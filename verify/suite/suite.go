@@ -144,7 +144,7 @@ const (
 
 	// LiveKeyEnv names the environment variable that carries the --live
 	// target's credential to the suite. It is an environment variable, not a
-	// flag, so the key never appears in a process listing.
+	// flag, so the key stays out of command-line arguments.
 	LiveKeyEnv = "SURLA_LIVE_TARGET_KEY"
 )
 
