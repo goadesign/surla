@@ -228,6 +228,12 @@ func (c *ControlPlane) draftLive(ctx context.Context, lt *liveTarget, promptID, 
 		span.SetStatus(codes.Error, "live target prompt update failed")
 		return nil, liveDraftError(err, lt)
 	}
+	if res.PromptID != promptID {
+		err := fmt.Errorf("live target answered for prompt %q instead of %q", res.PromptID, promptID)
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "live target answered for another prompt")
+		return nil, gensurla.MakeUpdateNotConfirmed(errors.New("the live target answered for a different prompt, so the update is not confirmed; keep the draft and send it again"))
+	}
 	span.AddEvent("prompt text accepted", trace.WithAttributes(attribute.String("version", res.Version)))
 	return &gensurla.DraftOverrideResult{
 		AppliedInStore:  true,

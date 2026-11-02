@@ -39,7 +39,8 @@ const (
 	// serves the prompt operation; "drop" closes every update's connection
 	// without answering; "leaky" rejects templates with a message quoting a
 	// path, a key and a URL; "version" accepts with the version in
-	// liveTargetVersionEnv; "fail" makes the suite exit before it
+	// liveTargetVersionEnv; "other-prompt" accepts but answers for another
+	// prompt ID; "fail" makes the suite exit before it
 	// is ready, and "fail-pinned" does so after leaving a file its cleanup
 	// cannot remove; "prepare-hangs" blocks preparation until it is canceled.
 	liveTargetModeEnv = "CONTROLPLANE_TEST_LIVE_TARGET"
@@ -83,6 +84,8 @@ func (f *fakeTarget) OverridePrompt(_ context.Context, p *genprompts.OverridePro
 		return nil, genprompts.MakeInvalidPrompt(errors.New("parse /private/secret/path with key=abc123 from http://10.0.0.1/admin"))
 	case "version":
 		return &genprompts.OverridePromptResult{PromptID: p.PromptID, Version: os.Getenv(liveTargetVersionEnv)}, nil
+	case "other-prompt":
+		return &genprompts.OverridePromptResult{PromptID: "/private/secret/path?key=abc123", Version: "v1"}, nil
 	}
 	if p.PromptID != fakePromptID {
 		return nil, genprompts.MakeUnknownPrompt(fmt.Errorf("no prompt %s", p.PromptID))
@@ -680,4 +683,17 @@ func TestAStartThatTimesOutSaysSo(t *testing.T) {
 	dirs, err := verifyrun.LeftoverLiveDirs(LiveRoot(cardsDir))
 	require.NoError(t, err)
 	assert.Empty(t, dirs)
+}
+
+func TestLiveTargetAnsweringForAnotherPromptIsNotConfirmed(t *testing.T) {
+	cp, _ := newLiveControlPlane(t, "other-prompt")
+	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
+	_, err := cp.StartLiveTarget(alice, &gensurla.StartLiveTargetPayload{CandidateCommit: strings.Repeat("a", 40)})
+	require.NoError(t, err)
+	out, err := draft(alice, cp, fakePromptID, "x")
+	assert.Nil(t, out, "no applied-success result")
+	assert.Equal(t, "update_not_confirmed", goaErrorName(err))
+	for _, secret := range []string{"/private/secret/path", "abc123"} {
+		assert.NotContains(t, err.Error(), secret, "the untrusted response ID is not echoed")
+	}
 }

@@ -146,9 +146,9 @@ func (e *LiveStartError) Unwrap() error {
 	return e.Err
 }
 
-// LeftoverLiveDirs returns the live directories under root, left there when
-// the process that started them died. Their processes are gone; the operator
-// removes the directories.
+// LeftoverLiveDirs returns the names of the live directories under root. It
+// only lists names: it does not check whether a directory belongs to a
+// running target or whether its processes have stopped.
 func LeftoverLiveDirs(root string) ([]string, error) {
 	matches, err := filepath.Glob(filepath.Join(root, liveDirPrefix+"*"))
 	if err != nil {
