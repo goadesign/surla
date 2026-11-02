@@ -527,6 +527,34 @@ func TestRunPreviewChangeRefusesRedirectsTimeoutAndInvalidUTF8(t *testing.T) {
 		require.ErrorContains(t, err, "design snapshot file design/design.go is not valid UTF-8")
 		assert.EqualValues(t, 0, requests.Load(), "server must not be contacted when snapshot contains invalid UTF-8")
 	})
+
+	t.Run("invalid raw UTF-8 in -builders fails before any network request", func(t *testing.T) {
+		t.Parallel()
+		var requests atomic.Int32
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			requests.Add(1)
+			w.WriteHeader(http.StatusOK)
+		}))
+		t.Cleanup(srv.Close)
+
+		buildersPath := filepath.Join(t.TempDir(), "builders.json")
+		require.NoError(t, os.WriteFile(buildersPath, []byte("[{\"name\":\"orders\",\"paths\":[\"internal/\xff/**\"]}]"), 0o600))
+		var out bytes.Buffer
+		err := runPreviewChange(
+			[]string{
+				"-server", srv.URL,
+				"-change-id", "vip-refunds",
+				"-request-revision", "rev-123",
+				"-dir", validDir,
+				"-auth-token", "secret-token",
+				"-builders", buildersPath,
+			},
+			&out,
+			func(string) string { return "" },
+		)
+		require.ErrorContains(t, err, "is not valid UTF-8")
+		assert.EqualValues(t, 0, requests.Load(), "server must not be contacted when -builders contains invalid UTF-8")
+	})
 }
 
 func TestParsePreviewChangeFlagsAndServerOrigin(t *testing.T) {
@@ -687,13 +715,41 @@ func TestParsePreviewChangeFlagsAndServerOrigin(t *testing.T) {
 func TestLoadBuilderScopesDecodesStrictly(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
-		name    string
-		content string
-		wantErr string
+		name        string
+		content     string
+		wantName    string
+		wantPaths   []string
+		wantProfile string
+		wantErr     string
 	}{
 		{
-			name:    "valid builder scopes with preferred profile",
-			content: `[{"name":"orders","paths":["internal/orders/**"],"preferred_profile_id":"claude-builder"}]`,
+			name:        "valid builder scopes with preferred profile",
+			content:     `[{"name":"orders","paths":["internal/orders/**"],"preferred_profile_id":"claude-builder"}]`,
+			wantName:    "orders",
+			wantPaths:   []string{"internal/orders/**"},
+			wantProfile: "claude-builder",
+		},
+		{
+			name:        "valid Unicode including literal U+FFFD is preserved",
+			content:     "[{\"name\":\"orders-€-\xef\xbf\xbd\",\"paths\":[\"internal/€-\\ufffd/**\"],\"preferred_profile_id\":\"claude-\xef\xbf\xbd\"}]",
+			wantName:    "orders-€-\ufffd",
+			wantPaths:   []string{"internal/€-\ufffd/**"},
+			wantProfile: "claude-\ufffd",
+		},
+		{
+			name:    "raw invalid UTF-8 in name",
+			content: "[{\"name\":\"orders-\xff\",\"paths\":[\"internal/**\"]}]",
+			wantErr: "is not valid UTF-8",
+		},
+		{
+			name:    "raw invalid UTF-8 in path",
+			content: "[{\"name\":\"orders\",\"paths\":[\"internal/\xff/**\"]}]",
+			wantErr: "is not valid UTF-8",
+		},
+		{
+			name:    "raw invalid UTF-8 in preferred_profile_id",
+			content: "[{\"name\":\"orders\",\"paths\":[\"internal/**\"],\"preferred_profile_id\":\"claude-\xff\"}]",
+			wantErr: "is not valid UTF-8",
 		},
 		{
 			name:    "null array",
@@ -737,10 +793,10 @@ func TestLoadBuilderScopesDecodesStrictly(t *testing.T) {
 			}
 			require.NoError(t, err)
 			require.Len(t, scopes, 1)
-			assert.Equal(t, "orders", *scopes[0].Name)
-			assert.Equal(t, []string{"internal/orders/**"}, scopes[0].Paths)
+			assert.Equal(t, tc.wantName, *scopes[0].Name)
+			assert.Equal(t, tc.wantPaths, scopes[0].Paths)
 			require.NotNil(t, scopes[0].PreferredProfileID)
-			assert.Equal(t, "claude-builder", *scopes[0].PreferredProfileID)
+			assert.Equal(t, tc.wantProfile, *scopes[0].PreferredProfileID)
 		})
 	}
 }

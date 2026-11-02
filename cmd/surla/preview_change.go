@@ -5,6 +5,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -207,20 +208,24 @@ func parseServerOrigin(raw string) (string, string, error) {
 	return u.Scheme, u.Host, nil
 }
 
-// loadBuilderScopes decodes the optional JSON array of builder scopes at path
-// using the generated wire type BuilderScopeItemRequestBody, rejecting null,
-// unknown fields, trailing data, and entries missing required fields or
-// containing invalid UTF-8. An empty path means no builder scopes were given.
+// loadBuilderScopes reads and decodes the optional JSON array of builder
+// scopes at path using the generated wire type BuilderScopeItemRequestBody,
+// rejecting invalid raw UTF-8 before JSON decoding (because encoding/json
+// replaces invalid UTF-8 bytes with U+FFFD), null arrays or elements, unknown
+// fields, trailing data, and entries missing required fields. An empty path
+// means no builder scopes were given.
 func loadBuilderScopes(path string) ([]*gensurlaserver.BuilderScopeItemRequestBody, error) {
 	if path == "" {
 		return nil, nil
 	}
-	f, err := os.Open(path)
+	raw, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("read -builders: %w", err)
 	}
-	defer f.Close()
-	dec := json.NewDecoder(f)
+	if !utf8.Valid(raw) {
+		return nil, fmt.Errorf("-builders %s is not valid UTF-8", path)
+	}
+	dec := json.NewDecoder(bytes.NewReader(raw))
 	dec.DisallowUnknownFields()
 	var scopes *[]*gensurlaserver.BuilderScopeItemRequestBody
 	if err := dec.Decode(&scopes); err != nil {
@@ -238,14 +243,6 @@ func loadBuilderScopes(path string) ([]*gensurlaserver.BuilderScopeItemRequestBo
 		}
 		if err := gensurlaserver.ValidateBuilderScopeItemRequestBody(s); err != nil {
 			return nil, fmt.Errorf("-builders %s[%d]: %w", path, i, err)
-		}
-		if !utf8.ValidString(*s.Name) || (s.PreferredProfileID != nil && !utf8.ValidString(*s.PreferredProfileID)) {
-			return nil, fmt.Errorf("-builders %s[%d]: builder fields must be valid UTF-8", path, i)
-		}
-		for _, p := range s.Paths {
-			if !utf8.ValidString(p) {
-				return nil, fmt.Errorf("-builders %s[%d]: builder path must be valid UTF-8", path, i)
-			}
 		}
 	}
 	return *scopes, nil
