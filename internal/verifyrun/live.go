@@ -35,11 +35,13 @@ import (
 // shared Go module and toolchain caches verify.Prepare inherits, is under the
 // directory.
 //
-// The executor never exits on its own: when its suite ends or its preparation
-// fails, it reports that on stdout and keeps watching the pipe, so a process
-// the session started can never outlive serve. It never removes anything.
-// While serve lives, LiveProcess.Stop is the only cleanup: it kills the
-// group, waits until it is empty and only then removes the directory. If serve dies, the kernel closes the pipe and the
+// Any terminal event ends the whole group at once: when preparation fails,
+// when the suite prints no valid ready line, or when the suite exits, the
+// executor prints at most one safe line and kills its own group, itself
+// included. It never removes anything. LiveProcess.Stop, run by serve outside
+// the group, is the only cleanup: it kills the group if it still exists,
+// waits until it is empty and the executor is reaped, and only then removes
+// the directory. If serve dies, the kernel closes the pipe and the
 // executor kills its whole group, itself included, so no process outlives
 // serve; the directory is then left for the operator, and the next StartLive
 // in the same root reports it.
@@ -70,8 +72,8 @@ type (
 		// its exit error.
 		exited  chan struct{}
 		waitErr error
-		// ended is closed when the executor reports that the target ended,
-		// or when its output ends because it was killed.
+		// ended is closed when the executor's output ends, which happens
+		// only when its group has been killed.
 		ended chan struct{}
 		// lines delivers the executor's first line to StartLive.
 		lines chan liveLine
@@ -90,8 +92,6 @@ type (
 		URL string `json:"url,omitempty"`
 		// Error is why the target could not start.
 		Error string `json:"error,omitempty"`
-		// Ended reports, after URL, why a running target ended.
-		Ended string `json:"ended,omitempty"`
 	}
 )
 
@@ -265,14 +265,14 @@ func Live(dir string, prepare func(context.Context, verify.Plan) (verify.Prepare
 	select {
 	case line := <-first:
 		if line.URL == "" {
-			return reportLive(out, errLog, summaryLiveSuite, fmt.Errorf("suite printed no URL; suite exited: %v", <-exited))
+			return reportLive(out, errLog, summaryLiveSuite, errors.New("suite printed no valid ready line"))
 		}
 		if err := json.NewEncoder(out).Encode(liveLine{URL: line.URL}); err != nil {
-			return errors.Join(err, waitForStop())
+			fmt.Fprintln(errLog, err)
+			return endGroup()
 		}
-		suiteErr := <-exited
-		fmt.Fprintln(errLog, "suite exited:", suiteErr)
-		return errors.Join(json.NewEncoder(out).Encode(liveLine{Ended: "The live target stopped."}), waitForStop())
+		fmt.Fprintln(errLog, "suite exited:", <-exited)
+		return endGroup()
 	case err := <-exited:
 		return reportLive(out, errLog, summaryLiveSuite, fmt.Errorf("suite exited before it was ready: %v", err))
 	}
@@ -307,51 +307,50 @@ func (p *LiveProcess) Stop() error {
 	return p.stopErr
 }
 
-// reportLive prints summary as the executor's line and writes the full error
-// to errLog, then waits for the process that started the executor to stop
-// it, because processes the failed step started may still be in the group.
+// reportLive prints summary as the executor's one line, writes the full error
+// to errLog and ends the group, so nothing the failed step started remains.
 func reportLive(out, errLog io.Writer, summary string, err error) error {
 	fmt.Fprintln(errLog, err)
-	return errors.Join(err, json.NewEncoder(out).Encode(liveLine{Error: summary}), waitForStop())
+	if err := json.NewEncoder(out).Encode(liveLine{Error: summary}); err != nil {
+		fmt.Fprintln(errLog, err)
+	}
+	return endGroup()
 }
 
-// waitForStop blocks until watchSupervisor kills the executor's group, which
-// happens when the starting process closes the control pipe or dies. It
-// returns only if that never happens, which is an error.
-func waitForStop() error {
-	for {
-		time.Sleep(time.Hour)
+// endGroup kills the executor's whole process group, the executor included.
+// The line already written stays readable in the pipe. It returns only if
+// the kill failed.
+func endGroup() error {
+	if err := syscall.Kill(0, syscall.SIGKILL); err != nil {
+		return fmt.Errorf("end live process group: %w", err)
 	}
+	// SIGKILL to the own group is delivered before the kill call returns to
+	// a running process, so this is not reached.
+	return errors.New("live process group survived SIGKILL")
 }
 
 // readOutput owns the executor's stdout: it delivers the first line to
-// StartLive, closes ended when the executor reports that the target ended or
-// when the output ends, and closes the pipe before closing readerDone.
+// StartLive, a zero line when the output ends first or the line does not
+// decode, closes ended when the output ends, and closes the pipe before
+// closing readerDone.
 func (p *LiveProcess) readOutput(r *os.File) {
 	defer close(p.readerDone)
 	defer r.Close()
 	defer close(p.ended)
 	sc := bufio.NewScanner(r)
 	sc.Buffer(make([]byte, 0, maxLiveLine), maxLiveLine)
-	first := true
-	for sc.Scan() {
-		// A line that does not decode is treated as a zero line: StartLive
-		// then reports that the suite did not start a target.
-		line, err := decodeLiveLine(sc.Text())
-		if err != nil {
-			line = liveLine{}
-		}
-		if first {
-			first = false
-			p.lines <- line
-			continue
-		}
-		if line.Ended != "" {
-			return
+	var line liveLine
+	if sc.Scan() {
+		decoded, err := decodeLiveLine(sc.Text())
+		if err == nil {
+			line = decoded
 		}
 	}
-	if first {
-		p.lines <- liveLine{}
+	p.lines <- line
+	// The executor writes nothing after its line; read to EOF, which comes
+	// when its group is killed.
+	for sc.Scan() {
+		continue
 	}
 }
 

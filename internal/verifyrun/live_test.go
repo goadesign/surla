@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -31,6 +32,8 @@ const (
 	//   - "prepare-hangs": prepare starts a child, as a build does, and blocks;
 	//   - "suite-hangs": the suite starts a child and never prints the line;
 	//   - "suite-exits": the suite exits before printing the line;
+	//   - "suite-bad-line": the suite starts a child, prints a diagnostic
+	//     instead of the ready line and keeps serving;
 	//   - "target-ends": the suite prints the line and exits 1s later,
 	//     leaving its child running, as a candidate a suite did not stop.
 	// Each started process records "pgid pid" lines in TMPDIR/pids.
@@ -83,6 +86,11 @@ func fakeSuiteLive() int {
 	if err := startRecordedChild(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 2
+	}
+	if mode == "suite-bad-line" {
+		fmt.Println("starting gateway...")
+		time.Sleep(time.Hour)
+		return 0
 	}
 	if mode == "suite-hangs" {
 		time.Sleep(time.Hour)
@@ -350,23 +358,24 @@ func TestLiveTargetDiesWithItsHostAfterItEndedAndBeforeStop(t *testing.T) {
 	}
 	dir := onlyLiveDir(t, root)
 	pgid, pids := recordedPIDs(t, dir, 2)
-	// The suite has exited but left its child; the host saw Done and has
-	// not called Stop. Its death alone must end every process.
-	require.NoError(t, syscall.Kill(pids[1], 0), "the suite's child is still running before the host dies")
-	require.NoError(t, host.Process.Signal(syscall.SIGKILL))
+	// The suite exited and left its child; the host saw Done and has not
+	// called Stop. The terminal event itself already ended every process,
+	// and the host's death leaves none behind.
 	requireGroupGone(t, pgid)
+	require.NoError(t, host.Process.Signal(syscall.SIGKILL))
 	for _, pid := range pids {
 		assert.ErrorIs(t, syscall.Kill(pid, 0), syscall.ESRCH, "process %d outlived its host", pid)
 	}
 }
 
-func TestLiveExecutorKeepsWatchingUntilItsStarterIsGone(t *testing.T) {
+func TestLiveExecutorEndsItsWholeGroupOnATerminalEvent(t *testing.T) {
 	cases := []struct {
 		mode      string
 		wantLines []string
 	}{
 		{mode: "prepare-fails-child", wantLines: []string{`{"error":"The candidate did not build."}`}},
-		{mode: "target-ends", wantLines: []string{`{"url":"http://127.0.0.1:4100"}`, `{"ended":"The live target stopped."}`}},
+		{mode: "suite-bad-line", wantLines: []string{`{"error":"` + summaryLiveSuite + `"}`}},
+		{mode: "target-ends", wantLines: []string{`{"url":"http://127.0.0.1:4100"}`}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.mode, func(t *testing.T) {
@@ -379,6 +388,7 @@ func TestLiveExecutorKeepsWatchingUntilItsStarterIsGone(t *testing.T) {
 			require.NoError(t, writeJSON(dir, liveRequestFile, LiveRequest{}))
 			control, keep, err := os.Pipe()
 			require.NoError(t, err)
+			defer keep.Close()
 			cmd := exec.Command(self, "verify-run", "live", dir)
 			cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 			cmd.ExtraFiles = []*os.File{control}
@@ -387,36 +397,34 @@ func TestLiveExecutorKeepsWatchingUntilItsStarterIsGone(t *testing.T) {
 			require.NoError(t, err)
 			require.NoError(t, cmd.Start())
 			require.NoError(t, control.Close())
-			exited := make(chan struct{})
-			go func() {
-				if err := cmd.Wait(); err == nil {
-					t.Error("the executor exited cleanly")
-				}
-				close(exited)
-			}()
-			r := bufio.NewReader(out)
-			for _, want := range tc.wantLines {
-				line, err := r.ReadString('\n')
-				require.NoError(t, err)
-				assert.Equal(t, want, strings.TrimSpace(line))
-			}
+			// The pipe stays open: the starter is alive and calls no Stop,
+			// so only the terminal event can end the group.
+			b, err := io.ReadAll(out)
+			require.NoError(t, err, "the executor's output ends")
+			assert.Equal(t, tc.wantLines, strings.Split(strings.TrimSpace(string(b)), "\n"))
+			assert.Error(t, cmd.Wait(), "the executor ended with its group")
 			pgid, pids := recordedPIDs(t, dir, 2)
-			select {
-			case <-exited:
-				t.Fatal("the executor exited while its group may still hold processes")
-			case <-time.After(300 * time.Millisecond):
-			}
-			for _, pid := range pids[1:] {
-				require.NoError(t, syscall.Kill(pid, 0), "the step's child %d is still running", pid)
-			}
-			require.NoError(t, keep.Close(), "closing the pipe stands in for the starter's death")
 			requireGroupGone(t, pgid)
-			<-exited
 			for _, pid := range pids {
-				assert.ErrorIs(t, syscall.Kill(pid, 0), syscall.ESRCH, "process %d outlived the pipe", pid)
+				assert.ErrorIs(t, syscall.Kill(pid, 0), syscall.ESRCH, "process %d outlived the terminal event", pid)
 			}
 		})
 	}
+}
+
+func TestStartLiveFailsPromptlyOnABadReadyLine(t *testing.T) {
+	t.Setenv(liveFakeEnv, "suite-bad-line")
+	root := t.TempDir()
+	self, err := os.Executable()
+	require.NoError(t, err)
+	started := time.Now()
+	_, err = StartLive(t.Context(), root, verify.Plan{}, "secret-key", []string{self}, os.Environ())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), summaryLiveSuite)
+	assert.Less(t, time.Since(started), 10*time.Second, "a protocol failure is reported without waiting for the suite to exit")
+	dirs, err := LeftoverLiveDirs(root)
+	require.NoError(t, err)
+	assert.Empty(t, dirs)
 }
 
 func TestRepeatedLiveTargetsRetainNoDescriptors(t *testing.T) {
