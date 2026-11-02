@@ -27,6 +27,11 @@ import (
 	"github.com/goadesign/surla/internal/verify"
 )
 
+// scriptedAnalyzer is a scripted CP1 analyzer: it returns a fixed analysis
+// with no open questions, so it proves the Change Card plumbing, not live
+// CP1 model judgment.
+type scriptedAnalyzer struct{}
+
 // echoSystem is a model provider that answers every request with the system
 // text it received, so a test sees which prompt text a service sent.
 type echoSystem struct{}
@@ -40,12 +45,15 @@ type echoStream struct {
 
 // TestStarterLiveTargetAppliesADraftToTheNextModelRequest creates a real
 // starter project, commits it as C1, and runs the full CP3 journey through the
-// control plane, with real sandboxed builds and processes: start_live_target
-// builds C1 and starts it with the generated suite's --live mode through a
-// loopback model gateway, draft_override replaces the helper's system prompt
-// on it, and the next question's model request carries the drafted text. The
-// builder then writes that text into source and commits C2: a live target
-// for C2 sends it with no draft, and verification of C2 passes. It needs the
+// control plane for one confirmed Change Card, with real sandboxed builds and
+// processes and a fake model that echoes the system prompt:
+// start_live_target builds C1 and starts it with the generated suite's --live
+// mode through a loopback model gateway, draft_override replaces the helper's
+// system prompt on it, the next question's model request carries the drafted
+// text, and the card keeps its revision. The builder then writes that text
+// into source and commits C2: a live target for C2 sends it with no draft,
+// and verify_change of C2 for the same card passes. A second card skips CP3
+// and verifies C1 directly. The CP1 analyzer is scripted. It needs the
 // network and, for the sandbox, macOS.
 func TestStarterLiveTargetAppliesADraftToTheNextModelRequest(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "shop")
@@ -63,12 +71,16 @@ func TestStarterLiveTargetAppliesADraftToTheNextModelRequest(t *testing.T) {
 	cardsDir := t.TempDir()
 	cp, err := controlplane.New(controlplane.Options{
 		CardsDir: cardsDir,
+		Analyzer: scriptedAnalyzer{},
 		Verification: &controlplane.VerificationConfig{
 			RunsDir: t.TempDir(),
 			Plan: verify.Plan{
 				CandidateRepo: dir, CandidateModule: ".", Binaries: map[string]string{name: "./cmd/" + name},
 				SuiteRepo: dir, SuiteCommit: commit, SuiteModule: "eval", SuiteCommand: "./cmd/" + name + "-evals",
+				ReportDir: t.TempDir(),
 			},
+			Command: []string{surlaBin},
+			Timeout: 15 * time.Minute,
 		},
 		Live: &controlplane.LiveConfig{
 			Command:      []string{surlaBin},
@@ -79,6 +91,7 @@ func TestStarterLiveTargetAppliesADraftToTheNextModelRequest(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { assert.NoError(t, cp.Close()) })
 	alice := controlplane.WithPrincipal(context.Background(), controlplane.Principal{ID: "alice@example.com"})
+	card := confirmCard(t, cp, alice, "starter-live-prompt")
 
 	started, err := cp.StartLiveTarget(alice, &gensurla.StartLiveTargetPayload{CandidateCommit: commit})
 	require.NoError(t, err)
@@ -93,6 +106,10 @@ func TestStarterLiveTargetAppliesADraftToTheNextModelRequest(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, drafted.AppliedInStore)
 	assert.Equal(t, "SYSTEM="+text, askLive(t, started.URL), "the next model request carries the drafted text")
+	afterDraft, err := cp.GetChange(alice, &gensurla.GetChangePayload{ChangeID: card.ChangeID})
+	require.NoError(t, err)
+	assert.Equal(t, card.RequestRevision, afterDraft.RequestRevision, "a runtime draft never changes the card")
+	assert.Equal(t, controlplane.StatusConfirmed, afterDraft.Status)
 
 	// The builder keeps the accepted text by writing it into source and
 	// committing C2; the draft itself is never what CP4 verifies.
@@ -114,13 +131,70 @@ func TestStarterLiveTargetAppliesADraftToTheNextModelRequest(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, stopped.Stopped)
 
-	report, err := verify.Run(t.Context(), verify.Plan{
-		CandidateRepo: dir, CandidateCommit: c2, CandidateModule: ".", Binaries: map[string]string{name: "./cmd/" + name},
-		SuiteRepo: dir, SuiteCommit: c2, SuiteModule: "eval", SuiteCommand: "./cmd/" + name + "-evals",
-		RequestRevision: strings.Repeat("r", 64), WorkDir: filepath.Join(t.TempDir(), "work"), ReportDir: t.TempDir(),
-	})
+	assertVerified(t, cp, alice, card, c2, "the committed text verifies for the same card")
+
+	skipped := confirmCard(t, cp, alice, "starter-skip-cp3")
+	assertVerified(t, cp, alice, skipped, commit, "a card that skips CP3 verifies C1 directly")
+}
+
+// Analyze returns a fixed analysis with no open questions.
+func (scriptedAnalyzer) Analyze(context.Context, string, string) (controlplane.CP1SemanticAnalysis, error) {
+	return controlplane.CP1SemanticAnalysis{
+		Summary: "Answer price questions in a friendlier tone.",
+		Examples: []controlplane.CP1ModelExample{{
+			Scenario: "Tea price", InputSummary: "How much is tea?",
+			ExpectedOutcome: "Answers $3.50", VerificationKind: "deterministic",
+		}},
+		PreservedBehaviors: []string{"Prices come only from lookup_price."},
+	}, nil
+}
+
+// confirmCard proposes changeID with the scripted analyzer and confirms it,
+// returning the confirmed card.
+func confirmCard(t *testing.T, cp *controlplane.ControlPlane, ctx context.Context, changeID string) *gensurla.ChangeCardResult {
+	t.Helper()
+	card, err := cp.ProposeChange(ctx, &gensurla.ProposeChangePayload{ChangeID: changeID, Prompt: "Answer price questions in a friendlier tone."})
 	require.NoError(t, err)
-	assert.True(t, report.Passed, "verification of the committed text passes: %+v", report)
+	if card.Status != controlplane.StatusConfirmed {
+		card, err = cp.ConfirmIntent(ctx, &gensurla.ConfirmIntentPayload{
+			ChangeID: changeID, RequestRevision: card.RequestRevision, Answers: map[string]string{}, Examples: card.Examples,
+		})
+		require.NoError(t, err)
+	}
+	require.Equal(t, controlplane.StatusConfirmed, card.Status)
+	return card
+}
+
+// assertVerified runs verify_change for commit on card and waits, within a
+// phase deadline, until the run completes. It fails at once on a run that
+// ends without a report or a report that does not pass.
+func assertVerified(t *testing.T, cp *controlplane.ControlPlane, ctx context.Context, card *gensurla.ChangeCardResult, commit, why string) {
+	t.Helper()
+	run, err := cp.VerifyChange(ctx, &gensurla.VerifyChangePayload{ChangeID: card.ChangeID, RequestRevision: card.RequestRevision, CandidateCommit: commit})
+	require.NoError(t, err)
+	phase, cancel := context.WithTimeout(t.Context(), 15*time.Minute)
+	defer cancel()
+	for {
+		status, err := cp.GetVerification(ctx, &gensurla.GetVerificationPayload{RunID: run.RunID})
+		require.NoError(t, err)
+		require.Equal(t, card.RequestRevision, status.RequestRevision)
+		require.Equal(t, commit, status.CandidateCommit)
+		if done, ok := status.State.AsCompleted(); ok {
+			assert.True(t, done.Report.Passed, "%s: %+v", why, done.Report)
+			return
+		}
+		if failed, ok := status.State.AsNotCompleted(); ok {
+			t.Fatalf("%s: the run ended without a report: %+v", why, failed)
+		}
+		if _, ok := status.State.AsRunning(); !ok {
+			t.Fatalf("%s: unexpected verification state %v", why, status.State.Kind())
+		}
+		select {
+		case <-phase.Done():
+			t.Fatalf("%s: verification did not finish: %v", why, phase.Err())
+		case <-time.After(2 * time.Second):
+		}
+	}
 }
 
 // Complete is not used; the starter's planner streams.

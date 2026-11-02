@@ -119,12 +119,13 @@ func Live(ctx context.Context, binary candidate.Artifact, key string, provider m
 // LiveThroughGateway starts the pinned [[.Name]] for Surla's live CP3 target
 // planning through the model gateway at gatewayAddr, the address surla serve's
 // -model-gateway-addr names. The candidate sandbox lets the [[.Name]] connect
-// only to loopback ports: a gateway on this host's loopback interface is used
-// directly, and any other gateway is reached through a forwarder this process
-// owns on a loopback port. Either way the [[.Name]] may connect to exactly one
-// port.
+// only to loopback ports and resolves no names: a literal loopback address,
+// such as 127.0.0.1 or [::1], is used directly, and any other address,
+// including a hostname such as localhost, is reached through a forwarder this
+// process owns on a loopback port, which dials it with ordinary name
+// resolution. Either way the [[.Name]] may connect to exactly one port.
 func LiveThroughGateway(ctx context.Context, binary candidate.Artifact, key, gatewayAddr string) (suite.LiveTarget, error) {
-	port, loopback, err := gatewayPort(ctx, gatewayAddr)
+	port, loopback, err := gatewayPort(gatewayAddr)
 	if err != nil {
 		return suite.LiveTarget{}, err
 	}
@@ -150,25 +151,32 @@ func LiveThroughGateway(ctx context.Context, binary candidate.Artifact, key, gat
 // liveTarget returns the target for a started [[.Name]]: it stops when ctx
 // ends, when the [[.Name]] exits, or when failed reports an error (nil
 // disables that case), and Done delivers only after stop has cleaned up.
+// Canceling ctx also ends the [[.Name]], so when ctx is canceled the ending
+// is a requested stop whichever case was ready first: Done then carries only
+// stop's own result.
 func liveTarget(ctx context.Context, addr string, exited <-chan struct{}, failed <-chan error, stop func() error) suite.LiveTarget {
 	done := make(chan error, 1)
 	go func() {
+		var cause error
 		select {
 		case <-ctx.Done():
-			done <- stop()
 		case <-exited:
-			done <- errors.Join(errors.New("[[.Name]] exited"), stop())
+			cause = errors.New("[[.Name]] exited")
 		case err := <-failed:
-			done <- errors.Join(err, stop())
+			cause = err
 		}
+		if ctx.Err() != nil {
+			cause = nil
+		}
+		done <- errors.Join(cause, stop())
 	}()
 	return suite.LiveTarget{URL: "http://" + addr, Done: done}
 }
 
-// gatewayPort returns gatewayAddr's port and whether its host is on this
-// host's loopback interface: a loopback IP address, or a name that resolves
-// only to loopback addresses.
-func gatewayPort(ctx context.Context, gatewayAddr string) (port int, loopback bool, err error) {
+// gatewayPort returns gatewayAddr's port and whether its host is a literal
+// loopback IP address, which the [[.Name]] can dial directly. A hostname is
+// never resolved here: the forwarder dials it.
+func gatewayPort(gatewayAddr string) (port int, loopback bool, err error) {
 	host, portText, err := net.SplitHostPort(gatewayAddr)
 	if err != nil {
 		return 0, false, fmt.Errorf("model gateway address %q: %w", gatewayAddr, err)
@@ -177,18 +185,8 @@ func gatewayPort(ctx context.Context, gatewayAddr string) (port int, loopback bo
 	if err != nil || port <= 0 || port > 65535 {
 		return 0, false, fmt.Errorf("model gateway address %q has no valid port", gatewayAddr)
 	}
-	if ip := net.ParseIP(host); ip != nil {
-		return port, ip.IsLoopback(), nil
-	}
-	addrs, err := net.DefaultResolver.LookupIPAddr(ctx, host)
-	if err != nil {
-		return 0, false, fmt.Errorf("resolve model gateway host %q: %w", host, err)
-	}
-	loopback = len(addrs) > 0
-	for _, a := range addrs {
-		loopback = loopback && a.IP.IsLoopback()
-	}
-	return port, loopback, nil
+	ip := net.ParseIP(host)
+	return port, ip != nil && ip.IsLoopback(), nil
 }
 
 // firstSystem returns the first exchange's system text, or "".

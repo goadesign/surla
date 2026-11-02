@@ -149,14 +149,14 @@ func TestGatewayPortTellsLoopbackFromRemote(t *testing.T) {
 	}{
 		{addr: "127.0.0.1:9090", port: 9090, loopback: true},
 		{addr: "[::1]:9090", port: 9090, loopback: true},
-		{addr: "localhost:9090", port: 9090, loopback: true},
+		{addr: "localhost:9090", port: 9090},
 		{addr: "10.0.0.7:9090", port: 9090},
 		{addr: "10.0.0.7", wantErr: "missing port"},
 		{addr: "10.0.0.7:0", wantErr: "no valid port"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.addr, func(t *testing.T) {
-			port, loopback, err := gatewayPort(context.Background(), tc.addr)
+			port, loopback, err := gatewayPort(tc.addr)
 			if tc.wantErr != "" {
 				if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
 					t.Errorf("error is %v, want one containing %q", err, tc.wantErr)
@@ -201,5 +201,54 @@ func TestLiveTargetDeliversDoneOnlyAfterCleanup(t *testing.T) {
 	target = liveTarget(context.Background(), "127.0.0.1:1", make(chan struct{}), failed, func() error { return nil })
 	if err := <-target.Done; err == nil || !strings.Contains(err.Error(), "stopped accepting") {
 		t.Errorf("Done is %v, want the relay failure that ended the target", err)
+	}
+}
+
+func TestLiveTargetTreatsACanceledStopAsRequested(t *testing.T) {
+	for range 50 {
+		ctx, cancel := context.WithCancel(context.Background())
+		exited := make(chan struct{})
+		close(exited)
+		cancel()
+		target := liveTarget(ctx, "127.0.0.1:1", exited, nil, func() error { return nil })
+		if err := <-target.Done; err != nil {
+			t.Fatalf("a requested stop reported %v; the [[.Name]] exiting because of it is not a failure", err)
+		}
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	exited := make(chan struct{})
+	close(exited)
+	target := liveTarget(ctx, "127.0.0.1:1", exited, nil, func() error { return errors.New("state kept") })
+	if err := <-target.Done; err == nil || !strings.Contains(err.Error(), "state kept") {
+		t.Errorf("Done is %v, want the real cleanup error", err)
+	}
+	exited = make(chan struct{})
+	close(exited)
+	target = liveTarget(context.Background(), "127.0.0.1:1", exited, nil, func() error { return nil })
+	if err := <-target.Done; err == nil || !strings.Contains(err.Error(), "exited") {
+		t.Errorf("Done is %v, want the [[.Name]]'s own exit reported", err)
+	}
+}
+
+func TestForwarderDialsAHostnameWithOrdinaryResolution(t *testing.T) {
+	_, echoPort, err := net.SplitHostPort(echoServer(t))
+	must(t, err, "split echo address")
+	f, err := startForwarder(net.JoinHostPort("localhost", echoPort))
+	must(t, err, "start forwarder")
+	defer func() { must(t, f.close(), "close") }()
+	c, err := net.Dial("tcp", f.addr())
+	must(t, err, "dial forwarder")
+	defer c.Close()
+	_, err = c.Write([]byte("hi"))
+	must(t, err, "write")
+	must(t, c.(*net.TCPConn).CloseWrite(), "half-close")
+	got, err := io.ReadAll(c)
+	must(t, err, "read")
+	if string(got) != "hi" {
+		t.Errorf("relayed %q through localhost, want %q", got, "hi")
+	}
+	if host, _, _ := net.SplitHostPort(f.addr()); host != "127.0.0.1" {
+		t.Errorf("the [[.Name]] would dial %s; it must get a literal loopback address", f.addr())
 	}
 }
