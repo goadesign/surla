@@ -338,6 +338,14 @@ func runLive(ctx context.Context, c Command, artifacts []string, key string, std
 	}
 	select {
 	case doneErr := <-target.Done:
+		// Done and a stop request can be ready together; a stop was asked
+		// for exactly when ctx is canceled.
+		if ctx.Err() != nil {
+			if doneErr != nil {
+				return fmt.Errorf("stop live target: %w", doneErr)
+			}
+			return nil
+		}
 		if doneErr == nil {
 			doneErr = errors.New("the live target stopped although it was not asked to")
 		}

@@ -18,6 +18,14 @@ import (
 	"github.com/goadesign/surla/verify/candidate"
 )
 
+// liveConfig is how one table case configures its fakeLive.
+type liveConfig struct {
+	// url, startErr, stopErr and endErr become the fakeLive fields of the
+	// same names.
+	url                       string
+	startErr, stopErr, endErr error
+}
+
 // fakeLive is a Command.Live that records what it was given and simulates a
 // target whose processes stop when ctx is canceled or when end is closed.
 type fakeLive struct {
@@ -67,32 +75,32 @@ func TestLiveFollowsTheSuiteCommandContract(t *testing.T) {
 		args       []string
 		key        string
 		noLive     bool
-		fake       fakeLive
+		fake       liveConfig
 		stopAfter  bool
 		endOnOwn   bool
 		wantCode   int
 		wantReady  bool
 		wantStderr string
 	}{
-		{name: "stopped on request", args: []string{"--live", artifact}, key: "k1", fake: fakeLive{url: "http://127.0.0.1:4100"},
+		{name: "stopped on request", args: []string{"--live", artifact}, key: "k1", fake: liveConfig{url: "http://127.0.0.1:4100"},
 			stopAfter: true, wantCode: ExitPassed, wantReady: true},
-		{name: "target ends on its own", args: []string{"--live", artifact}, key: "k1", fake: fakeLive{url: "http://127.0.0.1:4100", endErr: errors.New("candidate exited: status 3")},
+		{name: "target ends on its own", args: []string{"--live", artifact}, key: "k1", fake: liveConfig{url: "http://127.0.0.1:4100", endErr: errors.New("candidate exited: status 3")},
 			endOnOwn: true, wantCode: ExitError, wantReady: true, wantStderr: "live target ended: candidate exited: status 3"},
-		{name: "unclean stop", args: []string{"--live", artifact}, key: "k1", fake: fakeLive{url: "http://127.0.0.1:4100", stopErr: errors.New("gateway did not stop")},
+		{name: "unclean stop", args: []string{"--live", artifact}, key: "k1", fake: liveConfig{url: "http://127.0.0.1:4100", stopErr: errors.New("gateway did not stop")},
 			stopAfter: true, wantCode: ExitError, wantReady: true, wantStderr: "stop live target: gateway did not stop"},
 		{name: "suite without Live", args: []string{"--live", artifact}, key: "k1", noLive: true,
 			wantCode: ExitError, wantStderr: "this evaluator suite does not support --live"},
-		{name: "missing key", args: []string{"--live", artifact}, fake: fakeLive{url: "http://127.0.0.1:4100"},
+		{name: "missing key", args: []string{"--live", artifact}, fake: liveConfig{url: "http://127.0.0.1:4100"},
 			wantCode: ExitError, wantStderr: "--live requires the target key in " + LiveKeyEnv},
-		{name: "start fails", args: []string{"--live", artifact}, key: "k1", fake: fakeLive{startErr: errors.New("model gateway: no provider key")},
+		{name: "start fails", args: []string{"--live", artifact}, key: "k1", fake: liveConfig{startErr: errors.New("model gateway: no provider key")},
 			wantCode: ExitError, wantStderr: "start live target: model gateway: no provider key"},
-		{name: "non-loopback URL", args: []string{"--live", artifact}, key: "k1", fake: fakeLive{url: "http://10.0.0.1:4100"},
+		{name: "non-loopback URL", args: []string{"--live", artifact}, key: "k1", fake: liveConfig{url: "http://10.0.0.1:4100"},
 			wantCode: ExitError, wantStderr: `live target URL "http://10.0.0.1:4100" is not an http://127.0.0.1:<port> origin`},
 		{name: "with describe", args: []string{"--live", "--describe"}, key: "k1",
 			wantCode: ExitError, wantStderr: "--live cannot be combined with --describe, --scenario or --tag"},
 		{name: "with tag", args: []string{"--live", artifact, "--tag", "holdout"}, key: "k1",
 			wantCode: ExitError, wantStderr: "--live cannot be combined"},
-		{name: "missing artifact", args: []string{"--live"}, key: "k1", fake: fakeLive{url: "http://127.0.0.1:4100"},
+		{name: "missing artifact", args: []string{"--live"}, key: "k1", fake: liveConfig{url: "http://127.0.0.1:4100"},
 			wantCode: ExitError, wantStderr: "--artifact app=<path> is required"},
 	}
 	for _, tc := range cases {
@@ -101,8 +109,8 @@ func TestLiveFollowsTheSuiteCommandContract(t *testing.T) {
 			t.Setenv("TMPDIR", tmp)
 			t.Setenv(LiveKeyEnv, tc.key)
 			defer assertEmptyDir(t, tmp)
-			fake := tc.fake
-			fake.end = make(chan struct{})
+			fake := &fakeLive{url: tc.fake.url, startErr: tc.fake.startErr, stopErr: tc.fake.stopErr,
+				endErr: tc.fake.endErr, end: make(chan struct{})}
 			c := testCommand(false)
 			if !tc.noLive {
 				c.Live = fake.live
@@ -175,6 +183,45 @@ func TestLiveKeepsTheStoreUntilTheTargetHasStopped(t *testing.T) {
 	assert.Equal(t, ExitPassed, <-codes, stderr.String())
 	assert.True(t, <-storeSeen, "the store outlives the target's processes")
 	assertEmptyDir(t, tmp)
+}
+
+func TestLiveClassifiesAStopReadyTogetherWithDone(t *testing.T) {
+	bin := filepath.Join(t.TempDir(), "app")
+	require.NoError(t, os.WriteFile(bin, []byte("app binary"), 0o700))
+	cases := []struct {
+		name     string
+		doneErr  error
+		wantCode int
+		wantErr  string
+	}{
+		{name: "clean stop", wantCode: ExitPassed},
+		{name: "unclean stop", doneErr: errors.New("gateway did not stop"), wantCode: ExitError, wantErr: "stop live target: gateway did not stop"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			tmp := t.TempDir()
+			t.Setenv("TMPDIR", tmp)
+			t.Setenv(LiveKeyEnv, "k1")
+			ctx, cancel := context.WithCancel(t.Context())
+			c := testCommand(false)
+			c.Live = func(context.Context, map[string]candidate.Artifact, string) (LiveTarget, error) {
+				// Both the stop request and Done are ready before runLive
+				// selects between them.
+				cancel()
+				done := make(chan error, 1)
+				done <- tc.doneErr
+				return LiveTarget{URL: "http://127.0.0.1:4100", Done: done}, nil
+			}
+			for range 50 {
+				var stdout, stderr bytes.Buffer
+				code := runCommand(ctx, []string{"--live", "--artifact", "app=" + bin}, &stdout, &stderr, c)
+				require.Equal(t, tc.wantCode, code, stderr.String())
+				assert.NotContains(t, stderr.String(), "not asked")
+				assert.Contains(t, stderr.String(), tc.wantErr)
+			}
+			assertEmptyDir(t, tmp)
+		})
+	}
 }
 
 // syncBuffer is a bytes.Buffer safe for one writer and one reader.

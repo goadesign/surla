@@ -26,20 +26,31 @@ const (
 	//   - "ready": prepare succeeds and the suite starts a child, prints the
 	//     ready line and serves;
 	//   - "prepare-fails": prepare returns a StageError;
+	//   - "prepare-fails-child": prepare starts a child, as a build does, and
+	//     then returns a StageError;
 	//   - "prepare-hangs": prepare starts a child, as a build does, and blocks;
 	//   - "suite-hangs": the suite starts a child and never prints the line;
 	//   - "suite-exits": the suite exits before printing the line;
-	//   - "target-ends": the suite prints the line and exits 2s later.
+	//   - "target-ends": the suite prints the line and exits 1s later,
+	//     leaving its child running, as a candidate a suite did not stop.
 	// Each started process records "pgid pid" lines in TMPDIR/pids.
 	liveFakeEnv = "VERIFYRUN_TEST_LIVE"
-	// liveHostReady is printed by the fake host once StartLive returned.
+	// liveHostReady is printed by the fake host once StartLive returned, and
+	// liveHostEnded once the target reported that it ended.
 	liveHostReady = "host-ready"
+	liveHostEnded = "host-ended"
 )
 
 // fakePrepare stands in for verify.Prepare: it returns this test binary as the
 // suite, which then acts as fakeSuiteLive.
 func fakePrepare(ctx context.Context, _ verify.Plan) (verify.Prepared, error) {
 	switch os.Getenv(liveFakeEnv) {
+	case "prepare-fails-child":
+		if err := startRecordedChild(); err != nil {
+			return verify.Prepared{}, err
+		}
+		return verify.Prepared{}, &verify.StageError{Stage: verify.StageBuild, Summary: "The candidate did not build.",
+			Err: errors.New("compile error")}
 	case "prepare-fails":
 		return verify.Prepared{}, &verify.StageError{Stage: verify.StageBuild, Summary: "The candidate did not build.",
 			Err: errors.New("compile error in /private/secret/path")}
@@ -80,7 +91,7 @@ func fakeSuiteLive() int {
 		return 2
 	}
 	if mode == "target-ends" {
-		time.Sleep(2 * time.Second)
+		time.Sleep(time.Second)
 		return 2
 	}
 	time.Sleep(time.Hour)
@@ -101,6 +112,8 @@ func liveHost(root string) int {
 		return 2
 	}
 	fmt.Println(liveHostReady, p.pgid)
+	<-p.Done()
+	fmt.Println(liveHostEnded)
 	time.Sleep(time.Hour)
 	return 0
 }
@@ -310,4 +323,120 @@ func TestLiveTargetDiesWithItsHostAtEveryStage(t *testing.T) {
 func TestLiveEnvReplacesTMPDIRAndKey(t *testing.T) {
 	got := liveEnv([]string{"PATH=/bin", "TMPDIR=/tmp", suite.LiveKeyEnv + "=old", "HOME=/h"})
 	assert.Equal(t, []string{"PATH=/bin", "HOME=/h"}, got)
+}
+
+func TestLiveTargetDiesWithItsHostAfterItEndedAndBeforeStop(t *testing.T) {
+	t.Setenv(liveFakeEnv, "target-ends")
+	root := t.TempDir()
+	self, err := os.Executable()
+	require.NoError(t, err)
+	host := exec.Command(self, "live-host", root)
+	out, err := host.StdoutPipe()
+	require.NoError(t, err)
+	require.NoError(t, host.Start())
+	t.Cleanup(func() {
+		if err := host.Process.Kill(); err != nil && !errors.Is(err, os.ErrProcessDone) {
+			t.Errorf("kill host: %v", err)
+		}
+		if err := host.Wait(); err == nil {
+			t.Error("the killed host exited cleanly")
+		}
+	})
+	r := bufio.NewReader(out)
+	for _, want := range []string{liveHostReady, liveHostEnded} {
+		line, err := r.ReadString('\n')
+		require.NoError(t, err)
+		require.True(t, strings.HasPrefix(line, want), line)
+	}
+	dir := onlyLiveDir(t, root)
+	pgid, pids := recordedPIDs(t, dir, 2)
+	// The suite has exited but left its child; the host saw Done and has
+	// not called Stop. Its death alone must end every process.
+	require.NoError(t, syscall.Kill(pids[1], 0), "the suite's child is still running before the host dies")
+	require.NoError(t, host.Process.Signal(syscall.SIGKILL))
+	requireGroupGone(t, pgid)
+	for _, pid := range pids {
+		assert.ErrorIs(t, syscall.Kill(pid, 0), syscall.ESRCH, "process %d outlived its host", pid)
+	}
+}
+
+func TestLiveExecutorKeepsWatchingUntilItsStarterIsGone(t *testing.T) {
+	cases := []struct {
+		mode      string
+		wantLines []string
+	}{
+		{mode: "prepare-fails-child", wantLines: []string{`{"error":"The candidate did not build."}`}},
+		{mode: "target-ends", wantLines: []string{`{"url":"http://127.0.0.1:4100"}`, `{"ended":"The live target stopped."}`}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.mode, func(t *testing.T) {
+			t.Setenv(liveFakeEnv, tc.mode)
+			self, err := os.Executable()
+			require.NoError(t, err)
+			dir := t.TempDir()
+			tmp := filepath.Join(dir, liveTmpDir)
+			require.NoError(t, os.Mkdir(tmp, 0o700))
+			require.NoError(t, writeJSON(dir, liveRequestFile, LiveRequest{}))
+			control, keep, err := os.Pipe()
+			require.NoError(t, err)
+			cmd := exec.Command(self, "verify-run", "live", dir)
+			cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+			cmd.ExtraFiles = []*os.File{control}
+			cmd.Env = append(liveEnv(os.Environ()), "TMPDIR="+tmp, suite.LiveKeyEnv+"=secret-key")
+			out, err := cmd.StdoutPipe()
+			require.NoError(t, err)
+			require.NoError(t, cmd.Start())
+			require.NoError(t, control.Close())
+			exited := make(chan struct{})
+			go func() {
+				if err := cmd.Wait(); err == nil {
+					t.Error("the executor exited cleanly")
+				}
+				close(exited)
+			}()
+			r := bufio.NewReader(out)
+			for _, want := range tc.wantLines {
+				line, err := r.ReadString('\n')
+				require.NoError(t, err)
+				assert.Equal(t, want, strings.TrimSpace(line))
+			}
+			pgid, pids := recordedPIDs(t, dir, 2)
+			select {
+			case <-exited:
+				t.Fatal("the executor exited while its group may still hold processes")
+			case <-time.After(300 * time.Millisecond):
+			}
+			for _, pid := range pids[1:] {
+				require.NoError(t, syscall.Kill(pid, 0), "the step's child %d is still running", pid)
+			}
+			require.NoError(t, keep.Close(), "closing the pipe stands in for the starter's death")
+			requireGroupGone(t, pgid)
+			<-exited
+			for _, pid := range pids {
+				assert.ErrorIs(t, syscall.Kill(pid, 0), syscall.ESRCH, "process %d outlived the pipe", pid)
+			}
+		})
+	}
+}
+
+func TestRepeatedLiveTargetsRetainNoDescriptors(t *testing.T) {
+	t.Setenv(liveFakeEnv, "ready")
+	root := t.TempDir()
+	self, err := os.Executable()
+	require.NoError(t, err)
+	start := openDescriptors(t)
+	for range 5 {
+		p, err := StartLive(t.Context(), root, verify.Plan{}, "secret-key", []string{self}, os.Environ())
+		require.NoError(t, err)
+		require.NoError(t, p.Stop())
+	}
+	assert.Equal(t, start, openDescriptors(t), "every pipe is closed by its owner, not by the garbage collector")
+}
+
+// openDescriptors returns how many descriptors this process has open.
+func openDescriptors(t *testing.T) int {
+	t.Helper()
+	entries, err := os.ReadDir("/dev/fd")
+	require.NoError(t, err)
+	return len(entries)
 }
