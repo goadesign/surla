@@ -120,7 +120,16 @@ Then prompt your agent:
 
 > *"Using Surla, propose a change to `examples/orders` so VIP customers get instant store-credit refunds up to \$150, then preview the compiled C4 architecture and Chorus swarm plan for builder scope `orders` (`internal/**`)."*
 
-Your agent will create the **Change Card** (`propose_change`, calling `confirm_intent` to answer open ambiguity questions or refine confirmed answers and examples, which locks a SHA-256 `request_revision` fingerprint), compile the candidate Goa contract at **0 LLM tokens** (`preview_architecture`), and return the updated C4 topology, tool guardrails, and a proposed cross-family team roster (`@architect`, `@builder-orders`, `@eval-author`, `@reviewer`). The preview proposes the team; it does not launch agents.
+Your agent will create the **Change Card** (`propose_change`, calling `confirm_intent` to answer open ambiguity questions or refine confirmed answers and examples, which locks a SHA-256 `request_revision` fingerprint), compile the candidate Goa contract at **0 LLM tokens** (`preview_architecture` over MCP, or `surla preview-change` from the local module directory so the agent never has to copy `go.mod`, `go.sum`, and `design/*.go` into tool arguments), and return the updated C4 topology, tool guardrails, and a proposed cross-family team roster (`@architect`, `@builder-orders`, `@eval-author`, `@reviewer`). The preview proposes the team; it does not launch agents:
+
+```bash
+# Send the local module snapshot directly to the control plane's CP2 preview endpoint:
+surla preview-change \
+  -server http://127.0.0.1:8090 \
+  -change-id vip-refunds \
+  -request-revision "$REQUEST_REVISION" \
+  -dir examples/orders
+```
 
 To run the full independent verification suite (`surla verify` and `surla approve`) and compare the full operator report with the builder-redacted `-builder-view` report (where unseen `"holdout"` acceptance tests are redacted to `"id": "holdout-1"`), see the **[Orders Reference Platform Walkthrough (`examples/orders/README.md`)](examples/orders/README.md)**.
 

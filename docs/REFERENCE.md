@@ -8,7 +8,7 @@
 
 | Term | Plain-English Meaning |
 | :--- | :--- |
-| **`CP1` – `CP5`** | Surla's five verification checkpoints: **CP1** Confirm Intent (`propose_change`, `confirm_intent`), **CP2** Preview Compiled Architecture & Swarm (`preview_architecture`, or local `surla preview`), **CP3** Fast Draft & Live Sandbox (`draft_override`), **CP4** Isolated Sandboxed Verification (`verify_change`, `get_verification`, `surla verify`), and **CP5** Promotion Check (`surla approve`, `approve_merge`). |
+| **`CP1` – `CP5`** | Surla's five verification checkpoints: **CP1** Confirm Intent (`propose_change`, `confirm_intent`), **CP2** Preview Compiled Architecture & Swarm (`preview_architecture`, `surla preview-change`, or local `surla preview`), **CP3** Fast Draft & Live Sandbox (`draft_override`), **CP4** Isolated Sandboxed Verification (`verify_change`, `get_verification`, `surla verify`), and **CP5** Promotion Check (`surla approve`, `approve_merge`). |
 | **`Change Card`** | The versioned change plan (`ChangeCardResult`) created at `CP1` and saved on disk under `controlplane.Options.CardsDir` (`surla serve -cards-dir`, default `.surla/cards`) as `<sha256(change_id)>.json`, holding concrete input/outcome examples, open domain ambiguity questions, confirmed answers, preserved contract behaviors, and optional `CP5` approval metadata. |
 | **`request_revision`** | The SHA-256 hex digest of a Change Card's canonical content. `preview_architecture`, `verify_change`, `surla verify`, `surla approve`, and `approve_merge` bind to `request_revision` so changing the agreed examples or answers automatically invalidates stale previews, reports, and approvals. When running standalone `surla verify` and `surla approve` on the CLI without a control-plane Change Card, pass any explicit revision string (such as a commit or label) consistently to both commands. |
 | **`holdout`** | An unseen acceptance scenario (tagged `"holdout"` in the evaluator suite) whose name, inputs, checks, and logs are redacted to `"id": "holdout-N"` in `verify_change` / `get_verification` and `surla verify -builder-view` (`Report.ForBuilders()`) so coding agents cannot hardcode around the test cases. |
@@ -126,7 +126,7 @@ To include agent assignments in an architecture preview, pass `-swarm-profiles .
 
 These profiles describe coding agents separately from the CP1 analysis model. `authenticated: true` is the operator's assertion that the profile has usable credentials; the command does not test those credentials or discover installed coding agents. Keep credentials out of this file. Profiles from the same model family must use the same `family` value.
 
-After confirming a Change Card, include explicit builder ownership in the `preview_architecture` request. For example, a builder for the orders service can supply this `builders` field alongside `change_id`, `request_revision`, and `design`:
+After confirming a Change Card, include explicit builder ownership in the `preview_architecture` request (or pass the JSON array to `surla preview-change -builders <path.json>`). For example, a builder for the orders service can supply this `builders` field alongside `change_id`, `request_revision`, and `design`:
 
 ```json
 {
@@ -140,7 +140,7 @@ After confirming a Change Card, include explicit builder ownership in the `previ
 }
 ```
 
-Paths are relative to the target repository and must cover the files assigned to that builder. With no eligible profiles, the architecture preview returns the evaluated design with an `unconfigured` roster. If eligible profiles lack a required role, it returns `missing_capability`. Once all roles are covered, omitting builder scopes returns `unconfigured` with `builder` listed in `missing_roles`.
+When using `surla preview-change -builders ./builders.json`, save the array itself (`[{"name": "orders", "paths": ["internal/orders/**"], "preferred_profile_id": "refund-builder"}]`). Paths are relative to the target repository and must cover the files assigned to that builder. With no eligible profiles, the architecture preview returns the evaluated design with an `unconfigured` roster. If eligible profiles lack a required role, it returns `missing_capability`. Once all roles are covered, omitting builder scopes returns `unconfigured` with `builder` listed in `missing_roles`.
 
 A configured roster reports its actual `cross_family_review` and `cross_family_eval` values; family choices and capabilities determine whether those roles differ from every builder. The preview returns proposed assignments and manifest text; it does not launch agents or publish a Chorus manifest.
 
@@ -172,7 +172,7 @@ All tools and resources are served over MCP JSON-RPC at `POST /mcp` and over HTT
   - Records Checkpoint 5 (`CP5`) promotion approval on the owning principal's confirmed `ChangeCardResult` when `controlplane.Options.PromotionTarget` is bound (`surla serve -promotion-config <path.json>`). It loads the full `verify.Report` for `report_digest` and the current `PromotionInputs` (`SuiteID`, `SuiteCommit`, `Environment`, measured candidate binary `Artifacts`) for `candidate_commit` from `PromotionTarget`, runs `verify.Approve`, re-verifies that the card still has `request_revision`, and saves and returns the updated `ChangeCardResult` with `approval` (`ApprovalItem`: `approved_by`, `report_digest`, `candidate_commit`, `suite_id`, `suite_commit`, `environment`, `artifacts`, `scenario_count`) in `Options.CardsDir`. Recording approval does not merge branches or deploy binaries. When `-promotion-config` is omitted on `surla serve`, no `PromotionTarget` is bound and `approve_merge` requests return `no promotion target is bound to this control plane`.
 - **`preview_architecture`** (`POST /changes/preview`)
   - **Input:** `change_id`, `request_revision`, `design`, `builders?` → **Output:** `ArchitecturePreviewResult`
-  - Evaluates a candidate `DesignSnapshot` in a sandboxed subprocess at `CP2`, returning C4 `containers` and `edges`, `agent_policies`, `tools` (`input_binding`), and the proposed `swarm` plan. When the request includes a `progressToken`, the tool sends MCP progress updates as design evaluation and roster planning start and finish.
+  - Evaluates a candidate `DesignSnapshot` in a sandboxed subprocess at `CP2`, returning C4 `containers` and `edges`, `agent_policies`, `tools` (`input_binding`), and the proposed `swarm` plan. When the request includes a `progressToken`, the tool sends MCP progress updates as design evaluation and roster planning start and finish. Local callers and coding agents with shell access can also invoke this endpoint directly from a module directory on disk using [`surla preview-change`](#surla-preview-change) without serializing `go.mod`, `go.sum`, and `design/*.go` through LLM tool-call arguments.
 - **`draft_override`** (`POST /sandbox/draft`)
   - **Input:** `target_kind` (`prompt_template` \| `compiled_rule`), `prompt_id?`, `new_content` → **Output:** `DraftOverrideResult`
   - Applies a `prompt_template` to a target configured through `controlplane.Options.TargetUpdater`, without rebuilding Go code, or reports that a `compiled_rule` requires a rebuild. The `serve` command does not bind a prompt updater, so its `prompt_template` requests return `no target prompt updater is bound to this control plane`. For the `examples/orders` platform, [`examples/orders/cmd/orders-surla`](../examples/orders/cmd/orders-surla/main.go) provides a separate reference `CP3` host that saves Change Cards in `-cards-dir` (default `.surla/orders-surla-cards`) and binds `TargetUpdater` to `PUT /prompts/{prompt_id}` using the `SURLA_AUTH_TOKEN` (MCP) and `ORDERS_PROMPTS_TOKEN` (`prompts:manage`) environment variables and the pinned `github.com/goadesign/surla` module version in `examples/orders/go.mod` (leaving `CP1` analysis, `CP4` verification, and `CP5` promotion unconfigured).
@@ -203,6 +203,16 @@ Creates a Goa + Goa-AI + `goa.design/model` service in `<dir>` and a separate ev
 ### `surla preview`
 Reads a Go design module on disk into a symlink-safe snapshot (`go.mod`, `go.sum`, and non-test `.go` files; run `go mod tidy` first if `go.sum` is missing), evaluates it inside the sandboxed Goa/Goa-AI/Model compiler (`designeval.Evaluate`) at **0 LLM tokens**, and prints the indented JSON `designeval.Result` (`system_name`, `declarations`, C4 `containers` and `edges`, `agent_policies`, and `tools`) to `stdout`. Needs no running server, no Change Card, and no LLM API key.
 - `-dir <path>` — Root directory of the design module holding `go.mod`, `go.sum`, and `design/` (default `.`).
+
+### `surla preview-change`
+Reads a Go design module on disk into a symlink-safe `os.Root`-confined snapshot (`go.mod`, `go.sum`, and non-test `.go` files), validates that every path and file is valid UTF-8, sends the snapshot to a running `surla serve` instance's `POST /changes/preview` endpoint via the generated Goa HTTP client bound to `-change-id` and `-request-revision`, and prints the indented snake_case JSON `ArchitecturePreviewResult` (`change_id`, `request_revision`, `design_digest`, `system_name`, `containers`, `edges`, `agent_policies`, `tools`, `swarm`, `banner`) to `stdout`. HTTP redirects are refused so the bearer token is never forwarded to a redirect target, and the command performs no automatic latest-card lookup or retry.
+- `-server <url>` — HTTP or HTTPS origin URL of the Surla server, such as `http://127.0.0.1:8090` *(required; user credentials, non-root paths, queries, and fragments are rejected without echoing the raw URL)*.
+- `-change-id <id>` — Confirmed Change Card ID to bind the preview to *(required)*.
+- `-request-revision <digest>` — Confirmed `CP1` `request_revision` digest of the Change Card *(required)*.
+- `-dir <path>` — Root directory of the design module holding `go.mod`, `go.sum`, and `design/` (default `.`).
+- `-auth-token <token>` — Bearer token required on HTTP requests (default: `$SURLA_AUTH_TOKEN`, *required*; never printed in `-h` help output).
+- `-builders <path.json>` — Optional JSON file containing an array of explicit builder scopes (`[{"name": "...", "paths": ["..."], "preferred_profile_id": "..."}]`) for proposing a `CP2` Chorus swarm roster; unknown fields, `null` entries, missing required fields, and trailing data are rejected before sending the request.
+- `-timeout <duration>` — Positive time limit for the HTTP preview request (default `2m`).
 
 ### `surla serve`
 Starts the Surla HTTP and MCP JSON-RPC control-plane server protected by bearer-token authentication. Once the listener is bound, `surla serve` prints a startup summary to `stderr` showing the bound HTTP URL, the MCP endpoint (`http://<addr>/mcp`), the Change Cards directory (`surla: saving Change Cards in <dir>`), and the on/off status of each checkpoint (`CP1`–`CP5`) along with the flag or host option that turns each off capability on (the bearer token is never printed in startup logs or `-h` defaults). On shutdown, `surla serve` closes the control plane (`cp.Close()`) to release its exclusive lock on `-cards-dir`.
@@ -346,7 +356,7 @@ See [`examples/orders/README.md`](../examples/orders/README.md) for a step-by-st
 │   └── design.go                 # Surla Goa & Goa-AI MCP 1.0.0 DSL contract
 ├── cmd/
 │   └── surla/
-│       └── main.go               # CLI entrypoint (`surla init`, `surla serve`, `surla preview`, `surla diff`, `surla verify`, and `surla approve`)
+│       └── main.go               # CLI entrypoint (`surla init`, `surla serve`, `surla preview`, `surla preview-change`, `surla diff`, `surla verify`, and `surla approve`)
 ├── docs/
 │   ├── HOW_IT_WORKS.md           # The 5 checkpoints, Chorus routing & independent verification
 │   ├── ARCHITECTURE_PLAYBOOK.md  # Golden Path rules & Goa Design suite overview
