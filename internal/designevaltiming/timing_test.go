@@ -281,7 +281,11 @@ func TestTimingProbePreviewHTTP(t *testing.T) {
 		// The server keeps evaluating after the client gives up; its own
 		// outcome must be known before anything else is measured.
 		if !waitBounded(&inflight, operationTimeout) {
-			t.Fatalf("%s: the server request did not finish within %s", probe, operationTimeout)
+			// Keep the client measurement. The handler may still be changing
+			// files, so list only top-level names, and don't claim it stopped.
+			m.TempEntries = entryNames(id.TempDir)
+			emit(t, m)
+			t.Fatalf("%s: the server request did not finish within %s; its outcome and build processes are unresolved", probe, operationTimeout)
 		}
 		server, ok := svc.outcome(i)
 		if !ok {
