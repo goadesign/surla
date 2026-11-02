@@ -60,7 +60,11 @@ func TestInitCreatesAProjectWhoseSuitePasses(t *testing.T) {
 			var report eval.Report
 			require.NoError(t, json.Unmarshal(out, &report))
 			assert.True(t, report.Passed)
-			require.Len(t, report.Scenarios, 2)
+			ids := make([]string, 0, len(report.Scenarios))
+			for _, s := range report.Scenarios {
+				ids = append(ids, s.ID)
+			}
+			assert.ElementsMatch(t, []string{"prices_tea", "prompt_override_reaches_model", "unknown_item"}, ids)
 			for _, s := range report.Scenarios {
 				require.NotNil(t, s.Result, s.ID)
 				assert.True(t, s.Passed, "%s: %+v", s.ID, s.Result.Checks)

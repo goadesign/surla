@@ -1,6 +1,6 @@
 // Package design declares the [[.Name]] service: a public API, a pricing method,
-// and a helper agent that answers price questions by calling the pricing
-// method as a tool. goa gen generates the HTTP server, the agent's typed
+// a helper agent that answers price questions by calling the pricing method
+// as a tool, and the prompt operation Surla's live CP3 drafts call. goa gen generates the HTTP server, the agent's typed
 // client and tool bindings, and the C4 model from this package.
 package design
 
@@ -12,6 +12,12 @@ import (
 var _ = API("[[.Name]]", func() {
 	Title("[[.Name]]")
 	Description("Answers price questions with an agent that looks prices up through a tool.")
+})
+
+// LiveKey is the key Surla mints for a live CP3 target and passes to the
+// [[.Name]] through its environment. Only override_prompt requires it.
+var LiveKey = APIKeySecurity("live_key", func() {
+	Description("Key Surla minted for this process and passed to it at start.")
 })
 
 // catalog is the toolset the helper agent may call.
@@ -56,6 +62,36 @@ var _ = Service("[[.Name]]", func() {
 		Result(Price)
 		HTTP(func() {
 			GET("/prices/{item}")
+		})
+	})
+
+	Method("override_prompt", func() {
+		Description("Replace the text of a registered prompt for every question this process answers, until it exits. Surla's draft_override calls it on a live CP3 target. The template must render with the prompt's registered spec, so text that does not render is rejected and the text in use stays the same.")
+		Security(LiveKey)
+		Error("unauthorized", String, "The key is missing or is not this process's key.")
+		Error("unknown_prompt", ErrorResult, "No prompt with this ID is registered.")
+		Error("invalid_prompt", ErrorResult, "The template does not render with the prompt's registered spec.")
+		Payload(func() {
+			APIKey("live_key", "key", String, "This process's live key.")
+			Attribute("prompt_id", String, "Registered prompt to replace, such as [[.Name]].helper.system.", func() { MinLength(1) })
+			Attribute("template", String, "New prompt text, as a Go text/template.", func() { MinLength(1) })
+			Required("key", "prompt_id", "template")
+		})
+		Result(func() {
+			Attribute("prompt_id", String, "The prompt whose text was replaced.")
+			Attribute("version", String, "Version of the accepted text.")
+			Required("prompt_id", "version")
+		})
+		HTTP(func() {
+			PUT("/prompts/{prompt_id}")
+			Header("key:X-Live-Target-Key")
+			Body(func() {
+				Attribute("template")
+			})
+			Response(StatusOK)
+			Response("unauthorized", StatusUnauthorized)
+			Response("unknown_prompt", StatusNotFound)
+			Response("invalid_prompt", StatusUnprocessableEntity)
 		})
 	})
 

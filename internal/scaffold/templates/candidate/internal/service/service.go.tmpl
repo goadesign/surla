@@ -1,17 +1,21 @@
 // Package service implements the [[.Name]] service: ask answers a question
-// with the helper agent, and price looks items up in a fixed catalog.
+// with the helper agent, price looks items up in a fixed catalog, and
+// override_prompt replaces the helper's prompt text while the process runs.
 package service
 
 import (
 	"context"
 	"crypto/rand"
+	"crypto/subtle"
 	"errors"
 	"fmt"
 	"time"
 
 	"goa.design/goa-ai/runtime/agent/model"
+	"goa.design/goa-ai/runtime/agent/prompt"
 	"goa.design/goa-ai/runtime/agent/runtime"
 	storageinmem "goa.design/goa-ai/runtime/agent/storage/inmem"
+	"goa.design/goa/v3/security"
 
 	gen[[.Pkg]] "[[.Module]]/gen/[[.Pkg]]"
 	gen[[.Pkg]]helper "[[.Module]]/gen/[[.Pkg]]/agents/helper"
@@ -24,6 +28,12 @@ type Service struct {
 	// model is the model client every agent step uses; it outlives
 	// questions.
 	model model.Client
+	// prompts holds the prompt text override_prompt sets. It is the only
+	// state shared across questions: each question's runtime reads it, and
+	// it lives as long as the process, keeping every accepted text.
+	prompts *prompt.InMemoryStore
+	// liveKey is the key override_prompt requires; empty accepts no key.
+	liveKey string
 }
 
 // modelID is the runtime's name for the model client.
@@ -36,9 +46,10 @@ var catalog = map[string]int{
 }
 
 // New returns the [[.Name]] service. mc is the model client the helper agent
-// plans with.
-func New(mc model.Client) *Service {
-	return &Service{model: mc}
+// plans with. liveKey is the key override_prompt requires; when it is empty,
+// override_prompt rejects every call.
+func New(mc model.Client, liveKey string) *Service {
+	return &Service{model: mc, prompts: prompt.NewInMemoryStore(), liveKey: liveKey}
 }
 
 // Ask answers the question with the helper agent and returns its final
@@ -47,7 +58,7 @@ func New(mc model.Client) *Service {
 // run, so nothing is kept.
 func (s *Service) Ask(ctx context.Context, p *gen[[.Pkg]].AskPayload) (*gen[[.Pkg]].AskResult, error) {
 	store := storageinmem.New()
-	rt := runtime.New(store)
+	rt := runtime.New(store, runtime.WithPromptStore(s.prompts))
 	if err := rt.PromptRegistry.Register(helper.SystemPrompt()); err != nil {
 		return nil, fmt.Errorf("register system prompt: %w", err)
 	}
@@ -58,7 +69,7 @@ func (s *Service) Ask(ctx context.Context, p *gen[[.Pkg]].AskPayload) (*gen[[.Pk
 		return nil, fmt.Errorf("register helper agent: %w", err)
 	}
 	endpoints := gen[[.Pkg]].NewEndpoints(s)
-	tools := gen[[.Pkg]].NewClient(endpoints.Ask, endpoints.Price)
+	tools := gen[[.Pkg]].NewClient(endpoints.Ask, endpoints.Price, endpoints.OverridePrompt)
 	if err := gen[[.Pkg]]helper.RegisterUsedToolsets(ctx, rt,
 		gen[[.Pkg]]helper.WithCatalogExecutor(gen[[.Pkg]]helpercatalog.NewHelperCatalogExec(gen[[.Pkg]]helpercatalog.WithClient(tools))),
 	); err != nil {
@@ -82,6 +93,37 @@ func (s *Service) Ask(ctx context.Context, p *gen[[.Pkg]].AskPayload) (*gen[[.Pk
 		return nil, errors.New("helper agent finished without an answer")
 	}
 	return &gen[[.Pkg]].AskResult{Answer: out.Final.Text(), RunID: out.RunID}, nil
+}
+
+// OverridePrompt replaces the text of the helper's system prompt for every
+// later question. It renders the template with the registered spec and no
+// data before saving it, so a template that does not render is rejected and
+// the text in use stays the same. It returns the accepted text's version.
+func (s *Service) OverridePrompt(ctx context.Context, p *gen[[.Pkg]].OverridePromptPayload) (*gen[[.Pkg]].OverridePromptResult, error) {
+	spec := helper.SystemPrompt()
+	if prompt.Ident(p.PromptID) != spec.ID {
+		return nil, gen[[.Pkg]].MakeUnknownPrompt(fmt.Errorf("no prompt %q is registered", p.PromptID))
+	}
+	spec.Template = p.Template
+	check := prompt.NewRegistry(nil)
+	if err := check.Register(spec); err != nil {
+		return nil, gen[[.Pkg]].MakeInvalidPrompt(err)
+	}
+	if _, err := check.Render(ctx, spec.ID, prompt.Scope{}, nil); err != nil {
+		return nil, gen[[.Pkg]].MakeInvalidPrompt(err)
+	}
+	if err := s.prompts.Set(ctx, spec.ID, prompt.Scope{}, p.Template, nil); err != nil {
+		return nil, fmt.Errorf("save prompt text: %w", err)
+	}
+	return &gen[[.Pkg]].OverridePromptResult{PromptID: p.PromptID, Version: prompt.VersionFromTemplate(p.Template)}, nil
+}
+
+// APIKeyAuth accepts only the live key the process started with.
+func (s *Service) APIKeyAuth(ctx context.Context, key string, _ *security.APIKeyScheme) (context.Context, error) {
+	if s.liveKey == "" || subtle.ConstantTimeCompare([]byte(key), []byte(s.liveKey)) != 1 {
+		return ctx, gen[[.Pkg]].Unauthorized("missing or wrong live key")
+	}
+	return ctx, nil
 }
 
 // Price returns the catalog price of the item. An item the catalog does not

@@ -1,0 +1,205 @@
+package acceptance
+
+import (
+	"context"
+	"errors"
+	"io"
+	"slices"
+	"strings"
+	"net"
+	"sync"
+	"testing"
+	"time"
+)
+
+// must fails the test now when err is not nil.
+func must(t *testing.T, err error, what string) {
+	t.Helper()
+	if err != nil {
+		t.Fatalf("%s: %v", what, err)
+	}
+}
+
+// echoServer accepts connections on a loopback port and echoes each one until
+// its writer half-closes, then closes it.
+func echoServer(t *testing.T) string {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	must(t, err, "listen")
+	t.Cleanup(func() { ln.Close() })
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			go func() {
+				defer c.Close()
+				if _, err := io.Copy(c, c); err != nil {
+					return
+				}
+			}()
+		}
+	}()
+	return ln.Addr().String()
+}
+
+func TestForwarderRelaysBytesAndHalfCloses(t *testing.T) {
+	f, err := startForwarder(echoServer(t))
+	must(t, err, "start forwarder")
+	c, err := net.Dial("tcp", f.addr())
+	must(t, err, "dial forwarder")
+	_, err = c.Write([]byte("ping"))
+	must(t, err, "write")
+	must(t, c.(*net.TCPConn).CloseWrite(), "half-close")
+	got, err := io.ReadAll(c)
+	must(t, err, "read")
+	if string(got) != "ping" {
+		t.Errorf("relayed %q, want %q: bytes relay both ways and a half-close reaches the gateway", got, "ping")
+	}
+	c.Close()
+	must(t, f.close(), "close")
+	if len(f.conns) != 0 {
+		t.Errorf("%d connections still tracked after close", len(f.conns))
+	}
+}
+
+func TestForwarderClosesTheConnectionWhenTheGatewayRefuses(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	must(t, err, "listen")
+	refused := ln.Addr().String()
+	must(t, ln.Close(), "close listener")
+	f, err := startForwarder(refused)
+	must(t, err, "start forwarder")
+	defer func() { must(t, f.close(), "close") }()
+	c, err := net.Dial("tcp", f.addr())
+	must(t, err, "dial forwarder")
+	defer c.Close()
+	must(t, c.SetReadDeadline(time.Now().Add(5*time.Second)), "deadline")
+	if _, err := c.Read(make([]byte, 1)); !errors.Is(err, io.EOF) {
+		t.Errorf("read returned %v, want EOF: a refused dial closes the accepted connection and nothing is retried", err)
+	}
+}
+
+func TestForwarderCloseEndsEveryConnectionIncludingConcurrentOnes(t *testing.T) {
+	f, err := startForwarder(echoServer(t))
+	must(t, err, "start forwarder")
+	var open []net.Conn
+	for range 3 {
+		c, err := net.Dial("tcp", f.addr())
+		must(t, err, "dial forwarder")
+		open = append(open, c)
+	}
+	var dialing sync.WaitGroup
+	stop := make(chan struct{})
+	dialing.Add(1)
+	go func() {
+		defer dialing.Done()
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+			}
+			if c, err := net.Dial("tcp", f.addr()); err == nil {
+				c.Close()
+			}
+		}
+	}()
+	time.Sleep(50 * time.Millisecond)
+	must(t, f.close(), "close waits for every goroutine")
+	close(stop)
+	dialing.Wait()
+	f.mu.Lock()
+	if len(f.conns) != 0 {
+		t.Errorf("%d connections outlived close, including ones accepted while it ran", len(f.conns))
+	}
+	f.mu.Unlock()
+	for _, c := range open {
+		must(t, c.SetReadDeadline(time.Now().Add(5*time.Second)), "deadline")
+		if _, err := c.Read(make([]byte, 1)); err == nil {
+			t.Error("a connection open before close still reads")
+		}
+		c.Close()
+	}
+}
+
+func TestForwarderReportsAListenerFailure(t *testing.T) {
+	f, err := startForwarder(echoServer(t))
+	must(t, err, "start forwarder")
+	// Closing the listener without close stands in for an accept failure.
+	must(t, f.ln.Close(), "close listener")
+	select {
+	case err := <-f.failed:
+		if err == nil || !strings.Contains(err.Error(), "stopped accepting") {
+			t.Errorf("failure is %v, want one that says the relay stopped accepting", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("a listener failure was not reported")
+	}
+	must(t, f.close(), "close")
+}
+
+func TestGatewayPortTellsLoopbackFromRemote(t *testing.T) {
+	cases := []struct {
+		addr     string
+		port     int
+		loopback bool
+		wantErr  string
+	}{
+		{addr: "127.0.0.1:9090", port: 9090, loopback: true},
+		{addr: "[::1]:9090", port: 9090, loopback: true},
+		{addr: "localhost:9090", port: 9090, loopback: true},
+		{addr: "10.0.0.7:9090", port: 9090},
+		{addr: "10.0.0.7", wantErr: "missing port"},
+		{addr: "10.0.0.7:0", wantErr: "no valid port"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.addr, func(t *testing.T) {
+			port, loopback, err := gatewayPort(context.Background(), tc.addr)
+			if tc.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+					t.Errorf("error is %v, want one containing %q", err, tc.wantErr)
+				}
+				return
+			}
+			must(t, err, "gateway port")
+			if port != tc.port || loopback != tc.loopback {
+				t.Errorf("got port %d loopback %t, want %d %t", port, loopback, tc.port, tc.loopback)
+			}
+		})
+	}
+}
+
+func TestTheCandidateEnvironmentHoldsOnlyTheLiveKey(t *testing.T) {
+	if got := liveEnv("k"); !slices.Equal(got, []string{"SURLA_LIVE_TARGET_KEY=k"}) {
+		t.Errorf("the [[.Name]]'s environment is %q; provider keys must never reach it", got)
+	}
+	if got := liveEnv(""); got != nil {
+		t.Errorf("with no key the environment is %q, want nothing", got)
+	}
+}
+
+func TestLiveTargetDeliversDoneOnlyAfterCleanup(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cleaned := make(chan struct{})
+	target := liveTarget(ctx, "127.0.0.1:1", make(chan struct{}), nil, func() error {
+		time.Sleep(50 * time.Millisecond)
+		close(cleaned)
+		return nil
+	})
+	cancel()
+	must(t, <-target.Done, "stop")
+	select {
+	case <-cleaned:
+	default:
+		t.Fatal("Done was delivered before cleanup finished")
+	}
+
+	failed := make(chan error, 1)
+	failed <- errors.New("model gateway relay stopped accepting")
+	target = liveTarget(context.Background(), "127.0.0.1:1", make(chan struct{}), failed, func() error { return nil })
+	if err := <-target.Done; err == nil || !strings.Contains(err.Error(), "stopped accepting") {
+		t.Errorf("Done is %v, want the relay failure that ended the target", err)
+	}
+}
