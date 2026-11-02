@@ -168,12 +168,11 @@ func TestServeOptionsDerivesLiveTargetsFromVerification(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "verification.json")
 	require.NoError(t, os.WriteFile(path, []byte(`{"runs_dir":"/r","report_dir":"/p","candidate_repo":"/c","candidate_module":".","suite_module":".","binaries":{"app":"./cmd/app"},`+
 		`"suite_repo":"/s","suite_commit":"`+strings.Repeat("a", 40)+`","suite_command":"./cmd/evals","timeout":"20m"}`), 0o600))
-	opts, closeModel, err := serveOptions(serveConfig{verificationPath: path, liveDir: "/l"}, func(string) string { return "" },
+	opts, closeModel, err := serveOptions(serveConfig{verificationPath: path}, func(string) string { return "" },
 		[]string{"PATH=/bin", "SURLA_AUTH_TOKEN=secret", "ANTHROPIC_API_KEY=k"})
 	require.NoError(t, err)
 	assert.NoError(t, closeModel())
 	require.NotNil(t, opts.Live)
-	assert.Equal(t, "/l", opts.Live.Root)
 	assert.Equal(t, opts.Verification.Command, opts.Live.Command)
 	assert.Equal(t, 20*time.Minute, opts.Live.StartTimeout)
 	assert.Equal(t, []string{"PATH=/bin", "ANTHROPIC_API_KEY=k"}, opts.Live.Env, "serve's own bearer token never reaches a live target")
@@ -340,9 +339,10 @@ surla: CP5 (approve_merge): on
 `,
 		},
 	}
-	liveRoot := t.TempDir()
+	cardsDir := t.TempDir()
+	liveRoot := controlplane.LiveRoot(cardsDir)
 	leftover := filepath.Join(liveRoot, "live-123")
-	require.NoError(t, os.Mkdir(leftover, 0o700))
+	require.NoError(t, os.MkdirAll(leftover, 0o700))
 	cases = append(cases, struct {
 		name string
 		addr *net.TCPAddr
@@ -352,17 +352,17 @@ surla: CP5 (approve_merge): on
 		name: "live targets with a directory an earlier serve left",
 		addr: &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 8090},
 		opts: controlplane.Options{
-			CardsDir:     "/var/lib/surla/cards",
+			CardsDir:     cardsDir,
 			Verification: &controlplane.VerificationConfig{RunsDir: "/var/lib/surla/runs"},
-			Live:         &controlplane.LiveConfig{Root: liveRoot},
+			Live:         &controlplane.LiveConfig{},
 		},
 		want: `surla: serving on http://127.0.0.1:8090
 surla: connect MCP clients to http://127.0.0.1:8090/mcp with the bearer token
-surla: saving Change Cards in /var/lib/surla/cards
+surla: saving Change Cards in ` + cardsDir + `
 surla: CP1 (propose_change): off — no model is configured to analyze change requests (set -model-provider and -model-name, or -model-gateway-addr); confirm_intent and get_change are on
 surla: CP2 (preview_architecture): design preview is on; swarm roster is off (set -swarm-profiles)
 surla: CP3 (draft_override, start_live_target): compiled_rule is on; prompt_template is on once start_live_target runs a candidate commit (live targets in ` + liveRoot + `)
-surla: CP3: an earlier surla serve left live target directory ` + leftover + `; its processes are gone, so remove it
+surla: CP3: an earlier surla serve using this cards directory left live target directory ` + leftover + `; its files were kept
 surla: CP4 (verify_change, get_verification): on (runs in /var/lib/surla/runs)
 surla: CP5 (approve_merge): off (set -promotion-config, or run surla approve on the CLI)
 `,

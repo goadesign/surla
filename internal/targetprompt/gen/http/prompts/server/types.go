@@ -27,7 +27,7 @@ type OverridePromptRequestBody struct {
 type OverridePromptResponseBody struct {
 	// The prompt whose text was replaced.
 	PromptID string `form:"prompt_id" json:"prompt_id" xml:"prompt_id"`
-	// Version of the accepted text.
+	// Version of the accepted text: an opaque identifier that is not blank.
 	Version string `form:"version" json:"version" xml:"version"`
 }
 

@@ -455,8 +455,9 @@ export function LiveTargetView({ result }: { result: LiveTargetResult | StopLive
         <h2>Live Target Running</h2>
         <p>{result.message}</p>
         <p>
-          Try requests at <code>{result.url}</code>, then send prompt text with draft_override. Drafts are not verified:
-          commit the accepted text and run verification.
+          The target listens at <code>{result.url}</code>, a loopback address on the Surla server's host. Send prompt text
+          with draft_override. Drafts are not verified, and starting another target discards them: commit the accepted
+          text and run verification.
         </p>
         <details className="surla-details">
           <summary>Details</summary>

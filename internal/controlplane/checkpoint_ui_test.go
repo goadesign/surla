@@ -953,7 +953,7 @@ messageListener({
 });
 const liveText = renderText(viewEl);
 if (root.dataset.state !== "cp3-live-target" || !liveText.includes("Live Target Running") ||
-    !liveText.includes("http://127.0.0.1:41234") || !liveText.includes("Drafts are not verified")) {
+    !liveText.includes("http://127.0.0.1:41234") || !liveText.includes("Drafts are not verified") || !liveText.includes("loopback address on the Surla server's host")) {
   throw new Error("unexpected live target view: " + root.dataset.state + " / " + liveText);
 }
 

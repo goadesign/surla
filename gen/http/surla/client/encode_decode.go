@@ -752,6 +752,9 @@ func (c *Client) BuildStopLiveTargetRequest(ctx context.Context, v any) (*http.R
 // DecodeStopLiveTargetResponse returns a decoder for responses returned by the
 // surla stop_live_target endpoint. restoreBody controls whether the response
 // body should be restored after having been read.
+// DecodeStopLiveTargetResponse may return the following errors:
+//   - "live_target_stop_failed" (type *goa.ServiceError): http.StatusInternalServerError
+//   - error: internal error
 func DecodeStopLiveTargetResponse(decoder func(*http.Response) goahttp.Decoder, restoreBody bool) func(*http.Response) (any, error) {
 	return func(resp *http.Response) (result any, decodeErr error) {
 		responseBody := resp.Body
@@ -788,6 +791,20 @@ func DecodeStopLiveTargetResponse(decoder func(*http.Response) goahttp.Decoder, 
 			}
 			res := NewStopLiveTargetResultOK(&body)
 			return res, nil
+		case http.StatusInternalServerError:
+			var (
+				body StopLiveTargetLiveTargetStopFailedResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "stop_live_target", err)
+			}
+			err = ValidateStopLiveTargetLiveTargetStopFailedResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("surla", "stop_live_target", err)
+			}
+			return nil, NewStopLiveTargetLiveTargetStopFailed(&body)
 		default:
 			body, err := io.ReadAll(resp.Body)
 			if err != nil {

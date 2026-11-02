@@ -143,6 +143,9 @@ func (c *Client) StartLiveTarget(ctx context.Context, p *StartLiveTargetPayload)
 }
 
 // StopLiveTarget calls the "stop_live_target" endpoint of the "surla" service.
+// StopLiveTarget may return the following errors:
+//   - "live_target_stop_failed" (type *goa.ServiceError): The live target's processes could not be confirmed stopped; restart surla serve.
+//   - error: internal error
 func (c *Client) StopLiveTarget(ctx context.Context) (res *StopLiveTargetResult, err error) {
 	var ires any
 	ires, err = c.StopLiveTargetEndpoint(ctx, nil)

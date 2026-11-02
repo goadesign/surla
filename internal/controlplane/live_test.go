@@ -10,7 +10,10 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -22,6 +25,7 @@ import (
 	goa "goa.design/goa/v3/pkg"
 	"goa.design/goa/v3/security"
 
+	genmcpadapter "github.com/goadesign/surla/gen/mcp_surla"
 	gensurla "github.com/goadesign/surla/gen/surla"
 	genpromptsserver "github.com/goadesign/surla/internal/targetprompt/gen/http/prompts/server"
 	genprompts "github.com/goadesign/surla/internal/targetprompt/gen/prompts"
@@ -32,8 +36,11 @@ import (
 
 const (
 	// liveTargetModeEnv selects what the fake live target does: "serve"
-	// serves the prompt operation, "drop" closes every update's connection
-	// without answering, and "fail" makes the suite exit before it is ready.
+	// serves the prompt operation; "drop" closes every update's connection
+	// without answering; "leaky" rejects templates with a message quoting a
+	// path, a key and a URL; "blank-version" and "opaque-version" accept
+	// with a version of "  " or "v1"; "fail" makes the suite exit before it
+	// is ready; "prepare-hangs" blocks preparation until it is canceled.
 	liveTargetModeEnv = "CONTROLPLANE_TEST_LIVE_TARGET"
 	// fakePromptID is the one prompt the fake target registers.
 	fakePromptID = "homes.helper.system"
@@ -68,6 +75,14 @@ func TestMain(m *testing.M) {
 
 // OverridePrompt replaces the fake prompt's text.
 func (f *fakeTarget) OverridePrompt(_ context.Context, p *genprompts.OverridePromptPayload) (*genprompts.OverridePromptResult, error) {
+	switch os.Getenv(liveTargetModeEnv) {
+	case "leaky":
+		return nil, genprompts.MakeInvalidPrompt(errors.New("parse /private/secret/path with key=abc123 from http://10.0.0.1/admin"))
+	case "blank-version":
+		return &genprompts.OverridePromptResult{PromptID: p.PromptID, Version: "  "}, nil
+	case "opaque-version":
+		return &genprompts.OverridePromptResult{PromptID: p.PromptID, Version: "v1"}, nil
+	}
 	if p.PromptID != fakePromptID {
 		return nil, genprompts.MakeUnknownPrompt(fmt.Errorf("no prompt %s", p.PromptID))
 	}
@@ -90,7 +105,11 @@ func (f *fakeTarget) APIKeyAuth(ctx context.Context, key string, _ *security.API
 }
 
 // fakeLivePrepare returns this test binary as the suite.
-func fakeLivePrepare(context.Context, verify.Plan) (verify.Prepared, error) {
+func fakeLivePrepare(ctx context.Context, _ verify.Plan) (verify.Prepared, error) {
+	if os.Getenv(liveTargetModeEnv) == "prepare-hangs" {
+		<-ctx.Done()
+		return verify.Prepared{}, ctx.Err()
+	}
 	self, err := os.Executable()
 	if err != nil {
 		return verify.Prepared{}, err
@@ -150,18 +169,18 @@ func newLiveControlPlane(t *testing.T, mode string) (*ControlPlane, string) {
 	t.Helper()
 	self, err := os.Executable()
 	require.NoError(t, err)
-	root := t.TempDir()
+	cardsDir := t.TempDir()
 	cp, err := New(Options{
-		CardsDir:     t.TempDir(),
+		CardsDir:     cardsDir,
 		Verification: &VerificationConfig{RunsDir: t.TempDir()},
 		Live: &LiveConfig{
-			Root: root, Command: []string{self},
-			Env: append(os.Environ(), liveTargetModeEnv+"="+mode), StartTimeout: time.Minute,
+			Command: []string{self},
+			Env:     append(os.Environ(), liveTargetModeEnv+"="+mode), StartTimeout: time.Minute,
 		},
 	})
 	require.NoError(t, err)
 	t.Cleanup(func() { assert.NoError(t, cp.Close()) })
-	return cp, root
+	return cp, LiveRoot(cardsDir)
 }
 
 // draft sends text for promptID through draft_override.
@@ -241,7 +260,7 @@ func TestLiveTargetRejectsAWrongKey(t *testing.T) {
 	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
 	_, err := cp.StartLiveTarget(alice, &gensurla.StartLiveTargetPayload{CandidateCommit: strings.Repeat("a", 40)})
 	require.NoError(t, err)
-	lt := cp.currentLive()
+	lt := cp.boundLive()
 	require.NotNil(t, lt)
 	lt.key = "not-the-key"
 	_, err = draft(alice, cp, fakePromptID, "x")
@@ -257,27 +276,27 @@ func TestLiveTargetReportsAnUnconfirmedUpdate(t *testing.T) {
 	assert.Equal(t, "update_not_confirmed", goaErrorName(err))
 }
 
-func TestLiveTargetThatEndsIsReportedEndedUntilRestarted(t *testing.T) {
+func TestLiveTargetThatEndsIsUnboundAndCleanedUp(t *testing.T) {
 	cp, _ := newLiveControlPlane(t, "serve")
 	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
 	res, err := cp.StartLiveTarget(alice, &gensurla.StartLiveTargetPayload{CandidateCommit: strings.Repeat("a", 40)})
 	require.NoError(t, err)
-	lt := cp.currentLive()
+	lt := cp.boundLive()
 	require.NotNil(t, lt)
 	resp, err := http.Post(res.URL+"/exit", "text/plain", nil)
 	if err == nil {
 		resp.Body.Close()
 	}
-	require.Eventually(t, func() bool {
-		select {
-		case <-lt.ended:
-			return true
-		default:
-			return false
-		}
-	}, 30*time.Second, 20*time.Millisecond)
+	require.Eventually(t, func() bool { return cp.boundLive() == nil }, 30*time.Second, 20*time.Millisecond,
+		"an ended target is unbound")
+	<-lt.proc.Done()
 	_, err = draft(alice, cp, fakePromptID, "x")
-	assert.Equal(t, "live_target_ended", goaErrorName(err))
+	require.EqualError(t, err, "no target prompt updater is bound to this control plane", "later drafts get the unbound error")
+	stopped, err := cp.StopLiveTarget(alice)
+	require.NoError(t, err)
+	assert.False(t, stopped.Stopped, "nothing runs after the target ended and was cleaned up")
+	assert.Equal(t, "live_target_ended", goaErrorName(liveDraftError(errors.New("connection reset"), lt)),
+		"a draft in flight when the target ended is reported as ended")
 
 	_, err = cp.StartLiveTarget(alice, &gensurla.StartLiveTargetPayload{CandidateCommit: strings.Repeat("b", 40)})
 	require.NoError(t, err)
@@ -290,7 +309,7 @@ func TestLiveTargetStartFailuresAreTyped(t *testing.T) {
 	cp, root := newLiveControlPlane(t, "fail")
 	_, err := cp.StartLiveTarget(alice, &gensurla.StartLiveTargetPayload{CandidateCommit: strings.Repeat("a", 40)})
 	assert.Equal(t, "live_target_failed", goaErrorName(err))
-	assert.Contains(t, err.Error(), "The evaluator suite did not start a live target.")
+	assert.Contains(t, err.Error(), "The evaluator suite did not start a live target. Check that its suite.Command sets Live")
 	dirs, err := verifyrun.LeftoverLiveDirs(root)
 	require.NoError(t, err)
 	assert.Empty(t, dirs)
@@ -310,7 +329,7 @@ func TestLiveTargetReplacementNeverReachesTwoTargets(t *testing.T) {
 	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
 	first, err := cp.StartLiveTarget(alice, &gensurla.StartLiveTargetPayload{CandidateCommit: strings.Repeat("a", 40)})
 	require.NoError(t, err)
-	oldProc := cp.currentLive().proc
+	oldProc := cp.boundLive().proc
 
 	var wg sync.WaitGroup
 	results := make(chan error, 40)
@@ -365,17 +384,18 @@ func TestLiveTargetReplacementNeverReachesTwoTargets(t *testing.T) {
 func TestCloseStopsTheLiveTarget(t *testing.T) {
 	self, err := os.Executable()
 	require.NoError(t, err)
-	root := t.TempDir()
+	cardsDir := t.TempDir()
+	root := LiveRoot(cardsDir)
 	cp, err := New(Options{
-		CardsDir:     t.TempDir(),
+		CardsDir:     cardsDir,
 		Verification: &VerificationConfig{RunsDir: t.TempDir()},
-		Live:         &LiveConfig{Root: root, Command: []string{self}, Env: append(os.Environ(), liveTargetModeEnv+"=serve")},
+		Live:         &LiveConfig{Command: []string{self}, Env: append(os.Environ(), liveTargetModeEnv+"=serve")},
 	})
 	require.NoError(t, err)
 	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
 	_, err = cp.StartLiveTarget(alice, &gensurla.StartLiveTargetPayload{CandidateCommit: strings.Repeat("a", 40)})
 	require.NoError(t, err)
-	proc := cp.currentLive().proc
+	proc := cp.boundLive().proc
 	require.NoError(t, cp.Close())
 	select {
 	case <-proc.Done():
@@ -385,4 +405,199 @@ func TestCloseStopsTheLiveTarget(t *testing.T) {
 	dirs, err := verifyrun.LeftoverLiveDirs(root)
 	require.NoError(t, err)
 	assert.Empty(t, dirs)
+}
+
+func TestCloseEndsAStartInProgressAndRefusesLaterStarts(t *testing.T) {
+	self, err := os.Executable()
+	require.NoError(t, err)
+	cardsDir := t.TempDir()
+	cp, err := New(Options{
+		CardsDir:     cardsDir,
+		Verification: &VerificationConfig{RunsDir: t.TempDir()},
+		Live: &LiveConfig{Command: []string{self}, Env: append(os.Environ(), liveTargetModeEnv+"=prepare-hangs"),
+			StartTimeout: time.Hour},
+	})
+	require.NoError(t, err)
+	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
+	first := make(chan error, 1)
+	go func() {
+		_, err := cp.StartLiveTarget(alice, &gensurla.StartLiveTargetPayload{CandidateCommit: strings.Repeat("a", 40)})
+		first <- err
+	}()
+	require.Eventually(t, func() bool {
+		dirs, err := verifyrun.LeftoverLiveDirs(LiveRoot(cardsDir))
+		return err == nil && len(dirs) == 1
+	}, 30*time.Second, 20*time.Millisecond, "the first start is preparing")
+	queued := make(chan error, 1)
+	go func() {
+		_, err := cp.StartLiveTarget(alice, &gensurla.StartLiveTargetPayload{CandidateCommit: strings.Repeat("b", 40)})
+		queued <- err
+	}()
+
+	closed := time.Now()
+	require.NoError(t, cp.Close())
+	assert.Less(t, time.Since(closed), 30*time.Second, "Close does not wait for the build to finish")
+	assert.Equal(t, "live_target_failed", goaErrorName(<-first), "the start in progress ended")
+	assert.Equal(t, "live_target_unavailable", goaErrorName(<-queued), "a queued start is refused before launching")
+	_, err = cp.StartLiveTarget(alice, &gensurla.StartLiveTargetPayload{CandidateCommit: strings.Repeat("c", 40)})
+	assert.Equal(t, "live_target_unavailable", goaErrorName(err), "a start after Close is refused")
+	dirs, err := verifyrun.LeftoverLiveDirs(LiveRoot(cardsDir))
+	require.NoError(t, err)
+	assert.Empty(t, dirs, "nothing was launched after Close and the canceled start was cleaned up")
+}
+
+func TestAFailedStopKeepsTheOwnerAndStartsNoOtherTarget(t *testing.T) {
+	self, err := os.Executable()
+	require.NoError(t, err)
+	cardsDir := t.TempDir()
+	cp, err := New(Options{
+		CardsDir:     cardsDir,
+		Verification: &VerificationConfig{RunsDir: t.TempDir()},
+		Live:         &LiveConfig{Command: []string{self}, Env: append(os.Environ(), liveTargetModeEnv+"=serve")},
+	})
+	require.NoError(t, err)
+	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
+	_, err = cp.StartLiveTarget(alice, &gensurla.StartLiveTargetPayload{CandidateCommit: strings.Repeat("a", 40)})
+	require.NoError(t, err)
+	lt := cp.boundLive()
+	require.NotNil(t, lt)
+	// An immutable file makes removing the live directory fail, so Stop
+	// cannot confirm the cleanup.
+	pinned := filepath.Join(lt.proc.Dir(), "tmp", "immutable")
+	require.NoError(t, os.WriteFile(pinned, []byte("x"), 0o600))
+	require.NoError(t, exec.Command("chflags", "uchg", pinned).Run())
+	t.Cleanup(func() {
+		require.NoError(t, exec.Command("chflags", "nouchg", pinned).Run())
+		require.NoError(t, os.RemoveAll(cardsDir))
+	})
+
+	_, err = cp.StopLiveTarget(alice)
+	assert.Equal(t, "live_target_stop_failed", goaErrorName(err))
+	assert.NotContains(t, err.Error(), cardsDir, "the public error names no private directory")
+	_, err = cp.StartLiveTarget(alice, &gensurla.StartLiveTargetPayload{CandidateCommit: strings.Repeat("b", 40)})
+	assert.Equal(t, "live_target_failed", goaErrorName(err))
+	assert.Contains(t, err.Error(), "could not be confirmed stopped")
+	dirs, err := verifyrun.LeftoverLiveDirs(LiveRoot(cardsDir))
+	require.NoError(t, err)
+	assert.Equal(t, []string{lt.proc.Dir()}, dirs, "no second target was launched")
+	_, err = draft(alice, cp, fakePromptID, "x")
+	require.EqualError(t, err, "no target prompt updater is bound to this control plane", "drafts are unbound while stopping")
+
+	err = cp.Close()
+	require.Error(t, err, "Close reports the target it could not confirm stopped")
+	_, err = New(Options{CardsDir: cardsDir})
+	require.Error(t, err, "the cards directory, which holds the live root, stays locked")
+}
+
+func TestTargetMessagesNeverReachCallers(t *testing.T) {
+	cp, _ := newLiveControlPlane(t, "leaky")
+	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
+	_, err := cp.StartLiveTarget(alice, &gensurla.StartLiveTargetPayload{CandidateCommit: strings.Repeat("a", 40)})
+	require.NoError(t, err)
+	args, err := json.Marshal(map[string]string{"target_kind": TargetKindPromptTemplate, "prompt_id": fakePromptID, "new_content": "x"})
+	require.NoError(t, err)
+
+	srv := httptest.NewServer(NewHTTPHandler(cp, NewTokenAuthenticator(map[string]Principal{"tok": {ID: "alice@example.com"}})))
+	defer srv.Close()
+	req, err := http.NewRequest(http.MethodPost, srv.URL+"/sandbox/draft", strings.NewReader(string(args)))
+	require.NoError(t, err)
+	req.Header.Set("Authorization", "Bearer tok")
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	resp.Body.Close()
+	assert.Equal(t, http.StatusUnprocessableEntity, resp.StatusCode)
+
+	adapter := genmcpadapter.NewMCPAdapter(gensurla.NewEndpoints(cp), nil)
+	call, err := adapter.ToolsCall(alice, &genmcpadapter.ToolsCallPayload{Name: "draft_override", Arguments: args})
+	var mcpText string
+	if err != nil {
+		mcpText = err.Error()
+	} else {
+		b, merr := json.Marshal(call)
+		require.NoError(t, merr)
+		mcpText = string(b)
+	}
+	for _, secret := range []string{"/private/secret/path", "abc123", "10.0.0.1"} {
+		assert.NotContains(t, string(body), secret, "HTTP body")
+		assert.NotContains(t, mcpText, secret, "MCP result")
+	}
+	assert.Contains(t, string(body), "does not render")
+}
+
+func TestLiveTargetVersionsMustNotBeBlank(t *testing.T) {
+	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
+	cases := []struct {
+		mode    string
+		wantErr string
+		wantVer string
+	}{
+		{mode: "blank-version", wantErr: "update_not_confirmed"},
+		{mode: "opaque-version", wantVer: "v1"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.mode, func(t *testing.T) {
+			cp, _ := newLiveControlPlane(t, tc.mode)
+			_, err := cp.StartLiveTarget(alice, &gensurla.StartLiveTargetPayload{CandidateCommit: strings.Repeat("a", 40)})
+			require.NoError(t, err)
+			out, err := draft(alice, cp, fakePromptID, "x")
+			if tc.wantErr != "" {
+				assert.Equal(t, tc.wantErr, goaErrorName(err), "the generated client rejects a blank version")
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tc.wantVer, *out.PromptVersion, "an opaque version is passed through unchanged")
+		})
+	}
+}
+
+func TestStaticUpdaterAndLiveCannotBeCombined(t *testing.T) {
+	_, err := New(Options{CardsDir: t.TempDir(), TargetUpdater: staticUpdater{}, Live: &LiveConfig{}})
+	require.EqualError(t, err, "set either TargetUpdater or Live, not both: draft_override sends prompt text to exactly one target")
+
+	cp, err := New(Options{CardsDir: t.TempDir(), TargetUpdater: staticUpdater{}, Verification: &VerificationConfig{RunsDir: t.TempDir()}})
+	require.NoError(t, err, "a static updater with verification and no Live keeps working")
+	t.Cleanup(func() { assert.NoError(t, cp.Close()) })
+	out, err := draft(WithPrincipal(context.Background(), Principal{ID: "alice@example.com"}), cp, "orders.refund.system", "x")
+	require.NoError(t, err)
+	assert.Equal(t, "static-v1", *out.PromptVersion)
+}
+
+func TestServersWithDifferentCardsDirectoriesNeverSeeEachOthersTargets(t *testing.T) {
+	a, rootA := newLiveControlPlane(t, "serve")
+	_, rootB := newLiveControlPlane(t, "serve")
+	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
+	_, err := a.StartLiveTarget(alice, &gensurla.StartLiveTargetPayload{CandidateCommit: strings.Repeat("a", 40)})
+	require.NoError(t, err)
+	dirsA, err := verifyrun.LeftoverLiveDirs(rootA)
+	require.NoError(t, err)
+	require.Len(t, dirsA, 1)
+	dirsB, err := verifyrun.LeftoverLiveDirs(rootB)
+	require.NoError(t, err)
+	assert.Empty(t, dirsB, "B lists nothing of A's active target")
+}
+
+// staticUpdater is a TargetPromptUpdater that accepts every prompt.
+type staticUpdater struct{}
+
+// ApplyPromptOverride returns a fixed version.
+func (staticUpdater) ApplyPromptOverride(context.Context, string, string) (string, error) {
+	return "static-v1", nil
+}
+
+func TestToolsListWarnsThatStartingDiscardsTheRunningTargetsDrafts(t *testing.T) {
+	cp, _ := newLiveControlPlane(t, "serve")
+	adapter := genmcpadapter.NewMCPAdapter(gensurla.NewEndpoints(cp), nil)
+	res, err := adapter.ToolsList(context.Background(), &genmcpadapter.ToolsListPayload{})
+	require.NoError(t, err)
+	descriptions := map[string]string{}
+	for _, tool := range res.Tools {
+		if tool.Description != nil {
+			descriptions[tool.Name] = *tool.Description
+		}
+	}
+	assert.Contains(t, descriptions["start_live_target"], "first stops the target already running, which discards every prompt draft applied to it, even if the new build then fails")
+	assert.Contains(t, descriptions["stop_live_target"], "discards every prompt draft applied to it")
 }

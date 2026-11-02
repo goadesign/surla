@@ -64,7 +64,7 @@ type OverridePromptPayload struct {
 type OverridePromptResult struct {
 	// The prompt whose text was replaced.
 	PromptID string
-	// Version of the accepted text.
+	// Version of the accepted text: an opaque identifier that is not blank.
 	Version string
 }
 

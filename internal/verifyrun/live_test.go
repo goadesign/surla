@@ -80,7 +80,14 @@ func fakeSuiteLive() int {
 		return 2
 	}
 	mode := os.Getenv(liveFakeEnv)
-	if mode == "suite-exits" {
+	switch mode {
+	case "suite-exits":
+		return 2
+	case "suite-unsupported":
+		fmt.Fprintln(os.Stderr, "this evaluator suite does not support --live: its suite.Command sets no Live function")
+		return 2
+	case "suite-provider":
+		fmt.Fprintln(os.Stderr, "start live target: model gateway: ANTHROPIC_API_KEY is not set")
 		return 2
 	}
 	if err := startRecordedChild(); err != nil {
@@ -477,6 +484,32 @@ func TestLiveStartupKeepsTheSafeSummaryWhenTheOutputHasAlsoEnded(t *testing.T) {
 				require.Error(t, err)
 				assert.Contains(t, err.Error(), tc.wantErr)
 			}
+		})
+	}
+}
+
+func TestLiveStartFailuresStayDiagnosableAfterCleanup(t *testing.T) {
+	self, err := os.Executable()
+	require.NoError(t, err)
+	cases := []struct {
+		mode       string
+		wantDetail string
+	}{
+		{mode: "suite-unsupported", wantDetail: "does not support --live"},
+		{mode: "suite-provider", wantDetail: "ANTHROPIC_API_KEY is not set"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.mode, func(t *testing.T) {
+			t.Setenv(liveFakeEnv, tc.mode)
+			root := t.TempDir()
+			_, err := StartLive(t.Context(), root, verify.Plan{}, "secret-key", []string{self}, os.Environ())
+			var start *LiveStartError
+			require.ErrorAs(t, err, &start)
+			assert.Equal(t, summaryLiveSuite, start.Summary, "the public summary is the same safe text")
+			assert.Contains(t, start.Detail, tc.wantDetail, "the private detail tells the causes apart")
+			dirs, err := LeftoverLiveDirs(root)
+			require.NoError(t, err)
+			assert.Empty(t, dirs, "the detail outlives the removed directory")
 		})
 	}
 }

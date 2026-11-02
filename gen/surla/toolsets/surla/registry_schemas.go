@@ -6198,7 +6198,7 @@ func (registryDeclarations) field398() *genregistry.ToolFieldMetadata {
 
 // schema399 constructs one generated schema declaration.
 func (declarations registryDeclarations) schema399() *genregistry.ToolSchema {
-	registryText1 := "Build a candidate commit and run it as this server's live CP3 target so draft_override can try prompt text on it."
+	registryText1 := "Build a candidate commit and run it as this server's live CP3 target so draft_override can try prompt text on it. This first stops the target already running, which discards every prompt draft applied to it, even if the new build then fails. Prompt text survives only when it is committed."
 	return &genregistry.ToolSchema{
 		Name:                   "surla.start_live_target",
 		Description:            &registryText1,
@@ -6209,16 +6209,16 @@ func (declarations registryDeclarations) schema399() *genregistry.ToolSchema {
 			Kind:  "service",
 			Title: "Start Live Target",
 			Search: &genregistry.ToolSearchDocument{
-				Length: 30,
-				Terms:  map[string]int{"a": 1, "and": 1, "as": 1, "build": 1, "can": 1, "candidate": 1, "commit": 1, "cp3": 1, "draft": 1, "it": 2, "live": 3, "on": 1, "override": 1, "prompt": 1, "run": 1, "s": 1, "server": 1, "so": 1, "start": 2, "surla": 1, "target": 3, "text": 1, "this": 1, "try": 1},
+				Length: 60,
+				Terms:  map[string]int{"a": 1, "already": 1, "and": 1, "applied": 1, "as": 1, "build": 2, "can": 1, "candidate": 1, "commit": 1, "committed": 1, "cp3": 1, "discards": 1, "draft": 2, "even": 1, "every": 1, "fails": 1, "first": 1, "if": 1, "is": 1, "it": 4, "live": 3, "new": 1, "on": 1, "only": 1, "override": 1, "prompt": 3, "run": 1, "running": 1, "s": 1, "server": 1, "so": 1, "start": 2, "stops": 1, "surla": 1, "survives": 1, "target": 4, "text": 2, "the": 2, "then": 1, "this": 2, "to": 1, "try": 1, "when": 1, "which": 1},
 			},
 			RequiresUI: false,
 			TextOnly: &genregistry.TextOnlyToolContract{
 				ExecutionSchema: []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Candidate commit to build and run as this server's live CP3 target.\",\"properties\":{\"candidate_commit\":{\"description\":\"Full commit ID to build, in the candidate repository's object format.\",\"example\":\"4f0b3c1d2e5a6978877665544332211009988776\",\"pattern\":\"^([0-9a-f]{40}|[0-9a-f]{64})$\",\"type\":\"string\"}},\"required\":[\"candidate_commit\"],\"type\":\"object\"}"),
-				Description:     "Build a candidate commit and run it as this server's live CP3 target so draft_override can try prompt text on it.",
+				Description:     "Build a candidate commit and run it as this server's live CP3 target so draft_override can try prompt text on it. This first stops the target already running, which discards every prompt draft applied to it, even if the new build then fails. Prompt text survives only when it is committed.",
 				Search: &genregistry.ToolSearchDocument{
-					Length: 30,
-					Terms:  map[string]int{"a": 1, "and": 1, "as": 1, "build": 1, "can": 1, "candidate": 1, "commit": 1, "cp3": 1, "draft": 1, "it": 2, "live": 3, "on": 1, "override": 1, "prompt": 1, "run": 1, "s": 1, "server": 1, "so": 1, "start": 2, "surla": 1, "target": 3, "text": 1, "this": 1, "try": 1},
+					Length: 60,
+					Terms:  map[string]int{"a": 1, "already": 1, "and": 1, "applied": 1, "as": 1, "build": 2, "can": 1, "candidate": 1, "commit": 1, "committed": 1, "cp3": 1, "discards": 1, "draft": 2, "even": 1, "every": 1, "fails": 1, "first": 1, "if": 1, "is": 1, "it": 4, "live": 3, "new": 1, "on": 1, "only": 1, "override": 1, "prompt": 3, "run": 1, "running": 1, "s": 1, "server": 1, "so": 1, "start": 2, "stops": 1, "surla": 1, "survives": 1, "target": 4, "text": 2, "the": 2, "then": 1, "this": 2, "to": 1, "try": 1, "when": 1, "which": 1},
 				},
 				PayloadSchema: []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Candidate commit to build and run as this server's live CP3 target.\",\"properties\":{\"candidate_commit\":{\"description\":\"Full commit ID to build, in the candidate repository's object format.\",\"example\":\"4f0b3c1d2e5a6978877665544332211009988776\",\"pattern\":\"^([0-9a-f]{40}|[0-9a-f]{64})$\",\"type\":\"string\"}},\"required\":[\"candidate_commit\"],\"type\":\"object\"}"),
 				Payload:       declarations.metadata408(),
@@ -6367,7 +6367,7 @@ func (registryDeclarations) field410() *genregistry.ToolFieldMetadata {
 
 // schema411 constructs one generated schema declaration.
 func (declarations registryDeclarations) schema411() *genregistry.ToolSchema {
-	registryText1 := "Stop this server's live CP3 target, if one runs."
+	registryText1 := "Stop this server's live CP3 target, if one runs. This discards every prompt draft applied to it; prompt text survives only when it is committed."
 	return &genregistry.ToolSchema{
 		Name:                   "surla.stop_live_target",
 		Description:            &registryText1,
@@ -6378,16 +6378,16 @@ func (declarations registryDeclarations) schema411() *genregistry.ToolSchema {
 			Kind:  "service",
 			Title: "Stop Live Target",
 			Search: &genregistry.ToolSearchDocument{
-				Length: 17,
-				Terms:  map[string]int{"cp3": 1, "if": 1, "live": 3, "one": 1, "runs": 1, "s": 1, "server": 1, "stop": 3, "surla": 1, "target": 3, "this": 1},
+				Length: 33,
+				Terms:  map[string]int{"applied": 1, "committed": 1, "cp3": 1, "discards": 1, "draft": 1, "every": 1, "if": 1, "is": 1, "it": 2, "live": 3, "one": 1, "only": 1, "prompt": 2, "runs": 1, "s": 1, "server": 1, "stop": 3, "surla": 1, "survives": 1, "target": 3, "text": 1, "this": 2, "to": 1, "when": 1},
 			},
 			RequiresUI: false,
 			TextOnly: &genregistry.TextOnlyToolContract{
 				ExecutionSchema: []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"properties\":{},\"type\":\"object\"}"),
-				Description:     "Stop this server's live CP3 target, if one runs.",
+				Description:     "Stop this server's live CP3 target, if one runs. This discards every prompt draft applied to it; prompt text survives only when it is committed.",
 				Search: &genregistry.ToolSearchDocument{
-					Length: 17,
-					Terms:  map[string]int{"cp3": 1, "if": 1, "live": 3, "one": 1, "runs": 1, "s": 1, "server": 1, "stop": 3, "surla": 1, "target": 3, "this": 1},
+					Length: 33,
+					Terms:  map[string]int{"applied": 1, "committed": 1, "cp3": 1, "discards": 1, "draft": 1, "every": 1, "if": 1, "is": 1, "it": 2, "live": 3, "one": 1, "only": 1, "prompt": 2, "runs": 1, "s": 1, "server": 1, "stop": 3, "surla": 1, "survives": 1, "target": 3, "text": 1, "this": 2, "to": 1, "when": 1},
 				},
 				PayloadSchema: []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"properties\":{},\"type\":\"object\"}"),
 				Payload:       declarations.metadata418(),

@@ -107,18 +107,28 @@ const (
 	liveStopTimeout = 30 * time.Second
 	// maxLiveLine bounds the executor's line.
 	maxLiveLine = 4 << 10
-	// summaryLiveSuite describes a suite that did not report a ready target.
-	summaryLiveSuite = "The evaluator suite did not start a live target."
+	// summaryLiveSuite describes a suite that did not report a ready target
+	// and what the operator can check.
+	summaryLiveSuite = "The evaluator suite did not start a live target. Check that its suite.Command sets Live " +
+		"and that surla serve's environment has the model provider settings the suite reads."
+	// maxLiveDetail bounds the executor log excerpt kept in a
+	// LiveStartError after its directory is removed.
+	maxLiveDetail = 8 << 10
 )
 
 // ErrLiveEnded reports a live target whose processes ended before Stop.
 var ErrLiveEnded = errors.New("live target ended")
 
 // LiveStartError is a start failure the live executor reported. Summary is
-// safe to show builders; the full error is in the executor's log.
+// safe to show builders. Detail is the end of the executor's log, read
+// before StartLive removed the live directory; it may quote command output,
+// paths and provider errors, so it is only for the operator's private
+// diagnostics.
 type LiveStartError struct {
 	// Summary describes the failed step in one sentence.
 	Summary string
+	// Detail is at most maxLiveDetail bytes from the end of executor.log.
+	Detail string
 }
 
 // Error returns the summary.
@@ -202,6 +212,9 @@ func StartLive(ctx context.Context, root string, plan verify.Plan, key string, c
 	}()
 	defer func() {
 		if err != nil {
+			if start := (*LiveStartError)(nil); errors.As(err, &start) {
+				start.Detail = logTail(filepath.Join(dir, "executor.log"), maxLiveDetail)
+			}
 			err = errors.Join(err, p.Stop())
 		}
 	}()
@@ -405,6 +418,26 @@ func decodeLiveLine(text string) (liveLine, error) {
 		return liveLine{}, fmt.Errorf("decode live line: %w", err)
 	}
 	return line, nil
+}
+
+// logTail returns at most n bytes from the end of the file at path, or a
+// note saying why it could not be read.
+func logTail(path string, n int64) string {
+	f, err := os.Open(path)
+	if err != nil {
+		return fmt.Sprintf("(executor log unreadable: %v)", err)
+	}
+	defer f.Close()
+	info, err := f.Stat()
+	if err != nil {
+		return fmt.Sprintf("(executor log unreadable: %v)", err)
+	}
+	start := max(info.Size()-n, 0)
+	b := make([]byte, info.Size()-start)
+	if _, err := f.ReadAt(b, start); err != nil && !errors.Is(err, io.EOF) {
+		return fmt.Sprintf("(executor log unreadable: %v)", err)
+	}
+	return string(b)
 }
 
 // decodeLiveRequest reads live.json, rejecting unknown fields and trailing

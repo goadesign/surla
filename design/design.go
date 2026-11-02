@@ -593,7 +593,7 @@ var _ = Service("surla", func() {
 		Result(LiveTargetResult)
 		Error("live_target_unavailable", ErrorResult, "This server has no verification configuration, so it cannot build or run a live target.")
 		Error("live_target_failed", ErrorResult, "The live target could not be built or started; the message says which step failed.")
-		Tool("start_live_target", "Build a candidate commit and run it as this server's live CP3 target so draft_override can try prompt text on it.", func() {
+		Tool("start_live_target", "Build a candidate commit and run it as this server's live CP3 target so draft_override can try prompt text on it. This first stops the target already running, which discards every prompt draft applied to it, even if the new build then fails. Prompt text survives only when it is committed.", func() {
 			ToolUI("ui://surla/checkpoint")
 		})
 		HTTP(func() {
@@ -607,12 +607,14 @@ var _ = Service("surla", func() {
 	Method("stop_live_target", func() {
 		Description("Stop this server's live CP3 target, if one runs, and unbind draft_override from it. Stopping when none runs is not an error.")
 		Result(StopLiveTargetResult)
-		Tool("stop_live_target", "Stop this server's live CP3 target, if one runs.", func() {
+		Error("live_target_stop_failed", ErrorResult, "The live target's processes could not be confirmed stopped; restart surla serve.")
+		Tool("stop_live_target", "Stop this server's live CP3 target, if one runs. This discards every prompt draft applied to it; prompt text survives only when it is committed.", func() {
 			ToolUI("ui://surla/checkpoint")
 		})
 		HTTP(func() {
 			DELETE("/live-target")
 			Response(StatusOK)
+			Response("live_target_stop_failed", StatusInternalServerError)
 		})
 	})
 

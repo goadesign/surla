@@ -43,7 +43,7 @@ paths:
                                 $ref: '#/components/schemas/OverridePromptResponseBody'
                             example:
                                 prompt_id: Corporis exercitationem esse harum est consequatur sequi.
-                                version: Rerum et sint qui assumenda laudantium ad.
+                                version: "\U000EB05D"
                 "401":
                     description: 'unauthorized: Unauthorized response.'
                     content:
@@ -145,11 +145,12 @@ components:
                     example: Corporis exercitationem esse harum est consequatur sequi.
                 version:
                     type: string
-                    description: Version of the accepted text.
-                    example: Rerum et sint qui assumenda laudantium ad.
+                    description: 'Version of the accepted text: an opaque identifier that is not blank.'
+                    example: "\U000EB05D"
+                    pattern: \S
             example:
                 prompt_id: Corporis exercitationem esse harum est consequatur sequi.
-                version: Rerum et sint qui assumenda laudantium ad.
+                version: "\U000EB05D"
             required:
                 - prompt_id
                 - version

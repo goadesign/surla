@@ -693,6 +693,11 @@ func MakeLiveTargetFailed(err error) *goa.ServiceError {
 	return goa.NewServiceError(err, "live_target_failed", false, false, false)
 }
 
+// MakeLiveTargetStopFailed builds a goa.ServiceError from an error.
+func MakeLiveTargetStopFailed(err error) *goa.ServiceError {
+	return goa.NewServiceError(err, "live_target_stop_failed", false, false, false)
+}
+
 // agentPolicyItemIntTransport stores JSON fields until they have been validated.
 type agentPolicyItemIntTransport int
 

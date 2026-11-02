@@ -171,8 +171,8 @@ type (
 		// verify_change and get_verification fail.
 		Verification *VerificationConfig
 		// Live lets start_live_target build and run CP3 live targets with
-		// Verification's plan. Without it, or without Verification,
-		// start_live_target fails.
+		// Verification's plan, in <CardsDir>/live. Without it, or without
+		// Verification, start_live_target fails.
 		Live *LiveConfig
 	}
 
@@ -240,8 +240,8 @@ type (
 		promotionTarget PromotionTarget
 		// verification is the operator's CP4 configuration, or nil.
 		verification *VerificationConfig
-		// liveLocks holds the live CP3 target state.
-		liveLocks
+		// liveState holds the live CP3 target state.
+		liveState
 	}
 )
 
@@ -398,6 +398,9 @@ func NewTokenAuthenticator(tokens map[string]Principal) RequestAuthenticator {
 // creates the directory when missing and holds its lock until Close; it fails
 // when CardsDir is empty or another process holds the lock.
 func New(opts Options) (*ControlPlane, error) {
+	if opts.TargetUpdater != nil && opts.Live != nil {
+		return nil, errors.New("set either TargetUpdater or Live, not both: draft_override sends prompt text to exactly one target")
+	}
 	cards, err := openCardStore(opts.CardsDir)
 	if err != nil {
 		return nil, err
@@ -409,7 +412,7 @@ func New(opts Options) (*ControlPlane, error) {
 		swarmProfiles:   opts.SwarmProfiles,
 		promotionTarget: opts.PromotionTarget,
 		verification:    opts.Verification,
-		liveLocks:       liveLocks{live: opts.Live},
+		liveState:       newLiveState(opts.Live, opts.CardsDir),
 	}, nil
 }
 
@@ -626,12 +629,14 @@ func (c *ControlPlane) ProposeChange(ctx context.Context, p *gensurla.ProposeCha
 // afterwards, such as one still waiting on a model or promotion target, fail
 // without writing. Closing twice does nothing.
 func (c *ControlPlane) Close() error {
-	c.liveMu.Lock()
-	liveErr := c.stopLiveLocked()
-	c.liveMu.Unlock()
+	if err := c.closeLive(); err != nil {
+		// The cards directory, which holds the live root, stays locked while
+		// the target's processes may still use it.
+		return fmt.Errorf("stop live target; cards directory %s stays locked: %w", c.cards.dir, err)
+	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return errors.Join(liveErr, c.cards.close())
+	return c.cards.close()
 }
 
 // GetChange returns the current Change Card for change_id to its owner. It
@@ -797,7 +802,7 @@ func (c *ControlPlane) DraftOverride(ctx context.Context, p *gensurla.DraftOverr
 		}
 		id := strings.TrimSpace(*p.PromptID)
 		if c.targetUpdater == nil {
-			if lt := c.currentLive(); lt != nil {
+			if lt := c.boundLive(); lt != nil {
 				return c.draftLive(ctx, lt, id, p.NewContent)
 			}
 			return nil, errors.New("no target prompt updater is bound to this control plane")

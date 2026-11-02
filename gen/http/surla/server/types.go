@@ -489,6 +489,25 @@ type StartLiveTargetLiveTargetFailedResponseBody struct {
 	Fault bool `form:"fault" json:"fault" xml:"fault"`
 }
 
+// StopLiveTargetLiveTargetStopFailedResponseBody is the type of the "surla"
+// service "stop_live_target" endpoint HTTP response body for the
+// "live_target_stop_failed" error.
+type StopLiveTargetLiveTargetStopFailedResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
 // AmbiguityQuestionResponseBody is used to define fields on response body
 // types.
 type AmbiguityQuestionResponseBody struct {
@@ -1550,6 +1569,21 @@ func NewStartLiveTargetLiveTargetUnavailableResponseBody(res *goa.ServiceError) 
 // from the result of the "start_live_target" endpoint of the "surla" service.
 func NewStartLiveTargetLiveTargetFailedResponseBody(res *goa.ServiceError) *StartLiveTargetLiveTargetFailedResponseBody {
 	body := &StartLiveTargetLiveTargetFailedResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
+// NewStopLiveTargetLiveTargetStopFailedResponseBody builds the HTTP response
+// body from the result of the "stop_live_target" endpoint of the "surla"
+// service.
+func NewStopLiveTargetLiveTargetStopFailedResponseBody(res *goa.ServiceError) *StopLiveTargetLiveTargetStopFailedResponseBody {
+	body := &StopLiveTargetLiveTargetStopFailedResponseBody{
 		Name:      res.Name,
 		ID:        res.ID,
 		Message:   res.Message,

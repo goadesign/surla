@@ -44,7 +44,9 @@ var _ = Service("prompts", func() {
 		})
 		Result(func() {
 			Attribute("prompt_id", String, "The prompt whose text was replaced.")
-			Attribute("version", String, "Version of the accepted text.")
+			Attribute("version", String, "Version of the accepted text: an opaque identifier that is not blank.", func() {
+				Pattern(`\S`)
+			})
 			Required("prompt_id", "version")
 		})
 		HTTP(func() {

@@ -489,6 +489,25 @@ type StartLiveTargetLiveTargetFailedResponseBody struct {
 	Fault *bool `form:"fault,omitempty" json:"fault,omitempty" xml:"fault,omitempty"`
 }
 
+// StopLiveTargetLiveTargetStopFailedResponseBody is the type of the "surla"
+// service "stop_live_target" endpoint HTTP response body for the
+// "live_target_stop_failed" error.
+type StopLiveTargetLiveTargetStopFailedResponseBody struct {
+	// Name is the name of this class of errors.
+	Name *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID *string `form:"id,omitempty" json:"id,omitempty" xml:"id,omitempty"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message *string `form:"message,omitempty" json:"message,omitempty" xml:"message,omitempty"`
+	// Is the error temporary?
+	Temporary *bool `form:"temporary,omitempty" json:"temporary,omitempty" xml:"temporary,omitempty"`
+	// Is the error a timeout?
+	Timeout *bool `form:"timeout,omitempty" json:"timeout,omitempty" xml:"timeout,omitempty"`
+	// Is the error a server-side fault?
+	Fault *bool `form:"fault,omitempty" json:"fault,omitempty" xml:"fault,omitempty"`
+}
+
 // AmbiguityQuestionResponseBody is used to define fields on response body
 // types.
 type AmbiguityQuestionResponseBody struct {
@@ -1461,6 +1480,21 @@ func NewStopLiveTargetResultOK(body *StopLiveTargetResponseBody) *surla.StopLive
 	return v
 }
 
+// NewStopLiveTargetLiveTargetStopFailed builds a surla service
+// stop_live_target endpoint live_target_stop_failed error.
+func NewStopLiveTargetLiveTargetStopFailed(body *StopLiveTargetLiveTargetStopFailedResponseBody) *goa.ServiceError {
+	v := &goa.ServiceError{
+		Name:      *body.Name,
+		ID:        *body.ID,
+		Message:   *body.Message,
+		Temporary: *body.Temporary,
+		Timeout:   *body.Timeout,
+		Fault:     *body.Fault,
+	}
+
+	return v
+}
+
 // NewVerifyChangeVerificationStatusResultOK builds a "surla" service
 // "verify_change" endpoint result from a HTTP "OK" response.
 func NewVerifyChangeVerificationStatusResultOK(body *VerifyChangeResponseBody) *surla.VerificationStatusResult {
@@ -2240,6 +2274,30 @@ func ValidateStartLiveTargetLiveTargetUnavailableResponseBody(body *StartLiveTar
 // ValidateStartLiveTargetLiveTargetFailedResponseBody runs the validations
 // defined on StartLiveTargetLiveTargetFailedResponseBody
 func ValidateStartLiveTargetLiveTargetFailedResponseBody(body *StartLiveTargetLiveTargetFailedResponseBody) (err error) {
+	if body.Name == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
+	}
+	if body.ID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("id", "body"))
+	}
+	if body.Message == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("message", "body"))
+	}
+	if body.Temporary == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("temporary", "body"))
+	}
+	if body.Timeout == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("timeout", "body"))
+	}
+	if body.Fault == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("fault", "body"))
+	}
+	return
+}
+
+// ValidateStopLiveTargetLiveTargetStopFailedResponseBody runs the validations
+// defined on StopLiveTargetLiveTargetStopFailedResponseBody
+func ValidateStopLiveTargetLiveTargetStopFailedResponseBody(body *StopLiveTargetLiveTargetStopFailedResponseBody) (err error) {
 	if body.Name == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
 	}

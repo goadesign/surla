@@ -722,6 +722,19 @@ paths:
                             example:
                                 message: Dolor unde.
                                 stopped: true
+                "500":
+                    description: 'live_target_stop_failed: The live target''s processes could not be confirmed stopped; restart surla serve.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: live_target_stop_failed
+                                temporary: false
+                                timeout: false
         post:
             tags:
                 - surla

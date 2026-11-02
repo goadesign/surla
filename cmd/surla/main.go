@@ -65,10 +65,6 @@ type serveConfig struct {
 	// cardsDir is the directory where CP1 Change Cards are saved, so a
 	// restarted serve returns them.
 	cardsDir string
-	// liveDir is the directory under which CP3 live targets get their own
-	// directories; only this serve uses it. Live targets need
-	// verificationPath.
-	liveDir string
 }
 
 // binaryFlags collects repeated `-binary name=pkg` flags for `surla verify`
@@ -205,7 +201,6 @@ func runServe(args []string) (err error) {
 	fs.StringVar(&cfg.cardsDir, "cards-dir", ".surla/cards", "directory where CP1 Change Cards are saved so they survive restarts; one surla serve at a time may use it")
 	fs.StringVar(&cfg.promotionPath, "promotion-config", "", "JSON file with the CP5 report directory, required suite and environment, and release directory of staged binaries that approve_merge checks; it approves staged binaries for a fresh launch, never a running service")
 	fs.StringVar(&cfg.verificationPath, "verification-config", "", "JSON file with the CP4 candidate, evaluator suite, runs and reports configuration used by verify_change")
-	fs.StringVar(&cfg.liveDir, "live-dir", ".surla/live", "directory for CP3 live targets started by start_live_target (needs -verification-config); only one surla serve may use it")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -309,8 +304,9 @@ func writeServeStatus(w io.Writer, addr *net.TCPAddr, opts controlplane.Options)
 	}
 	switch {
 	case opts.TargetUpdater == nil && opts.Live != nil:
-		fmt.Fprintf(w, "surla: CP3 (draft_override, start_live_target): compiled_rule is on; prompt_template is on once start_live_target runs a candidate commit (live targets in %s)\n", opts.Live.Root)
-		writeLeftoverLiveDirs(w, opts.Live.Root)
+		root := controlplane.LiveRoot(opts.CardsDir)
+		fmt.Fprintf(w, "surla: CP3 (draft_override, start_live_target): compiled_rule is on; prompt_template is on once start_live_target runs a candidate commit (live targets in %s)\n", root)
+		writeLeftoverLiveDirs(w, root)
 	case opts.TargetUpdater == nil:
 		fmt.Fprintln(w, "surla: CP3 (draft_override): compiled_rule is on; prompt_template is off"+
 			" (surla serve binds no target prompt updater; to change a prompt, edit its source text, commit, and verify the commit)")
@@ -801,7 +797,7 @@ func serveOptions(cfg serveConfig, getenv func(string) string, environ []string)
 	var live *controlplane.LiveConfig
 	if verification != nil {
 		live = &controlplane.LiveConfig{
-			Root: cfg.liveDir, Command: verification.Command, Env: liveTargetEnv(environ),
+			Command: verification.Command, Env: liveTargetEnv(environ),
 			StartTimeout: verification.Timeout,
 		}
 	}
@@ -826,7 +822,8 @@ func liveTargetEnv(environ []string) []string {
 }
 
 // writeLeftoverLiveDirs names the live target directories an earlier serve
-// left when it stopped without cleaning up. Their processes ended with it.
+// using the same cards directory left without removing them. It states only
+// what it observed: whether their processes have stopped is not checked.
 func writeLeftoverLiveDirs(w io.Writer, root string) {
 	dirs, err := verifyrun.LeftoverLiveDirs(root)
 	if err != nil {
@@ -834,7 +831,7 @@ func writeLeftoverLiveDirs(w io.Writer, root string) {
 		return
 	}
 	for _, dir := range dirs {
-		fmt.Fprintf(w, "surla: CP3: an earlier surla serve left live target directory %s; its processes are gone, so remove it\n", dir)
+		fmt.Fprintf(w, "surla: CP3: an earlier surla serve using this cards directory left live target directory %s; its files were kept\n", dir)
 	}
 }
 
