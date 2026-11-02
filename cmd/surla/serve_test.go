@@ -178,6 +178,27 @@ func TestServeOptionsDerivesLiveTargetsFromVerification(t *testing.T) {
 	assert.Equal(t, []string{"PATH=/bin", "ANTHROPIC_API_KEY=k"}, opts.Live.Env, "serve's own bearer token never reaches a live target")
 }
 
+func TestLiveTargetEnvCarriesServesModelChoice(t *testing.T) {
+	environ := []string{"PATH=/bin", "SURLA_AUTH_TOKEN=secret", "ANTHROPIC_API_KEY=k", "SURLA_LIVE_MODEL_GATEWAY=stale:1"}
+	cases := []struct {
+		name string
+		cfg  serveConfig
+		want []string
+	}{
+		{name: "direct provider", cfg: serveConfig{provider: "anthropic", modelName: "claude-x"},
+			want: []string{"PATH=/bin", "ANTHROPIC_API_KEY=k", "SURLA_LIVE_MODEL_PROVIDER=anthropic", "SURLA_LIVE_MODEL_NAME=claude-x"}},
+		{name: "gateway", cfg: serveConfig{gatewayAddr: "127.0.0.1:9090"},
+			want: []string{"PATH=/bin", "ANTHROPIC_API_KEY=k", "SURLA_LIVE_MODEL_GATEWAY=127.0.0.1:9090"}},
+		{name: "no model", cfg: serveConfig{},
+			want: []string{"PATH=/bin", "ANTHROPIC_API_KEY=k"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.want, liveTargetEnv(environ, tc.cfg))
+		})
+	}
+}
+
 func TestServeOptionsWiresAnalyzerAndProfiles(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "profiles.json")
 	require.NoError(t, os.WriteFile(path, []byte(`[{"id":"a","provider":"openai","model":"m","family":"gpt"}]`), 0o600))

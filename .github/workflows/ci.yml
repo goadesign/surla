@@ -95,7 +95,11 @@ jobs:
       - name: Verifier end to end
         run: go test -race -tags e2e ./internal/verify </dev/null
       - name: Starter project end to end
-        run: go test -race -tags scaffold ./internal/scaffold </dev/null
+        # The live CP3 journey test builds a generated starter in the sandbox
+        # several times (two live targets and two verifications), which does
+        # not fit go test's default 10m binary deadline. 30m is a budget under
+        # the job's own limit, not a measured or guaranteed duration.
+        run: go test -race -timeout 30m -tags scaffold ./internal/scaffold </dev/null
       - name: Orders acceptance end to end
         working-directory: examples/orders-eval
         run: go test -race -tags e2e ./acceptance </dev/null

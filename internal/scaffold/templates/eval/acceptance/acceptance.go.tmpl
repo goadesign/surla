@@ -1,7 +1,8 @@
 // Package acceptance runs the starter acceptance scenarios against a pinned
 // [[.Name]] binary. Each scenario starts its own model gateway and [[.Name]] process,
 // asks one question over the public HTTP API, and checks both the answer and
-// the model exchange the gateway recorded.
+// the model exchange the gateway recorded. Live starts the same way for
+// Surla's live CP3 target, with a real model provider.
 package acceptance
 
 import (
@@ -18,9 +19,11 @@ import (
 	goahttp "goa.design/goa/v3/http"
 	"goa.design/goa-ai/eval"
 	"goa.design/goa-ai/features/model/gateway"
+	"goa.design/goa-ai/runtime/agent/model"
 	"google.golang.org/grpc"
 
 	"github.com/goadesign/surla/verify/candidate"
+	"github.com/goadesign/surla/verify/suite"
 
 	genhttp[[.Pkg]] "[[.Module]]/eval/gen/http/[[.Pkg]]/client"
 	gen[[.Pkg]] "[[.Module]]/eval/gen/[[.Pkg]]"
@@ -40,6 +43,12 @@ const gatewayStopTimeout = 10 * time.Second
 // Name is the binary name surla verify binds the [[.Name]] as (-binary [[.Name]]=...).
 const Name = "[[.Name]]"
 
+// systemPromptID is the [[.Name]]'s helper system prompt, which override_prompt replaces.
+const systemPromptID = "[[.Name]].helper.system"
+
+// liveKeyEnv is the variable the [[.Name]] reads its live key from.
+const liveKeyEnv = "SURLA_LIVE_TARGET_KEY"
+
 // New returns the scenario hooks for the pinned [[.Name]] binary.
 func New(binary candidate.Artifact) *Hooks {
 	return &Hooks{binary: binary}
@@ -57,25 +66,156 @@ func (h *Hooks) UnknownItem(ctx context.Context) (eval.Result, error) {
 	return h.ask(ctx, "How much is coffee?", "[scripted] I could not find a price for coffee.", false)
 }
 
-// ask starts the gateway and the [[.Name]], asks question, and checks the answer
-// and the recorded tool exchange, whose result must say whether the catalog
-// knew the item (wantKnown).
-func (h *Hooks) ask(ctx context.Context, question, want string, wantKnown bool) (res eval.Result, err error) {
+// PromptOverrideReachesModel checks that override_prompt rejects a wrong key,
+// accepts the right one, and that the next question's model request carries
+// the new system prompt text.
+func (h *Hooks) PromptOverrideReachesModel(ctx context.Context) (res eval.Result, err error) {
 	res.Artifacts = []eval.Artifact{h.binary.Evidence(Name)}
-	model := scripted.New()
-	addr, stop, err := h.start(ctx, model)
+	scriptedModel := scripted.New()
+	const key = "scenario-live-key"
+	addr, _, stop, err := h.start(ctx, scriptedModel, key)
 	if err != nil {
 		return res, err
 	}
 	defer func() { err = errors.Join(err, stop()) }()
 
 	c := genhttp[[.Pkg]].NewClient("http", addr, http.DefaultClient, goahttp.RequestEncoder, goahttp.ResponseDecoder, false)
-	out, err := gen[[.Pkg]].NewClient(c.Ask()).Ask(ctx, &gen[[.Pkg]].AskPayload{Question: question})
+	client := gen[[.Pkg]].NewClient(c.OverridePrompt(), c.Ask())
+	const text = "You answer questions about item prices. Prices come only from lookup_price. [override]"
+	_, wrongKeyErr := client.OverridePrompt(ctx, &gen[[.Pkg]].OverridePromptPayload{Key: "wrong", PromptID: systemPromptID, Template: text})
+	var unauthorized gen[[.Pkg]].Unauthorized
+	out, err := client.OverridePrompt(ctx, &gen[[.Pkg]].OverridePromptPayload{Key: key, PromptID: systemPromptID, Template: text})
+	if err != nil {
+		return res, fmt.Errorf("override prompt: %w", err)
+	}
+	answer, err := client.Ask(ctx, &gen[[.Pkg]].AskPayload{Question: "How much is tea?"})
+	if err != nil {
+		return res, fmt.Errorf("ask after override: %w", err)
+	}
+	res.Output = answer.Answer
+	ex := scriptedModel.Exchanges()
+	res.Checks = []eval.Check{
+		check("wrong_key_rejected", errors.As(wrongKeyErr, &unauthorized), "override with a wrong key returned %v, want unauthorized", wrongKeyErr),
+		check("override_accepted", out.PromptID == systemPromptID && out.Version != "", "override returned %+v", out),
+		check("next_request_carries_text", len(ex) > 0 && ex[0].System == text,
+			"the next model request's system text is %q, want %q", firstSystem(ex), text),
+	}
+	return res, nil
+}
+
+// Live starts the pinned [[.Name]] for Surla's live CP3 target the way a
+// scenario does, but planning with provider instead of the scripted model, and
+// with key as its live key. The provider's credentials stay in this process;
+// the [[.Name]] receives only key, through candidate.Spec.Env. The target stops
+// when ctx ends, and Done then reports the cleanup.
+func Live(ctx context.Context, binary candidate.Artifact, key string, provider model.Provider) (suite.LiveTarget, error) {
+	addr, exited, stop, err := (&Hooks{binary: binary}).start(ctx, provider, key)
+	if err != nil {
+		return suite.LiveTarget{}, err
+	}
+	return liveTarget(ctx, addr, exited, nil, stop), nil
+}
+
+// LiveThroughGateway starts the pinned [[.Name]] for Surla's live CP3 target
+// planning through the model gateway at gatewayAddr, the address surla serve's
+// -model-gateway-addr names. The candidate sandbox lets the [[.Name]] connect
+// only to loopback ports and resolves no names: a literal loopback address,
+// such as 127.0.0.1 or [::1], is used directly, and any other address,
+// including a hostname such as localhost, is reached through a forwarder this
+// process owns on a loopback port, which dials it with ordinary name
+// resolution. Either way the [[.Name]] may connect to exactly one port.
+func LiveThroughGateway(ctx context.Context, binary candidate.Artifact, key, gatewayAddr string) (suite.LiveTarget, error) {
+	port, loopback, err := gatewayPort(gatewayAddr)
+	if err != nil {
+		return suite.LiveTarget{}, err
+	}
+	h := &Hooks{binary: binary}
+	if loopback {
+		addr, exited, stop, err := h.startCandidate(ctx, gatewayAddr, port, key)
+		if err != nil {
+			return suite.LiveTarget{}, err
+		}
+		return liveTarget(ctx, addr, exited, nil, stop), nil
+	}
+	fwd, err := startForwarder(gatewayAddr)
+	if err != nil {
+		return suite.LiveTarget{}, err
+	}
+	addr, exited, stopCandidate, err := h.startCandidate(ctx, fwd.addr(), fwd.port(), key)
+	if err != nil {
+		return suite.LiveTarget{}, errors.Join(err, fwd.close())
+	}
+	return liveTarget(ctx, addr, exited, fwd.failed, func() error { return errors.Join(stopCandidate(), fwd.close()) }), nil
+}
+
+// liveTarget returns the target for a started [[.Name]]: it stops when ctx
+// ends, when the [[.Name]] exits, or when failed reports an error (nil
+// disables that case), and Done delivers only after stop has cleaned up.
+// Canceling ctx also ends the [[.Name]], so when ctx is canceled the ending
+// is a requested stop whichever case was ready first: Done then carries only
+// stop's own result.
+func liveTarget(ctx context.Context, addr string, exited <-chan struct{}, failed <-chan error, stop func() error) suite.LiveTarget {
+	done := make(chan error, 1)
+	go func() {
+		var cause error
+		select {
+		case <-ctx.Done():
+		case <-exited:
+			cause = errors.New("[[.Name]] exited")
+		case err := <-failed:
+			cause = err
+		}
+		if ctx.Err() != nil {
+			cause = nil
+		}
+		done <- errors.Join(cause, stop())
+	}()
+	return suite.LiveTarget{URL: "http://" + addr, Done: done}
+}
+
+// gatewayPort returns gatewayAddr's port and whether its host is a literal
+// loopback IP address, which the [[.Name]] can dial directly. A hostname is
+// never resolved here: the forwarder dials it.
+func gatewayPort(gatewayAddr string) (port int, loopback bool, err error) {
+	host, portText, err := net.SplitHostPort(gatewayAddr)
+	if err != nil {
+		return 0, false, fmt.Errorf("model gateway address %q: %w", gatewayAddr, err)
+	}
+	port, err = strconv.Atoi(portText)
+	if err != nil || port <= 0 || port > 65535 {
+		return 0, false, fmt.Errorf("model gateway address %q has no valid port", gatewayAddr)
+	}
+	ip := net.ParseIP(host)
+	return port, ip != nil && ip.IsLoopback(), nil
+}
+
+// firstSystem returns the first exchange's system text, or "".
+func firstSystem(ex []scripted.Exchange) string {
+	if len(ex) == 0 {
+		return ""
+	}
+	return ex[0].System
+}
+
+// ask starts the gateway and the [[.Name]], asks question, and checks the answer
+// and the recorded tool exchange, whose result must say whether the catalog
+// knew the item (wantKnown).
+func (h *Hooks) ask(ctx context.Context, question, want string, wantKnown bool) (res eval.Result, err error) {
+	res.Artifacts = []eval.Artifact{h.binary.Evidence(Name)}
+	scriptedModel := scripted.New()
+	addr, _, stop, err := h.start(ctx, scriptedModel, "")
+	if err != nil {
+		return res, err
+	}
+	defer func() { err = errors.Join(err, stop()) }()
+
+	c := genhttp[[.Pkg]].NewClient("http", addr, http.DefaultClient, goahttp.RequestEncoder, goahttp.ResponseDecoder, false)
+	out, err := gen[[.Pkg]].NewClient(c.OverridePrompt(), c.Ask()).Ask(ctx, &gen[[.Pkg]].AskPayload{Question: question})
 	if err != nil {
 		return res, fmt.Errorf("ask %q: %w", question, err)
 	}
 	res.Output = out.Answer
-	ex := model.Exchanges()
+	ex := scriptedModel.Exchanges()
 	res.Checks = []eval.Check{
 		check("answer", out.Answer == want, "answer is %q, want %q", out.Answer, want),
 		check("tool_called_then_answered", len(ex) == 2 && ex[0].Answer == "" && ex[1].CallID == ex[0].CallID && ex[1].Result != "",
@@ -86,25 +226,37 @@ func (h *Hooks) ask(ctx context.Context, question, want string, wantKnown bool) 
 	return res, nil
 }
 
-// start serves model through a goa-ai gateway on a loopback port, starts the
-// [[.Name]] in the candidate sandbox pointed at it, and waits until the [[.Name]]
-// listens or exits. stop kills the [[.Name]], stops the gateway within
-// gatewayStopTimeout, and removes the [[.Name]]'s state and log, unless the
-// [[.Name]] could not be killed and may still be using them.
-func (h *Hooks) start(ctx context.Context, model *scripted.Model) (addr string, stop func() error, err error) {
-	gw, err := gateway.NewServer(gateway.WithProvider(model))
+// start serves provider through a goa-ai gateway on a loopback port and starts
+// the [[.Name]] pointed at it (see startCandidate). stop also stops the gateway
+// within gatewayStopTimeout.
+func (h *Hooks) start(ctx context.Context, provider model.Provider, liveKey string) (addr string, exited <-chan struct{}, stop func() error, err error) {
+	gwAddr, gwPort, stopGateway, err := serveGateway(provider)
 	if err != nil {
-		return "", nil, fmt.Errorf("create model gateway: %w", err)
+		return "", nil, nil, err
+	}
+	addr, exited, stopCandidate, err := h.startCandidate(ctx, gwAddr, gwPort, liveKey)
+	if err != nil {
+		return "", nil, nil, errors.Join(err, stopGateway())
+	}
+	return addr, exited, func() error { return errors.Join(stopCandidate(), stopGateway()) }, nil
+}
+
+// serveGateway serves provider through a goa-ai gateway on a loopback port and
+// returns its address and port. stop stops it within gatewayStopTimeout.
+func serveGateway(provider model.Provider) (addr string, port int, stop func() error, err error) {
+	gw, err := gateway.NewServer(gateway.WithProvider(provider))
+	if err != nil {
+		return "", 0, nil, fmt.Errorf("create model gateway: %w", err)
 	}
 	gwLn, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
-		return "", nil, fmt.Errorf("listen for model gateway: %w", err)
+		return "", 0, nil, fmt.Errorf("listen for model gateway: %w", err)
 	}
 	server := grpc.NewServer()
 	gateway.RegisterGRPCServer(server, gw)
 	served := make(chan error, 1)
 	go func() { served <- server.Serve(gwLn) }()
-	stopGateway := func() error {
+	stop = func() error {
 		stopped := make(chan struct{})
 		go func() {
 			server.GracefulStop()
@@ -120,42 +272,61 @@ func (h *Hooks) start(ctx context.Context, model *scripted.Model) (addr string, 
 		}
 		return nil
 	}
+	return gwLn.Addr().String(), gwLn.Addr().(*net.TCPAddr).Port, stop, nil
+}
 
+// startCandidate starts the [[.Name]] in the candidate sandbox, planning
+// through the model gateway at gatewayAddr, which must be a loopback address
+// on gatewayPort, the only port it may connect to. It waits until the
+// [[.Name]] listens or exits. liveKey, when set, is the [[.Name]]'s live key and
+// the only variable added to its environment. exited is closed when the
+// [[.Name]] exits. stop kills the [[.Name]] and removes its state and log,
+// unless the [[.Name]] could not be killed and may still be using them.
+func (h *Hooks) startCandidate(ctx context.Context, gatewayAddr string, gatewayPort int, liveKey string) (addr string, exited <-chan struct{}, stop func() error, err error) {
 	// work holds the [[.Name]]'s state directory and, outside it, its log file.
 	work, err := os.MkdirTemp("", "[[.Name]]-eval-*")
 	if err != nil {
-		return "", nil, errors.Join(fmt.Errorf("create work directory: %w", err), stopGateway())
+		return "", nil, nil, fmt.Errorf("create work directory: %w", err)
 	}
 	state := filepath.Join(work, "state")
 	if err := os.Mkdir(state, 0o700); err != nil {
-		return "", nil, errors.Join(fmt.Errorf("create state directory: %w", err), stopGateway(), os.RemoveAll(work))
+		return "", nil, nil, errors.Join(fmt.Errorf("create state directory: %w", err), os.RemoveAll(work))
 	}
 	port, err := freePort()
 	if err != nil {
-		return "", nil, errors.Join(err, stopGateway(), os.RemoveAll(work))
+		return "", nil, nil, errors.Join(err, os.RemoveAll(work))
 	}
 	addr = "127.0.0.1:" + strconv.Itoa(port)
 	proc, err := candidate.Exec(ctx, h.binary, candidate.Spec{
-		Args:         []string{"-listen", addr, "-model-gateway", gwLn.Addr().String()},
+		Args:         []string{"-listen", addr, "-model-gateway", gatewayAddr},
+		Env:          liveEnv(liveKey),
 		StateDir:     state,
-		ConnectPorts: []int{gwLn.Addr().(*net.TCPAddr).Port},
+		ConnectPorts: []int{gatewayPort},
 		ListenPort:   port,
 		LogFile:      filepath.Join(work, "[[.Name]].log"),
 	})
 	if err != nil {
-		return "", nil, errors.Join(fmt.Errorf("start [[.Name]]: %w", err), stopGateway(), os.RemoveAll(work))
+		return "", nil, nil, errors.Join(fmt.Errorf("start [[.Name]]: %w", err), os.RemoveAll(work))
 	}
 	stop = func() error {
 		if err := proc.Kill(); err != nil {
-			return errors.Join(fmt.Errorf("kill [[.Name]]; its state is kept in %s: %w", work, err), stopGateway())
+			return fmt.Errorf("kill [[.Name]]; its state is kept in %s: %w", work, err)
 		}
-		return errors.Join(stopGateway(), os.RemoveAll(work))
+		return os.RemoveAll(work)
 	}
 	if err := waitListening(ctx, addr, proc.Done()); err != nil {
 		tail, _, tailErr := proc.Excerpt(4 << 10)
-		return "", nil, errors.Join(fmt.Errorf("[[.Name]] never listened on %s: %w\n%s", addr, err, tail), tailErr, stop())
+		return "", nil, nil, errors.Join(fmt.Errorf("[[.Name]] never listened on %s: %w\n%s", addr, err, tail), tailErr, stop())
 	}
-	return addr, stop, nil
+	return addr, proc.Done(), stop, nil
+}
+
+// liveEnv returns the [[.Name]]'s added environment: only its live key, when set.
+func liveEnv(liveKey string) []string {
+	if liveKey == "" {
+		return nil
+	}
+	return []string{liveKeyEnv + "=" + liveKey}
 }
 
 // check returns a deterministic check; a failing one carries the diagnostic.

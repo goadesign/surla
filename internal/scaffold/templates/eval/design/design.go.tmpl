@@ -13,7 +13,40 @@ var _ = API("[[.Name]]", func() {
 	Title("[[.Name]] (public contract as the evaluator sees it)")
 })
 
+// LiveKey is the [[.Name]]'s live key, as the evaluator sees it.
+var LiveKey = APIKeySecurity("live_key")
+
 var _ = Service("[[.Name]]", func() {
+	Error("unauthorized", String, "The key is missing or wrong.")
+	Error("unknown_prompt", ErrorResult, "No prompt with this ID is registered.")
+	Error("invalid_prompt", ErrorResult, "The template does not render.")
+
+	Method("override_prompt", func() {
+		Security(LiveKey)
+		Payload(func() {
+			APIKey("live_key", "key", String, "The [[.Name]]'s live key.")
+			Attribute("prompt_id", String, "Registered prompt to replace.")
+			Attribute("template", String, "New prompt text.")
+			Required("key", "prompt_id", "template")
+		})
+		Result(func() {
+			Attribute("prompt_id", String, "The prompt whose text was replaced.")
+			Attribute("version", String, "Version of the accepted text.")
+			Required("prompt_id", "version")
+		})
+		HTTP(func() {
+			PUT("/prompts/{prompt_id}")
+			Header("key:X-Live-Target-Key")
+			Body(func() {
+				Attribute("template")
+			})
+			Response(StatusOK)
+			Response("unauthorized", StatusUnauthorized)
+			Response("unknown_prompt", StatusNotFound)
+			Response("invalid_prompt", StatusUnprocessableEntity)
+		})
+	})
+
 	Method("ask", func() {
 		Payload(func() {
 			Attribute("question", String, "Question to answer.")
@@ -36,11 +69,15 @@ var _ = Service("[[.Name]]", func() {
 // builders (verify.Report.ForBuilders); it is not a secret test. Keep real
 // holdout scenarios in an evaluator repository builders cannot read.
 var _ = Suite("[[.Name]]_acceptance", func() {
-	Description("Proves through the public API that the helper agent prices items with its lookup_price tool.")
+	Description("Proves through the public API that the helper agent prices items with its lookup_price tool, and that override_prompt changes the prompt the next model request carries.")
 	Timeout("1m")
 
 	Scenario("prices_tea", func() {
 		Description("Asking \"How much is tea?\" makes the agent call lookup_price for tea and answer with the returned 350 cents as $3.50.")
+		Tags("repair")
+	})
+	Scenario("prompt_override_reaches_model", func() {
+		Description("override_prompt with the live key replaces the helper's system prompt, a wrong key is rejected, and the next question's model request carries the new text.")
 		Tags("repair")
 	})
 	Scenario("unknown_item", func() {

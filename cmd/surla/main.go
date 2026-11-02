@@ -117,6 +117,15 @@ Commands:
 // `surla -h`, `surla -help` and `surla --help`, also after `help`.
 var helpWords = []string{"help", "-h", "-help", "--help"}
 
+// liveModelProviderEnv, liveModelNameEnv and liveModelGatewayEnv name the
+// model choice serve passes to live targets' evaluator suites (see
+// liveTargetEnv and docs/REFERENCE.md).
+const (
+	liveModelProviderEnv = "SURLA_LIVE_MODEL_PROVIDER"
+	liveModelNameEnv     = "SURLA_LIVE_MODEL_NAME"
+	liveModelGatewayEnv  = "SURLA_LIVE_MODEL_GATEWAY"
+)
+
 // apiKeyEnv maps each supported direct model provider to the environment
 // variable that holds its API key. Keys are read only from the environment so
 // they never appear in process listings or shell history.
@@ -346,7 +355,7 @@ func runInit(args []string, stdout io.Writer) error {
 	if *version == "" {
 		*version = buildVersion()
 		if !scaffold.ValidVersion(*version) {
-			return fmt.Errorf("this surla binary has no exact module version (%q); pass -surla-version with a published version such as v0.0.0-20261031211028-8ec6e0997e6b", *version)
+			return fmt.Errorf("this surla binary has no exact module version (%q); pass -surla-version with a published version such as v0.0.0-20261102083950-a4246a33f714", *version)
 		}
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -797,7 +806,7 @@ func serveOptions(cfg serveConfig, getenv func(string) string, environ []string)
 	var live *controlplane.LiveConfig
 	if verification != nil {
 		live = &controlplane.LiveConfig{
-			Command: verification.Command, Env: liveTargetEnv(environ),
+			Command: verification.Command, Env: liveTargetEnv(environ, cfg),
 			StartTimeout: verification.Timeout,
 		}
 	}
@@ -808,15 +817,34 @@ func serveOptions(cfg serveConfig, getenv func(string) string, environ []string)
 }
 
 // liveTargetEnv returns the environment live targets start with: serve's own,
-// which carries the model provider settings the evaluator suite reads,
-// without serve's MCP bearer token, which no live target needs.
-func liveTargetEnv(environ []string) []string {
-	out := make([]string, 0, len(environ))
+// which carries the provider key its model flags use, without serve's MCP
+// bearer token, plus the model choice those flags made, so an evaluator
+// suite's Live hook can plan with the same model: SURLA_LIVE_MODEL_PROVIDER
+// and SURLA_LIVE_MODEL_NAME for -model-provider and -model-name, or
+// SURLA_LIVE_MODEL_GATEWAY for -model-gateway-addr. Nothing is added when no
+// model is configured; serve's own values replace inherited ones.
+func liveTargetEnv(environ []string, cfg serveConfig) []string {
+	derived := map[string]string{}
+	switch {
+	case cfg.gatewayAddr != "":
+		derived[liveModelGatewayEnv] = cfg.gatewayAddr
+	case cfg.provider != "":
+		derived[liveModelProviderEnv] = cfg.provider
+		derived[liveModelNameEnv] = cfg.modelName
+	}
+	out := make([]string, 0, len(environ)+len(derived))
 	for _, kv := range environ {
-		if name, _, _ := strings.Cut(kv, "="); name == "SURLA_AUTH_TOKEN" {
+		name, _, _ := strings.Cut(kv, "=")
+		switch name {
+		case "SURLA_AUTH_TOKEN", liveModelGatewayEnv, liveModelProviderEnv, liveModelNameEnv:
 			continue
 		}
 		out = append(out, kv)
+	}
+	for _, name := range []string{liveModelProviderEnv, liveModelNameEnv, liveModelGatewayEnv} {
+		if v, ok := derived[name]; ok {
+			out = append(out, name+"="+v)
+		}
 	}
 	return out
 }

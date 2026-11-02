@@ -5,6 +5,10 @@
 // Usage:
 //
 //	[[.Name]] -listen 127.0.0.1:8080 -model-gateway 127.0.0.1:9090
+//
+// When SURLA_LIVE_TARGET_KEY is set, override_prompt accepts that key; Surla's
+// start_live_target sets it for a live CP3 target. Without it, override_prompt
+// rejects every call.
 package main
 
 import (
@@ -32,13 +36,16 @@ import (
 	"[[.Module]]/internal/service"
 )
 
+// liveKeyEnv names the environment variable holding the live key.
+const liveKeyEnv = "SURLA_LIVE_TARGET_KEY"
+
 func main() {
 	listen := flag.String("listen", "127.0.0.1:8080", "HTTP listen address")
 	modelGateway := flag.String("model-gateway", "", "gRPC address of the goa-ai model gateway (required)")
 	flag.Parse()
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	if err := run(ctx, *listen, *modelGateway); err != nil {
+	if err := run(ctx, *listen, *modelGateway, os.Getenv(liveKeyEnv)); err != nil {
 		fmt.Fprintln(os.Stderr, "[[.Name]]:", err)
 		os.Exit(1)
 	}
@@ -46,8 +53,8 @@ func main() {
 
 // run connects to the model gateway and serves the [[.Name]] API until ctx
 // ends. Each question runs the helper agent in its own in-memory runtime (see
-// service.Service.Ask).
-func run(ctx context.Context, listen, modelGateway string) error {
+// service.Service.Ask); liveKey is the key override_prompt requires.
+func run(ctx context.Context, listen, modelGateway, liveKey string) error {
 	if modelGateway == "" {
 		return errors.New("-model-gateway is required")
 	}
@@ -61,7 +68,7 @@ func run(ctx context.Context, listen, modelGateway string) error {
 		return fmt.Errorf("create model client: %w", err)
 	}
 
-	endpoints := gen[[.Pkg]].NewEndpoints(service.New(mc))
+	endpoints := gen[[.Pkg]].NewEndpoints(service.New(mc, liveKey))
 	mux := goahttp.NewMuxer()
 	genhttp[[.Pkg]].Mount(mux, genhttp[[.Pkg]].New(endpoints, mux, goahttp.RequestDecoder, goahttp.ResponseEncoder, errorHandler, nil))
 	// otelhttp starts a span for every request; it records to the global

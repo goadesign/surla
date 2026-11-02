@@ -48,7 +48,7 @@ type (
 		Module string
 		// SurlaVersion is the exact github.com/goadesign/surla version the
 		// evaluator module requires, such as
-		// v0.0.0-20261031211028-8ec6e0997e6b.
+		// v0.0.0-20261102083950-a4246a33f714.
 		SurlaVersion string
 	}
 
@@ -247,7 +247,7 @@ func newData(o Options) (data, error) {
 		return data{}, fmt.Errorf("-module %q must end in a service name of lowercase letters and digits starting with a letter, other than a Go keyword or main, such as example.com/shop", o.Module)
 	}
 	if !ValidVersion(o.SurlaVersion) {
-		return data{}, fmt.Errorf("Surla version %q is not an exact module version such as v0.0.0-20261031211028-8ec6e0997e6b", o.SurlaVersion)
+		return data{}, fmt.Errorf("Surla version %q is not an exact module version such as v0.0.0-20261102083950-a4246a33f714", o.SurlaVersion)
 	}
 	mod, err := modfile.Parse("go.mod", []byte(surla.GoMod()), nil)
 	if err != nil {

@@ -1,0 +1,34 @@
+package main
+
+import (
+	"context"
+	"strings"
+	"testing"
+
+	"github.com/goadesign/surla/verify/candidate"
+)
+
+func TestLiveRejectsMixedOrIncompleteModelSettings(t *testing.T) {
+	cases := []struct {
+		name    string
+		env     map[string]string
+		wantErr string
+	}{
+		{name: "none", env: nil, wantErr: "no model for the live [[.Name]]"},
+		{name: "gateway and provider", env: map[string]string{"SURLA_LIVE_MODEL_GATEWAY": "127.0.0.1:9090", "SURLA_LIVE_MODEL_PROVIDER": "anthropic"},
+			wantErr: "both a model gateway and a model provider"},
+		{name: "gateway and name", env: map[string]string{"SURLA_LIVE_MODEL_GATEWAY": "127.0.0.1:9090", "SURLA_LIVE_MODEL_NAME": "m"},
+			wantErr: "both a model gateway and a model provider"},
+		{name: "provider without name", env: map[string]string{"SURLA_LIVE_MODEL_PROVIDER": "anthropic"}, wantErr: "needs both a model provider and a model name"},
+		{name: "name without provider", env: map[string]string{"SURLA_LIVE_MODEL_NAME": "m"}, wantErr: "needs both a model provider and a model name"},
+		{name: "unknown provider", env: map[string]string{"SURLA_LIVE_MODEL_PROVIDER": "other", "SURLA_LIVE_MODEL_NAME": "m"}, wantErr: `unsupported model provider "other"`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := live(context.Background(), candidate.Artifact{}, "k", func(name string) string { return tc.env[name] })
+			if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+				t.Errorf("error is %v, want one containing %q", err, tc.wantErr)
+			}
+		})
+	}
+}

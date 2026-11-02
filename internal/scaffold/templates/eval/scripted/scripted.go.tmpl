@@ -51,6 +51,9 @@ type (
 		Known bool
 		// Answer is the final answer; empty on the first step.
 		Answer string
+		// System is the text of the system messages the request carried,
+		// so a scenario can check which prompt text the [[.Name]] sent.
+		System string
 	}
 
 	// stream replays precomputed chunks and their response.
@@ -103,7 +106,7 @@ func (m *Model) Stream(_ context.Context, req *model.Request) (model.Streamer, e
 		if err != nil {
 			return nil, fmt.Errorf("encode lookup_price arguments: %w", err)
 		}
-		m.record(Exchange{Item: item, CallID: callID})
+		m.record(Exchange{Item: item, CallID: callID, System: systemText(req.Messages)})
 		call := model.ToolCall{ID: callID, Name: toolName, Payload: args}
 		return reply(nil, &call), nil
 	}
@@ -122,8 +125,24 @@ func (m *Model) Stream(_ context.Context, req *model.Request) (model.Streamer, e
 	if known {
 		answer = fmt.Sprintf("[scripted] %s costs $%d.%02d.", strings.ToUpper(item[:1])+item[1:], cents/100, cents%100)
 	}
-	m.record(Exchange{Item: item, CallID: callID, Result: string(content), Known: known, Answer: answer})
+	m.record(Exchange{Item: item, CallID: callID, Result: string(content), Known: known, Answer: answer, System: systemText(req.Messages)})
 	return reply(&answer, nil), nil
+}
+
+// systemText joins the text parts of the request's system messages.
+func systemText(msgs []*model.Message) string {
+	var b strings.Builder
+	for _, msg := range msgs {
+		if msg.Role != model.ConversationRoleSystem {
+			continue
+		}
+		for _, part := range msg.Parts {
+			if text, ok := part.(model.TextPart); ok {
+				b.WriteString(text.Text)
+			}
+		}
+	}
+	return b.String()
 }
 
 // record appends one exchange.

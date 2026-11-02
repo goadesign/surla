@@ -1,0 +1,168 @@
+package acceptance
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"io"
+	"net"
+	"sync"
+	"time"
+)
+
+// forwarder relays TCP connections from a loopback port to a model gateway
+// on another host. The candidate sandbox lets the [[.Name]] connect only to
+// loopback ports, so a live [[.Name]] reaches a remote gateway through it. It
+// copies bytes only: it knows no protocol and adds no credentials.
+type forwarder struct {
+	// ln accepts the [[.Name]]'s connections on 127.0.0.1.
+	ln net.Listener
+	// dest is the gateway address every connection is relayed to.
+	dest string
+	// ctx is canceled by close; it bounds every dial.
+	ctx    context.Context
+	cancel context.CancelFunc
+	// mu guards closed and conns, so a connection accepted or dialed while
+	// close runs is either registered before close closes it or closed by
+	// its own goroutine.
+	mu     sync.Mutex
+	closed bool
+	conns  map[net.Conn]struct{}
+	// wg counts the accept loop and every connection's goroutines.
+	wg sync.WaitGroup
+	// failed receives the accept loop's error when it stops for any reason
+	// other than close.
+	failed chan error
+}
+
+// forwardDialTimeout bounds one dial to the gateway. A dial that does not
+// finish in time fails that request only, as a refused one does.
+const forwardDialTimeout = 10 * time.Second
+
+// startForwarder listens on a loopback port and relays every connection to
+// dest until close.
+func startForwarder(dest string) (*forwarder, error) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return nil, fmt.Errorf("listen for model gateway relay: %w", err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	f := &forwarder{ln: ln, dest: dest, ctx: ctx, cancel: cancel, conns: map[net.Conn]struct{}{}, failed: make(chan error, 1)}
+	f.wg.Add(1)
+	go f.accept()
+	return f, nil
+}
+
+// addr returns the loopback address the [[.Name]] connects to.
+func (f *forwarder) addr() string {
+	return f.ln.Addr().String()
+}
+
+// port returns the loopback port the [[.Name]] may connect to.
+func (f *forwarder) port() int {
+	return f.ln.Addr().(*net.TCPAddr).Port
+}
+
+// close stops accepting, cancels pending dials, closes every connection and
+// waits until every goroutine has returned.
+func (f *forwarder) close() error {
+	f.mu.Lock()
+	f.closed = true
+	conns := make([]net.Conn, 0, len(f.conns))
+	for c := range f.conns {
+		conns = append(conns, c)
+	}
+	f.mu.Unlock()
+	f.cancel()
+	err := f.ln.Close()
+	for _, c := range conns {
+		c.Close()
+	}
+	f.wg.Wait()
+	if errors.Is(err, net.ErrClosed) {
+		return nil
+	}
+	return err
+}
+
+// accept relays each accepted connection until the listener closes. An
+// accept error before close ends the forwarder and is reported on failed.
+func (f *forwarder) accept() {
+	defer f.wg.Done()
+	for {
+		conn, err := f.ln.Accept()
+		if err != nil {
+			f.mu.Lock()
+			closed := f.closed
+			f.mu.Unlock()
+			if !closed {
+				f.failed <- fmt.Errorf("model gateway relay stopped accepting: %w", err)
+			}
+			return
+		}
+		if !f.track(conn) {
+			conn.Close()
+			continue
+		}
+		f.wg.Add(1)
+		go f.relay(conn)
+	}
+}
+
+// relay dials the gateway for one accepted connection and copies bytes both
+// ways. A failed dial closes the accepted connection, so the [[.Name]]'s
+// request fails; nothing is retried.
+func (f *forwarder) relay(conn net.Conn) {
+	defer f.wg.Done()
+	defer f.untrackAndClose(conn)
+	ctx, cancel := context.WithTimeout(f.ctx, forwardDialTimeout)
+	upstream, err := (&net.Dialer{}).DialContext(ctx, "tcp", f.dest)
+	cancel()
+	if err != nil {
+		return
+	}
+	if !f.track(upstream) {
+		upstream.Close()
+		return
+	}
+	defer f.untrackAndClose(upstream)
+	var copies sync.WaitGroup
+	copies.Add(2)
+	go copyHalf(&copies, upstream, conn)
+	go copyHalf(&copies, conn, upstream)
+	copies.Wait()
+}
+
+// track registers c unless close has begun; it reports whether it did.
+func (f *forwarder) track(c net.Conn) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.closed {
+		return false
+	}
+	f.conns[c] = struct{}{}
+	return true
+}
+
+// untrackAndClose forgets and closes c.
+func (f *forwarder) untrackAndClose(c net.Conn) {
+	f.mu.Lock()
+	delete(f.conns, c)
+	f.mu.Unlock()
+	c.Close()
+}
+
+// copyHalf copies src to dst and then closes dst's write side, so the other
+// end sees end of stream while the opposite direction keeps flowing.
+func copyHalf(wg *sync.WaitGroup, dst, src net.Conn) {
+	defer wg.Done()
+	if _, err := io.Copy(dst, src); err != nil {
+		dst.Close()
+		return
+	}
+	if tcp, ok := dst.(*net.TCPConn); ok {
+		if err := tcp.CloseWrite(); err != nil {
+			dst.Close()
+		}
+	}
+}
