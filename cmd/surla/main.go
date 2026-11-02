@@ -1,6 +1,7 @@
 // Command surla runs the Surla MCP software factory control-plane server
-// and CLI utilities (`surla init`, `surla serve`, `surla preview`, `surla diff`,
-// `surla verify` and `surla approve`). Run `surla help` for usage.
+// and CLI utilities (`surla init`, `surla serve`, `surla preview`,
+// `surla preview-change`, `surla diff`, `surla verify` and `surla approve`).
+// Run `surla help` for usage.
 package main
 
 import (
@@ -97,16 +98,18 @@ Usage:
 
 Commands:
 
-  init     create a starter service with an agent and an evaluator suite
-  serve    run the Surla server that MCP clients (coding agents) connect to
-  preview  print the architecture, agent policies and tool contracts a design
-           module declares; needs no server and no model key
-  diff     compare the designs in two module directories
-  verify   build a candidate commit and run an evaluator suite against it,
-           printing a verification report
-  approve  check that a saved verification report passed and matches the
-           change being promoted
-  help     print this text, or "surla help <command>" for a command's flags
+  init            create a starter service with an agent and an evaluator suite
+  serve           run the Surla server that MCP clients (coding agents) connect to
+  preview         print the architecture, agent policies and tool contracts a design
+                  module declares; needs no server and no model key
+  preview-change  send a design module to a Surla server to preview its
+                  architecture and optional swarm roster for a Change Card
+  diff            compare the designs in two module directories
+  verify          build a candidate commit and run an evaluator suite against it,
+                  printing a verification report
+  approve         check that a saved verification report passed and matches the
+                  change being promoted
+  help            print this text, or "surla help <command>" for a command's flags
 `
 
 // helpWords are the arguments that ask for top-level usage: `surla help`,
@@ -167,6 +170,8 @@ func dispatch(sub string, args []string, stdout io.Writer) error {
 		return runServe(args)
 	case "preview":
 		return runPreview(args, stdout)
+	case "preview-change":
+		return runPreviewChange(args, stdout, os.Getenv)
 	case "diff":
 		return runDiff(args)
 	case "verify":
@@ -667,25 +672,45 @@ func isSHA256Hex(s string) bool {
 // readModuleSnapshot reads the module rooted at dir into a design snapshot:
 // its go.mod, go.sum and every non-test .go file, keyed by slash-separated
 // path relative to dir. Hidden, vendor and testdata directories and nested
-// modules are skipped. A symbolic link anywhere in the module is an error, and
-// files are opened without following links, so the snapshot holds only files
-// that really are inside dir.
-func readModuleSnapshot(dir string) (map[string]string, error) {
-	root, err := filepath.Abs(dir)
+// modules are skipped. A symbolic link at dir or anywhere in the module is an
+// error, and both directory inspection and regular-file reads go through one
+// os.Root handle opened on dir, so a replaced parent directory cannot escape
+// dir. Raw file bytes are preserved as read for local preview and diff.
+func readModuleSnapshot(dir string) (files map[string]string, err error) {
+	cleanDir := filepath.Clean(dir)
+	lstatInfo, err := os.Lstat(cleanDir)
 	if err != nil {
 		return nil, err
 	}
+	if lstatInfo.Mode()&fs.ModeSymlink != 0 {
+		return nil, fmt.Errorf("%s is a symbolic link; a design snapshot holds only regular files", dir)
+	}
+	root, err := os.OpenRoot(cleanDir)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { err = errors.Join(err, root.Close()) }()
+	rootInfo, err := root.Stat(".")
+	if err != nil {
+		return nil, err
+	}
+	if !os.SameFile(lstatInfo, rootInfo) {
+		return nil, fmt.Errorf("%s changed while opening design snapshot root", dir)
+	}
+	return readModuleSnapshotFromRoot(cleanDir, root)
+}
+
+// readModuleSnapshotFromRoot walks root and reads its module snapshot files
+// relative to root. cleanDir is used only to format diagnostic paths.
+func readModuleSnapshotFromRoot(cleanDir string, root *os.Root) (map[string]string, error) {
 	files := map[string]string{}
-	err = filepath.WalkDir(root, func(p string, d fs.DirEntry, walkErr error) error {
+	err := fs.WalkDir(root.FS(), ".", func(rel string, d fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
 		}
-		rel, err := filepath.Rel(root, p)
-		if err != nil {
-			return err
-		}
 		if d.Type()&fs.ModeSymlink != 0 {
-			return fmt.Errorf("%s is a symbolic link; a design snapshot holds only regular files", p)
+			return fmt.Errorf("%s is a symbolic link; a design snapshot holds only regular files",
+				filepath.Join(cleanDir, filepath.FromSlash(rel)))
 		}
 		if d.IsDir() {
 			name := d.Name()
@@ -693,35 +718,51 @@ func readModuleSnapshot(dir string) (map[string]string, error) {
 			case rel == ".":
 				return nil
 			case strings.HasPrefix(name, ".") || name == "vendor" || name == "testdata":
-				return filepath.SkipDir
+				return fs.SkipDir
 			}
-			if _, err := os.Lstat(filepath.Join(p, "go.mod")); err == nil {
-				return filepath.SkipDir
+			if _, err := root.Lstat(filepath.FromSlash(rel + "/go.mod")); err == nil {
+				return fs.SkipDir
 			}
 			return nil
 		}
-		slash := filepath.ToSlash(rel)
-		keep := slash == "go.mod" || slash == "go.sum" ||
-			(strings.HasSuffix(slash, ".go") && !strings.HasSuffix(slash, "_test.go"))
+		keep := rel == "go.mod" || rel == "go.sum" ||
+			(strings.HasSuffix(rel, ".go") && !strings.HasSuffix(rel, "_test.go"))
 		if !keep || !d.Type().IsRegular() {
 			return nil
 		}
-		f, err := os.OpenFile(p, os.O_RDONLY|syscall.O_NOFOLLOW, 0)
+		f, err := openSnapshotFile(root, rel)
 		if err != nil {
-			return fmt.Errorf("read %s: %w", p, err)
+			return fmt.Errorf("read %s: %w", filepath.Join(cleanDir, filepath.FromSlash(rel)), err)
 		}
-		defer f.Close()
-		b, err := io.ReadAll(f)
-		if err != nil {
-			return fmt.Errorf("read %s: %w", p, err)
+		b, readErr := io.ReadAll(f)
+		if err := errors.Join(readErr, f.Close()); err != nil {
+			return fmt.Errorf("read %s: %w", filepath.Join(cleanDir, filepath.FromSlash(rel)), err)
 		}
-		files[slash] = string(b)
+		files[rel] = string(b)
 		return nil
 	})
 	if err != nil {
 		return nil, err
 	}
 	return files, nil
+}
+
+// openSnapshotFile opens the regular file at slash-separated path rel inside
+// root without following symbolic links or blocking on special files, and
+// checks that the opened descriptor is a regular file.
+func openSnapshotFile(root *os.Root, rel string) (*os.File, error) {
+	f, err := root.OpenFile(filepath.FromSlash(rel), os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
+	if err != nil {
+		return nil, err
+	}
+	info, err := f.Stat()
+	if err == nil && !info.Mode().IsRegular() {
+		err = fmt.Errorf("%s is not a regular file", rel)
+	}
+	if err != nil {
+		return nil, errors.Join(err, f.Close())
+	}
+	return f, nil
 }
 
 // serveOptions builds the control-plane Options for `surla serve` from cfg.
