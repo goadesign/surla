@@ -68,12 +68,12 @@ func TestStarterLiveTargetAppliesADraftToTheNextModelRequest(t *testing.T) {
 	require.NoError(t, err, string(out))
 
 	gatewayAddr := serveEchoGateway(t)
-	cardsDir := t.TempDir()
+	cardsDir, runsDir := t.TempDir(), t.TempDir()
 	cp, err := controlplane.New(controlplane.Options{
 		CardsDir: cardsDir,
 		Analyzer: scriptedAnalyzer{},
 		Verification: &controlplane.VerificationConfig{
-			RunsDir: t.TempDir(),
+			RunsDir: runsDir,
 			Plan: verify.Plan{
 				CandidateRepo: dir, CandidateModule: ".", Binaries: map[string]string{name: "./cmd/" + name},
 				SuiteRepo: dir, SuiteCommit: commit, SuiteModule: "eval", SuiteCommand: "./cmd/" + name + "-evals",
@@ -131,10 +131,50 @@ func TestStarterLiveTargetAppliesADraftToTheNextModelRequest(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, stopped.Stopped)
 
-	assertVerified(t, cp, alice, card, c2, "the committed text verifies for the same card")
+	assertVerified(t, cp, alice, runsDir, card, c2, "the committed text verifies for the same card")
 
 	skipped := confirmCard(t, cp, alice, "starter-skip-cp3")
-	assertVerified(t, cp, alice, skipped, commit, "a card that skips CP3 verifies C1 directly")
+	assertVerified(t, cp, alice, runsDir, skipped, commit, "a card that skips CP3 verifies C1 directly")
+}
+
+// keepRun copies a failed run's directory to $SURLA_TEST_KEEP_RUNS, when it
+// is set, so its evidence outlives the test's temporary directories.
+func keepRun(t *testing.T, runsDir, runID string) {
+	t.Helper()
+	dest := os.Getenv("SURLA_TEST_KEEP_RUNS")
+	if dest == "" {
+		return
+	}
+	out, err := exec.Command("cp", "-R", filepath.Join(runsDir, runID), dest).CombinedOutput()
+	if err != nil {
+		t.Logf("keep run %s: %v: %s", runID, err, out)
+		return
+	}
+	t.Logf("kept run %s in %s", runID, dest)
+}
+
+// buildLogs returns the build logs a verification run left, so a failed run
+// reports the actual compiler output.
+func buildLogs(t *testing.T, runsDir, runID string) string {
+	t.Helper()
+	evidence, err := filepath.Glob(filepath.Join(runsDir, runID, "work", "evidence", "*"))
+	if err != nil {
+		return err.Error()
+	}
+	runLogs, err := filepath.Glob(filepath.Join(runsDir, runID, "*.log"))
+	if err != nil {
+		return err.Error()
+	}
+	logs := append(runLogs, evidence...)
+	var b strings.Builder
+	for _, l := range logs {
+		data, err := os.ReadFile(l)
+		if err != nil || len(data) == 0 {
+			continue
+		}
+		b.WriteString("== " + filepath.Base(l) + "\n" + string(data) + "\n")
+	}
+	return b.String()
 }
 
 // Analyze returns a fixed analysis with no open questions.
@@ -168,7 +208,7 @@ func confirmCard(t *testing.T, cp *controlplane.ControlPlane, ctx context.Contex
 // assertVerified runs verify_change for commit on card and waits, within a
 // phase deadline, until the run completes. It fails at once on a run that
 // ends without a report or a report that does not pass.
-func assertVerified(t *testing.T, cp *controlplane.ControlPlane, ctx context.Context, card *gensurla.ChangeCardResult, commit, why string) {
+func assertVerified(t *testing.T, cp *controlplane.ControlPlane, ctx context.Context, runsDir string, card *gensurla.ChangeCardResult, commit, why string) {
 	t.Helper()
 	run, err := cp.VerifyChange(ctx, &gensurla.VerifyChangePayload{ChangeID: card.ChangeID, RequestRevision: card.RequestRevision, CandidateCommit: commit})
 	require.NoError(t, err)
@@ -184,7 +224,8 @@ func assertVerified(t *testing.T, cp *controlplane.ControlPlane, ctx context.Con
 			return
 		}
 		if failed, ok := status.State.AsNotCompleted(); ok {
-			t.Fatalf("%s: the run ended without a report: %+v", why, failed)
+			keepRun(t, runsDir, run.RunID)
+			t.Fatalf("%s: the run ended without a report: %+v\n%s", why, failed, buildLogs(t, runsDir, run.RunID))
 		}
 		if _, ok := status.State.AsRunning(); !ok {
 			t.Fatalf("%s: unexpected verification state %v", why, status.State.Kind())
