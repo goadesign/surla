@@ -189,6 +189,12 @@ func (scriptedAnalyzer) Analyze(context.Context, string, string) (controlplane.C
 	}, nil
 }
 
+// Revise is never called by this journey; it returns the same fixed analysis,
+// so the scripted analyzer satisfies controlplane.CP1Analyzer.
+func (a scriptedAnalyzer) Revise(ctx context.Context, _ controlplane.CP1PriorCard, prompt, design string) (controlplane.CP1SemanticAnalysis, error) {
+	return a.Analyze(ctx, prompt, design)
+}
+
 // confirmCard proposes changeID with the scripted analyzer and confirms it,
 // returning the confirmed card.
 func confirmCard(t *testing.T, cp *controlplane.ControlPlane, ctx context.Context, changeID string) *gensurla.ChangeCardResult {
