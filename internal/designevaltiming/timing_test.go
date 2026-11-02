@@ -163,6 +163,7 @@ func TestTimingProbeDirect(t *testing.T) {
 			res, err = designeval.Evaluate(ctx, files)
 			return err
 		})
+		m.TempEntries = tempEntries(t, id.TempDir)
 		if m.Outcome == "ok" {
 			m.Result = evaluationFacts(t, res)
 		}
@@ -179,6 +180,7 @@ func TestTimingProbeDirect(t *testing.T) {
 		rep, err = diff.Compare(ctx, files, changed)
 		return err
 	})
+	m.TempEntries = tempEntries(t, id.TempDir)
 	if m.Outcome == "ok" {
 		m.Result = resultFacts{Digest: digestJSON(t, rep), Facts: append([]string{fmt.Sprintf("has_changes=%t", rep.HasChanges)}, prefixed("added=", rep.AddedDeclarations)...)}
 	}
@@ -237,7 +239,10 @@ func TestTimingProbePreviewHTTP(t *testing.T) {
 		statuses = append(statuses, rec.status)
 		mu.Unlock()
 	}))
-	t.Cleanup(srv.Close)
+	// httptest.Server.Close waits for active handlers, and ControlPlane.Close
+	// does not cancel a running preview, so closing is bounded: a server that
+	// cannot close is reported, with what TMPDIR holds, as unresolved.
+	t.Cleanup(func() { closeServer(t, id, srv) })
 	u, err := url.Parse(srv.URL)
 	if err != nil {
 		t.Fatal(err)
@@ -296,7 +301,7 @@ func TestTimingProbePreviewHTTP(t *testing.T) {
 			requirePreviewFixture(t, probe, out)
 		}
 	}
-	srv.Close()
+	closeServer(t, id, srv)
 	if err := closeCP(); err != nil {
 		t.Fatal(err)
 	}
@@ -361,8 +366,9 @@ func fixtures(t *testing.T) (files, changed map[string]string) {
 	return testmodule.Snapshot(t, "", design), changed
 }
 
-// measure times only op, under operationTimeout, and then lists the
-// probe's TMPDIR. Result evidence is computed by the caller afterwards.
+// measure times only op, under operationTimeout. The caller lists the
+// probe's TMPDIR and computes result evidence once the operation, and any
+// server request it started, have finished.
 func measure(t *testing.T, id identity, probe string, inputs []map[string]string, op func(context.Context) error) measurement {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(t.Context(), operationTimeout)
@@ -370,7 +376,7 @@ func measure(t *testing.T, id identity, probe string, inputs []map[string]string
 	start := time.Now()
 	err := op(ctx)
 	elapsed := time.Since(start).Seconds()
-	m := measurement{identity: id, Probe: probe, Seconds: elapsed, Outcome: "ok", TempEntries: tempEntries(t, id.TempDir)}
+	m := measurement{identity: id, Probe: probe, Seconds: elapsed, Outcome: "ok"}
 	for _, in := range inputs {
 		m.Inputs = append(m.Inputs, designeval.SnapshotDigest(in))
 	}
@@ -381,6 +387,29 @@ func measure(t *testing.T, id identity, probe string, inputs []map[string]string
 		m.Outcome = err.Error()
 	}
 	return m
+}
+
+// serverCloseTimeout bounds closing the test server.
+const serverCloseTimeout = time.Minute
+
+// closeServer closes srv within serverCloseTimeout. When it cannot, a handler
+// is still running, so its evaluation's build processes are unresolved: it
+// prints server_close_unresolved with the TMPDIR listing and fails the test,
+// which stops the experiment. It never claims those processes stopped.
+func closeServer(t *testing.T, id identity, srv *httptest.Server) {
+	t.Helper()
+	done := make(chan struct{})
+	go func() {
+		srv.Close()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(serverCloseTimeout):
+		emit(t, measurement{identity: id, Probe: "server_close_unresolved",
+			Outcome: "a preview handler is still running; its build processes are unresolved", TempEntries: entryNames(id.TempDir)})
+		t.Errorf("the test server did not close within %s", serverCloseTimeout)
+	}
 }
 
 // requireFixture fails the test unless an evaluation produced the fixture's
@@ -510,6 +539,20 @@ func tempEntries(t *testing.T, dir string) []string {
 			t.Fatalf("size %s: %v", e.Name(), err)
 		}
 		out = append(out, fmt.Sprintf("%s=%dB", e.Name(), size))
+	}
+	return out
+}
+
+// entryNames lists dir's top-level names without sizes, for use while a
+// handler may still be removing files; a read error becomes the only entry.
+func entryNames(dir string) []string {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return []string{"list error: " + err.Error()}
+	}
+	out := make([]string, 0, len(entries))
+	for _, e := range entries {
+		out = append(out, e.Name())
 	}
 	return out
 }
