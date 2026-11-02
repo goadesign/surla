@@ -35,6 +35,11 @@ export interface UICompositionItem {
   program: string;
 }
 
+export interface UnverifiedApprovalItem {
+  approval: ApprovalItem;
+  reason: string;
+}
+
 export interface ChangeCardResult {
   ambiguities?: AmbiguityQuestion[];
   answers?: Record<string, string>;
@@ -48,6 +53,7 @@ export interface ChangeCardResult {
   status: "needs_confirmation" | "confirmed";
   summary: string;
   ui_composition?: UICompositionItem;
+  unverified_approval?: UnverifiedApprovalItem;
 }
 
 export interface AgentPolicyItem {
@@ -292,6 +298,9 @@ const GENERATED_RESULT_SCHEMAS: Record<string, JSONSchemaNode> = {
       },
       "ui_composition": {
         "$ref": "#/$defs/UICompositionItem"
+      },
+      "unverified_approval": {
+        "$ref": "#/$defs/UnverifiedApprovalItem"
       }
     },
     "$defs": {
@@ -405,6 +414,22 @@ const GENERATED_RESULT_SCHEMAS: Record<string, JSONSchemaNode> = {
             "type": "string"
           },
           "program": {
+            "type": "string"
+          }
+        }
+      },
+      "UnverifiedApprovalItem": {
+        "type": "object",
+        "required": [
+          "approval",
+          "reason"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "approval": {
+            "$ref": "#/$defs/ApprovalItem"
+          },
+          "reason": {
             "type": "string"
           }
         }

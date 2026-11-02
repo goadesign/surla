@@ -84,6 +84,48 @@ func DecodeProposeChangeRequest(mux goahttp.Muxer, decoder func(*http.Request) g
 	}
 }
 
+// EncodeReviseChangeResponse returns an encoder for responses returned by the
+// surla revise_change endpoint.
+func EncodeReviseChangeResponse(encoder func(context.Context, http.ResponseWriter) goahttp.Encoder) func(context.Context, http.ResponseWriter, any) error {
+	return func(ctx context.Context, w http.ResponseWriter, v any) error {
+		res, _ := v.(*surla.ChangeCardResult)
+		enc := encoder(ctx, w)
+		body := NewReviseChangeResponseBody(res)
+		w.WriteHeader(http.StatusOK)
+		return enc.Encode(body)
+	}
+}
+
+// DecodeReviseChangeRequest returns a decoder for requests sent to the surla
+// revise_change endpoint.
+func DecodeReviseChangeRequest(mux goahttp.Muxer, decoder func(*http.Request) goahttp.Decoder) func(*http.Request) (*surla.ReviseChangePayload, error) {
+	return func(r *http.Request) (*surla.ReviseChangePayload, error) {
+		var payload *surla.ReviseChangePayload
+		var (
+			body ReviseChangeRequestBody
+			err  error
+		)
+		err = decoder(r).Decode(&body)
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				return payload, goa.MissingPayloadError()
+			}
+			var gerr *goa.ServiceError
+			if errors.As(err, &gerr) {
+				return payload, gerr
+			}
+			return payload, goa.DecodePayloadError(err.Error())
+		}
+		err = ValidateReviseChangeRequestBody(&body)
+		if err != nil {
+			return payload, err
+		}
+		payload = NewReviseChangePayload(&body)
+
+		return payload, nil
+	}
+}
+
 // EncodeConfirmIntentResponse returns an encoder for responses returned by the
 // surla confirm_intent endpoint.
 func EncodeConfirmIntentResponse(encoder func(context.Context, http.ResponseWriter) goahttp.Encoder) func(context.Context, http.ResponseWriter, any) error {
@@ -672,6 +714,20 @@ func marshalSurlaApprovalItemToApprovalItemResponseBody(v *surla.ApprovalItem) *
 			tv := val
 			res.Artifacts[tk] = tv
 		}
+	}
+
+	return res
+}
+
+// marshalSurlaUnverifiedApprovalItemToUnverifiedApprovalItemResponseBody
+// builds a value of type *UnverifiedApprovalItemResponseBody from a value of
+// type *surla.UnverifiedApprovalItem.
+func marshalSurlaUnverifiedApprovalItemToUnverifiedApprovalItemResponseBody(v *surla.UnverifiedApprovalItem) *UnverifiedApprovalItemResponseBody {
+	res := &UnverifiedApprovalItemResponseBody{
+		Reason: v.Reason,
+	}
+	if v.Approval != nil {
+		res.Approval = marshalSurlaApprovalItemToApprovalItemResponseBody(v.Approval)
 	}
 
 	return res

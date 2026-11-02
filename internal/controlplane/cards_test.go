@@ -1,6 +1,7 @@
 package controlplane
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"os"
@@ -181,23 +182,146 @@ func TestAFailedSaveKeepsThePreviousCard(t *testing.T) {
 
 // TestASavedApprovalNeedsAPromotionTarget saves an approved card and reads it
 // from a control plane without a promotion target, which cannot check the
-// approval against current inputs and so leaves it out.
+// approval against current inputs and so reports it in UnverifiedApproval
+// rather than Approval.
 func TestASavedApprovalNeedsAPromotionTarget(t *testing.T) {
 	cp := newControlPlane(t, Options{})
-	approved := saveCard(t, cp, &gensurla.ApprovalItem{
+	recorded := &gensurla.ApprovalItem{
 		ApprovedBy: "alice@example.com", ReportDigest: strings.Repeat("d", 64), CandidateCommit: strings.Repeat("c", 40),
 		SuiteID: "orders", SuiteCommit: strings.Repeat("b", 40), Environment: "sim",
 		Artifacts: map[string]string{"orders": strings.Repeat("e", 64)}, ScenarioCount: 5,
-	})
+	}
+	approved := saveCard(t, cp, recorded)
 	got, err := cp.GetChange(WithPrincipal(context.Background(), Principal{ID: "alice@example.com"}), &gensurla.GetChangePayload{ChangeID: "chg"})
 	require.NoError(t, err)
 	assert.Nil(t, got.Approval)
+	require.NotNil(t, got.UnverifiedApproval)
+	assert.Equal(t, recorded, got.UnverifiedApproval.Approval)
+	assert.Contains(t, got.UnverifiedApproval.Reason, "-promotion-config")
 	saved, ok, err := cp.cards.load("chg")
 	require.NoError(t, err)
 	require.True(t, ok)
+	assert.Nil(t, saved.card.UnverifiedApproval)
 	assert.Equal(t, approved, saved.card, "the approval itself stays saved, unchanged")
 	approved.Approval = nil
-	assert.Equal(t, approved, got, "the rest of the card is served")
+	approved.UnverifiedApproval = got.UnverifiedApproval
+	assert.Equal(t, approved, got, "the rest of the card is served with unverified_approval")
+}
+
+// TestSavedCardCompatibilityWithPrior12FieldReader verifies that cardStore.save
+// writes only the 12 persisted Change Card fields (never UnverifiedApproval)
+// and that a strict 12-field reader with DisallowUnknownFields decodes cards
+// across nil/empty collections and optional Approval/UIComposition fields.
+func TestSavedCardCompatibilityWithPrior12FieldReader(t *testing.T) {
+	type prior12FieldCard struct {
+		ChangeID           string
+		Status             string
+		Prompt             string
+		Summary            string
+		Ambiguities        []*gensurla.AmbiguityQuestion
+		Answers            map[string]string
+		Examples           []*gensurla.ExampleItem
+		PreservedBehaviors []string
+		ConfirmedBy        *string
+		RequestRevision    string
+		UIComposition      *gensurla.UICompositionItem
+		Approval           *gensurla.ApprovalItem
+	}
+	type priorCardFile struct {
+		Card         *prior12FieldCard `json:"card"`
+		Owner        string            `json:"owner"`
+		DesignSource string            `json:"design_source"`
+	}
+
+	confirmedBy := "alice@example.com"
+	cases := []struct {
+		name string
+		card *gensurla.ChangeCardResult
+	}{
+		{
+			name: "confirmed with approval, ui_composition, and populated collections",
+			card: &gensurla.ChangeCardResult{
+				ChangeID: "chg-full",
+				Status:   StatusConfirmed,
+				Prompt:   "Refunds up to $50 are instant.",
+				Summary:  "Instant refunds up to $50.",
+				Ambiguities: []*gensurla.AmbiguityQuestion{{
+					ID: "chg-full-ambiguity-01", Question: "Include tax?", Options: []string{"yes", "no"},
+				}},
+				Answers: map[string]string{"chg-full-ambiguity-01": "yes"},
+				Examples: []*gensurla.ExampleItem{{
+					ID: "chg-full-check-01", Scenario: "Limit", InputSummary: "$50",
+					ExpectedOutcome: "Instant", VerificationKind: "deterministic",
+				}},
+				PreservedBehaviors: []string{"Over $50 requires manager."},
+				ConfirmedBy:        &confirmedBy,
+				UIComposition: &gensurla.UICompositionItem{
+					Program: "root = Stack([])", ComposedForRevision: "rev-placeholder",
+				},
+				Approval: &gensurla.ApprovalItem{
+					ApprovedBy: "alice@example.com", ReportDigest: strings.Repeat("a", 64),
+					CandidateCommit: strings.Repeat("b", 40), SuiteID: "orders",
+					SuiteCommit: strings.Repeat("c", 40), Environment: "sim",
+					Artifacts: map[string]string{"orders": strings.Repeat("d", 64)}, ScenarioCount: 3,
+				},
+				UnverifiedApproval: &gensurla.UnverifiedApprovalItem{
+					Approval: &gensurla.ApprovalItem{ApprovedBy: "must-not-persist"},
+					Reason:   "response-only field must never be written to disk",
+				},
+			},
+		},
+		{
+			name: "needs_confirmation with nil optional fields and nil/empty collections",
+			card: &gensurla.ChangeCardResult{
+				ChangeID: "chg-minimal",
+				Status:   StatusNeedsConfirmation,
+				Prompt:   "Add audit log.",
+				Summary:  "Write audit log entries.",
+				Examples: []*gensurla.ExampleItem{{
+					ID: "chg-minimal-check-01", Scenario: "Audit", InputSummary: "Action",
+					ExpectedOutcome: "Logged", VerificationKind: "deterministic",
+				}},
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cp := newControlPlane(t, Options{})
+			rev, err := computeCanonicalRevision(tc.card, "alice@example.com", "package design")
+			require.NoError(t, err)
+			tc.card.RequestRevision = rev
+			if tc.card.UIComposition != nil {
+				tc.card.UIComposition.ComposedForRevision = rev
+			}
+			require.NoError(t, cp.cards.save(storedChangeCard{
+				card: tc.card, owner: "alice@example.com", designSource: "package design",
+			}))
+
+			raw, err := os.ReadFile(cp.cards.path(tc.card.ChangeID))
+			require.NoError(t, err)
+			assert.NotContains(t, string(raw), "UnverifiedApproval")
+			assert.NotContains(t, string(raw), "unverified_approval")
+
+			var oldFormat priorCardFile
+			dec := json.NewDecoder(bytes.NewReader(raw))
+			dec.DisallowUnknownFields()
+			require.NoError(t, dec.Decode(&oldFormat))
+			require.NotNil(t, oldFormat.Card)
+			assert.Equal(t, tc.card.ChangeID, oldFormat.Card.ChangeID)
+			assert.Equal(t, tc.card.RequestRevision, oldFormat.Card.RequestRevision)
+			assert.Equal(t, tc.card.Approval, oldFormat.Card.Approval)
+			assert.Equal(t, tc.card.UIComposition, oldFormat.Card.UIComposition)
+
+			loaded, ok, err := cp.cards.load(tc.card.ChangeID)
+			require.NoError(t, err)
+			require.True(t, ok)
+			assert.Nil(t, loaded.card.UnverifiedApproval)
+			expected := *tc.card
+			expected.UnverifiedApproval = nil
+			assert.Equal(t, &expected, loaded.card)
+		})
+	}
 }
 
 // Analyze waits for release, then returns a card with no open questions.
@@ -211,6 +335,11 @@ func (a *heldAnalyzer) Analyze(context.Context, string, string) (CP1SemanticAnal
 			ExpectedOutcome: "Instant store credit", VerificationKind: "deterministic",
 		}},
 	}, nil
+}
+
+// Revise delegates to Analyze so heldAnalyzer satisfies CP1Analyzer.
+func (a *heldAnalyzer) Revise(ctx context.Context, _ CP1PriorCard, promptText, designSource string) (CP1SemanticAnalysis, error) {
+	return a.Analyze(ctx, promptText, designSource)
 }
 
 // saveCard saves a confirmed card "chg" owned by alice, with approval, in

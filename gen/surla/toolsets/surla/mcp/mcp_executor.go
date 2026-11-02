@@ -39,6 +39,8 @@ func NewMCPExecutor(caller mcpruntime.Caller) runtime.ToolCallExecutor {
 			return runtime.ExecuteMCPTool(ctx, caller, call, "preview_architecture", gensurla.SpecPreviewArchitecture())
 		case gensurla.ProposeChange:
 			return runtime.ExecuteMCPTool(ctx, caller, call, "propose_change", gensurla.SpecProposeChange())
+		case gensurla.ReviseChange:
+			return runtime.ExecuteMCPTool(ctx, caller, call, "revise_change", gensurla.SpecReviseChange())
 		case gensurla.StartLiveTarget:
 			return runtime.ExecuteMCPTool(ctx, caller, call, "start_live_target", gensurla.SpecStartLiveTarget())
 		case gensurla.StopLiveTarget:

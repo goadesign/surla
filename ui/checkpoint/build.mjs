@@ -254,6 +254,8 @@ function generateTypesModule() {
 
   if (
     JSON.stringify(rawByTool["surla.propose_change"]) !==
+      JSON.stringify(rawByTool["surla.revise_change"]) ||
+    JSON.stringify(rawByTool["surla.propose_change"]) !==
       JSON.stringify(rawByTool["surla.confirm_intent"]) ||
     JSON.stringify(rawByTool["surla.propose_change"]) !==
       JSON.stringify(rawByTool["surla.get_change"]) ||
@@ -261,7 +263,7 @@ function generateTypesModule() {
       JSON.stringify(rawByTool["surla.approve_merge"])
   ) {
     throw new Error(
-      "ChangeCardResult tool schemas (propose_change, confirm_intent, get_change, approve_merge) diverged"
+      "ChangeCardResult tool schemas (propose_change, revise_change, confirm_intent, get_change, approve_merge) diverged"
     );
   }
   if (

@@ -279,7 +279,7 @@ func TestWriteServeStatusNamesTheBoundAddressAndOffFeatures(t *testing.T) {
 			want: `surla: serving on http://127.0.0.1:51234
 surla: connect MCP clients to http://127.0.0.1:51234/mcp with the bearer token
 surla: saving Change Cards in .surla/cards
-surla: CP1 (propose_change): off — no model is configured to analyze change requests (set -model-provider and -model-name, or -model-gateway-addr); confirm_intent and get_change are on
+surla: CP1 (propose_change, revise_change): off — no model is configured to analyze change requests (set -model-provider and -model-name, or -model-gateway-addr); confirm_intent and get_change are on
 surla: CP2 (preview_architecture): design preview is on; swarm roster is off (set -swarm-profiles)
 surla: CP3 (draft_override): compiled_rule is on; prompt_template is off (surla serve binds no target prompt updater; to change a prompt, edit its source text, commit, and verify the commit)
 surla: CP4 (verify_change, get_verification): off (set -verification-config, or run surla verify on the CLI)
@@ -293,7 +293,7 @@ surla: CP5 (approve_merge): off (set -promotion-config, or run surla approve on 
 			want: `surla: serving on http://localhost:8090
 surla: connect MCP clients to http://localhost:8090/mcp with the bearer token
 surla: saving Change Cards in .surla/cards
-surla: CP1 (propose_change): off — no model is configured to analyze change requests (set -model-provider and -model-name, or -model-gateway-addr); confirm_intent and get_change are on
+surla: CP1 (propose_change, revise_change): off — no model is configured to analyze change requests (set -model-provider and -model-name, or -model-gateway-addr); confirm_intent and get_change are on
 surla: CP2 (preview_architecture): design preview is on; swarm roster is off (set -swarm-profiles)
 surla: CP3 (draft_override): compiled_rule is on; prompt_template is off (surla serve binds no target prompt updater; to change a prompt, edit its source text, commit, and verify the commit)
 surla: CP4 (verify_change, get_verification): off (set -verification-config, or run surla verify on the CLI)
@@ -310,7 +310,7 @@ surla: CP5 (approve_merge): off (set -promotion-config, or run surla approve on 
 			want: `surla: serving on http://127.0.0.1:8090
 surla: connect MCP clients to http://127.0.0.1:8090/mcp with the bearer token
 surla: saving Change Cards in .surla/cards
-surla: CP1 (propose_change): off — no model is configured to analyze change requests (set -model-provider and -model-name, or -model-gateway-addr); confirm_intent and get_change are on
+surla: CP1 (propose_change, revise_change): off — no model is configured to analyze change requests (set -model-provider and -model-name, or -model-gateway-addr); confirm_intent and get_change are on
 surla: CP2 (preview_architecture): on (1 swarm profile loaded; pass builders in the request to propose a roster)
 surla: CP3 (draft_override): compiled_rule is on; prompt_template is off (surla serve binds no target prompt updater; to change a prompt, edit its source text, commit, and verify the commit)
 surla: CP4 (verify_change, get_verification): off (set -verification-config, or run surla verify on the CLI)
@@ -331,7 +331,7 @@ surla: CP5 (approve_merge): off (set -promotion-config, or run surla approve on 
 			want: `surla: serving on http://localhost:8090
 surla: connect MCP clients to http://localhost:8090/mcp with the bearer token
 surla: saving Change Cards in /var/lib/surla/cards
-surla: CP1 (propose_change, confirm_intent, get_change): on
+surla: CP1 (propose_change, revise_change, confirm_intent, get_change): on
 surla: CP2 (preview_architecture): on (2 swarm profiles loaded; pass builders in the request to propose a roster)
 surla: CP3 (draft_override): on
 surla: CP4 (verify_change, get_verification): on (runs in /var/lib/surla/runs)
@@ -359,7 +359,7 @@ surla: CP5 (approve_merge): on
 		want: `surla: serving on http://127.0.0.1:8090
 surla: connect MCP clients to http://127.0.0.1:8090/mcp with the bearer token
 surla: saving Change Cards in ` + cardsDir + `
-surla: CP1 (propose_change): off — no model is configured to analyze change requests (set -model-provider and -model-name, or -model-gateway-addr); confirm_intent and get_change are on
+surla: CP1 (propose_change, revise_change): off — no model is configured to analyze change requests (set -model-provider and -model-name, or -model-gateway-addr); confirm_intent and get_change are on
 surla: CP2 (preview_architecture): design preview is on; swarm roster is off (set -swarm-profiles)
 surla: CP3 (draft_override, start_live_target): compiled_rule is on; prompt_template is on once start_live_target runs a candidate commit (live targets in ` + liveRoot + `)
 surla: CP3: an earlier surla serve using this cards directory left live target directory ` + leftover + `; its files were kept

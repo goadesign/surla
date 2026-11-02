@@ -21,6 +21,7 @@ import { Alert, Badge, Button, Card } from "./shadcn";
 
 export interface CP1EditorProps {
   card: ChangeCardResult;
+  priorCard: ChangeCardResult | null;
   draftAnswers: Record<string, string>;
   draftExamples: ExampleItem[];
   rpcInFlight: boolean;
@@ -121,6 +122,7 @@ function FieldTextarea({
 // workspace (when present), and the canonical shadcn/ui CP1 inspector.
 export function CP1EditorView({
   card,
+  priorCard,
   draftAnswers,
   draftExamples,
   rpcInFlight,
@@ -137,6 +139,9 @@ export function CP1EditorView({
   const draftDirty = isDraftDirty(card, draftAnswers, draftExamples);
   const artifactNames = card.approval
     ? Object.keys(card.approval.artifacts || {}).sort()
+    : [];
+  const unverifiedArtifactNames = card.unverified_approval
+    ? Object.keys(card.unverified_approval.approval.artifacts || {}).sort()
     : [];
 
   const ctxValue: CP1DraftContextValue = {
@@ -191,6 +196,7 @@ export function CP1EditorView({
         <p>
           <Badge>{card.status === "confirmed" ? "Confirmed" : "Needs confirmation"}</Badge>
           {card.approval ? <Badge variant="accent">Approval recorded</Badge> : null}
+          {card.unverified_approval ? <Badge>Approval unverified</Badge> : null}
           <strong>Summary: </strong>
           {card.summary}
         </p>
@@ -277,6 +283,148 @@ export function CP1EditorView({
               ))}
             </ul>
           </details>
+        </Card>
+      ) : null}
+
+      {card.unverified_approval ? (
+        <Card
+          id="surla-cp5-unverified-approval"
+          className="surla-card"
+          role="region"
+          aria-label="Unverified Checkpoint 5 Promotion Approval"
+        >
+          <div className="surla-field-row">
+            <h3>Saved Checkpoint 5 Promotion Approval (Unverified)</h3>
+            <Badge>Inputs not verified on this read</Badge>
+            <Badge>No merge or deploy side effect</Badge>
+          </div>
+          <Alert id="surla-cp5-unverified-approval-reason" variant="warning" role="status">
+            <strong>Saved approval could not be verified: </strong>
+            {card.unverified_approval.reason}
+          </Alert>
+          <Button
+            id="surla-cp5-refresh-approval"
+            disabled={rpcInFlight}
+            onClick={onLoadLatestCard}
+          >
+            Check current approval
+          </Button>
+          {draftDirty ? (
+            <Alert id="surla-cp5-approval-dirty-warning" variant="warning" role="status">
+              <strong>Unsaved draft edits detected: </strong>
+              Saving refined answers or examples will mint a new <code>request_revision</code> and
+              clear this saved approval.
+            </Alert>
+          ) : null}
+          <p>
+            <strong>Recorded approval by: </strong>
+            <code>{card.unverified_approval.approval.approved_by}</code> ·{" "}
+            <strong>Environment: </strong>
+            <code>{card.unverified_approval.approval.environment}</code> ·{" "}
+            <strong>Evaluator suite: </strong>
+            <code>{card.unverified_approval.approval.suite_id}</code> ·{" "}
+            <strong>Scenarios passed: </strong>
+            <code>{String(card.unverified_approval.approval.scenario_count)}</code> ·{" "}
+            <strong>Recorded artifacts: </strong>
+            <code>{String(unverifiedArtifactNames.length)}</code>
+          </p>
+          <details className="surla-details" id="surla-cp5-unverified-approval-details">
+            <summary>Recorded inputs and digests</summary>
+            <p>
+              <strong>Candidate commit: </strong>
+              <code>{card.unverified_approval.approval.candidate_commit}</code>
+            </p>
+            <p>
+              <strong>Verification report digest: </strong>
+              <code>{card.unverified_approval.approval.report_digest}</code>
+            </p>
+            <p>
+              <strong>Evaluator suite commit: </strong>
+              <code>{card.unverified_approval.approval.suite_id}</code> @{" "}
+              <code>{card.unverified_approval.approval.suite_commit}</code>
+            </p>
+            <h4>{"Recorded Candidate Artifacts (" + unverifiedArtifactNames.length + ")"}</h4>
+            <ul>
+              {unverifiedArtifactNames.map((name) => (
+                <li key={name}>
+                  <code>{name}</code>:{" "}
+                  <code>{card.unverified_approval!.approval.artifacts[name]}</code>
+                </li>
+              ))}
+            </ul>
+          </details>
+        </Card>
+      ) : null}
+
+      {priorCard ? (
+        <Card
+          id="surla-prior-revision"
+          className="surla-card"
+          role="region"
+          aria-label="Previous Saved Revision"
+        >
+          <div className="surla-field-row">
+            <h3>Previous Saved Revision</h3>
+            <Badge>{priorCard.status === "confirmed" ? "Confirmed" : "Needs confirmation"}</Badge>
+            <code>{priorCard.request_revision}</code>
+          </div>
+          <p>
+            <strong>Previous request: </strong>
+            {priorCard.prompt}
+          </p>
+          <p>
+            <strong>Previous summary: </strong>
+            {priorCard.summary}
+          </p>
+          <h4>
+            {"Previous Questions & Decisions (" +
+              (Array.isArray(priorCard.ambiguities) ? priorCard.ambiguities.length : 0) +
+              ")"}
+          </h4>
+          {Array.isArray(priorCard.ambiguities) && priorCard.ambiguities.length > 0 ? (
+            <ul>
+              {priorCard.ambiguities.map((amb) => {
+                const ans = (priorCard.answers && priorCard.answers[amb.id]) || "";
+                return (
+                  <li key={amb.id}>
+                    <strong>{amb.question}</strong>
+                    {ans
+                      ? " — Confirmed answer: " + ans
+                      : " — Unanswered (options: " + amb.options.join(", ") + ")"}
+                  </li>
+                );
+              })}
+            </ul>
+          ) : (
+            <p>No prior domain questions.</p>
+          )}
+          <h4>{"Previous Examples (" + priorCard.examples.length + ")"}</h4>
+          <ul>
+            {priorCard.examples.map((ex) => (
+              <li key={ex.id}>
+                <strong>{ex.scenario}</strong>
+                {" — Input: " +
+                  ex.input_summary +
+                  " -> Expected: " +
+                  ex.expected_outcome +
+                  " [" +
+                  ex.verification_kind +
+                  "]"}
+              </li>
+            ))}
+          </ul>
+          <h4>
+            {"Previous Preserved Invariants (" + priorCard.preserved_behaviors.length + ")"}
+          </h4>
+          {priorCard.preserved_behaviors.length > 0 ? (
+            <ul>
+              {priorCard.preserved_behaviors.map((pb, idx) => (
+                <li key={String(idx)}>{pb}</li>
+              ))}
+            </ul>
+          ) : (
+            <p>None declared.</p>
+          )}
         </Card>
       ) : null}
 

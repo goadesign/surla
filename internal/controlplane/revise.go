@@ -1,0 +1,306 @@
+// This file implements Checkpoint 1 (CP1) Change Card revision (`revise_change`)
+// and prior-card semantic re-analysis.
+
+package controlplane
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"slices"
+	"strings"
+	"unicode/utf8"
+
+	gensurla "github.com/goadesign/surla/gen/surla"
+	"github.com/goadesign/surla/internal/goldenpath"
+	"goa.design/goa-ai/runtime/agent/model"
+)
+
+type (
+	// CP1PriorDecision describes one ambiguity question and its confirmed answer
+	// (when resolved) from the Change Card revision being revised.
+	CP1PriorDecision struct {
+		// Question is the plain-English ambiguity question.
+		Question string `json:"question"`
+		// Options lists the candidate answers offered on the prior card.
+		Options []string `json:"options"`
+		// ConfirmedAnswer is the operator's confirmed choice, or empty when unanswered.
+		ConfirmedAnswer string `json:"confirmed_answer"`
+	}
+
+	// CP1PriorCard is the semantic snapshot of an existing Change Card passed to
+	// CP1Analyzer.Revise when the operator revises requirements on that card.
+	CP1PriorCard struct {
+		// Prompt is the prior revision's feature request.
+		Prompt string `json:"prompt"`
+		// Summary is the prior revision's plain-English summary.
+		Summary string `json:"summary"`
+		// Status is the prior revision's checkpoint status ("needs_confirmation" or "confirmed").
+		Status string `json:"status"`
+		// Decisions lists the prior revision's ambiguity questions paired with any confirmed answers.
+		Decisions []CP1PriorDecision `json:"decisions"`
+		// Examples lists the prior revision's concrete examples (including operator-confirmed edits).
+		Examples []CP1ModelExample `json:"examples"`
+		// PreservedBehaviors lists the prior revision's contract invariants.
+		PreservedBehaviors []string `json:"preserved_behaviors"`
+	}
+)
+
+// Revise invokes the underlying Goa-AI model.Client with the prior Change Card
+// semantic context, the revised operator prompt, and the target Goa design
+// source, and strictly decodes the validated CP1SemanticAnalysis response.
+func (a *ModelCP1Analyzer) Revise(
+	ctx context.Context,
+	prior CP1PriorCard,
+	promptText, designSource string,
+) (CP1SemanticAnalysis, error) {
+	userPrompt, err := formatCP1ReviseUserPrompt(prior, promptText, designSource)
+	if err != nil {
+		return CP1SemanticAnalysis{}, err
+	}
+	return a.completeAnalysis(ctx, goldenpath.ArchitectReviseSystemPrompt(), userPrompt)
+}
+
+// ReviseChange re-evaluates an existing Checkpoint 1 Change Card against a
+// revised operator prompt (and optional updated Goa design source) bound to the
+// card's current request_revision. It passes the prior card's confirmed
+// decisions, open questions, examples, and preserved behaviors to the
+// configured CP1Analyzer.Revise method, assigns code-owned ambiguity and
+// example IDs, and saves the new revision in needs_confirmation status only if
+// the saved card still has the caller's request_revision when the analysis
+// finishes.
+func (c *ControlPlane) ReviseChange(
+	ctx context.Context,
+	p *gensurla.ReviseChangePayload,
+) (*gensurla.ChangeCardResult, error) {
+	principal, ok := PrincipalFromContext(ctx)
+	if !ok {
+		return nil, errors.New("authenticated principal is required")
+	}
+	if p == nil ||
+		strings.TrimSpace(p.ChangeID) == "" ||
+		strings.TrimSpace(p.RequestRevision) == "" ||
+		strings.TrimSpace(p.Prompt) == "" {
+		return nil, errors.New("change_id, request_revision, and prompt are required")
+	}
+	if !utf8.ValidString(p.ChangeID) {
+		return nil, errors.New("change_id must be valid UTF-8")
+	}
+	if c.analyzer == nil {
+		return nil, errors.New("cp1 semantic analyzer is required")
+	}
+
+	c.mu.RLock()
+	record, exists, err := c.cards.load(p.ChangeID)
+	c.mu.RUnlock()
+	if err != nil {
+		return nil, err
+	}
+	if !exists {
+		return nil, fmt.Errorf("unknown change_id %q", p.ChangeID)
+	}
+	if record.owner != principal.ID {
+		return nil, fmt.Errorf("principal %q is not the owner of change_id %q", principal.ID, p.ChangeID)
+	}
+	if record.card.RequestRevision != p.RequestRevision {
+		return nil, fmt.Errorf(
+			"request_revision mismatch for %q: got %q, want %q",
+			p.ChangeID,
+			p.RequestRevision,
+			record.card.RequestRevision,
+		)
+	}
+
+	designSrc := record.designSource
+	if p.DesignSource != nil {
+		designSrc = *p.DesignSource
+	}
+	prior := buildCP1PriorCard(record.card)
+
+	if err := reportProgress(ctx, 0, 1, "Revising the Change Card with the CP1 model"); err != nil {
+		return nil, err
+	}
+	analysis, err := c.analyzer.Revise(ctx, prior, p.Prompt, designSrc)
+	if err != nil {
+		return nil, err
+	}
+	if err := reportProgress(ctx, 1, 1, "Validating the revised CP1 analysis"); err != nil {
+		return nil, err
+	}
+
+	summary, ambiguities, examples, preserved, err := validateCP1Analysis(p.ChangeID, analysis)
+	if err != nil {
+		return nil, fmt.Errorf("invalid cp1 analysis: %w", err)
+	}
+
+	// Every revised card enters needs_confirmation so the operator explicitly
+	// reviews and confirms the revised summary, decisions, and examples before
+	// advancing to downstream checkpoints.
+	revised := &gensurla.ChangeCardResult{
+		ChangeID:           p.ChangeID,
+		Status:             StatusNeedsConfirmation,
+		Prompt:             p.Prompt,
+		Summary:            summary,
+		Ambiguities:        ambiguities,
+		Examples:           examples,
+		PreservedBehaviors: preserved,
+	}
+	rev, err := computeCanonicalRevision(revised, principal.ID, designSrc)
+	if err != nil {
+		return nil, err
+	}
+	revised.RequestRevision = rev
+	if analysis.UIComposition != nil {
+		revised.UIComposition = &gensurla.UICompositionItem{
+			Program:             *analysis.UIComposition,
+			ComposedForRevision: rev,
+		}
+	}
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	current, exists, err := c.cards.load(p.ChangeID)
+	if err != nil {
+		return nil, err
+	}
+	if !exists {
+		return nil, fmt.Errorf("unknown change_id %q", p.ChangeID)
+	}
+	if current.owner != principal.ID {
+		return nil, fmt.Errorf("principal %q is not the owner of change_id %q", principal.ID, p.ChangeID)
+	}
+	if current.card.RequestRevision != p.RequestRevision {
+		return nil, fmt.Errorf(
+			"request_revision mismatch for %q: got %q, want %q",
+			p.ChangeID,
+			p.RequestRevision,
+			current.card.RequestRevision,
+		)
+	}
+	if err := c.cards.save(storedChangeCard{
+		card:         revised,
+		owner:        principal.ID,
+		designSource: designSrc,
+	}); err != nil {
+		return nil, err
+	}
+	return revised, nil
+}
+
+// buildCP1PriorCard extracts the semantic decisions, examples, and preserved
+// behaviors from card without positional IDs so CP1Analyzer.Revise can reason
+// over settled requirements, open questions, and confirmed examples.
+func buildCP1PriorCard(card *gensurla.ChangeCardResult) CP1PriorCard {
+	decisions := make([]CP1PriorDecision, 0, len(card.Ambiguities))
+	for _, amb := range card.Ambiguities {
+		if amb == nil {
+			continue
+		}
+		var confirmed string
+		if card.Answers != nil {
+			confirmed = card.Answers[amb.ID]
+		}
+		decisions = append(decisions, CP1PriorDecision{
+			Question:        amb.Question,
+			Options:         slices.Clone(amb.Options),
+			ConfirmedAnswer: confirmed,
+		})
+	}
+	examples := make([]CP1ModelExample, 0, len(card.Examples))
+	for _, ex := range card.Examples {
+		if ex == nil {
+			continue
+		}
+		examples = append(examples, CP1ModelExample{
+			Scenario:         ex.Scenario,
+			InputSummary:     ex.InputSummary,
+			ExpectedOutcome:  ex.ExpectedOutcome,
+			VerificationKind: ex.VerificationKind,
+		})
+	}
+	return CP1PriorCard{
+		Prompt:             card.Prompt,
+		Summary:            card.Summary,
+		Status:             card.Status,
+		Decisions:          decisions,
+		Examples:           examples,
+		PreservedBehaviors: slices.Clone(card.PreservedBehaviors),
+	}
+}
+
+// formatCP1ReviseUserPrompt formats the prior Change Card context, the revised
+// operator request, and the target Goa design source for ModelCP1Analyzer.Revise.
+func formatCP1ReviseUserPrompt(prior CP1PriorCard, promptText, designSource string) (string, error) {
+	priorJSON, err := json.Marshal(prior)
+	if err != nil {
+		return "", fmt.Errorf("marshal prior cp1 change card: %w", err)
+	}
+	return fmt.Sprintf(
+		"Prior Change Card:\n%s\n\nRevised Request:\n%s\n\nDesign:\n%s",
+		string(priorJSON),
+		promptText,
+		designSource,
+	), nil
+}
+
+// completeAnalysis runs one structured CP1 model completion with systemPrompt
+// and userPrompt and strictly decodes the resulting CP1SemanticAnalysis.
+func (a *ModelCP1Analyzer) completeAnalysis(
+	ctx context.Context,
+	systemPrompt, userPrompt string,
+) (CP1SemanticAnalysis, error) {
+	if a == nil || a.client == nil {
+		return CP1SemanticAnalysis{}, errors.New("cp1 model client is required")
+	}
+	req := &model.Request{
+		Messages: []*model.Message{
+			{
+				Role: model.ConversationRoleSystem,
+				Parts: []model.Part{
+					model.TextPart{
+						Text: systemPrompt,
+					},
+				},
+			},
+			{
+				Role: model.ConversationRoleUser,
+				Parts: []model.Part{
+					model.TextPart{
+						Text: userPrompt,
+					},
+				},
+			},
+		},
+		StructuredOutput: &model.StructuredOutput{
+			Name:   "cp1_change_card_analysis",
+			Schema: cp1AnalysisJSONSchema,
+		},
+		MaxTokens: cp1AnalysisMaxOutputTokens,
+	}
+	resp, err := a.client.Complete(ctx, req)
+	if err != nil {
+		return CP1SemanticAnalysis{}, fmt.Errorf("cp1 model completion: %w", err)
+	}
+	if resp.OutputLimited {
+		return CP1SemanticAnalysis{}, fmt.Errorf(
+			"cp1 model analysis may be incomplete: provider reported an output limit (stop reason %q)",
+			resp.StopReason,
+		)
+	}
+	raw := extractAssistantText(resp)
+	if raw == "" {
+		return CP1SemanticAnalysis{}, errors.New("cp1 model returned empty analysis")
+	}
+	var parsed CP1SemanticAnalysis
+	dec := json.NewDecoder(strings.NewReader(raw))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&parsed); err != nil {
+		return CP1SemanticAnalysis{}, fmt.Errorf("decode cp1 model analysis: %w", err)
+	}
+	if err := dec.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		return CP1SemanticAnalysis{}, errors.New("cp1 model analysis contains trailing JSON tokens")
+	}
+	return parsed, nil
+}

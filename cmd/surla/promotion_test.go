@@ -197,6 +197,28 @@ func TestApproveMergeChecksTheStagedRelease(t *testing.T) {
 	got, err = cp.GetChange(alice, &gensurla.GetChangePayload{ChangeID: "chg"})
 	require.NoError(t, err)
 	assert.Equal(t, approved.Approval, got.Approval, "the approval holds again for the approved binaries")
+	assert.Nil(t, got.UnverifiedApproval)
+
+	// Removing a configured binary or the staged commit directory causes the
+	// real releaseTarget.CurrentInputs to fail; GetChange still returns the
+	// card with UnverifiedApproval and a path-free reason.
+	require.NoError(t, os.Remove(filepath.Join(release, commit, "orders-worker")))
+	got, err = cp.GetChange(alice, &gensurla.GetChangePayload{ChangeID: "chg"})
+	require.NoError(t, err)
+	assert.Nil(t, got.Approval)
+	require.NotNil(t, got.UnverifiedApproval)
+	assert.Equal(t, approved.Approval, got.UnverifiedApproval.Approval)
+	assert.Contains(t, got.UnverifiedApproval.Reason, "could not report its current inputs")
+	assert.NotContains(t, got.UnverifiedApproval.Reason, release)
+
+	require.NoError(t, os.RemoveAll(filepath.Join(release, commit)))
+	got, err = cp.GetChange(alice, &gensurla.GetChangePayload{ChangeID: "chg"})
+	require.NoError(t, err)
+	assert.Nil(t, got.Approval)
+	require.NotNil(t, got.UnverifiedApproval)
+	assert.Equal(t, approved.Approval, got.UnverifiedApproval.Approval)
+	assert.Contains(t, got.UnverifiedApproval.Reason, "could not report its current inputs")
+	assert.NotContains(t, got.UnverifiedApproval.Reason, release)
 }
 
 // Analyze returns a summary and one example with no open questions.
@@ -208,6 +230,11 @@ func (confirmedAnalyzer) Analyze(context.Context, string, string) (controlplane.
 			ExpectedOutcome: "Instant store credit", VerificationKind: "deterministic",
 		}},
 	}, nil
+}
+
+// Revise returns the same fixed analysis as Analyze for tests that only exercise CP5.
+func (a confirmedAnalyzer) Revise(ctx context.Context, _ controlplane.CP1PriorCard, prompt, design string) (controlplane.CP1SemanticAnalysis, error) {
+	return a.Analyze(ctx, prompt, design)
 }
 
 // newReleaseTarget loads a promotion configuration for the orders binaries

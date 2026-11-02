@@ -23,7 +23,7 @@ import (
 //	command (subcommand1|subcommand2|...)
 func UsageCommands() []string {
 	return []string{
-		"surla (checkpoint-ui|golden-path|propose-change|confirm-intent|get-change|preview-architecture|draft-override|start-live-target|stop-live-target|verify-change|get-verification|approve-merge|diff)",
+		"surla (checkpoint-ui|golden-path|propose-change|revise-change|confirm-intent|get-change|preview-architecture|draft-override|start-live-target|stop-live-target|verify-change|get-verification|approve-merge|diff)",
 	}
 }
 
@@ -71,6 +71,9 @@ func ParseEndpoint(
 		surlaProposeChangeFlags    = flag.NewFlagSet("propose-change", flag.ExitOnError)
 		surlaProposeChangeBodyFlag = new(cliStringFlag)
 
+		surlaReviseChangeFlags    = flag.NewFlagSet("revise-change", flag.ExitOnError)
+		surlaReviseChangeBodyFlag = new(cliStringFlag)
+
 		surlaConfirmIntentFlags    = flag.NewFlagSet("confirm-intent", flag.ExitOnError)
 		surlaConfirmIntentBodyFlag = new(cliStringFlag)
 
@@ -102,6 +105,7 @@ func ParseEndpoint(
 		surlaDiffBodyFlag = new(cliStringFlag)
 	)
 	surlaProposeChangeFlags.Var(surlaProposeChangeBodyFlag, "body", "")
+	surlaReviseChangeFlags.Var(surlaReviseChangeBodyFlag, "body", "")
 	surlaConfirmIntentFlags.Var(surlaConfirmIntentBodyFlag, "body", "")
 	surlaGetChangeFlags.Var(surlaGetChangeChangeIDFlag, "change-id", "Change identifier.")
 	surlaPreviewArchitectureFlags.Var(surlaPreviewArchitectureBodyFlag, "body", "")
@@ -117,6 +121,7 @@ func ParseEndpoint(
 	surlaCheckpointUIFlags.Usage = surlaCheckpointUIUsage
 	surlaGoldenPathFlags.Usage = surlaGoldenPathUsage
 	surlaProposeChangeFlags.Usage = surlaProposeChangeUsage
+	surlaReviseChangeFlags.Usage = surlaReviseChangeUsage
 	surlaConfirmIntentFlags.Usage = surlaConfirmIntentUsage
 	surlaGetChangeFlags.Usage = surlaGetChangeUsage
 	surlaPreviewArchitectureFlags.Usage = surlaPreviewArchitectureUsage
@@ -170,6 +175,9 @@ func ParseEndpoint(
 
 			case "propose-change":
 				epf = surlaProposeChangeFlags
+
+			case "revise-change":
+				epf = surlaReviseChangeFlags
 
 			case "confirm-intent":
 				epf = surlaConfirmIntentFlags
@@ -233,6 +241,9 @@ func ParseEndpoint(
 			case "propose-change":
 				endpoint = c.ProposeChange()
 				data, err = surlac.BuildProposeChangePayload(surlaProposeChangeBodyFlag.value)
+			case "revise-change":
+				endpoint = c.ReviseChange()
+				data, err = surlac.BuildReviseChangePayload(surlaReviseChangeBodyFlag.value)
 			case "confirm-intent":
 				endpoint = c.ConfirmIntent()
 				data, err = surlac.BuildConfirmIntentPayload(surlaConfirmIntentBodyFlag.value)
@@ -280,8 +291,9 @@ func surlaUsage() {
 	fmt.Fprintln(os.Stderr, `    checkpoint-ui: Serve the interactive MCP Apps HTML host for Surla checkpoints.`)
 	fmt.Fprintln(os.Stderr, `    golden-path: Serve the Surla Golden Path architecture playbook for Goa-AI agentic platforms.`)
 	fmt.Fprintln(os.Stderr, `    propose-change: Evaluate a feature request at Checkpoint 1, surfacing concrete examples and any genuine domain ambiguity.`)
-	fmt.Fprintln(os.Stderr, `    confirm-intent: Confirm or refine a Checkpoint 1 Change Card with the complete ambiguity answers and example table, bound to its current request_revision. Changed answers or examples produce a new request_revision; unchanged ones return the card as it is, with its approval only while that approval still matches the promotion target's current inputs. The call fails when the card has an approval and the promotion target cannot report its current inputs.`)
-	fmt.Fprintln(os.Stderr, `    get-change: Return the current Change Card, including its request_revision, to its owner, for example after confirm_intent refused an edit made against an older revision. Reading never confirms or changes the card. A recorded approval is included only while it still matches the promotion target's current suite, environment and binary digests; the call fails when the card has an approval and the target cannot report them.`)
+	fmt.Fprintln(os.Stderr, `    revise-change: Revise an existing Checkpoint 1 Change Card with new or changed operator requirements bound to its current request_revision. Re-analyzes the revised prompt and design source alongside the prior card's confirmed decisions, open questions, examples and preserved behaviors, and saves a new revision in needs_confirmation status for operator review.`)
+	fmt.Fprintln(os.Stderr, `    confirm-intent: Confirm or refine a Checkpoint 1 Change Card with the complete ambiguity answers and example table, bound to its current request_revision. Changed answers or examples produce a new request_revision; unchanged ones return the card as it is, with a saved approval returned in approval only while that approval still matches the promotion target's current inputs, or in unverified_approval when no promotion target is configured or the target cannot report its current inputs.`)
+	fmt.Fprintln(os.Stderr, `    get-change: Return the current Change Card, including its request_revision, to its owner, for example after confirm_intent or revise_change refused an edit made against an older revision. Reading never confirms or changes the card. A recorded approval is returned in approval only while it still matches the promotion target's current suite, environment and binary digests, or in unverified_approval when no promotion target is configured or the target cannot report its current inputs.`)
 	fmt.Fprintln(os.Stderr, `    preview-architecture: Extract and validate the Checkpoint 2 C4 container topology, tool contracts, Goa-AI guardrails, and proposed Chorus swarm roster from a candidate Goa design bound to a confirmed Change Card.`)
 	fmt.Fprintln(os.Stderr, `    draft-override: Apply a Fast Draft Mode prompt override on the bound target or reject a compiled-rule prompt hack. On a live target started with start_live_target, a rejected update leaves the target's text unchanged; update_not_confirmed means the target may or may not have applied it.`)
 	fmt.Fprintln(os.Stderr, `    start-live-target: Build a candidate commit exactly as Checkpoint 4 does and run it, with the operator's evaluator suite, as this server's one live CP3 target, then bind draft_override to it. A running target is stopped first, so there is never more than one. The target runs until stop_live_target, a later start_live_target, its own exit, or this server's shutdown; a server restart leaves none running. Requires Checkpoint 4 verification to be configured, because the build and launch settings come from it.`)
@@ -344,6 +356,24 @@ func surlaProposeChangeUsage() {
 	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "surla propose-change --body '{\n      \"change_id\": \"Ipsum soluta officiis facilis dolorem quae.\",\n      \"design_source\": \"Quia placeat maiores voluptatem voluptatem.\",\n      \"prompt\": \"Enim distinctio et sunt sunt et.\"\n   }'")
 }
 
+func surlaReviseChangeUsage() {
+	// Header with flags
+	fmt.Fprintf(os.Stderr, "%s [flags] surla revise-change", os.Args[0])
+	fmt.Fprint(os.Stderr, " -body JSON")
+	fmt.Fprintln(os.Stderr)
+
+	// Description
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, `Revise an existing Checkpoint 1 Change Card with new or changed operator requirements bound to its current request_revision. Re-analyzes the revised prompt and design source alongside the prior card's confirmed decisions, open questions, examples and preserved behaviors, and saves a new revision in needs_confirmation status for operator review.`)
+
+	// Flags list
+	fmt.Fprintln(os.Stderr, `    -body JSON: `)
+
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, "Example:")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "surla revise-change --body '{\n      \"change_id\": \"Optio ratione suscipit et neque officia.\",\n      \"design_source\": \"Qui itaque.\",\n      \"prompt\": \"Omnis est.\",\n      \"request_revision\": \"Neque dolore optio.\"\n   }'")
+}
+
 func surlaConfirmIntentUsage() {
 	// Header with flags
 	fmt.Fprintf(os.Stderr, "%s [flags] surla confirm-intent", os.Args[0])
@@ -352,7 +382,7 @@ func surlaConfirmIntentUsage() {
 
 	// Description
 	fmt.Fprintln(os.Stderr)
-	fmt.Fprintln(os.Stderr, `Confirm or refine a Checkpoint 1 Change Card with the complete ambiguity answers and example table, bound to its current request_revision. Changed answers or examples produce a new request_revision; unchanged ones return the card as it is, with its approval only while that approval still matches the promotion target's current inputs. The call fails when the card has an approval and the promotion target cannot report its current inputs.`)
+	fmt.Fprintln(os.Stderr, `Confirm or refine a Checkpoint 1 Change Card with the complete ambiguity answers and example table, bound to its current request_revision. Changed answers or examples produce a new request_revision; unchanged ones return the card as it is, with a saved approval returned in approval only while that approval still matches the promotion target's current inputs, or in unverified_approval when no promotion target is configured or the target cannot report its current inputs.`)
 
 	// Flags list
 	fmt.Fprintln(os.Stderr, `    -body JSON: `)
@@ -370,7 +400,7 @@ func surlaGetChangeUsage() {
 
 	// Description
 	fmt.Fprintln(os.Stderr)
-	fmt.Fprintln(os.Stderr, `Return the current Change Card, including its request_revision, to its owner, for example after confirm_intent refused an edit made against an older revision. Reading never confirms or changes the card. A recorded approval is included only while it still matches the promotion target's current suite, environment and binary digests; the call fails when the card has an approval and the target cannot report them.`)
+	fmt.Fprintln(os.Stderr, `Return the current Change Card, including its request_revision, to its owner, for example after confirm_intent or revise_change refused an edit made against an older revision. Reading never confirms or changes the card. A recorded approval is returned in approval only while it still matches the promotion target's current suite, environment and binary digests, or in unverified_approval when no promotion target is configured or the target cannot report its current inputs.`)
 
 	// Flags list
 	fmt.Fprintln(os.Stderr, `    -change-id STRING: Change identifier.`)

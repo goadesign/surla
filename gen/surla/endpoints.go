@@ -18,6 +18,7 @@ type Endpoints struct {
 	CheckpointUI        goa.Endpoint
 	GoldenPath          goa.Endpoint
 	ProposeChange       goa.Endpoint
+	ReviseChange        goa.Endpoint
 	ConfirmIntent       goa.Endpoint
 	GetChange           goa.Endpoint
 	PreviewArchitecture goa.Endpoint
@@ -36,6 +37,7 @@ func NewEndpoints(s Service) *Endpoints {
 		CheckpointUI:        NewCheckpointUIEndpoint(s),
 		GoldenPath:          NewGoldenPathEndpoint(s),
 		ProposeChange:       NewProposeChangeEndpoint(s),
+		ReviseChange:        NewReviseChangeEndpoint(s),
 		ConfirmIntent:       NewConfirmIntentEndpoint(s),
 		GetChange:           NewGetChangeEndpoint(s),
 		PreviewArchitecture: NewPreviewArchitectureEndpoint(s),
@@ -54,6 +56,7 @@ func (e *Endpoints) Use(m func(goa.Endpoint) goa.Endpoint) {
 	e.CheckpointUI = m(e.CheckpointUI)
 	e.GoldenPath = m(e.GoldenPath)
 	e.ProposeChange = m(e.ProposeChange)
+	e.ReviseChange = m(e.ReviseChange)
 	e.ConfirmIntent = m(e.ConfirmIntent)
 	e.GetChange = m(e.GetChange)
 	e.PreviewArchitecture = m(e.PreviewArchitecture)
@@ -88,6 +91,15 @@ func NewProposeChangeEndpoint(s Service) goa.Endpoint {
 	return func(ctx context.Context, req any) (any, error) {
 		p := req.(*ProposeChangePayload)
 		return s.ProposeChange(ctx, p)
+	}
+}
+
+// NewReviseChangeEndpoint returns an endpoint function that calls the method
+// "revise_change" of service "surla".
+func NewReviseChangeEndpoint(s Service) goa.Endpoint {
+	return func(ctx context.Context, req any) (any, error) {
+		p := req.(*ReviseChangePayload)
+		return s.ReviseChange(ctx, p)
 	}
 }
 

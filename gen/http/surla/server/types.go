@@ -26,6 +26,20 @@ type ProposeChangeRequestBody struct {
 	DesignSource *string `form:"design_source,omitempty" json:"design_source,omitempty" xml:"design_source,omitempty"`
 }
 
+// ReviseChangeRequestBody is the type of the "surla" service "revise_change"
+// endpoint HTTP request body.
+type ReviseChangeRequestBody struct {
+	// Change identifier.
+	ChangeID *string `form:"change_id,omitempty" json:"change_id,omitempty" xml:"change_id,omitempty"`
+	// Current CP1 request_revision digest being revised.
+	RequestRevision *string `form:"request_revision,omitempty" json:"request_revision,omitempty" xml:"request_revision,omitempty"`
+	// Revised operator feature request.
+	Prompt *string `form:"prompt,omitempty" json:"prompt,omitempty" xml:"prompt,omitempty"`
+	// Updated target Goa design source inspected by the CP1 model; when omitted,
+	// the card's saved design source is preserved.
+	DesignSource *string `form:"design_source,omitempty" json:"design_source,omitempty" xml:"design_source,omitempty"`
+}
+
 // ConfirmIntentRequestBody is the type of the "surla" service "confirm_intent"
 // endpoint HTTP request body.
 type ConfirmIntentRequestBody struct {
@@ -111,7 +125,7 @@ type ProposeChangeResponseBody struct {
 	ChangeID string `form:"change_id" json:"change_id" xml:"change_id"`
 	// Checkpoint status (needs_confirmation or confirmed).
 	Status string `form:"status" json:"status" xml:"status"`
-	// Original operator feature request.
+	// Operator feature request for this revision.
 	Prompt string `form:"prompt" json:"prompt" xml:"prompt"`
 	// Plain-English summary of requested behavior.
 	Summary string `form:"summary" json:"summary" xml:"summary"`
@@ -131,12 +145,59 @@ type ProposeChangeResponseBody struct {
 	// one. A confirm_intent that changes answers or examples returns the new
 	// revision without it.
 	UIComposition *UICompositionItemResponseBody `form:"ui_composition,omitempty" json:"ui_composition,omitempty" xml:"ui_composition,omitempty"`
-	// Checkpoint 5 approval of this revision, present only while it matches the
-	// promotion target's current inputs. It is absent before approve_merge
-	// succeeds and whenever the target's suite, environment or binary digests have
-	// changed since; it comes back if they match again. It is never hashed into
-	// request_revision.
+	// Checkpoint 5 approval of this revision, present only while it is verified
+	// against the promotion target's current inputs on this read. It is absent
+	// before approve_merge succeeds, whenever the target's suite, environment or
+	// binary digests have changed since, and whenever current inputs cannot be
+	// verified (see unverified_approval). It is never hashed into request_revision.
 	Approval *ApprovalItemResponseBody `form:"approval,omitempty" json:"approval,omitempty" xml:"approval,omitempty"`
+	// Saved Checkpoint 5 approval of this revision when current promotion inputs
+	// could not be verified on this read (because no promotion target is
+	// configured or the target could not report its current inputs). At most one
+	// of approval or unverified_approval is set. It is never saved to disk or
+	// hashed into request_revision.
+	UnverifiedApproval *UnverifiedApprovalItemResponseBody `form:"unverified_approval,omitempty" json:"unverified_approval,omitempty" xml:"unverified_approval,omitempty"`
+}
+
+// ReviseChangeResponseBody is the type of the "surla" service "revise_change"
+// endpoint HTTP response body.
+type ReviseChangeResponseBody struct {
+	// Change identifier.
+	ChangeID string `form:"change_id" json:"change_id" xml:"change_id"`
+	// Checkpoint status (needs_confirmation or confirmed).
+	Status string `form:"status" json:"status" xml:"status"`
+	// Operator feature request for this revision.
+	Prompt string `form:"prompt" json:"prompt" xml:"prompt"`
+	// Plain-English summary of requested behavior.
+	Summary string `form:"summary" json:"summary" xml:"summary"`
+	// Domain questions surfaced at CP1, retained for audit after confirmation.
+	Ambiguities []*AmbiguityQuestionResponseBody `form:"ambiguities,omitempty" json:"ambiguities,omitempty" xml:"ambiguities,omitempty"`
+	// Confirmed resolution per ambiguity question ID.
+	Answers map[string]string `form:"answers,omitempty" json:"answers,omitempty" xml:"answers,omitempty"`
+	// Concrete examples mapped to evaluator checks.
+	Examples []*ExampleItemResponseBody `form:"examples" json:"examples" xml:"examples"`
+	// Existing contract invariants preserved by this change.
+	PreservedBehaviors []string `form:"preserved_behaviors" json:"preserved_behaviors" xml:"preserved_behaviors"`
+	// Authenticated principal that confirmed the Change Card.
+	ConfirmedBy *string `form:"confirmed_by,omitempty" json:"confirmed_by,omitempty" xml:"confirmed_by,omitempty"`
+	// SHA-256 digest of the canonical versioned Change Card.
+	RequestRevision string `form:"request_revision" json:"request_revision" xml:"request_revision"`
+	// Decision view the CP1 model composed for this revision, when it produced
+	// one. A confirm_intent that changes answers or examples returns the new
+	// revision without it.
+	UIComposition *UICompositionItemResponseBody `form:"ui_composition,omitempty" json:"ui_composition,omitempty" xml:"ui_composition,omitempty"`
+	// Checkpoint 5 approval of this revision, present only while it is verified
+	// against the promotion target's current inputs on this read. It is absent
+	// before approve_merge succeeds, whenever the target's suite, environment or
+	// binary digests have changed since, and whenever current inputs cannot be
+	// verified (see unverified_approval). It is never hashed into request_revision.
+	Approval *ApprovalItemResponseBody `form:"approval,omitempty" json:"approval,omitempty" xml:"approval,omitempty"`
+	// Saved Checkpoint 5 approval of this revision when current promotion inputs
+	// could not be verified on this read (because no promotion target is
+	// configured or the target could not report its current inputs). At most one
+	// of approval or unverified_approval is set. It is never saved to disk or
+	// hashed into request_revision.
+	UnverifiedApproval *UnverifiedApprovalItemResponseBody `form:"unverified_approval,omitempty" json:"unverified_approval,omitempty" xml:"unverified_approval,omitempty"`
 }
 
 // ConfirmIntentResponseBody is the type of the "surla" service
@@ -146,7 +207,7 @@ type ConfirmIntentResponseBody struct {
 	ChangeID string `form:"change_id" json:"change_id" xml:"change_id"`
 	// Checkpoint status (needs_confirmation or confirmed).
 	Status string `form:"status" json:"status" xml:"status"`
-	// Original operator feature request.
+	// Operator feature request for this revision.
 	Prompt string `form:"prompt" json:"prompt" xml:"prompt"`
 	// Plain-English summary of requested behavior.
 	Summary string `form:"summary" json:"summary" xml:"summary"`
@@ -166,12 +227,18 @@ type ConfirmIntentResponseBody struct {
 	// one. A confirm_intent that changes answers or examples returns the new
 	// revision without it.
 	UIComposition *UICompositionItemResponseBody `form:"ui_composition,omitempty" json:"ui_composition,omitempty" xml:"ui_composition,omitempty"`
-	// Checkpoint 5 approval of this revision, present only while it matches the
-	// promotion target's current inputs. It is absent before approve_merge
-	// succeeds and whenever the target's suite, environment or binary digests have
-	// changed since; it comes back if they match again. It is never hashed into
-	// request_revision.
+	// Checkpoint 5 approval of this revision, present only while it is verified
+	// against the promotion target's current inputs on this read. It is absent
+	// before approve_merge succeeds, whenever the target's suite, environment or
+	// binary digests have changed since, and whenever current inputs cannot be
+	// verified (see unverified_approval). It is never hashed into request_revision.
 	Approval *ApprovalItemResponseBody `form:"approval,omitempty" json:"approval,omitempty" xml:"approval,omitempty"`
+	// Saved Checkpoint 5 approval of this revision when current promotion inputs
+	// could not be verified on this read (because no promotion target is
+	// configured or the target could not report its current inputs). At most one
+	// of approval or unverified_approval is set. It is never saved to disk or
+	// hashed into request_revision.
+	UnverifiedApproval *UnverifiedApprovalItemResponseBody `form:"unverified_approval,omitempty" json:"unverified_approval,omitempty" xml:"unverified_approval,omitempty"`
 }
 
 // GetChangeResponseBody is the type of the "surla" service "get_change"
@@ -181,7 +248,7 @@ type GetChangeResponseBody struct {
 	ChangeID string `form:"change_id" json:"change_id" xml:"change_id"`
 	// Checkpoint status (needs_confirmation or confirmed).
 	Status string `form:"status" json:"status" xml:"status"`
-	// Original operator feature request.
+	// Operator feature request for this revision.
 	Prompt string `form:"prompt" json:"prompt" xml:"prompt"`
 	// Plain-English summary of requested behavior.
 	Summary string `form:"summary" json:"summary" xml:"summary"`
@@ -201,12 +268,18 @@ type GetChangeResponseBody struct {
 	// one. A confirm_intent that changes answers or examples returns the new
 	// revision without it.
 	UIComposition *UICompositionItemResponseBody `form:"ui_composition,omitempty" json:"ui_composition,omitempty" xml:"ui_composition,omitempty"`
-	// Checkpoint 5 approval of this revision, present only while it matches the
-	// promotion target's current inputs. It is absent before approve_merge
-	// succeeds and whenever the target's suite, environment or binary digests have
-	// changed since; it comes back if they match again. It is never hashed into
-	// request_revision.
+	// Checkpoint 5 approval of this revision, present only while it is verified
+	// against the promotion target's current inputs on this read. It is absent
+	// before approve_merge succeeds, whenever the target's suite, environment or
+	// binary digests have changed since, and whenever current inputs cannot be
+	// verified (see unverified_approval). It is never hashed into request_revision.
 	Approval *ApprovalItemResponseBody `form:"approval,omitempty" json:"approval,omitempty" xml:"approval,omitempty"`
+	// Saved Checkpoint 5 approval of this revision when current promotion inputs
+	// could not be verified on this read (because no promotion target is
+	// configured or the target could not report its current inputs). At most one
+	// of approval or unverified_approval is set. It is never saved to disk or
+	// hashed into request_revision.
+	UnverifiedApproval *UnverifiedApprovalItemResponseBody `form:"unverified_approval,omitempty" json:"unverified_approval,omitempty" xml:"unverified_approval,omitempty"`
 }
 
 // PreviewArchitectureResponseBody is the type of the "surla" service
@@ -311,7 +384,7 @@ type ApproveMergeResponseBody struct {
 	ChangeID string `form:"change_id" json:"change_id" xml:"change_id"`
 	// Checkpoint status (needs_confirmation or confirmed).
 	Status string `form:"status" json:"status" xml:"status"`
-	// Original operator feature request.
+	// Operator feature request for this revision.
 	Prompt string `form:"prompt" json:"prompt" xml:"prompt"`
 	// Plain-English summary of requested behavior.
 	Summary string `form:"summary" json:"summary" xml:"summary"`
@@ -331,12 +404,18 @@ type ApproveMergeResponseBody struct {
 	// one. A confirm_intent that changes answers or examples returns the new
 	// revision without it.
 	UIComposition *UICompositionItemResponseBody `form:"ui_composition,omitempty" json:"ui_composition,omitempty" xml:"ui_composition,omitempty"`
-	// Checkpoint 5 approval of this revision, present only while it matches the
-	// promotion target's current inputs. It is absent before approve_merge
-	// succeeds and whenever the target's suite, environment or binary digests have
-	// changed since; it comes back if they match again. It is never hashed into
-	// request_revision.
+	// Checkpoint 5 approval of this revision, present only while it is verified
+	// against the promotion target's current inputs on this read. It is absent
+	// before approve_merge succeeds, whenever the target's suite, environment or
+	// binary digests have changed since, and whenever current inputs cannot be
+	// verified (see unverified_approval). It is never hashed into request_revision.
 	Approval *ApprovalItemResponseBody `form:"approval,omitempty" json:"approval,omitempty" xml:"approval,omitempty"`
+	// Saved Checkpoint 5 approval of this revision when current promotion inputs
+	// could not be verified on this read (because no promotion target is
+	// configured or the target could not report its current inputs). At most one
+	// of approval or unverified_approval is set. It is never saved to disk or
+	// hashed into request_revision.
+	UnverifiedApproval *UnverifiedApprovalItemResponseBody `form:"unverified_approval,omitempty" json:"unverified_approval,omitempty" xml:"unverified_approval,omitempty"`
 }
 
 // DiffResponseBody is the type of the "surla" service "diff" endpoint HTTP
@@ -567,6 +646,16 @@ type ApprovalItemResponseBody struct {
 	Artifacts map[string]string `form:"artifacts" json:"artifacts" xml:"artifacts"`
 	// Number of declared evaluator scenarios, every one of which passed.
 	ScenarioCount int `form:"scenario_count" json:"scenario_count" xml:"scenario_count"`
+}
+
+// UnverifiedApprovalItemResponseBody is used to define fields on response body
+// types.
+type UnverifiedApprovalItemResponseBody struct {
+	// Recorded promotion approval from the Change Card.
+	Approval *ApprovalItemResponseBody `form:"approval" json:"approval" xml:"approval"`
+	// Explanation of why the recorded approval could not be verified against
+	// current promotion inputs and how to recover.
+	Reason string `form:"reason" json:"reason" xml:"reason"`
 }
 
 // C4ContainerItemResponseBody is used to define fields on response body types.
@@ -1075,6 +1164,70 @@ func NewProposeChangeResponseBody(res *surla.ChangeCardResult) *ProposeChangeRes
 	if res.Approval != nil {
 		body.Approval = marshalSurlaApprovalItemToApprovalItemResponseBody(res.Approval)
 	}
+	if res.UnverifiedApproval != nil {
+		body.UnverifiedApproval = marshalSurlaUnverifiedApprovalItemToUnverifiedApprovalItemResponseBody(res.UnverifiedApproval)
+	}
+	return body
+}
+
+// NewReviseChangeResponseBody builds the HTTP response body from the result of
+// the "revise_change" endpoint of the "surla" service.
+func NewReviseChangeResponseBody(res *surla.ChangeCardResult) *ReviseChangeResponseBody {
+	body := &ReviseChangeResponseBody{
+		ChangeID:        res.ChangeID,
+		Status:          res.Status,
+		Prompt:          res.Prompt,
+		Summary:         res.Summary,
+		ConfirmedBy:     res.ConfirmedBy,
+		RequestRevision: res.RequestRevision,
+	}
+	if res.Ambiguities != nil {
+		body.Ambiguities = make([]*AmbiguityQuestionResponseBody, len(res.Ambiguities))
+		for i, val := range res.Ambiguities {
+			if val == nil {
+				body.Ambiguities[i] = nil
+				continue
+			}
+			body.Ambiguities[i] = marshalSurlaAmbiguityQuestionToAmbiguityQuestionResponseBody(val)
+		}
+	}
+	if res.Answers != nil {
+		body.Answers = make(map[string]string, len(res.Answers))
+		for key, val := range res.Answers {
+			tk := key
+			tv := val
+			body.Answers[tk] = tv
+		}
+	}
+	if res.Examples != nil {
+		body.Examples = make([]*ExampleItemResponseBody, len(res.Examples))
+		for i, val := range res.Examples {
+			if val == nil {
+				body.Examples[i] = nil
+				continue
+			}
+			body.Examples[i] = marshalSurlaExampleItemToExampleItemResponseBody(val)
+		}
+	} else {
+		body.Examples = []*ExampleItemResponseBody{}
+	}
+	if res.PreservedBehaviors != nil {
+		body.PreservedBehaviors = make([]string, len(res.PreservedBehaviors))
+		for i, val := range res.PreservedBehaviors {
+			body.PreservedBehaviors[i] = val
+		}
+	} else {
+		body.PreservedBehaviors = []string{}
+	}
+	if res.UIComposition != nil {
+		body.UIComposition = marshalSurlaUICompositionItemToUICompositionItemResponseBody(res.UIComposition)
+	}
+	if res.Approval != nil {
+		body.Approval = marshalSurlaApprovalItemToApprovalItemResponseBody(res.Approval)
+	}
+	if res.UnverifiedApproval != nil {
+		body.UnverifiedApproval = marshalSurlaUnverifiedApprovalItemToUnverifiedApprovalItemResponseBody(res.UnverifiedApproval)
+	}
 	return body
 }
 
@@ -1133,6 +1286,9 @@ func NewConfirmIntentResponseBody(res *surla.ChangeCardResult) *ConfirmIntentRes
 	if res.Approval != nil {
 		body.Approval = marshalSurlaApprovalItemToApprovalItemResponseBody(res.Approval)
 	}
+	if res.UnverifiedApproval != nil {
+		body.UnverifiedApproval = marshalSurlaUnverifiedApprovalItemToUnverifiedApprovalItemResponseBody(res.UnverifiedApproval)
+	}
 	return body
 }
 
@@ -1190,6 +1346,9 @@ func NewGetChangeResponseBody(res *surla.ChangeCardResult) *GetChangeResponseBod
 	}
 	if res.Approval != nil {
 		body.Approval = marshalSurlaApprovalItemToApprovalItemResponseBody(res.Approval)
+	}
+	if res.UnverifiedApproval != nil {
+		body.UnverifiedApproval = marshalSurlaUnverifiedApprovalItemToUnverifiedApprovalItemResponseBody(res.UnverifiedApproval)
 	}
 	return body
 }
@@ -1434,6 +1593,9 @@ func NewApproveMergeResponseBody(res *surla.ChangeCardResult) *ApproveMergeRespo
 	if res.Approval != nil {
 		body.Approval = marshalSurlaApprovalItemToApprovalItemResponseBody(res.Approval)
 	}
+	if res.UnverifiedApproval != nil {
+		body.UnverifiedApproval = marshalSurlaUnverifiedApprovalItemToUnverifiedApprovalItemResponseBody(res.UnverifiedApproval)
+	}
 	return body
 }
 
@@ -1606,6 +1768,18 @@ func NewProposeChangePayload(body *ProposeChangeRequestBody) *surla.ProposeChang
 	return v
 }
 
+// NewReviseChangePayload builds a surla service revise_change endpoint payload.
+func NewReviseChangePayload(body *ReviseChangeRequestBody) *surla.ReviseChangePayload {
+	v := &surla.ReviseChangePayload{
+		ChangeID:        *body.ChangeID,
+		RequestRevision: *body.RequestRevision,
+		Prompt:          *body.Prompt,
+		DesignSource:    body.DesignSource,
+	}
+
+	return v
+}
+
 // NewConfirmIntentPayload builds a surla service confirm_intent endpoint
 // payload.
 func NewConfirmIntentPayload(body *ConfirmIntentRequestBody) *surla.ConfirmIntentPayload {
@@ -1729,6 +1903,21 @@ func NewDiffPayload(body *DiffRequestBody) *surla.DiffPayload {
 func ValidateProposeChangeRequestBody(body *ProposeChangeRequestBody) (err error) {
 	if body.ChangeID == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("change_id", "body"))
+	}
+	if body.Prompt == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("prompt", "body"))
+	}
+	return
+}
+
+// ValidateReviseChangeRequestBody runs the validations defined on
+// ReviseChangeRequestBody
+func ValidateReviseChangeRequestBody(body *ReviseChangeRequestBody) (err error) {
+	if body.ChangeID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("change_id", "body"))
+	}
+	if body.RequestRevision == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("request_revision", "body"))
 	}
 	if body.Prompt == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("prompt", "body"))

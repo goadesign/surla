@@ -18,7 +18,7 @@ paths:
             tags:
                 - surla
             summary: get_change surla
-            description: Return the current Change Card, including its request_revision, to its owner, for example after confirm_intent refused an edit made against an older revision. Reading never confirms or changes the card. A recorded approval is included only while it still matches the promotion target's current suite, environment and binary digests; the call fails when the card has an approval and the target cannot report them.
+            description: Return the current Change Card, including its request_revision, to its owner, for example after confirm_intent or revise_change refused an edit made against an older revision. Reading never confirms or changes the card. A recorded approval is returned in approval only while it still matches the promotion target's current suite, environment and binary digests, or in unverified_approval when no promotion target is configured or the target cannot report its current inputs.
             operationId: surla#get_change
             parameters:
                 - name: change_id
@@ -114,7 +114,7 @@ paths:
             tags:
                 - surla
             summary: confirm_intent surla
-            description: Confirm or refine a Checkpoint 1 Change Card with the complete ambiguity answers and example table, bound to its current request_revision. Changed answers or examples produce a new request_revision; unchanged ones return the card as it is, with its approval only while that approval still matches the promotion target's current inputs. The call fails when the card has an approval and the promotion target cannot report its current inputs.
+            description: Confirm or refine a Checkpoint 1 Change Card with the complete ambiguity answers and example table, bound to its current request_revision. Changed answers or examples produce a new request_revision; unchanged ones return the card as it is, with a saved approval returned in approval only while that approval still matches the promotion target's current inputs, or in unverified_approval when no promotion target is configured or the target cannot report its current inputs.
             operationId: surla#confirm_intent
             parameters:
                 - name: confirm_intent_request_body
@@ -192,6 +192,38 @@ paths:
                     $ref: '#/definitions/ProposeChangePayload'
                     required:
                         - change_id
+                        - prompt
+            responses:
+                "200":
+                    description: OK response.
+                    schema:
+                        $ref: '#/definitions/ChangeCardResult'
+                        required:
+                            - change_id
+                            - status
+                            - prompt
+                            - summary
+                            - examples
+                            - preserved_behaviors
+                            - request_revision
+            schemes:
+                - http
+    /changes/revise:
+        post:
+            tags:
+                - surla
+            summary: revise_change surla
+            description: Revise an existing Checkpoint 1 Change Card with new or changed operator requirements bound to its current request_revision. Re-analyzes the revised prompt and design source alongside the prior card's confirmed decisions, open questions, examples and preserved behaviors, and saves a new revision in needs_confirmation status for operator review.
+            operationId: surla#revise_change
+            parameters:
+                - name: revise_change_request_body
+                  in: body
+                  required: true
+                  schema:
+                    $ref: '#/definitions/ReviseChangePayload'
+                    required:
+                        - change_id
+                        - request_revision
                         - prompt
             responses:
                 "200":
@@ -584,7 +616,7 @@ definitions:
                 type: string
                 description: Evaluator suite the promotion target requires.
                 example: Accusantium quae ducimus.
-        description: 'Checkpoint 5 approval recorded by approve_merge after the evaluator-written verification report passed and matched the change being promoted: the exact candidate commit, suite, environment and binary digests it checked. It is saved with the card in the control plane''s cards directory, merges and deploys nothing, is replaced by the next successful approve_merge for the same revision, and is dropped when confirm_intent mints a new request_revision. get_change and confirm_intent return it only while the promotion target''s current suite, environment and binary digests still equal the ones it records, so a returned approval was current when that response was made, not afterwards.'
+        description: 'Checkpoint 5 approval recorded by approve_merge after the evaluator-written verification report passed and matched the change being promoted: the exact candidate commit, suite, environment and binary digests it checked. It is saved with the card in the control plane''s cards directory, merges and deploys nothing, is replaced by the next successful approve_merge for the same revision, and is dropped when confirm_intent or revise_change mints a new request_revision. get_change and confirm_intent return it in approval only while the promotion target''s current suite, environment and binary digests still equal the ones it records, or in unverified_approval when current promotion inputs cannot be verified on that read.'
         example:
             approved_by: Quia fuga rem fugiat quasi.
             artifacts:
@@ -1272,7 +1304,7 @@ definitions:
                     - Animi unde.
             prompt:
                 type: string
-                description: Original operator feature request.
+                description: Operator feature request for this revision.
                 example: Ea perferendis neque.
             request_revision:
                 type: string
@@ -1291,6 +1323,8 @@ definitions:
                 example: Et repellendus nemo.
             ui_composition:
                 $ref: '#/definitions/UICompositionItem'
+            unverified_approval:
+                $ref: '#/definitions/UnverifiedApprovalItem'
         description: Checkpoint 1 Change Card containing examples, preserved behaviors, and audit metadata.
         example:
             ambiguities:
@@ -1352,6 +1386,18 @@ definitions:
             ui_composition:
                 composed_for_revision: Est et sit voluptatibus quibusdam quisquam.
                 program: Numquam provident excepturi et deleniti vel sed.
+            unverified_approval:
+                approval:
+                    approved_by: Quia fuga rem fugiat quasi.
+                    artifacts:
+                        Aspernatur fugit quam.: Minus nesciunt.
+                    candidate_commit: Explicabo necessitatibus esse cumque.
+                    environment: Illum sequi ducimus mollitia esse.
+                    report_digest: Harum rem sequi harum quis.
+                    scenario_count: 675343994147794327
+                    suite_commit: Voluptatem et placeat ullam quisquam.
+                    suite_id: Accusantium quae ducimus.
+                reason: Sequi et ut doloribus tenetur corporis ad.
         required:
             - change_id
             - status
@@ -1771,6 +1817,35 @@ definitions:
             prompt: Enim distinctio et sunt sunt et.
         required:
             - change_id
+            - prompt
+    ReviseChangePayload:
+        title: ReviseChangePayload
+        type: object
+        properties:
+            change_id:
+                type: string
+                description: Change identifier.
+                example: Optio ratione suscipit et neque officia.
+            design_source:
+                type: string
+                description: Updated target Goa design source inspected by the CP1 model; when omitted, the card's saved design source is preserved.
+                example: Qui itaque.
+            prompt:
+                type: string
+                description: Revised operator feature request.
+                example: Omnis est.
+            request_revision:
+                type: string
+                description: Current CP1 request_revision digest being revised.
+                example: Neque dolore optio.
+        example:
+            change_id: Optio ratione suscipit et neque officia.
+            design_source: Qui itaque.
+            prompt: Omnis est.
+            request_revision: Neque dolore optio.
+        required:
+            - change_id
+            - request_revision
             - prompt
     StartLiveTargetPayload:
         title: StartLiveTargetPayload
@@ -2529,6 +2604,32 @@ definitions:
         required:
             - program
             - composed_for_revision
+    UnverifiedApprovalItem:
+        title: UnverifiedApprovalItem
+        type: object
+        properties:
+            approval:
+                $ref: '#/definitions/ApprovalItem'
+            reason:
+                type: string
+                description: Explanation of why the recorded approval could not be verified against current promotion inputs and how to recover.
+                example: Sequi et ut doloribus tenetur corporis ad.
+        description: Saved Checkpoint 5 promotion approval recorded on the Change Card whose current promotion inputs could not be verified on this read.
+        example:
+            approval:
+                approved_by: Quia fuga rem fugiat quasi.
+                artifacts:
+                    Aspernatur fugit quam.: Minus nesciunt.
+                candidate_commit: Explicabo necessitatibus esse cumque.
+                environment: Illum sequi ducimus mollitia esse.
+                report_digest: Harum rem sequi harum quis.
+                scenario_count: 675343994147794327
+                suite_commit: Voluptatem et placeat ullam quisquam.
+                suite_id: Accusantium quae ducimus.
+            reason: Sequi et ut doloribus tenetur corporis ad.
+        required:
+            - approval
+            - reason
     VerificationCheck:
         title: VerificationCheck
         type: object

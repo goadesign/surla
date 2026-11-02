@@ -117,7 +117,7 @@ func runPreviewChange(args []string, w io.Writer, getenv func(string) string) er
 		goahttp.ResponseDecoder,
 		false,
 	).PreviewArchitecture()
-	client := gensurla.NewClient(nil, nil, nil, nil, nil, endpoint, nil, nil, nil, nil, nil, nil, nil)
+	client := gensurla.NewClient(nil, nil, nil, nil, nil, nil, endpoint, nil, nil, nil, nil, nil, nil, nil)
 	sigCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	ctx, cancel := context.WithTimeout(sigCtx, cfg.timeout)
