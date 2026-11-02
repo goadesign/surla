@@ -72,19 +72,40 @@ type (
 		// Result identifies the returned result: a SHA-256 of its
 		// structure, and the concrete facts the fixture should produce.
 		Result resultFacts `json:"result"`
-		// ServerStatus is the HTTP status the server's handler wrote for a
-		// preview request, observed after the request finished; 0 otherwise.
-		ServerStatus int `json:"server_status,omitempty"`
+		// Server is the server's own outcome for a preview request, captured
+		// from the service method before the generated HTTP error mapping.
+		Server *serverOutcome `json:"server,omitempty"`
+		// Retained lists per-evaluation directories still present after the
+		// operation; they mean build processes may still be running.
+		Retained []string `json:"retained,omitempty"`
 		// TempEntries lists TempDir's entries after the operation and any
 		// server request it started have stopped.
 		TempEntries []string `json:"temp_entries"`
 	}
 
-	// statusRecorder records the status a handler writes.
-	statusRecorder struct {
-		http.ResponseWriter
-		// status is the written status, 200 until WriteHeader.
-		status int
+	// serverOutcome is what the server's PreviewArchitecture returned.
+	serverOutcome struct {
+		// Error is the returned error's text, empty on success.
+		Error string `json:"error,omitempty"`
+		// Cancelled reports that the returned error wraps the request
+		// context's own cancellation or deadline error.
+		Cancelled bool `json:"cancelled"`
+		// ContextErr is the request context's error when the method
+		// returned, empty while it was still live.
+		ContextErr string `json:"context_err,omitempty"`
+		// err is the returned error.
+		err error
+	}
+
+	// observedService is test-only composition: it records each
+	// PreviewArchitecture outcome before the generated HTTP server maps
+	// errors to statuses, and passes every call through unchanged.
+	observedService struct {
+		gensurla.Service
+		// mu guards outcomes.
+		mu sync.Mutex
+		// outcomes holds one entry per finished PreviewArchitecture call.
+		outcomes []serverOutcome
 	}
 
 	// resultFacts identifies a returned result.
@@ -163,7 +184,7 @@ func TestTimingProbeDirect(t *testing.T) {
 			res, err = designeval.Evaluate(ctx, files)
 			return err
 		})
-		m.TempEntries = tempEntries(t, id.TempDir)
+		requireSafeCleanup(t, &m)
 		if m.Outcome == "ok" {
 			m.Result = evaluationFacts(t, res)
 		}
@@ -172,7 +193,6 @@ func TestTimingProbeDirect(t *testing.T) {
 			t.Fatalf("%s: %s", probe, m.Outcome)
 		}
 		requireFixture(t, probe, res.Declarations, res.AgentPolicies, res.Tools)
-		requireNoEvaluationLeft(t, id.TempDir)
 	}
 	var rep diff.Report
 	m := measure(t, id, "diff_third_and_fourth_evaluations", []map[string]string{files, changed}, func(ctx context.Context) error {
@@ -180,7 +200,7 @@ func TestTimingProbeDirect(t *testing.T) {
 		rep, err = diff.Compare(ctx, files, changed)
 		return err
 	})
-	m.TempEntries = tempEntries(t, id.TempDir)
+	requireSafeCleanup(t, &m)
 	if m.Outcome == "ok" {
 		m.Result = resultFacts{Digest: digestJSON(t, rep), Facts: append([]string{fmt.Sprintf("has_changes=%t", rep.HasChanges)}, prefixed("added=", rep.AddedDeclarations)...)}
 	}
@@ -191,7 +211,6 @@ func TestTimingProbeDirect(t *testing.T) {
 	if !rep.HasChanges || !slices.Contains(rep.AddedDeclarations, "Service:orders/Method:cancel_order") {
 		t.Fatalf("diff: want the added cancel_order method, got %+v", rep)
 	}
-	requireNoEvaluationLeft(t, id.TempDir)
 }
 
 // TestTimingProbePreviewHTTP measures, in its own fresh process, two
@@ -200,9 +219,11 @@ func TestTimingProbeDirect(t *testing.T) {
 // preview-change` uses by default. It exercises that client and the server,
 // not the CLI's file collection, flags, signals or output. Only the endpoint
 // call is timed. Reaching the 2-minute deadline is a studied outcome,
-// recorded as client_deadline; the server's own outcome (its HTTP status) is
-// then awaited and recorded, and its evaluation directory must be gone before
-// the next measurement. Anything else is fatal.
+// recorded as client_deadline. The server's own outcome is then awaited and
+// recorded from the service method. The probe continues only when that
+// outcome is a success or wraps the request's cancellation, and no
+// evaluation directory remains. Anything else, including a server error that
+// cannot be shown to be the cancellation, stops the experiment.
 func TestTimingProbePreviewHTTP(t *testing.T) {
 	id := setup(t)
 	files, _ := fixtures(t)
@@ -224,20 +245,13 @@ func TestTimingProbePreviewHTTP(t *testing.T) {
 		t.Fatalf("confirmed card: %v %+v", err, card)
 	}
 	auth := controlplane.NewTokenAuthenticator(map[string]controlplane.Principal{"tok": {ID: "alice@example.com"}})
-	handler := controlplane.NewHTTPHandler(cp, auth)
-	var (
-		inflight sync.WaitGroup
-		mu       sync.Mutex
-		statuses []int
-	)
+	svc := &observedService{Service: cp}
+	handler := controlplane.NewHTTPHandler(svc, auth)
+	var inflight sync.WaitGroup
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		inflight.Add(1)
 		defer inflight.Done()
-		rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
-		handler.ServeHTTP(rec, r)
-		mu.Lock()
-		statuses = append(statuses, rec.status)
-		mu.Unlock()
+		handler.ServeHTTP(w, r)
 	}))
 	// httptest.Server.Close waits for active handlers, and ControlPlane.Close
 	// does not cancel a running preview, so closing is bounded: a server that
@@ -269,14 +283,13 @@ func TestTimingProbePreviewHTTP(t *testing.T) {
 		if !waitBounded(&inflight, operationTimeout) {
 			t.Fatalf("%s: the server request did not finish within %s", probe, operationTimeout)
 		}
-		mu.Lock()
-		if len(statuses) != i+1 {
-			mu.Unlock()
-			t.Fatalf("%s: the server recorded %d requests, want %d", probe, len(statuses), i+1)
+		server, ok := svc.outcome(i)
+		if !ok {
+			emit(t, m)
+			t.Fatalf("%s: the server recorded no outcome for request %d", probe, i+1)
 		}
-		m.ServerStatus = statuses[i]
-		mu.Unlock()
-		m.TempEntries = tempEntries(t, id.TempDir)
+		m.Server = &server
+		requireSafeCleanup(t, &m)
 		if m.Outcome == "ok" {
 			out := res.(*gensurla.ArchitecturePreviewResult)
 			m.Result = resultFacts{Digest: digestJSON(t, out), Facts: []string{
@@ -288,14 +301,16 @@ func TestTimingProbePreviewHTTP(t *testing.T) {
 		if m.Outcome != "ok" && m.Outcome != "client_deadline" {
 			t.Fatalf("%s: %s", probe, m.Outcome)
 		}
-		// A completed request must have succeeded on the server too. After a
-		// client deadline the server sees its request cancelled, so any
-		// status is recorded as its outcome; what must hold is that its
-		// evaluation directory is gone, checked next.
-		if m.Outcome == "ok" && m.ServerStatus != http.StatusOK {
-			t.Fatalf("%s: the client succeeded but the server wrote status %d", probe, m.ServerStatus)
+		// A client success needs a server success. After a client deadline,
+		// the server may have finished anyway or returned the request's
+		// cancellation; any other server error is an independent failure or
+		// cannot be told apart from one, so the experiment stops.
+		if m.Outcome == "ok" && server.err != nil {
+			t.Fatalf("%s: the client succeeded but the server returned %v", probe, server.err)
 		}
-		requireNoEvaluationLeft(t, id.TempDir)
+		if m.Outcome == "client_deadline" && server.err != nil && !server.Cancelled {
+			t.Fatalf("%s: after the client deadline the server returned an error that does not wrap the request's cancellation (%v); its outcome is unresolved", probe, server.err)
+		}
 		if m.Outcome == "ok" {
 			out := res.(*gensurla.ArchitecturePreviewResult)
 			requirePreviewFixture(t, probe, out)
@@ -449,21 +464,28 @@ func requireAgentAndTool(t *testing.T, probe string, policies []*gensurla.AgentP
 	}
 }
 
-// requireNoEvaluationLeft fails the test when an evaluation's per-call
-// directory (surla-designeval-<n>) is still in the probe's TMPDIR, which
-// means its build processes may still be running. The baseline's
-// process-wide surla-designeval-work-<n> is expected and not checked here.
-func requireNoEvaluationLeft(t *testing.T, dir string) {
+// requireSafeCleanup records the probe's TMPDIR in m once the operation, and
+// any server request it started, have finished. It first looks for retained
+// per-evaluation directories (surla-designeval-<n>), which Evaluate keeps
+// only when its build processes may still be running. If any remain, it
+// emits m with only top-level names, since those processes may still be
+// changing files, and stops the experiment. Otherwise it records every
+// entry with its size. The baseline's process-wide surla-designeval-work-<n>
+// is expected and only listed.
+func requireSafeCleanup(t *testing.T, m *measurement) {
 	t.Helper()
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		t.Fatalf("list probe TMPDIR: %v", err)
-	}
-	for _, e := range entries {
-		if strings.HasPrefix(e.Name(), "surla-designeval-") && !strings.HasPrefix(e.Name(), "surla-designeval-work-") {
-			t.Fatalf("evaluation directory %s was left behind; stopping the experiment", e.Name())
+	names := entryNames(m.TempDir)
+	for _, name := range names {
+		if strings.HasPrefix(name, "surla-designeval-") && !strings.HasPrefix(name, "surla-designeval-work-") {
+			m.Retained = append(m.Retained, name)
 		}
 	}
+	if len(m.Retained) > 0 {
+		m.TempEntries = names
+		emit(t, *m)
+		t.Fatalf("%s: evaluation directories %v were kept; their build processes are unresolved, so the experiment stops", m.Probe, m.Retained)
+	}
+	m.TempEntries = tempEntries(t, m.TempDir)
 }
 
 // prefixed returns each value with prefix.
@@ -475,10 +497,31 @@ func prefixed(prefix string, values []string) []string {
 	return out
 }
 
-// WriteHeader records the status.
-func (r *statusRecorder) WriteHeader(code int) {
-	r.status = code
-	r.ResponseWriter.WriteHeader(code)
+// PreviewArchitecture calls the control plane and records its outcome.
+func (s *observedService) PreviewArchitecture(ctx context.Context, p *gensurla.PreviewArchitecturePayload) (*gensurla.ArchitecturePreviewResult, error) {
+	res, err := s.Service.PreviewArchitecture(ctx, p)
+	out := serverOutcome{err: err}
+	if err != nil {
+		out.Error = err.Error()
+		out.Cancelled = errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
+	}
+	if cerr := ctx.Err(); cerr != nil {
+		out.ContextErr = cerr.Error()
+	}
+	s.mu.Lock()
+	s.outcomes = append(s.outcomes, out)
+	s.mu.Unlock()
+	return res, err
+}
+
+// outcome returns the i-th recorded outcome.
+func (s *observedService) outcome(i int) (serverOutcome, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if i >= len(s.outcomes) {
+		return serverOutcome{}, false
+	}
+	return s.outcomes[i], true
 }
 
 // evaluationFacts identifies an evaluation result and checks the fixture's
