@@ -218,6 +218,86 @@ func DecodeProposeChangeResponse(decoder func(*http.Response) goahttp.Decoder, r
 	}
 }
 
+// BuildReviseChangeRequest instantiates a HTTP request object with method and
+// path set to call the "surla" service "revise_change" endpoint
+func (c *Client) BuildReviseChangeRequest(ctx context.Context, v any) (*http.Request, error) {
+	u := &url.URL{Scheme: c.scheme, Host: c.host, Path: ReviseChangeSurlaPath()}
+	req, err := http.NewRequest("POST", u.String(), nil)
+	if err != nil {
+		return nil, goahttp.ErrInvalidURL("surla", "revise_change", u.String(), err)
+	}
+	if ctx != nil {
+		req = req.WithContext(ctx)
+	}
+
+	return req, nil
+}
+
+// EncodeReviseChangeRequest returns an encoder for requests sent to the surla
+// revise_change server.
+func EncodeReviseChangeRequest(encoder func(*http.Request) goahttp.Encoder) func(*http.Request, any) error {
+	return func(req *http.Request, v any) error {
+		p, ok := v.(*surla.ReviseChangePayload)
+		if !ok {
+			return goahttp.ErrInvalidType("surla", "revise_change", "*surla.ReviseChangePayload", v)
+		}
+		body := NewReviseChangeRequestBody(p)
+		if err := encoder(req).Encode(&body); err != nil {
+			return goahttp.ErrEncodingError("surla", "revise_change", err)
+		}
+		return nil
+	}
+}
+
+// DecodeReviseChangeResponse returns a decoder for responses returned by the
+// surla revise_change endpoint. restoreBody controls whether the response body
+// should be restored after having been read.
+func DecodeReviseChangeResponse(decoder func(*http.Response) goahttp.Decoder, restoreBody bool) func(*http.Response) (any, error) {
+	return func(resp *http.Response) (result any, decodeErr error) {
+		responseBody := resp.Body
+		if restoreBody {
+			b, readErr := io.ReadAll(responseBody)
+			closeErr := responseBody.Close()
+			if err := errors.Join(readErr, closeErr); err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "revise_change", err)
+			}
+			resp.Body = io.NopCloser(bytes.NewBuffer(b))
+			defer func() {
+				resp.Body = io.NopCloser(bytes.NewBuffer(b))
+			}()
+		} else {
+			defer func() {
+				if err := responseBody.Close(); err != nil {
+					decodeErr = errors.Join(decodeErr, goahttp.ErrDecodingError("surla", "revise_change", err))
+				}
+			}()
+		}
+		switch resp.StatusCode {
+		case http.StatusOK:
+			var (
+				body ReviseChangeResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "revise_change", err)
+			}
+			err = ValidateReviseChangeResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("surla", "revise_change", err)
+			}
+			res := NewReviseChangeChangeCardResultOK(&body)
+			return res, nil
+		default:
+			body, err := io.ReadAll(resp.Body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "revise_change", err)
+			}
+			return nil, goahttp.ErrInvalidResponse("surla", "revise_change", resp.StatusCode, string(body))
+		}
+	}
+}
+
 // BuildConfirmIntentRequest instantiates a HTTP request object with method and
 // path set to call the "surla" service "confirm_intent" endpoint
 func (c *Client) BuildConfirmIntentRequest(ctx context.Context, v any) (*http.Request, error) {
@@ -923,6 +1003,18 @@ func unmarshalApprovalItemResponseBodyToSurlaApprovalItem(v *ApprovalItemRespons
 		tv := val
 		res.Artifacts[tk] = tv
 	}
+
+	return res
+}
+
+// unmarshalUnverifiedApprovalItemResponseBodyToSurlaUnverifiedApprovalItem
+// builds a value of type *surla.UnverifiedApprovalItem from a value of type
+// *UnverifiedApprovalItemResponseBody.
+func unmarshalUnverifiedApprovalItemResponseBodyToSurlaUnverifiedApprovalItem(v *UnverifiedApprovalItemResponseBody) *surla.UnverifiedApprovalItem {
+	res := &surla.UnverifiedApprovalItem{
+		Reason: *v.Reason,
+	}
+	res.Approval = unmarshalApprovalItemResponseBodyToSurlaApprovalItem(v.Approval)
 
 	return res
 }

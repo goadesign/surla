@@ -31,19 +31,27 @@ type Service interface {
 	// Evaluate a feature request at Checkpoint 1, surfacing concrete examples and
 	// any genuine domain ambiguity.
 	ProposeChange(context.Context, *ProposeChangePayload) (res *ChangeCardResult, err error)
+	// Revise an existing Checkpoint 1 Change Card with new or changed operator
+	// requirements bound to its current request_revision. Re-analyzes the revised
+	// prompt and design source alongside the prior card's confirmed decisions,
+	// open questions, examples and preserved behaviors, and saves a new revision
+	// in needs_confirmation status for operator review.
+	ReviseChange(context.Context, *ReviseChangePayload) (res *ChangeCardResult, err error)
 	// Confirm or refine a Checkpoint 1 Change Card with the complete ambiguity
 	// answers and example table, bound to its current request_revision. Changed
 	// answers or examples produce a new request_revision; unchanged ones return
-	// the card as it is, with its approval only while that approval still matches
-	// the promotion target's current inputs. The call fails when the card has an
-	// approval and the promotion target cannot report its current inputs.
+	// the card as it is, with a saved approval returned in approval only while
+	// that approval still matches the promotion target's current inputs, or in
+	// unverified_approval when no promotion target is configured or the target
+	// cannot report its current inputs.
 	ConfirmIntent(context.Context, *ConfirmIntentPayload) (res *ChangeCardResult, err error)
 	// Return the current Change Card, including its request_revision, to its
-	// owner, for example after confirm_intent refused an edit made against an
-	// older revision. Reading never confirms or changes the card. A recorded
-	// approval is included only while it still matches the promotion target's
-	// current suite, environment and binary digests; the call fails when the card
-	// has an approval and the target cannot report them.
+	// owner, for example after confirm_intent or revise_change refused an edit
+	// made against an older revision. Reading never confirms or changes the card.
+	// A recorded approval is returned in approval only while it still matches the
+	// promotion target's current suite, environment and binary digests, or in
+	// unverified_approval when no promotion target is configured or the target
+	// cannot report its current inputs.
 	GetChange(context.Context, *GetChangePayload) (res *ChangeCardResult, err error)
 	// Extract and validate the Checkpoint 2 C4 container topology, tool contracts,
 	// Goa-AI guardrails, and proposed Chorus swarm roster from a candidate Goa
@@ -93,7 +101,7 @@ const ServiceName = "surla"
 // MethodNames lists the service method names as defined in the design. These
 // are the same values that are set in the endpoint request contexts under the
 // MethodKey key.
-var MethodNames = [11]string{"checkpoint_ui", "golden_path", "propose_change", "confirm_intent", "get_change", "preview_architecture", "draft_override", "verify_change", "get_verification", "approve_merge", "diff"}
+var MethodNames = [12]string{"checkpoint_ui", "golden_path", "propose_change", "revise_change", "confirm_intent", "get_change", "preview_architecture", "draft_override", "verify_change", "get_verification", "approve_merge", "diff"}
 
 // Evaluated Goa-AI cost, safety, history, and cache policy for a single agent.
 type AgentPolicyItem struct {
@@ -130,11 +138,11 @@ type AmbiguityQuestion struct {
 // candidate commit, suite, environment and binary digests it checked. It is
 // saved with the card in the control plane's cards directory, merges and
 // deploys nothing, is replaced by the next successful approve_merge for the
-// same revision, and is dropped when confirm_intent mints a new
-// request_revision. get_change and confirm_intent return it only while the
-// promotion target's current suite, environment and binary digests still equal
-// the ones it records, so a returned approval was current when that response
-// was made, not afterwards.
+// same revision, and is dropped when confirm_intent or revise_change mints a
+// new request_revision. get_change and confirm_intent return it in approval
+// only while the promotion target's current suite, environment and binary
+// digests still equal the ones it records, or in unverified_approval when
+// current promotion inputs cannot be verified on that read.
 type ApprovalItem struct {
 	// Authenticated bearer principal that owns the card and called approve_merge.
 	// Bearer authentication does not prove that a human, rather than a coding
@@ -255,7 +263,7 @@ type ChangeCardResult struct {
 	ChangeID string
 	// Checkpoint status (needs_confirmation or confirmed).
 	Status string
-	// Original operator feature request.
+	// Operator feature request for this revision.
 	Prompt string
 	// Plain-English summary of requested behavior.
 	Summary string
@@ -275,12 +283,18 @@ type ChangeCardResult struct {
 	// one. A confirm_intent that changes answers or examples returns the new
 	// revision without it.
 	UIComposition *UICompositionItem
-	// Checkpoint 5 approval of this revision, present only while it matches the
-	// promotion target's current inputs. It is absent before approve_merge
-	// succeeds and whenever the target's suite, environment or binary digests have
-	// changed since; it comes back if they match again. It is never hashed into
-	// request_revision.
+	// Checkpoint 5 approval of this revision, present only while it is verified
+	// against the promotion target's current inputs on this read. It is absent
+	// before approve_merge succeeds, whenever the target's suite, environment or
+	// binary digests have changed since, and whenever current inputs cannot be
+	// verified (see unverified_approval). It is never hashed into request_revision.
 	Approval *ApprovalItem
+	// Saved Checkpoint 5 approval of this revision when current promotion inputs
+	// could not be verified on this read (because no promotion target is
+	// configured or the target could not report its current inputs). At most one
+	// of approval or unverified_approval is set. It is never saved to disk or
+	// hashed into request_revision.
+	UnverifiedApproval *UnverifiedApprovalItem
 }
 
 // ConfirmIntentPayload is the payload type of the surla service confirm_intent
@@ -407,6 +421,20 @@ type ProposeChangePayload struct {
 	DesignSource *string
 }
 
+// ReviseChangePayload is the payload type of the surla service revise_change
+// method.
+type ReviseChangePayload struct {
+	// Change identifier.
+	ChangeID string
+	// Current CP1 request_revision digest being revised.
+	RequestRevision string
+	// Revised operator feature request.
+	Prompt string
+	// Updated target Goa design source inspected by the CP1 model; when omitted,
+	// the card's saved design source is preserved.
+	DesignSource *string
+}
+
 // Proposed Chorus role assignments and model-family diversity facts surfaced
 // at Checkpoint 2. Role and model assignments do not prove launch or replace
 // process/workspace isolation.
@@ -517,6 +545,16 @@ type UICompositionItem struct {
 	Program string
 	// request_revision of the Change Card this program was composed for.
 	ComposedForRevision string
+}
+
+// Saved Checkpoint 5 promotion approval recorded on the Change Card whose
+// current promotion inputs could not be verified on this read.
+type UnverifiedApprovalItem struct {
+	// Recorded promotion approval from the Change Card.
+	Approval *ApprovalItem
+	// Explanation of why the recorded approval could not be verified against
+	// current promotion inputs and how to recover.
+	Reason string
 }
 
 // One deterministic check of a repair scenario.
@@ -1091,7 +1129,7 @@ type jsonChangeCardResultTransport struct {
 	ChangeID *string `json:"change_id"`
 	// Checkpoint status (needs_confirmation or confirmed).
 	Status *string `json:"status"`
-	// Original operator feature request.
+	// Operator feature request for this revision.
 	Prompt *string `json:"prompt"`
 	// Plain-English summary of requested behavior.
 	Summary *string `json:"summary"`
@@ -1111,12 +1149,18 @@ type jsonChangeCardResultTransport struct {
 	// one. A confirm_intent that changes answers or examples returns the new
 	// revision without it.
 	UIComposition *jsonUICompositionItemTransport `json:"ui_composition,omitempty"`
-	// Checkpoint 5 approval of this revision, present only while it matches the
-	// promotion target's current inputs. It is absent before approve_merge
-	// succeeds and whenever the target's suite, environment or binary digests have
-	// changed since; it comes back if they match again. It is never hashed into
-	// request_revision.
+	// Checkpoint 5 approval of this revision, present only while it is verified
+	// against the promotion target's current inputs on this read. It is absent
+	// before approve_merge succeeds, whenever the target's suite, environment or
+	// binary digests have changed since, and whenever current inputs cannot be
+	// verified (see unverified_approval). It is never hashed into request_revision.
 	Approval *jsonApprovalItemTransport `json:"approval,omitempty"`
+	// Saved Checkpoint 5 approval of this revision when current promotion inputs
+	// could not be verified on this read (because no promotion target is
+	// configured or the target could not report its current inputs). At most one
+	// of approval or unverified_approval is set. It is never saved to disk or
+	// hashed into request_revision.
+	UnverifiedApproval *jsonUnverifiedApprovalItemTransport `json:"unverified_approval,omitempty"`
 }
 
 // validatejsonChangeCardResultTransport checks decoded JSON before it becomes a service value.
@@ -1171,6 +1215,11 @@ func validatejsonChangeCardResultTransport(value *jsonChangeCardResultTransport)
 	}
 	if value.Approval != nil {
 		if err2 := validatejsonApprovalItemTransport(value.Approval); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		}
+	}
+	if value.UnverifiedApproval != nil {
+		if err2 := validatejsonUnverifiedApprovalItemTransport(value.UnverifiedApproval); err2 != nil {
 			err = goa.MergeErrors(err, err2)
 		}
 	}
@@ -1508,6 +1557,36 @@ func validatejsonProposeChangePayloadTransport(value *jsonProposeChangePayloadTr
 	return err
 }
 
+// jsonReviseChangePayloadTransport stores JSON fields until they have been validated.
+type jsonReviseChangePayloadTransport struct {
+	// Change identifier.
+	ChangeID *string `json:"change_id"`
+	// Current CP1 request_revision digest being revised.
+	RequestRevision *string `json:"request_revision"`
+	// Revised operator feature request.
+	Prompt *string `json:"prompt"`
+	// Updated target Goa design source inspected by the CP1 model; when omitted,
+	// the card's saved design source is preserved.
+	DesignSource *string `json:"design_source,omitempty"`
+}
+
+// validatejsonReviseChangePayloadTransport checks decoded JSON before it becomes a service value.
+func validatejsonReviseChangePayloadTransport(value *jsonReviseChangePayloadTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.ChangeID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("change_id", "body"))
+	}
+	if value.RequestRevision == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("request_revision", "body"))
+	}
+	if value.Prompt == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("prompt", "body"))
+	}
+	return err
+}
+
 // jsonSwarmPlanItemTransport stores JSON fields until they have been validated.
 type jsonSwarmPlanItemTransport struct {
 	// Roster configuration status.
@@ -1762,6 +1841,34 @@ func validatejsonUICompositionItemTransport(value *jsonUICompositionItemTranspor
 	}
 	if value.ComposedForRevision == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("composed_for_revision", "body"))
+	}
+	return err
+}
+
+// jsonUnverifiedApprovalItemTransport stores JSON fields until they have been validated.
+type jsonUnverifiedApprovalItemTransport struct {
+	// Recorded promotion approval from the Change Card.
+	Approval *jsonApprovalItemTransport `json:"approval"`
+	// Explanation of why the recorded approval could not be verified against
+	// current promotion inputs and how to recover.
+	Reason *string `json:"reason"`
+}
+
+// validatejsonUnverifiedApprovalItemTransport checks decoded JSON before it becomes a service value.
+func validatejsonUnverifiedApprovalItemTransport(value *jsonUnverifiedApprovalItemTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.Approval == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("approval", "body"))
+	}
+	if value.Reason == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("reason", "body"))
+	}
+	if value.Approval != nil {
+		if err2 := validatejsonApprovalItemTransport(value.Approval); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		}
 	}
 	return err
 }
@@ -2246,6 +2353,11 @@ func validateChangeCardResultOriginal(value *ChangeCardResult) (err error) {
 			err = goa.MergeErrors(err, err2)
 		}
 	}
+	if value.UnverifiedApproval != nil {
+		if err2 := validateUnverifiedApprovalItemOriginal(value.UnverifiedApproval); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		}
+	}
 	return err
 }
 
@@ -2253,6 +2365,19 @@ func validateChangeCardResultOriginal(value *ChangeCardResult) (err error) {
 func validateExampleItemOriginal(value *ExampleItem) (err error) {
 	if !(value.VerificationKind == "deterministic" || value.VerificationKind == "model_judged") {
 		err = goa.MergeErrors(err, goa.InvalidEnumValueError("value.verification_kind", value.VerificationKind, []any{"deterministic", "model_judged"}))
+	}
+	return err
+}
+
+// validateUnverifiedApprovalItemOriginal checks the original typed value before JSON conversion.
+func validateUnverifiedApprovalItemOriginal(value *UnverifiedApprovalItem) (err error) {
+	if value.Approval == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("approval", "value"))
+	}
+	if value.Approval != nil {
+		if err2 := validateApprovalItemOriginal(value.Approval); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		}
 	}
 	return err
 }
@@ -3664,6 +3789,9 @@ func EncodeChangeCardResult(in *ChangeCardResult) ([]byte, error) {
 		if in.Approval != nil {
 			body.Approval = encodeApprovalItemToApprovalItemTransport(in.Approval)
 		}
+		if in.UnverifiedApproval != nil {
+			body.UnverifiedApproval = encodeUnverifiedApprovalItemToUnverifiedApprovalItemTransport(in.UnverifiedApproval)
+		}
 	}
 	if err := validatejsonChangeCardResultTransport(body); err != nil {
 		return nil, fmt.Errorf("validate ChangeCardResult JSON: %w", err)
@@ -3735,6 +3863,9 @@ func ValidateChangeCardResultValue(in *ChangeCardResult) error {
 		}
 		if in.Approval != nil {
 			body.Approval = encodeApprovalItemToApprovalItemTransport(in.Approval)
+		}
+		if in.UnverifiedApproval != nil {
+			body.UnverifiedApproval = encodeUnverifiedApprovalItemToUnverifiedApprovalItemTransport(in.UnverifiedApproval)
 		}
 	}
 	if err := validatejsonChangeCardResultTransport(body); err != nil {
@@ -3811,6 +3942,9 @@ func DecodeChangeCardResult(data []byte) (out *ChangeCardResult, err error) {
 		}
 		if body.Approval != nil {
 			out.Approval = decodeApprovalItemTransportToApprovalItem(body.Approval)
+		}
+		if body.UnverifiedApproval != nil {
+			out.UnverifiedApproval = decodeUnverifiedApprovalItemTransportToUnverifiedApprovalItem(body.UnverifiedApproval)
 		}
 	}
 	return out, nil
@@ -4882,6 +5016,92 @@ func DecodeProposeChangePayload(data []byte) (out *ProposeChangePayload, err err
 	return out, nil
 }
 
+// EncodeReviseChangePayload turns a service value into JSON using the field names in the Goa design.
+func EncodeReviseChangePayload(in *ReviseChangePayload) ([]byte, error) {
+	if err := checkReviseChangePayloadValue(in); err != nil {
+		return nil, fmt.Errorf("encode ReviseChangePayload JSON: %w", err)
+	}
+	var body *jsonReviseChangePayloadTransport
+	{
+		body = &jsonReviseChangePayloadTransport{
+			ChangeID:        &in.ChangeID,
+			RequestRevision: &in.RequestRevision,
+			Prompt:          &in.Prompt,
+			DesignSource:    in.DesignSource,
+		}
+	}
+	if err := validatejsonReviseChangePayloadTransport(body); err != nil {
+		return nil, fmt.Errorf("validate ReviseChangePayload JSON: %w", err)
+	}
+	data, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("encode ReviseChangePayload JSON: %w", err)
+	}
+	return data, nil
+}
+
+// ValidateReviseChangePayloadValue checks the original Go fields against their declared constraints.
+// It returns validation errors without encoding the value as JSON.
+
+func ValidateReviseChangePayloadValue(in *ReviseChangePayload) error {
+	if err := checkReviseChangePayloadValue(in); err != nil {
+		return fmt.Errorf("validate ReviseChangePayload value: %w", err)
+	}
+
+	if in == nil {
+		return goa.MissingFieldError("result", "ReviseChangePayload")
+	}
+
+	var body *jsonReviseChangePayloadTransport
+	{
+		body = &jsonReviseChangePayloadTransport{
+			ChangeID:        &in.ChangeID,
+			RequestRevision: &in.RequestRevision,
+			Prompt:          &in.Prompt,
+			DesignSource:    in.DesignSource,
+		}
+	}
+	if err := validatejsonReviseChangePayloadTransport(body); err != nil {
+		return fmt.Errorf("validate ReviseChangePayload value: %w", err)
+	}
+	return nil
+}
+
+// DecodeReviseChangePayload checks JSON field names from the Goa design and returns a service value.
+func DecodeReviseChangePayload(data []byte) (out *ReviseChangePayload, err error) {
+	root, err := readStrictJSON(data)
+	if err != nil {
+		return out, fmt.Errorf("decode ReviseChangePayload JSON: %w", err)
+	}
+	if err := validateReviseChangePayloadJSONValue("", root, ""); err != nil {
+		return out, fmt.Errorf("decode ReviseChangePayload JSON: %w", err)
+	}
+	var body *jsonReviseChangePayloadTransport
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&body); err != nil {
+		return out, fmt.Errorf("decode ReviseChangePayload JSON: %w", err)
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		if err == nil {
+			return out, fmt.Errorf("decode ReviseChangePayload JSON: multiple JSON values")
+		}
+		return out, fmt.Errorf("decode ReviseChangePayload JSON after first value: %w", err)
+	}
+	if err := validatejsonReviseChangePayloadTransport(body); err != nil {
+		return out, fmt.Errorf("validate ReviseChangePayload JSON: %w", err)
+	}
+	{
+		out = &ReviseChangePayload{
+			ChangeID:        *body.ChangeID,
+			RequestRevision: *body.RequestRevision,
+			Prompt:          *body.Prompt,
+			DesignSource:    body.DesignSource,
+		}
+	}
+	return out, nil
+}
+
 // EncodeSwarmPlanItem turns a service value into JSON using the field names in the Goa design.
 func EncodeSwarmPlanItem(in *SwarmPlanItem) ([]byte, error) {
 	if err := checkSwarmPlanItemValue(in); err != nil {
@@ -5449,6 +5669,92 @@ func DecodeUICompositionItem(data []byte) (out *UICompositionItem, err error) {
 			Program:             *body.Program,
 			ComposedForRevision: *body.ComposedForRevision,
 		}
+	}
+	return out, nil
+}
+
+// EncodeUnverifiedApprovalItem turns a service value into JSON using the field names in the Goa design.
+func EncodeUnverifiedApprovalItem(in *UnverifiedApprovalItem) ([]byte, error) {
+	if err := checkUnverifiedApprovalItemValue(in); err != nil {
+		return nil, fmt.Errorf("encode UnverifiedApprovalItem JSON: %w", err)
+	}
+	if err := validateUnverifiedApprovalItemOriginal(in); err != nil {
+		return nil, fmt.Errorf("validate UnverifiedApprovalItem value: %w", err)
+	}
+	var body *jsonUnverifiedApprovalItemTransport
+	{
+		body = &jsonUnverifiedApprovalItemTransport{
+			Reason: &in.Reason,
+		}
+		body.Approval = encodeApprovalItemToApprovalItemTransport2(in.Approval)
+	}
+	if err := validatejsonUnverifiedApprovalItemTransport(body); err != nil {
+		return nil, fmt.Errorf("validate UnverifiedApprovalItem JSON: %w", err)
+	}
+	data, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("encode UnverifiedApprovalItem JSON: %w", err)
+	}
+	return data, nil
+}
+
+// ValidateUnverifiedApprovalItemValue checks the original Go fields against their declared constraints.
+// It returns validation errors without encoding the value as JSON.
+
+func ValidateUnverifiedApprovalItemValue(in *UnverifiedApprovalItem) error {
+	if err := checkUnverifiedApprovalItemValue(in); err != nil {
+		return fmt.Errorf("validate UnverifiedApprovalItem value: %w", err)
+	}
+	if err := validateUnverifiedApprovalItemOriginal(in); err != nil {
+		return fmt.Errorf("validate UnverifiedApprovalItem value: %w", err)
+	}
+
+	if in == nil {
+		return goa.MissingFieldError("result", "UnverifiedApprovalItem")
+	}
+
+	var body *jsonUnverifiedApprovalItemTransport
+	{
+		body = &jsonUnverifiedApprovalItemTransport{
+			Reason: &in.Reason,
+		}
+		body.Approval = encodeApprovalItemToApprovalItemTransport2(in.Approval)
+	}
+	if err := validatejsonUnverifiedApprovalItemTransport(body); err != nil {
+		return fmt.Errorf("validate UnverifiedApprovalItem value: %w", err)
+	}
+	return nil
+}
+
+// DecodeUnverifiedApprovalItem checks JSON field names from the Goa design and returns a service value.
+func DecodeUnverifiedApprovalItem(data []byte) (out *UnverifiedApprovalItem, err error) {
+	root, err := readStrictJSON(data)
+	if err != nil {
+		return out, fmt.Errorf("decode UnverifiedApprovalItem JSON: %w", err)
+	}
+	if err := validateChangeCardResultJSONValue8("", root, ""); err != nil {
+		return out, fmt.Errorf("decode UnverifiedApprovalItem JSON: %w", err)
+	}
+	var body *jsonUnverifiedApprovalItemTransport
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&body); err != nil {
+		return out, fmt.Errorf("decode UnverifiedApprovalItem JSON: %w", err)
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		if err == nil {
+			return out, fmt.Errorf("decode UnverifiedApprovalItem JSON: multiple JSON values")
+		}
+		return out, fmt.Errorf("decode UnverifiedApprovalItem JSON after first value: %w", err)
+	}
+	if err := validatejsonUnverifiedApprovalItemTransport(body); err != nil {
+		return out, fmt.Errorf("validate UnverifiedApprovalItem JSON: %w", err)
+	}
+	{
+		out = &UnverifiedApprovalItem{
+			Reason: *body.Reason,
+		}
+		out.Approval = decodeApprovalItemTransportToApprovalItem(body.Approval)
 	}
 	return out, nil
 }
@@ -6507,6 +6813,15 @@ func decodeUICompositionItemTransportToUICompositionItem(v *jsonUICompositionIte
 	return res
 }
 
+func decodeUnverifiedApprovalItemTransportToUnverifiedApprovalItem(v *jsonUnverifiedApprovalItemTransport) *UnverifiedApprovalItem {
+	res := &UnverifiedApprovalItem{
+		Reason: *v.Reason,
+	}
+	res.Approval = decodeApprovalItemTransportToApprovalItem(v.Approval)
+
+	return res
+}
+
 func decodeVerificationCheckTransportToVerificationCheck(v *jsonVerificationCheckTransport) *VerificationCheck {
 	res := &VerificationCheck{
 		Name:       *v.Name,
@@ -6611,6 +6926,27 @@ func encodeAmbiguityQuestionToAmbiguityQuestionTransport(v *AmbiguityQuestion) *
 }
 
 func encodeApprovalItemToApprovalItemTransport(v *ApprovalItem) *jsonApprovalItemTransport {
+	res := &jsonApprovalItemTransport{
+		ApprovedBy:      &v.ApprovedBy,
+		ReportDigest:    &v.ReportDigest,
+		CandidateCommit: &v.CandidateCommit,
+		SuiteID:         &v.SuiteID,
+		SuiteCommit:     &v.SuiteCommit,
+		Environment:     &v.Environment,
+	}
+	scenarioCount := approvalItemIntTransport(v.ScenarioCount)
+	res.ScenarioCount = &scenarioCount
+	res.Artifacts = make(map[string]string, len(v.Artifacts))
+	for key, val := range v.Artifacts {
+		tk := key
+		tv := val
+		res.Artifacts[tk] = tv
+	}
+
+	return res
+}
+
+func encodeApprovalItemToApprovalItemTransport2(v *ApprovalItem) *jsonApprovalItemTransport {
 	res := &jsonApprovalItemTransport{
 		ApprovedBy:      &v.ApprovedBy,
 		ReportDigest:    &v.ReportDigest,
@@ -6822,6 +7158,15 @@ func encodeUICompositionItemToUICompositionItemTransport(v *UICompositionItem) *
 		Program:             &v.Program,
 		ComposedForRevision: &v.ComposedForRevision,
 	}
+
+	return res
+}
+
+func encodeUnverifiedApprovalItemToUnverifiedApprovalItemTransport(v *UnverifiedApprovalItem) *jsonUnverifiedApprovalItemTransport {
+	res := &jsonUnverifiedApprovalItemTransport{
+		Reason: &v.Reason,
+	}
+	res.Approval = encodeApprovalItemToApprovalItemTransport2(v.Approval)
 
 	return res
 }
@@ -8547,7 +8892,7 @@ func validateChangeCardResultJSONValue(path string, value any, description strin
 		case "approval":
 			if err := validateApprovalItemJSONValue(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Checkpoint 5 approval of this revision, present only while it matches the promotion target's current inputs. It is absent before approve_merge succeeds and whenever the target's suite, environment or binary digests have changed since; it comes back if they match again. It is never hashed into request_revision.",
+				typed[key], "Checkpoint 5 approval of this revision, present only while it is verified against the promotion target's current inputs on this read. It is absent before approve_merge succeeds, whenever the target's suite, environment or binary digests have changed since, and whenever current inputs cannot be verified (see unverified_approval). It is never hashed into request_revision.",
 			); err != nil {
 				return err
 			}
@@ -8582,7 +8927,7 @@ func validateChangeCardResultJSONValue(path string, value any, description strin
 		case "prompt":
 			if err := validateAgentPolicyItemJSONValue2(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Original operator feature request.",
+				typed[key], "Operator feature request for this revision.",
 			); err != nil {
 				return err
 			}
@@ -8614,6 +8959,13 @@ func validateChangeCardResultJSONValue(path string, value any, description strin
 			); err != nil {
 				return err
 			}
+		case "unverified_approval":
+			if err := validateChangeCardResultJSONValue8(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Saved Checkpoint 5 approval of this revision when current promotion inputs could not be verified on this read (because no promotion target is configured or the target could not report its current inputs). At most one of approval or unverified_approval is set. It is never saved to disk or hashed into request_revision.",
+			); err != nil {
+				return err
+			}
 		default:
 			return unknownJSONFieldError(path, key, []string{
 				"ambiguities",
@@ -8628,6 +8980,7 @@ func validateChangeCardResultJSONValue(path string, value any, description strin
 				"status",
 				"summary",
 				"ui_composition",
+				"unverified_approval",
 			})
 		}
 	}
@@ -8847,6 +9200,50 @@ func validateChangeCardResultJSONValue7(path string, value any, description stri
 			return unknownJSONFieldError(path, key, []string{
 				"composed_for_revision",
 				"program",
+			})
+		}
+	}
+	return nil
+}
+
+// validateChangeCardResultJSONValue8 checks one value whose JSON shape is fixed by the generated Goa type.
+func validateChangeCardResultJSONValue8(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "approval":
+			if err := validateApprovalItemJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Recorded promotion approval from the Change Card.",
+			); err != nil {
+				return err
+			}
+		case "reason":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Explanation of why the recorded approval could not be verified against current promotion inputs and how to recover.",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"approval",
+				"reason",
 			})
 		}
 	}
@@ -9567,6 +9964,66 @@ func validateProposeChangePayloadJSONValue(path string, value any, description s
 				"change_id",
 				"design_source",
 				"prompt",
+			})
+		}
+	}
+	return nil
+}
+
+// validateReviseChangePayloadJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateReviseChangePayloadJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "change_id":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Change identifier.",
+			); err != nil {
+				return err
+			}
+		case "design_source":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Updated target Goa design source inspected by the CP1 model; when omitted, the card's saved design source is preserved.",
+			); err != nil {
+				return err
+			}
+		case "prompt":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Revised operator feature request.",
+			); err != nil {
+				return err
+			}
+		case "request_revision":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Current CP1 request_revision digest being revised.",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"change_id",
+				"design_source",
+				"prompt",
+				"request_revision",
 			})
 		}
 	}
@@ -10753,6 +11210,9 @@ func checkChangeCardResultChangeCardResultValue(in *ChangeCardResult, field stri
 		if err := checkApprovalItemApprovalItemValue(in.Approval, generatedJSONChildPath(field, "approval", false), active); err != nil {
 			return err
 		}
+		if err := checkChangeCardResultUnverifiedApprovalItemValue(in.UnverifiedApproval, generatedJSONChildPath(field, "unverified_approval", false), active); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -10803,6 +11263,27 @@ func checkChangeCardResultUICompositionItemValue(in *UICompositionItem, field st
 		}
 		if !utf8.ValidString(string(in.ComposedForRevision)) {
 			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "composed_for_revision", false))
+		}
+	}
+	return nil
+}
+
+// checkChangeCardResultUnverifiedApprovalItemValue checks one generated value on the active path.
+func checkChangeCardResultUnverifiedApprovalItemValue(in *UnverifiedApprovalItem, field string, active map[any]bool) error {
+	if in == nil {
+		return nil
+	}
+	if active[in] {
+		return fmt.Errorf("%s: cyclic Go value", field)
+	}
+	active[in] = true
+	defer delete(active, in)
+	if in != nil {
+		if err := checkApprovalItemApprovalItemValue(in.Approval, generatedJSONChildPath(field, "approval", false), active); err != nil {
+			return err
+		}
+		if !utf8.ValidString(string(in.Reason)) {
+			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "reason", false))
 		}
 	}
 	return nil
@@ -11210,6 +11691,47 @@ func checkProposeChangePayloadProposeChangePayloadValue(in *ProposeChangePayload
 	return nil
 }
 
+// checkReviseChangePayloadValue checks text and cycles before conversion.
+func checkReviseChangePayloadValue(in *ReviseChangePayload) error {
+	if in == nil {
+		return fmt.Errorf("missing root value")
+	}
+	active := make(map[any]bool)
+	if err := checkReviseChangePayloadReviseChangePayloadValue(in, "$", active); err != nil {
+		return err
+	}
+	return nil
+}
+
+// checkReviseChangePayloadReviseChangePayloadValue checks one generated value on the active path.
+func checkReviseChangePayloadReviseChangePayloadValue(in *ReviseChangePayload, field string, active map[any]bool) error {
+	if in == nil {
+		return nil
+	}
+	if active[in] {
+		return fmt.Errorf("%s: cyclic Go value", field)
+	}
+	active[in] = true
+	defer delete(active, in)
+	if in != nil {
+		if !utf8.ValidString(string(in.ChangeID)) {
+			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "change_id", false))
+		}
+		if !utf8.ValidString(string(in.RequestRevision)) {
+			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "request_revision", false))
+		}
+		if !utf8.ValidString(string(in.Prompt)) {
+			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "prompt", false))
+		}
+		if in.DesignSource != nil {
+			if !utf8.ValidString(string(*in.DesignSource)) {
+				return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "design_source", false))
+			}
+		}
+	}
+	return nil
+}
+
 // checkSwarmPlanItemValue checks text and cycles before conversion.
 func checkSwarmPlanItemValue(in *SwarmPlanItem) error {
 	if in == nil {
@@ -11265,6 +11787,18 @@ func checkUICompositionItemValue(in *UICompositionItem) error {
 	}
 	active := make(map[any]bool)
 	if err := checkChangeCardResultUICompositionItemValue(in, "$", active); err != nil {
+		return err
+	}
+	return nil
+}
+
+// checkUnverifiedApprovalItemValue checks text and cycles before conversion.
+func checkUnverifiedApprovalItemValue(in *UnverifiedApprovalItem) error {
+	if in == nil {
+		return fmt.Errorf("missing root value")
+	}
+	active := make(map[any]bool)
+	if err := checkChangeCardResultUnverifiedApprovalItemValue(in, "$", active); err != nil {
 		return err
 	}
 	return nil

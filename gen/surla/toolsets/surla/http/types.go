@@ -33,7 +33,7 @@ type (
 		ChangeID *string `json:"change_id"`
 		// Checkpoint status (needs_confirmation or confirmed).
 		Status *string `json:"status"`
-		// Original operator feature request.
+		// Operator feature request for this revision.
 		Prompt *string `json:"prompt"`
 		// Plain-English summary of requested behavior.
 		Summary *string `json:"summary"`
@@ -53,12 +53,18 @@ type (
 		// one. A confirm_intent that changes answers or examples returns the new
 		// revision without it.
 		UIComposition *UICompositionItemTransport `json:"ui_composition,omitempty"`
-		// Checkpoint 5 approval of this revision, present only while it matches the
-		// promotion target's current inputs. It is absent before approve_merge
-		// succeeds and whenever the target's suite, environment or binary digests have
-		// changed since; it comes back if they match again. It is never hashed into
-		// request_revision.
+		// Checkpoint 5 approval of this revision, present only while it is verified
+		// against the promotion target's current inputs on this read. It is absent
+		// before approve_merge succeeds, whenever the target's suite, environment or
+		// binary digests have changed since, and whenever current inputs cannot be
+		// verified (see unverified_approval). It is never hashed into request_revision.
 		Approval *ApprovalItemTransport `json:"approval,omitempty"`
+		// Saved Checkpoint 5 approval of this revision when current promotion inputs
+		// could not be verified on this read (because no promotion target is
+		// configured or the target could not report its current inputs). At most one
+		// of approval or unverified_approval is set. It is never saved to disk or
+		// hashed into request_revision.
+		UnverifiedApproval *UnverifiedApprovalItemTransport `json:"unverified_approval,omitempty"`
 	}
 	// ConfirmIntentPayloadTransport is the internal JSON transport type for ConfirmIntentPayload.
 	// It lives in the toolset-local http package and is used only for JSON
@@ -83,7 +89,7 @@ type (
 		ChangeID *string `json:"change_id"`
 		// Checkpoint status (needs_confirmation or confirmed).
 		Status *string `json:"status"`
-		// Original operator feature request.
+		// Operator feature request for this revision.
 		Prompt *string `json:"prompt"`
 		// Plain-English summary of requested behavior.
 		Summary *string `json:"summary"`
@@ -103,12 +109,18 @@ type (
 		// one. A confirm_intent that changes answers or examples returns the new
 		// revision without it.
 		UIComposition *UICompositionItemTransport `json:"ui_composition,omitempty"`
-		// Checkpoint 5 approval of this revision, present only while it matches the
-		// promotion target's current inputs. It is absent before approve_merge
-		// succeeds and whenever the target's suite, environment or binary digests have
-		// changed since; it comes back if they match again. It is never hashed into
-		// request_revision.
+		// Checkpoint 5 approval of this revision, present only while it is verified
+		// against the promotion target's current inputs on this read. It is absent
+		// before approve_merge succeeds, whenever the target's suite, environment or
+		// binary digests have changed since, and whenever current inputs cannot be
+		// verified (see unverified_approval). It is never hashed into request_revision.
 		Approval *ApprovalItemTransport `json:"approval,omitempty"`
+		// Saved Checkpoint 5 approval of this revision when current promotion inputs
+		// could not be verified on this read (because no promotion target is
+		// configured or the target could not report its current inputs). At most one
+		// of approval or unverified_approval is set. It is never saved to disk or
+		// hashed into request_revision.
+		UnverifiedApproval *UnverifiedApprovalItemTransport `json:"unverified_approval,omitempty"`
 	}
 	// DiffPayloadTransport is the internal JSON transport type for DiffPayload.
 	// It lives in the toolset-local http package and is used only for JSON
@@ -182,7 +194,7 @@ type (
 		ChangeID *string `json:"change_id"`
 		// Checkpoint status (needs_confirmation or confirmed).
 		Status *string `json:"status"`
-		// Original operator feature request.
+		// Operator feature request for this revision.
 		Prompt *string `json:"prompt"`
 		// Plain-English summary of requested behavior.
 		Summary *string `json:"summary"`
@@ -202,12 +214,18 @@ type (
 		// one. A confirm_intent that changes answers or examples returns the new
 		// revision without it.
 		UIComposition *UICompositionItemTransport `json:"ui_composition,omitempty"`
-		// Checkpoint 5 approval of this revision, present only while it matches the
-		// promotion target's current inputs. It is absent before approve_merge
-		// succeeds and whenever the target's suite, environment or binary digests have
-		// changed since; it comes back if they match again. It is never hashed into
-		// request_revision.
+		// Checkpoint 5 approval of this revision, present only while it is verified
+		// against the promotion target's current inputs on this read. It is absent
+		// before approve_merge succeeds, whenever the target's suite, environment or
+		// binary digests have changed since, and whenever current inputs cannot be
+		// verified (see unverified_approval). It is never hashed into request_revision.
 		Approval *ApprovalItemTransport `json:"approval,omitempty"`
+		// Saved Checkpoint 5 approval of this revision when current promotion inputs
+		// could not be verified on this read (because no promotion target is
+		// configured or the target could not report its current inputs). At most one
+		// of approval or unverified_approval is set. It is never saved to disk or
+		// hashed into request_revision.
+		UnverifiedApproval *UnverifiedApprovalItemTransport `json:"unverified_approval,omitempty"`
 	}
 	// GetVerificationPayloadTransport is the internal JSON transport type for GetVerificationPayload.
 	// It lives in the toolset-local http package and is used only for JSON
@@ -297,7 +315,7 @@ type (
 		ChangeID *string `json:"change_id"`
 		// Checkpoint status (needs_confirmation or confirmed).
 		Status *string `json:"status"`
-		// Original operator feature request.
+		// Operator feature request for this revision.
 		Prompt *string `json:"prompt"`
 		// Plain-English summary of requested behavior.
 		Summary *string `json:"summary"`
@@ -317,12 +335,75 @@ type (
 		// one. A confirm_intent that changes answers or examples returns the new
 		// revision without it.
 		UIComposition *UICompositionItemTransport `json:"ui_composition,omitempty"`
-		// Checkpoint 5 approval of this revision, present only while it matches the
-		// promotion target's current inputs. It is absent before approve_merge
-		// succeeds and whenever the target's suite, environment or binary digests have
-		// changed since; it comes back if they match again. It is never hashed into
-		// request_revision.
+		// Checkpoint 5 approval of this revision, present only while it is verified
+		// against the promotion target's current inputs on this read. It is absent
+		// before approve_merge succeeds, whenever the target's suite, environment or
+		// binary digests have changed since, and whenever current inputs cannot be
+		// verified (see unverified_approval). It is never hashed into request_revision.
 		Approval *ApprovalItemTransport `json:"approval,omitempty"`
+		// Saved Checkpoint 5 approval of this revision when current promotion inputs
+		// could not be verified on this read (because no promotion target is
+		// configured or the target could not report its current inputs). At most one
+		// of approval or unverified_approval is set. It is never saved to disk or
+		// hashed into request_revision.
+		UnverifiedApproval *UnverifiedApprovalItemTransport `json:"unverified_approval,omitempty"`
+	}
+	// ReviseChangePayloadTransport is the internal JSON transport type for ReviseChangePayload.
+	// It lives in the toolset-local http package and is used only for JSON
+	// decode + validation (missing-field detection) before transforming into
+	// the public tool type.
+	ReviseChangePayloadTransport struct {
+		// Change identifier.
+		ChangeID *string `json:"change_id"`
+		// Current CP1 request_revision digest being revised.
+		RequestRevision *string `json:"request_revision"`
+		// Revised operator feature request.
+		Prompt *string `json:"prompt"`
+		// Updated target Goa design source inspected by the CP1 model; when omitted,
+		// the card's saved design source is preserved.
+		DesignSource *string `json:"design_source,omitempty"`
+	}
+	// ReviseChangeResultTransport is the internal JSON transport type for ReviseChangeResult.
+	// It lives in the toolset-local http package and is used only for JSON
+	// decode + validation (missing-field detection) before transforming into
+	// the public tool type.
+	ReviseChangeResultTransport struct {
+		// Change identifier.
+		ChangeID *string `json:"change_id"`
+		// Checkpoint status (needs_confirmation or confirmed).
+		Status *string `json:"status"`
+		// Operator feature request for this revision.
+		Prompt *string `json:"prompt"`
+		// Plain-English summary of requested behavior.
+		Summary *string `json:"summary"`
+		// Domain questions surfaced at CP1, retained for audit after confirmation.
+		Ambiguities []*AmbiguityQuestionTransport `json:"ambiguities,omitempty"`
+		// Confirmed resolution per ambiguity question ID.
+		Answers map[string]string `json:"answers,omitempty"`
+		// Concrete examples mapped to evaluator checks.
+		Examples []*ExampleItemTransport `json:"examples"`
+		// Existing contract invariants preserved by this change.
+		PreservedBehaviors []string `json:"preserved_behaviors"`
+		// Authenticated principal that confirmed the Change Card.
+		ConfirmedBy *string `json:"confirmed_by,omitempty"`
+		// SHA-256 digest of the canonical versioned Change Card.
+		RequestRevision *string `json:"request_revision"`
+		// Decision view the CP1 model composed for this revision, when it produced
+		// one. A confirm_intent that changes answers or examples returns the new
+		// revision without it.
+		UIComposition *UICompositionItemTransport `json:"ui_composition,omitempty"`
+		// Checkpoint 5 approval of this revision, present only while it is verified
+		// against the promotion target's current inputs on this read. It is absent
+		// before approve_merge succeeds, whenever the target's suite, environment or
+		// binary digests have changed since, and whenever current inputs cannot be
+		// verified (see unverified_approval). It is never hashed into request_revision.
+		Approval *ApprovalItemTransport `json:"approval,omitempty"`
+		// Saved Checkpoint 5 approval of this revision when current promotion inputs
+		// could not be verified on this read (because no promotion target is
+		// configured or the target could not report its current inputs). At most one
+		// of approval or unverified_approval is set. It is never saved to disk or
+		// hashed into request_revision.
+		UnverifiedApproval *UnverifiedApprovalItemTransport `json:"unverified_approval,omitempty"`
 	}
 	// VerifyChangePayloadTransport is the internal JSON transport type for VerifyChangePayload.
 	// It lives in the toolset-local http package and is used only for JSON
@@ -608,6 +689,17 @@ type (
 		Program *string `json:"program"`
 		// request_revision of the Change Card this program was composed for.
 		ComposedForRevision *string `json:"composed_for_revision"`
+	}
+	// UnverifiedApprovalItemTransport is the internal JSON transport type for UnverifiedApprovalItemTransport.
+	// It lives in the toolset-local http package and is used only for JSON
+	// decode + validation (missing-field detection) before transforming into
+	// the public tool type.
+	UnverifiedApprovalItemTransport struct {
+		// Recorded promotion approval from the Change Card.
+		Approval *ApprovalItemTransport `json:"approval"`
+		// Explanation of why the recorded approval could not be verified against
+		// current promotion inputs and how to recover.
+		Reason *string `json:"reason"`
 	}
 	// VerificationCheckTransport is the internal JSON transport type for VerificationCheckTransport.
 	// It lives in the toolset-local http package and is used only for JSON

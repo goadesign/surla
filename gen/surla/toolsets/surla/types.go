@@ -27,7 +27,7 @@ type (
 		ChangeID string
 		// Checkpoint status (needs_confirmation or confirmed).
 		Status string
-		// Original operator feature request.
+		// Operator feature request for this revision.
 		Prompt string
 		// Plain-English summary of requested behavior.
 		Summary string
@@ -47,12 +47,18 @@ type (
 		// one. A confirm_intent that changes answers or examples returns the new
 		// revision without it.
 		UIComposition *UICompositionItem
-		// Checkpoint 5 approval of this revision, present only while it matches the
-		// promotion target's current inputs. It is absent before approve_merge
-		// succeeds and whenever the target's suite, environment or binary digests have
-		// changed since; it comes back if they match again. It is never hashed into
-		// request_revision.
+		// Checkpoint 5 approval of this revision, present only while it is verified
+		// against the promotion target's current inputs on this read. It is absent
+		// before approve_merge succeeds, whenever the target's suite, environment or
+		// binary digests have changed since, and whenever current inputs cannot be
+		// verified (see unverified_approval). It is never hashed into request_revision.
 		Approval *ApprovalItem
+		// Saved Checkpoint 5 approval of this revision when current promotion inputs
+		// could not be verified on this read (because no promotion target is
+		// configured or the target could not report its current inputs). At most one
+		// of approval or unverified_approval is set. It is never saved to disk or
+		// hashed into request_revision.
+		UnverifiedApproval *UnverifiedApprovalItem
 	}
 	// ConfirmIntentPayload defines the JSON payload for the surla.confirm_intent tool.
 	ConfirmIntentPayload = struct {
@@ -71,7 +77,7 @@ type (
 		ChangeID string
 		// Checkpoint status (needs_confirmation or confirmed).
 		Status string
-		// Original operator feature request.
+		// Operator feature request for this revision.
 		Prompt string
 		// Plain-English summary of requested behavior.
 		Summary string
@@ -91,12 +97,18 @@ type (
 		// one. A confirm_intent that changes answers or examples returns the new
 		// revision without it.
 		UIComposition *UICompositionItem
-		// Checkpoint 5 approval of this revision, present only while it matches the
-		// promotion target's current inputs. It is absent before approve_merge
-		// succeeds and whenever the target's suite, environment or binary digests have
-		// changed since; it comes back if they match again. It is never hashed into
-		// request_revision.
+		// Checkpoint 5 approval of this revision, present only while it is verified
+		// against the promotion target's current inputs on this read. It is absent
+		// before approve_merge succeeds, whenever the target's suite, environment or
+		// binary digests have changed since, and whenever current inputs cannot be
+		// verified (see unverified_approval). It is never hashed into request_revision.
 		Approval *ApprovalItem
+		// Saved Checkpoint 5 approval of this revision when current promotion inputs
+		// could not be verified on this read (because no promotion target is
+		// configured or the target could not report its current inputs). At most one
+		// of approval or unverified_approval is set. It is never saved to disk or
+		// hashed into request_revision.
+		UnverifiedApproval *UnverifiedApprovalItem
 	}
 	// DiffPayload defines the JSON payload for the surla.diff tool.
 	DiffPayload = struct {
@@ -152,7 +164,7 @@ type (
 		ChangeID string
 		// Checkpoint status (needs_confirmation or confirmed).
 		Status string
-		// Original operator feature request.
+		// Operator feature request for this revision.
 		Prompt string
 		// Plain-English summary of requested behavior.
 		Summary string
@@ -172,12 +184,18 @@ type (
 		// one. A confirm_intent that changes answers or examples returns the new
 		// revision without it.
 		UIComposition *UICompositionItem
-		// Checkpoint 5 approval of this revision, present only while it matches the
-		// promotion target's current inputs. It is absent before approve_merge
-		// succeeds and whenever the target's suite, environment or binary digests have
-		// changed since; it comes back if they match again. It is never hashed into
-		// request_revision.
+		// Checkpoint 5 approval of this revision, present only while it is verified
+		// against the promotion target's current inputs on this read. It is absent
+		// before approve_merge succeeds, whenever the target's suite, environment or
+		// binary digests have changed since, and whenever current inputs cannot be
+		// verified (see unverified_approval). It is never hashed into request_revision.
 		Approval *ApprovalItem
+		// Saved Checkpoint 5 approval of this revision when current promotion inputs
+		// could not be verified on this read (because no promotion target is
+		// configured or the target could not report its current inputs). At most one
+		// of approval or unverified_approval is set. It is never saved to disk or
+		// hashed into request_revision.
+		UnverifiedApproval *UnverifiedApprovalItem
 	}
 	// GetVerificationPayload defines the JSON payload for the surla.get_verification tool.
 	GetVerificationPayload = struct {
@@ -249,7 +267,7 @@ type (
 		ChangeID string
 		// Checkpoint status (needs_confirmation or confirmed).
 		Status string
-		// Original operator feature request.
+		// Operator feature request for this revision.
 		Prompt string
 		// Plain-English summary of requested behavior.
 		Summary string
@@ -269,12 +287,69 @@ type (
 		// one. A confirm_intent that changes answers or examples returns the new
 		// revision without it.
 		UIComposition *UICompositionItem
-		// Checkpoint 5 approval of this revision, present only while it matches the
-		// promotion target's current inputs. It is absent before approve_merge
-		// succeeds and whenever the target's suite, environment or binary digests have
-		// changed since; it comes back if they match again. It is never hashed into
-		// request_revision.
+		// Checkpoint 5 approval of this revision, present only while it is verified
+		// against the promotion target's current inputs on this read. It is absent
+		// before approve_merge succeeds, whenever the target's suite, environment or
+		// binary digests have changed since, and whenever current inputs cannot be
+		// verified (see unverified_approval). It is never hashed into request_revision.
 		Approval *ApprovalItem
+		// Saved Checkpoint 5 approval of this revision when current promotion inputs
+		// could not be verified on this read (because no promotion target is
+		// configured or the target could not report its current inputs). At most one
+		// of approval or unverified_approval is set. It is never saved to disk or
+		// hashed into request_revision.
+		UnverifiedApproval *UnverifiedApprovalItem
+	}
+	// ReviseChangePayload defines the JSON payload for the surla.revise_change tool.
+	ReviseChangePayload = struct {
+		// Change identifier.
+		ChangeID string
+		// Current CP1 request_revision digest being revised.
+		RequestRevision string
+		// Revised operator feature request.
+		Prompt string
+		// Updated target Goa design source inspected by the CP1 model; when omitted,
+		// the card's saved design source is preserved.
+		DesignSource *string
+	}
+	// ReviseChangeResult defines the JSON result for the surla.revise_change tool.
+	ReviseChangeResult = struct {
+		// Change identifier.
+		ChangeID string
+		// Checkpoint status (needs_confirmation or confirmed).
+		Status string
+		// Operator feature request for this revision.
+		Prompt string
+		// Plain-English summary of requested behavior.
+		Summary string
+		// Domain questions surfaced at CP1, retained for audit after confirmation.
+		Ambiguities []*AmbiguityQuestion
+		// Confirmed resolution per ambiguity question ID.
+		Answers map[string]string
+		// Concrete examples mapped to evaluator checks.
+		Examples []*ExampleItem
+		// Existing contract invariants preserved by this change.
+		PreservedBehaviors []string
+		// Authenticated principal that confirmed the Change Card.
+		ConfirmedBy *string
+		// SHA-256 digest of the canonical versioned Change Card.
+		RequestRevision string
+		// Decision view the CP1 model composed for this revision, when it produced
+		// one. A confirm_intent that changes answers or examples returns the new
+		// revision without it.
+		UIComposition *UICompositionItem
+		// Checkpoint 5 approval of this revision, present only while it is verified
+		// against the promotion target's current inputs on this read. It is absent
+		// before approve_merge succeeds, whenever the target's suite, environment or
+		// binary digests have changed since, and whenever current inputs cannot be
+		// verified (see unverified_approval). It is never hashed into request_revision.
+		Approval *ApprovalItem
+		// Saved Checkpoint 5 approval of this revision when current promotion inputs
+		// could not be verified on this read (because no promotion target is
+		// configured or the target could not report its current inputs). At most one
+		// of approval or unverified_approval is set. It is never saved to disk or
+		// hashed into request_revision.
+		UnverifiedApproval *UnverifiedApprovalItem
 	}
 	// VerifyChangePayload defines the JSON payload for the surla.verify_change tool.
 	VerifyChangePayload = struct {
@@ -512,6 +587,14 @@ type (
 		Program string
 		// request_revision of the Change Card this program was composed for.
 		ComposedForRevision string
+	}
+	// UnverifiedApprovalItem is a nested type used by the generated JSON contract.
+	UnverifiedApprovalItem = struct {
+		// Recorded promotion approval from the Change Card.
+		Approval *ApprovalItem
+		// Explanation of why the recorded approval could not be verified against
+		// current promotion inputs and how to recover.
+		Reason string
 	}
 	// VerificationCheck is a nested type used by the generated JSON contract.
 	VerificationCheck = struct {

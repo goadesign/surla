@@ -150,6 +150,22 @@ func ProposeChangeResultCodec() tools.JSONCodec[*ProposeChangeResult] {
 	}
 }
 
+// ReviseChangePayloadCodec returns a fresh codec for *ReviseChangePayload.
+func ReviseChangePayloadCodec() tools.JSONCodec[*ReviseChangePayload] {
+	return tools.JSONCodec[*ReviseChangePayload]{
+		ToJSON:   MarshalReviseChangePayload,
+		FromJSON: UnmarshalReviseChangePayload,
+	}
+}
+
+// ReviseChangeResultCodec returns a fresh codec for *ReviseChangeResult.
+func ReviseChangeResultCodec() tools.JSONCodec[*ReviseChangeResult] {
+	return tools.JSONCodec[*ReviseChangeResult]{
+		ToJSON:   MarshalReviseChangeResult,
+		FromJSON: UnmarshalReviseChangeResult,
+	}
+}
+
 // VerifyChangePayloadCodec returns a fresh codec for *VerifyChangePayload.
 func VerifyChangePayloadCodec() tools.JSONCodec[*VerifyChangePayload] {
 	return tools.JSONCodec[*VerifyChangePayload]{
@@ -375,6 +391,32 @@ var (
 			return UnmarshalProposeChangeResult(data)
 		},
 	}
+	// reviseChangePayloadCodec provides an untyped codec for *ReviseChangePayload.
+	reviseChangePayloadCodec = tools.JSONCodec[any]{
+		ToJSON: func(v any) ([]byte, error) {
+			// Prefer typed marshal when the value matches the expected type.
+			if typed, ok := v.(*ReviseChangePayload); ok {
+				return MarshalReviseChangePayload(typed)
+			}
+			return nil, fmt.Errorf("invalid value type for *ReviseChangePayload: %T", v)
+		},
+		FromJSON: func(data []byte) (any, error) {
+			return UnmarshalReviseChangePayload(data)
+		},
+	}
+	// reviseChangeResultCodec provides an untyped codec for *ReviseChangeResult.
+	reviseChangeResultCodec = tools.JSONCodec[any]{
+		ToJSON: func(v any) ([]byte, error) {
+			// Prefer typed marshal when the value matches the expected type.
+			if typed, ok := v.(*ReviseChangeResult); ok {
+				return MarshalReviseChangeResult(typed)
+			}
+			return nil, fmt.Errorf("invalid value type for *ReviseChangeResult: %T", v)
+		},
+		FromJSON: func(data []byte) (any, error) {
+			return UnmarshalReviseChangeResult(data)
+		},
+	}
 	// verifyChangePayloadCodec provides an untyped codec for *VerifyChangePayload.
 	verifyChangePayloadCodec = tools.JSONCodec[any]{
 		ToJSON: func(v any) ([]byte, error) {
@@ -446,7 +488,7 @@ var approveMergeResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("prompt")},
 		JSONType:    "string",
-		Description: "Original operator feature request.",
+		Description: "Operator feature request for this revision.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("summary")},
@@ -566,7 +608,7 @@ var approveMergeResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("approval")},
 		JSONType:    "object",
-		Description: "Checkpoint 5 approval of this revision, present only while it matches the promotion target's current inputs. It is absent before approve_merge succeeds and whenever the target's suite, environment or binary digests have changed since; it comes back if they match again. It is never hashed into request_revision.",
+		Description: "Checkpoint 5 approval of this revision, present only while it is verified against the promotion target's current inputs on this read. It is absent before approve_merge succeeds, whenever the target's suite, environment or binary digests have changed since, and whenever current inputs cannot be verified (see unverified_approval). It is never hashed into request_revision.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("approved_by")},
@@ -612,6 +654,66 @@ var approveMergeResultFields = []tools.FieldMetadata{
 		Path:        []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("scenario_count")},
 		JSONType:    "integer",
 		Description: "Number of declared evaluator scenarios, every one of which passed.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval")},
+		JSONType:    "object",
+		Description: "Saved Checkpoint 5 approval of this revision when current promotion inputs could not be verified on this read (because no promotion target is configured or the target could not report its current inputs). At most one of approval or unverified_approval is set. It is never saved to disk or hashed into request_revision.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval")},
+		JSONType:    "object",
+		Description: "Recorded promotion approval from the Change Card.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("approved_by")},
+		JSONType:    "string",
+		Description: "Authenticated bearer principal that owns the card and called approve_merge. Bearer authentication does not prove that a human, rather than a coding agent, made the call.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("report_digest")},
+		JSONType:    "string",
+		Description: "SHA-256 digest of the approved CP4 verification report.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("candidate_commit")},
+		JSONType:    "string",
+		Description: "Candidate commit the report was checked against.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("suite_id")},
+		JSONType:    "string",
+		Description: "Evaluator suite the promotion target requires.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("suite_commit")},
+		JSONType:    "string",
+		Description: "Evaluator suite commit the promotion target requires.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("environment")},
+		JSONType:    "string",
+		Description: "Dependency profile the promotion target requires, such as sim.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("artifacts")},
+		JSONType:    "object",
+		Description: "SHA-256 digest of each candidate binary the promotion target measured, keyed by binary name.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("artifacts"), tools.DynamicField{}},
+		JSONType:    "string",
+		Description: "SHA-256 digest of each candidate binary the promotion target measured, keyed by binary name.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("scenario_count")},
+		JSONType:    "integer",
+		Description: "Number of declared evaluator scenarios, every one of which passed.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("reason")},
+		JSONType:    "string",
+		Description: "Explanation of why the recorded approval could not be verified against current promotion inputs and how to recover.",
 	},
 }
 var confirmIntentPayloadFields = []tools.FieldMetadata{
@@ -693,7 +795,7 @@ var confirmIntentResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("prompt")},
 		JSONType:    "string",
-		Description: "Original operator feature request.",
+		Description: "Operator feature request for this revision.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("summary")},
@@ -813,7 +915,7 @@ var confirmIntentResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("approval")},
 		JSONType:    "object",
-		Description: "Checkpoint 5 approval of this revision, present only while it matches the promotion target's current inputs. It is absent before approve_merge succeeds and whenever the target's suite, environment or binary digests have changed since; it comes back if they match again. It is never hashed into request_revision.",
+		Description: "Checkpoint 5 approval of this revision, present only while it is verified against the promotion target's current inputs on this read. It is absent before approve_merge succeeds, whenever the target's suite, environment or binary digests have changed since, and whenever current inputs cannot be verified (see unverified_approval). It is never hashed into request_revision.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("approved_by")},
@@ -859,6 +961,66 @@ var confirmIntentResultFields = []tools.FieldMetadata{
 		Path:        []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("scenario_count")},
 		JSONType:    "integer",
 		Description: "Number of declared evaluator scenarios, every one of which passed.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval")},
+		JSONType:    "object",
+		Description: "Saved Checkpoint 5 approval of this revision when current promotion inputs could not be verified on this read (because no promotion target is configured or the target could not report its current inputs). At most one of approval or unverified_approval is set. It is never saved to disk or hashed into request_revision.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval")},
+		JSONType:    "object",
+		Description: "Recorded promotion approval from the Change Card.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("approved_by")},
+		JSONType:    "string",
+		Description: "Authenticated bearer principal that owns the card and called approve_merge. Bearer authentication does not prove that a human, rather than a coding agent, made the call.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("report_digest")},
+		JSONType:    "string",
+		Description: "SHA-256 digest of the approved CP4 verification report.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("candidate_commit")},
+		JSONType:    "string",
+		Description: "Candidate commit the report was checked against.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("suite_id")},
+		JSONType:    "string",
+		Description: "Evaluator suite the promotion target requires.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("suite_commit")},
+		JSONType:    "string",
+		Description: "Evaluator suite commit the promotion target requires.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("environment")},
+		JSONType:    "string",
+		Description: "Dependency profile the promotion target requires, such as sim.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("artifacts")},
+		JSONType:    "object",
+		Description: "SHA-256 digest of each candidate binary the promotion target measured, keyed by binary name.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("artifacts"), tools.DynamicField{}},
+		JSONType:    "string",
+		Description: "SHA-256 digest of each candidate binary the promotion target measured, keyed by binary name.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("scenario_count")},
+		JSONType:    "integer",
+		Description: "Number of declared evaluator scenarios, every one of which passed.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("reason")},
+		JSONType:    "string",
+		Description: "Explanation of why the recorded approval could not be verified against current promotion inputs and how to recover.",
 	},
 }
 var diffPayloadFields = []tools.FieldMetadata{
@@ -1029,7 +1191,7 @@ var getChangeResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("prompt")},
 		JSONType:    "string",
-		Description: "Original operator feature request.",
+		Description: "Operator feature request for this revision.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("summary")},
@@ -1149,7 +1311,7 @@ var getChangeResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("approval")},
 		JSONType:    "object",
-		Description: "Checkpoint 5 approval of this revision, present only while it matches the promotion target's current inputs. It is absent before approve_merge succeeds and whenever the target's suite, environment or binary digests have changed since; it comes back if they match again. It is never hashed into request_revision.",
+		Description: "Checkpoint 5 approval of this revision, present only while it is verified against the promotion target's current inputs on this read. It is absent before approve_merge succeeds, whenever the target's suite, environment or binary digests have changed since, and whenever current inputs cannot be verified (see unverified_approval). It is never hashed into request_revision.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("approved_by")},
@@ -1195,6 +1357,66 @@ var getChangeResultFields = []tools.FieldMetadata{
 		Path:        []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("scenario_count")},
 		JSONType:    "integer",
 		Description: "Number of declared evaluator scenarios, every one of which passed.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval")},
+		JSONType:    "object",
+		Description: "Saved Checkpoint 5 approval of this revision when current promotion inputs could not be verified on this read (because no promotion target is configured or the target could not report its current inputs). At most one of approval or unverified_approval is set. It is never saved to disk or hashed into request_revision.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval")},
+		JSONType:    "object",
+		Description: "Recorded promotion approval from the Change Card.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("approved_by")},
+		JSONType:    "string",
+		Description: "Authenticated bearer principal that owns the card and called approve_merge. Bearer authentication does not prove that a human, rather than a coding agent, made the call.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("report_digest")},
+		JSONType:    "string",
+		Description: "SHA-256 digest of the approved CP4 verification report.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("candidate_commit")},
+		JSONType:    "string",
+		Description: "Candidate commit the report was checked against.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("suite_id")},
+		JSONType:    "string",
+		Description: "Evaluator suite the promotion target requires.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("suite_commit")},
+		JSONType:    "string",
+		Description: "Evaluator suite commit the promotion target requires.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("environment")},
+		JSONType:    "string",
+		Description: "Dependency profile the promotion target requires, such as sim.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("artifacts")},
+		JSONType:    "object",
+		Description: "SHA-256 digest of each candidate binary the promotion target measured, keyed by binary name.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("artifacts"), tools.DynamicField{}},
+		JSONType:    "string",
+		Description: "SHA-256 digest of each candidate binary the promotion target measured, keyed by binary name.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("scenario_count")},
+		JSONType:    "integer",
+		Description: "Number of declared evaluator scenarios, every one of which passed.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("reason")},
+		JSONType:    "string",
+		Description: "Explanation of why the recorded approval could not be verified against current promotion inputs and how to recover.",
 	},
 }
 var getVerificationPayloadFields = []tools.FieldMetadata{
@@ -2018,7 +2240,7 @@ var proposeChangeResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("prompt")},
 		JSONType:    "string",
-		Description: "Original operator feature request.",
+		Description: "Operator feature request for this revision.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("summary")},
@@ -2138,7 +2360,7 @@ var proposeChangeResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("approval")},
 		JSONType:    "object",
-		Description: "Checkpoint 5 approval of this revision, present only while it matches the promotion target's current inputs. It is absent before approve_merge succeeds and whenever the target's suite, environment or binary digests have changed since; it comes back if they match again. It is never hashed into request_revision.",
+		Description: "Checkpoint 5 approval of this revision, present only while it is verified against the promotion target's current inputs on this read. It is absent before approve_merge succeeds, whenever the target's suite, environment or binary digests have changed since, and whenever current inputs cannot be verified (see unverified_approval). It is never hashed into request_revision.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("approved_by")},
@@ -2184,6 +2406,338 @@ var proposeChangeResultFields = []tools.FieldMetadata{
 		Path:        []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("scenario_count")},
 		JSONType:    "integer",
 		Description: "Number of declared evaluator scenarios, every one of which passed.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval")},
+		JSONType:    "object",
+		Description: "Saved Checkpoint 5 approval of this revision when current promotion inputs could not be verified on this read (because no promotion target is configured or the target could not report its current inputs). At most one of approval or unverified_approval is set. It is never saved to disk or hashed into request_revision.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval")},
+		JSONType:    "object",
+		Description: "Recorded promotion approval from the Change Card.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("approved_by")},
+		JSONType:    "string",
+		Description: "Authenticated bearer principal that owns the card and called approve_merge. Bearer authentication does not prove that a human, rather than a coding agent, made the call.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("report_digest")},
+		JSONType:    "string",
+		Description: "SHA-256 digest of the approved CP4 verification report.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("candidate_commit")},
+		JSONType:    "string",
+		Description: "Candidate commit the report was checked against.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("suite_id")},
+		JSONType:    "string",
+		Description: "Evaluator suite the promotion target requires.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("suite_commit")},
+		JSONType:    "string",
+		Description: "Evaluator suite commit the promotion target requires.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("environment")},
+		JSONType:    "string",
+		Description: "Dependency profile the promotion target requires, such as sim.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("artifacts")},
+		JSONType:    "object",
+		Description: "SHA-256 digest of each candidate binary the promotion target measured, keyed by binary name.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("artifacts"), tools.DynamicField{}},
+		JSONType:    "string",
+		Description: "SHA-256 digest of each candidate binary the promotion target measured, keyed by binary name.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("scenario_count")},
+		JSONType:    "integer",
+		Description: "Number of declared evaluator scenarios, every one of which passed.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("reason")},
+		JSONType:    "string",
+		Description: "Explanation of why the recorded approval could not be verified against current promotion inputs and how to recover.",
+	},
+}
+var reviseChangePayloadFields = []tools.FieldMetadata{
+	{
+		JSONType:    "object",
+		Description: "Revised operator feature request submitted for an existing Checkpoint 1 Change Card.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("change_id")},
+		JSONType:    "string",
+		Description: "Change identifier.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("request_revision")},
+		JSONType:    "string",
+		Description: "Current CP1 request_revision digest being revised.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("prompt")},
+		JSONType:    "string",
+		Description: "Revised operator feature request.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("design_source")},
+		JSONType:    "string",
+		Description: "Updated target Goa design source inspected by the CP1 model; when omitted, the card's saved design source is preserved.",
+	},
+}
+var reviseChangeResultFields = []tools.FieldMetadata{
+	{
+		JSONType:    "object",
+		Description: "Checkpoint 1 Change Card containing examples, preserved behaviors, and audit metadata.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("change_id")},
+		JSONType:    "string",
+		Description: "Change identifier.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("status")},
+		JSONType:    "string",
+		Description: "Checkpoint status (needs_confirmation or confirmed).",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("prompt")},
+		JSONType:    "string",
+		Description: "Operator feature request for this revision.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("summary")},
+		JSONType:    "string",
+		Description: "Plain-English summary of requested behavior.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("ambiguities")},
+		JSONType:    "array",
+		Description: "Domain questions surfaced at CP1, retained for audit after confirmation.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("ambiguities"), tools.DynamicField{}},
+		JSONType:    "object",
+		Description: "Domain questions surfaced at CP1, retained for audit after confirmation.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("ambiguities"), tools.DynamicField{}, tools.FixedField("id")},
+		JSONType:    "string",
+		Description: "Stable question identifier.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("ambiguities"), tools.DynamicField{}, tools.FixedField("question")},
+		JSONType:    "string",
+		Description: "Plain-English question for the operator.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("ambiguities"), tools.DynamicField{}, tools.FixedField("options")},
+		JSONType:    "array",
+		Description: "Concrete resolution choices.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("ambiguities"), tools.DynamicField{}, tools.FixedField("options"), tools.DynamicField{}},
+		JSONType:    "string",
+		Description: "Concrete resolution choices.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("answers")},
+		JSONType:    "object",
+		Description: "Confirmed resolution per ambiguity question ID.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("answers"), tools.DynamicField{}},
+		JSONType:    "string",
+		Description: "Confirmed resolution per ambiguity question ID.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("examples")},
+		JSONType:    "array",
+		Description: "Concrete examples mapped to evaluator checks.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("examples"), tools.DynamicField{}},
+		JSONType:    "object",
+		Description: "Concrete examples mapped to evaluator checks.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("examples"), tools.DynamicField{}, tools.FixedField("id")},
+		JSONType:    "string",
+		Description: "Code-assigned stable example identifier.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("examples"), tools.DynamicField{}, tools.FixedField("scenario")},
+		JSONType:    "string",
+		Description: "Plain-English scenario description.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("examples"), tools.DynamicField{}, tools.FixedField("input_summary")},
+		JSONType:    "string",
+		Description: "Representative user request and domain fixture state.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("examples"), tools.DynamicField{}, tools.FixedField("expected_outcome")},
+		JSONType:    "string",
+		Description: "Expected side effect and response behavior.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("examples"), tools.DynamicField{}, tools.FixedField("verification_kind")},
+		JSONType:    "string",
+		Description: "Evaluator check classification (deterministic or model_judged).",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("preserved_behaviors")},
+		JSONType:    "array",
+		Description: "Existing contract invariants preserved by this change.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("preserved_behaviors"), tools.DynamicField{}},
+		JSONType:    "string",
+		Description: "Existing contract invariants preserved by this change.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("confirmed_by")},
+		JSONType:    "string",
+		Description: "Authenticated principal that confirmed the Change Card.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("request_revision")},
+		JSONType:    "string",
+		Description: "SHA-256 digest of the canonical versioned Change Card.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("ui_composition")},
+		JSONType:    "object",
+		Description: "Decision view the CP1 model composed for this revision, when it produced one. A confirm_intent that changes answers or examples returns the new revision without it.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("ui_composition"), tools.FixedField("program")},
+		JSONType:    "string",
+		Description: "OpenUI Lang program composed by the CP1 model from the Surla decision component catalog, exactly as the model returned it. The server does not check it; the checkpoint viewer validates it and shows its error state, with the rest of the card still usable, when the program is not a valid composition.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("ui_composition"), tools.FixedField("composed_for_revision")},
+		JSONType:    "string",
+		Description: "request_revision of the Change Card this program was composed for.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("approval")},
+		JSONType:    "object",
+		Description: "Checkpoint 5 approval of this revision, present only while it is verified against the promotion target's current inputs on this read. It is absent before approve_merge succeeds, whenever the target's suite, environment or binary digests have changed since, and whenever current inputs cannot be verified (see unverified_approval). It is never hashed into request_revision.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("approved_by")},
+		JSONType:    "string",
+		Description: "Authenticated bearer principal that owns the card and called approve_merge. Bearer authentication does not prove that a human, rather than a coding agent, made the call.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("report_digest")},
+		JSONType:    "string",
+		Description: "SHA-256 digest of the approved CP4 verification report.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("candidate_commit")},
+		JSONType:    "string",
+		Description: "Candidate commit the report was checked against.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("suite_id")},
+		JSONType:    "string",
+		Description: "Evaluator suite the promotion target requires.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("suite_commit")},
+		JSONType:    "string",
+		Description: "Evaluator suite commit the promotion target requires.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("environment")},
+		JSONType:    "string",
+		Description: "Dependency profile the promotion target requires, such as sim.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("artifacts")},
+		JSONType:    "object",
+		Description: "SHA-256 digest of each candidate binary the promotion target measured, keyed by binary name.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("artifacts"), tools.DynamicField{}},
+		JSONType:    "string",
+		Description: "SHA-256 digest of each candidate binary the promotion target measured, keyed by binary name.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("approval"), tools.FixedField("scenario_count")},
+		JSONType:    "integer",
+		Description: "Number of declared evaluator scenarios, every one of which passed.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval")},
+		JSONType:    "object",
+		Description: "Saved Checkpoint 5 approval of this revision when current promotion inputs could not be verified on this read (because no promotion target is configured or the target could not report its current inputs). At most one of approval or unverified_approval is set. It is never saved to disk or hashed into request_revision.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval")},
+		JSONType:    "object",
+		Description: "Recorded promotion approval from the Change Card.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("approved_by")},
+		JSONType:    "string",
+		Description: "Authenticated bearer principal that owns the card and called approve_merge. Bearer authentication does not prove that a human, rather than a coding agent, made the call.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("report_digest")},
+		JSONType:    "string",
+		Description: "SHA-256 digest of the approved CP4 verification report.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("candidate_commit")},
+		JSONType:    "string",
+		Description: "Candidate commit the report was checked against.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("suite_id")},
+		JSONType:    "string",
+		Description: "Evaluator suite the promotion target requires.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("suite_commit")},
+		JSONType:    "string",
+		Description: "Evaluator suite commit the promotion target requires.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("environment")},
+		JSONType:    "string",
+		Description: "Dependency profile the promotion target requires, such as sim.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("artifacts")},
+		JSONType:    "object",
+		Description: "SHA-256 digest of each candidate binary the promotion target measured, keyed by binary name.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("artifacts"), tools.DynamicField{}},
+		JSONType:    "string",
+		Description: "SHA-256 digest of each candidate binary the promotion target measured, keyed by binary name.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("approval"), tools.FixedField("scenario_count")},
+		JSONType:    "integer",
+		Description: "Number of declared evaluator scenarios, every one of which passed.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("reason")},
+		JSONType:    "string",
+		Description: "Explanation of why the recorded approval could not be verified against current promotion inputs and how to recover.",
 	},
 }
 var verifyChangePayloadFields = []tools.FieldMetadata{
@@ -2875,6 +3429,40 @@ func enrichProposeChangeResultValidationError(err error) error {
 	}
 	return tools.NewValidationError(ve.Error(), issues, m)
 }
+func enrichReviseChangePayloadValidationError(err error) error {
+	var ve *tools.ValidationError
+	if !errors.As(err, &ve) {
+		return err
+	}
+	issues := ve.Issues()
+	if len(issues) == 0 {
+		return err
+	}
+	m := make(map[string]string)
+	for _, is := range issues {
+		if field, ok := tools.LookupFieldMetadata(reviseChangePayloadFields, is.Field); ok && field.Description != "" {
+			m[is.Field] = field.Description
+		}
+	}
+	return tools.NewValidationError(ve.Error(), issues, m)
+}
+func enrichReviseChangeResultValidationError(err error) error {
+	var ve *tools.ValidationError
+	if !errors.As(err, &ve) {
+		return err
+	}
+	issues := ve.Issues()
+	if len(issues) == 0 {
+		return err
+	}
+	m := make(map[string]string)
+	for _, is := range issues {
+		if field, ok := tools.LookupFieldMetadata(reviseChangeResultFields, is.Field); ok && field.Description != "" {
+			m[is.Field] = field.Description
+		}
+	}
+	return tools.NewValidationError(ve.Error(), issues, m)
+}
 func enrichVerifyChangePayloadValidationError(err error) error {
 	var ve *tools.ValidationError
 	if !errors.As(err, &ve) {
@@ -3405,6 +3993,68 @@ func invalidProposeChangeResultFieldTypeError(err error) error {
 		nil,
 	)
 }
+func invalidReviseChangePayloadFieldTypeError(err error) error {
+	var typeErr *json.UnmarshalTypeError
+	if !errors.As(err, &typeErr) {
+		return err
+	}
+	field := typeErr.Field
+	field = strings.TrimPrefix(field, "ReviseChangePayloadTransport.")
+	if field == "" {
+		field = "$payload"
+	}
+	metadata, ok := tools.LookupFieldMetadata(reviseChangePayloadFields, field)
+	if !ok || metadata.JSONType == "" {
+		return err
+	}
+	actual := generatedUnmarshalJSONType(typeErr.Value)
+	if actual == "" {
+		return err
+	}
+	return tools.NewValidationError(
+		err.Error(),
+		[]*tools.FieldIssue{
+			{
+				Field:            field,
+				Constraint:       "invalid_field_type",
+				ExpectedJSONType: metadata.JSONType,
+				ActualJSONType:   actual,
+			},
+		},
+		nil,
+	)
+}
+func invalidReviseChangeResultFieldTypeError(err error) error {
+	var typeErr *json.UnmarshalTypeError
+	if !errors.As(err, &typeErr) {
+		return err
+	}
+	field := typeErr.Field
+	field = strings.TrimPrefix(field, "ReviseChangeResultTransport.")
+	if field == "" {
+		field = "$payload"
+	}
+	metadata, ok := tools.LookupFieldMetadata(reviseChangeResultFields, field)
+	if !ok || metadata.JSONType == "" {
+		return err
+	}
+	actual := generatedUnmarshalJSONType(typeErr.Value)
+	if actual == "" {
+		return err
+	}
+	return tools.NewValidationError(
+		err.Error(),
+		[]*tools.FieldIssue{
+			{
+				Field:            field,
+				Constraint:       "invalid_field_type",
+				ExpectedJSONType: metadata.JSONType,
+				ActualJSONType:   actual,
+			},
+		},
+		nil,
+	)
+}
 func invalidVerifyChangePayloadFieldTypeError(err error) error {
 	var typeErr *json.UnmarshalTypeError
 	if !errors.As(err, &typeErr) {
@@ -3566,6 +4216,9 @@ func MarshalApproveMergeResult(v *ApproveMergeResult) ([]byte, error) {
 	if in.Approval != nil {
 		out.Approval = encodeApprovalItemToApprovalItemTransport(in.Approval)
 	}
+	if in.UnverifiedApproval != nil {
+		out.UnverifiedApproval = encodeUnverifiedApprovalItemToUnverifiedApprovalItemTransport(in.UnverifiedApproval)
+	}
 	return json.Marshal(out)
 }
 
@@ -3632,6 +4285,9 @@ func UnmarshalApproveMergeResult(data []byte) (*ApproveMergeResult, error) {
 	}
 	if in.Approval != nil {
 		out.Approval = decodeApprovalItemTransportToApprovalItem(in.Approval)
+	}
+	if in.UnverifiedApproval != nil {
+		out.UnverifiedApproval = decodeUnverifiedApprovalItemTransportToUnverifiedApprovalItem(in.UnverifiedApproval)
 	}
 	return out, nil
 }
@@ -3758,6 +4414,9 @@ func MarshalConfirmIntentResult(v *ConfirmIntentResult) ([]byte, error) {
 	if in.Approval != nil {
 		out.Approval = encodeApprovalItemToApprovalItemTransport(in.Approval)
 	}
+	if in.UnverifiedApproval != nil {
+		out.UnverifiedApproval = encodeUnverifiedApprovalItemToUnverifiedApprovalItemTransport(in.UnverifiedApproval)
+	}
 	return json.Marshal(out)
 }
 
@@ -3824,6 +4483,9 @@ func UnmarshalConfirmIntentResult(data []byte) (*ConfirmIntentResult, error) {
 	}
 	if in.Approval != nil {
 		out.Approval = decodeApprovalItemTransportToApprovalItem(in.Approval)
+	}
+	if in.UnverifiedApproval != nil {
+		out.UnverifiedApproval = decodeUnverifiedApprovalItemTransportToUnverifiedApprovalItem(in.UnverifiedApproval)
 	}
 	return out, nil
 }
@@ -4124,6 +4786,9 @@ func MarshalGetChangeResult(v *GetChangeResult) ([]byte, error) {
 	if in.Approval != nil {
 		out.Approval = encodeApprovalItemToApprovalItemTransport(in.Approval)
 	}
+	if in.UnverifiedApproval != nil {
+		out.UnverifiedApproval = encodeUnverifiedApprovalItemToUnverifiedApprovalItemTransport(in.UnverifiedApproval)
+	}
 	return json.Marshal(out)
 }
 
@@ -4190,6 +4855,9 @@ func UnmarshalGetChangeResult(data []byte) (*GetChangeResult, error) {
 	}
 	if in.Approval != nil {
 		out.Approval = decodeApprovalItemTransportToApprovalItem(in.Approval)
+	}
+	if in.UnverifiedApproval != nil {
+		out.UnverifiedApproval = decodeUnverifiedApprovalItemTransportToUnverifiedApprovalItem(in.UnverifiedApproval)
 	}
 	return out, nil
 }
@@ -4616,6 +5284,9 @@ func MarshalProposeChangeResult(v *ProposeChangeResult) ([]byte, error) {
 	if in.Approval != nil {
 		out.Approval = encodeApprovalItemToApprovalItemTransport(in.Approval)
 	}
+	if in.UnverifiedApproval != nil {
+		out.UnverifiedApproval = encodeUnverifiedApprovalItemToUnverifiedApprovalItemTransport(in.UnverifiedApproval)
+	}
 	return json.Marshal(out)
 }
 
@@ -4682,6 +5353,183 @@ func UnmarshalProposeChangeResult(data []byte) (*ProposeChangeResult, error) {
 	}
 	if in.Approval != nil {
 		out.Approval = decodeApprovalItemTransportToApprovalItem(in.Approval)
+	}
+	if in.UnverifiedApproval != nil {
+		out.UnverifiedApproval = decodeUnverifiedApprovalItemTransportToUnverifiedApprovalItem(in.UnverifiedApproval)
+	}
+	return out, nil
+}
+
+// MarshalReviseChangePayload serializes *ReviseChangePayload into JSON.
+func MarshalReviseChangePayload(v *ReviseChangePayload) ([]byte, error) {
+	if v == nil {
+		return nil, fmt.Errorf("reviseChangePayload is nil")
+	}
+	in := v
+	_ = in
+	var out *toolhttp.ReviseChangePayloadTransport
+	out = &toolhttp.ReviseChangePayloadTransport{
+		ChangeID:        &in.ChangeID,
+		RequestRevision: &in.RequestRevision,
+		Prompt:          &in.Prompt,
+		DesignSource:    in.DesignSource,
+	}
+	return json.Marshal(out)
+}
+
+// UnmarshalReviseChangePayload deserializes JSON into *ReviseChangePayload.
+func UnmarshalReviseChangePayload(data []byte) (*ReviseChangePayload, error) {
+	if len(data) == 0 {
+		return nil, fmt.Errorf("reviseChangePayload JSON is empty")
+	}
+	var tv toolhttp.ReviseChangePayloadTransport
+	if err := validateReviseChangePayloadJSON(data); err != nil {
+		return nil, invalidReviseChangePayloadFieldTypeError(err)
+	}
+	if err := json.Unmarshal(data, &tv); err != nil {
+		return nil, invalidReviseChangePayloadFieldTypeError(err)
+	}
+	if err := toolhttp.ValidateReviseChangePayloadTransport(&tv); err != nil {
+		err = newValidationError(err)
+		err = enrichReviseChangePayloadValidationError(err)
+		return nil, err
+	}
+	in := &tv
+	_ = in
+	var out *ReviseChangePayload
+	out = &ReviseChangePayload{
+		ChangeID:        *in.ChangeID,
+		RequestRevision: *in.RequestRevision,
+		Prompt:          *in.Prompt,
+		DesignSource:    in.DesignSource,
+	}
+	return out, nil
+}
+
+// MarshalReviseChangeResult serializes *ReviseChangeResult into JSON.
+func MarshalReviseChangeResult(v *ReviseChangeResult) ([]byte, error) {
+	if v == nil {
+		return nil, fmt.Errorf("reviseChangeResult is nil")
+	}
+	in := v
+	_ = in
+	var out *toolhttp.ReviseChangeResultTransport
+	out = &toolhttp.ReviseChangeResultTransport{
+		ChangeID:        &in.ChangeID,
+		Status:          &in.Status,
+		Prompt:          &in.Prompt,
+		Summary:         &in.Summary,
+		ConfirmedBy:     in.ConfirmedBy,
+		RequestRevision: &in.RequestRevision,
+	}
+	if in.Ambiguities != nil {
+		out.Ambiguities = make([]*toolhttp.AmbiguityQuestionTransport, len(in.Ambiguities))
+		for i, val := range in.Ambiguities {
+			if val == nil {
+				out.Ambiguities[i] = nil
+				continue
+			}
+			out.Ambiguities[i] = encodeAmbiguityQuestionToAmbiguityQuestionTransport(val)
+		}
+	}
+	if in.Answers != nil {
+		out.Answers = make(map[string]string, len(in.Answers))
+		for key, val := range in.Answers {
+			tk := key
+			tv := val
+			out.Answers[tk] = tv
+		}
+	}
+	out.Examples = make([]*toolhttp.ExampleItemTransport, len(in.Examples))
+	for i, val := range in.Examples {
+		if val == nil {
+			out.Examples[i] = nil
+			continue
+		}
+		out.Examples[i] = encodeExampleItemToExampleItemTransport(val)
+	}
+	out.PreservedBehaviors = make([]string, len(in.PreservedBehaviors))
+	for i, val := range in.PreservedBehaviors {
+		out.PreservedBehaviors[i] = val
+	}
+	if in.UIComposition != nil {
+		out.UIComposition = encodeUICompositionItemToUICompositionItemTransport(in.UIComposition)
+	}
+	if in.Approval != nil {
+		out.Approval = encodeApprovalItemToApprovalItemTransport(in.Approval)
+	}
+	if in.UnverifiedApproval != nil {
+		out.UnverifiedApproval = encodeUnverifiedApprovalItemToUnverifiedApprovalItemTransport(in.UnverifiedApproval)
+	}
+	return json.Marshal(out)
+}
+
+// UnmarshalReviseChangeResult deserializes JSON into *ReviseChangeResult.
+func UnmarshalReviseChangeResult(data []byte) (*ReviseChangeResult, error) {
+	if len(data) == 0 {
+		return nil, fmt.Errorf("reviseChangeResult JSON is empty")
+	}
+	var tv toolhttp.ReviseChangeResultTransport
+	if err := validateProposeChangeResultJSON(data); err != nil {
+		return nil, invalidReviseChangeResultFieldTypeError(err)
+	}
+	if err := json.Unmarshal(data, &tv); err != nil {
+		return nil, invalidReviseChangeResultFieldTypeError(err)
+	}
+	if err := toolhttp.ValidateReviseChangeResultTransport(&tv); err != nil {
+		err = newValidationError(err)
+		err = enrichReviseChangeResultValidationError(err)
+		return nil, err
+	}
+	in := &tv
+	_ = in
+	var out *ReviseChangeResult
+	out = &ReviseChangeResult{
+		ChangeID:        *in.ChangeID,
+		Status:          *in.Status,
+		Prompt:          *in.Prompt,
+		Summary:         *in.Summary,
+		ConfirmedBy:     in.ConfirmedBy,
+		RequestRevision: *in.RequestRevision,
+	}
+	if in.Ambiguities != nil {
+		out.Ambiguities = make([]*AmbiguityQuestion, len(in.Ambiguities))
+		for i, val := range in.Ambiguities {
+			if val == nil {
+				out.Ambiguities[i] = nil
+				continue
+			}
+			out.Ambiguities[i] = decodeAmbiguityQuestionTransportToAmbiguityQuestion(val)
+		}
+	}
+	if in.Answers != nil {
+		out.Answers = make(map[string]string, len(in.Answers))
+		for key, val := range in.Answers {
+			tk := key
+			tv := val
+			out.Answers[tk] = tv
+		}
+	}
+	out.Examples = make([]*ExampleItem, len(in.Examples))
+	for i, val := range in.Examples {
+		if val == nil {
+			out.Examples[i] = nil
+			continue
+		}
+		out.Examples[i] = decodeExampleItemTransportToExampleItem(val)
+	}
+	out.PreservedBehaviors = make([]string, len(in.PreservedBehaviors))
+	for i, val := range in.PreservedBehaviors {
+		out.PreservedBehaviors[i] = val
+	}
+	if in.UIComposition != nil {
+		out.UIComposition = decodeUICompositionItemTransportToUICompositionItem(in.UIComposition)
+	}
+	if in.Approval != nil {
+		out.Approval = decodeApprovalItemTransportToApprovalItem(in.Approval)
+	}
+	if in.UnverifiedApproval != nil {
+		out.UnverifiedApproval = decodeUnverifiedApprovalItemTransportToUnverifiedApprovalItem(in.UnverifiedApproval)
 	}
 	return out, nil
 }
@@ -4856,6 +5704,16 @@ func validateProposeChangeResultJSON(data []byte) error {
 		return err
 	}
 	return validateProposeChangeResultJSONValue("", root, "")
+}
+
+// validateReviseChangePayloadJSON parses one JSON document and checks the exact value
+// shapes known from this generated Goa type.
+func validateReviseChangePayloadJSON(data []byte) error {
+	root, err := readStrictToolJSON(data)
+	if err != nil {
+		return err
+	}
+	return validateReviseChangePayloadJSONValue("", root, "")
 }
 
 // validateConfirmIntentPayloadJSON parses one JSON document and checks the exact value
@@ -5205,7 +6063,7 @@ func validateProposeChangeResultJSONValue(path string, value any, description st
 		case "approval":
 			if err := validateProposeChangeResultApprovalItemTransportJSONValue(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Checkpoint 5 approval of this revision, present only while it matches the promotion target's current inputs. It is absent before approve_merge succeeds and whenever the target's suite, environment or binary digests have changed since; it comes back if they match again. It is never hashed into request_revision.",
+				typed[key], "Checkpoint 5 approval of this revision, present only while it is verified against the promotion target's current inputs on this read. It is absent before approve_merge succeeds, whenever the target's suite, environment or binary digests have changed since, and whenever current inputs cannot be verified (see unverified_approval). It is never hashed into request_revision.",
 			); err != nil {
 				return err
 			}
@@ -5240,7 +6098,7 @@ func validateProposeChangeResultJSONValue(path string, value any, description st
 		case "prompt":
 			if err := validateStringJSONValue(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Original operator feature request.",
+				typed[key], "Operator feature request for this revision.",
 			); err != nil {
 				return err
 			}
@@ -5272,6 +6130,13 @@ func validateProposeChangeResultJSONValue(path string, value any, description st
 			); err != nil {
 				return err
 			}
+		case "unverified_approval":
+			if err := validateProposeChangeResultUnverifiedApprovalItemTransportJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Saved Checkpoint 5 approval of this revision when current promotion inputs could not be verified on this read (because no promotion target is configured or the target could not report its current inputs). At most one of approval or unverified_approval is set. It is never saved to disk or hashed into request_revision.",
+			); err != nil {
+				return err
+			}
 		default:
 			return unknownJSONFieldError(path, key, []string{
 				"ambiguities",
@@ -5286,6 +6151,7 @@ func validateProposeChangeResultJSONValue(path string, value any, description st
 				"status",
 				"summary",
 				"ui_composition",
+				"unverified_approval",
 			})
 		}
 	}
@@ -5662,6 +6528,110 @@ func validateProposeChangeResultUICompositionItemTransportJSONValue(path string,
 			return unknownJSONFieldError(path, key, []string{
 				"composed_for_revision",
 				"program",
+			})
+		}
+	}
+	return nil
+}
+
+// validateProposeChangeResultUnverifiedApprovalItemTransportJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateProposeChangeResultUnverifiedApprovalItemTransportJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "approval":
+			if err := validateProposeChangeResultApprovalItemTransportJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Recorded promotion approval from the Change Card.",
+			); err != nil {
+				return err
+			}
+		case "reason":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Explanation of why the recorded approval could not be verified against current promotion inputs and how to recover.",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"approval",
+				"reason",
+			})
+		}
+	}
+	return nil
+}
+
+// validateReviseChangePayloadJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateReviseChangePayloadJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "change_id":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Change identifier.",
+			); err != nil {
+				return err
+			}
+		case "design_source":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Updated target Goa design source inspected by the CP1 model; when omitted, the card's saved design source is preserved.",
+			); err != nil {
+				return err
+			}
+		case "prompt":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Revised operator feature request.",
+			); err != nil {
+				return err
+			}
+		case "request_revision":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Current CP1 request_revision digest being revised.",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"change_id",
+				"design_source",
+				"prompt",
+				"request_revision",
 			})
 		}
 	}
@@ -7882,6 +8852,14 @@ func decodeApprovalItemTransportToApprovalItem(v *toolhttp.ApprovalItemTransport
 
 	return res
 }
+func decodeUnverifiedApprovalItemTransportToUnverifiedApprovalItem(v *toolhttp.UnverifiedApprovalItemTransport) *UnverifiedApprovalItem {
+	res := &UnverifiedApprovalItem{
+		Reason: *v.Reason,
+	}
+	res.Approval = decodeApprovalItemTransportToApprovalItem(v.Approval)
+
+	return res
+}
 func encodeAmbiguityQuestionToAmbiguityQuestionTransport(v *AmbiguityQuestion) *toolhttp.AmbiguityQuestionTransport {
 	res := &toolhttp.AmbiguityQuestionTransport{
 		ID:       &v.ID,
@@ -7929,6 +8907,14 @@ func encodeApprovalItemToApprovalItemTransport(v *ApprovalItem) *toolhttp.Approv
 		tv := val
 		res.Artifacts[tk] = tv
 	}
+
+	return res
+}
+func encodeUnverifiedApprovalItemToUnverifiedApprovalItemTransport(v *UnverifiedApprovalItem) *toolhttp.UnverifiedApprovalItemTransport {
+	res := &toolhttp.UnverifiedApprovalItemTransport{
+		Reason: &v.Reason,
+	}
+	res.Approval = encodeApprovalItemToApprovalItemTransport(v.Approval)
 
 	return res
 }

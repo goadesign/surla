@@ -22,6 +22,7 @@ type Server struct {
 	CheckpointUI        http.Handler
 	GoldenPath          http.Handler
 	ProposeChange       http.Handler
+	ReviseChange        http.Handler
 	ConfirmIntent       http.Handler
 	GetChange           http.Handler
 	PreviewArchitecture http.Handler
@@ -62,6 +63,7 @@ func New(
 			{"CheckpointUI", "GET", "/ui/checkpoint"},
 			{"GoldenPath", "GET", "/golden-path"},
 			{"ProposeChange", "POST", "/changes/propose"},
+			{"ReviseChange", "POST", "/changes/revise"},
 			{"ConfirmIntent", "POST", "/changes/confirm"},
 			{"GetChange", "GET", "/changes/{change_id}"},
 			{"PreviewArchitecture", "POST", "/changes/preview"},
@@ -74,6 +76,7 @@ func New(
 		CheckpointUI:        NewCheckpointUIHandler(e.CheckpointUI, mux, decoder, encoder, errhandler, formatter),
 		GoldenPath:          NewGoldenPathHandler(e.GoldenPath, mux, decoder, encoder, errhandler, formatter),
 		ProposeChange:       NewProposeChangeHandler(e.ProposeChange, mux, decoder, encoder, errhandler, formatter),
+		ReviseChange:        NewReviseChangeHandler(e.ReviseChange, mux, decoder, encoder, errhandler, formatter),
 		ConfirmIntent:       NewConfirmIntentHandler(e.ConfirmIntent, mux, decoder, encoder, errhandler, formatter),
 		GetChange:           NewGetChangeHandler(e.GetChange, mux, decoder, encoder, errhandler, formatter),
 		PreviewArchitecture: NewPreviewArchitectureHandler(e.PreviewArchitecture, mux, decoder, encoder, errhandler, formatter),
@@ -93,6 +96,7 @@ func (s *Server) Use(m func(http.Handler) http.Handler) {
 	s.CheckpointUI = m(s.CheckpointUI)
 	s.GoldenPath = m(s.GoldenPath)
 	s.ProposeChange = m(s.ProposeChange)
+	s.ReviseChange = m(s.ReviseChange)
 	s.ConfirmIntent = m(s.ConfirmIntent)
 	s.GetChange = m(s.GetChange)
 	s.PreviewArchitecture = m(s.PreviewArchitecture)
@@ -111,6 +115,7 @@ func Mount(mux goahttp.Muxer, h *Server) {
 	MountCheckpointUIHandler(mux, h.CheckpointUI)
 	MountGoldenPathHandler(mux, h.GoldenPath)
 	MountProposeChangeHandler(mux, h.ProposeChange)
+	MountReviseChangeHandler(mux, h.ReviseChange)
 	MountConfirmIntentHandler(mux, h.ConfirmIntent)
 	MountGetChangeHandler(mux, h.GetChange)
 	MountPreviewArchitectureHandler(mux, h.PreviewArchitecture)
@@ -248,6 +253,59 @@ func NewProposeChangeHandler(
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := context.WithValue(r.Context(), goahttp.AcceptTypeKey, r.Header.Get("Accept"))
 		ctx = context.WithValue(ctx, goa.MethodKey, "propose_change")
+		ctx = context.WithValue(ctx, goa.ServiceKey, "surla")
+		payload, err := decodeRequest(r)
+		if err != nil {
+			if err := encodeError(ctx, w, err); err != nil && errhandler != nil {
+				errhandler(ctx, w, err)
+			}
+			return
+		}
+		res, err := endpoint(ctx, payload)
+		if err != nil {
+			if err := encodeError(ctx, w, err); err != nil && errhandler != nil {
+				errhandler(ctx, w, err)
+			}
+			return
+		}
+		if err := encodeResponse(ctx, w, res); err != nil {
+			if errhandler != nil {
+				errhandler(ctx, w, err)
+			}
+		}
+	})
+}
+
+// MountReviseChangeHandler configures the mux to serve the "surla" service
+// "revise_change" endpoint.
+func MountReviseChangeHandler(mux goahttp.Muxer, h http.Handler) {
+	f, ok := h.(http.HandlerFunc)
+	if !ok {
+		f = func(w http.ResponseWriter, r *http.Request) {
+			h.ServeHTTP(w, r)
+		}
+	}
+	mux.Handle("POST", "/changes/revise", f)
+}
+
+// NewReviseChangeHandler creates a HTTP handler which loads the HTTP request
+// and calls the "surla" service "revise_change" endpoint.
+func NewReviseChangeHandler(
+	endpoint goa.Endpoint,
+	mux goahttp.Muxer,
+	decoder func(*http.Request) goahttp.Decoder,
+	encoder func(context.Context, http.ResponseWriter) goahttp.Encoder,
+	errhandler func(context.Context, http.ResponseWriter, error),
+	formatter func(ctx context.Context, err error) goahttp.Statuser,
+) http.Handler {
+	var (
+		decodeRequest  = DecodeReviseChangeRequest(mux, decoder)
+		encodeResponse = EncodeReviseChangeResponse(encoder)
+		encodeError    = goahttp.ErrorEncoder(encoder, formatter)
+	)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := context.WithValue(r.Context(), goahttp.AcceptTypeKey, r.Header.Get("Accept"))
+		ctx = context.WithValue(ctx, goa.MethodKey, "revise_change")
 		ctx = context.WithValue(ctx, goa.ServiceKey, "surla")
 		payload, err := decodeRequest(r)
 		if err != nil {

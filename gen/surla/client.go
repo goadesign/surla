@@ -18,6 +18,7 @@ type Client struct {
 	CheckpointUIEndpoint        goa.Endpoint
 	GoldenPathEndpoint          goa.Endpoint
 	ProposeChangeEndpoint       goa.Endpoint
+	ReviseChangeEndpoint        goa.Endpoint
 	ConfirmIntentEndpoint       goa.Endpoint
 	GetChangeEndpoint           goa.Endpoint
 	PreviewArchitectureEndpoint goa.Endpoint
@@ -29,11 +30,12 @@ type Client struct {
 }
 
 // NewClient initializes a "surla" service client given the endpoints.
-func NewClient(checkpointUI, goldenPath, proposeChange, confirmIntent, getChange, previewArchitecture, draftOverride, verifyChange, getVerification, approveMerge, diff goa.Endpoint) *Client {
+func NewClient(checkpointUI, goldenPath, proposeChange, reviseChange, confirmIntent, getChange, previewArchitecture, draftOverride, verifyChange, getVerification, approveMerge, diff goa.Endpoint) *Client {
 	return &Client{
 		CheckpointUIEndpoint:        checkpointUI,
 		GoldenPathEndpoint:          goldenPath,
 		ProposeChangeEndpoint:       proposeChange,
+		ReviseChangeEndpoint:        reviseChange,
 		ConfirmIntentEndpoint:       confirmIntent,
 		GetChangeEndpoint:           getChange,
 		PreviewArchitectureEndpoint: previewArchitecture,
@@ -69,6 +71,16 @@ func (c *Client) GoldenPath(ctx context.Context) (res string, err error) {
 func (c *Client) ProposeChange(ctx context.Context, p *ProposeChangePayload) (res *ChangeCardResult, err error) {
 	var ires any
 	ires, err = c.ProposeChangeEndpoint(ctx, p)
+	if err != nil {
+		return
+	}
+	return ires.(*ChangeCardResult), nil
+}
+
+// ReviseChange calls the "revise_change" endpoint of the "surla" service.
+func (c *Client) ReviseChange(ctx context.Context, p *ReviseChangePayload) (res *ChangeCardResult, err error) {
+	var ires any
+	ires, err = c.ReviseChangeEndpoint(ctx, p)
 	if err != nil {
 		return
 	}

@@ -24,6 +24,11 @@ func ProposeChangeSurlaPath() string {
 	return "/changes/propose"
 }
 
+// ReviseChangeSurlaPath returns the URL path to the surla service revise_change HTTP endpoint.
+func ReviseChangeSurlaPath() string {
+	return "/changes/revise"
+}
+
 // ConfirmIntentSurlaPath returns the URL path to the surla service confirm_intent HTTP endpoint.
 func ConfirmIntentSurlaPath() string {
 	return "/changes/confirm"

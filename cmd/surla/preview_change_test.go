@@ -91,6 +91,11 @@ func (a staticCP1Analyzer) Analyze(context.Context, string, string) (controlplan
 	return a.analysis, nil
 }
 
+// Revise returns a.analysis for every CP1 ReviseChange call.
+func (a staticCP1Analyzer) Revise(context.Context, controlplane.CP1PriorCard, string, string) (controlplane.CP1SemanticAnalysis, error) {
+	return a.analysis, nil
+}
+
 // PreviewArchitecture records p and returns s.result.
 func (s *recordingPreviewService) PreviewArchitecture(_ context.Context, p *gensurla.PreviewArchitecturePayload) (*gensurla.ArchitecturePreviewResult, error) {
 	s.mu.Lock()

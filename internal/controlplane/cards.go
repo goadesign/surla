@@ -36,12 +36,42 @@ type (
 		lock *os.File
 	}
 
-	// cardFile is the saved form of one card. Changing gensurla's
-	// ChangeCardResult fields changes this format; saved cards that no longer
-	// decode stop the calls that read them rather than being skipped.
+	// savedCard is the on-disk JSON representation of one Change Card. It
+	// holds only the 12 persisted card fields (omitting response-only
+	// UnverifiedApproval) without omitempty tags so saved card files remain
+	// byte-for-byte compatible across versions under DisallowUnknownFields.
+	savedCard struct {
+		// ChangeID is the Change Card identifier.
+		ChangeID string
+		// Status is the checkpoint status ("needs_confirmation" or "confirmed").
+		Status string
+		// Prompt is the operator feature request for this revision.
+		Prompt string
+		// Summary is the plain-English summary of requested behavior.
+		Summary string
+		// Ambiguities lists surfaced domain questions.
+		Ambiguities []*gensurla.AmbiguityQuestion
+		// Answers maps each ambiguity question ID to its confirmed answer.
+		Answers map[string]string
+		// Examples lists concrete examples mapped to evaluator checks.
+		Examples []*gensurla.ExampleItem
+		// PreservedBehaviors lists contract invariants preserved by this change.
+		PreservedBehaviors []string
+		// ConfirmedBy is the authenticated principal that confirmed the card.
+		ConfirmedBy *string
+		// RequestRevision is the SHA-256 digest of the canonical versioned card.
+		RequestRevision string
+		// UIComposition is the optional OpenUI Lang decision view for this revision.
+		UIComposition *gensurla.UICompositionItem
+		// Approval is the recorded Checkpoint 5 promotion approval for this revision.
+		Approval *gensurla.ApprovalItem
+	}
+
+	// cardFile is the saved form of one card. Saved cards that do not match
+	// this schema stop the calls that read them rather than being skipped.
 	cardFile struct {
 		// Card is the latest versioned Change Card.
-		Card *gensurla.ChangeCardResult `json:"card"`
+		Card *savedCard `json:"card"`
 		// Owner is the authenticated principal that created the card.
 		Owner string `json:"owner"`
 		// DesignSource is the Goa design source inspected at CP1.
@@ -127,19 +157,33 @@ func (s *cardStore) load(changeID string) (storedChangeCard, bool, error) {
 	if f.Card == nil || f.Card.ChangeID != changeID || f.Owner == "" {
 		return storedChangeCard{}, false, fmt.Errorf("change card file for %q does not hold that card", changeID)
 	}
-	if f.Card.Status != StatusNeedsConfirmation && f.Card.Status != StatusConfirmed {
-		return storedChangeCard{}, false, fmt.Errorf("change card %q has unknown status %q", changeID, f.Card.Status)
+	card := &gensurla.ChangeCardResult{
+		ChangeID:           f.Card.ChangeID,
+		Status:             f.Card.Status,
+		Prompt:             f.Card.Prompt,
+		Summary:            f.Card.Summary,
+		Ambiguities:        f.Card.Ambiguities,
+		Answers:            f.Card.Answers,
+		Examples:           f.Card.Examples,
+		PreservedBehaviors: f.Card.PreservedBehaviors,
+		ConfirmedBy:        f.Card.ConfirmedBy,
+		RequestRevision:    f.Card.RequestRevision,
+		UIComposition:      f.Card.UIComposition,
+		Approval:           f.Card.Approval,
+	}
+	if card.Status != StatusNeedsConfirmation && card.Status != StatusConfirmed {
+		return storedChangeCard{}, false, fmt.Errorf("change card %q has unknown status %q", changeID, card.Status)
 	}
 	// request_revision is the digest of the card's content, owner and design
 	// source, so recomputing it checks every field it covers.
-	rev, err := computeCanonicalRevision(f.Card, f.Owner, f.DesignSource)
+	rev, err := computeCanonicalRevision(card, f.Owner, f.DesignSource)
 	if err != nil {
 		return storedChangeCard{}, false, err
 	}
-	if rev != f.Card.RequestRevision {
+	if rev != card.RequestRevision {
 		return storedChangeCard{}, false, fmt.Errorf("change card %q does not match its request_revision", changeID)
 	}
-	return storedChangeCard{card: f.Card, owner: f.Owner, designSource: f.DesignSource}, true, nil
+	return storedChangeCard{card: card, owner: f.Owner, designSource: f.DesignSource}, true, nil
 }
 
 // save replaces the saved card for record.card.ChangeID. It writes and syncs
@@ -154,7 +198,21 @@ func (s *cardStore) save(record storedChangeCard) error {
 	if s.lock == nil {
 		return errCardsClosed
 	}
-	data, err := json.Marshal(cardFile{Card: record.card, Owner: record.owner, DesignSource: record.designSource})
+	persisted := &savedCard{
+		ChangeID:           record.card.ChangeID,
+		Status:             record.card.Status,
+		Prompt:             record.card.Prompt,
+		Summary:            record.card.Summary,
+		Ambiguities:        record.card.Ambiguities,
+		Answers:            record.card.Answers,
+		Examples:           record.card.Examples,
+		PreservedBehaviors: record.card.PreservedBehaviors,
+		ConfirmedBy:        record.card.ConfirmedBy,
+		RequestRevision:    record.card.RequestRevision,
+		UIComposition:      record.card.UIComposition,
+		Approval:           record.card.Approval,
+	}
+	data, err := json.Marshal(cardFile{Card: persisted, Owner: record.owner, DesignSource: record.designSource})
 	if err != nil {
 		return fmt.Errorf("encode change card %q: %w", record.card.ChangeID, err)
 	}

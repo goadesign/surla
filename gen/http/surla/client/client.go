@@ -29,6 +29,10 @@ type Client struct {
 	// propose_change endpoint.
 	ProposeChangeDoer goahttp.Doer
 
+	// ReviseChange Doer is the HTTP client used to make requests to the
+	// revise_change endpoint.
+	ReviseChangeDoer goahttp.Doer
+
 	// ConfirmIntent Doer is the HTTP client used to make requests to the
 	// confirm_intent endpoint.
 	ConfirmIntentDoer goahttp.Doer
@@ -83,6 +87,7 @@ func NewClient(
 		CheckpointUIDoer:        doer,
 		GoldenPathDoer:          doer,
 		ProposeChangeDoer:       doer,
+		ReviseChangeDoer:        doer,
 		ConfirmIntentDoer:       doer,
 		GetChangeDoer:           doer,
 		PreviewArchitectureDoer: doer,
@@ -156,6 +161,30 @@ func (c *Client) ProposeChange() goa.Endpoint {
 		resp, err := c.ProposeChangeDoer.Do(req)
 		if err != nil {
 			return nil, goahttp.ErrRequestError("surla", "propose_change", err)
+		}
+		return decodeResponse(resp)
+	}
+}
+
+// ReviseChange returns an endpoint that makes HTTP requests to the surla
+// service revise_change server.
+func (c *Client) ReviseChange() goa.Endpoint {
+	var (
+		encodeRequest  = EncodeReviseChangeRequest(c.encoder)
+		decodeResponse = DecodeReviseChangeResponse(c.decoder, c.RestoreResponseBody)
+	)
+	return func(ctx context.Context, v any) (any, error) {
+		req, err := c.BuildReviseChangeRequest(ctx, v)
+		if err != nil {
+			return nil, err
+		}
+		err = encodeRequest(req, v)
+		if err != nil {
+			return nil, err
+		}
+		resp, err := c.ReviseChangeDoer.Do(req)
+		if err != nil {
+			return nil, goahttp.ErrRequestError("surla", "revise_change", err)
 		}
 		return decodeResponse(resp)
 	}

@@ -38,6 +38,30 @@ func BuildProposeChangePayload(surlaProposeChangeBody *string) (*surla.ProposeCh
 	return v, nil
 }
 
+// BuildReviseChangePayload builds the payload for the surla revise_change
+// endpoint from CLI flags.
+func BuildReviseChangePayload(surlaReviseChangeBody *string) (*surla.ReviseChangePayload, error) {
+	var err error
+	var body ReviseChangeRequestBody
+	{
+		if surlaReviseChangeBody == nil {
+			return nil, fmt.Errorf("missing required flag --body")
+		}
+		err = json.Unmarshal([]byte(*surlaReviseChangeBody), &body)
+		if err != nil {
+			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"change_id\": \"Optio ratione suscipit et neque officia.\",\n      \"design_source\": \"Qui itaque.\",\n      \"prompt\": \"Omnis est.\",\n      \"request_revision\": \"Neque dolore optio.\"\n   }'")
+		}
+	}
+	v := &surla.ReviseChangePayload{
+		ChangeID:        body.ChangeID,
+		RequestRevision: body.RequestRevision,
+		Prompt:          body.Prompt,
+		DesignSource:    body.DesignSource,
+	}
+
+	return v, nil
+}
+
 // BuildConfirmIntentPayload builds the payload for the surla confirm_intent
 // endpoint from CLI flags.
 func BuildConfirmIntentPayload(surlaConfirmIntentBody *string) (*surla.ConfirmIntentPayload, error) {

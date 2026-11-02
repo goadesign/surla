@@ -14,7 +14,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"maps"
 	"net/http"
 	"slices"
@@ -57,6 +56,10 @@ type (
 		// summary, open domain questions, concrete examples, and preserved
 		// behaviors.
 		Analyze(ctx context.Context, promptText, designSource string) (CP1SemanticAnalysis, error)
+		// Revise re-analyzes a revised prompt and design source against the
+		// prior Change Card's confirmed decisions, open questions, examples,
+		// and preserved behaviors.
+		Revise(ctx context.Context, prior CP1PriorCard, promptText, designSource string) (CP1SemanticAnalysis, error)
 	}
 
 	// CP1ModelAmbiguity is an open domain question returned by a CP1Analyzer
@@ -454,55 +457,11 @@ func NewModelCP1Analyzer(client model.Client) *ModelCP1Analyzer {
 // StructuredOutput contract for CP1 semantic analysis and strictly decodes the
 // validated CP1SemanticAnalysis response.
 func (a *ModelCP1Analyzer) Analyze(ctx context.Context, promptText, designSource string) (CP1SemanticAnalysis, error) {
-	if a == nil || a.client == nil {
-		return CP1SemanticAnalysis{}, errors.New("cp1 model client is required")
-	}
-	req := &model.Request{
-		Messages: []*model.Message{
-			{
-				Role: model.ConversationRoleSystem,
-				Parts: []model.Part{
-					model.TextPart{
-						Text: goldenpath.ArchitectSystemPrompt(),
-					},
-				},
-			},
-			{
-				Role: model.ConversationRoleUser,
-				Parts: []model.Part{
-					model.TextPart{
-						Text: fmt.Sprintf("Request:\n%s\n\nDesign:\n%s", promptText, designSource),
-					},
-				},
-			},
-		},
-		StructuredOutput: &model.StructuredOutput{
-			Name:   "cp1_change_card_analysis",
-			Schema: cp1AnalysisJSONSchema,
-		},
-		MaxTokens: cp1AnalysisMaxOutputTokens,
-	}
-	resp, err := a.client.Complete(ctx, req)
-	if err != nil {
-		return CP1SemanticAnalysis{}, fmt.Errorf("cp1 model completion: %w", err)
-	}
-	if resp.OutputLimited {
-		return CP1SemanticAnalysis{}, fmt.Errorf("cp1 model analysis may be incomplete: provider reported an output limit (stop reason %q)", resp.StopReason)
-	}
-	raw := extractAssistantText(resp)
-	if raw == "" {
-		return CP1SemanticAnalysis{}, errors.New("cp1 model returned empty analysis")
-	}
-	var parsed CP1SemanticAnalysis
-	dec := json.NewDecoder(strings.NewReader(raw))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&parsed); err != nil {
-		return CP1SemanticAnalysis{}, fmt.Errorf("decode cp1 model analysis: %w", err)
-	}
-	if err := dec.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
-		return CP1SemanticAnalysis{}, errors.New("cp1 model analysis contains trailing JSON tokens")
-	}
-	return parsed, nil
+	return a.completeAnalysis(
+		ctx,
+		goldenpath.ArchitectSystemPrompt(),
+		fmt.Sprintf("Request:\n%s\n\nDesign:\n%s", promptText, designSource),
+	)
 }
 
 // CheckpointUI returns the interactive MCP Apps HTML host for `ui://surla/checkpoint`.
@@ -626,9 +585,10 @@ func (c *ControlPlane) Close() error {
 
 // GetChange returns the current Change Card for change_id to its owner. It
 // fails for an unknown change_id or a caller who does not own the card, and
-// never changes the card. A saved approval is included only while it still
-// matches the promotion target's current inputs (see currentCard); reading
-// them fails the call when the target cannot report them.
+// never changes the card. A saved approval is returned in Approval only while
+// it still matches the promotion target's current inputs, or in
+// UnverifiedApproval when no promotion target is configured or the target
+// cannot report its current inputs (see currentCard).
 func (c *ControlPlane) GetChange(ctx context.Context, p *gensurla.GetChangePayload) (*gensurla.ChangeCardResult, error) {
 	principal, ok := PrincipalFromContext(ctx)
 	if !ok {
@@ -657,11 +617,12 @@ func (c *ControlPlane) GetChange(ctx context.Context, p *gensurla.GetChangePaylo
 // the card is returned as it is; otherwise the card is confirmed under a new
 // request_revision, so previews and verification reports bound to the earlier
 // revision no longer match it. The prompt, summary and preserved behaviors
-// never change here: a new requirement needs a new propose_change.
+// never change here: a new requirement on an existing card uses revise_change.
 //
 // An unchanged submission returns the saved card the same way get_change
-// does: with its approval only while that approval still matches the
-// promotion target's current inputs.
+// does: with its approval in Approval only while that approval still matches
+// the promotion target's current inputs, or in UnverifiedApproval when current
+// promotion inputs cannot be verified.
 func (c *ControlPlane) ConfirmIntent(ctx context.Context, p *gensurla.ConfirmIntentPayload) (*gensurla.ChangeCardResult, error) {
 	principal, ok := PrincipalFromContext(ctx)
 	if !ok {
@@ -805,99 +766,6 @@ func (c *ControlPlane) DraftOverride(ctx context.Context, p *gensurla.DraftOverr
 	default:
 		return nil, fmt.Errorf("unsupported target_kind %q", p.TargetKind)
 	}
-}
-
-// ApproveMerge records Checkpoint 5 approval of the caller's confirmed Change
-// Card revision. It loads the verification report by digest and the current
-// suite, environment and binary digests from the bound PromotionTarget, and
-// requires verify.Approve to accept the report for exactly that change. The
-// approval is saved on a copy of the card only if the card still has the same
-// request_revision after those calls, so a confirm_intent that changed the
-// examples meanwhile is never approved with the old report. It returns the
-// approved card; nothing is merged or deployed.
-func (c *ControlPlane) ApproveMerge(ctx context.Context, p *gensurla.ApproveMergePayload) (*gensurla.ChangeCardResult, error) {
-	principal, ok := PrincipalFromContext(ctx)
-	if !ok {
-		return nil, errors.New("authenticated principal is required")
-	}
-	if c.promotionTarget == nil {
-		return nil, errors.New("no promotion target is bound to this control plane")
-	}
-
-	c.mu.RLock()
-	record, exists, err := c.cards.load(p.ChangeID)
-	c.mu.RUnlock()
-	if err != nil {
-		return nil, err
-	}
-	if !exists {
-		return nil, fmt.Errorf("unknown change_id %q", p.ChangeID)
-	}
-	if record.owner != principal.ID {
-		return nil, fmt.Errorf("principal %q is not the owner of change_id %q", principal.ID, p.ChangeID)
-	}
-	if record.card.Status != StatusConfirmed {
-		return nil, fmt.Errorf("change_id %q must be confirmed before approval (status %q)", p.ChangeID, record.card.Status)
-	}
-	if record.card.RequestRevision != p.RequestRevision {
-		return nil, fmt.Errorf("request_revision mismatch for %q: got %q, want %q", p.ChangeID, p.RequestRevision, record.card.RequestRevision)
-	}
-
-	// The target calls may be slow, so they run without holding c.mu. A card
-	// is never removed and never changes owner or leaves confirmed status, so
-	// only its request_revision can change meanwhile; that is checked again
-	// before the approval is written.
-	report, err := c.promotionTarget.LoadReport(ctx, p.ReportDigest)
-	if err != nil {
-		return nil, fmt.Errorf("load verification report %s: %w", p.ReportDigest, err)
-	}
-	if report.Digest != p.ReportDigest {
-		return nil, fmt.Errorf("promotion target returned report %s for digest %s", report.Digest, p.ReportDigest)
-	}
-	inputs, err := c.promotionTarget.CurrentInputs(ctx, p.CandidateCommit)
-	if err != nil {
-		return nil, fmt.Errorf("load promotion inputs for %s: %w", p.CandidateCommit, err)
-	}
-	current := verify.Binding{
-		CandidateCommit: p.CandidateCommit,
-		RequestRevision: p.RequestRevision,
-		SuiteID:         inputs.SuiteID,
-		SuiteCommit:     inputs.SuiteCommit,
-		Artifacts:       inputs.Artifacts,
-		Environment:     inputs.Environment,
-	}
-	if err := verify.Approve(current, report); err != nil {
-		return nil, err
-	}
-
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	record, exists, err = c.cards.load(p.ChangeID)
-	if err != nil {
-		return nil, err
-	}
-	if !exists {
-		return nil, fmt.Errorf("change card %q is no longer saved", p.ChangeID)
-	}
-	if record.card.RequestRevision != p.RequestRevision {
-		return nil, fmt.Errorf("request_revision mismatch for %q: got %q, want %q", p.ChangeID, p.RequestRevision, record.card.RequestRevision)
-	}
-	approved := *record.card
-	approved.Approval = &gensurla.ApprovalItem{
-		ApprovedBy:      principal.ID,
-		ReportDigest:    report.Digest,
-		CandidateCommit: p.CandidateCommit,
-		SuiteID:         inputs.SuiteID,
-		SuiteCommit:     inputs.SuiteCommit,
-		Environment:     inputs.Environment,
-		Artifacts:       maps.Clone(inputs.Artifacts),
-		ScenarioCount:   report.Counts.Required,
-	}
-	record.card = &approved
-	if err := c.cards.save(record); err != nil {
-		return nil, err
-	}
-	return &approved, nil
 }
 
 // Diff compares two Goa design sources and go.mod snapshots and returns the
@@ -1121,40 +989,4 @@ func (c *ControlPlane) confirm(principal Principal, p *gensurla.ConfirmIntentPay
 		return nil, false, err
 	}
 	return confirmed, true, nil
-}
-
-// currentCard returns card as get_change and an unchanged confirm_intent
-// report it: card itself when it has no approval or when its approval still
-// matches the promotion target's current inputs for the approved candidate
-// commit, and otherwise a copy without the approval. The saved card is never
-// changed, so the approval remains the record of what was checked; it is
-// only not presented as current. An approval can exist only on a card of the
-// revision it was recorded for, because a changed confirmation creates a new
-// card without one. It fails when the current inputs cannot be read, rather
-// than present an approval nobody can confirm. Callers must not hold c.mu:
-// the target may be slow.
-func (c *ControlPlane) currentCard(ctx context.Context, card *gensurla.ChangeCardResult) (*gensurla.ChangeCardResult, error) {
-	a := card.Approval
-	if a == nil {
-		return card, nil
-	}
-	// Saved cards outlive the control plane that approved them, so this one
-	// may have no promotion target. An approval is reported only while it is
-	// checked against current inputs, so without a target it is left out.
-	if c.promotionTarget == nil {
-		unapproved := *card
-		unapproved.Approval = nil
-		return &unapproved, nil
-	}
-	inputs, err := c.promotionTarget.CurrentInputs(ctx, a.CandidateCommit)
-	if err != nil {
-		return nil, fmt.Errorf("check approval of %q against current promotion inputs for %s: %w", card.ChangeID, a.CandidateCommit, err)
-	}
-	if inputs.SuiteID == a.SuiteID && inputs.SuiteCommit == a.SuiteCommit &&
-		inputs.Environment == a.Environment && maps.Equal(inputs.Artifacts, a.Artifacts) {
-		return card, nil
-	}
-	unapproved := *card
-	unapproved.Approval = nil
-	return &unapproved, nil
 }

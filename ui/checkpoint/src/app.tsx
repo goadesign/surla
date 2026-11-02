@@ -51,11 +51,14 @@ interface PendingRPC {
 interface ActiveEditorState {
   // card is the last saved snapshot received from the server.
   card: ChangeCardResult;
+  // priorCard is the immediately prior saved snapshot for this change_id
+  // when the editor transitioned between distinct revisions of the same card.
+  priorCard: ChangeCardResult | null;
   // draftAnswers contains the user's current choices, including unsaved ones.
   draftAnswers: Record<string, string>;
   // draftExamples contains the exact text the user is editing.
   draftExamples: ExampleItem[];
-  // preservedDraft retains earlier revision text for explicit reconciliation.
+  // preservedDraft retains unsaved draft edits from an earlier revision.
   preservedDraft: PreservedDraft | null;
   // formError describes the latest failed editor request or invalid input.
   formError: string | null;
@@ -72,19 +75,61 @@ type ActiveResultState =
   | { kind: "error"; message: string }
   | { kind: "cancelled"; reason: string };
 
-// formatDraftLines keeps draft values readable when a newer saved revision
-// requires the user to reconcile earlier answers and examples.
-function formatDraftLines(
-  rev: string,
-  answers: Record<string, string>,
-  examples: ExampleItem[]
-): string[] {
-  return Object.keys(answers || {})
-    .map((k) => "[" + rev + "] " + k + "=" + answers[k])
-    .concat(
-      (examples || []).map(
-        (ex) =>
-          "[" +
+// formatChangedDraftLines formats only the ambiguity answers and acceptance
+// examples that differ from the saved Change Card, including cleared values,
+// so unchanged saved content is not relabeled as unsaved draft edits.
+function formatChangedDraftLines(ed: ActiveEditorState): string[] {
+  const rev = ed.card.request_revision;
+  const ambiguities = Array.isArray(ed.card.ambiguities) ? ed.card.ambiguities : [];
+  const savedAnswers = isPlainObject(ed.card.answers) ? ed.card.answers : {};
+  const draftAnswers = ed.draftAnswers || {};
+  const questionByID: Record<string, string> = {};
+  const answerIDs: string[] = [];
+  const seenIDs: Record<string, boolean> = {};
+  for (let i = 0; i < ambiguities.length; i++) {
+    const amb = ambiguities[i];
+    if (amb && typeof amb.id === "string") {
+      if (typeof amb.question === "string") {
+        questionByID[amb.id] = amb.question;
+      }
+      if (!seenIDs[amb.id]) {
+        seenIDs[amb.id] = true;
+        answerIDs.push(amb.id);
+      }
+    }
+  }
+  for (const k of Object.keys(savedAnswers).concat(Object.keys(draftAnswers))) {
+    if (!seenIDs[k]) {
+      seenIDs[k] = true;
+      answerIDs.push(k);
+    }
+  }
+
+  const lines: string[] = [];
+  for (let i = 0; i < answerIDs.length; i++) {
+    const k = answerIDs[i];
+    const savedVal = savedAnswers[k] || "";
+    const draftVal = draftAnswers[k] || "";
+    if (draftVal !== savedVal) {
+      const q = questionByID[k];
+      lines.push("[" + rev + "] " + k + (q ? " (" + q + ")" : "") + "=" + draftVal);
+    }
+  }
+
+  const savedExamples = Array.isArray(ed.card.examples) ? ed.card.examples : [];
+  const draftExamples = Array.isArray(ed.draftExamples) ? ed.draftExamples : [];
+  for (let i = 0; i < draftExamples.length; i++) {
+    const ex = draftExamples[i];
+    const savedEx = savedExamples.find((s) => s.id === ex.id);
+    if (
+      !savedEx ||
+      savedEx.scenario !== ex.scenario ||
+      savedEx.input_summary !== ex.input_summary ||
+      savedEx.expected_outcome !== ex.expected_outcome ||
+      savedEx.verification_kind !== ex.verification_kind
+    ) {
+      lines.push(
+        "[" +
           rev +
           "] " +
           ex.id +
@@ -97,23 +142,44 @@ function formatDraftLines(
           " [" +
           ex.verification_kind +
           "]"
-      )
-    );
+      );
+    }
+  }
+  return lines;
 }
 
-// snapshotDraft preserves current edits and any earlier revision text before
-// a different saved revision replaces the editable form.
-function snapshotDraft(ed: ActiveEditorState): PreservedDraft {
+// snapshotUnsavedDraft preserves unsaved local edits and any earlier unsaved
+// draft lines before a different saved revision replaces the editable form.
+function snapshotUnsavedDraft(ed: ActiveEditorState): PreservedDraft | null {
   const priorLines = ed.preservedDraft ? ed.preservedDraft.lines : [];
-  const dirty = isDraftDirty(ed.card, ed.draftAnswers, ed.draftExamples);
-  const currentLines =
-    dirty || priorLines.length === 0
-      ? formatDraftLines(ed.card.request_revision, ed.draftAnswers, ed.draftExamples)
-      : [];
+  const currentLines = formatChangedDraftLines(ed);
+  if (currentLines.length === 0 && priorLines.length === 0) {
+    return null;
+  }
   return {
-    fromRevision: ed.card.request_revision,
+    fromRevision:
+      currentLines.length > 0
+        ? ed.card.request_revision
+        : ed.preservedDraft!.fromRevision,
     lines: priorLines.concat(currentLines),
   };
+}
+
+// nextPriorCard returns the immediately prior saved card when transitioning
+// between distinct revisions of the same change_id, preserves the existing
+// priorCard when refreshing the same revision, and returns null when
+// mounting an initial card or switching to a different change_id.
+function nextPriorCard(
+  current: ActiveEditorState | null,
+  next: ChangeCardResult
+): ChangeCardResult | null {
+  if (!current || current.card.change_id !== next.change_id) {
+    return null;
+  }
+  if (current.card.request_revision === next.request_revision) {
+    return current.priorCard;
+  }
+  return current.card;
 }
 
 // extractErrorText uses the host's text error when provided and otherwise
@@ -245,6 +311,7 @@ export function bootstrapCheckpointApp() {
       editorRoot.render(
         <CP1EditorView
           card={ed.card}
+          priorCard={ed.priorCard}
           draftAnswers={ed.draftAnswers}
           draftExamples={ed.draftExamples}
           rpcInFlight={editorRequest !== null}
@@ -344,11 +411,11 @@ export function bootstrapCheckpointApp() {
                   "Wait for the pending CP1 Change Card request to finish before switching cards.";
                 return;
               }
-              const preserved =
-                activeEditor && hasUnsavedEditorState() ? snapshotDraft(activeEditor) : null;
+              const preserved = activeEditor ? snapshotUnsavedDraft(activeEditor) : null;
+              const prior = nextPriorCard(activeEditor, res.card);
               activeResult = null;
               syncResultRegion();
-              mountChangeCard(res.card, preserved);
+              mountChangeCard(res.card, preserved, prior);
             }}
           />
         );
@@ -615,7 +682,7 @@ export function bootstrapCheckpointApp() {
       },
       isChangeCardResult,
       (updatedCard) => {
-        mountChangeCard(updatedCard, null);
+        mountChangeCard(updatedCard, null, nextPriorCard(activeEditor, updatedCard));
       },
       showFormError
     );
@@ -634,7 +701,7 @@ export function bootstrapCheckpointApp() {
       rootEl.dataset.state = activeResult.kind;
       return;
     }
-    mountChangeCard(activeEditor.card, null);
+    mountChangeCard(activeEditor.card, null, activeEditor.priorCard);
   }
 
   // handleLoadLatestCard refreshes saved values and approval through get_change.
@@ -664,21 +731,32 @@ export function bootstrapCheckpointApp() {
           };
           statusEl.textContent = latestCard.approval
             ? "Showing the recorded approval for these inputs."
+            : latestCard.unverified_approval
+            ? "Showing the saved approval record (current promotion inputs could not be verified)."
             : "Showing the latest card without a current approval.";
           syncEditorRegion();
           return;
         }
-        mountChangeCard(latestCard, activeEditor ? snapshotDraft(activeEditor) : null);
+        mountChangeCard(
+          latestCard,
+          activeEditor ? snapshotUnsavedDraft(activeEditor) : null,
+          nextPriorCard(activeEditor, latestCard)
+        );
       },
       (message) => showFormError("Could not load the current card and approval: " + message)
     );
   }
 
   // mountChangeCard starts an editor from a received saved card and optionally
-  // shows draft text that belonged to an earlier revision.
-  function mountChangeCard(card: ChangeCardResult, preservedDraft: PreservedDraft | null) {
+  // shows draft text or the immediately prior saved revision.
+  function mountChangeCard(
+    card: ChangeCardResult,
+    preservedDraft: PreservedDraft | null,
+    priorCard: ChangeCardResult | null = null
+  ) {
     activeEditor = {
       card,
+      priorCard,
       draftAnswers: isPlainObject(card.answers) ? { ...card.answers } : {},
       draftExamples: card.examples.map((ex) => ({
         id: ex.id,
@@ -694,6 +772,8 @@ export function bootstrapCheckpointApp() {
       card.status === "confirmed"
         ? card.approval
           ? "Showing the recorded approval for these inputs."
+          : card.unverified_approval
+          ? "Showing the saved approval record (current promotion inputs could not be verified)."
           : "Showing confirmed Change Card. You can refine answers or examples below."
         : "Review the open questions and examples below, then confirm your intent.";
     rootEl.dataset.state = "cp1-change-card";
@@ -783,23 +863,20 @@ export function bootstrapCheckpointApp() {
           payload.change_id === activeEditor.card.change_id &&
           payload.request_revision === activeEditor.card.request_revision
         ) {
-          if (
-            JSON.stringify(payload.approval || null) ===
-            JSON.stringify(activeEditor.card.approval || null)
-          ) {
-            return;
-          }
-          if (shouldRetainEditor()) {
-            activeEditor = {
-              ...activeEditor,
-              card: payload,
-            };
-            statusEl.textContent = payload.approval
-              ? "Showing the recorded approval for these inputs."
-              : "Showing confirmed Change Card. You can refine answers or examples below.";
-            syncEditorRegion();
-            return;
-          }
+          activeEditor = {
+            ...activeEditor,
+            card: payload,
+          };
+          statusEl.textContent =
+            payload.status === "confirmed"
+              ? payload.approval
+                ? "Showing the recorded approval for these inputs."
+                : payload.unverified_approval
+                ? "Showing the saved approval record (current promotion inputs could not be verified)."
+                : "Showing confirmed Change Card. You can refine answers or examples below."
+              : "Review the open questions and examples below, then confirm your intent.";
+          syncEditorRegion();
+          return;
         } else if (shouldRetainEditor()) {
           activeResult = { kind: "cp1-incoming-card", card: payload };
           syncResultRegion();
@@ -809,9 +886,10 @@ export function bootstrapCheckpointApp() {
           return;
         }
       }
+      const prior = nextPriorCard(activeEditor, payload);
       activeResult = null;
       syncResultRegion();
-      mountChangeCard(payload, null);
+      mountChangeCard(payload, null, prior);
       return;
     }
     if (isDiffResult(payload)) {
@@ -893,7 +971,7 @@ export function bootstrapCheckpointApp() {
           renderError("Malformed ui/notifications/tool-input-partial notification.");
           return;
         }
-        if (shouldRetainEditor() || activeResult?.kind === "cp4-verification") {
+        if (activeEditor !== null || activeResult?.kind === "cp4-verification") {
           return;
         }
         const partialArgs =
@@ -915,7 +993,7 @@ export function bootstrapCheckpointApp() {
           renderError("Malformed ui/notifications/tool-input notification.");
           return;
         }
-        if (shouldRetainEditor() || activeResult?.kind === "cp4-verification") {
+        if (activeEditor !== null || activeResult?.kind === "cp4-verification") {
           return;
         }
         renderWaiting("Preparing checkpoint view...");

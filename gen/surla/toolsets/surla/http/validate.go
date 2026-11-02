@@ -84,6 +84,11 @@ func ValidateApproveMergeResultTransport(body *ApproveMergeResultTransport) (err
 			err = goa.MergeErrors(err, err2)
 		}
 	}
+	if body.UnverifiedApproval != nil {
+		if err2 := ValidateUnverifiedApprovalItemTransport(body.UnverifiedApproval); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		}
+	}
 	return
 }
 
@@ -160,6 +165,11 @@ func ValidateConfirmIntentResultTransport(body *ConfirmIntentResultTransport) (e
 	}
 	if body.Approval != nil {
 		if err2 := ValidateApprovalItemTransport(body.Approval); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		}
+	}
+	if body.UnverifiedApproval != nil {
+		if err2 := ValidateUnverifiedApprovalItemTransport(body.UnverifiedApproval); err2 != nil {
 			err = goa.MergeErrors(err, err2)
 		}
 	}
@@ -297,6 +307,11 @@ func ValidateGetChangeResultTransport(body *GetChangeResultTransport) (err error
 	}
 	if body.Approval != nil {
 		if err2 := ValidateApprovalItemTransport(body.Approval); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		}
+	}
+	if body.UnverifiedApproval != nil {
+		if err2 := ValidateUnverifiedApprovalItemTransport(body.UnverifiedApproval); err2 != nil {
 			err = goa.MergeErrors(err, err2)
 		}
 	}
@@ -519,6 +534,85 @@ func ValidateProposeChangeResultTransport(body *ProposeChangeResultTransport) (e
 	}
 	if body.Approval != nil {
 		if err2 := ValidateApprovalItemTransport(body.Approval); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		}
+	}
+	if body.UnverifiedApproval != nil {
+		if err2 := ValidateUnverifiedApprovalItemTransport(body.UnverifiedApproval); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		}
+	}
+	return
+}
+
+// ValidateReviseChangePayloadTransport runs the validations defined on ReviseChangePayloadTransport.
+func ValidateReviseChangePayloadTransport(body *ReviseChangePayloadTransport) (err error) {
+	if body.ChangeID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("change_id", "body"))
+	}
+	if body.RequestRevision == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("request_revision", "body"))
+	}
+	if body.Prompt == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("prompt", "body"))
+	}
+	return
+}
+
+// ValidateReviseChangeResultTransport runs the validations defined on ReviseChangeResultTransport.
+func ValidateReviseChangeResultTransport(body *ReviseChangeResultTransport) (err error) {
+	if body.ChangeID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("change_id", "body"))
+	}
+	if body.Status == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("status", "body"))
+	}
+	if body.Prompt == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("prompt", "body"))
+	}
+	if body.Summary == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("summary", "body"))
+	}
+	if body.Examples == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("examples", "body"))
+	}
+	if body.PreservedBehaviors == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("preserved_behaviors", "body"))
+	}
+	if body.RequestRevision == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("request_revision", "body"))
+	}
+	if body.Status != nil {
+		if !(*body.Status == "needs_confirmation" || *body.Status == "confirmed") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.status", *body.Status, []any{"needs_confirmation", "confirmed"}))
+		}
+	}
+	for _, e := range body.Ambiguities {
+		if e != nil {
+			if err2 := ValidateAmbiguityQuestionTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	for _, e := range body.Examples {
+		if e != nil {
+			if err2 := ValidateExampleItemTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	if body.UIComposition != nil {
+		if err2 := ValidateUICompositionItemTransport(body.UIComposition); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		}
+	}
+	if body.Approval != nil {
+		if err2 := ValidateApprovalItemTransport(body.Approval); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		}
+	}
+	if body.UnverifiedApproval != nil {
+		if err2 := ValidateUnverifiedApprovalItemTransport(body.UnverifiedApproval); err2 != nil {
 			err = goa.MergeErrors(err, err2)
 		}
 	}
@@ -915,6 +1009,22 @@ func ValidateUICompositionItemTransport(body *UICompositionItemTransport) (err e
 	}
 	if body.ComposedForRevision == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("composed_for_revision", "body"))
+	}
+	return
+}
+
+// ValidateUnverifiedApprovalItemTransport runs the validations defined on UnverifiedApprovalItemTransport.
+func ValidateUnverifiedApprovalItemTransport(body *UnverifiedApprovalItemTransport) (err error) {
+	if body.Approval == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("approval", "body"))
+	}
+	if body.Reason == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("reason", "body"))
+	}
+	if body.Approval != nil {
+		if err2 := ValidateApprovalItemTransport(body.Approval); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		}
 	}
 	return
 }

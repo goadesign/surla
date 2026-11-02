@@ -286,10 +286,10 @@ func writeServeStatus(w io.Writer, addr *net.TCPAddr, opts controlplane.Options)
 	fmt.Fprintf(w, "surla: connect MCP clients to http://%s/mcp with the bearer token\n", host)
 	fmt.Fprintf(w, "surla: saving Change Cards in %s\n", opts.CardsDir)
 	if opts.Analyzer == nil {
-		fmt.Fprintln(w, "surla: CP1 (propose_change): off — no model is configured to analyze change requests"+
+		fmt.Fprintln(w, "surla: CP1 (propose_change, revise_change): off — no model is configured to analyze change requests"+
 			" (set -model-provider and -model-name, or -model-gateway-addr); confirm_intent and get_change are on")
 	} else {
-		fmt.Fprintln(w, "surla: CP1 (propose_change, confirm_intent, get_change): on")
+		fmt.Fprintln(w, "surla: CP1 (propose_change, revise_change, confirm_intent, get_change): on")
 	}
 	if len(opts.SwarmProfiles) == 0 {
 		fmt.Fprintln(w, "surla: CP2 (preview_architecture): design preview is on; swarm roster is off (set -swarm-profiles)")
