@@ -448,3 +448,35 @@ func openDescriptors(t *testing.T) int {
 	require.NoError(t, err)
 	return len(entries)
 }
+
+func TestLiveStartupKeepsTheSafeSummaryWhenTheOutputHasAlsoEnded(t *testing.T) {
+	cases := []struct {
+		name    string
+		line    liveLine
+		wantErr string
+		wantURL string
+	}{
+		{name: "error line", line: liveLine{Error: "The candidate did not build."}, wantErr: "The candidate did not build."},
+		{name: "no line", line: liveLine{}, wantErr: summaryLiveSuite},
+		{name: "ready line", line: liveLine{URL: "http://127.0.0.1:4100"}, wantURL: "http://127.0.0.1:4100"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			for range 100 {
+				// The line is queued and the output has already ended, as
+				// when the executor writes its line and kills its group.
+				p := &LiveProcess{lines: make(chan liveLine, 1), ended: make(chan struct{})}
+				p.lines <- tc.line
+				close(p.ended)
+				err := p.awaitReady(t.Context())
+				if tc.wantErr == "" {
+					require.NoError(t, err)
+					assert.Equal(t, tc.wantURL, p.URL)
+					continue
+				}
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tc.wantErr)
+			}
+		})
+	}
+}

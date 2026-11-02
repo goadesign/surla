@@ -193,21 +193,10 @@ func StartLive(ctx context.Context, root string, plan verify.Plan, key string, c
 			err = errors.Join(err, p.Stop())
 		}
 	}()
-	select {
-	case line := <-p.lines:
-		switch {
-		case line.Error != "":
-			return nil, errors.New(line.Error)
-		case line.URL == "":
-			return nil, errors.New(summaryLiveSuite)
-		}
-		p.URL = line.URL
-		return p, nil
-	case <-p.ended:
-		return nil, fmt.Errorf("%w before it was ready", ErrLiveEnded)
-	case <-ctx.Done():
-		return nil, fmt.Errorf("start live target: %w", ctx.Err())
+	if err := p.awaitReady(ctx); err != nil {
+		return nil, err
 	}
+	return p, nil
 }
 
 // Live runs as `surla verify-run live <dir>`, the leader of the target's
@@ -275,6 +264,26 @@ func Live(dir string, prepare func(context.Context, verify.Plan) (verify.Prepare
 		return endGroup()
 	case err := <-exited:
 		return reportLive(out, errLog, summaryLiveSuite, fmt.Errorf("suite exited before it was ready: %v", err))
+	}
+}
+
+// awaitReady returns the startup result. Its one source is the executor's
+// first line, which readOutput always delivers (a zero line when the output
+// ends first), so the end of the output can never replace the safe summary
+// the executor wrote before it ended. ctx bounds the wait.
+func (p *LiveProcess) awaitReady(ctx context.Context) error {
+	select {
+	case line := <-p.lines:
+		switch {
+		case line.Error != "":
+			return errors.New(line.Error)
+		case line.URL == "":
+			return fmt.Errorf("%w before it was ready: %s", ErrLiveEnded, summaryLiveSuite)
+		}
+		p.URL = line.URL
+		return nil
+	case <-ctx.Done():
+		return fmt.Errorf("start live target: %w", ctx.Err())
 	}
 }
 
