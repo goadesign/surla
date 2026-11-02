@@ -40,7 +40,8 @@ const (
 	// without answering; "leaky" rejects templates with a message quoting a
 	// path, a key and a URL; "blank-version" and "opaque-version" accept
 	// with a version of "  " or "v1"; "fail" makes the suite exit before it
-	// is ready; "prepare-hangs" blocks preparation until it is canceled.
+	// is ready, and "fail-pinned" does so after leaving a file its cleanup
+	// cannot remove; "prepare-hangs" blocks preparation until it is canceled.
 	liveTargetModeEnv = "CONTROLPLANE_TEST_LIVE_TARGET"
 	// fakePromptID is the one prompt the fake target registers.
 	fakePromptID = "homes.helper.system"
@@ -107,6 +108,7 @@ func (f *fakeTarget) APIKeyAuth(ctx context.Context, key string, _ *security.API
 // fakeLivePrepare returns this test binary as the suite.
 func fakeLivePrepare(ctx context.Context, _ verify.Plan) (verify.Prepared, error) {
 	if os.Getenv(liveTargetModeEnv) == "prepare-hangs" {
+		fmt.Fprintln(os.Stderr, "preparing: downloading modules")
 		<-ctx.Done()
 		return verify.Prepared{}, ctx.Err()
 	}
@@ -122,7 +124,19 @@ func fakeLivePrepare(ctx context.Context, _ verify.Plan) (verify.Prepared, error
 // returns the last accepted text, and prints the ready line.
 func serveFakeTarget() int {
 	mode := os.Getenv(liveTargetModeEnv)
-	if mode == "fail" {
+	switch mode {
+	case "fail":
+		fmt.Fprintln(os.Stderr, "no provider key")
+		return 2
+	case "fail-pinned":
+		// A file the suite cannot remove makes the owner's cleanup fail.
+		pinned := filepath.Join(os.TempDir(), "immutable")
+		if err := os.WriteFile(pinned, []byte("x"), 0o600); err != nil {
+			return 2
+		}
+		if err := exec.Command("chflags", "uchg", pinned).Run(); err != nil {
+			return 2
+		}
 		fmt.Fprintln(os.Stderr, "no provider key")
 		return 2
 	}
@@ -600,4 +614,64 @@ func TestToolsListWarnsThatStartingDiscardsTheRunningTargetsDrafts(t *testing.T)
 	}
 	assert.Contains(t, descriptions["start_live_target"], "first stops the target already running, which discards every prompt draft applied to it, even if the new build then fails")
 	assert.Contains(t, descriptions["stop_live_target"], "discards every prompt draft applied to it")
+}
+
+func TestAStartThatFailsBeforeReadyAndCannotBeCleanedUpKeepsItsOwner(t *testing.T) {
+	self, err := os.Executable()
+	require.NoError(t, err)
+	cardsDir := t.TempDir()
+	cp, err := New(Options{
+		CardsDir:     cardsDir,
+		Verification: &VerificationConfig{RunsDir: t.TempDir()},
+		Live:         &LiveConfig{Command: []string{self}, Env: append(os.Environ(), liveTargetModeEnv+"=fail-pinned")},
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		matches, err := filepath.Glob(filepath.Join(LiveRoot(cardsDir), "live-*", "tmp", "immutable"))
+		require.NoError(t, err)
+		for _, m := range matches {
+			require.NoError(t, exec.Command("chflags", "nouchg", m).Run())
+		}
+	})
+	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
+
+	_, err = cp.StartLiveTarget(alice, &gensurla.StartLiveTargetPayload{CandidateCommit: strings.Repeat("a", 40)})
+	assert.Equal(t, "live_target_failed", goaErrorName(err))
+	assert.Contains(t, err.Error(), "could not be confirmed stopped")
+	dirs, err := verifyrun.LeftoverLiveDirs(LiveRoot(cardsDir))
+	require.NoError(t, err)
+	require.Len(t, dirs, 1)
+
+	_, err = cp.StartLiveTarget(alice, &gensurla.StartLiveTargetPayload{CandidateCommit: strings.Repeat("b", 40)})
+	assert.Equal(t, "live_target_failed", goaErrorName(err))
+	again, err := verifyrun.LeftoverLiveDirs(LiveRoot(cardsDir))
+	require.NoError(t, err)
+	assert.Equal(t, dirs, again, "no second target was launched")
+	_, err = cp.StopLiveTarget(alice)
+	assert.Equal(t, "live_target_stop_failed", goaErrorName(err), "the owner is still known")
+	require.Error(t, cp.Close())
+	_, err = New(Options{CardsDir: cardsDir})
+	require.Error(t, err, "the cards directory stays locked")
+}
+
+func TestAStartThatTimesOutSaysSo(t *testing.T) {
+	self, err := os.Executable()
+	require.NoError(t, err)
+	cardsDir := t.TempDir()
+	cp, err := New(Options{
+		CardsDir:     cardsDir,
+		Verification: &VerificationConfig{RunsDir: t.TempDir()},
+		Live: &LiveConfig{Command: []string{self}, Env: append(os.Environ(), liveTargetModeEnv+"=prepare-hangs"),
+			StartTimeout: 300 * time.Millisecond},
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() { assert.NoError(t, cp.Close()) })
+	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
+	_, err = cp.StartLiveTarget(alice, &gensurla.StartLiveTargetPayload{CandidateCommit: strings.Repeat("a", 40)})
+	assert.Equal(t, "live_target_failed", goaErrorName(err))
+	assert.Contains(t, err.Error(), "did not become ready within the configured start timeout (300ms)")
+	assert.NotContains(t, err.Error(), "commit exists")
+	dirs, err := verifyrun.LeftoverLiveDirs(LiveRoot(cardsDir))
+	require.NoError(t, err)
+	assert.Empty(t, dirs)
 }

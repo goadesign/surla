@@ -28,7 +28,7 @@ import (
 
 // A control plane runs at most one live CP3 target: a candidate commit built
 // the way CP4 builds it and started by the operator's evaluator suite in its
-// --live mode (see verifyrun.StartLive). draft_override sends prompt text to
+// --live mode (see verifyrun.LaunchLive). draft_override sends prompt text to
 // it through the one operation Surla expects a target to serve
 // (design/targetprompt), authenticated with a key minted for that target.
 //
@@ -142,28 +142,43 @@ func (c *ControlPlane) StartLiveTarget(ctx context.Context, p *gensurla.StartLiv
 	if timeout <= 0 {
 		timeout = startTimeoutDefault
 	}
+	proc, err := verifyrun.LaunchLive(c.liveRoot, plan, key, c.live.Command, c.live.Env)
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "live target did not launch")
+		return nil, gensurla.MakeLiveTargetFailed(errors.New("The live target could not be launched; the server could not prepare its directory or start its process."))
+	}
+	// The control plane owns the target from launch, so a target whose
+	// cleanup fails is never forgotten.
+	lt := &liveTarget{commit: p.CandidateCommit, proc: proc, key: key}
+	c.owned = lt
 	startCtx, cancel := context.WithTimeout(c.serverCtx, timeout)
 	defer cancel()
-	proc, err := verifyrun.StartLive(startCtx, c.liveRoot, plan, key, c.live.Command, c.live.Env)
-	if err != nil {
-		summary := "The live target could not be started. Check that the commit exists in the candidate repository and that the server can build it."
-		if c.serverCtx.Err() != nil {
+	if err := proc.AwaitReady(startCtx); err != nil {
+		summary := err.Error()
+		switch {
+		case c.serverCtx.Err() != nil:
 			summary = "The server is shutting down, so the live target was not started."
+		case errors.Is(err, context.DeadlineExceeded):
+			summary = fmt.Sprintf("The live target did not become ready within the configured start timeout (%s). "+
+				"Check the evaluator suite's startup, or raise the verification configuration's timeout.", timeout)
 		}
 		if start := (*verifyrun.LiveStartError)(nil); errors.As(err, &start) {
-			summary = start.Summary
 			span.AddEvent("live target start failed", trace.WithAttributes(attribute.String("executor_log_tail", start.Detail)))
 		}
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "live target did not start")
+		if stopErr := c.stopOwnedLocked(); stopErr != nil {
+			span.RecordError(stopErr)
+			return nil, gensurla.MakeLiveTargetFailed(errors.New(summary + " " + msgStopFailed))
+		}
 		return nil, gensurla.MakeLiveTargetFailed(errors.New(summary))
 	}
 	client, err := newPromptsClient(proc.URL)
 	if err != nil {
-		return nil, errors.Join(err, proc.Stop())
+		return nil, errors.Join(err, c.stopOwnedLocked())
 	}
-	lt := &liveTarget{commit: p.CandidateCommit, proc: proc, client: client, key: key}
-	c.owned = lt
+	lt.client = client
 	c.bindMu.Lock()
 	c.bound = lt
 	c.bindMu.Unlock()
