@@ -38,11 +38,13 @@ const (
 	// liveTargetModeEnv selects what the fake live target does: "serve"
 	// serves the prompt operation; "drop" closes every update's connection
 	// without answering; "leaky" rejects templates with a message quoting a
-	// path, a key and a URL; "blank-version" and "opaque-version" accept
-	// with a version of "  " or "v1"; "fail" makes the suite exit before it
+	// path, a key and a URL; "version" accepts with the version in
+	// liveTargetVersionEnv; "fail" makes the suite exit before it
 	// is ready, and "fail-pinned" does so after leaving a file its cleanup
 	// cannot remove; "prepare-hangs" blocks preparation until it is canceled.
 	liveTargetModeEnv = "CONTROLPLANE_TEST_LIVE_TARGET"
+	// liveTargetVersionEnv is the version the "version" mode returns.
+	liveTargetVersionEnv = "CONTROLPLANE_TEST_LIVE_VERSION"
 	// fakePromptID is the one prompt the fake target registers.
 	fakePromptID = "homes.helper.system"
 )
@@ -79,10 +81,8 @@ func (f *fakeTarget) OverridePrompt(_ context.Context, p *genprompts.OverridePro
 	switch os.Getenv(liveTargetModeEnv) {
 	case "leaky":
 		return nil, genprompts.MakeInvalidPrompt(errors.New("parse /private/secret/path with key=abc123 from http://10.0.0.1/admin"))
-	case "blank-version":
-		return &genprompts.OverridePromptResult{PromptID: p.PromptID, Version: "  "}, nil
-	case "opaque-version":
-		return &genprompts.OverridePromptResult{PromptID: p.PromptID, Version: "v1"}, nil
+	case "version":
+		return &genprompts.OverridePromptResult{PromptID: p.PromptID, Version: os.Getenv(liveTargetVersionEnv)}, nil
 	}
 	if p.PromptID != fakePromptID {
 		return nil, genprompts.MakeUnknownPrompt(fmt.Errorf("no prompt %s", p.PromptID))
@@ -544,25 +544,31 @@ func TestTargetMessagesNeverReachCallers(t *testing.T) {
 func TestLiveTargetVersionsMustNotBeBlank(t *testing.T) {
 	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
 	cases := []struct {
-		mode    string
-		wantErr string
-		wantVer string
+		name    string
+		version string
+		valid   bool
 	}{
-		{mode: "blank-version", wantErr: "update_not_confirmed"},
-		{mode: "opaque-version", wantVer: "v1"},
+		{name: "empty", version: ""},
+		{name: "ordinary whitespace", version: " \t\n"},
+		{name: "vertical tab", version: "\v"},
+		{name: "no-break space", version: "\u00a0"},
+		{name: "ideographic space", version: "\u3000"},
+		{name: "opaque ASCII", version: "v1", valid: true},
+		{name: "opaque Unicode", version: "版本-α\u00a01", valid: true},
 	}
 	for _, tc := range cases {
-		t.Run(tc.mode, func(t *testing.T) {
-			cp, _ := newLiveControlPlane(t, tc.mode)
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv(liveTargetVersionEnv, tc.version)
+			cp, _ := newLiveControlPlane(t, "version")
 			_, err := cp.StartLiveTarget(alice, &gensurla.StartLiveTargetPayload{CandidateCommit: strings.Repeat("a", 40)})
 			require.NoError(t, err)
 			out, err := draft(alice, cp, fakePromptID, "x")
-			if tc.wantErr != "" {
-				assert.Equal(t, tc.wantErr, goaErrorName(err), "the generated client rejects a blank version")
+			if !tc.valid {
+				assert.Equal(t, "update_not_confirmed", goaErrorName(err), "the generated client rejects a blank version")
 				return
 			}
 			require.NoError(t, err)
-			assert.Equal(t, tc.wantVer, *out.PromptVersion, "an opaque version is passed through unchanged")
+			assert.Equal(t, tc.version, *out.PromptVersion, "an opaque version is passed through unchanged")
 		})
 	}
 }

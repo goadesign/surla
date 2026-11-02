@@ -10,6 +10,13 @@ import (
 	. "goa.design/goa/v3/dsl"
 )
 
+// nonBlankPattern matches a string with at least one character outside the
+// whitespace strings.TrimSpace removes: ASCII whitespace including vertical
+// tab, U+0085, U+00A0 and Unicode White_Space (U+1680, U+2000-U+200A, U+2028,
+// U+2029, U+202F, U+205F, U+3000). The characters are literal, not escapes,
+// because engines disagree on what \s and \u mean.
+const nonBlankPattern = "[^ \t\n\v\f\r\u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]"
+
 var _ = API("targetprompt", func() {
 	Title("CP3 live target prompt operation")
 	Description("The operation a CP3 live target serves so Surla can replace a registered prompt's text while it runs.")
@@ -45,7 +52,10 @@ var _ = Service("prompts", func() {
 		Result(func() {
 			Attribute("prompt_id", String, "The prompt whose text was replaced.")
 			Attribute("version", String, "Version of the accepted text: an opaque identifier that is not blank.", func() {
-				Pattern(`\S`)
+				// At least one character that strings.TrimSpace would keep. The
+				// class lists that whitespace set as literal characters, so Go,
+				// JavaScript and other regular expression engines agree on it.
+				Pattern(nonBlankPattern)
 			})
 			Required("prompt_id", "version")
 		})
