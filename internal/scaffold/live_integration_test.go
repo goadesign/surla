@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -153,8 +154,9 @@ func keepRun(t *testing.T, runsDir, runID string) {
 	t.Logf("kept run %s in %s", runID, dest)
 }
 
-// buildLogs returns the build logs a verification run left, so a failed run
-// reports the actual compiler output.
+// buildLogs returns every log and evidence file a verification run left,
+// each with its name and byte count, including empty files and read errors,
+// so a failed run shows exactly what was and was not written.
 func buildLogs(t *testing.T, runsDir, runID string) string {
 	t.Helper()
 	evidence, err := filepath.Glob(filepath.Join(runsDir, runID, "work", "evidence", "*"))
@@ -169,10 +171,11 @@ func buildLogs(t *testing.T, runsDir, runID string) string {
 	var b strings.Builder
 	for _, l := range logs {
 		data, err := os.ReadFile(l)
-		if err != nil || len(data) == 0 {
+		if err != nil {
+			fmt.Fprintf(&b, "== %s: read error: %v\n", filepath.Base(l), err)
 			continue
 		}
-		b.WriteString("== " + filepath.Base(l) + "\n" + string(data) + "\n")
+		fmt.Fprintf(&b, "== %s (%d bytes)\n%s\n", filepath.Base(l), len(data), data)
 	}
 	return b.String()
 }
