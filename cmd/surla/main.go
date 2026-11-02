@@ -1,5 +1,5 @@
 // Command surla runs the Surla MCP software factory control-plane server
-// and CLI utilities (`surla serve`, `surla preview`, `surla diff`,
+// and CLI utilities (`surla init`, `surla serve`, `surla preview`, `surla diff`,
 // `surla verify` and `surla approve`). Run `surla help` for usage.
 package main
 
@@ -266,12 +266,12 @@ func resolveAuthToken(flagValue string, getenv func(string) string) string {
 }
 
 // writeServeStatus tells the operator of `surla serve`, once the listener is
-// bound, where MCP clients connect and whether propose_change, which fails
-// without a model, is off. addr is the bound address, so port 0 reports the
-// port actually assigned; an unspecified IP such as [::] is shown as localhost
-// so the printed URL works from this machine. The bearer token never appears.
-// Swarm readiness is not reported here: it depends on each request's builder
-// scopes, and preview_architecture reports it per change.
+// bound, where MCP clients connect, where Change Cards are saved, and which of
+// the five checkpoints (CP1–CP5) are on or off, naming the flag or host option
+// that enables each off capability. addr is the bound address, so port 0
+// reports the port actually assigned; an unspecified IP such as [::] is shown
+// as localhost so the printed URL works from this machine. The bearer token
+// never appears.
 func writeServeStatus(w io.Writer, addr *net.TCPAddr, opts controlplane.Options) {
 	host := addr.String()
 	if addr.IP.IsUnspecified() {
@@ -281,8 +281,36 @@ func writeServeStatus(w io.Writer, addr *net.TCPAddr, opts controlplane.Options)
 	fmt.Fprintf(w, "surla: connect MCP clients to http://%s/mcp with the bearer token\n", host)
 	fmt.Fprintf(w, "surla: saving Change Cards in %s\n", opts.CardsDir)
 	if opts.Analyzer == nil {
-		fmt.Fprintln(w, "surla: propose_change is off: no model is configured to analyze change requests"+
-			" (set -model-provider and -model-name, or -model-gateway-addr)")
+		fmt.Fprintln(w, "surla: CP1 (propose_change): off — no model is configured to analyze change requests"+
+			" (set -model-provider and -model-name, or -model-gateway-addr); confirm_intent and get_change are on")
+	} else {
+		fmt.Fprintln(w, "surla: CP1 (propose_change, confirm_intent, get_change): on")
+	}
+	if len(opts.SwarmProfiles) == 0 {
+		fmt.Fprintln(w, "surla: CP2 (preview_architecture): design preview is on; swarm roster is off (set -swarm-profiles)")
+	} else {
+		noun := "profiles"
+		if len(opts.SwarmProfiles) == 1 {
+			noun = "profile"
+		}
+		fmt.Fprintf(w, "surla: CP2 (preview_architecture): on (%d swarm %s loaded; pass builders in the request to propose a roster)\n",
+			len(opts.SwarmProfiles), noun)
+	}
+	if opts.TargetUpdater == nil {
+		fmt.Fprintln(w, "surla: CP3 (draft_override): compiled_rule is on; prompt_template is off"+
+			" (surla serve binds no target prompt updater; embed controlplane with Options.TargetUpdater)")
+	} else {
+		fmt.Fprintln(w, "surla: CP3 (draft_override): on")
+	}
+	if opts.Verification == nil {
+		fmt.Fprintln(w, "surla: CP4 (verify_change, get_verification): off (set -verification-config, or run surla verify on the CLI)")
+	} else {
+		fmt.Fprintf(w, "surla: CP4 (verify_change, get_verification): on (runs in %s)\n", opts.Verification.RunsDir)
+	}
+	if opts.PromotionTarget == nil {
+		fmt.Fprintln(w, "surla: CP5 (approve_merge): off (set -promotion-config, or run surla approve on the CLI)")
+	} else {
+		fmt.Fprintln(w, "surla: CP5 (approve_merge): on")
 	}
 }
 

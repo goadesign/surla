@@ -25,15 +25,21 @@ import (
 	"github.com/goadesign/surla/internal/swarm"
 )
 
-// scriptedCP1Provider is a model.Provider served by a local model gateway in
-// tests. It answers every Complete call with one fixed CP1 analysis and
-// records the output allowance the gateway forwarded.
-type scriptedCP1Provider struct {
-	// analysis is the JSON CP1 analysis returned as assistant text.
-	analysis string
-	// maxTokens is the MaxTokens of the last request the gateway delivered.
-	maxTokens atomic.Int64
-}
+type (
+	// scriptedCP1Provider is a model.Provider served by a local model gateway in
+	// tests. It answers every Complete call with one fixed CP1 analysis and
+	// records the output allowance the gateway forwarded.
+	scriptedCP1Provider struct {
+		// analysis is the JSON CP1 analysis returned as assistant text.
+		analysis string
+		// maxTokens is the MaxTokens of the last request the gateway delivered.
+		maxTokens atomic.Int64
+	}
+
+	// noopTargetUpdater is a TargetPromptUpdater stub used to verify CP3
+	// startup status formatting when a host binds TargetUpdater.
+	noopTargetUpdater struct{}
+)
 
 func TestNewCP1AnalyzerSelectsModelFromFlags(t *testing.T) {
 	env := map[string]string{
@@ -242,6 +248,89 @@ func TestServeGatewayModeAnswersProposeChangeOverHTTP(t *testing.T) {
 	assert.EqualValues(t, 6144, provider.maxTokens.Load(), "CP1 output allowance must reach the provider through the gateway")
 }
 
+func TestWriteServeStatusNamesTheBoundAddressAndOffFeatures(t *testing.T) {
+	cases := []struct {
+		name string
+		addr *net.TCPAddr
+		opts controlplane.Options
+		want string
+	}{
+		{
+			name: "loopback without a model",
+			addr: &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 51234},
+			opts: controlplane.Options{CardsDir: ".surla/cards"},
+			want: `surla: serving on http://127.0.0.1:51234
+surla: connect MCP clients to http://127.0.0.1:51234/mcp with the bearer token
+surla: saving Change Cards in .surla/cards
+surla: CP1 (propose_change): off — no model is configured to analyze change requests (set -model-provider and -model-name, or -model-gateway-addr); confirm_intent and get_change are on
+surla: CP2 (preview_architecture): design preview is on; swarm roster is off (set -swarm-profiles)
+surla: CP3 (draft_override): compiled_rule is on; prompt_template is off (surla serve binds no target prompt updater; embed controlplane with Options.TargetUpdater)
+surla: CP4 (verify_change, get_verification): off (set -verification-config, or run surla verify on the CLI)
+surla: CP5 (approve_merge): off (set -promotion-config, or run surla approve on the CLI)
+`,
+		},
+		{
+			name: "all IPv4 interfaces without a model",
+			addr: &net.TCPAddr{IP: net.IPv4zero, Port: 8090},
+			opts: controlplane.Options{CardsDir: ".surla/cards"},
+			want: `surla: serving on http://localhost:8090
+surla: connect MCP clients to http://localhost:8090/mcp with the bearer token
+surla: saving Change Cards in .surla/cards
+surla: CP1 (propose_change): off — no model is configured to analyze change requests (set -model-provider and -model-name, or -model-gateway-addr); confirm_intent and get_change are on
+surla: CP2 (preview_architecture): design preview is on; swarm roster is off (set -swarm-profiles)
+surla: CP3 (draft_override): compiled_rule is on; prompt_template is off (surla serve binds no target prompt updater; embed controlplane with Options.TargetUpdater)
+surla: CP4 (verify_change, get_verification): off (set -verification-config, or run surla verify on the CLI)
+surla: CP5 (approve_merge): off (set -promotion-config, or run surla approve on the CLI)
+`,
+		},
+		{
+			name: "loopback with one swarm profile",
+			addr: &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 8090},
+			opts: controlplane.Options{
+				CardsDir:      ".surla/cards",
+				SwarmProfiles: []swarm.ProviderProfile{{ID: "claude-a"}},
+			},
+			want: `surla: serving on http://127.0.0.1:8090
+surla: connect MCP clients to http://127.0.0.1:8090/mcp with the bearer token
+surla: saving Change Cards in .surla/cards
+surla: CP1 (propose_change): off — no model is configured to analyze change requests (set -model-provider and -model-name, or -model-gateway-addr); confirm_intent and get_change are on
+surla: CP2 (preview_architecture): on (1 swarm profile loaded; pass builders in the request to propose a roster)
+surla: CP3 (draft_override): compiled_rule is on; prompt_template is off (surla serve binds no target prompt updater; embed controlplane with Options.TargetUpdater)
+surla: CP4 (verify_change, get_verification): off (set -verification-config, or run surla verify on the CLI)
+surla: CP5 (approve_merge): off (set -promotion-config, or run surla approve on the CLI)
+`,
+		},
+		{
+			name: "all interfaces with all checkpoints configured",
+			addr: &net.TCPAddr{IP: net.IPv6unspecified, Port: 8090},
+			opts: controlplane.Options{
+				CardsDir:        "/var/lib/surla/cards",
+				Analyzer:        controlplane.NewModelCP1Analyzer(nil),
+				SwarmProfiles:   []swarm.ProviderProfile{{ID: "claude-a"}, {ID: "gpt-b"}},
+				TargetUpdater:   noopTargetUpdater{},
+				Verification:    &controlplane.VerificationConfig{RunsDir: "/var/lib/surla/runs"},
+				PromotionTarget: &releaseTarget{},
+			},
+			want: `surla: serving on http://localhost:8090
+surla: connect MCP clients to http://localhost:8090/mcp with the bearer token
+surla: saving Change Cards in /var/lib/surla/cards
+surla: CP1 (propose_change, confirm_intent, get_change): on
+surla: CP2 (preview_architecture): on (2 swarm profiles loaded; pass builders in the request to propose a roster)
+surla: CP3 (draft_override): on
+surla: CP4 (verify_change, get_verification): on (runs in /var/lib/surla/runs)
+surla: CP5 (approve_merge): on
+`,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var out bytes.Buffer
+			writeServeStatus(&out, tc.addr, tc.opts)
+			assert.Equal(t, tc.want, out.String())
+		})
+	}
+}
+
 // Complete returns the scripted CP1 analysis as assistant text.
 func (p *scriptedCP1Provider) Complete(_ context.Context, req *model.Request) (*model.Response, error) {
 	p.maxTokens.Store(int64(req.MaxTokens))
@@ -259,6 +348,11 @@ func (p *scriptedCP1Provider) Stream(_ context.Context, _ *model.Request) (model
 	return nil, errors.New("streaming not used by CP1 analyzer")
 }
 
+// ApplyPromptOverride satisfies controlplane.TargetPromptUpdater for status tests.
+func (noopTargetUpdater) ApplyPromptOverride(context.Context, string, string) (string, error) {
+	return "v1", nil
+}
+
 // startModelGateway serves provider through a Goa-AI model gateway on a
 // loopback gRPC listener and returns its address. The server stops when the
 // test ends.
@@ -273,50 +367,4 @@ func startModelGateway(t *testing.T, provider model.Provider) string {
 	go func() { assert.NoError(t, grpcSrv.Serve(lis)) }()
 	t.Cleanup(grpcSrv.Stop)
 	return lis.Addr().String()
-}
-
-func TestWriteServeStatusNamesTheBoundAddressAndOffFeatures(t *testing.T) {
-	cases := []struct {
-		name string
-		addr *net.TCPAddr
-		opts controlplane.Options
-		want string
-	}{
-		{
-			name: "loopback without a model",
-			addr: &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 51234},
-			opts: controlplane.Options{CardsDir: ".surla/cards"},
-			want: `surla: serving on http://127.0.0.1:51234
-surla: connect MCP clients to http://127.0.0.1:51234/mcp with the bearer token
-surla: saving Change Cards in .surla/cards
-surla: propose_change is off: no model is configured to analyze change requests (set -model-provider and -model-name, or -model-gateway-addr)
-`,
-		},
-		{
-			name: "all IPv4 interfaces without a model",
-			addr: &net.TCPAddr{IP: net.IPv4zero, Port: 8090},
-			opts: controlplane.Options{CardsDir: ".surla/cards"},
-			want: `surla: serving on http://localhost:8090
-surla: connect MCP clients to http://localhost:8090/mcp with the bearer token
-surla: saving Change Cards in .surla/cards
-surla: propose_change is off: no model is configured to analyze change requests (set -model-provider and -model-name, or -model-gateway-addr)
-`,
-		},
-		{
-			name: "all interfaces with a model",
-			addr: &net.TCPAddr{IP: net.IPv6unspecified, Port: 8090},
-			opts: controlplane.Options{CardsDir: "/var/lib/surla/cards", Analyzer: controlplane.NewModelCP1Analyzer(nil)},
-			want: `surla: serving on http://localhost:8090
-surla: connect MCP clients to http://localhost:8090/mcp with the bearer token
-surla: saving Change Cards in /var/lib/surla/cards
-`,
-		},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			var out bytes.Buffer
-			writeServeStatus(&out, tc.addr, tc.opts)
-			assert.Equal(t, tc.want, out.String())
-		})
-	}
 }

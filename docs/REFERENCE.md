@@ -20,17 +20,18 @@
 ## Quickstart & MCP Configuration
 
 ### Prerequisites
-- **Go 1.27.3+**, matching the repository's `go.mod` files, and the **Goa CLI** (`go install goa.design/goa/v3/cmd/goa@latest`)
+- **Go 1.27.3+**, matching the repository's `go.mod` files (`surla init` runs module-pinned `go run goa.design/goa/v3/cmd/goa gen`, and `surla preview` uses Surla's sandboxed evaluator, so a globally installed `goa` binary is not required)
+- **Surla CLI** (`go install github.com/goadesign/surla/cmd/surla@latest`, or `go run ./cmd/surla` from a repository checkout)
 - **macOS** (`sandbox-exec` is used by `verify/candidate` to isolate candidate builds and processes; non-macOS hosts fail closed with `ErrIsolationUnavailable`)
 - **Temporal CLI** (`brew install temporal`) for running the end-to-end durable workflow crash and replay verification suites
 
 ### Start the Surla Server
 
-To enable feature-request analysis, set `ANTHROPIC_API_KEY` and set `SURLA_MODEL_NAME` to a model ID available to that key, then run:
+To enable feature-request analysis, set `ANTHROPIC_API_KEY` and set `SURLA_MODEL_NAME` to a model ID available to that key, then run (with `surla serve` after `go install`, or `go run ./cmd/surla serve` from a repository checkout):
 
 ```bash
 export SURLA_AUTH_TOKEN="dev-secret-token"
-go run ./cmd/surla serve -addr 127.0.0.1:8090 \
+surla serve -addr 127.0.0.1:8090 \
   -principal operator@example.com \
   -model-provider anthropic -model-name "$SURLA_MODEL_NAME"
 ```
@@ -39,23 +40,64 @@ For OpenAI, use `-model-provider openai`, set `OPENAI_API_KEY`, and choose a mod
 
 Omitting all model flags starts the server without feature-request analysis. The `diff` tool, Golden Path resource, and `compiled_rule` rebuild response still work; `propose_change` returns `cp1 semantic analyzer is required`.
 
-### Register Surla in `.mcp.json`
+<a id="register-surla-in-mcpjson"></a>
+### Register Surla in Your MCP Client
 
-Add Surla to your project's `.mcp.json` (or global agent configuration in Claude Code, Codex, Gemini, or Cursor):
+Register `http://127.0.0.1:8090/mcp` in your coding agent's MCP configuration file:
 
-```json
-{
-  "mcpServers": {
-    "surla": {
-      "type": "http",
-      "url": "http://127.0.0.1:8090/mcp",
-      "headers": {
-        "Authorization": "Bearer dev-secret-token"
+- **Claude Code** — save `.mcp.json` in the project root (see the [Claude Code MCP documentation](https://code.claude.com/docs/en/mcp#project-scope)):
+
+  ```json
+  {
+    "mcpServers": {
+      "surla": {
+        "type": "http",
+        "url": "http://127.0.0.1:8090/mcp",
+        "headers": {
+          "Authorization": "Bearer dev-secret-token"
+        }
       }
     }
   }
-}
-```
+  ```
+
+- **Cursor** — save `.cursor/mcp.json` in the project or `~/.cursor/mcp.json` globally (see the [Cursor MCP documentation](https://cursor.com/help/customization/mcp)):
+
+  ```json
+  {
+    "mcpServers": {
+      "surla": {
+        "url": "http://127.0.0.1:8090/mcp",
+        "headers": {
+          "Authorization": "Bearer dev-secret-token"
+        }
+      }
+    }
+  }
+  ```
+
+- **Gemini CLI** — save `.gemini/settings.json` in the project or `~/.gemini/settings.json` globally, using `httpUrl` for streamable HTTP (`url` selects SSE in Gemini CLI; see the [Gemini CLI MCP documentation](https://geminicli.com/docs/tools/mcp-server/)):
+
+  ```json
+  {
+    "mcpServers": {
+      "surla": {
+        "httpUrl": "http://127.0.0.1:8090/mcp",
+        "headers": {
+          "Authorization": "Bearer dev-secret-token"
+        }
+      }
+    }
+  }
+  ```
+
+- **Codex** — export `SURLA_AUTH_TOKEN="dev-secret-token"` in the shell where you launch Codex and register Surla in `~/.codex/config.toml` or a trusted project's `.codex/config.toml` (see the [Codex MCP documentation](https://learn.chatgpt.com/docs/extend/mcp?surface=cli)):
+
+  ```toml
+  [mcp_servers.surla]
+  url = "http://127.0.0.1:8090/mcp"
+  bearer_token_env_var = "SURLA_AUTH_TOKEN"
+  ```
 
 ### Configure the Proposed Swarm Roster
 
@@ -163,7 +205,7 @@ Reads a Go design module on disk into a symlink-safe snapshot (`go.mod`, `go.sum
 - `-dir <path>` — Root directory of the design module holding `go.mod`, `go.sum`, and `design/` (default `.`).
 
 ### `surla serve`
-Starts the Surla HTTP and MCP JSON-RPC control-plane server protected by bearer-token authentication. Once the listener is bound, `surla serve` prints a startup summary to `stderr` showing the bound HTTP URL, the MCP endpoint (`http://<addr>/mcp`), the Change Cards directory (`surla: saving Change Cards in <dir>`), and whether `propose_change` is off when no model is configured (the bearer token is never printed in startup logs or `-h` defaults). On shutdown, `surla serve` closes the control plane (`cp.Close()`) to release its exclusive lock on `-cards-dir`.
+Starts the Surla HTTP and MCP JSON-RPC control-plane server protected by bearer-token authentication. Once the listener is bound, `surla serve` prints a startup summary to `stderr` showing the bound HTTP URL, the MCP endpoint (`http://<addr>/mcp`), the Change Cards directory (`surla: saving Change Cards in <dir>`), and the on/off status of each checkpoint (`CP1`–`CP5`) along with the flag or host option that turns each off capability on (the bearer token is never printed in startup logs or `-h` defaults). On shutdown, `surla serve` closes the control plane (`cp.Close()`) to release its exclusive lock on `-cards-dir`.
 - `-addr <host:port>` — Listen address (default `127.0.0.1:8090`).
 - `-principal <id>` — Authenticated operator principal ID *(required)*.
 - `-auth-token <token>` — Bearer token required on HTTP and MCP requests (default: `$SURLA_AUTH_TOKEN`, *required*).
