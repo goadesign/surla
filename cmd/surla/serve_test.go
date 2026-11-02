@@ -14,6 +14,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -163,6 +164,20 @@ func TestLoadSwarmProfilesDecodesStrictly(t *testing.T) {
 	}
 }
 
+func TestServeOptionsDerivesLiveTargetsFromVerification(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "verification.json")
+	require.NoError(t, os.WriteFile(path, []byte(`{"runs_dir":"/r","report_dir":"/p","candidate_repo":"/c","candidate_module":".","suite_module":".","binaries":{"app":"./cmd/app"},`+
+		`"suite_repo":"/s","suite_commit":"`+strings.Repeat("a", 40)+`","suite_command":"./cmd/evals","timeout":"20m"}`), 0o600))
+	opts, closeModel, err := serveOptions(serveConfig{verificationPath: path}, func(string) string { return "" },
+		[]string{"PATH=/bin", "SURLA_AUTH_TOKEN=secret", "ANTHROPIC_API_KEY=k"})
+	require.NoError(t, err)
+	assert.NoError(t, closeModel())
+	require.NotNil(t, opts.Live)
+	assert.Equal(t, opts.Verification.Command, opts.Live.Command)
+	assert.Equal(t, 20*time.Minute, opts.Live.StartTimeout)
+	assert.Equal(t, []string{"PATH=/bin", "ANTHROPIC_API_KEY=k"}, opts.Live.Env, "serve's own bearer token never reaches a live target")
+}
+
 func TestServeOptionsWiresAnalyzerAndProfiles(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "profiles.json")
 	require.NoError(t, os.WriteFile(path, []byte(`[{"id":"a","provider":"openai","model":"m","family":"gpt"}]`), 0o600))
@@ -170,6 +185,7 @@ func TestServeOptionsWiresAnalyzerAndProfiles(t *testing.T) {
 	opts, closeModel, err := serveOptions(
 		serveConfig{provider: "openai", modelName: "gpt-test", swarmProfilesPath: path},
 		func(string) string { return "test-key" },
+		nil,
 	)
 	require.NoError(t, err)
 	assert.NotNil(t, opts.Analyzer)
@@ -177,13 +193,14 @@ func TestServeOptionsWiresAnalyzerAndProfiles(t *testing.T) {
 	assert.Nil(t, opts.TargetUpdater)
 	assert.NoError(t, closeModel())
 
-	opts, closeModel, err = serveOptions(serveConfig{}, func(string) string { return "" })
+	opts, closeModel, err = serveOptions(serveConfig{}, func(string) string { return "" }, nil)
 	require.NoError(t, err)
 	assert.Nil(t, opts.Analyzer)
 	assert.Nil(t, opts.SwarmProfiles)
+	assert.Nil(t, opts.Live, "live targets need a verification configuration")
 	assert.NoError(t, closeModel())
 
-	_, _, err = serveOptions(serveConfig{swarmProfilesPath: filepath.Join(t.TempDir(), "missing.json")}, os.Getenv)
+	_, _, err = serveOptions(serveConfig{swarmProfilesPath: filepath.Join(t.TempDir(), "missing.json")}, os.Getenv, nil)
 	require.ErrorContains(t, err, "read -swarm-profiles")
 }
 
@@ -208,7 +225,7 @@ func TestServeGatewayModeAnswersProposeChangeOverHTTP(t *testing.T) {
 	provider := &scriptedCP1Provider{analysis: string(analysis)}
 	gatewayAddr := startModelGateway(t, provider)
 
-	opts, closeModel, err := serveOptions(serveConfig{gatewayAddr: gatewayAddr, cardsDir: t.TempDir()}, func(string) string { return "" })
+	opts, closeModel, err := serveOptions(serveConfig{gatewayAddr: gatewayAddr, cardsDir: t.TempDir()}, func(string) string { return "" }, nil)
 	require.NoError(t, err)
 	t.Cleanup(func() { assert.NoError(t, closeModel()) })
 	cp, err := controlplane.New(opts)
@@ -322,6 +339,34 @@ surla: CP5 (approve_merge): on
 `,
 		},
 	}
+	cardsDir := t.TempDir()
+	liveRoot := controlplane.LiveRoot(cardsDir)
+	leftover := filepath.Join(liveRoot, "live-123")
+	require.NoError(t, os.MkdirAll(leftover, 0o700))
+	cases = append(cases, struct {
+		name string
+		addr *net.TCPAddr
+		opts controlplane.Options
+		want string
+	}{
+		name: "live targets with a directory an earlier serve left",
+		addr: &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 8090},
+		opts: controlplane.Options{
+			CardsDir:     cardsDir,
+			Verification: &controlplane.VerificationConfig{RunsDir: "/var/lib/surla/runs"},
+			Live:         &controlplane.LiveConfig{},
+		},
+		want: `surla: serving on http://127.0.0.1:8090
+surla: connect MCP clients to http://127.0.0.1:8090/mcp with the bearer token
+surla: saving Change Cards in ` + cardsDir + `
+surla: CP1 (propose_change): off — no model is configured to analyze change requests (set -model-provider and -model-name, or -model-gateway-addr); confirm_intent and get_change are on
+surla: CP2 (preview_architecture): design preview is on; swarm roster is off (set -swarm-profiles)
+surla: CP3 (draft_override, start_live_target): compiled_rule is on; prompt_template is on once start_live_target runs a candidate commit (live targets in ` + liveRoot + `)
+surla: CP3: an earlier surla serve using this cards directory left live target directory ` + leftover + `; its files were kept
+surla: CP4 (verify_change, get_verification): on (runs in /var/lib/surla/runs)
+surla: CP5 (approve_merge): off (set -promotion-config, or run surla approve on the CLI)
+`,
+	})
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			var out bytes.Buffer

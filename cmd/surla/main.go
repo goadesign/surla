@@ -38,6 +38,7 @@ import (
 	"github.com/goadesign/surla/internal/scaffold"
 	"github.com/goadesign/surla/internal/swarm"
 	"github.com/goadesign/surla/internal/verify"
+	"github.com/goadesign/surla/internal/verifyrun"
 )
 
 // serveConfig holds the optional `surla serve` flags that choose the CP1
@@ -215,7 +216,7 @@ func runServe(args []string) (err error) {
 	if !utf8.ValidString(*principalID) {
 		return errors.New("-principal must be valid UTF-8")
 	}
-	opts, closeModel, err := serveOptions(cfg, os.Getenv)
+	opts, closeModel, err := serveOptions(cfg, os.Getenv, os.Environ())
 	if err != nil {
 		return err
 	}
@@ -301,10 +302,15 @@ func writeServeStatus(w io.Writer, addr *net.TCPAddr, opts controlplane.Options)
 		fmt.Fprintf(w, "surla: CP2 (preview_architecture): on (%d swarm %s loaded; pass builders in the request to propose a roster)\n",
 			len(opts.SwarmProfiles), noun)
 	}
-	if opts.TargetUpdater == nil {
+	switch {
+	case opts.TargetUpdater == nil && opts.Live != nil:
+		root := controlplane.LiveRoot(opts.CardsDir)
+		fmt.Fprintf(w, "surla: CP3 (draft_override, start_live_target): compiled_rule is on; prompt_template is on once start_live_target runs a candidate commit (live targets in %s)\n", root)
+		writeLeftoverLiveDirs(w, root)
+	case opts.TargetUpdater == nil:
 		fmt.Fprintln(w, "surla: CP3 (draft_override): compiled_rule is on; prompt_template is off"+
 			" (surla serve binds no target prompt updater; to change a prompt, edit its source text, commit, and verify the commit)")
-	} else {
+	default:
 		fmt.Fprintln(w, "surla: CP3 (draft_override): on")
 	}
 	if opts.Verification == nil {
@@ -771,7 +777,7 @@ func openSnapshotFile(root *os.Root, rel string) (*os.File, error) {
 // opened. With no model flags the Analyzer stays nil, and with no
 // -swarm-profiles the profiles stay nil, so the server still answers diff,
 // golden-path and compiled_rule requests without credentials.
-func serveOptions(cfg serveConfig, getenv func(string) string) (controlplane.Options, func() error, error) {
+func serveOptions(cfg serveConfig, getenv func(string) string, environ []string) (controlplane.Options, func() error, error) {
 	profiles, err := loadSwarmProfiles(cfg.swarmProfilesPath)
 	if err != nil {
 		return controlplane.Options{}, nil, err
@@ -788,10 +794,45 @@ func serveOptions(cfg serveConfig, getenv func(string) string) (controlplane.Opt
 	if err != nil {
 		return controlplane.Options{}, nil, err
 	}
+	var live *controlplane.LiveConfig
+	if verification != nil {
+		live = &controlplane.LiveConfig{
+			Command: verification.Command, Env: liveTargetEnv(environ),
+			StartTimeout: verification.Timeout,
+		}
+	}
 	return controlplane.Options{
 		CardsDir: cfg.cardsDir, Analyzer: analyzer, SwarmProfiles: profiles, Verification: verification,
-		PromotionTarget: promotion,
+		PromotionTarget: promotion, Live: live,
 	}, closeModel, nil
+}
+
+// liveTargetEnv returns the environment live targets start with: serve's own,
+// which carries the model provider settings the evaluator suite reads,
+// without serve's MCP bearer token, which no live target needs.
+func liveTargetEnv(environ []string) []string {
+	out := make([]string, 0, len(environ))
+	for _, kv := range environ {
+		if name, _, _ := strings.Cut(kv, "="); name == "SURLA_AUTH_TOKEN" {
+			continue
+		}
+		out = append(out, kv)
+	}
+	return out
+}
+
+// writeLeftoverLiveDirs names the live target directories an earlier serve
+// using the same cards directory left without removing them. It states only
+// what it observed: whether their processes have stopped is not checked.
+func writeLeftoverLiveDirs(w io.Writer, root string) {
+	dirs, err := verifyrun.LeftoverLiveDirs(root)
+	if err != nil {
+		fmt.Fprintf(w, "surla: CP3: could not list earlier live target directories: %v\n", err)
+		return
+	}
+	for _, dir := range dirs {
+		fmt.Fprintf(w, "surla: CP3: an earlier surla serve using this cards directory left live target directory %s; its files were kept\n", dir)
+	}
 }
 
 // newCP1Analyzer returns the CP1 analyzer selected by cfg: a model gateway

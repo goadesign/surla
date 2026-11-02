@@ -26,6 +26,8 @@ type Server struct {
 	GetChange           http.Handler
 	PreviewArchitecture http.Handler
 	DraftOverride       http.Handler
+	StartLiveTarget     http.Handler
+	StopLiveTarget      http.Handler
 	VerifyChange        http.Handler
 	GetVerification     http.Handler
 	ApproveMerge        http.Handler
@@ -66,6 +68,8 @@ func New(
 			{"GetChange", "GET", "/changes/{change_id}"},
 			{"PreviewArchitecture", "POST", "/changes/preview"},
 			{"DraftOverride", "POST", "/sandbox/draft"},
+			{"StartLiveTarget", "POST", "/live-target"},
+			{"StopLiveTarget", "DELETE", "/live-target"},
 			{"VerifyChange", "POST", "/changes/{change_id}/verifications"},
 			{"GetVerification", "GET", "/verifications/{run_id}"},
 			{"ApproveMerge", "POST", "/changes/approve"},
@@ -78,6 +82,8 @@ func New(
 		GetChange:           NewGetChangeHandler(e.GetChange, mux, decoder, encoder, errhandler, formatter),
 		PreviewArchitecture: NewPreviewArchitectureHandler(e.PreviewArchitecture, mux, decoder, encoder, errhandler, formatter),
 		DraftOverride:       NewDraftOverrideHandler(e.DraftOverride, mux, decoder, encoder, errhandler, formatter),
+		StartLiveTarget:     NewStartLiveTargetHandler(e.StartLiveTarget, mux, decoder, encoder, errhandler, formatter),
+		StopLiveTarget:      NewStopLiveTargetHandler(e.StopLiveTarget, mux, decoder, encoder, errhandler, formatter),
 		VerifyChange:        NewVerifyChangeHandler(e.VerifyChange, mux, decoder, encoder, errhandler, formatter),
 		GetVerification:     NewGetVerificationHandler(e.GetVerification, mux, decoder, encoder, errhandler, formatter),
 		ApproveMerge:        NewApproveMergeHandler(e.ApproveMerge, mux, decoder, encoder, errhandler, formatter),
@@ -97,6 +103,8 @@ func (s *Server) Use(m func(http.Handler) http.Handler) {
 	s.GetChange = m(s.GetChange)
 	s.PreviewArchitecture = m(s.PreviewArchitecture)
 	s.DraftOverride = m(s.DraftOverride)
+	s.StartLiveTarget = m(s.StartLiveTarget)
+	s.StopLiveTarget = m(s.StopLiveTarget)
 	s.VerifyChange = m(s.VerifyChange)
 	s.GetVerification = m(s.GetVerification)
 	s.ApproveMerge = m(s.ApproveMerge)
@@ -115,6 +123,8 @@ func Mount(mux goahttp.Muxer, h *Server) {
 	MountGetChangeHandler(mux, h.GetChange)
 	MountPreviewArchitectureHandler(mux, h.PreviewArchitecture)
 	MountDraftOverrideHandler(mux, h.DraftOverride)
+	MountStartLiveTargetHandler(mux, h.StartLiveTarget)
+	MountStopLiveTargetHandler(mux, h.StopLiveTarget)
 	MountVerifyChangeHandler(mux, h.VerifyChange)
 	MountGetVerificationHandler(mux, h.GetVerification)
 	MountApproveMergeHandler(mux, h.ApproveMerge)
@@ -455,7 +465,7 @@ func NewDraftOverrideHandler(
 	var (
 		decodeRequest  = DecodeDraftOverrideRequest(mux, decoder)
 		encodeResponse = EncodeDraftOverrideResponse(encoder)
-		encodeError    = goahttp.ErrorEncoder(encoder, formatter)
+		encodeError    = EncodeDraftOverrideError(encoder, formatter)
 	)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := context.WithValue(r.Context(), goahttp.AcceptTypeKey, r.Header.Get("Accept"))
@@ -469,6 +479,105 @@ func NewDraftOverrideHandler(
 			return
 		}
 		res, err := endpoint(ctx, payload)
+		if err != nil {
+			if err := encodeError(ctx, w, err); err != nil && errhandler != nil {
+				errhandler(ctx, w, err)
+			}
+			return
+		}
+		if err := encodeResponse(ctx, w, res); err != nil {
+			if errhandler != nil {
+				errhandler(ctx, w, err)
+			}
+		}
+	})
+}
+
+// MountStartLiveTargetHandler configures the mux to serve the "surla" service
+// "start_live_target" endpoint.
+func MountStartLiveTargetHandler(mux goahttp.Muxer, h http.Handler) {
+	f, ok := h.(http.HandlerFunc)
+	if !ok {
+		f = func(w http.ResponseWriter, r *http.Request) {
+			h.ServeHTTP(w, r)
+		}
+	}
+	mux.Handle("POST", "/live-target", f)
+}
+
+// NewStartLiveTargetHandler creates a HTTP handler which loads the HTTP
+// request and calls the "surla" service "start_live_target" endpoint.
+func NewStartLiveTargetHandler(
+	endpoint goa.Endpoint,
+	mux goahttp.Muxer,
+	decoder func(*http.Request) goahttp.Decoder,
+	encoder func(context.Context, http.ResponseWriter) goahttp.Encoder,
+	errhandler func(context.Context, http.ResponseWriter, error),
+	formatter func(ctx context.Context, err error) goahttp.Statuser,
+) http.Handler {
+	var (
+		decodeRequest  = DecodeStartLiveTargetRequest(mux, decoder)
+		encodeResponse = EncodeStartLiveTargetResponse(encoder)
+		encodeError    = EncodeStartLiveTargetError(encoder, formatter)
+	)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := context.WithValue(r.Context(), goahttp.AcceptTypeKey, r.Header.Get("Accept"))
+		ctx = context.WithValue(ctx, goa.MethodKey, "start_live_target")
+		ctx = context.WithValue(ctx, goa.ServiceKey, "surla")
+		payload, err := decodeRequest(r)
+		if err != nil {
+			if err := encodeError(ctx, w, err); err != nil && errhandler != nil {
+				errhandler(ctx, w, err)
+			}
+			return
+		}
+		res, err := endpoint(ctx, payload)
+		if err != nil {
+			if err := encodeError(ctx, w, err); err != nil && errhandler != nil {
+				errhandler(ctx, w, err)
+			}
+			return
+		}
+		if err := encodeResponse(ctx, w, res); err != nil {
+			if errhandler != nil {
+				errhandler(ctx, w, err)
+			}
+		}
+	})
+}
+
+// MountStopLiveTargetHandler configures the mux to serve the "surla" service
+// "stop_live_target" endpoint.
+func MountStopLiveTargetHandler(mux goahttp.Muxer, h http.Handler) {
+	f, ok := h.(http.HandlerFunc)
+	if !ok {
+		f = func(w http.ResponseWriter, r *http.Request) {
+			h.ServeHTTP(w, r)
+		}
+	}
+	mux.Handle("DELETE", "/live-target", f)
+}
+
+// NewStopLiveTargetHandler creates a HTTP handler which loads the HTTP request
+// and calls the "surla" service "stop_live_target" endpoint.
+func NewStopLiveTargetHandler(
+	endpoint goa.Endpoint,
+	mux goahttp.Muxer,
+	decoder func(*http.Request) goahttp.Decoder,
+	encoder func(context.Context, http.ResponseWriter) goahttp.Encoder,
+	errhandler func(context.Context, http.ResponseWriter, error),
+	formatter func(ctx context.Context, err error) goahttp.Statuser,
+) http.Handler {
+	var (
+		encodeResponse = EncodeStopLiveTargetResponse(encoder)
+		encodeError    = EncodeStopLiveTargetError(encoder, formatter)
+	)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := context.WithValue(r.Context(), goahttp.AcceptTypeKey, r.Header.Get("Accept"))
+		ctx = context.WithValue(ctx, goa.MethodKey, "stop_live_target")
+		ctx = context.WithValue(ctx, goa.ServiceKey, "surla")
+		var err error
+		res, err := endpoint(ctx, nil)
 		if err != nil {
 			if err := encodeError(ctx, w, err); err != nil && errhandler != nil {
 				errhandler(ctx, w, err)

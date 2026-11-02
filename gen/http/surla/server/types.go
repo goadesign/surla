@@ -63,6 +63,13 @@ type DraftOverrideRequestBody struct {
 	NewContent *string `form:"new_content,omitempty" json:"new_content,omitempty" xml:"new_content,omitempty"`
 }
 
+// StartLiveTargetRequestBody is the type of the "surla" service
+// "start_live_target" endpoint HTTP request body.
+type StartLiveTargetRequestBody struct {
+	// Full commit ID to build, in the candidate repository's object format.
+	CandidateCommit *string `form:"candidate_commit,omitempty" json:"candidate_commit,omitempty" xml:"candidate_commit,omitempty"`
+}
+
 // VerifyChangeRequestBody is the type of the "surla" service "verify_change"
 // endpoint HTTP request body.
 type VerifyChangeRequestBody struct {
@@ -241,6 +248,28 @@ type DraftOverrideResponseBody struct {
 	Message string `form:"message" json:"message" xml:"message"`
 }
 
+// StartLiveTargetResponseBody is the type of the "surla" service
+// "start_live_target" endpoint HTTP response body.
+type StartLiveTargetResponseBody struct {
+	// The commit the live target was built from.
+	CandidateCommit string `form:"candidate_commit" json:"candidate_commit" xml:"candidate_commit"`
+	// Loopback origin of the running candidate, for trying requests such as its
+	// own API directly.
+	URL string `form:"url" json:"url" xml:"url"`
+	// Operator-facing status explanation.
+	Message string `form:"message" json:"message" xml:"message"`
+}
+
+// StopLiveTargetResponseBody is the type of the "surla" service
+// "stop_live_target" endpoint HTTP response body.
+type StopLiveTargetResponseBody struct {
+	// True when a live target was running and is now stopped; false when none was
+	// running.
+	Stopped bool `form:"stopped" json:"stopped" xml:"stopped"`
+	// Operator-facing status explanation.
+	Message string `form:"message" json:"message" xml:"message"`
+}
+
 // VerifyChangeResponseBody is the type of the "surla" service "verify_change"
 // endpoint HTTP response body.
 type VerifyChangeResponseBody struct {
@@ -326,6 +355,157 @@ type DiffResponseBody struct {
 	VersionDeltas []string `form:"version_deltas" json:"version_deltas" xml:"version_deltas"`
 	// Human-readable structural diff summary.
 	Summary string `form:"summary" json:"summary" xml:"summary"`
+}
+
+// DraftOverridePromptNotFoundResponseBody is the type of the "surla" service
+// "draft_override" endpoint HTTP response body for the "prompt_not_found"
+// error.
+type DraftOverridePromptNotFoundResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
+// DraftOverrideInvalidPromptResponseBody is the type of the "surla" service
+// "draft_override" endpoint HTTP response body for the "invalid_prompt" error.
+type DraftOverrideInvalidPromptResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
+// DraftOverrideLiveTargetEndedResponseBody is the type of the "surla" service
+// "draft_override" endpoint HTTP response body for the "live_target_ended"
+// error.
+type DraftOverrideLiveTargetEndedResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
+// DraftOverrideTargetRejectedCredentialResponseBody is the type of the "surla"
+// service "draft_override" endpoint HTTP response body for the
+// "target_rejected_credential" error.
+type DraftOverrideTargetRejectedCredentialResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
+// DraftOverrideUpdateNotConfirmedResponseBody is the type of the "surla"
+// service "draft_override" endpoint HTTP response body for the
+// "update_not_confirmed" error.
+type DraftOverrideUpdateNotConfirmedResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
+// StartLiveTargetLiveTargetUnavailableResponseBody is the type of the "surla"
+// service "start_live_target" endpoint HTTP response body for the
+// "live_target_unavailable" error.
+type StartLiveTargetLiveTargetUnavailableResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
+// StartLiveTargetLiveTargetFailedResponseBody is the type of the "surla"
+// service "start_live_target" endpoint HTTP response body for the
+// "live_target_failed" error.
+type StartLiveTargetLiveTargetFailedResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
+// StopLiveTargetLiveTargetStopFailedResponseBody is the type of the "surla"
+// service "stop_live_target" endpoint HTTP response body for the
+// "live_target_stop_failed" error.
+type StopLiveTargetLiveTargetStopFailedResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
 }
 
 // AmbiguityQuestionResponseBody is used to define fields on response body
@@ -1090,6 +1270,27 @@ func NewDraftOverrideResponseBody(res *surla.DraftOverrideResult) *DraftOverride
 	return body
 }
 
+// NewStartLiveTargetResponseBody builds the HTTP response body from the result
+// of the "start_live_target" endpoint of the "surla" service.
+func NewStartLiveTargetResponseBody(res *surla.LiveTargetResult) *StartLiveTargetResponseBody {
+	body := &StartLiveTargetResponseBody{
+		CandidateCommit: res.CandidateCommit,
+		URL:             res.URL,
+		Message:         res.Message,
+	}
+	return body
+}
+
+// NewStopLiveTargetResponseBody builds the HTTP response body from the result
+// of the "stop_live_target" endpoint of the "surla" service.
+func NewStopLiveTargetResponseBody(res *surla.StopLiveTargetResult) *StopLiveTargetResponseBody {
+	body := &StopLiveTargetResponseBody{
+		Stopped: res.Stopped,
+		Message: res.Message,
+	}
+	return body
+}
+
 // NewVerifyChangeResponseBody builds the HTTP response body from the result of
 // the "verify_change" endpoint of the "surla" service.
 func NewVerifyChangeResponseBody(res *surla.VerificationStatusResult) *VerifyChangeResponseBody {
@@ -1278,6 +1479,121 @@ func NewDiffResponseBody(res *surla.DiffResult) *DiffResponseBody {
 	return body
 }
 
+// NewDraftOverridePromptNotFoundResponseBody builds the HTTP response body
+// from the result of the "draft_override" endpoint of the "surla" service.
+func NewDraftOverridePromptNotFoundResponseBody(res *goa.ServiceError) *DraftOverridePromptNotFoundResponseBody {
+	body := &DraftOverridePromptNotFoundResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
+// NewDraftOverrideInvalidPromptResponseBody builds the HTTP response body from
+// the result of the "draft_override" endpoint of the "surla" service.
+func NewDraftOverrideInvalidPromptResponseBody(res *goa.ServiceError) *DraftOverrideInvalidPromptResponseBody {
+	body := &DraftOverrideInvalidPromptResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
+// NewDraftOverrideLiveTargetEndedResponseBody builds the HTTP response body
+// from the result of the "draft_override" endpoint of the "surla" service.
+func NewDraftOverrideLiveTargetEndedResponseBody(res *goa.ServiceError) *DraftOverrideLiveTargetEndedResponseBody {
+	body := &DraftOverrideLiveTargetEndedResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
+// NewDraftOverrideTargetRejectedCredentialResponseBody builds the HTTP
+// response body from the result of the "draft_override" endpoint of the
+// "surla" service.
+func NewDraftOverrideTargetRejectedCredentialResponseBody(res *goa.ServiceError) *DraftOverrideTargetRejectedCredentialResponseBody {
+	body := &DraftOverrideTargetRejectedCredentialResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
+// NewDraftOverrideUpdateNotConfirmedResponseBody builds the HTTP response body
+// from the result of the "draft_override" endpoint of the "surla" service.
+func NewDraftOverrideUpdateNotConfirmedResponseBody(res *goa.ServiceError) *DraftOverrideUpdateNotConfirmedResponseBody {
+	body := &DraftOverrideUpdateNotConfirmedResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
+// NewStartLiveTargetLiveTargetUnavailableResponseBody builds the HTTP response
+// body from the result of the "start_live_target" endpoint of the "surla"
+// service.
+func NewStartLiveTargetLiveTargetUnavailableResponseBody(res *goa.ServiceError) *StartLiveTargetLiveTargetUnavailableResponseBody {
+	body := &StartLiveTargetLiveTargetUnavailableResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
+// NewStartLiveTargetLiveTargetFailedResponseBody builds the HTTP response body
+// from the result of the "start_live_target" endpoint of the "surla" service.
+func NewStartLiveTargetLiveTargetFailedResponseBody(res *goa.ServiceError) *StartLiveTargetLiveTargetFailedResponseBody {
+	body := &StartLiveTargetLiveTargetFailedResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
+// NewStopLiveTargetLiveTargetStopFailedResponseBody builds the HTTP response
+// body from the result of the "stop_live_target" endpoint of the "surla"
+// service.
+func NewStopLiveTargetLiveTargetStopFailedResponseBody(res *goa.ServiceError) *StopLiveTargetLiveTargetStopFailedResponseBody {
+	body := &StopLiveTargetLiveTargetStopFailedResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
 // NewProposeChangePayload builds a surla service propose_change endpoint
 // payload.
 func NewProposeChangePayload(body *ProposeChangeRequestBody) *surla.ProposeChangePayload {
@@ -1352,6 +1668,16 @@ func NewDraftOverridePayload(body *DraftOverrideRequestBody) *surla.DraftOverrid
 		TargetKind: *body.TargetKind,
 		PromptID:   body.PromptID,
 		NewContent: *body.NewContent,
+	}
+
+	return v
+}
+
+// NewStartLiveTargetPayload builds a surla service start_live_target endpoint
+// payload.
+func NewStartLiveTargetPayload(body *StartLiveTargetRequestBody) *surla.StartLiveTargetPayload {
+	v := &surla.StartLiveTargetPayload{
+		CandidateCommit: *body.CandidateCommit,
 	}
 
 	return v
@@ -1475,6 +1801,18 @@ func ValidateDraftOverrideRequestBody(body *DraftOverrideRequestBody) (err error
 		if !(*body.TargetKind == "prompt_template" || *body.TargetKind == "compiled_rule") {
 			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.target_kind", *body.TargetKind, []any{"prompt_template", "compiled_rule"}))
 		}
+	}
+	return
+}
+
+// ValidateStartLiveTargetRequestBody runs the validations defined on
+// StartLiveTargetRequestBody
+func ValidateStartLiveTargetRequestBody(body *StartLiveTargetRequestBody) (err error) {
+	if body.CandidateCommit == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("candidate_commit", "body"))
+	}
+	if body.CandidateCommit != nil {
+		err = goa.MergeErrors(err, goa.ValidatePattern("body.candidate_commit", *body.CandidateCommit, "^([0-9a-f]{40}|[0-9a-f]{64})$"))
 	}
 	return
 }

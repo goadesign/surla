@@ -312,6 +312,18 @@ var _ = Service("orders", func() {
 		t.Fatalf("unexpected draft_override outcome: %+v", draftCall)
 	}
 
+	stopLiveCall, err := adapter.ToolsCall(ctx, &genmcpadapter.ToolsCallPayload{
+		Name:      "stop_live_target",
+		Arguments: json.RawMessage(`{}`),
+	})
+	if err != nil {
+		t.Fatalf("ToolsCall(stop_live_target): %v", err)
+	}
+	stopLiveOut, ok := stopLiveCall.Outcome.AsComplete()
+	if !ok || len(stopLiveOut.StructuredContent) == 0 {
+		t.Fatalf("unexpected stop_live_target outcome: %+v", stopLiveCall)
+	}
+
 	staleConfirmCall, err := adapter.ToolsCall(ctx, &genmcpadapter.ToolsCallPayload{
 		Name:      "confirm_intent",
 		Arguments: confirmArgs,
@@ -374,6 +386,7 @@ var _ = Service("orders", func() {
 		"cp2Structured":          json.RawMessage(previewOut.StructuredContent),
 		"diffStructured":         json.RawMessage(diffOut.StructuredContent),
 		"cp3Structured":          json.RawMessage(draftOut.StructuredContent),
+		"cp3StopLiveStructured":  json.RawMessage(stopLiveOut.StructuredContent),
 		"staleErrorText":         *staleConfirmOut.Content[0].Text,
 		"wantCP1Revision":        proposedWire.RequestRevision,
 		"wantCP2Revision":        confirmedWire.RequestRevision,
@@ -923,6 +936,38 @@ if (root.dataset.state !== "cp3-draft-override" || resultRegion.dataset.designDi
 }
 if (!cp3Text.includes("applied_in_store=true") || !cp3Text.includes("requires_rebuild=false")) {
   throw new Error("CP3 view missing fast-draft badges: " + cp3Text);
+}
+
+// 5b. Deliver a start_live_target result -> renders the running live target.
+messageListener({
+  source: parentWindow,
+  data: {
+    jsonrpc: "2.0",
+    method: "ui/notifications/tool-result",
+    params: { structuredContent: {
+      candidate_commit: "4f0b3c1d2e5a6978877665544332211009988776",
+      url: "http://127.0.0.1:41234",
+      message: "Live target for commit 4f0b3c1d2e5a6978877665544332211009988776 is running at http://127.0.0.1:41234."
+    } }
+  }
+});
+const liveText = renderText(viewEl);
+if (root.dataset.state !== "cp3-live-target" || !liveText.includes("Live Target Running") ||
+    !liveText.includes("http://127.0.0.1:41234") || !liveText.includes("Drafts are not verified") || !liveText.includes("loopback address on the Surla server's host")) {
+  throw new Error("unexpected live target view: " + root.dataset.state + " / " + liveText);
+}
+
+// 5c. Deliver the stop_live_target result the MCP codec produced -> no target ran.
+messageListener({
+  source: parentWindow,
+  data: {
+    jsonrpc: "2.0",
+    method: "ui/notifications/tool-result",
+    params: { structuredContent: input.cp3StopLiveStructured }
+  }
+});
+if (root.dataset.state !== "cp3-live-target" || !renderText(viewEl).includes("No Live Target Running")) {
+  throw new Error("unexpected stop live target view: " + renderText(viewEl));
 }
 
 // 6. Deliver tool-input notification -> transitions back to waiting state.

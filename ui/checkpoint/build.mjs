@@ -289,6 +289,14 @@ function generateTypesModule() {
       rawByTool["surla.get_verification"],
       "VerificationStatusResult"
     ),
+    LiveTargetResult: compactSchema(
+      rawByTool["surla.start_live_target"],
+      "LiveTargetResult"
+    ),
+    StopLiveTargetResult: compactSchema(
+      rawByTool["surla.stop_live_target"],
+      "StopLiveTargetResult"
+    ),
   };
 
   const emittedDefs = new Set();
@@ -458,6 +466,16 @@ export function isDraftOverrideResult(p: unknown): p is DraftOverrideResult {
 // isVerificationStatusResult validates the generated CP4 state and report.
 export function isVerificationStatusResult(p: unknown): p is VerificationStatusResult {
   return validateGeneratedRoot("VerificationStatusResult", p);
+}
+
+// isLiveTargetResult validates a start_live_target result.
+export function isLiveTargetResult(p: unknown): p is LiveTargetResult {
+  return validateGeneratedRoot("LiveTargetResult", p);
+}
+
+// isStopLiveTargetResult validates a stop_live_target result.
+export function isStopLiveTargetResult(p: unknown): p is StopLiveTargetResult {
+  return validateGeneratedRoot("StopLiveTargetResult", p);
 }
 `;
 }

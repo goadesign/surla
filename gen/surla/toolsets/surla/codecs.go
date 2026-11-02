@@ -150,6 +150,38 @@ func ProposeChangeResultCodec() tools.JSONCodec[*ProposeChangeResult] {
 	}
 }
 
+// StartLiveTargetPayloadCodec returns a fresh codec for *StartLiveTargetPayload.
+func StartLiveTargetPayloadCodec() tools.JSONCodec[*StartLiveTargetPayload] {
+	return tools.JSONCodec[*StartLiveTargetPayload]{
+		ToJSON:   MarshalStartLiveTargetPayload,
+		FromJSON: UnmarshalStartLiveTargetPayload,
+	}
+}
+
+// StartLiveTargetResultCodec returns a fresh codec for *StartLiveTargetResult.
+func StartLiveTargetResultCodec() tools.JSONCodec[*StartLiveTargetResult] {
+	return tools.JSONCodec[*StartLiveTargetResult]{
+		ToJSON:   MarshalStartLiveTargetResult,
+		FromJSON: UnmarshalStartLiveTargetResult,
+	}
+}
+
+// StopLiveTargetPayloadCodec returns a fresh codec for *StopLiveTargetPayload.
+func StopLiveTargetPayloadCodec() tools.JSONCodec[*StopLiveTargetPayload] {
+	return tools.JSONCodec[*StopLiveTargetPayload]{
+		ToJSON:   MarshalStopLiveTargetPayload,
+		FromJSON: UnmarshalStopLiveTargetPayload,
+	}
+}
+
+// StopLiveTargetResultCodec returns a fresh codec for *StopLiveTargetResult.
+func StopLiveTargetResultCodec() tools.JSONCodec[*StopLiveTargetResult] {
+	return tools.JSONCodec[*StopLiveTargetResult]{
+		ToJSON:   MarshalStopLiveTargetResult,
+		FromJSON: UnmarshalStopLiveTargetResult,
+	}
+}
+
 // VerifyChangePayloadCodec returns a fresh codec for *VerifyChangePayload.
 func VerifyChangePayloadCodec() tools.JSONCodec[*VerifyChangePayload] {
 	return tools.JSONCodec[*VerifyChangePayload]{
@@ -373,6 +405,58 @@ var (
 		},
 		FromJSON: func(data []byte) (any, error) {
 			return UnmarshalProposeChangeResult(data)
+		},
+	}
+	// startLiveTargetPayloadCodec provides an untyped codec for *StartLiveTargetPayload.
+	startLiveTargetPayloadCodec = tools.JSONCodec[any]{
+		ToJSON: func(v any) ([]byte, error) {
+			// Prefer typed marshal when the value matches the expected type.
+			if typed, ok := v.(*StartLiveTargetPayload); ok {
+				return MarshalStartLiveTargetPayload(typed)
+			}
+			return nil, fmt.Errorf("invalid value type for *StartLiveTargetPayload: %T", v)
+		},
+		FromJSON: func(data []byte) (any, error) {
+			return UnmarshalStartLiveTargetPayload(data)
+		},
+	}
+	// startLiveTargetResultCodec provides an untyped codec for *StartLiveTargetResult.
+	startLiveTargetResultCodec = tools.JSONCodec[any]{
+		ToJSON: func(v any) ([]byte, error) {
+			// Prefer typed marshal when the value matches the expected type.
+			if typed, ok := v.(*StartLiveTargetResult); ok {
+				return MarshalStartLiveTargetResult(typed)
+			}
+			return nil, fmt.Errorf("invalid value type for *StartLiveTargetResult: %T", v)
+		},
+		FromJSON: func(data []byte) (any, error) {
+			return UnmarshalStartLiveTargetResult(data)
+		},
+	}
+	// stopLiveTargetPayloadCodec provides an untyped codec for *StopLiveTargetPayload.
+	stopLiveTargetPayloadCodec = tools.JSONCodec[any]{
+		ToJSON: func(v any) ([]byte, error) {
+			// Prefer typed marshal when the value matches the expected type.
+			if typed, ok := v.(*StopLiveTargetPayload); ok {
+				return MarshalStopLiveTargetPayload(typed)
+			}
+			return nil, fmt.Errorf("invalid value type for *StopLiveTargetPayload: %T", v)
+		},
+		FromJSON: func(data []byte) (any, error) {
+			return UnmarshalStopLiveTargetPayload(data)
+		},
+	}
+	// stopLiveTargetResultCodec provides an untyped codec for *StopLiveTargetResult.
+	stopLiveTargetResultCodec = tools.JSONCodec[any]{
+		ToJSON: func(v any) ([]byte, error) {
+			// Prefer typed marshal when the value matches the expected type.
+			if typed, ok := v.(*StopLiveTargetResult); ok {
+				return MarshalStopLiveTargetResult(typed)
+			}
+			return nil, fmt.Errorf("invalid value type for *StopLiveTargetResult: %T", v)
+		},
+		FromJSON: func(data []byte) (any, error) {
+			return UnmarshalStopLiveTargetResult(data)
 		},
 	}
 	// verifyChangePayloadCodec provides an untyped codec for *VerifyChangePayload.
@@ -2186,6 +2270,59 @@ var proposeChangeResultFields = []tools.FieldMetadata{
 		Description: "Number of declared evaluator scenarios, every one of which passed.",
 	},
 }
+var startLiveTargetPayloadFields = []tools.FieldMetadata{
+	{
+		JSONType:    "object",
+		Description: "Candidate commit to build and run as this server's live CP3 target.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("candidate_commit")},
+		JSONType:    "string",
+		Description: "Full commit ID to build, in the candidate repository's object format.",
+	},
+}
+var startLiveTargetResultFields = []tools.FieldMetadata{
+	{
+		JSONType:    "object",
+		Description: "The live CP3 target this server runs and binds draft_override to.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("candidate_commit")},
+		JSONType:    "string",
+		Description: "The commit the live target was built from.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("url")},
+		JSONType:    "string",
+		Description: "Loopback origin of the running candidate, for trying requests such as its own API directly.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("message")},
+		JSONType:    "string",
+		Description: "Operator-facing status explanation.",
+	},
+}
+var stopLiveTargetPayloadFields = []tools.FieldMetadata{
+	{
+		JSONType: "object",
+	},
+}
+var stopLiveTargetResultFields = []tools.FieldMetadata{
+	{
+		JSONType:    "object",
+		Description: "Result of stopping this server's live CP3 target.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stopped")},
+		JSONType:    "boolean",
+		Description: "True when a live target was running and is now stopped; false when none was running.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("message")},
+		JSONType:    "string",
+		Description: "Operator-facing status explanation.",
+	},
+}
 var verifyChangePayloadFields = []tools.FieldMetadata{
 	{
 		JSONType:    "object",
@@ -2875,6 +3012,57 @@ func enrichProposeChangeResultValidationError(err error) error {
 	}
 	return tools.NewValidationError(ve.Error(), issues, m)
 }
+func enrichStartLiveTargetPayloadValidationError(err error) error {
+	var ve *tools.ValidationError
+	if !errors.As(err, &ve) {
+		return err
+	}
+	issues := ve.Issues()
+	if len(issues) == 0 {
+		return err
+	}
+	m := make(map[string]string)
+	for _, is := range issues {
+		if field, ok := tools.LookupFieldMetadata(startLiveTargetPayloadFields, is.Field); ok && field.Description != "" {
+			m[is.Field] = field.Description
+		}
+	}
+	return tools.NewValidationError(ve.Error(), issues, m)
+}
+func enrichStartLiveTargetResultValidationError(err error) error {
+	var ve *tools.ValidationError
+	if !errors.As(err, &ve) {
+		return err
+	}
+	issues := ve.Issues()
+	if len(issues) == 0 {
+		return err
+	}
+	m := make(map[string]string)
+	for _, is := range issues {
+		if field, ok := tools.LookupFieldMetadata(startLiveTargetResultFields, is.Field); ok && field.Description != "" {
+			m[is.Field] = field.Description
+		}
+	}
+	return tools.NewValidationError(ve.Error(), issues, m)
+}
+func enrichStopLiveTargetResultValidationError(err error) error {
+	var ve *tools.ValidationError
+	if !errors.As(err, &ve) {
+		return err
+	}
+	issues := ve.Issues()
+	if len(issues) == 0 {
+		return err
+	}
+	m := make(map[string]string)
+	for _, is := range issues {
+		if field, ok := tools.LookupFieldMetadata(stopLiveTargetResultFields, is.Field); ok && field.Description != "" {
+			m[is.Field] = field.Description
+		}
+	}
+	return tools.NewValidationError(ve.Error(), issues, m)
+}
 func enrichVerifyChangePayloadValidationError(err error) error {
 	var ve *tools.ValidationError
 	if !errors.As(err, &ve) {
@@ -3385,6 +3573,130 @@ func invalidProposeChangeResultFieldTypeError(err error) error {
 		field = "$payload"
 	}
 	metadata, ok := tools.LookupFieldMetadata(proposeChangeResultFields, field)
+	if !ok || metadata.JSONType == "" {
+		return err
+	}
+	actual := generatedUnmarshalJSONType(typeErr.Value)
+	if actual == "" {
+		return err
+	}
+	return tools.NewValidationError(
+		err.Error(),
+		[]*tools.FieldIssue{
+			{
+				Field:            field,
+				Constraint:       "invalid_field_type",
+				ExpectedJSONType: metadata.JSONType,
+				ActualJSONType:   actual,
+			},
+		},
+		nil,
+	)
+}
+func invalidStartLiveTargetPayloadFieldTypeError(err error) error {
+	var typeErr *json.UnmarshalTypeError
+	if !errors.As(err, &typeErr) {
+		return err
+	}
+	field := typeErr.Field
+	field = strings.TrimPrefix(field, "StartLiveTargetPayloadTransport.")
+	if field == "" {
+		field = "$payload"
+	}
+	metadata, ok := tools.LookupFieldMetadata(startLiveTargetPayloadFields, field)
+	if !ok || metadata.JSONType == "" {
+		return err
+	}
+	actual := generatedUnmarshalJSONType(typeErr.Value)
+	if actual == "" {
+		return err
+	}
+	return tools.NewValidationError(
+		err.Error(),
+		[]*tools.FieldIssue{
+			{
+				Field:            field,
+				Constraint:       "invalid_field_type",
+				ExpectedJSONType: metadata.JSONType,
+				ActualJSONType:   actual,
+			},
+		},
+		nil,
+	)
+}
+func invalidStartLiveTargetResultFieldTypeError(err error) error {
+	var typeErr *json.UnmarshalTypeError
+	if !errors.As(err, &typeErr) {
+		return err
+	}
+	field := typeErr.Field
+	field = strings.TrimPrefix(field, "StartLiveTargetResultTransport.")
+	if field == "" {
+		field = "$payload"
+	}
+	metadata, ok := tools.LookupFieldMetadata(startLiveTargetResultFields, field)
+	if !ok || metadata.JSONType == "" {
+		return err
+	}
+	actual := generatedUnmarshalJSONType(typeErr.Value)
+	if actual == "" {
+		return err
+	}
+	return tools.NewValidationError(
+		err.Error(),
+		[]*tools.FieldIssue{
+			{
+				Field:            field,
+				Constraint:       "invalid_field_type",
+				ExpectedJSONType: metadata.JSONType,
+				ActualJSONType:   actual,
+			},
+		},
+		nil,
+	)
+}
+func invalidStopLiveTargetPayloadFieldTypeError(err error) error {
+	var typeErr *json.UnmarshalTypeError
+	if !errors.As(err, &typeErr) {
+		return err
+	}
+	field := typeErr.Field
+	field = strings.TrimPrefix(field, "StopLiveTargetPayloadTransport.")
+	if field == "" {
+		field = "$payload"
+	}
+	metadata, ok := tools.LookupFieldMetadata(stopLiveTargetPayloadFields, field)
+	if !ok || metadata.JSONType == "" {
+		return err
+	}
+	actual := generatedUnmarshalJSONType(typeErr.Value)
+	if actual == "" {
+		return err
+	}
+	return tools.NewValidationError(
+		err.Error(),
+		[]*tools.FieldIssue{
+			{
+				Field:            field,
+				Constraint:       "invalid_field_type",
+				ExpectedJSONType: metadata.JSONType,
+				ActualJSONType:   actual,
+			},
+		},
+		nil,
+	)
+}
+func invalidStopLiveTargetResultFieldTypeError(err error) error {
+	var typeErr *json.UnmarshalTypeError
+	if !errors.As(err, &typeErr) {
+		return err
+	}
+	field := typeErr.Field
+	field = strings.TrimPrefix(field, "StopLiveTargetResultTransport.")
+	if field == "" {
+		field = "$payload"
+	}
+	metadata, ok := tools.LookupFieldMetadata(stopLiveTargetResultFields, field)
 	if !ok || metadata.JSONType == "" {
 		return err
 	}
@@ -4686,6 +4998,164 @@ func UnmarshalProposeChangeResult(data []byte) (*ProposeChangeResult, error) {
 	return out, nil
 }
 
+// MarshalStartLiveTargetPayload serializes *StartLiveTargetPayload into JSON.
+func MarshalStartLiveTargetPayload(v *StartLiveTargetPayload) ([]byte, error) {
+	if v == nil {
+		return nil, fmt.Errorf("startLiveTargetPayload is nil")
+	}
+	in := v
+	_ = in
+	var out *toolhttp.StartLiveTargetPayloadTransport
+	out = &toolhttp.StartLiveTargetPayloadTransport{
+		CandidateCommit: &in.CandidateCommit,
+	}
+	return json.Marshal(out)
+}
+
+// UnmarshalStartLiveTargetPayload deserializes JSON into *StartLiveTargetPayload.
+func UnmarshalStartLiveTargetPayload(data []byte) (*StartLiveTargetPayload, error) {
+	if len(data) == 0 {
+		return nil, fmt.Errorf("startLiveTargetPayload JSON is empty")
+	}
+	var tv toolhttp.StartLiveTargetPayloadTransport
+	if err := validateStartLiveTargetPayloadJSON(data); err != nil {
+		return nil, invalidStartLiveTargetPayloadFieldTypeError(err)
+	}
+	if err := json.Unmarshal(data, &tv); err != nil {
+		return nil, invalidStartLiveTargetPayloadFieldTypeError(err)
+	}
+	if err := toolhttp.ValidateStartLiveTargetPayloadTransport(&tv); err != nil {
+		err = newValidationError(err)
+		err = enrichStartLiveTargetPayloadValidationError(err)
+		return nil, err
+	}
+	in := &tv
+	_ = in
+	var out *StartLiveTargetPayload
+	out = &StartLiveTargetPayload{
+		CandidateCommit: *in.CandidateCommit,
+	}
+	return out, nil
+}
+
+// MarshalStartLiveTargetResult serializes *StartLiveTargetResult into JSON.
+func MarshalStartLiveTargetResult(v *StartLiveTargetResult) ([]byte, error) {
+	if v == nil {
+		return nil, fmt.Errorf("startLiveTargetResult is nil")
+	}
+	in := v
+	_ = in
+	var out *toolhttp.StartLiveTargetResultTransport
+	out = &toolhttp.StartLiveTargetResultTransport{
+		CandidateCommit: &in.CandidateCommit,
+		URL:             &in.URL,
+		Message:         &in.Message,
+	}
+	return json.Marshal(out)
+}
+
+// UnmarshalStartLiveTargetResult deserializes JSON into *StartLiveTargetResult.
+func UnmarshalStartLiveTargetResult(data []byte) (*StartLiveTargetResult, error) {
+	if len(data) == 0 {
+		return nil, fmt.Errorf("startLiveTargetResult JSON is empty")
+	}
+	var tv toolhttp.StartLiveTargetResultTransport
+	if err := validateStartLiveTargetResultJSON(data); err != nil {
+		return nil, invalidStartLiveTargetResultFieldTypeError(err)
+	}
+	if err := json.Unmarshal(data, &tv); err != nil {
+		return nil, invalidStartLiveTargetResultFieldTypeError(err)
+	}
+	if err := toolhttp.ValidateStartLiveTargetResultTransport(&tv); err != nil {
+		err = newValidationError(err)
+		err = enrichStartLiveTargetResultValidationError(err)
+		return nil, err
+	}
+	in := &tv
+	_ = in
+	var out *StartLiveTargetResult
+	out = &StartLiveTargetResult{
+		CandidateCommit: *in.CandidateCommit,
+		URL:             *in.URL,
+		Message:         *in.Message,
+	}
+	return out, nil
+}
+
+// MarshalStopLiveTargetPayload serializes *StopLiveTargetPayload into JSON.
+func MarshalStopLiveTargetPayload(v *StopLiveTargetPayload) ([]byte, error) {
+	if v == nil {
+		return nil, fmt.Errorf("stopLiveTargetPayload is nil")
+	}
+	in := v
+	_ = in
+	var out *toolhttp.StopLiveTargetPayloadTransport
+	out = &toolhttp.StopLiveTargetPayloadTransport{}
+	return json.Marshal(out)
+}
+
+// UnmarshalStopLiveTargetPayload deserializes JSON into *StopLiveTargetPayload.
+func UnmarshalStopLiveTargetPayload(data []byte) (*StopLiveTargetPayload, error) {
+	if len(data) == 0 {
+		var v *StopLiveTargetPayload
+		return v, nil
+	}
+	var tv toolhttp.StopLiveTargetPayloadTransport
+	if err := validateStopLiveTargetPayloadJSON(data); err != nil {
+		return nil, invalidStopLiveTargetPayloadFieldTypeError(err)
+	}
+	if err := json.Unmarshal(data, &tv); err != nil {
+		return nil, invalidStopLiveTargetPayloadFieldTypeError(err)
+	}
+	in := &tv
+	_ = in
+	var out *StopLiveTargetPayload
+	out = &StopLiveTargetPayload{}
+	return out, nil
+}
+
+// MarshalStopLiveTargetResult serializes *StopLiveTargetResult into JSON.
+func MarshalStopLiveTargetResult(v *StopLiveTargetResult) ([]byte, error) {
+	if v == nil {
+		return nil, fmt.Errorf("stopLiveTargetResult is nil")
+	}
+	in := v
+	_ = in
+	var out *toolhttp.StopLiveTargetResultTransport
+	out = &toolhttp.StopLiveTargetResultTransport{
+		Stopped: &in.Stopped,
+		Message: &in.Message,
+	}
+	return json.Marshal(out)
+}
+
+// UnmarshalStopLiveTargetResult deserializes JSON into *StopLiveTargetResult.
+func UnmarshalStopLiveTargetResult(data []byte) (*StopLiveTargetResult, error) {
+	if len(data) == 0 {
+		return nil, fmt.Errorf("stopLiveTargetResult JSON is empty")
+	}
+	var tv toolhttp.StopLiveTargetResultTransport
+	if err := validateStopLiveTargetResultJSON(data); err != nil {
+		return nil, invalidStopLiveTargetResultFieldTypeError(err)
+	}
+	if err := json.Unmarshal(data, &tv); err != nil {
+		return nil, invalidStopLiveTargetResultFieldTypeError(err)
+	}
+	if err := toolhttp.ValidateStopLiveTargetResultTransport(&tv); err != nil {
+		err = newValidationError(err)
+		err = enrichStopLiveTargetResultValidationError(err)
+		return nil, err
+	}
+	in := &tv
+	_ = in
+	var out *StopLiveTargetResult
+	out = &StopLiveTargetResult{
+		Stopped: *in.Stopped,
+		Message: *in.Message,
+	}
+	return out, nil
+}
+
 // MarshalVerifyChangePayload serializes *VerifyChangePayload into JSON.
 func MarshalVerifyChangePayload(v *VerifyChangePayload) ([]byte, error) {
 	if v == nil {
@@ -4916,6 +5386,46 @@ func validateDraftOverrideResultJSON(data []byte) error {
 		return err
 	}
 	return validateDraftOverrideResultJSONValue("", root, "")
+}
+
+// validateStartLiveTargetPayloadJSON parses one JSON document and checks the exact value
+// shapes known from this generated Goa type.
+func validateStartLiveTargetPayloadJSON(data []byte) error {
+	root, err := readStrictToolJSON(data)
+	if err != nil {
+		return err
+	}
+	return validateStartLiveTargetPayloadJSONValue("", root, "")
+}
+
+// validateStartLiveTargetResultJSON parses one JSON document and checks the exact value
+// shapes known from this generated Goa type.
+func validateStartLiveTargetResultJSON(data []byte) error {
+	root, err := readStrictToolJSON(data)
+	if err != nil {
+		return err
+	}
+	return validateStartLiveTargetResultJSONValue("", root, "")
+}
+
+// validateStopLiveTargetPayloadJSON parses one JSON document and checks the exact value
+// shapes known from this generated Goa type.
+func validateStopLiveTargetPayloadJSON(data []byte) error {
+	root, err := readStrictToolJSON(data)
+	if err != nil {
+		return err
+	}
+	return validateStopLiveTargetPayloadJSONValue("", root, "")
+}
+
+// validateStopLiveTargetResultJSON parses one JSON document and checks the exact value
+// shapes known from this generated Goa type.
+func validateStopLiveTargetResultJSON(data []byte) error {
+	root, err := readStrictToolJSON(data)
+	if err != nil {
+		return err
+	}
+	return validateStopLiveTargetResultJSONValue("", root, "")
 }
 
 // validateVerifyChangePayloadJSON parses one JSON document and checks the exact value
@@ -6874,6 +7384,165 @@ func validateDraftOverrideResultJSONValue(path string, value any, description st
 				"message",
 				"prompt_version",
 				"requires_rebuild",
+			})
+		}
+	}
+	return nil
+}
+
+// validateStartLiveTargetPayloadJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateStartLiveTargetPayloadJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "candidate_commit":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Full commit ID to build, in the candidate repository's object format.",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"candidate_commit",
+			})
+		}
+	}
+	return nil
+}
+
+// validateStartLiveTargetResultJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateStartLiveTargetResultJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "candidate_commit":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "The commit the live target was built from.",
+			); err != nil {
+				return err
+			}
+		case "message":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Operator-facing status explanation.",
+			); err != nil {
+				return err
+			}
+		case "url":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Loopback origin of the running candidate, for trying requests such as its own API directly.",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"candidate_commit",
+				"message",
+				"url",
+			})
+		}
+	}
+	return nil
+}
+
+// validateStopLiveTargetPayloadJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateStopLiveTargetPayloadJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		default:
+			return unknownJSONFieldError(path, key, []string{})
+		}
+	}
+	return nil
+}
+
+// validateStopLiveTargetResultJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateStopLiveTargetResultJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "message":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Operator-facing status explanation.",
+			); err != nil {
+				return err
+			}
+		case "stopped":
+			if err := validateBooleanJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "True when a live target was running and is now stopped; false when none was running.",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"message",
+				"stopped",
 			})
 		}
 	}

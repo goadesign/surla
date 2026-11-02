@@ -36,6 +36,8 @@ func ToolSchemas() []*genregistry.ToolSchema {
 		declarations.schema253(),
 		declarations.schema350(),
 		declarations.schema399(),
+		declarations.schema411(),
+		declarations.schema420(),
 	}
 } // schema1 constructs one generated schema declaration.
 func (declarations registryDeclarations) schema1() *genregistry.ToolSchema {
@@ -6196,6 +6198,298 @@ func (registryDeclarations) field398() *genregistry.ToolFieldMetadata {
 
 // schema399 constructs one generated schema declaration.
 func (declarations registryDeclarations) schema399() *genregistry.ToolSchema {
+	registryText1 := "Build a candidate commit and run it as this server's live CP3 target so draft_override can try prompt text on it. This first stops the target already running, which discards every prompt draft applied to it, even if the new build then fails. Prompt text survives only when it is committed."
+	return &genregistry.ToolSchema{
+		Name:                   "surla.start_live_target",
+		Description:            &registryText1,
+		PayloadSchema:          []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Candidate commit to build and run as this server's live CP3 target.\",\"properties\":{\"candidate_commit\":{\"description\":\"Full commit ID to build, in the candidate repository's object format.\",\"example\":\"4f0b3c1d2e5a6978877665544332211009988776\",\"pattern\":\"^([0-9a-f]{40}|[0-9a-f]{64})$\",\"type\":\"string\"}},\"required\":[\"candidate_commit\"],\"type\":\"object\"}"),
+		ExecutionPayloadSchema: []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Candidate commit to build and run as this server's live CP3 target.\",\"properties\":{\"candidate_commit\":{\"description\":\"Full commit ID to build, in the candidate repository's object format.\",\"example\":\"4f0b3c1d2e5a6978877665544332211009988776\",\"pattern\":\"^([0-9a-f]{40}|[0-9a-f]{64})$\",\"type\":\"string\"}},\"required\":[\"candidate_commit\"],\"type\":\"object\"}"),
+		ResultSchema:           []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"The live CP3 target this server runs and binds draft_override to.\",\"properties\":{\"candidate_commit\":{\"description\":\"The commit the live target was built from.\",\"type\":\"string\"},\"message\":{\"description\":\"Operator-facing status explanation.\",\"type\":\"string\"},\"url\":{\"description\":\"Loopback origin of the running candidate, for trying requests such as its own API directly.\",\"type\":\"string\"}},\"required\":[\"candidate_commit\",\"url\",\"message\"],\"type\":\"object\"}"),
+		ConsumerContract: &genregistry.ConsumerContract{
+			Kind:  "service",
+			Title: "Start Live Target",
+			Search: &genregistry.ToolSearchDocument{
+				Length: 60,
+				Terms:  map[string]int{"a": 1, "already": 1, "and": 1, "applied": 1, "as": 1, "build": 2, "can": 1, "candidate": 1, "commit": 1, "committed": 1, "cp3": 1, "discards": 1, "draft": 2, "even": 1, "every": 1, "fails": 1, "first": 1, "if": 1, "is": 1, "it": 4, "live": 3, "new": 1, "on": 1, "only": 1, "override": 1, "prompt": 3, "run": 1, "running": 1, "s": 1, "server": 1, "so": 1, "start": 2, "stops": 1, "surla": 1, "survives": 1, "target": 4, "text": 2, "the": 2, "then": 1, "this": 2, "to": 1, "try": 1, "when": 1, "which": 1},
+			},
+			RequiresUI: false,
+			TextOnly: &genregistry.TextOnlyToolContract{
+				ExecutionSchema: []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Candidate commit to build and run as this server's live CP3 target.\",\"properties\":{\"candidate_commit\":{\"description\":\"Full commit ID to build, in the candidate repository's object format.\",\"example\":\"4f0b3c1d2e5a6978877665544332211009988776\",\"pattern\":\"^([0-9a-f]{40}|[0-9a-f]{64})$\",\"type\":\"string\"}},\"required\":[\"candidate_commit\"],\"type\":\"object\"}"),
+				Description:     "Build a candidate commit and run it as this server's live CP3 target so draft_override can try prompt text on it. This first stops the target already running, which discards every prompt draft applied to it, even if the new build then fails. Prompt text survives only when it is committed.",
+				Search: &genregistry.ToolSearchDocument{
+					Length: 60,
+					Terms:  map[string]int{"a": 1, "already": 1, "and": 1, "applied": 1, "as": 1, "build": 2, "can": 1, "candidate": 1, "commit": 1, "committed": 1, "cp3": 1, "discards": 1, "draft": 2, "even": 1, "every": 1, "fails": 1, "first": 1, "if": 1, "is": 1, "it": 4, "live": 3, "new": 1, "on": 1, "only": 1, "override": 1, "prompt": 3, "run": 1, "running": 1, "s": 1, "server": 1, "so": 1, "start": 2, "stops": 1, "surla": 1, "survives": 1, "target": 4, "text": 2, "the": 2, "then": 1, "this": 2, "to": 1, "try": 1, "when": 1, "which": 1},
+				},
+				PayloadSchema: []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Candidate commit to build and run as this server's live CP3 target.\",\"properties\":{\"candidate_commit\":{\"description\":\"Full commit ID to build, in the candidate repository's object format.\",\"example\":\"4f0b3c1d2e5a6978877665544332211009988776\",\"pattern\":\"^([0-9a-f]{40}|[0-9a-f]{64})$\",\"type\":\"string\"}},\"required\":[\"candidate_commit\"],\"type\":\"object\"}"),
+				Payload:       declarations.metadata408(),
+			},
+			Payload: declarations.metadata400(),
+			Result:  declarations.metadata403(),
+		},
+	}
+}
+
+// metadata400 constructs one generated metadata declaration.
+func (declarations registryDeclarations) metadata400() *genregistry.ToolTypeMetadata {
+	registryText1 := "StartLiveTargetPayload"
+	return &genregistry.ToolTypeMetadata{
+		Name:                     &registryText1,
+		SchemaWithoutRootExample: []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Candidate commit to build and run as this server's live CP3 target.\",\"properties\":{\"candidate_commit\":{\"description\":\"Full commit ID to build, in the candidate repository's object format.\",\"example\":\"4f0b3c1d2e5a6978877665544332211009988776\",\"pattern\":\"^([0-9a-f]{40}|[0-9a-f]{64})$\",\"type\":\"string\"}},\"required\":[\"candidate_commit\"],\"type\":\"object\"}"),
+		Fields: []*genregistry.ToolFieldMetadata{
+			declarations.field401(),
+			declarations.field402(),
+		},
+	}
+}
+
+// field401 constructs one generated field declaration.
+func (registryDeclarations) field401() *genregistry.ToolFieldMetadata {
+	registryText1 := "object"
+	registryText2 := "Candidate commit to build and run as this server's live CP3 target."
+	return &genregistry.ToolFieldMetadata{
+		JSONType:    &registryText1,
+		Description: &registryText2,
+	}
+}
+
+// field402 constructs one generated field declaration.
+func (registryDeclarations) field402() *genregistry.ToolFieldMetadata {
+	registryText1 := "string"
+	registryText2 := "Full commit ID to build, in the candidate repository's object format."
+	return &genregistry.ToolFieldMetadata{
+		Path: []*genregistry.ToolFieldPathSegment{
+			{Segment: genregistry.NewToolFieldSegmentField("candidate_commit")},
+		},
+		JSONType:    &registryText1,
+		Description: &registryText2,
+	}
+}
+
+// metadata403 constructs one generated metadata declaration.
+func (declarations registryDeclarations) metadata403() *genregistry.ToolTypeMetadata {
+	registryText1 := "StartLiveTargetResult"
+	return &genregistry.ToolTypeMetadata{
+		Name:                     &registryText1,
+		SchemaWithoutRootExample: []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"The live CP3 target this server runs and binds draft_override to.\",\"properties\":{\"candidate_commit\":{\"description\":\"The commit the live target was built from.\",\"type\":\"string\"},\"message\":{\"description\":\"Operator-facing status explanation.\",\"type\":\"string\"},\"url\":{\"description\":\"Loopback origin of the running candidate, for trying requests such as its own API directly.\",\"type\":\"string\"}},\"required\":[\"candidate_commit\",\"url\",\"message\"],\"type\":\"object\"}"),
+		Fields: []*genregistry.ToolFieldMetadata{
+			declarations.field404(),
+			declarations.field405(),
+			declarations.field406(),
+			declarations.field407(),
+		},
+	}
+}
+
+// field404 constructs one generated field declaration.
+func (registryDeclarations) field404() *genregistry.ToolFieldMetadata {
+	registryText1 := "object"
+	registryText2 := "The live CP3 target this server runs and binds draft_override to."
+	return &genregistry.ToolFieldMetadata{
+		JSONType:    &registryText1,
+		Description: &registryText2,
+	}
+}
+
+// field405 constructs one generated field declaration.
+func (registryDeclarations) field405() *genregistry.ToolFieldMetadata {
+	registryText1 := "string"
+	registryText2 := "The commit the live target was built from."
+	return &genregistry.ToolFieldMetadata{
+		Path: []*genregistry.ToolFieldPathSegment{
+			{Segment: genregistry.NewToolFieldSegmentField("candidate_commit")},
+		},
+		JSONType:    &registryText1,
+		Description: &registryText2,
+	}
+}
+
+// field406 constructs one generated field declaration.
+func (registryDeclarations) field406() *genregistry.ToolFieldMetadata {
+	registryText1 := "string"
+	registryText2 := "Loopback origin of the running candidate, for trying requests such as its own API directly."
+	return &genregistry.ToolFieldMetadata{
+		Path: []*genregistry.ToolFieldPathSegment{
+			{Segment: genregistry.NewToolFieldSegmentField("url")},
+		},
+		JSONType:    &registryText1,
+		Description: &registryText2,
+	}
+}
+
+// field407 constructs one generated field declaration.
+func (registryDeclarations) field407() *genregistry.ToolFieldMetadata {
+	registryText1 := "string"
+	registryText2 := "Operator-facing status explanation."
+	return &genregistry.ToolFieldMetadata{
+		Path: []*genregistry.ToolFieldPathSegment{
+			{Segment: genregistry.NewToolFieldSegmentField("message")},
+		},
+		JSONType:    &registryText1,
+		Description: &registryText2,
+	}
+}
+
+// metadata408 constructs one generated metadata declaration.
+func (declarations registryDeclarations) metadata408() *genregistry.ToolTypeMetadata {
+	registryText1 := "StartLiveTargetPayload"
+	return &genregistry.ToolTypeMetadata{
+		Name:                     &registryText1,
+		SchemaWithoutRootExample: []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Candidate commit to build and run as this server's live CP3 target.\",\"properties\":{\"candidate_commit\":{\"description\":\"Full commit ID to build, in the candidate repository's object format.\",\"example\":\"4f0b3c1d2e5a6978877665544332211009988776\",\"pattern\":\"^([0-9a-f]{40}|[0-9a-f]{64})$\",\"type\":\"string\"}},\"required\":[\"candidate_commit\"],\"type\":\"object\"}"),
+		Fields: []*genregistry.ToolFieldMetadata{
+			declarations.field409(),
+			declarations.field410(),
+		},
+	}
+}
+
+// field409 constructs one generated field declaration.
+func (registryDeclarations) field409() *genregistry.ToolFieldMetadata {
+	registryText1 := "object"
+	registryText2 := "Candidate commit to build and run as this server's live CP3 target."
+	return &genregistry.ToolFieldMetadata{
+		JSONType:    &registryText1,
+		Description: &registryText2,
+	}
+}
+
+// field410 constructs one generated field declaration.
+func (registryDeclarations) field410() *genregistry.ToolFieldMetadata {
+	registryText1 := "string"
+	registryText2 := "Full commit ID to build, in the candidate repository's object format."
+	return &genregistry.ToolFieldMetadata{
+		Path: []*genregistry.ToolFieldPathSegment{
+			{Segment: genregistry.NewToolFieldSegmentField("candidate_commit")},
+		},
+		JSONType:    &registryText1,
+		Description: &registryText2,
+	}
+}
+
+// schema411 constructs one generated schema declaration.
+func (declarations registryDeclarations) schema411() *genregistry.ToolSchema {
+	registryText1 := "Stop this server's live CP3 target, if one runs. This discards every prompt draft applied to it; prompt text survives only when it is committed."
+	return &genregistry.ToolSchema{
+		Name:                   "surla.stop_live_target",
+		Description:            &registryText1,
+		PayloadSchema:          []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"properties\":{},\"type\":\"object\"}"),
+		ExecutionPayloadSchema: []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"properties\":{},\"type\":\"object\"}"),
+		ResultSchema:           []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Result of stopping this server's live CP3 target.\",\"properties\":{\"message\":{\"description\":\"Operator-facing status explanation.\",\"type\":\"string\"},\"stopped\":{\"description\":\"True when a live target was running and is now stopped; false when none was running.\",\"type\":\"boolean\"}},\"required\":[\"stopped\",\"message\"],\"type\":\"object\"}"),
+		ConsumerContract: &genregistry.ConsumerContract{
+			Kind:  "service",
+			Title: "Stop Live Target",
+			Search: &genregistry.ToolSearchDocument{
+				Length: 33,
+				Terms:  map[string]int{"applied": 1, "committed": 1, "cp3": 1, "discards": 1, "draft": 1, "every": 1, "if": 1, "is": 1, "it": 2, "live": 3, "one": 1, "only": 1, "prompt": 2, "runs": 1, "s": 1, "server": 1, "stop": 3, "surla": 1, "survives": 1, "target": 3, "text": 1, "this": 2, "to": 1, "when": 1},
+			},
+			RequiresUI: false,
+			TextOnly: &genregistry.TextOnlyToolContract{
+				ExecutionSchema: []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"properties\":{},\"type\":\"object\"}"),
+				Description:     "Stop this server's live CP3 target, if one runs. This discards every prompt draft applied to it; prompt text survives only when it is committed.",
+				Search: &genregistry.ToolSearchDocument{
+					Length: 33,
+					Terms:  map[string]int{"applied": 1, "committed": 1, "cp3": 1, "discards": 1, "draft": 1, "every": 1, "if": 1, "is": 1, "it": 2, "live": 3, "one": 1, "only": 1, "prompt": 2, "runs": 1, "s": 1, "server": 1, "stop": 3, "surla": 1, "survives": 1, "target": 3, "text": 1, "this": 2, "to": 1, "when": 1},
+				},
+				PayloadSchema: []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"properties\":{},\"type\":\"object\"}"),
+				Payload:       declarations.metadata418(),
+			},
+			Payload: declarations.metadata412(),
+			Result:  declarations.metadata414(),
+		},
+	}
+}
+
+// metadata412 constructs one generated metadata declaration.
+func (declarations registryDeclarations) metadata412() *genregistry.ToolTypeMetadata {
+	registryText1 := "StopLiveTargetPayload"
+	return &genregistry.ToolTypeMetadata{
+		Name:                     &registryText1,
+		SchemaWithoutRootExample: []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"properties\":{},\"type\":\"object\"}"),
+		Fields: []*genregistry.ToolFieldMetadata{
+			declarations.field413(),
+		},
+	}
+}
+
+// field413 constructs one generated field declaration.
+func (registryDeclarations) field413() *genregistry.ToolFieldMetadata {
+	registryText1 := "object"
+	return &genregistry.ToolFieldMetadata{
+		JSONType: &registryText1,
+	}
+}
+
+// metadata414 constructs one generated metadata declaration.
+func (declarations registryDeclarations) metadata414() *genregistry.ToolTypeMetadata {
+	registryText1 := "StopLiveTargetResult"
+	return &genregistry.ToolTypeMetadata{
+		Name:                     &registryText1,
+		SchemaWithoutRootExample: []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Result of stopping this server's live CP3 target.\",\"properties\":{\"message\":{\"description\":\"Operator-facing status explanation.\",\"type\":\"string\"},\"stopped\":{\"description\":\"True when a live target was running and is now stopped; false when none was running.\",\"type\":\"boolean\"}},\"required\":[\"stopped\",\"message\"],\"type\":\"object\"}"),
+		Fields: []*genregistry.ToolFieldMetadata{
+			declarations.field415(),
+			declarations.field416(),
+			declarations.field417(),
+		},
+	}
+}
+
+// field415 constructs one generated field declaration.
+func (registryDeclarations) field415() *genregistry.ToolFieldMetadata {
+	registryText1 := "object"
+	registryText2 := "Result of stopping this server's live CP3 target."
+	return &genregistry.ToolFieldMetadata{
+		JSONType:    &registryText1,
+		Description: &registryText2,
+	}
+}
+
+// field416 constructs one generated field declaration.
+func (registryDeclarations) field416() *genregistry.ToolFieldMetadata {
+	registryText1 := "boolean"
+	registryText2 := "True when a live target was running and is now stopped; false when none was running."
+	return &genregistry.ToolFieldMetadata{
+		Path: []*genregistry.ToolFieldPathSegment{
+			{Segment: genregistry.NewToolFieldSegmentField("stopped")},
+		},
+		JSONType:    &registryText1,
+		Description: &registryText2,
+	}
+}
+
+// field417 constructs one generated field declaration.
+func (registryDeclarations) field417() *genregistry.ToolFieldMetadata {
+	registryText1 := "string"
+	registryText2 := "Operator-facing status explanation."
+	return &genregistry.ToolFieldMetadata{
+		Path: []*genregistry.ToolFieldPathSegment{
+			{Segment: genregistry.NewToolFieldSegmentField("message")},
+		},
+		JSONType:    &registryText1,
+		Description: &registryText2,
+	}
+}
+
+// metadata418 constructs one generated metadata declaration.
+func (declarations registryDeclarations) metadata418() *genregistry.ToolTypeMetadata {
+	registryText1 := "StopLiveTargetPayload"
+	return &genregistry.ToolTypeMetadata{
+		Name:                     &registryText1,
+		SchemaWithoutRootExample: []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"properties\":{},\"type\":\"object\"}"),
+		Fields: []*genregistry.ToolFieldMetadata{
+			declarations.field419(),
+		},
+	}
+}
+
+// field419 constructs one generated field declaration.
+func (registryDeclarations) field419() *genregistry.ToolFieldMetadata {
+	registryText1 := "object"
+	return &genregistry.ToolFieldMetadata{
+		JSONType: &registryText1,
+	}
+}
+
+// schema420 constructs one generated schema declaration.
+func (declarations registryDeclarations) schema420() *genregistry.ToolSchema {
 	registryText1 := "Start CP4 verification of a candidate commit for the confirmed Change Card revision; returns a run_id to read with get_verification."
 	return &genregistry.ToolSchema{
 		Name:                   "surla.verify_change",
@@ -6219,31 +6513,31 @@ func (declarations registryDeclarations) schema399() *genregistry.ToolSchema {
 					Terms:  map[string]int{"a": 2, "candidate": 1, "card": 1, "change": 3, "commit": 1, "confirmed": 1, "cp4": 1, "for": 1, "get": 1, "id": 1, "of": 1, "read": 1, "returns": 1, "revision": 1, "run": 1, "start": 1, "surla": 1, "the": 1, "to": 1, "verification": 2, "verify": 2, "with": 1},
 				},
 				PayloadSchema: []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Names the confirmed Change Card revision and the candidate commit to verify. What is built and which evaluator suite runs come from the operator's configuration of surla serve, never from the caller.\",\"properties\":{\"candidate_commit\":{\"description\":\"Full commit ID of the candidate to build and verify (40 or 64 lowercase hex characters).\",\"pattern\":\"^([0-9a-f]{40}|[0-9a-f]{64})$\",\"type\":\"string\"},\"change_id\":{\"description\":\"Confirmed Change Card identifier.\",\"type\":\"string\"},\"request_revision\":{\"description\":\"Current request_revision of the confirmed Change Card.\",\"type\":\"string\"}},\"required\":[\"change_id\",\"request_revision\",\"candidate_commit\"],\"type\":\"object\"}"),
-				Payload:       declarations.metadata443(),
+				Payload:       declarations.metadata464(),
 			},
-			Payload: declarations.metadata400(),
-			Result:  declarations.metadata405(),
+			Payload: declarations.metadata421(),
+			Result:  declarations.metadata426(),
 		},
 	}
 }
 
-// metadata400 constructs one generated metadata declaration.
-func (declarations registryDeclarations) metadata400() *genregistry.ToolTypeMetadata {
+// metadata421 constructs one generated metadata declaration.
+func (declarations registryDeclarations) metadata421() *genregistry.ToolTypeMetadata {
 	registryText1 := "VerifyChangePayload"
 	return &genregistry.ToolTypeMetadata{
 		Name:                     &registryText1,
 		SchemaWithoutRootExample: []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Names the confirmed Change Card revision and the candidate commit to verify. What is built and which evaluator suite runs come from the operator's configuration of surla serve, never from the caller.\",\"properties\":{\"candidate_commit\":{\"description\":\"Full commit ID of the candidate to build and verify (40 or 64 lowercase hex characters).\",\"pattern\":\"^([0-9a-f]{40}|[0-9a-f]{64})$\",\"type\":\"string\"},\"change_id\":{\"description\":\"Confirmed Change Card identifier.\",\"type\":\"string\"},\"request_revision\":{\"description\":\"Current request_revision of the confirmed Change Card.\",\"type\":\"string\"}},\"required\":[\"change_id\",\"request_revision\",\"candidate_commit\"],\"type\":\"object\"}"),
 		Fields: []*genregistry.ToolFieldMetadata{
-			declarations.field401(),
-			declarations.field402(),
-			declarations.field403(),
-			declarations.field404(),
+			declarations.field422(),
+			declarations.field423(),
+			declarations.field424(),
+			declarations.field425(),
 		},
 	}
 }
 
-// field401 constructs one generated field declaration.
-func (registryDeclarations) field401() *genregistry.ToolFieldMetadata {
+// field422 constructs one generated field declaration.
+func (registryDeclarations) field422() *genregistry.ToolFieldMetadata {
 	registryText1 := "object"
 	registryText2 := "Names the confirmed Change Card revision and the candidate commit to verify. What is built and which evaluator suite runs come from the operator's configuration of surla serve, never from the caller."
 	return &genregistry.ToolFieldMetadata{
@@ -6252,8 +6546,8 @@ func (registryDeclarations) field401() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field402 constructs one generated field declaration.
-func (registryDeclarations) field402() *genregistry.ToolFieldMetadata {
+// field423 constructs one generated field declaration.
+func (registryDeclarations) field423() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
 	registryText2 := "Confirmed Change Card identifier."
 	return &genregistry.ToolFieldMetadata{
@@ -6265,8 +6559,8 @@ func (registryDeclarations) field402() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field403 constructs one generated field declaration.
-func (registryDeclarations) field403() *genregistry.ToolFieldMetadata {
+// field424 constructs one generated field declaration.
+func (registryDeclarations) field424() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
 	registryText2 := "Current request_revision of the confirmed Change Card."
 	return &genregistry.ToolFieldMetadata{
@@ -6278,8 +6572,8 @@ func (registryDeclarations) field403() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field404 constructs one generated field declaration.
-func (registryDeclarations) field404() *genregistry.ToolFieldMetadata {
+// field425 constructs one generated field declaration.
+func (registryDeclarations) field425() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
 	registryText2 := "Full commit ID of the candidate to build and verify (40 or 64 lowercase hex characters)."
 	return &genregistry.ToolFieldMetadata{
@@ -6291,34 +6585,13 @@ func (registryDeclarations) field404() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// metadata405 constructs one generated metadata declaration.
-func (declarations registryDeclarations) metadata405() *genregistry.ToolTypeMetadata {
+// metadata426 constructs one generated metadata declaration.
+func (declarations registryDeclarations) metadata426() *genregistry.ToolTypeMetadata {
 	registryText1 := "VerifyChangeResult"
 	return &genregistry.ToolTypeMetadata{
 		Name:                     &registryText1,
 		SchemaWithoutRootExample: []byte("{\"$defs\":{\"BuilderVerificationReport\":{\"additionalProperties\":false,\"description\":\"The builder view of a Checkpoint 4 verification report: counts, verdict and repair scenario checks. Holdout details, evidence and logs stay with the evaluator.\",\"properties\":{\"counts\":{\"$ref\":\"#/$defs/VerificationCounts\",\"description\":\"Every declared scenario, counted by outcome.\"},\"passed\":{\"description\":\"The verdict: true only when every declared scenario passed and the suite ran cleanly.\",\"type\":\"boolean\"},\"report_digest\":{\"description\":\"SHA-256 digest of the full report the evaluator saved; approve_merge and surla approve take this digest.\",\"type\":\"string\"},\"scenarios\":{\"description\":\"Every declared scenario in declaration order.\",\"items\":{\"$ref\":\"#/$defs/VerificationScenario\"},\"type\":\"array\"},\"suite_failed\":{\"description\":\"Whether the evaluator suite itself failed or ended abnormally.\",\"type\":\"boolean\"}},\"required\":[\"report_digest\",\"counts\",\"passed\",\"suite_failed\",\"scenarios\"],\"title\":\"BuilderVerificationReport\",\"type\":\"object\"},\"VerificationCheck\":{\"additionalProperties\":false,\"description\":\"One deterministic check of a repair scenario.\",\"properties\":{\"diagnostic\":{\"description\":\"Why the check failed; empty when it passed.\",\"type\":\"string\"},\"name\":{\"description\":\"Check name.\",\"type\":\"string\"},\"passed\":{\"description\":\"Whether the check passed.\",\"type\":\"boolean\"}},\"required\":[\"name\",\"passed\"],\"title\":\"VerificationCheck\",\"type\":\"object\"},\"VerificationCompleted\":{\"additionalProperties\":false,\"description\":\"The run produced a verification report. Its verdict is report.passed.\",\"properties\":{\"environment\":{\"description\":\"Dependency profile the suite ran the candidate with, such as sim.\",\"type\":\"string\"},\"report\":{\"$ref\":\"#/$defs/BuilderVerificationReport\",\"description\":\"The builder view of the report.\"},\"suite_id\":{\"description\":\"Evaluator suite the report was produced by.\",\"type\":\"string\"}},\"required\":[\"suite_id\",\"environment\",\"report\"],\"title\":\"VerificationCompleted\",\"type\":\"object\"},\"VerificationCounts\":{\"additionalProperties\":false,\"description\":\"Every declared scenario, counted by outcome.\",\"properties\":{\"failed\":{\"description\":\"Scenarios whose checks failed.\",\"format\":\"int64\",\"type\":\"integer\"},\"harness_error\":{\"description\":\"Scenarios that could not be evaluated.\",\"format\":\"int64\",\"type\":\"integer\"},\"not_run\":{\"description\":\"Declared scenarios the suite did not report.\",\"format\":\"int64\",\"type\":\"integer\"},\"passed\":{\"description\":\"Scenarios that passed.\",\"format\":\"int64\",\"type\":\"integer\"},\"required\":{\"description\":\"Scenarios the suite declares.\",\"format\":\"int64\",\"type\":\"integer\"}},\"required\":[\"required\",\"passed\",\"failed\",\"not_run\",\"harness_error\"],\"title\":\"VerificationCounts\",\"type\":\"object\"},\"VerificationNotCompleted\":{\"additionalProperties\":false,\"description\":\"The run was accepted but did not complete: a step failed, or its processes ended or were canceled or timed out before it finished. The summary states where it stopped, without command output; full evidence, including any partial report saved while it was being stopped, stays with the evaluator.\",\"properties\":{\"kind\":{\"description\":\"execution_failed when a step failed; interrupted when the run's process ended before it finished.\",\"enum\":[\"execution_failed\",\"interrupted\"],\"type\":\"string\"},\"stage\":{\"description\":\"Where the run stopped.\",\"enum\":[\"checkout\",\"build\",\"describe\",\"suite\",\"report\",\"supervise\"],\"type\":\"string\"},\"summary\":{\"description\":\"Builder-safe description of what stopped the run; never command output.\",\"type\":\"string\"}},\"required\":[\"kind\",\"stage\",\"summary\"],\"title\":\"VerificationNotCompleted\",\"type\":\"object\"},\"VerificationRunning\":{\"additionalProperties\":false,\"description\":\"The run is still building or evaluating the candidate.\",\"properties\":{\"started_at\":{\"description\":\"When the run was accepted.\",\"format\":\"date-time\",\"type\":\"string\"}},\"required\":[\"started_at\"],\"title\":\"VerificationRunning\",\"type\":\"object\"},\"VerificationScenario\":{\"additionalProperties\":false,\"description\":\"One declared scenario as builders see it. Repair scenarios carry their name, checks and environment error; holdout scenarios appear only as holdout-\\u003cn\\u003e with their outcome.\",\"properties\":{\"checks\":{\"description\":\"The repair scenario's checks; empty for holdouts.\",\"items\":{\"$ref\":\"#/$defs/VerificationCheck\"},\"type\":\"array\"},\"error\":{\"description\":\"The repair scenario's environment error; empty for holdouts.\",\"type\":\"string\"},\"id\":{\"description\":\"Scenario name for a repair scenario, or holdout-\\u003cn\\u003e for a holdout.\",\"type\":\"string\"},\"outcome\":{\"description\":\"How the scenario ended.\",\"enum\":[\"passed\",\"failed\",\"not_run\",\"harness_error\"],\"type\":\"string\"}},\"required\":[\"id\",\"outcome\"],\"title\":\"VerificationScenario\",\"type\":\"object\"}},\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"One Checkpoint 4 verification run of a candidate commit for a confirmed Change Card revision, and its current state. The run keeps the revision it was started for, so a later confirm_intent does not change it.\",\"properties\":{\"candidate_commit\":{\"description\":\"Candidate commit the run builds and verifies.\",\"type\":\"string\"},\"change_id\":{\"description\":\"Change Card the run verifies.\",\"type\":\"string\"},\"request_revision\":{\"description\":\"Change Card revision the run verifies.\",\"type\":\"string\"},\"run_id\":{\"description\":\"Verification run identifier; get_verification takes it.\",\"type\":\"string\"},\"state\":{\"description\":\"Exactly one of running, completed or not_completed.\",\"oneOf\":[{\"additionalProperties\":false,\"properties\":{\"type\":{\"enum\":[\"running\"],\"type\":\"string\"},\"value\":{\"$ref\":\"#/$defs/VerificationRunning\"}},\"required\":[\"type\",\"value\"],\"type\":\"object\"},{\"additionalProperties\":false,\"properties\":{\"type\":{\"enum\":[\"completed\"],\"type\":\"string\"},\"value\":{\"$ref\":\"#/$defs/VerificationCompleted\"}},\"required\":[\"type\",\"value\"],\"type\":\"object\"},{\"additionalProperties\":false,\"properties\":{\"type\":{\"enum\":[\"not_completed\"],\"type\":\"string\"},\"value\":{\"$ref\":\"#/$defs/VerificationNotCompleted\"}},\"required\":[\"type\",\"value\"],\"type\":\"object\"}],\"type\":\"object\"},\"suite_commit\":{\"description\":\"Evaluator suite commit the operator configured for the run.\",\"type\":\"string\"}},\"required\":[\"run_id\",\"change_id\",\"request_revision\",\"candidate_commit\",\"suite_commit\",\"state\"],\"type\":\"object\"}"),
 		Fields: []*genregistry.ToolFieldMetadata{
-			declarations.field406(),
-			declarations.field407(),
-			declarations.field408(),
-			declarations.field409(),
-			declarations.field410(),
-			declarations.field411(),
-			declarations.field412(),
-			declarations.field413(),
-			declarations.field414(),
-			declarations.field415(),
-			declarations.field416(),
-			declarations.field417(),
-			declarations.field418(),
-			declarations.field419(),
-			declarations.field420(),
-			declarations.field421(),
-			declarations.field422(),
-			declarations.field423(),
-			declarations.field424(),
-			declarations.field425(),
-			declarations.field426(),
 			declarations.field427(),
 			declarations.field428(),
 			declarations.field429(),
@@ -6335,12 +6608,33 @@ func (declarations registryDeclarations) metadata405() *genregistry.ToolTypeMeta
 			declarations.field440(),
 			declarations.field441(),
 			declarations.field442(),
+			declarations.field443(),
+			declarations.field444(),
+			declarations.field445(),
+			declarations.field446(),
+			declarations.field447(),
+			declarations.field448(),
+			declarations.field449(),
+			declarations.field450(),
+			declarations.field451(),
+			declarations.field452(),
+			declarations.field453(),
+			declarations.field454(),
+			declarations.field455(),
+			declarations.field456(),
+			declarations.field457(),
+			declarations.field458(),
+			declarations.field459(),
+			declarations.field460(),
+			declarations.field461(),
+			declarations.field462(),
+			declarations.field463(),
 		},
 	}
 }
 
-// field406 constructs one generated field declaration.
-func (registryDeclarations) field406() *genregistry.ToolFieldMetadata {
+// field427 constructs one generated field declaration.
+func (registryDeclarations) field427() *genregistry.ToolFieldMetadata {
 	registryText1 := "object"
 	registryText2 := "One Checkpoint 4 verification run of a candidate commit for a confirmed Change Card revision, and its current state. The run keeps the revision it was started for, so a later confirm_intent does not change it."
 	return &genregistry.ToolFieldMetadata{
@@ -6349,8 +6643,8 @@ func (registryDeclarations) field406() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field407 constructs one generated field declaration.
-func (registryDeclarations) field407() *genregistry.ToolFieldMetadata {
+// field428 constructs one generated field declaration.
+func (registryDeclarations) field428() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
 	registryText2 := "Verification run identifier; get_verification takes it."
 	return &genregistry.ToolFieldMetadata{
@@ -6362,8 +6656,8 @@ func (registryDeclarations) field407() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field408 constructs one generated field declaration.
-func (registryDeclarations) field408() *genregistry.ToolFieldMetadata {
+// field429 constructs one generated field declaration.
+func (registryDeclarations) field429() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
 	registryText2 := "Change Card the run verifies."
 	return &genregistry.ToolFieldMetadata{
@@ -6375,8 +6669,8 @@ func (registryDeclarations) field408() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field409 constructs one generated field declaration.
-func (registryDeclarations) field409() *genregistry.ToolFieldMetadata {
+// field430 constructs one generated field declaration.
+func (registryDeclarations) field430() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
 	registryText2 := "Change Card revision the run verifies."
 	return &genregistry.ToolFieldMetadata{
@@ -6388,8 +6682,8 @@ func (registryDeclarations) field409() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field410 constructs one generated field declaration.
-func (registryDeclarations) field410() *genregistry.ToolFieldMetadata {
+// field431 constructs one generated field declaration.
+func (registryDeclarations) field431() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
 	registryText2 := "Candidate commit the run builds and verifies."
 	return &genregistry.ToolFieldMetadata{
@@ -6401,8 +6695,8 @@ func (registryDeclarations) field410() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field411 constructs one generated field declaration.
-func (registryDeclarations) field411() *genregistry.ToolFieldMetadata {
+// field432 constructs one generated field declaration.
+func (registryDeclarations) field432() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
 	registryText2 := "Evaluator suite commit the operator configured for the run."
 	return &genregistry.ToolFieldMetadata{
@@ -6414,8 +6708,8 @@ func (registryDeclarations) field411() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field412 constructs one generated field declaration.
-func (registryDeclarations) field412() *genregistry.ToolFieldMetadata {
+// field433 constructs one generated field declaration.
+func (registryDeclarations) field433() *genregistry.ToolFieldMetadata {
 	registryText1 := "object"
 	registryText2 := "Exactly one of running, completed or not_completed."
 	return &genregistry.ToolFieldMetadata{
@@ -6427,8 +6721,8 @@ func (registryDeclarations) field412() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field413 constructs one generated field declaration.
-func (registryDeclarations) field413() *genregistry.ToolFieldMetadata {
+// field434 constructs one generated field declaration.
+func (registryDeclarations) field434() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
 	return &genregistry.ToolFieldMetadata{
 		Path: []*genregistry.ToolFieldPathSegment{
@@ -6440,8 +6734,8 @@ func (registryDeclarations) field413() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field414 constructs one generated field declaration.
-func (registryDeclarations) field414() *genregistry.ToolFieldMetadata {
+// field435 constructs one generated field declaration.
+func (registryDeclarations) field435() *genregistry.ToolFieldMetadata {
 	registryText1 := "object"
 	registryText2 := "The run is still building or evaluating the candidate."
 	return &genregistry.ToolFieldMetadata{
@@ -6459,8 +6753,8 @@ func (registryDeclarations) field414() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field415 constructs one generated field declaration.
-func (registryDeclarations) field415() *genregistry.ToolFieldMetadata {
+// field436 constructs one generated field declaration.
+func (registryDeclarations) field436() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
 	registryText2 := "When the run was accepted."
 	return &genregistry.ToolFieldMetadata{
@@ -6479,8 +6773,8 @@ func (registryDeclarations) field415() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field416 constructs one generated field declaration.
-func (registryDeclarations) field416() *genregistry.ToolFieldMetadata {
+// field437 constructs one generated field declaration.
+func (registryDeclarations) field437() *genregistry.ToolFieldMetadata {
 	registryText1 := "object"
 	registryText2 := "The run produced a verification report. Its verdict is report.passed."
 	return &genregistry.ToolFieldMetadata{
@@ -6498,8 +6792,8 @@ func (registryDeclarations) field416() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field417 constructs one generated field declaration.
-func (registryDeclarations) field417() *genregistry.ToolFieldMetadata {
+// field438 constructs one generated field declaration.
+func (registryDeclarations) field438() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
 	registryText2 := "Evaluator suite the report was produced by."
 	return &genregistry.ToolFieldMetadata{
@@ -6518,8 +6812,8 @@ func (registryDeclarations) field417() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field418 constructs one generated field declaration.
-func (registryDeclarations) field418() *genregistry.ToolFieldMetadata {
+// field439 constructs one generated field declaration.
+func (registryDeclarations) field439() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
 	registryText2 := "Dependency profile the suite ran the candidate with, such as sim."
 	return &genregistry.ToolFieldMetadata{
@@ -6538,8 +6832,8 @@ func (registryDeclarations) field418() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field419 constructs one generated field declaration.
-func (registryDeclarations) field419() *genregistry.ToolFieldMetadata {
+// field440 constructs one generated field declaration.
+func (registryDeclarations) field440() *genregistry.ToolFieldMetadata {
 	registryText1 := "object"
 	registryText2 := "The builder view of the report."
 	return &genregistry.ToolFieldMetadata{
@@ -6558,8 +6852,8 @@ func (registryDeclarations) field419() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field420 constructs one generated field declaration.
-func (registryDeclarations) field420() *genregistry.ToolFieldMetadata {
+// field441 constructs one generated field declaration.
+func (registryDeclarations) field441() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
 	registryText2 := "SHA-256 digest of the full report the evaluator saved; approve_merge and surla approve take this digest."
 	return &genregistry.ToolFieldMetadata{
@@ -6579,8 +6873,8 @@ func (registryDeclarations) field420() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field421 constructs one generated field declaration.
-func (registryDeclarations) field421() *genregistry.ToolFieldMetadata {
+// field442 constructs one generated field declaration.
+func (registryDeclarations) field442() *genregistry.ToolFieldMetadata {
 	registryText1 := "object"
 	registryText2 := "Every declared scenario, counted by outcome."
 	return &genregistry.ToolFieldMetadata{
@@ -6600,8 +6894,8 @@ func (registryDeclarations) field421() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field422 constructs one generated field declaration.
-func (registryDeclarations) field422() *genregistry.ToolFieldMetadata {
+// field443 constructs one generated field declaration.
+func (registryDeclarations) field443() *genregistry.ToolFieldMetadata {
 	registryText1 := "integer"
 	registryText2 := "Scenarios the suite declares."
 	return &genregistry.ToolFieldMetadata{
@@ -6622,8 +6916,8 @@ func (registryDeclarations) field422() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field423 constructs one generated field declaration.
-func (registryDeclarations) field423() *genregistry.ToolFieldMetadata {
+// field444 constructs one generated field declaration.
+func (registryDeclarations) field444() *genregistry.ToolFieldMetadata {
 	registryText1 := "integer"
 	registryText2 := "Scenarios that passed."
 	return &genregistry.ToolFieldMetadata{
@@ -6644,8 +6938,8 @@ func (registryDeclarations) field423() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field424 constructs one generated field declaration.
-func (registryDeclarations) field424() *genregistry.ToolFieldMetadata {
+// field445 constructs one generated field declaration.
+func (registryDeclarations) field445() *genregistry.ToolFieldMetadata {
 	registryText1 := "integer"
 	registryText2 := "Scenarios whose checks failed."
 	return &genregistry.ToolFieldMetadata{
@@ -6666,8 +6960,8 @@ func (registryDeclarations) field424() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field425 constructs one generated field declaration.
-func (registryDeclarations) field425() *genregistry.ToolFieldMetadata {
+// field446 constructs one generated field declaration.
+func (registryDeclarations) field446() *genregistry.ToolFieldMetadata {
 	registryText1 := "integer"
 	registryText2 := "Declared scenarios the suite did not report."
 	return &genregistry.ToolFieldMetadata{
@@ -6688,8 +6982,8 @@ func (registryDeclarations) field425() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field426 constructs one generated field declaration.
-func (registryDeclarations) field426() *genregistry.ToolFieldMetadata {
+// field447 constructs one generated field declaration.
+func (registryDeclarations) field447() *genregistry.ToolFieldMetadata {
 	registryText1 := "integer"
 	registryText2 := "Scenarios that could not be evaluated."
 	return &genregistry.ToolFieldMetadata{
@@ -6710,8 +7004,8 @@ func (registryDeclarations) field426() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field427 constructs one generated field declaration.
-func (registryDeclarations) field427() *genregistry.ToolFieldMetadata {
+// field448 constructs one generated field declaration.
+func (registryDeclarations) field448() *genregistry.ToolFieldMetadata {
 	registryText1 := "boolean"
 	registryText2 := "The verdict: true only when every declared scenario passed and the suite ran cleanly."
 	return &genregistry.ToolFieldMetadata{
@@ -6731,8 +7025,8 @@ func (registryDeclarations) field427() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field428 constructs one generated field declaration.
-func (registryDeclarations) field428() *genregistry.ToolFieldMetadata {
+// field449 constructs one generated field declaration.
+func (registryDeclarations) field449() *genregistry.ToolFieldMetadata {
 	registryText1 := "boolean"
 	registryText2 := "Whether the evaluator suite itself failed or ended abnormally."
 	return &genregistry.ToolFieldMetadata{
@@ -6752,8 +7046,8 @@ func (registryDeclarations) field428() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field429 constructs one generated field declaration.
-func (registryDeclarations) field429() *genregistry.ToolFieldMetadata {
+// field450 constructs one generated field declaration.
+func (registryDeclarations) field450() *genregistry.ToolFieldMetadata {
 	registryText1 := "array"
 	registryText2 := "Every declared scenario in declaration order."
 	return &genregistry.ToolFieldMetadata{
@@ -6773,8 +7067,8 @@ func (registryDeclarations) field429() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field430 constructs one generated field declaration.
-func (registryDeclarations) field430() *genregistry.ToolFieldMetadata {
+// field451 constructs one generated field declaration.
+func (registryDeclarations) field451() *genregistry.ToolFieldMetadata {
 	registryText1 := "object"
 	registryText2 := "Every declared scenario in declaration order."
 	return &genregistry.ToolFieldMetadata{
@@ -6795,8 +7089,8 @@ func (registryDeclarations) field430() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field431 constructs one generated field declaration.
-func (registryDeclarations) field431() *genregistry.ToolFieldMetadata {
+// field452 constructs one generated field declaration.
+func (registryDeclarations) field452() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
 	registryText2 := "Scenario name for a repair scenario, or holdout-<n> for a holdout."
 	return &genregistry.ToolFieldMetadata{
@@ -6818,8 +7112,8 @@ func (registryDeclarations) field431() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field432 constructs one generated field declaration.
-func (registryDeclarations) field432() *genregistry.ToolFieldMetadata {
+// field453 constructs one generated field declaration.
+func (registryDeclarations) field453() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
 	registryText2 := "How the scenario ended."
 	return &genregistry.ToolFieldMetadata{
@@ -6841,8 +7135,8 @@ func (registryDeclarations) field432() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field433 constructs one generated field declaration.
-func (registryDeclarations) field433() *genregistry.ToolFieldMetadata {
+// field454 constructs one generated field declaration.
+func (registryDeclarations) field454() *genregistry.ToolFieldMetadata {
 	registryText1 := "array"
 	registryText2 := "The repair scenario's checks; empty for holdouts."
 	return &genregistry.ToolFieldMetadata{
@@ -6864,8 +7158,8 @@ func (registryDeclarations) field433() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field434 constructs one generated field declaration.
-func (registryDeclarations) field434() *genregistry.ToolFieldMetadata {
+// field455 constructs one generated field declaration.
+func (registryDeclarations) field455() *genregistry.ToolFieldMetadata {
 	registryText1 := "object"
 	registryText2 := "The repair scenario's checks; empty for holdouts."
 	return &genregistry.ToolFieldMetadata{
@@ -6888,8 +7182,8 @@ func (registryDeclarations) field434() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field435 constructs one generated field declaration.
-func (registryDeclarations) field435() *genregistry.ToolFieldMetadata {
+// field456 constructs one generated field declaration.
+func (registryDeclarations) field456() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
 	registryText2 := "Check name."
 	return &genregistry.ToolFieldMetadata{
@@ -6913,8 +7207,8 @@ func (registryDeclarations) field435() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field436 constructs one generated field declaration.
-func (registryDeclarations) field436() *genregistry.ToolFieldMetadata {
+// field457 constructs one generated field declaration.
+func (registryDeclarations) field457() *genregistry.ToolFieldMetadata {
 	registryText1 := "boolean"
 	registryText2 := "Whether the check passed."
 	return &genregistry.ToolFieldMetadata{
@@ -6938,8 +7232,8 @@ func (registryDeclarations) field436() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field437 constructs one generated field declaration.
-func (registryDeclarations) field437() *genregistry.ToolFieldMetadata {
+// field458 constructs one generated field declaration.
+func (registryDeclarations) field458() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
 	registryText2 := "Why the check failed; empty when it passed."
 	return &genregistry.ToolFieldMetadata{
@@ -6963,8 +7257,8 @@ func (registryDeclarations) field437() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field438 constructs one generated field declaration.
-func (registryDeclarations) field438() *genregistry.ToolFieldMetadata {
+// field459 constructs one generated field declaration.
+func (registryDeclarations) field459() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
 	registryText2 := "The repair scenario's environment error; empty for holdouts."
 	return &genregistry.ToolFieldMetadata{
@@ -6986,8 +7280,8 @@ func (registryDeclarations) field438() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field439 constructs one generated field declaration.
-func (registryDeclarations) field439() *genregistry.ToolFieldMetadata {
+// field460 constructs one generated field declaration.
+func (registryDeclarations) field460() *genregistry.ToolFieldMetadata {
 	registryText1 := "object"
 	registryText2 := "The run was accepted but did not complete: a step failed, or its processes ended or were canceled or timed out before it finished. The summary states where it stopped, without command output; full evidence, including any partial report saved while it was being stopped, stays with the evaluator."
 	return &genregistry.ToolFieldMetadata{
@@ -7005,8 +7299,8 @@ func (registryDeclarations) field439() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field440 constructs one generated field declaration.
-func (registryDeclarations) field440() *genregistry.ToolFieldMetadata {
+// field461 constructs one generated field declaration.
+func (registryDeclarations) field461() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
 	registryText2 := "execution_failed when a step failed; interrupted when the run's process ended before it finished."
 	return &genregistry.ToolFieldMetadata{
@@ -7025,8 +7319,8 @@ func (registryDeclarations) field440() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field441 constructs one generated field declaration.
-func (registryDeclarations) field441() *genregistry.ToolFieldMetadata {
+// field462 constructs one generated field declaration.
+func (registryDeclarations) field462() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
 	registryText2 := "Where the run stopped."
 	return &genregistry.ToolFieldMetadata{
@@ -7045,8 +7339,8 @@ func (registryDeclarations) field441() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field442 constructs one generated field declaration.
-func (registryDeclarations) field442() *genregistry.ToolFieldMetadata {
+// field463 constructs one generated field declaration.
+func (registryDeclarations) field463() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
 	registryText2 := "Builder-safe description of what stopped the run; never command output."
 	return &genregistry.ToolFieldMetadata{
@@ -7065,23 +7359,23 @@ func (registryDeclarations) field442() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// metadata443 constructs one generated metadata declaration.
-func (declarations registryDeclarations) metadata443() *genregistry.ToolTypeMetadata {
+// metadata464 constructs one generated metadata declaration.
+func (declarations registryDeclarations) metadata464() *genregistry.ToolTypeMetadata {
 	registryText1 := "VerifyChangePayload"
 	return &genregistry.ToolTypeMetadata{
 		Name:                     &registryText1,
 		SchemaWithoutRootExample: []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Names the confirmed Change Card revision and the candidate commit to verify. What is built and which evaluator suite runs come from the operator's configuration of surla serve, never from the caller.\",\"properties\":{\"candidate_commit\":{\"description\":\"Full commit ID of the candidate to build and verify (40 or 64 lowercase hex characters).\",\"pattern\":\"^([0-9a-f]{40}|[0-9a-f]{64})$\",\"type\":\"string\"},\"change_id\":{\"description\":\"Confirmed Change Card identifier.\",\"type\":\"string\"},\"request_revision\":{\"description\":\"Current request_revision of the confirmed Change Card.\",\"type\":\"string\"}},\"required\":[\"change_id\",\"request_revision\",\"candidate_commit\"],\"type\":\"object\"}"),
 		Fields: []*genregistry.ToolFieldMetadata{
-			declarations.field444(),
-			declarations.field445(),
-			declarations.field446(),
-			declarations.field447(),
+			declarations.field465(),
+			declarations.field466(),
+			declarations.field467(),
+			declarations.field468(),
 		},
 	}
 }
 
-// field444 constructs one generated field declaration.
-func (registryDeclarations) field444() *genregistry.ToolFieldMetadata {
+// field465 constructs one generated field declaration.
+func (registryDeclarations) field465() *genregistry.ToolFieldMetadata {
 	registryText1 := "object"
 	registryText2 := "Names the confirmed Change Card revision and the candidate commit to verify. What is built and which evaluator suite runs come from the operator's configuration of surla serve, never from the caller."
 	return &genregistry.ToolFieldMetadata{
@@ -7090,8 +7384,8 @@ func (registryDeclarations) field444() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field445 constructs one generated field declaration.
-func (registryDeclarations) field445() *genregistry.ToolFieldMetadata {
+// field466 constructs one generated field declaration.
+func (registryDeclarations) field466() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
 	registryText2 := "Confirmed Change Card identifier."
 	return &genregistry.ToolFieldMetadata{
@@ -7103,8 +7397,8 @@ func (registryDeclarations) field445() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field446 constructs one generated field declaration.
-func (registryDeclarations) field446() *genregistry.ToolFieldMetadata {
+// field467 constructs one generated field declaration.
+func (registryDeclarations) field467() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
 	registryText2 := "Current request_revision of the confirmed Change Card."
 	return &genregistry.ToolFieldMetadata{
@@ -7116,8 +7410,8 @@ func (registryDeclarations) field446() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field447 constructs one generated field declaration.
-func (registryDeclarations) field447() *genregistry.ToolFieldMetadata {
+// field468 constructs one generated field declaration.
+func (registryDeclarations) field468() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
 	registryText2 := "Full commit ID of the candidate to build and verify (40 or 64 lowercase hex characters)."
 	return &genregistry.ToolFieldMetadata{

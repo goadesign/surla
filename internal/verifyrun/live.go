@@ -25,7 +25,7 @@ import (
 // A live target is a candidate commit an evaluator suite runs for interactive
 // CP3 prompt drafts. It lives no longer than the process that started it.
 //
-// StartLive, called by `surla serve`, creates a directory under the live root
+// LaunchLive, called by `surla serve`, creates a directory under the live root
 // and starts `surla verify-run live <dir>` as the leader of a new process
 // group, with the read end of a control pipe on its descriptor 3 and TMPDIR
 // set inside the directory. The executor (Live) watches that pipe before it
@@ -43,8 +43,9 @@ import (
 // waits until it is empty and the executor is reaped, and only then removes
 // the directory. If serve dies, the kernel closes the pipe and the
 // executor kills its whole group, itself included, so no process outlives
-// serve; the directory is then left for the operator, and the next StartLive
-// in the same root reports it.
+// serve; the directory is then left for the operator. LaunchLive returns as
+// soon as the executor runs, so its caller owns the process group from then
+// on; AwaitReady waits for the ready line and never cleans anything up.
 
 type (
 	// LiveRequest is the record of one live target, saved as live.json in
@@ -57,7 +58,7 @@ type (
 	}
 
 	// LiveProcess is a started live target, owned by the process that
-	// called StartLive.
+	// called LaunchLive.
 	LiveProcess struct {
 		// URL is the candidate's loopback origin from the suite's ready line.
 		URL string
@@ -75,7 +76,7 @@ type (
 		// ended is closed when the executor's output ends, which happens
 		// only when its group has been killed.
 		ended chan struct{}
-		// lines delivers the executor's first line to StartLive.
+		// lines delivers the executor's first line to AwaitReady.
 		lines chan liveLine
 		// readerDone is closed once the reader of the executor's output has
 		// closed the pipe.
@@ -107,16 +108,47 @@ const (
 	liveStopTimeout = 30 * time.Second
 	// maxLiveLine bounds the executor's line.
 	maxLiveLine = 4 << 10
-	// summaryLiveSuite describes a suite that did not report a ready target.
-	summaryLiveSuite = "The evaluator suite did not start a live target."
+	// summaryLiveSuite describes a suite that did not report a ready target
+	// and what the operator can check.
+	summaryLiveSuite = "The evaluator suite did not start a live target. Check that its suite.Command sets Live " +
+		"and that surla serve's environment has the model provider settings the suite reads."
+	// maxLiveDetail bounds the executor log excerpt kept in a
+	// LiveStartError after its directory is removed.
+	maxLiveDetail = 8 << 10
 )
 
 // ErrLiveEnded reports a live target whose processes ended before Stop.
 var ErrLiveEnded = errors.New("live target ended")
 
-// LeftoverLiveDirs returns the live directories under root, left there when
-// the process that started them died. Their processes are gone; the operator
-// removes the directories.
+// LiveStartError is why a launched live target did not become ready. Summary
+// is safe to show builders. Detail is the end of the executor's log, read
+// while the live directory still existed; it may quote command output, paths
+// and provider errors, so it is only for the operator's private diagnostics.
+// Err is the cause: ctx.Err() when the wait was canceled or timed out,
+// ErrLiveEnded when the executor ended first, or nil when the executor
+// reported the failure itself.
+type LiveStartError struct {
+	// Summary describes the failure in one sentence.
+	Summary string
+	// Detail is at most maxLiveDetail bytes from the end of executor.log.
+	Detail string
+	// Err is the underlying cause, or nil.
+	Err error
+}
+
+// Error returns the summary.
+func (e *LiveStartError) Error() string {
+	return e.Summary
+}
+
+// Unwrap returns the cause.
+func (e *LiveStartError) Unwrap() error {
+	return e.Err
+}
+
+// LeftoverLiveDirs returns the names of the live directories under root. It
+// only lists names: it does not check whether a directory belongs to a
+// running target or whether its processes have stopped.
 func LeftoverLiveDirs(root string) ([]string, error) {
 	matches, err := filepath.Glob(filepath.Join(root, liveDirPrefix+"*"))
 	if err != nil {
@@ -125,16 +157,16 @@ func LeftoverLiveDirs(root string) ([]string, error) {
 	return matches, nil
 }
 
-// StartLive starts a live target for plan under root and returns once its
-// suite reports the target listening. key is the target's credential: it
+// LaunchLive starts a live target for plan under root and returns as soon as
+// its executor runs; AwaitReady then waits until the suite reports the target
+// listening. From the moment LaunchLive returns a process, the caller owns it
+// and must eventually call Stop. key is the target's credential: it
 // reaches the executor and the suite only through the environment
 // (suite.LiveKeyEnv), and the suite passes it to the candidate. env is the
-// executor's environment without TMPDIR or the key, which StartLive sets.
-// command is the argument list that runs this program. ctx bounds only the
-// start: canceling it before the ready line stops the target. On any error
-// the target is stopped and its directory removed, unless its processes could
-// not be stopped, in which case the error names the kept directory.
-func StartLive(ctx context.Context, root string, plan verify.Plan, key string, command, env []string) (_ *LiveProcess, err error) {
+// executor's environment without TMPDIR or the key, which LaunchLive sets.
+// command is the argument list that runs this program. When LaunchLive fails,
+// no process was started and the directory it created is removed.
+func LaunchLive(root string, plan verify.Plan, key string, command, env []string) (*LiveProcess, error) {
 	if key == "" {
 		return nil, errors.New("live target key is required")
 	}
@@ -188,14 +220,6 @@ func StartLive(ctx context.Context, root string, plan verify.Plan, key string, c
 		p.waitErr = cmd.Wait()
 		close(p.exited)
 	}()
-	defer func() {
-		if err != nil {
-			err = errors.Join(err, p.Stop())
-		}
-	}()
-	if err := p.awaitReady(ctx); err != nil {
-		return nil, err
-	}
 	return p, nil
 }
 
@@ -267,24 +291,32 @@ func Live(dir string, prepare func(context.Context, verify.Plan) (verify.Prepare
 	}
 }
 
-// awaitReady returns the startup result. Its one source is the executor's
-// first line, which readOutput always delivers (a zero line when the output
-// ends first), so the end of the output can never replace the safe summary
-// the executor wrote before it ended. ctx bounds the wait.
-func (p *LiveProcess) awaitReady(ctx context.Context) error {
+// AwaitReady waits until the target reports it is listening and sets URL.
+// Its one source is the executor's first line, which readOutput always
+// delivers (a zero line when the output ends first), so the end of the output
+// can never replace the safe summary the executor wrote before it ended. ctx
+// bounds the wait. Every failure is a *LiveStartError whose Detail was read
+// before any cleanup; AwaitReady never stops the target, which stays the
+// caller's to stop.
+func (p *LiveProcess) AwaitReady(ctx context.Context) error {
 	select {
 	case line := <-p.lines:
 		switch {
 		case line.Error != "":
-			return errors.New(line.Error)
+			return p.startError(line.Error, nil)
 		case line.URL == "":
-			return fmt.Errorf("%w before it was ready: %s", ErrLiveEnded, summaryLiveSuite)
+			return p.startError(summaryLiveSuite, fmt.Errorf("%w before it was ready", ErrLiveEnded))
 		}
 		p.URL = line.URL
 		return nil
 	case <-ctx.Done():
-		return fmt.Errorf("start live target: %w", ctx.Err())
+		return p.startError(summaryLiveSuite, ctx.Err())
 	}
+}
+
+// startError returns a *LiveStartError with the executor log's current tail.
+func (p *LiveProcess) startError(summary string, cause error) *LiveStartError {
+	return &LiveStartError{Summary: summary, Detail: logTail(filepath.Join(p.dir, "executor.log"), maxLiveDetail), Err: cause}
 }
 
 // Dir returns the live directory, which Stop removes.
@@ -339,7 +371,7 @@ func endGroup() error {
 }
 
 // readOutput owns the executor's stdout: it delivers the first line to
-// StartLive, a zero line when the output ends first or the line does not
+// AwaitReady, a zero line when the output ends first or the line does not
 // decode, closes ended when the output ends, and closes the pipe before
 // closing readerDone.
 func (p *LiveProcess) readOutput(r *os.File) {
@@ -395,6 +427,26 @@ func decodeLiveLine(text string) (liveLine, error) {
 	return line, nil
 }
 
+// logTail returns at most n bytes from the end of the file at path, or a
+// note saying why it could not be read.
+func logTail(path string, n int64) string {
+	f, err := os.Open(path)
+	if err != nil {
+		return fmt.Sprintf("(executor log unreadable: %v)", err)
+	}
+	defer f.Close()
+	info, err := f.Stat()
+	if err != nil {
+		return fmt.Sprintf("(executor log unreadable: %v)", err)
+	}
+	start := max(info.Size()-n, 0)
+	b := make([]byte, info.Size()-start)
+	if _, err := f.ReadAt(b, start); err != nil && !errors.Is(err, io.EOF) {
+		return fmt.Sprintf("(executor log unreadable: %v)", err)
+	}
+	return string(b)
+}
+
 // decodeLiveRequest reads live.json, rejecting unknown fields and trailing
 // data.
 func decodeLiveRequest(dir string, req *LiveRequest) error {
@@ -414,7 +466,7 @@ func decodeLiveRequest(dir string, req *LiveRequest) error {
 	return nil
 }
 
-// liveEnv returns env without TMPDIR or the live key, which StartLive sets.
+// liveEnv returns env without TMPDIR or the live key, which LaunchLive sets.
 func liveEnv(env []string) []string {
 	out := make([]string, 0, len(env))
 	for _, kv := range env {

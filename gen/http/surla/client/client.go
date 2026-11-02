@@ -45,6 +45,14 @@ type Client struct {
 	// draft_override endpoint.
 	DraftOverrideDoer goahttp.Doer
 
+	// StartLiveTarget Doer is the HTTP client used to make requests to the
+	// start_live_target endpoint.
+	StartLiveTargetDoer goahttp.Doer
+
+	// StopLiveTarget Doer is the HTTP client used to make requests to the
+	// stop_live_target endpoint.
+	StopLiveTargetDoer goahttp.Doer
+
 	// VerifyChange Doer is the HTTP client used to make requests to the
 	// verify_change endpoint.
 	VerifyChangeDoer goahttp.Doer
@@ -87,6 +95,8 @@ func NewClient(
 		GetChangeDoer:           doer,
 		PreviewArchitectureDoer: doer,
 		DraftOverrideDoer:       doer,
+		StartLiveTargetDoer:     doer,
+		StopLiveTargetDoer:      doer,
 		VerifyChangeDoer:        doer,
 		GetVerificationDoer:     doer,
 		ApproveMergeDoer:        doer,
@@ -247,6 +257,49 @@ func (c *Client) DraftOverride() goa.Endpoint {
 		resp, err := c.DraftOverrideDoer.Do(req)
 		if err != nil {
 			return nil, goahttp.ErrRequestError("surla", "draft_override", err)
+		}
+		return decodeResponse(resp)
+	}
+}
+
+// StartLiveTarget returns an endpoint that makes HTTP requests to the surla
+// service start_live_target server.
+func (c *Client) StartLiveTarget() goa.Endpoint {
+	var (
+		encodeRequest  = EncodeStartLiveTargetRequest(c.encoder)
+		decodeResponse = DecodeStartLiveTargetResponse(c.decoder, c.RestoreResponseBody)
+	)
+	return func(ctx context.Context, v any) (any, error) {
+		req, err := c.BuildStartLiveTargetRequest(ctx, v)
+		if err != nil {
+			return nil, err
+		}
+		err = encodeRequest(req, v)
+		if err != nil {
+			return nil, err
+		}
+		resp, err := c.StartLiveTargetDoer.Do(req)
+		if err != nil {
+			return nil, goahttp.ErrRequestError("surla", "start_live_target", err)
+		}
+		return decodeResponse(resp)
+	}
+}
+
+// StopLiveTarget returns an endpoint that makes HTTP requests to the surla
+// service stop_live_target server.
+func (c *Client) StopLiveTarget() goa.Endpoint {
+	var (
+		decodeResponse = DecodeStopLiveTargetResponse(c.decoder, c.RestoreResponseBody)
+	)
+	return func(ctx context.Context, v any) (any, error) {
+		req, err := c.BuildStopLiveTargetRequest(ctx, v)
+		if err != nil {
+			return nil, err
+		}
+		resp, err := c.StopLiveTargetDoer.Do(req)
+		if err != nil {
+			return nil, goahttp.ErrRequestError("surla", "stop_live_target", err)
 		}
 		return decodeResponse(resp)
 	}

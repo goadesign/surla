@@ -44,6 +44,16 @@ func DraftOverrideSurlaPath() string {
 	return "/sandbox/draft"
 }
 
+// StartLiveTargetSurlaPath returns the URL path to the surla service start_live_target HTTP endpoint.
+func StartLiveTargetSurlaPath() string {
+	return "/live-target"
+}
+
+// StopLiveTargetSurlaPath returns the URL path to the surla service stop_live_target HTTP endpoint.
+func StopLiveTargetSurlaPath() string {
+	return "/live-target"
+}
+
 // VerifyChangeSurlaPath returns the URL path to the surla service verify_change HTTP endpoint.
 func VerifyChangeSurlaPath(changeID string) string {
 	return fmt.Sprintf("/changes/%v/verifications", changeID)
