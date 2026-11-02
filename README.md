@@ -71,19 +71,23 @@ Instead of reading a 2,000-line diff blindly, Surla separates fast prompt tuning
 Before configuring an LLM key or starting a server, run Surla's sandboxed Goa/Goa-AI compiler directly on the included [`examples/orders`](examples/orders/README.md) reference platform—or scaffold a new starter service and evaluator suite with `surla init`:
 
 ```bash
+# Install the surla CLI (embeds the published module version for surla init):
+go install github.com/goadesign/surla/cmd/surla@latest
+
 # Compile examples/orders/design/*.go in an OS sandbox at 0 LLM tokens and print
 # its C4 containers, boundary edges, agent policies, and tool guardrails:
-go run ./cmd/surla preview -dir examples/orders
+surla preview -dir examples/orders
 
 # Compare two Goa design modules structurally at 0 LLM tokens:
-go run ./cmd/surla diff --old-dir examples/orders --new-dir examples/orders
+surla diff --old-dir examples/orders --new-dir examples/orders
 
-# Scaffold a new Goa + Goa-AI + Model starter service and visible eval/ suite:
-go run ./cmd/surla init -dir /tmp/shop -module example.com/shop \
-  -surla-version v0.0.0-20261031211028-8ec6e0997e6b
+# Scaffold a new Goa + Goa-AI + Model starter service and visible eval/ suite
+# (when running from a local git checkout with `go run ./cmd/surla init`, pass
+# `-surla-version v0.0.0-20261031211028-8ec6e0997e6b`):
+surla init -dir /tmp/shop -module example.com/shop
 
 # List all commands and flags:
-go run ./cmd/surla help
+surla help
 ```
 
 ### 2. Connect Your Coding Agent to the Surla Control Plane (`surla serve`)
@@ -102,7 +106,23 @@ go run ./cmd/surla serve \
   -swarm-profiles ./examples/orders/swarm-profiles.example.json
 ```
 
-Point **Claude Code, Codex, Gemini, or Cursor** at `http://127.0.0.1:8090/mcp` (see [`.mcp.json` setup](docs/REFERENCE.md#quickstart--mcp-configuration), [Terminology at a Glance](docs/REFERENCE.md#terminology-at-a-glance), and [`-swarm-profiles` configuration](docs/REFERENCE.md#configure-the-proposed-swarm-roster); [`examples/orders/swarm-profiles.example.json`](examples/orders/swarm-profiles.example.json) is an illustrative operator-edited profile file where `"authenticated": true` is an operator assertion rather than a live credential check, and setting `ANTHROPIC_API_KEY` for CP1 analysis does not authenticate the OpenAI or Google coding-agent CLIs) and prompt your agent:
+Point **Claude Code, Codex, Gemini, or Cursor** at `http://127.0.0.1:8090/mcp` by adding Surla to your project's `.mcp.json` (see [Terminology at a Glance](docs/REFERENCE.md#terminology-at-a-glance) and [`-swarm-profiles` configuration](docs/REFERENCE.md#configure-the-proposed-swarm-roster); [`examples/orders/swarm-profiles.example.json`](examples/orders/swarm-profiles.example.json) is an illustrative operator-edited profile file where `"authenticated": true` is an operator assertion rather than a live credential check, and setting `ANTHROPIC_API_KEY` for CP1 analysis does not authenticate the OpenAI or Google coding-agent CLIs):
+
+```json
+{
+  "mcpServers": {
+    "surla": {
+      "type": "http",
+      "url": "http://127.0.0.1:8090/mcp",
+      "headers": {
+        "Authorization": "Bearer dev-secret-token"
+      }
+    }
+  }
+}
+```
+
+Then prompt your agent:
 
 > *"Using Surla, propose a change to `examples/orders` so VIP customers get instant store-credit refunds up to \$150, then preview the compiled C4 architecture and Chorus swarm plan for builder scope `orders` (`internal/**`)."*
 
