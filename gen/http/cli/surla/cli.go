@@ -23,7 +23,7 @@ import (
 //	command (subcommand1|subcommand2|...)
 func UsageCommands() []string {
 	return []string{
-		"surla (checkpoint-ui|golden-path|propose-change|confirm-intent|get-change|preview-architecture|draft-override|verify-change|get-verification|approve-merge|diff)",
+		"surla (checkpoint-ui|golden-path|propose-change|confirm-intent|get-change|preview-architecture|draft-override|start-live-target|stop-live-target|verify-change|get-verification|approve-merge|diff)",
 	}
 }
 
@@ -83,6 +83,11 @@ func ParseEndpoint(
 		surlaDraftOverrideFlags    = flag.NewFlagSet("draft-override", flag.ExitOnError)
 		surlaDraftOverrideBodyFlag = new(cliStringFlag)
 
+		surlaStartLiveTargetFlags    = flag.NewFlagSet("start-live-target", flag.ExitOnError)
+		surlaStartLiveTargetBodyFlag = new(cliStringFlag)
+
+		surlaStopLiveTargetFlags = flag.NewFlagSet("stop-live-target", flag.ExitOnError)
+
 		surlaVerifyChangeFlags        = flag.NewFlagSet("verify-change", flag.ExitOnError)
 		surlaVerifyChangeBodyFlag     = new(cliStringFlag)
 		surlaVerifyChangeChangeIDFlag = new(cliStringFlag)
@@ -101,6 +106,7 @@ func ParseEndpoint(
 	surlaGetChangeFlags.Var(surlaGetChangeChangeIDFlag, "change-id", "Change identifier.")
 	surlaPreviewArchitectureFlags.Var(surlaPreviewArchitectureBodyFlag, "body", "")
 	surlaDraftOverrideFlags.Var(surlaDraftOverrideBodyFlag, "body", "")
+	surlaStartLiveTargetFlags.Var(surlaStartLiveTargetBodyFlag, "body", "")
 	surlaVerifyChangeFlags.Var(surlaVerifyChangeBodyFlag, "body", "")
 	surlaVerifyChangeFlags.Var(surlaVerifyChangeChangeIDFlag, "change-id", "Confirmed Change Card identifier.")
 	surlaGetVerificationFlags.Var(surlaGetVerificationRunIDFlag, "run-id", "Verification run identifier returned by verify_change.")
@@ -115,6 +121,8 @@ func ParseEndpoint(
 	surlaGetChangeFlags.Usage = surlaGetChangeUsage
 	surlaPreviewArchitectureFlags.Usage = surlaPreviewArchitectureUsage
 	surlaDraftOverrideFlags.Usage = surlaDraftOverrideUsage
+	surlaStartLiveTargetFlags.Usage = surlaStartLiveTargetUsage
+	surlaStopLiveTargetFlags.Usage = surlaStopLiveTargetUsage
 	surlaVerifyChangeFlags.Usage = surlaVerifyChangeUsage
 	surlaGetVerificationFlags.Usage = surlaGetVerificationUsage
 	surlaApproveMergeFlags.Usage = surlaApproveMergeUsage
@@ -175,6 +183,12 @@ func ParseEndpoint(
 			case "draft-override":
 				epf = surlaDraftOverrideFlags
 
+			case "start-live-target":
+				epf = surlaStartLiveTargetFlags
+
+			case "stop-live-target":
+				epf = surlaStopLiveTargetFlags
+
 			case "verify-change":
 				epf = surlaVerifyChangeFlags
 
@@ -231,6 +245,11 @@ func ParseEndpoint(
 			case "draft-override":
 				endpoint = c.DraftOverride()
 				data, err = surlac.BuildDraftOverridePayload(surlaDraftOverrideBodyFlag.value)
+			case "start-live-target":
+				endpoint = c.StartLiveTarget()
+				data, err = surlac.BuildStartLiveTargetPayload(surlaStartLiveTargetBodyFlag.value)
+			case "stop-live-target":
+				endpoint = c.StopLiveTarget()
 			case "verify-change":
 				endpoint = c.VerifyChange()
 				data, err = surlac.BuildVerifyChangePayload(surlaVerifyChangeBodyFlag.value, surlaVerifyChangeChangeIDFlag.value)
@@ -264,7 +283,9 @@ func surlaUsage() {
 	fmt.Fprintln(os.Stderr, `    confirm-intent: Confirm or refine a Checkpoint 1 Change Card with the complete ambiguity answers and example table, bound to its current request_revision. Changed answers or examples produce a new request_revision; unchanged ones return the card as it is, with its approval only while that approval still matches the promotion target's current inputs. The call fails when the card has an approval and the promotion target cannot report its current inputs.`)
 	fmt.Fprintln(os.Stderr, `    get-change: Return the current Change Card, including its request_revision, to its owner, for example after confirm_intent refused an edit made against an older revision. Reading never confirms or changes the card. A recorded approval is included only while it still matches the promotion target's current suite, environment and binary digests; the call fails when the card has an approval and the target cannot report them.`)
 	fmt.Fprintln(os.Stderr, `    preview-architecture: Extract and validate the Checkpoint 2 C4 container topology, tool contracts, Goa-AI guardrails, and proposed Chorus swarm roster from a candidate Goa design bound to a confirmed Change Card.`)
-	fmt.Fprintln(os.Stderr, `    draft-override: Apply a Fast Draft Mode prompt override on the bound target or reject a compiled-rule prompt hack.`)
+	fmt.Fprintln(os.Stderr, `    draft-override: Apply a Fast Draft Mode prompt override on the bound target or reject a compiled-rule prompt hack. On a live target started with start_live_target, a rejected update leaves the target's text unchanged; update_not_confirmed means the target may or may not have applied it.`)
+	fmt.Fprintln(os.Stderr, `    start-live-target: Build a candidate commit exactly as Checkpoint 4 does and run it, with the operator's evaluator suite, as this server's one live CP3 target, then bind draft_override to it. A running target is stopped first, so there is never more than one. The target runs until stop_live_target, a later start_live_target, its own exit, or this server's shutdown; a server restart leaves none running. Requires Checkpoint 4 verification to be configured, because the build and launch settings come from it.`)
+	fmt.Fprintln(os.Stderr, `    stop-live-target: Stop this server's live CP3 target, if one runs, and unbind draft_override from it. Stopping when none runs is not an error.`)
 	fmt.Fprintln(os.Stderr, `    verify-change: Start Checkpoint 4 verification of a candidate commit for the owner's confirmed Change Card revision and return its run_id at once. The server builds the commit in Surla's sandbox and runs the evaluator suite the operator configured, in a separate process that keeps running when the caller disconnects or the server restarts; get_verification reads its state. Only the builder view of the report is ever returned. A server started without verification configured rejects every call.`)
 	fmt.Fprintln(os.Stderr, `    get-verification: Return the current state of a verification run to the owner who started it: running, completed with the builder view of its report, or not completed with where it stopped. A run keeps the Change Card revision it was started for.`)
 	fmt.Fprintln(os.Stderr, `    approve-merge: Record Checkpoint 5 approval for the owner's confirmed Change Card revision. The control plane loads the verification report by digest and the expected suite, environment and candidate binary digests from its promotion target, re-derives the report from its evidence with verify.Approve, and records the approval on the card. A report that did not pass or describes different inputs is rejected. Nothing is merged or deployed. The promotion target is provided by the program that embeds the control plane; a control plane without one, such as standalone surla serve, rejects every call.`)
@@ -385,7 +406,7 @@ func surlaDraftOverrideUsage() {
 
 	// Description
 	fmt.Fprintln(os.Stderr)
-	fmt.Fprintln(os.Stderr, `Apply a Fast Draft Mode prompt override on the bound target or reject a compiled-rule prompt hack.`)
+	fmt.Fprintln(os.Stderr, `Apply a Fast Draft Mode prompt override on the bound target or reject a compiled-rule prompt hack. On a live target started with start_live_target, a rejected update leaves the target's text unchanged; update_not_confirmed means the target may or may not have applied it.`)
 
 	// Flags list
 	fmt.Fprintln(os.Stderr, `    -body JSON: `)
@@ -393,6 +414,40 @@ func surlaDraftOverrideUsage() {
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Example:")
 	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "surla draft-override --body '{\n      \"new_content\": \"Dolores explicabo.\",\n      \"prompt_id\": \"Quia ea soluta.\",\n      \"target_kind\": \"prompt_template\"\n   }'")
+}
+
+func surlaStartLiveTargetUsage() {
+	// Header with flags
+	fmt.Fprintf(os.Stderr, "%s [flags] surla start-live-target", os.Args[0])
+	fmt.Fprint(os.Stderr, " -body JSON")
+	fmt.Fprintln(os.Stderr)
+
+	// Description
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, `Build a candidate commit exactly as Checkpoint 4 does and run it, with the operator's evaluator suite, as this server's one live CP3 target, then bind draft_override to it. A running target is stopped first, so there is never more than one. The target runs until stop_live_target, a later start_live_target, its own exit, or this server's shutdown; a server restart leaves none running. Requires Checkpoint 4 verification to be configured, because the build and launch settings come from it.`)
+
+	// Flags list
+	fmt.Fprintln(os.Stderr, `    -body JSON: `)
+
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, "Example:")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "surla start-live-target --body '{\n      \"candidate_commit\": \"4f0b3c1d2e5a6978877665544332211009988776\"\n   }'")
+}
+
+func surlaStopLiveTargetUsage() {
+	// Header with flags
+	fmt.Fprintf(os.Stderr, "%s [flags] surla stop-live-target", os.Args[0])
+	fmt.Fprintln(os.Stderr)
+
+	// Description
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, `Stop this server's live CP3 target, if one runs, and unbind draft_override from it. Stopping when none runs is not an error.`)
+
+	// Flags list
+
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, "Example:")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "surla stop-live-target")
 }
 
 func surlaVerifyChangeUsage() {

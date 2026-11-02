@@ -114,6 +114,18 @@ const (
 // ErrLiveEnded reports a live target whose processes ended before Stop.
 var ErrLiveEnded = errors.New("live target ended")
 
+// LiveStartError is a start failure the live executor reported. Summary is
+// safe to show builders; the full error is in the executor's log.
+type LiveStartError struct {
+	// Summary describes the failed step in one sentence.
+	Summary string
+}
+
+// Error returns the summary.
+func (e *LiveStartError) Error() string {
+	return e.Summary
+}
+
 // LeftoverLiveDirs returns the live directories under root, left there when
 // the process that started them died. Their processes are gone; the operator
 // removes the directories.
@@ -276,9 +288,9 @@ func (p *LiveProcess) awaitReady(ctx context.Context) error {
 	case line := <-p.lines:
 		switch {
 		case line.Error != "":
-			return errors.New(line.Error)
+			return &LiveStartError{Summary: line.Error}
 		case line.URL == "":
-			return fmt.Errorf("%w before it was ready: %s", ErrLiveEnded, summaryLiveSuite)
+			return errors.Join(fmt.Errorf("%w before it was ready", ErrLiveEnded), &LiveStartError{Summary: summaryLiveSuite})
 		}
 		p.URL = line.URL
 		return nil

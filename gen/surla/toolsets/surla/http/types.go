@@ -324,6 +324,44 @@ type (
 		// request_revision.
 		Approval *ApprovalItemTransport `json:"approval,omitempty"`
 	}
+	// StartLiveTargetPayloadTransport is the internal JSON transport type for StartLiveTargetPayload.
+	// It lives in the toolset-local http package and is used only for JSON
+	// decode + validation (missing-field detection) before transforming into
+	// the public tool type.
+	StartLiveTargetPayloadTransport struct {
+		// Full commit ID to build, in the candidate repository's object format.
+		CandidateCommit *string `json:"candidate_commit"`
+	}
+	// StartLiveTargetResultTransport is the internal JSON transport type for StartLiveTargetResult.
+	// It lives in the toolset-local http package and is used only for JSON
+	// decode + validation (missing-field detection) before transforming into
+	// the public tool type.
+	StartLiveTargetResultTransport struct {
+		// The commit the live target was built from.
+		CandidateCommit *string `json:"candidate_commit"`
+		// Loopback origin of the running candidate, for trying requests such as its
+		// own API directly.
+		URL *string `json:"url"`
+		// Operator-facing status explanation.
+		Message *string `json:"message"`
+	}
+	// StopLiveTargetPayloadTransport is the internal JSON transport type for StopLiveTargetPayload.
+	// It lives in the toolset-local http package and is used only for JSON
+	// decode + validation (missing-field detection) before transforming into
+	// the public tool type.
+	StopLiveTargetPayloadTransport struct {
+	}
+	// StopLiveTargetResultTransport is the internal JSON transport type for StopLiveTargetResult.
+	// It lives in the toolset-local http package and is used only for JSON
+	// decode + validation (missing-field detection) before transforming into
+	// the public tool type.
+	StopLiveTargetResultTransport struct {
+		// True when a live target was running and is now stopped; false when none was
+		// running.
+		Stopped *bool `json:"stopped"`
+		// Operator-facing status explanation.
+		Message *string `json:"message"`
+	}
 	// VerifyChangePayloadTransport is the internal JSON transport type for VerifyChangePayload.
 	// It lives in the toolset-local http package and is used only for JSON
 	// decode + validation (missing-field detection) before transforming into

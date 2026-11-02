@@ -60,6 +60,7 @@ jobs:
           # esbuild strips TypeScript types without checking them.
           npm --prefix ui/checkpoint run typecheck </dev/null
           go run goa.design/goa/v3/cmd/goa gen github.com/goadesign/surla/design </dev/null
+          go run goa.design/goa/v3/cmd/goa gen github.com/goadesign/surla/design/targetprompt -o internal/targetprompt </dev/null
           (cd examples/orders && go run goa.design/goa/v3/cmd/goa gen github.com/goadesign/surla/examples/orders/design) </dev/null
           (cd examples/orders-eval && go run goa.design/goa/v3/cmd/goa gen github.com/goadesign/surla/examples/orders-eval/design) </dev/null
           node ui/checkpoint/build.mjs --check </dev/null

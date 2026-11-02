@@ -489,6 +489,13 @@ func EncodeDraftOverrideRequest(encoder func(*http.Request) goahttp.Encoder) fun
 // DecodeDraftOverrideResponse returns a decoder for responses returned by the
 // surla draft_override endpoint. restoreBody controls whether the response
 // body should be restored after having been read.
+// DecodeDraftOverrideResponse may return the following errors:
+//   - "prompt_not_found" (type *goa.ServiceError): http.StatusNotFound
+//   - "invalid_prompt" (type *goa.ServiceError): http.StatusUnprocessableEntity
+//   - "live_target_ended" (type *goa.ServiceError): http.StatusConflict
+//   - "target_rejected_credential" (type *goa.ServiceError): http.StatusBadGateway
+//   - "update_not_confirmed" (type *goa.ServiceError): http.StatusBadGateway
+//   - error: internal error
 func DecodeDraftOverrideResponse(decoder func(*http.Response) goahttp.Decoder, restoreBody bool) func(*http.Response) (any, error) {
 	return func(resp *http.Response) (result any, decodeErr error) {
 		responseBody := resp.Body
@@ -525,12 +532,268 @@ func DecodeDraftOverrideResponse(decoder func(*http.Response) goahttp.Decoder, r
 			}
 			res := NewDraftOverrideResultOK(&body)
 			return res, nil
+		case http.StatusNotFound:
+			var (
+				body DraftOverridePromptNotFoundResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "draft_override", err)
+			}
+			err = ValidateDraftOverridePromptNotFoundResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("surla", "draft_override", err)
+			}
+			return nil, NewDraftOverridePromptNotFound(&body)
+		case http.StatusUnprocessableEntity:
+			var (
+				body DraftOverrideInvalidPromptResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "draft_override", err)
+			}
+			err = ValidateDraftOverrideInvalidPromptResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("surla", "draft_override", err)
+			}
+			return nil, NewDraftOverrideInvalidPrompt(&body)
+		case http.StatusConflict:
+			var (
+				body DraftOverrideLiveTargetEndedResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "draft_override", err)
+			}
+			err = ValidateDraftOverrideLiveTargetEndedResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("surla", "draft_override", err)
+			}
+			return nil, NewDraftOverrideLiveTargetEnded(&body)
+		case http.StatusBadGateway:
+			en := resp.Header.Get("goa-error")
+			switch en {
+			case "target_rejected_credential":
+				var (
+					body DraftOverrideTargetRejectedCredentialResponseBody
+					err  error
+				)
+				err = decoder(resp).Decode(&body)
+				if err != nil {
+					return nil, goahttp.ErrDecodingError("surla", "draft_override", err)
+				}
+				err = ValidateDraftOverrideTargetRejectedCredentialResponseBody(&body)
+				if err != nil {
+					return nil, goahttp.ErrValidationError("surla", "draft_override", err)
+				}
+				return nil, NewDraftOverrideTargetRejectedCredential(&body)
+			case "update_not_confirmed":
+				var (
+					body DraftOverrideUpdateNotConfirmedResponseBody
+					err  error
+				)
+				err = decoder(resp).Decode(&body)
+				if err != nil {
+					return nil, goahttp.ErrDecodingError("surla", "draft_override", err)
+				}
+				err = ValidateDraftOverrideUpdateNotConfirmedResponseBody(&body)
+				if err != nil {
+					return nil, goahttp.ErrValidationError("surla", "draft_override", err)
+				}
+				return nil, NewDraftOverrideUpdateNotConfirmed(&body)
+			default:
+				body, err := io.ReadAll(resp.Body)
+				if err != nil {
+					return nil, goahttp.ErrDecodingError("surla", "draft_override", err)
+				}
+				return nil, goahttp.ErrInvalidResponse("surla", "draft_override", resp.StatusCode, string(body))
+			}
 		default:
 			body, err := io.ReadAll(resp.Body)
 			if err != nil {
 				return nil, goahttp.ErrDecodingError("surla", "draft_override", err)
 			}
 			return nil, goahttp.ErrInvalidResponse("surla", "draft_override", resp.StatusCode, string(body))
+		}
+	}
+}
+
+// BuildStartLiveTargetRequest instantiates a HTTP request object with method
+// and path set to call the "surla" service "start_live_target" endpoint
+func (c *Client) BuildStartLiveTargetRequest(ctx context.Context, v any) (*http.Request, error) {
+	u := &url.URL{Scheme: c.scheme, Host: c.host, Path: StartLiveTargetSurlaPath()}
+	req, err := http.NewRequest("POST", u.String(), nil)
+	if err != nil {
+		return nil, goahttp.ErrInvalidURL("surla", "start_live_target", u.String(), err)
+	}
+	if ctx != nil {
+		req = req.WithContext(ctx)
+	}
+
+	return req, nil
+}
+
+// EncodeStartLiveTargetRequest returns an encoder for requests sent to the
+// surla start_live_target server.
+func EncodeStartLiveTargetRequest(encoder func(*http.Request) goahttp.Encoder) func(*http.Request, any) error {
+	return func(req *http.Request, v any) error {
+		p, ok := v.(*surla.StartLiveTargetPayload)
+		if !ok {
+			return goahttp.ErrInvalidType("surla", "start_live_target", "*surla.StartLiveTargetPayload", v)
+		}
+		body := NewStartLiveTargetRequestBody(p)
+		if err := encoder(req).Encode(&body); err != nil {
+			return goahttp.ErrEncodingError("surla", "start_live_target", err)
+		}
+		return nil
+	}
+}
+
+// DecodeStartLiveTargetResponse returns a decoder for responses returned by
+// the surla start_live_target endpoint. restoreBody controls whether the
+// response body should be restored after having been read.
+// DecodeStartLiveTargetResponse may return the following errors:
+//   - "live_target_unavailable" (type *goa.ServiceError): http.StatusNotImplemented
+//   - "live_target_failed" (type *goa.ServiceError): http.StatusUnprocessableEntity
+//   - error: internal error
+func DecodeStartLiveTargetResponse(decoder func(*http.Response) goahttp.Decoder, restoreBody bool) func(*http.Response) (any, error) {
+	return func(resp *http.Response) (result any, decodeErr error) {
+		responseBody := resp.Body
+		if restoreBody {
+			b, readErr := io.ReadAll(responseBody)
+			closeErr := responseBody.Close()
+			if err := errors.Join(readErr, closeErr); err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "start_live_target", err)
+			}
+			resp.Body = io.NopCloser(bytes.NewBuffer(b))
+			defer func() {
+				resp.Body = io.NopCloser(bytes.NewBuffer(b))
+			}()
+		} else {
+			defer func() {
+				if err := responseBody.Close(); err != nil {
+					decodeErr = errors.Join(decodeErr, goahttp.ErrDecodingError("surla", "start_live_target", err))
+				}
+			}()
+		}
+		switch resp.StatusCode {
+		case http.StatusOK:
+			var (
+				body StartLiveTargetResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "start_live_target", err)
+			}
+			err = ValidateStartLiveTargetResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("surla", "start_live_target", err)
+			}
+			res := NewStartLiveTargetResultOK(&body)
+			return res, nil
+		case http.StatusNotImplemented:
+			var (
+				body StartLiveTargetLiveTargetUnavailableResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "start_live_target", err)
+			}
+			err = ValidateStartLiveTargetLiveTargetUnavailableResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("surla", "start_live_target", err)
+			}
+			return nil, NewStartLiveTargetLiveTargetUnavailable(&body)
+		case http.StatusUnprocessableEntity:
+			var (
+				body StartLiveTargetLiveTargetFailedResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "start_live_target", err)
+			}
+			err = ValidateStartLiveTargetLiveTargetFailedResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("surla", "start_live_target", err)
+			}
+			return nil, NewStartLiveTargetLiveTargetFailed(&body)
+		default:
+			body, err := io.ReadAll(resp.Body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "start_live_target", err)
+			}
+			return nil, goahttp.ErrInvalidResponse("surla", "start_live_target", resp.StatusCode, string(body))
+		}
+	}
+}
+
+// BuildStopLiveTargetRequest instantiates a HTTP request object with method
+// and path set to call the "surla" service "stop_live_target" endpoint
+func (c *Client) BuildStopLiveTargetRequest(ctx context.Context, v any) (*http.Request, error) {
+	u := &url.URL{Scheme: c.scheme, Host: c.host, Path: StopLiveTargetSurlaPath()}
+	req, err := http.NewRequest("DELETE", u.String(), nil)
+	if err != nil {
+		return nil, goahttp.ErrInvalidURL("surla", "stop_live_target", u.String(), err)
+	}
+	if ctx != nil {
+		req = req.WithContext(ctx)
+	}
+
+	return req, nil
+}
+
+// DecodeStopLiveTargetResponse returns a decoder for responses returned by the
+// surla stop_live_target endpoint. restoreBody controls whether the response
+// body should be restored after having been read.
+func DecodeStopLiveTargetResponse(decoder func(*http.Response) goahttp.Decoder, restoreBody bool) func(*http.Response) (any, error) {
+	return func(resp *http.Response) (result any, decodeErr error) {
+		responseBody := resp.Body
+		if restoreBody {
+			b, readErr := io.ReadAll(responseBody)
+			closeErr := responseBody.Close()
+			if err := errors.Join(readErr, closeErr); err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "stop_live_target", err)
+			}
+			resp.Body = io.NopCloser(bytes.NewBuffer(b))
+			defer func() {
+				resp.Body = io.NopCloser(bytes.NewBuffer(b))
+			}()
+		} else {
+			defer func() {
+				if err := responseBody.Close(); err != nil {
+					decodeErr = errors.Join(decodeErr, goahttp.ErrDecodingError("surla", "stop_live_target", err))
+				}
+			}()
+		}
+		switch resp.StatusCode {
+		case http.StatusOK:
+			var (
+				body StopLiveTargetResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "stop_live_target", err)
+			}
+			err = ValidateStopLiveTargetResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("surla", "stop_live_target", err)
+			}
+			res := NewStopLiveTargetResultOK(&body)
+			return res, nil
+		default:
+			body, err := io.ReadAll(resp.Body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "stop_live_target", err)
+			}
+			return nil, goahttp.ErrInvalidResponse("surla", "stop_live_target", resp.StatusCode, string(body))
 		}
 	}
 }

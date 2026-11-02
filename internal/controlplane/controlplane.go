@@ -170,6 +170,10 @@ type (
 		// Verification is the operator's CP4 configuration. Without it
 		// verify_change and get_verification fail.
 		Verification *VerificationConfig
+		// Live lets start_live_target build and run CP3 live targets with
+		// Verification's plan. Without it, or without Verification,
+		// start_live_target fails.
+		Live *LiveConfig
 	}
 
 	// storedChangeCard holds a versioned Change Card alongside its authenticated
@@ -236,6 +240,8 @@ type (
 		promotionTarget PromotionTarget
 		// verification is the operator's CP4 configuration, or nil.
 		verification *VerificationConfig
+		// liveLocks holds the live CP3 target state.
+		liveLocks
 	}
 )
 
@@ -403,6 +409,7 @@ func New(opts Options) (*ControlPlane, error) {
 		swarmProfiles:   opts.SwarmProfiles,
 		promotionTarget: opts.PromotionTarget,
 		verification:    opts.Verification,
+		liveLocks:       liveLocks{live: opts.Live},
 	}, nil
 }
 
@@ -619,9 +626,12 @@ func (c *ControlPlane) ProposeChange(ctx context.Context, p *gensurla.ProposeCha
 // afterwards, such as one still waiting on a model or promotion target, fail
 // without writing. Closing twice does nothing.
 func (c *ControlPlane) Close() error {
+	c.liveMu.Lock()
+	liveErr := c.stopLiveLocked()
+	c.liveMu.Unlock()
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return c.cards.close()
+	return errors.Join(liveErr, c.cards.close())
 }
 
 // GetChange returns the current Change Card for change_id to its owner. It
@@ -785,10 +795,13 @@ func (c *ControlPlane) DraftOverride(ctx context.Context, p *gensurla.DraftOverr
 		if strings.TrimSpace(p.NewContent) == "" {
 			return nil, errors.New("new_content is required when target_kind is prompt_template")
 		}
+		id := strings.TrimSpace(*p.PromptID)
 		if c.targetUpdater == nil {
+			if lt := c.currentLive(); lt != nil {
+				return c.draftLive(ctx, lt, id, p.NewContent)
+			}
 			return nil, errors.New("no target prompt updater is bound to this control plane")
 		}
-		id := strings.TrimSpace(*p.PromptID)
 		version, err := c.targetUpdater.ApplyPromptOverride(ctx, id, p.NewContent)
 		if err != nil {
 			return nil, fmt.Errorf("apply target prompt override: %w", err)

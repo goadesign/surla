@@ -22,6 +22,8 @@ type Client struct {
 	GetChangeEndpoint           goa.Endpoint
 	PreviewArchitectureEndpoint goa.Endpoint
 	DraftOverrideEndpoint       goa.Endpoint
+	StartLiveTargetEndpoint     goa.Endpoint
+	StopLiveTargetEndpoint      goa.Endpoint
 	VerifyChangeEndpoint        goa.Endpoint
 	GetVerificationEndpoint     goa.Endpoint
 	ApproveMergeEndpoint        goa.Endpoint
@@ -29,7 +31,7 @@ type Client struct {
 }
 
 // NewClient initializes a "surla" service client given the endpoints.
-func NewClient(checkpointUI, goldenPath, proposeChange, confirmIntent, getChange, previewArchitecture, draftOverride, verifyChange, getVerification, approveMerge, diff goa.Endpoint) *Client {
+func NewClient(checkpointUI, goldenPath, proposeChange, confirmIntent, getChange, previewArchitecture, draftOverride, startLiveTarget, stopLiveTarget, verifyChange, getVerification, approveMerge, diff goa.Endpoint) *Client {
 	return &Client{
 		CheckpointUIEndpoint:        checkpointUI,
 		GoldenPathEndpoint:          goldenPath,
@@ -38,6 +40,8 @@ func NewClient(checkpointUI, goldenPath, proposeChange, confirmIntent, getChange
 		GetChangeEndpoint:           getChange,
 		PreviewArchitectureEndpoint: previewArchitecture,
 		DraftOverrideEndpoint:       draftOverride,
+		StartLiveTargetEndpoint:     startLiveTarget,
+		StopLiveTargetEndpoint:      stopLiveTarget,
 		VerifyChangeEndpoint:        verifyChange,
 		GetVerificationEndpoint:     getVerification,
 		ApproveMergeEndpoint:        approveMerge,
@@ -107,6 +111,13 @@ func (c *Client) PreviewArchitecture(ctx context.Context, p *PreviewArchitecture
 }
 
 // DraftOverride calls the "draft_override" endpoint of the "surla" service.
+// DraftOverride may return the following errors:
+//   - "prompt_not_found" (type *goa.ServiceError): The live target has no prompt with this ID; nothing changed.
+//   - "invalid_prompt" (type *goa.ServiceError): The live target rejected the template because it does not render; nothing changed.
+//   - "live_target_ended" (type *goa.ServiceError): The live target is no longer running; start it again with start_live_target.
+//   - "target_rejected_credential" (type *goa.ServiceError): The live target rejected this server's key; nothing changed. Start the target again with start_live_target.
+//   - "update_not_confirmed" (type *goa.ServiceError): The live target did not confirm the update, so it may or may not have applied it. Keep the draft and send it again.
+//   - error: internal error
 func (c *Client) DraftOverride(ctx context.Context, p *DraftOverridePayload) (res *DraftOverrideResult, err error) {
 	var ires any
 	ires, err = c.DraftOverrideEndpoint(ctx, p)
@@ -114,6 +125,31 @@ func (c *Client) DraftOverride(ctx context.Context, p *DraftOverridePayload) (re
 		return
 	}
 	return ires.(*DraftOverrideResult), nil
+}
+
+// StartLiveTarget calls the "start_live_target" endpoint of the "surla"
+// service.
+// StartLiveTarget may return the following errors:
+//   - "live_target_unavailable" (type *goa.ServiceError): This server has no verification configuration, so it cannot build or run a live target.
+//   - "live_target_failed" (type *goa.ServiceError): The live target could not be built or started; the message says which step failed.
+//   - error: internal error
+func (c *Client) StartLiveTarget(ctx context.Context, p *StartLiveTargetPayload) (res *LiveTargetResult, err error) {
+	var ires any
+	ires, err = c.StartLiveTargetEndpoint(ctx, p)
+	if err != nil {
+		return
+	}
+	return ires.(*LiveTargetResult), nil
+}
+
+// StopLiveTarget calls the "stop_live_target" endpoint of the "surla" service.
+func (c *Client) StopLiveTarget(ctx context.Context) (res *StopLiveTargetResult, err error) {
+	var ires any
+	ires, err = c.StopLiveTargetEndpoint(ctx, nil)
+	if err != nil {
+		return
+	}
+	return ires.(*StopLiveTargetResult), nil
 }
 
 // VerifyChange calls the "verify_change" endpoint of the "surla" service.

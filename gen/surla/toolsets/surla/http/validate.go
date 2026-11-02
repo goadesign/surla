@@ -525,6 +525,42 @@ func ValidateProposeChangeResultTransport(body *ProposeChangeResultTransport) (e
 	return
 }
 
+// ValidateStartLiveTargetPayloadTransport runs the validations defined on StartLiveTargetPayloadTransport.
+func ValidateStartLiveTargetPayloadTransport(body *StartLiveTargetPayloadTransport) (err error) {
+	if body.CandidateCommit == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("candidate_commit", "body"))
+	}
+	if body.CandidateCommit != nil {
+		err = goa.MergeErrors(err, goa.ValidatePattern("body.candidate_commit", *body.CandidateCommit, "^([0-9a-f]{40}|[0-9a-f]{64})$"))
+	}
+	return
+}
+
+// ValidateStartLiveTargetResultTransport runs the validations defined on StartLiveTargetResultTransport.
+func ValidateStartLiveTargetResultTransport(body *StartLiveTargetResultTransport) (err error) {
+	if body.CandidateCommit == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("candidate_commit", "body"))
+	}
+	if body.URL == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("url", "body"))
+	}
+	if body.Message == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("message", "body"))
+	}
+	return
+}
+
+// ValidateStopLiveTargetResultTransport runs the validations defined on StopLiveTargetResultTransport.
+func ValidateStopLiveTargetResultTransport(body *StopLiveTargetResultTransport) (err error) {
+	if body.Stopped == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("stopped", "body"))
+	}
+	if body.Message == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("message", "body"))
+	}
+	return
+}
+
 // ValidateVerifyChangePayloadTransport runs the validations defined on VerifyChangePayloadTransport.
 func ValidateVerifyChangePayloadTransport(body *VerifyChangePayloadTransport) (err error) {
 	if body.ChangeID == nil {

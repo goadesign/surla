@@ -22,6 +22,8 @@ type Endpoints struct {
 	GetChange           goa.Endpoint
 	PreviewArchitecture goa.Endpoint
 	DraftOverride       goa.Endpoint
+	StartLiveTarget     goa.Endpoint
+	StopLiveTarget      goa.Endpoint
 	VerifyChange        goa.Endpoint
 	GetVerification     goa.Endpoint
 	ApproveMerge        goa.Endpoint
@@ -38,6 +40,8 @@ func NewEndpoints(s Service) *Endpoints {
 		GetChange:           NewGetChangeEndpoint(s),
 		PreviewArchitecture: NewPreviewArchitectureEndpoint(s),
 		DraftOverride:       NewDraftOverrideEndpoint(s),
+		StartLiveTarget:     NewStartLiveTargetEndpoint(s),
+		StopLiveTarget:      NewStopLiveTargetEndpoint(s),
 		VerifyChange:        NewVerifyChangeEndpoint(s),
 		GetVerification:     NewGetVerificationEndpoint(s),
 		ApproveMerge:        NewApproveMergeEndpoint(s),
@@ -54,6 +58,8 @@ func (e *Endpoints) Use(m func(goa.Endpoint) goa.Endpoint) {
 	e.GetChange = m(e.GetChange)
 	e.PreviewArchitecture = m(e.PreviewArchitecture)
 	e.DraftOverride = m(e.DraftOverride)
+	e.StartLiveTarget = m(e.StartLiveTarget)
+	e.StopLiveTarget = m(e.StopLiveTarget)
 	e.VerifyChange = m(e.VerifyChange)
 	e.GetVerification = m(e.GetVerification)
 	e.ApproveMerge = m(e.ApproveMerge)
@@ -118,6 +124,23 @@ func NewDraftOverrideEndpoint(s Service) goa.Endpoint {
 	return func(ctx context.Context, req any) (any, error) {
 		p := req.(*DraftOverridePayload)
 		return s.DraftOverride(ctx, p)
+	}
+}
+
+// NewStartLiveTargetEndpoint returns an endpoint function that calls the
+// method "start_live_target" of service "surla".
+func NewStartLiveTargetEndpoint(s Service) goa.Endpoint {
+	return func(ctx context.Context, req any) (any, error) {
+		p := req.(*StartLiveTargetPayload)
+		return s.StartLiveTarget(ctx, p)
+	}
+}
+
+// NewStopLiveTargetEndpoint returns an endpoint function that calls the method
+// "stop_live_target" of service "surla".
+func NewStopLiveTargetEndpoint(s Service) goa.Endpoint {
+	return func(ctx context.Context, req any) (any, error) {
+		return s.StopLiveTarget(ctx)
 	}
 }
 

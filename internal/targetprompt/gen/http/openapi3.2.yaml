@@ -1,0 +1,167 @@
+openapi: 3.2.0
+info:
+    title: CP3 live target prompt operation
+    description: The operation a CP3 live target serves so Surla can replace a registered prompt's text while it runs.
+    version: 1.0.0
+servers:
+    - url: http://localhost:80
+      name: targetprompt
+      description: Default server for targetprompt
+paths:
+    /prompts/{prompt_id}:
+        put:
+            tags:
+                - prompts
+            summary: override_prompt prompts
+            description: Replace the text of a registered prompt. The target renders the template with the prompt's registered spec before it saves it, so text that does not render is rejected and the text in use stays the same. Returns the version of the accepted text.
+            operationId: prompts#override_prompt
+            parameters:
+                - name: prompt_id
+                  in: path
+                  description: Registered prompt to replace.
+                  required: true
+                  schema:
+                    type: string
+                    description: Registered prompt to replace.
+                    example: homes.helper.system
+                    minLength: 1
+                  example: homes.helper.system
+            requestBody:
+                description: Request body for override_prompt.
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/OverridePromptRequestBody'
+                        example:
+                            template: le
+            responses:
+                "200":
+                    description: OK response.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/OverridePromptResponseBody'
+                            example:
+                                prompt_id: Corporis exercitationem esse harum est consequatur sequi.
+                                version: Rerum et sint qui assumenda laudantium ad.
+                "401":
+                    description: 'unauthorized: Unauthorized response.'
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Unauthorized'
+                            example: Mollitia maxime quo doloribus.
+                "404":
+                    description: 'unknown_prompt: No prompt with this ID is registered.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: unknown_prompt
+                                temporary: false
+                                timeout: false
+                "422":
+                    description: 'invalid_prompt: The template does not render with the prompt''s registered spec.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: invalid_prompt
+                                temporary: false
+                                timeout: false
+            security:
+                - live_key_header_X-Live-Target-Key: []
+components:
+    schemas:
+        Error:
+            type: object
+            properties:
+                fault:
+                    type: boolean
+                    description: Is the error a server-side fault?
+                    example: true
+                id:
+                    type: string
+                    description: ID is a unique identifier for this particular occurrence of the problem.
+                    example: 123abc
+                message:
+                    type: string
+                    description: Message is a human-readable explanation specific to this occurrence of the problem.
+                    example: parameter 'p' must be an integer
+                name:
+                    type: string
+                    description: Name is the name of this class of errors.
+                    example: bad_request
+                temporary:
+                    type: boolean
+                    description: Is the error temporary?
+                    example: true
+                timeout:
+                    type: boolean
+                    description: Is the error a timeout?
+                    example: false
+            description: Error response result type
+            example:
+                fault: true
+                id: 123abc
+                message: parameter 'p' must be an integer
+                name: bad_request
+                temporary: true
+                timeout: false
+            required:
+                - name
+                - id
+                - message
+                - temporary
+                - timeout
+                - fault
+        OverridePromptRequestBody:
+            type: object
+            properties:
+                template:
+                    type: string
+                    description: New prompt text, as a Go text/template.
+                    example: le
+                    minLength: 1
+            description: Request body for override_prompt.
+            example:
+                template: le
+        OverridePromptResponseBody:
+            type: object
+            properties:
+                prompt_id:
+                    type: string
+                    description: The prompt whose text was replaced.
+                    example: Corporis exercitationem esse harum est consequatur sequi.
+                version:
+                    type: string
+                    description: Version of the accepted text.
+                    example: Rerum et sint qui assumenda laudantium ad.
+            example:
+                prompt_id: Corporis exercitationem esse harum est consequatur sequi.
+                version: Rerum et sint qui assumenda laudantium ad.
+            required:
+                - prompt_id
+                - version
+        Unauthorized:
+            type: string
+            description: The key is missing or is not this target's key.
+            example: Mollitia maxime quo doloribus.
+    securitySchemes:
+        live_key_header_X-Live-Target-Key:
+            type: apiKey
+            description: Key Surla minted for this live target and passed to it at start.
+            name: X-Live-Target-Key
+            in: header
+tags:
+    - name: prompts
+      description: Prompt text a live target lets Surla replace. Each call replaces the text of one prompt the target registered, for every caller of that target process, until the process exits.

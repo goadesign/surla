@@ -705,12 +705,81 @@ paths:
                                 type: string
                                 example: Maxime nihil veritatis perferendis culpa et.
                             example: Maxime nihil veritatis perferendis culpa et.
+    /live-target:
+        delete:
+            tags:
+                - surla
+            summary: stop_live_target surla
+            description: Stop this server's live CP3 target, if one runs, and unbind draft_override from it. Stopping when none runs is not an error.
+            operationId: surla#stop_live_target
+            responses:
+                "200":
+                    description: OK response.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/StopLiveTargetResult'
+                            example:
+                                message: Dolor unde.
+                                stopped: true
+        post:
+            tags:
+                - surla
+            summary: start_live_target surla
+            description: Build a candidate commit exactly as Checkpoint 4 does and run it, with the operator's evaluator suite, as this server's one live CP3 target, then bind draft_override to it. A running target is stopped first, so there is never more than one. The target runs until stop_live_target, a later start_live_target, its own exit, or this server's shutdown; a server restart leaves none running. Requires Checkpoint 4 verification to be configured, because the build and launch settings come from it.
+            operationId: surla#start_live_target
+            requestBody:
+                description: Request body for start_live_target.
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/StartLiveTargetPayload'
+                        example:
+                            candidate_commit: 4f0b3c1d2e5a6978877665544332211009988776
+            responses:
+                "200":
+                    description: OK response.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/LiveTargetResult'
+                            example:
+                                candidate_commit: Esse assumenda.
+                                message: Dolor voluptatem reiciendis non.
+                                url: Ut soluta eligendi labore ipsa dicta.
+                "422":
+                    description: 'live_target_failed: The live target could not be built or started; the message says which step failed.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: live_target_failed
+                                temporary: false
+                                timeout: false
+                "501":
+                    description: 'live_target_unavailable: This server has no verification configuration, so it cannot build or run a live target.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: live_target_unavailable
+                                temporary: false
+                                timeout: false
     /sandbox/draft:
         post:
             tags:
                 - surla
             summary: draft_override surla
-            description: Apply a Fast Draft Mode prompt override on the bound target or reject a compiled-rule prompt hack.
+            description: Apply a Fast Draft Mode prompt override on the bound target or reject a compiled-rule prompt hack. On a live target started with start_live_target, a rejected update leaves the target's text unchanged; update_not_confirmed means the target may or may not have applied it.
             operationId: surla#draft_override
             requestBody:
                 description: Request body for draft_override.
@@ -735,6 +804,58 @@ paths:
                                 message: Mollitia voluptatem error voluptatem molestiae quia.
                                 prompt_version: Pariatur numquam quisquam sunt sequi recusandae adipisci.
                                 requires_rebuild: true
+                "404":
+                    description: 'prompt_not_found: The live target has no prompt with this ID; nothing changed.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: prompt_not_found
+                                temporary: false
+                                timeout: false
+                "409":
+                    description: 'live_target_ended: The live target is no longer running; start it again with start_live_target.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: live_target_ended
+                                temporary: false
+                                timeout: false
+                "422":
+                    description: 'invalid_prompt: The live target rejected the template because it does not render; nothing changed.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: invalid_prompt
+                                temporary: false
+                                timeout: false
+                "502":
+                    description: 'update_not_confirmed: The live target did not confirm the update, so it may or may not have applied it. Keep the draft and send it again.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: update_not_confirmed
+                                temporary: false
+                                timeout: false
     /ui/checkpoint:
         get:
             tags:
@@ -1984,6 +2105,48 @@ components:
                 - applied_in_store
                 - requires_rebuild
                 - message
+        Error:
+            type: object
+            properties:
+                fault:
+                    type: boolean
+                    description: Is the error a server-side fault?
+                    example: false
+                id:
+                    type: string
+                    description: ID is a unique identifier for this particular occurrence of the problem.
+                    example: 123abc
+                message:
+                    type: string
+                    description: Message is a human-readable explanation specific to this occurrence of the problem.
+                    example: parameter 'p' must be an integer
+                name:
+                    type: string
+                    description: Name is the name of this class of errors.
+                    example: bad_request
+                temporary:
+                    type: boolean
+                    description: Is the error temporary?
+                    example: true
+                timeout:
+                    type: boolean
+                    description: Is the error a timeout?
+                    example: false
+            description: Error response result type
+            example:
+                fault: false
+                id: 123abc
+                message: parameter 'p' must be an integer
+                name: bad_request
+                temporary: true
+                timeout: false
+            required:
+                - name
+                - id
+                - message
+                - temporary
+                - timeout
+                - fault
         ExampleItem:
             type: object
             properties:
@@ -2023,6 +2186,30 @@ components:
                 - input_summary
                 - expected_outcome
                 - verification_kind
+        LiveTargetResult:
+            type: object
+            properties:
+                candidate_commit:
+                    type: string
+                    description: The commit the live target was built from.
+                    example: Esse assumenda.
+                message:
+                    type: string
+                    description: Operator-facing status explanation.
+                    example: Dolor voluptatem reiciendis non.
+                url:
+                    type: string
+                    description: Loopback origin of the running candidate, for trying requests such as its own API directly.
+                    example: Ut soluta eligendi labore ipsa dicta.
+            description: The live CP3 target this server runs and binds draft_override to.
+            example:
+                candidate_commit: Esse assumenda.
+                message: Dolor voluptatem reiciendis non.
+                url: Ut soluta eligendi labore ipsa dicta.
+            required:
+                - candidate_commit
+                - url
+                - message
         PreviewArchitecturePayload:
             type: object
             properties:
@@ -2134,6 +2321,37 @@ components:
             required:
                 - change_id
                 - prompt
+        StartLiveTargetPayload:
+            type: object
+            properties:
+                candidate_commit:
+                    type: string
+                    description: Full commit ID to build, in the candidate repository's object format.
+                    example: 4f0b3c1d2e5a6978877665544332211009988776
+                    pattern: ^([0-9a-f]{40}|[0-9a-f]{64})$
+            description: Request body for start_live_target.
+            example:
+                candidate_commit: 4f0b3c1d2e5a6978877665544332211009988776
+            required:
+                - candidate_commit
+        StopLiveTargetResult:
+            type: object
+            properties:
+                message:
+                    type: string
+                    description: Operator-facing status explanation.
+                    example: Dolor unde.
+                stopped:
+                    type: boolean
+                    description: True when a live target was running and is now stopped; false when none was running.
+                    example: true
+            description: Result of stopping this server's live CP3 target.
+            example:
+                message: Dolor unde.
+                stopped: true
+            required:
+                - stopped
+                - message
         SwarmPlanItem:
             type: object
             properties:
