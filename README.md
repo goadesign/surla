@@ -68,37 +68,46 @@ Instead of reading a 2,000-line diff blindly, Surla separates fast prompt tuning
 
 ### 1. Inspect, Diff, or Scaffold a Goa-AI Project Locally (`0` API Keys Needed)
 
-Before configuring an LLM key or starting a server, run Surla's sandboxed Goa/Goa-AI compiler directly on the included [`examples/orders`](examples/orders/README.md) reference platform—or scaffold a new starter service and evaluator suite with `surla init`:
+Surla requires **macOS** (`sandbox-exec` isolates candidate builds and processes) and **Go 1.27.3+**. Before configuring an LLM key or starting a server, install the `surla` and `goa` CLIs to scaffold and preview a new starter service from anywhere:
 
 ```bash
-# Install the surla CLI (embeds the published module version for surla init):
+# Install the Surla and Goa CLIs (embeds the published module version for surla init):
 go install github.com/goadesign/surla/cmd/surla@latest
+go install goa.design/goa/v3/cmd/goa@latest
 
-# Compile examples/orders/design/*.go in an OS sandbox at 0 LLM tokens and print
-# its C4 containers, boundary edges, agent policies, and tool guardrails:
-surla preview -dir examples/orders
-
-# Compare two Goa design modules structurally at 0 LLM tokens:
-surla diff --old-dir examples/orders --new-dir examples/orders
-
-# Scaffold a new Goa + Goa-AI + Model starter service and visible eval/ suite
-# (when running from a local git checkout with `go run ./cmd/surla init`, pass
-# `-surla-version v0.0.0-20261031211028-8ec6e0997e6b`):
+# Scaffold a new Goa + Goa-AI + Model starter service and visible eval/ suite:
 surla init -dir /tmp/shop -module example.com/shop
+
+# Compile /tmp/shop/design/*.go in an OS sandbox at 0 LLM tokens and print
+# its C4 containers, boundary edges, agent policies, and tool guardrails:
+surla preview -dir /tmp/shop
 
 # List all commands and flags:
 surla help
 ```
 
+Or clone this repository to inspect and diff the included [`examples/orders`](examples/orders/README.md) reference platform (from a checkout, you can run either the installed `surla` binary or `go run ./cmd/surla`; when running `go run ./cmd/surla init` from a checkout, pass `-surla-version v0.0.0-20261031211028-8ec6e0997e6b`):
+
+```bash
+git clone https://github.com/goadesign/surla.git
+cd surla
+
+# Preview the Orders reference platform's C4 architecture and tool guardrails at 0 LLM tokens:
+surla preview -dir examples/orders
+
+# Compare two Goa design modules structurally at 0 LLM tokens:
+surla diff --old-dir examples/orders --new-dir examples/orders
+```
+
 ### 2. Connect Your Coding Agent to the Surla Control Plane (`surla serve`)
 
-Surla organizes development around five checkpoints (**CP1** Confirm Intent → **CP2** Preview Architecture → **CP3** Fast Draft & Sandbox → **CP4** Isolated Verification → **CP5** Promotion Check; see [`docs/HOW_IT_WORKS.md`](docs/HOW_IT_WORKS.md)). Start the standalone Surla control plane and connect your coding assistant over MCP to propose, confirm, and preview a feature change at **CP1** and **CP2** (`surla serve` saves Change Cards in `-cards-dir`, default `.surla/cards`, so confirmed cards survive restarts; add `-verification-config` to enable **CP4** `verify_change` and `get_verification` over MCP, and add `-promotion-config` to bind the **CP5** staged-release `PromotionTarget` for `approve_merge`; standalone `surla serve` binds no `TargetUpdater`, and the [CLI verification walkthrough](examples/orders/README.md#3-run-os-sandboxed-end-to-end-verification-surla-verify) covers standalone `surla verify` and `surla approve`):
+Surla organizes development around five checkpoints (**CP1** Confirm Intent → **CP2** Preview Architecture → **CP3** Fast Draft & Sandbox → **CP4** Isolated Verification → **CP5** Promotion Check; see [`docs/HOW_IT_WORKS.md`](docs/HOW_IT_WORKS.md)). From the `surla` repository checkout, start the standalone Surla control plane and connect your coding assistant over MCP to propose, confirm, and preview a feature change at **CP1** and **CP2** (`surla serve` saves Change Cards in `-cards-dir`, default `.surla/cards`, so confirmed cards survive restarts; add `-verification-config` to enable **CP4** `verify_change` and `get_verification` over MCP, and add `-promotion-config` to bind the **CP5** staged-release `PromotionTarget` for `approve_merge`; standalone `surla serve` binds no `TargetUpdater`, and the [CLI verification walkthrough](examples/orders/README.md#3-run-os-sandboxed-end-to-end-verification-surla-verify) covers standalone `surla verify` and `surla approve`):
 
 ```bash
 # Start the Surla MCP & HTTP control plane with CP1 model analysis and multi-family swarm profiles
 export SURLA_AUTH_TOKEN="dev-secret-token"
 export ANTHROPIC_API_KEY="sk-ant-..."
-go run ./cmd/surla serve \
+surla serve \
   -addr 127.0.0.1:8090 \
   -principal operator@example.com \
   -model-provider anthropic \
@@ -106,7 +115,7 @@ go run ./cmd/surla serve \
   -swarm-profiles ./examples/orders/swarm-profiles.example.json
 ```
 
-Point **Claude Code, Codex, Gemini, or Cursor** at `http://127.0.0.1:8090/mcp` by adding Surla to your project's `.mcp.json` (see [Terminology at a Glance](docs/REFERENCE.md#terminology-at-a-glance) and [`-swarm-profiles` configuration](docs/REFERENCE.md#configure-the-proposed-swarm-roster); [`examples/orders/swarm-profiles.example.json`](examples/orders/swarm-profiles.example.json) is an illustrative operator-edited profile file where `"authenticated": true` is an operator assertion rather than a live credential check, and setting `ANTHROPIC_API_KEY` for CP1 analysis does not authenticate the OpenAI or Google coding-agent CLIs):
+Register `http://127.0.0.1:8090/mcp` in your MCP client (see [Client-Specific MCP Configuration](docs/REFERENCE.md#register-surla-in-your-mcp-client), [Terminology at a Glance](docs/REFERENCE.md#terminology-at-a-glance), and [`-swarm-profiles` configuration](docs/REFERENCE.md#configure-the-proposed-swarm-roster); [`examples/orders/swarm-profiles.example.json`](examples/orders/swarm-profiles.example.json) is an illustrative operator-edited profile file where `"authenticated": true` is an operator assertion rather than a live credential check, and setting `ANTHROPIC_API_KEY` for CP1 analysis does not authenticate the OpenAI or Google coding-agent CLIs). For **Claude Code, Gemini CLI, or Cursor**, save `.mcp.json` (for **Codex**, configure `[mcp_servers.surla]` with `bearer_token_env_var = "SURLA_AUTH_TOKEN"` in `~/.codex/config.toml` or `.codex/config.toml` as shown in [`docs/REFERENCE.md`](docs/REFERENCE.md#register-surla-in-your-mcp-client)):
 
 ```json
 {
@@ -137,7 +146,7 @@ To run the full independent verification suite (`surla verify` and `surla approv
 - **[Orders Reference Platform (`examples/orders/README.md`)](examples/orders/README.md)** — Walk through the Golden Path `orders` platform, run `surla verify` (full vs. `-builder-view`), and watch `TestSeededPayloadBloatFailsTheBudget` catch a token regression.
 - **[How Surla Works (`docs/HOW_IT_WORKS.md`)](docs/HOW_IT_WORKS.md)** — Walk through the 5 checkpoints (`CP1`–`CP5`), the proposed cross-model team, fast draft overrides, and OS-isolated verification.
 - **[Golden Path Architecture (`docs/ARCHITECTURE_PLAYBOOK.md`)](docs/ARCHITECTURE_PLAYBOOK.md)** — Explore the 7 Golden Path rules that keep Surla platforms maintainable and see how the Goa Design suite powers them.
-- **[CLI, MCP & Repo Reference (`docs/REFERENCE.md`)](docs/REFERENCE.md)** — Copy `.mcp.json` configuration, browse the MCP tools and CLI flags, and run the [`examples/orders`](examples/orders/) reference suite.
+- **[CLI, MCP & Repo Reference (`docs/REFERENCE.md`)](docs/REFERENCE.md)** — Configure MCP clients (`.mcp.json` and Codex `config.toml`), browse the MCP tools and CLI flags, and run the [`examples/orders`](examples/orders/) reference suite.
 - **[Architecture Proposal (`PROPOSAL.md`)](PROPOSAL.md)** & **[Product Vision (`PRESS_RELEASE.md`)](PRESS_RELEASE.md)** — Read the full system design, threat model, and Working Backwards press release.
 
 ## License

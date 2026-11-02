@@ -32,12 +32,13 @@ comments, tests, fixtures, docs, commits, branches, issues, or pull requests.
    `origin/main` as required by the design gate below. Walk the first-time
    user, operator, and agent journey from install and startup through every
    step and backward loop before designing a command, API, MCP tool, or UI—
-   never design outward from an internal digest, RPC, or file format. Show
-   progressively so the first run needs the fewest flags and files, each off
-   capability names the one step that enables it, loops back state what stays
-   valid and what needs re-confirmation without silently carrying stale
-   decisions forward, and system-spawned and user-attached agents share one
-   execution boundary.
+   never design outward from an internal digest, RPC, or file format. Derive
+   setup and inputs from known workspace and credential facts so the first
+   run asks only for genuine trust or target choices, each off capability
+   names the one step that enables it, backward loops state what stays valid
+   and what needs re-confirmation without silently carrying stale decisions
+   forward, and system-spawned and user-attached agents share one execution
+   boundary.
 3. **Explain plans for larger changes.** Before changing three or more files,
    state the intended outcome, the steps, and the main risks, then proceed.
 4. **Answer before acting.** Reply to questions before edits or mutations.
@@ -118,16 +119,16 @@ stated in writing before the first edit or recommendation:
    - filters that hide truthful errors, spans, or payloads;
    - repeated checks, wrappers, or mode flags inside an already validated
      flow.
-5. **Effects and proof.** State user-visible behavior, compatibility, risk,
-   and verification, including persisted data, deployment order, mixed
-   versions, and rollback when relevant. Re-run the gate for a newly involved
-   owner, external behavior, migration, or public contract.
-6. **Journey proof.** For every user-, operator-, or agent-facing CLI, API,
+5. **Journey proof.** For every user-, operator-, or agent-facing CLI, API,
    MCP tool, workflow, or UI change, state the input, owner action, visible
    result, backward loop, failure recovery, and preserved valid cases before
    choosing endpoints or views. When a change alters onboarding or multi-step
    loops, verify it with `surla-ux-review` or an equivalent end-to-end
    walkthrough and record the findings.
+6. **Effects and proof.** State user-visible behavior, compatibility, risk,
+   and verification, including persisted data, deployment order, mixed
+   versions, and rollback when relevant. Re-run the gate for a newly involved
+   owner, external behavior, migration, or public contract.
 
 For each addition, ask: "If omitted, which required case fails, and why can't
 the existing owner handle it?" Compare deletion, correcting the owner, and a

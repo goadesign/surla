@@ -20,17 +20,18 @@
 ## Quickstart & MCP Configuration
 
 ### Prerequisites
-- **Go 1.27.3+**, matching the repository's `go.mod` files, and the **Goa CLI** (`go install goa.design/goa/v3/cmd/goa@latest`)
+- **Go 1.27.3+**, matching the repository's `go.mod` files
+- **Surla CLI** (`go install github.com/goadesign/surla/cmd/surla@latest`, or `go run ./cmd/surla` from a repository checkout) and the **Goa CLI** (`go install goa.design/goa/v3/cmd/goa@latest`)
 - **macOS** (`sandbox-exec` is used by `verify/candidate` to isolate candidate builds and processes; non-macOS hosts fail closed with `ErrIsolationUnavailable`)
 - **Temporal CLI** (`brew install temporal`) for running the end-to-end durable workflow crash and replay verification suites
 
 ### Start the Surla Server
 
-To enable feature-request analysis, set `ANTHROPIC_API_KEY` and set `SURLA_MODEL_NAME` to a model ID available to that key, then run:
+To enable feature-request analysis, set `ANTHROPIC_API_KEY` and set `SURLA_MODEL_NAME` to a model ID available to that key, then run (with `surla serve` after `go install`, or `go run ./cmd/surla serve` from a repository checkout):
 
 ```bash
 export SURLA_AUTH_TOKEN="dev-secret-token"
-go run ./cmd/surla serve -addr 127.0.0.1:8090 \
+surla serve -addr 127.0.0.1:8090 \
   -principal operator@example.com \
   -model-provider anthropic -model-name "$SURLA_MODEL_NAME"
 ```
@@ -39,9 +40,10 @@ For OpenAI, use `-model-provider openai`, set `OPENAI_API_KEY`, and choose a mod
 
 Omitting all model flags starts the server without feature-request analysis. The `diff` tool, Golden Path resource, and `compiled_rule` rebuild response still work; `propose_change` returns `cp1 semantic analyzer is required`.
 
-### Register Surla in `.mcp.json`
+<a id="register-surla-in-mcpjson"></a>
+### Register Surla in Your MCP Client
 
-Add Surla to your project's `.mcp.json` (or global agent configuration in Claude Code, Codex, Gemini, or Cursor):
+For **Claude Code, Gemini CLI, or Cursor**, add Surla to your project's `.mcp.json` (or user-level MCP configuration):
 
 ```json
 {
@@ -55,6 +57,14 @@ Add Surla to your project's `.mcp.json` (or global agent configuration in Claude
     }
   }
 }
+```
+
+For **Codex**, export `SURLA_AUTH_TOKEN="dev-secret-token"` in the shell where you launch Codex and register Surla in `~/.codex/config.toml` or a trusted project's `.codex/config.toml` (see the [Codex MCP documentation](https://learn.chatgpt.com/docs/extend/mcp?surface=cli)):
+
+```toml
+[mcp_servers.surla]
+url = "http://127.0.0.1:8090/mcp"
+bearer_token_env_var = "SURLA_AUTH_TOKEN"
 ```
 
 ### Configure the Proposed Swarm Roster
