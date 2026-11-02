@@ -10,6 +10,8 @@ import {
   ChangeCardResult,
   DiffResult,
   DraftOverrideResult,
+  LiveTargetResult,
+  StopLiveTargetResult,
 } from "../types";
 import { Alert, Badge, Button, Card } from "./shadcn";
 
@@ -439,6 +441,37 @@ export function DraftOverrideView({ draft }: { draft: DraftOverrideResult }) {
           ) : null}
         </p>
       </details>
+    </Card>
+  );
+}
+
+// LiveTargetView renders the CP3 live target a start_live_target call started
+// or the outcome of stop_live_target. The commit stays in Details; the
+// heading and message say what the operator can do next.
+export function LiveTargetView({ result }: { result: LiveTargetResult | StopLiveTargetResult }) {
+  if ("url" in result) {
+    return (
+      <Card className="surla-meta">
+        <h2>Live Target Running</h2>
+        <p>{result.message}</p>
+        <p>
+          The target listens at <code>{result.url}</code>, a loopback address on the Surla server's host. Send prompt text
+          with draft_override. Drafts are not verified, and starting another target discards them: commit the accepted
+          text and run verification.
+        </p>
+        <details className="surla-details">
+          <summary>Details</summary>
+          <p>
+            candidate_commit: <code>{result.candidate_commit}</code>
+          </p>
+        </details>
+      </Card>
+    );
+  }
+  return (
+    <Card className="surla-meta">
+      <h2>{result.stopped ? "Live Target Stopped" : "No Live Target Running"}</h2>
+      <p>{result.message}</p>
     </Card>
   );
 }

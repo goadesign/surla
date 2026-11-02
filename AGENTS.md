@@ -343,11 +343,14 @@ Stop if that context is unavailable or contradicts the code.
 
 ### Goa and generated code
 
-- Never edit generated files by hand: `gen/`, `ui/checkpoint/src/types.ts`,
+- Never edit generated files by hand: `gen/`, `internal/targetprompt/gen/`,
+  `ui/checkpoint/src/types.ts`,
   `internal/controlplane/checkpoint.html`, and
   `internal/goldenpath/decision_catalog.md`.
 - After changing `design/`, run the module-pinned generator:
   `CI=true go run goa.design/goa/v3/cmd/goa gen github.com/goadesign/surla/design </dev/null`.
+  After changing `design/targetprompt/`, run
+  `CI=true go run goa.design/goa/v3/cmd/goa gen github.com/goadesign/surla/design/targetprompt -o internal/targetprompt </dev/null`.
   After changing `design/` or `ui/checkpoint/src/`, rebuild with
   `CI=true node ui/checkpoint/build.mjs </dev/null`; check that nothing is
   stale with `CI=true node ui/checkpoint/build.mjs --check </dev/null`.

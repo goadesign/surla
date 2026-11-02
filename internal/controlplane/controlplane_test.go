@@ -414,6 +414,7 @@ var _ = Service("orders", func() {
 	}
 	assert.ElementsMatch(t, []string{
 		"propose_change", "revise_change", "confirm_intent", "get_change", "preview_architecture", "draft_override", "approve_merge", "diff",
+		"start_live_target", "stop_live_target",
 		"verify_change", "get_verification",
 	}, toolNames)
 	// Every tool, diff included, links the checkpoint viewer so an MCP Apps

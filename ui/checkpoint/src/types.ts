@@ -209,6 +209,17 @@ export interface VerificationStatusResult {
   suite_commit: string;
 }
 
+export interface LiveTargetResult {
+  candidate_commit: string;
+  message: string;
+  url: string;
+}
+
+export interface StopLiveTargetResult {
+  message: string;
+  stopped: boolean;
+}
+
 interface JSONSchemaNode {
   type?: string;
   $ref?: string;
@@ -1106,6 +1117,42 @@ const GENERATED_RESULT_SCHEMAS: Record<string, JSONSchemaNode> = {
         }
       }
     }
+  },
+  "LiveTargetResult": {
+    "type": "object",
+    "required": [
+      "candidate_commit",
+      "url",
+      "message"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "candidate_commit": {
+        "type": "string"
+      },
+      "message": {
+        "type": "string"
+      },
+      "url": {
+        "type": "string"
+      }
+    }
+  },
+  "StopLiveTargetResult": {
+    "type": "object",
+    "required": [
+      "stopped",
+      "message"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "message": {
+        "type": "string"
+      },
+      "stopped": {
+        "type": "boolean"
+      }
+    }
   }
 };
 
@@ -1236,4 +1283,14 @@ export function isDraftOverrideResult(p: unknown): p is DraftOverrideResult {
 // isVerificationStatusResult validates the generated CP4 state and report.
 export function isVerificationStatusResult(p: unknown): p is VerificationStatusResult {
   return validateGeneratedRoot("VerificationStatusResult", p);
+}
+
+// isLiveTargetResult validates a start_live_target result.
+export function isLiveTargetResult(p: unknown): p is LiveTargetResult {
+  return validateGeneratedRoot("LiveTargetResult", p);
+}
+
+// isStopLiveTargetResult validates a stop_live_target result.
+export function isStopLiveTargetResult(p: unknown): p is StopLiveTargetResult {
+  return validateGeneratedRoot("StopLiveTargetResult", p);
 }

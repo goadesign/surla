@@ -351,6 +351,32 @@ type (
 		// hashed into request_revision.
 		UnverifiedApproval *UnverifiedApprovalItem
 	}
+	// StartLiveTargetPayload defines the JSON payload for the surla.start_live_target tool.
+	StartLiveTargetPayload = struct {
+		// Full commit ID to build, in the candidate repository's object format.
+		CandidateCommit string
+	}
+	// StartLiveTargetResult defines the JSON result for the surla.start_live_target tool.
+	StartLiveTargetResult = struct {
+		// The commit the live target was built from.
+		CandidateCommit string
+		// Loopback origin of the running candidate, for trying requests such as its
+		// own API directly.
+		URL string
+		// Operator-facing status explanation.
+		Message string
+	}
+	// StopLiveTargetPayload defines the JSON payload for the surla.stop_live_target tool.
+	StopLiveTargetPayload = struct {
+	}
+	// StopLiveTargetResult defines the JSON result for the surla.stop_live_target tool.
+	StopLiveTargetResult = struct {
+		// True when a live target was running and is now stopped; false when none was
+		// running.
+		Stopped bool
+		// Operator-facing status explanation.
+		Message string
+	}
 	// VerifyChangePayload defines the JSON payload for the surla.verify_change tool.
 	VerifyChangePayload = struct {
 		// Confirmed Change Card identifier.

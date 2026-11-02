@@ -337,6 +337,33 @@ var DraftOverrideResult = Type("DraftOverrideResult", func() {
 	Required("applied_in_store", "requires_rebuild", "message")
 })
 
+// StartLiveTargetPayload names the candidate commit a CP3 live target runs.
+var StartLiveTargetPayload = Type("StartLiveTargetPayload", func() {
+	Description("Candidate commit to build and run as this server's live CP3 target.")
+	Attribute("candidate_commit", String, "Full commit ID to build, in the candidate repository's object format.", func() {
+		Pattern("^([0-9a-f]{40}|[0-9a-f]{64})$")
+		Example("4f0b3c1d2e5a6978877665544332211009988776")
+	})
+	Required("candidate_commit")
+})
+
+// LiveTargetResult describes the live CP3 target a server now runs.
+var LiveTargetResult = Type("LiveTargetResult", func() {
+	Description("The live CP3 target this server runs and binds draft_override to.")
+	Attribute("candidate_commit", String, "The commit the live target was built from.")
+	Attribute("url", String, "Loopback origin of the running candidate, for trying requests such as its own API directly.")
+	Attribute("message", String, "Operator-facing status explanation.")
+	Required("candidate_commit", "url", "message")
+})
+
+// StopLiveTargetResult reports whether a live CP3 target was stopped.
+var StopLiveTargetResult = Type("StopLiveTargetResult", func() {
+	Description("Result of stopping this server's live CP3 target.")
+	Attribute("stopped", Boolean, "True when a live target was running and is now stopped; false when none was running.")
+	Attribute("message", String, "Operator-facing status explanation.")
+	Required("stopped", "message")
+})
+
 // ApproveMergePayload is the input to the CP5 approve_merge tool.
 var ApproveMergePayload = Type("ApproveMergePayload", func() {
 	Description("Identifies the confirmed Change Card revision, the candidate commit being promoted, and the evaluator-written verification report to check. The report itself and the expected suite, environment and binary digests come from the control plane's promotion target, never from the caller.")
@@ -571,15 +598,56 @@ var _ = Service("surla", func() {
 	})
 
 	Method("draft_override", func() {
-		Description("Apply a Fast Draft Mode prompt override on the bound target or reject a compiled-rule prompt hack.")
+		Description("Apply a Fast Draft Mode prompt override on the bound target or reject a compiled-rule prompt hack. On a live target started with start_live_target, a rejected update leaves the target's text unchanged; update_not_confirmed means the target may or may not have applied it.")
 		Payload(DraftOverridePayload)
 		Result(DraftOverrideResult)
+		Error("prompt_not_found", ErrorResult, "The live target has no prompt with this ID; nothing changed.")
+		Error("invalid_prompt", ErrorResult, "The live target rejected the template because it does not render; nothing changed.")
+		Error("live_target_ended", ErrorResult, "The live target is no longer running; start it again with start_live_target.")
+		Error("target_rejected_credential", ErrorResult, "The live target rejected this server's key; nothing changed. Start the target again with start_live_target.")
+		Error("update_not_confirmed", ErrorResult, "The live target did not confirm the update, so it may or may not have applied it. Keep the draft and send it again.")
 		Tool("draft_override", "Hot-reload a prompt template in 0s or flag a compiled business rule change.", func() {
 			ToolUI("ui://surla/checkpoint")
 		})
 		HTTP(func() {
 			POST("/sandbox/draft")
 			Response(StatusOK)
+			Response("prompt_not_found", StatusNotFound)
+			Response("invalid_prompt", StatusUnprocessableEntity)
+			Response("live_target_ended", StatusConflict)
+			Response("target_rejected_credential", StatusBadGateway)
+			Response("update_not_confirmed", StatusBadGateway)
+		})
+	})
+
+	Method("start_live_target", func() {
+		Description("Build a candidate commit exactly as Checkpoint 4 does and run it, with the operator's evaluator suite, as this server's one live CP3 target, then bind draft_override to it. A running target is stopped first, so there is never more than one. The target runs until stop_live_target, a later start_live_target, its own exit, or this server's shutdown; a server restart leaves none running. Requires Checkpoint 4 verification to be configured, because the build and launch settings come from it.")
+		Payload(StartLiveTargetPayload)
+		Result(LiveTargetResult)
+		Error("live_target_unavailable", ErrorResult, "This server has no verification configuration, so it cannot build or run a live target.")
+		Error("live_target_failed", ErrorResult, "The live target could not be built or started; the message says which step failed.")
+		Tool("start_live_target", "Build a candidate commit and run it as this server's live CP3 target so draft_override can try prompt text on it. This first stops the target already running, which discards every prompt draft applied to it, even if the new build then fails. Prompt text survives only when it is committed.", func() {
+			ToolUI("ui://surla/checkpoint")
+		})
+		HTTP(func() {
+			POST("/live-target")
+			Response(StatusOK)
+			Response("live_target_unavailable", StatusNotImplemented)
+			Response("live_target_failed", StatusUnprocessableEntity)
+		})
+	})
+
+	Method("stop_live_target", func() {
+		Description("Stop this server's live CP3 target, if one runs, and unbind draft_override from it. Stopping when none runs is not an error.")
+		Result(StopLiveTargetResult)
+		Error("live_target_stop_failed", ErrorResult, "The live target's processes could not be confirmed stopped; restart surla serve.")
+		Tool("stop_live_target", "Stop this server's live CP3 target, if one runs. This discards every prompt draft applied to it; prompt text survives only when it is committed.", func() {
+			ToolUI("ui://surla/checkpoint")
+		})
+		HTTP(func() {
+			DELETE("/live-target")
+			Response(StatusOK)
+			Response("live_target_stop_failed", StatusInternalServerError)
 		})
 	})
 

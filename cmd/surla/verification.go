@@ -46,7 +46,7 @@ type verificationFile struct {
 // runVerifyRun runs one internal role started by verifyrun: `surla verify-run
 // supervise <dir>` or `surla verify-run execute <dir>` for a verification run
 // (verifyrun.Start), or `surla verify-run live <dir>` for a CP3 live target
-// (verifyrun.StartLive). Only verifyrun starts these; they are not listed in
+// (verifyrun.LaunchLive). Only verifyrun starts these; they are not listed in
 // the usage text.
 func runVerifyRun(args []string) error {
 	if len(args) != 2 {

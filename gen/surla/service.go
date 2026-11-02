@@ -58,8 +58,21 @@ type Service interface {
 	// design bound to a confirmed Change Card.
 	PreviewArchitecture(context.Context, *PreviewArchitecturePayload) (res *ArchitecturePreviewResult, err error)
 	// Apply a Fast Draft Mode prompt override on the bound target or reject a
-	// compiled-rule prompt hack.
+	// compiled-rule prompt hack. On a live target started with start_live_target,
+	// a rejected update leaves the target's text unchanged; update_not_confirmed
+	// means the target may or may not have applied it.
 	DraftOverride(context.Context, *DraftOverridePayload) (res *DraftOverrideResult, err error)
+	// Build a candidate commit exactly as Checkpoint 4 does and run it, with the
+	// operator's evaluator suite, as this server's one live CP3 target, then bind
+	// draft_override to it. A running target is stopped first, so there is never
+	// more than one. The target runs until stop_live_target, a later
+	// start_live_target, its own exit, or this server's shutdown; a server restart
+	// leaves none running. Requires Checkpoint 4 verification to be configured,
+	// because the build and launch settings come from it.
+	StartLiveTarget(context.Context, *StartLiveTargetPayload) (res *LiveTargetResult, err error)
+	// Stop this server's live CP3 target, if one runs, and unbind draft_override
+	// from it. Stopping when none runs is not an error.
+	StopLiveTarget(context.Context) (res *StopLiveTargetResult, err error)
 	// Start Checkpoint 4 verification of a candidate commit for the owner's
 	// confirmed Change Card revision and return its run_id at once. The server
 	// builds the commit in Surla's sandbox and runs the evaluator suite the
@@ -101,7 +114,7 @@ const ServiceName = "surla"
 // MethodNames lists the service method names as defined in the design. These
 // are the same values that are set in the endpoint request contexts under the
 // MethodKey key.
-var MethodNames = [12]string{"checkpoint_ui", "golden_path", "propose_change", "revise_change", "confirm_intent", "get_change", "preview_architecture", "draft_override", "verify_change", "get_verification", "approve_merge", "diff"}
+var MethodNames = [14]string{"checkpoint_ui", "golden_path", "propose_change", "revise_change", "confirm_intent", "get_change", "preview_architecture", "draft_override", "start_live_target", "stop_live_target", "verify_change", "get_verification", "approve_merge", "diff"}
 
 // Evaluated Goa-AI cost, safety, history, and cache policy for a single agent.
 type AgentPolicyItem struct {
@@ -397,6 +410,18 @@ type GetVerificationPayload struct {
 	RunID string
 }
 
+// LiveTargetResult is the result type of the surla service start_live_target
+// method.
+type LiveTargetResult struct {
+	// The commit the live target was built from.
+	CandidateCommit string
+	// Loopback origin of the running candidate, for trying requests such as its
+	// own API directly.
+	URL string
+	// Operator-facing status explanation.
+	Message string
+}
+
 // PreviewArchitecturePayload is the payload type of the surla service
 // preview_architecture method.
 type PreviewArchitecturePayload struct {
@@ -433,6 +458,23 @@ type ReviseChangePayload struct {
 	// Updated target Goa design source inspected by the CP1 model; when omitted,
 	// the card's saved design source is preserved.
 	DesignSource *string
+}
+
+// StartLiveTargetPayload is the payload type of the surla service
+// start_live_target method.
+type StartLiveTargetPayload struct {
+	// Full commit ID to build, in the candidate repository's object format.
+	CandidateCommit string
+}
+
+// StopLiveTargetResult is the result type of the surla service
+// stop_live_target method.
+type StopLiveTargetResult struct {
+	// True when a live target was running and is now stopped; false when none was
+	// running.
+	Stopped bool
+	// Operator-facing status explanation.
+	Message string
 }
 
 // Proposed Chorus role assignments and model-family diversity facts surfaced
@@ -652,6 +694,46 @@ type VerifyChangePayload struct {
 	// Full commit ID of the candidate to build and verify (40 or 64 lowercase hex
 	// characters).
 	CandidateCommit string
+}
+
+// MakePromptNotFound builds a goa.ServiceError from an error.
+func MakePromptNotFound(err error) *goa.ServiceError {
+	return goa.NewServiceError(err, "prompt_not_found", false, false, false)
+}
+
+// MakeInvalidPrompt builds a goa.ServiceError from an error.
+func MakeInvalidPrompt(err error) *goa.ServiceError {
+	return goa.NewServiceError(err, "invalid_prompt", false, false, false)
+}
+
+// MakeLiveTargetEnded builds a goa.ServiceError from an error.
+func MakeLiveTargetEnded(err error) *goa.ServiceError {
+	return goa.NewServiceError(err, "live_target_ended", false, false, false)
+}
+
+// MakeTargetRejectedCredential builds a goa.ServiceError from an error.
+func MakeTargetRejectedCredential(err error) *goa.ServiceError {
+	return goa.NewServiceError(err, "target_rejected_credential", false, false, false)
+}
+
+// MakeUpdateNotConfirmed builds a goa.ServiceError from an error.
+func MakeUpdateNotConfirmed(err error) *goa.ServiceError {
+	return goa.NewServiceError(err, "update_not_confirmed", false, false, false)
+}
+
+// MakeLiveTargetUnavailable builds a goa.ServiceError from an error.
+func MakeLiveTargetUnavailable(err error) *goa.ServiceError {
+	return goa.NewServiceError(err, "live_target_unavailable", false, false, false)
+}
+
+// MakeLiveTargetFailed builds a goa.ServiceError from an error.
+func MakeLiveTargetFailed(err error) *goa.ServiceError {
+	return goa.NewServiceError(err, "live_target_failed", false, false, false)
+}
+
+// MakeLiveTargetStopFailed builds a goa.ServiceError from an error.
+func MakeLiveTargetStopFailed(err error) *goa.ServiceError {
+	return goa.NewServiceError(err, "live_target_stop_failed", false, false, false)
 }
 
 // agentPolicyItemIntTransport stores JSON fields until they have been validated.
@@ -1492,6 +1574,34 @@ func validatejsonGetVerificationPayloadTransport(value *jsonGetVerificationPaylo
 	return err
 }
 
+// jsonLiveTargetResultTransport stores JSON fields until they have been validated.
+type jsonLiveTargetResultTransport struct {
+	// The commit the live target was built from.
+	CandidateCommit *string `json:"candidate_commit"`
+	// Loopback origin of the running candidate, for trying requests such as its
+	// own API directly.
+	URL *string `json:"url"`
+	// Operator-facing status explanation.
+	Message *string `json:"message"`
+}
+
+// validatejsonLiveTargetResultTransport checks decoded JSON before it becomes a service value.
+func validatejsonLiveTargetResultTransport(value *jsonLiveTargetResultTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.CandidateCommit == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("candidate_commit", "body"))
+	}
+	if value.URL == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("url", "body"))
+	}
+	if value.Message == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("message", "body"))
+	}
+	return err
+}
+
 // jsonPreviewArchitecturePayloadTransport stores JSON fields until they have been validated.
 type jsonPreviewArchitecturePayloadTransport struct {
 	// Confirmed Change Card identifier.
@@ -1583,6 +1693,49 @@ func validatejsonReviseChangePayloadTransport(value *jsonReviseChangePayloadTran
 	}
 	if value.Prompt == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("prompt", "body"))
+	}
+	return err
+}
+
+// jsonStartLiveTargetPayloadTransport stores JSON fields until they have been validated.
+type jsonStartLiveTargetPayloadTransport struct {
+	// Full commit ID to build, in the candidate repository's object format.
+	CandidateCommit *string `json:"candidate_commit"`
+}
+
+// validatejsonStartLiveTargetPayloadTransport checks decoded JSON before it becomes a service value.
+func validatejsonStartLiveTargetPayloadTransport(value *jsonStartLiveTargetPayloadTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.CandidateCommit == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("candidate_commit", "body"))
+	}
+	if value.CandidateCommit != nil {
+		err = goa.MergeErrors(err, goa.ValidatePattern("body.candidate_commit", *value.CandidateCommit, "^([0-9a-f]{40}|[0-9a-f]{64})$"))
+	}
+	return err
+}
+
+// jsonStopLiveTargetResultTransport stores JSON fields until they have been validated.
+type jsonStopLiveTargetResultTransport struct {
+	// True when a live target was running and is now stopped; false when none was
+	// running.
+	Stopped *bool `json:"stopped"`
+	// Operator-facing status explanation.
+	Message *string `json:"message"`
+}
+
+// validatejsonStopLiveTargetResultTransport checks decoded JSON before it becomes a service value.
+func validatejsonStopLiveTargetResultTransport(value *jsonStopLiveTargetResultTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.Stopped == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("stopped", "body"))
+	}
+	if value.Message == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("message", "body"))
 	}
 	return err
 }
@@ -2471,6 +2624,12 @@ func validatePreviewArchitecturePayloadOriginal(value *PreviewArchitecturePayloa
 			}
 		}
 	}
+	return err
+}
+
+// validateStartLiveTargetPayloadOriginal checks the original typed value before JSON conversion.
+func validateStartLiveTargetPayloadOriginal(value *StartLiveTargetPayload) (err error) {
+	err = goa.MergeErrors(err, goa.ValidatePattern("value.candidate_commit", value.CandidateCommit, "^([0-9a-f]{40}|[0-9a-f]{64})$"))
 	return err
 }
 
@@ -4814,6 +4973,89 @@ func DecodeGetVerificationPayload(data []byte) (out *GetVerificationPayload, err
 	return out, nil
 }
 
+// EncodeLiveTargetResult turns a service value into JSON using the field names in the Goa design.
+func EncodeLiveTargetResult(in *LiveTargetResult) ([]byte, error) {
+	if err := checkLiveTargetResultValue(in); err != nil {
+		return nil, fmt.Errorf("encode LiveTargetResult JSON: %w", err)
+	}
+	var body *jsonLiveTargetResultTransport
+	{
+		body = &jsonLiveTargetResultTransport{
+			CandidateCommit: &in.CandidateCommit,
+			URL:             &in.URL,
+			Message:         &in.Message,
+		}
+	}
+	if err := validatejsonLiveTargetResultTransport(body); err != nil {
+		return nil, fmt.Errorf("validate LiveTargetResult JSON: %w", err)
+	}
+	data, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("encode LiveTargetResult JSON: %w", err)
+	}
+	return data, nil
+}
+
+// ValidateLiveTargetResultValue checks the original Go fields against their declared constraints.
+// It returns validation errors without encoding the value as JSON.
+
+func ValidateLiveTargetResultValue(in *LiveTargetResult) error {
+	if err := checkLiveTargetResultValue(in); err != nil {
+		return fmt.Errorf("validate LiveTargetResult value: %w", err)
+	}
+
+	if in == nil {
+		return goa.MissingFieldError("result", "LiveTargetResult")
+	}
+
+	var body *jsonLiveTargetResultTransport
+	{
+		body = &jsonLiveTargetResultTransport{
+			CandidateCommit: &in.CandidateCommit,
+			URL:             &in.URL,
+			Message:         &in.Message,
+		}
+	}
+	if err := validatejsonLiveTargetResultTransport(body); err != nil {
+		return fmt.Errorf("validate LiveTargetResult value: %w", err)
+	}
+	return nil
+}
+
+// DecodeLiveTargetResult checks JSON field names from the Goa design and returns a service value.
+func DecodeLiveTargetResult(data []byte) (out *LiveTargetResult, err error) {
+	root, err := readStrictJSON(data)
+	if err != nil {
+		return out, fmt.Errorf("decode LiveTargetResult JSON: %w", err)
+	}
+	if err := validateLiveTargetResultJSONValue("", root, ""); err != nil {
+		return out, fmt.Errorf("decode LiveTargetResult JSON: %w", err)
+	}
+	var body *jsonLiveTargetResultTransport
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&body); err != nil {
+		return out, fmt.Errorf("decode LiveTargetResult JSON: %w", err)
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		if err == nil {
+			return out, fmt.Errorf("decode LiveTargetResult JSON: multiple JSON values")
+		}
+		return out, fmt.Errorf("decode LiveTargetResult JSON after first value: %w", err)
+	}
+	if err := validatejsonLiveTargetResultTransport(body); err != nil {
+		return out, fmt.Errorf("validate LiveTargetResult JSON: %w", err)
+	}
+	{
+		out = &LiveTargetResult{
+			CandidateCommit: *body.CandidateCommit,
+			URL:             *body.URL,
+			Message:         *body.Message,
+		}
+	}
+	return out, nil
+}
+
 // EncodePreviewArchitecturePayload turns a service value into JSON using the field names in the Goa design.
 func EncodePreviewArchitecturePayload(in *PreviewArchitecturePayload) ([]byte, error) {
 	if err := checkPreviewArchitecturePayloadValue(in); err != nil {
@@ -5097,6 +5339,169 @@ func DecodeReviseChangePayload(data []byte) (out *ReviseChangePayload, err error
 			RequestRevision: *body.RequestRevision,
 			Prompt:          *body.Prompt,
 			DesignSource:    body.DesignSource,
+		}
+	}
+	return out, nil
+}
+
+// EncodeStartLiveTargetPayload turns a service value into JSON using the field names in the Goa design.
+func EncodeStartLiveTargetPayload(in *StartLiveTargetPayload) ([]byte, error) {
+	if err := checkStartLiveTargetPayloadValue(in); err != nil {
+		return nil, fmt.Errorf("encode StartLiveTargetPayload JSON: %w", err)
+	}
+	if err := validateStartLiveTargetPayloadOriginal(in); err != nil {
+		return nil, fmt.Errorf("validate StartLiveTargetPayload value: %w", err)
+	}
+	var body *jsonStartLiveTargetPayloadTransport
+	{
+		body = &jsonStartLiveTargetPayloadTransport{
+			CandidateCommit: &in.CandidateCommit,
+		}
+	}
+	if err := validatejsonStartLiveTargetPayloadTransport(body); err != nil {
+		return nil, fmt.Errorf("validate StartLiveTargetPayload JSON: %w", err)
+	}
+	data, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("encode StartLiveTargetPayload JSON: %w", err)
+	}
+	return data, nil
+}
+
+// ValidateStartLiveTargetPayloadValue checks the original Go fields against their declared constraints.
+// It returns validation errors without encoding the value as JSON.
+
+func ValidateStartLiveTargetPayloadValue(in *StartLiveTargetPayload) error {
+	if err := checkStartLiveTargetPayloadValue(in); err != nil {
+		return fmt.Errorf("validate StartLiveTargetPayload value: %w", err)
+	}
+	if err := validateStartLiveTargetPayloadOriginal(in); err != nil {
+		return fmt.Errorf("validate StartLiveTargetPayload value: %w", err)
+	}
+
+	if in == nil {
+		return goa.MissingFieldError("result", "StartLiveTargetPayload")
+	}
+
+	var body *jsonStartLiveTargetPayloadTransport
+	{
+		body = &jsonStartLiveTargetPayloadTransport{
+			CandidateCommit: &in.CandidateCommit,
+		}
+	}
+	if err := validatejsonStartLiveTargetPayloadTransport(body); err != nil {
+		return fmt.Errorf("validate StartLiveTargetPayload value: %w", err)
+	}
+	return nil
+}
+
+// DecodeStartLiveTargetPayload checks JSON field names from the Goa design and returns a service value.
+func DecodeStartLiveTargetPayload(data []byte) (out *StartLiveTargetPayload, err error) {
+	root, err := readStrictJSON(data)
+	if err != nil {
+		return out, fmt.Errorf("decode StartLiveTargetPayload JSON: %w", err)
+	}
+	if err := validateStartLiveTargetPayloadJSONValue("", root, ""); err != nil {
+		return out, fmt.Errorf("decode StartLiveTargetPayload JSON: %w", err)
+	}
+	var body *jsonStartLiveTargetPayloadTransport
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&body); err != nil {
+		return out, fmt.Errorf("decode StartLiveTargetPayload JSON: %w", err)
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		if err == nil {
+			return out, fmt.Errorf("decode StartLiveTargetPayload JSON: multiple JSON values")
+		}
+		return out, fmt.Errorf("decode StartLiveTargetPayload JSON after first value: %w", err)
+	}
+	if err := validatejsonStartLiveTargetPayloadTransport(body); err != nil {
+		return out, fmt.Errorf("validate StartLiveTargetPayload JSON: %w", err)
+	}
+	{
+		out = &StartLiveTargetPayload{
+			CandidateCommit: *body.CandidateCommit,
+		}
+	}
+	return out, nil
+}
+
+// EncodeStopLiveTargetResult turns a service value into JSON using the field names in the Goa design.
+func EncodeStopLiveTargetResult(in *StopLiveTargetResult) ([]byte, error) {
+	if err := checkStopLiveTargetResultValue(in); err != nil {
+		return nil, fmt.Errorf("encode StopLiveTargetResult JSON: %w", err)
+	}
+	var body *jsonStopLiveTargetResultTransport
+	{
+		body = &jsonStopLiveTargetResultTransport{
+			Stopped: &in.Stopped,
+			Message: &in.Message,
+		}
+	}
+	if err := validatejsonStopLiveTargetResultTransport(body); err != nil {
+		return nil, fmt.Errorf("validate StopLiveTargetResult JSON: %w", err)
+	}
+	data, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("encode StopLiveTargetResult JSON: %w", err)
+	}
+	return data, nil
+}
+
+// ValidateStopLiveTargetResultValue checks the original Go fields against their declared constraints.
+// It returns validation errors without encoding the value as JSON.
+
+func ValidateStopLiveTargetResultValue(in *StopLiveTargetResult) error {
+	if err := checkStopLiveTargetResultValue(in); err != nil {
+		return fmt.Errorf("validate StopLiveTargetResult value: %w", err)
+	}
+
+	if in == nil {
+		return goa.MissingFieldError("result", "StopLiveTargetResult")
+	}
+
+	var body *jsonStopLiveTargetResultTransport
+	{
+		body = &jsonStopLiveTargetResultTransport{
+			Stopped: &in.Stopped,
+			Message: &in.Message,
+		}
+	}
+	if err := validatejsonStopLiveTargetResultTransport(body); err != nil {
+		return fmt.Errorf("validate StopLiveTargetResult value: %w", err)
+	}
+	return nil
+}
+
+// DecodeStopLiveTargetResult checks JSON field names from the Goa design and returns a service value.
+func DecodeStopLiveTargetResult(data []byte) (out *StopLiveTargetResult, err error) {
+	root, err := readStrictJSON(data)
+	if err != nil {
+		return out, fmt.Errorf("decode StopLiveTargetResult JSON: %w", err)
+	}
+	if err := validateStopLiveTargetResultJSONValue("", root, ""); err != nil {
+		return out, fmt.Errorf("decode StopLiveTargetResult JSON: %w", err)
+	}
+	var body *jsonStopLiveTargetResultTransport
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&body); err != nil {
+		return out, fmt.Errorf("decode StopLiveTargetResult JSON: %w", err)
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		if err == nil {
+			return out, fmt.Errorf("decode StopLiveTargetResult JSON: multiple JSON values")
+		}
+		return out, fmt.Errorf("decode StopLiveTargetResult JSON after first value: %w", err)
+	}
+	if err := validatejsonStopLiveTargetResultTransport(body); err != nil {
+		return out, fmt.Errorf("validate StopLiveTargetResult JSON: %w", err)
+	}
+	{
+		out = &StopLiveTargetResult{
+			Stopped: *body.Stopped,
+			Message: *body.Message,
 		}
 	}
 	return out, nil
@@ -9831,6 +10236,58 @@ func validateGetVerificationPayloadJSONValue(path string, value any, description
 	return nil
 }
 
+// validateLiveTargetResultJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateLiveTargetResultJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "candidate_commit":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "The commit the live target was built from.",
+			); err != nil {
+				return err
+			}
+		case "message":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Operator-facing status explanation.",
+			); err != nil {
+				return err
+			}
+		case "url":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Loopback origin of the running candidate, for trying requests such as its own API directly.",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"candidate_commit",
+				"message",
+				"url",
+			})
+		}
+	}
+	return nil
+}
+
 // validatePreviewArchitecturePayloadJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
 func validatePreviewArchitecturePayloadJSONValue(path string, value any, description string) error {
 	field := path
@@ -10024,6 +10481,86 @@ func validateReviseChangePayloadJSONValue(path string, value any, description st
 				"design_source",
 				"prompt",
 				"request_revision",
+			})
+		}
+	}
+	return nil
+}
+
+// validateStartLiveTargetPayloadJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateStartLiveTargetPayloadJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "candidate_commit":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Full commit ID to build, in the candidate repository's object format.",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"candidate_commit",
+			})
+		}
+	}
+	return nil
+}
+
+// validateStopLiveTargetResultJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateStopLiveTargetResultJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "message":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Operator-facing status explanation.",
+			); err != nil {
+				return err
+			}
+		case "stopped":
+			if err := validateAgentPolicyItemJSONValue3(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "True when a live target was running and is now stopped; false when none was running.",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"message",
+				"stopped",
 			})
 		}
 	}
@@ -11610,6 +12147,42 @@ func checkGetVerificationPayloadGetVerificationPayloadValue(in *GetVerificationP
 	return nil
 }
 
+// checkLiveTargetResultValue checks text and cycles before conversion.
+func checkLiveTargetResultValue(in *LiveTargetResult) error {
+	if in == nil {
+		return fmt.Errorf("missing root value")
+	}
+	active := make(map[any]bool)
+	if err := checkLiveTargetResultLiveTargetResultValue(in, "$", active); err != nil {
+		return err
+	}
+	return nil
+}
+
+// checkLiveTargetResultLiveTargetResultValue checks one generated value on the active path.
+func checkLiveTargetResultLiveTargetResultValue(in *LiveTargetResult, field string, active map[any]bool) error {
+	if in == nil {
+		return nil
+	}
+	if active[in] {
+		return fmt.Errorf("%s: cyclic Go value", field)
+	}
+	active[in] = true
+	defer delete(active, in)
+	if in != nil {
+		if !utf8.ValidString(string(in.CandidateCommit)) {
+			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "candidate_commit", false))
+		}
+		if !utf8.ValidString(string(in.URL)) {
+			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "url", false))
+		}
+		if !utf8.ValidString(string(in.Message)) {
+			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "message", false))
+		}
+	}
+	return nil
+}
+
 // checkPreviewArchitecturePayloadValue checks text and cycles before conversion.
 func checkPreviewArchitecturePayloadValue(in *PreviewArchitecturePayload) error {
 	if in == nil {
@@ -11727,6 +12300,66 @@ func checkReviseChangePayloadReviseChangePayloadValue(in *ReviseChangePayload, f
 			if !utf8.ValidString(string(*in.DesignSource)) {
 				return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "design_source", false))
 			}
+		}
+	}
+	return nil
+}
+
+// checkStartLiveTargetPayloadValue checks text and cycles before conversion.
+func checkStartLiveTargetPayloadValue(in *StartLiveTargetPayload) error {
+	if in == nil {
+		return fmt.Errorf("missing root value")
+	}
+	active := make(map[any]bool)
+	if err := checkStartLiveTargetPayloadStartLiveTargetPayloadValue(in, "$", active); err != nil {
+		return err
+	}
+	return nil
+}
+
+// checkStartLiveTargetPayloadStartLiveTargetPayloadValue checks one generated value on the active path.
+func checkStartLiveTargetPayloadStartLiveTargetPayloadValue(in *StartLiveTargetPayload, field string, active map[any]bool) error {
+	if in == nil {
+		return nil
+	}
+	if active[in] {
+		return fmt.Errorf("%s: cyclic Go value", field)
+	}
+	active[in] = true
+	defer delete(active, in)
+	if in != nil {
+		if !utf8.ValidString(string(in.CandidateCommit)) {
+			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "candidate_commit", false))
+		}
+	}
+	return nil
+}
+
+// checkStopLiveTargetResultValue checks text and cycles before conversion.
+func checkStopLiveTargetResultValue(in *StopLiveTargetResult) error {
+	if in == nil {
+		return fmt.Errorf("missing root value")
+	}
+	active := make(map[any]bool)
+	if err := checkStopLiveTargetResultStopLiveTargetResultValue(in, "$", active); err != nil {
+		return err
+	}
+	return nil
+}
+
+// checkStopLiveTargetResultStopLiveTargetResultValue checks one generated value on the active path.
+func checkStopLiveTargetResultStopLiveTargetResultValue(in *StopLiveTargetResult, field string, active map[any]bool) error {
+	if in == nil {
+		return nil
+	}
+	if active[in] {
+		return fmt.Errorf("%s: cyclic Go value", field)
+	}
+	active[in] = true
+	defer delete(active, in)
+	if in != nil {
+		if !utf8.ValidString(string(in.Message)) {
+			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "message", false))
 		}
 	}
 	return nil

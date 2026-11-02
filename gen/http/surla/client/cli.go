@@ -218,6 +218,31 @@ func BuildDraftOverridePayload(surlaDraftOverrideBody *string) (*surla.DraftOver
 	return v, nil
 }
 
+// BuildStartLiveTargetPayload builds the payload for the surla
+// start_live_target endpoint from CLI flags.
+func BuildStartLiveTargetPayload(surlaStartLiveTargetBody *string) (*surla.StartLiveTargetPayload, error) {
+	var err error
+	var body StartLiveTargetRequestBody
+	{
+		if surlaStartLiveTargetBody == nil {
+			return nil, fmt.Errorf("missing required flag --body")
+		}
+		err = json.Unmarshal([]byte(*surlaStartLiveTargetBody), &body)
+		if err != nil {
+			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"candidate_commit\": \"4f0b3c1d2e5a6978877665544332211009988776\"\n   }'")
+		}
+		err = goa.MergeErrors(err, goa.ValidatePattern("body.candidate_commit", body.CandidateCommit, "^([0-9a-f]{40}|[0-9a-f]{64})$"))
+		if err != nil {
+			return nil, err
+		}
+	}
+	v := &surla.StartLiveTargetPayload{
+		CandidateCommit: body.CandidateCommit,
+	}
+
+	return v, nil
+}
+
 // BuildVerifyChangePayload builds the payload for the surla verify_change
 // endpoint from CLI flags.
 func BuildVerifyChangePayload(surlaVerifyChangeBody *string, surlaVerifyChangeChangeID *string) (*surla.VerifyChangePayload, error) {

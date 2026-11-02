@@ -11,6 +11,7 @@ import {
   DiffResultView,
   DraftOverrideView,
   IncomingChangeCardView,
+  LiveTargetView,
   ToolInputPartialView,
 } from "./components/c4-graph";
 import { CP1EditorView } from "./components/cp1-editor";
@@ -23,12 +24,16 @@ import {
   DiffResult,
   DraftOverrideResult,
   ExampleItem,
+  LiveTargetResult,
+  StopLiveTargetResult,
   VerificationStatusResult,
   isArchitecturePreviewResult,
   isChangeCardResult,
   isDiffResult,
   isDraftOverrideResult,
+  isLiveTargetResult,
   isPlainObject,
+  isStopLiveTargetResult,
   isVerificationStatusResult,
 } from "./types";
 
@@ -69,6 +74,7 @@ type ActiveResultState =
   | { kind: "cp2-architecture-preview"; preview: ArchitecturePreviewResult }
   | { kind: "cp2-diff"; diff: DiffResult }
   | { kind: "cp3-draft-override"; draft: DraftOverrideResult }
+  | { kind: "cp3-live-target"; live: LiveTargetResult | StopLiveTargetResult }
   | { kind: "cp4-verification"; run: VerificationStatusResult; requestError: string | null }
   | { kind: "cp1-incoming-card"; card: ChangeCardResult }
   | { kind: "partial-input"; partialArgs: Record<string, unknown> }
@@ -377,6 +383,12 @@ export function bootstrapCheckpointApp() {
     if (res.kind === "cp3-draft-override") {
       flushSync(() => {
         resultRoot.render(<DraftOverrideView draft={res.draft} />);
+      });
+      return;
+    }
+    if (res.kind === "cp3-live-target") {
+      flushSync(() => {
+        resultRoot.render(<LiveTargetView result={res.live} />);
       });
       return;
     }
@@ -917,6 +929,19 @@ export function bootstrapCheckpointApp() {
       if (payload.applied_in_store) {
         void refreshAfterPromptUpdate();
       }
+      return;
+    }
+    if (isLiveTargetResult(payload) || isStopLiveTargetResult(payload)) {
+      if (!shouldRetainEditor()) {
+        activeEditor = null;
+        syncEditorRegion();
+      }
+      activeResult = { kind: "cp3-live-target", live: payload };
+      syncResultRegion();
+      rootEl.dataset.state = "cp3-live-target";
+      statusEl.textContent = isLiveTargetResult(payload)
+        ? "Showing the running CP3 live target."
+        : "Showing the stopped CP3 live target.";
       return;
     }
     renderError("Unsupported or malformed Surla checkpoint payload.");
