@@ -13,6 +13,17 @@
 //     were removed, 1 when a scenario did not pass, and 2 when it could not
 //     run or could not remove the pinned binaries.
 //
+// A suite that sets Command.Live also supports a third mode, used by a CP3
+// live target rather than by verification:
+//
+//   - suite --live --artifact name=path ... pins the binaries, calls Live
+//     with the key in the SURLA_LIVE_TARGET_KEY environment variable, prints
+//     one JSON line {"url": "http://127.0.0.1:<port>"} once the candidate is
+//     listening, and serves until SIGINT or SIGTERM or until the target
+//     ends. It exits 0 when it was asked to stop and the target and pinned
+//     binaries were cleaned up, and 2 otherwise. A suite without Live
+//     rejects --live with ExitError and changes nothing else.
+//
 // A scenario result must carry the evidence of every bound binary
 // (candidate.Artifact.Evidence) so the verifier can compare the digests the
 // suite reports with the ones it measured.
@@ -29,6 +40,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -64,6 +76,32 @@ type (
 		// declare, counts a declared scenario the report omits as not run,
 		// and reads holdout tags from Declare alone.
 		Suite func(pinned map[string]candidate.Artifact) (eval.Suite, error)
+		// Live, when set, starts the given pinned binaries the way a scenario
+		// does, for interactive use, and returns once the candidate is
+		// listening. key is the credential the candidate must require on its
+		// prompt-override operation; it comes from LiveKeyEnv and must reach
+		// the candidate only through candidate.Spec.Env. ctx is canceled when
+		// the suite is asked to stop; Live's processes must then stop, and
+		// LiveTarget.Done must deliver once they have. Nil means the suite
+		// supports no --live mode.
+		Live func(ctx context.Context, pinned map[string]candidate.Artifact, key string) (LiveTarget, error)
+	}
+
+	// LiveTarget is a running candidate started by Command.Live.
+	LiveTarget struct {
+		// URL is the candidate's loopback HTTP origin, such as
+		// http://127.0.0.1:8080.
+		URL string
+		// Done delivers once, after every process Live started has exited:
+		// nil when they stopped because ctx was canceled, otherwise why the
+		// target ended.
+		Done <-chan error
+	}
+
+	// liveReady is the one line --live prints when its target listens.
+	liveReady struct {
+		// URL is LiveTarget.URL.
+		URL string `json:"url"`
 	}
 
 	// Declaration is what a suite prints for --describe and what the
@@ -103,6 +141,11 @@ const (
 	ExitFailed = 1
 	// ExitError is the exit status of a suite that could not run.
 	ExitError = 2
+
+	// LiveKeyEnv names the environment variable that carries the --live
+	// target's credential to the suite. It is an environment variable, not a
+	// flag, so the key never appears in a process listing.
+	LiveKeyEnv = "SURLA_LIVE_TARGET_KEY"
 )
 
 // Main runs the suite command described by c with the process's arguments
@@ -127,6 +170,7 @@ func runCommand(ctx context.Context, args []string, stdout, stderr io.Writer, c 
 	fs := flag.NewFlagSet(filepath.Base(os.Args[0]), flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	describe := fs.Bool("describe", false, "print the suite declaration as JSON and exit")
+	live := fs.Bool("live", false, "start the candidate for interactive use, print its URL, and serve until stopped")
 	fs.Var(&artifacts, "artifact", "candidate binary as name=path (repeatable)")
 	fs.Var(&scenarios, "scenario", "run only this scenario (repeatable)")
 	fs.Var(&tags, "tag", "run only scenarios with this tag (repeatable)")
@@ -140,6 +184,17 @@ func runCommand(ctx context.Context, args []string, stdout, stderr io.Writer, c 
 	if fs.NArg() > 0 {
 		fmt.Fprintf(stderr, "unexpected arguments %q\n", fs.Args())
 		return ExitError
+	}
+	if *live {
+		if *describe || len(scenarios) > 0 || len(tags) > 0 {
+			fmt.Fprintln(stderr, "--live cannot be combined with --describe, --scenario or --tag")
+			return ExitError
+		}
+		if err := runLive(ctx, c, artifacts, os.Getenv(LiveKeyEnv), stdout); err != nil {
+			fmt.Fprintln(stderr, err)
+			return ExitError
+		}
+		return ExitPassed
 	}
 	if *describe {
 		if err := writeDeclaration(stdout, c); err != nil {
@@ -231,6 +286,80 @@ func run(ctx context.Context, c Command, artifacts, scenarios, tags []string) (_
 		report, err = runner.Run(ctx, s)
 	}
 	return &report, err
+}
+
+// runLive pins the artifacts into a temporary store, starts them with
+// c.Live, prints the ready line and waits until the target ends. A target
+// that ends while ctx is still active is an error, as is one that does not
+// stop cleanly after ctx is canceled; the store is removed only after Done
+// reports that Live's processes have exited.
+func runLive(ctx context.Context, c Command, artifacts []string, key string, stdout io.Writer) (err error) {
+	if c.Live == nil {
+		return errors.New("this evaluator suite does not support --live: its suite.Command sets no Live function")
+	}
+	if key == "" {
+		return fmt.Errorf("--live requires the target key in %s", LiveKeyEnv)
+	}
+	paths, err := parseArtifacts(artifacts, c.Binaries)
+	if err != nil {
+		return err
+	}
+	store, err := os.MkdirTemp("", "surla-suite-artifacts-*")
+	if err != nil {
+		return fmt.Errorf("create artifact store: %w", err)
+	}
+	pinned := make(map[string]candidate.Artifact, len(paths))
+	for name, path := range paths {
+		a, err := candidate.Pin(store, path)
+		if err != nil {
+			return errors.Join(err, candidate.RemoveStore(store))
+		}
+		pinned[name] = a
+	}
+	liveCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	target, err := c.Live(liveCtx, pinned, key)
+	if err != nil {
+		return errors.Join(fmt.Errorf("start live target: %w", err), candidate.RemoveStore(store))
+	}
+	if target.Done == nil {
+		return errors.Join(errors.New("Live returned a target without a Done channel"), candidate.RemoveStore(store))
+	}
+	// From here Live's processes may use the store, so it is removed only
+	// after Done reports that they have exited.
+	defer func() { err = errors.Join(err, candidate.RemoveStore(store)) }()
+	if err := checkLiveURL(target.URL); err != nil {
+		cancel()
+		return errors.Join(err, <-target.Done)
+	}
+	if err := json.NewEncoder(stdout).Encode(liveReady{URL: target.URL}); err != nil {
+		cancel()
+		return errors.Join(fmt.Errorf("print ready line: %w", err), <-target.Done)
+	}
+	select {
+	case doneErr := <-target.Done:
+		if doneErr == nil {
+			doneErr = errors.New("the live target stopped although it was not asked to")
+		}
+		return fmt.Errorf("live target ended: %w", doneErr)
+	case <-ctx.Done():
+		cancel()
+		if doneErr := <-target.Done; doneErr != nil {
+			return fmt.Errorf("stop live target: %w", doneErr)
+		}
+		return nil
+	}
+}
+
+// checkLiveURL requires an http origin on the IPv4 loopback address, the
+// only address a sandboxed candidate can listen on.
+func checkLiveURL(raw string) error {
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme != "http" || u.Hostname() != "127.0.0.1" || u.Port() == "" ||
+		(u.Path != "" && u.Path != "/") || u.RawQuery != "" || u.Fragment != "" || u.User != nil {
+		return fmt.Errorf("live target URL %q is not an http://127.0.0.1:<port> origin", raw)
+	}
+	return nil
 }
 
 // parseArtifacts maps --artifact name=path flags and requires exactly the
