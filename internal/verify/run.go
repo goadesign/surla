@@ -87,6 +87,26 @@ type (
 		Err error
 	}
 
+	// Prepared is what Prepare built: the binding of the exact commits and
+	// candidate binary digests, the suite program, and the --artifact flags
+	// that hand the built candidate binaries to it.
+	Prepared struct {
+		// Binding names the candidate and suite commits, the request revision
+		// and every built binary's digest. Its SuiteID and Environment are
+		// empty until the suite describes itself.
+		Binding Binding
+		// SuiteBin is the built suite program.
+		SuiteBin string
+		// ArtifactFlags are the suite's --artifact name=path arguments, in
+		// binary-name order.
+		ArtifactFlags []string
+		// EvidenceDir holds every preparation command's output.
+		EvidenceDir string
+		// runner runs Run's later suite commands with the same evidence
+		// directory.
+		runner *runner
+	}
+
 	// runner runs the verifier's commands with file-backed output.
 	runner struct {
 		// evidenceDir receives every command's stdout and stderr.
@@ -147,11 +167,12 @@ func IsCommitID(commit string) bool {
 	return commitID.MatchString(commit)
 }
 
-// Run clones the candidate at its exact commit and builds its binaries into
-// WorkDir/candidate-bin, then clones the suite at its exact commit, builds it
-// into WorkDir/suite-bin, asks it for its declaration, runs it against the
-// built binaries, and returns the CP4 report bound to everything that was
-// tested. The report is also written to ReportDir as <digest>.json.
+// Run verifies a plan. Prepare first clones the candidate at its exact commit
+// and builds its binaries into WorkDir/candidate-bin, then clones the suite at
+// its exact commit and builds it into WorkDir/suite-bin. Run then asks the
+// suite for its declaration, runs it against the built binaries, and returns
+// the CP4 report bound to everything that was tested. The report is also
+// written to ReportDir as <digest>.json.
 //
 // Both builds go through candidate.Build: an OS sandbox in which the build
 // reads nothing but its source tree, the toolchain, the module cache and its
@@ -177,114 +198,11 @@ func IsCommitID(commit string) bool {
 // that ran and failed, or that exited abnormally after writing partial
 // results, yields a report that does not pass.
 func Run(ctx context.Context, p Plan) (Report, error) {
-	for name, commit := range map[string]string{"candidate": p.CandidateCommit, "suite": p.SuiteCommit} {
-		if !IsCommitID(commit) {
-			return Report{}, stageError(StageCheckout, summaryPlan, fmt.Errorf("%s commit %q is not a full commit ID", name, commit))
-		}
-	}
-	for name, pkg := range p.Binaries {
-		if err := ValidateArtifactName(name); err != nil {
-			return Report{}, stageError(StageCheckout, summaryPlan, err)
-		}
-		if err := validatePackagePath(pkg); err != nil {
-			return Report{}, stageError(StageCheckout, summaryPlan, fmt.Errorf("binary %q: %w", name, err))
-		}
-	}
-	if err := validatePackagePath(p.SuiteCommand); err != nil {
-		return Report{}, stageError(StageCheckout, summaryPlan, fmt.Errorf("suite command: %w", err))
-	}
-	if p.WorkDir == "" {
-		return Report{}, stageError(StageCheckout, summaryPlan, errors.New("work directory is required"))
-	}
-	workDir, err := filepath.Abs(p.WorkDir)
+	prep, err := Prepare(ctx, p)
 	if err != nil {
-		return Report{}, stageError(StageCheckout, summaryPlan, fmt.Errorf("work directory: %w", err))
+		return Report{}, err
 	}
-	p.WorkDir = workDir
-	switch entries, err := os.ReadDir(p.WorkDir); {
-	case errors.Is(err, fs.ErrNotExist):
-	case err != nil:
-		return Report{}, stageError(StageCheckout, summaryPlan, fmt.Errorf("work directory: %w", err))
-	case len(entries) > 0:
-		return Report{}, stageError(StageCheckout, summaryPlan, fmt.Errorf("work directory %s must be missing or empty", p.WorkDir))
-	}
-	evidenceDir := filepath.Join(p.WorkDir, "evidence")
-	candidateBinDir := filepath.Join(p.WorkDir, "candidate-bin")
-	suiteBinDir := filepath.Join(p.WorkDir, "suite-bin")
-	for _, dir := range []string{evidenceDir, candidateBinDir, suiteBinDir} {
-		if err := os.MkdirAll(dir, 0o700); err != nil {
-			return Report{}, stageError(StageCheckout, summaryPlan, fmt.Errorf("create %s: %w", dir, err))
-		}
-	}
-	r := &runner{evidenceDir: evidenceDir}
-	binding := Binding{
-		CandidateCommit: p.CandidateCommit,
-		RequestRevision: p.RequestRevision,
-		SuiteCommit:     p.SuiteCommit,
-		Artifacts:       map[string]string{},
-	}
-
-	candidateDir := filepath.Join(p.WorkDir, "candidate")
-	if err := r.checkout(ctx, "candidate", p.CandidateRepo, p.CandidateCommit, candidateDir); err != nil {
-		return Report{}, stageError(StageCheckout, "Checking out the candidate commit failed.", err)
-	}
-	moduleDir, err := resolveInside(candidateDir, p.CandidateModule)
-	if err != nil {
-		return Report{}, stageError(StageCheckout, "The candidate commit does not contain the configured module.", fmt.Errorf("candidate module %q: %w", p.CandidateModule, err))
-	}
-	for name, pkg := range p.Binaries {
-		if _, err := resolveInside(moduleDir, pkg); err != nil {
-			return Report{}, stageError(StageCheckout, "The candidate commit does not contain a configured binary package.", fmt.Errorf("binary %q package %q: %w", name, pkg, err))
-		}
-	}
-	toolchain, err := r.prepareBuild(ctx, "candidate", moduleDir, p.WorkDir)
-	if err != nil {
-		return Report{}, stageError(StageBuild, summaryCandidateBuild, err)
-	}
-	var artifactFlags []string
-	for _, name := range slices.Sorted(maps.Keys(p.Binaries)) {
-		out := filepath.Join(candidateBinDir, name)
-		if err := candidate.Build(ctx, candidate.BuildSpec{
-			SourceDir: moduleDir, ModuleDir: moduleDir, Package: p.Binaries[name], Out: out,
-			GOROOT: toolchain.goroot, ModCache: toolchain.modCache, WorkDir: toolchain.workDir,
-			LogFile: filepath.Join(r.evidenceDir, "build-"+name+".log"),
-		}, (*exec.Cmd).Run); err != nil {
-			return Report{}, stageError(StageBuild, summaryCandidateBuild, fmt.Errorf("build candidate %s: %w", name, err))
-		}
-		digest, err := sha256File(out)
-		if err != nil {
-			return Report{}, stageError(StageBuild, summaryCandidateBuild, err)
-		}
-		binding.Artifacts[name] = digest
-		artifactFlags = append(artifactFlags, "--artifact", name+"="+out)
-	}
-
-	suiteDir := filepath.Join(p.WorkDir, "suite")
-	if err := r.checkout(ctx, "suite", p.SuiteRepo, p.SuiteCommit, suiteDir); err != nil {
-		return Report{}, stageError(StageCheckout, "Checking out the evaluator suite failed.", err)
-	}
-	suiteModuleDir, err := resolveInside(suiteDir, p.SuiteModule)
-	if err != nil {
-		return Report{}, stageError(StageCheckout, summaryPlan, fmt.Errorf("suite module %q: %w", p.SuiteModule, err))
-	}
-	if _, err := resolveInside(suiteModuleDir, p.SuiteCommand); err != nil {
-		return Report{}, stageError(StageCheckout, summaryPlan, fmt.Errorf("suite command %q: %w", p.SuiteCommand, err))
-	}
-	suiteToolchain, err := r.prepareBuild(ctx, "suite", suiteModuleDir, p.WorkDir)
-	if err != nil {
-		return Report{}, stageError(StageBuild, summarySuiteBuild, err)
-	}
-	// The suite builds in the same sandbox as the candidate, readable only
-	// within its own checkout: its module may replace sibling modules there,
-	// but no link or replace can pull in source outside SuiteCommit.
-	suiteBin := filepath.Join(suiteBinDir, "suite")
-	if err := candidate.Build(ctx, candidate.BuildSpec{
-		SourceDir: suiteDir, ModuleDir: suiteModuleDir, Package: p.SuiteCommand, Out: suiteBin,
-		GOROOT: suiteToolchain.goroot, ModCache: suiteToolchain.modCache, WorkDir: suiteToolchain.workDir,
-		LogFile: filepath.Join(r.evidenceDir, "build-suite.log"),
-	}, (*exec.Cmd).Run); err != nil {
-		return Report{}, stageError(StageBuild, summarySuiteBuild, fmt.Errorf("build suite: %w", err))
-	}
+	r, binding, suiteBin, artifactFlags := prep.runner, prep.Binding, prep.SuiteBin, prep.ArtifactFlags
 	declared, err := r.describe(ctx, suiteBin)
 	if err != nil {
 		return Report{}, stageError(StageDescribe, "The evaluator suite did not describe its scenarios.", err)
@@ -302,6 +220,132 @@ func Run(ctx context.Context, p Plan) (Report, error) {
 		return Report{}, stageError(StageReport, "Saving the verification report failed.", err)
 	}
 	return report, nil
+}
+
+// Prepare runs the trusted preparation Run starts with: it checks the plan,
+// clones the candidate at its exact commit and builds its binaries into
+// WorkDir/candidate-bin, then clones the suite at its exact commit and builds
+// it into WorkDir/suite-bin, with the same sandbox, containment and evidence
+// rules Run documents. Run calls it before describing and running the suite;
+// a live CP3 target calls it before starting the suite in --live mode, so
+// both build exactly the same way. The caller owns the process group, as for
+// Run. Every error is a *StageError.
+func Prepare(ctx context.Context, p Plan) (Prepared, error) {
+	for name, commit := range map[string]string{"candidate": p.CandidateCommit, "suite": p.SuiteCommit} {
+		if !IsCommitID(commit) {
+			return Prepared{}, stageError(StageCheckout, summaryPlan, fmt.Errorf("%s commit %q is not a full commit ID", name, commit))
+		}
+	}
+	for name, pkg := range p.Binaries {
+		if err := ValidateArtifactName(name); err != nil {
+			return Prepared{}, stageError(StageCheckout, summaryPlan, err)
+		}
+		if err := validatePackagePath(pkg); err != nil {
+			return Prepared{}, stageError(StageCheckout, summaryPlan, fmt.Errorf("binary %q: %w", name, err))
+		}
+	}
+	if err := validatePackagePath(p.SuiteCommand); err != nil {
+		return Prepared{}, stageError(StageCheckout, summaryPlan, fmt.Errorf("suite command: %w", err))
+	}
+	if p.WorkDir == "" {
+		return Prepared{}, stageError(StageCheckout, summaryPlan, errors.New("work directory is required"))
+	}
+	workDir, err := filepath.Abs(p.WorkDir)
+	if err != nil {
+		return Prepared{}, stageError(StageCheckout, summaryPlan, fmt.Errorf("work directory: %w", err))
+	}
+	p.WorkDir = workDir
+	switch entries, err := os.ReadDir(p.WorkDir); {
+	case errors.Is(err, fs.ErrNotExist):
+	case err != nil:
+		return Prepared{}, stageError(StageCheckout, summaryPlan, fmt.Errorf("work directory: %w", err))
+	case len(entries) > 0:
+		return Prepared{}, stageError(StageCheckout, summaryPlan, fmt.Errorf("work directory %s must be missing or empty", p.WorkDir))
+	}
+	evidenceDir := filepath.Join(p.WorkDir, "evidence")
+	candidateBinDir := filepath.Join(p.WorkDir, "candidate-bin")
+	suiteBinDir := filepath.Join(p.WorkDir, "suite-bin")
+	for _, dir := range []string{evidenceDir, candidateBinDir, suiteBinDir} {
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			return Prepared{}, stageError(StageCheckout, summaryPlan, fmt.Errorf("create %s: %w", dir, err))
+		}
+	}
+	r := &runner{evidenceDir: evidenceDir}
+	binding := Binding{
+		CandidateCommit: p.CandidateCommit,
+		RequestRevision: p.RequestRevision,
+		SuiteCommit:     p.SuiteCommit,
+		Artifacts:       map[string]string{},
+	}
+
+	candidateDir := filepath.Join(p.WorkDir, "candidate")
+	if err := r.checkout(ctx, "candidate", p.CandidateRepo, p.CandidateCommit, candidateDir); err != nil {
+		return Prepared{}, stageError(StageCheckout, "Checking out the candidate commit failed.", err)
+	}
+	moduleDir, err := resolveInside(candidateDir, p.CandidateModule)
+	if err != nil {
+		return Prepared{}, stageError(StageCheckout, "The candidate commit does not contain the configured module.", fmt.Errorf("candidate module %q: %w", p.CandidateModule, err))
+	}
+	for name, pkg := range p.Binaries {
+		if _, err := resolveInside(moduleDir, pkg); err != nil {
+			return Prepared{}, stageError(StageCheckout, "The candidate commit does not contain a configured binary package.", fmt.Errorf("binary %q package %q: %w", name, pkg, err))
+		}
+	}
+	toolchain, err := r.prepareBuild(ctx, "candidate", moduleDir, p.WorkDir)
+	if err != nil {
+		return Prepared{}, stageError(StageBuild, summaryCandidateBuild, err)
+	}
+	var artifactFlags []string
+	for _, name := range slices.Sorted(maps.Keys(p.Binaries)) {
+		out := filepath.Join(candidateBinDir, name)
+		if err := candidate.Build(ctx, candidate.BuildSpec{
+			SourceDir: moduleDir, ModuleDir: moduleDir, Package: p.Binaries[name], Out: out,
+			GOROOT: toolchain.goroot, ModCache: toolchain.modCache, WorkDir: toolchain.workDir,
+			LogFile: filepath.Join(r.evidenceDir, "build-"+name+".log"),
+		}, (*exec.Cmd).Run); err != nil {
+			return Prepared{}, stageError(StageBuild, summaryCandidateBuild, fmt.Errorf("build candidate %s: %w", name, err))
+		}
+		digest, err := sha256File(out)
+		if err != nil {
+			return Prepared{}, stageError(StageBuild, summaryCandidateBuild, err)
+		}
+		binding.Artifacts[name] = digest
+		artifactFlags = append(artifactFlags, "--artifact", name+"="+out)
+	}
+
+	suiteDir := filepath.Join(p.WorkDir, "suite")
+	if err := r.checkout(ctx, "suite", p.SuiteRepo, p.SuiteCommit, suiteDir); err != nil {
+		return Prepared{}, stageError(StageCheckout, "Checking out the evaluator suite failed.", err)
+	}
+	suiteModuleDir, err := resolveInside(suiteDir, p.SuiteModule)
+	if err != nil {
+		return Prepared{}, stageError(StageCheckout, summaryPlan, fmt.Errorf("suite module %q: %w", p.SuiteModule, err))
+	}
+	if _, err := resolveInside(suiteModuleDir, p.SuiteCommand); err != nil {
+		return Prepared{}, stageError(StageCheckout, summaryPlan, fmt.Errorf("suite command %q: %w", p.SuiteCommand, err))
+	}
+	suiteToolchain, err := r.prepareBuild(ctx, "suite", suiteModuleDir, p.WorkDir)
+	if err != nil {
+		return Prepared{}, stageError(StageBuild, summarySuiteBuild, err)
+	}
+	// The suite builds in the same sandbox as the candidate, readable only
+	// within its own checkout: its module may replace sibling modules there,
+	// but no link or replace can pull in source outside SuiteCommit.
+	suiteBin := filepath.Join(suiteBinDir, "suite")
+	if err := candidate.Build(ctx, candidate.BuildSpec{
+		SourceDir: suiteDir, ModuleDir: suiteModuleDir, Package: p.SuiteCommand, Out: suiteBin,
+		GOROOT: suiteToolchain.goroot, ModCache: suiteToolchain.modCache, WorkDir: suiteToolchain.workDir,
+		LogFile: filepath.Join(r.evidenceDir, "build-suite.log"),
+	}, (*exec.Cmd).Run); err != nil {
+		return Prepared{}, stageError(StageBuild, summarySuiteBuild, fmt.Errorf("build suite: %w", err))
+	}
+	return Prepared{
+		Binding:       binding,
+		SuiteBin:      suiteBin,
+		ArtifactFlags: artifactFlags,
+		EvidenceDir:   evidenceDir,
+		runner:        r,
+	}, nil
 }
 
 // Error returns the step, the summary and the full error.

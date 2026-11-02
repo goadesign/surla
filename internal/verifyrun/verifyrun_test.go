@@ -38,6 +38,12 @@ func TestMain(m *testing.M) {
 	if len(os.Args) == 4 && os.Args[1] == "verify-run" {
 		os.Exit(helper(os.Args[2], os.Args[3]))
 	}
+	if len(os.Args) >= 2 && os.Args[1] == "--live" {
+		os.Exit(fakeSuiteLive())
+	}
+	if len(os.Args) == 3 && os.Args[1] == "live-host" {
+		os.Exit(liveHost(os.Args[2]))
+	}
 	os.Exit(m.Run())
 }
 
@@ -49,6 +55,8 @@ func helper(role, dir string) int {
 		err = Supervise(dir, []string{os.Args[0]})
 	case "execute":
 		err = Execute(dir, fakeRun, os.Stdout, os.Stderr)
+	case "live":
+		err = Live(dir, fakePrepare, os.Stdout, os.Stderr)
 	default:
 		err = fmt.Errorf("unknown role %q", role)
 	}

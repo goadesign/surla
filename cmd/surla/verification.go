@@ -43,13 +43,14 @@ type verificationFile struct {
 	Timeout string `json:"timeout"`
 }
 
-// runVerifyRun runs one internal role of a verification run started by
-// verifyrun.Start: `surla verify-run supervise <dir>` or
-// `surla verify-run execute <dir>`. Only verifyrun starts these; they are not
-// listed in the usage text.
+// runVerifyRun runs one internal role started by verifyrun: `surla verify-run
+// supervise <dir>` or `surla verify-run execute <dir>` for a verification run
+// (verifyrun.Start), or `surla verify-run live <dir>` for a CP3 live target
+// (verifyrun.StartLive). Only verifyrun starts these; they are not listed in
+// the usage text.
 func runVerifyRun(args []string) error {
 	if len(args) != 2 {
-		return errors.New("verify-run takes a role (supervise or execute) and a run directory")
+		return errors.New("verify-run takes a role (supervise, execute or live) and a run directory")
 	}
 	self, err := selfCommand()
 	if err != nil {
@@ -60,6 +61,8 @@ func runVerifyRun(args []string) error {
 		return verifyrun.Supervise(dir, self)
 	case "execute":
 		return verifyrun.Execute(dir, verify.Run, os.Stdout, os.Stderr)
+	case "live":
+		return verifyrun.Live(dir, verify.Prepare, os.Stdout, os.Stderr)
 	default:
 		return fmt.Errorf("unknown verify-run role %q", role)
 	}
