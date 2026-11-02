@@ -1,0 +1,51 @@
+# Temporary experiment for the designeval workspace-lifetime design gate. It
+# measures design evaluation with the workspace kept for the whole process
+# (baseline, eval.go as on main c2409e0) and created per call (hypothesis0,
+# this branch), on a fresh runner. Each probe runs in its own go test process
+# so the evaluator's build cache starts empty. Delete this workflow and
+# internal/designevaltiming before any implementation pull request.
+name: timing-probe
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/timing-probe.yml
+      - internal/designeval/**
+      - internal/designevaltiming/**
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: "**/go.sum"
+      - name: Download modules
+        run: go mod download </dev/null
+      - name: Baseline (eval.go from c2409e0)
+        env:
+          TIMING_VARIANT: baseline
+        run: |
+          git checkout c2409e0492e8f811ebff613f41020c23eab876c5 -- internal/designeval/eval.go
+          df -h "$TMPDIR"
+          go test -count=1 -tags timing -run '^TestTimingProbeDirect$' -timeout 30m ./internal/designevaltiming </dev/null
+          go test -count=1 -tags timing -run '^TestTimingProbePreviewHTTP$' -timeout 30m ./internal/designevaltiming </dev/null
+          df -h "$TMPDIR"
+          git checkout HEAD -- internal/designeval/eval.go
+      - name: Hypothesis 0 (this branch)
+        env:
+          TIMING_VARIANT: hypothesis0
+        run: |
+          git diff --exit-code -- internal/designeval/eval.go
+          df -h "$TMPDIR"
+          go test -count=1 -tags timing -run '^TestTimingProbeDirect$' -timeout 30m ./internal/designevaltiming </dev/null
+          go test -count=1 -tags timing -run '^TestTimingProbePreviewHTTP$' -timeout 30m ./internal/designevaltiming </dev/null
+          df -h "$TMPDIR"

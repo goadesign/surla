@@ -47,15 +47,14 @@ type (
 		Tools []*gensurla.ToolContractItem `json:"tools"`
 	}
 
-	// toolchainEnv holds the resolved Go toolchain root, module cache directory,
-	// and private sandboxed build work directory for candidate.Build.
+	// toolchainEnv holds the resolved Go toolchain root and module cache
+	// directory for candidate.Build. Each Evaluate call creates its own build
+	// workspace.
 	toolchainEnv struct {
 		// goroot is the resolved Go toolchain root.
 		goroot string
 		// modCache is the read-only Go module cache directory.
 		modCache string
-		// workDir is the private writable directory for GOCACHE, HOME, and TMPDIR.
-		workDir string
 	}
 
 	// stuckBuildError reports an evaluator build whose process group did not
@@ -72,8 +71,8 @@ type (
 const buildStopGrace = 10 * time.Second
 
 var (
-	// resolveToolchainEnv caches the resolved GOROOT, GOMODCACHE, and private
-	// sandboxed build cache directory used by candidate.Build.
+	// resolveToolchainEnv caches the resolved GOROOT and GOMODCACHE used by
+	// candidate.Build. It creates no directory.
 	resolveToolchainEnv = sync.OnceValues(func() (toolchainEnv, error) {
 		out, err := exec.Command("go", "env", "GOROOT", "GOMODCACHE").Output()
 		if err != nil {
@@ -83,14 +82,9 @@ var (
 		if len(lines) < 2 || strings.TrimSpace(lines[0]) == "" || strings.TrimSpace(lines[1]) == "" {
 			return toolchainEnv{}, fmt.Errorf("unexpected go env output %q", string(out))
 		}
-		workDir, err := os.MkdirTemp("", "surla-designeval-work-*")
-		if err != nil {
-			return toolchainEnv{}, fmt.Errorf("create designeval work dir: %w", err)
-		}
 		return toolchainEnv{
 			goroot:   strings.TrimSpace(lines[0]),
 			modCache: strings.TrimSpace(lines[1]),
-			workDir:  workDir,
 		}, nil
 	})
 )
@@ -126,11 +120,15 @@ func Evaluate(ctx context.Context, files map[string]string) (_ Result, err error
 	storeDir := filepath.Join(tmpDir, "store")
 	defer func() { err = releaseTemp(tmpDir, storeDir, err) }()
 
+	// work is the evaluator build's private HOME, TMPDIR and GOCACHE. It
+	// lives inside this call's temporary directory, so releaseTemp removes it
+	// with the rest, or keeps it when build processes may still use it.
+	workDir := filepath.Join(tmpDir, "work")
 	buildDir := filepath.Join(tmpDir, "build")
 	outDir := filepath.Join(tmpDir, "out")
 	stateDir := filepath.Join(tmpDir, "state")
 	logDir := filepath.Join(tmpDir, "logs")
-	for _, d := range []string{buildDir, outDir, storeDir, stateDir, logDir} {
+	for _, d := range []string{workDir, buildDir, outDir, storeDir, stateDir, logDir} {
 		if err := os.MkdirAll(d, 0o750); err != nil {
 			return Result{}, fmt.Errorf("mkdir %q: %w", d, err)
 		}
@@ -158,7 +156,7 @@ func Evaluate(ctx context.Context, files map[string]string) (_ Result, err error
 		Out:       rawBin,
 		GOROOT:    tc.goroot,
 		ModCache:  tc.modCache,
-		WorkDir:   tc.workDir,
+		WorkDir:   workDir,
 		LogFile:   buildLog,
 	}, runBuild); err != nil {
 		// A stuck build's processes may still be writing its log.
