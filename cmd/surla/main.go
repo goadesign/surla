@@ -303,7 +303,7 @@ func writeServeStatus(w io.Writer, addr *net.TCPAddr, opts controlplane.Options)
 	}
 	if opts.TargetUpdater == nil {
 		fmt.Fprintln(w, "surla: CP3 (draft_override): compiled_rule is on; prompt_template is off"+
-			" (surla serve binds no target prompt updater; embed controlplane with Options.TargetUpdater)")
+			" (surla serve binds no target prompt updater; to change a prompt, edit its source text, commit, and verify the commit)")
 	} else {
 		fmt.Fprintln(w, "surla: CP3 (draft_override): on")
 	}
