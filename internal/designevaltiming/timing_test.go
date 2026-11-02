@@ -22,6 +22,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"sync"
@@ -71,9 +72,19 @@ type (
 		// Result identifies the returned result: a SHA-256 of its
 		// structure, and the concrete facts the fixture should produce.
 		Result resultFacts `json:"result"`
+		// ServerStatus is the HTTP status the server's handler wrote for a
+		// preview request, observed after the request finished; 0 otherwise.
+		ServerStatus int `json:"server_status,omitempty"`
 		// TempEntries lists TempDir's entries after the operation and any
 		// server request it started have stopped.
 		TempEntries []string `json:"temp_entries"`
+	}
+
+	// statusRecorder records the status a handler writes.
+	statusRecorder struct {
+		http.ResponseWriter
+		// status is the written status, 200 until WriteHeader.
+		status int
 	}
 
 	// resultFacts identifies a returned result.
@@ -94,6 +105,9 @@ type (
 		token string
 	}
 )
+
+// maximum20 finds a JSON schema maximum of 20.
+var maximum20 = regexp.MustCompile(`"maximum":\s*20\b`)
 
 // operationTimeout bounds one operation, leaving room for designeval to stop
 // its build process group before the test binary's own deadline.
@@ -136,48 +150,57 @@ var _ = Service("orders", func() {
 
 // TestTimingProbeDirect measures, in one fresh process, a first Evaluate, a
 // second Evaluate of the same snapshot, and a diff of that snapshot against
-// one with an added cancel_order method. Any failure is fatal.
+// one with an added cancel_order method. Only the Evaluate or Compare call is
+// timed. Any failure, a result that does not match the fixture, or an
+// evaluation directory left behind is fatal.
 func TestTimingProbeDirect(t *testing.T) {
 	id := setup(t)
 	files, changed := fixtures(t)
 	for _, probe := range []string{"evaluate_first", "evaluate_second"} {
-		m := measure(t, id, probe, []map[string]string{files}, func(ctx context.Context) (resultFacts, error) {
-			res, err := designeval.Evaluate(ctx, files)
-			if err != nil {
-				return resultFacts{}, err
-			}
-			return evaluationFacts(t, res), nil
+		var res designeval.Result
+		m := measure(t, id, probe, []map[string]string{files}, func(ctx context.Context) error {
+			var err error
+			res, err = designeval.Evaluate(ctx, files)
+			return err
 		})
+		if m.Outcome == "ok" {
+			m.Result = evaluationFacts(t, res)
+		}
 		emit(t, m)
 		if m.Outcome != "ok" {
 			t.Fatalf("%s: %s", probe, m.Outcome)
 		}
+		requireFixture(t, probe, res.Declarations, res.AgentPolicies, res.Tools)
+		requireNoEvaluationLeft(t, id.TempDir)
 	}
-	m := measure(t, id, "diff_third_and_fourth_evaluations", []map[string]string{files, changed}, func(ctx context.Context) (resultFacts, error) {
-		rep, err := diff.Compare(ctx, files, changed)
-		if err != nil {
-			return resultFacts{}, err
-		}
-		facts := resultFacts{Digest: digestJSON(t, rep), Facts: []string{fmt.Sprintf("has_changes=%t", rep.HasChanges)}}
-		for _, d := range rep.AddedDeclarations {
-			facts.Facts = append(facts.Facts, "added="+d)
-		}
-		return facts, nil
+	var rep diff.Report
+	m := measure(t, id, "diff_third_and_fourth_evaluations", []map[string]string{files, changed}, func(ctx context.Context) error {
+		var err error
+		rep, err = diff.Compare(ctx, files, changed)
+		return err
 	})
+	if m.Outcome == "ok" {
+		m.Result = resultFacts{Digest: digestJSON(t, rep), Facts: append([]string{fmt.Sprintf("has_changes=%t", rep.HasChanges)}, prefixed("added=", rep.AddedDeclarations)...)}
+	}
 	emit(t, m)
 	if m.Outcome != "ok" {
 		t.Fatalf("diff: %s", m.Outcome)
 	}
+	if !rep.HasChanges || !slices.Contains(rep.AddedDeclarations, "Service:orders/Method:cancel_order") {
+		t.Fatalf("diff: want the added cancel_order method, got %+v", rep)
+	}
+	requireNoEvaluationLeft(t, id.TempDir)
 }
 
 // TestTimingProbePreviewHTTP measures, in its own fresh process, two
 // preview_architecture requests for a confirmed Change Card through the
 // generated, authenticated HTTP client with the 2-minute budget `surla
 // preview-change` uses by default. It exercises that client and the server,
-// not the CLI's file collection, flags, signals or output. Reaching the
-// 2-minute deadline is a studied outcome, recorded as client_deadline; the
-// probe then waits for the server's request to finish before measuring
-// again. Any other failure is fatal.
+// not the CLI's file collection, flags, signals or output. Only the endpoint
+// call is timed. Reaching the 2-minute deadline is a studied outcome,
+// recorded as client_deadline; the server's own outcome (its HTTP status) is
+// then awaited and recorded, and its evaluation directory must be gone before
+// the next measurement. Anything else is fatal.
 func TestTimingProbePreviewHTTP(t *testing.T) {
 	id := setup(t)
 	files, _ := fixtures(t)
@@ -185,6 +208,14 @@ func TestTimingProbePreviewHTTP(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// closeCP runs once, whether the test reaches its explicit stop or a
+	// fatal path leaves it to t.Cleanup.
+	closeCP := sync.OnceValue(cp.Close)
+	t.Cleanup(func() {
+		if err := closeCP(); err != nil {
+			t.Error(err)
+		}
+	})
 	alice := controlplane.WithPrincipal(context.Background(), controlplane.Principal{ID: "alice@example.com"})
 	card, err := cp.ProposeChange(alice, &gensurla.ProposeChangePayload{ChangeID: "timing", Prompt: "Add order cancellation."})
 	if err != nil || card.Status != controlplane.StatusConfirmed {
@@ -192,48 +223,81 @@ func TestTimingProbePreviewHTTP(t *testing.T) {
 	}
 	auth := controlplane.NewTokenAuthenticator(map[string]controlplane.Principal{"tok": {ID: "alice@example.com"}})
 	handler := controlplane.NewHTTPHandler(cp, auth)
-	var inflight sync.WaitGroup
+	var (
+		inflight sync.WaitGroup
+		mu       sync.Mutex
+		statuses []int
+	)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		inflight.Add(1)
 		defer inflight.Done()
-		handler.ServeHTTP(w, r)
+		rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
+		handler.ServeHTTP(rec, r)
+		mu.Lock()
+		statuses = append(statuses, rec.status)
+		mu.Unlock()
 	}))
+	t.Cleanup(srv.Close)
 	u, err := url.Parse(srv.URL)
 	if err != nil {
 		t.Fatal(err)
 	}
 	endpoint := genhttpsurla.NewClient(u.Scheme, u.Host, &http.Client{Transport: bearer{token: "tok"}},
 		goahttp.RequestEncoder, goahttp.ResponseDecoder, false).PreviewArchitecture()
-	for _, probe := range []string{"preview_http_first", "preview_http_second"} {
-		m := measure(t, id, probe, []map[string]string{files}, func(ctx context.Context) (resultFacts, error) {
+	for i, probe := range []string{"preview_http_first", "preview_http_second"} {
+		var res any
+		m := measure(t, id, probe, []map[string]string{files}, func(ctx context.Context) error {
 			reqCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 			defer cancel()
-			res, err := endpoint(reqCtx, &gensurla.PreviewArchitecturePayload{
+			var err error
+			res, err = endpoint(reqCtx, &gensurla.PreviewArchitecturePayload{
 				ChangeID: card.ChangeID, RequestRevision: card.RequestRevision,
 				Design: &gensurla.DesignSnapshot{Files: files},
 			})
-			if err != nil {
-				if errors.Is(err, context.DeadlineExceeded) && ctx.Err() == nil {
-					return resultFacts{}, errClientDeadline
-				}
-				return resultFacts{}, err
+			if err != nil && errors.Is(err, context.DeadlineExceeded) && ctx.Err() == nil {
+				return errClientDeadline
 			}
-			out := res.(*gensurla.ArchitecturePreviewResult)
-			return previewFacts(t, out), nil
-		}, func() {
-			// The server keeps evaluating after the client gives up; wait for
-			// it, bounded, before listing files or measuring again.
-			if !waitBounded(&inflight, operationTimeout) {
-				t.Fatalf("%s: the server request did not finish within %s", probe, operationTimeout)
-			}
+			return err
 		})
+		// The server keeps evaluating after the client gives up; its own
+		// outcome must be known before anything else is measured.
+		if !waitBounded(&inflight, operationTimeout) {
+			t.Fatalf("%s: the server request did not finish within %s", probe, operationTimeout)
+		}
+		mu.Lock()
+		if len(statuses) != i+1 {
+			mu.Unlock()
+			t.Fatalf("%s: the server recorded %d requests, want %d", probe, len(statuses), i+1)
+		}
+		m.ServerStatus = statuses[i]
+		mu.Unlock()
+		m.TempEntries = tempEntries(t, id.TempDir)
+		if m.Outcome == "ok" {
+			out := res.(*gensurla.ArchitecturePreviewResult)
+			m.Result = resultFacts{Digest: digestJSON(t, out), Facts: []string{
+				"system=" + out.SystemName, "design_digest=" + out.DesignDigest, "banner=" + out.Banner,
+				fmt.Sprintf("containers=%d edges=%d policies=%d tools=%d", len(out.Containers), len(out.Edges), len(out.AgentPolicies), len(out.Tools)),
+			}}
+		}
 		emit(t, m)
 		if m.Outcome != "ok" && m.Outcome != "client_deadline" {
 			t.Fatalf("%s: %s", probe, m.Outcome)
 		}
+		// A completed request must have succeeded on the server too. After a
+		// client deadline the server sees its request cancelled, so any
+		// status is recorded as its outcome; what must hold is that its
+		// evaluation directory is gone, checked next.
+		if m.Outcome == "ok" && m.ServerStatus != http.StatusOK {
+			t.Fatalf("%s: the client succeeded but the server wrote status %d", probe, m.ServerStatus)
+		}
+		requireNoEvaluationLeft(t, id.TempDir)
+		if m.Outcome == "ok" {
+			out := res.(*gensurla.ArchitecturePreviewResult)
+			requirePreviewFixture(t, probe, out)
+		}
 	}
 	srv.Close()
-	if err := cp.Close(); err != nil {
+	if err := closeCP(); err != nil {
 		t.Fatal(err)
 	}
 	emit(t, measurement{identity: id, Probe: "after_server_stopped", Outcome: "ok", TempEntries: tempEntries(t, id.TempDir)})
@@ -297,19 +361,16 @@ func fixtures(t *testing.T) (files, changed map[string]string) {
 	return testmodule.Snapshot(t, "", design), changed
 }
 
-// measure times op under operationTimeout, taking the elapsed time as soon as
-// op returns, then runs after, then lists the probe's TMPDIR.
-func measure(t *testing.T, id identity, probe string, inputs []map[string]string, op func(context.Context) (resultFacts, error), after ...func()) measurement {
+// measure times only op, under operationTimeout, and then lists the
+// probe's TMPDIR. Result evidence is computed by the caller afterwards.
+func measure(t *testing.T, id identity, probe string, inputs []map[string]string, op func(context.Context) error) measurement {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(t.Context(), operationTimeout)
 	defer cancel()
 	start := time.Now()
-	facts, err := op(ctx)
+	err := op(ctx)
 	elapsed := time.Since(start).Seconds()
-	for _, f := range after {
-		f()
-	}
-	m := measurement{identity: id, Probe: probe, Seconds: elapsed, Outcome: "ok", Result: facts, TempEntries: tempEntries(t, id.TempDir)}
+	m := measurement{identity: id, Probe: probe, Seconds: elapsed, Outcome: "ok", TempEntries: tempEntries(t, id.TempDir)}
 	for _, in := range inputs {
 		m.Inputs = append(m.Inputs, designeval.SnapshotDigest(in))
 	}
@@ -320,6 +381,75 @@ func measure(t *testing.T, id identity, probe string, inputs []map[string]string
 		m.Outcome = err.Error()
 	}
 	return m
+}
+
+// requireFixture fails the test unless an evaluation produced the fixture's
+// concrete content: the orders service with get_order (limit maximum 20) and
+// approve_refund, the refund_agent policy of 6 tool calls in 120 seconds,
+// and the issue_refund tool.
+func requireFixture(t *testing.T, probe string, decls map[string]string, policies []*gensurla.AgentPolicyItem, tools []*gensurla.ToolContractItem) {
+	t.Helper()
+	for _, key := range []string{"Service:orders", "Service:orders/Method:get_order", "Service:orders/Method:approve_refund", "Service:orders/Agent:refund_agent"} {
+		if _, ok := decls[key]; !ok {
+			t.Fatalf("%s: declaration %s is missing", probe, key)
+		}
+	}
+	if !maximum20.MatchString(decls["Service:orders/Method:get_order"]) {
+		t.Fatalf("%s: get_order's payload has no limit maximum of 20: %s", probe, decls["Service:orders/Method:get_order"])
+	}
+	requireAgentAndTool(t, probe, policies, tools)
+}
+
+// requirePreviewFixture checks a preview's policies and tools.
+func requirePreviewFixture(t *testing.T, probe string, out *gensurla.ArchitecturePreviewResult) {
+	t.Helper()
+	requireAgentAndTool(t, probe, out.AgentPolicies, out.Tools)
+}
+
+// requireAgentAndTool checks the refund_agent policy and issue_refund tool.
+func requireAgentAndTool(t *testing.T, probe string, policies []*gensurla.AgentPolicyItem, tools []*gensurla.ToolContractItem) {
+	t.Helper()
+	policyOK := slices.ContainsFunc(policies, func(p *gensurla.AgentPolicyItem) bool {
+		return strings.Contains(p.AgentID, "refund_agent") && p.MaxToolCalls == 6 && p.MaxExecutionSeconds == 120
+	})
+	if !policyOK {
+		t.Fatalf("%s: no refund_agent policy with 6 tool calls in 120 seconds: %+v", probe, policies)
+	}
+	if !slices.ContainsFunc(tools, func(c *gensurla.ToolContractItem) bool { return c.Name == "issue_refund" }) {
+		t.Fatalf("%s: the issue_refund tool is missing", probe)
+	}
+}
+
+// requireNoEvaluationLeft fails the test when an evaluation's per-call
+// directory (surla-designeval-<n>) is still in the probe's TMPDIR, which
+// means its build processes may still be running. The baseline's
+// process-wide surla-designeval-work-<n> is expected and not checked here.
+func requireNoEvaluationLeft(t *testing.T, dir string) {
+	t.Helper()
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("list probe TMPDIR: %v", err)
+	}
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), "surla-designeval-") && !strings.HasPrefix(e.Name(), "surla-designeval-work-") {
+			t.Fatalf("evaluation directory %s was left behind; stopping the experiment", e.Name())
+		}
+	}
+}
+
+// prefixed returns each value with prefix.
+func prefixed(prefix string, values []string) []string {
+	out := make([]string, 0, len(values))
+	for _, v := range values {
+		out = append(out, prefix+v)
+	}
+	return out
+}
+
+// WriteHeader records the status.
+func (r *statusRecorder) WriteHeader(code int) {
+	r.status = code
+	r.ResponseWriter.WriteHeader(code)
 }
 
 // evaluationFacts identifies an evaluation result and checks the fixture's
@@ -342,22 +472,6 @@ func evaluationFacts(t *testing.T, res designeval.Result) resultFacts {
 		}
 	}
 	return resultFacts{Digest: digestJSON(t, res), Facts: facts}
-}
-
-// previewFacts identifies a preview result's evaluated architecture.
-func previewFacts(t *testing.T, out *gensurla.ArchitecturePreviewResult) resultFacts {
-	t.Helper()
-	arch := struct {
-		SystemName    string
-		Containers    any
-		Edges         any
-		AgentPolicies any
-		Tools         any
-	}{out.SystemName, out.Containers, out.Edges, out.AgentPolicies, out.Tools}
-	return resultFacts{Digest: digestJSON(t, arch), Facts: []string{
-		"system=" + out.SystemName, "design_digest=" + out.DesignDigest,
-		fmt.Sprintf("containers=%d edges=%d policies=%d tools=%d", len(out.Containers), len(out.Edges), len(out.AgentPolicies), len(out.Tools)),
-	}}
 }
 
 // digestJSON returns the SHA-256 of v's JSON encoding, which sorts map keys.

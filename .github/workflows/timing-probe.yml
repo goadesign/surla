@@ -34,26 +34,37 @@ jobs:
         run: go mod download </dev/null
       - name: Measure both variants
         run: |
-          set +e
-          failed=0
+          set -eu
+          # Restore this branch's eval.go however the step ends, and prove it
+          # matches the commit.
+          restore() {
+            git checkout HEAD -- internal/designeval/eval.go
+            git diff --exit-code HEAD -- internal/designeval/eval.go
+          }
+          trap restore EXIT
+          # probe runs one test in its own go test process with its own empty
+          # TMPDIR. A nonzero exit means a setup, identity, guard, capture or
+          # unsafe-cleanup failure, so it stops the whole experiment; the
+          # studied 2-minute client deadline is recorded inside the probe and
+          # does not fail it.
           probe() { # variant test
             dir="$RUNNER_TEMP/probe-$1-$2"
-            mkdir -p "$dir"
+            mkdir -p "$dir" "$RUNNER_TEMP/gotmp"
             df -k "$RUNNER_TEMP" | tail -1
-            # GOTMPDIR keeps the go command's own build files out of the
-            # probe-owned TMPDIR.
-            mkdir -p "$RUNNER_TEMP/gotmp"
-            GOTMPDIR="$RUNNER_TEMP/gotmp" TMPDIR="$dir" TIMING_VARIANT="$1" go test -v -count=1 -tags timing -run "^$2\$" -timeout 30m ./internal/designevaltiming </dev/null
-            rc=$?
+            rc=0
+            GOTMPDIR="$RUNNER_TEMP/gotmp" TMPDIR="$dir" TIMING_VARIANT="$1" \
+              go test -v -count=1 -tags timing -run "^$2\$" -timeout 30m ./internal/designevaltiming </dev/null || rc=$?
             echo "PROBE_EXIT variant=$1 test=$2 exit=$rc"
             df -k "$RUNNER_TEMP" | tail -1
-            [ $rc -eq 0 ] || failed=1
+            if [ "$rc" -ne 0 ]; then
+              echo "STOP: $1 $2 failed; no further probes run"
+              exit "$rc"
+            fi
           }
           git checkout c2409e0492e8f811ebff613f41020c23eab876c5 -- internal/designeval/eval.go
+          git diff --exit-code c2409e0492e8f811ebff613f41020c23eab876c5 -- internal/designeval/eval.go
           probe baseline TestTimingProbeDirect
           probe baseline TestTimingProbePreviewHTTP
-          git checkout HEAD -- internal/designeval/eval.go
-          git diff --exit-code -- internal/designeval/eval.go || exit 1
+          restore
           probe hypothesis0 TestTimingProbeDirect
           probe hypothesis0 TestTimingProbePreviewHTTP
-          exit $failed
