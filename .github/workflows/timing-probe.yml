@@ -1,9 +1,11 @@
 # Temporary experiment for the designeval workspace-lifetime design gate. It
 # measures design evaluation with the workspace kept for the whole process
 # (baseline, eval.go as on main c2409e0) and created per call (hypothesis0,
-# this branch), on a fresh runner. Each probe runs in its own go test process
-# so the evaluator's build cache starts empty. Delete this workflow and
-# internal/designevaltiming before any implementation pull request.
+# this branch), on a fresh runner. Each probe runs in its own `go test -v`
+# process with its own empty TMPDIR, so the evaluator's build cache starts
+# empty and every leftover directory belongs to that probe. Delete this
+# workflow and internal/designevaltiming before any implementation pull
+# request.
 name: timing-probe
 
 on:
@@ -19,7 +21,7 @@ permissions:
 jobs:
   probe:
     runs-on: macos-latest
-    timeout-minutes: 60
+    timeout-minutes: 75
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
@@ -30,22 +32,28 @@ jobs:
           cache-dependency-path: "**/go.sum"
       - name: Download modules
         run: go mod download </dev/null
-      - name: Baseline (eval.go from c2409e0)
-        env:
-          TIMING_VARIANT: baseline
+      - name: Measure both variants
         run: |
+          set +e
+          failed=0
+          probe() { # variant test
+            dir="$RUNNER_TEMP/probe-$1-$2"
+            mkdir -p "$dir"
+            df -k "$RUNNER_TEMP" | tail -1
+            # GOTMPDIR keeps the go command's own build files out of the
+            # probe-owned TMPDIR.
+            mkdir -p "$RUNNER_TEMP/gotmp"
+            GOTMPDIR="$RUNNER_TEMP/gotmp" TMPDIR="$dir" TIMING_VARIANT="$1" go test -v -count=1 -tags timing -run "^$2\$" -timeout 30m ./internal/designevaltiming </dev/null
+            rc=$?
+            echo "PROBE_EXIT variant=$1 test=$2 exit=$rc"
+            df -k "$RUNNER_TEMP" | tail -1
+            [ $rc -eq 0 ] || failed=1
+          }
           git checkout c2409e0492e8f811ebff613f41020c23eab876c5 -- internal/designeval/eval.go
-          df -h "$TMPDIR"
-          go test -count=1 -tags timing -run '^TestTimingProbeDirect$' -timeout 30m ./internal/designevaltiming </dev/null
-          go test -count=1 -tags timing -run '^TestTimingProbePreviewHTTP$' -timeout 30m ./internal/designevaltiming </dev/null
-          df -h "$TMPDIR"
+          probe baseline TestTimingProbeDirect
+          probe baseline TestTimingProbePreviewHTTP
           git checkout HEAD -- internal/designeval/eval.go
-      - name: Hypothesis 0 (this branch)
-        env:
-          TIMING_VARIANT: hypothesis0
-        run: |
-          git diff --exit-code -- internal/designeval/eval.go
-          df -h "$TMPDIR"
-          go test -count=1 -tags timing -run '^TestTimingProbeDirect$' -timeout 30m ./internal/designevaltiming </dev/null
-          go test -count=1 -tags timing -run '^TestTimingProbePreviewHTTP$' -timeout 30m ./internal/designevaltiming </dev/null
-          df -h "$TMPDIR"
+          git diff --exit-code -- internal/designeval/eval.go || exit 1
+          probe hypothesis0 TestTimingProbeDirect
+          probe hypothesis0 TestTimingProbePreviewHTTP
+          exit $failed
