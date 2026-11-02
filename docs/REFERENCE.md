@@ -20,8 +20,8 @@
 ## Quickstart & MCP Configuration
 
 ### Prerequisites
-- **Go 1.27.3+**, matching the repository's `go.mod` files
-- **Surla CLI** (`go install github.com/goadesign/surla/cmd/surla@latest`, or `go run ./cmd/surla` from a repository checkout) and the **Goa CLI** (`go install goa.design/goa/v3/cmd/goa@latest`)
+- **Go 1.27.3+**, matching the repository's `go.mod` files (`surla init` runs module-pinned `go run goa.design/goa/v3/cmd/goa gen`, and `surla preview` uses Surla's sandboxed evaluator, so a globally installed `goa` binary is not required)
+- **Surla CLI** (`go install github.com/goadesign/surla/cmd/surla@latest`, or `go run ./cmd/surla` from a repository checkout)
 - **macOS** (`sandbox-exec` is used by `verify/candidate` to isolate candidate builds and processes; non-macOS hosts fail closed with `ErrIsolationUnavailable`)
 - **Temporal CLI** (`brew install temporal`) for running the end-to-end durable workflow crash and replay verification suites
 
@@ -43,29 +43,61 @@ Omitting all model flags starts the server without feature-request analysis. The
 <a id="register-surla-in-mcpjson"></a>
 ### Register Surla in Your MCP Client
 
-For **Claude Code, Gemini CLI, or Cursor**, add Surla to your project's `.mcp.json` (or user-level MCP configuration):
+Register `http://127.0.0.1:8090/mcp` in your coding agent's MCP configuration file:
 
-```json
-{
-  "mcpServers": {
-    "surla": {
-      "type": "http",
-      "url": "http://127.0.0.1:8090/mcp",
-      "headers": {
-        "Authorization": "Bearer dev-secret-token"
+- **Claude Code** — save `.mcp.json` in the project root (see the [Claude Code MCP documentation](https://code.claude.com/docs/en/mcp#project-scope)):
+
+  ```json
+  {
+    "mcpServers": {
+      "surla": {
+        "type": "http",
+        "url": "http://127.0.0.1:8090/mcp",
+        "headers": {
+          "Authorization": "Bearer dev-secret-token"
+        }
       }
     }
   }
-}
-```
+  ```
 
-For **Codex**, export `SURLA_AUTH_TOKEN="dev-secret-token"` in the shell where you launch Codex and register Surla in `~/.codex/config.toml` or a trusted project's `.codex/config.toml` (see the [Codex MCP documentation](https://learn.chatgpt.com/docs/extend/mcp?surface=cli)):
+- **Cursor** — save `.cursor/mcp.json` in the project or `~/.cursor/mcp.json` globally (see the [Cursor MCP documentation](https://cursor.com/help/customization/mcp)):
 
-```toml
-[mcp_servers.surla]
-url = "http://127.0.0.1:8090/mcp"
-bearer_token_env_var = "SURLA_AUTH_TOKEN"
-```
+  ```json
+  {
+    "mcpServers": {
+      "surla": {
+        "url": "http://127.0.0.1:8090/mcp",
+        "headers": {
+          "Authorization": "Bearer dev-secret-token"
+        }
+      }
+    }
+  }
+  ```
+
+- **Gemini CLI** — save `.gemini/settings.json` in the project or `~/.gemini/settings.json` globally, using `httpUrl` for streamable HTTP (`url` selects SSE in Gemini CLI; see the [Gemini CLI MCP documentation](https://geminicli.com/docs/tools/mcp-server/)):
+
+  ```json
+  {
+    "mcpServers": {
+      "surla": {
+        "httpUrl": "http://127.0.0.1:8090/mcp",
+        "headers": {
+          "Authorization": "Bearer dev-secret-token"
+        }
+      }
+    }
+  }
+  ```
+
+- **Codex** — export `SURLA_AUTH_TOKEN="dev-secret-token"` in the shell where you launch Codex and register Surla in `~/.codex/config.toml` or a trusted project's `.codex/config.toml` (see the [Codex MCP documentation](https://learn.chatgpt.com/docs/extend/mcp?surface=cli)):
+
+  ```toml
+  [mcp_servers.surla]
+  url = "http://127.0.0.1:8090/mcp"
+  bearer_token_env_var = "SURLA_AUTH_TOKEN"
+  ```
 
 ### Configure the Proposed Swarm Roster
 

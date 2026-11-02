@@ -68,12 +68,11 @@ Instead of reading a 2,000-line diff blindly, Surla separates fast prompt tuning
 
 ### 1. Inspect, Diff, or Scaffold a Goa-AI Project Locally (`0` API Keys Needed)
 
-Surla requires **macOS** (`sandbox-exec` isolates candidate builds and processes) and **Go 1.27.3+**. Before configuring an LLM key or starting a server, install the `surla` and `goa` CLIs to scaffold and preview a new starter service from anywhere:
+Surla requires **macOS** (`sandbox-exec` isolates candidate builds and processes) and **Go 1.27.3+**. Before configuring an LLM key or starting a server, install the `surla` CLI to scaffold and preview a new starter service from anywhere (`surla init` runs module-pinned `go run goa.design/goa/v3/cmd/goa gen` and `surla preview` runs Surla's sandboxed evaluator, so no separate global `goa` install is needed):
 
 ```bash
-# Install the Surla and Goa CLIs (embeds the published module version for surla init):
+# Install the Surla CLI (embeds the published module version for surla init):
 go install github.com/goadesign/surla/cmd/surla@latest
-go install goa.design/goa/v3/cmd/goa@latest
 
 # Scaffold a new Goa + Goa-AI + Model starter service and visible eval/ suite:
 surla init -dir /tmp/shop -module example.com/shop
@@ -115,21 +114,7 @@ surla serve \
   -swarm-profiles ./examples/orders/swarm-profiles.example.json
 ```
 
-Register `http://127.0.0.1:8090/mcp` in your MCP client (see [Client-Specific MCP Configuration](docs/REFERENCE.md#register-surla-in-your-mcp-client), [Terminology at a Glance](docs/REFERENCE.md#terminology-at-a-glance), and [`-swarm-profiles` configuration](docs/REFERENCE.md#configure-the-proposed-swarm-roster); [`examples/orders/swarm-profiles.example.json`](examples/orders/swarm-profiles.example.json) is an illustrative operator-edited profile file where `"authenticated": true` is an operator assertion rather than a live credential check, and setting `ANTHROPIC_API_KEY` for CP1 analysis does not authenticate the OpenAI or Google coding-agent CLIs). For **Claude Code, Gemini CLI, or Cursor**, save `.mcp.json` (for **Codex**, configure `[mcp_servers.surla]` with `bearer_token_env_var = "SURLA_AUTH_TOKEN"` in `~/.codex/config.toml` or `.codex/config.toml` as shown in [`docs/REFERENCE.md`](docs/REFERENCE.md#register-surla-in-your-mcp-client)):
-
-```json
-{
-  "mcpServers": {
-    "surla": {
-      "type": "http",
-      "url": "http://127.0.0.1:8090/mcp",
-      "headers": {
-        "Authorization": "Bearer dev-secret-token"
-      }
-    }
-  }
-}
-```
+Register `http://127.0.0.1:8090/mcp` in your coding agent using the client-specific configuration in **[Register Surla in Your MCP Client (`docs/REFERENCE.md`)](docs/REFERENCE.md#register-surla-in-your-mcp-client)** (covering **Claude Code** `.mcp.json`, **Cursor** `.cursor/mcp.json`, **Gemini CLI** `.gemini/settings.json` with `httpUrl`, and **Codex** `.codex/config.toml`; see also [Terminology at a Glance](docs/REFERENCE.md#terminology-at-a-glance) and [`-swarm-profiles` configuration](docs/REFERENCE.md#configure-the-proposed-swarm-roster)—[`examples/orders/swarm-profiles.example.json`](examples/orders/swarm-profiles.example.json) is an illustrative operator-edited profile file where `"authenticated": true` is an operator assertion rather than a live credential check, and setting `ANTHROPIC_API_KEY` for CP1 analysis does not authenticate the OpenAI or Google coding-agent CLIs).
 
 Then prompt your agent:
 
@@ -146,7 +131,7 @@ To run the full independent verification suite (`surla verify` and `surla approv
 - **[Orders Reference Platform (`examples/orders/README.md`)](examples/orders/README.md)** — Walk through the Golden Path `orders` platform, run `surla verify` (full vs. `-builder-view`), and watch `TestSeededPayloadBloatFailsTheBudget` catch a token regression.
 - **[How Surla Works (`docs/HOW_IT_WORKS.md`)](docs/HOW_IT_WORKS.md)** — Walk through the 5 checkpoints (`CP1`–`CP5`), the proposed cross-model team, fast draft overrides, and OS-isolated verification.
 - **[Golden Path Architecture (`docs/ARCHITECTURE_PLAYBOOK.md`)](docs/ARCHITECTURE_PLAYBOOK.md)** — Explore the 7 Golden Path rules that keep Surla platforms maintainable and see how the Goa Design suite powers them.
-- **[CLI, MCP & Repo Reference (`docs/REFERENCE.md`)](docs/REFERENCE.md)** — Configure MCP clients (`.mcp.json` and Codex `config.toml`), browse the MCP tools and CLI flags, and run the [`examples/orders`](examples/orders/) reference suite.
+- **[CLI, MCP & Repo Reference (`docs/REFERENCE.md`)](docs/REFERENCE.md)** — Configure MCP clients (Claude Code, Cursor, Gemini CLI, and Codex), browse the MCP tools and CLI flags, and run the [`examples/orders`](examples/orders/) reference suite.
 - **[Architecture Proposal (`PROPOSAL.md`)](PROPOSAL.md)** & **[Product Vision (`PRESS_RELEASE.md`)](PRESS_RELEASE.md)** — Read the full system design, threat model, and Working Backwards press release.
 
 ## License
