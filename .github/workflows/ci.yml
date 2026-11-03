@@ -94,6 +94,12 @@ jobs:
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
       - name: Verifier end to end
         run: go test -race -tags e2e ./internal/verify </dev/null
+      - name: Generation journeys end to end
+        # surla gen against host goa gen, and surla init followed by surla gen
+        # on a fresh starter, each through the sandboxed generator. -count=1
+        # keeps a cached result from skipping the journeys. 15m is a budget
+        # for the package, not a measured or guaranteed duration.
+        run: go test -race -count=1 -timeout 15m -tags e2e ./cmd/surla </dev/null
       - name: Starter project end to end
         # The live CP3 journey test builds a generated starter in the sandbox
         # several times (two live targets and two verifications), which does

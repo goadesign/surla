@@ -406,6 +406,8 @@ appropriate for CPU, memory, and restarts.
   example module before running its commands:
   - `go test -race ./...`
   - `go test -race -tags e2e ./internal/verify`
+  - `go test -race -count=1 -tags e2e ./cmd/surla` for `surla gen` and
+    `surla init` generation
   - `(cd examples/orders && go test -race ./...)` when `examples/orders`
     changed
   - `(cd examples/orders-eval && go test -race -tags e2e ./acceptance)` when

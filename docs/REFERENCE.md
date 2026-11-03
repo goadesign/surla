@@ -379,11 +379,12 @@ go test -race ./...
 (cd examples/orders-eval && go test -race ./...)
 ```
 
-The end-to-end and starter-project integration tests require macOS (`sandbox-exec`); `examples/orders-eval/acceptance` also requires the Temporal CLI. Run the five acceptance scenarios and the seeded token-budget regression, the verifier's complete `Run` → report → `Approve` test, and the `surla init` starter-project build and sandboxed evaluator test (all run automatically on GitHub Actions in [`.github/workflows/ci.yml`](../.github/workflows/ci.yml)):
+The end-to-end and starter-project integration tests require macOS (`sandbox-exec`); `examples/orders-eval/acceptance` also requires the Temporal CLI. Run the five acceptance scenarios and the seeded token-budget regression, the verifier's complete `Run` → report → `Approve` test, the `surla gen` and `surla init` generation journeys, and the `surla init` starter-project build and sandboxed evaluator test (all run automatically on GitHub Actions in [`.github/workflows/ci.yml`](../.github/workflows/ci.yml)):
 
 ```bash
 (cd examples/orders-eval && go test -race -tags e2e ./acceptance)
 go test -race -tags e2e ./internal/verify
+go test -race -count=1 -tags e2e ./cmd/surla
 go test -race -tags scaffold ./internal/scaffold
 ```
 
