@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -89,6 +90,21 @@ type (
 		modCache string
 	}
 
+	// generatedFile is one entry of the generation program's sources.json.
+	generatedFile struct {
+		// Path is the module-relative, slash-separated path.
+		Path string `json:"path"`
+		// Bytes is the file's content.
+		Bytes []byte `json:"bytes"`
+	}
+
+	// buildError reports a harness program that did not compile. Its message
+	// carries the compiler's diagnostics unchanged.
+	buildError struct {
+		// err is the compile error, with the build log.
+		err error
+	}
+
 	// stuckBuildError reports an evaluator build whose process group did not
 	// empty after the build ended. Its processes may still use the evaluation's
 	// temporary directory, so Evaluate keeps it.
@@ -101,6 +117,10 @@ type (
 // buildStopGrace bounds how long the evaluator build gets to exit after it
 // is killed, and how long its process group may take to empty.
 const buildStopGrace = 10 * time.Second
+
+// completeSourcesGoa is the first goa.design/goa/v3 version that provides
+// generator.CompleteSources, which Generate needs.
+const completeSourcesGoa = "v3.35.1-0.20261103205041-35e789e8f9b1"
 
 // errEvaluatorClosed is the cause of an evaluation canceled by Close, and
 // the error Evaluate returns after Close.
@@ -126,22 +146,37 @@ func NewEvaluator() *Evaluator {
 // prepareHarnessModule). The evaluator program is then compiled with
 // candidate.Build and run with candidate.Exec, so neither compiling nor
 // running the design can read evaluator files or reach the network.
-func (e *Evaluator) Evaluate(ctx context.Context, files map[string]string) (_ Result, err error) {
-	workDir, err := e.admit()
-	if err != nil {
-		return Result{}, err
-	}
-	ctx, cancel := context.WithCancelCause(ctx)
-	stop := context.AfterFunc(e.ctx, func() { cancel(errEvaluatorClosed) })
-	// This runs after evaluate's own deferred cleanup of its temporary
-	// directory, and marks the evaluation finished only after everything it
-	// started has been released.
-	defer func() {
-		stop()
-		cancel(nil)
-		e.finish(err)
-	}()
-	return evaluate(ctx, files, workDir)
+func (e *Evaluator) Evaluate(ctx context.Context, files map[string]string) (Result, error) {
+	var res Result
+	err := e.admitted(ctx, func(ctx context.Context, workDir string) error {
+		var err error
+		res, err = evaluate(ctx, files, workDir)
+		return err
+	})
+	return res, err
+}
+
+// Generate returns every path and its bytes that `goa gen` writes for the
+// design in a module snapshot, including gen/goa.json, with each generated
+// file's header naming "$ surla gen". It compiles and runs a generation
+// program inside the same sandbox as Evaluate, with the target module's own
+// dependency versions, and calls Goa's generator.CompleteSources, which fails
+// when a generated file would be changed after it is written, such as a gRPC
+// design's protobuf output.
+//
+// The target must select a goa.design/goa/v3 that provides CompleteSources.
+// When the generation program does not compile, the error keeps the
+// compiler's diagnostics and names the Goa module the build selected, so the
+// caller can tell whether the module needs a newer Goa. Like Evaluate, it
+// shares the evaluator's workspace and fails at once after Close.
+func (e *Evaluator) Generate(ctx context.Context, files map[string]string) (map[string][]byte, error) {
+	var out map[string][]byte
+	err := e.admitted(ctx, func(ctx context.Context, workDir string) error {
+		var err error
+		out, err = generate(ctx, files, workDir)
+		return err
+	})
+	return out, err
 }
 
 // Close cancels the evaluations in progress, waits until each has released
@@ -151,6 +186,16 @@ func (e *Evaluator) Evaluate(ctx context.Context, files map[string]string) (_ Re
 // of that one cleanup once it has finished.
 func (e *Evaluator) Close() error {
 	return e.closeResult()
+}
+
+// Error returns the compile error and its diagnostics.
+func (e *buildError) Error() string {
+	return e.err.Error()
+}
+
+// Unwrap returns the compile error.
+func (e *buildError) Unwrap() error {
+	return e.err
 }
 
 // Error describes the build processes left running.
@@ -163,25 +208,117 @@ func (e *stuckBuildError) Unwrap() error {
 	return e.err
 }
 
+// generate runs one generation in a temporary directory of its own, with
+// workDir as the build's shared HOME, TMPDIR and GOCACHE.
+func generate(ctx context.Context, files map[string]string, workDir string) (map[string][]byte, error) {
+	var out map[string][]byte
+	goa, err := runSandboxed(ctx, files, workDir, generateMainTemplate,
+		func(stateDir string) []string {
+			// One literal argument, which Goa copies into generated headers.
+			return []string{"-sources", filepath.Join(stateDir, "sources.json"), "--cmd=$ surla gen"}
+		},
+		func(stateDir string) error {
+			var err error
+			out, err = readSources(stateDir)
+			return err
+		})
+	if build := (*buildError)(nil); errors.As(err, &build) {
+		return nil, fmt.Errorf("surla gen needs a goa.design/goa/v3 that provides generator.CompleteSources "+
+			"(%s or later); this module builds with goa.design/goa/v3 %s. If the compiler output below shows that "+
+			"CompleteSources is undefined, update the module's goa.design/goa/v3 requirement and go.sum, then run "+
+			"surla gen again: %w", completeSourcesGoa, describe(goa), err)
+	}
+	return out, err
+}
+
+// readSources reads the generation program's sources.json from stateDir. The
+// program is untrusted, so the file is opened through a root confined to
+// stateDir, must be a regular file, and is decoded strictly: unknown fields,
+// trailing data, and repeated paths are errors.
+func readSources(stateDir string) (_ map[string][]byte, err error) {
+	root, err := os.OpenRoot(stateDir)
+	if err != nil {
+		return nil, fmt.Errorf("open generation output: %w", err)
+	}
+	defer func() { err = errors.Join(err, root.Close()) }()
+	info, err := root.Lstat("sources.json")
+	if err != nil {
+		return nil, fmt.Errorf("read generation output: %w", err)
+	}
+	if !info.Mode().IsRegular() {
+		return nil, fmt.Errorf("generation output sources.json is not a regular file (%s)", info.Mode().Type())
+	}
+	f, err := root.Open("sources.json")
+	if err != nil {
+		return nil, fmt.Errorf("read generation output: %w", err)
+	}
+	defer func() { err = errors.Join(err, f.Close()) }()
+	dec := json.NewDecoder(f)
+	dec.DisallowUnknownFields()
+	var listed []generatedFile
+	if err := dec.Decode(&listed); err != nil {
+		return nil, fmt.Errorf("decode generation output: %w", err)
+	}
+	if err := dec.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		return nil, errors.New("decode generation output: unexpected data after the file list")
+	}
+	out := make(map[string][]byte, len(listed))
+	for _, g := range listed {
+		if _, dup := out[g.Path]; dup {
+			return nil, fmt.Errorf("decode generation output: %s is listed twice", g.Path)
+		}
+		out[g.Path] = g.Bytes
+	}
+	return out, nil
+}
+
 // evaluate runs one evaluation in a temporary directory of its own, with
 // workDir as the build's shared HOME, TMPDIR and GOCACHE.
-func evaluate(ctx context.Context, files map[string]string, workDir string) (_ Result, err error) {
+func evaluate(ctx context.Context, files map[string]string, workDir string) (Result, error) {
+	var res Result
+	_, err := runSandboxed(ctx, files, workDir, harnessMainTemplate,
+		func(stateDir string) []string {
+			return []string{"-out", filepath.Join(stateDir, "evaluated.json")}
+		},
+		func(stateDir string) error {
+			rawJSON, err := os.ReadFile(filepath.Join(stateDir, "evaluated.json"))
+			if err != nil {
+				return fmt.Errorf("read evaluated design output: %w", err)
+			}
+			if err := json.Unmarshal(rawJSON, &res); err != nil {
+				return fmt.Errorf("decode evaluated Goa design: %w", err)
+			}
+			return nil
+		})
+	return res, err
+}
+
+// runSandboxed stages the module snapshot, compiles program (a harness
+// template whose {{DESIGN_IMPORT}} and {{GEN_IMPORT}} name the target's
+// packages) with candidate.Build against the target's own dependency
+// versions, and runs it with candidate.Exec and args(stateDir). collect then
+// reads the program's output from stateDir. Everything happens in a temporary
+// directory of its own, with workDir as the build's shared HOME, TMPDIR and
+// GOCACHE; releaseTemp removes it, or keeps it after a stuck build. It
+// returns the Goa module the build selected, and a *buildError when the
+// program does not compile.
+func runSandboxed(ctx context.Context, files map[string]string, workDir, program string, args func(stateDir string) []string, collect func(stateDir string) error) (goa listedModule, err error) {
 	target, err := validateSnapshot(files)
 	if err != nil {
-		return Result{}, err
+		return listedModule{}, err
 	}
 	evalMod, err := evaluatorGoMod()
 	if err != nil {
-		return Result{}, err
+		return listedModule{}, err
 	}
 	tc, err := resolveToolchainEnv(ctx)
 	if err != nil {
-		return Result{}, err
+		return listedModule{}, err
 	}
 
 	tmpDir, err := os.MkdirTemp("", "surla-designeval-*")
 	if err != nil {
-		return Result{}, fmt.Errorf("create temp dir: %w", err)
+		return listedModule{}, fmt.Errorf("create temp dir: %w", err)
 	}
 	storeDir := filepath.Join(tmpDir, "store")
 	defer func() { err = releaseTemp(tmpDir, storeDir, err) }()
@@ -192,21 +329,21 @@ func evaluate(ctx context.Context, files map[string]string, workDir string) (_ R
 	logDir := filepath.Join(tmpDir, "logs")
 	for _, d := range []string{buildDir, outDir, storeDir, stateDir, logDir} {
 		if err := os.MkdirAll(d, 0o750); err != nil {
-			return Result{}, fmt.Errorf("mkdir %q: %w", d, err)
+			return listedModule{}, fmt.Errorf("mkdir %q: %w", d, err)
 		}
 	}
 	if err := stageSnapshot(filepath.Join(buildDir, "target"), files); err != nil {
-		return Result{}, err
+		return listedModule{}, err
 	}
-	designImport := strconv.Quote(target.Module.Mod.Path + "/design")
-	harnessMain := strings.ReplaceAll(harnessMainTemplate, "{{DESIGN_IMPORT}}", designImport)
-	harnessMain = strings.ReplaceAll(harnessMain, "{{GEN_IMPORT}}", strconv.Quote(target.Module.Mod.Path+"/gen"))
-	if err := os.WriteFile(filepath.Join(buildDir, "main.go"), []byte(harnessMain), 0o600); err != nil {
-		return Result{}, fmt.Errorf("write evaluator main.go: %w", err)
+	main := strings.ReplaceAll(program, "{{DESIGN_IMPORT}}", strconv.Quote(target.Module.Mod.Path+"/design"))
+	main = strings.ReplaceAll(main, "{{GEN_IMPORT}}", strconv.Quote(target.Module.Mod.Path+"/gen"))
+	if err := os.WriteFile(filepath.Join(buildDir, "main.go"), []byte(main), 0o600); err != nil {
+		return listedModule{}, fmt.Errorf("write evaluator main.go: %w", err)
 	}
 	gocmd := goCommand{bin: filepath.Join(tc.goroot, "bin", "go")}
-	if err := prepareHarnessModule(ctx, gocmd, buildDir, target, evalMod, logDir); err != nil {
-		return Result{}, err
+	goa, err = prepareHarnessModule(ctx, gocmd, buildDir, target, evalMod, logDir)
+	if err != nil {
+		return listedModule{}, err
 	}
 
 	rawBin := filepath.Join(outDir, "designeval-bin")
@@ -223,47 +360,35 @@ func evaluate(ctx context.Context, files map[string]string, workDir string) (_ R
 	}, runBuild); err != nil {
 		// A stuck build's processes may still be writing its log.
 		if stuck := (*stuckBuildError)(nil); errors.As(err, &stuck) {
-			return Result{}, fmt.Errorf("compile Goa design: %w", err)
+			return goa, fmt.Errorf("compile Goa design: %w", err)
 		}
 		logBytes, readErr := os.ReadFile(buildLog)
 		if readErr != nil {
-			return Result{}, fmt.Errorf("compile Goa design: %w", err)
+			return goa, &buildError{err: fmt.Errorf("compile Goa design: %w", err)}
 		}
-		return Result{}, fmt.Errorf("compile Goa design: %w (%s)", err, strings.TrimSpace(string(logBytes)))
+		return goa, &buildError{err: fmt.Errorf("compile Goa design: %w (%s)", err, strings.TrimSpace(string(logBytes)))}
 	}
 
 	art, err := candidate.Pin(storeDir, rawBin)
 	if err != nil {
-		return Result{}, fmt.Errorf("pin design evaluator binary: %w", err)
+		return goa, fmt.Errorf("pin design evaluator binary: %w", err)
 	}
-
-	outFile := filepath.Join(stateDir, "evaluated.json")
-	logFile := filepath.Join(tmpDir, "designeval.log")
 	proc, err := candidate.Exec(ctx, art, candidate.Spec{
-		Args:     []string{"-out", outFile},
+		Args:     args(stateDir),
 		StateDir: stateDir,
-		LogFile:  logFile,
+		LogFile:  filepath.Join(tmpDir, "designeval.log"),
 	})
 	if err != nil {
-		return Result{}, fmt.Errorf("exec sandboxed design evaluator: %w", err)
+		return goa, fmt.Errorf("exec sandboxed design evaluator: %w", err)
 	}
 	if waitErr := proc.Wait(); waitErr != nil {
 		excerpt, _, exErr := proc.Excerpt(16 << 10)
 		if exErr != nil {
-			return Result{}, fmt.Errorf("evaluate Goa design in sandbox: %w", waitErr)
+			return goa, fmt.Errorf("evaluate Goa design in sandbox: %w", waitErr)
 		}
-		return Result{}, fmt.Errorf("evaluate Goa design in sandbox: %w (%s)", waitErr, strings.TrimSpace(excerpt))
+		return goa, fmt.Errorf("evaluate Goa design in sandbox: %w (%s)", waitErr, strings.TrimSpace(excerpt))
 	}
-
-	rawJSON, err := os.ReadFile(outFile)
-	if err != nil {
-		return Result{}, fmt.Errorf("read evaluated design output: %w", err)
-	}
-	var res Result
-	if err := json.Unmarshal(rawJSON, &res); err != nil {
-		return Result{}, fmt.Errorf("decode evaluated Goa design: %w", err)
-	}
-	return res, nil
+	return goa, collect(stateDir)
 }
 
 // resolveToolchainEnv resolves the Go toolchain root and module cache for one
@@ -316,6 +441,27 @@ func releaseTemp(tmpDir, storeDir string, err error) error {
 		return fmt.Errorf("%w; the temporary directory %s is kept because build processes may still use it", err, tmpDir)
 	}
 	return errors.Join(err, candidate.RemoveStore(storeDir), os.RemoveAll(tmpDir))
+}
+
+// admitted runs op as one admitted evaluation: it registers it, runs it with
+// a context that also ends when Close starts, and, once op has released its
+// own files, releases the context and records whether its build got stuck.
+func (e *Evaluator) admitted(ctx context.Context, op func(ctx context.Context, workDir string) error) (err error) {
+	workDir, err := e.admit()
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithCancelCause(ctx)
+	stop := context.AfterFunc(e.ctx, func() { cancel(errEvaluatorClosed) })
+	// This runs after op's own deferred cleanup of its temporary directory,
+	// and marks the evaluation finished only after everything it started has
+	// been released.
+	defer func() {
+		stop()
+		cancel(nil)
+		e.finish(err)
+	}()
+	return op(ctx, workDir)
 }
 
 // admit registers one evaluation and returns the shared workspace, creating

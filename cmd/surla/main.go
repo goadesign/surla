@@ -106,6 +106,8 @@ Commands:
   preview-change  send a design module to a Surla server to preview its
                   architecture and optional swarm roster for a Change Card
   diff            compare the designs in two module directories
+  gen             regenerate a design module's gen/ inside Surla's sandbox and
+                  replace it atomically
   verify          build a candidate commit and run an evaluator suite against it,
                   printing a verification report
   approve         check that a saved verification report passed and matches the
@@ -184,6 +186,8 @@ func dispatch(sub string, args []string, stdout io.Writer) error {
 		return runPreviewChange(args, stdout, os.Getenv)
 	case "diff":
 		return runDiff(args)
+	case "gen":
+		return runGen(args, stdout, os.Stderr)
 	case "verify":
 		return runVerify(args)
 	case "approve":
@@ -703,26 +707,11 @@ func isSHA256Hex(s string) bool {
 // os.Root handle opened on dir, so a replaced parent directory cannot escape
 // dir. Raw file bytes are preserved as read for local preview and diff.
 func readModuleSnapshot(dir string) (files map[string]string, err error) {
-	cleanDir := filepath.Clean(dir)
-	lstatInfo, err := os.Lstat(cleanDir)
-	if err != nil {
-		return nil, err
-	}
-	if lstatInfo.Mode()&fs.ModeSymlink != 0 {
-		return nil, fmt.Errorf("%s is a symbolic link; a design snapshot holds only regular files", dir)
-	}
-	root, err := os.OpenRoot(cleanDir)
+	cleanDir, root, err := openModuleRoot(dir)
 	if err != nil {
 		return nil, err
 	}
 	defer func() { err = errors.Join(err, root.Close()) }()
-	rootInfo, err := root.Stat(".")
-	if err != nil {
-		return nil, err
-	}
-	if !os.SameFile(lstatInfo, rootInfo) {
-		return nil, fmt.Errorf("%s changed while opening design snapshot root", dir)
-	}
 	return readModuleSnapshotFromRoot(cleanDir, root)
 }
 

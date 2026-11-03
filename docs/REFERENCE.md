@@ -265,6 +265,14 @@ Reads two Go design modules into symlink-safe snapshots (`go.mod`, `go.sum`, and
 - `--old-dir <path>` — Root directory of the previous design module *(required)*.
 - `--new-dir <path>` — Root directory of the candidate design module *(required)*.
 
+### `surla gen`
+Regenerates the `gen/` directory of a design module from its `design/`, inside Surla's sandbox, and replaces `gen/` in one step. The design code and its generators are compiled and run only in the sandbox; Surla writes their output.
+- `-dir <path>` — Root directory of the design module holding `go.mod`, `go.sum`, and `design/` (default `.`).
+
+`surla gen` reads the module as `surla preview` does, then builds and runs a generation program with the module's own dependency versions. That program calls Goa's `generator.CompleteSources`, so the module must select `goa.design/goa/v3` `v3.35.1-0.20261103205041-35e789e8f9b1` or later. With an older Goa, the build fails, and the error shows the compiler output and the Goa version the module uses; update the module's `goa.design/goa/v3` requirement and `go.sum`, then run it again. A design with gRPC transports is refused, because protoc compiles its `.proto` files after generation and cannot run in the sandbox; generate those designs with the module-pinned `go run goa.design/goa/v3/cmd/goa gen <module>/design`.
+
+The new `gen/` is written to a `.surla-gen-<random>` directory in the module and swapped with the current `gen/` in one atomic rename (or moved in when there is none), so `gen/` is never missing or half-written. As with `goa gen`, generated subdirectories that the design no longer produces disappear, and top-level files in `gen/` that are not generated are kept. Generated file headers record `$ surla gen`. Until the swap, any failure or interrupt (SIGINT or SIGTERM) leaves `gen/` untouched and exits non-zero. After the swap, `surla gen` prints `gen/ updated` and the files added, changed, and removed, and exits 0; writing `AGENTS_QUICKSTART.md`, removing the staging directory, or listing the changes can then only print warnings. `go.mod` and `go.sum` are never changed: when the generated code imports a module `go.mod` does not require, the command says to run `go mod tidy`. Leftover `.surla-gen-*` directories from an interrupted run are listed and never deleted.
+
 ### `surla verify`
 Clones the committed candidate and evaluator suite into an isolated work directory, builds the candidate binaries (`WorkDir/candidate-bin/<name>`) and suite runner (`WorkDir/suite-bin/suite`) inside `verify/candidate`'s macOS `sandbox-exec` jail, runs the suite, writes the canonical `verify.Report` JSON to `<report-dir>/<digest>.json`, and prints the JSON report to `stdout` (setup or build errors exit non-zero without printing report JSON, while an assembled report with a failing scenario is written and printed before exiting non-zero).
 - `-candidate-repo <path|url>` — Git repository holding the candidate *(required)*.
@@ -391,7 +399,7 @@ See [`examples/orders/README.md`](../examples/orders/README.md) for a step-by-st
 │   └── design.go                 # Surla Goa & Goa-AI MCP 1.0.0 DSL contract
 ├── cmd/
 │   └── surla/
-│       └── main.go               # CLI entrypoint (`surla init`, `surla serve`, `surla preview`, `surla preview-change`, `surla diff`, `surla verify`, and `surla approve`)
+│       └── main.go               # CLI entrypoint (`surla init`, `surla serve`, `surla preview`, `surla preview-change`, `surla diff`, `surla gen`, `surla verify`, and `surla approve`)
 ├── docs/
 │   ├── HOW_IT_WORKS.md           # The 5 checkpoints, Chorus routing & independent verification
 │   ├── ARCHITECTURE_PLAYBOOK.md  # Golden Path rules & Goa Design suite overview
