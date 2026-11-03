@@ -438,7 +438,9 @@ export function bootstrapCheckpointApp() {
             return;
           }
           editorOpen = shouldRetainEditor();
-          activeResult = { kind: "cp2-architecture-preview" };
+          if (activeResult?.kind !== "cp2-architecture-preview") {
+            activeResult = { kind: "cp2-architecture-preview" };
+          }
           rootEl.dataset.state = "cp2-architecture-preview";
           statusEl.textContent =
             "Showing architecture preview for " + previewState.system_name + ".";
@@ -502,7 +504,9 @@ export function bootstrapCheckpointApp() {
             return;
           }
           editorOpen = shouldRetainEditor();
-          activeResult = { kind: "cp4-verification" };
+          if (activeResult?.kind !== "cp4-verification") {
+            activeResult = { kind: "cp4-verification" };
+          }
           rootEl.dataset.state = "cp4-verification";
           statusEl.textContent =
             selectedRunId !== null
@@ -931,9 +935,15 @@ export function bootstrapCheckpointApp() {
     if (hasPendingListVerifications(target.change_id)) {
       selectionTouchedDuringList.set(target.change_id, true);
     }
+    const sameDisplayedRun =
+      activeResult?.kind === "cp4-verification" &&
+      selectedVerificationChangeId === target.change_id &&
+      selectedRunId === target.run_id;
     selectedVerificationChangeId = target.change_id;
     selectedRunId = target.run_id;
-    activeResult = { kind: "cp4-verification" };
+    if (!sameDisplayedRun) {
+      activeResult = { kind: "cp4-verification" };
+    }
     rootEl.dataset.state = "cp4-verification";
     statusEl.textContent = "Showing the saved verification result.";
     syncAllRegions();
@@ -995,15 +1005,20 @@ export function bootstrapCheckpointApp() {
     if (!shouldRetainEditor()) {
       editorOpen = false;
     }
-    selectedVerificationChangeId = requestedChangeId;
-    if (
+    const nextRunId =
       selectedRunId !== null &&
       runsById.get(selectedRunId)?.change_id !== requestedChangeId
-    ) {
-      const prevList = lastLoadedListByChangeId.get(requestedChangeId);
-      selectedRunId = prevList && prevList.length > 0 ? prevList[0] : null;
+        ? (lastLoadedListByChangeId.get(requestedChangeId)?.[0] ?? null)
+        : selectedRunId;
+    const sameDisplayedVerification =
+      activeResult?.kind === "cp4-verification" &&
+      selectedVerificationChangeId === requestedChangeId &&
+      selectedRunId === nextRunId;
+    selectedVerificationChangeId = requestedChangeId;
+    selectedRunId = nextRunId;
+    if (!sameDisplayedVerification) {
+      activeResult = { kind: "cp4-verification" };
     }
-    activeResult = { kind: "cp4-verification" };
     rootEl.dataset.state = "cp4-verification";
     statusEl.textContent = "Loading saved verification runs...";
 
@@ -1036,6 +1051,7 @@ export function bootstrapCheckpointApp() {
           activeResult?.kind === "cp4-verification" &&
           selectedVerificationChangeId === requestedChangeId
         ) {
+          const prevRunId = selectedRunId;
           if (
             touched &&
             selectedRunId !== null &&
@@ -1046,6 +1062,9 @@ export function bootstrapCheckpointApp() {
             // Preserve the selected run when it remains in the loaded list.
           } else {
             selectedRunId = loadedIds.length > 0 ? loadedIds[0] : null;
+          }
+          if (selectedRunId !== prevRunId) {
+            activeResult = { kind: "cp4-verification" };
           }
           statusEl.textContent =
             loadedIds.length > 0
@@ -1473,19 +1492,28 @@ export function bootstrapCheckpointApp() {
       if (!shouldRetainEditor()) {
         editorOpen = false;
       }
+      const nextRunId =
+        listedIds.length === 0
+          ? null
+          : selectedRunId === null || !listedIds.includes(selectedRunId)
+            ? listedIds[0]
+            : selectedRunId;
+      const sameDisplayedVerification =
+        activeResult?.kind === "cp4-verification" &&
+        selectedVerificationChangeId === payload.change_id &&
+        selectedRunId === nextRunId;
       selectedVerificationChangeId = payload.change_id;
+      selectedRunId = nextRunId;
       if (listedIds.length === 0) {
-        selectedRunId = null;
         statusEl.textContent =
           "No saved verification runs found for Change Card " + payload.change_id + ".";
       } else {
-        if (selectedRunId === null || !listedIds.includes(selectedRunId)) {
-          selectedRunId = listedIds[0];
-        }
         statusEl.textContent =
           "Showing saved verification runs for Change Card " + payload.change_id + ".";
       }
-      activeResult = { kind: "cp4-verification" };
+      if (!sameDisplayedVerification) {
+        activeResult = { kind: "cp4-verification" };
+      }
       rootEl.dataset.state = "cp4-verification";
       syncAllRegions();
       return;
@@ -1494,9 +1522,14 @@ export function bootstrapCheckpointApp() {
       if (!shouldRetainEditor()) {
         editorOpen = false;
       }
+      const sameDisplayedPreview =
+        activeResult?.kind === "cp2-architecture-preview" &&
+        previewState?.change_id === payload.change_id;
       previewState = payload;
       cardLoadErrors.delete(payload.change_id);
-      activeResult = { kind: "cp2-architecture-preview" };
+      if (!sameDisplayedPreview) {
+        activeResult = { kind: "cp2-architecture-preview" };
+      }
       rootEl.dataset.state = "cp2-architecture-preview";
       statusEl.textContent = "Showing architecture preview for " + payload.system_name + ".";
       syncAllRegions();

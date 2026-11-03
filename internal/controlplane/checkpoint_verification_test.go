@@ -329,13 +329,16 @@ async function main() {
     const openBMismatchReq = h.calls[h.calls.length - 1];
     h.reply(openBMismatchReq, input.confirmedR3); await turn();
     expect(h.doc.querySelector("#surla-cp4-card-error") && h.field().value === "Dirty edit on Card A before loading Card B", "mismatched get_change reply overwrote Card A");
+    h.notify({change_id: "chg-card-b", runs: [runCardB]});
     h.doc.querySelector("#surla-open-change-card").click();
     const openBValidReq = h.calls[h.calls.length - 1];
-    // While LoadB is in flight, receiving a same-revision Card A update or a same-run B status update must not drop LoadB.
+    // While LoadB is in flight, clicking the already-selected run B button, receiving a same-selection list notification for B, receiving a same-revision Card A update, or receiving a same-run B status update must not drop LoadB.
+    h.doc.querySelector("#surla-cp4-run-" + runCardB.run_id).click();
+    h.notify({change_id: "chg-card-b", runs: [runCardB]});
     h.notify(input.confirmedR3);
     h.notify({...runCardB, state: input.running.state});
     h.reply(openBValidReq, input.cardB); await turn();
-    expect(h.doc.querySelector("#surla-cp1-editor").dataset.changeId === "chg-card-b" && h.doc.querySelector("#surla-preserved-draft")?.textContent.includes("Dirty edit on Card A before loading Card B"), "loading Card B did not complete across non-navigational updates or did not preserve Card A dirty draft");
+    expect(h.doc.querySelector("#surla-cp1-editor").dataset.changeId === "chg-card-b" && h.doc.querySelector("#surla-preserved-draft")?.textContent.includes("Dirty edit on Card A before loading Card B"), "loading Card B did not complete across same-selection run click, same-selection list notification, or non-navigational updates, or did not preserve Card A dirty draft");
     // 5. Dirty R1 + incoming R2 -> CP4 -> CP1 (and clicking #surla-nav-cp1 while on CP1) preserves incoming R2 and its Switch action; ambiguity ID "toString" never reads Object.prototype.toString.
     h.doc.querySelector("#surla-discard-draft").click();
     h.notify(input.approved);
