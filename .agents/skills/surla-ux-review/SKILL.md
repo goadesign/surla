@@ -103,6 +103,12 @@ source out of its view.
   Record which CLIs it may use, or that none can run here. Do not hand it an
   undocumented HTTP route, because working that out from outside the README
   is coaching.
+- **what each mid-build change needs** (see the tester brief's "Mid-build
+  changes"), recorded as two separate facts: what this machine provides,
+  such as model credentials or the access a live demo needs, and what the
+  commit under test provides, such as a command that regenerates code after a
+  design change. The tester uses them to tell "not supported on this
+  machine" apart from "blocked by a missing Surla capability".
 
 ## 2. Start the two subagents
 
@@ -118,6 +124,7 @@ fill in every placeholder:
 | `{{PARTICIPANT}}` | the participant's folder |
 | `{{TESTER}}` | the tester's folder |
 | `{{CHALLENGE}}` | the tester's challenge text, word for word |
+| `{{BASELINE_REPORT}}` | the path of an earlier study's `report.md` to compare with, or "none". Give it to the tester only, never the participant |
 
 Start each role as a new subagent that does not inherit this conversation.
 This conversation holds the skill, may hold Surla's source or an earlier
@@ -153,10 +160,24 @@ Each round trip works like this:
    each new `surla` command.
 2. Append the report to the transcript and send it unchanged to the tester,
    together with the elapsed time since the previous report.
-3. The tester replies with up to three questions, an optional hint, and a
-   decision: `continue`, `stop_for_bug`, or `end_session`.
-4. Append the reply to the transcript. On `continue`, send the participant
-   only the questions and the hint, word for word.
+3. The tester replies with up to three questions, an optional hint, an
+   optional `CHANGE_REQUEST`, and a decision: `continue`, `stop_for_bug`, or
+   `end_session`.
+4. If there is a `CHANGE_REQUEST`, check it before relaying it. If it names
+   a Surla command or MCP tool, a checkpoint (`CP1`–`CP5`), "Change Card",
+   "checkpoint", or a Surla doc or section, send it back to the tester to
+   reword and relay nothing yet. A returned draft does not count as handed
+   over. If private criteria or tester instructions ever reach the
+   participant, treat it as a scope leak.
+5. Append the reply to the transcript. On `continue`, send the participant
+   only the questions, the hint and the change request, word for word.
+
+**Bounds.** Unless the person running the skill sets others: 4 hours of
+wall-clock time per session, and 3 attempts. If a running participant sends
+no report for 30 minutes, tell the tester "no report within 30 minutes"; it
+decides `continue` or `end_session`. A second missed report ends the attempt.
+When a bound ends an attempt or the session, tell the tester which one, so it
+can close every open change with that reason.
 
 A level-2 hint names a doc section that the participant cannot otherwise
 open. Copy that one document into `work/` and say where it is. Record the
@@ -258,6 +279,9 @@ Before handing the report over, check it against the transcripts:
 - Every finding points to a step that happened.
 - Quotes are exact.
 - The counts of hints, errors, and milestones match the transcripts.
+- Every change request in the report was relayed word for word, as the
+  transcript shows, and every planned change has exactly one outcome per
+  attempt.
 
 Add each bug fixed during the study, with its PR link. Correct mismatches
 with the tester rather than rewriting its conclusions yourself. Then give the
