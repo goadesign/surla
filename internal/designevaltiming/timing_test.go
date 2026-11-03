@@ -223,8 +223,8 @@ func TestTimingProbeDirect(t *testing.T) {
 	if closeErr != nil {
 		t.Fatalf("close evaluator: %v", closeErr)
 	}
-	if len(after.TempEntries) != 0 {
-		t.Fatalf("Close left %v", after.TempEntries)
+	if left := evaluatorDirs(after.TempEntries); len(left) != 0 {
+		t.Fatalf("the evaluator's Close left %v", left)
 	}
 }
 
@@ -341,8 +341,8 @@ func TestTimingProbePreviewHTTP(t *testing.T) {
 	}
 	stopped := measurement{identity: id, Probe: "after_server_stopped", Outcome: "ok", TempEntries: tempEntries(t, id.TempDir)}
 	emit(t, stopped)
-	if len(stopped.TempEntries) != 0 {
-		t.Fatalf("the control plane's Close left %v", stopped.TempEntries)
+	if left := evaluatorDirs(stopped.TempEntries); len(left) != 0 {
+		t.Fatalf("the control plane's Close left %v", left)
 	}
 }
 
@@ -509,6 +509,20 @@ func requireSafeCleanup(t *testing.T, m *measurement) {
 		t.Fatalf("%s: evaluation directories %v were kept; their build processes are unresolved, so the experiment stops", m.Probe, m.Retained)
 	}
 	m.TempEntries = tempEntries(t, m.TempDir)
+}
+
+// evaluatorDirs returns the entries, as tempEntries formats them, that are
+// design evaluator directories (surla-designeval-*, both per-evaluation and
+// workspace). Other entries, such as the test's fixture modules and cards
+// directory, stay until the test's own cleanup.
+func evaluatorDirs(entries []string) []string {
+	var dirs []string
+	for _, e := range entries {
+		if strings.HasPrefix(e, "surla-designeval-") {
+			dirs = append(dirs, e)
+		}
+	}
+	return dirs
 }
 
 // prefixed returns each value with prefix.
