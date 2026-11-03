@@ -34,9 +34,34 @@ the most important problems, and what to fix first.>
 | <milestone> (attempt N) | Completed / Completed with help / Failed / Not reached / Not valid (after a scope leak) / Not supported on this machine | <mm:ss> | <n (levels)> | <n> | <score> |
 
 <With more than one attempt, give each milestone one row per attempt, so a
-reader sees what changed after each fix.>
+reader sees what changed after each fix. These are the first-pass results,
+copied from observations.md before the first mid-build change.>
 
 <One paragraph on overall effectiveness, efficiency, and ease, with totals.>
+
+## Mid-build changes
+
+| Change / sub-milestone | Outcome | Elapsed time | Hints (level) | Errors | SEQ (1–7) | Same card and project? | Work redone |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| <C1a …> (attempt N) | Completed / Completed with help / Not completed: <reason> / Not delivered: <reason> / Not supported on this machine / Blocked by <capability or bug> / Not valid (after a scope leak) | <mm:ss> | <n (levels)> | <n> | <score> | <yes / no / n/a> | <short> |
+
+<For C2, the route chosen (runtime tuning, or rebuild). For C3, the suite
+commit and scenario names the passing verification reported. Say whether
+Surla showed what each change made out of date.>
+
+## Comparison with the baseline
+
+<Only when this study was compared with an earlier one. Name its report and
+commit.>
+
+| Milestone | Baseline outcome (with its qualification) | This study's outcome | Hints | Errors | Time | Why it changed |
+| --- | --- | --- | --- | --- | --- | --- |
+| <milestone> | <outcome, for example "completed for the unmodified starter only"> | <outcome> | <baseline → now> | <baseline → now> | <baseline → now> | <fixed finding Fn (PR) / new capability / environment difference / no change> |
+
+<Write "not available" for a value the baseline never recorded, such as an
+SEQ it did not ask, and "not retested" for a milestone this study did not
+reach. Never estimate. Then list each baseline finding as fixed, improved,
+unchanged, regressed, or not retested, with evidence.>
 
 ## Findings
 
@@ -74,7 +99,9 @@ effect on users.>
 know Go, Goa, or similar tools from training. One participant per attempt.
 Restarts after fixes change the experience. Note any milestone this machine
 could not run, and anything the facilitator recorded about its own
-influence.>
+influence. With mid-build changes: one example of each kind of change, written
+by the tester; differences from the baseline's environment, such as
+credentials now set; and any bound that ended the session.>
 
 ## Appendix: debrief
 
