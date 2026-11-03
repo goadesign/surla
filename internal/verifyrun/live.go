@@ -287,10 +287,12 @@ func Live(dir string, prepare func(context.Context, verify.Plan) (verify.Prepare
 	go func() { exited <- cmd.Wait() }()
 	select {
 	case line := <-first:
-		diag.mark("end suite-ready", nil)
 		if line.URL == "" {
-			return reportLive(out, errLog, summaryLiveSuite, errors.New("suite printed no valid ready line"))
+			err := errors.New("suite printed no valid ready line")
+			diag.mark("end suite-ready", err)
+			return reportLive(out, errLog, summaryLiveSuite, err)
 		}
+		diag.mark("end suite-ready", nil)
 		if err := json.NewEncoder(out).Encode(liveLine{URL: line.URL}); err != nil {
 			fmt.Fprintln(errLog, err)
 			return endGroup()
@@ -298,8 +300,9 @@ func Live(dir string, prepare func(context.Context, verify.Plan) (verify.Prepare
 		fmt.Fprintln(errLog, "suite exited:", <-exited)
 		return endGroup()
 	case err := <-exited:
-		diag.mark("end suite-ready", err)
-		return reportLive(out, errLog, summaryLiveSuite, fmt.Errorf("suite exited before it was ready: %v", err))
+		readyErr := fmt.Errorf("suite exited before it was ready: %v", err)
+		diag.mark("end suite-ready", readyErr)
+		return reportLive(out, errLog, summaryLiveSuite, readyErr)
 	}
 }
 

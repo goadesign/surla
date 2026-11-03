@@ -111,6 +111,10 @@ type (
 	runner struct {
 		// evidenceDir receives every command's stdout and stderr.
 		evidenceDir string
+		// diagFailed counts timeline marker failures whose MARK-ERROR line
+		// could not be written either; later lines report it. TEMPORARY
+		// DIAGNOSTIC.
+		diagFailed int
 	}
 
 	// buildToolchain is what a sandboxed candidate build runs with.
@@ -508,15 +512,17 @@ func (r *runner) run(ctx context.Context, label, dir string, env []string, name 
 }
 
 // diagMark appends one timeline line to the evidence directory's
-// timeline.log, a file it opens, writes and closes itself. A failure at any
-// of those steps is reported on the process's stderr, which it never closes,
-// and never changes the command.
-// TEMPORARY DIAGNOSTIC (branch diag/live-start-evidence, never merged).
+// timeline.log, a file it opens, writes and closes itself, reporting on each
+// line how many earlier failures could not be reported. A failure at any of
+// those steps is reported on the process's stderr, which it never closes; if
+// that report also fails or comes up short, the runner's count grows. It
+// never changes the command. TEMPORARY DIAGNOSTIC (branch
+// diag/live-start-evidence, never merged).
 func (r *runner) diagMark(phase, label string, err error) {
-	line := fmt.Sprintf("MARK %s %s %s err=%v\n", phase, label, time.Now().UTC().Format(time.RFC3339Nano), err)
+	line := fmt.Sprintf("MARK %s %s %s err=%v unreported_failures=%d\n", phase, label, time.Now().UTC().Format(time.RFC3339Nano), err, r.diagFailed)
 	f, openErr := os.OpenFile(filepath.Join(r.evidenceDir, "timeline.log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 	if openErr != nil {
-		fmt.Fprintf(os.Stderr, "MARK-ERROR %s %v\n", label, openErr)
+		r.diagReport(label, openErr)
 		return
 	}
 	n, writeErr := f.WriteString(line)
@@ -524,7 +530,17 @@ func (r *runner) diagMark(phase, label string, err error) {
 		writeErr = io.ErrShortWrite
 	}
 	if err := errors.Join(writeErr, f.Close()); err != nil {
-		fmt.Fprintf(os.Stderr, "MARK-ERROR %s %v\n", label, err)
+		r.diagReport(label, err)
+	}
+}
+
+// diagReport writes a MARK-ERROR line to the process's stderr, which it never
+// closes, and counts the failure when that line cannot be written whole.
+// TEMPORARY DIAGNOSTIC.
+func (r *runner) diagReport(label string, err error) {
+	line := fmt.Sprintf("MARK-ERROR %s %v unreported_failures=%d\n", label, err, r.diagFailed)
+	if n, werr := os.Stderr.WriteString(line); werr != nil || n != len(line) {
+		r.diagFailed++
 	}
 }
 
