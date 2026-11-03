@@ -401,7 +401,11 @@ export function CP1EditorView({
           {Array.isArray(priorCard.ambiguities) && priorCard.ambiguities.length > 0 ? (
             <ul>
               {priorCard.ambiguities.map((amb) => {
-                const ans = (priorCard.answers && priorCard.answers[amb.id]) || "";
+                const ans =
+                  priorCard.answers &&
+                  Object.prototype.hasOwnProperty.call(priorCard.answers, amb.id)
+                    ? priorCard.answers[amb.id]
+                    : "";
                 return (
                   <li key={amb.id}>
                     <strong>{amb.question}</strong>
@@ -481,8 +485,13 @@ export function CP1EditorView({
         {ambiguities.length > 0 ? (
           <ul>
             {ambiguities.map((amb) => {
-              const selected = draftAnswers[amb.id] || "";
-              const saved = (card.answers && card.answers[amb.id]) || "";
+              const selected = Object.prototype.hasOwnProperty.call(draftAnswers, amb.id)
+                ? draftAnswers[amb.id]
+                : "";
+              const saved =
+                card.answers && Object.prototype.hasOwnProperty.call(card.answers, amb.id)
+                  ? card.answers[amb.id]
+                  : "";
               const answerBadge = !selected
                 ? ""
                 : card.status === "confirmed" && selected === saved

@@ -331,8 +331,35 @@ async function main() {
     expect(h.doc.querySelector("#surla-cp4-card-error") && h.field().value === "Dirty edit on Card A before loading Card B", "mismatched get_change reply overwrote Card A");
     h.doc.querySelector("#surla-open-change-card").click();
     const openBValidReq = h.calls[h.calls.length - 1];
+    // While LoadB is in flight, receiving a same-revision Card A update or a same-run B status update must not drop LoadB.
+    h.notify(input.confirmedR3);
+    h.notify({...runCardB, state: input.running.state});
     h.reply(openBValidReq, input.cardB); await turn();
-    expect(h.doc.querySelector("#surla-cp1-editor").dataset.changeId === "chg-card-b" && h.doc.querySelector("#surla-preserved-draft")?.textContent.includes("Dirty edit on Card A before loading Card B"), "loading Card B did not preserve Card A dirty draft");
+    expect(h.doc.querySelector("#surla-cp1-editor").dataset.changeId === "chg-card-b" && h.doc.querySelector("#surla-preserved-draft")?.textContent.includes("Dirty edit on Card A before loading Card B"), "loading Card B did not complete across non-navigational updates or did not preserve Card A dirty draft");
+    // 5. Dirty R1 + incoming R2 -> CP4 -> CP1 (and clicking #surla-nav-cp1 while on CP1) preserves incoming R2 and its Switch action; ambiguity ID "toString" never reads Object.prototype.toString.
+    h.doc.querySelector("#surla-discard-draft").click();
+    h.notify(input.approved);
+    h.edit("Dirty R1 before incoming R2");
+    h.notify(input.revisedR2);
+    expect(h.doc.querySelector("#surla-incoming-change-card") && h.doc.querySelector("#surla-replace-incoming-card"), "incoming R2 did not render #surla-incoming-change-card");
+    h.doc.querySelector("#surla-nav-cp4").click();
+    expect(h.doc.querySelector("#surla-result-view").dataset.state === "cp4-verification", "did not switch to CP4 while incoming R2 was retained");
+    h.doc.querySelector("#surla-nav-cp1").click();
+    expect(h.doc.querySelector("#surla-incoming-change-card") && h.doc.querySelector("#surla-replace-incoming-card"), "returning from CP4 to CP1 lost retained incoming R2 card");
+    h.doc.querySelector("#surla-nav-cp1").click();
+    expect(h.doc.querySelector("#surla-incoming-change-card") && h.doc.querySelector("#surla-replace-incoming-card"), "clicking #surla-nav-cp1 while on CP1 cleared retained incoming R2 card");
+    h.notify({...input.revisedR2, summary: "Updated summary on incoming R2"});
+    expect(h.doc.querySelector("#surla-incoming-change-card")?.textContent.includes("Updated summary on incoming R2"), "same-revision update on incoming R2 did not refresh incomingCard");
+    h.doc.querySelector("#surla-replace-incoming-card").click();
+    expect(h.doc.querySelector("#surla-cp1-editor").dataset.requestRevision === input.revisedR2.request_revision && h.doc.querySelector("#surla-prior-revision")?.textContent.includes(input.approved.request_revision) && h.doc.querySelector("#surla-preserved-draft")?.textContent.includes("Dirty R1 before incoming R2"), "switching to retained incoming R2 after CP4 round-trip did not mount R2 with R1 priorCard and preserved draft");
+    // Verify ambiguity.id === "toString" with empty answers does not render Object.prototype.toString.
+    const toStringAmbCard = {
+      ...input.confirmedR3,
+      ambiguities: [{id: "toString", question: "Prototype key question?", options: ["optA", "optB"]}],
+      answers: {},
+    };
+    h.notify(toStringAmbCard);
+    expect(!h.text().includes("function toString") && !h.text().includes("[Confirmed answer:"), "ambiguity id toString leaked Object.prototype.toString into answers badge");
     h.dom.window.close();
   }
   // Revision inequality establishes identity, not which snapshot is newer.

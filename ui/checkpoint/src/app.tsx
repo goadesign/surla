@@ -62,6 +62,10 @@ interface ActiveEditorState {
   // priorCard is the immediately prior saved snapshot for this change_id
   // when the editor transitioned between distinct revisions of the same card.
   priorCard: ChangeCardResult | null;
+  // incomingCard retains a newer Change Card notification that arrived while
+  // the current editor had unsaved state or an in-flight request, until the
+  // user switches to it or mounts a card directly.
+  incomingCard: ChangeCardResult | null;
   // draftAnswers contains the user's current choices, including unsaved ones.
   draftAnswers: Record<string, string>;
   // draftExamples contains the exact text the user is editing.
@@ -80,7 +84,7 @@ type ActiveResultState =
   | { kind: "cp3-draft-override" }
   | { kind: "cp3-live-target" }
   | { kind: "cp4-verification" }
-  | { kind: "cp1-incoming-card"; card: ChangeCardResult }
+  | { kind: "cp1-incoming-card" }
   | { kind: "partial-input"; partialArgs: Record<string, unknown> }
   | { kind: "error"; message: string }
   | { kind: "cancelled"; reason: string };
@@ -324,7 +328,6 @@ export function bootstrapCheckpointApp() {
   const runRequestErrors = new Map<string, string>();
   const listRequestErrors = new Map<string, string>();
   const cardLoadErrors = new Map<string, string>();
-  let viewTransitionSeq = 0;
   let activeResult: ActiveResultState | null = null;
 
   // isViewingChangeResult reports whether the active result view currently
@@ -434,7 +437,6 @@ export function bootstrapCheckpointApp() {
           if (!previewState) {
             return;
           }
-          viewTransitionSeq++;
           editorOpen = shouldRetainEditor();
           activeResult = { kind: "cp2-architecture-preview" };
           rootEl.dataset.state = "cp2-architecture-preview";
@@ -453,7 +455,6 @@ export function bootstrapCheckpointApp() {
           if (!diffState) {
             return;
           }
-          viewTransitionSeq++;
           editorOpen = shouldRetainEditor();
           activeResult = { kind: "cp2-diff" };
           rootEl.dataset.state = "cp2-diff";
@@ -472,7 +473,6 @@ export function bootstrapCheckpointApp() {
           activeResult?.kind === "cp3-draft-override" ||
           activeResult?.kind === "cp3-live-target",
         onClick: () => {
-          viewTransitionSeq++;
           editorOpen = shouldRetainEditor();
           if (draftOverrideState !== null) {
             activeResult = { kind: "cp3-draft-override" };
@@ -501,7 +501,6 @@ export function bootstrapCheckpointApp() {
           if (!selectedVerificationChangeId) {
             return;
           }
-          viewTransitionSeq++;
           editorOpen = shouldRetainEditor();
           activeResult = { kind: "cp4-verification" };
           rootEl.dataset.state = "cp4-verification";
@@ -574,7 +573,6 @@ export function bootstrapCheckpointApp() {
             if (!activeEditor || editorRequest !== null) {
               return;
             }
-            viewTransitionSeq++;
             activeEditor = {
               ...activeEditor,
               draftAnswers: { ...activeEditor.draftAnswers, [ambId]: opt },
@@ -585,7 +583,6 @@ export function bootstrapCheckpointApp() {
             if (!activeEditor || editorRequest !== null) {
               return;
             }
-            viewTransitionSeq++;
             activeEditor = {
               ...activeEditor,
               draftExamples: activeEditor.draftExamples.map((item) =>
@@ -716,23 +713,29 @@ export function bootstrapCheckpointApp() {
       return;
     }
     if (res.kind === "cp1-incoming-card") {
-      resultRegionEl.dataset.changeId = res.card.change_id;
-      resultRegionEl.dataset.requestRevision = res.card.request_revision;
+      const incoming = activeEditor ? activeEditor.incomingCard : null;
+      if (!incoming) {
+        flushSync(() => {
+          resultRoot.render(null);
+        });
+        return;
+      }
+      resultRegionEl.dataset.changeId = incoming.change_id;
+      resultRegionEl.dataset.requestRevision = incoming.request_revision;
       flushSync(() => {
         resultRoot.render(
           <IncomingChangeCardView
-            incomingCard={res.card}
+            incomingCard={incoming}
             onSwitch={() => {
               if (editorRequest !== null) {
                 statusEl.textContent =
                   "Wait for the pending CP1 Change Card request to finish before switching cards.";
                 return;
               }
-              viewTransitionSeq++;
               const preserved = activeEditor ? snapshotUnsavedDraft(activeEditor) : null;
-              const prior = nextPriorCard(activeEditor, res.card);
+              const prior = nextPriorCard(activeEditor, incoming);
               activeResult = null;
-              mountChangeCard(res.card, preserved, prior);
+              mountChangeCard(incoming, preserved, prior);
             }}
           />
         );
@@ -898,15 +901,24 @@ export function bootstrapCheckpointApp() {
   }
 
   // displayVerification stores and selects one verification run snapshot.
+  // When updating the already-selected (change_id, run_id) in cp4-verification,
+  // it preserves the activeResult object reference so an in-flight get_change
+  // read for that displayed card is not treated as a view transition.
   function displayVerification(run: VerificationStatusResult) {
     if (hasPendingListVerifications(run.change_id)) {
       selectionTouchedDuringList.set(run.change_id, true);
     }
     const shown = upsertRunSnapshot(run);
     runRequestErrors.delete(shown.run_id);
+    const sameDisplayedRun =
+      activeResult?.kind === "cp4-verification" &&
+      selectedVerificationChangeId === shown.change_id &&
+      selectedRunId === shown.run_id;
     selectedVerificationChangeId = shown.change_id;
     selectedRunId = shown.run_id;
-    activeResult = { kind: "cp4-verification" };
+    if (!sameDisplayedRun) {
+      activeResult = { kind: "cp4-verification" };
+    }
     statusEl.textContent = "Showing the saved verification result.";
   }
 
@@ -916,7 +928,6 @@ export function bootstrapCheckpointApp() {
     if (!target) {
       return;
     }
-    viewTransitionSeq++;
     if (hasPendingListVerifications(target.change_id)) {
       selectionTouchedDuringList.set(target.change_id, true);
     }
@@ -979,7 +990,6 @@ export function bootstrapCheckpointApp() {
     if (!requestedChangeId || hasPendingListVerifications(requestedChangeId)) {
       return;
     }
-    viewTransitionSeq++;
     selectionTouchedDuringList.set(requestedChangeId, false);
     listRequestErrors.delete(requestedChangeId);
     if (!shouldRetainEditor()) {
@@ -1057,31 +1067,33 @@ export function bootstrapCheckpointApp() {
     );
   }
 
-  // handleReturnToChangeCard switches the view back to the retained Change Card.
+  // handleReturnToChangeCard switches the view back to the retained Change Card
+  // and restores any pending incoming Change Card banner.
   function handleReturnToChangeCard() {
     if (!activeEditor) {
       return;
     }
-    viewTransitionSeq++;
     cardLoadErrors.delete(activeEditor.card.change_id);
     editorOpen = true;
-    activeResult = null;
+    activeResult = activeEditor.incomingCard ? { kind: "cp1-incoming-card" } : null;
     rootEl.dataset.state = "cp1-change-card";
     const card = activeEditor.card;
-    statusEl.textContent =
-      card.status === "confirmed"
-        ? card.approval
-          ? "Showing the recorded approval for these inputs."
-          : card.unverified_approval
-          ? "Showing the saved approval record (current promotion inputs could not be verified)."
-          : "Showing confirmed Change Card. You can refine answers or examples below."
-        : "Review the open questions and examples below, then confirm your intent.";
+    statusEl.textContent = activeEditor.incomingCard
+      ? "A newer Change Card arrived while you were editing; your unsaved draft is preserved."
+      : card.status === "confirmed"
+      ? card.approval
+        ? "Showing the recorded approval for these inputs."
+        : card.unverified_approval
+        ? "Showing the saved approval record (current promotion inputs could not be verified)."
+        : "Showing confirmed Change Card. You can refine answers or examples below."
+      : "Review the open questions and examples below, then confirm your intent.";
     syncAllRegions();
   }
 
   // handleOpenChangeCard loads requestedChangeId via get_change when not
   // already loaded in activeEditor, correlating completion and error to
-  // requestedChangeId and preserving any subsequent navigation or dirty draft.
+  // the exact activeResult view and requestedChangeId while preserving any
+  // subsequent navigation or dirty draft.
   function handleOpenChangeCard(requestedChangeId: string) {
     if (!requestedChangeId || editorRequest !== null) {
       return;
@@ -1090,8 +1102,11 @@ export function bootstrapCheckpointApp() {
       handleReturnToChangeCard();
       return;
     }
+    const initialActiveResult = activeResult;
+    if (!initialActiveResult) {
+      return;
+    }
     cardLoadErrors.delete(requestedChangeId);
-    const requestSeq = viewTransitionSeq;
     statusEl.textContent = "Loading Change Card " + requestedChangeId + "...";
     callEditorTool(
       "get_change",
@@ -1107,24 +1122,29 @@ export function bootstrapCheckpointApp() {
               requestedChangeId +
               "."
           );
-          if (requestSeq === viewTransitionSeq && isViewingChangeResult(requestedChangeId)) {
+          if (activeResult === initialActiveResult && isViewingChangeResult(requestedChangeId)) {
             statusEl.textContent = "Could not load the requested Change Card.";
           }
           return;
         }
         cardLoadErrors.delete(requestedChangeId);
-        if (requestSeq !== viewTransitionSeq || !isViewingChangeResult(requestedChangeId)) {
+        if (activeResult !== initialActiveResult || !isViewingChangeResult(requestedChangeId)) {
           return;
         }
-        viewTransitionSeq++;
         const preserved = activeEditor ? snapshotUnsavedDraft(activeEditor) : null;
         const prior = nextPriorCard(activeEditor, loadedCard);
+        if (activeEditor) {
+          activeEditor = {
+            ...activeEditor,
+            incomingCard: null,
+          };
+        }
         activeResult = null;
         mountChangeCard(loadedCard, preserved, prior);
       },
       (message) => {
         cardLoadErrors.set(requestedChangeId, "Could not load Change Card: " + message);
-        if (requestSeq === viewTransitionSeq && isViewingChangeResult(requestedChangeId)) {
+        if (activeResult === initialActiveResult && isViewingChangeResult(requestedChangeId)) {
           statusEl.textContent = "Could not load the requested Change Card.";
         }
       }
@@ -1193,7 +1213,6 @@ export function bootstrapCheckpointApp() {
         return;
       }
     }
-    viewTransitionSeq++;
     activeEditor = {
       ...activeEditor,
       formError: null,
@@ -1232,12 +1251,12 @@ export function bootstrapCheckpointApp() {
     if (!activeEditor || editorRequest !== null) {
       return;
     }
-    viewTransitionSeq++;
+    const savedCard = activeEditor.card;
     if (activeResult && activeResult.kind !== "cp1-incoming-card") {
-      const savedCard = activeEditor.card;
       activeEditor = {
         card: savedCard,
         priorCard: activeEditor.priorCard,
+        incomingCard: activeEditor.incomingCard,
         draftAnswers: isPlainObject(savedCard.answers) ? { ...savedCard.answers } : {},
         draftExamples: savedCard.examples.map((ex) => ({
           id: ex.id,
@@ -1254,7 +1273,7 @@ export function bootstrapCheckpointApp() {
       syncAllRegions();
       return;
     }
-    mountChangeCard(activeEditor.card, null, activeEditor.priorCard);
+    mountChangeCard(savedCard, null, activeEditor.priorCard);
   }
 
   // handleLoadLatestCard refreshes saved values and approval through get_change.
@@ -1284,6 +1303,9 @@ export function bootstrapCheckpointApp() {
             card: latestCard,
             formError: null,
           };
+          if (!activeResult && activeEditor.incomingCard) {
+            activeResult = { kind: "cp1-incoming-card" };
+          }
           if (editorOpen || !keepHiddenIfClosed) {
             statusEl.textContent = latestCard.approval
               ? "Showing the recorded approval for these inputs."
@@ -1303,6 +1325,7 @@ export function bootstrapCheckpointApp() {
           activeEditor = {
             card: latestCard,
             priorCard: prior,
+            incomingCard: null,
             draftAnswers: isPlainObject(latestCard.answers) ? { ...latestCard.answers } : {},
             draftExamples: latestCard.examples.map((ex) => ({
               id: ex.id,
@@ -1322,16 +1345,28 @@ export function bootstrapCheckpointApp() {
   }
 
   // mountChangeCard starts an editor from a received saved card and optionally
-  // shows draft text or the immediately prior saved revision.
+  // shows draft text or the immediately prior saved revision. Any distinct
+  // incomingCard that arrived while an editor RPC was in flight remains retained.
   function mountChangeCard(
     card: ChangeCardResult,
     preservedDraft: PreservedDraft | null,
     priorCard: ChangeCardResult | null = null
   ) {
     cardLoadErrors.delete(card.change_id);
+    const existingIncoming = activeEditor ? activeEditor.incomingCard : null;
+    const keepIncoming =
+      existingIncoming !== null &&
+      (existingIncoming.change_id !== card.change_id ||
+        existingIncoming.request_revision !== card.request_revision)
+        ? existingIncoming
+        : null;
+    if (!keepIncoming && activeResult?.kind === "cp1-incoming-card") {
+      activeResult = null;
+    }
     activeEditor = {
       card,
       priorCard,
+      incomingCard: keepIncoming,
       draftAnswers: isPlainObject(card.answers) ? { ...card.answers } : {},
       draftExamples: card.examples.map((ex) => ({
         id: ex.id,
@@ -1359,7 +1394,6 @@ export function bootstrapCheckpointApp() {
   // renderWaiting clears the active result display when the host begins a new
   // checkpoint while preserving any retained session state.
   function renderWaiting(message: string) {
-    viewTransitionSeq++;
     if (!shouldRetainEditor()) {
       editorOpen = false;
     }
@@ -1372,7 +1406,6 @@ export function bootstrapCheckpointApp() {
   // renderCancelled shows the host's cancellation notice without aborting
   // independent tools/call requests or discarding retained session state.
   function renderCancelled(reason: string) {
-    viewTransitionSeq++;
     if (!shouldRetainEditor()) {
       editorOpen = false;
     }
@@ -1390,7 +1423,6 @@ export function bootstrapCheckpointApp() {
       statusEl.textContent = "Could not display the new checkpoint result: " + message;
       return;
     }
-    viewTransitionSeq++;
     if (!shouldRetainEditor()) {
       editorOpen = false;
     }
@@ -1418,7 +1450,6 @@ export function bootstrapCheckpointApp() {
     }
     const payload = params.structuredContent;
     if (isVerificationStatusResult(payload)) {
-      viewTransitionSeq++;
       if (!shouldRetainEditor()) {
         editorOpen = false;
       }
@@ -1433,7 +1464,6 @@ export function bootstrapCheckpointApp() {
         renderError(listErr);
         return;
       }
-      viewTransitionSeq++;
       for (let i = 0; i < payload.runs.length; i++) {
         upsertRunSnapshot(payload.runs[i]);
       }
@@ -1461,7 +1491,6 @@ export function bootstrapCheckpointApp() {
       return;
     }
     if (isArchitecturePreviewResult(payload)) {
-      viewTransitionSeq++;
       if (!shouldRetainEditor()) {
         editorOpen = false;
       }
@@ -1474,7 +1503,6 @@ export function bootstrapCheckpointApp() {
       return;
     }
     if (isChangeCardResult(payload)) {
-      viewTransitionSeq++;
       cardLoadErrors.delete(payload.change_id);
       if (activeEditor) {
         if (
@@ -1486,7 +1514,10 @@ export function bootstrapCheckpointApp() {
             card: payload,
           };
           editorOpen = true;
-          if (!activeResult) {
+          if (!activeResult && activeEditor.incomingCard) {
+            activeResult = { kind: "cp1-incoming-card" };
+          }
+          if (!activeResult || activeResult.kind === "cp1-incoming-card") {
             rootEl.dataset.state = "cp1-change-card";
           }
           statusEl.textContent =
@@ -1499,9 +1530,31 @@ export function bootstrapCheckpointApp() {
               : "Review the open questions and examples below, then confirm your intent.";
           syncAllRegions();
           return;
-        } else if (shouldRetainEditor()) {
+        } else if (
+          activeEditor.incomingCard &&
+          payload.change_id === activeEditor.incomingCard.change_id &&
+          payload.request_revision === activeEditor.incomingCard.request_revision
+        ) {
+          activeEditor = {
+            ...activeEditor,
+            incomingCard: payload,
+          };
           editorOpen = true;
-          activeResult = { kind: "cp1-incoming-card", card: payload };
+          if (!activeResult || activeResult.kind === "cp1-incoming-card") {
+            activeResult = { kind: "cp1-incoming-card" };
+            rootEl.dataset.state = "cp1-change-card";
+            statusEl.textContent =
+              "A newer Change Card arrived while you were editing; your unsaved draft is preserved.";
+          }
+          syncAllRegions();
+          return;
+        } else if (shouldRetainEditor()) {
+          activeEditor = {
+            ...activeEditor,
+            incomingCard: payload,
+          };
+          editorOpen = true;
+          activeResult = { kind: "cp1-incoming-card" };
           rootEl.dataset.state = "cp1-change-card";
           statusEl.textContent =
             "A newer Change Card arrived while you were editing; your unsaved draft is preserved.";
@@ -1510,12 +1563,17 @@ export function bootstrapCheckpointApp() {
         }
       }
       const prior = nextPriorCard(activeEditor, payload);
+      if (activeEditor) {
+        activeEditor = {
+          ...activeEditor,
+          incomingCard: null,
+        };
+      }
       activeResult = null;
       mountChangeCard(payload, null, prior);
       return;
     }
     if (isDiffResult(payload)) {
-      viewTransitionSeq++;
       if (!shouldRetainEditor()) {
         editorOpen = false;
       }
@@ -1529,7 +1587,6 @@ export function bootstrapCheckpointApp() {
       return;
     }
     if (isDraftOverrideResult(payload)) {
-      viewTransitionSeq++;
       if (!shouldRetainEditor()) {
         editorOpen = false;
       }
@@ -1544,7 +1601,6 @@ export function bootstrapCheckpointApp() {
       return;
     }
     if (isLiveTargetResult(payload) || isStopLiveTargetResult(payload)) {
-      viewTransitionSeq++;
       if (!shouldRetainEditor()) {
         editorOpen = false;
       }
@@ -1573,7 +1629,6 @@ export function bootstrapCheckpointApp() {
     if (typeof msg.method === "string") {
       if (msg.id !== undefined && msg.id !== null) {
         if (msg.method === "ui/resource-teardown") {
-          viewTransitionSeq++;
           activeEditor = null;
           editorOpen = false;
           previewState = null;
@@ -1625,7 +1680,6 @@ export function bootstrapCheckpointApp() {
         if (isEditorProtected() || activeResult?.kind === "cp4-verification") {
           return;
         }
-        viewTransitionSeq++;
         const partialArgs =
           isPlainObject(msg.params) && isPlainObject(msg.params.arguments)
             ? msg.params.arguments

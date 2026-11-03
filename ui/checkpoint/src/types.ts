@@ -210,16 +210,6 @@ export interface VerificationStatusResult {
   suite_commit: string;
 }
 
-export interface VerificationStatusResult {
-  accepted_at: string;
-  candidate_commit: string;
-  change_id: string;
-  request_revision: string;
-  run_id: string;
-  state: ({ "type": "running"; "value": VerificationRunning } | { "type": "completed"; "value": VerificationCompleted } | { "type": "not_completed"; "value": VerificationNotCompleted });
-  suite_commit: string;
-}
-
 export interface VerificationListResult {
   change_id: string;
   runs: VerificationStatusResult[];
