@@ -44,6 +44,21 @@ type echoStream struct {
 	response *model.Response
 }
 
+// phaseLog is a temporary diagnostic for the live starter test. It logs when
+// each outer step starts and how long it ran until the test moved on, so a
+// slow run can be localized to an outer operation. It cannot split the work
+// inside a step, and reaching the next step says nothing about whether the
+// step's assertions passed: the unchanged assertions and the test's outcome
+// decide that.
+type phaseLog struct {
+	// t receives the log lines.
+	t *testing.T
+	// name and id identify the open step; name is empty when none is open.
+	name, id string
+	// start is when the open step began.
+	start time.Time
+}
+
 // TestStarterLiveTargetAppliesADraftToTheNextModelRequest creates a real
 // starter project, commits it as C1, and runs the full CP3 journey through the
 // control plane for one confirmed Change Card, with real sandboxed builds and
@@ -57,7 +72,12 @@ type echoStream struct {
 // and verifies C1 directly. The CP1 analyzer is scripted. It needs the
 // network and, for the sandbox, macOS.
 func TestStarterLiveTargetAppliesADraftToTheNextModelRequest(t *testing.T) {
-	phases := newPhaseLog(t)
+	// A step still open when the test function exits early (a failed require)
+	// is logged before any t.Cleanup runs, so cleanup time is not counted.
+	// A package alarm in another goroutine runs no defers; then the last
+	// START line, with its time, is all the log has.
+	phases := &phaseLog{t: t}
+	defer phases.finish("test_function_exited")
 	phases.begin("init", "")
 	dir := filepath.Join(t.TempDir(), "shop")
 	name, err := Init(t.Context(), Options{Dir: dir, Module: "example.com/shop", SurlaVersion: published}, RunCommand)
@@ -152,47 +172,6 @@ func TestStarterLiveTargetAppliesADraftToTheNextModelRequest(t *testing.T) {
 	phases.begin("verify_c1", "card=starter-skip-cp3 c1="+commit)
 	assertVerified(t, cp, alice, runsDir, skipped, commit, "a card that skips CP3 verifies C1 directly")
 	phases.end()
-}
-
-// phaseLog is a temporary diagnostic: it logs when each outer step of the
-// live test starts and how long it took, so a slow run can be localized to
-// an outer operation. It cannot split the work inside a step.
-type phaseLog struct {
-	// t receives the log lines.
-	t *testing.T
-	// name and id identify the open step; name is empty when none is open.
-	name, id string
-	// start is when the open step began.
-	start time.Time
-}
-
-// newPhaseLog returns a phaseLog whose open step, if any, is logged as not
-// ok when the test ends early, for example on a failed assertion.
-func newPhaseLog(t *testing.T) *phaseLog {
-	p := &phaseLog{t: t}
-	t.Cleanup(func() { p.finish(false) })
-	return p
-}
-
-// begin ends the open step as ok and starts the next one.
-func (p *phaseLog) begin(name, id string) {
-	p.finish(true)
-	p.name, p.id, p.start = name, id, time.Now()
-	p.t.Logf("PHASE START %s %s at=%s", name, id, p.start.UTC().Format(time.RFC3339Nano))
-}
-
-// end ends the open step as ok.
-func (p *phaseLog) end() {
-	p.finish(true)
-}
-
-// finish logs the open step's end, if one is open.
-func (p *phaseLog) finish(ok bool) {
-	if p.name == "" {
-		return
-	}
-	p.t.Logf("PHASE END %s %s elapsed=%s ok=%t", p.name, p.id, time.Since(p.start).Round(time.Millisecond), ok)
-	p.name = ""
 }
 
 // keepRun copies a failed run's directory to $SURLA_TEST_KEEP_RUNS, when it
@@ -413,4 +392,27 @@ func askLive(t *testing.T, origin string) string {
 	}
 	require.NoError(t, json.Unmarshal(body, &out))
 	return out.Answer
+}
+
+// begin ends the open step, which returned, and starts the next one.
+func (p *phaseLog) begin(name, id string) {
+	p.finish("returned")
+	p.name, p.id, p.start = name, id, time.Now()
+	p.t.Logf("PHASE START %s %s at=%s", name, id, p.start.UTC().Format(time.RFC3339Nano))
+}
+
+// end ends the last step, which returned.
+func (p *phaseLog) end() {
+	p.finish("returned")
+}
+
+// finish logs the open step's elapsed time and how it ended: "returned" when
+// the test moved on, "test_function_exited" when the test function exited
+// while the step was open. It does nothing when no step is open.
+func (p *phaseLog) finish(how string) {
+	if p.name == "" {
+		return
+	}
+	p.t.Logf("PHASE END %s %s elapsed=%s %s", p.name, p.id, time.Since(p.start).Round(time.Millisecond), how)
+	p.name = ""
 }
