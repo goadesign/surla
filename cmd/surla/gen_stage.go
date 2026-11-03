@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"go/parser"
 	"go/token"
+	"io"
 	"io/fs"
 	"maps"
 	"os"
@@ -20,7 +21,7 @@ import (
 )
 
 // genStage is the .surla-gen-<random> directory runGen creates in the module
-// to build the new gen/ in. dir stays open from creation to cleanup, so the
+// to build the new gen/ in. dir stays open from acquisition to cleanup, so the
 // exchange and the removal of the old tree act on that directory even if its
 // name is later renamed or replaced.
 type genStage struct {
@@ -28,19 +29,63 @@ type genStage struct {
 	name string
 	// dir is the directory, held open.
 	dir *os.Root
+	// ownsGen is set once acquireStage has created gen inside dir itself, so
+	// cleanup only ever removes a gen this run created, or, after the
+	// exchange, the module's old gen.
+	ownsGen bool
 }
 
-// newStage creates and opens a new staging directory in root.
+// newStage creates a new staging directory in root under a random name and
+// acquires it with acquireStage.
 func newStage(root *os.Root) (*genStage, error) {
 	name := ".surla-gen-" + strings.ToLower(rand.Text())
 	if err := root.Mkdir(name, 0o755); err != nil {
 		return nil, fmt.Errorf("create staging directory: %w", err)
 	}
+	return acquireStage(root, name)
+}
+
+// acquireStage opens the directory name that newStage just created and
+// establishes that this run owns what it will later write and remove: the
+// opened directory must be empty, and gen is then created inside it through
+// the held handle, failing if it exists. A directory that was replaced
+// between creation and opening by one holding anything is refused, and
+// nothing in it is removed. This guards against a replacement holding files,
+// such as a foreign gen/; it does not claim to stop every concurrent change
+// by another process of the same user.
+func acquireStage(root *os.Root, name string) (*genStage, error) {
 	dir, err := root.OpenRoot(name)
 	if err != nil {
-		return nil, errors.Join(fmt.Errorf("open staging directory: %w", err), root.Remove(name))
+		return nil, fmt.Errorf("open staging directory: %w", err)
 	}
-	return &genStage{name: name, dir: dir}, nil
+	stage := &genStage{name: name, dir: dir}
+	refuse := func(reason error) (*genStage, error) {
+		return nil, errors.Join(fmt.Errorf("staging directory %s is not the empty directory surla gen created; it was left alone: %w", name, reason), dir.Close())
+	}
+	listing, err := dir.Open(".")
+	if err != nil {
+		return refuse(err)
+	}
+	entries, err := listing.Readdirnames(1)
+	if err := errors.Join(listingErr(err), listing.Close()); err != nil {
+		return refuse(err)
+	}
+	if len(entries) > 0 {
+		return refuse(fmt.Errorf("it holds %s", entries[0]))
+	}
+	if err := dir.Mkdir("gen", 0o755); err != nil {
+		return refuse(err)
+	}
+	stage.ownsGen = true
+	return stage, nil
+}
+
+// listingErr treats the end of a directory listing as no error.
+func listingErr(err error) error {
+	if errors.Is(err, io.EOF) {
+		return nil
+	}
+	return err
 }
 
 // write builds gen/ in the staging directory: every generated file, and a
@@ -56,7 +101,7 @@ func (s *genStage) write(root *os.Root, generated map[string][]byte) error {
 		if err := s.dir.MkdirAll(path.Dir(p), 0o755); err != nil {
 			return fmt.Errorf("stage %s: %w", p, err)
 		}
-		if err := writeSynced(s.dir, p, generated[p]); err != nil {
+		if err := writeSynced(s.dir, p, generated[p], 0o644); err != nil {
 			return fmt.Errorf("stage %s: %w", p, err)
 		}
 	}
@@ -64,9 +109,6 @@ func (s *genStage) write(root *os.Root, generated map[string][]byte) error {
 		if err := s.keepUserFiles(root, generated); err != nil {
 			return err
 		}
-	}
-	if err := s.dir.MkdirAll("gen", 0o755); err != nil {
-		return fmt.Errorf("stage gen: %w", err)
 	}
 	return errors.Join(syncDir(s.dir, "gen"), syncDir(s.dir, "."))
 }
@@ -137,13 +179,16 @@ func (s *genStage) report(root *os.Root) (string, error) {
 	return b.String(), errors.Join(beforeErr, afterErr)
 }
 
-// cleanup removes gen/ inside the held staging directory (the old tree after
-// an exchange, or the unpublished new one), then
+// cleanup removes gen/ inside the held staging directory when this run owns
+// it (the old tree after an exchange, or the unpublished new one), then
 // removes the staging directory's name only if it still names that same
 // directory, with a non-recursive remove. It never deletes recursively by
 // name; anything it leaves is named in the error.
 func (s *genStage) cleanup(root *os.Root) error {
-	removeErr := s.dir.RemoveAll("gen")
+	var removeErr error
+	if s.ownsGen {
+		removeErr = s.dir.RemoveAll("gen")
+	}
 	held, statErr := s.dir.Stat(".")
 	closeErr := s.dir.Close()
 	if removeErr != nil || statErr != nil {
@@ -178,14 +223,17 @@ func (s *genStage) keepUserFiles(root *os.Root, generated map[string][]byte) err
 		if _, ok := generated[p]; ok {
 			continue
 		}
+		info, err := e.Info()
+		if err != nil {
+			return fmt.Errorf("keep %s: %w", p, err)
+		}
 		content, err := root.ReadFile(p)
 		if err != nil {
 			return fmt.Errorf("keep %s: %w", p, err)
 		}
-		if err := s.dir.MkdirAll("gen", 0o755); err != nil {
-			return fmt.Errorf("keep %s: %w", p, err)
-		}
-		if err := writeSynced(s.dir, p, content); err != nil {
+		// The copy keeps the file's permission bits, as goa gen, which leaves
+		// the file in place, would.
+		if err := writeSynced(s.dir, p, content, info.Mode().Perm()); err != nil {
 			return fmt.Errorf("keep %s: %w", p, err)
 		}
 	}

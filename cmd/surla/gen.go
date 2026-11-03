@@ -58,7 +58,19 @@ func runGen(args []string, stdout, stderr io.Writer) (err error) {
 	if err != nil {
 		return err
 	}
-	defer func() { err = errors.Join(err, root.Close()) }()
+	published := false
+	defer func() {
+		closeErr := root.Close()
+		switch {
+		case closeErr == nil:
+		case published:
+			// gen/ is already updated; a failure to close the handle does not
+			// undo that.
+			fmt.Fprintf(stderr, "warning: gen/ was updated; closing the module directory failed: %v\n", closeErr)
+		default:
+			err = errors.Join(err, closeErr)
+		}
+	}()
 	files, err := readModuleSnapshotFromRoot(cleanDir, root)
 	if err != nil {
 		return err
@@ -93,7 +105,6 @@ func runGen(args []string, stdout, stderr io.Writer) (err error) {
 	if err != nil {
 		return err
 	}
-	published := false
 	defer func() {
 		if !published {
 			err = errors.Join(err, stage.cleanup(root))
@@ -168,7 +179,7 @@ func openModuleRoot(dir string) (string, *os.Root, error) {
 // file renamed over the old one, both inside root.
 func writeGuide(root *os.Root, content []byte) error {
 	tmp := "." + quickstartGuide + ".surla-" + strings.ToLower(rand.Text())
-	if err := writeSynced(root, tmp, content); err != nil {
+	if err := writeSynced(root, tmp, content, 0o644); err != nil {
 		return errors.Join(err, removeIfPresent(root, tmp))
 	}
 	if err := root.Rename(tmp, quickstartGuide); err != nil {
@@ -177,12 +188,16 @@ func writeGuide(root *os.Root, content []byte) error {
 	return nil
 }
 
-// writeSynced creates name inside root, which must not exist, writes content,
-// syncs it and closes it.
-func writeSynced(root *os.Root, name string, content []byte) error {
-	f, err := root.OpenFile(name, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
+// writeSynced creates name inside root, which must not exist, with exactly
+// the permission bits perm (whatever the umask), writes content, syncs it and
+// closes it.
+func writeSynced(root *os.Root, name string, content []byte, perm os.FileMode) error {
+	f, err := root.OpenFile(name, os.O_CREATE|os.O_EXCL|os.O_WRONLY, perm)
 	if err != nil {
 		return err
+	}
+	if err := f.Chmod(perm); err != nil {
+		return errors.Join(err, f.Close())
 	}
 	if _, err := f.Write(content); err != nil {
 		return errors.Join(err, f.Close())

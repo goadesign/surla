@@ -143,6 +143,60 @@ func TestCleanupNeverDeletesAReplacementByName(t *testing.T) {
 	}
 }
 
+func TestAcquireRefusesAStagingDirectoryReplacedBeforeItWasOpened(t *testing.T) {
+	cases := []struct {
+		name string
+		// replace puts something else at name between its creation and
+		// acquisition.
+		replace func(t *testing.T, dir, name string)
+		// survivor is a file that must still exist afterwards.
+		survivor string
+	}{
+		{name: "directory holding a foreign gen", replace: func(t *testing.T, dir, name string) {
+			require.NoError(t, os.Remove(filepath.Join(dir, name)))
+			layout(t, dir, map[string]string{name + "/gen/theirs.go": "theirs\n"})
+		}, survivor: "gen/theirs.go"},
+		{name: "symbolic link to a directory outside the module", replace: func(t *testing.T, dir, name string) {
+			require.NoError(t, os.Remove(filepath.Join(dir, name)))
+			outside := t.TempDir()
+			layout(t, outside, map[string]string{"gen/theirs.go": "theirs\n"})
+			require.NoError(t, os.Symlink(outside, filepath.Join(dir, name)))
+		}, survivor: "gen/theirs.go"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir, root := moduleRoot(t)
+			const name = ".surla-gen-test"
+			require.NoError(t, root.Mkdir(name, 0o755))
+			tc.replace(t, dir, name)
+
+			stage, err := acquireStage(root, name)
+			require.Error(t, err)
+			assert.Nil(t, stage)
+			got, err := os.ReadFile(filepath.Join(dir, name, tc.survivor))
+			require.NoError(t, err, "nothing in the replacement is removed")
+			assert.Equal(t, "theirs\n", string(got))
+		})
+	}
+}
+
+func TestKeptUserFilesKeepTheirPermissions(t *testing.T) {
+	dir, root := moduleRoot(t)
+	layout(t, dir, map[string]string{"gen/run.sh": "#!/bin/sh\n", "gen/private.txt": "secret\n"})
+	require.NoError(t, os.Chmod(filepath.Join(dir, "gen/run.sh"), 0o755))
+	require.NoError(t, os.Chmod(filepath.Join(dir, "gen/private.txt"), 0o600))
+	stage, err := newStage(root)
+	require.NoError(t, err)
+	require.NoError(t, stage.write(root, generatedFiles))
+	require.NoError(t, stage.exchange(root))
+	require.NoError(t, stage.cleanup(root))
+	for name, want := range map[string]os.FileMode{"gen/run.sh": 0o755, "gen/private.txt": 0o600} {
+		info, err := os.Stat(filepath.Join(dir, name))
+		require.NoError(t, err)
+		assert.Equal(t, want, info.Mode().Perm(), name)
+	}
+}
+
 func TestWriteGuideReplacesTheGuide(t *testing.T) {
 	dir, root := moduleRoot(t)
 	layout(t, dir, map[string]string{quickstartGuide: "old\n"})
