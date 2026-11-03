@@ -7,10 +7,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"syscall"
@@ -64,6 +66,9 @@ type (
 		URL string
 		// dir is the live directory Stop removes.
 		dir string
+		// diagBinaries names the plan's candidate binaries, whose build logs
+		// the diagnostic evidence lists. TEMPORARY DIAGNOSTIC.
+		diagBinaries []string
 		// pgid is the executor's process group.
 		pgid int
 		// control is serve's end of the control pipe; closing it makes the
@@ -212,7 +217,7 @@ func LaunchLive(root string, plan verify.Plan, key string, command, env []string
 	control.Close()
 	stdoutW.Close()
 	p := &LiveProcess{
-		dir: dir, pgid: cmd.Process.Pid, control: keep, exited: make(chan struct{}),
+		dir: dir, diagBinaries: slices.Sorted(maps.Keys(plan.Binaries)), pgid: cmd.Process.Pid, control: keep, exited: make(chan struct{}),
 		ended: make(chan struct{}), lines: make(chan liveLine, 1), readerDone: make(chan struct{}),
 	}
 	go p.readOutput(stdout)
@@ -350,7 +355,7 @@ func (p *LiveProcess) Stop() error {
 		}
 		<-p.exited
 		<-p.readerDone
-		diagLiveEvidence(os.Stderr, p.dir)
+		diagLiveEvidence(os.Stderr, p.dir, p.diagBinaries)
 		p.stopErr = errors.Join(closeErr, candidate.RemoveStore(p.dir))
 	})
 	return p.stopErr
@@ -519,12 +524,20 @@ const diagTail = 16 << 10
 // diagLiveEvidence writes a live target's named evidence files to w, which it
 // borrows and never closes, before the directory is removed: executor.log,
 // work/evidence/timeline.log, each Prepare command's stdout and stderr, and
-// the build logs, each with its size and its last diagTail bytes. It reads
-// one directory listing for the build-*.log names and walks nothing. The
-// END line says complete=true only when no open, read, close or write
-// failed. TEMPORARY DIAGNOSTIC (branch diag/live-start-evidence, never
-// merged).
-func diagLiveEvidence(w io.Writer, dir string) {
+// build-<binary>.log for each named binary plus build-suite.log, each with its
+// size and its last diagTail bytes, or "missing". It lists and walks nothing.
+// The END line says complete=true only when no open, read or close failed,
+// no read came up short, and no line failed to write. TEMPORARY DIAGNOSTIC
+// (branch diag/live-start-evidence, never merged).
+func diagLiveEvidence(w io.Writer, dir string, binaries []string) {
+	names := []string{"executor.log", "work/evidence/timeline.log"}
+	for _, l := range diagPrepareLabels {
+		names = append(names, "work/evidence/"+l+".stdout", "work/evidence/"+l+".stderr")
+	}
+	for _, b := range binaries {
+		names = append(names, "work/evidence/build-"+b+".log")
+	}
+	names = append(names, "work/evidence/build-suite.log")
 	errs := 0
 	emit := func(format string, args ...any) {
 		line := fmt.Sprintf(format, args...)
@@ -532,23 +545,9 @@ func diagLiveEvidence(w io.Writer, dir string) {
 			errs++
 		}
 	}
-	names := []string{"executor.log", "work/evidence/timeline.log"}
-	for _, l := range diagPrepareLabels {
-		names = append(names, "work/evidence/"+l+".stdout", "work/evidence/"+l+".stderr")
-	}
-	if entries, err := os.ReadDir(filepath.Join(dir, "work", "evidence")); err == nil {
-		for _, e := range entries {
-			if strings.HasPrefix(e.Name(), "build-") && strings.HasSuffix(e.Name(), ".log") {
-				names = append(names, "work/evidence/"+e.Name())
-			}
-		}
-	} else if !errors.Is(err, os.ErrNotExist) {
-		errs++
-		emit("LIVE EVIDENCE list-error=%v\n", err)
-	}
 	emit("LIVE EVIDENCE BEGIN %s\n", filepath.Base(dir))
 	for _, name := range names {
-		size, tail, missing, err := diagReadTail(filepath.Join(dir, filepath.FromSlash(name)))
+		size, tail, missing, short, err := diagReadTail(filepath.Join(dir, filepath.FromSlash(name)))
 		switch {
 		case missing:
 			emit("ENTRY path=%s missing\n", name)
@@ -556,32 +555,45 @@ func diagLiveEvidence(w io.Writer, dir string) {
 			errs++
 			emit("ENTRY path=%s read-error=%v\n", name, err)
 		default:
-			emit("ENTRY path=%s size=%d shown=%d truncated=%t\n%s\nENTRY-END %s\n", name, size, len(tail), int64(len(tail)) < size, tail, name)
+			if short {
+				errs++
+			}
+			emit("ENTRY path=%s size=%d shown=%d truncated=%t short_read=%t\n%s\nENTRY-END %s\n",
+				name, size, len(tail), int64(len(tail)) < size, short, tail, name)
 		}
 	}
 	emit("LIVE EVIDENCE END complete=%t errors=%d\n", errs == 0, errs)
 }
 
-// diagReadTail returns a file's size and its last diagTail bytes, closing
-// the file it opens. TEMPORARY DIAGNOSTIC.
-func diagReadTail(path string) (size int64, tail []byte, missing bool, err error) {
+// diagReadTail opens path, reads its size and last diagTail bytes with
+// diagTailFrom, and closes it. TEMPORARY DIAGNOSTIC.
+func diagReadTail(path string) (size int64, tail []byte, missing, short bool, err error) {
 	f, err := os.Open(path)
 	if errors.Is(err, os.ErrNotExist) {
-		return 0, nil, true, nil
+		return 0, nil, true, false, nil
 	}
 	if err != nil {
-		return 0, nil, false, err
+		return 0, nil, false, false, err
 	}
 	defer func() { err = errors.Join(err, f.Close()) }()
 	info, err := f.Stat()
 	if err != nil {
-		return 0, nil, false, err
+		return 0, nil, false, false, err
 	}
-	size = info.Size()
+	tail, short, err = diagTailFrom(f, info.Size())
+	return info.Size(), tail, false, short, err
+}
+
+// diagTailFrom reads the last diagTail bytes of a file of the given size.
+// It keeps only the bytes actually read: a file that shrank after its size
+// was taken yields fewer bytes and short=true, never padding. TEMPORARY
+// DIAGNOSTIC.
+func diagTailFrom(r io.ReaderAt, size int64) (tail []byte, short bool, err error) {
 	off := max(size-diagTail, 0)
-	tail = make([]byte, size-off)
-	if _, err := f.ReadAt(tail, off); err != nil && !errors.Is(err, io.EOF) {
-		return size, nil, false, err
+	buf := make([]byte, size-off)
+	n, err := r.ReadAt(buf, off)
+	if err != nil && !errors.Is(err, io.EOF) {
+		return buf[:n], false, err
 	}
-	return size, tail, false, nil
+	return buf[:n], n < len(buf), nil
 }

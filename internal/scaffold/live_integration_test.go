@@ -138,13 +138,13 @@ func TestStarterLiveTargetAppliesADraftToTheNextModelRequest(t *testing.T) {
 	if t.Failed() {
 		t.FailNow()
 	}
-	assertVerified(t, cp, alice, runsDir, card, c2, "the committed text verifies for the same card")
+	assertVerified(t, cp, alice, runsDir, name, card, c2, "the committed text verifies for the same card")
 
 	if t.Failed() {
 		t.FailNow()
 	}
 	skipped := confirmCard(t, cp, alice, "starter-skip-cp3")
-	assertVerified(t, cp, alice, runsDir, skipped, commit, "a card that skips CP3 verifies C1 directly")
+	assertVerified(t, cp, alice, runsDir, name, skipped, commit, "a card that skips CP3 verifies C1 directly")
 }
 
 // keepRun copies a failed run's directory to $SURLA_TEST_KEEP_RUNS, when it
@@ -200,7 +200,7 @@ func confirmCard(t *testing.T, cp *controlplane.ControlPlane, ctx context.Contex
 // assertVerified runs verify_change for commit on card and waits, within a
 // phase deadline, until the run completes. It fails at once on a run that
 // ends without a report or a report that does not pass.
-func assertVerified(t *testing.T, cp *controlplane.ControlPlane, ctx context.Context, runsDir string, card *gensurla.ChangeCardResult, commit, why string) {
+func assertVerified(t *testing.T, cp *controlplane.ControlPlane, ctx context.Context, runsDir, binary string, card *gensurla.ChangeCardResult, commit, why string) {
 	t.Helper()
 	run, err := cp.VerifyChange(ctx, &gensurla.VerifyChangePayload{ChangeID: card.ChangeID, RequestRevision: card.RequestRevision, CandidateCommit: commit})
 	require.NoError(t, err)
@@ -217,7 +217,7 @@ func assertVerified(t *testing.T, cp *controlplane.ControlPlane, ctx context.Con
 		} else if _, ok := status.State.AsRunning(); ok {
 			snapshot = "incomplete"
 		}
-		diagRunEvidence(t, filepath.Join(runsDir, run.RunID), snapshot)
+		diagRunEvidence(t, filepath.Join(runsDir, run.RunID), snapshot, binary)
 	})
 	phase, cancel := context.WithTimeout(t.Context(), 15*time.Minute)
 	defer cancel()
@@ -356,13 +356,14 @@ func askLive(t *testing.T, origin string) string {
 }
 
 // diagRunEvidence logs a verification run's named evidence files, each with
-// its size and its last 16 KiB, through t.Logf: supervisor.log,
-// executor.log, work/evidence/timeline.log, each Prepare command's streams,
-// describe and suite streams, and the build logs found by one directory
-// listing. The END line says complete=true only when no open, read or close
-// failed. TEMPORARY DIAGNOSTIC (branch diag/live-start-evidence, never
+// its size and its last 16 KiB, or "missing", through t.Logf:
+// supervisor.log, executor.log, work/evidence/timeline.log, each Prepare
+// command's streams, describe and suite streams, build-<binary>.log and
+// build-suite.log. It lists and walks nothing. The END line says
+// complete=true only when no open, read or close failed and no read came up
+// short. TEMPORARY DIAGNOSTIC (branch diag/live-start-evidence, never
 // merged).
-func diagRunEvidence(t *testing.T, dir, snapshot string) {
+func diagRunEvidence(t *testing.T, dir, snapshot, binary string) {
 	t.Helper()
 	names := []string{"supervisor.log", "executor.log", "work/evidence/timeline.log"}
 	for _, l := range []string{
@@ -371,20 +372,11 @@ func diagRunEvidence(t *testing.T, dir, snapshot string) {
 	} {
 		names = append(names, "work/evidence/"+l+".stdout", "work/evidence/"+l+".stderr")
 	}
+	names = append(names, "work/evidence/build-"+binary+".log", "work/evidence/build-suite.log")
 	errs := 0
-	if entries, err := os.ReadDir(filepath.Join(dir, "work", "evidence")); err == nil {
-		for _, e := range entries {
-			if strings.HasPrefix(e.Name(), "build-") && strings.HasSuffix(e.Name(), ".log") {
-				names = append(names, "work/evidence/"+e.Name())
-			}
-		}
-	} else if !errors.Is(err, os.ErrNotExist) {
-		errs++
-		t.Logf("RUN EVIDENCE list-error=%v", err)
-	}
 	t.Logf("RUN EVIDENCE BEGIN %s snapshot=%s", filepath.Base(dir), snapshot)
 	for _, name := range names {
-		size, tail, missing, err := diagTail(filepath.Join(dir, filepath.FromSlash(name)))
+		size, tail, missing, short, err := diagTail(filepath.Join(dir, filepath.FromSlash(name)))
 		switch {
 		case missing:
 			t.Logf("ENTRY path=%s missing", name)
@@ -392,32 +384,38 @@ func diagRunEvidence(t *testing.T, dir, snapshot string) {
 			errs++
 			t.Logf("ENTRY path=%s read-error=%v", name, err)
 		default:
-			t.Logf("ENTRY path=%s size=%d shown=%d truncated=%t\n%s\nENTRY-END %s", name, size, len(tail), int64(len(tail)) < size, tail, name)
+			if short {
+				errs++
+			}
+			t.Logf("ENTRY path=%s size=%d shown=%d truncated=%t short_read=%t\n%s\nENTRY-END %s",
+				name, size, len(tail), int64(len(tail)) < size, short, tail, name)
 		}
 	}
 	t.Logf("RUN EVIDENCE END complete=%t errors=%d", errs == 0, errs)
 }
 
-// diagTail returns a file's size and its last 16 KiB, closing the file it
-// opens. TEMPORARY DIAGNOSTIC.
-func diagTail(path string) (size int64, tail []byte, missing bool, err error) {
+// diagTail returns a file's size and its last 16 KiB, keeping only the bytes
+// actually read (short=true when the file shrank after its size was taken),
+// and closes the file it opens. TEMPORARY DIAGNOSTIC.
+func diagTail(path string) (size int64, tail []byte, missing, short bool, err error) {
 	f, err := os.Open(path)
 	if errors.Is(err, os.ErrNotExist) {
-		return 0, nil, true, nil
+		return 0, nil, true, false, nil
 	}
 	if err != nil {
-		return 0, nil, false, err
+		return 0, nil, false, false, err
 	}
 	defer func() { err = errors.Join(err, f.Close()) }()
 	info, err := f.Stat()
 	if err != nil {
-		return 0, nil, false, err
+		return 0, nil, false, false, err
 	}
 	size = info.Size()
 	off := max(size-16<<10, 0)
-	tail = make([]byte, size-off)
-	if _, err := f.ReadAt(tail, off); err != nil && !errors.Is(err, io.EOF) {
-		return size, nil, false, err
+	buf := make([]byte, size-off)
+	n, err := f.ReadAt(buf, off)
+	if err != nil && !errors.Is(err, io.EOF) {
+		return size, buf[:n], false, false, err
 	}
-	return size, tail, false, nil
+	return size, buf[:n], false, n < len(buf), nil
 }

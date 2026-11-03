@@ -155,9 +155,10 @@ func (c *ControlPlane) StartLiveTarget(ctx context.Context, p *gensurla.StartLiv
 	c.owned = lt
 	startCtx, cancel := context.WithTimeout(c.serverCtx, timeout)
 	defer cancel()
-	diagMark("PARENT start await-ready", nil)
+	diag := &diagMarks{}
+	diag.mark("PARENT start await-ready", nil)
 	awaitErr := proc.AwaitReady(startCtx)
-	diagMark("PARENT end await-ready", awaitErr)
+	diag.mark("PARENT end await-ready", awaitErr)
 	if err := awaitErr; err != nil {
 		summary := err.Error()
 		switch {
@@ -172,9 +173,9 @@ func (c *ControlPlane) StartLiveTarget(ctx context.Context, p *gensurla.StartLiv
 		}
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "live target did not start")
-		diagMark("PARENT start stop", nil)
+		diag.mark("PARENT start stop", nil)
 		stopErr := c.stopOwnedLocked()
-		diagMark("PARENT end stop", stopErr)
+		diag.mark("PARENT end stop", stopErr)
 		if stopErr != nil {
 			span.RecordError(stopErr)
 			return nil, gensurla.MakeLiveTargetFailed(errors.New(summary + " " + msgStopFailed))
@@ -362,16 +363,19 @@ func newLiveKey() (string, error) {
 	return hex.EncodeToString(b), nil
 }
 
-// diagFailedWrites counts failed or short writes of diagMark lines.
+// diagMarks writes PARENT marker lines for one StartLiveTarget call to the
+// process's stderr, which it never closes, counting failed or short writes
+// and reporting the count on each later line. Each call owns its own count.
 // TEMPORARY DIAGNOSTIC (branch diag/live-start-evidence, never merged).
-var diagFailedWrites int
+type diagMarks struct {
+	// failed counts failed or short writes.
+	failed int
+}
 
-// diagMark writes one PARENT marker to the process's stderr, which it never
-// closes. A failed or short write is counted and reported on the next line.
-// TEMPORARY DIAGNOSTIC (branch diag/live-start-evidence, never merged).
-func diagMark(what string, err error) {
-	line := fmt.Sprintf("%s %s err=%v failed_writes=%d\n", what, time.Now().UTC().Format(time.RFC3339Nano), err, diagFailedWrites)
+// mark writes one PARENT marker line.
+func (d *diagMarks) mark(what string, err error) {
+	line := fmt.Sprintf("%s %s err=%v failed_writes=%d\n", what, time.Now().UTC().Format(time.RFC3339Nano), err, d.failed)
 	if n, werr := os.Stderr.WriteString(line); werr != nil || n != len(line) {
-		diagFailedWrites++
+		d.failed++
 	}
 }
