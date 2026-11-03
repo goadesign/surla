@@ -70,12 +70,13 @@ const (
 //
 // Modules are downloaded through the operator's Go proxy settings. evalMod is
 // the evaluator's own go.mod, which supplies generator versions the target
-// does not require.
-func prepareHarnessModule(ctx context.Context, gocmd goCommand, buildDir string, target *modfile.File, evalMod *modfile.File, logDir string) error {
+// does not require. It returns the Goa module the harness build selects, with
+// its replacement if any, so a failed build can name it.
+func prepareHarnessModule(ctx context.Context, gocmd goCommand, buildDir string, target *modfile.File, evalMod *modfile.File, logDir string) (listedModule, error) {
 	targetDir := filepath.Join(buildDir, "target")
 	loaded, err := gocmd.designModules(ctx, targetDir, filepath.Join(logDir, "target-load.log"))
 	if err != nil {
-		return fmt.Errorf("target module is incomplete or unresolvable: %w", err)
+		return listedModule{}, fmt.Errorf("target module is incomplete or unresolvable: %w", err)
 	}
 	for _, core := range []string{harnessGoaModule, harnessGoaAIModule, harnessModelModule} {
 		if _, ok := requiredVersion(target, core); ok {
@@ -84,7 +85,7 @@ func prepareHarnessModule(ctx context.Context, gocmd goCommand, buildDir string,
 	}
 	targetModules, err := gocmd.listModules(ctx, targetDir, filepath.Join(logDir, "target-modules.log"), "-mod=readonly")
 	if err != nil {
-		return fmt.Errorf("list target modules: %w", err)
+		return listedModule{}, fmt.Errorf("list target modules: %w", err)
 	}
 
 	harness := &modfile.File{}
@@ -96,47 +97,50 @@ func prepareHarnessModule(ctx context.Context, gocmd goCommand, buildDir string,
 		func() error { return harness.AddReplace(targetPath, "", "./target", "") },
 	} {
 		if err := step(); err != nil {
-			return fmt.Errorf("write harness go.mod: %w", err)
+			return listedModule{}, fmt.Errorf("write harness go.mod: %w", err)
 		}
 	}
 	for _, core := range []string{harnessGoaModule, harnessGoaAIModule, harnessModelModule} {
 		version, ok := requiredVersion(evalMod, core)
 		if !ok {
-			return fmt.Errorf("evaluator go.mod does not require %s", core)
+			return listedModule{}, fmt.Errorf("evaluator go.mod does not require %s", core)
 		}
 		if err := harness.AddRequire(core, version); err != nil {
-			return fmt.Errorf("write harness go.mod: %w", err)
+			return listedModule{}, fmt.Errorf("write harness go.mod: %w", err)
 		}
 	}
 	for _, r := range target.Replace {
 		// The target's versioned replacements apply to the whole build, as
 		// they would in the target's own builds.
 		if err := harness.AddReplace(r.Old.Path, r.Old.Version, r.New.Path, r.New.Version); err != nil {
-			return fmt.Errorf("write harness go.mod: %w", err)
+			return listedModule{}, fmt.Errorf("write harness go.mod: %w", err)
 		}
 	}
 	formatted, err := harness.Format()
 	if err != nil {
-		return fmt.Errorf("format harness go.mod: %w", err)
+		return listedModule{}, fmt.Errorf("format harness go.mod: %w", err)
 	}
 	if err := os.WriteFile(filepath.Join(buildDir, "go.mod"), formatted, 0o600); err != nil {
-		return fmt.Errorf("write harness go.mod: %w", err)
+		return listedModule{}, fmt.Errorf("write harness go.mod: %w", err)
 	}
 	targetSum, err := os.ReadFile(filepath.Join(targetDir, "go.sum"))
 	if err != nil {
-		return fmt.Errorf("read staged go.sum: %w", err)
+		return listedModule{}, fmt.Errorf("read staged go.sum: %w", err)
 	}
 	if err := os.WriteFile(filepath.Join(buildDir, "go.sum"), targetSum, 0o600); err != nil {
-		return fmt.Errorf("write harness go.sum: %w", err)
+		return listedModule{}, fmt.Errorf("write harness go.sum: %w", err)
 	}
 	if err := gocmd.run(ctx, buildDir, filepath.Join(logDir, "harness-load.log"), "list", "-mod=mod", "-deps", "."); err != nil {
-		return fmt.Errorf("resolve evaluator dependencies: %w", err)
+		return listedModule{}, fmt.Errorf("resolve evaluator dependencies: %w", err)
 	}
 	harnessModules, err := gocmd.listModules(ctx, buildDir, filepath.Join(logDir, "harness-modules.log"), "-mod=readonly")
 	if err != nil {
-		return fmt.Errorf("list evaluator modules: %w", err)
+		return listedModule{}, fmt.Errorf("list evaluator modules: %w", err)
 	}
-	return sameVersions(loaded, targetModules, harnessModules)
+	if err := sameVersions(loaded, targetModules, harnessModules); err != nil {
+		return listedModule{}, err
+	}
+	return harnessModules[harnessGoaModule], nil
 }
 
 // designModules returns the modules that provide a package the target's

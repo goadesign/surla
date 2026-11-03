@@ -54,7 +54,7 @@ var _ = Service("orders", func() {
 		t.Run(tc.name, func(t *testing.T) {
 			old := testmodule.Snapshot(t, "", tc.design)
 			updated := testmodule.Replace(t, old, "design/design.go", tc.old, tc.replacement)
-			report, err := Compare(t.Context(), old, updated)
+			report, err := Compare(t.Context(), testEvaluator, old, updated)
 			require.NoError(t, err)
 			assert.True(t, report.HasChanges)
 			assert.Contains(t, report.ModifiedDeclarations, tc.generated)
@@ -67,7 +67,7 @@ var _ = Service("orders", func() {
 // files: independent evaluator processes must return the same declarations.
 func TestCompareIdenticalCompiledSources(t *testing.T) {
 	files := testmodule.Snapshot(t, "", resourceReaderDesign)
-	report, err := Compare(t.Context(), files, files)
+	report, err := Compare(t.Context(), testEvaluator, files, files)
 	require.NoError(t, err)
 	assert.False(t, report.HasChanges)
 	assert.Empty(t, report.AddedDeclarations)
@@ -80,7 +80,7 @@ func TestCompareIdenticalCompiledSources(t *testing.T) {
 func TestCompareTargetModulePathChangesGeneratedOutput(t *testing.T) {
 	old := testmodule.Snapshot(t, "", grpcResultDesign)
 	updated := testmodule.Replace(t, old, "go.mod", "module example.com/design", "module example.com/renamed")
-	report, err := Compare(t.Context(), old, updated)
+	report, err := Compare(t.Context(), testEvaluator, old, updated)
 	require.NoError(t, err)
 	assert.True(t, report.HasChanges)
 	assert.Contains(t, report.RemovedDeclarations, "Generated:gen/grpc/orders/pb/goagen_design_orders.proto")

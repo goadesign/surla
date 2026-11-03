@@ -31,15 +31,17 @@ type (
 	}
 )
 
-// Compare evaluates the old and new design module snapshots, each with its own
-// go.mod dependencies (see designeval.Evaluate), compares their go.mod
-// directives, and returns a factual structural diff Report.
-func Compare(ctx context.Context, oldFiles, newFiles map[string]string) (Report, error) {
-	oldEval, err := designeval.Evaluate(ctx, oldFiles)
+// Compare evaluates the old and new design module snapshots with ev, each with
+// its own go.mod dependencies (see designeval.Evaluator.Evaluate), compares
+// their go.mod directives, and returns a factual structural diff Report. Both
+// evaluations share ev's build workspace, so the second reuses what the first
+// compiled. The caller owns ev and closes it.
+func Compare(ctx context.Context, ev *designeval.Evaluator, oldFiles, newFiles map[string]string) (Report, error) {
+	oldEval, err := ev.Evaluate(ctx, oldFiles)
 	if err != nil {
 		return Report{}, fmt.Errorf("evaluate old design: %w", err)
 	}
-	newEval, err := designeval.Evaluate(ctx, newFiles)
+	newEval, err := ev.Evaluate(ctx, newFiles)
 	if err != nil {
 		return Report{}, fmt.Errorf("evaluate new design: %w", err)
 	}

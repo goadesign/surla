@@ -13,7 +13,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/goadesign/surla/internal/designeval"
 	"github.com/goadesign/surla/internal/testmodule"
 )
 
@@ -99,7 +98,7 @@ replace goa.design/goa-ai => ../goa-ai
 exclude example.com/legacy v1.1.0
 `
 
-	rep, err := Compare(ctx, testmodule.Snapshot(t, "", oldDesign), testmodule.Snapshot(t, "", newDesign))
+	rep, err := Compare(ctx, testEvaluator, testmodule.Snapshot(t, "", oldDesign), testmodule.Snapshot(t, "", newDesign))
 	if err != nil {
 		t.Fatalf("Compare returned unexpected error: %v", err)
 	}
@@ -324,7 +323,7 @@ var _ = Service("orders", func() {
 	})
 })
 `
-	rep, err := Compare(ctx, testmodule.Snapshot(t, "", oldDesign), testmodule.Snapshot(t, "", newDesign))
+	rep, err := Compare(ctx, testEvaluator, testmodule.Snapshot(t, "", oldDesign), testmodule.Snapshot(t, "", newDesign))
 	if err != nil {
 		t.Fatalf("Compare returned unexpected error: %v", err)
 	}
@@ -338,7 +337,7 @@ var _ = Service("orders", func() {
 		}
 	}
 
-	evaluated, err := designeval.Evaluate(ctx, testmodule.Snapshot(t, "", newDesign))
+	evaluated, err := testEvaluator.Evaluate(ctx, testmodule.Snapshot(t, "", newDesign))
 	if err != nil {
 		t.Fatalf("Evaluate failed: %v", err)
 	}
@@ -524,7 +523,7 @@ var _ = m.Design("Architecture", "Orders architecture", func() {
 	oldFiles := testmodule.Module(t, "github.com/acme/orders", "", goFiles(t, oldRoot))
 	newFiles := testmodule.Module(t, "github.com/acme/orders", "", goFiles(t, newRoot))
 
-	rep, err := Compare(ctx, oldFiles, newFiles)
+	rep, err := Compare(ctx, testEvaluator, oldFiles, newFiles)
 	if err != nil {
 		t.Fatalf("Compare multi-file design directories failed: %v", err)
 	}
@@ -540,11 +539,11 @@ var _ = m.Design("Architecture", "Orders architecture", func() {
 		}
 	}
 
-	evalOld, err := designeval.Evaluate(ctx, oldFiles)
+	evalOld, err := testEvaluator.Evaluate(ctx, oldFiles)
 	if err != nil {
 		t.Fatalf("Evaluate old failed: %v", err)
 	}
-	evalNew, err := designeval.Evaluate(ctx, newFiles)
+	evalNew, err := testEvaluator.Evaluate(ctx, newFiles)
 	if err != nil {
 		t.Fatalf("Evaluate new failed: %v", err)
 	}

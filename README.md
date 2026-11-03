@@ -98,6 +98,8 @@ surla preview -dir examples/orders
 surla diff --old-dir examples/orders --new-dir examples/orders
 ```
 
+After you edit a module's `design/`, `surla gen -dir <module>` regenerates its `gen/` inside the same sandbox and swaps it in atomically. It needs the module to use `goa.design/goa/v3` `v3.35.1-0.20261103205041-35e789e8f9b1` or later, and doesn't yet support gRPC designs; see [`surla gen`](docs/REFERENCE.md#surla-gen).
+
 ### 2. Connect Your Coding Agent to the Surla Control Plane (`surla serve`)
 
 Surla organizes development around five checkpoints (**CP1** Confirm Intent → **CP2** Preview Architecture → **CP3** Fast Draft & Sandbox → **CP4** Isolated Verification → **CP5** Promotion Check; see [`docs/HOW_IT_WORKS.md`](docs/HOW_IT_WORKS.md)). From the `surla` repository checkout, start the standalone Surla control plane and connect your coding assistant over MCP to propose, confirm, and preview a feature change at **CP1** and **CP2** (`surla serve` saves Change Cards in `-cards-dir`, default `.surla/cards`, so confirmed cards survive restarts; add `-verification-config` to enable **CP4** `verify_change`, `get_verification`, and `list_verifications` over MCP, and add `-promotion-config` to bind the **CP5** staged-release `PromotionTarget` for `approve_merge`; `surla serve` applies `CP3` prompt drafts to a live target started with `start_live_target` when `-verification-config` is set, and the [CLI verification walkthrough](examples/orders/README.md#3-run-os-sandboxed-end-to-end-verification-surla-verify) covers standalone `surla verify` and `surla approve`):

@@ -106,6 +106,8 @@ Commands:
   preview-change  send a design module to a Surla server to preview its
                   architecture and optional swarm roster for a Change Card
   diff            compare the designs in two module directories
+  gen             regenerate a design module's gen/ inside Surla's sandbox and
+                  replace it atomically
   verify          build a candidate commit and run an evaluator suite against it,
                   printing a verification report
   approve         check that a saved verification report passed and matches the
@@ -184,6 +186,8 @@ func dispatch(sub string, args []string, stdout io.Writer) error {
 		return runPreviewChange(args, stdout, os.Getenv)
 	case "diff":
 		return runDiff(args)
+	case "gen":
+		return runGen(args, stdout, os.Stderr)
 	case "verify":
 		return runVerify(args)
 	case "approve":
@@ -403,11 +407,13 @@ func buildVersion() string {
 }
 
 // runPreview reads the design module in -dir (default: the current directory)
-// with readModuleSnapshot, evaluates it with designeval.Evaluate, and writes
-// the result to w as indented JSON: the system name, declarations, C4
+// with readModuleSnapshot, evaluates it with a design evaluator it owns, and
+// writes the result to w as indented JSON: the system name, declarations, C4
 // containers and edges, agent policies and tool contracts. It records nothing
-// and calls no model. SIGINT and SIGTERM cancel the evaluation.
-func runPreview(args []string, w io.Writer) error {
+// and calls no model. SIGINT and SIGTERM cancel the evaluation. On every
+// return it closes the evaluator, which removes its build workspace, and
+// returns that error with any other.
+func runPreview(args []string, w io.Writer) (err error) {
 	fs := flag.NewFlagSet("preview", flag.ContinueOnError)
 	dir := fs.String("dir", ".", "root directory of the design module (holding go.mod, go.sum and design/)")
 	if err := fs.Parse(args); err != nil {
@@ -422,7 +428,9 @@ func runPreview(args []string, w io.Writer) error {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	res, err := designeval.Evaluate(ctx, files)
+	ev := designeval.NewEvaluator()
+	defer func() { err = errors.Join(err, ev.Close()) }()
+	res, err := ev.Evaluate(ctx, files)
 	if err != nil {
 		return err
 	}
@@ -433,7 +441,10 @@ func runPreview(args []string, w io.Writer) error {
 
 // runDiff compares two design modules on disk, each read into a snapshot with
 // readModuleSnapshot, and writes the structured diff JSON report to stdout.
-func runDiff(args []string) error {
+// Both evaluations share one design evaluator it owns. SIGINT and SIGTERM
+// cancel them. On every return it closes the evaluator, which removes its
+// build workspace, and returns that error with any other.
+func runDiff(args []string) (err error) {
 	fs := flag.NewFlagSet("diff", flag.ContinueOnError)
 	oldDir := fs.String("old-dir", "", "root directory of the previous design module (holding go.mod and design/)")
 	newDir := fs.String("new-dir", "", "root directory of the candidate design module (holding go.mod and design/)")
@@ -454,7 +465,11 @@ func runDiff(args []string) error {
 	if err != nil {
 		return err
 	}
-	rep, err := diff.Compare(context.Background(), oldFiles, newFiles)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	ev := designeval.NewEvaluator()
+	defer func() { err = errors.Join(err, ev.Close()) }()
+	rep, err := diff.Compare(ctx, ev, oldFiles, newFiles)
 	if err != nil {
 		return err
 	}
@@ -692,26 +707,11 @@ func isSHA256Hex(s string) bool {
 // os.Root handle opened on dir, so a replaced parent directory cannot escape
 // dir. Raw file bytes are preserved as read for local preview and diff.
 func readModuleSnapshot(dir string) (files map[string]string, err error) {
-	cleanDir := filepath.Clean(dir)
-	lstatInfo, err := os.Lstat(cleanDir)
-	if err != nil {
-		return nil, err
-	}
-	if lstatInfo.Mode()&fs.ModeSymlink != 0 {
-		return nil, fmt.Errorf("%s is a symbolic link; a design snapshot holds only regular files", dir)
-	}
-	root, err := os.OpenRoot(cleanDir)
+	cleanDir, root, err := openModuleRoot(dir)
 	if err != nil {
 		return nil, err
 	}
 	defer func() { err = errors.Join(err, root.Close()) }()
-	rootInfo, err := root.Stat(".")
-	if err != nil {
-		return nil, err
-	}
-	if !os.SameFile(lstatInfo, rootInfo) {
-		return nil, fmt.Errorf("%s changed while opening design snapshot root", dir)
-	}
 	return readModuleSnapshotFromRoot(cleanDir, root)
 }
 

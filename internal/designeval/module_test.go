@@ -15,7 +15,7 @@ import (
 
 func TestEvaluateTreatsArchiveLookingTextAsPlainGo(t *testing.T) {
 	design := strings.Replace(minimalDesign, `Service("orders"`, "Service(\"orders\", func() {\n\tDescription(`first line\n-- example.go --\nlast line`)\n})\n\nvar _ = Service(\"orders2\"", 1)
-	res, err := Evaluate(t.Context(), testmodule.Snapshot(t, "", design))
+	res, err := testEvaluator.Evaluate(t.Context(), testmodule.Snapshot(t, "", design))
 	require.NoError(t, err)
 	assert.Contains(t, res.Declarations, "Service:orders2/Method:get_order")
 }
@@ -23,7 +23,7 @@ func TestEvaluateTreatsArchiveLookingTextAsPlainGo(t *testing.T) {
 func TestEvaluateRejectsAnIncompleteModule(t *testing.T) {
 	files := testmodule.Snapshot(t, "", minimalDesign)
 	files["go.sum"] = ""
-	_, err := Evaluate(t.Context(), files)
+	_, err := testEvaluator.Evaluate(t.Context(), files)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "target module is incomplete or unresolvable")
 }
@@ -37,13 +37,13 @@ func TestEvaluateRefusesToUpgradeTheTargetsGenerator(t *testing.T) {
 		"design/design.go": minimalDesign,
 	})
 	require.Contains(t, files["go.mod"], "goa.design/goa/v3 "+old, "tidy keeps the target's own goa version")
-	_, err := Evaluate(t.Context(), files)
+	_, err := testEvaluator.Evaluate(t.Context(), files)
 	require.Error(t, err, "goa %s is older than the evaluator needs, so evaluating it would upgrade goa", old)
 	assert.Contains(t, err.Error(), "goa.design/goa/v3: target selects "+old)
 }
 
 func TestEvaluateUsesTheTargetsOwnGeneratorVersion(t *testing.T) {
-	res, err := Evaluate(t.Context(), testmodule.Snapshot(t, "", minimalDesign))
+	res, err := testEvaluator.Evaluate(t.Context(), testmodule.Snapshot(t, "", minimalDesign))
 	require.NoError(t, err)
 	assert.Contains(t, res.Declarations, "Service:orders/Method:get_order")
 }
@@ -52,7 +52,7 @@ func TestEvaluateUsesTheBuildToolchainToResolveModules(t *testing.T) {
 	// Module resolution must run with the toolchain the sandboxed build
 	// compiles with, never whatever go is first on PATH: a design may require
 	// that toolchain's exact Go version while PATH holds an older go.
-	tc, err := resolveToolchainEnv()
+	tc, err := resolveToolchainEnv(t.Context())
 	require.NoError(t, err)
 	raw, err := os.ReadFile(filepath.Join(tc.goroot, "VERSION"))
 	require.NoError(t, err)
@@ -61,12 +61,16 @@ func TestEvaluateUsesTheBuildToolchainToResolveModules(t *testing.T) {
 	files["go.mod"] = strings.Replace(files["go.mod"], "go 1.24", "go "+version, 1)
 	require.Contains(t, files["go.mod"], "go "+version)
 
+	// The go on PATH only reports where the build toolchain and module cache
+	// are, as `go env` does; any module command run with it fails.
 	fakeBin := t.TempDir()
-	require.NoError(t, os.WriteFile(filepath.Join(fakeBin, "go"),
-		[]byte("#!/bin/sh\necho 'go on PATH must not be used' >&2\nexit 1\n"), 0o700))
+	script := "#!/bin/sh\n" +
+		"if [ \"$1 $2 $3\" = \"env GOROOT GOMODCACHE\" ]; then printf '%s\\n%s\\n' '" + tc.goroot + "' '" + tc.modCache + "'; exit 0; fi\n" +
+		"echo 'go on PATH must not be used' >&2\nexit 1\n"
+	require.NoError(t, os.WriteFile(filepath.Join(fakeBin, "go"), []byte(script), 0o700))
 	t.Setenv("PATH", fakeBin+":/usr/bin:/bin")
 
-	res, err := Evaluate(t.Context(), files)
+	res, err := testEvaluator.Evaluate(t.Context(), files)
 	require.NoError(t, err)
 	assert.Contains(t, res.Declarations, "Service:orders/Method:get_order")
 }

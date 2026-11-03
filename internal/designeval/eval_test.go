@@ -61,7 +61,7 @@ var _ = Service("orders", func() {
 	})
 })
 `
-	res, err := Evaluate(ctx, testmodule.Snapshot(t, "", hostileDesign))
+	res, err := testEvaluator.Evaluate(ctx, testmodule.Snapshot(t, "", hostileDesign))
 	if err != nil {
 		t.Fatalf("Evaluate failed on sandboxed design: %v", err)
 	}
