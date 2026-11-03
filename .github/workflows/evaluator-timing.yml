@@ -1,0 +1,59 @@
+# Temporary experiment, never merged: times design evaluation on a fresh
+# runner, first on main c2409e0 (one process-wide build workspace, never
+# removed) with PR #38's harness, then on this branch (one workspace per
+# designeval.Evaluator owner, removed by Close). Each probe runs in its own
+# `go test -v` process with its own empty TMPDIR. The first failed probe stops
+# the experiment.
+name: evaluator-timing
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/evaluator-timing.yml
+      - internal/designevaltiming/**
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: macos-latest
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: "**/go.sum"
+      - name: Download modules
+        run: go mod download </dev/null
+      - name: Measure main, then this branch
+        run: |
+          set -eu
+          base="$RUNNER_TEMP/base"
+          git worktree add --detach "$base" c2409e0492e8f811ebff613f41020c23eab876c5
+          mkdir -p "$base/internal/designevaltiming"
+          cp internal/designevaltiming/baseline_harness.go.txt "$base/internal/designevaltiming/timing_test.go"
+          mkdir -p "$RUNNER_TEMP/gotmp"
+          # probe runs one test in its own go test process with its own
+          # empty TMPDIR, from the given tree. A nonzero exit stops the run.
+          probe() { # tree variant test
+            dir="$RUNNER_TEMP/probe-$2-$3"
+            mkdir -p "$dir"
+            df -k "$RUNNER_TEMP" | tail -1
+            rc=0
+            (cd "$1" && GOTMPDIR="$RUNNER_TEMP/gotmp" TMPDIR="$dir" TIMING_VARIANT="$2" \
+              go test -v -count=1 -tags timing -run "^$3\$" -timeout 30m ./internal/designevaltiming </dev/null) || rc=$?
+            echo "PROBE_EXIT variant=$2 test=$3 exit=$rc"
+            df -k "$RUNNER_TEMP" | tail -1
+            if [ "$rc" -ne 0 ]; then
+              echo "STOP: $2 $3 failed; no further probes run"
+              exit "$rc"
+            fi
+          }
+          probe "$base" baseline TestTimingProbeDirect
+          probe "$base" baseline TestTimingProbePreviewHTTP
+          probe . evaluator TestTimingProbeDirect
+          probe . evaluator TestTimingProbePreviewHTTP
