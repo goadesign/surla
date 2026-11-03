@@ -364,7 +364,7 @@ func runInit(args []string, stdout io.Writer) error {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	name, err := scaffold.Init(ctx, scaffold.Options{Dir: *dir, Module: *modulePath, SurlaVersion: *version}, scaffold.RunCommand)
+	name, err := scaffold.Init(ctx, scaffold.Options{Dir: *dir, Module: *modulePath, SurlaVersion: *version}, scaffold.RunCommand, designeval.NewEvaluator())
 	if err != nil {
 		return err
 	}

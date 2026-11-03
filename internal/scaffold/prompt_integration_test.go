@@ -11,6 +11,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/goadesign/surla/internal/designeval"
 )
 
 // TestInitSendsRegisteredPromptReferences generates a real project and asks
@@ -19,7 +21,7 @@ import (
 // different generated package name without changing the prompt ID.
 func TestInitSendsRegisteredPromptReferences(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "errors")
-	_, err := Init(t.Context(), Options{Dir: dir, Module: "example.com/errors", SurlaVersion: published}, RunCommand)
+	_, err := Init(t.Context(), Options{Dir: dir, Module: "example.com/errors", SurlaVersion: published}, RunCommand, designeval.NewEvaluator())
 	require.NoError(t, err, "Init vets the generated candidate and evaluator modules")
 	fixture, err := os.ReadFile("testdata/prompt_request_test.go.txt")
 	require.NoError(t, err)

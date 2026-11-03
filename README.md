@@ -68,7 +68,7 @@ Instead of reading a 2,000-line diff blindly, Surla separates fast prompt tuning
 
 ### 1. Inspect, Diff, or Scaffold a Goa-AI Project Locally (`0` API Keys Needed)
 
-Surla requires **macOS** (`sandbox-exec` isolates candidate builds and processes) and **Go 1.27.3+**. Before configuring an LLM key or starting a server, install the `surla` CLI to scaffold and preview a new starter service from anywhere (`surla init` runs module-pinned `go run goa.design/goa/v3/cmd/goa gen` and `surla preview` runs Surla's sandboxed evaluator, so no separate global `goa` install is needed):
+Surla requires **macOS** (`sandbox-exec` isolates candidate builds and processes) and **Go 1.27.3+**. Before configuring an LLM key or starting a server, install the `surla` CLI to scaffold and preview a new starter service from anywhere (`surla init` and `surla gen` generate code, and `surla preview` evaluates designs, in Surla's sandbox, so no separate global `goa` install is needed):
 
 ```bash
 # Install the Surla CLI (embeds the published module version for surla init):

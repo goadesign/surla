@@ -9,7 +9,7 @@ require (
 	github.com/yosida95/uritemplate/v3 v3.0.2
 	go.opentelemetry.io/otel v1.47.0
 	goa.design/goa-ai v0.90.0
-	goa.design/goa/v3 v3.35.1-0.20261030163856-3e08a6128171
+	goa.design/goa/v3 v3.35.1-0.20261103205041-35e789e8f9b1
 	goa.design/model v1.16.11-0.20261030164016-5e17c2e932fb
 	golang.org/x/mod v0.42.0
 	golang.org/x/sys v0.49.0

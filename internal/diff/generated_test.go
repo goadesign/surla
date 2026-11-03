@@ -77,6 +77,16 @@ func TestCompareIdenticalCompiledSources(t *testing.T) {
 
 // TestCompareTargetModulePathChangesGeneratedOutput proves that generated names
 // and imports come from the submitted module, never the evaluator's own module.
+func TestCompareKeepsAnOlderTargetsGoa(t *testing.T) {
+	// Starters created before Surla required goa 35e789e8 pin goa 3e08; their
+	// previews and diffs keep evaluating with that version.
+	old := testmodule.Snapshot(t, "v3.35.1-0.20261030163856-3e08a6128171", grpcResultDesign)
+	updated := testmodule.Replace(t, old, "design/design.go", `Field(1, "value", String)`, `Field(1, "amount", String)`)
+	report, err := Compare(t.Context(), testEvaluator, old, updated)
+	require.NoError(t, err)
+	assert.True(t, report.HasChanges)
+}
+
 func TestCompareTargetModulePathChangesGeneratedOutput(t *testing.T) {
 	old := testmodule.Snapshot(t, "", grpcResultDesign)
 	updated := testmodule.Replace(t, old, "go.mod", "module example.com/design", "module example.com/renamed")
