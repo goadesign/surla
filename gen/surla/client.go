@@ -27,12 +27,13 @@ type Client struct {
 	StopLiveTargetEndpoint      goa.Endpoint
 	VerifyChangeEndpoint        goa.Endpoint
 	GetVerificationEndpoint     goa.Endpoint
+	ListVerificationsEndpoint   goa.Endpoint
 	ApproveMergeEndpoint        goa.Endpoint
 	DiffEndpoint                goa.Endpoint
 }
 
 // NewClient initializes a "surla" service client given the endpoints.
-func NewClient(checkpointUI, goldenPath, proposeChange, reviseChange, confirmIntent, getChange, previewArchitecture, draftOverride, startLiveTarget, stopLiveTarget, verifyChange, getVerification, approveMerge, diff goa.Endpoint) *Client {
+func NewClient(checkpointUI, goldenPath, proposeChange, reviseChange, confirmIntent, getChange, previewArchitecture, draftOverride, startLiveTarget, stopLiveTarget, verifyChange, getVerification, listVerifications, approveMerge, diff goa.Endpoint) *Client {
 	return &Client{
 		CheckpointUIEndpoint:        checkpointUI,
 		GoldenPathEndpoint:          goldenPath,
@@ -46,6 +47,7 @@ func NewClient(checkpointUI, goldenPath, proposeChange, reviseChange, confirmInt
 		StopLiveTargetEndpoint:      stopLiveTarget,
 		VerifyChangeEndpoint:        verifyChange,
 		GetVerificationEndpoint:     getVerification,
+		ListVerificationsEndpoint:   listVerifications,
 		ApproveMergeEndpoint:        approveMerge,
 		DiffEndpoint:                diff,
 	}
@@ -185,6 +187,17 @@ func (c *Client) GetVerification(ctx context.Context, p *GetVerificationPayload)
 		return
 	}
 	return ires.(*VerificationStatusResult), nil
+}
+
+// ListVerifications calls the "list_verifications" endpoint of the "surla"
+// service.
+func (c *Client) ListVerifications(ctx context.Context, p *ListVerificationsPayload) (res *VerificationListResult, err error) {
+	var ires any
+	ires, err = c.ListVerificationsEndpoint(ctx, p)
+	if err != nil {
+		return
+	}
+	return ires.(*VerificationListResult), nil
 }
 
 // ApproveMerge calls the "approve_merge" endpoint of the "surla" service.

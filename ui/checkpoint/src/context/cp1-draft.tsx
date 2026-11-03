@@ -61,7 +61,13 @@ export function isDraftDirty(
   const ambiguities = card.ambiguities || [];
   for (let i = 0; i < ambiguities.length; i++) {
     const id = ambiguities[i].id;
-    if ((draftAnswers[id] || "") !== (initialAnswers[id] || "")) {
+    const draftVal = Object.prototype.hasOwnProperty.call(draftAnswers, id)
+      ? draftAnswers[id]
+      : "";
+    const savedVal = Object.prototype.hasOwnProperty.call(initialAnswers, id)
+      ? initialAnswers[id]
+      : "";
+    if (draftVal !== savedVal) {
       return true;
     }
   }

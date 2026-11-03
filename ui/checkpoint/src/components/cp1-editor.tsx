@@ -25,6 +25,8 @@ export interface CP1EditorProps {
   draftAnswers: Record<string, string>;
   draftExamples: ExampleItem[];
   rpcInFlight: boolean;
+  loadingVerifications: boolean;
+  cp4Open: boolean;
   preservedDraft: PreservedDraft | null;
   formError: string | null;
   onSetAnswer: (ambiguityId: string, option: string) => void;
@@ -36,6 +38,7 @@ export interface CP1EditorProps {
   onSubmitConfirm: () => void;
   onDiscardDraft: () => void;
   onLoadLatestCard: () => void;
+  onLoadVerifications: () => void;
 }
 
 interface FieldTextareaProps {
@@ -126,6 +129,8 @@ export function CP1EditorView({
   draftAnswers,
   draftExamples,
   rpcInFlight,
+  loadingVerifications,
+  cp4Open,
   preservedDraft,
   formError,
   onSetAnswer,
@@ -133,6 +138,7 @@ export function CP1EditorView({
   onSubmitConfirm,
   onDiscardDraft,
   onLoadLatestCard,
+  onLoadVerifications,
 }: CP1EditorProps) {
   const ambiguities = Array.isArray(card.ambiguities) ? card.ambiguities : [];
   const localExamplesEdited = areExamplesModified(card.examples, draftExamples);
@@ -217,6 +223,17 @@ export function CP1EditorView({
             request_revision: <code>{card.request_revision}</code>
           </p>
         </details>
+        {!cp4Open ? (
+          <div className="surla-field-row">
+            <Button
+              id="surla-load-verifications"
+              disabled={loadingVerifications}
+              onClick={onLoadVerifications}
+            >
+              {loadingVerifications ? "Loading saved verifications..." : "View saved verifications"}
+            </Button>
+          </div>
+        ) : null}
       </Card>
 
       {card.approval ? (
@@ -384,7 +401,11 @@ export function CP1EditorView({
           {Array.isArray(priorCard.ambiguities) && priorCard.ambiguities.length > 0 ? (
             <ul>
               {priorCard.ambiguities.map((amb) => {
-                const ans = (priorCard.answers && priorCard.answers[amb.id]) || "";
+                const ans =
+                  priorCard.answers &&
+                  Object.prototype.hasOwnProperty.call(priorCard.answers, amb.id)
+                    ? priorCard.answers[amb.id]
+                    : "";
                 return (
                   <li key={amb.id}>
                     <strong>{amb.question}</strong>
@@ -464,8 +485,13 @@ export function CP1EditorView({
         {ambiguities.length > 0 ? (
           <ul>
             {ambiguities.map((amb) => {
-              const selected = draftAnswers[amb.id] || "";
-              const saved = (card.answers && card.answers[amb.id]) || "";
+              const selected = Object.prototype.hasOwnProperty.call(draftAnswers, amb.id)
+                ? draftAnswers[amb.id]
+                : "";
+              const saved =
+                card.answers && Object.prototype.hasOwnProperty.call(card.answers, amb.id)
+                  ? card.answers[amb.id]
+                  : "";
               const answerBadge = !selected
                 ? ""
                 : card.status === "confirmed" && selected === saved

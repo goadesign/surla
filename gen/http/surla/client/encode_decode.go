@@ -1063,6 +1063,82 @@ func DecodeGetVerificationResponse(decoder func(*http.Response) goahttp.Decoder,
 	}
 }
 
+// BuildListVerificationsRequest instantiates a HTTP request object with method
+// and path set to call the "surla" service "list_verifications" endpoint
+func (c *Client) BuildListVerificationsRequest(ctx context.Context, v any) (*http.Request, error) {
+	var (
+		changeID string
+	)
+	{
+		p, ok := v.(*surla.ListVerificationsPayload)
+		if !ok {
+			return nil, goahttp.ErrInvalidType("surla", "list_verifications", "*surla.ListVerificationsPayload", v)
+		}
+		changeID = p.ChangeID
+	}
+
+	rawPath := fmt.Sprintf("/changes/%v/verifications", url.PathEscape(fmt.Sprint(changeID)))
+	u := &url.URL{Scheme: c.scheme, Host: c.host, Path: ListVerificationsSurlaPath(changeID), RawPath: rawPath}
+	req, err := http.NewRequest("GET", u.String(), nil)
+	if err != nil {
+		return nil, goahttp.ErrInvalidURL("surla", "list_verifications", u.String(), err)
+	}
+	if ctx != nil {
+		req = req.WithContext(ctx)
+	}
+
+	return req, nil
+}
+
+// DecodeListVerificationsResponse returns a decoder for responses returned by
+// the surla list_verifications endpoint. restoreBody controls whether the
+// response body should be restored after having been read.
+func DecodeListVerificationsResponse(decoder func(*http.Response) goahttp.Decoder, restoreBody bool) func(*http.Response) (any, error) {
+	return func(resp *http.Response) (result any, decodeErr error) {
+		responseBody := resp.Body
+		if restoreBody {
+			b, readErr := io.ReadAll(responseBody)
+			closeErr := responseBody.Close()
+			if err := errors.Join(readErr, closeErr); err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "list_verifications", err)
+			}
+			resp.Body = io.NopCloser(bytes.NewBuffer(b))
+			defer func() {
+				resp.Body = io.NopCloser(bytes.NewBuffer(b))
+			}()
+		} else {
+			defer func() {
+				if err := responseBody.Close(); err != nil {
+					decodeErr = errors.Join(decodeErr, goahttp.ErrDecodingError("surla", "list_verifications", err))
+				}
+			}()
+		}
+		switch resp.StatusCode {
+		case http.StatusOK:
+			var (
+				body ListVerificationsResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "list_verifications", err)
+			}
+			err = ValidateListVerificationsResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("surla", "list_verifications", err)
+			}
+			res := NewListVerificationsVerificationListResultOK(&body)
+			return res, nil
+		default:
+			body, err := io.ReadAll(resp.Body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "list_verifications", err)
+			}
+			return nil, goahttp.ErrInvalidResponse("surla", "list_verifications", resp.StatusCode, string(body))
+		}
+	}
+}
+
 // BuildApproveMergeRequest instantiates a HTTP request object with method and
 // path set to call the "surla" service "approve_merge" endpoint
 func (c *Client) BuildApproveMergeRequest(ctx context.Context, v any) (*http.Request, error) {
@@ -1643,6 +1719,51 @@ func unmarshalVerificationNotCompletedResponseBodyToSurlaVerificationNotComplete
 		Kind:    *v.Kind,
 		Stage:   *v.Stage,
 		Summary: *v.Summary,
+	}
+
+	return res
+}
+
+// unmarshalVerificationStatusResultResponseBodyToSurlaVerificationStatusResult
+// builds a value of type *surla.VerificationStatusResult from a value of type
+// *VerificationStatusResultResponseBody.
+func unmarshalVerificationStatusResultResponseBodyToSurlaVerificationStatusResult(v *VerificationStatusResultResponseBody) *surla.VerificationStatusResult {
+	res := &surla.VerificationStatusResult{
+		RunID:           *v.RunID,
+		ChangeID:        *v.ChangeID,
+		RequestRevision: *v.RequestRevision,
+		CandidateCommit: *v.CandidateCommit,
+		SuiteCommit:     *v.SuiteCommit,
+		AcceptedAt:      *v.AcceptedAt,
+	}
+	switch string(v.State.Kind()) {
+	case "running":
+		actual, _ := v.State.AsRunning()
+		var obj *surla.VerificationRunning
+		if actual != nil {
+			obj = unmarshalVerificationRunningResponseBodyToSurlaVerificationRunning(actual)
+		}
+		u := res.State
+		u.SetRunning((*surla.VerificationRunning)(obj))
+		res.State = u
+	case "completed":
+		actual, _ := v.State.AsCompleted()
+		var obj *surla.VerificationCompleted
+		if actual != nil {
+			obj = unmarshalVerificationCompletedResponseBodyToSurlaVerificationCompleted(actual)
+		}
+		u := res.State
+		u.SetCompleted((*surla.VerificationCompleted)(obj))
+		res.State = u
+	case "not_completed":
+		actual, _ := v.State.AsNotCompleted()
+		var obj *surla.VerificationNotCompleted
+		if actual != nil {
+			obj = unmarshalVerificationNotCompletedResponseBodyToSurlaVerificationNotCompleted(actual)
+		}
+		u := res.State
+		u.SetNotCompleted((*surla.VerificationNotCompleted)(obj))
+		res.State = u
 	}
 
 	return res

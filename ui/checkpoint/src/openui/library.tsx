@@ -76,7 +76,9 @@ export const PolicySimulatorTable = defineComponent({
       return null;
     }
 
-    const selectedOption = draft.draftAnswers[amb.id] || "";
+    const selectedOption = Object.prototype.hasOwnProperty.call(draft.draftAnswers, amb.id)
+      ? draft.draftAnswers[amb.id]
+      : "";
     const selectedIdx = amb.options.indexOf(selectedOption);
     const controlsDisabled = Boolean(draft.rpcInFlight);
     const rawRows = Array.isArray(props.rows) ? props.rows : [];
@@ -203,7 +205,9 @@ export const AmbiguityChoiceCard = defineComponent({
       return null;
     }
 
-    const selectedOption = draft.draftAnswers[amb.id] || "";
+    const selectedOption = Object.prototype.hasOwnProperty.call(draft.draftAnswers, amb.id)
+      ? draft.draftAnswers[amb.id]
+      : "";
     const controlsDisabled = Boolean(draft.rpcInFlight);
 
     return (

@@ -42,6 +42,29 @@ paths:
             schemes:
                 - http
     /changes/{change_id}/verifications:
+        get:
+            tags:
+                - surla
+            summary: list_verifications surla
+            description: Return all Checkpoint 4 verification runs started by the owner for a Change Card, ordered newest first by accepted_at (tie-broken by run_id), with each run's current state and the Change Card revision it was started for. Works whether the Change Card is currently confirmed or in needs_confirmation after a later revision.
+            operationId: surla#list_verifications
+            parameters:
+                - name: change_id
+                  in: path
+                  description: Change Card identifier.
+                  required: true
+                  type: string
+                  minLength: 1
+            responses:
+                "200":
+                    description: OK response.
+                    schema:
+                        $ref: '#/definitions/VerificationListResult'
+                        required:
+                            - change_id
+                            - runs
+            schemes:
+                - http
         post:
             tags:
                 - surla
@@ -73,6 +96,7 @@ paths:
                             - request_revision
                             - candidate_commit
                             - suite_commit
+                            - accepted_at
                             - state
             schemes:
                 - http
@@ -475,6 +499,7 @@ paths:
                             - request_revision
                             - candidate_commit
                             - suite_commit
+                            - accepted_at
                             - state
             schemes:
                 - http
@@ -2777,6 +2802,447 @@ definitions:
             - failed
             - not_run
             - harness_error
+    VerificationListResult:
+        title: VerificationListResult
+        type: object
+        properties:
+            change_id:
+                type: string
+                description: Change Card identifier.
+                example: Culpa voluptas voluptas.
+            runs:
+                type: array
+                items:
+                    $ref: '#/definitions/VerificationStatusResult'
+                description: Verification runs for change_id in newest-first order.
+                example:
+                    - accepted_at: "1984-07-01T17:36:31Z"
+                      candidate_commit: Consequatur quisquam non et est reprehenderit.
+                      change_id: Nam possimus nihil exercitationem blanditiis sint nulla.
+                      request_revision: Fugiat laudantium in et voluptas aspernatur ducimus.
+                      run_id: Qui distinctio.
+                      state:
+                        type: completed
+                        value:
+                            environment: Non fuga.
+                            report:
+                                counts:
+                                    failed: 3609575290093886988
+                                    harness_error: 3839550226689301973
+                                    not_run: 9211899176780709078
+                                    passed: 7576242881612066164
+                                    required: 8747759020562929756
+                                passed: true
+                                report_digest: Omnis nulla cum minima reiciendis sed nihil.
+                                scenarios:
+                                    - checks:
+                                        - diagnostic: Adipisci suscipit aperiam nihil corrupti accusantium illo.
+                                          name: Et asperiores.
+                                          passed: true
+                                        - diagnostic: Adipisci suscipit aperiam nihil corrupti accusantium illo.
+                                          name: Et asperiores.
+                                          passed: true
+                                        - diagnostic: Adipisci suscipit aperiam nihil corrupti accusantium illo.
+                                          name: Et asperiores.
+                                          passed: true
+                                        - diagnostic: Adipisci suscipit aperiam nihil corrupti accusantium illo.
+                                          name: Et asperiores.
+                                          passed: true
+                                      error: A voluptates.
+                                      id: Nihil dolore alias.
+                                      outcome: not_run
+                                    - checks:
+                                        - diagnostic: Adipisci suscipit aperiam nihil corrupti accusantium illo.
+                                          name: Et asperiores.
+                                          passed: true
+                                        - diagnostic: Adipisci suscipit aperiam nihil corrupti accusantium illo.
+                                          name: Et asperiores.
+                                          passed: true
+                                        - diagnostic: Adipisci suscipit aperiam nihil corrupti accusantium illo.
+                                          name: Et asperiores.
+                                          passed: true
+                                        - diagnostic: Adipisci suscipit aperiam nihil corrupti accusantium illo.
+                                          name: Et asperiores.
+                                          passed: true
+                                      error: A voluptates.
+                                      id: Nihil dolore alias.
+                                      outcome: not_run
+                                    - checks:
+                                        - diagnostic: Adipisci suscipit aperiam nihil corrupti accusantium illo.
+                                          name: Et asperiores.
+                                          passed: true
+                                        - diagnostic: Adipisci suscipit aperiam nihil corrupti accusantium illo.
+                                          name: Et asperiores.
+                                          passed: true
+                                        - diagnostic: Adipisci suscipit aperiam nihil corrupti accusantium illo.
+                                          name: Et asperiores.
+                                          passed: true
+                                        - diagnostic: Adipisci suscipit aperiam nihil corrupti accusantium illo.
+                                          name: Et asperiores.
+                                          passed: true
+                                      error: A voluptates.
+                                      id: Nihil dolore alias.
+                                      outcome: not_run
+                                suite_failed: false
+                            suite_id: Dolorum sed sunt sed.
+                      suite_commit: Nostrum perspiciatis quo.
+                    - accepted_at: "1984-07-01T17:36:31Z"
+                      candidate_commit: Consequatur quisquam non et est reprehenderit.
+                      change_id: Nam possimus nihil exercitationem blanditiis sint nulla.
+                      request_revision: Fugiat laudantium in et voluptas aspernatur ducimus.
+                      run_id: Qui distinctio.
+                      state:
+                        type: completed
+                        value:
+                            environment: Non fuga.
+                            report:
+                                counts:
+                                    failed: 3609575290093886988
+                                    harness_error: 3839550226689301973
+                                    not_run: 9211899176780709078
+                                    passed: 7576242881612066164
+                                    required: 8747759020562929756
+                                passed: true
+                                report_digest: Omnis nulla cum minima reiciendis sed nihil.
+                                scenarios:
+                                    - checks:
+                                        - diagnostic: Adipisci suscipit aperiam nihil corrupti accusantium illo.
+                                          name: Et asperiores.
+                                          passed: true
+                                        - diagnostic: Adipisci suscipit aperiam nihil corrupti accusantium illo.
+                                          name: Et asperiores.
+                                          passed: true
+                                        - diagnostic: Adipisci suscipit aperiam nihil corrupti accusantium illo.
+                                          name: Et asperiores.
+                                          passed: true
+                                        - diagnostic: Adipisci suscipit aperiam nihil corrupti accusantium illo.
+                                          name: Et asperiores.
+                                          passed: true
+                                      error: A voluptates.
+                                      id: Nihil dolore alias.
+                                      outcome: not_run
+                                    - checks:
+                                        - diagnostic: Adipisci suscipit aperiam nihil corrupti accusantium illo.
+                                          name: Et asperiores.
+                                          passed: true
+                                        - diagnostic: Adipisci suscipit aperiam nihil corrupti accusantium illo.
+                                          name: Et asperiores.
+                                          passed: true
+                                        - diagnostic: Adipisci suscipit aperiam nihil corrupti accusantium illo.
+                                          name: Et asperiores.
+                                          passed: true
+                                        - diagnostic: Adipisci suscipit aperiam nihil corrupti accusantium illo.
+                                          name: Et asperiores.
+                                          passed: true
+                                      error: A voluptates.
+                                      id: Nihil dolore alias.
+                                      outcome: not_run
+                                    - checks:
+                                        - diagnostic: Adipisci suscipit aperiam nihil corrupti accusantium illo.
+                                          name: Et asperiores.
+                                          passed: true
+                                        - diagnostic: Adipisci suscipit aperiam nihil corrupti accusantium illo.
+                                          name: Et asperiores.
+                                          passed: true
+                                        - diagnostic: Adipisci suscipit aperiam nihil corrupti accusantium illo.
+                                          name: Et asperiores.
+                                          passed: true
+                                        - diagnostic: Adipisci suscipit aperiam nihil corrupti accusantium illo.
+                                          name: Et asperiores.
+                                          passed: true
+                                      error: A voluptates.
+                                      id: Nihil dolore alias.
+                                      outcome: not_run
+                                suite_failed: false
+                            suite_id: Dolorum sed sunt sed.
+                      suite_commit: Nostrum perspiciatis quo.
+                    - accepted_at: "1984-07-01T17:36:31Z"
+                      candidate_commit: Consequatur quisquam non et est reprehenderit.
+                      change_id: Nam possimus nihil exercitationem blanditiis sint nulla.
+                      request_revision: Fugiat laudantium in et voluptas aspernatur ducimus.
+                      run_id: Qui distinctio.
+                      state:
+                        type: completed
+                        value:
+                            environment: Non fuga.
+                            report:
+                                counts:
+                                    failed: 3609575290093886988
+                                    harness_error: 3839550226689301973
+                                    not_run: 9211899176780709078
+                                    passed: 7576242881612066164
+                                    required: 8747759020562929756
+                                passed: true
+                                report_digest: Omnis nulla cum minima reiciendis sed nihil.
+                                scenarios:
+                                    - checks:
+                                        - diagnostic: Adipisci suscipit aperiam nihil corrupti accusantium illo.
+                                          name: Et asperiores.
+                                          passed: true
+                                        - diagnostic: Adipisci suscipit aperiam nihil corrupti accusantium illo.
+                                          name: Et asperiores.
+                                          passed: true
+                                        - diagnostic: Adipisci suscipit aperiam nihil corrupti accusantium illo.
+                                          name: Et asperiores.
+                                          passed: true
+                                        - diagnostic: Adipisci suscipit aperiam nihil corrupti accusantium illo.
+                                          name: Et asperiores.
+                                          passed: true
+                                      error: A voluptates.
+                                      id: Nihil dolore alias.
+                                      outcome: not_run
+                                    - checks:
+                                        - diagnostic: Adipisci suscipit aperiam nihil corrupti accusantium illo.
+                                          name: Et asperiores.
+                                          passed: true
+                                        - diagnostic: Adipisci suscipit aperiam nihil corrupti accusantium illo.
+                                          name: Et asperiores.
+                                          passed: true
+                                        - diagnostic: Adipisci suscipit aperiam nihil corrupti accusantium illo.
+                                          name: Et asperiores.
+                                          passed: true
+                                        - diagnostic: Adipisci suscipit aperiam nihil corrupti accusantium illo.
+                                          name: Et asperiores.
+                                          passed: true
+                                      error: A voluptates.
+                                      id: Nihil dolore alias.
+                                      outcome: not_run
+                                    - checks:
+                                        - diagnostic: Adipisci suscipit aperiam nihil corrupti accusantium illo.
+                                          name: Et asperiores.
+                                          passed: true
+                                        - diagnostic: Adipisci suscipit aperiam nihil corrupti accusantium illo.
+                                          name: Et asperiores.
+                                          passed: true
+                                        - diagnostic: Adipisci suscipit aperiam nihil corrupti accusantium illo.
+                                          name: Et asperiores.
+                                          passed: true
+                                        - diagnostic: Adipisci suscipit aperiam nihil corrupti accusantium illo.
+                                          name: Et asperiores.
+                                          passed: true
+                                      error: A voluptates.
+                                      id: Nihil dolore alias.
+                                      outcome: not_run
+                                suite_failed: false
+                            suite_id: Dolorum sed sunt sed.
+                      suite_commit: Nostrum perspiciatis quo.
+        description: All Checkpoint 4 verification runs started by the owner for one Change Card, ordered newest first by accepted_at (tie-broken by run_id).
+        example:
+            change_id: Culpa voluptas voluptas.
+            runs:
+                - accepted_at: "1984-07-01T17:36:31Z"
+                  candidate_commit: Consequatur quisquam non et est reprehenderit.
+                  change_id: Nam possimus nihil exercitationem blanditiis sint nulla.
+                  request_revision: Fugiat laudantium in et voluptas aspernatur ducimus.
+                  run_id: Qui distinctio.
+                  state:
+                    type: completed
+                    value:
+                        environment: Non fuga.
+                        report:
+                            counts:
+                                failed: 3609575290093886988
+                                harness_error: 3839550226689301973
+                                not_run: 9211899176780709078
+                                passed: 7576242881612066164
+                                required: 8747759020562929756
+                            passed: true
+                            report_digest: Omnis nulla cum minima reiciendis sed nihil.
+                            scenarios:
+                                - checks:
+                                    - diagnostic: Adipisci suscipit aperiam nihil corrupti accusantium illo.
+                                      name: Et asperiores.
+                                      passed: true
+                                    - diagnostic: Adipisci suscipit aperiam nihil corrupti accusantium illo.
+                                      name: Et asperiores.
+                                      passed: true
+                                    - diagnostic: Adipisci suscipit aperiam nihil corrupti accusantium illo.
+                                      name: Et asperiores.
+                                      passed: true
+                                    - diagnostic: Adipisci suscipit aperiam nihil corrupti accusantium illo.
+                                      name: Et asperiores.
+                                      passed: true
+                                  error: A voluptates.
+                                  id: Nihil dolore alias.
+                                  outcome: not_run
+                                - checks:
+                                    - diagnostic: Adipisci suscipit aperiam nihil corrupti accusantium illo.
+                                      name: Et asperiores.
+                                      passed: true
+                                    - diagnostic: Adipisci suscipit aperiam nihil corrupti accusantium illo.
+                                      name: Et asperiores.
+                                      passed: true
+                                    - diagnostic: Adipisci suscipit aperiam nihil corrupti accusantium illo.
+                                      name: Et asperiores.
+                                      passed: true
+                                    - diagnostic: Adipisci suscipit aperiam nihil corrupti accusantium illo.
+                                      name: Et asperiores.
+                                      passed: true
+                                  error: A voluptates.
+                                  id: Nihil dolore alias.
+                                  outcome: not_run
+                                - checks:
+                                    - diagnostic: Adipisci suscipit aperiam nihil corrupti accusantium illo.
+                                      name: Et asperiores.
+                                      passed: true
+                                    - diagnostic: Adipisci suscipit aperiam nihil corrupti accusantium illo.
+                                      name: Et asperiores.
+                                      passed: true
+                                    - diagnostic: Adipisci suscipit aperiam nihil corrupti accusantium illo.
+                                      name: Et asperiores.
+                                      passed: true
+                                    - diagnostic: Adipisci suscipit aperiam nihil corrupti accusantium illo.
+                                      name: Et asperiores.
+                                      passed: true
+                                  error: A voluptates.
+                                  id: Nihil dolore alias.
+                                  outcome: not_run
+                            suite_failed: false
+                        suite_id: Dolorum sed sunt sed.
+                  suite_commit: Nostrum perspiciatis quo.
+                - accepted_at: "1984-07-01T17:36:31Z"
+                  candidate_commit: Consequatur quisquam non et est reprehenderit.
+                  change_id: Nam possimus nihil exercitationem blanditiis sint nulla.
+                  request_revision: Fugiat laudantium in et voluptas aspernatur ducimus.
+                  run_id: Qui distinctio.
+                  state:
+                    type: completed
+                    value:
+                        environment: Non fuga.
+                        report:
+                            counts:
+                                failed: 3609575290093886988
+                                harness_error: 3839550226689301973
+                                not_run: 9211899176780709078
+                                passed: 7576242881612066164
+                                required: 8747759020562929756
+                            passed: true
+                            report_digest: Omnis nulla cum minima reiciendis sed nihil.
+                            scenarios:
+                                - checks:
+                                    - diagnostic: Adipisci suscipit aperiam nihil corrupti accusantium illo.
+                                      name: Et asperiores.
+                                      passed: true
+                                    - diagnostic: Adipisci suscipit aperiam nihil corrupti accusantium illo.
+                                      name: Et asperiores.
+                                      passed: true
+                                    - diagnostic: Adipisci suscipit aperiam nihil corrupti accusantium illo.
+                                      name: Et asperiores.
+                                      passed: true
+                                    - diagnostic: Adipisci suscipit aperiam nihil corrupti accusantium illo.
+                                      name: Et asperiores.
+                                      passed: true
+                                  error: A voluptates.
+                                  id: Nihil dolore alias.
+                                  outcome: not_run
+                                - checks:
+                                    - diagnostic: Adipisci suscipit aperiam nihil corrupti accusantium illo.
+                                      name: Et asperiores.
+                                      passed: true
+                                    - diagnostic: Adipisci suscipit aperiam nihil corrupti accusantium illo.
+                                      name: Et asperiores.
+                                      passed: true
+                                    - diagnostic: Adipisci suscipit aperiam nihil corrupti accusantium illo.
+                                      name: Et asperiores.
+                                      passed: true
+                                    - diagnostic: Adipisci suscipit aperiam nihil corrupti accusantium illo.
+                                      name: Et asperiores.
+                                      passed: true
+                                  error: A voluptates.
+                                  id: Nihil dolore alias.
+                                  outcome: not_run
+                                - checks:
+                                    - diagnostic: Adipisci suscipit aperiam nihil corrupti accusantium illo.
+                                      name: Et asperiores.
+                                      passed: true
+                                    - diagnostic: Adipisci suscipit aperiam nihil corrupti accusantium illo.
+                                      name: Et asperiores.
+                                      passed: true
+                                    - diagnostic: Adipisci suscipit aperiam nihil corrupti accusantium illo.
+                                      name: Et asperiores.
+                                      passed: true
+                                    - diagnostic: Adipisci suscipit aperiam nihil corrupti accusantium illo.
+                                      name: Et asperiores.
+                                      passed: true
+                                  error: A voluptates.
+                                  id: Nihil dolore alias.
+                                  outcome: not_run
+                            suite_failed: false
+                        suite_id: Dolorum sed sunt sed.
+                  suite_commit: Nostrum perspiciatis quo.
+                - accepted_at: "1984-07-01T17:36:31Z"
+                  candidate_commit: Consequatur quisquam non et est reprehenderit.
+                  change_id: Nam possimus nihil exercitationem blanditiis sint nulla.
+                  request_revision: Fugiat laudantium in et voluptas aspernatur ducimus.
+                  run_id: Qui distinctio.
+                  state:
+                    type: completed
+                    value:
+                        environment: Non fuga.
+                        report:
+                            counts:
+                                failed: 3609575290093886988
+                                harness_error: 3839550226689301973
+                                not_run: 9211899176780709078
+                                passed: 7576242881612066164
+                                required: 8747759020562929756
+                            passed: true
+                            report_digest: Omnis nulla cum minima reiciendis sed nihil.
+                            scenarios:
+                                - checks:
+                                    - diagnostic: Adipisci suscipit aperiam nihil corrupti accusantium illo.
+                                      name: Et asperiores.
+                                      passed: true
+                                    - diagnostic: Adipisci suscipit aperiam nihil corrupti accusantium illo.
+                                      name: Et asperiores.
+                                      passed: true
+                                    - diagnostic: Adipisci suscipit aperiam nihil corrupti accusantium illo.
+                                      name: Et asperiores.
+                                      passed: true
+                                    - diagnostic: Adipisci suscipit aperiam nihil corrupti accusantium illo.
+                                      name: Et asperiores.
+                                      passed: true
+                                  error: A voluptates.
+                                  id: Nihil dolore alias.
+                                  outcome: not_run
+                                - checks:
+                                    - diagnostic: Adipisci suscipit aperiam nihil corrupti accusantium illo.
+                                      name: Et asperiores.
+                                      passed: true
+                                    - diagnostic: Adipisci suscipit aperiam nihil corrupti accusantium illo.
+                                      name: Et asperiores.
+                                      passed: true
+                                    - diagnostic: Adipisci suscipit aperiam nihil corrupti accusantium illo.
+                                      name: Et asperiores.
+                                      passed: true
+                                    - diagnostic: Adipisci suscipit aperiam nihil corrupti accusantium illo.
+                                      name: Et asperiores.
+                                      passed: true
+                                  error: A voluptates.
+                                  id: Nihil dolore alias.
+                                  outcome: not_run
+                                - checks:
+                                    - diagnostic: Adipisci suscipit aperiam nihil corrupti accusantium illo.
+                                      name: Et asperiores.
+                                      passed: true
+                                    - diagnostic: Adipisci suscipit aperiam nihil corrupti accusantium illo.
+                                      name: Et asperiores.
+                                      passed: true
+                                    - diagnostic: Adipisci suscipit aperiam nihil corrupti accusantium illo.
+                                      name: Et asperiores.
+                                      passed: true
+                                    - diagnostic: Adipisci suscipit aperiam nihil corrupti accusantium illo.
+                                      name: Et asperiores.
+                                      passed: true
+                                  error: A voluptates.
+                                  id: Nihil dolore alias.
+                                  outcome: not_run
+                            suite_failed: false
+                        suite_id: Dolorum sed sunt sed.
+                  suite_commit: Nostrum perspiciatis quo.
+        required:
+            - change_id
+            - runs
     VerificationNotCompleted:
         title: VerificationNotCompleted
         type: object
@@ -2890,6 +3356,11 @@ definitions:
         title: VerificationStatusResult
         type: object
         properties:
+            accepted_at:
+                type: string
+                description: When the run was accepted.
+                example: "1996-01-07T22:40:11Z"
+                format: date-time
             candidate_commit:
                 type: string
                 description: Candidate commit the run builds and verifies.
@@ -2953,6 +3424,7 @@ definitions:
                 example: Nesciunt dolor in ea.
         description: One Checkpoint 4 verification run of a candidate commit for a confirmed Change Card revision, and its current state. The run keeps the revision it was started for, so a later confirm_intent does not change it.
         example:
+            accepted_at: "1996-01-07T22:40:11Z"
             candidate_commit: Molestiae totam nam nobis quidem reprehenderit quae.
             change_id: Sunt ut sit omnis nobis.
             request_revision: Enim et.
@@ -2968,6 +3440,7 @@ definitions:
             - request_revision
             - candidate_commit
             - suite_commit
+            - accepted_at
             - state
     VerifyChangePayload:
         title: VerifyChangePayload

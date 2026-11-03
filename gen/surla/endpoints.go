@@ -27,6 +27,7 @@ type Endpoints struct {
 	StopLiveTarget      goa.Endpoint
 	VerifyChange        goa.Endpoint
 	GetVerification     goa.Endpoint
+	ListVerifications   goa.Endpoint
 	ApproveMerge        goa.Endpoint
 	Diff                goa.Endpoint
 }
@@ -46,6 +47,7 @@ func NewEndpoints(s Service) *Endpoints {
 		StopLiveTarget:      NewStopLiveTargetEndpoint(s),
 		VerifyChange:        NewVerifyChangeEndpoint(s),
 		GetVerification:     NewGetVerificationEndpoint(s),
+		ListVerifications:   NewListVerificationsEndpoint(s),
 		ApproveMerge:        NewApproveMergeEndpoint(s),
 		Diff:                NewDiffEndpoint(s),
 	}
@@ -65,6 +67,7 @@ func (e *Endpoints) Use(m func(goa.Endpoint) goa.Endpoint) {
 	e.StopLiveTarget = m(e.StopLiveTarget)
 	e.VerifyChange = m(e.VerifyChange)
 	e.GetVerification = m(e.GetVerification)
+	e.ListVerifications = m(e.ListVerifications)
 	e.ApproveMerge = m(e.ApproveMerge)
 	e.Diff = m(e.Diff)
 }
@@ -171,6 +174,15 @@ func NewGetVerificationEndpoint(s Service) goa.Endpoint {
 	return func(ctx context.Context, req any) (any, error) {
 		p := req.(*GetVerificationPayload)
 		return s.GetVerification(ctx, p)
+	}
+}
+
+// NewListVerificationsEndpoint returns an endpoint function that calls the
+// method "list_verifications" of service "surla".
+func NewListVerificationsEndpoint(s Service) goa.Endpoint {
+	return func(ctx context.Context, req any) (any, error) {
+		p := req.(*ListVerificationsPayload)
+		return s.ListVerifications(ctx, p)
 	}
 }
 

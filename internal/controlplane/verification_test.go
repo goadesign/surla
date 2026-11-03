@@ -11,6 +11,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/codes"
 
 	gensurla "github.com/goadesign/surla/gen/surla"
 	"github.com/goadesign/surla/internal/verify"
@@ -155,6 +157,218 @@ func TestGetVerificationReadsTheRunFromDiskInEveryState(t *testing.T) {
 	t.Run("unknown run", func(t *testing.T) {
 		_, err := cp.GetVerification(alice, &gensurla.GetVerificationPayload{RunID: verifyrun.NewRunID()})
 		assert.ErrorContains(t, err, "unknown run_id")
+	})
+}
+
+func TestGetVerificationSafeErrors(t *testing.T) {
+	prevProvider := otel.GetTracerProvider()
+	recorder := &recordingTracerProvider{}
+	otel.SetTracerProvider(recorder)
+	t.Cleanup(func() { otel.SetTracerProvider(prevProvider) })
+
+	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
+	cp, card, cfg := verificationSetup(t)
+	commit := strings.Repeat("a", 40)
+
+	t.Run("foreign run with malformed accepted_at still reports non-owner without leaking validation error", func(t *testing.T) {
+		recorder.reset()
+		runID := verifyrun.NewRunID()
+		dir := filepath.Join(cfg.RunsDir, runID)
+		require.NoError(t, os.MkdirAll(dir, 0o700))
+		plan := cfg.Plan
+		plan.CandidateCommit, plan.RequestRevision = commit, card.RequestRevision
+		raw, err := json.Marshal(verifyrun.Request{
+			RunID:    runID,
+			Owner:    "bob@example.com",
+			ChangeID: "chg",
+			Plan:     plan,
+		})
+		require.NoError(t, err)
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "request.json"), raw, 0o600))
+
+		_, err = cp.GetVerification(alice, &gensurla.GetVerificationPayload{RunID: runID})
+		require.Error(t, err)
+		assert.ErrorContains(t, err, "is not the owner of run_id")
+		assert.NotContains(t, err.Error(), "accepted_at")
+		assert.NotContains(t, err.Error(), cfg.RunsDir)
+	})
+
+	t.Run("empty object request.json records raw error on span and returns safe public error", func(t *testing.T) {
+		recorder.reset()
+		runID := verifyrun.NewRunID()
+		dir := filepath.Join(cfg.RunsDir, runID)
+		require.NoError(t, os.MkdirAll(dir, 0o700))
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "request.json"), []byte(`{}`), 0o600))
+
+		_, err := cp.GetVerification(alice, &gensurla.GetVerificationPayload{RunID: runID})
+		require.Error(t, err)
+		assert.Equal(t, `read verification "`+runID+`": saved verification record could not be read`, err.Error())
+		assert.NotContains(t, err.Error(), cfg.RunsDir)
+
+		spans := recorder.matching("surla.controlplane.get_verification")
+		require.Len(t, spans, 1)
+		assert.Equal(t, codes.Error, spans[0].statusCode)
+		require.Len(t, spans[0].errors, 1)
+		assert.ErrorContains(t, spans[0].errors[0], "does not match directory")
+	})
+
+	t.Run("missing report file records evaluator path on span and returns safe public error", func(t *testing.T) {
+		recorder.reset()
+		runID := verifyrun.NewRunID()
+		dir := filepath.Join(cfg.RunsDir, runID)
+		require.NoError(t, os.MkdirAll(dir, 0o700))
+		plan := cfg.Plan
+		plan.CandidateCommit, plan.RequestRevision = commit, card.RequestRevision
+		raw, err := json.Marshal(verifyrun.Request{
+			RunID:      runID,
+			Owner:      "alice@example.com",
+			ChangeID:   "chg",
+			AcceptedAt: time.Date(2026, 10, 31, 12, 0, 0, 0, time.UTC),
+			Plan:       plan,
+		})
+		require.NoError(t, err)
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "request.json"), raw, 0o600))
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "lock"), nil, 0o600))
+		missingDigest := strings.Repeat("f", 64)
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "result.json"), []byte(`{"kind":"report","report_digest":"`+missingDigest+`"}`), 0o600))
+
+		_, err = cp.GetVerification(alice, &gensurla.GetVerificationPayload{RunID: runID})
+		require.Error(t, err)
+		assert.Equal(t, `read verification "`+runID+`": saved verification record could not be read`, err.Error())
+		assert.NotContains(t, err.Error(), cfg.Plan.ReportDir)
+
+		spans := recorder.matching("surla.controlplane.get_verification")
+		require.Len(t, spans, 1)
+		assert.Equal(t, codes.Error, spans[0].statusCode)
+		require.Len(t, spans[0].errors, 1)
+		assert.ErrorContains(t, spans[0].errors[0], missingDigest)
+	})
+}
+
+func TestListVerifications(t *testing.T) {
+	prevProvider := otel.GetTracerProvider()
+	recorder := &recordingTracerProvider{}
+	otel.SetTracerProvider(recorder)
+	t.Cleanup(func() { otel.SetTracerProvider(prevProvider) })
+
+	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
+	bob := WithPrincipal(context.Background(), Principal{ID: "bob@example.com"})
+	cp, card, cfg := verificationSetup(t)
+	commit := strings.Repeat("a", 40)
+	inputs := PromotionInputs{
+		SuiteID: "orders_acceptance", SuiteCommit: cfg.Plan.SuiteCommit, Environment: "sim",
+		Artifacts: map[string]string{"orders": "d1"},
+	}
+
+	t.Run("authorization and configuration guards", func(t *testing.T) {
+		_, err := cp.ListVerifications(context.Background(), &gensurla.ListVerificationsPayload{ChangeID: "chg"})
+		assert.ErrorContains(t, err, "authenticated principal is required")
+
+		unconfigured := newControlPlane(t, Options{})
+		_, err = unconfigured.ListVerifications(alice, &gensurla.ListVerificationsPayload{ChangeID: "chg"})
+		assert.ErrorIs(t, err, errVerificationUnavailable)
+
+		_, err = cp.ListVerifications(alice, &gensurla.ListVerificationsPayload{ChangeID: "unknown-card"})
+		assert.ErrorContains(t, err, `unknown change_id "unknown-card"`)
+
+		_, err = cp.ListVerifications(bob, &gensurla.ListVerificationsPayload{ChangeID: "chg"})
+		assert.ErrorContains(t, err, `principal "bob@example.com" is not the owner of change_id "chg"`)
+	})
+
+	t.Run("empty list when no runs exist yet", func(t *testing.T) {
+		res, err := cp.ListVerifications(alice, &gensurla.ListVerificationsPayload{ChangeID: "chg"})
+		require.NoError(t, err)
+		assert.Equal(t, "chg", res.ChangeID)
+		assert.NotNil(t, res.Runs)
+		assert.Empty(t, res.Runs)
+	})
+
+	t.Run("lists owner runs newest-first with sub-second accepted_at, builder projection, and needs_confirmation support", func(t *testing.T) {
+		report := failingReport(t, card.RequestRevision, commit, inputs)
+		b, err := json.Marshal(report)
+		require.NoError(t, err)
+		require.NoError(t, os.WriteFile(filepath.Join(cfg.Plan.ReportDir, report.Digest+".json"), b, 0o600))
+
+		writeCompletedRun := func(runID string, acceptedAt time.Time) {
+			dir := filepath.Join(cfg.RunsDir, runID)
+			require.NoError(t, os.MkdirAll(dir, 0o700))
+			plan := cfg.Plan
+			plan.CandidateCommit, plan.RequestRevision = commit, card.RequestRevision
+			raw, err := json.Marshal(verifyrun.Request{
+				RunID:      runID,
+				Owner:      "alice@example.com",
+				ChangeID:   "chg",
+				AcceptedAt: acceptedAt,
+				Plan:       plan,
+			})
+			require.NoError(t, err)
+			require.NoError(t, os.WriteFile(filepath.Join(dir, "request.json"), raw, 0o600))
+			require.NoError(t, os.WriteFile(filepath.Join(dir, "lock"), nil, 0o600))
+			require.NoError(t, os.WriteFile(filepath.Join(dir, "result.json"), []byte(`{"kind":"report","report_digest":"`+report.Digest+`"}`), 0o600))
+		}
+
+		runEarly := "10000000000000000000000000000001"
+		runLate := "20000000000000000000000000000002"
+		writeCompletedRun(runEarly, time.Date(2026, 10, 31, 12, 0, 0, 100_000_000, time.UTC))
+		writeCompletedRun(runLate, time.Date(2026, 10, 31, 12, 0, 0, 900_000_000, time.UTC))
+
+		// Revise the card into needs_confirmation; prior R1 runs must remain discoverable.
+		revisedAnalysis, err := json.Marshal(CP1SemanticAnalysis{
+			Summary: "Refunds up to $50 require a reason.",
+			Ambiguities: []CP1ModelAmbiguity{{
+				Question: "Which reasons are allowed?",
+				Options:  []string{"damaged_item", "any_reason"},
+			}},
+			Examples: []CP1ModelExample{{
+				Scenario: "Refund at the limit", InputSummary: "Order total $50.00",
+				ExpectedOutcome: "Instant store credit", VerificationKind: "deterministic",
+			}},
+			PreservedBehaviors: []string{},
+		})
+		require.NoError(t, err)
+		cp.analyzer = NewModelCP1Analyzer(newStubModelClient(t, string(revisedAnalysis)))
+		revised, err := cp.ReviseChange(alice, &gensurla.ReviseChangePayload{
+			ChangeID:        "chg",
+			RequestRevision: card.RequestRevision,
+			Prompt:          "Require a refund reason.",
+		})
+		require.NoError(t, err)
+		require.Equal(t, StatusNeedsConfirmation, revised.Status)
+
+		res, err := cp.ListVerifications(alice, &gensurla.ListVerificationsPayload{ChangeID: "chg"})
+		require.NoError(t, err)
+		require.Len(t, res.Runs, 2)
+		assert.Equal(t, runLate, res.Runs[0].RunID)
+		assert.Equal(t, "2026-10-31T12:00:00.9Z", res.Runs[0].AcceptedAt)
+		assert.Equal(t, card.RequestRevision, res.Runs[0].RequestRevision)
+		assert.Equal(t, runEarly, res.Runs[1].RunID)
+		assert.Equal(t, "2026-10-31T12:00:00.1Z", res.Runs[1].AcceptedAt)
+
+		completed, ok := res.Runs[0].State.AsCompleted()
+		require.True(t, ok)
+		require.Len(t, completed.Report.Scenarios, 2)
+		assert.Equal(t, "holdout-1", completed.Report.Scenarios[1].ID)
+		assert.Empty(t, completed.Report.Scenarios[1].Checks)
+	})
+
+	t.Run("corrupt published request.json records raw error on span and returns safe public error", func(t *testing.T) {
+		recorder.reset()
+		corruptID := "30000000000000000000000000000003"
+		corruptDir := filepath.Join(cfg.RunsDir, corruptID)
+		require.NoError(t, os.MkdirAll(corruptDir, 0o700))
+		require.NoError(t, os.WriteFile(filepath.Join(corruptDir, "request.json"), []byte(`{"secret_host_path":"/var/lib/secret`), 0o600))
+
+		_, err := cp.ListVerifications(alice, &gensurla.ListVerificationsPayload{ChangeID: "chg"})
+		require.Error(t, err)
+		assert.Equal(t, `list verifications for "chg": saved verification records could not be read`, err.Error())
+		assert.NotContains(t, err.Error(), cfg.RunsDir)
+		assert.NotContains(t, err.Error(), "secret_host_path")
+
+		spans := recorder.matching("surla.controlplane.list_verifications")
+		require.Len(t, spans, 1)
+		assert.Equal(t, codes.Error, spans[0].statusCode)
+		require.Len(t, spans[0].errors, 1)
+		assert.ErrorContains(t, spans[0].errors[0], "decode run request")
 	})
 }
 

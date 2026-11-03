@@ -195,11 +195,25 @@ li { margin-bottom: 0.35rem; }
   opacity: 0.55;
   cursor: not-allowed;
 }
-.surla-pill[aria-pressed="true"], .surla-btn-primary, .shadcn-btn-primary {
+.surla-pill[aria-pressed="true"], .surla-pill[aria-current="page"], .surla-btn-primary, .shadcn-btn-primary {
   border-color: var(--accent);
   background-color: var(--accent-soft);
   color: var(--foreground);
   font-weight: 600;
+}
+#surla-checkpoint-nav:not([hidden]) {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin: 0.45rem 0 0.75rem 0;
+  padding-bottom: 0.45rem;
+  border-bottom: 1px solid var(--border);
+}
+#surla-cp4-run-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin: 0.5rem 0;
 }
 
 .surla-field-row { display: flex; flex-wrap: wrap; gap: 0.45rem; align-items: flex-start; margin: 0.35rem 0; }

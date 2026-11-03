@@ -250,8 +250,28 @@ type (
 		CandidateCommit *string `json:"candidate_commit"`
 		// Evaluator suite commit the operator configured for the run.
 		SuiteCommit *string `json:"suite_commit"`
+		// When the run was accepted.
+		AcceptedAt *string `json:"accepted_at"`
 		// Exactly one of running, completed or not_completed.
 		State *State `json:"state"`
+	}
+	// ListVerificationsPayloadTransport is the internal JSON transport type for ListVerificationsPayload.
+	// It lives in the toolset-local http package and is used only for JSON
+	// decode + validation (missing-field detection) before transforming into
+	// the public tool type.
+	ListVerificationsPayloadTransport struct {
+		// Change Card identifier.
+		ChangeID *string `json:"change_id"`
+	}
+	// ListVerificationsResultTransport is the internal JSON transport type for ListVerificationsResult.
+	// It lives in the toolset-local http package and is used only for JSON
+	// decode + validation (missing-field detection) before transforming into
+	// the public tool type.
+	ListVerificationsResultTransport struct {
+		// Change Card identifier.
+		ChangeID *string `json:"change_id"`
+		// Verification runs for change_id in newest-first order.
+		Runs []*VerificationStatusResultTransport `json:"runs"`
 	}
 	// PreviewArchitecturePayloadTransport is the internal JSON transport type for PreviewArchitecturePayload.
 	// It lives in the toolset-local http package and is used only for JSON
@@ -471,6 +491,8 @@ type (
 		CandidateCommit *string `json:"candidate_commit"`
 		// Evaluator suite commit the operator configured for the run.
 		SuiteCommit *string `json:"suite_commit"`
+		// When the run was accepted.
+		AcceptedAt *string `json:"accepted_at"`
 		// Exactly one of running, completed or not_completed.
 		State *State `json:"state"`
 	}
@@ -813,5 +835,25 @@ type (
 		Checks []*VerificationCheckTransport `json:"checks,omitempty"`
 		// The repair scenario's environment error; empty for holdouts.
 		Error *string `json:"error,omitempty"`
+	}
+	// VerificationStatusResultTransport is the internal JSON transport type for VerificationStatusResultTransport.
+	// It lives in the toolset-local http package and is used only for JSON
+	// decode + validation (missing-field detection) before transforming into
+	// the public tool type.
+	VerificationStatusResultTransport struct {
+		// Verification run identifier; get_verification takes it.
+		RunID *string `json:"run_id"`
+		// Change Card the run verifies.
+		ChangeID *string `json:"change_id"`
+		// Change Card revision the run verifies.
+		RequestRevision *string `json:"request_revision"`
+		// Candidate commit the run builds and verifies.
+		CandidateCommit *string `json:"candidate_commit"`
+		// Evaluator suite commit the operator configured for the run.
+		SuiteCommit *string `json:"suite_commit"`
+		// When the run was accepted.
+		AcceptedAt *string `json:"accepted_at"`
+		// Exactly one of running, completed or not_completed.
+		State *State `json:"state"`
 	}
 )

@@ -45,6 +45,8 @@ import (
 	"os/signal"
 	"path/filepath"
 	"regexp"
+	"slices"
+	"strings"
 	"syscall"
 	"time"
 
@@ -115,6 +117,15 @@ type (
 
 	// StateKind is one of the three run states.
 	StateKind string
+
+	// Run pairs an accepted verification request with its current state as
+	// classified by Read or List.
+	Run struct {
+		// Request is the immutable record written when the run was accepted.
+		Request Request
+		// State is the run's current state on disk.
+		State State
+	}
 
 	// limitedWriter keeps at most n bytes written to it and drops the rest.
 	limitedWriter struct {
@@ -212,6 +223,12 @@ func Start(root string, req Request, command []string) (int, error) {
 	}
 	if req.Plan.WorkDir == "" {
 		return 0, errors.New("run work directory is required")
+	}
+	if strings.TrimSpace(req.Owner) == "" {
+		return 0, errors.New("run owner is required")
+	}
+	if req.AcceptedAt.IsZero() {
+		return 0, errors.New("run accepted_at time is required")
 	}
 	if err := os.MkdirAll(root, 0o700); err != nil {
 		return 0, fmt.Errorf("create runs directory: %w", err)
@@ -373,38 +390,69 @@ func Read(root, runID string) (Request, State, error) {
 	dir := filepath.Join(root, runID)
 	req, err := readRequest(dir)
 	if err != nil {
-		return Request{}, State{}, err
+		return req, State{}, err
 	}
-	lock, err := os.Open(filepath.Join(dir, lockFile))
-	if err != nil {
-		return req, State{}, fmt.Errorf("open run lock: %w", err)
-	}
-	defer lock.Close()
-	switch err := syscall.Flock(int(lock.Fd()), syscall.LOCK_SH|syscall.LOCK_NB); {
-	case errors.Is(err, syscall.EWOULDBLOCK):
-		return req, State{Kind: StateRunning}, nil
-	case err != nil:
-		return req, State{}, fmt.Errorf("lock run for reading: %w", err)
-	}
-	raw, err := os.ReadFile(filepath.Join(dir, resultFile))
-	switch {
-	case errors.Is(err, fs.ErrNotExist):
-		return req, State{Kind: StateNotCompleted, Result: interrupted(summarySupervisorDied)}, nil
-	case err != nil:
-		return req, State{}, fmt.Errorf("read run result: %w", err)
-	}
-	result, err := decodeResult(raw)
+	state, err := readState(dir, req)
 	if err != nil {
 		return req, State{}, err
 	}
-	if result.Kind == ResultNoReport {
-		return req, State{Kind: StateNotCompleted, Result: result}, nil
+	return req, state, nil
+}
+
+// List returns the saved verification runs under root whose request.json names
+// owner and changeID, ordered by AcceptedAt descending and tie-broken by RunID
+// ascending. A missing root directory returns nil, nil because Start creates
+// root on the first accepted run. A run directory without request.json has no
+// published request in this enumeration snapshot and is skipped; any corrupt
+// or unreadable published request.json returns an error so List never claims
+// complete coverage after skipping a damaged record. Only matching
+// (owner, changeID) runs have their lock, result.json, or report inspected.
+func List(root, owner, changeID string) ([]Run, error) {
+	if strings.TrimSpace(owner) == "" {
+		return nil, errors.New("run owner is required")
 	}
-	report, err := LoadReport(req.Plan.ReportDir, result.ReportDigest)
+	if strings.TrimSpace(changeID) == "" {
+		return nil, errors.New("change_id is required")
+	}
+	entries, err := os.ReadDir(root)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, nil
+	}
 	if err != nil {
-		return req, State{}, err
+		return nil, fmt.Errorf("read runs directory: %w", err)
 	}
-	return req, State{Kind: StateCompleted, Report: report}, nil
+	var runs []Run
+	for _, entry := range entries {
+		if !entry.IsDir() || !runIDPattern.MatchString(entry.Name()) {
+			continue
+		}
+		dir := filepath.Join(root, entry.Name())
+		req, err := readRequest(dir)
+		if errors.Is(err, fs.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		if req.Owner != owner || req.ChangeID != changeID {
+			continue
+		}
+		state, err := readState(dir, req)
+		if err != nil {
+			return nil, err
+		}
+		runs = append(runs, Run{Request: req, State: state})
+	}
+	slices.SortFunc(runs, func(a, b Run) int {
+		if !a.Request.AcceptedAt.Equal(b.Request.AcceptedAt) {
+			if a.Request.AcceptedAt.After(b.Request.AcceptedAt) {
+				return -1
+			}
+			return 1
+		}
+		return strings.Compare(a.Request.RunID, b.Request.RunID)
+	})
+	return runs, nil
 }
 
 // LoadReport reads the report saved under reportDir with digest, such as a
@@ -451,6 +499,41 @@ func (l *limitedWriter) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
+// readState classifies the run in dir by its kernel lock and, once unlocked,
+// its result.json and saved report.
+func readState(dir string, req Request) (State, error) {
+	lock, err := os.Open(filepath.Join(dir, lockFile))
+	if err != nil {
+		return State{}, fmt.Errorf("open run lock: %w", err)
+	}
+	defer lock.Close()
+	switch err := syscall.Flock(int(lock.Fd()), syscall.LOCK_SH|syscall.LOCK_NB); {
+	case errors.Is(err, syscall.EWOULDBLOCK):
+		return State{Kind: StateRunning}, nil
+	case err != nil:
+		return State{}, fmt.Errorf("lock run for reading: %w", err)
+	}
+	raw, err := os.ReadFile(filepath.Join(dir, resultFile))
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		return State{Kind: StateNotCompleted, Result: interrupted(summarySupervisorDied)}, nil
+	case err != nil:
+		return State{}, fmt.Errorf("read run result: %w", err)
+	}
+	result, err := decodeResult(raw)
+	if err != nil {
+		return State{}, err
+	}
+	if result.Kind == ResultNoReport {
+		return State{Kind: StateNotCompleted, Result: result}, nil
+	}
+	report, err := LoadReport(req.Plan.ReportDir, result.ReportDigest)
+	if err != nil {
+		return State{}, err
+	}
+	return State{Kind: StateCompleted, Report: report}, nil
+}
+
 // interrupted returns the outcome of a run whose processes ended before it
 // finished.
 func interrupted(summary string) Result {
@@ -465,6 +548,9 @@ func decodeResult(raw []byte) (Result, error) {
 	var r Result
 	if err := dec.Decode(&r); err != nil {
 		return Result{}, fmt.Errorf("decode run result: %w", err)
+	}
+	if err := dec.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		return Result{}, errors.New("decode run result: unexpected trailing data")
 	}
 	switch {
 	case r.Kind == ResultReport && digestPattern.MatchString(r.ReportDigest) &&
@@ -481,7 +567,10 @@ func decodeResult(raw []byte) (Result, error) {
 	return Result{}, fmt.Errorf("run result %s is inconsistent", raw)
 }
 
-// readRequest strictly decodes the run's request.json.
+// readRequest strictly decodes the run's request.json and validates its
+// directory identity, owner, and acceptance time. Once Decode succeeds, req is
+// returned alongside any validation error so callers can still check req.Owner
+// before reporting read failures.
 func readRequest(dir string) (Request, error) {
 	raw, err := os.ReadFile(filepath.Join(dir, requestFile))
 	if err != nil {
@@ -492,6 +581,20 @@ func readRequest(dir string) (Request, error) {
 	var req Request
 	if err := dec.Decode(&req); err != nil {
 		return Request{}, fmt.Errorf("decode run request: %w", err)
+	}
+	if err := dec.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		return req, errors.New("decode run request: unexpected trailing data")
+	}
+	wantRunID := filepath.Base(dir)
+	if !runIDPattern.MatchString(req.RunID) || req.RunID != wantRunID {
+		return req, fmt.Errorf("decode run request: run_id %q does not match directory %q", req.RunID, wantRunID)
+	}
+	if strings.TrimSpace(req.Owner) == "" {
+		req.Owner = ""
+		return req, errors.New("decode run request: owner is required")
+	}
+	if req.AcceptedAt.IsZero() {
+		return req, errors.New("decode run request: accepted_at is required")
 	}
 	return req, nil
 }

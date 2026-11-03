@@ -56,7 +56,7 @@ type serveConfig struct {
 	swarmProfilesPath string
 	// verificationPath is the path of the operator's CP4 verification
 	// configuration (see loadVerificationConfig); empty disables
-	// verify_change and get_verification.
+	// verify_change, get_verification and list_verifications.
 	verificationPath string
 	// promotionPath is the path of the operator's CP5 promotion
 	// configuration (see loadPromotionConfig); empty leaves approve_merge
@@ -323,9 +323,9 @@ func writeServeStatus(w io.Writer, addr *net.TCPAddr, opts controlplane.Options)
 		fmt.Fprintln(w, "surla: CP3 (draft_override): on")
 	}
 	if opts.Verification == nil {
-		fmt.Fprintln(w, "surla: CP4 (verify_change, get_verification): off (set -verification-config, or run surla verify on the CLI)")
+		fmt.Fprintln(w, "surla: CP4 (verify_change, get_verification, list_verifications): off (set -verification-config, or run surla verify on the CLI)")
 	} else {
-		fmt.Fprintf(w, "surla: CP4 (verify_change, get_verification): on (runs in %s)\n", opts.Verification.RunsDir)
+		fmt.Fprintf(w, "surla: CP4 (verify_change, get_verification, list_verifications): on (runs in %s)\n", opts.Verification.RunsDir)
 	}
 	if opts.PromotionTarget == nil {
 		fmt.Fprintln(w, "surla: CP5 (approve_merge): off (set -promotion-config, or run surla approve on the CLI)")

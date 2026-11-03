@@ -496,12 +496,30 @@ var VerificationStatusResult = Type("VerificationStatusResult", func() {
 	Attribute("request_revision", String, "Change Card revision the run verifies.")
 	Attribute("candidate_commit", String, "Candidate commit the run builds and verifies.")
 	Attribute("suite_commit", String, "Evaluator suite commit the operator configured for the run.")
+	Attribute("accepted_at", String, "When the run was accepted.", func() { Format(FormatDateTime) })
 	OneOf("state", "Exactly one of running, completed or not_completed.", func() {
 		Attribute("running", VerificationRunning)
 		Attribute("completed", VerificationCompleted)
 		Attribute("not_completed", VerificationNotCompleted)
 	})
-	Required("run_id", "change_id", "request_revision", "candidate_commit", "suite_commit", "state")
+	Required("run_id", "change_id", "request_revision", "candidate_commit", "suite_commit", "accepted_at", "state")
+})
+
+// ListVerificationsPayload names the Change Card whose verification runs are listed.
+var ListVerificationsPayload = Type("ListVerificationsPayload", func() {
+	Description("Identifies the Change Card whose verification runs are listed for its owner.")
+	Attribute("change_id", String, "Change Card identifier.", func() {
+		MinLength(1)
+	})
+	Required("change_id")
+})
+
+// VerificationListResult lists the owner's verification runs for one Change Card.
+var VerificationListResult = Type("VerificationListResult", func() {
+	Description("All Checkpoint 4 verification runs started by the owner for one Change Card, ordered newest first by accepted_at (tie-broken by run_id).")
+	Attribute("change_id", String, "Change Card identifier.")
+	Attribute("runs", ArrayOf(VerificationStatusResult), "Verification runs for change_id in newest-first order.")
+	Required("change_id", "runs")
 })
 
 var _ = Service("surla", func() {
@@ -673,6 +691,19 @@ var _ = Service("surla", func() {
 		})
 		HTTP(func() {
 			GET("/verifications/{run_id}")
+			Response(StatusOK)
+		})
+	})
+
+	Method("list_verifications", func() {
+		Description("Return all Checkpoint 4 verification runs started by the owner for a Change Card, ordered newest first by accepted_at (tie-broken by run_id), with each run's current state and the Change Card revision it was started for. Works whether the Change Card is currently confirmed or in needs_confirmation after a later revision.")
+		Payload(ListVerificationsPayload)
+		Result(VerificationListResult)
+		Tool("list_verifications", "List all CP4 verification runs started for a Change Card, newest first.", func() {
+			ToolUI("ui://surla/checkpoint")
+		})
+		HTTP(func() {
+			GET("/changes/{change_id}/verifications")
 			Response(StatusOK)
 		})
 	})

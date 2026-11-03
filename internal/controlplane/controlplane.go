@@ -171,7 +171,7 @@ type (
 		// promotion inputs. Without it approve_merge fails.
 		PromotionTarget PromotionTarget
 		// Verification is the operator's CP4 configuration. Without it
-		// verify_change and get_verification fail.
+		// verify_change, get_verification and list_verifications fail.
 		Verification *VerificationConfig
 		// Live lets start_live_target build and run CP3 live targets with
 		// Verification's plan, in <CardsDir>/live. Without it, or without

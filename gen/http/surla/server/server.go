@@ -31,6 +31,7 @@ type Server struct {
 	StopLiveTarget      http.Handler
 	VerifyChange        http.Handler
 	GetVerification     http.Handler
+	ListVerifications   http.Handler
 	ApproveMerge        http.Handler
 	Diff                http.Handler
 }
@@ -74,6 +75,7 @@ func New(
 			{"StopLiveTarget", "DELETE", "/live-target"},
 			{"VerifyChange", "POST", "/changes/{change_id}/verifications"},
 			{"GetVerification", "GET", "/verifications/{run_id}"},
+			{"ListVerifications", "GET", "/changes/{change_id}/verifications"},
 			{"ApproveMerge", "POST", "/changes/approve"},
 			{"Diff", "POST", "/diff"},
 		},
@@ -89,6 +91,7 @@ func New(
 		StopLiveTarget:      NewStopLiveTargetHandler(e.StopLiveTarget, mux, decoder, encoder, errhandler, formatter),
 		VerifyChange:        NewVerifyChangeHandler(e.VerifyChange, mux, decoder, encoder, errhandler, formatter),
 		GetVerification:     NewGetVerificationHandler(e.GetVerification, mux, decoder, encoder, errhandler, formatter),
+		ListVerifications:   NewListVerificationsHandler(e.ListVerifications, mux, decoder, encoder, errhandler, formatter),
 		ApproveMerge:        NewApproveMergeHandler(e.ApproveMerge, mux, decoder, encoder, errhandler, formatter),
 		Diff:                NewDiffHandler(e.Diff, mux, decoder, encoder, errhandler, formatter),
 	}
@@ -111,6 +114,7 @@ func (s *Server) Use(m func(http.Handler) http.Handler) {
 	s.StopLiveTarget = m(s.StopLiveTarget)
 	s.VerifyChange = m(s.VerifyChange)
 	s.GetVerification = m(s.GetVerification)
+	s.ListVerifications = m(s.ListVerifications)
 	s.ApproveMerge = m(s.ApproveMerge)
 	s.Diff = m(s.Diff)
 }
@@ -132,6 +136,7 @@ func Mount(mux goahttp.Muxer, h *Server) {
 	MountStopLiveTargetHandler(mux, h.StopLiveTarget)
 	MountVerifyChangeHandler(mux, h.VerifyChange)
 	MountGetVerificationHandler(mux, h.GetVerification)
+	MountListVerificationsHandler(mux, h.ListVerifications)
 	MountApproveMergeHandler(mux, h.ApproveMerge)
 	MountDiffHandler(mux, h.Diff)
 }
@@ -733,6 +738,59 @@ func NewGetVerificationHandler(
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := context.WithValue(r.Context(), goahttp.AcceptTypeKey, r.Header.Get("Accept"))
 		ctx = context.WithValue(ctx, goa.MethodKey, "get_verification")
+		ctx = context.WithValue(ctx, goa.ServiceKey, "surla")
+		payload, err := decodeRequest(r)
+		if err != nil {
+			if err := encodeError(ctx, w, err); err != nil && errhandler != nil {
+				errhandler(ctx, w, err)
+			}
+			return
+		}
+		res, err := endpoint(ctx, payload)
+		if err != nil {
+			if err := encodeError(ctx, w, err); err != nil && errhandler != nil {
+				errhandler(ctx, w, err)
+			}
+			return
+		}
+		if err := encodeResponse(ctx, w, res); err != nil {
+			if errhandler != nil {
+				errhandler(ctx, w, err)
+			}
+		}
+	})
+}
+
+// MountListVerificationsHandler configures the mux to serve the "surla"
+// service "list_verifications" endpoint.
+func MountListVerificationsHandler(mux goahttp.Muxer, h http.Handler) {
+	f, ok := h.(http.HandlerFunc)
+	if !ok {
+		f = func(w http.ResponseWriter, r *http.Request) {
+			h.ServeHTTP(w, r)
+		}
+	}
+	mux.Handle("GET", "/changes/{change_id}/verifications", f)
+}
+
+// NewListVerificationsHandler creates a HTTP handler which loads the HTTP
+// request and calls the "surla" service "list_verifications" endpoint.
+func NewListVerificationsHandler(
+	endpoint goa.Endpoint,
+	mux goahttp.Muxer,
+	decoder func(*http.Request) goahttp.Decoder,
+	encoder func(context.Context, http.ResponseWriter) goahttp.Encoder,
+	errhandler func(context.Context, http.ResponseWriter, error),
+	formatter func(ctx context.Context, err error) goahttp.Statuser,
+) http.Handler {
+	var (
+		decodeRequest  = DecodeListVerificationsRequest(mux, decoder)
+		encodeResponse = EncodeListVerificationsResponse(encoder)
+		encodeError    = goahttp.ErrorEncoder(encoder, formatter)
+	)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := context.WithValue(r.Context(), goahttp.AcceptTypeKey, r.Header.Get("Accept"))
+		ctx = context.WithValue(ctx, goa.MethodKey, "list_verifications")
 		ctx = context.WithValue(ctx, goa.ServiceKey, "surla")
 		payload, err := decodeRequest(r)
 		if err != nil {
