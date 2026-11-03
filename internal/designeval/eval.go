@@ -47,15 +47,46 @@ type (
 		Tools []*gensurla.ToolContractItem `json:"tools"`
 	}
 
-	// toolchainEnv holds the resolved Go toolchain root, module cache directory,
-	// and private sandboxed build work directory for candidate.Build.
+	// Evaluator evaluates design snapshots for one owner, such as a
+	// ControlPlane or one `surla preview` or `surla diff` command. Its
+	// evaluations share one private build workspace (the evaluator build's
+	// HOME, TMPDIR and GOCACHE), so later evaluations reuse compiled
+	// dependencies. The workspace is created by the first admitted Evaluate,
+	// never by NewEvaluator, and Close removes it. Evaluate may be called
+	// concurrently. After Close, Evaluate fails and creates nothing. The owner
+	// must call Close; an unclosed Evaluator leaves its workspace behind.
+	Evaluator struct {
+		// ctx ends when Close starts; every admitted evaluation runs under it
+		// and under its caller's context.
+		ctx context.Context
+		// cancel ends ctx.
+		cancel context.CancelFunc
+		// closeResult runs the cleanup once and returns its result to every
+		// Close call.
+		closeResult func() error
+		// active counts admitted evaluations that have not finished their own
+		// cleanup. Add is called only under mu while closed is false.
+		active sync.WaitGroup
+		// mu guards workDir, closed and unsafe. It is never held across a
+		// command, a build or a wait.
+		mu sync.Mutex
+		// workDir is the shared build workspace, empty until first use.
+		workDir string
+		// closed is set when Close starts; later evaluations are refused.
+		closed bool
+		// unsafe is set, and never cleared, once an evaluation's build
+		// processes could not be confirmed stopped: they may still use
+		// workDir, so Close keeps it.
+		unsafe bool
+	}
+
+	// toolchainEnv holds the Go toolchain root and module cache one
+	// evaluation resolves and uses for both module resolution and the build.
 	toolchainEnv struct {
 		// goroot is the resolved Go toolchain root.
 		goroot string
 		// modCache is the read-only Go module cache directory.
 		modCache string
-		// workDir is the private writable directory for GOCACHE, HOME, and TMPDIR.
-		workDir string
 	}
 
 	// stuckBuildError reports an evaluator build whose process group did not
@@ -71,32 +102,22 @@ type (
 // is killed, and how long its process group may take to empty.
 const buildStopGrace = 10 * time.Second
 
-var (
-	// resolveToolchainEnv caches the resolved GOROOT, GOMODCACHE, and private
-	// sandboxed build cache directory used by candidate.Build.
-	resolveToolchainEnv = sync.OnceValues(func() (toolchainEnv, error) {
-		out, err := exec.Command("go", "env", "GOROOT", "GOMODCACHE").Output()
-		if err != nil {
-			return toolchainEnv{}, fmt.Errorf("resolve go env GOROOT GOMODCACHE: %w", err)
-		}
-		lines := strings.Split(strings.TrimSpace(string(out)), "\n")
-		if len(lines) < 2 || strings.TrimSpace(lines[0]) == "" || strings.TrimSpace(lines[1]) == "" {
-			return toolchainEnv{}, fmt.Errorf("unexpected go env output %q", string(out))
-		}
-		workDir, err := os.MkdirTemp("", "surla-designeval-work-*")
-		if err != nil {
-			return toolchainEnv{}, fmt.Errorf("create designeval work dir: %w", err)
-		}
-		return toolchainEnv{
-			goroot:   strings.TrimSpace(lines[0]),
-			modCache: strings.TrimSpace(lines[1]),
-			workDir:  workDir,
-		}, nil
-	})
-)
+// errEvaluatorClosed is the cause of an evaluation canceled by Close, and
+// the error Evaluate returns after Close.
+var errEvaluatorClosed = errors.New("design evaluator is closed")
+
+// NewEvaluator returns an Evaluator. It runs no command and creates no file.
+func NewEvaluator() *Evaluator {
+	ctx, cancel := context.WithCancel(context.Background())
+	e := &Evaluator{ctx: ctx, cancel: cancel}
+	e.closeResult = sync.OnceValue(e.close)
+	return e
+}
 
 // Evaluate evaluates the Goa/Goa-AI/Model design in a module snapshot and
 // returns its declarations, C4 topology, agent policies and tool contracts.
+// It runs until it finishes, ctx ends, or Close is called, and fails at once
+// after Close.
 //
 // files is the module's exact content keyed by module-relative path (see
 // validateSnapshot). The snapshot is staged byte for byte; no host path it
@@ -105,7 +126,46 @@ var (
 // prepareHarnessModule). The evaluator program is then compiled with
 // candidate.Build and run with candidate.Exec, so neither compiling nor
 // running the design can read evaluator files or reach the network.
-func Evaluate(ctx context.Context, files map[string]string) (_ Result, err error) {
+func (e *Evaluator) Evaluate(ctx context.Context, files map[string]string) (_ Result, err error) {
+	workDir, err := e.admit()
+	if err != nil {
+		return Result{}, err
+	}
+	ctx, cancel := context.WithCancelCause(ctx)
+	stop := context.AfterFunc(e.ctx, func() { cancel(errEvaluatorClosed) })
+	// This runs after evaluate's own deferred cleanup of its temporary
+	// directory, and marks the evaluation finished only after everything it
+	// started has been released.
+	defer func() {
+		stop()
+		cancel(nil)
+		e.finish(err)
+	}()
+	return evaluate(ctx, files, workDir)
+}
+
+// Close cancels the evaluations in progress, waits until each has released
+// its files, and removes the shared workspace. If any evaluation's build
+// processes could not be confirmed stopped, it keeps the workspace and its
+// error names it. Every call, including concurrent ones, returns the result
+// of that one cleanup once it has finished.
+func (e *Evaluator) Close() error {
+	return e.closeResult()
+}
+
+// Error describes the build processes left running.
+func (e *stuckBuildError) Error() string {
+	return "build processes did not exit: " + e.err.Error()
+}
+
+// Unwrap returns procgroup.Run's stop error.
+func (e *stuckBuildError) Unwrap() error {
+	return e.err
+}
+
+// evaluate runs one evaluation in a temporary directory of its own, with
+// workDir as the build's shared HOME, TMPDIR and GOCACHE.
+func evaluate(ctx context.Context, files map[string]string, workDir string) (_ Result, err error) {
 	target, err := validateSnapshot(files)
 	if err != nil {
 		return Result{}, err
@@ -114,7 +174,7 @@ func Evaluate(ctx context.Context, files map[string]string) (_ Result, err error
 	if err != nil {
 		return Result{}, err
 	}
-	tc, err := resolveToolchainEnv()
+	tc, err := resolveToolchainEnv(ctx)
 	if err != nil {
 		return Result{}, err
 	}
@@ -158,7 +218,7 @@ func Evaluate(ctx context.Context, files map[string]string) (_ Result, err error
 		Out:       rawBin,
 		GOROOT:    tc.goroot,
 		ModCache:  tc.modCache,
-		WorkDir:   tc.workDir,
+		WorkDir:   workDir,
 		LogFile:   buildLog,
 	}, runBuild); err != nil {
 		// A stuck build's processes may still be writing its log.
@@ -206,14 +266,18 @@ func Evaluate(ctx context.Context, files map[string]string) (_ Result, err error
 	return res, nil
 }
 
-// Error describes the build processes left running.
-func (e *stuckBuildError) Error() string {
-	return "build processes did not exit: " + e.err.Error()
-}
-
-// Unwrap returns procgroup.Run's stop error.
-func (e *stuckBuildError) Unwrap() error {
-	return e.err
+// resolveToolchainEnv resolves the Go toolchain root and module cache for one
+// evaluation with the go command on PATH. ctx bounds it.
+func resolveToolchainEnv(ctx context.Context) (toolchainEnv, error) {
+	out, err := exec.CommandContext(ctx, "go", "env", "GOROOT", "GOMODCACHE").Output()
+	if err != nil {
+		return toolchainEnv{}, fmt.Errorf("resolve go env GOROOT GOMODCACHE: %w", err)
+	}
+	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+	if len(lines) < 2 || strings.TrimSpace(lines[0]) == "" || strings.TrimSpace(lines[1]) == "" {
+		return toolchainEnv{}, fmt.Errorf("unexpected go env output %q", string(out))
+	}
+	return toolchainEnv{goroot: strings.TrimSpace(lines[0]), modCache: strings.TrimSpace(lines[1])}, nil
 }
 
 // evaluatorGoMod returns the go.mod Surla was built from (surla.GoMod), which
@@ -252,4 +316,55 @@ func releaseTemp(tmpDir, storeDir string, err error) error {
 		return fmt.Errorf("%w; the temporary directory %s is kept because build processes may still use it", err, tmpDir)
 	}
 	return errors.Join(err, candidate.RemoveStore(storeDir), os.RemoveAll(tmpDir))
+}
+
+// admit registers one evaluation and returns the shared workspace, creating
+// it on first use. It fails once Close has started; a failure to create the
+// workspace is returned and not remembered.
+func (e *Evaluator) admit() (string, error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.closed {
+		return "", errEvaluatorClosed
+	}
+	if e.workDir == "" {
+		dir, err := os.MkdirTemp("", "surla-designeval-work-*")
+		if err != nil {
+			return "", fmt.Errorf("create design evaluator workspace: %w", err)
+		}
+		e.workDir = dir
+	}
+	e.active.Add(1)
+	return e.workDir, nil
+}
+
+// finish ends one admitted evaluation that returned err, after it released
+// its own files and context: a stuck build marks the evaluator unsafe for
+// good, and only then does the evaluation stop counting as active.
+func (e *Evaluator) finish(err error) {
+	if stuck := (*stuckBuildError)(nil); errors.As(err, &stuck) {
+		e.mu.Lock()
+		e.unsafe = true
+		e.mu.Unlock()
+	}
+	e.active.Done()
+}
+
+// close is the one cleanup Close runs: it refuses new evaluations, cancels
+// the ones in progress, waits for them, and then removes the workspace or,
+// when it may still be in use, keeps it and says so.
+func (e *Evaluator) close() error {
+	e.mu.Lock()
+	e.closed = true
+	e.mu.Unlock()
+	e.cancel()
+	e.active.Wait()
+	switch {
+	case e.unsafe:
+		return fmt.Errorf("design evaluator workspace %s is kept because build processes may still use it", e.workDir)
+	case e.workDir == "":
+		return nil
+	default:
+		return os.RemoveAll(e.workDir)
+	}
 }

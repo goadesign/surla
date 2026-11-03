@@ -39,7 +39,7 @@ var _ = m.Design("Architecture", "Scoped relationships", func() {
 	})
 })
 `, destination)
-			result, err := Evaluate(context.Background(), testmodule.Snapshot(t, "", source))
+			result, err := testEvaluator.Evaluate(context.Background(), testmodule.Snapshot(t, "", source))
 			require.NoError(t, err)
 			require.Len(t, result.Containers, 6)
 			require.Len(t, result.Edges, 2)

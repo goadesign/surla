@@ -403,11 +403,13 @@ func buildVersion() string {
 }
 
 // runPreview reads the design module in -dir (default: the current directory)
-// with readModuleSnapshot, evaluates it with designeval.Evaluate, and writes
-// the result to w as indented JSON: the system name, declarations, C4
+// with readModuleSnapshot, evaluates it with a design evaluator it owns, and
+// writes the result to w as indented JSON: the system name, declarations, C4
 // containers and edges, agent policies and tool contracts. It records nothing
-// and calls no model. SIGINT and SIGTERM cancel the evaluation.
-func runPreview(args []string, w io.Writer) error {
+// and calls no model. SIGINT and SIGTERM cancel the evaluation. On every
+// return it closes the evaluator, which removes its build workspace, and
+// returns that error with any other.
+func runPreview(args []string, w io.Writer) (err error) {
 	fs := flag.NewFlagSet("preview", flag.ContinueOnError)
 	dir := fs.String("dir", ".", "root directory of the design module (holding go.mod, go.sum and design/)")
 	if err := fs.Parse(args); err != nil {
@@ -422,7 +424,9 @@ func runPreview(args []string, w io.Writer) error {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	res, err := designeval.Evaluate(ctx, files)
+	ev := designeval.NewEvaluator()
+	defer func() { err = errors.Join(err, ev.Close()) }()
+	res, err := ev.Evaluate(ctx, files)
 	if err != nil {
 		return err
 	}
@@ -433,7 +437,10 @@ func runPreview(args []string, w io.Writer) error {
 
 // runDiff compares two design modules on disk, each read into a snapshot with
 // readModuleSnapshot, and writes the structured diff JSON report to stdout.
-func runDiff(args []string) error {
+// Both evaluations share one design evaluator it owns. SIGINT and SIGTERM
+// cancel them. On every return it closes the evaluator, which removes its
+// build workspace, and returns that error with any other.
+func runDiff(args []string) (err error) {
 	fs := flag.NewFlagSet("diff", flag.ContinueOnError)
 	oldDir := fs.String("old-dir", "", "root directory of the previous design module (holding go.mod and design/)")
 	newDir := fs.String("new-dir", "", "root directory of the candidate design module (holding go.mod and design/)")
@@ -454,7 +461,11 @@ func runDiff(args []string) error {
 	if err != nil {
 		return err
 	}
-	rep, err := diff.Compare(context.Background(), oldFiles, newFiles)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	ev := designeval.NewEvaluator()
+	defer func() { err = errors.Join(err, ev.Close()) }()
+	rep, err := diff.Compare(ctx, ev, oldFiles, newFiles)
 	if err != nil {
 		return err
 	}

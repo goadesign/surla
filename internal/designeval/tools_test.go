@@ -43,7 +43,7 @@ var _ = Service("reader", func() {
   Use(records, func() { BindField("scope", func() { Lookup(String, "Scope key", func() { MinLength(2) }) }) })
  })
 })`)
-	result, err := Evaluate(t.Context(), files)
+	result, err := testEvaluator.Evaluate(t.Context(), files)
 	require.NoError(t, err)
 	require.Len(t, result.Tools, 4)
 	seen := make(map[string]bool)
