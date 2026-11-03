@@ -201,12 +201,28 @@ export interface VerificationScenario {
 }
 
 export interface VerificationStatusResult {
+  accepted_at: string;
   candidate_commit: string;
   change_id: string;
   request_revision: string;
   run_id: string;
   state: ({ "type": "running"; "value": VerificationRunning } | { "type": "completed"; "value": VerificationCompleted } | { "type": "not_completed"; "value": VerificationNotCompleted });
   suite_commit: string;
+}
+
+export interface VerificationStatusResult {
+  accepted_at: string;
+  candidate_commit: string;
+  change_id: string;
+  request_revision: string;
+  run_id: string;
+  state: ({ "type": "running"; "value": VerificationRunning } | { "type": "completed"; "value": VerificationCompleted } | { "type": "not_completed"; "value": VerificationNotCompleted });
+  suite_commit: string;
+}
+
+export interface VerificationListResult {
+  change_id: string;
+  runs: VerificationStatusResult[];
 }
 
 export interface LiveTargetResult {
@@ -859,10 +875,15 @@ const GENERATED_RESULT_SCHEMAS: Record<string, JSONSchemaNode> = {
       "request_revision",
       "candidate_commit",
       "suite_commit",
+      "accepted_at",
       "state"
     ],
     "additionalProperties": false,
     "properties": {
+      "accepted_at": {
+        "type": "string",
+        "format": "date-time"
+      },
       "candidate_commit": {
         "type": "string"
       },
@@ -1118,6 +1139,297 @@ const GENERATED_RESULT_SCHEMAS: Record<string, JSONSchemaNode> = {
       }
     }
   },
+  "VerificationListResult": {
+    "type": "object",
+    "required": [
+      "change_id",
+      "runs"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "change_id": {
+        "type": "string"
+      },
+      "runs": {
+        "type": "array",
+        "items": {
+          "$ref": "#/$defs/VerificationStatusResult"
+        }
+      }
+    },
+    "$defs": {
+      "BuilderVerificationReport": {
+        "type": "object",
+        "required": [
+          "report_digest",
+          "counts",
+          "passed",
+          "suite_failed",
+          "scenarios"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "counts": {
+            "$ref": "#/$defs/VerificationCounts"
+          },
+          "passed": {
+            "type": "boolean"
+          },
+          "report_digest": {
+            "type": "string"
+          },
+          "scenarios": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/VerificationScenario"
+            }
+          },
+          "suite_failed": {
+            "type": "boolean"
+          }
+        }
+      },
+      "VerificationCheck": {
+        "type": "object",
+        "required": [
+          "name",
+          "passed"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "diagnostic": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "passed": {
+            "type": "boolean"
+          }
+        }
+      },
+      "VerificationCompleted": {
+        "type": "object",
+        "required": [
+          "suite_id",
+          "environment",
+          "report"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "environment": {
+            "type": "string"
+          },
+          "report": {
+            "$ref": "#/$defs/BuilderVerificationReport"
+          },
+          "suite_id": {
+            "type": "string"
+          }
+        }
+      },
+      "VerificationCounts": {
+        "type": "object",
+        "required": [
+          "required",
+          "passed",
+          "failed",
+          "not_run",
+          "harness_error"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "failed": {
+            "type": "integer"
+          },
+          "harness_error": {
+            "type": "integer"
+          },
+          "not_run": {
+            "type": "integer"
+          },
+          "passed": {
+            "type": "integer"
+          },
+          "required": {
+            "type": "integer"
+          }
+        }
+      },
+      "VerificationNotCompleted": {
+        "type": "object",
+        "required": [
+          "kind",
+          "stage",
+          "summary"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "execution_failed",
+              "interrupted"
+            ]
+          },
+          "stage": {
+            "type": "string",
+            "enum": [
+              "checkout",
+              "build",
+              "describe",
+              "suite",
+              "report",
+              "supervise"
+            ]
+          },
+          "summary": {
+            "type": "string"
+          }
+        }
+      },
+      "VerificationRunning": {
+        "type": "object",
+        "required": [
+          "started_at"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "started_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "VerificationScenario": {
+        "type": "object",
+        "required": [
+          "id",
+          "outcome"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "checks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/VerificationCheck"
+            }
+          },
+          "error": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "passed",
+              "failed",
+              "not_run",
+              "harness_error"
+            ]
+          }
+        }
+      },
+      "VerificationStatusResult": {
+        "type": "object",
+        "required": [
+          "run_id",
+          "change_id",
+          "request_revision",
+          "candidate_commit",
+          "suite_commit",
+          "accepted_at",
+          "state"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "accepted_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "candidate_commit": {
+            "type": "string"
+          },
+          "change_id": {
+            "type": "string"
+          },
+          "request_revision": {
+            "type": "string"
+          },
+          "run_id": {
+            "type": "string"
+          },
+          "state": {
+            "type": "object",
+            "oneOf": [
+              {
+                "type": "object",
+                "required": [
+                  "type",
+                  "value"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "enum": [
+                      "running"
+                    ]
+                  },
+                  "value": {
+                    "$ref": "#/$defs/VerificationRunning"
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "required": [
+                  "type",
+                  "value"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "enum": [
+                      "completed"
+                    ]
+                  },
+                  "value": {
+                    "$ref": "#/$defs/VerificationCompleted"
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "required": [
+                  "type",
+                  "value"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "enum": [
+                      "not_completed"
+                    ]
+                  },
+                  "value": {
+                    "$ref": "#/$defs/VerificationNotCompleted"
+                  }
+                }
+              }
+            ]
+          },
+          "suite_commit": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
   "LiveTargetResult": {
     "type": "object",
     "required": [
@@ -1283,6 +1595,11 @@ export function isDraftOverrideResult(p: unknown): p is DraftOverrideResult {
 // isVerificationStatusResult validates the generated CP4 state and report.
 export function isVerificationStatusResult(p: unknown): p is VerificationStatusResult {
   return validateGeneratedRoot("VerificationStatusResult", p);
+}
+
+// isVerificationListResult validates the generated CP4 saved-run list.
+export function isVerificationListResult(p: unknown): p is VerificationListResult {
+  return validateGeneratedRoot("VerificationListResult", p);
 }
 
 // isLiveTargetResult validates a start_live_target result.

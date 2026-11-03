@@ -23,7 +23,7 @@ import (
 //	command (subcommand1|subcommand2|...)
 func UsageCommands() []string {
 	return []string{
-		"surla (checkpoint-ui|golden-path|propose-change|revise-change|confirm-intent|get-change|preview-architecture|draft-override|start-live-target|stop-live-target|verify-change|get-verification|approve-merge|diff)",
+		"surla (checkpoint-ui|golden-path|propose-change|revise-change|confirm-intent|get-change|preview-architecture|draft-override|start-live-target|stop-live-target|verify-change|get-verification|list-verifications|approve-merge|diff)",
 	}
 }
 
@@ -98,6 +98,9 @@ func ParseEndpoint(
 		surlaGetVerificationFlags     = flag.NewFlagSet("get-verification", flag.ExitOnError)
 		surlaGetVerificationRunIDFlag = new(cliStringFlag)
 
+		surlaListVerificationsFlags        = flag.NewFlagSet("list-verifications", flag.ExitOnError)
+		surlaListVerificationsChangeIDFlag = new(cliStringFlag)
+
 		surlaApproveMergeFlags    = flag.NewFlagSet("approve-merge", flag.ExitOnError)
 		surlaApproveMergeBodyFlag = new(cliStringFlag)
 
@@ -114,6 +117,7 @@ func ParseEndpoint(
 	surlaVerifyChangeFlags.Var(surlaVerifyChangeBodyFlag, "body", "")
 	surlaVerifyChangeFlags.Var(surlaVerifyChangeChangeIDFlag, "change-id", "Confirmed Change Card identifier.")
 	surlaGetVerificationFlags.Var(surlaGetVerificationRunIDFlag, "run-id", "Verification run identifier returned by verify_change.")
+	surlaListVerificationsFlags.Var(surlaListVerificationsChangeIDFlag, "change-id", "Change Card identifier.")
 	surlaApproveMergeFlags.Var(surlaApproveMergeBodyFlag, "body", "")
 	surlaDiffFlags.Var(surlaDiffBodyFlag, "body", "")
 
@@ -130,6 +134,7 @@ func ParseEndpoint(
 	surlaStopLiveTargetFlags.Usage = surlaStopLiveTargetUsage
 	surlaVerifyChangeFlags.Usage = surlaVerifyChangeUsage
 	surlaGetVerificationFlags.Usage = surlaGetVerificationUsage
+	surlaListVerificationsFlags.Usage = surlaListVerificationsUsage
 	surlaApproveMergeFlags.Usage = surlaApproveMergeUsage
 	surlaDiffFlags.Usage = surlaDiffUsage
 
@@ -203,6 +208,9 @@ func ParseEndpoint(
 			case "get-verification":
 				epf = surlaGetVerificationFlags
 
+			case "list-verifications":
+				epf = surlaListVerificationsFlags
+
 			case "approve-merge":
 				epf = surlaApproveMergeFlags
 
@@ -267,6 +275,9 @@ func ParseEndpoint(
 			case "get-verification":
 				endpoint = c.GetVerification()
 				data, err = surlac.BuildGetVerificationPayload(surlaGetVerificationRunIDFlag.value)
+			case "list-verifications":
+				endpoint = c.ListVerifications()
+				data, err = surlac.BuildListVerificationsPayload(surlaListVerificationsChangeIDFlag.value)
 			case "approve-merge":
 				endpoint = c.ApproveMerge()
 				data, err = surlac.BuildApproveMergePayload(surlaApproveMergeBodyFlag.value)
@@ -300,6 +311,7 @@ func surlaUsage() {
 	fmt.Fprintln(os.Stderr, `    stop-live-target: Stop this server's live CP3 target, if one runs, and unbind draft_override from it. Stopping when none runs is not an error.`)
 	fmt.Fprintln(os.Stderr, `    verify-change: Start Checkpoint 4 verification of a candidate commit for the owner's confirmed Change Card revision and return its run_id at once. The server builds the commit in Surla's sandbox and runs the evaluator suite the operator configured, in a separate process that keeps running when the caller disconnects or the server restarts; get_verification reads its state. Only the builder view of the report is ever returned. A server started without verification configured rejects every call.`)
 	fmt.Fprintln(os.Stderr, `    get-verification: Return the current state of a verification run to the owner who started it: running, completed with the builder view of its report, or not completed with where it stopped. A run keeps the Change Card revision it was started for.`)
+	fmt.Fprintln(os.Stderr, `    list-verifications: Return all Checkpoint 4 verification runs started by the owner for a Change Card, ordered newest first by accepted_at (tie-broken by run_id), with each run's current state and the Change Card revision it was started for. Works whether the Change Card is currently confirmed or in needs_confirmation after a later revision.`)
 	fmt.Fprintln(os.Stderr, `    approve-merge: Record Checkpoint 5 approval for the owner's confirmed Change Card revision. The control plane loads the verification report by digest and the expected suite, environment and candidate binary digests from its promotion target, re-derives the report from its evidence with verify.Approve, and records the approval on the card. A report that did not pass or describes different inputs is rejected. Nothing is merged or deployed. The promotion target is provided by the program that embeds the control plane; a control plane without one, such as standalone surla serve, rejects every call.`)
 	fmt.Fprintln(os.Stderr, `    diff: Compare evaluated Goa designs and go.mod directives without emitting a blanket compatibility verdict.`)
 	fmt.Fprintln(os.Stderr)
@@ -516,6 +528,24 @@ func surlaGetVerificationUsage() {
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Example:")
 	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "surla get-verification --run-id \"Sapiente quae quis reiciendis autem consectetur et.\"")
+}
+
+func surlaListVerificationsUsage() {
+	// Header with flags
+	fmt.Fprintf(os.Stderr, "%s [flags] surla list-verifications", os.Args[0])
+	fmt.Fprint(os.Stderr, " -change-id STRING")
+	fmt.Fprintln(os.Stderr)
+
+	// Description
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, `Return all Checkpoint 4 verification runs started by the owner for a Change Card, ordered newest first by accepted_at (tie-broken by run_id), with each run's current state and the Change Card revision it was started for. Works whether the Change Card is currently confirmed or in needs_confirmation after a later revision.`)
+
+	// Flags list
+	fmt.Fprintln(os.Stderr, `    -change-id STRING: Change Card identifier.`)
+
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, "Example:")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "surla list-verifications --change-id \"vw\"")
 }
 
 func surlaApproveMergeUsage() {

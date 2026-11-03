@@ -356,6 +356,8 @@ type VerifyChangeResponseBody struct {
 	CandidateCommit *string `form:"candidate_commit,omitempty" json:"candidate_commit,omitempty" xml:"candidate_commit,omitempty"`
 	// Evaluator suite commit the operator configured for the run.
 	SuiteCommit *string `form:"suite_commit,omitempty" json:"suite_commit,omitempty" xml:"suite_commit,omitempty"`
+	// When the run was accepted.
+	AcceptedAt *string `form:"accepted_at,omitempty" json:"accepted_at,omitempty" xml:"accepted_at,omitempty"`
 	// Exactly one of running, completed or not_completed.
 	State *StateResponseBody `form:"state,omitempty" json:"state,omitempty" xml:"state,omitempty"`
 }
@@ -373,8 +375,19 @@ type GetVerificationResponseBody struct {
 	CandidateCommit *string `form:"candidate_commit,omitempty" json:"candidate_commit,omitempty" xml:"candidate_commit,omitempty"`
 	// Evaluator suite commit the operator configured for the run.
 	SuiteCommit *string `form:"suite_commit,omitempty" json:"suite_commit,omitempty" xml:"suite_commit,omitempty"`
+	// When the run was accepted.
+	AcceptedAt *string `form:"accepted_at,omitempty" json:"accepted_at,omitempty" xml:"accepted_at,omitempty"`
 	// Exactly one of running, completed or not_completed.
 	State *StateResponseBody `form:"state,omitempty" json:"state,omitempty" xml:"state,omitempty"`
+}
+
+// ListVerificationsResponseBody is the type of the "surla" service
+// "list_verifications" endpoint HTTP response body.
+type ListVerificationsResponseBody struct {
+	// Change Card identifier.
+	ChangeID *string `form:"change_id,omitempty" json:"change_id,omitempty" xml:"change_id,omitempty"`
+	// Verification runs for change_id in newest-first order.
+	Runs []*VerificationStatusResultResponseBody `form:"runs,omitempty" json:"runs,omitempty" xml:"runs,omitempty"`
 }
 
 // ApproveMergeResponseBody is the type of the "surla" service "approve_merge"
@@ -877,6 +890,25 @@ type VerificationNotCompletedResponseBody struct {
 	Stage *string `form:"stage,omitempty" json:"stage,omitempty" xml:"stage,omitempty"`
 	// Builder-safe description of what stopped the run; never command output.
 	Summary *string `form:"summary,omitempty" json:"summary,omitempty" xml:"summary,omitempty"`
+}
+
+// VerificationStatusResultResponseBody is used to define fields on response
+// body types.
+type VerificationStatusResultResponseBody struct {
+	// Verification run identifier; get_verification takes it.
+	RunID *string `form:"run_id,omitempty" json:"run_id,omitempty" xml:"run_id,omitempty"`
+	// Change Card the run verifies.
+	ChangeID *string `form:"change_id,omitempty" json:"change_id,omitempty" xml:"change_id,omitempty"`
+	// Change Card revision the run verifies.
+	RequestRevision *string `form:"request_revision,omitempty" json:"request_revision,omitempty" xml:"request_revision,omitempty"`
+	// Candidate commit the run builds and verifies.
+	CandidateCommit *string `form:"candidate_commit,omitempty" json:"candidate_commit,omitempty" xml:"candidate_commit,omitempty"`
+	// Evaluator suite commit the operator configured for the run.
+	SuiteCommit *string `form:"suite_commit,omitempty" json:"suite_commit,omitempty" xml:"suite_commit,omitempty"`
+	// When the run was accepted.
+	AcceptedAt *string `form:"accepted_at,omitempty" json:"accepted_at,omitempty" xml:"accepted_at,omitempty"`
+	// Exactly one of running, completed or not_completed.
+	State *StateResponseBody `form:"state,omitempty" json:"state,omitempty" xml:"state,omitempty"`
 }
 
 // ExampleItemRequestBody is used to define fields on request body types.
@@ -1668,6 +1700,7 @@ func NewVerifyChangeVerificationStatusResultOK(body *VerifyChangeResponseBody) *
 		RequestRevision: *body.RequestRevision,
 		CandidateCommit: *body.CandidateCommit,
 		SuiteCommit:     *body.SuiteCommit,
+		AcceptedAt:      *body.AcceptedAt,
 	}
 	switch string(body.State.Kind()) {
 	case "running":
@@ -1711,6 +1744,7 @@ func NewGetVerificationVerificationStatusResultOK(body *GetVerificationResponseB
 		RequestRevision: *body.RequestRevision,
 		CandidateCommit: *body.CandidateCommit,
 		SuiteCommit:     *body.SuiteCommit,
+		AcceptedAt:      *body.AcceptedAt,
 	}
 	switch string(body.State.Kind()) {
 	case "running":
@@ -1740,6 +1774,24 @@ func NewGetVerificationVerificationStatusResultOK(body *GetVerificationResponseB
 		u := v.State
 		u.SetNotCompleted((*surla.VerificationNotCompleted)(obj))
 		v.State = u
+	}
+
+	return v
+}
+
+// NewListVerificationsVerificationListResultOK builds a "surla" service
+// "list_verifications" endpoint result from a HTTP "OK" response.
+func NewListVerificationsVerificationListResultOK(body *ListVerificationsResponseBody) *surla.VerificationListResult {
+	v := &surla.VerificationListResult{
+		ChangeID: *body.ChangeID,
+	}
+	v.Runs = make([]*surla.VerificationStatusResult, len(body.Runs))
+	for i, val := range body.Runs {
+		if val == nil {
+			v.Runs[i] = nil
+			continue
+		}
+		v.Runs[i] = unmarshalVerificationStatusResultResponseBodyToSurlaVerificationStatusResult(val)
 	}
 
 	return v
@@ -2199,8 +2251,14 @@ func ValidateVerifyChangeResponseBody(body *VerifyChangeResponseBody) (err error
 	if body.SuiteCommit == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("suite_commit", "body"))
 	}
+	if body.AcceptedAt == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("accepted_at", "body"))
+	}
 	if body.State == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("state", "body"))
+	}
+	if body.AcceptedAt != nil {
+		err = goa.MergeErrors(err, goa.ValidateFormat("body.accepted_at", *body.AcceptedAt, goa.FormatDateTime))
 	}
 	if body.State != nil {
 
@@ -2254,8 +2312,14 @@ func ValidateGetVerificationResponseBody(body *GetVerificationResponseBody) (err
 	if body.SuiteCommit == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("suite_commit", "body"))
 	}
+	if body.AcceptedAt == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("accepted_at", "body"))
+	}
 	if body.State == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("state", "body"))
+	}
+	if body.AcceptedAt != nil {
+		err = goa.MergeErrors(err, goa.ValidateFormat("body.accepted_at", *body.AcceptedAt, goa.FormatDateTime))
 	}
 	if body.State != nil {
 
@@ -2287,6 +2351,25 @@ func ValidateGetVerificationResponseBody(body *GetVerificationResponseBody) (err
 			}
 		}
 
+	}
+	return
+}
+
+// ValidateListVerificationsResponseBody runs the validations defined on
+// ListVerificationsResponseBody
+func ValidateListVerificationsResponseBody(body *ListVerificationsResponseBody) (err error) {
+	if body.ChangeID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("change_id", "body"))
+	}
+	if body.Runs == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("runs", "body"))
+	}
+	for _, e := range body.Runs {
+		if e != nil {
+			if err2 := validateVerificationStatusResultResponseBody(e, "body.runs[*]"); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
 	}
 	return
 }
@@ -3455,6 +3538,128 @@ func validateVerificationNotCompletedResponseBody(body *VerificationNotCompleted
 		if !(*body.Stage == "checkout" || *body.Stage == "build" || *body.Stage == "describe" || *body.Stage == "suite" || *body.Stage == "report" || *body.Stage == "supervise") {
 			err = goa.MergeErrors(err, goa.InvalidEnumValueError(path+".stage", *body.Stage, []any{"checkout", "build", "describe", "suite", "report", "supervise"}))
 		}
+	}
+	return
+}
+
+// ValidateVerificationStatusResultResponseBody runs the validations defined on
+// VerificationStatusResult
+func ValidateVerificationStatusResultResponseBody(body *VerificationStatusResultResponseBody) (err error) {
+	if body.RunID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("run_id", "body"))
+	}
+	if body.ChangeID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("change_id", "body"))
+	}
+	if body.RequestRevision == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("request_revision", "body"))
+	}
+	if body.CandidateCommit == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("candidate_commit", "body"))
+	}
+	if body.SuiteCommit == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("suite_commit", "body"))
+	}
+	if body.AcceptedAt == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("accepted_at", "body"))
+	}
+	if body.State == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("state", "body"))
+	}
+	if body.AcceptedAt != nil {
+		err = goa.MergeErrors(err, goa.ValidateFormat("body.accepted_at", *body.AcceptedAt, goa.FormatDateTime))
+	}
+	if body.State != nil {
+
+		if err2 := body.State.Validate(); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		} else {
+			switch string(body.State.Kind()) {
+			case "running":
+				actual, _ := body.State.AsRunning()
+				if actual != nil {
+					if err2 := validateVerificationRunningResponseBody(actual, "body.state.value"); err2 != nil {
+						err = goa.MergeErrors(err, err2)
+					}
+				}
+			case "completed":
+				actual, _ := body.State.AsCompleted()
+				if actual != nil {
+					if err2 := validateVerificationCompletedResponseBody(actual, "body.state.value"); err2 != nil {
+						err = goa.MergeErrors(err, err2)
+					}
+				}
+			case "not_completed":
+				actual, _ := body.State.AsNotCompleted()
+				if actual != nil {
+					if err2 := validateVerificationNotCompletedResponseBody(actual, "body.state.value"); err2 != nil {
+						err = goa.MergeErrors(err, err2)
+					}
+				}
+			}
+		}
+
+	}
+	return
+}
+
+// validateVerificationStatusResultResponseBody checks VerificationStatusResult
+// and reports errors using the path supplied by its caller
+func validateVerificationStatusResultResponseBody(body *VerificationStatusResultResponseBody, path string) (err error) {
+	if body.RunID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("run_id", path))
+	}
+	if body.ChangeID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("change_id", path))
+	}
+	if body.RequestRevision == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("request_revision", path))
+	}
+	if body.CandidateCommit == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("candidate_commit", path))
+	}
+	if body.SuiteCommit == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("suite_commit", path))
+	}
+	if body.AcceptedAt == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("accepted_at", path))
+	}
+	if body.State == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("state", path))
+	}
+	if body.AcceptedAt != nil {
+		err = goa.MergeErrors(err, goa.ValidateFormat(path+".accepted_at", *body.AcceptedAt, goa.FormatDateTime))
+	}
+	if body.State != nil {
+
+		if err2 := body.State.Validate(); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		} else {
+			switch string(body.State.Kind()) {
+			case "running":
+				actual, _ := body.State.AsRunning()
+				if actual != nil {
+					if err2 := validateVerificationRunningResponseBody(actual, path+".state.value"); err2 != nil {
+						err = goa.MergeErrors(err, err2)
+					}
+				}
+			case "completed":
+				actual, _ := body.State.AsCompleted()
+				if actual != nil {
+					if err2 := validateVerificationCompletedResponseBody(actual, path+".state.value"); err2 != nil {
+						err = goa.MergeErrors(err, err2)
+					}
+				}
+			case "not_completed":
+				actual, _ := body.State.AsNotCompleted()
+				if actual != nil {
+					if err2 := validateVerificationNotCompletedResponseBody(actual, path+".state.value"); err2 != nil {
+						err = goa.MergeErrors(err, err2)
+					}
+				}
+			}
+		}
+
 	}
 	return
 }

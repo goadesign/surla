@@ -356,6 +356,8 @@ type VerifyChangeResponseBody struct {
 	CandidateCommit string `form:"candidate_commit" json:"candidate_commit" xml:"candidate_commit"`
 	// Evaluator suite commit the operator configured for the run.
 	SuiteCommit string `form:"suite_commit" json:"suite_commit" xml:"suite_commit"`
+	// When the run was accepted.
+	AcceptedAt string `form:"accepted_at" json:"accepted_at" xml:"accepted_at"`
 	// Exactly one of running, completed or not_completed.
 	State StateResponseBody `form:"state" json:"state" xml:"state"`
 }
@@ -373,8 +375,19 @@ type GetVerificationResponseBody struct {
 	CandidateCommit string `form:"candidate_commit" json:"candidate_commit" xml:"candidate_commit"`
 	// Evaluator suite commit the operator configured for the run.
 	SuiteCommit string `form:"suite_commit" json:"suite_commit" xml:"suite_commit"`
+	// When the run was accepted.
+	AcceptedAt string `form:"accepted_at" json:"accepted_at" xml:"accepted_at"`
 	// Exactly one of running, completed or not_completed.
 	State StateResponseBody `form:"state" json:"state" xml:"state"`
+}
+
+// ListVerificationsResponseBody is the type of the "surla" service
+// "list_verifications" endpoint HTTP response body.
+type ListVerificationsResponseBody struct {
+	// Change Card identifier.
+	ChangeID string `form:"change_id" json:"change_id" xml:"change_id"`
+	// Verification runs for change_id in newest-first order.
+	Runs []*VerificationStatusResultResponseBody `form:"runs" json:"runs" xml:"runs"`
 }
 
 // ApproveMergeResponseBody is the type of the "surla" service "approve_merge"
@@ -877,6 +890,25 @@ type VerificationNotCompletedResponseBody struct {
 	Stage string `form:"stage" json:"stage" xml:"stage"`
 	// Builder-safe description of what stopped the run; never command output.
 	Summary string `form:"summary" json:"summary" xml:"summary"`
+}
+
+// VerificationStatusResultResponseBody is used to define fields on response
+// body types.
+type VerificationStatusResultResponseBody struct {
+	// Verification run identifier; get_verification takes it.
+	RunID string `form:"run_id" json:"run_id" xml:"run_id"`
+	// Change Card the run verifies.
+	ChangeID string `form:"change_id" json:"change_id" xml:"change_id"`
+	// Change Card revision the run verifies.
+	RequestRevision string `form:"request_revision" json:"request_revision" xml:"request_revision"`
+	// Candidate commit the run builds and verifies.
+	CandidateCommit string `form:"candidate_commit" json:"candidate_commit" xml:"candidate_commit"`
+	// Evaluator suite commit the operator configured for the run.
+	SuiteCommit string `form:"suite_commit" json:"suite_commit" xml:"suite_commit"`
+	// When the run was accepted.
+	AcceptedAt string `form:"accepted_at" json:"accepted_at" xml:"accepted_at"`
+	// Exactly one of running, completed or not_completed.
+	State StateResponseBody `form:"state" json:"state" xml:"state"`
 }
 
 // ExampleItemRequestBody is used to define fields on request body types.
@@ -1459,6 +1491,7 @@ func NewVerifyChangeResponseBody(res *surla.VerificationStatusResult) *VerifyCha
 		RequestRevision: res.RequestRevision,
 		CandidateCommit: res.CandidateCommit,
 		SuiteCommit:     res.SuiteCommit,
+		AcceptedAt:      res.AcceptedAt,
 	}
 	if res.State.Kind() != "" {
 		switch string(res.State.Kind()) {
@@ -1503,6 +1536,7 @@ func NewGetVerificationResponseBody(res *surla.VerificationStatusResult) *GetVer
 		RequestRevision: res.RequestRevision,
 		CandidateCommit: res.CandidateCommit,
 		SuiteCommit:     res.SuiteCommit,
+		AcceptedAt:      res.AcceptedAt,
 	}
 	if res.State.Kind() != "" {
 		switch string(res.State.Kind()) {
@@ -1534,6 +1568,27 @@ func NewGetVerificationResponseBody(res *surla.VerificationStatusResult) *GetVer
 			u.SetNotCompleted((*VerificationNotCompletedResponseBody)(obj))
 			body.State = u
 		}
+	}
+	return body
+}
+
+// NewListVerificationsResponseBody builds the HTTP response body from the
+// result of the "list_verifications" endpoint of the "surla" service.
+func NewListVerificationsResponseBody(res *surla.VerificationListResult) *ListVerificationsResponseBody {
+	body := &ListVerificationsResponseBody{
+		ChangeID: res.ChangeID,
+	}
+	if res.Runs != nil {
+		body.Runs = make([]*VerificationStatusResultResponseBody, len(res.Runs))
+		for i, val := range res.Runs {
+			if val == nil {
+				body.Runs[i] = nil
+				continue
+			}
+			body.Runs[i] = marshalSurlaVerificationStatusResultToVerificationStatusResultResponseBody(val)
+		}
+	} else {
+		body.Runs = []*VerificationStatusResultResponseBody{}
 	}
 	return body
 }
@@ -1873,6 +1928,15 @@ func NewVerifyChangePayload(body *VerifyChangeRequestBody, changeID string) *sur
 func NewGetVerificationPayload(runID string) *surla.GetVerificationPayload {
 	v := &surla.GetVerificationPayload{}
 	v.RunID = runID
+
+	return v
+}
+
+// NewListVerificationsPayload builds a surla service list_verifications
+// endpoint payload.
+func NewListVerificationsPayload(changeID string) *surla.ListVerificationsPayload {
+	v := &surla.ListVerificationsPayload{}
+	v.ChangeID = changeID
 
 	return v
 }

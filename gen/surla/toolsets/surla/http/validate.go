@@ -7,7 +7,11 @@
 
 package http
 
-import goa "goa.design/goa/v3/pkg"
+import (
+	"unicode/utf8"
+
+	goa "goa.design/goa/v3/pkg"
+)
 
 // ValidateApproveMergePayloadTransport runs the validations defined on ApproveMergePayloadTransport.
 func ValidateApproveMergePayloadTransport(body *ApproveMergePayloadTransport) (err error) {
@@ -343,8 +347,14 @@ func ValidateGetVerificationResultTransport(body *GetVerificationResultTransport
 	if body.SuiteCommit == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("suite_commit", "body"))
 	}
+	if body.AcceptedAt == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("accepted_at", "body"))
+	}
 	if body.State == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("state", "body"))
+	}
+	if body.AcceptedAt != nil {
+		err = goa.MergeErrors(err, goa.ValidateFormat("body.accepted_at", *body.AcceptedAt, goa.FormatDateTime))
 	}
 	if body.State != nil {
 
@@ -376,6 +386,37 @@ func ValidateGetVerificationResultTransport(body *GetVerificationResultTransport
 			}
 		}
 
+	}
+	return
+}
+
+// ValidateListVerificationsPayloadTransport runs the validations defined on ListVerificationsPayloadTransport.
+func ValidateListVerificationsPayloadTransport(body *ListVerificationsPayloadTransport) (err error) {
+	if body.ChangeID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("change_id", "body"))
+	}
+	if body.ChangeID != nil {
+		if utf8.RuneCountInString(*body.ChangeID) < 1 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.change_id", *body.ChangeID, utf8.RuneCountInString(*body.ChangeID), 1, true))
+		}
+	}
+	return
+}
+
+// ValidateListVerificationsResultTransport runs the validations defined on ListVerificationsResultTransport.
+func ValidateListVerificationsResultTransport(body *ListVerificationsResultTransport) (err error) {
+	if body.ChangeID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("change_id", "body"))
+	}
+	if body.Runs == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("runs", "body"))
+	}
+	for _, e := range body.Runs {
+		if e != nil {
+			if err2 := ValidateVerificationStatusResultTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
 	}
 	return
 }
@@ -689,8 +730,14 @@ func ValidateVerifyChangeResultTransport(body *VerifyChangeResultTransport) (err
 	if body.SuiteCommit == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("suite_commit", "body"))
 	}
+	if body.AcceptedAt == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("accepted_at", "body"))
+	}
 	if body.State == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("state", "body"))
+	}
+	if body.AcceptedAt != nil {
+		err = goa.MergeErrors(err, goa.ValidateFormat("body.accepted_at", *body.AcceptedAt, goa.FormatDateTime))
 	}
 	if body.State != nil {
 
@@ -1169,6 +1216,66 @@ func ValidateVerificationScenarioTransport(body *VerificationScenarioTransport) 
 				err = goa.MergeErrors(err, err2)
 			}
 		}
+	}
+	return
+}
+
+// ValidateVerificationStatusResultTransport runs the validations defined on VerificationStatusResultTransport.
+func ValidateVerificationStatusResultTransport(body *VerificationStatusResultTransport) (err error) {
+	if body.RunID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("run_id", "body"))
+	}
+	if body.ChangeID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("change_id", "body"))
+	}
+	if body.RequestRevision == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("request_revision", "body"))
+	}
+	if body.CandidateCommit == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("candidate_commit", "body"))
+	}
+	if body.SuiteCommit == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("suite_commit", "body"))
+	}
+	if body.AcceptedAt == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("accepted_at", "body"))
+	}
+	if body.State == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("state", "body"))
+	}
+	if body.AcceptedAt != nil {
+		err = goa.MergeErrors(err, goa.ValidateFormat("body.accepted_at", *body.AcceptedAt, goa.FormatDateTime))
+	}
+	if body.State != nil {
+
+		if err2 := body.State.Validate(); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		} else {
+			switch string(body.State.Kind()) {
+			case "running":
+				actual, _ := body.State.AsRunning()
+				if actual != nil {
+					if err2 := ValidateVerificationRunningTransport(actual); err2 != nil {
+						err = goa.MergeErrors(err, err2)
+					}
+				}
+			case "completed":
+				actual, _ := body.State.AsCompleted()
+				if actual != nil {
+					if err2 := ValidateVerificationCompletedTransport(actual); err2 != nil {
+						err = goa.MergeErrors(err, err2)
+					}
+				}
+			case "not_completed":
+				actual, _ := body.State.AsNotCompleted()
+				if actual != nil {
+					if err2 := ValidateVerificationNotCompletedTransport(actual); err2 != nil {
+						err = goa.MergeErrors(err, err2)
+					}
+				}
+			}
+		}
+
 	}
 	return
 }

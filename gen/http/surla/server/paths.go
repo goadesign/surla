@@ -69,6 +69,11 @@ func GetVerificationSurlaPath(runID string) string {
 	return fmt.Sprintf("/verifications/%v", runID)
 }
 
+// ListVerificationsSurlaPath returns the URL path to the surla service list_verifications HTTP endpoint.
+func ListVerificationsSurlaPath(changeID string) string {
+	return fmt.Sprintf("/changes/%v/verifications", changeID)
+}
+
 // ApproveMergeSurlaPath returns the URL path to the surla service approve_merge HTTP endpoint.
 func ApproveMergeSurlaPath() string {
 	return "/changes/approve"

@@ -35,6 +35,8 @@ func NewMCPExecutor(caller mcpruntime.Caller) runtime.ToolCallExecutor {
 			return runtime.ExecuteMCPTool(ctx, caller, call, "get_change", gensurla.SpecGetChange())
 		case gensurla.GetVerification:
 			return runtime.ExecuteMCPTool(ctx, caller, call, "get_verification", gensurla.SpecGetVerification())
+		case gensurla.ListVerifications:
+			return runtime.ExecuteMCPTool(ctx, caller, call, "list_verifications", gensurla.SpecListVerifications())
 		case gensurla.PreviewArchitecture:
 			return runtime.ExecuteMCPTool(ctx, caller, call, "preview_architecture", gensurla.SpecPreviewArchitecture())
 		case gensurla.ProposeChange:

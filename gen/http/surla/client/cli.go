@@ -10,6 +10,7 @@ package client
 import (
 	"encoding/json"
 	"fmt"
+	"unicode/utf8"
 
 	surla "github.com/goadesign/surla/gen/surla"
 	goa "goa.design/goa/v3/pkg"
@@ -289,6 +290,29 @@ func BuildGetVerificationPayload(surlaGetVerificationRunID *string) (*surla.GetV
 	}
 	v := &surla.GetVerificationPayload{}
 	v.RunID = runID
+
+	return v, nil
+}
+
+// BuildListVerificationsPayload builds the payload for the surla
+// list_verifications endpoint from CLI flags.
+func BuildListVerificationsPayload(surlaListVerificationsChangeID *string) (*surla.ListVerificationsPayload, error) {
+	var err error
+	var changeID string
+	{
+		if surlaListVerificationsChangeID == nil {
+			return nil, fmt.Errorf("missing required flag --change-id")
+		}
+		changeID = *surlaListVerificationsChangeID
+		if utf8.RuneCountInString(changeID) < 1 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("change_id", changeID, utf8.RuneCountInString(changeID), 1, true))
+		}
+		if err != nil {
+			return nil, err
+		}
+	}
+	v := &surla.ListVerificationsPayload{}
+	v.ChangeID = changeID
 
 	return v, nil
 }

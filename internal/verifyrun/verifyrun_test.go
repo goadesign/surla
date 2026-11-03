@@ -325,10 +325,183 @@ func TestReadAndStartRejectInvalidRuns(t *testing.T) {
 
 	runID := NewRunID()
 	require.NoError(t, os.MkdirAll(filepath.Join(root, runID), 0o700))
-	_, err = Start(root, Request{RunID: runID, Timeout: time.Minute, Plan: verify.Plan{WorkDir: "w"}}, []string{os.Args[0]})
+	_, err = Start(root, Request{
+		RunID:      runID,
+		Owner:      "alice",
+		AcceptedAt: time.Now().UTC(),
+		Timeout:    time.Minute,
+		Plan:       verify.Plan{WorkDir: "w"},
+	}, []string{os.Args[0]})
 	assert.ErrorContains(t, err, "create run directory", "a run directory is never reused")
 	_, err = Start(root, Request{RunID: NewRunID(), Timeout: -time.Second}, []string{os.Args[0]})
 	assert.ErrorContains(t, err, "must not be negative")
 	_, err = Start(root, Request{RunID: NewRunID(), Timeout: time.Minute}, []string{os.Args[0]})
 	assert.ErrorContains(t, err, "work directory is required")
+	_, err = Start(root, Request{RunID: NewRunID(), Timeout: time.Minute, Plan: verify.Plan{WorkDir: "w"}}, []string{os.Args[0]})
+	assert.ErrorContains(t, err, "run owner is required")
+	_, err = Start(root, Request{RunID: NewRunID(), Owner: "alice", Timeout: time.Minute, Plan: verify.Plan{WorkDir: "w"}}, []string{os.Args[0]})
+	assert.ErrorContains(t, err, "run accepted_at time is required")
+}
+
+func TestReadRequestValidationPreservesCLIAndRejectsCorruptRecords(t *testing.T) {
+	root := t.TempDir()
+	writeRawRun := func(t *testing.T, runID, requestBody, resultBody string) {
+		t.Helper()
+		dir := filepath.Join(root, runID)
+		require.NoError(t, os.MkdirAll(dir, 0o700))
+		require.NoError(t, os.WriteFile(filepath.Join(dir, requestFile), []byte(requestBody), 0o600))
+		require.NoError(t, os.WriteFile(filepath.Join(dir, lockFile), nil, 0o600))
+		if resultBody != "" {
+			require.NoError(t, os.WriteFile(filepath.Join(dir, resultFile), []byte(resultBody), 0o600))
+		}
+	}
+
+	// Standalone CLI requests have Owner="cli" and ChangeID="" and must remain valid.
+	cliRunID := NewRunID()
+	cliReq, err := json.Marshal(Request{
+		RunID:      cliRunID,
+		Owner:      "cli",
+		ChangeID:   "",
+		AcceptedAt: time.Date(2026, 10, 31, 12, 0, 0, 100_000_000, time.UTC),
+	})
+	require.NoError(t, err)
+	writeRawRun(t, cliRunID, string(cliReq), `{"kind":"no_report","failure":"execution_failed","stage":"build","summary":"Failed"}`)
+	gotCLI, gotState, err := Read(root, cliRunID)
+	require.NoError(t, err)
+	assert.Equal(t, "cli", gotCLI.Owner)
+	assert.Empty(t, gotCLI.ChangeID)
+	assert.Equal(t, StateNotCompleted, gotState.Kind)
+
+	for _, tc := range []struct {
+		name      string
+		buildBody func(runID string) string
+		wantErr   string
+		wantOwner string
+	}{
+		{
+			name:      "empty JSON object",
+			buildBody: func(_ string) string { return `{}` },
+			wantErr:   "does not match directory",
+		},
+		{
+			name:      "JSON null",
+			buildBody: func(_ string) string { return `null` },
+			wantErr:   "does not match directory",
+		},
+		{
+			name: "mismatched run_id preserves decoded owner",
+			buildBody: func(_ string) string {
+				return `{"run_id":"` + NewRunID() + `","owner":"bob","change_id":"chg","accepted_at":"2026-10-31T12:00:00Z"}`
+			},
+			wantErr:   "does not match directory",
+			wantOwner: "bob",
+		},
+		{
+			name: "blank owner",
+			buildBody: func(runID string) string {
+				return `{"run_id":"` + runID + `","owner":"   ","change_id":"chg","accepted_at":"2026-10-31T12:00:00Z"}`
+			},
+			wantErr: "owner is required",
+		},
+		{
+			name: "zero accepted_at preserves decoded owner",
+			buildBody: func(runID string) string {
+				return `{"run_id":"` + runID + `","owner":"bob","change_id":"chg"}`
+			},
+			wantErr:   "accepted_at is required",
+			wantOwner: "bob",
+		},
+		{
+			name: "trailing JSON data preserves decoded owner",
+			buildBody: func(runID string) string {
+				return `{"run_id":"` + runID + `","owner":"bob","change_id":"chg","accepted_at":"2026-10-31T12:00:00Z"}{}`
+			},
+			wantErr:   "unexpected trailing data",
+			wantOwner: "bob",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			runID := NewRunID()
+			writeRawRun(t, runID, tc.buildBody(runID), "")
+			req, _, err := Read(root, runID)
+			require.ErrorContains(t, err, tc.wantErr)
+			assert.Equal(t, tc.wantOwner, req.Owner)
+		})
+	}
+}
+
+func TestListFiltersByOwnerAndChangeBeforeReadingStateAndSortsDeterministically(t *testing.T) {
+	missingRoot := filepath.Join(t.TempDir(), "not-created-yet")
+	runs, err := List(missingRoot, "alice", "chg-1")
+	require.NoError(t, err)
+	assert.Empty(t, runs, "missing root returns nil, nil before any run is started")
+
+	_, err = List(missingRoot, "", "chg-1")
+	assert.ErrorContains(t, err, "run owner is required")
+	_, err = List(missingRoot, "alice", "")
+	assert.ErrorContains(t, err, "change_id is required")
+
+	root := t.TempDir()
+	writeRun := func(t *testing.T, runID, owner, changeID string, acceptedAt time.Time, resultBody string) {
+		t.Helper()
+		dir := filepath.Join(root, runID)
+		require.NoError(t, os.MkdirAll(dir, 0o700))
+		rawReq, err := json.Marshal(Request{
+			RunID:      runID,
+			Owner:      owner,
+			ChangeID:   changeID,
+			AcceptedAt: acceptedAt,
+		})
+		require.NoError(t, err)
+		require.NoError(t, os.WriteFile(filepath.Join(dir, requestFile), rawReq, 0o600))
+		require.NoError(t, os.WriteFile(filepath.Join(dir, lockFile), nil, 0o600))
+		if resultBody != "" {
+			require.NoError(t, os.WriteFile(filepath.Join(dir, resultFile), []byte(resultBody), 0o600))
+		}
+	}
+
+	// Unaccepted directory without request.json (e.g. Start publication window) is skipped cleanly.
+	unacceptedID := NewRunID()
+	require.NoError(t, os.MkdirAll(filepath.Join(root, unacceptedID), 0o700))
+	// Non-run directory entry is ignored.
+	require.NoError(t, os.MkdirAll(filepath.Join(root, "not-a-run-id"), 0o700))
+
+	// Foreign principal run and another card's run have corrupt result.json;
+	// List for (alice, chg-1) must skip them before reading result.json.
+	writeRun(t, NewRunID(), "bob", "chg-1", time.Date(2026, 10, 31, 12, 5, 0, 0, time.UTC), `{corrupt-foreign-result`)
+	writeRun(t, NewRunID(), "alice", "chg-other", time.Date(2026, 10, 31, 12, 5, 0, 0, time.UTC), `{corrupt-other-card-result`)
+
+	// Matching runs for (alice, chg-1), including sub-second precision and same-timestamp tie-break by RunID.
+	idTieB := "22222222222222222222222222222222"
+	idTieA := "11111111111111111111111111111111"
+	idOlder := "33333333333333333333333333333333"
+	idNewest := "00000000000000000000000000000000"
+	sameTime := time.Date(2026, 10, 31, 12, 0, 0, 100_000_000, time.UTC)
+	newerSubSec := time.Date(2026, 10, 31, 12, 0, 0, 900_000_000, time.UTC)
+	olderTime := time.Date(2026, 10, 31, 11, 59, 0, 0, time.UTC)
+	okResult := `{"kind":"no_report","failure":"execution_failed","stage":"build","summary":"Stopped at build."}`
+
+	writeRun(t, idTieB, "alice", "chg-1", sameTime, okResult)
+	writeRun(t, idOlder, "alice", "chg-1", olderTime, "")
+	writeRun(t, idTieA, "alice", "chg-1", sameTime, okResult)
+	writeRun(t, idNewest, "alice", "chg-1", newerSubSec, okResult)
+
+	runs, err = List(root, "alice", "chg-1")
+	require.NoError(t, err)
+	require.Len(t, runs, 4)
+	assert.Equal(t, []string{idNewest, idTieA, idTieB, idOlder}, []string{
+		runs[0].Request.RunID,
+		runs[1].Request.RunID,
+		runs[2].Request.RunID,
+		runs[3].Request.RunID,
+	})
+	assert.Equal(t, newerSubSec, runs[0].Request.AcceptedAt)
+
+	// A published request.json that is {} or corrupt must fail List rather than being silently skipped.
+	corruptID := NewRunID()
+	corruptDir := filepath.Join(root, corruptID)
+	require.NoError(t, os.MkdirAll(corruptDir, 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(corruptDir, requestFile), []byte(`{}`), 0o600))
+	_, err = List(root, "alice", "chg-1")
+	require.ErrorContains(t, err, "does not match directory")
 }

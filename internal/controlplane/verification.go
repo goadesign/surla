@@ -8,6 +8,11 @@ import (
 	"path/filepath"
 	"time"
 
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
+
 	gensurla "github.com/goadesign/surla/gen/surla"
 	"github.com/goadesign/surla/internal/verify"
 	"github.com/goadesign/surla/internal/verifyrun"
@@ -103,6 +108,10 @@ func (c *ControlPlane) GetVerification(ctx context.Context, p *gensurla.GetVerif
 	if c.verification == nil {
 		return nil, errVerificationUnavailable
 	}
+	_, span := otel.Tracer("surla/controlplane").Start(ctx, "surla.controlplane.get_verification",
+		trace.WithAttributes(attribute.String("surla.run_id", p.RunID)))
+	defer span.End()
+
 	req, state, err := verifyrun.Read(c.verification.RunsDir, p.RunID)
 	switch {
 	case req.Owner == "" && errors.Is(err, fs.ErrNotExist):
@@ -112,24 +121,74 @@ func (c *ControlPlane) GetVerification(ctx context.Context, p *gensurla.GetVerif
 		// evaluator paths.
 		return nil, fmt.Errorf("principal %q is not the owner of run_id %q", principal.ID, p.RunID)
 	case err != nil:
-		return nil, fmt.Errorf("read verification %s: %w", p.RunID, err)
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "read verification run")
+		return nil, fmt.Errorf("read verification %q: saved verification record could not be read", p.RunID)
 	}
 	return statusResult(req, state), nil
+}
+
+// ListVerifications returns all Checkpoint 4 verification runs started by the
+// caller for the named Change Card, ordered newest first by accepted_at
+// (tie-broken by run_id). The caller must own the card; listing works whether
+// the card is currently confirmed or in needs_confirmation after a later
+// revision. Each completed run returns only the builder view of its report.
+func (c *ControlPlane) ListVerifications(ctx context.Context, p *gensurla.ListVerificationsPayload) (*gensurla.VerificationListResult, error) {
+	principal, ok := PrincipalFromContext(ctx)
+	if !ok {
+		return nil, errors.New("authenticated principal is required")
+	}
+	if c.verification == nil {
+		return nil, errVerificationUnavailable
+	}
+	_, span := otel.Tracer("surla/controlplane").Start(ctx, "surla.controlplane.list_verifications",
+		trace.WithAttributes(attribute.String("surla.change_id", p.ChangeID)))
+	defer span.End()
+
+	c.mu.RLock()
+	record, exists, err := c.cards.load(p.ChangeID)
+	c.mu.RUnlock()
+	switch {
+	case err != nil:
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "load change card")
+		return nil, fmt.Errorf("list verifications for %q: saved change card could not be read", p.ChangeID)
+	case !exists:
+		return nil, fmt.Errorf("unknown change_id %q", p.ChangeID)
+	case record.owner != principal.ID:
+		return nil, fmt.Errorf("principal %q is not the owner of change_id %q", principal.ID, p.ChangeID)
+	}
+	runs, err := verifyrun.List(c.verification.RunsDir, principal.ID, p.ChangeID)
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "list verification runs")
+		return nil, fmt.Errorf("list verifications for %q: saved verification records could not be read", p.ChangeID)
+	}
+	out := make([]*gensurla.VerificationStatusResult, 0, len(runs))
+	for _, r := range runs {
+		out = append(out, statusResult(r.Request, r.State))
+	}
+	return &gensurla.VerificationListResult{
+		ChangeID: p.ChangeID,
+		Runs:     out,
+	}, nil
 }
 
 // statusResult returns the wire form of a run: its request and its state,
 // with a completed run's report reduced to the builder view.
 func statusResult(req verifyrun.Request, state verifyrun.State) *gensurla.VerificationStatusResult {
+	acceptedAt := req.AcceptedAt.UTC().Format(time.RFC3339Nano)
 	res := &gensurla.VerificationStatusResult{
 		RunID:           req.RunID,
 		ChangeID:        req.ChangeID,
 		RequestRevision: req.Plan.RequestRevision,
 		CandidateCommit: req.Plan.CandidateCommit,
 		SuiteCommit:     req.Plan.SuiteCommit,
+		AcceptedAt:      acceptedAt,
 	}
 	switch state.Kind {
 	case verifyrun.StateRunning:
-		res.State = gensurla.NewStateRunning(&gensurla.VerificationRunning{StartedAt: req.AcceptedAt.Format(time.RFC3339)})
+		res.State = gensurla.NewStateRunning(&gensurla.VerificationRunning{StartedAt: acceptedAt})
 	case verifyrun.StateCompleted:
 		res.State = gensurla.NewStateCompleted(&gensurla.VerificationCompleted{
 			SuiteID:     state.Report.Binding.SuiteID,

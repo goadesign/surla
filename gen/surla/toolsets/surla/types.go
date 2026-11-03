@@ -214,8 +214,22 @@ type (
 		CandidateCommit string
 		// Evaluator suite commit the operator configured for the run.
 		SuiteCommit string
+		// When the run was accepted.
+		AcceptedAt string
 		// Exactly one of running, completed or not_completed.
 		State State
+	}
+	// ListVerificationsPayload defines the JSON payload for the surla.list_verifications tool.
+	ListVerificationsPayload = struct {
+		// Change Card identifier.
+		ChangeID string
+	}
+	// ListVerificationsResult defines the JSON result for the surla.list_verifications tool.
+	ListVerificationsResult = struct {
+		// Change Card identifier.
+		ChangeID string
+		// Verification runs for change_id in newest-first order.
+		Runs []*VerificationStatusResult
 	}
 	// PreviewArchitecturePayload defines the JSON payload for the surla.preview_architecture tool.
 	PreviewArchitecturePayload = struct {
@@ -399,6 +413,8 @@ type (
 		CandidateCommit string
 		// Evaluator suite commit the operator configured for the run.
 		SuiteCommit string
+		// When the run was accepted.
+		AcceptedAt string
 		// Exactly one of running, completed or not_completed.
 		State State
 	}
@@ -678,5 +694,22 @@ type (
 		Checks []*VerificationCheck
 		// The repair scenario's environment error; empty for holdouts.
 		Error *string
+	}
+	// VerificationStatusResult is a nested type used by the generated JSON contract.
+	VerificationStatusResult = struct {
+		// Verification run identifier; get_verification takes it.
+		RunID string
+		// Change Card the run verifies.
+		ChangeID string
+		// Change Card revision the run verifies.
+		RequestRevision string
+		// Candidate commit the run builds and verifies.
+		CandidateCommit string
+		// Evaluator suite commit the operator configured for the run.
+		SuiteCommit string
+		// When the run was accepted.
+		AcceptedAt string
+		// Exactly one of running, completed or not_completed.
+		State State
 	}
 )

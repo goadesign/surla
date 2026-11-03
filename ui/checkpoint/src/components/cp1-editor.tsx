@@ -25,6 +25,8 @@ export interface CP1EditorProps {
   draftAnswers: Record<string, string>;
   draftExamples: ExampleItem[];
   rpcInFlight: boolean;
+  loadingVerifications: boolean;
+  cp4Open: boolean;
   preservedDraft: PreservedDraft | null;
   formError: string | null;
   onSetAnswer: (ambiguityId: string, option: string) => void;
@@ -36,6 +38,7 @@ export interface CP1EditorProps {
   onSubmitConfirm: () => void;
   onDiscardDraft: () => void;
   onLoadLatestCard: () => void;
+  onLoadVerifications: () => void;
 }
 
 interface FieldTextareaProps {
@@ -126,6 +129,8 @@ export function CP1EditorView({
   draftAnswers,
   draftExamples,
   rpcInFlight,
+  loadingVerifications,
+  cp4Open,
   preservedDraft,
   formError,
   onSetAnswer,
@@ -133,6 +138,7 @@ export function CP1EditorView({
   onSubmitConfirm,
   onDiscardDraft,
   onLoadLatestCard,
+  onLoadVerifications,
 }: CP1EditorProps) {
   const ambiguities = Array.isArray(card.ambiguities) ? card.ambiguities : [];
   const localExamplesEdited = areExamplesModified(card.examples, draftExamples);
@@ -217,6 +223,17 @@ export function CP1EditorView({
             request_revision: <code>{card.request_revision}</code>
           </p>
         </details>
+        {!cp4Open ? (
+          <div className="surla-field-row">
+            <Button
+              id="surla-load-verifications"
+              disabled={loadingVerifications}
+              onClick={onLoadVerifications}
+            >
+              {loadingVerifications ? "Loading saved verifications..." : "View saved verifications"}
+            </Button>
+          </div>
+        ) : null}
       </Card>
 
       {card.approval ? (

@@ -225,12 +225,64 @@ export function C4GraphSVG({
 }
 
 // ArchitecturePreviewView renders a Checkpoint 2 C4 Architecture Preview.
-export function ArchitecturePreviewView({ preview }: { preview: ArchitecturePreviewResult }) {
+export function ArchitecturePreviewView({
+  preview,
+  loadedCard,
+  loadingCard,
+  cardLoadError,
+  onOpenChangeCard,
+}: {
+  preview: ArchitecturePreviewResult;
+  loadedCard: ChangeCardResult | null;
+  loadingCard: boolean;
+  cardLoadError: string | null;
+  onOpenChangeCard: () => void;
+}) {
+  const sameCardLoaded = loadedCard !== null && loadedCard.change_id === preview.change_id;
+  const differentRevision =
+    sameCardLoaded && loadedCard.request_revision !== preview.request_revision;
+  const differentChange = loadedCard !== null && loadedCard.change_id !== preview.change_id;
+
   return (
     <>
       <Card className="surla-meta">
         <h2>{"Architecture Preview: " + preview.system_name}</h2>
         <p>{preview.banner}</p>
+        <p id="surla-cp2-session-note">
+          Session preview for this candidate design snapshot (not saved on the server; re-run
+          preview_architecture after editing design/*.go).
+        </p>
+        {differentRevision ? (
+          <Alert variant="warning" role="status" id="surla-cp2-different-revision">
+            This architecture preview was evaluated for a different saved Change Card revision than
+            the one currently loaded.
+          </Alert>
+        ) : null}
+        {differentChange ? (
+          <Alert variant="warning" role="status" id="surla-cp2-different-change">
+            {"This architecture preview belongs to Change Card " +
+              preview.change_id +
+              " (currently loaded: " +
+              loadedCard!.change_id +
+              ")."}
+          </Alert>
+        ) : null}
+        {cardLoadError !== null && !sameCardLoaded ? (
+          <Alert id="surla-cp2-card-error" variant="destructive" role="alert">
+            {cardLoadError}
+          </Alert>
+        ) : null}
+        {!sameCardLoaded ? (
+          <div className="surla-field-row">
+            <Button
+              id="surla-open-change-card"
+              disabled={loadingCard}
+              onClick={onOpenChangeCard}
+            >
+              {loadingCard ? "Loading Change Card..." : "Load Change Card (CP1 / CP5)"}
+            </Button>
+          </div>
+        ) : null}
         <details className="surla-details">
           <summary>Details</summary>
           <p>

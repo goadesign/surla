@@ -65,6 +65,10 @@ type Client struct {
 	// get_verification endpoint.
 	GetVerificationDoer goahttp.Doer
 
+	// ListVerifications Doer is the HTTP client used to make requests to the
+	// list_verifications endpoint.
+	ListVerificationsDoer goahttp.Doer
+
 	// ApproveMerge Doer is the HTTP client used to make requests to the
 	// approve_merge endpoint.
 	ApproveMergeDoer goahttp.Doer
@@ -104,6 +108,7 @@ func NewClient(
 		StopLiveTargetDoer:      doer,
 		VerifyChangeDoer:        doer,
 		GetVerificationDoer:     doer,
+		ListVerificationsDoer:   doer,
 		ApproveMergeDoer:        doer,
 		DiffDoer:                doer,
 		RestoreResponseBody:     restoreBody,
@@ -372,6 +377,25 @@ func (c *Client) GetVerification() goa.Endpoint {
 		resp, err := c.GetVerificationDoer.Do(req)
 		if err != nil {
 			return nil, goahttp.ErrRequestError("surla", "get_verification", err)
+		}
+		return decodeResponse(resp)
+	}
+}
+
+// ListVerifications returns an endpoint that makes HTTP requests to the surla
+// service list_verifications server.
+func (c *Client) ListVerifications() goa.Endpoint {
+	var (
+		decodeResponse = DecodeListVerificationsResponse(c.decoder, c.RestoreResponseBody)
+	)
+	return func(ctx context.Context, v any) (any, error) {
+		req, err := c.BuildListVerificationsRequest(ctx, v)
+		if err != nil {
+			return nil, err
+		}
+		resp, err := c.ListVerificationsDoer.Do(req)
+		if err != nil {
+			return nil, goahttp.ErrRequestError("surla", "list_verifications", err)
 		}
 		return decodeResponse(resp)
 	}

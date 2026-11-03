@@ -1,7 +1,8 @@
 // Package main implements the Surla Checkpoint Studio MCP Apps guest bridge,
-// coordinating the two-region layout (#surla-cp1-editor and #surla-result-view),
-// JSON-RPC 2.0 host lifecycle notifications, theme synchronization, and
-// synchronous React 19 rendering.
+// coordinating the session navigation bar (#surla-checkpoint-nav), the
+// two-region layout (#surla-cp1-editor and #surla-result-view), JSON-RPC 2.0
+// host lifecycle notifications, theme synchronization, and synchronous React 19
+// rendering.
 
 import React from "react";
 import { flushSync } from "react-dom";
@@ -16,7 +17,7 @@ import {
 } from "./components/c4-graph";
 import { CP1EditorView } from "./components/cp1-editor";
 import { VerificationView } from "./components/cp4-verification";
-import { Alert, Card } from "./components/shadcn";
+import { Alert, Button, Card } from "./components/shadcn";
 import { isDraftDirty, PreservedDraft } from "./context/cp1-draft";
 import {
   ArchitecturePreviewResult,
@@ -26,6 +27,7 @@ import {
   ExampleItem,
   LiveTargetResult,
   StopLiveTargetResult,
+  VerificationListResult,
   VerificationStatusResult,
   isArchitecturePreviewResult,
   isChangeCardResult,
@@ -34,6 +36,7 @@ import {
   isLiveTargetResult,
   isPlainObject,
   isStopLiveTargetResult,
+  isVerificationListResult,
   isVerificationStatusResult,
 } from "./types";
 
@@ -46,7 +49,7 @@ const PROTOCOL_VERSION = "2026-01-26";
 interface PendingRPC {
   // params is the exact call sent to the host, retained only until its reply.
   params: { name: string; arguments: Record<string, unknown> };
-  // onResult validates the tool payload before an editor callback uses it.
+  // onResult validates the tool payload before a callback uses it.
   onResult: (payload: unknown) => void;
   // onError reports the failed request and completes its local lifetime.
   onError: (message: string) => void;
@@ -69,13 +72,14 @@ interface ActiveEditorState {
   formError: string | null;
 }
 
-// ActiveResultState is the checkpoint displayed alongside a retained editor.
+// ActiveResultState selects the checkpoint result displayed in #surla-result-view.
+// Each checkpoint payload is owned once by its dedicated session state variable.
 type ActiveResultState =
-  | { kind: "cp2-architecture-preview"; preview: ArchitecturePreviewResult }
-  | { kind: "cp2-diff"; diff: DiffResult }
-  | { kind: "cp3-draft-override"; draft: DraftOverrideResult }
-  | { kind: "cp3-live-target"; live: LiveTargetResult | StopLiveTargetResult }
-  | { kind: "cp4-verification"; run: VerificationStatusResult; requestError: string | null }
+  | { kind: "cp2-architecture-preview" }
+  | { kind: "cp2-diff" }
+  | { kind: "cp3-draft-override" }
+  | { kind: "cp3-live-target" }
+  | { kind: "cp4-verification" }
   | { kind: "cp1-incoming-card"; card: ChangeCardResult }
   | { kind: "partial-input"; partialArgs: Record<string, unknown> }
   | { kind: "error"; message: string }
@@ -222,8 +226,41 @@ function applyHostTheme(candidate: unknown) {
   }
 }
 
-// bootstrapCheckpointApp mounts the two-region Checkpoint Studio inside the
-// MCP Apps host document and registers the window postMessage bridge.
+// validateVerificationListPayload checks that a VerificationListResult carries
+// a non-empty change_id, matches expectedChangeId when correlated, and only
+// contains runs belonging to that same change_id.
+function validateVerificationListPayload(
+  payload: VerificationListResult,
+  expectedChangeId?: string
+): string | null {
+  if (!payload.change_id || payload.change_id.trim().length === 0) {
+    return "The host returned a verification list without a change_id.";
+  }
+  if (expectedChangeId !== undefined && payload.change_id !== expectedChangeId) {
+    return (
+      "The host returned verification runs for Change Card " +
+      payload.change_id +
+      " instead of " +
+      expectedChangeId +
+      "."
+    );
+  }
+  for (let i = 0; i < payload.runs.length; i++) {
+    if (payload.runs[i].change_id !== payload.change_id) {
+      return (
+        "The host returned a verification run for Change Card " +
+        payload.runs[i].change_id +
+        " inside the list for " +
+        payload.change_id +
+        "."
+      );
+    }
+  }
+  return null;
+}
+
+// bootstrapCheckpointApp mounts the Checkpoint Studio inside the MCP Apps host
+// document and registers the window postMessage bridge.
 export function bootstrapCheckpointApp() {
   const rawRootEl = document.getElementById("surla-checkpoint-root");
   const rawStatusEl = document.getElementById("surla-checkpoint-status");
@@ -233,6 +270,18 @@ export function bootstrapCheckpointApp() {
   }
   const rootEl: HTMLElement = rawRootEl;
   const statusEl: HTMLElement = rawStatusEl;
+
+  let navRegionEl = document.getElementById("surla-checkpoint-nav");
+  if (!navRegionEl) {
+    navRegionEl = document.createElement("nav");
+    navRegionEl.setAttribute("id", "surla-checkpoint-nav");
+    navRegionEl.setAttribute("aria-label", "Checkpoint views");
+    navRegionEl.hidden = true;
+    if (viewEl.parentNode) {
+      viewEl.parentNode.insertBefore(navRegionEl, viewEl);
+    }
+  }
+  const navEl: HTMLElement = navRegionEl;
 
   const editorRegionEl = document.createElement("div");
   editorRegionEl.setAttribute("id", "surla-cp1-editor");
@@ -244,6 +293,7 @@ export function bootstrapCheckpointApp() {
   viewEl.appendChild(editorRegionEl);
   viewEl.appendChild(resultRegionEl);
 
+  const navRoot: Root = createRoot(navEl);
   const editorRoot: Root = createRoot(editorRegionEl);
   const resultRoot: Root = createRoot(resultRegionEl);
 
@@ -254,6 +304,23 @@ export function bootstrapCheckpointApp() {
   // CP3 waits for it; independent verification reads do not block editing.
   let editorRequest: Promise<void> | null = null;
   let activeEditor: ActiveEditorState | null = null;
+  // editorOpen tracks whether #surla-cp1-editor is mounted in the DOM.
+  // Clean CP2/CP3/CP4 notifications set editorOpen = false while keeping
+  // activeEditor in memory for session navigation and revision comparison.
+  let editorOpen = false;
+  let previewState: ArchitecturePreviewResult | null = null;
+  let diffState: DiffResult | null = null;
+  let draftOverrideState: DraftOverrideResult | null = null;
+  let liveTargetState: LiveTargetResult | StopLiveTargetResult | null = null;
+  let selectedCP3Kind: "cp3-draft-override" | "cp3-live-target" = "cp3-draft-override";
+  const runsById: Record<string, VerificationStatusResult> = {};
+  const lastLoadedListByChangeId: Record<string, string[]> = {};
+  let selectedVerificationChangeId: string | null = null;
+  let selectedRunId: string | null = null;
+  const selectionTouchedDuringList: Record<string, boolean> = {};
+  const runRequestErrors: Record<string, string> = {};
+  const listRequestErrors: Record<string, string> = {};
+  let cardLoadError: string | null = null;
   let activeResult: ActiveResultState | null = null;
 
   // hasUnsavedEditorState identifies work that a different checkpoint must
@@ -278,7 +345,16 @@ export function bootstrapCheckpointApp() {
   function shouldRetainEditor(): boolean {
     return (
       activeEditor !== null &&
-      (editorRequest !== null || hasUnsavedEditorState())
+      ((editorOpen && editorRequest !== null) || hasUnsavedEditorState())
+    );
+  }
+
+  // isEditorProtected reports whether incoming tool-input or tool-cancelled
+  // notifications must leave the current CP1 editor untouched.
+  function isEditorProtected(): boolean {
+    return (
+      activeEditor !== null &&
+      (editorOpen || hasUnsavedEditorState())
     );
   }
 
@@ -299,10 +375,157 @@ export function bootstrapCheckpointApp() {
     delete resultRegionEl.dataset.runId;
   }
 
-  // syncEditorRegion renders saved values and drafts together, with editing
-  // disabled while the host owns an outstanding editor request.
+  // syncNavRegion renders the session navigation bar when two or more
+  // checkpoints are available in the session.
+  function syncNavRegion() {
+    if (rootEl.dataset.state === "terminated") {
+      navEl.hidden = true;
+      flushSync(() => {
+        navRoot.render(null);
+      });
+      return;
+    }
+
+    const tabs: {
+      id: string;
+      label: string;
+      active: boolean;
+      onClick: () => void;
+    }[] = [];
+
+    const cp1Active =
+      editorOpen && (!activeResult || activeResult.kind === "cp1-incoming-card");
+
+    if (activeEditor !== null) {
+      tabs.push({
+        id: "surla-nav-cp1",
+        label: "Change Card (CP1 / CP5)",
+        active: cp1Active,
+        onClick: handleReturnToChangeCard,
+      });
+    }
+    if (previewState !== null) {
+      tabs.push({
+        id: "surla-nav-cp2",
+        label: "Architecture Preview (CP2)",
+        active: activeResult?.kind === "cp2-architecture-preview",
+        onClick: () => {
+          if (!previewState) {
+            return;
+          }
+          editorOpen = shouldRetainEditor();
+          activeResult = { kind: "cp2-architecture-preview" };
+          rootEl.dataset.state = "cp2-architecture-preview";
+          statusEl.textContent =
+            "Showing architecture preview for " + previewState.system_name + ".";
+          syncAllRegions();
+        },
+      });
+    }
+    if (diffState !== null) {
+      tabs.push({
+        id: "surla-nav-diff",
+        label: "Design Diff (CP2)",
+        active: activeResult?.kind === "cp2-diff",
+        onClick: () => {
+          if (!diffState) {
+            return;
+          }
+          editorOpen = shouldRetainEditor();
+          activeResult = { kind: "cp2-diff" };
+          rootEl.dataset.state = "cp2-diff";
+          statusEl.textContent = diffState.has_changes
+            ? "Showing structural design diff with detected contract changes."
+            : "Showing structural design diff (no contract changes detected).";
+          syncAllRegions();
+        },
+      });
+    }
+    if (draftOverrideState !== null || liveTargetState !== null) {
+      tabs.push({
+        id: "surla-nav-cp3",
+        label: "Prompt & Live Target (CP3)",
+        active:
+          activeResult?.kind === "cp3-draft-override" ||
+          activeResult?.kind === "cp3-live-target",
+        onClick: () => {
+          editorOpen = shouldRetainEditor();
+          if (selectedCP3Kind === "cp3-live-target" && liveTargetState !== null) {
+            activeResult = { kind: "cp3-live-target" };
+            rootEl.dataset.state = "cp3-live-target";
+            statusEl.textContent = isLiveTargetResult(liveTargetState)
+              ? "Showing the running CP3 live target."
+              : "Showing the stopped CP3 live target.";
+          } else if (draftOverrideState !== null) {
+            activeResult = { kind: "cp3-draft-override" };
+            rootEl.dataset.state = "cp3-draft-override";
+            statusEl.textContent = "Showing Fast Draft prompt and rule update.";
+          } else if (liveTargetState !== null) {
+            activeResult = { kind: "cp3-live-target" };
+            rootEl.dataset.state = "cp3-live-target";
+            statusEl.textContent = isLiveTargetResult(liveTargetState)
+              ? "Showing the running CP3 live target."
+              : "Showing the stopped CP3 live target.";
+          }
+          syncAllRegions();
+        },
+      });
+    }
+    if (selectedVerificationChangeId !== null) {
+      tabs.push({
+        id: "surla-nav-cp4",
+        label: "Verification (CP4)",
+        active: activeResult?.kind === "cp4-verification",
+        onClick: () => {
+          if (!selectedVerificationChangeId) {
+            return;
+          }
+          editorOpen = shouldRetainEditor();
+          activeResult = { kind: "cp4-verification" };
+          rootEl.dataset.state = "cp4-verification";
+          statusEl.textContent =
+            selectedRunId !== null
+              ? "Showing the saved verification result."
+              : "Showing saved verification runs for Change Card " +
+                selectedVerificationChangeId +
+                ".";
+          syncAllRegions();
+        },
+      });
+    }
+
+    if (tabs.length < 2) {
+      navEl.hidden = true;
+      flushSync(() => {
+        navRoot.render(null);
+      });
+      return;
+    }
+
+    navEl.hidden = false;
+    flushSync(() => {
+      navRoot.render(
+        <>
+          {tabs.map((tab) => (
+            <Button
+              key={tab.id}
+              id={tab.id}
+              variant="pill"
+              aria-current={tab.active ? "page" : undefined}
+              onClick={tab.onClick}
+            >
+              {tab.label}
+            </Button>
+          ))}
+        </>
+      );
+    });
+  }
+
+  // syncEditorRegion renders saved values and drafts together when editorOpen
+  // is true, with editing disabled while the host owns an outstanding editor request.
   function syncEditorRegion() {
-    if (!activeEditor) {
+    if (!activeEditor || !editorOpen) {
       clearEditorDataset();
       flushSync(() => {
         editorRoot.render(null);
@@ -321,6 +544,8 @@ export function bootstrapCheckpointApp() {
           draftAnswers={ed.draftAnswers}
           draftExamples={ed.draftExamples}
           rpcInFlight={editorRequest !== null}
+          loadingVerifications={hasPendingListVerifications(ed.card.change_id)}
+          cp4Open={activeResult?.kind === "cp4-verification"}
           preservedDraft={ed.preservedDraft}
           formError={ed.formError}
           onSetAnswer={(ambId, opt) => {
@@ -347,7 +572,8 @@ export function bootstrapCheckpointApp() {
           }}
           onSubmitConfirm={handleConfirmSubmit}
           onDiscardDraft={handleDiscardDraft}
-          onLoadLatestCard={handleLoadLatestCard}
+          onLoadLatestCard={() => handleLoadLatestCard(false)}
+          onLoadVerifications={() => handleListVerifications(ed.card.change_id)}
         />
       );
     });
@@ -365,46 +591,106 @@ export function bootstrapCheckpointApp() {
     const res = activeResult;
     resultRegionEl.dataset.state = res.kind;
     if (res.kind === "cp2-architecture-preview") {
-      resultRegionEl.dataset.changeId = res.preview.change_id;
-      resultRegionEl.dataset.requestRevision = res.preview.request_revision;
-      resultRegionEl.dataset.designDigest = res.preview.design_digest;
+      if (!previewState) {
+        flushSync(() => {
+          resultRoot.render(null);
+        });
+        return;
+      }
+      const preview = previewState;
+      resultRegionEl.dataset.changeId = preview.change_id;
+      resultRegionEl.dataset.requestRevision = preview.request_revision;
+      resultRegionEl.dataset.designDigest = preview.design_digest;
       flushSync(() => {
-        resultRoot.render(<ArchitecturePreviewView preview={res.preview} />);
+        resultRoot.render(
+          <ArchitecturePreviewView
+            preview={preview}
+            loadedCard={activeEditor ? activeEditor.card : null}
+            loadingCard={editorRequest !== null}
+            cardLoadError={cardLoadError}
+            onOpenChangeCard={() => handleOpenChangeCard(preview.change_id)}
+          />
+        );
       });
       return;
     }
     if (res.kind === "cp2-diff") {
-      resultRegionEl.dataset.hasChanges = String(res.diff.has_changes);
+      if (!diffState) {
+        flushSync(() => {
+          resultRoot.render(null);
+        });
+        return;
+      }
+      resultRegionEl.dataset.hasChanges = String(diffState.has_changes);
       flushSync(() => {
-        resultRoot.render(<DiffResultView diff={res.diff} />);
+        resultRoot.render(<DiffResultView diff={diffState} />);
       });
       return;
     }
     if (res.kind === "cp3-draft-override") {
+      if (!draftOverrideState) {
+        flushSync(() => {
+          resultRoot.render(null);
+        });
+        return;
+      }
       flushSync(() => {
-        resultRoot.render(<DraftOverrideView draft={res.draft} />);
+        resultRoot.render(<DraftOverrideView draft={draftOverrideState} />);
       });
       return;
     }
     if (res.kind === "cp3-live-target") {
+      if (!liveTargetState) {
+        flushSync(() => {
+          resultRoot.render(null);
+        });
+        return;
+      }
       flushSync(() => {
-        resultRoot.render(<LiveTargetView result={res.live} />);
+        resultRoot.render(<LiveTargetView result={liveTargetState} />);
       });
       return;
     }
     if (res.kind === "cp4-verification") {
-      resultRegionEl.dataset.runId = res.run.run_id;
-      resultRegionEl.dataset.changeId = res.run.change_id;
-      resultRegionEl.dataset.requestRevision = res.run.request_revision;
+      const changeId = selectedVerificationChangeId || "";
+      const displayedRun =
+        selectedRunId !== null && runsById[selectedRunId]
+          ? runsById[selectedRunId]
+          : null;
+      if (displayedRun) {
+        resultRegionEl.dataset.runId = displayedRun.run_id;
+        resultRegionEl.dataset.changeId = displayedRun.change_id;
+        resultRegionEl.dataset.requestRevision = displayedRun.request_revision;
+      } else if (changeId) {
+        resultRegionEl.dataset.changeId = changeId;
+      }
+      const effectiveChangeId = displayedRun ? displayedRun.change_id : changeId;
+      const listedRuns = Object.prototype.hasOwnProperty.call(
+        lastLoadedListByChangeId,
+        effectiveChangeId
+      )
+        ? lastLoadedListByChangeId[effectiveChangeId]
+            .map((id) => runsById[id])
+            .filter((r): r is VerificationStatusResult => Boolean(r))
+        : null;
       flushSync(() => {
         resultRoot.render(
           <VerificationView
-            run={res.run}
-            displayedCardRevision={activeEditor?.card.change_id === res.run.change_id
-              ? activeEditor.card.request_revision : null}
-            checking={hasPendingVerification(res.run.run_id)}
-            requestError={res.requestError}
+            changeId={effectiveChangeId}
+            run={displayedRun}
+            listedRuns={listedRuns}
+            loadedCard={activeEditor ? activeEditor.card : null}
+            checking={displayedRun ? hasPendingVerification(displayedRun.run_id) : false}
+            loadingList={hasPendingListVerifications(effectiveChangeId)}
+            loadingCard={editorRequest !== null}
+            requestError={displayedRun ? runRequestErrors[displayedRun.run_id] ?? null : null}
+            listError={listRequestErrors[effectiveChangeId] ?? null}
+            cardLoadError={cardLoadError}
             onCheckStatus={handleCheckVerificationStatus}
+            onLoadVerifications={() => handleListVerifications(effectiveChangeId)}
+            onSelectRun={handleSelectVerificationRun}
+            onOpenChangeCard={() => handleOpenChangeCard(effectiveChangeId)}
+            onReturnToChangeCard={handleReturnToChangeCard}
           />
         );
       });
@@ -426,7 +712,6 @@ export function bootstrapCheckpointApp() {
               const preserved = activeEditor ? snapshotUnsavedDraft(activeEditor) : null;
               const prior = nextPriorCard(activeEditor, res.card);
               activeResult = null;
-              syncResultRegion();
               mountChangeCard(res.card, preserved, prior);
             }}
           />
@@ -469,6 +754,13 @@ export function bootstrapCheckpointApp() {
     }
   }
 
+  // syncAllRegions synchronizes the editor, result, and session nav regions.
+  function syncAllRegions() {
+    syncEditorRegion();
+    syncResultRegion();
+    syncNavRegion();
+  }
+
   // callHostTool correlates one request and validates its response once. Its
   // caller receives the completion before dispatch, so the caller can own its
   // waiting state without a second protocol path or an unrelated busy flag.
@@ -482,7 +774,7 @@ export function bootstrapCheckpointApp() {
   ) {
     if (!window.parent || window.parent === window) {
       onError("Cannot invoke " + toolName + ": no MCP Apps host frame is attached.");
-      syncResultRegion();
+      syncAllRegions();
       return;
     }
     const reqId = nextRequestId++;
@@ -496,12 +788,12 @@ export function bootstrapCheckpointApp() {
           } else {
             onError("Tool response is missing a valid structured checkpoint payload.");
           }
-          syncResultRegion();
+          syncAllRegions();
           complete();
         },
         onError: (message) => {
           onError(message);
-          syncResultRegion();
+          syncAllRegions();
           complete();
         },
       };
@@ -541,7 +833,7 @@ export function bootstrapCheckpointApp() {
       },
       (completion) => {
         editorRequest = completion;
-        syncEditorRegion();
+        syncAllRegions();
       }
     );
   }
@@ -549,22 +841,62 @@ export function bootstrapCheckpointApp() {
   // hasPendingVerification derives a button's waiting state from the original
   // calls already awaiting a host reply, without a second map or status flag.
   function hasPendingVerification(runID: string): boolean {
-    return Object.values(pendingRequests).some((request) =>
-      request.params.name === "get_verification" &&
-      request.params.arguments.run_id === runID
+    return Object.values(pendingRequests).some(
+      (request) =>
+        request.params.name === "get_verification" &&
+        request.params.arguments.run_id === runID
     );
   }
 
-  // displayVerification keeps the terminal result already observed for this
-  // run. Its owner writes that result once and never reuses the run ID, so an
-  // older notification or status reply cannot put it back into progress.
-  // Another run can always be displayed without retaining a result history.
+  // hasPendingListVerifications reports whether a list_verifications request
+  // is currently in flight for changeId.
+  function hasPendingListVerifications(changeId: string): boolean {
+    return Object.values(pendingRequests).some(
+      (request) =>
+        request.params.name === "list_verifications" &&
+        request.params.arguments.change_id === changeId
+    );
+  }
+
+  // upsertRunSnapshot stores run in runsById unless runsById[run.run_id]
+  // already holds a terminal state (state.type !== "running").
+  function upsertRunSnapshot(run: VerificationStatusResult): VerificationStatusResult {
+    const existing = runsById[run.run_id];
+    if (existing && existing.state.type !== "running") {
+      return existing;
+    }
+    runsById[run.run_id] = run;
+    return run;
+  }
+
+  // displayVerification stores and selects one verification run snapshot.
   function displayVerification(run: VerificationStatusResult) {
-    const displayed = activeResult?.kind === "cp4-verification" ? activeResult.run : null;
-    const shown = displayed?.run_id === run.run_id && displayed.state.type !== "running"
-      ? displayed : run;
-    activeResult = { kind: "cp4-verification", run: shown, requestError: null };
+    if (hasPendingListVerifications(run.change_id)) {
+      selectionTouchedDuringList[run.change_id] = true;
+    }
+    const shown = upsertRunSnapshot(run);
+    delete runRequestErrors[shown.run_id];
+    selectedVerificationChangeId = shown.change_id;
+    selectedRunId = shown.run_id;
+    activeResult = { kind: "cp4-verification" };
     statusEl.textContent = "Showing the saved verification result.";
+  }
+
+  // handleSelectVerificationRun switches the displayed run inside CP4.
+  function handleSelectVerificationRun(runId: string) {
+    const target = runsById[runId];
+    if (!target) {
+      return;
+    }
+    if (hasPendingListVerifications(target.change_id)) {
+      selectionTouchedDuringList[target.change_id] = true;
+    }
+    selectedVerificationChangeId = target.change_id;
+    selectedRunId = target.run_id;
+    activeResult = { kind: "cp4-verification" };
+    rootEl.dataset.state = "cp4-verification";
+    statusEl.textContent = "Showing the saved verification result.";
+    syncAllRegions();
   }
 
   // handleCheckVerificationStatus reads the displayed run and never starts a
@@ -573,35 +905,184 @@ export function bootstrapCheckpointApp() {
   function handleCheckVerificationStatus() {
     if (
       activeResult?.kind !== "cp4-verification" ||
-      hasPendingVerification(activeResult.run.run_id)
+      selectedRunId === null ||
+      !runsById[selectedRunId] ||
+      hasPendingVerification(selectedRunId)
     ) {
       return;
     }
-    const runID = activeResult.run.run_id;
-    activeResult = { ...activeResult, requestError: null };
+    const runID = selectedRunId;
+    delete runRequestErrors[runID];
     callHostTool(
       "get_verification",
       { run_id: runID },
       isVerificationStatusResult,
       (run) => {
-        if (activeResult?.kind !== "cp4-verification" || activeResult.run.run_id !== runID) {
-          return;
-        }
         if (run.run_id !== runID) {
-          activeResult = { ...activeResult, requestError: "The host returned a different verification run." };
-          statusEl.textContent = "Could not check verification status; the last result is preserved.";
+          if (activeResult?.kind === "cp4-verification" && selectedRunId === runID) {
+            runRequestErrors[runID] = "The host returned a different verification run.";
+            statusEl.textContent =
+              "Could not check verification status; the last result is preserved.";
+          }
           return;
         }
-        displayVerification(run);
+        upsertRunSnapshot(run);
+        delete runRequestErrors[runID];
+        if (activeResult?.kind === "cp4-verification" && selectedRunId === runID) {
+          statusEl.textContent = "Showing the saved verification result.";
+        }
       },
       (message) => {
-        if (activeResult?.kind !== "cp4-verification" || activeResult.run.run_id !== runID) {
+        if (activeResult?.kind !== "cp4-verification" || selectedRunId !== runID) {
           return;
         }
-        activeResult = { ...activeResult, requestError: message };
-        statusEl.textContent = "Could not check verification status; the last result is preserved.";
+        runRequestErrors[runID] = message;
+        statusEl.textContent =
+          "Could not check verification status; the last result is preserved.";
       },
-      syncResultRegion
+      syncAllRegions
+    );
+  }
+
+  // handleListVerifications loads the saved verification runs for requestedChangeId,
+  // enforcing at most one in-flight list_verifications request per change_id.
+  function handleListVerifications(requestedChangeId: string) {
+    if (!requestedChangeId || hasPendingListVerifications(requestedChangeId)) {
+      return;
+    }
+    selectionTouchedDuringList[requestedChangeId] = false;
+    delete listRequestErrors[requestedChangeId];
+    cardLoadError = null;
+    if (!shouldRetainEditor()) {
+      editorOpen = false;
+    }
+    selectedVerificationChangeId = requestedChangeId;
+    if (selectedRunId !== null && runsById[selectedRunId]?.change_id !== requestedChangeId) {
+      const prevList = lastLoadedListByChangeId[requestedChangeId];
+      selectedRunId = prevList && prevList.length > 0 ? prevList[0] : null;
+    }
+    activeResult = { kind: "cp4-verification" };
+    rootEl.dataset.state = "cp4-verification";
+    statusEl.textContent = "Loading saved verification runs...";
+
+    callHostTool(
+      "list_verifications",
+      { change_id: requestedChangeId },
+      isVerificationListResult,
+      (payload) => {
+        const touched = Boolean(selectionTouchedDuringList[requestedChangeId]);
+        delete selectionTouchedDuringList[requestedChangeId];
+        const mismatchErr = validateVerificationListPayload(payload, requestedChangeId);
+        if (mismatchErr !== null) {
+          listRequestErrors[requestedChangeId] = mismatchErr;
+          if (
+            activeResult?.kind === "cp4-verification" &&
+            selectedVerificationChangeId === requestedChangeId
+          ) {
+            statusEl.textContent = "Could not load saved verification runs.";
+          }
+          return;
+        }
+        for (let i = 0; i < payload.runs.length; i++) {
+          upsertRunSnapshot(payload.runs[i]);
+        }
+        const loadedIds = payload.runs.map((r) => r.run_id);
+        lastLoadedListByChangeId[requestedChangeId] = loadedIds;
+        delete listRequestErrors[requestedChangeId];
+
+        if (
+          activeResult?.kind === "cp4-verification" &&
+          selectedVerificationChangeId === requestedChangeId
+        ) {
+          if (
+            touched &&
+            selectedRunId !== null &&
+            runsById[selectedRunId]?.change_id === requestedChangeId
+          ) {
+            // Preserve the run explicitly selected or notified during the list read.
+          } else if (selectedRunId !== null && loadedIds.includes(selectedRunId)) {
+            // Preserve the selected run when it remains in the loaded list.
+          } else {
+            selectedRunId = loadedIds.length > 0 ? loadedIds[0] : null;
+          }
+          statusEl.textContent =
+            loadedIds.length > 0
+              ? "Showing saved verification runs for Change Card " + requestedChangeId + "."
+              : "No saved verification runs found for Change Card " + requestedChangeId + ".";
+        }
+      },
+      (message) => {
+        delete selectionTouchedDuringList[requestedChangeId];
+        listRequestErrors[requestedChangeId] = message;
+        if (
+          activeResult?.kind === "cp4-verification" &&
+          selectedVerificationChangeId === requestedChangeId
+        ) {
+          statusEl.textContent = "Could not load saved verification runs.";
+        }
+      },
+      syncAllRegions
+    );
+  }
+
+  // handleReturnToChangeCard switches the view back to the retained Change Card.
+  function handleReturnToChangeCard() {
+    if (!activeEditor) {
+      return;
+    }
+    cardLoadError = null;
+    editorOpen = true;
+    activeResult = null;
+    rootEl.dataset.state = "cp1-change-card";
+    const card = activeEditor.card;
+    statusEl.textContent =
+      card.status === "confirmed"
+        ? card.approval
+          ? "Showing the recorded approval for these inputs."
+          : card.unverified_approval
+          ? "Showing the saved approval record (current promotion inputs could not be verified)."
+          : "Showing confirmed Change Card. You can refine answers or examples below."
+        : "Review the open questions and examples below, then confirm your intent.";
+    syncAllRegions();
+  }
+
+  // handleOpenChangeCard loads requestedChangeId via get_change when not
+  // already loaded in activeEditor, preserving any unsaved draft on a prior card.
+  function handleOpenChangeCard(requestedChangeId: string) {
+    if (!requestedChangeId || editorRequest !== null) {
+      return;
+    }
+    if (activeEditor && activeEditor.card.change_id === requestedChangeId) {
+      handleReturnToChangeCard();
+      return;
+    }
+    cardLoadError = null;
+    statusEl.textContent = "Loading Change Card " + requestedChangeId + "...";
+    callEditorTool(
+      "get_change",
+      { change_id: requestedChangeId },
+      isChangeCardResult,
+      (loadedCard) => {
+        if (loadedCard.change_id !== requestedChangeId) {
+          cardLoadError =
+            "The host returned Change Card " +
+            loadedCard.change_id +
+            " instead of " +
+            requestedChangeId +
+            ".";
+          statusEl.textContent = "Could not load the requested Change Card.";
+          return;
+        }
+        cardLoadError = null;
+        const preserved = activeEditor ? snapshotUnsavedDraft(activeEditor) : null;
+        const prior = nextPriorCard(activeEditor, loadedCard);
+        activeResult = null;
+        mountChangeCard(loadedCard, preserved, prior);
+      },
+      (message) => {
+        cardLoadError = "Could not load Change Card: " + message;
+        statusEl.textContent = "Could not load the requested Change Card.";
+      }
     );
   }
 
@@ -614,8 +1095,8 @@ export function bootstrapCheckpointApp() {
     if (pending !== null) {
       await pending;
     }
-    if (editorRequest === null) {
-      handleLoadLatestCard();
+    if (editorRequest === null && activeEditor !== null) {
+      handleLoadLatestCard(true);
     }
   }
 
@@ -640,7 +1121,7 @@ export function bootstrapCheckpointApp() {
       ...activeEditor,
       formError: String(msg),
     };
-    syncEditorRegion();
+    syncAllRegions();
   }
 
   // handleConfirmSubmit sends complete answers and examples for the displayed
@@ -700,17 +1181,31 @@ export function bootstrapCheckpointApp() {
     );
   }
 
-  // handleDiscardDraft restores saved values or closes the retained editor
-  // while leaving the newer checkpoint result available.
+  // handleDiscardDraft restores saved values on the retained card and closes
+  // the split-screen editor when another checkpoint is displayed beside it.
   function handleDiscardDraft() {
     if (!activeEditor || editorRequest !== null) {
       return;
     }
     if (activeResult && activeResult.kind !== "cp1-incoming-card") {
-      activeEditor = null;
-      syncEditorRegion();
-      syncResultRegion();
+      const savedCard = activeEditor.card;
+      activeEditor = {
+        card: savedCard,
+        priorCard: activeEditor.priorCard,
+        draftAnswers: isPlainObject(savedCard.answers) ? { ...savedCard.answers } : {},
+        draftExamples: savedCard.examples.map((ex) => ({
+          id: ex.id,
+          scenario: ex.scenario,
+          input_summary: ex.input_summary,
+          expected_outcome: ex.expected_outcome,
+          verification_kind: ex.verification_kind,
+        })),
+        preservedDraft: null,
+        formError: null,
+      };
+      editorOpen = false;
       rootEl.dataset.state = activeResult.kind;
+      syncAllRegions();
       return;
     }
     mountChangeCard(activeEditor.card, null, activeEditor.priorCard);
@@ -719,12 +1214,14 @@ export function bootstrapCheckpointApp() {
   // handleLoadLatestCard refreshes saved values and approval through get_change.
   // The same revision keeps editable drafts; a different revision preserves
   // their text for reconciliation instead of applying it to changed examples.
-  function handleLoadLatestCard() {
+  function handleLoadLatestCard(keepHiddenIfClosed = false) {
     if (!activeEditor || editorRequest !== null) {
       return;
     }
     const changeId = activeEditor.card.change_id;
-    statusEl.textContent = "Loading the latest saved Change Card...";
+    if (editorOpen || !keepHiddenIfClosed) {
+      statusEl.textContent = "Loading the latest saved Change Card...";
+    }
 
     callEditorTool(
       "get_change",
@@ -741,19 +1238,38 @@ export function bootstrapCheckpointApp() {
             card: latestCard,
             formError: null,
           };
-          statusEl.textContent = latestCard.approval
-            ? "Showing the recorded approval for these inputs."
-            : latestCard.unverified_approval
-            ? "Showing the saved approval record (current promotion inputs could not be verified)."
-            : "Showing the latest card without a current approval.";
-          syncEditorRegion();
+          if (editorOpen || !keepHiddenIfClosed) {
+            statusEl.textContent = latestCard.approval
+              ? "Showing the recorded approval for these inputs."
+              : latestCard.unverified_approval
+              ? "Showing the saved approval record (current promotion inputs could not be verified)."
+              : "Showing the latest card without a current approval.";
+          }
+          syncAllRegions();
           return;
         }
-        mountChangeCard(
-          latestCard,
-          activeEditor ? snapshotUnsavedDraft(activeEditor) : null,
-          nextPriorCard(activeEditor, latestCard)
-        );
+        const shouldOpen = editorOpen || !keepHiddenIfClosed || hasUnsavedEditorState();
+        const preserved = activeEditor ? snapshotUnsavedDraft(activeEditor) : null;
+        const prior = nextPriorCard(activeEditor, latestCard);
+        if (shouldOpen) {
+          mountChangeCard(latestCard, preserved, prior);
+        } else {
+          activeEditor = {
+            card: latestCard,
+            priorCard: prior,
+            draftAnswers: isPlainObject(latestCard.answers) ? { ...latestCard.answers } : {},
+            draftExamples: latestCard.examples.map((ex) => ({
+              id: ex.id,
+              scenario: ex.scenario,
+              input_summary: ex.input_summary,
+              expected_outcome: ex.expected_outcome,
+              verification_kind: ex.verification_kind,
+            })),
+            preservedDraft: preserved,
+            formError: null,
+          };
+          syncAllRegions();
+        }
       },
       (message) => showFormError("Could not load the current card and approval: " + message)
     );
@@ -780,6 +1296,7 @@ export function bootstrapCheckpointApp() {
       preservedDraft,
       formError: null,
     };
+    editorOpen = true;
     statusEl.textContent =
       card.status === "confirmed"
         ? card.approval
@@ -789,28 +1306,31 @@ export function bootstrapCheckpointApp() {
           : "Showing confirmed Change Card. You can refine answers or examples below."
         : "Review the open questions and examples below, then confirm your intent.";
     rootEl.dataset.state = "cp1-change-card";
-    syncEditorRegion();
+    syncAllRegions();
   }
 
-  // renderWaiting clears prior results when the host begins a new checkpoint.
+  // renderWaiting clears the active result display when the host begins a new
+  // checkpoint while preserving any retained session state.
   function renderWaiting(message: string) {
-    activeEditor = null;
+    if (!shouldRetainEditor()) {
+      editorOpen = false;
+    }
     activeResult = null;
-    syncEditorRegion();
-    syncResultRegion();
     rootEl.dataset.state = "waiting";
     statusEl.textContent = message;
+    syncAllRegions();
   }
 
-  // renderCancelled ends local waiting and shows the host's cancellation.
+  // renderCancelled shows the host's cancellation notice without aborting
+  // independent tools/call requests or discarding retained session state.
   function renderCancelled(reason: string) {
-    activeEditor = null;
-    finishPendingRequests("The host ended the checkpoint tool call.");
+    if (!shouldRetainEditor()) {
+      editorOpen = false;
+    }
     activeResult = { kind: "cancelled", reason };
-    syncEditorRegion();
-    syncResultRegion();
     rootEl.dataset.state = "cancelled";
     statusEl.textContent = "Checkpoint tool call cancelled";
+    syncAllRegions();
   }
 
   // renderError displays an uncorrelated notification failure without
@@ -822,13 +1342,12 @@ export function bootstrapCheckpointApp() {
       return;
     }
     if (!shouldRetainEditor()) {
-      activeEditor = null;
-      syncEditorRegion();
+      editorOpen = false;
     }
     activeResult = { kind: "error", message: String(message) };
-    syncResultRegion();
     rootEl.dataset.state = "error";
     statusEl.textContent = "Checkpoint payload error";
+    syncAllRegions();
   }
 
   // handleToolResult validates untyped host data and updates the region that
@@ -850,26 +1369,59 @@ export function bootstrapCheckpointApp() {
     const payload = params.structuredContent;
     if (isVerificationStatusResult(payload)) {
       if (!shouldRetainEditor()) {
-        activeEditor = null;
-        syncEditorRegion();
+        editorOpen = false;
       }
       displayVerification(payload);
-      syncResultRegion();
       rootEl.dataset.state = "cp4-verification";
+      syncAllRegions();
+      return;
+    }
+    if (isVerificationListResult(payload)) {
+      const listErr = validateVerificationListPayload(payload);
+      if (listErr !== null) {
+        renderError(listErr);
+        return;
+      }
+      for (let i = 0; i < payload.runs.length; i++) {
+        upsertRunSnapshot(payload.runs[i]);
+      }
+      const listedIds = payload.runs.map((r) => r.run_id);
+      lastLoadedListByChangeId[payload.change_id] = listedIds;
+      delete listRequestErrors[payload.change_id];
+      if (!shouldRetainEditor()) {
+        editorOpen = false;
+      }
+      selectedVerificationChangeId = payload.change_id;
+      if (listedIds.length === 0) {
+        selectedRunId = null;
+        statusEl.textContent =
+          "No saved verification runs found for Change Card " + payload.change_id + ".";
+      } else {
+        if (selectedRunId === null || !listedIds.includes(selectedRunId)) {
+          selectedRunId = listedIds[0];
+        }
+        statusEl.textContent =
+          "Showing saved verification runs for Change Card " + payload.change_id + ".";
+      }
+      activeResult = { kind: "cp4-verification" };
+      rootEl.dataset.state = "cp4-verification";
+      syncAllRegions();
       return;
     }
     if (isArchitecturePreviewResult(payload)) {
       if (!shouldRetainEditor()) {
-        activeEditor = null;
-        syncEditorRegion();
+        editorOpen = false;
       }
-      activeResult = { kind: "cp2-architecture-preview", preview: payload };
-      syncResultRegion();
+      previewState = payload;
+      cardLoadError = null;
+      activeResult = { kind: "cp2-architecture-preview" };
       rootEl.dataset.state = "cp2-architecture-preview";
       statusEl.textContent = "Showing architecture preview for " + payload.system_name + ".";
+      syncAllRegions();
       return;
     }
     if (isChangeCardResult(payload)) {
+      cardLoadError = null;
       if (activeEditor) {
         if (
           payload.change_id === activeEditor.card.change_id &&
@@ -879,6 +1431,10 @@ export function bootstrapCheckpointApp() {
             ...activeEditor,
             card: payload,
           };
+          editorOpen = true;
+          if (!activeResult) {
+            rootEl.dataset.state = "cp1-change-card";
+          }
           statusEl.textContent =
             payload.status === "confirmed"
               ? payload.approval
@@ -887,45 +1443,46 @@ export function bootstrapCheckpointApp() {
                 ? "Showing the saved approval record (current promotion inputs could not be verified)."
                 : "Showing confirmed Change Card. You can refine answers or examples below."
               : "Review the open questions and examples below, then confirm your intent.";
-          syncEditorRegion();
+          syncAllRegions();
           return;
         } else if (shouldRetainEditor()) {
+          editorOpen = true;
           activeResult = { kind: "cp1-incoming-card", card: payload };
-          syncResultRegion();
           rootEl.dataset.state = "cp1-change-card";
           statusEl.textContent =
             "A newer Change Card arrived while you were editing; your unsaved draft is preserved.";
+          syncAllRegions();
           return;
         }
       }
       const prior = nextPriorCard(activeEditor, payload);
       activeResult = null;
-      syncResultRegion();
       mountChangeCard(payload, null, prior);
       return;
     }
     if (isDiffResult(payload)) {
       if (!shouldRetainEditor()) {
-        activeEditor = null;
-        syncEditorRegion();
+        editorOpen = false;
       }
-      activeResult = { kind: "cp2-diff", diff: payload };
-      syncResultRegion();
+      diffState = payload;
+      activeResult = { kind: "cp2-diff" };
       rootEl.dataset.state = "cp2-diff";
       statusEl.textContent = payload.has_changes
         ? "Showing structural design diff with detected contract changes."
         : "Showing structural design diff (no contract changes detected).";
+      syncAllRegions();
       return;
     }
     if (isDraftOverrideResult(payload)) {
       if (!shouldRetainEditor()) {
-        activeEditor = null;
-        syncEditorRegion();
+        editorOpen = false;
       }
-      activeResult = { kind: "cp3-draft-override", draft: payload };
-      syncResultRegion();
+      draftOverrideState = payload;
+      selectedCP3Kind = "cp3-draft-override";
+      activeResult = { kind: "cp3-draft-override" };
       rootEl.dataset.state = "cp3-draft-override";
       statusEl.textContent = "Showing Fast Draft prompt and rule update.";
+      syncAllRegions();
       if (payload.applied_in_store) {
         void refreshAfterPromptUpdate();
       }
@@ -933,15 +1490,16 @@ export function bootstrapCheckpointApp() {
     }
     if (isLiveTargetResult(payload) || isStopLiveTargetResult(payload)) {
       if (!shouldRetainEditor()) {
-        activeEditor = null;
-        syncEditorRegion();
+        editorOpen = false;
       }
-      activeResult = { kind: "cp3-live-target", live: payload };
-      syncResultRegion();
+      liveTargetState = payload;
+      selectedCP3Kind = "cp3-live-target";
+      activeResult = { kind: "cp3-live-target" };
       rootEl.dataset.state = "cp3-live-target";
       statusEl.textContent = isLiveTargetResult(payload)
         ? "Showing the running CP3 live target."
         : "Showing the stopped CP3 live target.";
+      syncAllRegions();
       return;
     }
     renderError("Unsupported or malformed Surla checkpoint payload.");
@@ -961,12 +1519,34 @@ export function bootstrapCheckpointApp() {
       if (msg.id !== undefined && msg.id !== null) {
         if (msg.method === "ui/resource-teardown") {
           activeEditor = null;
+          editorOpen = false;
+          previewState = null;
+          diffState = null;
+          draftOverrideState = null;
+          liveTargetState = null;
+          selectedVerificationChangeId = null;
+          selectedRunId = null;
+          for (const k of Object.keys(runsById)) {
+            delete runsById[k];
+          }
+          for (const k of Object.keys(lastLoadedListByChangeId)) {
+            delete lastLoadedListByChangeId[k];
+          }
+          for (const k of Object.keys(selectionTouchedDuringList)) {
+            delete selectionTouchedDuringList[k];
+          }
+          for (const k of Object.keys(runRequestErrors)) {
+            delete runRequestErrors[k];
+          }
+          for (const k of Object.keys(listRequestErrors)) {
+            delete listRequestErrors[k];
+          }
+          cardLoadError = null;
           finishPendingRequests("The host closed the checkpoint viewer.");
           activeResult = null;
-          syncEditorRegion();
-          syncResultRegion();
           rootEl.dataset.state = "terminated";
           statusEl.textContent = "Checkpoint resource torn down.";
+          syncAllRegions();
           window.parent.postMessage({ jsonrpc: "2.0", id: msg.id, result: {} }, "*");
           return;
         }
@@ -996,7 +1576,7 @@ export function bootstrapCheckpointApp() {
           renderError("Malformed ui/notifications/tool-input-partial notification.");
           return;
         }
-        if (activeEditor !== null || activeResult?.kind === "cp4-verification") {
+        if (isEditorProtected() || activeResult?.kind === "cp4-verification") {
           return;
         }
         const partialArgs =
@@ -1005,12 +1585,11 @@ export function bootstrapCheckpointApp() {
             : isPlainObject(msg.params)
             ? msg.params
             : {};
-        activeEditor = null;
+        editorOpen = false;
         activeResult = { kind: "partial-input", partialArgs };
-        syncEditorRegion();
-        syncResultRegion();
         rootEl.dataset.state = "waiting";
         statusEl.textContent = "Receiving checkpoint input...";
+        syncAllRegions();
         return;
       }
       if (msg.method === "ui/notifications/tool-input") {
@@ -1018,7 +1597,7 @@ export function bootstrapCheckpointApp() {
           renderError("Malformed ui/notifications/tool-input notification.");
           return;
         }
-        if (activeEditor !== null || activeResult?.kind === "cp4-verification") {
+        if (isEditorProtected() || activeResult?.kind === "cp4-verification") {
           return;
         }
         renderWaiting("Preparing checkpoint view...");
@@ -1033,14 +1612,15 @@ export function bootstrapCheckpointApp() {
           isPlainObject(msg.params) && typeof msg.params.reason === "string"
             ? msg.params.reason
             : "";
-        if (activeEditor) {
+        if (isEditorProtected()) {
           statusEl.textContent = cancelReason
             ? "Host reported tool cancellation (" + cancelReason + "); CP1 draft preserved."
             : "Host reported tool cancellation; CP1 draft preserved.";
           return;
         }
         if (activeResult?.kind === "cp4-verification") {
-          statusEl.textContent = "The host canceled a tool call; the saved verification result is still shown.";
+          statusEl.textContent =
+            "The host canceled a tool call; the saved verification result is still shown.";
           return;
         }
         renderCancelled(cancelReason);

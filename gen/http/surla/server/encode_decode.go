@@ -12,6 +12,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"unicode/utf8"
 
 	surla "github.com/goadesign/surla/gen/surla"
 	goahttp "goa.design/goa/v3/http"
@@ -565,6 +566,42 @@ func DecodeGetVerificationRequest(mux goahttp.Muxer, decoder func(*http.Request)
 	}
 }
 
+// EncodeListVerificationsResponse returns an encoder for responses returned by
+// the surla list_verifications endpoint.
+func EncodeListVerificationsResponse(encoder func(context.Context, http.ResponseWriter) goahttp.Encoder) func(context.Context, http.ResponseWriter, any) error {
+	return func(ctx context.Context, w http.ResponseWriter, v any) error {
+		res, _ := v.(*surla.VerificationListResult)
+		enc := encoder(ctx, w)
+		body := NewListVerificationsResponseBody(res)
+		w.WriteHeader(http.StatusOK)
+		return enc.Encode(body)
+	}
+}
+
+// DecodeListVerificationsRequest returns a decoder for requests sent to the
+// surla list_verifications endpoint.
+func DecodeListVerificationsRequest(mux goahttp.Muxer, decoder func(*http.Request) goahttp.Decoder) func(*http.Request) (*surla.ListVerificationsPayload, error) {
+	return func(r *http.Request) (*surla.ListVerificationsPayload, error) {
+		var payload *surla.ListVerificationsPayload
+		var (
+			changeID string
+			err      error
+
+			params = mux.Vars(r)
+		)
+		changeID = params["change_id"]
+		if utf8.RuneCountInString(changeID) < 1 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("change_id", changeID, utf8.RuneCountInString(changeID), 1, true))
+		}
+		if err != nil {
+			return payload, err
+		}
+		payload = NewListVerificationsPayload(changeID)
+
+		return payload, nil
+	}
+}
+
 // EncodeApproveMergeResponse returns an encoder for responses returned by the
 // surla approve_merge endpoint.
 func EncodeApproveMergeResponse(encoder func(context.Context, http.ResponseWriter) goahttp.Encoder) func(context.Context, http.ResponseWriter, any) error {
@@ -1045,6 +1082,53 @@ func marshalSurlaVerificationNotCompletedToVerificationNotCompletedResponseBody(
 		Kind:    v.Kind,
 		Stage:   v.Stage,
 		Summary: v.Summary,
+	}
+
+	return res
+}
+
+// marshalSurlaVerificationStatusResultToVerificationStatusResultResponseBody
+// builds a value of type *VerificationStatusResultResponseBody from a value of
+// type *surla.VerificationStatusResult.
+func marshalSurlaVerificationStatusResultToVerificationStatusResultResponseBody(v *surla.VerificationStatusResult) *VerificationStatusResultResponseBody {
+	res := &VerificationStatusResultResponseBody{
+		RunID:           v.RunID,
+		ChangeID:        v.ChangeID,
+		RequestRevision: v.RequestRevision,
+		CandidateCommit: v.CandidateCommit,
+		SuiteCommit:     v.SuiteCommit,
+		AcceptedAt:      v.AcceptedAt,
+	}
+	if v.State.Kind() != "" {
+		switch string(v.State.Kind()) {
+		case "running":
+			actual, _ := v.State.AsRunning()
+			var obj *VerificationRunningResponseBody
+			if actual != nil {
+				obj = marshalSurlaVerificationRunningToVerificationRunningResponseBody(actual)
+			}
+			u := res.State
+			u.SetRunning((*VerificationRunningResponseBody)(obj))
+			res.State = u
+		case "completed":
+			actual, _ := v.State.AsCompleted()
+			var obj *VerificationCompletedResponseBody
+			if actual != nil {
+				obj = marshalSurlaVerificationCompletedToVerificationCompletedResponseBody(actual)
+			}
+			u := res.State
+			u.SetCompleted((*VerificationCompletedResponseBody)(obj))
+			res.State = u
+		case "not_completed":
+			actual, _ := v.State.AsNotCompleted()
+			var obj *VerificationNotCompletedResponseBody
+			if actual != nil {
+				obj = marshalSurlaVerificationNotCompletedToVerificationNotCompletedResponseBody(actual)
+			}
+			u := res.State
+			u.SetNotCompleted((*VerificationNotCompletedResponseBody)(obj))
+			res.State = u
+		}
 	}
 
 	return res

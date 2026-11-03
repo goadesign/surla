@@ -291,6 +291,10 @@ function generateTypesModule() {
       rawByTool["surla.get_verification"],
       "VerificationStatusResult"
     ),
+    VerificationListResult: compactSchema(
+      rawByTool["surla.list_verifications"],
+      "VerificationListResult"
+    ),
     LiveTargetResult: compactSchema(
       rawByTool["surla.start_live_target"],
       "LiveTargetResult"
@@ -470,6 +474,11 @@ export function isVerificationStatusResult(p: unknown): p is VerificationStatusR
   return validateGeneratedRoot("VerificationStatusResult", p);
 }
 
+// isVerificationListResult validates the generated CP4 saved-run list.
+export function isVerificationListResult(p: unknown): p is VerificationListResult {
+  return validateGeneratedRoot("VerificationListResult", p);
+}
+
 // isLiveTargetResult validates a start_live_target result.
 export function isLiveTargetResult(p: unknown): p is LiveTargetResult {
   return validateGeneratedRoot("LiveTargetResult", p);
@@ -546,6 +555,7 @@ ${stylesCss}
       </details>
     </header>
     <p id="surla-checkpoint-status" role="status" aria-live="polite">Connecting to checkpoint studio...</p>
+    <nav id="surla-checkpoint-nav" aria-label="Checkpoint views" hidden></nav>
     <section id="surla-checkpoint-view" aria-label="Checkpoint Payload"></section>
   </main>
   <script>
