@@ -385,7 +385,7 @@ The end-to-end and starter-project integration tests require macOS (`sandbox-exe
 (cd examples/orders-eval && go test -race -tags e2e ./acceptance)
 go test -race -tags e2e ./internal/verify
 go test -race -count=1 -tags e2e ./cmd/surla
-go test -race -tags scaffold ./internal/scaffold
+go test -race -count=1 -timeout 60m -tags scaffold ./internal/scaffold
 ```
 
 See [`examples/orders/README.md`](../examples/orders/README.md) for a step-by-step walkthrough including `surla verify` (full operator report vs. `-builder-view`).

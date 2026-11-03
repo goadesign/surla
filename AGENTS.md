@@ -412,7 +412,8 @@ appropriate for CPU, memory, and restarts.
     changed
   - `(cd examples/orders-eval && go test -race -tags e2e ./acceptance)` when
     `examples/orders` or `examples/orders-eval` changed
-  - `go test -race -tags scaffold ./internal/scaffold` for starter generation
+  - `go test -race -count=1 -timeout 60m -tags scaffold ./internal/scaffold`
+    for starter generation
   - `npm --prefix ui/checkpoint run typecheck` for viewer TypeScript changes
 - Set `CI=true` and close stdin on these invocations. Do not regenerate or
   run runtime/browser suites for text-only instructions or documentation;
