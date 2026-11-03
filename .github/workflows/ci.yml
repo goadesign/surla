@@ -111,7 +111,7 @@ jobs:
         # guaranteed duration. -count=1 makes the journeys run every time:
         # setup-go restores Go's build cache, which can hold a cached test
         # result.
-        run: go test -race -count=1 -timeout 60m -tags scaffold ./internal/scaffold </dev/null
+        run: go test -race -count=1 -v -timeout 60m -tags scaffold ./internal/scaffold </dev/null
       - name: Orders acceptance end to end
         working-directory: examples/orders-eval
         run: go test -race -tags e2e ./acceptance </dev/null

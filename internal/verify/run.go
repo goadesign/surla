@@ -302,7 +302,7 @@ func Prepare(ctx context.Context, p Plan) (Prepared, error) {
 			SourceDir: moduleDir, ModuleDir: moduleDir, Package: p.Binaries[name], Out: out,
 			GOROOT: toolchain.goroot, ModCache: toolchain.modCache, WorkDir: toolchain.workDir,
 			LogFile: filepath.Join(r.evidenceDir, "build-"+name+".log"),
-		}, (*exec.Cmd).Run); err != nil {
+		}, r.diagBuildRun("build-"+name)); err != nil {
 			return Prepared{}, stageError(StageBuild, summaryCandidateBuild, fmt.Errorf("build candidate %s: %w", name, err))
 		}
 		digest, err := sha256File(out)
@@ -336,7 +336,7 @@ func Prepare(ctx context.Context, p Plan) (Prepared, error) {
 		SourceDir: suiteDir, ModuleDir: suiteModuleDir, Package: p.SuiteCommand, Out: suiteBin,
 		GOROOT: suiteToolchain.goroot, ModCache: suiteToolchain.modCache, WorkDir: suiteToolchain.workDir,
 		LogFile: filepath.Join(r.evidenceDir, "build-suite.log"),
-	}, (*exec.Cmd).Run); err != nil {
+	}, r.diagBuildRun("build-suite")); err != nil {
 		return Prepared{}, stageError(StageBuild, summarySuiteBuild, fmt.Errorf("build suite: %w", err))
 	}
 	return Prepared{
@@ -498,10 +498,46 @@ func (r *runner) run(ctx context.Context, label, dir string, env []string, name 
 	cmd.Dir = dir
 	cmd.Env = env
 	cmd.Stdout, cmd.Stderr = stdout, stderr
-	if err := cmd.Run(); err != nil {
+	r.diagMark("start", label, nil)
+	runErr := cmd.Run()
+	r.diagMark("end", label, runErr)
+	if err := runErr; err != nil {
 		return fmt.Errorf("%s: %w%s", label, err, r.excerpt(label))
 	}
 	return nil
+}
+
+// diagMark appends one timeline line to the evidence directory's
+// timeline.log, a file it opens, writes and closes itself. A failure at any
+// of those steps is reported on the process's stderr, which it never closes,
+// and never changes the command.
+// TEMPORARY DIAGNOSTIC (branch diag/live-start-evidence, never merged).
+func (r *runner) diagMark(phase, label string, err error) {
+	line := fmt.Sprintf("MARK %s %s %s err=%v\n", phase, label, time.Now().UTC().Format(time.RFC3339Nano), err)
+	f, openErr := os.OpenFile(filepath.Join(r.evidenceDir, "timeline.log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+	if openErr != nil {
+		fmt.Fprintf(os.Stderr, "MARK-ERROR %s %v\n", label, openErr)
+		return
+	}
+	n, writeErr := f.WriteString(line)
+	if writeErr == nil && n != len(line) {
+		writeErr = io.ErrShortWrite
+	}
+	if err := errors.Join(writeErr, f.Close()); err != nil {
+		fmt.Fprintf(os.Stderr, "MARK-ERROR %s %v\n", label, err)
+	}
+}
+
+// diagBuildRun returns candidate.Build's run callback for label: it marks the
+// exact compiler command's start and return in the timeline.
+// TEMPORARY DIAGNOSTIC (branch diag/live-start-evidence, never merged).
+func (r *runner) diagBuildRun(label string) func(*exec.Cmd) error {
+	return func(cmd *exec.Cmd) error {
+		r.diagMark("start", label, nil)
+		err := cmd.Run()
+		r.diagMark("end", label, err)
+		return err
+	}
 }
 
 // outputs creates the evidence files for one command.

@@ -242,7 +242,10 @@ func Live(dir string, prepare func(context.Context, verify.Plan) (verify.Prepare
 	if err := decodeLiveRequest(dir, &req); err != nil {
 		return reportLive(out, errLog, "The live target request could not be read.", err)
 	}
+	diag := &diagMarks{w: errLog}
+	diag.mark("start prepare", nil)
 	prep, err := prepare(ctx, req.Plan)
+	diag.mark("end prepare", err)
 	if err != nil {
 		summary := summaryLiveSuite
 		var stage *verify.StageError
@@ -261,7 +264,9 @@ func Live(dir string, prepare func(context.Context, verify.Plan) (verify.Prepare
 	// The suite and everything it starts stay in this process group, which
 	// the starting process kills to stop the target.
 	cmd.Cancel = func() error { return cmd.Process.Signal(syscall.SIGTERM) }
+	diag.mark("start suite-ready", nil)
 	if err := cmd.Start(); err != nil {
+		diag.mark("end suite-ready", err)
 		return errors.Join(reportLive(out, errLog, summaryLiveSuite, err), suiteOutW.Close(), suiteOut.Close())
 	}
 	suiteOutW.Close()
@@ -277,6 +282,7 @@ func Live(dir string, prepare func(context.Context, verify.Plan) (verify.Prepare
 	go func() { exited <- cmd.Wait() }()
 	select {
 	case line := <-first:
+		diag.mark("end suite-ready", nil)
 		if line.URL == "" {
 			return reportLive(out, errLog, summaryLiveSuite, errors.New("suite printed no valid ready line"))
 		}
@@ -287,6 +293,7 @@ func Live(dir string, prepare func(context.Context, verify.Plan) (verify.Prepare
 		fmt.Fprintln(errLog, "suite exited:", <-exited)
 		return endGroup()
 	case err := <-exited:
+		diag.mark("end suite-ready", err)
 		return reportLive(out, errLog, summaryLiveSuite, fmt.Errorf("suite exited before it was ready: %v", err))
 	}
 }
@@ -343,6 +350,7 @@ func (p *LiveProcess) Stop() error {
 		}
 		<-p.exited
 		<-p.readerDone
+		diagLiveEvidence(os.Stderr, p.dir)
 		p.stopErr = errors.Join(closeErr, candidate.RemoveStore(p.dir))
 	})
 	return p.stopErr
@@ -477,4 +485,103 @@ func liveEnv(env []string) []string {
 		out = append(out, kv)
 	}
 	return out
+}
+
+// diagMarks writes executor MARK lines to the executor's stderr, which it
+// borrows and never closes. Failed or short writes are counted and reported
+// on the next line. TEMPORARY DIAGNOSTIC (branch diag/live-start-evidence,
+// never merged).
+type diagMarks struct {
+	// w is the borrowed executor stderr.
+	w io.Writer
+	// failed counts failed or short writes.
+	failed int
+}
+
+// mark writes one MARK line.
+func (d *diagMarks) mark(what string, err error) {
+	line := fmt.Sprintf("MARK %s %s err=%v failed_writes=%d\n", what, time.Now().UTC().Format(time.RFC3339Nano), err, d.failed)
+	if n, werr := io.WriteString(d.w, line); werr != nil || n != len(line) {
+		d.failed++
+	}
+}
+
+// diagPrepareLabels are the commands verify.Prepare runs through its runner,
+// in order. TEMPORARY DIAGNOSTIC.
+var diagPrepareLabels = []string{
+	"clone-candidate", "checkout-candidate", "head-candidate", "go-mod-download-candidate", "go-env-candidate",
+	"clone-suite", "checkout-suite", "head-suite", "go-mod-download-suite", "go-env-suite",
+}
+
+// diagTail is the temporary per-file bound chosen for this diagnostic.
+const diagTail = 16 << 10
+
+// diagLiveEvidence writes a live target's named evidence files to w, which it
+// borrows and never closes, before the directory is removed: executor.log,
+// work/evidence/timeline.log, each Prepare command's stdout and stderr, and
+// the build logs, each with its size and its last diagTail bytes. It reads
+// one directory listing for the build-*.log names and walks nothing. The
+// END line says complete=true only when no open, read, close or write
+// failed. TEMPORARY DIAGNOSTIC (branch diag/live-start-evidence, never
+// merged).
+func diagLiveEvidence(w io.Writer, dir string) {
+	errs := 0
+	emit := func(format string, args ...any) {
+		line := fmt.Sprintf(format, args...)
+		if n, err := io.WriteString(w, line); err != nil || n != len(line) {
+			errs++
+		}
+	}
+	names := []string{"executor.log", "work/evidence/timeline.log"}
+	for _, l := range diagPrepareLabels {
+		names = append(names, "work/evidence/"+l+".stdout", "work/evidence/"+l+".stderr")
+	}
+	if entries, err := os.ReadDir(filepath.Join(dir, "work", "evidence")); err == nil {
+		for _, e := range entries {
+			if strings.HasPrefix(e.Name(), "build-") && strings.HasSuffix(e.Name(), ".log") {
+				names = append(names, "work/evidence/"+e.Name())
+			}
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		errs++
+		emit("LIVE EVIDENCE list-error=%v\n", err)
+	}
+	emit("LIVE EVIDENCE BEGIN %s\n", filepath.Base(dir))
+	for _, name := range names {
+		size, tail, missing, err := diagReadTail(filepath.Join(dir, filepath.FromSlash(name)))
+		switch {
+		case missing:
+			emit("ENTRY path=%s missing\n", name)
+		case err != nil:
+			errs++
+			emit("ENTRY path=%s read-error=%v\n", name, err)
+		default:
+			emit("ENTRY path=%s size=%d shown=%d truncated=%t\n%s\nENTRY-END %s\n", name, size, len(tail), int64(len(tail)) < size, tail, name)
+		}
+	}
+	emit("LIVE EVIDENCE END complete=%t errors=%d\n", errs == 0, errs)
+}
+
+// diagReadTail returns a file's size and its last diagTail bytes, closing
+// the file it opens. TEMPORARY DIAGNOSTIC.
+func diagReadTail(path string) (size int64, tail []byte, missing bool, err error) {
+	f, err := os.Open(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return 0, nil, true, nil
+	}
+	if err != nil {
+		return 0, nil, false, err
+	}
+	defer func() { err = errors.Join(err, f.Close()) }()
+	info, err := f.Stat()
+	if err != nil {
+		return 0, nil, false, err
+	}
+	size = info.Size()
+	off := max(size-diagTail, 0)
+	tail = make([]byte, size-off)
+	if _, err := f.ReadAt(tail, off); err != nil && !errors.Is(err, io.EOF) {
+		return size, nil, false, err
+	}
+	return size, tail, false, nil
 }

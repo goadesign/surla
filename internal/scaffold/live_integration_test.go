@@ -6,7 +6,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -125,6 +124,10 @@ func TestStarterLiveTargetAppliesADraftToTheNextModelRequest(t *testing.T) {
 	require.NoError(t, os.WriteFile(planner, []byte(edited), 0o600))
 	c2 := commitAll(t, dir)
 
+	// TEMPORARY DIAGNOSTIC: after the first failure, start nothing costly.
+	if t.Failed() {
+		t.FailNow()
+	}
 	restarted, err := cp.StartLiveTarget(alice, &gensurla.StartLiveTargetPayload{CandidateCommit: c2})
 	require.NoError(t, err, "starting C2 replaces the C1 target")
 	assert.Equal(t, "SYSTEM="+text, askLive(t, restarted.URL), "C2 carries the committed text without any draft")
@@ -132,8 +135,14 @@ func TestStarterLiveTargetAppliesADraftToTheNextModelRequest(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, stopped.Stopped)
 
+	if t.Failed() {
+		t.FailNow()
+	}
 	assertVerified(t, cp, alice, runsDir, card, c2, "the committed text verifies for the same card")
 
+	if t.Failed() {
+		t.FailNow()
+	}
 	skipped := confirmCard(t, cp, alice, "starter-skip-cp3")
 	assertVerified(t, cp, alice, runsDir, skipped, commit, "a card that skips CP3 verifies C1 directly")
 }
@@ -152,32 +161,6 @@ func keepRun(t *testing.T, runsDir, runID string) {
 		return
 	}
 	t.Logf("kept run %s in %s", runID, dest)
-}
-
-// buildLogs returns every log and evidence file a verification run left,
-// each with its name and byte count, including empty files and read errors,
-// so a failed run shows exactly what was and was not written.
-func buildLogs(t *testing.T, runsDir, runID string) string {
-	t.Helper()
-	evidence, err := filepath.Glob(filepath.Join(runsDir, runID, "work", "evidence", "*"))
-	if err != nil {
-		return err.Error()
-	}
-	runLogs, err := filepath.Glob(filepath.Join(runsDir, runID, "*.log"))
-	if err != nil {
-		return err.Error()
-	}
-	logs := append(runLogs, evidence...)
-	var b strings.Builder
-	for _, l := range logs {
-		data, err := os.ReadFile(l)
-		if err != nil {
-			fmt.Fprintf(&b, "== %s: read error: %v\n", filepath.Base(l), err)
-			continue
-		}
-		fmt.Fprintf(&b, "== %s (%d bytes)\n%s\n", filepath.Base(l), len(data), data)
-	}
-	return b.String()
 }
 
 // Analyze returns a fixed analysis with no open questions.
@@ -221,6 +204,21 @@ func assertVerified(t *testing.T, cp *controlplane.ControlPlane, ctx context.Con
 	t.Helper()
 	run, err := cp.VerifyChange(ctx, &gensurla.VerifyChangePayload{ChangeID: card.ChangeID, RequestRevision: card.RequestRevision, CandidateCommit: commit})
 	require.NoError(t, err)
+	// TEMPORARY DIAGNOSTIC: one capture, registered before every check that
+	// can fail and after runsDir was created, so it runs before runsDir is
+	// removed and covers every failing exit of this helper.
+	t.Cleanup(func() {
+		if !t.Failed() {
+			return
+		}
+		snapshot := "final"
+		if status, err := cp.GetVerification(ctx, &gensurla.GetVerificationPayload{RunID: run.RunID}); err != nil {
+			snapshot = "unknown: " + err.Error()
+		} else if _, ok := status.State.AsRunning(); ok {
+			snapshot = "incomplete"
+		}
+		diagRunEvidence(t, filepath.Join(runsDir, run.RunID), snapshot)
+	})
 	phase, cancel := context.WithTimeout(t.Context(), 15*time.Minute)
 	defer cancel()
 	for {
@@ -234,7 +232,7 @@ func assertVerified(t *testing.T, cp *controlplane.ControlPlane, ctx context.Con
 		}
 		if failed, ok := status.State.AsNotCompleted(); ok {
 			keepRun(t, runsDir, run.RunID)
-			t.Fatalf("%s: the run ended without a report: %+v\n%s", why, failed, buildLogs(t, runsDir, run.RunID))
+			t.Fatalf("%s: the run ended without a report: %+v", why, failed)
 		}
 		if _, ok := status.State.AsRunning(); !ok {
 			t.Fatalf("%s: unexpected verification state %v", why, status.State.Kind())
@@ -355,4 +353,71 @@ func askLive(t *testing.T, origin string) string {
 	}
 	require.NoError(t, json.Unmarshal(body, &out))
 	return out.Answer
+}
+
+// diagRunEvidence logs a verification run's named evidence files, each with
+// its size and its last 16 KiB, through t.Logf: supervisor.log,
+// executor.log, work/evidence/timeline.log, each Prepare command's streams,
+// describe and suite streams, and the build logs found by one directory
+// listing. The END line says complete=true only when no open, read or close
+// failed. TEMPORARY DIAGNOSTIC (branch diag/live-start-evidence, never
+// merged).
+func diagRunEvidence(t *testing.T, dir, snapshot string) {
+	t.Helper()
+	names := []string{"supervisor.log", "executor.log", "work/evidence/timeline.log"}
+	for _, l := range []string{
+		"clone-candidate", "checkout-candidate", "head-candidate", "go-mod-download-candidate", "go-env-candidate",
+		"clone-suite", "checkout-suite", "head-suite", "go-mod-download-suite", "go-env-suite", "describe", "suite",
+	} {
+		names = append(names, "work/evidence/"+l+".stdout", "work/evidence/"+l+".stderr")
+	}
+	errs := 0
+	if entries, err := os.ReadDir(filepath.Join(dir, "work", "evidence")); err == nil {
+		for _, e := range entries {
+			if strings.HasPrefix(e.Name(), "build-") && strings.HasSuffix(e.Name(), ".log") {
+				names = append(names, "work/evidence/"+e.Name())
+			}
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		errs++
+		t.Logf("RUN EVIDENCE list-error=%v", err)
+	}
+	t.Logf("RUN EVIDENCE BEGIN %s snapshot=%s", filepath.Base(dir), snapshot)
+	for _, name := range names {
+		size, tail, missing, err := diagTail(filepath.Join(dir, filepath.FromSlash(name)))
+		switch {
+		case missing:
+			t.Logf("ENTRY path=%s missing", name)
+		case err != nil:
+			errs++
+			t.Logf("ENTRY path=%s read-error=%v", name, err)
+		default:
+			t.Logf("ENTRY path=%s size=%d shown=%d truncated=%t\n%s\nENTRY-END %s", name, size, len(tail), int64(len(tail)) < size, tail, name)
+		}
+	}
+	t.Logf("RUN EVIDENCE END complete=%t errors=%d", errs == 0, errs)
+}
+
+// diagTail returns a file's size and its last 16 KiB, closing the file it
+// opens. TEMPORARY DIAGNOSTIC.
+func diagTail(path string) (size int64, tail []byte, missing bool, err error) {
+	f, err := os.Open(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return 0, nil, true, nil
+	}
+	if err != nil {
+		return 0, nil, false, err
+	}
+	defer func() { err = errors.Join(err, f.Close()) }()
+	info, err := f.Stat()
+	if err != nil {
+		return 0, nil, false, err
+	}
+	size = info.Size()
+	off := max(size-16<<10, 0)
+	tail = make([]byte, size-off)
+	if _, err := f.ReadAt(tail, off); err != nil && !errors.Is(err, io.EOF) {
+		return size, nil, false, err
+	}
+	return size, tail, false, nil
 }

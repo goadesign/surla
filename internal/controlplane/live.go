@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"os"
 	"path/filepath"
 	"sync"
 	"time"
@@ -154,7 +155,10 @@ func (c *ControlPlane) StartLiveTarget(ctx context.Context, p *gensurla.StartLiv
 	c.owned = lt
 	startCtx, cancel := context.WithTimeout(c.serverCtx, timeout)
 	defer cancel()
-	if err := proc.AwaitReady(startCtx); err != nil {
+	diagMark("PARENT start await-ready", nil)
+	awaitErr := proc.AwaitReady(startCtx)
+	diagMark("PARENT end await-ready", awaitErr)
+	if err := awaitErr; err != nil {
 		summary := err.Error()
 		switch {
 		case c.serverCtx.Err() != nil:
@@ -168,7 +172,10 @@ func (c *ControlPlane) StartLiveTarget(ctx context.Context, p *gensurla.StartLiv
 		}
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "live target did not start")
-		if stopErr := c.stopOwnedLocked(); stopErr != nil {
+		diagMark("PARENT start stop", nil)
+		stopErr := c.stopOwnedLocked()
+		diagMark("PARENT end stop", stopErr)
+		if stopErr != nil {
 			span.RecordError(stopErr)
 			return nil, gensurla.MakeLiveTargetFailed(errors.New(summary + " " + msgStopFailed))
 		}
@@ -353,4 +360,18 @@ func newLiveKey() (string, error) {
 		return "", fmt.Errorf("create live target key: %w", err)
 	}
 	return hex.EncodeToString(b), nil
+}
+
+// diagFailedWrites counts failed or short writes of diagMark lines.
+// TEMPORARY DIAGNOSTIC (branch diag/live-start-evidence, never merged).
+var diagFailedWrites int
+
+// diagMark writes one PARENT marker to the process's stderr, which it never
+// closes. A failed or short write is counted and reported on the next line.
+// TEMPORARY DIAGNOSTIC (branch diag/live-start-evidence, never merged).
+func diagMark(what string, err error) {
+	line := fmt.Sprintf("%s %s err=%v failed_writes=%d\n", what, time.Now().UTC().Format(time.RFC3339Nano), err, diagFailedWrites)
+	if n, werr := os.Stderr.WriteString(line); werr != nil || n != len(line) {
+		diagFailedWrites++
+	}
 }
