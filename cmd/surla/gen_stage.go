@@ -27,12 +27,11 @@ import (
 type genStage struct {
 	// name is the directory's name in the module root.
 	name string
-	// dir is the directory, held open.
+	// dir is the directory, held open. acquireStage created gen inside it
+	// through this handle before the stage existed, so cleanup only ever
+	// removes a gen this run created, or, after the exchange, the module's
+	// old gen.
 	dir *os.Root
-	// ownsGen is set once acquireStage has created gen inside dir itself, so
-	// cleanup only ever removes a gen this run created, or, after the
-	// exchange, the module's old gen.
-	ownsGen bool
 }
 
 // newStage creates a new staging directory in root under a random name and
@@ -58,7 +57,6 @@ func acquireStage(root *os.Root, name string) (*genStage, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open staging directory: %w", err)
 	}
-	stage := &genStage{name: name, dir: dir}
 	refuse := func(reason error) (*genStage, error) {
 		return nil, errors.Join(fmt.Errorf("staging directory %s is not the empty directory surla gen created; it was left alone: %w", name, reason), dir.Close())
 	}
@@ -76,8 +74,7 @@ func acquireStage(root *os.Root, name string) (*genStage, error) {
 	if err := dir.Mkdir("gen", 0o755); err != nil {
 		return refuse(err)
 	}
-	stage.ownsGen = true
-	return stage, nil
+	return &genStage{name: name, dir: dir}, nil
 }
 
 // listingErr treats the end of a directory listing as no error.
@@ -179,16 +176,13 @@ func (s *genStage) report(root *os.Root) (string, error) {
 	return b.String(), errors.Join(beforeErr, afterErr)
 }
 
-// cleanup removes gen/ inside the held staging directory when this run owns
-// it (the old tree after an exchange, or the unpublished new one), then
+// cleanup removes gen/ inside the held staging directory (the old tree after
+// an exchange, or the unpublished new one), then
 // removes the staging directory's name only if it still names that same
 // directory, with a non-recursive remove. It never deletes recursively by
 // name; anything it leaves is named in the error.
 func (s *genStage) cleanup(root *os.Root) error {
-	var removeErr error
-	if s.ownsGen {
-		removeErr = s.dir.RemoveAll("gen")
-	}
+	removeErr := s.dir.RemoveAll("gen")
 	held, statErr := s.dir.Stat(".")
 	closeErr := s.dir.Close()
 	if removeErr != nil || statErr != nil {
