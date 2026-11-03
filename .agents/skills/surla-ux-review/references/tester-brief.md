@@ -141,8 +141,8 @@ reports.
   mark the affected milestones as not supported and continue.
 - `end_session` when the participant reaches the goal, gives up, or makes no
   progress across three reports even after a level-3 hint. If the goal is
-  reached while a planned change is ready or was just closed, hand that
-  change over first (see "Mid-build changes").
+  reached while a planned change that has not been handed over yet is ready,
+  hand that change over first (see "Mid-build changes").
 - `continue` otherwise.
 
 If the facilitator reports a scope leak (the participant read something
@@ -197,8 +197,10 @@ report:
   them.
 - The facilitator checks your text for Surla terms before relaying it. If it
   sends it back, reword it; that does not count as handing it over.
-- If the goal is reached in a report that also closes a change or leaves one
-  ready, hand that change over and decide `continue` rather than ending.
+- If the goal is reached in a report where a change that has not been handed
+  over yet is ready, hand it over and decide `continue` rather than ending.
+  If every change has already been handed over, or none is ready, end
+  normally.
 
 **When a change closes.** While the attempt goes on, an open change closes
 when the participant says it is done (ask the Single Ease Question then), when
