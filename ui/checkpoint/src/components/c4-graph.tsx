@@ -366,11 +366,17 @@ export function ArchitecturePreviewView({
       <Card className="surla-card">
         <h3>{"Proposed Chorus Swarm (" + preview.swarm.status + ")"}</h3>
         <p>{preview.swarm.summary}</p>
-        <p>
-          <Badge>{"cross_family_review=" + preview.swarm.cross_family_review}</Badge>
-          <Badge>{"cross_family_eval=" + preview.swarm.cross_family_eval}</Badge>
-          <Badge>{"single_family=" + preview.swarm.single_family}</Badge>
-        </p>
+        {preview.swarm.status !== "configured" ? null : (
+          <p>
+            <Badge>{"cross_family_review=" + preview.swarm.cross_family_review}</Badge>
+            <Badge>
+              {!preview.swarm.assignments.some((r) => r.role === "eval_author")
+                ? "cross_family_eval=false (eval-author not assigned)"
+                : "cross_family_eval=" + preview.swarm.cross_family_eval}
+            </Badge>
+            <Badge>{"single_family=" + preview.swarm.single_family}</Badge>
+          </p>
+        )}
         {preview.swarm.assignments.length > 0 ? (
           <ul>
             {preview.swarm.assignments.map((r) => (

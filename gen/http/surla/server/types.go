@@ -62,8 +62,16 @@ type PreviewArchitectureRequestBody struct {
 	RequestRevision *string `form:"request_revision,omitempty" json:"request_revision,omitempty" xml:"request_revision,omitempty"`
 	// Candidate module whose Goa and Goa-AI design is evaluated.
 	Design *DesignSnapshotRequestBody `form:"design,omitempty" json:"design,omitempty" xml:"design,omitempty"`
-	// Optional explicit builder path scopes for proposing the Chorus build roster.
+	// Optional explicit builder path scopes for proposing a Chorus build roster.
+	// When omitted, preview_architecture returns a solo preview with swarm.status
+	// unconfigured and no missing_roles.
 	Builders []*BuilderScopeItemRequestBody `form:"builders,omitempty" json:"builders,omitempty" xml:"builders,omitempty"`
+	// Optional repository-relative path globs for an @architect role in the
+	// proposed Chorus roster (requires builders).
+	ArchitectPaths []string `form:"architect_paths,omitempty" json:"architect_paths,omitempty" xml:"architect_paths,omitempty"`
+	// Optional repository or evaluator-workspace relative path globs for an
+	// @eval-author role in the proposed Chorus roster (requires builders).
+	EvalPaths []string `form:"eval_paths,omitempty" json:"eval_paths,omitempty" xml:"eval_paths,omitempty"`
 }
 
 // DraftOverrideRequestBody is the type of the "surla" service "draft_override"
@@ -768,13 +776,15 @@ type SwarmPlanItemResponseBody struct {
 	// True if and only if status is configured and the reviewer model family is
 	// disjoint from every assigned builder model family.
 	CrossFamilyReview bool `form:"cross_family_review" json:"cross_family_review" xml:"cross_family_review"`
-	// True if and only if status is configured and the eval_author model family is
-	// disjoint from every assigned builder model family.
+	// True if and only if status is configured, an eval_author role is assigned,
+	// and the eval_author model family is disjoint from every assigned builder
+	// model family.
 	CrossFamilyEval bool `form:"cross_family_eval" json:"cross_family_eval" xml:"cross_family_eval"`
 	// True when status is configured and all assigned roles share one model family.
 	SingleFamily bool `form:"single_family" json:"single_family" xml:"single_family"`
-	// Required roles lacking an authenticated capable profile when status is
-	// unconfigured or missing_capability.
+	// Requested roles lacking an authenticated capable profile when status is
+	// unconfigured (with builder scopes supplied) or missing_capability; omitted
+	// on solo previews with no builder scopes.
 	MissingRoles []string `form:"missing_roles,omitempty" json:"missing_roles,omitempty" xml:"missing_roles,omitempty"`
 	// Plain-English summary of the proposed swarm roster and model-family posture.
 	Summary string `form:"summary" json:"summary" xml:"summary"`
@@ -800,9 +810,10 @@ type SwarmRoleItemResponseBody struct {
 	Model string `form:"model" json:"model" xml:"model"`
 	// Canonical model family identifier.
 	Family string `form:"family" json:"family" xml:"family"`
-	// Repository or workspace path globs owned by this role.
+	// Repository or workspace path globs owned by this role for Chorus
+	// coordination.
 	OwnedPaths []string `form:"owned_paths" json:"owned_paths" xml:"owned_paths"`
-	// Workspace access boundary required of the job runner.
+	// Operator-declared workspace coordination boundary for this role.
 	AccessMode string `form:"access_mode" json:"access_mode" xml:"access_mode"`
 }
 
@@ -1884,6 +1895,18 @@ func NewPreviewArchitecturePayload(body *PreviewArchitectureRequestBody) *surla.
 				continue
 			}
 			v.Builders[i] = unmarshalBuilderScopeItemRequestBodyToSurlaBuilderScopeItem(val)
+		}
+	}
+	if body.ArchitectPaths != nil {
+		v.ArchitectPaths = make([]string, len(body.ArchitectPaths))
+		for i, val := range body.ArchitectPaths {
+			v.ArchitectPaths[i] = val
+		}
+	}
+	if body.EvalPaths != nil {
+		v.EvalPaths = make([]string, len(body.EvalPaths))
+		for i, val := range body.EvalPaths {
+			v.EvalPaths[i] = val
 		}
 	}
 

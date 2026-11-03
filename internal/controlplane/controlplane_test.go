@@ -350,8 +350,8 @@ var _ = Service("orders", func() {
 	if len(preview.Tools) != 1 || !preview.Tools[0].RequiresConfirmation || len(preview.Tools[0].InjectedFields) != 1 || preview.Tools[0].InjectedFields[0] != "tenant_id" {
 		t.Fatalf("unexpected evaluated ToolContractItem: %+v", preview.Tools)
 	}
-	if preview.Swarm == nil || preview.Swarm.Status != string(swarm.StatusUnconfigured) || len(preview.Swarm.MissingRoles) != 4 || preview.Swarm.Manifest != nil {
-		t.Fatalf("expected unconfigured swarm plan when no SwarmProfiles are configured, got %+v", preview.Swarm)
+	if preview.Swarm == nil || preview.Swarm.Status != string(swarm.StatusUnconfigured) || len(preview.Swarm.MissingRoles) != 0 || preview.Swarm.Manifest != nil {
+		t.Fatalf("expected solo unconfigured swarm plan with empty MissingRoles when no builders are supplied, got %+v", preview.Swarm)
 	}
 
 	// CP3: Fast Draft Mode updates the bound TargetPromptUpdater and rejects compiled_rule hacks.
@@ -493,7 +493,8 @@ var _ = Service("orders", func() {
 	if err != nil {
 		t.Fatalf("ProposeChange(chg-swarm) failed: %v", err)
 	}
-	previewSwarm, err := cpWithSwarm.PreviewArchitecture(ctx, &gensurla.PreviewArchitecturePayload{
+	// 1. Builders only on full-capability profiles -> 2-role roster (@builder-* + @reviewer).
+	previewSwarm2Role, err := cpWithSwarm.PreviewArchitecture(ctx, &gensurla.PreviewArchitecturePayload{
 		ChangeID:        cardSwarm.ChangeID,
 		RequestRevision: cardSwarm.RequestRevision,
 		Design:          &gensurla.DesignSnapshot{Files: testmodule.Snapshot(t, "", candidateDesign)},
@@ -503,7 +504,33 @@ var _ = Service("orders", func() {
 		},
 	})
 	if err != nil {
-		t.Fatalf("PreviewArchitecture(chg-swarm) failed: %v", err)
+		t.Fatalf("PreviewArchitecture(chg-swarm 2-role) failed: %v", err)
+	}
+	if previewSwarm2Role.Swarm == nil ||
+		previewSwarm2Role.Swarm.Status != string(swarm.StatusConfigured) ||
+		!previewSwarm2Role.Swarm.CrossFamilyReview ||
+		previewSwarm2Role.Swarm.CrossFamilyEval ||
+		previewSwarm2Role.Swarm.SingleFamily ||
+		len(previewSwarm2Role.Swarm.Assignments) != 3 ||
+		previewSwarm2Role.Swarm.Manifest == nil ||
+		!strings.Contains(*previewSwarm2Role.Swarm.Manifest, "eval-author not assigned") {
+		t.Fatalf("unexpected 2-role previewSwarm2Role.Swarm: %+v", previewSwarm2Role.Swarm)
+	}
+
+	// 2. Builders + ArchitectPaths + EvalPaths on the same server -> full 4-role roster.
+	previewSwarm, err := cpWithSwarm.PreviewArchitecture(ctx, &gensurla.PreviewArchitecturePayload{
+		ChangeID:        cardSwarm.ChangeID,
+		RequestRevision: cardSwarm.RequestRevision,
+		Design:          &gensurla.DesignSnapshot{Files: testmodule.Snapshot(t, "", candidateDesign)},
+		Builders: []*gensurla.BuilderScopeItem{
+			{Name: "orders", Paths: []string{"internal/orders/**"}},
+			{Name: "api", Paths: []string{"cmd/orders-api/**"}},
+		},
+		ArchitectPaths: []string{"design/**"},
+		EvalPaths:      []string{"*-eval/**"},
+	})
+	if err != nil {
+		t.Fatalf("PreviewArchitecture(chg-swarm 4-role) failed: %v", err)
 	}
 	if previewSwarm.Swarm == nil ||
 		previewSwarm.Swarm.Status != string(swarm.StatusConfigured) ||

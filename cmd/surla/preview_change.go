@@ -30,6 +30,11 @@ import (
 )
 
 type (
+	// repeatStringFlag collects repeated string flags (such as -architect-path and
+	// -eval-path) verbatim without splitting on commas or trimming significant
+	// spaces, rejecting invalid UTF-8 at parse time.
+	repeatStringFlag []string
+
 	// previewChangeConfig holds the parsed flags for `surla preview-change`.
 	previewChangeConfig struct {
 		// serverURL is the HTTP or HTTPS origin of the Surla server.
@@ -44,6 +49,10 @@ type (
 		token string
 		// buildersPath is the optional path of a JSON array of builder scopes.
 		buildersPath string
+		// architectPaths lists optional repository-relative path globs for @architect.
+		architectPaths repeatStringFlag
+		// evalPaths lists optional repository or evaluator-workspace relative path globs for @eval-author.
+		evalPaths repeatStringFlag
 		// timeout bounds the HTTP request to the Surla server.
 		timeout time.Duration
 	}
@@ -57,6 +66,27 @@ type (
 		token string
 	}
 )
+
+// String returns the formatted slice of collected flag values.
+func (f *repeatStringFlag) String() string {
+	if f == nil {
+		return ""
+	}
+	return strings.Join(*f, ", ")
+}
+
+// Set validates that val is valid, non-empty UTF-8 and appends it verbatim to
+// *f.
+func (f *repeatStringFlag) Set(val string) error {
+	if !utf8.ValidString(val) {
+		return errors.New("path must be valid UTF-8")
+	}
+	if strings.TrimSpace(val) == "" {
+		return errors.New("path must not be empty")
+	}
+	*f = append(*f, val)
+	return nil
+}
 
 // Do sets the Authorization bearer header on req and executes it with
 // d.client.
@@ -96,6 +126,8 @@ func runPreviewChange(args []string, w io.Writer, getenv func(string) string) er
 		RequestRevision: &cfg.requestRevision,
 		Design:          &gensurlaserver.DesignSnapshotRequestBody{Files: files},
 		Builders:        builders,
+		ArchitectPaths:  []string(cfg.architectPaths),
+		EvalPaths:       []string(cfg.evalPaths),
 	}
 	if err := gensurlaserver.ValidatePreviewArchitectureRequestBody(reqBody); err != nil {
 		return err
@@ -144,6 +176,8 @@ func parsePreviewChangeFlags(args []string, getenv func(string) string) (preview
 	fs.StringVar(&cfg.dir, "dir", ".", "root directory of the design module (holding go.mod, go.sum and design/)")
 	fs.StringVar(&rawToken, "auth-token", "", "Bearer token required on HTTP requests (default: $SURLA_AUTH_TOKEN)")
 	fs.StringVar(&cfg.buildersPath, "builders", "", "optional JSON file listing explicit builder path scopes for a CP2 swarm roster")
+	fs.Var(&cfg.architectPaths, "architect-path", "optional repository-relative path glob for @architect in the CP2 swarm roster (repeatable; requires -builders)")
+	fs.Var(&cfg.evalPaths, "eval-path", "optional repository or evaluator-workspace relative path glob for @eval-author in the CP2 swarm roster (repeatable; requires -builders)")
 	fs.DurationVar(&cfg.timeout, "timeout", 2*time.Minute, "how long the HTTP preview request may take before it is stopped")
 	if err := fs.Parse(args); err != nil {
 		return previewChangeConfig{}, err
@@ -180,6 +214,9 @@ func parsePreviewChangeFlags(args []string, getenv func(string) string) (preview
 	}
 	if !utf8.ValidString(cfg.requestRevision) {
 		return previewChangeConfig{}, errors.New("-request-revision must be valid UTF-8")
+	}
+	if strings.TrimSpace(cfg.buildersPath) == "" && (len(cfg.architectPaths) > 0 || len(cfg.evalPaths) > 0) {
+		return previewChangeConfig{}, errors.New("-architect-path and -eval-path require -builders")
 	}
 	return cfg, nil
 }

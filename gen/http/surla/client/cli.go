@@ -148,7 +148,7 @@ func BuildPreviewArchitecturePayload(surlaPreviewArchitectureBody *string) (*sur
 		}
 		err = json.Unmarshal([]byte(*surlaPreviewArchitectureBody), &body)
 		if err != nil {
-			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"builders\": [\n         {\n            \"name\": \"Libero cupiditate occaecati natus sed.\",\n            \"paths\": [\n               \"At recusandae.\",\n               \"Ea ipsa sed ullam et quas.\",\n               \"Quia perferendis rerum.\",\n               \"Praesentium quia beatae dolorem vel.\"\n            ],\n            \"preferred_profile_id\": \"Unde ut in.\"\n         },\n         {\n            \"name\": \"Libero cupiditate occaecati natus sed.\",\n            \"paths\": [\n               \"At recusandae.\",\n               \"Ea ipsa sed ullam et quas.\",\n               \"Quia perferendis rerum.\",\n               \"Praesentium quia beatae dolorem vel.\"\n            ],\n            \"preferred_profile_id\": \"Unde ut in.\"\n         },\n         {\n            \"name\": \"Libero cupiditate occaecati natus sed.\",\n            \"paths\": [\n               \"At recusandae.\",\n               \"Ea ipsa sed ullam et quas.\",\n               \"Quia perferendis rerum.\",\n               \"Praesentium quia beatae dolorem vel.\"\n            ],\n            \"preferred_profile_id\": \"Unde ut in.\"\n         },\n         {\n            \"name\": \"Libero cupiditate occaecati natus sed.\",\n            \"paths\": [\n               \"At recusandae.\",\n               \"Ea ipsa sed ullam et quas.\",\n               \"Quia perferendis rerum.\",\n               \"Praesentium quia beatae dolorem vel.\"\n            ],\n            \"preferred_profile_id\": \"Unde ut in.\"\n         }\n      ],\n      \"change_id\": \"Vel libero.\",\n      \"design\": {\n         \"files\": {\n            \"Doloribus repellat aut eveniet nesciunt natus labore.\": \"Dolores magni.\",\n            \"Quaerat vitae quas rerum.\": \"Vel in molestias et quaerat.\"\n         }\n      },\n      \"request_revision\": \"Quisquam mollitia.\"\n   }'")
+			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"architect_paths\": [\n         \"Voluptas velit quia rerum.\",\n         \"Odit aut perspiciatis aut aut.\",\n         \"Quasi delectus incidunt ipsum.\",\n         \"Non sequi qui nisi pariatur a.\"\n      ],\n      \"builders\": [\n         {\n            \"name\": \"Libero cupiditate occaecati natus sed.\",\n            \"paths\": [\n               \"At recusandae.\",\n               \"Ea ipsa sed ullam et quas.\",\n               \"Quia perferendis rerum.\",\n               \"Praesentium quia beatae dolorem vel.\"\n            ],\n            \"preferred_profile_id\": \"Unde ut in.\"\n         },\n         {\n            \"name\": \"Libero cupiditate occaecati natus sed.\",\n            \"paths\": [\n               \"At recusandae.\",\n               \"Ea ipsa sed ullam et quas.\",\n               \"Quia perferendis rerum.\",\n               \"Praesentium quia beatae dolorem vel.\"\n            ],\n            \"preferred_profile_id\": \"Unde ut in.\"\n         },\n         {\n            \"name\": \"Libero cupiditate occaecati natus sed.\",\n            \"paths\": [\n               \"At recusandae.\",\n               \"Ea ipsa sed ullam et quas.\",\n               \"Quia perferendis rerum.\",\n               \"Praesentium quia beatae dolorem vel.\"\n            ],\n            \"preferred_profile_id\": \"Unde ut in.\"\n         },\n         {\n            \"name\": \"Libero cupiditate occaecati natus sed.\",\n            \"paths\": [\n               \"At recusandae.\",\n               \"Ea ipsa sed ullam et quas.\",\n               \"Quia perferendis rerum.\",\n               \"Praesentium quia beatae dolorem vel.\"\n            ],\n            \"preferred_profile_id\": \"Unde ut in.\"\n         }\n      ],\n      \"change_id\": \"Vel libero.\",\n      \"design\": {\n         \"files\": {\n            \"Doloribus repellat aut eveniet nesciunt natus labore.\": \"Dolores magni.\",\n            \"Quaerat vitae quas rerum.\": \"Vel in molestias et quaerat.\"\n         }\n      },\n      \"eval_paths\": [\n         \"Minima veritatis sint eius qui.\",\n         \"Nemo quas.\",\n         \"Fuga doloribus illum.\"\n      ],\n      \"request_revision\": \"Quisquam mollitia.\"\n   }'")
 		}
 		if body.Design == nil {
 			err = goa.MergeErrors(err, goa.MissingFieldError("design", "body"))
@@ -184,6 +184,18 @@ func BuildPreviewArchitecturePayload(surlaPreviewArchitectureBody *string) (*sur
 				continue
 			}
 			v.Builders[i] = marshalBuilderScopeItemRequestBodyToSurlaBuilderScopeItem(val)
+		}
+	}
+	if body.ArchitectPaths != nil {
+		v.ArchitectPaths = make([]string, len(body.ArchitectPaths))
+		for i, val := range body.ArchitectPaths {
+			v.ArchitectPaths[i] = val
+		}
+	}
+	if body.EvalPaths != nil {
+		v.EvalPaths = make([]string, len(body.EvalPaths))
+		for i, val := range body.EvalPaths {
+			v.EvalPaths[i] = val
 		}
 	}
 

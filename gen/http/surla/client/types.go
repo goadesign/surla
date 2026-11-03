@@ -62,8 +62,16 @@ type PreviewArchitectureRequestBody struct {
 	RequestRevision string `form:"request_revision" json:"request_revision" xml:"request_revision"`
 	// Candidate module whose Goa and Goa-AI design is evaluated.
 	Design *DesignSnapshotRequestBody `form:"design" json:"design" xml:"design"`
-	// Optional explicit builder path scopes for proposing the Chorus build roster.
+	// Optional explicit builder path scopes for proposing a Chorus build roster.
+	// When omitted, preview_architecture returns a solo preview with swarm.status
+	// unconfigured and no missing_roles.
 	Builders []*BuilderScopeItemRequestBody `form:"builders,omitempty" json:"builders,omitempty" xml:"builders,omitempty"`
+	// Optional repository-relative path globs for an @architect role in the
+	// proposed Chorus roster (requires builders).
+	ArchitectPaths []string `form:"architect_paths,omitempty" json:"architect_paths,omitempty" xml:"architect_paths,omitempty"`
+	// Optional repository or evaluator-workspace relative path globs for an
+	// @eval-author role in the proposed Chorus roster (requires builders).
+	EvalPaths []string `form:"eval_paths,omitempty" json:"eval_paths,omitempty" xml:"eval_paths,omitempty"`
 }
 
 // DraftOverrideRequestBody is the type of the "surla" service "draft_override"
@@ -768,13 +776,15 @@ type SwarmPlanItemResponseBody struct {
 	// True if and only if status is configured and the reviewer model family is
 	// disjoint from every assigned builder model family.
 	CrossFamilyReview *bool `form:"cross_family_review,omitempty" json:"cross_family_review,omitempty" xml:"cross_family_review,omitempty"`
-	// True if and only if status is configured and the eval_author model family is
-	// disjoint from every assigned builder model family.
+	// True if and only if status is configured, an eval_author role is assigned,
+	// and the eval_author model family is disjoint from every assigned builder
+	// model family.
 	CrossFamilyEval *bool `form:"cross_family_eval,omitempty" json:"cross_family_eval,omitempty" xml:"cross_family_eval,omitempty"`
 	// True when status is configured and all assigned roles share one model family.
 	SingleFamily *bool `form:"single_family,omitempty" json:"single_family,omitempty" xml:"single_family,omitempty"`
-	// Required roles lacking an authenticated capable profile when status is
-	// unconfigured or missing_capability.
+	// Requested roles lacking an authenticated capable profile when status is
+	// unconfigured (with builder scopes supplied) or missing_capability; omitted
+	// on solo previews with no builder scopes.
 	MissingRoles []string `form:"missing_roles,omitempty" json:"missing_roles,omitempty" xml:"missing_roles,omitempty"`
 	// Plain-English summary of the proposed swarm roster and model-family posture.
 	Summary *string `form:"summary,omitempty" json:"summary,omitempty" xml:"summary,omitempty"`
@@ -800,9 +810,10 @@ type SwarmRoleItemResponseBody struct {
 	Model *string `form:"model,omitempty" json:"model,omitempty" xml:"model,omitempty"`
 	// Canonical model family identifier.
 	Family *string `form:"family,omitempty" json:"family,omitempty" xml:"family,omitempty"`
-	// Repository or workspace path globs owned by this role.
+	// Repository or workspace path globs owned by this role for Chorus
+	// coordination.
 	OwnedPaths []string `form:"owned_paths,omitempty" json:"owned_paths,omitempty" xml:"owned_paths,omitempty"`
-	// Workspace access boundary required of the job runner.
+	// Operator-declared workspace coordination boundary for this role.
 	AccessMode *string `form:"access_mode,omitempty" json:"access_mode,omitempty" xml:"access_mode,omitempty"`
 }
 
@@ -1212,6 +1223,18 @@ func NewPreviewArchitectureRequestBody(p *surla.PreviewArchitecturePayload) *Pre
 				continue
 			}
 			body.Builders[i] = marshalSurlaBuilderScopeItemToBuilderScopeItemRequestBody(val)
+		}
+	}
+	if p.ArchitectPaths != nil {
+		body.ArchitectPaths = make([]string, len(p.ArchitectPaths))
+		for i, val := range p.ArchitectPaths {
+			body.ArchitectPaths[i] = val
+		}
+	}
+	if p.EvalPaths != nil {
+		body.EvalPaths = make([]string, len(p.EvalPaths))
+		for i, val := range p.EvalPaths {
+			body.EvalPaths[i] = val
 		}
 	}
 	return body

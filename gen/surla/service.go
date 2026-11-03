@@ -444,8 +444,16 @@ type PreviewArchitecturePayload struct {
 	RequestRevision string
 	// Candidate module whose Goa and Goa-AI design is evaluated.
 	Design *DesignSnapshot
-	// Optional explicit builder path scopes for proposing the Chorus build roster.
+	// Optional explicit builder path scopes for proposing a Chorus build roster.
+	// When omitted, preview_architecture returns a solo preview with swarm.status
+	// unconfigured and no missing_roles.
 	Builders []*BuilderScopeItem
+	// Optional repository-relative path globs for an @architect role in the
+	// proposed Chorus roster (requires builders).
+	ArchitectPaths []string
+	// Optional repository or evaluator-workspace relative path globs for an
+	// @eval-author role in the proposed Chorus roster (requires builders).
+	EvalPaths []string
 }
 
 // ProposeChangePayload is the payload type of the surla service propose_change
@@ -491,8 +499,9 @@ type StopLiveTargetResult struct {
 }
 
 // Proposed Chorus role assignments and model-family diversity facts surfaced
-// at Checkpoint 2. Role and model assignments do not prove launch or replace
-// process/workspace isolation.
+// at Checkpoint 2. Role, model, and workspace scope assignments are Chorus
+// coordination proposals and do not prove agent launch or replace OS process
+// and workspace isolation.
 type SwarmPlanItem struct {
 	// Roster configuration status.
 	Status string
@@ -501,13 +510,15 @@ type SwarmPlanItem struct {
 	// True if and only if status is configured and the reviewer model family is
 	// disjoint from every assigned builder model family.
 	CrossFamilyReview bool
-	// True if and only if status is configured and the eval_author model family is
-	// disjoint from every assigned builder model family.
+	// True if and only if status is configured, an eval_author role is assigned,
+	// and the eval_author model family is disjoint from every assigned builder
+	// model family.
 	CrossFamilyEval bool
 	// True when status is configured and all assigned roles share one model family.
 	SingleFamily bool
-	// Required roles lacking an authenticated capable profile when status is
-	// unconfigured or missing_capability.
+	// Requested roles lacking an authenticated capable profile when status is
+	// unconfigured (with builder scopes supplied) or missing_capability; omitted
+	// on solo previews with no builder scopes.
 	MissingRoles []string
 	// Plain-English summary of the proposed swarm roster and model-family posture.
 	Summary string
@@ -517,7 +528,9 @@ type SwarmPlanItem struct {
 }
 
 // Proposed Chorus agent role assignment derived from server-owned provider
-// profiles and explicit workspace scopes.
+// profiles and explicit workspace scopes. Owned paths and access modes are
+// operator-declared coordination ownership boundaries for Chorus agents, not
+// Surla-enforced OS isolation.
 type SwarmRoleItem struct {
 	// Deterministic Chorus agent handle (without leading '@', at most 32
 	// characters).
@@ -534,9 +547,10 @@ type SwarmRoleItem struct {
 	Model string
 	// Canonical model family identifier.
 	Family string
-	// Repository or workspace path globs owned by this role.
+	// Repository or workspace path globs owned by this role for Chorus
+	// coordination.
 	OwnedPaths []string
-	// Workspace access boundary required of the job runner.
+	// Operator-declared workspace coordination boundary for this role.
 	AccessMode string
 }
 
@@ -1656,8 +1670,16 @@ type jsonPreviewArchitecturePayloadTransport struct {
 	RequestRevision *string `json:"request_revision"`
 	// Candidate module whose Goa and Goa-AI design is evaluated.
 	Design *jsonDesignSnapshotTransport `json:"design"`
-	// Optional explicit builder path scopes for proposing the Chorus build roster.
+	// Optional explicit builder path scopes for proposing a Chorus build roster.
+	// When omitted, preview_architecture returns a solo preview with swarm.status
+	// unconfigured and no missing_roles.
 	Builders []*jsonBuilderScopeItemTransport `json:"builders,omitempty"`
+	// Optional repository-relative path globs for an @architect role in the
+	// proposed Chorus roster (requires builders).
+	ArchitectPaths []string `json:"architect_paths,omitempty"`
+	// Optional repository or evaluator-workspace relative path globs for an
+	// @eval-author role in the proposed Chorus roster (requires builders).
+	EvalPaths []string `json:"eval_paths,omitempty"`
 }
 
 // validatejsonPreviewArchitecturePayloadTransport checks decoded JSON before it becomes a service value.
@@ -1795,13 +1817,15 @@ type jsonSwarmPlanItemTransport struct {
 	// True if and only if status is configured and the reviewer model family is
 	// disjoint from every assigned builder model family.
 	CrossFamilyReview *bool `json:"cross_family_review"`
-	// True if and only if status is configured and the eval_author model family is
-	// disjoint from every assigned builder model family.
+	// True if and only if status is configured, an eval_author role is assigned,
+	// and the eval_author model family is disjoint from every assigned builder
+	// model family.
 	CrossFamilyEval *bool `json:"cross_family_eval"`
 	// True when status is configured and all assigned roles share one model family.
 	SingleFamily *bool `json:"single_family"`
-	// Required roles lacking an authenticated capable profile when status is
-	// unconfigured or missing_capability.
+	// Requested roles lacking an authenticated capable profile when status is
+	// unconfigured (with builder scopes supplied) or missing_capability; omitted
+	// on solo previews with no builder scopes.
 	MissingRoles []string `json:"missing_roles,omitempty"`
 	// Plain-English summary of the proposed swarm roster and model-family posture.
 	Summary *string `json:"summary"`
@@ -1865,9 +1889,10 @@ type jsonSwarmRoleItemTransport struct {
 	Model *string `json:"model"`
 	// Canonical model family identifier.
 	Family *string `json:"family"`
-	// Repository or workspace path globs owned by this role.
+	// Repository or workspace path globs owned by this role for Chorus
+	// coordination.
 	OwnedPaths []string `json:"owned_paths"`
-	// Workspace access boundary required of the job runner.
+	// Operator-declared workspace coordination boundary for this role.
 	AccessMode *string `json:"access_mode"`
 }
 
@@ -5271,6 +5296,18 @@ func EncodePreviewArchitecturePayload(in *PreviewArchitecturePayload) ([]byte, e
 				body.Builders[i] = encodeBuilderScopeItemToBuilderScopeItemTransport(val)
 			}
 		}
+		if in.ArchitectPaths != nil {
+			body.ArchitectPaths = make([]string, len(in.ArchitectPaths))
+			for i, val := range in.ArchitectPaths {
+				body.ArchitectPaths[i] = val
+			}
+		}
+		if in.EvalPaths != nil {
+			body.EvalPaths = make([]string, len(in.EvalPaths))
+			for i, val := range in.EvalPaths {
+				body.EvalPaths[i] = val
+			}
+		}
 	}
 	if err := validatejsonPreviewArchitecturePayloadTransport(body); err != nil {
 		return nil, fmt.Errorf("validate PreviewArchitecturePayload JSON: %w", err)
@@ -5312,6 +5349,18 @@ func ValidatePreviewArchitecturePayloadValue(in *PreviewArchitecturePayload) err
 					continue
 				}
 				body.Builders[i] = encodeBuilderScopeItemToBuilderScopeItemTransport(val)
+			}
+		}
+		if in.ArchitectPaths != nil {
+			body.ArchitectPaths = make([]string, len(in.ArchitectPaths))
+			for i, val := range in.ArchitectPaths {
+				body.ArchitectPaths[i] = val
+			}
+		}
+		if in.EvalPaths != nil {
+			body.EvalPaths = make([]string, len(in.EvalPaths))
+			for i, val := range in.EvalPaths {
+				body.EvalPaths[i] = val
 			}
 		}
 	}
@@ -5359,6 +5408,18 @@ func DecodePreviewArchitecturePayload(data []byte) (out *PreviewArchitecturePayl
 					continue
 				}
 				out.Builders[i] = decodeBuilderScopeItemTransportToBuilderScopeItem(val)
+			}
+		}
+		if body.ArchitectPaths != nil {
+			out.ArchitectPaths = make([]string, len(body.ArchitectPaths))
+			for i, val := range body.ArchitectPaths {
+				out.ArchitectPaths[i] = val
+			}
+		}
+		if body.EvalPaths != nil {
+			out.EvalPaths = make([]string, len(body.EvalPaths))
+			for i, val := range body.EvalPaths {
+				out.EvalPaths[i] = val
 			}
 		}
 	}
@@ -8764,7 +8825,7 @@ func validateArchitecturePreviewResultJSONValue13(path string, value any, descri
 		case "cross_family_eval":
 			if err := validateAgentPolicyItemJSONValue3(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "True if and only if status is configured and the eval_author model family is disjoint from every assigned builder model family.",
+				typed[key], "True if and only if status is configured, an eval_author role is assigned, and the eval_author model family is disjoint from every assigned builder model family.",
 			); err != nil {
 				return err
 			}
@@ -8785,7 +8846,7 @@ func validateArchitecturePreviewResultJSONValue13(path string, value any, descri
 		case "missing_roles":
 			if err := validateArchitecturePreviewResultJSONValue3(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Required roles lacking an authenticated capable profile when status is unconfigured or missing_capability.",
+				typed[key], "Requested roles lacking an authenticated capable profile when status is unconfigured (with builder scopes supplied) or missing_capability; omitted on solo previews with no builder scopes.",
 			); err != nil {
 				return err
 			}
@@ -8876,7 +8937,7 @@ func validateArchitecturePreviewResultJSONValue15(path string, value any, descri
 		case "access_mode":
 			if err := validateAgentPolicyItemJSONValue2(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Workspace access boundary required of the job runner.",
+				typed[key], "Operator-declared workspace coordination boundary for this role.",
 			); err != nil {
 				return err
 			}
@@ -8904,7 +8965,7 @@ func validateArchitecturePreviewResultJSONValue15(path string, value any, descri
 		case "owned_paths":
 			if err := validateArchitecturePreviewResultJSONValue16(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Repository or workspace path globs owned by this role.",
+				typed[key], "Repository or workspace path globs owned by this role for Chorus coordination.",
 			); err != nil {
 				return err
 			}
@@ -10730,10 +10791,17 @@ func validatePreviewArchitecturePayloadJSONValue(path string, value any, descrip
 	sort.Strings(keys)
 	for _, key := range keys {
 		switch key {
-		case "builders":
+		case "architect_paths":
 			if err := validatePreviewArchitecturePayloadJSONValue2(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Optional explicit builder path scopes for proposing the Chorus build roster.",
+				typed[key], "Optional repository-relative path globs for an @architect role in the proposed Chorus roster (requires builders).",
+			); err != nil {
+				return err
+			}
+		case "builders":
+			if err := validatePreviewArchitecturePayloadJSONValue3(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Optional explicit builder path scopes for proposing a Chorus build roster. When omitted, preview_architecture returns a solo preview with swarm.status unconfigured and no missing_roles.",
 			); err != nil {
 				return err
 			}
@@ -10751,6 +10819,13 @@ func validatePreviewArchitecturePayloadJSONValue(path string, value any, descrip
 			); err != nil {
 				return err
 			}
+		case "eval_paths":
+			if err := validatePreviewArchitecturePayloadJSONValue4(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Optional repository or evaluator-workspace relative path globs for an @eval-author role in the proposed Chorus roster (requires builders).",
+			); err != nil {
+				return err
+			}
 		case "request_revision":
 			if err := validateAgentPolicyItemJSONValue2(
 				generatedJSONChildPath(path, key, false),
@@ -10760,9 +10835,11 @@ func validatePreviewArchitecturePayloadJSONValue(path string, value any, descrip
 			}
 		default:
 			return unknownJSONFieldError(path, key, []string{
+				"architect_paths",
 				"builders",
 				"change_id",
 				"design",
+				"eval_paths",
 				"request_revision",
 			})
 		}
@@ -10784,10 +10861,58 @@ func validatePreviewArchitecturePayloadJSONValue2(path string, value any, descri
 		return invalidGeneratedFieldTypeError(field, "array", decodedJSONType(value), description)
 	}
 	for index, item := range typed {
+		if err := validateAgentPolicyItemJSONValue2(
+			generatedJSONChildPath(path, strconv.Itoa(index), true),
+			item, description,
+		); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validatePreviewArchitecturePayloadJSONValue3 checks one value whose JSON shape is fixed by the generated Goa type.
+func validatePreviewArchitecturePayloadJSONValue3(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "array", "null", description)
+	}
+	typed, ok := value.([]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "array", decodedJSONType(value), description)
+	}
+	for index, item := range typed {
 		if item == nil {
 			continue
 		}
 		if err := validateBuilderScopeItemJSONValue(
+			generatedJSONChildPath(path, strconv.Itoa(index), true),
+			item, description,
+		); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validatePreviewArchitecturePayloadJSONValue4 checks one value whose JSON shape is fixed by the generated Goa type.
+func validatePreviewArchitecturePayloadJSONValue4(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "array", "null", description)
+	}
+	typed, ok := value.([]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "array", decodedJSONType(value), description)
+	}
+	for index, item := range typed {
+		if err := validateAgentPolicyItemJSONValue2(
 			generatedJSONChildPath(path, strconv.Itoa(index), true),
 			item, description,
 		); err != nil {
@@ -12751,6 +12876,20 @@ func checkPreviewArchitecturePayloadPreviewArchitecturePayloadValue(in *PreviewA
 			_ = item1
 			if err := checkBuilderScopeItemBuilderScopeItemValue(item1, generatedJSONChildPath(generatedJSONChildPath(field, "builders", false), strconv.Itoa(index1), true), active); err != nil {
 				return err
+			}
+		}
+		for index1, item1 := range in.ArchitectPaths {
+			_ = index1
+			_ = item1
+			if !utf8.ValidString(string(item1)) {
+				return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(generatedJSONChildPath(field, "architect_paths", false), strconv.Itoa(index1), true))
+			}
+		}
+		for index1, item1 := range in.EvalPaths {
+			_ = index1
+			_ = item1
+			if !utf8.ValidString(string(item1)) {
+				return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(generatedJSONChildPath(field, "eval_paths", false), strconv.Itoa(index1), true))
 			}
 		}
 	}

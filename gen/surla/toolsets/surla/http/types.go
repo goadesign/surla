@@ -284,8 +284,16 @@ type (
 		RequestRevision *string `json:"request_revision"`
 		// Candidate module whose Goa and Goa-AI design is evaluated.
 		Design *DesignSnapshotTransport `json:"design"`
-		// Optional explicit builder path scopes for proposing the Chorus build roster.
+		// Optional explicit builder path scopes for proposing a Chorus build roster.
+		// When omitted, preview_architecture returns a solo preview with swarm.status
+		// unconfigured and no missing_roles.
 		Builders []*BuilderScopeItemTransport `json:"builders,omitempty"`
+		// Optional repository-relative path globs for an @architect role in the
+		// proposed Chorus roster (requires builders).
+		ArchitectPaths []string `json:"architect_paths,omitempty"`
+		// Optional repository or evaluator-workspace relative path globs for an
+		// @eval-author role in the proposed Chorus roster (requires builders).
+		EvalPaths []string `json:"eval_paths,omitempty"`
 	}
 	// PreviewArchitectureResultTransport is the internal JSON transport type for PreviewArchitectureResult.
 	// It lives in the toolset-local http package and is used only for JSON
@@ -648,13 +656,15 @@ type (
 		// True if and only if status is configured and the reviewer model family is
 		// disjoint from every assigned builder model family.
 		CrossFamilyReview *bool `json:"cross_family_review"`
-		// True if and only if status is configured and the eval_author model family is
-		// disjoint from every assigned builder model family.
+		// True if and only if status is configured, an eval_author role is assigned,
+		// and the eval_author model family is disjoint from every assigned builder
+		// model family.
 		CrossFamilyEval *bool `json:"cross_family_eval"`
 		// True when status is configured and all assigned roles share one model family.
 		SingleFamily *bool `json:"single_family"`
-		// Required roles lacking an authenticated capable profile when status is
-		// unconfigured or missing_capability.
+		// Requested roles lacking an authenticated capable profile when status is
+		// unconfigured (with builder scopes supplied) or missing_capability; omitted
+		// on solo previews with no builder scopes.
 		MissingRoles []string `json:"missing_roles,omitempty"`
 		// Plain-English summary of the proposed swarm roster and model-family posture.
 		Summary *string `json:"summary"`
@@ -682,9 +692,10 @@ type (
 		Model *string `json:"model"`
 		// Canonical model family identifier.
 		Family *string `json:"family"`
-		// Repository or workspace path globs owned by this role.
+		// Repository or workspace path globs owned by this role for Chorus
+		// coordination.
 		OwnedPaths []string `json:"owned_paths"`
-		// Workspace access boundary required of the job runner.
+		// Operator-declared workspace coordination boundary for this role.
 		AccessMode *string `json:"access_mode"`
 	}
 	// ToolContractItemTransport is the internal JSON transport type for ToolContractItemTransport.

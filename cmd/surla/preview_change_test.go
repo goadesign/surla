@@ -170,7 +170,48 @@ func TestRunPreviewChangeEndToEndThroughControlPlane(t *testing.T) {
 		{"name": "orders", "paths": ["internal/orders/**"], "preferred_profile_id": "claude-builder"}
 	]`), 0o600))
 
-	// 1. Confirmed card + -builders produces a ready swarm roster and evaluated C4/policy/tool JSON.
+	// 1a. Confirmed card + -builders alone produces a 2-role (@builder-orders + @reviewer) roster.
+	var stdout2Role bytes.Buffer
+	err = runPreviewChange(
+		[]string{
+			"-server", srv.URL,
+			"-change-id", card.ChangeID,
+			"-request-revision", card.RequestRevision,
+			"-dir", modDir,
+			"-builders", buildersPath,
+		},
+		&stdout2Role,
+		func(k string) string {
+			if k == "SURLA_AUTH_TOKEN" {
+				return "alice-token"
+			}
+			return ""
+		},
+	)
+	require.NoError(t, err)
+	var got2Role struct {
+		Swarm struct {
+			Status            string `json:"status"`
+			CrossFamilyReview bool   `json:"cross_family_review"`
+			CrossFamilyEval   bool   `json:"cross_family_eval"`
+			Manifest          string `json:"manifest"`
+			Assignments       []struct {
+				Role       string   `json:"role"`
+				Handle     string   `json:"handle"`
+				OwnedPaths []string `json:"owned_paths"`
+			} `json:"assignments"`
+		} `json:"swarm"`
+	}
+	require.NoError(t, json.Unmarshal(stdout2Role.Bytes(), &got2Role))
+	assert.Equal(t, string(swarm.StatusConfigured), got2Role.Swarm.Status)
+	assert.True(t, got2Role.Swarm.CrossFamilyReview)
+	assert.False(t, got2Role.Swarm.CrossFamilyEval)
+	assert.Contains(t, got2Role.Swarm.Manifest, "eval-author not assigned")
+	require.Len(t, got2Role.Swarm.Assignments, 2)
+	assert.Equal(t, "builder", got2Role.Swarm.Assignments[0].Role)
+	assert.Equal(t, "reviewer", got2Role.Swarm.Assignments[1].Role)
+
+	// 1b. Confirmed card + -builders + repeatable -architect-path and -eval-path (preserving commas and spaces verbatim) produces a full 4-role roster.
 	var stdout bytes.Buffer
 	err = runPreviewChange(
 		[]string{
@@ -179,6 +220,9 @@ func TestRunPreviewChangeEndToEndThroughControlPlane(t *testing.T) {
 			"-request-revision", card.RequestRevision,
 			"-dir", modDir,
 			"-builders", buildersPath,
+			"-architect-path", "design/**",
+			"-eval-path", "*-eval/**",
+			"-eval-path", " eval/a,b/**",
 		},
 		&stdout,
 		func(k string) string {
@@ -214,9 +258,10 @@ func TestRunPreviewChangeEndToEndThroughControlPlane(t *testing.T) {
 			CrossFamilyEval   bool   `json:"cross_family_eval"`
 			Manifest          string `json:"manifest"`
 			Assignments       []struct {
-				Role      string `json:"role"`
-				Handle    string `json:"handle"`
-				ProfileID string `json:"profile_id"`
+				Role       string   `json:"role"`
+				Handle     string   `json:"handle"`
+				ProfileID  string   `json:"profile_id"`
+				OwnedPaths []string `json:"owned_paths"`
 			} `json:"assignments"`
 		} `json:"swarm"`
 	}
@@ -239,8 +284,9 @@ func TestRunPreviewChangeEndToEndThroughControlPlane(t *testing.T) {
 	assert.True(t, got.Swarm.CrossFamilyEval)
 	assert.Contains(t, got.Swarm.Manifest, "@builder-orders")
 	require.Len(t, got.Swarm.Assignments, 4)
+	assert.Equal(t, []string{" eval/a,b/**", "*-eval/**"}, got.Swarm.Assignments[2].OwnedPaths)
 
-	// 2. Omitting -builders when profiles are configured returns an unconfigured roster missing "builder".
+	// 2. Omitting -builders when profiles are configured returns a solo unconfigured roster with no missing_roles.
 	stdout.Reset()
 	require.NoError(t, run(
 		[]string{
@@ -257,11 +303,13 @@ func TestRunPreviewChangeEndToEndThroughControlPlane(t *testing.T) {
 		Swarm struct {
 			Status       string   `json:"status"`
 			MissingRoles []string `json:"missing_roles"`
+			Summary      string   `json:"summary"`
 		} `json:"swarm"`
 	}
 	require.NoError(t, json.Unmarshal(stdout.Bytes(), &withoutBuilders))
 	assert.Equal(t, string(swarm.StatusUnconfigured), withoutBuilders.Swarm.Status)
-	assert.Equal(t, []string{"builder"}, withoutBuilders.Swarm.MissingRoles)
+	assert.Empty(t, withoutBuilders.Swarm.MissingRoles)
+	assert.Contains(t, withoutBuilders.Swarm.Summary, "Swarm roster: off (solo workflow")
 
 	// 3. Wrong bearer token, wrong principal, missing card, unconfirmed card, and stale request_revision fail without retries.
 	unconfirmedCard, err := cp.ProposeChange(aliceCtx, &gensurla.ProposeChangePayload{
@@ -633,6 +681,40 @@ func TestParsePreviewChangeFlagsAndServerOrigin(t *testing.T) {
 				"-auth-token", "tok",
 			},
 			wantErr: "-request-revision must be valid UTF-8",
+		},
+		{
+			name: "architect-path without builders",
+			args: []string{
+				"-server", "http://127.0.0.1:8090",
+				"-change-id", "vip",
+				"-request-revision", "rev",
+				"-auth-token", "tok",
+				"-architect-path", "design/**",
+			},
+			wantErr: "-architect-path and -eval-path require -builders",
+		},
+		{
+			name: "eval-path without builders",
+			args: []string{
+				"-server", "http://127.0.0.1:8090",
+				"-change-id", "vip",
+				"-request-revision", "rev",
+				"-auth-token", "tok",
+				"-eval-path", "eval/**",
+			},
+			wantErr: "-architect-path and -eval-path require -builders",
+		},
+		{
+			name: "invalid UTF-8 in architect-path",
+			args: []string{
+				"-server", "http://127.0.0.1:8090",
+				"-change-id", "vip",
+				"-request-revision", "rev",
+				"-auth-token", "tok",
+				"-builders", "builders.json",
+				"-architect-path", "design/\xff",
+			},
+			wantErr: "path must be valid UTF-8",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

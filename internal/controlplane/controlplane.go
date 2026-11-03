@@ -707,7 +707,14 @@ func (c *ControlPlane) PreviewArchitecture(ctx context.Context, p *gensurla.Prev
 	}
 
 	designDigest := designeval.SnapshotDigest(p.Design.Files)
-	swarmItem, err := planSwarmRoster(p.ChangeID, designDigest, c.swarmProfiles, p.Builders)
+	swarmItem, err := planSwarmRoster(
+		p.ChangeID,
+		designDigest,
+		c.swarmProfiles,
+		p.Builders,
+		p.ArchitectPaths,
+		p.EvalPaths,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -874,11 +881,13 @@ func reportProgress(ctx context.Context, value, total float64, message string) e
 }
 
 // planSwarmRoster invokes swarm.Plan over server-owned provider profiles and
-// explicit builder path scopes and projects the result into a gensurla.SwarmPlanItem.
+// explicit workspace path scopes and projects the result into a
+// gensurla.SwarmPlanItem.
 func planSwarmRoster(
 	changeID, designDigest string,
 	profiles []swarm.ProviderProfile,
 	in []*gensurla.BuilderScopeItem,
+	architectPaths, evalPaths []string,
 ) (*gensurla.SwarmPlanItem, error) {
 	builders := make([]swarm.BuilderScope, 0, len(in))
 	for i, item := range in {
@@ -896,10 +905,12 @@ func planSwarmRoster(
 		})
 	}
 	plan, err := swarm.Plan(swarm.Request{
-		ChangeID:     changeID,
-		DesignDigest: designDigest,
-		Profiles:     profiles,
-		Builders:     builders,
+		ChangeID:       changeID,
+		DesignDigest:   designDigest,
+		Profiles:       profiles,
+		ArchitectPaths: architectPaths,
+		Builders:       builders,
+		EvalPaths:      evalPaths,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("plan swarm roster: %w", err)
