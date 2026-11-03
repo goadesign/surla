@@ -49,12 +49,12 @@ export function C4GraphSVG({
   const boxW = 210;
   const boxH = 54;
   const rowStep = 76;
-  const posById: Record<string, NodePosition> = {};
+  const posById = new Map<string, NodePosition>();
 
   containers.forEach((c) => {
     const col = columnForKind(c.kind);
     const row = colRows[col]++;
-    posById[c.id] = {
+    posById.set(c.id, {
       id: c.id,
       name: c.name,
       kind: c.kind,
@@ -62,13 +62,13 @@ export function C4GraphSVG({
       row,
       x: colX[col],
       y: 24 + row * rowStep,
-    };
+    });
   });
 
   const maxRows = Math.max(1, colRows[0], colRows[1], colRows[2]);
   const svgWidth = 840;
   const svgHeight = Math.max(140, maxRows * rowStep + 36);
-  const pairCounts: Record<string, number> = {};
+  const pairCounts = new Map<string, number>();
 
   return (
     <div
@@ -105,15 +105,15 @@ export function C4GraphSVG({
           </marker>
         </defs>
         {edges.map((e, idx) => {
-          const src = posById[e.from_id];
-          const dst = posById[e.to_id];
+          const src = posById.get(e.from_id);
+          const dst = posById.get(e.to_id);
           if (!src || !dst) {
             return null;
           }
           const pairKey =
             e.from_id < e.to_id ? e.from_id + "::" + e.to_id : e.to_id + "::" + e.from_id;
-          const seen = pairCounts[pairKey] || 0;
-          pairCounts[pairKey] = seen + 1;
+          const seen = pairCounts.get(pairKey) || 0;
+          pairCounts.set(pairKey, seen + 1);
           const curveOffset = (seen % 2 === 0 ? 1 : -1) * (12 + seen * 10);
 
           let pathD = "";
@@ -192,7 +192,10 @@ export function C4GraphSVG({
           );
         })}
         {containers.map((c) => {
-          const pos = posById[c.id];
+          const pos = posById.get(c.id);
+          if (!pos) {
+            return null;
+          }
           return (
             <g
               key={c.id}

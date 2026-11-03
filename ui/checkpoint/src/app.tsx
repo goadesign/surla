@@ -93,24 +93,24 @@ function formatChangedDraftLines(ed: ActiveEditorState): string[] {
   const ambiguities = Array.isArray(ed.card.ambiguities) ? ed.card.ambiguities : [];
   const savedAnswers = isPlainObject(ed.card.answers) ? ed.card.answers : {};
   const draftAnswers = ed.draftAnswers || {};
-  const questionByID: Record<string, string> = {};
+  const questionByID = new Map<string, string>();
   const answerIDs: string[] = [];
-  const seenIDs: Record<string, boolean> = {};
+  const seenIDs = new Set<string>();
   for (let i = 0; i < ambiguities.length; i++) {
     const amb = ambiguities[i];
     if (amb && typeof amb.id === "string") {
       if (typeof amb.question === "string") {
-        questionByID[amb.id] = amb.question;
+        questionByID.set(amb.id, amb.question);
       }
-      if (!seenIDs[amb.id]) {
-        seenIDs[amb.id] = true;
+      if (!seenIDs.has(amb.id)) {
+        seenIDs.add(amb.id);
         answerIDs.push(amb.id);
       }
     }
   }
   for (const k of Object.keys(savedAnswers).concat(Object.keys(draftAnswers))) {
-    if (!seenIDs[k]) {
-      seenIDs[k] = true;
+    if (!seenIDs.has(k)) {
+      seenIDs.add(k);
       answerIDs.push(k);
     }
   }
@@ -118,10 +118,14 @@ function formatChangedDraftLines(ed: ActiveEditorState): string[] {
   const lines: string[] = [];
   for (let i = 0; i < answerIDs.length; i++) {
     const k = answerIDs[i];
-    const savedVal = savedAnswers[k] || "";
-    const draftVal = draftAnswers[k] || "";
+    const savedVal = Object.prototype.hasOwnProperty.call(savedAnswers, k)
+      ? savedAnswers[k]
+      : "";
+    const draftVal = Object.prototype.hasOwnProperty.call(draftAnswers, k)
+      ? draftAnswers[k]
+      : "";
     if (draftVal !== savedVal) {
-      const q = questionByID[k];
+      const q = questionByID.get(k);
       lines.push("[" + rev + "] " + k + (q ? " (" + q + ")" : "") + "=" + draftVal);
     }
   }
@@ -299,7 +303,7 @@ export function bootstrapCheckpointApp() {
 
   let initPending = false;
   let nextRequestId = 2;
-  const pendingRequests: Record<string, PendingRPC> = {};
+  const pendingRequests = new Map<string, PendingRPC>();
   // editorRequest completes after the current card request updates the view.
   // CP3 waits for it; independent verification reads do not block editing.
   let editorRequest: Promise<void> | null = null;
@@ -312,16 +316,33 @@ export function bootstrapCheckpointApp() {
   let diffState: DiffResult | null = null;
   let draftOverrideState: DraftOverrideResult | null = null;
   let liveTargetState: LiveTargetResult | StopLiveTargetResult | null = null;
-  let selectedCP3Kind: "cp3-draft-override" | "cp3-live-target" = "cp3-draft-override";
-  const runsById: Record<string, VerificationStatusResult> = {};
-  const lastLoadedListByChangeId: Record<string, string[]> = {};
+  const runsById = new Map<string, VerificationStatusResult>();
+  const lastLoadedListByChangeId = new Map<string, string[]>();
   let selectedVerificationChangeId: string | null = null;
   let selectedRunId: string | null = null;
-  const selectionTouchedDuringList: Record<string, boolean> = {};
-  const runRequestErrors: Record<string, string> = {};
-  const listRequestErrors: Record<string, string> = {};
-  let cardLoadError: string | null = null;
+  const selectionTouchedDuringList = new Map<string, boolean>();
+  const runRequestErrors = new Map<string, string>();
+  const listRequestErrors = new Map<string, string>();
+  const cardLoadErrors = new Map<string, string>();
+  let viewTransitionSeq = 0;
   let activeResult: ActiveResultState | null = null;
+
+  // isViewingChangeResult reports whether the active result view currently
+  // displays a CP2 preview or CP4 verification view for changeId.
+  function isViewingChangeResult(changeId: string): boolean {
+    if (activeResult?.kind === "cp2-architecture-preview") {
+      return previewState !== null && previewState.change_id === changeId;
+    }
+    if (activeResult?.kind === "cp4-verification") {
+      const displayedRun =
+        selectedRunId !== null ? runsById.get(selectedRunId) ?? null : null;
+      const effectiveId = displayedRun
+        ? displayedRun.change_id
+        : selectedVerificationChangeId || "";
+      return effectiveId === changeId;
+    }
+    return false;
+  }
 
   // hasUnsavedEditorState identifies work that a different checkpoint must
   // leave available for the user to recover or continue editing.
@@ -413,6 +434,7 @@ export function bootstrapCheckpointApp() {
           if (!previewState) {
             return;
           }
+          viewTransitionSeq++;
           editorOpen = shouldRetainEditor();
           activeResult = { kind: "cp2-architecture-preview" };
           rootEl.dataset.state = "cp2-architecture-preview";
@@ -431,6 +453,7 @@ export function bootstrapCheckpointApp() {
           if (!diffState) {
             return;
           }
+          viewTransitionSeq++;
           editorOpen = shouldRetainEditor();
           activeResult = { kind: "cp2-diff" };
           rootEl.dataset.state = "cp2-diff";
@@ -449,17 +472,15 @@ export function bootstrapCheckpointApp() {
           activeResult?.kind === "cp3-draft-override" ||
           activeResult?.kind === "cp3-live-target",
         onClick: () => {
+          viewTransitionSeq++;
           editorOpen = shouldRetainEditor();
-          if (selectedCP3Kind === "cp3-live-target" && liveTargetState !== null) {
-            activeResult = { kind: "cp3-live-target" };
-            rootEl.dataset.state = "cp3-live-target";
-            statusEl.textContent = isLiveTargetResult(liveTargetState)
-              ? "Showing the running CP3 live target."
-              : "Showing the stopped CP3 live target.";
-          } else if (draftOverrideState !== null) {
+          if (draftOverrideState !== null) {
             activeResult = { kind: "cp3-draft-override" };
             rootEl.dataset.state = "cp3-draft-override";
-            statusEl.textContent = "Showing Fast Draft prompt and rule update.";
+            statusEl.textContent =
+              liveTargetState !== null
+                ? "Showing CP3 live target and Fast Draft prompt update."
+                : "Showing Fast Draft prompt and rule update.";
           } else if (liveTargetState !== null) {
             activeResult = { kind: "cp3-live-target" };
             rootEl.dataset.state = "cp3-live-target";
@@ -480,6 +501,7 @@ export function bootstrapCheckpointApp() {
           if (!selectedVerificationChangeId) {
             return;
           }
+          viewTransitionSeq++;
           editorOpen = shouldRetainEditor();
           activeResult = { kind: "cp4-verification" };
           rootEl.dataset.state = "cp4-verification";
@@ -552,6 +574,7 @@ export function bootstrapCheckpointApp() {
             if (!activeEditor || editorRequest !== null) {
               return;
             }
+            viewTransitionSeq++;
             activeEditor = {
               ...activeEditor,
               draftAnswers: { ...activeEditor.draftAnswers, [ambId]: opt },
@@ -562,6 +585,7 @@ export function bootstrapCheckpointApp() {
             if (!activeEditor || editorRequest !== null) {
               return;
             }
+            viewTransitionSeq++;
             activeEditor = {
               ...activeEditor,
               draftExamples: activeEditor.draftExamples.map((item) =>
@@ -607,7 +631,7 @@ export function bootstrapCheckpointApp() {
             preview={preview}
             loadedCard={activeEditor ? activeEditor.card : null}
             loadingCard={editorRequest !== null}
-            cardLoadError={cardLoadError}
+            cardLoadError={cardLoadErrors.get(preview.change_id) ?? null}
             onOpenChangeCard={() => handleOpenChangeCard(preview.change_id)}
           />
         );
@@ -621,42 +645,36 @@ export function bootstrapCheckpointApp() {
         });
         return;
       }
-      resultRegionEl.dataset.hasChanges = String(diffState.has_changes);
+      const diff = diffState;
+      resultRegionEl.dataset.hasChanges = String(diff.has_changes);
       flushSync(() => {
-        resultRoot.render(<DiffResultView diff={diffState} />);
+        resultRoot.render(<DiffResultView diff={diff} />);
       });
       return;
     }
-    if (res.kind === "cp3-draft-override") {
-      if (!draftOverrideState) {
+    if (res.kind === "cp3-draft-override" || res.kind === "cp3-live-target") {
+      const draft = draftOverrideState;
+      const liveTarget = liveTargetState;
+      if (!draft && !liveTarget) {
         flushSync(() => {
           resultRoot.render(null);
         });
         return;
       }
       flushSync(() => {
-        resultRoot.render(<DraftOverrideView draft={draftOverrideState} />);
-      });
-      return;
-    }
-    if (res.kind === "cp3-live-target") {
-      if (!liveTargetState) {
-        flushSync(() => {
-          resultRoot.render(null);
-        });
-        return;
-      }
-      flushSync(() => {
-        resultRoot.render(<LiveTargetView result={liveTargetState} />);
+        resultRoot.render(
+          <>
+            {liveTarget ? <LiveTargetView result={liveTarget} /> : null}
+            {draft ? <DraftOverrideView draft={draft} /> : null}
+          </>
+        );
       });
       return;
     }
     if (res.kind === "cp4-verification") {
       const changeId = selectedVerificationChangeId || "";
       const displayedRun =
-        selectedRunId !== null && runsById[selectedRunId]
-          ? runsById[selectedRunId]
-          : null;
+        selectedRunId !== null ? runsById.get(selectedRunId) ?? null : null;
       if (displayedRun) {
         resultRegionEl.dataset.runId = displayedRun.run_id;
         resultRegionEl.dataset.changeId = displayedRun.change_id;
@@ -665,14 +683,13 @@ export function bootstrapCheckpointApp() {
         resultRegionEl.dataset.changeId = changeId;
       }
       const effectiveChangeId = displayedRun ? displayedRun.change_id : changeId;
-      const listedRuns = Object.prototype.hasOwnProperty.call(
-        lastLoadedListByChangeId,
-        effectiveChangeId
-      )
-        ? lastLoadedListByChangeId[effectiveChangeId]
-            .map((id) => runsById[id])
-            .filter((r): r is VerificationStatusResult => Boolean(r))
-        : null;
+      const listedIds = lastLoadedListByChangeId.get(effectiveChangeId);
+      const listedRuns =
+        listedIds !== undefined
+          ? listedIds
+              .map((id) => runsById.get(id))
+              .filter((r): r is VerificationStatusResult => Boolean(r))
+          : null;
       flushSync(() => {
         resultRoot.render(
           <VerificationView
@@ -683,9 +700,11 @@ export function bootstrapCheckpointApp() {
             checking={displayedRun ? hasPendingVerification(displayedRun.run_id) : false}
             loadingList={hasPendingListVerifications(effectiveChangeId)}
             loadingCard={editorRequest !== null}
-            requestError={displayedRun ? runRequestErrors[displayedRun.run_id] ?? null : null}
-            listError={listRequestErrors[effectiveChangeId] ?? null}
-            cardLoadError={cardLoadError}
+            requestError={displayedRun ? runRequestErrors.get(displayedRun.run_id) ?? null : null}
+            listError={listRequestErrors.get(effectiveChangeId) ?? null}
+            cardLoadError={
+              effectiveChangeId ? cardLoadErrors.get(effectiveChangeId) ?? null : null
+            }
             onCheckStatus={handleCheckVerificationStatus}
             onLoadVerifications={() => handleListVerifications(effectiveChangeId)}
             onSelectRun={handleSelectVerificationRun}
@@ -709,6 +728,7 @@ export function bootstrapCheckpointApp() {
                   "Wait for the pending CP1 Change Card request to finish before switching cards.";
                 return;
               }
+              viewTransitionSeq++;
               const preserved = activeEditor ? snapshotUnsavedDraft(activeEditor) : null;
               const prior = nextPriorCard(activeEditor, res.card);
               activeResult = null;
@@ -780,7 +800,7 @@ export function bootstrapCheckpointApp() {
     const reqId = nextRequestId++;
     const params = { name: toolName, arguments: args };
     const completion = new Promise<void>((complete) => {
-      pendingRequests[String(reqId)] = {
+      pendingRequests.set(String(reqId), {
         params,
         onResult: (payload) => {
           if (validateFn(payload)) {
@@ -796,7 +816,7 @@ export function bootstrapCheckpointApp() {
           syncAllRegions();
           complete();
         },
-      };
+      });
     });
     onStart(completion);
     window.parent.postMessage(
@@ -841,41 +861,49 @@ export function bootstrapCheckpointApp() {
   // hasPendingVerification derives a button's waiting state from the original
   // calls already awaiting a host reply, without a second map or status flag.
   function hasPendingVerification(runID: string): boolean {
-    return Object.values(pendingRequests).some(
-      (request) =>
+    for (const request of pendingRequests.values()) {
+      if (
         request.params.name === "get_verification" &&
         request.params.arguments.run_id === runID
-    );
+      ) {
+        return true;
+      }
+    }
+    return false;
   }
 
   // hasPendingListVerifications reports whether a list_verifications request
   // is currently in flight for changeId.
   function hasPendingListVerifications(changeId: string): boolean {
-    return Object.values(pendingRequests).some(
-      (request) =>
+    for (const request of pendingRequests.values()) {
+      if (
         request.params.name === "list_verifications" &&
         request.params.arguments.change_id === changeId
-    );
+      ) {
+        return true;
+      }
+    }
+    return false;
   }
 
-  // upsertRunSnapshot stores run in runsById unless runsById[run.run_id]
+  // upsertRunSnapshot stores run in runsById unless runsById.get(run.run_id)
   // already holds a terminal state (state.type !== "running").
   function upsertRunSnapshot(run: VerificationStatusResult): VerificationStatusResult {
-    const existing = runsById[run.run_id];
+    const existing = runsById.get(run.run_id);
     if (existing && existing.state.type !== "running") {
       return existing;
     }
-    runsById[run.run_id] = run;
+    runsById.set(run.run_id, run);
     return run;
   }
 
   // displayVerification stores and selects one verification run snapshot.
   function displayVerification(run: VerificationStatusResult) {
     if (hasPendingListVerifications(run.change_id)) {
-      selectionTouchedDuringList[run.change_id] = true;
+      selectionTouchedDuringList.set(run.change_id, true);
     }
     const shown = upsertRunSnapshot(run);
-    delete runRequestErrors[shown.run_id];
+    runRequestErrors.delete(shown.run_id);
     selectedVerificationChangeId = shown.change_id;
     selectedRunId = shown.run_id;
     activeResult = { kind: "cp4-verification" };
@@ -884,12 +912,13 @@ export function bootstrapCheckpointApp() {
 
   // handleSelectVerificationRun switches the displayed run inside CP4.
   function handleSelectVerificationRun(runId: string) {
-    const target = runsById[runId];
+    const target = runsById.get(runId);
     if (!target) {
       return;
     }
+    viewTransitionSeq++;
     if (hasPendingListVerifications(target.change_id)) {
-      selectionTouchedDuringList[target.change_id] = true;
+      selectionTouchedDuringList.set(target.change_id, true);
     }
     selectedVerificationChangeId = target.change_id;
     selectedRunId = target.run_id;
@@ -906,13 +935,13 @@ export function bootstrapCheckpointApp() {
     if (
       activeResult?.kind !== "cp4-verification" ||
       selectedRunId === null ||
-      !runsById[selectedRunId] ||
+      !runsById.has(selectedRunId) ||
       hasPendingVerification(selectedRunId)
     ) {
       return;
     }
     const runID = selectedRunId;
-    delete runRequestErrors[runID];
+    runRequestErrors.delete(runID);
     callHostTool(
       "get_verification",
       { run_id: runID },
@@ -920,14 +949,14 @@ export function bootstrapCheckpointApp() {
       (run) => {
         if (run.run_id !== runID) {
           if (activeResult?.kind === "cp4-verification" && selectedRunId === runID) {
-            runRequestErrors[runID] = "The host returned a different verification run.";
+            runRequestErrors.set(runID, "The host returned a different verification run.");
             statusEl.textContent =
               "Could not check verification status; the last result is preserved.";
           }
           return;
         }
         upsertRunSnapshot(run);
-        delete runRequestErrors[runID];
+        runRequestErrors.delete(runID);
         if (activeResult?.kind === "cp4-verification" && selectedRunId === runID) {
           statusEl.textContent = "Showing the saved verification result.";
         }
@@ -936,7 +965,7 @@ export function bootstrapCheckpointApp() {
         if (activeResult?.kind !== "cp4-verification" || selectedRunId !== runID) {
           return;
         }
-        runRequestErrors[runID] = message;
+        runRequestErrors.set(runID, message);
         statusEl.textContent =
           "Could not check verification status; the last result is preserved.";
       },
@@ -950,15 +979,18 @@ export function bootstrapCheckpointApp() {
     if (!requestedChangeId || hasPendingListVerifications(requestedChangeId)) {
       return;
     }
-    selectionTouchedDuringList[requestedChangeId] = false;
-    delete listRequestErrors[requestedChangeId];
-    cardLoadError = null;
+    viewTransitionSeq++;
+    selectionTouchedDuringList.set(requestedChangeId, false);
+    listRequestErrors.delete(requestedChangeId);
     if (!shouldRetainEditor()) {
       editorOpen = false;
     }
     selectedVerificationChangeId = requestedChangeId;
-    if (selectedRunId !== null && runsById[selectedRunId]?.change_id !== requestedChangeId) {
-      const prevList = lastLoadedListByChangeId[requestedChangeId];
+    if (
+      selectedRunId !== null &&
+      runsById.get(selectedRunId)?.change_id !== requestedChangeId
+    ) {
+      const prevList = lastLoadedListByChangeId.get(requestedChangeId);
       selectedRunId = prevList && prevList.length > 0 ? prevList[0] : null;
     }
     activeResult = { kind: "cp4-verification" };
@@ -970,11 +1002,11 @@ export function bootstrapCheckpointApp() {
       { change_id: requestedChangeId },
       isVerificationListResult,
       (payload) => {
-        const touched = Boolean(selectionTouchedDuringList[requestedChangeId]);
-        delete selectionTouchedDuringList[requestedChangeId];
+        const touched = Boolean(selectionTouchedDuringList.get(requestedChangeId));
+        selectionTouchedDuringList.delete(requestedChangeId);
         const mismatchErr = validateVerificationListPayload(payload, requestedChangeId);
         if (mismatchErr !== null) {
-          listRequestErrors[requestedChangeId] = mismatchErr;
+          listRequestErrors.set(requestedChangeId, mismatchErr);
           if (
             activeResult?.kind === "cp4-verification" &&
             selectedVerificationChangeId === requestedChangeId
@@ -987,8 +1019,8 @@ export function bootstrapCheckpointApp() {
           upsertRunSnapshot(payload.runs[i]);
         }
         const loadedIds = payload.runs.map((r) => r.run_id);
-        lastLoadedListByChangeId[requestedChangeId] = loadedIds;
-        delete listRequestErrors[requestedChangeId];
+        lastLoadedListByChangeId.set(requestedChangeId, loadedIds);
+        listRequestErrors.delete(requestedChangeId);
 
         if (
           activeResult?.kind === "cp4-verification" &&
@@ -997,7 +1029,7 @@ export function bootstrapCheckpointApp() {
           if (
             touched &&
             selectedRunId !== null &&
-            runsById[selectedRunId]?.change_id === requestedChangeId
+            runsById.get(selectedRunId)?.change_id === requestedChangeId
           ) {
             // Preserve the run explicitly selected or notified during the list read.
           } else if (selectedRunId !== null && loadedIds.includes(selectedRunId)) {
@@ -1012,8 +1044,8 @@ export function bootstrapCheckpointApp() {
         }
       },
       (message) => {
-        delete selectionTouchedDuringList[requestedChangeId];
-        listRequestErrors[requestedChangeId] = message;
+        selectionTouchedDuringList.delete(requestedChangeId);
+        listRequestErrors.set(requestedChangeId, message);
         if (
           activeResult?.kind === "cp4-verification" &&
           selectedVerificationChangeId === requestedChangeId
@@ -1030,7 +1062,8 @@ export function bootstrapCheckpointApp() {
     if (!activeEditor) {
       return;
     }
-    cardLoadError = null;
+    viewTransitionSeq++;
+    cardLoadErrors.delete(activeEditor.card.change_id);
     editorOpen = true;
     activeResult = null;
     rootEl.dataset.state = "cp1-change-card";
@@ -1047,7 +1080,8 @@ export function bootstrapCheckpointApp() {
   }
 
   // handleOpenChangeCard loads requestedChangeId via get_change when not
-  // already loaded in activeEditor, preserving any unsaved draft on a prior card.
+  // already loaded in activeEditor, correlating completion and error to
+  // requestedChangeId and preserving any subsequent navigation or dirty draft.
   function handleOpenChangeCard(requestedChangeId: string) {
     if (!requestedChangeId || editorRequest !== null) {
       return;
@@ -1056,7 +1090,8 @@ export function bootstrapCheckpointApp() {
       handleReturnToChangeCard();
       return;
     }
-    cardLoadError = null;
+    cardLoadErrors.delete(requestedChangeId);
+    const requestSeq = viewTransitionSeq;
     statusEl.textContent = "Loading Change Card " + requestedChangeId + "...";
     callEditorTool(
       "get_change",
@@ -1064,24 +1099,34 @@ export function bootstrapCheckpointApp() {
       isChangeCardResult,
       (loadedCard) => {
         if (loadedCard.change_id !== requestedChangeId) {
-          cardLoadError =
+          cardLoadErrors.set(
+            requestedChangeId,
             "The host returned Change Card " +
-            loadedCard.change_id +
-            " instead of " +
-            requestedChangeId +
-            ".";
-          statusEl.textContent = "Could not load the requested Change Card.";
+              loadedCard.change_id +
+              " instead of " +
+              requestedChangeId +
+              "."
+          );
+          if (requestSeq === viewTransitionSeq && isViewingChangeResult(requestedChangeId)) {
+            statusEl.textContent = "Could not load the requested Change Card.";
+          }
           return;
         }
-        cardLoadError = null;
+        cardLoadErrors.delete(requestedChangeId);
+        if (requestSeq !== viewTransitionSeq || !isViewingChangeResult(requestedChangeId)) {
+          return;
+        }
+        viewTransitionSeq++;
         const preserved = activeEditor ? snapshotUnsavedDraft(activeEditor) : null;
         const prior = nextPriorCard(activeEditor, loadedCard);
         activeResult = null;
         mountChangeCard(loadedCard, preserved, prior);
       },
       (message) => {
-        cardLoadError = "Could not load Change Card: " + message;
-        statusEl.textContent = "Could not load the requested Change Card.";
+        cardLoadErrors.set(requestedChangeId, "Could not load Change Card: " + message);
+        if (requestSeq === viewTransitionSeq && isViewingChangeResult(requestedChangeId)) {
+          statusEl.textContent = "Could not load the requested Change Card.";
+        }
       }
     );
   }
@@ -1103,9 +1148,8 @@ export function bootstrapCheckpointApp() {
   // finishPendingRequests stops local waiting when the host ends the viewer.
   // It releases prompt-update continuations without canceling server work.
   function finishPendingRequests(message: string) {
-    for (const key of Object.keys(pendingRequests)) {
-      const request = pendingRequests[key];
-      delete pendingRequests[key];
+    for (const [key, request] of Array.from(pendingRequests.entries())) {
+      pendingRequests.delete(key);
       request.onError(message);
     }
   }
@@ -1135,7 +1179,7 @@ export function bootstrapCheckpointApp() {
       : [];
     for (let i = 0; i < ambiguities.length; i++) {
       const ambId = ambiguities[i].id;
-      if (!activeEditor.draftAnswers[ambId]) {
+      if (!Object.prototype.hasOwnProperty.call(activeEditor.draftAnswers, ambId) || !activeEditor.draftAnswers[ambId]) {
         showFormError("Select an option for ambiguity " + ambId + " before confirming.");
         return;
       }
@@ -1149,6 +1193,7 @@ export function bootstrapCheckpointApp() {
         return;
       }
     }
+    viewTransitionSeq++;
     activeEditor = {
       ...activeEditor,
       formError: null,
@@ -1187,6 +1232,7 @@ export function bootstrapCheckpointApp() {
     if (!activeEditor || editorRequest !== null) {
       return;
     }
+    viewTransitionSeq++;
     if (activeResult && activeResult.kind !== "cp1-incoming-card") {
       const savedCard = activeEditor.card;
       activeEditor = {
@@ -1282,6 +1328,7 @@ export function bootstrapCheckpointApp() {
     preservedDraft: PreservedDraft | null,
     priorCard: ChangeCardResult | null = null
   ) {
+    cardLoadErrors.delete(card.change_id);
     activeEditor = {
       card,
       priorCard,
@@ -1312,6 +1359,7 @@ export function bootstrapCheckpointApp() {
   // renderWaiting clears the active result display when the host begins a new
   // checkpoint while preserving any retained session state.
   function renderWaiting(message: string) {
+    viewTransitionSeq++;
     if (!shouldRetainEditor()) {
       editorOpen = false;
     }
@@ -1324,6 +1372,7 @@ export function bootstrapCheckpointApp() {
   // renderCancelled shows the host's cancellation notice without aborting
   // independent tools/call requests or discarding retained session state.
   function renderCancelled(reason: string) {
+    viewTransitionSeq++;
     if (!shouldRetainEditor()) {
       editorOpen = false;
     }
@@ -1341,6 +1390,7 @@ export function bootstrapCheckpointApp() {
       statusEl.textContent = "Could not display the new checkpoint result: " + message;
       return;
     }
+    viewTransitionSeq++;
     if (!shouldRetainEditor()) {
       editorOpen = false;
     }
@@ -1368,6 +1418,7 @@ export function bootstrapCheckpointApp() {
     }
     const payload = params.structuredContent;
     if (isVerificationStatusResult(payload)) {
+      viewTransitionSeq++;
       if (!shouldRetainEditor()) {
         editorOpen = false;
       }
@@ -1382,12 +1433,13 @@ export function bootstrapCheckpointApp() {
         renderError(listErr);
         return;
       }
+      viewTransitionSeq++;
       for (let i = 0; i < payload.runs.length; i++) {
         upsertRunSnapshot(payload.runs[i]);
       }
       const listedIds = payload.runs.map((r) => r.run_id);
-      lastLoadedListByChangeId[payload.change_id] = listedIds;
-      delete listRequestErrors[payload.change_id];
+      lastLoadedListByChangeId.set(payload.change_id, listedIds);
+      listRequestErrors.delete(payload.change_id);
       if (!shouldRetainEditor()) {
         editorOpen = false;
       }
@@ -1409,11 +1461,12 @@ export function bootstrapCheckpointApp() {
       return;
     }
     if (isArchitecturePreviewResult(payload)) {
+      viewTransitionSeq++;
       if (!shouldRetainEditor()) {
         editorOpen = false;
       }
       previewState = payload;
-      cardLoadError = null;
+      cardLoadErrors.delete(payload.change_id);
       activeResult = { kind: "cp2-architecture-preview" };
       rootEl.dataset.state = "cp2-architecture-preview";
       statusEl.textContent = "Showing architecture preview for " + payload.system_name + ".";
@@ -1421,7 +1474,8 @@ export function bootstrapCheckpointApp() {
       return;
     }
     if (isChangeCardResult(payload)) {
-      cardLoadError = null;
+      viewTransitionSeq++;
+      cardLoadErrors.delete(payload.change_id);
       if (activeEditor) {
         if (
           payload.change_id === activeEditor.card.change_id &&
@@ -1461,6 +1515,7 @@ export function bootstrapCheckpointApp() {
       return;
     }
     if (isDiffResult(payload)) {
+      viewTransitionSeq++;
       if (!shouldRetainEditor()) {
         editorOpen = false;
       }
@@ -1474,11 +1529,11 @@ export function bootstrapCheckpointApp() {
       return;
     }
     if (isDraftOverrideResult(payload)) {
+      viewTransitionSeq++;
       if (!shouldRetainEditor()) {
         editorOpen = false;
       }
       draftOverrideState = payload;
-      selectedCP3Kind = "cp3-draft-override";
       activeResult = { kind: "cp3-draft-override" };
       rootEl.dataset.state = "cp3-draft-override";
       statusEl.textContent = "Showing Fast Draft prompt and rule update.";
@@ -1489,11 +1544,11 @@ export function bootstrapCheckpointApp() {
       return;
     }
     if (isLiveTargetResult(payload) || isStopLiveTargetResult(payload)) {
+      viewTransitionSeq++;
       if (!shouldRetainEditor()) {
         editorOpen = false;
       }
       liveTargetState = payload;
-      selectedCP3Kind = "cp3-live-target";
       activeResult = { kind: "cp3-live-target" };
       rootEl.dataset.state = "cp3-live-target";
       statusEl.textContent = isLiveTargetResult(payload)
@@ -1518,6 +1573,7 @@ export function bootstrapCheckpointApp() {
     if (typeof msg.method === "string") {
       if (msg.id !== undefined && msg.id !== null) {
         if (msg.method === "ui/resource-teardown") {
+          viewTransitionSeq++;
           activeEditor = null;
           editorOpen = false;
           previewState = null;
@@ -1526,22 +1582,12 @@ export function bootstrapCheckpointApp() {
           liveTargetState = null;
           selectedVerificationChangeId = null;
           selectedRunId = null;
-          for (const k of Object.keys(runsById)) {
-            delete runsById[k];
-          }
-          for (const k of Object.keys(lastLoadedListByChangeId)) {
-            delete lastLoadedListByChangeId[k];
-          }
-          for (const k of Object.keys(selectionTouchedDuringList)) {
-            delete selectionTouchedDuringList[k];
-          }
-          for (const k of Object.keys(runRequestErrors)) {
-            delete runRequestErrors[k];
-          }
-          for (const k of Object.keys(listRequestErrors)) {
-            delete listRequestErrors[k];
-          }
-          cardLoadError = null;
+          runsById.clear();
+          lastLoadedListByChangeId.clear();
+          selectionTouchedDuringList.clear();
+          runRequestErrors.clear();
+          listRequestErrors.clear();
+          cardLoadErrors.clear();
           finishPendingRequests("The host closed the checkpoint viewer.");
           activeResult = null;
           rootEl.dataset.state = "terminated";
@@ -1579,6 +1625,7 @@ export function bootstrapCheckpointApp() {
         if (isEditorProtected() || activeResult?.kind === "cp4-verification") {
           return;
         }
+        viewTransitionSeq++;
         const partialArgs =
           isPlainObject(msg.params) && isPlainObject(msg.params.arguments)
             ? msg.params.arguments
@@ -1633,9 +1680,9 @@ export function bootstrapCheckpointApp() {
     }
 
     const reqKey = msg.id !== undefined && msg.id !== null ? String(msg.id) : "";
-    if (reqKey && Object.prototype.hasOwnProperty.call(pendingRequests, reqKey)) {
-      const activeReq = pendingRequests[reqKey];
-      delete pendingRequests[reqKey];
+    if (reqKey && pendingRequests.has(reqKey)) {
+      const activeReq = pendingRequests.get(reqKey)!;
+      pendingRequests.delete(reqKey);
       if (msg.error) {
         const rpcErr =
           isPlainObject(msg.error) && typeof msg.error.message === "string"
