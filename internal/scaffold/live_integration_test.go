@@ -57,17 +57,22 @@ type echoStream struct {
 // and verifies C1 directly. The CP1 analyzer is scripted. It needs the
 // network and, for the sandbox, macOS.
 func TestStarterLiveTargetAppliesADraftToTheNextModelRequest(t *testing.T) {
+	phases := newPhaseLog(t)
+	phases.begin("init", "")
 	dir := filepath.Join(t.TempDir(), "shop")
 	name, err := Init(t.Context(), Options{Dir: dir, Module: "example.com/shop", SurlaVersion: published}, RunCommand)
 	require.NoError(t, err)
+	phases.begin("commit_c1", "")
 	commit := commitAll(t, dir)
 
+	phases.begin("build_surla", "c1="+commit)
 	surlaBin := filepath.Join(t.TempDir(), "surla")
 	build := exec.CommandContext(t.Context(), "go", "build", "-o", surlaBin, "./cmd/surla")
 	build.Dir = filepath.Join("..", "..")
 	out, err := build.CombinedOutput()
 	require.NoError(t, err, string(out))
 
+	phases.begin("gateway_and_control_plane", "")
 	gatewayAddr := serveEchoGateway(t)
 	cardsDir, runsDir := t.TempDir(), t.TempDir()
 	cp, err := controlplane.New(controlplane.Options{
@@ -92,13 +97,17 @@ func TestStarterLiveTargetAppliesADraftToTheNextModelRequest(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { assert.NoError(t, cp.Close()) })
 	alice := controlplane.WithPrincipal(context.Background(), controlplane.Principal{ID: "alice@example.com"})
+	phases.begin("confirm_card", "starter-live-prompt")
 	card := confirmCard(t, cp, alice, "starter-live-prompt")
 
+	phases.begin("start_live_c1", "c1="+commit)
 	started, err := cp.StartLiveTarget(alice, &gensurla.StartLiveTargetPayload{CandidateCommit: commit})
 	require.NoError(t, err)
+	phases.begin("ask_c1_before_draft", "c1="+commit)
 	before := askLive(t, started.URL)
 	assert.True(t, strings.HasPrefix(before, "SYSTEM="), before)
 
+	phases.begin("draft_and_ask_c1", "c1="+commit)
 	promptID := name + ".helper.system"
 	const text = "You answer questions about item prices. [drafted]"
 	drafted, err := cp.DraftOverride(alice, &gensurla.DraftOverridePayload{
@@ -114,6 +123,7 @@ func TestStarterLiveTargetAppliesADraftToTheNextModelRequest(t *testing.T) {
 
 	// The builder keeps the accepted text by writing it into source and
 	// committing C2; the draft itself is never what CP4 verifies.
+	phases.begin("edit_and_commit_c2", "")
 	planner := filepath.Join(dir, "internal", "helper", "planner.go")
 	src, err := os.ReadFile(planner)
 	require.NoError(t, err)
@@ -125,17 +135,64 @@ func TestStarterLiveTargetAppliesADraftToTheNextModelRequest(t *testing.T) {
 	require.NoError(t, os.WriteFile(planner, []byte(edited), 0o600))
 	c2 := commitAll(t, dir)
 
+	phases.begin("start_live_c2_and_ask", "c2="+c2)
 	restarted, err := cp.StartLiveTarget(alice, &gensurla.StartLiveTargetPayload{CandidateCommit: c2})
 	require.NoError(t, err, "starting C2 replaces the C1 target")
 	assert.Equal(t, "SYSTEM="+text, askLive(t, restarted.URL), "C2 carries the committed text without any draft")
+	phases.begin("stop_live", "c2="+c2)
 	stopped, err := cp.StopLiveTarget(alice)
 	require.NoError(t, err)
 	assert.True(t, stopped.Stopped)
 
+	phases.begin("verify_c2", "card=starter-live-prompt c2="+c2)
 	assertVerified(t, cp, alice, runsDir, card, c2, "the committed text verifies for the same card")
 
+	phases.begin("confirm_second_card", "starter-skip-cp3")
 	skipped := confirmCard(t, cp, alice, "starter-skip-cp3")
+	phases.begin("verify_c1", "card=starter-skip-cp3 c1="+commit)
 	assertVerified(t, cp, alice, runsDir, skipped, commit, "a card that skips CP3 verifies C1 directly")
+	phases.end()
+}
+
+// phaseLog is a temporary diagnostic: it logs when each outer step of the
+// live test starts and how long it took, so a slow run can be localized to
+// an outer operation. It cannot split the work inside a step.
+type phaseLog struct {
+	// t receives the log lines.
+	t *testing.T
+	// name and id identify the open step; name is empty when none is open.
+	name, id string
+	// start is when the open step began.
+	start time.Time
+}
+
+// newPhaseLog returns a phaseLog whose open step, if any, is logged as not
+// ok when the test ends early, for example on a failed assertion.
+func newPhaseLog(t *testing.T) *phaseLog {
+	p := &phaseLog{t: t}
+	t.Cleanup(func() { p.finish(false) })
+	return p
+}
+
+// begin ends the open step as ok and starts the next one.
+func (p *phaseLog) begin(name, id string) {
+	p.finish(true)
+	p.name, p.id, p.start = name, id, time.Now()
+	p.t.Logf("PHASE START %s %s at=%s", name, id, p.start.UTC().Format(time.RFC3339Nano))
+}
+
+// end ends the open step as ok.
+func (p *phaseLog) end() {
+	p.finish(true)
+}
+
+// finish logs the open step's end, if one is open.
+func (p *phaseLog) finish(ok bool) {
+	if p.name == "" {
+		return
+	}
+	p.t.Logf("PHASE END %s %s elapsed=%s ok=%t", p.name, p.id, time.Since(p.start).Round(time.Millisecond), ok)
+	p.name = ""
 }
 
 // keepRun copies a failed run's directory to $SURLA_TEST_KEEP_RUNS, when it
@@ -221,6 +278,7 @@ func assertVerified(t *testing.T, cp *controlplane.ControlPlane, ctx context.Con
 	t.Helper()
 	run, err := cp.VerifyChange(ctx, &gensurla.VerifyChangePayload{ChangeID: card.ChangeID, RequestRevision: card.RequestRevision, CandidateCommit: commit})
 	require.NoError(t, err)
+	t.Logf("PHASE INFO verification run_id=%s commit=%s", run.RunID, commit)
 	phase, cancel := context.WithTimeout(t.Context(), 15*time.Minute)
 	defer cancel()
 	for {
