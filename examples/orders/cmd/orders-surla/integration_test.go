@@ -84,7 +84,7 @@ var testSigningKey = []byte("phase19-disposable-signing-key")
 func TestMCPDraftChangesTheNextOrdersTurn(t *testing.T) {
 	target := newTarget(t)
 	baseline := target.nextRequest(t)
-	assert.Equal(t, []prompt.PromptRef{{ID: assistant.SystemPromptID, Version: "v1"}}, baseline.PromptRefs)
+	assert.Equal(t, []prompt.PromptRef{{ID: genrefund.SystemPromptID, Version: genrefund.PromptSpecSystem().Version}}, baseline.PromptRefs)
 	host := newHost(t, target.server.URL, targetToken(t, "prompts:manage"))
 	const text = "Help customers with refunds. Keep the answer to one sentence."
 	result := callTool(t, host, "draft_override", draftPayload(t, "prompt_template", text))
@@ -96,7 +96,7 @@ func TestMCPDraftChangesTheNextOrdersTurn(t *testing.T) {
 	require.NotNil(t, draft.PromptVersion)
 	assert.Equal(t, prompt.VersionFromTemplate(text), *draft.PromptVersion)
 	request := target.nextRequest(t)
-	assert.Equal(t, []prompt.PromptRef{{ID: assistant.SystemPromptID, Version: *draft.PromptVersion}}, request.PromptRefs)
+	assert.Equal(t, []prompt.PromptRef{{ID: genrefund.SystemPromptID, Version: *draft.PromptVersion}}, request.PromptRefs)
 	require.NotEmpty(t, request.Messages)
 	assert.Equal(t, text, request.Messages[0].Text())
 	assert.Equal(t, int64(1), target.updates.Load())
@@ -220,7 +220,6 @@ func newTarget(t *testing.T) *targetFixture {
 	store := storageinmem.New()
 	prompts := prompt.NewInMemoryStore()
 	rt := runtime.New(store, runtime.WithPromptStore(prompts))
-	require.NoError(t, rt.PromptRegistry.Register(assistant.SystemPrompt()))
 	provider := &recordingModel{requests: make(chan *model.Request, 1)}
 	client, err := model.NewClient(provider)
 	require.NoError(t, err)
@@ -231,7 +230,7 @@ func newTarget(t *testing.T) *targetFixture {
 	))
 	require.NoError(t, rt.Seal(t.Context()))
 	target := &targetFixture{prompts: prompts, agent: genrefund.NewClient(rt), runs: store, model: provider}
-	service := orders.New(nil, nil, nil, assistant.NewPrompts(rt.PromptRegistry, prompts), testSigningKey)
+	service := orders.New(nil, nil, nil, assistant.NewPrompts(rt.PromptRegistry), testSigningKey)
 	mux := goahttp.NewMuxer()
 	genordersserver.Mount(mux, genordersserver.New(genorders.NewEndpoints(service), mux, goahttp.RequestDecoder, goahttp.ResponseEncoder, nil, nil))
 	target.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -263,7 +262,7 @@ func newHost(t *testing.T, targetURL, token string) *httptest.Server {
 // draftPayload uses the published Surla codec for the tool's business input.
 func draftPayload(t *testing.T, kind, text string) json.RawMessage {
 	t.Helper()
-	id := string(assistant.SystemPromptID)
+	id := string(genrefund.SystemPromptID)
 	args, err := gensurlatools.MarshalDraftOverridePayload(&gensurlatools.DraftOverridePayload{TargetKind: kind, PromptID: &id, NewContent: text})
 	require.NoError(t, err)
 	return args

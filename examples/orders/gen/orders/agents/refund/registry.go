@@ -62,6 +62,7 @@ func NewRefundAgentRegistration(rt *agentsruntime.Runtime, cfg RefundAgentConfig
 			MaxRecoveryTurns: 2,
 			TimeBudget:       time.Duration(120000000000),
 		},
+		PromptSpecs: PromptSpecs(),
 	}, nil
 }
 

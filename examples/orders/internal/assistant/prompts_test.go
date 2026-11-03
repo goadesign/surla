@@ -64,18 +64,19 @@ type (
 // the generated HTTP server and client with an operator token, wired to the
 // agent's real prompt store, and reads the model request of the next turn.
 func TestOverridePromptChangesTheNextModelRequest(t *testing.T) {
+	spec := genrefund.PromptSpecSystem()
 	svc := startService(t)
 	first := svc.turn(t)
-	assert.Equal(t, []prompt.PromptRef{{ID: SystemPromptID, Version: "v1"}}, first.PromptRefs)
-	assert.Equal(t, systemPrompt, systemText(t, first))
+	assert.Equal(t, []prompt.PromptRef{{ID: genrefund.SystemPromptID, Version: spec.Version}}, first.PromptRefs)
+	assert.Equal(t, spec.Template, systemText(t, first))
 
 	const draft = "You help customers with refunds. Answer in one sentence."
-	res, err := svc.overridePrompt(t, string(SystemPromptID), draft)
+	res, err := svc.overridePrompt(t, string(genrefund.SystemPromptID), draft)
 	require.NoError(t, err)
-	assert.Equal(t, &genorders.PromptVersion{PromptID: string(SystemPromptID), Version: prompt.VersionFromTemplate(draft)}, res)
+	assert.Equal(t, &genorders.PromptVersion{PromptID: string(genrefund.SystemPromptID), Version: prompt.VersionFromTemplate(draft)}, res)
 
 	second := svc.turn(t)
-	assert.Equal(t, []prompt.PromptRef{{ID: SystemPromptID, Version: res.Version}}, second.PromptRefs,
+	assert.Equal(t, []prompt.PromptRef{{ID: genrefund.SystemPromptID, Version: res.Version}}, second.PromptRefs,
 		"the next model request names the version override_prompt returned")
 	assert.Equal(t, draft, systemText(t, second))
 
@@ -84,14 +85,14 @@ func TestOverridePromptChangesTheNextModelRequest(t *testing.T) {
 	// a restart, not a restart of a running orders process.
 	fresh := startService(t)
 	third := fresh.turn(t)
-	assert.Equal(t, []prompt.PromptRef{{ID: SystemPromptID, Version: "v1"}}, third.PromptRefs,
+	assert.Equal(t, []prompt.PromptRef{{ID: genrefund.SystemPromptID, Version: spec.Version}}, third.PromptRefs,
 		"a newly built service starts with the built-in prompt")
-	assert.Equal(t, systemPrompt, systemText(t, third))
+	assert.Equal(t, spec.Template, systemText(t, third))
 }
 
 // TestOverrideRejectsWithoutChangingThePrompt verifies that Prompts.Override
-// validates both the prompt ID and the template execution against the planner's
-// functions and nil data before saving, leaving the active prompt unchanged
+// validates both the prompt ID and the template AST against the registered
+// zero-argument prompt spec before saving, leaving the active prompt unchanged
 // when validation fails.
 func TestOverrideRejectsWithoutChangingThePrompt(t *testing.T) {
 	cases := []struct {
@@ -101,24 +102,25 @@ func TestOverrideRejectsWithoutChangingThePrompt(t *testing.T) {
 		want     error
 	}{
 		{"unregistered prompt", "orders.refund.other", "Hello.", orders.ErrPromptNotFound},
-		{"template does not parse", string(SystemPromptID), "Hello {{ .Name", orders.ErrInvalidPrompt},
-		{"template does not execute", string(SystemPromptID), `Hello {{ template "missing" }}.`, orders.ErrInvalidPrompt},
-		{"template reads data the planner does not pass", string(SystemPromptID), "Hello {{ .Customer }}.", orders.ErrInvalidPrompt},
+		{"template does not parse", string(genrefund.SystemPromptID), "Hello {{ .Name", orders.ErrInvalidPrompt},
+		{"template does not execute", string(genrefund.SystemPromptID), `Hello {{ template "missing" }}.`, orders.ErrInvalidPrompt},
+		{"template reads data the planner does not pass", string(genrefund.SystemPromptID), "Hello {{ .Customer }}.", orders.ErrInvalidPrompt},
+		{"template reads undeclared field inside branch", string(genrefund.SystemPromptID), "Hello {{ if . }}{{ .Customer }}{{ else }}guest{{ end }}.", orders.ErrInvalidPrompt},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			store := prompt.NewInMemoryStore()
 			registry := prompt.NewRegistry(store)
-			require.NoError(t, registry.Register(SystemPrompt()))
-			prompts := NewPrompts(registry, store)
+			require.NoError(t, genrefund.RegisterPrompts(registry))
+			prompts := NewPrompts(registry)
 			const kept = "Kept text."
-			_, err := prompts.Override(t.Context(), string(SystemPromptID), kept)
+			_, err := prompts.Override(t.Context(), string(genrefund.SystemPromptID), kept)
 			require.NoError(t, err)
 
 			_, err = prompts.Override(t.Context(), c.promptID, c.template)
 			require.ErrorIs(t, err, c.want)
 
-			active, err := registry.Render(t.Context(), SystemPromptID, prompt.Scope{}, nil)
+			active, err := genrefund.RenderSystemPromptWithRegistry(t.Context(), registry, prompt.Scope{})
 			require.NoError(t, err)
 			assert.Equal(t, kept, active.Text, "a rejected override leaves the text in use unchanged")
 			overrides, err := store.List(t.Context())
@@ -171,7 +173,6 @@ func startService(t *testing.T) *service {
 	t.Cleanup(func() { assert.NoError(t, store.Close()) })
 	promptStore := prompt.NewInMemoryStore()
 	rt := runtime.New(store, runtime.WithPromptStore(promptStore))
-	require.NoError(t, rt.PromptRegistry.Register(SystemPrompt()))
 	recorder := &recordingProvider{}
 	client, err := model.NewClient(recorder)
 	require.NoError(t, err)
@@ -183,7 +184,7 @@ func startService(t *testing.T) *service {
 		genrefund.WithOrdersExecutor(genrefundorders.NewRefundOrdersExec(genrefundorders.WithClient(&genorders.Client{}))),
 	))
 	require.NoError(t, rt.Seal(ctx))
-	return &service{agent: genrefund.NewClient(rt), store: store, prompts: NewPrompts(rt.PromptRegistry, promptStore), model: recorder}
+	return &service{agent: genrefund.NewClient(rt), store: store, prompts: NewPrompts(rt.PromptRegistry), model: recorder}
 }
 
 // systemText returns the system message text of req.
