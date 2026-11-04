@@ -355,7 +355,7 @@ export function ArchitecturePreviewView({
         <p id="surla-cp2-confirmation-note">
           A Confirmation badge means the design requires approval before that tool runs. It does
           not show that the service asks the right person and continues after their answer:
-          implement that flow and verify it. The <code>examples/orders</code> project in the Surla
+          implement that flow and verify it. The <code translate="no">examples/orders</code> project in the Surla
           repository shows one, a manager approving refunds.
         </p>
         <ul>
