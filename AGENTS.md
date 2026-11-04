@@ -181,7 +181,10 @@ expanded plan. When a review finds a high-priority or design-touching issue,
 fix it and run another fresh review until none remain. Explain findings
 against the owning contract. Before merging, check every review comment
 against the current diff; fix confirmed issues and resolve or explain the
-rest. A new head must not inherit approval for unreviewed changes.
+rest. A new head must not inherit approval for unreviewed changes. Keep
+examples and starters minimal and focused on demonstrating Surla's CP1–CP5
+journey, and validate that journey through Surla's real CLI and MCP
+entrypoints using the existing test support rather than parallel harnesses.
 
 Before delegating, explain the task and purpose to the user. Set each
 subagent's model and reasoning level explicitly: Sol 6.1, Opus 5.5, or
