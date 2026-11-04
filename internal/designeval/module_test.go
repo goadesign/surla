@@ -42,6 +42,16 @@ func TestEvaluateRefusesToUpgradeTheTargetsGenerator(t *testing.T) {
 	assert.Contains(t, err.Error(), "goa.design/goa/v3: target selects "+old)
 }
 
+func TestEvaluateKeepsTheTargetsOwnCoreVersions(t *testing.T) {
+	// A target pinned at an older goa than Surla's own is evaluated with
+	// its own version, not upgraded to Surla's and then rejected.
+	for _, goa := range []string{preCompleteSourcesGoa, ""} {
+		res, err := testEvaluator.Evaluate(t.Context(), testmodule.Snapshot(t, goa, minimalDesign))
+		require.NoError(t, err, "goa %q", goa)
+		assert.Contains(t, res.Declarations, "Service:orders/Method:get_order", "goa %q", goa)
+	}
+}
+
 func TestEvaluateUsesTheTargetsOwnGeneratorVersion(t *testing.T) {
 	res, err := testEvaluator.Evaluate(t.Context(), testmodule.Snapshot(t, "", minimalDesign))
 	require.NoError(t, err)

@@ -25,6 +25,7 @@ import (
 
 	gensurla "github.com/goadesign/surla/gen/surla"
 	"github.com/goadesign/surla/internal/controlplane"
+	"github.com/goadesign/surla/internal/designeval"
 	"github.com/goadesign/surla/internal/verify"
 )
 
@@ -58,7 +59,7 @@ type echoStream struct {
 // network and, for the sandbox, macOS.
 func TestStarterLiveTargetAppliesADraftToTheNextModelRequest(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "shop")
-	name, err := Init(t.Context(), Options{Dir: dir, Module: "example.com/shop", SurlaVersion: published}, RunCommand)
+	name, err := Init(t.Context(), Options{Dir: dir, Module: "example.com/shop", SurlaVersion: published}, RunCommand, designeval.NewEvaluator())
 	require.NoError(t, err)
 	commit := commitAll(t, dir)
 

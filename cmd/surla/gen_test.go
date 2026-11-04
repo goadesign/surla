@@ -17,6 +17,10 @@ import (
 // generator.CompleteSources.
 const completeSourcesGoa = "v3.35.1-0.20261103205041-35e789e8f9b1"
 
+// preCompleteSourcesGoa is the goa.design/goa/v3 version starters created
+// before generator.CompleteSources require.
+const preCompleteSourcesGoa = "v3.35.1-0.20261030163856-3e08a6128171"
+
 // genDesign is a small design surla gen regenerates.
 const genDesign = `package design
 
@@ -52,7 +56,7 @@ func TestGenPublishesGenAndLeavesNothingBehind(t *testing.T) {
 func TestGenRefusesAGoaWithoutCompleteSourcesAndChangesNothing(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("TMPDIR", tmp)
-	dir := writeModule(t, testmodule.Snapshot(t, "", genDesign))
+	dir := writeModule(t, testmodule.Snapshot(t, preCompleteSourcesGoa, genDesign))
 	layout(t, dir, map[string]string{"gen/orders/service.go": "old\n"})
 
 	err := runGen([]string{"-dir", dir}, io.Discard, io.Discard)

@@ -60,7 +60,9 @@ const (
 //     checksum fails here instead of being filled in, and records which
 //     modules provide the code the design loads;
 //  2. writes the harness go.mod requiring the target (replaced by the staged
-//     copy) and the generator modules, and resolves it, which may write only
+//     copy) and the generator modules, each at the target's required version
+//     or, when the target does not require it, the evaluator's, and resolves
+//     it, which may write only
 //     the harness's own go.mod and go.sum;
 //  3. requires each of those modules, and each generator module (goa,
 //     goa-ai, model) the target requires, to keep exactly the target's version
@@ -101,7 +103,14 @@ func prepareHarnessModule(ctx context.Context, gocmd goCommand, buildDir string,
 		}
 	}
 	for _, core := range []string{harnessGoaModule, harnessGoaAIModule, harnessModelModule} {
-		version, ok := requiredVersion(evalMod, core)
+		// The target's own requirement wins, so evaluating a module never
+		// changes the versions it builds with; the evaluator's version only
+		// fills a core module the target does not require. sameVersions still
+		// rejects a graph in which the evaluator's code raises any of them.
+		version, ok := requiredVersion(target, core)
+		if !ok {
+			version, ok = requiredVersion(evalMod, core)
+		}
 		if !ok {
 			return listedModule{}, fmt.Errorf("evaluator go.mod does not require %s", core)
 		}

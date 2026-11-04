@@ -20,7 +20,7 @@
 ## Quickstart & MCP Configuration
 
 ### Prerequisites
-- **Go 1.27.3+**, matching the repository's `go.mod` files (`surla init` runs module-pinned `go run goa.design/goa/v3/cmd/goa gen`, and `surla preview` uses Surla's sandboxed evaluator, so a globally installed `goa` binary is not required)
+- **Go 1.27.3+**, matching the repository's `go.mod` files (`surla init`, `surla gen`, and `surla preview` run Goa inside Surla's sandbox with each module's own versions, so a globally installed `goa` binary is not required)
 - **Surla CLI** (`go install github.com/goadesign/surla/cmd/surla@latest`, or `go run ./cmd/surla` from a repository checkout)
 - **macOS** (`sandbox-exec` is used by `verify/candidate` to isolate candidate builds and processes; non-macOS hosts fail closed with `ErrIsolationUnavailable`)
 - **Temporal CLI** (`brew install temporal`) for running the end-to-end durable workflow crash and replay verification suites
@@ -227,7 +227,7 @@ Changing this contract is a breaking change for every target that implements it.
 Running `surla`, `surla help`, `surla -h`, or `surla --help` prints top-level usage to `stdout` and exits `0`. Running `surla help <command>` or `surla <command> -h` prints that subcommand's flags to `stderr` and exits `0`. Every subcommand rejects unexpected positional arguments (`unexpected arguments [...]`), so a stray non-flag token never causes Go's `flag` parser to silently ignore flags that follow it.
 
 ### `surla init`
-Creates a Goa + Goa-AI + `goa.design/model` service in `<dir>` and a separate evaluator module in `<dir>/eval`. It resolves dependencies, generates code with `go run goa.design/goa/v3/cmd/goa gen`, checks both modules with `go vet ./...`, and prints the commands to commit, preview, and verify the project. Both module files start with the Go and library versions saved in the `surla` binary (`surla.GoMod()`). Before generating the evaluator, `surla init` pins its exact Surla dependency with `go get github.com/goadesign/surla@<version>`; Go may select newer library versions required by that dependency.
+Creates a Goa + Goa-AI + `goa.design/model` service in `<dir>` and a separate evaluator module in `<dir>/eval`. It resolves dependencies, generates each module's code inside Surla's sandbox with the same generator as [`surla gen`](#surla-gen) (the design code never runs on the host), checks both modules with `go vet ./...`, and prints the commands to commit, preview, and verify the project. Both module files start with the Go and library versions saved in the `surla` binary (`surla.GoMod()`). `surla init` writes the project to a staging directory next to `<dir>` and renames it to `<dir>` only after every step, including generation, has succeeded; a failure or interrupt leaves `<dir>` absent. Before generating the evaluator, `surla init` pins its exact Surla dependency with `go get github.com/goadesign/surla@<version>`; Go may select newer library versions required by that dependency.
 - `-dir <path>` — Directory to create; it must not exist *(required)*. `surla init` builds the project in a sibling staging directory (`<dir>.surla-init-*`) under `procgroup.Run` (`GOWORK=off`) and renames it to `-dir` only after every step succeeds (removing the staging directory on any command failure or cancellation when the process group exits cleanly, or keeping it and reporting its path if a child process fails to stop).
 - `-module <path>` — Go module path of the candidate service, such as `example.com/shop` *(required)*. Its last path element names the service and must be a lowercase Go identifier (`^[a-z][a-z0-9]*$`, excluding Go keywords and `main`).
 - `-surla-version <version>` — Exact canonical semantic version (`golang.org/x/mod/semver`) of `github.com/goadesign/surla` required by `<dir>/eval/go.mod` (default: the build-info `Main.Version` stamped into the `surla` binary; required explicitly when running from a `(devel)` or `+dirty` build, and mutable labels such as `latest` or `main` are rejected).
@@ -379,12 +379,13 @@ go test -race ./...
 (cd examples/orders-eval && go test -race ./...)
 ```
 
-The end-to-end and starter-project integration tests require macOS (`sandbox-exec`); `examples/orders-eval/acceptance` also requires the Temporal CLI. Run the five acceptance scenarios and the seeded token-budget regression, the verifier's complete `Run` → report → `Approve` test, and the `surla init` starter-project build and sandboxed evaluator test (all run automatically on GitHub Actions in [`.github/workflows/ci.yml`](../.github/workflows/ci.yml)):
+The end-to-end and starter-project integration tests require macOS (`sandbox-exec`); `examples/orders-eval/acceptance` also requires the Temporal CLI. Run the five acceptance scenarios and the seeded token-budget regression, the verifier's complete `Run` → report → `Approve` test, the `surla gen` and `surla init` generation journeys, and the `surla init` starter-project build and sandboxed evaluator test (all run automatically on GitHub Actions in [`.github/workflows/ci.yml`](../.github/workflows/ci.yml)):
 
 ```bash
 (cd examples/orders-eval && go test -race -tags e2e ./acceptance)
 go test -race -tags e2e ./internal/verify
-go test -race -tags scaffold ./internal/scaffold
+go test -race -count=1 -tags e2e ./cmd/surla
+go test -race -count=1 -timeout 60m -tags scaffold ./internal/scaffold
 ```
 
 See [`examples/orders/README.md`](../examples/orders/README.md) for a step-by-step walkthrough including `surla verify` (full operator report vs. `-builder-view`).

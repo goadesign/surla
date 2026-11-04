@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"go/format"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -70,8 +71,10 @@ func TestInitRefusesAnExistingDirectory(t *testing.T) {
 	link := filepath.Join(parent, "link")
 	require.NoError(t, os.Symlink(empty, link))
 	for _, dir := range []string{empty, full, link} {
-		_, err := Init(t.Context(), Options{Dir: dir, Module: "example.com/shop", SurlaVersion: published}, failRunner(t))
+		gen := &fakeGenerator{}
+		_, err := Init(t.Context(), Options{Dir: dir, Module: "example.com/shop", SurlaVersion: published}, failRunner(t), gen)
 		require.ErrorContains(t, err, "already exists", dir)
+		assert.Equal(t, 1, gen.closes, "Init closes the generator it is given on every return")
 	}
 	assertOnly(t, parent, "empty", "full", "link")
 	assertOnly(t, empty)
@@ -82,31 +85,31 @@ func TestInitLeavesNothingWhenAStepFails(t *testing.T) {
 	parent := t.TempDir()
 	dir := filepath.Join(parent, "shop")
 	var ran [][]string
-	run := func(_ context.Context, _, logPath string, args ...string) error {
+	run := func(_ context.Context, moduleDir, logPath string, args ...string) error {
 		ran = append(ran, args)
 		out := "ok"
-		if args[1] == "run" {
-			out = strings.Repeat("x", 5000) + "design/design.go:3: boom"
+		if args[1] == "vet" {
+			out = strings.Repeat("x", 5000) + "internal/service/service.go:3: boom"
 		}
 		if err := os.WriteFile(logPath, []byte(out), 0o600); err != nil {
 			return err
 		}
-		if args[1] == "run" {
+		if args[1] == "vet" {
 			return errors.New("exit status 1")
 		}
-		return nil
+		return fakeGo(moduleDir, args)
 	}
-	_, err := Init(t.Context(), Options{Dir: dir, Module: "example.com/shop", SurlaVersion: published}, run)
+	_, err := Init(t.Context(), Options{Dir: dir, Module: "example.com/shop", SurlaVersion: published}, run, &fakeGenerator{pkgs: []string{"shop"}})
 	var step *StepError
 	require.ErrorAs(t, err, &step)
-	assert.Equal(t, []string{"go", "run", "goa.design/goa/v3/cmd/goa", "gen", "example.com/shop/design"}, step.Args)
-	assert.Contains(t, err.Error(), "design/design.go:3: boom")
+	assert.Equal(t, []string{"go", "vet", "./..."}, step.Args)
+	assert.Contains(t, err.Error(), "internal/service/service.go:3: boom")
 	assert.True(t, strings.HasPrefix(step.Tail, "...\n"), "only the end of a long log is quoted")
 	assert.Len(t, step.Tail, len("...\n")+maxTail)
 	full, err := os.ReadFile(step.Log)
 	require.NoError(t, err, "the failed step's log is kept")
-	assert.Len(t, full, 5000+len("design/design.go:3: boom"))
-	assert.Equal(t, [][]string{{"go", "mod", "tidy"}, step.Args}, ran)
+	assert.Len(t, full, 5000+len("internal/service/service.go:3: boom"))
+	assert.Equal(t, [][]string{{"go", "mod", "tidy"}, {"go", "mod", "tidy"}, step.Args}, ran)
 	assertOnly(t, parent)
 }
 
@@ -120,9 +123,9 @@ func TestInitNeverReplacesADirectoryCreatedMeanwhile(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(dir, "late.txt"), []byte("written meanwhile"), 0o600); err != nil {
 			return err
 		}
-		return fakeGoaGen(moduleDir, "shop", args)
+		return fakeGo(moduleDir, args)
 	}
-	_, err := Init(t.Context(), Options{Dir: dir, Module: "example.com/shop", SurlaVersion: published}, run)
+	_, err := Init(t.Context(), Options{Dir: dir, Module: "example.com/shop", SurlaVersion: published}, run, &fakeGenerator{pkgs: []string{"shop"}})
 	require.ErrorContains(t, err, "move project into")
 	assertOnly(t, parent, "shop")
 	assertOnly(t, dir, "late.txt")
@@ -134,7 +137,9 @@ func TestInitKeepsStagingWhenProcessesMayStillRun(t *testing.T) {
 	run := func(_ context.Context, _, _ string, _ ...string) error {
 		return &stuckError{err: errors.New("process group did not exit")}
 	}
-	_, err := Init(t.Context(), Options{Dir: dir, Module: "example.com/shop", SurlaVersion: published}, run)
+	gen := &fakeGenerator{}
+	_, err := Init(t.Context(), Options{Dir: dir, Module: "example.com/shop", SurlaVersion: published}, run, gen)
+	assert.Equal(t, 1, gen.closes)
 	var step *StepError
 	require.ErrorAs(t, err, &step)
 	assert.Equal(t, []string{"go", "mod", "tidy"}, step.Args)
@@ -156,7 +161,7 @@ func TestInitStopsAndCleansUpWhenCanceled(t *testing.T) {
 		return RunCommand(ctx, dir, logPath, "sleep", "30")
 	}
 	start := time.Now()
-	_, err := Init(ctx, Options{Dir: dir, Module: "example.com/shop", SurlaVersion: published}, run)
+	_, err := Init(ctx, Options{Dir: dir, Module: "example.com/shop", SurlaVersion: published}, run, &fakeGenerator{})
 	require.Error(t, err)
 	assert.Less(t, time.Since(start), 10*time.Second, "the canceled command's process group is stopped")
 	assertOnly(t, parent)
@@ -168,19 +173,25 @@ func TestInitWritesTheProjectWithTheServiceName(t *testing.T) {
 	var ran []string
 	run := func(_ context.Context, dir, _ string, args ...string) error {
 		ran = append(ran, strings.Join(args, " "))
-		return fakeGoaGen(dir, "bakery", args)
+		return fakeGo(dir, args)
 	}
 	tmp := t.TempDir()
 	t.Setenv("TMPDIR", tmp)
-	name, err := Init(t.Context(), Options{Dir: dir, Module: "example.com/bakery", SurlaVersion: published}, run)
+	gen := &fakeGenerator{pkgs: []string{"bakery"}, extra: map[string]string{quickstartGuide: "guide\n"}}
+	name, err := Init(t.Context(), Options{Dir: dir, Module: "example.com/bakery", SurlaVersion: published}, run, gen)
 	require.NoError(t, err)
 	assertOnly(t, tmp)
 	assert.Equal(t, "bakery", name)
 	assert.Equal(t, []string{
-		"go mod tidy", "go run goa.design/goa/v3/cmd/goa gen example.com/bakery/design", "go mod tidy", "go vet ./...",
-		"go mod tidy", "go get github.com/goadesign/surla@" + published,
-		"go run goa.design/goa/v3/cmd/goa gen example.com/bakery/eval/design", "go mod tidy", "go vet ./...",
-	}, ran)
+		"go mod tidy", "go mod tidy", "go vet ./...",
+		"go mod tidy", "go get github.com/goadesign/surla@" + published, "go mod tidy", "go vet ./...",
+	}, ran, "no command generates code on the host")
+	require.Len(t, gen.inputs, 2, "one generation per module")
+	assert.Equal(t, []string{"design/design.go", "design/model.go", "go.mod", "go.sum"}, slices.Sorted(maps.Keys(gen.inputs[0])))
+	assert.Contains(t, gen.inputs[0]["go.mod"], "module example.com/bakery\n")
+	assert.Equal(t, []string{"design/design.go", "go.mod", "go.sum"}, slices.Sorted(maps.Keys(gen.inputs[1])))
+	assert.Contains(t, gen.inputs[1]["go.mod"], "module example.com/bakery/eval\n")
+	assert.Equal(t, 1, gen.closes)
 	info, err := os.Stat(dir)
 	require.NoError(t, err)
 	assert.Equal(t, os.FileMode(0o755), info.Mode().Perm())
@@ -205,6 +216,7 @@ func TestInitWritesTheProjectWithTheServiceName(t *testing.T) {
 		"internal/helper/planner.go", "internal/service/service.go", "cmd/bakery/main.go",
 		"eval/go.mod", "eval/design/design.go", "eval/scripted/scripted.go",
 		"eval/acceptance/acceptance.go", "eval/cmd/bakery-evals/main.go",
+		"gen/bakery/service.go", quickstartGuide, "eval/gen/bakery/service.go", "eval/" + quickstartGuide,
 	} {
 		assert.FileExists(t, filepath.Join(dir, f))
 	}
@@ -225,9 +237,9 @@ func TestInitImportsThePackageGoaGenerated(t *testing.T) {
 	require.NoError(t, os.Mkdir(parent, 0o755))
 	dir := filepath.Join(parent, "errors")
 	run := func(_ context.Context, moduleDir, _ string, args ...string) error {
-		return fakeGoaGen(moduleDir, "errors_", args)
+		return fakeGo(moduleDir, args)
 	}
-	name, err := Init(t.Context(), Options{Dir: dir, Module: "example.com/errors", SurlaVersion: published}, run)
+	name, err := Init(t.Context(), Options{Dir: dir, Module: "example.com/errors", SurlaVersion: published}, run, &fakeGenerator{pkgs: []string{"errors_"}})
 	require.NoError(t, err)
 	assert.Equal(t, "errors", name)
 	main, err := os.ReadFile(filepath.Join(dir, "cmd", "errors", "main.go"))
@@ -258,30 +270,107 @@ func TestInitRequiresExactlyOneGeneratedService(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			parent := t.TempDir()
 			run := func(_ context.Context, moduleDir, _ string, args ...string) error {
-				for _, pkg := range tc.pkgs {
-					if err := fakeGoaGen(moduleDir, pkg, args); err != nil {
-						return err
-					}
-				}
-				return nil
+				return fakeGo(moduleDir, args)
 			}
-			_, err := Init(t.Context(), Options{Dir: filepath.Join(parent, "shop"), Module: "example.com/shop", SurlaVersion: published}, run)
+			_, err := Init(t.Context(), Options{Dir: filepath.Join(parent, "shop"), Module: "example.com/shop", SurlaVersion: published}, run, &fakeGenerator{pkgs: tc.pkgs})
 			require.ErrorContains(t, err, tc.wantErr)
 			assertOnly(t, parent)
 		})
 	}
 }
 
-// fakeGoaGen stands in for goa gen: for a gen command it writes the service
-// package Goa would generate, named pkg, into dir.
-func fakeGoaGen(dir, pkg string, args []string) error {
-	if !slices.Contains(args, "gen") {
-		return nil
+func TestInitLeavesNoProjectWhenGenerationFails(t *testing.T) {
+	cases := []struct {
+		name string
+		// gen is the generator.
+		gen *fakeGenerator
+		// cancelInGenerate cancels Init's context during the last
+		// generation, after which every remaining step succeeds.
+		cancelInGenerate bool
+		// wantErr is part of the expected error.
+		wantErr string
+	}{
+		{name: "generation fails", gen: &fakeGenerator{err: errors.New("design/design.go:3: boom")}, wantErr: "generate code for module .: design/design.go:3: boom"},
+		{name: "closing the generator fails", gen: &fakeGenerator{pkgs: []string{"shop"}, closeErr: errors.New("workspace not removed")}, wantErr: "workspace not removed"},
+		{name: "path outside the module", gen: &fakeGenerator{pkgs: []string{"shop"}, extra: map[string]string{"../escape.go": "x"}}, wantErr: `refusing to write "../escape.go"`},
+		{name: "path outside gen/", gen: &fakeGenerator{pkgs: []string{"shop"}, extra: map[string]string{"design/design.go": "x"}}, wantErr: `refusing to write "design/design.go"`},
+		{name: "unclean path", gen: &fakeGenerator{pkgs: []string{"shop"}, extra: map[string]string{"gen/../go.mod": "x"}}, wantErr: `refusing to write "gen/../go.mod"`},
+		{name: "canceled after generation", gen: &fakeGenerator{pkgs: []string{"shop"}}, cancelInGenerate: true, wantErr: context.Canceled.Error()},
 	}
-	if err := os.MkdirAll(filepath.Join(dir, "gen", pkg), 0o755); err != nil {
-		return err
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			parent := t.TempDir()
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			if tc.cancelInGenerate {
+				tc.gen.onGenerate = func(n int) {
+					if n == 2 {
+						cancel()
+					}
+				}
+			}
+			run := func(_ context.Context, moduleDir, _ string, args ...string) error {
+				return fakeGo(moduleDir, args)
+			}
+			_, err := Init(ctx, Options{Dir: filepath.Join(parent, "shop"), Module: "example.com/shop", SurlaVersion: published}, run, tc.gen)
+			require.ErrorContains(t, err, tc.wantErr)
+			assertOnly(t, parent)
+			assert.Equal(t, 1, tc.gen.closes)
+		})
 	}
-	return os.WriteFile(filepath.Join(dir, "gen", pkg, "service.go"), []byte("package "+pkg+"\n"), 0o644)
+}
+
+// fakeGo stands in for the go command: `go mod tidy` writes the module's
+// go.sum, and every other command does nothing.
+func fakeGo(dir string, args []string) error {
+	if slices.Equal(args, []string{"go", "mod", "tidy"}) {
+		return os.WriteFile(filepath.Join(dir, "go.sum"), []byte("sum\n"), 0o644)
+	}
+	return nil
+}
+
+// fakeGenerator stands in for Surla's sandboxed generator.
+type fakeGenerator struct {
+	// pkgs are the service packages each Generate returns a service.go for.
+	pkgs []string
+	// extra is added to every Generate result.
+	extra map[string]string
+	// err, when set, is what Generate returns.
+	err error
+	// closeErr is what Close returns.
+	closeErr error
+	// onGenerate, when set, runs on each Generate call with its 1-based
+	// number.
+	onGenerate func(n int)
+	// inputs records each Generate call's files.
+	inputs []map[string]string
+	// closes counts Close calls.
+	closes int
+}
+
+// Generate records files and returns the configured result.
+func (g *fakeGenerator) Generate(_ context.Context, files map[string]string) (map[string][]byte, error) {
+	g.inputs = append(g.inputs, files)
+	if g.onGenerate != nil {
+		g.onGenerate(len(g.inputs))
+	}
+	if g.err != nil {
+		return nil, g.err
+	}
+	out := map[string][]byte{}
+	for _, pkg := range g.pkgs {
+		out["gen/"+pkg+"/service.go"] = []byte("package " + pkg + "\n")
+	}
+	for p, content := range g.extra {
+		out[p] = []byte(content)
+	}
+	return out, nil
+}
+
+// Close counts the call and returns closeErr.
+func (g *fakeGenerator) Close() error {
+	g.closes++
+	return g.closeErr
 }
 
 // failRunner fails the test if Init runs any command.

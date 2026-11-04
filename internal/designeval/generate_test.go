@@ -10,9 +10,9 @@ import (
 	"github.com/goadesign/surla/internal/testmodule"
 )
 
-// surlaGoa is the goa.design/goa/v3 version Surla itself requires, which has
-// no generator.CompleteSources.
-const surlaGoa = "v3.35.1-0.20261030163856-3e08a6128171"
+// preCompleteSourcesGoa is the goa.design/goa/v3 version starters created
+// before generator.CompleteSources require; it has no CompleteSources.
+const preCompleteSourcesGoa = "v3.35.1-0.20261030163856-3e08a6128171"
 
 func TestGenerateReturnsWhatGoaGenWrites(t *testing.T) {
 	files := testmodule.Snapshot(t, completeSourcesGoa, minimalDesign)
@@ -39,26 +39,28 @@ func TestGenerateNeedsAGoaWithCompleteSources(t *testing.T) {
 		wantErr []string
 	}{
 		{
-			name:  "goa without CompleteSources",
-			files: func(t *testing.T) map[string]string { return testmodule.Snapshot(t, surlaGoa, minimalDesign) },
+			name: "goa without CompleteSources",
+			files: func(t *testing.T) map[string]string {
+				return testmodule.Snapshot(t, preCompleteSourcesGoa, minimalDesign)
+			},
 			wantErr: []string{
 				"surla gen needs a goa.design/goa/v3 that provides generator.CompleteSources",
-				"builds with goa.design/goa/v3 " + surlaGoa,
+				"builds with goa.design/goa/v3 " + preCompleteSourcesGoa,
 				"CompleteSources",
 			},
 		},
 		{
 			name: "old requirement replaced by a goa that has it",
 			files: func(t *testing.T) map[string]string {
-				return withGoaReplace(t, surlaGoa, completeSourcesGoa)
+				return withGoaReplace(t, preCompleteSourcesGoa, completeSourcesGoa)
 			},
 		},
 		{
 			name: "new requirement replaced by a goa that lacks it",
 			files: func(t *testing.T) map[string]string {
-				return withGoaReplace(t, completeSourcesGoa, surlaGoa)
+				return withGoaReplace(t, completeSourcesGoa, preCompleteSourcesGoa)
 			},
-			wantErr: []string{"=> goa.design/goa/v3@" + surlaGoa, "CompleteSources"},
+			wantErr: []string{"=> goa.design/goa/v3@" + preCompleteSourcesGoa, "CompleteSources"},
 		},
 	}
 	for _, tc := range cases {
