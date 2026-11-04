@@ -298,12 +298,16 @@ func Prepare(ctx context.Context, p Plan) (Prepared, error) {
 	var artifactFlags []string
 	for _, name := range slices.Sorted(maps.Keys(p.Binaries)) {
 		out := filepath.Join(candidateBinDir, name)
+		logFile := filepath.Join(r.evidenceDir, "build-"+name+".log")
 		if err := candidate.Build(ctx, candidate.BuildSpec{
 			SourceDir: moduleDir, ModuleDir: moduleDir, Package: p.Binaries[name], Out: out,
 			GOROOT: toolchain.goroot, ModCache: toolchain.modCache, WorkDir: toolchain.workDir,
-			LogFile: filepath.Join(r.evidenceDir, "build-"+name+".log"),
+			LogFile: logFile,
 		}, (*exec.Cmd).Run); err != nil {
-			return Prepared{}, stageError(StageBuild, summaryCandidateBuild, fmt.Errorf("build candidate %s: %w", name, err))
+			// The private error carries the end of the compiler's output and
+			// the log that holds all of it; the summary builders see does not.
+			return Prepared{}, stageError(StageBuild, summaryCandidateBuild,
+				fmt.Errorf("build candidate %s: %w%s", name, err, excerptFile(logFile, "build output")))
 		}
 		digest, err := sha256File(out)
 		if err != nil {
@@ -332,12 +336,15 @@ func Prepare(ctx context.Context, p Plan) (Prepared, error) {
 	// within its own checkout: its module may replace sibling modules there,
 	// but no link or replace can pull in source outside SuiteCommit.
 	suiteBin := filepath.Join(suiteBinDir, "suite")
+	suiteLog := filepath.Join(r.evidenceDir, "build-suite.log")
 	if err := candidate.Build(ctx, candidate.BuildSpec{
 		SourceDir: suiteDir, ModuleDir: suiteModuleDir, Package: p.SuiteCommand, Out: suiteBin,
 		GOROOT: suiteToolchain.goroot, ModCache: suiteToolchain.modCache, WorkDir: suiteToolchain.workDir,
-		LogFile: filepath.Join(r.evidenceDir, "build-suite.log"),
+		LogFile: suiteLog,
 	}, (*exec.Cmd).Run); err != nil {
-		return Prepared{}, stageError(StageBuild, summarySuiteBuild, fmt.Errorf("build suite: %w", err))
+		// As for the candidate: compiler output goes only into the private error.
+		return Prepared{}, stageError(StageBuild, summarySuiteBuild,
+			fmt.Errorf("build suite: %w%s", err, excerptFile(suiteLog, "build output")))
 	}
 	return Prepared{
 		Binding:       binding,
@@ -521,26 +528,7 @@ func (r *runner) outputs(label string) (*os.File, *os.File, error) {
 // excerpt returns the end of a command's stderr for an error message, noting
 // truncation and where the full output is.
 func (r *runner) excerpt(label string) string {
-	path := filepath.Join(r.evidenceDir, label+".stderr")
-	f, err := os.Open(path)
-	if err != nil {
-		return ""
-	}
-	defer f.Close()
-	info, err := f.Stat()
-	if err != nil || info.Size() == 0 {
-		return ""
-	}
-	start := max(info.Size()-maxErrorExcerpt, 0)
-	b := make([]byte, info.Size()-start)
-	if _, err := f.ReadAt(b, start); err != nil && !errors.Is(err, io.EOF) {
-		return ""
-	}
-	note := ""
-	if start > 0 {
-		note = " (last " + strconv.Itoa(maxErrorExcerpt) + " bytes)"
-	}
-	return "\nstderr" + note + ", full output in " + path + ":\n" + strings.TrimSpace(string(b))
+	return excerptFile(filepath.Join(r.evidenceDir, label+".stderr"), "stderr")
 }
 
 // prepareBuild resolves the toolchain the module at moduleDir selects and
@@ -569,6 +557,32 @@ func (r *runner) prepareBuild(ctx context.Context, label, moduleDir, workDir str
 		return buildToolchain{}, fmt.Errorf("create build home: %w", err)
 	}
 	return t, nil
+}
+
+// excerptFile returns the end of the evidence file at path, described as
+// what, for an error message: a note of truncation, the file's path, and its
+// last maxErrorExcerpt bytes. It returns "" when the file is missing, empty
+// or unreadable, so an error never points at output that was not written.
+func excerptFile(path, what string) string {
+	f, err := os.Open(path)
+	if err != nil {
+		return ""
+	}
+	defer f.Close()
+	info, err := f.Stat()
+	if err != nil || info.Size() == 0 {
+		return ""
+	}
+	start := max(info.Size()-maxErrorExcerpt, 0)
+	b := make([]byte, info.Size()-start)
+	if _, err := f.ReadAt(b, start); err != nil && !errors.Is(err, io.EOF) {
+		return ""
+	}
+	note := ""
+	if start > 0 {
+		note = " (last " + strconv.Itoa(maxErrorExcerpt) + " bytes)"
+	}
+	return "\n" + what + note + ", full output in " + path + ":\n" + strings.TrimSpace(string(b))
 }
 
 // decodeFile decodes one JSON value from a file.

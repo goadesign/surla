@@ -4,10 +4,10 @@ Rules for agents building services with Goa, Goa-AI, Model, Pulse and Clue. Rule
 
 ## 0. Loop
 
-1. Change `design/` first. Run `goa gen <module>/design`. Implement outside `gen/`. Build and test.
+1. Change `design/` first. Regenerate with `surla gen -dir <module root>`, which runs Goa inside Surla's sandbox with the module's own dependency versions. Implement outside `gen/`. Build and test.
 2. Never edit `gen/`. A compiler error in `gen/` means the design or the application code is wrong.
 3. `goa example` writes scaffolding once and never updates it. Port design changes into existing implementations by hand.
-4. Pin the `goa` command to the module version: `go run goa.design/goa/v3/cmd/goa gen …`.
+4. `surla gen` refuses a design with gRPC transports, because protoc cannot run in its sandbox. Generate such a design with the `goa` command pinned to the module version, `go run goa.design/goa/v3/cmd/goa gen <module>/design`, never a separately installed `goa`.
 5. After a signature change, regenerate, compile, and fix every caller the compiler reports. Then add behavior tests. Compiling proves types, not behavior.
 
 ## 1. Contract
