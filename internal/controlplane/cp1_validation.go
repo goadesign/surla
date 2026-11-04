@@ -97,26 +97,46 @@ func validateAmbiguities(changeID string, in []CP1ModelAmbiguity) ([]*gensurla.A
 	return out, nil
 }
 
-// validateAmbiguityAnswers verifies exact 1-to-1 resolution of open ambiguity
-// questions against their declared options.
+// validateAmbiguityAnswers verifies that answers resolves every open ambiguity
+// question with exactly one of its declared options and names no other
+// question. It reports every problem in one error, so a caller fixes all of
+// them in one retry: missing answers and answers that are not an option, in
+// question order and each with its options quoted, then answers for unknown
+// question IDs in sorted order. When an answer is missing or is not an
+// option, the error ends by pointing to revise_change for a decision that
+// none of the options expresses.
 func validateAmbiguityAnswers(questions []*gensurla.AmbiguityQuestion, answers map[string]string) error {
-	allowedByID := make(map[string][]string, len(questions))
+	known := make(map[string]bool, len(questions))
+	var problems []string
 	for _, q := range questions {
-		allowedByID[q.ID] = q.Options
+		known[q.ID] = true
 		ans, has := answers[q.ID]
-		if !has || strings.TrimSpace(ans) == "" {
-			return fmt.Errorf("missing confirmation answer for ambiguity %q", q.ID)
-		}
-		if !slices.Contains(q.Options, ans) {
-			return fmt.Errorf("answer %q for ambiguity %q is not in allowed options %v", ans, q.ID, q.Options)
+		switch {
+		case !has || strings.TrimSpace(ans) == "":
+			problems = append(problems, fmt.Sprintf("missing confirmation answer for ambiguity %q (options: %q)", q.ID, q.Options))
+		case !slices.Contains(q.Options, ans):
+			problems = append(problems, fmt.Sprintf("answer %q for ambiguity %q is not one of its options: %q", ans, q.ID, q.Options))
 		}
 	}
+	unresolved := len(problems) > 0
+	var unknown []string
 	for id := range answers {
-		if _, ok := allowedByID[id]; !ok {
-			return fmt.Errorf("unexpected confirmation answer for unknown ambiguity %q", id)
+		if !known[id] {
+			unknown = append(unknown, id)
 		}
 	}
-	return nil
+	slices.Sort(unknown)
+	for _, id := range unknown {
+		problems = append(problems, fmt.Sprintf("unexpected confirmation answer for unknown ambiguity %q", id))
+	}
+	if len(problems) == 0 {
+		return nil
+	}
+	msg := strings.Join(problems, "; ")
+	if unresolved {
+		msg += "; each answer must be exactly one of its question's options, and a decision that no option expresses goes in revise_change's prompt"
+	}
+	return errors.New(msg)
 }
 
 // validateConfirmedExamples validates that every confirmed ExampleItem has a

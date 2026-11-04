@@ -47,7 +47,10 @@ type ConfirmIntentRequestBody struct {
 	ChangeID *string `form:"change_id,omitempty" json:"change_id,omitempty" xml:"change_id,omitempty"`
 	// Reviewed CP1 request_revision digest being confirmed.
 	RequestRevision *string `form:"request_revision,omitempty" json:"request_revision,omitempty" xml:"request_revision,omitempty"`
-	// Selected resolution per ambiguity question ID.
+	// Selected resolution per ambiguity question ID. Answer every question, and
+	// give each value exactly as one string from that question's options,
+	// character for character. To record a decision none of the options expresses,
+	// call revise_change with it in prompt, then confirm the revised card.
 	Answers map[string]string `form:"answers,omitempty" json:"answers,omitempty" xml:"answers,omitempty"`
 	// Confirmed example table.
 	Examples []*ExampleItemRequestBody `form:"examples,omitempty" json:"examples,omitempty" xml:"examples,omitempty"`
@@ -139,7 +142,8 @@ type ProposeChangeResponseBody struct {
 	Summary string `form:"summary" json:"summary" xml:"summary"`
 	// Domain questions surfaced at CP1, retained for audit after confirmation.
 	Ambiguities []*AmbiguityQuestionResponseBody `form:"ambiguities,omitempty" json:"ambiguities,omitempty" xml:"ambiguities,omitempty"`
-	// Confirmed resolution per ambiguity question ID.
+	// Confirmed resolution per ambiguity question ID: each value is exactly one
+	// string from that question's options.
 	Answers map[string]string `form:"answers,omitempty" json:"answers,omitempty" xml:"answers,omitempty"`
 	// Concrete examples mapped to evaluator checks.
 	Examples []*ExampleItemResponseBody `form:"examples" json:"examples" xml:"examples"`
@@ -180,7 +184,8 @@ type ReviseChangeResponseBody struct {
 	Summary string `form:"summary" json:"summary" xml:"summary"`
 	// Domain questions surfaced at CP1, retained for audit after confirmation.
 	Ambiguities []*AmbiguityQuestionResponseBody `form:"ambiguities,omitempty" json:"ambiguities,omitempty" xml:"ambiguities,omitempty"`
-	// Confirmed resolution per ambiguity question ID.
+	// Confirmed resolution per ambiguity question ID: each value is exactly one
+	// string from that question's options.
 	Answers map[string]string `form:"answers,omitempty" json:"answers,omitempty" xml:"answers,omitempty"`
 	// Concrete examples mapped to evaluator checks.
 	Examples []*ExampleItemResponseBody `form:"examples" json:"examples" xml:"examples"`
@@ -221,7 +226,8 @@ type ConfirmIntentResponseBody struct {
 	Summary string `form:"summary" json:"summary" xml:"summary"`
 	// Domain questions surfaced at CP1, retained for audit after confirmation.
 	Ambiguities []*AmbiguityQuestionResponseBody `form:"ambiguities,omitempty" json:"ambiguities,omitempty" xml:"ambiguities,omitempty"`
-	// Confirmed resolution per ambiguity question ID.
+	// Confirmed resolution per ambiguity question ID: each value is exactly one
+	// string from that question's options.
 	Answers map[string]string `form:"answers,omitempty" json:"answers,omitempty" xml:"answers,omitempty"`
 	// Concrete examples mapped to evaluator checks.
 	Examples []*ExampleItemResponseBody `form:"examples" json:"examples" xml:"examples"`
@@ -262,7 +268,8 @@ type GetChangeResponseBody struct {
 	Summary string `form:"summary" json:"summary" xml:"summary"`
 	// Domain questions surfaced at CP1, retained for audit after confirmation.
 	Ambiguities []*AmbiguityQuestionResponseBody `form:"ambiguities,omitempty" json:"ambiguities,omitempty" xml:"ambiguities,omitempty"`
-	// Confirmed resolution per ambiguity question ID.
+	// Confirmed resolution per ambiguity question ID: each value is exactly one
+	// string from that question's options.
 	Answers map[string]string `form:"answers,omitempty" json:"answers,omitempty" xml:"answers,omitempty"`
 	// Concrete examples mapped to evaluator checks.
 	Examples []*ExampleItemResponseBody `form:"examples" json:"examples" xml:"examples"`
@@ -411,7 +418,8 @@ type ApproveMergeResponseBody struct {
 	Summary string `form:"summary" json:"summary" xml:"summary"`
 	// Domain questions surfaced at CP1, retained for audit after confirmation.
 	Ambiguities []*AmbiguityQuestionResponseBody `form:"ambiguities,omitempty" json:"ambiguities,omitempty" xml:"ambiguities,omitempty"`
-	// Confirmed resolution per ambiguity question ID.
+	// Confirmed resolution per ambiguity question ID: each value is exactly one
+	// string from that question's options.
 	Answers map[string]string `form:"answers,omitempty" json:"answers,omitempty" xml:"answers,omitempty"`
 	// Concrete examples mapped to evaluator checks.
 	Examples []*ExampleItemResponseBody `form:"examples" json:"examples" xml:"examples"`

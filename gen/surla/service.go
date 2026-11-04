@@ -288,7 +288,8 @@ type ChangeCardResult struct {
 	Summary string
 	// Domain questions surfaced at CP1, retained for audit after confirmation.
 	Ambiguities []*AmbiguityQuestion
-	// Confirmed resolution per ambiguity question ID.
+	// Confirmed resolution per ambiguity question ID: each value is exactly one
+	// string from that question's options.
 	Answers map[string]string
 	// Concrete examples mapped to evaluator checks.
 	Examples []*ExampleItem
@@ -323,7 +324,10 @@ type ConfirmIntentPayload struct {
 	ChangeID string
 	// Reviewed CP1 request_revision digest being confirmed.
 	RequestRevision string
-	// Selected resolution per ambiguity question ID.
+	// Selected resolution per ambiguity question ID. Answer every question, and
+	// give each value exactly as one string from that question's options,
+	// character for character. To record a decision none of the options expresses,
+	// call revise_change with it in prompt, then confirm the revised card.
 	Answers map[string]string
 	// Confirmed example table.
 	Examples []*ExampleItem
@@ -1255,7 +1259,8 @@ type jsonChangeCardResultTransport struct {
 	Summary *string `json:"summary"`
 	// Domain questions surfaced at CP1, retained for audit after confirmation.
 	Ambiguities []*jsonAmbiguityQuestionTransport `json:"ambiguities,omitempty"`
-	// Confirmed resolution per ambiguity question ID.
+	// Confirmed resolution per ambiguity question ID: each value is exactly one
+	// string from that question's options.
 	Answers map[string]string `json:"answers,omitempty"`
 	// Concrete examples mapped to evaluator checks.
 	Examples []*jsonExampleItemTransport `json:"examples"`
@@ -1352,7 +1357,10 @@ type jsonConfirmIntentPayloadTransport struct {
 	ChangeID *string `json:"change_id"`
 	// Reviewed CP1 request_revision digest being confirmed.
 	RequestRevision *string `json:"request_revision"`
-	// Selected resolution per ambiguity question ID.
+	// Selected resolution per ambiguity question ID. Answer every question, and
+	// give each value exactly as one string from that question's options,
+	// character for character. To record a decision none of the options expresses,
+	// call revise_change with it in prompt, then confirm the revised card.
 	Answers map[string]string `json:"answers"`
 	// Confirmed example table.
 	Examples []*jsonExampleItemTransport `json:"examples"`
@@ -9737,7 +9745,7 @@ func validateChangeCardResultJSONValue(path string, value any, description strin
 		case "answers":
 			if err := validateChangeCardResultJSONValue3(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Confirmed resolution per ambiguity question ID.",
+				typed[key], "Confirmed resolution per ambiguity question ID: each value is exactly one string from that question's options.",
 			); err != nil {
 				return err
 			}
@@ -10125,7 +10133,7 @@ func validateConfirmIntentPayloadJSONValue(path string, value any, description s
 		case "answers":
 			if err := validateConfirmIntentPayloadJSONValue2(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Selected resolution per ambiguity question ID.",
+				typed[key], "Selected resolution per ambiguity question ID. Answer every question, and give each value exactly as one string from that question's options, character for character. To record a decision none of the options expresses, call revise_change with it in prompt, then confirm the revised card.",
 			); err != nil {
 				return err
 			}

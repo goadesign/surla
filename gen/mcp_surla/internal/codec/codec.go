@@ -194,7 +194,8 @@ type ApproveMergeResultTransport struct {
 	Summary *string `json:"summary"`
 	// Domain questions surfaced at CP1, retained for audit after confirmation.
 	Ambiguities []*ApproveMergeResultAmbiguityQuestionTransport `json:"ambiguities,omitempty"`
-	// Confirmed resolution per ambiguity question ID.
+	// Confirmed resolution per ambiguity question ID: each value is exactly one
+	// string from that question's options.
 	Answers map[string]string `json:"answers,omitempty"`
 	// Concrete examples mapped to evaluator checks.
 	Examples []*ApproveMergeResultExampleItemTransport `json:"examples"`
@@ -387,7 +388,10 @@ type ConfirmIntentPayloadTransport struct {
 	ChangeID *string `json:"change_id"`
 	// Reviewed CP1 request_revision digest being confirmed.
 	RequestRevision *string `json:"request_revision"`
-	// Selected resolution per ambiguity question ID.
+	// Selected resolution per ambiguity question ID. Answer every question, and
+	// give each value exactly as one string from that question's options,
+	// character for character. To record a decision none of the options expresses,
+	// call revise_change with it in prompt, then confirm the revised card.
 	Answers map[string]string `json:"answers"`
 	// Confirmed example table.
 	Examples []*ConfirmIntentPayloadExampleItemTransport `json:"examples"`
@@ -556,7 +560,8 @@ type ConfirmIntentResultTransport struct {
 	Summary *string `json:"summary"`
 	// Domain questions surfaced at CP1, retained for audit after confirmation.
 	Ambiguities []*ConfirmIntentResultAmbiguityQuestionTransport `json:"ambiguities,omitempty"`
-	// Confirmed resolution per ambiguity question ID.
+	// Confirmed resolution per ambiguity question ID: each value is exactly one
+	// string from that question's options.
 	Answers map[string]string `json:"answers,omitempty"`
 	// Concrete examples mapped to evaluator checks.
 	Examples []*ConfirmIntentResultExampleItemTransport `json:"examples"`
@@ -1005,7 +1010,8 @@ type GetChangeResultTransport struct {
 	Summary *string `json:"summary"`
 	// Domain questions surfaced at CP1, retained for audit after confirmation.
 	Ambiguities []*GetChangeResultAmbiguityQuestionTransport `json:"ambiguities,omitempty"`
-	// Confirmed resolution per ambiguity question ID.
+	// Confirmed resolution per ambiguity question ID: each value is exactly one
+	// string from that question's options.
 	Answers map[string]string `json:"answers,omitempty"`
 	// Concrete examples mapped to evaluator checks.
 	Examples []*GetChangeResultExampleItemTransport `json:"examples"`
@@ -2558,7 +2564,8 @@ type ProposeChangeResultTransport struct {
 	Summary *string `json:"summary"`
 	// Domain questions surfaced at CP1, retained for audit after confirmation.
 	Ambiguities []*ProposeChangeResultAmbiguityQuestionTransport `json:"ambiguities,omitempty"`
-	// Confirmed resolution per ambiguity question ID.
+	// Confirmed resolution per ambiguity question ID: each value is exactly one
+	// string from that question's options.
 	Answers map[string]string `json:"answers,omitempty"`
 	// Concrete examples mapped to evaluator checks.
 	Examples []*ProposeChangeResultExampleItemTransport `json:"examples"`
@@ -2869,7 +2876,8 @@ type ReviseChangeResultTransport struct {
 	Summary *string `json:"summary"`
 	// Domain questions surfaced at CP1, retained for audit after confirmation.
 	Ambiguities []*ReviseChangeResultAmbiguityQuestionTransport `json:"ambiguities,omitempty"`
-	// Confirmed resolution per ambiguity question ID.
+	// Confirmed resolution per ambiguity question ID: each value is exactly one
+	// string from that question's options.
 	Answers map[string]string `json:"answers,omitempty"`
 	// Concrete examples mapped to evaluator checks.
 	Examples []*ReviseChangeResultExampleItemTransport `json:"examples"`
