@@ -16,6 +16,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/goadesign/surla/internal/abspath"
 	"github.com/goadesign/surla/internal/procgroup"
 	"github.com/goadesign/surla/internal/verify"
 	"github.com/goadesign/surla/verify/candidate"
@@ -166,6 +167,8 @@ func LeftoverLiveDirs(root string) ([]string, error) {
 // executor's environment without TMPDIR or the key, which LaunchLive sets.
 // command is the argument list that runs this program. When LaunchLive fails,
 // no process was started and the directory it created is removed.
+// The allocated directory and child TMPDIR are absolute and symlink-free, so
+// preparation and suite processes can change directories without changing them.
 func LaunchLive(root string, plan verify.Plan, key string, command, env []string) (*LiveProcess, error) {
 	if key == "" {
 		return nil, errors.New("live target key is required")
@@ -173,7 +176,11 @@ func LaunchLive(root string, plan verify.Plan, key string, command, env []string
 	if err := os.MkdirAll(root, 0o700); err != nil {
 		return nil, fmt.Errorf("create live root: %w", err)
 	}
-	dir, err := os.MkdirTemp(root, liveDirPrefix+"*")
+	resolvedRoot, err := abspath.Eval(root)
+	if err != nil {
+		return nil, fmt.Errorf("resolve live root symlinks: %w", err)
+	}
+	dir, err := os.MkdirTemp(resolvedRoot, liveDirPrefix+"*")
 	if err != nil {
 		return nil, fmt.Errorf("create live directory: %w", err)
 	}

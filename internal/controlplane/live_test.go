@@ -498,7 +498,10 @@ func TestAFailedStopKeepsTheOwnerAndStartsNoOtherTarget(t *testing.T) {
 	assert.Contains(t, err.Error(), "could not be confirmed stopped")
 	dirs, err := verifyrun.LeftoverLiveDirs(LiveRoot(cardsDir))
 	require.NoError(t, err)
-	assert.Equal(t, []string{lt.proc.Dir()}, dirs, "no second target was launched")
+	require.Len(t, dirs, 1, "no second target was launched")
+	resolvedDir, err := filepath.EvalSymlinks(dirs[0])
+	require.NoError(t, err)
+	assert.Equal(t, lt.proc.Dir(), resolvedDir, "the original target's directory remains")
 	_, err = draft(alice, cp, fakePromptID, "x")
 	require.EqualError(t, err, "no target prompt updater is bound to this control plane", "drafts are unbound while stopping")
 
