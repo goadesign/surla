@@ -351,7 +351,8 @@ func TestInitReadmeFirstRunSnippetsMatchTheProject(t *testing.T) {
 	}
 
 	config := between(t, readme, "cat > .surla/verification.json <<EOF\n", "\nEOF\n")
-	config = strings.NewReplacer("$PWD", "/work/bakery", "$(git rev-parse HEAD)", strings.Repeat("a", 40)).Replace(config)
+	assert.NotContains(t, config, "$PWD", "paths stay relative so any valid project path writes valid JSON")
+	config = strings.ReplaceAll(config, "$(git rev-parse HEAD)", strings.Repeat("a", 40))
 	var fields map[string]any
 	require.NoError(t, json.Unmarshal([]byte(config), &fields), config)
 	// These are the fields cmd/surla's verificationFile defines and
@@ -362,6 +363,8 @@ func TestInitReadmeFirstRunSnippetsMatchTheProject(t *testing.T) {
 	}, slices.Sorted(maps.Keys(fields)))
 	assert.Equal(t, map[string]any{"bakery": "./cmd/bakery"}, fields["binaries"])
 	assert.Equal(t, "./cmd/bakery-evals", fields["suite_command"])
+	assert.Equal(t, ".", fields["candidate_repo"])
+	assert.Equal(t, ".", fields["suite_repo"])
 	assert.Contains(t, readme, "-verification-config .surla/verification.json")
 
 	mcpSection := between(t, readme, "Register the server with your coding agent.", "Other coding agents")

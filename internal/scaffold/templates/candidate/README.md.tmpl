@@ -17,7 +17,7 @@ evaluator suite that `surla verify` can run against it.
   in this directory: it runs Goa's generator for this module inside Surla's
   sandbox. Never edit `gen/`. `surla gen` publishes `gen/` without compiling
   the hand-written packages in `internal/` and `cmd/`, so after a design
-  change, update them to match the new `gen/` before you commit, verify, or
+  change, update them to match the new `gen/` before you verify a commit or
   start a live target.
   `AGENTS_QUICKSTART.md` is generated with it and maps the agent, its tools
   and the generated packages for coding agents.
@@ -71,7 +71,8 @@ receives the verification report as `reports/<digest>.json`.
 
 After the first commit, write a verification configuration for this
 repository. It pins the evaluator suite to the commit you just made; to trust
-a later suite commit, write it again and restart `surla serve`. `.gitignore`
+a later suite commit, write it again and restart `surla serve`. Its paths are
+relative to this directory, so run `surla serve` from here. `.gitignore`
 keeps `.surla/`, which also holds Change Cards, run state and live targets,
 out of the repository:
 
@@ -79,12 +80,12 @@ out of the repository:
 mkdir -p .surla
 cat > .surla/verification.json <<EOF
 {
-  "runs_dir": "$PWD/.surla/runs",
-  "report_dir": "$PWD/reports",
-  "candidate_repo": "$PWD",
+  "runs_dir": ".surla/runs",
+  "report_dir": "reports",
+  "candidate_repo": ".",
   "candidate_module": ".",
   "binaries": {"[[.Name]]": "./cmd/[[.Name]]"},
-  "suite_repo": "$PWD",
+  "suite_repo": ".",
   "suite_commit": "$(git rev-parse HEAD)",
   "suite_module": "eval",
   "suite_command": "./cmd/[[.Name]]-evals",
@@ -111,8 +112,8 @@ surla serve -principal you@example.com \
 Register the server with your coding agent. For Claude Code, save this as
 `.mcp.json` in this directory. Claude Code fills in `${SURLA_AUTH_TOKEN}`
 from its environment, so start it from a shell where that variable is
-exported, and the token never lands in a file; `.gitignore` keeps
-`.mcp.json` out of the repository anyway:
+exported. `.mcp.json` holds that reference, not the token itself, and
+`.gitignore` keeps it out of the repository:
 
 ```json
 {
