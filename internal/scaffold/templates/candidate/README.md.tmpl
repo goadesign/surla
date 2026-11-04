@@ -15,10 +15,10 @@ evaluator suite that `surla verify` can run against it.
   `design/model.go` declares the C4 architecture model.
 - `gen/` is generated from `design/`. After changing `design/`, run `surla gen`
   in this directory: it runs Goa's generator for this module inside Surla's
-  sandbox. Never edit `gen/`. `surla gen` publishes `gen/` without compiling
-  the hand-written packages in `internal/` and `cmd/`, so after a design
-  change, update them to match the new `gen/` before you verify a commit or
-  start a live target.
+  sandbox. Never edit `gen/`. `surla gen` does not build the whole
+  application against the new `gen/`, so after a design change, update the
+  hand-written code in `internal/` and `cmd/` to match it before you verify a
+  commit or start a live target.
   `AGENTS_QUICKSTART.md` is generated with it and maps the agent, its tools
   and the generated packages for coding agents.
 - `internal/helper` is the agent's planner and `internal/service` implements the
