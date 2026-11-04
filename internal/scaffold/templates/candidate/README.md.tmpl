@@ -15,7 +15,10 @@ evaluator suite that `surla verify` can run against it.
   `design/model.go` declares the C4 architecture model.
 - `gen/` is generated from `design/`. After changing `design/`, run `surla gen`
   in this directory: it runs Goa's generator for this module inside Surla's
-  sandbox. Never edit `gen/`.
+  sandbox. Never edit `gen/`. `surla gen` does not build the whole
+  application against the new `gen/`, so after a design change, update the
+  hand-written code in `internal/` and `cmd/` to match it before you verify a
+  commit or start a live target.
   `AGENTS_QUICKSTART.md` is generated with it and maps the agent, its tools
   and the generated packages for coding agents.
 - `internal/helper` is the agent's planner and `internal/service` implements the
@@ -24,12 +27,16 @@ evaluator suite that `surla verify` can run against it.
   model call to a goa-ai model gateway given with `-model-gateway host:port`;
   the gateway holds the model provider and its API keys.
 - `eval/` is a separate Go module: the starter evaluator suite. It runs the
-  `[[.Name]]` binary in Surla's sandbox, serves a scripted model (not an LLM)
-  through its own model gateway, asks "How much is tea?" and "How much is
-  coffee?", and checks both the answer and that the agent called
-  `lookup_price` and answered from that call's result. A third scenario checks
-  that `override_prompt` rejects a wrong key and that the next question's model
-  request carries the new prompt text. Its `--live` mode starts the
+  `[[.Name]]` binary in Surla's sandbox and serves a scripted model (not an
+  LLM) through its own model gateway. Its three scenarios are:
+  - `prices_tea`: asks "How much is tea?" and checks that the agent called
+    `lookup_price` and answered from that call's result;
+  - `unknown_item` (tagged `holdout`): asks "How much is coffee?", which the
+    catalog does not price, and checks that the agent calls `lookup_price`
+    and reports that it found no price;
+  - `prompt_override_reaches_model`: checks that `override_prompt` rejects a
+    wrong key and that the next question's model request carries the new
+    prompt text. Its `--live` mode starts the
   `[[.Name]]` for `surla serve`'s `start_live_target`, planning with the model
   `surla serve` was started with. After changing
   `eval/design/`, regenerate its code with
@@ -48,16 +55,82 @@ git init
 git add .gitignore README.md AGENTS_QUICKSTART.md go.mod go.sum design gen internal cmd eval
 git commit -m "Start [[.Name]] from surla init"
 surla preview -dir .
+WORK_DIR="$(mktemp -d)/work"
 surla verify \
   -candidate-repo . -candidate-commit "$(git rev-parse HEAD)" -binary [[.Name]]=./cmd/[[.Name]] \
   -suite-repo . -suite-commit "$(git rev-parse HEAD)" -suite-module eval -suite-command ./cmd/[[.Name]]-evals \
-  -request-revision starter -work-dir "$(mktemp -d)/work" -report-dir reports
+  -request-revision starter -work-dir "$WORK_DIR" -report-dir reports
 ```
 
-To try prompt wording on a running `[[.Name]]` before you verify it, start
-`surla serve` with a `-verification-config` for this repository and with
-`-model-provider` and `-model-name` (or `-model-gateway-addr`). Then call
-`start_live_target` with a commit, and `draft_override` with
+`surla verify` keeps `$WORK_DIR` after the run: it holds the clones, the
+built binaries, and the evaluator's private evidence, including each build's
+log and each step's output in `$WORK_DIR/evidence/`. `-report-dir reports`
+receives the verification report as `reports/<digest>.json`.
+
+## Connect a coding agent and try a live target
+
+After the first commit, write a verification configuration for this
+repository. It pins the evaluator suite to the commit you just made; to trust
+a later suite commit, write it again and restart `surla serve`. Its paths are
+relative to this directory, so run `surla serve` from here. `.gitignore`
+keeps `.surla/`, which also holds Change Cards, run state and live targets,
+out of the repository:
+
+```sh
+mkdir -p .surla
+cat > .surla/verification.json <<EOF
+{
+  "runs_dir": ".surla/runs",
+  "report_dir": "reports",
+  "candidate_repo": ".",
+  "candidate_module": ".",
+  "binaries": {"[[.Name]]": "./cmd/[[.Name]]"},
+  "suite_repo": ".",
+  "suite_commit": "$(git rev-parse HEAD)",
+  "suite_module": "eval",
+  "suite_command": "./cmd/[[.Name]]-evals",
+  "timeout": "30m"
+}
+EOF
+```
+
+Start `surla serve` with that configuration, a bearer token of your choice,
+and a model. `-model-provider anthropic` reads `ANTHROPIC_API_KEY`,
+`-model-provider openai` reads `OPENAI_API_KEY`, and `-model-gateway-addr`
+uses a goa-ai model gateway instead. Set `MODEL_NAME` to a model your
+provider offers:
+
+```sh
+export SURLA_AUTH_TOKEN="choose-a-secret"
+export ANTHROPIC_API_KEY="your-anthropic-key"
+MODEL_NAME="your-model-name"
+surla serve -principal you@example.com \
+  -model-provider anthropic -model-name "$MODEL_NAME" \
+  -verification-config .surla/verification.json
+```
+
+Register the server with your coding agent. For Claude Code, save this as
+`.mcp.json` in this directory. Claude Code fills in `${SURLA_AUTH_TOKEN}`
+from its environment, so start it from a shell where that variable is
+exported. `.mcp.json` holds that reference, not the token itself, and
+`.gitignore` keeps it out of the repository:
+
+```json
+{
+  "mcpServers": {
+    "surla": {
+      "type": "http",
+      "url": "http://127.0.0.1:8090/mcp",
+      "headers": {"Authorization": "Bearer ${SURLA_AUTH_TOKEN}"}
+    }
+  }
+}
+```
+
+Other coding agents take the same URL and header in their own configuration
+files. To try prompt wording on a running `[[.Name]]` before you verify it,
+call `start_live_target` with a full commit ID, such as the output of
+`git rev-parse HEAD`, then `draft_override` with
 `prompt_id` `[[.Name]].helper.system`. A draft lasts only as long as that
 target: to keep it, write the text into `internal/helper/planner.go`, commit,
 and verify that commit.
