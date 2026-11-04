@@ -222,7 +222,7 @@ var BuilderScopeItem = Type("BuilderScopeItem", func() {
 
 // SwarmRoleItem describes one proposed agent role assignment in a Surla build swarm.
 var SwarmRoleItem = Type("SwarmRoleItem", func() {
-	Description("Proposed Chorus agent role assignment derived from server-owned provider profiles and explicit workspace scopes.")
+	Description("Proposed Chorus agent role assignment derived from server-owned provider profiles and explicit workspace scopes. Owned paths and access modes are operator-declared coordination ownership boundaries for Chorus agents, not Surla-enforced OS isolation.")
 	Attribute("handle", String, "Deterministic Chorus agent handle (without leading '@', at most 32 characters).")
 	Attribute("role", String, "Assigned swarm role kind.", func() {
 		Enum("architect", "builder", "eval_author", "reviewer")
@@ -232,8 +232,8 @@ var SwarmRoleItem = Type("SwarmRoleItem", func() {
 	Attribute("provider", String, "Assigned coding-agent provider name.")
 	Attribute("model", String, "Assigned model identifier.")
 	Attribute("family", String, "Canonical model family identifier.")
-	Attribute("owned_paths", ArrayOf(String), "Repository or workspace path globs owned by this role.")
-	Attribute("access_mode", String, "Workspace access boundary required of the job runner.", func() {
+	Attribute("owned_paths", ArrayOf(String), "Repository or workspace path globs owned by this role for Chorus coordination.")
+	Attribute("access_mode", String, "Operator-declared workspace coordination boundary for this role.", func() {
 		Enum("read_only_after_cp2", "read_write_worktree", "isolated_eval_workspace", "read_only_review")
 	})
 	Required(
@@ -251,15 +251,15 @@ var SwarmRoleItem = Type("SwarmRoleItem", func() {
 
 // SwarmPlanItem reports the proposed Chorus role roster and model-family routing at Checkpoint 2.
 var SwarmPlanItem = Type("SwarmPlanItem", func() {
-	Description("Proposed Chorus role assignments and model-family diversity facts surfaced at Checkpoint 2. Role and model assignments do not prove launch or replace process/workspace isolation.")
+	Description("Proposed Chorus role assignments and model-family diversity facts surfaced at Checkpoint 2. Role, model, and workspace scope assignments are Chorus coordination proposals and do not prove agent launch or replace OS process and workspace isolation.")
 	Attribute("status", String, "Roster configuration status.", func() {
 		Enum("configured", "unconfigured", "missing_capability")
 	})
 	Attribute("assignments", ArrayOf(SwarmRoleItem), "Deterministic role assignments when status is configured.")
 	Attribute("cross_family_review", Boolean, "True if and only if status is configured and the reviewer model family is disjoint from every assigned builder model family.")
-	Attribute("cross_family_eval", Boolean, "True if and only if status is configured and the eval_author model family is disjoint from every assigned builder model family.")
+	Attribute("cross_family_eval", Boolean, "True if and only if status is configured, an eval_author role is assigned, and the eval_author model family is disjoint from every assigned builder model family.")
 	Attribute("single_family", Boolean, "True when status is configured and all assigned roles share one model family.")
-	Attribute("missing_roles", ArrayOf(String), "Required roles lacking an authenticated capable profile when status is unconfigured or missing_capability.")
+	Attribute("missing_roles", ArrayOf(String), "Requested roles lacking an authenticated capable profile when status is unconfigured (with builder scopes supplied) or missing_capability; omitted on solo previews with no builder scopes.")
 	Attribute("summary", String, "Plain-English summary of the proposed swarm roster and model-family posture.")
 	Attribute("manifest", String, "Formatted Chorus collaboration manifest text when status is configured; does not claim publication until sent via Chorus.")
 	Required(
@@ -285,7 +285,9 @@ var PreviewArchitecturePayload = Type("PreviewArchitecturePayload", func() {
 	Attribute("change_id", String, "Confirmed Change Card identifier.")
 	Attribute("request_revision", String, "Expected CP1 request_revision digest.")
 	Attribute("design", DesignSnapshot, "Candidate module whose Goa and Goa-AI design is evaluated.")
-	Attribute("builders", ArrayOf(BuilderScopeItem), "Optional explicit builder path scopes for proposing the Chorus build roster.")
+	Attribute("builders", ArrayOf(BuilderScopeItem), "Optional explicit builder path scopes for proposing a Chorus build roster. When omitted, preview_architecture returns a solo preview with swarm.status unconfigured and no missing_roles.")
+	Attribute("architect_paths", ArrayOf(String), "Optional repository-relative path globs for an @architect role in the proposed Chorus roster (requires builders).")
+	Attribute("eval_paths", ArrayOf(String), "Optional repository or evaluator-workspace relative path globs for an @eval-author role in the proposed Chorus roster (requires builders).")
 	Required("change_id", "request_revision", "design")
 })
 

@@ -626,6 +626,11 @@ paths:
                         schema:
                             $ref: '#/components/schemas/PreviewArchitecturePayload'
                         example:
+                            architect_paths:
+                                - Voluptas velit quia rerum.
+                                - Odit aut perspiciatis aut aut.
+                                - Quasi delectus incidunt ipsum.
+                                - Non sequi qui nisi pariatur a.
                             builders:
                                 - name: Libero cupiditate occaecati natus sed.
                                   paths:
@@ -660,6 +665,10 @@ paths:
                                 files:
                                     Doloribus repellat aut eveniet nesciunt natus labore.: Dolores magni.
                                     Quaerat vitae quas rerum.: Vel in molestias et quaerat.
+                            eval_paths:
+                                - Minima veritatis sint eius qui.
+                                - Nemo quas.
+                                - Fuga doloribus illum.
                             request_revision: Quisquam mollitia.
             responses:
                 "200":
@@ -2636,11 +2645,22 @@ components:
         PreviewArchitecturePayload:
             type: object
             properties:
+                architect_paths:
+                    type: array
+                    items:
+                        type: string
+                        example: Voluptas velit quia rerum.
+                    description: Optional repository-relative path globs for an @architect role in the proposed Chorus roster (requires builders).
+                    example:
+                        - Voluptas velit quia rerum.
+                        - Odit aut perspiciatis aut aut.
+                        - Quasi delectus incidunt ipsum.
+                        - Non sequi qui nisi pariatur a.
                 builders:
                     type: array
                     items:
                         $ref: '#/components/schemas/BuilderScopeItem'
-                    description: Optional explicit builder path scopes for proposing the Chorus build roster.
+                    description: Optional explicit builder path scopes for proposing a Chorus build roster. When omitted, preview_architecture returns a solo preview with swarm.status unconfigured and no missing_roles.
                     example:
                         - name: Libero cupiditate occaecati natus sed.
                           paths:
@@ -2676,12 +2696,27 @@ components:
                     example: Vel libero.
                 design:
                     $ref: '#/components/schemas/DesignSnapshot'
+                eval_paths:
+                    type: array
+                    items:
+                        type: string
+                        example: Minima veritatis sint eius qui.
+                    description: Optional repository or evaluator-workspace relative path globs for an @eval-author role in the proposed Chorus roster (requires builders).
+                    example:
+                        - Minima veritatis sint eius qui.
+                        - Nemo quas.
+                        - Fuga doloribus illum.
                 request_revision:
                     type: string
                     description: Expected CP1 request_revision digest.
                     example: Quisquam mollitia.
             description: Request body for preview_architecture.
             example:
+                architect_paths:
+                    - Voluptas velit quia rerum.
+                    - Odit aut perspiciatis aut aut.
+                    - Quasi delectus incidunt ipsum.
+                    - Non sequi qui nisi pariatur a.
                 builders:
                     - name: Libero cupiditate occaecati natus sed.
                       paths:
@@ -2716,6 +2751,10 @@ components:
                     files:
                         Doloribus repellat aut eveniet nesciunt natus labore.: Dolores magni.
                         Quaerat vitae quas rerum.: Vel in molestias et quaerat.
+                eval_paths:
+                    - Minima veritatis sint eius qui.
+                    - Nemo quas.
+                    - Fuga doloribus illum.
                 request_revision: Quisquam mollitia.
             required:
                 - change_id
@@ -2854,7 +2893,7 @@ components:
                           scope_name: Sit expedita voluptatem rerum perferendis dolores.
                 cross_family_eval:
                     type: boolean
-                    description: True if and only if status is configured and the eval_author model family is disjoint from every assigned builder model family.
+                    description: True if and only if status is configured, an eval_author role is assigned, and the eval_author model family is disjoint from every assigned builder model family.
                     example: true
                 cross_family_review:
                     type: boolean
@@ -2869,7 +2908,7 @@ components:
                     items:
                         type: string
                         example: Quas a quia non accusantium ipsam facere.
-                    description: Required roles lacking an authenticated capable profile when status is unconfigured or missing_capability.
+                    description: Requested roles lacking an authenticated capable profile when status is unconfigured (with builder scopes supplied) or missing_capability; omitted on solo previews with no builder scopes.
                     example:
                         - Quas a quia non accusantium ipsam facere.
                         - Est rerum beatae quasi occaecati earum.
@@ -2890,7 +2929,7 @@ components:
                     type: string
                     description: Plain-English summary of the proposed swarm roster and model-family posture.
                     example: Repellat neque ut facilis.
-            description: Proposed Chorus role assignments and model-family diversity facts surfaced at Checkpoint 2. Role and model assignments do not prove launch or replace process/workspace isolation.
+            description: Proposed Chorus role assignments and model-family diversity facts surfaced at Checkpoint 2. Role, model, and workspace scope assignments are Chorus coordination proposals and do not prove agent launch or replace OS process and workspace isolation.
             example:
                 assignments:
                     - access_mode: read_only_after_cp2
@@ -2954,7 +2993,7 @@ components:
             properties:
                 access_mode:
                     type: string
-                    description: Workspace access boundary required of the job runner.
+                    description: Operator-declared workspace coordination boundary for this role.
                     example: read_only_after_cp2
                     enum:
                         - read_only_after_cp2
@@ -2978,7 +3017,7 @@ components:
                     items:
                         type: string
                         example: Et harum fugiat.
-                    description: Repository or workspace path globs owned by this role.
+                    description: Repository or workspace path globs owned by this role for Chorus coordination.
                     example:
                         - Et harum fugiat.
                         - Fuga sit ut.
@@ -3005,7 +3044,7 @@ components:
                     type: string
                     description: Human-readable scope label for this assignment.
                     example: Sit expedita voluptatem rerum perferendis dolores.
-            description: Proposed Chorus agent role assignment derived from server-owned provider profiles and explicit workspace scopes.
+            description: Proposed Chorus agent role assignment derived from server-owned provider profiles and explicit workspace scopes. Owned paths and access modes are operator-declared coordination ownership boundaries for Chorus agents, not Surla-enforced OS isolation.
             example:
                 access_mode: read_only_after_cp2
                 family: Et aut accusantium alias.

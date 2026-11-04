@@ -5,9 +5,14 @@
 // Chorus (`who`, `join`, `send`, `read`) owns real-time message routing,
 // channel subscriptions, and pinned channel manifests. This package owns the
 // server-side mapping from verified coding-agent provider profiles and explicit
-// builder write scopes to proposed role assignments (`@architect`,
-// `@builder-*`, `@eval-author`, and `@reviewer`). Role labels and cross-family
-// model assignments never substitute for OS process and workspace isolation.
+// workspace path scopes to proposed role assignments (`@builder-*` and
+// `@reviewer` when `Builders` are supplied, plus optional `@architect` when
+// `ArchitectPaths` are supplied and `@eval-author` when `EvalPaths` are
+// supplied). Declared path scopes and access modes are operator-declared
+// coordination ownership boundaries for Chorus agents, not Surla-enforced
+// secrecy or OS isolation; at Checkpoint 4, `verify.Run` builds the candidate
+// and runs candidate processes inside `verify/candidate`'s OS sandbox while
+// executing the trusted evaluator suite binary directly on the host.
 package swarm
 
 import (
@@ -58,13 +63,18 @@ type (
 		DesignDigest string `json:"design_digest"`
 		// Profiles lists the server-configured coding-agent profiles.
 		Profiles []ProviderProfile `json:"profiles"`
-		// ArchitectPaths lists the paths owned by @architect (defaults to ["design/**"] when empty).
+		// ArchitectPaths lists the optional repository-relative path globs owned
+		// by @architect. When non-empty (requires Builders), Plan includes
+		// RoleArchitect in the proposed roster without inventing default globs.
 		ArchitectPaths []string `json:"architect_paths,omitempty"`
 		// Builders lists the explicit builder write scopes. When empty, Plan
-		// reports Status "unconfigured" with MissingRoles ["builder"] rather than
-		// guessing repository paths.
+		// returns a solo preview (Status "unconfigured", MissingRoles nil) and
+		// rejects non-empty ArchitectPaths or EvalPaths.
 		Builders []BuilderScope `json:"builders,omitempty"`
-		// EvalPaths lists the isolated evaluator workspace paths (defaults to ["*-eval/**"] when empty).
+		// EvalPaths lists the optional repository or evaluator-workspace relative
+		// path globs owned by @eval-author. When non-empty (requires Builders),
+		// Plan includes RoleEvalAuthor in the proposed roster without inventing
+		// default globs.
 		EvalPaths []string `json:"eval_paths,omitempty"`
 	}
 
@@ -84,31 +94,34 @@ type (
 		Model string `json:"model"`
 		// Family is the assigned ProviderProfile.Family.
 		Family string `json:"family"`
-		// OwnedPaths lists the repository or workspace path globs for this role.
+		// OwnedPaths lists the operator-declared repository or workspace path globs for Chorus coordination.
 		OwnedPaths []string `json:"owned_paths"`
-		// AccessMode describes the workspace boundary ("read_only_after_cp2", "read_write_worktree", "isolated_eval_workspace", or "read_only_review").
+		// AccessMode describes the operator-declared workspace coordination boundary ("read_only_after_cp2", "read_write_worktree", "isolated_eval_workspace", or "read_only_review").
 		AccessMode string `json:"access_mode"`
 	}
 
 	// PlanResult holds the proposed swarm role roster and model-diversity facts
 	// surfaced at Checkpoint 2 (CP2).
 	PlanResult struct {
-		// Status reports whether a complete roster was configured ("configured",
-		// "unconfigured" when no authenticated profiles exist, or "missing_capability").
+		// Status reports whether a roster was configured ("configured",
+		// "unconfigured" on solo previews or when no authenticated profiles exist,
+		// or "missing_capability").
 		Status string `json:"status"`
 		// Assignments lists the deterministic role assignments when Status is "configured".
 		Assignments []Assignment `json:"assignments"`
 		// CrossFamilyReview is true if and only if Status is "configured" and the
 		// @reviewer role's Family is disjoint from every assigned @builder role's Family.
 		CrossFamilyReview bool `json:"cross_family_review"`
-		// CrossFamilyEval is true if and only if Status is "configured" and the
-		// @eval-author role's Family is disjoint from every assigned @builder role's Family.
+		// CrossFamilyEval is true if and only if Status is "configured", an
+		// @eval-author role is assigned, and the @eval-author role's Family is
+		// disjoint from every assigned @builder role's Family.
 		CrossFamilyEval bool `json:"cross_family_eval"`
 		// SingleFamily is true when Status is "configured" and all assigned roles
 		// use the same model Family.
 		SingleFamily bool `json:"single_family"`
-		// MissingRoles lists required roles that lacked an authenticated capable
-		// profile when Status is "unconfigured" or "missing_capability".
+		// MissingRoles lists requested roles that lacked an authenticated capable
+		// profile when Status is "unconfigured" (with Builders supplied) or
+		// "missing_capability"; nil on solo previews (len(Builders) == 0).
 		MissingRoles []RoleKind `json:"missing_roles,omitempty"`
 		// Summary is a plain-English description of the proposed roster and
 		// cross-family or single-family status.
@@ -121,23 +134,23 @@ const (
 	RoleArchitect RoleKind = "architect"
 	// RoleBuilder implements Go service and agent code for an assigned scope.
 	RoleBuilder RoleKind = "builder"
-	// RoleEvalAuthor wires scenario hooks and simulators in the isolated evaluator workspace.
+	// RoleEvalAuthor wires scenario hooks and simulators in the declared evaluator scope.
 	RoleEvalAuthor RoleKind = "eval_author"
 	// RoleReviewer performs a zero-sunk-cost read-only adversarial review before CP4.
 	RoleReviewer RoleKind = "reviewer"
 
-	// StatusConfigured indicates all required roles have authenticated capable profiles assigned.
+	// StatusConfigured indicates all requested roles have authenticated capable profiles assigned.
 	StatusConfigured = "configured"
-	// StatusUnconfigured indicates no authenticated provider profiles are configured.
+	// StatusUnconfigured indicates either a solo preview (no builders supplied) or no authenticated provider profiles.
 	StatusUnconfigured = "unconfigured"
-	// StatusMissingCapability indicates at least one required role has no authenticated capable profile.
+	// StatusMissingCapability indicates at least one requested role has no authenticated capable profile.
 	StatusMissingCapability = "missing_capability"
 
 	// AccessReadOnlyAfterCP2 indicates @architect's design files are frozen during the build phase.
 	AccessReadOnlyAfterCP2 = "read_only_after_cp2"
-	// AccessReadWriteWorktree indicates an isolated per-builder Git worktree.
+	// AccessReadWriteWorktree indicates an operator-declared per-builder Git worktree scope.
 	AccessReadWriteWorktree = "read_write_worktree"
-	// AccessIsolatedEvalWorkspace indicates the evaluator workspace inaccessible to builders.
+	// AccessIsolatedEvalWorkspace indicates an operator-declared evaluator workspace coordination scope.
 	AccessIsolatedEvalWorkspace = "isolated_eval_workspace"
 	// AccessReadOnlyReview indicates a fresh read-only review context.
 	AccessReadOnlyReview = "read_only_review"
@@ -146,26 +159,17 @@ const (
 	maxChorusHandleLen = 32
 )
 
-var (
-	// requiredRoles is the canonical ordered list of roles every Surla build requires.
-	requiredRoles = []RoleKind{
-		RoleArchitect,
-		RoleBuilder,
-		RoleEvalAuthor,
-		RoleReviewer,
-	}
-)
-
 // Plan computes a deterministic proposed swarm role roster and model routing
-// plan from server-configured provider profiles and explicit builder scopes.
+// plan from server-configured provider profiles and explicit workspace scopes.
 //
-// When no authenticated profiles are configured or a required role capability
-// is missing, Plan returns a non-error PlanResult with Status "unconfigured" or
-// "missing_capability" and MissingRoles populated so CP2 architecture previews
-// still succeed before coding CLIs are configured, while RequireReady blocks
-// actual build job launch. Plan returns an error only when the supplied
-// configuration itself is malformed (such as duplicate profile IDs or empty
-// required profile metadata).
+// When no builders are supplied (and ArchitectPaths and EvalPaths are empty),
+// Plan returns a solo preview PlanResult with Status "unconfigured" and
+// MissingRoles nil. When builders are supplied, Plan derives the requested
+// roles from the supplied scopes (RoleBuilder and RoleReviewer, plus
+// RoleArchitect when ArchitectPaths is non-empty and RoleEvalAuthor when
+// EvalPaths is non-empty). Plan returns an error only when the supplied
+// profiles, scopes, or path globs are malformed (such as duplicate profile IDs,
+// invalid path globs, or ArchitectPaths/EvalPaths without Builders).
 func Plan(req Request) (PlanResult, error) {
 	profiles, err := validateAndSortProfiles(req.Profiles)
 	if err != nil {
@@ -175,14 +179,37 @@ func Plan(req Request) (PlanResult, error) {
 	if err != nil {
 		return PlanResult{}, err
 	}
-	archPaths, err := normalizePaths(req.ArchitectPaths, []string{"design/**"})
+	archPaths, err := normalizePaths(req.ArchitectPaths)
 	if err != nil {
 		return PlanResult{}, fmt.Errorf("architect_paths: %w", err)
 	}
-	evalPaths, err := normalizePaths(req.EvalPaths, []string{"*-eval/**"})
+	evalPaths, err := normalizePaths(req.EvalPaths)
 	if err != nil {
 		return PlanResult{}, fmt.Errorf("eval_paths: %w", err)
 	}
+
+	if len(builders) == 0 {
+		if len(archPaths) > 0 || len(evalPaths) > 0 {
+			return PlanResult{}, errors.New("architect_paths and eval_paths require at least one builder scope")
+		}
+		return PlanResult{
+			Status:       StatusUnconfigured,
+			MissingRoles: nil,
+			Summary:      "Swarm roster: off (solo workflow; proceed directly to build and CP4 verification, or pass builder scopes with -swarm-profiles to propose a Chorus roster).",
+		}, nil
+	}
+
+	hasArchitect := len(archPaths) > 0
+	hasEvalAuthor := len(evalPaths) > 0
+	requestedRoles := make([]RoleKind, 0, 4)
+	if hasArchitect {
+		requestedRoles = append(requestedRoles, RoleArchitect)
+	}
+	requestedRoles = append(requestedRoles, RoleBuilder)
+	if hasEvalAuthor {
+		requestedRoles = append(requestedRoles, RoleEvalAuthor)
+	}
+	requestedRoles = append(requestedRoles, RoleReviewer)
 
 	var eligible []ProviderProfile
 	for _, p := range profiles {
@@ -191,42 +218,36 @@ func Plan(req Request) (PlanResult, error) {
 		}
 	}
 	if len(eligible) == 0 {
+		names := roleKindStrings(requestedRoles)
 		return PlanResult{
 			Status:       StatusUnconfigured,
-			MissingRoles: slices.Clone(requiredRoles),
-			Summary:      "Proposed swarm: unconfigured (no authenticated coding-agent profiles available; configure at least one provider before launching build jobs).",
+			MissingRoles: slices.Clone(requestedRoles),
+			Summary: fmt.Sprintf(
+				"Proposed swarm: unconfigured (builder scopes supplied without authenticated coding-agent profiles; configure -swarm-profiles supporting %s or omit builder scopes for a solo preview).",
+				strings.Join(names, ", "),
+			),
 		}, nil
 	}
 
 	var missing []RoleKind
-	for _, role := range requiredRoles {
+	for _, role := range requestedRoles {
 		if len(profilesWithCapability(eligible, role)) == 0 {
 			missing = append(missing, role)
 		}
 	}
 	if len(missing) > 0 {
-		names := make([]string, len(missing))
-		for i, r := range missing {
-			names[i] = string(r)
-		}
+		names := roleKindStrings(missing)
 		return PlanResult{
 			Status:       StatusMissingCapability,
 			MissingRoles: missing,
 			Summary: fmt.Sprintf(
-				"Proposed swarm: missing_capability (no authenticated profile supports required role(s): %s).",
+				"Proposed swarm: missing_capability (no authenticated profile supports requested role(s): %s).",
 				strings.Join(names, ", "),
 			),
 		}, nil
 	}
-	if len(builders) == 0 {
-		return PlanResult{
-			Status:       StatusUnconfigured,
-			MissingRoles: []RoleKind{RoleBuilder},
-			Summary:      "Proposed swarm: unconfigured (no explicit builder path scopes supplied; specify builders to assign write ownership before launching build jobs).",
-		}, nil
-	}
 
-	builderProfiles, err := selectBuilderProfiles(eligible, builders)
+	builderProfiles, err := selectBuilderProfiles(eligible, builders, hasEvalAuthor)
 	if err != nil {
 		return PlanResult{}, err
 	}
@@ -236,22 +257,22 @@ func Plan(req Request) (PlanResult, error) {
 	}
 
 	reviewerProfile := selectDisjointOrFirst(eligible, RoleReviewer, builderFamilies)
-	evalProfile := selectDisjointOrFirst(eligible, RoleEvalAuthor, builderFamilies, reviewerProfile.Family)
-	archProfile := selectDisjointOrFirst(eligible, RoleArchitect, builderFamilies, reviewerProfile.Family)
-
 	builderHandles := allocateBuilderHandles(builders)
 	assignments := make([]Assignment, 0, len(builders)+3)
-	assignments = append(assignments, Assignment{
-		Handle:     "architect",
-		Role:       RoleArchitect,
-		ScopeName:  "design",
-		ProfileID:  archProfile.ID,
-		Provider:   archProfile.Provider,
-		Model:      archProfile.Model,
-		Family:     archProfile.Family,
-		OwnedPaths: archPaths,
-		AccessMode: AccessReadOnlyAfterCP2,
-	})
+	if hasArchitect {
+		archProfile := selectDisjointOrFirst(eligible, RoleArchitect, builderFamilies, reviewerProfile.Family)
+		assignments = append(assignments, Assignment{
+			Handle:     "architect",
+			Role:       RoleArchitect,
+			ScopeName:  "design",
+			ProfileID:  archProfile.ID,
+			Provider:   archProfile.Provider,
+			Model:      archProfile.Model,
+			Family:     archProfile.Family,
+			OwnedPaths: archPaths,
+			AccessMode: AccessReadOnlyAfterCP2,
+		})
+	}
 	for i, b := range builders {
 		bp := builderProfiles[i]
 		assignments = append(assignments, Assignment{
@@ -266,8 +287,10 @@ func Plan(req Request) (PlanResult, error) {
 			AccessMode: AccessReadWriteWorktree,
 		})
 	}
-	assignments = append(assignments,
-		Assignment{
+	var evalProfile ProviderProfile
+	if hasEvalAuthor {
+		evalProfile = selectDisjointOrFirst(eligible, RoleEvalAuthor, builderFamilies, reviewerProfile.Family)
+		assignments = append(assignments, Assignment{
 			Handle:     "eval-author",
 			Role:       RoleEvalAuthor,
 			ScopeName:  "eval",
@@ -277,22 +300,22 @@ func Plan(req Request) (PlanResult, error) {
 			Family:     evalProfile.Family,
 			OwnedPaths: evalPaths,
 			AccessMode: AccessIsolatedEvalWorkspace,
-		},
-		Assignment{
-			Handle:     "reviewer",
-			Role:       RoleReviewer,
-			ScopeName:  "review",
-			ProfileID:  reviewerProfile.ID,
-			Provider:   reviewerProfile.Provider,
-			Model:      reviewerProfile.Model,
-			Family:     reviewerProfile.Family,
-			OwnedPaths: []string{"*"},
-			AccessMode: AccessReadOnlyReview,
-		},
-	)
+		})
+	}
+	assignments = append(assignments, Assignment{
+		Handle:     "reviewer",
+		Role:       RoleReviewer,
+		ScopeName:  "review",
+		ProfileID:  reviewerProfile.ID,
+		Provider:   reviewerProfile.Provider,
+		Model:      reviewerProfile.Model,
+		Family:     reviewerProfile.Family,
+		OwnedPaths: []string{"*"},
+		AccessMode: AccessReadOnlyReview,
+	})
 
 	crossReview := !builderFamilies[reviewerProfile.Family]
-	crossEval := !builderFamilies[evalProfile.Family]
+	crossEval := hasEvalAuthor && !builderFamilies[evalProfile.Family]
 
 	allFamilies := make(map[string]bool, len(assignments))
 	for _, a := range assignments {
@@ -300,7 +323,7 @@ func Plan(req Request) (PlanResult, error) {
 	}
 	singleFamily := len(allFamilies) == 1
 
-	summary := formatPlanSummary(assignments, crossReview, crossEval, singleFamily)
+	summary := formatPlanSummary(assignments, hasEvalAuthor, crossReview, crossEval, singleFamily)
 	return PlanResult{
 		Status:            StatusConfigured,
 		Assignments:       assignments,
@@ -311,24 +334,13 @@ func Plan(req Request) (PlanResult, error) {
 	}, nil
 }
 
-// RequireReady verifies that plan has Status "configured" and a complete set of
-// assignments before the orchestrator launches any coding-agent job.
-func RequireReady(plan PlanResult) error {
-	if plan.Status != StatusConfigured {
-		return fmt.Errorf("swarm plan is not ready for launch (status=%q): %s", plan.Status, plan.Summary)
-	}
-	if len(plan.Assignments) < 4 {
-		return fmt.Errorf("swarm plan requires at least 4 role assignments, got %d", len(plan.Assignments))
-	}
-	return nil
-}
-
 // FormatManifest renders the deterministic Chorus Collaboration Manifest text
 // for a configured PlanResult. Formatting is pure and does not claim that the
-// manifest has been published to Chorus.
+// manifest has been published to Chorus or that Surla enforces agent filesystem
+// scopes outside CP4 verification.
 func FormatManifest(changeID, designDigest string, plan PlanResult) (string, error) {
-	if err := RequireReady(plan); err != nil {
-		return "", err
+	if plan.Status != StatusConfigured || len(plan.Assignments) == 0 {
+		return "", fmt.Errorf("swarm plan is not configured (status=%q): %s", plan.Status, plan.Summary)
 	}
 	if strings.TrimSpace(changeID) == "" {
 		return "", errors.New("change_id is required to format swarm manifest")
@@ -337,15 +349,34 @@ func FormatManifest(changeID, designDigest string, plan PlanResult) (string, err
 		return "", errors.New("design_digest is required to format swarm manifest")
 	}
 
+	hasEvalAuthor := false
+	for _, a := range plan.Assignments {
+		if a.Role == RoleEvalAuthor {
+			hasEvalAuthor = true
+			break
+		}
+	}
+
 	var b strings.Builder
 	fmt.Fprintf(&b, "[SURLA SWARM MANIFEST | change=%s | design=%s]\n", strings.TrimSpace(changeID), strings.TrimSpace(designDigest))
-	fmt.Fprintf(
-		&b,
-		"Status: proposed/configured (cross_family_review=%t, cross_family_eval=%t, single_family=%t)\n",
-		plan.CrossFamilyReview,
-		plan.CrossFamilyEval,
-		plan.SingleFamily,
-	)
+	if hasEvalAuthor {
+		fmt.Fprintf(
+			&b,
+			"Status: proposed/configured (cross_family_review=%t, cross_family_eval=%t, single_family=%t)\n",
+			plan.CrossFamilyReview,
+			plan.CrossFamilyEval,
+			plan.SingleFamily,
+		)
+	} else {
+		fmt.Fprintf(
+			&b,
+			"Status: proposed/configured (cross_family_review=%t, cross_family_eval=%t [eval-author not assigned], single_family=%t)\n",
+			plan.CrossFamilyReview,
+			plan.CrossFamilyEval,
+			plan.SingleFamily,
+		)
+	}
+	b.WriteString("Boundary Note: Owned paths and access modes are operator-declared Chorus coordination scopes (unverified by Surla, not OS isolation); in-repo eval/ is readable by builders, while unseen holdouts require an external evaluator workspace inaccessible to builders, and CP4 runs candidate builds/processes in verify/candidate's OS sandbox while executing the trusted evaluator binary on the host.\n")
 	b.WriteString("Roles & Workspace Boundaries:\n")
 	for _, a := range plan.Assignments {
 		fmt.Fprintf(
@@ -361,6 +392,15 @@ func FormatManifest(changeID, designDigest string, plan PlanResult) (string, err
 		)
 	}
 	return b.String(), nil
+}
+
+// roleKindStrings converts a slice of RoleKind values to their string names.
+func roleKindStrings(roles []RoleKind) []string {
+	out := make([]string, len(roles))
+	for i, r := range roles {
+		out[i] = string(r)
+	}
+	return out
 }
 
 // validateAndSortProfiles validates all configured ProviderProfile entries,
@@ -435,7 +475,7 @@ func normalizeBuilders(in []BuilderScope) ([]BuilderScope, error) {
 			return nil, fmt.Errorf("duplicate builder scope name %q", name)
 		}
 		seenNames[name] = true
-		paths, err := normalizePaths(b.Paths, nil)
+		paths, err := normalizePaths(b.Paths)
 		if err != nil {
 			return nil, fmt.Errorf("builder scope %q: %w", name, err)
 		}
@@ -455,16 +495,15 @@ func normalizeBuilders(in []BuilderScope) ([]BuilderScope, error) {
 }
 
 // normalizePaths validates repository-relative path globs without rewriting
-// supplied path bytes, deduplicates and sorts them, and falls back to defaults
-// only when in is empty.
-func normalizePaths(in, defaults []string) ([]string, error) {
-	src := in
-	if len(src) == 0 {
-		src = defaults
+// supplied path bytes, deduplicates and sorts them, and returns nil when in is
+// empty.
+func normalizePaths(in []string) ([]string, error) {
+	if len(in) == 0 {
+		return nil, nil
 	}
-	seen := make(map[string]bool, len(src))
+	seen := make(map[string]bool, len(in))
 	var out []string
-	for _, p := range src {
+	for _, p := range in {
 		if err := validateRelativePathGlob(p); err != nil {
 			return nil, err
 		}
@@ -511,11 +550,15 @@ func profilesWithCapability(profiles []ProviderProfile, role RoleKind) []Provide
 // selectBuilderProfiles chooses an authenticated builder-capable profile for
 // each BuilderScope, resolving pinned builder profiles first and scoring the
 // default builder family against the union of pinned and unpinned builder
-// families so @reviewer and @eval-author retain disjoint families whenever possible.
-func selectBuilderProfiles(eligible []ProviderProfile, builders []BuilderScope) ([]ProviderProfile, error) {
+// families so @reviewer (and @eval-author when requested) retain disjoint
+// families whenever possible.
+func selectBuilderProfiles(eligible []ProviderProfile, builders []BuilderScope, hasEvalAuthor bool) ([]ProviderProfile, error) {
 	builderCapable := profilesWithCapability(eligible, RoleBuilder)
 	reviewerCapable := profilesWithCapability(eligible, RoleReviewer)
-	evalCapable := profilesWithCapability(eligible, RoleEvalAuthor)
+	var evalCapable []ProviderProfile
+	if hasEvalAuthor {
+		evalCapable = profilesWithCapability(eligible, RoleEvalAuthor)
+	}
 
 	byID := make(map[string]ProviderProfile, len(builderCapable))
 	for _, cand := range builderCapable {
@@ -551,7 +594,7 @@ func selectBuilderProfiles(eligible []ProviderProfile, builders []BuilderScope) 
 		if hasDisjointFamily(reviewerCapable, pinnedFamilies, cand.Family) {
 			score += 4
 		}
-		if hasDisjointFamily(evalCapable, pinnedFamilies, cand.Family) {
+		if hasEvalAuthor && hasDisjointFamily(evalCapable, pinnedFamilies, cand.Family) {
 			score += 2
 		}
 		if pinnedFamilies[cand.Family] {
@@ -675,26 +718,37 @@ func sanitizeSlug(s string) string {
 }
 
 // formatPlanSummary builds the honest plain-English summary of a configured
-// PlanResult, explicitly distinguishing cross-family vs. single-family routing
-// and noting that role/model assignment does not replace workspace isolation.
-func formatPlanSummary(assignments []Assignment, crossReview, crossEval, singleFamily bool) string {
+// PlanResult, explicitly distinguishing cross-family vs. single-family routing,
+// reporting whether @eval-author was assigned, and stating that Chorus path
+// scopes are operator-declared coordination boundaries while CP4 sandboxes
+// candidate builds and processes in verify/candidate.
+func formatPlanSummary(assignments []Assignment, hasEvalAuthor, crossReview, crossEval, singleFamily bool) string {
 	parts := make([]string, 0, len(assignments))
 	for _, a := range assignments {
 		parts = append(parts, fmt.Sprintf("@%s (%s/%s, family=%s)", a.Handle, a.Provider, a.Model, a.Family))
 	}
 	var posture string
 	switch {
+	case singleFamily && hasEvalAuthor:
+		posture = fmt.Sprintf(
+			"single-family routing (all roles use family %q; cross_family_review=false, cross_family_eval=false; Chorus path scopes are operator-declared coordination boundaries, and unseen holdouts require an external evaluator workspace inaccessible to builders while CP4 sandboxes candidate builds/processes in verify/candidate)",
+			assignments[0].Family,
+		)
 	case singleFamily:
 		posture = fmt.Sprintf(
-			"single-family routing (all roles use family %q; cross_family_review=false; evaluator independence relies on workspace/process isolation)",
+			"single-family routing (all roles use family %q; cross_family_review=false, eval-author not assigned in this roster; Chorus path scopes are operator-declared coordination boundaries while CP4 sandboxes candidate builds/processes in verify/candidate)",
 			assignments[0].Family,
 		)
 	case crossReview && crossEval:
-		posture = "cross-family review and eval-author routing configured (reviewer and eval-author model families are disjoint from all builders; workspace/process isolation enforces evaluator boundaries)"
+		posture = "cross-family review and eval-author routing configured (reviewer and eval-author model families are disjoint from all builders; Chorus path scopes are operator-declared coordination boundaries, and unseen holdouts require an external evaluator workspace inaccessible to builders while CP4 sandboxes candidate builds/processes in verify/candidate)"
+	case crossReview && !hasEvalAuthor:
+		posture = "cross-family review configured (reviewer family is disjoint from all builders; eval-author not assigned in this roster; Chorus path scopes are operator-declared coordination boundaries while CP4 sandboxes candidate builds/processes in verify/candidate)"
 	case crossReview:
-		posture = "cross-family review configured (reviewer family is disjoint from all builders; eval-author shares a builder family)"
+		posture = "cross-family review configured (reviewer family is disjoint from all builders; eval-author shares a builder family; Chorus path scopes are operator-declared coordination boundaries, and unseen holdouts require an external evaluator workspace inaccessible to builders while CP4 sandboxes candidate builds/processes in verify/candidate)"
+	case !hasEvalAuthor:
+		posture = "mixed-family routing without disjoint global reviewer (reviewer shares a model family with at least one builder; cross_family_review=false, eval-author not assigned in this roster; Chorus path scopes are operator-declared coordination boundaries while CP4 sandboxes candidate builds/processes in verify/candidate)"
 	default:
-		posture = "mixed-family routing without disjoint global reviewer (reviewer shares a model family with at least one builder; cross_family_review=false)"
+		posture = "mixed-family routing without disjoint global reviewer (reviewer shares a model family with at least one builder; cross_family_review=false; Chorus path scopes are operator-declared coordination boundaries, and unseen holdouts require an external evaluator workspace inaccessible to builders while CP4 sandboxes candidate builds/processes in verify/candidate)"
 	}
 	return fmt.Sprintf("Proposed swarm (%s): %s.", posture, strings.Join(parts, ", "))
 }

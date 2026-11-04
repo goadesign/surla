@@ -239,8 +239,16 @@ type (
 		RequestRevision string
 		// Candidate module whose Goa and Goa-AI design is evaluated.
 		Design *DesignSnapshot
-		// Optional explicit builder path scopes for proposing the Chorus build roster.
+		// Optional explicit builder path scopes for proposing a Chorus build roster.
+		// When omitted, preview_architecture returns a solo preview with swarm.status
+		// unconfigured and no missing_roles.
 		Builders []*BuilderScopeItem
+		// Optional repository-relative path globs for an @architect role in the
+		// proposed Chorus roster (requires builders).
+		ArchitectPaths []string
+		// Optional repository or evaluator-workspace relative path globs for an
+		// @eval-author role in the proposed Chorus roster (requires builders).
+		EvalPaths []string
 	}
 	// PreviewArchitectureResult defines the JSON result for the surla.preview_architecture tool.
 	PreviewArchitectureResult = struct {
@@ -540,13 +548,15 @@ type (
 		// True if and only if status is configured and the reviewer model family is
 		// disjoint from every assigned builder model family.
 		CrossFamilyReview bool
-		// True if and only if status is configured and the eval_author model family is
-		// disjoint from every assigned builder model family.
+		// True if and only if status is configured, an eval_author role is assigned,
+		// and the eval_author model family is disjoint from every assigned builder
+		// model family.
 		CrossFamilyEval bool
 		// True when status is configured and all assigned roles share one model family.
 		SingleFamily bool
-		// Required roles lacking an authenticated capable profile when status is
-		// unconfigured or missing_capability.
+		// Requested roles lacking an authenticated capable profile when status is
+		// unconfigured (with builder scopes supplied) or missing_capability; omitted
+		// on solo previews with no builder scopes.
 		MissingRoles []string
 		// Plain-English summary of the proposed swarm roster and model-family posture.
 		Summary string
@@ -571,9 +581,10 @@ type (
 		Model string
 		// Canonical model family identifier.
 		Family string
-		// Repository or workspace path globs owned by this role.
+		// Repository or workspace path globs owned by this role for Chorus
+		// coordination.
 		OwnedPaths []string
-		// Workspace access boundary required of the job runner.
+		// Operator-declared workspace coordination boundary for this role.
 		AccessMode string
 	}
 	// ToolContractItem is a nested type used by the generated JSON contract.

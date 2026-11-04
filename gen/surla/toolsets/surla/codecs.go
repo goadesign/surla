@@ -2353,12 +2353,12 @@ var previewArchitecturePayloadFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("builders")},
 		JSONType:    "array",
-		Description: "Optional explicit builder path scopes for proposing the Chorus build roster.",
+		Description: "Optional explicit builder path scopes for proposing a Chorus build roster. When omitted, preview_architecture returns a solo preview with swarm.status unconfigured and no missing_roles.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("builders"), tools.DynamicField{}},
 		JSONType:    "object",
-		Description: "Optional explicit builder path scopes for proposing the Chorus build roster.",
+		Description: "Optional explicit builder path scopes for proposing a Chorus build roster. When omitted, preview_architecture returns a solo preview with swarm.status unconfigured and no missing_roles.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("builders"), tools.DynamicField{}, tools.FixedField("name")},
@@ -2379,6 +2379,26 @@ var previewArchitecturePayloadFields = []tools.FieldMetadata{
 		Path:        []tools.FieldPathSegment{tools.FixedField("builders"), tools.DynamicField{}, tools.FixedField("preferred_profile_id")},
 		JSONType:    "string",
 		Description: "Optional preference selecting a server-configured authenticated profile ID.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("architect_paths")},
+		JSONType:    "array",
+		Description: "Optional repository-relative path globs for an @architect role in the proposed Chorus roster (requires builders).",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("architect_paths"), tools.DynamicField{}},
+		JSONType:    "string",
+		Description: "Optional repository-relative path globs for an @architect role in the proposed Chorus roster (requires builders).",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("eval_paths")},
+		JSONType:    "array",
+		Description: "Optional repository or evaluator-workspace relative path globs for an @eval-author role in the proposed Chorus roster (requires builders).",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("eval_paths"), tools.DynamicField{}},
+		JSONType:    "string",
+		Description: "Optional repository or evaluator-workspace relative path globs for an @eval-author role in the proposed Chorus roster (requires builders).",
 	},
 }
 var previewArchitectureResultFields = []tools.FieldMetadata{
@@ -2674,17 +2694,17 @@ var previewArchitectureResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("swarm"), tools.FixedField("assignments"), tools.DynamicField{}, tools.FixedField("owned_paths")},
 		JSONType:    "array",
-		Description: "Repository or workspace path globs owned by this role.",
+		Description: "Repository or workspace path globs owned by this role for Chorus coordination.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("swarm"), tools.FixedField("assignments"), tools.DynamicField{}, tools.FixedField("owned_paths"), tools.DynamicField{}},
 		JSONType:    "string",
-		Description: "Repository or workspace path globs owned by this role.",
+		Description: "Repository or workspace path globs owned by this role for Chorus coordination.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("swarm"), tools.FixedField("assignments"), tools.DynamicField{}, tools.FixedField("access_mode")},
 		JSONType:    "string",
-		Description: "Workspace access boundary required of the job runner.",
+		Description: "Operator-declared workspace coordination boundary for this role.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("swarm"), tools.FixedField("cross_family_review")},
@@ -2694,7 +2714,7 @@ var previewArchitectureResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("swarm"), tools.FixedField("cross_family_eval")},
 		JSONType:    "boolean",
-		Description: "True if and only if status is configured and the eval_author model family is disjoint from every assigned builder model family.",
+		Description: "True if and only if status is configured, an eval_author role is assigned, and the eval_author model family is disjoint from every assigned builder model family.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("swarm"), tools.FixedField("single_family")},
@@ -2704,12 +2724,12 @@ var previewArchitectureResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("swarm"), tools.FixedField("missing_roles")},
 		JSONType:    "array",
-		Description: "Required roles lacking an authenticated capable profile when status is unconfigured or missing_capability.",
+		Description: "Requested roles lacking an authenticated capable profile when status is unconfigured (with builder scopes supplied) or missing_capability; omitted on solo previews with no builder scopes.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("swarm"), tools.FixedField("missing_roles"), tools.DynamicField{}},
 		JSONType:    "string",
-		Description: "Required roles lacking an authenticated capable profile when status is unconfigured or missing_capability.",
+		Description: "Requested roles lacking an authenticated capable profile when status is unconfigured (with builder scopes supplied) or missing_capability; omitted on solo previews with no builder scopes.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("swarm"), tools.FixedField("summary")},
@@ -5986,6 +6006,18 @@ func MarshalPreviewArchitecturePayload(v *PreviewArchitecturePayload) ([]byte, e
 			out.Builders[i] = encodeBuilderScopeItemToBuilderScopeItemTransport(val)
 		}
 	}
+	if in.ArchitectPaths != nil {
+		out.ArchitectPaths = make([]string, len(in.ArchitectPaths))
+		for i, val := range in.ArchitectPaths {
+			out.ArchitectPaths[i] = val
+		}
+	}
+	if in.EvalPaths != nil {
+		out.EvalPaths = make([]string, len(in.EvalPaths))
+		for i, val := range in.EvalPaths {
+			out.EvalPaths[i] = val
+		}
+	}
 	return json.Marshal(out)
 }
 
@@ -6022,6 +6054,18 @@ func UnmarshalPreviewArchitecturePayload(data []byte) (*PreviewArchitecturePaylo
 				continue
 			}
 			out.Builders[i] = decodeBuilderScopeItemTransportToBuilderScopeItem(val)
+		}
+	}
+	if in.ArchitectPaths != nil {
+		out.ArchitectPaths = make([]string, len(in.ArchitectPaths))
+		for i, val := range in.ArchitectPaths {
+			out.ArchitectPaths[i] = val
+		}
+	}
+	if in.EvalPaths != nil {
+		out.EvalPaths = make([]string, len(in.EvalPaths))
+		for i, val := range in.EvalPaths {
+			out.EvalPaths[i] = val
 		}
 	}
 	return out, nil
@@ -7927,10 +7971,17 @@ func validatePreviewArchitecturePayloadJSONValue(path string, value any, descrip
 	sort.Strings(keys)
 	for _, key := range keys {
 		switch key {
+		case "architect_paths":
+			if err := validateProposeChangeResultAmbiguityQuestionTransportOptionsJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Optional repository-relative path globs for an @architect role in the proposed Chorus roster (requires builders).",
+			); err != nil {
+				return err
+			}
 		case "builders":
 			if err := validatePreviewArchitecturePayloadRootBuildersJSONValue(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Optional explicit builder path scopes for proposing the Chorus build roster.",
+				typed[key], "Optional explicit builder path scopes for proposing a Chorus build roster. When omitted, preview_architecture returns a solo preview with swarm.status unconfigured and no missing_roles.",
 			); err != nil {
 				return err
 			}
@@ -7948,6 +7999,13 @@ func validatePreviewArchitecturePayloadJSONValue(path string, value any, descrip
 			); err != nil {
 				return err
 			}
+		case "eval_paths":
+			if err := validateProposeChangeResultAmbiguityQuestionTransportOptionsJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Optional repository or evaluator-workspace relative path globs for an @eval-author role in the proposed Chorus roster (requires builders).",
+			); err != nil {
+				return err
+			}
 		case "request_revision":
 			if err := validateStringJSONValue(
 				generatedJSONChildPath(path, key, false),
@@ -7957,9 +8015,11 @@ func validatePreviewArchitecturePayloadJSONValue(path string, value any, descrip
 			}
 		default:
 			return unknownJSONFieldError(path, key, []string{
+				"architect_paths",
 				"builders",
 				"change_id",
 				"design",
+				"eval_paths",
 				"request_revision",
 			})
 		}
@@ -8509,7 +8569,7 @@ func validatePreviewArchitectureResultSwarmPlanItemTransportJSONValue(path strin
 		case "cross_family_eval":
 			if err := validateBooleanJSONValue(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "True if and only if status is configured and the eval_author model family is disjoint from every assigned builder model family.",
+				typed[key], "True if and only if status is configured, an eval_author role is assigned, and the eval_author model family is disjoint from every assigned builder model family.",
 			); err != nil {
 				return err
 			}
@@ -8530,7 +8590,7 @@ func validatePreviewArchitectureResultSwarmPlanItemTransportJSONValue(path strin
 		case "missing_roles":
 			if err := validateProposeChangeResultAmbiguityQuestionTransportOptionsJSONValue(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Required roles lacking an authenticated capable profile when status is unconfigured or missing_capability.",
+				typed[key], "Requested roles lacking an authenticated capable profile when status is unconfigured (with builder scopes supplied) or missing_capability; omitted on solo previews with no builder scopes.",
 			); err != nil {
 				return err
 			}
@@ -8618,7 +8678,7 @@ func validatePreviewArchitectureResultSwarmRoleItemTransportJSONValue(path strin
 		case "access_mode":
 			if err := validateStringJSONValue(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Workspace access boundary required of the job runner.",
+				typed[key], "Operator-declared workspace coordination boundary for this role.",
 			); err != nil {
 				return err
 			}
@@ -8646,7 +8706,7 @@ func validatePreviewArchitectureResultSwarmRoleItemTransportJSONValue(path strin
 		case "owned_paths":
 			if err := validateProposeChangeResultAmbiguityQuestionTransportOptionsJSONValue(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Repository or workspace path globs owned by this role.",
+				typed[key], "Repository or workspace path globs owned by this role for Chorus coordination.",
 			); err != nil {
 				return err
 			}

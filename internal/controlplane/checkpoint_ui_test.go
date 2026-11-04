@@ -828,8 +828,35 @@ if (cp2Text.includes(input.wantAmbiguityText)) {
 if (!cp2Text.includes(input.wantCP2Revision) ||
     !cp2Text.includes(input.wantDesignDigest) ||
     !cp2Text.includes("Inject: tenant_id") ||
-    !cp2Text.includes("Confirmation")) {
-  throw new Error("CP2 view missing expected digests or guardrails: " + cp2Text);
+    !cp2Text.includes("Confirmation") ||
+    !cp2Text.includes("eval-author not assigned in this roster") ||
+    !cp2Text.includes("cross_family_eval=false (eval-author not assigned)")) {
+  throw new Error("CP2 view missing expected digests, guardrails, or 2-role swarm posture: " + cp2Text);
+}
+// 4s. Deliver solo unconfigured CP2 preview -> hides cross_family_* badges and renders solo swarm posture.
+const soloPreview = Object.assign({}, input.cp2Structured, {
+  swarm: {
+    status: "unconfigured",
+    assignments: [],
+    cross_family_review: false,
+    cross_family_eval: false,
+    single_family: false,
+    summary: "Swarm roster: off (solo workflow). Pass -builders name=path_glob,... on preview-change or builders on preview_architecture to plan a Chorus multi-agent roster."
+  }
+});
+messageListener({
+  source: parentWindow,
+  data: {
+    jsonrpc: "2.0",
+    method: "ui/notifications/tool-result",
+    params: { structuredContent: soloPreview }
+  }
+});
+const soloCp2Text = renderText(viewEl);
+if (!soloCp2Text.includes("Swarm roster: off (solo workflow)") ||
+    soloCp2Text.includes("cross_family_eval=") ||
+    soloCp2Text.includes("cross_family_review=")) {
+  throw new Error("Solo CP2 view did not hide cross_family_* badges: " + soloCp2Text);
 }
 const cp2GraphWrap = findAll(viewEl, (n) => n.attributes["class"] === "surla-graph-wrap");
 const cp2Svg = findAll(viewEl, (n) => n.attributes["id"] === "surla-c4-svg");
@@ -867,7 +894,35 @@ const largePreview = Object.assign({}, input.cp2Structured, {
   containers: largeContainers,
   edges: cyclicEdges,
   swarm: Object.assign({}, input.cp2Structured.swarm, {
-    manifest: "# Chorus Collaboration Manifest\n@architect -> claude"
+    status: "configured",
+    cross_family_review: true,
+    cross_family_eval: false,
+    single_family: false,
+    assignments: [
+      {
+        handle: "builder-orders",
+        role: "builder",
+        scope_name: "orders",
+        profile_id: "claude-opus",
+        provider: "anthropic",
+        model: "claude-opus-4-6",
+        family: "claude",
+        owned_paths: ["internal/orders/**"],
+        access_mode: "read_write_worktree"
+      },
+      {
+        handle: "reviewer",
+        role: "reviewer",
+        scope_name: "review",
+        profile_id: "codex-gpt5",
+        provider: "openai",
+        model: "gpt-5.4",
+        family: "gpt",
+        owned_paths: ["*"],
+        access_mode: "read_only_review"
+      }
+    ],
+    manifest: "# Chorus Collaboration Manifest\n@builder-orders -> claude"
   })
 });
 messageListener({
@@ -892,12 +947,13 @@ if (largeSvg.length !== 1 ||
     swarmManifestDetails.length !== 1 ||
     !renderText(swarmManifestDetails[0]).includes("Chorus collaboration manifest") ||
     !renderText(swarmManifestDetails[0]).includes("# Chorus Collaboration Manifest") ||
+    !largeText.includes("cross_family_eval=false (eval-author not assigned)") ||
     edge23Path === edge32Path ||
     !edge23Path.includes("Q 526") ||
     !edge32Path.includes("Q 544") ||
     !largeText.includes("node-15") ||
     !largeText.includes("Self Loop")) {
-  throw new Error("expected 840px SVG with 15 nodes, #surla-cp2-swarm-manifest details, and distinct intra-column cyclic/self-loop edges, got width=" + (largeSvg[0] && largeSvg[0].attributes["width"]) + " e23=" + edge23Path + " e32=" + edge32Path);
+  throw new Error("expected 840px SVG with 15 nodes, #surla-cp2-swarm-manifest details, 2-role eval-author not assigned badge, and distinct intra-column cyclic/self-loop edges, got width=" + (largeSvg[0] && largeSvg[0].attributes["width"]) + " e23=" + edge23Path + " e32=" + edge32Path);
 }
 
 // 4b. Deliver CP2 DiffResult from MCP diff codec -> renders unbound structural diff and clears CP1/CP2 dataset keys.
