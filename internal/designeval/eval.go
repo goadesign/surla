@@ -234,11 +234,16 @@ func generate(ctx context.Context, files map[string]string, workDir string) (map
 			out, err = readSources(stateDir)
 			return err
 		})
+	// A build failure leads with the compiler's own error, whatever caused
+	// it: a design that doesn't compile, a cancelled build, or a Goa without
+	// generator.CompleteSources. The recovery for that last case follows,
+	// conditional on the compiler output, because a versioned replacement
+	// can lack the function whatever its version string.
 	if build := (*buildError)(nil); errors.As(err, &build) {
-		return nil, fmt.Errorf("surla gen needs a goa.design/goa/v3 that provides generator.CompleteSources "+
-			"(%s or later); this module builds with goa.design/goa/v3 %s. If the compiler output below shows that "+
-			"CompleteSources is undefined, update the module's goa.design/goa/v3 requirement and go.sum, then run "+
-			"surla gen again: %w", completeSourcesGoa, describe(goa), err)
+		return nil, fmt.Errorf("%w\nIf that output shows that generator.CompleteSources is undefined, the "+
+			"goa.design/goa/v3 this module builds with (%s) lacks it; surla gen needs %s or later. Update the "+
+			"module's goa.design/goa/v3 requirement, or its replace directive, and go.sum, then run surla gen again",
+			err, describe(goa), completeSourcesGoa)
 	}
 	return out, err
 }

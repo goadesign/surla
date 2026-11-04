@@ -64,7 +64,7 @@ func TestGenRefusesAGoaWithoutCompleteSourcesAndChangesNothing(t *testing.T) {
 	layout(t, dir, map[string]string{"gen/orders/service.go": "old\n"})
 
 	err := runGen([]string{"-dir", dir}, io.Discard, io.Discard)
-	require.ErrorContains(t, err, "surla gen needs a goa.design/goa/v3 that provides generator.CompleteSources")
+	require.ErrorContains(t, err, "If that output shows that generator.CompleteSources is undefined")
 	assert.Equal(t, map[string]string{"gen/orders/service.go": "old\n"}, files(t, dir, "gen"))
 	assertNothingLeft(t, dir, tmp)
 }
