@@ -381,7 +381,7 @@ func runInit(args []string, stdout io.Writer) error {
 	if *version == "" {
 		*version = buildVersion()
 		if !scaffold.ValidVersion(*version) {
-			return fmt.Errorf("this surla binary has no exact module version (%q); pass -surla-version with a published version such as v0.0.0-20261102083950-a4246a33f714", *version)
+			return fmt.Errorf("this surla binary has no exact module version (%q); pass -surla-version with a published version such as v0.0.0-20261104215521-580509970fb6", *version)
 		}
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
