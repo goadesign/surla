@@ -55,6 +55,29 @@ type (
 		SurlaVersion string
 	}
 
+	// Layout describes the module paths and command package directories that
+	// Init creates for a starter project and `surla serve -project` expects at
+	// the repository's committed HEAD.
+	Layout struct {
+		// Service is the candidate service and binary name, such as "shop".
+		Service string
+		// CandidateModule is the candidate's Go module path, such as
+		// "example.com/shop".
+		CandidateModule string
+		// CandidatePackage is the candidate command package relative to the
+		// project directory, such as "./cmd/shop".
+		CandidatePackage string
+		// SuiteDir is the evaluator suite's module directory relative to the
+		// project directory ("eval").
+		SuiteDir string
+		// SuiteModule is the evaluator suite's Go module path, such as
+		// "example.com/shop/eval".
+		SuiteModule string
+		// SuiteCommand is the evaluator suite command package relative to
+		// SuiteDir, such as "./cmd/shop-evals".
+		SuiteCommand string
+	}
+
 	// Runner runs one command in dir, writing its combined output to the
 	// file at logPath, and returns once every process it started has
 	// exited. Init uses RunCommand; tests substitute their own.
@@ -250,6 +273,35 @@ func ValidVersion(v string) bool {
 	return semver.IsValid(v) && semver.Canonical(v) == v
 }
 
+// StarterLayout parses the committed root go.mod and eval/go.mod files of a
+// starter project without executing Go tooling or project code, validates that
+// they declare a valid starter module pair (<module> and <module>/eval), and
+// returns the project's Layout.
+func StarterLayout(rootGoMod, evalGoMod []byte) (Layout, error) {
+	rootMod, err := modfile.ParseLax("go.mod", rootGoMod, nil)
+	if err != nil {
+		return Layout{}, fmt.Errorf("parse go.mod: %w", err)
+	}
+	if rootMod.Module == nil || rootMod.Module.Mod.Path == "" {
+		return Layout{}, errors.New("go.mod does not declare a module path")
+	}
+	layout, err := layoutForModule(rootMod.Module.Mod.Path, "go.mod module")
+	if err != nil {
+		return Layout{}, err
+	}
+	evalMod, err := modfile.ParseLax("eval/go.mod", evalGoMod, nil)
+	if err != nil {
+		return Layout{}, fmt.Errorf("parse eval/go.mod: %w", err)
+	}
+	if evalMod.Module == nil || evalMod.Module.Mod.Path == "" {
+		return Layout{}, errors.New("eval/go.mod does not declare a module path")
+	}
+	if evalMod.Module.Mod.Path != layout.SuiteModule {
+		return Layout{}, fmt.Errorf("eval/go.mod declares module %q, want %q", evalMod.Module.Mod.Path, layout.SuiteModule)
+	}
+	return layout, nil
+}
+
 // Error describes the failed command and the end of its output.
 func (e *StepError) Error() string {
 	return fmt.Sprintf("%s (in module %s) failed: %v; full output in %s\n%s", strings.Join(e.Args, " "), e.Module, e.Err, e.Log, e.Tail)
@@ -270,15 +322,33 @@ func (e *stuckError) Unwrap() error {
 	return e.err
 }
 
+// layoutForModule validates modulePath using Surla's starter service-name rule
+// and returns the corresponding starter Layout. label names the source of
+// modulePath in error messages (such as "-module" or "go.mod module").
+func layoutForModule(modulePath, label string) (Layout, error) {
+	if err := module.CheckPath(modulePath); err != nil {
+		return Layout{}, fmt.Errorf("%s %q: %w", label, modulePath, err)
+	}
+	name := path.Base(modulePath)
+	if !lowerAlnum.MatchString(name) || !token.IsIdentifier(name) || name == "main" {
+		return Layout{}, fmt.Errorf("%s %q must end in a service name of lowercase letters and digits starting with a letter, other than a Go keyword or main, such as example.com/shop", label, modulePath)
+	}
+	return Layout{
+		Service:          name,
+		CandidateModule:  modulePath,
+		CandidatePackage: "./cmd/" + name,
+		SuiteDir:         "eval",
+		SuiteModule:      modulePath + "/eval",
+		SuiteCommand:     "./cmd/" + name + "-evals",
+	}, nil
+}
+
 // newData validates o and returns the template data, with the Go, Goa,
 // Goa-AI and Model versions read from Surla's own go.mod.
 func newData(o Options) (data, error) {
-	if err := module.CheckPath(o.Module); err != nil {
-		return data{}, fmt.Errorf("-module %q: %w", o.Module, err)
-	}
-	name := path.Base(o.Module)
-	if !lowerAlnum.MatchString(name) || !token.IsIdentifier(name) || name == "main" {
-		return data{}, fmt.Errorf("-module %q must end in a service name of lowercase letters and digits starting with a letter, other than a Go keyword or main, such as example.com/shop", o.Module)
+	layout, err := layoutForModule(o.Module, "-module")
+	if err != nil {
+		return data{}, err
 	}
 	if !ValidVersion(o.SurlaVersion) {
 		return data{}, fmt.Errorf("Surla version %q is not an exact module version such as v0.0.0-20261102083950-a4246a33f714", o.SurlaVersion)
@@ -287,7 +357,7 @@ func newData(o Options) (data, error) {
 	if err != nil {
 		return data{}, fmt.Errorf("parse Surla's go.mod: %w", err)
 	}
-	d := data{Name: name, Module: o.Module, SurlaVersion: o.SurlaVersion, GoVersion: mod.Go.Version}
+	d := data{Name: layout.Service, Module: layout.CandidateModule, SurlaVersion: o.SurlaVersion, GoVersion: mod.Go.Version}
 	for _, req := range []struct {
 		path string
 		dst  *string

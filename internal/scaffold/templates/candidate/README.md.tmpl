@@ -69,12 +69,29 @@ receives the verification report as `reports/<digest>.json`.
 
 ## Connect a coding agent and try a live target
 
-After the first commit, write a verification configuration for this
-repository. It pins the evaluator suite to the commit you just made; to trust
-a later suite commit, write it again and restart `surla serve`. Its paths are
-relative to this directory, so run `surla serve` from here. `.gitignore`
-keeps `.surla/`, which also holds Change Cards, run state and live targets,
-out of the repository:
+After the first commit, start `surla serve` from this directory with
+`-project .`, a bearer token of your choice, and a model. `-project .` reads
+this starter layout from the current `HEAD` commit, pins the evaluator suite
+to that commit for `start_live_target` and `verify_change`, and writes runs to
+`.surla/runs` and reports to `reports/` (restart `surla serve` to trust a
+later `HEAD` commit). `.gitignore` keeps `.surla/`, which also holds Change
+Cards, run state and live targets, out of the repository. `-model-provider
+anthropic` reads `ANTHROPIC_API_KEY`, `-model-provider openai` reads
+`OPENAI_API_KEY`, and `-model-gateway-addr` uses a goa-ai model gateway
+instead. Set `MODEL_NAME` to a model your provider offers:
+
+```sh
+export SURLA_AUTH_TOKEN="choose-a-secret"
+export ANTHROPIC_API_KEY="your-anthropic-key"
+MODEL_NAME="your-model-name"
+surla serve -principal you@example.com \
+  -model-provider anthropic -model-name "$MODEL_NAME" \
+  -project .
+```
+
+To pin a specific suite commit without following `HEAD` on restart, or to use
+a separate evaluator repository, write `.surla/verification.json` and pass
+`-verification-config .surla/verification.json` instead of `-project .`:
 
 ```sh
 mkdir -p .surla
@@ -92,21 +109,6 @@ cat > .surla/verification.json <<EOF
   "timeout": "30m"
 }
 EOF
-```
-
-Start `surla serve` with that configuration, a bearer token of your choice,
-and a model. `-model-provider anthropic` reads `ANTHROPIC_API_KEY`,
-`-model-provider openai` reads `OPENAI_API_KEY`, and `-model-gateway-addr`
-uses a goa-ai model gateway instead. Set `MODEL_NAME` to a model your
-provider offers:
-
-```sh
-export SURLA_AUTH_TOKEN="choose-a-secret"
-export ANTHROPIC_API_KEY="your-anthropic-key"
-MODEL_NAME="your-model-name"
-surla serve -principal you@example.com \
-  -model-provider anthropic -model-name "$MODEL_NAME" \
-  -verification-config .surla/verification.json
 ```
 
 Register the server with your coding agent. For Claude Code, save this as

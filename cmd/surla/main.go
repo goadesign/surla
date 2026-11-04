@@ -54,9 +54,16 @@ type serveConfig struct {
 	modelName string
 	// swarmProfilesPath is the path of a JSON array of swarm.ProviderProfile.
 	swarmProfilesPath string
+	// projectDir is the path of a starter project created by `surla init`
+	// from whose committed HEAD `surla serve -project` derives its CP3/CP4
+	// verification configuration; mutually exclusive with verificationPath.
+	projectDir string
+	// projectSet reports whether -project was explicitly passed on the CLI.
+	projectSet bool
 	// verificationPath is the path of the operator's CP4 verification
 	// configuration (see loadVerificationConfig); empty disables
-	// verify_change, get_verification and list_verifications.
+	// verify_change, get_verification and list_verifications unless
+	// projectDir is set.
 	verificationPath string
 	// promotionPath is the path of the operator's CP5 promotion
 	// configuration (see loadPromotionConfig); empty leaves approve_merge
@@ -213,10 +220,16 @@ func runServe(args []string) (err error) {
 	fs.StringVar(&cfg.swarmProfilesPath, "swarm-profiles", "", "JSON file listing the coding-agent provider profiles used for CP2 swarm plans")
 	fs.StringVar(&cfg.cardsDir, "cards-dir", ".surla/cards", "directory where CP1 Change Cards are saved so they survive restarts; one surla serve at a time may use it")
 	fs.StringVar(&cfg.promotionPath, "promotion-config", "", "JSON file with the CP5 report directory, required suite and environment, and release directory of staged binaries that approve_merge checks; it approves staged binaries for a fresh launch, never a running service")
+	fs.StringVar(&cfg.projectDir, "project", "", "starter project directory created by surla init; derives CP3/CP4 verification from its committed HEAD (excludes -verification-config)")
 	fs.StringVar(&cfg.verificationPath, "verification-config", "", "JSON file with the CP4 candidate, evaluator suite, runs and reports configuration used by verify_change")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
+	fs.Visit(func(f *flag.Flag) {
+		if f.Name == "project" {
+			cfg.projectSet = true
+		}
+	})
 	// Flag parsing stops at the first non-flag argument, so anything left over
 	// would silently drop the flags after it.
 	if fs.NArg() > 0 {
@@ -328,6 +341,9 @@ func writeServeStatus(w io.Writer, addr *net.TCPAddr, opts controlplane.Options)
 	}
 	if opts.Verification == nil {
 		fmt.Fprintln(w, "surla: CP4 (verify_change, get_verification, list_verifications): off (set -verification-config, or run surla verify on the CLI)")
+	} else if opts.Verification.Plan.SuiteCommit != "" {
+		fmt.Fprintf(w, "surla: CP4 (verify_change, get_verification, list_verifications): on (runs in %s, reports in %s, suite commit %s pinned at startup; restart surla serve to select a new HEAD)\n",
+			opts.Verification.RunsDir, opts.Verification.Plan.ReportDir, opts.Verification.Plan.SuiteCommit)
 	} else {
 		fmt.Fprintf(w, "surla: CP4 (verify_change, get_verification, list_verifications): on (runs in %s)\n", opts.Verification.RunsDir)
 	}
@@ -390,23 +406,15 @@ Next:
 surla verify keeps $WORK_DIR, including its build logs in $WORK_DIR/evidence/,
 and writes the report to reports/.
 
-To connect a coding agent and run a live target, write a verification
-configuration after the first commit (paste these lines as they are; the EOF
-line must start the line):
-
-mkdir -p .surla
-cat > .surla/verification.json <<EOF
-{"runs_dir": ".surla/runs", "report_dir": "reports", "candidate_repo": ".", "candidate_module": ".",
- "binaries": {"%[2]s": "./cmd/%[2]s"}, "suite_repo": ".", "suite_commit": "$(git rev-parse HEAD)",
- "suite_module": "eval", "suite_command": "./cmd/%[2]s-evals", "timeout": "30m"}
-EOF
-
-Then, from this directory, with SURLA_AUTH_TOKEN exported as a token of your
-choice, ANTHROPIC_API_KEY exported, and MODEL_NAME set to a model Anthropic
-offers:
+To connect a coding agent and run a live target, start surla serve from this
+directory after the first commit, with SURLA_AUTH_TOKEN exported as a token of
+your choice, ANTHROPIC_API_KEY exported, and MODEL_NAME set to a model
+Anthropic offers (-project . pins the evaluator suite to the current HEAD
+commit at startup; restart surla serve to trust a later HEAD commit, or pass
+-verification-config for a separate suite repository):
 
 surla serve -principal you@example.com -model-provider anthropic -model-name "$MODEL_NAME" \
-  -verification-config .surla/verification.json
+  -project .
 
 Leave surla serve running. Open another terminal in this directory, export
 the same SURLA_AUTH_TOKEN there, and register http://127.0.0.1:8090/mcp with
@@ -414,8 +422,8 @@ your coding agent, sending "Authorization: Bearer $SURLA_AUTH_TOKEN". Setup
 for Claude Code, Cursor, Gemini CLI and Codex:
 https://github.com/goadesign/surla/blob/main/docs/REFERENCE.md#register-surla-in-your-mcp-client
 
-README.md in the project explains each surla verify part and the
--request-revision value.
+README.md in the project explains each surla verify part, -project .,
+-verification-config, and the -request-revision value.
 `
 
 // shellQuote quotes s as one POSIX shell word: it wraps s in single quotes
@@ -832,7 +840,7 @@ func serveOptions(cfg serveConfig, getenv func(string) string, environ []string)
 	if err != nil {
 		return controlplane.Options{}, nil, err
 	}
-	verification, err := loadVerificationConfig(cfg.verificationPath)
+	verification, err := resolveVerificationConfig(cfg)
 	if err != nil {
 		return controlplane.Options{}, nil, err
 	}

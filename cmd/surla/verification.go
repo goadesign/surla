@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"strconv"
@@ -15,6 +16,7 @@ import (
 	"time"
 
 	"github.com/goadesign/surla/internal/controlplane"
+	"github.com/goadesign/surla/internal/scaffold"
 	"github.com/goadesign/surla/internal/verify"
 	"github.com/goadesign/surla/internal/verifyrun"
 )
@@ -184,6 +186,173 @@ func writeVerifySummary(w io.Writer, report verify.Report, builderView bool) {
 		line += "; not passing: " + strings.Join(failing, ", ")
 	}
 	fmt.Fprintf(w, "%s (report %s)\n", line, report.Digest)
+}
+
+// defaultProjectVerifyTimeout is the CP4 verification timeout derived for
+// `surla serve -project <dir>`, matching the starter README.
+const defaultProjectVerifyTimeout = 30 * time.Minute
+
+// resolveVerificationConfig selects and loads the operator's CP3/CP4 target
+// configuration from either -project or -verification-config, rejecting
+// supplying both flags at once.
+func resolveVerificationConfig(cfg serveConfig) (*controlplane.VerificationConfig, error) {
+	if cfg.projectSet && cfg.verificationPath != "" {
+		return nil, errors.New("-project and -verification-config cannot be used together")
+	}
+	if cfg.projectSet {
+		if strings.TrimSpace(cfg.projectDir) == "" {
+			return nil, errors.New("-project requires a directory")
+		}
+		return loadProjectVerificationConfig(cfg.projectDir)
+	}
+	return loadVerificationConfig(cfg.verificationPath)
+}
+
+// loadProjectVerificationConfig derives a VerificationConfig from the starter
+// layout committed at HEAD in projectDir, pinning SuiteCommit to that HEAD
+// commit and placing RunsDir and ReportDir under <projectDir>/.surla/.
+func loadProjectVerificationConfig(projectDir string) (*controlplane.VerificationConfig, error) {
+	info, err := os.Stat(projectDir)
+	if err != nil {
+		return nil, fmt.Errorf("read -project %s: %w", projectDir, err)
+	}
+	if !info.IsDir() {
+		return nil, fmt.Errorf("-project %s is not a directory", projectDir)
+	}
+	projectRoot, err := filepath.EvalSymlinks(projectDir)
+	if err != nil {
+		return nil, fmt.Errorf("resolve -project %s: %w", projectDir, err)
+	}
+	topOut, err := runGitRead(projectRoot, "rev-parse", "--show-toplevel")
+	if err != nil {
+		return nil, fmt.Errorf("-project %s is not inside a git repository (run git init && git add -A && git commit -m 'Initial scaffold' first): %w",
+			projectDir, err)
+	}
+	repoRoot, err := filepath.EvalSymlinks(strings.TrimSpace(string(topOut)))
+	if err != nil {
+		return nil, fmt.Errorf("resolve git repository root for -project %s: %w", projectDir, err)
+	}
+	relProject, err := filepath.Rel(repoRoot, projectRoot)
+	if err != nil || (relProject != "." && !filepath.IsLocal(relProject)) {
+		return nil, fmt.Errorf("-project %s lies outside git repository %s", projectDir, repoRoot)
+	}
+	headOut, err := runGitRead(repoRoot, "rev-parse", "--verify", "HEAD^{commit}")
+	if err != nil {
+		return nil, fmt.Errorf("-project %s has no committed HEAD (run git add -A && git commit -m 'Initial scaffold' first): %w",
+			projectDir, err)
+	}
+	suiteCommit := strings.TrimSpace(string(headOut))
+
+	relSlash := filepath.ToSlash(relProject)
+	candidateModule := "."
+	suiteModule := "eval"
+	prefix := ""
+	if relSlash != "." {
+		candidateModule = relSlash
+		suiteModule = relSlash + "/eval"
+		prefix = relSlash + "/"
+	}
+	rootGoMod, err := readGitBlob(repoRoot, suiteCommit, prefix+"go.mod", projectDir)
+	if err != nil {
+		return nil, err
+	}
+	evalGoMod, err := readGitBlob(repoRoot, suiteCommit, prefix+"eval/go.mod", projectDir)
+	if err != nil {
+		return nil, err
+	}
+	layout, err := scaffold.StarterLayout(rootGoMod, evalGoMod)
+	if err != nil {
+		return nil, fmt.Errorf("-project %s does not match the surla init starter layout at HEAD (%s): %w (commit the starter layout or pass -verification-config)",
+			projectDir, suiteCommit, err)
+	}
+	cmdTree := prefix + strings.TrimPrefix(layout.CandidatePackage, "./")
+	if err := requireGitTree(repoRoot, suiteCommit, cmdTree, projectDir); err != nil {
+		return nil, err
+	}
+	evalCmdTree := prefix + layout.SuiteDir + "/" + strings.TrimPrefix(layout.SuiteCommand, "./")
+	if err := requireGitTree(repoRoot, suiteCommit, evalCmdTree, projectDir); err != nil {
+		return nil, err
+	}
+	self, err := selfCommand()
+	if err != nil {
+		return nil, err
+	}
+	return &controlplane.VerificationConfig{
+		Timeout: defaultProjectVerifyTimeout,
+		RunsDir: filepath.Join(projectRoot, ".surla", "runs"),
+		Plan: verify.Plan{
+			CandidateRepo:   repoRoot,
+			CandidateModule: candidateModule,
+			Binaries:        map[string]string{layout.Service: layout.CandidatePackage},
+			SuiteRepo:       repoRoot,
+			SuiteCommit:     suiteCommit,
+			SuiteModule:     suiteModule,
+			SuiteCommand:    layout.SuiteCommand,
+			ReportDir:       filepath.Join(projectRoot, "reports"),
+		},
+		Command: self,
+	}, nil
+}
+
+// readGitBlob reads a committed regular-file blob at <commit>:<treePath> in
+// repoRoot, rejecting missing paths, symlinks, and directories.
+func readGitBlob(repoRoot, commit, treePath, projectDir string) ([]byte, error) {
+	modeOut, err := runGitRead(repoRoot, "ls-tree", commit, "--", treePath)
+	if err != nil || len(bytes.TrimSpace(modeOut)) == 0 {
+		return nil, fmt.Errorf("-project %s is missing committed %s at HEAD (%s) (commit the starter layout or pass -verification-config)",
+			projectDir, treePath, commit)
+	}
+	fields := strings.Fields(string(modeOut))
+	if len(fields) < 2 || fields[1] != "blob" || (fields[0] != "100644" && fields[0] != "100755") {
+		return nil, fmt.Errorf("-project %s: committed %s at HEAD (%s) must be a regular file", projectDir, treePath, commit)
+	}
+	return runGitRead(repoRoot, "cat-file", "blob", commit+":"+treePath)
+}
+
+// requireGitTree checks that <commit>:<treePath> exists as a committed
+// directory in repoRoot.
+func requireGitTree(repoRoot, commit, treePath, projectDir string) error {
+	out, err := runGitRead(repoRoot, "cat-file", "-t", commit+":"+treePath)
+	if err != nil || strings.TrimSpace(string(out)) != "tree" {
+		return fmt.Errorf("-project %s is missing committed directory %s at HEAD (%s) (commit the starter layout or pass -verification-config)",
+			projectDir, treePath, commit)
+	}
+	return nil
+}
+
+// runGitRead runs a read-only git command in dir with ambient GIT_* overrides
+// removed so the inspected repository comes only from dir.
+func runGitRead(dir string, args ...string) ([]byte, error) {
+	cmdArgs := append([]string{"-C", dir}, args...)
+	cmd := exec.Command("git", cmdArgs...)
+	cmd.Env = cleanGitEnv()
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	out, err := cmd.Output()
+	if err != nil {
+		if msg := strings.TrimSpace(stderr.String()); msg != "" {
+			return nil, fmt.Errorf("%s: %w", msg, err)
+		}
+		return nil, err
+	}
+	return out, nil
+}
+
+// cleanGitEnv returns os.Environ with repository-redirecting GIT_* variables
+// removed and terminal prompts disabled.
+func cleanGitEnv() []string {
+	var env []string
+	for _, kv := range os.Environ() {
+		name, _, _ := strings.Cut(kv, "=")
+		switch name {
+		case "GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_OBJECT_DIRECTORY",
+			"GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_COMMON_DIR", "GIT_CEILING_DIRECTORIES",
+			"GIT_DISCOVERY_ACROSS_FILESYSTEM", "GIT_NAMESPACE", "GIT_PREFIX":
+			continue
+		}
+		env = append(env, kv)
+	}
+	return append(env, "GIT_TERMINAL_PROMPT=0", "GIT_CONFIG_NOSYSTEM=1")
 }
 
 // loadVerificationConfig strictly decodes the operator's verification
