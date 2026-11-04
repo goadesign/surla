@@ -35,13 +35,12 @@ const (
 		"Apply the following Golden Path architectural playbook when identifying ambiguities, examples, and preserved behaviors:\n\n"
 
 	// cp1CardContentRules gives the CP1 model, in both the proposal and the
-	// revision prompt, the rules that span fields: who answers the questions,
-	// where already-settled facts go, and what to do when the request leaves
-	// behavior open. What each field means is in cp1_change_card_analysis's
+	// revision prompt, the rules that span fields: who answers the questions
+	// and where already-settled facts go. What each field means, including
+	// what a concrete example is, is in cp1_change_card_analysis's
 	// descriptions.
 	cp1CardContentRules = "Write the card for the requester, who answers its questions and confirms its examples:\n" +
-		"- `ambiguities`: ask only about product, domain, or operational choices the requester must make that change observable behavior or service boundaries. Do not ask about details the request or the design already settle; reflect them in `summary`, or in `examples` when they change an observable outcome. In a revision, the revision rules above decide which earlier questions stay open.\n" +
-		"- `examples`: when the request leaves most behavior open, write examples only for the behavior it does state.\n\n"
+		"- `ambiguities`: ask only about product, domain, or operational choices the requester must make that change observable behavior or service boundaries. Do not ask about details the request or the design already settle; reflect them in `summary`, or in `examples` when they change an observable outcome. In a revision, the revision rules above decide which earlier questions stay open.\n\n"
 
 	// cp1CompositionHeader introduces the decision component catalog in the
 	// CP1 architect system prompt.
