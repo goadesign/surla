@@ -76,6 +76,17 @@ const gitReadMaxOutput = 1 << 20
 // failed query's error message quotes.
 const gitReadMaxStderr = 4 << 10
 
+// Write appends p, or records the overflow and fails when p would take the
+// stream past limit, so the git command stops instead of producing output
+// nobody will read.
+func (c *cappedBuffer) Write(p []byte) (int, error) {
+	if c.buf.Len()+len(p) > c.limit {
+		c.overflow = true
+		return 0, errors.New("output limit exceeded")
+	}
+	return c.buf.Write(p)
+}
+
 // runVerifyRun runs one internal role started by verifyrun: `surla verify-run
 // supervise <dir>` or `surla verify-run execute <dir>` for a verification run
 // (verifyrun.Start), or `surla verify-run live <dir>` for a CP3 live target
@@ -216,17 +227,6 @@ func writeVerifySummary(w io.Writer, report verify.Report, builderView bool) {
 		line += "; not passing: " + strings.Join(failing, ", ")
 	}
 	fmt.Fprintf(w, "%s (report %s)\n", line, report.Digest)
-}
-
-// Write appends p, or records the overflow and fails when p would take the
-// stream past limit, so the git command stops instead of producing output
-// nobody will read.
-func (c *cappedBuffer) Write(p []byte) (int, error) {
-	if c.buf.Len()+len(p) > c.limit {
-		c.overflow = true
-		return 0, errors.New("output limit exceeded")
-	}
-	return c.buf.Write(p)
 }
 
 // resolveVerificationConfig selects and loads the operator's CP3/CP4 target
@@ -408,6 +408,10 @@ func runGitRead(ctx context.Context, dir string, args ...string) ([]byte, error)
 	stderr := &cappedBuffer{limit: gitReadMaxStderr}
 	cmd.Stdout, cmd.Stderr = stdout, stderr
 	err := cmd.Run()
+	if strings.Contains(stderr.buf.String(), "unknown option: --no-lazy-fetch") {
+		return nil, errors.New("surla serve -project needs Git 2.45 or newer, which can refuse to fetch" +
+			" missing objects; upgrade Git or pass -verification-config")
+	}
 	if stdout.overflow || stderr.overflow {
 		return nil, fmt.Errorf("git %s printed more output than a startup read allows", args[0])
 	}

@@ -63,6 +63,7 @@ func TestLoadVerificationConfigReadsTheOperatorsPlanStrictly(t *testing.T) {
 // the directory is called, wherever the project sits in its repository, and
 // whatever the working files or the environment say.
 func TestLoadProjectVerificationConfigDerivesTheStarterPlanFromHEAD(t *testing.T) {
+	isolateGitConfig(t)
 	cases := []struct {
 		name        string
 		module      string
@@ -187,6 +188,7 @@ func TestLoadProjectVerificationConfigDerivesTheStarterPlanFromHEAD(t *testing.T
 // step (git init, a commit, or the starter layout) where there is one, instead
 // of searching for another layout or starting without verification.
 func TestLoadProjectVerificationConfigRejectsUnusableProjects(t *testing.T) {
+	isolateGitConfig(t)
 	cases := []struct {
 		name    string
 		prepare func(t *testing.T) string
@@ -259,6 +261,17 @@ func TestLoadProjectVerificationConfigRejectsUnusableProjects(t *testing.T) {
 			wantErr: "printed more output than a startup read allows",
 		},
 		{
+			name: "git older than 2.45",
+			prepare: func(t *testing.T) string {
+				fakeBin := t.TempDir()
+				script := "#!/bin/sh\necho 'error: unknown option: --no-lazy-fetch' >&2\nexit 129\n"
+				require.NoError(t, os.WriteFile(filepath.Join(fakeBin, "git"), []byte(script), 0o700))
+				t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
+				return t.TempDir()
+			},
+			wantErr: "needs Git 2.45 or newer",
+		},
+		{
 			name: "partial clone without the committed go.mod",
 			prepare: func(t *testing.T) string {
 				src := newGitRepo(t)
@@ -310,6 +323,15 @@ func TestResolveVerificationConfigChoosesOneSource(t *testing.T) {
 
 	_, err = resolveVerificationConfig(serveConfig{projectSet: true})
 	assert.ErrorContains(t, err, "-project requires a directory")
+}
+
+// isolateGitConfig points HOME and XDG_CONFIG_HOME at empty directories for
+// the test, so the developer's own Git configuration cannot change what the
+// startup Git reads see.
+func isolateGitConfig(t *testing.T) {
+	t.Helper()
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 }
 
 // newGitRepo creates an empty Git repository in a new temporary directory and

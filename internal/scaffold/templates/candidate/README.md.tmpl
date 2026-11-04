@@ -70,7 +70,8 @@ receives the verification report as `reports/<digest>.json`.
 ## Connect a coding agent and try a live target
 
 After the first commit, start `surla serve` from this directory with
-`-project .`, a bearer token of your choice, and a model. `-project .` reads
+`-project .`, a bearer token of your choice, and a model. `-project` needs Git
+2.45 or newer. `-project .` reads
 this starter layout from the current `HEAD` commit, pins the evaluator suite
 to that commit for `start_live_target` and `verify_change`, and writes runs to
 `.surla/runs` and reports to `reports/` (restart `surla serve` to trust a
