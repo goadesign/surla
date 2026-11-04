@@ -416,8 +416,9 @@ To connect a coding agent and run a live target, start surla serve from this
 directory after the first commit, with SURLA_AUTH_TOKEN exported as a token of
 your choice, ANTHROPIC_API_KEY exported, and MODEL_NAME set to a model
 Anthropic offers (-project . pins the evaluator suite to the current HEAD
-commit at startup; restart surla serve to trust a later HEAD commit, or pass
--verification-config for a separate suite repository):
+commit at startup and needs Git 2.45 or newer; restart surla serve to trust a
+later HEAD commit, or pass -verification-config for a separate suite
+repository):
 
 surla serve -principal you@example.com -model-provider anthropic -model-name "$MODEL_NAME" \
   -project .

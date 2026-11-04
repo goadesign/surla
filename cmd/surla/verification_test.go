@@ -264,7 +264,8 @@ func TestLoadProjectVerificationConfigRejectsUnusableProjects(t *testing.T) {
 			name: "git older than 2.45",
 			prepare: func(t *testing.T) string {
 				fakeBin := t.TempDir()
-				script := "#!/bin/sh\necho 'error: unknown option: --no-lazy-fetch' >&2\nexit 129\n"
+				// Git 2.44 and older print this for an unknown top-level option.
+				script := "#!/bin/sh\nprintf 'unknown option: --no-lazy-fetch\\nusage: git [-v | --version] [-h | --help]\\n' >&2\nexit 129\n"
 				require.NoError(t, os.WriteFile(filepath.Join(fakeBin, "git"), []byte(script), 0o700))
 				t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
 				return t.TempDir()

@@ -409,8 +409,8 @@ func runGitRead(ctx context.Context, dir string, args ...string) ([]byte, error)
 	cmd.Stdout, cmd.Stderr = stdout, stderr
 	err := cmd.Run()
 	if strings.Contains(stderr.buf.String(), "unknown option: --no-lazy-fetch") {
-		return nil, errors.New("surla serve -project needs Git 2.45 or newer, which can refuse to fetch" +
-			" missing objects; upgrade Git or pass -verification-config")
+		return nil, errors.New("surla serve -project needs Git 2.45 or newer (for --no-lazy-fetch, so startup" +
+			" never downloads objects); upgrade Git or pass -verification-config")
 	}
 	if stdout.overflow || stderr.overflow {
 		return nil, fmt.Errorf("git %s printed more output than a startup read allows", args[0])
