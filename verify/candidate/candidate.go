@@ -325,12 +325,19 @@ func Build(ctx context.Context, spec BuildSpec, run func(*exec.Cmd) error) error
 // what Exec documents, so a test that needs any of them fails inside the
 // sandbox instead of escaping it.
 func BuildTest(ctx context.Context, spec BuildSpec, run func(*exec.Cmd) error) (bool, error) {
-	if pkg := spec.Package; (pkg != "." && !strings.HasPrefix(pkg, "./")) || strings.Contains(pkg, "...") {
+	if pkg := spec.Package; (pkg != "." && !strings.HasPrefix(pkg, "./")) || !filepath.IsLocal(pkg) || strings.Contains(pkg, "...") {
 		return false, fmt.Errorf("test build package %q is not one package path", spec.Package)
 	}
 	b, err := resolveBuild(spec)
 	if err != nil {
 		return false, err
+	}
+	pkgDir := filepath.Join(b.spec.ModuleDir, filepath.FromSlash(spec.Package))
+	switch pkgInfo, err := os.Stat(pkgDir); {
+	case err != nil:
+		return false, fmt.Errorf("inspect test package directory %s: %w", spec.Package, err)
+	case !pkgInfo.IsDir():
+		return false, fmt.Errorf("test build package %q is not a directory", spec.Package)
 	}
 	out := b.spec.Out
 	switch _, err := os.Lstat(out); {
@@ -338,6 +345,13 @@ func BuildTest(ctx context.Context, spec BuildSpec, run func(*exec.Cmd) error) (
 		return false, fmt.Errorf("test binary path %s must not exist before the build", out)
 	case !errors.Is(err, os.ErrNotExist):
 		return false, fmt.Errorf("inspect test binary path %s: %w", out, err)
+	}
+	logPath, err := resolveFilePath(b.spec.LogFile)
+	if err != nil {
+		return false, fmt.Errorf("resolve build log path: %w", err)
+	}
+	if logPath == out {
+		return false, fmt.Errorf("test build log %s must not be the test binary path %s", b.spec.LogFile, out)
 	}
 	if err := b.goRun(ctx, run, "test", "-c", "-trimpath", "-vet=off"); err != nil {
 		return false, fmt.Errorf("sandboxed test build of %s: %w", spec.Package, err)
@@ -516,6 +530,44 @@ func resolvedOrSelf(path string) string {
 		return r
 	}
 	return path
+}
+
+// resolveFilePath returns the symlink-free absolute path that opening path for
+// creation would reach, resolving symlinks in ancestor directories and any
+// symlink chain at the final path element before the target file exists.
+func resolveFilePath(path string) (string, error) {
+	if path == "" {
+		return "", errors.New("empty path")
+	}
+	cur, err := filepath.Abs(path)
+	if err != nil {
+		return "", err
+	}
+	for range 40 {
+		dir, err := filepath.EvalSymlinks(filepath.Dir(cur))
+		if err != nil {
+			return "", err
+		}
+		cur = filepath.Join(dir, filepath.Base(cur))
+		info, err := os.Lstat(cur)
+		switch {
+		case errors.Is(err, os.ErrNotExist):
+			return cur, nil
+		case err != nil:
+			return "", err
+		case info.Mode()&os.ModeSymlink == 0:
+			return cur, nil
+		}
+		target, err := os.Readlink(cur)
+		if err != nil {
+			return "", err
+		}
+		if !filepath.IsAbs(target) {
+			target = filepath.Join(dir, target)
+		}
+		cur = filepath.Clean(target)
+	}
+	return "", fmt.Errorf("too many symlinks resolving %s", path)
 }
 
 // quote renders s as a sandbox profile string literal.

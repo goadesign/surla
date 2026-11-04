@@ -364,6 +364,7 @@ func TestBuildTestReportsWhetherThePackageHasTests(t *testing.T) {
 	}
 	cases := []struct {
 		name      string
+		pkg       string
 		files     map[string]string
 		wantTests bool
 		wantErr   string
@@ -374,6 +375,16 @@ func TestBuildTestReportsWhetherThePackageHasTests(t *testing.T) {
 				"go.mod":      libGoMod,
 				"lib.go":      "package lib\n\nfunc V() int { return 7 }\n",
 				"lib_test.go": "package lib\n\nimport \"testing\"\n\nfunc TestV(t *testing.T) {\n\tif V() != 7 {\n\t\tt.Fatal(V())\n\t}\n}\n",
+			},
+			wantTests: true,
+		},
+		{
+			name: "package directory ending in .go yields a test binary",
+			pkg:  "./dir.go",
+			files: map[string]string{
+				"go.mod":             libGoMod,
+				"dir.go/lib.go":      "package lib\n\nfunc V() int { return 7 }\n",
+				"dir.go/lib_test.go": "package lib\n\nimport \"testing\"\n\nfunc TestV(t *testing.T) {\n\tif V() != 7 {\n\t\tt.Fatal(V())\n\t}\n}\n",
 			},
 			wantTests: true,
 		},
@@ -396,7 +407,11 @@ func TestBuildTestReportsWhetherThePackageHasTests(t *testing.T) {
 			mod := writeModule(t, c.files)
 			out := filepath.Join(t.TempDir(), "lib.test")
 			log := filepath.Join(t.TempDir(), "build.log")
-			hasTests, err := BuildTest(t.Context(), testBuildSpec(t, mod, mod, out, log), (*exec.Cmd).Run)
+			spec := testBuildSpec(t, mod, mod, out, log)
+			if c.pkg != "" {
+				spec.Package = c.pkg
+			}
+			hasTests, err := BuildTest(t.Context(), spec, (*exec.Cmd).Run)
 			logText, _ := os.ReadFile(log)
 			if c.wantErr != "" {
 				require.ErrorContains(t, err, c.wantErr)
@@ -424,34 +439,58 @@ func TestBuildTestRejectsBeforeRunningTheToolchain(t *testing.T) {
 	if runtime.GOOS != "darwin" {
 		t.Skip("the sandbox is implemented with sandbox-exec on macOS")
 	}
-	mod := writeModule(t, map[string]string{"go.mod": libGoMod, "lib.go": "package lib\n"})
+	mod := writeModule(t, map[string]string{
+		"go.mod":      libGoMod,
+		"lib.go":      "package lib\n",
+		"lib_test.go": "package lib\n\nimport \"testing\"\n\nfunc TestV(t *testing.T) {}\n",
+	})
 	outDir := t.TempDir()
 	existing := filepath.Join(outDir, "existing.test")
 	require.NoError(t, os.WriteFile(existing, []byte("stale"), 0o600))
 	link := filepath.Join(outDir, "link.test")
 	require.NoError(t, os.Symlink(filepath.Join(outDir, "missing"), link))
+	symOutDir := filepath.Join(t.TempDir(), "sym-out")
+	require.NoError(t, os.Symlink(outDir, symOutDir))
+	aliasLinkTarget := filepath.Join(outDir, "alias-link.test")
+	logLinkToOut := filepath.Join(t.TempDir(), "build.log")
+	require.NoError(t, os.Symlink(aliasLinkTarget, logLinkToOut))
 	cases := []struct {
 		name    string
 		pkg     string
 		out     string
+		log     string
 		wantErr string
 	}{
-		{"package pattern", "./...", filepath.Join(outDir, "new.test"), "is not one package path"},
-		{"output flag as package", "-o=" + filepath.Join(outDir, "other.test"), filepath.Join(outDir, "new.test"), "is not one package path"},
-		{"compile flag as package", "-c=false", filepath.Join(outDir, "new.test"), "is not one package path"},
-		{"import path as package", "fmt", filepath.Join(outDir, "new.test"), "is not one package path"},
-		{"existing output file", ".", existing, "must not exist"},
-		{"existing output symlink", ".", link, "must not exist"},
+		{"package pattern", "./...", filepath.Join(outDir, "new.test"), "", "is not one package path"},
+		{"parent traversal package", "./../outside", filepath.Join(outDir, "new.test"), "", "is not one package path"},
+		{"output flag as package", "-o=" + filepath.Join(outDir, "other.test"), filepath.Join(outDir, "new.test"), "", "is not one package path"},
+		{"compile flag as package", "-c=false", filepath.Join(outDir, "new.test"), "", "is not one package path"},
+		{"import path as package", "fmt", filepath.Join(outDir, "new.test"), "", "is not one package path"},
+		{"source file as package", "./lib.go", filepath.Join(outDir, "new.test"), "", "is not a directory"},
+		{"missing package directory", "./missing", filepath.Join(outDir, "new.test"), "", "inspect test package directory"},
+		{"existing output file", ".", existing, "", "must not exist"},
+		{"existing output symlink", ".", link, "", "must not exist"},
+		{"log file equals output path", ".", filepath.Join(outDir, "same.test"), filepath.Join(outDir, "same.test"), "must not be the test binary path"},
+		{"log file aliases output path through symlinked directory", ".", filepath.Join(outDir, "alias-dir.test"), filepath.Join(symOutDir, "alias-dir.test"), "must not be the test binary path"},
+		{"log file symlink points to output path", ".", aliasLinkTarget, logLinkToOut, "must not be the test binary path"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			spec := testBuildSpec(t, mod, mod, c.out, filepath.Join(t.TempDir(), "build.log"))
+			logPath := c.log
+			if logPath == "" {
+				logPath = filepath.Join(t.TempDir(), "build.log")
+			}
+			spec := testBuildSpec(t, mod, mod, c.out, logPath)
 			spec.Package = c.pkg
 			_, err := BuildTest(t.Context(), spec, func(*exec.Cmd) error {
 				t.Fatal("the toolchain must not run")
 				return nil
 			})
 			require.ErrorContains(t, err, c.wantErr)
+			if c.out != existing && c.out != link {
+				_, statErr := os.Lstat(c.out)
+				assert.ErrorIs(t, statErr, os.ErrNotExist, "rejected preflight must not create output file")
+			}
 		})
 	}
 }
