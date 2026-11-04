@@ -44,9 +44,9 @@ func TestGenerateNeedsAGoaWithCompleteSources(t *testing.T) {
 				return testmodule.Snapshot(t, preCompleteSourcesGoa, minimalDesign)
 			},
 			wantErr: []string{
-				"surla gen needs a goa.design/goa/v3 that provides generator.CompleteSources",
-				"builds with goa.design/goa/v3 " + preCompleteSourcesGoa,
-				"CompleteSources",
+				"If that output shows that generator.CompleteSources is undefined",
+				"(" + preCompleteSourcesGoa + ") lacks it",
+				"requirement, or its replace directive",
 			},
 		},
 		{
@@ -62,6 +62,13 @@ func TestGenerateNeedsAGoaWithCompleteSources(t *testing.T) {
 			},
 			wantErr: []string{"=> goa.design/goa/v3@" + preCompleteSourcesGoa, "CompleteSources"},
 		},
+		{
+			name: "goa without CompleteSources and an unrelated design error",
+			files: func(t *testing.T) map[string]string {
+				return testmodule.Snapshot(t, preCompleteSourcesGoa, minimalDesign+"\nvar _ = undefinedInDesign\n")
+			},
+			wantErr: []string{"undefinedInDesign", "If that output shows that generator.CompleteSources is undefined"},
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -75,6 +82,8 @@ func TestGenerateNeedsAGoaWithCompleteSources(t *testing.T) {
 			for _, w := range tc.wantErr {
 				assert.ErrorContains(t, err, w)
 			}
+			assert.True(t, strings.HasPrefix(err.Error(), "compile Goa design"),
+				"the compiler's error leads; the CompleteSources recovery follows it: %v", err)
 			assert.Nil(t, out)
 		})
 	}
