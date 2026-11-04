@@ -15,7 +15,8 @@ import (
 // after it creates a project: verify keeps a named work directory, and the
 // verification configuration written after the first commit is a heredoc a
 // shell ends correctly, holding a configuration that loadVerificationConfig,
-// which surla serve -verification-config uses, accepts.
+// which surla serve -verification-config uses, accepts; and the text after
+// the serve command says how to connect a coding agent while it runs.
 func TestInitNextStepsGiveAWorkingFirstRunPath(t *testing.T) {
 	out := fmt.Sprintf(initNextSteps, shellQuote("/tmp/my shop"), "bakery")
 
@@ -38,4 +39,11 @@ func TestInitNextStepsGiveAWorkingFirstRunPath(t *testing.T) {
 	assert.Equal(t, strings.Repeat("a", 40), cfg.Plan.SuiteCommit)
 	assert.Contains(t, out, "-verification-config .surla/verification.json")
 	assert.Contains(t, out, "SURLA_AUTH_TOKEN")
+
+	_, handoff, ok := strings.Cut(out, "-verification-config .surla/verification.json\n")
+	require.True(t, ok)
+	assert.Contains(t, handoff, "Leave surla serve running.", "the agent connects while the server keeps running")
+	assert.Contains(t, handoff, "export\nthe same SURLA_AUTH_TOKEN there")
+	assert.Contains(t, handoff, "http://127.0.0.1:8090/mcp")
+	assert.Contains(t, handoff, "docs/REFERENCE.md#register-surla-in-your-mcp-client")
 }

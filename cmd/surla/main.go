@@ -408,7 +408,14 @@ offers:
 surla serve -principal you@example.com -model-provider anthropic -model-name "$MODEL_NAME" \
   -verification-config .surla/verification.json
 
-README.md in the project explains each part and the -request-revision value.
+Leave surla serve running. Open another terminal in this directory, export
+the same SURLA_AUTH_TOKEN there, and register http://127.0.0.1:8090/mcp with
+your coding agent, sending "Authorization: Bearer $SURLA_AUTH_TOKEN". Setup
+for Claude Code, Cursor, Gemini CLI and Codex:
+https://github.com/goadesign/surla/blob/main/docs/REFERENCE.md#register-surla-in-your-mcp-client
+
+README.md in the project explains each surla verify part and the
+-request-revision value.
 `
 
 // shellQuote quotes s as one POSIX shell word: it wraps s in single quotes

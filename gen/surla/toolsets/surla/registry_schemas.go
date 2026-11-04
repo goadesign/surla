@@ -9035,7 +9035,7 @@ func (registryDeclarations) field567() *genregistry.ToolFieldMetadata {
 
 // schema568 constructs one generated schema declaration.
 func (declarations registryDeclarations) schema568() *genregistry.ToolSchema {
-	registryText1 := "Build a candidate commit and run it as this server's live CP3 target so draft_override can try prompt text on it. This first stops the target already running, which discards every prompt draft applied to it, even if the new build then fails. Prompt text survives only when it is committed. Requires surla serve -verification-config."
+	registryText1 := "Build a candidate commit and run it as this server's live CP3 target so draft_override can try prompt text on it. This first stops the target already running, which discards every prompt draft applied to it, even if the new build then fails. Prompt text survives only when it is committed. Requires a server configured for verification and live targets; on surla serve, -verification-config."
 	return &genregistry.ToolSchema{
 		Name:                   "surla.start_live_target",
 		Description:            &registryText1,
@@ -9046,16 +9046,16 @@ func (declarations registryDeclarations) schema568() *genregistry.ToolSchema {
 			Kind:  "service",
 			Title: "Start Live Target",
 			Search: &genregistry.ToolSearchDocument{
-				Length: 65,
-				Terms:  map[string]int{"a": 1, "already": 1, "and": 1, "applied": 1, "as": 1, "build": 2, "can": 1, "candidate": 1, "commit": 1, "committed": 1, "config": 1, "cp3": 1, "discards": 1, "draft": 2, "even": 1, "every": 1, "fails": 1, "first": 1, "if": 1, "is": 1, "it": 4, "live": 3, "new": 1, "on": 1, "only": 1, "override": 1, "prompt": 3, "requires": 1, "run": 1, "running": 1, "s": 1, "serve": 1, "server": 1, "so": 1, "start": 2, "stops": 1, "surla": 2, "survives": 1, "target": 4, "text": 2, "the": 2, "then": 1, "this": 2, "to": 1, "try": 1, "verification": 1, "when": 1, "which": 1},
+				Length: 74,
+				Terms:  map[string]int{"a": 2, "already": 1, "and": 2, "applied": 1, "as": 1, "build": 2, "can": 1, "candidate": 1, "commit": 1, "committed": 1, "config": 1, "configured": 1, "cp3": 1, "discards": 1, "draft": 2, "even": 1, "every": 1, "fails": 1, "first": 1, "for": 1, "if": 1, "is": 1, "it": 4, "live": 4, "new": 1, "on": 2, "only": 1, "override": 1, "prompt": 3, "requires": 1, "run": 1, "running": 1, "s": 1, "serve": 1, "server": 2, "so": 1, "start": 2, "stops": 1, "surla": 2, "survives": 1, "target": 4, "targets": 1, "text": 2, "the": 2, "then": 1, "this": 2, "to": 1, "try": 1, "verification": 2, "when": 1, "which": 1},
 			},
 			RequiresUI: false,
 			TextOnly: &genregistry.TextOnlyToolContract{
 				ExecutionSchema: []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Candidate commit to build and run as this server's live CP3 target.\",\"properties\":{\"candidate_commit\":{\"description\":\"Full commit ID to build, in the candidate repository's object format.\",\"example\":\"4f0b3c1d2e5a6978877665544332211009988776\",\"pattern\":\"^([0-9a-f]{40}|[0-9a-f]{64})$\",\"type\":\"string\"}},\"required\":[\"candidate_commit\"],\"type\":\"object\"}"),
-				Description:     "Build a candidate commit and run it as this server's live CP3 target so draft_override can try prompt text on it. This first stops the target already running, which discards every prompt draft applied to it, even if the new build then fails. Prompt text survives only when it is committed. Requires surla serve -verification-config.",
+				Description:     "Build a candidate commit and run it as this server's live CP3 target so draft_override can try prompt text on it. This first stops the target already running, which discards every prompt draft applied to it, even if the new build then fails. Prompt text survives only when it is committed. Requires a server configured for verification and live targets; on surla serve, -verification-config.",
 				Search: &genregistry.ToolSearchDocument{
-					Length: 65,
-					Terms:  map[string]int{"a": 1, "already": 1, "and": 1, "applied": 1, "as": 1, "build": 2, "can": 1, "candidate": 1, "commit": 1, "committed": 1, "config": 1, "cp3": 1, "discards": 1, "draft": 2, "even": 1, "every": 1, "fails": 1, "first": 1, "if": 1, "is": 1, "it": 4, "live": 3, "new": 1, "on": 1, "only": 1, "override": 1, "prompt": 3, "requires": 1, "run": 1, "running": 1, "s": 1, "serve": 1, "server": 1, "so": 1, "start": 2, "stops": 1, "surla": 2, "survives": 1, "target": 4, "text": 2, "the": 2, "then": 1, "this": 2, "to": 1, "try": 1, "verification": 1, "when": 1, "which": 1},
+					Length: 74,
+					Terms:  map[string]int{"a": 2, "already": 1, "and": 2, "applied": 1, "as": 1, "build": 2, "can": 1, "candidate": 1, "commit": 1, "committed": 1, "config": 1, "configured": 1, "cp3": 1, "discards": 1, "draft": 2, "even": 1, "every": 1, "fails": 1, "first": 1, "for": 1, "if": 1, "is": 1, "it": 4, "live": 4, "new": 1, "on": 2, "only": 1, "override": 1, "prompt": 3, "requires": 1, "run": 1, "running": 1, "s": 1, "serve": 1, "server": 2, "so": 1, "start": 2, "stops": 1, "surla": 2, "survives": 1, "target": 4, "targets": 1, "text": 2, "the": 2, "then": 1, "this": 2, "to": 1, "try": 1, "verification": 2, "when": 1, "which": 1},
 				},
 				PayloadSchema: []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Candidate commit to build and run as this server's live CP3 target.\",\"properties\":{\"candidate_commit\":{\"description\":\"Full commit ID to build, in the candidate repository's object format.\",\"example\":\"4f0b3c1d2e5a6978877665544332211009988776\",\"pattern\":\"^([0-9a-f]{40}|[0-9a-f]{64})$\",\"type\":\"string\"}},\"required\":[\"candidate_commit\"],\"type\":\"object\"}"),
 				Payload:       declarations.metadata577(),
@@ -9327,7 +9327,7 @@ func (registryDeclarations) field588() *genregistry.ToolFieldMetadata {
 
 // schema589 constructs one generated schema declaration.
 func (declarations registryDeclarations) schema589() *genregistry.ToolSchema {
-	registryText1 := "Start CP4 verification of a candidate commit for the confirmed Change Card revision; returns a run_id to read with get_verification. Requires surla serve -verification-config."
+	registryText1 := "Start CP4 verification of a candidate commit for the confirmed Change Card revision; returns a run_id to read with get_verification. Requires a server configured for verification; on surla serve, -verification-config."
 	return &genregistry.ToolSchema{
 		Name:                   "surla.verify_change",
 		Description:            &registryText1,
@@ -9338,16 +9338,16 @@ func (declarations registryDeclarations) schema589() *genregistry.ToolSchema {
 			Kind:  "service",
 			Title: "Verify Change",
 			Search: &genregistry.ToolSearchDocument{
-				Length: 32,
-				Terms:  map[string]int{"a": 2, "candidate": 1, "card": 1, "change": 3, "commit": 1, "config": 1, "confirmed": 1, "cp4": 1, "for": 1, "get": 1, "id": 1, "of": 1, "read": 1, "requires": 1, "returns": 1, "revision": 1, "run": 1, "serve": 1, "start": 1, "surla": 2, "the": 1, "to": 1, "verification": 3, "verify": 2, "with": 1},
+				Length: 38,
+				Terms:  map[string]int{"a": 3, "candidate": 1, "card": 1, "change": 3, "commit": 1, "config": 1, "configured": 1, "confirmed": 1, "cp4": 1, "for": 2, "get": 1, "id": 1, "of": 1, "on": 1, "read": 1, "requires": 1, "returns": 1, "revision": 1, "run": 1, "serve": 1, "server": 1, "start": 1, "surla": 2, "the": 1, "to": 1, "verification": 4, "verify": 2, "with": 1},
 			},
 			RequiresUI: false,
 			TextOnly: &genregistry.TextOnlyToolContract{
 				ExecutionSchema: []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Names the confirmed Change Card revision and the candidate commit to verify. What is built and which evaluator suite runs come from the operator's configuration of surla serve, never from the caller.\",\"properties\":{\"candidate_commit\":{\"description\":\"Full commit ID of the candidate to build and verify (40 or 64 lowercase hex characters).\",\"pattern\":\"^([0-9a-f]{40}|[0-9a-f]{64})$\",\"type\":\"string\"},\"change_id\":{\"description\":\"Confirmed Change Card identifier.\",\"type\":\"string\"},\"request_revision\":{\"description\":\"Current request_revision of the confirmed Change Card.\",\"type\":\"string\"}},\"required\":[\"change_id\",\"request_revision\",\"candidate_commit\"],\"type\":\"object\"}"),
-				Description:     "Start CP4 verification of a candidate commit for the confirmed Change Card revision; returns a run_id to read with get_verification. Requires surla serve -verification-config.",
+				Description:     "Start CP4 verification of a candidate commit for the confirmed Change Card revision; returns a run_id to read with get_verification. Requires a server configured for verification; on surla serve, -verification-config.",
 				Search: &genregistry.ToolSearchDocument{
-					Length: 32,
-					Terms:  map[string]int{"a": 2, "candidate": 1, "card": 1, "change": 3, "commit": 1, "config": 1, "confirmed": 1, "cp4": 1, "for": 1, "get": 1, "id": 1, "of": 1, "read": 1, "requires": 1, "returns": 1, "revision": 1, "run": 1, "serve": 1, "start": 1, "surla": 2, "the": 1, "to": 1, "verification": 3, "verify": 2, "with": 1},
+					Length: 38,
+					Terms:  map[string]int{"a": 3, "candidate": 1, "card": 1, "change": 3, "commit": 1, "config": 1, "configured": 1, "confirmed": 1, "cp4": 1, "for": 2, "get": 1, "id": 1, "of": 1, "on": 1, "read": 1, "requires": 1, "returns": 1, "revision": 1, "run": 1, "serve": 1, "server": 1, "start": 1, "surla": 2, "the": 1, "to": 1, "verification": 4, "verify": 2, "with": 1},
 				},
 				PayloadSchema: []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Names the confirmed Change Card revision and the candidate commit to verify. What is built and which evaluator suite runs come from the operator's configuration of surla serve, never from the caller.\",\"properties\":{\"candidate_commit\":{\"description\":\"Full commit ID of the candidate to build and verify (40 or 64 lowercase hex characters).\",\"pattern\":\"^([0-9a-f]{40}|[0-9a-f]{64})$\",\"type\":\"string\"},\"change_id\":{\"description\":\"Confirmed Change Card identifier.\",\"type\":\"string\"},\"request_revision\":{\"description\":\"Current request_revision of the confirmed Change Card.\",\"type\":\"string\"}},\"required\":[\"change_id\",\"request_revision\",\"candidate_commit\"],\"type\":\"object\"}"),
 				Payload:       declarations.metadata634(),
