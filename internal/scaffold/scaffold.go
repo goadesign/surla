@@ -55,24 +55,16 @@ type (
 		SurlaVersion string
 	}
 
-	// Layout describes the module paths and command package directories that
-	// Init creates for a starter project and `surla serve -project` expects at
-	// the repository's committed HEAD.
+	// Layout names the command packages Init writes for one starter project,
+	// which `surla serve -project` builds: the candidate in the project
+	// directory and the evaluator suite in its SuiteDir module.
 	Layout struct {
-		// Service is the candidate service and binary name, such as "shop".
+		// Service is the candidate service and binary name, the last element
+		// of the module path, such as "shop".
 		Service string
-		// CandidateModule is the candidate's Go module path, such as
-		// "example.com/shop".
-		CandidateModule string
 		// CandidatePackage is the candidate command package relative to the
 		// project directory, such as "./cmd/shop".
 		CandidatePackage string
-		// SuiteDir is the evaluator suite's module directory relative to the
-		// project directory ("eval").
-		SuiteDir string
-		// SuiteModule is the evaluator suite's Go module path, such as
-		// "example.com/shop/eval".
-		SuiteModule string
 		// SuiteCommand is the evaluator suite command package relative to
 		// SuiteDir, such as "./cmd/shop-evals".
 		SuiteCommand string
@@ -148,6 +140,11 @@ type (
 		err error
 	}
 )
+
+// SuiteDir is the directory, relative to the project directory, where Init
+// writes the evaluator suite's module <module>/eval. surla serve -project
+// reads that module's go.mod from there.
+const SuiteDir = "eval"
 
 const (
 	// quickstartGuide is the one generated file outside gen/: goa-ai's guide
@@ -273,10 +270,11 @@ func ValidVersion(v string) bool {
 	return semver.IsValid(v) && semver.Canonical(v) == v
 }
 
-// StarterLayout parses the committed root go.mod and eval/go.mod files of a
-// starter project without executing Go tooling or project code, validates that
-// they declare a valid starter module pair (<module> and <module>/eval), and
-// returns the project's Layout.
+// StarterLayout parses a starter project's go.mod and SuiteDir/go.mod, which
+// the caller read from one commit, without running Go tooling or project code.
+// It checks that the root module path ends in a valid service name and that
+// the suite module is <module>/eval, and returns the command packages Init
+// writes for that module path.
 func StarterLayout(rootGoMod, evalGoMod []byte) (Layout, error) {
 	rootMod, err := modfile.ParseLax("go.mod", rootGoMod, nil)
 	if err != nil {
@@ -285,7 +283,8 @@ func StarterLayout(rootGoMod, evalGoMod []byte) (Layout, error) {
 	if rootMod.Module == nil || rootMod.Module.Mod.Path == "" {
 		return Layout{}, errors.New("go.mod does not declare a module path")
 	}
-	layout, err := layoutForModule(rootMod.Module.Mod.Path, "go.mod module")
+	modulePath := rootMod.Module.Mod.Path
+	layout, err := layoutForModule(modulePath, "go.mod module")
 	if err != nil {
 		return Layout{}, err
 	}
@@ -296,8 +295,8 @@ func StarterLayout(rootGoMod, evalGoMod []byte) (Layout, error) {
 	if evalMod.Module == nil || evalMod.Module.Mod.Path == "" {
 		return Layout{}, errors.New("eval/go.mod does not declare a module path")
 	}
-	if evalMod.Module.Mod.Path != layout.SuiteModule {
-		return Layout{}, fmt.Errorf("eval/go.mod declares module %q, want %q", evalMod.Module.Mod.Path, layout.SuiteModule)
+	if want := modulePath + "/" + SuiteDir; evalMod.Module.Mod.Path != want {
+		return Layout{}, fmt.Errorf("eval/go.mod declares module %q, want %q", evalMod.Module.Mod.Path, want)
 	}
 	return layout, nil
 }
@@ -335,10 +334,7 @@ func layoutForModule(modulePath, label string) (Layout, error) {
 	}
 	return Layout{
 		Service:          name,
-		CandidateModule:  modulePath,
 		CandidatePackage: "./cmd/" + name,
-		SuiteDir:         "eval",
-		SuiteModule:      modulePath + "/eval",
 		SuiteCommand:     "./cmd/" + name + "-evals",
 	}, nil
 }
@@ -357,7 +353,7 @@ func newData(o Options) (data, error) {
 	if err != nil {
 		return data{}, fmt.Errorf("parse Surla's go.mod: %w", err)
 	}
-	d := data{Name: layout.Service, Module: layout.CandidateModule, SurlaVersion: o.SurlaVersion, GoVersion: mod.Go.Version}
+	d := data{Name: layout.Service, Module: o.Module, SurlaVersion: o.SurlaVersion, GoVersion: mod.Go.Version}
 	for _, req := range []struct {
 		path string
 		dst  *string
@@ -387,7 +383,7 @@ func newData(o Options) (data, error) {
 func build(ctx context.Context, root, logs string, d data, run Runner, gen Generator) error {
 	for _, m := range []moduleStep{
 		{dir: ".", templates: "templates/candidate", path: d.Module},
-		{dir: "eval", templates: "templates/eval", path: d.Module + "/eval", requireSurla: true},
+		{dir: SuiteDir, templates: "templates/eval", path: d.Module + "/" + SuiteDir, requireSurla: true},
 	} {
 		dir := filepath.Join(root, m.dir)
 		designFiles, err := render(dir, m.templates, d, isDesignFile)

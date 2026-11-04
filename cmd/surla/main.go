@@ -263,11 +263,7 @@ func runServe(args []string) (err error) {
 	if err != nil {
 		return err
 	}
-	projectDir := ""
-	if cfg.projectSet {
-		projectDir = cfg.projectDir
-	}
-	writeServeStatus(os.Stderr, ln.Addr().(*net.TCPAddr), opts, projectDir)
+	writeServeStatus(os.Stderr, ln.Addr().(*net.TCPAddr), opts, cfg.projectDir)
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
@@ -306,12 +302,12 @@ func resolveAuthToken(flagValue string, getenv func(string) string) string {
 // the five checkpoints (CP1–CP5) are on or off, naming the flag or host option
 // that enables each off capability. addr is the bound address, so port 0
 // reports the port actually assigned; an unspecified IP such as [::] is shown
-// as localhost so the printed URL works from this machine. projectDir is the
+// as localhost so the printed URL works from this machine. project is the
 // -project value, or empty when verification comes from -verification-config
 // or is off; with it, the status also says that the evaluator suite commit is
 // the project's HEAD at startup and that a restart selects a later one. The
 // bearer token never appears.
-func writeServeStatus(w io.Writer, addr *net.TCPAddr, opts controlplane.Options, projectDir string) {
+func writeServeStatus(w io.Writer, addr *net.TCPAddr, opts controlplane.Options, project string) {
 	host := addr.String()
 	if addr.IP.IsUnspecified() {
 		host = net.JoinHostPort("localhost", strconv.Itoa(addr.Port))
@@ -349,15 +345,13 @@ func writeServeStatus(w io.Writer, addr *net.TCPAddr, opts controlplane.Options,
 	if opts.Verification == nil {
 		fmt.Fprintln(w, "surla: CP4 (verify_change, get_verification, list_verifications): off"+
 			" (set -project or -verification-config, or run surla verify on the CLI)")
-	} else if opts.Verification.Plan.SuiteCommit == "" {
-		fmt.Fprintf(w, "surla: CP4 (verify_change, get_verification, list_verifications): on (runs in %s)\n", opts.Verification.RunsDir)
 	} else {
 		fmt.Fprintf(w, "surla: CP4 (verify_change, get_verification, list_verifications): on (runs in %s, reports in %s, evaluator suite commit %s)\n",
 			opts.Verification.RunsDir, opts.Verification.Plan.ReportDir, opts.Verification.Plan.SuiteCommit)
 	}
-	if projectDir != "" {
+	if project != "" {
 		fmt.Fprintf(w, "surla: -project %s: the evaluator suite commit is the project's HEAD at startup;"+
-			" commit and restart surla serve to use a later suite\n", projectDir)
+			" commit and restart surla serve to use a later suite\n", project)
 	}
 	if opts.PromotionTarget == nil {
 		fmt.Fprintln(w, "surla: CP5 (approve_merge): off (set -promotion-config, or run surla approve on the CLI)")

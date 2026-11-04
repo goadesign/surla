@@ -82,7 +82,7 @@ func TestLoadProjectVerificationConfigDerivesTheStarterPlanFromHEAD(t *testing.T
 			writeStarter(t, project, tc.module)
 			head := gitCommitAll(t, repo, "starter")
 
-			cfg, err := loadProjectVerificationConfig(project)
+			cfg, err := loadProjectConfig(t.Context(), project)
 			require.NoError(t, err)
 			suiteModule := "eval"
 			if tc.wantModule != "." {
@@ -128,7 +128,7 @@ func TestLoadProjectVerificationConfigDerivesTheStarterPlanFromHEAD(t *testing.T
 		require.NoError(t, os.WriteFile(filepath.Join(repo, "go.mod"), []byte("module example.com/other\n"), 0o600))
 		require.NoError(t, os.RemoveAll(filepath.Join(repo, "cmd")))
 
-		cfg, err := loadProjectVerificationConfig(repo)
+		cfg, err := loadProjectConfig(t.Context(), repo)
 		require.NoError(t, err)
 		assert.Equal(t, head, cfg.Plan.SuiteCommit)
 		assert.Equal(t, map[string]string{"shop": "./cmd/shop"}, cfg.Plan.Binaries)
@@ -138,7 +138,7 @@ func TestLoadProjectVerificationConfigDerivesTheStarterPlanFromHEAD(t *testing.T
 		repo := newGitRepo(t)
 		writeStarter(t, repo, "example.com/shop")
 		first := gitCommitAll(t, repo, "starter")
-		cfg, err := loadProjectVerificationConfig(repo)
+		cfg, err := loadProjectConfig(t.Context(), repo)
 		require.NoError(t, err)
 
 		require.NoError(t, os.WriteFile(filepath.Join(repo, "eval", "NOTES"), []byte("new scenario\n"), 0o600))
@@ -146,9 +146,24 @@ func TestLoadProjectVerificationConfigDerivesTheStarterPlanFromHEAD(t *testing.T
 		require.NotEqual(t, first, second)
 		assert.Equal(t, first, cfg.Plan.SuiteCommit, "the loaded plan keeps the startup commit")
 
-		restarted, err := loadProjectVerificationConfig(repo)
+		restarted, err := loadProjectConfig(t.Context(), repo)
 		require.NoError(t, err)
 		assert.Equal(t, second, restarted.Plan.SuiteCommit, "a restart selects the new HEAD")
+	})
+
+	t.Run("linked worktree uses its own checkout and HEAD", func(t *testing.T) {
+		repo := newGitRepo(t)
+		writeStarter(t, repo, "example.com/shop")
+		gitCommitAll(t, repo, "starter")
+		worktree := filepath.Join(newGitRepo(t), "wt")
+		runTestGit(t, repo, "worktree", "add", "-q", "-b", "feature", worktree)
+		require.NoError(t, os.WriteFile(filepath.Join(worktree, "eval", "NOTES"), []byte("feature suite\n"), 0o600))
+		head := gitCommitAll(t, worktree, "feature suite")
+
+		cfg, err := loadProjectConfig(t.Context(), worktree)
+		require.NoError(t, err)
+		assert.Equal(t, worktree, cfg.Plan.CandidateRepo)
+		assert.Equal(t, head, cfg.Plan.SuiteCommit, "the worktree's HEAD, not the main checkout's")
 	})
 
 	t.Run("GIT_DIR in the environment does not redirect the project", func(t *testing.T) {
@@ -160,7 +175,7 @@ func TestLoadProjectVerificationConfigDerivesTheStarterPlanFromHEAD(t *testing.T
 		head := gitCommitAll(t, repo, "starter")
 		t.Setenv("GIT_DIR", filepath.Join(other, ".git"))
 
-		cfg, err := loadProjectVerificationConfig(repo)
+		cfg, err := loadProjectConfig(t.Context(), repo)
 		require.NoError(t, err)
 		assert.Equal(t, head, cfg.Plan.SuiteCommit)
 		assert.Equal(t, map[string]string{"shop": "./cmd/shop"}, cfg.Plan.Binaries)
@@ -240,7 +255,7 @@ func TestLoadProjectVerificationConfigNamesTheNextStep(t *testing.T) {
 				gitCommitAll(t, repo, "starter")
 				return repo
 			},
-			wantErr: "printed more than",
+			wantErr: "printed more output than a startup read allows",
 		},
 		{
 			name: "candidate command never committed",
@@ -256,7 +271,7 @@ func TestLoadProjectVerificationConfigNamesTheNextStep(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := loadProjectVerificationConfig(tc.prepare(t))
+			_, err := loadProjectConfig(t.Context(), tc.prepare(t))
 			require.ErrorContains(t, err, tc.wantErr)
 		})
 	}
@@ -321,7 +336,7 @@ func runTestGit(t *testing.T, dir string, args ...string) string {
 	t.Helper()
 	cmd := exec.Command("git", append([]string{"-C", dir, "-c", "user.name=Surla Test",
 		"-c", "user.email=test@example.com", "-c", "commit.gpgsign=false"}, args...)...)
-	cmd.Env = cleanGitEnv()
+	cmd.Env = append(cleanGitEnv(), "GIT_CONFIG_GLOBAL=/dev/null")
 	out, err := cmd.Output()
 	require.NoError(t, err, "git %v", args)
 	return string(out)

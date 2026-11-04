@@ -202,7 +202,7 @@ func TestInitWritesTheProjectWithTheServiceName(t *testing.T) {
 	require.NoError(t, err, "surla serve -project accepts the modules Init writes")
 	for _, pkgDir := range []string{
 		filepath.Join(dir, filepath.FromSlash(layout.CandidatePackage)),
-		filepath.Join(dir, layout.SuiteDir, filepath.FromSlash(layout.SuiteCommand)),
+		filepath.Join(dir, SuiteDir, filepath.FromSlash(layout.SuiteCommand)),
 	} {
 		info, err := os.Stat(pkgDir)
 		require.NoError(t, err, "Init writes the command directory the layout names")
@@ -430,10 +430,7 @@ func TestStarterLayoutValidatesModulesAndDerivesPaths(t *testing.T) {
 			evalGoMod: "module example.com/shop/eval\n\ngo 1.26\n",
 			want: Layout{
 				Service:          "shop",
-				CandidateModule:  "example.com/shop",
 				CandidatePackage: "./cmd/shop",
-				SuiteDir:         "eval",
-				SuiteModule:      "example.com/shop/eval",
 				SuiteCommand:     "./cmd/shop-evals",
 			},
 		},
@@ -443,10 +440,7 @@ func TestStarterLayoutValidatesModulesAndDerivesPaths(t *testing.T) {
 			evalGoMod: "module example.com/errors/eval\n\ngo 1.26\n",
 			want: Layout{
 				Service:          "errors",
-				CandidateModule:  "example.com/errors",
 				CandidatePackage: "./cmd/errors",
-				SuiteDir:         "eval",
-				SuiteModule:      "example.com/errors/eval",
 				SuiteCommand:     "./cmd/errors-evals",
 			},
 		},
