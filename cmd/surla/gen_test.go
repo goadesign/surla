@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -45,6 +46,9 @@ func TestGenPublishesGenAndLeavesNothingBehind(t *testing.T) {
 	require.NoError(t, runGen([]string{"-dir", dir}, &stdout, &stderr))
 	assert.Contains(t, stdout.String(), "gen/ updated")
 	assert.Contains(t, stdout.String(), "removed: 1\n  gen/stale/old.go")
+	notice := strings.Index(stdout.String(), "surla gen did not build this module's hand-written packages")
+	next := strings.Index(stdout.String(), "Next: surla preview")
+	assert.True(t, notice >= 0 && notice < next, "the success output says generation does not build the hand-written code, before its next step")
 	got := files(t, dir, "gen")
 	assert.Contains(t, got["gen/orders/service.go"], "$ surla gen")
 	assert.Contains(t, got, "gen/goa.json")

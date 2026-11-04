@@ -146,6 +146,10 @@ func runGen(args []string, stdout, stderr io.Writer) (err error) {
 		fmt.Fprintf(stdout, "The generated code imports %s, which go.mod does not require. Run `go mod tidy` in %s.\n",
 			strings.Join(missing, ", "), cleanDir)
 	}
+	// Generation publishes gen/ only; it never builds the module's hand-written
+	// packages, so it cannot tell whether they still match the new gen/.
+	fmt.Fprintln(stdout, "surla gen did not build this module's hand-written packages, such as internal/ and cmd/;"+
+		" check that they still match gen/ before you run surla verify or start a live target.")
 	fmt.Fprintln(stdout, "Next: surla preview -dir", cleanDir)
 	return nil
 }

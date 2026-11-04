@@ -937,6 +937,15 @@ const largeSvg = findAll(viewEl, (n) => n.attributes["id"] === "surla-c4-svg");
 const largeSvgNodes = findAll(viewEl, (n) => n.attributes["class"] === "surla-svg-node");
 const largeSvgEdges = findAll(viewEl, (n) => n.attributes["class"] === "surla-svg-edge");
 const swarmManifestDetails = findAll(viewEl, (n) => n.attributes["id"] === "surla-cp2-swarm-manifest" && n.tagName === "DETAILS");
+const scopeNote = findAll(viewEl, (n) => n.attributes["id"] === "surla-cp2-scope-note");
+const confirmationNote = findAll(viewEl, (n) => n.attributes["id"] === "surla-cp2-confirmation-note");
+if (scopeNote.length !== 1 ||
+    !renderText(scopeNote[0]).includes("does not compare the design with the Change Card") ||
+    confirmationNote.length !== 1 ||
+    !renderText(confirmationNote[0]).includes("does not show that the service asks the right person") ||
+    !renderText(confirmationNote[0]).includes("examples/orders")) {
+  throw new Error("expected #surla-cp2-scope-note (declarations, not requirement coverage) and #surla-cp2-confirmation-note (badge is not a working approval flow, see examples/orders)");
+}
 const largeText = renderText(viewEl);
 const edge23Path = largeSvgEdges[1].children[0].attributes["d"];
 const edge32Path = largeSvgEdges[2].children[0].attributes["d"];
