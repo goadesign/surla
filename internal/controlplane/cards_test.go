@@ -464,3 +464,29 @@ func TestPrincipalIDsMustBeValidUTF8(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, saved)
 }
+
+// TestCloseRemovesTheEvaluatorWorkspace checks that a control plane that
+// never evaluates creates no design evaluator workspace, that one that did
+// removes it on Close, and that it refuses evaluations afterwards.
+func TestCloseRemovesTheEvaluatorWorkspace(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("TMPDIR", tmp)
+	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
+	incomplete := &gensurla.DesignSnapshot{Files: map[string]string{"design/design.go": "package design\n"}}
+
+	idle, err := New(Options{CardsDir: t.TempDir()})
+	require.NoError(t, err)
+	require.NoError(t, idle.Close())
+	assert.Empty(t, workspaces(t, tmp), "a control plane that never evaluates creates no workspace")
+
+	cp, err := New(Options{CardsDir: t.TempDir()})
+	require.NoError(t, err)
+	_, err = cp.Diff(alice, &gensurla.DiffPayload{Old: incomplete, New: incomplete})
+	require.Error(t, err)
+	require.Len(t, workspaces(t, tmp), 1)
+	require.NoError(t, cp.Close())
+	assert.Empty(t, workspaces(t, tmp))
+	_, err = cp.Diff(alice, &gensurla.DiffPayload{Old: incomplete, New: incomplete})
+	require.ErrorContains(t, err, "design evaluator is closed")
+	require.NoError(t, cp.Close(), "closing again repeats the same results")
+}

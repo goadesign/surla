@@ -243,6 +243,10 @@ type (
 		promotionTarget PromotionTarget
 		// verification is the operator's CP4 configuration, or nil.
 		verification *VerificationConfig
+		// evaluator evaluates designs for preview_architecture and diff. It
+		// creates its build workspace on the first evaluation, and Close
+		// removes it.
+		evaluator *designeval.Evaluator
 		// liveState holds the live CP3 target state.
 		liveState
 	}
@@ -415,6 +419,7 @@ func New(opts Options) (*ControlPlane, error) {
 		swarmProfiles:   opts.SwarmProfiles,
 		promotionTarget: opts.PromotionTarget,
 		verification:    opts.Verification,
+		evaluator:       designeval.NewEvaluator(),
 		liveState:       newLiveState(opts.Live, opts.CardsDir),
 	}, nil
 }
@@ -583,19 +588,28 @@ func (c *ControlPlane) ProposeChange(ctx context.Context, p *gensurla.ProposeCha
 	return card, nil
 }
 
-// Close releases the cards directory so another process can use it. It
-// waits for a card read or save in progress; requests that reach the cards
-// afterwards, such as one still waiting on a model or promotion target, fail
-// without writing. Closing twice does nothing.
+// Close shuts the control plane down. It first refuses new live targets,
+// then stops the live target, then cancels the design evaluations in
+// progress, waits for them, and removes their build workspace, and finally
+// releases the cards directory so another process can use it. It always
+// attempts the evaluator cleanup, and joins its error with any other. If the
+// live target cannot be confirmed stopped, the cards directory stays locked
+// on this and every later call, because the target's processes may still use
+// it. Card cleanup waits for a card read or save in progress; requests that
+// reach the cards afterwards, such as one still waiting on a model or
+// promotion target, fail without writing. A later call returns the same
+// evaluator result and, if the live target could not be stopped, the same
+// failure; the cards directory is released only once.
 func (c *ControlPlane) Close() error {
-	if err := c.closeLive(); err != nil {
-		// The cards directory, which holds the live root, stays locked while
-		// the target's processes may still use it.
-		return fmt.Errorf("stop live target; cards directory %s stays locked: %w", c.cards.dir, err)
+	c.cancelServer()
+	liveErr := c.closeLive()
+	evalErr := c.evaluator.Close()
+	if liveErr != nil {
+		return errors.Join(evalErr, fmt.Errorf("stop live target; cards directory %s stays locked: %w", c.cards.dir, liveErr))
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return c.cards.close()
+	return errors.Join(evalErr, c.cards.close())
 }
 
 // GetChange returns the current Change Card for change_id to its owner. It
@@ -656,7 +670,7 @@ func (c *ControlPlane) ConfirmIntent(ctx context.Context, p *gensurla.ConfirmInt
 }
 
 // PreviewArchitecture evaluates the candidate design module snapshot via the
-// real Goa evaluation engine (`designeval.Evaluate`) bound to a confirmed CP1
+// real Goa evaluation engine (the control plane's designeval.Evaluator) bound to a confirmed CP1
 // Change Card and returns the validated C4 topology, directed edges, per-agent
 // runtime policies, and tool contracts.
 func (c *ControlPlane) PreviewArchitecture(ctx context.Context, p *gensurla.PreviewArchitecturePayload) (*gensurla.ArchitecturePreviewResult, error) {
@@ -690,7 +704,7 @@ func (c *ControlPlane) PreviewArchitecture(ctx context.Context, p *gensurla.Prev
 	if err := reportProgress(ctx, 0, 2, "Evaluating the candidate design in the sandbox"); err != nil {
 		return nil, err
 	}
-	evaluated, err := designeval.Evaluate(ctx, p.Design.Files)
+	evaluated, err := c.evaluator.Evaluate(ctx, p.Design.Files)
 	if err != nil {
 		return nil, err
 	}
@@ -792,7 +806,7 @@ func (c *ControlPlane) Diff(ctx context.Context, p *gensurla.DiffPayload) (*gens
 	if p == nil {
 		return nil, errors.New("diff payload is required")
 	}
-	rep, err := diff.Compare(ctx, p.Old.Files, p.New.Files)
+	rep, err := diff.Compare(ctx, c.evaluator, p.Old.Files, p.New.Files)
 	if err != nil {
 		return nil, err
 	}

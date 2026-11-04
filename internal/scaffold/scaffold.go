@@ -3,10 +3,11 @@
 // starter evaluator suite that `surla verify` runs against it.
 //
 // Init builds the whole project in a staging directory next to the target,
-// running `go mod tidy` and `goa gen` in each module, and renames the staging
-// directory to the target only when every step succeeded. A failed or
-// canceled step removes the staging directory, so the target is never left
-// half-written. Each command's output goes to a log file; a failed step's log
+// running `go mod tidy` in each module and generating its code with a
+// Generator (Surla's sandboxed Goa generator, the one `surla gen` uses), and
+// renames the staging directory to the target only when every step
+// succeeded. A failed or canceled step removes the staging directory, so the
+// target is never left half-written. Each command's output goes to a log file; a failed step's log
 // is kept and named in the error.
 package scaffold
 
@@ -20,11 +21,13 @@ import (
 	"go/token"
 	"io"
 	"io/fs"
+	"maps"
 	"os"
 	"os/exec"
 	"path"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"syscall"
 	"text/template"
@@ -57,13 +60,25 @@ type (
 	// exited. Init uses RunCommand; tests substitute their own.
 	Runner func(ctx context.Context, dir, logPath string, args ...string) error
 
+	// Generator runs Goa's generator for one module snapshot without running
+	// the module's code on the host. *designeval.Evaluator implements it.
+	// Generate receives the module's go.mod, go.sum and design files keyed by
+	// module-relative path and returns the generated files by the same kind
+	// of path: files under gen/ and AGENTS_QUICKSTART.md. Its processes work
+	// on their own copies of those files, never on Init's staging directory.
+	// Init owns the Generator it is given and closes it before returning.
+	Generator interface {
+		Generate(ctx context.Context, files map[string]string) (map[string][]byte, error)
+		Close() error
+	}
+
 	// data is what the templates are rendered with.
 	data struct {
 		// Name is the service name, the last element of Module.
 		Name string
-		// Pkg is the Go package goa gen generated for the service: Name, or
+		// Pkg is the Go package Goa generated for the service: Name, or
 		// Name with "_" appended when Name is reserved in generated Go code
-		// (errors becomes errors_). Only templates rendered after goa gen
+		// (errors becomes errors_). Only templates rendered after generation
 		// use it.
 		Pkg string
 		// Module is the candidate's module path.
@@ -112,6 +127,9 @@ type (
 )
 
 const (
+	// quickstartGuide is the one generated file outside gen/: goa-ai's guide
+	// for coding agents, written at the module root.
+	quickstartGuide = "AGENTS_QUICKSTART.md"
 	// surlaModule is Surla's module path.
 	surlaModule = "github.com/goadesign/surla"
 	// stopGrace is how long a canceled command's process group gets to exit
@@ -137,9 +155,17 @@ var (
 	lowerAlnum = regexp.MustCompile(`^[a-z][a-z0-9]*$`)
 )
 
-// Init creates the project described by o, running every command with run.
-// It returns the service name. On error the target directory is unchanged.
-func Init(ctx context.Context, o Options, run Runner) (string, error) {
+// Init creates the project described by o, running every command with run
+// and generating each module's code with gen, which it closes before
+// returning. It returns the service name. On error the target directory is
+// unchanged.
+func Init(ctx context.Context, o Options, run Runner, gen Generator) (name string, err error) {
+	genClosed := false
+	defer func() {
+		if !genClosed {
+			err = errors.Join(err, gen.Close())
+		}
+	}()
 	d, err := newData(o)
 	if err != nil {
 		return "", err
@@ -161,12 +187,20 @@ func Init(ctx context.Context, o Options, run Runner) (string, error) {
 	if err != nil {
 		return "", errors.Join(fmt.Errorf("create staging directory: %w", err), os.RemoveAll(logs))
 	}
-	if err := build(ctx, staging, logs, d, run); err != nil {
+	if err := build(ctx, staging, logs, d, run, gen); err != nil {
 		var stuck *stuckError
 		if errors.As(err, &stuck) {
 			return "", fmt.Errorf("%w; the staging directory %s is kept because processes may still use it", err, staging)
 		}
 		return "", errors.Join(err, os.RemoveAll(staging))
+	}
+	// The generator's processes worked on their own copies of the files, so
+	// whatever its Close reports, nothing of it uses the staging directory.
+	// It is closed and the context checked before publishing, so a project
+	// appears only when generation is fully over and Init was not canceled.
+	genClosed = true
+	if err := errors.Join(gen.Close(), ctx.Err()); err != nil {
+		return "", errors.Join(err, os.RemoveAll(logs), os.RemoveAll(staging))
 	}
 	// Every step succeeded, so the logs are no longer needed. They are removed
 	// before publishing so that the rename is the last thing that can fail.
@@ -275,28 +309,32 @@ func newData(o Options) (data, error) {
 }
 
 // build creates both modules under root. For each module it writes go.mod and
-// design/, resolves the design's dependencies, generates code with goa gen,
+// design/, resolves the design's dependencies, generates code with gen,
 // writes the remaining files, tidies again and vets. The evaluator module
-// pins the exact Surla version with go get before goa gen: the final tidy then
-// keeps that version instead of picking another, and the code is generated
-// with whatever Goa versions it requires.
-func build(ctx context.Context, root, logs string, d data, run Runner) error {
+// pins the exact Surla version with go get before generation: the final tidy
+// then keeps that version instead of picking another, and the code is
+// generated with whatever Goa versions it requires.
+func build(ctx context.Context, root, logs string, d data, run Runner, gen Generator) error {
 	for _, m := range []moduleStep{
 		{dir: ".", templates: "templates/candidate", path: d.Module},
 		{dir: "eval", templates: "templates/eval", path: d.Module + "/eval", requireSurla: true},
 	} {
 		dir := filepath.Join(root, m.dir)
-		if err := render(dir, m.templates, d, isDesignFile); err != nil {
+		designFiles, err := render(dir, m.templates, d, isDesignFile)
+		if err != nil {
 			return err
 		}
 		steps := [][]string{{"go", "mod", "tidy"}}
 		if m.requireSurla {
 			// Pinning Surla first may raise Goa or Goa-AI to what this Surla
-			// version requires, so goa gen runs once with the final versions.
+			// version requires, so generation runs once with the final
+			// versions.
 			steps = append(steps, []string{"go", "get", surlaModule + "@" + d.SurlaVersion})
 		}
-		steps = append(steps, []string{"go", "run", "goa.design/goa/v3/cmd/goa", "gen", m.path + "/design"})
 		if err := runAll(ctx, dir, m.dir, logs, steps, run); err != nil {
+			return err
+		}
+		if err := generate(ctx, dir, m.dir, designFiles, gen); err != nil {
 			return err
 		}
 		pkg, err := generatedServicePackage(dir)
@@ -304,7 +342,7 @@ func build(ctx context.Context, root, logs string, d data, run Runner) error {
 			return err
 		}
 		d.Pkg = pkg
-		if err := render(dir, m.templates, d, func(p string) bool { return !isDesignFile(p) }); err != nil {
+		if _, err := render(dir, m.templates, d, func(p string) bool { return !isDesignFile(p) }); err != nil {
 			return err
 		}
 		steps = [][]string{{"go", "mod", "tidy"}, {"go", "vet", "./..."}}
@@ -338,6 +376,46 @@ func runAll(ctx context.Context, dir, moduleDir, logs string, steps [][]string, 
 	return nil
 }
 
+// generate runs gen on the module in dir, whose files are exactly
+// designFiles (go.mod and design/, as rendered and then resolved) plus the
+// go.sum the resolution wrote, and writes the generated files into dir.
+// Every generated path is checked before anything is written: it must be
+// AGENTS_QUICKSTART.md or a clean relative path under gen/. dir is a new,
+// unpublished module, so there is nothing in it to keep or replace.
+func generate(ctx context.Context, dir, moduleDir string, designFiles []string, gen Generator) error {
+	files := map[string]string{}
+	for _, name := range append(slices.Clone(designFiles), "go.sum") {
+		b, err := os.ReadFile(filepath.Join(dir, filepath.FromSlash(name)))
+		if err != nil {
+			return fmt.Errorf("generate code for module %s: %w", moduleDir, err)
+		}
+		files[name] = string(b)
+	}
+	generated, err := gen.Generate(ctx, files)
+	if err != nil {
+		return fmt.Errorf("generate code for module %s: %w", moduleDir, err)
+	}
+	for p := range generated {
+		if p != quickstartGuide && (p != path.Clean(p) || !strings.HasPrefix(p, "gen/")) {
+			return fmt.Errorf("generate code for module %s: refusing to write %q: generated files must be inside gen/", moduleDir, p)
+		}
+	}
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		return fmt.Errorf("generate code for module %s: %w", moduleDir, err)
+	}
+	for _, p := range slices.Sorted(maps.Keys(generated)) {
+		err := root.MkdirAll(path.Dir(p), 0o755)
+		if err == nil {
+			err = root.WriteFile(p, generated[p], 0o644)
+		}
+		if err != nil {
+			return errors.Join(fmt.Errorf("write %s in module %s: %w", p, moduleDir, err), root.Close())
+		}
+	}
+	return root.Close()
+}
+
 // newLogPath returns a new, unused file path in logs for one command, named
 // after its module and the command's verb, such as eval-get-123.log.
 func newLogPath(logs, moduleDir string, args []string) (string, error) {
@@ -353,7 +431,7 @@ func newLogPath(logs, moduleDir string, args []string) (string, error) {
 	return f.Name(), errors.Join(f.Close(), os.Remove(f.Name()))
 }
 
-// generatedServicePackage returns the package goa gen generated for the
+// generatedServicePackage returns the package Goa generated for the
 // project's only service: the one directory under gen/ holding service.go.
 // Goa owns that name, so the templates import it instead of predicting it.
 func generatedServicePackage(dir string) (string, error) {
@@ -364,21 +442,23 @@ func generatedServicePackage(dir string) (string, error) {
 		return "", err
 	}
 	if len(matches) != 1 {
-		return "", fmt.Errorf("goa gen produced %d service packages under %s, want exactly 1", len(matches), filepath.Join(dir, "gen"))
+		return "", fmt.Errorf("the generator produced %d service packages under %s, want exactly 1", len(matches), filepath.Join(dir, "gen"))
 	}
 	return path.Base(path.Dir(matches[0])), nil
 }
 
-// isDesignFile reports whether a template path is written before goa gen:
+// isDesignFile reports whether a template path is written before generation:
 // go.mod and the design package.
 func isDesignFile(p string) bool {
 	return p == "go.mod.tmpl" || strings.HasPrefix(p, "design/")
 }
 
 // render writes every template under root in templatesFS for which keep
-// reports true into dir, with "_name_" in paths replaced by the service name.
-func render(dir, root string, d data, keep func(string) bool) error {
-	return fs.WalkDir(templatesFS, root, func(p string, e fs.DirEntry, err error) error {
+// reports true into dir, with "_name_" in paths replaced by the service name,
+// and returns the slash-separated paths it wrote, relative to dir.
+func render(dir, root string, d data, keep func(string) bool) ([]string, error) {
+	var written []string
+	err := fs.WalkDir(templatesFS, root, func(p string, e fs.DirEntry, err error) error {
 		if err != nil || e.IsDir() {
 			return err
 		}
@@ -414,8 +494,10 @@ func render(dir, root string, d data, keep func(string) bool) error {
 		if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
 			return err
 		}
+		written = append(written, out)
 		return os.WriteFile(dst, content, 0o644)
 	})
+	return written, err
 }
 
 // readTail returns at most the last maxTail bytes of the file at path, which

@@ -406,11 +406,14 @@ appropriate for CPU, memory, and restarts.
   example module before running its commands:
   - `go test -race ./...`
   - `go test -race -tags e2e ./internal/verify`
+  - `go test -race -count=1 -tags e2e ./cmd/surla` for `surla gen` and
+    `surla init` generation
   - `(cd examples/orders && go test -race ./...)` when `examples/orders`
     changed
   - `(cd examples/orders-eval && go test -race -tags e2e ./acceptance)` when
     `examples/orders` or `examples/orders-eval` changed
-  - `go test -race -tags scaffold ./internal/scaffold` for starter generation
+  - `go test -race -count=1 -timeout 60m -tags scaffold ./internal/scaffold`
+    for starter generation
   - `npm --prefix ui/checkpoint run typecheck` for viewer TypeScript changes
 - Set `CI=true` and close stdin on these invocations. Do not regenerate or
   run runtime/browser suites for text-only instructions or documentation;
