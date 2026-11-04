@@ -33,3 +33,16 @@ func TestPlaybookMarkdownAndArchitectSystemPromptEmbedSingleSourceOfTruth(t *tes
 	assert.True(t, strings.HasSuffix(revisePrompt, decisionCatalog), "ArchitectReviseSystemPrompt must end with the embedded decision catalog verbatim")
 	assert.Contains(t, revisePrompt, "1-based position")
 }
+
+// TestPlaybookRegeneratesWithSurlaGenAndKeepsTheGRPCRoute verifies that the
+// playbook's executable regeneration step, which both CP1 prompts and the
+// surla://golden-path resource carry, names the sandboxed surla gen, and that
+// the module-pinned goa gen route remains for gRPC designs surla gen refuses.
+func TestPlaybookRegeneratesWithSurlaGenAndKeepsTheGRPCRoute(t *testing.T) {
+	t.Parallel()
+
+	md := PlaybookMarkdown()
+	assert.Contains(t, md, "surla gen -dir")
+	assert.Contains(t, md, "gRPC")
+	assert.Contains(t, md, "go run goa.design/goa/v3/cmd/goa gen")
+}
