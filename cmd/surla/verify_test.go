@@ -135,6 +135,71 @@ func TestWriteVerifyReportPrintsBeforeFailing(t *testing.T) {
 	}
 }
 
+// TestWriteVerifySummaryKeepsJSONOnStdoutAndHoldoutsHidden verifies the one
+// human-readable line surla verify writes to stderr: it gives the verdict,
+// counts and non-passing scenarios, the report on stdout stays decodable JSON
+// on its own, and the builder view never prints a holdout's name.
+func TestWriteVerifySummaryKeepsJSONOnStdoutAndHoldoutsHidden(t *testing.T) {
+	report := verify.Report{
+		Digest: "abc123",
+		Counts: verify.Counts{Required: 3, Passed: 1, Failed: 1, NotRun: 1},
+		Scenarios: []verify.ScenarioResult{
+			{ID: "refund_within_limit", Outcome: verify.OutcomePassed},
+			{ID: "cross_customer_refund_refused", Holdout: true, Outcome: verify.OutcomeFailed},
+			{ID: "slow_refund", Outcome: verify.OutcomeNotRun},
+		},
+	}
+	cases := []struct {
+		name        string
+		suiteExit   int
+		builderView bool
+		want        string
+	}{
+		{
+			name: "full report names every non-passing scenario",
+			want: "surla: verification did not pass: 1/3 scenarios passed; failed: 1, not run: 1, harness errors: 0; " +
+				"not passing: cross_customer_refund_refused, slow_refund (report abc123)\n",
+		},
+		{
+			name: "builder view names holdouts only by number", builderView: true,
+			want: "surla: verification did not pass: 1/3 scenarios passed; failed: 1, not run: 1, harness errors: 0; " +
+				"not passing: holdout-1, slow_refund (report abc123)\n",
+		},
+		{
+			name: "a failed suite run is said", suiteExit: 2, builderView: true,
+			want: "surla: verification did not pass: 1/3 scenarios passed; failed: 1, not run: 1, harness errors: 0; " +
+				"the suite run itself failed; not passing: holdout-1, slow_refund (report abc123)\n",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			r := report
+			r.SuiteExit = tc.suiteExit
+			var stdout, stderr bytes.Buffer
+			// runVerify writes the JSON first and the summary after it.
+			require.Error(t, writeVerifyReport(&stdout, r, tc.builderView), "every case is a report that did not pass")
+			writeVerifySummary(&stderr, r, tc.builderView)
+			assert.Equal(t, tc.want, stderr.String())
+			var printed map[string]any
+			require.NoError(t, json.Unmarshal(stdout.Bytes(), &printed), "stdout holds only the JSON report")
+			if tc.builderView {
+				assert.NotContains(t, stderr.String(), "cross_customer_refund_refused")
+			}
+		})
+	}
+
+	t.Run("a passing report has no not-passing list", func(t *testing.T) {
+		passing := verify.Report{
+			Digest: "def456", Passed: true,
+			Counts:    verify.Counts{Required: 1, Passed: 1},
+			Scenarios: []verify.ScenarioResult{{ID: "refund_within_limit", Outcome: verify.OutcomePassed}},
+		}
+		var stderr bytes.Buffer
+		writeVerifySummary(&stderr, passing, false)
+		assert.Equal(t, "surla: verification passed: 1/1 scenarios passed; failed: 0, not run: 0, harness errors: 0 (report def456)\n", stderr.String())
+	})
+}
+
 func TestRunPrintsHelpAndDispatchesCommands(t *testing.T) {
 	cases := []struct {
 		name      string

@@ -74,8 +74,10 @@ func runVerifyRun(args []string) error {
 // the built binaries (candidate-bin/<name>) and the evidence, and is left in
 // place. The run's own bookkeeping lives in a temporary directory removed
 // when the command ends. It waits for the run and writes the JSON report to
-// stdout: the full report, or its builder view with -builder-view. The full
-// report is also saved in -report-dir. A report that did not pass is still
+// stdout: the full report, or its builder view with -builder-view. stdout
+// holds only that JSON; after it, one human-readable summary line goes to
+// stderr (see writeVerifySummary), which with -builder-view names holdouts
+// only as holdout-<n>. The full report is also saved in -report-dir. A report that did not pass is still
 // printed, and the command then fails so the exit status is 1. A canceled or
 // timed-out run prints the partial report its suite saved while stopping, if
 // any, and fails with the reason. Any other run that ends without a report
@@ -120,7 +122,10 @@ func runVerify(args []string) error {
 		if err != nil {
 			return err
 		}
-		if err := writeVerifyReport(os.Stdout, partial, builderView); err != nil {
+		// The summary follows the JSON, so it stays visible on a terminal.
+		err = writeVerifyReport(os.Stdout, partial, builderView)
+		writeVerifySummary(os.Stderr, partial, builderView)
+		if err != nil {
 			return fmt.Errorf("verification %s: %s (%w)", state.Result.Failure, state.Result.Summary, err)
 		}
 	}
@@ -133,7 +138,47 @@ func runVerify(args []string) error {
 		return fmt.Errorf("verification %s at stage %s: %s\n%s",
 			state.Result.Failure, state.Result.Stage, state.Result.Summary, strings.TrimSpace(string(detail)))
 	}
-	return writeVerifyReport(os.Stdout, state.Report, builderView)
+	err = writeVerifyReport(os.Stdout, state.Report, builderView)
+	writeVerifySummary(os.Stderr, state.Report, builderView)
+	return err
+}
+
+// writeVerifySummary writes one human-readable line about report to w, which
+// runVerify passes as stderr so stdout stays the report's JSON alone. The line
+// gives the verdict, the scenario counts, the scenarios that did not pass and
+// the report digest. With builderView it names scenarios as the builder view
+// does, so a holdout appears only as holdout-<n>. A failed write is ignored:
+// the summary only repeats what the JSON report already says.
+func writeVerifySummary(w io.Writer, report verify.Report, builderView bool) {
+	view := report.ForBuilders()
+	var failing []string
+	if builderView {
+		for _, s := range view.Scenarios {
+			if s.Outcome != verify.OutcomePassed {
+				failing = append(failing, s.ID)
+			}
+		}
+	} else {
+		for _, s := range report.Scenarios {
+			if s.Outcome != verify.OutcomePassed {
+				failing = append(failing, s.ID)
+			}
+		}
+	}
+	verdict := "passed"
+	if !report.Passed {
+		verdict = "did not pass"
+	}
+	c := report.Counts
+	line := fmt.Sprintf("surla: verification %s: %d/%d scenarios passed; failed: %d, not run: %d, harness errors: %d",
+		verdict, c.Passed, c.Required, c.Failed, c.NotRun, c.HarnessError)
+	if view.SuiteFailed {
+		line += "; the suite run itself failed"
+	}
+	if len(failing) > 0 {
+		line += "; not passing: " + strings.Join(failing, ", ")
+	}
+	fmt.Fprintf(w, "%s (report %s)\n", line, report.Digest)
 }
 
 // loadVerificationConfig strictly decodes the operator's verification
