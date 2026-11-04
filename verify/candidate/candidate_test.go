@@ -2,6 +2,7 @@ package candidate
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -11,6 +12,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -142,6 +144,75 @@ func TestPinIsolatesTheArtifactFromItsSource(t *testing.T) {
 	info, err := os.Stat(a.path)
 	require.NoError(t, err)
 	assert.Equal(t, os.FileMode(0o500), info.Mode().Perm())
+}
+
+// TestPinKeepsItsBinaryAfterTheCallerChangesDirectories pins through a relative
+// symlink and then reads the same copy from another working directory.
+func TestPinKeepsItsBinaryAfterTheCallerChangesDirectories(t *testing.T) {
+	base := t.TempDir()
+	t.Chdir(base)
+	require.NoError(t, os.Mkdir("storage", 0o700))
+	require.NoError(t, os.Symlink("storage", "alias"))
+	require.NoError(t, os.WriteFile("source", []byte("pinned bytes"), 0o700))
+	store := filepath.Join(base, "storage", "artifacts")
+	t.Cleanup(func() { require.NoError(t, RemoveStore(store)) })
+
+	art, err := Pin(filepath.Join("alias", "artifacts"), "source")
+	require.NoError(t, err)
+	t.Chdir(t.TempDir())
+	got, err := fileDigest(art.path)
+	require.NoError(t, err)
+	assert.Equal(t, art.Digest(), got)
+	assert.True(t, filepath.IsAbs(art.path))
+	resolved, err := filepath.EvalSymlinks(art.path)
+	require.NoError(t, err)
+	assert.Equal(t, resolved, art.path)
+}
+
+// TestExecUsesRelativeSymlinkedState resolves the caller's state path before
+// building its sandbox policy and changing the candidate's working directory.
+func TestExecUsesRelativeSymlinkedState(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("the sandbox is implemented with sandbox-exec on macOS")
+	}
+	probe := buildProbe(t)
+	base := t.TempDir()
+	t.Chdir(base)
+	require.NoError(t, os.Mkdir("state", 0o700))
+	require.NoError(t, os.Symlink("state", "state-link"))
+	state, err := filepath.EvalSymlinks(filepath.Join(base, "state"))
+	require.NoError(t, err)
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+	proc, err := Exec(ctx, probe, Spec{
+		Args:     []string{"write:relative.txt", "env:HOME", "env:TMPDIR"},
+		StateDir: "state-link",
+		LogFile:  "exec.log",
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() { assert.NoError(t, proc.Kill()) })
+	out, truncated, err := excerptAfterExit(proc)
+	require.NoError(t, err)
+	require.False(t, truncated)
+	results := make(map[string]probeResult)
+	scanner := bufio.NewScanner(strings.NewReader(out))
+	for scanner.Scan() {
+		var result probeResult
+		require.NoError(t, json.Unmarshal(scanner.Bytes(), &result))
+		results[result.Action] = result
+	}
+	require.NoError(t, scanner.Err())
+	require.Len(t, results, 3)
+	for _, action := range []string{"write:relative.txt", "env:HOME", "env:TMPDIR"} {
+		assert.True(t, results[action].Allowed, action)
+	}
+	assert.Equal(t, state, results["env:HOME"].Detail)
+	assert.Equal(t, state, results["env:TMPDIR"].Detail)
+	assert.FileExists(t, filepath.Join(state, "relative.txt"))
+
+	inside, err := Exec(ctx, probe, Spec{StateDir: "state-link", LogFile: "state-link/inside.log"})
+	assert.Nil(t, inside)
+	assert.ErrorContains(t, err, "outside the candidate state directory")
 }
 
 func TestExcerptIsBoundedAndReportsTruncation(t *testing.T) {

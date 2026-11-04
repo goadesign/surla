@@ -91,6 +91,11 @@ func fakeSuiteLive() int {
 		fmt.Fprintln(os.Stderr, "start live target: model gateway: ANTHROPIC_API_KEY is not set")
 		return 2
 	}
+	// Suite setup can change its directory before it uses TMPDIR again.
+	if err := os.Chdir(os.TempDir()); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 2
+	}
 	if err := startRecordedChild(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 2
@@ -229,6 +234,39 @@ func TestStartLiveServesUntilStopAndThenRemovesEverything(t *testing.T) {
 	dirs, err := LeftoverLiveDirs(root)
 	require.NoError(t, err)
 	assert.Empty(t, dirs)
+}
+
+// TestLaunchLiveResolvesItsRoot lets a child change directories before using
+// TMPDIR, while relative and symlinked roots still name the caller's directory.
+func TestLaunchLiveResolvesItsRoot(t *testing.T) {
+	t.Setenv(liveFakeEnv, "ready")
+	base := t.TempDir()
+	t.Chdir(base)
+	require.NoError(t, os.Mkdir("real-cards", 0o700))
+	require.NoError(t, os.Symlink("real-cards", "alias"))
+	self, err := os.Executable()
+	require.NoError(t, err)
+	for _, root := range []string{filepath.Join(".surla", "cards", "live"), filepath.Join("alias", "live")} {
+		t.Run(root, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+			defer cancel()
+			p, err := startLive(ctx, root, verify.Plan{}, "secret-key", []string{self}, os.Environ())
+			require.NoError(t, err)
+			t.Cleanup(func() { assert.NoError(t, p.Stop()) })
+			resolvedRoot, err := filepath.EvalSymlinks(filepath.Join(base, root))
+			require.NoError(t, err)
+			assert.True(t, filepath.IsAbs(p.Dir()))
+			assert.Equal(t, resolvedRoot, filepath.Dir(p.Dir()))
+			var request LiveRequest
+			require.NoError(t, decodeLiveRequest(p.Dir(), &request))
+			assert.Equal(t, filepath.Join(p.Dir(), liveWorkDir), request.Plan.WorkDir)
+			pgid, pids := recordedPIDs(t, p.Dir(), 2)
+			assert.Len(t, pids, 2)
+			require.NoError(t, p.Stop())
+			requireGroupGone(t, pgid)
+			assert.NoDirExists(t, p.Dir())
+		})
+	}
 }
 
 func TestStartLiveReportsAndCleansUpEveryFailedStart(t *testing.T) {

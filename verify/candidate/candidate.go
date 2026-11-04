@@ -178,7 +178,8 @@ func (a Artifact) Evidence(name string) eval.Artifact {
 }
 
 // Exec verifies the artifact's digest and starts it in the sandbox described by
-// spec. The process is killed when ctx ends.
+// spec. Relative paths resolve from the caller's working directory before the
+// candidate changes into its state directory. The process is killed when ctx ends.
 func Exec(ctx context.Context, a Artifact, spec Spec) (*Process, error) {
 	if runtime.GOOS != "darwin" {
 		return nil, ErrIsolationUnavailable
@@ -196,7 +197,7 @@ func Exec(ctx context.Context, a Artifact, spec Spec) (*Process, error) {
 	if digest != a.digest {
 		return nil, fmt.Errorf("%w: %s is %s, pinned %s", ErrDigestMismatch, a.path, digest, a.digest)
 	}
-	stateDir, err := filepath.EvalSymlinks(spec.StateDir)
+	stateDir, err := evalAbsSymlinks(spec.StateDir)
 	if err != nil {
 		return nil, fmt.Errorf("resolve state directory: %w", err)
 	}
@@ -538,10 +539,11 @@ func evalAbsSymlinks(path string) (string, error) {
 	return filepath.EvalSymlinks(abs)
 }
 
-// resolvedArtifact returns the Artifact for a pinned copy with every symlink
-// in its path resolved, so the sandbox profile and the executed path agree.
+// resolvedArtifact returns the Artifact for a pinned copy with an absolute,
+// symlink-free path, so a caller changing directories cannot change the binary
+// the sandbox profile permits or the process executes.
 func resolvedArtifact(path, digest string) (Artifact, error) {
-	resolved, err := filepath.EvalSymlinks(path)
+	resolved, err := evalAbsSymlinks(path)
 	if err != nil {
 		return Artifact{}, fmt.Errorf("resolve pinned copy: %w", err)
 	}
