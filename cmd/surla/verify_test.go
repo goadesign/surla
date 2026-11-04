@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -137,7 +138,8 @@ func TestWriteVerifyReportPrintsBeforeFailing(t *testing.T) {
 
 // TestWriteVerifySummaryKeepsJSONOnStdoutAndHoldoutsHidden verifies the one
 // human-readable line surla verify writes to stderr: it gives the verdict,
-// counts and non-passing scenarios, the report on stdout stays decodable JSON
+// counts and non-passing scenarios with each ID quoted, so an ID containing a
+// line break keeps it on one line; the report on stdout stays decodable JSON
 // on its own, and the builder view never prints a holdout's name.
 func TestWriteVerifySummaryKeepsJSONOnStdoutAndHoldoutsHidden(t *testing.T) {
 	report := verify.Report{
@@ -146,7 +148,7 @@ func TestWriteVerifySummaryKeepsJSONOnStdoutAndHoldoutsHidden(t *testing.T) {
 		Scenarios: []verify.ScenarioResult{
 			{ID: "refund_within_limit", Outcome: verify.OutcomePassed},
 			{ID: "cross_customer_refund_refused", Holdout: true, Outcome: verify.OutcomeFailed},
-			{ID: "slow_refund", Outcome: verify.OutcomeNotRun},
+			{ID: "slow\nrefund", Outcome: verify.OutcomeNotRun},
 		},
 	}
 	cases := []struct {
@@ -158,17 +160,17 @@ func TestWriteVerifySummaryKeepsJSONOnStdoutAndHoldoutsHidden(t *testing.T) {
 		{
 			name: "full report names every non-passing scenario",
 			want: "surla: verification did not pass: 1/3 scenarios passed; failed: 1, not run: 1, harness errors: 0; " +
-				"not passing: cross_customer_refund_refused, slow_refund (report abc123)\n",
+				`not passing: "cross_customer_refund_refused", "slow\nrefund" (report abc123)` + "\n",
 		},
 		{
 			name: "builder view names holdouts only by number", builderView: true,
 			want: "surla: verification did not pass: 1/3 scenarios passed; failed: 1, not run: 1, harness errors: 0; " +
-				"not passing: holdout-1, slow_refund (report abc123)\n",
+				`not passing: "holdout-1", "slow\nrefund" (report abc123)` + "\n",
 		},
 		{
 			name: "a failed suite run is said", suiteExit: 2, builderView: true,
 			want: "surla: verification did not pass: 1/3 scenarios passed; failed: 1, not run: 1, harness errors: 0; " +
-				"the suite run itself failed; not passing: holdout-1, slow_refund (report abc123)\n",
+				`the suite run itself failed; not passing: "holdout-1", "slow\nrefund" (report abc123)` + "\n",
 		},
 	}
 	for _, tc := range cases {
@@ -180,6 +182,7 @@ func TestWriteVerifySummaryKeepsJSONOnStdoutAndHoldoutsHidden(t *testing.T) {
 			require.Error(t, writeVerifyReport(&stdout, r, tc.builderView), "every case is a report that did not pass")
 			writeVerifySummary(&stderr, r, tc.builderView)
 			assert.Equal(t, tc.want, stderr.String())
+			assert.Equal(t, 1, strings.Count(stderr.String(), "\n"), "an ID with a line break stays on the summary's one line")
 			var printed map[string]any
 			require.NoError(t, json.Unmarshal(stdout.Bytes(), &printed), "stdout holds only the JSON report")
 			if tc.builderView {

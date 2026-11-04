@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -146,8 +147,10 @@ func runVerify(args []string) error {
 // writeVerifySummary writes one human-readable line about report to w, which
 // runVerify passes as stderr so stdout stays the report's JSON alone. The line
 // gives the verdict, the scenario counts, the scenarios that did not pass and
-// the report digest. With builderView it names scenarios as the builder view
-// does, so a holdout appears only as holdout-<n>. A failed write is ignored:
+// the report digest. Each scenario ID is Go-quoted, because suites may declare
+// IDs that contain spaces or line breaks and the summary must stay one line.
+// With builderView it names scenarios as the builder view does, so a holdout
+// appears only as holdout-<n>. A failed write is ignored:
 // the summary only repeats what the JSON report already says.
 func writeVerifySummary(w io.Writer, report verify.Report, builderView bool) {
 	view := report.ForBuilders()
@@ -155,13 +158,13 @@ func writeVerifySummary(w io.Writer, report verify.Report, builderView bool) {
 	if builderView {
 		for _, s := range view.Scenarios {
 			if s.Outcome != verify.OutcomePassed {
-				failing = append(failing, s.ID)
+				failing = append(failing, strconv.Quote(s.ID))
 			}
 		}
 	} else {
 		for _, s := range report.Scenarios {
 			if s.Outcome != verify.OutcomePassed {
-				failing = append(failing, s.ID)
+				failing = append(failing, strconv.Quote(s.ID))
 			}
 		}
 	}
