@@ -120,7 +120,7 @@ var ConfirmIntentPayload = Type("ConfirmIntentPayload", func() {
 	Description("Operator confirmation of Checkpoint 1 ambiguity answers and concrete examples.")
 	Attribute("change_id", String, "Change identifier.")
 	Attribute("request_revision", String, "Reviewed CP1 request_revision digest being confirmed.")
-	Attribute("answers", MapOf(String, String), "Selected resolution per ambiguity question ID. Answer every question, and give each value exactly as one string from that question's options, character for character. To record a decision none of the options expresses, call revise_change with it in prompt, then confirm the revised card.")
+	Attribute("answers", MapOf(String, String), "Selected resolution per ambiguity question ID. Answer every current question, and give each value exactly as one string from that question's options, character for character.")
 	Attribute("examples", ArrayOf(ExampleItem), "Confirmed example table.")
 	Required("change_id", "request_revision", "answers", "examples")
 })

@@ -134,11 +134,9 @@ type (
 		// It fails when those facts do not fix the target's behavior, for
 		// example when the host also binds Options.TargetUpdater to the same
 		// running target, whose runtime prompt overrides no verification
-		// report covers (see the verify package). Drafts sent to a
-		// start_live_target target never change what a promotion target
-		// describes. approve_merge
-		// checks a report against it, and get_change and confirm_intent
-		// return a saved approval only while it still matches.
+		// report covers (see the verify package). approve_merge checks a
+		// report against it, and get_change and confirm_intent return a
+		// saved approval only while it still matches.
 		CurrentInputs(ctx context.Context, candidateCommit string) (PromotionInputs, error)
 	}
 

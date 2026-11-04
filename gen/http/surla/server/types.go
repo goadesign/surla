@@ -47,10 +47,9 @@ type ConfirmIntentRequestBody struct {
 	ChangeID *string `form:"change_id,omitempty" json:"change_id,omitempty" xml:"change_id,omitempty"`
 	// Reviewed CP1 request_revision digest being confirmed.
 	RequestRevision *string `form:"request_revision,omitempty" json:"request_revision,omitempty" xml:"request_revision,omitempty"`
-	// Selected resolution per ambiguity question ID. Answer every question, and
-	// give each value exactly as one string from that question's options,
-	// character for character. To record a decision none of the options expresses,
-	// call revise_change with it in prompt, then confirm the revised card.
+	// Selected resolution per ambiguity question ID. Answer every current
+	// question, and give each value exactly as one string from that question's
+	// options, character for character.
 	Answers map[string]string `form:"answers,omitempty" json:"answers,omitempty" xml:"answers,omitempty"`
 	// Confirmed example table.
 	Examples []*ExampleItemRequestBody `form:"examples,omitempty" json:"examples,omitempty" xml:"examples,omitempty"`

@@ -324,10 +324,9 @@ type ConfirmIntentPayload struct {
 	ChangeID string
 	// Reviewed CP1 request_revision digest being confirmed.
 	RequestRevision string
-	// Selected resolution per ambiguity question ID. Answer every question, and
-	// give each value exactly as one string from that question's options,
-	// character for character. To record a decision none of the options expresses,
-	// call revise_change with it in prompt, then confirm the revised card.
+	// Selected resolution per ambiguity question ID. Answer every current
+	// question, and give each value exactly as one string from that question's
+	// options, character for character.
 	Answers map[string]string
 	// Confirmed example table.
 	Examples []*ExampleItem
@@ -1357,10 +1356,9 @@ type jsonConfirmIntentPayloadTransport struct {
 	ChangeID *string `json:"change_id"`
 	// Reviewed CP1 request_revision digest being confirmed.
 	RequestRevision *string `json:"request_revision"`
-	// Selected resolution per ambiguity question ID. Answer every question, and
-	// give each value exactly as one string from that question's options,
-	// character for character. To record a decision none of the options expresses,
-	// call revise_change with it in prompt, then confirm the revised card.
+	// Selected resolution per ambiguity question ID. Answer every current
+	// question, and give each value exactly as one string from that question's
+	// options, character for character.
 	Answers map[string]string `json:"answers"`
 	// Confirmed example table.
 	Examples []*jsonExampleItemTransport `json:"examples"`
@@ -10133,7 +10131,7 @@ func validateConfirmIntentPayloadJSONValue(path string, value any, description s
 		case "answers":
 			if err := validateConfirmIntentPayloadJSONValue2(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Selected resolution per ambiguity question ID. Answer every question, and give each value exactly as one string from that question's options, character for character. To record a decision none of the options expresses, call revise_change with it in prompt, then confirm the revised card.",
+				typed[key], "Selected resolution per ambiguity question ID. Answer every current question, and give each value exactly as one string from that question's options, character for character.",
 			); err != nil {
 				return err
 			}

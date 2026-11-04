@@ -860,12 +860,12 @@ var confirmIntentPayloadFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("answers")},
 		JSONType:    "object",
-		Description: "Selected resolution per ambiguity question ID. Answer every question, and give each value exactly as one string from that question's options, character for character. To record a decision none of the options expresses, call revise_change with it in prompt, then confirm the revised card.",
+		Description: "Selected resolution per ambiguity question ID. Answer every current question, and give each value exactly as one string from that question's options, character for character.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("answers"), tools.DynamicField{}},
 		JSONType:    "string",
-		Description: "Selected resolution per ambiguity question ID. Answer every question, and give each value exactly as one string from that question's options, character for character. To record a decision none of the options expresses, call revise_change with it in prompt, then confirm the revised card.",
+		Description: "Selected resolution per ambiguity question ID. Answer every current question, and give each value exactly as one string from that question's options, character for character.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("examples")},
@@ -7878,7 +7878,7 @@ func validateConfirmIntentPayloadJSONValue(path string, value any, description s
 		case "answers":
 			if err := validateProposeChangeResultRootAnswersJSONValue(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Selected resolution per ambiguity question ID. Answer every question, and give each value exactly as one string from that question's options, character for character. To record a decision none of the options expresses, call revise_change with it in prompt, then confirm the revised card.",
+				typed[key], "Selected resolution per ambiguity question ID. Answer every current question, and give each value exactly as one string from that question's options, character for character.",
 			); err != nil {
 				return err
 			}

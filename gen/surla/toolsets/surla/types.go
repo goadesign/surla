@@ -67,10 +67,9 @@ type (
 		ChangeID string
 		// Reviewed CP1 request_revision digest being confirmed.
 		RequestRevision string
-		// Selected resolution per ambiguity question ID. Answer every question, and
-		// give each value exactly as one string from that question's options,
-		// character for character. To record a decision none of the options expresses,
-		// call revise_change with it in prompt, then confirm the revised card.
+		// Selected resolution per ambiguity question ID. Answer every current
+		// question, and give each value exactly as one string from that question's
+		// options, character for character.
 		Answers map[string]string
 		// Confirmed example table.
 		Examples []*ExampleItem
