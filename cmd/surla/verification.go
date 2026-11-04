@@ -17,6 +17,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/goadesign/surla/internal/abspath"
 	"github.com/goadesign/surla/internal/controlplane"
 	"github.com/goadesign/surla/internal/scaffold"
 	"github.com/goadesign/surla/internal/verify"
@@ -260,14 +261,9 @@ func loadProjectConfig(ctx context.Context, dir string) (*controlplane.Verificat
 	if !info.IsDir() {
 		return nil, fmt.Errorf("-project %s is not a directory", dir)
 	}
-	// EvalSymlinks keeps a relative path relative, and Git reports an absolute
-	// repository root, so resolve the directory from the working directory
-	// first: -project . names the directory surla serve started in.
-	absProject, err := filepath.Abs(dir)
-	if err != nil {
-		return nil, fmt.Errorf("resolve -project %s: %w", dir, err)
-	}
-	projectRoot, err := filepath.EvalSymlinks(absProject)
+	// Resolve from the working directory without cleaning parent components
+	// before following symlinks: alias/.. must name the linked directory's parent.
+	projectRoot, err := abspath.Eval(dir)
 	if err != nil {
 		return nil, fmt.Errorf("resolve -project %s: %w", dir, err)
 	}

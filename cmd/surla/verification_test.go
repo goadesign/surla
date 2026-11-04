@@ -122,6 +122,32 @@ func TestLoadProjectVerificationConfigDerivesTheStarterPlanFromHEAD(t *testing.T
 		}
 	})
 
+	t.Run("symlink parent paths select the linked project", func(t *testing.T) {
+		repo := newGitRepo(t)
+		writeStarter(t, repo, "example.com/shop")
+		head := gitCommitAll(t, repo, "starter")
+		nested := filepath.Join(repo, "nested")
+		require.NoError(t, os.Mkdir(nested, 0o700))
+
+		other := newGitRepo(t)
+		writeStarter(t, other, "example.com/other")
+		gitCommitAll(t, other, "other starter")
+		require.NoError(t, os.Symlink(nested, filepath.Join(other, "alias")))
+		t.Chdir(other)
+
+		// Keep the raw parent component: filepath.Join would erase the link.
+		for _, arg := range []string{"alias/..", other + "/alias/.."} {
+			cfg, err := resolveVerificationConfig(serveConfig{projectDir: arg, projectSet: true})
+			require.NoError(t, err, "-project %s", arg)
+			assert.Equal(t, repo, cfg.Plan.CandidateRepo, "-project %s", arg)
+			assert.Equal(t, repo, cfg.Plan.SuiteRepo, "-project %s", arg)
+			assert.Equal(t, head, cfg.Plan.SuiteCommit, "-project %s", arg)
+			assert.Equal(t, map[string]string{"shop": "./cmd/shop"}, cfg.Plan.Binaries)
+			assert.Equal(t, filepath.Join(repo, ".surla", "runs"), cfg.RunsDir)
+			assert.Equal(t, filepath.Join(repo, "reports"), cfg.Plan.ReportDir)
+		}
+	})
+
 	t.Run("committed layout wins over working files", func(t *testing.T) {
 		repo := newGitRepo(t)
 		writeStarter(t, repo, "example.com/shop")
