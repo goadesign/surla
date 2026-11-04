@@ -294,7 +294,7 @@ func Build(ctx context.Context, spec BuildSpec, run func(*exec.Cmd) error) error
 	if err != nil {
 		return err
 	}
-	if err := b.goRun(ctx, run, "build", "-trimpath"); err != nil {
+	if err := b.goRun(ctx, run, b.spec.Out, "build", "-trimpath"); err != nil {
 		return fmt.Errorf("sandboxed build of %s: %w", spec.Package, err)
 	}
 	return nil
@@ -312,11 +312,13 @@ func Build(ctx context.Context, spec BuildSpec, run func(*exec.Cmd) error) error
 // as an import path, "all", or a value the go command would read as a flag
 // such as -o or -c, is rejected before the toolchain runs.
 //
-// spec.Out must lie outside spec.WorkDir and must not exist when BuildTest is
-// called, so that its absence afterwards can only mean the package has no
-// tests. BuildTest returns true when it wrote the test binary, a regular file
-// at spec.Out. A package without _test.go files is not an error: BuildTest
-// returns false and a nil error and writes nothing.
+// spec.Out must not exist when BuildTest is called. BuildTest compiles to a
+// fresh staging path in the output directory and links the result to spec.Out
+// only when the toolchain produced a test binary, so other files written
+// during the build cannot be mistaken for the test binary or overwritten by
+// it. BuildTest returns true when it wrote the test binary, a regular file at
+// spec.Out. A package without _test.go files is not an error: BuildTest
+// returns false and a nil error and writes no test binary.
 //
 // The caller runs the result only as a candidate: pin it with Pin and start
 // it with Exec, passing test flags such as -test.run and -test.timeout in
@@ -340,23 +342,22 @@ func BuildTest(ctx context.Context, spec BuildSpec, run func(*exec.Cmd) error) (
 		return false, fmt.Errorf("test build package %q is not a directory", spec.Package)
 	}
 	out := b.spec.Out
-	inWork, err := withinDir(b.outDir, b.spec.WorkDir)
-	if err != nil {
-		return false, fmt.Errorf("inspect test output directory %s: %w", b.outDir, err)
-	}
-	if inWork {
-		return false, fmt.Errorf("test binary path %s must lie outside work directory %s", out, b.spec.WorkDir)
-	}
 	switch _, err := os.Lstat(out); {
 	case err == nil:
 		return false, fmt.Errorf("test binary path %s must not exist before the build", out)
 	case !errors.Is(err, os.ErrNotExist):
 		return false, fmt.Errorf("inspect test binary path %s: %w", out, err)
 	}
-	if err := b.goRun(ctx, run, "test", "-c", "-trimpath", "-vet=off"); err != nil {
+	stageDir, err := os.MkdirTemp(b.outDir, ".buildtest-*")
+	if err != nil {
+		return false, fmt.Errorf("create test build staging directory: %w", err)
+	}
+	defer os.RemoveAll(stageDir)
+	stageOut := filepath.Join(stageDir, filepath.Base(out))
+	if err := b.goRun(ctx, run, stageOut, "test", "-c", "-trimpath", "-vet=off"); err != nil {
 		return false, fmt.Errorf("sandboxed test build of %s: %w", spec.Package, err)
 	}
-	info, err := os.Lstat(out)
+	info, err := os.Lstat(stageOut)
 	switch {
 	case errors.Is(err, os.ErrNotExist):
 		return false, nil
@@ -364,6 +365,9 @@ func BuildTest(ctx context.Context, spec BuildSpec, run func(*exec.Cmd) error) (
 		return false, fmt.Errorf("inspect test binary %s: %w", out, err)
 	case !info.Mode().IsRegular():
 		return false, fmt.Errorf("test binary %s is not a regular file", out)
+	}
+	if err := os.Link(stageOut, out); err != nil {
+		return false, fmt.Errorf("publish test binary %s: %w", out, err)
 	}
 	return true, nil
 }
@@ -495,7 +499,7 @@ func resolveBuild(spec BuildSpec) (resolvedBuild, error) {
 		"modcache": &spec.ModCache, "work": &spec.WorkDir,
 	}
 	for name, p := range paths {
-		resolved, err := filepath.EvalSymlinks(*p)
+		resolved, err := evalAbsSymlinks(*p)
 		if err != nil {
 			return resolvedBuild{}, fmt.Errorf("resolve %s directory: %w", name, err)
 		}
@@ -505,12 +509,33 @@ func resolveBuild(spec BuildSpec) (resolvedBuild, error) {
 		return resolvedBuild{}, fmt.Errorf("module directory %s is outside source directory %s",
 			spec.ModuleDir, spec.SourceDir)
 	}
-	outDir, err := filepath.EvalSymlinks(filepath.Dir(spec.Out))
+	if spec.Out == "" {
+		return resolvedBuild{}, fmt.Errorf("resolve output directory: %w", os.ErrNotExist)
+	}
+	absOut, err := filepath.Abs(spec.Out)
 	if err != nil {
 		return resolvedBuild{}, fmt.Errorf("resolve output directory: %w", err)
 	}
-	spec.Out = filepath.Join(outDir, filepath.Base(spec.Out))
+	outDir, err := evalAbsSymlinks(filepath.Dir(absOut))
+	if err != nil {
+		return resolvedBuild{}, fmt.Errorf("resolve output directory: %w", err)
+	}
+	spec.Out = filepath.Join(outDir, filepath.Base(absOut))
 	return resolvedBuild{spec: spec, outDir: outDir}, nil
+}
+
+// evalAbsSymlinks resolves path to an absolute, symlink-free path, rejecting an
+// empty path with os.ErrNotExist instead of resolving it to the working
+// directory.
+func evalAbsSymlinks(path string) (string, error) {
+	if path == "" {
+		return "", os.ErrNotExist
+	}
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return "", err
+	}
+	return filepath.EvalSymlinks(abs)
 }
 
 // resolvedArtifact returns the Artifact for a pinned copy with every symlink
@@ -532,44 +557,25 @@ func resolvedOrSelf(path string) string {
 	return path
 }
 
-// withinDir reports whether dir is root or a subdirectory inside root on the
-// filesystem, comparing directory identity with os.SameFile at each ancestor so
-// symlinks and case-insensitive directory aliases cannot disguise containment.
-func withinDir(dir, root string) (bool, error) {
-	rootInfo, err := os.Stat(root)
-	if err != nil {
-		return false, err
-	}
-	for cur := filepath.Clean(dir); ; {
-		curInfo, err := os.Stat(cur)
-		if err != nil {
-			return false, err
-		}
-		if os.SameFile(curInfo, rootInfo) {
-			return true, nil
-		}
-		parent := filepath.Dir(cur)
-		if parent == cur {
-			return false, nil
-		}
-		cur = parent
-	}
-}
-
 // quote renders s as a sandbox profile string literal.
 func quote(s string) string {
 	return strconv.Quote(s)
 }
 
-// goRun runs `go <args> -o <Out> <Package>` from ModuleDir in the build
+// goRun runs `go <args> -o <outPath> <Package>` from ModuleDir in the build
 // sandbox, which may write only WorkDir and the output directory, with the
 // toolchain's output in LogFile. It returns run's error unwrapped, an
 // "open build log" error when LogFile cannot be opened, or an error when
-// opening LogFile resolves to the same file as Out. The fixed
+// opening LogFile resolves to the same file as spec.Out. The fixed
 // environment keeps the build offline (GOPROXY=off), on the selected toolchain
 // (GOTOOLCHAIN=local), unable to change go.mod (-mod=readonly), and free of
 // cgo, with HOME, TMPDIR and GOCACHE inside WorkDir.
-func (b resolvedBuild) goRun(ctx context.Context, run func(*exec.Cmd) error, args ...string) error {
+func (b resolvedBuild) goRun(
+	ctx context.Context,
+	run func(*exec.Cmd) error,
+	outPath string,
+	args ...string,
+) error {
 	spec := b.spec
 	_, outStatErr := os.Lstat(spec.Out)
 	logFile, err := os.OpenFile(spec.LogFile, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
@@ -593,7 +599,7 @@ func (b resolvedBuild) goRun(ctx context.Context, run func(*exec.Cmd) error, arg
 	goBin := filepath.Join(spec.GOROOT, "bin", "go")
 	profile := BuildProfile(spec.SourceDir, spec.GOROOT, spec.ModCache, spec.WorkDir, b.outDir)
 	cmdArgs := append([]string{"-p", profile, goBin}, args...)
-	cmd := exec.CommandContext(ctx, sandboxExec, append(cmdArgs, "-o", spec.Out, spec.Package)...)
+	cmd := exec.CommandContext(ctx, sandboxExec, append(cmdArgs, "-o", outPath, spec.Package)...)
 	cmd.Dir = spec.ModuleDir
 	cmd.Env = []string{
 		"PATH=" + filepath.Join(spec.GOROOT, "bin") + ":/usr/bin:/bin",
