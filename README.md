@@ -116,7 +116,23 @@ surla serve \
   -swarm-profiles ./examples/orders/swarm-profiles.example.json
 ```
 
-Register `http://127.0.0.1:8090/mcp` in your coding agent using the client-specific configuration in **[Register Surla in Your MCP Client (`docs/REFERENCE.md`)](docs/REFERENCE.md#register-surla-in-your-mcp-client)** (covering **Claude Code** `.mcp.json`, **Cursor** `.cursor/mcp.json`, **Gemini CLI** `.gemini/settings.json` with `httpUrl`, and **Codex** `.codex/config.toml`; see also [Terminology at a Glance](docs/REFERENCE.md#terminology-at-a-glance) and [`-swarm-profiles` configuration](docs/REFERENCE.md#configure-the-proposed-swarm-roster)—[`examples/orders/swarm-profiles.example.json`](examples/orders/swarm-profiles.example.json) is an illustrative operator-edited profile file where `"authenticated": true` is an operator assertion rather than a live credential check, and setting `ANTHROPIC_API_KEY` for CP1 analysis does not authenticate the OpenAI or Google coding-agent CLIs).
+Register `http://127.0.0.1:8090/mcp` in your coding agent. For Claude Code, save this as `.mcp.json`; Claude Code fills in `${SURLA_AUTH_TOKEN}` from the environment it starts in:
+
+```json
+{
+  "mcpServers": {
+    "surla": {
+      "type": "http",
+      "url": "http://127.0.0.1:8090/mcp",
+      "headers": {"Authorization": "Bearer ${SURLA_AUTH_TOKEN}"}
+    }
+  }
+}
+```
+
+Other clients use the client-specific configuration in **[Register Surla in Your MCP Client (`docs/REFERENCE.md`)](docs/REFERENCE.md#register-surla-in-your-mcp-client)** (covering **Cursor** `.cursor/mcp.json`, **Gemini CLI** `.gemini/settings.json` with `httpUrl`, and **Codex** `.codex/config.toml`; see also [Terminology at a Glance](docs/REFERENCE.md#terminology-at-a-glance) and [`-swarm-profiles` configuration](docs/REFERENCE.md#configure-the-proposed-swarm-roster)—[`examples/orders/swarm-profiles.example.json`](examples/orders/swarm-profiles.example.json) is an illustrative operator-edited profile file where `"authenticated": true` is an operator assertion rather than a live credential check, and setting `ANTHROPIC_API_KEY` for CP1 analysis does not authenticate the OpenAI or Google coding-agent CLIs).
+
+For a project that already has a design, ask your agent to send its `design/*.go` files as `design_source`, so the analysis considers them; without it, `propose_change` receives no current design.
 
 Then prompt your agent:
 

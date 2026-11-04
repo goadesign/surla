@@ -142,7 +142,7 @@ func ValidateApproveMergeResultApprovalItemTransport(value *ApproveMergeResultAp
 
 // ApproveMergeResultExampleItemTransport stores JSON fields until they have been validated.
 type ApproveMergeResultExampleItemTransport struct {
-	// Code-assigned stable example identifier.
+	// Stable example identifier. CP1 assigns one to each example it proposes.
 	ID *string `json:"id"`
 	// Plain-English scenario description.
 	Scenario *string `json:"scenario"`
@@ -342,7 +342,7 @@ func ValidateApproveMergeResultUnverifiedApprovalItemTransport(value *ApproveMer
 
 // ConfirmIntentPayloadExampleItemTransport stores JSON fields until they have been validated.
 type ConfirmIntentPayloadExampleItemTransport struct {
-	// Code-assigned stable example identifier.
+	// Stable example identifier. CP1 assigns one to each example it proposes.
 	ID *string `json:"id"`
 	// Plain-English scenario description.
 	Scenario *string `json:"scenario"`
@@ -392,7 +392,9 @@ type ConfirmIntentPayloadTransport struct {
 	// question, and give each value exactly as one string from that question's
 	// options, character for character.
 	Answers map[string]string `json:"answers"`
-	// Confirmed example table.
+	// The complete confirmed example table, including examples you edited or
+	// added. Keep an existing example's id when you edit it, and give an example
+	// you add a new, unique, non-blank id; ids are saved as sent.
 	Examples []*ConfirmIntentPayloadExampleItemTransport `json:"examples"`
 }
 
@@ -507,7 +509,7 @@ func ValidateConfirmIntentResultApprovalItemTransport(value *ConfirmIntentResult
 
 // ConfirmIntentResultExampleItemTransport stores JSON fields until they have been validated.
 type ConfirmIntentResultExampleItemTransport struct {
-	// Code-assigned stable example identifier.
+	// Stable example identifier. CP1 assigns one to each example it proposes.
 	ID *string `json:"id"`
 	// Plain-English scenario description.
 	Scenario *string `json:"scenario"`
@@ -957,7 +959,7 @@ func ValidateGetChangeResultApprovalItemTransport(value *GetChangeResultApproval
 
 // GetChangeResultExampleItemTransport stores JSON fields until they have been validated.
 type GetChangeResultExampleItemTransport struct {
-	// Code-assigned stable example identifier.
+	// Stable example identifier. CP1 assigns one to each example it proposes.
 	ID *string `json:"id"`
 	// Plain-English scenario description.
 	Scenario *string `json:"scenario"`
@@ -2229,7 +2231,9 @@ type PreviewArchitectureResultToolContractItemTransport struct {
 	InjectedFields []string `json:"injected_fields"`
 	// True when the tool requires a UI-capable runtime.
 	RequiresUI *bool `json:"requires_ui"`
-	// True when the tool declares a design-time Confirmation gate.
+	// True when the tool declares a design-time Confirmation gate. This is a
+	// declaration: it does not show that the application delivers the approval
+	// request or continues after the answer.
 	RequiresConfirmation *bool `json:"requires_confirmation"`
 	// True when the tool declares a BoundedResult cursor/truncation contract.
 	BoundedResult *bool `json:"bounded_result"`
@@ -2409,7 +2413,9 @@ type ProposeChangePayloadTransport struct {
 	ChangeID *string `json:"change_id"`
 	// Operator feature request.
 	Prompt *string `json:"prompt"`
-	// Current target Goa design source inspected by the CP1 model.
+	// Current Goa design source of the target (its design/*.go files) for the CP1
+	// model to read. If omitted, CP1 receives no current design; supply the
+	// relevant design source when you want it considered.
 	DesignSource *string `json:"design_source,omitempty"`
 }
 
@@ -2511,7 +2517,7 @@ func ValidateProposeChangeResultApprovalItemTransport(value *ProposeChangeResult
 
 // ProposeChangeResultExampleItemTransport stores JSON fields until they have been validated.
 type ProposeChangeResultExampleItemTransport struct {
-	// Code-assigned stable example identifier.
+	// Stable example identifier. CP1 assigns one to each example it proposes.
 	ID *string `json:"id"`
 	// Plain-English scenario description.
 	Scenario *string `json:"scenario"`
@@ -2717,8 +2723,8 @@ type ReviseChangePayloadTransport struct {
 	RequestRevision *string `json:"request_revision"`
 	// Revised operator feature request.
 	Prompt *string `json:"prompt"`
-	// Updated target Goa design source inspected by the CP1 model; when omitted,
-	// the card's saved design source is preserved.
+	// Updated Goa design source of the target (its design/*.go files) for the CP1
+	// model to read; when omitted, the card's saved design source is used again.
 	DesignSource *string `json:"design_source,omitempty"`
 }
 
@@ -2823,7 +2829,7 @@ func ValidateReviseChangeResultApprovalItemTransport(value *ReviseChangeResultAp
 
 // ReviseChangeResultExampleItemTransport stores JSON fields until they have been validated.
 type ReviseChangeResultExampleItemTransport struct {
-	// Code-assigned stable example identifier.
+	// Stable example identifier. CP1 assigns one to each example it proposes.
 	ID *string `json:"id"`
 	// Plain-English scenario description.
 	Scenario *string `json:"scenario"`

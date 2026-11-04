@@ -674,7 +674,7 @@ var approveMergeResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("examples"), tools.DynamicField{}, tools.FixedField("id")},
 		JSONType:    "string",
-		Description: "Code-assigned stable example identifier.",
+		Description: "Stable example identifier. CP1 assigns one to each example it proposes.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("examples"), tools.DynamicField{}, tools.FixedField("scenario")},
@@ -870,17 +870,17 @@ var confirmIntentPayloadFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("examples")},
 		JSONType:    "array",
-		Description: "Confirmed example table.",
+		Description: "The complete confirmed example table, including examples you edited or added. Keep an existing example's id when you edit it, and give an example you add a new, unique, non-blank id; ids are saved as sent.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("examples"), tools.DynamicField{}},
 		JSONType:    "object",
-		Description: "Confirmed example table.",
+		Description: "The complete confirmed example table, including examples you edited or added. Keep an existing example's id when you edit it, and give an example you add a new, unique, non-blank id; ids are saved as sent.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("examples"), tools.DynamicField{}, tools.FixedField("id")},
 		JSONType:    "string",
-		Description: "Code-assigned stable example identifier.",
+		Description: "Stable example identifier. CP1 assigns one to each example it proposes.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("examples"), tools.DynamicField{}, tools.FixedField("scenario")},
@@ -981,7 +981,7 @@ var confirmIntentResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("examples"), tools.DynamicField{}, tools.FixedField("id")},
 		JSONType:    "string",
-		Description: "Code-assigned stable example identifier.",
+		Description: "Stable example identifier. CP1 assigns one to each example it proposes.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("examples"), tools.DynamicField{}, tools.FixedField("scenario")},
@@ -1377,7 +1377,7 @@ var getChangeResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("examples"), tools.DynamicField{}, tools.FixedField("id")},
 		JSONType:    "string",
-		Description: "Code-assigned stable example identifier.",
+		Description: "Stable example identifier. CP1 assigns one to each example it proposes.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("examples"), tools.DynamicField{}, tools.FixedField("scenario")},
@@ -2629,7 +2629,7 @@ var previewArchitectureResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("tools"), tools.DynamicField{}, tools.FixedField("requires_confirmation")},
 		JSONType:    "boolean",
-		Description: "True when the tool declares a design-time Confirmation gate.",
+		Description: "True when the tool declares a design-time Confirmation gate. This is a declaration: it does not show that the application delivers the approval request or continues after the answer.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("tools"), tools.DynamicField{}, tools.FixedField("bounded_result")},
@@ -2765,7 +2765,7 @@ var proposeChangePayloadFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("design_source")},
 		JSONType:    "string",
-		Description: "Current target Goa design source inspected by the CP1 model.",
+		Description: "Current Goa design source of the target (its design/*.go files) for the CP1 model to read. If omitted, CP1 receives no current design; supply the relevant design source when you want it considered.",
 	},
 }
 var proposeChangeResultFields = []tools.FieldMetadata{
@@ -2846,7 +2846,7 @@ var proposeChangeResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("examples"), tools.DynamicField{}, tools.FixedField("id")},
 		JSONType:    "string",
-		Description: "Code-assigned stable example identifier.",
+		Description: "Stable example identifier. CP1 assigns one to each example it proposes.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("examples"), tools.DynamicField{}, tools.FixedField("scenario")},
@@ -3037,7 +3037,7 @@ var reviseChangePayloadFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("design_source")},
 		JSONType:    "string",
-		Description: "Updated target Goa design source inspected by the CP1 model; when omitted, the card's saved design source is preserved.",
+		Description: "Updated Goa design source of the target (its design/*.go files) for the CP1 model to read; when omitted, the card's saved design source is used again.",
 	},
 }
 var reviseChangeResultFields = []tools.FieldMetadata{
@@ -3118,7 +3118,7 @@ var reviseChangeResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("examples"), tools.DynamicField{}, tools.FixedField("id")},
 		JSONType:    "string",
-		Description: "Code-assigned stable example identifier.",
+		Description: "Stable example identifier. CP1 assigns one to each example it proposes.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("examples"), tools.DynamicField{}, tools.FixedField("scenario")},
@@ -7205,7 +7205,7 @@ func validateProposeChangePayloadJSONValue(path string, value any, description s
 		case "design_source":
 			if err := validateStringJSONValue(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Current target Goa design source inspected by the CP1 model.",
+				typed[key], "Current Goa design source of the target (its design/*.go files) for the CP1 model to read. If omitted, CP1 receives no current design; supply the relevant design source when you want it considered.",
 			); err != nil {
 				return err
 			}
@@ -7669,7 +7669,7 @@ func validateProposeChangeResultExampleItemTransportJSONValue(path string, value
 		case "id":
 			if err := validateStringJSONValue(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Code-assigned stable example identifier.",
+				typed[key], "Stable example identifier. CP1 assigns one to each example it proposes.",
 			); err != nil {
 				return err
 			}
@@ -7825,7 +7825,7 @@ func validateReviseChangePayloadJSONValue(path string, value any, description st
 		case "design_source":
 			if err := validateStringJSONValue(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Updated target Goa design source inspected by the CP1 model; when omitted, the card's saved design source is preserved.",
+				typed[key], "Updated Goa design source of the target (its design/*.go files) for the CP1 model to read; when omitted, the card's saved design source is used again.",
 			); err != nil {
 				return err
 			}
@@ -7892,7 +7892,7 @@ func validateConfirmIntentPayloadJSONValue(path string, value any, description s
 		case "examples":
 			if err := validateProposeChangeResultRootExamplesJSONValue(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Confirmed example table.",
+				typed[key], "The complete confirmed example table, including examples you edited or added. Keep an existing example's id when you edit it, and give an example you add a new, unique, non-blank id; ids are saved as sent.",
 			); err != nil {
 				return err
 			}
@@ -8851,7 +8851,7 @@ func validatePreviewArchitectureResultToolContractItemTransportJSONValue(path st
 		case "requires_confirmation":
 			if err := validateBooleanJSONValue(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "True when the tool declares a design-time Confirmation gate.",
+				typed[key], "True when the tool declares a design-time Confirmation gate. This is a declaration: it does not show that the application delivers the approval request or continues after the answer.",
 			); err != nil {
 				return err
 			}

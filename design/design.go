@@ -25,7 +25,7 @@ var AmbiguityQuestion = Type("AmbiguityQuestion", func() {
 // ExampleItem represents a concrete input/outcome row in a Checkpoint 1 Change Card.
 var ExampleItem = Type("ExampleItem", func() {
 	Description("Concrete input and expected outcome confirmed at Checkpoint 1.")
-	Attribute("id", String, "Code-assigned stable example identifier.")
+	Attribute("id", String, "Stable example identifier. CP1 assigns one to each example it proposes.")
 	Attribute("scenario", String, "Plain-English scenario description.")
 	Attribute("input_summary", String, "Representative user request and domain fixture state.")
 	Attribute("expected_outcome", String, "Expected side effect and response behavior.")
@@ -40,7 +40,7 @@ var ProposeChangePayload = Type("ProposeChangePayload", func() {
 	Description("Operator feature request submitted for Checkpoint 1 ambiguity and example analysis.")
 	Attribute("change_id", String, "Unique change identifier.")
 	Attribute("prompt", String, "Operator feature request.")
-	Attribute("design_source", String, "Current target Goa design source inspected by the CP1 model.")
+	Attribute("design_source", String, "Current Goa design source of the target (its design/*.go files) for the CP1 model to read. If omitted, CP1 receives no current design; supply the relevant design source when you want it considered.")
 	Required("change_id", "prompt")
 })
 
@@ -50,7 +50,7 @@ var ReviseChangePayload = Type("ReviseChangePayload", func() {
 	Attribute("change_id", String, "Change identifier.")
 	Attribute("request_revision", String, "Current CP1 request_revision digest being revised.")
 	Attribute("prompt", String, "Revised operator feature request.")
-	Attribute("design_source", String, "Updated target Goa design source inspected by the CP1 model; when omitted, the card's saved design source is preserved.")
+	Attribute("design_source", String, "Updated Goa design source of the target (its design/*.go files) for the CP1 model to read; when omitted, the card's saved design source is used again.")
 	Required("change_id", "request_revision", "prompt")
 })
 
@@ -121,7 +121,7 @@ var ConfirmIntentPayload = Type("ConfirmIntentPayload", func() {
 	Attribute("change_id", String, "Change identifier.")
 	Attribute("request_revision", String, "Reviewed CP1 request_revision digest being confirmed.")
 	Attribute("answers", MapOf(String, String), "Selected resolution per ambiguity question ID. Answer every current question, and give each value exactly as one string from that question's options, character for character.")
-	Attribute("examples", ArrayOf(ExampleItem), "Confirmed example table.")
+	Attribute("examples", ArrayOf(ExampleItem), "The complete confirmed example table, including examples you edited or added. Keep an existing example's id when you edit it, and give an example you add a new, unique, non-blank id; ids are saved as sent.")
 	Required("change_id", "request_revision", "answers", "examples")
 })
 
@@ -195,7 +195,7 @@ var ToolContractItem = Type("ToolContractItem", func() {
 	Attribute("return_schema", String, "Generated model-visible result schema; empty when the tool declares no result.")
 	Attribute("injected_fields", ArrayOf(String), "Compiler-listed runtime or provider fields omitted from the provider model input.")
 	Attribute("requires_ui", Boolean, "True when the tool requires a UI-capable runtime.")
-	Attribute("requires_confirmation", Boolean, "True when the tool declares a design-time Confirmation gate.")
+	Attribute("requires_confirmation", Boolean, "True when the tool declares a design-time Confirmation gate. This is a declaration: it does not show that the application delivers the approval request or continues after the answer.")
 	Attribute("bounded_result", Boolean, "True when the tool declares a BoundedResult cursor/truncation contract.")
 	Required(
 		"id",
@@ -553,10 +553,10 @@ var _ = Service("surla", func() {
 	})
 
 	Method("propose_change", func() {
-		Description("Evaluate a feature request at Checkpoint 1, surfacing concrete examples and any genuine domain ambiguity.")
+		Description("Evaluate a feature request at Checkpoint 1, surfacing concrete examples and any genuine domain ambiguity. The analysis considers the target's current design only when it is sent in design_source.")
 		Payload(ProposeChangePayload)
 		Result(ChangeCardResult)
-		Tool("propose_change", "Propose a feature change and generate a Checkpoint 1 Change Card.", func() {
+		Tool("propose_change", "Propose a feature change and generate a Checkpoint 1 Change Card. The analysis considers the target's current design only when it is sent in design_source.", func() {
 			ToolUI("ui://surla/checkpoint")
 		})
 		HTTP(func() {
@@ -566,10 +566,10 @@ var _ = Service("surla", func() {
 	})
 
 	Method("revise_change", func() {
-		Description("Revise an existing Checkpoint 1 Change Card with new or changed operator requirements bound to its current request_revision. Re-analyzes the revised prompt and design source alongside the prior card's confirmed decisions, open questions, examples and preserved behaviors, and saves a new revision in needs_confirmation status for operator review.")
+		Description("Revise an existing Checkpoint 1 Change Card with new or changed operator requirements bound to its current request_revision. Re-analyzes the revised prompt and design source with the prior card's prompt, summary, confirmed answers, open questions, examples and preserved behaviors as context, and saves a new revision in needs_confirmation status for operator review. The new revision's answers, confirmed_by and any approval are cleared: earlier decisions remain only where the analysis restated them in its summary, examples or preserved behaviors.")
 		Payload(ReviseChangePayload)
 		Result(ChangeCardResult)
-		Tool("revise_change", "Revise an existing Checkpoint 1 Change Card with updated requirements bound to its current request_revision.", func() {
+		Tool("revise_change", "Revise an existing Checkpoint 1 Change Card with updated requirements bound to its current request_revision. The new revision's answers, confirmed_by and any approval are cleared, so it needs confirmation again; earlier decisions remain only where the analysis restated them in its summary, examples or preserved behaviors.", func() {
 			ToolUI("ui://surla/checkpoint")
 		})
 		HTTP(func() {
@@ -605,10 +605,10 @@ var _ = Service("surla", func() {
 	})
 
 	Method("preview_architecture", func() {
-		Description("Extract and validate the Checkpoint 2 C4 container topology, tool contracts, Goa-AI guardrails, and proposed Chorus swarm roster from a candidate Goa design bound to a confirmed Change Card.")
+		Description("Extract and validate the Checkpoint 2 C4 container topology, tool contracts, Goa-AI guardrails, and proposed Chorus swarm roster from a candidate Goa design bound to a confirmed Change Card. Apart from the swarm roster, the result reports what the design declares; it does not compare the design with the Change Card's requirements.")
 		Payload(PreviewArchitecturePayload)
 		Result(ArchitecturePreviewResult)
-		Tool("preview_architecture", "Preview Checkpoint 2 C4 container topology, Goa-AI guardrails, and proposed Chorus swarm roster for a confirmed Change Card.", func() {
+		Tool("preview_architecture", "Preview Checkpoint 2 C4 container topology, Goa-AI guardrails, and proposed Chorus swarm roster for a confirmed Change Card. Apart from the swarm roster, it reports what the design declares; it does not compare the design with the Change Card's requirements.", func() {
 			ToolUI("ui://surla/checkpoint")
 		})
 		HTTP(func() {
@@ -618,7 +618,7 @@ var _ = Service("surla", func() {
 	})
 
 	Method("draft_override", func() {
-		Description("Apply a Fast Draft Mode prompt override on the bound target or reject a compiled-rule prompt hack. On a live target started with start_live_target, a rejected update leaves the target's text unchanged; update_not_confirmed means the target may or may not have applied it.")
+		Description("Apply a Fast Draft Mode prompt override on the bound target or reject a compiled-rule prompt hack. A prompt_template override needs a bound target: on surla serve, that is the live target start_live_target runs, which requires surla serve -verification-config. On a live target started with start_live_target, a rejected update leaves the target's text unchanged; update_not_confirmed means the target may or may not have applied it.")
 		Payload(DraftOverridePayload)
 		Result(DraftOverrideResult)
 		Error("prompt_not_found", ErrorResult, "The live target has no prompt with this ID; nothing changed.")
@@ -626,7 +626,7 @@ var _ = Service("surla", func() {
 		Error("live_target_ended", ErrorResult, "The live target is no longer running; start it again with start_live_target.")
 		Error("target_rejected_credential", ErrorResult, "The live target rejected this server's key; nothing changed. Start the target again with start_live_target.")
 		Error("update_not_confirmed", ErrorResult, "The live target did not confirm the update, so it may or may not have applied it. Keep the draft and send it again.")
-		Tool("draft_override", "Hot-reload a prompt template in 0s or flag a compiled business rule change.", func() {
+		Tool("draft_override", "Hot-reload a prompt template in 0s or flag a compiled business rule change. A prompt template needs a bound target; on surla serve that is a live target, which requires surla serve -verification-config.", func() {
 			ToolUI("ui://surla/checkpoint")
 		})
 		HTTP(func() {
@@ -641,12 +641,12 @@ var _ = Service("surla", func() {
 	})
 
 	Method("start_live_target", func() {
-		Description("Build a candidate commit exactly as Checkpoint 4 does and run it, with the operator's evaluator suite, as this server's one live CP3 target, then bind draft_override to it. A running target is stopped first, so there is never more than one. The target runs until stop_live_target, a later start_live_target, its own exit, or this server's shutdown; a server restart leaves none running. Requires Checkpoint 4 verification to be configured, because the build and launch settings come from it.")
+		Description("Build a candidate commit exactly as Checkpoint 4 does and run it, with the operator's evaluator suite, as this server's one live CP3 target, then bind draft_override to it. A running target is stopped first, so there is never more than one. The target runs until stop_live_target, a later start_live_target, its own exit, or this server's shutdown; a server restart leaves none running. Requires Checkpoint 4 verification to be configured (surla serve -verification-config), because the build and launch settings come from it.")
 		Payload(StartLiveTargetPayload)
 		Result(LiveTargetResult)
 		Error("live_target_unavailable", ErrorResult, "This server has no verification configuration, so it cannot build or run a live target.")
 		Error("live_target_failed", ErrorResult, "The live target could not be built or started; the message says which step failed.")
-		Tool("start_live_target", "Build a candidate commit and run it as this server's live CP3 target so draft_override can try prompt text on it. This first stops the target already running, which discards every prompt draft applied to it, even if the new build then fails. Prompt text survives only when it is committed.", func() {
+		Tool("start_live_target", "Build a candidate commit and run it as this server's live CP3 target so draft_override can try prompt text on it. This first stops the target already running, which discards every prompt draft applied to it, even if the new build then fails. Prompt text survives only when it is committed. Requires surla serve -verification-config.", func() {
 			ToolUI("ui://surla/checkpoint")
 		})
 		HTTP(func() {
@@ -672,10 +672,10 @@ var _ = Service("surla", func() {
 	})
 
 	Method("verify_change", func() {
-		Description("Start Checkpoint 4 verification of a candidate commit for the owner's confirmed Change Card revision and return its run_id at once. The server builds the commit in Surla's sandbox and runs the evaluator suite the operator configured, in a separate process that keeps running when the caller disconnects or the server restarts; get_verification reads its state. Only the builder view of the report is ever returned. A server started without verification configured rejects every call.")
+		Description("Start Checkpoint 4 verification of a candidate commit for the owner's confirmed Change Card revision and return its run_id at once. The server builds the commit in Surla's sandbox and runs the evaluator suite the operator configured, in a separate process that keeps running when the caller disconnects or the server restarts; get_verification reads its state. Only the builder view of the report is ever returned. A server started without verification configured (surla serve -verification-config) rejects every call.")
 		Payload(VerifyChangePayload)
 		Result(VerificationStatusResult)
-		Tool("verify_change", "Start CP4 verification of a candidate commit for the confirmed Change Card revision; returns a run_id to read with get_verification.", func() {
+		Tool("verify_change", "Start CP4 verification of a candidate commit for the confirmed Change Card revision; returns a run_id to read with get_verification. Requires surla serve -verification-config.", func() {
 			ToolUI("ui://surla/checkpoint")
 		})
 		HTTP(func() {
@@ -711,10 +711,10 @@ var _ = Service("surla", func() {
 	})
 
 	Method("approve_merge", func() {
-		Description("Record Checkpoint 5 approval for the owner's confirmed Change Card revision. The control plane loads the verification report by digest and the expected suite, environment and candidate binary digests from its promotion target, re-derives the report from its evidence with verify.Approve, and records the approval on the card. A report that did not pass or describes different inputs is rejected. Nothing is merged or deployed. The promotion target is provided by the program that embeds the control plane; a control plane without one, such as standalone surla serve, rejects every call.")
+		Description("Record Checkpoint 5 approval for the owner's confirmed Change Card revision. The control plane loads the verification report by digest and the expected suite, environment and candidate binary digests from its promotion target, re-derives the report from its evidence with verify.Approve, and records the approval on the card. A report that did not pass or describes different inputs is rejected. Nothing is merged or deployed. The promotion target comes from surla serve -promotion-config or from the program that embeds the control plane; a control plane without one rejects every call.")
 		Payload(ApproveMergePayload)
 		Result(ChangeCardResult)
-		Tool("approve_merge", "Approve the confirmed Change Card revision after its CP4 verification report passed for the candidate commit.", func() {
+		Tool("approve_merge", "Approve the confirmed Change Card revision after its CP4 verification report passed for the candidate commit. Requires a promotion target, such as surla serve -promotion-config.", func() {
 			ToolUI("ui://surla/checkpoint")
 		})
 		HTTP(func() {

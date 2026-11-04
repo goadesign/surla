@@ -29,13 +29,17 @@ type Service interface {
 	// platforms.
 	GoldenPath(context.Context) (res string, err error)
 	// Evaluate a feature request at Checkpoint 1, surfacing concrete examples and
-	// any genuine domain ambiguity.
+	// any genuine domain ambiguity. The analysis considers the target's current
+	// design only when it is sent in design_source.
 	ProposeChange(context.Context, *ProposeChangePayload) (res *ChangeCardResult, err error)
 	// Revise an existing Checkpoint 1 Change Card with new or changed operator
 	// requirements bound to its current request_revision. Re-analyzes the revised
-	// prompt and design source alongside the prior card's confirmed decisions,
-	// open questions, examples and preserved behaviors, and saves a new revision
-	// in needs_confirmation status for operator review.
+	// prompt and design source with the prior card's prompt, summary, confirmed
+	// answers, open questions, examples and preserved behaviors as context, and
+	// saves a new revision in needs_confirmation status for operator review. The
+	// new revision's answers, confirmed_by and any approval are cleared: earlier
+	// decisions remain only where the analysis restated them in its summary,
+	// examples or preserved behaviors.
 	ReviseChange(context.Context, *ReviseChangePayload) (res *ChangeCardResult, err error)
 	// Confirm or refine a Checkpoint 1 Change Card with the complete ambiguity
 	// answers and example table, bound to its current request_revision. Changed
@@ -55,20 +59,25 @@ type Service interface {
 	GetChange(context.Context, *GetChangePayload) (res *ChangeCardResult, err error)
 	// Extract and validate the Checkpoint 2 C4 container topology, tool contracts,
 	// Goa-AI guardrails, and proposed Chorus swarm roster from a candidate Goa
-	// design bound to a confirmed Change Card.
+	// design bound to a confirmed Change Card. Apart from the swarm roster, the
+	// result reports what the design declares; it does not compare the design with
+	// the Change Card's requirements.
 	PreviewArchitecture(context.Context, *PreviewArchitecturePayload) (res *ArchitecturePreviewResult, err error)
 	// Apply a Fast Draft Mode prompt override on the bound target or reject a
-	// compiled-rule prompt hack. On a live target started with start_live_target,
-	// a rejected update leaves the target's text unchanged; update_not_confirmed
-	// means the target may or may not have applied it.
+	// compiled-rule prompt hack. A prompt_template override needs a bound target:
+	// on surla serve, that is the live target start_live_target runs, which
+	// requires surla serve -verification-config. On a live target started with
+	// start_live_target, a rejected update leaves the target's text unchanged;
+	// update_not_confirmed means the target may or may not have applied it.
 	DraftOverride(context.Context, *DraftOverridePayload) (res *DraftOverrideResult, err error)
 	// Build a candidate commit exactly as Checkpoint 4 does and run it, with the
 	// operator's evaluator suite, as this server's one live CP3 target, then bind
 	// draft_override to it. A running target is stopped first, so there is never
 	// more than one. The target runs until stop_live_target, a later
 	// start_live_target, its own exit, or this server's shutdown; a server restart
-	// leaves none running. Requires Checkpoint 4 verification to be configured,
-	// because the build and launch settings come from it.
+	// leaves none running. Requires Checkpoint 4 verification to be configured
+	// (surla serve -verification-config), because the build and launch settings
+	// come from it.
 	StartLiveTarget(context.Context, *StartLiveTargetPayload) (res *LiveTargetResult, err error)
 	// Stop this server's live CP3 target, if one runs, and unbind draft_override
 	// from it. Stopping when none runs is not an error.
@@ -79,7 +88,8 @@ type Service interface {
 	// operator configured, in a separate process that keeps running when the
 	// caller disconnects or the server restarts; get_verification reads its state.
 	// Only the builder view of the report is ever returned. A server started
-	// without verification configured rejects every call.
+	// without verification configured (surla serve -verification-config) rejects
+	// every call.
 	VerifyChange(context.Context, *VerifyChangePayload) (res *VerificationStatusResult, err error)
 	// Return the current state of a verification run to the owner who started it:
 	// running, completed with the builder view of its report, or not completed
@@ -97,9 +107,9 @@ type Service interface {
 	// suite, environment and candidate binary digests from its promotion target,
 	// re-derives the report from its evidence with verify.Approve, and records the
 	// approval on the card. A report that did not pass or describes different
-	// inputs is rejected. Nothing is merged or deployed. The promotion target is
-	// provided by the program that embeds the control plane; a control plane
-	// without one, such as standalone surla serve, rejects every call.
+	// inputs is rejected. Nothing is merged or deployed. The promotion target
+	// comes from surla serve -promotion-config or from the program that embeds the
+	// control plane; a control plane without one rejects every call.
 	ApproveMerge(context.Context, *ApproveMergePayload) (res *ChangeCardResult, err error)
 	// Compare evaluated Goa designs and go.mod directives without emitting a
 	// blanket compatibility verdict.
@@ -328,7 +338,9 @@ type ConfirmIntentPayload struct {
 	// question, and give each value exactly as one string from that question's
 	// options, character for character.
 	Answers map[string]string
-	// Confirmed example table.
+	// The complete confirmed example table, including examples you edited or
+	// added. Keep an existing example's id when you edit it, and give an example
+	// you add a new, unique, non-blank id; ids are saved as sent.
 	Examples []*ExampleItem
 }
 
@@ -394,7 +406,7 @@ type DraftOverrideResult struct {
 
 // Concrete input and expected outcome confirmed at Checkpoint 1.
 type ExampleItem struct {
-	// Code-assigned stable example identifier.
+	// Stable example identifier. CP1 assigns one to each example it proposes.
 	ID string
 	// Plain-English scenario description.
 	Scenario string
@@ -466,7 +478,9 @@ type ProposeChangePayload struct {
 	ChangeID string
 	// Operator feature request.
 	Prompt string
-	// Current target Goa design source inspected by the CP1 model.
+	// Current Goa design source of the target (its design/*.go files) for the CP1
+	// model to read. If omitted, CP1 receives no current design; supply the
+	// relevant design source when you want it considered.
 	DesignSource *string
 }
 
@@ -479,8 +493,8 @@ type ReviseChangePayload struct {
 	RequestRevision string
 	// Revised operator feature request.
 	Prompt string
-	// Updated target Goa design source inspected by the CP1 model; when omitted,
-	// the card's saved design source is preserved.
+	// Updated Goa design source of the target (its design/*.go files) for the CP1
+	// model to read; when omitted, the card's saved design source is used again.
 	DesignSource *string
 }
 
@@ -581,7 +595,9 @@ type ToolContractItem struct {
 	InjectedFields []string
 	// True when the tool requires a UI-capable runtime.
 	RequiresUI bool
-	// True when the tool declares a design-time Confirmation gate.
+	// True when the tool declares a design-time Confirmation gate. This is a
+	// declaration: it does not show that the application delivers the approval
+	// request or continues after the answer.
 	RequiresConfirmation bool
 	// True when the tool declares a BoundedResult cursor/truncation contract.
 	BoundedResult bool
@@ -1360,7 +1376,9 @@ type jsonConfirmIntentPayloadTransport struct {
 	// question, and give each value exactly as one string from that question's
 	// options, character for character.
 	Answers map[string]string `json:"answers"`
-	// Confirmed example table.
+	// The complete confirmed example table, including examples you edited or
+	// added. Keep an existing example's id when you edit it, and give an example
+	// you add a new, unique, non-blank id; ids are saved as sent.
 	Examples []*jsonExampleItemTransport `json:"examples"`
 }
 
@@ -1544,7 +1562,7 @@ func validatejsonDraftOverrideResultTransport(value *jsonDraftOverrideResultTran
 
 // jsonExampleItemTransport stores JSON fields until they have been validated.
 type jsonExampleItemTransport struct {
-	// Code-assigned stable example identifier.
+	// Stable example identifier. CP1 assigns one to each example it proposes.
 	ID *string `json:"id"`
 	// Plain-English scenario description.
 	Scenario *string `json:"scenario"`
@@ -1723,7 +1741,9 @@ type jsonProposeChangePayloadTransport struct {
 	ChangeID *string `json:"change_id"`
 	// Operator feature request.
 	Prompt *string `json:"prompt"`
-	// Current target Goa design source inspected by the CP1 model.
+	// Current Goa design source of the target (its design/*.go files) for the CP1
+	// model to read. If omitted, CP1 receives no current design; supply the
+	// relevant design source when you want it considered.
 	DesignSource *string `json:"design_source,omitempty"`
 }
 
@@ -1749,8 +1769,8 @@ type jsonReviseChangePayloadTransport struct {
 	RequestRevision *string `json:"request_revision"`
 	// Revised operator feature request.
 	Prompt *string `json:"prompt"`
-	// Updated target Goa design source inspected by the CP1 model; when omitted,
-	// the card's saved design source is preserved.
+	// Updated Goa design source of the target (its design/*.go files) for the CP1
+	// model to read; when omitted, the card's saved design source is used again.
 	DesignSource *string `json:"design_source,omitempty"`
 }
 
@@ -1971,7 +1991,9 @@ type jsonToolContractItemTransport struct {
 	InjectedFields []string `json:"injected_fields"`
 	// True when the tool requires a UI-capable runtime.
 	RequiresUI *bool `json:"requires_ui"`
-	// True when the tool declares a design-time Confirmation gate.
+	// True when the tool declares a design-time Confirmation gate. This is a
+	// declaration: it does not show that the application delivers the approval
+	// request or continues after the answer.
 	RequiresConfirmation *bool `json:"requires_confirmation"`
 	// True when the tool declares a BoundedResult cursor/truncation contract.
 	BoundedResult *bool `json:"bounded_result"`
@@ -9167,7 +9189,7 @@ func validateArchitecturePreviewResultJSONValue5(path string, value any, descrip
 		case "requires_confirmation":
 			if err := validateAgentPolicyItemJSONValue3(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "True when the tool declares a design-time Confirmation gate.",
+				typed[key], "True when the tool declares a design-time Confirmation gate. This is a declaration: it does not show that the application delivers the approval request or continues after the answer.",
 			); err != nil {
 				return err
 			}
@@ -9958,7 +9980,7 @@ func validateChangeCardResultJSONValue5(path string, value any, description stri
 		case "id":
 			if err := validateAgentPolicyItemJSONValue2(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Code-assigned stable example identifier.",
+				typed[key], "Stable example identifier. CP1 assigns one to each example it proposes.",
 			); err != nil {
 				return err
 			}
@@ -10145,7 +10167,7 @@ func validateConfirmIntentPayloadJSONValue(path string, value any, description s
 		case "examples":
 			if err := validateConfirmIntentPayloadJSONValue3(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Confirmed example table.",
+				typed[key], "The complete confirmed example table, including examples you edited or added. Keep an existing example's id when you edit it, and give an example you add a new, unique, non-blank id; ids are saved as sent.",
 			); err != nil {
 				return err
 			}
@@ -10958,7 +10980,7 @@ func validateProposeChangePayloadJSONValue(path string, value any, description s
 		case "design_source":
 			if err := validateAgentPolicyItemJSONValue2(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Current target Goa design source inspected by the CP1 model.",
+				typed[key], "Current Goa design source of the target (its design/*.go files) for the CP1 model to read. If omitted, CP1 receives no current design; supply the relevant design source when you want it considered.",
 			); err != nil {
 				return err
 			}
@@ -11010,7 +11032,7 @@ func validateReviseChangePayloadJSONValue(path string, value any, description st
 		case "design_source":
 			if err := validateAgentPolicyItemJSONValue2(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Updated target Goa design source inspected by the CP1 model; when omitted, the card's saved design source is preserved.",
+				typed[key], "Updated Goa design source of the target (its design/*.go files) for the CP1 model to read; when omitted, the card's saved design source is used again.",
 			); err != nil {
 				return err
 			}

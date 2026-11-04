@@ -363,7 +363,7 @@ paths:
             tags:
                 - surla
             summary: verify_change surla
-            description: Start Checkpoint 4 verification of a candidate commit for the owner's confirmed Change Card revision and return its run_id at once. The server builds the commit in Surla's sandbox and runs the evaluator suite the operator configured, in a separate process that keeps running when the caller disconnects or the server restarts; get_verification reads its state. Only the builder view of the report is ever returned. A server started without verification configured rejects every call.
+            description: Start Checkpoint 4 verification of a candidate commit for the owner's confirmed Change Card revision and return its run_id at once. The server builds the commit in Surla's sandbox and runs the evaluator suite the operator configured, in a separate process that keeps running when the caller disconnects or the server restarts; get_verification reads its state. Only the builder view of the report is ever returned. A server started without verification configured (surla serve -verification-config) rejects every call.
             operationId: surla#verify_change
             parameters:
                 - name: change_id
@@ -408,7 +408,7 @@ paths:
             tags:
                 - surla
             summary: approve_merge surla
-            description: Record Checkpoint 5 approval for the owner's confirmed Change Card revision. The control plane loads the verification report by digest and the expected suite, environment and candidate binary digests from its promotion target, re-derives the report from its evidence with verify.Approve, and records the approval on the card. A report that did not pass or describes different inputs is rejected. Nothing is merged or deployed. The promotion target is provided by the program that embeds the control plane; a control plane without one, such as standalone surla serve, rejects every call.
+            description: Record Checkpoint 5 approval for the owner's confirmed Change Card revision. The control plane loads the verification report by digest and the expected suite, environment and candidate binary digests from its promotion target, re-derives the report from its evidence with verify.Approve, and records the approval on the card. A report that did not pass or describes different inputs is rejected. Nothing is merged or deployed. The promotion target comes from surla serve -promotion-config or from the program that embeds the control plane; a control plane without one rejects every call.
             operationId: surla#approve_merge
             requestBody:
                 description: Request body for approve_merge.
@@ -616,7 +616,7 @@ paths:
             tags:
                 - surla
             summary: preview_architecture surla
-            description: Extract and validate the Checkpoint 2 C4 container topology, tool contracts, Goa-AI guardrails, and proposed Chorus swarm roster from a candidate Goa design bound to a confirmed Change Card.
+            description: Extract and validate the Checkpoint 2 C4 container topology, tool contracts, Goa-AI guardrails, and proposed Chorus swarm roster from a candidate Goa design bound to a confirmed Change Card. Apart from the swarm roster, the result reports what the design declares; it does not compare the design with the Change Card's requirements.
             operationId: surla#preview_architecture
             requestBody:
                 description: Request body for preview_architecture.
@@ -842,7 +842,7 @@ paths:
             tags:
                 - surla
             summary: propose_change surla
-            description: Evaluate a feature request at Checkpoint 1, surfacing concrete examples and any genuine domain ambiguity.
+            description: Evaluate a feature request at Checkpoint 1, surfacing concrete examples and any genuine domain ambiguity. The analysis considers the target's current design only when it is sent in design_source.
             operationId: surla#propose_change
             requestBody:
                 description: Request body for propose_change.
@@ -939,7 +939,7 @@ paths:
             tags:
                 - surla
             summary: revise_change surla
-            description: Revise an existing Checkpoint 1 Change Card with new or changed operator requirements bound to its current request_revision. Re-analyzes the revised prompt and design source alongside the prior card's confirmed decisions, open questions, examples and preserved behaviors, and saves a new revision in needs_confirmation status for operator review.
+            description: 'Revise an existing Checkpoint 1 Change Card with new or changed operator requirements bound to its current request_revision. Re-analyzes the revised prompt and design source with the prior card''s prompt, summary, confirmed answers, open questions, examples and preserved behaviors as context, and saves a new revision in needs_confirmation status for operator review. The new revision''s answers, confirmed_by and any approval are cleared: earlier decisions remain only where the analysis restated them in its summary, examples or preserved behaviors.'
             operationId: surla#revise_change
             requestBody:
                 description: Request body for revise_change.
@@ -1143,7 +1143,7 @@ paths:
             tags:
                 - surla
             summary: start_live_target surla
-            description: Build a candidate commit exactly as Checkpoint 4 does and run it, with the operator's evaluator suite, as this server's one live CP3 target, then bind draft_override to it. A running target is stopped first, so there is never more than one. The target runs until stop_live_target, a later start_live_target, its own exit, or this server's shutdown; a server restart leaves none running. Requires Checkpoint 4 verification to be configured, because the build and launch settings come from it.
+            description: Build a candidate commit exactly as Checkpoint 4 does and run it, with the operator's evaluator suite, as this server's one live CP3 target, then bind draft_override to it. A running target is stopped first, so there is never more than one. The target runs until stop_live_target, a later start_live_target, its own exit, or this server's shutdown; a server restart leaves none running. Requires Checkpoint 4 verification to be configured (surla serve -verification-config), because the build and launch settings come from it.
             operationId: surla#start_live_target
             requestBody:
                 description: Request body for start_live_target.
@@ -1196,7 +1196,7 @@ paths:
             tags:
                 - surla
             summary: draft_override surla
-            description: Apply a Fast Draft Mode prompt override on the bound target or reject a compiled-rule prompt hack. On a live target started with start_live_target, a rejected update leaves the target's text unchanged; update_not_confirmed means the target may or may not have applied it.
+            description: 'Apply a Fast Draft Mode prompt override on the bound target or reject a compiled-rule prompt hack. A prompt_template override needs a bound target: on surla serve, that is the live target start_live_target runs, which requires surla serve -verification-config. On a live target started with start_live_target, a rejected update leaves the target''s text unchanged; update_not_confirmed means the target may or may not have applied it.'
             operationId: surla#draft_override
             requestBody:
                 description: Request body for draft_override.
@@ -2324,7 +2324,7 @@ components:
                     type: array
                     items:
                         $ref: '#/components/schemas/ExampleItem'
-                    description: Confirmed example table.
+                    description: The complete confirmed example table, including examples you edited or added. Keep an existing example's id when you edit it, and give an example you add a new, unique, non-blank id; ids are saved as sent.
                     example:
                         - expected_outcome: Sed minus voluptatum quis molestiae doloribus.
                           id: Consequatur voluptatibus soluta sequi reiciendis.
@@ -2588,7 +2588,7 @@ components:
                     example: Sed minus voluptatum quis molestiae doloribus.
                 id:
                     type: string
-                    description: Code-assigned stable example identifier.
+                    description: Stable example identifier. CP1 assigns one to each example it proposes.
                     example: Consequatur voluptatibus soluta sequi reiciendis.
                 input_summary:
                     type: string
@@ -2769,7 +2769,7 @@ components:
                     example: Ipsum soluta officiis facilis dolorem quae.
                 design_source:
                     type: string
-                    description: Current target Goa design source inspected by the CP1 model.
+                    description: Current Goa design source of the target (its design/*.go files) for the CP1 model to read. If omitted, CP1 receives no current design; supply the relevant design source when you want it considered.
                     example: Quia placeat maiores voluptatem voluptatem.
                 prompt:
                     type: string
@@ -2792,7 +2792,7 @@ components:
                     example: Optio ratione suscipit et neque officia.
                 design_source:
                     type: string
-                    description: Updated target Goa design source inspected by the CP1 model; when omitted, the card's saved design source is preserved.
+                    description: Updated Goa design source of the target (its design/*.go files) for the CP1 model to read; when omitted, the card's saved design source is used again.
                     example: Qui itaque.
                 prompt:
                     type: string
@@ -3107,7 +3107,7 @@ components:
                     example: Et quis sapiente tempora nihil est ut.
                 requires_confirmation:
                     type: boolean
-                    description: True when the tool declares a design-time Confirmation gate.
+                    description: 'True when the tool declares a design-time Confirmation gate. This is a declaration: it does not show that the application delivers the approval request or continues after the answer.'
                     example: false
                 requires_ui:
                     type: boolean
