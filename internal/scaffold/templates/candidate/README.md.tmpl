@@ -128,7 +128,16 @@ exported. `.mcp.json` holds that reference, not the token itself, and
 ```
 
 Other coding agents take the same URL and header in their own configuration
-files. To try prompt wording on a running `[[.Name]]` before you verify it,
+files.
+
+To start a change, ask your coding agent to call `propose_change` with your
+request and this project's `design/*.go` files as `design_source`, so the
+analysis considers the current design; without them, it receives no current
+design. Answer the card's questions and confirm it with `confirm_intent`.
+The confirmed card's `request_revision` is the value to verify and approve
+the change with.
+
+To try prompt wording on a running `[[.Name]]` before you verify it,
 call `start_live_target` with a full commit ID, such as the output of
 `git rev-parse HEAD`, then `draft_override` with
 `prompt_id` `[[.Name]].helper.system`. A draft lasts only as long as that

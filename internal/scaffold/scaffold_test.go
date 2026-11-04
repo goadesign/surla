@@ -328,7 +328,9 @@ func TestInitLeavesNoProjectWhenGenerationFails(t *testing.T) {
 // after the first commit is a JSON object with exactly the fields surla serve's
 // -verification-config requires, the Claude Code .mcp.json example is valid
 // JSON that names the default MCP endpoint and takes the bearer token from
-// SURLA_AUTH_TOKEN, and .gitignore keeps that file and .surla/ out of git.
+// SURLA_AUTH_TOKEN, the change-request step names propose_change's
+// design_source field with the project's design files, and .gitignore keeps
+// .mcp.json and .surla/ out of git.
 func TestInitReadmeFirstRunSnippetsMatchTheProject(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "bakery")
 	run := func(_ context.Context, moduleDir, _ string, args ...string) error {
@@ -382,6 +384,12 @@ func TestInitReadmeFirstRunSnippetsMatchTheProject(t *testing.T) {
 	assert.Equal(t, "http://127.0.0.1:8090/mcp", server.URL)
 	assert.Equal(t, "Bearer ${SURLA_AUTH_TOKEN}", server.Headers["Authorization"])
 	assert.Contains(t, readme, "export SURLA_AUTH_TOKEN=")
+
+	proposal := between(t, readme, "To start a change,", "To try prompt wording")
+	assert.Contains(t, proposal, "`propose_change`")
+	assert.Contains(t, proposal, "`design/*.go` files as `design_source`")
+	assert.Contains(t, proposal, "`confirm_intent`")
+	assert.Contains(t, proposal, "`request_revision`")
 
 	ignore, err := os.ReadFile(filepath.Join(dir, ".gitignore"))
 	require.NoError(t, err)
