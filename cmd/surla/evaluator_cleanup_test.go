@@ -18,7 +18,7 @@ func TestPreviewAndDiffRemoveTheirWorkspaceWhenEvaluationFails(t *testing.T) {
 		name string
 		run  func(dir string) error
 	}{
-		{name: "preview", run: func(dir string) error { return runPreview([]string{"-dir", dir}, io.Discard) }},
+		{name: "preview", run: func(dir string) error { return runPreview([]string{"-dir", dir}, io.Discard, io.Discard) }},
 		{name: "diff", run: func(dir string) error { return runDiff([]string{"--old-dir", dir, "--new-dir", dir}) }},
 	}
 	for _, tc := range cases {

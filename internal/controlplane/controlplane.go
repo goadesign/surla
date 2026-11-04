@@ -744,14 +744,7 @@ func (c *ControlPlane) PreviewArchitecture(ctx context.Context, p *gensurla.Prev
 	if err := reportProgress(ctx, 2, 2, "Architecture preview ready"); err != nil {
 		return nil, err
 	}
-	banner := fmt.Sprintf(
-		"%s: %d container(s), %d boundary edge(s), %d agent policy(s), %d tool contract(s)",
-		evaluated.SystemName,
-		len(evaluated.Containers),
-		len(evaluated.Edges),
-		len(evaluated.AgentPolicies),
-		len(evaluated.Tools),
-	)
+	banner := evaluated.Summary()
 
 	return &gensurla.ArchitecturePreviewResult{
 		ChangeID:        p.ChangeID,
