@@ -20,7 +20,7 @@
 ## Quickstart & MCP Configuration
 
 ### Prerequisites
-- **Go 1.27.3+**, matching the repository's `go.mod` files (`surla init` runs module-pinned `go run goa.design/goa/v3/cmd/goa gen`, and `surla preview` uses Surla's sandboxed evaluator, so a globally installed `goa` binary is not required)
+- **Go 1.27.3+**, matching the repository's `go.mod` files (`surla init`, `surla gen`, and `surla preview` run Goa inside Surla's sandbox with each module's own versions, so a globally installed `goa` binary is not required)
 - **Surla CLI** (`go install github.com/goadesign/surla/cmd/surla@latest`, or `go run ./cmd/surla` from a repository checkout)
 - **macOS** (`sandbox-exec` is used by `verify/candidate` to isolate candidate builds and processes; non-macOS hosts fail closed with `ErrIsolationUnavailable`)
 - **Temporal CLI** (`brew install temporal`) for running the end-to-end durable workflow crash and replay verification suites
@@ -229,14 +229,14 @@ Changing this contract is a breaking change for every target that implements it.
 Running `surla`, `surla help`, `surla -h`, or `surla --help` prints top-level usage to `stdout` and exits `0`. Running `surla help <command>` or `surla <command> -h` prints that subcommand's flags to `stderr` and exits `0`. Every subcommand rejects unexpected positional arguments (`unexpected arguments [...]`), so a stray non-flag token never causes Go's `flag` parser to silently ignore flags that follow it.
 
 ### `surla init`
-Creates a Goa + Goa-AI + `goa.design/model` service in `<dir>` and a separate evaluator module in `<dir>/eval`. It resolves dependencies, generates code with `go run goa.design/goa/v3/cmd/goa gen`, checks both modules with `go vet ./...`, and prints the commands to commit, preview, and verify the project. Both module files start with the Go and library versions saved in the `surla` binary (`surla.GoMod()`). Before generating the evaluator, `surla init` pins its exact Surla dependency with `go get github.com/goadesign/surla@<version>`; Go may select newer library versions required by that dependency.
+Creates a Goa + Goa-AI + `goa.design/model` service in `<dir>` and a separate evaluator module in `<dir>/eval`. It resolves dependencies, generates each module's code inside Surla's sandbox with the same generator as [`surla gen`](#surla-gen) (the design code never runs on the host), checks both modules with `go vet ./...`, and prints the commands to commit, preview, and verify the project. Both module files start with the Go and library versions saved in the `surla` binary (`surla.GoMod()`). `surla init` writes the project to a staging directory next to `<dir>` and renames it to `<dir>` only after every step, including generation, has succeeded; a failure or interrupt leaves `<dir>` absent. Before generating the evaluator, `surla init` pins its exact Surla dependency with `go get github.com/goadesign/surla@<version>`; Go may select newer library versions required by that dependency.
 - `-dir <path>` — Directory to create; it must not exist *(required)*. `surla init` builds the project in a sibling staging directory (`<dir>.surla-init-*`) under `procgroup.Run` (`GOWORK=off`) and renames it to `-dir` only after every step succeeds (removing the staging directory on any command failure or cancellation when the process group exits cleanly, or keeping it and reporting its path if a child process fails to stop).
 - `-module <path>` — Go module path of the candidate service, such as `example.com/shop` *(required)*. Its last path element names the service and must be a lowercase Go identifier (`^[a-z][a-z0-9]*$`, excluding Go keywords and `main`).
 - `-surla-version <version>` — Exact canonical semantic version (`golang.org/x/mod/semver`) of `github.com/goadesign/surla` required by `<dir>/eval/go.mod` (default: the build-info `Main.Version` stamped into the `surla` binary; required explicitly when running from a `(devel)` or `+dirty` build, and mutable labels such as `latest` or `main` are rejected).
 - **Starter scope & visible-suite note:** The generated candidate (`cmd/<name>`) runs an in-memory Goa-AI `helper` agent (`RunPolicy`, `BindTo("price")`, and C4 `System`/`Container` model) connecting to `-model-gateway <host:port>`, registering `helper.SystemPrompt()` (`<name>.helper.system`, version `"v1"`) on each question's runtime and attaching `PromptRefs: []prompt.PromptRef{system.Ref}` on every model request. The generated `<dir>/eval/` module runs a scripted `goa-ai` model gateway and two starter scenarios (`prices_tea` tagged `"repair"` and `unknown_item` tagged `"holdout"`, checking the correlated `catalog.lookup_price` tool call and `ToolResultPart` exchange plus `pinned.Evidence("<name>")`). Because `eval/` lives inside the same repository as the starter code, its `"holdout"` tag demonstrates `Report.ForBuilders()` redaction only; real unseen holdouts belong in an evaluator repository that builder agents cannot read.
 
 ### `surla preview`
-Reads a Go design module on disk into a symlink-safe snapshot (`go.mod`, `go.sum`, and non-test `.go` files; run `go mod tidy` first if `go.sum` is missing), evaluates it inside the sandboxed Goa/Goa-AI/Model compiler (`designeval.Evaluate`) at **0 LLM tokens**, and prints the indented JSON `designeval.Result` (`system_name`, `declarations`, C4 `containers` and `edges`, `agent_policies`, and `tools`) to `stdout`. Needs no running server, no Change Card, and no LLM API key.
+Reads a Go design module on disk into a symlink-safe snapshot (`go.mod`, `go.sum`, and non-test `.go` files; run `go mod tidy` first if `go.sum` is missing), evaluates it inside the sandboxed Goa/Goa-AI/Model compiler (`designeval.Evaluator`) at **0 LLM tokens**, and prints the indented JSON `designeval.Result` (`system_name`, `declarations`, C4 `containers` and `edges`, `agent_policies`, and `tools`) to `stdout`. Needs no running server, no Change Card, and no LLM API key. SIGINT and SIGTERM cancel the evaluation. Before the command exits, it removes the build workspace (`$TMPDIR/surla-designeval-work-*`) the evaluation compiled in; a build whose processes cannot be confirmed stopped keeps it, and the error names it.
 - `-dir <path>` — Root directory of the design module holding `go.mod`, `go.sum`, and `design/` (default `.`).
 
 ### `surla preview-change`
@@ -252,7 +252,7 @@ Reads a Go design module on disk into a symlink-safe `os.Root`-confined snapshot
 - `-timeout <duration>` — Positive time limit for the HTTP preview request (default `2m`).
 
 ### `surla serve`
-Starts the Surla HTTP and MCP JSON-RPC control-plane server protected by bearer-token authentication. Once the listener is bound, `surla serve` prints a startup summary to `stderr` showing the bound HTTP URL, the MCP endpoint (`http://<addr>/mcp`), the Change Cards directory (`surla: saving Change Cards in <dir>`), and the on/off status of each checkpoint (`CP1`–`CP5`) along with the flag or host option that turns each off capability on (the bearer token is never printed in startup logs or `-h` defaults). On shutdown, `surla serve` closes the control plane (`cp.Close()`) to release its exclusive lock on `-cards-dir`.
+Starts the Surla HTTP and MCP JSON-RPC control-plane server protected by bearer-token authentication. Once the listener is bound, `surla serve` prints a startup summary to `stderr` showing the bound HTTP URL, the MCP endpoint (`http://<addr>/mcp`), the Change Cards directory (`surla: saving Change Cards in <dir>`), and the on/off status of each checkpoint (`CP1`–`CP5`) along with the flag or host option that turns each off capability on (the bearer token is never printed in startup logs or `-h` defaults). On shutdown, `surla serve` closes the control plane (`cp.Close()`). It refuses new live targets, stops the live target, cancels the `preview_architecture` and `diff` evaluations still running and waits for them, removes their shared build workspace (`$TMPDIR/surla-designeval-work-*`, created by the first evaluation, so a server that never evaluates a design creates none), and releases its exclusive lock on `-cards-dir`. A build whose processes cannot be confirmed stopped keeps the workspace, and the exit error names it; a live target that cannot be confirmed stopped keeps the cards directory locked.
 - `-addr <host:port>` — Listen address (default `127.0.0.1:8090`).
 - `-principal <id>` — Authenticated operator principal ID *(required)*.
 - `-auth-token <token>` — Bearer token required on HTTP and MCP requests (default: `$SURLA_AUTH_TOKEN`, *required*).
@@ -268,9 +268,17 @@ Starts the Surla HTTP and MCP JSON-RPC control-plane server protected by bearer-
 Model, swarm-profile, verification-config, and promotion-config flags are independent. Incomplete or mixed model options stop startup with an error. A supplied profiles file must contain one JSON array: unknown fields, trailing JSON values, duplicate profile IDs, empty required metadata, and unknown capabilities stop startup. Omitted profiles leave the proposed roster unconfigured.
 
 ### `surla diff`
-Reads two Go design modules into symlink-safe snapshots (`go.mod`, `go.sum`, and non-test `.go` files), evaluates both inside the sandboxed Goa/Goa-AI compiler at their own `go.mod` dependency versions, and prints the JSON `DiffResult` to `stdout`.
+Reads two Go design modules into symlink-safe snapshots (`go.mod`, `go.sum`, and non-test `.go` files), evaluates both inside the sandboxed Goa/Goa-AI compiler at their own `go.mod` dependency versions, and prints the JSON `DiffResult` to `stdout`. Both evaluations share one build workspace, so the second reuses the dependencies the first compiled. SIGINT and SIGTERM cancel them, and the workspace is removed before the command exits, as for `surla preview`.
 - `--old-dir <path>` — Root directory of the previous design module *(required)*.
 - `--new-dir <path>` — Root directory of the candidate design module *(required)*.
+
+### `surla gen`
+Regenerates the `gen/` directory of a design module from its `design/`, inside Surla's sandbox, and replaces `gen/` in one step. The design code and its generators are compiled and run only in the sandbox; Surla writes their output.
+- `-dir <path>` — Root directory of the design module holding `go.mod`, `go.sum`, and `design/` (default `.`).
+
+`surla gen` reads the module as `surla preview` does, then builds and runs a generation program with the module's own dependency versions. That program calls Goa's `generator.CompleteSources`, so the module must select `goa.design/goa/v3` `v3.35.1-0.20261103205041-35e789e8f9b1` or later. With an older Goa, the build fails, and the error shows the compiler output and the Goa version the module uses; update the module's `goa.design/goa/v3` requirement and `go.sum`, then run it again. A design with gRPC transports is refused, because protoc compiles its `.proto` files after generation and cannot run in the sandbox; generate those designs with the module-pinned `go run goa.design/goa/v3/cmd/goa gen <module>/design`.
+
+The new `gen/` is written to a `.surla-gen-<random>` directory in the module and swapped with the current `gen/` in one atomic rename (or moved in when there is none), so `gen/` is never missing or half-written. As with `goa gen`, generated subdirectories that the design no longer produces disappear, and top-level files in `gen/` that are not generated are kept. Generated file headers record `$ surla gen`. Until the swap, any failure or interrupt (SIGINT or SIGTERM) leaves `gen/` untouched and exits non-zero. After the swap, `surla gen` prints `gen/ updated` and the files added, changed, and removed, and exits 0; writing `AGENTS_QUICKSTART.md`, removing the staging directory, or listing the changes can then only print warnings. `go.mod` and `go.sum` are never changed: when the generated code imports a module `go.mod` does not require, the command says to run `go mod tidy`. Leftover `.surla-gen-*` directories from an interrupted run are listed and never deleted.
 
 ### `surla verify`
 Clones the committed candidate and evaluator suite into an isolated work directory, builds the candidate binaries (`WorkDir/candidate-bin/<name>`) and suite runner (`WorkDir/suite-bin/suite`) inside `verify/candidate`'s macOS `sandbox-exec` jail, runs the suite, writes the canonical `verify.Report` JSON to `<report-dir>/<digest>.json`, and prints the JSON report to `stdout` (setup or build errors exit non-zero without printing report JSON, while an assembled report with a failing scenario is written and printed before exiting non-zero).
@@ -375,12 +383,13 @@ go test -race ./...
 (cd examples/orders-eval && go test -race ./...)
 ```
 
-The end-to-end and starter-project integration tests require macOS (`sandbox-exec`); `examples/orders-eval/acceptance` also requires the Temporal CLI. Run the five acceptance scenarios and the seeded token-budget regression, the verifier's complete `Run` → report → `Approve` test, and the `surla init` starter-project build and sandboxed evaluator test (all run automatically on GitHub Actions in [`.github/workflows/ci.yml`](../.github/workflows/ci.yml)):
+The end-to-end and starter-project integration tests require macOS (`sandbox-exec`); `examples/orders-eval/acceptance` also requires the Temporal CLI. Run the five acceptance scenarios and the seeded token-budget regression, the verifier's complete `Run` → report → `Approve` test, the `surla gen` and `surla init` generation journeys, and the `surla init` starter-project build and sandboxed evaluator test (all run automatically on GitHub Actions in [`.github/workflows/ci.yml`](../.github/workflows/ci.yml)):
 
 ```bash
 (cd examples/orders-eval && go test -race -tags e2e ./acceptance)
 go test -race -tags e2e ./internal/verify
-go test -race -tags scaffold ./internal/scaffold
+go test -race -count=1 -tags e2e ./cmd/surla
+go test -race -count=1 -timeout 60m -tags scaffold ./internal/scaffold
 ```
 
 See [`examples/orders/README.md`](../examples/orders/README.md) for a step-by-step walkthrough including `surla verify` (full operator report vs. `-builder-view`).
@@ -398,7 +407,7 @@ See [`examples/orders/README.md`](../examples/orders/README.md) for a step-by-st
 │   └── design.go                 # Surla Goa & Goa-AI MCP 1.0.0 DSL contract
 ├── cmd/
 │   └── surla/
-│       └── main.go               # CLI entrypoint (`surla init`, `surla serve`, `surla preview`, `surla preview-change`, `surla diff`, `surla verify`, and `surla approve`)
+│       └── main.go               # CLI entrypoint (`surla init`, `surla serve`, `surla preview`, `surla preview-change`, `surla diff`, `surla gen`, `surla verify`, and `surla approve`)
 ├── docs/
 │   ├── HOW_IT_WORKS.md           # The 5 checkpoints, Chorus routing & independent verification
 │   ├── ARCHITECTURE_PLAYBOOK.md  # Golden Path rules & Goa Design suite overview

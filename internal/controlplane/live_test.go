@@ -464,6 +464,8 @@ func TestCloseEndsAStartInProgressAndRefusesLaterStarts(t *testing.T) {
 }
 
 func TestAFailedStopKeepsTheOwnerAndStartsNoOtherTarget(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("TMPDIR", tmp)
 	self, err := os.Executable()
 	require.NoError(t, err)
 	cardsDir := t.TempDir()
@@ -500,10 +502,35 @@ func TestAFailedStopKeepsTheOwnerAndStartsNoOtherTarget(t *testing.T) {
 	_, err = draft(alice, cp, fakePromptID, "x")
 	require.EqualError(t, err, "no target prompt updater is bound to this control plane", "drafts are unbound while stopping")
 
+	// A diff admits a design evaluation, which creates the evaluator's
+	// workspace, and fails on the incomplete snapshot.
+	_, err = cp.Diff(alice, &gensurla.DiffPayload{
+		Old: &gensurla.DesignSnapshot{Files: map[string]string{"design/design.go": "package design\n"}},
+		New: &gensurla.DesignSnapshot{Files: map[string]string{"design/design.go": "package design\n"}},
+	})
+	require.Error(t, err)
+	require.Len(t, workspaces(t, tmp), 1)
+
 	err = cp.Close()
 	require.Error(t, err, "Close reports the target it could not confirm stopped")
+	assert.Empty(t, workspaces(t, tmp), "Close still removes the evaluator's workspace")
+	again := cp.Close()
+	require.Error(t, again, "a later Close returns the same stop failure")
+	assert.Equal(t, err.Error(), again.Error())
 	_, err = New(Options{CardsDir: cardsDir})
 	require.Error(t, err, "the cards directory, which holds the live root, stays locked")
+	_, err = cp.Diff(alice, &gensurla.DiffPayload{
+		Old: &gensurla.DesignSnapshot{Files: map[string]string{}}, New: &gensurla.DesignSnapshot{Files: map[string]string{}},
+	})
+	require.ErrorContains(t, err, "design evaluator is closed")
+}
+
+// workspaces lists the design evaluator workspaces in dir.
+func workspaces(t *testing.T, dir string) []string {
+	t.Helper()
+	matches, err := filepath.Glob(filepath.Join(dir, "surla-designeval-work-*"))
+	require.NoError(t, err)
+	return matches
 }
 
 func TestTargetMessagesNeverReachCallers(t *testing.T) {
