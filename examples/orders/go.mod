@@ -12,8 +12,8 @@ require (
 	go.opentelemetry.io/otel/trace v1.47.0
 	go.temporal.io/api v1.64.0
 	go.temporal.io/sdk v1.50.0
-	goa.design/goa-ai v0.90.0
-	goa.design/goa/v3 v3.35.1-0.20261030163856-3e08a6128171
+	goa.design/goa-ai v0.90.1-0.20261102072428-fb00df97927e
+	goa.design/goa/v3 v3.35.1-0.20261103205041-35e789e8f9b1
 	goa.design/model v1.16.11-0.20261030164016-5e17c2e932fb
 	google.golang.org/grpc v1.85.0
 	modernc.org/sqlite v1.52.0

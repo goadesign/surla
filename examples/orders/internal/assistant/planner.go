@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 
+	genrefund "github.com/goadesign/surla/examples/orders/gen/orders/agents/refund"
 	"goa.design/goa-ai/runtime/agent/model"
 	"goa.design/goa-ai/runtime/agent/planner"
 	"goa.design/goa-ai/runtime/agent/prompt"
@@ -18,38 +19,6 @@ import (
 type Planner struct {
 	// modelID selects the model client registered with the runtime.
 	modelID string
-}
-
-const (
-	// SystemPromptID identifies the refund agent's system prompt in the
-	// runtime prompt registry. Prompt store overrides of this ID change the
-	// agent's wording without rebuilding the service.
-	SystemPromptID prompt.Ident = "orders.refund.system"
-
-	// systemPromptVersion is the version of the baseline prompt below.
-	systemPromptVersion = "v1"
-
-	// systemPrompt is the baseline instruction for the refund agent. Business
-	// rules such as the $50.00 limit are enforced by the tools; the prompt
-	// only helps the model pick the right tool the first time.
-	systemPrompt = `You help a customer get refunds for their own orders.
-Use list_orders to find the order the customer means. Refund each order at most once.
-An order total includes tax and shipping. If that total is $50.00 or less, use issue_store_credit.
-If it is over $50.00, use request_refund; a manager must approve it before the money moves, so tell the customer the refund is waiting for approval.
-Never promise a refund before a tool result confirms it. If a tool refuses, explain the reason to the customer in plain words.`
-)
-
-// SystemPrompt returns the baseline prompt spec to register with the runtime
-// prompt registry.
-func SystemPrompt() prompt.PromptSpec {
-	return prompt.PromptSpec{
-		ID:          SystemPromptID,
-		AgentID:     "orders.refund",
-		Role:        prompt.PromptRoleSystem,
-		Description: "Instructions for the refund assistant.",
-		Template:    systemPrompt,
-		Version:     systemPromptVersion,
-	}
 }
 
 // NewPlanner returns a planner that uses the runtime model client registered
@@ -73,7 +42,7 @@ func (p *Planner) PlanResume(ctx context.Context, in *planner.PlanResumeInput) (
 // tools to the model, and returns either the requested tool calls or the
 // final answer.
 func (p *Planner) plan(ctx context.Context, agent planner.PlannerContext, messages []*model.Message, finalize bool) (*planner.PlanResult, error) {
-	system, err := agent.RenderPrompt(ctx, SystemPromptID, nil)
+	system, err := genrefund.RenderSystemPrompt(ctx, agent)
 	if err != nil {
 		return nil, fmt.Errorf("render system prompt: %w", err)
 	}

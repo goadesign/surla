@@ -246,6 +246,13 @@ var _ = Service("orders", func() {
 
 	Agent("refund", "Helps customers get refunds for their orders.", func() {
 		Use(orderTools)
+		SystemPrompt(`You help a customer get refunds for their own orders.
+Use list_orders to find the order the customer means. Refund each order at most once.
+An order total includes tax and shipping. If that total is $50.00 or less, use issue_store_credit.
+If it is over $50.00, use request_refund; a manager must approve it before the money moves, so tell the customer the refund is waiting for approval.
+Never promise a refund before a tool result confirms it. If a tool refuses, explain the reason to the customer in plain words.`, func() {
+			Description("Instructions for the refund assistant.")
+		})
 		RunPolicy(func() {
 			DefaultCaps(MaxToolCalls(8), MaxRecoveryTurns(2))
 			TimeBudget("2m")

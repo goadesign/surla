@@ -130,9 +130,6 @@ func run(ctx context.Context, cfg config) (err error) {
 	// memory only, so restarting the service restores the built-in prompts.
 	prompts := prompt.NewInMemoryStore()
 	rt := runtime.New(store, runtime.WithEngine(eng), runtime.WithPromptStore(prompts))
-	if err := rt.PromptRegistry.Register(assistant.SystemPrompt()); err != nil {
-		return fmt.Errorf("register system prompt: %w", err)
-	}
 	mc, err := newModelClient(cfg)
 	if err != nil {
 		return fmt.Errorf("create model client: %w", err)
@@ -143,7 +140,7 @@ func run(ctx context.Context, cfg config) (err error) {
 
 	conversations := assistant.NewConversations(rt, genrefund.NewClient(rt), store)
 	svc := orders.New(commerce, refundflow.NewRunner(temporal, cfg.refundQueue), conversations,
-		assistant.NewPrompts(rt.PromptRegistry, prompts), cfg.signingKey)
+		assistant.NewPrompts(rt.PromptRegistry), cfg.signingKey)
 	endpoints := genorders.NewEndpoints(svc)
 
 	if err := genrefund.RegisterRefundAgent(ctx, rt, genrefund.RefundAgentConfig{Planner: assistant.NewPlanner(modelID)}); err != nil {
