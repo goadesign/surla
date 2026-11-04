@@ -218,6 +218,17 @@ func writeVerifySummary(w io.Writer, report verify.Report, builderView bool) {
 	fmt.Fprintf(w, "%s (report %s)\n", line, report.Digest)
 }
 
+// Write appends p, or records the overflow and fails when p would take the
+// stream past limit, so the git command stops instead of producing output
+// nobody will read.
+func (c *cappedBuffer) Write(p []byte) (int, error) {
+	if c.buf.Len()+len(p) > c.limit {
+		c.overflow = true
+		return 0, errors.New("output limit exceeded")
+	}
+	return c.buf.Write(p)
+}
+
 // resolveVerificationConfig selects and loads the operator's CP3/CP4 target
 // configuration from either -project or -verification-config, rejecting
 // supplying both flags at once.
@@ -260,7 +271,9 @@ func loadProjectConfig(ctx context.Context, dir string) (*controlplane.Verificat
 	if err != nil {
 		return nil, fmt.Errorf("resolve -project %s: %w", dir, err)
 	}
-	topOut, err := runGitRead(ctx, projectRoot, "rev-parse", "--show-toplevel")
+	// Git reports the repository root and the project's path inside it, such
+	// as "services/shop/" or "" at the root, one per line.
+	topOut, err := runGitRead(ctx, projectRoot, "rev-parse", "--show-toplevel", "--show-prefix")
 	if err != nil {
 		if strings.Contains(err.Error(), "not a git repository") {
 			return nil, fmt.Errorf("-project %s is not inside a git repository"+
@@ -268,14 +281,11 @@ func loadProjectConfig(ctx context.Context, dir string) (*controlplane.Verificat
 		}
 		return nil, fmt.Errorf("-project %s: find its git repository: %w", dir, err)
 	}
-	repoRoot, err := filepath.EvalSymlinks(strings.TrimSpace(string(topOut)))
-	if err != nil {
-		return nil, fmt.Errorf("resolve git repository root for -project %s: %w", dir, err)
+	lines := strings.Split(strings.TrimSuffix(string(topOut), "\n"), "\n")
+	if len(lines) != 2 {
+		return nil, fmt.Errorf("-project %s: git rev-parse printed %q, want the repository root and prefix", dir, topOut)
 	}
-	relProject, err := filepath.Rel(repoRoot, projectRoot)
-	if err != nil || (relProject != "." && !filepath.IsLocal(relProject)) {
-		return nil, fmt.Errorf("-project %s lies outside git repository %s", dir, repoRoot)
-	}
+	repoRoot := lines[0]
 	headOut, err := runGitRead(ctx, repoRoot, "rev-parse", "--verify", "HEAD^{commit}")
 	if err != nil {
 		return nil, fmt.Errorf("-project %s has no committed HEAD (run git add -A && git commit -m 'Initial scaffold' first): %w",
@@ -286,7 +296,7 @@ func loadProjectConfig(ctx context.Context, dir string) (*controlplane.Verificat
 	// Module directories and committed paths are slash-separated and relative
 	// to the repository root: "." and "eval" for a project at the root,
 	// "services/shop" and "services/shop/eval" for one nested in it.
-	candidateModule := filepath.ToSlash(relProject)
+	candidateModule := path.Clean("./" + lines[1])
 	suiteModule := path.Join(candidateModule, scaffold.SuiteDir)
 	rootGoMod, err := readGitBlob(ctx, repoRoot, suiteCommit, path.Join(candidateModule, "go.mod"), dir)
 	if err != nil {
@@ -333,37 +343,63 @@ func loadProjectConfig(ctx context.Context, dir string) (*controlplane.Verificat
 // readGitBlob reads a committed regular-file blob at <commit>:<treePath> in
 // repoRoot, rejecting missing paths, symlinks, and directories.
 func readGitBlob(ctx context.Context, repoRoot, commit, treePath, project string) ([]byte, error) {
-	modeOut, err := runGitRead(ctx, repoRoot, "ls-tree", commit, "--", treePath)
-	if err != nil || len(bytes.TrimSpace(modeOut)) == 0 {
-		return nil, fmt.Errorf("-project %s is missing committed %s at HEAD (%s) (commit the starter layout or pass -verification-config)",
-			project, treePath, commit)
-	}
-	fields := strings.Fields(string(modeOut))
-	if len(fields) < 2 || fields[1] != "blob" || (fields[0] != "100644" && fields[0] != "100755") {
+	mode, kind, err := gitEntry(ctx, repoRoot, commit, treePath)
+	switch {
+	case err != nil:
+		return nil, fmt.Errorf("-project %s: %w", project, err)
+	case kind == "":
+		return nil, fmt.Errorf("-project %s is missing committed %s at HEAD (%s)"+
+			" (commit the starter layout or pass -verification-config)", project, treePath, commit)
+	case kind != "blob" || (mode != "100644" && mode != "100755"):
 		return nil, fmt.Errorf("-project %s: committed %s at HEAD (%s) must be a regular file", project, treePath, commit)
 	}
-	return runGitRead(ctx, repoRoot, "cat-file", "blob", commit+":"+treePath)
+	content, err := runGitRead(ctx, repoRoot, "cat-file", "blob", commit+":"+treePath)
+	if err != nil {
+		return nil, fmt.Errorf("-project %s: read committed %s at HEAD (%s): %w (surla serve never downloads"+
+			" objects; if this is a partial clone, check out HEAD there first so git fetches them)",
+			project, treePath, commit, err)
+	}
+	return content, nil
 }
 
 // requireGitTree checks that <commit>:<treePath> exists as a committed
 // directory in repoRoot.
 func requireGitTree(ctx context.Context, repoRoot, commit, treePath, project string) error {
-	out, err := runGitRead(ctx, repoRoot, "cat-file", "-t", commit+":"+treePath)
-	if err != nil || strings.TrimSpace(string(out)) != "tree" {
-		return fmt.Errorf("-project %s is missing committed directory %s at HEAD (%s) (commit the starter layout or pass -verification-config)",
-			project, treePath, commit)
+	_, kind, err := gitEntry(ctx, repoRoot, commit, treePath)
+	if err != nil {
+		return fmt.Errorf("-project %s: %w", project, err)
+	}
+	if kind != "tree" {
+		return fmt.Errorf("-project %s is missing committed directory %s at HEAD (%s)"+
+			" (commit the starter layout or pass -verification-config)", project, treePath, commit)
 	}
 	return nil
+}
+
+// gitEntry returns the mode and object type, such as "100644" and "blob",
+// of <commit>:<treePath> in repoRoot, or two empty strings when the commit
+// has no such path. An error means git itself failed.
+func gitEntry(ctx context.Context, repoRoot, commit, treePath string) (string, string, error) {
+	out, err := runGitRead(ctx, repoRoot, "ls-tree", commit, "--", treePath)
+	if err != nil {
+		return "", "", fmt.Errorf("list committed %s at HEAD (%s): %w", treePath, commit, err)
+	}
+	fields := strings.Fields(string(out))
+	if len(fields) < 2 {
+		return "", "", nil
+	}
+	return fields[0], fields[1], nil
 }
 
 // runGitRead runs one read-only git query in dir and returns its stdout. It
 // removes every inherited GIT_* variable, so dir alone selects the repository;
 // ignores replace refs, so a commit ID names its real content; disables a
-// configured file-system monitor and hooks, so no repository program runs;
+// configured file-system monitor and hooks, and never fetches objects missing
+// from a partial clone, so no repository program or network access runs;
 // takes no optional locks; and stops when ctx ends. Output past
 // gitReadMaxOutput on stdout or gitReadMaxStderr on stderr fails the query.
 func runGitRead(ctx context.Context, dir string, args ...string) ([]byte, error) {
-	cmdArgs := append([]string{"-C", dir, "--no-optional-locks", "--no-replace-objects",
+	cmdArgs := append([]string{"-C", dir, "--no-optional-locks", "--no-replace-objects", "--no-lazy-fetch", "--literal-pathspecs",
 		"-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null"}, args...)
 	cmd := exec.CommandContext(ctx, "git", cmdArgs...)
 	cmd.Env = cleanGitEnv()
@@ -388,7 +424,8 @@ func runGitRead(ctx context.Context, dir string, args ...string) ([]byte, error)
 // GIT_OBJECT_DIRECTORY or GIT_CONFIG_PARAMETERS, that could make git read a
 // different repository, objects or configuration than the -project
 // directory's own, plus settings that disable terminal prompts and the
-// system-wide configuration file.
+// system-wide configuration file and keep git's messages in English, which
+// loadProjectConfig matches.
 func cleanGitEnv() []string {
 	var env []string
 	for _, kv := range os.Environ() {
@@ -396,7 +433,7 @@ func cleanGitEnv() []string {
 			env = append(env, kv)
 		}
 	}
-	return append(env, "GIT_TERMINAL_PROMPT=0", "GIT_CONFIG_NOSYSTEM=1")
+	return append(env, "GIT_TERMINAL_PROMPT=0", "GIT_CONFIG_NOSYSTEM=1", "LC_ALL=C")
 }
 
 // loadVerificationConfig strictly decodes the operator's verification
@@ -475,15 +512,4 @@ func selfCommand() ([]string, error) {
 		return nil, fmt.Errorf("locate the surla executable: %w", err)
 	}
 	return []string{exe}, nil
-}
-
-// Write appends p, or records the overflow and fails when p would take the
-// stream past limit, so the git command stops instead of producing output
-// nobody will read.
-func (c *cappedBuffer) Write(p []byte) (int, error) {
-	if c.buf.Len()+len(p) > c.limit {
-		c.overflow = true
-		return 0, errors.New("output limit exceeded")
-	}
-	return c.buf.Write(p)
 }

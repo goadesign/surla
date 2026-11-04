@@ -182,10 +182,11 @@ func TestLoadProjectVerificationConfigDerivesTheStarterPlanFromHEAD(t *testing.T
 	})
 }
 
-// TestLoadProjectVerificationConfigNamesTheNextStep checks that every project
-// -project cannot use stops startup with an error saying what to do, instead
+// TestLoadProjectVerificationConfigRejectsUnusableProjects checks that every
+// project -project cannot use stops startup with an error, naming the next
+// step (git init, a commit, or the starter layout) where there is one, instead
 // of searching for another layout or starting without verification.
-func TestLoadProjectVerificationConfigNamesTheNextStep(t *testing.T) {
+func TestLoadProjectVerificationConfigRejectsUnusableProjects(t *testing.T) {
 	cases := []struct {
 		name    string
 		prepare func(t *testing.T) string
@@ -256,6 +257,24 @@ func TestLoadProjectVerificationConfigNamesTheNextStep(t *testing.T) {
 				return repo
 			},
 			wantErr: "printed more output than a startup read allows",
+		},
+		{
+			name: "partial clone without the committed go.mod",
+			prepare: func(t *testing.T) string {
+				src := newGitRepo(t)
+				writeStarter(t, src, "example.com/shop")
+				gitCommitAll(t, src, "starter")
+				runTestGit(t, src, "config", "uploadpack.allowfilter", "true")
+				clone := filepath.Join(newGitRepo(t), "partial")
+				runTestGit(t, src, "clone", "-q", "--filter=blob:none", "--no-checkout", "file://"+src, clone)
+				t.Cleanup(func() {
+					missing := exec.Command("git", "-C", clone, "--no-lazy-fetch", "cat-file", "-e", "HEAD:go.mod")
+					missing.Env = append(cleanGitEnv(), "GIT_CONFIG_GLOBAL=/dev/null")
+					assert.Error(t, missing.Run(), "startup must not have fetched the missing object")
+				})
+				return clone
+			},
+			wantErr: "check out HEAD there first",
 		},
 		{
 			name: "candidate command never committed",

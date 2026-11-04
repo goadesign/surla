@@ -288,15 +288,16 @@ func StarterLayout(rootGoMod, evalGoMod []byte) (Layout, error) {
 	if err != nil {
 		return Layout{}, err
 	}
-	evalMod, err := modfile.ParseLax("eval/go.mod", evalGoMod, nil)
+	evalFile := SuiteDir + "/go.mod"
+	evalMod, err := modfile.ParseLax(evalFile, evalGoMod, nil)
 	if err != nil {
-		return Layout{}, fmt.Errorf("parse eval/go.mod: %w", err)
+		return Layout{}, fmt.Errorf("parse %s: %w", evalFile, err)
 	}
 	if evalMod.Module == nil || evalMod.Module.Mod.Path == "" {
-		return Layout{}, errors.New("eval/go.mod does not declare a module path")
+		return Layout{}, fmt.Errorf("%s does not declare a module path", evalFile)
 	}
 	if want := modulePath + "/" + SuiteDir; evalMod.Module.Mod.Path != want {
-		return Layout{}, fmt.Errorf("eval/go.mod declares module %q, want %q", evalMod.Module.Mod.Path, want)
+		return Layout{}, fmt.Errorf("%s declares module %q, want %q", evalFile, evalMod.Module.Mod.Path, want)
 	}
 	return layout, nil
 }
