@@ -257,6 +257,16 @@ type BuildSpec struct {
 	LogFile string
 }
 
+// resolvedBuild is a BuildSpec whose directories resolveBuild has resolved to
+// symlink-free paths, with Out inside outDir. Only resolveBuild creates one.
+type resolvedBuild struct {
+	// spec holds the resolved paths; spec.Out is the absolute output file.
+	spec BuildSpec
+	// outDir is the resolved output directory, the only place besides
+	// spec.WorkDir that the build may write.
+	outDir string
+}
+
 // Build compiles source in the build sandbox. The Go toolchain may start its
 // own compiler, assembler and linker, but the build can read only SourceDir,
 // the toolchain, the read-only module cache, its own work and output
@@ -280,59 +290,68 @@ type BuildSpec struct {
 // group, which its supervisor stops; a caller without such a group passes a
 // runner that gives the build its own group and stops it.
 func Build(ctx context.Context, spec BuildSpec, run func(*exec.Cmd) error) error {
-	if runtime.GOOS != "darwin" {
-		return ErrIsolationUnavailable
-	}
-	if _, err := os.Stat(sandboxExec); err != nil {
-		return fmt.Errorf("%w: %v", ErrIsolationUnavailable, err)
-	}
-	paths := map[string]*string{
-		"source": &spec.SourceDir, "module": &spec.ModuleDir, "goroot": &spec.GOROOT,
-		"modcache": &spec.ModCache, "work": &spec.WorkDir,
-	}
-	for name, p := range paths {
-		resolved, err := filepath.EvalSymlinks(*p)
-		if err != nil {
-			return fmt.Errorf("resolve %s directory: %w", name, err)
-		}
-		*p = resolved
-	}
-	if rel, err := filepath.Rel(spec.SourceDir, spec.ModuleDir); err != nil || !filepath.IsLocal(rel) {
-		return fmt.Errorf("module directory %s is outside source directory %s", spec.ModuleDir, spec.SourceDir)
-	}
-	outDir, err := filepath.EvalSymlinks(filepath.Dir(spec.Out))
+	b, err := resolveBuild(spec)
 	if err != nil {
-		return fmt.Errorf("resolve output directory: %w", err)
+		return err
 	}
-	logFile, err := os.OpenFile(spec.LogFile, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
-	if err != nil {
-		return fmt.Errorf("open build log: %w", err)
-	}
-	defer logFile.Close()
-	goBin := filepath.Join(spec.GOROOT, "bin", "go")
-	profile := BuildProfile(spec.SourceDir, spec.GOROOT, spec.ModCache, spec.WorkDir, outDir)
-	cmd := exec.CommandContext(ctx, sandboxExec, "-p", profile, goBin, "build", "-trimpath",
-		"-o", filepath.Join(outDir, filepath.Base(spec.Out)), spec.Package)
-	cmd.Dir = spec.ModuleDir
-	cmd.Env = []string{
-		"PATH=" + filepath.Join(spec.GOROOT, "bin") + ":/usr/bin:/bin",
-		"HOME=" + spec.WorkDir,
-		"TMPDIR=" + spec.WorkDir,
-		"GOROOT=" + spec.GOROOT,
-		"GOCACHE=" + filepath.Join(spec.WorkDir, "gocache"),
-		"GOMODCACHE=" + spec.ModCache,
-		"GOTOOLCHAIN=local",
-		"GOFLAGS=-mod=readonly",
-		"GOPROXY=off",
-		"GONOSUMDB=*",
-		"GOTELEMETRY=off",
-		"CGO_ENABLED=0",
-	}
-	cmd.Stdout, cmd.Stderr = logFile, logFile
-	if err := run(cmd); err != nil {
+	if err := b.goRun(ctx, run, "build", "-trimpath"); err != nil {
 		return fmt.Errorf("sandboxed build of %s: %w", spec.Package, err)
 	}
 	return nil
+}
+
+// BuildTest compiles the tests of one candidate package into a single test
+// binary at spec.Out, in the same build sandbox, environment and process-group
+// contract as Build. It runs `go test -c -trimpath -vet=off`, so go vet
+// findings do not fail it, and a compile error in the package or its tests
+// fails it with the toolchain output in spec.LogFile. Test-only imports must
+// already be in go.mod, go.sum and ModCache, as for any Build.
+//
+// spec.Package must name one package directory inside ModuleDir: "." or a
+// path starting with "./" and containing no "..." pattern. Anything else, such
+// as an import path, "all", or a value the go command would read as a flag
+// such as -o or -c, is rejected before the toolchain runs.
+//
+// spec.Out must not exist when BuildTest is called, so that its absence
+// afterwards can only mean the package has no tests. BuildTest returns true
+// when it wrote the test binary, a regular file at spec.Out. A package without
+// _test.go files is not an error: BuildTest returns false and a nil error and
+// writes nothing.
+//
+// The caller runs the result only as a candidate: pin it with Pin and start
+// it with Exec, passing test flags such as -test.run and -test.timeout in
+// Spec.Args. Exec's sandbox forbids child processes, network access beyond
+// the assigned loopback ports, and file access outside Spec.StateDir beyond
+// what Exec documents, so a test that needs any of them fails inside the
+// sandbox instead of escaping it.
+func BuildTest(ctx context.Context, spec BuildSpec, run func(*exec.Cmd) error) (bool, error) {
+	if pkg := spec.Package; (pkg != "." && !strings.HasPrefix(pkg, "./")) || strings.Contains(pkg, "...") {
+		return false, fmt.Errorf("test build package %q is not one package path", spec.Package)
+	}
+	b, err := resolveBuild(spec)
+	if err != nil {
+		return false, err
+	}
+	out := b.spec.Out
+	switch _, err := os.Lstat(out); {
+	case err == nil:
+		return false, fmt.Errorf("test binary path %s must not exist before the build", out)
+	case !errors.Is(err, os.ErrNotExist):
+		return false, fmt.Errorf("inspect test binary path %s: %w", out, err)
+	}
+	if err := b.goRun(ctx, run, "test", "-c", "-trimpath", "-vet=off"); err != nil {
+		return false, fmt.Errorf("sandboxed test build of %s: %w", spec.Package, err)
+	}
+	info, err := os.Lstat(out)
+	switch {
+	case errors.Is(err, os.ErrNotExist):
+		return false, nil
+	case err != nil:
+		return false, fmt.Errorf("inspect test binary %s: %w", out, err)
+	case !info.Mode().IsRegular():
+		return false, fmt.Errorf("test binary %s is not a regular file", out)
+	}
+	return true, nil
 }
 
 // BuildProfile renders the build sandbox profile. Paths must be absolute and
@@ -446,6 +465,40 @@ func fileDigest(path string) (string, error) {
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
+// resolveBuild checks that the build sandbox is available and resolves every
+// directory in spec to its symlink-free path, placing Out in the resolved
+// output directory. The sandbox profile is written in those resolved paths, so
+// the toolchain sees the same paths the profile allows.
+func resolveBuild(spec BuildSpec) (resolvedBuild, error) {
+	if runtime.GOOS != "darwin" {
+		return resolvedBuild{}, ErrIsolationUnavailable
+	}
+	if _, err := os.Stat(sandboxExec); err != nil {
+		return resolvedBuild{}, fmt.Errorf("%w: %v", ErrIsolationUnavailable, err)
+	}
+	paths := map[string]*string{
+		"source": &spec.SourceDir, "module": &spec.ModuleDir, "goroot": &spec.GOROOT,
+		"modcache": &spec.ModCache, "work": &spec.WorkDir,
+	}
+	for name, p := range paths {
+		resolved, err := filepath.EvalSymlinks(*p)
+		if err != nil {
+			return resolvedBuild{}, fmt.Errorf("resolve %s directory: %w", name, err)
+		}
+		*p = resolved
+	}
+	if rel, err := filepath.Rel(spec.SourceDir, spec.ModuleDir); err != nil || !filepath.IsLocal(rel) {
+		return resolvedBuild{}, fmt.Errorf("module directory %s is outside source directory %s",
+			spec.ModuleDir, spec.SourceDir)
+	}
+	outDir, err := filepath.EvalSymlinks(filepath.Dir(spec.Out))
+	if err != nil {
+		return resolvedBuild{}, fmt.Errorf("resolve output directory: %w", err)
+	}
+	spec.Out = filepath.Join(outDir, filepath.Base(spec.Out))
+	return resolvedBuild{spec: spec, outDir: outDir}, nil
+}
+
 // resolvedArtifact returns the Artifact for a pinned copy with every symlink
 // in its path resolved, so the sandbox profile and the executed path agree.
 func resolvedArtifact(path, digest string) (Artifact, error) {
@@ -468,4 +521,41 @@ func resolvedOrSelf(path string) string {
 // quote renders s as a sandbox profile string literal.
 func quote(s string) string {
 	return strconv.Quote(s)
+}
+
+// goRun runs `go <args> -o <Out> <Package>` from ModuleDir in the build
+// sandbox, which may write only WorkDir and the output directory, with the
+// toolchain's output in LogFile. It returns run's error unwrapped, or an
+// "open build log" error when LogFile cannot be opened. The fixed
+// environment keeps the build offline (GOPROXY=off), on the selected toolchain
+// (GOTOOLCHAIN=local), unable to change go.mod (-mod=readonly), and free of
+// cgo, with HOME, TMPDIR and GOCACHE inside WorkDir.
+func (b resolvedBuild) goRun(ctx context.Context, run func(*exec.Cmd) error, args ...string) error {
+	spec := b.spec
+	logFile, err := os.OpenFile(spec.LogFile, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
+	if err != nil {
+		return fmt.Errorf("open build log: %w", err)
+	}
+	defer logFile.Close()
+	goBin := filepath.Join(spec.GOROOT, "bin", "go")
+	profile := BuildProfile(spec.SourceDir, spec.GOROOT, spec.ModCache, spec.WorkDir, b.outDir)
+	cmdArgs := append([]string{"-p", profile, goBin}, args...)
+	cmd := exec.CommandContext(ctx, sandboxExec, append(cmdArgs, "-o", spec.Out, spec.Package)...)
+	cmd.Dir = spec.ModuleDir
+	cmd.Env = []string{
+		"PATH=" + filepath.Join(spec.GOROOT, "bin") + ":/usr/bin:/bin",
+		"HOME=" + spec.WorkDir,
+		"TMPDIR=" + spec.WorkDir,
+		"GOROOT=" + spec.GOROOT,
+		"GOCACHE=" + filepath.Join(spec.WorkDir, "gocache"),
+		"GOMODCACHE=" + spec.ModCache,
+		"GOTOOLCHAIN=local",
+		"GOFLAGS=-mod=readonly",
+		"GOPROXY=off",
+		"GONOSUMDB=*",
+		"GOTELEMETRY=off",
+		"CGO_ENABLED=0",
+	}
+	cmd.Stdout, cmd.Stderr = logFile, logFile
+	return run(cmd)
 }
