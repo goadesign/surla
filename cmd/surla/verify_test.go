@@ -159,17 +159,17 @@ func TestWriteVerifySummaryKeepsJSONOnStdoutAndHoldoutsHidden(t *testing.T) {
 	}{
 		{
 			name: "full report names every non-passing scenario",
-			want: "surla: verification did not pass: 1/3 scenarios passed; failed: 1, not run: 1, harness errors: 0; " +
+			want: "surla: verification report did not pass: 1/3 scenarios passed; failed: 1, not run: 1, harness errors: 0; " +
 				`not passing: "cross_customer_refund_refused", "slow\nrefund" (report abc123)` + "\n",
 		},
 		{
 			name: "builder view names holdouts only by number", builderView: true,
-			want: "surla: verification did not pass: 1/3 scenarios passed; failed: 1, not run: 1, harness errors: 0; " +
+			want: "surla: verification report did not pass: 1/3 scenarios passed; failed: 1, not run: 1, harness errors: 0; " +
 				`not passing: "holdout-1", "slow\nrefund" (report abc123)` + "\n",
 		},
 		{
 			name: "a failed suite run is said", suiteExit: 2, builderView: true,
-			want: "surla: verification did not pass: 1/3 scenarios passed; failed: 1, not run: 1, harness errors: 0; " +
+			want: "surla: verification report did not pass: 1/3 scenarios passed; failed: 1, not run: 1, harness errors: 0; " +
 				`the suite run itself failed; not passing: "holdout-1", "slow\nrefund" (report abc123)` + "\n",
 		},
 	}
@@ -191,6 +191,9 @@ func TestWriteVerifySummaryKeepsJSONOnStdoutAndHoldoutsHidden(t *testing.T) {
 		})
 	}
 
+	// A passing report can also be the partial report of a run stopped after
+	// its suite passed; the line describes the report, and runVerify's
+	// interruption error follows it.
 	t.Run("a passing report has no not-passing list", func(t *testing.T) {
 		passing := verify.Report{
 			Digest: "def456", Passed: true,
@@ -199,7 +202,7 @@ func TestWriteVerifySummaryKeepsJSONOnStdoutAndHoldoutsHidden(t *testing.T) {
 		}
 		var stderr bytes.Buffer
 		writeVerifySummary(&stderr, passing, false)
-		assert.Equal(t, "surla: verification passed: 1/1 scenarios passed; failed: 0, not run: 0, harness errors: 0 (report def456)\n", stderr.String())
+		assert.Equal(t, "surla: verification report passed: 1/1 scenarios passed; failed: 0, not run: 0, harness errors: 0 (report def456)\n", stderr.String())
 	})
 }
 

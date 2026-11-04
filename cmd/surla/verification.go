@@ -147,7 +147,9 @@ func runVerify(args []string) error {
 // writeVerifySummary writes one human-readable line about report to w, which
 // runVerify passes as stderr so stdout stays the report's JSON alone. The line
 // gives the verdict, the scenario counts, the scenarios that did not pass and
-// the report digest. Each scenario ID is Go-quoted, because suites may declare
+// the report digest. The verdict is the report's own: a run stopped after its
+// suite passed keeps an all-passing partial report, yet the command still
+// fails as interrupted. Each scenario ID is Go-quoted, because suites may declare
 // IDs that contain spaces or line breaks and the summary must stay one line.
 // With builderView it names scenarios as the builder view does, so a holdout
 // appears only as holdout-<n>. A failed write is ignored:
@@ -173,7 +175,7 @@ func writeVerifySummary(w io.Writer, report verify.Report, builderView bool) {
 		verdict = "did not pass"
 	}
 	c := report.Counts
-	line := fmt.Sprintf("surla: verification %s: %d/%d scenarios passed; failed: %d, not run: %d, harness errors: %d",
+	line := fmt.Sprintf("surla: verification report %s: %d/%d scenarios passed; failed: %d, not run: %d, harness errors: %d",
 		verdict, c.Passed, c.Required, c.Failed, c.NotRun, c.HarnessError)
 	if view.SuiteFailed {
 		line += "; the suite run itself failed"
