@@ -26,6 +26,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/goadesign/surla/internal/abspath"
 	"goa.design/goa-ai/eval"
 )
 
@@ -197,7 +198,7 @@ func Exec(ctx context.Context, a Artifact, spec Spec) (*Process, error) {
 	if digest != a.digest {
 		return nil, fmt.Errorf("%w: %s is %s, pinned %s", ErrDigestMismatch, a.path, digest, a.digest)
 	}
-	stateDir, err := evalAbsSymlinks(spec.StateDir)
+	stateDir, err := abspath.Eval(spec.StateDir)
 	if err != nil {
 		return nil, fmt.Errorf("resolve state directory: %w", err)
 	}
@@ -500,7 +501,7 @@ func resolveBuild(spec BuildSpec) (resolvedBuild, error) {
 		"modcache": &spec.ModCache, "work": &spec.WorkDir,
 	}
 	for name, p := range paths {
-		resolved, err := evalAbsSymlinks(*p)
+		resolved, err := abspath.Eval(*p)
 		if err != nil {
 			return resolvedBuild{}, fmt.Errorf("resolve %s directory: %w", name, err)
 		}
@@ -517,7 +518,7 @@ func resolveBuild(spec BuildSpec) (resolvedBuild, error) {
 	if err != nil {
 		return resolvedBuild{}, fmt.Errorf("resolve output directory: %w", err)
 	}
-	outDir, err := evalAbsSymlinks(filepath.Dir(absOut))
+	outDir, err := abspath.Eval(filepath.Dir(absOut))
 	if err != nil {
 		return resolvedBuild{}, fmt.Errorf("resolve output directory: %w", err)
 	}
@@ -525,25 +526,11 @@ func resolveBuild(spec BuildSpec) (resolvedBuild, error) {
 	return resolvedBuild{spec: spec, outDir: outDir}, nil
 }
 
-// evalAbsSymlinks resolves path to an absolute, symlink-free path, rejecting an
-// empty path with os.ErrNotExist instead of resolving it to the working
-// directory.
-func evalAbsSymlinks(path string) (string, error) {
-	if path == "" {
-		return "", os.ErrNotExist
-	}
-	abs, err := filepath.Abs(path)
-	if err != nil {
-		return "", err
-	}
-	return filepath.EvalSymlinks(abs)
-}
-
 // resolvedArtifact returns the Artifact for a pinned copy with an absolute,
 // symlink-free path, so a caller changing directories cannot change the binary
 // the sandbox profile permits or the process executes.
 func resolvedArtifact(path, digest string) (Artifact, error) {
-	resolved, err := evalAbsSymlinks(path)
+	resolved, err := abspath.Eval(path)
 	if err != nil {
 		return Artifact{}, fmt.Errorf("resolve pinned copy: %w", err)
 	}

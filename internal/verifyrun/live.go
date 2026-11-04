@@ -16,6 +16,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/goadesign/surla/internal/abspath"
 	"github.com/goadesign/surla/internal/procgroup"
 	"github.com/goadesign/surla/internal/verify"
 	"github.com/goadesign/surla/verify/candidate"
@@ -175,11 +176,7 @@ func LaunchLive(root string, plan verify.Plan, key string, command, env []string
 	if err := os.MkdirAll(root, 0o700); err != nil {
 		return nil, fmt.Errorf("create live root: %w", err)
 	}
-	absRoot, err := filepath.Abs(root)
-	if err != nil {
-		return nil, fmt.Errorf("resolve live root: %w", err)
-	}
-	resolvedRoot, err := filepath.EvalSymlinks(absRoot)
+	resolvedRoot, err := abspath.Eval(root)
 	if err != nil {
 		return nil, fmt.Errorf("resolve live root symlinks: %w", err)
 	}

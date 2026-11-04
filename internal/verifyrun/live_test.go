@@ -242,21 +242,34 @@ func TestLaunchLiveResolvesItsRoot(t *testing.T) {
 	t.Setenv(liveFakeEnv, "ready")
 	base := t.TempDir()
 	t.Chdir(base)
-	require.NoError(t, os.Mkdir("real-cards", 0o700))
-	require.NoError(t, os.Symlink("real-cards", "alias"))
+	require.NoError(t, os.MkdirAll("real-cards/nested", 0o700))
+	require.NoError(t, os.Mkdir("live", 0o700))
+	require.NoError(t, os.Symlink("real-cards/nested", "alias"))
+	physicalBase, err := filepath.EvalSymlinks(base)
+	require.NoError(t, err)
 	self, err := os.Executable()
 	require.NoError(t, err)
-	for _, root := range []string{filepath.Join(".surla", "cards", "live"), filepath.Join("alias", "live")} {
-		t.Run(root, func(t *testing.T) {
+	cases := []struct {
+		name string
+		// root preserves the caller's path before symlink resolution.
+		root string
+		// physicalRoot is the directory where the live target must be created.
+		physicalRoot string
+	}{
+		{"relative", ".surla/cards/live", filepath.Join(physicalBase, ".surla", "cards", "live")},
+		{"symlink", "alias/live", filepath.Join(physicalBase, "real-cards", "nested", "live")},
+		{"relative_parent", "alias/../live", filepath.Join(physicalBase, "real-cards", "live")},
+		{"absolute_parent", base + "/alias/../live", filepath.Join(physicalBase, "real-cards", "live")},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
 			ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 			defer cancel()
-			p, err := startLive(ctx, root, verify.Plan{}, "secret-key", []string{self}, os.Environ())
+			p, err := startLive(ctx, tc.root, verify.Plan{}, "secret-key", []string{self}, os.Environ())
 			require.NoError(t, err)
 			t.Cleanup(func() { assert.NoError(t, p.Stop()) })
-			resolvedRoot, err := filepath.EvalSymlinks(filepath.Join(base, root))
-			require.NoError(t, err)
 			assert.True(t, filepath.IsAbs(p.Dir()))
-			assert.Equal(t, resolvedRoot, filepath.Dir(p.Dir()))
+			assert.Equal(t, tc.physicalRoot, filepath.Dir(p.Dir()))
 			var request LiveRequest
 			require.NoError(t, decodeLiveRequest(p.Dir(), &request))
 			assert.Equal(t, filepath.Join(p.Dir(), liveWorkDir), request.Plan.WorkDir)

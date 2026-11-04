@@ -169,8 +169,8 @@ func TestPinKeepsItsBinaryAfterTheCallerChangesDirectories(t *testing.T) {
 	assert.Equal(t, resolved, art.path)
 }
 
-// TestExecUsesRelativeSymlinkedState resolves the caller's state path before
-// building its sandbox policy and changing the candidate's working directory.
+// TestExecUsesRelativeSymlinkedState preserves the physical state directory
+// selected by relative paths and by symlinks followed by parent components.
 func TestExecUsesRelativeSymlinkedState(t *testing.T) {
 	if runtime.GOOS != "darwin" {
 		t.Skip("the sandbox is implemented with sandbox-exec on macOS")
@@ -180,39 +180,61 @@ func TestExecUsesRelativeSymlinkedState(t *testing.T) {
 	t.Chdir(base)
 	require.NoError(t, os.Mkdir("state", 0o700))
 	require.NoError(t, os.Symlink("state", "state-link"))
-	state, err := filepath.EvalSymlinks(filepath.Join(base, "state"))
+	require.NoError(t, os.MkdirAll("target/nested", 0o700))
+	require.NoError(t, os.Mkdir("target/state", 0o700))
+	require.NoError(t, os.Symlink("target/nested", "alias"))
+	physicalBase, err := filepath.EvalSymlinks(base)
 	require.NoError(t, err)
-	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
-	defer cancel()
-	proc, err := Exec(ctx, probe, Spec{
-		Args:     []string{"write:relative.txt", "env:HOME", "env:TMPDIR"},
-		StateDir: "state-link",
-		LogFile:  "exec.log",
-	})
-	require.NoError(t, err)
-	t.Cleanup(func() { assert.NoError(t, proc.Kill()) })
-	out, truncated, err := excerptAfterExit(proc)
-	require.NoError(t, err)
-	require.False(t, truncated)
-	results := make(map[string]probeResult)
-	scanner := bufio.NewScanner(strings.NewReader(out))
-	for scanner.Scan() {
-		var result probeResult
-		require.NoError(t, json.Unmarshal(scanner.Bytes(), &result))
-		results[result.Action] = result
+	cases := []struct {
+		name string
+		// stateArg keeps the caller's spelling, including symlinks before "..".
+		stateArg string
+		// state is the physical directory that spelling must select.
+		state string
+	}{
+		{"relative_symlink", "state-link", filepath.Join(physicalBase, "state")},
+		{"relative_parent", "alias/../state", filepath.Join(physicalBase, "target", "state")},
+		{"absolute_parent", base + "/alias/../state", filepath.Join(physicalBase, "target", "state")},
 	}
-	require.NoError(t, scanner.Err())
-	require.Len(t, results, 3)
-	for _, action := range []string{"write:relative.txt", "env:HOME", "env:TMPDIR"} {
-		assert.True(t, results[action].Allowed, action)
-	}
-	assert.Equal(t, state, results["env:HOME"].Detail)
-	assert.Equal(t, state, results["env:TMPDIR"].Detail)
-	assert.FileExists(t, filepath.Join(state, "relative.txt"))
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+			defer cancel()
+			writeAction := "write:" + tc.name + ".txt"
+			proc, err := Exec(ctx, probe, Spec{
+				Args:     []string{writeAction, "env:HOME", "env:TMPDIR"},
+				StateDir: tc.stateArg,
+				LogFile:  tc.name + ".log",
+			})
+			require.NoError(t, err)
+			t.Cleanup(func() { assert.NoError(t, proc.Kill()) })
+			out, truncated, err := excerptAfterExit(proc)
+			require.NoError(t, err)
+			require.False(t, truncated)
+			results := make(map[string]probeResult)
+			scanner := bufio.NewScanner(strings.NewReader(out))
+			for scanner.Scan() {
+				var result probeResult
+				require.NoError(t, json.Unmarshal(scanner.Bytes(), &result))
+				results[result.Action] = result
+			}
+			require.NoError(t, scanner.Err())
+			require.Len(t, results, 3)
+			for _, action := range []string{writeAction, "env:HOME", "env:TMPDIR"} {
+				assert.True(t, results[action].Allowed, action)
+			}
+			assert.Equal(t, tc.state, results["env:HOME"].Detail)
+			assert.Equal(t, tc.state, results["env:TMPDIR"].Detail)
+			assert.FileExists(t, filepath.Join(tc.state, tc.name+".txt"))
 
-	inside, err := Exec(ctx, probe, Spec{StateDir: "state-link", LogFile: "state-link/inside.log"})
-	assert.Nil(t, inside)
-	assert.ErrorContains(t, err, "outside the candidate state directory")
+			inside, err := Exec(ctx, probe, Spec{
+				StateDir: tc.stateArg,
+				LogFile:  filepath.Join(tc.state, "inside.log"),
+			})
+			assert.Nil(t, inside)
+			assert.ErrorContains(t, err, "outside the candidate state directory")
+		})
+	}
 }
 
 func TestExcerptIsBoundedAndReportsTruncation(t *testing.T) {
