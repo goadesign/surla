@@ -470,9 +470,35 @@ func TestBuildTestRejectsBeforeRunningTheToolchain(t *testing.T) {
 		{"missing package directory", "./missing", filepath.Join(outDir, "new.test"), "", "inspect test package directory"},
 		{"existing output file", ".", existing, "", "must not exist"},
 		{"existing output symlink", ".", link, "", "must not exist"},
-		{"log file equals output path", ".", filepath.Join(outDir, "same.test"), filepath.Join(outDir, "same.test"), "must not be the test binary path"},
-		{"log file aliases output path through symlinked directory", ".", filepath.Join(outDir, "alias-dir.test"), filepath.Join(symOutDir, "alias-dir.test"), "must not be the test binary path"},
-		{"log file symlink points to output path", ".", aliasLinkTarget, logLinkToOut, "must not be the test binary path"},
+		{"log file equals output path", ".", filepath.Join(outDir, "same.test"), filepath.Join(outDir, "same.test"), "must not be the output binary"},
+		{"log file aliases output path through symlinked directory", ".", filepath.Join(outDir, "alias-dir.test"), filepath.Join(symOutDir, "alias-dir.test"), "must not be the output binary"},
+		{"log file symlink points to output path", ".", aliasLinkTarget, logLinkToOut, "must not be the output binary"},
+	}
+	if _, err := os.Stat(filepath.Join(outDir, "EXISTING.TEST")); err == nil {
+		cases = append(cases, struct {
+			name    string
+			pkg     string
+			out     string
+			log     string
+			wantErr string
+		}{
+			"log file aliases output path by case on case-insensitive filesystem",
+			".",
+			filepath.Join(outDir, "case-alias.test"),
+			filepath.Join(outDir, "CASE-ALIAS.TEST"),
+			"must not be the output binary",
+		})
+	} else {
+		t.Run("distinct case paths are allowed on case-sensitive filesystem", func(t *testing.T) {
+			spec := testBuildSpec(t, mod, mod, filepath.Join(outDir, "case-distinct.test"), filepath.Join(outDir, "CASE-DISTINCT.TEST"))
+			var ran bool
+			_, err := BuildTest(t.Context(), spec, func(*exec.Cmd) error {
+				ran = true
+				return nil
+			})
+			require.NoError(t, err)
+			assert.True(t, ran)
+		})
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

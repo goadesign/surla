@@ -346,13 +346,6 @@ func BuildTest(ctx context.Context, spec BuildSpec, run func(*exec.Cmd) error) (
 	case !errors.Is(err, os.ErrNotExist):
 		return false, fmt.Errorf("inspect test binary path %s: %w", out, err)
 	}
-	logPath, err := resolveFilePath(b.spec.LogFile)
-	if err != nil {
-		return false, fmt.Errorf("resolve build log path: %w", err)
-	}
-	if logPath == out {
-		return false, fmt.Errorf("test build log %s must not be the test binary path %s", b.spec.LogFile, out)
-	}
 	if err := b.goRun(ctx, run, "test", "-c", "-trimpath", "-vet=off"); err != nil {
 		return false, fmt.Errorf("sandboxed test build of %s: %w", spec.Package, err)
 	}
@@ -532,44 +525,6 @@ func resolvedOrSelf(path string) string {
 	return path
 }
 
-// resolveFilePath returns the symlink-free absolute path that opening path for
-// creation would reach, resolving symlinks in ancestor directories and any
-// symlink chain at the final path element before the target file exists.
-func resolveFilePath(path string) (string, error) {
-	if path == "" {
-		return "", errors.New("empty path")
-	}
-	cur, err := filepath.Abs(path)
-	if err != nil {
-		return "", err
-	}
-	for range 40 {
-		dir, err := filepath.EvalSymlinks(filepath.Dir(cur))
-		if err != nil {
-			return "", err
-		}
-		cur = filepath.Join(dir, filepath.Base(cur))
-		info, err := os.Lstat(cur)
-		switch {
-		case errors.Is(err, os.ErrNotExist):
-			return cur, nil
-		case err != nil:
-			return "", err
-		case info.Mode()&os.ModeSymlink == 0:
-			return cur, nil
-		}
-		target, err := os.Readlink(cur)
-		if err != nil {
-			return "", err
-		}
-		if !filepath.IsAbs(target) {
-			target = filepath.Join(dir, target)
-		}
-		cur = filepath.Clean(target)
-	}
-	return "", fmt.Errorf("too many symlinks resolving %s", path)
-}
-
 // quote renders s as a sandbox profile string literal.
 func quote(s string) string {
 	return strconv.Quote(s)
@@ -577,18 +532,33 @@ func quote(s string) string {
 
 // goRun runs `go <args> -o <Out> <Package>` from ModuleDir in the build
 // sandbox, which may write only WorkDir and the output directory, with the
-// toolchain's output in LogFile. It returns run's error unwrapped, or an
-// "open build log" error when LogFile cannot be opened. The fixed
+// toolchain's output in LogFile. It returns run's error unwrapped, an
+// "open build log" error when LogFile cannot be opened, or an error when
+// opening LogFile resolves to the same file as Out. The fixed
 // environment keeps the build offline (GOPROXY=off), on the selected toolchain
 // (GOTOOLCHAIN=local), unable to change go.mod (-mod=readonly), and free of
 // cgo, with HOME, TMPDIR and GOCACHE inside WorkDir.
 func (b resolvedBuild) goRun(ctx context.Context, run func(*exec.Cmd) error, args ...string) error {
 	spec := b.spec
+	_, outStatErr := os.Lstat(spec.Out)
 	logFile, err := os.OpenFile(spec.LogFile, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
 	if err != nil {
 		return fmt.Errorf("open build log: %w", err)
 	}
 	defer logFile.Close()
+	logInfo, err := logFile.Stat()
+	if err != nil {
+		return fmt.Errorf("stat build log: %w", err)
+	}
+	if outInfo, err := os.Stat(spec.Out); err == nil && os.SameFile(logInfo, outInfo) {
+		aliasErr := fmt.Errorf("build log %s must not be the output binary %s", spec.LogFile, spec.Out)
+		if errors.Is(outStatErr, os.ErrNotExist) {
+			if rmErr := os.Remove(spec.Out); rmErr != nil {
+				return errors.Join(aliasErr, rmErr)
+			}
+		}
+		return aliasErr
+	}
 	goBin := filepath.Join(spec.GOROOT, "bin", "go")
 	profile := BuildProfile(spec.SourceDir, spec.GOROOT, spec.ModCache, spec.WorkDir, b.outDir)
 	cmdArgs := append([]string{"-p", profile, goBin}, args...)
