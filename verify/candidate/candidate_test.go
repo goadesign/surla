@@ -444,6 +444,10 @@ func TestBuildTestRejectsBeforeRunningTheToolchain(t *testing.T) {
 		"lib.go":      "package lib\n",
 		"lib_test.go": "package lib\n\nimport \"testing\"\n\nfunc TestV(t *testing.T) {}\n",
 	})
+	noTestsMod := writeModule(t, map[string]string{
+		"go.mod": libGoMod,
+		"lib.go": "package lib\n",
+	})
 	outDir := t.TempDir()
 	existing := filepath.Join(outDir, "existing.test")
 	require.NoError(t, os.WriteFile(existing, []byte("stale"), 0o600))
@@ -454,45 +458,72 @@ func TestBuildTestRejectsBeforeRunningTheToolchain(t *testing.T) {
 	aliasLinkTarget := filepath.Join(outDir, "alias-link.test")
 	logLinkToOut := filepath.Join(t.TempDir(), "build.log")
 	require.NoError(t, os.Symlink(aliasLinkTarget, logLinkToOut))
-	cases := []struct {
+	workParent := t.TempDir()
+	workDir := filepath.Join(workParent, "work-dir")
+	require.NoError(t, os.MkdirAll(filepath.Join(workDir, "gocache"), 0o700))
+	symWorkDir := filepath.Join(t.TempDir(), "sym-work")
+	require.NoError(t, os.Symlink(workDir, symWorkDir))
+	type rejectCase struct {
 		name    string
+		modDir  string
 		pkg     string
 		out     string
+		work    string
 		log     string
 		wantErr string
-	}{
-		{"package pattern", "./...", filepath.Join(outDir, "new.test"), "", "is not one package path"},
-		{"parent traversal package", "./../outside", filepath.Join(outDir, "new.test"), "", "is not one package path"},
-		{"output flag as package", "-o=" + filepath.Join(outDir, "other.test"), filepath.Join(outDir, "new.test"), "", "is not one package path"},
-		{"compile flag as package", "-c=false", filepath.Join(outDir, "new.test"), "", "is not one package path"},
-		{"import path as package", "fmt", filepath.Join(outDir, "new.test"), "", "is not one package path"},
-		{"source file as package", "./lib.go", filepath.Join(outDir, "new.test"), "", "is not a directory"},
-		{"missing package directory", "./missing", filepath.Join(outDir, "new.test"), "", "inspect test package directory"},
-		{"existing output file", ".", existing, "", "must not exist"},
-		{"existing output symlink", ".", link, "", "must not exist"},
-		{"log file equals output path", ".", filepath.Join(outDir, "same.test"), filepath.Join(outDir, "same.test"), "must not be the output binary"},
-		{"log file aliases output path through symlinked directory", ".", filepath.Join(outDir, "alias-dir.test"), filepath.Join(symOutDir, "alias-dir.test"), "must not be the output binary"},
-		{"log file symlink points to output path", ".", aliasLinkTarget, logLinkToOut, "must not be the output binary"},
+	}
+	cases := []rejectCase{
+		{name: "package pattern", pkg: "./...", out: filepath.Join(outDir, "new.test"), wantErr: "is not one package path"},
+		{name: "parent traversal package", pkg: "./../outside", out: filepath.Join(outDir, "new.test"), wantErr: "is not one package path"},
+		{name: "output flag as package", pkg: "-o=" + filepath.Join(outDir, "other.test"), out: filepath.Join(outDir, "new.test"), wantErr: "is not one package path"},
+		{name: "compile flag as package", pkg: "-c=false", out: filepath.Join(outDir, "new.test"), wantErr: "is not one package path"},
+		{name: "import path as package", pkg: "fmt", out: filepath.Join(outDir, "new.test"), wantErr: "is not one package path"},
+		{name: "source file as package", pkg: "./lib.go", out: filepath.Join(outDir, "new.test"), wantErr: "is not a directory"},
+		{name: "missing package directory", pkg: "./missing", out: filepath.Join(outDir, "new.test"), wantErr: "inspect test package directory"},
+		{name: "existing output file", pkg: ".", out: existing, wantErr: "must not exist"},
+		{name: "existing output symlink", pkg: ".", out: link, wantErr: "must not exist"},
+		{name: "output path inside work directory", pkg: ".", out: filepath.Join(workDir, "lib.test"), work: workDir, wantErr: "must lie outside work directory"},
+		{name: "output path at GOCACHE README in package without tests", modDir: noTestsMod, pkg: ".", out: filepath.Join(workDir, "gocache", "README"), work: workDir, wantErr: "must lie outside work directory"},
+		{name: "output path inside symlinked work directory", modDir: noTestsMod, pkg: ".", out: filepath.Join(symWorkDir, "gocache", "README"), work: workDir, wantErr: "must lie outside work directory"},
+		{name: "log file equals output path", pkg: ".", out: filepath.Join(outDir, "same.test"), log: filepath.Join(outDir, "same.test"), wantErr: "must not be the output binary"},
+		{name: "log file aliases output path through symlinked directory", pkg: ".", out: filepath.Join(outDir, "alias-dir.test"), log: filepath.Join(symOutDir, "alias-dir.test"), wantErr: "must not be the output binary"},
+		{name: "log file symlink points to output path", pkg: ".", out: aliasLinkTarget, log: logLinkToOut, wantErr: "must not be the output binary"},
 	}
 	if _, err := os.Stat(filepath.Join(outDir, "EXISTING.TEST")); err == nil {
-		cases = append(cases, struct {
-			name    string
-			pkg     string
-			out     string
-			log     string
-			wantErr string
-		}{
-			"log file aliases output path by case on case-insensitive filesystem",
-			".",
-			filepath.Join(outDir, "case-alias.test"),
-			filepath.Join(outDir, "CASE-ALIAS.TEST"),
-			"must not be the output binary",
-		})
+		cases = append(cases,
+			rejectCase{
+				name:    "log file aliases output path by case on case-insensitive filesystem",
+				pkg:     ".",
+				out:     filepath.Join(outDir, "case-alias.test"),
+				log:     filepath.Join(outDir, "CASE-ALIAS.TEST"),
+				wantErr: "must not be the output binary",
+			},
+			rejectCase{
+				name:    "output path inside case-aliased work directory on case-insensitive filesystem",
+				modDir:  noTestsMod,
+				pkg:     ".",
+				out:     filepath.Join(workParent, "WORK-DIR", "gocache", "README"),
+				work:    workDir,
+				wantErr: "must lie outside work directory",
+			},
+		)
 	} else {
 		t.Run("distinct case paths are allowed on case-sensitive filesystem", func(t *testing.T) {
 			spec := testBuildSpec(t, mod, mod, filepath.Join(outDir, "case-distinct.test"), filepath.Join(outDir, "CASE-DISTINCT.TEST"))
 			var ran bool
 			_, err := BuildTest(t.Context(), spec, func(*exec.Cmd) error {
+				ran = true
+				return nil
+			})
+			require.NoError(t, err)
+			assert.True(t, ran)
+
+			caseWorkOutDir := filepath.Join(workParent, "WORK-DIR", "gocache")
+			require.NoError(t, os.MkdirAll(caseWorkOutDir, 0o700))
+			spec = testBuildSpec(t, noTestsMod, noTestsMod, filepath.Join(caseWorkOutDir, "README"), filepath.Join(t.TempDir(), "build.log"))
+			spec.WorkDir = workDir
+			ran = false
+			_, err = BuildTest(t.Context(), spec, func(*exec.Cmd) error {
 				ran = true
 				return nil
 			})
@@ -506,7 +537,14 @@ func TestBuildTestRejectsBeforeRunningTheToolchain(t *testing.T) {
 			if logPath == "" {
 				logPath = filepath.Join(t.TempDir(), "build.log")
 			}
-			spec := testBuildSpec(t, mod, mod, c.out, logPath)
+			modDir := c.modDir
+			if modDir == "" {
+				modDir = mod
+			}
+			spec := testBuildSpec(t, modDir, modDir, c.out, logPath)
+			if c.work != "" {
+				spec.WorkDir = c.work
+			}
 			spec.Package = c.pkg
 			_, err := BuildTest(t.Context(), spec, func(*exec.Cmd) error {
 				t.Fatal("the toolchain must not run")

@@ -312,11 +312,11 @@ func Build(ctx context.Context, spec BuildSpec, run func(*exec.Cmd) error) error
 // as an import path, "all", or a value the go command would read as a flag
 // such as -o or -c, is rejected before the toolchain runs.
 //
-// spec.Out must not exist when BuildTest is called, so that its absence
-// afterwards can only mean the package has no tests. BuildTest returns true
-// when it wrote the test binary, a regular file at spec.Out. A package without
-// _test.go files is not an error: BuildTest returns false and a nil error and
-// writes nothing.
+// spec.Out must lie outside spec.WorkDir and must not exist when BuildTest is
+// called, so that its absence afterwards can only mean the package has no
+// tests. BuildTest returns true when it wrote the test binary, a regular file
+// at spec.Out. A package without _test.go files is not an error: BuildTest
+// returns false and a nil error and writes nothing.
 //
 // The caller runs the result only as a candidate: pin it with Pin and start
 // it with Exec, passing test flags such as -test.run and -test.timeout in
@@ -340,6 +340,13 @@ func BuildTest(ctx context.Context, spec BuildSpec, run func(*exec.Cmd) error) (
 		return false, fmt.Errorf("test build package %q is not a directory", spec.Package)
 	}
 	out := b.spec.Out
+	inWork, err := withinDir(b.outDir, b.spec.WorkDir)
+	if err != nil {
+		return false, fmt.Errorf("inspect test output directory %s: %w", b.outDir, err)
+	}
+	if inWork {
+		return false, fmt.Errorf("test binary path %s must lie outside work directory %s", out, b.spec.WorkDir)
+	}
 	switch _, err := os.Lstat(out); {
 	case err == nil:
 		return false, fmt.Errorf("test binary path %s must not exist before the build", out)
@@ -523,6 +530,30 @@ func resolvedOrSelf(path string) string {
 		return r
 	}
 	return path
+}
+
+// withinDir reports whether dir is root or a subdirectory inside root on the
+// filesystem, comparing directory identity with os.SameFile at each ancestor so
+// symlinks and case-insensitive directory aliases cannot disguise containment.
+func withinDir(dir, root string) (bool, error) {
+	rootInfo, err := os.Stat(root)
+	if err != nil {
+		return false, err
+	}
+	for cur := filepath.Clean(dir); ; {
+		curInfo, err := os.Stat(cur)
+		if err != nil {
+			return false, err
+		}
+		if os.SameFile(curInfo, rootInfo) {
+			return true, nil
+		}
+		parent := filepath.Dir(cur)
+		if parent == cur {
+			return false, nil
+		}
+		cur = parent
+	}
 }
 
 // quote renders s as a sandbox profile string literal.
