@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -45,6 +46,35 @@ type verificationFile struct {
 	// Timeout is how long a run may take, as a Go duration such as "30m".
 	Timeout string `json:"timeout"`
 }
+
+// cappedBuffer collects at most limit bytes of one git query's output stream.
+type cappedBuffer struct {
+	// buf holds the bytes kept so far.
+	buf bytes.Buffer
+	// limit is the most bytes buf may hold.
+	limit int
+	// keepPrefix makes writes past limit succeed and be dropped, keeping the
+	// first limit bytes, instead of failing the command.
+	keepPrefix bool
+	// overflow reports that the stream exceeded limit.
+	overflow bool
+}
+
+// defaultProjectVerifyTimeout is the CP4 verification timeout derived for
+// `surla serve -project <dir>`, matching the starter README.
+const defaultProjectVerifyTimeout = 30 * time.Minute
+
+// gitReadTimeout bounds each read-only git query that `surla serve -project`
+// makes at startup, so an unresponsive repository stops startup with an error.
+const gitReadTimeout = 30 * time.Second
+
+// gitReadMaxOutput bounds the stdout of each startup git query. The largest
+// is a committed go.mod file; a larger one stops startup with an error.
+const gitReadMaxOutput = 1 << 20
+
+// gitReadMaxStderr bounds how much of a failed git query's stderr is kept for
+// the startup error message.
+const gitReadMaxStderr = 4 << 10
 
 // runVerifyRun runs one internal role started by verifyrun: `surla verify-run
 // supervise <dir>` or `surla verify-run execute <dir>` for a verification run
@@ -188,10 +218,6 @@ func writeVerifySummary(w io.Writer, report verify.Report, builderView bool) {
 	fmt.Fprintf(w, "%s (report %s)\n", line, report.Digest)
 }
 
-// defaultProjectVerifyTimeout is the CP4 verification timeout derived for
-// `surla serve -project <dir>`, matching the starter README.
-const defaultProjectVerifyTimeout = 30 * time.Minute
-
 // resolveVerificationConfig selects and loads the operator's CP3/CP4 target
 // configuration from either -project or -verification-config, rejecting
 // supplying both flags at once.
@@ -219,7 +245,14 @@ func loadProjectVerificationConfig(projectDir string) (*controlplane.Verificatio
 	if !info.IsDir() {
 		return nil, fmt.Errorf("-project %s is not a directory", projectDir)
 	}
-	projectRoot, err := filepath.EvalSymlinks(projectDir)
+	// EvalSymlinks keeps a relative path relative, and Git reports an absolute
+	// repository root, so resolve the directory from the working directory
+	// first: -project . names the directory surla serve started in.
+	absProject, err := filepath.Abs(projectDir)
+	if err != nil {
+		return nil, fmt.Errorf("resolve -project %s: %w", projectDir, err)
+	}
+	projectRoot, err := filepath.EvalSymlinks(absProject)
 	if err != nil {
 		return nil, fmt.Errorf("resolve -project %s: %w", projectDir, err)
 	}
@@ -320,37 +353,45 @@ func requireGitTree(repoRoot, commit, treePath, projectDir string) error {
 	return nil
 }
 
-// runGitRead runs a read-only git command in dir with ambient GIT_* overrides
-// removed so the inspected repository comes only from dir.
+// runGitRead runs one read-only git query in dir and returns its stdout. It
+// removes every inherited GIT_* variable, so dir alone selects the repository;
+// ignores replace refs, so a commit ID names its real content; disables a
+// configured file-system monitor and hooks, so no repository program runs;
+// takes no optional locks; and stops after gitReadTimeout.
 func runGitRead(dir string, args ...string) ([]byte, error) {
-	cmdArgs := append([]string{"-C", dir}, args...)
-	cmd := exec.Command("git", cmdArgs...)
+	ctx, cancel := context.WithTimeout(context.Background(), gitReadTimeout)
+	defer cancel()
+	cmdArgs := append([]string{"-C", dir, "--no-optional-locks", "--no-replace-objects",
+		"-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null"}, args...)
+	cmd := exec.CommandContext(ctx, "git", cmdArgs...)
 	cmd.Env = cleanGitEnv()
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-	out, err := cmd.Output()
+	stdout := &cappedBuffer{limit: gitReadMaxOutput}
+	stderr := &cappedBuffer{limit: gitReadMaxStderr, keepPrefix: true}
+	cmd.Stdout, cmd.Stderr = stdout, stderr
+	err := cmd.Run()
+	if stdout.overflow {
+		return nil, fmt.Errorf("git %s printed more than %d bytes", args[0], gitReadMaxOutput)
+	}
 	if err != nil {
-		if msg := strings.TrimSpace(stderr.String()); msg != "" {
+		if msg := strings.TrimSpace(stderr.buf.String()); msg != "" {
 			return nil, fmt.Errorf("%s: %w", msg, err)
 		}
 		return nil, err
 	}
-	return out, nil
+	return stdout.buf.Bytes(), nil
 }
 
-// cleanGitEnv returns os.Environ with repository-redirecting GIT_* variables
-// removed and terminal prompts disabled.
+// cleanGitEnv returns os.Environ without any GIT_* variable, such as GIT_DIR,
+// GIT_OBJECT_DIRECTORY or GIT_CONFIG_PARAMETERS, that could make git read a
+// different repository, objects or configuration than the -project
+// directory's own, plus settings that disable terminal prompts and the
+// system-wide configuration file.
 func cleanGitEnv() []string {
 	var env []string
 	for _, kv := range os.Environ() {
-		name, _, _ := strings.Cut(kv, "=")
-		switch name {
-		case "GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_OBJECT_DIRECTORY",
-			"GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_COMMON_DIR", "GIT_CEILING_DIRECTORIES",
-			"GIT_DISCOVERY_ACROSS_FILESYSTEM", "GIT_NAMESPACE", "GIT_PREFIX":
-			continue
+		if !strings.HasPrefix(kv, "GIT_") {
+			env = append(env, kv)
 		}
-		env = append(env, kv)
 	}
 	return append(env, "GIT_TERMINAL_PROMPT=0", "GIT_CONFIG_NOSYSTEM=1")
 }
@@ -431,4 +472,20 @@ func selfCommand() ([]string, error) {
 		return nil, fmt.Errorf("locate the surla executable: %w", err)
 	}
 	return []string{exe}, nil
+}
+
+// Write appends p up to the buffer's limit. Past the limit it records the
+// overflow and, unless keepPrefix is set, fails so the git command stops
+// instead of producing output nobody will read.
+func (c *cappedBuffer) Write(p []byte) (int, error) {
+	room := c.limit - c.buf.Len()
+	if len(p) > room {
+		c.buf.Write(p[:max(room, 0)])
+		c.overflow = true
+		if !c.keepPrefix {
+			return 0, errors.New("output limit exceeded")
+		}
+		return len(p), nil
+	}
+	return c.buf.Write(p)
 }

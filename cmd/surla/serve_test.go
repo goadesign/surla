@@ -24,6 +24,7 @@ import (
 
 	"github.com/goadesign/surla/internal/controlplane"
 	"github.com/goadesign/surla/internal/swarm"
+	"github.com/goadesign/surla/internal/verify"
 )
 
 type (
@@ -288,10 +289,11 @@ func TestServeGatewayModeAnswersProposeChangeOverHTTP(t *testing.T) {
 
 func TestWriteServeStatusNamesTheBoundAddressAndOffFeatures(t *testing.T) {
 	cases := []struct {
-		name string
-		addr *net.TCPAddr
-		opts controlplane.Options
-		want string
+		name       string
+		addr       *net.TCPAddr
+		opts       controlplane.Options
+		projectDir string
+		want       string
 	}{
 		{
 			name: "loopback without a model",
@@ -302,8 +304,8 @@ surla: connect MCP clients to http://127.0.0.1:51234/mcp with the bearer token
 surla: saving Change Cards in .surla/cards
 surla: CP1 (propose_change, revise_change): off — no model is configured to analyze change requests (set -model-provider and -model-name, or -model-gateway-addr); confirm_intent and get_change are on
 surla: CP2 (preview_architecture): design preview is on; swarm roster is off (set -swarm-profiles)
-surla: CP3 (draft_override, start_live_target): compiled_rule is on; prompt_template is off (set -verification-config, then call start_live_target with a commit; or edit the prompt's source text, commit, and verify the commit)
-surla: CP4 (verify_change, get_verification, list_verifications): off (set -verification-config, or run surla verify on the CLI)
+surla: CP3 (draft_override, start_live_target): compiled_rule is on; prompt_template is off (set -project or -verification-config, then call start_live_target with a commit; or edit the prompt's source text, commit, and verify the commit)
+surla: CP4 (verify_change, get_verification, list_verifications): off (set -project or -verification-config, or run surla verify on the CLI)
 surla: CP5 (approve_merge): off (set -promotion-config, or run surla approve on the CLI)
 `,
 		},
@@ -316,8 +318,8 @@ surla: connect MCP clients to http://localhost:8090/mcp with the bearer token
 surla: saving Change Cards in .surla/cards
 surla: CP1 (propose_change, revise_change): off — no model is configured to analyze change requests (set -model-provider and -model-name, or -model-gateway-addr); confirm_intent and get_change are on
 surla: CP2 (preview_architecture): design preview is on; swarm roster is off (set -swarm-profiles)
-surla: CP3 (draft_override, start_live_target): compiled_rule is on; prompt_template is off (set -verification-config, then call start_live_target with a commit; or edit the prompt's source text, commit, and verify the commit)
-surla: CP4 (verify_change, get_verification, list_verifications): off (set -verification-config, or run surla verify on the CLI)
+surla: CP3 (draft_override, start_live_target): compiled_rule is on; prompt_template is off (set -project or -verification-config, then call start_live_target with a commit; or edit the prompt's source text, commit, and verify the commit)
+surla: CP4 (verify_change, get_verification, list_verifications): off (set -project or -verification-config, or run surla verify on the CLI)
 surla: CP5 (approve_merge): off (set -promotion-config, or run surla approve on the CLI)
 `,
 		},
@@ -333,8 +335,8 @@ surla: connect MCP clients to http://127.0.0.1:8090/mcp with the bearer token
 surla: saving Change Cards in .surla/cards
 surla: CP1 (propose_change, revise_change): off — no model is configured to analyze change requests (set -model-provider and -model-name, or -model-gateway-addr); confirm_intent and get_change are on
 surla: CP2 (preview_architecture): on (1 swarm profile loaded; pass builders in the request to propose a roster)
-surla: CP3 (draft_override, start_live_target): compiled_rule is on; prompt_template is off (set -verification-config, then call start_live_target with a commit; or edit the prompt's source text, commit, and verify the commit)
-surla: CP4 (verify_change, get_verification, list_verifications): off (set -verification-config, or run surla verify on the CLI)
+surla: CP3 (draft_override, start_live_target): compiled_rule is on; prompt_template is off (set -project or -verification-config, then call start_live_target with a commit; or edit the prompt's source text, commit, and verify the commit)
+surla: CP4 (verify_change, get_verification, list_verifications): off (set -project or -verification-config, or run surla verify on the CLI)
 surla: CP5 (approve_merge): off (set -promotion-config, or run surla approve on the CLI)
 `,
 		},
@@ -365,10 +367,11 @@ surla: CP5 (approve_merge): on
 	leftover := filepath.Join(liveRoot, "live-123")
 	require.NoError(t, os.MkdirAll(leftover, 0o700))
 	cases = append(cases, struct {
-		name string
-		addr *net.TCPAddr
-		opts controlplane.Options
-		want string
+		name       string
+		addr       *net.TCPAddr
+		opts       controlplane.Options
+		projectDir string
+		want       string
 	}{
 		name: "live targets with a directory an earlier serve left",
 		addr: &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 8090},
@@ -388,10 +391,67 @@ surla: CP4 (verify_change, get_verification, list_verifications): on (runs in /v
 surla: CP5 (approve_merge): off (set -promotion-config, or run surla approve on the CLI)
 `,
 	})
+	suite := strings.Repeat("c", 40)
+	cases = append(cases, struct {
+		name       string
+		addr       *net.TCPAddr
+		opts       controlplane.Options
+		projectDir string
+		want       string
+	}{
+		name: "starter project pins its HEAD as the evaluator suite",
+		addr: &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 8090},
+		opts: controlplane.Options{
+			CardsDir: cardsDir,
+			Verification: &controlplane.VerificationConfig{
+				RunsDir: "/work/shop/.surla/runs",
+				Plan:    verify.Plan{SuiteCommit: suite, ReportDir: "/work/shop/reports"},
+			},
+			Live: &controlplane.LiveConfig{},
+		},
+		projectDir: ".",
+		want: `surla: serving on http://127.0.0.1:8090
+surla: connect MCP clients to http://127.0.0.1:8090/mcp with the bearer token
+surla: saving Change Cards in ` + cardsDir + `
+surla: CP1 (propose_change, revise_change): off — no model is configured to analyze change requests (set -model-provider and -model-name, or -model-gateway-addr); confirm_intent and get_change are on
+surla: CP2 (preview_architecture): design preview is on; swarm roster is off (set -swarm-profiles)
+surla: CP3 (draft_override, start_live_target): compiled_rule is on; prompt_template is on once start_live_target runs a candidate commit (live targets in ` + liveRoot + `)
+surla: CP3: an earlier surla serve using this cards directory left live target directory ` + leftover + `; its files were kept
+surla: CP4 (verify_change, get_verification, list_verifications): on (runs in /work/shop/.surla/runs, reports in /work/shop/reports, evaluator suite commit ` + suite + `)
+surla: -project .: the evaluator suite commit is the project's HEAD at startup; commit and restart surla serve to use a later suite
+surla: CP5 (approve_merge): off (set -promotion-config, or run surla approve on the CLI)
+`,
+	})
+	cases = append(cases, struct {
+		name       string
+		addr       *net.TCPAddr
+		opts       controlplane.Options
+		projectDir string
+		want       string
+	}{
+		name: "explicit configuration keeps its fixed suite commit",
+		addr: &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 8090},
+		opts: controlplane.Options{
+			CardsDir: "/srv/cards",
+			Verification: &controlplane.VerificationConfig{
+				RunsDir: "/srv/runs",
+				Plan:    verify.Plan{SuiteCommit: suite, ReportDir: "/srv/reports"},
+			},
+		},
+		want: `surla: serving on http://127.0.0.1:8090
+surla: connect MCP clients to http://127.0.0.1:8090/mcp with the bearer token
+surla: saving Change Cards in /srv/cards
+surla: CP1 (propose_change, revise_change): off — no model is configured to analyze change requests (set -model-provider and -model-name, or -model-gateway-addr); confirm_intent and get_change are on
+surla: CP2 (preview_architecture): design preview is on; swarm roster is off (set -swarm-profiles)
+surla: CP3 (draft_override, start_live_target): compiled_rule is on; prompt_template is off (set -project or -verification-config, then call start_live_target with a commit; or edit the prompt's source text, commit, and verify the commit)
+surla: CP4 (verify_change, get_verification, list_verifications): on (runs in /srv/runs, reports in /srv/reports, evaluator suite commit ` + suite + `)
+surla: CP5 (approve_merge): off (set -promotion-config, or run surla approve on the CLI)
+`,
+	})
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			var out bytes.Buffer
-			writeServeStatus(&out, tc.addr, tc.opts)
+			writeServeStatus(&out, tc.addr, tc.opts, tc.projectDir)
 			assert.Equal(t, tc.want, out.String())
 		})
 	}

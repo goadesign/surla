@@ -194,6 +194,20 @@ func TestInitWritesTheProjectWithTheServiceName(t *testing.T) {
 	assert.Equal(t, []string{"design/design.go", "go.mod", "go.sum"}, slices.Sorted(maps.Keys(gen.inputs[1])))
 	assert.Contains(t, gen.inputs[1]["go.mod"], "module example.com/bakery/eval\n")
 	assert.Equal(t, 1, gen.closes)
+	rootGoMod, err := os.ReadFile(filepath.Join(dir, "go.mod"))
+	require.NoError(t, err)
+	evalGoMod, err := os.ReadFile(filepath.Join(dir, "eval", "go.mod"))
+	require.NoError(t, err)
+	layout, err := StarterLayout(rootGoMod, evalGoMod)
+	require.NoError(t, err, "surla serve -project accepts the modules Init writes")
+	for _, pkgDir := range []string{
+		filepath.Join(dir, filepath.FromSlash(layout.CandidatePackage)),
+		filepath.Join(dir, layout.SuiteDir, filepath.FromSlash(layout.SuiteCommand)),
+	} {
+		info, err := os.Stat(pkgDir)
+		require.NoError(t, err, "Init writes the command directory the layout names")
+		assert.True(t, info.IsDir())
+	}
 	info, err := os.Stat(dir)
 	require.NoError(t, err)
 	assert.Equal(t, os.FileMode(0o755), info.Mode().Perm())
