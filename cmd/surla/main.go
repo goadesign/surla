@@ -382,11 +382,40 @@ Next:
   git add .gitignore README.md AGENTS_QUICKSTART.md go.mod go.sum design gen internal cmd eval
   git commit -m "Start %[2]s from surla init"
   surla preview -dir .
+  WORK_DIR="$(mktemp -d)/work"
   surla verify -candidate-repo . -candidate-commit "$(git rev-parse HEAD)" -binary %[2]s=./cmd/%[2]s \
     -suite-repo . -suite-commit "$(git rev-parse HEAD)" -suite-module eval -suite-command ./cmd/%[2]s-evals \
-    -request-revision starter -work-dir "$(mktemp -d)/work" -report-dir reports
+    -request-revision starter -work-dir "$WORK_DIR" -report-dir reports
 
-README.md in the project explains each part and the -request-revision value.
+surla verify keeps $WORK_DIR, including its build logs in $WORK_DIR/evidence/,
+and writes the report to reports/.
+
+To connect a coding agent and run a live target, write a verification
+configuration after the first commit (paste these lines as they are; the EOF
+line must start the line):
+
+mkdir -p .surla
+cat > .surla/verification.json <<EOF
+{"runs_dir": ".surla/runs", "report_dir": "reports", "candidate_repo": ".", "candidate_module": ".",
+ "binaries": {"%[2]s": "./cmd/%[2]s"}, "suite_repo": ".", "suite_commit": "$(git rev-parse HEAD)",
+ "suite_module": "eval", "suite_command": "./cmd/%[2]s-evals", "timeout": "30m"}
+EOF
+
+Then, from this directory, with SURLA_AUTH_TOKEN exported as a token of your
+choice, ANTHROPIC_API_KEY exported, and MODEL_NAME set to a model Anthropic
+offers:
+
+surla serve -principal you@example.com -model-provider anthropic -model-name "$MODEL_NAME" \
+  -verification-config .surla/verification.json
+
+Leave surla serve running. Open another terminal in this directory, export
+the same SURLA_AUTH_TOKEN there, and register http://127.0.0.1:8090/mcp with
+your coding agent, sending "Authorization: Bearer $SURLA_AUTH_TOKEN". Setup
+for Claude Code, Cursor, Gemini CLI and Codex:
+https://github.com/goadesign/surla/blob/main/docs/REFERENCE.md#register-surla-in-your-mcp-client
+
+README.md in the project explains each surla verify part and the
+-request-revision value.
 `
 
 // shellQuote quotes s as one POSIX shell word: it wraps s in single quotes

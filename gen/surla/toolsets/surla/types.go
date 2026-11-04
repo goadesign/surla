@@ -71,7 +71,9 @@ type (
 		// question, and give each value exactly as one string from that question's
 		// options, character for character.
 		Answers map[string]string
-		// Confirmed example table.
+		// The complete confirmed example table, including examples you edited or
+		// added. Keep an existing example's id when you edit it, and give an example
+		// you add a new, unique, non-blank id; ids are saved as sent.
 		Examples []*ExampleItem
 	}
 	// ConfirmIntentResult defines the JSON result for the surla.confirm_intent tool.
@@ -285,7 +287,9 @@ type (
 		ChangeID string
 		// Operator feature request.
 		Prompt string
-		// Current target Goa design source inspected by the CP1 model.
+		// Current Goa design source of the target (its design/*.go files) for the CP1
+		// model to read. If omitted, CP1 receives no current design; supply the
+		// relevant design source when you want it considered.
 		DesignSource *string
 	}
 	// ProposeChangeResult defines the JSON result for the surla.propose_change tool.
@@ -336,8 +340,8 @@ type (
 		RequestRevision string
 		// Revised operator feature request.
 		Prompt string
-		// Updated target Goa design source inspected by the CP1 model; when omitted,
-		// the card's saved design source is preserved.
+		// Updated Goa design source of the target (its design/*.go files) for the CP1
+		// model to read; when omitted, the card's saved design source is used again.
 		DesignSource *string
 	}
 	// ReviseChangeResult defines the JSON result for the surla.revise_change tool.
@@ -535,7 +539,7 @@ type (
 	}
 	// ExampleItem is a nested type used by the generated JSON contract.
 	ExampleItem = struct {
-		// Code-assigned stable example identifier.
+		// Stable example identifier. CP1 assigns one to each example it proposes.
 		ID string
 		// Plain-English scenario description.
 		Scenario string
@@ -618,7 +622,9 @@ type (
 		InjectedFields []string
 		// True when the tool requires a UI-capable runtime.
 		RequiresUI bool
-		// True when the tool declares a design-time Confirmation gate.
+		// True when the tool declares a design-time Confirmation gate. This is a
+		// declaration: it does not show that the application delivers the approval
+		// request or continues after the answer.
 		RequiresConfirmation bool
 		// True when the tool declares a BoundedResult cursor/truncation contract.
 		BoundedResult bool
