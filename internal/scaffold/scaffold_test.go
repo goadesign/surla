@@ -194,6 +194,20 @@ func TestInitWritesTheProjectWithTheServiceName(t *testing.T) {
 	assert.Equal(t, []string{"design/design.go", "go.mod", "go.sum"}, slices.Sorted(maps.Keys(gen.inputs[1])))
 	assert.Contains(t, gen.inputs[1]["go.mod"], "module example.com/bakery/eval\n")
 	assert.Equal(t, 1, gen.closes)
+	rootGoMod, err := os.ReadFile(filepath.Join(dir, "go.mod"))
+	require.NoError(t, err)
+	evalGoMod, err := os.ReadFile(filepath.Join(dir, "eval", "go.mod"))
+	require.NoError(t, err)
+	layout, err := StarterLayout(rootGoMod, evalGoMod)
+	require.NoError(t, err, "surla serve -project accepts the modules Init writes")
+	for _, pkgDir := range []string{
+		filepath.Join(dir, filepath.FromSlash(layout.CandidatePackage)),
+		filepath.Join(dir, SuiteDir, filepath.FromSlash(layout.SuiteCommand)),
+	} {
+		info, err := os.Stat(pkgDir)
+		require.NoError(t, err, "Init writes the command directory the layout names")
+		assert.True(t, info.IsDir())
+	}
 	info, err := os.Stat(dir)
 	require.NoError(t, err)
 	assert.Equal(t, os.FileMode(0o755), info.Mode().Perm())
@@ -367,6 +381,7 @@ func TestInitReadmeFirstRunSnippetsMatchTheProject(t *testing.T) {
 	assert.Equal(t, "./cmd/bakery-evals", fields["suite_command"])
 	assert.Equal(t, ".", fields["candidate_repo"])
 	assert.Equal(t, ".", fields["suite_repo"])
+	assert.Contains(t, readme, "-project .")
 	assert.Contains(t, readme, "-verification-config .surla/verification.json")
 
 	mcpSection := between(t, readme, "Register the server with your coding agent.", "Other coding agents")
@@ -395,6 +410,76 @@ func TestInitReadmeFirstRunSnippetsMatchTheProject(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, strings.Split(string(ignore), "\n"), "/.surla/")
 	assert.Contains(t, strings.Split(string(ignore), "\n"), "/.mcp.json")
+}
+
+// TestStarterLayoutValidatesModulesAndDerivesPaths verifies that StarterLayout
+// derives the same service name and command paths as Init, including when the
+// service name is reserved in generated Go code (such as "errors"), and
+// rejects malformed, missing, invalid or mismatched module declarations.
+func TestStarterLayoutValidatesModulesAndDerivesPaths(t *testing.T) {
+	cases := []struct {
+		name      string
+		rootGoMod string
+		evalGoMod string
+		want      Layout
+		wantErr   string
+	}{
+		{
+			name:      "standard starter module pair",
+			rootGoMod: "module example.com/shop\n\ngo 1.26\n",
+			evalGoMod: "module example.com/shop/eval\n\ngo 1.26\n",
+			want: Layout{
+				Service:          "shop",
+				CandidatePackage: "./cmd/shop",
+				SuiteCommand:     "./cmd/shop-evals",
+			},
+		},
+		{
+			name:      "service name reserved in generated Go code",
+			rootGoMod: "module example.com/errors\n\ngo 1.26\n",
+			evalGoMod: "module example.com/errors/eval\n\ngo 1.26\n",
+			want: Layout{
+				Service:          "errors",
+				CandidatePackage: "./cmd/errors",
+				SuiteCommand:     "./cmd/errors-evals",
+			},
+		},
+		{
+			name:      "missing root module directive",
+			rootGoMod: "go 1.26\n",
+			evalGoMod: "module example.com/shop/eval\n\ngo 1.26\n",
+			wantErr:   "go.mod does not declare a module path",
+		},
+		{
+			name:      "invalid service name in root module",
+			rootGoMod: "module example.com/my-shop\n\ngo 1.26\n",
+			evalGoMod: "module example.com/my-shop/eval\n\ngo 1.26\n",
+			wantErr:   "must end in a service name of lowercase letters and digits",
+		},
+		{
+			name:      "missing eval module directive",
+			rootGoMod: "module example.com/shop\n\ngo 1.26\n",
+			evalGoMod: "go 1.26\n",
+			wantErr:   "eval/go.mod does not declare a module path",
+		},
+		{
+			name:      "mismatched eval module path",
+			rootGoMod: "module example.com/shop\n\ngo 1.26\n",
+			evalGoMod: "module example.com/other/eval\n\ngo 1.26\n",
+			wantErr:   `eval/go.mod declares module "example.com/other/eval", want "example.com/shop/eval"`,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := StarterLayout([]byte(tc.rootGoMod), []byte(tc.evalGoMod))
+			if tc.wantErr != "" {
+				require.ErrorContains(t, err, tc.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, got)
+		})
+	}
 }
 
 // fakeGo stands in for the go command: `go mod tidy` writes the module's
