@@ -2,11 +2,13 @@ package scaffold
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"go/format"
 	"maps"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -320,6 +322,70 @@ func TestInitLeavesNoProjectWhenGenerationFails(t *testing.T) {
 	}
 }
 
+// TestInitReadmeFirstRunSnippetsMatchTheProject verifies the starter README's
+// copy-and-run material against the project it describes: every scenario the
+// evaluator design declares is named, the verification configuration written
+// after the first commit is a JSON object with exactly the fields surla serve's
+// -verification-config requires, the Claude Code .mcp.json example is valid
+// JSON that names the default MCP endpoint and takes the bearer token from
+// SURLA_AUTH_TOKEN, and .gitignore keeps that file and .surla/ out of git.
+func TestInitReadmeFirstRunSnippetsMatchTheProject(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "bakery")
+	run := func(_ context.Context, moduleDir, _ string, args ...string) error {
+		return fakeGo(moduleDir, args)
+	}
+	t.Setenv("TMPDIR", t.TempDir())
+	gen := &fakeGenerator{pkgs: []string{"bakery"}, extra: map[string]string{quickstartGuide: "guide\n"}}
+	_, err := Init(t.Context(), Options{Dir: dir, Module: "example.com/bakery", SurlaVersion: published}, run, gen)
+	require.NoError(t, err)
+	readmeRaw, err := os.ReadFile(filepath.Join(dir, "README.md"))
+	require.NoError(t, err)
+	readme := string(readmeRaw)
+	evalDesign, err := os.ReadFile(filepath.Join(dir, "eval", "design", "design.go"))
+	require.NoError(t, err)
+
+	scenarios := regexp.MustCompile(`Scenario\("([a-z_]+)"`).FindAllStringSubmatch(string(evalDesign), -1)
+	require.NotEmpty(t, scenarios)
+	for _, m := range scenarios {
+		assert.Contains(t, readme, "`"+m[1]+"`", "README names scenario %s", m[1])
+	}
+
+	config := between(t, readme, "cat > .surla/verification.json <<EOF\n", "\nEOF\n")
+	config = strings.NewReplacer("$PWD", "/work/bakery", "$(git rev-parse HEAD)", strings.Repeat("a", 40)).Replace(config)
+	var fields map[string]any
+	require.NoError(t, json.Unmarshal([]byte(config), &fields), config)
+	// These are the fields cmd/surla's verificationFile defines and
+	// loadVerificationConfig requires; keep them in step with that type.
+	assert.Equal(t, []string{
+		"binaries", "candidate_module", "candidate_repo", "report_dir", "runs_dir",
+		"suite_command", "suite_commit", "suite_module", "suite_repo", "timeout",
+	}, slices.Sorted(maps.Keys(fields)))
+	assert.Equal(t, map[string]any{"bakery": "./cmd/bakery"}, fields["binaries"])
+	assert.Equal(t, "./cmd/bakery-evals", fields["suite_command"])
+	assert.Contains(t, readme, "-verification-config .surla/verification.json")
+
+	mcpSection := between(t, readme, "Register the server with your coding agent.", "Other coding agents")
+	mcp := between(t, mcpSection, "```json\n", "\n```")
+	var mcpConfig struct {
+		MCPServers map[string]struct {
+			Type    string            `json:"type"`
+			URL     string            `json:"url"`
+			Headers map[string]string `json:"headers"`
+		} `json:"mcpServers"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(mcp), &mcpConfig), mcp)
+	server := mcpConfig.MCPServers["surla"]
+	assert.Equal(t, "http", server.Type)
+	assert.Equal(t, "http://127.0.0.1:8090/mcp", server.URL)
+	assert.Equal(t, "Bearer ${SURLA_AUTH_TOKEN}", server.Headers["Authorization"])
+	assert.Contains(t, readme, "export SURLA_AUTH_TOKEN=")
+
+	ignore, err := os.ReadFile(filepath.Join(dir, ".gitignore"))
+	require.NoError(t, err)
+	assert.Contains(t, strings.Split(string(ignore), "\n"), "/.surla/")
+	assert.Contains(t, strings.Split(string(ignore), "\n"), "/.mcp.json")
+}
+
 // fakeGo stands in for the go command: `go mod tidy` writes the module's
 // go.sum, and every other command does nothing.
 func fakeGo(dir string, args []string) error {
@@ -391,4 +457,15 @@ func assertOnly(t *testing.T, dir string, names ...string) {
 		got = append(got, e.Name())
 	}
 	assert.ElementsMatch(t, names, got)
+}
+
+// between returns the text of s after the first start and before the next
+// end, failing the test when either marker is missing.
+func between(t *testing.T, s, start, end string) string {
+	t.Helper()
+	_, after, ok := strings.Cut(s, start)
+	require.True(t, ok, "missing %q", start)
+	body, _, ok := strings.Cut(after, end)
+	require.True(t, ok, "missing %q after %q", end, start)
+	return body
 }
