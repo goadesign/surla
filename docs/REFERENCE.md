@@ -428,7 +428,7 @@ See [`examples/orders/README.md`](../examples/orders/README.md) for a step-by-st
 ├── ui/
 │   └── checkpoint/               # React + OpenUI checkpoint viewer source; build.mjs writes checkpoint.html, decision_catalog.md, and generated types
 ├── verify/
-│   ├── candidate/                # macOS Seatbelt (`sandbox-exec`) build & runtime isolation jail
+│   ├── candidate/                # macOS Seatbelt (`sandbox-exec`) build & runtime isolation jail (`Build`, `BuildTest`, `Pin`, `Exec`)
 │   └── suite/                    # Evaluator suite command runner (`suite.Main`, `suite.Command`, `suite.Declaration`)
 ├── examples/
 │   ├── orders/                   # Reference Goa + Goa-AI + Temporal + SQLite order-refund platform
