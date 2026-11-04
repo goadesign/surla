@@ -255,6 +255,10 @@ export function ArchitecturePreviewView({
           Session preview for this candidate design snapshot (not saved on the server; re-run
           preview_architecture after editing design/*.go).
         </p>
+        <p id="surla-cp2-scope-note">
+          Apart from the proposed swarm, this preview shows what the design declares. It does not
+          compare the design with the Change Card&apos;s requirements.
+        </p>
         {differentRevision ? (
           <Alert variant="warning" role="status" id="surla-cp2-different-revision">
             This architecture preview was evaluated for a different saved Change Card revision than
@@ -348,6 +352,12 @@ export function ArchitecturePreviewView({
           ))}
         </ul>
         <h3>{"Evaluated Tool Guardrails (" + preview.tools.length + ")"}</h3>
+        <p id="surla-cp2-confirmation-note">
+          A Confirmation badge means the design requires approval before that tool runs. It does
+          not show that the service asks the right person and continues after their answer:
+          implement that flow and verify it. The <code translate="no">examples/orders</code> project in the Surla
+          repository shows one, a manager approving refunds.
+        </p>
         <ul>
           {preview.tools.map((t) => (
             <li key={t.id}>
