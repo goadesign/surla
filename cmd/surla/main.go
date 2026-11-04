@@ -321,8 +321,8 @@ func writeServeStatus(w io.Writer, addr *net.TCPAddr, opts controlplane.Options)
 		fmt.Fprintf(w, "surla: CP3 (draft_override, start_live_target): compiled_rule is on; prompt_template is on once start_live_target runs a candidate commit (live targets in %s)\n", root)
 		writeLeftoverLiveDirs(w, root)
 	case opts.TargetUpdater == nil:
-		fmt.Fprintln(w, "surla: CP3 (draft_override): compiled_rule is on; prompt_template is off"+
-			" (surla serve binds no target prompt updater; to change a prompt, edit its source text, commit, and verify the commit)")
+		fmt.Fprintln(w, "surla: CP3 (draft_override, start_live_target): compiled_rule is on; prompt_template is off"+
+			" (set -verification-config, then call start_live_target with a commit; or edit the prompt's source text, commit, and verify the commit)")
 	default:
 		fmt.Fprintln(w, "surla: CP3 (draft_override): on")
 	}

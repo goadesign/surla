@@ -2158,7 +2158,7 @@ components:
                           question: Labore harum illo eos ipsum deleniti possimus.
                 answers:
                     type: object
-                    description: Confirmed resolution per ambiguity question ID.
+                    description: 'Confirmed resolution per ambiguity question ID: each value is exactly one string from that question''s options.'
                     example:
                         Consequatur ex.: Veritatis alias non blanditiis.
                     additionalProperties:
@@ -2310,7 +2310,7 @@ components:
             properties:
                 answers:
                     type: object
-                    description: Selected resolution per ambiguity question ID.
+                    description: Selected resolution per ambiguity question ID. Answer every current question, and give each value exactly as one string from that question's options, character for character.
                     example:
                         Qui aut iure rem.: Deserunt vitae fuga nisi quia atque quia.
                         Soluta cumque quas minus autem neque.: Quis exercitationem.

@@ -33,7 +33,8 @@ type (
 		Summary string
 		// Domain questions surfaced at CP1, retained for audit after confirmation.
 		Ambiguities []*AmbiguityQuestion
-		// Confirmed resolution per ambiguity question ID.
+		// Confirmed resolution per ambiguity question ID: each value is exactly one
+		// string from that question's options.
 		Answers map[string]string
 		// Concrete examples mapped to evaluator checks.
 		Examples []*ExampleItem
@@ -66,7 +67,9 @@ type (
 		ChangeID string
 		// Reviewed CP1 request_revision digest being confirmed.
 		RequestRevision string
-		// Selected resolution per ambiguity question ID.
+		// Selected resolution per ambiguity question ID. Answer every current
+		// question, and give each value exactly as one string from that question's
+		// options, character for character.
 		Answers map[string]string
 		// Confirmed example table.
 		Examples []*ExampleItem
@@ -83,7 +86,8 @@ type (
 		Summary string
 		// Domain questions surfaced at CP1, retained for audit after confirmation.
 		Ambiguities []*AmbiguityQuestion
-		// Confirmed resolution per ambiguity question ID.
+		// Confirmed resolution per ambiguity question ID: each value is exactly one
+		// string from that question's options.
 		Answers map[string]string
 		// Concrete examples mapped to evaluator checks.
 		Examples []*ExampleItem
@@ -170,7 +174,8 @@ type (
 		Summary string
 		// Domain questions surfaced at CP1, retained for audit after confirmation.
 		Ambiguities []*AmbiguityQuestion
-		// Confirmed resolution per ambiguity question ID.
+		// Confirmed resolution per ambiguity question ID: each value is exactly one
+		// string from that question's options.
 		Answers map[string]string
 		// Concrete examples mapped to evaluator checks.
 		Examples []*ExampleItem
@@ -295,7 +300,8 @@ type (
 		Summary string
 		// Domain questions surfaced at CP1, retained for audit after confirmation.
 		Ambiguities []*AmbiguityQuestion
-		// Confirmed resolution per ambiguity question ID.
+		// Confirmed resolution per ambiguity question ID: each value is exactly one
+		// string from that question's options.
 		Answers map[string]string
 		// Concrete examples mapped to evaluator checks.
 		Examples []*ExampleItem
@@ -346,7 +352,8 @@ type (
 		Summary string
 		// Domain questions surfaced at CP1, retained for audit after confirmation.
 		Ambiguities []*AmbiguityQuestion
-		// Confirmed resolution per ambiguity question ID.
+		// Confirmed resolution per ambiguity question ID: each value is exactly one
+		// string from that question's options.
 		Answers map[string]string
 		// Concrete examples mapped to evaluator checks.
 		Examples []*ExampleItem

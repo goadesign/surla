@@ -302,7 +302,7 @@ surla: connect MCP clients to http://127.0.0.1:51234/mcp with the bearer token
 surla: saving Change Cards in .surla/cards
 surla: CP1 (propose_change, revise_change): off — no model is configured to analyze change requests (set -model-provider and -model-name, or -model-gateway-addr); confirm_intent and get_change are on
 surla: CP2 (preview_architecture): design preview is on; swarm roster is off (set -swarm-profiles)
-surla: CP3 (draft_override): compiled_rule is on; prompt_template is off (surla serve binds no target prompt updater; to change a prompt, edit its source text, commit, and verify the commit)
+surla: CP3 (draft_override, start_live_target): compiled_rule is on; prompt_template is off (set -verification-config, then call start_live_target with a commit; or edit the prompt's source text, commit, and verify the commit)
 surla: CP4 (verify_change, get_verification, list_verifications): off (set -verification-config, or run surla verify on the CLI)
 surla: CP5 (approve_merge): off (set -promotion-config, or run surla approve on the CLI)
 `,
@@ -316,7 +316,7 @@ surla: connect MCP clients to http://localhost:8090/mcp with the bearer token
 surla: saving Change Cards in .surla/cards
 surla: CP1 (propose_change, revise_change): off — no model is configured to analyze change requests (set -model-provider and -model-name, or -model-gateway-addr); confirm_intent and get_change are on
 surla: CP2 (preview_architecture): design preview is on; swarm roster is off (set -swarm-profiles)
-surla: CP3 (draft_override): compiled_rule is on; prompt_template is off (surla serve binds no target prompt updater; to change a prompt, edit its source text, commit, and verify the commit)
+surla: CP3 (draft_override, start_live_target): compiled_rule is on; prompt_template is off (set -verification-config, then call start_live_target with a commit; or edit the prompt's source text, commit, and verify the commit)
 surla: CP4 (verify_change, get_verification, list_verifications): off (set -verification-config, or run surla verify on the CLI)
 surla: CP5 (approve_merge): off (set -promotion-config, or run surla approve on the CLI)
 `,
@@ -333,7 +333,7 @@ surla: connect MCP clients to http://127.0.0.1:8090/mcp with the bearer token
 surla: saving Change Cards in .surla/cards
 surla: CP1 (propose_change, revise_change): off — no model is configured to analyze change requests (set -model-provider and -model-name, or -model-gateway-addr); confirm_intent and get_change are on
 surla: CP2 (preview_architecture): on (1 swarm profile loaded; pass builders in the request to propose a roster)
-surla: CP3 (draft_override): compiled_rule is on; prompt_template is off (surla serve binds no target prompt updater; to change a prompt, edit its source text, commit, and verify the commit)
+surla: CP3 (draft_override, start_live_target): compiled_rule is on; prompt_template is off (set -verification-config, then call start_live_target with a commit; or edit the prompt's source text, commit, and verify the commit)
 surla: CP4 (verify_change, get_verification, list_verifications): off (set -verification-config, or run surla verify on the CLI)
 surla: CP5 (approve_merge): off (set -promotion-config, or run surla approve on the CLI)
 `,

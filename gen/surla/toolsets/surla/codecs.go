@@ -654,12 +654,12 @@ var approveMergeResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("answers")},
 		JSONType:    "object",
-		Description: "Confirmed resolution per ambiguity question ID.",
+		Description: "Confirmed resolution per ambiguity question ID: each value is exactly one string from that question's options.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("answers"), tools.DynamicField{}},
 		JSONType:    "string",
-		Description: "Confirmed resolution per ambiguity question ID.",
+		Description: "Confirmed resolution per ambiguity question ID: each value is exactly one string from that question's options.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("examples")},
@@ -860,12 +860,12 @@ var confirmIntentPayloadFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("answers")},
 		JSONType:    "object",
-		Description: "Selected resolution per ambiguity question ID.",
+		Description: "Selected resolution per ambiguity question ID. Answer every current question, and give each value exactly as one string from that question's options, character for character.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("answers"), tools.DynamicField{}},
 		JSONType:    "string",
-		Description: "Selected resolution per ambiguity question ID.",
+		Description: "Selected resolution per ambiguity question ID. Answer every current question, and give each value exactly as one string from that question's options, character for character.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("examples")},
@@ -961,12 +961,12 @@ var confirmIntentResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("answers")},
 		JSONType:    "object",
-		Description: "Confirmed resolution per ambiguity question ID.",
+		Description: "Confirmed resolution per ambiguity question ID: each value is exactly one string from that question's options.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("answers"), tools.DynamicField{}},
 		JSONType:    "string",
-		Description: "Confirmed resolution per ambiguity question ID.",
+		Description: "Confirmed resolution per ambiguity question ID: each value is exactly one string from that question's options.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("examples")},
@@ -1357,12 +1357,12 @@ var getChangeResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("answers")},
 		JSONType:    "object",
-		Description: "Confirmed resolution per ambiguity question ID.",
+		Description: "Confirmed resolution per ambiguity question ID: each value is exactly one string from that question's options.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("answers"), tools.DynamicField{}},
 		JSONType:    "string",
-		Description: "Confirmed resolution per ambiguity question ID.",
+		Description: "Confirmed resolution per ambiguity question ID: each value is exactly one string from that question's options.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("examples")},
@@ -2826,12 +2826,12 @@ var proposeChangeResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("answers")},
 		JSONType:    "object",
-		Description: "Confirmed resolution per ambiguity question ID.",
+		Description: "Confirmed resolution per ambiguity question ID: each value is exactly one string from that question's options.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("answers"), tools.DynamicField{}},
 		JSONType:    "string",
-		Description: "Confirmed resolution per ambiguity question ID.",
+		Description: "Confirmed resolution per ambiguity question ID: each value is exactly one string from that question's options.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("examples")},
@@ -3098,12 +3098,12 @@ var reviseChangeResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("answers")},
 		JSONType:    "object",
-		Description: "Confirmed resolution per ambiguity question ID.",
+		Description: "Confirmed resolution per ambiguity question ID: each value is exactly one string from that question's options.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("answers"), tools.DynamicField{}},
 		JSONType:    "string",
-		Description: "Confirmed resolution per ambiguity question ID.",
+		Description: "Confirmed resolution per ambiguity question ID: each value is exactly one string from that question's options.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("examples")},
@@ -7273,7 +7273,7 @@ func validateProposeChangeResultJSONValue(path string, value any, description st
 		case "answers":
 			if err := validateProposeChangeResultRootAnswersJSONValue(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Confirmed resolution per ambiguity question ID.",
+				typed[key], "Confirmed resolution per ambiguity question ID: each value is exactly one string from that question's options.",
 			); err != nil {
 				return err
 			}
@@ -7878,7 +7878,7 @@ func validateConfirmIntentPayloadJSONValue(path string, value any, description s
 		case "answers":
 			if err := validateProposeChangeResultRootAnswersJSONValue(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Selected resolution per ambiguity question ID.",
+				typed[key], "Selected resolution per ambiguity question ID. Answer every current question, and give each value exactly as one string from that question's options, character for character.",
 			); err != nil {
 				return err
 			}
