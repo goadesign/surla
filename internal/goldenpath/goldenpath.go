@@ -18,7 +18,9 @@ const (
 
 	// cp1InstructionHeader precedes the embedded Golden Path Markdown in the
 	// CP1 architect system prompt.
-	cp1InstructionHeader = "Analyze the operator feature request against the Goa design source. Return structured JSON matching the cp1_change_card_analysis schema.\n\nApply the following Golden Path architectural playbook when identifying ambiguities, examples, and preserved behaviors:\n\n"
+	cp1InstructionHeader = "Analyze the operator feature request against the Goa design source. Return structured JSON matching the cp1_change_card_analysis schema.\n\n" +
+		cp1CardContentRules +
+		"Apply the following Golden Path architectural playbook when identifying ambiguities, examples, and preserved behaviors:\n\n"
 
 	// cp1ReviseInstructionHeader precedes the embedded Golden Path Markdown in
 	// the CP1 architect revision system prompt.
@@ -29,7 +31,17 @@ const (
 		"3. Unanswered prior questions (`confirmed_answer` empty) must remain in `ambiguities` unless the `Revised Request` or `Design` explicitly resolves them or removes the scope they asked about.\n" +
 		"4. Surviving prior `examples` (including operator-confirmed edits) whose behavior is not changed by the `Revised Request` or `Design` must be carried forward in `examples` alongside new or updated examples for the revised scope.\n" +
 		"5. Successive revisions (`R2 -> R3`): the prior card's `summary`, `examples`, and `preserved_behaviors` are authoritative settled requirements even when they came from an earlier revision's confirmed decisions that are no longer listed in `decisions`. Preserve all of them unless the `Revised Request` or `Design` explicitly changes them.\n\n" +
+		cp1CardContentRules +
 		"Apply the following Golden Path architectural playbook when identifying ambiguities, examples, and preserved behaviors:\n\n"
+
+	// cp1CardContentRules gives the CP1 model, in both the proposal and the
+	// revision prompt, the rules that span fields: who answers the questions,
+	// where already-settled facts go, and what to do when the request leaves
+	// behavior open. What each field means is in cp1_change_card_analysis's
+	// descriptions.
+	cp1CardContentRules = "Write the card for the requester, who answers its questions and confirms its examples:\n" +
+		"- `ambiguities`: ask only about product, domain, or operational choices the requester must make that change observable behavior or service boundaries. Do not ask about details the request or the design already settle; reflect them in `summary`, or in `examples` when they change an observable outcome. In a revision, the revision rules above decide which earlier questions stay open.\n" +
+		"- `examples`: when the request leaves most behavior open, write examples only for the behavior it does state.\n\n"
 
 	// cp1CompositionHeader introduces the decision component catalog in the
 	// CP1 architect system prompt.
