@@ -181,7 +181,7 @@ func dispatch(sub string, args []string, stdout io.Writer) error {
 	case "serve":
 		return runServe(args)
 	case "preview":
-		return runPreview(args, stdout)
+		return runPreview(args, stdout, os.Stderr)
 	case "preview-change":
 		return runPreviewChange(args, stdout, os.Getenv)
 	case "diff":
@@ -408,12 +408,11 @@ func buildVersion() string {
 
 // runPreview reads the design module in -dir (default: the current directory)
 // with readModuleSnapshot, evaluates it with a design evaluator it owns, and
-// writes the result to w as indented JSON: the system name, declarations, C4
-// containers and edges, agent policies and tool contracts. It records nothing
-// and calls no model. SIGINT and SIGTERM cancel the evaluation. On every
-// return it closes the evaluator, which removes its build workspace, and
-// returns that error with any other.
-func runPreview(args []string, w io.Writer) (err error) {
+// writes the result with writePreviewResult: indented JSON to w and a one-line
+// summary to stderr. It records nothing and calls no model. SIGINT and SIGTERM
+// cancel the evaluation. On every return it closes the evaluator, which
+// removes its build workspace, and returns that error with any other.
+func runPreview(args []string, w, stderr io.Writer) (err error) {
 	fs := flag.NewFlagSet("preview", flag.ContinueOnError)
 	dir := fs.String("dir", ".", "root directory of the design module (holding go.mod, go.sum and design/)")
 	if err := fs.Parse(args); err != nil {
@@ -434,9 +433,22 @@ func runPreview(args []string, w io.Writer) (err error) {
 	if err != nil {
 		return err
 	}
-	enc := json.NewEncoder(w)
+	return writePreviewResult(w, stderr, res)
+}
+
+// writePreviewResult writes res to stdout as indented JSON, the only thing
+// surla preview prints there, so the output stays machine-readable. After
+// the JSON it writes one line to stderr for a person:
+// `surla: "orders": 3 container(s), ...` from Result.Summary. It writes the
+// summary only after the JSON was written, and returns the JSON write error.
+func writePreviewResult(stdout, stderr io.Writer, res designeval.Result) error {
+	enc := json.NewEncoder(stdout)
 	enc.SetIndent("", "  ")
-	return enc.Encode(res)
+	if err := enc.Encode(res); err != nil {
+		return err
+	}
+	fmt.Fprintf(stderr, "surla: %s\n", res.Summary())
+	return nil
 }
 
 // runDiff compares two design modules on disk, each read into a snapshot with

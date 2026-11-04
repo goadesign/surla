@@ -188,6 +188,18 @@ func (e *Evaluator) Close() error {
 	return e.closeResult()
 }
 
+// Summary returns a one-line count of what r declares, such as
+// `"orders": 3 container(s), 2 boundary edge(s), 1 agent policy(s), 4 tool contract(s)`.
+// The system name is Go-quoted, so the line stays a single line whatever the
+// design names its system. `surla preview` prints it to stderr, and
+// preview_architecture returns it as its banner.
+func (r Result) Summary() string {
+	return fmt.Sprintf(
+		"%q: %d container(s), %d boundary edge(s), %d agent policy(s), %d tool contract(s)",
+		r.SystemName, len(r.Containers), len(r.Edges), len(r.AgentPolicies), len(r.Tools),
+	)
+}
+
 // Error returns the compile error and its diagnostics.
 func (e *buildError) Error() string {
 	return e.err.Error()
