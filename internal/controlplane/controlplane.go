@@ -293,6 +293,7 @@ var (
     },
     "ambiguities": {
       "type": "array",
+      "description": "Open product, domain, or operational choices that only the requester can make. Leave out details the request, design, or playbook already settle.",
       "items": {
         "type": "object",
         "additionalProperties": false,
@@ -300,11 +301,13 @@ var (
         "properties": {
           "question": {
             "type": "string",
-            "minLength": 1
+            "minLength": 1,
+            "description": "One decision the requester must make, in plain language, saying what the choice changes."
           },
           "options": {
             "type": "array",
             "minItems": 2,
+            "description": "Distinct, self-contained choices; each states the behavior it selects and what follows from it.",
             "items": {
               "type": "string",
               "minLength": 1
@@ -316,6 +319,7 @@ var (
     "examples": {
       "type": "array",
       "minItems": 1,
+      "description": "Concrete acceptance examples drawn from the request and the design, never placeholder text; each becomes a check the change must pass.",
       "items": {
         "type": "object",
         "additionalProperties": false,
@@ -323,19 +327,23 @@ var (
         "properties": {
           "scenario": {
             "type": "string",
-            "minLength": 1
+            "minLength": 1,
+            "description": "Short name of the situation, in the requester's domain terms."
           },
           "input_summary": {
             "type": "string",
-            "minLength": 1
+            "minLength": 1,
+            "description": "The actual request, inputs, and starting state in this scenario."
           },
           "expected_outcome": {
             "type": "string",
-            "minLength": 1
+            "minLength": 1,
+            "description": "The observable result or refusal that must hold."
           },
           "verification_kind": {
             "type": "string",
-            "enum": ["deterministic", "model_judged"]
+            "enum": ["deterministic", "model_judged"],
+            "description": "deterministic when code can check the outcome directly; model_judged when checking it needs judgment."
           }
         }
       }
