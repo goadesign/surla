@@ -105,9 +105,11 @@ After you edit a module's `design/`, `surla gen -dir <module>` regenerates its `
 Surla organizes development around five checkpoints (**CP1** Confirm Intent → **CP2** Preview Architecture → **CP3** Fast Draft & Sandbox → **CP4** Isolated Verification → **CP5** Promotion Check; see [`docs/HOW_IT_WORKS.md`](docs/HOW_IT_WORKS.md)). From the `surla` repository checkout, start the standalone Surla control plane and connect your coding assistant over MCP to propose, confirm, and preview a feature change at **CP1** and **CP2** (`surla serve` saves Change Cards in `-cards-dir`, default `.surla/cards`, so confirmed cards survive restarts; add `-project <dir>` or `-verification-config` to enable **CP4** `verify_change`, `get_verification`, and `list_verifications` over MCP, and add `-promotion-config` to bind the **CP5** staged-release `PromotionTarget` for `approve_merge`; `surla serve` applies `CP3` prompt drafts to a live target started with `start_live_target` when `-project` or `-verification-config` is set, and the [CLI verification walkthrough](examples/orders/README.md#3-run-os-sandboxed-end-to-end-verification-surla-verify) covers standalone `surla verify` and `surla approve`):
 
 ```bash
-# Start the Surla MCP & HTTP control plane with CP1 model analysis and multi-family swarm profiles
+# Start the Surla MCP & HTTP control plane with CP1 model analysis and multi-family swarm profiles.
+# Set MODEL_NAME to a model your provider offers:
 export SURLA_AUTH_TOKEN="dev-secret-token"
 export ANTHROPIC_API_KEY="sk-ant-..."
+MODEL_NAME="your-model-name"
 surla serve \
   -addr 127.0.0.1:8090 \
   -principal operator@example.com \
@@ -117,6 +119,7 @@ surla serve \
 
 # Or with OpenAI (OPENAI_API_KEY):
 export OPENAI_API_KEY="sk-..."
+MODEL_NAME="your-model-name"
 surla serve \
   -addr 127.0.0.1:8090 \
   -principal operator@example.com \

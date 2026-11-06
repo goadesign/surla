@@ -384,6 +384,7 @@ func TestInitReadmeFirstRunSnippetsMatchTheProject(t *testing.T) {
 	assert.Contains(t, readme, "-project .")
 	assert.Contains(t, readme, "-verification-config .surla/verification.json")
 	assert.Contains(t, readme, "-report-dir reports -builder-view")
+	assert.Contains(t, readme, "while `-builder-view` hides holdout scenario names and checks\nin the completed report JSON and summary line (if a run fails before writing a\nreport, `stderr` prints operator setup/execution failure diagnostics).")
 	assert.Contains(t, readme, "-model-provider openai -model-name \"$MODEL_NAME\"")
 	assert.Contains(t, readme, "surla://golden-path")
 	assert.Contains(t, readme, "http://127.0.0.1:8090/golden-path")

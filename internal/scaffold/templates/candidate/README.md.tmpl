@@ -84,7 +84,9 @@ built binaries, and the evaluator's private evidence, including each build's
 log and each step's output in `$WORK_DIR/evidence/`. `-report-dir reports`
 always writes the full verification report as `reports/<digest>.json` (used by
 `surla approve`), while `-builder-view` hides holdout scenario names and checks
-on `stdout` and `stderr`. Do not share `$WORK_DIR` or `reports/` with coding
+in the completed report JSON and summary line (if a run fails before writing a
+report, `stderr` prints operator setup/execution failure diagnostics). Do not
+share `$WORK_DIR`, `reports/`, or setup/execution failure output with coding
 agents that build the service.
 
 ## Connect a coding agent and try a live target
