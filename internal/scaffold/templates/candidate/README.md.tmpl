@@ -11,7 +11,13 @@ evaluator suite that `surla verify` can run against it.
   `override_prompt` (PUT /prompts/{prompt_id}) replaces the helper's system
   prompt text until the process exits; it requires the key in the
   `SURLA_LIVE_TARGET_KEY` environment variable, which Surla sets for a live
-  target, and rejects every call without one.
+  target, and rejects every call without one. `key` is left optional in
+  `design/design.go` so a missing `X-Live-Target-Key` header reaches
+  `Service.APIKeyAuth` and returns `401` (`unauthorized`) rather than `400`
+  (`missing_field`) from the HTTP decoder; if you pass a security credential
+  field to tools with `Inject(...)` (which requires the payload field to be in
+  `Required(...)`), check for a missing header in HTTP middleware before the
+  generated decoder runs when you want missing headers to answer `401`.
   `design/model.go` declares the C4 architecture model.
 - `gen/` is generated from `design/`. After changing `design/`, run `surla gen`
   in this directory: it runs Goa's generator for this module inside Surla's
@@ -20,9 +26,20 @@ evaluator suite that `surla verify` can run against it.
   hand-written code in `internal/` and `cmd/` to match it before you verify a
   commit or start a live target.
   `AGENTS_QUICKSTART.md` is generated with it and maps the agent, its tools
-  and the generated packages for coding agents.
+  and the generated packages for coding agents (in a Surla project, use
+  `surla gen` and `surla verify` in place of the guide's `goa gen` and
+  `go run` commands).
 - `internal/helper` is the agent's planner and `internal/service` implements the
-  service.
+  service. `Service.Ask` builds an in-memory runtime and store per question
+  because this starter has no multi-turn sessions or `Confirmation` tools, and
+  `Service.Price` returns expected outcomes as a result value (`known: false`)
+  because errors returned by bound service methods that do not implement
+  `planner.ToolFailureProvider` end the agent run. If you add a tool with
+  `Confirmation` (which pauses the run before the bound method's own
+  authorization runs; the host can also deny unauthorized calls immediately
+  when handling the suspension), build one runtime and store in `main` so
+  paused runs can be resumed, as Surla's `examples/orders` reference service
+  does.
 - `cmd/[[.Name]]` serves the API. The agent runs in memory and sends every
   model call to a goa-ai model gateway given with `-model-gateway host:port`;
   the gateway holds the model provider and its API keys.
@@ -35,8 +52,8 @@ evaluator suite that `surla verify` can run against it.
     catalog does not price, and checks that the agent calls `lookup_price`
     and reports that it found no price;
   - `prompt_override_reaches_model`: checks that `override_prompt` rejects a
-    wrong key and that the next question's model request carries the new
-    prompt text. Its `--live` mode starts the
+    missing or wrong key and that the next question's model request carries the
+    new prompt text. Its `--live` mode starts the
   `[[.Name]]` for `surla serve`'s `start_live_target`, planning with the model
   `surla serve` was started with. After changing
   `eval/design/`, regenerate its code with
@@ -59,13 +76,18 @@ WORK_DIR="$(mktemp -d)/work"
 surla verify \
   -candidate-repo . -candidate-commit "$(git rev-parse HEAD)" -binary [[.Name]]=./cmd/[[.Name]] \
   -suite-repo . -suite-commit "$(git rev-parse HEAD)" -suite-module eval -suite-command ./cmd/[[.Name]]-evals \
-  -request-revision starter -work-dir "$WORK_DIR" -report-dir reports
+  -request-revision starter -work-dir "$WORK_DIR" -report-dir reports -builder-view
 ```
 
 `surla verify` keeps `$WORK_DIR` after the run: it holds the clones, the
 built binaries, and the evaluator's private evidence, including each build's
 log and each step's output in `$WORK_DIR/evidence/`. `-report-dir reports`
-receives the verification report as `reports/<digest>.json`.
+always writes the full verification report as `reports/<digest>.json` (used by
+`surla approve`), while `-builder-view` hides holdout scenario names and checks
+in the completed report JSON and summary line (if a run fails before writing a
+report, `stderr` prints operator setup/execution failure diagnostics). Do not
+share `$WORK_DIR`, `reports/`, or setup/execution failure output with coding
+agents that build the service.
 
 ## Connect a coding agent and try a live target
 
@@ -87,6 +109,13 @@ export ANTHROPIC_API_KEY="your-anthropic-key"
 MODEL_NAME="your-model-name"
 surla serve -principal you@example.com \
   -model-provider anthropic -model-name "$MODEL_NAME" \
+  -project .
+
+# Or with OpenAI:
+export OPENAI_API_KEY="your-openai-key"
+MODEL_NAME="your-model-name"
+surla serve -principal you@example.com \
+  -model-provider openai -model-name "$MODEL_NAME" \
   -project .
 ```
 
@@ -112,7 +141,10 @@ cat > .surla/verification.json <<EOF
 EOF
 ```
 
-Register the server with your coding agent. For Claude Code, save this as
+Register the server with your coding agent. Connected coding agents can also
+read Surla's Golden Path architecture and evaluator guide at the MCP resource
+`surla://golden-path` (or `GET http://127.0.0.1:8090/golden-path`). For Claude
+Code, save this as
 `.mcp.json` in this directory. Claude Code fills in `${SURLA_AUTH_TOKEN}`
 from its environment, so start it from a shell where that variable is
 exported. `.mcp.json` holds that reference, not the token itself, and

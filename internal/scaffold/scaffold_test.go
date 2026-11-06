@@ -383,6 +383,22 @@ func TestInitReadmeFirstRunSnippetsMatchTheProject(t *testing.T) {
 	assert.Equal(t, ".", fields["suite_repo"])
 	assert.Contains(t, readme, "-project .")
 	assert.Contains(t, readme, "-verification-config .surla/verification.json")
+	assert.Contains(t, readme, "-report-dir reports -builder-view")
+	assert.Contains(t, readme, "while `-builder-view` hides holdout scenario names and checks\nin the completed report JSON and summary line (if a run fails before writing a\nreport, `stderr` prints operator setup/execution failure diagnostics).")
+	assert.Contains(t, readme, "-model-provider openai -model-name \"$MODEL_NAME\"")
+	assert.Contains(t, readme, "surla://golden-path")
+	assert.Contains(t, readme, "http://127.0.0.1:8090/golden-path")
+	assert.Contains(t, readme, "planner.ToolFailureProvider")
+	assert.Contains(t, readme, "use\n  `surla gen` and `surla verify` in place of the guide's `goa gen` and\n  `go run` commands")
+
+	candDesign, err := os.ReadFile(filepath.Join(dir, "design", "design.go"))
+	require.NoError(t, err)
+	assert.Contains(t, string(candDesign), `Required("prompt_id", "template")`, "override_prompt leaves key optional so a missing X-Live-Target-Key header reaches APIKeyAuth and answers 401")
+	assert.NotContains(t, string(candDesign), `Required("key", "prompt_id", "template")`)
+
+	evalAcceptance, err := os.ReadFile(filepath.Join(dir, "eval", "acceptance", "acceptance.go"))
+	require.NoError(t, err)
+	assert.Contains(t, string(evalAcceptance), `"missing_key_rejected"`)
 
 	mcpSection := between(t, readme, "Register the server with your coding agent.", "Other coding agents")
 	mcp := between(t, mcpSection, "```json\n", "\n```")
