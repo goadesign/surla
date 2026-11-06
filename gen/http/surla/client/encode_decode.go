@@ -176,6 +176,7 @@ func EncodeProposeChangeRequest(encoder func(*http.Request) goahttp.Encoder) fun
 //   - "conflict" (type *goa.ServiceError): http.StatusConflict
 //   - "unprocessable" (type *goa.ServiceError): http.StatusUnprocessableEntity
 //   - "not_implemented" (type *goa.ServiceError): http.StatusNotImplemented
+//   - "analysis_rejected" (type *goa.ServiceError): http.StatusBadGateway
 //   - error: internal error
 func DecodeProposeChangeResponse(decoder func(*http.Response) goahttp.Decoder, restoreBody bool) func(*http.Response) (any, error) {
 	return func(resp *http.Response) (result any, decodeErr error) {
@@ -255,6 +256,20 @@ func DecodeProposeChangeResponse(decoder func(*http.Response) goahttp.Decoder, r
 				return nil, goahttp.ErrValidationError("surla", "propose_change", err)
 			}
 			return nil, NewProposeChangeNotImplemented(&body)
+		case http.StatusBadGateway:
+			var (
+				body ProposeChangeAnalysisRejectedResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "propose_change", err)
+			}
+			err = ValidateProposeChangeAnalysisRejectedResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("surla", "propose_change", err)
+			}
+			return nil, NewProposeChangeAnalysisRejected(&body)
 		default:
 			body, err := io.ReadAll(resp.Body)
 			if err != nil {
@@ -305,6 +320,7 @@ func EncodeReviseChangeRequest(encoder func(*http.Request) goahttp.Encoder) func
 //   - "conflict" (type *goa.ServiceError): http.StatusConflict
 //   - "unprocessable" (type *goa.ServiceError): http.StatusUnprocessableEntity
 //   - "not_implemented" (type *goa.ServiceError): http.StatusNotImplemented
+//   - "analysis_rejected" (type *goa.ServiceError): http.StatusBadGateway
 //   - error: internal error
 func DecodeReviseChangeResponse(decoder func(*http.Response) goahttp.Decoder, restoreBody bool) func(*http.Response) (any, error) {
 	return func(resp *http.Response) (result any, decodeErr error) {
@@ -412,6 +428,20 @@ func DecodeReviseChangeResponse(decoder func(*http.Response) goahttp.Decoder, re
 				return nil, goahttp.ErrValidationError("surla", "revise_change", err)
 			}
 			return nil, NewReviseChangeNotImplemented(&body)
+		case http.StatusBadGateway:
+			var (
+				body ReviseChangeAnalysisRejectedResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "revise_change", err)
+			}
+			err = ValidateReviseChangeAnalysisRejectedResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("surla", "revise_change", err)
+			}
+			return nil, NewReviseChangeAnalysisRejected(&body)
 		default:
 			body, err := io.ReadAll(resp.Body)
 			if err != nil {

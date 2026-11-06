@@ -141,12 +141,16 @@ type ProposeChangeResponseBody struct {
 	Status string `form:"status" json:"status" xml:"status"`
 	// Operator feature request for this revision.
 	Prompt string `form:"prompt" json:"prompt" xml:"prompt"`
-	// Plain-English summary of requested behavior.
+	// Plain-English summary of the proposed change from propose_change or
+	// revise_change. confirm_intent does not rewrite this text; when status is
+	// confirmed, answers records the owner's resolutions for ambiguities.
 	Summary string `form:"summary" json:"summary" xml:"summary"`
 	// Domain questions surfaced at CP1, retained for audit after confirmation.
 	Ambiguities []*AmbiguityQuestionResponseBody `form:"ambiguities,omitempty" json:"ambiguities,omitempty" xml:"ambiguities,omitempty"`
-	// Confirmed resolution per ambiguity question ID: each value is exactly one
-	// string from that question's options.
+	// Owner-confirmed answers keyed by ambiguity question ID when status is
+	// confirmed and ambiguities is non-empty (empty when a confirmed card has no
+	// ambiguity questions). Each answer equals one of its question's declared
+	// options and takes precedence over open phrasing in summary.
 	Answers map[string]string `form:"answers,omitempty" json:"answers,omitempty" xml:"answers,omitempty"`
 	// Concrete examples mapped to evaluator checks.
 	Examples []*ExampleItemResponseBody `form:"examples" json:"examples" xml:"examples"`
@@ -183,12 +187,16 @@ type ReviseChangeResponseBody struct {
 	Status string `form:"status" json:"status" xml:"status"`
 	// Operator feature request for this revision.
 	Prompt string `form:"prompt" json:"prompt" xml:"prompt"`
-	// Plain-English summary of requested behavior.
+	// Plain-English summary of the proposed change from propose_change or
+	// revise_change. confirm_intent does not rewrite this text; when status is
+	// confirmed, answers records the owner's resolutions for ambiguities.
 	Summary string `form:"summary" json:"summary" xml:"summary"`
 	// Domain questions surfaced at CP1, retained for audit after confirmation.
 	Ambiguities []*AmbiguityQuestionResponseBody `form:"ambiguities,omitempty" json:"ambiguities,omitempty" xml:"ambiguities,omitempty"`
-	// Confirmed resolution per ambiguity question ID: each value is exactly one
-	// string from that question's options.
+	// Owner-confirmed answers keyed by ambiguity question ID when status is
+	// confirmed and ambiguities is non-empty (empty when a confirmed card has no
+	// ambiguity questions). Each answer equals one of its question's declared
+	// options and takes precedence over open phrasing in summary.
 	Answers map[string]string `form:"answers,omitempty" json:"answers,omitempty" xml:"answers,omitempty"`
 	// Concrete examples mapped to evaluator checks.
 	Examples []*ExampleItemResponseBody `form:"examples" json:"examples" xml:"examples"`
@@ -225,12 +233,16 @@ type ConfirmIntentResponseBody struct {
 	Status string `form:"status" json:"status" xml:"status"`
 	// Operator feature request for this revision.
 	Prompt string `form:"prompt" json:"prompt" xml:"prompt"`
-	// Plain-English summary of requested behavior.
+	// Plain-English summary of the proposed change from propose_change or
+	// revise_change. confirm_intent does not rewrite this text; when status is
+	// confirmed, answers records the owner's resolutions for ambiguities.
 	Summary string `form:"summary" json:"summary" xml:"summary"`
 	// Domain questions surfaced at CP1, retained for audit after confirmation.
 	Ambiguities []*AmbiguityQuestionResponseBody `form:"ambiguities,omitempty" json:"ambiguities,omitempty" xml:"ambiguities,omitempty"`
-	// Confirmed resolution per ambiguity question ID: each value is exactly one
-	// string from that question's options.
+	// Owner-confirmed answers keyed by ambiguity question ID when status is
+	// confirmed and ambiguities is non-empty (empty when a confirmed card has no
+	// ambiguity questions). Each answer equals one of its question's declared
+	// options and takes precedence over open phrasing in summary.
 	Answers map[string]string `form:"answers,omitempty" json:"answers,omitempty" xml:"answers,omitempty"`
 	// Concrete examples mapped to evaluator checks.
 	Examples []*ExampleItemResponseBody `form:"examples" json:"examples" xml:"examples"`
@@ -267,12 +279,16 @@ type GetChangeResponseBody struct {
 	Status string `form:"status" json:"status" xml:"status"`
 	// Operator feature request for this revision.
 	Prompt string `form:"prompt" json:"prompt" xml:"prompt"`
-	// Plain-English summary of requested behavior.
+	// Plain-English summary of the proposed change from propose_change or
+	// revise_change. confirm_intent does not rewrite this text; when status is
+	// confirmed, answers records the owner's resolutions for ambiguities.
 	Summary string `form:"summary" json:"summary" xml:"summary"`
 	// Domain questions surfaced at CP1, retained for audit after confirmation.
 	Ambiguities []*AmbiguityQuestionResponseBody `form:"ambiguities,omitempty" json:"ambiguities,omitempty" xml:"ambiguities,omitempty"`
-	// Confirmed resolution per ambiguity question ID: each value is exactly one
-	// string from that question's options.
+	// Owner-confirmed answers keyed by ambiguity question ID when status is
+	// confirmed and ambiguities is non-empty (empty when a confirmed card has no
+	// ambiguity questions). Each answer equals one of its question's declared
+	// options and takes precedence over open phrasing in summary.
 	Answers map[string]string `form:"answers,omitempty" json:"answers,omitempty" xml:"answers,omitempty"`
 	// Concrete examples mapped to evaluator checks.
 	Examples []*ExampleItemResponseBody `form:"examples" json:"examples" xml:"examples"`
@@ -417,12 +433,16 @@ type ApproveMergeResponseBody struct {
 	Status string `form:"status" json:"status" xml:"status"`
 	// Operator feature request for this revision.
 	Prompt string `form:"prompt" json:"prompt" xml:"prompt"`
-	// Plain-English summary of requested behavior.
+	// Plain-English summary of the proposed change from propose_change or
+	// revise_change. confirm_intent does not rewrite this text; when status is
+	// confirmed, answers records the owner's resolutions for ambiguities.
 	Summary string `form:"summary" json:"summary" xml:"summary"`
 	// Domain questions surfaced at CP1, retained for audit after confirmation.
 	Ambiguities []*AmbiguityQuestionResponseBody `form:"ambiguities,omitempty" json:"ambiguities,omitempty" xml:"ambiguities,omitempty"`
-	// Confirmed resolution per ambiguity question ID: each value is exactly one
-	// string from that question's options.
+	// Owner-confirmed answers keyed by ambiguity question ID when status is
+	// confirmed and ambiguities is non-empty (empty when a confirmed card has no
+	// ambiguity questions). Each answer equals one of its question's declared
+	// options and takes precedence over open phrasing in summary.
 	Answers map[string]string `form:"answers,omitempty" json:"answers,omitempty" xml:"answers,omitempty"`
 	// Concrete examples mapped to evaluator checks.
 	Examples []*ExampleItemResponseBody `form:"examples" json:"examples" xml:"examples"`
@@ -522,6 +542,25 @@ type ProposeChangeNotImplementedResponseBody struct {
 	Fault bool `form:"fault" json:"fault" xml:"fault"`
 }
 
+// ProposeChangeAnalysisRejectedResponseBody is the type of the "surla" service
+// "propose_change" endpoint HTTP response body for the "analysis_rejected"
+// error.
+type ProposeChangeAnalysisRejectedResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
 // ReviseChangeNotFoundResponseBody is the type of the "surla" service
 // "revise_change" endpoint HTTP response body for the "not_found" error.
 type ReviseChangeNotFoundResponseBody struct {
@@ -597,6 +636,25 @@ type ReviseChangeUnprocessableResponseBody struct {
 // ReviseChangeNotImplementedResponseBody is the type of the "surla" service
 // "revise_change" endpoint HTTP response body for the "not_implemented" error.
 type ReviseChangeNotImplementedResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
+// ReviseChangeAnalysisRejectedResponseBody is the type of the "surla" service
+// "revise_change" endpoint HTTP response body for the "analysis_rejected"
+// error.
+type ReviseChangeAnalysisRejectedResponseBody struct {
 	// Name is the name of this class of errors.
 	Name string `form:"name" json:"name" xml:"name"`
 	// ID is a unique identifier for this particular occurrence of the problem.
@@ -2359,6 +2417,20 @@ func NewProposeChangeNotImplementedResponseBody(res *goa.ServiceError) *ProposeC
 	return body
 }
 
+// NewProposeChangeAnalysisRejectedResponseBody builds the HTTP response body
+// from the result of the "propose_change" endpoint of the "surla" service.
+func NewProposeChangeAnalysisRejectedResponseBody(res *goa.ServiceError) *ProposeChangeAnalysisRejectedResponseBody {
+	body := &ProposeChangeAnalysisRejectedResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
 // NewReviseChangeNotFoundResponseBody builds the HTTP response body from the
 // result of the "revise_change" endpoint of the "surla" service.
 func NewReviseChangeNotFoundResponseBody(res *goa.ServiceError) *ReviseChangeNotFoundResponseBody {
@@ -2419,6 +2491,20 @@ func NewReviseChangeUnprocessableResponseBody(res *goa.ServiceError) *ReviseChan
 // the result of the "revise_change" endpoint of the "surla" service.
 func NewReviseChangeNotImplementedResponseBody(res *goa.ServiceError) *ReviseChangeNotImplementedResponseBody {
 	body := &ReviseChangeNotImplementedResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
+// NewReviseChangeAnalysisRejectedResponseBody builds the HTTP response body
+// from the result of the "revise_change" endpoint of the "surla" service.
+func NewReviseChangeAnalysisRejectedResponseBody(res *goa.ServiceError) *ReviseChangeAnalysisRejectedResponseBody {
+	body := &ReviseChangeAnalysisRejectedResponseBody{
 		Name:      res.Name,
 		ID:        res.ID,
 		Message:   res.Message,

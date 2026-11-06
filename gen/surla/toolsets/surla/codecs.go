@@ -619,7 +619,7 @@ var approveMergeResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("summary")},
 		JSONType:    "string",
-		Description: "Plain-English summary of requested behavior.",
+		Description: "Plain-English summary of the proposed change from propose_change or revise_change. confirm_intent does not rewrite this text; when status is confirmed, answers records the owner's resolutions for ambiguities.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("ambiguities")},
@@ -654,12 +654,12 @@ var approveMergeResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("answers")},
 		JSONType:    "object",
-		Description: "Confirmed resolution per ambiguity question ID: each value is exactly one string from that question's options.",
+		Description: "Owner-confirmed answers keyed by ambiguity question ID when status is confirmed and ambiguities is non-empty (empty when a confirmed card has no ambiguity questions). Each answer equals one of its question's declared options and takes precedence over open phrasing in summary.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("answers"), tools.DynamicField{}},
 		JSONType:    "string",
-		Description: "Confirmed resolution per ambiguity question ID: each value is exactly one string from that question's options.",
+		Description: "Owner-confirmed answers keyed by ambiguity question ID when status is confirmed and ambiguities is non-empty (empty when a confirmed card has no ambiguity questions). Each answer equals one of its question's declared options and takes precedence over open phrasing in summary.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("examples")},
@@ -926,7 +926,7 @@ var confirmIntentResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("summary")},
 		JSONType:    "string",
-		Description: "Plain-English summary of requested behavior.",
+		Description: "Plain-English summary of the proposed change from propose_change or revise_change. confirm_intent does not rewrite this text; when status is confirmed, answers records the owner's resolutions for ambiguities.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("ambiguities")},
@@ -961,12 +961,12 @@ var confirmIntentResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("answers")},
 		JSONType:    "object",
-		Description: "Confirmed resolution per ambiguity question ID: each value is exactly one string from that question's options.",
+		Description: "Owner-confirmed answers keyed by ambiguity question ID when status is confirmed and ambiguities is non-empty (empty when a confirmed card has no ambiguity questions). Each answer equals one of its question's declared options and takes precedence over open phrasing in summary.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("answers"), tools.DynamicField{}},
 		JSONType:    "string",
-		Description: "Confirmed resolution per ambiguity question ID: each value is exactly one string from that question's options.",
+		Description: "Owner-confirmed answers keyed by ambiguity question ID when status is confirmed and ambiguities is non-empty (empty when a confirmed card has no ambiguity questions). Each answer equals one of its question's declared options and takes precedence over open phrasing in summary.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("examples")},
@@ -1322,7 +1322,7 @@ var getChangeResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("summary")},
 		JSONType:    "string",
-		Description: "Plain-English summary of requested behavior.",
+		Description: "Plain-English summary of the proposed change from propose_change or revise_change. confirm_intent does not rewrite this text; when status is confirmed, answers records the owner's resolutions for ambiguities.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("ambiguities")},
@@ -1357,12 +1357,12 @@ var getChangeResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("answers")},
 		JSONType:    "object",
-		Description: "Confirmed resolution per ambiguity question ID: each value is exactly one string from that question's options.",
+		Description: "Owner-confirmed answers keyed by ambiguity question ID when status is confirmed and ambiguities is non-empty (empty when a confirmed card has no ambiguity questions). Each answer equals one of its question's declared options and takes precedence over open phrasing in summary.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("answers"), tools.DynamicField{}},
 		JSONType:    "string",
-		Description: "Confirmed resolution per ambiguity question ID: each value is exactly one string from that question's options.",
+		Description: "Owner-confirmed answers keyed by ambiguity question ID when status is confirmed and ambiguities is non-empty (empty when a confirmed card has no ambiguity questions). Each answer equals one of its question's declared options and takes precedence over open phrasing in summary.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("examples")},
@@ -2791,7 +2791,7 @@ var proposeChangeResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("summary")},
 		JSONType:    "string",
-		Description: "Plain-English summary of requested behavior.",
+		Description: "Plain-English summary of the proposed change from propose_change or revise_change. confirm_intent does not rewrite this text; when status is confirmed, answers records the owner's resolutions for ambiguities.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("ambiguities")},
@@ -2826,12 +2826,12 @@ var proposeChangeResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("answers")},
 		JSONType:    "object",
-		Description: "Confirmed resolution per ambiguity question ID: each value is exactly one string from that question's options.",
+		Description: "Owner-confirmed answers keyed by ambiguity question ID when status is confirmed and ambiguities is non-empty (empty when a confirmed card has no ambiguity questions). Each answer equals one of its question's declared options and takes precedence over open phrasing in summary.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("answers"), tools.DynamicField{}},
 		JSONType:    "string",
-		Description: "Confirmed resolution per ambiguity question ID: each value is exactly one string from that question's options.",
+		Description: "Owner-confirmed answers keyed by ambiguity question ID when status is confirmed and ambiguities is non-empty (empty when a confirmed card has no ambiguity questions). Each answer equals one of its question's declared options and takes precedence over open phrasing in summary.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("examples")},
@@ -3063,7 +3063,7 @@ var reviseChangeResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("summary")},
 		JSONType:    "string",
-		Description: "Plain-English summary of requested behavior.",
+		Description: "Plain-English summary of the proposed change from propose_change or revise_change. confirm_intent does not rewrite this text; when status is confirmed, answers records the owner's resolutions for ambiguities.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("ambiguities")},
@@ -3098,12 +3098,12 @@ var reviseChangeResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("answers")},
 		JSONType:    "object",
-		Description: "Confirmed resolution per ambiguity question ID: each value is exactly one string from that question's options.",
+		Description: "Owner-confirmed answers keyed by ambiguity question ID when status is confirmed and ambiguities is non-empty (empty when a confirmed card has no ambiguity questions). Each answer equals one of its question's declared options and takes precedence over open phrasing in summary.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("answers"), tools.DynamicField{}},
 		JSONType:    "string",
-		Description: "Confirmed resolution per ambiguity question ID: each value is exactly one string from that question's options.",
+		Description: "Owner-confirmed answers keyed by ambiguity question ID when status is confirmed and ambiguities is non-empty (empty when a confirmed card has no ambiguity questions). Each answer equals one of its question's declared options and takes precedence over open phrasing in summary.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("examples")},
@@ -7273,7 +7273,7 @@ func validateProposeChangeResultJSONValue(path string, value any, description st
 		case "answers":
 			if err := validateProposeChangeResultRootAnswersJSONValue(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Confirmed resolution per ambiguity question ID: each value is exactly one string from that question's options.",
+				typed[key], "Owner-confirmed answers keyed by ambiguity question ID when status is confirmed and ambiguities is non-empty (empty when a confirmed card has no ambiguity questions). Each answer equals one of its question's declared options and takes precedence over open phrasing in summary.",
 			); err != nil {
 				return err
 			}
@@ -7336,7 +7336,7 @@ func validateProposeChangeResultJSONValue(path string, value any, description st
 		case "summary":
 			if err := validateStringJSONValue(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Plain-English summary of requested behavior.",
+				typed[key], "Plain-English summary of the proposed change from propose_change or revise_change. confirm_intent does not rewrite this text; when status is confirmed, answers records the owner's resolutions for ambiguities.",
 			); err != nil {
 				return err
 			}

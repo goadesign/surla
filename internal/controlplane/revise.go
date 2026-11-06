@@ -15,7 +15,12 @@ import (
 
 	gensurla "github.com/goadesign/surla/gen/surla"
 	"github.com/goadesign/surla/internal/goldenpath"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 	"goa.design/goa-ai/runtime/agent/model"
+	goa "goa.design/goa/v3/pkg"
 )
 
 type (
@@ -119,11 +124,29 @@ func (c *ControlPlane) ReviseChange(
 	}
 	prior := buildCP1PriorCard(record.card)
 
+	ctx, span := otel.Tracer("surla/controlplane").Start(
+		ctx,
+		"surla.controlplane.revise_change",
+		trace.WithAttributes(attribute.String("surla.change_id", p.ChangeID)),
+	)
+	defer span.End()
+
 	if err := reportProgress(ctx, 0, 1, "Revising the Change Card with the CP1 model"); err != nil {
 		return nil, err
 	}
 	analysis, err := c.analyzer.Revise(ctx, prior, p.Prompt, designSrc)
 	if err != nil {
+		if se, ok := asAnalysisRejected(err); ok {
+			se.Message = fmt.Sprintf(
+				"cp1 analysis rejected (%s): this revise_change request did not modify Change Card %q; retry revise_change with request_revision %s (and design_source when updating the Goa design), or call get_change if another request may have updated the card",
+				se.Message,
+				p.ChangeID,
+				p.RequestRevision,
+			)
+			err = se
+		}
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "revise cp1 change card")
 		return nil, err
 	}
 	if err := reportProgress(ctx, 1, 1, "Validating the revised CP1 analysis"); err != nil {
@@ -132,7 +155,18 @@ func (c *ControlPlane) ReviseChange(
 
 	summary, ambiguities, examples, preserved, err := validateCP1Analysis(p.ChangeID, analysis)
 	if err != nil {
-		return nil, fmt.Errorf("invalid cp1 analysis: %w", err)
+		se := newAnalysisRejected(
+			fmt.Sprintf(
+				"cp1 analysis rejected (%s): this revise_change request did not modify Change Card %q; retry revise_change with request_revision %s (and design_source when updating the Goa design), or call get_change if another request may have updated the card",
+				err.Error(),
+				p.ChangeID,
+				p.RequestRevision,
+			),
+			err,
+		)
+		span.RecordError(se)
+		span.SetStatus(codes.Error, "validate revised cp1 analysis")
+		return nil, se
 	}
 
 	// Every revised card enters needs_confirmation so the operator explicitly
@@ -230,6 +264,34 @@ func buildCP1PriorCard(card *gensurla.ChangeCardResult) CP1PriorCard {
 	}
 }
 
+// newAnalysisRejected constructs a non-fault analysis_rejected ServiceError
+// whose public Message is set to reason while retaining cause for Unwrap.
+func newAnalysisRejected(reason string, cause error) *goa.ServiceError {
+	se := gensurla.MakeAnalysisRejected(cause)
+	se.Message = reason
+	return se
+}
+
+// asAnalysisRejected reports whether err wraps an analysis_rejected ServiceError.
+func asAnalysisRejected(err error) (*goa.ServiceError, bool) {
+	var se *goa.ServiceError
+	if errors.As(err, &se) && se.GoaErrorName() == "analysis_rejected" {
+		return se, true
+	}
+	return nil, false
+}
+
+// formatCP1DesignSection returns designSource unchanged when it contains
+// non-whitespace text, or an explicit no-design instruction when omitted or
+// whitespace-only so the CP1 model does not assume unstated services or
+// fixture IDs.
+func formatCP1DesignSection(designSource string) string {
+	if strings.TrimSpace(designSource) != "" {
+		return designSource
+	}
+	return "(no Goa design source was supplied — do not assume or invent service splits, endpoints, or fixture IDs that are not stated in the request or prior card)"
+}
+
 // formatCP1ReviseUserPrompt formats the prior Change Card context, the revised
 // operator request, and the target Goa design source for ModelCP1Analyzer.Revise.
 func formatCP1ReviseUserPrompt(prior CP1PriorCard, promptText, designSource string) (string, error) {
@@ -241,7 +303,7 @@ func formatCP1ReviseUserPrompt(prior CP1PriorCard, promptText, designSource stri
 		"Prior Change Card:\n%s\n\nRevised Request:\n%s\n\nDesign:\n%s",
 		string(priorJSON),
 		promptText,
-		designSource,
+		formatCP1DesignSection(designSource),
 	), nil
 }
 
@@ -281,26 +343,39 @@ func (a *ModelCP1Analyzer) completeAnalysis(
 	}
 	resp, err := a.client.Complete(ctx, req)
 	if err != nil {
+		var ovErr *model.OutputValidationError
+		if errors.As(err, &ovErr) {
+			return CP1SemanticAnalysis{}, newAnalysisRejected(
+				fmt.Sprintf("model output failed %q validation", ovErr.Kind()),
+				err,
+			)
+		}
 		return CP1SemanticAnalysis{}, fmt.Errorf("cp1 model completion: %w", err)
 	}
 	if resp.OutputLimited {
-		return CP1SemanticAnalysis{}, fmt.Errorf(
-			"cp1 model analysis may be incomplete: provider reported an output limit (stop reason %q)",
-			resp.StopReason,
+		return CP1SemanticAnalysis{}, newAnalysisRejected(
+			"provider stopped at output limit",
+			errors.New("cp1 model response reached output limit"),
 		)
 	}
 	raw := extractAssistantText(resp)
 	if raw == "" {
-		return CP1SemanticAnalysis{}, errors.New("cp1 model returned empty analysis")
+		return CP1SemanticAnalysis{}, newAnalysisRejected(
+			"model returned empty analysis text",
+			errors.New("cp1 model returned empty analysis"),
+		)
 	}
 	var parsed CP1SemanticAnalysis
 	dec := json.NewDecoder(strings.NewReader(raw))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&parsed); err != nil {
-		return CP1SemanticAnalysis{}, fmt.Errorf("decode cp1 model analysis: %w", err)
+		return CP1SemanticAnalysis{}, newAnalysisRejected("model returned malformed analysis JSON", err)
 	}
 	if err := dec.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
-		return CP1SemanticAnalysis{}, errors.New("cp1 model analysis contains trailing JSON tokens")
+		return CP1SemanticAnalysis{}, newAnalysisRejected(
+			"model returned malformed analysis JSON",
+			errors.New("cp1 model analysis contains trailing JSON tokens"),
+		)
 	}
 	return parsed, nil
 }

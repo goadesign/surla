@@ -318,6 +318,8 @@ const activeCells = openuiWorkspace.querySelectorAll(".shadcn-cell-active");
 if (!canonicalPill ||
     canonicalPill.getAttribute("aria-pressed") !== "true" ||
     activeCells.length !== 3 ||
+    doc.getElementById("surla-confirmed-decisions") ||
+    !editorRegion.textContent.includes("Summary: ") ||
     !editorRegion.textContent.includes("[Selected draft answer: subtotal_only]") ||
     editorRegion.textContent.includes("[Confirmed answer: subtotal_only]")) {
   throw new Error("OpenUI option click did not synchronize canonical pill, draft label, or active column cells (activeCells=" + activeCells.length + ")");
@@ -488,6 +490,33 @@ messageListener({
 if (doc.getElementById("surla-openui-workspace") ||
     !editorRegion.textContent.includes("[Confirmed answer: subtotal_only]")) {
   throw new Error("expected #surla-openui-workspace to unmount and confirmed answer label to appear after confirm_intent");
+}
+const confirmedDecisionsEl = doc.getElementById("surla-confirmed-decisions");
+if (!confirmedDecisionsEl ||
+    !confirmedDecisionsEl.textContent.includes("Confirmed Decisions:") ||
+    !confirmedDecisionsEl.textContent.includes("Does the $50 limit include tax?") ||
+    !confirmedDecisionsEl.textContent.includes("subtotal_only") ||
+    !editorRegion.textContent.includes("Initial Proposal Summary: ")) {
+  throw new Error("expected #surla-confirmed-decisions and Initial Proposal Summary heading on confirmed card with ambiguities, got: " + editorRegion.textContent);
+}
+const confirmedZeroAmbiguities = Object.assign({}, confirmedWithoutUI, {
+  change_id: "chg-zero-amb",
+  request_revision: "rev-zero-amb",
+  ambiguities: [],
+  answers: undefined
+});
+messageListener({
+  source: parentWindow,
+  data: {
+    jsonrpc: "2.0",
+    method: "ui/notifications/tool-result",
+    params: { structuredContent: confirmedZeroAmbiguities }
+  }
+});
+if (doc.getElementById("surla-confirmed-decisions") ||
+    !editorRegion.textContent.includes("Summary: ") ||
+    editorRegion.textContent.includes("Initial Proposal Summary: ")) {
+  throw new Error("expected zero-ambiguity confirmed card to omit #surla-confirmed-decisions and keep Summary heading, got: " + editorRegion.textContent);
 }
 
 for (const tc of badCases) {

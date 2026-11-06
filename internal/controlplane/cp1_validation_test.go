@@ -3,6 +3,8 @@ package controlplane
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -10,12 +12,28 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/codes"
+	"goa.design/goa-ai/features/model/gateway"
+	"goa.design/goa-ai/runtime/agent/model"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 
 	genmcpadapter "github.com/goadesign/surla/gen/mcp_surla"
 	gensurla "github.com/goadesign/surla/gen/surla"
 	"github.com/goadesign/surla/internal/swarm"
 	"github.com/goadesign/surla/internal/testmodule"
 )
+
+// stubCP1Analyzer implements CP1Analyzer directly so tests can exercise
+// post-decode structural checks in validateCP1Analysis and concurrent
+// analyzer turns.
+type stubCP1Analyzer struct {
+	// analyzeFn handles Analyze calls.
+	analyzeFn func(ctx context.Context, promptText, designSource string) (CP1SemanticAnalysis, error)
+	// reviseFn handles Revise calls.
+	reviseFn func(ctx context.Context, prior CP1PriorCard, promptText, designSource string) (CP1SemanticAnalysis, error)
+}
 
 // TestValidateAmbiguityAnswersReportsEveryProblemOnce verifies that
 // confirm_intent's answer check accepts exact option text and otherwise
@@ -214,4 +232,430 @@ var _ = Service("orders", func() {})
 	require.NotEmpty(t, complete.Content)
 	require.NotNil(t, complete.Content[0].Text)
 	assert.Contains(t, *complete.Content[0].Text, `change_id "chg" must be confirmed before architecture preview (status "needs_confirmation")`)
+}
+
+// TestCP1AnalysisRejectedContractAcrossModelBoundaries verifies that:
+//  1. Both direct model.NewClient and gRPC gateway.NewGRPCClient boundaries
+//     classify model output validation failures (structured_output,
+//     output_bounds) and OutputLimited stops as HTTP 502 analysis_rejected
+//     (fault: false) on propose_change and revise_change while retaining the
+//     underlying cause via Unwrap() and never echoing provider StopReason or
+//     rejected model strings.
+//  2. Post-decode validateCP1Analysis failures (duplicate ambiguity option,
+//     invalid verification_kind) return HTTP 502 analysis_rejected without
+//     echoing rejected model strings.
+//  3. Non-validation provider/transport failures remain HTTP 500 faults.
+//  4. OpenTelemetry spans record the failure on both propose_change and
+//     revise_change.
+func TestCP1AnalysisRejectedContractAcrossModelBoundaries(t *testing.T) {
+	prevProvider := otel.GetTracerProvider()
+	recorder := &recordingTracerProvider{}
+	otel.SetTracerProvider(recorder)
+	t.Cleanup(func() { otel.SetTracerProvider(prevProvider) })
+
+	aliceCtx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
+	auth := NewTokenAuthenticator(map[string]Principal{
+		"alice-token": {ID: "alice@example.com"},
+	})
+	validAnalysis := CP1SemanticAnalysis{
+		Summary:     "Refunds up to $50 are instant.",
+		Ambiguities: []CP1ModelAmbiguity{},
+		Examples: []CP1ModelExample{{
+			Scenario:         "Refund at limit",
+			InputSummary:     "$50 subtotal",
+			ExpectedOutcome:  "Instant refund",
+			VerificationKind: "deterministic",
+		}},
+		PreservedBehaviors: []string{"Cross-tenant lookups return 404."},
+	}
+	validBytes, err := json.Marshal(validAnalysis)
+	require.NoError(t, err)
+
+	for _, mode := range []struct {
+		name      string
+		makeModel func(t *testing.T, p *queuedModelClient) model.Client
+	}{
+		{name: "direct_model_client", makeModel: newQueuedModelClient},
+		{name: "grpc_model_gateway", makeModel: func(t *testing.T, p *queuedModelClient) model.Client {
+			return startGatewayModelClient(t, p)
+		}},
+	} {
+		t.Run(mode.name, func(t *testing.T) {
+			q := &queuedModelClient{}
+			cp := newControlPlane(t, Options{
+				Analyzer: NewModelCP1Analyzer(mode.makeModel(t, q)),
+			})
+			handler := NewHTTPHandler(cp, auth)
+			adapter := genmcpadapter.NewMCPAdapter(gensurla.NewEndpoints(cp), nil)
+
+			// Seed an initial card for revise_change checks.
+			q.enqueueJSON(t, validAnalysis)
+			seedCard, err := cp.ProposeChange(aliceCtx, &gensurla.ProposeChangePayload{
+				ChangeID: "chg-seed",
+				Prompt:   "Refunds up to $50 are instant.",
+			})
+			require.NoError(t, err)
+
+			// 1. Malformed assistant text -> OutputValidationStructuredOutput -> 502 analysis_rejected.
+			// 2. Empty message parts -> OutputValidationResponseShape -> 502 analysis_rejected.
+			// 3. OutputLimited with private StopReason -> 502 analysis_rejected without StopReason leak.
+			// 4. Upstream provider transport fault -> 500 fault.
+			q.mu.Lock()
+			q.responses = append(q.responses,
+				queuedModelTurn{resp: &model.Response{
+					Content: []model.Message{{
+						Role:  model.ConversationRoleAssistant,
+						Parts: []model.Part{model.TextPart{Text: "not-json-private-marker"}},
+					}},
+					StopReason: "stop",
+				}},
+				queuedModelTurn{resp: &model.Response{
+					Content: []model.Message{{
+						Role:  model.ConversationRoleAssistant,
+						Parts: nil,
+					}},
+					StopReason: "stop",
+				}},
+				queuedModelTurn{resp: &model.Response{
+					OutputLimited: true,
+					StopReason:    "private-stop-marker",
+					Content: []model.Message{{
+						Role:  model.ConversationRoleAssistant,
+						Parts: []model.Part{model.TextPart{Text: string(validBytes)}},
+					}},
+				}},
+				queuedModelTurn{err: errors.New("upstream transport reset")},
+			)
+			q.mu.Unlock()
+
+			// Check 1: Direct Go call on ProposeChange preserves *model.OutputValidationError via errors.As.
+			recorder.reset()
+			_, err = cp.ProposeChange(aliceCtx, &gensurla.ProposeChangePayload{
+				ChangeID: "chg-reject-1",
+				Prompt:   "Refunds.",
+			})
+			require.Error(t, err)
+			var ovErr *model.OutputValidationError
+			require.ErrorAs(t, err, &ovErr)
+			assert.Equal(t, model.OutputValidationStructuredOutput, ovErr.Kind())
+			assert.Contains(t, err.Error(), `cp1 analysis rejected (model output failed "structured_output" validation): this propose_change request did not save Change Card "chg-reject-1"`)
+			assert.NotContains(t, err.Error(), "not-json-private-marker")
+			spans := recorder.matching("surla.controlplane.propose_change")
+			require.Len(t, spans, 1)
+			assert.Equal(t, codes.Error, spans[0].statusCode)
+
+			// Check 2: HTTP POST /changes/propose on response_shape returns 502 analysis_rejected (fault: false).
+			reqBody, err := json.Marshal(map[string]any{"change_id": "chg-reject-2", "prompt": "Refunds."})
+			require.NoError(t, err)
+			req := httptest.NewRequest(http.MethodPost, "/changes/propose", strings.NewReader(string(reqBody)))
+			req.Header.Set("Authorization", "Bearer alice-token")
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, req)
+			assert.Equal(t, http.StatusBadGateway, rec.Code)
+			var errBody struct {
+				Name    string `json:"name"`
+				Message string `json:"message"`
+				Fault   bool   `json:"fault"`
+			}
+			require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &errBody))
+			assert.Equal(t, "analysis_rejected", errBody.Name)
+			assert.False(t, errBody.Fault)
+			assert.Contains(t, errBody.Message, `model output failed "response_shape" validation`)
+
+			// Check 3: HTTP POST /changes/revise & MCP on OutputLimited returns 502 without leaking StopReason.
+			recorder.reset()
+			revBody, err := json.Marshal(map[string]any{
+				"change_id":        "chg-seed",
+				"request_revision": seedCard.RequestRevision,
+				"prompt":           "Revised refunds.",
+			})
+			require.NoError(t, err)
+			revReq := httptest.NewRequest(http.MethodPost, "/changes/revise", strings.NewReader(string(revBody)))
+			revReq.Header.Set("Authorization", "Bearer alice-token")
+			revReq.Header.Set("Content-Type", "application/json")
+			revRec := httptest.NewRecorder()
+			handler.ServeHTTP(revRec, revReq)
+			assert.Equal(t, http.StatusBadGateway, revRec.Code)
+			require.NoError(t, json.Unmarshal(revRec.Body.Bytes(), &errBody))
+			assert.Equal(t, "analysis_rejected", errBody.Name)
+			assert.False(t, errBody.Fault)
+			assert.Contains(t, errBody.Message, `cp1 analysis rejected (provider stopped at output limit): this revise_change request did not modify Change Card "chg-seed"; retry revise_change with request_revision `+seedCard.RequestRevision)
+			assert.NotContains(t, errBody.Message, "private-stop-marker")
+			revSpans := recorder.matching("surla.controlplane.revise_change")
+			require.Len(t, revSpans, 1)
+			assert.Equal(t, codes.Error, revSpans[0].statusCode)
+
+			// Check 4: Non-validation transport error remains HTTP 500 fault.
+			faultReq := httptest.NewRequest(http.MethodPost, "/changes/propose", strings.NewReader(string(reqBody)))
+			faultReq.Header.Set("Authorization", "Bearer alice-token")
+			faultReq.Header.Set("Content-Type", "application/json")
+			faultRec := httptest.NewRecorder()
+			handler.ServeHTTP(faultRec, faultReq)
+			assert.Equal(t, http.StatusInternalServerError, faultRec.Code)
+			require.NoError(t, json.Unmarshal(faultRec.Body.Bytes(), &errBody))
+			assert.True(t, errBody.Fault)
+
+			// Verify MCP tools/call returns isError: true with the sanitized message on OutputLimited.
+			q.mu.Lock()
+			q.responses = append(q.responses, queuedModelTurn{resp: &model.Response{
+				OutputLimited: true,
+				StopReason:    "private-stop-marker",
+				Content: []model.Message{{
+					Role:  model.ConversationRoleAssistant,
+					Parts: []model.Part{model.TextPart{Text: string(validBytes)}},
+				}},
+			}})
+			q.mu.Unlock()
+			mcpRes, err := adapter.ToolsCall(aliceCtx, &genmcpadapter.ToolsCallPayload{
+				Name:      "revise_change",
+				Arguments: revBody,
+			})
+			require.NoError(t, err)
+			complete, ok := mcpRes.Outcome.AsComplete()
+			require.True(t, ok)
+			require.NotNil(t, complete.IsError)
+			assert.True(t, *complete.IsError)
+			require.NotEmpty(t, complete.Content)
+			require.NotNil(t, complete.Content[0].Text)
+			assert.Contains(t, *complete.Content[0].Text, "cp1 analysis rejected (provider stopped at output limit)")
+			assert.NotContains(t, *complete.Content[0].Text, "private-stop-marker")
+		})
+	}
+
+	// Post-decode validateCP1Analysis sanitization: duplicate option and invalid verification_kind
+	// never echo rejected model-authored strings.
+	t.Run("validateCP1Analysis_sanitizes_rejected_model_values", func(t *testing.T) {
+		calls := 0
+		cp := newControlPlane(t, Options{
+			Analyzer: &stubCP1Analyzer{
+				analyzeFn: func(context.Context, string, string) (CP1SemanticAnalysis, error) {
+					calls++
+					if calls == 1 {
+						return CP1SemanticAnalysis{
+							Summary: "Summary",
+							Ambiguities: []CP1ModelAmbiguity{{
+								Question: "Which option?",
+								Options:  []string{"private-response-marker", "private-response-marker"},
+							}},
+							Examples: []CP1ModelExample{{
+								Scenario: "S", InputSummary: "I", ExpectedOutcome: "O", VerificationKind: "deterministic",
+							}},
+						}, nil
+					}
+					return CP1SemanticAnalysis{
+						Summary: "Summary",
+						Examples: []CP1ModelExample{{
+							Scenario: "S", InputSummary: "I", ExpectedOutcome: "O", VerificationKind: "private-kind-marker",
+						}},
+					}, nil
+				},
+			},
+		})
+		handler := NewHTTPHandler(cp, auth)
+
+		for _, tc := range []struct {
+			name        string
+			wantSubstr  string
+			forbidValue string
+		}{
+			{
+				name:        "duplicate_option",
+				wantSubstr:  `ambiguity "chg-val-ambiguity-01" has duplicate option at options[1]`,
+				forbidValue: "private-response-marker",
+			},
+			{
+				name:        "invalid_verification_kind",
+				wantSubstr:  `examples[0] has invalid verification_kind (want "deterministic" or "model_judged")`,
+				forbidValue: "private-kind-marker",
+			},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				reqBody, err := json.Marshal(map[string]any{"change_id": "chg-val", "prompt": "Refunds."})
+				require.NoError(t, err)
+				req := httptest.NewRequest(http.MethodPost, "/changes/propose", strings.NewReader(string(reqBody)))
+				req.Header.Set("Authorization", "Bearer alice-token")
+				req.Header.Set("Content-Type", "application/json")
+				rec := httptest.NewRecorder()
+				handler.ServeHTTP(rec, req)
+				assert.Equal(t, http.StatusBadGateway, rec.Code)
+				var errBody struct {
+					Name    string `json:"name"`
+					Message string `json:"message"`
+					Fault   bool   `json:"fault"`
+				}
+				require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &errBody))
+				assert.Equal(t, "analysis_rejected", errBody.Name)
+				assert.False(t, errBody.Fault)
+				assert.Contains(t, errBody.Message, tc.wantSubstr)
+				assert.NotContains(t, errBody.Message, tc.forbidValue)
+				assert.NotContains(t, rec.Body.String(), tc.forbidValue)
+			})
+		}
+	})
+}
+
+// TestCP1AnalysisRejectedConcurrentMutationCounterexample verifies that when
+// Request A fails CP1 analysis validation while concurrent Request B creates or
+// updates the same Change Card, Request A's error message claims only that
+// Request A did not save/modify the card and leaves Request B's saved revision
+// intact.
+func TestCP1AnalysisRejectedConcurrentMutationCounterexample(t *testing.T) {
+	aliceCtx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
+	startedA, releaseA := make(chan struct{}), make(chan struct{})
+	callNum := 0
+	cp := newControlPlane(t, Options{
+		Analyzer: &stubCP1Analyzer{
+			analyzeFn: func(context.Context, string, string) (CP1SemanticAnalysis, error) {
+				callNum++
+				if callNum == 1 {
+					close(startedA)
+					<-releaseA
+					return CP1SemanticAnalysis{Summary: ""}, nil
+				}
+				return CP1SemanticAnalysis{
+					Summary: "Saved by concurrent Request B.",
+					Examples: []CP1ModelExample{{
+						Scenario: "S", InputSummary: "I", ExpectedOutcome: "O", VerificationKind: "deterministic",
+					}},
+				}, nil
+			},
+		},
+	})
+
+	errCh := runAsyncProposeChange(aliceCtx, cp, &gensurla.ProposeChangePayload{
+		ChangeID: "chg-race",
+		Prompt:   "Request A",
+	})
+	<-startedA
+
+	cardB, err := cp.ProposeChange(aliceCtx, &gensurla.ProposeChangePayload{
+		ChangeID: "chg-race",
+		Prompt:   "Request B",
+	})
+	require.NoError(t, err)
+	close(releaseA)
+
+	errA := <-errCh
+	require.Error(t, errA)
+	assert.Contains(t, errA.Error(), `this propose_change request did not save Change Card "chg-race"`)
+	assert.Contains(t, errA.Error(), "or call get_change if another request may have created the card")
+
+	got, err := cp.GetChange(aliceCtx, &gensurla.GetChangePayload{ChangeID: "chg-race"})
+	require.NoError(t, err)
+	assert.Equal(t, cardB.RequestRevision, got.RequestRevision)
+	assert.Equal(t, "Saved by concurrent Request B.", got.Summary)
+}
+
+// TestFormatCP1DesignSectionPreservesDesignAndSpecializesEmpty verifies that
+// Analyze and Revise substitute the explicit no-design notice when
+// design_source is empty or whitespace-only, preserve exact design_source
+// bytes when provided or inherited on ReviseChange, and keep canonical
+// RequestRevision hashing unchanged.
+func TestFormatCP1DesignSectionPreservesDesignAndSpecializesEmpty(t *testing.T) {
+	const noDesignNotice = "(no Goa design source was supplied — do not assume or invent service splits, endpoints, or fixture IDs that are not stated in the request or prior card)"
+	assert.Equal(t, noDesignNotice, formatCP1DesignSection(""))
+	assert.Equal(t, noDesignNotice, formatCP1DesignSection("   \n\t "))
+	assert.Equal(t, "  package design\n", formatCP1DesignSection("  package design\n"))
+
+	aliceCtx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
+	q := &queuedModelClient{}
+	cp := newControlPlane(t, Options{
+		Analyzer: NewModelCP1Analyzer(newQueuedModelClient(t, q)),
+	})
+	validAnalysis := CP1SemanticAnalysis{
+		Summary: "Single-service assistant.",
+		Examples: []CP1ModelExample{{
+			Scenario: "Ask assistant", InputSummary: "Hello", ExpectedOutcome: "Replies", VerificationKind: "deterministic",
+		}},
+		PreservedBehaviors: []string{},
+	}
+
+	// 1. ProposeChange with omitted design_source sends noDesignNotice in user prompt,
+	// while canonical RequestRevision still hashes raw "".
+	q.enqueueJSON(t, validAnalysis)
+	card, err := cp.ProposeChange(aliceCtx, &gensurla.ProposeChangePayload{
+		ChangeID: "chg-nodesign",
+		Prompt:   "Build a single-service assistant.",
+	})
+	require.NoError(t, err)
+	userText := q.lastRequest().Messages[1].Parts[0].(model.TextPart).Text
+	assert.True(t, strings.HasSuffix(userText, "\n\nDesign:\n"+noDesignNotice), userText)
+	wantRev, err := computeCanonicalRevision(card, "alice@example.com", "")
+	require.NoError(t, err)
+	assert.Equal(t, wantRev, card.RequestRevision)
+
+	// 2. ReviseChange with omitted design_source on a card with empty designSource also sends noDesignNotice.
+	q.enqueueJSON(t, validAnalysis)
+	_, err = cp.ReviseChange(aliceCtx, &gensurla.ReviseChangePayload{
+		ChangeID:        "chg-nodesign",
+		RequestRevision: card.RequestRevision,
+		Prompt:          "Refine the single-service assistant.",
+	})
+	require.NoError(t, err)
+	_, _, sentDesign := extractPriorCardFromUserPrompt(t, q.lastRequest())
+	assert.Equal(t, noDesignNotice, sentDesign)
+}
+
+// Analyze delegates to analyzeFn.
+func (s *stubCP1Analyzer) Analyze(ctx context.Context, promptText, designSource string) (CP1SemanticAnalysis, error) {
+	return s.analyzeFn(ctx, promptText, designSource)
+}
+
+// Revise delegates to reviseFn.
+func (s *stubCP1Analyzer) Revise(ctx context.Context, prior CP1PriorCard, promptText, designSource string) (CP1SemanticAnalysis, error) {
+	return s.reviseFn(ctx, prior, promptText, designSource)
+}
+
+// runAsyncProposeChange runs cp.ProposeChange in a background goroutine and
+// sends the returned error to the returned buffered channel.
+func runAsyncProposeChange(
+	ctx context.Context,
+	cp *ControlPlane,
+	p *gensurla.ProposeChangePayload,
+) <-chan error {
+	errCh := make(chan error, 1)
+	go executeProposeChange(ctx, cp, p, errCh)
+	return errCh
+}
+
+// executeProposeChange invokes cp.ProposeChange and writes the error to errCh.
+func executeProposeChange(
+	ctx context.Context,
+	cp *ControlPlane,
+	p *gensurla.ProposeChangePayload,
+	errCh chan<- error,
+) {
+	_, err := cp.ProposeChange(ctx, p)
+	errCh <- err
+}
+
+// startGatewayModelClient serves provider through an in-process goa-ai gRPC
+// model gateway and returns a connected gateway.NewGRPCClient.
+func startGatewayModelClient(t *testing.T, provider model.Provider) model.Client {
+	t.Helper()
+	gw, err := gateway.NewServer(gateway.WithProvider(provider))
+	require.NoError(t, err)
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	srv := grpc.NewServer()
+	gateway.RegisterGRPCServer(srv, gw)
+	go serveGateway(t, srv, lis)
+	t.Cleanup(srv.Stop)
+
+	conn, err := grpc.NewClient(lis.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		assert.NoError(t, conn.Close())
+	})
+	client, err := gateway.NewGRPCClient(conn)
+	require.NoError(t, err)
+	return client
+}
+
+// serveGateway runs srv.Serve(lis) and fails t if Serve returns an unexpected error.
+func serveGateway(t *testing.T, srv *grpc.Server, lis net.Listener) {
+	if serveErr := srv.Serve(lis); serveErr != nil && !errors.Is(serveErr, grpc.ErrServerStopped) {
+		t.Errorf("gateway server: %v", serveErr)
+	}
 }

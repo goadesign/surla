@@ -199,11 +199,30 @@ export function CP1EditorView({
             ? "Confirmed Change Decision"
             : "Review & Confirm Change Intent"}
         </h2>
+        {card.status === "confirmed" && ambiguities.length > 0 ? (
+          <div id="surla-confirmed-decisions" role="region" aria-label="Confirmed Decisions">
+            <p>
+              <strong>Confirmed Decisions:</strong>
+            </p>
+            <ul>
+              {ambiguities.map((amb) => (
+                <li key={amb.id}>
+                  <strong>{amb.question}</strong>{" "}
+                  <code>{card.answers?.[amb.id] ?? ""}</code>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
         <p>
           <Badge>{card.status === "confirmed" ? "Confirmed" : "Needs confirmation"}</Badge>
           {card.approval ? <Badge variant="accent">Approval recorded</Badge> : null}
           {card.unverified_approval ? <Badge>Approval unverified</Badge> : null}
-          <strong>Summary: </strong>
+          <strong>
+            {card.status === "confirmed" && ambiguities.length > 0
+              ? "Initial Proposal Summary: "
+              : "Summary: "}
+          </strong>
           {card.summary}
         </p>
         <p>

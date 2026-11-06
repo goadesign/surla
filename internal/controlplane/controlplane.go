@@ -30,6 +30,10 @@ import (
 	"github.com/goadesign/surla/internal/goldenpath"
 	"github.com/goadesign/surla/internal/swarm"
 	"github.com/goadesign/surla/internal/verify"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 	"goa.design/goa-ai/runtime/agent/model"
 	"goa.design/goa-ai/runtime/mcp"
 	goahttp "goa.design/goa/v3/http"
@@ -484,7 +488,7 @@ func (a *ModelCP1Analyzer) Analyze(ctx context.Context, promptText, designSource
 	return a.completeAnalysis(
 		ctx,
 		goldenpath.ArchitectSystemPrompt(),
-		fmt.Sprintf("Request:\n%s\n\nDesign:\n%s", promptText, designSource),
+		fmt.Sprintf("Request:\n%s\n\nDesign:\n%s", promptText, formatCP1DesignSection(designSource)),
 	)
 }
 
@@ -536,11 +540,28 @@ func (c *ControlPlane) ProposeChange(ctx context.Context, p *gensurla.ProposeCha
 		return nil, gensurla.MakeConflict(fmt.Errorf("change_id %q already exists", p.ChangeID))
 	}
 
+	ctx, span := otel.Tracer("surla/controlplane").Start(
+		ctx,
+		"surla.controlplane.propose_change",
+		trace.WithAttributes(attribute.String("surla.change_id", p.ChangeID)),
+	)
+	defer span.End()
+
 	if err := reportProgress(ctx, 0, 1, "Analyzing the feature request with the CP1 model"); err != nil {
 		return nil, err
 	}
 	analysis, err := c.analyzer.Analyze(ctx, p.Prompt, designSrc)
 	if err != nil {
+		if se, ok := asAnalysisRejected(err); ok {
+			se.Message = fmt.Sprintf(
+				"cp1 analysis rejected (%s): this propose_change request did not save Change Card %q; retry propose_change (including design_source when evaluating an existing Goa design), or call get_change if another request may have created the card",
+				se.Message,
+				p.ChangeID,
+			)
+			err = se
+		}
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "analyze cp1 change card")
 		return nil, err
 	}
 	if err := reportProgress(ctx, 1, 1, "Validating the CP1 analysis"); err != nil {
@@ -549,7 +570,17 @@ func (c *ControlPlane) ProposeChange(ctx context.Context, p *gensurla.ProposeCha
 
 	summary, ambiguities, examples, preserved, err := validateCP1Analysis(p.ChangeID, analysis)
 	if err != nil {
-		return nil, fmt.Errorf("invalid cp1 analysis: %w", err)
+		se := newAnalysisRejected(
+			fmt.Sprintf(
+				"cp1 analysis rejected (%s): this propose_change request did not save Change Card %q; retry propose_change (including design_source when evaluating an existing Goa design), or call get_change if another request may have created the card",
+				err.Error(),
+				p.ChangeID,
+			),
+			err,
+		)
+		span.RecordError(se)
+		span.SetStatus(codes.Error, "validate cp1 analysis")
+		return nil, se
 	}
 
 	status := StatusConfirmed

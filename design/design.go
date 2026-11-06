@@ -102,9 +102,9 @@ var ChangeCardResult = Type("ChangeCardResult", func() {
 		Enum("needs_confirmation", "confirmed")
 	})
 	Attribute("prompt", String, "Operator feature request for this revision.")
-	Attribute("summary", String, "Plain-English summary of requested behavior.")
+	Attribute("summary", String, "Plain-English summary of the proposed change from propose_change or revise_change. confirm_intent does not rewrite this text; when status is confirmed, answers records the owner's resolutions for ambiguities.")
 	Attribute("ambiguities", ArrayOf(AmbiguityQuestion), "Domain questions surfaced at CP1, retained for audit after confirmation.")
-	Attribute("answers", MapOf(String, String), "Confirmed resolution per ambiguity question ID: each value is exactly one string from that question's options.")
+	Attribute("answers", MapOf(String, String), "Owner-confirmed answers keyed by ambiguity question ID when status is confirmed and ambiguities is non-empty (empty when a confirmed card has no ambiguity questions). Each answer equals one of its question's declared options and takes precedence over open phrasing in summary.")
 	Attribute("examples", ArrayOf(ExampleItem), "Concrete examples mapped to evaluator checks.")
 	Attribute("preserved_behaviors", ArrayOf(String), "Existing contract invariants preserved by this change.")
 	Attribute("confirmed_by", String, "Authenticated principal that confirmed the Change Card.")
@@ -559,6 +559,7 @@ var _ = Service("surla", func() {
 		Error("conflict", ErrorResult, "A Change Card with this change_id already exists; use revise_change or a new change_id.")
 		Error("unprocessable", ErrorResult, "The request could not be accepted; the message states which required field or constraint failed.")
 		Error("not_implemented", ErrorResult, "This control plane has no Checkpoint 1 analyzer configured.")
+		Error("analysis_rejected", ErrorResult, "The Checkpoint 1 model response did not satisfy the analysis contract or stopped at the output limit; this request did not save or modify the Change Card.")
 		Tool("propose_change", "Propose a feature change and generate a Checkpoint 1 Change Card. The analysis considers the target's current design only when it is sent in design_source.", func() {
 			ToolUI("ui://surla/checkpoint")
 		})
@@ -568,6 +569,7 @@ var _ = Service("surla", func() {
 			Response("conflict", StatusConflict)
 			Response("unprocessable", StatusUnprocessableEntity)
 			Response("not_implemented", StatusNotImplemented)
+			Response("analysis_rejected", StatusBadGateway)
 		})
 	})
 
@@ -580,6 +582,7 @@ var _ = Service("surla", func() {
 		Error("conflict", ErrorResult, "The card's request_revision changed; read the current revision with get_change.")
 		Error("unprocessable", ErrorResult, "The request could not be accepted; the message states which required field or constraint failed.")
 		Error("not_implemented", ErrorResult, "This control plane has no Checkpoint 1 analyzer configured.")
+		Error("analysis_rejected", ErrorResult, "The Checkpoint 1 model response did not satisfy the analysis contract or stopped at the output limit; this request did not save or modify the Change Card.")
 		Tool("revise_change", "Revise an existing Checkpoint 1 Change Card with updated requirements bound to its current request_revision. The new revision's answers, confirmed_by and any approval are cleared, so it needs confirmation again; earlier decisions remain only where the analysis restated them in its summary, examples or preserved behaviors.", func() {
 			ToolUI("ui://surla/checkpoint")
 		})
@@ -591,6 +594,7 @@ var _ = Service("surla", func() {
 			Response("conflict", StatusConflict)
 			Response("unprocessable", StatusUnprocessableEntity)
 			Response("not_implemented", StatusNotImplemented)
+			Response("analysis_rejected", StatusBadGateway)
 		})
 	})
 

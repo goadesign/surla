@@ -29,12 +29,16 @@ type (
 		Status string
 		// Operator feature request for this revision.
 		Prompt string
-		// Plain-English summary of requested behavior.
+		// Plain-English summary of the proposed change from propose_change or
+		// revise_change. confirm_intent does not rewrite this text; when status is
+		// confirmed, answers records the owner's resolutions for ambiguities.
 		Summary string
 		// Domain questions surfaced at CP1, retained for audit after confirmation.
 		Ambiguities []*AmbiguityQuestion
-		// Confirmed resolution per ambiguity question ID: each value is exactly one
-		// string from that question's options.
+		// Owner-confirmed answers keyed by ambiguity question ID when status is
+		// confirmed and ambiguities is non-empty (empty when a confirmed card has no
+		// ambiguity questions). Each answer equals one of its question's declared
+		// options and takes precedence over open phrasing in summary.
 		Answers map[string]string
 		// Concrete examples mapped to evaluator checks.
 		Examples []*ExampleItem
@@ -84,12 +88,16 @@ type (
 		Status string
 		// Operator feature request for this revision.
 		Prompt string
-		// Plain-English summary of requested behavior.
+		// Plain-English summary of the proposed change from propose_change or
+		// revise_change. confirm_intent does not rewrite this text; when status is
+		// confirmed, answers records the owner's resolutions for ambiguities.
 		Summary string
 		// Domain questions surfaced at CP1, retained for audit after confirmation.
 		Ambiguities []*AmbiguityQuestion
-		// Confirmed resolution per ambiguity question ID: each value is exactly one
-		// string from that question's options.
+		// Owner-confirmed answers keyed by ambiguity question ID when status is
+		// confirmed and ambiguities is non-empty (empty when a confirmed card has no
+		// ambiguity questions). Each answer equals one of its question's declared
+		// options and takes precedence over open phrasing in summary.
 		Answers map[string]string
 		// Concrete examples mapped to evaluator checks.
 		Examples []*ExampleItem
@@ -172,12 +180,16 @@ type (
 		Status string
 		// Operator feature request for this revision.
 		Prompt string
-		// Plain-English summary of requested behavior.
+		// Plain-English summary of the proposed change from propose_change or
+		// revise_change. confirm_intent does not rewrite this text; when status is
+		// confirmed, answers records the owner's resolutions for ambiguities.
 		Summary string
 		// Domain questions surfaced at CP1, retained for audit after confirmation.
 		Ambiguities []*AmbiguityQuestion
-		// Confirmed resolution per ambiguity question ID: each value is exactly one
-		// string from that question's options.
+		// Owner-confirmed answers keyed by ambiguity question ID when status is
+		// confirmed and ambiguities is non-empty (empty when a confirmed card has no
+		// ambiguity questions). Each answer equals one of its question's declared
+		// options and takes precedence over open phrasing in summary.
 		Answers map[string]string
 		// Concrete examples mapped to evaluator checks.
 		Examples []*ExampleItem
@@ -300,12 +312,16 @@ type (
 		Status string
 		// Operator feature request for this revision.
 		Prompt string
-		// Plain-English summary of requested behavior.
+		// Plain-English summary of the proposed change from propose_change or
+		// revise_change. confirm_intent does not rewrite this text; when status is
+		// confirmed, answers records the owner's resolutions for ambiguities.
 		Summary string
 		// Domain questions surfaced at CP1, retained for audit after confirmation.
 		Ambiguities []*AmbiguityQuestion
-		// Confirmed resolution per ambiguity question ID: each value is exactly one
-		// string from that question's options.
+		// Owner-confirmed answers keyed by ambiguity question ID when status is
+		// confirmed and ambiguities is non-empty (empty when a confirmed card has no
+		// ambiguity questions). Each answer equals one of its question's declared
+		// options and takes precedence over open phrasing in summary.
 		Answers map[string]string
 		// Concrete examples mapped to evaluator checks.
 		Examples []*ExampleItem
@@ -352,12 +368,16 @@ type (
 		Status string
 		// Operator feature request for this revision.
 		Prompt string
-		// Plain-English summary of requested behavior.
+		// Plain-English summary of the proposed change from propose_change or
+		// revise_change. confirm_intent does not rewrite this text; when status is
+		// confirmed, answers records the owner's resolutions for ambiguities.
 		Summary string
 		// Domain questions surfaced at CP1, retained for audit after confirmation.
 		Ambiguities []*AmbiguityQuestion
-		// Confirmed resolution per ambiguity question ID: each value is exactly one
-		// string from that question's options.
+		// Owner-confirmed answers keyed by ambiguity question ID when status is
+		// confirmed and ambiguities is non-empty (empty when a confirmed card has no
+		// ambiguity questions). Each answer equals one of its question's declared
+		// options and takes precedence over open phrasing in summary.
 		Answers map[string]string
 		// Concrete examples mapped to evaluator checks.
 		Examples []*ExampleItem

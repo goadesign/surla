@@ -71,7 +71,7 @@ func validateCP1Analysis(
 			return "", nil, nil, nil, fmt.Errorf("examples[%d] requires non-empty scenario, input_summary, and expected_outcome", i)
 		}
 		if item.VerificationKind != "deterministic" && item.VerificationKind != "model_judged" {
-			return "", nil, nil, nil, fmt.Errorf("examples[%d] has invalid verification_kind %q", i, item.VerificationKind)
+			return "", nil, nil, nil, fmt.Errorf("examples[%d] has invalid verification_kind (want \"deterministic\" or \"model_judged\")", i)
 		}
 		examples = append(examples, &gensurla.ExampleItem{
 			ID:               fmt.Sprintf("%s-check-%02d", changeID, i+1),
@@ -109,13 +109,13 @@ func validateAmbiguities(changeID string, in []CP1ModelAmbiguity) ([]*gensurla.A
 		}
 		seenOpts := make(map[string]bool, len(q.Options)*2)
 		opts := make([]string, 0, len(q.Options))
-		for _, opt := range q.Options {
+		for j, opt := range q.Options {
 			trimmed := strings.TrimSpace(opt)
 			if trimmed == "" {
 				return nil, fmt.Errorf("ambiguity %q has an empty option", id)
 			}
 			if seenOpts[opt] || seenOpts[trimmed] {
-				return nil, fmt.Errorf("ambiguity %q has duplicate option %q", id, opt)
+				return nil, fmt.Errorf("ambiguity %q has duplicate option at options[%d]", id, j)
 			}
 			seenOpts[opt] = true
 			seenOpts[trimmed] = true
