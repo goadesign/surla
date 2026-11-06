@@ -161,7 +161,7 @@ func (c *ControlPlane) ReviseChange(
 				),
 				err,
 			)
-		} else {
+		} else if containsAnalysisRejected(err) {
 			err = unclassifiedCP1Error{cause: err}
 		}
 		span.RecordError(err)
@@ -363,6 +363,29 @@ func asAnalysisRejected(err error) (*goa.ServiceError, bool) {
 		return asAnalysisRejected(wrapped.Unwrap())
 	}
 	return nil, false
+}
+
+// containsAnalysisRejected reports whether err or any error in its unwrap tree
+// is an analysis_rejected ServiceError.
+func containsAnalysisRejected(err error) bool {
+	if err == nil {
+		return false
+	}
+	if se, ok := err.(*goa.ServiceError); ok && se != nil && se.GoaErrorName() == "analysis_rejected" {
+		return true
+	}
+	if joined, ok := err.(interface{ Unwrap() []error }); ok {
+		for _, child := range joined.Unwrap() {
+			if containsAnalysisRejected(child) {
+				return true
+			}
+		}
+		return false
+	}
+	if wrapped, ok := err.(interface{ Unwrap() error }); ok {
+		return containsAnalysisRejected(wrapped.Unwrap())
+	}
+	return false
 }
 
 // exactOutputValidation accepts only an error tree whose every leaf is the

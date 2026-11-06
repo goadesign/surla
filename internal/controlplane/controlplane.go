@@ -563,7 +563,7 @@ func (c *ControlPlane) ProposeChange(ctx context.Context, p *gensurla.ProposeCha
 				),
 				err,
 			)
-		} else {
+		} else if containsAnalysisRejected(err) {
 			err = unclassifiedCP1Error{cause: err}
 		}
 		span.RecordError(err)
