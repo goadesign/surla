@@ -548,23 +548,29 @@ func (c *ControlPlane) ProposeChange(ctx context.Context, p *gensurla.ProposeCha
 	defer span.End()
 
 	if err := reportProgress(ctx, 0, 1, "Analyzing the feature request with the CP1 model"); err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "report cp1 analysis progress")
 		return nil, err
 	}
 	analysis, err := c.analyzer.Analyze(ctx, p.Prompt, designSrc)
 	if err != nil {
 		if se, ok := asAnalysisRejected(err); ok {
-			se.Message = fmt.Sprintf(
-				"cp1 analysis rejected (%s): this propose_change request did not save Change Card %q; retry propose_change (including design_source when evaluating an existing Goa design), or call get_change if another request may have created the card",
-				se.Message,
-				p.ChangeID,
+			err = newAnalysisRejected(
+				fmt.Sprintf(
+					"cp1 analysis rejected (%s): this propose_change request did not save Change Card %q; retry propose_change (including design_source when evaluating an existing Goa design), or call get_change if another request may have created the card",
+					se.Message,
+					p.ChangeID,
+				),
+				err,
 			)
-			err = se
 		}
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "analyze cp1 change card")
 		return nil, err
 	}
 	if err := reportProgress(ctx, 1, 1, "Validating the CP1 analysis"); err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "report cp1 validation progress")
 		return nil, err
 	}
 
@@ -604,6 +610,8 @@ func (c *ControlPlane) ProposeChange(ctx context.Context, p *gensurla.ProposeCha
 	}
 	rev, err := computeCanonicalRevision(card, principal.ID, designSrc)
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "compute cp1 card revision")
 		return nil, err
 	}
 	card.RequestRevision = rev
@@ -617,12 +625,16 @@ func (c *ControlPlane) ProposeChange(ctx context.Context, p *gensurla.ProposeCha
 	defer c.mu.Unlock()
 	_, exists, err := c.cards.load(p.ChangeID)
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "load cp1 change card")
 		return nil, err
 	}
 	if exists {
 		return nil, gensurla.MakeConflict(fmt.Errorf("change_id %q already exists", p.ChangeID))
 	}
 	if err := c.cards.save(storedChangeCard{card: card, owner: principal.ID, designSource: designSrc}); err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "save cp1 change card")
 		return nil, err
 	}
 	return card, nil

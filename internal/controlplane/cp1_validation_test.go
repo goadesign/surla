@@ -4,9 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -16,6 +19,7 @@ import (
 	"go.opentelemetry.io/otel/codes"
 	"goa.design/goa-ai/features/model/gateway"
 	"goa.design/goa-ai/runtime/agent/model"
+	goa "goa.design/goa/v3/pkg"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
@@ -420,6 +424,61 @@ func TestCP1AnalysisRejectedContractAcrossModelBoundaries(t *testing.T) {
 			require.NotNil(t, complete.Content[0].Text)
 			assert.Contains(t, *complete.Content[0].Text, "cp1 analysis rejected (provider stopped at output limit)")
 			assert.NotContains(t, *complete.Content[0].Text, "private-stop-marker")
+
+			// Check 5 (R1): Sole wrapped and duplicate-joined OutputValidationError remain 502 analysis_rejected,
+			// whereas OutputValidationError joined with an independent provider/observer fault or context
+			// cancellation remains an HTTP 500 fault with all causes preserved.
+			soleValidationErr := ovErr
+			independentFault := errors.New("independent provider fault")
+			q.mu.Lock()
+			q.responses = append(q.responses,
+				queuedModelTurn{err: fmt.Errorf("translated: %w", soleValidationErr)},
+				queuedModelTurn{err: fmt.Errorf(
+					"translated: %w",
+					errors.Join(soleValidationErr, errors.Join(soleValidationErr, soleValidationErr)),
+				)},
+				queuedModelTurn{err: errors.Join(soleValidationErr, independentFault)},
+				queuedModelTurn{err: errors.Join(soleValidationErr, context.Canceled)},
+			)
+			q.mu.Unlock()
+
+			for _, name := range []string{"wrapped_sole_validation", "duplicate_joined_sole_validation"} {
+				t.Run(name, func(t *testing.T) {
+					_, err := cp.ProposeChange(aliceCtx, &gensurla.ProposeChangePayload{
+						ChangeID: "chg-" + name,
+						Prompt:   "Refunds.",
+					})
+					require.Error(t, err)
+					se, ok := asAnalysisRejected(err)
+					require.True(t, ok, "sole wrapped/duplicate validation must classify as analysis_rejected: %v", err)
+					assert.Contains(t, se.Message, `model output failed "structured_output" validation`)
+					var gotOV *model.OutputValidationError
+					require.ErrorAs(t, err, &gotOV)
+					assert.Equal(t, model.OutputValidationStructuredOutput, gotOV.Kind())
+				})
+			}
+
+			// Combined validation + independent fault -> HTTP 500 fault, retaining both causes in Go.
+			_, err = cp.ProposeChange(aliceCtx, &gensurla.ProposeChangePayload{
+				ChangeID: "chg-mixed-fault",
+				Prompt:   "Refunds.",
+			})
+			require.Error(t, err)
+			_, isRejected := asAnalysisRejected(err)
+			assert.False(t, isRejected, "validation joined with independent fault must not classify as analysis_rejected")
+			var gotOV *model.OutputValidationError
+			require.ErrorAs(t, err, &gotOV)
+			assert.ErrorContains(t, err, "independent provider fault")
+
+			// Combined validation + context.Canceled -> HTTP 500 fault over HTTP.
+			mixedCancelReq := httptest.NewRequest(http.MethodPost, "/changes/propose", strings.NewReader(string(reqBody)))
+			mixedCancelReq.Header.Set("Authorization", "Bearer alice-token")
+			mixedCancelReq.Header.Set("Content-Type", "application/json")
+			mixedCancelRec := httptest.NewRecorder()
+			handler.ServeHTTP(mixedCancelRec, mixedCancelReq)
+			assert.Equal(t, http.StatusInternalServerError, mixedCancelRec.Code)
+			require.NoError(t, json.Unmarshal(mixedCancelRec.Body.Bytes(), &errBody))
+			assert.True(t, errBody.Fault)
 		})
 	}
 
@@ -545,6 +604,186 @@ func TestCP1AnalysisRejectedConcurrentMutationCounterexample(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, cardB.RequestRevision, got.RequestRevision)
 	assert.Equal(t, "Saved by concurrent Request B.", got.Summary)
+}
+
+// TestCP1ReusedAnalyzerErrorImmutabilityAndSaveSpanRecording verifies:
+//  1. R2: Reusing a single shared analysis_rejected ServiceError (and an outer
+//     wrapped analysis_rejected error) across sequential and concurrent
+//     ProposeChange and ReviseChange calls never mutates the analyzer's error
+//     or earlier callers' returned error messages, and retains the entire
+//     original cause chain via Unwrap.
+//  2. R3: Storage failures reached after valid CP1 analysis (such as an
+//     unusable staging path in cardStore.save) record both the error and
+//     codes.Error on the surla.controlplane.propose_change and
+//     surla.controlplane.revise_change spans, while expected conflict refusals
+//     leave the span status Unset.
+func TestCP1ReusedAnalyzerErrorImmutabilityAndSaveSpanRecording(t *testing.T) {
+	prevProvider := otel.GetTracerProvider()
+	recorder := &recordingTracerProvider{}
+	otel.SetTracerProvider(recorder)
+	t.Cleanup(func() { otel.SetTracerProvider(prevProvider) })
+
+	aliceCtx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
+	rootCause := errors.New("underlying analyzer cause")
+	sharedRejected := newAnalysisRejected("shared analyzer reason", rootCause)
+	wrappedShared := fmt.Errorf("outer analyzer wrapper: %w", sharedRejected)
+
+	reusedCP := newControlPlane(t, Options{
+		Analyzer: &stubCP1Analyzer{
+			analyzeFn: func(_ context.Context, promptText, _ string) (CP1SemanticAnalysis, error) {
+				if promptText == "seed" {
+					return CP1SemanticAnalysis{
+						Summary: "Seed summary.",
+						Examples: []CP1ModelExample{{
+							Scenario: "S", InputSummary: "I", ExpectedOutcome: "O", VerificationKind: "deterministic",
+						}},
+					}, nil
+				}
+				return CP1SemanticAnalysis{}, wrappedShared
+			},
+			reviseFn: func(context.Context, CP1PriorCard, string, string) (CP1SemanticAnalysis, error) {
+				return CP1SemanticAnalysis{}, sharedRejected
+			},
+		},
+	})
+	seed, err := reusedCP.ProposeChange(aliceCtx, &gensurla.ProposeChangePayload{
+		ChangeID: "chg-seed",
+		Prompt:   "seed",
+	})
+	require.NoError(t, err)
+
+	_, errA := reusedCP.ProposeChange(aliceCtx, &gensurla.ProposeChangePayload{
+		ChangeID: "chg-seq-a",
+		Prompt:   "fail",
+	})
+	require.Error(t, errA)
+	msgABefore := errA.Error()
+	assert.Contains(t, msgABefore, `Change Card "chg-seq-a"`)
+	assert.Equal(t, "shared analyzer reason", sharedRejected.Message)
+	assert.ErrorIs(t, errA, rootCause)
+	assert.ErrorContains(t, errors.Unwrap(errA), "outer analyzer wrapper")
+
+	// Concurrent ProposeChange and ReviseChange reusing the same sharedRejected instance.
+	proposeCh := runAsyncProposeChange(aliceCtx, reusedCP, &gensurla.ProposeChangePayload{
+		ChangeID: "chg-conc-b",
+		Prompt:   "fail",
+	})
+	_, errRev := reusedCP.ReviseChange(aliceCtx, &gensurla.ReviseChangePayload{
+		ChangeID:        "chg-seed",
+		RequestRevision: seed.RequestRevision,
+		Prompt:          "revise fail",
+	})
+	errB := <-proposeCh
+	require.Error(t, errB)
+	require.Error(t, errRev)
+	assert.Equal(t, "shared analyzer reason", sharedRejected.Message)
+	assert.Equal(t, msgABefore, errA.Error(), "earlier caller's returned error message must not be mutated")
+	assert.Contains(t, errB.Error(), `this propose_change request did not save Change Card "chg-conc-b"`)
+	assert.NotContains(t, errB.Error(), "chg-seq-a")
+	assert.Contains(t, errRev.Error(), `this revise_change request did not modify Change Card "chg-seed"; retry revise_change with request_revision `+seed.RequestRevision)
+
+	// R3: Deterministic cardStore.save failure after valid analysis records codes.Error on both spans.
+	cardsDir := t.TempDir()
+	saveFailCP, err := New(Options{
+		CardsDir: cardsDir,
+		Analyzer: &stubCP1Analyzer{
+			analyzeFn: func(context.Context, string, string) (CP1SemanticAnalysis, error) {
+				return CP1SemanticAnalysis{
+					Summary: "Valid summary.",
+					Examples: []CP1ModelExample{{
+						Scenario: "S", InputSummary: "I", ExpectedOutcome: "O", VerificationKind: "deterministic",
+					}},
+				}, nil
+			},
+			reviseFn: func(context.Context, CP1PriorCard, string, string) (CP1SemanticAnalysis, error) {
+				return CP1SemanticAnalysis{
+					Summary: "Revised valid summary.",
+					Examples: []CP1ModelExample{{
+						Scenario: "S", InputSummary: "I", ExpectedOutcome: "O", VerificationKind: "deterministic",
+					}},
+				}, nil
+			},
+		},
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() { assert.NoError(t, saveFailCP.Close()) })
+
+	initialCard, err := saveFailCP.ProposeChange(aliceCtx, &gensurla.ProposeChangePayload{
+		ChangeID: "chg-existing",
+		Prompt:   "Initial.",
+	})
+	require.NoError(t, err)
+
+	// Replace the staging file path with a directory so cardStore.save fails deterministically after analysis.
+	stagingPath := filepath.Join(cardsDir, stagingFile)
+	require.NoError(t, os.Mkdir(stagingPath, 0o700))
+
+	recorder.reset()
+	_, err = saveFailCP.ProposeChange(aliceCtx, &gensurla.ProposeChangePayload{
+		ChangeID: "chg-save-fail",
+		Prompt:   "Will fail on save.",
+	})
+	require.Error(t, err)
+	proposeSpans := recorder.matching("surla.controlplane.propose_change")
+	require.Len(t, proposeSpans, 1)
+	assert.Equal(t, codes.Error, proposeSpans[0].statusCode)
+	assert.Equal(t, "save cp1 change card", proposeSpans[0].statusDesc)
+	assert.NotEmpty(t, proposeSpans[0].errors)
+
+	recorder.reset()
+	_, err = saveFailCP.ReviseChange(aliceCtx, &gensurla.ReviseChangePayload{
+		ChangeID:        "chg-existing",
+		RequestRevision: initialCard.RequestRevision,
+		Prompt:          "Will fail on revise save.",
+	})
+	require.Error(t, err)
+	reviseSpans := recorder.matching("surla.controlplane.revise_change")
+	require.Len(t, reviseSpans, 1)
+	assert.Equal(t, codes.Error, reviseSpans[0].statusCode)
+	assert.Equal(t, "save revised cp1 change card", reviseSpans[0].statusDesc)
+	assert.NotEmpty(t, reviseSpans[0].errors)
+
+	// Expected post-analysis conflict refusal keeps span status Unset with no recorded error.
+	startedConflict, releaseConflict := make(chan struct{}), make(chan struct{})
+	conflictTurns := 0
+	conflictCP := newControlPlane(t, Options{
+		Analyzer: &stubCP1Analyzer{
+			analyzeFn: func(context.Context, string, string) (CP1SemanticAnalysis, error) {
+				conflictTurns++
+				if conflictTurns == 1 {
+					close(startedConflict)
+					<-releaseConflict
+				}
+				return CP1SemanticAnalysis{
+					Summary: "Valid summary.",
+					Examples: []CP1ModelExample{{
+						Scenario: "S", InputSummary: "I", ExpectedOutcome: "O", VerificationKind: "deterministic",
+					}},
+				}, nil
+			},
+		},
+	})
+	recorder.reset()
+	conflictCh := runAsyncProposeChange(aliceCtx, conflictCP, &gensurla.ProposeChangePayload{
+		ChangeID: "chg-conflict",
+		Prompt:   "First.",
+	})
+	<-startedConflict
+	_, err = conflictCP.ProposeChange(aliceCtx, &gensurla.ProposeChangePayload{
+		ChangeID: "chg-conflict",
+		Prompt:   "Second wins.",
+	})
+	require.NoError(t, err)
+	close(releaseConflict)
+	conflictErr := <-conflictCh
+	require.Error(t, conflictErr)
+	var conflictSE *goa.ServiceError
+	require.ErrorAs(t, conflictErr, &conflictSE)
+	assert.Equal(t, "conflict", conflictSE.GoaErrorName())
+	for _, s := range recorder.matching("surla.controlplane.propose_change") {
+		assert.Equal(t, codes.Unset, s.statusCode)
+		assert.Empty(t, s.errors)
+	}
 }
 
 // TestFormatCP1DesignSectionPreservesDesignAndSpecializesEmpty verifies that

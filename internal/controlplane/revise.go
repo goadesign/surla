@@ -132,24 +132,30 @@ func (c *ControlPlane) ReviseChange(
 	defer span.End()
 
 	if err := reportProgress(ctx, 0, 1, "Revising the Change Card with the CP1 model"); err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "report cp1 revision progress")
 		return nil, err
 	}
 	analysis, err := c.analyzer.Revise(ctx, prior, p.Prompt, designSrc)
 	if err != nil {
 		if se, ok := asAnalysisRejected(err); ok {
-			se.Message = fmt.Sprintf(
-				"cp1 analysis rejected (%s): this revise_change request did not modify Change Card %q; retry revise_change with request_revision %s (and design_source when updating the Goa design), or call get_change if another request may have updated the card",
-				se.Message,
-				p.ChangeID,
-				p.RequestRevision,
+			err = newAnalysisRejected(
+				fmt.Sprintf(
+					"cp1 analysis rejected (%s): this revise_change request did not modify Change Card %q; retry revise_change with request_revision %s (and design_source when updating the Goa design), or call get_change if another request may have updated the card",
+					se.Message,
+					p.ChangeID,
+					p.RequestRevision,
+				),
+				err,
 			)
-			err = se
 		}
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "revise cp1 change card")
 		return nil, err
 	}
 	if err := reportProgress(ctx, 1, 1, "Validating the revised CP1 analysis"); err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "report cp1 validation progress")
 		return nil, err
 	}
 
@@ -183,6 +189,8 @@ func (c *ControlPlane) ReviseChange(
 	}
 	rev, err := computeCanonicalRevision(revised, principal.ID, designSrc)
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "compute revised cp1 card revision")
 		return nil, err
 	}
 	revised.RequestRevision = rev
@@ -197,6 +205,8 @@ func (c *ControlPlane) ReviseChange(
 	defer c.mu.Unlock()
 	current, exists, err := c.cards.load(p.ChangeID)
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "load cp1 change card")
 		return nil, err
 	}
 	if !exists {
@@ -218,6 +228,8 @@ func (c *ControlPlane) ReviseChange(
 		owner:        principal.ID,
 		designSource: designSrc,
 	}); err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "save revised cp1 change card")
 		return nil, err
 	}
 	return revised, nil
@@ -272,11 +284,75 @@ func newAnalysisRejected(reason string, cause error) *goa.ServiceError {
 	return se
 }
 
-// asAnalysisRejected reports whether err wraps an analysis_rejected ServiceError.
+// asAnalysisRejected reports whether err is (or wraps solely) a single
+// non-nil analysis_rejected ServiceError. If err joins an analysis_rejected
+// error with an independent failure, asAnalysisRejected returns false so the
+// combined failure remains a server fault.
 func asAnalysisRejected(err error) (*goa.ServiceError, bool) {
-	var se *goa.ServiceError
-	if errors.As(err, &se) && se.GoaErrorName() == "analysis_rejected" {
-		return se, true
+	if err == nil {
+		return nil, false
+	}
+	if se, ok := err.(*goa.ServiceError); ok {
+		if se != nil && se.GoaErrorName() == "analysis_rejected" {
+			return se, true
+		}
+		return nil, false
+	}
+	if joined, ok := err.(interface{ Unwrap() []error }); ok {
+		var expected *goa.ServiceError
+		for _, child := range joined.Unwrap() {
+			actual, valid := asAnalysisRejected(child)
+			if !valid {
+				return nil, false
+			}
+			if expected == nil {
+				expected = actual
+				continue
+			}
+			if expected != actual {
+				return nil, false
+			}
+		}
+		return expected, expected != nil
+	}
+	if wrapped, ok := err.(interface{ Unwrap() error }); ok {
+		return asAnalysisRejected(wrapped.Unwrap())
+	}
+	return nil, false
+}
+
+// exactOutputValidation accepts only an error tree whose every leaf is the
+// same non-nil *model.OutputValidationError. Ordinary single-cause wrappers
+// and duplicate joins of that same validation error preserve its identity;
+// any non-validation leaf (such as context cancellation, a provider error,
+// or an observer failure) or distinct validation leaf rejects the
+// classification so combined failures remain ordinary server faults.
+func exactOutputValidation(err error) (*model.OutputValidationError, bool) {
+	if err == nil {
+		return nil, false
+	}
+	if ovErr, ok := err.(*model.OutputValidationError); ok {
+		return ovErr, ovErr != nil
+	}
+	if joined, ok := err.(interface{ Unwrap() []error }); ok {
+		var expected *model.OutputValidationError
+		for _, child := range joined.Unwrap() {
+			actual, valid := exactOutputValidation(child)
+			if !valid {
+				return nil, false
+			}
+			if expected == nil {
+				expected = actual
+				continue
+			}
+			if expected != actual {
+				return nil, false
+			}
+		}
+		return expected, expected != nil
+	}
+	if wrapped, ok := err.(interface{ Unwrap() error }); ok {
+		return exactOutputValidation(wrapped.Unwrap())
 	}
 	return nil, false
 }
@@ -343,8 +419,7 @@ func (a *ModelCP1Analyzer) completeAnalysis(
 	}
 	resp, err := a.client.Complete(ctx, req)
 	if err != nil {
-		var ovErr *model.OutputValidationError
-		if errors.As(err, &ovErr) {
+		if ovErr, ok := exactOutputValidation(err); ok {
 			return CP1SemanticAnalysis{}, newAnalysisRejected(
 				fmt.Sprintf("model output failed %q validation", ovErr.Kind()),
 				err,
