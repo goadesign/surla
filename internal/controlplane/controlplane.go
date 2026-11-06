@@ -448,7 +448,7 @@ func NewHTTPHandler(svc gensurla.Service, auth RequestAuthenticator) http.Handle
 		goahttp.RequestDecoder,
 		goahttp.ResponseEncoder,
 		nil,
-		nil,
+		httpErrorFormatter,
 	)
 	gensurlahttp.Mount(mux, httpServer)
 
@@ -563,6 +563,8 @@ func (c *ControlPlane) ProposeChange(ctx context.Context, p *gensurla.ProposeCha
 				),
 				err,
 			)
+		} else {
+			err = unclassifiedCP1Error{cause: err}
 		}
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "analyze cp1 change card")

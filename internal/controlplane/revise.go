@@ -20,10 +20,23 @@ import (
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 	"goa.design/goa-ai/runtime/agent/model"
+	goahttp "goa.design/goa/v3/http"
 	goa "goa.design/goa/v3/pkg"
 )
 
 type (
+	// unclassifiedCP1Error wraps a non-rejection CP1 analyzer error (including a
+	// multi-cause join that contains a nested Goa ServiceError alongside an
+	// independent failure) so the generated HTTP error encoder's
+	// errors.As(v, &GoaErrorNamer) check matches this outer unnamed error first
+	// and falls through to the HTTP 500 fault encoder, while preserving the
+	// complete underlying error tree via Unwrap and keeping MCP tool-error
+	// classification unchanged.
+	unclassifiedCP1Error struct {
+		// cause is the underlying non-rejection error returned by CP1Analyzer.
+		cause error
+	}
+
 	// CP1PriorDecision describes one ambiguity question and its confirmed answer
 	// (when resolved) from the Change Card revision being revised.
 	CP1PriorDecision struct {
@@ -148,6 +161,8 @@ func (c *ControlPlane) ReviseChange(
 				),
 				err,
 			)
+		} else {
+			err = unclassifiedCP1Error{cause: err}
 		}
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "revise cp1 change card")
@@ -233,6 +248,35 @@ func (c *ControlPlane) ReviseChange(
 		return nil, err
 	}
 	return revised, nil
+}
+
+// Error returns the underlying analyzer error text.
+func (e unclassifiedCP1Error) Error() string {
+	return e.cause.Error()
+}
+
+// Unwrap returns the underlying analyzer error tree.
+func (e unclassifiedCP1Error) Unwrap() error {
+	return e.cause
+}
+
+// GoaErrorName returns an empty Goa error name so the generated HTTP error
+// encoder falls through its declared-error switch without unwrapping a nested
+// ServiceError inside a multi-cause join.
+func (e unclassifiedCP1Error) GoaErrorName() string {
+	return ""
+}
+
+// httpErrorFormatter formats HTTP error responses for NewHTTPHandler. When err
+// is an unclassifiedCP1Error (such as an analysis_rejected ServiceError joined
+// with context cancellation or an independent fault), it formats the response
+// as an HTTP 500 server fault; all other errors delegate to
+// goahttp.NewErrorResponse.
+func httpErrorFormatter(ctx context.Context, err error) goahttp.Statuser {
+	if _, isUnclassified := err.(unclassifiedCP1Error); isUnclassified {
+		return goahttp.NewErrorResponse(ctx, goa.Fault("%s", err.Error()))
+	}
+	return goahttp.NewErrorResponse(ctx, err)
 }
 
 // buildCP1PriorCard extracts the semantic decisions, examples, and preserved

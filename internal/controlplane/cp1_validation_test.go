@@ -682,6 +682,102 @@ func TestCP1ReusedAnalyzerErrorImmutabilityAndSaveSpanRecording(t *testing.T) {
 	assert.NotContains(t, errB.Error(), "chg-seq-a")
 	assert.Contains(t, errRev.Error(), `this revise_change request did not modify Change Card "chg-seed"; retry revise_change with request_revision `+seed.RequestRevision)
 
+	// Configurable analyzer joining a named analysis_rejected ServiceError with
+	// context.Canceled or an independent fault must return HTTP 500 (fault: true)
+	// on both POST /changes/propose and POST /changes/revise, preserve all
+	// causes in process, and remain an MCP isError tool result.
+	independentAnalyzerFault := errors.New("independent analyzer fault")
+	mixedNamedTurn := 0
+	mixedNamedCP := newControlPlane(t, Options{
+		Analyzer: &stubCP1Analyzer{
+			analyzeFn: func(_ context.Context, promptText, _ string) (CP1SemanticAnalysis, error) {
+				if promptText == "seed" {
+					return CP1SemanticAnalysis{
+						Summary: "Seed summary.",
+						Examples: []CP1ModelExample{{
+							Scenario: "S", InputSummary: "I", ExpectedOutcome: "O", VerificationKind: "deterministic",
+						}},
+					}, nil
+				}
+				mixedNamedTurn++
+				if mixedNamedTurn == 1 {
+					return CP1SemanticAnalysis{}, errors.Join(sharedRejected, context.Canceled)
+				}
+				return CP1SemanticAnalysis{}, errors.Join(sharedRejected, independentAnalyzerFault)
+			},
+			reviseFn: func(context.Context, CP1PriorCard, string, string) (CP1SemanticAnalysis, error) {
+				mixedNamedTurn++
+				if mixedNamedTurn == 3 {
+					return CP1SemanticAnalysis{}, errors.Join(sharedRejected, context.Canceled)
+				}
+				return CP1SemanticAnalysis{}, errors.Join(sharedRejected, independentAnalyzerFault)
+			},
+		},
+	})
+	mixedSeed, err := mixedNamedCP.ProposeChange(aliceCtx, &gensurla.ProposeChangePayload{
+		ChangeID: "chg-mixed-seed",
+		Prompt:   "seed",
+	})
+	require.NoError(t, err)
+	mixedHandler := NewHTTPHandler(mixedNamedCP, NewTokenAuthenticator(map[string]Principal{
+		"alice-token": {ID: "alice@example.com"},
+	}))
+	mixedMCP := genmcpadapter.NewMCPAdapter(gensurla.NewEndpoints(mixedNamedCP), nil)
+
+	// 1. Go in-process & HTTP POST /changes/propose with joined analysis_rejected + context.Canceled / independent fault.
+	_, goMixedProposeErr := mixedNamedCP.ProposeChange(aliceCtx, &gensurla.ProposeChangePayload{
+		ChangeID: "chg-mixed-propose-go",
+		Prompt:   "fail",
+	})
+	require.Error(t, goMixedProposeErr)
+	assert.ErrorIs(t, goMixedProposeErr, context.Canceled)
+	assert.ErrorIs(t, goMixedProposeErr, sharedRejected)
+	assert.ErrorIs(t, goMixedProposeErr, rootCause)
+
+	proposeMixedBody, err := json.Marshal(map[string]any{"change_id": "chg-mixed-propose-http", "prompt": "fail"})
+	require.NoError(t, err)
+	proposeMixedReq := httptest.NewRequest(http.MethodPost, "/changes/propose", strings.NewReader(string(proposeMixedBody)))
+	proposeMixedReq.Header.Set("Authorization", "Bearer alice-token")
+	proposeMixedReq.Header.Set("Content-Type", "application/json")
+	proposeMixedRec := httptest.NewRecorder()
+	mixedHandler.ServeHTTP(proposeMixedRec, proposeMixedReq)
+	assert.Equal(t, http.StatusInternalServerError, proposeMixedRec.Code)
+	var mixedHTTPBody struct {
+		Name    string `json:"name"`
+		Message string `json:"message"`
+		Fault   bool   `json:"fault"`
+	}
+	require.NoError(t, json.Unmarshal(proposeMixedRec.Body.Bytes(), &mixedHTTPBody))
+	assert.True(t, mixedHTTPBody.Fault)
+	assert.Equal(t, "fault", mixedHTTPBody.Name)
+
+	// 2. HTTP POST /changes/revise & MCP revise_change with joined analysis_rejected + context.Canceled / independent fault.
+	reviseMixedBody, err := json.Marshal(map[string]any{
+		"change_id":        "chg-mixed-seed",
+		"request_revision": mixedSeed.RequestRevision,
+		"prompt":           "fail",
+	})
+	require.NoError(t, err)
+	reviseMixedReq := httptest.NewRequest(http.MethodPost, "/changes/revise", strings.NewReader(string(reviseMixedBody)))
+	reviseMixedReq.Header.Set("Authorization", "Bearer alice-token")
+	reviseMixedReq.Header.Set("Content-Type", "application/json")
+	reviseMixedRec := httptest.NewRecorder()
+	mixedHandler.ServeHTTP(reviseMixedRec, reviseMixedReq)
+	assert.Equal(t, http.StatusInternalServerError, reviseMixedRec.Code)
+	require.NoError(t, json.Unmarshal(reviseMixedRec.Body.Bytes(), &mixedHTTPBody))
+	assert.True(t, mixedHTTPBody.Fault)
+	assert.Equal(t, "fault", mixedHTTPBody.Name)
+
+	mcpMixedRes, err := mixedMCP.ToolsCall(aliceCtx, &genmcpadapter.ToolsCallPayload{
+		Name:      "revise_change",
+		Arguments: reviseMixedBody,
+	})
+	require.NoError(t, err)
+	mcpMixedComplete, ok := mcpMixedRes.Outcome.AsComplete()
+	require.True(t, ok)
+	require.NotNil(t, mcpMixedComplete.IsError)
+	assert.True(t, *mcpMixedComplete.IsError)
+
 	// R3: Deterministic cardStore.save failure after valid analysis records codes.Error on both spans.
 	cardsDir := t.TempDir()
 	saveFailCP, err := New(Options{
