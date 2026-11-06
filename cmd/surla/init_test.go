@@ -22,7 +22,7 @@ func TestInitNextStepsGiveAWorkingFirstRunPath(t *testing.T) {
 	assert.Contains(t, out, `WORK_DIR="$(mktemp -d)/work"`)
 	assert.Contains(t, out, `-work-dir "$WORK_DIR" -report-dir reports -builder-view`)
 	assert.Contains(t, out, "$WORK_DIR/evidence/")
-	assert.Contains(t, out, "-builder-view hides holdout scenario names and checks on stdout and stderr.")
+	assert.Contains(t, out, "-builder-view hides holdout scenario names and checks in the completed report\nJSON and summary line (if a run fails before writing a report, stderr prints\noperator setup/execution failure diagnostics).")
 	assert.NotContains(t, out, "cat > .surla/verification.json", "first run uses -project . instead of writing verification.json by hand")
 	assert.Contains(t, out, "surla serve -principal you@example.com -model-provider anthropic -model-name \"$MODEL_NAME\" \\\n  -project .\n")
 	assert.Contains(t, out, "surla serve -principal you@example.com -model-provider openai -model-name \"$MODEL_NAME\" \\\n  -project .\n")

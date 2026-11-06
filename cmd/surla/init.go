@@ -33,8 +33,11 @@ Next:
 
 surla verify keeps $WORK_DIR, including its build logs in $WORK_DIR/evidence/,
 writes the full report to reports/ (used by surla approve), and with
--builder-view hides holdout scenario names and checks on stdout and stderr.
-Do not share $WORK_DIR or reports/ with coding agents that build the service.
+-builder-view hides holdout scenario names and checks in the completed report
+JSON and summary line (if a run fails before writing a report, stderr prints
+operator setup/execution failure diagnostics). Do not share $WORK_DIR,
+reports/, or setup/execution failure output with coding agents that build the
+service.
 
 To connect a coding agent and run a live target, start surla serve from this
 directory after the first commit, with SURLA_AUTH_TOKEN exported as a token of
