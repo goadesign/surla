@@ -172,6 +172,11 @@ func EncodeProposeChangeRequest(encoder func(*http.Request) goahttp.Encoder) fun
 // DecodeProposeChangeResponse returns a decoder for responses returned by the
 // surla propose_change endpoint. restoreBody controls whether the response
 // body should be restored after having been read.
+// DecodeProposeChangeResponse may return the following errors:
+//   - "conflict" (type *goa.ServiceError): http.StatusConflict
+//   - "unprocessable" (type *goa.ServiceError): http.StatusUnprocessableEntity
+//   - "not_implemented" (type *goa.ServiceError): http.StatusNotImplemented
+//   - error: internal error
 func DecodeProposeChangeResponse(decoder func(*http.Response) goahttp.Decoder, restoreBody bool) func(*http.Response) (any, error) {
 	return func(resp *http.Response) (result any, decodeErr error) {
 		responseBody := resp.Body
@@ -208,6 +213,48 @@ func DecodeProposeChangeResponse(decoder func(*http.Response) goahttp.Decoder, r
 			}
 			res := NewProposeChangeChangeCardResultOK(&body)
 			return res, nil
+		case http.StatusConflict:
+			var (
+				body ProposeChangeConflictResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "propose_change", err)
+			}
+			err = ValidateProposeChangeConflictResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("surla", "propose_change", err)
+			}
+			return nil, NewProposeChangeConflict(&body)
+		case http.StatusUnprocessableEntity:
+			var (
+				body ProposeChangeUnprocessableResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "propose_change", err)
+			}
+			err = ValidateProposeChangeUnprocessableResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("surla", "propose_change", err)
+			}
+			return nil, NewProposeChangeUnprocessable(&body)
+		case http.StatusNotImplemented:
+			var (
+				body ProposeChangeNotImplementedResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "propose_change", err)
+			}
+			err = ValidateProposeChangeNotImplementedResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("surla", "propose_change", err)
+			}
+			return nil, NewProposeChangeNotImplemented(&body)
 		default:
 			body, err := io.ReadAll(resp.Body)
 			if err != nil {
@@ -252,6 +299,13 @@ func EncodeReviseChangeRequest(encoder func(*http.Request) goahttp.Encoder) func
 // DecodeReviseChangeResponse returns a decoder for responses returned by the
 // surla revise_change endpoint. restoreBody controls whether the response body
 // should be restored after having been read.
+// DecodeReviseChangeResponse may return the following errors:
+//   - "not_found" (type *goa.ServiceError): http.StatusNotFound
+//   - "forbidden" (type *goa.ServiceError): http.StatusForbidden
+//   - "conflict" (type *goa.ServiceError): http.StatusConflict
+//   - "unprocessable" (type *goa.ServiceError): http.StatusUnprocessableEntity
+//   - "not_implemented" (type *goa.ServiceError): http.StatusNotImplemented
+//   - error: internal error
 func DecodeReviseChangeResponse(decoder func(*http.Response) goahttp.Decoder, restoreBody bool) func(*http.Response) (any, error) {
 	return func(resp *http.Response) (result any, decodeErr error) {
 		responseBody := resp.Body
@@ -288,6 +342,76 @@ func DecodeReviseChangeResponse(decoder func(*http.Response) goahttp.Decoder, re
 			}
 			res := NewReviseChangeChangeCardResultOK(&body)
 			return res, nil
+		case http.StatusNotFound:
+			var (
+				body ReviseChangeNotFoundResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "revise_change", err)
+			}
+			err = ValidateReviseChangeNotFoundResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("surla", "revise_change", err)
+			}
+			return nil, NewReviseChangeNotFound(&body)
+		case http.StatusForbidden:
+			var (
+				body ReviseChangeForbiddenResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "revise_change", err)
+			}
+			err = ValidateReviseChangeForbiddenResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("surla", "revise_change", err)
+			}
+			return nil, NewReviseChangeForbidden(&body)
+		case http.StatusConflict:
+			var (
+				body ReviseChangeConflictResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "revise_change", err)
+			}
+			err = ValidateReviseChangeConflictResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("surla", "revise_change", err)
+			}
+			return nil, NewReviseChangeConflict(&body)
+		case http.StatusUnprocessableEntity:
+			var (
+				body ReviseChangeUnprocessableResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "revise_change", err)
+			}
+			err = ValidateReviseChangeUnprocessableResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("surla", "revise_change", err)
+			}
+			return nil, NewReviseChangeUnprocessable(&body)
+		case http.StatusNotImplemented:
+			var (
+				body ReviseChangeNotImplementedResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "revise_change", err)
+			}
+			err = ValidateReviseChangeNotImplementedResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("surla", "revise_change", err)
+			}
+			return nil, NewReviseChangeNotImplemented(&body)
 		default:
 			body, err := io.ReadAll(resp.Body)
 			if err != nil {
@@ -332,6 +456,12 @@ func EncodeConfirmIntentRequest(encoder func(*http.Request) goahttp.Encoder) fun
 // DecodeConfirmIntentResponse returns a decoder for responses returned by the
 // surla confirm_intent endpoint. restoreBody controls whether the response
 // body should be restored after having been read.
+// DecodeConfirmIntentResponse may return the following errors:
+//   - "not_found" (type *goa.ServiceError): http.StatusNotFound
+//   - "forbidden" (type *goa.ServiceError): http.StatusForbidden
+//   - "conflict" (type *goa.ServiceError): http.StatusConflict
+//   - "unprocessable" (type *goa.ServiceError): http.StatusUnprocessableEntity
+//   - error: internal error
 func DecodeConfirmIntentResponse(decoder func(*http.Response) goahttp.Decoder, restoreBody bool) func(*http.Response) (any, error) {
 	return func(resp *http.Response) (result any, decodeErr error) {
 		responseBody := resp.Body
@@ -368,6 +498,62 @@ func DecodeConfirmIntentResponse(decoder func(*http.Response) goahttp.Decoder, r
 			}
 			res := NewConfirmIntentChangeCardResultOK(&body)
 			return res, nil
+		case http.StatusNotFound:
+			var (
+				body ConfirmIntentNotFoundResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "confirm_intent", err)
+			}
+			err = ValidateConfirmIntentNotFoundResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("surla", "confirm_intent", err)
+			}
+			return nil, NewConfirmIntentNotFound(&body)
+		case http.StatusForbidden:
+			var (
+				body ConfirmIntentForbiddenResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "confirm_intent", err)
+			}
+			err = ValidateConfirmIntentForbiddenResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("surla", "confirm_intent", err)
+			}
+			return nil, NewConfirmIntentForbidden(&body)
+		case http.StatusConflict:
+			var (
+				body ConfirmIntentConflictResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "confirm_intent", err)
+			}
+			err = ValidateConfirmIntentConflictResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("surla", "confirm_intent", err)
+			}
+			return nil, NewConfirmIntentConflict(&body)
+		case http.StatusUnprocessableEntity:
+			var (
+				body ConfirmIntentUnprocessableResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "confirm_intent", err)
+			}
+			err = ValidateConfirmIntentUnprocessableResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("surla", "confirm_intent", err)
+			}
+			return nil, NewConfirmIntentUnprocessable(&body)
 		default:
 			body, err := io.ReadAll(resp.Body)
 			if err != nil {
@@ -408,6 +594,10 @@ func (c *Client) BuildGetChangeRequest(ctx context.Context, v any) (*http.Reques
 // DecodeGetChangeResponse returns a decoder for responses returned by the
 // surla get_change endpoint. restoreBody controls whether the response body
 // should be restored after having been read.
+// DecodeGetChangeResponse may return the following errors:
+//   - "not_found" (type *goa.ServiceError): http.StatusNotFound
+//   - "forbidden" (type *goa.ServiceError): http.StatusForbidden
+//   - error: internal error
 func DecodeGetChangeResponse(decoder func(*http.Response) goahttp.Decoder, restoreBody bool) func(*http.Response) (any, error) {
 	return func(resp *http.Response) (result any, decodeErr error) {
 		responseBody := resp.Body
@@ -444,6 +634,34 @@ func DecodeGetChangeResponse(decoder func(*http.Response) goahttp.Decoder, resto
 			}
 			res := NewGetChangeChangeCardResultOK(&body)
 			return res, nil
+		case http.StatusNotFound:
+			var (
+				body GetChangeNotFoundResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "get_change", err)
+			}
+			err = ValidateGetChangeNotFoundResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("surla", "get_change", err)
+			}
+			return nil, NewGetChangeNotFound(&body)
+		case http.StatusForbidden:
+			var (
+				body GetChangeForbiddenResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "get_change", err)
+			}
+			err = ValidateGetChangeForbiddenResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("surla", "get_change", err)
+			}
+			return nil, NewGetChangeForbidden(&body)
 		default:
 			body, err := io.ReadAll(resp.Body)
 			if err != nil {
@@ -489,6 +707,12 @@ func EncodePreviewArchitectureRequest(encoder func(*http.Request) goahttp.Encode
 // DecodePreviewArchitectureResponse returns a decoder for responses returned
 // by the surla preview_architecture endpoint. restoreBody controls whether the
 // response body should be restored after having been read.
+// DecodePreviewArchitectureResponse may return the following errors:
+//   - "not_found" (type *goa.ServiceError): http.StatusNotFound
+//   - "forbidden" (type *goa.ServiceError): http.StatusForbidden
+//   - "conflict" (type *goa.ServiceError): http.StatusConflict
+//   - "unprocessable" (type *goa.ServiceError): http.StatusUnprocessableEntity
+//   - error: internal error
 func DecodePreviewArchitectureResponse(decoder func(*http.Response) goahttp.Decoder, restoreBody bool) func(*http.Response) (any, error) {
 	return func(resp *http.Response) (result any, decodeErr error) {
 		responseBody := resp.Body
@@ -525,6 +749,62 @@ func DecodePreviewArchitectureResponse(decoder func(*http.Response) goahttp.Deco
 			}
 			res := NewPreviewArchitectureArchitecturePreviewResultOK(&body)
 			return res, nil
+		case http.StatusNotFound:
+			var (
+				body PreviewArchitectureNotFoundResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "preview_architecture", err)
+			}
+			err = ValidatePreviewArchitectureNotFoundResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("surla", "preview_architecture", err)
+			}
+			return nil, NewPreviewArchitectureNotFound(&body)
+		case http.StatusForbidden:
+			var (
+				body PreviewArchitectureForbiddenResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "preview_architecture", err)
+			}
+			err = ValidatePreviewArchitectureForbiddenResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("surla", "preview_architecture", err)
+			}
+			return nil, NewPreviewArchitectureForbidden(&body)
+		case http.StatusConflict:
+			var (
+				body PreviewArchitectureConflictResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "preview_architecture", err)
+			}
+			err = ValidatePreviewArchitectureConflictResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("surla", "preview_architecture", err)
+			}
+			return nil, NewPreviewArchitectureConflict(&body)
+		case http.StatusUnprocessableEntity:
+			var (
+				body PreviewArchitectureUnprocessableResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "preview_architecture", err)
+			}
+			err = ValidatePreviewArchitectureUnprocessableResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("surla", "preview_architecture", err)
+			}
+			return nil, NewPreviewArchitectureUnprocessable(&body)
 		default:
 			body, err := io.ReadAll(resp.Body)
 			if err != nil {
@@ -941,6 +1221,12 @@ func EncodeVerifyChangeRequest(encoder func(*http.Request) goahttp.Encoder) func
 // DecodeVerifyChangeResponse returns a decoder for responses returned by the
 // surla verify_change endpoint. restoreBody controls whether the response body
 // should be restored after having been read.
+// DecodeVerifyChangeResponse may return the following errors:
+//   - "not_found" (type *goa.ServiceError): http.StatusNotFound
+//   - "forbidden" (type *goa.ServiceError): http.StatusForbidden
+//   - "conflict" (type *goa.ServiceError): http.StatusConflict
+//   - "not_implemented" (type *goa.ServiceError): http.StatusNotImplemented
+//   - error: internal error
 func DecodeVerifyChangeResponse(decoder func(*http.Response) goahttp.Decoder, restoreBody bool) func(*http.Response) (any, error) {
 	return func(resp *http.Response) (result any, decodeErr error) {
 		responseBody := resp.Body
@@ -977,6 +1263,62 @@ func DecodeVerifyChangeResponse(decoder func(*http.Response) goahttp.Decoder, re
 			}
 			res := NewVerifyChangeVerificationStatusResultOK(&body)
 			return res, nil
+		case http.StatusNotFound:
+			var (
+				body VerifyChangeNotFoundResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "verify_change", err)
+			}
+			err = ValidateVerifyChangeNotFoundResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("surla", "verify_change", err)
+			}
+			return nil, NewVerifyChangeNotFound(&body)
+		case http.StatusForbidden:
+			var (
+				body VerifyChangeForbiddenResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "verify_change", err)
+			}
+			err = ValidateVerifyChangeForbiddenResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("surla", "verify_change", err)
+			}
+			return nil, NewVerifyChangeForbidden(&body)
+		case http.StatusConflict:
+			var (
+				body VerifyChangeConflictResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "verify_change", err)
+			}
+			err = ValidateVerifyChangeConflictResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("surla", "verify_change", err)
+			}
+			return nil, NewVerifyChangeConflict(&body)
+		case http.StatusNotImplemented:
+			var (
+				body VerifyChangeNotImplementedResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "verify_change", err)
+			}
+			err = ValidateVerifyChangeNotImplementedResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("surla", "verify_change", err)
+			}
+			return nil, NewVerifyChangeNotImplemented(&body)
 		default:
 			body, err := io.ReadAll(resp.Body)
 			if err != nil {
@@ -1017,6 +1359,11 @@ func (c *Client) BuildGetVerificationRequest(ctx context.Context, v any) (*http.
 // DecodeGetVerificationResponse returns a decoder for responses returned by
 // the surla get_verification endpoint. restoreBody controls whether the
 // response body should be restored after having been read.
+// DecodeGetVerificationResponse may return the following errors:
+//   - "not_found" (type *goa.ServiceError): http.StatusNotFound
+//   - "forbidden" (type *goa.ServiceError): http.StatusForbidden
+//   - "not_implemented" (type *goa.ServiceError): http.StatusNotImplemented
+//   - error: internal error
 func DecodeGetVerificationResponse(decoder func(*http.Response) goahttp.Decoder, restoreBody bool) func(*http.Response) (any, error) {
 	return func(resp *http.Response) (result any, decodeErr error) {
 		responseBody := resp.Body
@@ -1053,6 +1400,48 @@ func DecodeGetVerificationResponse(decoder func(*http.Response) goahttp.Decoder,
 			}
 			res := NewGetVerificationVerificationStatusResultOK(&body)
 			return res, nil
+		case http.StatusNotFound:
+			var (
+				body GetVerificationNotFoundResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "get_verification", err)
+			}
+			err = ValidateGetVerificationNotFoundResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("surla", "get_verification", err)
+			}
+			return nil, NewGetVerificationNotFound(&body)
+		case http.StatusForbidden:
+			var (
+				body GetVerificationForbiddenResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "get_verification", err)
+			}
+			err = ValidateGetVerificationForbiddenResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("surla", "get_verification", err)
+			}
+			return nil, NewGetVerificationForbidden(&body)
+		case http.StatusNotImplemented:
+			var (
+				body GetVerificationNotImplementedResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "get_verification", err)
+			}
+			err = ValidateGetVerificationNotImplementedResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("surla", "get_verification", err)
+			}
+			return nil, NewGetVerificationNotImplemented(&body)
 		default:
 			body, err := io.ReadAll(resp.Body)
 			if err != nil {
@@ -1093,6 +1482,11 @@ func (c *Client) BuildListVerificationsRequest(ctx context.Context, v any) (*htt
 // DecodeListVerificationsResponse returns a decoder for responses returned by
 // the surla list_verifications endpoint. restoreBody controls whether the
 // response body should be restored after having been read.
+// DecodeListVerificationsResponse may return the following errors:
+//   - "not_found" (type *goa.ServiceError): http.StatusNotFound
+//   - "forbidden" (type *goa.ServiceError): http.StatusForbidden
+//   - "not_implemented" (type *goa.ServiceError): http.StatusNotImplemented
+//   - error: internal error
 func DecodeListVerificationsResponse(decoder func(*http.Response) goahttp.Decoder, restoreBody bool) func(*http.Response) (any, error) {
 	return func(resp *http.Response) (result any, decodeErr error) {
 		responseBody := resp.Body
@@ -1129,6 +1523,48 @@ func DecodeListVerificationsResponse(decoder func(*http.Response) goahttp.Decode
 			}
 			res := NewListVerificationsVerificationListResultOK(&body)
 			return res, nil
+		case http.StatusNotFound:
+			var (
+				body ListVerificationsNotFoundResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "list_verifications", err)
+			}
+			err = ValidateListVerificationsNotFoundResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("surla", "list_verifications", err)
+			}
+			return nil, NewListVerificationsNotFound(&body)
+		case http.StatusForbidden:
+			var (
+				body ListVerificationsForbiddenResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "list_verifications", err)
+			}
+			err = ValidateListVerificationsForbiddenResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("surla", "list_verifications", err)
+			}
+			return nil, NewListVerificationsForbidden(&body)
+		case http.StatusNotImplemented:
+			var (
+				body ListVerificationsNotImplementedResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "list_verifications", err)
+			}
+			err = ValidateListVerificationsNotImplementedResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("surla", "list_verifications", err)
+			}
+			return nil, NewListVerificationsNotImplemented(&body)
 		default:
 			body, err := io.ReadAll(resp.Body)
 			if err != nil {
@@ -1173,6 +1609,13 @@ func EncodeApproveMergeRequest(encoder func(*http.Request) goahttp.Encoder) func
 // DecodeApproveMergeResponse returns a decoder for responses returned by the
 // surla approve_merge endpoint. restoreBody controls whether the response body
 // should be restored after having been read.
+// DecodeApproveMergeResponse may return the following errors:
+//   - "not_found" (type *goa.ServiceError): http.StatusNotFound
+//   - "forbidden" (type *goa.ServiceError): http.StatusForbidden
+//   - "conflict" (type *goa.ServiceError): http.StatusConflict
+//   - "unprocessable" (type *goa.ServiceError): http.StatusUnprocessableEntity
+//   - "not_implemented" (type *goa.ServiceError): http.StatusNotImplemented
+//   - error: internal error
 func DecodeApproveMergeResponse(decoder func(*http.Response) goahttp.Decoder, restoreBody bool) func(*http.Response) (any, error) {
 	return func(resp *http.Response) (result any, decodeErr error) {
 		responseBody := resp.Body
@@ -1209,6 +1652,76 @@ func DecodeApproveMergeResponse(decoder func(*http.Response) goahttp.Decoder, re
 			}
 			res := NewApproveMergeChangeCardResultOK(&body)
 			return res, nil
+		case http.StatusNotFound:
+			var (
+				body ApproveMergeNotFoundResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "approve_merge", err)
+			}
+			err = ValidateApproveMergeNotFoundResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("surla", "approve_merge", err)
+			}
+			return nil, NewApproveMergeNotFound(&body)
+		case http.StatusForbidden:
+			var (
+				body ApproveMergeForbiddenResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "approve_merge", err)
+			}
+			err = ValidateApproveMergeForbiddenResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("surla", "approve_merge", err)
+			}
+			return nil, NewApproveMergeForbidden(&body)
+		case http.StatusConflict:
+			var (
+				body ApproveMergeConflictResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "approve_merge", err)
+			}
+			err = ValidateApproveMergeConflictResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("surla", "approve_merge", err)
+			}
+			return nil, NewApproveMergeConflict(&body)
+		case http.StatusUnprocessableEntity:
+			var (
+				body ApproveMergeUnprocessableResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "approve_merge", err)
+			}
+			err = ValidateApproveMergeUnprocessableResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("surla", "approve_merge", err)
+			}
+			return nil, NewApproveMergeUnprocessable(&body)
+		case http.StatusNotImplemented:
+			var (
+				body ApproveMergeNotImplementedResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "approve_merge", err)
+			}
+			err = ValidateApproveMergeNotImplementedResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("surla", "approve_merge", err)
+			}
+			return nil, NewApproveMergeNotImplemented(&body)
 		default:
 			body, err := io.ReadAll(resp.Body)
 			if err != nil {

@@ -348,13 +348,30 @@ func TestRunPreviewChangeEndToEndThroughControlPlane(t *testing.T) {
 	ambiguousSrv := httptest.NewServer(controlplane.NewHTTPHandler(cpAmbiguous, auth))
 	t.Cleanup(ambiguousSrv.Close)
 
+	missingPolicyFiles := make(map[string]string, len(files))
+	for k, v := range files {
+		missingPolicyFiles[k] = v
+	}
+	missingPolicyFiles["design/design.go"] = "package design\n\n" +
+		"import (\n" +
+		"\t. \"goa.design/goa/v3/dsl\"\n" +
+		"\t. \"goa.design/goa-ai/dsl\"\n" +
+		")\n\n" +
+		"var _ = API(\"orders\", func() {})\n\n" +
+		"var _ = Service(\"orders\", func() {\n" +
+		"\tAgent(\"refund\", \"VIP refund assistant\", func() {})\n" +
+		"})\n"
+	missingPolicyDir := writeFilesToDir(t, missingPolicyFiles)
+
 	for _, tc := range []struct {
 		name      string
 		serverURL string
 		token     string
 		changeID  string
 		revision  string
+		dir       string
 		wantErr   string
+		rawHTTP   bool
 	}{
 		{
 			name:      "wrong bearer token",
@@ -362,7 +379,9 @@ func TestRunPreviewChangeEndToEndThroughControlPlane(t *testing.T) {
 			token:     "wrong-token",
 			changeID:  card.ChangeID,
 			revision:  card.RequestRevision,
+			dir:       modDir,
 			wantErr:   "invalid response code 401, body: unauthorized",
+			rawHTTP:   true,
 		},
 		{
 			name:      "wrong principal",
@@ -370,7 +389,8 @@ func TestRunPreviewChangeEndToEndThroughControlPlane(t *testing.T) {
 			token:     "bob-token",
 			changeID:  card.ChangeID,
 			revision:  card.RequestRevision,
-			wantErr:   `principal \"bob@example.com\" is not the owner of change_id \"vip-refunds\"`,
+			dir:       modDir,
+			wantErr:   `principal "bob@example.com" is not the owner of change_id "vip-refunds"`,
 		},
 		{
 			name:      "missing card",
@@ -378,7 +398,8 @@ func TestRunPreviewChangeEndToEndThroughControlPlane(t *testing.T) {
 			token:     "alice-token",
 			changeID:  "no-such-card",
 			revision:  card.RequestRevision,
-			wantErr:   `unknown change_id \"no-such-card\"`,
+			dir:       modDir,
+			wantErr:   `unknown change_id "no-such-card"`,
 		},
 		{
 			name:      "unconfirmed card",
@@ -386,7 +407,8 @@ func TestRunPreviewChangeEndToEndThroughControlPlane(t *testing.T) {
 			token:     "alice-token",
 			changeID:  pending.ChangeID,
 			revision:  pending.RequestRevision,
-			wantErr:   `change_id \"needs-confirm\" must be confirmed before architecture preview`,
+			dir:       modDir,
+			wantErr:   `change_id "needs-confirm" must be confirmed before architecture preview (status "needs_confirmation")`,
 		},
 		{
 			name:      "stale request_revision makes one call with no retry",
@@ -394,7 +416,17 @@ func TestRunPreviewChangeEndToEndThroughControlPlane(t *testing.T) {
 			token:     "alice-token",
 			changeID:  unconfirmedCard.ChangeID,
 			revision:  "0000000000000000000000000000000000000000000000000000000000000000",
-			wantErr:   "request_revision mismatch",
+			dir:       modDir,
+			wantErr:   `request_revision mismatch for "pending-card"`,
+		},
+		{
+			name:      "missing RunPolicy caps decodes 422 unprocessable error cleanly",
+			serverURL: srv.URL,
+			token:     "alice-token",
+			changeID:  card.ChangeID,
+			revision:  card.RequestRevision,
+			dir:       missingPolicyDir,
+			wantErr:   `agent "agent:orders.refund" must declare positive TimeBudget and DefaultCaps(MaxToolCalls) in RunPolicy`,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -405,13 +437,17 @@ func TestRunPreviewChangeEndToEndThroughControlPlane(t *testing.T) {
 					"-server", tc.serverURL,
 					"-change-id", tc.changeID,
 					"-request-revision", tc.revision,
-					"-dir", modDir,
+					"-dir", tc.dir,
 					"-auth-token", tc.token,
 				},
 				&out,
 				func(string) string { return "" },
 			)
 			require.ErrorContains(t, err, tc.wantErr)
+			if !tc.rawHTTP {
+				assert.NotContains(t, err.Error(), "invalid response code")
+				assert.NotContains(t, err.Error(), `"fault"`)
+			}
 			assert.Empty(t, out.String())
 			if tc.serverURL == srv.URL {
 				assert.Equal(t, before+1, reqCount.Load(), "must make exactly 1 HTTP request with no automatic retry")

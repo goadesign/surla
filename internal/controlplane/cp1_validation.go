@@ -1,8 +1,10 @@
 package controlplane
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 
@@ -13,6 +15,37 @@ import (
 // operator's confirmation: ambiguity questions and examples are validated and
 // given code-owned IDs, and answers and confirmed examples are checked before
 // a Change Card is confirmed.
+
+// ConfirmIntent records the owner's complete answers and example table for a
+// Change Card that needs confirmation or is already confirmed. The caller
+// must be the card's owner and send the card's current request_revision, so
+// an edit based on an older revision fails. Every open ambiguity must have an
+// allowed answer. When a confirmed card's answers and examples are unchanged,
+// the card is returned as it is; otherwise the card is confirmed under a new
+// request_revision, so previews and verification reports bound to the earlier
+// revision no longer match it. The prompt, summary and preserved behaviors
+// never change here: a new requirement on an existing card uses revise_change.
+//
+// An unchanged submission returns the saved card the same way get_change
+// does: with its approval in Approval only while that approval still matches
+// the promotion target's current inputs, or in UnverifiedApproval when current
+// promotion inputs cannot be verified.
+func (c *ControlPlane) ConfirmIntent(ctx context.Context, p *gensurla.ConfirmIntentPayload) (*gensurla.ChangeCardResult, error) {
+	principal, ok := PrincipalFromContext(ctx)
+	if !ok {
+		return nil, errors.New("authenticated principal is required")
+	}
+	if p == nil || strings.TrimSpace(p.ChangeID) == "" || strings.TrimSpace(p.RequestRevision) == "" {
+		return nil, gensurla.MakeUnprocessable(errors.New("change_id and request_revision are required"))
+	}
+	card, changed, err := c.confirm(principal, p)
+	if err != nil || changed {
+		return card, err
+	}
+	// The saved card is checked against the promotion target after c.mu is
+	// released, because the target may be slow.
+	return c.currentCard(ctx, card)
+}
 
 // validateCP1Analysis validates all model-returned CP1 fields strictly without
 // silent coercion and assigns code-owned mechanical ambiguity and check IDs.
@@ -175,4 +208,64 @@ func validateConfirmedExamples(in []*gensurla.ExampleItem) ([]*gensurla.ExampleI
 		})
 	}
 	return out, nil
+}
+
+// confirm applies a confirm_intent submission under c.mu. It returns the new
+// confirmed card and true when the answers or examples changed the revision,
+// or the unchanged saved card and false.
+func (c *ControlPlane) confirm(principal Principal, p *gensurla.ConfirmIntentPayload) (*gensurla.ChangeCardResult, bool, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	record, ok, err := c.cards.load(p.ChangeID)
+	if err != nil {
+		return nil, false, err
+	}
+	if !ok {
+		return nil, false, gensurla.MakeNotFound(fmt.Errorf("unknown change_id %q", p.ChangeID))
+	}
+	if record.owner != principal.ID {
+		return nil, false, gensurla.MakeForbidden(fmt.Errorf("principal %q is not the owner of change_id %q", principal.ID, p.ChangeID))
+	}
+	existing := record.card
+	if existing.RequestRevision != p.RequestRevision {
+		return nil, false, gensurla.MakeConflict(fmt.Errorf("request_revision mismatch for %q: got %q, want %q", p.ChangeID, p.RequestRevision, existing.RequestRevision))
+	}
+
+	if err := validateAmbiguityAnswers(existing.Ambiguities, p.Answers); err != nil {
+		return nil, false, gensurla.MakeUnprocessable(err)
+	}
+	examples, err := validateConfirmedExamples(p.Examples)
+	if err != nil {
+		return nil, false, gensurla.MakeUnprocessable(fmt.Errorf("invalid confirmed examples: %w", err))
+	}
+	// confirmed carries no ui_composition: a composition describes only the
+	// revision it was composed for, and changed answers or examples produce a
+	// new revision. An unchanged submission returns existing, composition
+	// included, below.
+	confirmedBy := principal.ID
+	confirmed := &gensurla.ChangeCardResult{
+		ChangeID:           existing.ChangeID,
+		Status:             StatusConfirmed,
+		Prompt:             existing.Prompt,
+		Summary:            existing.Summary,
+		Ambiguities:        existing.Ambiguities,
+		Answers:            maps.Clone(p.Answers),
+		Examples:           examples,
+		PreservedBehaviors: slices.Clone(existing.PreservedBehaviors),
+		ConfirmedBy:        &confirmedBy,
+	}
+	rev, err := computeCanonicalRevision(confirmed, record.owner, record.designSource)
+	if err != nil {
+		return nil, false, err
+	}
+	if rev == existing.RequestRevision {
+		// Same answers and examples on an already confirmed card.
+		return existing, false, nil
+	}
+	confirmed.RequestRevision = rev
+	if err := c.cards.save(storedChangeCard{card: confirmed, owner: record.owner, designSource: record.designSource}); err != nil {
+		return nil, false, err
+	}
+	return confirmed, true, nil
 }

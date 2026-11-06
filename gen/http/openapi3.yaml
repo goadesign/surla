@@ -121,6 +121,32 @@ paths:
                                         suite_commit: Voluptatem et placeat ullam quisquam.
                                         suite_id: Accusantium quae ducimus.
                                     reason: Sequi et ut doloribus tenetur corporis ad.
+                "403":
+                    description: 'forbidden: The authenticated principal does not own this Change Card.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: forbidden
+                                temporary: false
+                                timeout: false
+                "404":
+                    description: 'not_found: No Change Card exists with this change_id.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: not_found
+                                temporary: false
+                                timeout: false
     /changes/{change_id}/verifications:
         get:
             tags:
@@ -359,6 +385,45 @@ paths:
                                                 suite_failed: false
                                             suite_id: Dolorum sed sunt sed.
                                       suite_commit: Nostrum perspiciatis quo.
+                "403":
+                    description: 'forbidden: The authenticated principal does not own this Change Card.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: forbidden
+                                temporary: false
+                                timeout: false
+                "404":
+                    description: 'not_found: No Change Card exists with this change_id.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: not_found
+                                temporary: false
+                                timeout: false
+                "501":
+                    description: 'not_implemented: This server has no verification configuration, so it cannot list verification runs.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: not_implemented
+                                temporary: false
+                                timeout: false
         post:
             tags:
                 - surla
@@ -403,6 +468,58 @@ paths:
                                     value:
                                         started_at: "1984-04-01T02:58:45Z"
                                 suite_commit: Nesciunt dolor in ea.
+                "403":
+                    description: 'forbidden: The authenticated principal does not own this Change Card.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: forbidden
+                                temporary: false
+                                timeout: false
+                "404":
+                    description: 'not_found: No Change Card exists with this change_id.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: not_found
+                                temporary: false
+                                timeout: false
+                "409":
+                    description: 'conflict: The Change Card is not confirmed or its request_revision does not match; confirm the card or read the current revision with get_change.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: conflict
+                                temporary: false
+                                timeout: false
+                "501":
+                    description: 'not_implemented: This server has no verification configuration, so it cannot run Checkpoint 4 verifications.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: not_implemented
+                                temporary: false
+                                timeout: false
     /changes/approve:
         post:
             tags:
@@ -503,6 +620,71 @@ paths:
                                         suite_commit: Voluptatem et placeat ullam quisquam.
                                         suite_id: Accusantium quae ducimus.
                                     reason: Sequi et ut doloribus tenetur corporis ad.
+                "403":
+                    description: 'forbidden: The authenticated principal does not own this Change Card.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: forbidden
+                                temporary: false
+                                timeout: false
+                "404":
+                    description: 'not_found: No Change Card exists with this change_id.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: not_found
+                                temporary: false
+                                timeout: false
+                "409":
+                    description: 'conflict: The Change Card is not confirmed or its request_revision does not match; confirm the card or read the current revision with get_change.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: conflict
+                                temporary: false
+                                timeout: false
+                "422":
+                    description: 'unprocessable: The verification report did not pass or does not match the Change Card and promotion target inputs.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: unprocessable
+                                temporary: false
+                                timeout: false
+                "501":
+                    description: 'not_implemented: This control plane has no promotion target bound to it.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: not_implemented
+                                temporary: false
+                                timeout: false
     /changes/confirm:
         post:
             tags:
@@ -611,6 +793,58 @@ paths:
                                         suite_commit: Voluptatem et placeat ullam quisquam.
                                         suite_id: Accusantium quae ducimus.
                                     reason: Sequi et ut doloribus tenetur corporis ad.
+                "403":
+                    description: 'forbidden: The authenticated principal does not own this Change Card.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: forbidden
+                                temporary: false
+                                timeout: false
+                "404":
+                    description: 'not_found: No Change Card exists with this change_id.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: not_found
+                                temporary: false
+                                timeout: false
+                "409":
+                    description: 'conflict: The card''s request_revision changed; read the current revision with get_change.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: conflict
+                                temporary: false
+                                timeout: false
+                "422":
+                    description: 'unprocessable: The submitted answers or examples did not satisfy the Change Card''s requirements; the message states which check failed.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: unprocessable
+                                temporary: false
+                                timeout: false
     /changes/preview:
         post:
             tags:
@@ -837,6 +1071,58 @@ paths:
                                       return_schema: Nulla sit velit dolorem veritatis saepe eum.
                                       text_only_args_schema: Facere voluptas rerum consectetur.
                                       toolset: Beatae repudiandae.
+                "403":
+                    description: 'forbidden: The authenticated principal does not own this Change Card.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: forbidden
+                                temporary: false
+                                timeout: false
+                "404":
+                    description: 'not_found: No Change Card exists with this change_id.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: not_found
+                                temporary: false
+                                timeout: false
+                "409":
+                    description: 'conflict: The Change Card is not confirmed or its request_revision does not match; confirm the card or read the current revision with get_change.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: conflict
+                                temporary: false
+                                timeout: false
+                "422":
+                    description: 'unprocessable: The request or evaluated design did not meet Checkpoint 2 requirements; the message states which check failed.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: unprocessable
+                                temporary: false
+                                timeout: false
     /changes/propose:
         post:
             tags:
@@ -934,6 +1220,45 @@ paths:
                                         suite_commit: Voluptatem et placeat ullam quisquam.
                                         suite_id: Accusantium quae ducimus.
                                     reason: Sequi et ut doloribus tenetur corporis ad.
+                "409":
+                    description: 'conflict: A Change Card with this change_id already exists; use revise_change or a new change_id.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: conflict
+                                temporary: false
+                                timeout: false
+                "422":
+                    description: 'unprocessable: The request could not be accepted; the message states which required field or constraint failed.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: unprocessable
+                                temporary: false
+                                timeout: false
+                "501":
+                    description: 'not_implemented: This control plane has no Checkpoint 1 analyzer configured.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: not_implemented
+                                temporary: false
+                                timeout: false
     /changes/revise:
         post:
             tags:
@@ -1043,6 +1368,71 @@ paths:
                                         suite_commit: Voluptatem et placeat ullam quisquam.
                                         suite_id: Accusantium quae ducimus.
                                     reason: Sequi et ut doloribus tenetur corporis ad.
+                "403":
+                    description: 'forbidden: The authenticated principal does not own this Change Card.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: forbidden
+                                temporary: false
+                                timeout: false
+                "404":
+                    description: 'not_found: No Change Card exists with this change_id.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: not_found
+                                temporary: false
+                                timeout: false
+                "409":
+                    description: 'conflict: The card''s request_revision changed; read the current revision with get_change.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: conflict
+                                temporary: false
+                                timeout: false
+                "422":
+                    description: 'unprocessable: The request could not be accepted; the message states which required field or constraint failed.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: unprocessable
+                                temporary: false
+                                timeout: false
+                "501":
+                    description: 'not_implemented: This control plane has no Checkpoint 1 analyzer configured.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: not_implemented
+                                temporary: false
+                                timeout: false
     /diff:
         post:
             tags:
@@ -1384,6 +1774,45 @@ paths:
                                             suite_failed: false
                                         suite_id: Dolorum sed sunt sed.
                                 suite_commit: Laboriosam architecto minus itaque deleniti.
+                "403":
+                    description: 'forbidden: The authenticated principal does not own this verification run.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: forbidden
+                                temporary: false
+                                timeout: false
+                "404":
+                    description: 'not_found: No verification run exists with this run_id.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: not_found
+                                temporary: false
+                                timeout: false
+                "501":
+                    description: 'not_implemented: This server has no verification configuration, so it cannot read verification runs.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: not_implemented
+                                temporary: false
+                                timeout: false
 components:
     schemas:
         AgentPolicyItem:
@@ -2543,7 +2972,7 @@ components:
                 fault:
                     type: boolean
                     description: Is the error a server-side fault?
-                    example: false
+                    example: true
                 id:
                     type: string
                     description: ID is a unique identifier for this particular occurrence of the problem.
@@ -2559,19 +2988,19 @@ components:
                 temporary:
                     type: boolean
                     description: Is the error temporary?
-                    example: true
+                    example: false
                 timeout:
                     type: boolean
                     description: Is the error a timeout?
-                    example: false
+                    example: true
             description: Error response result type
             example:
-                fault: false
+                fault: true
                 id: 123abc
                 message: parameter 'p' must be an integer
                 name: bad_request
-                temporary: true
-                timeout: false
+                temporary: false
+                timeout: true
             required:
                 - name
                 - id

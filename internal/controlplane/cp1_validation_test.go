@@ -1,12 +1,20 @@
 package controlplane
 
 import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	genmcpadapter "github.com/goadesign/surla/gen/mcp_surla"
 	gensurla "github.com/goadesign/surla/gen/surla"
+	"github.com/goadesign/surla/internal/swarm"
+	"github.com/goadesign/surla/internal/testmodule"
 )
 
 // TestValidateAmbiguityAnswersReportsEveryProblemOnce verifies that
@@ -80,4 +88,130 @@ func TestValidateAmbiguityAnswersReportsEveryProblemOnce(t *testing.T) {
 			assert.Equal(t, tc.want, err.Error())
 		})
 	}
+}
+
+// TestChangeCardHTTPErrorsAndMCPToolPreservation verifies that established
+// caller, state, and unconfigured-capability refusals across the Change Card
+// HTTP routes return their declared non-fault HTTP status codes (403, 404, 409,
+// 422, 501), that server-owned SwarmProfiles misconfiguration on an embedded
+// host remains an HTTP 500 fault, and that MCP tools/call continues to return
+// non-fault tool error results with the same domain error message.
+func TestChangeCardHTTPErrorsAndMCPToolPreservation(t *testing.T) {
+	aliceCtx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
+	ambiguousJSON, err := json.Marshal(CP1SemanticAnalysis{
+		Summary:     "Refunds up to $50 are instant.",
+		Ambiguities: []CP1ModelAmbiguity{{Question: "Who approves?", Options: []string{"instant", "manager"}}},
+		Examples: []CP1ModelExample{{
+			Scenario: "Refund at limit", InputSummary: "$50", ExpectedOutcome: "Instant", VerificationKind: "deterministic",
+		}},
+		PreservedBehaviors: []string{},
+	})
+	require.NoError(t, err)
+	auth := NewTokenAuthenticator(map[string]Principal{
+		"alice-token": {ID: "alice@example.com"},
+		"bob-token":   {ID: "bob@example.com"},
+	})
+	cp := newControlPlane(t, Options{Analyzer: NewModelCP1Analyzer(newStubModelClient(t, string(ambiguousJSON)))})
+	pending, err := cp.ProposeChange(aliceCtx, &gensurla.ProposeChangePayload{ChangeID: "chg", Prompt: "Refunds."})
+	require.NoError(t, err)
+	confirmed, err := cp.ConfirmIntent(aliceCtx, &gensurla.ConfirmIntentPayload{
+		ChangeID: "chg-ok", RequestRevision: func() string {
+			c, err := cp.ProposeChange(aliceCtx, &gensurla.ProposeChangePayload{ChangeID: "chg-ok", Prompt: "Refunds."})
+			require.NoError(t, err)
+			return c.RequestRevision
+		}(),
+		Answers:  map[string]string{"chg-ok-ambiguity-01": "instant"},
+		Examples: pending.Examples,
+	})
+	require.NoError(t, err)
+	designFiles := testmodule.Snapshot(t, "", `package design
+import . "goa.design/goa/v3/dsl"
+var _ = API("orders", func() {})
+var _ = Service("orders", func() {})
+`)
+	handler := NewHTTPHandler(cp, auth)
+	noAnalyzerHandler := NewHTTPHandler(newControlPlane(t, Options{}), auth)
+	badSwarmCP := newControlPlane(t, Options{
+		Analyzer:      NewModelCP1Analyzer(newStubModelClient(t, string(ambiguousJSON))),
+		SwarmProfiles: []swarm.ProviderProfile{{ID: "bad"}},
+	})
+	badCard, err := badSwarmCP.ProposeChange(aliceCtx, &gensurla.ProposeChangePayload{ChangeID: "bad", Prompt: "Refunds."})
+	require.NoError(t, err)
+	badConfirmed, err := badSwarmCP.ConfirmIntent(aliceCtx, &gensurla.ConfirmIntentPayload{
+		ChangeID: "bad", RequestRevision: badCard.RequestRevision,
+		Answers: map[string]string{"bad-ambiguity-01": "instant"}, Examples: badCard.Examples,
+	})
+	require.NoError(t, err)
+	badSwarmHandler := NewHTTPHandler(badSwarmCP, auth)
+
+	for _, tc := range []struct {
+		name       string
+		h          http.Handler
+		method     string
+		path       string
+		token      string
+		body       map[string]any
+		wantStatus int
+		wantFault  bool
+		wantMsg    string
+	}{
+		{"propose without analyzer", noAnalyzerHandler, http.MethodPost, "/changes/propose", "alice-token", map[string]any{"change_id": "x", "prompt": "p"}, http.StatusNotImplemented, false, "cp1 semantic analyzer is required"},
+		{"propose duplicate change_id", handler, http.MethodPost, "/changes/propose", "alice-token", map[string]any{"change_id": "chg", "prompt": "p"}, http.StatusConflict, false, `change_id "chg" already exists`},
+		{"get_change unknown", handler, http.MethodGet, "/changes/missing", "alice-token", nil, http.StatusNotFound, false, `unknown change_id "missing"`},
+		{"get_change wrong owner", handler, http.MethodGet, "/changes/chg", "bob-token", nil, http.StatusForbidden, false, `principal "bob@example.com" is not the owner of change_id "chg"`},
+		{"revise stale revision", handler, http.MethodPost, "/changes/revise", "alice-token", map[string]any{"change_id": "chg", "request_revision": strings.Repeat("0", 64), "prompt": "p"}, http.StatusConflict, false, "request_revision mismatch"},
+		{"confirm invalid answer", handler, http.MethodPost, "/changes/confirm", "alice-token", map[string]any{
+			"change_id":        "chg",
+			"request_revision": pending.RequestRevision,
+			"answers":          map[string]string{"chg-ambiguity-01": "wrong"},
+			"examples": []map[string]any{{
+				"id":                pending.Examples[0].ID,
+				"scenario":          pending.Examples[0].Scenario,
+				"input_summary":     pending.Examples[0].InputSummary,
+				"expected_outcome":  pending.Examples[0].ExpectedOutcome,
+				"verification_kind": pending.Examples[0].VerificationKind,
+			}},
+		}, http.StatusUnprocessableEntity, false, "is not one of its options"},
+		{"preview unconfirmed card", handler, http.MethodPost, "/changes/preview", "alice-token", map[string]any{"change_id": "chg", "request_revision": pending.RequestRevision, "design": map[string]any{"files": designFiles}}, http.StatusConflict, false, `change_id "chg" must be confirmed before architecture preview (status "needs_confirmation")`},
+		{"preview nil builder element", handler, http.MethodPost, "/changes/preview", "alice-token", map[string]any{"change_id": "chg-ok", "request_revision": confirmed.RequestRevision, "design": map[string]any{"files": designFiles}, "builders": []any{nil}}, http.StatusUnprocessableEntity, false, "builders[0] is nil"},
+		{"preview malformed server SwarmProfiles", badSwarmHandler, http.MethodPost, "/changes/preview", "alice-token", map[string]any{"change_id": "bad", "request_revision": badConfirmed.RequestRevision, "design": map[string]any{"files": designFiles}}, http.StatusInternalServerError, true, "plan swarm roster"},
+		{"verify_change without config", handler, http.MethodPost, "/changes/chg-ok/verifications", "alice-token", map[string]any{"request_revision": confirmed.RequestRevision, "candidate_commit": strings.Repeat("a", 40)}, http.StatusNotImplemented, false, "verification is not configured"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var raw []byte
+			if tc.body != nil {
+				var err error
+				raw, err = json.Marshal(tc.body)
+				require.NoError(t, err)
+			}
+			req := httptest.NewRequest(tc.method, tc.path, strings.NewReader(string(raw)))
+			req.Header.Set("Authorization", "Bearer "+tc.token)
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+			tc.h.ServeHTTP(rec, req)
+			assert.Equal(t, tc.wantStatus, rec.Code)
+			var errBody struct {
+				Message string `json:"message"`
+				Fault   bool   `json:"fault"`
+			}
+			require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &errBody), rec.Body.String())
+			assert.Equal(t, tc.wantFault, errBody.Fault)
+			assert.Contains(t, errBody.Message, tc.wantMsg)
+		})
+	}
+
+	adapter := genmcpadapter.NewMCPAdapter(gensurla.NewEndpoints(cp), nil)
+	argsJSON, err := json.Marshal(map[string]any{
+		"change_id": "chg", "request_revision": pending.RequestRevision, "design": map[string]any{"files": designFiles},
+	})
+	require.NoError(t, err)
+	mcpRes, err := adapter.ToolsCall(aliceCtx, &genmcpadapter.ToolsCallPayload{Name: "preview_architecture", Arguments: argsJSON})
+	require.NoError(t, err)
+	complete, ok := mcpRes.Outcome.AsComplete()
+	require.True(t, ok)
+	require.NotNil(t, complete.IsError)
+	assert.True(t, *complete.IsError)
+	require.NotEmpty(t, complete.Content)
+	require.NotNil(t, complete.Content[0].Text)
+	assert.Contains(t, *complete.Content[0].Text, `change_id "chg" must be confirmed before architecture preview (status "needs_confirmation")`)
 }

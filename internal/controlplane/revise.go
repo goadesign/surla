@@ -83,13 +83,13 @@ func (c *ControlPlane) ReviseChange(
 		strings.TrimSpace(p.ChangeID) == "" ||
 		strings.TrimSpace(p.RequestRevision) == "" ||
 		strings.TrimSpace(p.Prompt) == "" {
-		return nil, errors.New("change_id, request_revision, and prompt are required")
+		return nil, gensurla.MakeUnprocessable(errors.New("change_id, request_revision, and prompt are required"))
 	}
 	if !utf8.ValidString(p.ChangeID) {
-		return nil, errors.New("change_id must be valid UTF-8")
+		return nil, gensurla.MakeUnprocessable(errors.New("change_id must be valid UTF-8"))
 	}
 	if c.analyzer == nil {
-		return nil, errors.New("cp1 semantic analyzer is required")
+		return nil, gensurla.MakeNotImplemented(errors.New("cp1 semantic analyzer is required"))
 	}
 
 	c.mu.RLock()
@@ -99,18 +99,18 @@ func (c *ControlPlane) ReviseChange(
 		return nil, err
 	}
 	if !exists {
-		return nil, fmt.Errorf("unknown change_id %q", p.ChangeID)
+		return nil, gensurla.MakeNotFound(fmt.Errorf("unknown change_id %q", p.ChangeID))
 	}
 	if record.owner != principal.ID {
-		return nil, fmt.Errorf("principal %q is not the owner of change_id %q", principal.ID, p.ChangeID)
+		return nil, gensurla.MakeForbidden(fmt.Errorf("principal %q is not the owner of change_id %q", principal.ID, p.ChangeID))
 	}
 	if record.card.RequestRevision != p.RequestRevision {
-		return nil, fmt.Errorf(
+		return nil, gensurla.MakeConflict(fmt.Errorf(
 			"request_revision mismatch for %q: got %q, want %q",
 			p.ChangeID,
 			p.RequestRevision,
 			record.card.RequestRevision,
-		)
+		))
 	}
 
 	designSrc := record.designSource
@@ -166,18 +166,18 @@ func (c *ControlPlane) ReviseChange(
 		return nil, err
 	}
 	if !exists {
-		return nil, fmt.Errorf("unknown change_id %q", p.ChangeID)
+		return nil, gensurla.MakeNotFound(fmt.Errorf("unknown change_id %q", p.ChangeID))
 	}
 	if current.owner != principal.ID {
-		return nil, fmt.Errorf("principal %q is not the owner of change_id %q", principal.ID, p.ChangeID)
+		return nil, gensurla.MakeForbidden(fmt.Errorf("principal %q is not the owner of change_id %q", principal.ID, p.ChangeID))
 	}
 	if current.card.RequestRevision != p.RequestRevision {
-		return nil, fmt.Errorf(
+		return nil, gensurla.MakeConflict(fmt.Errorf(
 			"request_revision mismatch for %q: got %q, want %q",
 			p.ChangeID,
 			p.RequestRevision,
 			current.card.RequestRevision,
-		)
+		))
 	}
 	if err := c.cards.save(storedChangeCard{
 		card:         revised,

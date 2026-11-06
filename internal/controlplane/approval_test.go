@@ -359,46 +359,48 @@ func TestApproveMergeRecordsApprovalOnlyForTheCheckedRevision(t *testing.T) {
 	})
 
 	rejections := []struct {
-		name    string
-		ctx     context.Context
-		change  func(cp *ControlPlane, target *promotionTargetStub, card *gensurla.ChangeCardResult) string
-		wantErr string
-		isStale bool
+		name           string
+		ctx            context.Context
+		token          string
+		change         func(cp *ControlPlane, target *promotionTargetStub, card *gensurla.ChangeCardResult) string
+		wantErr        string
+		isStale        bool
+		wantHTTPStatus int
 	}{
-		{"no promotion target is bound", aliceCtx, func(cp *ControlPlane, target *promotionTargetStub, _ *gensurla.ChangeCardResult) string {
+		{"no promotion target is bound", aliceCtx, "alice-token", func(cp *ControlPlane, target *promotionTargetStub, _ *gensurla.ChangeCardResult) string {
 			cp.promotionTarget = nil
 			return target.report.Digest
-		}, "no promotion target", false},
-		{"caller does not own the card", bobCtx, func(_ *ControlPlane, target *promotionTargetStub, _ *gensurla.ChangeCardResult) string {
+		}, "no promotion target", false, http.StatusNotImplemented},
+		{"caller does not own the card", bobCtx, "bob-token", func(_ *ControlPlane, target *promotionTargetStub, _ *gensurla.ChangeCardResult) string {
 			return target.report.Digest
-		}, "is not the owner", false},
-		{"target returns a different report", aliceCtx, func(_ *ControlPlane, _ *promotionTargetStub, _ *gensurla.ChangeCardResult) string {
+		}, "is not the owner", false, http.StatusForbidden},
+		{"target returns a different report", aliceCtx, "alice-token", func(_ *ControlPlane, _ *promotionTargetStub, _ *gensurla.ChangeCardResult) string {
 			return strings.Repeat("0", 64)
-		}, "returned report", false},
-		{"measured binary differs", aliceCtx, func(_ *ControlPlane, target *promotionTargetStub, _ *gensurla.ChangeCardResult) string {
+		}, "returned report", false, http.StatusInternalServerError},
+		{"measured binary differs", aliceCtx, "alice-token", func(_ *ControlPlane, target *promotionTargetStub, _ *gensurla.ChangeCardResult) string {
 			target.inputs.Artifacts = map[string]string{"orders": "rebuilt"}
 			return target.report.Digest
-		}, "candidate binaries", true},
-		{"report cannot be loaded", aliceCtx, func(_ *ControlPlane, target *promotionTargetStub, _ *gensurla.ChangeCardResult) string {
+		}, "candidate binaries", true, http.StatusUnprocessableEntity},
+		{"report cannot be loaded", aliceCtx, "alice-token", func(_ *ControlPlane, target *promotionTargetStub, _ *gensurla.ChangeCardResult) string {
 			target.loadErr = errors.New("no report under that digest")
 			return target.report.Digest
-		}, "no report under that digest", false},
-		{"current inputs cannot be measured", aliceCtx, func(_ *ControlPlane, target *promotionTargetStub, _ *gensurla.ChangeCardResult) string {
+		}, "no report under that digest", false, http.StatusInternalServerError},
+		{"current inputs cannot be measured", aliceCtx, "alice-token", func(_ *ControlPlane, target *promotionTargetStub, _ *gensurla.ChangeCardResult) string {
 			target.inputsErr = errors.New("commit not built")
 			return target.report.Digest
-		}, "commit not built", false},
-		{"required environment differs", aliceCtx, func(_ *ControlPlane, target *promotionTargetStub, _ *gensurla.ChangeCardResult) string {
+		}, "commit not built", false, http.StatusInternalServerError},
+		{"required environment differs", aliceCtx, "alice-token", func(_ *ControlPlane, target *promotionTargetStub, _ *gensurla.ChangeCardResult) string {
 			target.inputs.Environment = "staging"
 			return target.report.Digest
-		}, "environment", true},
-		{"required suite commit differs", aliceCtx, func(_ *ControlPlane, target *promotionTargetStub, _ *gensurla.ChangeCardResult) string {
+		}, "environment", true, http.StatusUnprocessableEntity},
+		{"required suite commit differs", aliceCtx, "alice-token", func(_ *ControlPlane, target *promotionTargetStub, _ *gensurla.ChangeCardResult) string {
 			target.inputs.SuiteCommit = "suite-2"
 			return target.report.Digest
-		}, "evaluator suite", true},
-		{"report did not pass", aliceCtx, func(_ *ControlPlane, target *promotionTargetStub, card *gensurla.ChangeCardResult) string {
+		}, "evaluator suite", true, http.StatusUnprocessableEntity},
+		{"report did not pass", aliceCtx, "alice-token", func(_ *ControlPlane, target *promotionTargetStub, card *gensurla.ChangeCardResult) string {
 			target.report = failingReport(t, card.RequestRevision, commit, inputs)
 			return target.report.Digest
-		}, "did not pass", true},
+		}, "did not pass", true, http.StatusUnprocessableEntity},
 	}
 	for _, c := range rejections {
 		t.Run(c.name, func(t *testing.T) {
@@ -407,6 +409,25 @@ func TestApproveMergeRecordsApprovalOnlyForTheCheckedRevision(t *testing.T) {
 			_, err := approve(c.ctx, cp, card, digest)
 			require.ErrorContains(t, err, c.wantErr)
 			assert.Equal(t, c.isStale, errors.Is(err, verify.ErrStaleReport))
+
+			handler := NewHTTPHandler(cp, NewTokenAuthenticator(map[string]Principal{
+				"alice-token": {ID: "alice@example.com"},
+				"bob-token":   {ID: "bob@example.com"},
+			}))
+			body, err := json.Marshal(map[string]any{
+				"change_id":        card.ChangeID,
+				"request_revision": card.RequestRevision,
+				"candidate_commit": commit,
+				"report_digest":    digest,
+			})
+			require.NoError(t, err)
+			req := httptest.NewRequest(http.MethodPost, "/changes/approve", bytes.NewReader(body))
+			req.Header.Set("Authorization", "Bearer "+c.token)
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, req)
+			assert.Equal(t, c.wantHTTPStatus, rec.Code)
+
 			read, err := cp.GetChange(aliceCtx, &gensurla.GetChangePayload{ChangeID: "chg"})
 			require.NoError(t, err)
 			assert.Nil(t, read.Approval)

@@ -510,16 +510,16 @@ func (c *ControlPlane) ProposeChange(ctx context.Context, p *gensurla.ProposeCha
 		return nil, errors.New("authenticated principal is required")
 	}
 	if p == nil || strings.TrimSpace(p.ChangeID) == "" || strings.TrimSpace(p.Prompt) == "" {
-		return nil, errors.New("change_id and prompt are required")
+		return nil, gensurla.MakeUnprocessable(errors.New("change_id and prompt are required"))
 	}
 	// A saved card is found by its change_id; invalid UTF-8 would be saved as
 	// U+FFFD and the card could not be found again. HTTP and MCP requests
 	// are already valid, so only Go callers can send such an ID.
 	if !utf8.ValidString(p.ChangeID) {
-		return nil, errors.New("change_id must be valid UTF-8")
+		return nil, gensurla.MakeUnprocessable(errors.New("change_id must be valid UTF-8"))
 	}
 	if c.analyzer == nil {
-		return nil, errors.New("cp1 semantic analyzer is required")
+		return nil, gensurla.MakeNotImplemented(errors.New("cp1 semantic analyzer is required"))
 	}
 	var designSrc string
 	if p.DesignSource != nil {
@@ -533,7 +533,7 @@ func (c *ControlPlane) ProposeChange(ctx context.Context, p *gensurla.ProposeCha
 		return nil, err
 	}
 	if alreadyExists {
-		return nil, fmt.Errorf("change_id %q already exists", p.ChangeID)
+		return nil, gensurla.MakeConflict(fmt.Errorf("change_id %q already exists", p.ChangeID))
 	}
 
 	if err := reportProgress(ctx, 0, 1, "Analyzing the feature request with the CP1 model"); err != nil {
@@ -589,7 +589,7 @@ func (c *ControlPlane) ProposeChange(ctx context.Context, p *gensurla.ProposeCha
 		return nil, err
 	}
 	if exists {
-		return nil, fmt.Errorf("change_id %q already exists", p.ChangeID)
+		return nil, gensurla.MakeConflict(fmt.Errorf("change_id %q already exists", p.ChangeID))
 	}
 	if err := c.cards.save(storedChangeCard{card: card, owner: principal.ID, designSource: designSrc}); err != nil {
 		return nil, err
@@ -639,43 +639,12 @@ func (c *ControlPlane) GetChange(ctx context.Context, p *gensurla.GetChangePaylo
 		return nil, err
 	}
 	if !ok {
-		return nil, fmt.Errorf("unknown change_id %q", p.ChangeID)
+		return nil, gensurla.MakeNotFound(fmt.Errorf("unknown change_id %q", p.ChangeID))
 	}
 	if record.owner != principal.ID {
-		return nil, fmt.Errorf("principal %q is not the owner of change_id %q", principal.ID, p.ChangeID)
+		return nil, gensurla.MakeForbidden(fmt.Errorf("principal %q is not the owner of change_id %q", principal.ID, p.ChangeID))
 	}
 	return c.currentCard(ctx, record.card)
-}
-
-// ConfirmIntent records the owner's complete answers and example table for a
-// Change Card that needs confirmation or is already confirmed. The caller
-// must be the card's owner and send the card's current request_revision, so
-// an edit based on an older revision fails. Every open ambiguity must have an
-// allowed answer. When a confirmed card's answers and examples are unchanged,
-// the card is returned as it is; otherwise the card is confirmed under a new
-// request_revision, so previews and verification reports bound to the earlier
-// revision no longer match it. The prompt, summary and preserved behaviors
-// never change here: a new requirement on an existing card uses revise_change.
-//
-// An unchanged submission returns the saved card the same way get_change
-// does: with its approval in Approval only while that approval still matches
-// the promotion target's current inputs, or in UnverifiedApproval when current
-// promotion inputs cannot be verified.
-func (c *ControlPlane) ConfirmIntent(ctx context.Context, p *gensurla.ConfirmIntentPayload) (*gensurla.ChangeCardResult, error) {
-	principal, ok := PrincipalFromContext(ctx)
-	if !ok {
-		return nil, errors.New("authenticated principal is required")
-	}
-	if p == nil || strings.TrimSpace(p.ChangeID) == "" || strings.TrimSpace(p.RequestRevision) == "" {
-		return nil, errors.New("change_id and request_revision are required")
-	}
-	card, changed, err := c.confirm(principal, p)
-	if err != nil || changed {
-		return card, err
-	}
-	// The saved card is checked against the promotion target after c.mu is
-	// released, because the target may be slow.
-	return c.currentCard(ctx, card)
 }
 
 // PreviewArchitecture evaluates the candidate design module snapshot via the
@@ -688,7 +657,7 @@ func (c *ControlPlane) PreviewArchitecture(ctx context.Context, p *gensurla.Prev
 		return nil, errors.New("authenticated principal is required")
 	}
 	if p == nil || strings.TrimSpace(p.ChangeID) == "" || strings.TrimSpace(p.RequestRevision) == "" {
-		return nil, errors.New("change_id and request_revision are required")
+		return nil, gensurla.MakeUnprocessable(errors.New("change_id and request_revision are required"))
 	}
 
 	c.mu.RLock()
@@ -698,16 +667,16 @@ func (c *ControlPlane) PreviewArchitecture(ctx context.Context, p *gensurla.Prev
 		return nil, err
 	}
 	if !exists {
-		return nil, fmt.Errorf("unknown change_id %q", p.ChangeID)
+		return nil, gensurla.MakeNotFound(fmt.Errorf("unknown change_id %q", p.ChangeID))
 	}
 	if record.owner != principal.ID {
-		return nil, fmt.Errorf("principal %q is not the owner of change_id %q", principal.ID, p.ChangeID)
+		return nil, gensurla.MakeForbidden(fmt.Errorf("principal %q is not the owner of change_id %q", principal.ID, p.ChangeID))
 	}
 	if record.card.Status != StatusConfirmed {
-		return nil, fmt.Errorf("change_id %q must be confirmed before architecture preview (status %q)", p.ChangeID, record.card.Status)
+		return nil, gensurla.MakeConflict(fmt.Errorf("change_id %q must be confirmed before architecture preview (status %q)", p.ChangeID, record.card.Status))
 	}
 	if record.card.RequestRevision != p.RequestRevision {
-		return nil, fmt.Errorf("request_revision mismatch for %q: got %q, want %q", p.ChangeID, p.RequestRevision, record.card.RequestRevision)
+		return nil, gensurla.MakeConflict(fmt.Errorf("request_revision mismatch for %q: got %q, want %q", p.ChangeID, p.RequestRevision, record.card.RequestRevision))
 	}
 
 	if err := reportProgress(ctx, 0, 2, "Evaluating the candidate design in the sandbox"); err != nil {
@@ -721,11 +690,11 @@ func (c *ControlPlane) PreviewArchitecture(ctx context.Context, p *gensurla.Prev
 		return nil, err
 	}
 	if evaluated.SystemName == "" || len(evaluated.Containers) == 0 {
-		return nil, errors.New("design must declare at least one Goa API or Service container")
+		return nil, gensurla.MakeUnprocessable(errors.New("design must declare at least one Goa API or Service container"))
 	}
 	for _, pol := range evaluated.AgentPolicies {
 		if pol.MaxExecutionSeconds <= 0 || pol.MaxToolCalls <= 0 {
-			return nil, fmt.Errorf("agent %q must declare positive TimeBudget and DefaultCaps(MaxToolCalls) in RunPolicy", pol.AgentID)
+			return nil, gensurla.MakeUnprocessable(fmt.Errorf("agent %q must declare positive TimeBudget and DefaultCaps(MaxToolCalls) in RunPolicy", pol.AgentID))
 		}
 	}
 
@@ -908,7 +877,7 @@ func planSwarmRoster(
 	builders := make([]swarm.BuilderScope, 0, len(in))
 	for i, item := range in {
 		if item == nil {
-			return nil, fmt.Errorf("builders[%d] is nil", i)
+			return nil, gensurla.MakeUnprocessable(fmt.Errorf("builders[%d] is nil", i))
 		}
 		var preferred string
 		if item.PreferredProfileID != nil {
@@ -974,64 +943,4 @@ func planSwarmRoster(
 		Summary:           plan.Summary,
 		Manifest:          manifestPtr,
 	}, nil
-}
-
-// confirm applies a confirm_intent submission under c.mu. It returns the new
-// confirmed card and true when the answers or examples changed the revision,
-// or the unchanged saved card and false.
-func (c *ControlPlane) confirm(principal Principal, p *gensurla.ConfirmIntentPayload) (*gensurla.ChangeCardResult, bool, error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	record, ok, err := c.cards.load(p.ChangeID)
-	if err != nil {
-		return nil, false, err
-	}
-	if !ok {
-		return nil, false, fmt.Errorf("unknown change_id %q", p.ChangeID)
-	}
-	if record.owner != principal.ID {
-		return nil, false, fmt.Errorf("principal %q is not the owner of change_id %q", principal.ID, p.ChangeID)
-	}
-	existing := record.card
-	if existing.RequestRevision != p.RequestRevision {
-		return nil, false, fmt.Errorf("request_revision mismatch for %q: got %q, want %q", p.ChangeID, p.RequestRevision, existing.RequestRevision)
-	}
-
-	if err := validateAmbiguityAnswers(existing.Ambiguities, p.Answers); err != nil {
-		return nil, false, err
-	}
-	examples, err := validateConfirmedExamples(p.Examples)
-	if err != nil {
-		return nil, false, fmt.Errorf("invalid confirmed examples: %w", err)
-	}
-	// confirmed carries no ui_composition: a composition describes only the
-	// revision it was composed for, and changed answers or examples produce a
-	// new revision. An unchanged submission returns existing, composition
-	// included, below.
-	confirmedBy := principal.ID
-	confirmed := &gensurla.ChangeCardResult{
-		ChangeID:           existing.ChangeID,
-		Status:             StatusConfirmed,
-		Prompt:             existing.Prompt,
-		Summary:            existing.Summary,
-		Ambiguities:        existing.Ambiguities,
-		Answers:            maps.Clone(p.Answers),
-		Examples:           examples,
-		PreservedBehaviors: slices.Clone(existing.PreservedBehaviors),
-		ConfirmedBy:        &confirmedBy,
-	}
-	rev, err := computeCanonicalRevision(confirmed, record.owner, record.designSource)
-	if err != nil {
-		return nil, false, err
-	}
-	if rev == existing.RequestRevision {
-		// Same answers and examples on an already confirmed card.
-		return existing, false, nil
-	}
-	confirmed.RequestRevision = rev
-	if err := c.cards.save(storedChangeCard{card: confirmed, owner: record.owner, designSource: record.designSource}); err != nil {
-		return nil, false, err
-	}
-	return confirmed, true, nil
 }

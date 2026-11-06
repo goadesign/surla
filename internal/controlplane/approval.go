@@ -36,7 +36,7 @@ func (c *ControlPlane) ApproveMerge(
 		return nil, errors.New("authenticated principal is required")
 	}
 	if c.promotionTarget == nil {
-		return nil, errors.New("no promotion target is bound to this control plane")
+		return nil, gensurla.MakeNotImplemented(errors.New("no promotion target is bound to this control plane"))
 	}
 
 	c.mu.RLock()
@@ -46,25 +46,25 @@ func (c *ControlPlane) ApproveMerge(
 		return nil, err
 	}
 	if !exists {
-		return nil, fmt.Errorf("unknown change_id %q", p.ChangeID)
+		return nil, gensurla.MakeNotFound(fmt.Errorf("unknown change_id %q", p.ChangeID))
 	}
 	if record.owner != principal.ID {
-		return nil, fmt.Errorf("principal %q is not the owner of change_id %q", principal.ID, p.ChangeID)
+		return nil, gensurla.MakeForbidden(fmt.Errorf("principal %q is not the owner of change_id %q", principal.ID, p.ChangeID))
 	}
 	if record.card.Status != StatusConfirmed {
-		return nil, fmt.Errorf(
+		return nil, gensurla.MakeConflict(fmt.Errorf(
 			"change_id %q must be confirmed before approval (status %q)",
 			p.ChangeID,
 			record.card.Status,
-		)
+		))
 	}
 	if record.card.RequestRevision != p.RequestRevision {
-		return nil, fmt.Errorf(
+		return nil, gensurla.MakeConflict(fmt.Errorf(
 			"request_revision mismatch for %q: got %q, want %q",
 			p.ChangeID,
 			p.RequestRevision,
 			record.card.RequestRevision,
-		)
+		))
 	}
 
 	// The target calls may be slow, so they run without holding c.mu. A card
@@ -91,6 +91,9 @@ func (c *ControlPlane) ApproveMerge(
 		Environment:     inputs.Environment,
 	}
 	if err := verify.Approve(current, report); err != nil {
+		if errors.Is(err, verify.ErrStaleReport) {
+			return nil, gensurla.MakeUnprocessable(err)
+		}
 		return nil, err
 	}
 
@@ -101,15 +104,15 @@ func (c *ControlPlane) ApproveMerge(
 		return nil, err
 	}
 	if !exists {
-		return nil, fmt.Errorf("change card %q is no longer saved", p.ChangeID)
+		return nil, gensurla.MakeNotFound(fmt.Errorf("change card %q is no longer saved", p.ChangeID))
 	}
 	if record.card.RequestRevision != p.RequestRevision {
-		return nil, fmt.Errorf(
+		return nil, gensurla.MakeConflict(fmt.Errorf(
 			"request_revision mismatch for %q: got %q, want %q",
 			p.ChangeID,
 			p.RequestRevision,
 			record.card.RequestRevision,
-		)
+		))
 	}
 	approved := *record.card
 	approved.Approval = &gensurla.ApprovalItem{
