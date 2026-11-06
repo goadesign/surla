@@ -342,6 +342,9 @@ func asAnalysisRejected(err error) (*goa.ServiceError, bool) {
 		}
 		return nil, false
 	}
+	if named, ok := err.(goa.GoaErrorNamer); ok && named != nil {
+		return nil, false
+	}
 	if joined, ok := err.(interface{ Unwrap() []error }); ok {
 		var expected *goa.ServiceError
 		for _, child := range joined.Unwrap() {
@@ -365,14 +368,18 @@ func asAnalysisRejected(err error) (*goa.ServiceError, bool) {
 	return nil, false
 }
 
-// containsAnalysisRejected reports whether err or any error in its unwrap tree
-// is an analysis_rejected ServiceError.
+// containsAnalysisRejected reports whether err has an analysis_rejected
+// ServiceError in its unwrap tree without traversing past an already named Goa
+// error owner.
 func containsAnalysisRejected(err error) bool {
 	if err == nil {
 		return false
 	}
-	if se, ok := err.(*goa.ServiceError); ok && se != nil && se.GoaErrorName() == "analysis_rejected" {
-		return true
+	if se, ok := err.(*goa.ServiceError); ok {
+		return se != nil && se.GoaErrorName() == "analysis_rejected"
+	}
+	if named, ok := err.(goa.GoaErrorNamer); ok && named != nil {
+		return named.GoaErrorName() == "analysis_rejected"
 	}
 	if joined, ok := err.(interface{ Unwrap() []error }); ok {
 		for _, child := range joined.Unwrap() {

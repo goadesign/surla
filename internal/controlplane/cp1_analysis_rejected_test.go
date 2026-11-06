@@ -501,22 +501,38 @@ func TestCP1ReusedAnalyzerErrorImmutabilityAndSaveSpanRecording(t *testing.T) {
 	// on both POST /changes/propose and POST /changes/revise, preserve all
 	// causes in process, and remain an MCP isError tool result.
 	independentAnalyzerFault := errors.New("independent analyzer fault")
+	classifyPromptError := func(promptText string) (error, bool) {
+		switch promptText {
+		case "unprocessable":
+			return fmt.Errorf("wrap: %w", gensurla.MakeUnprocessable(errors.New("unsupported domain"))), true
+		case "unprocessable_retained_direct":
+			return gensurla.MakeUnprocessable(sharedRejected), true
+		case "unprocessable_retained_wrapped":
+			return fmt.Errorf("wrap: %w", gensurla.MakeUnprocessable(sharedRejected)), true
+		case "explicit_fault":
+			return fmt.Errorf("wrap: %w", goa.Fault("provider unavailable")), true
+		case "explicit_fault_retained_direct":
+			return goa.NewServiceError(errors.Join(sharedRejected, context.Canceled), "fault", false, false, true), true
+		case "explicit_fault_retained_wrapped":
+			return fmt.Errorf("wrap: %w", goa.NewServiceError(errors.Join(sharedRejected, context.Canceled), "fault", false, false, true)), true
+		default:
+			return nil, false
+		}
+	}
 	mixedNamedTurn := 0
 	mixedNamedCP := newControlPlane(t, Options{
 		Analyzer: &stubCP1Analyzer{
 			analyzeFn: func(_ context.Context, promptText, _ string) (CP1SemanticAnalysis, error) {
-				switch promptText {
-				case "seed":
+				if promptText == "seed" {
 					return CP1SemanticAnalysis{
 						Summary: "Seed summary.",
 						Examples: []CP1ModelExample{{
 							Scenario: "S", InputSummary: "I", ExpectedOutcome: "O", VerificationKind: "deterministic",
 						}},
 					}, nil
-				case "unprocessable":
-					return CP1SemanticAnalysis{}, fmt.Errorf("wrap: %w", gensurla.MakeUnprocessable(errors.New("unsupported domain")))
-				case "explicit_fault":
-					return CP1SemanticAnalysis{}, fmt.Errorf("wrap: %w", goa.Fault("provider unavailable"))
+				}
+				if err, ok := classifyPromptError(promptText); ok {
+					return CP1SemanticAnalysis{}, err
 				}
 				mixedNamedTurn++
 				if mixedNamedTurn == 1 {
@@ -525,11 +541,8 @@ func TestCP1ReusedAnalyzerErrorImmutabilityAndSaveSpanRecording(t *testing.T) {
 				return CP1SemanticAnalysis{}, errors.Join(sharedRejected, independentAnalyzerFault)
 			},
 			reviseFn: func(_ context.Context, _ CP1PriorCard, promptText, _ string) (CP1SemanticAnalysis, error) {
-				switch promptText {
-				case "unprocessable":
-					return CP1SemanticAnalysis{}, gensurla.MakeUnprocessable(errors.New("unsupported domain"))
-				case "explicit_fault":
-					return CP1SemanticAnalysis{}, fmt.Errorf("wrap: %w", goa.Fault("provider unavailable"))
+				if err, ok := classifyPromptError(promptText); ok {
+					return CP1SemanticAnalysis{}, err
 				}
 				mixedNamedTurn++
 				if mixedNamedTurn == 3 {
@@ -637,45 +650,49 @@ func TestCP1ReusedAnalyzerErrorImmutabilityAndSaveSpanRecording(t *testing.T) {
 		},
 	} {
 		t.Run("preserve_"+ep.name, func(t *testing.T) {
-			unprocBody := ep.makeBody("unprocessable")
-			unprocReq := httptest.NewRequest(http.MethodPost, ep.httpPath, strings.NewReader(string(unprocBody)))
-			unprocReq.Header.Set("Authorization", "Bearer alice-token")
-			unprocReq.Header.Set("Content-Type", "application/json")
-			unprocRec := httptest.NewRecorder()
-			mixedHandler.ServeHTTP(unprocRec, unprocReq)
-			assert.Equal(t, http.StatusUnprocessableEntity, unprocRec.Code)
-			require.NoError(t, json.Unmarshal(unprocRec.Body.Bytes(), &mixedHTTPBody))
-			assert.False(t, mixedHTTPBody.Fault)
-			assert.Equal(t, "unprocessable", mixedHTTPBody.Name)
+			for _, unprocPrompt := range []string{"unprocessable", "unprocessable_retained_direct", "unprocessable_retained_wrapped"} {
+				unprocBody := ep.makeBody(unprocPrompt)
+				unprocReq := httptest.NewRequest(http.MethodPost, ep.httpPath, strings.NewReader(string(unprocBody)))
+				unprocReq.Header.Set("Authorization", "Bearer alice-token")
+				unprocReq.Header.Set("Content-Type", "application/json")
+				unprocRec := httptest.NewRecorder()
+				mixedHandler.ServeHTTP(unprocRec, unprocReq)
+				assert.Equal(t, http.StatusUnprocessableEntity, unprocRec.Code, unprocPrompt)
+				require.NoError(t, json.Unmarshal(unprocRec.Body.Bytes(), &mixedHTTPBody))
+				assert.False(t, mixedHTTPBody.Fault, unprocPrompt)
+				assert.Equal(t, "unprocessable", mixedHTTPBody.Name, unprocPrompt)
 
-			mcpUnproc, err := mixedMCP.ToolsCall(aliceCtx, &genmcpadapter.ToolsCallPayload{
-				Name:      ep.mcpTool,
-				Arguments: unprocBody,
-			})
-			require.NoError(t, err)
-			unprocComplete, ok := mcpUnproc.Outcome.AsComplete()
-			require.True(t, ok)
-			require.NotNil(t, unprocComplete.IsError)
-			assert.True(t, *unprocComplete.IsError)
+				mcpUnproc, err := mixedMCP.ToolsCall(aliceCtx, &genmcpadapter.ToolsCallPayload{
+					Name:      ep.mcpTool,
+					Arguments: unprocBody,
+				})
+				require.NoError(t, err, unprocPrompt)
+				unprocComplete, ok := mcpUnproc.Outcome.AsComplete()
+				require.True(t, ok, unprocPrompt)
+				require.NotNil(t, unprocComplete.IsError, unprocPrompt)
+				assert.True(t, *unprocComplete.IsError, unprocPrompt)
+			}
 
-			faultBody := ep.makeBody("explicit_fault")
-			faultReq := httptest.NewRequest(http.MethodPost, ep.httpPath, strings.NewReader(string(faultBody)))
-			faultReq.Header.Set("Authorization", "Bearer alice-token")
-			faultReq.Header.Set("Content-Type", "application/json")
-			faultRec := httptest.NewRecorder()
-			mixedHandler.ServeHTTP(faultRec, faultReq)
-			assert.Equal(t, http.StatusInternalServerError, faultRec.Code)
-			require.NoError(t, json.Unmarshal(faultRec.Body.Bytes(), &mixedHTTPBody))
-			assert.True(t, mixedHTTPBody.Fault)
+			for _, faultPrompt := range []string{"explicit_fault", "explicit_fault_retained_direct", "explicit_fault_retained_wrapped"} {
+				faultBody := ep.makeBody(faultPrompt)
+				faultReq := httptest.NewRequest(http.MethodPost, ep.httpPath, strings.NewReader(string(faultBody)))
+				faultReq.Header.Set("Authorization", "Bearer alice-token")
+				faultReq.Header.Set("Content-Type", "application/json")
+				faultRec := httptest.NewRecorder()
+				mixedHandler.ServeHTTP(faultRec, faultReq)
+				assert.Equal(t, http.StatusInternalServerError, faultRec.Code, faultPrompt)
+				require.NoError(t, json.Unmarshal(faultRec.Body.Bytes(), &mixedHTTPBody))
+				assert.True(t, mixedHTTPBody.Fault, faultPrompt)
 
-			_, mcpFaultErr := mixedMCP.ToolsCall(aliceCtx, &genmcpadapter.ToolsCallPayload{
-				Name:      ep.mcpTool,
-				Arguments: faultBody,
-			})
-			require.Error(t, mcpFaultErr, "explicit goa.Fault must remain an MCP protocol error")
-			var faultSE *goa.ServiceError
-			require.ErrorAs(t, mcpFaultErr, &faultSE)
-			assert.True(t, faultSE.Fault)
+				_, mcpFaultErr := mixedMCP.ToolsCall(aliceCtx, &genmcpadapter.ToolsCallPayload{
+					Name:      ep.mcpTool,
+					Arguments: faultBody,
+				})
+				require.Error(t, mcpFaultErr, "explicit fault (%s) must remain an MCP protocol error", faultPrompt)
+				var faultSE *goa.ServiceError
+				require.ErrorAs(t, mcpFaultErr, &faultSE, faultPrompt)
+				assert.True(t, faultSE.Fault, faultPrompt)
+			}
 		})
 	}
 
