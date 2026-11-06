@@ -301,7 +301,7 @@ func TestWriteServeStatusNamesTheBoundAddressAndOffFeatures(t *testing.T) {
 			addr: &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 51234},
 			opts: controlplane.Options{CardsDir: ".surla/cards"},
 			want: `surla: serving on http://127.0.0.1:51234
-surla: connect MCP clients to http://127.0.0.1:51234/mcp with the bearer token
+surla: connect MCP clients to http://127.0.0.1:51234/mcp with the bearer token (architecture guide: surla://golden-path or http://127.0.0.1:51234/golden-path)
 surla: saving Change Cards in .surla/cards
 surla: CP1 (propose_change, revise_change): off — no model is configured to analyze change requests (set -model-provider and -model-name, or -model-gateway-addr); confirm_intent and get_change are on
 surla: CP2 (preview_architecture): design preview is on; swarm roster is off (set -swarm-profiles)
@@ -315,7 +315,7 @@ surla: CP5 (approve_merge): off (set -promotion-config, or run surla approve on 
 			addr: &net.TCPAddr{IP: net.IPv4zero, Port: 8090},
 			opts: controlplane.Options{CardsDir: ".surla/cards"},
 			want: `surla: serving on http://localhost:8090
-surla: connect MCP clients to http://localhost:8090/mcp with the bearer token
+surla: connect MCP clients to http://localhost:8090/mcp with the bearer token (architecture guide: surla://golden-path or http://localhost:8090/golden-path)
 surla: saving Change Cards in .surla/cards
 surla: CP1 (propose_change, revise_change): off — no model is configured to analyze change requests (set -model-provider and -model-name, or -model-gateway-addr); confirm_intent and get_change are on
 surla: CP2 (preview_architecture): design preview is on; swarm roster is off (set -swarm-profiles)
@@ -332,7 +332,7 @@ surla: CP5 (approve_merge): off (set -promotion-config, or run surla approve on 
 				SwarmProfiles: []swarm.ProviderProfile{{ID: "claude-a"}},
 			},
 			want: `surla: serving on http://127.0.0.1:8090
-surla: connect MCP clients to http://127.0.0.1:8090/mcp with the bearer token
+surla: connect MCP clients to http://127.0.0.1:8090/mcp with the bearer token (architecture guide: surla://golden-path or http://127.0.0.1:8090/golden-path)
 surla: saving Change Cards in .surla/cards
 surla: CP1 (propose_change, revise_change): off — no model is configured to analyze change requests (set -model-provider and -model-name, or -model-gateway-addr); confirm_intent and get_change are on
 surla: CP2 (preview_architecture): on (1 swarm profile loaded; pass builders in the request to propose a roster)
@@ -353,7 +353,7 @@ surla: CP5 (approve_merge): off (set -promotion-config, or run surla approve on 
 				PromotionTarget: &releaseTarget{},
 			},
 			want: `surla: serving on http://localhost:8090
-surla: connect MCP clients to http://localhost:8090/mcp with the bearer token
+surla: connect MCP clients to http://localhost:8090/mcp with the bearer token (architecture guide: surla://golden-path or http://localhost:8090/golden-path)
 surla: saving Change Cards in /var/lib/surla/cards
 surla: CP1 (propose_change, revise_change, confirm_intent, get_change): on
 surla: CP2 (preview_architecture): on (2 swarm profiles loaded; pass builders in the request to propose a roster)
@@ -382,7 +382,7 @@ surla: CP5 (approve_merge): on
 			Live:         &controlplane.LiveConfig{},
 		},
 		want: `surla: serving on http://127.0.0.1:8090
-surla: connect MCP clients to http://127.0.0.1:8090/mcp with the bearer token
+surla: connect MCP clients to http://127.0.0.1:8090/mcp with the bearer token (architecture guide: surla://golden-path or http://127.0.0.1:8090/golden-path)
 surla: saving Change Cards in ` + cardsDir + `
 surla: CP1 (propose_change, revise_change): off — no model is configured to analyze change requests (set -model-provider and -model-name, or -model-gateway-addr); confirm_intent and get_change are on
 surla: CP2 (preview_architecture): design preview is on; swarm roster is off (set -swarm-profiles)
@@ -412,7 +412,7 @@ surla: CP5 (approve_merge): off (set -promotion-config, or run surla approve on 
 		},
 		projectDir: ".",
 		want: `surla: serving on http://127.0.0.1:8090
-surla: connect MCP clients to http://127.0.0.1:8090/mcp with the bearer token
+surla: connect MCP clients to http://127.0.0.1:8090/mcp with the bearer token (architecture guide: surla://golden-path or http://127.0.0.1:8090/golden-path)
 surla: saving Change Cards in ` + cardsDir + `
 surla: CP1 (propose_change, revise_change): off — no model is configured to analyze change requests (set -model-provider and -model-name, or -model-gateway-addr); confirm_intent and get_change are on
 surla: CP2 (preview_architecture): design preview is on; swarm roster is off (set -swarm-profiles)
@@ -440,7 +440,7 @@ surla: CP5 (approve_merge): off (set -promotion-config, or run surla approve on 
 			},
 		},
 		want: `surla: serving on http://127.0.0.1:8090
-surla: connect MCP clients to http://127.0.0.1:8090/mcp with the bearer token
+surla: connect MCP clients to http://127.0.0.1:8090/mcp with the bearer token (architecture guide: surla://golden-path or http://127.0.0.1:8090/golden-path)
 surla: saving Change Cards in /srv/cards
 surla: CP1 (propose_change, revise_change): off — no model is configured to analyze change requests (set -model-provider and -model-name, or -model-gateway-addr); confirm_intent and get_change are on
 surla: CP2 (preview_architecture): design preview is on; swarm roster is off (set -swarm-profiles)

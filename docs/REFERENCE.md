@@ -360,6 +360,9 @@ Decodes a saved full `verify.Report` JSON file with `verify.DecodeReport`, check
 - `-environment <env>` — Dependency profile required for promotion, such as `sim` *(required)*.
 - `-artifact <name=sha256>` — Candidate binary artifact name and 64-character lowercase hex SHA-256 digest measured for promotion (repeatable, at least one *required*; duplicate artifact names are rejected).
 
+### `surla version`
+Prints the module version this `surla` binary was built from (such as a pseudo-version stamped from a clean checkout, or `(devel)` when built without module version metadata) to `stdout`. Accepts `-h`/`--help` and rejects positional arguments.
+
 ---
 
 ## Reference Platform: `examples/orders` & `examples/orders-eval`
@@ -410,7 +413,7 @@ See [`examples/orders/README.md`](../examples/orders/README.md) for a step-by-st
 │   └── design.go                 # Surla Goa & Goa-AI MCP 1.0.0 DSL contract
 ├── cmd/
 │   └── surla/
-│       └── main.go               # CLI entrypoint (`surla init`, `surla serve`, `surla preview`, `surla preview-change`, `surla diff`, `surla gen`, `surla verify`, and `surla approve`)
+│       └── main.go               # CLI entrypoint (`surla init`, `surla serve`, `surla preview`, `surla preview-change`, `surla diff`, `surla gen`, `surla verify`, `surla approve`, and `surla version`)
 ├── docs/
 │   ├── HOW_IT_WORKS.md           # The 5 checkpoints, Chorus routing & independent verification
 │   ├── ARCHITECTURE_PLAYBOOK.md  # Golden Path rules & Goa Design suite overview
