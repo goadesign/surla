@@ -68,7 +68,7 @@ Instead of reading a 2,000-line diff blindly, Surla separates fast prompt tuning
 
 ### 1. Inspect, Diff, or Scaffold a Goa-AI Project Locally (`0` API Keys Needed)
 
-Surla requires **macOS** (`sandbox-exec` isolates candidate builds and processes) and **Go 1.27.3+**. Before configuring an LLM key or starting a server, install the `surla` CLI to scaffold and preview a new starter service from anywhere (`surla init` and `surla gen` generate code, and `surla preview` evaluates designs, in Surla's sandbox, so no separate global `goa` install is needed):
+Surla requires **macOS** (`sandbox-exec` isolates candidate builds and processes; run `surla` commands and `surla serve` from an unrestricted host shell rather than inside a sandboxed coding-agent CLI, because macOS does not nest `sandbox-exec` profiles—see [`docs/REFERENCE.md`](docs/REFERENCE.md#terminology-at-a-glance)) and **Go 1.27.3+**. Before configuring an LLM key or starting a server, install the `surla` CLI to scaffold and preview a new starter service from anywhere (`surla init` and `surla gen` generate code, and `surla preview` evaluates designs, in Surla's sandbox, so no separate global `goa` install is needed):
 
 ```bash
 # Install the Surla CLI (embeds the published module version for surla init):
@@ -112,11 +112,20 @@ surla serve \
   -addr 127.0.0.1:8090 \
   -principal operator@example.com \
   -model-provider anthropic \
-  -model-name claude-opus-4-6 \
+  -model-name "$MODEL_NAME" \
+  -swarm-profiles ./examples/orders/swarm-profiles.example.json
+
+# Or with OpenAI (OPENAI_API_KEY):
+export OPENAI_API_KEY="sk-..."
+surla serve \
+  -addr 127.0.0.1:8090 \
+  -principal operator@example.com \
+  -model-provider openai \
+  -model-name "$MODEL_NAME" \
   -swarm-profiles ./examples/orders/swarm-profiles.example.json
 ```
 
-Register `http://127.0.0.1:8090/mcp` in your coding agent. For Claude Code, save this as `.mcp.json`; Claude Code fills in `${SURLA_AUTH_TOKEN}` from the environment it starts in:
+Register `http://127.0.0.1:8090/mcp` in your coding agent (connected agents can also read the embedded Surla Golden Path architecture and evaluator guide at the MCP resource `surla://golden-path` or `GET http://127.0.0.1:8090/golden-path`). For Claude Code, save this as `.mcp.json`; Claude Code fills in `${SURLA_AUTH_TOKEN}` from the environment it starts in:
 
 ```json
 {

@@ -75,7 +75,7 @@ var _ = Service("[[.Name]]", func() {
 			APIKey("live_key", "key", String, "This process's live key.")
 			Attribute("prompt_id", String, "Registered prompt to replace, such as [[.Name]].helper.system.", func() { MinLength(1) })
 			Attribute("template", String, "New prompt text, as a Go text/template.", func() { MinLength(1) })
-			Required("key", "prompt_id", "template")
+			Required("prompt_id", "template")
 		})
 		Result(func() {
 			Attribute("prompt_id", String, "The prompt whose text was replaced.")

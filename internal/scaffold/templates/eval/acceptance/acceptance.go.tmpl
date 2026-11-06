@@ -82,6 +82,7 @@ func (h *Hooks) PromptOverrideReachesModel(ctx context.Context) (res eval.Result
 	c := genhttp[[.Pkg]].NewClient("http", addr, http.DefaultClient, goahttp.RequestEncoder, goahttp.ResponseDecoder, false)
 	client := gen[[.Pkg]].NewClient(c.OverridePrompt(), c.Ask())
 	const text = "You answer questions about item prices. Prices come only from lookup_price. [override]"
+	_, missingKeyErr := client.OverridePrompt(ctx, &gen[[.Pkg]].OverridePromptPayload{PromptID: systemPromptID, Template: text})
 	_, wrongKeyErr := client.OverridePrompt(ctx, &gen[[.Pkg]].OverridePromptPayload{Key: "wrong", PromptID: systemPromptID, Template: text})
 	var unauthorized gen[[.Pkg]].Unauthorized
 	out, err := client.OverridePrompt(ctx, &gen[[.Pkg]].OverridePromptPayload{Key: key, PromptID: systemPromptID, Template: text})
@@ -95,6 +96,7 @@ func (h *Hooks) PromptOverrideReachesModel(ctx context.Context) (res eval.Result
 	res.Output = answer.Answer
 	ex := scriptedModel.Exchanges()
 	res.Checks = []eval.Check{
+		check("missing_key_rejected", errors.As(missingKeyErr, &unauthorized), "override with a missing key returned %v, want unauthorized", missingKeyErr),
 		check("wrong_key_rejected", errors.As(wrongKeyErr, &unauthorized), "override with a wrong key returned %v, want unauthorized", wrongKeyErr),
 		check("override_accepted", out.PromptID == systemPromptID && out.Version != "", "override returned %+v", out),
 		check("next_request_carries_text", len(ex) > 0 && ex[0].System == text,
