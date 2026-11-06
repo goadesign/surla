@@ -74,6 +74,11 @@ func (c *Client) GoldenPath(ctx context.Context) (res string, err error) {
 }
 
 // ProposeChange calls the "propose_change" endpoint of the "surla" service.
+// ProposeChange may return the following errors:
+//   - "conflict" (type *goa.ServiceError): A Change Card with this change_id already exists; use revise_change or a new change_id.
+//   - "unprocessable" (type *goa.ServiceError): The request could not be accepted; the message states which required field or constraint failed.
+//   - "not_implemented" (type *goa.ServiceError): This control plane has no Checkpoint 1 analyzer configured.
+//   - error: internal error
 func (c *Client) ProposeChange(ctx context.Context, p *ProposeChangePayload) (res *ChangeCardResult, err error) {
 	var ires any
 	ires, err = c.ProposeChangeEndpoint(ctx, p)
@@ -84,6 +89,13 @@ func (c *Client) ProposeChange(ctx context.Context, p *ProposeChangePayload) (re
 }
 
 // ReviseChange calls the "revise_change" endpoint of the "surla" service.
+// ReviseChange may return the following errors:
+//   - "not_found" (type *goa.ServiceError): No Change Card exists with this change_id.
+//   - "forbidden" (type *goa.ServiceError): The authenticated principal does not own this Change Card.
+//   - "conflict" (type *goa.ServiceError): The card's request_revision changed; read the current revision with get_change.
+//   - "unprocessable" (type *goa.ServiceError): The request could not be accepted; the message states which required field or constraint failed.
+//   - "not_implemented" (type *goa.ServiceError): This control plane has no Checkpoint 1 analyzer configured.
+//   - error: internal error
 func (c *Client) ReviseChange(ctx context.Context, p *ReviseChangePayload) (res *ChangeCardResult, err error) {
 	var ires any
 	ires, err = c.ReviseChangeEndpoint(ctx, p)
@@ -94,6 +106,12 @@ func (c *Client) ReviseChange(ctx context.Context, p *ReviseChangePayload) (res 
 }
 
 // ConfirmIntent calls the "confirm_intent" endpoint of the "surla" service.
+// ConfirmIntent may return the following errors:
+//   - "not_found" (type *goa.ServiceError): No Change Card exists with this change_id.
+//   - "forbidden" (type *goa.ServiceError): The authenticated principal does not own this Change Card.
+//   - "conflict" (type *goa.ServiceError): The card's request_revision changed; read the current revision with get_change.
+//   - "unprocessable" (type *goa.ServiceError): The submitted answers or examples did not satisfy the Change Card's requirements; the message states which check failed.
+//   - error: internal error
 func (c *Client) ConfirmIntent(ctx context.Context, p *ConfirmIntentPayload) (res *ChangeCardResult, err error) {
 	var ires any
 	ires, err = c.ConfirmIntentEndpoint(ctx, p)
@@ -104,6 +122,10 @@ func (c *Client) ConfirmIntent(ctx context.Context, p *ConfirmIntentPayload) (re
 }
 
 // GetChange calls the "get_change" endpoint of the "surla" service.
+// GetChange may return the following errors:
+//   - "not_found" (type *goa.ServiceError): No Change Card exists with this change_id.
+//   - "forbidden" (type *goa.ServiceError): The authenticated principal does not own this Change Card.
+//   - error: internal error
 func (c *Client) GetChange(ctx context.Context, p *GetChangePayload) (res *ChangeCardResult, err error) {
 	var ires any
 	ires, err = c.GetChangeEndpoint(ctx, p)
@@ -115,6 +137,12 @@ func (c *Client) GetChange(ctx context.Context, p *GetChangePayload) (res *Chang
 
 // PreviewArchitecture calls the "preview_architecture" endpoint of the "surla"
 // service.
+// PreviewArchitecture may return the following errors:
+//   - "not_found" (type *goa.ServiceError): No Change Card exists with this change_id.
+//   - "forbidden" (type *goa.ServiceError): The authenticated principal does not own this Change Card.
+//   - "conflict" (type *goa.ServiceError): The Change Card is not confirmed or its request_revision does not match; confirm the card or read the current revision with get_change.
+//   - "unprocessable" (type *goa.ServiceError): The request or evaluated design did not meet Checkpoint 2 requirements; the message states which check failed.
+//   - error: internal error
 func (c *Client) PreviewArchitecture(ctx context.Context, p *PreviewArchitecturePayload) (res *ArchitecturePreviewResult, err error) {
 	var ires any
 	ires, err = c.PreviewArchitectureEndpoint(ctx, p)
@@ -170,6 +198,12 @@ func (c *Client) StopLiveTarget(ctx context.Context) (res *StopLiveTargetResult,
 }
 
 // VerifyChange calls the "verify_change" endpoint of the "surla" service.
+// VerifyChange may return the following errors:
+//   - "not_found" (type *goa.ServiceError): No Change Card exists with this change_id.
+//   - "forbidden" (type *goa.ServiceError): The authenticated principal does not own this Change Card.
+//   - "conflict" (type *goa.ServiceError): The Change Card is not confirmed or its request_revision does not match; confirm the card or read the current revision with get_change.
+//   - "not_implemented" (type *goa.ServiceError): This server has no verification configuration, so it cannot run Checkpoint 4 verifications.
+//   - error: internal error
 func (c *Client) VerifyChange(ctx context.Context, p *VerifyChangePayload) (res *VerificationStatusResult, err error) {
 	var ires any
 	ires, err = c.VerifyChangeEndpoint(ctx, p)
@@ -180,6 +214,11 @@ func (c *Client) VerifyChange(ctx context.Context, p *VerifyChangePayload) (res 
 }
 
 // GetVerification calls the "get_verification" endpoint of the "surla" service.
+// GetVerification may return the following errors:
+//   - "not_found" (type *goa.ServiceError): No verification run exists with this run_id.
+//   - "forbidden" (type *goa.ServiceError): The authenticated principal does not own this verification run.
+//   - "not_implemented" (type *goa.ServiceError): This server has no verification configuration, so it cannot read verification runs.
+//   - error: internal error
 func (c *Client) GetVerification(ctx context.Context, p *GetVerificationPayload) (res *VerificationStatusResult, err error) {
 	var ires any
 	ires, err = c.GetVerificationEndpoint(ctx, p)
@@ -191,6 +230,11 @@ func (c *Client) GetVerification(ctx context.Context, p *GetVerificationPayload)
 
 // ListVerifications calls the "list_verifications" endpoint of the "surla"
 // service.
+// ListVerifications may return the following errors:
+//   - "not_found" (type *goa.ServiceError): No Change Card exists with this change_id.
+//   - "forbidden" (type *goa.ServiceError): The authenticated principal does not own this Change Card.
+//   - "not_implemented" (type *goa.ServiceError): This server has no verification configuration, so it cannot list verification runs.
+//   - error: internal error
 func (c *Client) ListVerifications(ctx context.Context, p *ListVerificationsPayload) (res *VerificationListResult, err error) {
 	var ires any
 	ires, err = c.ListVerificationsEndpoint(ctx, p)
@@ -201,6 +245,13 @@ func (c *Client) ListVerifications(ctx context.Context, p *ListVerificationsPayl
 }
 
 // ApproveMerge calls the "approve_merge" endpoint of the "surla" service.
+// ApproveMerge may return the following errors:
+//   - "not_found" (type *goa.ServiceError): No Change Card exists with this change_id.
+//   - "forbidden" (type *goa.ServiceError): The authenticated principal does not own this Change Card.
+//   - "conflict" (type *goa.ServiceError): The Change Card is not confirmed or its request_revision does not match; confirm the card or read the current revision with get_change.
+//   - "unprocessable" (type *goa.ServiceError): The verification report did not pass or does not match the Change Card and promotion target inputs.
+//   - "not_implemented" (type *goa.ServiceError): This control plane has no promotion target bound to it.
+//   - error: internal error
 func (c *Client) ApproveMerge(ctx context.Context, p *ApproveMergePayload) (res *ChangeCardResult, err error) {
 	var ires any
 	ires, err = c.ApproveMergeEndpoint(ctx, p)

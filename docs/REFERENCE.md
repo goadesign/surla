@@ -152,7 +152,7 @@ A configured roster reports its actual `cross_family_review` and `cross_family_e
 
 ## MCP Tools & Resources
 
-All tools and resources are served over MCP JSON-RPC at `POST /mcp` and over HTTP REST on the same listen address (authenticated via `Authorization: Bearer <token>`).
+All tools and resources are served over MCP JSON-RPC at `POST /mcp` and over HTTP REST on the same listen address (authenticated via `Authorization: Bearer <token>`). Each Change Card and verification HTTP route declares its method-specific non-fault `ErrorResult` responses (`403` `forbidden`, `404` `not_found`, `409` `conflict`, `422` `unprocessable`, and `501` `not_implemented`) in [`design/design.go`](../design/design.go) and [`gen/http/openapi3.yaml`](../gen/http/openapi3.yaml)—for example, calling `POST /changes/preview` on a `needs_confirmation` card returns HTTP `409` `conflict` (`fault: false`) and `surla preview-change` prints the message directly—while unclassified evaluator, planning, storage, and owner failures remain HTTP `500` faults and MCP `tools/call` returns non-fault tool error results (`isError: true`) with the same domain error message.
 
 ### MCP Tools
 

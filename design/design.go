@@ -556,12 +556,18 @@ var _ = Service("surla", func() {
 		Description("Evaluate a feature request at Checkpoint 1, surfacing concrete examples and any genuine domain ambiguity. The analysis considers the target's current design only when it is sent in design_source.")
 		Payload(ProposeChangePayload)
 		Result(ChangeCardResult)
+		Error("conflict", ErrorResult, "A Change Card with this change_id already exists; use revise_change or a new change_id.")
+		Error("unprocessable", ErrorResult, "The request could not be accepted; the message states which required field or constraint failed.")
+		Error("not_implemented", ErrorResult, "This control plane has no Checkpoint 1 analyzer configured.")
 		Tool("propose_change", "Propose a feature change and generate a Checkpoint 1 Change Card. The analysis considers the target's current design only when it is sent in design_source.", func() {
 			ToolUI("ui://surla/checkpoint")
 		})
 		HTTP(func() {
 			POST("/changes/propose")
 			Response(StatusOK)
+			Response("conflict", StatusConflict)
+			Response("unprocessable", StatusUnprocessableEntity)
+			Response("not_implemented", StatusNotImplemented)
 		})
 	})
 
@@ -569,12 +575,22 @@ var _ = Service("surla", func() {
 		Description("Revise an existing Checkpoint 1 Change Card with new or changed operator requirements bound to its current request_revision. Re-analyzes the revised prompt and design source with the prior card's prompt, summary, confirmed answers, open questions, examples and preserved behaviors as context, and saves a new revision in needs_confirmation status for operator review. The new revision's answers, confirmed_by and any approval are cleared: earlier decisions remain only where the analysis restated them in its summary, examples or preserved behaviors.")
 		Payload(ReviseChangePayload)
 		Result(ChangeCardResult)
+		Error("not_found", ErrorResult, "No Change Card exists with this change_id.")
+		Error("forbidden", ErrorResult, "The authenticated principal does not own this Change Card.")
+		Error("conflict", ErrorResult, "The card's request_revision changed; read the current revision with get_change.")
+		Error("unprocessable", ErrorResult, "The request could not be accepted; the message states which required field or constraint failed.")
+		Error("not_implemented", ErrorResult, "This control plane has no Checkpoint 1 analyzer configured.")
 		Tool("revise_change", "Revise an existing Checkpoint 1 Change Card with updated requirements bound to its current request_revision. The new revision's answers, confirmed_by and any approval are cleared, so it needs confirmation again; earlier decisions remain only where the analysis restated them in its summary, examples or preserved behaviors.", func() {
 			ToolUI("ui://surla/checkpoint")
 		})
 		HTTP(func() {
 			POST("/changes/revise")
 			Response(StatusOK)
+			Response("not_found", StatusNotFound)
+			Response("forbidden", StatusForbidden)
+			Response("conflict", StatusConflict)
+			Response("unprocessable", StatusUnprocessableEntity)
+			Response("not_implemented", StatusNotImplemented)
 		})
 	})
 
@@ -582,12 +598,20 @@ var _ = Service("surla", func() {
 		Description("Confirm or refine a Checkpoint 1 Change Card with the complete ambiguity answers and example table, bound to its current request_revision. Changed answers or examples produce a new request_revision; unchanged ones return the card as it is, with a saved approval returned in approval only while that approval still matches the promotion target's current inputs, or in unverified_approval when no promotion target is configured or the target cannot report its current inputs.")
 		Payload(ConfirmIntentPayload)
 		Result(ChangeCardResult)
+		Error("not_found", ErrorResult, "No Change Card exists with this change_id.")
+		Error("forbidden", ErrorResult, "The authenticated principal does not own this Change Card.")
+		Error("conflict", ErrorResult, "The card's request_revision changed; read the current revision with get_change.")
+		Error("unprocessable", ErrorResult, "The submitted answers or examples did not satisfy the Change Card's requirements; the message states which check failed.")
 		Tool("confirm_intent", "Confirm or refine Checkpoint 1 ambiguity answers and example checks for the card's current request_revision.", func() {
 			ToolUI("ui://surla/checkpoint")
 		})
 		HTTP(func() {
 			POST("/changes/confirm")
 			Response(StatusOK)
+			Response("not_found", StatusNotFound)
+			Response("forbidden", StatusForbidden)
+			Response("conflict", StatusConflict)
+			Response("unprocessable", StatusUnprocessableEntity)
 		})
 	})
 
@@ -595,12 +619,16 @@ var _ = Service("surla", func() {
 		Description("Return the current Change Card, including its request_revision, to its owner, for example after confirm_intent or revise_change refused an edit made against an older revision. Reading never confirms or changes the card. A recorded approval is returned in approval only while it still matches the promotion target's current suite, environment and binary digests, or in unverified_approval when no promotion target is configured or the target cannot report its current inputs.")
 		Payload(GetChangePayload)
 		Result(ChangeCardResult)
+		Error("not_found", ErrorResult, "No Change Card exists with this change_id.")
+		Error("forbidden", ErrorResult, "The authenticated principal does not own this Change Card.")
 		Tool("get_change", "Read the current Checkpoint 1 Change Card and its request_revision.", func() {
 			ToolUI("ui://surla/checkpoint")
 		})
 		HTTP(func() {
 			GET("/changes/{change_id}")
 			Response(StatusOK)
+			Response("not_found", StatusNotFound)
+			Response("forbidden", StatusForbidden)
 		})
 	})
 
@@ -608,12 +636,20 @@ var _ = Service("surla", func() {
 		Description("Extract and validate the Checkpoint 2 C4 container topology, tool contracts, Goa-AI guardrails, and proposed Chorus swarm roster from a candidate Goa design bound to a confirmed Change Card. Apart from the swarm roster, the result reports what the design declares; it does not compare the design with the Change Card's requirements.")
 		Payload(PreviewArchitecturePayload)
 		Result(ArchitecturePreviewResult)
+		Error("not_found", ErrorResult, "No Change Card exists with this change_id.")
+		Error("forbidden", ErrorResult, "The authenticated principal does not own this Change Card.")
+		Error("conflict", ErrorResult, "The Change Card is not confirmed or its request_revision does not match; confirm the card or read the current revision with get_change.")
+		Error("unprocessable", ErrorResult, "The request or evaluated design did not meet Checkpoint 2 requirements; the message states which check failed.")
 		Tool("preview_architecture", "Preview Checkpoint 2 C4 container topology, Goa-AI guardrails, and proposed Chorus swarm roster for a confirmed Change Card. Apart from the swarm roster, it reports what the design declares; it does not compare the design with the Change Card's requirements.", func() {
 			ToolUI("ui://surla/checkpoint")
 		})
 		HTTP(func() {
 			POST("/changes/preview")
 			Response(StatusOK)
+			Response("not_found", StatusNotFound)
+			Response("forbidden", StatusForbidden)
+			Response("conflict", StatusConflict)
+			Response("unprocessable", StatusUnprocessableEntity)
 		})
 	})
 
@@ -675,12 +711,20 @@ var _ = Service("surla", func() {
 		Description("Start Checkpoint 4 verification of a candidate commit for the owner's confirmed Change Card revision and return its run_id at once. The server builds the commit in Surla's sandbox and runs the evaluator suite the operator configured, in a separate process that keeps running when the caller disconnects or the server restarts; get_verification reads its state. Only the builder view of the report is ever returned. A server started without verification configured (surla serve -verification-config) rejects every call.")
 		Payload(VerifyChangePayload)
 		Result(VerificationStatusResult)
+		Error("not_found", ErrorResult, "No Change Card exists with this change_id.")
+		Error("forbidden", ErrorResult, "The authenticated principal does not own this Change Card.")
+		Error("conflict", ErrorResult, "The Change Card is not confirmed or its request_revision does not match; confirm the card or read the current revision with get_change.")
+		Error("not_implemented", ErrorResult, "This server has no verification configuration, so it cannot run Checkpoint 4 verifications.")
 		Tool("verify_change", "Start CP4 verification of a candidate commit for the confirmed Change Card revision; returns a run_id to read with get_verification. Requires a server configured for verification; on surla serve, -verification-config.", func() {
 			ToolUI("ui://surla/checkpoint")
 		})
 		HTTP(func() {
 			POST("/changes/{change_id}/verifications")
 			Response(StatusOK)
+			Response("not_found", StatusNotFound)
+			Response("forbidden", StatusForbidden)
+			Response("conflict", StatusConflict)
+			Response("not_implemented", StatusNotImplemented)
 		})
 	})
 
@@ -688,12 +732,18 @@ var _ = Service("surla", func() {
 		Description("Return the current state of a verification run to the owner who started it: running, completed with the builder view of its report, or not completed with where it stopped. A run keeps the Change Card revision it was started for.")
 		Payload(GetVerificationPayload)
 		Result(VerificationStatusResult)
+		Error("not_found", ErrorResult, "No verification run exists with this run_id.")
+		Error("forbidden", ErrorResult, "The authenticated principal does not own this verification run.")
+		Error("not_implemented", ErrorResult, "This server has no verification configuration, so it cannot read verification runs.")
 		Tool("get_verification", "Read the state of a CP4 verification run started by verify_change.", func() {
 			ToolUI("ui://surla/checkpoint")
 		})
 		HTTP(func() {
 			GET("/verifications/{run_id}")
 			Response(StatusOK)
+			Response("not_found", StatusNotFound)
+			Response("forbidden", StatusForbidden)
+			Response("not_implemented", StatusNotImplemented)
 		})
 	})
 
@@ -701,12 +751,18 @@ var _ = Service("surla", func() {
 		Description("Return all Checkpoint 4 verification runs started by the owner for a Change Card, ordered newest first by accepted_at (tie-broken by run_id), with each run's current state and the Change Card revision it was started for. Works whether the Change Card is currently confirmed or in needs_confirmation after a later revision.")
 		Payload(ListVerificationsPayload)
 		Result(VerificationListResult)
+		Error("not_found", ErrorResult, "No Change Card exists with this change_id.")
+		Error("forbidden", ErrorResult, "The authenticated principal does not own this Change Card.")
+		Error("not_implemented", ErrorResult, "This server has no verification configuration, so it cannot list verification runs.")
 		Tool("list_verifications", "List all CP4 verification runs started for a Change Card, newest first.", func() {
 			ToolUI("ui://surla/checkpoint")
 		})
 		HTTP(func() {
 			GET("/changes/{change_id}/verifications")
 			Response(StatusOK)
+			Response("not_found", StatusNotFound)
+			Response("forbidden", StatusForbidden)
+			Response("not_implemented", StatusNotImplemented)
 		})
 	})
 
@@ -714,12 +770,22 @@ var _ = Service("surla", func() {
 		Description("Record Checkpoint 5 approval for the owner's confirmed Change Card revision. The control plane loads the verification report by digest and the expected suite, environment and candidate binary digests from its promotion target, re-derives the report from its evidence with verify.Approve, and records the approval on the card. A report that did not pass or describes different inputs is rejected. Nothing is merged or deployed. The promotion target comes from surla serve -promotion-config or from the program that embeds the control plane; a control plane without one rejects every call.")
 		Payload(ApproveMergePayload)
 		Result(ChangeCardResult)
+		Error("not_found", ErrorResult, "No Change Card exists with this change_id.")
+		Error("forbidden", ErrorResult, "The authenticated principal does not own this Change Card.")
+		Error("conflict", ErrorResult, "The Change Card is not confirmed or its request_revision does not match; confirm the card or read the current revision with get_change.")
+		Error("unprocessable", ErrorResult, "The verification report did not pass or does not match the Change Card and promotion target inputs.")
+		Error("not_implemented", ErrorResult, "This control plane has no promotion target bound to it.")
 		Tool("approve_merge", "Approve the confirmed Change Card revision after its CP4 verification report passed for the candidate commit. Requires a promotion target, such as surla serve -promotion-config.", func() {
 			ToolUI("ui://surla/checkpoint")
 		})
 		HTTP(func() {
 			POST("/changes/approve")
 			Response(StatusOK)
+			Response("not_found", StatusNotFound)
+			Response("forbidden", StatusForbidden)
+			Response("conflict", StatusConflict)
+			Response("unprocessable", StatusUnprocessableEntity)
+			Response("not_implemented", StatusNotImplemented)
 		})
 	})
 

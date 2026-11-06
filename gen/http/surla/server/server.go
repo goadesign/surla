@@ -263,7 +263,7 @@ func NewProposeChangeHandler(
 	var (
 		decodeRequest  = DecodeProposeChangeRequest(mux, decoder)
 		encodeResponse = EncodeProposeChangeResponse(encoder)
-		encodeError    = goahttp.ErrorEncoder(encoder, formatter)
+		encodeError    = EncodeProposeChangeError(encoder, formatter)
 	)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := context.WithValue(r.Context(), goahttp.AcceptTypeKey, r.Header.Get("Accept"))
@@ -316,7 +316,7 @@ func NewReviseChangeHandler(
 	var (
 		decodeRequest  = DecodeReviseChangeRequest(mux, decoder)
 		encodeResponse = EncodeReviseChangeResponse(encoder)
-		encodeError    = goahttp.ErrorEncoder(encoder, formatter)
+		encodeError    = EncodeReviseChangeError(encoder, formatter)
 	)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := context.WithValue(r.Context(), goahttp.AcceptTypeKey, r.Header.Get("Accept"))
@@ -369,7 +369,7 @@ func NewConfirmIntentHandler(
 	var (
 		decodeRequest  = DecodeConfirmIntentRequest(mux, decoder)
 		encodeResponse = EncodeConfirmIntentResponse(encoder)
-		encodeError    = goahttp.ErrorEncoder(encoder, formatter)
+		encodeError    = EncodeConfirmIntentError(encoder, formatter)
 	)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := context.WithValue(r.Context(), goahttp.AcceptTypeKey, r.Header.Get("Accept"))
@@ -422,7 +422,7 @@ func NewGetChangeHandler(
 	var (
 		decodeRequest  = DecodeGetChangeRequest(mux, decoder)
 		encodeResponse = EncodeGetChangeResponse(encoder)
-		encodeError    = goahttp.ErrorEncoder(encoder, formatter)
+		encodeError    = EncodeGetChangeError(encoder, formatter)
 	)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := context.WithValue(r.Context(), goahttp.AcceptTypeKey, r.Header.Get("Accept"))
@@ -475,7 +475,7 @@ func NewPreviewArchitectureHandler(
 	var (
 		decodeRequest  = DecodePreviewArchitectureRequest(mux, decoder)
 		encodeResponse = EncodePreviewArchitectureResponse(encoder)
-		encodeError    = goahttp.ErrorEncoder(encoder, formatter)
+		encodeError    = EncodePreviewArchitectureError(encoder, formatter)
 	)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := context.WithValue(r.Context(), goahttp.AcceptTypeKey, r.Header.Get("Accept"))
@@ -680,7 +680,7 @@ func NewVerifyChangeHandler(
 	var (
 		decodeRequest  = DecodeVerifyChangeRequest(mux, decoder)
 		encodeResponse = EncodeVerifyChangeResponse(encoder)
-		encodeError    = goahttp.ErrorEncoder(encoder, formatter)
+		encodeError    = EncodeVerifyChangeError(encoder, formatter)
 	)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := context.WithValue(r.Context(), goahttp.AcceptTypeKey, r.Header.Get("Accept"))
@@ -733,7 +733,7 @@ func NewGetVerificationHandler(
 	var (
 		decodeRequest  = DecodeGetVerificationRequest(mux, decoder)
 		encodeResponse = EncodeGetVerificationResponse(encoder)
-		encodeError    = goahttp.ErrorEncoder(encoder, formatter)
+		encodeError    = EncodeGetVerificationError(encoder, formatter)
 	)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := context.WithValue(r.Context(), goahttp.AcceptTypeKey, r.Header.Get("Accept"))
@@ -786,7 +786,7 @@ func NewListVerificationsHandler(
 	var (
 		decodeRequest  = DecodeListVerificationsRequest(mux, decoder)
 		encodeResponse = EncodeListVerificationsResponse(encoder)
-		encodeError    = goahttp.ErrorEncoder(encoder, formatter)
+		encodeError    = EncodeListVerificationsError(encoder, formatter)
 	)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := context.WithValue(r.Context(), goahttp.AcceptTypeKey, r.Header.Get("Accept"))
@@ -839,7 +839,7 @@ func NewApproveMergeHandler(
 	var (
 		decodeRequest  = DecodeApproveMergeRequest(mux, decoder)
 		encodeResponse = EncodeApproveMergeResponse(encoder)
-		encodeError    = goahttp.ErrorEncoder(encoder, formatter)
+		encodeError    = EncodeApproveMergeError(encoder, formatter)
 	)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := context.WithValue(r.Context(), goahttp.AcceptTypeKey, r.Header.Get("Accept"))

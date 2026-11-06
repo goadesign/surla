@@ -57,7 +57,7 @@ func (c *ControlPlane) VerifyChange(ctx context.Context, p *gensurla.VerifyChang
 		return nil, errors.New("authenticated principal is required")
 	}
 	if c.verification == nil {
-		return nil, errVerificationUnavailable
+		return nil, gensurla.MakeNotImplemented(errVerificationUnavailable)
 	}
 	c.mu.RLock()
 	record, exists, err := c.cards.load(p.ChangeID)
@@ -66,13 +66,13 @@ func (c *ControlPlane) VerifyChange(ctx context.Context, p *gensurla.VerifyChang
 	case err != nil:
 		return nil, err
 	case !exists:
-		return nil, fmt.Errorf("unknown change_id %q", p.ChangeID)
+		return nil, gensurla.MakeNotFound(fmt.Errorf("unknown change_id %q", p.ChangeID))
 	case record.owner != principal.ID:
-		return nil, fmt.Errorf("principal %q is not the owner of change_id %q", principal.ID, p.ChangeID)
+		return nil, gensurla.MakeForbidden(fmt.Errorf("principal %q is not the owner of change_id %q", principal.ID, p.ChangeID))
 	case record.card.Status != StatusConfirmed:
-		return nil, fmt.Errorf("change_id %q must be confirmed before verification (status %q)", p.ChangeID, record.card.Status)
+		return nil, gensurla.MakeConflict(fmt.Errorf("change_id %q must be confirmed before verification (status %q)", p.ChangeID, record.card.Status))
 	case record.card.RequestRevision != p.RequestRevision:
-		return nil, fmt.Errorf("request_revision mismatch for %q: got %q, want %q", p.ChangeID, p.RequestRevision, record.card.RequestRevision)
+		return nil, gensurla.MakeConflict(fmt.Errorf("request_revision mismatch for %q: got %q, want %q", p.ChangeID, p.RequestRevision, record.card.RequestRevision))
 	}
 	runID := verifyrun.NewRunID()
 	plan := c.verification.Plan
@@ -106,7 +106,7 @@ func (c *ControlPlane) GetVerification(ctx context.Context, p *gensurla.GetVerif
 		return nil, errors.New("authenticated principal is required")
 	}
 	if c.verification == nil {
-		return nil, errVerificationUnavailable
+		return nil, gensurla.MakeNotImplemented(errVerificationUnavailable)
 	}
 	_, span := otel.Tracer("surla/controlplane").Start(ctx, "surla.controlplane.get_verification",
 		trace.WithAttributes(attribute.String("surla.run_id", p.RunID)))
@@ -115,11 +115,11 @@ func (c *ControlPlane) GetVerification(ctx context.Context, p *gensurla.GetVerif
 	req, state, err := verifyrun.Read(c.verification.RunsDir, p.RunID)
 	switch {
 	case req.Owner == "" && errors.Is(err, fs.ErrNotExist):
-		return nil, fmt.Errorf("unknown run_id %q", p.RunID)
+		return nil, gensurla.MakeNotFound(fmt.Errorf("unknown run_id %q", p.RunID))
 	case req.Owner != principal.ID && req.Owner != "":
 		// Checked before any later read error, whose text may name
 		// evaluator paths.
-		return nil, fmt.Errorf("principal %q is not the owner of run_id %q", principal.ID, p.RunID)
+		return nil, gensurla.MakeForbidden(fmt.Errorf("principal %q is not the owner of run_id %q", principal.ID, p.RunID))
 	case err != nil:
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "read verification run")
@@ -139,7 +139,7 @@ func (c *ControlPlane) ListVerifications(ctx context.Context, p *gensurla.ListVe
 		return nil, errors.New("authenticated principal is required")
 	}
 	if c.verification == nil {
-		return nil, errVerificationUnavailable
+		return nil, gensurla.MakeNotImplemented(errVerificationUnavailable)
 	}
 	_, span := otel.Tracer("surla/controlplane").Start(ctx, "surla.controlplane.list_verifications",
 		trace.WithAttributes(attribute.String("surla.change_id", p.ChangeID)))
@@ -154,9 +154,9 @@ func (c *ControlPlane) ListVerifications(ctx context.Context, p *gensurla.ListVe
 		span.SetStatus(codes.Error, "load change card")
 		return nil, fmt.Errorf("list verifications for %q: saved change card could not be read", p.ChangeID)
 	case !exists:
-		return nil, fmt.Errorf("unknown change_id %q", p.ChangeID)
+		return nil, gensurla.MakeNotFound(fmt.Errorf("unknown change_id %q", p.ChangeID))
 	case record.owner != principal.ID:
-		return nil, fmt.Errorf("principal %q is not the owner of change_id %q", principal.ID, p.ChangeID)
+		return nil, gensurla.MakeForbidden(fmt.Errorf("principal %q is not the owner of change_id %q", principal.ID, p.ChangeID))
 	}
 	runs, err := verifyrun.List(c.verification.RunsDir, principal.ID, p.ChangeID)
 	if err != nil {

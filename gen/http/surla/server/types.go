@@ -468,6 +468,331 @@ type DiffResponseBody struct {
 	Summary string `form:"summary" json:"summary" xml:"summary"`
 }
 
+// ProposeChangeConflictResponseBody is the type of the "surla" service
+// "propose_change" endpoint HTTP response body for the "conflict" error.
+type ProposeChangeConflictResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
+// ProposeChangeUnprocessableResponseBody is the type of the "surla" service
+// "propose_change" endpoint HTTP response body for the "unprocessable" error.
+type ProposeChangeUnprocessableResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
+// ProposeChangeNotImplementedResponseBody is the type of the "surla" service
+// "propose_change" endpoint HTTP response body for the "not_implemented" error.
+type ProposeChangeNotImplementedResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
+// ReviseChangeNotFoundResponseBody is the type of the "surla" service
+// "revise_change" endpoint HTTP response body for the "not_found" error.
+type ReviseChangeNotFoundResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
+// ReviseChangeForbiddenResponseBody is the type of the "surla" service
+// "revise_change" endpoint HTTP response body for the "forbidden" error.
+type ReviseChangeForbiddenResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
+// ReviseChangeConflictResponseBody is the type of the "surla" service
+// "revise_change" endpoint HTTP response body for the "conflict" error.
+type ReviseChangeConflictResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
+// ReviseChangeUnprocessableResponseBody is the type of the "surla" service
+// "revise_change" endpoint HTTP response body for the "unprocessable" error.
+type ReviseChangeUnprocessableResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
+// ReviseChangeNotImplementedResponseBody is the type of the "surla" service
+// "revise_change" endpoint HTTP response body for the "not_implemented" error.
+type ReviseChangeNotImplementedResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
+// ConfirmIntentNotFoundResponseBody is the type of the "surla" service
+// "confirm_intent" endpoint HTTP response body for the "not_found" error.
+type ConfirmIntentNotFoundResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
+// ConfirmIntentForbiddenResponseBody is the type of the "surla" service
+// "confirm_intent" endpoint HTTP response body for the "forbidden" error.
+type ConfirmIntentForbiddenResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
+// ConfirmIntentConflictResponseBody is the type of the "surla" service
+// "confirm_intent" endpoint HTTP response body for the "conflict" error.
+type ConfirmIntentConflictResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
+// ConfirmIntentUnprocessableResponseBody is the type of the "surla" service
+// "confirm_intent" endpoint HTTP response body for the "unprocessable" error.
+type ConfirmIntentUnprocessableResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
+// GetChangeNotFoundResponseBody is the type of the "surla" service
+// "get_change" endpoint HTTP response body for the "not_found" error.
+type GetChangeNotFoundResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
+// GetChangeForbiddenResponseBody is the type of the "surla" service
+// "get_change" endpoint HTTP response body for the "forbidden" error.
+type GetChangeForbiddenResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
+// PreviewArchitectureNotFoundResponseBody is the type of the "surla" service
+// "preview_architecture" endpoint HTTP response body for the "not_found" error.
+type PreviewArchitectureNotFoundResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
+// PreviewArchitectureForbiddenResponseBody is the type of the "surla" service
+// "preview_architecture" endpoint HTTP response body for the "forbidden" error.
+type PreviewArchitectureForbiddenResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
+// PreviewArchitectureConflictResponseBody is the type of the "surla" service
+// "preview_architecture" endpoint HTTP response body for the "conflict" error.
+type PreviewArchitectureConflictResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
+// PreviewArchitectureUnprocessableResponseBody is the type of the "surla"
+// service "preview_architecture" endpoint HTTP response body for the
+// "unprocessable" error.
+type PreviewArchitectureUnprocessableResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
 // DraftOverridePromptNotFoundResponseBody is the type of the "surla" service
 // "draft_override" endpoint HTTP response body for the "prompt_not_found"
 // error.
@@ -604,6 +929,278 @@ type StartLiveTargetLiveTargetFailedResponseBody struct {
 // service "stop_live_target" endpoint HTTP response body for the
 // "live_target_stop_failed" error.
 type StopLiveTargetLiveTargetStopFailedResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
+// VerifyChangeNotFoundResponseBody is the type of the "surla" service
+// "verify_change" endpoint HTTP response body for the "not_found" error.
+type VerifyChangeNotFoundResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
+// VerifyChangeForbiddenResponseBody is the type of the "surla" service
+// "verify_change" endpoint HTTP response body for the "forbidden" error.
+type VerifyChangeForbiddenResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
+// VerifyChangeConflictResponseBody is the type of the "surla" service
+// "verify_change" endpoint HTTP response body for the "conflict" error.
+type VerifyChangeConflictResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
+// VerifyChangeNotImplementedResponseBody is the type of the "surla" service
+// "verify_change" endpoint HTTP response body for the "not_implemented" error.
+type VerifyChangeNotImplementedResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
+// GetVerificationNotFoundResponseBody is the type of the "surla" service
+// "get_verification" endpoint HTTP response body for the "not_found" error.
+type GetVerificationNotFoundResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
+// GetVerificationForbiddenResponseBody is the type of the "surla" service
+// "get_verification" endpoint HTTP response body for the "forbidden" error.
+type GetVerificationForbiddenResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
+// GetVerificationNotImplementedResponseBody is the type of the "surla" service
+// "get_verification" endpoint HTTP response body for the "not_implemented"
+// error.
+type GetVerificationNotImplementedResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
+// ListVerificationsNotFoundResponseBody is the type of the "surla" service
+// "list_verifications" endpoint HTTP response body for the "not_found" error.
+type ListVerificationsNotFoundResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
+// ListVerificationsForbiddenResponseBody is the type of the "surla" service
+// "list_verifications" endpoint HTTP response body for the "forbidden" error.
+type ListVerificationsForbiddenResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
+// ListVerificationsNotImplementedResponseBody is the type of the "surla"
+// service "list_verifications" endpoint HTTP response body for the
+// "not_implemented" error.
+type ListVerificationsNotImplementedResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
+// ApproveMergeNotFoundResponseBody is the type of the "surla" service
+// "approve_merge" endpoint HTTP response body for the "not_found" error.
+type ApproveMergeNotFoundResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
+// ApproveMergeForbiddenResponseBody is the type of the "surla" service
+// "approve_merge" endpoint HTTP response body for the "forbidden" error.
+type ApproveMergeForbiddenResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
+// ApproveMergeConflictResponseBody is the type of the "surla" service
+// "approve_merge" endpoint HTTP response body for the "conflict" error.
+type ApproveMergeConflictResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
+// ApproveMergeUnprocessableResponseBody is the type of the "surla" service
+// "approve_merge" endpoint HTTP response body for the "unprocessable" error.
+type ApproveMergeUnprocessableResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
+// ApproveMergeNotImplementedResponseBody is the type of the "surla" service
+// "approve_merge" endpoint HTTP response body for the "not_implemented" error.
+type ApproveMergeNotImplementedResponseBody struct {
 	// Name is the name of this class of errors.
 	Name string `form:"name" json:"name" xml:"name"`
 	// ID is a unique identifier for this particular occurrence of the problem.
@@ -1720,6 +2317,262 @@ func NewDiffResponseBody(res *surla.DiffResult) *DiffResponseBody {
 	return body
 }
 
+// NewProposeChangeConflictResponseBody builds the HTTP response body from the
+// result of the "propose_change" endpoint of the "surla" service.
+func NewProposeChangeConflictResponseBody(res *goa.ServiceError) *ProposeChangeConflictResponseBody {
+	body := &ProposeChangeConflictResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
+// NewProposeChangeUnprocessableResponseBody builds the HTTP response body from
+// the result of the "propose_change" endpoint of the "surla" service.
+func NewProposeChangeUnprocessableResponseBody(res *goa.ServiceError) *ProposeChangeUnprocessableResponseBody {
+	body := &ProposeChangeUnprocessableResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
+// NewProposeChangeNotImplementedResponseBody builds the HTTP response body
+// from the result of the "propose_change" endpoint of the "surla" service.
+func NewProposeChangeNotImplementedResponseBody(res *goa.ServiceError) *ProposeChangeNotImplementedResponseBody {
+	body := &ProposeChangeNotImplementedResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
+// NewReviseChangeNotFoundResponseBody builds the HTTP response body from the
+// result of the "revise_change" endpoint of the "surla" service.
+func NewReviseChangeNotFoundResponseBody(res *goa.ServiceError) *ReviseChangeNotFoundResponseBody {
+	body := &ReviseChangeNotFoundResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
+// NewReviseChangeForbiddenResponseBody builds the HTTP response body from the
+// result of the "revise_change" endpoint of the "surla" service.
+func NewReviseChangeForbiddenResponseBody(res *goa.ServiceError) *ReviseChangeForbiddenResponseBody {
+	body := &ReviseChangeForbiddenResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
+// NewReviseChangeConflictResponseBody builds the HTTP response body from the
+// result of the "revise_change" endpoint of the "surla" service.
+func NewReviseChangeConflictResponseBody(res *goa.ServiceError) *ReviseChangeConflictResponseBody {
+	body := &ReviseChangeConflictResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
+// NewReviseChangeUnprocessableResponseBody builds the HTTP response body from
+// the result of the "revise_change" endpoint of the "surla" service.
+func NewReviseChangeUnprocessableResponseBody(res *goa.ServiceError) *ReviseChangeUnprocessableResponseBody {
+	body := &ReviseChangeUnprocessableResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
+// NewReviseChangeNotImplementedResponseBody builds the HTTP response body from
+// the result of the "revise_change" endpoint of the "surla" service.
+func NewReviseChangeNotImplementedResponseBody(res *goa.ServiceError) *ReviseChangeNotImplementedResponseBody {
+	body := &ReviseChangeNotImplementedResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
+// NewConfirmIntentNotFoundResponseBody builds the HTTP response body from the
+// result of the "confirm_intent" endpoint of the "surla" service.
+func NewConfirmIntentNotFoundResponseBody(res *goa.ServiceError) *ConfirmIntentNotFoundResponseBody {
+	body := &ConfirmIntentNotFoundResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
+// NewConfirmIntentForbiddenResponseBody builds the HTTP response body from the
+// result of the "confirm_intent" endpoint of the "surla" service.
+func NewConfirmIntentForbiddenResponseBody(res *goa.ServiceError) *ConfirmIntentForbiddenResponseBody {
+	body := &ConfirmIntentForbiddenResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
+// NewConfirmIntentConflictResponseBody builds the HTTP response body from the
+// result of the "confirm_intent" endpoint of the "surla" service.
+func NewConfirmIntentConflictResponseBody(res *goa.ServiceError) *ConfirmIntentConflictResponseBody {
+	body := &ConfirmIntentConflictResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
+// NewConfirmIntentUnprocessableResponseBody builds the HTTP response body from
+// the result of the "confirm_intent" endpoint of the "surla" service.
+func NewConfirmIntentUnprocessableResponseBody(res *goa.ServiceError) *ConfirmIntentUnprocessableResponseBody {
+	body := &ConfirmIntentUnprocessableResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
+// NewGetChangeNotFoundResponseBody builds the HTTP response body from the
+// result of the "get_change" endpoint of the "surla" service.
+func NewGetChangeNotFoundResponseBody(res *goa.ServiceError) *GetChangeNotFoundResponseBody {
+	body := &GetChangeNotFoundResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
+// NewGetChangeForbiddenResponseBody builds the HTTP response body from the
+// result of the "get_change" endpoint of the "surla" service.
+func NewGetChangeForbiddenResponseBody(res *goa.ServiceError) *GetChangeForbiddenResponseBody {
+	body := &GetChangeForbiddenResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
+// NewPreviewArchitectureNotFoundResponseBody builds the HTTP response body
+// from the result of the "preview_architecture" endpoint of the "surla"
+// service.
+func NewPreviewArchitectureNotFoundResponseBody(res *goa.ServiceError) *PreviewArchitectureNotFoundResponseBody {
+	body := &PreviewArchitectureNotFoundResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
+// NewPreviewArchitectureForbiddenResponseBody builds the HTTP response body
+// from the result of the "preview_architecture" endpoint of the "surla"
+// service.
+func NewPreviewArchitectureForbiddenResponseBody(res *goa.ServiceError) *PreviewArchitectureForbiddenResponseBody {
+	body := &PreviewArchitectureForbiddenResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
+// NewPreviewArchitectureConflictResponseBody builds the HTTP response body
+// from the result of the "preview_architecture" endpoint of the "surla"
+// service.
+func NewPreviewArchitectureConflictResponseBody(res *goa.ServiceError) *PreviewArchitectureConflictResponseBody {
+	body := &PreviewArchitectureConflictResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
+// NewPreviewArchitectureUnprocessableResponseBody builds the HTTP response
+// body from the result of the "preview_architecture" endpoint of the "surla"
+// service.
+func NewPreviewArchitectureUnprocessableResponseBody(res *goa.ServiceError) *PreviewArchitectureUnprocessableResponseBody {
+	body := &PreviewArchitectureUnprocessableResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
 // NewDraftOverridePromptNotFoundResponseBody builds the HTTP response body
 // from the result of the "draft_override" endpoint of the "surla" service.
 func NewDraftOverridePromptNotFoundResponseBody(res *goa.ServiceError) *DraftOverridePromptNotFoundResponseBody {
@@ -1825,6 +2678,216 @@ func NewStartLiveTargetLiveTargetFailedResponseBody(res *goa.ServiceError) *Star
 // service.
 func NewStopLiveTargetLiveTargetStopFailedResponseBody(res *goa.ServiceError) *StopLiveTargetLiveTargetStopFailedResponseBody {
 	body := &StopLiveTargetLiveTargetStopFailedResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
+// NewVerifyChangeNotFoundResponseBody builds the HTTP response body from the
+// result of the "verify_change" endpoint of the "surla" service.
+func NewVerifyChangeNotFoundResponseBody(res *goa.ServiceError) *VerifyChangeNotFoundResponseBody {
+	body := &VerifyChangeNotFoundResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
+// NewVerifyChangeForbiddenResponseBody builds the HTTP response body from the
+// result of the "verify_change" endpoint of the "surla" service.
+func NewVerifyChangeForbiddenResponseBody(res *goa.ServiceError) *VerifyChangeForbiddenResponseBody {
+	body := &VerifyChangeForbiddenResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
+// NewVerifyChangeConflictResponseBody builds the HTTP response body from the
+// result of the "verify_change" endpoint of the "surla" service.
+func NewVerifyChangeConflictResponseBody(res *goa.ServiceError) *VerifyChangeConflictResponseBody {
+	body := &VerifyChangeConflictResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
+// NewVerifyChangeNotImplementedResponseBody builds the HTTP response body from
+// the result of the "verify_change" endpoint of the "surla" service.
+func NewVerifyChangeNotImplementedResponseBody(res *goa.ServiceError) *VerifyChangeNotImplementedResponseBody {
+	body := &VerifyChangeNotImplementedResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
+// NewGetVerificationNotFoundResponseBody builds the HTTP response body from
+// the result of the "get_verification" endpoint of the "surla" service.
+func NewGetVerificationNotFoundResponseBody(res *goa.ServiceError) *GetVerificationNotFoundResponseBody {
+	body := &GetVerificationNotFoundResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
+// NewGetVerificationForbiddenResponseBody builds the HTTP response body from
+// the result of the "get_verification" endpoint of the "surla" service.
+func NewGetVerificationForbiddenResponseBody(res *goa.ServiceError) *GetVerificationForbiddenResponseBody {
+	body := &GetVerificationForbiddenResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
+// NewGetVerificationNotImplementedResponseBody builds the HTTP response body
+// from the result of the "get_verification" endpoint of the "surla" service.
+func NewGetVerificationNotImplementedResponseBody(res *goa.ServiceError) *GetVerificationNotImplementedResponseBody {
+	body := &GetVerificationNotImplementedResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
+// NewListVerificationsNotFoundResponseBody builds the HTTP response body from
+// the result of the "list_verifications" endpoint of the "surla" service.
+func NewListVerificationsNotFoundResponseBody(res *goa.ServiceError) *ListVerificationsNotFoundResponseBody {
+	body := &ListVerificationsNotFoundResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
+// NewListVerificationsForbiddenResponseBody builds the HTTP response body from
+// the result of the "list_verifications" endpoint of the "surla" service.
+func NewListVerificationsForbiddenResponseBody(res *goa.ServiceError) *ListVerificationsForbiddenResponseBody {
+	body := &ListVerificationsForbiddenResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
+// NewListVerificationsNotImplementedResponseBody builds the HTTP response body
+// from the result of the "list_verifications" endpoint of the "surla" service.
+func NewListVerificationsNotImplementedResponseBody(res *goa.ServiceError) *ListVerificationsNotImplementedResponseBody {
+	body := &ListVerificationsNotImplementedResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
+// NewApproveMergeNotFoundResponseBody builds the HTTP response body from the
+// result of the "approve_merge" endpoint of the "surla" service.
+func NewApproveMergeNotFoundResponseBody(res *goa.ServiceError) *ApproveMergeNotFoundResponseBody {
+	body := &ApproveMergeNotFoundResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
+// NewApproveMergeForbiddenResponseBody builds the HTTP response body from the
+// result of the "approve_merge" endpoint of the "surla" service.
+func NewApproveMergeForbiddenResponseBody(res *goa.ServiceError) *ApproveMergeForbiddenResponseBody {
+	body := &ApproveMergeForbiddenResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
+// NewApproveMergeConflictResponseBody builds the HTTP response body from the
+// result of the "approve_merge" endpoint of the "surla" service.
+func NewApproveMergeConflictResponseBody(res *goa.ServiceError) *ApproveMergeConflictResponseBody {
+	body := &ApproveMergeConflictResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
+// NewApproveMergeUnprocessableResponseBody builds the HTTP response body from
+// the result of the "approve_merge" endpoint of the "surla" service.
+func NewApproveMergeUnprocessableResponseBody(res *goa.ServiceError) *ApproveMergeUnprocessableResponseBody {
+	body := &ApproveMergeUnprocessableResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
+// NewApproveMergeNotImplementedResponseBody builds the HTTP response body from
+// the result of the "approve_merge" endpoint of the "surla" service.
+func NewApproveMergeNotImplementedResponseBody(res *goa.ServiceError) *ApproveMergeNotImplementedResponseBody {
+	body := &ApproveMergeNotImplementedResponseBody{
 		Name:      res.Name,
 		ID:        res.ID,
 		Message:   res.Message,
