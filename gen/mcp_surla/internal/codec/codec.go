@@ -190,12 +190,16 @@ type ApproveMergeResultTransport struct {
 	Status *string `json:"status"`
 	// Operator feature request for this revision.
 	Prompt *string `json:"prompt"`
-	// Plain-English summary of requested behavior.
+	// Plain-English summary of the proposed change from propose_change or
+	// revise_change. confirm_intent does not rewrite this text; when status is
+	// confirmed, answers records the owner's resolutions for ambiguities.
 	Summary *string `json:"summary"`
 	// Domain questions surfaced at CP1, retained for audit after confirmation.
 	Ambiguities []*ApproveMergeResultAmbiguityQuestionTransport `json:"ambiguities,omitempty"`
-	// Confirmed resolution per ambiguity question ID: each value is exactly one
-	// string from that question's options.
+	// Owner-confirmed answers keyed by ambiguity question ID when status is
+	// confirmed and ambiguities is non-empty (empty when a confirmed card has no
+	// ambiguity questions). Each answer equals one of its question's declared
+	// options and takes precedence over open phrasing in summary.
 	Answers map[string]string `json:"answers,omitempty"`
 	// Concrete examples mapped to evaluator checks.
 	Examples []*ApproveMergeResultExampleItemTransport `json:"examples"`
@@ -557,12 +561,16 @@ type ConfirmIntentResultTransport struct {
 	Status *string `json:"status"`
 	// Operator feature request for this revision.
 	Prompt *string `json:"prompt"`
-	// Plain-English summary of requested behavior.
+	// Plain-English summary of the proposed change from propose_change or
+	// revise_change. confirm_intent does not rewrite this text; when status is
+	// confirmed, answers records the owner's resolutions for ambiguities.
 	Summary *string `json:"summary"`
 	// Domain questions surfaced at CP1, retained for audit after confirmation.
 	Ambiguities []*ConfirmIntentResultAmbiguityQuestionTransport `json:"ambiguities,omitempty"`
-	// Confirmed resolution per ambiguity question ID: each value is exactly one
-	// string from that question's options.
+	// Owner-confirmed answers keyed by ambiguity question ID when status is
+	// confirmed and ambiguities is non-empty (empty when a confirmed card has no
+	// ambiguity questions). Each answer equals one of its question's declared
+	// options and takes precedence over open phrasing in summary.
 	Answers map[string]string `json:"answers,omitempty"`
 	// Concrete examples mapped to evaluator checks.
 	Examples []*ConfirmIntentResultExampleItemTransport `json:"examples"`
@@ -1007,12 +1015,16 @@ type GetChangeResultTransport struct {
 	Status *string `json:"status"`
 	// Operator feature request for this revision.
 	Prompt *string `json:"prompt"`
-	// Plain-English summary of requested behavior.
+	// Plain-English summary of the proposed change from propose_change or
+	// revise_change. confirm_intent does not rewrite this text; when status is
+	// confirmed, answers records the owner's resolutions for ambiguities.
 	Summary *string `json:"summary"`
 	// Domain questions surfaced at CP1, retained for audit after confirmation.
 	Ambiguities []*GetChangeResultAmbiguityQuestionTransport `json:"ambiguities,omitempty"`
-	// Confirmed resolution per ambiguity question ID: each value is exactly one
-	// string from that question's options.
+	// Owner-confirmed answers keyed by ambiguity question ID when status is
+	// confirmed and ambiguities is non-empty (empty when a confirmed card has no
+	// ambiguity questions). Each answer equals one of its question's declared
+	// options and takes precedence over open phrasing in summary.
 	Answers map[string]string `json:"answers,omitempty"`
 	// Concrete examples mapped to evaluator checks.
 	Examples []*GetChangeResultExampleItemTransport `json:"examples"`
@@ -2565,12 +2577,16 @@ type ProposeChangeResultTransport struct {
 	Status *string `json:"status"`
 	// Operator feature request for this revision.
 	Prompt *string `json:"prompt"`
-	// Plain-English summary of requested behavior.
+	// Plain-English summary of the proposed change from propose_change or
+	// revise_change. confirm_intent does not rewrite this text; when status is
+	// confirmed, answers records the owner's resolutions for ambiguities.
 	Summary *string `json:"summary"`
 	// Domain questions surfaced at CP1, retained for audit after confirmation.
 	Ambiguities []*ProposeChangeResultAmbiguityQuestionTransport `json:"ambiguities,omitempty"`
-	// Confirmed resolution per ambiguity question ID: each value is exactly one
-	// string from that question's options.
+	// Owner-confirmed answers keyed by ambiguity question ID when status is
+	// confirmed and ambiguities is non-empty (empty when a confirmed card has no
+	// ambiguity questions). Each answer equals one of its question's declared
+	// options and takes precedence over open phrasing in summary.
 	Answers map[string]string `json:"answers,omitempty"`
 	// Concrete examples mapped to evaluator checks.
 	Examples []*ProposeChangeResultExampleItemTransport `json:"examples"`
@@ -2877,12 +2893,16 @@ type ReviseChangeResultTransport struct {
 	Status *string `json:"status"`
 	// Operator feature request for this revision.
 	Prompt *string `json:"prompt"`
-	// Plain-English summary of requested behavior.
+	// Plain-English summary of the proposed change from propose_change or
+	// revise_change. confirm_intent does not rewrite this text; when status is
+	// confirmed, answers records the owner's resolutions for ambiguities.
 	Summary *string `json:"summary"`
 	// Domain questions surfaced at CP1, retained for audit after confirmation.
 	Ambiguities []*ReviseChangeResultAmbiguityQuestionTransport `json:"ambiguities,omitempty"`
-	// Confirmed resolution per ambiguity question ID: each value is exactly one
-	// string from that question's options.
+	// Owner-confirmed answers keyed by ambiguity question ID when status is
+	// confirmed and ambiguities is non-empty (empty when a confirmed card has no
+	// ambiguity questions). Each answer equals one of its question's declared
+	// options and takes precedence over open phrasing in summary.
 	Answers map[string]string `json:"answers,omitempty"`
 	// Concrete examples mapped to evaluator checks.
 	Examples []*ReviseChangeResultExampleItemTransport `json:"examples"`

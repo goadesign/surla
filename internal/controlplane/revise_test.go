@@ -472,7 +472,7 @@ func TestReviseChangeTransportsConcurrencyAndFailureAtomicity(t *testing.T) {
 	)
 	client.mu.Unlock()
 
-	for _, wantErr := range []string{"upstream model timeout", "output limit", "invalid cp1 analysis"} {
+	for _, wantErr := range []string{"upstream model timeout", "output limit", `cp1 analysis rejected (ambiguity "chg-tx-ambiguity-01" has duplicate option at options[1])`} {
 		_, err := cp.ReviseChange(aliceCtx, &gensurla.ReviseChangePayload{
 			ChangeID: "chg-tx", RequestRevision: r1.RequestRevision, Prompt: "New prompt",
 		})

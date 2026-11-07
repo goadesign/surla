@@ -1259,6 +1259,19 @@ paths:
                                 name: not_implemented
                                 temporary: false
                                 timeout: false
+                "502":
+                    description: 'analysis_rejected: The Checkpoint 1 model response did not satisfy the analysis contract or stopped at the output limit; this request did not save or modify the Change Card.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: analysis_rejected
+                                temporary: false
+                                timeout: false
     /changes/revise:
         post:
             tags:
@@ -1431,6 +1444,19 @@ paths:
                                 id: 123abc
                                 message: parameter 'p' must be an integer
                                 name: not_implemented
+                                temporary: false
+                                timeout: false
+                "502":
+                    description: 'analysis_rejected: The Checkpoint 1 model response did not satisfy the analysis contract or stopped at the output limit; this request did not save or modify the Change Card.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: analysis_rejected
                                 temporary: false
                                 timeout: false
     /diff:
@@ -2586,7 +2612,7 @@ components:
                           question: Labore harum illo eos ipsum deleniti possimus.
                 answers:
                     type: object
-                    description: 'Confirmed resolution per ambiguity question ID: each value is exactly one string from that question''s options.'
+                    description: Owner-confirmed answers keyed by ambiguity question ID when status is confirmed and ambiguities is non-empty (empty when a confirmed card has no ambiguity questions). Each answer equals one of its question's declared options and takes precedence over open phrasing in summary.
                     example:
                         Consequatur ex.: Veritatis alias non blanditiis.
                     additionalProperties:
@@ -2646,7 +2672,7 @@ components:
                         - confirmed
                 summary:
                     type: string
-                    description: Plain-English summary of requested behavior.
+                    description: Plain-English summary of the proposed change from propose_change or revise_change. confirm_intent does not rewrite this text; when status is confirmed, answers records the owner's resolutions for ambiguities.
                     example: Et repellendus nemo.
                 ui_composition:
                     $ref: '#/components/schemas/UICompositionItem'

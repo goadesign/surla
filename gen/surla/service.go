@@ -294,12 +294,16 @@ type ChangeCardResult struct {
 	Status string
 	// Operator feature request for this revision.
 	Prompt string
-	// Plain-English summary of requested behavior.
+	// Plain-English summary of the proposed change from propose_change or
+	// revise_change. confirm_intent does not rewrite this text; when status is
+	// confirmed, answers records the owner's resolutions for ambiguities.
 	Summary string
 	// Domain questions surfaced at CP1, retained for audit after confirmation.
 	Ambiguities []*AmbiguityQuestion
-	// Confirmed resolution per ambiguity question ID: each value is exactly one
-	// string from that question's options.
+	// Owner-confirmed answers keyed by ambiguity question ID when status is
+	// confirmed and ambiguities is non-empty (empty when a confirmed card has no
+	// ambiguity questions). Each answer equals one of its question's declared
+	// options and takes precedence over open phrasing in summary.
 	Answers map[string]string
 	// Concrete examples mapped to evaluator checks.
 	Examples []*ExampleItem
@@ -766,6 +770,11 @@ func MakeUnprocessable(err error) *goa.ServiceError {
 // MakeNotImplemented builds a goa.ServiceError from an error.
 func MakeNotImplemented(err error) *goa.ServiceError {
 	return goa.NewServiceError(err, "not_implemented", false, false, false)
+}
+
+// MakeAnalysisRejected builds a goa.ServiceError from an error.
+func MakeAnalysisRejected(err error) *goa.ServiceError {
+	return goa.NewServiceError(err, "analysis_rejected", false, false, false)
 }
 
 // MakeNotFound builds a goa.ServiceError from an error.
@@ -1295,12 +1304,16 @@ type jsonChangeCardResultTransport struct {
 	Status *string `json:"status"`
 	// Operator feature request for this revision.
 	Prompt *string `json:"prompt"`
-	// Plain-English summary of requested behavior.
+	// Plain-English summary of the proposed change from propose_change or
+	// revise_change. confirm_intent does not rewrite this text; when status is
+	// confirmed, answers records the owner's resolutions for ambiguities.
 	Summary *string `json:"summary"`
 	// Domain questions surfaced at CP1, retained for audit after confirmation.
 	Ambiguities []*jsonAmbiguityQuestionTransport `json:"ambiguities,omitempty"`
-	// Confirmed resolution per ambiguity question ID: each value is exactly one
-	// string from that question's options.
+	// Owner-confirmed answers keyed by ambiguity question ID when status is
+	// confirmed and ambiguities is non-empty (empty when a confirmed card has no
+	// ambiguity questions). Each answer equals one of its question's declared
+	// options and takes precedence over open phrasing in summary.
 	Answers map[string]string `json:"answers,omitempty"`
 	// Concrete examples mapped to evaluator checks.
 	Examples []*jsonExampleItemTransport `json:"examples"`
@@ -9790,7 +9803,7 @@ func validateChangeCardResultJSONValue(path string, value any, description strin
 		case "answers":
 			if err := validateChangeCardResultJSONValue3(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Confirmed resolution per ambiguity question ID: each value is exactly one string from that question's options.",
+				typed[key], "Owner-confirmed answers keyed by ambiguity question ID when status is confirmed and ambiguities is non-empty (empty when a confirmed card has no ambiguity questions). Each answer equals one of its question's declared options and takes precedence over open phrasing in summary.",
 			); err != nil {
 				return err
 			}
@@ -9853,7 +9866,7 @@ func validateChangeCardResultJSONValue(path string, value any, description strin
 		case "summary":
 			if err := validateAgentPolicyItemJSONValue2(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Plain-English summary of requested behavior.",
+				typed[key], "Plain-English summary of the proposed change from propose_change or revise_change. confirm_intent does not rewrite this text; when status is confirmed, answers records the owner's resolutions for ambiguities.",
 			); err != nil {
 				return err
 			}

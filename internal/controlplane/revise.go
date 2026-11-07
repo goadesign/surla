@@ -15,10 +15,28 @@ import (
 
 	gensurla "github.com/goadesign/surla/gen/surla"
 	"github.com/goadesign/surla/internal/goldenpath"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 	"goa.design/goa-ai/runtime/agent/model"
+	goahttp "goa.design/goa/v3/http"
+	goa "goa.design/goa/v3/pkg"
 )
 
 type (
+	// unclassifiedCP1Error wraps a non-rejection CP1 analyzer error (including a
+	// multi-cause join that contains a nested Goa ServiceError alongside an
+	// independent failure) so the generated HTTP error encoder's
+	// errors.As(v, &GoaErrorNamer) check matches this outer unnamed error first
+	// and falls through to the HTTP 500 fault encoder, while preserving the
+	// complete underlying error tree via Unwrap and keeping MCP tool-error
+	// classification unchanged.
+	unclassifiedCP1Error struct {
+		// cause is the underlying non-rejection error returned by CP1Analyzer.
+		cause error
+	}
+
 	// CP1PriorDecision describes one ambiguity question and its confirmed answer
 	// (when resolved) from the Change Card revision being revised.
 	CP1PriorDecision struct {
@@ -119,20 +137,57 @@ func (c *ControlPlane) ReviseChange(
 	}
 	prior := buildCP1PriorCard(record.card)
 
+	ctx, span := otel.Tracer("surla/controlplane").Start(
+		ctx,
+		"surla.controlplane.revise_change",
+		trace.WithAttributes(attribute.String("surla.change_id", p.ChangeID)),
+	)
+	defer span.End()
+
 	if err := reportProgress(ctx, 0, 1, "Revising the Change Card with the CP1 model"); err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "report cp1 revision progress")
 		return nil, err
 	}
 	analysis, err := c.analyzer.Revise(ctx, prior, p.Prompt, designSrc)
 	if err != nil {
+		if se, ok := asAnalysisRejected(err); ok {
+			err = newAnalysisRejected(
+				fmt.Sprintf(
+					"cp1 analysis rejected (%s): this revise_change request did not modify Change Card %q; retry revise_change with request_revision %s (and design_source when updating the Goa design), or call get_change if another request may have updated the card",
+					se.Message,
+					p.ChangeID,
+					p.RequestRevision,
+				),
+				err,
+			)
+		} else if containsAnalysisRejected(err) {
+			err = unclassifiedCP1Error{cause: err}
+		}
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "revise cp1 change card")
 		return nil, err
 	}
 	if err := reportProgress(ctx, 1, 1, "Validating the revised CP1 analysis"); err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "report cp1 validation progress")
 		return nil, err
 	}
 
 	summary, ambiguities, examples, preserved, err := validateCP1Analysis(p.ChangeID, analysis)
 	if err != nil {
-		return nil, fmt.Errorf("invalid cp1 analysis: %w", err)
+		se := newAnalysisRejected(
+			fmt.Sprintf(
+				"cp1 analysis rejected (%s): this revise_change request did not modify Change Card %q; retry revise_change with request_revision %s (and design_source when updating the Goa design), or call get_change if another request may have updated the card",
+				err.Error(),
+				p.ChangeID,
+				p.RequestRevision,
+			),
+			err,
+		)
+		span.RecordError(se)
+		span.SetStatus(codes.Error, "validate revised cp1 analysis")
+		return nil, se
 	}
 
 	// Every revised card enters needs_confirmation so the operator explicitly
@@ -149,6 +204,8 @@ func (c *ControlPlane) ReviseChange(
 	}
 	rev, err := computeCanonicalRevision(revised, principal.ID, designSrc)
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "compute revised cp1 card revision")
 		return nil, err
 	}
 	revised.RequestRevision = rev
@@ -163,6 +220,8 @@ func (c *ControlPlane) ReviseChange(
 	defer c.mu.Unlock()
 	current, exists, err := c.cards.load(p.ChangeID)
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "load cp1 change card")
 		return nil, err
 	}
 	if !exists {
@@ -184,9 +243,40 @@ func (c *ControlPlane) ReviseChange(
 		owner:        principal.ID,
 		designSource: designSrc,
 	}); err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "save revised cp1 change card")
 		return nil, err
 	}
 	return revised, nil
+}
+
+// Error returns the underlying analyzer error text.
+func (e unclassifiedCP1Error) Error() string {
+	return e.cause.Error()
+}
+
+// Unwrap returns the underlying analyzer error tree.
+func (e unclassifiedCP1Error) Unwrap() error {
+	return e.cause
+}
+
+// GoaErrorName returns an empty Goa error name so the generated HTTP error
+// encoder falls through its declared-error switch without unwrapping a nested
+// ServiceError inside a multi-cause join.
+func (e unclassifiedCP1Error) GoaErrorName() string {
+	return ""
+}
+
+// httpErrorFormatter formats HTTP error responses for NewHTTPHandler. When err
+// is an unclassifiedCP1Error (such as an analysis_rejected ServiceError joined
+// with context cancellation or an independent fault), it formats the response
+// as an HTTP 500 server fault; all other errors delegate to
+// goahttp.NewErrorResponse.
+func httpErrorFormatter(ctx context.Context, err error) goahttp.Statuser {
+	if _, isUnclassified := err.(unclassifiedCP1Error); isUnclassified {
+		return goahttp.NewErrorResponse(ctx, goa.Fault("%s", err.Error()))
+	}
+	return goahttp.NewErrorResponse(ctx, err)
 }
 
 // buildCP1PriorCard extracts the semantic decisions, examples, and preserved
@@ -230,6 +320,128 @@ func buildCP1PriorCard(card *gensurla.ChangeCardResult) CP1PriorCard {
 	}
 }
 
+// newAnalysisRejected constructs a non-fault analysis_rejected ServiceError
+// whose public Message is set to reason while retaining cause for Unwrap.
+func newAnalysisRejected(reason string, cause error) *goa.ServiceError {
+	se := gensurla.MakeAnalysisRejected(cause)
+	se.Message = reason
+	return se
+}
+
+// asAnalysisRejected reports whether err is (or wraps solely) a single
+// non-nil analysis_rejected ServiceError. If err joins an analysis_rejected
+// error with an independent failure, asAnalysisRejected returns false so the
+// combined failure remains a server fault.
+func asAnalysisRejected(err error) (*goa.ServiceError, bool) {
+	if err == nil {
+		return nil, false
+	}
+	if se, ok := err.(*goa.ServiceError); ok {
+		if se != nil && se.GoaErrorName() == "analysis_rejected" {
+			return se, true
+		}
+		return nil, false
+	}
+	if named, ok := err.(goa.GoaErrorNamer); ok && named != nil {
+		return nil, false
+	}
+	if joined, ok := err.(interface{ Unwrap() []error }); ok {
+		var expected *goa.ServiceError
+		for _, child := range joined.Unwrap() {
+			actual, valid := asAnalysisRejected(child)
+			if !valid {
+				return nil, false
+			}
+			if expected == nil {
+				expected = actual
+				continue
+			}
+			if expected != actual {
+				return nil, false
+			}
+		}
+		return expected, expected != nil
+	}
+	if wrapped, ok := err.(interface{ Unwrap() error }); ok {
+		return asAnalysisRejected(wrapped.Unwrap())
+	}
+	return nil, false
+}
+
+// containsAnalysisRejected reports whether err has an analysis_rejected
+// ServiceError in its unwrap tree without traversing past an already named Goa
+// error owner.
+func containsAnalysisRejected(err error) bool {
+	if err == nil {
+		return false
+	}
+	if se, ok := err.(*goa.ServiceError); ok {
+		return se != nil && se.GoaErrorName() == "analysis_rejected"
+	}
+	if named, ok := err.(goa.GoaErrorNamer); ok && named != nil {
+		return named.GoaErrorName() == "analysis_rejected"
+	}
+	if joined, ok := err.(interface{ Unwrap() []error }); ok {
+		for _, child := range joined.Unwrap() {
+			if containsAnalysisRejected(child) {
+				return true
+			}
+		}
+		return false
+	}
+	if wrapped, ok := err.(interface{ Unwrap() error }); ok {
+		return containsAnalysisRejected(wrapped.Unwrap())
+	}
+	return false
+}
+
+// exactOutputValidation accepts only an error tree whose every leaf is the
+// same non-nil *model.OutputValidationError. Ordinary single-cause wrappers
+// and duplicate joins of that same validation error preserve its identity;
+// any non-validation leaf (such as context cancellation, a provider error,
+// or an observer failure) or distinct validation leaf rejects the
+// classification so combined failures remain ordinary server faults.
+func exactOutputValidation(err error) (*model.OutputValidationError, bool) {
+	if err == nil {
+		return nil, false
+	}
+	if ovErr, ok := err.(*model.OutputValidationError); ok {
+		return ovErr, ovErr != nil
+	}
+	if joined, ok := err.(interface{ Unwrap() []error }); ok {
+		var expected *model.OutputValidationError
+		for _, child := range joined.Unwrap() {
+			actual, valid := exactOutputValidation(child)
+			if !valid {
+				return nil, false
+			}
+			if expected == nil {
+				expected = actual
+				continue
+			}
+			if expected != actual {
+				return nil, false
+			}
+		}
+		return expected, expected != nil
+	}
+	if wrapped, ok := err.(interface{ Unwrap() error }); ok {
+		return exactOutputValidation(wrapped.Unwrap())
+	}
+	return nil, false
+}
+
+// formatCP1DesignSection returns designSource unchanged when it contains
+// non-whitespace text, or an explicit no-design instruction when omitted or
+// whitespace-only so the CP1 model does not assume unstated services or
+// fixture IDs.
+func formatCP1DesignSection(designSource string) string {
+	if strings.TrimSpace(designSource) != "" {
+		return designSource
+	}
+	return "(no Goa design source was supplied — do not assume or invent service splits, endpoints, or fixture IDs that are not stated in the request or prior card)"
+}
+
 // formatCP1ReviseUserPrompt formats the prior Change Card context, the revised
 // operator request, and the target Goa design source for ModelCP1Analyzer.Revise.
 func formatCP1ReviseUserPrompt(prior CP1PriorCard, promptText, designSource string) (string, error) {
@@ -241,7 +453,7 @@ func formatCP1ReviseUserPrompt(prior CP1PriorCard, promptText, designSource stri
 		"Prior Change Card:\n%s\n\nRevised Request:\n%s\n\nDesign:\n%s",
 		string(priorJSON),
 		promptText,
-		designSource,
+		formatCP1DesignSection(designSource),
 	), nil
 }
 
@@ -281,26 +493,38 @@ func (a *ModelCP1Analyzer) completeAnalysis(
 	}
 	resp, err := a.client.Complete(ctx, req)
 	if err != nil {
+		if ovErr, ok := exactOutputValidation(err); ok {
+			return CP1SemanticAnalysis{}, newAnalysisRejected(
+				fmt.Sprintf("model output failed %q validation", ovErr.Kind()),
+				err,
+			)
+		}
 		return CP1SemanticAnalysis{}, fmt.Errorf("cp1 model completion: %w", err)
 	}
 	if resp.OutputLimited {
-		return CP1SemanticAnalysis{}, fmt.Errorf(
-			"cp1 model analysis may be incomplete: provider reported an output limit (stop reason %q)",
-			resp.StopReason,
+		return CP1SemanticAnalysis{}, newAnalysisRejected(
+			"provider stopped at output limit",
+			errors.New("cp1 model response reached output limit"),
 		)
 	}
 	raw := extractAssistantText(resp)
 	if raw == "" {
-		return CP1SemanticAnalysis{}, errors.New("cp1 model returned empty analysis")
+		return CP1SemanticAnalysis{}, newAnalysisRejected(
+			"model returned empty analysis text",
+			errors.New("cp1 model returned empty analysis"),
+		)
 	}
 	var parsed CP1SemanticAnalysis
 	dec := json.NewDecoder(strings.NewReader(raw))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&parsed); err != nil {
-		return CP1SemanticAnalysis{}, fmt.Errorf("decode cp1 model analysis: %w", err)
+		return CP1SemanticAnalysis{}, newAnalysisRejected("model returned malformed analysis JSON", err)
 	}
 	if err := dec.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
-		return CP1SemanticAnalysis{}, errors.New("cp1 model analysis contains trailing JSON tokens")
+		return CP1SemanticAnalysis{}, newAnalysisRejected(
+			"model returned malformed analysis JSON",
+			errors.New("cp1 model analysis contains trailing JSON tokens"),
+		)
 	}
 	return parsed, nil
 }
