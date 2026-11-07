@@ -195,7 +195,11 @@ func Init(ctx context.Context, o Options, run Runner, gen Generator) (name strin
 		return "", err
 	}
 	if _, err := os.Lstat(target); err == nil {
-		return "", fmt.Errorf("%s already exists; surla init only creates a new directory", target)
+		return "", fmt.Errorf(
+			"%s already exists; surla init only creates a new directory (pass a new path such as -dir %s, or change to the parent directory and remove an empty directory first)",
+			target,
+			filepath.Join(target, d.Name),
+		)
 	} else if !errors.Is(err, fs.ErrNotExist) {
 		return "", fmt.Errorf("check %s: %w", target, err)
 	}
@@ -232,9 +236,10 @@ func Init(ctx context.Context, o Options, run Runner, gen Generator) (name strin
 	if err := os.Chmod(staging, 0o755); err != nil {
 		return "", errors.Join(fmt.Errorf("set project permissions: %w", err), os.RemoveAll(staging))
 	}
-	// os.Rename refuses a target that exists when it checks. A directory
-	// created between that check and the rename is replaced only if it is
-	// empty (rename(2) fails on a non-empty one), so no data is lost.
+	// os.Rename checks Lstat(target) and refuses an existing directory. A
+	// directory created in the race window between that Lstat and rename(2)
+	// is replaced only if it is empty (rename(2) fails on a non-empty one),
+	// so no data is lost.
 	if err := os.Rename(staging, target); err != nil {
 		return "", errors.Join(fmt.Errorf("move project into %s: %w", target, err), os.RemoveAll(staging))
 	}
