@@ -76,6 +76,8 @@ func TestInitRefusesAnExistingDirectory(t *testing.T) {
 		gen := &fakeGenerator{}
 		_, err := Init(t.Context(), Options{Dir: dir, Module: "example.com/shop", SurlaVersion: published}, failRunner(t), gen)
 		require.ErrorContains(t, err, "already exists", dir)
+		assert.ErrorContains(t, err, "-dir "+filepath.Join(dir, "shop"), dir)
+		assert.ErrorContains(t, err, "change to the parent directory and remove an empty directory first", dir)
 		assert.Equal(t, 1, gen.closes, "Init closes the generator it is given on every return")
 	}
 	assertOnly(t, parent, "empty", "full", "link")
