@@ -4,10 +4,15 @@ package designeval
 
 import (
 	"context"
+	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/goadesign/surla/internal/testmodule"
 )
@@ -75,4 +80,49 @@ var _ = Service("orders", func() {
 	if !strings.Contains(methodSig, `"minLength":3`) {
 		t.Fatalf("expected JSON Schema minLength:3 in method payload schema, got %q", methodSig)
 	}
+}
+
+func TestSandboxedExit71AppendsConditionalRecoveryGuidance(t *testing.T) {
+	ctx := t.Context()
+
+	exit71Design := `package design
+
+import (
+	"os"
+	. "goa.design/goa/v3/dsl"
+)
+
+func init() {
+	os.Exit(71)
+}
+
+var _ = API("orders", func() {})
+`
+	snap := testmodule.Snapshot(t, "", exit71Design)
+	_, err := testEvaluator.Evaluate(ctx, snap)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "exit status 71")
+	assert.Contains(t, err.Error(), exit71Guidance)
+
+	_, err = testEvaluator.Generate(ctx, snap)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "exit status 71")
+	assert.Contains(t, err.Error(), exit71Guidance)
+
+	// Ordinary compiler failures do not append exit-71 guidance.
+	brokenSnap := testmodule.Snapshot(t, "", minimalDesign+"\nvar _ = undefinedInDesign\n")
+	_, err = testEvaluator.Evaluate(ctx, brokenSnap)
+	require.Error(t, err)
+	assert.NotContains(t, err.Error(), exit71Guidance)
+
+	// Direct check of build exit-71 and canceled-context handling in withExit71Guidance.
+	exit71CmdErr := exec.Command("sh", "-c", "exit 71").Run()
+	require.Error(t, exit71CmdErr)
+	wrapped := withExit71Guidance(ctx, fmt.Errorf("compile Goa design: %w", exit71CmdErr))
+	assert.Contains(t, wrapped.Error(), exit71Guidance)
+
+	canceledCtx, cancel := context.WithCancel(ctx)
+	cancel()
+	canceledWrapped := withExit71Guidance(canceledCtx, fmt.Errorf("compile Goa design: %w", exit71CmdErr))
+	assert.NotContains(t, canceledWrapped.Error(), exit71Guidance, "a canceled build keeps its error without exit-71 guidance")
 }

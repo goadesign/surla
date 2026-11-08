@@ -154,6 +154,13 @@ const (
 	// summarySuiteBuild is the builder-safe summary of an evaluator suite that
 	// did not build.
 	summarySuiteBuild = "The evaluator suite did not build."
+	// sandboxExit71 is the exit status (EX_OSERR) /usr/bin/sandbox-exec returns
+	// when macOS refuses to apply a sandbox profile (for example inside a nested
+	// restricted coding-agent shell), and also when a sandboxed child exits 71.
+	sandboxExit71 = 71
+	// summarySandboxExit71 is the builder-safe summary returned when a
+	// non-canceled sandboxed build command in Prepare exits with status 71.
+	summarySandboxExit71 = "The sandboxed command exited with status 71. If Surla is running inside a restricted coding-agent shell, its sandbox may have been blocked; run Surla from an unrestricted host shell."
 )
 
 // commitID matches a full commit ID in either Git object format: 40 hex digits
@@ -306,7 +313,7 @@ func Prepare(ctx context.Context, p Plan) (Prepared, error) {
 		}, (*exec.Cmd).Run); err != nil {
 			// The private error carries the end of the compiler's output and
 			// the log that holds all of it; the summary builders see does not.
-			return Prepared{}, stageError(StageBuild, summaryCandidateBuild,
+			return Prepared{}, stageError(StageBuild, buildSummary(ctx, err, summaryCandidateBuild),
 				fmt.Errorf("build candidate %s: %w%s", name, err, excerptFile(logFile, "build output")))
 		}
 		digest, err := sha256File(out)
@@ -343,7 +350,7 @@ func Prepare(ctx context.Context, p Plan) (Prepared, error) {
 		LogFile: suiteLog,
 	}, (*exec.Cmd).Run); err != nil {
 		// As for the candidate: compiler output goes only into the private error.
-		return Prepared{}, stageError(StageBuild, summarySuiteBuild,
+		return Prepared{}, stageError(StageBuild, buildSummary(ctx, err, summarySuiteBuild),
 			fmt.Errorf("build suite: %w%s", err, excerptFile(suiteLog, "build output")))
 	}
 	return Prepared{
@@ -619,6 +626,18 @@ func sha256File(path string) (string, error) {
 		return "", fmt.Errorf("hash %s: %w", path, err)
 	}
 	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+// buildSummary returns summarySandboxExit71 when a non-canceled sandboxed
+// build command exited with status 71, and defaultSummary otherwise.
+func buildSummary(ctx context.Context, err error, defaultSummary string) string {
+	if ctx.Err() == nil {
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) && exitErr.ExitCode() == sandboxExit71 {
+			return summarySandboxExit71
+		}
+	}
+	return defaultSummary
 }
 
 // stageError wraps err as the *StageError Run returns.

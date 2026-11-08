@@ -1,7 +1,9 @@
 package verify
 
 import (
+	"context"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -170,6 +172,72 @@ func TestCheckoutRecordsTheExactCommitInEitherObjectFormat(t *testing.T) {
 			other := strings.Repeat("0", len(head))
 			assert.Error(t, r.checkout(t.Context(), "candidate", repo, other, filepath.Join(t.TempDir(), "clone")),
 				"a well-formed ID that is not in the repository is refused")
+		})
+	}
+}
+
+func TestBuildSummarySurfacesExit71GuidanceWithoutLeakingPrivateDiagnostics(t *testing.T) {
+	exit71Err := exec.Command("sh", "-c", "exit 71").Run()
+	require.Error(t, exit71Err)
+	exit2Err := exec.Command("sh", "-c", "exit 2").Run()
+	require.Error(t, exit2Err)
+
+	canceledCtx, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	cases := []struct {
+		name           string
+		ctx            context.Context
+		err            error
+		defaultSummary string
+		wantSummary    string
+	}{
+		{
+			name:           "candidate build exit 71",
+			ctx:            t.Context(),
+			err:            fmt.Errorf("sandboxed build: %w", exit71Err),
+			defaultSummary: summaryCandidateBuild,
+			wantSummary:    summarySandboxExit71,
+		},
+		{
+			name:           "suite build exit 71",
+			ctx:            t.Context(),
+			err:            fmt.Errorf("sandboxed build: %w", exit71Err),
+			defaultSummary: summarySuiteBuild,
+			wantSummary:    summarySandboxExit71,
+		},
+		{
+			name:           "ordinary compile failure keeps candidate summary",
+			ctx:            t.Context(),
+			err:            fmt.Errorf("sandboxed build: %w", exit2Err),
+			defaultSummary: summaryCandidateBuild,
+			wantSummary:    summaryCandidateBuild,
+		},
+		{
+			name:           "ordinary compile failure keeps suite summary",
+			ctx:            t.Context(),
+			err:            fmt.Errorf("sandboxed build: %w", exit2Err),
+			defaultSummary: summarySuiteBuild,
+			wantSummary:    summarySuiteBuild,
+		},
+		{
+			name:           "canceled context keeps default summary even on exit 71",
+			ctx:            canceledCtx,
+			err:            fmt.Errorf("sandboxed build: %w", exit71Err),
+			defaultSummary: summaryCandidateBuild,
+			wantSummary:    summaryCandidateBuild,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := buildSummary(tc.ctx, tc.err, tc.defaultSummary)
+			assert.Equal(t, tc.wantSummary, got)
+			stage := stageError(StageBuild, got, fmt.Errorf("build candidate orders: %w\nbuild output, full output in /private/secret/build.log:\nsandbox_apply: Operation not permitted", tc.err))
+			var se *StageError
+			require.ErrorAs(t, stage, &se)
+			assert.Equal(t, tc.wantSummary, se.Summary)
+			assert.NotContains(t, se.Summary, "/private/secret/build.log")
+			assert.Contains(t, se.Error(), "/private/secret/build.log")
 		})
 	}
 }
