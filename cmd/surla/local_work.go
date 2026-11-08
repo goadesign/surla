@@ -49,10 +49,13 @@ func localInitWorkDir(targetParent string) (string, error) {
 		return "", err
 	}
 	parent := protected[0]
+	candidates := localOperatorCandidates(startup)
+	// A different destination mount may need protected storage beside its
+	// parent, after every standard location has failed the complete check.
+	candidates = append(candidates, filepath.Join(filepath.Dir(parent), fmt.Sprintf(".surla-operator-%d", os.Getuid())))
 	var failures []error
-	root, err := localOperatorRoot(startup, protected)
-	if err == nil {
-		work, err := createProtectedDir(filepath.Join(root, "init-stage"), protected)
+	for _, candidate := range candidates {
+		work, err := createProtectedDir(filepath.Join(candidate, "init-stage"), protected)
 		if err == nil {
 			err = requireSameDevice(parent, work)
 		}
@@ -60,34 +63,14 @@ func localInitWorkDir(targetParent string) (string, error) {
 			return work, nil
 		}
 		failures = append(failures, err)
-	} else {
-		failures = append(failures, err)
 	}
-	// A different destination mount needs protected storage beside its parent,
-	// not a copy into another staging tree inside the writable workspace.
-	fallback := filepath.Join(filepath.Dir(parent), fmt.Sprintf(".surla-operator-%d", os.Getuid()), "init-stage")
-	work, err := createProtectedDir(fallback, protected)
-	if err == nil {
-		err = requireSameDevice(parent, work)
-	}
-	if err == nil {
-		return work, nil
-	}
-	return "", fmt.Errorf("cannot find protected init storage on the destination filesystem: %w", errors.Join(append(failures, err)...))
+	return "", fmt.Errorf("cannot find protected init storage on the destination filesystem: %w", errors.Join(failures...))
 }
 
 // localOperatorRoot chooses the first operator directory outside every grant.
 func localOperatorRoot(startup string, protected []string) (string, error) {
-	var candidates []string
-	if config, err := userConfigDir(); err == nil {
-		candidates = append(candidates, filepath.Join(config, "surla", "operator"))
-	}
-	candidates = append(candidates,
-		filepath.Join(os.TempDir(), fmt.Sprintf("surla-operator-%d", os.Getuid())),
-		filepath.Join(filepath.Dir(startup), fmt.Sprintf(".surla-operator-%d", os.Getuid())),
-	)
 	var failures []error
-	for _, candidate := range candidates {
+	for _, candidate := range localOperatorCandidates(startup) {
 		dir, err := createProtectedDir(candidate, protected)
 		if err == nil {
 			return dir, nil
@@ -95,6 +78,19 @@ func localOperatorRoot(startup string, protected []string) (string, error) {
 		failures = append(failures, err)
 	}
 	return "", fmt.Errorf("cannot find operator storage outside the workspace: %w", errors.Join(failures...))
+}
+
+// localOperatorCandidates lists the existing operator locations in preference
+// order. Each owner applies all its requirements before selecting a location.
+func localOperatorCandidates(startup string) []string {
+	var candidates []string
+	if config, err := userConfigDir(); err == nil {
+		candidates = append(candidates, filepath.Join(config, "surla", "operator"))
+	}
+	return append(candidates,
+		filepath.Join(os.TempDir(), fmt.Sprintf("surla-operator-%d", os.Getuid())),
+		filepath.Join(filepath.Dir(startup), fmt.Sprintf(".surla-operator-%d", os.Getuid())),
+	)
 }
 
 // physicalLocalRoots resolves existing roots before any temporary allocation.

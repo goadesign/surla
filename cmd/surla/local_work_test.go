@@ -3,10 +3,14 @@
 package main
 
 import (
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"syscall"
 	"testing"
+
+	"golang.org/x/sys/unix"
 
 	"github.com/goadesign/surla/internal/abspath"
 	"github.com/stretchr/testify/assert"
@@ -38,6 +42,69 @@ func TestLocalWorkStaysOutsideStartupAndTargets(t *testing.T) {
 	left, err := os.ReadDir(tmp)
 	require.NoError(t, err)
 	assert.Empty(t, left)
+}
+
+// TestInitConsidersTheCompleteLocationBeforeSelecting proves that a creatable
+// configuration root cannot hide a usable temporary location when its actual
+// init-stage directory is unusable. The fallback also stays test-owned.
+func TestInitConsidersTheCompleteLocationBeforeSelecting(t *testing.T) {
+	config := isolateLocalWork(t)
+	workspace, destination, tmp := t.TempDir(), t.TempDir(), t.TempDir()
+	t.Chdir(workspace)
+	t.Setenv("TMPDIR", tmp)
+	configRoot := filepath.Join(config, "surla", "operator")
+	require.NoError(t, os.MkdirAll(configRoot, 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(configRoot, "init-stage"), []byte("keep"), 0o600))
+	parent := filepath.Join(destination, "projects")
+	require.NoError(t, os.Mkdir(parent, 0o700))
+	work, err := localInitWorkDir(parent)
+	require.NoError(t, err)
+	want, err := abspath.Eval(filepath.Join(tmp, fmt.Sprintf("surla-operator-%d", os.Getuid()), "init-stage"))
+	require.NoError(t, err)
+	assert.Equal(t, want, work, "the next complete usable location wins before the destination fallback")
+	assert.FileExists(t, filepath.Join(configRoot, "init-stage"))
+}
+
+// TestInitUsesTemporaryStorageOnTheDestinationDevice covers a creatable config
+// root on the startup disk followed by TMPDIR on the destination disk. A host
+// without a writable second mounted filesystem skips only this physical case.
+func TestInitUsesTemporaryStorageOnTheDestinationDevice(t *testing.T) {
+	config := isolateLocalWork(t)
+	startup := t.TempDir()
+	var source syscall.Stat_t
+	require.NoError(t, syscall.Stat(config, &source))
+	volumes, err := os.ReadDir("/Volumes")
+	if err != nil {
+		t.Skip("no mounted volume directory available for a second-filesystem test")
+	}
+	secondTemp := ""
+	for _, volume := range volumes {
+		candidate := filepath.Join("/Volumes", volume.Name(), "tmp")
+		var target syscall.Stat_t
+		if syscall.Stat(candidate, &target) == nil && target.Mode&unix.S_IFMT == unix.S_IFDIR && target.Dev != source.Dev && unix.Access(candidate, unix.W_OK|unix.X_OK) == nil {
+			secondTemp = candidate
+			break
+		}
+	}
+	if secondTemp == "" {
+		t.Skip("requires a writable tmp directory on a second mounted filesystem; complete-location ordering is covered without a second mount")
+	}
+	t.Setenv("TMPDIR", secondTemp)
+	t.Run("uses destination device before unwritable fallback", func(t *testing.T) {
+		volumeRoot := t.TempDir()
+		parent, tmp := filepath.Join(volumeRoot, "projects"), filepath.Join(volumeRoot, "tmp")
+		require.NoError(t, os.Mkdir(parent, 0o700))
+		require.NoError(t, os.Mkdir(tmp, 0o700))
+		t.Chdir(startup)
+		t.Setenv("TMPDIR", tmp)
+		require.NoError(t, os.Chmod(volumeRoot, 0o500))
+		t.Cleanup(func() { require.NoError(t, os.Chmod(volumeRoot, 0o700)) })
+		work, err := localInitWorkDir(parent)
+		require.NoError(t, err)
+		want, err := abspath.Eval(filepath.Join(tmp, fmt.Sprintf("surla-operator-%d", os.Getuid()), "init-stage"))
+		require.NoError(t, err)
+		assert.Equal(t, want, work)
+	})
 }
 
 // TestProtectedDirectoryRejectsWorkspaceAliases checks physical ancestors

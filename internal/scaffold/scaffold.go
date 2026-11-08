@@ -246,8 +246,9 @@ func Init(ctx context.Context, o Options, run Runner, gen Generator) (name strin
 // RunCommand runs args in dir as its own process group with GOWORK=off, so a
 // go.work file around dir cannot change the new modules, and writes the
 // combined output to a new file at logPath. Go command temporary files also
-// use that protected log directory rather than inherited TMPDIR. When ctx ends the group gets
-// SIGTERM, then SIGKILL; a group that does not exit is reported as a stuck
+// use that protected log directory rather than inherited TMPDIR or GOTMPDIR,
+// including Go's saved GOTMPDIR setting. When ctx ends the group gets SIGTERM,
+// then SIGKILL; a group that does not exit is reported as a stuck
 // error so Init keeps the staging directory its processes may still use.
 func RunCommand(ctx context.Context, dir, logPath string, args ...string) error {
 	log, err := os.OpenFile(logPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
@@ -256,7 +257,11 @@ func RunCommand(ctx context.Context, dir, logPath string, args ...string) error 
 	}
 	cmd := exec.CommandContext(ctx, args[0], args[1:]...)
 	cmd.Dir = dir
-	cmd.Env = append(os.Environ(), "GOWORK=off", "TMPDIR="+filepath.Dir(logPath))
+	cmd.Env = append(os.Environ(),
+		"GOWORK=off",
+		"TMPDIR="+filepath.Dir(logPath),
+		"GOTMPDIR="+filepath.Dir(logPath),
+	)
 	cmd.Stdout, cmd.Stderr = log, log
 	runErr, stopErr := procgroup.Run(cmd, syscall.SIGTERM, stopGrace, stopTimeout)
 	if stopErr != nil {

@@ -93,3 +93,31 @@ func TestInitRejectsWorkspaceStaging(t *testing.T) {
 	assert.Equal(t, 1, gen.closes)
 	assertOnly(t, parent)
 }
+
+// TestRunCommandOverridesBothTemporaryDirectories checks the exact environment
+// Go uses for OS temporary files and compiler work, without executing a candidate.
+func TestRunCommandOverridesBothTemporaryDirectories(t *testing.T) {
+	workspace, work := t.TempDir(), t.TempDir()
+	physicalWork, err := filepath.EvalSymlinks(work)
+	require.NoError(t, err)
+	osTemp, goTemp := filepath.Join(workspace, "os-temp"), filepath.Join(workspace, "go-temp")
+	require.NoError(t, os.Mkdir(osTemp, 0o700))
+	require.NoError(t, os.Mkdir(goTemp, 0o700))
+	t.Setenv("TMPDIR", osTemp)
+	t.Setenv("GOTMPDIR", goTemp)
+	t.Setenv("GOWORK", filepath.Join(workspace, "go.work"))
+	log := filepath.Join(physicalWork, "command.log")
+	err = RunCommand(t.Context(), workspace, log, "/bin/sh", "-c", `
+printf '%s\n%s\n%s\n' "$TMPDIR" "$GOTMPDIR" "$GOWORK"
+printf os-temp > "$TMPDIR/os-file"
+printf go-temp > "$GOTMPDIR/go-file"
+`)
+	require.NoError(t, err)
+	output, err := os.ReadFile(log)
+	require.NoError(t, err)
+	assert.Equal(t, physicalWork+"\n"+physicalWork+"\noff\n", string(output))
+	assert.FileExists(t, filepath.Join(physicalWork, "os-file"))
+	assert.FileExists(t, filepath.Join(physicalWork, "go-file"))
+	assertOnly(t, osTemp)
+	assertOnly(t, goTemp)
+}
