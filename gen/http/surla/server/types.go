@@ -51,7 +51,8 @@ type ConfirmIntentRequestBody struct {
 	RequestRevision *string `form:"request_revision,omitempty" json:"request_revision,omitempty" xml:"request_revision,omitempty"`
 	// Selected resolution per ambiguity question ID. Answer every current
 	// question, and give each value exactly as one string from that question's
-	// options, character for character.
+	// options, character for character. To record a decision that no option
+	// expresses, call revise_change with that decision in prompt.
 	Answers map[string]string `form:"answers,omitempty" json:"answers,omitempty" xml:"answers,omitempty"`
 	// The complete confirmed example table, including examples you edited or
 	// added. Keep an existing example's id when you edit it, and give an example
@@ -1287,7 +1288,9 @@ type AmbiguityQuestionResponseBody struct {
 
 // ExampleItemResponseBody is used to define fields on response body types.
 type ExampleItemResponseBody struct {
-	// Stable example identifier. CP1 assigns one to each example it proposes.
+	// Stable example identifier. Default code-assigned IDs use check_01, check_02,
+	// ... (valid goa-ai/eval Scenario names). confirm_intent preserves
+	// caller-chosen IDs.
 	ID string `form:"id" json:"id" xml:"id"`
 	// Plain-English scenario description.
 	Scenario string `form:"scenario" json:"scenario" xml:"scenario"`
@@ -1592,7 +1595,9 @@ type VerificationStatusResultResponseBody struct {
 
 // ExampleItemRequestBody is used to define fields on request body types.
 type ExampleItemRequestBody struct {
-	// Stable example identifier. CP1 assigns one to each example it proposes.
+	// Stable example identifier. Default code-assigned IDs use check_01, check_02,
+	// ... (valid goa-ai/eval Scenario names). confirm_intent preserves
+	// caller-chosen IDs.
 	ID *string `form:"id,omitempty" json:"id,omitempty" xml:"id,omitempty"`
 	// Plain-English scenario description.
 	Scenario *string `form:"scenario,omitempty" json:"scenario,omitempty" xml:"scenario,omitempty"`

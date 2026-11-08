@@ -63,7 +63,7 @@ type (
 		// Revise re-analyzes a revised prompt and design source against the
 		// prior Change Card's confirmed decisions, open questions, examples,
 		// and preserved behaviors.
-		Revise(ctx context.Context, prior CP1PriorCard, promptText, designSource string) (CP1SemanticAnalysis, error)
+		Revise(ctx context.Context, prior CP1PriorCard, promptText, designSource string) (CP1RevisionSemanticAnalysis, error)
 	}
 
 	// CP1ModelAmbiguity is an open domain question returned by a CP1Analyzer

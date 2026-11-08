@@ -337,9 +337,54 @@ func (a *heldAnalyzer) Analyze(context.Context, string, string) (CP1SemanticAnal
 	}, nil
 }
 
-// Revise delegates to Analyze so heldAnalyzer satisfies CP1Analyzer.
-func (a *heldAnalyzer) Revise(ctx context.Context, _ CP1PriorCard, promptText, designSource string) (CP1SemanticAnalysis, error) {
-	return a.Analyze(ctx, promptText, designSource)
+// Revise delegates to Analyze and accounts for prior examples so heldAnalyzer satisfies CP1Analyzer.
+func (a *heldAnalyzer) Revise(ctx context.Context, prior CP1PriorCard, promptText, designSource string) (CP1RevisionSemanticAnalysis, error) {
+	analysis, err := a.Analyze(ctx, promptText, designSource)
+	if err != nil {
+		return CP1RevisionSemanticAnalysis{}, err
+	}
+	revExamples := make([]CP1RevisionModelExample, 0, len(analysis.Examples))
+	var removed []string
+	if len(prior.Examples) > 0 {
+		for i, ex := range prior.Examples {
+			if i < len(analysis.Examples) {
+				revExamples = append(revExamples, CP1RevisionModelExample{
+					PriorID:          ex.ID,
+					Scenario:         analysis.Examples[i].Scenario,
+					InputSummary:     analysis.Examples[i].InputSummary,
+					ExpectedOutcome:  analysis.Examples[i].ExpectedOutcome,
+					VerificationKind: analysis.Examples[i].VerificationKind,
+				})
+			} else {
+				removed = append(removed, ex.ID)
+			}
+		}
+		for i := len(prior.Examples); i < len(analysis.Examples); i++ {
+			revExamples = append(revExamples, CP1RevisionModelExample{
+				Scenario:         analysis.Examples[i].Scenario,
+				InputSummary:     analysis.Examples[i].InputSummary,
+				ExpectedOutcome:  analysis.Examples[i].ExpectedOutcome,
+				VerificationKind: analysis.Examples[i].VerificationKind,
+			})
+		}
+	} else {
+		for _, ex := range analysis.Examples {
+			revExamples = append(revExamples, CP1RevisionModelExample{
+				Scenario:         ex.Scenario,
+				InputSummary:     ex.InputSummary,
+				ExpectedOutcome:  ex.ExpectedOutcome,
+				VerificationKind: ex.VerificationKind,
+			})
+		}
+	}
+	return CP1RevisionSemanticAnalysis{
+		Summary:            analysis.Summary,
+		Ambiguities:        analysis.Ambiguities,
+		Examples:           revExamples,
+		RemovedExampleIDs:  removed,
+		PreservedBehaviors: analysis.PreservedBehaviors,
+		UIComposition:      analysis.UIComposition,
+	}, nil
 }
 
 // saveCard saves a confirmed card "chg" owned by alice, with approval, in

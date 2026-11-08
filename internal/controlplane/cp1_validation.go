@@ -74,7 +74,7 @@ func validateCP1Analysis(
 			return "", nil, nil, nil, fmt.Errorf("examples[%d] has invalid verification_kind (want \"deterministic\" or \"model_judged\")", i)
 		}
 		examples = append(examples, &gensurla.ExampleItem{
-			ID:               fmt.Sprintf("%s-check-%02d", changeID, i+1),
+			ID:               fmt.Sprintf("check_%02d", i+1),
 			Scenario:         item.Scenario,
 			InputSummary:     item.InputSummary,
 			ExpectedOutcome:  item.ExpectedOutcome,
@@ -89,6 +89,128 @@ func validateCP1Analysis(
 		preserved = append(preserved, item)
 	}
 	return in.Summary, ambiguities, examples, preserved, nil
+}
+
+// validateCP1RevisionAnalysis validates model-returned CP1 revision fields,
+// enforces complete accounting of prior examples across examples[].prior_id and
+// removed_example_ids, preserves IDs of kept or edited prior examples, and assigns
+// the lowest unused check_NN IDs absent from both prior and resulting tables for
+// brand-new examples.
+func validateCP1RevisionAnalysis(
+	changeID string,
+	priorExamples []*gensurla.ExampleItem,
+	in CP1RevisionSemanticAnalysis,
+) (string, []*gensurla.AmbiguityQuestion, []*gensurla.ExampleItem, []string, error) {
+	if strings.TrimSpace(in.Summary) == "" {
+		return "", nil, nil, nil, errors.New("summary is required")
+	}
+	ambiguities, err := validateAmbiguities(changeID, in.Ambiguities)
+	if err != nil {
+		return "", nil, nil, nil, err
+	}
+	if len(in.Examples) == 0 {
+		return "", nil, nil, nil, errors.New("at least one example is required")
+	}
+
+	priorMap := make(map[string]bool, len(priorExamples))
+	orderedPriorIDs := make([]string, 0, len(priorExamples))
+	for _, ex := range priorExamples {
+		if ex == nil || strings.TrimSpace(ex.ID) == "" {
+			continue
+		}
+		priorMap[ex.ID] = true
+		orderedPriorIDs = append(orderedPriorIDs, ex.ID)
+	}
+
+	seenRemoved := make(map[string]bool, len(in.RemovedExampleIDs))
+	for idx, remID := range in.RemovedExampleIDs {
+		if strings.TrimSpace(remID) == "" {
+			return "", nil, nil, nil, fmt.Errorf("removed_example_ids[%d] is empty", idx)
+		}
+		if !priorMap[remID] {
+			return "", nil, nil, nil, fmt.Errorf("removed_example_ids[%d] references unknown prior example ID %q", idx, remID)
+		}
+		if seenRemoved[remID] {
+			return "", nil, nil, nil, fmt.Errorf("duplicate ID %q in removed_example_ids", remID)
+		}
+		seenRemoved[remID] = true
+	}
+
+	seenPrior := make(map[string]bool, len(in.Examples))
+	for i, item := range in.Examples {
+		if strings.TrimSpace(item.Scenario) == "" ||
+			strings.TrimSpace(item.InputSummary) == "" ||
+			strings.TrimSpace(item.ExpectedOutcome) == "" {
+			return "", nil, nil, nil, fmt.Errorf("examples[%d] requires non-empty scenario, input_summary, and expected_outcome", i)
+		}
+		if item.VerificationKind != "deterministic" && item.VerificationKind != "model_judged" {
+			return "", nil, nil, nil, fmt.Errorf("examples[%d] has invalid verification_kind (want \"deterministic\" or \"model_judged\")", i)
+		}
+		if item.PriorID != "" {
+			if !priorMap[item.PriorID] {
+				return "", nil, nil, nil, fmt.Errorf("examples[%d].prior_id references unknown prior example ID %q", i, item.PriorID)
+			}
+			if seenPrior[item.PriorID] {
+				return "", nil, nil, nil, fmt.Errorf("duplicate prior_id %q at examples[%d]", item.PriorID, i)
+			}
+			if seenRemoved[item.PriorID] {
+				return "", nil, nil, nil, fmt.Errorf("prior example ID %q appears in both examples[%d].prior_id and removed_example_ids", item.PriorID, i)
+			}
+			seenPrior[item.PriorID] = true
+		}
+	}
+
+	for _, pID := range orderedPriorIDs {
+		if !seenPrior[pID] && !seenRemoved[pID] {
+			return "", nil, nil, nil, fmt.Errorf("prior example ID %q is omitted from both examples and removed_example_ids", pID)
+		}
+	}
+
+	// Reserve both exact and trimmed forms of every prior example ID so
+	// newly allocated check_NN IDs never collide under confirm_intent's
+	// validateConfirmedExamples check.
+	reserved := make(map[string]bool, len(priorMap)*2+len(in.Examples))
+	for id := range priorMap {
+		reserved[id] = true
+		reserved[strings.TrimSpace(id)] = true
+	}
+
+	examples := make([]*gensurla.ExampleItem, 0, len(in.Examples))
+	for _, item := range in.Examples {
+		id := item.PriorID
+		if id == "" {
+			id = allocateExampleID(reserved)
+		}
+		examples = append(examples, &gensurla.ExampleItem{
+			ID:               id,
+			Scenario:         item.Scenario,
+			InputSummary:     item.InputSummary,
+			ExpectedOutcome:  item.ExpectedOutcome,
+			VerificationKind: item.VerificationKind,
+		})
+	}
+
+	preserved := make([]string, 0, len(in.PreservedBehaviors))
+	for i, item := range in.PreservedBehaviors {
+		if strings.TrimSpace(item) == "" {
+			return "", nil, nil, nil, fmt.Errorf("preserved_behaviors[%d] is empty", i)
+		}
+		preserved = append(preserved, item)
+	}
+
+	return in.Summary, ambiguities, examples, preserved, nil
+}
+
+// allocateExampleID finds the lowest unused fmt.Sprintf("check_%02d", n) (n >= 1)
+// that is absent from reserved, marks it reserved, and returns it.
+func allocateExampleID(reserved map[string]bool) string {
+	for n := 1; ; n++ {
+		candidate := fmt.Sprintf("check_%02d", n)
+		if !reserved[candidate] {
+			reserved[candidate] = true
+			return candidate
+		}
+	}
 }
 
 // validateAmbiguities validates that every ambiguity question has a non-empty

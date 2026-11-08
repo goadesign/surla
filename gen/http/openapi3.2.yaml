@@ -691,7 +691,7 @@ paths:
             tags:
                 - surla
             summary: confirm_intent surla
-            description: Confirm or refine a Checkpoint 1 Change Card with the complete ambiguity answers and example table, bound to its current request_revision. Changed answers or examples produce a new request_revision; unchanged ones return the card as it is, with a saved approval returned in approval only while that approval still matches the promotion target's current inputs, or in unverified_approval when no promotion target is configured or the target cannot report its current inputs.
+            description: Confirm or refine a Checkpoint 1 Change Card with the complete ambiguity answers and example table, bound to its current request_revision. Changed answers or examples produce a new request_revision; unchanged ones return the card as it is, with a saved approval returned in approval only while that approval still matches the promotion target's current inputs, or in unverified_approval when no promotion target is configured or the target cannot report its current inputs. To record a decision that no option expresses, call revise_change with that decision in prompt.
             operationId: surla#confirm_intent
             requestBody:
                 description: Request body for confirm_intent.
@@ -2765,7 +2765,7 @@ components:
             properties:
                 answers:
                     type: object
-                    description: Selected resolution per ambiguity question ID. Answer every current question, and give each value exactly as one string from that question's options, character for character.
+                    description: Selected resolution per ambiguity question ID. Answer every current question, and give each value exactly as one string from that question's options, character for character. To record a decision that no option expresses, call revise_change with that decision in prompt.
                     example:
                         Qui aut iure rem.: Deserunt vitae fuga nisi quia atque quia.
                         Soluta cumque quas minus autem neque.: Quis exercitationem.
@@ -3044,7 +3044,7 @@ components:
                     example: Sed minus voluptatum quis molestiae doloribus.
                 id:
                     type: string
-                    description: Stable example identifier. CP1 assigns one to each example it proposes.
+                    description: Stable example identifier. Default code-assigned IDs use check_01, check_02, ... (valid goa-ai/eval Scenario names). confirm_intent preserves caller-chosen IDs.
                     example: Consequatur voluptatibus soluta sequi reiciendis.
                 input_summary:
                     type: string

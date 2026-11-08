@@ -59,8 +59,8 @@ type (
 		Status string `json:"status"`
 		// Decisions lists the prior revision's ambiguity questions paired with any confirmed answers.
 		Decisions []CP1PriorDecision `json:"decisions"`
-		// Examples lists the prior revision's concrete examples (including operator-confirmed edits).
-		Examples []CP1ModelExample `json:"examples"`
+		// Examples lists the prior revision's concrete examples with their confirmed IDs.
+		Examples []CP1PriorExample `json:"examples"`
 		// PreservedBehaviors lists the prior revision's contract invariants.
 		PreservedBehaviors []string `json:"preserved_behaviors"`
 	}
@@ -68,17 +68,17 @@ type (
 
 // Revise invokes the underlying Goa-AI model.Client with the prior Change Card
 // semantic context, the revised operator prompt, and the target Goa design
-// source, and strictly decodes the validated CP1SemanticAnalysis response.
+// source, and strictly decodes the validated CP1RevisionSemanticAnalysis response.
 func (a *ModelCP1Analyzer) Revise(
 	ctx context.Context,
 	prior CP1PriorCard,
 	promptText, designSource string,
-) (CP1SemanticAnalysis, error) {
+) (CP1RevisionSemanticAnalysis, error) {
 	userPrompt, err := formatCP1ReviseUserPrompt(prior, promptText, designSource)
 	if err != nil {
-		return CP1SemanticAnalysis{}, err
+		return CP1RevisionSemanticAnalysis{}, err
 	}
-	return a.completeAnalysis(ctx, goldenpath.ArchitectReviseSystemPrompt(), userPrompt)
+	return a.completeReviseAnalysis(ctx, goldenpath.ArchitectReviseSystemPrompt(), userPrompt)
 }
 
 // ReviseChange re-evaluates an existing Checkpoint 1 Change Card against a
@@ -174,7 +174,7 @@ func (c *ControlPlane) ReviseChange(
 		return nil, err
 	}
 
-	summary, ambiguities, examples, preserved, err := validateCP1Analysis(p.ChangeID, analysis)
+	summary, ambiguities, examples, preserved, err := validateCP1RevisionAnalysis(p.ChangeID, record.card.Examples, analysis)
 	if err != nil {
 		se := newAnalysisRejected(
 			fmt.Sprintf(
@@ -280,8 +280,9 @@ func httpErrorFormatter(ctx context.Context, err error) goahttp.Statuser {
 }
 
 // buildCP1PriorCard extracts the semantic decisions, examples, and preserved
-// behaviors from card without positional IDs so CP1Analyzer.Revise can reason
-// over settled requirements, open questions, and confirmed examples.
+// behaviors from card, preserving each example's confirmed ID so
+// CP1Analyzer.Revise can reason over settled requirements and account for prior
+// examples under Decision 1A.
 func buildCP1PriorCard(card *gensurla.ChangeCardResult) CP1PriorCard {
 	decisions := make([]CP1PriorDecision, 0, len(card.Ambiguities))
 	for _, amb := range card.Ambiguities {
@@ -298,12 +299,13 @@ func buildCP1PriorCard(card *gensurla.ChangeCardResult) CP1PriorCard {
 			ConfirmedAnswer: confirmed,
 		})
 	}
-	examples := make([]CP1ModelExample, 0, len(card.Examples))
+	examples := make([]CP1PriorExample, 0, len(card.Examples))
 	for _, ex := range card.Examples {
 		if ex == nil {
 			continue
 		}
-		examples = append(examples, CP1ModelExample{
+		examples = append(examples, CP1PriorExample{
+			ID:               ex.ID,
 			Scenario:         ex.Scenario,
 			InputSummary:     ex.InputSummary,
 			ExpectedOutcome:  ex.ExpectedOutcome,
@@ -457,14 +459,18 @@ func formatCP1ReviseUserPrompt(prior CP1PriorCard, promptText, designSource stri
 	), nil
 }
 
-// completeAnalysis runs one structured CP1 model completion with systemPrompt
-// and userPrompt and strictly decodes the resulting CP1SemanticAnalysis.
-func (a *ModelCP1Analyzer) completeAnalysis(
+// completeStructuredAnalysis runs one structured CP1 model completion with systemPrompt
+// and userPrompt for the given schemaName and schemaBytes, and strictly decodes into target T.
+func completeStructuredAnalysis[T any](
 	ctx context.Context,
+	client model.Client,
+	schemaName string,
+	schemaBytes []byte,
 	systemPrompt, userPrompt string,
-) (CP1SemanticAnalysis, error) {
-	if a == nil || a.client == nil {
-		return CP1SemanticAnalysis{}, errors.New("cp1 model client is required")
+) (T, error) {
+	var zero T
+	if client == nil {
+		return zero, errors.New("cp1 model client is required")
 	}
 	req := &model.Request{
 		Messages: []*model.Message{
@@ -486,45 +492,83 @@ func (a *ModelCP1Analyzer) completeAnalysis(
 			},
 		},
 		StructuredOutput: &model.StructuredOutput{
-			Name:   "cp1_change_card_analysis",
-			Schema: cp1AnalysisJSONSchema,
+			Name:   schemaName,
+			Schema: schemaBytes,
 		},
 		MaxTokens: cp1AnalysisMaxOutputTokens,
 	}
-	resp, err := a.client.Complete(ctx, req)
+	resp, err := client.Complete(ctx, req)
 	if err != nil {
 		if ovErr, ok := exactOutputValidation(err); ok {
-			return CP1SemanticAnalysis{}, newAnalysisRejected(
+			return zero, newAnalysisRejected(
 				fmt.Sprintf("model output failed %q validation", ovErr.Kind()),
 				err,
 			)
 		}
-		return CP1SemanticAnalysis{}, fmt.Errorf("cp1 model completion: %w", err)
+		return zero, fmt.Errorf("cp1 model completion: %w", err)
 	}
 	if resp.OutputLimited {
-		return CP1SemanticAnalysis{}, newAnalysisRejected(
+		return zero, newAnalysisRejected(
 			"provider stopped at output limit",
 			errors.New("cp1 model response reached output limit"),
 		)
 	}
 	raw := extractAssistantText(resp)
 	if raw == "" {
-		return CP1SemanticAnalysis{}, newAnalysisRejected(
+		return zero, newAnalysisRejected(
 			"model returned empty analysis text",
 			errors.New("cp1 model returned empty analysis"),
 		)
 	}
-	var parsed CP1SemanticAnalysis
+	var parsed T
 	dec := json.NewDecoder(strings.NewReader(raw))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&parsed); err != nil {
-		return CP1SemanticAnalysis{}, newAnalysisRejected("model returned malformed analysis JSON", err)
+		return zero, newAnalysisRejected("model returned malformed analysis JSON", err)
 	}
 	if err := dec.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
-		return CP1SemanticAnalysis{}, newAnalysisRejected(
+		return zero, newAnalysisRejected(
 			"model returned malformed analysis JSON",
 			errors.New("cp1 model analysis contains trailing JSON tokens"),
 		)
 	}
 	return parsed, nil
+}
+
+// completeAnalysis runs one structured CP1 model completion with systemPrompt
+// and userPrompt and strictly decodes the resulting CP1SemanticAnalysis.
+func (a *ModelCP1Analyzer) completeAnalysis(
+	ctx context.Context,
+	systemPrompt, userPrompt string,
+) (CP1SemanticAnalysis, error) {
+	if a == nil {
+		return CP1SemanticAnalysis{}, errors.New("cp1 model client is required")
+	}
+	return completeStructuredAnalysis[CP1SemanticAnalysis](
+		ctx,
+		a.client,
+		"cp1_change_card_analysis",
+		cp1AnalysisJSONSchema,
+		systemPrompt,
+		userPrompt,
+	)
+}
+
+// completeReviseAnalysis runs one structured CP1 revision completion with systemPrompt
+// and userPrompt and strictly decodes the resulting CP1RevisionSemanticAnalysis.
+func (a *ModelCP1Analyzer) completeReviseAnalysis(
+	ctx context.Context,
+	systemPrompt, userPrompt string,
+) (CP1RevisionSemanticAnalysis, error) {
+	if a == nil {
+		return CP1RevisionSemanticAnalysis{}, errors.New("cp1 model client is required")
+	}
+	return completeStructuredAnalysis[CP1RevisionSemanticAnalysis](
+		ctx,
+		a.client,
+		"cp1_revise_change_card_analysis",
+		cp1ReviseAnalysisJSONSchema,
+		systemPrompt,
+		userPrompt,
+	)
 }

@@ -329,7 +329,7 @@ if (!canonicalPill ||
 if (doc.getElementById("surla-openui-local-edit-notice")) {
   throw new Error("unexpected local-edit notice before editing examples");
 }
-const outcomeTextarea = editorRegion.querySelector('textarea[data-example-id="chg-openui-check-01"][data-field="expected_outcome"]');
+const outcomeTextarea = editorRegion.querySelector('textarea[data-example-id="check_01"][data-field="expected_outcome"]');
 outcomeTextarea.value = "Auto-approved with audit log";
 outcomeTextarea.dispatchEvent(new win.Event("input", { bubbles: true }));
 if (!doc.getElementById("surla-openui-local-edit-notice")) {
@@ -579,7 +579,7 @@ const timelineWs = doc.getElementById("surla-openui-workspace");
 if (!timelineWs || !timelineWs.textContent.includes("Model-Proposed Illustration")) {
   throw new Error("expected workspace-level Model-Proposed Illustration badge on timeline/callout workspace");
 }
-const timelineTextarea = editorRegion.querySelector('textarea[data-example-id="chg-openui-check-01"][data-field="expected_outcome"]');
+const timelineTextarea = editorRegion.querySelector('textarea[data-example-id="check_01"][data-field="expected_outcome"]');
 timelineTextarea.value = "Locally edited outcome on timeline workspace";
 timelineTextarea.dispatchEvent(new win.Event("input", { bubbles: true }));
 if (!doc.getElementById("surla-openui-local-edit-notice")) {

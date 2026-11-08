@@ -539,7 +539,7 @@ func (s *checkpointVerificationService) ListVerifications(
 func verificationJourneyFixtures(t *testing.T, card *gensurlatools.GetChangeResult, input map[string]any) {
 	t.Helper()
 	ctx := WithPrincipal(t.Context(), Principal{ID: "approval-owner@example.invalid"})
-	analysis, err := json.Marshal(CP1SemanticAnalysis{
+	analysis := CP1SemanticAnalysis{
 		Summary:     "Refunds above $50 require a manager.",
 		Ambiguities: []CP1ModelAmbiguity{},
 		Examples: []CP1ModelExample{{
@@ -547,10 +547,27 @@ func verificationJourneyFixtures(t *testing.T, card *gensurlatools.GetChangeResu
 			ExpectedOutcome: "Wait for manager approval", VerificationKind: "deterministic",
 		}},
 		PreservedBehaviors: []string{},
-	})
-	require.NoError(t, err)
+	}
+	reviseAnalysis := CP1RevisionSemanticAnalysis{
+		Summary:     "Refunds above $50 require a manager and audit log.",
+		Ambiguities: []CP1ModelAmbiguity{},
+		Examples: []CP1RevisionModelExample{{
+			PriorID:          "check_01",
+			Scenario:         "Refund above $50",
+			InputSummary:     "Order total $75",
+			ExpectedOutcome:  "Wait for manager approval",
+			VerificationKind: "deterministic",
+		}},
+		RemovedExampleIDs:  []string{},
+		PreservedBehaviors: []string{},
+	}
+	q := &queuedModelClient{}
+	q.enqueueJSON(t, analysis)
+	q.enqueueJSON(t, reviseAnalysis)
+	q.enqueueJSON(t, analysis)
+	q.enqueueJSON(t, analysis)
 	cp := newControlPlane(t, Options{
-		Analyzer: NewModelCP1Analyzer(newStubModelClient(t, string(analysis))),
+		Analyzer: NewModelCP1Analyzer(newQueuedModelClient(t, q)),
 	})
 	adapter := genmcpadapter.NewMCPAdapter(gensurla.NewEndpoints(cp), nil)
 	callTool := func(name string, args any) json.RawMessage {

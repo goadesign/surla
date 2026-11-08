@@ -73,7 +73,8 @@ type (
 		RequestRevision string
 		// Selected resolution per ambiguity question ID. Answer every current
 		// question, and give each value exactly as one string from that question's
-		// options, character for character.
+		// options, character for character. To record a decision that no option
+		// expresses, call revise_change with that decision in prompt.
 		Answers map[string]string
 		// The complete confirmed example table, including examples you edited or
 		// added. Keep an existing example's id when you edit it, and give an example
@@ -559,7 +560,9 @@ type (
 	}
 	// ExampleItem is a nested type used by the generated JSON contract.
 	ExampleItem = struct {
-		// Stable example identifier. CP1 assigns one to each example it proposes.
+		// Stable example identifier. Default code-assigned IDs use check_01, check_02,
+		// ... (valid goa-ai/eval Scenario names). confirm_intent preserves
+		// caller-chosen IDs.
 		ID string
 		// Plain-English scenario description.
 		Scenario string

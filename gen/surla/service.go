@@ -47,7 +47,8 @@ type Service interface {
 	// the card as it is, with a saved approval returned in approval only while
 	// that approval still matches the promotion target's current inputs, or in
 	// unverified_approval when no promotion target is configured or the target
-	// cannot report its current inputs.
+	// cannot report its current inputs. To record a decision that no option
+	// expresses, call revise_change with that decision in prompt.
 	ConfirmIntent(context.Context, *ConfirmIntentPayload) (res *ChangeCardResult, err error)
 	// Return the current Change Card, including its request_revision, to its
 	// owner, for example after confirm_intent or revise_change refused an edit
@@ -340,7 +341,8 @@ type ConfirmIntentPayload struct {
 	RequestRevision string
 	// Selected resolution per ambiguity question ID. Answer every current
 	// question, and give each value exactly as one string from that question's
-	// options, character for character.
+	// options, character for character. To record a decision that no option
+	// expresses, call revise_change with that decision in prompt.
 	Answers map[string]string
 	// The complete confirmed example table, including examples you edited or
 	// added. Keep an existing example's id when you edit it, and give an example
@@ -410,7 +412,9 @@ type DraftOverrideResult struct {
 
 // Concrete input and expected outcome confirmed at Checkpoint 1.
 type ExampleItem struct {
-	// Stable example identifier. CP1 assigns one to each example it proposes.
+	// Stable example identifier. Default code-assigned IDs use check_01, check_02,
+	// ... (valid goa-ai/eval Scenario names). confirm_intent preserves
+	// caller-chosen IDs.
 	ID string
 	// Plain-English scenario description.
 	Scenario string
@@ -1412,7 +1416,8 @@ type jsonConfirmIntentPayloadTransport struct {
 	RequestRevision *string `json:"request_revision"`
 	// Selected resolution per ambiguity question ID. Answer every current
 	// question, and give each value exactly as one string from that question's
-	// options, character for character.
+	// options, character for character. To record a decision that no option
+	// expresses, call revise_change with that decision in prompt.
 	Answers map[string]string `json:"answers"`
 	// The complete confirmed example table, including examples you edited or
 	// added. Keep an existing example's id when you edit it, and give an example
@@ -1600,7 +1605,9 @@ func validatejsonDraftOverrideResultTransport(value *jsonDraftOverrideResultTran
 
 // jsonExampleItemTransport stores JSON fields until they have been validated.
 type jsonExampleItemTransport struct {
-	// Stable example identifier. CP1 assigns one to each example it proposes.
+	// Stable example identifier. Default code-assigned IDs use check_01, check_02,
+	// ... (valid goa-ai/eval Scenario names). confirm_intent preserves
+	// caller-chosen IDs.
 	ID *string `json:"id"`
 	// Plain-English scenario description.
 	Scenario *string `json:"scenario"`
@@ -10018,7 +10025,7 @@ func validateChangeCardResultJSONValue5(path string, value any, description stri
 		case "id":
 			if err := validateAgentPolicyItemJSONValue2(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Stable example identifier. CP1 assigns one to each example it proposes.",
+				typed[key], "Stable example identifier. Default code-assigned IDs use check_01, check_02, ... (valid goa-ai/eval Scenario names). confirm_intent preserves caller-chosen IDs.",
 			); err != nil {
 				return err
 			}
@@ -10191,7 +10198,7 @@ func validateConfirmIntentPayloadJSONValue(path string, value any, description s
 		case "answers":
 			if err := validateConfirmIntentPayloadJSONValue2(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Selected resolution per ambiguity question ID. Answer every current question, and give each value exactly as one string from that question's options, character for character.",
+				typed[key], "Selected resolution per ambiguity question ID. Answer every current question, and give each value exactly as one string from that question's options, character for character. To record a decision that no option expresses, call revise_change with that decision in prompt.",
 			); err != nil {
 				return err
 			}

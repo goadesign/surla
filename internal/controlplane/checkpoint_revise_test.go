@@ -94,15 +94,16 @@ func TestCheckpointUIReviseLifecyclePriorComparisonAndUnverifiedApproval(t *test
 	require.NoError(t, json.Unmarshal(r1Raw, &r1Card))
 
 	// Mint R2 via revise_change (1 ambiguity, 2 examples -> needs_confirmation, no ui_composition).
-	r2Analysis := CP1SemanticAnalysis{
+	r2Analysis := CP1RevisionSemanticAnalysis{
 		Summary: "Refunds up to $50 are instant; refunds over $50 require approval.",
 		Ambiguities: []CP1ModelAmbiguity{
 			{Question: "Does the $50 limit include tax?", Options: []string{"subtotal_only", "total_with_tax"}},
 		},
-		Examples: []CP1ModelExample{
-			{Scenario: "Refund under $50", InputSummary: "$40 subtotal", ExpectedOutcome: "Instant refund", VerificationKind: "deterministic"},
+		Examples: []CP1RevisionModelExample{
+			{PriorID: "check_01", Scenario: "Refund under $50", InputSummary: "$40 subtotal", ExpectedOutcome: "Instant refund", VerificationKind: "deterministic"},
 			{Scenario: "Refund over $50", InputSummary: "$75 subtotal", ExpectedOutcome: "Manager approval", VerificationKind: "deterministic"},
 		},
+		RemovedExampleIDs:  []string{},
 		PreservedBehaviors: []string{"Cross-tenant lookups return 404."},
 	}
 	client.enqueueJSON(t, r2Analysis)
@@ -120,6 +121,10 @@ func TestCheckpointUIReviseLifecyclePriorComparisonAndUnverifiedApproval(t *test
 		`callout = ImpactCallout("info", "Illustration V1", "Initial OpenUI callout.")`,
 	}, "\n")
 	r2AnalysisWithProgramA := r2Analysis
+	r2AnalysisWithProgramA.Examples = []CP1RevisionModelExample{
+		{PriorID: "check_01", Scenario: "Refund under $50", InputSummary: "$40 subtotal", ExpectedOutcome: "Instant refund", VerificationKind: "deterministic"},
+		{PriorID: "check_02", Scenario: "Refund over $50", InputSummary: "$75 subtotal", ExpectedOutcome: "Manager approval", VerificationKind: "deterministic"},
+	}
 	r2AnalysisWithProgramA.UIComposition = &r2ProgramA
 	client.enqueueJSON(t, r2AnalysisWithProgramA)
 	r2WithProgramARaw := callMCPTool(t, "revise_change", map[string]any{
@@ -135,7 +140,7 @@ func TestCheckpointUIReviseLifecyclePriorComparisonAndUnverifiedApproval(t *test
 		`root = DecisionWorkspace("Refund Studio V2", [callout])`,
 		`callout = ImpactCallout("warning", "Illustration V2", "Updated OpenUI callout.")`,
 	}, "\n")
-	r2AnalysisWithProgramB := r2Analysis
+	r2AnalysisWithProgramB := r2AnalysisWithProgramA
 	r2AnalysisWithProgramB.UIComposition = &r2ProgramB
 	client.enqueueJSON(t, r2AnalysisWithProgramB)
 	r2WithProgramBRaw := callMCPTool(t, "revise_change", map[string]any{
@@ -183,14 +188,15 @@ func TestCheckpointUIReviseLifecyclePriorComparisonAndUnverifiedApproval(t *test
 	target.inputsErr = nil
 
 	// Mint R3 via revise_change on R2Confirmed.
-	client.enqueueJSON(t, CP1SemanticAnalysis{
+	client.enqueueJSON(t, CP1RevisionSemanticAnalysis{
 		Summary: "Refunds up to $50 (subtotal only) are instant and emit a webhook.",
 		Ambiguities: []CP1ModelAmbiguity{
 			{Question: "Should webhook retries use exponential backoff?", Options: []string{"exponential_backoff", "fixed_delay"}},
 		},
-		Examples: []CP1ModelExample{
-			{Scenario: "Refund under $50", InputSummary: "$40 subtotal", ExpectedOutcome: "Instant refund + webhook", VerificationKind: "deterministic"},
+		Examples: []CP1RevisionModelExample{
+			{PriorID: "check_01", Scenario: "Refund under $50", InputSummary: "$40 subtotal", ExpectedOutcome: "Instant refund + webhook", VerificationKind: "deterministic"},
 		},
+		RemovedExampleIDs: []string{"check_02"},
 		PreservedBehaviors: []string{
 			"Cross-tenant lookups return 404.",
 			"The $50 limit applies to subtotal_only.",
@@ -323,13 +329,15 @@ if (editorRegion.dataset.requestRevision !== input.r2.request_revision ||
     !priorOnR2.textContent.includes("Previous Saved Revision") ||
     !priorOnR2.textContent.includes(input.r1.request_revision) ||
     !priorOnR2.textContent.includes(input.r1.summary) ||
+    !priorOnR2.textContent.includes("check_01") ||
+    !priorOnR2.textContent.includes("Kept") ||
     documentObj.getElementById("surla-preserved-draft") !== null ||
     documentObj.getElementById("surla-openui-workspace") !== null) {
-  throw new Error("expected R2 to render #surla-prior-revision with R1 and no #surla-preserved-draft or #surla-openui-workspace, got: " + (priorOnR2 && priorOnR2.textContent));
+  throw new Error("expected R2 to render #surla-prior-revision with R1, check_01 Kept badge, and no #surla-preserved-draft or #surla-openui-workspace, got: " + (priorOnR2 && priorOnR2.textContent));
 }
 
 // 1b. Same-hash ui_composition updates (nil -> programA -> programB at input.r2.request_revision) apply in place while preserving drafts, priorCard, pending request ownership, and incoming result.
-const r2Check2Input = editorRegion.querySelector('textarea[data-example-id="chg-rev-ui-check-02"][data-field="expected_outcome"]');
+const r2Check2Input = editorRegion.querySelector('textarea[data-example-id="check_02"][data-field="expected_outcome"]');
 r2Check2Input.value = "Draft edit kept across same-hash OpenUI update";
 r2Check2Input.dispatchEvent(new guestWindow.Event("input", { bubbles: true }));
 messageListener({
@@ -405,8 +413,12 @@ if (editorRegion.dataset.requestRevision !== input.r3.request_revision ||
     priorOnR3 === null ||
     !priorOnR3.textContent.includes(input.r2.request_revision) ||
     !priorOnR3.textContent.includes(input.r2.summary) ||
+    !priorOnR3.textContent.includes("check_01") ||
+    !priorOnR3.textContent.includes("Edited") ||
+    !priorOnR3.textContent.includes("check_02") ||
+    !priorOnR3.textContent.includes("Removed") ||
     documentObj.getElementById("surla-preserved-draft") !== null) {
-  throw new Error("expected R3 to render #surla-prior-revision with R2 and no #surla-preserved-draft");
+  throw new Error("expected R3 to render #surla-prior-revision with R2, check_01 Edited badge, check_02 Removed badge, and no #surla-preserved-draft");
 }
 
 // 2. Dirty unsaved edits on R2 when R3 arrives -> holds R3 in #surla-incoming-change-card, and clicking #surla-replace-incoming-card mounts R3 with BOTH #surla-prior-revision (R2) AND #surla-preserved-draft with question text.
@@ -435,18 +447,18 @@ if (editorRegion.dataset.requestRevision !== input.r3.request_revision ||
     !priorDirtyR3.textContent.includes(input.r2.request_revision) ||
     preservedDirtyR3 === null ||
     !preservedDirtyR3.textContent.includes("[" + input.r2.request_revision + "] chg-rev-ui-ambiguity-01 (Does the $50 limit include tax?)=total_with_tax") ||
-    preservedDirtyR3.textContent.includes("chg-rev-ui-check-01") ||
-    preservedDirtyR3.textContent.includes("chg-rev-ui-check-02")) {
+    preservedDirtyR3.textContent.includes("check_01") ||
+    preservedDirtyR3.textContent.includes("check_02")) {
   throw new Error("expected only changed ambiguity answer in #surla-preserved-draft on R3 (without unchanged examples), got: " + (preservedDirtyR3 && preservedDirtyR3.textContent));
 }
 documentObj.getElementById("surla-discard-draft").click();
 
-// 2b. Editing ONE example on R2Confirmed while leaving saved answer (subtotal_only) and first example (chg-rev-ui-check-01) untouched preserves ONLY the changed example in #surla-preserved-draft, and retains it across successive revision R3 -> R1 when R3 has a cleared example field.
+// 2b. Editing ONE example on R2Confirmed while leaving saved answer (subtotal_only) and first example (check_01) untouched preserves ONLY the changed example in #surla-preserved-draft, and retains it across successive revision R3 -> R1 when R3 has a cleared example field.
 messageListener({
   source: parentWindow,
   data: { jsonrpc: "2.0", method: "ui/notifications/tool-result", params: { structuredContent: input.r2Confirmed } }
 });
-const r2ConfEx2 = editorRegion.querySelector('textarea[data-example-id="chg-rev-ui-check-02"][data-field="expected_outcome"]');
+const r2ConfEx2 = editorRegion.querySelector('textarea[data-example-id="check_02"][data-field="expected_outcome"]');
 r2ConfEx2.value = "VP finance approval over $50";
 r2ConfEx2.dispatchEvent(new guestWindow.Event("input", { bubbles: true }));
 messageListener({
@@ -456,14 +468,14 @@ messageListener({
 documentObj.getElementById("surla-replace-incoming-card").click();
 const preservedOneEx = documentObj.getElementById("surla-preserved-draft");
 if (preservedOneEx === null ||
-    !preservedOneEx.textContent.includes("[" + input.r2Confirmed.request_revision + "] chg-rev-ui-check-02: Refund over $50 | $75 subtotal -> VP finance approval over $50 [deterministic]") ||
+    !preservedOneEx.textContent.includes("[" + input.r2Confirmed.request_revision + "] check_02: Refund over $50 | $75 subtotal -> VP finance approval over $50 [deterministic]") ||
     preservedOneEx.textContent.includes("chg-rev-ui-ambiguity-01") ||
     preservedOneEx.textContent.includes("subtotal_only") ||
-    preservedOneEx.textContent.includes("chg-rev-ui-check-01")) {
-  throw new Error("expected #surla-preserved-draft to include ONLY changed chg-rev-ui-check-02 and omit unchanged saved answer/example, got: " + (preservedOneEx && preservedOneEx.textContent));
+    preservedOneEx.textContent.includes("check_01")) {
+  throw new Error("expected #surla-preserved-draft to include ONLY changed check_02 and omit unchanged saved answer/example, got: " + (preservedOneEx && preservedOneEx.textContent));
 }
 // On R3, clear the example's expected_outcome to "" and switch to incoming R2 -> both the earlier changed check-02 line and R3's cleared check-01 line are retained.
-const r3Ex1 = editorRegion.querySelector('textarea[data-example-id="chg-rev-ui-check-01"][data-field="expected_outcome"]');
+const r3Ex1 = editorRegion.querySelector('textarea[data-example-id="check_01"][data-field="expected_outcome"]');
 r3Ex1.value = "";
 r3Ex1.dispatchEvent(new guestWindow.Event("input", { bubbles: true }));
 messageListener({
@@ -473,8 +485,8 @@ messageListener({
 documentObj.getElementById("surla-replace-incoming-card").click();
 const preservedSuccessive = documentObj.getElementById("surla-preserved-draft");
 if (preservedSuccessive === null ||
-    !preservedSuccessive.textContent.includes("[" + input.r2Confirmed.request_revision + "] chg-rev-ui-check-02: Refund over $50 | $75 subtotal -> VP finance approval over $50 [deterministic]") ||
-    !preservedSuccessive.textContent.includes("[" + input.r3.request_revision + "] chg-rev-ui-check-01: Refund under $50 | $40 subtotal ->  [deterministic]") ||
+    !preservedSuccessive.textContent.includes("[" + input.r2Confirmed.request_revision + "] check_02: Refund over $50 | $75 subtotal -> VP finance approval over $50 [deterministic]") ||
+    !preservedSuccessive.textContent.includes("[" + input.r3.request_revision + "] check_01: Refund under $50 | $40 subtotal ->  [deterministic]") ||
     preservedSuccessive.textContent.includes("chg-rev-ui-ambiguity-01")) {
   throw new Error("expected successive revision #surla-preserved-draft to retain both R2Confirmed changed example and R3 cleared example without unchanged fields, got: " + (preservedSuccessive && preservedSuccessive.textContent));
 }

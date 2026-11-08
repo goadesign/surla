@@ -91,9 +91,34 @@ func (a staticCP1Analyzer) Analyze(context.Context, string, string) (controlplan
 	return a.analysis, nil
 }
 
-// Revise returns a.analysis for every CP1 ReviseChange call.
-func (a staticCP1Analyzer) Revise(context.Context, controlplane.CP1PriorCard, string, string) (controlplane.CP1SemanticAnalysis, error) {
-	return a.analysis, nil
+// Revise returns a revision analysis derived from a.analysis for every CP1 ReviseChange call.
+func (a staticCP1Analyzer) Revise(_ context.Context, prior controlplane.CP1PriorCard, _, _ string) (controlplane.CP1RevisionSemanticAnalysis, error) {
+	revExamples := make([]controlplane.CP1RevisionModelExample, 0, len(a.analysis.Examples))
+	var removed []string
+	for i, ex := range a.analysis.Examples {
+		priorID := ""
+		if i < len(prior.Examples) {
+			priorID = prior.Examples[i].ID
+		}
+		revExamples = append(revExamples, controlplane.CP1RevisionModelExample{
+			PriorID:          priorID,
+			Scenario:         ex.Scenario,
+			InputSummary:     ex.InputSummary,
+			ExpectedOutcome:  ex.ExpectedOutcome,
+			VerificationKind: ex.VerificationKind,
+		})
+	}
+	for i := len(a.analysis.Examples); i < len(prior.Examples); i++ {
+		removed = append(removed, prior.Examples[i].ID)
+	}
+	return controlplane.CP1RevisionSemanticAnalysis{
+		Summary:            a.analysis.Summary,
+		Ambiguities:        a.analysis.Ambiguities,
+		Examples:           revExamples,
+		RemovedExampleIDs:  removed,
+		PreservedBehaviors: a.analysis.PreservedBehaviors,
+		UIComposition:      a.analysis.UIComposition,
+	}, nil
 }
 
 // PreviewArchitecture records p and returns s.result.
