@@ -284,7 +284,7 @@ func TestServeGatewayModeAnswersProposeChangeOverHTTP(t *testing.T) {
 	require.Len(t, card.Examples, 1)
 	assert.Equal(t, "check_01", card.Examples[0].ID)
 	assert.Regexp(t, regexp.MustCompile(`^[0-9a-f]{64}$`), card.RequestRevision)
-	assert.EqualValues(t, 6144, provider.maxTokens.Load(), "CP1 output allowance must reach the provider through the gateway")
+	assert.EqualValues(t, 16384, provider.maxTokens.Load(), "CP1 output allowance must reach the provider through the gateway")
 }
 
 func TestWriteServeStatusNamesTheBoundAddressAndOffFeatures(t *testing.T) {
