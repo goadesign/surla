@@ -82,6 +82,10 @@ var _ = Service("orders", func() {
 	}
 }
 
+// TestSandboxedExit71AppendsConditionalRecoveryGuidance verifies that Evaluate
+// and Generate preserve the observed error and append conditional recovery
+// guidance when a non-canceled sandboxed command exits with status 71, while
+// leaving ordinary compiler errors and canceled runs unchanged.
 func TestSandboxedExit71AppendsConditionalRecoveryGuidance(t *testing.T) {
 	ctx := t.Context()
 

@@ -176,6 +176,11 @@ func TestCheckoutRecordsTheExactCommitInEitherObjectFormat(t *testing.T) {
 	}
 }
 
+// TestBuildSummarySurfacesExit71GuidanceWithoutLeakingPrivateDiagnostics
+// verifies that buildSummary replaces the generic build failure summary with
+// conditional exit-71 recovery guidance only when a non-canceled build command
+// exits with status 71, while keeping compiler output and log paths inside
+// StageError.Err and out of StageError.Summary.
 func TestBuildSummarySurfacesExit71GuidanceWithoutLeakingPrivateDiagnostics(t *testing.T) {
 	exit71Err := exec.Command("sh", "-c", "exit 71").Run()
 	require.Error(t, exit71Err)
