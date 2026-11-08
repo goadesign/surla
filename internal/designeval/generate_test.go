@@ -10,9 +10,10 @@ import (
 	"github.com/goadesign/surla/internal/testmodule"
 )
 
-// preCompleteSourcesGoa is the goa.design/goa/v3 version starters created
-// before generator.CompleteSources require; it has no CompleteSources.
-const preCompleteSourcesGoa = "v3.35.1-0.20261030163856-3e08a6128171"
+// preCompleteSourcesGoa is goa-ai's minimum Goa version, which lacks
+// generator.CompleteSources. Tests use it to verify generation rejection and
+// evaluation with a target version older than Surla's own.
+const preCompleteSourcesGoa = "v3.35.1-0.20261102054348-8481e49a6c89"
 
 func TestGenerateReturnsWhatGoaGenWrites(t *testing.T) {
 	files := testmodule.Snapshot(t, completeSourcesGoa, minimalDesign)

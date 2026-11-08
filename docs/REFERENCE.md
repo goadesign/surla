@@ -36,7 +36,7 @@ surla serve -addr 127.0.0.1:8090 \
   -model-provider anthropic -model-name "$SURLA_MODEL_NAME"
 ```
 
-For OpenAI, use `-model-provider openai`, set `OPENAI_API_KEY`, and choose a model ID available to that key. Alternatively, use `-model-gateway-addr <host:port>` alone to call an existing model gateway; the gateway chooses the model, must run a compatible `goa.design/goa-ai` gateway protocol version matching `go.mod` (`v0.90.0`, which updated the `GatewayErrorNode` protobuf wire schema), and must be upgraded or rolled back together with `surla serve`. That connection uses plaintext gRPC and is intended for loopback or a trusted network.
+For OpenAI, use `-model-provider openai`, set `OPENAI_API_KEY`, and choose a model ID available to that key. Alternatively, use `-model-gateway-addr <host:port>` alone to call an existing model gateway; the gateway chooses the model and must use the `goa.design/goa-ai` version selected in [`go.mod`](../go.mod). Upgrade or roll back the gateway and `surla serve` together: older clients reject the `output_limited` validation kind returned when a structured response fails validation and the provider reports its output token limit. That connection uses plaintext gRPC and is intended for loopback or a trusted network.
 
 Omitting all model flags starts the server without feature-request analysis. The `diff` tool, Golden Path resource, and `compiled_rule` rebuild response still work; `propose_change` and `revise_change` return `cp1 semantic analyzer is required`.
 
@@ -156,6 +156,8 @@ All tools and resources are served over MCP JSON-RPC at `POST /mcp` and over HTT
 
 ### MCP Tools
 
+When CP1 rejects an invalid structured response because the provider reported its output token limit, the error says `provider stopped at output limit; shorten the request before retrying`. For example, retry a large feature request as a smaller change using the same tool and its required inputs. Malformed JSON alone does not establish that the provider hit its token limit. Rejected response text and provider stop reasons are not included in the public error.
+
 - **`propose_change`** (`POST /changes/propose`)
   - **Input:** `change_id`, `prompt`, `design_source?` → **Output:** `ChangeCardResult`
   - Analyzes a feature request at `CP1` using the embedded Golden Path prompt, saving the card (`card`, `owner`, `design_source`) atomically as `<cards_dir>/<sha256(change_id)>.json` under `controlplane.Options.CardsDir` and returning concrete `examples` (assigned deterministic `check_01`, `check_02`, ... IDs matching `goa-ai/eval` `validateID`), `ambiguities`, `preserved_behaviors`, and a canonical `request_revision` digest. When `design_source` is omitted, the CP1 model receives an explicit no-design notice so it does not assume unstated services or fixture IDs; send the target's relevant `design/*.go` source in `design_source` when you want the analysis to consider it. When the CP1 model response fails output validation or stops at the output limit, `propose_change` returns `analysis_rejected` (HTTP `502`) without saving the card. When the model also composed a decision view, the card carries `ui_composition` (`program`, `composed_for_revision`): it is presentation only, never hashed into `request_revision`, and dropped when `confirm_intent` changes answers or examples. When the request includes a `progressToken`, the tool sends MCP progress updates before and after the model call.
@@ -259,7 +261,7 @@ Starts the Surla HTTP and MCP JSON-RPC control-plane server protected by bearer-
 - `-principal <id>` — Authenticated operator principal ID *(required)*.
 - `-auth-token <token>` — Bearer token required on HTTP and MCP requests (default: `$SURLA_AUTH_TOKEN`, *required*).
 - `-cards-dir <path>` — Directory where `CP1` Change Cards are saved as `<sha256(change_id)>.json` so they survive restarts (default `.surla/cards`). One `surla serve` process at a time may use a given directory, enforced by an exclusive `flock` on `<cards-dir>/lock`.
-- `-model-gateway-addr <host:port>` — Optional model gateway for CP1 analysis over plaintext gRPC. The gateway chooses the model and must run the `goa.design/goa-ai` gateway protocol version matching `go.mod` (`v0.90.0`; upgrade or roll back the gateway and `surla serve` together); cannot be combined with `-model-provider` or `-model-name`.
+- `-model-gateway-addr <host:port>` — Optional model gateway for CP1 analysis over plaintext gRPC. The gateway chooses the model; follow the [gateway version and upgrade requirements](#start-the-surla-server). Cannot be combined with `-model-provider` or `-model-name`.
 - `-model-provider <anthropic|openai>` — Optional direct provider for CP1 analysis. Requires `-model-name` and the matching `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` environment variable. Provider names must match exactly.
 - `-model-name <model>` — Model ID for direct provider mode; required with `-model-provider` and rejected in gateway mode.
 - `-swarm-profiles <path.json>` — Optional JSON array of configured coding-agent profiles for proposed CP2 assignments; see [Configure the Proposed Swarm Roster](#configure-the-proposed-swarm-roster).
