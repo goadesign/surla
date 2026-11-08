@@ -111,7 +111,12 @@ func TestChangeCardHTTPErrorsAndMCPToolPreservation(t *testing.T) {
 		"alice-token": {ID: "alice@example.com"},
 		"bob-token":   {ID: "bob@example.com"},
 	})
-	cp := newControlPlane(t, Options{Analyzer: NewModelCP1Analyzer(newStubModelClient(t, string(ambiguousJSON)))})
+	// Both preview refusals use one server so its evaluator reuses its own
+	// compiler workspace while the handler preserves each distinct error.
+	cp := newControlPlane(t, Options{
+		Analyzer:      NewModelCP1Analyzer(newStubModelClient(t, string(ambiguousJSON))),
+		SwarmProfiles: []swarm.ProviderProfile{{ID: "bad"}},
+	})
 	pending, err := cp.ProposeChange(aliceCtx, &gensurla.ProposeChangePayload{ChangeID: "chg", Prompt: "Refunds."})
 	require.NoError(t, err)
 	confirmed, err := cp.ConfirmIntent(aliceCtx, &gensurla.ConfirmIntentPayload{
@@ -131,18 +136,6 @@ var _ = Service("orders", func() {})
 `)
 	handler := NewHTTPHandler(cp, auth)
 	noAnalyzerHandler := NewHTTPHandler(newControlPlane(t, Options{}), auth)
-	badSwarmCP := newControlPlane(t, Options{
-		Analyzer:      NewModelCP1Analyzer(newStubModelClient(t, string(ambiguousJSON))),
-		SwarmProfiles: []swarm.ProviderProfile{{ID: "bad"}},
-	})
-	badCard, err := badSwarmCP.ProposeChange(aliceCtx, &gensurla.ProposeChangePayload{ChangeID: "bad", Prompt: "Refunds."})
-	require.NoError(t, err)
-	badConfirmed, err := badSwarmCP.ConfirmIntent(aliceCtx, &gensurla.ConfirmIntentPayload{
-		ChangeID: "bad", RequestRevision: badCard.RequestRevision,
-		Answers: map[string]string{"bad-ambiguity-01": "instant"}, Examples: badCard.Examples,
-	})
-	require.NoError(t, err)
-	badSwarmHandler := NewHTTPHandler(badSwarmCP, auth)
 
 	for _, tc := range []struct {
 		name       string
@@ -174,7 +167,7 @@ var _ = Service("orders", func() {})
 		}, http.StatusUnprocessableEntity, false, "is not one of its options"},
 		{"preview unconfirmed card", handler, http.MethodPost, "/changes/preview", "alice-token", map[string]any{"change_id": "chg", "request_revision": pending.RequestRevision, "design": map[string]any{"files": designFiles}}, http.StatusConflict, false, `change_id "chg" must be confirmed before architecture preview (status "needs_confirmation")`},
 		{"preview nil builder element", handler, http.MethodPost, "/changes/preview", "alice-token", map[string]any{"change_id": "chg-ok", "request_revision": confirmed.RequestRevision, "design": map[string]any{"files": designFiles}, "builders": []any{nil}}, http.StatusUnprocessableEntity, false, "builders[0] is nil"},
-		{"preview malformed server SwarmProfiles", badSwarmHandler, http.MethodPost, "/changes/preview", "alice-token", map[string]any{"change_id": "bad", "request_revision": badConfirmed.RequestRevision, "design": map[string]any{"files": designFiles}}, http.StatusInternalServerError, true, "plan swarm roster"},
+		{"preview malformed server SwarmProfiles", handler, http.MethodPost, "/changes/preview", "alice-token", map[string]any{"change_id": "chg-ok", "request_revision": confirmed.RequestRevision, "design": map[string]any{"files": designFiles}}, http.StatusInternalServerError, true, "plan swarm roster"},
 		{"verify_change without config", handler, http.MethodPost, "/changes/chg-ok/verifications", "alice-token", map[string]any{"request_revision": confirmed.RequestRevision, "candidate_commit": strings.Repeat("a", 40)}, http.StatusNotImplemented, false, "verification is not configured"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
