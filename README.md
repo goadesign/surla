@@ -162,13 +162,13 @@ surla preview-change \
   -dir examples/orders
 ```
 
-To run the full independent verification suite (`surla verify` and `surla approve`) and compare the full operator report with the builder-redacted `-builder-view` report (where unseen `"holdout"` acceptance tests are redacted to `"id": "holdout-1"`), see the **[Orders Reference Platform Walkthrough (`examples/orders/README.md`)](examples/orders/README.md)**.
+To run the full independent verification suite (`surla verify` and `surla approve`) and compare the default builder-redacted report (where unseen `"holdout"` acceptance tests are redacted to `"id": "holdout-1"`) with the full operator report (`-builder-view=false`), see the **[Orders Reference Platform Walkthrough (`examples/orders/README.md`)](examples/orders/README.md)**.
 
 ---
 
 ## Dive Deeper
 
-- **[Orders Reference Platform (`examples/orders/README.md`)](examples/orders/README.md)** — Walk through the Golden Path `orders` platform, run `surla verify` (full vs. `-builder-view`), and watch `TestSeededPayloadBloatFailsTheBudget` catch a token regression.
+- **[Orders Reference Platform (`examples/orders/README.md`)](examples/orders/README.md)** — Walk through the Golden Path `orders` platform, run `surla verify` (default builder view vs. full report with `-builder-view=false`), and watch `TestSeededPayloadBloatFailsTheBudget` catch a token regression.
 - **[How Surla Works (`docs/HOW_IT_WORKS.md`)](docs/HOW_IT_WORKS.md)** — Walk through the 5 checkpoints (`CP1`–`CP5`), the proposed cross-model team, fast draft overrides, and OS-isolated verification.
 - **[Golden Path Architecture (`docs/ARCHITECTURE_PLAYBOOK.md`)](docs/ARCHITECTURE_PLAYBOOK.md)** — Explore the 7 Golden Path rules that keep Surla platforms maintainable and see how the Goa Design suite powers them.
 - **[CLI, MCP & Repo Reference (`docs/REFERENCE.md`)](docs/REFERENCE.md)** — Configure MCP clients (Claude Code, Cursor, Gemini CLI, and Codex), browse the MCP tools and CLI flags, and run the [`examples/orders`](examples/orders/) reference suite.

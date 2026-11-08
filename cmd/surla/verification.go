@@ -119,9 +119,9 @@ func runVerifyRun(args []string) error {
 // the built binaries (candidate-bin/<name>) and the evidence, and is left in
 // place. The run's own bookkeeping lives in a temporary directory removed
 // when the command ends. It waits for the run and writes the JSON report to
-// stdout: the full report, or its builder view with -builder-view. stdout
-// holds only that JSON; after it, one human-readable summary line goes to
-// stderr (see writeVerifySummary), which with -builder-view names holdouts
+// stdout: its builder view by default, or the full report with
+// -builder-view=false. stdout holds only that JSON; after it, one summary line goes to
+// stderr (see writeVerifySummary), which in the builder view names holdouts
 // only as holdout-<n>. The full report is also saved in -report-dir. A report that did not pass is still
 // printed, and the command then fails so the exit status is 1. A canceled or
 // timed-out run prints the partial report its suite saved while stopping, if
