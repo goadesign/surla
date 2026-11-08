@@ -65,6 +65,48 @@ func TestInitConsidersTheCompleteLocationBeforeSelecting(t *testing.T) {
 	assert.FileExists(t, filepath.Join(configRoot, "init-stage"))
 }
 
+// TestLocalWorkSkipsReadOnlyDirectories preserves an existing unusable leaf
+// and selects a writable location for each operation before returning it.
+func TestLocalWorkSkipsReadOnlyDirectories(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("UID 0 can write mode-0500 directories; this case requires an unprivileged process")
+	}
+	for _, tc := range []struct {
+		// name is the operation whose actual work parent is selected.
+		name string
+		// leaf is the protected resource, not merely its operator base.
+		leaf string
+		// choose calls the operation's production selection entry point.
+		choose func(string) (string, error)
+	}{
+		{name: "init", leaf: "init-stage", choose: localInitWorkDir},
+		{name: "evaluator", leaf: "designeval-work", choose: func(target string) (string, error) {
+			return localEvalWorkDir(target)
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			config := isolateLocalWork(t)
+			workspace, destination, tmp := t.TempDir(), t.TempDir(), t.TempDir()
+			t.Chdir(workspace)
+			t.Setenv("TMPDIR", tmp)
+			blocked := filepath.Join(config, "surla", "operator", tc.leaf)
+			require.NoError(t, os.MkdirAll(blocked, 0o700))
+			require.NoError(t, os.Chmod(blocked, 0o500))
+			t.Cleanup(func() { require.NoError(t, os.Chmod(blocked, 0o700)) })
+			parent := filepath.Join(destination, "projects")
+			require.NoError(t, os.Mkdir(parent, 0o700))
+			work, err := tc.choose(parent)
+			require.NoError(t, err)
+			want, err := abspath.Eval(filepath.Join(tmp, fmt.Sprintf("surla-operator-%d", os.Getuid()), tc.leaf))
+			require.NoError(t, err)
+			assert.Equal(t, want, work, "the actual usable leaf wins before any later fallback")
+			info, err := os.Stat(blocked)
+			require.NoError(t, err)
+			assert.Equal(t, os.FileMode(0o500), info.Mode().Perm(), "selection does not change an existing leaf's permissions")
+		})
+	}
+}
+
 // TestInitUsesTemporaryStorageOnTheDestinationDevice covers a creatable config
 // root on the startup disk followed by TMPDIR on the destination disk. A host
 // without a writable second mounted filesystem skips only this physical case.

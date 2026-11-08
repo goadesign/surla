@@ -12,6 +12,8 @@ import (
 	"strings"
 	"syscall"
 
+	"golang.org/x/sys/unix"
+
 	"github.com/goadesign/surla/internal/abspath"
 )
 
@@ -30,11 +32,15 @@ func localEvalWorkDir(roots ...string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	root, err := localOperatorRoot(startup, protected)
-	if err != nil {
-		return "", err
+	var failures []error
+	for _, candidate := range localOperatorCandidates(startup) {
+		work, err := createProtectedDir(filepath.Join(candidate, "designeval-work"), protected)
+		if err == nil {
+			return work, nil
+		}
+		failures = append(failures, err)
 	}
-	return createProtectedDir(filepath.Join(root, "designeval-work"), protected)
+	return "", fmt.Errorf("cannot find protected design evaluator storage outside the workspace: %w", errors.Join(failures...))
 }
 
 // localInitWorkDir chooses protected staging on the destination filesystem.
@@ -67,19 +73,6 @@ func localInitWorkDir(targetParent string) (string, error) {
 	return "", fmt.Errorf("cannot find protected init storage on the destination filesystem: %w", errors.Join(failures...))
 }
 
-// localOperatorRoot chooses the first operator directory outside every grant.
-func localOperatorRoot(startup string, protected []string) (string, error) {
-	var failures []error
-	for _, candidate := range localOperatorCandidates(startup) {
-		dir, err := createProtectedDir(candidate, protected)
-		if err == nil {
-			return dir, nil
-		}
-		failures = append(failures, err)
-	}
-	return "", fmt.Errorf("cannot find operator storage outside the workspace: %w", errors.Join(failures...))
-}
-
 // localOperatorCandidates lists the existing operator locations in preference
 // order. Each owner applies all its requirements before selecting a location.
 func localOperatorCandidates(startup string) []string {
@@ -108,6 +101,8 @@ func physicalLocalRoots(roots []string) ([]string, error) {
 
 // createProtectedDir checks existing ancestors before creating storage, so a
 // symlinked parent cannot place new compiler files inside a builder's grant.
+// A returned directory permits the current effective user to create files and
+// search its entries; an existing but read-only directory is not a location.
 func createProtectedDir(candidate string, protected []string) (string, error) {
 	physical, err := resolveMissingPath(candidate)
 	if err != nil {
@@ -125,7 +120,14 @@ func createProtectedDir(candidate string, protected []string) (string, error) {
 	if err := os.MkdirAll(physical, 0o700); err != nil {
 		return "", err
 	}
-	return abspath.Eval(physical)
+	physical, err = abspath.Eval(physical)
+	if err != nil {
+		return "", err
+	}
+	if err := unix.Faccessat(unix.AT_FDCWD, physical, unix.W_OK|unix.X_OK, unix.AT_EACCESS); err != nil {
+		return "", fmt.Errorf("operator directory %s must allow creating and accessing temporary files: %w", physical, err)
+	}
+	return physical, nil
 }
 
 // resolveMissingPath follows existing ancestors and appends only absent names.
