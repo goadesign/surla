@@ -148,7 +148,7 @@ func TestCP1OutputLimitedRejectionAcrossModelBoundaries(t *testing.T) {
 								assert.Equal(t, before, after)
 								assert.Contains(t, message, seed.RequestRevision)
 							}
-							assert.Equal(t, 6144, q.lastRequest().MaxTokens)
+							assert.Equal(t, 16384, q.lastRequest().MaxTokens)
 						})
 					}
 				}

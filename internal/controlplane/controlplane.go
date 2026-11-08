@@ -267,12 +267,13 @@ const (
 	// TargetKindCompiledRule identifies a compiled Go business rule that cannot be overridden via prompt store.
 	TargetKindCompiledRule = "compiled_rule"
 	// cp1AnalysisMaxOutputTokens is the output allowance for the one CP1
-	// inference that writes the structured Change Card analysis. It caps that
-	// response only, not the cost of a whole change. Providers such as
+	// inference that writes the structured Change Card analysis, including
+	// reasoning tokens counted against that allowance. It caps that response
+	// only, not the cost of a whole change. Providers such as
 	// Anthropic require a positive allowance on every request. A response the
 	// provider marks OutputLimited fails Analyze even when its JSON parses, so
 	// no card is stored from an analysis that may be incomplete.
-	cp1AnalysisMaxOutputTokens = 6144
+	cp1AnalysisMaxOutputTokens = 16384
 )
 
 var (
