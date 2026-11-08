@@ -95,6 +95,15 @@ lifecycle, storage, or a new flag, field, or dependency)—and every
 architectural or UX assessment or proposal in prose—must pass this gate,
 stated in writing before the first edit or recommendation:
 
+0. **Check the workflow before inspecting callers.** Name the real actor and
+   what they need to accomplish across the full journey. Derive known source
+   files and setup from the workspace instead of asking the caller to upload
+   them. An LLM using MCP should complete the lifecycle through MCP tools with
+   one running server, without CLI escape steps or phase-specific restarts.
+   A developer should build and test working-tree changes before committing
+   them. Correct a backwards workflow before adding a flag, warning, or hook.
+   For a usability report with multiple findings, first identify the shared
+   workflow problems across the whole journey, then choose individual fixes.
 1. **Current behavior and callers.** Give an example and inventory every
    affected caller on `origin/main`, tracing entry, downstream calls, storage,
    and result. Prove this change causes the requested outcome; report
@@ -170,6 +179,9 @@ duplication, or add useful domain language; do not wrap a lookup, literal,
 field access, or pass-through value merely to name it.
 
 ### Reviews
+
+Begin every review with Step 0 of the design gate before inspecting callers
+or code-level invariants.
 
 Before finalizing a design-touching change or pull request, run a review by
 a fresh read-only subagent that has not seen your reasoning. Give it the

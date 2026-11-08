@@ -598,10 +598,10 @@ func (b binaryFlags) Set(v string) error {
 }
 
 // parseVerifyFlags turns `surla verify` arguments into a verify.Plan, the
-// run's time limit, and whether the builder view was requested. -candidate-module and
-// -suite-module default to ".", the repository root; every other plan field is
-// required and must be given explicitly. Commit IDs and repositories are
-// checked by verify.Run.
+// run's time limit, and whether to print the builder view (the default).
+// -candidate-module and -suite-module default to ".", the repository root;
+// every other plan field is required and must be given explicitly. Commit IDs
+// and repositories are checked by verify.Run.
 func parseVerifyFlags(args []string) (verify.Plan, time.Duration, bool, error) {
 	fs := flag.NewFlagSet("verify", flag.ContinueOnError)
 	binaries := binaryFlags{}
@@ -618,7 +618,7 @@ func parseVerifyFlags(args []string) (verify.Plan, time.Duration, bool, error) {
 	fs.StringVar(&p.WorkDir, "work-dir", "", "private directory for clones, builds (candidate-bin/<name>) and evidence; it must be missing or empty and is kept after the run; keep it away from builders")
 	fs.StringVar(&p.ReportDir, "report-dir", "", "directory that receives the full report as <digest>.json")
 	timeout := fs.Duration("timeout", 0, "how long the run may take before it is stopped; 0, the default, means no limit")
-	builderView := fs.Bool("builder-view", false, "print the builder view, which hides holdout scenario details, instead of the full report")
+	builderView := fs.Bool("builder-view", true, "hide holdout scenario details in the printed report and summary; set to false for the full report")
 	if err := fs.Parse(args); err != nil {
 		return verify.Plan{}, 0, false, err
 	}

@@ -123,10 +123,11 @@ go run ./cmd/surla verify \
   -suite-command ./cmd/orders_acceptance-evals \
   -request-revision rev-orders-demo \
   -work-dir "$WORK_DIR/work" \
-  -report-dir "$WORK_DIR/reports"
+  -report-dir "$WORK_DIR/reports" \
+  -builder-view=false
 ```
 
-To see the **builder-redacted report** (`Report.ForBuilders()`), pass `-builder-view`:
+The **builder-redacted report** (`Report.ForBuilders()`) is the default. The explicit `-builder-view` below also requests it:
 
 ```bash
 go run ./cmd/surla verify \
@@ -145,7 +146,7 @@ go run ./cmd/surla verify \
   -builder-view
 ```
 
-In `-builder-view`, stdout prints `Report.ForBuilders()` where the `"holdout"` scenario is redacted to `"id": "holdout-1"` with all scenario inputs, declarations, checks, and failure logs stripped. *(Note: in this public reference repo, `examples/orders-eval` is checked in alongside `examples/orders` to demonstrate the mechanism; in production, actual unseen holdouts require keeping the evaluator suite repository (`-suite-repo`), `-work-dir`, and `-report-dir` unreadable to builder agents, since `ForBuilders()` redacts the report JSON while workspace boundaries protect the suite source and raw evidence on disk.)*
+By default, stdout prints `Report.ForBuilders()` where the `"holdout"` scenario is redacted to `"id": "holdout-1"` with all scenario inputs, declarations, checks, and failure logs stripped. In either view, a run that stops with a passing partial report or no report still prints raw operator diagnostics to stderr; do not share those diagnostics with builder agents. *(Note: in this public reference repo, `examples/orders-eval` is checked in alongside `examples/orders` to demonstrate the mechanism; in production, actual unseen holdouts require keeping the evaluator suite repository (`-suite-repo`), `-work-dir`, and `-report-dir` unreadable to builder agents, since `ForBuilders()` redacts the report JSON while workspace boundaries protect the suite source and raw evidence on disk.)*
 
 Once `surla verify` writes the full report to `"$WORK_DIR/reports/<digest>.json"`, run `surla approve` (`verify.Approve`) to re-derive the report from its raw evidence and verify that the candidate commit, confirmed `request_revision`, evaluator suite, environment, and measured candidate binary SHA-256 digests match the change being promoted:
 

@@ -14,6 +14,8 @@ import (
 	"github.com/goadesign/surla/internal/verify"
 )
 
+// TestParseVerifyFlagsBuildsTheExplicitPlan checks required inputs and every
+// supported spelling of the report-view flag without starting a run.
 func TestParseVerifyFlagsBuildsTheExplicitPlan(t *testing.T) {
 	complete := []string{
 		"-candidate-repo", "/repos/candidate",
@@ -49,8 +51,10 @@ func TestParseVerifyFlagsBuildsTheExplicitPlan(t *testing.T) {
 		wantBuilderView bool
 		wantErr         string
 	}{
-		{name: "complete plan", args: complete},
-		{name: "builder view", args: append([]string{"-builder-view"}, complete...), wantBuilderView: true},
+		{name: "omitted builder view defaults to true", args: complete, wantBuilderView: true},
+		{name: "bare builder view", args: append([]string{"-builder-view"}, complete...), wantBuilderView: true},
+		{name: "explicit true builder view", args: append([]string{"-builder-view=true"}, complete...), wantBuilderView: true},
+		{name: "explicit false prints full report", args: append([]string{"-builder-view=false"}, complete...)},
 		{
 			name:    "no flags names every required flag",
 			args:    nil,
@@ -140,8 +144,20 @@ func TestWriteVerifyReportPrintsBeforeFailing(t *testing.T) {
 // human-readable line surla verify writes to stderr: it gives the verdict,
 // counts and non-passing scenarios with each ID quoted, so an ID containing a
 // line break keeps it on one line; the report on stdout stays decodable JSON
-// on its own, and the builder view never prints a holdout's name.
+// on its own, and the parsed default never prints a holdout's name. Explicit
+// -builder-view=false preserves the full report and summary.
 func TestWriteVerifySummaryKeepsJSONOnStdoutAndHoldoutsHidden(t *testing.T) {
+	args := []string{
+		"-candidate-repo", "/repos/candidate",
+		"-candidate-commit", strings.Repeat("1", 40),
+		"-binary", "orders=./cmd/orders",
+		"-suite-repo", "/repos/suite",
+		"-suite-commit", strings.Repeat("2", 40),
+		"-suite-command", "./cmd/orders-evals",
+		"-request-revision", "rev-1",
+		"-work-dir", "/private/work",
+		"-report-dir", "/private/reports",
+	}
 	report := verify.Report{
 		Digest: "abc123",
 		Counts: verify.Counts{Required: 3, Passed: 1, Failed: 1, NotRun: 1},
@@ -152,42 +168,48 @@ func TestWriteVerifySummaryKeepsJSONOnStdoutAndHoldoutsHidden(t *testing.T) {
 		},
 	}
 	cases := []struct {
-		name        string
-		suiteExit   int
-		builderView bool
-		want        string
+		name      string
+		suiteExit int
+		flags     []string
+		want      string
 	}{
 		{
-			name: "full report names every non-passing scenario",
+			name:  "full report names every non-passing scenario",
+			flags: []string{"-builder-view=false"},
 			want: "surla: verification report did not pass: 1/3 scenarios passed; failed: 1, not run: 1, harness errors: 0; " +
 				`not passing: "cross_customer_refund_refused", "slow\nrefund" (report abc123)` + "\n",
 		},
 		{
-			name: "builder view names holdouts only by number", builderView: true,
+			name: "default builder view names holdouts only by number",
 			want: "surla: verification report did not pass: 1/3 scenarios passed; failed: 1, not run: 1, harness errors: 0; " +
 				`not passing: "holdout-1", "slow\nrefund" (report abc123)` + "\n",
 		},
 		{
-			name: "a failed suite run is said", suiteExit: 2, builderView: true,
+			name: "a failed suite run is said", suiteExit: 2,
 			want: "surla: verification report did not pass: 1/3 scenarios passed; failed: 1, not run: 1, harness errors: 0; " +
 				`the suite run itself failed; not passing: "holdout-1", "slow\nrefund" (report abc123)` + "\n",
 		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
+			_, _, builderView, err := parseVerifyFlags(append(tc.flags, args...))
+			require.NoError(t, err)
 			r := report
 			r.SuiteExit = tc.suiteExit
 			var stdout, stderr bytes.Buffer
 			// runVerify writes the JSON first and the summary after it.
-			require.Error(t, writeVerifyReport(&stdout, r, tc.builderView), "every case is a report that did not pass")
-			writeVerifySummary(&stderr, r, tc.builderView)
+			require.Error(t, writeVerifyReport(&stdout, r, builderView), "every case is a report that did not pass")
+			writeVerifySummary(&stderr, r, builderView)
 			assert.Equal(t, tc.want, stderr.String())
 			assert.Equal(t, 1, strings.Count(stderr.String(), "\n"), "an ID with a line break stays on the summary's one line")
-			var printed map[string]any
-			require.NoError(t, json.Unmarshal(stdout.Bytes(), &printed), "stdout holds only the JSON report")
-			if tc.builderView {
+			var wantReport any = r
+			if builderView {
+				wantReport = r.ForBuilders()
 				assert.NotContains(t, stderr.String(), "cross_customer_refund_refused")
 			}
+			wantJSON, err := json.Marshal(wantReport)
+			require.NoError(t, err)
+			assert.JSONEq(t, string(wantJSON), stdout.String(), "stdout holds only the chosen report JSON")
 		})
 	}
 
