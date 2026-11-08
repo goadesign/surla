@@ -497,3 +497,136 @@ func TestReviseChangeLegacySavedCardWithHyphenatedIDs(t *testing.T) {
 	assert.Equal(t, "check_01", reloaded.Examples[1].ID)
 	_ = cardsDir
 }
+
+// TestReviseChangeWhitespaceManualIDRemovalAndCollision verifies that:
+//  1. A confirmed manual example ID with surrounding whitespace (" custom ") can be
+//     explicitly removed via removed_example_ids: [" custom "] without being rejected
+//     by premature whitespace trimming.
+//  2. Keeping a whitespace-padded manual alias of a code-assigned ID (" check_01 ")
+//     reserves both exact and trimmed forms during ID allocation so a brand-new example
+//     receives "check_02" and the resulting table is accepted unchanged by confirm_intent.
+//  3. Removing " check_01 " reserves "check_01" while constructing that revision (R3),
+//     and a later revision (R4) after " check_01 " is no longer in the prior table can
+//     allocate "check_01" again.
+func TestReviseChangeWhitespaceManualIDRemovalAndCollision(t *testing.T) {
+	aliceCtx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
+	proposeR1JSON := `{
+		"summary": "Initial feature.",
+		"ambiguities": [],
+		"examples": [
+			{"scenario": "First check", "input_summary": "In 1", "expected_outcome": "Out 1", "verification_kind": "deterministic"},
+			{"scenario": "Second check", "input_summary": "In 2", "expected_outcome": "Out 2", "verification_kind": "deterministic"}
+		],
+		"preserved_behaviors": []
+	}`
+	reviseR2JSON := `{
+		"summary": "Revised feature keeping padded check_01, removing padded custom, and adding a new row.",
+		"ambiguities": [],
+		"examples": [
+			{"prior_id": " check_01 ", "scenario": "First check kept", "input_summary": "In 1", "expected_outcome": "Out 1", "verification_kind": "deterministic"},
+			{"scenario": "Brand-new row", "input_summary": "In 3", "expected_outcome": "Out 3", "verification_kind": "deterministic"}
+		],
+		"removed_example_ids": [" custom "],
+		"preserved_behaviors": []
+	}`
+	reviseR3JSON := `{
+		"summary": "Third revision removing padded check_01 and adding a new row.",
+		"ambiguities": [],
+		"examples": [
+			{"prior_id": "check_02", "scenario": "Second row kept", "input_summary": "In 3", "expected_outcome": "Out 3", "verification_kind": "deterministic"},
+			{"scenario": "Row added when padded check_01 is removed", "input_summary": "In 4", "expected_outcome": "Out 4", "verification_kind": "deterministic"}
+		],
+		"removed_example_ids": [" check_01 "],
+		"preserved_behaviors": []
+	}`
+	reviseR4JSON := `{
+		"summary": "Fourth revision adding a row after padded check_01 was already removed in R3.",
+		"ambiguities": [],
+		"examples": [
+			{"prior_id": "check_02", "scenario": "Second row kept", "input_summary": "In 3", "expected_outcome": "Out 3", "verification_kind": "deterministic"},
+			{"prior_id": "check_03", "scenario": "Third row kept", "input_summary": "In 4", "expected_outcome": "Out 4", "verification_kind": "deterministic"},
+			{"scenario": "Row reusing freed check_01", "input_summary": "In 5", "expected_outcome": "Out 5", "verification_kind": "deterministic"}
+		],
+		"removed_example_ids": [],
+		"preserved_behaviors": []
+	}`
+
+	cp, _ := newReviseTestControlPlane(t, proposeR1JSON, reviseR2JSON, reviseR3JSON, reviseR4JSON)
+
+	r1, err := cp.ProposeChange(aliceCtx, &gensurla.ProposeChangePayload{
+		ChangeID: "chg-ws-ids",
+		Prompt:   "Initial feature.",
+	})
+	require.NoError(t, err)
+
+	// Confirm R1 with whitespace-padded manual IDs " check_01 " and " custom ".
+	confirmedR1, err := cp.ConfirmIntent(aliceCtx, &gensurla.ConfirmIntentPayload{
+		ChangeID:        "chg-ws-ids",
+		RequestRevision: r1.RequestRevision,
+		Answers:         map[string]string{},
+		Examples: []*gensurla.ExampleItem{
+			{
+				ID:               " check_01 ",
+				Scenario:         "First check",
+				InputSummary:     "In 1",
+				ExpectedOutcome:  "Out 1",
+				VerificationKind: "deterministic",
+			},
+			{
+				ID:               " custom ",
+				Scenario:         "Second check",
+				InputSummary:     "In 2",
+				ExpectedOutcome:  "Out 2",
+				VerificationKind: "deterministic",
+			},
+		},
+	})
+	require.NoError(t, err)
+	require.Len(t, confirmedR1.Examples, 2)
+	assert.Equal(t, " check_01 ", confirmedR1.Examples[0].ID)
+	assert.Equal(t, " custom ", confirmedR1.Examples[1].ID)
+
+	// Revise to R2: removes " custom ", keeps " check_01 ", and adds a brand-new row.
+	r2, err := cp.ReviseChange(aliceCtx, &gensurla.ReviseChangePayload{
+		ChangeID:        "chg-ws-ids",
+		RequestRevision: confirmedR1.RequestRevision,
+		Prompt:          "Remove custom and add a new row.",
+	})
+	require.NoError(t, err)
+	require.Len(t, r2.Examples, 2)
+	assert.Equal(t, " check_01 ", r2.Examples[0].ID, "kept example preserves exact whitespace-padded ID")
+	assert.Equal(t, "check_02", r2.Examples[1].ID, "allocator reserves trimmed 'check_01' so new row gets 'check_02'")
+
+	// Confirm R2 with the returned table unchanged: must succeed without a trimmed-ID duplicate error.
+	confirmedR2, err := cp.ConfirmIntent(aliceCtx, &gensurla.ConfirmIntentPayload{
+		ChangeID:        "chg-ws-ids",
+		RequestRevision: r2.RequestRevision,
+		Answers:         map[string]string{},
+		Examples:        r2.Examples,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, StatusConfirmed, confirmedR2.Status)
+
+	// Revise to R3: removes " check_01 " and adds a new row; "check_01" is still reserved during R3 construction.
+	r3, err := cp.ReviseChange(aliceCtx, &gensurla.ReviseChangePayload{
+		ChangeID:        "chg-ws-ids",
+		RequestRevision: confirmedR2.RequestRevision,
+		Prompt:          "Remove padded check_01 and add a row.",
+	})
+	require.NoError(t, err)
+	require.Len(t, r3.Examples, 2)
+	assert.Equal(t, "check_02", r3.Examples[0].ID)
+	assert.Equal(t, "check_03", r3.Examples[1].ID, "removed ' check_01 ' is reserved during R3 construction")
+
+	// Revise to R4: " check_01 " is no longer in the immediately prior table (R3), so "check_01" is reusable.
+	r4, err := cp.ReviseChange(aliceCtx, &gensurla.ReviseChangePayload{
+		ChangeID:        "chg-ws-ids",
+		RequestRevision: r3.RequestRevision,
+		Prompt:          "Add another row in R4.",
+	})
+	require.NoError(t, err)
+	require.Len(t, r4.Examples, 3)
+	assert.Equal(t, "check_02", r4.Examples[0].ID)
+	assert.Equal(t, "check_03", r4.Examples[1].ID)
+	assert.Equal(t, "check_01", r4.Examples[2].ID, "check_01 is reusable once absent from the immediately prior table")
+}

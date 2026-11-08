@@ -124,17 +124,16 @@ func validateCP1RevisionAnalysis(
 
 	seenRemoved := make(map[string]bool, len(in.RemovedExampleIDs))
 	for idx, remID := range in.RemovedExampleIDs {
-		trimmed := strings.TrimSpace(remID)
-		if trimmed == "" {
+		if strings.TrimSpace(remID) == "" {
 			return "", nil, nil, nil, fmt.Errorf("removed_example_ids[%d] is empty", idx)
 		}
-		if !priorMap[trimmed] {
-			return "", nil, nil, nil, fmt.Errorf("removed_example_ids[%d] references unknown prior example ID %q", idx, trimmed)
+		if !priorMap[remID] {
+			return "", nil, nil, nil, fmt.Errorf("removed_example_ids[%d] references unknown prior example ID %q", idx, remID)
 		}
-		if seenRemoved[trimmed] {
-			return "", nil, nil, nil, fmt.Errorf("duplicate ID %q in removed_example_ids", trimmed)
+		if seenRemoved[remID] {
+			return "", nil, nil, nil, fmt.Errorf("duplicate ID %q in removed_example_ids", remID)
 		}
-		seenRemoved[trimmed] = true
+		seenRemoved[remID] = true
 	}
 
 	seenPrior := make(map[string]bool, len(in.Examples))
@@ -167,12 +166,13 @@ func validateCP1RevisionAnalysis(
 		}
 	}
 
-	reserved := make(map[string]bool, len(priorMap)+len(in.Examples))
+	// Reserve both exact and trimmed forms of every prior example ID so
+	// newly allocated check_NN IDs never collide under confirm_intent's
+	// validateConfirmedExamples check.
+	reserved := make(map[string]bool, len(priorMap)*2+len(in.Examples))
 	for id := range priorMap {
 		reserved[id] = true
-	}
-	for id := range seenPrior {
-		reserved[id] = true
+		reserved[strings.TrimSpace(id)] = true
 	}
 
 	examples := make([]*gensurla.ExampleItem, 0, len(in.Examples))

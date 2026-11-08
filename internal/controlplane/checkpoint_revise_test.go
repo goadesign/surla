@@ -329,9 +329,11 @@ if (editorRegion.dataset.requestRevision !== input.r2.request_revision ||
     !priorOnR2.textContent.includes("Previous Saved Revision") ||
     !priorOnR2.textContent.includes(input.r1.request_revision) ||
     !priorOnR2.textContent.includes(input.r1.summary) ||
+    !priorOnR2.textContent.includes("check_01") ||
+    !priorOnR2.textContent.includes("Kept") ||
     documentObj.getElementById("surla-preserved-draft") !== null ||
     documentObj.getElementById("surla-openui-workspace") !== null) {
-  throw new Error("expected R2 to render #surla-prior-revision with R1 and no #surla-preserved-draft or #surla-openui-workspace, got: " + (priorOnR2 && priorOnR2.textContent));
+  throw new Error("expected R2 to render #surla-prior-revision with R1, check_01 Kept badge, and no #surla-preserved-draft or #surla-openui-workspace, got: " + (priorOnR2 && priorOnR2.textContent));
 }
 
 // 1b. Same-hash ui_composition updates (nil -> programA -> programB at input.r2.request_revision) apply in place while preserving drafts, priorCard, pending request ownership, and incoming result.
@@ -411,8 +413,12 @@ if (editorRegion.dataset.requestRevision !== input.r3.request_revision ||
     priorOnR3 === null ||
     !priorOnR3.textContent.includes(input.r2.request_revision) ||
     !priorOnR3.textContent.includes(input.r2.summary) ||
+    !priorOnR3.textContent.includes("check_01") ||
+    !priorOnR3.textContent.includes("Edited") ||
+    !priorOnR3.textContent.includes("check_02") ||
+    !priorOnR3.textContent.includes("Removed") ||
     documentObj.getElementById("surla-preserved-draft") !== null) {
-  throw new Error("expected R3 to render #surla-prior-revision with R2 and no #surla-preserved-draft");
+  throw new Error("expected R3 to render #surla-prior-revision with R2, check_01 Edited badge, check_02 Removed badge, and no #surla-preserved-draft");
 }
 
 // 2. Dirty unsaved edits on R2 when R3 arrives -> holds R3 in #surla-incoming-change-card, and clicking #surla-replace-incoming-card mounts R3 with BOTH #surla-prior-revision (R2) AND #surla-preserved-draft with question text.
