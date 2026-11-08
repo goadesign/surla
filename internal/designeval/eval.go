@@ -148,7 +148,8 @@ func NewEvaluator() *Evaluator {
 
 // NewEvaluatorInDir returns an evaluator whose compiler workspace and
 // evaluation directories are created under tempParentDir, never the process's
-// TMPDIR. Filesystem hosts pass a parent outside their builder's write grant.
+// TMPDIR. Filesystem hosts pass a parent outside their builder's write grant
+// with read, write, and search permission for allocation and cleanup.
 // An empty parent preserves NewEvaluator's host-default behavior. Construction
 // creates nothing; the first operation creates the parent if needed, and Close
 // removes only this evaluator's temporary directories, keeping unsafe builds.

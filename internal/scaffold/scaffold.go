@@ -48,8 +48,9 @@ type (
 		// Dir is the directory to create. It must not exist.
 		Dir string
 		// WorkDir is an existing operator-owned parent for staging and logs,
-		// outside the target parent and the builder's write grant. It must
-		// share the destination filesystem so publication moves one tree.
+		// outside the target parent and the builder's write grant. It needs
+		// read, write, and search permission for allocation and cleanup, and
+		// must share the destination filesystem so publication moves one tree.
 		WorkDir string
 		// Module is the candidate's Go module path, such as
 		// example.com/shop. Its last element names the service.
@@ -182,10 +183,9 @@ var (
 
 // Init creates the project described by o, running every command with run
 // and generating each module's code with gen, which it closes before
-// returning. It returns the service name. A failure before publication leaves
-// the target unchanged; a directory-sync failure after publication names the
-// created project and leaves it intact. Logs of failed commands are retained,
-// and a command whose child cleanup is unconfirmed also retains its stage.
+// returning. It returns the service name. On error the target is unchanged.
+// Logs of failed commands are retained, and a command whose child cleanup is
+// unconfirmed also retains its stage.
 func Init(ctx context.Context, o Options, run Runner, gen Generator) (name string, err error) {
 	genClosed := false
 	defer func() {
@@ -214,7 +214,6 @@ func Init(ctx context.Context, o Options, run Runner, gen Generator) (name strin
 	if err != nil {
 		return "", err
 	}
-	defer func() { err = errors.Join(err, stage.close()) }()
 	staging, logs := stage.path, stage.logs
 	if err := build(ctx, staging, logs, d, run, gen); err != nil {
 		var stuck *stuckError
@@ -232,8 +231,8 @@ func Init(ctx context.Context, o Options, run Runner, gen Generator) (name strin
 		return "", errors.Join(err, os.RemoveAll(logs), os.RemoveAll(staging))
 	}
 	// Every step succeeded, so the logs are no longer needed. They are removed
-	// before publishing; the subsequent directory synchronization can still
-	// report that an already-created project may not survive a machine failure.
+	// before publishing so that the exclusive rename is the last thing that can
+	// fail. A successful publication cannot be reported as a failed init.
 	if err := os.RemoveAll(logs); err != nil {
 		return "", errors.Join(fmt.Errorf("remove command logs: %w", err), os.RemoveAll(staging))
 	}

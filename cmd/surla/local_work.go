@@ -101,8 +101,9 @@ func physicalLocalRoots(roots []string) ([]string, error) {
 
 // createProtectedDir checks existing ancestors before creating storage, so a
 // symlinked parent cannot place new compiler files inside a builder's grant.
-// A returned directory permits the current effective user to create files and
-// search its entries; an existing but read-only directory is not a location.
+// A returned directory permits the current effective user to read, write, and
+// search its entries: Go removes populated temporary children through their
+// parent, which requires read permission as well as allocation permission.
 func createProtectedDir(candidate string, protected []string) (string, error) {
 	physical, err := resolveMissingPath(candidate)
 	if err != nil {
@@ -124,8 +125,8 @@ func createProtectedDir(candidate string, protected []string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if err := unix.Faccessat(unix.AT_FDCWD, physical, unix.W_OK|unix.X_OK, unix.AT_EACCESS); err != nil {
-		return "", fmt.Errorf("operator directory %s must allow creating and accessing temporary files: %w", physical, err)
+	if err := unix.Faccessat(unix.AT_FDCWD, physical, unix.R_OK|unix.W_OK|unix.X_OK, unix.AT_EACCESS); err != nil {
+		return "", fmt.Errorf("operator directory %s must allow allocating and cleaning up temporary files: %w", physical, err)
 	}
 	return physical, nil
 }

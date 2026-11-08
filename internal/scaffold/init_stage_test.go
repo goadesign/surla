@@ -45,6 +45,44 @@ func TestInitPublishesTheBuiltTreeFromProtectedStorage(t *testing.T) {
 	assertOnly(t, tmp)
 }
 
+// TestInitPublishesUnderAWriteSearchOnlyParent preserves the CLI's existing
+// destination permissions while moving one completed tree with populated logs.
+func TestInitPublishesUnderAWriteSearchOnlyParent(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("UID 0 bypasses directory read restrictions; this case requires an unprivileged process")
+	}
+	parent, work := t.TempDir(), t.TempDir()
+	require.NoError(t, os.Chmod(parent, 0o300))
+	t.Cleanup(func() { require.NoError(t, os.Chmod(parent, 0o700)) })
+	var built os.FileInfo
+	run := func(_ context.Context, dir, log string, args ...string) error {
+		if built == nil {
+			var err error
+			built, err = os.Stat(dir)
+			require.NoError(t, err)
+		}
+		if err := os.WriteFile(log, []byte("trusted command fixture output\n"), 0o600); err != nil {
+			return err
+		}
+		return fakeGo(dir, args)
+	}
+	target := filepath.Join(parent, "shop")
+	gen := &fakeGenerator{pkgs: []string{"shop"}}
+	_, err := Init(t.Context(), Options{
+		Dir: target, WorkDir: work, Module: "example.com/shop", SurlaVersion: published,
+	}, run, gen)
+	require.NoError(t, err)
+	created, err := os.Stat(target)
+	require.NoError(t, err)
+	assert.True(t, os.SameFile(built, created), "publication moves the exact completed tree")
+	info, err := os.Stat(parent)
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(0o300), info.Mode().Perm())
+	assert.Equal(t, 1, gen.closes)
+	assert.FileExists(t, filepath.Join(target, "gen", "shop", "service.go"))
+	assertOnly(t, work)
+}
+
 // TestInitNeverReplacesAnEmptyDirectoryFileOrLink checks targets planted
 // after initial validation; even an empty directory must survive publication.
 func TestInitNeverReplacesAnEmptyDirectoryFileOrLink(t *testing.T) {
