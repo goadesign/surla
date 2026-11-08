@@ -500,6 +500,12 @@ func completeStructuredAnalysis[T any](
 	resp, err := client.Complete(ctx, req)
 	if err != nil {
 		if ovErr, ok := exactOutputValidation(err); ok {
+			if ovErr.Kind() == model.OutputValidationOutputLimited {
+				return zero, newAnalysisRejected(
+					"provider stopped at output limit; shorten the request before retrying",
+					err,
+				)
+			}
 			return zero, newAnalysisRejected(
 				fmt.Sprintf("model output failed %q validation", ovErr.Kind()),
 				err,
