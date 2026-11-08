@@ -74,7 +74,7 @@ func TestInitRefusesAnExistingDirectory(t *testing.T) {
 	require.NoError(t, os.Symlink(empty, link))
 	for _, dir := range []string{empty, full, link} {
 		gen := &fakeGenerator{}
-		_, err := Init(t.Context(), Options{Dir: dir, Module: "example.com/shop", SurlaVersion: published}, failRunner(t), gen)
+		_, err := Init(t.Context(), Options{Dir: dir, WorkDir: t.TempDir(), Module: "example.com/shop", SurlaVersion: published}, failRunner(t), gen)
 		require.ErrorContains(t, err, "already exists", dir)
 		assert.ErrorContains(t, err, "-dir "+filepath.Join(dir, "shop"), dir)
 		assert.ErrorContains(t, err, "change to the parent directory and remove an empty directory first", dir)
@@ -103,7 +103,7 @@ func TestInitLeavesNothingWhenAStepFails(t *testing.T) {
 		}
 		return fakeGo(moduleDir, args)
 	}
-	_, err := Init(t.Context(), Options{Dir: dir, Module: "example.com/shop", SurlaVersion: published}, run, &fakeGenerator{pkgs: []string{"shop"}})
+	_, err := Init(t.Context(), Options{Dir: dir, WorkDir: t.TempDir(), Module: "example.com/shop", SurlaVersion: published}, run, &fakeGenerator{pkgs: []string{"shop"}})
 	var step *StepError
 	require.ErrorAs(t, err, &step)
 	assert.Equal(t, []string{"go", "vet", "./..."}, step.Args)
@@ -129,7 +129,7 @@ func TestInitNeverReplacesADirectoryCreatedMeanwhile(t *testing.T) {
 		}
 		return fakeGo(moduleDir, args)
 	}
-	_, err := Init(t.Context(), Options{Dir: dir, Module: "example.com/shop", SurlaVersion: published}, run, &fakeGenerator{pkgs: []string{"shop"}})
+	_, err := Init(t.Context(), Options{Dir: dir, WorkDir: t.TempDir(), Module: "example.com/shop", SurlaVersion: published}, run, &fakeGenerator{pkgs: []string{"shop"}})
 	require.ErrorContains(t, err, "move project into")
 	assertOnly(t, parent, "shop")
 	assertOnly(t, dir, "late.txt")
@@ -141,8 +141,9 @@ func TestInitKeepsStagingWhenProcessesMayStillRun(t *testing.T) {
 	run := func(_ context.Context, _, _ string, _ ...string) error {
 		return &stuckError{err: errors.New("process group did not exit")}
 	}
+	work := t.TempDir()
 	gen := &fakeGenerator{}
-	_, err := Init(t.Context(), Options{Dir: dir, Module: "example.com/shop", SurlaVersion: published}, run, gen)
+	_, err := Init(t.Context(), Options{Dir: dir, WorkDir: work, Module: "example.com/shop", SurlaVersion: published}, run, gen)
 	assert.Equal(t, 1, gen.closes)
 	var step *StepError
 	require.ErrorAs(t, err, &step)
@@ -150,10 +151,12 @@ func TestInitKeepsStagingWhenProcessesMayStillRun(t *testing.T) {
 	assert.Equal(t, ".", step.Module)
 	assert.Empty(t, step.Tail, "a log that may still be written is not read")
 	assert.Contains(t, err.Error(), "is kept because processes may still use it")
-	entries, err := os.ReadDir(parent)
+	entries, err := os.ReadDir(work)
 	require.NoError(t, err)
-	require.Len(t, entries, 1)
-	assert.True(t, strings.HasPrefix(entries[0].Name(), "shop.surla-init-"), entries[0].Name())
+	require.Len(t, entries, 2)
+	assert.True(t, strings.HasPrefix(entries[0].Name(), ".surla-init-"), entries[0].Name())
+	assert.DirExists(t, filepath.Dir(step.Log), "logs remain while processes may still write them")
+	assertOnly(t, parent)
 }
 
 func TestInitStopsAndCleansUpWhenCanceled(t *testing.T) {
@@ -165,7 +168,7 @@ func TestInitStopsAndCleansUpWhenCanceled(t *testing.T) {
 		return RunCommand(ctx, dir, logPath, "sleep", "30")
 	}
 	start := time.Now()
-	_, err := Init(ctx, Options{Dir: dir, Module: "example.com/shop", SurlaVersion: published}, run, &fakeGenerator{})
+	_, err := Init(ctx, Options{Dir: dir, WorkDir: t.TempDir(), Module: "example.com/shop", SurlaVersion: published}, run, &fakeGenerator{})
 	require.Error(t, err)
 	assert.Less(t, time.Since(start), 10*time.Second, "the canceled command's process group is stopped")
 	assertOnly(t, parent)
@@ -182,7 +185,7 @@ func TestInitWritesTheProjectWithTheServiceName(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("TMPDIR", tmp)
 	gen := &fakeGenerator{pkgs: []string{"bakery"}, extra: map[string]string{quickstartGuide: "guide\n"}}
-	name, err := Init(t.Context(), Options{Dir: dir, Module: "example.com/bakery", SurlaVersion: published}, run, gen)
+	name, err := Init(t.Context(), Options{Dir: dir, WorkDir: t.TempDir(), Module: "example.com/bakery", SurlaVersion: published}, run, gen)
 	require.NoError(t, err)
 	assertOnly(t, tmp)
 	assert.Equal(t, "bakery", name)
@@ -257,7 +260,7 @@ func TestInitImportsThePackageGoaGenerated(t *testing.T) {
 	run := func(_ context.Context, moduleDir, _ string, args ...string) error {
 		return fakeGo(moduleDir, args)
 	}
-	name, err := Init(t.Context(), Options{Dir: dir, Module: "example.com/errors", SurlaVersion: published}, run, &fakeGenerator{pkgs: []string{"errors_"}})
+	name, err := Init(t.Context(), Options{Dir: dir, WorkDir: t.TempDir(), Module: "example.com/errors", SurlaVersion: published}, run, &fakeGenerator{pkgs: []string{"errors_"}})
 	require.NoError(t, err)
 	assert.Equal(t, "errors", name)
 	main, err := os.ReadFile(filepath.Join(dir, "cmd", "errors", "main.go"))
@@ -290,7 +293,7 @@ func TestInitRequiresExactlyOneGeneratedService(t *testing.T) {
 			run := func(_ context.Context, moduleDir, _ string, args ...string) error {
 				return fakeGo(moduleDir, args)
 			}
-			_, err := Init(t.Context(), Options{Dir: filepath.Join(parent, "shop"), Module: "example.com/shop", SurlaVersion: published}, run, &fakeGenerator{pkgs: tc.pkgs})
+			_, err := Init(t.Context(), Options{Dir: filepath.Join(parent, "shop"), WorkDir: t.TempDir(), Module: "example.com/shop", SurlaVersion: published}, run, &fakeGenerator{pkgs: tc.pkgs})
 			require.ErrorContains(t, err, tc.wantErr)
 			assertOnly(t, parent)
 		})
@@ -330,7 +333,7 @@ func TestInitLeavesNoProjectWhenGenerationFails(t *testing.T) {
 			run := func(_ context.Context, moduleDir, _ string, args ...string) error {
 				return fakeGo(moduleDir, args)
 			}
-			_, err := Init(ctx, Options{Dir: filepath.Join(parent, "shop"), Module: "example.com/shop", SurlaVersion: published}, run, tc.gen)
+			_, err := Init(ctx, Options{Dir: filepath.Join(parent, "shop"), WorkDir: t.TempDir(), Module: "example.com/shop", SurlaVersion: published}, run, tc.gen)
 			require.ErrorContains(t, err, tc.wantErr)
 			assertOnly(t, parent)
 			assert.Equal(t, 1, tc.gen.closes)
@@ -354,7 +357,7 @@ func TestInitReadmeFirstRunSnippetsMatchTheProject(t *testing.T) {
 	}
 	t.Setenv("TMPDIR", t.TempDir())
 	gen := &fakeGenerator{pkgs: []string{"bakery"}, extra: map[string]string{quickstartGuide: "guide\n"}}
-	_, err := Init(t.Context(), Options{Dir: dir, Module: "example.com/bakery", SurlaVersion: published}, run, gen)
+	_, err := Init(t.Context(), Options{Dir: dir, WorkDir: t.TempDir(), Module: "example.com/bakery", SurlaVersion: published}, run, gen)
 	require.NoError(t, err)
 	readmeRaw, err := os.ReadFile(filepath.Join(dir, "README.md"))
 	require.NoError(t, err)

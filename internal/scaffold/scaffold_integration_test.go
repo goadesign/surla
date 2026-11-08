@@ -22,7 +22,7 @@ func TestInitBuildsForNamesThatCollideWithTemplatesOrGo(t *testing.T) {
 	for _, name := range []string{"helper", "service", "catalog", "errors", "string"} {
 		t.Run(name, func(t *testing.T) {
 			dir := filepath.Join(t.TempDir(), name)
-			_, err := Init(t.Context(), Options{Dir: dir, Module: "example.com/" + name, SurlaVersion: published}, RunCommand, designeval.NewEvaluator())
+			_, err := Init(t.Context(), Options{Dir: dir, WorkDir: t.TempDir(), Module: "example.com/" + name, SurlaVersion: published}, RunCommand, designeval.NewEvaluator())
 			require.NoError(t, err, "Init runs go vet on both modules")
 		})
 	}
@@ -38,7 +38,7 @@ func TestInitCreatesAProjectWhoseSuitePasses(t *testing.T) {
 	for _, service := range []string{"shop", "errors"} {
 		t.Run(service, func(t *testing.T) {
 			dir := filepath.Join(t.TempDir(), service)
-			name, err := Init(t.Context(), Options{Dir: dir, Module: "example.com/" + service, SurlaVersion: published}, RunCommand, designeval.NewEvaluator())
+			name, err := Init(t.Context(), Options{Dir: dir, WorkDir: t.TempDir(), Module: "example.com/" + service, SurlaVersion: published}, RunCommand, designeval.NewEvaluator())
 			require.NoError(t, err)
 			bin := t.TempDir()
 			build := func(moduleDir, out, pkg string) {

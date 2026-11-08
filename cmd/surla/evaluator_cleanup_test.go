@@ -23,12 +23,14 @@ func TestPreviewAndDiffRemoveTheirWorkspaceWhenEvaluationFails(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
+			operator := isolateLocalWork(t)
 			module := t.TempDir()
 			require.NoError(t, os.WriteFile(filepath.Join(module, "go.mod"), []byte("module example.com/design\n\ngo 1.24\n"), 0o600))
 			require.NoError(t, os.WriteFile(filepath.Join(module, "go.sum"), nil, 0o600))
 			require.NoError(t, os.MkdirAll(filepath.Join(module, "design"), 0o700))
 			require.NoError(t, os.WriteFile(filepath.Join(module, "design", "design.go"), []byte("package design\n"), 0o600))
-			tmp := t.TempDir()
+			tmp := filepath.Join(module, "tmp")
+			require.NoError(t, os.Mkdir(tmp, 0o700))
 			t.Setenv("TMPDIR", tmp)
 			// The go on PATH fails, so the evaluation fails right after the
 			// command's evaluator created its workspace.
@@ -38,9 +40,12 @@ func TestPreviewAndDiffRemoveTheirWorkspaceWhenEvaluationFails(t *testing.T) {
 
 			err := tc.run(module)
 			require.ErrorContains(t, err, "resolve go env")
-			left, globErr := filepath.Glob(filepath.Join(tmp, "surla-designeval-*"))
+			left, globErr := filepath.Glob(filepath.Join(operator, "surla", "operator", "designeval-work", "surla-designeval-*"))
 			require.NoError(t, globErr)
 			assert.Empty(t, left, "the command removed its evaluator workspace before returning")
+			entries, err := os.ReadDir(tmp)
+			require.NoError(t, err)
+			assert.Empty(t, entries, "builder-writable TMPDIR receives no evaluator files")
 		})
 	}
 }

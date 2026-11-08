@@ -383,7 +383,11 @@ func runPreview(args []string, w, stderr io.Writer) (err error) {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	ev := designeval.NewEvaluator()
+	evalWorkDir, err := localEvalWorkDir(*dir)
+	if err != nil {
+		return err
+	}
+	ev := designeval.NewEvaluatorInDir(evalWorkDir)
 	defer func() { err = errors.Join(err, ev.Close()) }()
 	res, err := ev.Evaluate(ctx, files)
 	if err != nil {
@@ -435,7 +439,11 @@ func runDiff(args []string) (err error) {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	ev := designeval.NewEvaluator()
+	evalWorkDir, err := localEvalWorkDir(*oldDir, *newDir)
+	if err != nil {
+		return err
+	}
+	ev := designeval.NewEvaluatorInDir(evalWorkDir)
 	defer func() { err = errors.Join(err, ev.Close()) }()
 	rep, err := diff.Compare(ctx, ev, oldFiles, newFiles)
 	if err != nil {

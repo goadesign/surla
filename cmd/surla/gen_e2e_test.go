@@ -58,8 +58,9 @@ func TestGenMatchesGoaGenByteForByte(t *testing.T) {
 // regenerating after a design edit in one module leaves the other module
 // byte-for-byte unchanged.
 func TestGenOnAFreshStarterChangesNothingAndKeepsModulesApart(t *testing.T) {
+	isolateLocalWork(t)
 	dir := filepath.Join(t.TempDir(), "shop")
-	_, err := scaffold.Init(t.Context(), scaffold.Options{Dir: dir, Module: "example.com/shop", SurlaVersion: starterSurlaVersion},
+	_, err := scaffold.Init(t.Context(), scaffold.Options{Dir: dir, WorkDir: t.TempDir(), Module: "example.com/shop", SurlaVersion: starterSurlaVersion},
 		scaffold.RunCommand, designeval.NewEvaluator())
 	require.NoError(t, err)
 	evalDir := filepath.Join(dir, "eval")

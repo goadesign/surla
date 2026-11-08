@@ -73,6 +73,9 @@ type (
 		mu sync.Mutex
 		// workDir is the shared build workspace, empty until first use.
 		workDir string
+		// tempParentDir is the owner's temporary storage parent; empty uses
+		// the host default for embedded callers without a workspace.
+		tempParentDir string
 		// closed is set when Close starts; later evaluations are refused.
 		closed bool
 		// unsafe is set, and never cleared, once an evaluation's build
@@ -140,8 +143,18 @@ var errEvaluatorClosed = errors.New("design evaluator is closed")
 
 // NewEvaluator returns an Evaluator. It runs no command and creates no file.
 func NewEvaluator() *Evaluator {
+	return NewEvaluatorInDir("")
+}
+
+// NewEvaluatorInDir returns an evaluator whose compiler workspace and
+// evaluation directories are created under tempParentDir, never the process's
+// TMPDIR. Filesystem hosts pass a parent outside their builder's write grant.
+// An empty parent preserves NewEvaluator's host-default behavior. Construction
+// creates nothing; the first operation creates the parent if needed, and Close
+// removes only this evaluator's temporary directories, keeping unsafe builds.
+func NewEvaluatorInDir(tempParentDir string) *Evaluator {
 	ctx, cancel := context.WithCancel(context.Background())
-	e := &Evaluator{ctx: ctx, cancel: cancel}
+	e := &Evaluator{ctx: ctx, cancel: cancel, tempParentDir: tempParentDir}
 	e.closeResult = sync.OnceValue(e.close)
 	return e
 }
@@ -345,7 +358,7 @@ func runSandboxed(ctx context.Context, files map[string]string, workDir, program
 		return listedModule{}, err
 	}
 
-	tmpDir, err := os.MkdirTemp("", "surla-designeval-*")
+	tmpDir, err := os.MkdirTemp(filepath.Dir(workDir), "surla-designeval-*")
 	if err != nil {
 		return listedModule{}, fmt.Errorf("create temp dir: %w", err)
 	}
@@ -516,7 +529,12 @@ func (e *Evaluator) admit() (string, error) {
 		return "", errEvaluatorClosed
 	}
 	if e.workDir == "" {
-		dir, err := os.MkdirTemp("", "surla-designeval-work-*")
+		if e.tempParentDir != "" {
+			if err := os.MkdirAll(e.tempParentDir, 0o700); err != nil {
+				return "", fmt.Errorf("create design evaluator parent: %w", err)
+			}
+		}
+		dir, err := os.MkdirTemp(e.tempParentDir, "surla-designeval-work-*")
 		if err != nil {
 			return "", fmt.Errorf("create design evaluator workspace: %w", err)
 		}

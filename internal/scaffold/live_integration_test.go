@@ -59,7 +59,7 @@ type echoStream struct {
 // network and, for the sandbox, macOS.
 func TestStarterLiveTargetAppliesADraftToTheNextModelRequest(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "shop")
-	name, err := Init(t.Context(), Options{Dir: dir, Module: "example.com/shop", SurlaVersion: published}, RunCommand, designeval.NewEvaluator())
+	name, err := Init(t.Context(), Options{Dir: dir, WorkDir: t.TempDir(), Module: "example.com/shop", SurlaVersion: published}, RunCommand, designeval.NewEvaluator())
 	require.NoError(t, err)
 	commit := commitAll(t, dir)
 

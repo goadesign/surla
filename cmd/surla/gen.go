@@ -78,7 +78,11 @@ func runGen(args []string, stdout, stderr io.Writer) (err error) {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	ev := designeval.NewEvaluator()
+	evalWorkDir, err := localEvalWorkDir(cleanDir)
+	if err != nil {
+		return err
+	}
+	ev := designeval.NewEvaluatorInDir(evalWorkDir)
 	evClosed := false
 	defer func() {
 		if !evClosed {
