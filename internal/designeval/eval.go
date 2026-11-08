@@ -122,6 +122,18 @@ const buildStopGrace = 10 * time.Second
 // generator.CompleteSources, which Generate needs.
 const completeSourcesGoa = "v3.35.1-0.20261103205041-35e789e8f9b1"
 
+// sandboxExit71 is the exit status (EX_OSERR) /usr/bin/sandbox-exec returns
+// when macOS refuses to apply a sandbox profile (for example inside a nested
+// restricted coding-agent shell), and also when the sandboxed child itself
+// calls os.Exit(71).
+const sandboxExit71 = 71
+
+// exit71Guidance is appended to a non-canceled sandboxed build or evaluation
+// error whose command exited with status 71. It states the observed exit code
+// and gives conditional recovery advice without claiming the sandbox failed to
+// start.
+const exit71Guidance = "The sandboxed command exited with status 71. If Surla is running inside a restricted coding-agent shell, its sandbox may have been blocked; run Surla from an unrestricted host shell."
+
 // errEvaluatorClosed is the cause of an evaluation canceled by Close, and
 // the error Evaluate returns after Close.
 var errEvaluatorClosed = errors.New("design evaluator is closed")
@@ -381,9 +393,9 @@ func runSandboxed(ctx context.Context, files map[string]string, workDir, program
 		}
 		logBytes, readErr := os.ReadFile(buildLog)
 		if readErr != nil {
-			return goa, &buildError{err: fmt.Errorf("compile Goa design: %w", err)}
+			return goa, &buildError{err: withExit71Guidance(ctx, fmt.Errorf("compile Goa design: %w", err))}
 		}
-		return goa, &buildError{err: fmt.Errorf("compile Goa design: %w (%s)", err, strings.TrimSpace(string(logBytes)))}
+		return goa, &buildError{err: withExit71Guidance(ctx, fmt.Errorf("compile Goa design: %w (%s)", err, strings.TrimSpace(string(logBytes))))}
 	}
 
 	art, err := candidate.Pin(storeDir, rawBin)
@@ -401,11 +413,24 @@ func runSandboxed(ctx context.Context, files map[string]string, workDir, program
 	if waitErr := proc.Wait(); waitErr != nil {
 		excerpt, _, exErr := proc.Excerpt(16 << 10)
 		if exErr != nil {
-			return goa, fmt.Errorf("evaluate Goa design in sandbox: %w", waitErr)
+			return goa, withExit71Guidance(ctx, fmt.Errorf("evaluate Goa design in sandbox: %w", waitErr))
 		}
-		return goa, fmt.Errorf("evaluate Goa design in sandbox: %w (%s)", waitErr, strings.TrimSpace(excerpt))
+		return goa, withExit71Guidance(ctx, fmt.Errorf("evaluate Goa design in sandbox: %w (%s)", waitErr, strings.TrimSpace(excerpt)))
 	}
 	return goa, collect(stateDir)
+}
+
+// withExit71Guidance appends exit71Guidance to err when ctx was not canceled
+// and the sandboxed command exited with status 71.
+func withExit71Guidance(ctx context.Context, err error) error {
+	if ctx.Err() != nil {
+		return err
+	}
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) && exitErr.ExitCode() == sandboxExit71 {
+		return fmt.Errorf("%w\n%s", err, exit71Guidance)
+	}
+	return err
 }
 
 // resolveToolchainEnv resolves the Go toolchain root and module cache for one

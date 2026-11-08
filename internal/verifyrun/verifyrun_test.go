@@ -80,6 +80,12 @@ func fakeRun(ctx context.Context, plan verify.Plan) (verify.Report, error) {
 	case "fail":
 		return verify.Report{}, &verify.StageError{Stage: verify.StageBuild, Summary: "The candidate did not build.",
 			Err: errors.New("compile error in /private/secret/path")}
+	case "fail-exit71":
+		return verify.Report{}, &verify.StageError{
+			Stage:   verify.StageBuild,
+			Summary: "The sandboxed command exited with status 71. If Surla is running inside a restricted coding-agent shell, its sandbox may have been blocked; run Surla from an unrestricted host shell.",
+			Err:     errors.New("build candidate app: exit status 71 in /private/secret/path"),
+		}
 	case "hang":
 		store := filepath.Join(plan.WorkDir, "store")
 		if err := os.MkdirAll(store, 0o700); err != nil {
@@ -241,6 +247,21 @@ func TestFailedStepReadsAsExecutionFailedWithoutItsOutput(t *testing.T) {
 	evidence, err := os.ReadFile(filepath.Join(root, runID, "executor.log"))
 	require.NoError(t, err)
 	assert.Contains(t, string(evidence), "/private/secret/path", "the full error stays with the evaluator")
+
+	root71, runID71, _ := start(t, "fail-exit71")
+	require.NoError(t, Wait(root71, runID71))
+	_, state71, err := Read(root71, runID71)
+	require.NoError(t, err)
+	want71Summary := "The sandboxed command exited with status 71. If Surla is running inside a restricted coding-agent shell, its sandbox may have been blocked; run Surla from an unrestricted host shell."
+	assert.Equal(t, State{Kind: StateNotCompleted, Result: Result{
+		Kind: ResultNoReport, Failure: FailureExecution, Stage: "build", Summary: want71Summary,
+	}}, state71)
+	saved71, err := os.ReadFile(filepath.Join(root71, runID71, "result.json"))
+	require.NoError(t, err)
+	assert.NotContains(t, string(saved71), "/private/secret/path")
+	evidence71, err := os.ReadFile(filepath.Join(root71, runID71, "executor.log"))
+	require.NoError(t, err)
+	assert.Contains(t, string(evidence71), "/private/secret/path")
 }
 
 func TestKilledExecutorIsInterruptedAndLeavesNoProcesses(t *testing.T) {

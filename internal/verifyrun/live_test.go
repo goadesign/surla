@@ -57,6 +57,12 @@ func fakePrepare(ctx context.Context, _ verify.Plan) (verify.Prepared, error) {
 	case "prepare-fails":
 		return verify.Prepared{}, &verify.StageError{Stage: verify.StageBuild, Summary: "The candidate did not build.",
 			Err: errors.New("compile error in /private/secret/path")}
+	case "prepare-fails-exit71":
+		return verify.Prepared{}, &verify.StageError{
+			Stage:   verify.StageBuild,
+			Summary: "The sandboxed command exited with status 71. If Surla is running inside a restricted coding-agent shell, its sandbox may have been blocked; run Surla from an unrestricted host shell.",
+			Err:     errors.New("build candidate app: exit status 71 in /private/secret/path"),
+		}
 	case "prepare-hangs":
 		if err := startRecordedChild(); err != nil {
 			return verify.Prepared{}, err
@@ -291,6 +297,7 @@ func TestStartLiveReportsAndCleansUpEveryFailedStart(t *testing.T) {
 		wantErr string
 	}{
 		{mode: "prepare-fails", key: "secret-key", wantErr: "The candidate did not build."},
+		{mode: "prepare-fails-exit71", key: "secret-key", wantErr: "The sandboxed command exited with status 71. If Surla is running inside a restricted coding-agent shell, its sandbox may have been blocked; run Surla from an unrestricted host shell."},
 		{mode: "suite-exits", key: "secret-key", wantErr: summaryLiveSuite},
 		{mode: "ready", key: "", wantErr: "live target key is required"},
 	}
