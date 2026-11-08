@@ -648,6 +648,50 @@ paths:
                             timeout: false
             schemes:
                 - http
+    /cp1/model:
+        post:
+            tags:
+                - surla
+            summary: configure_model surla
+            description: Configure or switch the active CP1 semantic analyzer and CP3 live-target model provider and model name or gRPC model gateway on a running control plane without restarting.
+            operationId: surla#configure_model
+            parameters:
+                - name: configure_model_request_body
+                  in: body
+                  required: true
+                  schema:
+                    $ref: '#/definitions/ConfigureModelPayload'
+            responses:
+                "200":
+                    description: OK response.
+                    schema:
+                        $ref: '#/definitions/ModelConfigResult'
+                "422":
+                    description: 'unprocessable: The model provider, model name, gateway address, or required environment credential is invalid.'
+                    schema:
+                        $ref: '#/definitions/SurlaConfigureModelUnprocessableResponseBody'
+                    examples:
+                        application/vnd.goa.error:
+                            fault: false
+                            id: 123abc
+                            message: parameter 'p' must be an integer
+                            name: unprocessable
+                            temporary: false
+                            timeout: false
+                "501":
+                    description: 'not_implemented: Runtime model reconfiguration is not configured on this control plane.'
+                    schema:
+                        $ref: '#/definitions/SurlaConfigureModelNotImplementedResponseBody'
+                    examples:
+                        application/vnd.goa.error:
+                            fault: false
+                            id: 123abc
+                            message: parameter 'p' must be an integer
+                            name: not_implemented
+                            temporary: false
+                            timeout: false
+            schemes:
+                - http
     /diff:
         post:
             tags:
@@ -1851,6 +1895,31 @@ definitions:
             - examples
             - preserved_behaviors
             - request_revision
+    ConfigureModelPayload:
+        title: ConfigureModelPayload
+        type: object
+        properties:
+            gateway_addr:
+                type: string
+                description: Plaintext gRPC host:port of a running goa-ai model gateway; mutually exclusive with provider and model_name.
+                example: 127.0.0.1:9090
+                minLength: 1
+            model_name:
+                type: string
+                description: Provider model identifier when configuring a direct provider (for example claude-sonnet-4-6 or gpt-5.4-mini); must be paired with provider and omitted when gateway_addr is set.
+                example: claude-sonnet-4-6
+                minLength: 1
+            provider:
+                type: string
+                description: Direct model provider name when configuring a direct provider; must be paired with model_name and omitted when gateway_addr is set.
+                example: anthropic
+                enum:
+                    - anthropic
+                    - openai
+        example:
+            gateway_addr: 127.0.0.1:9090
+            model_name: claude-sonnet-4-6
+            provider: anthropic
     ConfirmIntentPayload:
         title: ConfirmIntentPayload
         type: object
@@ -2152,6 +2221,32 @@ definitions:
             - candidate_commit
             - url
             - message
+    ModelConfigResult:
+        title: ModelConfigResult
+        type: object
+        properties:
+            gateway_addr:
+                type: string
+                description: Active gRPC model gateway host:port when a model gateway is configured.
+                example: "0"
+                minLength: 1
+            model_name:
+                type: string
+                description: Active model identifier when a direct provider is configured.
+                example: l
+                minLength: 1
+            provider:
+                type: string
+                description: Active direct model provider when a direct provider is configured.
+                example: openai
+                enum:
+                    - anthropic
+                    - openai
+        description: Active CP1 and live-target model configuration after configure_model succeeds.
+        example:
+            gateway_addr: "0"
+            model_name: l
+            provider: openai
     PreviewArchitecturePayload:
         title: PreviewArchitecturePayload
         type: object
@@ -2561,6 +2656,92 @@ definitions:
             message: parameter 'p' must be an integer
             name: bad_request
             temporary: true
+            timeout: false
+        required:
+            - name
+            - id
+            - message
+            - temporary
+            - timeout
+            - fault
+    SurlaConfigureModelNotImplementedResponseBody:
+        title: 'Mediatype identifier: application/vnd.goa.error; view=default'
+        type: object
+        properties:
+            fault:
+                type: boolean
+                description: Is the error a server-side fault?
+                example: false
+            id:
+                type: string
+                description: ID is a unique identifier for this particular occurrence of the problem.
+                example: 123abc
+            message:
+                type: string
+                description: Message is a human-readable explanation specific to this occurrence of the problem.
+                example: parameter 'p' must be an integer
+            name:
+                type: string
+                description: Name is the name of this class of errors.
+                example: bad_request
+            temporary:
+                type: boolean
+                description: Is the error temporary?
+                example: false
+            timeout:
+                type: boolean
+                description: Is the error a timeout?
+                example: false
+        description: Error response result type (default view)
+        example:
+            fault: false
+            id: 123abc
+            message: parameter 'p' must be an integer
+            name: bad_request
+            temporary: false
+            timeout: false
+        required:
+            - name
+            - id
+            - message
+            - temporary
+            - timeout
+            - fault
+    SurlaConfigureModelUnprocessableResponseBody:
+        title: 'Mediatype identifier: application/vnd.goa.error; view=default'
+        type: object
+        properties:
+            fault:
+                type: boolean
+                description: Is the error a server-side fault?
+                example: true
+            id:
+                type: string
+                description: ID is a unique identifier for this particular occurrence of the problem.
+                example: 123abc
+            message:
+                type: string
+                description: Message is a human-readable explanation specific to this occurrence of the problem.
+                example: parameter 'p' must be an integer
+            name:
+                type: string
+                description: Name is the name of this class of errors.
+                example: bad_request
+            temporary:
+                type: boolean
+                description: Is the error temporary?
+                example: false
+            timeout:
+                type: boolean
+                description: Is the error a timeout?
+                example: false
+        description: Error response result type (default view)
+        example:
+            fault: true
+            id: 123abc
+            message: parameter 'p' must be an integer
+            name: bad_request
+            temporary: false
             timeout: false
         required:
             - name

@@ -72,8 +72,15 @@ type (
 	// liveState is the control plane's live-target state, embedded in
 	// ControlPlane.
 	liveState struct {
-		// live is the operator's live configuration, or nil.
-		live *LiveConfig
+		// liveConfigured reports whether the control plane is configured to
+		// launch managed CP3 live targets.
+		liveConfigured bool
+		// liveCommand is the argument list that runs this surla executable;
+		// targets start `<liveCommand> verify-run live <dir>`.
+		liveCommand []string
+		// liveTimeout bounds how long building and starting a target may
+		// take.
+		liveTimeout time.Duration
 		// liveRoot is <CardsDir>/live.
 		liveRoot string
 		// serverCtx lives as long as the control plane. Close cancels it with
@@ -115,7 +122,7 @@ func (c *ControlPlane) StartLiveTarget(ctx context.Context, p *gensurla.StartLiv
 	if _, ok := PrincipalFromContext(ctx); !ok {
 		return nil, errors.New("authenticated principal is required")
 	}
-	if c.verification == nil || c.live == nil {
+	if c.verification == nil || !c.liveConfigured {
 		return nil, gensurla.MakeLiveTargetUnavailable(errors.New("this server has no verification configuration, so it cannot build or run a live target"))
 	}
 	ctx, span := otel.Tracer("surla/controlplane").Start(ctx, "controlplane.start_live_target",
@@ -138,11 +145,11 @@ func (c *ControlPlane) StartLiveTarget(ctx context.Context, p *gensurla.StartLiv
 	}
 	plan := c.verification.Plan
 	plan.CandidateCommit = p.CandidateCommit
-	timeout := c.live.StartTimeout
+	timeout := c.liveTimeout
 	if timeout <= 0 {
 		timeout = startTimeoutDefault
 	}
-	proc, err := verifyrun.LaunchLive(c.liveRoot, plan, key, c.live.Command, c.live.Env)
+	proc, err := verifyrun.LaunchLive(c.liveRoot, plan, key, c.liveCommand, c.liveEnv())
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "live target did not launch")
@@ -306,10 +313,21 @@ func LiveRoot(cardsDir string) string {
 }
 
 // newLiveState returns the live-target state for a control plane whose cards
-// are in cardsDir.
+// are in cardsDir, retaining only the launch command and start timeout from
+// cfg while ControlPlane.activeModel owns the live target environment.
 func newLiveState(cfg *LiveConfig, cardsDir string) liveState {
 	ctx, cancel := context.WithCancel(context.Background())
-	return liveState{live: cfg, liveRoot: LiveRoot(cardsDir), serverCtx: ctx, cancelServer: cancel}
+	if cfg == nil {
+		return liveState{liveRoot: LiveRoot(cardsDir), serverCtx: ctx, cancelServer: cancel}
+	}
+	return liveState{
+		liveConfigured: true,
+		liveCommand:    cfg.Command,
+		liveTimeout:    cfg.StartTimeout,
+		liveRoot:       LiveRoot(cardsDir),
+		serverCtx:      ctx,
+		cancelServer:   cancel,
+	}
 }
 
 // liveDraftError maps an override error to draft_override's errors with

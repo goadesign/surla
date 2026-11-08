@@ -83,3 +83,8 @@ func ApproveMergeSurlaPath() string {
 func DiffSurlaPath() string {
 	return "/diff"
 }
+
+// ConfigureModelSurlaPath returns the URL path to the surla service configure_model HTTP endpoint.
+func ConfigureModelSurlaPath() string {
+	return "/cp1/model"
+}

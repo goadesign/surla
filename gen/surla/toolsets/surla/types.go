@@ -65,6 +65,28 @@ type (
 		// hashed into request_revision.
 		UnverifiedApproval *UnverifiedApprovalItem
 	}
+	// ConfigureModelPayload defines the JSON payload for the surla.configure_model tool.
+	ConfigureModelPayload = struct {
+		// Direct model provider name when configuring a direct provider; must be
+		// paired with model_name and omitted when gateway_addr is set.
+		Provider *string
+		// Provider model identifier when configuring a direct provider (for example
+		// claude-sonnet-4-6 or gpt-5.4-mini); must be paired with provider and omitted
+		// when gateway_addr is set.
+		ModelName *string
+		// Plaintext gRPC host:port of a running goa-ai model gateway; mutually
+		// exclusive with provider and model_name.
+		GatewayAddr *string
+	}
+	// ConfigureModelResult defines the JSON result for the surla.configure_model tool.
+	ConfigureModelResult = struct {
+		// Active direct model provider when a direct provider is configured.
+		Provider *string
+		// Active model identifier when a direct provider is configured.
+		ModelName *string
+		// Active gRPC model gateway host:port when a model gateway is configured.
+		GatewayAddr *string
+	}
 	// ConfirmIntentPayload defines the JSON payload for the surla.confirm_intent tool.
 	ConfirmIntentPayload = struct {
 		// Change identifier.

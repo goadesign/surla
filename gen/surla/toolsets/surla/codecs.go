@@ -38,6 +38,22 @@ func ApproveMergeResultCodec() tools.JSONCodec[*ApproveMergeResult] {
 	}
 }
 
+// ConfigureModelPayloadCodec returns a fresh codec for *ConfigureModelPayload.
+func ConfigureModelPayloadCodec() tools.JSONCodec[*ConfigureModelPayload] {
+	return tools.JSONCodec[*ConfigureModelPayload]{
+		ToJSON:   MarshalConfigureModelPayload,
+		FromJSON: UnmarshalConfigureModelPayload,
+	}
+}
+
+// ConfigureModelResultCodec returns a fresh codec for *ConfigureModelResult.
+func ConfigureModelResultCodec() tools.JSONCodec[*ConfigureModelResult] {
+	return tools.JSONCodec[*ConfigureModelResult]{
+		ToJSON:   MarshalConfigureModelResult,
+		FromJSON: UnmarshalConfigureModelResult,
+	}
+}
+
 // ConfirmIntentPayloadCodec returns a fresh codec for *ConfirmIntentPayload.
 func ConfirmIntentPayloadCodec() tools.JSONCodec[*ConfirmIntentPayload] {
 	return tools.JSONCodec[*ConfirmIntentPayload]{
@@ -255,6 +271,32 @@ var (
 		},
 		FromJSON: func(data []byte) (any, error) {
 			return UnmarshalApproveMergeResult(data)
+		},
+	}
+	// configureModelPayloadCodec provides an untyped codec for *ConfigureModelPayload.
+	configureModelPayloadCodec = tools.JSONCodec[any]{
+		ToJSON: func(v any) ([]byte, error) {
+			// Prefer typed marshal when the value matches the expected type.
+			if typed, ok := v.(*ConfigureModelPayload); ok {
+				return MarshalConfigureModelPayload(typed)
+			}
+			return nil, fmt.Errorf("invalid value type for *ConfigureModelPayload: %T", v)
+		},
+		FromJSON: func(data []byte) (any, error) {
+			return UnmarshalConfigureModelPayload(data)
+		},
+	}
+	// configureModelResultCodec provides an untyped codec for *ConfigureModelResult.
+	configureModelResultCodec = tools.JSONCodec[any]{
+		ToJSON: func(v any) ([]byte, error) {
+			// Prefer typed marshal when the value matches the expected type.
+			if typed, ok := v.(*ConfigureModelResult); ok {
+				return MarshalConfigureModelResult(typed)
+			}
+			return nil, fmt.Errorf("invalid value type for *ConfigureModelResult: %T", v)
+		},
+		FromJSON: func(data []byte) (any, error) {
+			return UnmarshalConfigureModelResult(data)
 		},
 	}
 	// confirmIntentPayloadCodec provides an untyped codec for *ConfirmIntentPayload.
@@ -840,6 +882,48 @@ var approveMergeResultFields = []tools.FieldMetadata{
 		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("reason")},
 		JSONType:    "string",
 		Description: "Explanation of why the recorded approval could not be verified against current promotion inputs and how to recover.",
+	},
+}
+var configureModelPayloadFields = []tools.FieldMetadata{
+	{
+		JSONType:    "object",
+		Description: "Selects either a direct model provider and model name (using the API key already present in surla serve's process environment) or a running goa-ai model gateway address.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("provider")},
+		JSONType:    "string",
+		Description: "Direct model provider name when configuring a direct provider; must be paired with model_name and omitted when gateway_addr is set.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("model_name")},
+		JSONType:    "string",
+		Description: "Provider model identifier when configuring a direct provider (for example claude-sonnet-4-6 or gpt-5.4-mini); must be paired with provider and omitted when gateway_addr is set.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("gateway_addr")},
+		JSONType:    "string",
+		Description: "Plaintext gRPC host:port of a running goa-ai model gateway; mutually exclusive with provider and model_name.",
+	},
+}
+var configureModelResultFields = []tools.FieldMetadata{
+	{
+		JSONType:    "object",
+		Description: "Active CP1 and live-target model configuration after configure_model succeeds.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("provider")},
+		JSONType:    "string",
+		Description: "Active direct model provider when a direct provider is configured.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("model_name")},
+		JSONType:    "string",
+		Description: "Active model identifier when a direct provider is configured.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("gateway_addr")},
+		JSONType:    "string",
+		Description: "Active gRPC model gateway host:port when a model gateway is configured.",
 	},
 }
 var confirmIntentPayloadFields = []tools.FieldMetadata{
@@ -3795,6 +3879,40 @@ func enrichApproveMergeResultValidationError(err error) error {
 	}
 	return tools.NewValidationError(ve.Error(), issues, m)
 }
+func enrichConfigureModelPayloadValidationError(err error) error {
+	var ve *tools.ValidationError
+	if !errors.As(err, &ve) {
+		return err
+	}
+	issues := ve.Issues()
+	if len(issues) == 0 {
+		return err
+	}
+	m := make(map[string]string)
+	for _, is := range issues {
+		if field, ok := tools.LookupFieldMetadata(configureModelPayloadFields, is.Field); ok && field.Description != "" {
+			m[is.Field] = field.Description
+		}
+	}
+	return tools.NewValidationError(ve.Error(), issues, m)
+}
+func enrichConfigureModelResultValidationError(err error) error {
+	var ve *tools.ValidationError
+	if !errors.As(err, &ve) {
+		return err
+	}
+	issues := ve.Issues()
+	if len(issues) == 0 {
+		return err
+	}
+	m := make(map[string]string)
+	for _, is := range issues {
+		if field, ok := tools.LookupFieldMetadata(configureModelResultFields, is.Field); ok && field.Description != "" {
+			m[is.Field] = field.Description
+		}
+	}
+	return tools.NewValidationError(ve.Error(), issues, m)
+}
 func enrichConfirmIntentPayloadValidationError(err error) error {
 	var ve *tools.ValidationError
 	if !errors.As(err, &ve) {
@@ -4228,6 +4346,68 @@ func invalidApproveMergeResultFieldTypeError(err error) error {
 		field = "$payload"
 	}
 	metadata, ok := tools.LookupFieldMetadata(approveMergeResultFields, field)
+	if !ok || metadata.JSONType == "" {
+		return err
+	}
+	actual := generatedUnmarshalJSONType(typeErr.Value)
+	if actual == "" {
+		return err
+	}
+	return tools.NewValidationError(
+		err.Error(),
+		[]*tools.FieldIssue{
+			{
+				Field:            field,
+				Constraint:       "invalid_field_type",
+				ExpectedJSONType: metadata.JSONType,
+				ActualJSONType:   actual,
+			},
+		},
+		nil,
+	)
+}
+func invalidConfigureModelPayloadFieldTypeError(err error) error {
+	var typeErr *json.UnmarshalTypeError
+	if !errors.As(err, &typeErr) {
+		return err
+	}
+	field := typeErr.Field
+	field = strings.TrimPrefix(field, "ConfigureModelPayloadTransport.")
+	if field == "" {
+		field = "$payload"
+	}
+	metadata, ok := tools.LookupFieldMetadata(configureModelPayloadFields, field)
+	if !ok || metadata.JSONType == "" {
+		return err
+	}
+	actual := generatedUnmarshalJSONType(typeErr.Value)
+	if actual == "" {
+		return err
+	}
+	return tools.NewValidationError(
+		err.Error(),
+		[]*tools.FieldIssue{
+			{
+				Field:            field,
+				Constraint:       "invalid_field_type",
+				ExpectedJSONType: metadata.JSONType,
+				ActualJSONType:   actual,
+			},
+		},
+		nil,
+	)
+}
+func invalidConfigureModelResultFieldTypeError(err error) error {
+	var typeErr *json.UnmarshalTypeError
+	if !errors.As(err, &typeErr) {
+		return err
+	}
+	field := typeErr.Field
+	field = strings.TrimPrefix(field, "ConfigureModelResultTransport.")
+	if field == "" {
+		field = "$payload"
+	}
+	metadata, ok := tools.LookupFieldMetadata(configureModelResultFields, field)
 	if !ok || metadata.JSONType == "" {
 		return err
 	}
@@ -5163,6 +5343,94 @@ func UnmarshalApproveMergeResult(data []byte) (*ApproveMergeResult, error) {
 	}
 	if in.UnverifiedApproval != nil {
 		out.UnverifiedApproval = decodeUnverifiedApprovalItemTransportToUnverifiedApprovalItem(in.UnverifiedApproval)
+	}
+	return out, nil
+}
+
+// MarshalConfigureModelPayload serializes *ConfigureModelPayload into JSON.
+func MarshalConfigureModelPayload(v *ConfigureModelPayload) ([]byte, error) {
+	if v == nil {
+		return nil, fmt.Errorf("configureModelPayload is nil")
+	}
+	in := v
+	_ = in
+	var out *toolhttp.ConfigureModelPayloadTransport
+	out = &toolhttp.ConfigureModelPayloadTransport{
+		Provider:    in.Provider,
+		ModelName:   in.ModelName,
+		GatewayAddr: in.GatewayAddr,
+	}
+	return json.Marshal(out)
+}
+
+// UnmarshalConfigureModelPayload deserializes JSON into *ConfigureModelPayload.
+func UnmarshalConfigureModelPayload(data []byte) (*ConfigureModelPayload, error) {
+	if len(data) == 0 {
+		return nil, fmt.Errorf("configureModelPayload JSON is empty")
+	}
+	var tv toolhttp.ConfigureModelPayloadTransport
+	if err := validateConfigureModelPayloadJSON(data); err != nil {
+		return nil, invalidConfigureModelPayloadFieldTypeError(err)
+	}
+	if err := json.Unmarshal(data, &tv); err != nil {
+		return nil, invalidConfigureModelPayloadFieldTypeError(err)
+	}
+	if err := toolhttp.ValidateConfigureModelPayloadTransport(&tv); err != nil {
+		err = newValidationError(err)
+		err = enrichConfigureModelPayloadValidationError(err)
+		return nil, err
+	}
+	in := &tv
+	_ = in
+	var out *ConfigureModelPayload
+	out = &ConfigureModelPayload{
+		Provider:    in.Provider,
+		ModelName:   in.ModelName,
+		GatewayAddr: in.GatewayAddr,
+	}
+	return out, nil
+}
+
+// MarshalConfigureModelResult serializes *ConfigureModelResult into JSON.
+func MarshalConfigureModelResult(v *ConfigureModelResult) ([]byte, error) {
+	if v == nil {
+		return nil, fmt.Errorf("configureModelResult is nil")
+	}
+	in := v
+	_ = in
+	var out *toolhttp.ConfigureModelResultTransport
+	out = &toolhttp.ConfigureModelResultTransport{
+		Provider:    in.Provider,
+		ModelName:   in.ModelName,
+		GatewayAddr: in.GatewayAddr,
+	}
+	return json.Marshal(out)
+}
+
+// UnmarshalConfigureModelResult deserializes JSON into *ConfigureModelResult.
+func UnmarshalConfigureModelResult(data []byte) (*ConfigureModelResult, error) {
+	if len(data) == 0 {
+		return nil, fmt.Errorf("configureModelResult JSON is empty")
+	}
+	var tv toolhttp.ConfigureModelResultTransport
+	if err := validateConfigureModelResultJSON(data); err != nil {
+		return nil, invalidConfigureModelResultFieldTypeError(err)
+	}
+	if err := json.Unmarshal(data, &tv); err != nil {
+		return nil, invalidConfigureModelResultFieldTypeError(err)
+	}
+	if err := toolhttp.ValidateConfigureModelResultTransport(&tv); err != nil {
+		err = newValidationError(err)
+		err = enrichConfigureModelResultValidationError(err)
+		return nil, err
+	}
+	in := &tv
+	_ = in
+	var out *ConfigureModelResult
+	out = &ConfigureModelResult{
+		Provider:    in.Provider,
+		ModelName:   in.ModelName,
+		GatewayAddr: in.GatewayAddr,
 	}
 	return out, nil
 }
@@ -7051,6 +7319,26 @@ func validateDiffResultJSON(data []byte) error {
 		return err
 	}
 	return validateDiffResultJSONValue("", root, "")
+}
+
+// validateConfigureModelPayloadJSON parses one JSON document and checks the exact value
+// shapes known from this generated Goa type.
+func validateConfigureModelPayloadJSON(data []byte) error {
+	root, err := readStrictToolJSON(data)
+	if err != nil {
+		return err
+	}
+	return validateConfigureModelPayloadJSONValue("", root, "")
+}
+
+// validateConfigureModelResultJSON parses one JSON document and checks the exact value
+// shapes known from this generated Goa type.
+func validateConfigureModelResultJSON(data []byte) error {
+	root, err := readStrictToolJSON(data)
+	if err != nil {
+		return err
+	}
+	return validateConfigureModelResultJSONValue("", root, "")
 }
 
 // readStrictToolJSON checks the complete JSON document for malformed text and
@@ -10167,6 +10455,110 @@ func validateDiffResultJSONValue(path string, value any, description string) err
 				"removed_declarations",
 				"summary",
 				"version_deltas",
+			})
+		}
+	}
+	return nil
+}
+
+// validateConfigureModelPayloadJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateConfigureModelPayloadJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "gateway_addr":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Plaintext gRPC host:port of a running goa-ai model gateway; mutually exclusive with provider and model_name.",
+			); err != nil {
+				return err
+			}
+		case "model_name":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Provider model identifier when configuring a direct provider (for example claude-sonnet-4-6 or gpt-5.4-mini); must be paired with provider and omitted when gateway_addr is set.",
+			); err != nil {
+				return err
+			}
+		case "provider":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Direct model provider name when configuring a direct provider; must be paired with model_name and omitted when gateway_addr is set.",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"gateway_addr",
+				"model_name",
+				"provider",
+			})
+		}
+	}
+	return nil
+}
+
+// validateConfigureModelResultJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateConfigureModelResultJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "gateway_addr":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Active gRPC model gateway host:port when a model gateway is configured.",
+			); err != nil {
+				return err
+			}
+		case "model_name":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Active model identifier when a direct provider is configured.",
+			); err != nil {
+				return err
+			}
+		case "provider":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Active direct model provider when a direct provider is configured.",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"gateway_addr",
+				"model_name",
+				"provider",
 			})
 		}
 	}

@@ -136,6 +136,11 @@ var _ = Service("orders", func() {})
 `)
 	handler := NewHTTPHandler(cp, auth)
 	noAnalyzerHandler := NewHTTPHandler(newControlPlane(t, Options{}), auth)
+	adjustableNoAnalyzerHandler := NewHTTPHandler(newControlPlane(t, Options{
+		ModelBuilder: func(p *gensurla.ConfigureModelPayload) (CP1Analyzer, []string, func() error, error) {
+			return NewModelCP1Analyzer(newStubModelClient(t, string(ambiguousJSON))), nil, nil, nil
+		},
+	}), auth)
 
 	for _, tc := range []struct {
 		name       string
@@ -148,7 +153,12 @@ var _ = Service("orders", func() {})
 		wantFault  bool
 		wantMsg    string
 	}{
-		{"propose without analyzer", noAnalyzerHandler, http.MethodPost, "/changes/propose", "alice-token", map[string]any{"change_id": "x", "prompt": "p"}, http.StatusNotImplemented, false, "cp1 semantic analyzer is required"},
+		{"propose without analyzer on fixed host", noAnalyzerHandler, http.MethodPost, "/changes/propose", "alice-token", map[string]any{"change_id": "x", "prompt": "p"}, http.StatusNotImplemented, false, msgCP1NotConfiguredFixedHost},
+		{"revise without analyzer on fixed host", noAnalyzerHandler, http.MethodPost, "/changes/revise", "alice-token", map[string]any{"change_id": "x", "request_revision": strings.Repeat("0", 64), "prompt": "p"}, http.StatusNotImplemented, false, msgCP1NotConfiguredFixedHost},
+		{"configure_model without builder on fixed host", noAnalyzerHandler, http.MethodPost, "/cp1/model", "alice-token", map[string]any{"gateway_addr": "127.0.0.1:9090"}, http.StatusNotImplemented, false, msgModelReconfigUnavailable},
+		{"configure_model without builder on configured fixed host", handler, http.MethodPost, "/cp1/model", "alice-token", map[string]any{"gateway_addr": "127.0.0.1:9090"}, http.StatusNotImplemented, false, msgModelReconfigUnavailable},
+		{"propose without analyzer on adjustable host", adjustableNoAnalyzerHandler, http.MethodPost, "/changes/propose", "alice-token", map[string]any{"change_id": "x", "prompt": "p"}, http.StatusNotImplemented, false, msgCP1NotConfiguredAdjustable},
+		{"revise without analyzer on adjustable host", adjustableNoAnalyzerHandler, http.MethodPost, "/changes/revise", "alice-token", map[string]any{"change_id": "x", "request_revision": strings.Repeat("0", 64), "prompt": "p"}, http.StatusNotImplemented, false, msgCP1NotConfiguredAdjustable},
 		{"propose duplicate change_id", handler, http.MethodPost, "/changes/propose", "alice-token", map[string]any{"change_id": "chg", "prompt": "p"}, http.StatusConflict, false, `change_id "chg" already exists`},
 		{"get_change unknown", handler, http.MethodGet, "/changes/missing", "alice-token", nil, http.StatusNotFound, false, `unknown change_id "missing"`},
 		{"get_change wrong owner", handler, http.MethodGet, "/changes/chg", "bob-token", nil, http.StatusForbidden, false, `principal "bob@example.com" is not the owner of change_id "chg"`},

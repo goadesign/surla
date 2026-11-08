@@ -1842,6 +1842,118 @@ func DecodeDiffResponse(decoder func(*http.Response) goahttp.Decoder, restoreBod
 	}
 }
 
+// BuildConfigureModelRequest instantiates a HTTP request object with method
+// and path set to call the "surla" service "configure_model" endpoint
+func (c *Client) BuildConfigureModelRequest(ctx context.Context, v any) (*http.Request, error) {
+	u := &url.URL{Scheme: c.scheme, Host: c.host, Path: ConfigureModelSurlaPath()}
+	req, err := http.NewRequest("POST", u.String(), nil)
+	if err != nil {
+		return nil, goahttp.ErrInvalidURL("surla", "configure_model", u.String(), err)
+	}
+	if ctx != nil {
+		req = req.WithContext(ctx)
+	}
+
+	return req, nil
+}
+
+// EncodeConfigureModelRequest returns an encoder for requests sent to the
+// surla configure_model server.
+func EncodeConfigureModelRequest(encoder func(*http.Request) goahttp.Encoder) func(*http.Request, any) error {
+	return func(req *http.Request, v any) error {
+		p, ok := v.(*surla.ConfigureModelPayload)
+		if !ok {
+			return goahttp.ErrInvalidType("surla", "configure_model", "*surla.ConfigureModelPayload", v)
+		}
+		body := NewConfigureModelRequestBody(p)
+		if err := encoder(req).Encode(&body); err != nil {
+			return goahttp.ErrEncodingError("surla", "configure_model", err)
+		}
+		return nil
+	}
+}
+
+// DecodeConfigureModelResponse returns a decoder for responses returned by the
+// surla configure_model endpoint. restoreBody controls whether the response
+// body should be restored after having been read.
+// DecodeConfigureModelResponse may return the following errors:
+//   - "unprocessable" (type *goa.ServiceError): http.StatusUnprocessableEntity
+//   - "not_implemented" (type *goa.ServiceError): http.StatusNotImplemented
+//   - error: internal error
+func DecodeConfigureModelResponse(decoder func(*http.Response) goahttp.Decoder, restoreBody bool) func(*http.Response) (any, error) {
+	return func(resp *http.Response) (result any, decodeErr error) {
+		responseBody := resp.Body
+		if restoreBody {
+			b, readErr := io.ReadAll(responseBody)
+			closeErr := responseBody.Close()
+			if err := errors.Join(readErr, closeErr); err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "configure_model", err)
+			}
+			resp.Body = io.NopCloser(bytes.NewBuffer(b))
+			defer func() {
+				resp.Body = io.NopCloser(bytes.NewBuffer(b))
+			}()
+		} else {
+			defer func() {
+				if err := responseBody.Close(); err != nil {
+					decodeErr = errors.Join(decodeErr, goahttp.ErrDecodingError("surla", "configure_model", err))
+				}
+			}()
+		}
+		switch resp.StatusCode {
+		case http.StatusOK:
+			var (
+				body ConfigureModelResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "configure_model", err)
+			}
+			err = ValidateConfigureModelResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("surla", "configure_model", err)
+			}
+			res := NewConfigureModelModelConfigResultOK(&body)
+			return res, nil
+		case http.StatusUnprocessableEntity:
+			var (
+				body ConfigureModelUnprocessableResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "configure_model", err)
+			}
+			err = ValidateConfigureModelUnprocessableResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("surla", "configure_model", err)
+			}
+			return nil, NewConfigureModelUnprocessable(&body)
+		case http.StatusNotImplemented:
+			var (
+				body ConfigureModelNotImplementedResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "configure_model", err)
+			}
+			err = ValidateConfigureModelNotImplementedResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("surla", "configure_model", err)
+			}
+			return nil, NewConfigureModelNotImplemented(&body)
+		default:
+			body, err := io.ReadAll(resp.Body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "configure_model", err)
+			}
+			return nil, goahttp.ErrInvalidResponse("surla", "configure_model", resp.StatusCode, string(body))
+		}
+	}
+}
+
 // unmarshalAmbiguityQuestionResponseBodyToSurlaAmbiguityQuestion builds a
 // value of type *surla.AmbiguityQuestion from a value of type
 // *AmbiguityQuestionResponseBody.

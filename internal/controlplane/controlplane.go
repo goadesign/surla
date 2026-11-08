@@ -34,7 +34,6 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
-	"goa.design/goa-ai/runtime/agent/model"
 	"goa.design/goa-ai/runtime/mcp"
 	goahttp "goa.design/goa/v3/http"
 )
@@ -52,67 +51,6 @@ type (
 
 	// principalContextKey is the context key storing the authenticated Principal.
 	principalContextKey struct{}
-
-	// CP1Analyzer performs semantic Checkpoint 1 analysis of an operator feature
-	// request against the current Goa design source.
-	CP1Analyzer interface {
-		// Analyze inspects the prompt and design source and returns structured
-		// summary, open domain questions, concrete examples, and preserved
-		// behaviors.
-		Analyze(ctx context.Context, promptText, designSource string) (CP1SemanticAnalysis, error)
-		// Revise re-analyzes a revised prompt and design source against the
-		// prior Change Card's confirmed decisions, open questions, examples,
-		// and preserved behaviors.
-		Revise(ctx context.Context, prior CP1PriorCard, promptText, designSource string) (CP1RevisionSemanticAnalysis, error)
-	}
-
-	// CP1ModelAmbiguity is an open domain question returned by a CP1Analyzer
-	// model call before Surla assigns its mechanical question ID.
-	CP1ModelAmbiguity struct {
-		// Question is the plain-English ambiguity question.
-		Question string `json:"question"`
-		// Options lists the candidate answers (at least 2 distinct options).
-		Options []string `json:"options"`
-	}
-
-	// CP1ModelExample is a concrete input/outcome example returned by a
-	// CP1Analyzer model call before Surla assigns its mechanical check ID.
-	CP1ModelExample struct {
-		// Scenario is the plain-English scenario description.
-		Scenario string `json:"scenario"`
-		// InputSummary describes the representative user request and fixture state.
-		InputSummary string `json:"input_summary"`
-		// ExpectedOutcome describes the expected side effect and response behavior.
-		ExpectedOutcome string `json:"expected_outcome"`
-		// VerificationKind classifies the check ("deterministic" or "model_judged").
-		VerificationKind string `json:"verification_kind"`
-	}
-
-	// CP1SemanticAnalysis is the structured semantic output returned by a
-	// CP1Analyzer model call.
-	CP1SemanticAnalysis struct {
-		// Summary is the plain-English description of the requested behavior.
-		Summary string `json:"summary"`
-		// Ambiguities lists genuine domain questions that require human confirmation.
-		Ambiguities []CP1ModelAmbiguity `json:"ambiguities"`
-		// Examples lists concrete input/outcome examples for the Change Card.
-		Examples []CP1ModelExample `json:"examples"`
-		// PreservedBehaviors lists existing contract invariants preserved by the change.
-		PreservedBehaviors []string `json:"preserved_behaviors"`
-		// UIComposition is an optional OpenUI Lang decision view composed from
-		// the Surla decision catalog. Nil means the model composed none. Any
-		// string the model returns, including an empty or invalid program, is
-		// carried to the card unchanged: it is presentation only, so a bad
-		// program never costs the operator the authoritative analysis.
-		UIComposition *string `json:"ui_composition,omitempty"`
-	}
-
-	// ModelCP1Analyzer implements CP1Analyzer using a Goa-AI model.Client with
-	// schema-validated structured JSON output.
-	ModelCP1Analyzer struct {
-		// client is the underlying Goa-AI model.Client.
-		client model.Client
-	}
 
 	// TargetPromptUpdater applies a Checkpoint 3 Fast Draft Mode prompt template
 	// override to the bound target platform's runtime prompt store.
@@ -167,6 +105,19 @@ type (
 		CardsDir string
 		// Analyzer performs CP1 semantic analysis via a model call.
 		Analyzer CP1Analyzer
+		// CloseAnalyzer releases the transport owned by Analyzer (such as a
+		// gRPC model gateway connection) when Analyzer is superseded by
+		// ConfigureModel, when ControlPlane.Close runs, or if New fails
+		// validation.
+		CloseAnalyzer func() error
+		// LiveEnv is the initial CP3 live-target environment slice derived from
+		// the server's startup model configuration, owned independently of
+		// whether Verification or Live is configured at startup.
+		LiveEnv []string
+		// ModelBuilder constructs replacement CP1 analyzers and CP3 live-target
+		// environments when configure_model is called. Without it,
+		// configure_model returns not_implemented.
+		ModelBuilder ModelBuilder
 		// TargetUpdater applies CP3 Fast Draft Mode prompt overrides to the bound target platform.
 		TargetUpdater TargetPromptUpdater
 		// SwarmProfiles lists server-configured coding-agent provider profiles for
@@ -237,8 +188,19 @@ type (
 		mu sync.RWMutex
 		// cards saves pending and confirmed CP1 Change Cards by change_id.
 		cards *cardStore
-		// analyzer performs semantic CP1 analysis.
-		analyzer CP1Analyzer
+		// modelMu serializes access to activeModel, modelClosed, and every
+		// modelHandle's reference count and closeFn.
+		modelMu sync.Mutex
+		// activeModel holds the currently active CP1 analyzer and CP3
+		// live-target environment snapshot. Guarded by modelMu.
+		activeModel *modelHandle
+		// modelClosed reports whether closeModel has run during Close. Guarded
+		// by modelMu.
+		modelClosed bool
+		// modelBuilder constructs replacement CP1 analyzers and CP3 live-target
+		// environments when configure_model is called, or nil when runtime
+		// model reconfiguration is not configured.
+		modelBuilder ModelBuilder
 		// targetUpdater applies CP3 Fast Draft Mode prompt overrides to the target platform.
 		targetUpdater TargetPromptUpdater
 		// swarmProfiles stores server-configured coding-agent provider profiles.
@@ -338,15 +300,26 @@ func NewTokenAuthenticator(tokens map[string]Principal) RequestAuthenticator {
 // when CardsDir is empty or another process holds the lock.
 func New(opts Options) (*ControlPlane, error) {
 	if opts.TargetUpdater != nil && opts.Live != nil {
-		return nil, errors.New("set either TargetUpdater or Live, not both: draft_override sends prompt text to exactly one target")
+		err := errors.New("set either TargetUpdater or Live, not both: draft_override sends prompt text to exactly one target")
+		return nil, errors.Join(err, closeInitialAnalyzer(opts.CloseAnalyzer))
 	}
 	cards, err := openCardStore(opts.CardsDir)
 	if err != nil {
-		return nil, err
+		return nil, errors.Join(err, closeInitialAnalyzer(opts.CloseAnalyzer))
+	}
+	initialLiveEnv := opts.LiveEnv
+	if len(initialLiveEnv) == 0 && opts.Live != nil {
+		initialLiveEnv = opts.Live.Env
 	}
 	return &ControlPlane{
-		cards:           cards,
-		analyzer:        opts.Analyzer,
+		cards: cards,
+		activeModel: &modelHandle{
+			analyzer: opts.Analyzer,
+			liveEnv:  initialLiveEnv,
+			closeFn:  opts.CloseAnalyzer,
+			refs:     1,
+		},
+		modelBuilder:    opts.ModelBuilder,
 		targetUpdater:   opts.TargetUpdater,
 		swarmProfiles:   opts.SwarmProfiles,
 		promotionTarget: opts.PromotionTarget,
@@ -395,21 +368,6 @@ func NewHTTPHandler(svc gensurla.Service, auth RequestAuthenticator) http.Handle
 	})
 }
 
-// NewModelCP1Analyzer constructs a CP1Analyzer backed by a Goa-AI model.Client.
-func NewModelCP1Analyzer(client model.Client) *ModelCP1Analyzer {
-	return &ModelCP1Analyzer{client: client}
-}
-
-// Analyze invokes the underlying Goa-AI model.Client with the generated CP1
-// completion contract and returns its decoded semantic analysis.
-func (a *ModelCP1Analyzer) Analyze(ctx context.Context, promptText, designSource string) (CP1SemanticAnalysis, error) {
-	return a.completeAnalysis(
-		ctx,
-		goldenpath.ArchitectSystemPrompt(),
-		fmt.Sprintf("Request:\n%s\n\nDesign:\n%s", promptText, formatCP1DesignSection(designSource)),
-	)
-}
-
 // CheckpointUI returns the interactive MCP Apps HTML host for `ui://surla/checkpoint`.
 func (c *ControlPlane) CheckpointUI(_ context.Context) (string, error) {
 	return checkpointUIHTML, nil
@@ -440,9 +398,16 @@ func (c *ControlPlane) ProposeChange(ctx context.Context, p *gensurla.ProposeCha
 	if !utf8.ValidString(p.ChangeID) {
 		return nil, gensurla.MakeUnprocessable(errors.New("change_id must be valid UTF-8"))
 	}
-	if c.analyzer == nil {
-		return nil, gensurla.MakeNotImplemented(errors.New("cp1 semantic analyzer is required"))
+	model, err := c.acquireModel()
+	if err != nil {
+		return nil, err
 	}
+	if model == nil {
+		return nil, c.notConfiguredAnalyzerError()
+	}
+	defer func() {
+		c.releaseModel(ctx, model)
+	}()
 	var designSrc string
 	if p.DesignSource != nil {
 		designSrc = *p.DesignSource
@@ -470,7 +435,7 @@ func (c *ControlPlane) ProposeChange(ctx context.Context, p *gensurla.ProposeCha
 		span.SetStatus(codes.Error, "report cp1 analysis progress")
 		return nil, err
 	}
-	analysis, err := c.analyzer.Analyze(ctx, p.Prompt, designSrc)
+	analysis, err := model.analyzer.Analyze(ctx, p.Prompt, designSrc)
 	if err != nil {
 		if se, ok := asAnalysisRejected(err); ok {
 			err = newAnalysisRejected(
@@ -576,12 +541,13 @@ func (c *ControlPlane) Close() error {
 	c.cancelServer()
 	liveErr := c.closeLive()
 	evalErr := c.evaluator.Close()
+	modelErr := c.closeModel()
 	if liveErr != nil {
-		return errors.Join(evalErr, fmt.Errorf("stop live target; cards directory %s stays locked: %w", c.cards.dir, liveErr))
+		return errors.Join(evalErr, modelErr, fmt.Errorf("stop live target; cards directory %s stays locked: %w", c.cards.dir, liveErr))
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return errors.Join(evalErr, c.cards.close())
+	return errors.Join(evalErr, modelErr, c.cards.close())
 }
 
 // GetChange returns the current Change Card for change_id to its owner. It

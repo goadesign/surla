@@ -107,9 +107,16 @@ func (c *ControlPlane) ReviseChange(
 	if !utf8.ValidString(p.ChangeID) {
 		return nil, gensurla.MakeUnprocessable(errors.New("change_id must be valid UTF-8"))
 	}
-	if c.analyzer == nil {
-		return nil, gensurla.MakeNotImplemented(errors.New("cp1 semantic analyzer is required"))
+	model, err := c.acquireModel()
+	if err != nil {
+		return nil, err
 	}
+	if model == nil {
+		return nil, c.notConfiguredAnalyzerError()
+	}
+	defer func() {
+		c.releaseModel(ctx, model)
+	}()
 
 	c.mu.RLock()
 	record, exists, err := c.cards.load(p.ChangeID)
@@ -150,7 +157,7 @@ func (c *ControlPlane) ReviseChange(
 		span.SetStatus(codes.Error, "report cp1 revision progress")
 		return nil, err
 	}
-	analysis, err := c.analyzer.Revise(ctx, prior, p.Prompt, designSrc)
+	analysis, err := model.analyzer.Revise(ctx, prior, p.Prompt, designSrc)
 	if err != nil {
 		if se, ok := asAnalysisRejected(err); ok {
 			err = newAnalysisRejected(

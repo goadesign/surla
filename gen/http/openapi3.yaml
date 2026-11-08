@@ -1459,6 +1459,61 @@ paths:
                                 name: analysis_rejected
                                 temporary: false
                                 timeout: false
+    /cp1/model:
+        post:
+            tags:
+                - surla
+            summary: configure_model surla
+            description: Configure or switch the active CP1 semantic analyzer and CP3 live-target model provider and model name or gRPC model gateway on a running control plane without restarting.
+            operationId: surla#configure_model
+            requestBody:
+                description: Request body for configure_model.
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/ConfigureModelPayload'
+                        example:
+                            gateway_addr: 127.0.0.1:9090
+                            model_name: claude-sonnet-4-6
+                            provider: anthropic
+            responses:
+                "200":
+                    description: OK response.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ModelConfigResult'
+                            example:
+                                gateway_addr: "0"
+                                model_name: l
+                                provider: openai
+                "422":
+                    description: 'unprocessable: The model provider, model name, gateway address, or required environment credential is invalid.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: unprocessable
+                                temporary: false
+                                timeout: false
+                "501":
+                    description: 'not_implemented: Runtime model reconfiguration is not configured on this control plane.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: not_implemented
+                                temporary: false
+                                timeout: false
     /diff:
         post:
             tags:
@@ -2759,6 +2814,31 @@ components:
                 - examples
                 - preserved_behaviors
                 - request_revision
+        ConfigureModelPayload:
+            type: object
+            properties:
+                gateway_addr:
+                    type: string
+                    description: Plaintext gRPC host:port of a running goa-ai model gateway; mutually exclusive with provider and model_name.
+                    example: 127.0.0.1:9090
+                    minLength: 1
+                model_name:
+                    type: string
+                    description: Provider model identifier when configuring a direct provider (for example claude-sonnet-4-6 or gpt-5.4-mini); must be paired with provider and omitted when gateway_addr is set.
+                    example: claude-sonnet-4-6
+                    minLength: 1
+                provider:
+                    type: string
+                    description: Direct model provider name when configuring a direct provider; must be paired with model_name and omitted when gateway_addr is set.
+                    example: anthropic
+                    enum:
+                        - anthropic
+                        - openai
+            description: Request body for configure_model.
+            example:
+                gateway_addr: 127.0.0.1:9090
+                model_name: claude-sonnet-4-6
+                provider: anthropic
         ConfirmIntentPayload:
             type: object
             properties:
@@ -3097,6 +3177,31 @@ components:
                 - candidate_commit
                 - url
                 - message
+        ModelConfigResult:
+            type: object
+            properties:
+                gateway_addr:
+                    type: string
+                    description: Active gRPC model gateway host:port when a model gateway is configured.
+                    example: "0"
+                    minLength: 1
+                model_name:
+                    type: string
+                    description: Active model identifier when a direct provider is configured.
+                    example: l
+                    minLength: 1
+                provider:
+                    type: string
+                    description: Active direct model provider when a direct provider is configured.
+                    example: openai
+                    enum:
+                        - anthropic
+                        - openai
+            description: Active CP1 and live-target model configuration after configure_model succeeds.
+            example:
+                gateway_addr: "0"
+                model_name: l
+                provider: openai
         PreviewArchitecturePayload:
             type: object
             properties:

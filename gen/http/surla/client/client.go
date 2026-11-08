@@ -76,6 +76,10 @@ type Client struct {
 	// Diff Doer is the HTTP client used to make requests to the diff endpoint.
 	DiffDoer goahttp.Doer
 
+	// ConfigureModel Doer is the HTTP client used to make requests to the
+	// configure_model endpoint.
+	ConfigureModelDoer goahttp.Doer
+
 	// RestoreResponseBody controls whether the response bodies are reset after
 	// decoding so they can be read again.
 	RestoreResponseBody bool
@@ -111,6 +115,7 @@ func NewClient(
 		ListVerificationsDoer:   doer,
 		ApproveMergeDoer:        doer,
 		DiffDoer:                doer,
+		ConfigureModelDoer:      doer,
 		RestoreResponseBody:     restoreBody,
 		scheme:                  scheme,
 		host:                    host,
@@ -444,6 +449,30 @@ func (c *Client) Diff() goa.Endpoint {
 		resp, err := c.DiffDoer.Do(req)
 		if err != nil {
 			return nil, goahttp.ErrRequestError("surla", "diff", err)
+		}
+		return decodeResponse(resp)
+	}
+}
+
+// ConfigureModel returns an endpoint that makes HTTP requests to the surla
+// service configure_model server.
+func (c *Client) ConfigureModel() goa.Endpoint {
+	var (
+		encodeRequest  = EncodeConfigureModelRequest(c.encoder)
+		decodeResponse = DecodeConfigureModelResponse(c.decoder, c.RestoreResponseBody)
+	)
+	return func(ctx context.Context, v any) (any, error) {
+		req, err := c.BuildConfigureModelRequest(ctx, v)
+		if err != nil {
+			return nil, err
+		}
+		err = encodeRequest(req, v)
+		if err != nil {
+			return nil, err
+		}
+		resp, err := c.ConfigureModelDoer.Do(req)
+		if err != nil {
+			return nil, goahttp.ErrRequestError("surla", "configure_model", err)
 		}
 		return decodeResponse(resp)
 	}

@@ -61,6 +61,37 @@ var GetChangePayload = Type("GetChangePayload", func() {
 	Required("change_id")
 })
 
+// ConfigureModelPayload is the input to the configure_model tool.
+var ConfigureModelPayload = Type("ConfigureModelPayload", func() {
+	Description("Selects either a direct model provider and model name (using the API key already present in surla serve's process environment) or a running goa-ai model gateway address.")
+	Attribute("provider", String, "Direct model provider name when configuring a direct provider; must be paired with model_name and omitted when gateway_addr is set.", func() {
+		Enum("anthropic", "openai")
+		Example("anthropic")
+	})
+	Attribute("model_name", String, "Provider model identifier when configuring a direct provider (for example claude-sonnet-4-6 or gpt-5.4-mini); must be paired with provider and omitted when gateway_addr is set.", func() {
+		MinLength(1)
+		Example("claude-sonnet-4-6")
+	})
+	Attribute("gateway_addr", String, "Plaintext gRPC host:port of a running goa-ai model gateway; mutually exclusive with provider and model_name.", func() {
+		MinLength(1)
+		Example("127.0.0.1:9090")
+	})
+})
+
+// ModelConfigResult is the output of the configure_model tool.
+var ModelConfigResult = Type("ModelConfigResult", func() {
+	Description("Active CP1 and live-target model configuration after configure_model succeeds.")
+	Attribute("provider", String, "Active direct model provider when a direct provider is configured.", func() {
+		Enum("anthropic", "openai")
+	})
+	Attribute("model_name", String, "Active model identifier when a direct provider is configured.", func() {
+		MinLength(1)
+	})
+	Attribute("gateway_addr", String, "Active gRPC model gateway host:port when a model gateway is configured.", func() {
+		MinLength(1)
+	})
+})
+
 // UICompositionItem is an optional model-authored decision view for one
 // Change Card revision.
 var UICompositionItem = Type("UICompositionItem", func() {
@@ -810,6 +841,21 @@ var _ = Service("surla", func() {
 		HTTP(func() {
 			POST("/diff")
 			Response(StatusOK)
+		})
+	})
+
+	Method("configure_model", func() {
+		Description("Configure or switch the active CP1 semantic analyzer and CP3 live-target model provider and model name or gRPC model gateway on a running control plane without restarting.")
+		Payload(ConfigureModelPayload)
+		Result(ModelConfigResult)
+		Error("unprocessable", ErrorResult, "The model provider, model name, gateway address, or required environment credential is invalid.")
+		Error("not_implemented", ErrorResult, "Runtime model reconfiguration is not configured on this control plane.")
+		Tool("configure_model", "Switch the active CP1 and live-target model provider and model name (such as anthropic/claude-sonnet-4-6 or openai/gpt-5.4-mini, using the API key in surla serve's environment) or attach a running model gateway address without restarting surla serve.")
+		HTTP(func() {
+			POST("/cp1/model")
+			Response(StatusOK)
+			Response("unprocessable", StatusUnprocessableEntity)
+			Response("not_implemented", StatusNotImplemented)
 		})
 	})
 })

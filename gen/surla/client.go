@@ -30,10 +30,11 @@ type Client struct {
 	ListVerificationsEndpoint   goa.Endpoint
 	ApproveMergeEndpoint        goa.Endpoint
 	DiffEndpoint                goa.Endpoint
+	ConfigureModelEndpoint      goa.Endpoint
 }
 
 // NewClient initializes a "surla" service client given the endpoints.
-func NewClient(checkpointUI, goldenPath, proposeChange, reviseChange, confirmIntent, getChange, previewArchitecture, draftOverride, startLiveTarget, stopLiveTarget, verifyChange, getVerification, listVerifications, approveMerge, diff goa.Endpoint) *Client {
+func NewClient(checkpointUI, goldenPath, proposeChange, reviseChange, confirmIntent, getChange, previewArchitecture, draftOverride, startLiveTarget, stopLiveTarget, verifyChange, getVerification, listVerifications, approveMerge, diff, configureModel goa.Endpoint) *Client {
 	return &Client{
 		CheckpointUIEndpoint:        checkpointUI,
 		GoldenPathEndpoint:          goldenPath,
@@ -50,6 +51,7 @@ func NewClient(checkpointUI, goldenPath, proposeChange, reviseChange, confirmInt
 		ListVerificationsEndpoint:   listVerifications,
 		ApproveMergeEndpoint:        approveMerge,
 		DiffEndpoint:                diff,
+		ConfigureModelEndpoint:      configureModel,
 	}
 }
 
@@ -271,4 +273,18 @@ func (c *Client) Diff(ctx context.Context, p *DiffPayload) (res *DiffResult, err
 		return
 	}
 	return ires.(*DiffResult), nil
+}
+
+// ConfigureModel calls the "configure_model" endpoint of the "surla" service.
+// ConfigureModel may return the following errors:
+//   - "unprocessable" (type *goa.ServiceError): The model provider, model name, gateway address, or required environment credential is invalid.
+//   - "not_implemented" (type *goa.ServiceError): Runtime model reconfiguration is not configured on this control plane.
+//   - error: internal error
+func (c *Client) ConfigureModel(ctx context.Context, p *ConfigureModelPayload) (res *ModelConfigResult, err error) {
+	var ires any
+	ires, err = c.ConfigureModelEndpoint(ctx, p)
+	if err != nil {
+		return
+	}
+	return ires.(*ModelConfigResult), nil
 }

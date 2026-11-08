@@ -401,3 +401,26 @@ func BuildDiffPayload(surlaDiffBody *string) (*surla.DiffPayload, error) {
 
 	return v, nil
 }
+
+// BuildConfigureModelPayload builds the payload for the surla configure_model
+// endpoint from CLI flags.
+func BuildConfigureModelPayload(surlaConfigureModelBody *string) (*surla.ConfigureModelPayload, error) {
+	var err error
+	var body ConfigureModelRequestBody
+	{
+		if surlaConfigureModelBody == nil {
+			return nil, fmt.Errorf("missing required flag --body")
+		}
+		err = json.Unmarshal([]byte(*surlaConfigureModelBody), &body)
+		if err != nil {
+			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"gateway_addr\": \"127.0.0.1:9090\",\n      \"model_name\": \"claude-sonnet-4-6\",\n      \"provider\": \"anthropic\"\n   }'")
+		}
+	}
+	v := &surla.ConfigureModelPayload{
+		Provider:    body.Provider,
+		ModelName:   body.ModelName,
+		GatewayAddr: body.GatewayAddr,
+	}
+
+	return v, nil
+}

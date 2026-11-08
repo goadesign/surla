@@ -23,7 +23,7 @@ import (
 //	command (subcommand1|subcommand2|...)
 func UsageCommands() []string {
 	return []string{
-		"surla (checkpoint-ui|golden-path|propose-change|revise-change|confirm-intent|get-change|preview-architecture|draft-override|start-live-target|stop-live-target|verify-change|get-verification|list-verifications|approve-merge|diff)",
+		"surla (checkpoint-ui|golden-path|propose-change|revise-change|confirm-intent|get-change|preview-architecture|draft-override|start-live-target|stop-live-target|verify-change|get-verification|list-verifications|approve-merge|diff|configure-model)",
 	}
 }
 
@@ -106,6 +106,9 @@ func ParseEndpoint(
 
 		surlaDiffFlags    = flag.NewFlagSet("diff", flag.ExitOnError)
 		surlaDiffBodyFlag = new(cliStringFlag)
+
+		surlaConfigureModelFlags    = flag.NewFlagSet("configure-model", flag.ExitOnError)
+		surlaConfigureModelBodyFlag = new(cliStringFlag)
 	)
 	surlaProposeChangeFlags.Var(surlaProposeChangeBodyFlag, "body", "")
 	surlaReviseChangeFlags.Var(surlaReviseChangeBodyFlag, "body", "")
@@ -120,6 +123,7 @@ func ParseEndpoint(
 	surlaListVerificationsFlags.Var(surlaListVerificationsChangeIDFlag, "change-id", "Change Card identifier.")
 	surlaApproveMergeFlags.Var(surlaApproveMergeBodyFlag, "body", "")
 	surlaDiffFlags.Var(surlaDiffBodyFlag, "body", "")
+	surlaConfigureModelFlags.Var(surlaConfigureModelBodyFlag, "body", "")
 
 	surlaFlags.Usage = surlaUsage
 	surlaCheckpointUIFlags.Usage = surlaCheckpointUIUsage
@@ -137,6 +141,7 @@ func ParseEndpoint(
 	surlaListVerificationsFlags.Usage = surlaListVerificationsUsage
 	surlaApproveMergeFlags.Usage = surlaApproveMergeUsage
 	surlaDiffFlags.Usage = surlaDiffUsage
+	surlaConfigureModelFlags.Usage = surlaConfigureModelUsage
 
 	if err := flag.CommandLine.Parse(os.Args[1:]); err != nil {
 		return nil, nil, err
@@ -217,6 +222,9 @@ func ParseEndpoint(
 			case "diff":
 				epf = surlaDiffFlags
 
+			case "configure-model":
+				epf = surlaConfigureModelFlags
+
 			}
 
 		}
@@ -284,6 +292,9 @@ func ParseEndpoint(
 			case "diff":
 				endpoint = c.Diff()
 				data, err = surlac.BuildDiffPayload(surlaDiffBodyFlag.value)
+			case "configure-model":
+				endpoint = c.ConfigureModel()
+				data, err = surlac.BuildConfigureModelPayload(surlaConfigureModelBodyFlag.value)
 			}
 		}
 	}
@@ -314,6 +325,7 @@ func surlaUsage() {
 	fmt.Fprintln(os.Stderr, `    list-verifications: Return all Checkpoint 4 verification runs started by the owner for a Change Card, ordered newest first by accepted_at (tie-broken by run_id), with each run's current state and the Change Card revision it was started for. Works whether the Change Card is currently confirmed or in needs_confirmation after a later revision.`)
 	fmt.Fprintln(os.Stderr, `    approve-merge: Record Checkpoint 5 approval for the owner's confirmed Change Card revision. The control plane loads the verification report by digest and the expected suite, environment and candidate binary digests from its promotion target, re-derives the report from its evidence with verify.Approve, and records the approval on the card. A report that did not pass or describes different inputs is rejected. Nothing is merged or deployed. The promotion target comes from surla serve -promotion-config or from the program that embeds the control plane; a control plane without one rejects every call.`)
 	fmt.Fprintln(os.Stderr, `    diff: Compare evaluated Goa designs and go.mod directives without emitting a blanket compatibility verdict.`)
+	fmt.Fprintln(os.Stderr, `    configure-model: Configure or switch the active CP1 semantic analyzer and CP3 live-target model provider and model name or gRPC model gateway on a running control plane without restarting.`)
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Additional help:")
 	fmt.Fprintf(os.Stderr, "    %s surla COMMAND --help\n", os.Args[0])
@@ -582,4 +594,22 @@ func surlaDiffUsage() {
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Example:")
 	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "surla diff --body '{\n      \"new\": {\n         \"files\": {\n            \"Doloribus repellat aut eveniet nesciunt natus labore.\": \"Dolores magni.\",\n            \"Quaerat vitae quas rerum.\": \"Vel in molestias et quaerat.\"\n         }\n      },\n      \"old\": {\n         \"files\": {\n            \"Doloribus repellat aut eveniet nesciunt natus labore.\": \"Dolores magni.\",\n            \"Quaerat vitae quas rerum.\": \"Vel in molestias et quaerat.\"\n         }\n      }\n   }'")
+}
+
+func surlaConfigureModelUsage() {
+	// Header with flags
+	fmt.Fprintf(os.Stderr, "%s [flags] surla configure-model", os.Args[0])
+	fmt.Fprint(os.Stderr, " -body JSON")
+	fmt.Fprintln(os.Stderr)
+
+	// Description
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, `Configure or switch the active CP1 semantic analyzer and CP3 live-target model provider and model name or gRPC model gateway on a running control plane without restarting.`)
+
+	// Flags list
+	fmt.Fprintln(os.Stderr, `    -body JSON: `)
+
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, "Example:")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "surla configure-model --body '{\n      \"gateway_addr\": \"127.0.0.1:9090\",\n      \"model_name\": \"claude-sonnet-4-6\",\n      \"provider\": \"anthropic\"\n   }'")
 }
