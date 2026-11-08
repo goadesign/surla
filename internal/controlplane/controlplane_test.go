@@ -132,7 +132,7 @@ func TestCP1AmbiguityResolutionStrictValidationOwnershipAndRevisionLock(t *testi
 		proposed.Ambiguities[1].ID != "chg-refund-50-ambiguity-02" {
 		t.Fatalf("expected 2 ambiguities with code-owned IDs, got %+v", proposed.Ambiguities)
 	}
-	if len(proposed.Examples) != 3 || proposed.Examples[0].ID != "chg-refund-50-check-01" {
+	if len(proposed.Examples) != 3 || proposed.Examples[0].ID != "check_01" {
 		t.Fatalf("unexpected examples: %+v", proposed.Examples)
 	}
 	if proposed.Summary != ambiguousAnalysis.Summary ||

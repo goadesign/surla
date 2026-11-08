@@ -282,7 +282,7 @@ func TestServeGatewayModeAnswersProposeChangeOverHTTP(t *testing.T) {
 	require.NotNil(t, card.ConfirmedBy)
 	assert.Equal(t, "operator@example.com", *card.ConfirmedBy)
 	require.Len(t, card.Examples, 1)
-	assert.Equal(t, "vip-refunds-check-01", card.Examples[0].ID)
+	assert.Equal(t, "check_01", card.Examples[0].ID)
 	assert.Regexp(t, regexp.MustCompile(`^[0-9a-f]{64}$`), card.RequestRevision)
 	assert.EqualValues(t, 6144, provider.maxTokens.Load(), "CP1 output allowance must reach the provider through the gateway")
 }

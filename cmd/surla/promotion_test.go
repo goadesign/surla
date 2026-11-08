@@ -233,8 +233,27 @@ func (confirmedAnalyzer) Analyze(context.Context, string, string) (controlplane.
 }
 
 // Revise returns the same fixed analysis as Analyze for tests that only exercise CP5.
-func (a confirmedAnalyzer) Revise(ctx context.Context, _ controlplane.CP1PriorCard, prompt, design string) (controlplane.CP1SemanticAnalysis, error) {
-	return a.Analyze(ctx, prompt, design)
+func (a confirmedAnalyzer) Revise(ctx context.Context, prior controlplane.CP1PriorCard, prompt, design string) (controlplane.CP1RevisionSemanticAnalysis, error) {
+	analysis, err := a.Analyze(ctx, prompt, design)
+	if err != nil {
+		return controlplane.CP1RevisionSemanticAnalysis{}, err
+	}
+	var priorID string
+	if len(prior.Examples) > 0 {
+		priorID = prior.Examples[0].ID
+	}
+	return controlplane.CP1RevisionSemanticAnalysis{
+		Summary: analysis.Summary,
+		Examples: []controlplane.CP1RevisionModelExample{{
+			PriorID:          priorID,
+			Scenario:         analysis.Examples[0].Scenario,
+			InputSummary:     analysis.Examples[0].InputSummary,
+			ExpectedOutcome:  analysis.Examples[0].ExpectedOutcome,
+			VerificationKind: analysis.Examples[0].VerificationKind,
+		}},
+		RemovedExampleIDs:  []string{},
+		PreservedBehaviors: analysis.PreservedBehaviors,
+	}, nil
 }
 
 // newReleaseTarget loads a promotion configuration for the orders binaries

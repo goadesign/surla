@@ -24,12 +24,12 @@ const (
 
 	// cp1ReviseInstructionHeader precedes the embedded Golden Path Markdown in
 	// the CP1 architect revision system prompt.
-	cp1ReviseInstructionHeader = "Revise the existing Checkpoint 1 Change Card against the updated operator feature request and Goa design source. Return structured JSON matching the cp1_change_card_analysis schema.\n\n" +
+	cp1ReviseInstructionHeader = "Revise the existing Checkpoint 1 Change Card against the updated operator feature request and Goa design source. Return structured JSON matching the cp1_revise_change_card_analysis schema.\n\n" +
 		"Apply these revision rules strictly:\n" +
 		"1. Confirmed decisions (`confirmed_answer` non-empty) that are not contradicted by the `Revised Request` or `Design` remain settled requirements: do not re-ask them in `ambiguities`, and materialize them into the resulting `summary`, `examples`, and `preserved_behaviors`.\n" +
 		"2. Explicit instructions in the `Revised Request` or `Design` supersede affected prior decisions, examples, and `preserved_behaviors`. When a revised instruction is unambiguous, do not emit an ambiguity for it; when it introduces a genuine new domain question, include that question in `ambiguities`.\n" +
 		"3. Unanswered prior questions (`confirmed_answer` empty) must remain in `ambiguities` unless the `Revised Request` or `Design` explicitly resolves them or removes the scope they asked about.\n" +
-		"4. Surviving prior `examples` (including operator-confirmed edits) whose behavior is not changed by the `Revised Request` or `Design` must be carried forward in `examples` alongside new or updated examples for the revised scope.\n" +
+		"4. Account for every prior example from the prior card: to keep or edit a prior example, include it in `examples` with `prior_id` set to its prior `id`; to remove or supersede a prior example, list its `id` in `removed_example_ids`; for brand-new examples, omit `prior_id`. Every prior example `id` must appear in either `examples[].prior_id` or `removed_example_ids`, never in both, and zero prior IDs may be omitted.\n" +
 		"5. Successive revisions (`R2 -> R3`): the prior card's `summary`, `examples`, and `preserved_behaviors` are authoritative settled requirements even when they came from an earlier revision's confirmed decisions that are no longer listed in `decisions`. Preserve all of them unless the `Revised Request` or `Design` explicitly changes them.\n\n" +
 		cp1CardContentRules +
 		"Apply the following Golden Path architectural playbook when identifying ambiguities, examples, and preserved behaviors:\n\n"

@@ -38,7 +38,7 @@ type stubCP1Analyzer struct {
 	// analyzeFn handles Analyze calls.
 	analyzeFn func(ctx context.Context, promptText, designSource string) (CP1SemanticAnalysis, error)
 	// reviseFn handles Revise calls.
-	reviseFn func(ctx context.Context, prior CP1PriorCard, promptText, designSource string) (CP1SemanticAnalysis, error)
+	reviseFn func(ctx context.Context, prior CP1PriorCard, promptText, designSource string) (CP1RevisionSemanticAnalysis, error)
 }
 
 // TestCP1AnalysisRejectedContractAcrossModelBoundaries verifies that:
@@ -78,7 +78,19 @@ func TestCP1AnalysisRejectedContractAcrossModelBoundaries(t *testing.T) {
 		}},
 		PreservedBehaviors: []string{"Cross-tenant lookups return 404."},
 	}
-	validBytes, err := json.Marshal(validAnalysis)
+	validReviseBytes, err := json.Marshal(CP1RevisionSemanticAnalysis{
+		Summary:     "Refunds up to $50 are instant.",
+		Ambiguities: []CP1ModelAmbiguity{},
+		Examples: []CP1RevisionModelExample{{
+			PriorID:          "check_01",
+			Scenario:         "Refund at limit",
+			InputSummary:     "$50 subtotal",
+			ExpectedOutcome:  "Instant refund",
+			VerificationKind: "deterministic",
+		}},
+		RemovedExampleIDs:  []string{},
+		PreservedBehaviors: []string{"Cross-tenant lookups return 404."},
+	})
 	require.NoError(t, err)
 
 	for _, mode := range []struct {
@@ -131,7 +143,7 @@ func TestCP1AnalysisRejectedContractAcrossModelBoundaries(t *testing.T) {
 					StopReason:    "private-stop-marker",
 					Content: []model.Message{{
 						Role:  model.ConversationRoleAssistant,
-						Parts: []model.Part{model.TextPart{Text: string(validBytes)}},
+						Parts: []model.Part{model.TextPart{Text: string(validReviseBytes)}},
 					}},
 				}},
 				queuedModelTurn{err: errors.New("upstream transport reset")},
@@ -213,7 +225,7 @@ func TestCP1AnalysisRejectedContractAcrossModelBoundaries(t *testing.T) {
 				StopReason:    "private-stop-marker",
 				Content: []model.Message{{
 					Role:  model.ConversationRoleAssistant,
-					Parts: []model.Part{model.TextPart{Text: string(validBytes)}},
+					Parts: []model.Part{model.TextPart{Text: string(validReviseBytes)}},
 				}},
 			}})
 			q.mu.Unlock()
@@ -455,8 +467,8 @@ func TestCP1ReusedAnalyzerErrorImmutabilityAndSaveSpanRecording(t *testing.T) {
 				}
 				return CP1SemanticAnalysis{}, wrappedShared
 			},
-			reviseFn: func(context.Context, CP1PriorCard, string, string) (CP1SemanticAnalysis, error) {
-				return CP1SemanticAnalysis{}, sharedRejected
+			reviseFn: func(context.Context, CP1PriorCard, string, string) (CP1RevisionSemanticAnalysis, error) {
+				return CP1RevisionSemanticAnalysis{}, sharedRejected
 			},
 		},
 	})
@@ -540,15 +552,15 @@ func TestCP1ReusedAnalyzerErrorImmutabilityAndSaveSpanRecording(t *testing.T) {
 				}
 				return CP1SemanticAnalysis{}, errors.Join(sharedRejected, independentAnalyzerFault)
 			},
-			reviseFn: func(_ context.Context, _ CP1PriorCard, promptText, _ string) (CP1SemanticAnalysis, error) {
+			reviseFn: func(_ context.Context, _ CP1PriorCard, promptText, _ string) (CP1RevisionSemanticAnalysis, error) {
 				if err, ok := classifyPromptError(promptText); ok {
-					return CP1SemanticAnalysis{}, err
+					return CP1RevisionSemanticAnalysis{}, err
 				}
 				mixedNamedTurn++
 				if mixedNamedTurn == 3 {
-					return CP1SemanticAnalysis{}, errors.Join(sharedRejected, context.Canceled)
+					return CP1RevisionSemanticAnalysis{}, errors.Join(sharedRejected, context.Canceled)
 				}
-				return CP1SemanticAnalysis{}, errors.Join(sharedRejected, independentAnalyzerFault)
+				return CP1RevisionSemanticAnalysis{}, errors.Join(sharedRejected, independentAnalyzerFault)
 			},
 		},
 	})
@@ -709,12 +721,21 @@ func TestCP1ReusedAnalyzerErrorImmutabilityAndSaveSpanRecording(t *testing.T) {
 					}},
 				}, nil
 			},
-			reviseFn: func(context.Context, CP1PriorCard, string, string) (CP1SemanticAnalysis, error) {
-				return CP1SemanticAnalysis{
+			reviseFn: func(_ context.Context, prior CP1PriorCard, _, _ string) (CP1RevisionSemanticAnalysis, error) {
+				var priorID string
+				if len(prior.Examples) > 0 {
+					priorID = prior.Examples[0].ID
+				}
+				return CP1RevisionSemanticAnalysis{
 					Summary: "Revised valid summary.",
-					Examples: []CP1ModelExample{{
-						Scenario: "S", InputSummary: "I", ExpectedOutcome: "O", VerificationKind: "deterministic",
+					Examples: []CP1RevisionModelExample{{
+						PriorID:          priorID,
+						Scenario:         "S",
+						InputSummary:     "I",
+						ExpectedOutcome:  "O",
+						VerificationKind: "deterministic",
 					}},
+					RemovedExampleIDs: []string{},
 				}, nil
 			},
 		},
@@ -817,7 +838,8 @@ func TestFormatCP1DesignSectionPreservesDesignAndSpecializesEmpty(t *testing.T) 
 		Analyzer: NewModelCP1Analyzer(newQueuedModelClient(t, q)),
 	})
 	validAnalysis := CP1SemanticAnalysis{
-		Summary: "Single-service assistant.",
+		Summary:     "Single-service assistant.",
+		Ambiguities: []CP1ModelAmbiguity{},
 		Examples: []CP1ModelExample{{
 			Scenario: "Ask assistant", InputSummary: "Hello", ExpectedOutcome: "Replies", VerificationKind: "deterministic",
 		}},
@@ -839,7 +861,20 @@ func TestFormatCP1DesignSectionPreservesDesignAndSpecializesEmpty(t *testing.T) 
 	assert.Equal(t, wantRev, card.RequestRevision)
 
 	// 2. ReviseChange with omitted design_source on a card with empty designSource also sends noDesignNotice.
-	q.enqueueJSON(t, validAnalysis)
+	validReviseAnalysis := CP1RevisionSemanticAnalysis{
+		Summary:     "Single-service assistant.",
+		Ambiguities: []CP1ModelAmbiguity{},
+		Examples: []CP1RevisionModelExample{{
+			PriorID:          "check_01",
+			Scenario:         "Ask assistant",
+			InputSummary:     "Hello",
+			ExpectedOutcome:  "Replies",
+			VerificationKind: "deterministic",
+		}},
+		RemovedExampleIDs:  []string{},
+		PreservedBehaviors: []string{},
+	}
+	q.enqueueJSON(t, validReviseAnalysis)
 	_, err = cp.ReviseChange(aliceCtx, &gensurla.ReviseChangePayload{
 		ChangeID:        "chg-nodesign",
 		RequestRevision: card.RequestRevision,
@@ -856,7 +891,7 @@ func (s *stubCP1Analyzer) Analyze(ctx context.Context, promptText, designSource 
 }
 
 // Revise delegates to reviseFn.
-func (s *stubCP1Analyzer) Revise(ctx context.Context, prior CP1PriorCard, promptText, designSource string) (CP1SemanticAnalysis, error) {
+func (s *stubCP1Analyzer) Revise(ctx context.Context, prior CP1PriorCard, promptText, designSource string) (CP1RevisionSemanticAnalysis, error) {
 	return s.reviseFn(ctx, prior, promptText, designSource)
 }
 

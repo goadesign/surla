@@ -76,17 +76,8 @@ func (c *queuedModelClient) Stream(context.Context, *model.Request) (model.Strea
 	return nil, errors.New("stream not implemented")
 }
 
-func (c *queuedModelClient) enqueueJSON(t *testing.T, analysis CP1SemanticAnalysis) {
+func (c *queuedModelClient) enqueueJSON(t *testing.T, analysis any) {
 	t.Helper()
-	if analysis.Ambiguities == nil {
-		analysis.Ambiguities = []CP1ModelAmbiguity{}
-	}
-	if analysis.Examples == nil {
-		analysis.Examples = []CP1ModelExample{}
-	}
-	if analysis.PreservedBehaviors == nil {
-		analysis.PreservedBehaviors = []string{}
-	}
 	raw, err := json.Marshal(analysis)
 	require.NoError(t, err)
 	c.mu.Lock()
@@ -118,8 +109,8 @@ func extractPriorCardFromUserPrompt(t *testing.T, req *model.Request) (CP1PriorC
 	require.True(t, ok)
 	assert.Equal(t, goldenpath.ArchitectReviseSystemPrompt(), sysPart.Text)
 	require.NotNil(t, req.StructuredOutput)
-	assert.Equal(t, "cp1_change_card_analysis", req.StructuredOutput.Name)
-	assert.Equal(t, cp1AnalysisJSONSchema, req.StructuredOutput.Schema)
+	assert.Equal(t, "cp1_revise_change_card_analysis", req.StructuredOutput.Name)
+	assert.Equal(t, cp1ReviseAnalysisJSONSchema, req.StructuredOutput.Schema)
 	assert.Equal(t, cp1AnalysisMaxOutputTokens, req.MaxTokens)
 
 	assert.Equal(t, model.ConversationRoleUser, req.Messages[1].Role)
@@ -133,9 +124,9 @@ func extractPriorCardFromUserPrompt(t *testing.T, req *model.Request) (CP1PriorC
 	revisedPrompt, designSrc, ok := strings.Cut(rest, "\n\nDesign:\n")
 	require.True(t, ok)
 
-	// Verify no positional IDs ("chg-rev-ambiguity-01", "chg-rev-check-01") appear in the prior JSON.
+	// Verify no positional ambiguity IDs appear in the prior JSON, and example IDs are preserved.
 	assert.NotContains(t, priorJSON, "-ambiguity-")
-	assert.NotContains(t, priorJSON, "-check-")
+	assert.Contains(t, priorJSON, `"id":"check_01"`)
 
 	var prior CP1PriorCard
 	dec := json.NewDecoder(strings.NewReader(priorJSON))
@@ -197,15 +188,16 @@ func TestModelCP1AnalyzerReviseRequestContractAndSemanticCases(t *testing.T) {
 
 	// Case 3: Revise R1 while still in needs_confirmation (unanswered questions have ConfirmedAnswer == "").
 	uiProgR1b := "root = DecisionWorkspace(\"Refund Policy\", [card1])\ncard1 = AmbiguityChoiceCard(1, \"Choose tax basis\")"
-	client.enqueueJSON(t, CP1SemanticAnalysis{
+	client.enqueueJSON(t, CP1RevisionSemanticAnalysis{
 		Summary: "Refunds up to $50 are instant and emit an audit event.",
 		Ambiguities: []CP1ModelAmbiguity{
 			{Question: "Does the $50 limit include tax?", Options: []string{"subtotal_only", "total_with_tax"}},
 			{Question: "Who approves refunds over $50?", Options: []string{"store_manager", "finance_lead"}},
 		},
-		Examples: []CP1ModelExample{
-			{Scenario: "Refund at limit", InputSummary: "$50 subtotal", ExpectedOutcome: "Instant refund with audit event", VerificationKind: "deterministic"},
+		Examples: []CP1RevisionModelExample{
+			{PriorID: "check_01", Scenario: "Refund at limit", InputSummary: "$50 subtotal", ExpectedOutcome: "Instant refund with audit event", VerificationKind: "deterministic"},
 		},
+		RemovedExampleIDs:  []string{},
 		PreservedBehaviors: []string{"Cross-tenant lookups return 404."},
 		UIComposition:      &uiProgR1b,
 	})
@@ -254,12 +246,13 @@ func TestModelCP1AnalyzerReviseRequestContractAndSemanticCases(t *testing.T) {
 	// Case 1: Unrelated addition on confirmed R1 -> R2 has 0 ambiguities, folds
 	// confirmed decisions into summary/examples/preserved_behaviors, drops the
 	// prior CP5 approval, and enters needs_confirmation.
-	client.enqueueJSON(t, CP1SemanticAnalysis{
+	client.enqueueJSON(t, CP1RevisionSemanticAnalysis{
 		Summary:     "Refunds up to $50 (subtotal only) are instant; refunds over $50 require store_manager approval; all refunds send a webhook.",
 		Ambiguities: []CP1ModelAmbiguity{},
-		Examples: []CP1ModelExample{
-			{Scenario: "Refund at limit", InputSummary: "$50 subtotal", ExpectedOutcome: "Instant store credit with audit event and webhook", VerificationKind: "deterministic"},
+		Examples: []CP1RevisionModelExample{
+			{PriorID: "check_01", Scenario: "Refund at limit", InputSummary: "$50 subtotal", ExpectedOutcome: "Instant store credit with audit event and webhook", VerificationKind: "deterministic"},
 		},
+		RemovedExampleIDs: []string{},
 		PreservedBehaviors: []string{
 			"Cross-tenant lookups return 404.",
 			"The $50 instant-refund limit applies to subtotal_only.",
@@ -304,15 +297,16 @@ func TestModelCP1AnalyzerReviseRequestContractAndSemanticCases(t *testing.T) {
 	// and preserved_behaviors, and R3 preserves R2's surviving <= $50 example
 	// alongside the updated > $50 example.
 	designV2 := "package design\n// v2"
-	client.enqueueJSON(t, CP1SemanticAnalysis{
+	client.enqueueJSON(t, CP1RevisionSemanticAnalysis{
 		Summary: "Refunds up to $50 (subtotal only) are instant; refunds over $50 require vp_finance approval; all refunds send a webhook.",
 		Ambiguities: []CP1ModelAmbiguity{
 			{Question: "Should vp_finance approval expire after 24h?", Options: []string{"expire_24h", "no_expiry"}},
 		},
-		Examples: []CP1ModelExample{
-			{Scenario: "Refund at limit", InputSummary: "$50 subtotal", ExpectedOutcome: "Instant store credit with audit event and webhook", VerificationKind: "deterministic"},
+		Examples: []CP1RevisionModelExample{
+			{PriorID: "check_01", Scenario: "Refund at limit", InputSummary: "$50 subtotal", ExpectedOutcome: "Instant store credit with audit event and webhook", VerificationKind: "deterministic"},
 			{Scenario: "Refund over limit", InputSummary: "$75 subtotal", ExpectedOutcome: "Pending vp_finance approval", VerificationKind: "deterministic"},
 		},
+		RemovedExampleIDs: []string{},
 		PreservedBehaviors: []string{
 			"Cross-tenant lookups return 404.",
 			"The $50 instant-refund limit applies to subtotal_only.",
@@ -333,23 +327,24 @@ func TestModelCP1AnalyzerReviseRequestContractAndSemanticCases(t *testing.T) {
 	require.Len(t, r3.Ambiguities, 1)
 	assert.Equal(t, "chg-rev-ambiguity-01", r3.Ambiguities[0].ID)
 	require.Len(t, r3.Examples, 2)
-	assert.Equal(t, "chg-rev-check-01", r3.Examples[0].ID)
+	assert.Equal(t, "check_01", r3.Examples[0].ID)
 	assert.Equal(t, "Instant store credit with audit event and webhook", r3.Examples[0].ExpectedOutcome)
-	assert.Equal(t, "chg-rev-check-02", r3.Examples[1].ID)
+	assert.Equal(t, "check_02", r3.Examples[1].ID)
 	assert.Equal(t, "Pending vp_finance approval", r3.Examples[1].ExpectedOutcome)
 
 	// Pure content digest invariant: revising R3 back to the exact R1Draft
 	// content and design_source produces the exact same RequestRevision as R1Draft,
 	// and passes both surviving R3 examples in the Prior Change Card input.
-	client.enqueueJSON(t, CP1SemanticAnalysis{
+	client.enqueueJSON(t, CP1RevisionSemanticAnalysis{
 		Summary: "Refunds up to $50 are instant.",
 		Ambiguities: []CP1ModelAmbiguity{
 			{Question: "Does the $50 limit include tax?", Options: []string{"subtotal_only", "total_with_tax"}},
 			{Question: "Who approves refunds over $50?", Options: []string{"store_manager", "finance_lead"}},
 		},
-		Examples: []CP1ModelExample{
-			{Scenario: "Refund at limit", InputSummary: "$50 subtotal", ExpectedOutcome: "Instant refund", VerificationKind: "deterministic"},
+		Examples: []CP1RevisionModelExample{
+			{PriorID: "check_01", Scenario: "Refund at limit", InputSummary: "$50 subtotal", ExpectedOutcome: "Instant refund", VerificationKind: "deterministic"},
 		},
+		RemovedExampleIDs:  []string{"check_02"},
 		PreservedBehaviors: []string{"Cross-tenant lookups return 404."},
 	})
 	rRestored, err := cp.ReviseChange(aliceCtx, &gensurla.ReviseChangePayload{
@@ -442,12 +437,13 @@ func TestReviseChangeTransportsConcurrencyAndFailureAtomicity(t *testing.T) {
 	assert.ErrorContains(t, err, "request_revision mismatch")
 
 	// Model failure, OutputLimited, and invalid analysis leave on-disk bytes untouched.
-	validR2Bytes, err := json.Marshal(CP1SemanticAnalysis{
+	validR2Bytes, err := json.Marshal(CP1RevisionSemanticAnalysis{
 		Summary:     "Refunds up to $100 are instant.",
 		Ambiguities: []CP1ModelAmbiguity{},
-		Examples: []CP1ModelExample{
-			{Scenario: "Refund at $100", InputSummary: "$100 subtotal", ExpectedOutcome: "Instant refund", VerificationKind: "deterministic"},
+		Examples: []CP1RevisionModelExample{
+			{PriorID: "check_01", Scenario: "Refund at $100", InputSummary: "$100 subtotal", ExpectedOutcome: "Instant refund", VerificationKind: "deterministic"},
 		},
+		RemovedExampleIDs:  []string{},
 		PreservedBehaviors: []string{"Cross-tenant lookups return 404."},
 	})
 	require.NoError(t, err)
@@ -465,7 +461,7 @@ func TestReviseChangeTransportsConcurrencyAndFailureAtomicity(t *testing.T) {
 		queuedModelTurn{resp: &model.Response{
 			Content: []model.Message{{
 				Role:  model.ConversationRoleAssistant,
-				Parts: []model.Part{model.TextPart{Text: `{"summary":"x","ambiguities":[{"question":"Q?","options":["dup","dup"]}],"examples":[{"scenario":"s","input_summary":"i","expected_outcome":"o","verification_kind":"deterministic"}],"preserved_behaviors":[]}`}},
+				Parts: []model.Part{model.TextPart{Text: `{"summary":"x","ambiguities":[{"question":"Q?","options":["dup","dup"]}],"examples":[{"prior_id":"check_01","scenario":"s","input_summary":"i","expected_outcome":"o","verification_kind":"deterministic"}],"removed_example_ids":[],"preserved_behaviors":[]}`}},
 			}},
 			StopReason: "stop",
 		}},
@@ -529,12 +525,13 @@ func TestReviseChangeTransportsConcurrencyAndFailureAtomicity(t *testing.T) {
 	// finishes its model call, its post-model re-check under c.mu.Lock() fails
 	// with request_revision mismatch and leaves B's saved card intact.
 	startedA, releaseA := make(chan struct{}), make(chan struct{})
-	validR2WinnerBytes, err := json.Marshal(CP1SemanticAnalysis{
+	validR2WinnerBytes, err := json.Marshal(CP1RevisionSemanticAnalysis{
 		Summary:     "Refunds up to $80 are instant (winner B).",
 		Ambiguities: []CP1ModelAmbiguity{},
-		Examples: []CP1ModelExample{
-			{Scenario: "Refund at $80", InputSummary: "$80 subtotal", ExpectedOutcome: "Instant store credit", VerificationKind: "deterministic"},
+		Examples: []CP1RevisionModelExample{
+			{PriorID: "check_01", Scenario: "Refund at $80", InputSummary: "$80 subtotal", ExpectedOutcome: "Instant store credit", VerificationKind: "deterministic"},
 		},
+		RemovedExampleIDs:  []string{},
 		PreservedBehaviors: []string{"Cross-tenant lookups return 404."},
 	})
 	require.NoError(t, err)
@@ -586,12 +583,13 @@ func TestReviseChangeTransportsConcurrencyAndFailureAtomicity(t *testing.T) {
 	assert.Equal(t, "Refunds up to $80 are instant (winner B).", gotAfterReviseRace.Summary)
 
 	// HTTP POST /changes/revise succeeds against r2Winner.RequestRevision.
-	client.enqueueJSON(t, CP1SemanticAnalysis{
+	client.enqueueJSON(t, CP1RevisionSemanticAnalysis{
 		Summary:     "Refunds up to $100 are instant via HTTP.",
 		Ambiguities: []CP1ModelAmbiguity{},
-		Examples: []CP1ModelExample{
-			{Scenario: "Refund at $100", InputSummary: "$100 subtotal", ExpectedOutcome: "Instant store credit", VerificationKind: "deterministic"},
+		Examples: []CP1RevisionModelExample{
+			{PriorID: "check_01", Scenario: "Refund at $100", InputSummary: "$100 subtotal", ExpectedOutcome: "Instant store credit", VerificationKind: "deterministic"},
 		},
+		RemovedExampleIDs:  []string{},
 		PreservedBehaviors: []string{"Cross-tenant lookups return 404."},
 	})
 	httpBody, err := json.Marshal(map[string]any{
@@ -618,12 +616,13 @@ func TestReviseChangeTransportsConcurrencyAndFailureAtomicity(t *testing.T) {
 	assert.Equal(t, "Refunds up to $100 are instant via HTTP.", httpCard.Summary)
 
 	// MCP ToolsCall("revise_change") succeeds against httpCard.RequestRevision.
-	client.enqueueJSON(t, CP1SemanticAnalysis{
+	client.enqueueJSON(t, CP1RevisionSemanticAnalysis{
 		Summary:     "Refunds up to $150 are instant via MCP.",
 		Ambiguities: []CP1ModelAmbiguity{},
-		Examples: []CP1ModelExample{
-			{Scenario: "Refund at $150", InputSummary: "$150 subtotal", ExpectedOutcome: "Instant store credit", VerificationKind: "deterministic"},
+		Examples: []CP1RevisionModelExample{
+			{PriorID: "check_01", Scenario: "Refund at $150", InputSummary: "$150 subtotal", ExpectedOutcome: "Instant store credit", VerificationKind: "deterministic"},
 		},
+		RemovedExampleIDs:  []string{},
 		PreservedBehaviors: []string{"Cross-tenant lookups return 404."},
 	})
 	mcpArgs, err := json.Marshal(map[string]any{

@@ -313,16 +313,20 @@ func TestListVerifications(t *testing.T) {
 		writeCompletedRun(runLate, time.Date(2026, 10, 31, 12, 0, 0, 900_000_000, time.UTC))
 
 		// Revise the card into needs_confirmation; prior R1 runs must remain discoverable.
-		revisedAnalysis, err := json.Marshal(CP1SemanticAnalysis{
+		revisedAnalysis, err := json.Marshal(CP1RevisionSemanticAnalysis{
 			Summary: "Refunds up to $50 require a reason.",
 			Ambiguities: []CP1ModelAmbiguity{{
 				Question: "Which reasons are allowed?",
 				Options:  []string{"damaged_item", "any_reason"},
 			}},
-			Examples: []CP1ModelExample{{
-				Scenario: "Refund at the limit", InputSummary: "Order total $50.00",
-				ExpectedOutcome: "Instant store credit", VerificationKind: "deterministic",
+			Examples: []CP1RevisionModelExample{{
+				PriorID:          "check_01",
+				Scenario:         "Refund at the limit",
+				InputSummary:     "Order total $50.00",
+				ExpectedOutcome:  "Instant store credit",
+				VerificationKind: "deterministic",
 			}},
+			RemovedExampleIDs:  []string{},
 			PreservedBehaviors: []string{},
 		})
 		require.NoError(t, err)

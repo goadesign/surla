@@ -25,7 +25,7 @@ var AmbiguityQuestion = Type("AmbiguityQuestion", func() {
 // ExampleItem represents a concrete input/outcome row in a Checkpoint 1 Change Card.
 var ExampleItem = Type("ExampleItem", func() {
 	Description("Concrete input and expected outcome confirmed at Checkpoint 1.")
-	Attribute("id", String, "Stable example identifier. CP1 assigns one to each example it proposes.")
+	Attribute("id", String, "Stable example identifier. Default code-assigned IDs use check_01, check_02, ... (valid goa-ai/eval Scenario names). confirm_intent preserves caller-chosen IDs.")
 	Attribute("scenario", String, "Plain-English scenario description.")
 	Attribute("input_summary", String, "Representative user request and domain fixture state.")
 	Attribute("expected_outcome", String, "Expected side effect and response behavior.")
@@ -120,7 +120,7 @@ var ConfirmIntentPayload = Type("ConfirmIntentPayload", func() {
 	Description("Operator confirmation of Checkpoint 1 ambiguity answers and concrete examples.")
 	Attribute("change_id", String, "Change identifier.")
 	Attribute("request_revision", String, "Reviewed CP1 request_revision digest being confirmed.")
-	Attribute("answers", MapOf(String, String), "Selected resolution per ambiguity question ID. Answer every current question, and give each value exactly as one string from that question's options, character for character.")
+	Attribute("answers", MapOf(String, String), "Selected resolution per ambiguity question ID. Answer every current question, and give each value exactly as one string from that question's options, character for character. To record a decision that no option expresses, call revise_change with that decision in prompt.")
 	Attribute("examples", ArrayOf(ExampleItem), "The complete confirmed example table, including examples you edited or added. Keep an existing example's id when you edit it, and give an example you add a new, unique, non-blank id; ids are saved as sent.")
 	Required("change_id", "request_revision", "answers", "examples")
 })
@@ -599,14 +599,14 @@ var _ = Service("surla", func() {
 	})
 
 	Method("confirm_intent", func() {
-		Description("Confirm or refine a Checkpoint 1 Change Card with the complete ambiguity answers and example table, bound to its current request_revision. Changed answers or examples produce a new request_revision; unchanged ones return the card as it is, with a saved approval returned in approval only while that approval still matches the promotion target's current inputs, or in unverified_approval when no promotion target is configured or the target cannot report its current inputs.")
+		Description("Confirm or refine a Checkpoint 1 Change Card with the complete ambiguity answers and example table, bound to its current request_revision. Changed answers or examples produce a new request_revision; unchanged ones return the card as it is, with a saved approval returned in approval only while that approval still matches the promotion target's current inputs, or in unverified_approval when no promotion target is configured or the target cannot report its current inputs. To record a decision that no option expresses, call revise_change with that decision in prompt.")
 		Payload(ConfirmIntentPayload)
 		Result(ChangeCardResult)
 		Error("not_found", ErrorResult, "No Change Card exists with this change_id.")
 		Error("forbidden", ErrorResult, "The authenticated principal does not own this Change Card.")
 		Error("conflict", ErrorResult, "The card's request_revision changed; read the current revision with get_change.")
 		Error("unprocessable", ErrorResult, "The submitted answers or examples did not satisfy the Change Card's requirements; the message states which check failed.")
-		Tool("confirm_intent", "Confirm or refine Checkpoint 1 ambiguity answers and example checks for the card's current request_revision.", func() {
+		Tool("confirm_intent", "Confirm or refine Checkpoint 1 ambiguity answers and example checks for the card's current request_revision. To record a decision that no option expresses, call revise_change with that decision in prompt.", func() {
 			ToolUI("ui://surla/checkpoint")
 		})
 		HTTP(func() {

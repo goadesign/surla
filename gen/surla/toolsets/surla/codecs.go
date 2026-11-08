@@ -674,7 +674,7 @@ var approveMergeResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("examples"), tools.DynamicField{}, tools.FixedField("id")},
 		JSONType:    "string",
-		Description: "Stable example identifier. CP1 assigns one to each example it proposes.",
+		Description: "Stable example identifier. Default code-assigned IDs use check_01, check_02, ... (valid goa-ai/eval Scenario names). confirm_intent preserves caller-chosen IDs.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("examples"), tools.DynamicField{}, tools.FixedField("scenario")},
@@ -860,12 +860,12 @@ var confirmIntentPayloadFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("answers")},
 		JSONType:    "object",
-		Description: "Selected resolution per ambiguity question ID. Answer every current question, and give each value exactly as one string from that question's options, character for character.",
+		Description: "Selected resolution per ambiguity question ID. Answer every current question, and give each value exactly as one string from that question's options, character for character. To record a decision that no option expresses, call revise_change with that decision in prompt.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("answers"), tools.DynamicField{}},
 		JSONType:    "string",
-		Description: "Selected resolution per ambiguity question ID. Answer every current question, and give each value exactly as one string from that question's options, character for character.",
+		Description: "Selected resolution per ambiguity question ID. Answer every current question, and give each value exactly as one string from that question's options, character for character. To record a decision that no option expresses, call revise_change with that decision in prompt.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("examples")},
@@ -880,7 +880,7 @@ var confirmIntentPayloadFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("examples"), tools.DynamicField{}, tools.FixedField("id")},
 		JSONType:    "string",
-		Description: "Stable example identifier. CP1 assigns one to each example it proposes.",
+		Description: "Stable example identifier. Default code-assigned IDs use check_01, check_02, ... (valid goa-ai/eval Scenario names). confirm_intent preserves caller-chosen IDs.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("examples"), tools.DynamicField{}, tools.FixedField("scenario")},
@@ -981,7 +981,7 @@ var confirmIntentResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("examples"), tools.DynamicField{}, tools.FixedField("id")},
 		JSONType:    "string",
-		Description: "Stable example identifier. CP1 assigns one to each example it proposes.",
+		Description: "Stable example identifier. Default code-assigned IDs use check_01, check_02, ... (valid goa-ai/eval Scenario names). confirm_intent preserves caller-chosen IDs.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("examples"), tools.DynamicField{}, tools.FixedField("scenario")},
@@ -1377,7 +1377,7 @@ var getChangeResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("examples"), tools.DynamicField{}, tools.FixedField("id")},
 		JSONType:    "string",
-		Description: "Stable example identifier. CP1 assigns one to each example it proposes.",
+		Description: "Stable example identifier. Default code-assigned IDs use check_01, check_02, ... (valid goa-ai/eval Scenario names). confirm_intent preserves caller-chosen IDs.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("examples"), tools.DynamicField{}, tools.FixedField("scenario")},
@@ -2846,7 +2846,7 @@ var proposeChangeResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("examples"), tools.DynamicField{}, tools.FixedField("id")},
 		JSONType:    "string",
-		Description: "Stable example identifier. CP1 assigns one to each example it proposes.",
+		Description: "Stable example identifier. Default code-assigned IDs use check_01, check_02, ... (valid goa-ai/eval Scenario names). confirm_intent preserves caller-chosen IDs.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("examples"), tools.DynamicField{}, tools.FixedField("scenario")},
@@ -3118,7 +3118,7 @@ var reviseChangeResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("examples"), tools.DynamicField{}, tools.FixedField("id")},
 		JSONType:    "string",
-		Description: "Stable example identifier. CP1 assigns one to each example it proposes.",
+		Description: "Stable example identifier. Default code-assigned IDs use check_01, check_02, ... (valid goa-ai/eval Scenario names). confirm_intent preserves caller-chosen IDs.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("examples"), tools.DynamicField{}, tools.FixedField("scenario")},
@@ -7669,7 +7669,7 @@ func validateProposeChangeResultExampleItemTransportJSONValue(path string, value
 		case "id":
 			if err := validateStringJSONValue(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Stable example identifier. CP1 assigns one to each example it proposes.",
+				typed[key], "Stable example identifier. Default code-assigned IDs use check_01, check_02, ... (valid goa-ai/eval Scenario names). confirm_intent preserves caller-chosen IDs.",
 			); err != nil {
 				return err
 			}
@@ -7878,7 +7878,7 @@ func validateConfirmIntentPayloadJSONValue(path string, value any, description s
 		case "answers":
 			if err := validateProposeChangeResultRootAnswersJSONValue(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Selected resolution per ambiguity question ID. Answer every current question, and give each value exactly as one string from that question's options, character for character.",
+				typed[key], "Selected resolution per ambiguity question ID. Answer every current question, and give each value exactly as one string from that question's options, character for character. To record a decision that no option expresses, call revise_change with that decision in prompt.",
 			); err != nil {
 				return err
 			}

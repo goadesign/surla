@@ -146,7 +146,7 @@ func TestCheckpointUIMCPAppsHandshakeAndToolResultRendering(t *testing.T) {
 		},
 		"examples": []map[string]any{
 			{
-				"id":                "chg-ui-test-check-01",
+				"id":                "check_01",
 				"scenario":          "Refund under $50",
 				"input_summary":     "$40 subtotal",
 				"expected_outcome":  "  Instant store credit\nup to $50.00  ",
@@ -563,7 +563,7 @@ if (optionPills.length !== 1) {
   throw new Error("expected ambiguity option pill button, got: " + optionPills.length);
 }
 optionPills[0].dispatch("click");
-const outcomeInputs = findAll(viewEl, (n) => n.attributes["data-example-id"] === "chg-ui-test-check-01" && n.attributes["data-field"] === "expected_outcome");
+const outcomeInputs = findAll(viewEl, (n) => n.attributes["data-example-id"] === "check_01" && n.attributes["data-field"] === "expected_outcome");
 if (outcomeInputs.length !== 1 || outcomeInputs[0].tagName !== "TEXTAREA") {
   throw new Error("expected example expected_outcome textarea, got: " + outcomeInputs.length);
 }
@@ -612,7 +612,7 @@ if (root.dataset.state !== "cp1-change-card" ||
   throw new Error("expected confirmed CP1 revision and cleared aria-busy after tools/call reply, got: " + JSON.stringify(editorRegion.dataset));
 }
 // Typing into confirmed card and receiving a late tool-result notification must NOT overwrite post-reply edits.
-const postConfirmInputs = findAll(viewEl, (n) => n.attributes["data-example-id"] === "chg-ui-test-check-01" && n.attributes["data-field"] === "expected_outcome");
+const postConfirmInputs = findAll(viewEl, (n) => n.attributes["data-example-id"] === "check_01" && n.attributes["data-field"] === "expected_outcome");
 postConfirmInputs[0].value = "post-confirm draft edit";
 postConfirmInputs[0].dispatch("input", { target: postConfirmInputs[0] });
 messageListener({ source: parentWindow, data: { jsonrpc: "2.0", method: "ui/notifications/tool-result", params: { structuredContent: input.cp1ConfirmedStructured } } });
@@ -648,7 +648,7 @@ if (approvalPanels.length !== 1 ||
     findAll(viewEl, (n) => n.attributes["id"] === "surla-cp5-approval-dirty-warning").length !== 0) {
   throw new Error("expected #surla-cp5-approval panel without dirty warning on clean approved card, got: " + approvalText);
 }
-const approvedOutcomeInputs = findAll(viewEl, (n) => n.attributes["data-example-id"] === "chg-ui-test-check-01" && n.attributes["data-field"] === "expected_outcome");
+const approvedOutcomeInputs = findAll(viewEl, (n) => n.attributes["data-example-id"] === "check_01" && n.attributes["data-field"] === "expected_outcome");
 approvedOutcomeInputs[0].value = "edited after approval";
 approvedOutcomeInputs[0].dispatch("input", { target: approvedOutcomeInputs[0] });
 if (findAll(viewEl, (n) => n.attributes["id"] === "surla-cp5-approval-dirty-warning").length !== 1) {
@@ -664,7 +664,7 @@ if (findAll(viewEl, (n) => n.attributes["id"] === "surla-cp5-approval-dirty-warn
 messageListener({ source: parentWindow, data: { jsonrpc: "2.0", method: "ui/notifications/tool-result", params: { structuredContent: input.cp1Structured } } });
 const stalePills = findAll(viewEl, (n) => n.attributes["data-ambiguity-id"] === "chg-ui-test-ambiguity-01" && n.attributes["data-option"] === "total_with_tax");
 stalePills[0].dispatch("click");
-const staleOutcomeInputs = findAll(viewEl, (n) => n.attributes["data-example-id"] === "chg-ui-test-check-01" && n.attributes["data-field"] === "expected_outcome");
+const staleOutcomeInputs = findAll(viewEl, (n) => n.attributes["data-example-id"] === "check_01" && n.attributes["data-field"] === "expected_outcome");
 staleOutcomeInputs[0].value = "Edited outcome preserved across stale error";
 staleOutcomeInputs[0].dispatch("input", { target: staleOutcomeInputs[0] });
 const staleSubmitBtns = findAll(viewEl, (n) => n.attributes["id"] === "surla-confirm-submit");
@@ -747,7 +747,7 @@ if (!renderText(editorRegion).includes("Edited outcome preserved across stale er
   throw new Error("repeated get_change recovery lost prior preserved draft");
 }
 // Switching to an incoming card while the editor has both prior preserved draft lines and new dirty edits must preserve both in #surla-preserved-draft and initialize the form from the incoming card's own saved values.
-const dirtyBeforeSwitchInputs = findAll(editorRegion, (n) => n.attributes["data-example-id"] === "chg-ui-test-check-01" && n.attributes["data-field"] === "expected_outcome");
+const dirtyBeforeSwitchInputs = findAll(editorRegion, (n) => n.attributes["data-example-id"] === "check_01" && n.attributes["data-field"] === "expected_outcome");
 dirtyBeforeSwitchInputs[0].value = "Dirty edit on confirmed card before incoming switch";
 dirtyBeforeSwitchInputs[0].dispatch("input", { target: dirtyBeforeSwitchInputs[0] });
 messageListener({ source: parentWindow, data: { jsonrpc: "2.0", method: "ui/notifications/tool-result", params: { structuredContent: input.cp1Structured } } });
@@ -756,7 +756,7 @@ if (incomingSwitchBtns.length !== 1 || !renderText(incomingSwitchBtns[0]).includ
   throw new Error("expected #surla-replace-incoming-card button with Keep Unsaved Edits label");
 }
 incomingSwitchBtns[0].dispatch("click");
-const switchedOutcomeInputs = findAll(editorRegion, (n) => n.attributes["data-example-id"] === "chg-ui-test-check-01" && n.attributes["data-field"] === "expected_outcome");
+const switchedOutcomeInputs = findAll(editorRegion, (n) => n.attributes["data-example-id"] === "check_01" && n.attributes["data-field"] === "expected_outcome");
 const switchedPreservedPanels = findAll(editorRegion, (n) => n.attributes["id"] === "surla-preserved-draft");
 const switchedPreservedText = switchedPreservedPanels.length === 1 ? renderText(switchedPreservedPanels[0]) : "";
 if (editorRegion.dataset.requestRevision !== input.wantCP1Revision ||

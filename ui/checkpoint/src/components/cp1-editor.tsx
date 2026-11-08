@@ -440,18 +440,38 @@ export function CP1EditorView({
           )}
           <h4>{"Previous Examples (" + priorCard.examples.length + ")"}</h4>
           <ul>
-            {priorCard.examples.map((ex) => (
-              <li key={ex.id}>
-                <strong>{ex.scenario}</strong>
-                {" — Input: " +
-                  ex.input_summary +
-                  " -> Expected: " +
-                  ex.expected_outcome +
-                  " [" +
-                  ex.verification_kind +
-                  "]"}
-              </li>
-            ))}
+            {priorCard.examples.map((ex) => {
+              const currentEx = card.examples.find((c) => c.id === ex.id);
+              let statusText = "Removed";
+              let badgeVariant: "default" | "accent" | "destructive" = "destructive";
+              if (currentEx) {
+                const unchanged =
+                  currentEx.scenario === ex.scenario &&
+                  currentEx.input_summary === ex.input_summary &&
+                  currentEx.expected_outcome === ex.expected_outcome &&
+                  currentEx.verification_kind === ex.verification_kind;
+                if (unchanged) {
+                  statusText = "Kept";
+                  badgeVariant = "default";
+                } else {
+                  statusText = "Edited";
+                  badgeVariant = "accent";
+                }
+              }
+              return (
+                <li key={ex.id}>
+                  <code>{ex.id}</code> <Badge variant={badgeVariant}>{statusText}</Badge>{" "}
+                  <strong>{ex.scenario}</strong>
+                  {" — Input: " +
+                    ex.input_summary +
+                    " -> Expected: " +
+                    ex.expected_outcome +
+                    " [" +
+                    ex.verification_kind +
+                    "]"}
+                </li>
+              );
+            })}
           </ul>
           <h4>
             {"Previous Preserved Invariants (" + priorCard.preserved_behaviors.length + ")"}

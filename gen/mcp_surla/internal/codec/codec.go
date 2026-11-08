@@ -142,7 +142,9 @@ func ValidateApproveMergeResultApprovalItemTransport(value *ApproveMergeResultAp
 
 // ApproveMergeResultExampleItemTransport stores JSON fields until they have been validated.
 type ApproveMergeResultExampleItemTransport struct {
-	// Stable example identifier. CP1 assigns one to each example it proposes.
+	// Stable example identifier. Default code-assigned IDs use check_01, check_02,
+	// ... (valid goa-ai/eval Scenario names). confirm_intent preserves
+	// caller-chosen IDs.
 	ID *string `json:"id"`
 	// Plain-English scenario description.
 	Scenario *string `json:"scenario"`
@@ -346,7 +348,9 @@ func ValidateApproveMergeResultUnverifiedApprovalItemTransport(value *ApproveMer
 
 // ConfirmIntentPayloadExampleItemTransport stores JSON fields until they have been validated.
 type ConfirmIntentPayloadExampleItemTransport struct {
-	// Stable example identifier. CP1 assigns one to each example it proposes.
+	// Stable example identifier. Default code-assigned IDs use check_01, check_02,
+	// ... (valid goa-ai/eval Scenario names). confirm_intent preserves
+	// caller-chosen IDs.
 	ID *string `json:"id"`
 	// Plain-English scenario description.
 	Scenario *string `json:"scenario"`
@@ -394,7 +398,8 @@ type ConfirmIntentPayloadTransport struct {
 	RequestRevision *string `json:"request_revision"`
 	// Selected resolution per ambiguity question ID. Answer every current
 	// question, and give each value exactly as one string from that question's
-	// options, character for character.
+	// options, character for character. To record a decision that no option
+	// expresses, call revise_change with that decision in prompt.
 	Answers map[string]string `json:"answers"`
 	// The complete confirmed example table, including examples you edited or
 	// added. Keep an existing example's id when you edit it, and give an example
@@ -513,7 +518,9 @@ func ValidateConfirmIntentResultApprovalItemTransport(value *ConfirmIntentResult
 
 // ConfirmIntentResultExampleItemTransport stores JSON fields until they have been validated.
 type ConfirmIntentResultExampleItemTransport struct {
-	// Stable example identifier. CP1 assigns one to each example it proposes.
+	// Stable example identifier. Default code-assigned IDs use check_01, check_02,
+	// ... (valid goa-ai/eval Scenario names). confirm_intent preserves
+	// caller-chosen IDs.
 	ID *string `json:"id"`
 	// Plain-English scenario description.
 	Scenario *string `json:"scenario"`
@@ -967,7 +974,9 @@ func ValidateGetChangeResultApprovalItemTransport(value *GetChangeResultApproval
 
 // GetChangeResultExampleItemTransport stores JSON fields until they have been validated.
 type GetChangeResultExampleItemTransport struct {
-	// Stable example identifier. CP1 assigns one to each example it proposes.
+	// Stable example identifier. Default code-assigned IDs use check_01, check_02,
+	// ... (valid goa-ai/eval Scenario names). confirm_intent preserves
+	// caller-chosen IDs.
 	ID *string `json:"id"`
 	// Plain-English scenario description.
 	Scenario *string `json:"scenario"`
@@ -2529,7 +2538,9 @@ func ValidateProposeChangeResultApprovalItemTransport(value *ProposeChangeResult
 
 // ProposeChangeResultExampleItemTransport stores JSON fields until they have been validated.
 type ProposeChangeResultExampleItemTransport struct {
-	// Stable example identifier. CP1 assigns one to each example it proposes.
+	// Stable example identifier. Default code-assigned IDs use check_01, check_02,
+	// ... (valid goa-ai/eval Scenario names). confirm_intent preserves
+	// caller-chosen IDs.
 	ID *string `json:"id"`
 	// Plain-English scenario description.
 	Scenario *string `json:"scenario"`
@@ -2845,7 +2856,9 @@ func ValidateReviseChangeResultApprovalItemTransport(value *ReviseChangeResultAp
 
 // ReviseChangeResultExampleItemTransport stores JSON fields until they have been validated.
 type ReviseChangeResultExampleItemTransport struct {
-	// Stable example identifier. CP1 assigns one to each example it proposes.
+	// Stable example identifier. Default code-assigned IDs use check_01, check_02,
+	// ... (valid goa-ai/eval Scenario names). confirm_intent preserves
+	// caller-chosen IDs.
 	ID *string `json:"id"`
 	// Plain-English scenario description.
 	Scenario *string `json:"scenario"`

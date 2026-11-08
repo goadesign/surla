@@ -24,7 +24,7 @@ func TestConfirmIntentKeepsCallerExampleIDs(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, proposed.Examples, 1)
 	assignedID := proposed.Examples[0].ID
-	assert.Equal(t, "refunds-check-01", assignedID, "CP1 assigns ids to the examples it proposes")
+	assert.Equal(t, "check_01", assignedID, "CP1 assigns ids to the examples it proposes")
 
 	edited := *proposed.Examples[0]
 	edited.ExpectedOutcome = "Instant store credit"

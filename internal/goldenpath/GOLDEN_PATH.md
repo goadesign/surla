@@ -72,6 +72,9 @@ Rules for agents building services with Goa, Goa-AI, Model, Pulse and Clue. Rule
 - Register every toolset and agent, then call `rt.Seal(ctx)` before the first run.
 - Create the session in the host service before `Start`. Let the runtime own conversation history; keep no second copy.
 - Decisions code can derive belong in code: the authenticated caller, authorization, runtime IDs, cursors, pagination, valid state transitions. Leave semantic choices to the model.
+- Default acceptance check IDs to `check_01`, `check_02`, ... in `lower_snake_case` matching `goa-ai/eval` `validateID` so examples map directly to evaluator scenarios without identifier translation.
+- Account for every prior example when revising intent (`revise_change`): the model links surviving or edited checks via `prior_id` and lists dropped checks in `removed_example_ids`. Code preserves surviving IDs, prevents collision with removed IDs, and allocates brand-new checks to the lowest unused `check_NN` ID.
+- `confirm_intent` answers ambiguity questions from their declared options. When a domain decision requires an unlisted choice, route to `revise_change` with guidance in `prompt` and confirm the revised card.
 
 ## 6. Durability
 
