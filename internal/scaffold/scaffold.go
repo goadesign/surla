@@ -2,13 +2,14 @@
 // Goa / Goa-AI service whose helper agent prices items through a tool, plus a
 // starter evaluator suite that `surla verify` runs against it.
 //
-// Init builds the whole project in a staging directory next to the target,
+// Init builds the whole project in the operator-provided work directory,
 // running `go mod tidy` in each module and generating its code with a
 // Generator (Surla's sandboxed Goa generator, the one `surla gen` uses), and
 // renames the staging directory to the target only when every step
 // succeeded. A failed or canceled step removes the staging directory, so the
-// target is never left half-written. Each command's output goes to a log file; a failed step's log
-// is kept and named in the error.
+// target is never left half-written. When child cleanup cannot be confirmed,
+// the protected stage is retained instead. Each failed command keeps its log
+// and names it in the error.
 package scaffold
 
 import (
@@ -46,6 +47,11 @@ type (
 	Options struct {
 		// Dir is the directory to create. It must not exist.
 		Dir string
+		// WorkDir is an existing operator-owned parent for staging and logs,
+		// outside the target parent and the builder's write grant. It needs
+		// read, write, and search permission for allocation and cleanup, and
+		// must share the destination filesystem so publication moves one tree.
+		WorkDir string
 		// Module is the candidate's Go module path, such as
 		// example.com/shop. Its last element names the service.
 		Module string
@@ -177,8 +183,9 @@ var (
 
 // Init creates the project described by o, running every command with run
 // and generating each module's code with gen, which it closes before
-// returning. It returns the service name. On error the target directory is
-// unchanged.
+// returning. It returns the service name. On error the target is unchanged.
+// Logs of failed commands are retained, and a command whose child cleanup is
+// unconfirmed also retains its stage.
 func Init(ctx context.Context, o Options, run Runner, gen Generator) (name string, err error) {
 	genClosed := false
 	defer func() {
@@ -203,14 +210,11 @@ func Init(ctx context.Context, o Options, run Runner, gen Generator) (name strin
 	} else if !errors.Is(err, fs.ErrNotExist) {
 		return "", fmt.Errorf("check %s: %w", target, err)
 	}
-	logs, err := os.MkdirTemp("", "surla-init-logs-*")
+	stage, err := newInitStage(target, o.WorkDir)
 	if err != nil {
-		return "", fmt.Errorf("create log directory: %w", err)
+		return "", err
 	}
-	staging, err := os.MkdirTemp(filepath.Dir(target), filepath.Base(target)+".surla-init-*")
-	if err != nil {
-		return "", errors.Join(fmt.Errorf("create staging directory: %w", err), os.RemoveAll(logs))
-	}
+	staging, logs := stage.path, stage.logs
 	if err := build(ctx, staging, logs, d, run, gen); err != nil {
 		var stuck *stuckError
 		if errors.As(err, &stuck) {
@@ -227,29 +231,23 @@ func Init(ctx context.Context, o Options, run Runner, gen Generator) (name strin
 		return "", errors.Join(err, os.RemoveAll(logs), os.RemoveAll(staging))
 	}
 	// Every step succeeded, so the logs are no longer needed. They are removed
-	// before publishing so that the rename is the last thing that can fail.
+	// before publishing so that the exclusive rename is the last thing that can
+	// fail. A successful publication cannot be reported as a failed init.
 	if err := os.RemoveAll(logs); err != nil {
 		return "", errors.Join(fmt.Errorf("remove command logs: %w", err), os.RemoveAll(staging))
 	}
-	// MkdirTemp creates the staging directory private (0700); the project
-	// gets the usual directory permissions before it is published.
-	if err := os.Chmod(staging, 0o755); err != nil {
-		return "", errors.Join(fmt.Errorf("set project permissions: %w", err), os.RemoveAll(staging))
-	}
-	// os.Rename checks Lstat(target) and refuses an existing directory. A
-	// directory created in the race window between that Lstat and rename(2)
-	// is replaced only if it is empty (rename(2) fails on a non-empty one),
-	// so no data is lost.
-	if err := os.Rename(staging, target); err != nil {
-		return "", errors.Join(fmt.Errorf("move project into %s: %w", target, err), os.RemoveAll(staging))
+	if err := stage.publish(); err != nil {
+		return "", errors.Join(err, os.RemoveAll(staging))
 	}
 	return d.Name, nil
 }
 
 // RunCommand runs args in dir as its own process group with GOWORK=off, so a
 // go.work file around dir cannot change the new modules, and writes the
-// combined output to a new file at logPath. When ctx ends the group gets
-// SIGTERM, then SIGKILL; a group that does not exit is reported as a stuck
+// combined output to a new file at logPath. Go command temporary files also
+// use that protected log directory rather than inherited TMPDIR or GOTMPDIR,
+// including Go's saved GOTMPDIR setting. When ctx ends the group gets SIGTERM,
+// then SIGKILL; a group that does not exit is reported as a stuck
 // error so Init keeps the staging directory its processes may still use.
 func RunCommand(ctx context.Context, dir, logPath string, args ...string) error {
 	log, err := os.OpenFile(logPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
@@ -258,7 +256,11 @@ func RunCommand(ctx context.Context, dir, logPath string, args ...string) error 
 	}
 	cmd := exec.CommandContext(ctx, args[0], args[1:]...)
 	cmd.Dir = dir
-	cmd.Env = append(os.Environ(), "GOWORK=off")
+	cmd.Env = append(os.Environ(),
+		"GOWORK=off",
+		"TMPDIR="+filepath.Dir(logPath),
+		"GOTMPDIR="+filepath.Dir(logPath),
+	)
 	cmd.Stdout, cmd.Stderr = log, log
 	runErr, stopErr := procgroup.Run(cmd, syscall.SIGTERM, stopGrace, stopTimeout)
 	if stopErr != nil {

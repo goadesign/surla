@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"runtime/debug"
 	"strings"
 	"syscall"
@@ -92,7 +93,21 @@ func runInit(args []string, stdout io.Writer) error {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	name, err := scaffold.Init(ctx, scaffold.Options{Dir: *dir, Module: *modulePath, SurlaVersion: *version}, scaffold.RunCommand, designeval.NewEvaluator())
+	target, err := filepath.Abs(*dir)
+	if err != nil {
+		return err
+	}
+	workDir, err := localInitWorkDir(filepath.Dir(target))
+	if err != nil {
+		return err
+	}
+	evalWorkDir, err := localEvalWorkDir(filepath.Dir(target))
+	if err != nil {
+		return err
+	}
+	name, err := scaffold.Init(ctx, scaffold.Options{
+		Dir: target, Module: *modulePath, SurlaVersion: *version, WorkDir: workDir,
+	}, scaffold.RunCommand, designeval.NewEvaluatorInDir(evalWorkDir))
 	if err != nil {
 		return err
 	}

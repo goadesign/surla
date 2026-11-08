@@ -72,6 +72,7 @@ func TestGenRefusesAGoaWithoutCompleteSourcesAndChangesNothing(t *testing.T) {
 // writeModule writes a module snapshot to a new directory and returns it.
 func writeModule(t *testing.T, snapshot map[string]string) string {
 	t.Helper()
+	isolateLocalWork(t)
 	dir := t.TempDir()
 	layout(t, dir, snapshot)
 	return dir

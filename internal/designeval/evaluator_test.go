@@ -5,10 +5,12 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/goadesign/surla/internal/testmodule"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -23,6 +25,54 @@ func TestNewEvaluatorCreatesNothingAndClosesCleanly(t *testing.T) {
 	assert.Empty(t, entries(t, tmp), "a host that never evaluates creates no workspace")
 	require.NoError(t, ev.Close())
 	assert.Empty(t, entries(t, tmp))
+}
+
+// TestExplicitParentIsLazyAndIgnoresTMPDIR checks the embedded constructor
+// contract alongside filesystem callers' protected allocation boundary.
+func TestExplicitParentIsLazyAndIgnoresTMPDIR(t *testing.T) {
+	tmp := isolatedTempDir(t)
+	parent := filepath.Join(t.TempDir(), "operator")
+	ev := NewEvaluatorInDir(parent)
+	assert.NoDirExists(t, parent)
+	_, err := ev.Evaluate(t.Context(), incomplete)
+	require.Error(t, err)
+	assert.Equal(t, parent, filepath.Dir(ev.workDir))
+	assert.Empty(t, entries(t, tmp), "the builder's TMPDIR contains no compiler workspace")
+	require.NoError(t, ev.Close())
+	assert.Empty(t, entries(t, parent))
+}
+
+// TestEvaluationAndGenerationUseTheExplicitParent runs both sandboxed paths
+// with a design that checks where its evaluator output directory was allocated.
+func TestEvaluationAndGenerationUseTheExplicitParent(t *testing.T) {
+	tmp := isolatedTempDir(t)
+	parent := t.TempDir()
+	ev := NewEvaluatorInDir(parent)
+	t.Cleanup(func() { require.NoError(t, ev.Close()) })
+	files := testmodule.Snapshot(t, completeSourcesGoa, `package design
+import (
+    "os"
+    "strings"
+    . "goa.design/goa/v3/dsl"
+)
+func init() {
+    for _, arg := range os.Args {
+        if strings.HasSuffix(arg, "/evaluated.json") || strings.HasSuffix(arg, "/sources.json") {
+            if !strings.HasPrefix(arg, `+strconv.Quote(parent+string(filepath.Separator))+`) {
+                panic("evaluation temporary directory is outside its owner's parent")
+            }
+        }
+    }
+}
+var _ = Service("orders", func() { Method("get", func() { Payload(String); Result(String); HTTP(func() { GET("/{id}") }) }) })
+`)
+	_, err := ev.Evaluate(t.Context(), files)
+	require.NoError(t, err)
+	_, err = ev.Generate(t.Context(), files)
+	require.NoError(t, err)
+	assert.Empty(t, entries(t, tmp), "neither operation allocates under inherited TMPDIR")
+	require.NoError(t, ev.Close())
+	assert.Empty(t, entries(t, parent))
 }
 
 func TestCloseRemovesTheWorkspaceAfterAFailedEvaluation(t *testing.T) {
