@@ -527,6 +527,13 @@ var VerificationListResult = Type("VerificationListResult", func() {
 var _ = Service("surla", func() {
 	Description("Surla MCP software factory control plane.")
 
+	Completion("cp1_change_card_analysis", func() {
+		Return(CP1Analysis)
+	})
+	Completion("cp1_revise_change_card_analysis", func() {
+		Return(CP1RevisionAnalysis)
+	})
+
 	MCP("surla", "1.0.0")
 	JSONRPC(func() {
 		POST("/mcp")

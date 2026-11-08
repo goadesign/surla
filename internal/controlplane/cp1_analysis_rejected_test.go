@@ -23,6 +23,7 @@ import (
 	"go.opentelemetry.io/otel/codes"
 	"goa.design/goa-ai/features/model/gateway"
 	"goa.design/goa-ai/runtime/agent/model"
+	"goa.design/goa-ai/runtime/agent/planner"
 	goa "goa.design/goa/v3/pkg"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -286,7 +287,15 @@ func TestCP1AnalysisRejectedContractAcrossModelBoundaries(t *testing.T) {
 			assert.False(t, isRejected, "validation joined with independent fault must not classify as analysis_rejected")
 			var gotOV *model.OutputValidationError
 			require.ErrorAs(t, err, &gotOV)
-			assert.ErrorContains(t, err, "independent provider fault")
+			if mode.name == "direct_model_client" {
+				assert.ErrorIs(t, err, independentFault)
+			} else {
+				// The gateway reconstructs causes across gRPC; its received join
+				// retains the fault below the sanitized completion error wrapper.
+				var completionErr *planner.OutputContractError
+				require.ErrorAs(t, err, &completionErr)
+				assert.ErrorContains(t, completionErr.Unwrap(), independentFault.Error())
+			}
 
 			// Combined validation + context.Canceled -> HTTP 500 fault over HTTP.
 			mixedCancelReq := httptest.NewRequest(http.MethodPost, "/changes/propose", strings.NewReader(string(reqBody)))

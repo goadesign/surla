@@ -171,6 +171,15 @@ func TestCP1OutputLimitedErrorIdentityAndMixedFaults(t *testing.T) {
 	var original *model.OutputValidationError
 	require.ErrorAs(t, err, &original)
 	require.Equal(t, model.OutputValidationOutputLimited, original.Kind())
+	q.mu.Lock()
+	q.responses = append(q.responses, queuedModelTurn{resp: &model.Response{
+		OutputLimited: true, StopReason: "another-private-stop-marker",
+	}})
+	q.mu.Unlock()
+	_, secondErr := cp.ProposeChange(ctx, payload)
+	var distinct *model.OutputValidationError
+	require.ErrorAs(t, secondErr, &distinct)
+	require.NotSame(t, original, distinct)
 	fault := errors.New("independent provider fault")
 	for _, tc := range []struct {
 		name     string
@@ -180,6 +189,7 @@ func TestCP1OutputLimitedErrorIdentityAndMixedFaults(t *testing.T) {
 	}{
 		{name: "wrapped", err: fmt.Errorf("wrapped: %w", original), rejected: true},
 		{name: "duplicate_join", err: errors.Join(original, original), rejected: true},
+		{name: "distinct_validation", err: errors.Join(original, distinct), other: distinct},
 		{name: "independent_fault", err: errors.Join(original, fault), other: fault},
 		{name: "cancellation", err: errors.Join(original, context.Canceled), other: context.Canceled},
 	} {

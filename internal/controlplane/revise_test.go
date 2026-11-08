@@ -20,6 +20,7 @@ import (
 
 	genmcpadapter "github.com/goadesign/surla/gen/mcp_surla"
 	gensurla "github.com/goadesign/surla/gen/surla"
+	gencompletions "github.com/goadesign/surla/gen/surla/completions"
 	"github.com/goadesign/surla/internal/goldenpath"
 	"goa.design/goa-ai/runtime/agent/model"
 )
@@ -110,7 +111,7 @@ func extractPriorCardFromUserPrompt(t *testing.T, req *model.Request) (CP1PriorC
 	assert.Equal(t, goldenpath.ArchitectReviseSystemPrompt(), sysPart.Text)
 	require.NotNil(t, req.StructuredOutput)
 	assert.Equal(t, "cp1_revise_change_card_analysis", req.StructuredOutput.Name)
-	assert.Equal(t, cp1ReviseAnalysisJSONSchema, req.StructuredOutput.Schema)
+	assert.Equal(t, []byte(gencompletions.SpecCp1ReviseChangeCardAnalysis().Schema), req.StructuredOutput.Schema)
 	assert.Equal(t, cp1AnalysisMaxOutputTokens, req.MaxTokens)
 
 	assert.Equal(t, model.ConversationRoleUser, req.Messages[1].Role)
