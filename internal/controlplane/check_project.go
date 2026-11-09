@@ -13,9 +13,17 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"sync"
+	"unicode/utf8"
+
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
+	"golang.org/x/sys/unix"
 
 	gensurla "github.com/goadesign/surla/gen/surla"
 	"github.com/goadesign/surla/internal/abspath"
@@ -34,10 +42,17 @@ type (
 		id string
 		// dir is <CheckWorkDir>/<id>.
 		dir string
-		// grantRoot is the live grant the copy reproduces.
+		// grantRoot is the live grant's path when the operation started. It
+		// names the source mount point inside containers and nothing else.
 		grantRoot string
-		// workspaceDir is the active workspace inside the grant.
-		workspaceDir string
+		// grantFD holds the live grant directory open for the whole
+		// operation, reached from the identity-verified workspace root. The
+		// copy reads through it and update_dependencies writes through it,
+		// so a path component replaced mid-operation cannot redirect either.
+		grantFD int
+		// workspaceRel is the workspace's slash path inside the grant, "."
+		// when they are the same directory.
+		workspaceRel string
 		// copy is the result of copying the grant into dir/src.
 		copy grantCopy
 		// engine is the operation's resolved local Docker engine.
@@ -92,8 +107,14 @@ const (
 
 // CheckProject copies the active workspace's live files into a protected
 // per-operation copy and runs go test ./... for every Go module in it in
-// Linux containers, never changing the workspace.
-func (c *ControlPlane) CheckProject(ctx context.Context) (*gensurla.CheckProjectResult, error) {
+// Linux containers, never changing the workspace. It requires an
+// authenticated principal.
+func (c *ControlPlane) CheckProject(ctx context.Context) (res *gensurla.CheckProjectResult, retErr error) {
+	if _, ok := PrincipalFromContext(ctx); !ok {
+		return nil, errors.New("authenticated principal is required")
+	}
+	ctx, span := otel.Tracer("surla/controlplane").Start(ctx, "surla.controlplane.check_project")
+	defer func() { endCheckSpan(span, retErr) }()
 	ctx, cancel := c.checkDeadline(ctx)
 	defer cancel()
 	op, err := c.startCheckOperation(ctx)
@@ -117,6 +138,7 @@ func (c *ControlPlane) CheckProject(ctx context.Context) (*gensurla.CheckProject
 	if err := op.finish(nil); err != nil {
 		return nil, err
 	}
+	span.SetAttributes(attribute.Bool("surla.check.passed", len(failures) == 0))
 	return &gensurla.CheckProjectResult{
 		OpID:    op.id,
 		Passed:  len(failures) == 0,
@@ -139,26 +161,29 @@ func (c *ControlPlane) startCheckOperation(ctx context.Context) (*checkOperation
 	if err != nil {
 		return nil, err
 	}
-	_ = wsRoot.Close()
-	roots, err := verify.WorkspaceBoundaryRoots(ctx, physWS)
-	if err != nil {
-		return nil, fmt.Errorf("resolve the workspace's source boundary: %w", err)
+	op := &checkOperation{c: c, id: newOperationID(), grantFD: -1}
+	op.grantRoot, op.workspaceRel, op.grantFD, err = openGrant(ctx, wsRoot, physWS)
+	if err := errors.Join(err, wsRoot.Close()); err != nil {
+		return nil, errors.Join(err, closeFD(op.grantFD))
 	}
-	op := &checkOperation{c: c, id: newOperationID(), workspaceDir: physWS, grantRoot: outermost(roots)}
 	op.dir = filepath.Join(c.checkWorkDir, op.id)
+	trace.SpanFromContext(ctx).SetAttributes(attribute.String("surla.check.op_id", op.id))
 	for _, d := range []string{op.dir, op.path("src"), op.path("modcache"), op.path("docker-config")} {
 		if err := os.Mkdir(d, 0o700); err != nil {
-			return nil, fmt.Errorf("create check directory %s: %w", d, err)
+			return nil, errors.Join(fmt.Errorf("create check directory %s: %w", d, err), closeFD(op.grantFD))
 		}
 	}
 	if op.out, err = newCapWriter(op.path(outputFile)); err != nil {
-		return nil, err
+		return nil, errors.Join(err, closeFD(op.grantFD))
 	}
 	c.checkOps.Add(1)
-	op.copy, err = copyGrant(op.grantRoot, op.workspaceDir, op.path("src"), c.importedReports)
+	op.copy, err = copyGrant(ctx, op.grantFD, op.workspaceRel, op.path("src"), c.importedReports)
 	if err != nil {
 		var changed *errSourceChanged
-		if errors.As(err, &changed) {
+		switch {
+		case ctx.Err() != nil:
+			return nil, op.finish(fmt.Errorf("check exceeded -check-timeout (%s) or was canceled while copying the workspace: %w", c.checkTimeout, err))
+		case errors.As(err, &changed):
 			return nil, op.finish(err)
 		}
 		return nil, op.finish(fmt.Errorf("copy the workspace: %w", err))
@@ -166,6 +191,8 @@ func (c *ControlPlane) startCheckOperation(ctx context.Context) (*checkOperation
 	for _, p := range op.copy.skipped {
 		fmt.Fprintf(op.out, "note: %s is not a regular file, directory or symlink and was not copied\n", p)
 	}
+	fmt.Fprintf(op.out, "==> modules: %s\n", strings.Join(op.copy.modules, ", "))
+	trace.SpanFromContext(ctx).SetAttributes(attribute.Int("surla.check.modules", len(op.copy.modules)))
 	if len(op.copy.modules) == 0 {
 		return nil, op.finish(gensurla.MakeUnprocessable(errors.New("the workspace contains no Go module (no go.mod)")))
 	}
@@ -253,61 +280,84 @@ func (op *checkOperation) runGo(ctx context.Context, mod, step, network string, 
 		return moduleOutcome{}, false, err
 	}
 	fmt.Fprintf(op.out, "<== %s %s: exit %d\n", step, mod, code)
+	trace.SpanFromContext(ctx).AddEvent("go_command_exited", trace.WithAttributes(
+		attribute.String("surla.check.module", mod),
+		attribute.String("surla.check.step", step),
+		attribute.Int("surla.check.exit_code", code),
+	))
 	if code != 0 {
 		return moduleOutcome{dir: mod, step: step, exitCode: code, start: start, end: end}, false, nil
 	}
 	return moduleOutcome{}, true, nil
 }
 
-// finish closes the output, then removes the operation's copy, module cache
-// and work directories once no container still pins them, keeping the
-// output for read_check_output. It returns cause joined with any cleanup
-// failure; an unconfirmed container removal keeps the whole directory.
+// finish releases the grant, closes the output, then removes the
+// operation's copy, module cache and work directories once no container
+// still pins them, keeping the output for read_check_output. It returns
+// cause joined with any capture or cleanup failure; an unconfirmed container
+// removal keeps the whole directory.
 func (op *checkOperation) finish(cause error) error {
 	defer op.c.checkOps.Done()
-	closeErr := op.out.close()
+	closeErr := errors.Join(op.out.close(), closeFD(op.grantFD))
 	if len(op.owner.Containers) > 0 {
 		return errors.Join(cause, closeErr, fmt.Errorf("kept %s because container %s may still exist; remove it with docker rm -f %s", op.dir, op.owner.Containers[0], op.owner.Containers[0]))
 	}
 	return errors.Join(cause, closeErr, removeOperationScratch(op.dir))
 }
 
-// message is the bounded result message: the modules tested, then the
-// first failure and the end of its output.
+// message is the result message: the modules tested, then the first
+// failure and the end of its output, bounded as a whole.
 func (op *checkOperation) message(failures []moduleOutcome) string {
-	var b strings.Builder
-	fmt.Fprintf(&b, "tested %d module(s): %s.", len(op.copy.modules), strings.Join(op.copy.modules, ", "))
+	head := fmt.Sprintf("tested %d module(s): ", len(op.copy.modules))
+	list := strings.Join(op.copy.modules, ", ")
 	if len(failures) == 0 {
-		b.WriteString(" All passed.")
-		return op.withGap(b.String())
+		return op.boundedMessage(head, list, ". All passed.", nil)
 	}
 	f := failures[0]
+	var b strings.Builder
 	switch f.step {
 	case "download":
-		fmt.Fprintf(&b, " Dependencies for %s could not be prepared (go list exited %d). If Go reports a missing go.sum or go.work.sum entry, or a go.mod update, call update_dependencies and check again.", f.dir, f.exitCode)
+		fmt.Fprintf(&b, ". Dependencies for %s could not be prepared (go list exited %d). If Go reports a missing go.sum or go.work.sum entry, or a go.mod update, call update_dependencies and check again.", f.dir, f.exitCode)
 	default:
-		fmt.Fprintf(&b, " %s failed: go %s exited %d.", f.dir, f.step, f.exitCode)
+		fmt.Fprintf(&b, ". %s failed: go %s exited %d.", f.dir, f.step, f.exitCode)
 	}
 	if len(failures) > 1 {
 		fmt.Fprintf(&b, " %d other module step(s) also failed.", len(failures)-1)
 	}
 	b.WriteString(" Read the full output with read_check_output(op_id). Last output:\n")
-	return op.withGap(b.String() + op.out.tail(f.start, f.end, maxCheckMessageBytes-b.Len()-256))
+	return op.boundedMessage(head, list, b.String(), &f)
 }
 
-// withGap appends the capture-limit note when output was dropped.
-func (op *checkOperation) withGap(s string) string {
-	if op.out.dropped > 0 {
-		s += fmt.Sprintf("\nOutput after byte %d was not captured: %d bytes dropped.", op.out.limit, op.out.dropped)
+// boundedMessage assembles a result message of at most
+// maxCheckMessageBytes from, in order: head, list, body, the end of the
+// failed step's output when failed is non-nil, and the capture-gap note.
+// head and body are short fixed sentences; list (module names, written
+// files, refusal notes) and the output tail vary. list is cut to the room
+// left, or to a quarter of it when output follows, with a pointer to
+// read_check_output, which holds the full list; the tail gets the rest.
+func (op *checkOperation) boundedMessage(head, list, body string, failed *moduleOutcome) string {
+	gap := op.gapNote()
+	room := maxCheckMessageBytes - len(head) - len(body) - len(gap)
+	if failed == nil {
+		return head + clipText(list, room) + body + gap
 	}
-	return s
+	list = clipText(list, room/4)
+	return head + list + body + op.out.tail(failed.start, failed.end, room-len(list)) + gap
+}
+
+// gapNote states the output that was not captured, or is empty when the
+// capture is complete.
+func (op *checkOperation) gapNote() string {
+	if op.out.dropped == 0 {
+		return ""
+	}
+	return fmt.Sprintf("\nOutput after byte %d was not captured: %d bytes dropped.", op.out.captured, op.out.dropped)
 }
 
 // moduleGrantRel returns the workspace module mod as a grant-relative slash
 // path.
 func (op *checkOperation) moduleGrantRel(mod string) string {
-	rel, _ := filepath.Rel(op.grantRoot, filepath.Join(op.workspaceDir, filepath.FromSlash(mod)))
-	return filepath.ToSlash(rel)
+	return path.Join(op.workspaceRel, mod)
 }
 
 // path returns a path inside the operation directory.
@@ -430,6 +480,78 @@ func validateCheckWorkSeparation(checkWorkDir string, protectedDirs ...string) e
 	return nil
 }
 
+// openGrant resolves the grant (the outermost source root containing the
+// identity-verified workspace held as wsRoot at physWS) and returns its
+// path, the workspace's slash path inside it, and a descriptor of it. The
+// descriptor is reached by walking ".." up from the held workspace once per
+// path component between them, so it names the tree that contains the
+// verified workspace even if a component of the grant's path is renamed or
+// replaced afterwards.
+func openGrant(ctx context.Context, wsRoot *os.Root, physWS string) (string, string, int, error) {
+	roots, err := verify.WorkspaceBoundaryRoots(ctx, physWS)
+	if err != nil {
+		return "", "", -1, fmt.Errorf("resolve the workspace's source boundary: %w", err)
+	}
+	grantRoot := outermost(roots)
+	rel, err := filepath.Rel(grantRoot, physWS)
+	if err != nil || !filepath.IsLocal(rel) && rel != "." {
+		return "", "", -1, fmt.Errorf("workspace %s is not inside its source boundary %s", physWS, grantRoot)
+	}
+	ws, err := wsRoot.Open(".")
+	if err != nil {
+		return "", "", -1, fmt.Errorf("open the workspace: %w", err)
+	}
+	fd, err := unix.Openat(int(ws.Fd()), ".", openDirFlags, 0)
+	if err := errors.Join(err, ws.Close()); err != nil {
+		return "", "", -1, errors.Join(fmt.Errorf("hold the workspace: %w", err), closeFD(fd))
+	}
+	if rel != "." {
+		for range strings.Split(filepath.ToSlash(rel), "/") {
+			parent, err := unix.Openat(fd, "..", openDirFlags, 0)
+			if err := errors.Join(err, unix.Close(fd)); err != nil {
+				return "", "", -1, errors.Join(fmt.Errorf("hold the workspace's source boundary %s: %w", grantRoot, err), closeFD(parent))
+			}
+			fd = parent
+		}
+	}
+	return grantRoot, filepath.ToSlash(rel), fd, nil
+}
+
+// closeFD closes fd when it is open (non-negative).
+func closeFD(fd int) error {
+	if fd < 0 {
+		return nil
+	}
+	return unix.Close(fd)
+}
+
+// clipText returns s cut to at most n bytes on a UTF-8 boundary, ending with
+// a pointer to the full text in read_check_output when anything was cut.
+func clipText(s string, n int) string {
+	const more = " … (cut; read_check_output(op_id) has the full list)"
+	if len(s) <= n {
+		return s
+	}
+	if n < len(more) {
+		return ""
+	}
+	k := n - len(more)
+	for k > 0 && !utf8.RuneStart(s[k]) {
+		k--
+	}
+	return s[:k] + more
+}
+
+// endCheckSpan records a failed operation's error with error status and
+// ends span. A failing go test is an outcome, not an error.
+func endCheckSpan(span trace.Span, err error) {
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "check operation failed")
+	}
+	span.End()
+}
+
 // newOperationID returns a random 32-hex operation ID.
 func newOperationID() string {
 	var b [16]byte
@@ -460,8 +582,12 @@ type capWriter struct {
 	limit int64
 	// captured counts bytes written to f.
 	captured int64
-	// dropped counts bytes past limit.
+	// dropped counts bytes that were not captured: past limit, or after a
+	// write failure.
 	dropped int64
+	// err is the first write failure; nothing is written after it and
+	// close reports it.
+	err error
 	// metaPath is where close records the counts.
 	metaPath string
 }
@@ -478,20 +604,20 @@ func newCapWriter(path string) (*capWriter, error) {
 	return &capWriter{f: f, limit: maxCheckLogBytes, metaPath: filepath.Join(filepath.Dir(path), outputMetaFile)}, nil
 }
 
-// Write implements io.Writer, never failing the stream: bytes past the
-// limit are counted as dropped.
+// Write implements io.Writer, never failing the stream, so the container's
+// output is drained to the end: bytes past the limit, and every byte after a
+// write failure, are counted as dropped, and close reports the failure.
 func (w *capWriter) Write(p []byte) (int, error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	keep := min(int64(len(p)), max(w.limit-w.captured, 0))
-	if keep > 0 {
+	written := int64(0)
+	if keep := min(int64(len(p)), max(w.limit-w.captured, 0)); keep > 0 && w.err == nil {
 		n, err := w.f.Write(p[:keep])
-		w.captured += int64(n)
-		if err != nil {
-			return len(p), nil
-		}
+		written = int64(n)
+		w.err = err
 	}
-	w.dropped += int64(len(p)) - keep
+	w.captured += written
+	w.dropped += int64(len(p)) - written
 	return len(p), nil
 }
 
@@ -518,12 +644,20 @@ func (w *capWriter) tail(start, end int64, n int) string {
 	return string(buf[:k])
 }
 
-// close closes the file and records the byte counts for read_check_output.
+// close closes the file, records the byte counts for read_check_output,
+// and returns the first write failure, if any.
 func (w *capWriter) close() error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	raw, _ := json.Marshal(outputMeta{Captured: w.captured, Dropped: w.dropped})
-	return errors.Join(w.f.Close(), os.WriteFile(w.metaPath, raw, 0o600))
+	var captureErr error
+	if w.err != nil {
+		captureErr = fmt.Errorf("capture check output after byte %d (%d bytes not captured): %w", w.captured, w.dropped, w.err)
+	}
+	raw, err := json.Marshal(outputMeta{Captured: w.captured, Dropped: w.dropped})
+	if err != nil {
+		return errors.Join(captureErr, w.f.Close(), err)
+	}
+	return errors.Join(captureErr, w.f.Close(), os.WriteFile(w.metaPath, raw, 0o600))
 }
 
 // outputMeta is the saved byte accounting of one operation's output.

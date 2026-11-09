@@ -16,19 +16,40 @@ import (
 	"slices"
 	"strings"
 
-	gensurla "github.com/goadesign/surla/gen/surla"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sys/unix"
+
+	gensurla "github.com/goadesign/surla/gen/surla"
 )
 
-// errManifestConflict reports that a live manifest cannot be updated safely:
-// it is a symlink, not a regular file, or changed during the call.
-var errManifestConflict = errors.New("manifest conflict")
+// maxCleanupWarningBytes bounds the post-write failure text in an
+// update_dependencies message, so it never displaces the written paths.
+const maxCleanupWarningBytes = 2 << 10
+
+var (
+	// errManifestConflict reports that a live manifest cannot be updated
+	// safely: it is a symlink, not a regular file, or changed during the
+	// call.
+	errManifestConflict = errors.New("manifest conflict")
+	// fsyncDir makes a rename durable; tests replace it to inject a failure
+	// after the rename succeeded.
+	fsyncDir = unix.Fsync
+)
 
 // UpdateDependencies runs go mod tidy for every Go module of the active
 // workspace in a protected copy, populates go.work.sum when the copy has a
 // go.work, and publishes only the changed manifests. Modules are published
-// one at a time with Go's normal partial semantics.
-func (c *ControlPlane) UpdateDependencies(ctx context.Context) (*gensurla.UpdateDependenciesResult, error) {
+// one at a time with Go's normal partial semantics. Once a manifest is
+// replaced, later failures are reported next to the written paths, never
+// instead of them. It requires an authenticated principal.
+func (c *ControlPlane) UpdateDependencies(ctx context.Context) (res *gensurla.UpdateDependenciesResult, retErr error) {
+	if _, ok := PrincipalFromContext(ctx); !ok {
+		return nil, errors.New("authenticated principal is required")
+	}
+	ctx, span := otel.Tracer("surla/controlplane").Start(ctx, "surla.controlplane.update_dependencies")
+	defer func() { endCheckSpan(span, retErr) }()
 	ctx, cancel := c.checkDeadline(ctx)
 	defer cancel()
 	op, err := c.startCheckOperation(ctx)
@@ -52,14 +73,25 @@ func (c *ControlPlane) UpdateDependencies(ctx context.Context) (*gensurla.Update
 			}
 		}
 	}
-	written, notes := op.publishManifests(failures)
+	written, notes := op.publishManifests(ctx, failures)
+	if len(written) > 0 {
+		fmt.Fprintf(op.out, "==> wrote: %s\n", strings.Join(written, ", "))
+	}
+	for _, n := range notes {
+		fmt.Fprintf(op.out, "note: %s\n", n)
+	}
+	warning := ""
 	if err := op.finish(nil); err != nil {
-		return nil, err
+		if len(written) == 0 {
+			return nil, err
+		}
+		span.RecordError(err)
+		warning = clipText(fmt.Sprintf(" The files were written, but finishing the operation failed: %v.", err), maxCleanupWarningBytes)
 	}
 	return &gensurla.UpdateDependenciesResult{
 		OpID:         op.id,
 		FilesWritten: written,
-		Message:      op.updateMessage(written, notes, failures),
+		Message:      op.updateMessage(written, notes, warning, failures),
 	}, nil
 }
 
@@ -75,8 +107,9 @@ func (op *checkOperation) hasGoWork() bool {
 
 // publishManifests writes each changed manifest of every module whose tidy
 // succeeded, plus changed go.work.sum files, to the live grant. It returns
-// the workspace-relative paths written and one note per refused file.
-func (op *checkOperation) publishManifests(failures []moduleOutcome) ([]string, []string) {
+// the workspace-relative paths written and one note per refused file or
+// per written file whose write could not be made durable.
+func (op *checkOperation) publishManifests(ctx context.Context, failures []moduleOutcome) ([]string, []string) {
 	failed := map[string]bool{}
 	for _, f := range failures {
 		failed[f.dir] = true
@@ -96,15 +129,25 @@ func (op *checkOperation) publishManifests(failures []moduleOutcome) ([]string, 
 	}
 	slices.Sort(candidates)
 	candidates = slices.Compact(candidates)
+	span := trace.SpanFromContext(ctx)
 	var written, notes []string
 	for _, rel := range candidates {
-		changed, err := op.publishManifest(rel)
-		wsRel, _ := filepath.Rel(op.workspaceDir, filepath.Join(op.grantRoot, filepath.FromSlash(rel)))
+		replaced, err := op.publishManifest(rel)
+		wsRel, relErr := filepath.Rel(op.workspaceRel, rel)
+		if relErr != nil {
+			wsRel = rel
+		}
 		switch {
+		case replaced && err != nil:
+			written = append(written, wsRel)
+			notes = append(notes, fmt.Sprintf("%s was written, but making the write durable failed: %v", wsRel, err))
+			span.AddEvent("manifest_written", trace.WithAttributes(attribute.String("surla.check.path", wsRel), attribute.String("surla.check.warning", err.Error())))
+		case replaced:
+			written = append(written, wsRel)
+			span.AddEvent("manifest_written", trace.WithAttributes(attribute.String("surla.check.path", wsRel)))
 		case err != nil:
-			notes = append(notes, fmt.Sprintf("%s was not written: %v", filepath.ToSlash(wsRel), err))
-		case changed:
-			written = append(written, filepath.ToSlash(wsRel))
+			notes = append(notes, fmt.Sprintf("%s was not written: %v", wsRel, err))
+			span.AddEvent("manifest_refused", trace.WithAttributes(attribute.String("surla.check.path", wsRel), attribute.String("surla.check.reason", err.Error())))
 		}
 	}
 	return written, notes
@@ -113,7 +156,10 @@ func (op *checkOperation) publishManifests(failures []moduleOutcome) ([]string, 
 // publishManifest compares the copy's bytes of the grant-relative manifest
 // rel with the bytes read from the live file during the copy, and writes the
 // new bytes to the live file when they differ. Both sides are opened
-// through held directory descriptors without following a link.
+// through held directory descriptors without following a link; the live
+// side starts from the held grant. It reports whether the live file was
+// replaced: true with an error means the new bytes are in place but the
+// write could not be made durable.
 func (op *checkOperation) publishManifest(rel string) (bool, error) {
 	after, afterOK, err := readNoFollow(op.path("src"), rel)
 	if err != nil {
@@ -123,7 +169,7 @@ func (op *checkOperation) publishManifest(rel string) (bool, error) {
 	if !afterOK || (beforeOK && bytes.Equal(before, after)) {
 		return false, nil
 	}
-	dirFD, err := openDirNoFollow(op.grantRoot, path.Dir(rel))
+	dirFD, err := openDirAt(op.grantFD, path.Dir(rel))
 	if err != nil {
 		return false, err
 	}
@@ -141,43 +187,61 @@ func (op *checkOperation) publishManifest(rel string) (bool, error) {
 	case liveOK && !bytes.Equal(live, before):
 		return false, fmt.Errorf("%w: %s changed during update_dependencies; call again", errManifestConflict, name)
 	}
-	return true, writeAtomic(dirFD, name, after, !beforeOK)
+	return writeAtomic(dirFD, name, after, !beforeOK)
 }
 
-// updateMessage is the bounded update_dependencies message.
-func (op *checkOperation) updateMessage(written, notes []string, failures []moduleOutcome) string {
-	var b strings.Builder
-	if len(written) == 0 {
-		b.WriteString("No go.mod, go.sum or go.work.sum needed changes.")
-	} else {
-		fmt.Fprintf(&b, "Wrote %s.", strings.Join(written, ", "))
+// updateMessage is the update_dependencies message, bounded as a whole: the
+// written files and refusal notes, any failure after the writes, then the
+// first failed module and the end of its output.
+func (op *checkOperation) updateMessage(written, notes []string, warning string, failures []moduleOutcome) string {
+	head := "No go.mod, go.sum or go.work.sum needed changes."
+	list := ""
+	if len(written) > 0 {
+		head = fmt.Sprintf("Wrote %d file(s): ", len(written))
+		list = strings.Join(written, ", ") + "."
 	}
 	for _, n := range notes {
-		b.WriteString(" " + n + ".")
+		list += " " + n + "."
 	}
 	if len(failures) == 0 {
-		return op.withGap(b.String())
+		return op.boundedMessage(head, list, warning, nil)
 	}
 	f := failures[0]
-	fmt.Fprintf(&b, " go %s failed for %s (exit %d); its files were not written. Read the full output with read_check_output(op_id). Last output:\n", f.step, f.dir, f.exitCode)
-	return op.withGap(b.String() + op.out.tail(f.start, f.end, maxCheckMessageBytes-b.Len()-256))
+	body := warning + fmt.Sprintf(" go %s failed for %s (exit %d); its files were not written. Read the full output with read_check_output(op_id). Last output:\n", f.step, f.dir, f.exitCode)
+	return op.boundedMessage(head, list, body, &f)
 }
 
-// openDirNoFollow opens the slash-relative directory rel under root,
-// one component at a time, refusing any symlink component.
+// openDirNoFollow opens the slash-relative directory rel under the
+// directory path root without following a link.
 func openDirNoFollow(root, rel string) (int, error) {
 	fd, err := unix.Open(root, openDirFlags, 0)
 	if err != nil {
 		return -1, fmt.Errorf("open %s: %w", root, err)
 	}
+	return walkDirNoFollow(fd, rel)
+}
+
+// openDirAt opens the slash-relative directory rel under the held
+// directory base without following a link, leaving base open.
+func openDirAt(base int, rel string) (int, error) {
+	fd, err := unix.Openat(base, ".", openDirFlags, 0)
+	if err != nil {
+		return -1, fmt.Errorf("reopen the held directory: %w", err)
+	}
+	return walkDirNoFollow(fd, rel)
+}
+
+// walkDirNoFollow walks from the open directory fd to the slash-relative
+// directory rel, one component at a time, refusing any symlink component.
+// It takes ownership of fd and returns the descriptor of rel.
+func walkDirNoFollow(fd int, rel string) (int, error) {
 	if rel == "." {
 		return fd, nil
 	}
 	for _, part := range strings.Split(rel, "/") {
 		next, err := unix.Openat(fd, part, openDirFlags, 0)
-		_ = unix.Close(fd)
-		if err != nil {
-			return -1, fmt.Errorf("open directory %s: %w", rel, err)
+		if err := errors.Join(err, unix.Close(fd)); err != nil {
+			return -1, errors.Join(fmt.Errorf("open directory %s: %w", rel, err), closeFD(next))
 		}
 		fd = next
 	}
@@ -223,33 +287,35 @@ func readAtNoFollow(dirFD int, name string) ([]byte, bool, error) {
 
 // writeAtomic writes data to name in dirFD through a temporary file in the
 // same directory, then renames it into place: exclusively when create is
-// true, so a concurrently created file is never overwritten.
-func writeAtomic(dirFD int, name string, data []byte, create bool) error {
+// true, so a concurrently created file is never overwritten. It reports
+// whether the rename happened; an error after it means name holds data but
+// the directory entry may not yet be durable.
+func writeAtomic(dirFD int, name string, data []byte, create bool) (bool, error) {
 	tmp := "." + name + ".surla-" + newOperationID()
 	fd, err := unix.Openat(dirFD, tmp, unix.O_WRONLY|unix.O_CREAT|unix.O_EXCL|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0o644)
 	if err != nil {
-		return fmt.Errorf("create temporary %s: %w", name, err)
+		return false, fmt.Errorf("create temporary %s: %w", name, err)
 	}
 	f := os.NewFile(uintptr(fd), tmp)
 	_, werr := f.Write(data)
 	serr := f.Sync()
 	cerr := f.Close()
 	if err := errors.Join(werr, serr, cerr); err != nil {
-		_ = unix.Unlinkat(dirFD, tmp, 0)
-		return fmt.Errorf("write %s: %w", name, err)
+		return false, errors.Join(fmt.Errorf("write %s: %w", name, err), unix.Unlinkat(dirFD, tmp, 0))
 	}
 	if create {
 		err = unix.RenameatxNp(dirFD, tmp, dirFD, name, unix.RENAME_EXCL)
 		if errors.Is(err, unix.EEXIST) {
-			_ = unix.Unlinkat(dirFD, tmp, 0)
-			return fmt.Errorf("%w: %s was created concurrently; call again", errManifestConflict, name)
+			return false, errors.Join(fmt.Errorf("%w: %s was created concurrently; call again", errManifestConflict, name), unix.Unlinkat(dirFD, tmp, 0))
 		}
 	} else {
 		err = unix.Renameat(dirFD, tmp, dirFD, name)
 	}
 	if err != nil {
-		_ = unix.Unlinkat(dirFD, tmp, 0)
-		return fmt.Errorf("replace %s: %w", name, err)
+		return false, errors.Join(fmt.Errorf("replace %s: %w", name, err), unix.Unlinkat(dirFD, tmp, 0))
 	}
-	return unix.Fsync(dirFD)
+	if err := fsyncDir(dirFD); err != nil {
+		return true, fmt.Errorf("sync the directory of %s: %w", name, err)
+	}
+	return true, nil
 }

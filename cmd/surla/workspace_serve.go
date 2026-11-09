@@ -183,10 +183,22 @@ func configureServeWorkspace(cfg serveConfig) (ws workspaceServeConfig, err erro
 		operatorRunsDir     string
 		operatorReportsRoot string
 		defaultReportDir    string
+		importedReports     []string
 	)
 	if hasImported {
 		operatorCardsDir = filepath.Join(importedRoot, "cards-"+cardsHash)
 		operatorRunsDir = filepath.Join(importedRoot, "runs")
+		// Every import records the original report paths it copied, even
+		// when it copied none, and check_project keeps those files out of
+		// its copies whatever -verification-config names as runs_dir. A
+		// missing or unreadable record means lost import state.
+		if err := validateOperatorPrivateDir(operatorRunsDir); err != nil {
+			return workspaceServeConfig{}, fmt.Errorf("validate imported runs directory %s: %w", operatorRunsDir, err)
+		}
+		importedReports, err = verifyrun.LoadImportedReportPaths(operatorRunsDir)
+		if err != nil {
+			return workspaceServeConfig{}, fmt.Errorf("load the report paths recorded by the legacy workspace import: %w", err)
+		}
 		operatorReportsRoot = filepath.Join(importedRoot, "reports")
 		if _, statErr := os.Lstat(operatorReportsRoot); statErr == nil {
 			if err := validateOperatorPrivateDir(operatorReportsRoot); err != nil {
@@ -366,6 +378,7 @@ func configureServeWorkspace(cfg serveConfig) (ws workspaceServeConfig, err erro
 		initStageDir:           initStageDir,
 		evalWorkDir:            evalWorkDir,
 		checkWorkDir:           checkWorkDir,
+		importedReports:        importedReports,
 		runsDir:                runsDir,
 		verification:           startupVerification,
 		resolveVerification:    resolveVerification,

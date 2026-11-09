@@ -1,10 +1,13 @@
 package controlplane
 
 import (
+	"context"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"syscall"
 	"testing"
 
@@ -31,6 +34,18 @@ func writeTree(t *testing.T, root string, files map[string]string) {
 		require.NoError(t, os.MkdirAll(filepath.Dir(full), 0o755))
 		require.NoError(t, os.WriteFile(full, []byte(content), 0o644))
 	}
+}
+
+// copyGrantPath copies the grant at the path grant, holding it open as
+// startCheckOperation does, with the workspace at workspaceDir inside it.
+func copyGrantPath(t *testing.T, ctx context.Context, grant, workspaceDir, dst string, reports []string) (grantCopy, error) {
+	t.Helper()
+	rel, err := filepath.Rel(grant, workspaceDir)
+	require.NoError(t, err)
+	fd, err := syscall.Open(grant, openDirFlags, 0)
+	require.NoError(t, err)
+	defer func() { require.NoError(t, syscall.Close(fd)) }()
+	return copyGrant(ctx, fd, filepath.ToSlash(rel), dst, reports)
 }
 
 // copiedFiles lists the slash paths of every non-directory entry under root.
@@ -80,7 +95,7 @@ func TestCopyGrantCopiesLiveTree(t *testing.T) {
 	require.NoError(t, os.Symlink("/etc/hosts", filepath.Join(grant, "hosts-link")))
 	dst := realTempDir(t)
 
-	got, err := copyGrant(grant, grant, dst, nil)
+	got, err := copyGrantPath(t, context.Background(), grant, grant, dst, nil)
 	require.NoError(t, err)
 
 	assert.Equal(t, []string{".", "eval"}, got.modules)
@@ -104,7 +119,7 @@ func TestCopyGrantWorkspaceInsideMonorepo(t *testing.T) {
 		"services/shop/go.sum": "\n",
 	})
 	dst := realTempDir(t)
-	got, err := copyGrant(grant, filepath.Join(grant, "services", "shop"), dst, nil)
+	got, err := copyGrantPath(t, context.Background(), grant, filepath.Join(grant, "services", "shop"), dst, nil)
 	require.NoError(t, err)
 	assert.Equal(t, []string{"."}, got.modules, "only modules under the workspace are tested")
 	assert.Contains(t, copiedFiles(t, dst), "lib/go.mod", "siblings in the grant are copied for replace directives")
@@ -218,7 +233,7 @@ func TestCopyGrantExcludesRecordedReports(t *testing.T) {
 			writeTree(t, grant, map[string]string{"go.mod": "module example.com/shop\n", "reports/public-fixture.json": "{}\n"})
 			recorded := tc.setup(t, grant)
 			dst := realTempDir(t)
-			_, err := copyGrant(grant, grant, dst, []string{recorded})
+			_, err := copyGrantPath(t, context.Background(), grant, grant, dst, []string{recorded})
 			require.NoError(t, err)
 			got := copiedFiles(t, dst)
 			for _, p := range tc.wantAbsent {
@@ -236,9 +251,99 @@ func TestCopyEntryReportsVanishedEntry(t *testing.T) {
 	fd, err := syscall.Open(grant, openDirFlags, 0)
 	require.NoError(t, err)
 	defer syscall.Close(fd)
-	c := &grantCopier{workspaceRel: ".", recorded: map[string][]string{}, out: grantCopy{manifests: map[string][]byte{}}}
-	err = c.copyEntry(fd, "gone.txt", "gone.txt", realTempDir(t), nil)
+	c := &grantCopier{ctx: context.Background(), workspaceRel: ".", recorded: map[string][]string{}, out: grantCopy{manifests: map[string][]byte{}}}
+	err = c.copyEntry(fd, "gone.txt", "gone.txt", realTempDir(t), nil, nil)
 	var changed *errSourceChanged
 	require.True(t, errors.As(err, &changed))
 	assert.Contains(t, err.Error(), "the workspace changed while check_project was copying gone.txt")
+}
+
+func TestCopyGrantExcludesProtectedDirectoryAliases(t *testing.T) {
+	cases := []struct {
+		name        string
+		insensitive bool
+		files       map[string]string
+		wantAbsent  []string
+		wantPresent []string
+	}{
+		{
+			name:        "upper-case .SURLA is the private store on a case-insensitive volume",
+			insensitive: true,
+			files: map[string]string{
+				".SURLA/runs/r1/work/suite/main.go": "package main\n",
+				".SURLA/runs/r1/log.txt":            "suite log\n",
+				"surla-notes/fixture.txt":           "adjacent fixture\n",
+			},
+			wantAbsent:  []string{".SURLA/runs/r1/work/suite/main.go", ".SURLA/runs/r1/log.txt"},
+			wantPresent: []string{"surla-notes/fixture.txt"},
+		},
+		{
+			name:        "mixed-case .Git is the repository on a case-insensitive volume",
+			insensitive: true,
+			files: map[string]string{
+				".Git/config":       "[core]\n",
+				"gitdocs/notes.txt": "adjacent fixture\n",
+			},
+			wantAbsent:  []string{".Git/config"},
+			wantPresent: []string{"gitdocs/notes.txt"},
+		},
+		{
+			name: "distinct .SURLA beside .surla is a fixture on a case-sensitive volume",
+			files: map[string]string{
+				".surla/cards/card.json": "{}\n",
+				".SURLA/fixture.txt":     "fixture\n",
+			},
+			wantAbsent:  []string{".surla/cards/card.json"},
+			wantPresent: []string{".SURLA/fixture.txt"},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			grant := realTempDir(t)
+			if caseInsensitive(t, grant) != tc.insensitive {
+				t.Skip("needs a case-insensitive volume to equal ", tc.insensitive)
+			}
+			writeTree(t, grant, map[string]string{"go.mod": "module example.com/shop\n"})
+			writeTree(t, grant, tc.files)
+			dst := realTempDir(t)
+			_, err := copyGrantPath(t, context.Background(), grant, grant, dst, nil)
+			require.NoError(t, err)
+			got := copiedFiles(t, dst)
+			for _, p := range tc.wantAbsent {
+				assert.NotContains(t, got, p)
+			}
+			for _, p := range tc.wantPresent {
+				assert.Contains(t, got, p)
+			}
+		})
+	}
+}
+
+func TestCopyGrantStopsWhenTheOperationEnds(t *testing.T) {
+	grant := realTempDir(t)
+	writeTree(t, grant, map[string]string{"go.mod": "module example.com/shop\n", "big.bin": strings.Repeat("x", 1<<20)})
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err := copyGrantPath(t, ctx, grant, grant, realTempDir(t), nil)
+	require.ErrorIs(t, err, context.Canceled)
+
+	// A file that keeps growing stops at the deadline mid-read.
+	ctx, cancel = context.WithCancel(context.Background())
+	r := ctxReader{ctx: ctx, r: &endlessReader{cancelAfter: 3, cancel: cancel}}
+	_, err = io.Copy(io.Discard, r)
+	require.ErrorIs(t, err, context.Canceled)
+}
+
+// endlessReader never reaches EOF, like a log appended faster than it is
+// read, and cancels its operation after cancelAfter reads.
+type endlessReader struct {
+	cancelAfter int
+	cancel      context.CancelFunc
+}
+
+func (r *endlessReader) Read(p []byte) (int, error) {
+	if r.cancelAfter--; r.cancelAfter <= 0 {
+		r.cancel()
+	}
+	return len(p), nil
 }

@@ -15,6 +15,9 @@ import (
 	"strconv"
 	"strings"
 
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+
 	gensurla "github.com/goadesign/surla/gen/surla"
 )
 
@@ -23,8 +26,15 @@ var opIDPattern = regexp.MustCompile(`^[0-9a-f]{32}$`)
 
 // ReadCheckOutput returns one page of at most 16 KiB of an operation's
 // captured output, starting at the cursor, with the next cursor and the
-// operation's captured and dropped byte counts.
-func (c *ControlPlane) ReadCheckOutput(_ context.Context, p *gensurla.ReadCheckOutputPayload) (*gensurla.CheckOutputPage, error) {
+// operation's captured and dropped byte counts. It requires an
+// authenticated principal.
+func (c *ControlPlane) ReadCheckOutput(ctx context.Context, p *gensurla.ReadCheckOutputPayload) (res *gensurla.CheckOutputPage, retErr error) {
+	if _, ok := PrincipalFromContext(ctx); !ok {
+		return nil, errors.New("authenticated principal is required")
+	}
+	_, span := otel.Tracer("surla/controlplane").Start(ctx, "surla.controlplane.read_check_output")
+	span.SetAttributes(attribute.String("surla.check.op_id", p.OpID))
+	defer func() { endCheckSpan(span, retErr) }()
 	if !opIDPattern.MatchString(p.OpID) || c.checkWorkDir == "" {
 		return nil, gensurla.MakeNotFound(fmt.Errorf("no output exists for op_id %q", p.OpID))
 	}

@@ -3,6 +3,7 @@ package candidate
 import (
 	"bytes"
 	"context"
+	"encoding/csv"
 	"errors"
 	"fmt"
 	"io"
@@ -194,13 +195,19 @@ func (e *Engine) Run(ctx context.Context, spec ContainerSpec, out io.Writer) (ex
 			err = errors.Join(err, rmErr)
 		}
 	}()
+	create, err := e.createArgs(spec)
+	if err != nil {
+		return -1, err
+	}
 	var stderr bytes.Buffer
-	if err := e.docker(ctx, io.Discard, &stderr, e.createArgs(spec)...); err != nil {
+	if err := e.docker(ctx, io.Discard, &stderr, create...); err != nil {
 		return -1, fmt.Errorf("create container %s: %w: %s", spec.Name, err, strings.TrimSpace(stderr.String()))
 	}
-	// docker start --attach streams the output; its own exit status repeats
-	// the container's, so the authoritative code comes from docker wait.
-	if err := e.docker(ctx, out, out, "start", "--attach", spec.Name); err != nil && ctx.Err() != nil {
+	// docker start --attach streams the output. When the container exits
+	// non-zero, start exits with the same status; any other start failure
+	// means the stream, and so the captured evidence, is incomplete.
+	startErr := e.docker(ctx, out, out, "start", "--attach", spec.Name)
+	if startErr != nil && ctx.Err() != nil {
 		return -1, fmt.Errorf("run container %s: %w", spec.Name, ctx.Err())
 	}
 	var waitOut bytes.Buffer
@@ -211,6 +218,9 @@ func (e *Engine) Run(ctx context.Context, spec ContainerSpec, out io.Writer) (ex
 	code, err := strconv.Atoi(strings.TrimSpace(waitOut.String()))
 	if err != nil {
 		return -1, fmt.Errorf("container %s exit status %q: %w", spec.Name, waitOut.String(), err)
+	}
+	if startErr != nil && !mirrorsExit(startErr, code) {
+		return -1, fmt.Errorf("stream the output of container %s, which exited %d: %w", spec.Name, code, startErr)
 	}
 	return code, nil
 }
@@ -257,7 +267,7 @@ func runDocker(ctx context.Context, docker string, args, env []string, stdout, s
 // createArgs builds the docker create arguments for spec. Every container
 // is read-only with no capabilities, no privilege escalation, a process
 // limit, no Docker-kept logs, and only spec's environment and mounts.
-func (e *Engine) createArgs(spec ContainerSpec) []string {
+func (e *Engine) createArgs(spec ContainerSpec) ([]string, error) {
 	args := []string{
 		"create",
 		"--name", spec.Name,
@@ -273,9 +283,9 @@ func (e *Engine) createArgs(spec ContainerSpec) []string {
 		"--workdir", spec.WorkDir,
 	}
 	for _, m := range spec.Mounts {
-		opt := "type=bind,source=" + m.Source + ",target=" + m.Target
-		if m.ReadOnly {
-			opt += ",readonly"
+		opt, err := mountOption(m)
+		if err != nil {
+			return nil, err
 		}
 		args = append(args, "--mount", opt)
 	}
@@ -283,7 +293,29 @@ func (e *Engine) createArgs(spec ContainerSpec) []string {
 		args = append(args, "--env", kv)
 	}
 	args = append(args, CheckImage)
-	return append(args, spec.Args...)
+	return append(args, spec.Args...), nil
+}
+
+// mirrorsExit reports whether err is a docker start --attach exit that only
+// repeats the container's non-zero exit code.
+func mirrorsExit(err error, code int) bool {
+	var exitErr *exec.ExitError
+	return code != 0 && errors.As(err, &exitErr) && exitErr.ExitCode() == code
+}
+
+// mountOption encodes m as a docker --mount value. Docker splits the value
+// as one CSV record, so each field is CSV-encoded and a path containing a
+// comma or quote stays one field.
+func mountOption(m Mount) (string, error) {
+	fields := []string{"type=bind", "source=" + m.Source, "target=" + m.Target}
+	if m.ReadOnly {
+		fields = append(fields, "readonly")
+	}
+	var b strings.Builder
+	if err := csv.NewWriter(&b).WriteAll([][]string{fields}); err != nil {
+		return "", fmt.Errorf("encode mount %s: %w", m.Source, err)
+	}
+	return strings.TrimSuffix(b.String(), "\n"), nil
 }
 
 // docker runs one command against this engine's endpoint with only the

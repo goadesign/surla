@@ -3,9 +3,11 @@ package candidate
 import (
 	"bytes"
 	"context"
+	"encoding/csv"
 	"errors"
 	"fmt"
 	"io"
+	"os/exec"
 	"strings"
 	"testing"
 
@@ -97,6 +99,80 @@ func TestEngineRunRemovesContainerOnEveryPath(t *testing.T) {
 			assert.Equal(t, []string{"--host", "unix:///var/run/docker.sock", "rm", "--force", "surla-check-op1-0"}, last)
 		})
 	}
+}
+
+func TestEngineRunSeparatesStreamFailureFromTestFailure(t *testing.T) {
+	cases := []struct {
+		name     string
+		startErr error
+		waitCode int
+		wantCode int
+		wantErr  string
+	}{
+		{name: "stream breaks and the container exited 0", startErr: errors.New("unexpected EOF"), waitCode: 0, wantCode: -1, wantErr: "stream the output of container surla-check-op1-0, which exited 0"},
+		{name: "start repeats the container's non-zero exit", startErr: exitError(t, 1), waitCode: 1, wantCode: 1},
+		{name: "start fails differently from the container's exit", startErr: exitError(t, 1), waitCode: 2, wantCode: -1, wantErr: "which exited 2"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			e, s := newScriptedEngine(func(args []string) (string, string, error) {
+				switch verb(args) {
+				case "start":
+					return "", "", tc.startErr
+				case "wait":
+					return fmt.Sprintf("%d\n", tc.waitCode), "", nil
+				}
+				return "", "", nil
+			})
+			code, err := e.Run(context.Background(), ContainerSpec{Name: "surla-check-op1-0", Network: "none"}, io.Discard)
+			assert.Equal(t, tc.wantCode, code)
+			if tc.wantErr == "" {
+				require.NoError(t, err)
+			} else {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tc.wantErr)
+			}
+			assert.Equal(t, "rm", verb(s.calls[len(s.calls)-1]), "the container is removed")
+		})
+	}
+}
+
+// exitError returns the *exec.ExitError of a trusted shell exiting with
+// code, the type a docker command's exit status arrives as.
+func exitError(t *testing.T, code int) error {
+	t.Helper()
+	err := exec.Command("/bin/sh", "-c", fmt.Sprintf("exit %d", code)).Run()
+	var exitErr *exec.ExitError
+	require.ErrorAs(t, err, &exitErr)
+	return err
+}
+
+func TestMountOptionKeepsCommaAndQuotePathsAsOneField(t *testing.T) {
+	cases := []struct {
+		name  string
+		mount Mount
+	}{
+		{name: "comma in source and target", mount: Mount{Source: "/Users/dev/shop,old", Target: "/Users/dev/shop,old"}},
+		{name: "quote in source", mount: Mount{Source: `/Users/dev/"quoted"`, Target: "/w", ReadOnly: true}},
+		{name: "plain paths are unchanged", mount: Mount{Source: "/ops/src", Target: "/w"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			opt, err := mountOption(tc.mount)
+			require.NoError(t, err)
+			// Docker reads the value with encoding/csv as one record.
+			fields, err := csv.NewReader(strings.NewReader(opt)).Read()
+			require.NoError(t, err)
+			want := []string{"type=bind", "source=" + tc.mount.Source, "target=" + tc.mount.Target}
+			if tc.mount.ReadOnly {
+				want = append(want, "readonly")
+			}
+			assert.Equal(t, want, fields)
+		})
+	}
+	opt, err := mountOption(Mount{Source: "/ops/src", Target: "/w"})
+	require.NoError(t, err)
+	assert.Equal(t, "type=bind,source=/ops/src,target=/w", opt)
 }
 
 func TestEngineRunReportsUnconfirmedCleanup(t *testing.T) {

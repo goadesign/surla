@@ -748,28 +748,114 @@ func assertOutsideDirectory(t *testing.T, child, root string) {
 }
 
 // TestImportLegacyWorkspaceCardsOnlyPublishesEmptyReportRecord verifies that a
-// cards-only import (no legacy runs or reports) still publishes
-// imported/runs/imported_paths.json as an explicit empty version 1 record, so
-// a later missing record means lost state, never "nothing to exclude".
+// cards-only import (no legacy runs or reports) publishes
+// imported/runs/imported_paths.json as an explicit empty version 1 record and
+// that startup loads it, both for the starter layout and when
+// -verification-config names an external runs_dir, so a later missing record
+// means lost state, never "nothing to exclude".
 func TestImportLegacyWorkspaceCardsOnlyPublishesEmptyReportRecord(t *testing.T) {
-	root := t.TempDir()
-	cfgRoot := filepath.Join(root, "user-config")
-	wsDir := filepath.Join(root, "workspace")
-	require.NoError(t, os.MkdirAll(cfgRoot, 0o700))
-	legacyCardsDir := filepath.Join(wsDir, ".surla", "cards")
-	require.NoError(t, os.MkdirAll(legacyCardsDir, 0o700))
-	require.NoError(t, os.WriteFile(filepath.Join(legacyCardsDir, strings.Repeat("c", 64)+".json"), []byte(`{"card":{"ChangeID":"CHG-2"}}`), 0o600))
+	for _, external := range []bool{false, true} {
+		t.Run(map[bool]string{false: "starter layout", true: "external verification config"}[external], func(t *testing.T) {
+			root, err := filepath.EvalSymlinks(t.TempDir())
+			require.NoError(t, err)
+			cfgRoot := filepath.Join(root, "user-config")
+			wsDir := filepath.Join(root, "workspace")
+			require.NoError(t, os.MkdirAll(cfgRoot, 0o700))
+			legacyCardsDir := filepath.Join(wsDir, ".surla", "cards")
+			require.NoError(t, os.MkdirAll(legacyCardsDir, 0o700))
+			require.NoError(t, os.WriteFile(filepath.Join(legacyCardsDir, strings.Repeat("c", 64)+".json"), []byte(`{"card":{"ChangeID":"CHG-2"}}`), 0o600))
+			cfg := serveConfig{importLegacyWorkspace: true}
+			if external {
+				opsDir := filepath.Join(root, "ops")
+				require.NoError(t, os.MkdirAll(opsDir, 0o700))
+				cfg.verificationPath = filepath.Join(opsDir, "verification.json")
+				require.NoError(t, os.WriteFile(cfg.verificationPath, []byte(`{"runs_dir":"`+filepath.Join(opsDir, "runs")+`","report_dir":"`+filepath.Join(opsDir, "reports")+`",`+
+					`"candidate_repo":"`+wsDir+`","candidate_module":".","binaries":{"shop":"./cmd/shop"},`+
+					`"suite_repo":"`+filepath.Join(opsDir, "eval-repo")+`","suite_commit":"`+strings.Repeat("d", 40)+`",`+
+					`"suite_module":".","suite_command":"./cmd/shop-evals","timeout":"15m"}`), 0o600))
+			}
 
-	priorConfigDir := userConfigDir
-	userConfigDir = func() (string, error) { return cfgRoot, nil }
-	t.Cleanup(func() { userConfigDir = priorConfigDir })
-	t.Chdir(wsDir)
+			priorConfigDir := userConfigDir
+			userConfigDir = func() (string, error) { return cfgRoot, nil }
+			t.Cleanup(func() { userConfigDir = priorConfigDir })
+			t.Chdir(wsDir)
 
-	importedCfg, err := configureServeWorkspace(serveConfig{importLegacyWorkspace: true})
-	require.NoError(t, err)
-	require.NoError(t, importedCfg.closeProjectLock())
+			importedCfg, err := configureServeWorkspace(cfg)
+			require.NoError(t, err)
+			require.NoError(t, importedCfg.closeProjectLock())
+			if external {
+				assert.Equal(t, filepath.Join(root, "ops", "runs"), importedCfg.runsDir, "the external runs_dir serves verification")
+			}
 
-	raw, err := os.ReadFile(filepath.Join(importedCfg.runsDir, "imported_paths.json"))
-	require.NoError(t, err)
-	assert.JSONEq(t, `{"version":1}`, string(raw))
+			record := filepath.Join(filepath.Dir(importedCfg.cardsDir), "runs", "imported_paths.json")
+			raw, err := os.ReadFile(record)
+			require.NoError(t, err)
+			assert.JSONEq(t, `{"version":1}`, string(raw))
+			assert.Empty(t, importedCfg.importedReports)
+
+			cfg.importLegacyWorkspace = false
+			restarted, err := configureServeWorkspace(cfg)
+			require.NoError(t, err, "a later start loads the recorded empty list")
+			require.NoError(t, restarted.closeProjectLock())
+		})
+	}
+}
+
+// TestConfigureServeWorkspaceRejectsLostImportedReportRecord verifies that a
+// server started on an imported workspace refuses to start when the import's
+// report record is missing or unreadable, instead of copying the original
+// reports into check_project's containers.
+func TestConfigureServeWorkspaceRejectsLostImportedReportRecord(t *testing.T) {
+	cases := []struct {
+		name    string
+		damage  func(t *testing.T, record string)
+		wantErr string
+	}{
+		{
+			name:    "missing",
+			damage:  func(t *testing.T, record string) { require.NoError(t, os.Remove(record)) },
+			wantErr: "no such file",
+		},
+		{
+			name: "unsupported version",
+			damage: func(t *testing.T, record string) {
+				require.NoError(t, os.WriteFile(record, []byte(`{"version":2}`), 0o600))
+			},
+			wantErr: "unsupported version 2",
+		},
+		{
+			name: "symlink",
+			damage: func(t *testing.T, record string) {
+				target := filepath.Join(filepath.Dir(record), "elsewhere.json")
+				require.NoError(t, os.Rename(record, target))
+				require.NoError(t, os.Symlink(target, record))
+			},
+			wantErr: "imported_paths.json",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			cfgRoot := filepath.Join(root, "user-config")
+			wsDir := filepath.Join(root, "workspace")
+			require.NoError(t, os.MkdirAll(cfgRoot, 0o700))
+			legacyCardsDir := filepath.Join(wsDir, ".surla", "cards")
+			require.NoError(t, os.MkdirAll(legacyCardsDir, 0o700))
+			require.NoError(t, os.WriteFile(filepath.Join(legacyCardsDir, strings.Repeat("c", 64)+".json"), []byte(`{"card":{"ChangeID":"CHG-2"}}`), 0o600))
+			priorConfigDir := userConfigDir
+			userConfigDir = func() (string, error) { return cfgRoot, nil }
+			t.Cleanup(func() { userConfigDir = priorConfigDir })
+			t.Chdir(wsDir)
+
+			importedCfg, err := configureServeWorkspace(serveConfig{importLegacyWorkspace: true})
+			require.NoError(t, err)
+			require.NoError(t, importedCfg.closeProjectLock())
+			tc.damage(t, filepath.Join(filepath.Dir(importedCfg.cardsDir), "runs", "imported_paths.json"))
+
+			_, err = configureServeWorkspace(serveConfig{})
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "load the report paths recorded by the legacy workspace import")
+			assert.Contains(t, err.Error(), tc.wantErr)
+		})
+	}
 }
