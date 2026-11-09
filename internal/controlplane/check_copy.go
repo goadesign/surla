@@ -119,7 +119,7 @@ func copyGrant(ctx context.Context, rootFD int, workspaceRel string, workspaceID
 			return grantCopy{}, err
 		}
 	}
-	if c.workspaceRel == "." && hasRegularGoMod(rootFD, ".") {
+	if c.workspaceRel == "." && hasGoMod(rootFD, ".") {
 		c.out.modules = append(c.out.modules, ".")
 	}
 	if err := c.copyDir(rootFD, ".", dst); err != nil {
@@ -360,7 +360,8 @@ func sameEntry(a, b int, aStat unix.Stat_t) (bool, error) {
 // isModuleRoot reports whether the directory name in dirFD, at
 // grant-relative rel, is a module root that go test ./... would visit from
 // the workspace: inside the workspace, not under testdata, vendor or a
-// directory whose name starts with "." or "_", and holding a regular go.mod.
+// directory whose name starts with "." or "_", and holding a go.mod file or
+// symlink.
 func (c *grantCopier) isModuleRoot(dirFD int, name, rel string) bool {
 	wsRel, ok := c.workspaceRelative(rel)
 	if !ok {
@@ -373,17 +374,22 @@ func (c *grantCopier) isModuleRoot(dirFD int, name, rel string) bool {
 			}
 		}
 	}
-	return hasRegularGoMod(dirFD, name)
+	return hasGoMod(dirFD, name)
 }
 
-// hasRegularGoMod reports whether directory name in dirFD holds go.mod as a
-// regular file, without following a link.
-func hasRegularGoMod(dirFD int, name string) bool {
+// hasGoMod reports whether directory name in dirFD holds a go.mod entry
+// that Go's ./... treats as a nested module root: a regular file or a
+// symlink. The host never follows the link; the copy keeps it raw, and Go in
+// the container resolves it, so a link whose target is missing or outside
+// the copy makes that module's go command fail instead of silently dropping
+// its packages.
+func hasGoMod(dirFD int, name string) bool {
 	var st unix.Stat_t
 	if err := unix.Fstatat(dirFD, name+"/go.mod", &st, unix.AT_SYMLINK_NOFOLLOW); err != nil {
 		return false
 	}
-	return st.Mode&unix.S_IFMT == unix.S_IFREG
+	mode := st.Mode & unix.S_IFMT
+	return mode == unix.S_IFREG || mode == unix.S_IFLNK
 }
 
 // addModule records the workspace-relative module directory for the

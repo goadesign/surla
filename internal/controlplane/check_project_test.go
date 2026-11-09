@@ -549,6 +549,30 @@ func TestRecoverCheckOperationsKeepsScratchItCannotAttribute(t *testing.T) {
 	}
 }
 
+func TestPublishManifestRefusesALinkedGoModInTheCopy(t *testing.T) {
+	// A module whose go.mod is a symlink is checked, but update_dependencies
+	// never writes through or replaces the link.
+	grant := realTempDir(t)
+	writeTree(t, grant, map[string]string{"manifests/eval.mod": "module example.com/shop/eval\n"})
+	require.NoError(t, os.MkdirAll(filepath.Join(grant, "eval"), 0o755))
+	require.NoError(t, os.Symlink("../manifests/eval.mod", filepath.Join(grant, "eval", "go.mod")))
+	op := newPublishOp(t, grant, map[string][]byte{})
+	writeTree(t, op.path("src"), map[string]string{"manifests/eval.mod": "module example.com/shop/eval\n\nrequire example.com/x v1.0.0\n"})
+	require.NoError(t, os.MkdirAll(op.path("src/eval"), 0o755))
+	require.NoError(t, os.Symlink("../manifests/eval.mod", op.path("src/eval/go.mod")))
+
+	changed, err := op.publishManifest("eval/go.mod")
+	require.ErrorIs(t, err, errManifestConflict)
+	assert.Contains(t, err.Error(), "is a symbolic link")
+	assert.False(t, changed)
+	link, err := os.Readlink(filepath.Join(grant, "eval", "go.mod"))
+	require.NoError(t, err)
+	assert.Equal(t, "../manifests/eval.mod", link)
+	target, err := os.ReadFile(filepath.Join(grant, "manifests", "eval.mod"))
+	require.NoError(t, err)
+	assert.Equal(t, "module example.com/shop/eval\n", string(target), "the link target is untouched")
+}
+
 // runGitForTest runs a trusted git command in dir for a test fixture.
 func runGitForTest(t *testing.T, dir string, args ...string) {
 	t.Helper()

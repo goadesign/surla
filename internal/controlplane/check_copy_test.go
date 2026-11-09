@@ -397,3 +397,27 @@ func TestCopyGrantRefusesAReplacedNestedWorkspace(t *testing.T) {
 	require.ErrorAs(t, err, &changed)
 	assert.Contains(t, err.Error(), "the workspace directory was replaced")
 }
+
+func TestCopyGrantTreatsSymlinkedGoModAsAModule(t *testing.T) {
+	// Go's ./... stops at a nested directory whose go.mod is a symlink, so
+	// that directory is its own module and must be checked separately; the
+	// link is copied raw and resolved only by Go in the container.
+	grant := realTempDir(t)
+	writeTree(t, grant, map[string]string{
+		"go.mod":             "module example.com/shop\n",
+		"manifests/eval.mod": "module example.com/shop/eval\n",
+		"eval/eval_test.go":  "package eval\n",
+		"other/x_test.go":    "package other\n",
+	})
+	require.NoError(t, os.Symlink("../manifests/eval.mod", filepath.Join(grant, "eval", "go.mod")))
+	require.NoError(t, os.Symlink("../missing.mod", filepath.Join(grant, "other", "go.mod")))
+	dst := realTempDir(t)
+
+	got, err := copyGrantPath(t, context.Background(), grant, grant, dst, nil)
+	require.NoError(t, err)
+	assert.Equal(t, []string{".", "eval", "other"}, got.modules, "a dangling link is still a module root, so its go command fails instead of its packages vanishing")
+	link, err := os.Readlink(filepath.Join(dst, "eval", "go.mod"))
+	require.NoError(t, err)
+	assert.Equal(t, "../manifests/eval.mod", link, "the link is copied raw")
+	assert.NotContains(t, got.manifests, "eval/go.mod", "a linked manifest is never published")
+}
