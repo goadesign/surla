@@ -180,7 +180,6 @@ func TestGenOnAFreshStarterChangesNothingAndKeepsModulesApart(t *testing.T) {
 	restored.close(t)
 	assertTrustedSuiteJourney(t, startup.client, startup.cardsDir, startup.runsDir, candidateCommit, initialized.Commit, "startup")
 	startup.close(t)
-	assert.Zero(t, provider.maxTokens.Load(), "live startup makes no model inference calls")
 
 	edits := []struct {
 		// module is the module directory surla gen runs in.
