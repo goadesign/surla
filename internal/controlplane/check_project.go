@@ -171,12 +171,12 @@ func (c *ControlPlane) startCheckOperation(ctx context.Context) (*checkOperation
 	if wsDir == "" {
 		return abort(gensurla.MakeNotImplemented(errors.New("no workspace directory is bound to this control plane")))
 	}
-	physWS, wsRoot, err := openModuleRootWithIdentity(wsDir, dev, ino)
+	_, wsRoot, err := openModuleRootWithIdentity(wsDir, dev, ino)
 	if err != nil {
 		return abort(err)
 	}
 	op := &checkOperation{c: c, id: newOperationID(), grantFD: -1, workspaceFD: -1}
-	if err := errors.Join(op.openLive(wsRoot, physWS, c.protectedDirs), wsRoot.Close()); err != nil {
+	if err := errors.Join(op.openLive(wsRoot, c.protectedDirs), wsRoot.Close()); err != nil {
 		return abort(errors.Join(err, op.closeLive()))
 	}
 	op.dir = filepath.Join(c.checkWorkDir, op.id)
@@ -502,19 +502,14 @@ func removeOperationScratch(dir string) error {
 // openLive binds the operation to the live source. The grant is the
 // outermost source root this server accepted at startup (the initial
 // workspace or its enclosing Git working tree), never re-derived from Git
-// metadata that may have changed since. The active workspace, verified by
-// identity and held as wsRoot at physWS, must lie inside it. openLive holds
-// the workspace and the grant open: the grant is reached by walking ".." up
-// from the held workspace, and the workspace's identity is recorded so the
-// copy and every publication either act on the verified directories or
-// refuse.
-func (op *checkOperation) openLive(wsRoot *os.Root, physWS string, accepted []string) error {
-	op.grantRoot = outermost(accepted)
-	rel, err := filepath.Rel(op.grantRoot, physWS)
-	if err != nil || !filepath.IsLocal(rel) && rel != "." {
-		return gensurla.MakeUnprocessable(fmt.Errorf("workspace %s is outside %s, the source directory this server accepted at startup; restart surla serve from the workspace", physWS, op.grantRoot))
-	}
-	op.workspaceRel = filepath.ToSlash(rel)
+// metadata that may have changed since; openLive opens it directly. It also
+// holds the identity-verified workspace wsRoot. The kernel's stored paths of
+// both held directories give one spelling for each, whatever spelling the
+// operator or Git used, so the workspace must lie inside the grant by those
+// names; a workspace moved elsewhere is refused. The workspace's identity is
+// recorded so the copy and every publication either act on the verified
+// directories or refuse.
+func (op *checkOperation) openLive(wsRoot *os.Root, accepted []string) error {
 	ws, err := wsRoot.Open(".")
 	if err != nil {
 		return fmt.Errorf("open the workspace: %w", err)
@@ -528,45 +523,23 @@ func (op *checkOperation) openLive(wsRoot *os.Root, physWS string, accepted []st
 		return fmt.Errorf("hold the workspace: %w", err)
 	}
 	op.workspaceID = fileID{dev: st.Dev, ino: st.Ino}
-	fd, err := unix.Openat(op.workspaceFD, ".", openDirFlags, 0)
+	accepted0 := outermost(accepted)
+	if op.grantFD, err = unix.Open(accepted0, openDirFlags, 0); err != nil {
+		return fmt.Errorf("open the source directory %s: %w", accepted0, err)
+	}
+	if op.grantRoot, err = fdPath(op.grantFD); err != nil {
+		return fmt.Errorf("resolve the source directory %s: %w", accepted0, err)
+	}
+	wsPath, err := fdPath(op.workspaceFD)
 	if err != nil {
-		return fmt.Errorf("hold the workspace: %w", err)
+		return fmt.Errorf("resolve the workspace: %w", err)
 	}
-	if rel != "." {
-		for range strings.Split(op.workspaceRel, "/") {
-			parent, err := unix.Openat(fd, "..", openDirFlags, 0)
-			if err := errors.Join(err, unix.Close(fd)); err != nil {
-				return errors.Join(fmt.Errorf("hold the source directory %s: %w", op.grantRoot, err), closeFD(parent))
-			}
-			fd = parent
-		}
+	rel, err := filepath.Rel(op.grantRoot, wsPath)
+	if err != nil || !filepath.IsLocal(rel) && rel != "." {
+		return gensurla.MakeUnprocessable(fmt.Errorf("workspace %s is outside %s, the source directory this server accepted at startup; if the workspace moved, move it back or restart surla serve from it", wsPath, op.grantRoot))
 	}
-	op.grantFD = fd
-	// The ".." walk reaches whatever directory now contains the verified
-	// workspace. Prove it is the accepted root by asking the kernel what the
-	// accepted path names now: any spelling the volume resolves to the same
-	// directory is accepted, and a workspace moved under another parent is
-	// refused.
-	same, err := sameDirectory(op.grantFD, op.grantRoot)
-	if err != nil {
-		return fmt.Errorf("open the source directory %s: %w", op.grantRoot, err)
-	}
-	if !same {
-		return gensurla.MakeUnprocessable(fmt.Errorf("the workspace was moved out of %s after it was verified; call again", op.grantRoot))
-	}
+	op.workspaceRel = filepath.ToSlash(rel)
 	return nil
-}
-
-// sameDirectory reports whether the open directory fd is the directory the
-// path p currently names.
-func sameDirectory(fd int, p string) (bool, error) {
-	pfd, err := unix.Open(p, openDirFlags, 0)
-	if err != nil {
-		return false, err
-	}
-	var a, b unix.Stat_t
-	err = errors.Join(unix.Fstat(fd, &a), unix.Fstat(pfd, &b), unix.Close(pfd))
-	return err == nil && a.Dev == b.Dev && a.Ino == b.Ino, err
 }
 
 // liveDirAt opens the grant-relative directory rel of the live source
@@ -717,7 +690,15 @@ func (w *capWriter) tail(start, end int64, n int) string {
 	}
 	defer r.Close()
 	k, _ := r.ReadAt(buf, from)
-	return string(buf[:k])
+	buf = buf[:k]
+	if from > start {
+		// Start at a character boundary rather than inside the character
+		// the cut would split.
+		for skipped := 0; skipped < utf8.UTFMax-1 && len(buf) > 0 && !utf8.RuneStart(buf[0]); skipped++ {
+			buf = buf[1:]
+		}
+	}
+	return string(buf)
 }
 
 // close closes the file, records the byte counts for read_check_output,

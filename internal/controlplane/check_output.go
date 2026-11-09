@@ -14,6 +14,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -71,12 +72,31 @@ func (c *ControlPlane) ReadCheckOutput(ctx context.Context, p *gensurla.ReadChec
 	if err != nil && !errors.Is(err, io.EOF) {
 		return nil, err
 	}
+	if offset+int64(n) < meta.Captured {
+		// The next page starts the character this one would split.
+		n = completeRunes(buf[:n])
+	}
 	page := &gensurla.CheckOutputPage{Text: string(buf[:n]), CapturedBytes: meta.Captured, DroppedBytes: meta.Dropped}
 	if next := offset + int64(n); next < meta.Captured {
 		cursor := encodeCursor(p.OpID, next)
 		page.NextCursor = &cursor
 	}
 	return page, nil
+}
+
+// completeRunes returns the length of b without a UTF-8 character cut off
+// at its end. Invalid bytes count as complete, and a b holding only a cut
+// character is returned whole, so every page makes progress.
+func completeRunes(b []byte) int {
+	for i := len(b) - 1; i >= 0 && i >= len(b)-utf8.UTFMax; i-- {
+		if utf8.RuneStart(b[i]) {
+			if !utf8.FullRune(b[i:]) && i > 0 {
+				return i
+			}
+			break
+		}
+	}
+	return len(b)
 }
 
 // encodeCursor returns the opaque cursor for offset within operation id.

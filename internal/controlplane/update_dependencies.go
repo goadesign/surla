@@ -157,9 +157,17 @@ func (op *checkOperation) publishManifests(ctx context.Context, failures []modul
 // rel with the bytes read from the live file during the copy, and writes the
 // new bytes to the live file when they differ. Both sides are opened
 // through held directory descriptors without following a link; the live
-// side starts from the held grant. It reports whether the live file was
-// replaced: true with an error means the new bytes are in place but the
-// write could not be made durable.
+// side starts from the held workspace or grant. It reports whether the live
+// file was replaced: true with an error means the new bytes are in place but
+// the write could not be made durable.
+//
+// The live comparison and the replacement run under an exclusive,
+// non-blocking flock of the live directory, so two update_dependencies
+// calls, in this server or another one on the same workspace, never both
+// replace a file read with the same old bytes: the second gets a conflict
+// and calls again. An editor that does not take that lock can still write
+// the file between the comparison and the rename; edits made before the
+// comparison are always detected and kept.
 func (op *checkOperation) publishManifest(rel string) (bool, error) {
 	after, afterOK, err := readNoFollow(op.path("src"), rel)
 	if err != nil {
@@ -174,6 +182,12 @@ func (op *checkOperation) publishManifest(rel string) (bool, error) {
 		return false, err
 	}
 	defer unix.Close(dirFD)
+	if err := unix.Flock(dirFD, unix.LOCK_EX|unix.LOCK_NB); err != nil {
+		if errors.Is(err, unix.EWOULDBLOCK) {
+			return false, fmt.Errorf("%w: another update_dependencies is writing the directory of %s; call again", errManifestConflict, rel)
+		}
+		return false, fmt.Errorf("lock the directory of %s: %w", rel, err)
+	}
 	name := path.Base(rel)
 	live, liveOK, err := readAtNoFollow(dirFD, name)
 	if err != nil {

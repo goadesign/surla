@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	gensurla "github.com/goadesign/surla/gen/surla"
 	"github.com/goadesign/surla/verify/candidate"
@@ -181,7 +182,7 @@ func TestPublishManifestWritesThroughTheVerifiedNestedWorkspace(t *testing.T) {
 	ws, err := os.OpenRoot(filepath.Join(repo, "app"))
 	require.NoError(t, err)
 	op := &checkOperation{dir: realTempDir(t), grantFD: -1, workspaceFD: -1}
-	require.NoError(t, op.openLive(ws, filepath.Join(repo, "app"), []string{filepath.Join(repo, "app"), repo}))
+	require.NoError(t, op.openLive(ws, []string{filepath.Join(repo, "app"), repo}))
 	require.NoError(t, ws.Close())
 	t.Cleanup(func() { require.NoError(t, op.closeLive()) })
 	assert.Equal(t, repo, op.grantRoot)
@@ -232,7 +233,7 @@ func TestOpenLiveUsesTheSourceRootsAcceptedAtStartup(t *testing.T) {
 			require.NoError(t, err)
 			defer func() { require.NoError(t, root.Close()) }()
 			op := &checkOperation{grantFD: -1, workspaceFD: -1}
-			err = op.openLive(root, tc.ws, accepted)
+			err = op.openLive(root, accepted)
 			defer func() { require.NoError(t, op.closeLive()) }()
 			if tc.wantErr != "" {
 				assertServiceError(t, err, "unprocessable")
@@ -267,30 +268,122 @@ func TestOpenLiveRefusesAWorkspaceReparentedBeforeBinding(t *testing.T) {
 	require.NoError(t, os.Rename(filepath.Join(repo, "app"), filepath.Join(parent, "private-parent", "app")))
 
 	op := &checkOperation{grantFD: -1, workspaceFD: -1}
-	err = op.openLive(wsRoot, filepath.Join(repo, "app"), []string{filepath.Join(repo, "app"), repo})
+	err = op.openLive(wsRoot, []string{filepath.Join(repo, "app"), repo})
 	assertServiceError(t, err, "unprocessable")
-	assert.Contains(t, err.Error(), "the workspace was moved out of "+repo)
+	assert.Contains(t, err.Error(), "is outside "+repo)
 	require.NoError(t, op.closeLive())
 }
 
-func TestOpenLiveAcceptsAnotherSpellingOfTheAcceptedRoot(t *testing.T) {
-	// The operator started the server from /…/REPO on a case-insensitive
-	// volume that stores the directory as repo: both name one directory.
-	parent := realTempDir(t)
-	if !caseInsensitive(t, parent) {
-		t.Skip("needs a case-insensitive volume")
+func TestCheckBindingAcceptsOtherSpellingsThroughTheStartupPipeline(t *testing.T) {
+	// The operator starts the server with a spelling the volume resolves to
+	// the stored directories, while Git reports the stored spelling of the
+	// working tree. New records both; the operation must still bind.
+	cases := []struct {
+		name    string
+		stored  string
+		started string
+	}{
+		{name: "upper-case repository", stored: "repo", started: "REPO/app"},
+		{name: "upper-case workspace", stored: "repo", started: "repo/APP"},
+		{name: "decomposed Unicode repository", stored: "caf\u00e9", started: "cafe\u0301/app"},
 	}
-	writeTree(t, parent, map[string]string{"repo/app/go.mod": "module example.com/app\n"})
-	spelled := filepath.Join(parent, "REPO")
-	wsRoot, err := os.OpenRoot(filepath.Join(spelled, "app"))
-	require.NoError(t, err)
-	defer func() { require.NoError(t, wsRoot.Close()) }()
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			parent := realTempDir(t)
+			if !caseInsensitive(t, parent) {
+				t.Skip("needs a case- and normalization-insensitive volume")
+			}
+			writeTree(t, parent, map[string]string{tc.stored + "/app/go.mod": "module example.com/app\n"})
+			runGitForTest(t, filepath.Join(parent, tc.stored), "init", "-q")
+			cp, err := New(Options{CardsDir: filepath.Join(realTempDir(t), "cards"), WorkspaceDir: filepath.Join(parent, tc.started)})
+			require.NoError(t, err)
+			defer func() { require.NoError(t, cp.Close()) }()
 
-	op := &checkOperation{grantFD: -1, workspaceFD: -1}
-	require.NoError(t, op.openLive(wsRoot, filepath.Join(spelled, "app"), []string{filepath.Join(spelled, "app"), spelled}))
-	defer func() { require.NoError(t, op.closeLive()) }()
-	assert.Equal(t, spelled, op.grantRoot)
-	assert.Equal(t, "app", op.workspaceRel)
+			wsDir, dev, ino := cp.currentWorkspaceTarget()
+			_, wsRoot, err := openModuleRootWithIdentity(wsDir, dev, ino)
+			require.NoError(t, err)
+			op := &checkOperation{grantFD: -1, workspaceFD: -1}
+			require.NoError(t, errors.Join(op.openLive(wsRoot, cp.protectedDirs), wsRoot.Close()))
+			defer func() { require.NoError(t, op.closeLive()) }()
+			assert.Equal(t, "app", op.workspaceRel)
+			dst := realTempDir(t)
+			got, err := copyGrant(context.Background(), op.grantFD, op.workspaceRel, op.workspaceID, dst, nil)
+			require.NoError(t, err)
+			assert.Equal(t, []string{"."}, got.modules)
+			assert.Contains(t, copiedFiles(t, dst), "app/go.mod")
+		})
+	}
+}
+
+func TestPublishManifestRefusesWhileAnotherWriterHoldsTheDirectory(t *testing.T) {
+	// Two update_dependencies calls read the same old go.sum. While one
+	// holds the directory, which is what a second server does with its own
+	// open directory, the other refuses; afterwards it sees the first one's
+	// write and refuses instead of overwriting it.
+	grant := realTempDir(t)
+	writeTree(t, grant, map[string]string{"go.sum": "old\n"})
+	first := newPublishOp(t, grant, map[string][]byte{"go.sum": []byte("old\n")})
+	writeTree(t, first.path("src"), map[string]string{"go.sum": "first\n"})
+	second := newPublishOp(t, grant, map[string][]byte{"go.sum": []byte("old\n")})
+	writeTree(t, second.path("src"), map[string]string{"go.sum": "second\n"})
+
+	holder, err := syscall.Open(grant, openDirFlags, 0)
+	require.NoError(t, err)
+	require.NoError(t, syscall.Flock(holder, syscall.LOCK_EX|syscall.LOCK_NB))
+	changed, err := second.publishManifest("go.sum")
+	require.ErrorIs(t, err, errManifestConflict)
+	assert.Contains(t, err.Error(), "another update_dependencies is writing the directory of go.sum")
+	assert.False(t, changed)
+	require.NoError(t, syscall.Close(holder))
+
+	changed, err = first.publishManifest("go.sum")
+	require.NoError(t, err)
+	assert.True(t, changed)
+	changed, err = second.publishManifest("go.sum")
+	require.ErrorIs(t, err, errManifestConflict)
+	assert.Contains(t, err.Error(), "changed during update_dependencies")
+	assert.False(t, changed)
+	got, err := os.ReadFile(filepath.Join(grant, "go.sum"))
+	require.NoError(t, err)
+	assert.Equal(t, "first\n", string(got))
+}
+
+func TestOutputKeepsMultiByteCharactersWhole(t *testing.T) {
+	// "é" is two bytes; place one across the 16 KiB page boundary.
+	workDir := realTempDir(t)
+	id := strings.Repeat("ab", 16)
+	text := strings.Repeat("x", maxCheckMessageBytes-1) + "é" + strings.Repeat("y", 10)
+	writeTree(t, filepath.Join(workDir, id), map[string]string{
+		outputFile:     text,
+		outputMetaFile: fmt.Sprintf(`{"captured":%d,"dropped":0}`, len(text)),
+	})
+	c := &ControlPlane{checkWorkDir: workDir}
+	ctx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
+	var pages []string
+	p := &gensurla.ReadCheckOutputPayload{OpID: id}
+	for {
+		page, err := c.ReadCheckOutput(ctx, p)
+		require.NoError(t, err)
+		assert.True(t, utf8.ValidString(page.Text), "page %d is valid UTF-8", len(pages))
+		pages = append(pages, page.Text)
+		if page.NextCursor == nil {
+			break
+		}
+		p.Cursor = page.NextCursor
+	}
+	require.Len(t, pages, 2)
+	assert.Equal(t, text, strings.Join(pages, ""), "paging loses nothing")
+
+	// The tail of a failed step cut inside "é" starts after it.
+	dir := realTempDir(t)
+	w, err := newCapWriter(filepath.Join(dir, outputFile))
+	require.NoError(t, err)
+	_, err = w.Write([]byte("aé--- FAIL"))
+	require.NoError(t, err)
+	require.NoError(t, w.close())
+	tail := w.tail(0, int64(len("aé--- FAIL")), len("--- FAIL")+1)
+	assert.Equal(t, "--- FAIL", tail)
+	assert.Equal(t, "é--- FAIL", w.tail(0, int64(len("aé--- FAIL")), len("é--- FAIL")))
 }
 
 func TestCheckAdmissionIsOrderedWithClose(t *testing.T) {
