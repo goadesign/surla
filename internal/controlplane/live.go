@@ -72,8 +72,8 @@ type (
 	// liveState is the control plane's live-target state, embedded in
 	// ControlPlane.
 	liveState struct {
-		// liveConfigured reports whether the control plane is configured to
-		// launch managed CP3 live targets.
+		// liveConfigured records whether live launch settings were supplied.
+		// A verification plan is also required before a target can start.
 		liveConfigured bool
 		// liveCommand is the argument list that runs this surla executable;
 		// targets start `<liveCommand> verify-run live <dir>`.

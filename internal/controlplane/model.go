@@ -1,3 +1,5 @@
+// This file owns configured model clients and keeps each client open until the
+// last analysis using it finishes. Client construction belongs to the host.
 package controlplane
 
 import (
@@ -82,6 +84,11 @@ type (
 	// environment, and its transport cleanup function for a validated
 	// ConfigureModelPayload. Callers wire ModelBuilder in Options so the
 	// composition root (cmd/surla) owns provider and gateway client creation.
+	// A successful build transfers a non-nil analyzer, an immutable environment,
+	// and an optional cleanup function to the control plane. On failure, the
+	// builder closes any partially constructed resources before returning.
+	// Missing credentials may return unprocessable; other failures are server
+	// faults. Constructing a client does not establish remote readiness.
 	ModelBuilder func(
 		p *gensurla.ConfigureModelPayload,
 	) (analyzer CP1Analyzer, liveEnv []string, closeFn func() error, err error)
@@ -320,22 +327,6 @@ func closeInitialAnalyzer(closeFn func() error) error {
 		return nil
 	}
 	return closeFn()
-}
-
-// extractAssistantText concatenates TextPart payloads from a model.Response.
-func extractAssistantText(resp *model.Response) string {
-	if resp == nil {
-		return ""
-	}
-	var b strings.Builder
-	for _, msg := range resp.Content {
-		for _, part := range msg.Parts {
-			if tp, ok := part.(model.TextPart); ok {
-				b.WriteString(tp.Text)
-			}
-		}
-	}
-	return b.String()
 }
 
 // acquireModel increments the active model handle's reference count under
