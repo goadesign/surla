@@ -100,9 +100,9 @@ jobs:
           tar -xzf "$RUNNER_TEMP/$archive" -C "$RUNNER_TEMP/bin" temporal
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
       - name: Verifier end to end
-        # The candidate and evaluator compile in separate private workspaces.
-        # Allow both cold builds instead of using Go's implicit 10m alarm.
-        run: go test -race -timeout 20m -tags e2e ./internal/verify </dev/null
+        # The test reads HEAD through Git and builds both pinned checkouts in
+        # private workspaces. Run it anew with a deadline for both cold builds.
+        run: go test -race -count=1 -timeout 20m -tags e2e ./internal/verify </dev/null
       - name: Generation journeys end to end
         # surla gen against host goa gen, and surla init followed by surla gen
         # on a fresh starter, each through the sandboxed generator. -count=1
