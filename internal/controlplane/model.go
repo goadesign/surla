@@ -189,9 +189,7 @@ func (c *ControlPlane) ConfigureModel(
 			)
 			return nil, err
 		}
-		if containsConfigureModelError(err) {
-			err = unclassifiedCP1Error{cause: err}
-		}
+		err = unclassifiedCP1Error{cause: err}
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "build model client failed")
 		return nil, err
@@ -276,38 +274,6 @@ func asUnprocessable(err error) (*goa.ServiceError, bool) {
 		return asUnprocessable(wrapped.Unwrap())
 	}
 	return nil, false
-}
-
-// containsConfigureModelError reports whether err has a declared
-// ConfigureModel GoaErrorNamer ("unprocessable" or "not_implemented") in its
-// unwrap tree without traversing past an already named Goa error owner.
-func containsConfigureModelError(err error) bool {
-	if err == nil {
-		return false
-	}
-	if se, ok := err.(*goa.ServiceError); ok {
-		if se == nil {
-			return false
-		}
-		name := se.GoaErrorName()
-		return name == "unprocessable" || name == "not_implemented"
-	}
-	if named, ok := err.(goa.GoaErrorNamer); ok && named != nil {
-		name := named.GoaErrorName()
-		return name == "unprocessable" || name == "not_implemented"
-	}
-	if joined, ok := err.(interface{ Unwrap() []error }); ok {
-		for _, child := range joined.Unwrap() {
-			if containsConfigureModelError(child) {
-				return true
-			}
-		}
-		return false
-	}
-	if wrapped, ok := err.(interface{ Unwrap() error }); ok {
-		return containsConfigureModelError(wrapped.Unwrap())
-	}
-	return false
 }
 
 // validateConfigureModelPayload normalizes and validates the mutually exclusive

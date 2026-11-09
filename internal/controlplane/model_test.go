@@ -14,8 +14,10 @@ import (
 	"net/http/httptest"
 	"os"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -150,41 +152,13 @@ func TestConfigureModelValidationTelemetryAndLiveEnv(t *testing.T) {
 			payload *gensurla.ConfigureModelPayload
 			wantErr string
 		}{
-			{
-				name:    "nil payload",
-				payload: nil,
-				wantErr: "specify both provider and model_name, or specify gateway_addr",
-			},
-			{
-				name:    "all empty",
-				payload: &gensurla.ConfigureModelPayload{Provider: strPtr("  "), ModelName: strPtr("\t")},
-				wantErr: "specify both provider and model_name, or specify gateway_addr",
-			},
-			{
-				name:    "gateway combined with provider",
-				payload: &gensurla.ConfigureModelPayload{GatewayAddr: strPtr("127.0.0.1:9090"), Provider: strPtr("anthropic")},
-				wantErr: "gateway_addr cannot be combined with provider or model_name",
-			},
-			{
-				name:    "gateway combined with model_name",
-				payload: &gensurla.ConfigureModelPayload{GatewayAddr: strPtr("127.0.0.1:9090"), ModelName: strPtr("claude-sonnet-4-6")},
-				wantErr: "gateway_addr cannot be combined with provider or model_name",
-			},
-			{
-				name:    "provider without model_name",
-				payload: &gensurla.ConfigureModelPayload{Provider: strPtr("anthropic")},
-				wantErr: "provider and model_name must be set together",
-			},
-			{
-				name:    "model_name without provider",
-				payload: &gensurla.ConfigureModelPayload{ModelName: strPtr("claude-sonnet-4-6")},
-				wantErr: "provider and model_name must be set together",
-			},
-			{
-				name:    "unsupported provider",
-				payload: &gensurla.ConfigureModelPayload{Provider: strPtr("Anthropic"), ModelName: strPtr("claude-sonnet-4-6")},
-				wantErr: `unsupported provider "Anthropic"`,
-			},
+			{name: "nil payload", payload: nil, wantErr: "specify both provider and model_name, or specify gateway_addr"},
+			{name: "all empty", payload: &gensurla.ConfigureModelPayload{Provider: strPtr("  "), ModelName: strPtr("\t")}, wantErr: "specify both provider and model_name, or specify gateway_addr"},
+			{name: "gateway combined with provider", payload: &gensurla.ConfigureModelPayload{GatewayAddr: strPtr("127.0.0.1:9090"), Provider: strPtr("anthropic")}, wantErr: "gateway_addr cannot be combined with provider or model_name"},
+			{name: "gateway combined with model_name", payload: &gensurla.ConfigureModelPayload{GatewayAddr: strPtr("127.0.0.1:9090"), ModelName: strPtr("claude-sonnet-4-6")}, wantErr: "gateway_addr cannot be combined with provider or model_name"},
+			{name: "provider without model_name", payload: &gensurla.ConfigureModelPayload{Provider: strPtr("anthropic")}, wantErr: "provider and model_name must be set together"},
+			{name: "model_name without provider", payload: &gensurla.ConfigureModelPayload{ModelName: strPtr("claude-sonnet-4-6")}, wantErr: "provider and model_name must be set together"},
+			{name: "unsupported provider", payload: &gensurla.ConfigureModelPayload{Provider: strPtr("Anthropic"), ModelName: strPtr("claude-sonnet-4-6")}, wantErr: `unsupported provider "Anthropic"`},
 		}
 		for _, tc := range invalidCases {
 			t.Run(tc.name, func(t *testing.T) {
@@ -218,10 +192,47 @@ func TestConfigureModelValidationTelemetryAndLiveEnv(t *testing.T) {
 		}
 		reqBodyJSON, err := json.Marshal(map[string]any{"provider": "openai", "model_name": "gpt-5.4-mini"})
 		require.NoError(t, err)
+		assertSpanOutcome := func(t *testing.T, wantCode codes.Code, wantExceptions []string, wantEvents map[string]map[string]string) {
+			t.Helper()
+			spans := endedSpansByName(sr, "surla.controlplane.configure_model")
+			require.Len(t, spans, 1)
+			assert.Equal(t, wantCode, spans[0].Status().Code)
+			assert.Equal(t, wantExceptions, exceptionMessages(spans[0]))
+			assert.Equal(t, wantEvents, nonExceptionEvents(spans[0]))
+		}
+		assertHTTPAndMCP := func(t *testing.T, wantHTTPCode int, wantHTTPName string, wantFault bool, wantSpanCode codes.Code, wantExceptions []string, wantEvents map[string]map[string]string) {
+			t.Helper()
+			sr.Reset()
+			req := httptest.NewRequest(http.MethodPost, "/cp1/model", strings.NewReader(string(reqBodyJSON)))
+			req.Header.Set("Authorization", "Bearer alice-token")
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, req)
+			assert.Equal(t, wantHTTPCode, rec.Code)
+			var httpErr struct {
+				Name  string `json:"name"`
+				Fault bool   `json:"fault"`
+			}
+			require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &httpErr))
+			assert.Equal(t, wantHTTPName, httpErr.Name)
+			assert.Equal(t, wantFault, httpErr.Fault)
+			assertSpanOutcome(t, wantSpanCode, wantExceptions, wantEvents)
+
+			sr.Reset()
+			mcpRes, mErr := mcpAdapter.ToolsCall(alice, &genmcpadapter.ToolsCallPayload{Name: "configure_model", Arguments: reqBodyJSON})
+			require.NoError(t, mErr)
+			complete, ok := mcpRes.Outcome.AsComplete()
+			require.True(t, ok)
+			require.NotNil(t, complete.IsError)
+			assert.True(t, *complete.IsError)
+			assertSpanOutcome(t, wantSpanCode, wantExceptions, wantEvents)
+		}
+		missingKeyEvents := map[string]map[string]string{
+			"model_configuration_refused": {"surla.model.refusal_reason": "missing_api_key"},
+		}
 		for _, tc := range pureRefusalCases {
 			t.Run(tc.name, func(t *testing.T) {
 				buildErr = tc.err
-
 				sr.Reset()
 				_, goErr := cp.ConfigureModel(alice, &gensurla.ConfigureModelPayload{
 					Provider:  strPtr("openai"),
@@ -230,90 +241,36 @@ func TestConfigureModelValidationTelemetryAndLiveEnv(t *testing.T) {
 				require.Error(t, goErr)
 				assert.ErrorIs(t, goErr, sameRefusal)
 				assert.ErrorIs(t, goErr, missingKeyCause)
-				spans := endedSpansByName(sr, "surla.controlplane.configure_model")
-				require.Len(t, spans, 1)
-				assert.Equal(t, codes.Unset, spans[0].Status().Code)
-				assert.Empty(t, exceptionMessages(spans[0]))
-				assert.Equal(t, map[string]map[string]string{
-					"model_configuration_refused": {"surla.model.refusal_reason": "missing_api_key"},
-				}, nonExceptionEvents(spans[0]))
-
-				sr.Reset()
-				req := httptest.NewRequest(http.MethodPost, "/cp1/model", strings.NewReader(string(reqBodyJSON)))
-				req.Header.Set("Authorization", "Bearer alice-token")
-				req.Header.Set("Content-Type", "application/json")
-				rec := httptest.NewRecorder()
-				handler.ServeHTTP(rec, req)
-				assert.Equal(t, http.StatusUnprocessableEntity, rec.Code)
-				var httpErr struct {
-					Name  string `json:"name"`
-					Fault bool   `json:"fault"`
-				}
-				require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &httpErr))
-				assert.Equal(t, "unprocessable", httpErr.Name)
-				assert.False(t, httpErr.Fault)
-				spans = endedSpansByName(sr, "surla.controlplane.configure_model")
-				require.Len(t, spans, 1)
-				assert.Equal(t, codes.Unset, spans[0].Status().Code)
-				assert.Empty(t, exceptionMessages(spans[0]))
-
-				sr.Reset()
-				mcpRes, mErr := mcpAdapter.ToolsCall(alice, &genmcpadapter.ToolsCallPayload{
-					Name:      "configure_model",
-					Arguments: reqBodyJSON,
-				})
-				require.NoError(t, mErr)
-				complete, ok := mcpRes.Outcome.AsComplete()
-				require.True(t, ok)
-				require.NotNil(t, complete.IsError)
-				assert.True(t, *complete.IsError)
-				spans = endedSpansByName(sr, "surla.controlplane.configure_model")
-				require.Len(t, spans, 1)
-				assert.Equal(t, codes.Unset, spans[0].Status().Code)
-				assert.Empty(t, exceptionMessages(spans[0]))
+				assertSpanOutcome(t, codes.Unset, nil, missingKeyEvents)
+				assertHTTPAndMCP(t, http.StatusUnprocessableEntity, "unprocessable", false, codes.Unset, nil, missingKeyEvents)
 			})
 		}
 
-		// Mixed or distinct-leaf errors from ModelBuilder are server faults (HTTP 500 fault:true,
-		// span RecordError + codes.Error, zero refusal events) while keeping all causes accessible.
+		// Mixed, distinct-leaf, or unrelated named Goa errors from ModelBuilder are server
+		// faults (HTTP 500 fault:true, span RecordError + codes.Error, zero refusal events)
+		// while keeping all causes accessible via errors.Is and errors.As.
 		distinctRefusal := gensurla.MakeUnprocessable(errors.New("second distinct unprocessable leaf"))
 		independentCleanupErr := errors.New("close partial gateway transport failed")
 		unexpectedNotImpl := gensurla.MakeNotImplemented(errors.New("unexpected builder not_implemented"))
+		unexpectedConflict := gensurla.MakeConflict(errors.New("unexpected builder conflict"))
+		unexpectedAnalysisRejected := gensurla.MakeAnalysisRejected(errors.New("unexpected builder analysis_rejected"))
 		faultCases := []struct {
 			name       string
 			err        error
 			wantCauses []error
 		}{
-			{
-				name:       "plain constructor failure",
-				err:        independentCleanupErr,
-				wantCauses: []error{independentCleanupErr},
-			},
-			{
-				name:       "unprocessable joined with independent cleanup failure",
-				err:        errors.Join(sameRefusal, independentCleanupErr),
-				wantCauses: []error{sameRefusal, missingKeyCause, independentCleanupErr},
-			},
-			{
-				name:       "unprocessable joined with context cancellation",
-				err:        errors.Join(sameRefusal, context.Canceled),
-				wantCauses: []error{sameRefusal, missingKeyCause, context.Canceled},
-			},
-			{
-				name:       "two distinct unprocessable leaves joined",
-				err:        errors.Join(sameRefusal, distinctRefusal),
-				wantCauses: []error{sameRefusal, distinctRefusal},
-			},
-			{
-				name:       "unexpected not_implemented from ModelBuilder",
-				err:        errors.Join(unexpectedNotImpl, independentCleanupErr),
-				wantCauses: []error{unexpectedNotImpl, independentCleanupErr},
-			},
+			{name: "plain constructor failure", err: independentCleanupErr, wantCauses: []error{independentCleanupErr}},
+			{name: "unprocessable joined with independent cleanup failure", err: errors.Join(sameRefusal, independentCleanupErr), wantCauses: []error{sameRefusal, missingKeyCause, independentCleanupErr}},
+			{name: "unprocessable joined with context cancellation", err: errors.Join(sameRefusal, context.Canceled), wantCauses: []error{sameRefusal, missingKeyCause, context.Canceled}},
+			{name: "two distinct unprocessable leaves joined", err: errors.Join(sameRefusal, distinctRefusal), wantCauses: []error{sameRefusal, distinctRefusal}},
+			{name: "unexpected not_implemented from ModelBuilder", err: errors.Join(unexpectedNotImpl, independentCleanupErr), wantCauses: []error{unexpectedNotImpl, independentCleanupErr}},
+			{name: "unrelated conflict ServiceError from ModelBuilder", err: unexpectedConflict, wantCauses: []error{unexpectedConflict}},
+			{name: "unrelated conflict ServiceError joined with independent failure", err: errors.Join(unexpectedConflict, independentCleanupErr), wantCauses: []error{unexpectedConflict, independentCleanupErr}},
+			{name: "unrelated analysis_rejected ServiceError from ModelBuilder", err: unexpectedAnalysisRejected, wantCauses: []error{unexpectedAnalysisRejected}},
 		}
 		for _, tc := range faultCases {
 			t.Run(tc.name, func(t *testing.T) {
 				buildErr = tc.err
-
 				sr.Reset()
 				_, goErr := cp.ConfigureModel(alice, &gensurla.ConfigureModelPayload{
 					Provider:  strPtr("openai"),
@@ -328,47 +285,8 @@ func TestConfigureModelValidationTelemetryAndLiveEnv(t *testing.T) {
 					var gotSE *goa.ServiceError
 					assert.ErrorAs(t, goErr, &gotSE)
 				}
-				spans := endedSpansByName(sr, "surla.controlplane.configure_model")
-				require.Len(t, spans, 1)
-				assert.Equal(t, codes.Error, spans[0].Status().Code)
-				assert.Equal(t, []string{tc.err.Error()}, exceptionMessages(spans[0]))
-				assert.Empty(t, nonExceptionEvents(spans[0]))
-
-				sr.Reset()
-				req := httptest.NewRequest(http.MethodPost, "/cp1/model", strings.NewReader(string(reqBodyJSON)))
-				req.Header.Set("Authorization", "Bearer alice-token")
-				req.Header.Set("Content-Type", "application/json")
-				rec := httptest.NewRecorder()
-				handler.ServeHTTP(rec, req)
-				assert.Equal(t, http.StatusInternalServerError, rec.Code)
-				var httpErr struct {
-					Name  string `json:"name"`
-					Fault bool   `json:"fault"`
-				}
-				require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &httpErr))
-				assert.Equal(t, "fault", httpErr.Name)
-				assert.True(t, httpErr.Fault)
-				spans = endedSpansByName(sr, "surla.controlplane.configure_model")
-				require.Len(t, spans, 1)
-				assert.Equal(t, codes.Error, spans[0].Status().Code)
-				assert.Equal(t, []string{tc.err.Error()}, exceptionMessages(spans[0]))
-				assert.Empty(t, nonExceptionEvents(spans[0]))
-
-				sr.Reset()
-				mcpRes, mErr := mcpAdapter.ToolsCall(alice, &genmcpadapter.ToolsCallPayload{
-					Name:      "configure_model",
-					Arguments: reqBodyJSON,
-				})
-				require.NoError(t, mErr)
-				complete, ok := mcpRes.Outcome.AsComplete()
-				require.True(t, ok)
-				require.NotNil(t, complete.IsError)
-				assert.True(t, *complete.IsError)
-				spans = endedSpansByName(sr, "surla.controlplane.configure_model")
-				require.Len(t, spans, 1)
-				assert.Equal(t, codes.Error, spans[0].Status().Code)
-				assert.Equal(t, []string{tc.err.Error()}, exceptionMessages(spans[0]))
-				assert.Empty(t, nonExceptionEvents(spans[0]))
+				assertSpanOutcome(t, codes.Error, []string{tc.err.Error()}, nil)
+				assertHTTPAndMCP(t, http.StatusInternalServerError, "fault", true, codes.Error, []string{tc.err.Error()}, nil)
 			})
 		}
 
@@ -568,7 +486,7 @@ func TestModelLifecycleBarriersAcrossCloseAndConfigureModel(t *testing.T) {
 
 	t.Run("Close during in-flight ProposeChange waits to call CloseAnalyzer until Analyze finishes", func(t *testing.T) {
 		dir := t.TempDir()
-		held := &heldAnalyzer{started: make(chan struct{}), release: make(chan struct{})}
+		held, releaseHeld := newHeldAnalyzer(t)
 		var closeCount atomic.Int32
 		cp, err := New(Options{
 			CardsDir: dir,
@@ -580,31 +498,30 @@ func TestModelLifecycleBarriersAcrossCloseAndConfigureModel(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		proposeErrCh := make(chan error, 1)
-		go func() {
+		proposeErrCh := startAsync(t, "in-flight ProposeChange", releaseHeld, func() error {
 			_, pErr := cp.ProposeChange(alice, &gensurla.ProposeChangePayload{
 				ChangeID: "chg-inflight-propose",
 				Prompt:   "Refunds up to $50 are instant.",
 			})
-			proposeErrCh <- pErr
-		}()
-		<-held.started
+			return pErr
+		})
+		awaitSignal(t, held.started, "ProposeChange entered Analyze")
 
-		require.NoError(t, cp.Close())
+		require.NoError(t, runBounded(t, "Close while ProposeChange in flight", releaseHeld, cp.Close))
 		assert.EqualValues(t, 0, closeCount.Load(), "CloseAnalyzer must not be called while Analyze is still in flight")
 
-		close(held.release)
-		assert.ErrorIs(t, <-proposeErrCh, errCardsClosed)
+		releaseHeld()
+		assert.ErrorIs(t, awaitResult(t, proposeErrCh, "ProposeChange exit after release"), errCardsClosed)
 		assert.EqualValues(t, 1, closeCount.Load(), "CloseAnalyzer must be called once Analyze returns")
 		assert.NoFileExists(t, cp.cards.path("chg-inflight-propose"))
 
-		require.NoError(t, cp.Close())
+		require.NoError(t, runBounded(t, "second Close", releaseHeld, cp.Close))
 		assert.EqualValues(t, 1, closeCount.Load(), "second Close must not call CloseAnalyzer again")
 	})
 
 	t.Run("Close during in-flight ReviseChange waits to call CloseAnalyzer and preserves saved card", func(t *testing.T) {
 		dir := t.TempDir()
-		held := &heldAnalyzer{started: make(chan struct{}), release: make(chan struct{})}
+		held, releaseHeld := newHeldAnalyzer(t)
 		var closeCount atomic.Int32
 		cp, err := New(Options{
 			CardsDir: dir,
@@ -619,28 +536,27 @@ func TestModelLifecycleBarriersAcrossCloseAndConfigureModel(t *testing.T) {
 		beforeBytes, err := os.ReadFile(cp.cards.path("chg"))
 		require.NoError(t, err)
 
-		reviseErrCh := make(chan error, 1)
-		go func() {
+		reviseErrCh := startAsync(t, "in-flight ReviseChange", releaseHeld, func() error {
 			_, rErr := cp.ReviseChange(alice, &gensurla.ReviseChangePayload{
 				ChangeID:        "chg",
 				RequestRevision: saved.RequestRevision,
 				Prompt:          "Revise while closing.",
 			})
-			reviseErrCh <- rErr
-		}()
-		<-held.started
+			return rErr
+		})
+		awaitSignal(t, held.started, "ReviseChange entered Revise")
 
-		require.NoError(t, cp.Close())
+		require.NoError(t, runBounded(t, "Close while ReviseChange in flight", releaseHeld, cp.Close))
 		assert.EqualValues(t, 0, closeCount.Load(), "CloseAnalyzer must not be called while Revise is still in flight")
 
-		close(held.release)
-		assert.ErrorIs(t, <-reviseErrCh, errCardsClosed)
+		releaseHeld()
+		assert.ErrorIs(t, awaitResult(t, reviseErrCh, "ReviseChange exit after release"), errCardsClosed)
 		assert.EqualValues(t, 1, closeCount.Load(), "CloseAnalyzer must be called once Revise returns")
 		afterBytes, err := os.ReadFile(cp.cards.path("chg"))
 		require.NoError(t, err)
 		assert.Equal(t, string(beforeBytes), string(afterBytes), "saved card bytes must remain unchanged")
 
-		require.NoError(t, cp.Close())
+		require.NoError(t, runBounded(t, "second Close", releaseHeld, cp.Close))
 		assert.EqualValues(t, 1, closeCount.Load(), "second Close must not call CloseAnalyzer again")
 	})
 
@@ -648,7 +564,7 @@ func TestModelLifecycleBarriersAcrossCloseAndConfigureModel(t *testing.T) {
 		for _, op := range []string{"propose", "revise"} {
 			t.Run(op, func(t *testing.T) {
 				sr.Reset()
-				held1 := &heldAnalyzer{started: make(chan struct{}), release: make(chan struct{})}
+				held1, release1 := newHeldAnalyzer(t)
 				var close1Count atomic.Int32
 				var close2Count atomic.Int32
 				fast2 := &stubCP1Analyzer{
@@ -676,40 +592,46 @@ func TestModelLifecycleBarriersAcrossCloseAndConfigureModel(t *testing.T) {
 				})
 				saved := saveCard(t, cp, nil)
 
-				inflightCh := make(chan error, 1)
-				go func() {
+				inflightCh := startAsync(t, "in-flight "+op, release1, func() error {
 					if op == "propose" {
 						_, err := cp.ProposeChange(alice, &gensurla.ProposeChangePayload{
 							ChangeID: "chg-held-1",
 							Prompt:   "Held on model 1",
 						})
-						inflightCh <- err
-						return
+						return err
 					}
 					_, err := cp.ReviseChange(alice, &gensurla.ReviseChangePayload{
 						ChangeID:        "chg",
 						RequestRevision: saved.RequestRevision,
 						Prompt:          "Held revise on model 1",
 					})
-					inflightCh <- err
-				}()
-				<-held1.started
+					return err
+				})
+				awaitSignal(t, held1.started, op+" entered held1")
 
 				gw := "127.0.0.1:9090"
-				_, err := cp.ConfigureModel(alice, &gensurla.ConfigureModelPayload{GatewayAddr: &gw})
+				err := runBounded(t, "ConfigureModel while "+op+" in flight", release1, func() error {
+					_, cErr := cp.ConfigureModel(alice, &gensurla.ConfigureModelPayload{GatewayAddr: &gw})
+					return cErr
+				})
 				require.NoError(t, err)
 				assert.EqualValues(t, 0, close1Count.Load(), "model 1 must not close while call 1 is in flight")
 
 				// A new call immediately uses fast2 without waiting for held1.
-				card2, err := cp.ProposeChange(alice, &gensurla.ProposeChangePayload{
-					ChangeID: "chg-fast-2",
-					Prompt:   "Runs on model 2",
+				var card2 *gensurla.ChangeCardResult
+				err = runBounded(t, "ProposeChange on fast2 while held1 in flight", release1, func() error {
+					var pErr error
+					card2, pErr = cp.ProposeChange(alice, &gensurla.ProposeChangePayload{
+						ChangeID: "chg-fast-2",
+						Prompt:   "Runs on model 2",
+					})
+					return pErr
 				})
 				require.NoError(t, err)
 				assert.Equal(t, "Fast model 2", card2.Summary)
 
-				close(held1.release)
-				require.NoError(t, <-inflightCh)
+				release1()
+				require.NoError(t, awaitResult(t, inflightCh, op+" exit after release1"))
 				assert.EqualValues(t, 1, close1Count.Load(), "model 1 closes once when the in-flight call finishes")
 
 				retireSpans := endedSpansByName(sr, "surla.controlplane.retire_model")
@@ -732,27 +654,37 @@ func TestModelLifecycleBarriersAcrossCloseAndConfigureModel(t *testing.T) {
 		sr.Reset()
 		var close1Count atomic.Int32
 		cp := newControlPlane(t, Options{
-			Analyzer: &heldAnalyzer{started: make(chan struct{}), release: make(chan struct{})},
+			Analyzer: &stubCP1Analyzer{},
 			CloseAnalyzer: func() error {
 				close1Count.Add(1)
 				return errors.New("pre-span retire error")
 			},
 			ModelBuilder: func(*gensurla.ConfigureModelPayload) (CP1Analyzer, []string, func() error, error) {
-				return &heldAnalyzer{started: make(chan struct{}), release: make(chan struct{})}, nil, nil, nil
+				return &stubCP1Analyzer{}, nil, nil, nil
 			},
 		})
 
 		heldHandle, err := cp.acquireModel()
 		require.NoError(t, err)
 		require.NotNil(t, heldHandle)
+		var releaseOnce sync.Once
+		releaseHandle := func() {
+			releaseOnce.Do(func() {
+				cp.releaseModel(alice, heldHandle)
+			})
+		}
+		t.Cleanup(releaseHandle)
 
 		gw := "127.0.0.1:9090"
-		_, err = cp.ConfigureModel(alice, &gensurla.ConfigureModelPayload{GatewayAddr: &gw})
+		err = runBounded(t, "ConfigureModel while acquired handle held", releaseHandle, func() error {
+			_, cErr := cp.ConfigureModel(alice, &gensurla.ConfigureModelPayload{GatewayAddr: &gw})
+			return cErr
+		})
 		require.NoError(t, err)
 		assert.EqualValues(t, 0, close1Count.Load(), "superseded model must remain open while acquired reference is held")
 
 		sr.Reset()
-		cp.releaseModel(alice, heldHandle)
+		releaseHandle()
 		assert.EqualValues(t, 1, close1Count.Load())
 
 		retireSpans := endedSpansByName(sr, "surla.controlplane.retire_model")
@@ -762,8 +694,12 @@ func TestModelLifecycleBarriersAcrossCloseAndConfigureModel(t *testing.T) {
 	})
 
 	t.Run("overlapping switches model 1 -> model 2 -> model 3 retire each handle once as its call completes", func(t *testing.T) {
-		held1 := &heldAnalyzer{started: make(chan struct{}), release: make(chan struct{})}
-		held2 := &heldAnalyzer{started: make(chan struct{}), release: make(chan struct{})}
+		held1, release1 := newHeldAnalyzer(t)
+		held2, release2 := newHeldAnalyzer(t)
+		releaseAll := func() {
+			release1()
+			release2()
+		}
 		fast3 := &stubCP1Analyzer{
 			analyzeFn: func(context.Context, string, string) (CP1SemanticAnalysis, error) {
 				return CP1SemanticAnalysis{
@@ -776,9 +712,8 @@ func TestModelLifecycleBarriersAcrossCloseAndConfigureModel(t *testing.T) {
 		}
 		var close1, close2, close3 atomic.Int32
 		var step atomic.Int32
-		dir := t.TempDir()
 		cp, err := New(Options{
-			CardsDir: dir,
+			CardsDir: t.TempDir(),
 			Analyzer: held1,
 			CloseAnalyzer: func() error {
 				close1.Add(1)
@@ -799,48 +734,54 @@ func TestModelLifecycleBarriersAcrossCloseAndConfigureModel(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		callA := make(chan error, 1)
-		go func() {
+		callA := startAsync(t, "callA on model 1", releaseAll, func() error {
 			_, aErr := cp.ProposeChange(alice, &gensurla.ProposeChangePayload{ChangeID: "call-a", Prompt: "On model 1"})
-			callA <- aErr
-		}()
-		<-held1.started
+			return aErr
+		})
+		awaitSignal(t, held1.started, "callA entered held1")
 
 		gw2 := "127.0.0.1:9002"
-		_, err = cp.ConfigureModel(alice, &gensurla.ConfigureModelPayload{GatewayAddr: &gw2})
-		require.NoError(t, err)
+		require.NoError(t, runBounded(t, "switch to model 2", releaseAll, func() error {
+			_, cErr := cp.ConfigureModel(alice, &gensurla.ConfigureModelPayload{GatewayAddr: &gw2})
+			return cErr
+		}))
 
-		callB := make(chan error, 1)
-		go func() {
+		callB := startAsync(t, "callB on model 2", releaseAll, func() error {
 			_, bErr := cp.ProposeChange(alice, &gensurla.ProposeChangePayload{ChangeID: "call-b", Prompt: "On model 2"})
-			callB <- bErr
-		}()
-		<-held2.started
+			return bErr
+		})
+		awaitSignal(t, held2.started, "callB entered held2")
 
 		gw3 := "127.0.0.1:9003"
-		_, err = cp.ConfigureModel(alice, &gensurla.ConfigureModelPayload{GatewayAddr: &gw3})
-		require.NoError(t, err)
+		require.NoError(t, runBounded(t, "switch to model 3", releaseAll, func() error {
+			_, cErr := cp.ConfigureModel(alice, &gensurla.ConfigureModelPayload{GatewayAddr: &gw3})
+			return cErr
+		}))
 		assert.EqualValues(t, 0, close1.Load())
 		assert.EqualValues(t, 0, close2.Load())
 		assert.EqualValues(t, 0, close3.Load())
 
-		cardC, err := cp.ProposeChange(alice, &gensurla.ProposeChangePayload{ChangeID: "call-c", Prompt: "On model 3"})
-		require.NoError(t, err)
+		var cardC *gensurla.ChangeCardResult
+		require.NoError(t, runBounded(t, "callC on model 3", releaseAll, func() error {
+			var cErr error
+			cardC, cErr = cp.ProposeChange(alice, &gensurla.ProposeChangePayload{ChangeID: "call-c", Prompt: "On model 3"})
+			return cErr
+		}))
 		assert.Equal(t, "Model 3", cardC.Summary)
 
-		close(held2.release)
-		require.NoError(t, <-callB)
+		release2()
+		require.NoError(t, awaitResult(t, callB, "callB exit after release2"))
 		assert.EqualValues(t, 0, close1.Load())
 		assert.EqualValues(t, 1, close2.Load())
 		assert.EqualValues(t, 0, close3.Load())
 
-		close(held1.release)
-		require.NoError(t, <-callA)
+		release1()
+		require.NoError(t, awaitResult(t, callA, "callA exit after release1"))
 		assert.EqualValues(t, 1, close1.Load())
 		assert.EqualValues(t, 1, close2.Load())
 		assert.EqualValues(t, 0, close3.Load())
 
-		require.NoError(t, cp.Close())
+		require.NoError(t, runBounded(t, "Close after overlapping switches", releaseAll, cp.Close))
 		assert.EqualValues(t, 1, close1.Load())
 		assert.EqualValues(t, 1, close2.Load())
 		assert.EqualValues(t, 1, close3.Load())
@@ -850,10 +791,18 @@ func TestModelLifecycleBarriersAcrossCloseAndConfigureModel(t *testing.T) {
 		sr.Reset()
 		builderStarted := make(chan struct{})
 		builderRelease := make(chan struct{})
+		var releaseOnce sync.Once
+		releaseBuilder := func() {
+			releaseOnce.Do(func() {
+				close(builderRelease)
+			})
+		}
+		t.Cleanup(releaseBuilder)
+
 		var close1, close2 atomic.Int32
 		cp, err := New(Options{
 			CardsDir: t.TempDir(),
-			Analyzer: &heldAnalyzer{started: make(chan struct{}), release: make(chan struct{})},
+			Analyzer: &stubCP1Analyzer{},
 			CloseAnalyzer: func() error {
 				close1.Add(1)
 				return nil
@@ -861,7 +810,7 @@ func TestModelLifecycleBarriersAcrossCloseAndConfigureModel(t *testing.T) {
 			ModelBuilder: func(*gensurla.ConfigureModelPayload) (CP1Analyzer, []string, func() error, error) {
 				close(builderStarted)
 				<-builderRelease
-				return &heldAnalyzer{started: make(chan struct{}), release: make(chan struct{})}, nil, func() error {
+				return &stubCP1Analyzer{}, nil, func() error {
 					close2.Add(1)
 					return nil
 				}, nil
@@ -869,20 +818,19 @@ func TestModelLifecycleBarriersAcrossCloseAndConfigureModel(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		cfgErrCh := make(chan error, 1)
-		go func() {
+		cfgErrCh := startAsync(t, "ConfigureModel blocked in ModelBuilder", releaseBuilder, func() error {
 			gw := "127.0.0.1:9090"
 			_, cErr := cp.ConfigureModel(alice, &gensurla.ConfigureModelPayload{GatewayAddr: &gw})
-			cfgErrCh <- cErr
-		}()
-		<-builderStarted
+			return cErr
+		})
+		awaitSignal(t, builderStarted, "ModelBuilder entered")
 
-		require.NoError(t, cp.Close())
+		require.NoError(t, runBounded(t, "Close while ModelBuilder in flight", releaseBuilder, cp.Close))
 		assert.EqualValues(t, 1, close1.Load(), "initial model 1 closes on Close")
 		assert.EqualValues(t, 0, close2.Load())
 
-		close(builderRelease)
-		assert.ErrorIs(t, <-cfgErrCh, errCardsClosed)
+		releaseBuilder()
+		assert.ErrorIs(t, awaitResult(t, cfgErrCh, "ConfigureModel exit after Close"), errCardsClosed)
 		assert.EqualValues(t, 1, close2.Load(), "newly built model 2 must be retired immediately when Close raced with ModelBuilder")
 
 		cfgSpans := endedSpansByName(sr, "surla.controlplane.configure_model")
@@ -893,10 +841,79 @@ func TestModelLifecycleBarriersAcrossCloseAndConfigureModel(t *testing.T) {
 		retireSpans := endedSpansByName(sr, "surla.controlplane.retire_model")
 		require.Len(t, retireSpans, 2, "both model 1 and model 2 retirement spans are recorded")
 
-		require.NoError(t, cp.Close())
+		require.NoError(t, runBounded(t, "second Close", releaseBuilder, cp.Close))
 		assert.EqualValues(t, 1, close1.Load())
 		assert.EqualValues(t, 1, close2.Load())
 	})
+}
+
+// newHeldAnalyzer constructs a heldAnalyzer and returns a sync.Once-guarded
+// release function that is also registered with t.Cleanup.
+func newHeldAnalyzer(t *testing.T) (*heldAnalyzer, func()) {
+	t.Helper()
+	h := &heldAnalyzer{
+		started: make(chan struct{}),
+		release: make(chan struct{}),
+	}
+	var once sync.Once
+	releaseFn := func() {
+		once.Do(func() {
+			close(h.release)
+		})
+	}
+	t.Cleanup(releaseFn)
+	return h, releaseFn
+}
+
+// startAsync runs fn in a background goroutine, returns its result channel,
+// and registers a t.Cleanup hook that invokes release (if non-nil) and waits
+// with a bounded deadline for the goroutine to exit.
+func startAsync[T any](t *testing.T, label string, release func(), fn func() T) <-chan T {
+	t.Helper()
+	ch := make(chan T, 1)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		ch <- fn()
+	}()
+	t.Cleanup(func() {
+		if release != nil {
+			release()
+		}
+		awaitSignal(t, done, label+" cleanup drain")
+	})
+	return ch
+}
+
+// runBounded executes fn via startAsync and awaits its result within a bounded
+// 5-second deadline so a regression that blocks ConfigureModel or Close on an
+// in-flight analyzer fails locally and releases held goroutines cleanly.
+func runBounded[T any](t *testing.T, label string, release func(), fn func() T) T {
+	t.Helper()
+	return awaitResult(t, startAsync(t, label, release, fn), label)
+}
+
+// awaitSignal waits up to 5 seconds for ch to receive or close.
+func awaitSignal(t *testing.T, ch <-chan struct{}, label string) {
+	t.Helper()
+	select {
+	case <-ch:
+	case <-time.After(5 * time.Second):
+		require.FailNowf(t, "timed out waiting for signal", "%s did not arrive within 5s", label)
+	}
+}
+
+// awaitResult waits up to 5 seconds for ch to deliver a value.
+func awaitResult[T any](t *testing.T, ch <-chan T, label string) T {
+	t.Helper()
+	select {
+	case v := <-ch:
+		return v
+	case <-time.After(5 * time.Second):
+		var zero T
+		require.FailNowf(t, "timed out waiting for result", "%s did not complete within 5s", label)
+		return zero
+	}
 }
 
 // endedSpansByName returns all ended spans from sr matching the given name.
