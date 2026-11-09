@@ -182,13 +182,15 @@ func (c *ControlPlane) ConfigureModel(
 
 	analyzer, liveEnv, closeFn, err := c.modelBuilder(normalized)
 	if err != nil {
-		var se *goa.ServiceError
-		if errors.As(err, &se) && se.Name == "unprocessable" {
+		if _, ok := asUnprocessable(err); ok {
 			span.AddEvent(
 				"model_configuration_refused",
 				trace.WithAttributes(attribute.String("surla.model.refusal_reason", "missing_api_key")),
 			)
 			return nil, err
+		}
+		if containsConfigureModelError(err) {
+			err = unclassifiedCP1Error{cause: err}
 		}
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "build model client failed")
@@ -218,21 +220,94 @@ func (c *ControlPlane) ConfigureModel(
 	if gatewayAddr != "" {
 		span.AddEvent(
 			"model_configured",
-			trace.WithAttributes(attribute.String("surla.model.gateway_addr", gatewayAddr)),
+			trace.WithAttributes(attribute.String("surla.model.connection_kind", "gateway")),
 		)
 		return &gensurla.ModelConfigResult{GatewayAddr: &gatewayAddr}, nil
 	}
 	span.AddEvent(
 		"model_configured",
 		trace.WithAttributes(
+			attribute.String("surla.model.connection_kind", "provider"),
 			attribute.String("surla.model.provider", provider),
-			attribute.String("surla.model.name", modelName),
 		),
 	)
 	return &gensurla.ModelConfigResult{
 		Provider:  &provider,
 		ModelName: &modelName,
 	}, nil
+}
+
+// asUnprocessable reports whether err is (or wraps solely, including duplicate
+// joins of the same leaf) a single non-nil unprocessable ServiceError without
+// crossing another named Goa error owner. If err joins an unprocessable error
+// with an independent failure or a distinct unprocessable leaf, asUnprocessable
+// returns false so the combined failure remains a server fault.
+func asUnprocessable(err error) (*goa.ServiceError, bool) {
+	if err == nil {
+		return nil, false
+	}
+	if se, ok := err.(*goa.ServiceError); ok {
+		if se != nil && se.GoaErrorName() == "unprocessable" {
+			return se, true
+		}
+		return nil, false
+	}
+	if named, ok := err.(goa.GoaErrorNamer); ok && named != nil {
+		return nil, false
+	}
+	if joined, ok := err.(interface{ Unwrap() []error }); ok {
+		var expected *goa.ServiceError
+		for _, child := range joined.Unwrap() {
+			actual, valid := asUnprocessable(child)
+			if !valid {
+				return nil, false
+			}
+			if expected == nil {
+				expected = actual
+				continue
+			}
+			if expected != actual {
+				return nil, false
+			}
+		}
+		return expected, expected != nil
+	}
+	if wrapped, ok := err.(interface{ Unwrap() error }); ok {
+		return asUnprocessable(wrapped.Unwrap())
+	}
+	return nil, false
+}
+
+// containsConfigureModelError reports whether err has a declared
+// ConfigureModel GoaErrorNamer ("unprocessable" or "not_implemented") in its
+// unwrap tree without traversing past an already named Goa error owner.
+func containsConfigureModelError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if se, ok := err.(*goa.ServiceError); ok {
+		if se == nil {
+			return false
+		}
+		name := se.GoaErrorName()
+		return name == "unprocessable" || name == "not_implemented"
+	}
+	if named, ok := err.(goa.GoaErrorNamer); ok && named != nil {
+		name := named.GoaErrorName()
+		return name == "unprocessable" || name == "not_implemented"
+	}
+	if joined, ok := err.(interface{ Unwrap() []error }); ok {
+		for _, child := range joined.Unwrap() {
+			if containsConfigureModelError(child) {
+				return true
+			}
+		}
+		return false
+	}
+	if wrapped, ok := err.(interface{ Unwrap() error }); ok {
+		return containsConfigureModelError(wrapped.Unwrap())
+	}
+	return false
 }
 
 // validateConfigureModelPayload normalizes and validates the mutually exclusive

@@ -20,8 +20,10 @@ import (
 	"github.com/stretchr/testify/require"
 	"goa.design/goa-ai/features/model/gateway"
 	"goa.design/goa-ai/runtime/agent/model"
+	goa "goa.design/goa/v3/pkg"
 	"google.golang.org/grpc"
 
+	gensurla "github.com/goadesign/surla/gen/surla"
 	"github.com/goadesign/surla/internal/controlplane"
 	"github.com/goadesign/surla/internal/swarm"
 	"github.com/goadesign/surla/internal/verify"
@@ -98,7 +100,12 @@ func TestNewCP1AnalyzerSelectsModelFromFlags(t *testing.T) {
 			}
 			require.NoError(t, err)
 			assert.Equal(t, tc.wantAnalyzer, analyzer != nil)
-			assert.NoError(t, closeModel())
+			if tc.cfg.gatewayAddr != "" {
+				require.NotNil(t, closeModel)
+				assert.NoError(t, closeModel())
+			} else {
+				assert.Nil(t, closeModel)
+			}
 		})
 	}
 }
@@ -179,7 +186,6 @@ func TestServeOptionsDerivesLiveTargetsFromVerification(t *testing.T) {
 	assert.Equal(t, opts.Verification.Command, opts.Live.Command)
 	assert.Equal(t, 20*time.Minute, opts.Live.StartTimeout)
 	assert.Equal(t, []string{"PATH=/bin", "ANTHROPIC_API_KEY=k"}, opts.Live.Env, "serve's own bearer token never reaches a live target")
-	assert.Equal(t, opts.Live.Env, opts.LiveEnv)
 }
 
 func TestLiveTargetEnvCarriesServesModelChoice(t *testing.T) {
@@ -217,6 +223,11 @@ func TestServeOptionsWiresAnalyzerAndProfiles(t *testing.T) {
 	assert.NotNil(t, opts.ModelBuilder)
 	assert.Equal(t, []swarm.ProviderProfile{{ID: "a", Provider: "openai", Model: "m", Family: "gpt"}}, opts.SwarmProfiles)
 	assert.Nil(t, opts.TargetUpdater)
+	assert.Nil(t, opts.CloseAnalyzer, "direct provider client has no transport connection to close")
+
+	opts, err = serveOptions(serveConfig{gatewayAddr: "127.0.0.1:9090"}, func(string) string { return "" }, nil)
+	require.NoError(t, err)
+	assert.NotNil(t, opts.Analyzer)
 	require.NotNil(t, opts.CloseAnalyzer)
 	assert.NoError(t, opts.CloseAnalyzer())
 
@@ -225,9 +236,10 @@ func TestServeOptionsWiresAnalyzerAndProfiles(t *testing.T) {
 	assert.Nil(t, opts.Analyzer)
 	assert.NotNil(t, opts.ModelBuilder)
 	assert.Nil(t, opts.SwarmProfiles)
-	assert.Nil(t, opts.Live, "live targets need a verification configuration")
-	require.NotNil(t, opts.CloseAnalyzer)
-	assert.NoError(t, opts.CloseAnalyzer())
+	assert.Nil(t, opts.Verification)
+	require.NotNil(t, opts.Live)
+	assert.Empty(t, opts.Live.Command)
+	assert.Nil(t, opts.CloseAnalyzer)
 
 	_, err = serveOptions(serveConfig{swarmProfilesPath: filepath.Join(t.TempDir(), "missing.json")}, os.Getenv, nil)
 	require.ErrorContains(t, err, "read -swarm-profiles")
@@ -343,12 +355,26 @@ func TestResolveStartupModelConfigAndServeOptionsAutoDetection(t *testing.T) {
 			opts, err := serveOptions(tc.cfg, getenv, baseEnviron)
 			require.NoError(t, err)
 			assert.Equal(t, tc.wantAnalyzer, opts.Analyzer != nil)
-			assert.Nil(t, opts.Live, "no verification config was supplied")
-			assert.Equal(t, tc.wantLiveEnv, opts.LiveEnv)
+			assert.Nil(t, opts.Verification, "no verification config was supplied")
+			require.NotNil(t, opts.Live)
+			assert.Empty(t, opts.Live.Command)
+			assert.Zero(t, opts.Live.StartTimeout)
+			assert.Equal(t, tc.wantLiveEnv, opts.Live.Env)
 			opts.CardsDir = t.TempDir()
+			var statusBuf bytes.Buffer
+			writeServeStatus(&statusBuf, &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 8090}, opts, "")
+			assert.Contains(t, statusBuf.String(), "surla: CP3 (draft_override, start_live_target): compiled_rule is on; prompt_template is off")
 			cp, err := controlplane.New(opts)
 			require.NoError(t, err)
-			require.NoError(t, cp.Close())
+			t.Cleanup(func() { require.NoError(t, cp.Close()) })
+			_, err = cp.StartLiveTarget(
+				controlplane.WithPrincipal(context.Background(), controlplane.Principal{ID: "alice@example.com"}),
+				&gensurla.StartLiveTargetPayload{CandidateCommit: strings.Repeat("a", 40)},
+			)
+			require.Error(t, err)
+			var se *goa.ServiceError
+			require.ErrorAs(t, err, &se)
+			assert.Equal(t, "live_target_unavailable", se.GoaErrorName())
 		})
 	}
 }

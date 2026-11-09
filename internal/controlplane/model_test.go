@@ -1,7 +1,7 @@
 // This file tests runtime model configuration (`configure_model` / `POST /cp1/model`),
 // reference-counted model handle retirement across in-flight `ProposeChange`,
-// `ReviseChange`, and `Close`, OpenTelemetry span events and statuses, and
-// live-target environment propagation (`liveEnv`).
+// `ReviseChange`, and `Close`, OpenTelemetry SDK exported span events and
+// statuses, and live-target environment propagation (`liveEnv`).
 
 package controlplane
 
@@ -9,9 +9,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"testing"
 
@@ -20,76 +22,33 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
-	"go.opentelemetry.io/otel/trace"
-	"go.opentelemetry.io/otel/trace/embedded"
-	"go.opentelemetry.io/otel/trace/noop"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
+	goa "goa.design/goa/v3/pkg"
 
 	genmcpadapter "github.com/goadesign/surla/gen/mcp_surla"
 	gensurla "github.com/goadesign/surla/gen/surla"
 )
 
-type (
-	// modelSpanRecorder captures OpenTelemetry spans, events, attributes,
-	// recorded errors, and statuses emitted by ConfigureModel and retireModel.
-	modelSpanRecorder struct {
-		embedded.TracerProvider
-		// mu guards spans.
-		mu sync.Mutex
-		// spans holds every span started through this provider in start order.
-		spans []*modelRecordedSpan
-	}
-
-	// modelTracer implements trace.Tracer for modelSpanRecorder.
-	modelTracer struct {
-		embedded.Tracer
-		// provider is the owning modelSpanRecorder.
-		provider *modelSpanRecorder
-		// name is the instrumentation scope name.
-		name string
-	}
-
-	// modelRecordedSpan captures one OpenTelemetry span's events, errors, and
-	// status.
-	modelRecordedSpan struct {
-		trace.Span
-		// mu guards events, errors, statusCode, statusDesc, and ended.
-		mu sync.Mutex
-		// name is the span operation name.
-		name string
-		// events holds every event recorded via AddEvent on this span.
-		events []modelSpanEvent
-		// errors holds every error recorded via RecordError on this span.
-		errors []error
-		// statusCode is the last status code set on this span.
-		statusCode codes.Code
-		// statusDesc is the last status description set on this span.
-		statusDesc string
-		// ended reports whether End was called on this span.
-		ended bool
-	}
-
-	// modelSpanEvent captures one OpenTelemetry span event name and its
-	// attribute key-value map.
-	modelSpanEvent struct {
-		// name is the event name passed to AddEvent.
-		name string
-		// attrs maps attribute keys to string representations for assertion.
-		attrs map[string]string
-	}
-)
-
 // TestConfigureModelValidationTelemetryAndLiveEnv verifies ConfigureModel's
 // authentication, payload normalization and cross-field validation, capability
-// and credential refusal span events ("model_configuration_refused"), actual
-// constructor failure and closed-control-plane span statuses, successful
-// provider and gateway activation ("model_configured"), retired-model cleanup
-// span isolation ("surla.controlplane.retire_model"), liveEnv propagation, and
-// CloseAnalyzer cleanup when controlplane.New fails validation.
+// and credential refusal span events ("model_configuration_refused"), exact
+// single/duplicate-refusal vs. mixed/distinct-leaf ModelBuilder error
+// classification across Go, HTTP, MCP, and exported OpenTelemetry SDK spans,
+// bounded "model_configured" event attributes (preserving arbitrarily long
+// accepted model_name and gateway_addr values without leaking them into
+// telemetry), retired-model cleanup span isolation ("surla.controlplane.retire_model"),
+// liveEnv propagation across StartLiveTarget, and CloseAnalyzer cleanup when
+// controlplane.New fails validation.
 func TestConfigureModelValidationTelemetryAndLiveEnv(t *testing.T) {
 	prevProvider := otel.GetTracerProvider()
-	recorder := &modelSpanRecorder{}
-	otel.SetTracerProvider(recorder)
-	t.Cleanup(func() { otel.SetTracerProvider(prevProvider) })
+	sr := tracetest.NewSpanRecorder()
+	tp := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(sr))
+	otel.SetTracerProvider(tp)
+	t.Cleanup(func() {
+		otel.SetTracerProvider(prevProvider)
+		require.NoError(t, tp.Shutdown(context.Background()))
+	})
 
 	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
 	summaryJSON := func(summary string) string {
@@ -134,19 +93,19 @@ func TestConfigureModelValidationTelemetryAndLiveEnv(t *testing.T) {
 	})
 
 	t.Run("unauthenticated ConfigureModel is rejected before starting a span", func(t *testing.T) {
-		recorder.reset()
+		sr.Reset()
 		cp := newControlPlane(t, Options{})
 		gw := "127.0.0.1:9090"
 		_, err := cp.ConfigureModel(context.Background(), &gensurla.ConfigureModelPayload{GatewayAddr: &gw})
 		require.EqualError(t, err, "authenticated principal is required")
-		assert.Empty(t, recorder.matching("surla.controlplane.configure_model"))
+		assert.Empty(t, endedSpansByName(sr, "surla.controlplane.configure_model"))
 	})
 
 	t.Run("reconfiguration unavailable records refusal event without error status and preserves fixed analyzer", func(t *testing.T) {
-		recorder.reset()
+		sr.Reset()
 		cp := newControlPlane(t, Options{
 			Analyzer: NewModelCP1Analyzer(newStubModelClient(t, summaryJSON("Fixed host analyzer"))),
-			LiveEnv:  []string{"SURLA_LIVE_MODEL_PROVIDER=anthropic", "SURLA_LIVE_MODEL_NAME=claude-fixed"},
+			Live:     &LiveConfig{Env: []string{"SURLA_LIVE_MODEL_PROVIDER=anthropic", "SURLA_LIVE_MODEL_NAME=claude-fixed"}},
 		})
 		gw := "127.0.0.1:9090"
 		_, err := cp.ConfigureModel(alice, &gensurla.ConfigureModelPayload{GatewayAddr: &gw})
@@ -154,15 +113,13 @@ func TestConfigureModelValidationTelemetryAndLiveEnv(t *testing.T) {
 		assert.Equal(t, "not_implemented", goaErrorName(err))
 		assert.ErrorContains(t, err, msgModelReconfigUnavailable)
 
-		spans := recorder.matching("surla.controlplane.configure_model")
+		spans := endedSpansByName(sr, "surla.controlplane.configure_model")
 		require.Len(t, spans, 1)
-		assert.True(t, spans[0].ended)
-		assert.Equal(t, codes.Unset, spans[0].statusCode)
-		assert.Empty(t, spans[0].errors)
-		assert.Equal(t, []modelSpanEvent{{
-			name:  "model_configuration_refused",
-			attrs: map[string]string{"surla.model.refusal_reason": "reconfiguration_unavailable"},
-		}}, spans[0].events)
+		assert.Equal(t, codes.Unset, spans[0].Status().Code)
+		assert.Empty(t, exceptionMessages(spans[0]))
+		assert.Equal(t, map[string]map[string]string{
+			"model_configuration_refused": {"surla.model.refusal_reason": "reconfiguration_unavailable"},
+		}, nonExceptionEvents(spans[0]))
 
 		card, err := cp.ProposeChange(alice, &gensurla.ProposeChangePayload{ChangeID: "chg-fixed", Prompt: "Test fixed analyzer"})
 		require.NoError(t, err)
@@ -170,18 +127,22 @@ func TestConfigureModelValidationTelemetryAndLiveEnv(t *testing.T) {
 		assert.Equal(t, []string{"SURLA_LIVE_MODEL_PROVIDER=anthropic", "SURLA_LIVE_MODEL_NAME=claude-fixed"}, cp.liveEnv())
 	})
 
-	t.Run("payload and missing-credential refusals record refusal events without error status and preserve active model", func(t *testing.T) {
+	t.Run("payload and ModelBuilder refusal vs fault classification across Go HTTP MCP and exported spans", func(t *testing.T) {
 		var buildErr error
 		cp := newControlPlane(t, Options{
 			Analyzer: NewModelCP1Analyzer(newStubModelClient(t, summaryJSON("Initial model"))),
-			LiveEnv:  []string{"SURLA_LIVE_MODEL_PROVIDER=anthropic", "SURLA_LIVE_MODEL_NAME=claude-sonnet-4-6"},
-			ModelBuilder: func(p *gensurla.ConfigureModelPayload) (CP1Analyzer, []string, func() error, error) {
+			Live:     &LiveConfig{Env: []string{"SURLA_LIVE_MODEL_PROVIDER=anthropic", "SURLA_LIVE_MODEL_NAME=claude-sonnet-4-6"}},
+			ModelBuilder: func(*gensurla.ConfigureModelPayload) (CP1Analyzer, []string, func() error, error) {
 				if buildErr != nil {
 					return nil, nil, nil, buildErr
 				}
 				return NewModelCP1Analyzer(newStubModelClient(t, summaryJSON("Unused"))), nil, nil, nil
 			},
 		})
+		handler := NewHTTPHandler(cp, NewTokenAuthenticator(map[string]Principal{
+			"alice-token": {ID: "alice@example.com"},
+		}))
+		mcpAdapter := genmcpadapter.NewMCPAdapter(gensurla.NewEndpoints(cp), nil)
 
 		strPtr := func(s string) *string { return &s }
 		invalidCases := []struct {
@@ -227,64 +188,198 @@ func TestConfigureModelValidationTelemetryAndLiveEnv(t *testing.T) {
 		}
 		for _, tc := range invalidCases {
 			t.Run(tc.name, func(t *testing.T) {
-				recorder.reset()
+				sr.Reset()
 				_, err := cp.ConfigureModel(alice, tc.payload)
 				require.Error(t, err)
 				assert.Equal(t, "unprocessable", goaErrorName(err))
 				assert.ErrorContains(t, err, tc.wantErr)
 
-				spans := recorder.matching("surla.controlplane.configure_model")
+				spans := endedSpansByName(sr, "surla.controlplane.configure_model")
 				require.Len(t, spans, 1)
-				assert.True(t, spans[0].ended)
-				assert.Equal(t, codes.Unset, spans[0].statusCode)
-				assert.Empty(t, spans[0].errors)
-				assert.Equal(t, []modelSpanEvent{{
-					name:  "model_configuration_refused",
-					attrs: map[string]string{"surla.model.refusal_reason": "invalid_payload"},
-				}}, spans[0].events)
+				assert.Equal(t, codes.Unset, spans[0].Status().Code)
+				assert.Empty(t, exceptionMessages(spans[0]))
+				assert.Equal(t, map[string]map[string]string{
+					"model_configuration_refused": {"surla.model.refusal_reason": "invalid_payload"},
+				}, nonExceptionEvents(spans[0]))
 			})
 		}
 
-		// Missing API key refusal from ModelBuilder (422 unprocessable).
-		recorder.reset()
-		buildErr = gensurla.MakeUnprocessable(errors.New("provider openai requires OPENAI_API_KEY in surla serve's environment"))
-		_, err := cp.ConfigureModel(alice, &gensurla.ConfigureModelPayload{
-			Provider:  strPtr("openai"),
-			ModelName: strPtr("gpt-5.4-mini"),
-		})
-		require.Error(t, err)
-		assert.Equal(t, "unprocessable", goaErrorName(err))
-		spans := recorder.matching("surla.controlplane.configure_model")
-		require.Len(t, spans, 1)
-		assert.Equal(t, codes.Unset, spans[0].statusCode)
-		assert.Empty(t, spans[0].errors)
-		assert.Equal(t, []modelSpanEvent{{
-			name:  "model_configuration_refused",
-			attrs: map[string]string{"surla.model.refusal_reason": "missing_api_key"},
-		}}, spans[0].events)
+		// Pure missing-key refusals (direct, wrapped, and duplicate-joined of the same refusal leaf)
+		// remain expected 422 refusals across Go, HTTP, MCP, and exported spans.
+		missingKeyCause := errors.New("provider openai requires OPENAI_API_KEY in surla serve's environment")
+		sameRefusal := gensurla.MakeUnprocessable(missingKeyCause)
+		pureRefusalCases := []struct {
+			name string
+			err  error
+		}{
+			{name: "direct unprocessable refusal", err: sameRefusal},
+			{name: "wrapped unprocessable refusal", err: fmt.Errorf("check provider credentials: %w", sameRefusal)},
+			{name: "duplicate join of same unprocessable refusal", err: errors.Join(sameRefusal, sameRefusal)},
+		}
+		reqBodyJSON, err := json.Marshal(map[string]any{"provider": "openai", "model_name": "gpt-5.4-mini"})
+		require.NoError(t, err)
+		for _, tc := range pureRefusalCases {
+			t.Run(tc.name, func(t *testing.T) {
+				buildErr = tc.err
 
-		// Actual constructor failure from ModelBuilder records error + codes.Error.
-		recorder.reset()
-		buildErr = errors.New("dial gateway failed")
-		_, err = cp.ConfigureModel(alice, &gensurla.ConfigureModelPayload{
-			GatewayAddr: strPtr("127.0.0.1:9090"),
-		})
-		require.EqualError(t, err, "dial gateway failed")
-		spans = recorder.matching("surla.controlplane.configure_model")
-		require.Len(t, spans, 1)
-		assert.Equal(t, codes.Error, spans[0].statusCode)
-		require.Len(t, spans[0].errors, 1)
-		assert.EqualError(t, spans[0].errors[0], "dial gateway failed")
-		assert.Empty(t, spans[0].events)
+				sr.Reset()
+				_, goErr := cp.ConfigureModel(alice, &gensurla.ConfigureModelPayload{
+					Provider:  strPtr("openai"),
+					ModelName: strPtr("gpt-5.4-mini"),
+				})
+				require.Error(t, goErr)
+				assert.ErrorIs(t, goErr, sameRefusal)
+				assert.ErrorIs(t, goErr, missingKeyCause)
+				spans := endedSpansByName(sr, "surla.controlplane.configure_model")
+				require.Len(t, spans, 1)
+				assert.Equal(t, codes.Unset, spans[0].Status().Code)
+				assert.Empty(t, exceptionMessages(spans[0]))
+				assert.Equal(t, map[string]map[string]string{
+					"model_configuration_refused": {"surla.model.refusal_reason": "missing_api_key"},
+				}, nonExceptionEvents(spans[0]))
 
-		// Active model and liveEnv remain untouched after all refusals and failures.
+				sr.Reset()
+				req := httptest.NewRequest(http.MethodPost, "/cp1/model", strings.NewReader(string(reqBodyJSON)))
+				req.Header.Set("Authorization", "Bearer alice-token")
+				req.Header.Set("Content-Type", "application/json")
+				rec := httptest.NewRecorder()
+				handler.ServeHTTP(rec, req)
+				assert.Equal(t, http.StatusUnprocessableEntity, rec.Code)
+				var httpErr struct {
+					Name  string `json:"name"`
+					Fault bool   `json:"fault"`
+				}
+				require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &httpErr))
+				assert.Equal(t, "unprocessable", httpErr.Name)
+				assert.False(t, httpErr.Fault)
+				spans = endedSpansByName(sr, "surla.controlplane.configure_model")
+				require.Len(t, spans, 1)
+				assert.Equal(t, codes.Unset, spans[0].Status().Code)
+				assert.Empty(t, exceptionMessages(spans[0]))
+
+				sr.Reset()
+				mcpRes, mErr := mcpAdapter.ToolsCall(alice, &genmcpadapter.ToolsCallPayload{
+					Name:      "configure_model",
+					Arguments: reqBodyJSON,
+				})
+				require.NoError(t, mErr)
+				complete, ok := mcpRes.Outcome.AsComplete()
+				require.True(t, ok)
+				require.NotNil(t, complete.IsError)
+				assert.True(t, *complete.IsError)
+				spans = endedSpansByName(sr, "surla.controlplane.configure_model")
+				require.Len(t, spans, 1)
+				assert.Equal(t, codes.Unset, spans[0].Status().Code)
+				assert.Empty(t, exceptionMessages(spans[0]))
+			})
+		}
+
+		// Mixed or distinct-leaf errors from ModelBuilder are server faults (HTTP 500 fault:true,
+		// span RecordError + codes.Error, zero refusal events) while keeping all causes accessible.
+		distinctRefusal := gensurla.MakeUnprocessable(errors.New("second distinct unprocessable leaf"))
+		independentCleanupErr := errors.New("close partial gateway transport failed")
+		unexpectedNotImpl := gensurla.MakeNotImplemented(errors.New("unexpected builder not_implemented"))
+		faultCases := []struct {
+			name       string
+			err        error
+			wantCauses []error
+		}{
+			{
+				name:       "plain constructor failure",
+				err:        independentCleanupErr,
+				wantCauses: []error{independentCleanupErr},
+			},
+			{
+				name:       "unprocessable joined with independent cleanup failure",
+				err:        errors.Join(sameRefusal, independentCleanupErr),
+				wantCauses: []error{sameRefusal, missingKeyCause, independentCleanupErr},
+			},
+			{
+				name:       "unprocessable joined with context cancellation",
+				err:        errors.Join(sameRefusal, context.Canceled),
+				wantCauses: []error{sameRefusal, missingKeyCause, context.Canceled},
+			},
+			{
+				name:       "two distinct unprocessable leaves joined",
+				err:        errors.Join(sameRefusal, distinctRefusal),
+				wantCauses: []error{sameRefusal, distinctRefusal},
+			},
+			{
+				name:       "unexpected not_implemented from ModelBuilder",
+				err:        errors.Join(unexpectedNotImpl, independentCleanupErr),
+				wantCauses: []error{unexpectedNotImpl, independentCleanupErr},
+			},
+		}
+		for _, tc := range faultCases {
+			t.Run(tc.name, func(t *testing.T) {
+				buildErr = tc.err
+
+				sr.Reset()
+				_, goErr := cp.ConfigureModel(alice, &gensurla.ConfigureModelPayload{
+					Provider:  strPtr("openai"),
+					ModelName: strPtr("gpt-5.4-mini"),
+				})
+				require.Error(t, goErr)
+				for _, cause := range tc.wantCauses {
+					assert.ErrorIs(t, goErr, cause)
+				}
+				var targetSE *goa.ServiceError
+				if errors.As(tc.err, &targetSE) {
+					var gotSE *goa.ServiceError
+					assert.ErrorAs(t, goErr, &gotSE)
+				}
+				spans := endedSpansByName(sr, "surla.controlplane.configure_model")
+				require.Len(t, spans, 1)
+				assert.Equal(t, codes.Error, spans[0].Status().Code)
+				assert.Equal(t, []string{tc.err.Error()}, exceptionMessages(spans[0]))
+				assert.Empty(t, nonExceptionEvents(spans[0]))
+
+				sr.Reset()
+				req := httptest.NewRequest(http.MethodPost, "/cp1/model", strings.NewReader(string(reqBodyJSON)))
+				req.Header.Set("Authorization", "Bearer alice-token")
+				req.Header.Set("Content-Type", "application/json")
+				rec := httptest.NewRecorder()
+				handler.ServeHTTP(rec, req)
+				assert.Equal(t, http.StatusInternalServerError, rec.Code)
+				var httpErr struct {
+					Name  string `json:"name"`
+					Fault bool   `json:"fault"`
+				}
+				require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &httpErr))
+				assert.Equal(t, "fault", httpErr.Name)
+				assert.True(t, httpErr.Fault)
+				spans = endedSpansByName(sr, "surla.controlplane.configure_model")
+				require.Len(t, spans, 1)
+				assert.Equal(t, codes.Error, spans[0].Status().Code)
+				assert.Equal(t, []string{tc.err.Error()}, exceptionMessages(spans[0]))
+				assert.Empty(t, nonExceptionEvents(spans[0]))
+
+				sr.Reset()
+				mcpRes, mErr := mcpAdapter.ToolsCall(alice, &genmcpadapter.ToolsCallPayload{
+					Name:      "configure_model",
+					Arguments: reqBodyJSON,
+				})
+				require.NoError(t, mErr)
+				complete, ok := mcpRes.Outcome.AsComplete()
+				require.True(t, ok)
+				require.NotNil(t, complete.IsError)
+				assert.True(t, *complete.IsError)
+				spans = endedSpansByName(sr, "surla.controlplane.configure_model")
+				require.Len(t, spans, 1)
+				assert.Equal(t, codes.Error, spans[0].Status().Code)
+				assert.Equal(t, []string{tc.err.Error()}, exceptionMessages(spans[0]))
+				assert.Empty(t, nonExceptionEvents(spans[0]))
+			})
+		}
+
+		// Active model and liveEnv remain untouched after all refusals and faults.
 		card, err := cp.ProposeChange(alice, &gensurla.ProposeChangePayload{ChangeID: "chg-still-active", Prompt: "Still active"})
 		require.NoError(t, err)
 		assert.Equal(t, "Initial model", card.Summary)
 		assert.Equal(t, []string{"SURLA_LIVE_MODEL_PROVIDER=anthropic", "SURLA_LIVE_MODEL_NAME=claude-sonnet-4-6"}, cp.liveEnv())
 	})
 
-	t.Run("successful provider and gateway transitions update analyzer, liveEnv, MCP result, and retirement span", func(t *testing.T) {
+	t.Run("successful provider and gateway transitions record bounded telemetry and preserve long accepted names", func(t *testing.T) {
 		var closeInitialCalls atomic.Int32
 		var closeSecondCalls atomic.Int32
 		cp := newControlPlane(t, Options{
@@ -293,7 +388,7 @@ func TestConfigureModelValidationTelemetryAndLiveEnv(t *testing.T) {
 				closeInitialCalls.Add(1)
 				return errors.New("retire initial transport warning")
 			},
-			LiveEnv: []string{"SURLA_LIVE_MODEL_PROVIDER=anthropic", "SURLA_LIVE_MODEL_NAME=claude-sonnet-4-6"},
+			Live: &LiveConfig{Env: []string{"SURLA_LIVE_MODEL_PROVIDER=anthropic", "SURLA_LIVE_MODEL_NAME=claude-sonnet-4-6"}},
 			ModelBuilder: func(p *gensurla.ConfigureModelPayload) (CP1Analyzer, []string, func() error, error) {
 				if p.GatewayAddr != nil {
 					return NewModelCP1Analyzer(newStubModelClient(t, summaryJSON("Gateway "+*p.GatewayAddr))),
@@ -311,50 +406,50 @@ func TestConfigureModelValidationTelemetryAndLiveEnv(t *testing.T) {
 			},
 		})
 
-		// 1. Switch from initial anthropic (whose closeFn returns an error) to openai/gpt-5.4-mini.
-		recorder.reset()
-		prov, modelName := "  openai ", " gpt-5.4-mini  "
+		// 1. Switch from initial anthropic (whose closeFn returns an error) to a long openai model_name.
+		sr.Reset()
+		longModelName := "gpt-5.4-mini-custom-" + strings.Repeat("m", 4096)
+		prov, paddedModelName := "  openai ", " "+longModelName+"  "
 		res, err := cp.ConfigureModel(alice, &gensurla.ConfigureModelPayload{
 			Provider:  &prov,
-			ModelName: &modelName,
+			ModelName: &paddedModelName,
 		})
 		require.NoError(t, err)
 		require.NotNil(t, res.Provider)
 		require.NotNil(t, res.ModelName)
 		assert.Equal(t, "openai", *res.Provider)
-		assert.Equal(t, "gpt-5.4-mini", *res.ModelName)
+		assert.Equal(t, longModelName, *res.ModelName)
 		assert.Nil(t, res.GatewayAddr)
 		assert.EqualValues(t, 1, closeInitialCalls.Load())
-		assert.Equal(t, []string{"SURLA_LIVE_MODEL_PROVIDER=openai", "SURLA_LIVE_MODEL_NAME=gpt-5.4-mini"}, cp.liveEnv())
+		assert.Equal(t, []string{"SURLA_LIVE_MODEL_PROVIDER=openai", "SURLA_LIVE_MODEL_NAME=" + longModelName}, cp.liveEnv())
 
-		cfgSpans := recorder.matching("surla.controlplane.configure_model")
+		cfgSpans := endedSpansByName(sr, "surla.controlplane.configure_model")
 		require.Len(t, cfgSpans, 1)
-		assert.True(t, cfgSpans[0].ended)
-		assert.Equal(t, codes.Unset, cfgSpans[0].statusCode, "old transport retirement failure must not mark configure_model failed")
-		assert.Empty(t, cfgSpans[0].errors)
-		assert.Equal(t, []modelSpanEvent{{
-			name: "model_configured",
-			attrs: map[string]string{
-				"surla.model.provider": "openai",
-				"surla.model.name":     "gpt-5.4-mini",
+		assert.Equal(t, codes.Unset, cfgSpans[0].Status().Code, "old transport retirement failure must not mark configure_model failed")
+		assert.Empty(t, exceptionMessages(cfgSpans[0]))
+		assert.Empty(t, cfgSpans[0].Attributes())
+		assert.Equal(t, map[string]map[string]string{
+			"model_configured": {
+				"surla.model.connection_kind": "provider",
+				"surla.model.provider":        "openai",
 			},
-		}}, cfgSpans[0].events)
+		}, nonExceptionEvents(cfgSpans[0]))
+		assertSpanNeverContainsValue(t, cfgSpans[0], longModelName)
 
-		retireSpans := recorder.matching("surla.controlplane.retire_model")
+		retireSpans := endedSpansByName(sr, "surla.controlplane.retire_model")
 		require.Len(t, retireSpans, 1)
-		assert.True(t, retireSpans[0].ended)
-		assert.Equal(t, codes.Error, retireSpans[0].statusCode)
-		require.Len(t, retireSpans[0].errors, 1)
-		assert.EqualError(t, retireSpans[0].errors[0], "retire initial transport warning")
+		assert.Equal(t, codes.Error, retireSpans[0].Status().Code)
+		assert.Equal(t, []string{"retire initial transport warning"}, exceptionMessages(retireSpans[0]))
 
 		card1, err := cp.ProposeChange(alice, &gensurla.ProposeChangePayload{ChangeID: "chg-oai", Prompt: "Use openai"})
 		require.NoError(t, err)
-		assert.Equal(t, "Provider openai/gpt-5.4-mini", card1.Summary)
+		assert.Equal(t, "Provider openai/"+longModelName, card1.Summary)
 
-		// 2. Switch via MCP tools/call to gateway_addr.
-		recorder.reset()
+		// 2. Switch via MCP tools/call to a long gateway_addr.
+		sr.Reset()
+		longGatewayAddr := "127.0.0.1:9090/" + strings.Repeat("g", 4096)
 		adapter := genmcpadapter.NewMCPAdapter(gensurla.NewEndpoints(cp), nil)
-		argsJSON, err := json.Marshal(map[string]any{"gateway_addr": " 127.0.0.1:9090 "})
+		argsJSON, err := json.Marshal(map[string]any{"gateway_addr": " " + longGatewayAddr + " "})
 		require.NoError(t, err)
 		mcpRes, err := adapter.ToolsCall(alice, &genmcpadapter.ToolsCallPayload{Name: "configure_model", Arguments: argsJSON})
 		require.NoError(t, err)
@@ -362,19 +457,22 @@ func TestConfigureModelValidationTelemetryAndLiveEnv(t *testing.T) {
 		require.True(t, ok)
 		assert.False(t, complete.IsError != nil && *complete.IsError)
 		assert.EqualValues(t, 1, closeSecondCalls.Load())
-		assert.Equal(t, []string{"SURLA_LIVE_MODEL_GATEWAY=127.0.0.1:9090"}, cp.liveEnv())
+		assert.Equal(t, []string{"SURLA_LIVE_MODEL_GATEWAY=" + longGatewayAddr}, cp.liveEnv())
 
-		cfgSpans = recorder.matching("surla.controlplane.configure_model")
+		cfgSpans = endedSpansByName(sr, "surla.controlplane.configure_model")
 		require.Len(t, cfgSpans, 1)
-		assert.Equal(t, codes.Unset, cfgSpans[0].statusCode)
-		assert.Equal(t, []modelSpanEvent{{
-			name:  "model_configured",
-			attrs: map[string]string{"surla.model.gateway_addr": "127.0.0.1:9090"},
-		}}, cfgSpans[0].events)
+		assert.Equal(t, codes.Unset, cfgSpans[0].Status().Code)
+		assert.Empty(t, cfgSpans[0].Attributes())
+		assert.Equal(t, map[string]map[string]string{
+			"model_configured": {
+				"surla.model.connection_kind": "gateway",
+			},
+		}, nonExceptionEvents(cfgSpans[0]))
+		assertSpanNeverContainsValue(t, cfgSpans[0], longGatewayAddr)
 
 		card2, err := cp.ProposeChange(alice, &gensurla.ProposeChangePayload{ChangeID: "chg-gw", Prompt: "Use gateway"})
 		require.NoError(t, err)
-		assert.Equal(t, "Gateway 127.0.0.1:9090", card2.Summary)
+		assert.Equal(t, "Gateway "+longGatewayAddr, card2.Summary)
 	})
 
 	t.Run("StartLiveTarget launches child process with updated model liveEnv across ConfigureModel transitions", func(t *testing.T) {
@@ -445,23 +543,26 @@ func TestConfigureModelValidationTelemetryAndLiveEnv(t *testing.T) {
 }
 
 // TestModelLifecycleBarriersAcrossCloseAndConfigureModel exercises deterministic
-// channel barriers (zero sleeps) across:
+// channel barriers (zero sleeps, zero busy-loops) across:
 //  1. In-flight ProposeChange (Analyze) and separately ReviseChange (Revise)
 //     when ControlPlane.Close runs with a CloseAnalyzer spy.
 //  2. In-flight ProposeChange and separately ReviseChange when ConfigureModel
 //     switches to a new model (including when the retired model's closeFn fails).
-//  3. Early-exit ProposeChange (duplicate change_id) and ReviseChange (stale
-//     request_revision) retiring a superseded model handle via a still-open
-//     "surla.controlplane.retire_model" span.
+//  3. Retiring a superseded model handle when releaseModel runs without an
+//     enclosing operation span (such as an early pre-span exit).
 //  4. Overlapping switches (model 1 -> model 2 -> model 3) while calls A and B
 //     are held in flight on models 1 and 2.
 //  5. ModelBuilder completing after ControlPlane.Close has already closed the
 //     control plane.
 func TestModelLifecycleBarriersAcrossCloseAndConfigureModel(t *testing.T) {
 	prevProvider := otel.GetTracerProvider()
-	recorder := &modelSpanRecorder{}
-	otel.SetTracerProvider(recorder)
-	t.Cleanup(func() { otel.SetTracerProvider(prevProvider) })
+	sr := tracetest.NewSpanRecorder()
+	tp := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(sr))
+	otel.SetTracerProvider(tp)
+	t.Cleanup(func() {
+		otel.SetTracerProvider(prevProvider)
+		require.NoError(t, tp.Shutdown(context.Background()))
+	})
 
 	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
 
@@ -546,7 +647,7 @@ func TestModelLifecycleBarriersAcrossCloseAndConfigureModel(t *testing.T) {
 	t.Run("ConfigureModel during in-flight ProposeChange and ReviseChange switches immediately and retires old handle on completion", func(t *testing.T) {
 		for _, op := range []string{"propose", "revise"} {
 			t.Run(op, func(t *testing.T) {
-				recorder.reset()
+				sr.Reset()
 				held1 := &heldAnalyzer{started: make(chan struct{}), release: make(chan struct{})}
 				var close1Count atomic.Int32
 				var close2Count atomic.Int32
@@ -611,91 +712,53 @@ func TestModelLifecycleBarriersAcrossCloseAndConfigureModel(t *testing.T) {
 				require.NoError(t, <-inflightCh)
 				assert.EqualValues(t, 1, close1Count.Load(), "model 1 closes once when the in-flight call finishes")
 
-				retireSpans := recorder.matching("surla.controlplane.retire_model")
+				retireSpans := endedSpansByName(sr, "surla.controlplane.retire_model")
 				require.Len(t, retireSpans, 1)
-				assert.True(t, retireSpans[0].ended)
-				assert.Equal(t, codes.Error, retireSpans[0].statusCode)
-				require.Len(t, retireSpans[0].errors, 1)
-				assert.EqualError(t, retireSpans[0].errors[0], "close1 transport error")
+				assert.Equal(t, codes.Error, retireSpans[0].Status().Code)
+				assert.Equal(t, []string{"close1 transport error"}, exceptionMessages(retireSpans[0]))
 
 				opSpanName := "surla.controlplane.propose_change"
 				if op == "revise" {
 					opSpanName = "surla.controlplane.revise_change"
 				}
-				opSpans := recorder.matching(opSpanName)
+				opSpans := endedSpansByName(sr, opSpanName)
 				require.NotEmpty(t, opSpans)
-				assert.Equal(t, codes.Unset, opSpans[0].statusCode, "completed analysis span must not be marked failed by old-model retirement")
+				assert.Equal(t, codes.Unset, opSpans[0].Status().Code, "completed analysis span must not be marked failed by old-model retirement")
 			})
 		}
 	})
 
-	t.Run("early-exit ProposeChange and ReviseChange on a superseded handle record retire_model span", func(t *testing.T) {
-		for _, op := range []string{"propose_duplicate", "revise_stale"} {
-			t.Run(op, func(t *testing.T) {
-				recorder.reset()
-				var close1Count atomic.Int32
-				cp := newControlPlane(t, Options{
-					Analyzer: &heldAnalyzer{started: make(chan struct{}), release: make(chan struct{})},
-					CloseAnalyzer: func() error {
-						close1Count.Add(1)
-						return errors.New("early-exit retire error")
-					},
-					ModelBuilder: func(*gensurla.ConfigureModelPayload) (CP1Analyzer, []string, func() error, error) {
-						return &heldAnalyzer{started: make(chan struct{}), release: make(chan struct{})}, nil, nil, nil
-					},
-				})
-				saveCard(t, cp, nil)
+	t.Run("releaseModel without an operation span records a standalone ended retire_model span when superseded", func(t *testing.T) {
+		sr.Reset()
+		var close1Count atomic.Int32
+		cp := newControlPlane(t, Options{
+			Analyzer: &heldAnalyzer{started: make(chan struct{}), release: make(chan struct{})},
+			CloseAnalyzer: func() error {
+				close1Count.Add(1)
+				return errors.New("pre-span retire error")
+			},
+			ModelBuilder: func(*gensurla.ConfigureModelPayload) (CP1Analyzer, []string, func() error, error) {
+				return &heldAnalyzer{started: make(chan struct{}), release: make(chan struct{})}, nil, nil, nil
+			},
+		})
 
-				// Hold c.mu.Lock() so ProposeChange/ReviseChange acquires model 1
-				// and blocks at c.mu.RLock() before starting its operation span.
-				cp.mu.Lock()
-				errCh := make(chan error, 1)
-				go func() {
-					if op == "propose_duplicate" {
-						_, err := cp.ProposeChange(alice, &gensurla.ProposeChangePayload{
-							ChangeID: "chg",
-							Prompt:   "Duplicate change_id",
-						})
-						errCh <- err
-						return
-					}
-					_, err := cp.ReviseChange(alice, &gensurla.ReviseChangePayload{
-						ChangeID:        "chg",
-						RequestRevision: strings.Repeat("0", 64),
-						Prompt:          "Stale revision",
-					})
-					errCh <- err
-				}()
+		heldHandle, err := cp.acquireModel()
+		require.NoError(t, err)
+		require.NotNil(t, heldHandle)
 
-				// Wait until the goroutine has acquired model 1 (refs == 2).
-				for {
-					cp.modelMu.Lock()
-					refs := cp.activeModel.refs
-					cp.modelMu.Unlock()
-					if refs == 2 {
-						break
-					}
-				}
+		gw := "127.0.0.1:9090"
+		_, err = cp.ConfigureModel(alice, &gensurla.ConfigureModelPayload{GatewayAddr: &gw})
+		require.NoError(t, err)
+		assert.EqualValues(t, 0, close1Count.Load(), "superseded model must remain open while acquired reference is held")
 
-				// Switch the active model while the call is waiting on c.mu.RLock().
-				gw := "127.0.0.1:9090"
-				_, err := cp.ConfigureModel(alice, &gensurla.ConfigureModelPayload{GatewayAddr: &gw})
-				require.NoError(t, err)
-				assert.EqualValues(t, 0, close1Count.Load())
+		sr.Reset()
+		cp.releaseModel(alice, heldHandle)
+		assert.EqualValues(t, 1, close1Count.Load())
 
-				recorder.reset()
-				cp.mu.Unlock()
-
-				require.Error(t, <-errCh)
-				assert.EqualValues(t, 1, close1Count.Load())
-				retireSpans := recorder.matching("surla.controlplane.retire_model")
-				require.Len(t, retireSpans, 1)
-				assert.True(t, retireSpans[0].ended)
-				assert.Equal(t, codes.Error, retireSpans[0].statusCode)
-				require.Len(t, retireSpans[0].errors, 1)
-				assert.EqualError(t, retireSpans[0].errors[0], "early-exit retire error")
-			})
-		}
+		retireSpans := endedSpansByName(sr, "surla.controlplane.retire_model")
+		require.Len(t, retireSpans, 1)
+		assert.Equal(t, codes.Error, retireSpans[0].Status().Code)
+		assert.Equal(t, []string{"pre-span retire error"}, exceptionMessages(retireSpans[0]))
 	})
 
 	t.Run("overlapping switches model 1 -> model 2 -> model 3 retire each handle once as its call completes", func(t *testing.T) {
@@ -784,7 +847,7 @@ func TestModelLifecycleBarriersAcrossCloseAndConfigureModel(t *testing.T) {
 	})
 
 	t.Run("ModelBuilder finishing after Close retires newly built model immediately and returns errCardsClosed", func(t *testing.T) {
-		recorder.reset()
+		sr.Reset()
 		builderStarted := make(chan struct{})
 		builderRelease := make(chan struct{})
 		var close1, close2 atomic.Int32
@@ -822,12 +885,12 @@ func TestModelLifecycleBarriersAcrossCloseAndConfigureModel(t *testing.T) {
 		assert.ErrorIs(t, <-cfgErrCh, errCardsClosed)
 		assert.EqualValues(t, 1, close2.Load(), "newly built model 2 must be retired immediately when Close raced with ModelBuilder")
 
-		cfgSpans := recorder.matching("surla.controlplane.configure_model")
+		cfgSpans := endedSpansByName(sr, "surla.controlplane.configure_model")
 		require.Len(t, cfgSpans, 1)
-		assert.Equal(t, codes.Error, cfgSpans[0].statusCode)
-		assert.Empty(t, cfgSpans[0].events)
+		assert.Equal(t, codes.Error, cfgSpans[0].Status().Code)
+		assert.Empty(t, nonExceptionEvents(cfgSpans[0]))
 
-		retireSpans := recorder.matching("surla.controlplane.retire_model")
+		retireSpans := endedSpansByName(sr, "surla.controlplane.retire_model")
 		require.Len(t, retireSpans, 2, "both model 1 and model 2 retirement spans are recorded")
 
 		require.NoError(t, cp.Close())
@@ -836,89 +899,65 @@ func TestModelLifecycleBarriersAcrossCloseAndConfigureModel(t *testing.T) {
 	})
 }
 
-// Tracer returns a trace.Tracer that records spans into p.
-func (p *modelSpanRecorder) Tracer(name string, _ ...trace.TracerOption) trace.Tracer {
-	return &modelTracer{provider: p, name: name}
-}
-
-// reset clears all recorded spans.
-func (p *modelSpanRecorder) reset() {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	p.spans = nil
-}
-
-// matching returns all recorded spans with the given operation name.
-func (p *modelSpanRecorder) matching(name string) []*modelRecordedSpan {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	var out []*modelRecordedSpan
-	for _, s := range p.spans {
-		if s.name == name {
+// endedSpansByName returns all ended spans from sr matching the given name.
+func endedSpansByName(sr *tracetest.SpanRecorder, name string) []sdktrace.ReadOnlySpan {
+	var out []sdktrace.ReadOnlySpan
+	for _, s := range sr.Ended() {
+		if s.Name() == name {
 			out = append(out, s)
 		}
 	}
 	return out
 }
 
-// Start begins a new modelRecordedSpan and registers it on t.provider.
-func (t *modelTracer) Start(
-	ctx context.Context,
-	name string,
-	opts ...trace.SpanStartOption,
-) (context.Context, trace.Span) {
-	_, noopSpan := noop.NewTracerProvider().Tracer(t.name).Start(ctx, name, opts...)
-	sp := &modelRecordedSpan{
-		Span: noopSpan,
-		name: name,
+// nonExceptionEvents extracts non-exception span events as a map from event
+// name to string attribute key-value map.
+func nonExceptionEvents(s sdktrace.ReadOnlySpan) map[string]map[string]string {
+	var out map[string]map[string]string
+	for _, ev := range s.Events() {
+		if ev.Name == "exception" {
+			continue
+		}
+		if out == nil {
+			out = make(map[string]map[string]string)
+		}
+		attrs := make(map[string]string, len(ev.Attributes))
+		for _, kv := range ev.Attributes {
+			attrs[string(kv.Key)] = kv.Value.AsString()
+		}
+		out[ev.Name] = attrs
 	}
-	t.provider.mu.Lock()
-	t.provider.spans = append(t.provider.spans, sp)
-	t.provider.mu.Unlock()
-	return trace.ContextWithSpan(ctx, sp), sp
+	return out
 }
 
-// AddEvent records an event and its attributes on s.
-func (s *modelRecordedSpan) AddEvent(name string, opts ...trace.EventOption) {
-	cfg := trace.NewEventConfig(opts...)
-	attrs := make(map[string]string, len(cfg.Attributes()))
-	for _, kv := range cfg.Attributes() {
-		attrs[string(kv.Key)] = attributeValueString(kv.Value)
+// exceptionMessages extracts the "exception.message" attribute values from all
+// "exception" events recorded via span.RecordError on s.
+func exceptionMessages(s sdktrace.ReadOnlySpan) []string {
+	var msgs []string
+	for _, ev := range s.Events() {
+		if ev.Name != "exception" {
+			continue
+		}
+		for _, kv := range ev.Attributes {
+			if string(kv.Key) == "exception.message" {
+				msgs = append(msgs, kv.Value.AsString())
+			}
+		}
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.events = append(s.events, modelSpanEvent{
-		name:  name,
-		attrs: attrs,
-	})
+	return msgs
 }
 
-// RecordError records err on s when non-nil.
-func (s *modelRecordedSpan) RecordError(err error, _ ...trace.EventOption) {
-	if err == nil {
-		return
+// assertSpanNeverContainsValue asserts that neither the span's attributes nor
+// any of its event attributes contain forbidden.
+func assertSpanNeverContainsValue(t *testing.T, s sdktrace.ReadOnlySpan, forbidden string) {
+	t.Helper()
+	checkAttrs := func(kvs []attribute.KeyValue) {
+		for _, kv := range kvs {
+			assert.NotContains(t, kv.Value.AsString(), forbidden)
+		}
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.errors = append(s.errors, err)
-}
-
-// SetStatus records code and desc on s.
-func (s *modelRecordedSpan) SetStatus(code codes.Code, desc string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.statusCode = code
-	s.statusDesc = desc
-}
-
-// End marks s as ended.
-func (s *modelRecordedSpan) End(_ ...trace.SpanEndOption) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.ended = true
-}
-
-// attributeValueString returns the string form of an OpenTelemetry attribute value.
-func attributeValueString(v attribute.Value) string {
-	return v.AsString()
+	checkAttrs(s.Attributes())
+	for _, ev := range s.Events() {
+		checkAttrs(ev.Attributes)
+	}
 }

@@ -335,7 +335,7 @@ func writeServeStatus(w io.Writer, addr *net.TCPAddr, opts controlplane.Options,
 			len(opts.SwarmProfiles), noun)
 	}
 	switch {
-	case opts.TargetUpdater == nil && opts.Live != nil:
+	case opts.TargetUpdater == nil && opts.Verification != nil && opts.Live != nil:
 		root := controlplane.LiveRoot(opts.CardsDir)
 		fmt.Fprintf(w, "surla: CP3 (draft_override, start_live_target): compiled_rule is on; prompt_template is on once start_live_target runs a candidate commit (live targets in %s)\n", root)
 		writeLeftoverLiveDirs(w, root)
@@ -785,20 +785,17 @@ func serveOptions(
 	if err != nil {
 		return controlplane.Options{}, err
 	}
-	initialLiveEnv := liveTargetEnv(environ, resolvedCfg)
-	var live *controlplane.LiveConfig
+	live := &controlplane.LiveConfig{
+		Env: liveTargetEnv(environ, resolvedCfg),
+	}
 	if verification != nil {
-		live = &controlplane.LiveConfig{
-			Command:      verification.Command,
-			Env:          initialLiveEnv,
-			StartTimeout: verification.Timeout,
-		}
+		live.Command = verification.Command
+		live.StartTimeout = verification.Timeout
 	}
 	return controlplane.Options{
 		CardsDir:        cfg.cardsDir,
 		Analyzer:        analyzer,
 		CloseAnalyzer:   closeModel,
-		LiveEnv:         initialLiveEnv,
 		ModelBuilder:    newModelBuilder(getenv, environ),
 		SwarmProfiles:   profiles,
 		Verification:    verification,
@@ -909,8 +906,10 @@ func writeLeftoverLiveDirs(w io.Writer, root string) {
 // client when gatewayAddr is set, a direct provider client when provider and
 // modelName are set, or nil when neither is set. Mixed or partial model flags
 // and a missing provider API key are errors; key values never appear in them.
-func newCP1Analyzer(cfg serveConfig, getenv func(string) string) (controlplane.CP1Analyzer, func() error, error) {
-	noop := func() error { return nil }
+func newCP1Analyzer(
+	cfg serveConfig,
+	getenv func(string) string,
+) (controlplane.CP1Analyzer, func() error, error) {
 	switch {
 	case cfg.gatewayAddr != "" && (cfg.provider != "" || cfg.modelName != ""):
 		return nil, nil, errors.New("-model-gateway-addr cannot be combined with -model-provider or -model-name; the gateway chooses the model")
@@ -925,7 +924,7 @@ func newCP1Analyzer(cfg serveConfig, getenv func(string) string) (controlplane.C
 		}
 		return controlplane.NewModelCP1Analyzer(client), conn.Close, nil
 	case cfg.provider == "" && cfg.modelName == "":
-		return nil, noop, nil
+		return nil, nil, nil
 	case cfg.provider == "" || cfg.modelName == "":
 		return nil, nil, errors.New("-model-provider and -model-name must be set together")
 	}
@@ -945,7 +944,7 @@ func newCP1Analyzer(cfg serveConfig, getenv func(string) string) (controlplane.C
 	if err != nil {
 		return nil, nil, fmt.Errorf("%s model client: %w", cfg.provider, err)
 	}
-	return controlplane.NewModelCP1Analyzer(client), noop, nil
+	return controlplane.NewModelCP1Analyzer(client), nil, nil
 }
 
 // loadSwarmProfiles decodes the JSON array of swarm.ProviderProfile at path,

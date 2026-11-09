@@ -110,10 +110,6 @@ type (
 		// ConfigureModel, when ControlPlane.Close runs, or if New fails
 		// validation.
 		CloseAnalyzer func() error
-		// LiveEnv is the initial CP3 live-target environment slice derived from
-		// the server's startup model configuration, owned independently of
-		// whether Verification or Live is configured at startup.
-		LiveEnv []string
 		// ModelBuilder constructs replacement CP1 analyzers and CP3 live-target
 		// environments when configure_model is called. Without it,
 		// configure_model returns not_implemented.
@@ -307,8 +303,8 @@ func New(opts Options) (*ControlPlane, error) {
 	if err != nil {
 		return nil, errors.Join(err, closeInitialAnalyzer(opts.CloseAnalyzer))
 	}
-	initialLiveEnv := opts.LiveEnv
-	if len(initialLiveEnv) == 0 && opts.Live != nil {
+	var initialLiveEnv []string
+	if opts.Live != nil {
 		initialLiveEnv = opts.Live.Env
 	}
 	return &ControlPlane{
