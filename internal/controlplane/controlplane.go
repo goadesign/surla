@@ -721,6 +721,12 @@ func (c *ControlPlane) ProposeChange(ctx context.Context, p *gensurla.ProposeCha
 // project lock are released only once.
 func (c *ControlPlane) Close() error {
 	c.cancelServer()
+	// Wait out any check admission in progress: an operation admitted under
+	// workspaceMu before this point is already registered, and every later
+	// one sees the server context ended and is refused (see
+	// admitCheckOperation).
+	c.workspaceMu.Lock()
+	c.workspaceMu.Unlock()
 	// Running checks see the server context end, remove their containers
 	// and return; then any container still unconfirmed gets one more try.
 	c.checkOps.Wait()

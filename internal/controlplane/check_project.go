@@ -158,29 +158,37 @@ func (c *ControlPlane) startCheckOperation(ctx context.Context) (*checkOperation
 	if c.checker == nil || c.checkWorkDir == "" {
 		return nil, gensurla.MakeNotImplemented(errors.New("check_project is not configured on this server"))
 	}
+	if err := c.admitCheckOperation(); err != nil {
+		return nil, err
+	}
+	// From here the operation is registered: every return either calls
+	// op.finish, which ends the registration, or abort.
+	abort := func(err error) (*checkOperation, error) {
+		c.checkOps.Done()
+		return nil, err
+	}
 	wsDir, dev, ino := c.currentWorkspaceTarget()
 	if wsDir == "" {
-		return nil, gensurla.MakeNotImplemented(errors.New("no workspace directory is bound to this control plane"))
+		return abort(gensurla.MakeNotImplemented(errors.New("no workspace directory is bound to this control plane")))
 	}
 	physWS, wsRoot, err := openModuleRootWithIdentity(wsDir, dev, ino)
 	if err != nil {
-		return nil, err
+		return abort(err)
 	}
 	op := &checkOperation{c: c, id: newOperationID(), grantFD: -1, workspaceFD: -1}
 	if err := errors.Join(op.openLive(wsRoot, physWS, c.protectedDirs), wsRoot.Close()); err != nil {
-		return nil, errors.Join(err, op.closeLive())
+		return abort(errors.Join(err, op.closeLive()))
 	}
 	op.dir = filepath.Join(c.checkWorkDir, op.id)
 	trace.SpanFromContext(ctx).SetAttributes(attribute.String("surla.check.op_id", op.id))
 	for _, d := range []string{op.dir, op.path("src"), op.path("modcache"), op.path("docker-config")} {
 		if err := os.Mkdir(d, 0o700); err != nil {
-			return nil, errors.Join(fmt.Errorf("create check directory %s: %w", d, err), op.closeLive())
+			return abort(errors.Join(fmt.Errorf("create check directory %s: %w", d, err), op.closeLive()))
 		}
 	}
 	if op.out, err = newCapWriter(op.path(outputFile)); err != nil {
-		return nil, errors.Join(err, op.closeLive())
+		return abort(errors.Join(err, op.closeLive()))
 	}
-	c.checkOps.Add(1)
 	op.copy, err = copyGrant(ctx, op.grantFD, op.workspaceRel, op.workspaceID, op.path("src"), c.importedReports)
 	if err != nil {
 		var changed *errSourceChanged
@@ -213,6 +221,22 @@ func (c *ControlPlane) startCheckOperation(ctx context.Context) (*checkOperation
 		return nil, op.finish(err)
 	}
 	return op, nil
+}
+
+// admitCheckOperation registers a new operation with checkOps, or refuses it
+// once Close has started. The check and the registration happen under a
+// read lock of workspaceMu, which Close takes exclusively after canceling
+// serverCtx: an operation admitted before that point is registered before
+// Close waits on checkOps, and every later one sees serverCtx ended. Admitted
+// operations still run concurrently.
+func (c *ControlPlane) admitCheckOperation() error {
+	c.workspaceMu.RLock()
+	defer c.workspaceMu.RUnlock()
+	if c.serverCtx.Err() != nil {
+		return gensurla.MakeUnavailable(errors.New("the server is shutting down; call again on a running server"))
+	}
+	c.checkOps.Add(1)
+	return nil
 }
 
 // checkDeadline bounds a whole check or dependency operation (copy, image
@@ -518,7 +542,31 @@ func (op *checkOperation) openLive(wsRoot *os.Root, physWS string, accepted []st
 		}
 	}
 	op.grantFD = fd
+	// The ".." walk reaches whatever directory now contains the verified
+	// workspace. Prove it is the accepted root by asking the kernel what the
+	// accepted path names now: any spelling the volume resolves to the same
+	// directory is accepted, and a workspace moved under another parent is
+	// refused.
+	same, err := sameDirectory(op.grantFD, op.grantRoot)
+	if err != nil {
+		return fmt.Errorf("open the source directory %s: %w", op.grantRoot, err)
+	}
+	if !same {
+		return gensurla.MakeUnprocessable(fmt.Errorf("the workspace was moved out of %s after it was verified; call again", op.grantRoot))
+	}
 	return nil
+}
+
+// sameDirectory reports whether the open directory fd is the directory the
+// path p currently names.
+func sameDirectory(fd int, p string) (bool, error) {
+	pfd, err := unix.Open(p, openDirFlags, 0)
+	if err != nil {
+		return false, err
+	}
+	var a, b unix.Stat_t
+	err = errors.Join(unix.Fstat(fd, &a), unix.Fstat(pfd, &b), unix.Close(pfd))
+	return err == nil && a.Dev == b.Dev && a.Ino == b.Ino, err
 }
 
 // liveDirAt opens the grant-relative directory rel of the live source

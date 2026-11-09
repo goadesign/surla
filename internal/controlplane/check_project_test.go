@@ -251,6 +251,85 @@ func TestOpenLiveUsesTheSourceRootsAcceptedAtStartup(t *testing.T) {
 	}
 }
 
+func TestOpenLiveRefusesAWorkspaceReparentedBeforeBinding(t *testing.T) {
+	// The server verified /repo/app; the same app directory is then moved
+	// under another parent before the operation binds its grant. Walking
+	// ".." from it reaches the other parent, which is not the accepted root.
+	parent := realTempDir(t)
+	repo := filepath.Join(parent, "repo")
+	writeTree(t, parent, map[string]string{
+		"repo/app/go.mod":                 "module example.com/app\n",
+		"private-parent/operator-key.txt": "private\n",
+	})
+	wsRoot, err := os.OpenRoot(filepath.Join(repo, "app"))
+	require.NoError(t, err)
+	defer func() { require.NoError(t, wsRoot.Close()) }()
+	require.NoError(t, os.Rename(filepath.Join(repo, "app"), filepath.Join(parent, "private-parent", "app")))
+
+	op := &checkOperation{grantFD: -1, workspaceFD: -1}
+	err = op.openLive(wsRoot, filepath.Join(repo, "app"), []string{filepath.Join(repo, "app"), repo})
+	assertServiceError(t, err, "unprocessable")
+	assert.Contains(t, err.Error(), "the workspace was moved out of "+repo)
+	require.NoError(t, op.closeLive())
+}
+
+func TestOpenLiveAcceptsAnotherSpellingOfTheAcceptedRoot(t *testing.T) {
+	// The operator started the server from /…/REPO on a case-insensitive
+	// volume that stores the directory as repo: both name one directory.
+	parent := realTempDir(t)
+	if !caseInsensitive(t, parent) {
+		t.Skip("needs a case-insensitive volume")
+	}
+	writeTree(t, parent, map[string]string{"repo/app/go.mod": "module example.com/app\n"})
+	spelled := filepath.Join(parent, "REPO")
+	wsRoot, err := os.OpenRoot(filepath.Join(spelled, "app"))
+	require.NoError(t, err)
+	defer func() { require.NoError(t, wsRoot.Close()) }()
+
+	op := &checkOperation{grantFD: -1, workspaceFD: -1}
+	require.NoError(t, op.openLive(wsRoot, filepath.Join(spelled, "app"), []string{filepath.Join(spelled, "app"), spelled}))
+	defer func() { require.NoError(t, op.closeLive()) }()
+	assert.Equal(t, spelled, op.grantRoot)
+	assert.Equal(t, "app", op.workspaceRel)
+}
+
+func TestCheckAdmissionIsOrderedWithClose(t *testing.T) {
+	cardsDir := filepath.Join(realTempDir(t), "cards")
+	cp, err := New(Options{CardsDir: cardsDir, Checker: candidate.NewContainerRunner(), CheckTimeout: time.Minute})
+	require.NoError(t, err)
+
+	// An admission is in progress (it holds the read lock between its
+	// shutdown check and its registration) when Close starts.
+	cp.workspaceMu.RLock()
+	closed := make(chan error, 1)
+	go func() { closed <- cp.Close() }()
+	<-cp.serverCtx.Done()
+	cp.checkOps.Add(1)
+	cp.workspaceMu.RUnlock()
+	// The admitted operation now owns scratch without owner.json. Close
+	// must wait for it before recovery may remove anything.
+	id := strings.Repeat("cd", 16)
+	writeTree(t, filepath.Join(cp.checkWorkDir, id), map[string]string{"src/go.mod": "module example.com/shop\n"})
+	select {
+	case err := <-closed:
+		t.Fatalf("Close returned while an admitted operation was running: %v", err)
+	default:
+	}
+	cp.checkOps.Done()
+	require.NoError(t, <-closed)
+	assert.NoDirExists(t, filepath.Join(cp.checkWorkDir, id, "src"), "recovery ran after the operation ended")
+
+	// Calls after Close are refused before any work.
+	ctx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
+	_, err = cp.CheckProject(ctx)
+	assertServiceError(t, err, "unavailable")
+	_, err = cp.UpdateDependencies(ctx)
+	assertServiceError(t, err, "unavailable")
+	entries, err := os.ReadDir(cp.checkWorkDir)
+	require.NoError(t, err)
+	assert.Len(t, entries, 1, "no new operation directory")
+}
+
 // runGitForTest runs a trusted git command in dir for a test fixture.
 func runGitForTest(t *testing.T, dir string, args ...string) {
 	t.Helper()
