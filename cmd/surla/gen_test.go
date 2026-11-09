@@ -44,6 +44,7 @@ func TestGenPublishesGenAndLeavesNothingBehind(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 	require.NoError(t, runGen([]string{"-dir", dir}, &stdout, &stderr))
+	assert.Empty(t, stderr.String(), "successful publication does not emit warnings")
 	assert.Contains(t, stdout.String(), "gen/ updated")
 	assert.Contains(t, stdout.String(), "removed: 1\n  gen/stale/old.go")
 	notice := strings.Index(stdout.String(), "surla gen did not build the whole application against the new gen/")
