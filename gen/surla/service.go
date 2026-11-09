@@ -128,6 +128,15 @@ type Service interface {
 	// progress updates as starter generation/tests, initial commit creation, and
 	// publication start.
 	InitProject(context.Context, *InitProjectPayload) (res *InitProjectResult, err error)
+	// Read the active workspace's application module, or its public local eval/
+	// module when target is eval, compile that module's edited Goa design in
+	// Surla's sandbox, and atomically replace its gen/ directory. Preserve
+	// top-level user files and their permissions and leave go.mod and go.sum
+	// unchanged. Return the written paths and warnings; a warning after gen/
+	// publication still means generation succeeded. The tool compiles the design
+	// only; it does not build the application or run tests. Fix a rejected design
+	// and call again on the same running server.
+	GenerateCode(context.Context, *GenerateCodePayload) (res *GenerateCodeResult, err error)
 }
 
 // APIName is the name of the API as defined in the design.
@@ -144,7 +153,7 @@ const ServiceName = "surla"
 // MethodNames lists the service method names as defined in the design. These
 // are the same values that are set in the endpoint request contexts under the
 // MethodKey key.
-var MethodNames = [17]string{"checkpoint_ui", "golden_path", "propose_change", "revise_change", "confirm_intent", "get_change", "preview_architecture", "draft_override", "start_live_target", "stop_live_target", "verify_change", "get_verification", "list_verifications", "approve_merge", "diff", "configure_model", "init_project"}
+var MethodNames = [18]string{"checkpoint_ui", "golden_path", "propose_change", "revise_change", "confirm_intent", "get_change", "preview_architecture", "draft_override", "start_live_target", "stop_live_target", "verify_change", "get_verification", "list_verifications", "approve_merge", "diff", "configure_model", "init_project", "generate_code"}
 
 // Evaluated Goa-AI cost, safety, history, and cache policy for a single agent.
 type AgentPolicyItem struct {
@@ -452,6 +461,27 @@ type ExampleItem struct {
 	ExpectedOutcome string
 	// Evaluator check classification (deterministic or model_judged).
 	VerificationKind string
+}
+
+// GenerateCodePayload is the payload type of the surla service generate_code
+// method.
+type GenerateCodePayload struct {
+	// Module to regenerate: candidate (the application, the default when omitted)
+	// or eval (the local eval/ module).
+	Target *string
+}
+
+// GenerateCodeResult is the result type of the surla service generate_code
+// method.
+type GenerateCodeResult struct {
+	// Module that received the generated files.
+	Target string
+	// Sorted paths relative to the selected module that were written, including
+	// AGENTS_QUICKSTART.md when produced and written successfully.
+	FilesWritten []string
+	// Problems that did not prevent gen/ publication, such as incomplete cleanup
+	// or a guide that could not be written.
+	Warnings []string
 }
 
 // GetChangePayload is the payload type of the surla service get_change method.
@@ -1754,6 +1784,60 @@ func validatejsonExampleItemTransport(value *jsonExampleItemTransport) (err erro
 	return err
 }
 
+// jsonGenerateCodePayloadTransport stores JSON fields until they have been validated.
+type jsonGenerateCodePayloadTransport struct {
+	// Module to regenerate: candidate (the application, the default when omitted)
+	// or eval (the local eval/ module).
+	Target *string `json:"target,omitempty"`
+}
+
+// validatejsonGenerateCodePayloadTransport checks decoded JSON before it becomes a service value.
+func validatejsonGenerateCodePayloadTransport(value *jsonGenerateCodePayloadTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.Target != nil {
+		if !(*value.Target == "candidate" || *value.Target == "eval") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.target", *value.Target, []any{"candidate", "eval"}))
+		}
+	}
+	return err
+}
+
+// jsonGenerateCodeResultTransport stores JSON fields until they have been validated.
+type jsonGenerateCodeResultTransport struct {
+	// Module that received the generated files.
+	Target *string `json:"target"`
+	// Sorted paths relative to the selected module that were written, including
+	// AGENTS_QUICKSTART.md when produced and written successfully.
+	FilesWritten []string `json:"files_written"`
+	// Problems that did not prevent gen/ publication, such as incomplete cleanup
+	// or a guide that could not be written.
+	Warnings []string `json:"warnings"`
+}
+
+// validatejsonGenerateCodeResultTransport checks decoded JSON before it becomes a service value.
+func validatejsonGenerateCodeResultTransport(value *jsonGenerateCodeResultTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.Target == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("target", "body"))
+	}
+	if value.FilesWritten == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("files_written", "body"))
+	}
+	if value.Warnings == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("warnings", "body"))
+	}
+	if value.Target != nil {
+		if !(*value.Target == "candidate" || *value.Target == "eval") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.target", *value.Target, []any{"candidate", "eval"}))
+		}
+	}
+	return err
+}
+
 // jsonGetChangePayloadTransport stores JSON fields until they have been validated.
 type jsonGetChangePayloadTransport struct {
 	// Change identifier.
@@ -3009,6 +3093,30 @@ func validateDiffResultOriginal(value *DiffResult) (err error) {
 func validateDraftOverridePayloadOriginal(value *DraftOverridePayload) (err error) {
 	if !(value.TargetKind == "prompt_template" || value.TargetKind == "compiled_rule") {
 		err = goa.MergeErrors(err, goa.InvalidEnumValueError("value.target_kind", value.TargetKind, []any{"prompt_template", "compiled_rule"}))
+	}
+	return err
+}
+
+// validateGenerateCodePayloadOriginal checks the original typed value before JSON conversion.
+func validateGenerateCodePayloadOriginal(value *GenerateCodePayload) (err error) {
+	if value.Target != nil {
+		if !(*value.Target == "candidate" || *value.Target == "eval") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("value.target", *value.Target, []any{"candidate", "eval"}))
+		}
+	}
+	return err
+}
+
+// validateGenerateCodeResultOriginal checks the original typed value before JSON conversion.
+func validateGenerateCodeResultOriginal(value *GenerateCodeResult) (err error) {
+	if value.FilesWritten == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("files_written", "value"))
+	}
+	if value.Warnings == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("warnings", "value"))
+	}
+	if !(value.Target == "candidate" || value.Target == "eval") {
+		err = goa.MergeErrors(err, goa.InvalidEnumValueError("value.target", value.Target, []any{"candidate", "eval"}))
 	}
 	return err
 }
@@ -5364,6 +5472,196 @@ func DecodeExampleItem(data []byte) (out *ExampleItem, err error) {
 			InputSummary:     *body.InputSummary,
 			ExpectedOutcome:  *body.ExpectedOutcome,
 			VerificationKind: *body.VerificationKind,
+		}
+	}
+	return out, nil
+}
+
+// EncodeGenerateCodePayload turns a service value into JSON using the field names in the Goa design.
+func EncodeGenerateCodePayload(in *GenerateCodePayload) ([]byte, error) {
+	if err := checkGenerateCodePayloadValue(in); err != nil {
+		return nil, fmt.Errorf("encode GenerateCodePayload JSON: %w", err)
+	}
+	if err := validateGenerateCodePayloadOriginal(in); err != nil {
+		return nil, fmt.Errorf("validate GenerateCodePayload value: %w", err)
+	}
+	var body *jsonGenerateCodePayloadTransport
+	{
+		body = &jsonGenerateCodePayloadTransport{
+			Target: in.Target,
+		}
+	}
+	if err := validatejsonGenerateCodePayloadTransport(body); err != nil {
+		return nil, fmt.Errorf("validate GenerateCodePayload JSON: %w", err)
+	}
+	data, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("encode GenerateCodePayload JSON: %w", err)
+	}
+	return data, nil
+}
+
+// ValidateGenerateCodePayloadValue checks the original Go fields against their declared constraints.
+// It returns validation errors without encoding the value as JSON.
+
+func ValidateGenerateCodePayloadValue(in *GenerateCodePayload) error {
+	if err := checkGenerateCodePayloadValue(in); err != nil {
+		return fmt.Errorf("validate GenerateCodePayload value: %w", err)
+	}
+	if err := validateGenerateCodePayloadOriginal(in); err != nil {
+		return fmt.Errorf("validate GenerateCodePayload value: %w", err)
+	}
+
+	if in == nil {
+		return goa.MissingFieldError("result", "GenerateCodePayload")
+	}
+
+	var body *jsonGenerateCodePayloadTransport
+	{
+		body = &jsonGenerateCodePayloadTransport{
+			Target: in.Target,
+		}
+	}
+	if err := validatejsonGenerateCodePayloadTransport(body); err != nil {
+		return fmt.Errorf("validate GenerateCodePayload value: %w", err)
+	}
+	return nil
+}
+
+// DecodeGenerateCodePayload checks JSON field names from the Goa design and returns a service value.
+func DecodeGenerateCodePayload(data []byte) (out *GenerateCodePayload, err error) {
+	root, err := readStrictJSON(data)
+	if err != nil {
+		return out, fmt.Errorf("decode GenerateCodePayload JSON: %w", err)
+	}
+	if err := validateGenerateCodePayloadJSONValue("", root, ""); err != nil {
+		return out, fmt.Errorf("decode GenerateCodePayload JSON: %w", err)
+	}
+	var body *jsonGenerateCodePayloadTransport
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&body); err != nil {
+		return out, fmt.Errorf("decode GenerateCodePayload JSON: %w", err)
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		if err == nil {
+			return out, fmt.Errorf("decode GenerateCodePayload JSON: multiple JSON values")
+		}
+		return out, fmt.Errorf("decode GenerateCodePayload JSON after first value: %w", err)
+	}
+	if err := validatejsonGenerateCodePayloadTransport(body); err != nil {
+		return out, fmt.Errorf("validate GenerateCodePayload JSON: %w", err)
+	}
+	{
+		out = &GenerateCodePayload{
+			Target: body.Target,
+		}
+	}
+	return out, nil
+}
+
+// EncodeGenerateCodeResult turns a service value into JSON using the field names in the Goa design.
+func EncodeGenerateCodeResult(in *GenerateCodeResult) ([]byte, error) {
+	if err := checkGenerateCodeResultValue(in); err != nil {
+		return nil, fmt.Errorf("encode GenerateCodeResult JSON: %w", err)
+	}
+	if err := validateGenerateCodeResultOriginal(in); err != nil {
+		return nil, fmt.Errorf("validate GenerateCodeResult value: %w", err)
+	}
+	var body *jsonGenerateCodeResultTransport
+	{
+		body = &jsonGenerateCodeResultTransport{
+			Target: &in.Target,
+		}
+		body.FilesWritten = make([]string, len(in.FilesWritten))
+		for i, val := range in.FilesWritten {
+			body.FilesWritten[i] = val
+		}
+		body.Warnings = make([]string, len(in.Warnings))
+		for i, val := range in.Warnings {
+			body.Warnings[i] = val
+		}
+	}
+	if err := validatejsonGenerateCodeResultTransport(body); err != nil {
+		return nil, fmt.Errorf("validate GenerateCodeResult JSON: %w", err)
+	}
+	data, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("encode GenerateCodeResult JSON: %w", err)
+	}
+	return data, nil
+}
+
+// ValidateGenerateCodeResultValue checks the original Go fields against their declared constraints.
+// It returns validation errors without encoding the value as JSON.
+
+func ValidateGenerateCodeResultValue(in *GenerateCodeResult) error {
+	if err := checkGenerateCodeResultValue(in); err != nil {
+		return fmt.Errorf("validate GenerateCodeResult value: %w", err)
+	}
+	if err := validateGenerateCodeResultOriginal(in); err != nil {
+		return fmt.Errorf("validate GenerateCodeResult value: %w", err)
+	}
+
+	if in == nil {
+		return goa.MissingFieldError("result", "GenerateCodeResult")
+	}
+
+	var body *jsonGenerateCodeResultTransport
+	{
+		body = &jsonGenerateCodeResultTransport{
+			Target: &in.Target,
+		}
+		body.FilesWritten = make([]string, len(in.FilesWritten))
+		for i, val := range in.FilesWritten {
+			body.FilesWritten[i] = val
+		}
+		body.Warnings = make([]string, len(in.Warnings))
+		for i, val := range in.Warnings {
+			body.Warnings[i] = val
+		}
+	}
+	if err := validatejsonGenerateCodeResultTransport(body); err != nil {
+		return fmt.Errorf("validate GenerateCodeResult value: %w", err)
+	}
+	return nil
+}
+
+// DecodeGenerateCodeResult checks JSON field names from the Goa design and returns a service value.
+func DecodeGenerateCodeResult(data []byte) (out *GenerateCodeResult, err error) {
+	root, err := readStrictJSON(data)
+	if err != nil {
+		return out, fmt.Errorf("decode GenerateCodeResult JSON: %w", err)
+	}
+	if err := validateGenerateCodeResultJSONValue("", root, ""); err != nil {
+		return out, fmt.Errorf("decode GenerateCodeResult JSON: %w", err)
+	}
+	var body *jsonGenerateCodeResultTransport
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&body); err != nil {
+		return out, fmt.Errorf("decode GenerateCodeResult JSON: %w", err)
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		if err == nil {
+			return out, fmt.Errorf("decode GenerateCodeResult JSON: multiple JSON values")
+		}
+		return out, fmt.Errorf("decode GenerateCodeResult JSON after first value: %w", err)
+	}
+	if err := validatejsonGenerateCodeResultTransport(body); err != nil {
+		return out, fmt.Errorf("validate GenerateCodeResult JSON: %w", err)
+	}
+	{
+		out = &GenerateCodeResult{
+			Target: *body.Target,
+		}
+		out.FilesWritten = make([]string, len(body.FilesWritten))
+		for i, val := range body.FilesWritten {
+			out.FilesWritten[i] = val
+		}
+		out.Warnings = make([]string, len(body.Warnings))
+		for i, val := range body.Warnings {
+			out.Warnings[i] = val
 		}
 	}
 	return out, nil
@@ -11354,6 +11652,142 @@ func validateDraftOverrideResultJSONValue(path string, value any, description st
 	return nil
 }
 
+// validateGenerateCodePayloadJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateGenerateCodePayloadJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "target":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Module to regenerate: candidate (the application, the default when omitted) or eval (the local eval/ module).",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"target",
+			})
+		}
+	}
+	return nil
+}
+
+// validateGenerateCodeResultJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateGenerateCodeResultJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "files_written":
+			if err := validateGenerateCodeResultJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Sorted paths relative to the selected module that were written, including AGENTS_QUICKSTART.md when produced and written successfully.",
+			); err != nil {
+				return err
+			}
+		case "target":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Module that received the generated files.",
+			); err != nil {
+				return err
+			}
+		case "warnings":
+			if err := validateGenerateCodeResultJSONValue3(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Problems that did not prevent gen/ publication, such as incomplete cleanup or a guide that could not be written.",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"files_written",
+				"target",
+				"warnings",
+			})
+		}
+	}
+	return nil
+}
+
+// validateGenerateCodeResultJSONValue2 checks one value whose JSON shape is fixed by the generated Goa type.
+func validateGenerateCodeResultJSONValue2(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "array", "null", description)
+	}
+	typed, ok := value.([]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "array", decodedJSONType(value), description)
+	}
+	for index, item := range typed {
+		if err := validateAgentPolicyItemJSONValue2(
+			generatedJSONChildPath(path, strconv.Itoa(index), true),
+			item, description,
+		); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateGenerateCodeResultJSONValue3 checks one value whose JSON shape is fixed by the generated Goa type.
+func validateGenerateCodeResultJSONValue3(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "array", "null", description)
+	}
+	typed, ok := value.([]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "array", decodedJSONType(value), description)
+	}
+	for index, item := range typed {
+		if err := validateAgentPolicyItemJSONValue2(
+			generatedJSONChildPath(path, strconv.Itoa(index), true),
+			item, description,
+		); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // validateGetChangePayloadJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
 func validateGetChangePayloadJSONValue(path string, value any, description string) error {
 	field := path
@@ -13650,6 +14084,82 @@ func checkExampleItemValue(in *ExampleItem) error {
 	active := make(map[any]bool)
 	if err := checkChangeCardResultExampleItemValue(in, "$", active); err != nil {
 		return err
+	}
+	return nil
+}
+
+// checkGenerateCodePayloadValue checks text and cycles before conversion.
+func checkGenerateCodePayloadValue(in *GenerateCodePayload) error {
+	if in == nil {
+		return fmt.Errorf("missing root value")
+	}
+	active := make(map[any]bool)
+	if err := checkGenerateCodePayloadGenerateCodePayloadValue(in, "$", active); err != nil {
+		return err
+	}
+	return nil
+}
+
+// checkGenerateCodePayloadGenerateCodePayloadValue checks one generated value on the active path.
+func checkGenerateCodePayloadGenerateCodePayloadValue(in *GenerateCodePayload, field string, active map[any]bool) error {
+	if in == nil {
+		return nil
+	}
+	if active[in] {
+		return fmt.Errorf("%s: cyclic Go value", field)
+	}
+	active[in] = true
+	defer delete(active, in)
+	if in != nil {
+		if in.Target != nil {
+			if !utf8.ValidString(string(*in.Target)) {
+				return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "target", false))
+			}
+		}
+	}
+	return nil
+}
+
+// checkGenerateCodeResultValue checks text and cycles before conversion.
+func checkGenerateCodeResultValue(in *GenerateCodeResult) error {
+	if in == nil {
+		return fmt.Errorf("missing root value")
+	}
+	active := make(map[any]bool)
+	if err := checkGenerateCodeResultGenerateCodeResultValue(in, "$", active); err != nil {
+		return err
+	}
+	return nil
+}
+
+// checkGenerateCodeResultGenerateCodeResultValue checks one generated value on the active path.
+func checkGenerateCodeResultGenerateCodeResultValue(in *GenerateCodeResult, field string, active map[any]bool) error {
+	if in == nil {
+		return nil
+	}
+	if active[in] {
+		return fmt.Errorf("%s: cyclic Go value", field)
+	}
+	active[in] = true
+	defer delete(active, in)
+	if in != nil {
+		if !utf8.ValidString(string(in.Target)) {
+			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "target", false))
+		}
+		for index1, item1 := range in.FilesWritten {
+			_ = index1
+			_ = item1
+			if !utf8.ValidString(string(item1)) {
+				return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(generatedJSONChildPath(field, "files_written", false), strconv.Itoa(index1), true))
+			}
+		}
+		for index1, item1 := range in.Warnings {
+			_ = index1
+			_ = item1
+			if !utf8.ValidString(string(item1)) {
+				return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(generatedJSONChildPath(field, "warnings", false), strconv.Itoa(index1), true))
+			}
+		}
 	}
 	return nil
 }

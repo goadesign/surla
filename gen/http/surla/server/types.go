@@ -164,6 +164,14 @@ type InitProjectRequestBody struct {
 	Dir *string `form:"dir,omitempty" json:"dir,omitempty" xml:"dir,omitempty"`
 }
 
+// GenerateCodeRequestBody is the type of the "surla" service "generate_code"
+// endpoint HTTP request body.
+type GenerateCodeRequestBody struct {
+	// Module to regenerate: candidate (the application, the default when omitted)
+	// or eval (the local eval/ module).
+	Target *string `form:"target,omitempty" json:"target,omitempty" xml:"target,omitempty"`
+}
+
 // ProposeChangeResponseBody is the type of the "surla" service
 // "propose_change" endpoint HTTP response body.
 type ProposeChangeResponseBody struct {
@@ -545,6 +553,19 @@ type InitProjectResponseBody struct {
 	// repository (40 or 64 lowercase hex characters); start_live_target and
 	// verify_change take this commit ID.
 	Commit string `form:"commit" json:"commit" xml:"commit"`
+}
+
+// GenerateCodeResponseBody is the type of the "surla" service "generate_code"
+// endpoint HTTP response body.
+type GenerateCodeResponseBody struct {
+	// Module that received the generated files.
+	Target string `form:"target" json:"target" xml:"target"`
+	// Sorted paths relative to the selected module that were written, including
+	// AGENTS_QUICKSTART.md when produced and written successfully.
+	FilesWritten []string `form:"files_written" json:"files_written" xml:"files_written"`
+	// Problems that did not prevent gen/ publication, such as incomplete cleanup
+	// or a guide that could not be written.
+	Warnings []string `form:"warnings" json:"warnings" xml:"warnings"`
 }
 
 // ProposeChangeConflictResponseBody is the type of the "surla" service
@@ -1409,6 +1430,42 @@ type InitProjectUnprocessableResponseBody struct {
 // InitProjectNotImplementedResponseBody is the type of the "surla" service
 // "init_project" endpoint HTTP response body for the "not_implemented" error.
 type InitProjectNotImplementedResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
+// GenerateCodeUnprocessableResponseBody is the type of the "surla" service
+// "generate_code" endpoint HTTP response body for the "unprocessable" error.
+type GenerateCodeUnprocessableResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
+// GenerateCodeNotImplementedResponseBody is the type of the "surla" service
+// "generate_code" endpoint HTTP response body for the "not_implemented" error.
+type GenerateCodeNotImplementedResponseBody struct {
 	// Name is the name of this class of errors.
 	Name string `form:"name" json:"name" xml:"name"`
 	// ID is a unique identifier for this particular occurrence of the problem.
@@ -2552,6 +2609,31 @@ func NewInitProjectResponseBody(res *surla.InitProjectResult) *InitProjectRespon
 	return body
 }
 
+// NewGenerateCodeResponseBody builds the HTTP response body from the result of
+// the "generate_code" endpoint of the "surla" service.
+func NewGenerateCodeResponseBody(res *surla.GenerateCodeResult) *GenerateCodeResponseBody {
+	body := &GenerateCodeResponseBody{
+		Target: res.Target,
+	}
+	if res.FilesWritten != nil {
+		body.FilesWritten = make([]string, len(res.FilesWritten))
+		for i, val := range res.FilesWritten {
+			body.FilesWritten[i] = val
+		}
+	} else {
+		body.FilesWritten = []string{}
+	}
+	if res.Warnings != nil {
+		body.Warnings = make([]string, len(res.Warnings))
+		for i, val := range res.Warnings {
+			body.Warnings[i] = val
+		}
+	} else {
+		body.Warnings = []string{}
+	}
+	return body
+}
+
 // NewProposeChangeConflictResponseBody builds the HTTP response body from the
 // result of the "propose_change" endpoint of the "surla" service.
 func NewProposeChangeConflictResponseBody(res *goa.ServiceError) *ProposeChangeConflictResponseBody {
@@ -3231,6 +3313,34 @@ func NewInitProjectNotImplementedResponseBody(res *goa.ServiceError) *InitProjec
 	return body
 }
 
+// NewGenerateCodeUnprocessableResponseBody builds the HTTP response body from
+// the result of the "generate_code" endpoint of the "surla" service.
+func NewGenerateCodeUnprocessableResponseBody(res *goa.ServiceError) *GenerateCodeUnprocessableResponseBody {
+	body := &GenerateCodeUnprocessableResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
+// NewGenerateCodeNotImplementedResponseBody builds the HTTP response body from
+// the result of the "generate_code" endpoint of the "surla" service.
+func NewGenerateCodeNotImplementedResponseBody(res *goa.ServiceError) *GenerateCodeNotImplementedResponseBody {
+	body := &GenerateCodeNotImplementedResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
 // NewProposeChangePayload builds a surla service propose_change endpoint
 // payload.
 func NewProposeChangePayload(body *ProposeChangeRequestBody) *surla.ProposeChangePayload {
@@ -3413,6 +3523,15 @@ func NewInitProjectPayload(body *InitProjectRequestBody) *surla.InitProjectPaylo
 	v := &surla.InitProjectPayload{
 		ModulePath: *body.ModulePath,
 		Dir:        body.Dir,
+	}
+
+	return v
+}
+
+// NewGenerateCodePayload builds a surla service generate_code endpoint payload.
+func NewGenerateCodePayload(body *GenerateCodeRequestBody) *surla.GenerateCodePayload {
+	v := &surla.GenerateCodePayload{
+		Target: body.Target,
 	}
 
 	return v
@@ -3613,6 +3732,17 @@ func ValidateInitProjectRequestBody(body *InitProjectRequestBody) (err error) {
 	if body.ModulePath != nil {
 		if utf8.RuneCountInString(*body.ModulePath) < 3 {
 			err = goa.MergeErrors(err, goa.InvalidLengthError("body.module_path", *body.ModulePath, utf8.RuneCountInString(*body.ModulePath), 3, true))
+		}
+	}
+	return
+}
+
+// ValidateGenerateCodeRequestBody runs the validations defined on
+// GenerateCodeRequestBody
+func ValidateGenerateCodeRequestBody(body *GenerateCodeRequestBody) (err error) {
+	if body.Target != nil {
+		if !(*body.Target == "candidate" || *body.Target == "eval") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.target", *body.Target, []any{"candidate", "eval"}))
 		}
 	}
 	return

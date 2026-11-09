@@ -102,6 +102,22 @@ func DraftOverrideResultCodec() tools.JSONCodec[*DraftOverrideResult] {
 	}
 }
 
+// GenerateCodePayloadCodec returns a fresh codec for *GenerateCodePayload.
+func GenerateCodePayloadCodec() tools.JSONCodec[*GenerateCodePayload] {
+	return tools.JSONCodec[*GenerateCodePayload]{
+		ToJSON:   MarshalGenerateCodePayload,
+		FromJSON: UnmarshalGenerateCodePayload,
+	}
+}
+
+// GenerateCodeResultCodec returns a fresh codec for *GenerateCodeResult.
+func GenerateCodeResultCodec() tools.JSONCodec[*GenerateCodeResult] {
+	return tools.JSONCodec[*GenerateCodeResult]{
+		ToJSON:   MarshalGenerateCodeResult,
+		FromJSON: UnmarshalGenerateCodeResult,
+	}
+}
+
 // GetChangePayloadCodec returns a fresh codec for *GetChangePayload.
 func GetChangePayloadCodec() tools.JSONCodec[*GetChangePayload] {
 	return tools.JSONCodec[*GetChangePayload]{
@@ -391,6 +407,32 @@ var (
 		},
 		FromJSON: func(data []byte) (any, error) {
 			return UnmarshalDraftOverrideResult(data)
+		},
+	}
+	// generateCodePayloadCodec provides an untyped codec for *GenerateCodePayload.
+	generateCodePayloadCodec = tools.JSONCodec[any]{
+		ToJSON: func(v any) ([]byte, error) {
+			// Prefer typed marshal when the value matches the expected type.
+			if typed, ok := v.(*GenerateCodePayload); ok {
+				return MarshalGenerateCodePayload(typed)
+			}
+			return nil, fmt.Errorf("invalid value type for *GenerateCodePayload: %T", v)
+		},
+		FromJSON: func(data []byte) (any, error) {
+			return UnmarshalGenerateCodePayload(data)
+		},
+	}
+	// generateCodeResultCodec provides an untyped codec for *GenerateCodeResult.
+	generateCodeResultCodec = tools.JSONCodec[any]{
+		ToJSON: func(v any) ([]byte, error) {
+			// Prefer typed marshal when the value matches the expected type.
+			if typed, ok := v.(*GenerateCodeResult); ok {
+				return MarshalGenerateCodeResult(typed)
+			}
+			return nil, fmt.Errorf("invalid value type for *GenerateCodeResult: %T", v)
+		},
+		FromJSON: func(data []byte) (any, error) {
+			return UnmarshalGenerateCodeResult(data)
 		},
 	}
 	// getChangePayloadCodec provides an untyped codec for *GetChangePayload.
@@ -1412,6 +1454,48 @@ var draftOverrideResultFields = []tools.FieldMetadata{
 		Path:        []tools.FieldPathSegment{tools.FixedField("message")},
 		JSONType:    "string",
 		Description: "Operator-facing status explanation.",
+	},
+}
+var generateCodePayloadFields = []tools.FieldMetadata{
+	{
+		JSONType:    "object",
+		Description: "Selects the application module or its public local eval/ module for code generation from the active workspace's files.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("target")},
+		JSONType:    "string",
+		Description: "Module to regenerate: candidate (the application, the default when omitted) or eval (the local eval/ module).",
+	},
+}
+var generateCodeResultFields = []tools.FieldMetadata{
+	{
+		JSONType:    "object",
+		Description: "Generated files written in the selected local module and warnings about auxiliary work. Generation compiles the design only; it does not build the application or run tests.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("target")},
+		JSONType:    "string",
+		Description: "Module that received the generated files.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("files_written")},
+		JSONType:    "array",
+		Description: "Sorted paths relative to the selected module that were written, including AGENTS_QUICKSTART.md when produced and written successfully.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("files_written"), tools.DynamicField{}},
+		JSONType:    "string",
+		Description: "Sorted paths relative to the selected module that were written, including AGENTS_QUICKSTART.md when produced and written successfully.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("warnings")},
+		JSONType:    "array",
+		Description: "Problems that did not prevent gen/ publication, such as incomplete cleanup or a guide that could not be written.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("warnings"), tools.DynamicField{}},
+		JSONType:    "string",
+		Description: "Problems that did not prevent gen/ publication, such as incomplete cleanup or a guide that could not be written.",
 	},
 }
 var getChangePayloadFields = []tools.FieldMetadata{
@@ -4099,6 +4183,40 @@ func enrichDraftOverrideResultValidationError(err error) error {
 	}
 	return tools.NewValidationError(ve.Error(), issues, m)
 }
+func enrichGenerateCodePayloadValidationError(err error) error {
+	var ve *tools.ValidationError
+	if !errors.As(err, &ve) {
+		return err
+	}
+	issues := ve.Issues()
+	if len(issues) == 0 {
+		return err
+	}
+	m := make(map[string]string)
+	for _, is := range issues {
+		if field, ok := tools.LookupFieldMetadata(generateCodePayloadFields, is.Field); ok && field.Description != "" {
+			m[is.Field] = field.Description
+		}
+	}
+	return tools.NewValidationError(ve.Error(), issues, m)
+}
+func enrichGenerateCodeResultValidationError(err error) error {
+	var ve *tools.ValidationError
+	if !errors.As(err, &ve) {
+		return err
+	}
+	issues := ve.Issues()
+	if len(issues) == 0 {
+		return err
+	}
+	m := make(map[string]string)
+	for _, is := range issues {
+		if field, ok := tools.LookupFieldMetadata(generateCodeResultFields, is.Field); ok && field.Description != "" {
+			m[is.Field] = field.Description
+		}
+	}
+	return tools.NewValidationError(ve.Error(), issues, m)
+}
 func enrichGetChangePayloadValidationError(err error) error {
 	var ve *tools.ValidationError
 	if !errors.As(err, &ve) {
@@ -4712,6 +4830,68 @@ func invalidDraftOverrideResultFieldTypeError(err error) error {
 		field = "$payload"
 	}
 	metadata, ok := tools.LookupFieldMetadata(draftOverrideResultFields, field)
+	if !ok || metadata.JSONType == "" {
+		return err
+	}
+	actual := generatedUnmarshalJSONType(typeErr.Value)
+	if actual == "" {
+		return err
+	}
+	return tools.NewValidationError(
+		err.Error(),
+		[]*tools.FieldIssue{
+			{
+				Field:            field,
+				Constraint:       "invalid_field_type",
+				ExpectedJSONType: metadata.JSONType,
+				ActualJSONType:   actual,
+			},
+		},
+		nil,
+	)
+}
+func invalidGenerateCodePayloadFieldTypeError(err error) error {
+	var typeErr *json.UnmarshalTypeError
+	if !errors.As(err, &typeErr) {
+		return err
+	}
+	field := typeErr.Field
+	field = strings.TrimPrefix(field, "GenerateCodePayloadTransport.")
+	if field == "" {
+		field = "$payload"
+	}
+	metadata, ok := tools.LookupFieldMetadata(generateCodePayloadFields, field)
+	if !ok || metadata.JSONType == "" {
+		return err
+	}
+	actual := generatedUnmarshalJSONType(typeErr.Value)
+	if actual == "" {
+		return err
+	}
+	return tools.NewValidationError(
+		err.Error(),
+		[]*tools.FieldIssue{
+			{
+				Field:            field,
+				Constraint:       "invalid_field_type",
+				ExpectedJSONType: metadata.JSONType,
+				ActualJSONType:   actual,
+			},
+		},
+		nil,
+	)
+}
+func invalidGenerateCodeResultFieldTypeError(err error) error {
+	var typeErr *json.UnmarshalTypeError
+	if !errors.As(err, &typeErr) {
+		return err
+	}
+	field := typeErr.Field
+	field = strings.TrimPrefix(field, "GenerateCodeResultTransport.")
+	if field == "" {
+		field = "$payload"
+	}
+	metadata, ok := tools.LookupFieldMetadata(generateCodeResultFields, field)
 	if !ok || metadata.JSONType == "" {
 		return err
 	}
@@ -6013,6 +6193,102 @@ func UnmarshalDraftOverrideResult(data []byte) (*DraftOverrideResult, error) {
 		RequiresRebuild: *in.RequiresRebuild,
 		PromptVersion:   in.PromptVersion,
 		Message:         *in.Message,
+	}
+	return out, nil
+}
+
+// MarshalGenerateCodePayload serializes *GenerateCodePayload into JSON.
+func MarshalGenerateCodePayload(v *GenerateCodePayload) ([]byte, error) {
+	if v == nil {
+		return nil, fmt.Errorf("generateCodePayload is nil")
+	}
+	in := v
+	_ = in
+	var out *toolhttp.GenerateCodePayloadTransport
+	out = &toolhttp.GenerateCodePayloadTransport{
+		Target: in.Target,
+	}
+	return json.Marshal(out)
+}
+
+// UnmarshalGenerateCodePayload deserializes JSON into *GenerateCodePayload.
+func UnmarshalGenerateCodePayload(data []byte) (*GenerateCodePayload, error) {
+	if len(data) == 0 {
+		return nil, fmt.Errorf("generateCodePayload JSON is empty")
+	}
+	var tv toolhttp.GenerateCodePayloadTransport
+	if err := validateGenerateCodePayloadJSON(data); err != nil {
+		return nil, invalidGenerateCodePayloadFieldTypeError(err)
+	}
+	if err := json.Unmarshal(data, &tv); err != nil {
+		return nil, invalidGenerateCodePayloadFieldTypeError(err)
+	}
+	if err := toolhttp.ValidateGenerateCodePayloadTransport(&tv); err != nil {
+		err = newValidationError(err)
+		err = enrichGenerateCodePayloadValidationError(err)
+		return nil, err
+	}
+	in := &tv
+	_ = in
+	var out *GenerateCodePayload
+	out = &GenerateCodePayload{
+		Target: in.Target,
+	}
+	return out, nil
+}
+
+// MarshalGenerateCodeResult serializes *GenerateCodeResult into JSON.
+func MarshalGenerateCodeResult(v *GenerateCodeResult) ([]byte, error) {
+	if v == nil {
+		return nil, fmt.Errorf("generateCodeResult is nil")
+	}
+	in := v
+	_ = in
+	var out *toolhttp.GenerateCodeResultTransport
+	out = &toolhttp.GenerateCodeResultTransport{
+		Target: &in.Target,
+	}
+	out.FilesWritten = make([]string, len(in.FilesWritten))
+	for i, val := range in.FilesWritten {
+		out.FilesWritten[i] = val
+	}
+	out.Warnings = make([]string, len(in.Warnings))
+	for i, val := range in.Warnings {
+		out.Warnings[i] = val
+	}
+	return json.Marshal(out)
+}
+
+// UnmarshalGenerateCodeResult deserializes JSON into *GenerateCodeResult.
+func UnmarshalGenerateCodeResult(data []byte) (*GenerateCodeResult, error) {
+	if len(data) == 0 {
+		return nil, fmt.Errorf("generateCodeResult JSON is empty")
+	}
+	var tv toolhttp.GenerateCodeResultTransport
+	if err := validateGenerateCodeResultJSON(data); err != nil {
+		return nil, invalidGenerateCodeResultFieldTypeError(err)
+	}
+	if err := json.Unmarshal(data, &tv); err != nil {
+		return nil, invalidGenerateCodeResultFieldTypeError(err)
+	}
+	if err := toolhttp.ValidateGenerateCodeResultTransport(&tv); err != nil {
+		err = newValidationError(err)
+		err = enrichGenerateCodeResultValidationError(err)
+		return nil, err
+	}
+	in := &tv
+	_ = in
+	var out *GenerateCodeResult
+	out = &GenerateCodeResult{
+		Target: *in.Target,
+	}
+	out.FilesWritten = make([]string, len(in.FilesWritten))
+	for i, val := range in.FilesWritten {
+		out.FilesWritten[i] = val
+	}
+	out.Warnings = make([]string, len(in.Warnings))
+	for i, val := range in.Warnings {
+		out.Warnings[i] = val
 	}
 	return out, nil
 }
@@ -7631,6 +7907,26 @@ func validateInitProjectResultJSON(data []byte) error {
 		return err
 	}
 	return validateInitProjectResultJSONValue("", root, "")
+}
+
+// validateGenerateCodePayloadJSON parses one JSON document and checks the exact value
+// shapes known from this generated Goa type.
+func validateGenerateCodePayloadJSON(data []byte) error {
+	root, err := readStrictToolJSON(data)
+	if err != nil {
+		return err
+	}
+	return validateGenerateCodePayloadJSONValue("", root, "")
+}
+
+// validateGenerateCodeResultJSON parses one JSON document and checks the exact value
+// shapes known from this generated Goa type.
+func validateGenerateCodeResultJSON(data []byte) error {
+	root, err := readStrictToolJSON(data)
+	if err != nil {
+		return err
+	}
+	return validateGenerateCodeResultJSONValue("", root, "")
 }
 
 // readStrictToolJSON checks the complete JSON document for malformed text and
@@ -10955,6 +11251,94 @@ func validateInitProjectResultJSONValue(path string, value any, description stri
 				"dir",
 				"module_path",
 				"service_name",
+			})
+		}
+	}
+	return nil
+}
+
+// validateGenerateCodePayloadJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateGenerateCodePayloadJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "target":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Module to regenerate: candidate (the application, the default when omitted) or eval (the local eval/ module).",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"target",
+			})
+		}
+	}
+	return nil
+}
+
+// validateGenerateCodeResultJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateGenerateCodeResultJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "files_written":
+			if err := validateProposeChangeResultAmbiguityQuestionTransportOptionsJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Sorted paths relative to the selected module that were written, including AGENTS_QUICKSTART.md when produced and written successfully.",
+			); err != nil {
+				return err
+			}
+		case "target":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Module that received the generated files.",
+			); err != nil {
+				return err
+			}
+		case "warnings":
+			if err := validateProposeChangeResultAmbiguityQuestionTransportOptionsJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Problems that did not prevent gen/ publication, such as incomplete cleanup or a guide that could not be written.",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"files_written",
+				"target",
+				"warnings",
 			})
 		}
 	}

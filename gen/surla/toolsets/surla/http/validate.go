@@ -294,6 +294,35 @@ func ValidateDraftOverrideResultTransport(body *DraftOverrideResultTransport) (e
 	return
 }
 
+// ValidateGenerateCodePayloadTransport runs the validations defined on GenerateCodePayloadTransport.
+func ValidateGenerateCodePayloadTransport(body *GenerateCodePayloadTransport) (err error) {
+	if body.Target != nil {
+		if !(*body.Target == "candidate" || *body.Target == "eval") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.target", *body.Target, []any{"candidate", "eval"}))
+		}
+	}
+	return
+}
+
+// ValidateGenerateCodeResultTransport runs the validations defined on GenerateCodeResultTransport.
+func ValidateGenerateCodeResultTransport(body *GenerateCodeResultTransport) (err error) {
+	if body.Target == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("target", "body"))
+	}
+	if body.FilesWritten == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("files_written", "body"))
+	}
+	if body.Warnings == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("warnings", "body"))
+	}
+	if body.Target != nil {
+		if !(*body.Target == "candidate" || *body.Target == "eval") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.target", *body.Target, []any{"candidate", "eval"}))
+		}
+	}
+	return
+}
+
 // ValidateGetChangePayloadTransport runs the validations defined on GetChangePayloadTransport.
 func ValidateGetChangePayloadTransport(body *GetChangePayloadTransport) (err error) {
 	if body.ChangeID == nil {

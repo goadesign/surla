@@ -164,6 +164,14 @@ type InitProjectRequestBody struct {
 	Dir *string `form:"dir,omitempty" json:"dir,omitempty" xml:"dir,omitempty"`
 }
 
+// GenerateCodeRequestBody is the type of the "surla" service "generate_code"
+// endpoint HTTP request body.
+type GenerateCodeRequestBody struct {
+	// Module to regenerate: candidate (the application, the default when omitted)
+	// or eval (the local eval/ module).
+	Target *string `form:"target,omitempty" json:"target,omitempty" xml:"target,omitempty"`
+}
+
 // ProposeChangeResponseBody is the type of the "surla" service
 // "propose_change" endpoint HTTP response body.
 type ProposeChangeResponseBody struct {
@@ -545,6 +553,19 @@ type InitProjectResponseBody struct {
 	// repository (40 or 64 lowercase hex characters); start_live_target and
 	// verify_change take this commit ID.
 	Commit *string `form:"commit,omitempty" json:"commit,omitempty" xml:"commit,omitempty"`
+}
+
+// GenerateCodeResponseBody is the type of the "surla" service "generate_code"
+// endpoint HTTP response body.
+type GenerateCodeResponseBody struct {
+	// Module that received the generated files.
+	Target *string `form:"target,omitempty" json:"target,omitempty" xml:"target,omitempty"`
+	// Sorted paths relative to the selected module that were written, including
+	// AGENTS_QUICKSTART.md when produced and written successfully.
+	FilesWritten []string `form:"files_written,omitempty" json:"files_written,omitempty" xml:"files_written,omitempty"`
+	// Problems that did not prevent gen/ publication, such as incomplete cleanup
+	// or a guide that could not be written.
+	Warnings []string `form:"warnings,omitempty" json:"warnings,omitempty" xml:"warnings,omitempty"`
 }
 
 // ProposeChangeConflictResponseBody is the type of the "surla" service
@@ -1424,6 +1445,42 @@ type InitProjectNotImplementedResponseBody struct {
 	Fault *bool `form:"fault,omitempty" json:"fault,omitempty" xml:"fault,omitempty"`
 }
 
+// GenerateCodeUnprocessableResponseBody is the type of the "surla" service
+// "generate_code" endpoint HTTP response body for the "unprocessable" error.
+type GenerateCodeUnprocessableResponseBody struct {
+	// Name is the name of this class of errors.
+	Name *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID *string `form:"id,omitempty" json:"id,omitempty" xml:"id,omitempty"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message *string `form:"message,omitempty" json:"message,omitempty" xml:"message,omitempty"`
+	// Is the error temporary?
+	Temporary *bool `form:"temporary,omitempty" json:"temporary,omitempty" xml:"temporary,omitempty"`
+	// Is the error a timeout?
+	Timeout *bool `form:"timeout,omitempty" json:"timeout,omitempty" xml:"timeout,omitempty"`
+	// Is the error a server-side fault?
+	Fault *bool `form:"fault,omitempty" json:"fault,omitempty" xml:"fault,omitempty"`
+}
+
+// GenerateCodeNotImplementedResponseBody is the type of the "surla" service
+// "generate_code" endpoint HTTP response body for the "not_implemented" error.
+type GenerateCodeNotImplementedResponseBody struct {
+	// Name is the name of this class of errors.
+	Name *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID *string `form:"id,omitempty" json:"id,omitempty" xml:"id,omitempty"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message *string `form:"message,omitempty" json:"message,omitempty" xml:"message,omitempty"`
+	// Is the error temporary?
+	Temporary *bool `form:"temporary,omitempty" json:"temporary,omitempty" xml:"temporary,omitempty"`
+	// Is the error a timeout?
+	Timeout *bool `form:"timeout,omitempty" json:"timeout,omitempty" xml:"timeout,omitempty"`
+	// Is the error a server-side fault?
+	Fault *bool `form:"fault,omitempty" json:"fault,omitempty" xml:"fault,omitempty"`
+}
+
 // AmbiguityQuestionResponseBody is used to define fields on response body
 // types.
 type AmbiguityQuestionResponseBody struct {
@@ -2134,6 +2191,15 @@ func NewInitProjectRequestBody(p *surla.InitProjectPayload) *InitProjectRequestB
 	body := &InitProjectRequestBody{
 		ModulePath: p.ModulePath,
 		Dir:        p.Dir,
+	}
+	return body
+}
+
+// NewGenerateCodeRequestBody builds the HTTP request body from the payload of
+// the "generate_code" endpoint of the "surla" service.
+func NewGenerateCodeRequestBody(p *surla.GenerateCodePayload) *GenerateCodeRequestBody {
+	body := &GenerateCodeRequestBody{
+		Target: p.Target,
 	}
 	return body
 }
@@ -3369,6 +3435,54 @@ func NewInitProjectNotImplemented(body *InitProjectNotImplementedResponseBody) *
 	return v
 }
 
+// NewGenerateCodeResultOK builds a "surla" service "generate_code" endpoint
+// result from a HTTP "OK" response.
+func NewGenerateCodeResultOK(body *GenerateCodeResponseBody) *surla.GenerateCodeResult {
+	v := &surla.GenerateCodeResult{
+		Target: *body.Target,
+	}
+	v.FilesWritten = make([]string, len(body.FilesWritten))
+	for i, val := range body.FilesWritten {
+		v.FilesWritten[i] = val
+	}
+	v.Warnings = make([]string, len(body.Warnings))
+	for i, val := range body.Warnings {
+		v.Warnings[i] = val
+	}
+
+	return v
+}
+
+// NewGenerateCodeUnprocessable builds a surla service generate_code endpoint
+// unprocessable error.
+func NewGenerateCodeUnprocessable(body *GenerateCodeUnprocessableResponseBody) *goa.ServiceError {
+	v := &goa.ServiceError{
+		Name:      *body.Name,
+		ID:        *body.ID,
+		Message:   *body.Message,
+		Temporary: *body.Temporary,
+		Timeout:   *body.Timeout,
+		Fault:     *body.Fault,
+	}
+
+	return v
+}
+
+// NewGenerateCodeNotImplemented builds a surla service generate_code endpoint
+// not_implemented error.
+func NewGenerateCodeNotImplemented(body *GenerateCodeNotImplementedResponseBody) *goa.ServiceError {
+	v := &goa.ServiceError{
+		Name:      *body.Name,
+		ID:        *body.ID,
+		Message:   *body.Message,
+		Temporary: *body.Temporary,
+		Timeout:   *body.Timeout,
+		Fault:     *body.Fault,
+	}
+
+	return v
+}
+
 // ValidateProposeChangeResponseBody runs the validations defined on
 // ProposeChangeResponseBody
 func ValidateProposeChangeResponseBody(body *ProposeChangeResponseBody) (err error) {
@@ -3987,6 +4101,26 @@ func ValidateInitProjectResponseBody(body *InitProjectResponseBody) (err error) 
 	}
 	if body.Commit != nil {
 		err = goa.MergeErrors(err, goa.ValidatePattern("body.commit", *body.Commit, "^([0-9a-f]{40}|[0-9a-f]{64})$"))
+	}
+	return
+}
+
+// ValidateGenerateCodeResponseBody runs the validations defined on
+// GenerateCodeResponseBody
+func ValidateGenerateCodeResponseBody(body *GenerateCodeResponseBody) (err error) {
+	if body.Target == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("target", "body"))
+	}
+	if body.FilesWritten == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("files_written", "body"))
+	}
+	if body.Warnings == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("warnings", "body"))
+	}
+	if body.Target != nil {
+		if !(*body.Target == "candidate" || *body.Target == "eval") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.target", *body.Target, []any{"candidate", "eval"}))
+		}
 	}
 	return
 }
@@ -5122,6 +5256,54 @@ func ValidateInitProjectUnprocessableResponseBody(body *InitProjectUnprocessable
 // ValidateInitProjectNotImplementedResponseBody runs the validations defined
 // on InitProjectNotImplementedResponseBody
 func ValidateInitProjectNotImplementedResponseBody(body *InitProjectNotImplementedResponseBody) (err error) {
+	if body.Name == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
+	}
+	if body.ID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("id", "body"))
+	}
+	if body.Message == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("message", "body"))
+	}
+	if body.Temporary == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("temporary", "body"))
+	}
+	if body.Timeout == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("timeout", "body"))
+	}
+	if body.Fault == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("fault", "body"))
+	}
+	return
+}
+
+// ValidateGenerateCodeUnprocessableResponseBody runs the validations defined
+// on GenerateCodeUnprocessableResponseBody
+func ValidateGenerateCodeUnprocessableResponseBody(body *GenerateCodeUnprocessableResponseBody) (err error) {
+	if body.Name == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
+	}
+	if body.ID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("id", "body"))
+	}
+	if body.Message == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("message", "body"))
+	}
+	if body.Temporary == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("temporary", "body"))
+	}
+	if body.Timeout == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("timeout", "body"))
+	}
+	if body.Fault == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("fault", "body"))
+	}
+	return
+}
+
+// ValidateGenerateCodeNotImplementedResponseBody runs the validations defined
+// on GenerateCodeNotImplementedResponseBody
+func ValidateGenerateCodeNotImplementedResponseBody(body *GenerateCodeNotImplementedResponseBody) (err error) {
 	if body.Name == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
 	}

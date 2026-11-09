@@ -86,6 +86,25 @@ var InitProjectResult = Type("InitProjectResult", func() {
 	Required("dir", "module_path", "service_name", "commit")
 })
 
+// GenerateCodePayload selects the local module whose edited design is compiled.
+var GenerateCodePayload = Type("GenerateCodePayload", func() {
+	Description("Selects the application module or its public local eval/ module for code generation from the active workspace's files.")
+	Attribute("target", String, "Module to regenerate: candidate (the application, the default when omitted) or eval (the local eval/ module).", func() {
+		Enum("candidate", "eval")
+	})
+})
+
+// GenerateCodeResult reports the generated files actually published locally.
+var GenerateCodeResult = Type("GenerateCodeResult", func() {
+	Description("Generated files written in the selected local module and warnings about auxiliary work. Generation compiles the design only; it does not build the application or run tests.")
+	Attribute("target", String, "Module that received the generated files.", func() {
+		Enum("candidate", "eval")
+	})
+	Attribute("files_written", ArrayOf(String), "Sorted paths relative to the selected module that were written, including AGENTS_QUICKSTART.md when produced and written successfully.")
+	Attribute("warnings", ArrayOf(String), "Problems that did not prevent gen/ publication, such as incomplete cleanup or a guide that could not be written.")
+	Required("target", "files_written", "warnings")
+})
+
 // ConfigureModelPayload is the input to the configure_model tool.
 var ConfigureModelPayload = Type("ConfigureModelPayload", func() {
 	Description("Selects either a direct model provider and model name (using the API key already present in surla serve's process environment) or a running goa-ai model gateway address.")
@@ -896,6 +915,21 @@ var _ = Service("surla", func() {
 			POST("/workspace/init")
 			Response(StatusOK)
 			Response("conflict", StatusConflict)
+			Response("unprocessable", StatusUnprocessableEntity)
+			Response("not_implemented", StatusNotImplemented)
+		})
+	})
+
+	Method("generate_code", func() {
+		Description("Read the active workspace's application module, or its public local eval/ module when target is eval, compile that module's edited Goa design in Surla's sandbox, and atomically replace its gen/ directory. Preserve top-level user files and their permissions and leave go.mod and go.sum unchanged. Return the written paths and warnings; a warning after gen/ publication still means generation succeeded. The tool compiles the design only; it does not build the application or run tests. Fix a rejected design and call again on the same running server.")
+		Payload(GenerateCodePayload)
+		Result(GenerateCodeResult)
+		Error("unprocessable", ErrorResult, "The selected local module is absent, replaced, or invalid; correct its local files and call again.")
+		Error("not_implemented", ErrorResult, "No workspace directory is bound to this control plane.")
+		Tool("generate_code", "Regenerate code from local edited design files without uploading source. Omit target for the application, or use target eval for the public local eval/ module. Return sorted module-relative files_written and warnings. This compiles the design only; build the application and run its tests before verification. Fix a rejected design and call again on the same server.")
+		HTTP(func() {
+			POST("/workspace/generate")
+			Response(StatusOK)
 			Response("unprocessable", StatusUnprocessableEntity)
 			Response("not_implemented", StatusNotImplemented)
 		})

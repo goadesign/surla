@@ -220,6 +220,29 @@ type (
 		// Operator-facing status explanation.
 		Message *string `json:"message"`
 	}
+	// GenerateCodePayloadTransport is the internal JSON transport type for GenerateCodePayload.
+	// It lives in the toolset-local http package and is used only for JSON
+	// decode + validation (missing-field detection) before transforming into
+	// the public tool type.
+	GenerateCodePayloadTransport struct {
+		// Module to regenerate: candidate (the application, the default when omitted)
+		// or eval (the local eval/ module).
+		Target *string `json:"target,omitempty"`
+	}
+	// GenerateCodeResultTransport is the internal JSON transport type for GenerateCodeResult.
+	// It lives in the toolset-local http package and is used only for JSON
+	// decode + validation (missing-field detection) before transforming into
+	// the public tool type.
+	GenerateCodeResultTransport struct {
+		// Module that received the generated files.
+		Target *string `json:"target"`
+		// Sorted paths relative to the selected module that were written, including
+		// AGENTS_QUICKSTART.md when produced and written successfully.
+		FilesWritten []string `json:"files_written"`
+		// Problems that did not prevent gen/ publication, such as incomplete cleanup
+		// or a guide that could not be written.
+		Warnings []string `json:"warnings"`
+	}
 	// GetChangePayloadTransport is the internal JSON transport type for GetChangePayload.
 	// It lives in the toolset-local http package and is used only for JSON
 	// decode + validation (missing-field detection) before transforming into

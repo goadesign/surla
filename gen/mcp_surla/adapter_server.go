@@ -418,9 +418,27 @@ func (a *MCPAdapter) invokeMCPMethod14(ctx context.Context, payload *surla.InitP
 	return result, nil
 }
 
-// invokeMCPMethod15 sends validated input to the configured CheckpointUI endpoint
+// invokeMCPMethod15 sends validated input to the configured GenerateCode endpoint
 // and returns its declared result. An unexpected Go type is an internal error.
-func (a *MCPAdapter) invokeMCPMethod15(ctx context.Context) (string, error) {
+func (a *MCPAdapter) invokeMCPMethod15(ctx context.Context, payload *surla.GenerateCodePayload) (*surla.GenerateCodeResult, error) {
+	// The original endpoint middleware observes its authored service and method.
+	ctx = context.WithValue(ctx, goa.ServiceKey, "surla")
+	ctx = context.WithValue(ctx, goa.MethodKey, "generate_code")
+	raw, err := a.endpoints.GenerateCode(ctx, payload)
+	var zero *surla.GenerateCodeResult
+	if err != nil {
+		return zero, err
+	}
+	result, ok := raw.(*surla.GenerateCodeResult)
+	if !ok {
+		return zero, &endpointResultError{method: "GenerateCode"}
+	}
+	return result, nil
+}
+
+// invokeMCPMethod16 sends validated input to the configured CheckpointUI endpoint
+// and returns its declared result. An unexpected Go type is an internal error.
+func (a *MCPAdapter) invokeMCPMethod16(ctx context.Context) (string, error) {
 	// The original endpoint middleware observes its authored service and method.
 	ctx = context.WithValue(ctx, goa.ServiceKey, "surla")
 	ctx = context.WithValue(ctx, goa.MethodKey, "checkpoint_ui")
@@ -436,9 +454,9 @@ func (a *MCPAdapter) invokeMCPMethod15(ctx context.Context) (string, error) {
 	return result, nil
 }
 
-// invokeMCPMethod16 sends validated input to the configured GoldenPath endpoint
+// invokeMCPMethod17 sends validated input to the configured GoldenPath endpoint
 // and returns its declared result. An unexpected Go type is an internal error.
-func (a *MCPAdapter) invokeMCPMethod16(ctx context.Context) (string, error) {
+func (a *MCPAdapter) invokeMCPMethod17(ctx context.Context) (string, error) {
 	// The original endpoint middleware observes its authored service and method.
 	ctx = context.WithValue(ctx, goa.ServiceKey, "surla")
 	ctx = context.WithValue(ctx, goa.MethodKey, "golden_path")
@@ -510,6 +528,12 @@ func (a *MCPAdapter) ToolsList(ctx context.Context, p *ToolsListPayload) (*Tools
 			Meta:         json.RawMessage("{\"ui\":{\"resourceUri\":\"ui://surla/checkpoint\"}}"),
 			InputSchema:  json.RawMessage("{\"$defs\":{\"DraftOverridePayload\":{\"description\":\"Fast Draft Mode request to hot-reload a prompt template on the bound target platform or reject a compiled business-rule edit.\",\"properties\":{\"new_content\":{\"description\":\"Updated prompt template text or rule expression.\",\"type\":\"string\"},\"prompt_id\":{\"description\":\"Registered prompt identifier when target_kind is prompt_template.\",\"type\":\"string\"},\"target_kind\":{\"description\":\"Override target kind (prompt_template or compiled_rule).\",\"enum\":[\"prompt_template\",\"compiled_rule\"],\"type\":\"string\"}},\"required\":[\"target_kind\",\"new_content\"],\"title\":\"DraftOverridePayload\",\"type\":\"object\"}},\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Fast Draft Mode request to hot-reload a prompt template on the bound target platform or reject a compiled business-rule edit.\",\"properties\":{\"new_content\":{\"description\":\"Updated prompt template text or rule expression.\",\"type\":\"string\"},\"prompt_id\":{\"description\":\"Registered prompt identifier when target_kind is prompt_template.\",\"type\":\"string\"},\"target_kind\":{\"description\":\"Override target kind (prompt_template or compiled_rule).\",\"enum\":[\"prompt_template\",\"compiled_rule\"],\"type\":\"string\"}},\"required\":[\"target_kind\",\"new_content\"],\"title\":\"DraftOverridePayload\",\"type\":\"object\"}"),
 			OutputSchema: json.RawMessage("{\"$defs\":{\"DraftOverrideResult\":{\"description\":\"Result of a Checkpoint 3 Fast Draft Mode override request.\",\"properties\":{\"applied_in_store\":{\"description\":\"True when updated in the target platform's prompt.Store for 0s reload.\",\"type\":\"boolean\"},\"message\":{\"description\":\"Operator-facing status explanation.\",\"type\":\"string\"},\"prompt_version\":{\"description\":\"New prompt version digest returned by the target platform.\",\"type\":\"string\"},\"requires_rebuild\":{\"description\":\"True when the change modifies a compiled Go business rule.\",\"type\":\"boolean\"}},\"required\":[\"applied_in_store\",\"requires_rebuild\",\"message\"],\"title\":\"DraftOverrideResult\",\"type\":\"object\"}},\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Result of a Checkpoint 3 Fast Draft Mode override request.\",\"properties\":{\"applied_in_store\":{\"description\":\"True when updated in the target platform's prompt.Store for 0s reload.\",\"type\":\"boolean\"},\"message\":{\"description\":\"Operator-facing status explanation.\",\"type\":\"string\"},\"prompt_version\":{\"description\":\"New prompt version digest returned by the target platform.\",\"type\":\"string\"},\"requires_rebuild\":{\"description\":\"True when the change modifies a compiled Go business rule.\",\"type\":\"boolean\"}},\"required\":[\"applied_in_store\",\"requires_rebuild\",\"message\"],\"title\":\"DraftOverrideResult\",\"type\":\"object\"}"),
+		},
+		{
+			Name:         "generate_code",
+			Description:  stringPtr("Regenerate code from local edited design files without uploading source. Omit target for the application, or use target eval for the public local eval/ module. Return sorted module-relative files_written and warnings. This compiles the design only; build the application and run its tests before verification. Fix a rejected design and call again on the same server."),
+			InputSchema:  json.RawMessage("{\"$defs\":{\"GenerateCodePayload\":{\"description\":\"Selects the application module or its public local eval/ module for code generation from the active workspace's files.\",\"properties\":{\"target\":{\"description\":\"Module to regenerate: candidate (the application, the default when omitted) or eval (the local eval/ module).\",\"enum\":[\"candidate\",\"eval\"],\"type\":\"string\"}},\"title\":\"GenerateCodePayload\",\"type\":\"object\"}},\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Selects the application module or its public local eval/ module for code generation from the active workspace's files.\",\"properties\":{\"target\":{\"description\":\"Module to regenerate: candidate (the application, the default when omitted) or eval (the local eval/ module).\",\"enum\":[\"candidate\",\"eval\"],\"type\":\"string\"}},\"title\":\"GenerateCodePayload\",\"type\":\"object\"}"),
+			OutputSchema: json.RawMessage("{\"$defs\":{\"GenerateCodeResult\":{\"description\":\"Generated files written in the selected local module and warnings about auxiliary work. Generation compiles the design only; it does not build the application or run tests.\",\"properties\":{\"files_written\":{\"description\":\"Sorted paths relative to the selected module that were written, including AGENTS_QUICKSTART.md when produced and written successfully.\",\"items\":{\"type\":\"string\"},\"type\":\"array\"},\"target\":{\"description\":\"Module that received the generated files.\",\"enum\":[\"candidate\",\"eval\"],\"type\":\"string\"},\"warnings\":{\"description\":\"Problems that did not prevent gen/ publication, such as incomplete cleanup or a guide that could not be written.\",\"items\":{\"type\":\"string\"},\"type\":\"array\"}},\"required\":[\"target\",\"files_written\",\"warnings\"],\"title\":\"GenerateCodeResult\",\"type\":\"object\"}},\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Generated files written in the selected local module and warnings about auxiliary work. Generation compiles the design only; it does not build the application or run tests.\",\"properties\":{\"files_written\":{\"description\":\"Sorted paths relative to the selected module that were written, including AGENTS_QUICKSTART.md when produced and written successfully.\",\"items\":{\"type\":\"string\"},\"type\":\"array\"},\"target\":{\"description\":\"Module that received the generated files.\",\"enum\":[\"candidate\",\"eval\"],\"type\":\"string\"},\"warnings\":{\"description\":\"Problems that did not prevent gen/ publication, such as incomplete cleanup or a guide that could not be written.\",\"items\":{\"type\":\"string\"},\"type\":\"array\"}},\"required\":[\"target\",\"files_written\",\"warnings\"],\"title\":\"GenerateCodeResult\",\"type\":\"object\"}"),
 		},
 		{
 			Name:         "get_change",
@@ -744,6 +768,36 @@ func (a *MCPAdapter) ToolsCall(ctx context.Context, p *ToolsCallPayload) (*Tools
 			return toolCallError(failure.err.Error()), nil
 		}
 		encoded, err := mcpcodec.EncodeDraftOverrideResult(result)
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+			return nil, goa.PermanentError("internal_error", "%s", err.Error())
+		}
+		return &ToolsCallResult{Outcome: NewToolsCallOutcomeComplete(&ToolsCallCompleteResult{
+			Meta:              resultMeta(),
+			Content:           []*ContentItem{},
+			StructuredContent: json.RawMessage(encoded),
+		})}, nil
+	case "generate_code":
+		arguments := p.Arguments
+		if len(arguments) == 0 {
+			arguments = json.RawMessage("{}")
+		}
+		payload, err := mcpcodec.DecodeGenerateCodePayload(arguments)
+		if err != nil {
+			return toolCallError("invalid arguments: " + err.Error()), nil
+		}
+		result, err := a.invokeMCPMethod15(ctx, payload)
+		if err != nil {
+			failure := a.mapError(err, isEndpointFault(err))
+			span.RecordError(failure.err)
+			span.SetStatus(codes.Error, failure.err.Error())
+			if failure.internal {
+				return nil, failure.err
+			}
+			return toolCallError(failure.err.Error()), nil
+		}
+		encoded, err := mcpcodec.EncodeGenerateCodeResult(result)
 		if err != nil {
 			span.RecordError(err)
 			span.SetStatus(codes.Error, err.Error())
@@ -1081,7 +1135,7 @@ func (a *MCPAdapter) ResourcesRead(ctx context.Context, p *ResourcesReadPayload)
 
 	switch p.URI {
 	case "surla://golden-path":
-		result, err := a.invokeMCPMethod16(ctx)
+		result, err := a.invokeMCPMethod17(ctx)
 		if err != nil {
 			span.RecordError(err)
 			span.SetStatus(codes.Error, err.Error())
@@ -1097,7 +1151,7 @@ func (a *MCPAdapter) ResourcesRead(ctx context.Context, p *ResourcesReadPayload)
 
 		return &ResourcesReadResult{Outcome: NewResourcesReadOutcomeComplete(res)}, nil
 	case "ui://surla/checkpoint":
-		result, err := a.invokeMCPMethod15(ctx)
+		result, err := a.invokeMCPMethod16(ctx)
 		if err != nil {
 			span.RecordError(err)
 			span.SetStatus(codes.Error, err.Error())

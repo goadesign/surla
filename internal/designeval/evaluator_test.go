@@ -36,10 +36,38 @@ func TestExplicitParentIsLazyAndIgnoresTMPDIR(t *testing.T) {
 	assert.NoDirExists(t, parent)
 	_, err := ev.Evaluate(t.Context(), incomplete)
 	require.Error(t, err)
-	assert.Equal(t, parent, filepath.Dir(ev.workDir))
+	physical, err := filepath.EvalSymlinks(parent)
+	require.NoError(t, err)
+	assert.Equal(t, physical, filepath.Dir(ev.workDir))
 	assert.Empty(t, entries(t, tmp), "the builder's TMPDIR contains no compiler workspace")
 	require.NoError(t, ev.Close())
 	assert.Empty(t, entries(t, parent))
+}
+
+// TestExplicitRelativeAndSymlinkParentsStorePhysicalWorkspace checks the path
+// the allocator owns before any compiler or diagnostic consumer receives it.
+func TestExplicitRelativeAndSymlinkParentsStorePhysicalWorkspace(t *testing.T) {
+	for _, parent := range []string{"real/work", "link/work"} {
+		t.Run(parent, func(t *testing.T) {
+			root := t.TempDir()
+			t.Chdir(root)
+			require.NoError(t, os.Mkdir("real", 0o700))
+			require.NoError(t, os.Symlink("real", "link"))
+			physical, err := filepath.EvalSymlinks(root)
+			require.NoError(t, err)
+			physicalParent := filepath.Join(physical, "real", "work")
+			ev := NewEvaluatorInDir(parent)
+			assert.NoDirExists(t, physicalParent, "construction remains lazy")
+			_, err = ev.Evaluate(t.Context(), incomplete)
+			require.Error(t, err)
+			assert.Equal(t, physicalParent, filepath.Dir(ev.workDir))
+			resolved, err := filepath.EvalSymlinks(ev.workDir)
+			require.NoError(t, err)
+			assert.Equal(t, resolved, ev.workDir)
+			require.NoError(t, ev.Close())
+			assert.Empty(t, entries(t, physicalParent))
+		})
+	}
 }
 
 // TestEvaluationAndGenerationUseTheExplicitParent runs both sandboxed paths
@@ -47,6 +75,8 @@ func TestExplicitParentIsLazyAndIgnoresTMPDIR(t *testing.T) {
 func TestEvaluationAndGenerationUseTheExplicitParent(t *testing.T) {
 	tmp := isolatedTempDir(t)
 	parent := t.TempDir()
+	parent, err := filepath.EvalSymlinks(parent)
+	require.NoError(t, err)
 	ev := NewEvaluatorInDir(parent)
 	t.Cleanup(func() { require.NoError(t, ev.Close()) })
 	files := testmodule.Snapshot(t, completeSourcesGoa, `package design
@@ -66,7 +96,7 @@ func init() {
 }
 var _ = Service("orders", func() { Method("get", func() { Payload(String); Result(String); HTTP(func() { GET("/{id}") }) }) })
 `)
-	_, err := ev.Evaluate(t.Context(), files)
+	_, err = ev.Evaluate(t.Context(), files)
 	require.NoError(t, err)
 	_, err = ev.Generate(t.Context(), files)
 	require.NoError(t, err)

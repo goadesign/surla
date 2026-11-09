@@ -33,6 +33,8 @@ func NewMCPExecutor(caller mcpruntime.Caller) runtime.ToolCallExecutor {
 			return runtime.ExecuteMCPTool(ctx, caller, call, "diff", gensurla.SpecDiff())
 		case gensurla.DraftOverride:
 			return runtime.ExecuteMCPTool(ctx, caller, call, "draft_override", gensurla.SpecDraftOverride())
+		case gensurla.GenerateCode:
+			return runtime.ExecuteMCPTool(ctx, caller, call, "generate_code", gensurla.SpecGenerateCode())
 		case gensurla.GetChange:
 			return runtime.ExecuteMCPTool(ctx, caller, call, "get_change", gensurla.SpecGetChange())
 		case gensurla.GetVerification:

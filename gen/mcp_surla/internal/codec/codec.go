@@ -943,6 +943,60 @@ func ValidateDraftOverrideResultTransport(value *DraftOverrideResultTransport) (
 	return err
 }
 
+// GenerateCodePayloadTransport stores JSON fields until they have been validated.
+type GenerateCodePayloadTransport struct {
+	// Module to regenerate: candidate (the application, the default when omitted)
+	// or eval (the local eval/ module).
+	Target *string `json:"target,omitempty"`
+}
+
+// ValidateGenerateCodePayloadTransport checks decoded JSON before it becomes a service value.
+func ValidateGenerateCodePayloadTransport(value *GenerateCodePayloadTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.Target != nil {
+		if !(*value.Target == "candidate" || *value.Target == "eval") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.target", *value.Target, []any{"candidate", "eval"}))
+		}
+	}
+	return err
+}
+
+// GenerateCodeResultTransport stores JSON fields until they have been validated.
+type GenerateCodeResultTransport struct {
+	// Module that received the generated files.
+	Target *string `json:"target"`
+	// Sorted paths relative to the selected module that were written, including
+	// AGENTS_QUICKSTART.md when produced and written successfully.
+	FilesWritten []string `json:"files_written"`
+	// Problems that did not prevent gen/ publication, such as incomplete cleanup
+	// or a guide that could not be written.
+	Warnings []string `json:"warnings"`
+}
+
+// ValidateGenerateCodeResultTransport checks decoded JSON before it becomes a service value.
+func ValidateGenerateCodeResultTransport(value *GenerateCodeResultTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.Target == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("target", "body"))
+	}
+	if value.FilesWritten == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("files_written", "body"))
+	}
+	if value.Warnings == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("warnings", "body"))
+	}
+	if value.Target != nil {
+		if !(*value.Target == "candidate" || *value.Target == "eval") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.target", *value.Target, []any{"candidate", "eval"}))
+		}
+	}
+	return err
+}
+
 // GetChangePayloadTransport stores JSON fields until they have been validated.
 type GetChangePayloadTransport struct {
 	// Change identifier.
@@ -4339,6 +4393,57 @@ func EncodeDraftOverrideResult(in *surla.DraftOverrideResult) ([]byte, error) {
 	data, err := json.Marshal(body)
 	if err != nil {
 		return nil, fmt.Errorf("encode DraftOverrideResult JSON: %w", err)
+	}
+	return data, nil
+}
+
+// DecodeGenerateCodePayload checks JSON field names from the Goa design and returns a service value.
+func DecodeGenerateCodePayload(data []byte) (out *surla.GenerateCodePayload, err error) {
+	var body *GenerateCodePayloadTransport
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&body); err != nil {
+		return out, fmt.Errorf("decode GenerateCodePayload JSON: %w", err)
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		if err == nil {
+			return out, fmt.Errorf("decode GenerateCodePayload JSON: multiple JSON values")
+		}
+		return out, fmt.Errorf("decode GenerateCodePayload JSON after first value: %w", err)
+	}
+	if err := ValidateGenerateCodePayloadTransport(body); err != nil {
+		return out, fmt.Errorf("validate GenerateCodePayload JSON: %w", err)
+	}
+	{
+		out = &surla.GenerateCodePayload{
+			Target: body.Target,
+		}
+	}
+	return out, nil
+}
+
+// EncodeGenerateCodeResult turns a service value into JSON using the field names in the Goa design.
+func EncodeGenerateCodeResult(in *surla.GenerateCodeResult) ([]byte, error) {
+	var body *GenerateCodeResultTransport
+	{
+		body = &GenerateCodeResultTransport{
+			Target: &in.Target,
+		}
+		body.FilesWritten = make([]string, len(in.FilesWritten))
+		for i, val := range in.FilesWritten {
+			body.FilesWritten[i] = val
+		}
+		body.Warnings = make([]string, len(in.Warnings))
+		for i, val := range in.Warnings {
+			body.Warnings[i] = val
+		}
+	}
+	if err := ValidateGenerateCodeResultTransport(body); err != nil {
+		return nil, fmt.Errorf("validate GenerateCodeResult JSON: %w", err)
+	}
+	data, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("encode GenerateCodeResult JSON: %w", err)
 	}
 	return data, nil
 }

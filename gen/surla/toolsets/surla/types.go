@@ -190,6 +190,23 @@ type (
 		// Operator-facing status explanation.
 		Message string
 	}
+	// GenerateCodePayload defines the JSON payload for the surla.generate_code tool.
+	GenerateCodePayload = struct {
+		// Module to regenerate: candidate (the application, the default when omitted)
+		// or eval (the local eval/ module).
+		Target *string
+	}
+	// GenerateCodeResult defines the JSON result for the surla.generate_code tool.
+	GenerateCodeResult = struct {
+		// Module that received the generated files.
+		Target string
+		// Sorted paths relative to the selected module that were written, including
+		// AGENTS_QUICKSTART.md when produced and written successfully.
+		FilesWritten []string
+		// Problems that did not prevent gen/ publication, such as incomplete cleanup
+		// or a guide that could not be written.
+		Warnings []string
+	}
 	// GetChangePayload defines the JSON payload for the surla.get_change tool.
 	GetChangePayload = struct {
 		// Change identifier.
