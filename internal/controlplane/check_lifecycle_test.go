@@ -411,6 +411,48 @@ func TestUpdateDependenciesLifecycle(t *testing.T) {
 		assertFileContent(t, filepath.Join(workspace, "go.sum"), "tidied-shop-sum\n")
 		assertFileContent(t, filepath.Join(grant, "go.work.sum"), "work-sum-from-list\n")
 	})
+
+	// Direct callers use the same required-array contract as the generated
+	// codecs, including when tidy changes nothing or an editor wins a write.
+	for _, tc := range []struct {
+		name string
+		edit bool
+	}{
+		{name: "direct_no_change"},
+		{name: "direct_refused_write", edit: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			workspace := newShopModule(t, nil)
+			clients := newCheckTestServer(t, Options{WorkspaceDir: workspace})
+			liveManifest := filepath.Join(workspace, "go.mod")
+			before, err := os.ReadFile(liveManifest)
+			require.NoError(t, err)
+			daemon.setOnStart(func(c *recordedContainer) (string, string, int) {
+				if tc.edit {
+					copied := findMount(t, c, workspace)
+					assert.NoError(t, os.WriteFile(filepath.Join(copied.Source, "go.mod"),
+						[]byte(string(before)+"\n// tidied\n"), 0o600))
+					assert.NoError(t, os.WriteFile(liveManifest,
+						[]byte(string(before)+"\n// editor\n"), 0o600))
+				}
+				return "tidied\n", "", 0
+			})
+			result, err := clients.cp.UpdateDependencies(WithPrincipal(ctx, Principal{ID: "alice@example.com"}))
+			require.NoError(t, err)
+			assert.NotNil(t, result.FilesWritten)
+			assert.Empty(t, result.FilesWritten)
+			assert.NoError(t, gensurla.ValidateUpdateDependenciesResultValue(result))
+			encoded, err := gensurla.EncodeUpdateDependenciesResult(result)
+			require.NoError(t, err)
+			assert.Contains(t, string(encoded), `"files_written":[]`)
+			if tc.edit {
+				assert.Contains(t, result.Message, "was not written")
+				assertFileContent(t, liveManifest, string(before)+"\n// editor\n")
+			} else {
+				assertFileContent(t, liveManifest, string(before))
+			}
+		})
+	}
 }
 
 // TestCheckOperationsConcurrentIsolation verifies disjoint per-operation

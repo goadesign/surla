@@ -107,8 +107,8 @@ func (op *checkOperation) hasGoWork() bool {
 
 // publishManifests writes each changed manifest of every module whose tidy
 // succeeded, plus changed go.work.sum files, to the live grant. It returns
-// the workspace-relative paths written and one note per refused file or
-// per written file whose write could not be made durable.
+// an initialized list of workspace-relative paths written and one note per
+// refused file or per written file whose write could not be made durable.
 func (op *checkOperation) publishManifests(ctx context.Context, failures []moduleOutcome) ([]string, []string) {
 	failed := map[string]bool{}
 	for _, f := range failures {
@@ -130,7 +130,8 @@ func (op *checkOperation) publishManifests(ctx context.Context, failures []modul
 	slices.Sort(candidates)
 	candidates = slices.Compact(candidates)
 	span := trace.SpanFromContext(ctx)
-	var written, notes []string
+	written := []string{}
+	var notes []string
 	for _, rel := range candidates {
 		replaced, err := op.publishManifest(rel)
 		wsRel, relErr := filepath.Rel(op.workspaceRel, rel)
