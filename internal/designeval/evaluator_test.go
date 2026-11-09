@@ -73,6 +73,9 @@ func TestExplicitRelativeAndSymlinkParentsStorePhysicalWorkspace(t *testing.T) {
 // TestEvaluationAndGenerationUseTheExplicitParent runs both sandboxed paths
 // with a design that checks where its evaluator output directory was allocated.
 func TestEvaluationAndGenerationUseTheExplicitParent(t *testing.T) {
+	if testing.Short() {
+		t.Skip("runs the sandboxed Go toolchain; the full suite (go test without -short) covers it")
+	}
 	tmp := isolatedTempDir(t)
 	parent := t.TempDir()
 	parent, err := filepath.EvalSymlinks(parent)

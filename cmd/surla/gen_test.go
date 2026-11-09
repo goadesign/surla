@@ -37,6 +37,9 @@ var _ = Service("orders", func() {
 `
 
 func TestGenPublishesGenAndLeavesNothingBehind(t *testing.T) {
+	if testing.Short() {
+		t.Skip("runs the sandboxed Go toolchain; the full suite (go test without -short) covers it")
+	}
 	tmp := t.TempDir()
 	t.Setenv("TMPDIR", tmp)
 	dir := writeModule(t, testmodule.Snapshot(t, completeSourcesGoa, genDesign))
@@ -59,6 +62,9 @@ func TestGenPublishesGenAndLeavesNothingBehind(t *testing.T) {
 }
 
 func TestGenRefusesAGoaWithoutCompleteSourcesAndChangesNothing(t *testing.T) {
+	if testing.Short() {
+		t.Skip("runs the sandboxed Go toolchain; the full suite (go test without -short) covers it")
+	}
 	tmp := t.TempDir()
 	t.Setenv("TMPDIR", tmp)
 	dir := writeModule(t, testmodule.Snapshot(t, preCompleteSourcesGoa, genDesign))

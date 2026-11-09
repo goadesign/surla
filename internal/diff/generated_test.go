@@ -14,6 +14,9 @@ import (
 // TestCompareGeneratedTransportChanges verifies that the actual generators,
 // rather than a selected list of expression fields, decide which sources change.
 func TestCompareGeneratedTransportChanges(t *testing.T) {
+	if testing.Short() {
+		t.Skip("runs the sandboxed Go toolchain; the full suite (go test without -short) covers it")
+	}
 	cases := []struct {
 		// name identifies the transport contract under test.
 		name string
@@ -66,6 +69,9 @@ var _ = Service("orders", func() {
 // TestCompareIdenticalCompiledSources has no source normalization or ignored
 // files: independent evaluator processes must return the same declarations.
 func TestCompareIdenticalCompiledSources(t *testing.T) {
+	if testing.Short() {
+		t.Skip("runs the sandboxed Go toolchain; the full suite (go test without -short) covers it")
+	}
 	files := testmodule.Snapshot(t, "", resourceReaderDesign)
 	report, err := Compare(t.Context(), testEvaluator, files, files)
 	require.NoError(t, err)
@@ -78,6 +84,9 @@ func TestCompareIdenticalCompiledSources(t *testing.T) {
 // TestCompareTargetModulePathChangesGeneratedOutput proves that generated names
 // and imports come from the submitted module, never the evaluator's own module.
 func TestCompareKeepsAnOlderTargetsGoa(t *testing.T) {
+	if testing.Short() {
+		t.Skip("runs the sandboxed Go toolchain; the full suite (go test without -short) covers it")
+	}
 	// Starters created before Surla required goa 35e789e8 pin goa 3e08; their
 	// previews and diffs keep evaluating with that version.
 	old := testmodule.Snapshot(t, "v3.35.1-0.20261030163856-3e08a6128171", grpcResultDesign)
@@ -88,6 +97,9 @@ func TestCompareKeepsAnOlderTargetsGoa(t *testing.T) {
 }
 
 func TestCompareTargetModulePathChangesGeneratedOutput(t *testing.T) {
+	if testing.Short() {
+		t.Skip("runs the sandboxed Go toolchain; the full suite (go test without -short) covers it")
+	}
 	old := testmodule.Snapshot(t, "", grpcResultDesign)
 	updated := testmodule.Replace(t, old, "go.mod", "module example.com/design", "module example.com/renamed")
 	report, err := Compare(t.Context(), testEvaluator, old, updated)

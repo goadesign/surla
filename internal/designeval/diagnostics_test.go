@@ -117,6 +117,9 @@ func TestGenerationDiagnosticPreservesSnapshotValidationDetail(t *testing.T) {
 // TestGenerationUsesPhysicalOperatorPaths observes the exact facts supplied to
 // a real sandboxed Go build, despite relative and symlinked owner settings.
 func TestGenerationUsesPhysicalOperatorPaths(t *testing.T) {
+	if testing.Short() {
+		t.Skip("runs the sandboxed Go toolchain; the full suite (go test without -short) covers it")
+	}
 	files := testmodule.Snapshot(t, "", minimalDesign)
 	toolchain, err := resolveToolchainEnv(t.Context())
 	require.NoError(t, err)

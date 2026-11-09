@@ -97,6 +97,9 @@ func TestValidateAmbiguityAnswersReportsEveryProblemOnce(t *testing.T) {
 // host remains an HTTP 500 fault, and that MCP tools/call continues to return
 // non-fault tool error results with the same domain error message.
 func TestChangeCardHTTPErrorsAndMCPToolPreservation(t *testing.T) {
+	if testing.Short() {
+		t.Skip("runs the sandboxed Go toolchain; the full suite (go test without -short) covers it")
+	}
 	aliceCtx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
 	ambiguousJSON, err := json.Marshal(CP1SemanticAnalysis{
 		Summary:     "Refunds up to $50 are instant.",

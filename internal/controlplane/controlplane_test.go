@@ -243,6 +243,9 @@ func TestCP1RejectsMalformedOrUnknownFieldsViaStructuredOutput(t *testing.T) {
 // CP2 design evaluation, Golden Path MCP resource serving, proposed swarm
 // planning, CP3 Fast Draft Mode prompt overrides, and bearer-token authentication.
 func TestCP2EvaluatedArchitecturePreviewCP3FastDraftAndTokenAuthenticator(t *testing.T) {
+	if testing.Short() {
+		t.Skip("runs the sandboxed Go toolchain; the full suite (go test without -short) covers it")
+	}
 	ctx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
 	clearAnalysis := CP1SemanticAnalysis{
 		Summary:     "Refunds with item_subtotal_cents < 5000 auto-approve; >= 5000 require manager approval.",

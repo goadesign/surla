@@ -48,6 +48,9 @@ var _ = Service("orders", func() {
 // against one running server, including default target, local eval isolation,
 // exact output lists, preserved user files, and safe source-error recovery.
 func TestGenerateCodeHTTPMCPAndIteration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("runs the sandboxed Go toolchain; the full suite (go test without -short) covers it")
+	}
 	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Minute)
 	defer cancel()
 	workspace := t.TempDir()
