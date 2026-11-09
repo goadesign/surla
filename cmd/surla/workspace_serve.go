@@ -135,7 +135,7 @@ func configureServeWorkspace(cfg serveConfig) (ws workspaceServeConfig, err erro
 		}
 	}
 
-	opRoot, err := defaultOperatorRoot(startupBaseDir, initialWorkspaceRoot, protectedDirs...)
+	opRoot, err := defaultOperatorRoot(initialWorkspaceRoot, protectedDirs...)
 	if err != nil {
 		return workspaceServeConfig{}, err
 	}
@@ -571,11 +571,10 @@ func joinPreservingRawSegments(baseDir, p string) string {
 }
 
 // defaultOperatorRoot returns the single deterministic operator-only storage
-// root (`<UserConfigDir>/surla/operator`) strictly outside startupBaseDir,
-// initialWorkspaceRoot, and any extraDirs, failing if unavailable, inside the
-// workspace grant, or not owned by the current effective user with 0o700
-// permissions.
-func defaultOperatorRoot(startupBaseDir, initialWorkspaceRoot string, extraDirs ...string) (string, error) {
+// root (`<UserConfigDir>/surla/operator`) strictly outside initialWorkspaceRoot
+// and any extraDirs, failing if unavailable, inside the workspace grant, or not
+// owned by the current effective user with 0o700 permissions.
+func defaultOperatorRoot(initialWorkspaceRoot string, extraDirs ...string) (string, error) {
 	cfgRoot, err := userConfigDir()
 	if err != nil {
 		return "", fmt.Errorf("determine user configuration directory for operator storage: %w", err)
@@ -584,7 +583,7 @@ func defaultOperatorRoot(startupBaseDir, initialWorkspaceRoot string, extraDirs 
 		return "", errors.New("user configuration directory is empty; set HOME or XDG_CONFIG_HOME for operator storage")
 	}
 	cand := filepath.Join(cfgRoot, "surla", "operator")
-	excluded := append([]string{startupBaseDir, initialWorkspaceRoot}, extraDirs...)
+	excluded := append([]string{initialWorkspaceRoot}, extraDirs...)
 	phys, err := abspath.EvalMissing(cand)
 	if err != nil {
 		return "", fmt.Errorf("resolve operator storage root %s: %w", cand, err)

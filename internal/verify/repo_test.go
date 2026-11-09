@@ -90,4 +90,18 @@ func TestWorkspaceBoundaryRootsAndEnclosingWorktreeRoot(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(corruptRepo, ".git"), []byte("gitdir: /nonexistent-gitdir\n"), 0o600))
 	_, err = WorkspaceBoundaryRoots(t.Context(), corruptSub)
 	require.Error(t, err)
+
+	// 5. Git <= 2.44 (rejecting --no-lazy-fetch) still succeeds for metadata-only
+	// working-tree root discovery.
+	realGit, err := exec.LookPath("git")
+	require.NoError(t, err)
+	fakeBin := filepath.Join(root, "fake-git-244")
+	require.NoError(t, os.MkdirAll(fakeBin, 0o700))
+	script := "#!/bin/sh\nfor arg in \"$@\"; do\n  if [ \"$arg\" = \"--no-lazy-fetch\" ]; then\n    printf 'unknown option: --no-lazy-fetch\\n' >&2\n    exit 129\n  fi\ndone\nexec \"" + realGit + "\" \"$@\"\n"
+	require.NoError(t, os.WriteFile(filepath.Join(fakeBin, "git"), []byte(script), 0o700))
+	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	roots, err = WorkspaceBoundaryRoots(t.Context(), nestedWS)
+	require.NoError(t, err)
+	assert.Equal(t, []string{nestedWS, monorepo}, roots)
 }

@@ -43,8 +43,7 @@ const (
 // directory itself and, when workspaceDir lies inside a Git working tree, the
 // physical top-level root of that working tree. A non-Git or bare-repository
 // workspace returns only the physical workspace directory; malformed Git
-// metadata, unsupported Git versions, timeouts, and filesystem permission
-// failures return an error.
+// metadata, timeouts, and filesystem permission failures return an error.
 func WorkspaceBoundaryRoots(ctx context.Context, workspaceDir string) ([]string, error) {
 	if workspaceDir == "" {
 		return nil, nil
@@ -89,7 +88,6 @@ func EnclosingWorktreeRoot(ctx context.Context, dir string) (string, error) {
 		existingDir,
 		"--no-optional-locks",
 		"--no-replace-objects",
-		"--no-lazy-fetch",
 		"--literal-pathspecs",
 		"-c",
 		"core.fsmonitor=false",
@@ -108,11 +106,6 @@ func EnclosingWorktreeRoot(ctx context.Context, dir string) (string, error) {
 	cmd.Stderr = stderr
 	runErr := cmd.Run()
 	stderrStr := stderr.buf.String()
-	if strings.Contains(stderrStr, "unknown option: --no-lazy-fetch") {
-		return "", errors.New(
-			"surla needs Git 2.45 or newer (for --no-lazy-fetch, so startup never downloads objects); upgrade Git",
-		)
-	}
 	if stdout.overflow || stderr.overflow {
 		return "", fmt.Errorf("git rev-parse in %s printed more output than allowed", existingDir)
 	}

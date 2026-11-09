@@ -346,6 +346,18 @@ func TestDefaultOperatorRootDeterministicAndPermissionValidation(t *testing.T) {
 	}
 	_, err = configureServeWorkspace(serveConfig{})
 	require.ErrorContains(t, err, "has permissions 0755, want 0o700")
+
+	// 4. Starting from a parent directory ( such as $HOME ) that contains userConfigDir
+	// while binding a child workspace via -project succeeds because CWD is not a builder grant.
+	require.NoError(t, os.Chmod(opRoot, 0o700))
+	t.Chdir(root)
+	parentCWDCfg, err := configureServeWorkspace(serveConfig{
+		projectDir: wsDir,
+		projectSet: true,
+	})
+	require.NoError(t, err)
+	assert.False(t, isWithinOrEqualDir(parentCWDCfg.runsDir, wsDir))
+	require.NoError(t, parentCWDCfg.closeProjectLock())
 }
 
 // TestConfigureServeWorkspacePinsSuiteCommitAndRejectsSymlinkParentEscape verifies

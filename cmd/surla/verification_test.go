@@ -309,9 +309,11 @@ func TestLoadProjectVerificationConfigRejectsUnusableProjects(t *testing.T) {
 		{
 			name: "git older than 2.45",
 			prepare: func(t *testing.T) string {
+				realGit, err := exec.LookPath("git")
+				require.NoError(t, err)
 				fakeBin := t.TempDir()
-				// Git 2.44 and older print this for an unknown top-level option.
-				script := "#!/bin/sh\nprintf 'unknown option: --no-lazy-fetch\\nusage: git [-v | --version] [-h | --help]\\n' >&2\nexit 129\n"
+				// Git 2.44 and older print this for the unknown --no-lazy-fetch top-level option.
+				script := "#!/bin/sh\nfor arg in \"$@\"; do\n  if [ \"$arg\" = \"--no-lazy-fetch\" ]; then\n    printf 'unknown option: --no-lazy-fetch\\nusage: git [-v | --version] [-h | --help]\\n' >&2\n    exit 129\n  fi\ndone\nexec \"" + realGit + "\" \"$@\"\n"
 				require.NoError(t, os.WriteFile(filepath.Join(fakeBin, "git"), []byte(script), 0o700))
 				t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
 				return t.TempDir()
@@ -389,6 +391,17 @@ func TestConfigureServeWorkspaceSupportsIndependentProjectAndVerificationConfig(
 	require.NoError(t, os.MkdirAll(opsSessionDir, 0o755))
 	require.NoError(t, os.MkdirAll(filepath.Join(shopDir, "design"), 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(shopDir, "design", "design.go"), []byte("package design\n// shop workspace design\n"), 0o644))
+	runTestGit(t, filepath.Join(root, "work"), "init", "-q")
+
+	// Simulate Git <= 2.44 (rejecting --no-lazy-fetch) to verify that explicit
+	// -verification-config and CP1 flows succeed without requiring Git 2.45.
+	realGit, err := exec.LookPath("git")
+	require.NoError(t, err)
+	fakeBin := filepath.Join(root, "fake-git-244")
+	require.NoError(t, os.MkdirAll(fakeBin, 0o700))
+	script := "#!/bin/sh\nfor arg in \"$@\"; do\n  if [ \"$arg\" = \"--no-lazy-fetch\" ]; then\n    printf 'unknown option: --no-lazy-fetch\\nusage: git [-v | --version] [-h | --help]\\n' >&2\n    exit 129\n  fi\ndone\nexec \"" + realGit + "\" \"$@\"\n"
+	require.NoError(t, os.WriteFile(filepath.Join(fakeBin, "git"), []byte(script), 0o700))
+	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
 
 	verPath := filepath.Join(root, "ops", "shop-eval.json")
 	verContent := `{"runs_dir":"` + filepath.Join(root, "ops", "runs") + `","report_dir":"` + filepath.Join(root, "ops", "reports") + `",` +
