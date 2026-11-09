@@ -166,7 +166,11 @@ func importLegacyWorkspace(
 		return fmt.Errorf("resolve default cards directory: %w", err)
 	}
 	wsLegacyCardsDir := filepath.Join(initialWorkspaceRoot, ".surla", "cards")
-	implicitCardsInsideProtected := !cfg.cardsDirExplicit && withinAnyDir(startupCardsDir, protectedDirs)
+	startupCardsInside, err := withinAnyDir(startupCardsDir, protectedDirs)
+	if err != nil {
+		return err
+	}
+	implicitCardsInsideProtected := !cfg.cardsDirExplicit && startupCardsInside
 	var hasLegacyWSCards bool
 	if !cfg.cardsDirExplicit {
 		hasLegacyWSCards, err = hasLegacyHexJSONRecords(wsLegacyCardsDir)
@@ -325,7 +329,7 @@ func importLegacyWorkspace(
 		if err != nil {
 			return fmt.Errorf("resolve -cards-dir %s: %w", cfg.cardsDir, err)
 		}
-	case !withinAnyDir(startupCardsDir, protectedDirs):
+	case !startupCardsInside:
 		stagedSelectedCardsDir = startupCardsDir
 	default:
 		stagedSelectedCardsDir = filepath.Join(stageDir, "cards-"+cardsHash)
@@ -487,7 +491,11 @@ func requireNoUnimportedImplicitLegacyStore(
 		if err != nil {
 			return fmt.Errorf("resolve default cards directory: %w", err)
 		}
-		if withinAnyDir(startupCardsDir, protectedDirs) {
+		inside, err := withinAnyDir(startupCardsDir, protectedDirs)
+		if err != nil {
+			return err
+		}
+		if inside {
 			hasCards, err := hasLegacyHexJSONRecords(startupCardsDir)
 			if err != nil {
 				return err

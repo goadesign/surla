@@ -157,7 +157,11 @@ func (c *ControlPlane) restoreWorkspace() (err error) {
 			return fmt.Errorf("invalid stage_dir %q in workspace.json", wf.StageDir)
 		}
 		for _, root := range c.protectedDirs {
-			if isWithinOrEqualDir(wf.StageDir, root) {
+			inside, err := abspath.Within(root, wf.StageDir)
+			if err != nil {
+				return err
+			}
+			if inside {
 				return fmt.Errorf("stage_dir %s in workspace.json must be outside workspace %s", wf.StageDir, root)
 			}
 		}
@@ -609,15 +613,15 @@ func validateCardsWorkspaceSeparation(cardsDir string, protectedDirs ...string) 
 		if ws == "" {
 			continue
 		}
-		physWS, err := abspath.EvalMissing(ws)
+		inside, err := abspath.Within(ws, physCards)
 		if err != nil {
-			return fmt.Errorf("resolve workspace %s: %w", ws, err)
+			return err
 		}
-		if isWithinOrEqualDir(physCards, physWS) {
+		if inside {
 			return fmt.Errorf(
 				"cards directory %s must be outside the workspace (%s) so builder agents cannot modify authoritative Change Cards or workspace state",
 				physCards,
-				physWS,
+				ws,
 			)
 		}
 	}
@@ -638,15 +642,15 @@ func validateRunsDirWorkspaceSeparation(runsDir string, protectedDirs ...string)
 		if ws == "" {
 			continue
 		}
-		physWS, err := abspath.EvalMissing(ws)
+		inside, err := abspath.Within(ws, physRuns)
 		if err != nil {
-			return fmt.Errorf("resolve workspace %s: %w", ws, err)
+			return err
 		}
-		if isWithinOrEqualDir(physRuns, physWS) {
+		if inside {
 			return fmt.Errorf(
 				"verification runs directory %s must be outside the workspace (%s) so builder agents cannot modify verification state",
 				physRuns,
-				physWS,
+				ws,
 			)
 		}
 	}
@@ -667,15 +671,15 @@ func validateInitStageWorkspaceSeparation(initStageDir string, protectedDirs ...
 		if ws == "" {
 			continue
 		}
-		physWS, err := abspath.EvalMissing(ws)
+		inside, err := abspath.Within(ws, physStage)
 		if err != nil {
-			return fmt.Errorf("resolve workspace %s: %w", ws, err)
+			return err
 		}
-		if isWithinOrEqualDir(physStage, physWS) {
+		if inside {
 			return fmt.Errorf(
 				"init stage directory %s must be outside workspace %s",
 				physStage,
-				physWS,
+				ws,
 			)
 		}
 	}
@@ -703,31 +707,19 @@ func validateVerificationWorkspaceSeparation(cfg *VerificationConfig, protectedD
 		if ws == "" {
 			continue
 		}
-		physWS, err := abspath.EvalMissing(ws)
+		inside, err := abspath.Within(ws, physReports)
 		if err != nil {
-			return fmt.Errorf("resolve workspace %s: %w", ws, err)
+			return err
 		}
-		if isWithinOrEqualDir(physReports, physWS) {
+		if inside {
 			return fmt.Errorf(
 				"verification report_dir %s must be outside the workspace (%s) so builder agents cannot read or modify evaluator reports",
 				physReports,
-				physWS,
+				ws,
 			)
 		}
 	}
 	return nil
-}
-
-// isWithinOrEqualDir reports whether child equals or is a subdirectory of root.
-func isWithinOrEqualDir(child, root string) bool {
-	if child == "" || root == "" {
-		return false
-	}
-	rel, err := filepath.Rel(filepath.Clean(root), filepath.Clean(child))
-	if err != nil {
-		return false
-	}
-	return rel == "." || (rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)))
 }
 
 // recordWorkspaceCleanupFailure records a post-durability cleanup failure on a

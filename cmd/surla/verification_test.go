@@ -131,8 +131,8 @@ func TestLoadProjectVerificationConfigDerivesTheStarterPlanFromHEAD(t *testing.T
 			assert.Equal(t, repo, ws.verification.Plan.CandidateRepo)
 			assert.Equal(t, "services/shop", ws.verification.Plan.CandidateModule)
 			assert.Equal(t, "services/shop/eval", ws.verification.Plan.SuiteModule)
-			assert.False(t, isWithinOrEqualDir(ws.verification.RunsDir, project))
-			assert.False(t, isWithinOrEqualDir(ws.verification.Plan.ReportDir, project))
+			assertOutsideDirectory(t, ws.verification.RunsDir, project)
+			assertOutsideDirectory(t, ws.verification.Plan.ReportDir, project)
 			require.NoError(t, ws.closeProjectLock())
 		}
 	})
@@ -160,8 +160,8 @@ func TestLoadProjectVerificationConfigDerivesTheStarterPlanFromHEAD(t *testing.T
 			assert.Equal(t, repo, ws.verification.Plan.SuiteRepo, "-project %s", arg)
 			assert.Equal(t, head, ws.verification.Plan.SuiteCommit, "-project %s", arg)
 			assert.Equal(t, map[string]string{"shop": "./cmd/shop"}, ws.verification.Plan.Binaries)
-			assert.False(t, isWithinOrEqualDir(ws.verification.RunsDir, repo))
-			assert.False(t, isWithinOrEqualDir(ws.verification.Plan.ReportDir, repo))
+			assertOutsideDirectory(t, ws.verification.RunsDir, repo)
+			assertOutsideDirectory(t, ws.verification.Plan.ReportDir, repo)
 			require.NoError(t, ws.closeProjectLock())
 		}
 	})

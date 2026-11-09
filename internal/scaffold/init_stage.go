@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"golang.org/x/sys/unix"
 
@@ -37,11 +36,11 @@ func newInitStage(target, workDir string) (*initStage, error) {
 	if err != nil {
 		return nil, fmt.Errorf("resolve init work directory: %w", err)
 	}
-	rel, err := filepath.Rel(parentPath, workPath)
+	inside, err := abspath.Within(parentPath, workPath)
 	if err != nil {
 		return nil, err
 	}
-	if rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+	if inside {
 		return nil, fmt.Errorf("init work directory %s must be outside project parent %s", workPath, parentPath)
 	}
 	var source, destination unix.Stat_t

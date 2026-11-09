@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	gensurla "github.com/goadesign/surla/gen/surla"
+	"github.com/goadesign/surla/internal/abspath"
 	"github.com/goadesign/surla/internal/controlplane"
 	"github.com/goadesign/surla/internal/verify"
 )
@@ -42,10 +43,10 @@ func TestConfigureServeWorkspaceSeparatesOperatorStateAndImportsLegacyWorkspace(
 	wsCfg, err := configureServeWorkspace(serveConfig{})
 	require.NoError(t, err)
 	require.NotNil(t, wsCfg.closeProjectLock)
-	assert.False(t, isWithinOrEqualDir(wsCfg.cardsDir, wsCfg.workspaceDir))
-	assert.False(t, isWithinOrEqualDir(wsCfg.runsDir, wsCfg.workspaceDir))
-	assert.False(t, isWithinOrEqualDir(wsCfg.initStageDir, wsCfg.workspaceDir))
-	assert.False(t, isWithinOrEqualDir(wsCfg.evalWorkDir, wsCfg.workspaceDir))
+	assertOutsideDirectory(t, wsCfg.cardsDir, wsCfg.workspaceDir)
+	assertOutsideDirectory(t, wsCfg.runsDir, wsCfg.workspaceDir)
+	assertOutsideDirectory(t, wsCfg.initStageDir, wsCfg.workspaceDir)
+	assertOutsideDirectory(t, wsCfg.evalWorkDir, wsCfg.workspaceDir)
 	require.NoError(t, wsCfg.closeProjectLock())
 
 	// 3. Seed legacy workspace .surla/cards, .surla/runs, and reports/ and verify -import-legacy-workspace.
@@ -356,7 +357,7 @@ func TestDefaultOperatorRootDeterministicAndPermissionValidation(t *testing.T) {
 		projectSet: true,
 	})
 	require.NoError(t, err)
-	assert.False(t, isWithinOrEqualDir(parentCWDCfg.runsDir, wsDir))
+	assertOutsideDirectory(t, parentCWDCfg.runsDir, wsDir)
 	require.NoError(t, parentCWDCfg.closeProjectLock())
 }
 
@@ -521,7 +522,7 @@ func TestConfigureServeWorkspaceMonorepoSeparationAndLegacyImport(t *testing.T) 
 		importLegacyWorkspace: true,
 	})
 	require.NoError(t, err)
-	assert.False(t, isWithinOrEqualDir(monoImportedCfg.cardsDir, monorepo), "default cardsDir must be outside enclosing monorepo R")
+	assertOutsideDirectory(t, monoImportedCfg.cardsDir, monorepo)
 	assert.FileExists(t, filepath.Join(monoImportedCfg.cardsDir, monoCardDigest))
 	require.NoError(t, monoImportedCfg.closeProjectLock())
 
@@ -736,4 +737,12 @@ func closeServeOptions(t *testing.T, opts controlplane.Options) {
 	if opts.CloseProjectLock != nil {
 		assert.NoError(t, opts.CloseProjectLock())
 	}
+}
+
+// assertOutsideDirectory verifies storage exclusion without hiding filesystem errors.
+func assertOutsideDirectory(t *testing.T, child, root string) {
+	t.Helper()
+	inside, err := abspath.Within(root, child)
+	require.NoError(t, err)
+	assert.False(t, inside, "%s must be outside %s", child, root)
 }

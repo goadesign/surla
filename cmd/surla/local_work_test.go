@@ -174,6 +174,31 @@ func TestProtectedDirectoryRejectsWorkspaceAliases(t *testing.T) {
 	assert.NoDirExists(t, filepath.Join(workspace, "new"))
 }
 
+// TestProtectedDirectoryRejectsCaseAliases stops before creating compiler or
+// staging directories through a non-symlink alias of a builder directory.
+func TestProtectedDirectoryRejectsCaseAliases(t *testing.T) {
+	base := t.TempDir()
+	workspace := filepath.Join(base, "workspace")
+	alias := filepath.Join(base, "WORKSPACE")
+	require.NoError(t, os.Mkdir(workspace, 0o700))
+	a, err := os.Stat(workspace)
+	require.NoError(t, err)
+	b, err := os.Stat(alias)
+	if os.IsNotExist(err) {
+		t.Skip("filesystem does not provide this case alias")
+	}
+	require.NoError(t, err)
+	require.True(t, os.SameFile(a, b))
+	for _, pair := range [][2]string{{workspace, alias}, {alias, workspace}} {
+		_, err := createProtectedDir(filepath.Join(pair[1], "new"), []string{pair[0]})
+		require.ErrorContains(t, err, "must be outside workspace")
+	}
+	assert.NoDirExists(t, filepath.Join(workspace, "new"))
+	_, err = createProtectedDir(filepath.Join(base, "outside"), []string{filepath.Join(base, "missing-root")})
+	require.ErrorIs(t, err, os.ErrNotExist)
+	assert.NoDirExists(t, filepath.Join(base, "outside"))
+}
+
 // TestRunInitKeepsFailedLogsOutsideTheWorkspace runs the real CLI composition
 // with a failing trusted Go-command fixture; generation and downloads never run.
 func TestRunInitKeepsFailedLogsOutsideTheWorkspace(t *testing.T) {

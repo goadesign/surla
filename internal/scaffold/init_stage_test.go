@@ -132,6 +132,28 @@ func TestInitRejectsWorkspaceStaging(t *testing.T) {
 	assertOnly(t, parent)
 }
 
+// TestInitRejectsCaseAliasedWorkspaceStaging checks admission alone, before
+// allocating build directories or invoking a generator or command runner.
+func TestInitRejectsCaseAliasedWorkspaceStaging(t *testing.T) {
+	base := t.TempDir()
+	parent := filepath.Join(base, "workspace")
+	alias := filepath.Join(base, "WORKSPACE")
+	require.NoError(t, os.MkdirAll(filepath.Join(parent, "stage"), 0o700))
+	a, err := os.Stat(parent)
+	require.NoError(t, err)
+	b, err := os.Stat(alias)
+	if os.IsNotExist(err) {
+		t.Skip("filesystem does not provide this case alias")
+	}
+	require.NoError(t, err)
+	require.True(t, os.SameFile(a, b))
+	for _, pair := range [][2]string{{parent, alias}, {alias, parent}} {
+		_, err := newInitStage(filepath.Join(pair[0], "shop"), filepath.Join(pair[1], "stage"))
+		require.ErrorContains(t, err, "must be outside project parent")
+	}
+	assertOnly(t, filepath.Join(parent, "stage"))
+}
+
 // TestRunCommandOverridesBothTemporaryDirectories checks the exact environment
 // Go uses for OS temporary files and compiler work, without executing a candidate.
 func TestRunCommandOverridesBothTemporaryDirectories(t *testing.T) {

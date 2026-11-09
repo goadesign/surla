@@ -5,6 +5,7 @@ package abspath
 
 import (
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -99,6 +100,43 @@ func EvalFrom(baseDir, path string) (string, error) {
 		return "", err
 	}
 	return evalComponents(base, path, path)
+}
+
+// Within reports whether path names root or a descendant of root, comparing
+// actual filesystem identities so differently spelled aliases also match.
+// Storage admission callers supply an existing directory as root; path may
+// have a missing suffix. Symlinks are expanded before parent components, as in
+// EvalMissing. Missing roots, non-directory roots, and filesystem errors other
+// than missing path components return errors. The result describes the named
+// paths during this call, without protecting them against concurrent renames.
+func Within(root, path string) (bool, error) {
+	resolvedRoot, err := Eval(root)
+	if err != nil {
+		return false, fmt.Errorf("resolve root %s: %w", root, err)
+	}
+	rootInfo, err := os.Stat(resolvedRoot)
+	if err != nil {
+		return false, err
+	}
+	if !rootInfo.IsDir() {
+		return false, fmt.Errorf("root %s is not a directory", root)
+	}
+	resolvedPath, err := EvalMissing(path)
+	if err != nil {
+		return false, fmt.Errorf("resolve path %s: %w", path, err)
+	}
+	for cur := resolvedPath; ; cur = filepath.Dir(cur) {
+		info, err := os.Stat(cur)
+		if err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return false, err
+		}
+		if err == nil && os.SameFile(rootInfo, info) {
+			return true, nil
+		}
+		if filepath.Dir(cur) == cur {
+			return false, nil
+		}
+	}
 }
 
 // evalComponents walks rel's path components left-to-right from the resolved

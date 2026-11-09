@@ -269,6 +269,50 @@ func TestExecRejectsALogFileInsideTheState(t *testing.T) {
 	require.ErrorContains(t, err, "outside the candidate state directory")
 }
 
+// TestExecRejectsAliasedLogAdmission uses inert bytes as the digest-pinned
+// artifact. Every case must fail before launching it or opening its log.
+func TestExecRejectsAliasedLogAdmission(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("Exec admission requires the macOS sandbox launcher")
+	}
+	base := t.TempDir()
+	state := filepath.Join(base, "state")
+	alias := filepath.Join(base, "STATE")
+	require.NoError(t, os.Mkdir(state, 0o700))
+	artifactPath := filepath.Join(base, "inert-artifact")
+	require.NoError(t, os.WriteFile(artifactPath, []byte("inert admission fixture"), 0o600))
+	digest, err := fileDigest(artifactPath)
+	require.NoError(t, err)
+	artifact := Artifact{path: artifactPath, digest: digest}
+	log := filepath.Join(state, "evidence.log")
+	require.NoError(t, os.WriteFile(log, []byte("preserved evidence"), 0o600))
+	link := filepath.Join(base, "log-link")
+	require.NoError(t, os.Symlink(log, link))
+	_, err = Exec(t.Context(), artifact, Spec{StateDir: state, LogFile: link})
+	require.ErrorContains(t, err, "outside the candidate state directory")
+	a, err := os.Stat(state)
+	require.NoError(t, err)
+	b, err := os.Stat(alias)
+	if os.IsNotExist(err) {
+		t.Log("filesystem does not provide this case alias; symlink admission was verified")
+	} else {
+		require.NoError(t, err)
+		require.True(t, os.SameFile(a, b))
+		for _, pair := range [][2]string{{state, alias}, {alias, state}} {
+			for _, suffix := range []string{"evidence.log", "missing/evidence.log"} {
+				_, err := Exec(t.Context(), artifact, Spec{StateDir: pair[0], LogFile: filepath.Join(pair[1], suffix)})
+				require.ErrorContains(t, err, "outside the candidate state directory")
+			}
+		}
+	}
+	raw, err := os.ReadFile(log)
+	require.NoError(t, err)
+	assert.Equal(t, "preserved evidence", string(raw))
+	assert.NoDirExists(t, filepath.Join(state, "missing"))
+	_, err = Exec(t.Context(), artifact, Spec{StateDir: state, LogFile: log + "/child"})
+	require.Error(t, err, "filesystem errors must not become an outside verdict")
+}
+
 // excerptAfterExit waits for the process and returns its whole output.
 func excerptAfterExit(p *Process) (string, bool, error) {
 	if err := p.Wait(); err != nil {

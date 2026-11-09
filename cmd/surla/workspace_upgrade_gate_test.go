@@ -47,7 +47,7 @@ func TestWorkspaceUpgradeRequiresImportBeforeAcceptingNewWork(t *testing.T) {
 	reopened, err := configureServeWorkspace(serveConfig{})
 	require.NoError(t, err)
 	assert.Equal(t, imported.cardsDir, reopened.cardsDir)
-	assert.False(t, isWithinOrEqualDir(reopened.cardsDir, reopened.workspaceDir))
+	assertOutsideDirectory(t, reopened.cardsDir, reopened.workspaceDir)
 	cp, err := controlplane.New(controlplane.Options{
 		CardsDir:         reopened.cardsDir,
 		WorkspaceDir:     reopened.workspaceDir,
@@ -101,7 +101,7 @@ func TestWorkspaceUpgradeIgnoresUnrelatedFiles(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, configured.closeProjectLock)
 	t.Cleanup(func() { assert.NoError(t, configured.closeProjectLock()) })
-	assert.False(t, isWithinOrEqualDir(configured.cardsDir, configured.workspaceDir))
+	assertOutsideDirectory(t, configured.cardsDir, configured.workspaceDir)
 }
 
 // saveWorkspaceUpgradeCard saves and refines a confirmed card through the public

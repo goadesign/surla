@@ -251,6 +251,10 @@ func configureServeWorkspace(cfg serveConfig) (ws workspaceServeConfig, err erro
 		return pt, nil
 	}
 
+	startupCardsInside, err := withinAnyDir(startupCardsDir, protectedDirs)
+	if err != nil {
+		return workspaceServeConfig{}, err
+	}
 	var cardsDir string
 	switch {
 	case cfg.cardsDirExplicit:
@@ -258,7 +262,7 @@ func configureServeWorkspace(cfg serveConfig) (ws workspaceServeConfig, err erro
 		if err != nil {
 			return workspaceServeConfig{}, fmt.Errorf("resolve -cards-dir %s: %w", cfg.cardsDir, err)
 		}
-	case !withinAnyDir(startupCardsDir, protectedDirs):
+	case !startupCardsInside:
 		cardsDir = startupCardsDir
 	default:
 		cardsDir = operatorCardsDir
@@ -420,7 +424,11 @@ func validateVerificationConfigSeparation(
 			{"runs_dir", physRuns},
 			{"report_dir", physReports},
 		} {
-			if isWithinOrEqualDir(item.target, ws) {
+			inside, err := abspath.Within(ws, item.target)
+			if err != nil {
+				return err
+			}
+			if inside {
 				return fmt.Errorf(
 					"-verification-config %s: %s (%s) must be outside the workspace (%s) so builder agents cannot modify evaluator runs or reports",
 					configPath,
@@ -476,7 +484,11 @@ func loadWorkspacePromotionTarget(
 			{"report_dir", physReport},
 			{"release_dir", physRelease},
 		} {
-			if isWithinOrEqualDir(item.target, ws) {
+			inside, err := abspath.Within(ws, item.target)
+			if err != nil {
+				return nil, "", err
+			}
+			if inside {
 				return nil, "", fmt.Errorf(
 					"promotion config %s: %s (%s) must be outside the workspace (%s) so builder agents cannot modify promotion inputs, reports, or release binaries",
 					promoPath,
@@ -500,7 +512,14 @@ func validatePromotionPathSeparation(promoPath string, protectedDirs ...string) 
 		return err
 	}
 	for _, ws := range protectedDirs {
-		if ws != "" && isWithinOrEqualDir(physPromo, ws) {
+		if ws == "" {
+			continue
+		}
+		inside, err := abspath.Within(ws, physPromo)
+		if err != nil {
+			return err
+		}
+		if inside {
 			return fmt.Errorf(
 				"promotion config %s: config file (%s) must be outside the workspace (%s) so builder agents cannot modify promotion inputs, reports, or release binaries",
 				promoPath,
@@ -588,7 +607,11 @@ func defaultOperatorRoot(initialWorkspaceRoot string, extraDirs ...string) (stri
 	if err != nil {
 		return "", fmt.Errorf("resolve operator storage root %s: %w", cand, err)
 	}
-	if withinAnyDir(phys, excluded) {
+	inside, err := withinAnyDir(phys, excluded)
+	if err != nil {
+		return "", err
+	}
+	if inside {
 		return "", fmt.Errorf("operator storage root %s must be outside the workspace (%s)", phys, initialWorkspaceRoot)
 	}
 	if err := markOperatorPrivateDir(phys); err != nil {
@@ -598,7 +621,11 @@ func defaultOperatorRoot(initialWorkspaceRoot string, extraDirs ...string) (stri
 	if err != nil {
 		return "", fmt.Errorf("resolve operator storage root %s: %w", phys, err)
 	}
-	if withinAnyDir(evalPhys, excluded) {
+	inside, err = withinAnyDir(evalPhys, excluded)
+	if err != nil {
+		return "", err
+	}
+	if inside {
 		return "", fmt.Errorf("operator storage root %s must be outside the workspace (%s)", evalPhys, initialWorkspaceRoot)
 	}
 	if err := validateOperatorPrivateDir(evalPhys); err != nil {
@@ -607,14 +634,22 @@ func defaultOperatorRoot(initialWorkspaceRoot string, extraDirs ...string) (stri
 	return evalPhys, nil
 }
 
-// withinAnyDir reports whether dir lies within or equals any directory in dirs.
-func withinAnyDir(dir string, dirs []string) bool {
+// withinAnyDir checks physical containment in the supplied existing roots.
+// Filesystem failures stop admission instead of treating a path as outside.
+func withinAnyDir(dir string, dirs []string) (bool, error) {
 	for _, d := range dirs {
-		if d != "" && isWithinOrEqualDir(dir, d) {
-			return true
+		if d == "" {
+			continue
+		}
+		inside, err := abspath.Within(d, dir)
+		if err != nil {
+			return false, err
+		}
+		if inside {
+			return true, nil
 		}
 	}
-	return false
+	return false, nil
 }
 
 // workspaceProtectedDirs returns the deduplicated physical paths of
@@ -693,7 +728,14 @@ func validateWorkspaceDirSeparation(label, targetDir string, protectedDirs ...st
 		return err
 	}
 	for _, ws := range protectedDirs {
-		if ws != "" && isWithinOrEqualDir(physTarget, ws) {
+		if ws == "" {
+			continue
+		}
+		inside, err := abspath.Within(ws, physTarget)
+		if err != nil {
+			return err
+		}
+		if inside {
 			return fmt.Errorf(
 				"%s %s must be outside the workspace (%s) so builder agents cannot modify authoritative Change Cards or workspace state",
 				label,
@@ -703,19 +745,6 @@ func validateWorkspaceDirSeparation(label, targetDir string, protectedDirs ...st
 		}
 	}
 	return nil
-}
-
-// isWithinOrEqualDir reports whether child equals parent or is nested inside
-// parent.
-func isWithinOrEqualDir(child, parent string) bool {
-	if child == "" || parent == "" {
-		return false
-	}
-	rel, err := filepath.Rel(filepath.Clean(parent), filepath.Clean(child))
-	if err != nil {
-		return false
-	}
-	return rel == "." || (rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)))
 }
 
 // sha256HexString returns the 64-character lowercase hex SHA-256 digest of s.
