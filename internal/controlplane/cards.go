@@ -15,7 +15,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"slices"
 	"strings"
 	"syscall"
 
@@ -83,41 +82,6 @@ type (
 		// SourceOrigin records whether DesignSource was read from the bound
 		// workspace ("workspace") or supplied by the caller (omitted on disk).
 		SourceOrigin string `json:"source_origin,omitempty"`
-	}
-
-	// canonicalAnswerPair is a deterministic key/value entry for JSON hashing.
-	canonicalAnswerPair struct {
-		// ID is the ambiguity question ID.
-		ID string `json:"id"`
-		// Answer is the selected option value.
-		Answer string `json:"answer"`
-	}
-
-	// canonicalCardRevision is the canonical JSON structure hashed to produce
-	// RequestRevision without delimiter ambiguity.
-	canonicalCardRevision struct {
-		// ChangeID is the Change Card identifier.
-		ChangeID string `json:"change_id"`
-		// Owner is the authenticated creator principal ID.
-		Owner string `json:"owner"`
-		// Status is the Change Card status.
-		Status string `json:"status"`
-		// Prompt is the original operator feature request.
-		Prompt string `json:"prompt"`
-		// DesignSource is the Goa design source inspected at CP1.
-		DesignSource string `json:"design_source"`
-		// Summary is the plain-English summary.
-		Summary string `json:"summary"`
-		// Ambiguities is the ordered slice of surfaced domain questions.
-		Ambiguities []*gensurla.AmbiguityQuestion `json:"ambiguities"`
-		// Answers is the key-sorted slice of confirmed ambiguity answers.
-		Answers []canonicalAnswerPair `json:"answers"`
-		// Examples is the ordered slice of confirmed example checks.
-		Examples []*gensurla.ExampleItem `json:"examples"`
-		// PreservedBehaviors is the ordered slice of preserved contract invariants.
-		PreservedBehaviors []string `json:"preserved_behaviors"`
-		// ConfirmedBy is the authenticated principal ID that confirmed the card.
-		ConfirmedBy string `json:"confirmed_by"`
 	}
 )
 
@@ -486,47 +450,6 @@ func (s *cardStore) hasWorkspaceCardsWithFiles() (bool, error) {
 // isHexCardFilename reports whether name is <64 lowercase hex>.json.
 func isHexCardFilename(name string) bool {
 	return strings.HasSuffix(name, ".json") && cardFileDigestPattern.MatchString(strings.TrimSuffix(name, ".json"))
-}
-
-// computeCanonicalRevision computes a collision-free SHA-256 hex digest over
-// the canonical JSON encoding of the ChangeCardResult, its owner principal, and
-// its inspected design source.
-func computeCanonicalRevision(card *gensurla.ChangeCardResult, owner, designSource string) (string, error) {
-	keys := make([]string, 0, len(card.Answers))
-	for k := range card.Answers {
-		keys = append(keys, k)
-	}
-	slices.Sort(keys)
-	answers := make([]canonicalAnswerPair, 0, len(keys))
-	for _, k := range keys {
-		answers = append(answers, canonicalAnswerPair{
-			ID:     k,
-			Answer: card.Answers[k],
-		})
-	}
-	var confirmedBy string
-	if card.ConfirmedBy != nil {
-		confirmedBy = *card.ConfirmedBy
-	}
-	payload := canonicalCardRevision{
-		ChangeID:           card.ChangeID,
-		Owner:              owner,
-		Status:             card.Status,
-		Prompt:             card.Prompt,
-		DesignSource:       designSource,
-		Summary:            card.Summary,
-		Ambiguities:        card.Ambiguities,
-		Answers:            answers,
-		Examples:           card.Examples,
-		PreservedBehaviors: card.PreservedBehaviors,
-		ConfirmedBy:        confirmedBy,
-	}
-	raw, err := json.Marshal(payload)
-	if err != nil {
-		return "", fmt.Errorf("marshal canonical change card revision: %w", err)
-	}
-	sum := sha256.Sum256(raw)
-	return hex.EncodeToString(sum[:]), nil
 }
 
 // readCardRegularFileNoFollow reads path without following symlinks and
