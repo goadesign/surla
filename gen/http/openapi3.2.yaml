@@ -429,7 +429,7 @@ paths:
             tags:
                 - surla
             summary: verify_change surla
-            description: Start Checkpoint 4 verification of a candidate commit for the owner's confirmed Change Card revision and return its run_id at once. The server builds the commit in Surla's sandbox and runs the evaluator suite the operator configured, in a separate process that keeps running when the caller disconnects or the server restarts; get_verification reads its state. Only the builder view of the report is ever returned. A server started without verification configured (surla serve -verification-config) rejects every call.
+            description: Start Checkpoint 4 verification of a candidate commit for the owner's confirmed Change Card revision and return its run_id at once. The server builds the commit in Surla's sandbox and runs the evaluator suite the operator configured, in a separate process that keeps running when the caller disconnects or the server restarts; get_verification reads its state. Only the builder view of the report is ever returned. Requires a committed starter project in the bound workspace or -verification-config.
             operationId: surla#verify_change
             parameters:
                 - name: change_id
@@ -851,7 +851,7 @@ paths:
             tags:
                 - surla
             summary: preview_architecture surla
-            description: Extract and validate the Checkpoint 2 C4 container topology, tool contracts, Goa-AI guardrails, and proposed Chorus swarm roster from a candidate Goa design bound to a confirmed Change Card. Apart from the swarm roster, the result reports what the design declares; it does not compare the design with the Change Card's requirements.
+            description: Extract and validate the Checkpoint 2 C4 container topology, tool contracts, Goa-AI guardrails, and proposed Chorus swarm roster from a candidate Goa design bound to a confirmed Change Card. When design is omitted and a workspace is bound, Surla reads the candidate module snapshot from the bound workspace. Apart from the swarm roster, the result reports what the design declares; it does not compare the design with the Change Card's requirements.
             operationId: surla#preview_architecture
             requestBody:
                 description: Request body for preview_architecture.
@@ -1129,7 +1129,7 @@ paths:
             tags:
                 - surla
             summary: propose_change surla
-            description: Evaluate a feature request at Checkpoint 1, surfacing concrete examples and any genuine domain ambiguity. The analysis considers the target's current design only when it is sent in design_source.
+            description: Evaluate a feature request at Checkpoint 1, surfacing concrete examples and any genuine domain ambiguity. When design_source is omitted and a workspace is bound, Surla reads design/*.go from the bound workspace.
             operationId: surla#propose_change
             requestBody:
                 description: Request body for propose_change.
@@ -1278,7 +1278,7 @@ paths:
             tags:
                 - surla
             summary: revise_change surla
-            description: 'Revise an existing Checkpoint 1 Change Card with new or changed operator requirements bound to its current request_revision. Re-analyzes the revised prompt and design source with the prior card''s prompt, summary, confirmed answers, open questions, examples and preserved behaviors as context, and saves a new revision in needs_confirmation status for operator review. The new revision''s answers, confirmed_by and any approval are cleared: earlier decisions remain only where the analysis restated them in its summary, examples or preserved behaviors.'
+            description: 'Revise an existing Checkpoint 1 Change Card with new or changed operator requirements bound to its current request_revision. Re-analyzes the revised prompt and design source (re-reading design/*.go from the bound workspace when design_source is omitted on a workspace-backed card) with the prior card''s prompt, summary, confirmed answers, open questions, examples and preserved behaviors as context, and saves a new revision in needs_confirmation status for operator review. The new revision''s answers, confirmed_by and any approval are cleared: earlier decisions remain only where the analysis restated them in its summary, examples or preserved behaviors.'
             operationId: surla#revise_change
             requestBody:
                 description: Request body for revise_change.
@@ -1615,7 +1615,7 @@ paths:
             tags:
                 - surla
             summary: start_live_target surla
-            description: Build a candidate commit exactly as Checkpoint 4 does and run it, with the operator's evaluator suite, as this server's one live CP3 target, then bind draft_override to it. A running target is stopped first, so there is never more than one. The target runs until stop_live_target, a later start_live_target, its own exit, or this server's shutdown; a server restart leaves none running. Requires Checkpoint 4 verification to be configured (surla serve -verification-config), because the build and launch settings come from it.
+            description: Build a candidate commit exactly as Checkpoint 4 does and run it, with the operator's evaluator suite, as this server's one live CP3 target, then bind draft_override to it. A running target is stopped first, so there is never more than one. The target runs until stop_live_target, a later start_live_target, its own exit, or this server's shutdown; a server restart leaves none running. Requires a committed starter project in the bound workspace or -verification-config.
             operationId: surla#start_live_target
             requestBody:
                 description: Request body for start_live_target.
@@ -1668,7 +1668,7 @@ paths:
             tags:
                 - surla
             summary: draft_override surla
-            description: 'Apply a Fast Draft Mode prompt override on the bound target or reject a compiled-rule prompt hack. A prompt_template override needs a bound target: on surla serve, that is the live target start_live_target runs, which requires surla serve -verification-config. On a live target started with start_live_target, a rejected update leaves the target''s text unchanged; update_not_confirmed means the target may or may not have applied it.'
+            description: 'Apply a Fast Draft Mode prompt override on the bound target or reject a compiled-rule prompt hack. A prompt_template override needs a bound target: on surla serve, that is the live target start_live_target runs. On a live target started with start_live_target, a rejected update leaves the target''s text unchanged; update_not_confirmed means the target may or may not have applied it.'
             operationId: surla#draft_override
             requestBody:
                 description: Request body for draft_override.
@@ -1884,6 +1884,73 @@ paths:
                                 timeout: false
                 "501":
                     description: 'not_implemented: This server has no verification configuration, so it cannot read verification runs.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: not_implemented
+                                temporary: false
+                                timeout: false
+    /workspace/init:
+        post:
+            tags:
+                - surla
+            summary: init_project surla
+            description: Initialize a new Surla starter project directory inside the server's bound workspace, generating the candidate Go module, Goa and Goa-AI code, and the eval/ verification harness, and switch the server's active workspace to that project.
+            operationId: surla#init_project
+            requestBody:
+                description: Request body for init_project.
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/InitProjectPayload'
+                        example:
+                            dir: shop
+                            module_path: example.com/shop
+            responses:
+                "200":
+                    description: OK response.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/InitProjectResult'
+                            example:
+                                dir: Exercitationem mollitia illo incidunt.
+                                module_path: Voluptates soluta.
+                                service_name: Quis aliquam repellendus sit modi.
+                "409":
+                    description: 'conflict: The workspace or target directory is already initialized.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: conflict
+                                temporary: false
+                                timeout: false
+                "422":
+                    description: 'unprocessable: The module path or child directory name is invalid.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: unprocessable
+                                temporary: false
+                                timeout: false
+                "501":
+                    description: 'not_implemented: This control plane has no bound workspace or starter generator configured.'
                     content:
                         application/vnd.goa.error:
                             schema:
@@ -3154,6 +3221,48 @@ components:
                 - input_summary
                 - expected_outcome
                 - verification_kind
+        InitProjectPayload:
+            type: object
+            properties:
+                dir:
+                    type: string
+                    description: Direct child directory name inside the bound workspace root. When omitted or empty, defaults to the service name derived from module_path.
+                    example: shop
+                module_path:
+                    type: string
+                    description: Go module path of the new service (for example example.com/shop).
+                    example: example.com/shop
+                    minLength: 3
+            description: Request body for init_project.
+            example:
+                dir: shop
+                module_path: example.com/shop
+            required:
+                - module_path
+        InitProjectResult:
+            type: object
+            properties:
+                dir:
+                    type: string
+                    description: Physical directory path of the newly created starter project (now the server's active workspace).
+                    example: Exercitationem mollitia illo incidunt.
+                module_path:
+                    type: string
+                    description: Initialized Go module path.
+                    example: Voluptates soluta.
+                service_name:
+                    type: string
+                    description: Derived service name.
+                    example: Quis aliquam repellendus sit modi.
+            description: Newly initialized Surla starter project directory and derived service identity.
+            example:
+                dir: Exercitationem mollitia illo incidunt.
+                module_path: Voluptates soluta.
+                service_name: Quis aliquam repellendus sit modi.
+            required:
+                - dir
+                - module_path
+                - service_name
         LiveTargetResult:
             type: object
             properties:
@@ -3320,7 +3429,6 @@ components:
             required:
                 - change_id
                 - request_revision
-                - design
         ProposeChangePayload:
             type: object
             properties:
@@ -3330,7 +3438,7 @@ components:
                     example: Ipsum soluta officiis facilis dolorem quae.
                 design_source:
                     type: string
-                    description: Current Goa design source of the target (its design/*.go files) for the CP1 model to read. If omitted, CP1 receives no current design; supply the relevant design source when you want it considered.
+                    description: Current Goa design source of the target (its design/*.go files) for the CP1 model to read. When omitted on a server with a bound workspace, Surla reads design/*.go from the bound workspace; when omitted without a bound workspace, CP1 receives no current design.
                     example: Quia placeat maiores voluptatem voluptatem.
                 prompt:
                     type: string
@@ -3353,7 +3461,7 @@ components:
                     example: Optio ratione suscipit et neque officia.
                 design_source:
                     type: string
-                    description: Updated Goa design source of the target (its design/*.go files) for the CP1 model to read; when omitted, the card's saved design source is used again.
+                    description: Updated Goa design source of the target (its design/*.go files) for the CP1 model to read. When omitted on a workspace-backed card with a bound workspace, Surla re-reads design/*.go from the bound workspace; otherwise the card's saved design source is used again.
                     example: Qui itaque.
                 prompt:
                     type: string

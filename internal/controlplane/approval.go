@@ -35,7 +35,11 @@ func (c *ControlPlane) ApproveMerge(
 	if !ok {
 		return nil, errors.New("authenticated principal is required")
 	}
-	if c.promotionTarget == nil {
+	target, err := c.resolvePromotion(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if target == nil {
 		return nil, gensurla.MakeNotImplemented(errors.New("no promotion target is bound to this control plane"))
 	}
 
@@ -71,14 +75,14 @@ func (c *ControlPlane) ApproveMerge(
 	// is never removed and never changes owner; its request_revision and
 	// confirmed status are checked again under c.mu before the approval is
 	// written.
-	report, err := c.promotionTarget.LoadReport(ctx, p.ReportDigest)
+	report, err := target.LoadReport(ctx, p.ReportDigest)
 	if err != nil {
 		return nil, fmt.Errorf("load verification report %s: %w", p.ReportDigest, err)
 	}
 	if report.Digest != p.ReportDigest {
 		return nil, fmt.Errorf("promotion target returned report %s for digest %s", report.Digest, p.ReportDigest)
 	}
-	inputs, err := c.promotionTarget.CurrentInputs(ctx, p.CandidateCommit)
+	inputs, err := target.CurrentInputs(ctx, p.CandidateCommit)
 	if err != nil {
 		return nil, fmt.Errorf("load promotion inputs for %s: %w", p.CandidateCommit, err)
 	}
@@ -163,7 +167,7 @@ func (c *ControlPlane) currentCard(
 	if a == nil {
 		return card, nil
 	}
-	if c.promotionTarget == nil {
+	if c.promotionTarget == nil && c.resolvePromotionTarget == nil {
 		unverified := *card
 		unverified.Approval = nil
 		unverified.UnverifiedApproval = &gensurla.UnverifiedApprovalItem{
@@ -185,7 +189,23 @@ func (c *ControlPlane) currentCard(
 	)
 	defer span.End()
 
-	inputs, err := c.promotionTarget.CurrentInputs(ctx, a.CandidateCommit)
+	target, err := c.resolvePromotion(ctx)
+	if err == nil && target == nil {
+		unverified := *card
+		unverified.Approval = nil
+		unverified.UnverifiedApproval = &gensurla.UnverifiedApprovalItem{
+			Approval: a,
+			Reason: fmt.Sprintf(
+				"Saved approval for candidate commit %s could not be verified because no promotion target is configured (-promotion-config). Configure a promotion target and reload the card with get_change.",
+				a.CandidateCommit,
+			),
+		}
+		return &unverified, nil
+	}
+	var inputs PromotionInputs
+	if err == nil {
+		inputs, err = target.CurrentInputs(ctx, a.CandidateCommit)
+	}
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
@@ -210,4 +230,17 @@ func (c *ControlPlane) currentCard(
 	stale.Approval = nil
 	stale.UnverifiedApproval = nil
 	return &stale, nil
+}
+
+// resolvePromotion resolves a PromotionTarget dynamically from the currently
+// bound workspace directory when ResolvePromotionTarget is set, or returns the
+// static PromotionTarget.
+func (c *ControlPlane) resolvePromotion(ctx context.Context) (PromotionTarget, error) {
+	if c.resolvePromotionTarget != nil {
+		return c.resolvePromotionTarget(ctx, c.currentWorkspaceDir())
+	}
+	if c.promotionTarget != nil {
+		return c.promotionTarget, nil
+	}
+	return nil, nil
 }

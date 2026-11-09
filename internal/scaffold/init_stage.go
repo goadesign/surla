@@ -72,9 +72,6 @@ func newInitStage(target, workDir string) (*initStage, error) {
 // publish moves the completed tree without replacing any existing target.
 // Rename is the final fallible step: an error leaves the target unchanged.
 func (s *initStage) publish() error {
-	if err := os.Chmod(s.path, 0o755); err != nil {
-		return fmt.Errorf("set project permissions: %w", err)
-	}
 	if err := unix.RenamexNp(s.path, s.target, unix.RENAME_EXCL); err != nil {
 		return fmt.Errorf("move project into %s: %w", s.target, err)
 	}

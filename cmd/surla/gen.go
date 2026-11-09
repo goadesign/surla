@@ -12,7 +12,6 @@ import (
 	"os"
 	"os/signal"
 	"path"
-	"path/filepath"
 	"slices"
 	"strings"
 	"syscall"
@@ -54,7 +53,7 @@ func runGen(args []string, stdout, stderr io.Writer) (err error) {
 	if fs.NArg() > 0 {
 		return fmt.Errorf("unexpected arguments %q", fs.Args())
 	}
-	cleanDir, root, err := openModuleRoot(*dir)
+	cleanDir, root, err := designeval.OpenModuleRoot(*dir)
 	if err != nil {
 		return err
 	}
@@ -71,7 +70,7 @@ func runGen(args []string, stdout, stderr io.Writer) (err error) {
 			err = errors.Join(err, closeErr)
 		}
 	}()
-	files, err := readModuleSnapshotFromRoot(cleanDir, root)
+	files, err := designeval.ReadModuleSnapshotFromRoot(cleanDir, root)
 	if err != nil {
 		return err
 	}
@@ -158,31 +157,6 @@ func runGen(args []string, stdout, stderr io.Writer) (err error) {
 		" before you run surla verify or start a live target.")
 	fmt.Fprintln(stdout, "Next: surla preview -dir", cleanDir)
 	return nil
-}
-
-// openModuleRoot opens dir as an os.Root after checking that dir is not a
-// symbolic link and that the opened directory is the one checked.
-func openModuleRoot(dir string) (string, *os.Root, error) {
-	cleanDir := filepath.Clean(dir)
-	lstatInfo, err := os.Lstat(cleanDir)
-	if err != nil {
-		return "", nil, err
-	}
-	if lstatInfo.Mode()&fs.ModeSymlink != 0 {
-		return "", nil, fmt.Errorf("%s is a symbolic link; a design snapshot holds only regular files", dir)
-	}
-	root, err := os.OpenRoot(cleanDir)
-	if err != nil {
-		return "", nil, err
-	}
-	rootInfo, err := root.Stat(".")
-	if err != nil {
-		return "", nil, errors.Join(err, root.Close())
-	}
-	if !os.SameFile(lstatInfo, rootInfo) {
-		return "", nil, errors.Join(fmt.Errorf("%s changed while opening design snapshot root", dir), root.Close())
-	}
-	return cleanDir, root, nil
 }
 
 // writeGuide writes the agent guide at the module root through a temporary

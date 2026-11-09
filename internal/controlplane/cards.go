@@ -14,6 +14,9 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
+	"slices"
+	"strings"
 	"syscall"
 
 	gensurla "github.com/goadesign/surla/gen/surla"
@@ -76,17 +79,167 @@ type (
 		Owner string `json:"owner"`
 		// DesignSource is the Goa design source inspected at CP1.
 		DesignSource string `json:"design_source"`
+		// SourceOrigin records whether DesignSource was read from the bound
+		// workspace ("workspace") or supplied by the caller (omitted on disk).
+		SourceOrigin string `json:"source_origin,omitempty"`
+	}
+
+	// canonicalAnswerPair is a deterministic key/value entry for JSON hashing.
+	canonicalAnswerPair struct {
+		// ID is the ambiguity question ID.
+		ID string `json:"id"`
+		// Answer is the selected option value.
+		Answer string `json:"answer"`
+	}
+
+	// canonicalCardRevision is the canonical JSON structure hashed to produce
+	// RequestRevision without delimiter ambiguity.
+	canonicalCardRevision struct {
+		// ChangeID is the Change Card identifier.
+		ChangeID string `json:"change_id"`
+		// Owner is the authenticated creator principal ID.
+		Owner string `json:"owner"`
+		// Status is the Change Card status.
+		Status string `json:"status"`
+		// Prompt is the original operator feature request.
+		Prompt string `json:"prompt"`
+		// DesignSource is the Goa design source inspected at CP1.
+		DesignSource string `json:"design_source"`
+		// Summary is the plain-English summary.
+		Summary string `json:"summary"`
+		// Ambiguities is the ordered slice of surfaced domain questions.
+		Ambiguities []*gensurla.AmbiguityQuestion `json:"ambiguities"`
+		// Answers is the key-sorted slice of confirmed ambiguity answers.
+		Answers []canonicalAnswerPair `json:"answers"`
+		// Examples is the ordered slice of confirmed example checks.
+		Examples []*gensurla.ExampleItem `json:"examples"`
+		// PreservedBehaviors is the ordered slice of preserved contract invariants.
+		PreservedBehaviors []string `json:"preserved_behaviors"`
+		// ConfirmedBy is the authenticated principal ID that confirmed the card.
+		ConfirmedBy string `json:"confirmed_by"`
 	}
 )
 
-// stagingFile is the name, inside a cards directory, of the file each save
-// writes before renaming it over the card's file. load opens only the hashed
-// path of the card it is asked for, so this file is never read.
-const stagingFile = "pending"
+const (
+	// stagingFile is the name, inside a cards directory, of the file each save
+	// writes before renaming it over the card's file. load opens only the hashed
+	// path of the card it is asked for, so this file is never read.
+	stagingFile = "pending"
+	// sourceOriginSupplied marks a card whose design_source came from the caller
+	// payload (or had no bound workspace at proposal time).
+	sourceOriginSupplied = "supplied"
+	// sourceOriginWorkspace marks a card whose design_source was read from the
+	// control plane's bound workspace directory.
+	sourceOriginWorkspace = "workspace"
+)
 
-// errCardsClosed reports a request that reached the card store after the
-// control plane was closed.
-var errCardsClosed = errors.New("control plane is closed")
+var (
+	// errCardsClosed reports a request that reached the card store after the
+	// control plane was closed.
+	errCardsClosed = errors.New("control plane is closed")
+	// cardFileDigestPattern matches the 64-character lowercase hex digest of a
+	// saved Change Card filename.
+	cardFileDigestPattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
+)
+
+// PrepareCardSnapshot copies saved <64-hex>.json Change Card files verbatim from
+// legacyCardsDir into stageCardsDir while holding a non-blocking shared lock on
+// <legacyCardsDir>/lock until releaseLock is called. It never imports
+// workspace.json or modifies legacy originals.
+func PrepareCardSnapshot(legacyCardsDir, stageCardsDir string) (releaseLock func() error, err error) {
+	if err := os.MkdirAll(stageCardsDir, 0o700); err != nil {
+		return nil, fmt.Errorf("create staged cards directory %s: %w", stageCardsDir, err)
+	}
+	if err := writeCardRegularFileNoFollow(filepath.Join(stageCardsDir, "lock"), nil, 0o600); err != nil {
+		return nil, fmt.Errorf("create staged cards lock: %w", err)
+	}
+	if legacyCardsDir == "" {
+		if err := syncDir(stageCardsDir); err != nil {
+			return nil, fmt.Errorf("sync staged cards directory %s: %w", stageCardsDir, err)
+		}
+		return func() error { return nil }, nil
+	}
+	info, err := os.Lstat(legacyCardsDir)
+	if errors.Is(err, fs.ErrNotExist) {
+		if err := syncDir(stageCardsDir); err != nil {
+			return nil, fmt.Errorf("sync staged cards directory %s: %w", stageCardsDir, err)
+		}
+		return func() error { return nil }, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("stat legacy cards directory %s: %w", legacyCardsDir, err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
+		return nil, fmt.Errorf("legacy cards directory %s is not a regular directory", legacyCardsDir)
+	}
+
+	var heldLock *os.File
+	closeHeld := func() error {
+		if heldLock == nil {
+			return nil
+		}
+		f := heldLock
+		heldLock = nil
+		return f.Close()
+	}
+	defer func() {
+		if err != nil {
+			err = errors.Join(err, closeHeld())
+		}
+	}()
+
+	lockPath := filepath.Join(legacyCardsDir, "lock")
+	if _, statErr := os.Lstat(lockPath); !errors.Is(statErr, fs.ErrNotExist) {
+		f, openErr := os.OpenFile(lockPath, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
+		if openErr != nil {
+			return nil, fmt.Errorf("open legacy cards lock %s: %w", lockPath, openErr)
+		}
+		st, statErr := f.Stat()
+		if statErr == nil && !st.Mode().IsRegular() {
+			statErr = fmt.Errorf("legacy cards lock %s is not a regular file", lockPath)
+		}
+		if statErr == nil {
+			statErr = syscall.Flock(int(f.Fd()), syscall.LOCK_SH|syscall.LOCK_NB)
+		}
+		if statErr != nil {
+			if errors.Is(statErr, syscall.EWOULDBLOCK) {
+				return nil, errors.Join(
+					fmt.Errorf(
+						"legacy cards directory %s has an active writer; stop all legacy surla processes before running -import-legacy-workspace",
+						legacyCardsDir,
+					),
+					f.Close(),
+				)
+			}
+			return nil, errors.Join(fmt.Errorf("lock legacy cards directory %s: %w", legacyCardsDir, statErr), f.Close())
+		}
+		heldLock = f
+	}
+
+	entries, err := os.ReadDir(legacyCardsDir)
+	if err != nil {
+		return nil, fmt.Errorf("read legacy cards directory %s: %w", legacyCardsDir, err)
+	}
+	for _, entry := range entries {
+		name := entry.Name()
+		if !isHexCardFilename(name) {
+			continue
+		}
+		srcPath := filepath.Join(legacyCardsDir, name)
+		raw, err := readCardRegularFileNoFollow(srcPath)
+		if err != nil {
+			return nil, fmt.Errorf("read legacy card %s: %w", srcPath, err)
+		}
+		dstPath := filepath.Join(stageCardsDir, name)
+		if err := writeCardRegularFileNoFollow(dstPath, raw, 0o600); err != nil {
+			return nil, fmt.Errorf("write staged card %s: %w", dstPath, err)
+		}
+	}
+	if err := syncDir(stageCardsDir); err != nil {
+		return nil, fmt.Errorf("sync staged cards directory %s: %w", stageCardsDir, err)
+	}
+	return closeHeld, nil
+}
 
 // openCardStore creates dir (0700) when missing and takes its lock. It fails
 // when another process already holds the lock.
@@ -145,17 +298,44 @@ func (s *cardStore) load(changeID string) (storedChangeCard, bool, error) {
 	if err != nil {
 		return storedChangeCard{}, false, fmt.Errorf("read change card %q: %w", changeID, err)
 	}
+	rec, err := decodeCardBytes(changeID, filepath.Base(s.path(changeID)), true, data)
+	if err != nil {
+		return storedChangeCard{}, false, err
+	}
+	return rec, true, nil
+}
+
+// decodeCardBytes strictly decodes and validates a saved cardFile payload. When
+// requireExactID is true, f.Card.ChangeID must equal label; otherwise label is
+// the card filename and f.Card.ChangeID must hash to fileName.
+func decodeCardBytes(label, fileName string, requireExactID bool, data []byte) (storedChangeCard, error) {
 	var f cardFile
 	dec := json.NewDecoder(bytes.NewReader(data))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&f); err != nil {
-		return storedChangeCard{}, false, fmt.Errorf("decode change card %q: %w", changeID, err)
+		return storedChangeCard{}, fmt.Errorf("decode change card %q: %w", label, err)
 	}
 	if err := dec.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
-		return storedChangeCard{}, false, fmt.Errorf("decode change card %q: trailing data", changeID)
+		return storedChangeCard{}, fmt.Errorf("decode change card %q: trailing data", label)
 	}
-	if f.Card == nil || f.Card.ChangeID != changeID || f.Owner == "" {
-		return storedChangeCard{}, false, fmt.Errorf("change card file for %q does not hold that card", changeID)
+	if f.Card == nil || f.Card.ChangeID == "" || f.Owner == "" {
+		return storedChangeCard{}, fmt.Errorf("change card file for %q does not hold that card", label)
+	}
+	if requireExactID && f.Card.ChangeID != label {
+		return storedChangeCard{}, fmt.Errorf("change card file for %q does not hold that card", label)
+	}
+	sum := sha256.Sum256([]byte(f.Card.ChangeID))
+	if hex.EncodeToString(sum[:])+".json" != fileName {
+		return storedChangeCard{}, fmt.Errorf("change card file for %q does not hold that card", label)
+	}
+	sourceOrigin := sourceOriginSupplied
+	switch f.SourceOrigin {
+	case "", sourceOriginSupplied:
+		sourceOrigin = sourceOriginSupplied
+	case sourceOriginWorkspace:
+		sourceOrigin = sourceOriginWorkspace
+	default:
+		return storedChangeCard{}, fmt.Errorf("change card %q has unknown source_origin %q", label, f.SourceOrigin)
 	}
 	card := &gensurla.ChangeCardResult{
 		ChangeID:           f.Card.ChangeID,
@@ -172,18 +352,23 @@ func (s *cardStore) load(changeID string) (storedChangeCard, bool, error) {
 		Approval:           f.Card.Approval,
 	}
 	if card.Status != StatusNeedsConfirmation && card.Status != StatusConfirmed {
-		return storedChangeCard{}, false, fmt.Errorf("change card %q has unknown status %q", changeID, card.Status)
+		return storedChangeCard{}, fmt.Errorf("change card %q has unknown status %q", label, card.Status)
 	}
 	// request_revision is the digest of the card's content, owner and design
 	// source, so recomputing it checks every field it covers.
 	rev, err := computeCanonicalRevision(card, f.Owner, f.DesignSource)
 	if err != nil {
-		return storedChangeCard{}, false, err
+		return storedChangeCard{}, err
 	}
 	if rev != card.RequestRevision {
-		return storedChangeCard{}, false, fmt.Errorf("change card %q does not match its request_revision", changeID)
+		return storedChangeCard{}, fmt.Errorf("change card %q does not match its request_revision", label)
 	}
-	return storedChangeCard{card: card, owner: f.Owner, designSource: f.DesignSource}, true, nil
+	return storedChangeCard{
+		card:         card,
+		owner:        f.Owner,
+		designSource: f.DesignSource,
+		sourceOrigin: sourceOrigin,
+	}, nil
 }
 
 // save replaces the saved card for record.card.ChangeID. It writes and syncs
@@ -212,7 +397,16 @@ func (s *cardStore) save(record storedChangeCard) error {
 		UIComposition:      record.card.UIComposition,
 		Approval:           record.card.Approval,
 	}
-	data, err := json.Marshal(cardFile{Card: persisted, Owner: record.owner, DesignSource: record.designSource})
+	persistedOrigin := ""
+	if record.sourceOrigin == sourceOriginWorkspace {
+		persistedOrigin = sourceOriginWorkspace
+	}
+	data, err := json.Marshal(cardFile{
+		Card:         persisted,
+		Owner:        record.owner,
+		DesignSource: record.designSource,
+		SourceOrigin: persistedOrigin,
+	})
 	if err != nil {
 		return fmt.Errorf("encode change card %q: %w", record.card.ChangeID, err)
 	}
@@ -244,4 +438,119 @@ func (s *cardStore) save(record storedChangeCard) error {
 func (s *cardStore) path(changeID string) string {
 	sum := sha256.Sum256([]byte(changeID))
 	return filepath.Join(s.dir, hex.EncodeToString(sum[:])+".json")
+}
+
+// hasWorkspaceCardsWithFiles reports whether any saved card in s captured
+// existing workspace design files (source_origin == "workspace" with non-empty
+// design_source). Cards proposed in an empty workspace before init_project have
+// an empty design_source and do not block initialization. Every saved card file
+// is validated with the same strict decoder as load.
+func (s *cardStore) hasWorkspaceCardsWithFiles() (bool, error) {
+	if s.lock == nil {
+		return false, errCardsClosed
+	}
+	entries, err := os.ReadDir(s.dir)
+	if err != nil {
+		return false, fmt.Errorf("read cards directory: %w", err)
+	}
+	for _, entry := range entries {
+		name := entry.Name()
+		if !isHexCardFilename(name) {
+			continue
+		}
+		raw, err := readCardRegularFileNoFollow(filepath.Join(s.dir, name))
+		if err != nil {
+			return false, fmt.Errorf("read saved card %s: %w", name, err)
+		}
+		rec, err := decodeCardBytes(name, name, false, raw)
+		if err != nil {
+			return false, err
+		}
+		if rec.sourceOrigin == sourceOriginWorkspace && strings.TrimSpace(rec.designSource) != "" {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// isHexCardFilename reports whether name is <64 lowercase hex>.json.
+func isHexCardFilename(name string) bool {
+	return strings.HasSuffix(name, ".json") && cardFileDigestPattern.MatchString(strings.TrimSuffix(name, ".json"))
+}
+
+// computeCanonicalRevision computes a collision-free SHA-256 hex digest over
+// the canonical JSON encoding of the ChangeCardResult, its owner principal, and
+// its inspected design source.
+func computeCanonicalRevision(card *gensurla.ChangeCardResult, owner, designSource string) (string, error) {
+	keys := make([]string, 0, len(card.Answers))
+	for k := range card.Answers {
+		keys = append(keys, k)
+	}
+	slices.Sort(keys)
+	answers := make([]canonicalAnswerPair, 0, len(keys))
+	for _, k := range keys {
+		answers = append(answers, canonicalAnswerPair{
+			ID:     k,
+			Answer: card.Answers[k],
+		})
+	}
+	var confirmedBy string
+	if card.ConfirmedBy != nil {
+		confirmedBy = *card.ConfirmedBy
+	}
+	payload := canonicalCardRevision{
+		ChangeID:           card.ChangeID,
+		Owner:              owner,
+		Status:             card.Status,
+		Prompt:             card.Prompt,
+		DesignSource:       designSource,
+		Summary:            card.Summary,
+		Ambiguities:        card.Ambiguities,
+		Answers:            answers,
+		Examples:           card.Examples,
+		PreservedBehaviors: card.PreservedBehaviors,
+		ConfirmedBy:        confirmedBy,
+	}
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		return "", fmt.Errorf("marshal canonical change card revision: %w", err)
+	}
+	sum := sha256.Sum256(raw)
+	return hex.EncodeToString(sum[:]), nil
+}
+
+// readCardRegularFileNoFollow reads path without following symlinks and
+// requires a regular file.
+func readCardRegularFileNoFollow(path string) ([]byte, error) {
+	f, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
+	if err != nil {
+		return nil, err
+	}
+	info, err := f.Stat()
+	if err == nil && !info.Mode().IsRegular() {
+		err = fmt.Errorf("%s is not a regular file", path)
+	}
+	if err != nil {
+		return nil, errors.Join(err, f.Close())
+	}
+	raw, readErr := io.ReadAll(f)
+	return raw, errors.Join(readErr, f.Close())
+}
+
+// writeCardRegularFileNoFollow creates path exclusively without following
+// symlinks, writes raw, syncs the file, sets perm, and closes it.
+func writeCardRegularFileNoFollow(path string, raw []byte, perm os.FileMode) error {
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL|syscall.O_NOFOLLOW, 0o600)
+	if err != nil {
+		return err
+	}
+	if _, err := f.Write(raw); err != nil {
+		return errors.Join(err, f.Close())
+	}
+	if perm != 0o600 {
+		if err := f.Chmod(perm); err != nil {
+			return errors.Join(err, f.Close())
+		}
+	}
+	return errors.Join(f.Sync(), f.Close())
 }

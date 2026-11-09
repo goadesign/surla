@@ -336,6 +336,19 @@ func loadProjectConfig(ctx context.Context, dir string) (*controlplane.Verificat
 	}, nil
 }
 
+// starterVerificationConfig derives a VerificationConfig from the starter
+// layout committed at HEAD in workspaceDir and places RunsDir and ReportDir in
+// the operator-owned directories outside the workspace.
+func starterVerificationConfig(ctx context.Context, workspaceDir, runsDir, reportDir string) (*controlplane.VerificationConfig, error) {
+	cfg, err := loadProjectConfig(ctx, workspaceDir)
+	if err != nil {
+		return nil, err
+	}
+	cfg.RunsDir = runsDir
+	cfg.Plan.ReportDir = reportDir
+	return cfg, nil
+}
+
 // readGitBlob reads a committed regular-file blob at <commit>:<treePath> in
 // repoRoot, rejecting missing paths, symlinks, and directories.
 func readGitBlob(ctx context.Context, repoRoot, commit, treePath, project string) ([]byte, error) {

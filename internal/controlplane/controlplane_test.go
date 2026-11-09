@@ -413,15 +413,15 @@ var _ = Service("orders", func() {
 		toolNames = append(toolNames, tool.Name)
 	}
 	assert.ElementsMatch(t, []string{
-		"propose_change", "revise_change", "confirm_intent", "get_change", "configure_model", "preview_architecture", "draft_override", "approve_merge", "diff",
+		"propose_change", "revise_change", "confirm_intent", "get_change", "configure_model", "init_project", "preview_architecture", "draft_override", "approve_merge", "diff",
 		"start_live_target", "stop_live_target",
 		"verify_change", "get_verification", "list_verifications",
 	}, toolNames)
 	// Every checkpoint tool, diff included, links the checkpoint viewer so an
-	// MCP Apps host can render its result; configure_model is a server model
-	// setter without a checkpoint UI view.
+	// MCP Apps host can render its result; configure_model and init_project are
+	// server/workspace setup tools without a checkpoint UI view.
 	for _, tool := range toolsRes.Tools {
-		if tool.Name == "configure_model" {
+		if tool.Name == "configure_model" || tool.Name == "init_project" {
 			if strings.Contains(string(tool.Meta), "resourceUri") {
 				t.Fatalf("tool %q unexpectedly links a UI resource: _meta=%s", tool.Name, tool.Meta)
 			}

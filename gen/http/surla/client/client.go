@@ -80,6 +80,10 @@ type Client struct {
 	// configure_model endpoint.
 	ConfigureModelDoer goahttp.Doer
 
+	// InitProject Doer is the HTTP client used to make requests to the
+	// init_project endpoint.
+	InitProjectDoer goahttp.Doer
+
 	// RestoreResponseBody controls whether the response bodies are reset after
 	// decoding so they can be read again.
 	RestoreResponseBody bool
@@ -116,6 +120,7 @@ func NewClient(
 		ApproveMergeDoer:        doer,
 		DiffDoer:                doer,
 		ConfigureModelDoer:      doer,
+		InitProjectDoer:         doer,
 		RestoreResponseBody:     restoreBody,
 		scheme:                  scheme,
 		host:                    host,
@@ -473,6 +478,30 @@ func (c *Client) ConfigureModel() goa.Endpoint {
 		resp, err := c.ConfigureModelDoer.Do(req)
 		if err != nil {
 			return nil, goahttp.ErrRequestError("surla", "configure_model", err)
+		}
+		return decodeResponse(resp)
+	}
+}
+
+// InitProject returns an endpoint that makes HTTP requests to the surla
+// service init_project server.
+func (c *Client) InitProject() goa.Endpoint {
+	var (
+		encodeRequest  = EncodeInitProjectRequest(c.encoder)
+		decodeResponse = DecodeInitProjectResponse(c.decoder, c.RestoreResponseBody)
+	)
+	return func(ctx context.Context, v any) (any, error) {
+		req, err := c.BuildInitProjectRequest(ctx, v)
+		if err != nil {
+			return nil, err
+		}
+		err = encodeRequest(req, v)
+		if err != nil {
+			return nil, err
+		}
+		resp, err := c.InitProjectDoer.Do(req)
+		if err != nil {
+			return nil, goahttp.ErrRequestError("surla", "init_project", err)
 		}
 		return decodeResponse(resp)
 	}

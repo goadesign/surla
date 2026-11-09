@@ -6,12 +6,15 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"maps"
 	"os"
 	"path"
 	"path/filepath"
 	"slices"
 	"strings"
+	"syscall"
+	"unicode/utf8"
 
 	"golang.org/x/mod/modfile"
 )
@@ -19,6 +22,209 @@ import (
 // reservedDir is the snapshot directory the evaluator owns; snapshots must not
 // use it.
 const reservedDir = "surla_designeval"
+
+// OpenModuleRoot opens dir as an os.Root after checking that dir is not a
+// symbolic link and that the opened directory is the one checked.
+func OpenModuleRoot(dir string) (string, *os.Root, error) {
+	cleanDir := filepath.Clean(dir)
+	lstatInfo, err := os.Lstat(cleanDir)
+	if err != nil {
+		return "", nil, err
+	}
+	if lstatInfo.Mode()&fs.ModeSymlink != 0 {
+		return "", nil, fmt.Errorf("%s is a symbolic link; a design snapshot holds only regular files", dir)
+	}
+	root, err := os.OpenRoot(cleanDir)
+	if err != nil {
+		return "", nil, err
+	}
+	rootInfo, err := root.Stat(".")
+	if err != nil {
+		return "", nil, errors.Join(err, root.Close())
+	}
+	if !os.SameFile(lstatInfo, rootInfo) {
+		return "", nil, errors.Join(fmt.Errorf("%s changed while opening design snapshot root", dir), root.Close())
+	}
+	return cleanDir, root, nil
+}
+
+// ReadModuleSnapshot reads the module rooted at dir into a design snapshot:
+// its go.mod, go.sum and every non-test .go file, keyed by slash-separated
+// path relative to dir. Hidden, vendor and testdata directories and nested
+// modules are skipped. A symbolic link at dir or anywhere in the module is an
+// error, and both directory inspection and regular-file reads go through one
+// os.Root handle opened on dir, so a replaced parent directory cannot escape
+// dir. Raw file bytes are preserved as read for local preview and diff.
+func ReadModuleSnapshot(dir string) (files map[string]string, err error) {
+	cleanDir, root, err := OpenModuleRoot(dir)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { err = errors.Join(err, root.Close()) }()
+	return ReadModuleSnapshotFromRoot(cleanDir, root)
+}
+
+// ReadModuleSnapshotFromRoot walks root and reads its module snapshot files
+// relative to root. cleanDir is used only to format diagnostic paths.
+func ReadModuleSnapshotFromRoot(cleanDir string, root *os.Root) (map[string]string, error) {
+	files := map[string]string{}
+	err := fs.WalkDir(root.FS(), ".", func(rel string, d fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if d.Type()&fs.ModeSymlink != 0 {
+			return fmt.Errorf("%s is a symbolic link; a design snapshot holds only regular files",
+				filepath.Join(cleanDir, filepath.FromSlash(rel)))
+		}
+		if d.IsDir() {
+			if shouldSkipSnapshotDir(root, ".", rel, d.Name()) {
+				return fs.SkipDir
+			}
+			return nil
+		}
+		keep := rel == "go.mod" || rel == "go.sum" ||
+			(strings.HasSuffix(rel, ".go") && !strings.HasSuffix(rel, "_test.go"))
+		if !keep || !d.Type().IsRegular() {
+			return nil
+		}
+		b, err := readSnapshotFileBytes(cleanDir, root, rel)
+		if err != nil {
+			return err
+		}
+		files[rel] = string(b)
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return files, nil
+}
+
+// ReadDesignFilesFromRoot walks only the `design` subdirectory inside root and
+// reads its non-test `.go` regular files keyed by slash-separated path relative
+// to root (`design/...`). When `design` does not exist inside root, it returns
+// `(nil, nil)`. Hidden, vendor, testdata, and nested-module directories are
+// skipped, and symbolic links or non-regular files under `design` fail the read.
+func ReadDesignFilesFromRoot(cleanDir string, root *os.Root) (map[string]string, error) {
+	info, err := root.Lstat("design")
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("read %s: %w", filepath.Join(cleanDir, "design"), err)
+	}
+	if info.Mode()&fs.ModeSymlink != 0 {
+		return nil, fmt.Errorf("%s is a symbolic link; a design snapshot holds only regular files",
+			filepath.Join(cleanDir, "design"))
+	}
+	if !info.IsDir() {
+		return nil, fmt.Errorf("%s is not a directory", filepath.Join(cleanDir, "design"))
+	}
+	files := map[string]string{}
+	err = fs.WalkDir(root.FS(), "design", func(rel string, d fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if d.Type()&fs.ModeSymlink != 0 {
+			return fmt.Errorf("%s is a symbolic link; a design snapshot holds only regular files",
+				filepath.Join(cleanDir, filepath.FromSlash(rel)))
+		}
+		if d.IsDir() {
+			if shouldSkipSnapshotDir(root, "design", rel, d.Name()) {
+				return fs.SkipDir
+			}
+			return nil
+		}
+		if !strings.HasSuffix(rel, ".go") || strings.HasSuffix(rel, "_test.go") || !d.Type().IsRegular() {
+			return nil
+		}
+		b, err := readSnapshotFileBytes(cleanDir, root, rel)
+		if err != nil {
+			return err
+		}
+		files[rel] = string(b)
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return files, nil
+}
+
+// ValidateUTF8Snapshot checks that every file path and content in files is
+// valid UTF-8 before encoding the snapshot as JSON or sending it to a model,
+// because encoding/json silently replaces invalid UTF-8 bytes with U+FFFD.
+func ValidateUTF8Snapshot(files map[string]string) error {
+	for _, p := range slices.Sorted(maps.Keys(files)) {
+		if !utf8.ValidString(p) {
+			return fmt.Errorf("design snapshot path %q is not valid UTF-8", p)
+		}
+		if !utf8.ValidString(files[p]) {
+			return fmt.Errorf("design snapshot file %s is not valid UTF-8", p)
+		}
+	}
+	return nil
+}
+
+// SnapshotDigest returns the SHA-256 of a snapshot's canonical encoding: each
+// path and its content in path order, each length-prefixed, so two snapshots
+// have the same digest only when they hold exactly the same files.
+func SnapshotDigest(files map[string]string) string {
+	h := sha256.New()
+	for _, name := range slices.Sorted(maps.Keys(files)) {
+		for _, part := range []string{name, files[name]} {
+			_, _ = fmt.Fprintf(h, "%d:", len(part))
+			_, _ = io.WriteString(h, part)
+		}
+	}
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+// shouldSkipSnapshotDir reports whether WalkDir should skip directory rel
+// when walking from walkRoot ("." or "design").
+func shouldSkipSnapshotDir(root *os.Root, walkRoot, rel, name string) bool {
+	if rel == walkRoot {
+		return false
+	}
+	if strings.HasPrefix(name, ".") || name == "vendor" || name == "testdata" {
+		return true
+	}
+	_, err := root.Lstat(filepath.FromSlash(rel + "/go.mod"))
+	return err == nil
+}
+
+// readSnapshotFileBytes opens and reads the regular file at slash-separated
+// path rel inside root without following symbolic links or blocking on special
+// files.
+func readSnapshotFileBytes(cleanDir string, root *os.Root, rel string) ([]byte, error) {
+	f, err := openSnapshotFile(root, rel)
+	if err != nil {
+		return nil, fmt.Errorf("read %s: %w", filepath.Join(cleanDir, filepath.FromSlash(rel)), err)
+	}
+	b, readErr := io.ReadAll(f)
+	if err := errors.Join(readErr, f.Close()); err != nil {
+		return nil, fmt.Errorf("read %s: %w", filepath.Join(cleanDir, filepath.FromSlash(rel)), err)
+	}
+	return b, nil
+}
+
+// openSnapshotFile opens the regular file at slash-separated path rel inside
+// root without following symbolic links or blocking on special files, and
+// checks that the opened descriptor is a regular file.
+func openSnapshotFile(root *os.Root, rel string) (*os.File, error) {
+	f, err := root.OpenFile(filepath.FromSlash(rel), os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
+	if err != nil {
+		return nil, err
+	}
+	info, err := f.Stat()
+	if err == nil && !info.Mode().IsRegular() {
+		err = fmt.Errorf("%s is not a regular file", rel)
+	}
+	if err != nil {
+		return nil, errors.Join(err, f.Close())
+	}
+	return f, nil
+}
 
 // validateSnapshot checks a design snapshot and returns its parsed go.mod.
 //
@@ -102,18 +308,4 @@ func stageSnapshot(dir string, files map[string]string) error {
 		}
 	}
 	return nil
-}
-
-// SnapshotDigest returns the SHA-256 of a snapshot's canonical encoding: each
-// path and its content in path order, each length-prefixed, so two snapshots
-// have the same digest only when they hold exactly the same files.
-func SnapshotDigest(files map[string]string) string {
-	h := sha256.New()
-	for _, name := range slices.Sorted(maps.Keys(files)) {
-		for _, part := range []string{name, files[name]} {
-			_, _ = fmt.Fprintf(h, "%d:", len(part))
-			_, _ = io.WriteString(h, part)
-		}
-	}
-	return hex.EncodeToString(h.Sum(nil))
 }

@@ -24,8 +24,9 @@ type ProposeChangeRequestBody struct {
 	// Operator feature request.
 	Prompt *string `form:"prompt,omitempty" json:"prompt,omitempty" xml:"prompt,omitempty"`
 	// Current Goa design source of the target (its design/*.go files) for the CP1
-	// model to read. If omitted, CP1 receives no current design; supply the
-	// relevant design source when you want it considered.
+	// model to read. When omitted on a server with a bound workspace, Surla reads
+	// design/*.go from the bound workspace; when omitted without a bound
+	// workspace, CP1 receives no current design.
 	DesignSource *string `form:"design_source,omitempty" json:"design_source,omitempty" xml:"design_source,omitempty"`
 }
 
@@ -39,7 +40,9 @@ type ReviseChangeRequestBody struct {
 	// Revised operator feature request.
 	Prompt *string `form:"prompt,omitempty" json:"prompt,omitempty" xml:"prompt,omitempty"`
 	// Updated Goa design source of the target (its design/*.go files) for the CP1
-	// model to read; when omitted, the card's saved design source is used again.
+	// model to read. When omitted on a workspace-backed card with a bound
+	// workspace, Surla re-reads design/*.go from the bound workspace; otherwise
+	// the card's saved design source is used again.
 	DesignSource *string `form:"design_source,omitempty" json:"design_source,omitempty" xml:"design_source,omitempty"`
 }
 
@@ -68,7 +71,9 @@ type PreviewArchitectureRequestBody struct {
 	ChangeID *string `form:"change_id,omitempty" json:"change_id,omitempty" xml:"change_id,omitempty"`
 	// Expected CP1 request_revision digest.
 	RequestRevision *string `form:"request_revision,omitempty" json:"request_revision,omitempty" xml:"request_revision,omitempty"`
-	// Candidate module whose Goa and Goa-AI design is evaluated.
+	// Candidate module whose Goa and Goa-AI design is evaluated. When omitted on a
+	// server with a bound workspace, Surla reads the candidate module snapshot
+	// from the bound workspace.
 	Design *DesignSnapshotRequestBody `form:"design,omitempty" json:"design,omitempty" xml:"design,omitempty"`
 	// Optional explicit builder path scopes for proposing a Chorus build roster.
 	// When omitted, preview_architecture returns a solo preview with swarm.status
@@ -147,6 +152,16 @@ type ConfigureModelRequestBody struct {
 	// Plaintext gRPC host:port of a running goa-ai model gateway; mutually
 	// exclusive with provider and model_name.
 	GatewayAddr *string `form:"gateway_addr,omitempty" json:"gateway_addr,omitempty" xml:"gateway_addr,omitempty"`
+}
+
+// InitProjectRequestBody is the type of the "surla" service "init_project"
+// endpoint HTTP request body.
+type InitProjectRequestBody struct {
+	// Go module path of the new service (for example example.com/shop).
+	ModulePath *string `form:"module_path,omitempty" json:"module_path,omitempty" xml:"module_path,omitempty"`
+	// Direct child directory name inside the bound workspace root. When omitted or
+	// empty, defaults to the service name derived from module_path.
+	Dir *string `form:"dir,omitempty" json:"dir,omitempty" xml:"dir,omitempty"`
 }
 
 // ProposeChangeResponseBody is the type of the "surla" service
@@ -514,6 +529,18 @@ type ConfigureModelResponseBody struct {
 	ModelName *string `form:"model_name,omitempty" json:"model_name,omitempty" xml:"model_name,omitempty"`
 	// Active gRPC model gateway host:port when a model gateway is configured.
 	GatewayAddr *string `form:"gateway_addr,omitempty" json:"gateway_addr,omitempty" xml:"gateway_addr,omitempty"`
+}
+
+// InitProjectResponseBody is the type of the "surla" service "init_project"
+// endpoint HTTP response body.
+type InitProjectResponseBody struct {
+	// Physical directory path of the newly created starter project (now the
+	// server's active workspace).
+	Dir string `form:"dir" json:"dir" xml:"dir"`
+	// Initialized Go module path.
+	ModulePath string `form:"module_path" json:"module_path" xml:"module_path"`
+	// Derived service name.
+	ServiceName string `form:"service_name" json:"service_name" xml:"service_name"`
 }
 
 // ProposeChangeConflictResponseBody is the type of the "surla" service
@@ -1324,6 +1351,60 @@ type ConfigureModelUnprocessableResponseBody struct {
 // "configure_model" endpoint HTTP response body for the "not_implemented"
 // error.
 type ConfigureModelNotImplementedResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
+// InitProjectConflictResponseBody is the type of the "surla" service
+// "init_project" endpoint HTTP response body for the "conflict" error.
+type InitProjectConflictResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
+// InitProjectUnprocessableResponseBody is the type of the "surla" service
+// "init_project" endpoint HTTP response body for the "unprocessable" error.
+type InitProjectUnprocessableResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
+// InitProjectNotImplementedResponseBody is the type of the "surla" service
+// "init_project" endpoint HTTP response body for the "not_implemented" error.
+type InitProjectNotImplementedResponseBody struct {
 	// Name is the name of this class of errors.
 	Name string `form:"name" json:"name" xml:"name"`
 	// ID is a unique identifier for this particular occurrence of the problem.
@@ -2455,6 +2536,17 @@ func NewConfigureModelResponseBody(res *surla.ModelConfigResult) *ConfigureModel
 	return body
 }
 
+// NewInitProjectResponseBody builds the HTTP response body from the result of
+// the "init_project" endpoint of the "surla" service.
+func NewInitProjectResponseBody(res *surla.InitProjectResult) *InitProjectResponseBody {
+	body := &InitProjectResponseBody{
+		Dir:         res.Dir,
+		ModulePath:  res.ModulePath,
+		ServiceName: res.ServiceName,
+	}
+	return body
+}
+
 // NewProposeChangeConflictResponseBody builds the HTTP response body from the
 // result of the "propose_change" endpoint of the "surla" service.
 func NewProposeChangeConflictResponseBody(res *goa.ServiceError) *ProposeChangeConflictResponseBody {
@@ -3092,6 +3184,48 @@ func NewConfigureModelNotImplementedResponseBody(res *goa.ServiceError) *Configu
 	return body
 }
 
+// NewInitProjectConflictResponseBody builds the HTTP response body from the
+// result of the "init_project" endpoint of the "surla" service.
+func NewInitProjectConflictResponseBody(res *goa.ServiceError) *InitProjectConflictResponseBody {
+	body := &InitProjectConflictResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
+// NewInitProjectUnprocessableResponseBody builds the HTTP response body from
+// the result of the "init_project" endpoint of the "surla" service.
+func NewInitProjectUnprocessableResponseBody(res *goa.ServiceError) *InitProjectUnprocessableResponseBody {
+	body := &InitProjectUnprocessableResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
+// NewInitProjectNotImplementedResponseBody builds the HTTP response body from
+// the result of the "init_project" endpoint of the "surla" service.
+func NewInitProjectNotImplementedResponseBody(res *goa.ServiceError) *InitProjectNotImplementedResponseBody {
+	body := &InitProjectNotImplementedResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
 // NewProposeChangePayload builds a surla service propose_change endpoint
 // payload.
 func NewProposeChangePayload(body *ProposeChangeRequestBody) *surla.ProposeChangePayload {
@@ -3156,7 +3290,9 @@ func NewPreviewArchitecturePayload(body *PreviewArchitectureRequestBody) *surla.
 		ChangeID:        *body.ChangeID,
 		RequestRevision: *body.RequestRevision,
 	}
-	v.Design = unmarshalDesignSnapshotRequestBodyToSurlaDesignSnapshot(body.Design)
+	if body.Design != nil {
+		v.Design = unmarshalDesignSnapshotRequestBodyToSurlaDesignSnapshot(body.Design)
+	}
 	if body.Builders != nil {
 		v.Builders = make([]*surla.BuilderScopeItem, len(body.Builders))
 		for i, val := range body.Builders {
@@ -3267,6 +3403,16 @@ func NewConfigureModelPayload(body *ConfigureModelRequestBody) *surla.ConfigureM
 	return v
 }
 
+// NewInitProjectPayload builds a surla service init_project endpoint payload.
+func NewInitProjectPayload(body *InitProjectRequestBody) *surla.InitProjectPayload {
+	v := &surla.InitProjectPayload{
+		ModulePath: *body.ModulePath,
+		Dir:        body.Dir,
+	}
+
+	return v
+}
+
 // ValidateProposeChangeRequestBody runs the validations defined on
 // ProposeChangeRequestBody
 func ValidateProposeChangeRequestBody(body *ProposeChangeRequestBody) (err error) {
@@ -3327,9 +3473,6 @@ func ValidatePreviewArchitectureRequestBody(body *PreviewArchitectureRequestBody
 	}
 	if body.RequestRevision == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("request_revision", "body"))
-	}
-	if body.Design == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("design", "body"))
 	}
 	if body.Design != nil {
 		if err2 := validateDesignSnapshotRequestBody(body.Design, "body.design"); err2 != nil {
@@ -3451,6 +3594,20 @@ func ValidateConfigureModelRequestBody(body *ConfigureModelRequestBody) (err err
 	if body.GatewayAddr != nil {
 		if utf8.RuneCountInString(*body.GatewayAddr) < 1 {
 			err = goa.MergeErrors(err, goa.InvalidLengthError("body.gateway_addr", *body.GatewayAddr, utf8.RuneCountInString(*body.GatewayAddr), 1, true))
+		}
+	}
+	return
+}
+
+// ValidateInitProjectRequestBody runs the validations defined on
+// InitProjectRequestBody
+func ValidateInitProjectRequestBody(body *InitProjectRequestBody) (err error) {
+	if body.ModulePath == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("module_path", "body"))
+	}
+	if body.ModulePath != nil {
+		if utf8.RuneCountInString(*body.ModulePath) < 3 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.module_path", *body.ModulePath, utf8.RuneCountInString(*body.ModulePath), 3, true))
 		}
 	}
 	return

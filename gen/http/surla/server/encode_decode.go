@@ -1369,6 +1369,103 @@ func EncodeConfigureModelError(encoder func(context.Context, http.ResponseWriter
 	}
 }
 
+// EncodeInitProjectResponse returns an encoder for responses returned by the
+// surla init_project endpoint.
+func EncodeInitProjectResponse(encoder func(context.Context, http.ResponseWriter) goahttp.Encoder) func(context.Context, http.ResponseWriter, any) error {
+	return func(ctx context.Context, w http.ResponseWriter, v any) error {
+		res, _ := v.(*surla.InitProjectResult)
+		enc := encoder(ctx, w)
+		body := NewInitProjectResponseBody(res)
+		w.WriteHeader(http.StatusOK)
+		return enc.Encode(body)
+	}
+}
+
+// DecodeInitProjectRequest returns a decoder for requests sent to the surla
+// init_project endpoint.
+func DecodeInitProjectRequest(mux goahttp.Muxer, decoder func(*http.Request) goahttp.Decoder) func(*http.Request) (*surla.InitProjectPayload, error) {
+	return func(r *http.Request) (*surla.InitProjectPayload, error) {
+		var payload *surla.InitProjectPayload
+		var (
+			body InitProjectRequestBody
+			err  error
+		)
+		err = decoder(r).Decode(&body)
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				return payload, goa.MissingPayloadError()
+			}
+			var gerr *goa.ServiceError
+			if errors.As(err, &gerr) {
+				return payload, gerr
+			}
+			return payload, goa.DecodePayloadError(err.Error())
+		}
+		err = ValidateInitProjectRequestBody(&body)
+		if err != nil {
+			return payload, err
+		}
+		payload = NewInitProjectPayload(&body)
+
+		return payload, nil
+	}
+}
+
+// EncodeInitProjectError returns an encoder for errors returned by the
+// init_project surla endpoint.
+func EncodeInitProjectError(encoder func(context.Context, http.ResponseWriter) goahttp.Encoder, formatter func(ctx context.Context, err error) goahttp.Statuser) func(context.Context, http.ResponseWriter, error) error {
+	encodeError := goahttp.ErrorEncoder(encoder, formatter)
+	return func(ctx context.Context, w http.ResponseWriter, v error) error {
+		var en goa.GoaErrorNamer
+		if !errors.As(v, &en) {
+			return encodeError(ctx, w, v)
+		}
+		switch en.GoaErrorName() {
+		case "conflict":
+			var res *goa.ServiceError
+			errors.As(v, &res)
+			enc := encoder(ctx, w)
+			var body any
+			if formatter != nil {
+				body = formatter(ctx, res)
+			} else {
+				body = NewInitProjectConflictResponseBody(res)
+			}
+			w.Header().Set("goa-error", res.GoaErrorName())
+			w.WriteHeader(http.StatusConflict)
+			return enc.Encode(body)
+		case "unprocessable":
+			var res *goa.ServiceError
+			errors.As(v, &res)
+			enc := encoder(ctx, w)
+			var body any
+			if formatter != nil {
+				body = formatter(ctx, res)
+			} else {
+				body = NewInitProjectUnprocessableResponseBody(res)
+			}
+			w.Header().Set("goa-error", res.GoaErrorName())
+			w.WriteHeader(http.StatusUnprocessableEntity)
+			return enc.Encode(body)
+		case "not_implemented":
+			var res *goa.ServiceError
+			errors.As(v, &res)
+			enc := encoder(ctx, w)
+			var body any
+			if formatter != nil {
+				body = formatter(ctx, res)
+			} else {
+				body = NewInitProjectNotImplementedResponseBody(res)
+			}
+			w.Header().Set("goa-error", res.GoaErrorName())
+			w.WriteHeader(http.StatusNotImplemented)
+			return enc.Encode(body)
+		default:
+			return encodeError(ctx, w, v)
+		}
+	}
+}
+
 // marshalSurlaAmbiguityQuestionToAmbiguityQuestionResponseBody builds a value
 // of type *AmbiguityQuestionResponseBody from a value of type
 // *surla.AmbiguityQuestion.

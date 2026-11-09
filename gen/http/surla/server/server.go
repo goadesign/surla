@@ -35,6 +35,7 @@ type Server struct {
 	ApproveMerge        http.Handler
 	Diff                http.Handler
 	ConfigureModel      http.Handler
+	InitProject         http.Handler
 }
 
 // MountPoint holds information about the mounted endpoints.
@@ -80,6 +81,7 @@ func New(
 			{"ApproveMerge", "POST", "/changes/approve"},
 			{"Diff", "POST", "/diff"},
 			{"ConfigureModel", "POST", "/cp1/model"},
+			{"InitProject", "POST", "/workspace/init"},
 		},
 		CheckpointUI:        NewCheckpointUIHandler(e.CheckpointUI, mux, decoder, encoder, errhandler, formatter),
 		GoldenPath:          NewGoldenPathHandler(e.GoldenPath, mux, decoder, encoder, errhandler, formatter),
@@ -97,6 +99,7 @@ func New(
 		ApproveMerge:        NewApproveMergeHandler(e.ApproveMerge, mux, decoder, encoder, errhandler, formatter),
 		Diff:                NewDiffHandler(e.Diff, mux, decoder, encoder, errhandler, formatter),
 		ConfigureModel:      NewConfigureModelHandler(e.ConfigureModel, mux, decoder, encoder, errhandler, formatter),
+		InitProject:         NewInitProjectHandler(e.InitProject, mux, decoder, encoder, errhandler, formatter),
 	}
 }
 
@@ -121,6 +124,7 @@ func (s *Server) Use(m func(http.Handler) http.Handler) {
 	s.ApproveMerge = m(s.ApproveMerge)
 	s.Diff = m(s.Diff)
 	s.ConfigureModel = m(s.ConfigureModel)
+	s.InitProject = m(s.InitProject)
 }
 
 // MethodNames returns the methods served.
@@ -144,6 +148,7 @@ func Mount(mux goahttp.Muxer, h *Server) {
 	MountApproveMergeHandler(mux, h.ApproveMerge)
 	MountDiffHandler(mux, h.Diff)
 	MountConfigureModelHandler(mux, h.ConfigureModel)
+	MountInitProjectHandler(mux, h.InitProject)
 }
 
 // Mount configures the mux to serve the surla endpoints.
@@ -955,6 +960,59 @@ func NewConfigureModelHandler(
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := context.WithValue(r.Context(), goahttp.AcceptTypeKey, r.Header.Get("Accept"))
 		ctx = context.WithValue(ctx, goa.MethodKey, "configure_model")
+		ctx = context.WithValue(ctx, goa.ServiceKey, "surla")
+		payload, err := decodeRequest(r)
+		if err != nil {
+			if err := encodeError(ctx, w, err); err != nil && errhandler != nil {
+				errhandler(ctx, w, err)
+			}
+			return
+		}
+		res, err := endpoint(ctx, payload)
+		if err != nil {
+			if err := encodeError(ctx, w, err); err != nil && errhandler != nil {
+				errhandler(ctx, w, err)
+			}
+			return
+		}
+		if err := encodeResponse(ctx, w, res); err != nil {
+			if errhandler != nil {
+				errhandler(ctx, w, err)
+			}
+		}
+	})
+}
+
+// MountInitProjectHandler configures the mux to serve the "surla" service
+// "init_project" endpoint.
+func MountInitProjectHandler(mux goahttp.Muxer, h http.Handler) {
+	f, ok := h.(http.HandlerFunc)
+	if !ok {
+		f = func(w http.ResponseWriter, r *http.Request) {
+			h.ServeHTTP(w, r)
+		}
+	}
+	mux.Handle("POST", "/workspace/init", f)
+}
+
+// NewInitProjectHandler creates a HTTP handler which loads the HTTP request
+// and calls the "surla" service "init_project" endpoint.
+func NewInitProjectHandler(
+	endpoint goa.Endpoint,
+	mux goahttp.Muxer,
+	decoder func(*http.Request) goahttp.Decoder,
+	encoder func(context.Context, http.ResponseWriter) goahttp.Encoder,
+	errhandler func(context.Context, http.ResponseWriter, error),
+	formatter func(ctx context.Context, err error) goahttp.Statuser,
+) http.Handler {
+	var (
+		decodeRequest  = DecodeInitProjectRequest(mux, decoder)
+		encodeResponse = EncodeInitProjectResponse(encoder)
+		encodeError    = EncodeInitProjectError(encoder, formatter)
+	)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := context.WithValue(r.Context(), goahttp.AcceptTypeKey, r.Header.Get("Accept"))
+		ctx = context.WithValue(ctx, goa.MethodKey, "init_project")
 		ctx = context.WithValue(ctx, goa.ServiceKey, "surla")
 		payload, err := decodeRequest(r)
 		if err != nil {

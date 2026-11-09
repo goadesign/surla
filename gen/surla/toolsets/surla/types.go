@@ -261,6 +261,24 @@ type (
 		// Exactly one of running, completed or not_completed.
 		State State
 	}
+	// InitProjectPayload defines the JSON payload for the surla.init_project tool.
+	InitProjectPayload = struct {
+		// Go module path of the new service (for example example.com/shop).
+		ModulePath string
+		// Direct child directory name inside the bound workspace root. When omitted or
+		// empty, defaults to the service name derived from module_path.
+		Dir *string
+	}
+	// InitProjectResult defines the JSON result for the surla.init_project tool.
+	InitProjectResult = struct {
+		// Physical directory path of the newly created starter project (now the
+		// server's active workspace).
+		Dir string
+		// Initialized Go module path.
+		ModulePath string
+		// Derived service name.
+		ServiceName string
+	}
 	// ListVerificationsPayload defines the JSON payload for the surla.list_verifications tool.
 	ListVerificationsPayload = struct {
 		// Change Card identifier.
@@ -279,7 +297,9 @@ type (
 		ChangeID string
 		// Expected CP1 request_revision digest.
 		RequestRevision string
-		// Candidate module whose Goa and Goa-AI design is evaluated.
+		// Candidate module whose Goa and Goa-AI design is evaluated. When omitted on a
+		// server with a bound workspace, Surla reads the candidate module snapshot
+		// from the bound workspace.
 		Design *DesignSnapshot
 		// Optional explicit builder path scopes for proposing a Chorus build roster.
 		// When omitted, preview_architecture returns a solo preview with swarm.status
@@ -323,8 +343,9 @@ type (
 		// Operator feature request.
 		Prompt string
 		// Current Goa design source of the target (its design/*.go files) for the CP1
-		// model to read. If omitted, CP1 receives no current design; supply the
-		// relevant design source when you want it considered.
+		// model to read. When omitted on a server with a bound workspace, Surla reads
+		// design/*.go from the bound workspace; when omitted without a bound
+		// workspace, CP1 receives no current design.
 		DesignSource *string
 	}
 	// ProposeChangeResult defines the JSON result for the surla.propose_change tool.
@@ -380,7 +401,9 @@ type (
 		// Revised operator feature request.
 		Prompt string
 		// Updated Goa design source of the target (its design/*.go files) for the CP1
-		// model to read; when omitted, the card's saved design source is used again.
+		// model to read. When omitted on a workspace-backed card with a bound
+		// workspace, Surla re-reads design/*.go from the bound workspace; otherwise
+		// the card's saved design source is used again.
 		DesignSource *string
 	}
 	// ReviseChangeResult defines the JSON result for the surla.revise_change tool.

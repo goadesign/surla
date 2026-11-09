@@ -88,3 +88,8 @@ func DiffSurlaPath() string {
 func ConfigureModelSurlaPath() string {
 	return "/cp1/model"
 }
+
+// InitProjectSurlaPath returns the URL path to the surla service init_project HTTP endpoint.
+func InitProjectSurlaPath() string {
+	return "/workspace/init"
+}

@@ -430,6 +430,33 @@ func ValidateGetVerificationResultTransport(body *GetVerificationResultTransport
 	return
 }
 
+// ValidateInitProjectPayloadTransport runs the validations defined on InitProjectPayloadTransport.
+func ValidateInitProjectPayloadTransport(body *InitProjectPayloadTransport) (err error) {
+	if body.ModulePath == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("module_path", "body"))
+	}
+	if body.ModulePath != nil {
+		if utf8.RuneCountInString(*body.ModulePath) < 3 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.module_path", *body.ModulePath, utf8.RuneCountInString(*body.ModulePath), 3, true))
+		}
+	}
+	return
+}
+
+// ValidateInitProjectResultTransport runs the validations defined on InitProjectResultTransport.
+func ValidateInitProjectResultTransport(body *InitProjectResultTransport) (err error) {
+	if body.Dir == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("dir", "body"))
+	}
+	if body.ModulePath == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("module_path", "body"))
+	}
+	if body.ServiceName == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("service_name", "body"))
+	}
+	return
+}
+
 // ValidateListVerificationsPayloadTransport runs the validations defined on ListVerificationsPayloadTransport.
 func ValidateListVerificationsPayloadTransport(body *ListVerificationsPayloadTransport) (err error) {
 	if body.ChangeID == nil {
@@ -468,9 +495,6 @@ func ValidatePreviewArchitecturePayloadTransport(body *PreviewArchitecturePayloa
 	}
 	if body.RequestRevision == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("request_revision", "body"))
-	}
-	if body.Design == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("design", "body"))
 	}
 	if body.Design != nil {
 		if err2 := ValidateDesignSnapshotTransport(body.Design); err2 != nil {

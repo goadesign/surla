@@ -1586,6 +1586,59 @@ func ValidateGetVerificationResultVerificationScenarioTransport(value *GetVerifi
 	return err
 }
 
+// InitProjectPayloadTransport stores JSON fields until they have been validated.
+type InitProjectPayloadTransport struct {
+	// Go module path of the new service (for example example.com/shop).
+	ModulePath *string `json:"module_path"`
+	// Direct child directory name inside the bound workspace root. When omitted or
+	// empty, defaults to the service name derived from module_path.
+	Dir *string `json:"dir,omitempty"`
+}
+
+// ValidateInitProjectPayloadTransport checks decoded JSON before it becomes a service value.
+func ValidateInitProjectPayloadTransport(value *InitProjectPayloadTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.ModulePath == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("module_path", "body"))
+	}
+	if value.ModulePath != nil {
+		if utf8.RuneCountInString(*value.ModulePath) < 3 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.module_path", *value.ModulePath, utf8.RuneCountInString(*value.ModulePath), 3, true))
+		}
+	}
+	return err
+}
+
+// InitProjectResultTransport stores JSON fields until they have been validated.
+type InitProjectResultTransport struct {
+	// Physical directory path of the newly created starter project (now the
+	// server's active workspace).
+	Dir *string `json:"dir"`
+	// Initialized Go module path.
+	ModulePath *string `json:"module_path"`
+	// Derived service name.
+	ServiceName *string `json:"service_name"`
+}
+
+// ValidateInitProjectResultTransport checks decoded JSON before it becomes a service value.
+func ValidateInitProjectResultTransport(value *InitProjectResultTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.Dir == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("dir", "body"))
+	}
+	if value.ModulePath == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("module_path", "body"))
+	}
+	if value.ServiceName == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("service_name", "body"))
+	}
+	return err
+}
+
 // ListVerificationsPayloadTransport stores JSON fields until they have been validated.
 type ListVerificationsPayloadTransport struct {
 	// Change Card identifier.
@@ -2006,8 +2059,10 @@ type PreviewArchitecturePayloadTransport struct {
 	ChangeID *string `json:"change_id"`
 	// Expected CP1 request_revision digest.
 	RequestRevision *string `json:"request_revision"`
-	// Candidate module whose Goa and Goa-AI design is evaluated.
-	Design *PreviewArchitecturePayloadDesignSnapshotTransport `json:"design"`
+	// Candidate module whose Goa and Goa-AI design is evaluated. When omitted on a
+	// server with a bound workspace, Surla reads the candidate module snapshot
+	// from the bound workspace.
+	Design *PreviewArchitecturePayloadDesignSnapshotTransport `json:"design,omitempty"`
 	// Optional explicit builder path scopes for proposing a Chorus build roster.
 	// When omitted, preview_architecture returns a solo preview with swarm.status
 	// unconfigured and no missing_roles.
@@ -2030,9 +2085,6 @@ func ValidatePreviewArchitecturePayloadTransport(value *PreviewArchitecturePaylo
 	}
 	if value.RequestRevision == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("request_revision", "body"))
-	}
-	if value.Design == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("design", "body"))
 	}
 	if value.Design != nil {
 		if err2 := ValidatePreviewArchitecturePayloadDesignSnapshotTransport(value.Design); err2 != nil {
@@ -2505,8 +2557,9 @@ type ProposeChangePayloadTransport struct {
 	// Operator feature request.
 	Prompt *string `json:"prompt"`
 	// Current Goa design source of the target (its design/*.go files) for the CP1
-	// model to read. If omitted, CP1 receives no current design; supply the
-	// relevant design source when you want it considered.
+	// model to read. When omitted on a server with a bound workspace, Surla reads
+	// design/*.go from the bound workspace; when omitted without a bound
+	// workspace, CP1 receives no current design.
 	DesignSource *string `json:"design_source,omitempty"`
 }
 
@@ -2821,7 +2874,9 @@ type ReviseChangePayloadTransport struct {
 	// Revised operator feature request.
 	Prompt *string `json:"prompt"`
 	// Updated Goa design source of the target (its design/*.go files) for the CP1
-	// model to read; when omitted, the card's saved design source is used again.
+	// model to read. When omitted on a workspace-backed card with a bound
+	// workspace, Surla re-reads design/*.go from the bound workspace; otherwise
+	// the card's saved design source is used again.
 	DesignSource *string `json:"design_source,omitempty"`
 }
 
@@ -4444,6 +4499,52 @@ func EncodeGetVerificationResult(in *surla.VerificationStatusResult) ([]byte, er
 	return data, nil
 }
 
+// DecodeInitProjectPayload checks JSON field names from the Goa design and returns a service value.
+func DecodeInitProjectPayload(data []byte) (out *surla.InitProjectPayload, err error) {
+	var body *InitProjectPayloadTransport
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&body); err != nil {
+		return out, fmt.Errorf("decode InitProjectPayload JSON: %w", err)
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		if err == nil {
+			return out, fmt.Errorf("decode InitProjectPayload JSON: multiple JSON values")
+		}
+		return out, fmt.Errorf("decode InitProjectPayload JSON after first value: %w", err)
+	}
+	if err := ValidateInitProjectPayloadTransport(body); err != nil {
+		return out, fmt.Errorf("validate InitProjectPayload JSON: %w", err)
+	}
+	{
+		out = &surla.InitProjectPayload{
+			ModulePath: *body.ModulePath,
+			Dir:        body.Dir,
+		}
+	}
+	return out, nil
+}
+
+// EncodeInitProjectResult turns a service value into JSON using the field names in the Goa design.
+func EncodeInitProjectResult(in *surla.InitProjectResult) ([]byte, error) {
+	var body *InitProjectResultTransport
+	{
+		body = &InitProjectResultTransport{
+			Dir:         &in.Dir,
+			ModulePath:  &in.ModulePath,
+			ServiceName: &in.ServiceName,
+		}
+	}
+	if err := ValidateInitProjectResultTransport(body); err != nil {
+		return nil, fmt.Errorf("validate InitProjectResult JSON: %w", err)
+	}
+	data, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("encode InitProjectResult JSON: %w", err)
+	}
+	return data, nil
+}
+
 // DecodeListVerificationsPayload checks JSON field names from the Goa design and returns a service value.
 func DecodeListVerificationsPayload(data []byte) (out *surla.ListVerificationsPayload, err error) {
 	var body *ListVerificationsPayloadTransport
@@ -4517,7 +4618,9 @@ func DecodePreviewArchitecturePayload(data []byte) (out *surla.PreviewArchitectu
 			ChangeID:        *body.ChangeID,
 			RequestRevision: *body.RequestRevision,
 		}
-		out.Design = decodePreviewArchitecturePayloadDesignSnapshotTransportToDesignSnapshot(body.Design)
+		if body.Design != nil {
+			out.Design = decodePreviewArchitecturePayloadDesignSnapshotTransportToDesignSnapshot(body.Design)
+		}
 		if body.Builders != nil {
 			out.Builders = make([]*surla.BuilderScopeItem, len(body.Builders))
 			for i, val := range body.Builders {

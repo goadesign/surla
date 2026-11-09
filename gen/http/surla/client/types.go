@@ -24,8 +24,9 @@ type ProposeChangeRequestBody struct {
 	// Operator feature request.
 	Prompt string `form:"prompt" json:"prompt" xml:"prompt"`
 	// Current Goa design source of the target (its design/*.go files) for the CP1
-	// model to read. If omitted, CP1 receives no current design; supply the
-	// relevant design source when you want it considered.
+	// model to read. When omitted on a server with a bound workspace, Surla reads
+	// design/*.go from the bound workspace; when omitted without a bound
+	// workspace, CP1 receives no current design.
 	DesignSource *string `form:"design_source,omitempty" json:"design_source,omitempty" xml:"design_source,omitempty"`
 }
 
@@ -39,7 +40,9 @@ type ReviseChangeRequestBody struct {
 	// Revised operator feature request.
 	Prompt string `form:"prompt" json:"prompt" xml:"prompt"`
 	// Updated Goa design source of the target (its design/*.go files) for the CP1
-	// model to read; when omitted, the card's saved design source is used again.
+	// model to read. When omitted on a workspace-backed card with a bound
+	// workspace, Surla re-reads design/*.go from the bound workspace; otherwise
+	// the card's saved design source is used again.
 	DesignSource *string `form:"design_source,omitempty" json:"design_source,omitempty" xml:"design_source,omitempty"`
 }
 
@@ -68,8 +71,10 @@ type PreviewArchitectureRequestBody struct {
 	ChangeID string `form:"change_id" json:"change_id" xml:"change_id"`
 	// Expected CP1 request_revision digest.
 	RequestRevision string `form:"request_revision" json:"request_revision" xml:"request_revision"`
-	// Candidate module whose Goa and Goa-AI design is evaluated.
-	Design *DesignSnapshotRequestBody `form:"design" json:"design" xml:"design"`
+	// Candidate module whose Goa and Goa-AI design is evaluated. When omitted on a
+	// server with a bound workspace, Surla reads the candidate module snapshot
+	// from the bound workspace.
+	Design *DesignSnapshotRequestBody `form:"design,omitempty" json:"design,omitempty" xml:"design,omitempty"`
 	// Optional explicit builder path scopes for proposing a Chorus build roster.
 	// When omitted, preview_architecture returns a solo preview with swarm.status
 	// unconfigured and no missing_roles.
@@ -147,6 +152,16 @@ type ConfigureModelRequestBody struct {
 	// Plaintext gRPC host:port of a running goa-ai model gateway; mutually
 	// exclusive with provider and model_name.
 	GatewayAddr *string `form:"gateway_addr,omitempty" json:"gateway_addr,omitempty" xml:"gateway_addr,omitempty"`
+}
+
+// InitProjectRequestBody is the type of the "surla" service "init_project"
+// endpoint HTTP request body.
+type InitProjectRequestBody struct {
+	// Go module path of the new service (for example example.com/shop).
+	ModulePath string `form:"module_path" json:"module_path" xml:"module_path"`
+	// Direct child directory name inside the bound workspace root. When omitted or
+	// empty, defaults to the service name derived from module_path.
+	Dir *string `form:"dir,omitempty" json:"dir,omitempty" xml:"dir,omitempty"`
 }
 
 // ProposeChangeResponseBody is the type of the "surla" service
@@ -514,6 +529,18 @@ type ConfigureModelResponseBody struct {
 	ModelName *string `form:"model_name,omitempty" json:"model_name,omitempty" xml:"model_name,omitempty"`
 	// Active gRPC model gateway host:port when a model gateway is configured.
 	GatewayAddr *string `form:"gateway_addr,omitempty" json:"gateway_addr,omitempty" xml:"gateway_addr,omitempty"`
+}
+
+// InitProjectResponseBody is the type of the "surla" service "init_project"
+// endpoint HTTP response body.
+type InitProjectResponseBody struct {
+	// Physical directory path of the newly created starter project (now the
+	// server's active workspace).
+	Dir *string `form:"dir,omitempty" json:"dir,omitempty" xml:"dir,omitempty"`
+	// Initialized Go module path.
+	ModulePath *string `form:"module_path,omitempty" json:"module_path,omitempty" xml:"module_path,omitempty"`
+	// Derived service name.
+	ServiceName *string `form:"service_name,omitempty" json:"service_name,omitempty" xml:"service_name,omitempty"`
 }
 
 // ProposeChangeConflictResponseBody is the type of the "surla" service
@@ -1339,6 +1366,60 @@ type ConfigureModelNotImplementedResponseBody struct {
 	Fault *bool `form:"fault,omitempty" json:"fault,omitempty" xml:"fault,omitempty"`
 }
 
+// InitProjectConflictResponseBody is the type of the "surla" service
+// "init_project" endpoint HTTP response body for the "conflict" error.
+type InitProjectConflictResponseBody struct {
+	// Name is the name of this class of errors.
+	Name *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID *string `form:"id,omitempty" json:"id,omitempty" xml:"id,omitempty"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message *string `form:"message,omitempty" json:"message,omitempty" xml:"message,omitempty"`
+	// Is the error temporary?
+	Temporary *bool `form:"temporary,omitempty" json:"temporary,omitempty" xml:"temporary,omitempty"`
+	// Is the error a timeout?
+	Timeout *bool `form:"timeout,omitempty" json:"timeout,omitempty" xml:"timeout,omitempty"`
+	// Is the error a server-side fault?
+	Fault *bool `form:"fault,omitempty" json:"fault,omitempty" xml:"fault,omitempty"`
+}
+
+// InitProjectUnprocessableResponseBody is the type of the "surla" service
+// "init_project" endpoint HTTP response body for the "unprocessable" error.
+type InitProjectUnprocessableResponseBody struct {
+	// Name is the name of this class of errors.
+	Name *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID *string `form:"id,omitempty" json:"id,omitempty" xml:"id,omitempty"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message *string `form:"message,omitempty" json:"message,omitempty" xml:"message,omitempty"`
+	// Is the error temporary?
+	Temporary *bool `form:"temporary,omitempty" json:"temporary,omitempty" xml:"temporary,omitempty"`
+	// Is the error a timeout?
+	Timeout *bool `form:"timeout,omitempty" json:"timeout,omitempty" xml:"timeout,omitempty"`
+	// Is the error a server-side fault?
+	Fault *bool `form:"fault,omitempty" json:"fault,omitempty" xml:"fault,omitempty"`
+}
+
+// InitProjectNotImplementedResponseBody is the type of the "surla" service
+// "init_project" endpoint HTTP response body for the "not_implemented" error.
+type InitProjectNotImplementedResponseBody struct {
+	// Name is the name of this class of errors.
+	Name *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID *string `form:"id,omitempty" json:"id,omitempty" xml:"id,omitempty"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message *string `form:"message,omitempty" json:"message,omitempty" xml:"message,omitempty"`
+	// Is the error temporary?
+	Temporary *bool `form:"temporary,omitempty" json:"temporary,omitempty" xml:"temporary,omitempty"`
+	// Is the error a timeout?
+	Timeout *bool `form:"timeout,omitempty" json:"timeout,omitempty" xml:"timeout,omitempty"`
+	// Is the error a server-side fault?
+	Fault *bool `form:"fault,omitempty" json:"fault,omitempty" xml:"fault,omitempty"`
+}
+
 // AmbiguityQuestionResponseBody is used to define fields on response body
 // types.
 type AmbiguityQuestionResponseBody struct {
@@ -2039,6 +2120,16 @@ func NewConfigureModelRequestBody(p *surla.ConfigureModelPayload) *ConfigureMode
 		Provider:    p.Provider,
 		ModelName:   p.ModelName,
 		GatewayAddr: p.GatewayAddr,
+	}
+	return body
+}
+
+// NewInitProjectRequestBody builds the HTTP request body from the payload of
+// the "init_project" endpoint of the "surla" service.
+func NewInitProjectRequestBody(p *surla.InitProjectPayload) *InitProjectRequestBody {
+	body := &InitProjectRequestBody{
+		ModulePath: p.ModulePath,
+		Dir:        p.Dir,
 	}
 	return body
 }
@@ -3216,6 +3307,63 @@ func NewConfigureModelNotImplemented(body *ConfigureModelNotImplementedResponseB
 	return v
 }
 
+// NewInitProjectResultOK builds a "surla" service "init_project" endpoint
+// result from a HTTP "OK" response.
+func NewInitProjectResultOK(body *InitProjectResponseBody) *surla.InitProjectResult {
+	v := &surla.InitProjectResult{
+		Dir:         *body.Dir,
+		ModulePath:  *body.ModulePath,
+		ServiceName: *body.ServiceName,
+	}
+
+	return v
+}
+
+// NewInitProjectConflict builds a surla service init_project endpoint conflict
+// error.
+func NewInitProjectConflict(body *InitProjectConflictResponseBody) *goa.ServiceError {
+	v := &goa.ServiceError{
+		Name:      *body.Name,
+		ID:        *body.ID,
+		Message:   *body.Message,
+		Temporary: *body.Temporary,
+		Timeout:   *body.Timeout,
+		Fault:     *body.Fault,
+	}
+
+	return v
+}
+
+// NewInitProjectUnprocessable builds a surla service init_project endpoint
+// unprocessable error.
+func NewInitProjectUnprocessable(body *InitProjectUnprocessableResponseBody) *goa.ServiceError {
+	v := &goa.ServiceError{
+		Name:      *body.Name,
+		ID:        *body.ID,
+		Message:   *body.Message,
+		Temporary: *body.Temporary,
+		Timeout:   *body.Timeout,
+		Fault:     *body.Fault,
+	}
+
+	return v
+}
+
+// NewInitProjectNotImplemented builds a surla service init_project endpoint
+// not_implemented error.
+func NewInitProjectNotImplemented(body *InitProjectNotImplementedResponseBody) *goa.ServiceError {
+	v := &goa.ServiceError{
+		Name:      *body.Name,
+		ID:        *body.ID,
+		Message:   *body.Message,
+		Temporary: *body.Temporary,
+		Timeout:   *body.Timeout,
+		Fault:     *body.Fault,
+	}
+
+	return v
+}
+
 // ValidateProposeChangeResponseBody runs the validations defined on
 // ProposeChangeResponseBody
 func ValidateProposeChangeResponseBody(body *ProposeChangeResponseBody) (err error) {
@@ -3813,6 +3961,21 @@ func ValidateConfigureModelResponseBody(body *ConfigureModelResponseBody) (err e
 		if utf8.RuneCountInString(*body.GatewayAddr) < 1 {
 			err = goa.MergeErrors(err, goa.InvalidLengthError("body.gateway_addr", *body.GatewayAddr, utf8.RuneCountInString(*body.GatewayAddr), 1, true))
 		}
+	}
+	return
+}
+
+// ValidateInitProjectResponseBody runs the validations defined on
+// InitProjectResponseBody
+func ValidateInitProjectResponseBody(body *InitProjectResponseBody) (err error) {
+	if body.Dir == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("dir", "body"))
+	}
+	if body.ModulePath == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("module_path", "body"))
+	}
+	if body.ServiceName == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("service_name", "body"))
 	}
 	return
 }
@@ -4876,6 +5039,78 @@ func ValidateConfigureModelUnprocessableResponseBody(body *ConfigureModelUnproce
 // ValidateConfigureModelNotImplementedResponseBody runs the validations
 // defined on ConfigureModelNotImplementedResponseBody
 func ValidateConfigureModelNotImplementedResponseBody(body *ConfigureModelNotImplementedResponseBody) (err error) {
+	if body.Name == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
+	}
+	if body.ID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("id", "body"))
+	}
+	if body.Message == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("message", "body"))
+	}
+	if body.Temporary == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("temporary", "body"))
+	}
+	if body.Timeout == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("timeout", "body"))
+	}
+	if body.Fault == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("fault", "body"))
+	}
+	return
+}
+
+// ValidateInitProjectConflictResponseBody runs the validations defined on
+// InitProjectConflictResponseBody
+func ValidateInitProjectConflictResponseBody(body *InitProjectConflictResponseBody) (err error) {
+	if body.Name == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
+	}
+	if body.ID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("id", "body"))
+	}
+	if body.Message == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("message", "body"))
+	}
+	if body.Temporary == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("temporary", "body"))
+	}
+	if body.Timeout == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("timeout", "body"))
+	}
+	if body.Fault == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("fault", "body"))
+	}
+	return
+}
+
+// ValidateInitProjectUnprocessableResponseBody runs the validations defined on
+// InitProjectUnprocessableResponseBody
+func ValidateInitProjectUnprocessableResponseBody(body *InitProjectUnprocessableResponseBody) (err error) {
+	if body.Name == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
+	}
+	if body.ID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("id", "body"))
+	}
+	if body.Message == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("message", "body"))
+	}
+	if body.Temporary == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("temporary", "body"))
+	}
+	if body.Timeout == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("timeout", "body"))
+	}
+	if body.Fault == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("fault", "body"))
+	}
+	return
+}
+
+// ValidateInitProjectNotImplementedResponseBody runs the validations defined
+// on InitProjectNotImplementedResponseBody
+func ValidateInitProjectNotImplementedResponseBody(body *InitProjectNotImplementedResponseBody) (err error) {
 	if body.Name == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
 	}

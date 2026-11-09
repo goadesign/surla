@@ -16,7 +16,6 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
-	"slices"
 	"strings"
 	"syscall"
 	"time"
@@ -27,6 +26,7 @@ import (
 	gensurlaclient "github.com/goadesign/surla/gen/http/surla/client"
 	gensurlaserver "github.com/goadesign/surla/gen/http/surla/server"
 	gensurla "github.com/goadesign/surla/gen/surla"
+	"github.com/goadesign/surla/internal/designeval"
 )
 
 type (
@@ -114,11 +114,11 @@ func runPreviewChange(args []string, w io.Writer, getenv func(string) string) er
 	if err != nil {
 		return err
 	}
-	files, err := readModuleSnapshot(cfg.dir)
+	files, err := designeval.ReadModuleSnapshot(cfg.dir)
 	if err != nil {
 		return err
 	}
-	if err := validateUTF8Snapshot(files); err != nil {
+	if err := designeval.ValidateUTF8Snapshot(files); err != nil {
 		return err
 	}
 	reqBody := &gensurlaserver.PreviewArchitectureRequestBody{
@@ -149,7 +149,7 @@ func runPreviewChange(args []string, w io.Writer, getenv func(string) string) er
 		goahttp.ResponseDecoder,
 		false,
 	).PreviewArchitecture()
-	client := gensurla.NewClient(nil, nil, nil, nil, nil, nil, endpoint, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	client := gensurla.NewClient(nil, nil, nil, nil, nil, nil, endpoint, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	sigCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	ctx, cancel := context.WithTimeout(sigCtx, cfg.timeout)
@@ -283,24 +283,4 @@ func loadBuilderScopes(path string) ([]*gensurlaserver.BuilderScopeItemRequestBo
 		}
 	}
 	return *scopes, nil
-}
-
-// validateUTF8Snapshot checks that every file path and content in files is
-// valid UTF-8 before encoding the snapshot as JSON over HTTP, because
-// encoding/json silently replaces invalid UTF-8 bytes with U+FFFD.
-func validateUTF8Snapshot(files map[string]string) error {
-	paths := make([]string, 0, len(files))
-	for p := range files {
-		paths = append(paths, p)
-	}
-	slices.Sort(paths)
-	for _, p := range paths {
-		if !utf8.ValidString(p) {
-			return fmt.Errorf("design snapshot path %q is not valid UTF-8", p)
-		}
-		if !utf8.ValidString(files[p]) {
-			return fmt.Errorf("design snapshot file %s is not valid UTF-8", p)
-		}
-	}
-	return nil
 }

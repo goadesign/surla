@@ -29,17 +29,19 @@ type Service interface {
 	// platforms.
 	GoldenPath(context.Context) (res string, err error)
 	// Evaluate a feature request at Checkpoint 1, surfacing concrete examples and
-	// any genuine domain ambiguity. The analysis considers the target's current
-	// design only when it is sent in design_source.
+	// any genuine domain ambiguity. When design_source is omitted and a workspace
+	// is bound, Surla reads design/*.go from the bound workspace.
 	ProposeChange(context.Context, *ProposeChangePayload) (res *ChangeCardResult, err error)
 	// Revise an existing Checkpoint 1 Change Card with new or changed operator
 	// requirements bound to its current request_revision. Re-analyzes the revised
-	// prompt and design source with the prior card's prompt, summary, confirmed
-	// answers, open questions, examples and preserved behaviors as context, and
-	// saves a new revision in needs_confirmation status for operator review. The
-	// new revision's answers, confirmed_by and any approval are cleared: earlier
-	// decisions remain only where the analysis restated them in its summary,
-	// examples or preserved behaviors.
+	// prompt and design source (re-reading design/*.go from the bound workspace
+	// when design_source is omitted on a workspace-backed card) with the prior
+	// card's prompt, summary, confirmed answers, open questions, examples and
+	// preserved behaviors as context, and saves a new revision in
+	// needs_confirmation status for operator review. The new revision's answers,
+	// confirmed_by and any approval are cleared: earlier decisions remain only
+	// where the analysis restated them in its summary, examples or preserved
+	// behaviors.
 	ReviseChange(context.Context, *ReviseChangePayload) (res *ChangeCardResult, err error)
 	// Confirm or refine a Checkpoint 1 Change Card with the complete ambiguity
 	// answers and example table, bound to its current request_revision. Changed
@@ -60,25 +62,25 @@ type Service interface {
 	GetChange(context.Context, *GetChangePayload) (res *ChangeCardResult, err error)
 	// Extract and validate the Checkpoint 2 C4 container topology, tool contracts,
 	// Goa-AI guardrails, and proposed Chorus swarm roster from a candidate Goa
-	// design bound to a confirmed Change Card. Apart from the swarm roster, the
-	// result reports what the design declares; it does not compare the design with
-	// the Change Card's requirements.
+	// design bound to a confirmed Change Card. When design is omitted and a
+	// workspace is bound, Surla reads the candidate module snapshot from the bound
+	// workspace. Apart from the swarm roster, the result reports what the design
+	// declares; it does not compare the design with the Change Card's requirements.
 	PreviewArchitecture(context.Context, *PreviewArchitecturePayload) (res *ArchitecturePreviewResult, err error)
 	// Apply a Fast Draft Mode prompt override on the bound target or reject a
 	// compiled-rule prompt hack. A prompt_template override needs a bound target:
-	// on surla serve, that is the live target start_live_target runs, which
-	// requires surla serve -verification-config. On a live target started with
-	// start_live_target, a rejected update leaves the target's text unchanged;
-	// update_not_confirmed means the target may or may not have applied it.
+	// on surla serve, that is the live target start_live_target runs. On a live
+	// target started with start_live_target, a rejected update leaves the target's
+	// text unchanged; update_not_confirmed means the target may or may not have
+	// applied it.
 	DraftOverride(context.Context, *DraftOverridePayload) (res *DraftOverrideResult, err error)
 	// Build a candidate commit exactly as Checkpoint 4 does and run it, with the
 	// operator's evaluator suite, as this server's one live CP3 target, then bind
 	// draft_override to it. A running target is stopped first, so there is never
 	// more than one. The target runs until stop_live_target, a later
 	// start_live_target, its own exit, or this server's shutdown; a server restart
-	// leaves none running. Requires Checkpoint 4 verification to be configured
-	// (surla serve -verification-config), because the build and launch settings
-	// come from it.
+	// leaves none running. Requires a committed starter project in the bound
+	// workspace or -verification-config.
 	StartLiveTarget(context.Context, *StartLiveTargetPayload) (res *LiveTargetResult, err error)
 	// Stop this server's live CP3 target, if one runs, and unbind draft_override
 	// from it. Stopping when none runs is not an error.
@@ -88,9 +90,8 @@ type Service interface {
 	// builds the commit in Surla's sandbox and runs the evaluator suite the
 	// operator configured, in a separate process that keeps running when the
 	// caller disconnects or the server restarts; get_verification reads its state.
-	// Only the builder view of the report is ever returned. A server started
-	// without verification configured (surla serve -verification-config) rejects
-	// every call.
+	// Only the builder view of the report is ever returned. Requires a committed
+	// starter project in the bound workspace or -verification-config.
 	VerifyChange(context.Context, *VerifyChangePayload) (res *VerificationStatusResult, err error)
 	// Return the current state of a verification run to the owner who started it:
 	// running, completed with the builder view of its report, or not completed
@@ -119,6 +120,11 @@ type Service interface {
 	// model provider and model name or gRPC model gateway on a running control
 	// plane without restarting.
 	ConfigureModel(context.Context, *ConfigureModelPayload) (res *ModelConfigResult, err error)
+	// Initialize a new Surla starter project directory inside the server's bound
+	// workspace, generating the candidate Go module, Goa and Goa-AI code, and the
+	// eval/ verification harness, and switch the server's active workspace to that
+	// project.
+	InitProject(context.Context, *InitProjectPayload) (res *InitProjectResult, err error)
 }
 
 // APIName is the name of the API as defined in the design.
@@ -135,7 +141,7 @@ const ServiceName = "surla"
 // MethodNames lists the service method names as defined in the design. These
 // are the same values that are set in the endpoint request contexts under the
 // MethodKey key.
-var MethodNames = [16]string{"checkpoint_ui", "golden_path", "propose_change", "revise_change", "confirm_intent", "get_change", "preview_architecture", "draft_override", "start_live_target", "stop_live_target", "verify_change", "get_verification", "list_verifications", "approve_merge", "diff", "configure_model"}
+var MethodNames = [17]string{"checkpoint_ui", "golden_path", "propose_change", "revise_change", "confirm_intent", "get_change", "preview_architecture", "draft_override", "start_live_target", "stop_live_target", "verify_change", "get_verification", "list_verifications", "approve_merge", "diff", "configure_model", "init_project"}
 
 // Evaluated Goa-AI cost, safety, history, and cache policy for a single agent.
 type AgentPolicyItem struct {
@@ -458,6 +464,28 @@ type GetVerificationPayload struct {
 	RunID string
 }
 
+// InitProjectPayload is the payload type of the surla service init_project
+// method.
+type InitProjectPayload struct {
+	// Go module path of the new service (for example example.com/shop).
+	ModulePath string
+	// Direct child directory name inside the bound workspace root. When omitted or
+	// empty, defaults to the service name derived from module_path.
+	Dir *string
+}
+
+// InitProjectResult is the result type of the surla service init_project
+// method.
+type InitProjectResult struct {
+	// Physical directory path of the newly created starter project (now the
+	// server's active workspace).
+	Dir string
+	// Initialized Go module path.
+	ModulePath string
+	// Derived service name.
+	ServiceName string
+}
+
 // ListVerificationsPayload is the payload type of the surla service
 // list_verifications method.
 type ListVerificationsPayload struct {
@@ -495,7 +523,9 @@ type PreviewArchitecturePayload struct {
 	ChangeID string
 	// Expected CP1 request_revision digest.
 	RequestRevision string
-	// Candidate module whose Goa and Goa-AI design is evaluated.
+	// Candidate module whose Goa and Goa-AI design is evaluated. When omitted on a
+	// server with a bound workspace, Surla reads the candidate module snapshot
+	// from the bound workspace.
 	Design *DesignSnapshot
 	// Optional explicit builder path scopes for proposing a Chorus build roster.
 	// When omitted, preview_architecture returns a solo preview with swarm.status
@@ -517,8 +547,9 @@ type ProposeChangePayload struct {
 	// Operator feature request.
 	Prompt string
 	// Current Goa design source of the target (its design/*.go files) for the CP1
-	// model to read. If omitted, CP1 receives no current design; supply the
-	// relevant design source when you want it considered.
+	// model to read. When omitted on a server with a bound workspace, Surla reads
+	// design/*.go from the bound workspace; when omitted without a bound
+	// workspace, CP1 receives no current design.
 	DesignSource *string
 }
 
@@ -532,7 +563,9 @@ type ReviseChangePayload struct {
 	// Revised operator feature request.
 	Prompt string
 	// Updated Goa design source of the target (its design/*.go files) for the CP1
-	// model to read; when omitted, the card's saved design source is used again.
+	// model to read. When omitted on a workspace-backed card with a bound
+	// workspace, Surla re-reads design/*.go from the bound workspace; otherwise
+	// the card's saved design source is used again.
 	DesignSource *string
 }
 
@@ -1748,6 +1781,59 @@ func validatejsonGetVerificationPayloadTransport(value *jsonGetVerificationPaylo
 	return err
 }
 
+// jsonInitProjectPayloadTransport stores JSON fields until they have been validated.
+type jsonInitProjectPayloadTransport struct {
+	// Go module path of the new service (for example example.com/shop).
+	ModulePath *string `json:"module_path"`
+	// Direct child directory name inside the bound workspace root. When omitted or
+	// empty, defaults to the service name derived from module_path.
+	Dir *string `json:"dir,omitempty"`
+}
+
+// validatejsonInitProjectPayloadTransport checks decoded JSON before it becomes a service value.
+func validatejsonInitProjectPayloadTransport(value *jsonInitProjectPayloadTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.ModulePath == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("module_path", "body"))
+	}
+	if value.ModulePath != nil {
+		if utf8.RuneCountInString(*value.ModulePath) < 3 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.module_path", *value.ModulePath, utf8.RuneCountInString(*value.ModulePath), 3, true))
+		}
+	}
+	return err
+}
+
+// jsonInitProjectResultTransport stores JSON fields until they have been validated.
+type jsonInitProjectResultTransport struct {
+	// Physical directory path of the newly created starter project (now the
+	// server's active workspace).
+	Dir *string `json:"dir"`
+	// Initialized Go module path.
+	ModulePath *string `json:"module_path"`
+	// Derived service name.
+	ServiceName *string `json:"service_name"`
+}
+
+// validatejsonInitProjectResultTransport checks decoded JSON before it becomes a service value.
+func validatejsonInitProjectResultTransport(value *jsonInitProjectResultTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.Dir == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("dir", "body"))
+	}
+	if value.ModulePath == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("module_path", "body"))
+	}
+	if value.ServiceName == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("service_name", "body"))
+	}
+	return err
+}
+
 // jsonListVerificationsPayloadTransport stores JSON fields until they have been validated.
 type jsonListVerificationsPayloadTransport struct {
 	// Change Card identifier.
@@ -1837,8 +1923,10 @@ type jsonPreviewArchitecturePayloadTransport struct {
 	ChangeID *string `json:"change_id"`
 	// Expected CP1 request_revision digest.
 	RequestRevision *string `json:"request_revision"`
-	// Candidate module whose Goa and Goa-AI design is evaluated.
-	Design *jsonDesignSnapshotTransport `json:"design"`
+	// Candidate module whose Goa and Goa-AI design is evaluated. When omitted on a
+	// server with a bound workspace, Surla reads the candidate module snapshot
+	// from the bound workspace.
+	Design *jsonDesignSnapshotTransport `json:"design,omitempty"`
 	// Optional explicit builder path scopes for proposing a Chorus build roster.
 	// When omitted, preview_architecture returns a solo preview with swarm.status
 	// unconfigured and no missing_roles.
@@ -1862,9 +1950,6 @@ func validatejsonPreviewArchitecturePayloadTransport(value *jsonPreviewArchitect
 	if value.RequestRevision == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("request_revision", "body"))
 	}
-	if value.Design == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("design", "body"))
-	}
 	if value.Design != nil {
 		if err2 := validatejsonDesignSnapshotTransport(value.Design); err2 != nil {
 			err = goa.MergeErrors(err, err2)
@@ -1887,8 +1972,9 @@ type jsonProposeChangePayloadTransport struct {
 	// Operator feature request.
 	Prompt *string `json:"prompt"`
 	// Current Goa design source of the target (its design/*.go files) for the CP1
-	// model to read. If omitted, CP1 receives no current design; supply the
-	// relevant design source when you want it considered.
+	// model to read. When omitted on a server with a bound workspace, Surla reads
+	// design/*.go from the bound workspace; when omitted without a bound
+	// workspace, CP1 receives no current design.
 	DesignSource *string `json:"design_source,omitempty"`
 }
 
@@ -1915,7 +2001,9 @@ type jsonReviseChangePayloadTransport struct {
 	// Revised operator feature request.
 	Prompt *string `json:"prompt"`
 	// Updated Goa design source of the target (its design/*.go files) for the CP1
-	// model to read; when omitted, the card's saved design source is used again.
+	// model to read. When omitted on a workspace-backed card with a bound
+	// workspace, Surla re-reads design/*.go from the bound workspace; otherwise
+	// the card's saved design source is used again.
 	DesignSource *string `json:"design_source,omitempty"`
 }
 
@@ -2908,6 +2996,14 @@ func validateDraftOverridePayloadOriginal(value *DraftOverridePayload) (err erro
 	return err
 }
 
+// validateInitProjectPayloadOriginal checks the original typed value before JSON conversion.
+func validateInitProjectPayloadOriginal(value *InitProjectPayload) (err error) {
+	if utf8.RuneCountInString(value.ModulePath) < 3 {
+		err = goa.MergeErrors(err, goa.InvalidLengthError("value.module_path", value.ModulePath, utf8.RuneCountInString(value.ModulePath), 3, true))
+	}
+	return err
+}
+
 // validateListVerificationsPayloadOriginal checks the original typed value before JSON conversion.
 func validateListVerificationsPayloadOriginal(value *ListVerificationsPayload) (err error) {
 	if utf8.RuneCountInString(value.ChangeID) < 1 {
@@ -2938,9 +3034,6 @@ func validateModelConfigResultOriginal(value *ModelConfigResult) (err error) {
 
 // validatePreviewArchitecturePayloadOriginal checks the original typed value before JSON conversion.
 func validatePreviewArchitecturePayloadOriginal(value *PreviewArchitecturePayload) (err error) {
-	if value.Design == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("design", "value"))
-	}
 	if value.Design != nil {
 		if err2 := validateDesignSnapshotOriginal(value.Design); err2 != nil {
 			err = goa.MergeErrors(err, err2)
@@ -5407,6 +5500,175 @@ func DecodeGetVerificationPayload(data []byte) (out *GetVerificationPayload, err
 	return out, nil
 }
 
+// EncodeInitProjectPayload turns a service value into JSON using the field names in the Goa design.
+func EncodeInitProjectPayload(in *InitProjectPayload) ([]byte, error) {
+	if err := checkInitProjectPayloadValue(in); err != nil {
+		return nil, fmt.Errorf("encode InitProjectPayload JSON: %w", err)
+	}
+	if err := validateInitProjectPayloadOriginal(in); err != nil {
+		return nil, fmt.Errorf("validate InitProjectPayload value: %w", err)
+	}
+	var body *jsonInitProjectPayloadTransport
+	{
+		body = &jsonInitProjectPayloadTransport{
+			ModulePath: &in.ModulePath,
+			Dir:        in.Dir,
+		}
+	}
+	if err := validatejsonInitProjectPayloadTransport(body); err != nil {
+		return nil, fmt.Errorf("validate InitProjectPayload JSON: %w", err)
+	}
+	data, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("encode InitProjectPayload JSON: %w", err)
+	}
+	return data, nil
+}
+
+// ValidateInitProjectPayloadValue checks the original Go fields against their declared constraints.
+// It returns validation errors without encoding the value as JSON.
+
+func ValidateInitProjectPayloadValue(in *InitProjectPayload) error {
+	if err := checkInitProjectPayloadValue(in); err != nil {
+		return fmt.Errorf("validate InitProjectPayload value: %w", err)
+	}
+	if err := validateInitProjectPayloadOriginal(in); err != nil {
+		return fmt.Errorf("validate InitProjectPayload value: %w", err)
+	}
+
+	if in == nil {
+		return goa.MissingFieldError("result", "InitProjectPayload")
+	}
+
+	var body *jsonInitProjectPayloadTransport
+	{
+		body = &jsonInitProjectPayloadTransport{
+			ModulePath: &in.ModulePath,
+			Dir:        in.Dir,
+		}
+	}
+	if err := validatejsonInitProjectPayloadTransport(body); err != nil {
+		return fmt.Errorf("validate InitProjectPayload value: %w", err)
+	}
+	return nil
+}
+
+// DecodeInitProjectPayload checks JSON field names from the Goa design and returns a service value.
+func DecodeInitProjectPayload(data []byte) (out *InitProjectPayload, err error) {
+	root, err := readStrictJSON(data)
+	if err != nil {
+		return out, fmt.Errorf("decode InitProjectPayload JSON: %w", err)
+	}
+	if err := validateInitProjectPayloadJSONValue("", root, ""); err != nil {
+		return out, fmt.Errorf("decode InitProjectPayload JSON: %w", err)
+	}
+	var body *jsonInitProjectPayloadTransport
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&body); err != nil {
+		return out, fmt.Errorf("decode InitProjectPayload JSON: %w", err)
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		if err == nil {
+			return out, fmt.Errorf("decode InitProjectPayload JSON: multiple JSON values")
+		}
+		return out, fmt.Errorf("decode InitProjectPayload JSON after first value: %w", err)
+	}
+	if err := validatejsonInitProjectPayloadTransport(body); err != nil {
+		return out, fmt.Errorf("validate InitProjectPayload JSON: %w", err)
+	}
+	{
+		out = &InitProjectPayload{
+			ModulePath: *body.ModulePath,
+			Dir:        body.Dir,
+		}
+	}
+	return out, nil
+}
+
+// EncodeInitProjectResult turns a service value into JSON using the field names in the Goa design.
+func EncodeInitProjectResult(in *InitProjectResult) ([]byte, error) {
+	if err := checkInitProjectResultValue(in); err != nil {
+		return nil, fmt.Errorf("encode InitProjectResult JSON: %w", err)
+	}
+	var body *jsonInitProjectResultTransport
+	{
+		body = &jsonInitProjectResultTransport{
+			Dir:         &in.Dir,
+			ModulePath:  &in.ModulePath,
+			ServiceName: &in.ServiceName,
+		}
+	}
+	if err := validatejsonInitProjectResultTransport(body); err != nil {
+		return nil, fmt.Errorf("validate InitProjectResult JSON: %w", err)
+	}
+	data, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("encode InitProjectResult JSON: %w", err)
+	}
+	return data, nil
+}
+
+// ValidateInitProjectResultValue checks the original Go fields against their declared constraints.
+// It returns validation errors without encoding the value as JSON.
+
+func ValidateInitProjectResultValue(in *InitProjectResult) error {
+	if err := checkInitProjectResultValue(in); err != nil {
+		return fmt.Errorf("validate InitProjectResult value: %w", err)
+	}
+
+	if in == nil {
+		return goa.MissingFieldError("result", "InitProjectResult")
+	}
+
+	var body *jsonInitProjectResultTransport
+	{
+		body = &jsonInitProjectResultTransport{
+			Dir:         &in.Dir,
+			ModulePath:  &in.ModulePath,
+			ServiceName: &in.ServiceName,
+		}
+	}
+	if err := validatejsonInitProjectResultTransport(body); err != nil {
+		return fmt.Errorf("validate InitProjectResult value: %w", err)
+	}
+	return nil
+}
+
+// DecodeInitProjectResult checks JSON field names from the Goa design and returns a service value.
+func DecodeInitProjectResult(data []byte) (out *InitProjectResult, err error) {
+	root, err := readStrictJSON(data)
+	if err != nil {
+		return out, fmt.Errorf("decode InitProjectResult JSON: %w", err)
+	}
+	if err := validateInitProjectResultJSONValue("", root, ""); err != nil {
+		return out, fmt.Errorf("decode InitProjectResult JSON: %w", err)
+	}
+	var body *jsonInitProjectResultTransport
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&body); err != nil {
+		return out, fmt.Errorf("decode InitProjectResult JSON: %w", err)
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		if err == nil {
+			return out, fmt.Errorf("decode InitProjectResult JSON: multiple JSON values")
+		}
+		return out, fmt.Errorf("decode InitProjectResult JSON after first value: %w", err)
+	}
+	if err := validatejsonInitProjectResultTransport(body); err != nil {
+		return out, fmt.Errorf("validate InitProjectResult JSON: %w", err)
+	}
+	{
+		out = &InitProjectResult{
+			Dir:         *body.Dir,
+			ModulePath:  *body.ModulePath,
+			ServiceName: *body.ServiceName,
+		}
+	}
+	return out, nil
+}
+
 // EncodeListVerificationsPayload turns a service value into JSON using the field names in the Goa design.
 func EncodeListVerificationsPayload(in *ListVerificationsPayload) ([]byte, error) {
 	if err := checkListVerificationsPayloadValue(in); err != nil {
@@ -5676,7 +5938,9 @@ func EncodePreviewArchitecturePayload(in *PreviewArchitecturePayload) ([]byte, e
 			ChangeID:        &in.ChangeID,
 			RequestRevision: &in.RequestRevision,
 		}
-		body.Design = encodeDesignSnapshotToDesignSnapshotTransport3(in.Design)
+		if in.Design != nil {
+			body.Design = encodeDesignSnapshotToDesignSnapshotTransport3(in.Design)
+		}
 		if in.Builders != nil {
 			body.Builders = make([]*jsonBuilderScopeItemTransport, len(in.Builders))
 			for i, val := range in.Builders {
@@ -5731,7 +5995,9 @@ func ValidatePreviewArchitecturePayloadValue(in *PreviewArchitecturePayload) err
 			ChangeID:        &in.ChangeID,
 			RequestRevision: &in.RequestRevision,
 		}
-		body.Design = encodeDesignSnapshotToDesignSnapshotTransport3(in.Design)
+		if in.Design != nil {
+			body.Design = encodeDesignSnapshotToDesignSnapshotTransport3(in.Design)
+		}
 		if in.Builders != nil {
 			body.Builders = make([]*jsonBuilderScopeItemTransport, len(in.Builders))
 			for i, val := range in.Builders {
@@ -5790,7 +6056,9 @@ func DecodePreviewArchitecturePayload(data []byte) (out *PreviewArchitecturePayl
 			ChangeID:        *body.ChangeID,
 			RequestRevision: *body.RequestRevision,
 		}
-		out.Design = decodeDesignSnapshotTransportToDesignSnapshot(body.Design)
+		if body.Design != nil {
+			out.Design = decodeDesignSnapshotTransportToDesignSnapshot(body.Design)
+		}
 		if body.Builders != nil {
 			out.Builders = make([]*BuilderScopeItem, len(body.Builders))
 			for i, val := range body.Builders {
@@ -11126,6 +11394,102 @@ func validateGetVerificationPayloadJSONValue(path string, value any, description
 	return nil
 }
 
+// validateInitProjectPayloadJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateInitProjectPayloadJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "dir":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Direct child directory name inside the bound workspace root. When omitted or empty, defaults to the service name derived from module_path.",
+			); err != nil {
+				return err
+			}
+		case "module_path":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Go module path of the new service (for example example.com/shop).",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"dir",
+				"module_path",
+			})
+		}
+	}
+	return nil
+}
+
+// validateInitProjectResultJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateInitProjectResultJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "dir":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Physical directory path of the newly created starter project (now the server's active workspace).",
+			); err != nil {
+				return err
+			}
+		case "module_path":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Initialized Go module path.",
+			); err != nil {
+				return err
+			}
+		case "service_name":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Derived service name.",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"dir",
+				"module_path",
+				"service_name",
+			})
+		}
+	}
+	return nil
+}
+
 // validateListVerificationsPayloadJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
 func validateListVerificationsPayloadJSONValue(path string, value any, description string) error {
 	field := path
@@ -11310,7 +11674,7 @@ func validatePreviewArchitecturePayloadJSONValue(path string, value any, descrip
 		case "design":
 			if err := validateDesignSnapshotJSONValue(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Candidate module whose Goa and Goa-AI design is evaluated.",
+				typed[key], "Candidate module whose Goa and Goa-AI design is evaluated. When omitted on a server with a bound workspace, Surla reads the candidate module snapshot from the bound workspace.",
 			); err != nil {
 				return err
 			}
@@ -11447,7 +11811,7 @@ func validateProposeChangePayloadJSONValue(path string, value any, description s
 		case "design_source":
 			if err := validateAgentPolicyItemJSONValue2(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Current Goa design source of the target (its design/*.go files) for the CP1 model to read. If omitted, CP1 receives no current design; supply the relevant design source when you want it considered.",
+				typed[key], "Current Goa design source of the target (its design/*.go files) for the CP1 model to read. When omitted on a server with a bound workspace, Surla reads design/*.go from the bound workspace; when omitted without a bound workspace, CP1 receives no current design.",
 			); err != nil {
 				return err
 			}
@@ -11499,7 +11863,7 @@ func validateReviseChangePayloadJSONValue(path string, value any, description st
 		case "design_source":
 			if err := validateAgentPolicyItemJSONValue2(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Updated Goa design source of the target (its design/*.go files) for the CP1 model to read; when omitted, the card's saved design source is used again.",
+				typed[key], "Updated Goa design source of the target (its design/*.go files) for the CP1 model to read. When omitted on a workspace-backed card with a bound workspace, Surla re-reads design/*.go from the bound workspace; otherwise the card's saved design source is used again.",
 			); err != nil {
 				return err
 			}
@@ -13305,6 +13669,77 @@ func checkGetVerificationPayloadGetVerificationPayloadValue(in *GetVerificationP
 	if in != nil {
 		if !utf8.ValidString(string(in.RunID)) {
 			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "run_id", false))
+		}
+	}
+	return nil
+}
+
+// checkInitProjectPayloadValue checks text and cycles before conversion.
+func checkInitProjectPayloadValue(in *InitProjectPayload) error {
+	if in == nil {
+		return fmt.Errorf("missing root value")
+	}
+	active := make(map[any]bool)
+	if err := checkInitProjectPayloadInitProjectPayloadValue(in, "$", active); err != nil {
+		return err
+	}
+	return nil
+}
+
+// checkInitProjectPayloadInitProjectPayloadValue checks one generated value on the active path.
+func checkInitProjectPayloadInitProjectPayloadValue(in *InitProjectPayload, field string, active map[any]bool) error {
+	if in == nil {
+		return nil
+	}
+	if active[in] {
+		return fmt.Errorf("%s: cyclic Go value", field)
+	}
+	active[in] = true
+	defer delete(active, in)
+	if in != nil {
+		if !utf8.ValidString(string(in.ModulePath)) {
+			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "module_path", false))
+		}
+		if in.Dir != nil {
+			if !utf8.ValidString(string(*in.Dir)) {
+				return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "dir", false))
+			}
+		}
+	}
+	return nil
+}
+
+// checkInitProjectResultValue checks text and cycles before conversion.
+func checkInitProjectResultValue(in *InitProjectResult) error {
+	if in == nil {
+		return fmt.Errorf("missing root value")
+	}
+	active := make(map[any]bool)
+	if err := checkInitProjectResultInitProjectResultValue(in, "$", active); err != nil {
+		return err
+	}
+	return nil
+}
+
+// checkInitProjectResultInitProjectResultValue checks one generated value on the active path.
+func checkInitProjectResultInitProjectResultValue(in *InitProjectResult, field string, active map[any]bool) error {
+	if in == nil {
+		return nil
+	}
+	if active[in] {
+		return fmt.Errorf("%s: cyclic Go value", field)
+	}
+	active[in] = true
+	defer delete(active, in)
+	if in != nil {
+		if !utf8.ValidString(string(in.Dir)) {
+			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "dir", false))
+		}
+		if !utf8.ValidString(string(in.ModulePath)) {
+			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "module_path", false))
+		}
+		if !utf8.ValidString(string(in.ServiceName)) {
+			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "service_name", false))
 		}
 	}
 	return nil

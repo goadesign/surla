@@ -134,6 +134,22 @@ func GetVerificationResultCodec() tools.JSONCodec[*GetVerificationResult] {
 	}
 }
 
+// InitProjectPayloadCodec returns a fresh codec for *InitProjectPayload.
+func InitProjectPayloadCodec() tools.JSONCodec[*InitProjectPayload] {
+	return tools.JSONCodec[*InitProjectPayload]{
+		ToJSON:   MarshalInitProjectPayload,
+		FromJSON: UnmarshalInitProjectPayload,
+	}
+}
+
+// InitProjectResultCodec returns a fresh codec for *InitProjectResult.
+func InitProjectResultCodec() tools.JSONCodec[*InitProjectResult] {
+	return tools.JSONCodec[*InitProjectResult]{
+		ToJSON:   MarshalInitProjectResult,
+		FromJSON: UnmarshalInitProjectResult,
+	}
+}
+
 // ListVerificationsPayloadCodec returns a fresh codec for *ListVerificationsPayload.
 func ListVerificationsPayloadCodec() tools.JSONCodec[*ListVerificationsPayload] {
 	return tools.JSONCodec[*ListVerificationsPayload]{
@@ -427,6 +443,32 @@ var (
 		},
 		FromJSON: func(data []byte) (any, error) {
 			return UnmarshalGetVerificationResult(data)
+		},
+	}
+	// initProjectPayloadCodec provides an untyped codec for *InitProjectPayload.
+	initProjectPayloadCodec = tools.JSONCodec[any]{
+		ToJSON: func(v any) ([]byte, error) {
+			// Prefer typed marshal when the value matches the expected type.
+			if typed, ok := v.(*InitProjectPayload); ok {
+				return MarshalInitProjectPayload(typed)
+			}
+			return nil, fmt.Errorf("invalid value type for *InitProjectPayload: %T", v)
+		},
+		FromJSON: func(data []byte) (any, error) {
+			return UnmarshalInitProjectPayload(data)
+		},
+	}
+	// initProjectResultCodec provides an untyped codec for *InitProjectResult.
+	initProjectResultCodec = tools.JSONCodec[any]{
+		ToJSON: func(v any) ([]byte, error) {
+			// Prefer typed marshal when the value matches the expected type.
+			if typed, ok := v.(*InitProjectResult); ok {
+				return MarshalInitProjectResult(typed)
+			}
+			return nil, fmt.Errorf("invalid value type for *InitProjectResult: %T", v)
+		},
+		FromJSON: func(data []byte) (any, error) {
+			return UnmarshalInitProjectResult(data)
 		},
 	}
 	// listVerificationsPayloadCodec provides an untyped codec for *ListVerificationsPayload.
@@ -2009,6 +2051,43 @@ var getVerificationResultFields = []tools.FieldMetadata{
 		},
 	},
 }
+var initProjectPayloadFields = []tools.FieldMetadata{
+	{
+		JSONType:    "object",
+		Description: "Go module path and optional direct child directory name for initializing a new Surla starter project inside the bound workspace.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("module_path")},
+		JSONType:    "string",
+		Description: "Go module path of the new service (for example example.com/shop).",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("dir")},
+		JSONType:    "string",
+		Description: "Direct child directory name inside the bound workspace root. When omitted or empty, defaults to the service name derived from module_path.",
+	},
+}
+var initProjectResultFields = []tools.FieldMetadata{
+	{
+		JSONType:    "object",
+		Description: "Newly initialized Surla starter project directory and derived service identity.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("dir")},
+		JSONType:    "string",
+		Description: "Physical directory path of the newly created starter project (now the server's active workspace).",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("module_path")},
+		JSONType:    "string",
+		Description: "Initialized Go module path.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("service_name")},
+		JSONType:    "string",
+		Description: "Derived service name.",
+	},
+}
 var listVerificationsPayloadFields = []tools.FieldMetadata{
 	{
 		JSONType:    "object",
@@ -2422,7 +2501,7 @@ var previewArchitecturePayloadFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("design")},
 		JSONType:    "object",
-		Description: "Candidate module whose Goa and Goa-AI design is evaluated.",
+		Description: "Candidate module whose Goa and Goa-AI design is evaluated. When omitted on a server with a bound workspace, Surla reads the candidate module snapshot from the bound workspace.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("design"), tools.FixedField("files")},
@@ -2849,7 +2928,7 @@ var proposeChangePayloadFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("design_source")},
 		JSONType:    "string",
-		Description: "Current Goa design source of the target (its design/*.go files) for the CP1 model to read. If omitted, CP1 receives no current design; supply the relevant design source when you want it considered.",
+		Description: "Current Goa design source of the target (its design/*.go files) for the CP1 model to read. When omitted on a server with a bound workspace, Surla reads design/*.go from the bound workspace; when omitted without a bound workspace, CP1 receives no current design.",
 	},
 }
 var proposeChangeResultFields = []tools.FieldMetadata{
@@ -3121,7 +3200,7 @@ var reviseChangePayloadFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("design_source")},
 		JSONType:    "string",
-		Description: "Updated Goa design source of the target (its design/*.go files) for the CP1 model to read; when omitted, the card's saved design source is used again.",
+		Description: "Updated Goa design source of the target (its design/*.go files) for the CP1 model to read. When omitted on a workspace-backed card with a bound workspace, Surla re-reads design/*.go from the bound workspace; otherwise the card's saved design source is used again.",
 	},
 }
 var reviseChangeResultFields = []tools.FieldMetadata{
@@ -4083,6 +4162,40 @@ func enrichGetVerificationResultValidationError(err error) error {
 	}
 	return tools.NewValidationError(ve.Error(), issues, m)
 }
+func enrichInitProjectPayloadValidationError(err error) error {
+	var ve *tools.ValidationError
+	if !errors.As(err, &ve) {
+		return err
+	}
+	issues := ve.Issues()
+	if len(issues) == 0 {
+		return err
+	}
+	m := make(map[string]string)
+	for _, is := range issues {
+		if field, ok := tools.LookupFieldMetadata(initProjectPayloadFields, is.Field); ok && field.Description != "" {
+			m[is.Field] = field.Description
+		}
+	}
+	return tools.NewValidationError(ve.Error(), issues, m)
+}
+func enrichInitProjectResultValidationError(err error) error {
+	var ve *tools.ValidationError
+	if !errors.As(err, &ve) {
+		return err
+	}
+	issues := ve.Issues()
+	if len(issues) == 0 {
+		return err
+	}
+	m := make(map[string]string)
+	for _, is := range issues {
+		if field, ok := tools.LookupFieldMetadata(initProjectResultFields, is.Field); ok && field.Description != "" {
+			m[is.Field] = field.Description
+		}
+	}
+	return tools.NewValidationError(ve.Error(), issues, m)
+}
 func enrichListVerificationsPayloadValidationError(err error) error {
 	var ve *tools.ValidationError
 	if !errors.As(err, &ve) {
@@ -4718,6 +4831,68 @@ func invalidGetVerificationResultFieldTypeError(err error) error {
 		field = "$payload"
 	}
 	metadata, ok := tools.LookupFieldMetadata(getVerificationResultFields, field)
+	if !ok || metadata.JSONType == "" {
+		return err
+	}
+	actual := generatedUnmarshalJSONType(typeErr.Value)
+	if actual == "" {
+		return err
+	}
+	return tools.NewValidationError(
+		err.Error(),
+		[]*tools.FieldIssue{
+			{
+				Field:            field,
+				Constraint:       "invalid_field_type",
+				ExpectedJSONType: metadata.JSONType,
+				ActualJSONType:   actual,
+			},
+		},
+		nil,
+	)
+}
+func invalidInitProjectPayloadFieldTypeError(err error) error {
+	var typeErr *json.UnmarshalTypeError
+	if !errors.As(err, &typeErr) {
+		return err
+	}
+	field := typeErr.Field
+	field = strings.TrimPrefix(field, "InitProjectPayloadTransport.")
+	if field == "" {
+		field = "$payload"
+	}
+	metadata, ok := tools.LookupFieldMetadata(initProjectPayloadFields, field)
+	if !ok || metadata.JSONType == "" {
+		return err
+	}
+	actual := generatedUnmarshalJSONType(typeErr.Value)
+	if actual == "" {
+		return err
+	}
+	return tools.NewValidationError(
+		err.Error(),
+		[]*tools.FieldIssue{
+			{
+				Field:            field,
+				Constraint:       "invalid_field_type",
+				ExpectedJSONType: metadata.JSONType,
+				ActualJSONType:   actual,
+			},
+		},
+		nil,
+	)
+}
+func invalidInitProjectResultFieldTypeError(err error) error {
+	var typeErr *json.UnmarshalTypeError
+	if !errors.As(err, &typeErr) {
+		return err
+	}
+	field := typeErr.Field
+	field = strings.TrimPrefix(field, "InitProjectResultTransport.")
+	if field == "" {
+		field = "$payload"
+	}
+	metadata, ok := tools.LookupFieldMetadata(initProjectResultFields, field)
 	if !ok || metadata.JSONType == "" {
 		return err
 	}
@@ -6155,6 +6330,92 @@ func UnmarshalGetVerificationResult(data []byte) (*GetVerificationResult, error)
 	return out, nil
 }
 
+// MarshalInitProjectPayload serializes *InitProjectPayload into JSON.
+func MarshalInitProjectPayload(v *InitProjectPayload) ([]byte, error) {
+	if v == nil {
+		return nil, fmt.Errorf("initProjectPayload is nil")
+	}
+	in := v
+	_ = in
+	var out *toolhttp.InitProjectPayloadTransport
+	out = &toolhttp.InitProjectPayloadTransport{
+		ModulePath: &in.ModulePath,
+		Dir:        in.Dir,
+	}
+	return json.Marshal(out)
+}
+
+// UnmarshalInitProjectPayload deserializes JSON into *InitProjectPayload.
+func UnmarshalInitProjectPayload(data []byte) (*InitProjectPayload, error) {
+	if len(data) == 0 {
+		return nil, fmt.Errorf("initProjectPayload JSON is empty")
+	}
+	var tv toolhttp.InitProjectPayloadTransport
+	if err := validateInitProjectPayloadJSON(data); err != nil {
+		return nil, invalidInitProjectPayloadFieldTypeError(err)
+	}
+	if err := json.Unmarshal(data, &tv); err != nil {
+		return nil, invalidInitProjectPayloadFieldTypeError(err)
+	}
+	if err := toolhttp.ValidateInitProjectPayloadTransport(&tv); err != nil {
+		err = newValidationError(err)
+		err = enrichInitProjectPayloadValidationError(err)
+		return nil, err
+	}
+	in := &tv
+	_ = in
+	var out *InitProjectPayload
+	out = &InitProjectPayload{
+		ModulePath: *in.ModulePath,
+		Dir:        in.Dir,
+	}
+	return out, nil
+}
+
+// MarshalInitProjectResult serializes *InitProjectResult into JSON.
+func MarshalInitProjectResult(v *InitProjectResult) ([]byte, error) {
+	if v == nil {
+		return nil, fmt.Errorf("initProjectResult is nil")
+	}
+	in := v
+	_ = in
+	var out *toolhttp.InitProjectResultTransport
+	out = &toolhttp.InitProjectResultTransport{
+		Dir:         &in.Dir,
+		ModulePath:  &in.ModulePath,
+		ServiceName: &in.ServiceName,
+	}
+	return json.Marshal(out)
+}
+
+// UnmarshalInitProjectResult deserializes JSON into *InitProjectResult.
+func UnmarshalInitProjectResult(data []byte) (*InitProjectResult, error) {
+	if len(data) == 0 {
+		return nil, fmt.Errorf("initProjectResult JSON is empty")
+	}
+	var tv toolhttp.InitProjectResultTransport
+	if err := validateInitProjectResultJSON(data); err != nil {
+		return nil, invalidInitProjectResultFieldTypeError(err)
+	}
+	if err := json.Unmarshal(data, &tv); err != nil {
+		return nil, invalidInitProjectResultFieldTypeError(err)
+	}
+	if err := toolhttp.ValidateInitProjectResultTransport(&tv); err != nil {
+		err = newValidationError(err)
+		err = enrichInitProjectResultValidationError(err)
+		return nil, err
+	}
+	in := &tv
+	_ = in
+	var out *InitProjectResult
+	out = &InitProjectResult{
+		Dir:         *in.Dir,
+		ModulePath:  *in.ModulePath,
+		ServiceName: *in.ServiceName,
+	}
+	return out, nil
+}
+
 // MarshalListVerificationsPayload serializes *ListVerificationsPayload into JSON.
 func MarshalListVerificationsPayload(v *ListVerificationsPayload) ([]byte, error) {
 	if v == nil {
@@ -6263,7 +6524,9 @@ func MarshalPreviewArchitecturePayload(v *PreviewArchitecturePayload) ([]byte, e
 		ChangeID:        &in.ChangeID,
 		RequestRevision: &in.RequestRevision,
 	}
-	out.Design = encodeDesignSnapshotToDesignSnapshotTransport(in.Design)
+	if in.Design != nil {
+		out.Design = encodeDesignSnapshotToDesignSnapshotTransport(in.Design)
+	}
 	if in.Builders != nil {
 		out.Builders = make([]*toolhttp.BuilderScopeItemTransport, len(in.Builders))
 		for i, val := range in.Builders {
@@ -6313,7 +6576,9 @@ func UnmarshalPreviewArchitecturePayload(data []byte) (*PreviewArchitecturePaylo
 		ChangeID:        *in.ChangeID,
 		RequestRevision: *in.RequestRevision,
 	}
-	out.Design = decodeDesignSnapshotTransportToDesignSnapshot(in.Design)
+	if in.Design != nil {
+		out.Design = decodeDesignSnapshotTransportToDesignSnapshot(in.Design)
+	}
 	if in.Builders != nil {
 		out.Builders = make([]*BuilderScopeItem, len(in.Builders))
 		for i, val := range in.Builders {
@@ -7341,6 +7606,26 @@ func validateConfigureModelResultJSON(data []byte) error {
 	return validateConfigureModelResultJSONValue("", root, "")
 }
 
+// validateInitProjectPayloadJSON parses one JSON document and checks the exact value
+// shapes known from this generated Goa type.
+func validateInitProjectPayloadJSON(data []byte) error {
+	root, err := readStrictToolJSON(data)
+	if err != nil {
+		return err
+	}
+	return validateInitProjectPayloadJSONValue("", root, "")
+}
+
+// validateInitProjectResultJSON parses one JSON document and checks the exact value
+// shapes known from this generated Goa type.
+func validateInitProjectResultJSON(data []byte) error {
+	root, err := readStrictToolJSON(data)
+	if err != nil {
+		return err
+	}
+	return validateInitProjectResultJSONValue("", root, "")
+}
+
 // readStrictToolJSON checks the complete JSON document for malformed text and
 // duplicate members, then returns values with their original number text.
 func readStrictToolJSON(data []byte) (any, error) {
@@ -7493,7 +7778,7 @@ func validateProposeChangePayloadJSONValue(path string, value any, description s
 		case "design_source":
 			if err := validateStringJSONValue(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Current Goa design source of the target (its design/*.go files) for the CP1 model to read. If omitted, CP1 receives no current design; supply the relevant design source when you want it considered.",
+				typed[key], "Current Goa design source of the target (its design/*.go files) for the CP1 model to read. When omitted on a server with a bound workspace, Surla reads design/*.go from the bound workspace; when omitted without a bound workspace, CP1 receives no current design.",
 			); err != nil {
 				return err
 			}
@@ -8113,7 +8398,7 @@ func validateReviseChangePayloadJSONValue(path string, value any, description st
 		case "design_source":
 			if err := validateStringJSONValue(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Updated Goa design source of the target (its design/*.go files) for the CP1 model to read; when omitted, the card's saved design source is used again.",
+				typed[key], "Updated Goa design source of the target (its design/*.go files) for the CP1 model to read. When omitted on a workspace-backed card with a bound workspace, Surla re-reads design/*.go from the bound workspace; otherwise the card's saved design source is used again.",
 			); err != nil {
 				return err
 			}
@@ -8283,7 +8568,7 @@ func validatePreviewArchitecturePayloadJSONValue(path string, value any, descrip
 		case "design":
 			if err := validatePreviewArchitecturePayloadDesignSnapshotTransportJSONValue(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Candidate module whose Goa and Goa-AI design is evaluated.",
+				typed[key], "Candidate module whose Goa and Goa-AI design is evaluated. When omitted on a server with a bound workspace, Surla reads the candidate module snapshot from the bound workspace.",
 			); err != nil {
 				return err
 			}
@@ -10559,6 +10844,102 @@ func validateConfigureModelResultJSONValue(path string, value any, description s
 				"gateway_addr",
 				"model_name",
 				"provider",
+			})
+		}
+	}
+	return nil
+}
+
+// validateInitProjectPayloadJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateInitProjectPayloadJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "dir":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Direct child directory name inside the bound workspace root. When omitted or empty, defaults to the service name derived from module_path.",
+			); err != nil {
+				return err
+			}
+		case "module_path":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Go module path of the new service (for example example.com/shop).",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"dir",
+				"module_path",
+			})
+		}
+	}
+	return nil
+}
+
+// validateInitProjectResultJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateInitProjectResultJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "dir":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Physical directory path of the newly created starter project (now the server's active workspace).",
+			); err != nil {
+				return err
+			}
+		case "module_path":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Initialized Go module path.",
+			); err != nil {
+				return err
+			}
+		case "service_name":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Derived service name.",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"dir",
+				"module_path",
+				"service_name",
 			})
 		}
 	}

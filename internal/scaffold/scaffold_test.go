@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime/debug"
 	"slices"
 	"strings"
 	"testing"
@@ -37,6 +38,71 @@ func TestValidVersionAcceptsOnlyExactVersions(t *testing.T) {
 	} {
 		assert.Equal(t, want, ValidVersion(v), v)
 	}
+}
+
+func TestSurlaVersionReadsSurlaModuleFromStandaloneAndEmbeddedBuildInfo(t *testing.T) {
+	assert.Equal(t, "", SurlaVersion(nil))
+	assert.Equal(t, published, SurlaVersion(&debug.BuildInfo{
+		Main: debug.Module{
+			Path:    surlaModule,
+			Version: published,
+		},
+	}))
+	assert.Equal(t, "", SurlaVersion(&debug.BuildInfo{
+		Main: debug.Module{
+			Path:    surlaModule,
+			Version: "(devel)",
+		},
+	}))
+	// Embedded host application counterexample: Main.Version is the host app's
+	// version (v2.4.1), while Surla's version lives in Deps.
+	assert.Equal(t, published, SurlaVersion(&debug.BuildInfo{
+		Main: debug.Module{
+			Path:    "example.com/host-app",
+			Version: "v2.4.1",
+		},
+		Deps: []*debug.Module{
+			{
+				Path:    "example.com/other",
+				Version: "v1.0.0",
+			},
+			{
+				Path:    surlaModule,
+				Version: published,
+			},
+		},
+	}))
+	assert.Equal(t, "", SurlaVersion(&debug.BuildInfo{
+		Main: debug.Module{
+			Path:    "example.com/host-app",
+			Version: "v2.4.1",
+		},
+		Deps: []*debug.Module{
+			{
+				Path:    surlaModule,
+				Version: published,
+				Replace: &debug.Module{
+					Path: "../surla",
+				},
+			},
+		},
+	}))
+	assert.Equal(t, "v0.2.0", SurlaVersion(&debug.BuildInfo{
+		Main: debug.Module{
+			Path:    "example.com/host-app",
+			Version: "v2.4.1",
+		},
+		Deps: []*debug.Module{
+			{
+				Path:    surlaModule,
+				Version: "v0.1.0",
+				Replace: &debug.Module{
+					Path:    surlaModule,
+					Version: "v0.2.0",
+				},
+			},
+		},
+	}))
 }
 
 func TestNewDataValidatesTheModuleAndReadsSurlasVersions(t *testing.T) {

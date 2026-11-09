@@ -40,7 +40,7 @@ var ProposeChangePayload = Type("ProposeChangePayload", func() {
 	Description("Operator feature request submitted for Checkpoint 1 ambiguity and example analysis.")
 	Attribute("change_id", String, "Unique change identifier.")
 	Attribute("prompt", String, "Operator feature request.")
-	Attribute("design_source", String, "Current Goa design source of the target (its design/*.go files) for the CP1 model to read. If omitted, CP1 receives no current design; supply the relevant design source when you want it considered.")
+	Attribute("design_source", String, "Current Goa design source of the target (its design/*.go files) for the CP1 model to read. When omitted on a server with a bound workspace, Surla reads design/*.go from the bound workspace; when omitted without a bound workspace, CP1 receives no current design.")
 	Required("change_id", "prompt")
 })
 
@@ -50,7 +50,7 @@ var ReviseChangePayload = Type("ReviseChangePayload", func() {
 	Attribute("change_id", String, "Change identifier.")
 	Attribute("request_revision", String, "Current CP1 request_revision digest being revised.")
 	Attribute("prompt", String, "Revised operator feature request.")
-	Attribute("design_source", String, "Updated Goa design source of the target (its design/*.go files) for the CP1 model to read; when omitted, the card's saved design source is used again.")
+	Attribute("design_source", String, "Updated Goa design source of the target (its design/*.go files) for the CP1 model to read. When omitted on a workspace-backed card with a bound workspace, Surla re-reads design/*.go from the bound workspace; otherwise the card's saved design source is used again.")
 	Required("change_id", "request_revision", "prompt")
 })
 
@@ -59,6 +59,28 @@ var GetChangePayload = Type("GetChangePayload", func() {
 	Description("Identifies the Change Card the authenticated owner wants to read.")
 	Attribute("change_id", String, "Change identifier.")
 	Required("change_id")
+})
+
+// InitProjectPayload is the input to the init_project tool.
+var InitProjectPayload = Type("InitProjectPayload", func() {
+	Description("Go module path and optional direct child directory name for initializing a new Surla starter project inside the bound workspace.")
+	Attribute("module_path", String, "Go module path of the new service (for example example.com/shop).", func() {
+		MinLength(3)
+		Example("example.com/shop")
+	})
+	Attribute("dir", String, "Direct child directory name inside the bound workspace root. When omitted or empty, defaults to the service name derived from module_path.", func() {
+		Example("shop")
+	})
+	Required("module_path")
+})
+
+// InitProjectResult is the output of the init_project tool.
+var InitProjectResult = Type("InitProjectResult", func() {
+	Description("Newly initialized Surla starter project directory and derived service identity.")
+	Attribute("dir", String, "Physical directory path of the newly created starter project (now the server's active workspace).")
+	Attribute("module_path", String, "Initialized Go module path.")
+	Attribute("service_name", String, "Derived service name.")
+	Required("dir", "module_path", "service_name")
 })
 
 // ConfigureModelPayload is the input to the configure_model tool.
@@ -315,11 +337,11 @@ var PreviewArchitecturePayload = Type("PreviewArchitecturePayload", func() {
 	Description("Request to derive the Checkpoint 2 C4 topology, guardrails, and proposed swarm roster from a candidate Goa design bound to a confirmed Change Card.")
 	Attribute("change_id", String, "Confirmed Change Card identifier.")
 	Attribute("request_revision", String, "Expected CP1 request_revision digest.")
-	Attribute("design", DesignSnapshot, "Candidate module whose Goa and Goa-AI design is evaluated.")
+	Attribute("design", DesignSnapshot, "Candidate module whose Goa and Goa-AI design is evaluated. When omitted on a server with a bound workspace, Surla reads the candidate module snapshot from the bound workspace.")
 	Attribute("builders", ArrayOf(BuilderScopeItem), "Optional explicit builder path scopes for proposing a Chorus build roster. When omitted, preview_architecture returns a solo preview with swarm.status unconfigured and no missing_roles.")
 	Attribute("architect_paths", ArrayOf(String), "Optional repository-relative path globs for an @architect role in the proposed Chorus roster (requires builders).")
 	Attribute("eval_paths", ArrayOf(String), "Optional repository or evaluator-workspace relative path globs for an @eval-author role in the proposed Chorus roster (requires builders).")
-	Required("change_id", "request_revision", "design")
+	Required("change_id", "request_revision")
 })
 
 // ArchitecturePreviewResult is the output of the CP2 preview_architecture tool.
@@ -591,14 +613,14 @@ var _ = Service("surla", func() {
 	})
 
 	Method("propose_change", func() {
-		Description("Evaluate a feature request at Checkpoint 1, surfacing concrete examples and any genuine domain ambiguity. The analysis considers the target's current design only when it is sent in design_source.")
+		Description("Evaluate a feature request at Checkpoint 1, surfacing concrete examples and any genuine domain ambiguity. When design_source is omitted and a workspace is bound, Surla reads design/*.go from the bound workspace.")
 		Payload(ProposeChangePayload)
 		Result(ChangeCardResult)
 		Error("conflict", ErrorResult, "A Change Card with this change_id already exists; use revise_change or a new change_id.")
 		Error("unprocessable", ErrorResult, "The request could not be accepted; the message states which required field or constraint failed.")
 		Error("not_implemented", ErrorResult, "This control plane has no Checkpoint 1 analyzer configured.")
 		Error("analysis_rejected", ErrorResult, "The Checkpoint 1 model response did not satisfy the analysis contract or stopped at the output limit; this request did not save or modify the Change Card.")
-		Tool("propose_change", "Propose a feature change and generate a Checkpoint 1 Change Card. The analysis considers the target's current design only when it is sent in design_source.", func() {
+		Tool("propose_change", "Propose a feature change and generate a Checkpoint 1 Change Card. When design_source is omitted and a workspace is bound, Surla reads design/*.go from the bound workspace.", func() {
 			ToolUI("ui://surla/checkpoint")
 		})
 		HTTP(func() {
@@ -612,7 +634,7 @@ var _ = Service("surla", func() {
 	})
 
 	Method("revise_change", func() {
-		Description("Revise an existing Checkpoint 1 Change Card with new or changed operator requirements bound to its current request_revision. Re-analyzes the revised prompt and design source with the prior card's prompt, summary, confirmed answers, open questions, examples and preserved behaviors as context, and saves a new revision in needs_confirmation status for operator review. The new revision's answers, confirmed_by and any approval are cleared: earlier decisions remain only where the analysis restated them in its summary, examples or preserved behaviors.")
+		Description("Revise an existing Checkpoint 1 Change Card with new or changed operator requirements bound to its current request_revision. Re-analyzes the revised prompt and design source (re-reading design/*.go from the bound workspace when design_source is omitted on a workspace-backed card) with the prior card's prompt, summary, confirmed answers, open questions, examples and preserved behaviors as context, and saves a new revision in needs_confirmation status for operator review. The new revision's answers, confirmed_by and any approval are cleared: earlier decisions remain only where the analysis restated them in its summary, examples or preserved behaviors.")
 		Payload(ReviseChangePayload)
 		Result(ChangeCardResult)
 		Error("not_found", ErrorResult, "No Change Card exists with this change_id.")
@@ -675,14 +697,14 @@ var _ = Service("surla", func() {
 	})
 
 	Method("preview_architecture", func() {
-		Description("Extract and validate the Checkpoint 2 C4 container topology, tool contracts, Goa-AI guardrails, and proposed Chorus swarm roster from a candidate Goa design bound to a confirmed Change Card. Apart from the swarm roster, the result reports what the design declares; it does not compare the design with the Change Card's requirements.")
+		Description("Extract and validate the Checkpoint 2 C4 container topology, tool contracts, Goa-AI guardrails, and proposed Chorus swarm roster from a candidate Goa design bound to a confirmed Change Card. When design is omitted and a workspace is bound, Surla reads the candidate module snapshot from the bound workspace. Apart from the swarm roster, the result reports what the design declares; it does not compare the design with the Change Card's requirements.")
 		Payload(PreviewArchitecturePayload)
 		Result(ArchitecturePreviewResult)
 		Error("not_found", ErrorResult, "No Change Card exists with this change_id.")
 		Error("forbidden", ErrorResult, "The authenticated principal does not own this Change Card.")
 		Error("conflict", ErrorResult, "The Change Card is not confirmed or its request_revision does not match; confirm the card or read the current revision with get_change.")
 		Error("unprocessable", ErrorResult, "The request or evaluated design did not meet Checkpoint 2 requirements; the message states which check failed.")
-		Tool("preview_architecture", "Preview Checkpoint 2 C4 container topology, Goa-AI guardrails, and proposed Chorus swarm roster for a confirmed Change Card. Apart from the swarm roster, it reports what the design declares; it does not compare the design with the Change Card's requirements.", func() {
+		Tool("preview_architecture", "Preview Checkpoint 2 C4 container topology, Goa-AI guardrails, and proposed Chorus swarm roster for a confirmed Change Card. Omit design to read the candidate module from the bound workspace. Apart from the swarm roster, it reports what the design declares; it does not compare the design with the Change Card's requirements.", func() {
 			ToolUI("ui://surla/checkpoint")
 		})
 		HTTP(func() {
@@ -696,7 +718,7 @@ var _ = Service("surla", func() {
 	})
 
 	Method("draft_override", func() {
-		Description("Apply a Fast Draft Mode prompt override on the bound target or reject a compiled-rule prompt hack. A prompt_template override needs a bound target: on surla serve, that is the live target start_live_target runs, which requires surla serve -verification-config. On a live target started with start_live_target, a rejected update leaves the target's text unchanged; update_not_confirmed means the target may or may not have applied it.")
+		Description("Apply a Fast Draft Mode prompt override on the bound target or reject a compiled-rule prompt hack. A prompt_template override needs a bound target: on surla serve, that is the live target start_live_target runs. On a live target started with start_live_target, a rejected update leaves the target's text unchanged; update_not_confirmed means the target may or may not have applied it.")
 		Payload(DraftOverridePayload)
 		Result(DraftOverrideResult)
 		Error("prompt_not_found", ErrorResult, "The live target has no prompt with this ID; nothing changed.")
@@ -704,7 +726,7 @@ var _ = Service("surla", func() {
 		Error("live_target_ended", ErrorResult, "The live target is no longer running; start it again with start_live_target.")
 		Error("target_rejected_credential", ErrorResult, "The live target rejected this server's key; nothing changed. Start the target again with start_live_target.")
 		Error("update_not_confirmed", ErrorResult, "The live target did not confirm the update, so it may or may not have applied it. Keep the draft and send it again.")
-		Tool("draft_override", "Hot-reload a prompt template in 0s or flag a compiled business rule change. A prompt template needs a bound target; on surla serve that is a live target, which requires surla serve -verification-config.", func() {
+		Tool("draft_override", "Hot-reload a prompt template in 0s or flag a compiled business rule change. A prompt template needs a bound target; on surla serve, call start_live_target with a candidate commit first.", func() {
 			ToolUI("ui://surla/checkpoint")
 		})
 		HTTP(func() {
@@ -719,12 +741,12 @@ var _ = Service("surla", func() {
 	})
 
 	Method("start_live_target", func() {
-		Description("Build a candidate commit exactly as Checkpoint 4 does and run it, with the operator's evaluator suite, as this server's one live CP3 target, then bind draft_override to it. A running target is stopped first, so there is never more than one. The target runs until stop_live_target, a later start_live_target, its own exit, or this server's shutdown; a server restart leaves none running. Requires Checkpoint 4 verification to be configured (surla serve -verification-config), because the build and launch settings come from it.")
+		Description("Build a candidate commit exactly as Checkpoint 4 does and run it, with the operator's evaluator suite, as this server's one live CP3 target, then bind draft_override to it. A running target is stopped first, so there is never more than one. The target runs until stop_live_target, a later start_live_target, its own exit, or this server's shutdown; a server restart leaves none running. Requires a committed starter project in the bound workspace or -verification-config.")
 		Payload(StartLiveTargetPayload)
 		Result(LiveTargetResult)
 		Error("live_target_unavailable", ErrorResult, "This server has no verification configuration, so it cannot build or run a live target.")
 		Error("live_target_failed", ErrorResult, "The live target could not be built or started; the message says which step failed.")
-		Tool("start_live_target", "Build a candidate commit and run it as this server's live CP3 target so draft_override can try prompt text on it. This first stops the target already running, which discards every prompt draft applied to it, even if the new build then fails. Prompt text survives only when it is committed. Requires a server configured for verification and live targets; on surla serve, -verification-config.", func() {
+		Tool("start_live_target", "Build a candidate commit and run it as this server's live CP3 target so draft_override can try prompt text on it. This first stops the target already running, which discards every prompt draft applied to it, even if the new build then fails. Prompt text survives only when it is committed. Requires a committed starter project in the bound workspace or -verification-config.", func() {
 			ToolUI("ui://surla/checkpoint")
 		})
 		HTTP(func() {
@@ -750,14 +772,14 @@ var _ = Service("surla", func() {
 	})
 
 	Method("verify_change", func() {
-		Description("Start Checkpoint 4 verification of a candidate commit for the owner's confirmed Change Card revision and return its run_id at once. The server builds the commit in Surla's sandbox and runs the evaluator suite the operator configured, in a separate process that keeps running when the caller disconnects or the server restarts; get_verification reads its state. Only the builder view of the report is ever returned. A server started without verification configured (surla serve -verification-config) rejects every call.")
+		Description("Start Checkpoint 4 verification of a candidate commit for the owner's confirmed Change Card revision and return its run_id at once. The server builds the commit in Surla's sandbox and runs the evaluator suite the operator configured, in a separate process that keeps running when the caller disconnects or the server restarts; get_verification reads its state. Only the builder view of the report is ever returned. Requires a committed starter project in the bound workspace or -verification-config.")
 		Payload(VerifyChangePayload)
 		Result(VerificationStatusResult)
 		Error("not_found", ErrorResult, "No Change Card exists with this change_id.")
 		Error("forbidden", ErrorResult, "The authenticated principal does not own this Change Card.")
 		Error("conflict", ErrorResult, "The Change Card is not confirmed or its request_revision does not match; confirm the card or read the current revision with get_change.")
 		Error("not_implemented", ErrorResult, "This server has no verification configuration, so it cannot run Checkpoint 4 verifications.")
-		Tool("verify_change", "Start CP4 verification of a candidate commit for the confirmed Change Card revision; returns a run_id to read with get_verification. Requires a server configured for verification; on surla serve, -verification-config.", func() {
+		Tool("verify_change", "Start CP4 verification of a candidate commit for the confirmed Change Card revision; returns a run_id to read with get_verification. Requires a committed starter project in the bound workspace or -verification-config.", func() {
 			ToolUI("ui://surla/checkpoint")
 		})
 		HTTP(func() {
@@ -854,6 +876,23 @@ var _ = Service("surla", func() {
 		HTTP(func() {
 			POST("/cp1/model")
 			Response(StatusOK)
+			Response("unprocessable", StatusUnprocessableEntity)
+			Response("not_implemented", StatusNotImplemented)
+		})
+	})
+
+	Method("init_project", func() {
+		Description("Initialize a new Surla starter project directory inside the server's bound workspace, generating the candidate Go module, Goa and Goa-AI code, and the eval/ verification harness, and switch the server's active workspace to that project.")
+		Payload(InitProjectPayload)
+		Result(InitProjectResult)
+		Error("conflict", ErrorResult, "The workspace or target directory is already initialized.")
+		Error("unprocessable", ErrorResult, "The module path or child directory name is invalid.")
+		Error("not_implemented", ErrorResult, "This control plane has no bound workspace or starter generator configured.")
+		Tool("init_project", "Initialize a new Surla starter project inside the bound workspace directory and switch the server's active workspace to that project.")
+		HTTP(func() {
+			POST("/workspace/init")
+			Response(StatusOK)
+			Response("conflict", StatusConflict)
 			Response("unprocessable", StatusUnprocessableEntity)
 			Response("not_implemented", StatusNotImplemented)
 		})

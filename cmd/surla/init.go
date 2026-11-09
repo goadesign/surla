@@ -86,9 +86,9 @@ func runInit(args []string, stdout io.Writer) error {
 		return errors.New("init requires -dir and -module")
 	}
 	if *version == "" {
-		*version = buildVersion()
+		*version = surlaBuildVersion()
 		if !scaffold.ValidVersion(*version) {
-			return fmt.Errorf("this surla binary has no exact module version (%q); pass -surla-version with a published version such as v0.0.0-20261104215521-580509970fb6", *version)
+			return fmt.Errorf("this surla binary has no exact module version (%q); pass -surla-version with a published version such as v0.0.0-20261104215521-580509970fb6", buildVersion())
 		}
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -149,4 +149,14 @@ func buildVersion() string {
 		return ""
 	}
 	return info.Main.Version
+}
+
+// surlaBuildVersion returns the exact github.com/goadesign/surla module version
+// from runtime build metadata when available, or "" for development builds.
+func surlaBuildVersion() string {
+	info, ok := debug.ReadBuildInfo()
+	if !ok {
+		return ""
+	}
+	return scaffold.SurlaVersion(info)
 }

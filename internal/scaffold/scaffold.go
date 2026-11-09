@@ -28,6 +28,7 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
+	"runtime/debug"
 	"slices"
 	"strings"
 	"syscall"
@@ -186,60 +187,30 @@ var (
 // returning. It returns the service name. On error the target is unchanged.
 // Logs of failed commands are retained, and a command whose child cleanup is
 // unconfirmed also retains its stage.
-func Init(ctx context.Context, o Options, run Runner, gen Generator) (name string, err error) {
-	genClosed := false
-	defer func() {
-		if !genClosed {
-			err = errors.Join(err, gen.Close())
-		}
-	}()
-	d, err := newData(o)
+func Init(ctx context.Context, o Options, run Runner, gen Generator) (string, error) {
+	name, stage, err := prepare(ctx, o, run, gen)
 	if err != nil {
 		return "", err
-	}
-	target, err := filepath.Abs(o.Dir)
-	if err != nil {
-		return "", err
-	}
-	if _, err := os.Lstat(target); err == nil {
-		return "", fmt.Errorf(
-			"%s already exists; surla init only creates a new directory (pass a new path such as -dir %s, or change to the parent directory and remove an empty directory first)",
-			target,
-			filepath.Join(target, d.Name),
-		)
-	} else if !errors.Is(err, fs.ErrNotExist) {
-		return "", fmt.Errorf("check %s: %w", target, err)
-	}
-	stage, err := newInitStage(target, o.WorkDir)
-	if err != nil {
-		return "", err
-	}
-	staging, logs := stage.path, stage.logs
-	if err := build(ctx, staging, logs, d, run, gen); err != nil {
-		var stuck *stuckError
-		if errors.As(err, &stuck) {
-			return "", fmt.Errorf("%w; the staging directory %s is kept because processes may still use it", err, staging)
-		}
-		return "", errors.Join(err, os.RemoveAll(staging))
-	}
-	// The generator's processes worked on their own copies of the files, so
-	// whatever its Close reports, nothing of it uses the staging directory.
-	// It is closed and the context checked before publishing, so a project
-	// appears only when generation is fully over and Init was not canceled.
-	genClosed = true
-	if err := errors.Join(gen.Close(), ctx.Err()); err != nil {
-		return "", errors.Join(err, os.RemoveAll(logs), os.RemoveAll(staging))
-	}
-	// Every step succeeded, so the logs are no longer needed. They are removed
-	// before publishing so that the exclusive rename is the last thing that can
-	// fail. A successful publication cannot be reported as a failed init.
-	if err := os.RemoveAll(logs); err != nil {
-		return "", errors.Join(fmt.Errorf("remove command logs: %w", err), os.RemoveAll(staging))
 	}
 	if err := stage.publish(); err != nil {
-		return "", errors.Join(err, os.RemoveAll(staging))
+		return "", errors.Join(err, os.RemoveAll(stage.path))
 	}
-	return d.Name, nil
+	return name, nil
+}
+
+// Prepare builds the starter project described by o inside a new protected
+// staging directory under o.WorkDir without publishing it to o.Dir, closing gen
+// and removing command logs on success. It returns the derived service name and
+// the completed physical staging directory path so the caller can record its
+// write-ahead log and publish the directory atomically. On error the target is
+// unchanged, failed-command logs are retained, and a command whose child
+// cleanup is unconfirmed also retains its staging directory.
+func Prepare(ctx context.Context, o Options, run Runner, gen Generator) (name, stagePath string, err error) {
+	name, stage, err := prepare(ctx, o, run, gen)
+	if err != nil {
+		return "", "", err
+	}
+	return name, stage.path, nil
 }
 
 // RunCommand runs args in dir as its own process group with GOWORK=off, so a
@@ -275,6 +246,28 @@ func RunCommand(ctx context.Context, dir, logPath string, args ...string) error 
 // +dirty.
 func ValidVersion(v string) bool {
 	return semver.IsValid(v) && semver.Canonical(v) == v
+}
+
+// SurlaVersion returns the exact canonical github.com/goadesign/surla module
+// version recorded in info, or empty when info is nil, Surla is an unpublished
+// "(devel)" build or local replacement, or info records no valid Surla version.
+// When the binary's main module is github.com/goadesign/surla, it checks
+// info.Main; when Surla is embedded as a dependency of another main module, it
+// checks the github.com/goadesign/surla entry in info.Deps and never uses the
+// host application's info.Main.Version.
+func SurlaVersion(info *debug.BuildInfo) string {
+	if info == nil {
+		return ""
+	}
+	if info.Main.Path == surlaModule {
+		return moduleSurlaVersion(&info.Main)
+	}
+	for _, dep := range info.Deps {
+		if dep != nil && dep.Path == surlaModule {
+			return moduleSurlaVersion(dep)
+		}
+	}
+	return ""
 }
 
 // StarterLayout parses a starter project's go.mod and SuiteDir/go.mod, which
@@ -327,6 +320,65 @@ func (e *stuckError) Error() string {
 // Unwrap returns procgroup.Run's stop error.
 func (e *stuckError) Unwrap() error {
 	return e.err
+}
+
+// prepare validates o, builds the starter project in a protected staging
+// directory under o.WorkDir, closes gen, and removes command logs once every
+// build step succeeds.
+func prepare(ctx context.Context, o Options, run Runner, gen Generator) (name string, stage *initStage, err error) {
+	genClosed := false
+	defer func() {
+		if !genClosed {
+			err = errors.Join(err, gen.Close())
+		}
+	}()
+	d, err := newData(o)
+	if err != nil {
+		return "", nil, err
+	}
+	target, err := filepath.Abs(o.Dir)
+	if err != nil {
+		return "", nil, err
+	}
+	if _, err := os.Lstat(target); err == nil {
+		return "", nil, fmt.Errorf(
+			"%s already exists; surla init only creates a new directory (pass a new path such as -dir %s, or change to the parent directory and remove an empty directory first)",
+			target,
+			filepath.Join(target, d.Name),
+		)
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return "", nil, fmt.Errorf("check %s: %w", target, err)
+	}
+	stage, err = newInitStage(target, o.WorkDir)
+	if err != nil {
+		return "", nil, err
+	}
+	staging, logs := stage.path, stage.logs
+	if err := build(ctx, staging, logs, d, run, gen); err != nil {
+		var stuck *stuckError
+		if errors.As(err, &stuck) {
+			return "", nil, fmt.Errorf("%w; the staging directory %s is kept because processes may still use it", err, staging)
+		}
+		return "", nil, errors.Join(err, os.RemoveAll(staging))
+	}
+	// The generator's processes worked on their own copies of the files, so
+	// whatever its Close reports, nothing of it uses the staging directory.
+	// It is closed and the context checked before publishing, so a project
+	// appears only when generation is fully over and Init was not canceled.
+	genClosed = true
+	if err := errors.Join(gen.Close(), ctx.Err()); err != nil {
+		return "", nil, errors.Join(err, os.RemoveAll(logs), os.RemoveAll(staging))
+	}
+	// Every step succeeded, so the logs are no longer needed. They are removed
+	// before publishing so that the exclusive rename is the last thing that can
+	// fail. A successful publication cannot be reported as a failed init.
+	if err := os.RemoveAll(logs); err != nil {
+		return "", nil, errors.Join(fmt.Errorf("remove command logs: %w", err), os.RemoveAll(staging))
+	}
+	if err := os.Chmod(staging, 0o755); err != nil {
+		return "", nil, errors.Join(fmt.Errorf("set project permissions: %w", err), os.RemoveAll(staging))
+	}
+	return d.Name, stage, nil
 }
 
 // layoutForModule validates modulePath using Surla's starter service-name rule
@@ -598,4 +650,23 @@ func readTail(path string) (string, error) {
 		return "", fmt.Errorf("read command log: %w", err)
 	}
 	return prefix + string(b), nil
+}
+
+// moduleSurlaVersion returns the canonical github.com/goadesign/surla version
+// from m, honoring a version replacement of github.com/goadesign/surla and
+// returning empty for local directory or foreign-module replacements.
+func moduleSurlaVersion(m *debug.Module) string {
+	if m == nil {
+		return ""
+	}
+	if m.Replace != nil {
+		if m.Replace.Path == surlaModule && ValidVersion(m.Replace.Version) {
+			return m.Replace.Version
+		}
+		return ""
+	}
+	if ValidVersion(m.Version) {
+		return m.Version
+	}
+	return ""
 }

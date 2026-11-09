@@ -31,6 +31,7 @@ type Endpoints struct {
 	ApproveMerge        goa.Endpoint
 	Diff                goa.Endpoint
 	ConfigureModel      goa.Endpoint
+	InitProject         goa.Endpoint
 }
 
 // NewEndpoints wraps the methods of the "surla" service with endpoints.
@@ -52,6 +53,7 @@ func NewEndpoints(s Service) *Endpoints {
 		ApproveMerge:        NewApproveMergeEndpoint(s),
 		Diff:                NewDiffEndpoint(s),
 		ConfigureModel:      NewConfigureModelEndpoint(s),
+		InitProject:         NewInitProjectEndpoint(s),
 	}
 }
 
@@ -73,6 +75,7 @@ func (e *Endpoints) Use(m func(goa.Endpoint) goa.Endpoint) {
 	e.ApproveMerge = m(e.ApproveMerge)
 	e.Diff = m(e.Diff)
 	e.ConfigureModel = m(e.ConfigureModel)
+	e.InitProject = m(e.InitProject)
 }
 
 // NewCheckpointUIEndpoint returns an endpoint function that calls the method
@@ -213,5 +216,14 @@ func NewConfigureModelEndpoint(s Service) goa.Endpoint {
 	return func(ctx context.Context, req any) (any, error) {
 		p := req.(*ConfigureModelPayload)
 		return s.ConfigureModel(ctx, p)
+	}
+}
+
+// NewInitProjectEndpoint returns an endpoint function that calls the method
+// "init_project" of service "surla".
+func NewInitProjectEndpoint(s Service) goa.Endpoint {
+	return func(ctx context.Context, req any) (any, error) {
+		p := req.(*InitProjectPayload)
+		return s.InitProject(ctx, p)
 	}
 }

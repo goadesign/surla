@@ -140,8 +140,22 @@ func (c *ControlPlane) ReviseChange(
 	}
 
 	designSrc := record.designSource
-	if p.DesignSource != nil {
+	nextOrigin := record.sourceOrigin
+	if nextOrigin == "" {
+		nextOrigin = sourceOriginSupplied
+	}
+	switch {
+	case p.DesignSource != nil:
 		designSrc = *p.DesignSource
+		nextOrigin = sourceOriginSupplied
+	case nextOrigin == sourceOriginWorkspace:
+		wsDir, wsDev, wsIno := c.currentWorkspaceTarget()
+		if wsDir != "" {
+			designSrc, err = readWorkspaceDesignSource(wsDir, wsDev, wsIno)
+			if err != nil {
+				return nil, err
+			}
+		}
 	}
 	prior := buildCP1PriorCard(record.card)
 
@@ -250,6 +264,7 @@ func (c *ControlPlane) ReviseChange(
 		card:         revised,
 		owner:        principal.ID,
 		designSource: designSrc,
+		sourceOrigin: nextOrigin,
 	}); err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "save revised cp1 change card")

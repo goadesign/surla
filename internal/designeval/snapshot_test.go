@@ -3,6 +3,7 @@ package designeval
 import (
 	"os"
 	"path/filepath"
+	"syscall"
 	"testing"
 
 	"github.com/goadesign/surla/internal/testmodule"
@@ -91,6 +92,45 @@ func TestSnapshotDigestDistinguishesEveryFile(t *testing.T) {
 	assert.NotEqual(t, SnapshotDigest(a), SnapshotDigest(map[string]string{"a.go": "xb.go", "": "y"}),
 		"length prefixes keep path and content boundaries apart")
 	assert.NotEqual(t, SnapshotDigest(a), SnapshotDigest(map[string]string{"a.go": "x", "b.go": "z"}))
+}
+
+func TestOpenSnapshotFileAndReadDesignFilesFromRootConfineToOpenedRoot(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "design"), 0o750))
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "internal", "x"), 0o750))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module example.com/design\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "design", "design.go"), []byte("package design\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "design", "design_test.go"), []byte("package design\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "internal", "x", "x.go"), []byte("package x\n"), 0o600))
+
+	outsideFile := filepath.Join(t.TempDir(), "secret.go")
+	require.NoError(t, os.WriteFile(outsideFile, []byte("package secret\n"), 0o600))
+
+	cleanDir, root, err := OpenModuleRoot(dir)
+	require.NoError(t, err)
+	t.Cleanup(func() { assert.NoError(t, root.Close()) })
+
+	designOnly, err := ReadDesignFilesFromRoot(cleanDir, root)
+	require.NoError(t, err)
+	assert.Equal(t, map[string]string{
+		"design/design.go": "package design\n",
+	}, designOnly)
+
+	linkPath := filepath.Join(dir, "design", "linked.go")
+	require.NoError(t, os.Symlink(outsideFile, linkPath))
+	f, err := openSnapshotFile(root, "design/linked.go")
+	require.Nil(t, f)
+	require.Error(t, err)
+	_, err = ReadDesignFilesFromRoot(cleanDir, root)
+	require.ErrorContains(t, err, "symbolic link")
+	require.NoError(t, os.Remove(linkPath))
+
+	fifoPath := filepath.Join(dir, "design", "fifo.go")
+	require.NoError(t, syscall.Mkfifo(fifoPath, 0o600))
+	f, err = openSnapshotFile(root, "design/fifo.go")
+	require.Nil(t, f)
+	require.ErrorContains(t, err, "is not a regular file")
 }
 
 // without returns a copy of files without name.

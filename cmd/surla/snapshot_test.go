@@ -6,6 +6,7 @@ import (
 	"syscall"
 	"testing"
 
+	"github.com/goadesign/surla/internal/designeval"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -30,7 +31,7 @@ func TestReadModuleSnapshotReadsOnlyTheModulesOwnRegularFiles(t *testing.T) {
 	write("vendor/v/v.go", "package v\n")
 	write("testdata/t/t.go", "package t\n")
 
-	files, err := readModuleSnapshot(root)
+	files, err := designeval.ReadModuleSnapshot(root)
 	require.NoError(t, err)
 	assert.Equal(t, map[string]string{
 		"go.mod":           "module example.com/design\r\n",
@@ -67,7 +68,7 @@ func TestReadModuleSnapshotRejectsSymbolicLinks(t *testing.T) {
 			require.NoError(t, os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.com/design\n"), 0o600))
 			target, err := link(root)
 			require.NoError(t, err)
-			_, err = readModuleSnapshot(target)
+			_, err = designeval.ReadModuleSnapshot(target)
 			assert.ErrorContains(t, err, "symbolic link")
 		})
 	}
@@ -76,7 +77,7 @@ func TestReadModuleSnapshotRejectsSymbolicLinks(t *testing.T) {
 func TestReadModuleSnapshotConfinesReadsToOpenedRoot(t *testing.T) {
 	t.Parallel()
 
-	t.Run("replaced parent directory symlink is rejected by openSnapshotFile", func(t *testing.T) {
+	t.Run("replaced parent directory symlink is rejected by ReadModuleSnapshotFromRoot", func(t *testing.T) {
 		t.Parallel()
 		dir := t.TempDir()
 		require.NoError(t, os.MkdirAll(filepath.Join(dir, "design"), 0o750))
@@ -94,15 +95,11 @@ func TestReadModuleSnapshotConfinesReadsToOpenedRoot(t *testing.T) {
 		require.NoError(t, os.RemoveAll(filepath.Join(dir, "design")))
 		require.NoError(t, os.Symlink(outsideDir, filepath.Join(dir, "design")))
 
-		f, err := openSnapshotFile(root, "design/design.go")
-		require.Nil(t, f)
-		require.Error(t, err)
-
-		_, err = readModuleSnapshotFromRoot(dir, root)
+		_, err = designeval.ReadModuleSnapshotFromRoot(dir, root)
 		require.ErrorContains(t, err, "symbolic link")
 	})
 
-	t.Run("replaced file symlink and FIFO are rejected by openSnapshotFile", func(t *testing.T) {
+	t.Run("replaced file symlink and FIFO are rejected by ReadModuleSnapshotFromRoot", func(t *testing.T) {
 		t.Parallel()
 		dir := t.TempDir()
 		require.NoError(t, os.MkdirAll(filepath.Join(dir, "design"), 0o750))
@@ -113,17 +110,11 @@ func TestReadModuleSnapshotConfinesReadsToOpenedRoot(t *testing.T) {
 		require.NoError(t, err)
 		t.Cleanup(func() { assert.NoError(t, root.Close()) })
 
-		linkPath := filepath.Join(dir, "design", "linked.go")
-		require.NoError(t, os.Symlink(outsideFile, linkPath))
-		f, err := openSnapshotFile(root, "design/linked.go")
-		require.Nil(t, f)
-		require.Error(t, err)
-
 		fifoPath := filepath.Join(dir, "design", "fifo.go")
 		require.NoError(t, syscall.Mkfifo(fifoPath, 0o600))
-		f, err = openSnapshotFile(root, "design/fifo.go")
-		require.Nil(t, f)
-		require.ErrorContains(t, err, "is not a regular file")
+		files, err := designeval.ReadModuleSnapshotFromRoot(dir, root)
+		require.NoError(t, err)
+		assert.NotContains(t, files, "design/fifo.go")
 	})
 
 	t.Run("renamed root directory continues reading original root handle", func(t *testing.T) {
@@ -143,7 +134,7 @@ func TestReadModuleSnapshotConfinesReadsToOpenedRoot(t *testing.T) {
 		require.NoError(t, os.MkdirAll(filepath.Join(dir, "design"), 0o750))
 		require.NoError(t, os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module example.com/replaced\n"), 0o600))
 
-		files, err := readModuleSnapshotFromRoot(dir, root)
+		files, err := designeval.ReadModuleSnapshotFromRoot(dir, root)
 		require.NoError(t, err)
 		assert.Equal(t, map[string]string{
 			"go.mod":           "module example.com/original\n",

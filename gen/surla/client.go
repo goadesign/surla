@@ -31,10 +31,11 @@ type Client struct {
 	ApproveMergeEndpoint        goa.Endpoint
 	DiffEndpoint                goa.Endpoint
 	ConfigureModelEndpoint      goa.Endpoint
+	InitProjectEndpoint         goa.Endpoint
 }
 
 // NewClient initializes a "surla" service client given the endpoints.
-func NewClient(checkpointUI, goldenPath, proposeChange, reviseChange, confirmIntent, getChange, previewArchitecture, draftOverride, startLiveTarget, stopLiveTarget, verifyChange, getVerification, listVerifications, approveMerge, diff, configureModel goa.Endpoint) *Client {
+func NewClient(checkpointUI, goldenPath, proposeChange, reviseChange, confirmIntent, getChange, previewArchitecture, draftOverride, startLiveTarget, stopLiveTarget, verifyChange, getVerification, listVerifications, approveMerge, diff, configureModel, initProject goa.Endpoint) *Client {
 	return &Client{
 		CheckpointUIEndpoint:        checkpointUI,
 		GoldenPathEndpoint:          goldenPath,
@@ -52,6 +53,7 @@ func NewClient(checkpointUI, goldenPath, proposeChange, reviseChange, confirmInt
 		ApproveMergeEndpoint:        approveMerge,
 		DiffEndpoint:                diff,
 		ConfigureModelEndpoint:      configureModel,
+		InitProjectEndpoint:         initProject,
 	}
 }
 
@@ -287,4 +289,19 @@ func (c *Client) ConfigureModel(ctx context.Context, p *ConfigureModelPayload) (
 		return
 	}
 	return ires.(*ModelConfigResult), nil
+}
+
+// InitProject calls the "init_project" endpoint of the "surla" service.
+// InitProject may return the following errors:
+//   - "conflict" (type *goa.ServiceError): The workspace or target directory is already initialized.
+//   - "unprocessable" (type *goa.ServiceError): The module path or child directory name is invalid.
+//   - "not_implemented" (type *goa.ServiceError): This control plane has no bound workspace or starter generator configured.
+//   - error: internal error
+func (c *Client) InitProject(ctx context.Context, p *InitProjectPayload) (res *InitProjectResult, err error) {
+	var ires any
+	ires, err = c.InitProjectEndpoint(ctx, p)
+	if err != nil {
+		return
+	}
+	return ires.(*InitProjectResult), nil
 }

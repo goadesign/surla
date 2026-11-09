@@ -23,7 +23,7 @@ import (
 //	command (subcommand1|subcommand2|...)
 func UsageCommands() []string {
 	return []string{
-		"surla (checkpoint-ui|golden-path|propose-change|revise-change|confirm-intent|get-change|preview-architecture|draft-override|start-live-target|stop-live-target|verify-change|get-verification|list-verifications|approve-merge|diff|configure-model)",
+		"surla (checkpoint-ui|golden-path|propose-change|revise-change|confirm-intent|get-change|preview-architecture|draft-override|start-live-target|stop-live-target|verify-change|get-verification|list-verifications|approve-merge|diff|configure-model|init-project)",
 	}
 }
 
@@ -109,6 +109,9 @@ func ParseEndpoint(
 
 		surlaConfigureModelFlags    = flag.NewFlagSet("configure-model", flag.ExitOnError)
 		surlaConfigureModelBodyFlag = new(cliStringFlag)
+
+		surlaInitProjectFlags    = flag.NewFlagSet("init-project", flag.ExitOnError)
+		surlaInitProjectBodyFlag = new(cliStringFlag)
 	)
 	surlaProposeChangeFlags.Var(surlaProposeChangeBodyFlag, "body", "")
 	surlaReviseChangeFlags.Var(surlaReviseChangeBodyFlag, "body", "")
@@ -124,6 +127,7 @@ func ParseEndpoint(
 	surlaApproveMergeFlags.Var(surlaApproveMergeBodyFlag, "body", "")
 	surlaDiffFlags.Var(surlaDiffBodyFlag, "body", "")
 	surlaConfigureModelFlags.Var(surlaConfigureModelBodyFlag, "body", "")
+	surlaInitProjectFlags.Var(surlaInitProjectBodyFlag, "body", "")
 
 	surlaFlags.Usage = surlaUsage
 	surlaCheckpointUIFlags.Usage = surlaCheckpointUIUsage
@@ -142,6 +146,7 @@ func ParseEndpoint(
 	surlaApproveMergeFlags.Usage = surlaApproveMergeUsage
 	surlaDiffFlags.Usage = surlaDiffUsage
 	surlaConfigureModelFlags.Usage = surlaConfigureModelUsage
+	surlaInitProjectFlags.Usage = surlaInitProjectUsage
 
 	if err := flag.CommandLine.Parse(os.Args[1:]); err != nil {
 		return nil, nil, err
@@ -225,6 +230,9 @@ func ParseEndpoint(
 			case "configure-model":
 				epf = surlaConfigureModelFlags
 
+			case "init-project":
+				epf = surlaInitProjectFlags
+
 			}
 
 		}
@@ -295,6 +303,9 @@ func ParseEndpoint(
 			case "configure-model":
 				endpoint = c.ConfigureModel()
 				data, err = surlac.BuildConfigureModelPayload(surlaConfigureModelBodyFlag.value)
+			case "init-project":
+				endpoint = c.InitProject()
+				data, err = surlac.BuildInitProjectPayload(surlaInitProjectBodyFlag.value)
 			}
 		}
 	}
@@ -312,20 +323,21 @@ func surlaUsage() {
 	fmt.Fprintln(os.Stderr, "COMMAND:")
 	fmt.Fprintln(os.Stderr, `    checkpoint-ui: Serve the interactive MCP Apps HTML host for Surla checkpoints.`)
 	fmt.Fprintln(os.Stderr, `    golden-path: Serve the Surla Golden Path architecture playbook for Goa-AI agentic platforms.`)
-	fmt.Fprintln(os.Stderr, `    propose-change: Evaluate a feature request at Checkpoint 1, surfacing concrete examples and any genuine domain ambiguity. The analysis considers the target's current design only when it is sent in design_source.`)
-	fmt.Fprintln(os.Stderr, `    revise-change: Revise an existing Checkpoint 1 Change Card with new or changed operator requirements bound to its current request_revision. Re-analyzes the revised prompt and design source with the prior card's prompt, summary, confirmed answers, open questions, examples and preserved behaviors as context, and saves a new revision in needs_confirmation status for operator review. The new revision's answers, confirmed_by and any approval are cleared: earlier decisions remain only where the analysis restated them in its summary, examples or preserved behaviors.`)
+	fmt.Fprintln(os.Stderr, `    propose-change: Evaluate a feature request at Checkpoint 1, surfacing concrete examples and any genuine domain ambiguity. When design_source is omitted and a workspace is bound, Surla reads design/*.go from the bound workspace.`)
+	fmt.Fprintln(os.Stderr, `    revise-change: Revise an existing Checkpoint 1 Change Card with new or changed operator requirements bound to its current request_revision. Re-analyzes the revised prompt and design source (re-reading design/*.go from the bound workspace when design_source is omitted on a workspace-backed card) with the prior card's prompt, summary, confirmed answers, open questions, examples and preserved behaviors as context, and saves a new revision in needs_confirmation status for operator review. The new revision's answers, confirmed_by and any approval are cleared: earlier decisions remain only where the analysis restated them in its summary, examples or preserved behaviors.`)
 	fmt.Fprintln(os.Stderr, `    confirm-intent: Confirm or refine a Checkpoint 1 Change Card with the complete ambiguity answers and example table, bound to its current request_revision. Changed answers or examples produce a new request_revision; unchanged ones return the card as it is, with a saved approval returned in approval only while that approval still matches the promotion target's current inputs, or in unverified_approval when no promotion target is configured or the target cannot report its current inputs. To record a decision that no option expresses, call revise_change with that decision in prompt.`)
 	fmt.Fprintln(os.Stderr, `    get-change: Return the current Change Card, including its request_revision, to its owner, for example after confirm_intent or revise_change refused an edit made against an older revision. Reading never confirms or changes the card. A recorded approval is returned in approval only while it still matches the promotion target's current suite, environment and binary digests, or in unverified_approval when no promotion target is configured or the target cannot report its current inputs.`)
-	fmt.Fprintln(os.Stderr, `    preview-architecture: Extract and validate the Checkpoint 2 C4 container topology, tool contracts, Goa-AI guardrails, and proposed Chorus swarm roster from a candidate Goa design bound to a confirmed Change Card. Apart from the swarm roster, the result reports what the design declares; it does not compare the design with the Change Card's requirements.`)
-	fmt.Fprintln(os.Stderr, `    draft-override: Apply a Fast Draft Mode prompt override on the bound target or reject a compiled-rule prompt hack. A prompt_template override needs a bound target: on surla serve, that is the live target start_live_target runs, which requires surla serve -verification-config. On a live target started with start_live_target, a rejected update leaves the target's text unchanged; update_not_confirmed means the target may or may not have applied it.`)
-	fmt.Fprintln(os.Stderr, `    start-live-target: Build a candidate commit exactly as Checkpoint 4 does and run it, with the operator's evaluator suite, as this server's one live CP3 target, then bind draft_override to it. A running target is stopped first, so there is never more than one. The target runs until stop_live_target, a later start_live_target, its own exit, or this server's shutdown; a server restart leaves none running. Requires Checkpoint 4 verification to be configured (surla serve -verification-config), because the build and launch settings come from it.`)
+	fmt.Fprintln(os.Stderr, `    preview-architecture: Extract and validate the Checkpoint 2 C4 container topology, tool contracts, Goa-AI guardrails, and proposed Chorus swarm roster from a candidate Goa design bound to a confirmed Change Card. When design is omitted and a workspace is bound, Surla reads the candidate module snapshot from the bound workspace. Apart from the swarm roster, the result reports what the design declares; it does not compare the design with the Change Card's requirements.`)
+	fmt.Fprintln(os.Stderr, `    draft-override: Apply a Fast Draft Mode prompt override on the bound target or reject a compiled-rule prompt hack. A prompt_template override needs a bound target: on surla serve, that is the live target start_live_target runs. On a live target started with start_live_target, a rejected update leaves the target's text unchanged; update_not_confirmed means the target may or may not have applied it.`)
+	fmt.Fprintln(os.Stderr, `    start-live-target: Build a candidate commit exactly as Checkpoint 4 does and run it, with the operator's evaluator suite, as this server's one live CP3 target, then bind draft_override to it. A running target is stopped first, so there is never more than one. The target runs until stop_live_target, a later start_live_target, its own exit, or this server's shutdown; a server restart leaves none running. Requires a committed starter project in the bound workspace or -verification-config.`)
 	fmt.Fprintln(os.Stderr, `    stop-live-target: Stop this server's live CP3 target, if one runs, and unbind draft_override from it. Stopping when none runs is not an error.`)
-	fmt.Fprintln(os.Stderr, `    verify-change: Start Checkpoint 4 verification of a candidate commit for the owner's confirmed Change Card revision and return its run_id at once. The server builds the commit in Surla's sandbox and runs the evaluator suite the operator configured, in a separate process that keeps running when the caller disconnects or the server restarts; get_verification reads its state. Only the builder view of the report is ever returned. A server started without verification configured (surla serve -verification-config) rejects every call.`)
+	fmt.Fprintln(os.Stderr, `    verify-change: Start Checkpoint 4 verification of a candidate commit for the owner's confirmed Change Card revision and return its run_id at once. The server builds the commit in Surla's sandbox and runs the evaluator suite the operator configured, in a separate process that keeps running when the caller disconnects or the server restarts; get_verification reads its state. Only the builder view of the report is ever returned. Requires a committed starter project in the bound workspace or -verification-config.`)
 	fmt.Fprintln(os.Stderr, `    get-verification: Return the current state of a verification run to the owner who started it: running, completed with the builder view of its report, or not completed with where it stopped. A run keeps the Change Card revision it was started for.`)
 	fmt.Fprintln(os.Stderr, `    list-verifications: Return all Checkpoint 4 verification runs started by the owner for a Change Card, ordered newest first by accepted_at (tie-broken by run_id), with each run's current state and the Change Card revision it was started for. Works whether the Change Card is currently confirmed or in needs_confirmation after a later revision.`)
 	fmt.Fprintln(os.Stderr, `    approve-merge: Record Checkpoint 5 approval for the owner's confirmed Change Card revision. The control plane loads the verification report by digest and the expected suite, environment and candidate binary digests from its promotion target, re-derives the report from its evidence with verify.Approve, and records the approval on the card. A report that did not pass or describes different inputs is rejected. Nothing is merged or deployed. The promotion target comes from surla serve -promotion-config or from the program that embeds the control plane; a control plane without one rejects every call.`)
 	fmt.Fprintln(os.Stderr, `    diff: Compare evaluated Goa designs and go.mod directives without emitting a blanket compatibility verdict.`)
 	fmt.Fprintln(os.Stderr, `    configure-model: Configure or switch the active CP1 semantic analyzer and CP3 live-target model provider and model name or gRPC model gateway on a running control plane without restarting.`)
+	fmt.Fprintln(os.Stderr, `    init-project: Initialize a new Surla starter project directory inside the server's bound workspace, generating the candidate Go module, Goa and Goa-AI code, and the eval/ verification harness, and switch the server's active workspace to that project.`)
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Additional help:")
 	fmt.Fprintf(os.Stderr, "    %s surla COMMAND --help\n", os.Args[0])
@@ -370,7 +382,7 @@ func surlaProposeChangeUsage() {
 
 	// Description
 	fmt.Fprintln(os.Stderr)
-	fmt.Fprintln(os.Stderr, `Evaluate a feature request at Checkpoint 1, surfacing concrete examples and any genuine domain ambiguity. The analysis considers the target's current design only when it is sent in design_source.`)
+	fmt.Fprintln(os.Stderr, `Evaluate a feature request at Checkpoint 1, surfacing concrete examples and any genuine domain ambiguity. When design_source is omitted and a workspace is bound, Surla reads design/*.go from the bound workspace.`)
 
 	// Flags list
 	fmt.Fprintln(os.Stderr, `    -body JSON: `)
@@ -388,7 +400,7 @@ func surlaReviseChangeUsage() {
 
 	// Description
 	fmt.Fprintln(os.Stderr)
-	fmt.Fprintln(os.Stderr, `Revise an existing Checkpoint 1 Change Card with new or changed operator requirements bound to its current request_revision. Re-analyzes the revised prompt and design source with the prior card's prompt, summary, confirmed answers, open questions, examples and preserved behaviors as context, and saves a new revision in needs_confirmation status for operator review. The new revision's answers, confirmed_by and any approval are cleared: earlier decisions remain only where the analysis restated them in its summary, examples or preserved behaviors.`)
+	fmt.Fprintln(os.Stderr, `Revise an existing Checkpoint 1 Change Card with new or changed operator requirements bound to its current request_revision. Re-analyzes the revised prompt and design source (re-reading design/*.go from the bound workspace when design_source is omitted on a workspace-backed card) with the prior card's prompt, summary, confirmed answers, open questions, examples and preserved behaviors as context, and saves a new revision in needs_confirmation status for operator review. The new revision's answers, confirmed_by and any approval are cleared: earlier decisions remain only where the analysis restated them in its summary, examples or preserved behaviors.`)
 
 	// Flags list
 	fmt.Fprintln(os.Stderr, `    -body JSON: `)
@@ -442,7 +454,7 @@ func surlaPreviewArchitectureUsage() {
 
 	// Description
 	fmt.Fprintln(os.Stderr)
-	fmt.Fprintln(os.Stderr, `Extract and validate the Checkpoint 2 C4 container topology, tool contracts, Goa-AI guardrails, and proposed Chorus swarm roster from a candidate Goa design bound to a confirmed Change Card. Apart from the swarm roster, the result reports what the design declares; it does not compare the design with the Change Card's requirements.`)
+	fmt.Fprintln(os.Stderr, `Extract and validate the Checkpoint 2 C4 container topology, tool contracts, Goa-AI guardrails, and proposed Chorus swarm roster from a candidate Goa design bound to a confirmed Change Card. When design is omitted and a workspace is bound, Surla reads the candidate module snapshot from the bound workspace. Apart from the swarm roster, the result reports what the design declares; it does not compare the design with the Change Card's requirements.`)
 
 	// Flags list
 	fmt.Fprintln(os.Stderr, `    -body JSON: `)
@@ -460,7 +472,7 @@ func surlaDraftOverrideUsage() {
 
 	// Description
 	fmt.Fprintln(os.Stderr)
-	fmt.Fprintln(os.Stderr, `Apply a Fast Draft Mode prompt override on the bound target or reject a compiled-rule prompt hack. A prompt_template override needs a bound target: on surla serve, that is the live target start_live_target runs, which requires surla serve -verification-config. On a live target started with start_live_target, a rejected update leaves the target's text unchanged; update_not_confirmed means the target may or may not have applied it.`)
+	fmt.Fprintln(os.Stderr, `Apply a Fast Draft Mode prompt override on the bound target or reject a compiled-rule prompt hack. A prompt_template override needs a bound target: on surla serve, that is the live target start_live_target runs. On a live target started with start_live_target, a rejected update leaves the target's text unchanged; update_not_confirmed means the target may or may not have applied it.`)
 
 	// Flags list
 	fmt.Fprintln(os.Stderr, `    -body JSON: `)
@@ -478,7 +490,7 @@ func surlaStartLiveTargetUsage() {
 
 	// Description
 	fmt.Fprintln(os.Stderr)
-	fmt.Fprintln(os.Stderr, `Build a candidate commit exactly as Checkpoint 4 does and run it, with the operator's evaluator suite, as this server's one live CP3 target, then bind draft_override to it. A running target is stopped first, so there is never more than one. The target runs until stop_live_target, a later start_live_target, its own exit, or this server's shutdown; a server restart leaves none running. Requires Checkpoint 4 verification to be configured (surla serve -verification-config), because the build and launch settings come from it.`)
+	fmt.Fprintln(os.Stderr, `Build a candidate commit exactly as Checkpoint 4 does and run it, with the operator's evaluator suite, as this server's one live CP3 target, then bind draft_override to it. A running target is stopped first, so there is never more than one. The target runs until stop_live_target, a later start_live_target, its own exit, or this server's shutdown; a server restart leaves none running. Requires a committed starter project in the bound workspace or -verification-config.`)
 
 	// Flags list
 	fmt.Fprintln(os.Stderr, `    -body JSON: `)
@@ -513,7 +525,7 @@ func surlaVerifyChangeUsage() {
 
 	// Description
 	fmt.Fprintln(os.Stderr)
-	fmt.Fprintln(os.Stderr, `Start Checkpoint 4 verification of a candidate commit for the owner's confirmed Change Card revision and return its run_id at once. The server builds the commit in Surla's sandbox and runs the evaluator suite the operator configured, in a separate process that keeps running when the caller disconnects or the server restarts; get_verification reads its state. Only the builder view of the report is ever returned. A server started without verification configured (surla serve -verification-config) rejects every call.`)
+	fmt.Fprintln(os.Stderr, `Start Checkpoint 4 verification of a candidate commit for the owner's confirmed Change Card revision and return its run_id at once. The server builds the commit in Surla's sandbox and runs the evaluator suite the operator configured, in a separate process that keeps running when the caller disconnects or the server restarts; get_verification reads its state. Only the builder view of the report is ever returned. Requires a committed starter project in the bound workspace or -verification-config.`)
 
 	// Flags list
 	fmt.Fprintln(os.Stderr, `    -body JSON: `)
@@ -612,4 +624,22 @@ func surlaConfigureModelUsage() {
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Example:")
 	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "surla configure-model --body '{\n      \"gateway_addr\": \"127.0.0.1:9090\",\n      \"model_name\": \"claude-sonnet-4-6\",\n      \"provider\": \"anthropic\"\n   }'")
+}
+
+func surlaInitProjectUsage() {
+	// Header with flags
+	fmt.Fprintf(os.Stderr, "%s [flags] surla init-project", os.Args[0])
+	fmt.Fprint(os.Stderr, " -body JSON")
+	fmt.Fprintln(os.Stderr)
+
+	// Description
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, `Initialize a new Surla starter project directory inside the server's bound workspace, generating the candidate Go module, Goa and Goa-AI code, and the eval/ verification harness, and switch the server's active workspace to that project.`)
+
+	// Flags list
+	fmt.Fprintln(os.Stderr, `    -body JSON: `)
+
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, "Example:")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "surla init-project --body '{\n      \"dir\": \"shop\",\n      \"module_path\": \"example.com/shop\"\n   }'")
 }
