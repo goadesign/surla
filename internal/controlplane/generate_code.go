@@ -156,7 +156,8 @@ func openGenerationEvalModule(workspace *os.Root) (*os.Root, error) {
 }
 
 // failGenerateFault records an operation's raw failure on its span and returns
-// the recovery message without private operator paths or command output.
+// the owner-selected recovery message as a server fault. The caller chooses
+// which diagnostic details to include.
 func failGenerateFault(span trace.Span, message string, err error) error {
 	span.RecordError(err)
 	span.SetStatus(codes.Error, message)

@@ -1,5 +1,6 @@
-// This file exposes failed generation phases and safe sandbox output while
-// preserving the complete original error for CLI callers and operator traces.
+// This file exposes failed generation phases and offline sandbox output with
+// exact known path spellings replaced. It preserves the complete original error
+// for CLI callers and operator traces.
 package designeval
 
 import (
@@ -60,6 +61,10 @@ type (
 // cache, disk, or setup failures, so this function never makes that verdict.
 // Module-loading stderr is always withheld because those commands use operator
 // HOME and proxy settings outside the sandbox.
+//
+// Known-path substitution is diagnostic hygiene, not confidentiality for
+// arbitrary output from an executed design. The OS sandbox governs access to
+// files and credentials.
 func GenerationDiagnostic(err error) string {
 	phase := "starting the design compiler"
 	var operation *phaseError
