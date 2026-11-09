@@ -2193,6 +2193,341 @@ func DecodeGenerateCodeResponse(decoder func(*http.Response) goahttp.Decoder, re
 	}
 }
 
+// BuildCheckProjectRequest instantiates a HTTP request object with method and
+// path set to call the "surla" service "check_project" endpoint
+func (c *Client) BuildCheckProjectRequest(ctx context.Context, v any) (*http.Request, error) {
+	u := &url.URL{Scheme: c.scheme, Host: c.host, Path: CheckProjectSurlaPath()}
+	req, err := http.NewRequest("POST", u.String(), nil)
+	if err != nil {
+		return nil, goahttp.ErrInvalidURL("surla", "check_project", u.String(), err)
+	}
+	if ctx != nil {
+		req = req.WithContext(ctx)
+	}
+
+	return req, nil
+}
+
+// DecodeCheckProjectResponse returns a decoder for responses returned by the
+// surla check_project endpoint. restoreBody controls whether the response body
+// should be restored after having been read.
+// DecodeCheckProjectResponse may return the following errors:
+//   - "unprocessable" (type *goa.ServiceError): http.StatusUnprocessableEntity
+//   - "not_implemented" (type *goa.ServiceError): http.StatusNotImplemented
+//   - "unavailable" (type *goa.ServiceError): http.StatusServiceUnavailable
+//   - error: internal error
+func DecodeCheckProjectResponse(decoder func(*http.Response) goahttp.Decoder, restoreBody bool) func(*http.Response) (any, error) {
+	return func(resp *http.Response) (result any, decodeErr error) {
+		responseBody := resp.Body
+		if restoreBody {
+			b, readErr := io.ReadAll(responseBody)
+			closeErr := responseBody.Close()
+			if err := errors.Join(readErr, closeErr); err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "check_project", err)
+			}
+			resp.Body = io.NopCloser(bytes.NewBuffer(b))
+			defer func() {
+				resp.Body = io.NopCloser(bytes.NewBuffer(b))
+			}()
+		} else {
+			defer func() {
+				if err := responseBody.Close(); err != nil {
+					decodeErr = errors.Join(decodeErr, goahttp.ErrDecodingError("surla", "check_project", err))
+				}
+			}()
+		}
+		switch resp.StatusCode {
+		case http.StatusOK:
+			var (
+				body CheckProjectResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "check_project", err)
+			}
+			err = ValidateCheckProjectResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("surla", "check_project", err)
+			}
+			res := NewCheckProjectResultOK(&body)
+			return res, nil
+		case http.StatusUnprocessableEntity:
+			var (
+				body CheckProjectUnprocessableResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "check_project", err)
+			}
+			err = ValidateCheckProjectUnprocessableResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("surla", "check_project", err)
+			}
+			return nil, NewCheckProjectUnprocessable(&body)
+		case http.StatusNotImplemented:
+			var (
+				body CheckProjectNotImplementedResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "check_project", err)
+			}
+			err = ValidateCheckProjectNotImplementedResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("surla", "check_project", err)
+			}
+			return nil, NewCheckProjectNotImplemented(&body)
+		case http.StatusServiceUnavailable:
+			var (
+				body CheckProjectUnavailableResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "check_project", err)
+			}
+			err = ValidateCheckProjectUnavailableResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("surla", "check_project", err)
+			}
+			return nil, NewCheckProjectUnavailable(&body)
+		default:
+			body, err := io.ReadAll(resp.Body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "check_project", err)
+			}
+			return nil, goahttp.ErrInvalidResponse("surla", "check_project", resp.StatusCode, string(body))
+		}
+	}
+}
+
+// BuildUpdateDependenciesRequest instantiates a HTTP request object with
+// method and path set to call the "surla" service "update_dependencies"
+// endpoint
+func (c *Client) BuildUpdateDependenciesRequest(ctx context.Context, v any) (*http.Request, error) {
+	u := &url.URL{Scheme: c.scheme, Host: c.host, Path: UpdateDependenciesSurlaPath()}
+	req, err := http.NewRequest("POST", u.String(), nil)
+	if err != nil {
+		return nil, goahttp.ErrInvalidURL("surla", "update_dependencies", u.String(), err)
+	}
+	if ctx != nil {
+		req = req.WithContext(ctx)
+	}
+
+	return req, nil
+}
+
+// DecodeUpdateDependenciesResponse returns a decoder for responses returned by
+// the surla update_dependencies endpoint. restoreBody controls whether the
+// response body should be restored after having been read.
+// DecodeUpdateDependenciesResponse may return the following errors:
+//   - "unprocessable" (type *goa.ServiceError): http.StatusUnprocessableEntity
+//   - "not_implemented" (type *goa.ServiceError): http.StatusNotImplemented
+//   - "unavailable" (type *goa.ServiceError): http.StatusServiceUnavailable
+//   - error: internal error
+func DecodeUpdateDependenciesResponse(decoder func(*http.Response) goahttp.Decoder, restoreBody bool) func(*http.Response) (any, error) {
+	return func(resp *http.Response) (result any, decodeErr error) {
+		responseBody := resp.Body
+		if restoreBody {
+			b, readErr := io.ReadAll(responseBody)
+			closeErr := responseBody.Close()
+			if err := errors.Join(readErr, closeErr); err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "update_dependencies", err)
+			}
+			resp.Body = io.NopCloser(bytes.NewBuffer(b))
+			defer func() {
+				resp.Body = io.NopCloser(bytes.NewBuffer(b))
+			}()
+		} else {
+			defer func() {
+				if err := responseBody.Close(); err != nil {
+					decodeErr = errors.Join(decodeErr, goahttp.ErrDecodingError("surla", "update_dependencies", err))
+				}
+			}()
+		}
+		switch resp.StatusCode {
+		case http.StatusOK:
+			var (
+				body UpdateDependenciesResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "update_dependencies", err)
+			}
+			err = ValidateUpdateDependenciesResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("surla", "update_dependencies", err)
+			}
+			res := NewUpdateDependenciesResultOK(&body)
+			return res, nil
+		case http.StatusUnprocessableEntity:
+			var (
+				body UpdateDependenciesUnprocessableResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "update_dependencies", err)
+			}
+			err = ValidateUpdateDependenciesUnprocessableResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("surla", "update_dependencies", err)
+			}
+			return nil, NewUpdateDependenciesUnprocessable(&body)
+		case http.StatusNotImplemented:
+			var (
+				body UpdateDependenciesNotImplementedResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "update_dependencies", err)
+			}
+			err = ValidateUpdateDependenciesNotImplementedResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("surla", "update_dependencies", err)
+			}
+			return nil, NewUpdateDependenciesNotImplemented(&body)
+		case http.StatusServiceUnavailable:
+			var (
+				body UpdateDependenciesUnavailableResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "update_dependencies", err)
+			}
+			err = ValidateUpdateDependenciesUnavailableResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("surla", "update_dependencies", err)
+			}
+			return nil, NewUpdateDependenciesUnavailable(&body)
+		default:
+			body, err := io.ReadAll(resp.Body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "update_dependencies", err)
+			}
+			return nil, goahttp.ErrInvalidResponse("surla", "update_dependencies", resp.StatusCode, string(body))
+		}
+	}
+}
+
+// BuildReadCheckOutputRequest instantiates a HTTP request object with method
+// and path set to call the "surla" service "read_check_output" endpoint
+func (c *Client) BuildReadCheckOutputRequest(ctx context.Context, v any) (*http.Request, error) {
+	u := &url.URL{Scheme: c.scheme, Host: c.host, Path: ReadCheckOutputSurlaPath()}
+	req, err := http.NewRequest("POST", u.String(), nil)
+	if err != nil {
+		return nil, goahttp.ErrInvalidURL("surla", "read_check_output", u.String(), err)
+	}
+	if ctx != nil {
+		req = req.WithContext(ctx)
+	}
+
+	return req, nil
+}
+
+// EncodeReadCheckOutputRequest returns an encoder for requests sent to the
+// surla read_check_output server.
+func EncodeReadCheckOutputRequest(encoder func(*http.Request) goahttp.Encoder) func(*http.Request, any) error {
+	return func(req *http.Request, v any) error {
+		p, ok := v.(*surla.ReadCheckOutputPayload)
+		if !ok {
+			return goahttp.ErrInvalidType("surla", "read_check_output", "*surla.ReadCheckOutputPayload", v)
+		}
+		body := NewReadCheckOutputRequestBody(p)
+		if err := encoder(req).Encode(&body); err != nil {
+			return goahttp.ErrEncodingError("surla", "read_check_output", err)
+		}
+		return nil
+	}
+}
+
+// DecodeReadCheckOutputResponse returns a decoder for responses returned by
+// the surla read_check_output endpoint. restoreBody controls whether the
+// response body should be restored after having been read.
+// DecodeReadCheckOutputResponse may return the following errors:
+//   - "not_found" (type *goa.ServiceError): http.StatusNotFound
+//   - "unprocessable" (type *goa.ServiceError): http.StatusUnprocessableEntity
+//   - error: internal error
+func DecodeReadCheckOutputResponse(decoder func(*http.Response) goahttp.Decoder, restoreBody bool) func(*http.Response) (any, error) {
+	return func(resp *http.Response) (result any, decodeErr error) {
+		responseBody := resp.Body
+		if restoreBody {
+			b, readErr := io.ReadAll(responseBody)
+			closeErr := responseBody.Close()
+			if err := errors.Join(readErr, closeErr); err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "read_check_output", err)
+			}
+			resp.Body = io.NopCloser(bytes.NewBuffer(b))
+			defer func() {
+				resp.Body = io.NopCloser(bytes.NewBuffer(b))
+			}()
+		} else {
+			defer func() {
+				if err := responseBody.Close(); err != nil {
+					decodeErr = errors.Join(decodeErr, goahttp.ErrDecodingError("surla", "read_check_output", err))
+				}
+			}()
+		}
+		switch resp.StatusCode {
+		case http.StatusOK:
+			var (
+				body ReadCheckOutputResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "read_check_output", err)
+			}
+			err = ValidateReadCheckOutputResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("surla", "read_check_output", err)
+			}
+			res := NewReadCheckOutputCheckOutputPageOK(&body)
+			return res, nil
+		case http.StatusNotFound:
+			var (
+				body ReadCheckOutputNotFoundResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "read_check_output", err)
+			}
+			err = ValidateReadCheckOutputNotFoundResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("surla", "read_check_output", err)
+			}
+			return nil, NewReadCheckOutputNotFound(&body)
+		case http.StatusUnprocessableEntity:
+			var (
+				body ReadCheckOutputUnprocessableResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "read_check_output", err)
+			}
+			err = ValidateReadCheckOutputUnprocessableResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("surla", "read_check_output", err)
+			}
+			return nil, NewReadCheckOutputUnprocessable(&body)
+		default:
+			body, err := io.ReadAll(resp.Body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "read_check_output", err)
+			}
+			return nil, goahttp.ErrInvalidResponse("surla", "read_check_output", resp.StatusCode, string(body))
+		}
+	}
+}
+
 // unmarshalAmbiguityQuestionResponseBodyToSurlaAmbiguityQuestion builds a
 // value of type *surla.AmbiguityQuestion from a value of type
 // *AmbiguityQuestionResponseBody.

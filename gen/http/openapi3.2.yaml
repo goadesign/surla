@@ -1895,6 +1895,177 @@ paths:
                                 name: not_implemented
                                 temporary: false
                                 timeout: false
+    /workspace/check:
+        post:
+            tags:
+                - surla
+            summary: check_project surla
+            description: Copy the active workspace's live files (uncommitted edits included) into a protected per-operation copy and run go test ./... for every Go module in it, each in a Linux container with no network. Nothing in the workspace changes. Returns passed and a bounded message; read the full output with read_check_output.
+            operationId: surla#check_project
+            responses:
+                "200":
+                    description: OK response.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/CheckProjectResult'
+                            example:
+                                message: Quo qui voluptatem qui nisi ullam.
+                                op_id: Voluptatem assumenda earum iste.
+                                passed: false
+                "422":
+                    description: 'unprocessable: The workspace contains no Go module.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: unprocessable
+                                temporary: false
+                                timeout: false
+                "501":
+                    description: 'not_implemented: No workspace directory is bound to this control plane.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: not_implemented
+                                temporary: false
+                                timeout: false
+                "503":
+                    description: 'unavailable: No local Docker engine is usable: docker is missing, the engine does not answer or is not local, or the Go image cannot be pulled.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: unavailable
+                                temporary: false
+                                timeout: false
+    /workspace/check/output:
+        post:
+            tags:
+                - surla
+            summary: read_check_output surla
+            description: Return one page of at most 16 KiB of the full output a check_project or update_dependencies operation captured, with a cursor for the next page and the count of bytes not captured.
+            operationId: surla#read_check_output
+            requestBody:
+                description: Request body for read_check_output.
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/ReadCheckOutputPayload'
+                        example:
+                            cursor: Vero quia facilis et vel distinctio.
+                            op_id: Quo doloribus amet similique.
+            responses:
+                "200":
+                    description: OK response.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/CheckOutputPage'
+                            example:
+                                captured_bytes: 8386127994778990586
+                                dropped_bytes: 8153869448844237652
+                                next_cursor: Aut occaecati possimus maiores architecto.
+                                text: Esse vel sed aut perspiciatis quibusdam.
+                "404":
+                    description: 'not_found: No output exists for this op_id.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: not_found
+                                temporary: false
+                                timeout: false
+                "422":
+                    description: 'unprocessable: The cursor is malformed or belongs to another operation.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: unprocessable
+                                temporary: false
+                                timeout: false
+    /workspace/dependencies:
+        post:
+            tags:
+                - surla
+            summary: update_dependencies surla
+            description: Run go mod tidy for every Go module of the active workspace in a protected copy inside Linux containers, then write only the changed go.mod, go.sum and go.work.sum files back to the workspace through verified handles. A symlinked manifest or one edited during the call is refused for that module.
+            operationId: surla#update_dependencies
+            responses:
+                "200":
+                    description: OK response.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/UpdateDependenciesResult'
+                            example:
+                                files_written:
+                                    - Corporis commodi ipsam autem quo esse.
+                                    - Aut qui.
+                                message: Autem facilis est ullam blanditiis.
+                                op_id: Ipsam eveniet repellat quaerat ut.
+                "422":
+                    description: 'unprocessable: The workspace contains no Go module.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: unprocessable
+                                temporary: false
+                                timeout: false
+                "501":
+                    description: 'not_implemented: No workspace directory is bound to this control plane.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: not_implemented
+                                temporary: false
+                                timeout: false
+                "503":
+                    description: 'unavailable: No local Docker engine is usable: docker is missing, the engine does not answer or is not local, or the Go image cannot be pulled.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: unavailable
+                                temporary: false
+                                timeout: false
     /workspace/generate:
         post:
             tags:
@@ -2943,6 +3114,61 @@ components:
                 - examples
                 - preserved_behaviors
                 - request_revision
+        CheckOutputPage:
+            type: object
+            properties:
+                captured_bytes:
+                    type: integer
+                    description: Total bytes captured for the operation.
+                    example: 8386127994778990586
+                    format: int64
+                dropped_bytes:
+                    type: integer
+                    description: Bytes the operation produced beyond its capture limit and did not keep; nonzero means the output has a stated gap.
+                    example: 8153869448844237652
+                    format: int64
+                next_cursor:
+                    type: string
+                    description: Cursor for the following page; absent when this page reaches the end.
+                    example: Aut occaecati possimus maiores architecto.
+                text:
+                    type: string
+                    description: The page text.
+                    example: Esse vel sed aut perspiciatis quibusdam.
+            description: One page of at most 16 KiB of a check operation's captured output.
+            example:
+                captured_bytes: 8386127994778990586
+                dropped_bytes: 8153869448844237652
+                next_cursor: Aut occaecati possimus maiores architecto.
+                text: Esse vel sed aut perspiciatis quibusdam.
+            required:
+                - text
+                - captured_bytes
+                - dropped_bytes
+        CheckProjectResult:
+            type: object
+            properties:
+                message:
+                    type: string
+                    description: 'At most 16 KiB: the modules tested, the first failure and the end of its output, and how to read the rest.'
+                    example: Quo qui voluptatem qui nisi ullam.
+                op_id:
+                    type: string
+                    description: Operation identifier; pass it to read_check_output to read the full output.
+                    example: Voluptatem assumenda earum iste.
+                passed:
+                    type: boolean
+                    description: True only when go test ./... exited 0 in every module.
+                    example: false
+            description: Outcome of running every Go module's tests in a protected copy of the workspace inside Linux containers.
+            example:
+                message: Quo qui voluptatem qui nisi ullam.
+                op_id: Voluptatem assumenda earum iste.
+                passed: false
+            required:
+                - op_id
+                - passed
+                - message
         ConfigureModelPayload:
             type: object
             properties:
@@ -3580,6 +3806,23 @@ components:
             required:
                 - change_id
                 - prompt
+        ReadCheckOutputPayload:
+            type: object
+            properties:
+                cursor:
+                    type: string
+                    description: Opaque next_cursor from the previous page; omit for the first page.
+                    example: Vero quia facilis et vel distinctio.
+                op_id:
+                    type: string
+                    description: Operation identifier returned by check_project or update_dependencies.
+                    example: Quo doloribus amet similique.
+            description: Request body for read_check_output.
+            example:
+                cursor: Vero quia facilis et vel distinctio.
+                op_id: Quo doloribus amet similique.
+            required:
+                - op_id
         ReviseChangePayload:
             type: object
             properties:
@@ -4041,6 +4284,37 @@ components:
             required:
                 - approval
                 - reason
+        UpdateDependenciesResult:
+            type: object
+            properties:
+                files_written:
+                    type: array
+                    items:
+                        type: string
+                        example: Corporis commodi ipsam autem quo esse.
+                    description: Workspace-relative go.mod, go.sum and go.work.sum files whose bytes changed and were written.
+                    example:
+                        - Corporis commodi ipsam autem quo esse.
+                        - Aut qui.
+                message:
+                    type: string
+                    description: 'At most 16 KiB: what was updated, and Go''s message for any module that could not be.'
+                    example: Autem facilis est ullam blanditiis.
+                op_id:
+                    type: string
+                    description: Operation identifier; pass it to read_check_output to read the full output.
+                    example: Ipsam eveniet repellat quaerat ut.
+            description: Go module manifests rewritten in the workspace after go mod tidy ran in a protected copy.
+            example:
+                files_written:
+                    - Corporis commodi ipsam autem quo esse.
+                    - Aut qui.
+                message: Autem facilis est ullam blanditiis.
+                op_id: Ipsam eveniet repellat quaerat ut.
+            required:
+                - op_id
+                - files_written
+                - message
         VerificationCheck:
             type: object
             properties:

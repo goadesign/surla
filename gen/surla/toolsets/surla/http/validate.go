@@ -96,6 +96,20 @@ func ValidateApproveMergeResultTransport(body *ApproveMergeResultTransport) (err
 	return
 }
 
+// ValidateCheckProjectResultTransport runs the validations defined on CheckProjectResultTransport.
+func ValidateCheckProjectResultTransport(body *CheckProjectResultTransport) (err error) {
+	if body.OpID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("op_id", "body"))
+	}
+	if body.Passed == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("passed", "body"))
+	}
+	if body.Message == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("message", "body"))
+	}
+	return
+}
+
 // ValidateConfigureModelPayloadTransport runs the validations defined on ConfigureModelPayloadTransport.
 func ValidateConfigureModelPayloadTransport(body *ConfigureModelPayloadTransport) (err error) {
 	if body.Provider != nil {
@@ -685,6 +699,28 @@ func ValidateProposeChangeResultTransport(body *ProposeChangeResultTransport) (e
 	return
 }
 
+// ValidateReadCheckOutputPayloadTransport runs the validations defined on ReadCheckOutputPayloadTransport.
+func ValidateReadCheckOutputPayloadTransport(body *ReadCheckOutputPayloadTransport) (err error) {
+	if body.OpID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("op_id", "body"))
+	}
+	return
+}
+
+// ValidateReadCheckOutputResultTransport runs the validations defined on ReadCheckOutputResultTransport.
+func ValidateReadCheckOutputResultTransport(body *ReadCheckOutputResultTransport) (err error) {
+	if body.Text == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("text", "body"))
+	}
+	if body.CapturedBytes == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("captured_bytes", "body"))
+	}
+	if body.DroppedBytes == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("dropped_bytes", "body"))
+	}
+	return
+}
+
 // ValidateReviseChangePayloadTransport runs the validations defined on ReviseChangePayloadTransport.
 func ValidateReviseChangePayloadTransport(body *ReviseChangePayloadTransport) (err error) {
 	if body.ChangeID == nil {
@@ -788,6 +824,20 @@ func ValidateStartLiveTargetResultTransport(body *StartLiveTargetResultTransport
 func ValidateStopLiveTargetResultTransport(body *StopLiveTargetResultTransport) (err error) {
 	if body.Stopped == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("stopped", "body"))
+	}
+	if body.Message == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("message", "body"))
+	}
+	return
+}
+
+// ValidateUpdateDependenciesResultTransport runs the validations defined on UpdateDependenciesResultTransport.
+func ValidateUpdateDependenciesResultTransport(body *UpdateDependenciesResultTransport) (err error) {
+	if body.OpID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("op_id", "body"))
+	}
+	if body.FilesWritten == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("files_written", "body"))
 	}
 	if body.Message == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("message", "body"))

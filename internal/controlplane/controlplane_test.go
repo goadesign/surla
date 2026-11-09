@@ -416,12 +416,18 @@ var _ = Service("orders", func() {
 		"propose_change", "revise_change", "confirm_intent", "get_change", "configure_model", "init_project", "generate_code", "preview_architecture", "draft_override", "approve_merge", "diff",
 		"start_live_target", "stop_live_target",
 		"verify_change", "get_verification", "list_verifications",
+		"check_project", "update_dependencies", "read_check_output",
 	}, toolNames)
 	// Every checkpoint tool, diff included, links the checkpoint viewer so an
-	// MCP Apps host can render its result; configure_model, init_project, and
-	// generate_code are server/workspace tools without a checkpoint UI view.
+	// MCP Apps host can render its result; configure_model, init_project,
+	// generate_code, check_project, update_dependencies and read_check_output
+	// are server/workspace tools without a checkpoint UI view.
+	workspaceTools := map[string]bool{
+		"configure_model": true, "init_project": true, "generate_code": true,
+		"check_project": true, "update_dependencies": true, "read_check_output": true,
+	}
 	for _, tool := range toolsRes.Tools {
-		if tool.Name == "configure_model" || tool.Name == "init_project" || tool.Name == "generate_code" {
+		if workspaceTools[tool.Name] {
 			if strings.Contains(string(tool.Meta), "resourceUri") {
 				t.Fatalf("tool %q unexpectedly links a UI resource: _meta=%s", tool.Name, tool.Meta)
 			}

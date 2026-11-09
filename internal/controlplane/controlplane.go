@@ -13,9 +13,11 @@ import (
 	"fmt"
 	"maps"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 	"unicode/utf8"
 
 	gensurlahttp "github.com/goadesign/surla/gen/http/surla/server"
@@ -28,6 +30,7 @@ import (
 	"github.com/goadesign/surla/internal/scaffold"
 	"github.com/goadesign/surla/internal/swarm"
 	"github.com/goadesign/surla/internal/verify"
+	"github.com/goadesign/surla/verify/candidate"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -110,6 +113,24 @@ type (
 		// outside WorkspaceDir on the same filesystem device used by
 		// init_project before atomic publication.
 		InitStageDir string
+		// Checker runs check_project and update_dependencies containers on
+		// the local Docker engine. When nil, both tools return
+		// not_implemented.
+		Checker *candidate.ContainerRunner
+		// CheckWorkDir is the operator-owned parent of per-operation check
+		// directories. It must lie outside WorkspaceDir and its enclosing
+		// Git working tree.
+		CheckWorkDir string
+		// CheckTimeout bounds one whole check or dependency operation.
+		CheckTimeout time.Duration
+		// ImportedReports are the validated absolute original report paths
+		// recorded by -import-legacy-workspace; check copies never include
+		// the entries the kernel resolves them to.
+		ImportedReports []string
+		// GoProxyEnv holds the operator's GOPROXY, GOSUMDB, GOPRIVATE,
+		// GONOPROXY, GONOSUMDB and GOINSECURE settings as KEY=value, passed
+		// to dependency-download containers and nothing else.
+		GoProxyEnv []string
 		// Evaluator evaluates Goa design snapshots for preview_architecture and
 		// diff. When nil, New constructs a default designeval.Evaluator (using
 		// <CardsDir>/designeval as its protected temporary parent when
@@ -258,6 +279,19 @@ type (
 		boundSuiteCommit string
 		// initStageDir is Options.InitStageDir.
 		initStageDir string
+		// checker is Options.Checker.
+		checker *candidate.ContainerRunner
+		// checkWorkDir is Options.CheckWorkDir.
+		checkWorkDir string
+		// checkTimeout is Options.CheckTimeout.
+		checkTimeout time.Duration
+		// importedReports is Options.ImportedReports.
+		importedReports []string
+		// goProxyEnv is Options.GoProxyEnv.
+		goProxyEnv []string
+		// checkOps counts running check operations so Close can wait for
+		// their containers to be removed.
+		checkOps sync.WaitGroup
 		// newGenerator constructs a fresh scaffold.Generator for each
 		// InitProject call when non-nil.
 		newGenerator func() scaffold.Generator
@@ -426,6 +460,11 @@ func New(opts Options) (*ControlPlane, error) {
 		boundWorkspaceDev:      wsDev,
 		boundWorkspaceIno:      wsIno,
 		initStageDir:           initStageDir,
+		checker:                opts.Checker,
+		checkWorkDir:           opts.CheckWorkDir,
+		checkTimeout:           opts.CheckTimeout,
+		importedReports:        opts.ImportedReports,
+		goProxyEnv:             opts.GoProxyEnv,
 		newGenerator:           opts.NewGenerator,
 		initRunner:             opts.InitRunner,
 		surlaVersion:           surlaVersion,
@@ -437,6 +476,17 @@ func New(opts Options) (*ControlPlane, error) {
 	}
 	if err := validateStartupSeparation(cards.dir, runsDir, initStageDir, verCfg, protectedDirs...); err != nil {
 		return nil, errors.Join(err, cp.Close())
+	}
+	if opts.CheckWorkDir != "" {
+		if err := validateCheckWorkSeparation(opts.CheckWorkDir, protectedDirs...); err != nil {
+			return nil, errors.Join(err, cp.Close())
+		}
+		if err := os.MkdirAll(opts.CheckWorkDir, 0o700); err != nil {
+			return nil, errors.Join(fmt.Errorf("create check work directory: %w", err), cp.Close())
+		}
+		// Retry removal of containers that a previous server could not
+		// confirm; their directories stay until removal is confirmed.
+		_ = cp.recoverCheckOperations()
 	}
 	return cp, nil
 }
@@ -668,6 +718,10 @@ func (c *ControlPlane) ProposeChange(ctx context.Context, p *gensurla.ProposeCha
 // project lock are released only once.
 func (c *ControlPlane) Close() error {
 	c.cancelServer()
+	// Running checks see the server context end, remove their containers
+	// and return; then any container still unconfirmed gets one more try.
+	c.checkOps.Wait()
+	checkErr := c.recoverCheckOperations()
 	liveErr := c.closeLive()
 	evalErr := c.evaluator.Close()
 	modelErr := c.closeModel()
@@ -683,7 +737,7 @@ func (c *ControlPlane) Close() error {
 		lockErr = c.closeProjectLock()
 		c.closeProjectLock = nil
 	}
-	return errors.Join(evalErr, modelErr, c.cards.close(), lockErr)
+	return errors.Join(evalErr, modelErr, checkErr, c.cards.close(), lockErr)
 }
 
 // GetChange returns the current Change Card for change_id to its owner. It

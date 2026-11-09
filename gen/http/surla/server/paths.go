@@ -98,3 +98,18 @@ func InitProjectSurlaPath() string {
 func GenerateCodeSurlaPath() string {
 	return "/workspace/generate"
 }
+
+// CheckProjectSurlaPath returns the URL path to the surla service check_project HTTP endpoint.
+func CheckProjectSurlaPath() string {
+	return "/workspace/check"
+}
+
+// UpdateDependenciesSurlaPath returns the URL path to the surla service update_dependencies HTTP endpoint.
+func UpdateDependenciesSurlaPath() string {
+	return "/workspace/dependencies"
+}
+
+// ReadCheckOutputSurlaPath returns the URL path to the surla service read_check_output HTTP endpoint.
+func ReadCheckOutputSurlaPath() string {
+	return "/workspace/check/output"
+}

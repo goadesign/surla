@@ -15,6 +15,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"os/signal"
 	"slices"
 	"strconv"
@@ -37,6 +38,7 @@ import (
 	"github.com/goadesign/surla/internal/swarm"
 	"github.com/goadesign/surla/internal/verify"
 	"github.com/goadesign/surla/internal/verifyrun"
+	"github.com/goadesign/surla/verify/candidate"
 )
 
 // serveConfig holds the optional `surla serve` flags that choose the CP1
@@ -76,7 +78,13 @@ type serveConfig struct {
 	// importLegacyWorkspace reports whether -import-legacy-workspace was passed
 	// on the CLI to perform the one-time operator-vouched legacy import.
 	importLegacyWorkspace bool
+	// checkTimeout bounds one whole check_project or update_dependencies
+	// operation (copy, image pull and every container).
+	checkTimeout time.Duration
 }
+
+// defaultCheckTimeout is the default -check-timeout.
+const defaultCheckTimeout = 20 * time.Minute
 
 // binaryFlags collects repeated `-binary name=pkg` flags for `surla verify`
 // into verify.Plan.Binaries, rejecting malformed entries and repeated names.
@@ -232,6 +240,7 @@ func runServe(args []string) (err error) {
 	fs.StringVar(&cfg.projectDir, "project", "", "project workspace directory (default: working directory); derives CP3/CP4 verification from its committed starter HEAD at startup (or the commit created by init_project) when -verification-config is omitted")
 	fs.StringVar(&cfg.verificationPath, "verification-config", "", "JSON file with the CP4 candidate, evaluator suite, runs and reports configuration used by verify_change")
 	fs.BoolVar(&cfg.importLegacyWorkspace, "import-legacy-workspace", false, "import existing workspace .surla/cards, .surla/runs, and reports/ once into protected operator storage before starting")
+	fs.DurationVar(&cfg.checkTimeout, "check-timeout", defaultCheckTimeout, "how long one check_project or update_dependencies operation may take, including copying the workspace, pulling the Go image and running every module's containers")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -742,6 +751,10 @@ func serveOptions(
 		live.Command = self
 		live.StartTimeout = defaultProjectVerifyTimeout
 	}
+	goProxyEnv, err := operatorGoProxyEnv(ws.checkWorkDir)
+	if err != nil {
+		return controlplane.Options{}, errors.Join(err, cleanupModel(), ws.closeProjectLock())
+	}
 	return controlplane.Options{
 		CardsDir:               ws.cardsDir,
 		WorkspaceDir:           ws.workspaceDir,
@@ -760,7 +773,39 @@ func serveOptions(
 		ResolvePromotionTarget: ws.resolvePromotionTarget,
 		Live:                   live,
 		CloseProjectLock:       ws.closeProjectLock,
+		Checker:                candidate.NewContainerRunner(),
+		CheckWorkDir:           ws.checkWorkDir,
+		CheckTimeout:           cfg.checkTimeout,
+		ImportedReports:        ws.importedReports,
+		GoProxyEnv:             goProxyEnv,
 	}, nil
+}
+
+// operatorGoProxyEnv returns the operator's module proxy and checksum
+// settings as KEY=value for dependency-download containers. It runs the
+// trusted go command in dir, an operator-owned directory with no Go files,
+// so no workspace go.mod, go.work or go.env influences the values. Empty
+// values are omitted so the container's Go uses its defaults.
+func operatorGoProxyEnv(dir string) ([]string, error) {
+	names := []string{"GOPROXY", "GOSUMDB", "GOPRIVATE", "GONOPROXY", "GONOSUMDB", "GOINSECURE"}
+	cmd := exec.Command("go", append([]string{"env", "-json"}, names...)...)
+	cmd.Dir = dir
+	cmd.Env = append(os.Environ(), "GOWORK=off", "GOFLAGS=")
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("read the operator's Go proxy settings with go env: %w", err)
+	}
+	var values map[string]string
+	if err := json.Unmarshal(out, &values); err != nil {
+		return nil, fmt.Errorf("decode go env output: %w", err)
+	}
+	var env []string
+	for _, name := range names {
+		if v := values[name]; v != "" {
+			env = append(env, name+"="+v)
+		}
+	}
+	return env, nil
 }
 
 // resolveStartupModelConfig selects the default direct provider and model when

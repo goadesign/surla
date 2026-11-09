@@ -37,6 +37,9 @@ type Server struct {
 	ConfigureModel      http.Handler
 	InitProject         http.Handler
 	GenerateCode        http.Handler
+	CheckProject        http.Handler
+	UpdateDependencies  http.Handler
+	ReadCheckOutput     http.Handler
 }
 
 // MountPoint holds information about the mounted endpoints.
@@ -84,6 +87,9 @@ func New(
 			{"ConfigureModel", "POST", "/cp1/model"},
 			{"InitProject", "POST", "/workspace/init"},
 			{"GenerateCode", "POST", "/workspace/generate"},
+			{"CheckProject", "POST", "/workspace/check"},
+			{"UpdateDependencies", "POST", "/workspace/dependencies"},
+			{"ReadCheckOutput", "POST", "/workspace/check/output"},
 		},
 		CheckpointUI:        NewCheckpointUIHandler(e.CheckpointUI, mux, decoder, encoder, errhandler, formatter),
 		GoldenPath:          NewGoldenPathHandler(e.GoldenPath, mux, decoder, encoder, errhandler, formatter),
@@ -103,6 +109,9 @@ func New(
 		ConfigureModel:      NewConfigureModelHandler(e.ConfigureModel, mux, decoder, encoder, errhandler, formatter),
 		InitProject:         NewInitProjectHandler(e.InitProject, mux, decoder, encoder, errhandler, formatter),
 		GenerateCode:        NewGenerateCodeHandler(e.GenerateCode, mux, decoder, encoder, errhandler, formatter),
+		CheckProject:        NewCheckProjectHandler(e.CheckProject, mux, decoder, encoder, errhandler, formatter),
+		UpdateDependencies:  NewUpdateDependenciesHandler(e.UpdateDependencies, mux, decoder, encoder, errhandler, formatter),
+		ReadCheckOutput:     NewReadCheckOutputHandler(e.ReadCheckOutput, mux, decoder, encoder, errhandler, formatter),
 	}
 }
 
@@ -129,6 +138,9 @@ func (s *Server) Use(m func(http.Handler) http.Handler) {
 	s.ConfigureModel = m(s.ConfigureModel)
 	s.InitProject = m(s.InitProject)
 	s.GenerateCode = m(s.GenerateCode)
+	s.CheckProject = m(s.CheckProject)
+	s.UpdateDependencies = m(s.UpdateDependencies)
+	s.ReadCheckOutput = m(s.ReadCheckOutput)
 }
 
 // MethodNames returns the methods served.
@@ -154,6 +166,9 @@ func Mount(mux goahttp.Muxer, h *Server) {
 	MountConfigureModelHandler(mux, h.ConfigureModel)
 	MountInitProjectHandler(mux, h.InitProject)
 	MountGenerateCodeHandler(mux, h.GenerateCode)
+	MountCheckProjectHandler(mux, h.CheckProject)
+	MountUpdateDependenciesHandler(mux, h.UpdateDependencies)
+	MountReadCheckOutputHandler(mux, h.ReadCheckOutput)
 }
 
 // Mount configures the mux to serve the surla endpoints.
@@ -1071,6 +1086,151 @@ func NewGenerateCodeHandler(
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := context.WithValue(r.Context(), goahttp.AcceptTypeKey, r.Header.Get("Accept"))
 		ctx = context.WithValue(ctx, goa.MethodKey, "generate_code")
+		ctx = context.WithValue(ctx, goa.ServiceKey, "surla")
+		payload, err := decodeRequest(r)
+		if err != nil {
+			if err := encodeError(ctx, w, err); err != nil && errhandler != nil {
+				errhandler(ctx, w, err)
+			}
+			return
+		}
+		res, err := endpoint(ctx, payload)
+		if err != nil {
+			if err := encodeError(ctx, w, err); err != nil && errhandler != nil {
+				errhandler(ctx, w, err)
+			}
+			return
+		}
+		if err := encodeResponse(ctx, w, res); err != nil {
+			if errhandler != nil {
+				errhandler(ctx, w, err)
+			}
+		}
+	})
+}
+
+// MountCheckProjectHandler configures the mux to serve the "surla" service
+// "check_project" endpoint.
+func MountCheckProjectHandler(mux goahttp.Muxer, h http.Handler) {
+	f, ok := h.(http.HandlerFunc)
+	if !ok {
+		f = func(w http.ResponseWriter, r *http.Request) {
+			h.ServeHTTP(w, r)
+		}
+	}
+	mux.Handle("POST", "/workspace/check", f)
+}
+
+// NewCheckProjectHandler creates a HTTP handler which loads the HTTP request
+// and calls the "surla" service "check_project" endpoint.
+func NewCheckProjectHandler(
+	endpoint goa.Endpoint,
+	mux goahttp.Muxer,
+	decoder func(*http.Request) goahttp.Decoder,
+	encoder func(context.Context, http.ResponseWriter) goahttp.Encoder,
+	errhandler func(context.Context, http.ResponseWriter, error),
+	formatter func(ctx context.Context, err error) goahttp.Statuser,
+) http.Handler {
+	var (
+		encodeResponse = EncodeCheckProjectResponse(encoder)
+		encodeError    = EncodeCheckProjectError(encoder, formatter)
+	)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := context.WithValue(r.Context(), goahttp.AcceptTypeKey, r.Header.Get("Accept"))
+		ctx = context.WithValue(ctx, goa.MethodKey, "check_project")
+		ctx = context.WithValue(ctx, goa.ServiceKey, "surla")
+		var err error
+		res, err := endpoint(ctx, nil)
+		if err != nil {
+			if err := encodeError(ctx, w, err); err != nil && errhandler != nil {
+				errhandler(ctx, w, err)
+			}
+			return
+		}
+		if err := encodeResponse(ctx, w, res); err != nil {
+			if errhandler != nil {
+				errhandler(ctx, w, err)
+			}
+		}
+	})
+}
+
+// MountUpdateDependenciesHandler configures the mux to serve the "surla"
+// service "update_dependencies" endpoint.
+func MountUpdateDependenciesHandler(mux goahttp.Muxer, h http.Handler) {
+	f, ok := h.(http.HandlerFunc)
+	if !ok {
+		f = func(w http.ResponseWriter, r *http.Request) {
+			h.ServeHTTP(w, r)
+		}
+	}
+	mux.Handle("POST", "/workspace/dependencies", f)
+}
+
+// NewUpdateDependenciesHandler creates a HTTP handler which loads the HTTP
+// request and calls the "surla" service "update_dependencies" endpoint.
+func NewUpdateDependenciesHandler(
+	endpoint goa.Endpoint,
+	mux goahttp.Muxer,
+	decoder func(*http.Request) goahttp.Decoder,
+	encoder func(context.Context, http.ResponseWriter) goahttp.Encoder,
+	errhandler func(context.Context, http.ResponseWriter, error),
+	formatter func(ctx context.Context, err error) goahttp.Statuser,
+) http.Handler {
+	var (
+		encodeResponse = EncodeUpdateDependenciesResponse(encoder)
+		encodeError    = EncodeUpdateDependenciesError(encoder, formatter)
+	)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := context.WithValue(r.Context(), goahttp.AcceptTypeKey, r.Header.Get("Accept"))
+		ctx = context.WithValue(ctx, goa.MethodKey, "update_dependencies")
+		ctx = context.WithValue(ctx, goa.ServiceKey, "surla")
+		var err error
+		res, err := endpoint(ctx, nil)
+		if err != nil {
+			if err := encodeError(ctx, w, err); err != nil && errhandler != nil {
+				errhandler(ctx, w, err)
+			}
+			return
+		}
+		if err := encodeResponse(ctx, w, res); err != nil {
+			if errhandler != nil {
+				errhandler(ctx, w, err)
+			}
+		}
+	})
+}
+
+// MountReadCheckOutputHandler configures the mux to serve the "surla" service
+// "read_check_output" endpoint.
+func MountReadCheckOutputHandler(mux goahttp.Muxer, h http.Handler) {
+	f, ok := h.(http.HandlerFunc)
+	if !ok {
+		f = func(w http.ResponseWriter, r *http.Request) {
+			h.ServeHTTP(w, r)
+		}
+	}
+	mux.Handle("POST", "/workspace/check/output", f)
+}
+
+// NewReadCheckOutputHandler creates a HTTP handler which loads the HTTP
+// request and calls the "surla" service "read_check_output" endpoint.
+func NewReadCheckOutputHandler(
+	endpoint goa.Endpoint,
+	mux goahttp.Muxer,
+	decoder func(*http.Request) goahttp.Decoder,
+	encoder func(context.Context, http.ResponseWriter) goahttp.Encoder,
+	errhandler func(context.Context, http.ResponseWriter, error),
+	formatter func(ctx context.Context, err error) goahttp.Statuser,
+) http.Handler {
+	var (
+		decodeRequest  = DecodeReadCheckOutputRequest(mux, decoder)
+		encodeResponse = EncodeReadCheckOutputResponse(encoder)
+		encodeError    = EncodeReadCheckOutputError(encoder, formatter)
+	)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := context.WithValue(r.Context(), goahttp.AcceptTypeKey, r.Header.Get("Accept"))
+		ctx = context.WithValue(ctx, goa.MethodKey, "read_check_output")
 		ctx = context.WithValue(ctx, goa.ServiceKey, "surla")
 		payload, err := decodeRequest(r)
 		if err != nil {

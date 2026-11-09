@@ -65,6 +65,19 @@ type (
 		// hashed into request_revision.
 		UnverifiedApproval *UnverifiedApprovalItem
 	}
+	// CheckProjectPayload defines the JSON payload for the surla.check_project tool.
+	CheckProjectPayload = struct {
+	}
+	// CheckProjectResult defines the JSON result for the surla.check_project tool.
+	CheckProjectResult = struct {
+		// Operation identifier; pass it to read_check_output to read the full output.
+		OpID string
+		// True only when go test ./... exited 0 in every module.
+		Passed bool
+		// At most 16 KiB: the modules tested, the first failure and the end of its
+		// output, and how to read the rest.
+		Message string
+	}
 	// ConfigureModelPayload defines the JSON payload for the surla.configure_model tool.
 	ConfigureModelPayload = struct {
 		// Direct model provider name when configuring a direct provider; must be
@@ -413,6 +426,25 @@ type (
 		// hashed into request_revision.
 		UnverifiedApproval *UnverifiedApprovalItem
 	}
+	// ReadCheckOutputPayload defines the JSON payload for the surla.read_check_output tool.
+	ReadCheckOutputPayload = struct {
+		// Operation identifier returned by check_project or update_dependencies.
+		OpID string
+		// Opaque next_cursor from the previous page; omit for the first page.
+		Cursor *string
+	}
+	// ReadCheckOutputResult defines the JSON result for the surla.read_check_output tool.
+	ReadCheckOutputResult = struct {
+		// The page text.
+		Text string
+		// Cursor for the following page; absent when this page reaches the end.
+		NextCursor *string
+		// Total bytes captured for the operation.
+		CapturedBytes int64
+		// Bytes the operation produced beyond its capture limit and did not keep;
+		// nonzero means the output has a stated gap.
+		DroppedBytes int64
+	}
 	// ReviseChangePayload defines the JSON payload for the surla.revise_change tool.
 	ReviseChangePayload = struct {
 		// Change identifier.
@@ -495,6 +527,20 @@ type (
 		// running.
 		Stopped bool
 		// Operator-facing status explanation.
+		Message string
+	}
+	// UpdateDependenciesPayload defines the JSON payload for the surla.update_dependencies tool.
+	UpdateDependenciesPayload = struct {
+	}
+	// UpdateDependenciesResult defines the JSON result for the surla.update_dependencies tool.
+	UpdateDependenciesResult = struct {
+		// Operation identifier; pass it to read_check_output to read the full output.
+		OpID string
+		// Workspace-relative go.mod, go.sum and go.work.sum files whose bytes changed
+		// and were written.
+		FilesWritten []string
+		// At most 16 KiB: what was updated, and Go's message for any module that could
+		// not be.
 		Message string
 	}
 	// VerifyChangePayload defines the JSON payload for the surla.verify_change tool.

@@ -23,7 +23,7 @@ import (
 //	command (subcommand1|subcommand2|...)
 func UsageCommands() []string {
 	return []string{
-		"surla (checkpoint-ui|golden-path|propose-change|revise-change|confirm-intent|get-change|preview-architecture|draft-override|start-live-target|stop-live-target|verify-change|get-verification|list-verifications|approve-merge|diff|configure-model|init-project|generate-code)",
+		"surla (checkpoint-ui|golden-path|propose-change|revise-change|confirm-intent|get-change|preview-architecture|draft-override|start-live-target|stop-live-target|verify-change|get-verification|list-verifications|approve-merge|diff|configure-model|init-project|generate-code|check-project|update-dependencies|read-check-output)",
 	}
 }
 
@@ -115,6 +115,13 @@ func ParseEndpoint(
 
 		surlaGenerateCodeFlags    = flag.NewFlagSet("generate-code", flag.ExitOnError)
 		surlaGenerateCodeBodyFlag = new(cliStringFlag)
+
+		surlaCheckProjectFlags = flag.NewFlagSet("check-project", flag.ExitOnError)
+
+		surlaUpdateDependenciesFlags = flag.NewFlagSet("update-dependencies", flag.ExitOnError)
+
+		surlaReadCheckOutputFlags    = flag.NewFlagSet("read-check-output", flag.ExitOnError)
+		surlaReadCheckOutputBodyFlag = new(cliStringFlag)
 	)
 	surlaProposeChangeFlags.Var(surlaProposeChangeBodyFlag, "body", "")
 	surlaReviseChangeFlags.Var(surlaReviseChangeBodyFlag, "body", "")
@@ -132,6 +139,7 @@ func ParseEndpoint(
 	surlaConfigureModelFlags.Var(surlaConfigureModelBodyFlag, "body", "")
 	surlaInitProjectFlags.Var(surlaInitProjectBodyFlag, "body", "")
 	surlaGenerateCodeFlags.Var(surlaGenerateCodeBodyFlag, "body", "")
+	surlaReadCheckOutputFlags.Var(surlaReadCheckOutputBodyFlag, "body", "")
 
 	surlaFlags.Usage = surlaUsage
 	surlaCheckpointUIFlags.Usage = surlaCheckpointUIUsage
@@ -152,6 +160,9 @@ func ParseEndpoint(
 	surlaConfigureModelFlags.Usage = surlaConfigureModelUsage
 	surlaInitProjectFlags.Usage = surlaInitProjectUsage
 	surlaGenerateCodeFlags.Usage = surlaGenerateCodeUsage
+	surlaCheckProjectFlags.Usage = surlaCheckProjectUsage
+	surlaUpdateDependenciesFlags.Usage = surlaUpdateDependenciesUsage
+	surlaReadCheckOutputFlags.Usage = surlaReadCheckOutputUsage
 
 	if err := flag.CommandLine.Parse(os.Args[1:]); err != nil {
 		return nil, nil, err
@@ -241,6 +252,15 @@ func ParseEndpoint(
 			case "generate-code":
 				epf = surlaGenerateCodeFlags
 
+			case "check-project":
+				epf = surlaCheckProjectFlags
+
+			case "update-dependencies":
+				epf = surlaUpdateDependenciesFlags
+
+			case "read-check-output":
+				epf = surlaReadCheckOutputFlags
+
 			}
 
 		}
@@ -317,6 +337,13 @@ func ParseEndpoint(
 			case "generate-code":
 				endpoint = c.GenerateCode()
 				data, err = surlac.BuildGenerateCodePayload(surlaGenerateCodeBodyFlag.value)
+			case "check-project":
+				endpoint = c.CheckProject()
+			case "update-dependencies":
+				endpoint = c.UpdateDependencies()
+			case "read-check-output":
+				endpoint = c.ReadCheckOutput()
+				data, err = surlac.BuildReadCheckOutputPayload(surlaReadCheckOutputBodyFlag.value)
 			}
 		}
 	}
@@ -350,6 +377,9 @@ func surlaUsage() {
 	fmt.Fprintln(os.Stderr, `    configure-model: Configure or switch the active CP1 semantic analyzer and CP3 live-target model provider and model name or gRPC model gateway on a running control plane without restarting.`)
 	fmt.Fprintln(os.Stderr, `    init-project: Initialize a new Surla starter project directory inside the server's bound workspace, generating the candidate Go module, Goa and Goa-AI code, and the eval/ verification harness, creating the initial Git commit, and switching the server's active workspace and trusted evaluator suite commit to that project. When the request includes a progressToken, the tool sends MCP progress updates as starter generation/tests, initial commit creation, and publication start.`)
 	fmt.Fprintln(os.Stderr, `    generate-code: Read the active workspace's application module, or its public local eval/ module when target is eval, compile that module's edited Goa design in Surla's sandbox, and atomically replace its gen/ directory. Preserve top-level user files and their permissions and leave go.mod and go.sum unchanged. Return the written paths and warnings; a warning after gen/ publication still means generation succeeded. The tool compiles the design only; it does not build the application or run tests. Fix a rejected design and call again on the same running server.`)
+	fmt.Fprintln(os.Stderr, `    check-project: Copy the active workspace's live files (uncommitted edits included) into a protected per-operation copy and run go test ./... for every Go module in it, each in a Linux container with no network. Nothing in the workspace changes. Returns passed and a bounded message; read the full output with read_check_output.`)
+	fmt.Fprintln(os.Stderr, `    update-dependencies: Run go mod tidy for every Go module of the active workspace in a protected copy inside Linux containers, then write only the changed go.mod, go.sum and go.work.sum files back to the workspace through verified handles. A symlinked manifest or one edited during the call is refused for that module.`)
+	fmt.Fprintln(os.Stderr, `    read-check-output: Return one page of at most 16 KiB of the full output a check_project or update_dependencies operation captured, with a cursor for the next page and the count of bytes not captured.`)
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Additional help:")
 	fmt.Fprintf(os.Stderr, "    %s surla COMMAND --help\n", os.Args[0])
@@ -672,4 +702,54 @@ func surlaGenerateCodeUsage() {
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Example:")
 	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "surla generate-code --body '{\n      \"target\": \"eval\"\n   }'")
+}
+
+func surlaCheckProjectUsage() {
+	// Header with flags
+	fmt.Fprintf(os.Stderr, "%s [flags] surla check-project", os.Args[0])
+	fmt.Fprintln(os.Stderr)
+
+	// Description
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, `Copy the active workspace's live files (uncommitted edits included) into a protected per-operation copy and run go test ./... for every Go module in it, each in a Linux container with no network. Nothing in the workspace changes. Returns passed and a bounded message; read the full output with read_check_output.`)
+
+	// Flags list
+
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, "Example:")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "surla check-project")
+}
+
+func surlaUpdateDependenciesUsage() {
+	// Header with flags
+	fmt.Fprintf(os.Stderr, "%s [flags] surla update-dependencies", os.Args[0])
+	fmt.Fprintln(os.Stderr)
+
+	// Description
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, `Run go mod tidy for every Go module of the active workspace in a protected copy inside Linux containers, then write only the changed go.mod, go.sum and go.work.sum files back to the workspace through verified handles. A symlinked manifest or one edited during the call is refused for that module.`)
+
+	// Flags list
+
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, "Example:")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "surla update-dependencies")
+}
+
+func surlaReadCheckOutputUsage() {
+	// Header with flags
+	fmt.Fprintf(os.Stderr, "%s [flags] surla read-check-output", os.Args[0])
+	fmt.Fprint(os.Stderr, " -body JSON")
+	fmt.Fprintln(os.Stderr)
+
+	// Description
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, `Return one page of at most 16 KiB of the full output a check_project or update_dependencies operation captured, with a cursor for the next page and the count of bytes not captured.`)
+
+	// Flags list
+	fmt.Fprintln(os.Stderr, `    -body JSON: `)
+
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, "Example:")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "surla read-check-output --body '{\n      \"cursor\": \"Vero quia facilis et vel distinctio.\",\n      \"op_id\": \"Quo doloribus amet similique.\"\n   }'")
 }

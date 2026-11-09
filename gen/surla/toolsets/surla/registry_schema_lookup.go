@@ -19,36 +19,42 @@ func ToolSchema(name tools.Ident) (*genregistry.ToolSchema, bool) {
 	switch name {
 	case "surla.approve_merge":
 		return declarations.schema1(), true
-	case "surla.configure_model":
+	case "surla.check_project":
 		return declarations.schema64(), true
+	case "surla.configure_model":
+		return declarations.schema74(), true
 	case "surla.confirm_intent":
-		return declarations.schema80(), true
+		return declarations.schema90(), true
 	case "surla.diff":
-		return declarations.schema157(), true
+		return declarations.schema167(), true
 	case "surla.draft_override":
-		return declarations.schema186(), true
+		return declarations.schema196(), true
 	case "surla.generate_code":
-		return declarations.schema203(), true
+		return declarations.schema213(), true
 	case "surla.get_change":
-		return declarations.schema217(), true
+		return declarations.schema227(), true
 	case "surla.get_verification":
-		return declarations.schema274(), true
+		return declarations.schema284(), true
 	case "surla.init_project":
-		return declarations.schema320(), true
+		return declarations.schema330(), true
 	case "surla.list_verifications":
-		return declarations.schema335(), true
+		return declarations.schema345(), true
 	case "surla.preview_architecture":
-		return declarations.schema384(), true
+		return declarations.schema394(), true
 	case "surla.propose_change":
-		return declarations.schema489(), true
+		return declarations.schema499(), true
+	case "surla.read_check_output":
+		return declarations.schema560(), true
 	case "surla.revise_change":
-		return declarations.schema550(), true
+		return declarations.schema575(), true
 	case "surla.start_live_target":
-		return declarations.schema613(), true
+		return declarations.schema638(), true
 	case "surla.stop_live_target":
-		return declarations.schema625(), true
+		return declarations.schema650(), true
+	case "surla.update_dependencies":
+		return declarations.schema659(), true
 	case "surla.verify_change":
-		return declarations.schema634(), true
+		return declarations.schema670(), true
 	default:
 		return nil, false
 	}

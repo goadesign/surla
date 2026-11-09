@@ -105,6 +105,42 @@ var GenerateCodeResult = Type("GenerateCodeResult", func() {
 	Required("target", "files_written", "warnings")
 })
 
+// CheckProjectResult reports one check_project operation.
+var CheckProjectResult = Type("CheckProjectResult", func() {
+	Description("Outcome of running every Go module's tests in a protected copy of the workspace inside Linux containers.")
+	Attribute("op_id", String, "Operation identifier; pass it to read_check_output to read the full output.")
+	Attribute("passed", Boolean, "True only when go test ./... exited 0 in every module.")
+	Attribute("message", String, "At most 16 KiB: the modules tested, the first failure and the end of its output, and how to read the rest.")
+	Required("op_id", "passed", "message")
+})
+
+// ReadCheckOutputPayload selects one page of a check operation's output.
+var ReadCheckOutputPayload = Type("ReadCheckOutputPayload", func() {
+	Description("Selects a page of the full output that check_project or update_dependencies captured.")
+	Attribute("op_id", String, "Operation identifier returned by check_project or update_dependencies.")
+	Attribute("cursor", String, "Opaque next_cursor from the previous page; omit for the first page.")
+	Required("op_id")
+})
+
+// CheckOutputPage is one bounded page of captured output.
+var CheckOutputPage = Type("CheckOutputPage", func() {
+	Description("One page of at most 16 KiB of a check operation's captured output.")
+	Attribute("text", String, "The page text.")
+	Attribute("next_cursor", String, "Cursor for the following page; absent when this page reaches the end.")
+	Attribute("captured_bytes", Int64, "Total bytes captured for the operation.")
+	Attribute("dropped_bytes", Int64, "Bytes the operation produced beyond its capture limit and did not keep; nonzero means the output has a stated gap.")
+	Required("text", "captured_bytes", "dropped_bytes")
+})
+
+// UpdateDependenciesResult reports the manifests written by update_dependencies.
+var UpdateDependenciesResult = Type("UpdateDependenciesResult", func() {
+	Description("Go module manifests rewritten in the workspace after go mod tidy ran in a protected copy.")
+	Attribute("op_id", String, "Operation identifier; pass it to read_check_output to read the full output.")
+	Attribute("files_written", ArrayOf(String), "Workspace-relative go.mod, go.sum and go.work.sum files whose bytes changed and were written.")
+	Attribute("message", String, "At most 16 KiB: what was updated, and Go's message for any module that could not be.")
+	Required("op_id", "files_written", "message")
+})
+
 // ConfigureModelPayload is the input to the configure_model tool.
 var ConfigureModelPayload = Type("ConfigureModelPayload", func() {
 	Description("Selects either a direct model provider and model name (using the API key already present in surla serve's process environment) or a running goa-ai model gateway address.")
@@ -926,12 +962,59 @@ var _ = Service("surla", func() {
 		Result(GenerateCodeResult)
 		Error("unprocessable", ErrorResult, "The selected local module is absent, replaced, or invalid; correct its local files and call again.")
 		Error("not_implemented", ErrorResult, "No workspace directory is bound to this control plane.")
-		Tool("generate_code", "Regenerate code from local edited design files without uploading source. Omit target for the application, or use target eval for the public local eval/ module. Return sorted module-relative files_written and warnings. This compiles the design only; build the application and run its tests before verification. Fix a rejected design and call again on the same server.")
+		Tool("generate_code", "Regenerate code from local edited design files without uploading source. Omit target for the application, or use target eval for the public local eval/ module. Return sorted module-relative files_written and warnings. This compiles the design only; run check_project to build and test the application before verification. Fix a rejected design and call again on the same server.")
 		HTTP(func() {
 			POST("/workspace/generate")
 			Response(StatusOK)
 			Response("unprocessable", StatusUnprocessableEntity)
 			Response("not_implemented", StatusNotImplemented)
+		})
+	})
+
+	Method("check_project", func() {
+		Description("Copy the active workspace's live files (uncommitted edits included) into a protected per-operation copy and run go test ./... for every Go module in it, each in a Linux container with no network. Nothing in the workspace changes. Returns passed and a bounded message; read the full output with read_check_output.")
+		Result(CheckProjectResult)
+		Error("unprocessable", ErrorResult, "The workspace contains no Go module.")
+		Error("not_implemented", ErrorResult, "No workspace directory is bound to this control plane.")
+		Error("unavailable", ErrorResult, "No local Docker engine is usable: docker is missing, the engine does not answer or is not local, or the Go image cannot be pulled.")
+		Tool("check_project", "Run the workspace's Go tests on the current uncommitted files in an isolated Linux container. No input. Returns passed and a message with the first failure; when it says the output was cut, read the rest with read_check_output(op_id). If the message says go.sum or go.work.sum needs entries, call update_dependencies and check again.")
+		HTTP(func() {
+			POST("/workspace/check")
+			Response(StatusOK)
+			Response("unprocessable", StatusUnprocessableEntity)
+			Response("not_implemented", StatusNotImplemented)
+			Response("unavailable", StatusServiceUnavailable)
+		})
+	})
+
+	Method("update_dependencies", func() {
+		Description("Run go mod tidy for every Go module of the active workspace in a protected copy inside Linux containers, then write only the changed go.mod, go.sum and go.work.sum files back to the workspace through verified handles. A symlinked manifest or one edited during the call is refused for that module.")
+		Result(UpdateDependenciesResult)
+		Error("unprocessable", ErrorResult, "The workspace contains no Go module.")
+		Error("not_implemented", ErrorResult, "No workspace directory is bound to this control plane.")
+		Error("unavailable", ErrorResult, "No local Docker engine is usable: docker is missing, the engine does not answer or is not local, or the Go image cannot be pulled.")
+		Tool("update_dependencies", "Add missing requirements and checksums for the workspace's Go modules (go mod tidy) and write the changed go.mod, go.sum and go.work.sum. No input. Call it when check_project reports a missing go.sum or go.work.sum entry, then call check_project again.")
+		HTTP(func() {
+			POST("/workspace/dependencies")
+			Response(StatusOK)
+			Response("unprocessable", StatusUnprocessableEntity)
+			Response("not_implemented", StatusNotImplemented)
+			Response("unavailable", StatusServiceUnavailable)
+		})
+	})
+
+	Method("read_check_output", func() {
+		Description("Return one page of at most 16 KiB of the full output a check_project or update_dependencies operation captured, with a cursor for the next page and the count of bytes not captured.")
+		Payload(ReadCheckOutputPayload)
+		Result(CheckOutputPage)
+		Error("not_found", ErrorResult, "No output exists for this op_id.")
+		Error("unprocessable", ErrorResult, "The cursor is malformed or belongs to another operation.")
+		Tool("read_check_output", "Read the next page of a check_project or update_dependencies output. Pass op_id from that result and next_cursor from the previous page; omit cursor for the first page. dropped_bytes > 0 means part of the output was not captured.")
+		HTTP(func() {
+			POST("/workspace/check/output")
+			Response(StatusOK)
+			Response("not_found", StatusNotFound)
+			Response("unprocessable", StatusUnprocessableEntity)
 		})
 	})
 })

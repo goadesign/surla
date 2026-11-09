@@ -25,6 +25,8 @@ func NewMCPExecutor(caller mcpruntime.Caller) runtime.ToolCallExecutor {
 		switch call.Name {
 		case gensurla.ApproveMerge:
 			return runtime.ExecuteMCPTool(ctx, caller, call, "approve_merge", gensurla.SpecApproveMerge())
+		case gensurla.CheckProject:
+			return runtime.ExecuteMCPTool(ctx, caller, call, "check_project", gensurla.SpecCheckProject())
 		case gensurla.ConfigureModel:
 			return runtime.ExecuteMCPTool(ctx, caller, call, "configure_model", gensurla.SpecConfigureModel())
 		case gensurla.ConfirmIntent:
@@ -47,12 +49,16 @@ func NewMCPExecutor(caller mcpruntime.Caller) runtime.ToolCallExecutor {
 			return runtime.ExecuteMCPTool(ctx, caller, call, "preview_architecture", gensurla.SpecPreviewArchitecture())
 		case gensurla.ProposeChange:
 			return runtime.ExecuteMCPTool(ctx, caller, call, "propose_change", gensurla.SpecProposeChange())
+		case gensurla.ReadCheckOutput:
+			return runtime.ExecuteMCPTool(ctx, caller, call, "read_check_output", gensurla.SpecReadCheckOutput())
 		case gensurla.ReviseChange:
 			return runtime.ExecuteMCPTool(ctx, caller, call, "revise_change", gensurla.SpecReviseChange())
 		case gensurla.StartLiveTarget:
 			return runtime.ExecuteMCPTool(ctx, caller, call, "start_live_target", gensurla.SpecStartLiveTarget())
 		case gensurla.StopLiveTarget:
 			return runtime.ExecuteMCPTool(ctx, caller, call, "stop_live_target", gensurla.SpecStopLiveTarget())
+		case gensurla.UpdateDependencies:
+			return runtime.ExecuteMCPTool(ctx, caller, call, "update_dependencies", gensurla.SpecUpdateDependencies())
 		case gensurla.VerifyChange:
 			return runtime.ExecuteMCPTool(ctx, caller, call, "verify_change", gensurla.SpecVerifyChange())
 		default:

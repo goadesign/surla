@@ -172,6 +172,15 @@ type GenerateCodeRequestBody struct {
 	Target *string `form:"target,omitempty" json:"target,omitempty" xml:"target,omitempty"`
 }
 
+// ReadCheckOutputRequestBody is the type of the "surla" service
+// "read_check_output" endpoint HTTP request body.
+type ReadCheckOutputRequestBody struct {
+	// Operation identifier returned by check_project or update_dependencies.
+	OpID *string `form:"op_id,omitempty" json:"op_id,omitempty" xml:"op_id,omitempty"`
+	// Opaque next_cursor from the previous page; omit for the first page.
+	Cursor *string `form:"cursor,omitempty" json:"cursor,omitempty" xml:"cursor,omitempty"`
+}
+
 // ProposeChangeResponseBody is the type of the "surla" service
 // "propose_change" endpoint HTTP response body.
 type ProposeChangeResponseBody struct {
@@ -566,6 +575,45 @@ type GenerateCodeResponseBody struct {
 	// Problems that did not prevent gen/ publication, such as incomplete cleanup
 	// or a guide that could not be written.
 	Warnings []string `form:"warnings" json:"warnings" xml:"warnings"`
+}
+
+// CheckProjectResponseBody is the type of the "surla" service "check_project"
+// endpoint HTTP response body.
+type CheckProjectResponseBody struct {
+	// Operation identifier; pass it to read_check_output to read the full output.
+	OpID string `form:"op_id" json:"op_id" xml:"op_id"`
+	// True only when go test ./... exited 0 in every module.
+	Passed bool `form:"passed" json:"passed" xml:"passed"`
+	// At most 16 KiB: the modules tested, the first failure and the end of its
+	// output, and how to read the rest.
+	Message string `form:"message" json:"message" xml:"message"`
+}
+
+// UpdateDependenciesResponseBody is the type of the "surla" service
+// "update_dependencies" endpoint HTTP response body.
+type UpdateDependenciesResponseBody struct {
+	// Operation identifier; pass it to read_check_output to read the full output.
+	OpID string `form:"op_id" json:"op_id" xml:"op_id"`
+	// Workspace-relative go.mod, go.sum and go.work.sum files whose bytes changed
+	// and were written.
+	FilesWritten []string `form:"files_written" json:"files_written" xml:"files_written"`
+	// At most 16 KiB: what was updated, and Go's message for any module that could
+	// not be.
+	Message string `form:"message" json:"message" xml:"message"`
+}
+
+// ReadCheckOutputResponseBody is the type of the "surla" service
+// "read_check_output" endpoint HTTP response body.
+type ReadCheckOutputResponseBody struct {
+	// The page text.
+	Text string `form:"text" json:"text" xml:"text"`
+	// Cursor for the following page; absent when this page reaches the end.
+	NextCursor *string `form:"next_cursor,omitempty" json:"next_cursor,omitempty" xml:"next_cursor,omitempty"`
+	// Total bytes captured for the operation.
+	CapturedBytes int64 `form:"captured_bytes" json:"captured_bytes" xml:"captured_bytes"`
+	// Bytes the operation produced beyond its capture limit and did not keep;
+	// nonzero means the output has a stated gap.
+	DroppedBytes int64 `form:"dropped_bytes" json:"dropped_bytes" xml:"dropped_bytes"`
 }
 
 // ProposeChangeConflictResponseBody is the type of the "surla" service
@@ -1466,6 +1514,154 @@ type GenerateCodeUnprocessableResponseBody struct {
 // GenerateCodeNotImplementedResponseBody is the type of the "surla" service
 // "generate_code" endpoint HTTP response body for the "not_implemented" error.
 type GenerateCodeNotImplementedResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
+// CheckProjectUnprocessableResponseBody is the type of the "surla" service
+// "check_project" endpoint HTTP response body for the "unprocessable" error.
+type CheckProjectUnprocessableResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
+// CheckProjectNotImplementedResponseBody is the type of the "surla" service
+// "check_project" endpoint HTTP response body for the "not_implemented" error.
+type CheckProjectNotImplementedResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
+// CheckProjectUnavailableResponseBody is the type of the "surla" service
+// "check_project" endpoint HTTP response body for the "unavailable" error.
+type CheckProjectUnavailableResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
+// UpdateDependenciesUnprocessableResponseBody is the type of the "surla"
+// service "update_dependencies" endpoint HTTP response body for the
+// "unprocessable" error.
+type UpdateDependenciesUnprocessableResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
+// UpdateDependenciesNotImplementedResponseBody is the type of the "surla"
+// service "update_dependencies" endpoint HTTP response body for the
+// "not_implemented" error.
+type UpdateDependenciesNotImplementedResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
+// UpdateDependenciesUnavailableResponseBody is the type of the "surla" service
+// "update_dependencies" endpoint HTTP response body for the "unavailable"
+// error.
+type UpdateDependenciesUnavailableResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
+// ReadCheckOutputNotFoundResponseBody is the type of the "surla" service
+// "read_check_output" endpoint HTTP response body for the "not_found" error.
+type ReadCheckOutputNotFoundResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
+// ReadCheckOutputUnprocessableResponseBody is the type of the "surla" service
+// "read_check_output" endpoint HTTP response body for the "unprocessable"
+// error.
+type ReadCheckOutputUnprocessableResponseBody struct {
 	// Name is the name of this class of errors.
 	Name string `form:"name" json:"name" xml:"name"`
 	// ID is a unique identifier for this particular occurrence of the problem.
@@ -2634,6 +2830,47 @@ func NewGenerateCodeResponseBody(res *surla.GenerateCodeResult) *GenerateCodeRes
 	return body
 }
 
+// NewCheckProjectResponseBody builds the HTTP response body from the result of
+// the "check_project" endpoint of the "surla" service.
+func NewCheckProjectResponseBody(res *surla.CheckProjectResult) *CheckProjectResponseBody {
+	body := &CheckProjectResponseBody{
+		OpID:    res.OpID,
+		Passed:  res.Passed,
+		Message: res.Message,
+	}
+	return body
+}
+
+// NewUpdateDependenciesResponseBody builds the HTTP response body from the
+// result of the "update_dependencies" endpoint of the "surla" service.
+func NewUpdateDependenciesResponseBody(res *surla.UpdateDependenciesResult) *UpdateDependenciesResponseBody {
+	body := &UpdateDependenciesResponseBody{
+		OpID:    res.OpID,
+		Message: res.Message,
+	}
+	if res.FilesWritten != nil {
+		body.FilesWritten = make([]string, len(res.FilesWritten))
+		for i, val := range res.FilesWritten {
+			body.FilesWritten[i] = val
+		}
+	} else {
+		body.FilesWritten = []string{}
+	}
+	return body
+}
+
+// NewReadCheckOutputResponseBody builds the HTTP response body from the result
+// of the "read_check_output" endpoint of the "surla" service.
+func NewReadCheckOutputResponseBody(res *surla.CheckOutputPage) *ReadCheckOutputResponseBody {
+	body := &ReadCheckOutputResponseBody{
+		Text:          res.Text,
+		NextCursor:    res.NextCursor,
+		CapturedBytes: res.CapturedBytes,
+		DroppedBytes:  res.DroppedBytes,
+	}
+	return body
+}
+
 // NewProposeChangeConflictResponseBody builds the HTTP response body from the
 // result of the "propose_change" endpoint of the "surla" service.
 func NewProposeChangeConflictResponseBody(res *goa.ServiceError) *ProposeChangeConflictResponseBody {
@@ -3341,6 +3578,119 @@ func NewGenerateCodeNotImplementedResponseBody(res *goa.ServiceError) *GenerateC
 	return body
 }
 
+// NewCheckProjectUnprocessableResponseBody builds the HTTP response body from
+// the result of the "check_project" endpoint of the "surla" service.
+func NewCheckProjectUnprocessableResponseBody(res *goa.ServiceError) *CheckProjectUnprocessableResponseBody {
+	body := &CheckProjectUnprocessableResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
+// NewCheckProjectNotImplementedResponseBody builds the HTTP response body from
+// the result of the "check_project" endpoint of the "surla" service.
+func NewCheckProjectNotImplementedResponseBody(res *goa.ServiceError) *CheckProjectNotImplementedResponseBody {
+	body := &CheckProjectNotImplementedResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
+// NewCheckProjectUnavailableResponseBody builds the HTTP response body from
+// the result of the "check_project" endpoint of the "surla" service.
+func NewCheckProjectUnavailableResponseBody(res *goa.ServiceError) *CheckProjectUnavailableResponseBody {
+	body := &CheckProjectUnavailableResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
+// NewUpdateDependenciesUnprocessableResponseBody builds the HTTP response body
+// from the result of the "update_dependencies" endpoint of the "surla" service.
+func NewUpdateDependenciesUnprocessableResponseBody(res *goa.ServiceError) *UpdateDependenciesUnprocessableResponseBody {
+	body := &UpdateDependenciesUnprocessableResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
+// NewUpdateDependenciesNotImplementedResponseBody builds the HTTP response
+// body from the result of the "update_dependencies" endpoint of the "surla"
+// service.
+func NewUpdateDependenciesNotImplementedResponseBody(res *goa.ServiceError) *UpdateDependenciesNotImplementedResponseBody {
+	body := &UpdateDependenciesNotImplementedResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
+// NewUpdateDependenciesUnavailableResponseBody builds the HTTP response body
+// from the result of the "update_dependencies" endpoint of the "surla" service.
+func NewUpdateDependenciesUnavailableResponseBody(res *goa.ServiceError) *UpdateDependenciesUnavailableResponseBody {
+	body := &UpdateDependenciesUnavailableResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
+// NewReadCheckOutputNotFoundResponseBody builds the HTTP response body from
+// the result of the "read_check_output" endpoint of the "surla" service.
+func NewReadCheckOutputNotFoundResponseBody(res *goa.ServiceError) *ReadCheckOutputNotFoundResponseBody {
+	body := &ReadCheckOutputNotFoundResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
+// NewReadCheckOutputUnprocessableResponseBody builds the HTTP response body
+// from the result of the "read_check_output" endpoint of the "surla" service.
+func NewReadCheckOutputUnprocessableResponseBody(res *goa.ServiceError) *ReadCheckOutputUnprocessableResponseBody {
+	body := &ReadCheckOutputUnprocessableResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
 // NewProposeChangePayload builds a surla service propose_change endpoint
 // payload.
 func NewProposeChangePayload(body *ProposeChangeRequestBody) *surla.ProposeChangePayload {
@@ -3532,6 +3882,17 @@ func NewInitProjectPayload(body *InitProjectRequestBody) *surla.InitProjectPaylo
 func NewGenerateCodePayload(body *GenerateCodeRequestBody) *surla.GenerateCodePayload {
 	v := &surla.GenerateCodePayload{
 		Target: body.Target,
+	}
+
+	return v
+}
+
+// NewReadCheckOutputPayload builds a surla service read_check_output endpoint
+// payload.
+func NewReadCheckOutputPayload(body *ReadCheckOutputRequestBody) *surla.ReadCheckOutputPayload {
+	v := &surla.ReadCheckOutputPayload{
+		OpID:   *body.OpID,
+		Cursor: body.Cursor,
 	}
 
 	return v
@@ -3744,6 +4105,15 @@ func ValidateGenerateCodeRequestBody(body *GenerateCodeRequestBody) (err error) 
 		if !(*body.Target == "candidate" || *body.Target == "eval") {
 			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.target", *body.Target, []any{"candidate", "eval"}))
 		}
+	}
+	return
+}
+
+// ValidateReadCheckOutputRequestBody runs the validations defined on
+// ReadCheckOutputRequestBody
+func ValidateReadCheckOutputRequestBody(body *ReadCheckOutputRequestBody) (err error) {
+	if body.OpID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("op_id", "body"))
 	}
 	return
 }

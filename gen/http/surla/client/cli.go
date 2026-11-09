@@ -470,3 +470,25 @@ func BuildGenerateCodePayload(surlaGenerateCodeBody *string) (*surla.GenerateCod
 
 	return v, nil
 }
+
+// BuildReadCheckOutputPayload builds the payload for the surla
+// read_check_output endpoint from CLI flags.
+func BuildReadCheckOutputPayload(surlaReadCheckOutputBody *string) (*surla.ReadCheckOutputPayload, error) {
+	var err error
+	var body ReadCheckOutputRequestBody
+	{
+		if surlaReadCheckOutputBody == nil {
+			return nil, fmt.Errorf("missing required flag --body")
+		}
+		err = json.Unmarshal([]byte(*surlaReadCheckOutputBody), &body)
+		if err != nil {
+			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"cursor\": \"Vero quia facilis et vel distinctio.\",\n      \"op_id\": \"Quo doloribus amet similique.\"\n   }'")
+		}
+	}
+	v := &surla.ReadCheckOutputPayload{
+		OpID:   body.OpID,
+		Cursor: body.Cursor,
+	}
+
+	return v, nil
+}

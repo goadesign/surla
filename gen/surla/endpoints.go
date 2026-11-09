@@ -33,6 +33,9 @@ type Endpoints struct {
 	ConfigureModel      goa.Endpoint
 	InitProject         goa.Endpoint
 	GenerateCode        goa.Endpoint
+	CheckProject        goa.Endpoint
+	UpdateDependencies  goa.Endpoint
+	ReadCheckOutput     goa.Endpoint
 }
 
 // NewEndpoints wraps the methods of the "surla" service with endpoints.
@@ -56,6 +59,9 @@ func NewEndpoints(s Service) *Endpoints {
 		ConfigureModel:      NewConfigureModelEndpoint(s),
 		InitProject:         NewInitProjectEndpoint(s),
 		GenerateCode:        NewGenerateCodeEndpoint(s),
+		CheckProject:        NewCheckProjectEndpoint(s),
+		UpdateDependencies:  NewUpdateDependenciesEndpoint(s),
+		ReadCheckOutput:     NewReadCheckOutputEndpoint(s),
 	}
 }
 
@@ -79,6 +85,9 @@ func (e *Endpoints) Use(m func(goa.Endpoint) goa.Endpoint) {
 	e.ConfigureModel = m(e.ConfigureModel)
 	e.InitProject = m(e.InitProject)
 	e.GenerateCode = m(e.GenerateCode)
+	e.CheckProject = m(e.CheckProject)
+	e.UpdateDependencies = m(e.UpdateDependencies)
+	e.ReadCheckOutput = m(e.ReadCheckOutput)
 }
 
 // NewCheckpointUIEndpoint returns an endpoint function that calls the method
@@ -237,5 +246,30 @@ func NewGenerateCodeEndpoint(s Service) goa.Endpoint {
 	return func(ctx context.Context, req any) (any, error) {
 		p := req.(*GenerateCodePayload)
 		return s.GenerateCode(ctx, p)
+	}
+}
+
+// NewCheckProjectEndpoint returns an endpoint function that calls the method
+// "check_project" of service "surla".
+func NewCheckProjectEndpoint(s Service) goa.Endpoint {
+	return func(ctx context.Context, req any) (any, error) {
+		return s.CheckProject(ctx)
+	}
+}
+
+// NewUpdateDependenciesEndpoint returns an endpoint function that calls the
+// method "update_dependencies" of service "surla".
+func NewUpdateDependenciesEndpoint(s Service) goa.Endpoint {
+	return func(ctx context.Context, req any) (any, error) {
+		return s.UpdateDependencies(ctx)
+	}
+}
+
+// NewReadCheckOutputEndpoint returns an endpoint function that calls the
+// method "read_check_output" of service "surla".
+func NewReadCheckOutputEndpoint(s Service) goa.Endpoint {
+	return func(ctx context.Context, req any) (any, error) {
+		p := req.(*ReadCheckOutputPayload)
+		return s.ReadCheckOutput(ctx, p)
 	}
 }

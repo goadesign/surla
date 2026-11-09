@@ -71,6 +71,25 @@ type (
 		// hashed into request_revision.
 		UnverifiedApproval *UnverifiedApprovalItemTransport `json:"unverified_approval,omitempty"`
 	}
+	// CheckProjectPayloadTransport is the internal JSON transport type for CheckProjectPayload.
+	// It lives in the toolset-local http package and is used only for JSON
+	// decode + validation (missing-field detection) before transforming into
+	// the public tool type.
+	CheckProjectPayloadTransport struct {
+	}
+	// CheckProjectResultTransport is the internal JSON transport type for CheckProjectResult.
+	// It lives in the toolset-local http package and is used only for JSON
+	// decode + validation (missing-field detection) before transforming into
+	// the public tool type.
+	CheckProjectResultTransport struct {
+		// Operation identifier; pass it to read_check_output to read the full output.
+		OpID *string `json:"op_id"`
+		// True only when go test ./... exited 0 in every module.
+		Passed *bool `json:"passed"`
+		// At most 16 KiB: the modules tested, the first failure and the end of its
+		// output, and how to read the rest.
+		Message *string `json:"message"`
+	}
 	// ConfigureModelPayloadTransport is the internal JSON transport type for ConfigureModelPayload.
 	// It lives in the toolset-local http package and is used only for JSON
 	// decode + validation (missing-field detection) before transforming into
@@ -485,6 +504,31 @@ type (
 		// hashed into request_revision.
 		UnverifiedApproval *UnverifiedApprovalItemTransport `json:"unverified_approval,omitempty"`
 	}
+	// ReadCheckOutputPayloadTransport is the internal JSON transport type for ReadCheckOutputPayload.
+	// It lives in the toolset-local http package and is used only for JSON
+	// decode + validation (missing-field detection) before transforming into
+	// the public tool type.
+	ReadCheckOutputPayloadTransport struct {
+		// Operation identifier returned by check_project or update_dependencies.
+		OpID *string `json:"op_id"`
+		// Opaque next_cursor from the previous page; omit for the first page.
+		Cursor *string `json:"cursor,omitempty"`
+	}
+	// ReadCheckOutputResultTransport is the internal JSON transport type for ReadCheckOutputResult.
+	// It lives in the toolset-local http package and is used only for JSON
+	// decode + validation (missing-field detection) before transforming into
+	// the public tool type.
+	ReadCheckOutputResultTransport struct {
+		// The page text.
+		Text *string `json:"text"`
+		// Cursor for the following page; absent when this page reaches the end.
+		NextCursor *string `json:"next_cursor,omitempty"`
+		// Total bytes captured for the operation.
+		CapturedBytes *int64 `json:"captured_bytes"`
+		// Bytes the operation produced beyond its capture limit and did not keep;
+		// nonzero means the output has a stated gap.
+		DroppedBytes *int64 `json:"dropped_bytes"`
+	}
 	// ReviseChangePayloadTransport is the internal JSON transport type for ReviseChangePayload.
 	// It lives in the toolset-local http package and is used only for JSON
 	// decode + validation (missing-field detection) before transforming into
@@ -585,6 +629,26 @@ type (
 		// running.
 		Stopped *bool `json:"stopped"`
 		// Operator-facing status explanation.
+		Message *string `json:"message"`
+	}
+	// UpdateDependenciesPayloadTransport is the internal JSON transport type for UpdateDependenciesPayload.
+	// It lives in the toolset-local http package and is used only for JSON
+	// decode + validation (missing-field detection) before transforming into
+	// the public tool type.
+	UpdateDependenciesPayloadTransport struct {
+	}
+	// UpdateDependenciesResultTransport is the internal JSON transport type for UpdateDependenciesResult.
+	// It lives in the toolset-local http package and is used only for JSON
+	// decode + validation (missing-field detection) before transforming into
+	// the public tool type.
+	UpdateDependenciesResultTransport struct {
+		// Operation identifier; pass it to read_check_output to read the full output.
+		OpID *string `json:"op_id"`
+		// Workspace-relative go.mod, go.sum and go.work.sum files whose bytes changed
+		// and were written.
+		FilesWritten []string `json:"files_written"`
+		// At most 16 KiB: what was updated, and Go's message for any module that could
+		// not be.
 		Message *string `json:"message"`
 	}
 	// VerifyChangePayloadTransport is the internal JSON transport type for VerifyChangePayload.
