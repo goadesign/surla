@@ -4,8 +4,10 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"io"
 	"maps"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -13,12 +15,16 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	goahttp "goa.design/goa/v3/http"
 
-	"github.com/goadesign/surla/internal/designeval"
-	"github.com/goadesign/surla/internal/scaffold"
+	genmcpclient "github.com/goadesign/surla/gen/jsonrpc/mcp_surla/client"
+	genmcpsurla "github.com/goadesign/surla/gen/mcp_surla"
+	gensurla "github.com/goadesign/surla/gen/surla"
+	"github.com/goadesign/surla/internal/controlplane"
 	"github.com/goadesign/surla/internal/testmodule"
 )
 
@@ -53,16 +59,73 @@ func TestGenMatchesGoaGenByteForByte(t *testing.T) {
 }
 
 // TestGenOnAFreshStarterChangesNothingAndKeepsModulesApart creates a
-// starter with surla init's own code path, checks that surla gen in either
+// starter through one running server's authenticated MCP endpoint, checks
+// that the server adopts its default child directory and surla gen in either
 // module of the untouched project changes no byte anywhere in it, and that
 // regenerating after a design edit in one module leaves the other module
 // byte-for-byte unchanged.
 func TestGenOnAFreshStarterChangesNothingAndKeepsModulesApart(t *testing.T) {
 	isolateLocalWork(t)
-	dir := filepath.Join(t.TempDir(), "shop")
-	_, err := scaffold.Init(t.Context(), scaffold.Options{Dir: dir, WorkDir: t.TempDir(), Module: "example.com/shop", SurlaVersion: starterSurlaVersion},
-		scaffold.RunCommand, designeval.NewEvaluator())
+	workspace := t.TempDir()
+	opts, err := serveOptions(serveConfig{
+		projectDir:       workspace,
+		projectSet:       true,
+		cardsDir:         t.TempDir(),
+		cardsDirExplicit: true,
+	}, func(string) string { return "" }, nil)
 	require.NoError(t, err)
+	// A test executable has no released module version in its build info.
+	opts.SurlaVersion = starterSurlaVersion
+	cp, err := controlplane.New(opts)
+	require.NoError(t, err)
+	t.Cleanup(func() { assert.NoError(t, cp.Close()) })
+	auth := controlplane.NewTokenAuthenticator(map[string]controlplane.Principal{
+		"test-token": {ID: "operator@example.com"},
+	})
+	srv := httptest.NewServer(controlplane.NewHTTPHandler(cp, auth))
+	t.Cleanup(srv.Close)
+	scheme, host, err := parseServerOrigin(srv.URL)
+	require.NoError(t, err)
+	transport := genmcpclient.NewClient(scheme, host,
+		&bearerDoer{client: srv.Client(), token: "test-token"},
+		goahttp.RequestEncoder, goahttp.ResponseDecoder, false)
+	client := &genmcpsurla.Client{ToolsCallEndpoint: transport.ToolsCall()}
+	args, err := gensurla.EncodeInitProjectPayload(&gensurla.InitProjectPayload{
+		ModulePath: "example.com/shop",
+	})
+	require.NoError(t, err)
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Minute)
+	defer cancel()
+	call := &genmcpsurla.ToolsCallPayload{Name: "init_project", Arguments: args}
+	result, err := client.ToolsCall(ctx, call)
+	require.NoError(t, err)
+	complete, ok := result.Outcome.AsComplete()
+	require.True(t, ok, "initialization completes in the same MCP call")
+	require.False(t, complete.IsError != nil && *complete.IsError, "%+v", complete.Content)
+	initialized, err := gensurla.DecodeInitProjectResult(complete.StructuredContent)
+	require.NoError(t, err)
+	physicalWorkspace, err := filepath.EvalSymlinks(workspace)
+	require.NoError(t, err)
+	dir := filepath.Join(physicalWorkspace, "shop")
+	assert.Equal(t, dir, initialized.Dir, "omitting dir uses the module's service name")
+	assert.Equal(t, "example.com/shop", initialized.ModulePath)
+	assert.Equal(t, "shop", initialized.ServiceName)
+	entries, err := os.ReadDir(workspace)
+	require.NoError(t, err)
+	require.Len(t, entries, 1, "server state and compiler work stay outside the builder workspace")
+	assert.Equal(t, "shop", entries[0].Name())
+
+	// A second call must observe the first call's active workspace without
+	// restarting the server or running another starter build.
+	result, err = client.ToolsCall(ctx, call)
+	require.NoError(t, err)
+	complete, ok = result.Outcome.AsComplete()
+	require.True(t, ok)
+	require.NotNil(t, complete.IsError)
+	require.True(t, *complete.IsError)
+	require.Len(t, complete.Content, 1)
+	require.NotNil(t, complete.Content[0].Text)
+	assert.Contains(t, *complete.Content[0].Text, "already initialized at "+dir)
 	evalDir := filepath.Join(dir, "eval")
 	created := files(t, dir, ".")
 	require.Contains(t, created, quickstartGuide, "the product design declares an agent, so goa-ai writes its guide")
