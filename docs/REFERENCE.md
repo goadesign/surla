@@ -178,6 +178,7 @@ Each `propose_change` or `revise_change` model completion has an allowance of 16
   - Runs `go mod tidy` for every workspace module in the same kind of protected copy and containers (with network), and `go list -deps -test ./...` when the copy has a `go.work` so `go.work.sum` gets its entries, then writes only the `go.mod`, `go.sum` and `go.work.sum` files whose bytes changed back to the workspace. Before replacing a file, the server locks its directory and compares the live file with the bytes it read when the call started. A file that is a symlink, was edited before that comparison, or was created by someone else meanwhile is not written, and `message` says why. If another `update_dependencies` call, from this server or another one on the same workspace, is writing the same directory, the file is not written and `message` asks you to call again. An editor that writes the file between the comparison and the replacement is not detected. Modules are written one at a time, so a later module's failure leaves earlier modules' files written.
 - **`read_check_output`** (`POST /workspace/check/output`)
   - **Input:** `op_id`, `cursor?` → **Output:** `CheckOutputPage` (`text` of at most 16 KiB, `next_cursor?`, `captured_bytes`, `dropped_bytes`).
+  - Use the `op_id` from a `check_project` or `update_dependencies` result, or from its error message when an operation failed after opening its output capture. A failed operation's output may be incomplete; the operation still reports failure.
   - Returns one page of an operation's captured output. Omit `cursor` for the first page and pass `next_cursor` for the next; `next_cursor` is absent at the end. Each operation keeps at most 64 MiB of output; `dropped_bytes` counts what was not kept. `text` is valid UTF-8: each byte of output that is not valid UTF-8 appears as U+FFFD, and a page never ends inside a multi-byte character, so one page can cover fewer than 16 KiB of captured bytes. Returns an error when the saved output is shorter than its recorded size. Returns `not_found` when no output exists for `op_id`, and `unprocessable` for a malformed or foreign cursor.
 - **`propose_change`** (`POST /changes/propose`)
   - **Input:** `change_id`, `prompt`, `design_source?` → **Output:** `ChangeCardResult`
@@ -435,13 +436,19 @@ See [`examples/orders/README.md`](../examples/orders/README.md) for a step-by-st
 
 ---
 
+## Repository checks
+
+The [CI workflow](../.github/workflows/ci.yml) runs each Go module's vet and short race tests in parallel with viewer type checking and generated-file checks on pull requests and pushes to `main`. Each job has a five-minute limit. Run `go test -race -short ./...` in each of the three Go modules for the same short tests locally. Tests that compile candidate code in fresh sandboxes run without `-short` in the full suite.
+
+The full suite runs nightly at 07:17 UTC and on a manual **Run workflow** request for **CI**. Its three complete Go-module suites, verifier, generation journey, starter journey, and orders acceptance suite run as separate parallel jobs. To request a pushed branch from the CLI, use `CI=true gh workflow run ci.yml --ref <branch> </dev/null`. These longer checks still need to pass when validating changes to candidate execution or starter generation; a passing short run does not prove those paths.
+
 ## Project Layout
 
 ```text
 .
 ├── .github/
 │   └── workflows/
-│       └── ci.yml                # macOS GitHub Actions CI (`tests` unit/typecheck/codegen-drift job and `e2e` verifier/scaffold/acceptance job)
+│       └── ci.yml                # Parallel short checks per push; complete sandbox and native suites nightly or on request
 ├── design/
 │   └── design.go                 # Surla Goa & Goa-AI MCP 1.0.0 DSL contract
 ├── cmd/
