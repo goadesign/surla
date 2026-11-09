@@ -80,7 +80,9 @@ func openWorkspaceRootAndStat(dir string) (string, uint64, uint64, error) {
 	if !lstatInfo.IsDir() {
 		return "", 0, 0, fmt.Errorf("workspace %s is not a directory", dir)
 	}
-	cleanDir, err := abspath.Eval(dir)
+	// The stored spelling is the one the kernel reports for the open
+	// workspace later, so expected-path checks compare like with like.
+	cleanDir, err := abspath.Stored(dir)
 	if err != nil {
 		return "", 0, 0, fmt.Errorf("resolve workspace %s: %w", dir, err)
 	}

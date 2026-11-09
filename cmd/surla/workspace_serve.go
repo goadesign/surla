@@ -81,7 +81,9 @@ func configureServeWorkspace(cfg serveConfig) (ws workspaceServeConfig, err erro
 	if err != nil {
 		return workspaceServeConfig{}, err
 	}
-	startupBaseDir, err := abspath.Eval(wd)
+	// Stored spellings: every spelling of one directory selects the same
+	// operator project, card store and runs.
+	startupBaseDir, err := abspath.Stored(wd)
 	if err != nil {
 		return workspaceServeConfig{}, err
 	}
@@ -97,7 +99,7 @@ func configureServeWorkspace(cfg serveConfig) (ws workspaceServeConfig, err erro
 		if !info.IsDir() {
 			return workspaceServeConfig{}, fmt.Errorf("-project %s is not a directory", cfg.projectDir)
 		}
-		initialWorkspaceRoot, err = abspath.Eval(cfg.projectDir)
+		initialWorkspaceRoot, err = abspath.Stored(cfg.projectDir)
 		if err != nil {
 			return workspaceServeConfig{}, fmt.Errorf("resolve -project %s: %w", cfg.projectDir, err)
 		}

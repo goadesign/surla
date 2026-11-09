@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -856,6 +857,69 @@ func TestConfigureServeWorkspaceRejectsLostImportedReportRecord(t *testing.T) {
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), "load the report paths recorded by the legacy workspace import")
 			assert.Contains(t, err.Error(), tc.wantErr)
+		})
+	}
+}
+
+// TestConfigureServeWorkspaceKeepsHistoryAcrossSpellingsOfTheWorkspace
+// verifies that restarting surla serve with another spelling of the same
+// directories, on a case-insensitive volume, selects the same operator
+// project, card store and runs, so saved cards are still returned. Each case
+// keeps the same way of starting (from the parent with -project, or inside
+// the workspace), which by design selects its own card store.
+func TestConfigureServeWorkspaceKeepsHistoryAcrossSpellingsOfTheWorkspace(t *testing.T) {
+	type start struct {
+		chdir   string
+		project string
+	}
+	cases := []struct {
+		name   string
+		starts []start
+	}{
+		{name: "-project from the parent", starts: []start{{chdir: ".", project: "WORKSPACE"}, {chdir: ".", project: "workspace"}}},
+		{name: "started inside the workspace", starts: []start{{chdir: "Workspace"}, {chdir: "workspace"}, {chdir: "WORKSPACE"}}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			root, err := filepath.EvalSymlinks(t.TempDir())
+			require.NoError(t, err)
+			cfgRoot := filepath.Join(root, "user-config")
+			require.NoError(t, os.MkdirAll(cfgRoot, 0o700))
+			require.NoError(t, os.MkdirAll(filepath.Join(root, "workspace"), 0o755))
+			if _, err := os.Stat(filepath.Join(root, "WORKSPACE")); err != nil {
+				t.Skip("needs a case-insensitive volume")
+			}
+			priorConfigDir := userConfigDir
+			userConfigDir = func() (string, error) { return cfgRoot, nil }
+			t.Cleanup(func() { userConfigDir = priorConfigDir })
+			alice := controlplane.WithPrincipal(context.Background(), controlplane.Principal{ID: "alice@example.com"})
+
+			var first workspaceServeConfig
+			for i, st := range tc.starts {
+				t.Chdir(filepath.Join(root, st.chdir))
+				cfg := serveConfig{}
+				if st.project != "" {
+					cfg.projectDir, cfg.projectSet = st.project, true
+				}
+				ws, err := configureServeWorkspace(cfg)
+				require.NoError(t, err, st)
+				cp, err := controlplane.New(controlplane.Options{CardsDir: ws.cardsDir, WorkspaceDir: ws.workspaceDir, RunsDir: ws.runsDir, Analyzer: confirmedAnalyzer{}})
+				require.NoError(t, err, st)
+				if i == 0 {
+					first = ws
+					_, err = cp.ProposeChange(alice, &gensurla.ProposeChangePayload{ChangeID: "chg-1", Prompt: "Refunds up to $50 are instant."})
+					require.NoError(t, err)
+				} else {
+					assert.Equal(t, first.workspaceDir, ws.workspaceDir, st)
+					assert.Equal(t, first.cardsDir, ws.cardsDir, st)
+					assert.Equal(t, first.runsDir, ws.runsDir, st)
+					card, err := cp.GetChange(alice, &gensurla.GetChangePayload{ChangeID: "chg-1"})
+					require.NoError(t, err, st)
+					assert.Equal(t, "chg-1", card.ChangeID)
+				}
+				require.NoError(t, errors.Join(cp.Close(), ws.closeProjectLock()))
+			}
+			assert.Equal(t, filepath.Join(root, "workspace"), first.workspaceDir, "the stored spelling")
 		})
 	}
 }

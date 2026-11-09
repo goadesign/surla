@@ -592,3 +592,49 @@ func initGitWorktreeForBoundaryTest(t *testing.T, dir string) {
 	out, err := cmd.CombinedOutput()
 	require.NoErrorf(t, err, "git init %s: %s", dir, string(out))
 }
+
+// TestInitProjectAcceptsAnotherSpellingOfTheWorkspace verifies that a server
+// started with another spelling of an empty workspace on a case-insensitive
+// volume initializes it instead of reporting it replaced.
+func TestInitProjectAcceptsAnotherSpellingOfTheWorkspace(t *testing.T) {
+	root, err := abspath.Eval(t.TempDir())
+	require.NoError(t, err)
+	ws := filepath.Join(root, "ws")
+	require.NoError(t, os.MkdirAll(ws, 0o755))
+	if _, err := os.Stat(filepath.Join(root, "WS")); err != nil {
+		t.Skip("needs a case-insensitive volume")
+	}
+	runs := filepath.Join(root, "ops", "runs")
+	cp, err := New(Options{
+		WorkspaceDir: filepath.Join(root, "WS"),
+		CardsDir:     filepath.Join(root, "ops", "cards"),
+		RunsDir:      runs,
+		InitStageDir: filepath.Join(root, "ops", "stage"),
+		SurlaVersion: testSurlaVersion,
+		InitRunner:   fakeInitRunner,
+		NewGenerator: func() scaffold.Generator {
+			return &fakeInitGenerator{pkg: "shop"}
+		},
+		Verification: &VerificationConfig{
+			RunsDir: runs,
+			Plan: verify.Plan{
+				CandidateRepo:   ws,
+				CandidateModule: ".",
+				Binaries:        map[string]string{"shop": "./cmd/shop"},
+				SuiteRepo:       ws,
+				SuiteCommit:     fakeInitialSuiteCommit,
+				SuiteModule:     "eval",
+				SuiteCommand:    "./cmd/shop-eval",
+				ReportDir:       filepath.Join(root, "ops", "reports"),
+			},
+		},
+	})
+	require.NoError(t, err)
+	defer func() { require.NoError(t, cp.Close()) }()
+	assert.Equal(t, ws, cp.initialWorkspaceRoot, "the stored spelling")
+
+	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
+	initRes, err := cp.InitProject(alice, &gensurla.InitProjectPayload{ModulePath: "example.com/shop"})
+	require.NoError(t, err)
+	assert.Equal(t, filepath.Join(ws, "shop"), initRes.Dir)
+}
