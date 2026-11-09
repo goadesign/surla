@@ -112,6 +112,10 @@ func importLegacyWorkspace(
 		return fmt.Errorf("check imported workspace state in %s: %w", operatorProjectDir, err)
 	}
 
+	protectedDirs, err := workspaceProtectedDirs(initialWorkspaceRoot)
+	if err != nil {
+		return err
+	}
 	var startupExternalVer *controlplane.VerificationConfig
 	var verPath string
 	if cfg.verificationPath != "" {
@@ -119,7 +123,7 @@ func importLegacyWorkspace(
 		if err != nil {
 			return fmt.Errorf("resolve -verification-config %s: %w", cfg.verificationPath, err)
 		}
-		startupExternalVer, err = loadWorkspaceVerificationConfig(verPath, startupBaseDir, initialWorkspaceRoot, initialWorkspaceRoot)
+		startupExternalVer, err = loadWorkspaceVerificationConfig(verPath, startupBaseDir, protectedDirs...)
 		if err != nil {
 			return err
 		}
@@ -143,7 +147,7 @@ func importLegacyWorkspace(
 		promoReportInsideWS  bool
 	)
 	if hasPromotionConfig {
-		if err := validatePromotionPathSeparation(effectivePromotionPath, initialWorkspaceRoot, initialWorkspaceRoot); err != nil {
+		if err := validatePromotionPathSeparation(effectivePromotionPath, protectedDirs...); err != nil {
 			return err
 		}
 		promoFile, err := decodePromotionFileAtBase(effectivePromotionPath, startupBaseDir)
@@ -151,7 +155,7 @@ func importLegacyWorkspace(
 			return err
 		}
 		configuredReportDirs = append(configuredReportDirs, promoFile.ReportDir)
-		promoReportInsideWS, err = verifyrun.IsWorkspaceReportDir(initialWorkspaceRoot, promoFile.ReportDir)
+		promoReportInsideWS, err = verifyrun.IsWorkspaceReportDir(initialWorkspaceRoot, promoFile.ReportDir, protectedDirs...)
 		if err != nil {
 			return fmt.Errorf("-promotion-config %s: %w", effectivePromotionPath, err)
 		}
@@ -161,9 +165,27 @@ func importLegacyWorkspace(
 	if err != nil {
 		return fmt.Errorf("resolve default cards directory: %w", err)
 	}
-	implicitCardsInsideWS := !cfg.cardsDirExplicit && isWithinOrEqualDir(startupCardsDir, initialWorkspaceRoot)
+	wsLegacyCardsDir := filepath.Join(initialWorkspaceRoot, ".surla", "cards")
+	implicitCardsInsideProtected := !cfg.cardsDirExplicit && withinAnyDir(startupCardsDir, protectedDirs)
+	var hasLegacyWSCards bool
+	if !cfg.cardsDirExplicit {
+		hasLegacyWSCards, err = hasLegacyHexJSONRecords(wsLegacyCardsDir)
+		if err != nil {
+			return err
+		}
+	}
+	hasLegacyRuns, err := hasAcceptedLegacyRuns(filepath.Join(initialWorkspaceRoot, ".surla", "runs"))
+	if err != nil {
+		return err
+	}
+	hasLegacyReports, err := hasLegacyHexJSONRecords(filepath.Join(initialWorkspaceRoot, "reports"))
+	if err != nil {
+		return err
+	}
+	hasLegacyWSRunsOrReports := hasLegacyRuns || hasLegacyReports
 	starterMode := cfg.verificationPath == ""
-	if !implicitCardsInsideWS && !starterMode && !promoReportInsideWS {
+	importRunsAndReports := starterMode || promoReportInsideWS || hasLegacyWSRunsOrReports
+	if !implicitCardsInsideProtected && !hasLegacyWSCards && !importRunsAndReports {
 		return errors.New("cannot import legacy workspace: no workspace-interior .surla/ store is applicable when both -cards-dir and -verification-config point outside the workspace")
 	}
 
@@ -231,7 +253,7 @@ func importLegacyWorkspace(
 		}
 	}
 
-	if starterMode || promoReportInsideWS {
+	if importRunsAndReports {
 		for _, dirSpec := range []struct {
 			path      string
 			allowLive bool
@@ -253,7 +275,6 @@ func importLegacyWorkspace(
 		}
 	}
 
-	wsLegacyCardsDir := filepath.Join(initialWorkspaceRoot, ".surla", "cards")
 	stageDir, err := os.MkdirTemp(operatorProjectDir, ".surla-import-stage-*")
 	if err != nil {
 		return fmt.Errorf("create import staging directory: %w", err)
@@ -270,11 +291,15 @@ func importLegacyWorkspace(
 
 	for _, storeName := range cardStoreNames {
 		var legacySrc string
-		if implicitCardsInsideWS {
-			switch storeName {
-			case "cards-" + cardsHash:
+		switch storeName {
+		case "cards-" + cardsHash:
+			if implicitCardsInsideProtected {
 				legacySrc = startupCardsDir
-			case "cards-" + wsCardsHash:
+			} else if !cfg.cardsDirExplicit && cardsHash == wsCardsHash {
+				legacySrc = wsLegacyCardsDir
+			}
+		case "cards-" + wsCardsHash:
+			if !cfg.cardsDirExplicit {
 				legacySrc = wsLegacyCardsDir
 			}
 		}
@@ -300,18 +325,18 @@ func importLegacyWorkspace(
 		if err != nil {
 			return fmt.Errorf("resolve -cards-dir %s: %w", cfg.cardsDir, err)
 		}
-	case !isWithinOrEqualDir(startupCardsDir, initialWorkspaceRoot):
+	case !withinAnyDir(startupCardsDir, protectedDirs):
 		stagedSelectedCardsDir = startupCardsDir
 	default:
 		stagedSelectedCardsDir = filepath.Join(stageDir, "cards-"+cardsHash)
 	}
 
-	if starterMode || promoReportInsideWS {
+	if importRunsAndReports {
 		var (
 			legacyRunsDir           string
 			legacyDefaultReportsDir string
 		)
-		if starterMode {
+		if starterMode || hasLegacyWSRunsOrReports {
 			legacyRunsDir = filepath.Join(initialWorkspaceRoot, ".surla", "runs")
 			legacyDefaultReportsDir = filepath.Join(initialWorkspaceRoot, "reports")
 		}
@@ -324,6 +349,7 @@ func importLegacyWorkspace(
 			stagedReportsDir,
 			filepath.Join(operatorProjectDir, "imported", "reports"),
 			initialWorkspaceRoot,
+			protectedDirs,
 			configuredReportDirs...,
 		)
 		if unlockRuns != nil {
@@ -346,12 +372,12 @@ func importLegacyWorkspace(
 	// RenameatxNp publication so a rejected configuration never leaves imported/
 	// published on disk.
 	if cfg.cardsDirExplicit {
-		if err := validateWorkspaceDirSeparation("cards directory", stagedSelectedCardsDir, initialWorkspaceRoot, initialWorkspaceRoot); err != nil {
+		if err := validateWorkspaceDirSeparation("cards directory", stagedSelectedCardsDir, protectedDirs...); err != nil {
 			return err
 		}
 	}
 	if cfg.verificationPath != "" {
-		if err := validateVerificationConfigSeparation(verPath, startupExternalVer, initialWorkspaceRoot, initialWorkspaceRoot); err != nil {
+		if err := validateVerificationConfigSeparation(verPath, startupExternalVer, protectedDirs...); err != nil {
 			return err
 		}
 	}
@@ -362,6 +388,7 @@ func importLegacyWorkspace(
 			initialWorkspaceRoot,
 			initialWorkspaceRoot,
 			filepath.Join(stageDir, "reports"),
+			protectedDirs...,
 		); err != nil {
 			return err
 		}
@@ -445,39 +472,143 @@ func requireEmptyOperatorStore(dir string, allowEmptyLive bool) error {
 	return nil
 }
 
-// hasUnimportedLegacyWorkspaceNotice reports whether `opts` is serving a
-// non-imported workspace that still has legacy `.surla/cards`, `.surla/runs`, or
-// `reports/` artifacts on disk.
-func hasUnimportedLegacyWorkspaceNotice(opts controlplane.Options) bool {
-	if opts.WorkspaceDir == "" {
-		return false
-	}
-	if strings.Contains(filepath.ToSlash(opts.CardsDir), "/imported/") ||
-		strings.Contains(filepath.ToSlash(opts.RunsDir), "/imported/") {
-		return false
-	}
-	if hasMatchingEntries(filepath.Join(opts.WorkspaceDir, ".surla", "cards"), hex64JSONPattern) {
-		return true
-	}
-	if hasMatchingEntries(filepath.Join(opts.WorkspaceDir, ".surla", "runs"), hex32DirPattern) {
-		return true
-	}
-	return hasMatchingEntries(filepath.Join(opts.WorkspaceDir, "reports"), hex64JSONPattern)
-}
-
-// hasMatchingEntries reports whether dir contains any entry whose name matches
-// pattern.
-func hasMatchingEntries(dir string, pattern *regexp.Regexp) bool {
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return false
-	}
-	for _, entry := range entries {
-		if pattern.MatchString(entry.Name()) {
-			return true
+// requireNoUnimportedImplicitLegacyStore verifies before normal (non-imported)
+// startup that no selected implicit legacy store (.surla/cards, .surla/runs, or
+// reports/) contains durable records. When an unimported implicit legacy store
+// holds records, startup fails before creating divergent state in the new
+// operator store and instructs the operator to run -import-legacy-workspace.
+func requireNoUnimportedImplicitLegacyStore(
+	startupBaseDir, initialWorkspaceRoot string,
+	cfg serveConfig,
+	protectedDirs []string,
+) error {
+	if !cfg.cardsDirExplicit {
+		startupCardsDir, err := abspath.EvalFrom(startupBaseDir, ".surla/cards")
+		if err != nil {
+			return fmt.Errorf("resolve default cards directory: %w", err)
+		}
+		if withinAnyDir(startupCardsDir, protectedDirs) {
+			hasCards, err := hasLegacyHexJSONRecords(startupCardsDir)
+			if err != nil {
+				return err
+			}
+			if hasCards {
+				return fmt.Errorf(
+					"legacy workspace state found in %s; run surla serve -import-legacy-workspace with writers stopped to import existing cards, verification runs, and reports into protected operator storage before starting surla serve",
+					startupCardsDir,
+				)
+			}
+			wsLegacyCardsDir := filepath.Join(initialWorkspaceRoot, ".surla", "cards")
+			if wsLegacyCardsDir != startupCardsDir {
+				hasWSCards, err := hasLegacyHexJSONRecords(wsLegacyCardsDir)
+				if err != nil {
+					return err
+				}
+				if hasWSCards {
+					return fmt.Errorf(
+						"legacy workspace state found in %s; run surla serve -import-legacy-workspace with writers stopped to import existing cards, verification runs, and reports into protected operator storage before starting surla serve",
+						wsLegacyCardsDir,
+					)
+				}
+			}
 		}
 	}
-	return false
+	if cfg.verificationPath == "" {
+		wsLegacyRunsDir := filepath.Join(initialWorkspaceRoot, ".surla", "runs")
+		hasRuns, err := hasAcceptedLegacyRuns(wsLegacyRunsDir)
+		if err != nil {
+			return err
+		}
+		if hasRuns {
+			return fmt.Errorf(
+				"legacy workspace state found in %s; run surla serve -import-legacy-workspace with writers stopped to import existing cards, verification runs, and reports into protected operator storage before starting surla serve",
+				wsLegacyRunsDir,
+			)
+		}
+		wsLegacyReportsDir := filepath.Join(initialWorkspaceRoot, "reports")
+		hasReports, err := hasLegacyHexJSONRecords(wsLegacyReportsDir)
+		if err != nil {
+			return err
+		}
+		if hasReports {
+			return fmt.Errorf(
+				"legacy workspace state found in %s; run surla serve -import-legacy-workspace with writers stopped to import existing cards, verification runs, and reports into protected operator storage before starting surla serve",
+				wsLegacyReportsDir,
+			)
+		}
+	}
+	return nil
+}
+
+// hasLegacyHexJSONRecords reports whether dir contains any `<64-hex>.json`
+// record, returning (false, nil) only when dir does not exist or contains no
+// matching entries and returning any non-ErrNotExist filesystem error.
+func hasLegacyHexJSONRecords(dir string) (bool, error) {
+	info, err := os.Lstat(dir)
+	if errors.Is(err, fs.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("stat legacy store %s: %w", dir, err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
+		return false, fmt.Errorf("legacy store %s is not a regular directory", dir)
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return false, fmt.Errorf("read legacy store %s: %w", dir, err)
+	}
+	for _, entry := range entries {
+		if hex64JSONPattern.MatchString(entry.Name()) {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// hasAcceptedLegacyRuns reports whether dir contains any `<32-hex>` run
+// directory with a `request.json` entry, ignoring unaccepted `<32-hex>` run
+// directories where `request.json` is absent and returning any non-ErrNotExist
+// filesystem error.
+func hasAcceptedLegacyRuns(dir string) (bool, error) {
+	info, err := os.Lstat(dir)
+	if errors.Is(err, fs.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("stat legacy runs directory %s: %w", dir, err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
+		return false, fmt.Errorf("legacy runs directory %s is not a regular directory", dir)
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return false, fmt.Errorf("read legacy runs directory %s: %w", dir, err)
+	}
+	for _, entry := range entries {
+		name := entry.Name()
+		if !hex32DirPattern.MatchString(name) {
+			continue
+		}
+		runDir := filepath.Join(dir, name)
+		runInfo, err := os.Lstat(runDir)
+		if err != nil {
+			return false, fmt.Errorf("stat legacy run %s: %w", runDir, err)
+		}
+		if runInfo.Mode()&os.ModeSymlink != 0 || !runInfo.IsDir() {
+			return false, fmt.Errorf("legacy run entry %s is not a regular directory", runDir)
+		}
+		reqPath := filepath.Join(runDir, "request.json")
+		_, reqErr := os.Lstat(reqPath)
+		if errors.Is(reqErr, fs.ErrNotExist) {
+			continue
+		}
+		if reqErr != nil {
+			return false, fmt.Errorf("stat legacy run request %s: %w", reqPath, reqErr)
+		}
+		return true, nil
+	}
+	return false, nil
 }
 
 // syncDirectory opens dir without following symlinks and flushes its directory

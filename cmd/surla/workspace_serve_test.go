@@ -64,12 +64,10 @@ func TestConfigureServeWorkspaceSeparatesOperatorStateAndImportsLegacyWorkspace(
 	reportRaw := []byte(`{"passed":true}`)
 	require.NoError(t, os.WriteFile(filepath.Join(legacyReportsDir, reportDigest), reportRaw, 0o600))
 
-	// Before import, hasUnimportedLegacyWorkspaceNotice reports true.
-	assert.True(t, hasUnimportedLegacyWorkspaceNotice(controlplane.Options{
-		WorkspaceDir: wsCfg.workspaceDir,
-		CardsDir:     wsCfg.cardsDir,
-		RunsDir:      wsCfg.runsDir,
-	}))
+	// Before import, normal startup without -import-legacy-workspace fails closed requiring -import-legacy-workspace.
+	_, err = configureServeWorkspace(serveConfig{})
+	require.ErrorContains(t, err, "legacy workspace state found")
+	require.ErrorContains(t, err, "run surla serve -import-legacy-workspace")
 
 	// Run one-time -import-legacy-workspace cutover.
 	importedCfg, err := configureServeWorkspace(serveConfig{
@@ -89,17 +87,12 @@ func TestConfigureServeWorkspaceSeparatesOperatorStateAndImportsLegacyWorkspace(
 	require.NoError(t, err)
 	assert.Equal(t, cardRaw, origCard)
 
-	// After import, normal startup without -import-legacy-workspace uses the imported stores and suppresses the notice.
+	// After import, normal startup without -import-legacy-workspace uses the imported stores.
 	subsequentCfg, err := configureServeWorkspace(serveConfig{})
 	require.NoError(t, err)
 	require.NotNil(t, subsequentCfg.closeProjectLock)
 	assert.Equal(t, importedCfg.cardsDir, subsequentCfg.cardsDir)
 	assert.Equal(t, importedCfg.runsDir, subsequentCfg.runsDir)
-	assert.False(t, hasUnimportedLegacyWorkspaceNotice(controlplane.Options{
-		WorkspaceDir: subsequentCfg.workspaceDir,
-		CardsDir:     subsequentCfg.cardsDir,
-		RunsDir:      subsequentCfg.runsDir,
-	}))
 	require.NoError(t, subsequentCfg.closeProjectLock())
 
 	// Running -import-legacy-workspace a second time fails cleanly.
@@ -406,7 +399,9 @@ func TestConfigureServeWorkspacePinsSuiteCommitAndRejectsSymlinkParentEscape(t *
 	// Without a pinned suiteCommit (as if created manually after startup), resolveVerification fails closed
 	// with the startup loader error rather than trusting an unpinned post-startup HEAD.
 	_, err = uninitCfg.resolveVerification(context.Background(), childRepo, "")
+	require.ErrorContains(t, err, "automatic starter verification was unavailable at server startup")
 	require.ErrorContains(t, err, "is not inside a git repository")
+	require.ErrorContains(t, err, "restart surla serve so it pins the committed starter HEAD, or call init_project")
 
 	// Simulate builder advancing HEAD with a second commit that edits eval/.
 	require.NoError(t, os.WriteFile(filepath.Join(childRepo, "eval", "cmd", "shop-evals", "main.go"), []byte("package main\n// builder edit\n"), 0o644))
@@ -442,6 +437,248 @@ func TestConfigureServeWorkspacePinsSuiteCommitAndRejectsSymlinkParentEscape(t *
 	resolvedExisting, err := existingCfg.resolveVerification(context.Background(), existingCfg.workspaceDir, "")
 	require.NoError(t, err)
 	assert.Equal(t, startupCommit, resolvedExisting.Plan.SuiteCommit, "existing startup repo must stay pinned to startup HEAD")
+}
+
+// TestConfigureServeWorkspaceMonorepoSeparationAndLegacyImport verifies that
+// configureServeWorkspace and -import-legacy-workspace protect an enclosing
+// monorepo working tree R while preserving external operator working-directory
+// card stores, separate verification source repositories B, and the starter
+// README's sibling ../bakery-ops/verification.json layout, and importing legacy
+// monorepo cards and promotion/run reports.
+func TestConfigureServeWorkspaceMonorepoSeparationAndLegacyImport(t *testing.T) {
+	isolateGitConfig(t)
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	require.NoError(t, err)
+	cfgRoot := filepath.Join(root, "user-config")
+	require.NoError(t, os.MkdirAll(cfgRoot, 0o700))
+
+	priorConfigDir := userConfigDir
+	userConfigDir = func() (string, error) { return cfgRoot, nil }
+	t.Cleanup(func() { userConfigDir = priorConfigDir })
+
+	// 1. Starter README sibling layout (../bakery-ops/verification.json) loads cleanly from the starter directory.
+	bakeryDir, bakeryCommit := initCommittedStarterRepo(t, filepath.Join(root, "bakery"))
+	bakeryOpsDir := filepath.Join(root, "bakery-ops")
+	require.NoError(t, os.MkdirAll(bakeryOpsDir, 0o700))
+	bakeryVerPath := filepath.Join(bakeryOpsDir, "verification.json")
+	bakeryVerJSON := `{"runs_dir":"../bakery-ops/runs","report_dir":"../bakery-ops/reports","candidate_repo":".",` +
+		`"candidate_module":".","binaries":{"shop":"./cmd/shop"},"suite_repo":".","suite_commit":"` + bakeryCommit + `",` +
+		`"suite_module":"eval","suite_command":"./cmd/shop-evals","timeout":"30m"}`
+	require.NoError(t, os.WriteFile(bakeryVerPath, []byte(bakeryVerJSON), 0o600))
+	t.Chdir(bakeryDir)
+	bakeryCfg, err := configureServeWorkspace(serveConfig{
+		projectDir:       ".",
+		projectSet:       true,
+		verificationPath: "../bakery-ops/verification.json",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, bakeryCfg.verification)
+	assert.Equal(t, filepath.Join(bakeryOpsDir, "runs"), bakeryCfg.verification.RunsDir)
+	assert.Equal(t, filepath.Join(bakeryOpsDir, "reports"), bakeryCfg.verification.Plan.ReportDir)
+	require.NoError(t, bakeryCfg.closeProjectLock())
+
+	// 2. Monorepo R with -project services/shop launched from R places default cardsDir outside R,
+	// blocks normal startup when R/.surla/cards or R/services/shop/.surla/cards has unimported cards,
+	// and imports both R/.surla/cards and R/services/shop/.surla/cards on -import-legacy-workspace.
+	monorepo := filepath.Join(root, "monorepo")
+	shopInMono := filepath.Join(monorepo, "services", "shop")
+	writeStarter(t, shopInMono, "example.com/shop")
+	runTestGit(t, monorepo, "init", "-q")
+	gitCommitAll(t, monorepo, "Initial monorepo")
+
+	monoLegacyCards := filepath.Join(monorepo, ".surla", "cards")
+	subLegacyCards := filepath.Join(shopInMono, ".surla", "cards")
+	require.NoError(t, os.MkdirAll(monoLegacyCards, 0o700))
+	require.NoError(t, os.MkdirAll(subLegacyCards, 0o700))
+	monoCardDigest := strings.Repeat("1", 64) + ".json"
+	subCardDigest := strings.Repeat("2", 64) + ".json"
+	require.NoError(t, os.WriteFile(filepath.Join(monoLegacyCards, monoCardDigest), []byte(`{"mono":true}`), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(subLegacyCards, subCardDigest), []byte(`{"sub":true}`), 0o600))
+
+	t.Chdir(monorepo)
+	_, err = configureServeWorkspace(serveConfig{
+		projectDir: "services/shop",
+		projectSet: true,
+	})
+	require.ErrorContains(t, err, "legacy workspace state found")
+	require.ErrorContains(t, err, "run surla serve -import-legacy-workspace")
+
+	monoImportedCfg, err := configureServeWorkspace(serveConfig{
+		projectDir:            "services/shop",
+		projectSet:            true,
+		importLegacyWorkspace: true,
+	})
+	require.NoError(t, err)
+	assert.False(t, isWithinOrEqualDir(monoImportedCfg.cardsDir, monorepo), "default cardsDir must be outside enclosing monorepo R")
+	assert.FileExists(t, filepath.Join(monoImportedCfg.cardsDir, monoCardDigest))
+	require.NoError(t, monoImportedCfg.closeProjectLock())
+
+	t.Chdir(shopInMono)
+	subAfterImportCfg, err := configureServeWorkspace(serveConfig{})
+	require.NoError(t, err)
+	assert.FileExists(t, filepath.Join(subAfterImportCfg.cardsDir, subCardDigest))
+	require.NoError(t, subAfterImportCfg.closeProjectLock())
+
+	// 3. External operator CWD outside R preserves <opsDir>/.surla/cards when -cards-dir is omitted.
+	opsDir := filepath.Join(root, "external-ops")
+	require.NoError(t, os.MkdirAll(opsDir, 0o700))
+	t.Chdir(opsDir)
+	extCWDCfg, err := configureServeWorkspace(serveConfig{
+		projectDir: shopInMono,
+		projectSet: true,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, filepath.Join(opsDir, ".surla", "cards"), extCWDCfg.cardsDir)
+	require.NoError(t, extCWDCfg.closeProjectLock())
+
+	// 4. Separate verification source repository B (e.g. read-only bare mirror) is accepted when
+	// workspace is A, while paths inside an enclosing monorepo R2 are rejected until imported.
+	monorepo2 := filepath.Join(root, "monorepo-2")
+	wsA := filepath.Join(monorepo2, "services", "orders")
+	candB := filepath.Join(root, "candidate-b")
+	releaseDir := filepath.Join(root, "release-b")
+	require.NoError(t, os.MkdirAll(wsA, 0o755))
+	require.NoError(t, os.MkdirAll(candB, 0o755))
+	require.NoError(t, os.MkdirAll(releaseDir, 0o700))
+	runTestGit(t, monorepo2, "init", "-q")
+
+	commitB := strings.Repeat("c", 40)
+	publish(t, releaseDir, commitB, map[string]string{
+		"orders":        "api v1",
+		"orders-worker": "worker v1",
+	})
+
+	extRunsDir := filepath.Join(root, "ext-runs-b")
+	extReportsDir := filepath.Join(root, "ext-reports-b")
+	verInOpsPath := filepath.Join(opsDir, "ver-b.json")
+	writeVer := func(runsPath, reportPath string) {
+		content := `{"runs_dir":"` + runsPath + `","report_dir":"` + reportPath + `","candidate_repo":"` + candB + `",` +
+			`"candidate_module":".","binaries":{"orders":"./cmd/orders"},"suite_repo":"` + candB + `","suite_commit":"` + suiteCommit + `",` +
+			`"suite_module":"eval","suite_command":"./cmd/orders-evals","timeout":"15m"}`
+		require.NoError(t, os.WriteFile(verInOpsPath, []byte(content), 0o600))
+	}
+
+	t.Chdir(wsA)
+	// Rejects RunsDir or ReportDir inside enclosing monorepo2 (outside wsA).
+	writeVer(filepath.Join(monorepo2, "runs"), extReportsDir)
+	_, err = configureServeWorkspace(serveConfig{verificationPath: verInOpsPath})
+	require.ErrorContains(t, err, "must be outside the workspace")
+
+	writeVer(extRunsDir, filepath.Join(monorepo2, "reports"))
+	_, err = configureServeWorkspace(serveConfig{verificationPath: verInOpsPath})
+	require.ErrorContains(t, err, "must be outside the workspace")
+
+	// Rejects explicit -cards-dir or unimported -promotion-config report_dir inside enclosing monorepo2.
+	writeVer(extRunsDir, extReportsDir)
+	_, err = configureServeWorkspace(serveConfig{
+		verificationPath: verInOpsPath,
+		cardsDir:         filepath.Join(monorepo2, ".surla", "cards"),
+		cardsDirExplicit: true,
+	})
+	require.ErrorContains(t, err, "must be outside the workspace")
+
+	mono2ReportsDir := filepath.Join(monorepo2, "reports")
+	require.NoError(t, os.MkdirAll(mono2ReportsDir, 0o700))
+	promoBPath := filepath.Join(opsDir, "promo-b.json")
+	promoBContent := `{"report_dir":"` + mono2ReportsDir + `","release_dir":"` + releaseDir + `","suite_id":"orders","suite_commit":"` +
+		suiteCommit + `","environment":"sim","binaries":["orders","orders-worker"]}`
+	require.NoError(t, os.WriteFile(promoBPath, []byte(promoBContent), 0o600))
+
+	_, err = configureServeWorkspace(serveConfig{
+		verificationPath: verInOpsPath,
+		promotionPath:    promoBPath,
+	})
+	require.ErrorContains(t, err, "report_dir")
+	require.ErrorContains(t, err, "must be outside the workspace")
+
+	// Seed a confirmed card in wsA/.surla/cards with an existing approval referencing a report in monorepo2/reports.
+	alice := controlplane.WithPrincipal(context.Background(), controlplane.Principal{ID: "alice@example.com"})
+	seedCardsDir := filepath.Join(root, "seed-cards-b")
+	seedCP, err := controlplane.New(controlplane.Options{
+		CardsDir: seedCardsDir,
+		Analyzer: confirmedAnalyzer{},
+	})
+	require.NoError(t, err)
+	cardB, err := seedCP.ProposeChange(alice, &gensurla.ProposeChangePayload{
+		ChangeID: "chg-mono-2",
+		Prompt:   "Refunds up to $50 are instant.",
+	})
+	require.NoError(t, err)
+	require.NoError(t, seedCP.Close())
+
+	repB := saveReport(t, verify.Binding{
+		CandidateCommit: commitB,
+		RequestRevision: cardB.RequestRevision,
+		SuiteID:         "orders",
+		SuiteCommit:     suiteCommit,
+		Environment:     "sim",
+		Artifacts: map[string]string{
+			"orders":        digestOf("api v1"),
+			"orders-worker": digestOf("worker v1"),
+		},
+	}, true)
+	repBBytes, err := os.ReadFile(repB.path)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(mono2ReportsDir, repB.digest+".json"), repBBytes, 0o600))
+
+	seedCP, err = controlplane.New(controlplane.Options{
+		CardsDir:        seedCardsDir,
+		PromotionTarget: newReleaseTarget(t, releaseDir, mono2ReportsDir),
+	})
+	require.NoError(t, err)
+	approvedB, err := seedCP.ApproveMerge(alice, &gensurla.ApproveMergePayload{
+		ChangeID:        "chg-mono-2",
+		RequestRevision: cardB.RequestRevision,
+		CandidateCommit: commitB,
+		ReportDigest:    repB.digest,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, approvedB.Approval)
+	require.NoError(t, seedCP.Close())
+
+	wsALegacyCards := filepath.Join(wsA, ".surla", "cards")
+	require.NoError(t, os.MkdirAll(wsALegacyCards, 0o700))
+	seedEntries, err := os.ReadDir(seedCardsDir)
+	require.NoError(t, err)
+	for _, entry := range seedEntries {
+		if strings.HasSuffix(entry.Name(), ".json") {
+			raw, readErr := os.ReadFile(filepath.Join(seedCardsDir, entry.Name()))
+			require.NoError(t, readErr)
+			require.NoError(t, os.WriteFile(filepath.Join(wsALegacyCards, entry.Name()), raw, 0o600))
+		}
+	}
+
+	// Run -import-legacy-workspace with -verification-config (CandidateRepo B) and -promotion-config (report_dir in monorepo2).
+	importedBCfg, err := configureServeWorkspace(serveConfig{
+		verificationPath:      verInOpsPath,
+		promotionPath:         promoBPath,
+		importLegacyWorkspace: true,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, importedBCfg.promotionTarget)
+	t.Cleanup(func() {
+		if importedBCfg.closeProjectLock != nil {
+			assert.NoError(t, importedBCfg.closeProjectLock())
+		}
+	})
+
+	// Remove mono2ReportsDir to prove reports were snapshotted into <imported>/reports/dir-<sha256>.
+	require.NoError(t, os.RemoveAll(mono2ReportsDir))
+
+	cpB, err := controlplane.New(controlplane.Options{
+		CardsDir:               importedBCfg.cardsDir,
+		WorkspaceDir:           importedBCfg.workspaceDir,
+		PromotionTarget:        importedBCfg.promotionTarget,
+		ResolvePromotionTarget: importedBCfg.resolvePromotionTarget,
+		SurlaVersion:           "v0.0.0-20261104215521-580509970fb6",
+	})
+	require.NoError(t, err)
+	defer cpB.Close()
+
+	gotB, err := cpB.GetChange(alice, &gensurla.GetChangePayload{ChangeID: "chg-mono-2"})
+	require.NoError(t, err)
+	assert.Equal(t, approvedB.Approval, gotB.Approval)
+	assert.Nil(t, gotB.UnverifiedApproval)
 }
 
 // initCommittedStarterRepo creates a minimal starter repository layout at dir

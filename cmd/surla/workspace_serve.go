@@ -100,14 +100,9 @@ func configureServeWorkspace(cfg serveConfig) (ws workspaceServeConfig, err erro
 		}
 	}
 
-	if cfg.cardsDirExplicit {
-		explicitCardsDir, err := abspath.EvalFrom(startupBaseDir, cfg.cardsDir)
-		if err != nil {
-			return workspaceServeConfig{}, fmt.Errorf("resolve -cards-dir %s: %w", cfg.cardsDir, err)
-		}
-		if err := validateWorkspaceDirSeparation("cards directory", explicitCardsDir, initialWorkspaceRoot, initialWorkspaceRoot); err != nil {
-			return workspaceServeConfig{}, err
-		}
+	protectedDirs, err := workspaceProtectedDirs(initialWorkspaceRoot)
+	if err != nil {
+		return workspaceServeConfig{}, err
 	}
 	var startupExternalVer *controlplane.VerificationConfig
 	var verPath string
@@ -116,8 +111,17 @@ func configureServeWorkspace(cfg serveConfig) (ws workspaceServeConfig, err erro
 		if err != nil {
 			return workspaceServeConfig{}, fmt.Errorf("resolve -verification-config %s: %w", cfg.verificationPath, err)
 		}
-		startupExternalVer, err = loadWorkspaceVerificationConfig(verPath, startupBaseDir, initialWorkspaceRoot, initialWorkspaceRoot)
+		startupExternalVer, err = loadWorkspaceVerificationConfig(verPath, startupBaseDir, protectedDirs...)
 		if err != nil {
+			return workspaceServeConfig{}, err
+		}
+	}
+	if cfg.cardsDirExplicit {
+		explicitCardsDir, err := abspath.EvalFrom(startupBaseDir, cfg.cardsDir)
+		if err != nil {
+			return workspaceServeConfig{}, fmt.Errorf("resolve -cards-dir %s: %w", cfg.cardsDir, err)
+		}
+		if err := validateWorkspaceDirSeparation("cards directory", explicitCardsDir, protectedDirs...); err != nil {
 			return workspaceServeConfig{}, err
 		}
 	}
@@ -126,12 +130,12 @@ func configureServeWorkspace(cfg serveConfig) (ws workspaceServeConfig, err erro
 		if err != nil {
 			return workspaceServeConfig{}, fmt.Errorf("resolve -promotion-config %s: %w", cfg.promotionPath, err)
 		}
-		if err := validatePromotionPathSeparation(promoPath, initialWorkspaceRoot, initialWorkspaceRoot); err != nil {
+		if err := validatePromotionPathSeparation(promoPath, protectedDirs...); err != nil {
 			return workspaceServeConfig{}, err
 		}
 	}
 
-	opRoot, err := defaultOperatorRoot(startupBaseDir, initialWorkspaceRoot)
+	opRoot, err := defaultOperatorRoot(startupBaseDir, initialWorkspaceRoot, protectedDirs...)
 	if err != nil {
 		return workspaceServeConfig{}, err
 	}
@@ -160,6 +164,11 @@ func configureServeWorkspace(cfg serveConfig) (ws workspaceServeConfig, err erro
 		hasImported = true
 	} else if !errors.Is(statErr, fs.ErrNotExist) {
 		return workspaceServeConfig{}, fmt.Errorf("stat imported workspace state %s: %w", importedRoot, statErr)
+	}
+	if !hasImported {
+		if err := requireNoUnimportedImplicitLegacyStore(startupBaseDir, initialWorkspaceRoot, cfg, protectedDirs); err != nil {
+			return workspaceServeConfig{}, err
+		}
 	}
 
 	cardsHash := sha256HexString(startupBaseDir + "\x00" + initialWorkspaceRoot)
@@ -191,6 +200,57 @@ func configureServeWorkspace(cfg serveConfig) (ws workspaceServeConfig, err erro
 	if err != nil {
 		return workspaceServeConfig{}, fmt.Errorf("resolve default cards directory: %w", err)
 	}
+	effectivePromotionPath := filepath.Join(operatorProjectDir, "promotion.json")
+	hasStartupPromotion := false
+	if cfg.promotionPath != "" {
+		effectivePromotionPath, err = abspath.EvalFrom(startupBaseDir, cfg.promotionPath)
+		if err != nil {
+			return workspaceServeConfig{}, fmt.Errorf("resolve -promotion-config %s: %w", cfg.promotionPath, err)
+		}
+		hasStartupPromotion = true
+	} else if _, statErr := os.Lstat(effectivePromotionPath); statErr == nil {
+		hasStartupPromotion = true
+	} else if !errors.Is(statErr, fs.ErrNotExist) {
+		return workspaceServeConfig{}, fmt.Errorf("stat promotion config %s: %w", effectivePromotionPath, statErr)
+	}
+
+	var startupPromotion controlplane.PromotionTarget
+	if hasStartupPromotion {
+		pt, _, err := loadWorkspacePromotionTarget(
+			effectivePromotionPath,
+			startupBaseDir,
+			initialWorkspaceRoot,
+			initialWorkspaceRoot,
+			operatorReportsRoot,
+			protectedDirs...,
+		)
+		if err != nil {
+			return workspaceServeConfig{}, err
+		}
+		startupPromotion = pt
+	}
+	resolvePromotionTarget := func(_ context.Context, activeWorkspaceDir string) (controlplane.PromotionTarget, error) {
+		if cfg.promotionPath == "" {
+			if _, statErr := os.Lstat(effectivePromotionPath); errors.Is(statErr, fs.ErrNotExist) {
+				return nil, nil
+			} else if statErr != nil {
+				return nil, gensurla.MakeUnprocessable(fmt.Errorf("stat promotion config %s: %w", effectivePromotionPath, statErr))
+			}
+		}
+		pt, _, err := loadWorkspacePromotionTarget(
+			effectivePromotionPath,
+			startupBaseDir,
+			initialWorkspaceRoot,
+			activeWorkspaceDir,
+			operatorReportsRoot,
+			protectedDirs...,
+		)
+		if err != nil {
+			return nil, gensurla.MakeUnprocessable(err)
+		}
+		return pt, nil
+	}
+
 	var cardsDir string
 	switch {
 	case cfg.cardsDirExplicit:
@@ -198,7 +258,7 @@ func configureServeWorkspace(cfg serveConfig) (ws workspaceServeConfig, err erro
 		if err != nil {
 			return workspaceServeConfig{}, fmt.Errorf("resolve -cards-dir %s: %w", cfg.cardsDir, err)
 		}
-	case !isWithinOrEqualDir(startupCardsDir, initialWorkspaceRoot):
+	case !withinAnyDir(startupCardsDir, protectedDirs):
 		cardsDir = startupCardsDir
 	default:
 		cardsDir = operatorCardsDir
@@ -211,47 +271,6 @@ func configureServeWorkspace(cfg serveConfig) (ws workspaceServeConfig, err erro
 	evalWorkDir := filepath.Join(operatorProjectDir, "designeval-work")
 	if err := markOperatorPrivateDir(evalWorkDir); err != nil {
 		return workspaceServeConfig{}, err
-	}
-
-	effectivePromotionPath := filepath.Join(operatorProjectDir, "promotion.json")
-	if cfg.promotionPath != "" {
-		effectivePromotionPath, err = abspath.EvalFrom(startupBaseDir, cfg.promotionPath)
-		if err != nil {
-			return workspaceServeConfig{}, fmt.Errorf("resolve -promotion-config %s: %w", cfg.promotionPath, err)
-		}
-	}
-
-	var startupPromotion controlplane.PromotionTarget
-	if cfg.promotionPath != "" || regularFileOrSymlinkExists(effectivePromotionPath) {
-		pt, _, err := loadWorkspacePromotionTarget(
-			effectivePromotionPath,
-			startupBaseDir,
-			initialWorkspaceRoot,
-			initialWorkspaceRoot,
-			operatorReportsRoot,
-		)
-		if err != nil {
-			return workspaceServeConfig{}, err
-		}
-		startupPromotion = pt
-	}
-	resolvePromotionTarget := func(_ context.Context, activeWorkspaceDir string) (controlplane.PromotionTarget, error) {
-		if cfg.promotionPath == "" {
-			if _, err := os.Lstat(effectivePromotionPath); errors.Is(err, fs.ErrNotExist) {
-				return nil, nil
-			}
-		}
-		pt, _, err := loadWorkspacePromotionTarget(
-			effectivePromotionPath,
-			startupBaseDir,
-			initialWorkspaceRoot,
-			activeWorkspaceDir,
-			operatorReportsRoot,
-		)
-		if err != nil {
-			return nil, gensurla.MakeUnprocessable(err)
-		}
-		return pt, nil
 	}
 
 	var (
@@ -278,6 +297,7 @@ func configureServeWorkspace(cfg serveConfig) (ws workspaceServeConfig, err erro
 					initialWorkspaceRoot,
 					activeWorkspaceDir,
 					operatorReportsRoot,
+					protectedDirs...,
 				)
 				if loadErr != nil {
 					return "", loadErr
@@ -317,7 +337,10 @@ func configureServeWorkspace(cfg serveConfig) (ws workspaceServeConfig, err erro
 				return &cpVer, nil
 			}
 			if startupVerErr != nil {
-				return nil, startupVerErr
+				return nil, fmt.Errorf(
+					"automatic starter verification was unavailable at server startup (%w); if you initialized or fixed and committed the starter repository after starting surla serve, restart surla serve so it pins the committed starter HEAD, or call init_project when starting in an empty workspace",
+					startupVerErr,
+				)
 			}
 			return nil, fmt.Errorf("workspace %s has no pinned starter evaluator suite commit", activeWorkspaceDir)
 		}
@@ -339,10 +362,11 @@ func configureServeWorkspace(cfg serveConfig) (ws workspaceServeConfig, err erro
 
 // loadWorkspaceVerificationConfig reads `-verification-config`, resolves its
 // relative `runs_dir` and `report_dir` against baseDir, and verifies that the
-// config file, `runs_dir`, and `report_dir` lie strictly outside both
-// initialWorkspaceRoot and activeWorkspaceDir.
+// config file, `runs_dir`, and `report_dir` lie strictly outside protectedDirs
+// (the bound workspace and its enclosing Git working tree root).
 func loadWorkspaceVerificationConfig(
-	path, baseDir, initialWorkspaceRoot, activeWorkspaceDir string,
+	path, baseDir string,
+	protectedDirs ...string,
 ) (*controlplane.VerificationConfig, error) {
 	cfg, err := loadVerificationConfig(path)
 	if err != nil || cfg == nil {
@@ -358,19 +382,19 @@ func loadWorkspaceVerificationConfig(
 	}
 	cfg.RunsDir = runsDir
 	cfg.Plan.ReportDir = reportDir
-	if err := validateVerificationConfigSeparation(path, cfg, initialWorkspaceRoot, activeWorkspaceDir); err != nil {
+	if err := validateVerificationConfigSeparation(path, cfg, protectedDirs...); err != nil {
 		return nil, err
 	}
 	return cfg, nil
 }
 
 // validateVerificationConfigSeparation verifies that `-verification-config` and
-// its `runs_dir` and `report_dir` lie strictly outside initialWorkspaceRoot and
-// activeWorkspaceDir.
+// its `runs_dir` and `report_dir` do not lie inside any protected workspace or
+// enclosing Git working tree root.
 func validateVerificationConfigSeparation(
 	configPath string,
 	cfg *controlplane.VerificationConfig,
-	initialWorkspaceRoot, activeWorkspaceDir string,
+	protectedDirs ...string,
 ) error {
 	if cfg == nil {
 		return nil
@@ -387,7 +411,7 @@ func validateVerificationConfigSeparation(
 	if err != nil {
 		return err
 	}
-	for _, ws := range []string{initialWorkspaceRoot, activeWorkspaceDir} {
+	for _, ws := range protectedDirs {
 		if ws == "" {
 			continue
 		}
@@ -413,19 +437,26 @@ func validateVerificationConfigSeparation(
 // loadWorkspacePromotionTarget reads `promoPath`, resolves relative paths
 // against baseDir, maps `report_dir` through `verifyrun.ResolveImportedReportDir`
 // when imported reports exist, and verifies that `promoPath`, the resolved
-// `report_dir`, and `release_dir` lie strictly outside initialWorkspaceRoot and
-// activeWorkspaceDir.
+// `report_dir`, and `release_dir` do not lie inside initialWorkspaceRoot,
+// activeWorkspaceDir, or any protectedDirs.
 func loadWorkspacePromotionTarget(
 	promoPath, baseDir, initialWorkspaceRoot, activeWorkspaceDir, operatorReportsRoot string,
+	protectedDirs ...string,
 ) (controlplane.PromotionTarget, string, error) {
-	if err := validatePromotionPathSeparation(promoPath, initialWorkspaceRoot, activeWorkspaceDir); err != nil {
+	allProtected := append([]string{initialWorkspaceRoot, activeWorkspaceDir}, protectedDirs...)
+	if err := validatePromotionPathSeparation(promoPath, allProtected...); err != nil {
 		return nil, "", err
 	}
 	f, err := decodePromotionFileAtBase(promoPath, baseDir)
 	if err != nil {
 		return nil, "", err
 	}
-	resolvedReportDir, err := verifyrun.ResolveImportedReportDir(operatorReportsRoot, initialWorkspaceRoot, f.ReportDir)
+	resolvedReportDir, err := verifyrun.ResolveImportedReportDir(
+		operatorReportsRoot,
+		initialWorkspaceRoot,
+		f.ReportDir,
+		allProtected...,
+	)
 	if err != nil {
 		return nil, "", fmt.Errorf("-promotion-config %s: %w", promoPath, err)
 	}
@@ -437,7 +468,7 @@ func loadWorkspacePromotionTarget(
 	if err != nil {
 		return nil, "", fmt.Errorf("-promotion-config %s: %w", promoPath, err)
 	}
-	for _, ws := range []string{initialWorkspaceRoot, activeWorkspaceDir} {
+	for _, ws := range allProtected {
 		if ws == "" {
 			continue
 		}
@@ -461,14 +492,14 @@ func loadWorkspacePromotionTarget(
 	return &releaseTarget{cfg: f}, physReport, nil
 }
 
-// validatePromotionPathSeparation checks that promoPath itself lies outside
-// initialWorkspaceRoot and activeWorkspaceDir.
-func validatePromotionPathSeparation(promoPath, initialWorkspaceRoot, activeWorkspaceDir string) error {
+// validatePromotionPathSeparation checks that promoPath itself does not lie
+// inside any protected workspace or enclosing Git working tree root.
+func validatePromotionPathSeparation(promoPath string, protectedDirs ...string) error {
 	physPromo, err := abspath.EvalMissing(promoPath)
 	if err != nil {
 		return err
 	}
-	for _, ws := range []string{initialWorkspaceRoot, activeWorkspaceDir} {
+	for _, ws := range protectedDirs {
 		if ws != "" && isWithinOrEqualDir(physPromo, ws) {
 			return fmt.Errorf(
 				"promotion config %s: config file (%s) must be outside the workspace (%s) so builder agents cannot modify promotion inputs, reports, or release binaries",
@@ -558,7 +589,7 @@ func defaultOperatorRoot(startupBaseDir, initialWorkspaceRoot string, extraDirs 
 	if err != nil {
 		return "", fmt.Errorf("resolve operator storage root %s: %w", cand, err)
 	}
-	if overlapsAnyDir(phys, excluded) {
+	if withinAnyDir(phys, excluded) {
 		return "", fmt.Errorf("operator storage root %s must be outside the workspace (%s)", phys, initialWorkspaceRoot)
 	}
 	if err := markOperatorPrivateDir(phys); err != nil {
@@ -568,7 +599,7 @@ func defaultOperatorRoot(startupBaseDir, initialWorkspaceRoot string, extraDirs 
 	if err != nil {
 		return "", fmt.Errorf("resolve operator storage root %s: %w", phys, err)
 	}
-	if overlapsAnyDir(evalPhys, excluded) {
+	if withinAnyDir(evalPhys, excluded) {
 		return "", fmt.Errorf("operator storage root %s must be outside the workspace (%s)", evalPhys, initialWorkspaceRoot)
 	}
 	if err := validateOperatorPrivateDir(evalPhys); err != nil {
@@ -577,15 +608,22 @@ func defaultOperatorRoot(startupBaseDir, initialWorkspaceRoot string, extraDirs 
 	return evalPhys, nil
 }
 
-// overlapsAnyDir reports whether dir lies within or equals any directory in
-// dirs.
-func overlapsAnyDir(dir string, dirs []string) bool {
+// withinAnyDir reports whether dir lies within or equals any directory in dirs.
+func withinAnyDir(dir string, dirs []string) bool {
 	for _, d := range dirs {
 		if d != "" && isWithinOrEqualDir(dir, d) {
 			return true
 		}
 	}
 	return false
+}
+
+// workspaceProtectedDirs returns the deduplicated physical paths of
+// initialWorkspaceRoot and its enclosing Git working tree root.
+func workspaceProtectedDirs(initialWorkspaceRoot string) ([]string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), gitReadTimeout)
+	defer cancel()
+	return verify.WorkspaceBoundaryRoots(ctx, initialWorkspaceRoot)
 }
 
 // markOperatorPrivateDir creates dir with mode 0o700, verifies its non-symlink
@@ -648,14 +686,14 @@ func validateOperatorPrivateDir(dir string) error {
 	return nil
 }
 
-// validateWorkspaceDirSeparation checks that targetDir lies strictly outside
-// initialWorkspaceRoot and activeWorkspaceDir.
-func validateWorkspaceDirSeparation(label, targetDir, initialWorkspaceRoot, activeWorkspaceDir string) error {
+// validateWorkspaceDirSeparation checks that targetDir does not lie inside any
+// protected workspace or enclosing Git working tree root.
+func validateWorkspaceDirSeparation(label, targetDir string, protectedDirs ...string) error {
 	physTarget, err := abspath.EvalMissing(targetDir)
 	if err != nil {
 		return err
 	}
-	for _, ws := range []string{initialWorkspaceRoot, activeWorkspaceDir} {
+	for _, ws := range protectedDirs {
 		if ws != "" && isWithinOrEqualDir(physTarget, ws) {
 			return fmt.Errorf(
 				"%s %s must be outside the workspace (%s) so builder agents cannot modify authoritative Change Cards or workspace state",
@@ -679,12 +717,6 @@ func isWithinOrEqualDir(child, parent string) bool {
 		return false
 	}
 	return rel == "." || (rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)))
-}
-
-// regularFileOrSymlinkExists reports whether path exists on disk via Lstat.
-func regularFileOrSymlinkExists(path string) bool {
-	_, err := os.Lstat(path)
-	return err == nil
 }
 
 // sha256HexString returns the 64-character lowercase hex SHA-256 digest of s.

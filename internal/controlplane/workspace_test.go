@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -941,7 +942,7 @@ func (g *fakeInitGenerator) Close() error {
 // fakeInitRunner writes a synthetic command log, creates go.sum on "go mod tidy"
 // invocations, and writes fakeInitialSuiteCommit on "git rev-parse".
 func fakeInitRunner(_ context.Context, dir, logPath string, args ...string) error {
-	if gitSubcommand(args) == "rev-parse" {
+	if slices.Contains(args, "rev-parse") {
 		return os.WriteFile(logPath, []byte(fakeInitialSuiteCommit+"\n"), 0o600)
 	}
 	if err := os.WriteFile(logPath, []byte("ok\n"), 0o600); err != nil {

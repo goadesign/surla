@@ -125,7 +125,7 @@ func TestGenOnAFreshStarterChangesNothingAndKeepsModulesApart(t *testing.T) {
 	assert.Equal(t, dir, initialized.Dir, "omitting dir uses the module's service name")
 	assert.Equal(t, "example.com/shop", initialized.ModulePath)
 	assert.Equal(t, "shop", initialized.ServiceName)
-	assert.Regexp(t, "^[0-9a-f]{40}$", initialized.Commit)
+	assert.Regexp(t, "^([0-9a-f]{40}|[0-9a-f]{64})$", initialized.Commit)
 	headCmd := exec.CommandContext(ctx, "git", "-C", dir, "rev-parse", "--verify", "HEAD^{commit}")
 	headOut, err := headCmd.CombinedOutput()
 	require.NoError(t, err, string(headOut))

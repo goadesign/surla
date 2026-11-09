@@ -438,7 +438,14 @@ func TestInitReadmeFirstRunSnippetsMatchTheProject(t *testing.T) {
 		assert.Contains(t, readme, "`"+m[1]+"`", "README names scenario %s", m[1])
 	}
 
-	config := between(t, readme, "cat > .surla/verification.json <<EOF\n", "\nEOF\n")
+	rootGoMod, err := os.ReadFile(filepath.Join(dir, "go.mod"))
+	require.NoError(t, err)
+	evalGoMod, err := os.ReadFile(filepath.Join(dir, "eval", "go.mod"))
+	require.NoError(t, err)
+	layout, err := StarterLayout(rootGoMod, evalGoMod)
+	require.NoError(t, err)
+
+	config := between(t, readme, "cat > ../bakery-ops/verification.json <<EOF\n", "\nEOF\n")
 	assert.NotContains(t, config, "$PWD", "paths stay relative so any valid project path writes valid JSON")
 	config = strings.ReplaceAll(config, "$(git rev-parse HEAD)", strings.Repeat("a", 40))
 	var fields map[string]any
@@ -449,13 +456,22 @@ func TestInitReadmeFirstRunSnippetsMatchTheProject(t *testing.T) {
 		"binaries", "candidate_module", "candidate_repo", "report_dir", "runs_dir",
 		"suite_command", "suite_commit", "suite_module", "suite_repo", "timeout",
 	}, slices.Sorted(maps.Keys(fields)))
-	assert.Equal(t, map[string]any{"bakery": "./cmd/bakery"}, fields["binaries"])
-	assert.Equal(t, "./cmd/bakery-evals", fields["suite_command"])
+	assert.Equal(t, map[string]any{layout.Service: layout.CandidatePackage}, fields["binaries"])
+	assert.Equal(t, layout.SuiteCommand, fields["suite_command"])
+	assert.Equal(t, SuiteDir, fields["suite_module"])
+	assert.Equal(t, "../bakery-ops/runs", fields["runs_dir"])
+	assert.Equal(t, "../bakery-ops/reports", fields["report_dir"])
 	assert.Equal(t, ".", fields["candidate_repo"])
 	assert.Equal(t, ".", fields["suite_repo"])
 	assert.Contains(t, readme, "-project .")
-	assert.Contains(t, readme, "-verification-config .surla/verification.json")
-	assert.Contains(t, readme, "-report-dir reports -builder-view")
+	assert.Contains(t, readme, "-project . -verification-config ../bakery-ops/verification.json")
+	assert.Contains(t, readme, "operator-private\nstorage outside the repository")
+	assert.Contains(t, readme, "If you created this project over MCP with `init_project`")
+	assert.Contains(t, readme, "If you created this project from the CLI with `surla init`")
+	assert.Contains(t, readme, "restores\nthe initial suite commit saved in `workspace.json`")
+	assert.Contains(t, readme, "`\"services/bakery\"` and `\"services/bakery/eval\"`")
+	assert.Contains(t, readme, "REPORT_DIR=\"$VERIFY_DIR/reports\"")
+	assert.Contains(t, readme, "-report-dir \"$REPORT_DIR\" -builder-view")
 	assert.Contains(t, readme, "while `-builder-view` hides holdout scenario names and checks\nin the completed report JSON and summary line (if a run fails before writing a\nreport, `stderr` prints operator setup/execution failure diagnostics).")
 	assert.Contains(t, readme, "-model-provider openai -model-name \"$MODEL_NAME\"")
 	assert.Contains(t, readme, "surla://golden-path")
@@ -490,7 +506,7 @@ func TestInitReadmeFirstRunSnippetsMatchTheProject(t *testing.T) {
 
 	proposal := between(t, readme, "To start a change,", "To try prompt wording")
 	assert.Contains(t, proposal, "`propose_change`")
-	assert.Contains(t, proposal, "`design/*.go` files as `design_source`")
+	assert.Contains(t, proposal, "reads `design/*.go` from the workspace automatically when\n`design_source` is omitted")
 	assert.Contains(t, proposal, "`confirm_intent`")
 	assert.Contains(t, proposal, "`request_revision`")
 

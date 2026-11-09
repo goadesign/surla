@@ -4,15 +4,19 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sys/unix"
 
 	gensurla "github.com/goadesign/surla/gen/surla"
@@ -280,7 +284,9 @@ func TestInitProjectEmitsMCPProgressAndBindsSuiteCommitForVerification(t *testin
 	body := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{` +
 		`"name":"init_project","arguments":{"module_path":"example.com/shop"},` +
 		`"_meta":{"progressToken":"p-init","io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}`
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, srv.URL+"/mcp", strings.NewReader(body))
+	reqCtx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(reqCtx, http.MethodPost, srv.URL+"/mcp", strings.NewReader(body))
 	require.NoError(t, err)
 	req.Header.Set("Authorization", "Bearer alice-token")
 	req.Header.Set("Content-Type", "application/json")
@@ -332,22 +338,17 @@ func TestInitProjectEmitsMCPProgressAndBindsSuiteCommitForVerification(t *testin
 	}
 	require.NoError(t, json.Unmarshal(final.Result.StructuredContent, &res))
 	assert.Equal(t, fakeInitialSuiteCommit, res.Commit)
-	require.Len(t, events, 3)
+	require.Len(t, events, 2)
 	assert.Equal(t, capturedProgressEvent{
 		progress: 0,
-		total:    3,
-		message:  "Generating, building, and testing the starter project",
+		total:    2,
+		message:  "Generating, building, testing, and committing the starter project",
 	}, events[0])
 	assert.Equal(t, capturedProgressEvent{
 		progress: 1,
-		total:    3,
-		message:  "Recording the initial starter Git commit",
-	}, events[1])
-	assert.Equal(t, capturedProgressEvent{
-		progress: 2,
-		total:    3,
+		total:    2,
 		message:  "Publishing the initialized starter workspace",
-	}, events[2])
+	}, events[1])
 
 	ctx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
 	verCfg, err := cp.resolveActiveVerification(ctx)
@@ -453,4 +454,141 @@ func TestNewAndInitProjectPreserveSignificantPathWhitespace(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, "shop", filepath.Base(initRes.Dir))
 	})
+}
+
+// TestNewAndResolveActiveVerificationProtectMonorepoAndPreserveValidLayouts
+// verifies that New and resolveActiveVerification reject CardsDir, RunsDir,
+// InitStageDir, and Verification.Plan.ReportDir when they lie inside an
+// enclosing Git monorepo root R (outside the bound subdirectory R/services/shop),
+// while preserving valid parent-directory operator stores (InitStageDir=/ops
+// with WorkspaceDir=/ops/project), separate verification source repositories B,
+// and no-WorkspaceDir embeddings.
+func TestNewAndResolveActiveVerificationProtectMonorepoAndPreserveValidLayouts(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	monorepo := filepath.Join(root, "monorepo")
+	wsDir := filepath.Join(monorepo, "services", "shop")
+	candidateB := filepath.Join(root, "candidate-b")
+	require.NoError(t, os.MkdirAll(wsDir, 0o755))
+	require.NoError(t, os.MkdirAll(candidateB, 0o755))
+	initGitWorktreeForBoundaryTest(t, monorepo)
+
+	// 1. CardsDir, RunsDir, InitStageDir, or ReportDir inside enclosing monorepo R (outside wsDir) is rejected.
+	_, err := New(Options{
+		WorkspaceDir: wsDir,
+		CardsDir:     filepath.Join(monorepo, ".surla", "cards"),
+		SurlaVersion: testSurlaVersion,
+	})
+	require.ErrorContains(t, err, "must be outside the workspace")
+
+	_, err = New(Options{
+		WorkspaceDir: wsDir,
+		CardsDir:     filepath.Join(root, "cards-ok-1"),
+		RunsDir:      filepath.Join(monorepo, ".surla", "runs"),
+		SurlaVersion: testSurlaVersion,
+	})
+	require.ErrorContains(t, err, "must be outside the workspace")
+
+	_, err = New(Options{
+		WorkspaceDir: wsDir,
+		CardsDir:     filepath.Join(root, "cards-ok-2"),
+		InitStageDir: filepath.Join(monorepo, ".surla-stage"),
+		SurlaVersion: testSurlaVersion,
+	})
+	require.ErrorContains(t, err, "must be outside workspace")
+
+	_, err = New(Options{
+		WorkspaceDir: wsDir,
+		CardsDir:     filepath.Join(root, "cards-ok-3"),
+		SurlaVersion: testSurlaVersion,
+		Verification: &VerificationConfig{
+			RunsDir: filepath.Join(root, "runs-ok-3"),
+			Plan: verify.Plan{
+				CandidateRepo: ".",
+				ReportDir:     filepath.Join(monorepo, "reports"),
+			},
+		},
+	})
+	require.ErrorContains(t, err, "must be outside the workspace")
+
+	// 2. resolveActiveVerification rejects dynamically resolved ReportDir inside enclosing monorepo R.
+	cp, err := New(Options{
+		WorkspaceDir: wsDir,
+		CardsDir:     filepath.Join(root, "cards-ok-4"),
+		RunsDir:      filepath.Join(root, "runs-ok-4"),
+		SurlaVersion: testSurlaVersion,
+		ResolveVerification: func(_ context.Context, _, _ string) (*VerificationConfig, error) {
+			return &VerificationConfig{
+				RunsDir: filepath.Join(root, "runs-ok-4"),
+				Plan: verify.Plan{
+					CandidateRepo: monorepo,
+					ReportDir:     filepath.Join(monorepo, "reports"),
+				},
+			}, nil
+		},
+	})
+	require.NoError(t, err)
+	defer cp.Close()
+	_, err = cp.resolveActiveVerification(context.Background())
+	require.ErrorContains(t, err, "must be outside the workspace")
+
+	// 3. Valid parent-directory InitStageDir=/ops with WorkspaceDir=/ops/project (outside any Git working tree) is accepted.
+	opsParent := filepath.Join(root, "ops")
+	opsProject := filepath.Join(opsParent, "project")
+	require.NoError(t, os.MkdirAll(opsProject, 0o755))
+	require.NoError(t, os.Chmod(opsParent, 0o700))
+	cpParent, err := New(Options{
+		WorkspaceDir: opsProject,
+		CardsDir:     filepath.Join(root, "cards-parent"),
+		InitStageDir: opsParent,
+		SurlaVersion: testSurlaVersion,
+	})
+	require.NoError(t, err)
+	require.NoError(t, cpParent.Close())
+
+	// 4. Separate verification source repository B (e.g. read-only bare mirror) and no-WorkspaceDir embedding remain accepted.
+	cpSeparate, err := New(Options{
+		WorkspaceDir: wsDir,
+		CardsDir:     filepath.Join(root, "cards-sep"),
+		SurlaVersion: testSurlaVersion,
+		Verification: &VerificationConfig{
+			RunsDir: filepath.Join(candidateB, "runs"),
+			Plan: verify.Plan{
+				CandidateRepo: candidateB,
+				ReportDir:     filepath.Join(candidateB, "reports"),
+			},
+		},
+	})
+	require.NoError(t, err)
+	require.NoError(t, cpSeparate.Close())
+
+	// 5. failInitFault with an empty StepError.Summary falls through to the generic safe message without leaking raw StepError.Args.
+	faultErr := failInitFault(
+		trace.SpanFromContext(context.Background()),
+		"prepare starter project failed",
+		&scaffold.StepError{
+			Module: ".",
+			Args:   []string{"git", "-C", "/private/operator/path", "commit"},
+			Log:    "/private/operator/path/01.log",
+			Err:    errors.New("exit status 1"),
+		},
+	)
+	require.Error(t, faultErr)
+	assert.NotContains(t, faultErr.Error(), "/private/operator/path")
+	assert.Contains(t, faultErr.Error(), "prepare starter project failed; inspect the server trace span for diagnostic details")
+}
+
+// initGitWorktreeForBoundaryTest initializes a real Git working tree at dir.
+func initGitWorktreeForBoundaryTest(t *testing.T, dir string) {
+	t.Helper()
+	cmd := exec.Command("git", "-C", dir, "init", "-q")
+	var env []string
+	for _, kv := range os.Environ() {
+		if !strings.HasPrefix(kv, "GIT_") {
+			env = append(env, kv)
+		}
+	}
+	cmd.Env = append(env, "GIT_TERMINAL_PROMPT=0", "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=/dev/null", "LC_ALL=C")
+	out, err := cmd.CombinedOutput()
+	require.NoErrorf(t, err, "git init %s: %s", dir, string(out))
 }

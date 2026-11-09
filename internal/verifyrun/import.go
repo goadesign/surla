@@ -44,26 +44,31 @@ const (
 )
 
 // PrepareSnapshot stages a verified copy of legacyRunsDir,
-// legacyDefaultReportsDir, and any workspace-interior configuredReportDirs into
+// legacyDefaultReportsDir, and any protected-root configuredReportDirs into
 // stageRunsDir and stageReportsRoot before atomic publication of
 // <operatorProjectDir>/imported. It verifies that no legacy run directory holds
 // an active lock (acquiring LOCK_SH|LOCK_NB on every existing legacy run lock
 // and returning releaseLocks so the caller keeps them held until RenameatxNp
 // completes), omits unaccepted run folders where request.json is absent,
 // preserves lock absence (and original lock bytes when present) for accepted
-// run records, copies default, configured, and run-referenced workspace report
-// files verbatim into distinct subdirectories under stageReportsRoot, copies
-// completed, interrupted (unlocked without result.json), and corrupt published
-// run records without modifying legacy originals, rewrites workspace-interior
-// Plan.ReportDir paths to their published imported locations, and writes
-// <stageRunsDir>/imported_paths.json.
+// run records, copies default, configured, and run-referenced workspace or
+// enclosing-worktree report files verbatim into distinct subdirectories under
+// stageReportsRoot, copies completed, interrupted (unlocked without
+// result.json), and corrupt published run records without modifying legacy
+// originals, rewrites protected Plan.ReportDir paths to their published
+// imported locations, and writes <stageRunsDir>/imported_paths.json.
 func PrepareSnapshot(
 	legacyRunsDir, legacyDefaultReportsDir, stageRunsDir, stageReportsRoot, publishedReportsRoot, initialWorkspaceRoot string,
+	protectedDirs []string,
 	configuredReportDirs ...string,
 ) (releaseLocks func() error, err error) {
 	wsRoot, err := abspath.EvalMissing(initialWorkspaceRoot)
 	if err != nil {
 		return nil, fmt.Errorf("resolve workspace root %s: %w", initialWorkspaceRoot, err)
+	}
+	roots, err := normalizeProtectedRoots(wsRoot, protectedDirs)
+	if err != nil {
+		return nil, err
 	}
 	if err := os.MkdirAll(stageRunsDir, 0o700); err != nil {
 		return nil, fmt.Errorf("create staged runs directory: %w", err)
@@ -92,7 +97,7 @@ func PrepareSnapshot(
 	if legacyDefaultReportsDir != "" {
 		copiedReportDirs[defaultImportedReportSubdir] = true
 		defaultStageSubdir := filepath.Join(stageReportsRoot, defaultImportedReportSubdir)
-		if err := copyLegacyReportDir(wsRoot, legacyDefaultReportsDir, defaultStageSubdir, &recordedReportFiles); err != nil {
+		if err := copyLegacyReportDir(roots, legacyDefaultReportsDir, defaultStageSubdir, &recordedReportFiles); err != nil {
 			return nil, err
 		}
 	}
@@ -100,18 +105,18 @@ func PrepareSnapshot(
 		if cfgReportDir == "" {
 			continue
 		}
-		cleanReportDir, insideWS, err := resolveWorkspaceReportPath(wsRoot, cfgReportDir)
+		cleanReportDir, matchedRoot, err := resolveProtectedReportPath(roots, cfgReportDir)
 		if err != nil {
 			return nil, fmt.Errorf("resolve configured report_dir %s: %w", cfgReportDir, err)
 		}
-		if !insideWS {
+		if matchedRoot == "" {
 			continue
 		}
 		dirKey := importedReportDirKey(wsRoot, cleanReportDir)
 		if !copiedReportDirs[dirKey] {
 			copiedReportDirs[dirKey] = true
 			if err := copyLegacyReportDir(
-				wsRoot,
+				roots,
 				cleanReportDir,
 				filepath.Join(stageReportsRoot, dirKey),
 				&recordedReportFiles,
@@ -173,16 +178,16 @@ func PrepareSnapshot(
 
 		req, reqErr := decodeRequest(name, reqBytes)
 		if reqErr == nil && req.Plan.ReportDir != "" {
-			cleanReportDir, insideWS, err := resolveWorkspaceReportPath(wsRoot, req.Plan.ReportDir)
+			cleanReportDir, matchedRoot, err := resolveProtectedReportPath(roots, req.Plan.ReportDir)
 			if err != nil {
 				return nil, fmt.Errorf("resolve legacy run %s report_dir: %w", name, err)
 			}
-			if insideWS {
+			if matchedRoot != "" {
 				dirKey := importedReportDirKey(wsRoot, cleanReportDir)
 				if !copiedReportDirs[dirKey] {
 					copiedReportDirs[dirKey] = true
 					if err := copyLegacyReportDir(
-						wsRoot,
+						roots,
 						cleanReportDir,
 						filepath.Join(stageReportsRoot, dirKey),
 						&recordedReportFiles,
@@ -243,43 +248,60 @@ func PrepareSnapshot(
 }
 
 // IsWorkspaceReportDir reports whether configuredReportDir resolves inside
-// initialWorkspaceRoot without following symlinks inside initialWorkspaceRoot.
-func IsWorkspaceReportDir(initialWorkspaceRoot, configuredReportDir string) (bool, error) {
-	if initialWorkspaceRoot == "" || configuredReportDir == "" {
+// initialWorkspaceRoot or any additional protectedDirs without following
+// symlinks once inside a protected root.
+func IsWorkspaceReportDir(initialWorkspaceRoot, configuredReportDir string, protectedDirs ...string) (bool, error) {
+	if (initialWorkspaceRoot == "" && len(protectedDirs) == 0) || configuredReportDir == "" {
 		return false, nil
 	}
-	wsRoot, err := abspath.EvalMissing(initialWorkspaceRoot)
+	var wsRoot string
+	if initialWorkspaceRoot != "" {
+		var err error
+		wsRoot, err = abspath.EvalMissing(initialWorkspaceRoot)
+		if err != nil {
+			return false, err
+		}
+	}
+	roots, err := normalizeProtectedRoots(wsRoot, protectedDirs)
 	if err != nil {
 		return false, err
 	}
-	_, insideWS, err := resolveWorkspaceReportPath(wsRoot, configuredReportDir)
-	return insideWS, err
+	_, matchedRoot, err := resolveProtectedReportPath(roots, configuredReportDir)
+	return matchedRoot != "", err
 }
 
-// ResolveImportedReportDir maps a configured workspace-interior report
-// directory to its published counterpart under publishedReportsRoot when that
-// imported subdirectory exists as a non-symlink directory. Ancestors outside
-// initialWorkspaceRoot resolve symlinks left-to-right before applying "..",
-// while path components inside initialWorkspaceRoot are resolved without
-// following symlinks so post-import workspace edits or symlinks cannot redirect
-// an imported report directory. Non-workspace paths and workspace paths without
-// a published imported subdirectory (fs.ErrNotExist) are returned unchanged so
-// normal validation can accept external paths and reject unimported workspace
-// paths; filesystem errors or non-directory entries under publishedReportsRoot
-// return an error.
-func ResolveImportedReportDir(publishedReportsRoot, initialWorkspaceRoot, configuredReportDir string) (string, error) {
-	if publishedReportsRoot == "" || initialWorkspaceRoot == "" || configuredReportDir == "" {
+// ResolveImportedReportDir maps a configured workspace- or enclosing-worktree-interior
+// report directory to its published counterpart under publishedReportsRoot when
+// that imported subdirectory exists as a non-symlink directory. Ancestors
+// outside initialWorkspaceRoot and protectedDirs resolve symlinks left-to-right
+// before applying "..", while path components inside any protected root are
+// resolved without following symlinks so post-import workspace or worktree
+// edits or symlinks cannot redirect an imported report directory. External
+// paths and protected paths without a published imported subdirectory
+// (fs.ErrNotExist) are returned unchanged so normal validation can accept
+// external paths and reject unimported protected paths; filesystem errors or
+// non-directory entries under publishedReportsRoot return an error.
+func ResolveImportedReportDir(publishedReportsRoot, initialWorkspaceRoot, configuredReportDir string, protectedDirs ...string) (string, error) {
+	if publishedReportsRoot == "" || (initialWorkspaceRoot == "" && len(protectedDirs) == 0) || configuredReportDir == "" {
 		return configuredReportDir, nil
 	}
-	wsRoot, err := abspath.EvalMissing(initialWorkspaceRoot)
+	var wsRoot string
+	if initialWorkspaceRoot != "" {
+		var err error
+		wsRoot, err = abspath.EvalMissing(initialWorkspaceRoot)
+		if err != nil {
+			return "", err
+		}
+	}
+	roots, err := normalizeProtectedRoots(wsRoot, protectedDirs)
 	if err != nil {
 		return "", err
 	}
-	cleanConfigured, insideWS, err := resolveWorkspaceReportPath(wsRoot, configuredReportDir)
+	cleanConfigured, matchedRoot, err := resolveProtectedReportPath(roots, configuredReportDir)
 	if err != nil {
 		return "", err
 	}
-	if !insideWS {
+	if matchedRoot == "" {
 		return configuredReportDir, nil
 	}
 	dirKey := importedReportDirKey(wsRoot, cleanConfigured)
@@ -297,11 +319,50 @@ func ResolveImportedReportDir(publishedReportsRoot, initialWorkspaceRoot, config
 	return candidate, nil
 }
 
-// resolveWorkspaceReportPath resolves configuredReportDir left-to-right,
-// expanding symlinks outside wsRoot before applying ".." while refusing to
-// follow symlinks once inside wsRoot so builder changes inside the workspace
-// after import cannot redirect imported report lookup.
-func resolveWorkspaceReportPath(wsRoot, configuredReportDir string) (string, bool, error) {
+// normalizeProtectedRoots resolves wsRoot and protectedDirs via
+// abspath.EvalMissing and returns the deduplicated slice of non-empty physical
+// directory roots.
+func normalizeProtectedRoots(wsRoot string, protectedDirs []string) ([]string, error) {
+	var roots []string
+	if wsRoot != "" {
+		roots = append(roots, filepath.Clean(wsRoot))
+	}
+	for _, d := range protectedDirs {
+		if d == "" {
+			continue
+		}
+		phys, err := abspath.EvalMissing(d)
+		if err != nil {
+			return nil, fmt.Errorf("resolve protected root %s: %w", d, err)
+		}
+		clean := filepath.Clean(phys)
+		if !slices.Contains(roots, clean) {
+			roots = append(roots, clean)
+		}
+	}
+	return roots, nil
+}
+
+// enclosingProtectedRoot returns the outermost root in roots that contains or
+// equals target, or empty string when target is outside all roots.
+func enclosingProtectedRoot(target string, roots []string) string {
+	var matched string
+	for _, r := range roots {
+		if r != "" && isWithinOrEqualPath(target, r) {
+			if matched == "" || len(r) < len(matched) {
+				matched = r
+			}
+		}
+	}
+	return matched
+}
+
+// resolveProtectedReportPath resolves configuredReportDir left-to-right,
+// expanding symlinks outside roots before applying ".." while refusing to
+// follow symlinks once inside any root in roots so builder changes inside the
+// workspace or candidate repository after import cannot redirect imported
+// report lookup.
+func resolveProtectedReportPath(roots []string, configuredReportDir string) (string, string, error) {
 	var (
 		cur  string
 		rest string
@@ -313,11 +374,11 @@ func resolveWorkspaceReportPath(wsRoot, configuredReportDir string) (string, boo
 	} else {
 		wd, err := os.Getwd()
 		if err != nil {
-			return "", false, err
+			return "", "", err
 		}
 		cur, err = abspath.Eval(wd)
 		if err != nil {
-			return "", false, err
+			return "", "", err
 		}
 		rest = configuredReportDir
 	}
@@ -335,7 +396,7 @@ func resolveWorkspaceReportPath(wsRoot, configuredReportDir string) (string, boo
 			continue
 		}
 		next := filepath.Join(cur, part)
-		if wsRoot != "" && isWithinOrEqualPath(cur, wsRoot) {
+		if enclosingProtectedRoot(cur, roots) != "" {
 			cur = next
 			continue
 		}
@@ -345,16 +406,16 @@ func resolveWorkspaceReportPath(wsRoot, configuredReportDir string) (string, boo
 			continue
 		}
 		if err != nil {
-			return "", false, err
+			return "", "", err
 		}
 		if info.Mode()&os.ModeSymlink != 0 {
 			links++
 			if links > maxSymlinkExpansions {
-				return "", false, fmt.Errorf("resolve %s: too many symlinks", configuredReportDir)
+				return "", "", fmt.Errorf("resolve %s: too many symlinks", configuredReportDir)
 			}
 			target, err := os.Readlink(next)
 			if err != nil {
-				return "", false, err
+				return "", "", err
 			}
 			if rest != "" {
 				target = target + string(filepath.Separator) + rest
@@ -371,13 +432,13 @@ func resolveWorkspaceReportPath(wsRoot, configuredReportDir string) (string, boo
 		cur = next
 	}
 	cleanConfigured := filepath.Clean(cur)
-	return cleanConfigured, isWithinOrEqualPath(cleanConfigured, wsRoot), nil
+	return cleanConfigured, enclosingProtectedRoot(cleanConfigured, roots), nil
 }
 
 // importedReportDirKey returns "default" for <initialWorkspaceRoot>/reports and
-// "dir-<sha256>" for any other workspace-interior report directory.
+// "dir-<sha256>" for any other protected report directory.
 func importedReportDirKey(wsRoot, reportDir string) string {
-	if filepath.Clean(reportDir) == filepath.Join(filepath.Clean(wsRoot), "reports") {
+	if wsRoot != "" && filepath.Clean(reportDir) == filepath.Join(filepath.Clean(wsRoot), "reports") {
 		return defaultImportedReportSubdir
 	}
 	sum := sha256.Sum256([]byte(filepath.Clean(reportDir)))
@@ -388,7 +449,8 @@ func importedReportDirKey(wsRoot, reportDir string) string {
 // verbatim without JSON decoding into stageSubdir and appends each copied
 // source path to *recordedReportFiles.
 func copyLegacyReportDir(
-	wsRoot, origReportDir, stageSubdir string,
+	roots []string,
+	origReportDir, stageSubdir string,
 	recordedReportFiles *[]string,
 ) error {
 	if err := os.MkdirAll(stageSubdir, 0o700); err != nil {
@@ -397,12 +459,12 @@ func copyLegacyReportDir(
 	if origReportDir == "" {
 		return syncDir(stageSubdir)
 	}
-	cleanOrig, insideWS, err := resolveWorkspaceReportPath(wsRoot, origReportDir)
+	cleanOrig, matchedRoot, err := resolveProtectedReportPath(roots, origReportDir)
 	if err != nil {
 		return fmt.Errorf("resolve legacy report directory %s: %w", origReportDir, err)
 	}
-	if insideWS && wsRoot != "" {
-		if err := ensureNoSymlinksUnderRoot(wsRoot, cleanOrig); err != nil {
+	if matchedRoot != "" {
+		if err := ensureNoSymlinksUnderRoot(matchedRoot, cleanOrig); err != nil {
 			return err
 		}
 	}

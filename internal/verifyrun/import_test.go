@@ -139,6 +139,7 @@ func TestPrepareSnapshotSkipsUnacceptedRunsAndPreservesCompletedInterruptedAndCo
 		stageReportsRoot,
 		publishedReportsRoot,
 		wsRoot,
+		nil,
 	)
 	require.NoError(t, err)
 	require.NotNil(t, releaseLocks)
@@ -235,6 +236,7 @@ func TestPrepareSnapshotRejectsActiveLegacyRunWriter(t *testing.T) {
 		filepath.Join(stageDir, "reports"),
 		filepath.Join(root, "published", "reports"),
 		wsRoot,
+		nil,
 	)
 	require.ErrorContains(t, err, "has an active writer")
 }
@@ -285,4 +287,129 @@ func TestResolveImportedReportDirIgnoresPostImportWorkspaceSymlinks(t *testing.T
 	require.NoError(t, os.WriteFile(filepath.Join(publishedReportsRoot, dirKey), []byte("not-a-dir"), 0o600))
 	_, err = ResolveImportedReportDir(publishedReportsRoot, wsRoot, customWSReportDir)
 	require.ErrorContains(t, err, "is not a regular directory")
+}
+
+// TestPrepareSnapshotAndResolveImportedReportDirCoverProtectedMonorepoRoots
+// verifies that PrepareSnapshot, IsWorkspaceReportDir, and ResolveImportedReportDir
+// classify report directories inside protectedDirs (such as an enclosing monorepo
+// root R outside the bound subdirectory R/services/shop) as protected report stores,
+// snapshotting their reports, recording their paths in imported_paths.json, and
+// rewriting run Plan.ReportDir while leaving external report directories untouched.
+func TestPrepareSnapshotAndResolveImportedReportDirCoverProtectedMonorepoRoots(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	monorepoRoot := filepath.Join(root, "monorepo")
+	wsRoot := filepath.Join(monorepoRoot, "services", "shop")
+	externalReportsDir := filepath.Join(root, "external-ops-reports")
+	legacyRunsDir := filepath.Join(wsRoot, ".surla", "runs")
+	require.NoError(t, os.MkdirAll(legacyRunsDir, 0o700))
+	require.NoError(t, os.MkdirAll(externalReportsDir, 0o700))
+
+	monoPromoReportsDir := filepath.Join(monorepoRoot, "promo-reports")
+	monoRunReportsDir := filepath.Join(monorepoRoot, "run-reports")
+	require.NoError(t, os.MkdirAll(monoPromoReportsDir, 0o700))
+	require.NoError(t, os.MkdirAll(monoRunReportsDir, 0o700))
+
+	promoDigest := strings.Repeat("a", 64) + ".json"
+	runDigest := strings.Repeat("b", 64) + ".json"
+	extDigest := strings.Repeat("c", 64) + ".json"
+	require.NoError(t, os.WriteFile(filepath.Join(monoPromoReportsDir, promoDigest), []byte(`{"promo":true}`), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(monoRunReportsDir, runDigest), []byte(`{"run":true}`), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(externalReportsDir, extDigest), []byte(`{"ext":true}`), 0o600))
+
+	// Run 1: ReportDir is monoRunReportsDir (inside enclosing monorepoRoot R, outside wsRoot).
+	runInMonoID := strings.Repeat("1", 32)
+	runInMonoDir := filepath.Join(legacyRunsDir, runInMonoID)
+	require.NoError(t, os.MkdirAll(runInMonoDir, 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(runInMonoDir, lockFile), nil, 0o600))
+	reqInMono, err := json.Marshal(Request{
+		RunID:      runInMonoID,
+		Owner:      "alice",
+		ChangeID:   "CHG-MONO",
+		AcceptedAt: time.Date(2026, 11, 8, 12, 0, 0, 0, time.UTC),
+		Timeout:    time.Minute,
+		Plan: verify.Plan{
+			CandidateRepo: monorepoRoot,
+			ReportDir:     monoRunReportsDir,
+		},
+	})
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(runInMonoDir, requestFile), reqInMono, 0o600))
+
+	// Run 2: ReportDir is externalReportsDir (outside wsRoot and monorepoRoot).
+	runExtID := strings.Repeat("2", 32)
+	runExtDir := filepath.Join(legacyRunsDir, runExtID)
+	require.NoError(t, os.MkdirAll(runExtDir, 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(runExtDir, lockFile), nil, 0o600))
+	reqExt, err := json.Marshal(Request{
+		RunID:      runExtID,
+		Owner:      "alice",
+		ChangeID:   "CHG-EXT",
+		AcceptedAt: time.Date(2026, 11, 8, 12, 1, 0, 0, time.UTC),
+		Timeout:    time.Minute,
+		Plan: verify.Plan{
+			CandidateRepo: monorepoRoot,
+			ReportDir:     externalReportsDir,
+		},
+	})
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(runExtDir, requestFile), reqExt, 0o600))
+
+	protectedDirs := []string{wsRoot, monorepoRoot}
+	insideMono, err := IsWorkspaceReportDir(wsRoot, monoPromoReportsDir, protectedDirs...)
+	require.NoError(t, err)
+	assert.True(t, insideMono)
+	insideExt, err := IsWorkspaceReportDir(wsRoot, externalReportsDir, protectedDirs...)
+	require.NoError(t, err)
+	assert.False(t, insideExt)
+
+	stageRunsDir := filepath.Join(root, "stage", "runs")
+	publishedReportsRoot := filepath.Join(root, "imported", "reports")
+	releaseLocks, err := PrepareSnapshot(
+		legacyRunsDir,
+		"",
+		stageRunsDir,
+		publishedReportsRoot,
+		publishedReportsRoot,
+		wsRoot,
+		protectedDirs,
+		monoPromoReportsDir,
+		externalReportsDir,
+	)
+	require.NoError(t, err)
+	require.NoError(t, releaseLocks())
+
+	// Run 1's ReportDir inside R was rewritten to publishedReportsRoot/dir-<sha256>, while Run 2's external ReportDir stayed externalReportsDir.
+	gotReqInMono, _, err := Read(stageRunsDir, runInMonoID)
+	require.NoError(t, err)
+	assert.Contains(t, gotReqInMono.Plan.ReportDir, filepath.Join(publishedReportsRoot, "dir-"))
+	gotReqExt, _, err := Read(stageRunsDir, runExtID)
+	require.NoError(t, err)
+	assert.Equal(t, externalReportsDir, gotReqExt.Plan.ReportDir)
+
+	// imported_paths.json includes both monorepoRoot report files and excludes externalReportsDir.
+	pathsRaw, err := os.ReadFile(filepath.Join(stageRunsDir, importedPathsFile))
+	require.NoError(t, err)
+	var paths importedWorkspacePaths
+	require.NoError(t, json.Unmarshal(pathsRaw, &paths))
+	evalMono, err := abspath.EvalMissing(monorepoRoot)
+	require.NoError(t, err)
+	assert.ElementsMatch(t, []string{
+		filepath.Join(evalMono, "promo-reports", promoDigest),
+		filepath.Join(evalMono, "run-reports", runDigest),
+	}, paths.ReportFiles)
+
+	// Even if a builder later replaces monorepoRoot/promo-reports with a symlink inside R, ResolveImportedReportDir resolves without following symlinks inside R.
+	require.NoError(t, os.RemoveAll(monoPromoReportsDir))
+	require.NoError(t, os.Symlink(externalReportsDir, monoPromoReportsDir))
+	resolvedPromo, err := ResolveImportedReportDir(publishedReportsRoot, wsRoot, monoPromoReportsDir, protectedDirs...)
+	require.NoError(t, err)
+	assert.Contains(t, resolvedPromo, filepath.Join(publishedReportsRoot, "dir-"))
+	copiedPromoBytes, err := os.ReadFile(filepath.Join(resolvedPromo, promoDigest))
+	require.NoError(t, err)
+	assert.Equal(t, `{"promo":true}`, string(copiedPromoBytes))
+
+	resolvedExt, err := ResolveImportedReportDir(publishedReportsRoot, wsRoot, externalReportsDir, protectedDirs...)
+	require.NoError(t, err)
+	assert.Equal(t, externalReportsDir, resolvedExt)
 }

@@ -183,19 +183,19 @@ func (c *ControlPlane) InitProject(
 	}
 
 	targetPath := filepath.Join(c.initialWorkspaceRoot, targetBase)
-	if err := validateCardsWorkspaceSeparation(c.cards.dir, c.initialWorkspaceRoot, targetPath); err != nil {
+	if err := validateCardsWorkspaceSeparation(c.cards.dir, c.protectedDirs...); err != nil {
 		return nil, failInitFault(span, "validate cards workspace separation failed", err)
 	}
-	if err := validateRunsDirWorkspaceSeparation(c.effectiveRunsDir(), c.initialWorkspaceRoot, targetPath); err != nil {
+	if err := validateRunsDirWorkspaceSeparation(c.effectiveRunsDir(), c.protectedDirs...); err != nil {
 		return nil, failInitFault(span, "validate runs workspace separation failed", err)
 	}
 
-	stageParentDir, err := resolveInitStageParentDir(c.initialWorkspaceRoot, c.initStageDir, c.initialWorkspaceDev)
+	stageParentDir, err := resolveInitStageParentDir(c.initialWorkspaceRoot, c.initStageDir, c.initialWorkspaceDev, c.protectedDirs...)
 	if err != nil {
 		return nil, failInitFault(span, "resolve init stage directory failed", err)
 	}
 
-	if err := reportProgress(initCtx, 0, 3, "Generating, building, and testing the starter project"); err != nil {
+	if err := reportProgress(initCtx, 0, 2, "Generating, building, testing, and committing the starter project"); err != nil {
 		return nil, failInitFault(span, "init_project canceled", err)
 	}
 	physCards, err := abspath.Eval(c.cards.dir)
@@ -203,17 +203,9 @@ func (c *ControlPlane) InitProject(
 		return nil, failInitFault(span, "resolve cards directory failed", err)
 	}
 	gen := c.makeInitGenerator(filepath.Join(physCards, "designeval"))
-	baseRun := c.initRunner
-	if baseRun == nil {
-		baseRun = scaffold.RunCommand
-	}
-	run := func(ctx context.Context, dir, logPath string, args ...string) error {
-		if gitSubcommand(args) == "init" {
-			if err := reportProgress(ctx, 1, 3, "Recording the initial starter Git commit"); err != nil {
-				return err
-			}
-		}
-		return baseRun(ctx, dir, logPath, args...)
+	run := c.initRunner
+	if run == nil {
+		run = scaffold.RunCommand
 	}
 	builtService, stagePath, suiteCommit, err := scaffold.Prepare(
 		initCtx,
@@ -239,7 +231,7 @@ func (c *ControlPlane) InitProject(
 			),
 		)
 	}
-	if err := reportProgress(initCtx, 2, 3, "Publishing the initialized starter workspace"); err != nil {
+	if err := reportProgress(initCtx, 1, 2, "Publishing the initialized starter workspace"); err != nil {
 		return nil, failInitFault(
 			span,
 			"init_project canceled",
@@ -615,10 +607,13 @@ func hasVerificationRuns(runsDir string) (bool, error) {
 }
 
 // resolveInitStageParentDir selects an operator-owned staging parent directory
-// outside initialWorkspaceRoot on the same filesystem device (`wsDev`),
-// validating that the directory is owned by the current effective UID with mode
-// 0700.
-func resolveInitStageParentDir(initialWorkspaceRoot, configuredStageDir string, wsDev uint64) (string, error) {
+// outside initialWorkspaceRoot and protectedDirs on the same filesystem device
+// (`wsDev`), validating that the directory is owned by the current effective
+// UID with mode 0700.
+func resolveInitStageParentDir(initialWorkspaceRoot, configuredStageDir string, wsDev uint64, protectedDirs ...string) (string, error) {
+	if len(protectedDirs) == 0 && initialWorkspaceRoot != "" {
+		protectedDirs = []string{initialWorkspaceRoot}
+	}
 	var candidates []string
 	if configuredStageDir != "" {
 		candidates = append(candidates, configuredStageDir)
@@ -635,8 +630,8 @@ func resolveInitStageParentDir(initialWorkspaceRoot, configuredStageDir string, 
 			failures = append(failures, err)
 			continue
 		}
-		if isWithinOrEqualDir(phys, initialWorkspaceRoot) {
-			failures = append(failures, fmt.Errorf("init stage directory %s must be outside workspace %s", phys, initialWorkspaceRoot))
+		if err := validateInitStageWorkspaceSeparation(phys, protectedDirs...); err != nil {
+			failures = append(failures, err)
 			continue
 		}
 		if err := os.MkdirAll(phys, 0o700); err != nil {
@@ -648,8 +643,8 @@ func resolveInitStageParentDir(initialWorkspaceRoot, configuredStageDir string, 
 			failures = append(failures, err)
 			continue
 		}
-		if isWithinOrEqualDir(evalPhys, initialWorkspaceRoot) {
-			failures = append(failures, fmt.Errorf("init stage directory %s must be outside workspace %s", evalPhys, initialWorkspaceRoot))
+		if err := validateInitStageWorkspaceSeparation(evalPhys, protectedDirs...); err != nil {
+			failures = append(failures, err)
 			continue
 		}
 		if err := validateInitStageParentDir(evalPhys, wsDev, initialWorkspaceRoot); err != nil {
@@ -929,52 +924,23 @@ func failInitFault(span trace.Span, msg string, err error) error {
 	span.RecordError(err)
 	span.SetStatus(codes.Error, msg)
 	var stepErr *scaffold.StepError
-	if errors.As(err, &stepErr) && stepErr != nil {
-		cmdSummary := initStepSummary(stepErr.Args)
-		if gitSubcommand(stepErr.Args) == "commit" {
+	if errors.As(err, &stepErr) && stepErr != nil && stepErr.Summary != "" {
+		if stepErr.Summary == "git commit" {
 			return goa.Fault(
 				"%s: command %q in %q failed during starter initialization (verify that git user.name, user.email, and any commit signing settings are configured for this user); inspect the server trace span for diagnostic output",
 				msg,
-				cmdSummary,
+				stepErr.Summary,
 				stepErr.Module,
 			)
 		}
 		return goa.Fault(
 			"%s: command %q in %q failed during starter initialization; inspect the server trace span for diagnostic output",
 			msg,
-			cmdSummary,
+			stepErr.Summary,
 			stepErr.Module,
 		)
 	}
 	return goa.Fault("%s; inspect the server trace span for diagnostic details", msg)
-}
-
-// gitSubcommand returns the git subcommand verb (such as "init", "add",
-// "commit", or "rev-parse") when args invokes git, or an empty string.
-func gitSubcommand(args []string) string {
-	if len(args) == 0 || args[0] != "git" {
-		return ""
-	}
-	for i := 1; i < len(args); i++ {
-		if args[i] == "-c" {
-			i++
-			continue
-		}
-		if strings.HasPrefix(args[i], "-") {
-			continue
-		}
-		return args[i]
-	}
-	return ""
-}
-
-// initStepSummary returns a caller-safe command summary for a scaffold step
-// without internal git override flags.
-func initStepSummary(args []string) string {
-	if sub := gitSubcommand(args); sub != "" {
-		return "git " + sub
-	}
-	return strings.Join(args, " ")
 }
 
 // isConflictError reports whether err is a Goa conflict ServiceError.

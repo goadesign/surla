@@ -378,10 +378,6 @@ func writeServeStatus(w io.Writer, addr *net.TCPAddr, opts controlplane.Options,
 	} else {
 		fmt.Fprintln(w, "surla: CP5 (approve_merge): on")
 	}
-	if hasUnimportedLegacyWorkspaceNotice(opts) {
-		fmt.Fprintf(w, "surla: existing workspace .surla/ or reports/ files in %s were left untouched and not imported automatically; run surla serve -import-legacy-workspace with writers stopped to import them once\n",
-			opts.WorkspaceDir)
-	}
 }
 
 // runPreview reads the design module in -dir (default: the current directory)

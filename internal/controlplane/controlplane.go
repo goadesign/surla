@@ -239,6 +239,10 @@ type (
 		// initialWorkspaceRoot is the cleaned physical path of
 		// Options.WorkspaceDir at startup, or empty when unbound.
 		initialWorkspaceRoot string
+		// protectedDirs holds the deduplicated physical paths of
+		// initialWorkspaceRoot and its enclosing Git working tree root,
+		// computed once at startup.
+		protectedDirs []string
 		// initialWorkspaceDev and initialWorkspaceIno record the device and
 		// inode of initialWorkspaceRoot at startup.
 		initialWorkspaceDev uint64
@@ -377,7 +381,7 @@ func New(opts Options) (*ControlPlane, error) {
 	if err != nil {
 		return nil, errors.Join(err, cleanupFailedNew())
 	}
-	runsDir, initStageDir, verCfg, err := normalizeAndValidateStartupPaths(opts, wsRoot)
+	runsDir, initStageDir, verCfg, protectedDirs, err := normalizeAndValidateStartupPaths(opts, wsRoot)
 	if err != nil {
 		return nil, errors.Join(err, cleanupFailedNew())
 	}
@@ -415,6 +419,7 @@ func New(opts Options) (*ControlPlane, error) {
 		resolveVerification:    opts.ResolveVerification,
 		evaluator:              eval,
 		initialWorkspaceRoot:   wsRoot,
+		protectedDirs:          protectedDirs,
 		initialWorkspaceDev:    wsDev,
 		initialWorkspaceIno:    wsIno,
 		activeWorkspaceDir:     wsRoot,
@@ -430,7 +435,7 @@ func New(opts Options) (*ControlPlane, error) {
 	if err := cp.restoreWorkspace(); err != nil {
 		return nil, errors.Join(err, cp.Close())
 	}
-	if err := validateStartupSeparation(cards.dir, runsDir, initStageDir, verCfg, cp.initialWorkspaceRoot, cp.activeWorkspaceDir); err != nil {
+	if err := validateStartupSeparation(cards.dir, runsDir, initStageDir, verCfg, protectedDirs...); err != nil {
 		return nil, errors.Join(err, cp.Close())
 	}
 	return cp, nil

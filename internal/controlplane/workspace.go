@@ -24,6 +24,7 @@ import (
 	gensurla "github.com/goadesign/surla/gen/surla"
 	"github.com/goadesign/surla/internal/abspath"
 	"github.com/goadesign/surla/internal/designeval"
+	"github.com/goadesign/surla/internal/verify"
 )
 
 type (
@@ -155,8 +156,10 @@ func (c *ControlPlane) restoreWorkspace() (err error) {
 		if !filepath.IsAbs(wf.StageDir) || wf.StageDir != filepath.Clean(wf.StageDir) {
 			return fmt.Errorf("invalid stage_dir %q in workspace.json", wf.StageDir)
 		}
-		if isWithinOrEqualDir(wf.StageDir, c.initialWorkspaceRoot) {
-			return fmt.Errorf("stage_dir %s in workspace.json must be outside workspace %s", wf.StageDir, c.initialWorkspaceRoot)
+		for _, root := range c.protectedDirs {
+			if isWithinOrEqualDir(wf.StageDir, root) {
+				return fmt.Errorf("stage_dir %s in workspace.json must be outside workspace %s", wf.StageDir, root)
+			}
 		}
 	}
 
@@ -480,13 +483,13 @@ func readWorkspaceDesignSource(wsDir string, expectedDev, expectedIno uint64) (s
 
 // normalizeAndValidateStartupPaths resolves configured operator storage paths
 // to physical paths via abspath.EvalMissing and validates separation from
-// wsRoot before any directory is created.
-func normalizeAndValidateStartupPaths(opts Options, wsRoot string) (string, string, *VerificationConfig, error) {
+// wsRoot and its enclosing Git working tree before any directory is created.
+func normalizeAndValidateStartupPaths(opts Options, wsRoot string) (string, string, *VerificationConfig, []string, error) {
 	var runsDir string
 	if opts.RunsDir != "" {
 		physRuns, err := abspath.EvalMissing(opts.RunsDir)
 		if err != nil {
-			return "", "", nil, fmt.Errorf("resolve runs directory %s: %w", opts.RunsDir, err)
+			return "", "", nil, nil, fmt.Errorf("resolve runs directory %s: %w", opts.RunsDir, err)
 		}
 		runsDir = physRuns
 	}
@@ -494,18 +497,24 @@ func normalizeAndValidateStartupPaths(opts Options, wsRoot string) (string, stri
 	if opts.InitStageDir != "" {
 		physStage, err := abspath.EvalMissing(opts.InitStageDir)
 		if err != nil {
-			return "", "", nil, fmt.Errorf("resolve init stage directory %s: %w", opts.InitStageDir, err)
+			return "", "", nil, nil, fmt.Errorf("resolve init stage directory %s: %w", opts.InitStageDir, err)
 		}
 		initStageDir = physStage
 	}
 	verCfg, err := normalizeVerificationConfig(opts.Verification)
 	if err != nil {
-		return "", "", nil, err
+		return "", "", nil, nil, err
 	}
-	if err := validateStartupSeparation(opts.CardsDir, runsDir, initStageDir, verCfg, wsRoot, wsRoot); err != nil {
-		return "", "", nil, err
+	gitCtx, cancel := context.WithTimeout(contextBackgroundForCleanup(), workspaceGitTimeout)
+	protectedDirs, err := verify.WorkspaceBoundaryRoots(gitCtx, wsRoot)
+	cancel()
+	if err != nil {
+		return "", "", nil, nil, err
 	}
-	return runsDir, initStageDir, verCfg, nil
+	if err := validateStartupSeparation(opts.CardsDir, runsDir, initStageDir, verCfg, protectedDirs...); err != nil {
+		return "", "", nil, nil, err
+	}
+	return runsDir, initStageDir, verCfg, protectedDirs, nil
 }
 
 // normalizeVerificationConfig returns a shallow copy of cfg with RunsDir and
@@ -533,22 +542,23 @@ func normalizeVerificationConfig(cfg *VerificationConfig) (*VerificationConfig, 
 }
 
 // validateStartupSeparation verifies that cardsDir, runsDir, initStageDir, and
-// verCfg lie strictly outside both initialWorkspaceRoot and activeWorkspaceDir.
+// verCfg lie strictly outside protectedDirs (the bound workspace and its
+// enclosing Git working tree root).
 func validateStartupSeparation(
 	cardsDir, runsDir, initStageDir string,
 	verCfg *VerificationConfig,
-	initialWorkspaceRoot, activeWorkspaceDir string,
+	protectedDirs ...string,
 ) error {
-	if err := validateCardsWorkspaceSeparation(cardsDir, initialWorkspaceRoot, activeWorkspaceDir); err != nil {
+	if err := validateCardsWorkspaceSeparation(cardsDir, protectedDirs...); err != nil {
 		return err
 	}
-	if err := validateRunsDirWorkspaceSeparation(runsDir, initialWorkspaceRoot, activeWorkspaceDir); err != nil {
+	if err := validateRunsDirWorkspaceSeparation(runsDir, protectedDirs...); err != nil {
 		return err
 	}
-	if err := validateInitStageWorkspaceSeparation(initStageDir, initialWorkspaceRoot, activeWorkspaceDir); err != nil {
+	if err := validateInitStageWorkspaceSeparation(initStageDir, protectedDirs...); err != nil {
 		return err
 	}
-	return validateVerificationWorkspaceSeparation(verCfg, initialWorkspaceRoot, activeWorkspaceDir)
+	return validateVerificationWorkspaceSeparation(verCfg, protectedDirs...)
 }
 
 // resolveActiveVerification resolves the active VerificationConfig for
@@ -577,7 +587,7 @@ func (c *ControlPlane) resolveActiveVerification(ctx context.Context) (*Verifica
 		if err != nil {
 			return nil, err
 		}
-		if err := validateVerificationWorkspaceSeparation(normCfg, c.initialWorkspaceRoot, wsDir); err != nil {
+		if err := validateVerificationWorkspaceSeparation(normCfg, c.protectedDirs...); err != nil {
 			return nil, err
 		}
 		return normCfg, nil
@@ -585,9 +595,9 @@ func (c *ControlPlane) resolveActiveVerification(ctx context.Context) (*Verifica
 	return c.verification, nil
 }
 
-// validateCardsWorkspaceSeparation verifies that cardsDir lies strictly outside
-// initialWorkspaceRoot and activeWorkspaceDir.
-func validateCardsWorkspaceSeparation(cardsDir, initialWorkspaceRoot, activeWorkspaceDir string) error {
+// validateCardsWorkspaceSeparation verifies that cardsDir does not lie inside
+// any protected workspace or enclosing Git working tree root.
+func validateCardsWorkspaceSeparation(cardsDir string, protectedDirs ...string) error {
 	if cardsDir == "" {
 		return nil
 	}
@@ -595,7 +605,7 @@ func validateCardsWorkspaceSeparation(cardsDir, initialWorkspaceRoot, activeWork
 	if err != nil {
 		return fmt.Errorf("resolve cards directory %s: %w", cardsDir, err)
 	}
-	for _, ws := range []string{initialWorkspaceRoot, activeWorkspaceDir} {
+	for _, ws := range protectedDirs {
 		if ws == "" {
 			continue
 		}
@@ -614,9 +624,9 @@ func validateCardsWorkspaceSeparation(cardsDir, initialWorkspaceRoot, activeWork
 	return nil
 }
 
-// validateRunsDirWorkspaceSeparation verifies that runsDir lies strictly
-// outside initialWorkspaceRoot and activeWorkspaceDir.
-func validateRunsDirWorkspaceSeparation(runsDir, initialWorkspaceRoot, activeWorkspaceDir string) error {
+// validateRunsDirWorkspaceSeparation verifies that runsDir does not lie inside
+// any protected workspace or enclosing Git working tree root.
+func validateRunsDirWorkspaceSeparation(runsDir string, protectedDirs ...string) error {
 	if runsDir == "" {
 		return nil
 	}
@@ -624,7 +634,7 @@ func validateRunsDirWorkspaceSeparation(runsDir, initialWorkspaceRoot, activeWor
 	if err != nil {
 		return fmt.Errorf("resolve runs directory %s: %w", runsDir, err)
 	}
-	for _, ws := range []string{initialWorkspaceRoot, activeWorkspaceDir} {
+	for _, ws := range protectedDirs {
 		if ws == "" {
 			continue
 		}
@@ -643,9 +653,9 @@ func validateRunsDirWorkspaceSeparation(runsDir, initialWorkspaceRoot, activeWor
 	return nil
 }
 
-// validateInitStageWorkspaceSeparation verifies that initStageDir lies strictly
-// outside initialWorkspaceRoot and activeWorkspaceDir.
-func validateInitStageWorkspaceSeparation(initStageDir, initialWorkspaceRoot, activeWorkspaceDir string) error {
+// validateInitStageWorkspaceSeparation verifies that initStageDir does not lie
+// inside any protected workspace or enclosing Git working tree root.
+func validateInitStageWorkspaceSeparation(initStageDir string, protectedDirs ...string) error {
 	if initStageDir == "" {
 		return nil
 	}
@@ -653,7 +663,7 @@ func validateInitStageWorkspaceSeparation(initStageDir, initialWorkspaceRoot, ac
 	if err != nil {
 		return fmt.Errorf("resolve init stage directory %s: %w", initStageDir, err)
 	}
-	for _, ws := range []string{initialWorkspaceRoot, activeWorkspaceDir} {
+	for _, ws := range protectedDirs {
 		if ws == "" {
 			continue
 		}
@@ -673,13 +683,13 @@ func validateInitStageWorkspaceSeparation(initStageDir, initialWorkspaceRoot, ac
 }
 
 // validateVerificationWorkspaceSeparation verifies that a static or resolved
-// VerificationConfig's RunsDir and Plan.ReportDir lie strictly outside
-// initialWorkspaceRoot and activeWorkspaceDir.
-func validateVerificationWorkspaceSeparation(cfg *VerificationConfig, initialWorkspaceRoot, activeWorkspaceDir string) error {
+// VerificationConfig's RunsDir and Plan.ReportDir do not lie inside any
+// protected workspace or enclosing Git working tree root.
+func validateVerificationWorkspaceSeparation(cfg *VerificationConfig, protectedDirs ...string) error {
 	if cfg == nil {
 		return nil
 	}
-	if err := validateRunsDirWorkspaceSeparation(cfg.RunsDir, initialWorkspaceRoot, activeWorkspaceDir); err != nil {
+	if err := validateRunsDirWorkspaceSeparation(cfg.RunsDir, protectedDirs...); err != nil {
 		return err
 	}
 	if cfg.Plan.ReportDir == "" {
@@ -689,7 +699,7 @@ func validateVerificationWorkspaceSeparation(cfg *VerificationConfig, initialWor
 	if err != nil {
 		return fmt.Errorf("resolve verification report_dir %s: %w", cfg.Plan.ReportDir, err)
 	}
-	for _, ws := range []string{initialWorkspaceRoot, activeWorkspaceDir} {
+	for _, ws := range protectedDirs {
 		if ws == "" {
 			continue
 		}

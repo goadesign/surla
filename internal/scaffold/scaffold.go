@@ -131,6 +131,9 @@ type (
 	StepError struct {
 		// Args is the command line.
 		Args []string
+		// Summary is a caller-safe command summary without internal git override
+		// flags, such as "go mod tidy" or "git commit".
+		Summary string
 		// Module is the module directory it ran in: "." or "eval".
 		Module string
 		// Log is the file holding its complete output; Init keeps it.
@@ -529,7 +532,7 @@ func commitScaffold(ctx context.Context, staging, logs string, run Runner) (stri
 		return "", err
 	}
 	if err := run(ctx, staging, log, revArgs...); err != nil {
-		step := &StepError{Args: revArgs, Module: ".", Log: log, Err: err}
+		step := &StepError{Args: revArgs, Summary: "git rev-parse", Module: ".", Log: log, Err: err}
 		var stuck *stuckError
 		if errors.As(err, &stuck) {
 			return "", step
@@ -545,11 +548,12 @@ func commitScaffold(ctx context.Context, staging, logs string, run Runner) (stri
 	commit := strings.TrimSpace(string(out))
 	if !commitHexPattern.MatchString(commit) {
 		return "", &StepError{
-			Args:   revArgs,
-			Module: ".",
-			Log:    log,
-			Tail:   commit,
-			Err:    fmt.Errorf("git rev-parse returned %q, want a 40- or 64-character lowercase hex commit ID", commit),
+			Args:    revArgs,
+			Summary: "git rev-parse",
+			Module:  ".",
+			Log:     log,
+			Tail:    commit,
+			Err:     fmt.Errorf("git rev-parse returned %q, want a 40- or 64-character lowercase hex commit ID", commit),
 		}
 	}
 	return commit, nil
@@ -606,7 +610,7 @@ func runAll(ctx context.Context, dir, moduleDir, logs string, steps [][]string, 
 			return err
 		}
 		if err := run(ctx, dir, log, args...); err != nil {
-			step := &StepError{Args: args, Module: moduleDir, Log: log, Err: err}
+			step := &StepError{Args: args, Summary: stepSummary(args), Module: moduleDir, Log: log, Err: err}
 			var stuck *stuckError
 			if errors.As(err, &stuck) {
 				// Processes may still be writing the log, so it is not read.
@@ -672,6 +676,15 @@ func newLogPath(logs, moduleDir string, args []string) (string, error) {
 		return "", fmt.Errorf("create command log: %w", err)
 	}
 	return f.Name(), errors.Join(f.Close(), os.Remove(f.Name()))
+}
+
+// stepSummary returns a caller-safe command summary for args without internal
+// git override flags, such as "go mod tidy" or "git commit".
+func stepSummary(args []string) string {
+	if len(args) > 0 && args[0] == "git" {
+		return "git " + stepVerb(args)
+	}
+	return strings.Join(args, " ")
 }
 
 // stepVerb returns the subcommand verb (such as "mod", "vet", "init", or
