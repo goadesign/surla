@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"path"
@@ -9,10 +10,19 @@ import (
 	"testing"
 	"time"
 
-	"github.com/goadesign/surla/internal/verify"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	gensurla "github.com/goadesign/surla/gen/surla"
+	"github.com/goadesign/surla/internal/controlplane"
+	"github.com/goadesign/surla/internal/verify"
 )
+
+// capturingCP1Analyzer is a CP1Analyzer test double that records designSource.
+type capturingCP1Analyzer struct {
+	// onAnalyze is called with the designSource passed to Analyze.
+	onAnalyze func(designSource string)
+}
 
 func TestLoadVerificationConfigReadsTheOperatorsPlanStrictly(t *testing.T) {
 	cfg, err := loadVerificationConfig("")
@@ -111,14 +121,17 @@ func TestLoadProjectVerificationConfigDerivesTheStarterPlanFromHEAD(t *testing.T
 		writeStarter(t, project, "example.com/shop")
 		gitCommitAll(t, repo, "starter")
 		for _, start := range []struct{ dir, arg string }{{project, "."}, {repo, "services/shop"}} {
+			isolateServeWorkspace(t)
 			t.Chdir(start.dir)
-			cfg, err := resolveVerificationConfig(serveConfig{projectDir: start.arg, projectSet: true})
+			ws, err := configureServeWorkspace(serveConfig{projectDir: start.arg, projectSet: true})
 			require.NoError(t, err, "-project %s from %s", start.arg, start.dir)
-			assert.Equal(t, repo, cfg.Plan.CandidateRepo)
-			assert.Equal(t, "services/shop", cfg.Plan.CandidateModule)
-			assert.Equal(t, "services/shop/eval", cfg.Plan.SuiteModule)
-			assert.Equal(t, filepath.Join(project, ".surla", "runs"), cfg.RunsDir)
-			assert.Equal(t, filepath.Join(project, "reports"), cfg.Plan.ReportDir)
+			require.NotNil(t, ws.verification)
+			assert.Equal(t, repo, ws.verification.Plan.CandidateRepo)
+			assert.Equal(t, "services/shop", ws.verification.Plan.CandidateModule)
+			assert.Equal(t, "services/shop/eval", ws.verification.Plan.SuiteModule)
+			assert.False(t, isWithinOrEqualDir(ws.verification.RunsDir, project))
+			assert.False(t, isWithinOrEqualDir(ws.verification.Plan.ReportDir, project))
+			require.NoError(t, ws.closeProjectLock())
 		}
 	})
 
@@ -133,18 +146,21 @@ func TestLoadProjectVerificationConfigDerivesTheStarterPlanFromHEAD(t *testing.T
 		writeStarter(t, other, "example.com/other")
 		gitCommitAll(t, other, "other starter")
 		require.NoError(t, os.Symlink(nested, filepath.Join(other, "alias")))
-		t.Chdir(other)
 
 		// Keep the raw parent component: filepath.Join would erase the link.
 		for _, arg := range []string{"alias/..", other + "/alias/.."} {
-			cfg, err := resolveVerificationConfig(serveConfig{projectDir: arg, projectSet: true})
+			isolateServeWorkspace(t)
+			t.Chdir(other)
+			ws, err := configureServeWorkspace(serveConfig{projectDir: arg, projectSet: true})
 			require.NoError(t, err, "-project %s", arg)
-			assert.Equal(t, repo, cfg.Plan.CandidateRepo, "-project %s", arg)
-			assert.Equal(t, repo, cfg.Plan.SuiteRepo, "-project %s", arg)
-			assert.Equal(t, head, cfg.Plan.SuiteCommit, "-project %s", arg)
-			assert.Equal(t, map[string]string{"shop": "./cmd/shop"}, cfg.Plan.Binaries)
-			assert.Equal(t, filepath.Join(repo, ".surla", "runs"), cfg.RunsDir)
-			assert.Equal(t, filepath.Join(repo, "reports"), cfg.Plan.ReportDir)
+			require.NotNil(t, ws.verification)
+			assert.Equal(t, repo, ws.verification.Plan.CandidateRepo, "-project %s", arg)
+			assert.Equal(t, repo, ws.verification.Plan.SuiteRepo, "-project %s", arg)
+			assert.Equal(t, head, ws.verification.Plan.SuiteCommit, "-project %s", arg)
+			assert.Equal(t, map[string]string{"shop": "./cmd/shop"}, ws.verification.Plan.Binaries)
+			assert.False(t, isWithinOrEqualDir(ws.verification.RunsDir, repo))
+			assert.False(t, isWithinOrEqualDir(ws.verification.Plan.ReportDir, repo))
+			require.NoError(t, ws.closeProjectLock())
 		}
 	})
 
@@ -336,20 +352,86 @@ func TestLoadProjectVerificationConfigRejectsUnusableProjects(t *testing.T) {
 	}
 }
 
-// TestResolveVerificationConfigChoosesOneSource checks how serve picks its
-// verification configuration: -project and -verification-config exclude each
-// other, an explicitly empty -project is an error, and with neither,
-// verification stays off.
-func TestResolveVerificationConfigChoosesOneSource(t *testing.T) {
-	cfg, err := resolveVerificationConfig(serveConfig{})
-	require.NoError(t, err)
-	assert.Nil(t, cfg, "with neither flag, verification is off")
+// TestConfigureServeWorkspaceSupportsIndependentProjectAndVerificationConfig
+// verifies that -project (workspace binding) and -verification-config (external
+// evaluator suite) compose independently, and that an explicitly empty
+// -project="" flag is rejected.
+func TestConfigureServeWorkspaceSupportsIndependentProjectAndVerificationConfig(t *testing.T) {
+	isolateServeWorkspace(t)
 
-	_, err = resolveVerificationConfig(serveConfig{projectDir: ".", projectSet: true, verificationPath: "v.json"})
-	assert.ErrorContains(t, err, "-project and -verification-config cannot be used together")
-
-	_, err = resolveVerificationConfig(serveConfig{projectSet: true})
+	_, err := configureServeWorkspace(serveConfig{projectSet: true})
 	assert.ErrorContains(t, err, "-project requires a directory")
+
+	root := t.TempDir()
+	opsSessionDir := filepath.Join(root, "ops", "session")
+	shopDir := filepath.Join(root, "work", "shop")
+	require.NoError(t, os.MkdirAll(opsSessionDir, 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Join(shopDir, "design"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(shopDir, "design", "design.go"), []byte("package design\n// shop workspace design\n"), 0o644))
+
+	verPath := filepath.Join(root, "ops", "shop-eval.json")
+	verContent := `{"runs_dir":"` + filepath.Join(root, "ops", "runs") + `","report_dir":"` + filepath.Join(root, "ops", "reports") + `",` +
+		`"candidate_repo":"` + shopDir + `","candidate_module":".","binaries":{"shop":"./cmd/shop"},` +
+		`"suite_repo":"` + filepath.Join(root, "ops", "eval-repo") + `","suite_commit":"` + strings.Repeat("d", 40) + `",` +
+		`"suite_module":".","suite_command":"./cmd/shop-evals","timeout":"15m"}`
+	require.NoError(t, os.WriteFile(verPath, []byte(verContent), 0o600))
+
+	t.Chdir(opsSessionDir)
+	opts, err := serveOptions(
+		serveConfig{
+			projectDir:       shopDir,
+			projectSet:       true,
+			verificationPath: verPath,
+		},
+		func(string) string { return "" },
+		nil,
+	)
+	require.NoError(t, err)
+	require.NotNil(t, opts.Verification)
+	assert.Nil(t, opts.ResolveVerification, "explicit -verification-config must not fall back to starter verification resolution")
+	assert.Equal(t, filepath.Join(root, "ops", "eval-repo"), opts.Verification.Plan.SuiteRepo)
+	assert.Equal(t, 15*time.Minute, opts.Verification.Timeout)
+
+	var seenDesignSource string
+	opts.Analyzer = &capturingCP1Analyzer{
+		onAnalyze: func(designSource string) { seenDesignSource = designSource },
+	}
+	cp, err := controlplane.New(opts)
+	require.NoError(t, err)
+	defer cp.Close()
+
+	alice := controlplane.WithPrincipal(context.Background(), controlplane.Principal{ID: "alice@example.com"})
+	_, err = cp.ProposeChange(alice, &gensurla.ProposeChangePayload{
+		ChangeID: "chg-shop-with-external-eval",
+		Prompt:   "Add coupon validation",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, seenDesignSource, "shop workspace design", "-project must bind shopDir for CP1 workspace design reads even when -verification-config is set")
+}
+
+// Analyze records designSource and returns a confirmed CP1SemanticAnalysis.
+func (a *capturingCP1Analyzer) Analyze(_ context.Context, _, designSource string) (controlplane.CP1SemanticAnalysis, error) {
+	if a.onAnalyze != nil {
+		a.onAnalyze(designSource)
+	}
+	return controlplane.CP1SemanticAnalysis{
+		Summary: "Add coupon validation.",
+		Examples: []controlplane.CP1ModelExample{{
+			Scenario:         "Apply valid coupon",
+			InputSummary:     "Valid coupon code",
+			ExpectedOutcome:  "Discounts order total",
+			VerificationKind: "deterministic",
+		}},
+		PreservedBehaviors: []string{"existing checkout remains unchanged"},
+	}, nil
+}
+
+// Revise satisfies controlplane.CP1Analyzer for capturingCP1Analyzer.
+func (a *capturingCP1Analyzer) Revise(_ context.Context, _ controlplane.CP1PriorCard, _, designSource string) (controlplane.CP1RevisionSemanticAnalysis, error) {
+	if a.onAnalyze != nil {
+		a.onAnalyze(designSource)
+	}
+	return controlplane.CP1RevisionSemanticAnalysis{}, nil
 }
 
 // isolateGitConfig points HOME and XDG_CONFIG_HOME at empty directories for

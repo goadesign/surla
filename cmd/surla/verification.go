@@ -230,24 +230,6 @@ func writeVerifySummary(w io.Writer, report verify.Report, builderView bool) {
 	fmt.Fprintf(w, "%s (report %s)\n", line, report.Digest)
 }
 
-// resolveVerificationConfig selects and loads the operator's CP3/CP4 target
-// configuration from either -project or -verification-config, rejecting
-// supplying both flags at once.
-func resolveVerificationConfig(cfg serveConfig) (*controlplane.VerificationConfig, error) {
-	if cfg.projectSet && cfg.verificationPath != "" {
-		return nil, errors.New("-project and -verification-config cannot be used together")
-	}
-	if cfg.projectSet {
-		if cfg.projectDir == "" {
-			return nil, errors.New("-project requires a directory")
-		}
-		ctx, cancel := context.WithTimeout(context.Background(), gitReadTimeout)
-		defer cancel()
-		return loadProjectConfig(ctx, cfg.projectDir)
-	}
-	return loadVerificationConfig(cfg.verificationPath)
-}
-
 // loadProjectConfig derives a VerificationConfig from the starter layout
 // committed at HEAD in dir, the -project value: it resolves HEAD once, reads
 // both go.mod files and checks both command directories at that commit, pins

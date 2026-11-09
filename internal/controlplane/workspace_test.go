@@ -4,8 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -16,6 +20,7 @@ import (
 	"go.opentelemetry.io/otel/codes"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
+	goahttp "goa.design/goa/v3/http"
 	goa "goa.design/goa/v3/pkg"
 	"golang.org/x/sys/unix"
 
@@ -24,11 +29,13 @@ import (
 	"github.com/goadesign/surla/internal/scaffold"
 )
 
-// fakeInitGenerator is an in-memory scaffold.Generator test double that returns a minimal generated file.
-type fakeInitGenerator struct {
-	// pkg is the Go package name emitted in the stub generated file.
-	pkg string
-}
+type (
+	// fakeInitGenerator is an in-memory scaffold.Generator test double that returns a minimal generated file.
+	fakeInitGenerator struct {
+		// pkg is the Go package name emitted in the stub generated file.
+		pkg string
+	}
+)
 
 // testSurlaVersion is a canonical Surla module pseudo-version used in workspace unit tests.
 const testSurlaVersion = "v0.0.0-20261104215521-580509970fb6"
@@ -186,6 +193,161 @@ func TestWorkspaceWALReconciliationStates(t *testing.T) {
 		assert.Equal(t, "shop", wf.Dir)
 		assert.Empty(t, wf.Staging)
 	})
+
+	t.Run("case_2a_uncommitted_wal_with_foreign_target_and_foreign_staging_preserves_both_and_removes_wal", func(t *testing.T) {
+		t.Parallel()
+		root := t.TempDir()
+		wsDir := filepath.Join(root, "workspace")
+		cardsDir := filepath.Join(root, "cards")
+		stageParent := filepath.Join(root, "init-stage")
+		targetDir := filepath.Join(wsDir, "shop")
+		require.NoError(t, os.MkdirAll(targetDir, 0o755))
+		require.NoError(t, os.MkdirAll(cardsDir, 0o700))
+		require.NoError(t, os.MkdirAll(stageParent, 0o700))
+
+		evalStageParent, err := abspath.Eval(stageParent)
+		require.NoError(t, err)
+		foreignStageDir := filepath.Join(evalStageParent, ".surla-init-foreign")
+		require.NoError(t, os.MkdirAll(foreignStageDir, 0o700))
+		targetKeep := filepath.Join(targetDir, "keep-target.txt")
+		stageKeep := filepath.Join(foreignStageDir, "keep-stage.txt")
+		require.NoError(t, os.WriteFile(targetKeep, []byte("user-target"), 0o644))
+		require.NoError(t, os.WriteFile(stageKeep, []byte("foreign-stage"), 0o644))
+
+		var wsStat unix.Stat_t
+		require.NoError(t, unix.Lstat(wsDir, &wsStat))
+		walBytes, err := json.Marshal(workspaceFile{
+			Dir:      "shop",
+			StageDir: evalStageParent,
+			Staging:  ".surla-init-foreign",
+			Dev:      uint64(wsStat.Dev),
+			Ino:      wsStat.Ino, // matches neither targetDir nor foreignStageDir
+		})
+		require.NoError(t, err)
+		require.NoError(t, os.WriteFile(filepath.Join(cardsDir, workspaceRecordFile), walBytes, 0o600))
+
+		cp, err := New(Options{
+			CardsDir:     cardsDir,
+			WorkspaceDir: wsDir,
+			InitStageDir: stageParent,
+			SurlaVersion: testSurlaVersion,
+		})
+		require.NoError(t, err)
+		defer cp.Close()
+
+		assert.Equal(t, filepath.Base(wsDir), filepath.Base(cp.activeWorkspaceDir))
+		_, err = os.Stat(filepath.Join(cardsDir, workspaceRecordFile))
+		assert.ErrorIs(t, err, os.ErrNotExist)
+		gotTarget, err := os.ReadFile(targetKeep)
+		require.NoError(t, err)
+		assert.Equal(t, "user-target", string(gotTarget))
+		gotStage, err := os.ReadFile(stageKeep)
+		require.NoError(t, err)
+		assert.Equal(t, "foreign-stage", string(gotStage))
+	})
+
+	t.Run("case_2b_committed_wal_with_replaced_target_inode_fails_closed_without_deleting_target", func(t *testing.T) {
+		t.Parallel()
+		root := t.TempDir()
+		wsDir := filepath.Join(root, "workspace")
+		cardsDir := filepath.Join(root, "cards")
+		targetDir := filepath.Join(wsDir, "shop")
+		require.NoError(t, os.MkdirAll(targetDir, 0o755))
+		require.NoError(t, os.MkdirAll(cardsDir, 0o700))
+		targetKeep := filepath.Join(targetDir, "keep.txt")
+		require.NoError(t, os.WriteFile(targetKeep, []byte("important"), 0o644))
+
+		var wsStat unix.Stat_t
+		require.NoError(t, unix.Lstat(wsDir, &wsStat))
+		walBytes, err := json.Marshal(workspaceFile{
+			Dir: "shop",
+			Dev: uint64(wsStat.Dev),
+			Ino: wsStat.Ino, // different inode from targetDir
+		})
+		require.NoError(t, err)
+		require.NoError(t, os.WriteFile(filepath.Join(cardsDir, workspaceRecordFile), walBytes, 0o600))
+
+		_, err = New(Options{
+			CardsDir:     cardsDir,
+			WorkspaceDir: wsDir,
+			SurlaVersion: testSurlaVersion,
+		})
+		require.ErrorContains(t, err, "no longer matches its initialized (dev, ino) identity")
+		gotTarget, readErr := os.ReadFile(targetKeep)
+		require.NoError(t, readErr)
+		assert.Equal(t, "important", string(gotTarget))
+	})
+
+	t.Run("case_4_committed_wal_with_missing_target_fails_closed", func(t *testing.T) {
+		t.Parallel()
+		root := t.TempDir()
+		wsDir := filepath.Join(root, "workspace")
+		cardsDir := filepath.Join(root, "cards")
+		require.NoError(t, os.MkdirAll(wsDir, 0o755))
+		require.NoError(t, os.MkdirAll(cardsDir, 0o700))
+
+		var wsStat unix.Stat_t
+		require.NoError(t, unix.Lstat(wsDir, &wsStat))
+		walBytes, err := json.Marshal(workspaceFile{
+			Dir: "shop",
+			Dev: uint64(wsStat.Dev),
+			Ino: wsStat.Ino,
+		})
+		require.NoError(t, err)
+		require.NoError(t, os.WriteFile(filepath.Join(cardsDir, workspaceRecordFile), walBytes, 0o600))
+
+		_, err = New(Options{
+			CardsDir:     cardsDir,
+			WorkspaceDir: wsDir,
+			SurlaVersion: testSurlaVersion,
+		})
+		require.ErrorContains(t, err, "does not exist")
+	})
+
+	t.Run("case_4_uncommitted_wal_with_foreign_staging_preserves_foreign_staging_and_removes_wal", func(t *testing.T) {
+		t.Parallel()
+		root := t.TempDir()
+		wsDir := filepath.Join(root, "workspace")
+		cardsDir := filepath.Join(root, "cards")
+		stageParent := filepath.Join(root, "init-stage")
+		require.NoError(t, os.MkdirAll(wsDir, 0o755))
+		require.NoError(t, os.MkdirAll(cardsDir, 0o700))
+		require.NoError(t, os.MkdirAll(stageParent, 0o700))
+
+		evalStageParent, err := abspath.Eval(stageParent)
+		require.NoError(t, err)
+		foreignStage := filepath.Join(evalStageParent, ".surla-init-replaced")
+		require.NoError(t, os.MkdirAll(foreignStage, 0o700))
+		foreignFile := filepath.Join(foreignStage, "foreign.txt")
+		require.NoError(t, os.WriteFile(foreignFile, []byte("keep-foreign"), 0o644))
+
+		var wsStat unix.Stat_t
+		require.NoError(t, unix.Lstat(wsDir, &wsStat))
+		walBytes, err := json.Marshal(workspaceFile{
+			Dir:      "shop",
+			StageDir: evalStageParent,
+			Staging:  ".surla-init-replaced",
+			Dev:      uint64(wsStat.Dev),
+			Ino:      wsStat.Ino, // does not match foreignStage
+		})
+		require.NoError(t, err)
+		require.NoError(t, os.WriteFile(filepath.Join(cardsDir, workspaceRecordFile), walBytes, 0o600))
+
+		cp, err := New(Options{
+			CardsDir:     cardsDir,
+			WorkspaceDir: wsDir,
+			InitStageDir: stageParent,
+			SurlaVersion: testSurlaVersion,
+		})
+		require.NoError(t, err)
+		defer cp.Close()
+
+		_, err = os.Stat(filepath.Join(cardsDir, workspaceRecordFile))
+		assert.ErrorIs(t, err, os.ErrNotExist)
+		gotForeign, err := os.ReadFile(foreignFile)
+		require.NoError(t, err)
+		assert.Equal(t, "keep-foreign", string(gotForeign))
+	})
 }
 
 // TestInitProjectErrorAndSpanClassificationAndEndToEndTransition verifies InitProject's
@@ -201,7 +363,7 @@ func TestInitProjectErrorAndSpanClassificationAndEndToEndTransition(t *testing.T
 		otel.SetTracerProvider(tp)
 		t.Cleanup(func() {
 			otel.SetTracerProvider(prev)
-			_ = tp.Shutdown(context.Background())
+			require.NoError(t, tp.Shutdown(context.Background()))
 		})
 		return exp
 	}
@@ -278,9 +440,146 @@ func TestInitProjectErrorAndSpanClassificationAndEndToEndTransition(t *testing.T
 		_, err = cp.InitProject(aliceCtx, &gensurla.InitProjectPayload{
 			ModulePath: "example.com/shop",
 		})
-		require.Error(t, err)
 		var svcErr *goa.ServiceError
-		assert.False(t, errors.As(err, &svcErr), "corrupt card must return an internal fault, not a 4xx ServiceError")
+		require.ErrorAs(t, err, &svcErr)
+		assert.True(t, svcErr.Fault, "corrupt card must return a Goa Fault ServiceError")
+		spans := exp.GetSpans()
+		require.Len(t, spans, 1)
+		assert.Equal(t, codes.Error, spans[0].Status.Code)
+	})
+
+	t.Run("init_fault_returns_http_500_and_mcp_internal_error_without_leaking_log_path_or_tail", func(t *testing.T) {
+		exp := withTrackedSpans(t)
+		root := t.TempDir()
+		wsDir := filepath.Join(root, "ws")
+		cardsDir := filepath.Join(root, "cards")
+		stageDir := filepath.Join(root, "stage")
+		require.NoError(t, os.MkdirAll(wsDir, 0o755))
+
+		const (
+			secretLogPath = "/private/operator/init-stage/secret-tidy.log"
+			secretTail    = "SECRET_COMPILER_TAIL_TOKEN_98765"
+		)
+		cp, err := New(Options{
+			CardsDir:     cardsDir,
+			WorkspaceDir: wsDir,
+			InitStageDir: stageDir,
+			SurlaVersion: testSurlaVersion,
+			InitRunner: func(_ context.Context, _, _ string, args ...string) error {
+				return &scaffold.StepError{
+					Args:   args,
+					Module: ".",
+					Log:    secretLogPath,
+					Tail:   secretTail,
+					Err:    errors.New("exit status 1"),
+				}
+			},
+			NewGenerator: func() scaffold.Generator {
+				return &fakeInitGenerator{pkg: "shop"}
+			},
+		})
+		require.NoError(t, err)
+		defer cp.Close()
+
+		handler := NewHTTPHandler(cp, func(_ *http.Request) (Principal, error) {
+			return Principal{ID: "alice@example.com"}, nil
+		})
+
+		// 1. Verify HTTP POST /workspace/init returns 500 Fault without leaking Log or Tail.
+		httpReq := httptest.NewRequest(http.MethodPost, "/workspace/init", strings.NewReader(`{"module_path":"example.com/shop"}`))
+		httpReq.Header.Set("Content-Type", "application/json")
+		httpRec := httptest.NewRecorder()
+		handler.ServeHTTP(httpRec, httpReq)
+		assert.Equal(t, http.StatusInternalServerError, httpRec.Code)
+		rawHTTPBody, err := io.ReadAll(httpRec.Body)
+		require.NoError(t, err)
+		assert.NotContains(t, string(rawHTTPBody), secretLogPath)
+		assert.NotContains(t, string(rawHTTPBody), secretTail)
+		var errResp goahttp.ErrorResponse
+		require.NoError(t, json.Unmarshal(rawHTTPBody, &errResp))
+		assert.True(t, errResp.Fault)
+		assert.Contains(t, errResp.Message, "go mod tidy")
+
+		// 2. Verify MCP tools/call init_project returns JSON-RPC -32603 internal error without leaking Log or Tail.
+		mcpBody := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"init_project","arguments":{"module_path":"example.com/shop"},"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}`
+		mcpReq := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(mcpBody))
+		mcpReq.Header.Set("Content-Type", "application/json")
+		mcpReq.Header.Set("Accept", "application/json, text/event-stream")
+		mcpReq.Header.Set("MCP-Protocol-Version", "2026-07-28")
+		mcpReq.Header.Set("Mcp-Method", "tools/call")
+		mcpReq.Header.Set("Mcp-Name", "init_project")
+		mcpRec := httptest.NewRecorder()
+		handler.ServeHTTP(mcpRec, mcpReq)
+		assert.Equal(t, http.StatusInternalServerError, mcpRec.Code)
+		rawMCPBody, err := io.ReadAll(mcpRec.Body)
+		require.NoError(t, err)
+		assert.NotContains(t, string(rawMCPBody), secretLogPath)
+		assert.NotContains(t, string(rawMCPBody), secretTail)
+		var rpcResp struct {
+			Error *struct {
+				Code    int    `json:"code"`
+				Message string `json:"message"`
+			} `json:"error"`
+		}
+		require.NoError(t, json.Unmarshal(rawMCPBody, &rpcResp))
+		require.NotNil(t, rpcResp.Error, "MCP response must contain a JSON-RPC error object: %s", string(rawMCPBody))
+		assert.Equal(t, -32603, rpcResp.Error.Code)
+
+		// 3. Verify the raw diagnostic error is recorded on the server trace spans.
+		var initSpans []tracetest.SpanStub
+		for _, sp := range exp.GetSpans() {
+			if sp.Name == "surla.controlplane.init_project" {
+				initSpans = append(initSpans, sp)
+			}
+		}
+		require.Len(t, initSpans, 2)
+		for _, sp := range initSpans {
+			assert.Equal(t, codes.Error, sp.Status.Code)
+			require.NotEmpty(t, sp.Events)
+		}
+	})
+
+	t.Run("after_rename_concurrent_target_replacement_fails_closed_and_preserves_replacement_tree", func(t *testing.T) {
+		exp := withTrackedSpans(t)
+		root := t.TempDir()
+		wsDir := filepath.Join(root, "ws")
+		cardsDir := filepath.Join(root, "cards")
+		stageDir := filepath.Join(root, "stage")
+		require.NoError(t, os.MkdirAll(wsDir, 0o755))
+
+		cp, err := New(Options{
+			CardsDir:     cardsDir,
+			WorkspaceDir: wsDir,
+			InitStageDir: stageDir,
+			SurlaVersion: testSurlaVersion,
+			InitRunner:   fakeInitRunner,
+			NewGenerator: func() scaffold.Generator {
+				return &fakeInitGenerator{pkg: "shop"}
+			},
+		})
+		require.NoError(t, err)
+		defer cp.Close()
+
+		replacementFile := filepath.Join(wsDir, "shop", "builder.txt")
+		cp.initStepHook = func(step string) {
+			if step == "after_rename" {
+				published := filepath.Join(wsDir, "shop")
+				movedAside := filepath.Join(wsDir, "shop-moved-aside")
+				require.NoError(t, os.Rename(published, movedAside))
+				require.NoError(t, os.MkdirAll(published, 0o755))
+				require.NoError(t, os.WriteFile(replacementFile, []byte("builder-owned"), 0o644))
+			}
+		}
+
+		_, err = cp.InitProject(aliceCtx, &gensurla.InitProjectPayload{
+			ModulePath: "example.com/shop",
+		})
+		var svcErr *goa.ServiceError
+		require.ErrorAs(t, err, &svcErr)
+		assert.True(t, svcErr.Fault)
+		gotReplacement, readErr := os.ReadFile(replacementFile)
+		require.NoError(t, readErr)
+		assert.Equal(t, "builder-owned", string(gotReplacement))
 		spans := exp.GetSpans()
 		require.Len(t, spans, 1)
 		assert.Equal(t, codes.Error, spans[0].Status.Code)
@@ -383,9 +682,18 @@ func TestCloseDrainsAndCancelsInFlightInitProjectBeforeReleasingLocks(t *testing
 			initDone <- initErr
 		}()
 
-		<-runnerStarted
+		select {
+		case <-runnerStarted:
+		case <-time.After(5 * time.Second):
+			t.Fatal("timed out waiting for InitRunner to start")
+		}
 		require.NoError(t, cp.Close())
-		initErr := <-initDone
+		var initErr error
+		select {
+		case initErr = <-initDone:
+		case <-time.After(5 * time.Second):
+			t.Fatal("timed out waiting for InitProject to finish")
+		}
 		require.Error(t, initErr)
 		assert.True(t, runnerDone.Load(), "Close must wait for InitProject to finish before returning")
 		assert.False(t, lockReleasedBeforeRunnerDone.Load(), "Close must not release project lock while InitProject is still running")
@@ -429,21 +737,40 @@ func TestCloseDrainsAndCancelsInFlightInitProjectBeforeReleasingLocks(t *testing
 			initDone <- initErr
 		}()
 
-		<-atAfterWAL
+		select {
+		case <-atAfterWAL:
+		case <-time.After(5 * time.Second):
+			t.Fatal("timed out waiting for after_wal hook")
+		}
+		closeStarted := make(chan struct{})
 		closeDone := make(chan error, 1)
 		go func() {
+			close(closeStarted)
 			err := cp.Close()
 			closeReturned.Store(true)
 			closeDone <- err
 		}()
 
-		// Give Close() a moment to block on workspaceMu.
-		time.Sleep(25 * time.Millisecond)
+		select {
+		case <-closeStarted:
+		case <-time.After(5 * time.Second):
+			t.Fatal("timed out waiting for Close goroutine to start")
+		}
 		assert.False(t, closeReturned.Load(), "Close must block on workspaceMu while InitProject holds it")
 
 		close(releaseHook)
-		require.NoError(t, <-initDone)
-		require.NoError(t, <-closeDone)
+		select {
+		case err := <-initDone:
+			require.NoError(t, err)
+		case <-time.After(5 * time.Second):
+			t.Fatal("timed out waiting for InitProject to complete")
+		}
+		select {
+		case err := <-closeDone:
+			require.NoError(t, err)
+		case <-time.After(5 * time.Second):
+			t.Fatal("timed out waiting for Close to complete")
+		}
 
 		var wf workspaceFile
 		rawWAL, err := os.ReadFile(filepath.Join(cardsDir, workspaceRecordFile))
@@ -452,6 +779,195 @@ func TestCloseDrainsAndCancelsInFlightInitProjectBeforeReleasingLocks(t *testing
 		assert.Equal(t, "shop", wf.Dir)
 		assert.Empty(t, wf.Staging)
 	})
+}
+
+// TestCP1WorkspaceDesignSourceProvenanceAcrossProposeReviseAndReopen verifies that
+// workspace-derived CP1 Change Cards re-read updated workspace design files on
+// ReviseChange after reopening ControlPlane, while caller-supplied DesignSource
+// cards preserve their supplied source across ReviseChange.
+func TestCP1WorkspaceDesignSourceProvenanceAcrossProposeReviseAndReopen(t *testing.T) {
+	t.Parallel()
+	aliceCtx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
+	root := t.TempDir()
+	wsDir := filepath.Join(root, "ws")
+	cardsDir := filepath.Join(root, "cards")
+	designDir := filepath.Join(wsDir, "design")
+	require.NoError(t, os.MkdirAll(designDir, 0o755))
+
+	const designV1 = "package design\n// v1 workspace design\n"
+	const designV2 = "package design\n// v2 workspace design\n"
+	const suppliedDesign = "package design\n// explicit caller-supplied design\n"
+	require.NoError(t, os.WriteFile(filepath.Join(designDir, "design.go"), []byte(designV1), 0o644))
+
+	var capturedSources []string
+	analyzer := &stubCP1Analyzer{
+		analyzeFn: func(_ context.Context, prompt, designSource string) (CP1SemanticAnalysis, error) {
+			capturedSources = append(capturedSources, designSource)
+			return CP1SemanticAnalysis{
+				Summary: "Summary for " + prompt,
+				Examples: []CP1ModelExample{
+					{
+						Scenario:         "Price an item",
+						InputSummary:     "1 item",
+						ExpectedOutcome:  "Returns total",
+						VerificationKind: "deterministic",
+					},
+				},
+				PreservedBehaviors: []string{"existing orders continue to work"},
+			}, nil
+		},
+		reviseFn: func(_ context.Context, prior CP1PriorCard, prompt, designSource string) (CP1RevisionSemanticAnalysis, error) {
+			capturedSources = append(capturedSources, designSource)
+			revExamples := make([]CP1RevisionModelExample, 0, len(prior.Examples))
+			for _, ex := range prior.Examples {
+				revExamples = append(revExamples, CP1RevisionModelExample{
+					PriorID:          ex.ID,
+					Scenario:         ex.Scenario,
+					InputSummary:     ex.InputSummary,
+					ExpectedOutcome:  ex.ExpectedOutcome,
+					VerificationKind: ex.VerificationKind,
+				})
+			}
+			return CP1RevisionSemanticAnalysis{
+				Summary:            "Revised summary for " + prompt,
+				Examples:           revExamples,
+				PreservedBehaviors: prior.PreservedBehaviors,
+			}, nil
+		},
+	}
+
+	cp1, err := New(Options{
+		CardsDir:     cardsDir,
+		WorkspaceDir: wsDir,
+		Analyzer:     analyzer,
+	})
+	require.NoError(t, err)
+
+	// 1. ProposeChange with nil DesignSource reads design/design.go (v1) from the bound workspace.
+	wsCard, err := cp1.ProposeChange(aliceCtx, &gensurla.ProposeChangePayload{
+		ChangeID: "chg-workspace-origin",
+		Prompt:   "Add loyalty discount",
+	})
+	require.NoError(t, err)
+	require.Len(t, capturedSources, 1)
+	assert.Contains(t, capturedSources[0], "v1 workspace design")
+
+	// 2. ProposeChange with explicit DesignSource records caller-supplied provenance.
+	suppliedCopy := suppliedDesign
+	supCard, err := cp1.ProposeChange(aliceCtx, &gensurla.ProposeChangePayload{
+		ChangeID:     "chg-supplied-origin",
+		Prompt:       "Add tax breakdown",
+		DesignSource: &suppliedCopy,
+	})
+	require.NoError(t, err)
+	require.Len(t, capturedSources, 2)
+	assert.Equal(t, suppliedDesign, capturedSources[1])
+
+	require.NoError(t, cp1.Close())
+
+	// Update workspace design/design.go on disk to v2 and reopen ControlPlane.
+	require.NoError(t, os.WriteFile(filepath.Join(designDir, "design.go"), []byte(designV2), 0o644))
+	cp2, err := New(Options{
+		CardsDir:     cardsDir,
+		WorkspaceDir: wsDir,
+		Analyzer:     analyzer,
+	})
+	require.NoError(t, err)
+	defer cp2.Close()
+
+	// 3. ReviseChange with nil DesignSource on the workspace-origin card re-reads v2 from disk.
+	_, err = cp2.ReviseChange(aliceCtx, &gensurla.ReviseChangePayload{
+		ChangeID:        wsCard.ChangeID,
+		RequestRevision: wsCard.RequestRevision,
+		Prompt:          "Add loyalty discount with cap",
+	})
+	require.NoError(t, err)
+	require.Len(t, capturedSources, 3)
+	assert.Contains(t, capturedSources[2], "v2 workspace design")
+
+	// 4. ReviseChange with nil DesignSource on the supplied-origin card preserves the caller-supplied design.
+	_, err = cp2.ReviseChange(aliceCtx, &gensurla.ReviseChangePayload{
+		ChangeID:        supCard.ChangeID,
+		RequestRevision: supCard.RequestRevision,
+		Prompt:          "Add tax breakdown with rounding",
+	})
+	require.NoError(t, err)
+	require.Len(t, capturedSources, 4)
+	assert.Equal(t, suppliedDesign, capturedSources[3])
+}
+
+// TestBoundControlPlaneDefaultEvaluatorAndGeneratorIgnoreWorkspaceTMPDIRAndCleanOwnWork
+// verifies D8 and D1: when a workspace-bound ControlPlane is constructed with nil
+// Evaluator and nil NewGenerator while TMPDIR points inside WorkspaceDir, both
+// default preview/diff evaluations and default InitProject generation allocate
+// their work directories under <CardsDir>/designeval outside WorkspaceDir, and
+// closing a per-call generator does not remove the long-lived evaluator's work.
+func TestBoundControlPlaneDefaultEvaluatorAndGeneratorIgnoreWorkspaceTMPDIRAndCleanOwnWork(t *testing.T) {
+	root := t.TempDir()
+	wsDir := filepath.Join(root, "workspace")
+	wsTmpDir := filepath.Join(wsDir, "tmp")
+	cardsDir := filepath.Join(root, "cards")
+	stageDir := filepath.Join(root, "stage")
+	require.NoError(t, os.MkdirAll(wsTmpDir, 0o755))
+	t.Setenv("TMPDIR", wsTmpDir)
+
+	// Verify resolveInitStageParentDir rejects a 0755 stage directory.
+	badStageDir := filepath.Join(root, "bad-stage-0755")
+	require.NoError(t, os.MkdirAll(badStageDir, 0o755))
+	require.NoError(t, os.Chmod(badStageDir, 0o755))
+	var wsStat unix.Stat_t
+	require.NoError(t, unix.Stat(wsDir, &wsStat))
+	require.NoError(t, os.Chmod(badStageDir, 0o755))
+	err := validateInitStageParentDir(badStageDir, uint64(wsStat.Dev), wsDir)
+	require.ErrorContains(t, err, "has mode 0755, want 0700")
+
+	cp, err := New(Options{
+		CardsDir:     cardsDir,
+		WorkspaceDir: wsDir,
+		InitStageDir: stageDir,
+		SurlaVersion: testSurlaVersion,
+	})
+	require.NoError(t, err)
+
+	// 1. Exercise the default long-lived evaluator (Evaluate fails fast on empty snapshot
+	// after admit() allocates its surla-designeval-work-* directory).
+	_, err = cp.evaluator.Evaluate(context.Background(), map[string]string{})
+	require.Error(t, err)
+
+	physCards, err := abspath.Eval(cardsDir)
+	require.NoError(t, err)
+	evalParent := filepath.Join(physCards, "designeval")
+	entriesAfterEval, err := os.ReadDir(evalParent)
+	require.NoError(t, err)
+	require.Len(t, entriesAfterEval, 1, "default evaluator must allocate its workDir under <CardsDir>/designeval")
+	evalWorkName := entriesAfterEval[0].Name()
+	assert.True(t, strings.HasPrefix(evalWorkName, "surla-designeval-work-"))
+
+	// 2. Exercise the default per-call InitProject generator and close it; verify it
+	// allocates under <CardsDir>/designeval and cleans up only its own workDir on Close.
+	initGen := cp.makeInitGenerator(evalParent)
+	_, err = initGen.Generate(context.Background(), map[string]string{})
+	require.Error(t, err)
+	entriesDuringInitGen, err := os.ReadDir(evalParent)
+	require.NoError(t, err)
+	require.Len(t, entriesDuringInitGen, 2, "per-call init generator must allocate its own workDir under <CardsDir>/designeval")
+	require.NoError(t, initGen.Close())
+
+	entriesAfterInitGenClose, err := os.ReadDir(evalParent)
+	require.NoError(t, err)
+	require.Len(t, entriesAfterInitGenClose, 1, "closing per-call init generator must keep cp.evaluator's workDir intact")
+	assert.Equal(t, evalWorkName, entriesAfterInitGenClose[0].Name())
+
+	// 3. Verify TMPDIR inside the workspace remained completely untouched.
+	wsTmpEntries, err := os.ReadDir(wsTmpDir)
+	require.NoError(t, err)
+	assert.Empty(t, wsTmpEntries, "bound default evaluator and generator must never allocate inside workspace TMPDIR")
+
+	// 4. Verify cp.Close() removes cp.evaluator's workDir.
+	require.NoError(t, cp.Close())
+	entriesAfterCPClose, err := os.ReadDir(evalParent)
+	require.NoError(t, err)
+	assert.Empty(t, entriesAfterCPClose, "ControlPlane.Close must remove cp.evaluator's workDir")
 }
 
 // Generate returns a single stub generated Go source file for g.pkg.

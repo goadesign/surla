@@ -52,19 +52,15 @@ type serveConfig struct {
 	modelName string
 	// swarmProfilesPath is the path of a JSON array of swarm.ProviderProfile.
 	swarmProfilesPath string
-	// projectDir is the path of a starter project created by `surla init`
-	// from whose committed HEAD `surla serve -project` derives its CP3/CP4
-	// verification configuration; mutually exclusive with verificationPath.
+	// projectDir is the bound workspace directory (default: the startup working
+	// directory); when verificationPath is empty and the workspace holds a
+	// committed starter project, CP3/CP4 verification is derived from its HEAD.
 	projectDir string
 	// projectSet reports whether -project was explicitly passed on the CLI.
 	projectSet bool
-	// bindWorkspace reports whether `surla serve` should bind a local
-	// filesystem workspace (-project when set, or the working directory).
-	bindWorkspace bool
 	// verificationPath is the path of the operator's CP4 verification
-	// configuration (see loadVerificationConfig); empty disables
-	// verify_change, get_verification and list_verifications unless
-	// projectDir is set.
+	// configuration (see loadVerificationConfig); empty derives CP4
+	// verification from a committed starter workspace when present.
 	verificationPath string
 	// promotionPath is the path of the operator's CP5 promotion
 	// configuration (see loadPromotionConfig); empty leaves approve_merge
@@ -232,13 +228,12 @@ func runServe(args []string) (err error) {
 	fs.StringVar(&cfg.swarmProfilesPath, "swarm-profiles", "", "JSON file listing the coding-agent provider profiles used for CP2 swarm plans")
 	fs.StringVar(&cfg.cardsDir, "cards-dir", ".surla/cards", "directory where CP1 Change Cards are saved so they survive restarts; one surla serve at a time may use it")
 	fs.StringVar(&cfg.promotionPath, "promotion-config", "", "JSON file with the CP5 report directory, required suite and environment, and release directory of staged binaries that approve_merge checks; it approves staged binaries for a fresh launch, never a running service")
-	fs.StringVar(&cfg.projectDir, "project", "", "starter project directory created by surla init; derives CP3/CP4 verification from its committed HEAD (excludes -verification-config)")
+	fs.StringVar(&cfg.projectDir, "project", "", "project workspace directory (default: working directory); derives CP3/CP4 verification from its committed starter HEAD when -verification-config is omitted")
 	fs.StringVar(&cfg.verificationPath, "verification-config", "", "JSON file with the CP4 candidate, evaluator suite, runs and reports configuration used by verify_change")
 	fs.BoolVar(&cfg.importLegacyWorkspace, "import-legacy-workspace", false, "import existing workspace .surla/cards, .surla/runs, and reports/ once into protected operator storage before starting")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
-	cfg.bindWorkspace = true
 	fs.Visit(func(f *flag.Flag) {
 		switch f.Name {
 		case "project":
@@ -363,7 +358,7 @@ func writeServeStatus(w io.Writer, addr *net.TCPAddr, opts controlplane.Options,
 		fmt.Fprintf(w, "surla: CP4 (verify_change, get_verification, list_verifications): on (runs in %s, reports in %s, evaluator suite commit %s)\n",
 			opts.Verification.RunsDir, opts.Verification.Plan.ReportDir, opts.Verification.Plan.SuiteCommit)
 	case opts.ResolveVerification != nil:
-		fmt.Fprintf(w, "surla: CP4 (verify_change, get_verification, list_verifications): waiting for a committed starter project in %s (call init_project or commit the starter layout; runs in %s)\n",
+		fmt.Fprintf(w, "surla: CP4 (verify_change, get_verification, list_verifications): workspace %s (runs in %s; resolves the committed starter HEAD on each call after init_project or surla init)\n",
 			opts.WorkspaceDir, opts.RunsDir)
 	default:
 		fmt.Fprintln(w, "surla: CP4 (verify_change, get_verification, list_verifications): off"+
@@ -724,75 +719,46 @@ func serveOptions(
 		return nil
 	}
 
-	if cfg.bindWorkspace || cfg.projectSet || cfg.importLegacyWorkspace {
-		ws, err := configureServeWorkspace(cfg)
-		if err != nil {
-			return controlplane.Options{}, errors.Join(err, cleanupModel())
-		}
-		live := &controlplane.LiveConfig{
-			Env: liveTargetEnv(environ, resolvedCfg),
-		}
-		if ws.verification != nil {
-			live.Command = ws.verification.Command
-			live.StartTimeout = ws.verification.Timeout
-		} else if ws.resolveVerification != nil {
-			self, selfErr := selfCommand()
-			if selfErr != nil {
-				var lockErr error
-				if ws.closeProjectLock != nil {
-					lockErr = ws.closeProjectLock()
-				}
-				return controlplane.Options{}, errors.Join(selfErr, cleanupModel(), lockErr)
-			}
-			live.Command = self
-			live.StartTimeout = defaultProjectVerifyTimeout
-		}
-		return controlplane.Options{
-			CardsDir:               ws.cardsDir,
-			WorkspaceDir:           ws.workspaceDir,
-			InitStageDir:           ws.initStageDir,
-			Evaluator:              designeval.NewEvaluatorInDir(ws.evalWorkDir),
-			NewGenerator:           func() scaffold.Generator { return designeval.NewEvaluatorInDir(ws.evalWorkDir) },
-			SurlaVersion:           surlaBuildVersion(),
-			Analyzer:               analyzer,
-			CloseAnalyzer:          closeModel,
-			ModelBuilder:           newModelBuilder(getenv, environ),
-			SwarmProfiles:          profiles,
-			Verification:           ws.verification,
-			RunsDir:                ws.runsDir,
-			ResolveVerification:    ws.resolveVerification,
-			PromotionTarget:        ws.promotionTarget,
-			ResolvePromotionTarget: ws.resolvePromotionTarget,
-			Live:                   live,
-			CloseProjectLock:       ws.closeProjectLock,
-		}, nil
-	}
-
-	verification, err := resolveVerificationConfig(cfg)
-	if err != nil {
-		return controlplane.Options{}, errors.Join(err, cleanupModel())
-	}
-	promotion, err := loadPromotionConfig(cfg.promotionPath)
+	ws, err := configureServeWorkspace(cfg)
 	if err != nil {
 		return controlplane.Options{}, errors.Join(err, cleanupModel())
 	}
 	live := &controlplane.LiveConfig{
 		Env: liveTargetEnv(environ, resolvedCfg),
 	}
-	if verification != nil {
-		live.Command = verification.Command
-		live.StartTimeout = verification.Timeout
+	if ws.verification != nil {
+		live.Command = ws.verification.Command
+		live.StartTimeout = ws.verification.Timeout
+	} else if ws.resolveVerification != nil {
+		self, selfErr := selfCommand()
+		if selfErr != nil {
+			var lockErr error
+			if ws.closeProjectLock != nil {
+				lockErr = ws.closeProjectLock()
+			}
+			return controlplane.Options{}, errors.Join(selfErr, cleanupModel(), lockErr)
+		}
+		live.Command = self
+		live.StartTimeout = defaultProjectVerifyTimeout
 	}
 	return controlplane.Options{
-		CardsDir:        cfg.cardsDir,
-		SurlaVersion:    surlaBuildVersion(),
-		Analyzer:        analyzer,
-		CloseAnalyzer:   closeModel,
-		ModelBuilder:    newModelBuilder(getenv, environ),
-		SwarmProfiles:   profiles,
-		Verification:    verification,
-		PromotionTarget: promotion,
-		Live:            live,
+		CardsDir:               ws.cardsDir,
+		WorkspaceDir:           ws.workspaceDir,
+		InitStageDir:           ws.initStageDir,
+		Evaluator:              designeval.NewEvaluatorInDir(ws.evalWorkDir),
+		NewGenerator:           func() scaffold.Generator { return designeval.NewEvaluatorInDir(ws.evalWorkDir) },
+		SurlaVersion:           surlaBuildVersion(),
+		Analyzer:               analyzer,
+		CloseAnalyzer:          closeModel,
+		ModelBuilder:           newModelBuilder(getenv, environ),
+		SwarmProfiles:          profiles,
+		Verification:           ws.verification,
+		RunsDir:                ws.runsDir,
+		ResolveVerification:    ws.resolveVerification,
+		PromotionTarget:        ws.promotionTarget,
+		ResolvePromotionTarget: ws.resolvePromotionTarget,
+		Live:                   live,
+		CloseProjectLock:       ws.closeProjectLock,
 	}, nil
 }
 

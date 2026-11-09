@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"maps"
 	"net/http"
+	"path/filepath"
 	"strings"
 	"sync"
 	"unicode/utf8"
@@ -21,6 +22,7 @@ import (
 	genmcpsurla "github.com/goadesign/surla/gen/jsonrpc/mcp_surla/server"
 	genmcpadapter "github.com/goadesign/surla/gen/mcp_surla"
 	gensurla "github.com/goadesign/surla/gen/surla"
+	"github.com/goadesign/surla/internal/abspath"
 	"github.com/goadesign/surla/internal/designeval"
 	"github.com/goadesign/surla/internal/diff"
 	"github.com/goadesign/surla/internal/goldenpath"
@@ -110,17 +112,24 @@ type (
 		// init_project before atomic publication.
 		InitStageDir string
 		// Evaluator evaluates Goa design snapshots for preview_architecture and
-		// diff. When nil, New constructs a default designeval.Evaluator.
+		// diff. When nil, New constructs a default designeval.Evaluator (using
+		// <CardsDir>/designeval as its protected temporary parent when
+		// WorkspaceDir is set). When a host supplies Evaluator for a bound
+		// workspace, it must construct it with designeval.NewEvaluatorInDir
+		// using a protected directory outside WorkspaceDir.
 		Evaluator *designeval.Evaluator
 		// NewGenerator constructs a fresh scaffold.Generator for each
 		// init_project call. When nil, InitProject constructs a fresh
-		// designeval.NewEvaluator() per call.
+		// designeval.NewEvaluatorInDir("<CardsDir>/designeval") per call. When
+		// a host supplies NewGenerator, each returned generator must use a
+		// protected directory outside WorkspaceDir.
 		NewGenerator func() scaffold.Generator
 		// InitRunner runs external commands (`git`, `go`) during init_project.
 		// When nil, scaffold.RunCommand is used.
 		InitRunner scaffold.Runner
-		// SurlaVersion is the Surla module version pinned in `eval/go.mod` by
-		// init_project. When empty, surla.Version() is used.
+		// SurlaVersion is the exact canonical Surla module version pinned in
+		// `eval/go.mod` by init_project. When empty, init_project returns
+		// not_implemented.
 		SurlaVersion string
 		// Analyzer performs CP1 semantic analysis via a model call.
 		Analyzer CP1Analyzer
@@ -379,7 +388,15 @@ func New(opts Options) (*ControlPlane, error) {
 	}
 	eval := opts.Evaluator
 	if eval == nil {
-		eval = designeval.NewEvaluator()
+		if wsRoot != "" {
+			physCards, err := abspath.Eval(cards.dir)
+			if err != nil {
+				return nil, errors.Join(fmt.Errorf("resolve cards directory %s: %w", cards.dir, err), cards.close(), cleanupFailedNew())
+			}
+			eval = designeval.NewEvaluatorInDir(filepath.Join(physCards, "designeval"))
+		} else {
+			eval = designeval.NewEvaluator()
+		}
 	}
 	var initialLiveEnv []string
 	if opts.Live != nil {

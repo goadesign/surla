@@ -4,17 +4,14 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
-	"strings"
 	"syscall"
 
 	"github.com/goadesign/surla/internal/controlplane"
@@ -119,55 +116,11 @@ func loadPromotionConfig(path string) (controlplane.PromotionTarget, error) {
 // file and resolves its relative directories against the current working
 // directory.
 func decodePromotionFile(path string) (promotionFile, error) {
-	raw, err := os.ReadFile(path)
+	wd, err := os.Getwd()
 	if err != nil {
-		return promotionFile{}, fmt.Errorf("read -promotion-config: %w", err)
+		return promotionFile{}, fmt.Errorf("-promotion-config %s: %w", path, err)
 	}
-	dec := json.NewDecoder(bytes.NewReader(raw))
-	dec.DisallowUnknownFields()
-	var f promotionFile
-	if err := dec.Decode(&f); err != nil {
-		return promotionFile{}, fmt.Errorf("decode -promotion-config %s: %w", path, err)
-	}
-	if err := dec.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
-		return promotionFile{}, fmt.Errorf("decode -promotion-config %s: data after the configuration", path)
-	}
-	var missing []string
-	for _, field := range []struct{ name, value string }{
-		{"report_dir", f.ReportDir}, {"release_dir", f.ReleaseDir}, {"suite_id", f.SuiteID},
-		{"suite_commit", f.SuiteCommit}, {"environment", f.Environment},
-	} {
-		if field.value == "" {
-			missing = append(missing, field.name)
-		}
-	}
-	if len(f.Binaries) == 0 {
-		missing = append(missing, "binaries")
-	}
-	if len(missing) > 0 {
-		return promotionFile{}, fmt.Errorf("-promotion-config %s is missing %s", path, strings.Join(missing, ", "))
-	}
-	if !verify.IsCommitID(f.SuiteCommit) {
-		return promotionFile{}, fmt.Errorf("-promotion-config %s: suite_commit %q must be a full commit ID (40 or 64 lowercase hex characters)", path, f.SuiteCommit)
-	}
-	seen := make(map[string]bool, len(f.Binaries))
-	for _, name := range f.Binaries {
-		if err := verify.ValidateArtifactName(name); err != nil {
-			return promotionFile{}, fmt.Errorf("-promotion-config %s: %w", path, err)
-		}
-		if seen[name] {
-			return promotionFile{}, fmt.Errorf("-promotion-config %s: binary %q is listed twice", path, name)
-		}
-		seen[name] = true
-	}
-	for _, dir := range []*string{&f.ReportDir, &f.ReleaseDir} {
-		abs, err := filepath.Abs(*dir)
-		if err != nil {
-			return promotionFile{}, fmt.Errorf("-promotion-config %s: %w", path, err)
-		}
-		*dir = abs
-	}
-	return f, nil
+	return decodePromotionFileAtBase(path, wd)
 }
 
 // hashFile returns the hex SHA-256 digest of the regular file name inside

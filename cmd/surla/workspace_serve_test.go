@@ -254,7 +254,7 @@ func TestImportLegacyWorkspaceSnapshotsConfiguredPromotionReportsAndIsolatesRoot
 	require.NotNil(t, importedCfg.promotionTarget)
 	t.Cleanup(func() {
 		if importedCfg.closeProjectLock != nil {
-			_ = importedCfg.closeProjectLock()
+			assert.NoError(t, importedCfg.closeProjectLock())
 		}
 	})
 
@@ -314,4 +314,76 @@ func TestImportLegacyWorkspaceSnapshotsConfiguredPromotionReportsAndIsolatesRoot
 	require.NoError(t, err)
 	require.NotNil(t, approvedNew.Approval)
 	assert.Equal(t, repNew.digest, approvedNew.Approval.ReportDigest)
+}
+
+// TestDefaultOperatorRootDeterministicAndPermissionValidation verifies D1:
+// defaultOperatorRoot uses only the single deterministic root from userConfigDir,
+// failing without fallback when userConfigDir fails, overlaps the workspace, or
+// has permissive (non-0700) permissions.
+func TestDefaultOperatorRootDeterministicAndPermissionValidation(t *testing.T) {
+	root := t.TempDir()
+	wsDir := filepath.Join(root, "workspace")
+	require.NoError(t, os.MkdirAll(wsDir, 0o755))
+	t.Chdir(wsDir)
+
+	priorConfigDir := userConfigDir
+	t.Cleanup(func() { userConfigDir = priorConfigDir })
+
+	// 1. When userConfigDir fails, configureServeWorkspace fails without falling back to TMPDIR or sibling dirs.
+	userConfigDir = func() (string, error) {
+		return "", os.ErrNotExist
+	}
+	_, err := configureServeWorkspace(serveConfig{})
+	require.ErrorIs(t, err, os.ErrNotExist)
+
+	// 2. When userConfigDir points inside the bound workspace, configureServeWorkspace fails without falling back.
+	userConfigDir = func() (string, error) {
+		return filepath.Join(wsDir, ".config"), nil
+	}
+	_, err = configureServeWorkspace(serveConfig{})
+	require.ErrorContains(t, err, "must be outside the workspace")
+
+	// 3. When <userConfigDir>/surla/operator already exists with permissive 0755 mode, configureServeWorkspace fails.
+	cfgRoot := filepath.Join(root, "user-config")
+	opRoot := filepath.Join(cfgRoot, "surla", "operator")
+	require.NoError(t, os.MkdirAll(opRoot, 0o755))
+	require.NoError(t, os.Chmod(opRoot, 0o755))
+	userConfigDir = func() (string, error) {
+		return cfgRoot, nil
+	}
+	_, err = configureServeWorkspace(serveConfig{})
+	require.ErrorContains(t, err, "has permissions 0755, want 0o700")
+}
+
+// isolateServeWorkspace points userConfigDir at a new 0700 temporary directory
+// and changes the working directory to a new empty workspace directory,
+// returning that workspace directory path.
+func isolateServeWorkspace(t *testing.T) string {
+	t.Helper()
+	root := t.TempDir()
+	cfgRoot := filepath.Join(root, "user-config")
+	wsDir := filepath.Join(root, "workspace")
+	require.NoError(t, os.MkdirAll(cfgRoot, 0o700))
+	require.NoError(t, os.MkdirAll(wsDir, 0o755))
+	prior := userConfigDir
+	userConfigDir = func() (string, error) { return cfgRoot, nil }
+	t.Cleanup(func() { userConfigDir = prior })
+	t.Chdir(wsDir)
+	return wsDir
+}
+
+// closeServeOptions releases the evaluator, analyzer, and project lock owned by
+// opts when a test constructs serveOptions without handing opts to
+// controlplane.New.
+func closeServeOptions(t *testing.T, opts controlplane.Options) {
+	t.Helper()
+	if opts.Evaluator != nil {
+		assert.NoError(t, opts.Evaluator.Close())
+	}
+	if opts.CloseAnalyzer != nil {
+		assert.NoError(t, opts.CloseAnalyzer())
+	}
+	if opts.CloseProjectLock != nil {
+		assert.NoError(t, opts.CloseProjectLock())
+	}
 }

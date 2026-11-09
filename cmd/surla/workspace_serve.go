@@ -74,9 +74,6 @@ const (
 // directories, optional `-import-legacy-workspace` cutover, and dynamic
 // verification/promotion resolvers for `surla serve`.
 func configureServeWorkspace(cfg serveConfig) (ws workspaceServeConfig, err error) {
-	if cfg.projectSet && cfg.verificationPath != "" {
-		return workspaceServeConfig{}, errors.New("-project and -verification-config cannot be used together")
-	}
 	wd, err := os.Getwd()
 	if err != nil {
 		return workspaceServeConfig{}, err
@@ -129,7 +126,7 @@ func configureServeWorkspace(cfg serveConfig) (ws workspaceServeConfig, err erro
 	if err != nil {
 		return workspaceServeConfig{}, err
 	}
-	wsHash := sha256HexString(initialWorkspaceRoot)[:16]
+	wsHash := sha256HexString(initialWorkspaceRoot)
 	operatorProjectDir := filepath.Join(opRoot, "project-"+wsHash)
 	if err := markOperatorPrivateDir(operatorProjectDir); err != nil {
 		return workspaceServeConfig{}, fmt.Errorf("create operator project directory: %w", err)
@@ -147,16 +144,16 @@ func configureServeWorkspace(cfg serveConfig) (ws workspaceServeConfig, err erro
 
 	importedRoot := filepath.Join(operatorProjectDir, "imported")
 	hasImported := false
-	if info, statErr := os.Lstat(importedRoot); statErr == nil {
-		if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
-			return workspaceServeConfig{}, fmt.Errorf("imported workspace state %s is not a directory", importedRoot)
+	if _, statErr := os.Lstat(importedRoot); statErr == nil {
+		if err := validateOperatorPrivateDir(importedRoot); err != nil {
+			return workspaceServeConfig{}, fmt.Errorf("validate imported workspace state %s: %w", importedRoot, err)
 		}
 		hasImported = true
 	} else if !errors.Is(statErr, fs.ErrNotExist) {
 		return workspaceServeConfig{}, fmt.Errorf("stat imported workspace state %s: %w", importedRoot, statErr)
 	}
 
-	cardsHash := sha256HexString(startupBaseDir + "\x00" + initialWorkspaceRoot)[:16]
+	cardsHash := sha256HexString(startupBaseDir + "\x00" + initialWorkspaceRoot)
 	var (
 		operatorCardsDir    string
 		operatorRunsDir     string
@@ -167,6 +164,13 @@ func configureServeWorkspace(cfg serveConfig) (ws workspaceServeConfig, err erro
 		operatorCardsDir = filepath.Join(importedRoot, "cards-"+cardsHash)
 		operatorRunsDir = filepath.Join(importedRoot, "runs")
 		operatorReportsRoot = filepath.Join(importedRoot, "reports")
+		if _, statErr := os.Lstat(operatorReportsRoot); statErr == nil {
+			if err := validateOperatorPrivateDir(operatorReportsRoot); err != nil {
+				return workspaceServeConfig{}, fmt.Errorf("validate imported reports root %s: %w", operatorReportsRoot, err)
+			}
+		} else if !errors.Is(statErr, fs.ErrNotExist) {
+			return workspaceServeConfig{}, fmt.Errorf("stat imported reports root %s: %w", operatorReportsRoot, statErr)
+		}
 		defaultReportDir = filepath.Join(operatorReportsRoot, "default")
 	} else {
 		operatorCardsDir = filepath.Join(operatorProjectDir, "cards-"+cardsHash)
@@ -189,20 +193,11 @@ func configureServeWorkspace(cfg serveConfig) (ws workspaceServeConfig, err erro
 	}
 
 	initStageDir := filepath.Join(operatorProjectDir, "init-stage")
-	if err := markOperatorPrivateDir(initStageDir); err != nil {
-		return workspaceServeConfig{}, err
-	}
 	evalWorkDir := filepath.Join(operatorProjectDir, "designeval-work")
 	if err := markOperatorPrivateDir(evalWorkDir); err != nil {
 		return workspaceServeConfig{}, err
 	}
 
-	probeWorkspaceDir := peekRestoredWorkspaceDir(cardsDir, initialWorkspaceRoot)
-	if cfg.cardsDirExplicit {
-		if err := validateWorkspaceDirSeparation("cards directory", cardsDir, initialWorkspaceRoot, probeWorkspaceDir); err != nil {
-			return workspaceServeConfig{}, err
-		}
-	}
 	effectivePromotionPath := filepath.Join(operatorProjectDir, "promotion.json")
 	if cfg.promotionPath != "" {
 		effectivePromotionPath = resolveAgainstBase(startupBaseDir, cfg.promotionPath)
@@ -214,7 +209,7 @@ func configureServeWorkspace(cfg serveConfig) (ws workspaceServeConfig, err erro
 			effectivePromotionPath,
 			startupBaseDir,
 			initialWorkspaceRoot,
-			probeWorkspaceDir,
+			initialWorkspaceRoot,
 			operatorReportsRoot,
 		)
 		if err != nil {
@@ -247,26 +242,8 @@ func configureServeWorkspace(cfg serveConfig) (ws workspaceServeConfig, err erro
 		resolveVerification func(ctx context.Context, activeWorkspaceDir string) (*controlplane.VerificationConfig, error)
 	)
 	if cfg.verificationPath != "" {
-		if err := validateVerificationConfigSeparation(verPath, startupExternalVer, initialWorkspaceRoot, probeWorkspaceDir); err != nil {
-			return workspaceServeConfig{}, err
-		}
 		runsDir = startupExternalVer.RunsDir
 		startupVerification = startupExternalVer
-		resolveVerification = func(_ context.Context, activeWorkspaceDir string) (*controlplane.VerificationConfig, error) {
-			v, err := loadWorkspaceVerificationConfig(verPath, startupBaseDir, initialWorkspaceRoot, activeWorkspaceDir)
-			if err != nil {
-				return nil, err
-			}
-			if v.RunsDir != startupExternalVer.RunsDir {
-				return nil, fmt.Errorf(
-					"-verification-config %s changed runs_dir from %s to %s; restart surla serve to change runs_dir",
-					verPath,
-					startupExternalVer.RunsDir,
-					v.RunsDir,
-				)
-			}
-			return v, nil
-		}
 	} else {
 		if err := markOperatorPrivateDir(operatorRunsDir); err != nil {
 			return workspaceServeConfig{}, err
@@ -303,7 +280,7 @@ func configureServeWorkspace(cfg serveConfig) (ws workspaceServeConfig, err erro
 			return starterVerificationConfig(vCtx, activeWorkspaceDir, operatorRunsDir, repDir)
 		}
 		startupCtx, cancel := context.WithTimeout(context.Background(), gitReadTimeout)
-		if v, probeErr := resolveVerification(startupCtx, probeWorkspaceDir); probeErr == nil {
+		if v, probeErr := resolveVerification(startupCtx, initialWorkspaceRoot); probeErr == nil {
 			startupVerification = v
 		}
 		cancel()
@@ -508,50 +485,42 @@ func decodePromotionFileAtBase(path, baseDir string) (promotionFile, error) {
 	return f, nil
 }
 
-// defaultOperatorRoot returns the first writable operator-only storage root
-// strictly outside startupBaseDir, initialWorkspaceRoot, and any extraDirs.
+// defaultOperatorRoot returns the single deterministic operator-only storage
+// root (`<UserConfigDir>/surla/operator`) strictly outside startupBaseDir,
+// initialWorkspaceRoot, and any extraDirs, failing if unavailable, inside the
+// workspace grant, or not owned by the current effective user with 0o700
+// permissions.
 func defaultOperatorRoot(startupBaseDir, initialWorkspaceRoot string, extraDirs ...string) (string, error) {
-	var candidates []string
-	if cfgRoot, err := userConfigDir(); err == nil && strings.TrimSpace(cfgRoot) != "" {
-		candidates = append(candidates, filepath.Join(cfgRoot, "surla", "operator"))
+	cfgRoot, err := userConfigDir()
+	if err != nil {
+		return "", fmt.Errorf("determine user configuration directory for operator storage: %w", err)
 	}
-	candidates = append(
-		candidates,
-		filepath.Join(os.TempDir(), fmt.Sprintf("surla-operator-%d", os.Getuid())),
-		filepath.Join(filepath.Dir(initialWorkspaceRoot), fmt.Sprintf(".surla-operator-%d", os.Getuid())),
-	)
+	if strings.TrimSpace(cfgRoot) == "" {
+		return "", errors.New("user configuration directory is empty; set HOME or XDG_CONFIG_HOME for operator storage")
+	}
+	cand := filepath.Join(cfgRoot, "surla", "operator")
 	excluded := append([]string{startupBaseDir, initialWorkspaceRoot}, extraDirs...)
-	var failures []error
-	for _, cand := range candidates {
-		phys, err := evalExistingOrMissingPath(cand)
-		if err != nil {
-			failures = append(failures, err)
-			continue
-		}
-		if overlapsAnyDir(phys, excluded) {
-			failures = append(failures, fmt.Errorf("operator root %s overlaps workspace", phys))
-			continue
-		}
-		if err := markOperatorPrivateDir(phys); err != nil {
-			failures = append(failures, err)
-			continue
-		}
-		evalPhys, err := abspath.Eval(phys)
-		if err != nil {
-			failures = append(failures, err)
-			continue
-		}
-		if overlapsAnyDir(evalPhys, excluded) {
-			failures = append(failures, fmt.Errorf("operator root %s overlaps workspace", evalPhys))
-			continue
-		}
-		if err := unix.Faccessat(unix.AT_FDCWD, evalPhys, unix.R_OK|unix.W_OK|unix.X_OK, unix.AT_EACCESS); err != nil {
-			failures = append(failures, err)
-			continue
-		}
-		return evalPhys, nil
+	phys, err := evalExistingOrMissingPath(cand)
+	if err != nil {
+		return "", fmt.Errorf("resolve operator storage root %s: %w", cand, err)
 	}
-	return "", fmt.Errorf("cannot find operator storage root outside workspace: %w", errors.Join(failures...))
+	if overlapsAnyDir(phys, excluded) {
+		return "", fmt.Errorf("operator storage root %s must be outside the workspace (%s)", phys, initialWorkspaceRoot)
+	}
+	if err := markOperatorPrivateDir(phys); err != nil {
+		return "", fmt.Errorf("prepare operator storage root %s: %w", phys, err)
+	}
+	evalPhys, err := abspath.Eval(phys)
+	if err != nil {
+		return "", fmt.Errorf("resolve operator storage root %s: %w", phys, err)
+	}
+	if overlapsAnyDir(evalPhys, excluded) {
+		return "", fmt.Errorf("operator storage root %s must be outside the workspace (%s)", evalPhys, initialWorkspaceRoot)
+	}
+	if err := validateOperatorPrivateDir(evalPhys); err != nil {
+		return "", err
+	}
+	return evalPhys, nil
 }
 
 // overlapsAnyDir reports whether dir lies within or equals any directory in
@@ -565,41 +534,64 @@ func overlapsAnyDir(dir string, dirs []string) bool {
 	return false
 }
 
-// peekRestoredWorkspaceDir returns `<initialWorkspaceRoot>/<dir>` when
-// `<cardsDir>/workspace.json` already records an existing child directory, so
-// startup validation and status probing inspect the restored project directory.
-func peekRestoredWorkspaceDir(cardsDir, initialWorkspaceRoot string) string {
-	raw, err := os.ReadFile(filepath.Join(cardsDir, "workspace.json"))
-	if err != nil {
-		return initialWorkspaceRoot
-	}
-	var wf struct {
-		Dir     string `json:"dir"`
-		Staging string `json:"staging"`
-	}
-	if err := json.Unmarshal(raw, &wf); err != nil || wf.Dir == "" || strings.ContainsAny(wf.Dir, `/\`) {
-		return initialWorkspaceRoot
-	}
-	target := filepath.Join(initialWorkspaceRoot, wf.Dir)
-	if info, err := os.Lstat(target); err == nil && info.Mode()&os.ModeSymlink == 0 && info.IsDir() {
-		return target
-	}
-	return initialWorkspaceRoot
-}
-
-// markOperatorPrivateDir creates dir with mode 0o700 and writes the private
-// Surla directory marker and extended attribute.
+// markOperatorPrivateDir creates dir with mode 0o700, verifies its non-symlink
+// directory ownership and 0o700 permissions, and writes the private Surla
+// directory marker and extended attribute.
 func markOperatorPrivateDir(dir string) error {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
-	_ = unix.Setxattr(dir, operatorPrivateXattr, []byte(operatorPrivateDirValue), 0)
+	if err := validateOperatorPrivateDir(dir); err != nil {
+		return err
+	}
+	if err := unix.Setxattr(dir, operatorPrivateXattr, []byte(operatorPrivateDirValue), 0); err != nil &&
+		!errors.Is(err, unix.ENOTSUP) && !errors.Is(err, unix.EOPNOTSUPP) {
+		return fmt.Errorf("set private xattr on %s: %w", dir, err)
+	}
 	markerPath := filepath.Join(dir, operatorPrivateMarker)
 	f, err := os.OpenFile(markerPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC|syscall.O_NOFOLLOW, 0o600)
 	if err != nil {
 		return err
 	}
 	return errors.Join(f.Sync(), f.Close())
+}
+
+// validateOperatorPrivateDir verifies that dir is a non-symlink directory owned
+// by the current effective user with exact 0o700 permissions and R_OK|W_OK|X_OK
+// effective access.
+func validateOperatorPrivateDir(dir string) error {
+	info, err := os.Lstat(dir)
+	if err != nil {
+		return err
+	}
+	if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
+		return fmt.Errorf("operator private directory %s must be a non-symlink directory", dir)
+	}
+	fd, err := unix.Open(dir, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
+	if err != nil {
+		return fmt.Errorf("open operator private directory %s: %w", dir, err)
+	}
+	var st unix.Stat_t
+	statErr := unix.Fstat(fd, &st)
+	closeErr := unix.Close(fd)
+	if err := errors.Join(statErr, closeErr); err != nil {
+		return fmt.Errorf("stat operator private directory %s: %w", dir, err)
+	}
+	if st.Mode&unix.S_IFMT != unix.S_IFDIR {
+		return fmt.Errorf("operator private directory %s is not a directory", dir)
+	}
+	euid := uint32(os.Geteuid())
+	if st.Uid != euid {
+		return fmt.Errorf("operator private directory %s is owned by uid %d, want effective uid %d", dir, st.Uid, euid)
+	}
+	perm := st.Mode & 0o777
+	if perm != 0o700 {
+		return fmt.Errorf("operator private directory %s has permissions %#o, want 0o700", dir, perm)
+	}
+	if err := unix.Faccessat(unix.AT_FDCWD, dir, unix.R_OK|unix.W_OK|unix.X_OK, unix.AT_EACCESS); err != nil {
+		return fmt.Errorf("operator private directory %s is not accessible: %w", dir, err)
+	}
+	return nil
 }
 
 // validateWorkspaceDirSeparation checks that targetDir lies strictly outside

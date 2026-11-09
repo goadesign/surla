@@ -66,7 +66,7 @@ var (
 func (c *ControlPlane) InitProject(
 	ctx context.Context,
 	p *gensurla.InitProjectPayload,
-) (*gensurla.InitProjectResult, error) {
+) (res *gensurla.InitProjectResult, retErr error) {
 	if _, ok := PrincipalFromContext(ctx); !ok {
 		return nil, errors.New("authenticated principal is required")
 	}
@@ -146,7 +146,13 @@ func (c *ControlPlane) InitProject(
 		return nil, failInitFault(span, "open bound workspace failed", err)
 	}
 	defer func() {
-		_ = unix.Close(workspaceFD)
+		if closeErr := unix.Close(workspaceFD); closeErr != nil {
+			if retErr != nil {
+				retErr = errors.Join(retErr, closeErr)
+			} else {
+				recordWorkspaceCleanupFailure("surla.controlplane.cleanup_init_workspace_fd", closeErr)
+			}
+		}
 	}()
 
 	if err := checkWorkspaceUninitialized(initCtx, workspaceFD, c.initialWorkspaceRoot, targetBase); err != nil {
@@ -189,7 +195,11 @@ func (c *ControlPlane) InitProject(
 		return nil, failInitFault(span, "resolve init stage directory failed", err)
 	}
 
-	gen := c.makeInitGenerator()
+	physCards, err := abspath.Eval(c.cards.dir)
+	if err != nil {
+		return nil, failInitFault(span, "resolve cards directory failed", err)
+	}
+	gen := c.makeInitGenerator(filepath.Join(physCards, "designeval"))
 	run := c.initRunner
 	if run == nil {
 		run = scaffold.RunCommand
@@ -214,7 +224,13 @@ func (c *ControlPlane) InitProject(
 		return nil, failInitFault(span, "open init stage parent failed", fmt.Errorf("open init stage parent %s: %w", stageParentDir, err))
 	}
 	defer func() {
-		_ = unix.Close(stageParentFD)
+		if closeErr := unix.Close(stageParentFD); closeErr != nil {
+			if retErr != nil {
+				retErr = errors.Join(retErr, closeErr)
+			} else {
+				recordWorkspaceCleanupFailure("surla.controlplane.cleanup_init_stage_parent_fd", closeErr)
+			}
+		}
 	}()
 	if gotPath, err := fdPath(stageParentFD); err != nil || gotPath != stageParentDir {
 		return nil, failInitFault(span, "verify init stage parent path failed", fmt.Errorf("init stage parent %s changed path during initialization", stageParentDir))
@@ -228,7 +244,13 @@ func (c *ControlPlane) InitProject(
 	stageClosed := false
 	defer func() {
 		if !stageClosed {
-			_ = unix.Close(stageFD)
+			if closeErr := unix.Close(stageFD); closeErr != nil {
+				if retErr != nil {
+					retErr = errors.Join(retErr, closeErr)
+				} else {
+					recordWorkspaceCleanupFailure("surla.controlplane.cleanup_init_stage_fd", closeErr)
+				}
+			}
 		}
 	}()
 
@@ -401,11 +423,11 @@ func (e foreignStagingError) Error() string {
 
 // makeInitGenerator returns a fresh scaffold.Generator for one `InitProject`
 // call without closing or sharing `c.evaluator`.
-func (c *ControlPlane) makeInitGenerator() scaffold.Generator {
+func (c *ControlPlane) makeInitGenerator(defaultTempParent string) scaffold.Generator {
 	if c.newGenerator != nil {
 		return c.newGenerator()
 	}
-	return designeval.NewEvaluator()
+	return designeval.NewEvaluatorInDir(defaultTempParent)
 }
 
 // deriveStarterServiceName validates modulePath and returns its derived Goa
@@ -452,13 +474,17 @@ func openVerifiedDirFD(dir string, expectedDev, expectedIno uint64) (int, error)
 	}
 	var st unix.Stat_t
 	if err := unix.Fstat(fd, &st); err != nil {
-		_ = unix.Close(fd)
-		return -1, fmt.Errorf("bound workspace directory %s was replaced or removed after startup: %w", dir, err)
+		return -1, errors.Join(
+			fmt.Errorf("bound workspace directory %s was replaced or removed after startup: %w", dir, err),
+			unix.Close(fd),
+		)
 	}
 	gotPath, pathErr := fdPath(fd)
 	if pathErr != nil || gotPath != dir || uint64(st.Dev) != expectedDev || st.Ino != expectedIno {
-		_ = unix.Close(fd)
-		return -1, fmt.Errorf("bound workspace directory %s was replaced or removed after startup", dir)
+		return -1, errors.Join(
+			fmt.Errorf("bound workspace directory %s was replaced or removed after startup", dir),
+			unix.Close(fd),
+		)
 	}
 	return fd, nil
 }
@@ -546,7 +572,9 @@ func hasVerificationRuns(runsDir string) (bool, error) {
 }
 
 // resolveInitStageParentDir selects an operator-owned staging parent directory
-// outside initialWorkspaceRoot on the same filesystem device (`wsDev`).
+// outside initialWorkspaceRoot on the same filesystem device (`wsDev`),
+// validating that the directory is owned by the current effective UID with mode
+// 0700.
 func resolveInitStageParentDir(initialWorkspaceRoot, configuredStageDir string, wsDev uint64) (string, error) {
 	var candidates []string
 	if strings.TrimSpace(configuredStageDir) != "" {
@@ -554,6 +582,7 @@ func resolveInitStageParentDir(initialWorkspaceRoot, configuredStageDir string, 
 	}
 	candidates = append(
 		candidates,
+		filepath.Join(os.TempDir(), fmt.Sprintf("surla-operator-%d", os.Getuid()), "init-stage"),
 		filepath.Join(filepath.Dir(initialWorkspaceRoot), fmt.Sprintf(".surla-operator-%d", os.Getuid()), "init-stage"),
 	)
 	var failures []error
@@ -580,22 +609,49 @@ func resolveInitStageParentDir(initialWorkspaceRoot, configuredStageDir string, 
 			failures = append(failures, fmt.Errorf("init stage directory %s must be outside workspace %s", evalPhys, initialWorkspaceRoot))
 			continue
 		}
-		if err := unix.Faccessat(unix.AT_FDCWD, evalPhys, unix.R_OK|unix.W_OK|unix.X_OK, unix.AT_EACCESS); err != nil {
-			failures = append(failures, fmt.Errorf("init stage directory %s is not accessible: %w", evalPhys, err))
-			continue
-		}
-		var st unix.Stat_t
-		if err := unix.Stat(evalPhys, &st); err != nil {
+		if err := validateInitStageParentDir(evalPhys, wsDev, initialWorkspaceRoot); err != nil {
 			failures = append(failures, err)
-			continue
-		}
-		if uint64(st.Dev) != wsDev {
-			failures = append(failures, fmt.Errorf("init stage directory %s is on a different filesystem from workspace %s", evalPhys, initialWorkspaceRoot))
 			continue
 		}
 		return evalPhys, nil
 	}
 	return "", fmt.Errorf("cannot find protected init staging storage on the workspace filesystem: %w", errors.Join(failures...))
+}
+
+// validateInitStageParentDir verifies that dir is a non-symlink regular
+// directory owned by the current effective UID with mode 0700, accessible for
+// read/write/search, and residing on wsDev.
+func validateInitStageParentDir(dir string, wsDev uint64, workspaceRoot string) error {
+	info, err := os.Lstat(dir)
+	if err != nil {
+		return fmt.Errorf("stat init stage directory %s: %w", dir, err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
+		return fmt.Errorf("init stage directory %s must be a non-symlink directory", dir)
+	}
+	fd, err := unix.Open(dir, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
+	if err != nil {
+		return fmt.Errorf("open init stage directory %s: %w", dir, err)
+	}
+	var st unix.Stat_t
+	statErr := unix.Fstat(fd, &st)
+	closeErr := unix.Close(fd)
+	if err := errors.Join(statErr, closeErr); err != nil {
+		return fmt.Errorf("stat init stage directory %s: %w", dir, err)
+	}
+	if st.Uid != uint32(os.Geteuid()) {
+		return fmt.Errorf("init stage directory %s is owned by uid %d, want effective uid %d", dir, st.Uid, os.Geteuid())
+	}
+	if perm := st.Mode & 0o777; perm != 0o700 {
+		return fmt.Errorf("init stage directory %s has mode %04o, want 0700", dir, perm)
+	}
+	if err := unix.Faccessat(unix.AT_FDCWD, dir, unix.R_OK|unix.W_OK|unix.X_OK, unix.AT_EACCESS); err != nil {
+		return fmt.Errorf("init stage directory %s is not accessible: %w", dir, err)
+	}
+	if uint64(st.Dev) != wsDev {
+		return fmt.Errorf("init stage directory %s is on a different filesystem from workspace %s", dir, workspaceRoot)
+	}
+	return nil
 }
 
 // verifyPublishedTarget performs a non-destructive open-descriptor check that
@@ -628,7 +684,7 @@ func removeOwnedStagingDir(
 	stageParentFD, stageFD int,
 	stageParentDir, stageName string,
 	expectedDev, expectedIno uint64,
-) error {
+) (err error) {
 	ownFD := stageFD
 	if ownFD < 0 {
 		var entryStat unix.Stat_t
@@ -667,7 +723,7 @@ func removeOwnedStagingDir(
 		ownFD = fd
 	}
 	defer func() {
-		_ = unix.Close(ownFD)
+		err = errors.Join(err, unix.Close(ownFD))
 	}()
 
 	var st unix.Stat_t
@@ -818,15 +874,22 @@ func recordInitRefused(span trace.Span, reason string) {
 	)
 }
 
-// failInitFault wraps err in unclassifiedCP1Error so any nested GoaErrorNamer
-// (such as designeval.Evaluator.Generate returning unprocessable) is classified
-// as an HTTP 500 server fault while preserving all underlying causes via Unwrap,
-// and records the error and status on span.
+// failInitFault records the full raw error on span and returns a caller-safe
+// Goa Fault ServiceError (HTTP 500 / MCP internal error) that omits private
+// operator paths, command log filenames, and raw command output tails.
 func failInitFault(span trace.Span, msg string, err error) error {
-	wrapped := unclassifiedCP1Error{cause: err}
-	span.RecordError(wrapped)
+	span.RecordError(err)
 	span.SetStatus(codes.Error, msg)
-	return wrapped
+	var stepErr *scaffold.StepError
+	if errors.As(err, &stepErr) && stepErr != nil {
+		return goa.Fault(
+			"%s: command %q in %q failed during starter initialization; inspect the server trace span for diagnostic output",
+			msg,
+			strings.Join(stepErr.Args, " "),
+			stepErr.Module,
+		)
+	}
+	return goa.Fault("%s; inspect the server trace span for diagnostic details", msg)
 }
 
 // isConflictError reports whether err is a Goa conflict ServiceError.

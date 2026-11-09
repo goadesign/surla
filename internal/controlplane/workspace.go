@@ -80,11 +80,9 @@ func openWorkspaceRootAndStat(dir string) (string, uint64, uint64, error) {
 	if err != nil {
 		return "", 0, 0, fmt.Errorf("open workspace %s: %w", cleanDir, err)
 	}
-	defer func() {
-		_ = root.Close()
-	}()
-	rootInfo, err := root.Stat(".")
-	if err != nil {
+	rootInfo, statErr := root.Stat(".")
+	closeErr := root.Close()
+	if err := errors.Join(statErr, closeErr); err != nil {
 		return "", 0, 0, fmt.Errorf("stat opened workspace %s: %w", cleanDir, err)
 	}
 	st, ok := rootInfo.Sys().(*syscall.Stat_t)
@@ -114,7 +112,7 @@ func (c *ControlPlane) currentWorkspaceTarget() (string, uint64, uint64) {
 
 // restoreWorkspace recovers or binds `<cards_dir>/workspace.json` at control
 // plane startup using the 4-case inode-verified state machine.
-func (c *ControlPlane) restoreWorkspace() error {
+func (c *ControlPlane) restoreWorkspace() (err error) {
 	wf, ok, err := c.readWorkspaceRecord()
 	if err != nil || !ok {
 		return err
@@ -148,7 +146,13 @@ func (c *ControlPlane) restoreWorkspace() error {
 		return err
 	}
 	defer func() {
-		_ = unix.Close(workspaceFD)
+		if closeErr := unix.Close(workspaceFD); closeErr != nil {
+			if err != nil {
+				err = errors.Join(err, closeErr)
+			} else {
+				recordWorkspaceCleanupFailure("surla.controlplane.cleanup_restored_workspace_descriptors", closeErr)
+			}
+		}
 	}()
 
 	stageParentFD := -1
@@ -160,7 +164,13 @@ func (c *ControlPlane) restoreWorkspace() error {
 		if openErr == nil {
 			stageParentFD = fd
 			defer func() {
-				_ = unix.Close(stageParentFD)
+				if closeErr := unix.Close(stageParentFD); closeErr != nil {
+					if err != nil {
+						err = errors.Join(err, closeErr)
+					} else {
+						recordWorkspaceCleanupFailure("surla.controlplane.cleanup_restored_workspace_descriptors", closeErr)
+					}
+				}
 			}()
 		}
 	}
@@ -251,9 +261,9 @@ func (c *ControlPlane) restoreWorkspace() error {
 		var openStat unix.Stat_t
 		statErr := unix.Fstat(stageFD, &openStat)
 		gotStagePath, pathErr := fdPath(stageFD)
-		_ = unix.Close(stageFD)
-		if statErr != nil {
-			return statErr
+		closeStageErr := unix.Close(stageFD)
+		if err := errors.Join(statErr, closeStageErr); err != nil {
+			return err
 		}
 		if pathErr != nil || gotStagePath != filepath.Join(wf.StageDir, wf.Staging) ||
 			uint64(openStat.Dev) != wf.Dev || openStat.Ino != wf.Ino {

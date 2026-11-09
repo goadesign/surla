@@ -20,9 +20,9 @@ import (
 )
 
 var (
-	// cardsHashDirPattern matches a direct `cards-<16-lowercase-hex>` store
+	// cardsHashDirPattern matches a direct `cards-<64-lowercase-hex>` store
 	// directory inside `operatorProjectDir`.
-	cardsHashDirPattern = regexp.MustCompile(`^cards-[0-9a-f]{16}$`)
+	cardsHashDirPattern = regexp.MustCompile(`^cards-[0-9a-f]{64}$`)
 	// hex64JSONPattern matches a `<64-lowercase-hex>.json` card or report file.
 	hex64JSONPattern = regexp.MustCompile(`^[0-9a-f]{64}\.json$`)
 	// hex32DirPattern matches a `<32-lowercase-hex>` verification run directory.
@@ -98,7 +98,7 @@ func importLegacyWorkspace(
 		return fmt.Errorf("open operator project directory %s: %w", operatorProjectDir, err)
 	}
 	defer func() {
-		_ = unix.Close(projectDirFD)
+		err = errors.Join(err, unix.Close(projectDirFD))
 	}()
 
 	var st unix.Stat_t
@@ -157,8 +157,8 @@ func importLegacyWorkspace(
 		return errors.New("cannot import legacy workspace: no workspace-interior .surla/ store is applicable when both -cards-dir and -verification-config point outside the workspace")
 	}
 
-	cardsHash := sha256HexString(startupBaseDir + "\x00" + initialWorkspaceRoot)[:16]
-	wsCardsHash := sha256HexString(initialWorkspaceRoot + "\x00" + initialWorkspaceRoot)[:16]
+	cardsHash := sha256HexString(startupBaseDir + "\x00" + initialWorkspaceRoot)
+	wsCardsHash := sha256HexString(initialWorkspaceRoot + "\x00" + initialWorkspaceRoot)
 	cardStoreSet := map[string]bool{
 		"cards-" + cardsHash:   true,
 		"cards-" + wsCardsHash: true,
@@ -192,21 +192,19 @@ func importLegacyWorkspace(
 	var heldLocks []*os.File
 	defer func() {
 		for _, f := range heldLocks {
-			_ = f.Close()
+			err = errors.Join(err, f.Close())
 		}
 	}()
 
 	for _, storeName := range cardStoreNames {
 		storeDir := filepath.Join(operatorProjectDir, storeName)
-		info, statErr := os.Lstat(storeDir)
-		if errors.Is(statErr, fs.ErrNotExist) {
+		if _, statErr := os.Lstat(storeDir); errors.Is(statErr, fs.ErrNotExist) {
 			continue
-		}
-		if statErr != nil {
+		} else if statErr != nil {
 			return fmt.Errorf("stat operator store %s: %w", storeDir, statErr)
 		}
-		if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
-			return fmt.Errorf("operator store %s is not a directory", storeDir)
+		if err := validateOperatorPrivateDir(storeDir); err != nil {
+			return fmt.Errorf("validate operator store %s: %w", storeDir, err)
 		}
 		lockFile, lockErr := openAndLockStoreFile(
 			filepath.Join(storeDir, "lock"),
@@ -231,15 +229,13 @@ func importLegacyWorkspace(
 			{filepath.Join(operatorProjectDir, "runs"), true},
 			{filepath.Join(operatorProjectDir, "reports"), false},
 		} {
-			info, statErr := os.Lstat(dirSpec.path)
-			if errors.Is(statErr, fs.ErrNotExist) {
+			if _, statErr := os.Lstat(dirSpec.path); errors.Is(statErr, fs.ErrNotExist) {
 				continue
-			}
-			if statErr != nil {
+			} else if statErr != nil {
 				return fmt.Errorf("stat operator store %s: %w", dirSpec.path, statErr)
 			}
-			if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
-				return fmt.Errorf("operator store %s is not a directory", dirSpec.path)
+			if err := validateOperatorPrivateDir(dirSpec.path); err != nil {
+				return fmt.Errorf("validate operator store %s: %w", dirSpec.path, err)
 			}
 			if err := requireEmptyOperatorStore(dirSpec.path, dirSpec.allowLive); err != nil {
 				return err
@@ -255,7 +251,7 @@ func importLegacyWorkspace(
 	published := false
 	defer func() {
 		if !published {
-			_ = os.RemoveAll(stageDir)
+			err = errors.Join(err, os.RemoveAll(stageDir))
 		}
 	}()
 	if err := markOperatorPrivateDir(stageDir); err != nil {
@@ -272,13 +268,17 @@ func importLegacyWorkspace(
 				legacySrc = wsLegacyCardsDir
 			}
 		}
-		unlockCards, err := controlplane.PrepareCardSnapshot(legacySrc, filepath.Join(stageDir, storeName))
+		stagedStoreDir := filepath.Join(stageDir, storeName)
+		unlockCards, snapErr := controlplane.PrepareCardSnapshot(legacySrc, stagedStoreDir)
 		if unlockCards != nil {
 			defer func() {
-				_ = unlockCards()
+				err = errors.Join(err, unlockCards())
 			}()
 		}
-		if err != nil {
+		if snapErr != nil {
+			return snapErr
+		}
+		if err := markOperatorPrivateDir(stagedStoreDir); err != nil {
 			return err
 		}
 	}
@@ -292,10 +292,6 @@ func importLegacyWorkspace(
 	default:
 		stagedSelectedCardsDir = filepath.Join(stageDir, "cards-"+cardsHash)
 	}
-	probeWorkspaceDir := peekRestoredWorkspaceDir(stagedSelectedCardsDir, initialWorkspaceRoot)
-	if starterMode && probeWorkspaceDir != initialWorkspaceRoot {
-		configuredReportDirs = append(configuredReportDirs, filepath.Join(probeWorkspaceDir, "reports"))
-	}
 
 	if starterMode || promoReportInsideWS {
 		var (
@@ -306,21 +302,29 @@ func importLegacyWorkspace(
 			legacyRunsDir = filepath.Join(initialWorkspaceRoot, ".surla", "runs")
 			legacyDefaultReportsDir = filepath.Join(initialWorkspaceRoot, "reports")
 		}
-		unlockRuns, err := verifyrun.PrepareSnapshot(
+		stagedRunsDir := filepath.Join(stageDir, "runs")
+		stagedReportsDir := filepath.Join(stageDir, "reports")
+		unlockRuns, snapErr := verifyrun.PrepareSnapshot(
 			legacyRunsDir,
 			legacyDefaultReportsDir,
-			filepath.Join(stageDir, "runs"),
-			filepath.Join(stageDir, "reports"),
+			stagedRunsDir,
+			stagedReportsDir,
 			filepath.Join(operatorProjectDir, "imported", "reports"),
 			initialWorkspaceRoot,
 			configuredReportDirs...,
 		)
 		if unlockRuns != nil {
 			defer func() {
-				_ = unlockRuns()
+				err = errors.Join(err, unlockRuns())
 			}()
 		}
-		if err != nil {
+		if snapErr != nil {
+			return snapErr
+		}
+		if err := markOperatorPrivateDir(stagedRunsDir); err != nil {
+			return err
+		}
+		if err := markOperatorPrivateDir(stagedReportsDir); err != nil {
 			return err
 		}
 	}
@@ -329,12 +333,12 @@ func importLegacyWorkspace(
 	// RenameatxNp publication so a rejected configuration never leaves imported/
 	// published on disk.
 	if cfg.cardsDirExplicit {
-		if err := validateWorkspaceDirSeparation("cards directory", stagedSelectedCardsDir, initialWorkspaceRoot, probeWorkspaceDir); err != nil {
+		if err := validateWorkspaceDirSeparation("cards directory", stagedSelectedCardsDir, initialWorkspaceRoot, initialWorkspaceRoot); err != nil {
 			return err
 		}
 	}
 	if cfg.verificationPath != "" {
-		if err := validateVerificationConfigSeparation(verPath, startupExternalVer, initialWorkspaceRoot, probeWorkspaceDir); err != nil {
+		if err := validateVerificationConfigSeparation(verPath, startupExternalVer, initialWorkspaceRoot, initialWorkspaceRoot); err != nil {
 			return err
 		}
 	}
@@ -343,7 +347,7 @@ func importLegacyWorkspace(
 			effectivePromotionPath,
 			startupBaseDir,
 			initialWorkspaceRoot,
-			probeWorkspaceDir,
+			initialWorkspaceRoot,
 			filepath.Join(stageDir, "reports"),
 		); err != nil {
 			return err
