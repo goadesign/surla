@@ -357,15 +357,15 @@ func sameEntry(a, b int, aStat unix.Stat_t) (bool, error) {
 	return filepath.Base(aPath) == filepath.Base(bPath), nil
 }
 
-// recordIfModule records the copied directory at grant-relative rel,
-// copied to target, as a module when go test ./... from the workspace would
-// treat it as a module root: it is the workspace or inside it, not under
-// testdata, vendor or a directory whose name starts with "." or "_", and its
-// copy holds go.mod as a regular file or a symlink. It reads the finished
-// copy, exactly what Go in the container receives, without following a
-// link: Go resolves the link there, so a missing or outside target makes
-// that module's go command fail instead of silently dropping its packages.
-// It fails only when the copy itself cannot be read.
+// recordIfModule schedules the copied directory at grant-relative rel,
+// copied to target, for its own go commands when its copy holds a go.mod
+// entry, a regular file or a symlink, and it is the workspace or inside it,
+// not under testdata, vendor or a directory whose name starts with "." or
+// "_". It reads the finished copy, exactly what Go in the container
+// receives, and never follows a link on the host: resolving a linked go.mod,
+// deciding which module owns the directory's packages, and reporting any
+// error are left to Go in the container. It fails only when the copy itself
+// cannot be read.
 func (c *grantCopier) recordIfModule(rel, target string) error {
 	wsRel, ok := c.workspaceRelative(rel)
 	if !ok {
