@@ -1,6 +1,9 @@
 //go:build scaffold
 
-package scaffold
+// This file is an external test package: it drives a generated starter
+// through the control plane, and the control plane imports this package to
+// initialize projects, so an internal test here would form an import cycle.
+package scaffold_test
 
 import (
 	"context"
@@ -26,8 +29,13 @@ import (
 	gensurla "github.com/goadesign/surla/gen/surla"
 	"github.com/goadesign/surla/internal/controlplane"
 	"github.com/goadesign/surla/internal/designeval"
+	"github.com/goadesign/surla/internal/scaffold"
 	"github.com/goadesign/surla/internal/verify"
 )
+
+// published is the Surla version the starter's go.mod pins; it exists on the
+// module proxy. It matches the internal tests' fixture of the same name.
+const published = "v0.0.0-20261104215521-580509970fb6"
 
 // scriptedAnalyzer is a scripted CP1 analyzer: it returns a fixed analysis
 // with no open questions, so it proves the Change Card plumbing, not live
@@ -59,7 +67,7 @@ type echoStream struct {
 // network and, for the sandbox, macOS.
 func TestStarterLiveTargetAppliesADraftToTheNextModelRequest(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "shop")
-	name, err := Init(t.Context(), Options{Dir: dir, WorkDir: t.TempDir(), Module: "example.com/shop", SurlaVersion: published}, RunCommand, designeval.NewEvaluator())
+	name, err := scaffold.Init(t.Context(), scaffold.Options{Dir: dir, WorkDir: t.TempDir(), Module: "example.com/shop", SurlaVersion: published}, scaffold.RunCommand, designeval.NewEvaluator())
 	require.NoError(t, err)
 	commit := commitAll(t, dir)
 
