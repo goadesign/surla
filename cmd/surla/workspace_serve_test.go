@@ -316,7 +316,7 @@ func TestImportLegacyWorkspaceSnapshotsConfiguredPromotionReportsAndIsolatesRoot
 	assert.Equal(t, repNew.digest, approvedNew.Approval.ReportDigest)
 }
 
-// TestDefaultOperatorRootDeterministicAndPermissionValidation verifies D1:
+// TestDefaultOperatorRootDeterministicAndPermissionValidation verifies that
 // defaultOperatorRoot uses only the single deterministic root from userConfigDir,
 // failing without fallback when userConfigDir fails, overlaps the workspace, or
 // has permissive (non-0700) permissions.
@@ -353,6 +353,106 @@ func TestDefaultOperatorRootDeterministicAndPermissionValidation(t *testing.T) {
 	}
 	_, err = configureServeWorkspace(serveConfig{})
 	require.ErrorContains(t, err, "has permissions 0755, want 0o700")
+}
+
+// TestConfigureServeWorkspacePinsSuiteCommitAndRejectsSymlinkParentEscape verifies
+// that configureServeWorkspace resolves symlinks before ".." on -cards-dir,
+// -verification-config, and -promotion-config, pins SuiteCommit to the startup
+// commit or init_project commit across later builder commits, and refuses
+// unpinned post-startup repo creation.
+func TestConfigureServeWorkspacePinsSuiteCommitAndRejectsSymlinkParentEscape(t *testing.T) {
+	root := t.TempDir()
+	cfgRoot := filepath.Join(root, "user-config")
+	wsDir := filepath.Join(root, "workspace")
+	wsSub := filepath.Join(wsDir, "sub")
+	require.NoError(t, os.MkdirAll(cfgRoot, 0o700))
+	require.NoError(t, os.MkdirAll(wsSub, 0o755))
+
+	priorConfigDir := userConfigDir
+	userConfigDir = func() (string, error) { return cfgRoot, nil }
+	t.Cleanup(func() { userConfigDir = priorConfigDir })
+	t.Chdir(wsDir)
+
+	alias := filepath.Join(root, "alias")
+	require.NoError(t, os.Symlink(wsSub, alias))
+
+	// 1. Symlink before ".." that lands inside wsDir is rejected for -cards-dir and -promotion-config.
+	_, err := configureServeWorkspace(serveConfig{
+		cardsDir:         alias + "/../cards",
+		cardsDirExplicit: true,
+	})
+	require.ErrorContains(t, err, "must be outside the workspace")
+
+	promoInWSViaAlias := alias + "/../promo.json"
+	require.NoError(t, os.WriteFile(filepath.Join(wsDir, "promo.json"), []byte(`{}`), 0o600))
+	_, err = configureServeWorkspace(serveConfig{
+		promotionPath: promoInWSViaAlias,
+	})
+	require.ErrorContains(t, err, "must be outside the workspace")
+	require.NoError(t, os.Remove(filepath.Join(wsDir, "promo.json")))
+
+	// 2. Uninitialized workspace at startup refuses post-startup manual repo creation without init_project,
+	// while accepting a pinned suiteCommit from init_project and keeping SuiteCommit pinned across later builder commits.
+	uninitCfg, err := configureServeWorkspace(serveConfig{})
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		if uninitCfg.closeProjectLock != nil {
+			assert.NoError(t, uninitCfg.closeProjectLock())
+		}
+	})
+	assert.Nil(t, uninitCfg.verification)
+
+	childRepo, initialCommit := initCommittedStarterRepo(t, filepath.Join(wsDir, "shop"))
+	// Without a pinned suiteCommit (as if created manually after startup), resolveVerification fails closed.
+	_, err = uninitCfg.resolveVerification(context.Background(), childRepo, "")
+	require.ErrorContains(t, err, "had no committed starter evaluator suite at server startup")
+
+	// Simulate builder advancing HEAD with a second commit that edits eval/.
+	require.NoError(t, os.WriteFile(filepath.Join(childRepo, "eval", "cmd", "shop-evals", "main.go"), []byte("package main\n// builder edit\n"), 0o644))
+	builderCommit := gitCommitAll(t, childRepo, "Builder commit")
+	require.NotEqual(t, initialCommit, builderCommit)
+
+	// With the pinned initialCommit from init_project, resolveVerification keeps SuiteCommit == initialCommit.
+	resolvedFromInit, err := uninitCfg.resolveVerification(context.Background(), childRepo, initialCommit)
+	require.NoError(t, err)
+	assert.Equal(t, initialCommit, resolvedFromInit.Plan.SuiteCommit)
+
+	// 3. Existing starter repo committed at server startup keeps startup SuiteCommit across later builder commits
+	// while still picking up late promotion.json report_dir updates.
+	existingWS, startupCommit := initCommittedStarterRepo(t, filepath.Join(root, "existing-shop"))
+	existingCfg, err := configureServeWorkspace(serveConfig{
+		projectDir: existingWS,
+		projectSet: true,
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		if existingCfg.closeProjectLock != nil {
+			assert.NoError(t, existingCfg.closeProjectLock())
+		}
+	})
+	require.NotNil(t, existingCfg.verification)
+	assert.Equal(t, startupCommit, existingCfg.verification.Plan.SuiteCommit)
+
+	// Builder makes a new commit advancing HEAD in existingWS.
+	require.NoError(t, os.WriteFile(filepath.Join(existingWS, "cmd", "shop", "main.go"), []byte("package main\n// candidate v2\n"), 0o644))
+	laterCommit := gitCommitAll(t, existingWS, "Candidate v2")
+	require.NotEqual(t, startupCommit, laterCommit)
+
+	resolvedExisting, err := existingCfg.resolveVerification(context.Background(), existingCfg.workspaceDir, "")
+	require.NoError(t, err)
+	assert.Equal(t, startupCommit, resolvedExisting.Plan.SuiteCommit, "existing startup repo must stay pinned to startup HEAD")
+}
+
+// initCommittedStarterRepo creates a minimal starter repository layout at dir
+// and commits it, returning the physical directory path and initial commit SHA.
+func initCommittedStarterRepo(t *testing.T, dir string) (string, string) {
+	t.Helper()
+	writeStarter(t, dir, "example.com/shop")
+	runTestGit(t, dir, "init", "-q")
+	commit := gitCommitAll(t, dir, "Initial scaffold")
+	physDir, err := filepath.EvalSymlinks(dir)
+	require.NoError(t, err)
+	return physDir, commit
 }
 
 // isolateServeWorkspace points userConfigDir at a new 0700 temporary directory

@@ -125,28 +125,9 @@ func (c *ControlPlane) StartLiveTarget(ctx context.Context, p *gensurla.StartLiv
 	if !c.liveConfigured {
 		return nil, gensurla.MakeLiveTargetUnavailable(errors.New("this server has no verification configuration, so it cannot build or run a live target"))
 	}
-	var verCfg *VerificationConfig
-	if c.resolveVerification != nil {
-		wsDir, wsDev, wsIno := c.currentWorkspaceTarget()
-		if wsDir != "" {
-			_, root, err := openModuleRootWithIdentity(wsDir, wsDev, wsIno)
-			if err != nil {
-				return nil, gensurla.MakeLiveTargetUnavailable(err)
-			}
-			if err := root.Close(); err != nil {
-				return nil, gensurla.MakeLiveTargetUnavailable(err)
-			}
-		}
-		var err error
-		verCfg, err = c.resolveVerification(ctx, wsDir)
-		if err != nil {
-			return nil, gensurla.MakeLiveTargetUnavailable(err)
-		}
-		if err := validateVerificationWorkspaceSeparation(verCfg, c.initialWorkspaceRoot, wsDir); err != nil {
-			return nil, gensurla.MakeLiveTargetUnavailable(err)
-		}
-	} else {
-		verCfg = c.verification
+	verCfg, err := c.resolveActiveVerification(ctx)
+	if err != nil {
+		return nil, gensurla.MakeLiveTargetUnavailable(err)
 	}
 	if verCfg == nil {
 		return nil, gensurla.MakeLiveTargetUnavailable(errors.New("this server has no verification configuration, so it cannot build or run a live target"))

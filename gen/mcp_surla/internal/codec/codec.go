@@ -1620,6 +1620,10 @@ type InitProjectResultTransport struct {
 	ModulePath *string `json:"module_path"`
 	// Derived service name.
 	ServiceName *string `json:"service_name"`
+	// Full commit ID of the initial starter commit created in the initialized
+	// repository (40 or 64 lowercase hex characters); start_live_target and
+	// verify_change take this commit ID.
+	Commit *string `json:"commit"`
 }
 
 // ValidateInitProjectResultTransport checks decoded JSON before it becomes a service value.
@@ -1635,6 +1639,12 @@ func ValidateInitProjectResultTransport(value *InitProjectResultTransport) (err 
 	}
 	if value.ServiceName == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("service_name", "body"))
+	}
+	if value.Commit == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("commit", "body"))
+	}
+	if value.Commit != nil {
+		err = goa.MergeErrors(err, goa.ValidatePattern("body.commit", *value.Commit, "^([0-9a-f]{40}|[0-9a-f]{64})$"))
 	}
 	return err
 }
@@ -4533,6 +4543,7 @@ func EncodeInitProjectResult(in *surla.InitProjectResult) ([]byte, error) {
 			Dir:         &in.Dir,
 			ModulePath:  &in.ModulePath,
 			ServiceName: &in.ServiceName,
+			Commit:      &in.Commit,
 		}
 	}
 	if err := ValidateInitProjectResultTransport(body); err != nil {

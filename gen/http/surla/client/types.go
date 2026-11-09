@@ -541,6 +541,10 @@ type InitProjectResponseBody struct {
 	ModulePath *string `form:"module_path,omitempty" json:"module_path,omitempty" xml:"module_path,omitempty"`
 	// Derived service name.
 	ServiceName *string `form:"service_name,omitempty" json:"service_name,omitempty" xml:"service_name,omitempty"`
+	// Full commit ID of the initial starter commit created in the initialized
+	// repository (40 or 64 lowercase hex characters); start_live_target and
+	// verify_change take this commit ID.
+	Commit *string `form:"commit,omitempty" json:"commit,omitempty" xml:"commit,omitempty"`
 }
 
 // ProposeChangeConflictResponseBody is the type of the "surla" service
@@ -3314,6 +3318,7 @@ func NewInitProjectResultOK(body *InitProjectResponseBody) *surla.InitProjectRes
 		Dir:         *body.Dir,
 		ModulePath:  *body.ModulePath,
 		ServiceName: *body.ServiceName,
+		Commit:      *body.Commit,
 	}
 
 	return v
@@ -3976,6 +3981,12 @@ func ValidateInitProjectResponseBody(body *InitProjectResponseBody) (err error) 
 	}
 	if body.ServiceName == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("service_name", "body"))
+	}
+	if body.Commit == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("commit", "body"))
+	}
+	if body.Commit != nil {
+		err = goa.MergeErrors(err, goa.ValidatePattern("body.commit", *body.Commit, "^([0-9a-f]{40}|[0-9a-f]{64})$"))
 	}
 	return
 }

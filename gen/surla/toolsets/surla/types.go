@@ -278,6 +278,10 @@ type (
 		ModulePath string
 		// Derived service name.
 		ServiceName string
+		// Full commit ID of the initial starter commit created in the initialized
+		// repository (40 or 64 lowercase hex characters); start_live_target and
+		// verify_change take this commit ID.
+		Commit string
 	}
 	// ListVerificationsPayload defines the JSON payload for the surla.list_verifications tool.
 	ListVerificationsPayload = struct {

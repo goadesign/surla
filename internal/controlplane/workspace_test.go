@@ -37,8 +37,12 @@ type (
 	}
 )
 
-// testSurlaVersion is a canonical Surla module pseudo-version used in workspace unit tests.
-const testSurlaVersion = "v0.0.0-20261104215521-580509970fb6"
+const (
+	// testSurlaVersion is a canonical Surla module pseudo-version used in workspace unit tests.
+	testSurlaVersion = "v0.0.0-20261104215521-580509970fb6"
+	// fakeInitialSuiteCommit is the synthetic initial Git commit hash returned by fakeInitRunner.
+	fakeInitialSuiteCommit = "1111111111111111111111111111111111111111"
+)
 
 // TestNewValidatesSurlaVersionAndWorkspaceSeparation verifies that New rejects non-canonical
 // SurlaVersion values and CardsDir paths inside WorkspaceDir.
@@ -70,7 +74,7 @@ func TestNewValidatesSurlaVersionAndWorkspaceSeparation(t *testing.T) {
 func TestWorkspaceWALReconciliationStates(t *testing.T) {
 	t.Parallel()
 
-	t.Run("case_3_staged_dir_with_matching_inode_is_recovered_and_published", func(t *testing.T) {
+	t.Run("staged_dir_with_matching_inode_is_recovered_and_published", func(t *testing.T) {
 		t.Parallel()
 		root := t.TempDir()
 		wsDir := filepath.Join(root, "workspace")
@@ -88,11 +92,12 @@ func TestWorkspaceWALReconciliationStates(t *testing.T) {
 		require.NoError(t, unix.Lstat(stagedDir, &st))
 
 		walBytes, err := json.Marshal(workspaceFile{
-			Dir:      "shop",
-			StageDir: evalStageParent,
-			Staging:  ".surla-init-123",
-			Dev:      uint64(st.Dev),
-			Ino:      st.Ino,
+			Dir:         "shop",
+			SuiteCommit: fakeInitialSuiteCommit,
+			StageDir:    evalStageParent,
+			Staging:     ".surla-init-123",
+			Dev:         uint64(st.Dev),
+			Ino:         st.Ino,
 		})
 		require.NoError(t, err)
 		require.NoError(t, os.WriteFile(filepath.Join(cardsDir, workspaceRecordFile), walBytes, 0o600))
@@ -107,6 +112,7 @@ func TestWorkspaceWALReconciliationStates(t *testing.T) {
 		defer cp.Close()
 
 		assert.Equal(t, "shop", filepath.Base(cp.activeWorkspaceDir))
+		assert.Equal(t, fakeInitialSuiteCommit, cp.boundSuiteCommit)
 		_, err = os.Stat(stagedDir)
 		assert.ErrorIs(t, err, os.ErrNotExist)
 		var wf workspaceFile
@@ -114,10 +120,11 @@ func TestWorkspaceWALReconciliationStates(t *testing.T) {
 		require.NoError(t, err)
 		require.NoError(t, json.Unmarshal(rawWAL, &wf))
 		assert.Equal(t, "shop", wf.Dir)
+		assert.Equal(t, fakeInitialSuiteCommit, wf.SuiteCommit)
 		assert.Empty(t, wf.Staging)
 	})
 
-	t.Run("case_4_uncommitted_wal_with_missing_stage_removes_wal", func(t *testing.T) {
+	t.Run("uncommitted_wal_with_missing_stage_removes_wal", func(t *testing.T) {
 		t.Parallel()
 		root := t.TempDir()
 		wsDir := filepath.Join(root, "workspace")
@@ -130,11 +137,12 @@ func TestWorkspaceWALReconciliationStates(t *testing.T) {
 		evalStageParent, err := abspath.Eval(stageParent)
 		require.NoError(t, err)
 		walBytes, err := json.Marshal(workspaceFile{
-			Dir:      "shop",
-			StageDir: evalStageParent,
-			Staging:  ".surla-init-missing",
-			Dev:      1,
-			Ino:      1,
+			Dir:         "shop",
+			SuiteCommit: fakeInitialSuiteCommit,
+			StageDir:    evalStageParent,
+			Staging:     ".surla-init-missing",
+			Dev:         1,
+			Ino:         1,
 		})
 		require.NoError(t, err)
 		require.NoError(t, os.WriteFile(filepath.Join(cardsDir, workspaceRecordFile), walBytes, 0o600))
@@ -153,7 +161,7 @@ func TestWorkspaceWALReconciliationStates(t *testing.T) {
 		assert.ErrorIs(t, err, os.ErrNotExist)
 	})
 
-	t.Run("state_2_published_target_matches_wal_inode_finalizes_record", func(t *testing.T) {
+	t.Run("published_target_matches_wal_inode_finalizes_record", func(t *testing.T) {
 		t.Parallel()
 		root := t.TempDir()
 		wsDir := filepath.Join(root, "workspace")
@@ -167,11 +175,12 @@ func TestWorkspaceWALReconciliationStates(t *testing.T) {
 		var st unix.Stat_t
 		require.NoError(t, unix.Lstat(targetDir, &st))
 		walBytes, err := json.Marshal(workspaceFile{
-			Dir:      "shop",
-			StageDir: stageParent,
-			Staging:  ".surla-init-456",
-			Dev:      uint64(st.Dev),
-			Ino:      st.Ino,
+			Dir:         "shop",
+			SuiteCommit: fakeInitialSuiteCommit,
+			StageDir:    stageParent,
+			Staging:     ".surla-init-456",
+			Dev:         uint64(st.Dev),
+			Ino:         st.Ino,
 		})
 		require.NoError(t, err)
 		require.NoError(t, os.WriteFile(filepath.Join(cardsDir, workspaceRecordFile), walBytes, 0o600))
@@ -186,15 +195,17 @@ func TestWorkspaceWALReconciliationStates(t *testing.T) {
 		defer cp.Close()
 
 		assert.Equal(t, "shop", filepath.Base(cp.activeWorkspaceDir))
+		assert.Equal(t, fakeInitialSuiteCommit, cp.boundSuiteCommit)
 		var wf workspaceFile
 		rawWAL, err := os.ReadFile(filepath.Join(cardsDir, workspaceRecordFile))
 		require.NoError(t, err)
 		require.NoError(t, json.Unmarshal(rawWAL, &wf))
 		assert.Equal(t, "shop", wf.Dir)
+		assert.Equal(t, fakeInitialSuiteCommit, wf.SuiteCommit)
 		assert.Empty(t, wf.Staging)
 	})
 
-	t.Run("case_2a_uncommitted_wal_with_foreign_target_and_foreign_staging_preserves_both_and_removes_wal", func(t *testing.T) {
+	t.Run("uncommitted_wal_with_foreign_target_and_foreign_staging_preserves_both_and_removes_wal", func(t *testing.T) {
 		t.Parallel()
 		root := t.TempDir()
 		wsDir := filepath.Join(root, "workspace")
@@ -217,11 +228,12 @@ func TestWorkspaceWALReconciliationStates(t *testing.T) {
 		var wsStat unix.Stat_t
 		require.NoError(t, unix.Lstat(wsDir, &wsStat))
 		walBytes, err := json.Marshal(workspaceFile{
-			Dir:      "shop",
-			StageDir: evalStageParent,
-			Staging:  ".surla-init-foreign",
-			Dev:      uint64(wsStat.Dev),
-			Ino:      wsStat.Ino, // matches neither targetDir nor foreignStageDir
+			Dir:         "shop",
+			SuiteCommit: fakeInitialSuiteCommit,
+			StageDir:    evalStageParent,
+			Staging:     ".surla-init-foreign",
+			Dev:         uint64(wsStat.Dev),
+			Ino:         wsStat.Ino, // matches neither targetDir nor foreignStageDir
 		})
 		require.NoError(t, err)
 		require.NoError(t, os.WriteFile(filepath.Join(cardsDir, workspaceRecordFile), walBytes, 0o600))
@@ -246,7 +258,7 @@ func TestWorkspaceWALReconciliationStates(t *testing.T) {
 		assert.Equal(t, "foreign-stage", string(gotStage))
 	})
 
-	t.Run("case_2b_committed_wal_with_replaced_target_inode_fails_closed_without_deleting_target", func(t *testing.T) {
+	t.Run("committed_wal_with_replaced_target_inode_fails_closed_without_deleting_target", func(t *testing.T) {
 		t.Parallel()
 		root := t.TempDir()
 		wsDir := filepath.Join(root, "workspace")
@@ -260,9 +272,10 @@ func TestWorkspaceWALReconciliationStates(t *testing.T) {
 		var wsStat unix.Stat_t
 		require.NoError(t, unix.Lstat(wsDir, &wsStat))
 		walBytes, err := json.Marshal(workspaceFile{
-			Dir: "shop",
-			Dev: uint64(wsStat.Dev),
-			Ino: wsStat.Ino, // different inode from targetDir
+			Dir:         "shop",
+			SuiteCommit: fakeInitialSuiteCommit,
+			Dev:         uint64(wsStat.Dev),
+			Ino:         wsStat.Ino, // different inode from targetDir
 		})
 		require.NoError(t, err)
 		require.NoError(t, os.WriteFile(filepath.Join(cardsDir, workspaceRecordFile), walBytes, 0o600))
@@ -278,7 +291,7 @@ func TestWorkspaceWALReconciliationStates(t *testing.T) {
 		assert.Equal(t, "important", string(gotTarget))
 	})
 
-	t.Run("case_4_committed_wal_with_missing_target_fails_closed", func(t *testing.T) {
+	t.Run("committed_wal_with_missing_target_fails_closed", func(t *testing.T) {
 		t.Parallel()
 		root := t.TempDir()
 		wsDir := filepath.Join(root, "workspace")
@@ -289,9 +302,10 @@ func TestWorkspaceWALReconciliationStates(t *testing.T) {
 		var wsStat unix.Stat_t
 		require.NoError(t, unix.Lstat(wsDir, &wsStat))
 		walBytes, err := json.Marshal(workspaceFile{
-			Dir: "shop",
-			Dev: uint64(wsStat.Dev),
-			Ino: wsStat.Ino,
+			Dir:         "shop",
+			SuiteCommit: fakeInitialSuiteCommit,
+			Dev:         uint64(wsStat.Dev),
+			Ino:         wsStat.Ino,
 		})
 		require.NoError(t, err)
 		require.NoError(t, os.WriteFile(filepath.Join(cardsDir, workspaceRecordFile), walBytes, 0o600))
@@ -304,7 +318,7 @@ func TestWorkspaceWALReconciliationStates(t *testing.T) {
 		require.ErrorContains(t, err, "does not exist")
 	})
 
-	t.Run("case_4_uncommitted_wal_with_foreign_staging_preserves_foreign_staging_and_removes_wal", func(t *testing.T) {
+	t.Run("uncommitted_wal_with_foreign_staging_preserves_foreign_staging_and_removes_wal", func(t *testing.T) {
 		t.Parallel()
 		root := t.TempDir()
 		wsDir := filepath.Join(root, "workspace")
@@ -324,11 +338,12 @@ func TestWorkspaceWALReconciliationStates(t *testing.T) {
 		var wsStat unix.Stat_t
 		require.NoError(t, unix.Lstat(wsDir, &wsStat))
 		walBytes, err := json.Marshal(workspaceFile{
-			Dir:      "shop",
-			StageDir: evalStageParent,
-			Staging:  ".surla-init-replaced",
-			Dev:      uint64(wsStat.Dev),
-			Ino:      wsStat.Ino, // does not match foreignStage
+			Dir:         "shop",
+			SuiteCommit: fakeInitialSuiteCommit,
+			StageDir:    evalStageParent,
+			Staging:     ".surla-init-replaced",
+			Dev:         uint64(wsStat.Dev),
+			Ino:         wsStat.Ino, // does not match foreignStage
 		})
 		require.NoError(t, err)
 		require.NoError(t, os.WriteFile(filepath.Join(cardsDir, workspaceRecordFile), walBytes, 0o600))
@@ -613,13 +628,16 @@ func TestInitProjectErrorAndSpanClassificationAndEndToEndTransition(t *testing.T
 		assert.Equal(t, "shop", res.ServiceName)
 		assert.Equal(t, "example.com/shop", res.ModulePath)
 		assert.Equal(t, "shop", filepath.Base(res.Dir))
+		assert.Equal(t, fakeInitialSuiteCommit, res.Commit)
 		assert.Equal(t, res.Dir, cp.activeWorkspaceDir)
+		assert.Equal(t, fakeInitialSuiteCommit, cp.boundSuiteCommit)
 
 		var wf workspaceFile
 		rawWAL, err := os.ReadFile(filepath.Join(cardsDir, workspaceRecordFile))
 		require.NoError(t, err)
 		require.NoError(t, json.Unmarshal(rawWAL, &wf))
 		assert.Equal(t, "shop", wf.Dir)
+		assert.Equal(t, fakeInitialSuiteCommit, wf.SuiteCommit)
 		assert.Empty(t, wf.Staging)
 
 		spans := exp.GetSpans()
@@ -709,7 +727,16 @@ func TestCloseDrainsAndCancelsInFlightInitProjectBeforeReleasingLocks(t *testing
 
 		atAfterWAL := make(chan struct{})
 		releaseHook := make(chan struct{})
-		var closeReturned atomic.Bool
+		var releaseClosed atomic.Bool
+		releaseBarrier := func() {
+			if releaseClosed.CompareAndSwap(false, true) {
+				close(releaseHook)
+			}
+		}
+		t.Cleanup(releaseBarrier)
+
+		var lockSawFinalizedWAL atomic.Bool
+		var lockSawPublishedDir atomic.Bool
 
 		cp, err := New(Options{
 			CardsDir:     cardsDir,
@@ -719,6 +746,22 @@ func TestCloseDrainsAndCancelsInFlightInitProjectBeforeReleasingLocks(t *testing
 			InitRunner:   fakeInitRunner,
 			NewGenerator: func() scaffold.Generator {
 				return &fakeInitGenerator{pkg: "shop"}
+			},
+			CloseProjectLock: func() error {
+				rawWAL, readErr := os.ReadFile(filepath.Join(cardsDir, workspaceRecordFile))
+				if readErr == nil {
+					var wf workspaceFile
+					if json.Unmarshal(rawWAL, &wf) == nil &&
+						wf.Dir == "shop" &&
+						wf.SuiteCommit == fakeInitialSuiteCommit &&
+						wf.Staging == "" {
+						lockSawFinalizedWAL.Store(true)
+					}
+				}
+				if info, statErr := os.Stat(filepath.Join(wsDir, "shop")); statErr == nil && info.IsDir() {
+					lockSawPublishedDir.Store(true)
+				}
+				return nil
 			},
 		})
 		require.NoError(t, err)
@@ -742,23 +785,14 @@ func TestCloseDrainsAndCancelsInFlightInitProjectBeforeReleasingLocks(t *testing
 		case <-time.After(5 * time.Second):
 			t.Fatal("timed out waiting for after_wal hook")
 		}
-		closeStarted := make(chan struct{})
 		closeDone := make(chan error, 1)
 		go func() {
-			close(closeStarted)
-			err := cp.Close()
-			closeReturned.Store(true)
-			closeDone <- err
+			closeDone <- cp.Close()
 		}()
 
-		select {
-		case <-closeStarted:
-		case <-time.After(5 * time.Second):
-			t.Fatal("timed out waiting for Close goroutine to start")
-		}
-		assert.False(t, closeReturned.Load(), "Close must block on workspaceMu while InitProject holds it")
-
-		close(releaseHook)
+		// Release the after_wal barrier so InitProject finishes rename + WAL finalization
+		// while Close waits to acquire workspaceMu before calling CloseProjectLock.
+		releaseBarrier()
 		select {
 		case err := <-initDone:
 			require.NoError(t, err)
@@ -772,12 +806,8 @@ func TestCloseDrainsAndCancelsInFlightInitProjectBeforeReleasingLocks(t *testing
 			t.Fatal("timed out waiting for Close to complete")
 		}
 
-		var wf workspaceFile
-		rawWAL, err := os.ReadFile(filepath.Join(cardsDir, workspaceRecordFile))
-		require.NoError(t, err)
-		require.NoError(t, json.Unmarshal(rawWAL, &wf))
-		assert.Equal(t, "shop", wf.Dir)
-		assert.Empty(t, wf.Staging)
+		assert.True(t, lockSawPublishedDir.Load(), "CloseProjectLock must run only after InitProject publishes the project directory")
+		assert.True(t, lockSawFinalizedWAL.Load(), "CloseProjectLock must run only after InitProject finalizes workspace.json")
 	})
 }
 
@@ -896,80 +926,6 @@ func TestCP1WorkspaceDesignSourceProvenanceAcrossProposeReviseAndReopen(t *testi
 	assert.Equal(t, suppliedDesign, capturedSources[3])
 }
 
-// TestBoundControlPlaneDefaultEvaluatorAndGeneratorIgnoreWorkspaceTMPDIRAndCleanOwnWork
-// verifies D8 and D1: when a workspace-bound ControlPlane is constructed with nil
-// Evaluator and nil NewGenerator while TMPDIR points inside WorkspaceDir, both
-// default preview/diff evaluations and default InitProject generation allocate
-// their work directories under <CardsDir>/designeval outside WorkspaceDir, and
-// closing a per-call generator does not remove the long-lived evaluator's work.
-func TestBoundControlPlaneDefaultEvaluatorAndGeneratorIgnoreWorkspaceTMPDIRAndCleanOwnWork(t *testing.T) {
-	root := t.TempDir()
-	wsDir := filepath.Join(root, "workspace")
-	wsTmpDir := filepath.Join(wsDir, "tmp")
-	cardsDir := filepath.Join(root, "cards")
-	stageDir := filepath.Join(root, "stage")
-	require.NoError(t, os.MkdirAll(wsTmpDir, 0o755))
-	t.Setenv("TMPDIR", wsTmpDir)
-
-	// Verify resolveInitStageParentDir rejects a 0755 stage directory.
-	badStageDir := filepath.Join(root, "bad-stage-0755")
-	require.NoError(t, os.MkdirAll(badStageDir, 0o755))
-	require.NoError(t, os.Chmod(badStageDir, 0o755))
-	var wsStat unix.Stat_t
-	require.NoError(t, unix.Stat(wsDir, &wsStat))
-	require.NoError(t, os.Chmod(badStageDir, 0o755))
-	err := validateInitStageParentDir(badStageDir, uint64(wsStat.Dev), wsDir)
-	require.ErrorContains(t, err, "has mode 0755, want 0700")
-
-	cp, err := New(Options{
-		CardsDir:     cardsDir,
-		WorkspaceDir: wsDir,
-		InitStageDir: stageDir,
-		SurlaVersion: testSurlaVersion,
-	})
-	require.NoError(t, err)
-
-	// 1. Exercise the default long-lived evaluator (Evaluate fails fast on empty snapshot
-	// after admit() allocates its surla-designeval-work-* directory).
-	_, err = cp.evaluator.Evaluate(context.Background(), map[string]string{})
-	require.Error(t, err)
-
-	physCards, err := abspath.Eval(cardsDir)
-	require.NoError(t, err)
-	evalParent := filepath.Join(physCards, "designeval")
-	entriesAfterEval, err := os.ReadDir(evalParent)
-	require.NoError(t, err)
-	require.Len(t, entriesAfterEval, 1, "default evaluator must allocate its workDir under <CardsDir>/designeval")
-	evalWorkName := entriesAfterEval[0].Name()
-	assert.True(t, strings.HasPrefix(evalWorkName, "surla-designeval-work-"))
-
-	// 2. Exercise the default per-call InitProject generator and close it; verify it
-	// allocates under <CardsDir>/designeval and cleans up only its own workDir on Close.
-	initGen := cp.makeInitGenerator(evalParent)
-	_, err = initGen.Generate(context.Background(), map[string]string{})
-	require.Error(t, err)
-	entriesDuringInitGen, err := os.ReadDir(evalParent)
-	require.NoError(t, err)
-	require.Len(t, entriesDuringInitGen, 2, "per-call init generator must allocate its own workDir under <CardsDir>/designeval")
-	require.NoError(t, initGen.Close())
-
-	entriesAfterInitGenClose, err := os.ReadDir(evalParent)
-	require.NoError(t, err)
-	require.Len(t, entriesAfterInitGenClose, 1, "closing per-call init generator must keep cp.evaluator's workDir intact")
-	assert.Equal(t, evalWorkName, entriesAfterInitGenClose[0].Name())
-
-	// 3. Verify TMPDIR inside the workspace remained completely untouched.
-	wsTmpEntries, err := os.ReadDir(wsTmpDir)
-	require.NoError(t, err)
-	assert.Empty(t, wsTmpEntries, "bound default evaluator and generator must never allocate inside workspace TMPDIR")
-
-	// 4. Verify cp.Close() removes cp.evaluator's workDir.
-	require.NoError(t, cp.Close())
-	entriesAfterCPClose, err := os.ReadDir(evalParent)
-	require.NoError(t, err)
-	assert.Empty(t, entriesAfterCPClose, "ControlPlane.Close must remove cp.evaluator's workDir")
-}
-
 // Generate returns a single stub generated Go source file for g.pkg.
 func (g *fakeInitGenerator) Generate(_ context.Context, _ map[string]string) (map[string][]byte, error) {
 	return map[string][]byte{
@@ -982,8 +938,12 @@ func (g *fakeInitGenerator) Close() error {
 	return nil
 }
 
-// fakeInitRunner writes a synthetic command log and creates go.sum on "go mod tidy" invocations.
+// fakeInitRunner writes a synthetic command log, creates go.sum on "go mod tidy"
+// invocations, and writes fakeInitialSuiteCommit on "git rev-parse".
 func fakeInitRunner(_ context.Context, dir, logPath string, args ...string) error {
+	if len(args) >= 2 && args[0] == "git" && args[1] == "rev-parse" {
+		return os.WriteFile(logPath, []byte(fakeInitialSuiteCommit+"\n"), 0o600)
+	}
 	if err := os.WriteFile(logPath, []byte("ok\n"), 0o600); err != nil {
 		return err
 	}

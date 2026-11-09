@@ -5,6 +5,7 @@ package controlplane
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -12,6 +13,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"syscall"
 
@@ -26,13 +28,15 @@ import (
 
 type (
 	// workspaceFile is the persisted JSON schema of `<cards_dir>/workspace.json`.
-	// During `init_project`, Step 1 writes the record with `StageDir`, `Staging`,
-	// `Dev`, and `Ino` before `RenameatxNp`; Step 3 clears `StageDir` and
-	// `Staging` once the renamed target directory's `(Dev, Ino)` is verified and
-	// synced.
+	// During `init_project`, the uncommitted write-ahead record sets `StageDir`,
+	// `Staging`, `Dev`, `Ino`, and `SuiteCommit` before `RenameatxNp`; the
+	// finalized record clears `StageDir` and `Staging` once the renamed target
+	// directory's `(Dev, Ino)` is verified and synced.
 	workspaceFile struct {
 		// Dir is the direct child directory name inside initialWorkspaceRoot.
 		Dir string `json:"dir"`
+		// SuiteCommit is the trusted initial starter commit recorded for Dir.
+		SuiteCommit string `json:"suite_commit"`
 		// StageDir is the protected operator staging parent directory holding
 		// Staging while initialization is in flight.
 		StageDir string `json:"stage_dir,omitempty"`
@@ -54,6 +58,9 @@ const (
 	// rename over workspaceRecordFile.
 	workspaceStagingWriteFile = "workspace.json.tmp"
 )
+
+// commitIDPattern matches a full 40- or 64-character lowercase hex Git commit ID.
+var commitIDPattern = regexp.MustCompile(`^([0-9a-f]{40}|[0-9a-f]{64})$`)
 
 // openWorkspaceRootAndStat resolves dir to a physical non-symlink directory,
 // opens an os.Root handle to verify its open-descriptor identity, and returns
@@ -110,8 +117,17 @@ func (c *ControlPlane) currentWorkspaceTarget() (string, uint64, uint64) {
 	return c.activeWorkspaceDir, c.boundWorkspaceDev, c.boundWorkspaceIno
 }
 
+// currentWorkspaceVerificationTarget returns the currently bound workspace
+// directory path, its expected `(dev, ino)` identity, and the trusted starter
+// suite commit recorded by init_project or restored from workspace.json.
+func (c *ControlPlane) currentWorkspaceVerificationTarget() (string, uint64, uint64, string) {
+	c.workspaceMu.RLock()
+	defer c.workspaceMu.RUnlock()
+	return c.activeWorkspaceDir, c.boundWorkspaceDev, c.boundWorkspaceIno, c.boundSuiteCommit
+}
+
 // restoreWorkspace recovers or binds `<cards_dir>/workspace.json` at control
-// plane startup using the 4-case inode-verified state machine.
+// plane startup using inode-verified target and staging directory checks.
 func (c *ControlPlane) restoreWorkspace() (err error) {
 	wf, ok, err := c.readWorkspaceRecord()
 	if err != nil || !ok {
@@ -122,6 +138,9 @@ func (c *ControlPlane) restoreWorkspace() (err error) {
 	}
 	if err := validateInitDirName(wf.Dir); err != nil {
 		return fmt.Errorf("invalid dir %q in workspace.json: %w", wf.Dir, err)
+	}
+	if !commitIDPattern.MatchString(wf.SuiteCommit) {
+		return fmt.Errorf("invalid suite_commit %q in workspace.json", wf.SuiteCommit)
 	}
 	if wf.Dev == 0 || wf.Ino == 0 {
 		return errors.New("workspace.json is missing non-zero dev/ino identity")
@@ -182,7 +201,7 @@ func (c *ControlPlane) restoreWorkspace() (err error) {
 	case targetErr == nil:
 		isDir := targetStat.Mode&unix.S_IFMT == unix.S_IFDIR
 		if isDir && uint64(targetStat.Dev) == wf.Dev && targetStat.Ino == wf.Ino {
-			// Case 1: targetBase exists with the exact staged (Dev, Ino).
+			// Target directory exists with the exact recorded (Dev, Ino).
 			if wf.Staging != "" {
 				if err := unix.Fsync(workspaceFD); err != nil {
 					return fmt.Errorf("sync restored workspace %s: %w", c.initialWorkspaceRoot, err)
@@ -191,6 +210,7 @@ func (c *ControlPlane) restoreWorkspace() (err error) {
 			c.activeWorkspaceDir = targetPath
 			c.boundWorkspaceDev = wf.Dev
 			c.boundWorkspaceIno = wf.Ino
+			c.boundSuiteCommit = wf.SuiteCommit
 			if wf.Staging != "" {
 				var cleanErr error
 				if stageParentFD >= 0 {
@@ -204,9 +224,10 @@ func (c *ControlPlane) restoreWorkspace() (err error) {
 				cleanErr = errors.Join(
 					cleanErr,
 					c.writeWorkspaceRecord(workspaceFile{
-						Dir: wf.Dir,
-						Dev: wf.Dev,
-						Ino: wf.Ino,
+						Dir:         wf.Dir,
+						SuiteCommit: wf.SuiteCommit,
+						Dev:         wf.Dev,
+						Ino:         wf.Ino,
 					}),
 				)
 				if cleanErr != nil {
@@ -215,9 +236,9 @@ func (c *ControlPlane) restoreWorkspace() (err error) {
 			}
 			return nil
 		}
-		// Case 2: targetBase exists, but its (Dev, Ino) does not match wf.
+		// Target directory exists, but its (Dev, Ino) does not match wf.
 		if wf.Staging != "" {
-			// Subcase 2a: uncommitted init collided with an external targetBase.
+			// Uncommitted initialization collided with a separately created target directory.
 			if stageParentFD >= 0 {
 				if err := removeOwnedStagingDir(stageParentFD, -1, wf.StageDir, wf.Staging, wf.Dev, wf.Ino); err != nil {
 					var foreignErr foreignStagingError
@@ -228,12 +249,12 @@ func (c *ControlPlane) restoreWorkspace() (err error) {
 			}
 			return c.removeWorkspaceRecord()
 		}
-		// Subcase 2b: already-published targetBase was replaced.
+		// Previously published target directory was replaced with a different inode.
 		return fmt.Errorf("bound workspace directory %s no longer matches its initialized (dev, ino) identity", targetPath)
 
 	case errors.Is(targetErr, unix.ENOENT):
 		if wf.Staging == "" {
-			// Case 4 (committed): already-published workspace directory was deleted.
+			// Previously published workspace directory was deleted.
 			return fmt.Errorf("bound workspace directory %s does not exist", targetPath)
 		}
 		if stageParentFD < 0 {
@@ -242,18 +263,17 @@ func (c *ControlPlane) restoreWorkspace() (err error) {
 		var stageStat unix.Stat_t
 		stageErr := unix.Fstatat(stageParentFD, wf.Staging, &stageStat, unix.AT_SYMLINK_NOFOLLOW)
 		if errors.Is(stageErr, unix.ENOENT) {
-			// Case 4 (uncommitted, staging missing): remove uncommitted record.
+			// Uncommitted initialization whose staging directory was already removed.
 			return c.removeWorkspaceRecord()
 		}
 		if stageErr != nil {
 			return fmt.Errorf("stat staged workspace %s: %w", filepath.Join(wf.StageDir, wf.Staging), stageErr)
 		}
 		if stageStat.Mode&unix.S_IFMT != unix.S_IFDIR || uint64(stageStat.Dev) != wf.Dev || stageStat.Ino != wf.Ino {
-			// Case 4 (foreign staging entry): preserve foreign entry untouched and
-			// remove uncommitted workspace.json.
+			// Staging path holds a different inode; leave it untouched and remove the uncommitted record.
 			return c.removeWorkspaceRecord()
 		}
-		// Case 3: targetBase is ENOENT and (stageParentFD, wf.Staging) matches (wf.Dev, wf.Ino).
+		// Target directory is missing and the staged directory still matches (wf.Dev, wf.Ino): roll forward publication.
 		stageFD, err := unix.Openat(stageParentFD, wf.Staging, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
 		if err != nil {
 			return fmt.Errorf("open staged workspace %s: %w", filepath.Join(wf.StageDir, wf.Staging), err)
@@ -279,13 +299,15 @@ func (c *ControlPlane) restoreWorkspace() (err error) {
 		c.activeWorkspaceDir = targetPath
 		c.boundWorkspaceDev = wf.Dev
 		c.boundWorkspaceIno = wf.Ino
+		c.boundSuiteCommit = wf.SuiteCommit
 		if syncErr != nil {
 			return syncErr
 		}
 		if err := c.writeWorkspaceRecord(workspaceFile{
-			Dir: wf.Dir,
-			Dev: wf.Dev,
-			Ino: wf.Ino,
+			Dir:         wf.Dir,
+			SuiteCommit: wf.SuiteCommit,
+			Dev:         wf.Dev,
+			Ino:         wf.Ino,
 		}); err != nil {
 			recordWorkspaceCleanupFailure("surla.controlplane.finalize_restored_workspace", err)
 		}
@@ -344,20 +366,29 @@ func (c *ControlPlane) writeWorkspaceRecord(wf workspaceFile) error {
 		err = os.Rename(tmpPath, recPath)
 	}
 	if err != nil {
+		if rmErr := os.Remove(tmpPath); rmErr != nil && !errors.Is(rmErr, fs.ErrNotExist) {
+			err = errors.Join(err, rmErr)
+		}
 		return fmt.Errorf("write workspace.json: %w", err)
 	}
 	return syncDir(c.cards.dir)
 }
 
-// removeWorkspaceRecord removes `<cards_dir>/workspace.json` if present and
-// syncs the cards directory.
+// removeWorkspaceRecord removes `<cards_dir>/workspace.json` and any temporary
+// staging record file if present, then syncs the cards directory.
 func (c *ControlPlane) removeWorkspaceRecord() error {
 	if c.cards == nil || c.cards.lock == nil {
 		return errCardsClosed
 	}
-	recPath := filepath.Join(c.cards.dir, workspaceRecordFile)
-	if err := os.Remove(recPath); err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return fmt.Errorf("remove workspace.json: %w", err)
+	var err error
+	for _, name := range []string{workspaceRecordFile, workspaceStagingWriteFile} {
+		recPath := filepath.Join(c.cards.dir, name)
+		if rmErr := os.Remove(recPath); rmErr != nil && !errors.Is(rmErr, fs.ErrNotExist) {
+			err = errors.Join(err, fmt.Errorf("remove %s: %w", name, rmErr))
+		}
+	}
+	if err != nil {
+		return err
 	}
 	return syncDir(c.cards.dir)
 }
@@ -447,13 +478,123 @@ func readWorkspaceDesignSource(wsDir string, expectedDev, expectedIno uint64) (s
 	return strings.TrimSuffix(buf.String(), "\n"), nil
 }
 
+// normalizeAndValidateStartupPaths resolves configured operator storage paths
+// to physical paths via abspath.EvalMissing and validates separation from
+// wsRoot before any directory is created.
+func normalizeAndValidateStartupPaths(opts Options, wsRoot string) (string, string, *VerificationConfig, error) {
+	if err := validateCardsWorkspaceSeparation(opts.CardsDir, wsRoot, wsRoot); err != nil {
+		return "", "", nil, err
+	}
+	var runsDir string
+	if strings.TrimSpace(opts.RunsDir) != "" {
+		physRuns, err := abspath.EvalMissing(strings.TrimSpace(opts.RunsDir))
+		if err != nil {
+			return "", "", nil, fmt.Errorf("resolve runs directory %s: %w", opts.RunsDir, err)
+		}
+		runsDir = physRuns
+	}
+	var initStageDir string
+	if strings.TrimSpace(opts.InitStageDir) != "" {
+		physStage, err := abspath.EvalMissing(strings.TrimSpace(opts.InitStageDir))
+		if err != nil {
+			return "", "", nil, fmt.Errorf("resolve init stage directory %s: %w", opts.InitStageDir, err)
+		}
+		initStageDir = physStage
+	}
+	verCfg, err := normalizeVerificationConfig(opts.Verification)
+	if err != nil {
+		return "", "", nil, err
+	}
+	if err := validateStartupSeparation(opts.CardsDir, runsDir, initStageDir, verCfg, wsRoot, wsRoot); err != nil {
+		return "", "", nil, err
+	}
+	return runsDir, initStageDir, verCfg, nil
+}
+
+// normalizeVerificationConfig returns a shallow copy of cfg with RunsDir and
+// Plan.ReportDir resolved to physical paths via abspath.EvalMissing.
+func normalizeVerificationConfig(cfg *VerificationConfig) (*VerificationConfig, error) {
+	if cfg == nil {
+		return nil, nil
+	}
+	out := *cfg
+	if strings.TrimSpace(out.RunsDir) != "" {
+		physRuns, err := abspath.EvalMissing(strings.TrimSpace(out.RunsDir))
+		if err != nil {
+			return nil, fmt.Errorf("resolve verification runs_dir %s: %w", out.RunsDir, err)
+		}
+		out.RunsDir = physRuns
+	}
+	if strings.TrimSpace(out.Plan.ReportDir) != "" {
+		physReports, err := abspath.EvalMissing(strings.TrimSpace(out.Plan.ReportDir))
+		if err != nil {
+			return nil, fmt.Errorf("resolve verification report_dir %s: %w", out.Plan.ReportDir, err)
+		}
+		out.Plan.ReportDir = physReports
+	}
+	return &out, nil
+}
+
+// validateStartupSeparation verifies that cardsDir, runsDir, initStageDir, and
+// verCfg lie strictly outside both initialWorkspaceRoot and activeWorkspaceDir.
+func validateStartupSeparation(
+	cardsDir, runsDir, initStageDir string,
+	verCfg *VerificationConfig,
+	initialWorkspaceRoot, activeWorkspaceDir string,
+) error {
+	if err := validateCardsWorkspaceSeparation(cardsDir, initialWorkspaceRoot, activeWorkspaceDir); err != nil {
+		return err
+	}
+	if err := validateRunsDirWorkspaceSeparation(runsDir, initialWorkspaceRoot, activeWorkspaceDir); err != nil {
+		return err
+	}
+	if err := validateInitStageWorkspaceSeparation(initStageDir, initialWorkspaceRoot, activeWorkspaceDir); err != nil {
+		return err
+	}
+	return validateVerificationWorkspaceSeparation(verCfg, initialWorkspaceRoot, activeWorkspaceDir)
+}
+
+// resolveActiveVerification resolves the active VerificationConfig for
+// VerifyChange and StartLiveTarget, verifying the bound workspace's (dev, ino)
+// identity and physical path separation.
+func (c *ControlPlane) resolveActiveVerification(ctx context.Context) (*VerificationConfig, error) {
+	if c.resolveVerification != nil {
+		wsDir, wsDev, wsIno, suiteCommit := c.currentWorkspaceVerificationTarget()
+		if wsDir != "" {
+			_, root, err := openModuleRootWithIdentity(wsDir, wsDev, wsIno)
+			if err != nil {
+				return nil, err
+			}
+			if err := root.Close(); err != nil {
+				return nil, err
+			}
+		}
+		cfg, err := c.resolveVerification(ctx, wsDir, suiteCommit)
+		if err != nil {
+			return nil, err
+		}
+		if cfg == nil {
+			return nil, nil
+		}
+		normCfg, err := normalizeVerificationConfig(cfg)
+		if err != nil {
+			return nil, err
+		}
+		if err := validateVerificationWorkspaceSeparation(normCfg, c.initialWorkspaceRoot, wsDir); err != nil {
+			return nil, err
+		}
+		return normCfg, nil
+	}
+	return c.verification, nil
+}
+
 // validateCardsWorkspaceSeparation verifies that cardsDir lies strictly outside
 // initialWorkspaceRoot and activeWorkspaceDir.
 func validateCardsWorkspaceSeparation(cardsDir, initialWorkspaceRoot, activeWorkspaceDir string) error {
 	if strings.TrimSpace(cardsDir) == "" {
 		return nil
 	}
-	physCards, err := resolveExistingOrMissingPath(cardsDir)
+	physCards, err := abspath.EvalMissing(strings.TrimSpace(cardsDir))
 	if err != nil {
 		return fmt.Errorf("resolve cards directory %s: %w", cardsDir, err)
 	}
@@ -461,7 +602,7 @@ func validateCardsWorkspaceSeparation(cardsDir, initialWorkspaceRoot, activeWork
 		if strings.TrimSpace(ws) == "" {
 			continue
 		}
-		physWS, err := resolveExistingOrMissingPath(ws)
+		physWS, err := abspath.EvalMissing(strings.TrimSpace(ws))
 		if err != nil {
 			return fmt.Errorf("resolve workspace %s: %w", ws, err)
 		}
@@ -482,7 +623,7 @@ func validateRunsDirWorkspaceSeparation(runsDir, initialWorkspaceRoot, activeWor
 	if strings.TrimSpace(runsDir) == "" {
 		return nil
 	}
-	physRuns, err := resolveExistingOrMissingPath(runsDir)
+	physRuns, err := abspath.EvalMissing(strings.TrimSpace(runsDir))
 	if err != nil {
 		return fmt.Errorf("resolve runs directory %s: %w", runsDir, err)
 	}
@@ -490,7 +631,7 @@ func validateRunsDirWorkspaceSeparation(runsDir, initialWorkspaceRoot, activeWor
 		if strings.TrimSpace(ws) == "" {
 			continue
 		}
-		physWS, err := resolveExistingOrMissingPath(ws)
+		physWS, err := abspath.EvalMissing(strings.TrimSpace(ws))
 		if err != nil {
 			return fmt.Errorf("resolve workspace %s: %w", ws, err)
 		}
@@ -498,6 +639,35 @@ func validateRunsDirWorkspaceSeparation(runsDir, initialWorkspaceRoot, activeWor
 			return fmt.Errorf(
 				"verification runs directory %s must be outside the workspace (%s) so builder agents cannot modify verification state",
 				physRuns,
+				physWS,
+			)
+		}
+	}
+	return nil
+}
+
+// validateInitStageWorkspaceSeparation verifies that initStageDir lies strictly
+// outside initialWorkspaceRoot and activeWorkspaceDir.
+func validateInitStageWorkspaceSeparation(initStageDir, initialWorkspaceRoot, activeWorkspaceDir string) error {
+	if strings.TrimSpace(initStageDir) == "" {
+		return nil
+	}
+	physStage, err := abspath.EvalMissing(strings.TrimSpace(initStageDir))
+	if err != nil {
+		return fmt.Errorf("resolve init stage directory %s: %w", initStageDir, err)
+	}
+	for _, ws := range []string{initialWorkspaceRoot, activeWorkspaceDir} {
+		if strings.TrimSpace(ws) == "" {
+			continue
+		}
+		physWS, err := abspath.EvalMissing(strings.TrimSpace(ws))
+		if err != nil {
+			return fmt.Errorf("resolve workspace %s: %w", ws, err)
+		}
+		if isWithinOrEqualDir(physStage, physWS) {
+			return fmt.Errorf(
+				"init stage directory %s must be outside workspace %s",
+				physStage,
 				physWS,
 			)
 		}
@@ -518,7 +688,7 @@ func validateVerificationWorkspaceSeparation(cfg *VerificationConfig, initialWor
 	if strings.TrimSpace(cfg.Plan.ReportDir) == "" {
 		return nil
 	}
-	physReports, err := resolveExistingOrMissingPath(cfg.Plan.ReportDir)
+	physReports, err := abspath.EvalMissing(strings.TrimSpace(cfg.Plan.ReportDir))
 	if err != nil {
 		return fmt.Errorf("resolve verification report_dir %s: %w", cfg.Plan.ReportDir, err)
 	}
@@ -526,7 +696,7 @@ func validateVerificationWorkspaceSeparation(cfg *VerificationConfig, initialWor
 		if strings.TrimSpace(ws) == "" {
 			continue
 		}
-		physWS, err := resolveExistingOrMissingPath(ws)
+		physWS, err := abspath.EvalMissing(strings.TrimSpace(ws))
 		if err != nil {
 			return fmt.Errorf("resolve workspace %s: %w", ws, err)
 		}
@@ -539,35 +709,6 @@ func validateVerificationWorkspaceSeparation(cfg *VerificationConfig, initialWor
 		}
 	}
 	return nil
-}
-
-// resolveExistingOrMissingPath resolves existing ancestors via abspath.Eval and
-// appends any non-existent trailing path segments.
-func resolveExistingOrMissingPath(p string) (string, error) {
-	abs, err := filepath.Abs(p)
-	if err != nil {
-		return "", err
-	}
-	var missing []string
-	cur := abs
-	for {
-		phys, err := abspath.Eval(cur)
-		if err == nil {
-			for i := len(missing) - 1; i >= 0; i-- {
-				phys = filepath.Join(phys, missing[i])
-			}
-			return phys, nil
-		}
-		if !errors.Is(err, fs.ErrNotExist) {
-			return "", err
-		}
-		parent := filepath.Dir(cur)
-		if parent == cur {
-			return "", err
-		}
-		missing = append(missing, filepath.Base(cur))
-		cur = parent
-	}
 }
 
 // isWithinOrEqualDir reports whether child equals or is a subdirectory of root.

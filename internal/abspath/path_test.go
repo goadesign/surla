@@ -50,4 +50,58 @@ func TestEvalPreservesFilesystemPaths(t *testing.T) {
 func TestEvalRejectsEmptyPath(t *testing.T) {
 	_, err := Eval("")
 	require.ErrorIs(t, err, os.ErrNotExist)
+	_, err = EvalMissing("")
+	require.ErrorIs(t, err, os.ErrNotExist)
+	_, err = EvalFrom("", "rel")
+	require.ErrorIs(t, err, os.ErrNotExist)
+	_, err = EvalFrom(t.TempDir(), "")
+	require.ErrorIs(t, err, os.ErrNotExist)
+}
+
+// TestEvalMissingAndEvalFromResolveSymlinksBeforeParentComponents verifies that
+// EvalMissing and EvalFrom expand existing and dangling symlinks left-to-right
+// before applying ".." even when the final target does not exist yet.
+func TestEvalMissingAndEvalFromResolveSymlinksBeforeParentComponents(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the symlink fixture requires permission to create Unix-style links")
+	}
+	base := t.TempDir()
+	t.Chdir(base)
+	require.NoError(t, os.MkdirAll("target/workspace/nested", 0o700))
+	require.NoError(t, os.MkdirAll("outside", 0o700))
+	require.NoError(t, os.Symlink("target/workspace/nested", "alias"))
+	require.NoError(t, os.Symlink("target/workspace/missing-nested", "dangling-alias"))
+	require.NoError(t, os.Symlink(filepath.Join(base, "target", "workspace", "cards"), "outside/cards-link"))
+
+	physicalBase, err := filepath.EvalSymlinks(base)
+	require.NoError(t, err)
+	wantCards := filepath.Join(physicalBase, "target", "workspace", "cards")
+	wantDeep := filepath.Join(physicalBase, "target", "workspace", "cards", "sub")
+
+	for _, p := range []string{
+		"alias/../cards",
+		base + "/alias/../cards",
+		"dangling-alias/../cards",
+		base + "/dangling-alias/../cards",
+		"outside/cards-link",
+		base + "/outside/cards-link",
+	} {
+		got, err := EvalMissing(p)
+		require.NoError(t, err, p)
+		assert.Equal(t, wantCards, got, p)
+	}
+
+	gotFromRel, err := EvalFrom(filepath.Join(base, "alias"), "../cards/sub")
+	require.NoError(t, err)
+	assert.Equal(t, wantDeep, gotFromRel)
+
+	gotFromAbs, err := EvalFrom(filepath.Join(base, "outside"), base+"/alias/../cards/sub")
+	require.NoError(t, err)
+	assert.Equal(t, wantDeep, gotFromAbs)
+
+	// Symlink cycle returns an error without looping indefinitely.
+	require.NoError(t, os.Symlink("loop-b", filepath.Join(base, "loop-a")))
+	require.NoError(t, os.Symlink("loop-a", filepath.Join(base, "loop-b")))
+	_, err = EvalMissing(filepath.Join(base, "loop-a", "child"))
+	require.Error(t, err)
 }

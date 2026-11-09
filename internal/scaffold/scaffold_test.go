@@ -256,8 +256,8 @@ func TestInitWritesTheProjectWithTheServiceName(t *testing.T) {
 	assertOnly(t, tmp)
 	assert.Equal(t, "bakery", name)
 	assert.Equal(t, []string{
-		"go mod tidy", "go mod tidy", "go vet ./...",
-		"go mod tidy", "go get github.com/goadesign/surla@" + published, "go mod tidy", "go vet ./...",
+		"go mod tidy", "go mod tidy", "go vet ./...", "go test ./...",
+		"go mod tidy", "go get github.com/goadesign/surla@" + published, "go mod tidy", "go vet ./...", "go test ./...",
 	}, ran, "no command generates code on the host")
 	require.Len(t, gen.inputs, 2, "one generation per module")
 	assert.Equal(t, []string{"design/design.go", "design/model.go", "go.mod", "go.sum"}, slices.Sorted(maps.Keys(gen.inputs[0])))
@@ -497,6 +497,103 @@ func TestInitReadmeFirstRunSnippetsMatchTheProject(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, strings.Split(string(ignore), "\n"), "/.surla/")
 	assert.Contains(t, strings.Split(string(ignore), "\n"), "/.mcp.json")
+}
+
+// TestPrepareCommitsInitialScaffoldAndStripsRedirectingGitEnv verifies that
+// Prepare runs `go test ./...` in both modules and creates the initial Git
+// commit in the protected staging directory using the operator's Git identity
+// while stripping inherited repository-redirecting GIT_* variables.
+func TestPrepareCommitsInitialScaffoldAndStripsRedirectingGitEnv(t *testing.T) {
+	parent := t.TempDir()
+	dir := filepath.Join(parent, "shop")
+	work := t.TempDir()
+	poisonRepo := t.TempDir()
+
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+	t.Setenv("GIT_CONFIG_GLOBAL", "/dev/null")
+	t.Setenv("GIT_AUTHOR_NAME", "Test Operator")
+	t.Setenv("GIT_AUTHOR_EMAIL", "operator@example.com")
+	t.Setenv("GIT_COMMITTER_NAME", "Test Operator")
+	t.Setenv("GIT_COMMITTER_EMAIL", "operator@example.com")
+	t.Setenv("GIT_DIR", filepath.Join(poisonRepo, ".git"))
+	t.Setenv("GIT_WORK_TREE", poisonRepo)
+
+	var ran []string
+	run := func(ctx context.Context, moduleDir, logPath string, args ...string) error {
+		ran = append(ran, strings.Join(args, " "))
+		if len(args) > 0 && args[0] == "git" {
+			return RunCommand(ctx, moduleDir, logPath, args...)
+		}
+		if err := os.WriteFile(logPath, []byte("ok\n"), 0o600); err != nil {
+			return err
+		}
+		return fakeGo(moduleDir, args)
+	}
+	gen := &fakeGenerator{pkgs: []string{"shop"}, extra: map[string]string{quickstartGuide: "guide\n"}}
+	name, stagePath, commit, err := Prepare(
+		t.Context(),
+		Options{Dir: dir, WorkDir: work, Module: "example.com/shop", SurlaVersion: published},
+		run,
+		gen,
+	)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		assert.NoError(t, os.RemoveAll(stagePath))
+	})
+	assert.Equal(t, "shop", name)
+	assert.Regexp(t, `^([0-9a-f]{40}|[0-9a-f]{64})$`, commit)
+	assert.Equal(t, []string{
+		"go mod tidy", "go mod tidy", "go vet ./...", "go test ./...",
+		"go mod tidy", "go get github.com/goadesign/surla@" + published, "go mod tidy", "go vet ./...", "go test ./...",
+		"git init", "git add -A", "git commit -m Initial scaffold", "git rev-parse --verify HEAD^{commit}",
+	}, ran)
+	_, err = os.Stat(filepath.Join(poisonRepo, ".git"))
+	assert.ErrorIs(t, err, os.ErrNotExist, "RunCommand must strip inherited GIT_DIR and GIT_WORK_TREE")
+	_, err = os.Stat(filepath.Join(stagePath, ".git"))
+	require.NoError(t, err, "staged project has its own .git directory")
+}
+
+// TestPrepareFailsClosedWhenGitIdentityIsMissing verifies that Prepare fails
+// without fabricating a fallback author when the operator has no configured
+// Git identity, retains the failed command log, and removes the staged tree.
+func TestPrepareFailsClosedWhenGitIdentityIsMissing(t *testing.T) {
+	parent := t.TempDir()
+	dir := filepath.Join(parent, "shop")
+	work := t.TempDir()
+
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+	t.Setenv("GIT_CONFIG_GLOBAL", "/dev/null")
+	t.Setenv("GIT_AUTHOR_NAME", "")
+	t.Setenv("GIT_AUTHOR_EMAIL", "")
+	t.Setenv("GIT_COMMITTER_NAME", "")
+	t.Setenv("GIT_COMMITTER_EMAIL", "")
+	t.Setenv("EMAIL", "")
+
+	run := func(ctx context.Context, moduleDir, logPath string, args ...string) error {
+		if len(args) > 0 && args[0] == "git" {
+			return RunCommand(ctx, moduleDir, logPath, args...)
+		}
+		if err := os.WriteFile(logPath, []byte("ok\n"), 0o600); err != nil {
+			return err
+		}
+		return fakeGo(moduleDir, args)
+	}
+	gen := &fakeGenerator{pkgs: []string{"shop"}}
+	_, _, _, err := Prepare(
+		t.Context(),
+		Options{Dir: dir, WorkDir: work, Module: "example.com/shop", SurlaVersion: published},
+		run,
+		gen,
+	)
+	var step *StepError
+	require.ErrorAs(t, err, &step)
+	assert.Equal(t, []string{"git", "commit", "-m", "Initial scaffold"}, step.Args)
+	assert.FileExists(t, step.Log)
+	assertOnly(t, parent)
 }
 
 // TestStarterLayoutValidatesModulesAndDerivesPaths verifies that StarterLayout

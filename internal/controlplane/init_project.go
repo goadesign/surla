@@ -195,16 +195,27 @@ func (c *ControlPlane) InitProject(
 		return nil, failInitFault(span, "resolve init stage directory failed", err)
 	}
 
+	if err := reportProgress(initCtx, 0, 3, "Generating, building, and testing the starter project"); err != nil {
+		return nil, failInitFault(span, "init_project canceled", err)
+	}
 	physCards, err := abspath.Eval(c.cards.dir)
 	if err != nil {
 		return nil, failInitFault(span, "resolve cards directory failed", err)
 	}
 	gen := c.makeInitGenerator(filepath.Join(physCards, "designeval"))
-	run := c.initRunner
-	if run == nil {
-		run = scaffold.RunCommand
+	baseRun := c.initRunner
+	if baseRun == nil {
+		baseRun = scaffold.RunCommand
 	}
-	builtService, stagePath, err := scaffold.Prepare(
+	run := func(ctx context.Context, dir, logPath string, args ...string) error {
+		if len(args) >= 2 && args[0] == "git" && args[1] == "init" {
+			if err := reportProgress(ctx, 1, 3, "Recording the initial starter Git commit"); err != nil {
+				return err
+			}
+		}
+		return baseRun(ctx, dir, logPath, args...)
+	}
+	builtService, stagePath, suiteCommit, err := scaffold.Prepare(
 		initCtx,
 		scaffold.Options{
 			Dir:          targetPath,
@@ -218,10 +229,34 @@ func (c *ControlPlane) InitProject(
 	if err != nil {
 		return nil, failInitFault(span, "prepare starter project failed", err)
 	}
+	if !commitIDPattern.MatchString(suiteCommit) {
+		return nil, failInitFault(
+			span,
+			"verify starter commit failed",
+			errors.Join(
+				fmt.Errorf("scaffold.Prepare returned invalid commit ID %q", suiteCommit),
+				os.RemoveAll(stagePath),
+			),
+		)
+	}
+	if err := reportProgress(initCtx, 2, 3, "Publishing the initialized starter workspace"); err != nil {
+		return nil, failInitFault(
+			span,
+			"init_project canceled",
+			errors.Join(err, os.RemoveAll(stagePath)),
+		)
+	}
 
 	stageParentFD, err := unix.Open(stageParentDir, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
 	if err != nil {
-		return nil, failInitFault(span, "open init stage parent failed", fmt.Errorf("open init stage parent %s: %w", stageParentDir, err))
+		return nil, failInitFault(
+			span,
+			"open init stage parent failed",
+			errors.Join(
+				fmt.Errorf("open init stage parent %s: %w", stageParentDir, err),
+				os.RemoveAll(stagePath),
+			),
+		)
 	}
 	defer func() {
 		if closeErr := unix.Close(stageParentFD); closeErr != nil {
@@ -291,11 +326,12 @@ func (c *ControlPlane) InitProject(
 	}
 
 	wal := workspaceFile{
-		Dir:      targetBase,
-		StageDir: stageParentDir,
-		Staging:  stageName,
-		Dev:      stageDev,
-		Ino:      stageIno,
+		Dir:         targetBase,
+		SuiteCommit: suiteCommit,
+		StageDir:    stageParentDir,
+		Staging:     stageName,
+		Dev:         stageDev,
+		Ino:         stageIno,
 	}
 	if err := c.writeWorkspaceRecord(wal); err != nil {
 		stageClosed = true
@@ -304,6 +340,7 @@ func (c *ControlPlane) InitProject(
 			"write workspace.json failed",
 			errors.Join(
 				err,
+				c.removeWorkspaceRecord(),
 				removeOwnedStagingDir(stageParentFD, stageFD, stageParentDir, stageName, stageDev, stageIno),
 			),
 		)
@@ -386,6 +423,7 @@ func (c *ControlPlane) InitProject(
 	c.activeWorkspaceDir = targetPath
 	c.boundWorkspaceDev = stageDev
 	c.boundWorkspaceIno = stageIno
+	c.boundSuiteCommit = suiteCommit
 	if syncErr != nil {
 		return nil, failInitFault(
 			span,
@@ -398,21 +436,26 @@ func (c *ControlPlane) InitProject(
 		)
 	}
 	if err := c.writeWorkspaceRecord(workspaceFile{
-		Dir: targetBase,
-		Dev: stageDev,
-		Ino: stageIno,
+		Dir:         targetBase,
+		SuiteCommit: suiteCommit,
+		Dev:         stageDev,
+		Ino:         stageIno,
 	}); err != nil {
 		recordWorkspaceCleanupFailure("surla.controlplane.finalize_init_project", err)
 	}
 
 	span.AddEvent(
 		"project_initialized",
-		trace.WithAttributes(attribute.String("surla.init.service_name", builtService)),
+		trace.WithAttributes(
+			attribute.String("surla.init.service_name", builtService),
+			attribute.String("surla.init.suite_commit", suiteCommit),
+		),
 	)
 	return &gensurla.InitProjectResult{
 		Dir:         targetPath,
 		ModulePath:  modulePath,
 		ServiceName: builtService,
+		Commit:      suiteCommit,
 	}, nil
 }
 
@@ -587,7 +630,7 @@ func resolveInitStageParentDir(initialWorkspaceRoot, configuredStageDir string, 
 	)
 	var failures []error
 	for _, cand := range candidates {
-		phys, err := resolveExistingOrMissingPath(cand)
+		phys, err := abspath.EvalMissing(cand)
 		if err != nil {
 			failures = append(failures, err)
 			continue
@@ -758,18 +801,29 @@ func removeOwnedStagingDir(
 	return unix.Fsync(stageParentFD)
 }
 
+// readDirEntriesFD opens an independent directory stream on dirFD via
+// `Openat(dirFD, ".", O_RDONLY|O_DIRECTORY|O_NOFOLLOW|O_CLOEXEC)` so reading or
+// closing the stream neither shares nor advances dirFD's open file description.
+func readDirEntriesFD(dirFD int, name string) ([]os.DirEntry, error) {
+	iterFD, err := unix.Openat(dirFD, ".", unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
+	if err != nil {
+		return nil, err
+	}
+	dirFile := os.NewFile(uintptr(iterFD), name)
+	entries, readErr := dirFile.ReadDir(-1)
+	closeErr := dirFile.Close()
+	if err := errors.Join(readErr, closeErr); err != nil {
+		return nil, err
+	}
+	return entries, nil
+}
+
 // emptyOwnedDirFD recursively unlinks all entries inside dirFD using only
 // descriptor-relative operations (`Openat` with `O_NOFOLLOW` and `Unlinkat`),
 // verifying that every child resides on `expectedDev`.
 func emptyOwnedDirFD(dirFD int, expectedDev uint64) error {
-	dupFD, err := unix.Dup(dirFD)
+	entries, err := readDirEntriesFD(dirFD, "surla-stage-dir")
 	if err != nil {
-		return err
-	}
-	dirFile := os.NewFile(uintptr(dupFD), "surla-stage-dir")
-	entries, readErr := dirFile.ReadDir(-1)
-	closeErr := dirFile.Close()
-	if err := errors.Join(readErr, closeErr); err != nil {
 		return err
 	}
 	for _, entry := range entries {
@@ -809,14 +863,8 @@ func emptyOwnedDirFD(dirFD int, expectedDev uint64) error {
 // syncDirTreeFD recursively fsyncs all regular files and child directories in
 // post-order under dirFD on expectedDev, then fsyncs dirFD itself.
 func syncDirTreeFD(dirFD int, expectedDev uint64) error {
-	dupFD, err := unix.Dup(dirFD)
+	entries, err := readDirEntriesFD(dirFD, "surla-sync-dir")
 	if err != nil {
-		return err
-	}
-	dirFile := os.NewFile(uintptr(dupFD), "surla-sync-dir")
-	entries, readErr := dirFile.ReadDir(-1)
-	closeErr := dirFile.Close()
-	if err := errors.Join(readErr, closeErr); err != nil {
 		return err
 	}
 	for _, entry := range entries {
@@ -882,6 +930,14 @@ func failInitFault(span trace.Span, msg string, err error) error {
 	span.SetStatus(codes.Error, msg)
 	var stepErr *scaffold.StepError
 	if errors.As(err, &stepErr) && stepErr != nil {
+		if len(stepErr.Args) >= 2 && stepErr.Args[0] == "git" && stepErr.Args[1] == "commit" {
+			return goa.Fault(
+				"%s: command %q in %q failed during starter initialization (verify that git user.name, user.email, and any commit signing settings are configured for this user); inspect the server trace span for diagnostic output",
+				msg,
+				strings.Join(stepErr.Args, " "),
+				stepErr.Module,
+			)
+		}
 		return goa.Fault(
 			"%s: command %q in %q failed during starter initialization; inspect the server trace span for diagnostic output",
 			msg,

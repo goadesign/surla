@@ -180,6 +180,10 @@ var (
 	// digits starting with a letter, so Goa generates a Go package of the
 	// same name.
 	lowerAlnum = regexp.MustCompile(`^[a-z][a-z0-9]*$`)
+
+	// commitHexPattern matches a full 40- or 64-character lowercase hex Git
+	// commit ID.
+	commitHexPattern = regexp.MustCompile(`^([0-9a-f]{40}|[0-9a-f]{64})$`)
 )
 
 // Init creates the project described by o, running every command with run
@@ -188,7 +192,7 @@ var (
 // Logs of failed commands are retained, and a command whose child cleanup is
 // unconfirmed also retains its stage.
 func Init(ctx context.Context, o Options, run Runner, gen Generator) (string, error) {
-	name, stage, err := prepare(ctx, o, run, gen)
+	name, stage, _, err := prepare(ctx, o, run, gen, false)
 	if err != nil {
 		return "", err
 	}
@@ -198,28 +202,32 @@ func Init(ctx context.Context, o Options, run Runner, gen Generator) (string, er
 	return name, nil
 }
 
-// Prepare builds the starter project described by o inside a new protected
-// staging directory under o.WorkDir without publishing it to o.Dir, closing gen
-// and removing command logs on success. It returns the derived service name and
-// the completed physical staging directory path so the caller can record its
-// write-ahead log and publish the directory atomically. On error the target is
-// unchanged, failed-command logs are retained, and a command whose child
-// cleanup is unconfirmed also retains its staging directory.
-func Prepare(ctx context.Context, o Options, run Runner, gen Generator) (name, stagePath string, err error) {
-	name, stage, err := prepare(ctx, o, run, gen)
+// Prepare builds and tests the starter project described by o inside a new
+// protected staging directory under o.WorkDir, initializes its Git repository
+// and records its initial commit ("Initial scaffold") without publishing it to
+// o.Dir, closing gen and removing command logs on success. It returns the
+// derived service name, the completed physical staging directory path, and the
+// initial commit ID so the caller can record its write-ahead log and publish
+// the directory atomically. On error the target is unchanged, failed-command
+// logs are retained, and a command whose child cleanup is unconfirmed also
+// retains its staging directory.
+func Prepare(ctx context.Context, o Options, run Runner, gen Generator) (name, stagePath, commit string, err error) {
+	name, stage, commit, err := prepare(ctx, o, run, gen, true)
 	if err != nil {
-		return "", "", err
+		return "", "", "", err
 	}
-	return name, stage.path, nil
+	return name, stage.path, commit, nil
 }
 
 // RunCommand runs args in dir as its own process group with GOWORK=off, so a
-// go.work file around dir cannot change the new modules, and writes the
-// combined output to a new file at logPath. Go command temporary files also
-// use that protected log directory rather than inherited TMPDIR or GOTMPDIR,
-// including Go's saved GOTMPDIR setting. When ctx ends the group gets SIGTERM,
-// then SIGKILL; a group that does not exit is reported as a stuck
-// error so Init keeps the staging directory its processes may still use.
+// go.work file around dir cannot change the new modules, strips inherited
+// repository-redirecting Git variables while preserving operator author and
+// config variables, and writes the combined output to a new file at logPath.
+// Go command temporary files also use that protected log directory rather than
+// inherited TMPDIR or GOTMPDIR, including Go's saved GOTMPDIR setting. When ctx
+// ends the group gets SIGTERM, then SIGKILL; a group that does not exit is
+// reported as a stuck error so Init keeps the staging directory its processes
+// may still use.
 func RunCommand(ctx context.Context, dir, logPath string, args ...string) error {
 	log, err := os.OpenFile(logPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if err != nil {
@@ -227,11 +235,7 @@ func RunCommand(ctx context.Context, dir, logPath string, args ...string) error 
 	}
 	cmd := exec.CommandContext(ctx, args[0], args[1:]...)
 	cmd.Dir = dir
-	cmd.Env = append(os.Environ(),
-		"GOWORK=off",
-		"TMPDIR="+filepath.Dir(logPath),
-		"GOTMPDIR="+filepath.Dir(logPath),
-	)
+	cmd.Env = commandEnv(filepath.Dir(logPath))
 	cmd.Stdout, cmd.Stderr = log, log
 	runErr, stopErr := procgroup.Run(cmd, syscall.SIGTERM, stopGrace, stopTimeout)
 	if stopErr != nil {
@@ -322,10 +326,11 @@ func (e *stuckError) Unwrap() error {
 	return e.err
 }
 
-// prepare validates o, builds the starter project in a protected staging
-// directory under o.WorkDir, closes gen, and removes command logs once every
-// build step succeeds.
-func prepare(ctx context.Context, o Options, run Runner, gen Generator) (name string, stage *initStage, err error) {
+// prepare validates o, builds and tests the starter project in a protected
+// staging directory under o.WorkDir, closes gen, optionally records the initial
+// Git commit in the staged repository when commitRepo is true, and removes
+// command logs once every step succeeds.
+func prepare(ctx context.Context, o Options, run Runner, gen Generator, commitRepo bool) (name string, stage *initStage, commit string, err error) {
 	genClosed := false
 	defer func() {
 		if !genClosed {
@@ -334,32 +339,32 @@ func prepare(ctx context.Context, o Options, run Runner, gen Generator) (name st
 	}()
 	d, err := newData(o)
 	if err != nil {
-		return "", nil, err
+		return "", nil, "", err
 	}
 	target, err := filepath.Abs(o.Dir)
 	if err != nil {
-		return "", nil, err
+		return "", nil, "", err
 	}
 	if _, err := os.Lstat(target); err == nil {
-		return "", nil, fmt.Errorf(
+		return "", nil, "", fmt.Errorf(
 			"%s already exists; surla init only creates a new directory (pass a new path such as -dir %s, or change to the parent directory and remove an empty directory first)",
 			target,
 			filepath.Join(target, d.Name),
 		)
 	} else if !errors.Is(err, fs.ErrNotExist) {
-		return "", nil, fmt.Errorf("check %s: %w", target, err)
+		return "", nil, "", fmt.Errorf("check %s: %w", target, err)
 	}
 	stage, err = newInitStage(target, o.WorkDir)
 	if err != nil {
-		return "", nil, err
+		return "", nil, "", err
 	}
 	staging, logs := stage.path, stage.logs
 	if err := build(ctx, staging, logs, d, run, gen); err != nil {
 		var stuck *stuckError
 		if errors.As(err, &stuck) {
-			return "", nil, fmt.Errorf("%w; the staging directory %s is kept because processes may still use it", err, staging)
+			return "", nil, "", fmt.Errorf("%w; the staging directory %s is kept because processes may still use it", err, staging)
 		}
-		return "", nil, errors.Join(err, os.RemoveAll(staging))
+		return "", nil, "", errors.Join(err, os.RemoveAll(staging))
 	}
 	// The generator's processes worked on their own copies of the files, so
 	// whatever its Close reports, nothing of it uses the staging directory.
@@ -367,18 +372,28 @@ func prepare(ctx context.Context, o Options, run Runner, gen Generator) (name st
 	// appears only when generation is fully over and Init was not canceled.
 	genClosed = true
 	if err := errors.Join(gen.Close(), ctx.Err()); err != nil {
-		return "", nil, errors.Join(err, os.RemoveAll(logs), os.RemoveAll(staging))
+		return "", nil, "", errors.Join(err, os.RemoveAll(logs), os.RemoveAll(staging))
+	}
+	if commitRepo {
+		commit, err = commitScaffold(ctx, staging, logs, run)
+		if err != nil {
+			var stuck *stuckError
+			if errors.As(err, &stuck) {
+				return "", nil, "", fmt.Errorf("%w; the staging directory %s is kept because processes may still use it", err, staging)
+			}
+			return "", nil, "", errors.Join(err, os.RemoveAll(staging))
+		}
 	}
 	// Every step succeeded, so the logs are no longer needed. They are removed
 	// before publishing so that the exclusive rename is the last thing that can
 	// fail. A successful publication cannot be reported as a failed init.
 	if err := os.RemoveAll(logs); err != nil {
-		return "", nil, errors.Join(fmt.Errorf("remove command logs: %w", err), os.RemoveAll(staging))
+		return "", nil, "", errors.Join(fmt.Errorf("remove command logs: %w", err), os.RemoveAll(staging))
 	}
 	if err := os.Chmod(staging, 0o755); err != nil {
-		return "", nil, errors.Join(fmt.Errorf("set project permissions: %w", err), os.RemoveAll(staging))
+		return "", nil, "", errors.Join(fmt.Errorf("set project permissions: %w", err), os.RemoveAll(staging))
 	}
-	return d.Name, stage, nil
+	return d.Name, stage, commit, nil
 }
 
 // layoutForModule validates modulePath using Surla's starter service-name rule
@@ -436,10 +451,12 @@ func newData(o Options) (data, error) {
 
 // build creates both modules under root. For each module it writes go.mod and
 // design/, resolves the design's dependencies, generates code with gen,
-// writes the remaining files, tidies again and vets. The evaluator module
-// pins the exact Surla version with go get before generation: the final tidy
-// then keeps that version instead of picking another, and the code is
-// generated with whatever Goa versions it requires.
+// writes the remaining files, tidies again, vets, and runs `go test ./...`
+// (which compiles and checks every package; the generated starter modules have
+// no unit test files, and `go test ./...` does not run model-backed CP4
+// verification). The evaluator module pins the exact Surla version with go get
+// before generation: the final tidy then keeps that version instead of picking
+// another, and the code is generated with whatever Goa versions it requires.
 func build(ctx context.Context, root, logs string, d data, run Runner, gen Generator) error {
 	for _, m := range []moduleStep{
 		{dir: ".", templates: "templates/candidate", path: d.Module},
@@ -471,12 +488,83 @@ func build(ctx context.Context, root, logs string, d data, run Runner, gen Gener
 		if _, err := render(dir, m.templates, d, func(p string) bool { return !isDesignFile(p) }); err != nil {
 			return err
 		}
-		steps = [][]string{{"go", "mod", "tidy"}, {"go", "vet", "./..."}}
+		steps = [][]string{{"go", "mod", "tidy"}, {"go", "vet", "./..."}, {"go", "test", "./..."}}
 		if err := runAll(ctx, dir, m.dir, logs, steps, run); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// commitScaffold initializes a Git repository in staging, commits all
+// generated starter files as "Initial scaffold", and returns the verified
+// commit ID of HEAD.
+func commitScaffold(ctx context.Context, staging, logs string, run Runner) (string, error) {
+	steps := [][]string{
+		{"git", "init"},
+		{"git", "add", "-A"},
+		{"git", "commit", "-m", "Initial scaffold"},
+	}
+	if err := runAll(ctx, staging, ".", logs, steps, run); err != nil {
+		return "", err
+	}
+	revArgs := []string{"git", "rev-parse", "--verify", "HEAD^{commit}"}
+	log, err := newLogPath(logs, ".", revArgs)
+	if err != nil {
+		return "", err
+	}
+	if err := run(ctx, staging, log, revArgs...); err != nil {
+		step := &StepError{Args: revArgs, Module: ".", Log: log, Err: err}
+		var stuck *stuckError
+		if errors.As(err, &stuck) {
+			return "", step
+		}
+		tail, tailErr := readTail(log)
+		step.Tail = tail
+		return "", errors.Join(step, tailErr)
+	}
+	out, err := os.ReadFile(log)
+	if err != nil {
+		return "", fmt.Errorf("read git rev-parse output: %w", err)
+	}
+	commit := strings.TrimSpace(string(out))
+	if !commitHexPattern.MatchString(commit) {
+		return "", &StepError{
+			Args:   revArgs,
+			Module: ".",
+			Log:    log,
+			Tail:   commit,
+			Err:    fmt.Errorf("git rev-parse returned %q, want a 40- or 64-character lowercase hex commit ID", commit),
+		}
+	}
+	return commit, nil
+}
+
+// commandEnv returns os.Environ() with repository-redirecting Git variables
+// removed and isolated Go/Git non-interactive settings appended.
+func commandEnv(logDir string) []string {
+	base := os.Environ()
+	env := make([]string, 0, len(base)+4)
+	for _, kv := range base {
+		key, _, _ := strings.Cut(kv, "=")
+		switch key {
+		case "GIT_DIR",
+			"GIT_WORK_TREE",
+			"GIT_INDEX_FILE",
+			"GIT_OBJECT_DIRECTORY",
+			"GIT_ALTERNATE_OBJECT_DIRECTORIES",
+			"GIT_COMMON_DIR",
+			"GIT_REPLACE_REF_BASE":
+			continue
+		}
+		env = append(env, kv)
+	}
+	return append(env,
+		"GIT_TERMINAL_PROMPT=0",
+		"GOWORK=off",
+		"TMPDIR="+logDir,
+		"GOTMPDIR="+logDir,
+	)
 }
 
 // runAll runs each command in dir in order, each logging to its own new file

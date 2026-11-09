@@ -236,6 +236,12 @@ func writeVerifySummary(w io.Writer, report verify.Report, builderView bool) {
 // SuiteCommit to it, and places RunsDir at <dir>/.surla/runs and ReportDir at
 // <dir>/reports. Every git read shares ctx's deadline.
 func loadProjectConfig(ctx context.Context, dir string) (*controlplane.VerificationConfig, error) {
+	return loadProjectConfigAtCommit(ctx, dir, "")
+}
+
+// loadProjectConfigAtCommit derives a VerificationConfig from the starter
+// layout committed at pinnedCommit (or HEAD when pinnedCommit is empty) in dir.
+func loadProjectConfigAtCommit(ctx context.Context, dir, pinnedCommit string) (*controlplane.VerificationConfig, error) {
 	info, err := os.Stat(dir)
 	if err != nil {
 		return nil, fmt.Errorf("read -project %s: %w", dir, err)
@@ -264,8 +270,15 @@ func loadProjectConfig(ctx context.Context, dir string) (*controlplane.Verificat
 		return nil, fmt.Errorf("-project %s: git rev-parse printed %q, want the repository root and prefix", dir, topOut)
 	}
 	repoRoot := lines[0]
-	headOut, err := runGitRead(ctx, repoRoot, "rev-parse", "--verify", "HEAD^{commit}")
+	revSpec := "HEAD^{commit}"
+	if pinnedCommit != "" {
+		revSpec = pinnedCommit + "^{commit}"
+	}
+	headOut, err := runGitRead(ctx, repoRoot, "rev-parse", "--verify", revSpec)
 	if err != nil {
+		if pinnedCommit != "" {
+			return nil, fmt.Errorf("-project %s is missing pinned evaluator suite commit %s: %w", dir, pinnedCommit, err)
+		}
 		return nil, fmt.Errorf("-project %s has no committed HEAD (run git add -A && git commit -m 'Initial scaffold' first): %w",
 			dir, err)
 	}
@@ -322,7 +335,18 @@ func loadProjectConfig(ctx context.Context, dir string) (*controlplane.Verificat
 // layout committed at HEAD in workspaceDir and places RunsDir and ReportDir in
 // the operator-owned directories outside the workspace.
 func starterVerificationConfig(ctx context.Context, workspaceDir, runsDir, reportDir string) (*controlplane.VerificationConfig, error) {
-	cfg, err := loadProjectConfig(ctx, workspaceDir)
+	return starterVerificationConfigAtCommit(ctx, workspaceDir, "", runsDir, reportDir)
+}
+
+// starterVerificationConfigAtCommit derives a VerificationConfig from the
+// starter layout committed at suiteCommit (or HEAD when suiteCommit is empty)
+// in workspaceDir and places RunsDir and ReportDir in the operator-owned
+// directories outside the workspace.
+func starterVerificationConfigAtCommit(
+	ctx context.Context,
+	workspaceDir, suiteCommit, runsDir, reportDir string,
+) (*controlplane.VerificationConfig, error) {
+	cfg, err := loadProjectConfigAtCommit(ctx, workspaceDir, suiteCommit)
 	if err != nil {
 		return nil, err
 	}

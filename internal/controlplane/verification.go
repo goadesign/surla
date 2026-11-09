@@ -196,37 +196,18 @@ func (c *ControlPlane) effectiveRunsDir() string {
 }
 
 // resolveVerificationConfig resolves a VerificationConfig dynamically from the
-// currently bound workspace directory when ResolveVerification is set, or
-// returns the static VerificationConfig, validating that RunsDir and ReportDir
-// lie outside both initialWorkspaceRoot and activeWorkspaceDir.
+// currently bound workspace directory and suite commit when ResolveVerification
+// is set, or returns the static VerificationConfig, validating that RunsDir and
+// ReportDir lie outside both initialWorkspaceRoot and activeWorkspaceDir.
 func (c *ControlPlane) resolveVerificationConfig(ctx context.Context) (*VerificationConfig, error) {
-	if c.resolveVerification != nil {
-		wsDir, wsDev, wsIno := c.currentWorkspaceTarget()
-		if wsDir != "" {
-			_, root, err := openModuleRootWithIdentity(wsDir, wsDev, wsIno)
-			if err != nil {
-				return nil, gensurla.MakeNotImplemented(err)
-			}
-			if err := root.Close(); err != nil {
-				return nil, gensurla.MakeNotImplemented(err)
-			}
-		}
-		cfg, err := c.resolveVerification(ctx, wsDir)
-		if err != nil {
-			return nil, gensurla.MakeNotImplemented(err)
-		}
-		if cfg == nil {
-			return nil, gensurla.MakeNotImplemented(errVerificationUnavailable)
-		}
-		if err := validateVerificationWorkspaceSeparation(cfg, c.initialWorkspaceRoot, wsDir); err != nil {
-			return nil, gensurla.MakeNotImplemented(err)
-		}
-		return cfg, nil
+	cfg, err := c.resolveActiveVerification(ctx)
+	if err != nil {
+		return nil, gensurla.MakeNotImplemented(err)
 	}
-	if c.verification != nil {
-		return c.verification, nil
+	if cfg == nil {
+		return nil, gensurla.MakeNotImplemented(errVerificationUnavailable)
 	}
-	return nil, gensurla.MakeNotImplemented(errVerificationUnavailable)
+	return cfg, nil
 }
 
 // statusResult returns the wire form of a run: its request and its state,

@@ -122,8 +122,11 @@ type Service interface {
 	ConfigureModel(context.Context, *ConfigureModelPayload) (res *ModelConfigResult, err error)
 	// Initialize a new Surla starter project directory inside the server's bound
 	// workspace, generating the candidate Go module, Goa and Goa-AI code, and the
-	// eval/ verification harness, and switch the server's active workspace to that
-	// project.
+	// eval/ verification harness, creating the initial Git commit, and switching
+	// the server's active workspace and trusted evaluator suite commit to that
+	// project. When the request includes a progressToken, the tool sends MCP
+	// progress updates as starter generation/tests, initial commit creation, and
+	// publication start.
 	InitProject(context.Context, *InitProjectPayload) (res *InitProjectResult, err error)
 }
 
@@ -484,6 +487,10 @@ type InitProjectResult struct {
 	ModulePath string
 	// Derived service name.
 	ServiceName string
+	// Full commit ID of the initial starter commit created in the initialized
+	// repository (40 or 64 lowercase hex characters); start_live_target and
+	// verify_change take this commit ID.
+	Commit string
 }
 
 // ListVerificationsPayload is the payload type of the surla service
@@ -1815,6 +1822,10 @@ type jsonInitProjectResultTransport struct {
 	ModulePath *string `json:"module_path"`
 	// Derived service name.
 	ServiceName *string `json:"service_name"`
+	// Full commit ID of the initial starter commit created in the initialized
+	// repository (40 or 64 lowercase hex characters); start_live_target and
+	// verify_change take this commit ID.
+	Commit *string `json:"commit"`
 }
 
 // validatejsonInitProjectResultTransport checks decoded JSON before it becomes a service value.
@@ -1830,6 +1841,12 @@ func validatejsonInitProjectResultTransport(value *jsonInitProjectResultTranspor
 	}
 	if value.ServiceName == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("service_name", "body"))
+	}
+	if value.Commit == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("commit", "body"))
+	}
+	if value.Commit != nil {
+		err = goa.MergeErrors(err, goa.ValidatePattern("body.commit", *value.Commit, "^([0-9a-f]{40}|[0-9a-f]{64})$"))
 	}
 	return err
 }
@@ -3001,6 +3018,12 @@ func validateInitProjectPayloadOriginal(value *InitProjectPayload) (err error) {
 	if utf8.RuneCountInString(value.ModulePath) < 3 {
 		err = goa.MergeErrors(err, goa.InvalidLengthError("value.module_path", value.ModulePath, utf8.RuneCountInString(value.ModulePath), 3, true))
 	}
+	return err
+}
+
+// validateInitProjectResultOriginal checks the original typed value before JSON conversion.
+func validateInitProjectResultOriginal(value *InitProjectResult) (err error) {
+	err = goa.MergeErrors(err, goa.ValidatePattern("value.commit", value.Commit, "^([0-9a-f]{40}|[0-9a-f]{64})$"))
 	return err
 }
 
@@ -5591,12 +5614,16 @@ func EncodeInitProjectResult(in *InitProjectResult) ([]byte, error) {
 	if err := checkInitProjectResultValue(in); err != nil {
 		return nil, fmt.Errorf("encode InitProjectResult JSON: %w", err)
 	}
+	if err := validateInitProjectResultOriginal(in); err != nil {
+		return nil, fmt.Errorf("validate InitProjectResult value: %w", err)
+	}
 	var body *jsonInitProjectResultTransport
 	{
 		body = &jsonInitProjectResultTransport{
 			Dir:         &in.Dir,
 			ModulePath:  &in.ModulePath,
 			ServiceName: &in.ServiceName,
+			Commit:      &in.Commit,
 		}
 	}
 	if err := validatejsonInitProjectResultTransport(body); err != nil {
@@ -5616,6 +5643,9 @@ func ValidateInitProjectResultValue(in *InitProjectResult) error {
 	if err := checkInitProjectResultValue(in); err != nil {
 		return fmt.Errorf("validate InitProjectResult value: %w", err)
 	}
+	if err := validateInitProjectResultOriginal(in); err != nil {
+		return fmt.Errorf("validate InitProjectResult value: %w", err)
+	}
 
 	if in == nil {
 		return goa.MissingFieldError("result", "InitProjectResult")
@@ -5627,6 +5657,7 @@ func ValidateInitProjectResultValue(in *InitProjectResult) error {
 			Dir:         &in.Dir,
 			ModulePath:  &in.ModulePath,
 			ServiceName: &in.ServiceName,
+			Commit:      &in.Commit,
 		}
 	}
 	if err := validatejsonInitProjectResultTransport(body); err != nil {
@@ -5664,6 +5695,7 @@ func DecodeInitProjectResult(data []byte) (out *InitProjectResult, err error) {
 			Dir:         *body.Dir,
 			ModulePath:  *body.ModulePath,
 			ServiceName: *body.ServiceName,
+			Commit:      *body.Commit,
 		}
 	}
 	return out, nil
@@ -11458,6 +11490,13 @@ func validateInitProjectResultJSONValue(path string, value any, description stri
 	sort.Strings(keys)
 	for _, key := range keys {
 		switch key {
+		case "commit":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Full commit ID of the initial starter commit created in the initialized repository (40 or 64 lowercase hex characters); start_live_target and verify_change take this commit ID.",
+			); err != nil {
+				return err
+			}
 		case "dir":
 			if err := validateAgentPolicyItemJSONValue2(
 				generatedJSONChildPath(path, key, false),
@@ -11481,6 +11520,7 @@ func validateInitProjectResultJSONValue(path string, value any, description stri
 			}
 		default:
 			return unknownJSONFieldError(path, key, []string{
+				"commit",
 				"dir",
 				"module_path",
 				"service_name",
@@ -13740,6 +13780,9 @@ func checkInitProjectResultInitProjectResultValue(in *InitProjectResult, field s
 		}
 		if !utf8.ValidString(string(in.ServiceName)) {
 			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "service_name", false))
+		}
+		if !utf8.ValidString(string(in.Commit)) {
+			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "commit", false))
 		}
 	}
 	return nil

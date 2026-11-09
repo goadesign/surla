@@ -1899,7 +1899,7 @@ paths:
             tags:
                 - surla
             summary: init_project surla
-            description: Initialize a new Surla starter project directory inside the server's bound workspace, generating the candidate Go module, Goa and Goa-AI code, and the eval/ verification harness, and switch the server's active workspace to that project.
+            description: Initialize a new Surla starter project directory inside the server's bound workspace, generating the candidate Go module, Goa and Goa-AI code, and the eval/ verification harness, creating the initial Git commit, and switching the server's active workspace and trusted evaluator suite commit to that project. When the request includes a progressToken, the tool sends MCP progress updates as starter generation/tests, initial commit creation, and publication start.
             operationId: surla#init_project
             requestBody:
                 description: Request body for init_project.
@@ -1919,6 +1919,7 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/InitProjectResult'
                             example:
+                                commit: 0ac14c4500b9541d889f2a933126c41e0f75837d556ed1563d8b94e6e2684dd9
                                 dir: Exercitationem mollitia illo incidunt.
                                 module_path: Voluptates soluta.
                                 service_name: Quis aliquam repellendus sit modi.
@@ -3241,6 +3242,11 @@ components:
         InitProjectResult:
             type: object
             properties:
+                commit:
+                    type: string
+                    description: Full commit ID of the initial starter commit created in the initialized repository (40 or 64 lowercase hex characters); start_live_target and verify_change take this commit ID.
+                    example: 0ac14c4500b9541d889f2a933126c41e0f75837d556ed1563d8b94e6e2684dd9
+                    pattern: ^([0-9a-f]{40}|[0-9a-f]{64})$
                 dir:
                     type: string
                     description: Physical directory path of the newly created starter project (now the server's active workspace).
@@ -3253,8 +3259,9 @@ components:
                     type: string
                     description: Derived service name.
                     example: Quis aliquam repellendus sit modi.
-            description: Newly initialized Surla starter project directory and derived service identity.
+            description: Newly initialized Surla starter project directory, derived service identity, and initial Git commit.
             example:
+                commit: 0ac14c4500b9541d889f2a933126c41e0f75837d556ed1563d8b94e6e2684dd9
                 dir: Exercitationem mollitia illo incidunt.
                 module_path: Voluptates soluta.
                 service_name: Quis aliquam repellendus sit modi.
@@ -3262,6 +3269,7 @@ components:
                 - dir
                 - module_path
                 - service_name
+                - commit
         LiveTargetResult:
             type: object
             properties:

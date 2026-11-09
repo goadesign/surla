@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/goadesign/surla/internal/abspath"
 	"github.com/goadesign/surla/internal/verify"
 )
 
@@ -258,6 +259,19 @@ func TestResolveImportedReportDirIgnoresPostImportWorkspaceSymlinks(t *testing.T
 	require.NoError(t, err)
 	assert.Equal(t, filepath.Join(publishedReportsRoot, "default"), resolved)
 
+	// External symlink alias/../reports where alias -> wsRoot/sub resolves alias before ".."
+	// and maps to the imported default report directory without following wsRoot/reports.
+	wsSub := filepath.Join(wsRoot, "sub")
+	require.NoError(t, os.MkdirAll(wsSub, 0o755))
+	alias := filepath.Join(root, "alias")
+	require.NoError(t, os.Symlink(wsSub, alias))
+	aliasResolved, err := ResolveImportedReportDir(publishedReportsRoot, wsRoot, alias+"/../reports")
+	require.NoError(t, err)
+	assert.Equal(t, filepath.Join(publishedReportsRoot, "default"), aliasResolved)
+	insideViaAlias, err := IsWorkspaceReportDir(wsRoot, alias+"/../reports")
+	require.NoError(t, err)
+	assert.True(t, insideViaAlias)
+
 	// External configured paths are returned unchanged.
 	extResolved, err := ResolveImportedReportDir(publishedReportsRoot, wsRoot, externalDir)
 	require.NoError(t, err)
@@ -265,7 +279,7 @@ func TestResolveImportedReportDirIgnoresPostImportWorkspaceSymlinks(t *testing.T
 
 	// Non-directory entry under publishedReportsRoot returns an error.
 	customWSReportDir := filepath.Join(wsRoot, "custom-reports")
-	evalWS, err := evalExistingAncestor(wsRoot)
+	evalWS, err := abspath.EvalMissing(wsRoot)
 	require.NoError(t, err)
 	dirKey := importedReportDirKey(evalWS, filepath.Join(evalWS, "custom-reports"))
 	require.NoError(t, os.WriteFile(filepath.Join(publishedReportsRoot, dirKey), []byte("not-a-dir"), 0o600))

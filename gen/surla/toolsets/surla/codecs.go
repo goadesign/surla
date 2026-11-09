@@ -2070,7 +2070,7 @@ var initProjectPayloadFields = []tools.FieldMetadata{
 var initProjectResultFields = []tools.FieldMetadata{
 	{
 		JSONType:    "object",
-		Description: "Newly initialized Surla starter project directory and derived service identity.",
+		Description: "Newly initialized Surla starter project directory, derived service identity, and initial Git commit.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("dir")},
@@ -2086,6 +2086,11 @@ var initProjectResultFields = []tools.FieldMetadata{
 		Path:        []tools.FieldPathSegment{tools.FixedField("service_name")},
 		JSONType:    "string",
 		Description: "Derived service name.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("commit")},
+		JSONType:    "string",
+		Description: "Full commit ID of the initial starter commit created in the initialized repository (40 or 64 lowercase hex characters); start_live_target and verify_change take this commit ID.",
 	},
 }
 var listVerificationsPayloadFields = []tools.FieldMetadata{
@@ -6384,6 +6389,7 @@ func MarshalInitProjectResult(v *InitProjectResult) ([]byte, error) {
 		Dir:         &in.Dir,
 		ModulePath:  &in.ModulePath,
 		ServiceName: &in.ServiceName,
+		Commit:      &in.Commit,
 	}
 	return json.Marshal(out)
 }
@@ -6412,6 +6418,7 @@ func UnmarshalInitProjectResult(data []byte) (*InitProjectResult, error) {
 		Dir:         *in.Dir,
 		ModulePath:  *in.ModulePath,
 		ServiceName: *in.ServiceName,
+		Commit:      *in.Commit,
 	}
 	return out, nil
 }
@@ -10914,6 +10921,13 @@ func validateInitProjectResultJSONValue(path string, value any, description stri
 	sort.Strings(keys)
 	for _, key := range keys {
 		switch key {
+		case "commit":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Full commit ID of the initial starter commit created in the initialized repository (40 or 64 lowercase hex characters); start_live_target and verify_change take this commit ID.",
+			); err != nil {
+				return err
+			}
 		case "dir":
 			if err := validateStringJSONValue(
 				generatedJSONChildPath(path, key, false),
@@ -10937,6 +10951,7 @@ func validateInitProjectResultJSONValue(path string, value any, description stri
 			}
 		default:
 			return unknownJSONFieldError(path, key, []string{
+				"commit",
 				"dir",
 				"module_path",
 				"service_name",

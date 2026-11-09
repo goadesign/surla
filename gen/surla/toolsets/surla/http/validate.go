@@ -454,6 +454,12 @@ func ValidateInitProjectResultTransport(body *InitProjectResultTransport) (err e
 	if body.ServiceName == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("service_name", "body"))
 	}
+	if body.Commit == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("commit", "body"))
+	}
+	if body.Commit != nil {
+		err = goa.MergeErrors(err, goa.ValidatePattern("body.commit", *body.Commit, "^([0-9a-f]{40}|[0-9a-f]{64})$"))
+	}
 	return
 }
 

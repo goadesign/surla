@@ -20,6 +20,7 @@ import (
 	"syscall"
 
 	gensurla "github.com/goadesign/surla/gen/surla"
+	"github.com/goadesign/surla/internal/abspath"
 )
 
 type (
@@ -241,28 +242,37 @@ func PrepareCardSnapshot(legacyCardsDir, stageCardsDir string) (releaseLock func
 	return closeHeld, nil
 }
 
-// openCardStore creates dir (0700) when missing and takes its lock. It fails
-// when another process already holds the lock.
+// openCardStore resolves dir to its physical path, creates dir (0700) when
+// missing, and takes its lock. It fails when another process already holds the
+// lock.
 func openCardStore(dir string) (*cardStore, error) {
-	if dir == "" {
+	if strings.TrimSpace(dir) == "" {
 		return nil, errors.New("cards directory is required")
 	}
-	if err := os.MkdirAll(dir, 0o700); err != nil {
+	physDir, err := abspath.EvalMissing(dir)
+	if err != nil {
+		return nil, fmt.Errorf("resolve cards directory: %w", err)
+	}
+	if err := os.MkdirAll(physDir, 0o700); err != nil {
 		return nil, fmt.Errorf("create cards directory: %w", err)
 	}
-	lock, err := os.OpenFile(filepath.Join(dir, "lock"), os.O_RDWR|os.O_CREATE, 0o600)
+	physDir, err = abspath.Eval(physDir)
+	if err != nil {
+		return nil, fmt.Errorf("resolve created cards directory: %w", err)
+	}
+	lock, err := os.OpenFile(filepath.Join(physDir, "lock"), os.O_RDWR|os.O_CREATE, 0o600)
 	if err != nil {
 		return nil, fmt.Errorf("open cards directory lock: %w", err)
 	}
 	if err := syscall.Flock(int(lock.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
 		if errors.Is(err, syscall.EWOULDBLOCK) {
-			err = fmt.Errorf("cards directory %s is in use by another process", dir)
+			err = fmt.Errorf("cards directory %s is in use by another process", physDir)
 		} else {
 			err = fmt.Errorf("lock cards directory: %w", err)
 		}
 		return nil, errors.Join(err, lock.Close())
 	}
-	return &cardStore{dir: dir, lock: lock}, nil
+	return &cardStore{dir: physDir, lock: lock}, nil
 }
 
 // syncDir flushes dir's entries so a completed rename survives a crash.

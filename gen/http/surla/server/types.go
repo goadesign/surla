@@ -541,6 +541,10 @@ type InitProjectResponseBody struct {
 	ModulePath string `form:"module_path" json:"module_path" xml:"module_path"`
 	// Derived service name.
 	ServiceName string `form:"service_name" json:"service_name" xml:"service_name"`
+	// Full commit ID of the initial starter commit created in the initialized
+	// repository (40 or 64 lowercase hex characters); start_live_target and
+	// verify_change take this commit ID.
+	Commit string `form:"commit" json:"commit" xml:"commit"`
 }
 
 // ProposeChangeConflictResponseBody is the type of the "surla" service
@@ -2543,6 +2547,7 @@ func NewInitProjectResponseBody(res *surla.InitProjectResult) *InitProjectRespon
 		Dir:         res.Dir,
 		ModulePath:  res.ModulePath,
 		ServiceName: res.ServiceName,
+		Commit:      res.Commit,
 	}
 	return body
 }

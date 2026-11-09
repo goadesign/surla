@@ -15,6 +15,7 @@ import (
 
 	"golang.org/x/sys/unix"
 
+	"github.com/goadesign/surla/internal/abspath"
 	"github.com/goadesign/surla/internal/controlplane"
 	"github.com/goadesign/surla/internal/verifyrun"
 )
@@ -114,7 +115,10 @@ func importLegacyWorkspace(
 	var startupExternalVer *controlplane.VerificationConfig
 	var verPath string
 	if cfg.verificationPath != "" {
-		verPath = resolveAgainstBase(startupBaseDir, cfg.verificationPath)
+		verPath, err = abspath.EvalFrom(startupBaseDir, cfg.verificationPath)
+		if err != nil {
+			return fmt.Errorf("resolve -verification-config %s: %w", cfg.verificationPath, err)
+		}
 		startupExternalVer, err = loadWorkspaceVerificationConfig(verPath, startupBaseDir, initialWorkspaceRoot, initialWorkspaceRoot)
 		if err != nil {
 			return err
@@ -124,7 +128,10 @@ func importLegacyWorkspace(
 	effectivePromotionPath := filepath.Join(operatorProjectDir, "promotion.json")
 	hasPromotionConfig := false
 	if cfg.promotionPath != "" {
-		effectivePromotionPath = resolveAgainstBase(startupBaseDir, cfg.promotionPath)
+		effectivePromotionPath, err = abspath.EvalFrom(startupBaseDir, cfg.promotionPath)
+		if err != nil {
+			return fmt.Errorf("resolve -promotion-config %s: %w", cfg.promotionPath, err)
+		}
 		hasPromotionConfig = true
 	} else if _, statErr := os.Lstat(effectivePromotionPath); statErr == nil {
 		hasPromotionConfig = true
@@ -150,10 +157,13 @@ func importLegacyWorkspace(
 		}
 	}
 
-	startupCardsDir := resolveAgainstBase(startupBaseDir, ".surla/cards")
-	caseC3 := !cfg.cardsDirExplicit && isWithinOrEqualDir(startupCardsDir, initialWorkspaceRoot)
+	startupCardsDir, err := abspath.EvalFrom(startupBaseDir, ".surla/cards")
+	if err != nil {
+		return fmt.Errorf("resolve default cards directory: %w", err)
+	}
+	implicitCardsInsideWS := !cfg.cardsDirExplicit && isWithinOrEqualDir(startupCardsDir, initialWorkspaceRoot)
 	starterMode := cfg.verificationPath == ""
-	if !caseC3 && !starterMode && !promoReportInsideWS {
+	if !implicitCardsInsideWS && !starterMode && !promoReportInsideWS {
 		return errors.New("cannot import legacy workspace: no workspace-interior .surla/ store is applicable when both -cards-dir and -verification-config point outside the workspace")
 	}
 
@@ -260,7 +270,7 @@ func importLegacyWorkspace(
 
 	for _, storeName := range cardStoreNames {
 		var legacySrc string
-		if caseC3 {
+		if implicitCardsInsideWS {
 			switch storeName {
 			case "cards-" + cardsHash:
 				legacySrc = startupCardsDir
@@ -286,7 +296,10 @@ func importLegacyWorkspace(
 	var stagedSelectedCardsDir string
 	switch {
 	case cfg.cardsDirExplicit:
-		stagedSelectedCardsDir = resolveAgainstBase(startupBaseDir, cfg.cardsDir)
+		stagedSelectedCardsDir, err = abspath.EvalFrom(startupBaseDir, cfg.cardsDir)
+		if err != nil {
+			return fmt.Errorf("resolve -cards-dir %s: %w", cfg.cardsDir, err)
+		}
 	case !isWithinOrEqualDir(startupCardsDir, initialWorkspaceRoot):
 		stagedSelectedCardsDir = startupCardsDir
 	default:

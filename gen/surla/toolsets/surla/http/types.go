@@ -326,6 +326,10 @@ type (
 		ModulePath *string `json:"module_path"`
 		// Derived service name.
 		ServiceName *string `json:"service_name"`
+		// Full commit ID of the initial starter commit created in the initialized
+		// repository (40 or 64 lowercase hex characters); start_live_target and
+		// verify_change take this commit ID.
+		Commit *string `json:"commit"`
 	}
 	// ListVerificationsPayloadTransport is the internal JSON transport type for ListVerificationsPayload.
 	// It lives in the toolset-local http package and is used only for JSON

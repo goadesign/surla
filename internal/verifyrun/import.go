@@ -61,7 +61,7 @@ func PrepareSnapshot(
 	legacyRunsDir, legacyDefaultReportsDir, stageRunsDir, stageReportsRoot, publishedReportsRoot, initialWorkspaceRoot string,
 	configuredReportDirs ...string,
 ) (releaseLocks func() error, err error) {
-	wsRoot, err := evalExistingAncestor(initialWorkspaceRoot)
+	wsRoot, err := abspath.EvalMissing(initialWorkspaceRoot)
 	if err != nil {
 		return nil, fmt.Errorf("resolve workspace root %s: %w", initialWorkspaceRoot, err)
 	}
@@ -248,7 +248,7 @@ func IsWorkspaceReportDir(initialWorkspaceRoot, configuredReportDir string) (boo
 	if initialWorkspaceRoot == "" || configuredReportDir == "" {
 		return false, nil
 	}
-	wsRoot, err := evalExistingAncestor(initialWorkspaceRoot)
+	wsRoot, err := abspath.EvalMissing(initialWorkspaceRoot)
 	if err != nil {
 		return false, err
 	}
@@ -258,11 +258,12 @@ func IsWorkspaceReportDir(initialWorkspaceRoot, configuredReportDir string) (boo
 
 // ResolveImportedReportDir maps a configured workspace-interior report
 // directory to its published counterpart under publishedReportsRoot when that
-// imported subdirectory exists as a non-symlink directory. Ancestors up to
-// initialWorkspaceRoot are resolved without following symlinks inside the
-// workspace, so post-import workspace edits or symlinks cannot redirect an
-// imported report directory. Non-workspace paths and workspace paths without a
-// published imported subdirectory (fs.ErrNotExist) are returned unchanged so
+// imported subdirectory exists as a non-symlink directory. Ancestors outside
+// initialWorkspaceRoot resolve symlinks left-to-right before applying "..",
+// while path components inside initialWorkspaceRoot are resolved without
+// following symlinks so post-import workspace edits or symlinks cannot redirect
+// an imported report directory. Non-workspace paths and workspace paths without
+// a published imported subdirectory (fs.ErrNotExist) are returned unchanged so
 // normal validation can accept external paths and reject unimported workspace
 // paths; filesystem errors or non-directory entries under publishedReportsRoot
 // return an error.
@@ -270,7 +271,7 @@ func ResolveImportedReportDir(publishedReportsRoot, initialWorkspaceRoot, config
 	if publishedReportsRoot == "" || initialWorkspaceRoot == "" || configuredReportDir == "" {
 		return configuredReportDir, nil
 	}
-	wsRoot, err := evalExistingAncestor(initialWorkspaceRoot)
+	wsRoot, err := abspath.EvalMissing(initialWorkspaceRoot)
 	if err != nil {
 		return "", err
 	}
@@ -296,38 +297,78 @@ func ResolveImportedReportDir(publishedReportsRoot, initialWorkspaceRoot, config
 	return candidate, nil
 }
 
-// resolveWorkspaceReportPath resolves configuredReportDir against wsRoot without
-// following symlinks inside wsRoot once an ancestor matches wsRoot, so builder
-// changes inside the workspace after import cannot redirect imported report
-// lookup.
+// resolveWorkspaceReportPath resolves configuredReportDir left-to-right,
+// expanding symlinks outside wsRoot before applying ".." while refusing to
+// follow symlinks once inside wsRoot so builder changes inside the workspace
+// after import cannot redirect imported report lookup.
 func resolveWorkspaceReportPath(wsRoot, configuredReportDir string) (string, bool, error) {
-	absConfigured, err := filepath.Abs(configuredReportDir)
-	if err != nil {
-		return "", false, err
-	}
-	cur := absConfigured
-	for {
-		evalCur, evalErr := abspath.Eval(cur)
-		if evalErr == nil && evalCur == wsRoot {
-			rel, relErr := filepath.Rel(cur, absConfigured)
-			if relErr != nil {
-				return "", false, relErr
-			}
-			if rel == "." {
-				return wsRoot, true, nil
-			}
-			return filepath.Join(wsRoot, rel), true, nil
+	var (
+		cur  string
+		rest string
+	)
+	if filepath.IsAbs(configuredReportDir) {
+		cur = string(filepath.Separator)
+		rest = strings.TrimPrefix(configuredReportDir, string(filepath.Separator))
+	} else {
+		wd, err := os.Getwd()
+		if err != nil {
+			return "", false, err
 		}
-		parent := filepath.Dir(cur)
-		if parent == cur {
-			break
+		cur, err = abspath.Eval(wd)
+		if err != nil {
+			return "", false, err
 		}
-		cur = parent
+		rest = configuredReportDir
 	}
-	cleanConfigured, err := evalExistingAncestor(absConfigured)
-	if err != nil {
-		return "", false, err
+
+	const maxSymlinkExpansions = 40
+	links := 0
+	for rest != "" {
+		part, after, _ := strings.Cut(rest, string(filepath.Separator))
+		rest = after
+		switch part {
+		case "", ".":
+			continue
+		case "..":
+			cur = filepath.Dir(cur)
+			continue
+		}
+		next := filepath.Join(cur, part)
+		if wsRoot != "" && isWithinOrEqualPath(cur, wsRoot) {
+			cur = next
+			continue
+		}
+		info, err := os.Lstat(next)
+		if errors.Is(err, fs.ErrNotExist) {
+			cur = next
+			continue
+		}
+		if err != nil {
+			return "", false, err
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			links++
+			if links > maxSymlinkExpansions {
+				return "", false, fmt.Errorf("resolve %s: too many symlinks", configuredReportDir)
+			}
+			target, err := os.Readlink(next)
+			if err != nil {
+				return "", false, err
+			}
+			if rest != "" {
+				target = target + string(filepath.Separator) + rest
+			}
+			if filepath.IsAbs(target) {
+				cur = string(filepath.Separator)
+				rest = strings.TrimPrefix(target, string(filepath.Separator))
+			} else {
+				rest = target
+			}
+			continue
+		}
+		cur = next
 	}
+	cleanConfigured := filepath.Clean(cur)
 	return cleanConfigured, isWithinOrEqualPath(cleanConfigured, wsRoot), nil
 }
 
@@ -513,35 +554,6 @@ func writeRegularFileNoFollow(path string, raw []byte, perm os.FileMode) error {
 		}
 	}
 	return errors.Join(f.Sync(), f.Close())
-}
-
-// evalExistingAncestor resolves existing ancestor symlinks of candidate and
-// appends any not-yet-created trailing path components.
-func evalExistingAncestor(candidate string) (string, error) {
-	abs, err := filepath.Abs(candidate)
-	if err != nil {
-		return "", err
-	}
-	var missing []string
-	cur := abs
-	for {
-		physical, err := abspath.Eval(cur)
-		if err == nil {
-			for i := len(missing) - 1; i >= 0; i-- {
-				physical = filepath.Join(physical, missing[i])
-			}
-			return physical, nil
-		}
-		if !errors.Is(err, fs.ErrNotExist) {
-			return "", err
-		}
-		parent := filepath.Dir(cur)
-		if parent == cur {
-			return "", err
-		}
-		missing = append(missing, filepath.Base(cur))
-		cur = parent
-	}
 }
 
 // isWithinOrEqualPath reports whether target equals or lies inside root.

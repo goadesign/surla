@@ -66,6 +66,12 @@ func TestGenMatchesGoaGenByteForByte(t *testing.T) {
 // byte-for-byte unchanged.
 func TestGenOnAFreshStarterChangesNothingAndKeepsModulesApart(t *testing.T) {
 	isolateLocalWork(t)
+	t.Setenv("GIT_CONFIG_GLOBAL", os.DevNull)
+	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+	t.Setenv("GIT_AUTHOR_NAME", "Surla Test")
+	t.Setenv("GIT_AUTHOR_EMAIL", "test@example.com")
+	t.Setenv("GIT_COMMITTER_NAME", "Surla Test")
+	t.Setenv("GIT_COMMITTER_EMAIL", "test@example.com")
 	workspace := t.TempDir()
 	opts, err := serveOptions(serveConfig{
 		projectDir:       workspace,
@@ -110,6 +116,11 @@ func TestGenOnAFreshStarterChangesNothingAndKeepsModulesApart(t *testing.T) {
 	assert.Equal(t, dir, initialized.Dir, "omitting dir uses the module's service name")
 	assert.Equal(t, "example.com/shop", initialized.ModulePath)
 	assert.Equal(t, "shop", initialized.ServiceName)
+	assert.Regexp(t, "^[0-9a-f]{40}$", initialized.Commit)
+	headCmd := exec.CommandContext(ctx, "git", "-C", dir, "rev-parse", "--verify", "HEAD^{commit}")
+	headOut, err := headCmd.CombinedOutput()
+	require.NoError(t, err, string(headOut))
+	assert.Equal(t, initialized.Commit, strings.TrimSpace(string(headOut)))
 	entries, err := os.ReadDir(workspace)
 	require.NoError(t, err)
 	require.Len(t, entries, 1, "server state and compiler work stay outside the builder workspace")

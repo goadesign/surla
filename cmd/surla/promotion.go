@@ -120,7 +120,13 @@ func decodePromotionFile(path string) (promotionFile, error) {
 	if err != nil {
 		return promotionFile{}, fmt.Errorf("-promotion-config %s: %w", path, err)
 	}
-	return decodePromotionFileAtBase(path, wd)
+	f, err := decodePromotionFileAtBase(path, wd)
+	if err != nil {
+		return promotionFile{}, err
+	}
+	f.ReportDir = filepath.Clean(f.ReportDir)
+	f.ReleaseDir = filepath.Clean(f.ReleaseDir)
+	return f, nil
 }
 
 // hashFile returns the hex SHA-256 digest of the regular file name inside

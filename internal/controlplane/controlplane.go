@@ -22,7 +22,6 @@ import (
 	genmcpsurla "github.com/goadesign/surla/gen/jsonrpc/mcp_surla/server"
 	genmcpadapter "github.com/goadesign/surla/gen/mcp_surla"
 	gensurla "github.com/goadesign/surla/gen/surla"
-	"github.com/goadesign/surla/internal/abspath"
 	"github.com/goadesign/surla/internal/designeval"
 	"github.com/goadesign/surla/internal/diff"
 	"github.com/goadesign/surla/internal/goldenpath"
@@ -163,9 +162,11 @@ type (
 		// Verification is nil.
 		RunsDir string
 		// ResolveVerification dynamically resolves a VerificationConfig from
-		// the currently bound workspace directory for verify_change and
-		// start_live_target when Verification is nil.
-		ResolveVerification func(ctx context.Context, workspaceDir string) (*VerificationConfig, error)
+		// the currently bound workspace directory and its trusted starter suite
+		// commit (set by init_project or restored from workspace.json, or empty
+		// when the workspace was not initialized via init_project) for
+		// verify_change and start_live_target.
+		ResolveVerification func(ctx context.Context, workspaceDir, suiteCommit string) (*VerificationConfig, error)
 		// Live lets start_live_target build and run CP3 live targets with
 		// Verification's plan, in <CardsDir>/live. Without it, or without
 		// Verification/ResolveVerification, start_live_target fails.
@@ -226,14 +227,14 @@ type (
 		// verification is nil.
 		runsDir string
 		// resolveVerification dynamically resolves a VerificationConfig from
-		// the currently bound workspace when verification is nil.
-		resolveVerification func(ctx context.Context, workspaceDir string) (*VerificationConfig, error)
+		// the currently bound workspace and its trusted starter suite commit.
+		resolveVerification func(ctx context.Context, workspaceDir, suiteCommit string) (*VerificationConfig, error)
 		// evaluator evaluates designs for preview_architecture and diff. It
 		// creates its build workspace on the first evaluation, and Close
 		// removes it.
 		evaluator *designeval.Evaluator
 		// workspaceMu serializes InitProject and guards activeWorkspaceDir,
-		// boundWorkspaceDev, and boundWorkspaceIno.
+		// boundWorkspaceDev, boundWorkspaceIno, and boundSuiteCommit.
 		workspaceMu sync.RWMutex
 		// initialWorkspaceRoot is the cleaned physical path of
 		// Options.WorkspaceDir at startup, or empty when unbound.
@@ -248,6 +249,9 @@ type (
 		// of activeWorkspaceDir.
 		boundWorkspaceDev uint64
 		boundWorkspaceIno uint64
+		// boundSuiteCommit is the trusted initial starter commit recorded by
+		// init_project or restored from workspace.json.
+		boundSuiteCommit string
 		// initStageDir is Options.InitStageDir.
 		initStageDir string
 		// newGenerator constructs a fresh scaffold.Generator for each
@@ -373,13 +377,8 @@ func New(opts Options) (*ControlPlane, error) {
 	if err != nil {
 		return nil, errors.Join(err, cleanupFailedNew())
 	}
-	if err := validateCardsWorkspaceSeparation(opts.CardsDir, wsRoot, wsRoot); err != nil {
-		return nil, errors.Join(err, cleanupFailedNew())
-	}
-	if err := validateRunsDirWorkspaceSeparation(opts.RunsDir, wsRoot, wsRoot); err != nil {
-		return nil, errors.Join(err, cleanupFailedNew())
-	}
-	if err := validateVerificationWorkspaceSeparation(opts.Verification, wsRoot, wsRoot); err != nil {
+	runsDir, initStageDir, verCfg, err := normalizeAndValidateStartupPaths(opts, wsRoot)
+	if err != nil {
 		return nil, errors.Join(err, cleanupFailedNew())
 	}
 	cards, err := openCardStore(opts.CardsDir)
@@ -389,11 +388,7 @@ func New(opts Options) (*ControlPlane, error) {
 	eval := opts.Evaluator
 	if eval == nil {
 		if wsRoot != "" {
-			physCards, err := abspath.Eval(cards.dir)
-			if err != nil {
-				return nil, errors.Join(fmt.Errorf("resolve cards directory %s: %w", cards.dir, err), cards.close(), cleanupFailedNew())
-			}
-			eval = designeval.NewEvaluatorInDir(filepath.Join(physCards, "designeval"))
+			eval = designeval.NewEvaluatorInDir(filepath.Join(cards.dir, "designeval"))
 		} else {
 			eval = designeval.NewEvaluator()
 		}
@@ -415,8 +410,8 @@ func New(opts Options) (*ControlPlane, error) {
 		swarmProfiles:          opts.SwarmProfiles,
 		promotionTarget:        opts.PromotionTarget,
 		resolvePromotionTarget: opts.ResolvePromotionTarget,
-		verification:           opts.Verification,
-		runsDir:                opts.RunsDir,
+		verification:           verCfg,
+		runsDir:                runsDir,
 		resolveVerification:    opts.ResolveVerification,
 		evaluator:              eval,
 		initialWorkspaceRoot:   wsRoot,
@@ -425,23 +420,17 @@ func New(opts Options) (*ControlPlane, error) {
 		activeWorkspaceDir:     wsRoot,
 		boundWorkspaceDev:      wsDev,
 		boundWorkspaceIno:      wsIno,
-		initStageDir:           opts.InitStageDir,
+		initStageDir:           initStageDir,
 		newGenerator:           opts.NewGenerator,
 		initRunner:             opts.InitRunner,
 		surlaVersion:           surlaVersion,
 		closeProjectLock:       opts.CloseProjectLock,
-		liveState:              newLiveState(opts.Live, opts.CardsDir),
+		liveState:              newLiveState(opts.Live, cards.dir),
 	}
 	if err := cp.restoreWorkspace(); err != nil {
 		return nil, errors.Join(err, cp.Close())
 	}
-	if err := validateCardsWorkspaceSeparation(opts.CardsDir, cp.initialWorkspaceRoot, cp.activeWorkspaceDir); err != nil {
-		return nil, errors.Join(err, cp.Close())
-	}
-	if err := validateRunsDirWorkspaceSeparation(opts.RunsDir, cp.initialWorkspaceRoot, cp.activeWorkspaceDir); err != nil {
-		return nil, errors.Join(err, cp.Close())
-	}
-	if err := validateVerificationWorkspaceSeparation(opts.Verification, cp.initialWorkspaceRoot, cp.activeWorkspaceDir); err != nil {
+	if err := validateStartupSeparation(cards.dir, runsDir, initStageDir, verCfg, cp.initialWorkspaceRoot, cp.activeWorkspaceDir); err != nil {
 		return nil, errors.Join(err, cp.Close())
 	}
 	return cp, nil

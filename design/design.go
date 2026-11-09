@@ -76,11 +76,14 @@ var InitProjectPayload = Type("InitProjectPayload", func() {
 
 // InitProjectResult is the output of the init_project tool.
 var InitProjectResult = Type("InitProjectResult", func() {
-	Description("Newly initialized Surla starter project directory and derived service identity.")
+	Description("Newly initialized Surla starter project directory, derived service identity, and initial Git commit.")
 	Attribute("dir", String, "Physical directory path of the newly created starter project (now the server's active workspace).")
 	Attribute("module_path", String, "Initialized Go module path.")
 	Attribute("service_name", String, "Derived service name.")
-	Required("dir", "module_path", "service_name")
+	Attribute("commit", String, "Full commit ID of the initial starter commit created in the initialized repository (40 or 64 lowercase hex characters); start_live_target and verify_change take this commit ID.", func() {
+		Pattern("^([0-9a-f]{40}|[0-9a-f]{64})$")
+	})
+	Required("dir", "module_path", "service_name", "commit")
 })
 
 // ConfigureModelPayload is the input to the configure_model tool.
@@ -882,13 +885,13 @@ var _ = Service("surla", func() {
 	})
 
 	Method("init_project", func() {
-		Description("Initialize a new Surla starter project directory inside the server's bound workspace, generating the candidate Go module, Goa and Goa-AI code, and the eval/ verification harness, and switch the server's active workspace to that project.")
+		Description("Initialize a new Surla starter project directory inside the server's bound workspace, generating the candidate Go module, Goa and Goa-AI code, and the eval/ verification harness, creating the initial Git commit, and switching the server's active workspace and trusted evaluator suite commit to that project. When the request includes a progressToken, the tool sends MCP progress updates as starter generation/tests, initial commit creation, and publication start.")
 		Payload(InitProjectPayload)
 		Result(InitProjectResult)
 		Error("conflict", ErrorResult, "The workspace or target directory is already initialized.")
 		Error("unprocessable", ErrorResult, "The module path or child directory name is invalid.")
 		Error("not_implemented", ErrorResult, "This control plane has no bound workspace or starter generator configured.")
-		Tool("init_project", "Initialize a new Surla starter project inside the bound workspace directory and switch the server's active workspace to that project.")
+		Tool("init_project", "Initialize a new Surla starter project inside the bound workspace directory, create its initial Git commit, and switch the server's active workspace to that project. Returns the created commit ID in commit for start_live_target and verify_change.")
 		HTTP(func() {
 			POST("/workspace/init")
 			Response(StatusOK)
