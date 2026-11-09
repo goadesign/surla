@@ -128,8 +128,8 @@ func TestPublishManifest(t *testing.T) {
 }
 
 func TestPublishManifestRefusesLiveSymlinkAndKeepsItsTarget(t *testing.T) {
-	// The live go.sum points at an operator file outside the workspace, the
-	// case agy's #340 probe showed host go mod tidy would truncate.
+	// The live go.sum is a symlink to an operator file outside the
+	// workspace, which a go mod tidy run on the host would overwrite.
 	grant := realTempDir(t)
 	outside := filepath.Join(realTempDir(t), "operator_file.txt")
 	require.NoError(t, os.WriteFile(outside, []byte(`{"operator_secret":"do-not-clobber"}`), 0o600))
