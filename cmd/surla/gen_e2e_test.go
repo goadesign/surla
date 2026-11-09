@@ -72,19 +72,28 @@ func TestGenOnAFreshStarterChangesNothingAndKeepsModulesApart(t *testing.T) {
 	t.Setenv("GIT_AUTHOR_EMAIL", "test@example.com")
 	t.Setenv("GIT_COMMITTER_NAME", "Surla Test")
 	t.Setenv("GIT_COMMITTER_EMAIL", "test@example.com")
+	for _, name := range []string{"ANTHROPIC_API_KEY", "OPENAI_API_KEY", liveModelGatewayEnv, liveModelProviderEnv, liveModelNameEnv} {
+		t.Setenv(name, "")
+	}
+	provider := &scriptedCP1Provider{}
+	gatewayAddr := startModelGateway(t, provider)
 	workspace := t.TempDir()
-	opts, err := serveOptions(serveConfig{
+	cfg := serveConfig{
 		projectDir:       workspace,
 		projectSet:       true,
 		cardsDir:         t.TempDir(),
 		cardsDirExplicit: true,
-	}, func(string) string { return "" }, nil)
+		gatewayAddr:      gatewayAddr,
+	}
+	opts, err := serveOptions(cfg, func(string) string { return "" }, os.Environ())
 	require.NoError(t, err)
+	opts.Analyzer = trustedSuiteAnalyzer{}
+	opts.Live.StartTimeout = 3 * time.Minute
 	// A test executable has no released module version in its build info.
 	opts.SurlaVersion = starterSurlaVersion
 	cp, err := controlplane.New(opts)
 	require.NoError(t, err)
-	t.Cleanup(func() { assert.NoError(t, cp.Close()) })
+	t.Cleanup(func() { closeTrustedSuiteControlPlane(t, cp) })
 	auth := controlplane.NewTokenAuthenticator(map[string]controlplane.Principal{
 		"test-token": {ID: "operator@example.com"},
 	})
@@ -148,6 +157,29 @@ func TestGenOnAFreshStarterChangesNothingAndKeepsModulesApart(t *testing.T) {
 		assert.Contains(t, out.String(), "added: 0\nchanged: 0\nremoved: 0\n", module)
 	}
 	assert.Equal(t, created, files(t, dir, "."), "regenerating an untouched starter changes no byte")
+
+	// A server started on the already committed project must keep its startup
+	// suite, too. Reuse this same project while its HEAD is still trusted A.
+	startupCfg := cfg
+	startupCfg.projectDir, startupCfg.cardsDir = dir, t.TempDir()
+	startup := newTrustedSuiteServer(t, startupCfg)
+	commentPath := filepath.Join(evalDir, "design", "design.go")
+	source, err := os.ReadFile(commentPath)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(commentPath, append(source, []byte("\n// Builder-only comment; evaluator behavior stays unchanged.\n")...), 0o644))
+	candidateCommit := trustedSuiteCommit(t, dir)
+	require.NotEqual(t, initialized.Commit, candidateCommit)
+
+	assertTrustedSuiteJourney(t, client, opts.CardsDir, opts.RunsDir, candidateCommit, initialized.Commit, "initialized")
+	srv.Close()
+	closeTrustedSuiteControlPlane(t, cp)
+	// Reconstruct from the original empty parent, using its saved private
+	// state; the child project now has builder commit B at HEAD.
+	restored := newTrustedSuiteServer(t, cfg)
+	assertTrustedSuiteJourney(t, restored.client, restored.cardsDir, restored.runsDir, candidateCommit, initialized.Commit, "restored")
+	restored.close(t)
+	assertTrustedSuiteJourney(t, startup.client, startup.cardsDir, startup.runsDir, candidateCommit, initialized.Commit, "startup")
+	startup.close(t)
 
 	edits := []struct {
 		// module is the module directory surla gen runs in.
