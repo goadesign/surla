@@ -403,9 +403,10 @@ func TestConfigureServeWorkspacePinsSuiteCommitAndRejectsSymlinkParentEscape(t *
 	assert.Nil(t, uninitCfg.verification)
 
 	childRepo, initialCommit := initCommittedStarterRepo(t, filepath.Join(wsDir, "shop"))
-	// Without a pinned suiteCommit (as if created manually after startup), resolveVerification fails closed.
+	// Without a pinned suiteCommit (as if created manually after startup), resolveVerification fails closed
+	// with the startup loader error rather than trusting an unpinned post-startup HEAD.
 	_, err = uninitCfg.resolveVerification(context.Background(), childRepo, "")
-	require.ErrorContains(t, err, "had no committed starter evaluator suite at server startup")
+	require.ErrorContains(t, err, "is not inside a git repository")
 
 	// Simulate builder advancing HEAD with a second commit that edits eval/.
 	require.NoError(t, os.WriteFile(filepath.Join(childRepo, "eval", "cmd", "shop-evals", "main.go"), []byte("package main\n// builder edit\n"), 0o644))

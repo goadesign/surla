@@ -941,7 +941,7 @@ func (g *fakeInitGenerator) Close() error {
 // fakeInitRunner writes a synthetic command log, creates go.sum on "go mod tidy"
 // invocations, and writes fakeInitialSuiteCommit on "git rev-parse".
 func fakeInitRunner(_ context.Context, dir, logPath string, args ...string) error {
-	if len(args) >= 2 && args[0] == "git" && args[1] == "rev-parse" {
+	if gitSubcommand(args) == "rev-parse" {
 		return os.WriteFile(logPath, []byte(fakeInitialSuiteCommit+"\n"), 0o600)
 	}
 	if err := os.WriteFile(logPath, []byte("ok\n"), 0o600); err != nil {

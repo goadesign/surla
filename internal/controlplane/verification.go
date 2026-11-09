@@ -186,10 +186,10 @@ func (c *ControlPlane) ListVerifications(ctx context.Context, p *gensurla.ListVe
 // effectiveRunsDir returns the verification runs directory configured via
 // Options.RunsDir or directly on Verification.
 func (c *ControlPlane) effectiveRunsDir() string {
-	if strings.TrimSpace(c.runsDir) != "" {
-		return strings.TrimSpace(c.runsDir)
+	if c.runsDir != "" {
+		return c.runsDir
 	}
-	if c.verification != nil && strings.TrimSpace(c.verification.RunsDir) != "" {
+	if c.verification != nil && c.verification.RunsDir != "" {
 		return c.verification.RunsDir
 	}
 	return ""

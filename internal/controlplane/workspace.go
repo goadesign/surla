@@ -66,7 +66,7 @@ var commitIDPattern = regexp.MustCompile(`^([0-9a-f]{40}|[0-9a-f]{64})$`)
 // opens an os.Root handle to verify its open-descriptor identity, and returns
 // its cleaned physical path, device ID, and inode number.
 func openWorkspaceRootAndStat(dir string) (string, uint64, uint64, error) {
-	if strings.TrimSpace(dir) == "" {
+	if dir == "" {
 		return "", 0, 0, nil
 	}
 	lstatInfo, err := os.Lstat(dir)
@@ -397,7 +397,7 @@ func (c *ControlPlane) removeWorkspaceRecord() error {
 // `designeval.OpenModuleRoot` and verifies on the opened handle itself
 // (`root.Stat(".")`) that its `(dev, ino)` matches `(expectedDev, expectedIno)`.
 func openModuleRootWithIdentity(dir string, expectedDev, expectedIno uint64) (string, *os.Root, error) {
-	if strings.TrimSpace(dir) == "" {
+	if dir == "" {
 		return "", nil, gensurla.MakeUnprocessable(errors.New("no workspace directory is bound to this control plane"))
 	}
 	if expectedDev == 0 || expectedIno == 0 {
@@ -482,20 +482,17 @@ func readWorkspaceDesignSource(wsDir string, expectedDev, expectedIno uint64) (s
 // to physical paths via abspath.EvalMissing and validates separation from
 // wsRoot before any directory is created.
 func normalizeAndValidateStartupPaths(opts Options, wsRoot string) (string, string, *VerificationConfig, error) {
-	if err := validateCardsWorkspaceSeparation(opts.CardsDir, wsRoot, wsRoot); err != nil {
-		return "", "", nil, err
-	}
 	var runsDir string
-	if strings.TrimSpace(opts.RunsDir) != "" {
-		physRuns, err := abspath.EvalMissing(strings.TrimSpace(opts.RunsDir))
+	if opts.RunsDir != "" {
+		physRuns, err := abspath.EvalMissing(opts.RunsDir)
 		if err != nil {
 			return "", "", nil, fmt.Errorf("resolve runs directory %s: %w", opts.RunsDir, err)
 		}
 		runsDir = physRuns
 	}
 	var initStageDir string
-	if strings.TrimSpace(opts.InitStageDir) != "" {
-		physStage, err := abspath.EvalMissing(strings.TrimSpace(opts.InitStageDir))
+	if opts.InitStageDir != "" {
+		physStage, err := abspath.EvalMissing(opts.InitStageDir)
 		if err != nil {
 			return "", "", nil, fmt.Errorf("resolve init stage directory %s: %w", opts.InitStageDir, err)
 		}
@@ -518,15 +515,15 @@ func normalizeVerificationConfig(cfg *VerificationConfig) (*VerificationConfig, 
 		return nil, nil
 	}
 	out := *cfg
-	if strings.TrimSpace(out.RunsDir) != "" {
-		physRuns, err := abspath.EvalMissing(strings.TrimSpace(out.RunsDir))
+	if out.RunsDir != "" {
+		physRuns, err := abspath.EvalMissing(out.RunsDir)
 		if err != nil {
 			return nil, fmt.Errorf("resolve verification runs_dir %s: %w", out.RunsDir, err)
 		}
 		out.RunsDir = physRuns
 	}
-	if strings.TrimSpace(out.Plan.ReportDir) != "" {
-		physReports, err := abspath.EvalMissing(strings.TrimSpace(out.Plan.ReportDir))
+	if out.Plan.ReportDir != "" {
+		physReports, err := abspath.EvalMissing(out.Plan.ReportDir)
 		if err != nil {
 			return nil, fmt.Errorf("resolve verification report_dir %s: %w", out.Plan.ReportDir, err)
 		}
@@ -591,18 +588,18 @@ func (c *ControlPlane) resolveActiveVerification(ctx context.Context) (*Verifica
 // validateCardsWorkspaceSeparation verifies that cardsDir lies strictly outside
 // initialWorkspaceRoot and activeWorkspaceDir.
 func validateCardsWorkspaceSeparation(cardsDir, initialWorkspaceRoot, activeWorkspaceDir string) error {
-	if strings.TrimSpace(cardsDir) == "" {
+	if cardsDir == "" {
 		return nil
 	}
-	physCards, err := abspath.EvalMissing(strings.TrimSpace(cardsDir))
+	physCards, err := abspath.EvalMissing(cardsDir)
 	if err != nil {
 		return fmt.Errorf("resolve cards directory %s: %w", cardsDir, err)
 	}
 	for _, ws := range []string{initialWorkspaceRoot, activeWorkspaceDir} {
-		if strings.TrimSpace(ws) == "" {
+		if ws == "" {
 			continue
 		}
-		physWS, err := abspath.EvalMissing(strings.TrimSpace(ws))
+		physWS, err := abspath.EvalMissing(ws)
 		if err != nil {
 			return fmt.Errorf("resolve workspace %s: %w", ws, err)
 		}
@@ -620,18 +617,18 @@ func validateCardsWorkspaceSeparation(cardsDir, initialWorkspaceRoot, activeWork
 // validateRunsDirWorkspaceSeparation verifies that runsDir lies strictly
 // outside initialWorkspaceRoot and activeWorkspaceDir.
 func validateRunsDirWorkspaceSeparation(runsDir, initialWorkspaceRoot, activeWorkspaceDir string) error {
-	if strings.TrimSpace(runsDir) == "" {
+	if runsDir == "" {
 		return nil
 	}
-	physRuns, err := abspath.EvalMissing(strings.TrimSpace(runsDir))
+	physRuns, err := abspath.EvalMissing(runsDir)
 	if err != nil {
 		return fmt.Errorf("resolve runs directory %s: %w", runsDir, err)
 	}
 	for _, ws := range []string{initialWorkspaceRoot, activeWorkspaceDir} {
-		if strings.TrimSpace(ws) == "" {
+		if ws == "" {
 			continue
 		}
-		physWS, err := abspath.EvalMissing(strings.TrimSpace(ws))
+		physWS, err := abspath.EvalMissing(ws)
 		if err != nil {
 			return fmt.Errorf("resolve workspace %s: %w", ws, err)
 		}
@@ -649,18 +646,18 @@ func validateRunsDirWorkspaceSeparation(runsDir, initialWorkspaceRoot, activeWor
 // validateInitStageWorkspaceSeparation verifies that initStageDir lies strictly
 // outside initialWorkspaceRoot and activeWorkspaceDir.
 func validateInitStageWorkspaceSeparation(initStageDir, initialWorkspaceRoot, activeWorkspaceDir string) error {
-	if strings.TrimSpace(initStageDir) == "" {
+	if initStageDir == "" {
 		return nil
 	}
-	physStage, err := abspath.EvalMissing(strings.TrimSpace(initStageDir))
+	physStage, err := abspath.EvalMissing(initStageDir)
 	if err != nil {
 		return fmt.Errorf("resolve init stage directory %s: %w", initStageDir, err)
 	}
 	for _, ws := range []string{initialWorkspaceRoot, activeWorkspaceDir} {
-		if strings.TrimSpace(ws) == "" {
+		if ws == "" {
 			continue
 		}
-		physWS, err := abspath.EvalMissing(strings.TrimSpace(ws))
+		physWS, err := abspath.EvalMissing(ws)
 		if err != nil {
 			return fmt.Errorf("resolve workspace %s: %w", ws, err)
 		}
@@ -685,18 +682,18 @@ func validateVerificationWorkspaceSeparation(cfg *VerificationConfig, initialWor
 	if err := validateRunsDirWorkspaceSeparation(cfg.RunsDir, initialWorkspaceRoot, activeWorkspaceDir); err != nil {
 		return err
 	}
-	if strings.TrimSpace(cfg.Plan.ReportDir) == "" {
+	if cfg.Plan.ReportDir == "" {
 		return nil
 	}
-	physReports, err := abspath.EvalMissing(strings.TrimSpace(cfg.Plan.ReportDir))
+	physReports, err := abspath.EvalMissing(cfg.Plan.ReportDir)
 	if err != nil {
 		return fmt.Errorf("resolve verification report_dir %s: %w", cfg.Plan.ReportDir, err)
 	}
 	for _, ws := range []string{initialWorkspaceRoot, activeWorkspaceDir} {
-		if strings.TrimSpace(ws) == "" {
+		if ws == "" {
 			continue
 		}
-		physWS, err := abspath.EvalMissing(strings.TrimSpace(ws))
+		physWS, err := abspath.EvalMissing(ws)
 		if err != nil {
 			return fmt.Errorf("resolve workspace %s: %w", ws, err)
 		}

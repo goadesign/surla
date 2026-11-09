@@ -92,8 +92,10 @@ func TestLoadProjectVerificationConfigDerivesTheStarterPlanFromHEAD(t *testing.T
 			project := filepath.Join(repo, filepath.FromSlash(tc.projectPath))
 			writeStarter(t, project, tc.module)
 			head := gitCommitAll(t, repo, "starter")
+			runsDir := filepath.Join(t.TempDir(), "runs")
+			reportDir := filepath.Join(t.TempDir(), "reports")
 
-			cfg, err := loadProjectConfig(t.Context(), project)
+			cfg, err := starterVerificationAtHEAD(t.Context(), project, runsDir, reportDir)
 			require.NoError(t, err)
 			suiteModule := "eval"
 			if tc.wantModule != "." {
@@ -107,9 +109,9 @@ func TestLoadProjectVerificationConfigDerivesTheStarterPlanFromHEAD(t *testing.T
 				SuiteCommit:     head,
 				SuiteModule:     suiteModule,
 				SuiteCommand:    "./cmd/" + tc.wantService + "-evals",
-				ReportDir:       filepath.Join(project, "reports"),
+				ReportDir:       reportDir,
 			}, cfg.Plan)
-			assert.Equal(t, filepath.Join(project, ".surla", "runs"), cfg.RunsDir)
+			assert.Equal(t, runsDir, cfg.RunsDir)
 			assert.Equal(t, 30*time.Minute, cfg.Timeout)
 			require.Len(t, cfg.Command, 1, "runs re-execute this surla executable")
 		})
@@ -171,7 +173,7 @@ func TestLoadProjectVerificationConfigDerivesTheStarterPlanFromHEAD(t *testing.T
 		require.NoError(t, os.WriteFile(filepath.Join(repo, "go.mod"), []byte("module example.com/other\n"), 0o600))
 		require.NoError(t, os.RemoveAll(filepath.Join(repo, "cmd")))
 
-		cfg, err := loadProjectConfig(t.Context(), repo)
+		cfg, err := starterVerificationAtHEAD(t.Context(), repo, filepath.Join(t.TempDir(), "runs"), filepath.Join(t.TempDir(), "reports"))
 		require.NoError(t, err)
 		assert.Equal(t, head, cfg.Plan.SuiteCommit)
 		assert.Equal(t, map[string]string{"shop": "./cmd/shop"}, cfg.Plan.Binaries)
@@ -181,7 +183,9 @@ func TestLoadProjectVerificationConfigDerivesTheStarterPlanFromHEAD(t *testing.T
 		repo := newGitRepo(t)
 		writeStarter(t, repo, "example.com/shop")
 		first := gitCommitAll(t, repo, "starter")
-		cfg, err := loadProjectConfig(t.Context(), repo)
+		runsDir := filepath.Join(t.TempDir(), "runs")
+		reportDir := filepath.Join(t.TempDir(), "reports")
+		cfg, err := starterVerificationAtHEAD(t.Context(), repo, runsDir, reportDir)
 		require.NoError(t, err)
 
 		require.NoError(t, os.WriteFile(filepath.Join(repo, "eval", "NOTES"), []byte("new scenario\n"), 0o600))
@@ -189,7 +193,7 @@ func TestLoadProjectVerificationConfigDerivesTheStarterPlanFromHEAD(t *testing.T
 		require.NotEqual(t, first, second)
 		assert.Equal(t, first, cfg.Plan.SuiteCommit, "the loaded plan keeps the startup commit")
 
-		restarted, err := loadProjectConfig(t.Context(), repo)
+		restarted, err := starterVerificationAtHEAD(t.Context(), repo, runsDir, reportDir)
 		require.NoError(t, err)
 		assert.Equal(t, second, restarted.Plan.SuiteCommit, "a restart selects the new HEAD")
 	})
@@ -203,7 +207,7 @@ func TestLoadProjectVerificationConfigDerivesTheStarterPlanFromHEAD(t *testing.T
 		require.NoError(t, os.WriteFile(filepath.Join(worktree, "eval", "NOTES"), []byte("feature suite\n"), 0o600))
 		head := gitCommitAll(t, worktree, "feature suite")
 
-		cfg, err := loadProjectConfig(t.Context(), worktree)
+		cfg, err := starterVerificationAtHEAD(t.Context(), worktree, filepath.Join(t.TempDir(), "runs"), filepath.Join(t.TempDir(), "reports"))
 		require.NoError(t, err)
 		assert.Equal(t, worktree, cfg.Plan.CandidateRepo)
 		assert.Equal(t, head, cfg.Plan.SuiteCommit, "the worktree's HEAD, not the main checkout's")
@@ -218,7 +222,7 @@ func TestLoadProjectVerificationConfigDerivesTheStarterPlanFromHEAD(t *testing.T
 		head := gitCommitAll(t, repo, "starter")
 		t.Setenv("GIT_DIR", filepath.Join(other, ".git"))
 
-		cfg, err := loadProjectConfig(t.Context(), repo)
+		cfg, err := starterVerificationAtHEAD(t.Context(), repo, filepath.Join(t.TempDir(), "runs"), filepath.Join(t.TempDir(), "reports"))
 		require.NoError(t, err)
 		assert.Equal(t, head, cfg.Plan.SuiteCommit)
 		assert.Equal(t, map[string]string{"shop": "./cmd/shop"}, cfg.Plan.Binaries)
@@ -346,8 +350,25 @@ func TestLoadProjectVerificationConfigRejectsUnusableProjects(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := loadProjectConfig(t.Context(), tc.prepare(t))
+			isolateServeWorkspace(t)
+			dir := tc.prepare(t)
+			_, err := starterVerificationAtHEAD(t.Context(), dir, filepath.Join(t.TempDir(), "runs"), filepath.Join(t.TempDir(), "reports"))
 			require.ErrorContains(t, err, tc.wantErr)
+
+			ws, wsErr := configureServeWorkspace(serveConfig{projectDir: dir, projectSet: true})
+			if wsErr != nil {
+				require.ErrorContains(t, wsErr, tc.wantErr)
+				return
+			}
+			t.Cleanup(func() {
+				if ws.closeProjectLock != nil {
+					assert.NoError(t, ws.closeProjectLock())
+				}
+			})
+			assert.Nil(t, ws.verification)
+			require.NotNil(t, ws.resolveVerification)
+			_, resolveErr := ws.resolveVerification(t.Context(), ws.workspaceDir, "")
+			require.ErrorContains(t, resolveErr, tc.wantErr)
 		})
 	}
 }

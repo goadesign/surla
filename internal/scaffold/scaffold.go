@@ -452,11 +452,12 @@ func newData(o Options) (data, error) {
 // build creates both modules under root. For each module it writes go.mod and
 // design/, resolves the design's dependencies, generates code with gen,
 // writes the remaining files, tidies again, vets, and runs `go test ./...`
-// (which compiles and checks every package; the generated starter modules have
-// no unit test files, and `go test ./...` does not run model-backed CP4
-// verification). The evaluator module pins the exact Surla version with go get
-// before generation: the final tidy then keeps that version instead of picking
-// another, and the code is generated with whatever Goa versions it requires.
+// (which compiles and checks every package in the candidate module and runs
+// the non-e2e package tests in the evaluator module without starting a live
+// model-backed CP4 verification run). The evaluator module pins the exact
+// Surla version with go get before generation: the final tidy then keeps that
+// version instead of picking another, and the code is generated with whatever
+// Goa versions it requires.
 func build(ctx context.Context, root, logs string, d data, run Runner, gen Generator) error {
 	for _, m := range []moduleStep{
 		{dir: ".", templates: "templates/candidate", path: d.Module},
@@ -498,17 +499,31 @@ func build(ctx context.Context, root, logs string, d data, run Runner, gen Gener
 
 // commitScaffold initializes a Git repository in staging, commits all
 // generated starter files as "Initial scaffold", and returns the verified
-// commit ID of HEAD.
+// commit ID of HEAD. Explicit -c overrides neutralize hooks, fsmonitor,
+// templates, worktree redirection, and attribute/CRLF filters even when set
+// via GIT_CONFIG_GLOBAL, GIT_CONFIG_SYSTEM, GIT_CONFIG_COUNT, or
+// GIT_CONFIG_PARAMETERS, while preserving the operator's author/committer
+// identity and commit signing configuration.
 func commitScaffold(ctx context.Context, staging, logs string, run Runner) (string, error) {
+	gitFlags := []string{
+		"-c", "core.hooksPath=/dev/null",
+		"-c", "core.fsmonitor=false",
+		"-c", "core.worktree=",
+		"-c", "init.templateDir=",
+		"-c", "core.attributesFile=/dev/null",
+		"-c", "core.autocrlf=false",
+		"-c", "core.safecrlf=false",
+	}
+	repoFlags := append(slices.Clone(gitFlags), "--git-dir=.git", "--work-tree=.")
 	steps := [][]string{
-		{"git", "init"},
-		{"git", "add", "-A"},
-		{"git", "commit", "-m", "Initial scaffold"},
+		append(append([]string{"git"}, gitFlags...), "init", "--template="),
+		append(append([]string{"git"}, repoFlags...), "add", "-A"),
+		append(append([]string{"git"}, repoFlags...), "commit", "--no-verify", "-m", "Initial scaffold"),
 	}
 	if err := runAll(ctx, staging, ".", logs, steps, run); err != nil {
 		return "", err
 	}
-	revArgs := []string{"git", "rev-parse", "--verify", "HEAD^{commit}"}
+	revArgs := append(append([]string{"git"}, repoFlags...), "rev-parse", "--verify", "HEAD^{commit}")
 	log, err := newLogPath(logs, ".", revArgs)
 	if err != nil {
 		return "", err
@@ -540,11 +555,13 @@ func commitScaffold(ctx context.Context, staging, logs string, run Runner) (stri
 	return commit, nil
 }
 
-// commandEnv returns os.Environ() with repository-redirecting Git variables
-// removed and isolated Go/Git non-interactive settings appended.
+// commandEnv returns os.Environ() with repository-, worktree-, index-, object-,
+// template-, and attribute-redirecting Git variables removed and isolated
+// Go/Git non-interactive settings appended, while preserving the operator's
+// Git identity and commit signing configuration.
 func commandEnv(logDir string) []string {
 	base := os.Environ()
-	env := make([]string, 0, len(base)+4)
+	env := make([]string, 0, len(base)+5)
 	for _, kv := range base {
 		key, _, _ := strings.Cut(kv, "=")
 		switch key {
@@ -554,13 +571,26 @@ func commandEnv(logDir string) []string {
 			"GIT_OBJECT_DIRECTORY",
 			"GIT_ALTERNATE_OBJECT_DIRECTORIES",
 			"GIT_COMMON_DIR",
-			"GIT_REPLACE_REF_BASE":
+			"GIT_REPLACE_REF_BASE",
+			"GIT_TEMPLATE_DIR",
+			"GIT_NAMESPACE",
+			"GIT_CEILING_DIRECTORIES",
+			"GIT_DISCOVERY_ACROSS_FILESYSTEM",
+			"GIT_PREFIX",
+			"GIT_SUPER_PREFIX",
+			"GIT_SHALLOW_FILE",
+			"GIT_ATTR_NOSYSTEM",
+			"GIT_TERMINAL_PROMPT",
+			"GOWORK",
+			"TMPDIR",
+			"GOTMPDIR":
 			continue
 		}
 		env = append(env, kv)
 	}
 	return append(env,
 		"GIT_TERMINAL_PROMPT=0",
+		"GIT_ATTR_NOSYSTEM=1",
 		"GOWORK=off",
 		"TMPDIR="+logDir,
 		"GOTMPDIR="+logDir,
@@ -637,12 +667,30 @@ func newLogPath(logs, moduleDir string, args []string) (string, error) {
 	if module == "." {
 		module = "root"
 	}
-	// Every step is "go <verb> ...", so the verb names the step.
-	f, err := os.CreateTemp(logs, module+"-"+args[1]+"-*.log")
+	f, err := os.CreateTemp(logs, module+"-"+stepVerb(args)+"-*.log")
 	if err != nil {
 		return "", fmt.Errorf("create command log: %w", err)
 	}
 	return f.Name(), errors.Join(f.Close(), os.Remove(f.Name()))
+}
+
+// stepVerb returns the subcommand verb (such as "mod", "vet", "init", or
+// "commit") used to name a command's log file.
+func stepVerb(args []string) string {
+	for i := 1; i < len(args); i++ {
+		if args[i] == "-c" {
+			i++
+			continue
+		}
+		if strings.HasPrefix(args[i], "-") {
+			continue
+		}
+		return args[i]
+	}
+	if len(args) > 1 {
+		return args[1]
+	}
+	return "cmd"
 }
 
 // generatedServicePackage returns the package Goa generated for the

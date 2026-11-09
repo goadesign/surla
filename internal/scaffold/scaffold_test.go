@@ -502,23 +502,55 @@ func TestInitReadmeFirstRunSnippetsMatchTheProject(t *testing.T) {
 // TestPrepareCommitsInitialScaffoldAndStripsRedirectingGitEnv verifies that
 // Prepare runs `go test ./...` in both modules and creates the initial Git
 // commit in the protected staging directory using the operator's Git identity
-// while stripping inherited repository-redirecting GIT_* variables.
+// (including via GIT_CONFIG_COUNT) while stripping inherited
+// repository-redirecting GIT_* variables and neutralizing hooks, fsmonitor,
+// templates, attributes, and clean/smudge filters.
 func TestPrepareCommitsInitialScaffoldAndStripsRedirectingGitEnv(t *testing.T) {
 	parent := t.TempDir()
 	dir := filepath.Join(parent, "shop")
 	work := t.TempDir()
 	poisonRepo := t.TempDir()
+	hookDir := t.TempDir()
+	tmplDir := t.TempDir()
+	attrDir := t.TempDir()
+
+	hookMarker := filepath.Join(t.TempDir(), "hook-ran")
+	hookScript := "#!/bin/sh\ntouch " + strconv.Quote(hookMarker) + "\nexit 1\n"
+	require.NoError(t, os.WriteFile(filepath.Join(hookDir, "pre-commit"), []byte(hookScript), 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(hookDir, "commit-msg"), []byte(hookScript), 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(hookDir, "post-commit"), []byte(hookScript), 0o700))
+	require.NoError(t, os.MkdirAll(filepath.Join(tmplDir, "hooks"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(tmplDir, "hooks", "pre-commit"), []byte(hookScript), 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(tmplDir, "poison-template-file"), []byte("poison"), 0o600))
+	attrFile := filepath.Join(attrDir, "gitattributes")
+	require.NoError(t, os.WriteFile(attrFile, []byte("* filter=rot\n"), 0o600))
 
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
 	t.Setenv("GIT_CONFIG_GLOBAL", "/dev/null")
-	t.Setenv("GIT_AUTHOR_NAME", "Test Operator")
-	t.Setenv("GIT_AUTHOR_EMAIL", "operator@example.com")
-	t.Setenv("GIT_COMMITTER_NAME", "Test Operator")
-	t.Setenv("GIT_COMMITTER_EMAIL", "operator@example.com")
+	t.Setenv("GIT_AUTHOR_NAME", "")
+	t.Setenv("GIT_AUTHOR_EMAIL", "")
+	t.Setenv("GIT_COMMITTER_NAME", "")
+	t.Setenv("GIT_COMMITTER_EMAIL", "")
+	t.Setenv("GIT_CONFIG_COUNT", "7")
+	t.Setenv("GIT_CONFIG_KEY_0", "user.name")
+	t.Setenv("GIT_CONFIG_VALUE_0", "Config Count Operator")
+	t.Setenv("GIT_CONFIG_KEY_1", "user.email")
+	t.Setenv("GIT_CONFIG_VALUE_1", "count-operator@example.com")
+	t.Setenv("GIT_CONFIG_KEY_2", "core.hooksPath")
+	t.Setenv("GIT_CONFIG_VALUE_2", hookDir)
+	t.Setenv("GIT_CONFIG_KEY_3", "core.fsmonitor")
+	t.Setenv("GIT_CONFIG_VALUE_3", filepath.Join(hookDir, "pre-commit"))
+	t.Setenv("GIT_CONFIG_KEY_4", "init.templateDir")
+	t.Setenv("GIT_CONFIG_VALUE_4", tmplDir)
+	t.Setenv("GIT_CONFIG_KEY_5", "core.attributesFile")
+	t.Setenv("GIT_CONFIG_VALUE_5", attrFile)
+	t.Setenv("GIT_CONFIG_KEY_6", "filter.rot.clean")
+	t.Setenv("GIT_CONFIG_VALUE_6", "sh -c 'touch "+hookMarker+"; exit 1'")
 	t.Setenv("GIT_DIR", filepath.Join(poisonRepo, ".git"))
 	t.Setenv("GIT_WORK_TREE", poisonRepo)
+	t.Setenv("GIT_TEMPLATE_DIR", tmplDir)
 
 	var ran []string
 	run := func(ctx context.Context, moduleDir, logPath string, args ...string) error {
@@ -544,11 +576,20 @@ func TestPrepareCommitsInitialScaffoldAndStripsRedirectingGitEnv(t *testing.T) {
 	})
 	assert.Equal(t, "shop", name)
 	assert.Regexp(t, `^([0-9a-f]{40}|[0-9a-f]{64})$`, commit)
+	gitPrefix := "git -c core.hooksPath=/dev/null -c core.fsmonitor=false -c core.worktree= -c init.templateDir= -c core.attributesFile=/dev/null -c core.autocrlf=false -c core.safecrlf=false"
+	repoPrefix := gitPrefix + " --git-dir=.git --work-tree=."
 	assert.Equal(t, []string{
 		"go mod tidy", "go mod tidy", "go vet ./...", "go test ./...",
 		"go mod tidy", "go get github.com/goadesign/surla@" + published, "go mod tidy", "go vet ./...", "go test ./...",
-		"git init", "git add -A", "git commit -m Initial scaffold", "git rev-parse --verify HEAD^{commit}",
+		gitPrefix + " init --template=",
+		repoPrefix + " add -A",
+		repoPrefix + " commit --no-verify -m Initial scaffold",
+		repoPrefix + " rev-parse --verify HEAD^{commit}",
 	}, ran)
+	_, err = os.Stat(hookMarker)
+	assert.ErrorIs(t, err, os.ErrNotExist, "hooks, fsmonitor, templates, and clean filters must not execute")
+	_, err = os.Stat(filepath.Join(stagePath, ".git", "poison-template-file"))
+	assert.ErrorIs(t, err, os.ErrNotExist, "init.templateDir and GIT_TEMPLATE_DIR must not copy files into .git")
 	_, err = os.Stat(filepath.Join(poisonRepo, ".git"))
 	assert.ErrorIs(t, err, os.ErrNotExist, "RunCommand must strip inherited GIT_DIR and GIT_WORK_TREE")
 	_, err = os.Stat(filepath.Join(stagePath, ".git"))
@@ -591,7 +632,22 @@ func TestPrepareFailsClosedWhenGitIdentityIsMissing(t *testing.T) {
 	)
 	var step *StepError
 	require.ErrorAs(t, err, &step)
-	assert.Equal(t, []string{"git", "commit", "-m", "Initial scaffold"}, step.Args)
+	assert.Equal(t, []string{
+		"git",
+		"-c", "core.hooksPath=/dev/null",
+		"-c", "core.fsmonitor=false",
+		"-c", "core.worktree=",
+		"-c", "init.templateDir=",
+		"-c", "core.attributesFile=/dev/null",
+		"-c", "core.autocrlf=false",
+		"-c", "core.safecrlf=false",
+		"--git-dir=.git",
+		"--work-tree=.",
+		"commit",
+		"--no-verify",
+		"-m",
+		"Initial scaffold",
+	}, step.Args)
 	assert.FileExists(t, step.Log)
 	assertOnly(t, parent)
 }

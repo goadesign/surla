@@ -85,8 +85,8 @@ func (c *ControlPlane) InitProject(
 		return nil, gensurla.MakeUnprocessable(err)
 	}
 	targetBase := serviceName
-	if p.Dir != nil && strings.TrimSpace(*p.Dir) != "" {
-		targetBase = strings.TrimSpace(*p.Dir)
+	if p.Dir != nil && *p.Dir != "" {
+		targetBase = *p.Dir
 	}
 	if err := validateInitDirName(targetBase); err != nil {
 		recordInitRefused(span, "invalid_dir_name")
@@ -208,7 +208,7 @@ func (c *ControlPlane) InitProject(
 		baseRun = scaffold.RunCommand
 	}
 	run := func(ctx context.Context, dir, logPath string, args ...string) error {
-		if len(args) >= 2 && args[0] == "git" && args[1] == "init" {
+		if gitSubcommand(args) == "init" {
 			if err := reportProgress(ctx, 1, 3, "Recording the initial starter Git commit"); err != nil {
 				return err
 			}
@@ -596,7 +596,7 @@ func hasCommittedGitHEAD(ctx context.Context, dir string) bool {
 // hasVerificationRuns reports whether runsDir already contains any `<32-hex>`
 // verification run directory.
 func hasVerificationRuns(runsDir string) (bool, error) {
-	if strings.TrimSpace(runsDir) == "" {
+	if runsDir == "" {
 		return false, nil
 	}
 	entries, err := os.ReadDir(runsDir)
@@ -620,7 +620,7 @@ func hasVerificationRuns(runsDir string) (bool, error) {
 // 0700.
 func resolveInitStageParentDir(initialWorkspaceRoot, configuredStageDir string, wsDev uint64) (string, error) {
 	var candidates []string
-	if strings.TrimSpace(configuredStageDir) != "" {
+	if configuredStageDir != "" {
 		candidates = append(candidates, configuredStageDir)
 	}
 	candidates = append(
@@ -930,22 +930,51 @@ func failInitFault(span trace.Span, msg string, err error) error {
 	span.SetStatus(codes.Error, msg)
 	var stepErr *scaffold.StepError
 	if errors.As(err, &stepErr) && stepErr != nil {
-		if len(stepErr.Args) >= 2 && stepErr.Args[0] == "git" && stepErr.Args[1] == "commit" {
+		cmdSummary := initStepSummary(stepErr.Args)
+		if gitSubcommand(stepErr.Args) == "commit" {
 			return goa.Fault(
 				"%s: command %q in %q failed during starter initialization (verify that git user.name, user.email, and any commit signing settings are configured for this user); inspect the server trace span for diagnostic output",
 				msg,
-				strings.Join(stepErr.Args, " "),
+				cmdSummary,
 				stepErr.Module,
 			)
 		}
 		return goa.Fault(
 			"%s: command %q in %q failed during starter initialization; inspect the server trace span for diagnostic output",
 			msg,
-			strings.Join(stepErr.Args, " "),
+			cmdSummary,
 			stepErr.Module,
 		)
 	}
 	return goa.Fault("%s; inspect the server trace span for diagnostic details", msg)
+}
+
+// gitSubcommand returns the git subcommand verb (such as "init", "add",
+// "commit", or "rev-parse") when args invokes git, or an empty string.
+func gitSubcommand(args []string) string {
+	if len(args) == 0 || args[0] != "git" {
+		return ""
+	}
+	for i := 1; i < len(args); i++ {
+		if args[i] == "-c" {
+			i++
+			continue
+		}
+		if strings.HasPrefix(args[i], "-") {
+			continue
+		}
+		return args[i]
+	}
+	return ""
+}
+
+// initStepSummary returns a caller-safe command summary for a scaffold step
+// without internal git override flags.
+func initStepSummary(args []string) string {
+	if sub := gitSubcommand(args); sub != "" {
+		return "git " + sub
+	}
+	return strings.Join(args, " ")
 }
 
 // isConflictError reports whether err is a Goa conflict ServiceError.

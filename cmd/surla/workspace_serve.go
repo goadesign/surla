@@ -288,12 +288,17 @@ func configureServeWorkspace(cfg serveConfig) (ws workspaceServeConfig, err erro
 			}
 			return defaultReportDir, nil
 		}
-		startupCtx, cancel := context.WithTimeout(context.Background(), gitReadTimeout)
-		if startupRepDir, repErr := resolveStarterReportDir(initialWorkspaceRoot); repErr == nil {
-			if v, probeErr := starterVerificationConfig(startupCtx, initialWorkspaceRoot, operatorRunsDir, startupRepDir); probeErr == nil {
-				startupVerification = v
-			}
+		startupRepDir, err := resolveStarterReportDir(initialWorkspaceRoot)
+		if err != nil {
+			return workspaceServeConfig{}, err
 		}
+		startupCtx, cancel := context.WithTimeout(context.Background(), gitReadTimeout)
+		startupVerification, startupVerErr := starterVerificationAtHEAD(
+			startupCtx,
+			initialWorkspaceRoot,
+			operatorRunsDir,
+			startupRepDir,
+		)
 		cancel()
 		resolveVerification = func(ctx context.Context, activeWorkspaceDir, suiteCommit string) (*controlplane.VerificationConfig, error) {
 			repDir, err := resolveStarterReportDir(activeWorkspaceDir)
@@ -303,17 +308,17 @@ func configureServeWorkspace(cfg serveConfig) (ws workspaceServeConfig, err erro
 			if suiteCommit != "" {
 				vCtx, cancel := context.WithTimeout(ctx, gitReadTimeout)
 				defer cancel()
-				return starterVerificationConfigAtCommit(vCtx, activeWorkspaceDir, suiteCommit, operatorRunsDir, repDir)
+				return starterVerificationAtCommit(vCtx, activeWorkspaceDir, suiteCommit, operatorRunsDir, repDir)
 			}
 			if startupVerification != nil && activeWorkspaceDir == initialWorkspaceRoot {
 				cpVer := *startupVerification
 				cpVer.Plan.ReportDir = repDir
 				return &cpVer, nil
 			}
-			return nil, fmt.Errorf(
-				"workspace %s had no committed starter evaluator suite at server startup; initialize the project with init_project or commit the starter layout and restart surla serve",
-				activeWorkspaceDir,
-			)
+			if startupVerErr != nil {
+				return nil, startupVerErr
+			}
+			return nil, fmt.Errorf("workspace %s has no pinned starter evaluator suite commit", activeWorkspaceDir)
 		}
 	}
 
@@ -543,7 +548,7 @@ func defaultOperatorRoot(startupBaseDir, initialWorkspaceRoot string, extraDirs 
 	if err != nil {
 		return "", fmt.Errorf("determine user configuration directory for operator storage: %w", err)
 	}
-	if strings.TrimSpace(cfgRoot) == "" {
+	if cfgRoot == "" {
 		return "", errors.New("user configuration directory is empty; set HOME or XDG_CONFIG_HOME for operator storage")
 	}
 	cand := filepath.Join(cfgRoot, "surla", "operator")

@@ -54,7 +54,8 @@ type serveConfig struct {
 	swarmProfilesPath string
 	// projectDir is the bound workspace directory (default: the startup working
 	// directory); when verificationPath is empty and the workspace holds a
-	// committed starter project, CP3/CP4 verification is derived from its HEAD.
+	// committed starter project at startup (or after init_project), CP3/CP4
+	// verification pins its evaluator suite to that starter commit.
 	projectDir string
 	// projectSet reports whether -project was explicitly passed on the CLI.
 	projectSet bool
@@ -63,7 +64,7 @@ type serveConfig struct {
 	// verification from a committed starter workspace when present.
 	verificationPath string
 	// promotionPath is the path of the operator's CP5 promotion
-	// configuration (see loadPromotionConfig); empty leaves approve_merge
+	// configuration (see loadWorkspacePromotionTarget); empty leaves approve_merge
 	// unavailable.
 	promotionPath string
 	// cardsDir is the directory where CP1 Change Cards are saved, so a
@@ -228,7 +229,7 @@ func runServe(args []string) (err error) {
 	fs.StringVar(&cfg.swarmProfilesPath, "swarm-profiles", "", "JSON file listing the coding-agent provider profiles used for CP2 swarm plans")
 	fs.StringVar(&cfg.cardsDir, "cards-dir", ".surla/cards", "directory where CP1 Change Cards are saved so they survive restarts; one surla serve at a time may use it")
 	fs.StringVar(&cfg.promotionPath, "promotion-config", "", "JSON file with the CP5 report directory, required suite and environment, and release directory of staged binaries that approve_merge checks; it approves staged binaries for a fresh launch, never a running service")
-	fs.StringVar(&cfg.projectDir, "project", "", "project workspace directory (default: working directory); derives CP3/CP4 verification from its committed starter HEAD when -verification-config is omitted")
+	fs.StringVar(&cfg.projectDir, "project", "", "project workspace directory (default: working directory); derives CP3/CP4 verification from its committed starter HEAD at startup (or the commit created by init_project) when -verification-config is omitted")
 	fs.StringVar(&cfg.verificationPath, "verification-config", "", "JSON file with the CP4 candidate, evaluator suite, runs and reports configuration used by verify_change")
 	fs.BoolVar(&cfg.importLegacyWorkspace, "import-legacy-workspace", false, "import existing workspace .surla/cards, .surla/runs, and reports/ once into protected operator storage before starting")
 	if err := fs.Parse(args); err != nil {
@@ -274,7 +275,11 @@ func runServe(args []string) (err error) {
 	if err != nil {
 		return err
 	}
-	writeServeStatus(os.Stderr, ln.Addr().(*net.TCPAddr), opts, cfg.projectDir)
+	starterProject := cfg.projectDir
+	if cfg.verificationPath != "" {
+		starterProject = ""
+	}
+	writeServeStatus(os.Stderr, ln.Addr().(*net.TCPAddr), opts, starterProject)
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
@@ -358,13 +363,13 @@ func writeServeStatus(w io.Writer, addr *net.TCPAddr, opts controlplane.Options,
 		fmt.Fprintf(w, "surla: CP4 (verify_change, get_verification, list_verifications): on (runs in %s, reports in %s, evaluator suite commit %s)\n",
 			opts.Verification.RunsDir, opts.Verification.Plan.ReportDir, opts.Verification.Plan.SuiteCommit)
 	case opts.ResolveVerification != nil:
-		fmt.Fprintf(w, "surla: CP4 (verify_change, get_verification, list_verifications): workspace %s (runs in %s; resolves the committed starter HEAD on each call after init_project or surla init)\n",
+		fmt.Fprintf(w, "surla: CP4 (verify_change, get_verification, list_verifications): workspace %s (runs in %s; activates after init_project or when started in a committed starter repository)\n",
 			opts.WorkspaceDir, opts.RunsDir)
 	default:
 		fmt.Fprintln(w, "surla: CP4 (verify_change, get_verification, list_verifications): off"+
 			" (set -project or -verification-config, or run surla verify on the CLI)")
 	}
-	if project != "" && opts.ResolveVerification == nil {
+	if project != "" && opts.Verification != nil {
 		fmt.Fprintf(w, "surla: -project %s: the evaluator suite commit is the project's HEAD at startup;"+
 			" commit and restart surla serve to use a later suite\n", project)
 	}

@@ -246,7 +246,7 @@ func PrepareCardSnapshot(legacyCardsDir, stageCardsDir string) (releaseLock func
 // missing, and takes its lock. It fails when another process already holds the
 // lock.
 func openCardStore(dir string) (*cardStore, error) {
-	if strings.TrimSpace(dir) == "" {
+	if dir == "" {
 		return nil, errors.New("cards directory is required")
 	}
 	physDir, err := abspath.EvalMissing(dir)

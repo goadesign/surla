@@ -357,3 +357,99 @@ func TestInitProjectEmitsMCPProgressAndBindsSuiteCommitForVerification(t *testin
 	assert.Equal(t, fakeInitialSuiteCommit, resolvedSuiteCommit)
 	assert.Equal(t, fakeInitialSuiteCommit, verCfg.Plan.SuiteCommit)
 }
+
+// TestNewAndInitProjectPreserveSignificantPathWhitespace verifies that
+// whitespace in filesystem paths is never stripped before boundary checks or
+// directory resolution: an interior path with trailing spaces ("ws /cards") is
+// rejected when the workspace is "ws ", an exterior path with trailing spaces
+// ("ws /cards ") outside workspace "ws" is accepted and opened at its exact
+// path, and init_project rejects a child directory name with leading/trailing
+// whitespace (" shop ").
+func TestNewAndInitProjectPreserveSignificantPathWhitespace(t *testing.T) {
+	t.Parallel()
+
+	t.Run("rejects_cards_runs_and_stage_dirs_inside_workspace_with_trailing_space", func(t *testing.T) {
+		t.Parallel()
+		root := t.TempDir()
+		wsWithSpace := filepath.Join(root, "ws ")
+		require.NoError(t, os.MkdirAll(wsWithSpace, 0o755))
+
+		_, err := New(Options{
+			WorkspaceDir: wsWithSpace,
+			CardsDir:     filepath.Join(wsWithSpace, "cards"),
+		})
+		require.ErrorContains(t, err, "must be outside the workspace")
+
+		extCards := filepath.Join(root, "cards")
+		_, err = New(Options{
+			WorkspaceDir: wsWithSpace,
+			CardsDir:     extCards,
+			RunsDir:      filepath.Join(wsWithSpace, "runs"),
+		})
+		require.ErrorContains(t, err, "must be outside the workspace")
+
+		_, err = New(Options{
+			WorkspaceDir: wsWithSpace,
+			CardsDir:     extCards,
+			InitStageDir: filepath.Join(wsWithSpace, "stage"),
+		})
+		require.ErrorContains(t, err, "must be outside the workspace")
+	})
+
+	t.Run("accepts_exterior_paths_with_trailing_and_interior_spaces", func(t *testing.T) {
+		t.Parallel()
+		root := t.TempDir()
+		ws := filepath.Join(root, "ws")
+		extParentWithSpace := filepath.Join(root, "ws ")
+		cardsWithSpace := filepath.Join(extParentWithSpace, "cards ")
+		runsWithSpace := filepath.Join(extParentWithSpace, "runs ")
+		reportsWithSpace := filepath.Join(extParentWithSpace, "reports ")
+		stageWithSpace := filepath.Join(extParentWithSpace, "stage ")
+		require.NoError(t, os.MkdirAll(ws, 0o755))
+		require.NoError(t, os.MkdirAll(stageWithSpace, 0o700))
+
+		cp, err := New(Options{
+			WorkspaceDir: ws,
+			CardsDir:     cardsWithSpace,
+			RunsDir:      runsWithSpace,
+			InitStageDir: stageWithSpace,
+			SurlaVersion: testSurlaVersion,
+			InitRunner:   fakeInitRunner,
+			NewGenerator: func() scaffold.Generator {
+				return &fakeInitGenerator{pkg: "shop"}
+			},
+			Verification: &VerificationConfig{
+				RunsDir: runsWithSpace,
+				Plan: verify.Plan{
+					CandidateRepo:   ws,
+					CandidateModule: ".",
+					Binaries:        map[string]string{"shop": "./cmd/shop"},
+					SuiteRepo:       ws,
+					SuiteCommit:     fakeInitialSuiteCommit,
+					SuiteModule:     "eval",
+					SuiteCommand:    "./cmd/shop-eval",
+					ReportDir:       reportsWithSpace,
+				},
+			},
+		})
+		require.NoError(t, err)
+		defer cp.Close()
+
+		assert.DirExists(t, cardsWithSpace)
+		assert.Equal(t, runsWithSpace, cp.effectiveRunsDir())
+
+		alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
+		paddedDir := " shop "
+		_, err = cp.InitProject(alice, &gensurla.InitProjectPayload{
+			ModulePath: "example.com/shop",
+			Dir:        &paddedDir,
+		})
+		require.ErrorContains(t, err, "single child directory name")
+
+		initRes, err := cp.InitProject(alice, &gensurla.InitProjectPayload{
+			ModulePath: "example.com/shop",
+		})
+		require.NoError(t, err)
+		assert.Equal(t, "shop", filepath.Base(initRes.Dir))
+	})
+}

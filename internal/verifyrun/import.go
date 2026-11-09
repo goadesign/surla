@@ -307,8 +307,9 @@ func resolveWorkspaceReportPath(wsRoot, configuredReportDir string) (string, boo
 		rest string
 	)
 	if filepath.IsAbs(configuredReportDir) {
-		cur = string(filepath.Separator)
-		rest = strings.TrimPrefix(configuredReportDir, string(filepath.Separator))
+		vol := filepath.VolumeName(configuredReportDir)
+		cur = vol + string(filepath.Separator)
+		rest = strings.TrimLeft(configuredReportDir[len(vol):], string(filepath.Separator))
 	} else {
 		wd, err := os.Getwd()
 		if err != nil {
@@ -321,7 +322,7 @@ func resolveWorkspaceReportPath(wsRoot, configuredReportDir string) (string, boo
 		rest = configuredReportDir
 	}
 
-	const maxSymlinkExpansions = 40
+	const maxSymlinkExpansions = 255
 	links := 0
 	for rest != "" {
 		part, after, _ := strings.Cut(rest, string(filepath.Separator))
@@ -359,8 +360,9 @@ func resolveWorkspaceReportPath(wsRoot, configuredReportDir string) (string, boo
 				target = target + string(filepath.Separator) + rest
 			}
 			if filepath.IsAbs(target) {
-				cur = string(filepath.Separator)
-				rest = strings.TrimPrefix(target, string(filepath.Separator))
+				vol := filepath.VolumeName(target)
+				cur = vol + string(filepath.Separator)
+				rest = strings.TrimLeft(target[len(vol):], string(filepath.Separator))
 			} else {
 				rest = target
 			}

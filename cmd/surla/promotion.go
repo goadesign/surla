@@ -96,39 +96,6 @@ func (t *releaseTarget) LoadReport(_ context.Context, digest string) (verify.Rep
 	return verifyrun.LoadReport(t.cfg.ReportDir, digest)
 }
 
-// loadPromotionConfig reads and validates -promotion-config. An empty path
-// means approve_merge stays unavailable; any missing field, unknown field,
-// trailing data, suite_commit that is not a full commit ID, or binary name
-// that is not a distinct artifact name stops startup. Relative directories
-// are resolved against the working directory once, here.
-func loadPromotionConfig(path string) (controlplane.PromotionTarget, error) {
-	if path == "" {
-		return nil, nil
-	}
-	f, err := decodePromotionFile(path)
-	if err != nil {
-		return nil, err
-	}
-	return &releaseTarget{cfg: f}, nil
-}
-
-// decodePromotionFile strictly decodes and validates a promotion configuration
-// file and resolves its relative directories against the current working
-// directory.
-func decodePromotionFile(path string) (promotionFile, error) {
-	wd, err := os.Getwd()
-	if err != nil {
-		return promotionFile{}, fmt.Errorf("-promotion-config %s: %w", path, err)
-	}
-	f, err := decodePromotionFileAtBase(path, wd)
-	if err != nil {
-		return promotionFile{}, err
-	}
-	f.ReportDir = filepath.Clean(f.ReportDir)
-	f.ReleaseDir = filepath.Clean(f.ReleaseDir)
-	return f, nil
-}
-
 // hashFile returns the hex SHA-256 digest of the regular file name inside
 // root. It opens without blocking and checks the opened file, so a FIFO or
 // device staged under a binary's name fails instead of blocking the call.
