@@ -1,17 +1,23 @@
-// This file checks startup and the one-time copy of saved legacy Change Cards.
+// This file checks startup and the one-time copy of saved legacy workspace state.
 package main
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"goa.design/goa-ai/eval"
 
 	gensurla "github.com/goadesign/surla/gen/surla"
 	"github.com/goadesign/surla/internal/controlplane"
+	"github.com/goadesign/surla/internal/verify"
+	"github.com/goadesign/surla/internal/verifyrun"
 )
 
 // TestWorkspaceUpgradeRequiresImportBeforeAcceptingNewWork checks that an actual
@@ -102,6 +108,177 @@ func TestWorkspaceUpgradeIgnoresUnrelatedFiles(t *testing.T) {
 	require.NotNil(t, configured.closeProjectLock)
 	t.Cleanup(func() { assert.NoError(t, configured.closeProjectLock()) })
 	assertOutsideDirectory(t, configured.cardsDir, configured.workspaceDir)
+}
+
+// TestWorkspaceUpgradeWithExternalVerification checks that an external plan
+// cannot bypass import of workspace reports or accepted runs. Import preserves
+// the original files, records report paths for check_project, and leaves the
+// external plan selected on both the importing start and the next start.
+func TestWorkspaceUpgradeWithExternalVerification(t *testing.T) {
+	cases := []struct {
+		name      string
+		reportDir string
+		run       bool
+		notes     bool
+	}{
+		{name: "default report", reportDir: "reports"},
+		{name: "accepted run with custom report", reportDir: "custom-reports", run: true},
+		{name: "no legacy state"},
+		{name: "unrelated files", notes: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			workspace, err := filepath.EvalSymlinks(isolateServeWorkspace(t))
+			require.NoError(t, err)
+			t.Setenv("HOME", t.TempDir())
+			ops, err := filepath.EvalSymlinks(t.TempDir())
+			require.NoError(t, err)
+			file := verificationFile{
+				RunsDir:         filepath.Join(ops, "runs"),
+				ReportDir:       filepath.Join(ops, "reports"),
+				CandidateRepo:   workspace,
+				CandidateModule: ".",
+				Binaries:        map[string]string{"shop": "./cmd/shop"},
+				SuiteRepo:       filepath.Join(ops, "eval-repo"),
+				SuiteCommit:     strings.Repeat("d", 40),
+				SuiteModule:     ".",
+				SuiteCommand:    "./cmd/shop-evals",
+				Timeout:         "15m",
+			}
+			cfg := serveConfig{verificationPath: filepath.Join(ops, "verification.json")}
+			raw, err := json.Marshal(file)
+			require.NoError(t, err)
+			require.NoError(t, os.WriteFile(cfg.verificationPath, raw, 0o600))
+			wantVerification, err := loadWorkspaceVerificationConfig(cfg.verificationPath, workspace, workspace)
+			require.NoError(t, err)
+
+			originals := map[string][]byte{}
+			var report verify.Report
+			var reportPath string
+			if tc.reportDir != "" {
+				reportDir := filepath.Join(workspace, tc.reportDir)
+				report = saveWorkspaceUpgradeReport(t, reportDir)
+				reportPath = filepath.Join(reportDir, report.Digest+".json")
+				originals[reportPath], err = os.ReadFile(reportPath)
+				require.NoError(t, err)
+			}
+			runID := strings.Repeat("a", 32)
+			if tc.run {
+				runDir := filepath.Join(workspace, ".surla", "runs", runID)
+				require.NoError(t, os.MkdirAll(runDir, 0o700))
+				req := verifyrun.Request{
+					RunID:      runID,
+					Owner:      "alice@example.com",
+					ChangeID:   "chg-workspace-upgrade",
+					AcceptedAt: time.Date(2026, 11, 8, 12, 0, 0, 0, time.UTC),
+					Timeout:    15 * time.Minute,
+					Plan:       verify.Plan{ReportDir: filepath.Dir(reportPath)},
+				}
+				raw, err := json.Marshal(req)
+				require.NoError(t, err)
+				originals[filepath.Join(runDir, "request.json")] = raw
+				originals[filepath.Join(runDir, "lock")] = []byte("legacy lock\n")
+			}
+			if tc.notes {
+				for _, dir := range []string{"reports", ".surla/runs"} {
+					note := filepath.Join(workspace, dir, "README.txt")
+					require.NoError(t, os.MkdirAll(filepath.Dir(note), 0o700))
+					originals[note] = []byte("ordinary project notes\n")
+				}
+			}
+			for path, content := range originals {
+				require.NoError(t, os.WriteFile(path, content, 0o600))
+			}
+
+			configured, startupErr := configureServeWorkspace(cfg)
+			if configured.closeProjectLock != nil {
+				require.NoError(t, configured.closeProjectLock())
+			}
+			if tc.reportDir == "" {
+				require.NoError(t, startupErr)
+				assert.Empty(t, configured.importedReports)
+			} else {
+				require.ErrorContains(t, startupErr, "-import-legacy-workspace")
+				assert.ErrorContains(t, startupErr, "with writers stopped")
+				cfg.importLegacyWorkspace = true
+				configured, err = configureServeWorkspace(cfg)
+				require.NoError(t, err)
+				require.NoError(t, configured.closeProjectLock())
+				assert.Equal(t, []string{reportPath}, configured.importedReports)
+				importedRoot := filepath.Dir(configured.cardsDir)
+				paths, err := verifyrun.LoadImportedReportPaths(filepath.Join(importedRoot, "runs"))
+				require.NoError(t, err)
+				assert.Equal(t, []string{reportPath}, paths)
+				reportDir, err := verifyrun.ResolveImportedReportDir(
+					filepath.Join(importedRoot, "reports"), workspace, filepath.Dir(reportPath),
+				)
+				require.NoError(t, err)
+				copied, err := os.ReadFile(filepath.Join(reportDir, report.Digest+".json"))
+				require.NoError(t, err)
+				assert.Equal(t, originals[reportPath], copied)
+				loaded, err := verifyrun.LoadReport(reportDir, report.Digest)
+				require.NoError(t, err)
+				assert.Equal(t, report, loaded)
+				if tc.run {
+					req, state, err := verifyrun.Read(filepath.Join(importedRoot, "runs"), runID)
+					require.NoError(t, err)
+					assert.Equal(t, reportDir, req.Plan.ReportDir)
+					assert.Equal(t, verifyrun.StateNotCompleted, state.Kind)
+					assert.Equal(t, verifyrun.FailureInterrupted, state.Result.Failure)
+				}
+			}
+			assert.Equal(t, wantVerification, configured.verification)
+			assert.Equal(t, file.RunsDir, configured.runsDir)
+			assert.Nil(t, configured.resolveVerification)
+
+			cfg.importLegacyWorkspace = false
+			restarted, err := configureServeWorkspace(cfg)
+			require.NoError(t, err)
+			require.NoError(t, restarted.closeProjectLock())
+			assert.Equal(t, configured.importedReports, restarted.importedReports)
+			assert.Equal(t, wantVerification, restarted.verification)
+			assert.Equal(t, file.RunsDir, restarted.runsDir)
+			for path, content := range originals {
+				got, err := os.ReadFile(path)
+				require.NoError(t, err)
+				assert.Equal(t, content, got, "original %s must remain unchanged", path)
+			}
+		})
+	}
+}
+
+// saveWorkspaceUpgradeReport writes a valid report containing private holdout
+// evidence in the legacy layout, using the same assembly and JSON encoding as
+// verification. The returned report can be read through verifyrun.LoadReport.
+func saveWorkspaceUpgradeReport(t *testing.T, dir string) verify.Report {
+	t.Helper()
+	binding := verify.Binding{
+		CandidateCommit: strings.Repeat("b", 40),
+		RequestRevision: strings.Repeat("c", 64),
+		SuiteID:         "workspace-upgrade",
+		SuiteCommit:     strings.Repeat("d", 40),
+		Artifacts:       map[string]string{"shop": strings.Repeat("e", 64)},
+		Environment:     "sim",
+	}
+	suite := verify.Suite{
+		ID: binding.SuiteID, Environment: binding.Environment,
+		Scenarios: []verify.Scenario{{ID: "private-holdout", Holdout: true}},
+	}
+	evidence := eval.Report{SuiteID: suite.ID, Scenarios: []eval.ScenarioReport{{
+		ID:        "private-holdout",
+		StartedAt: time.Date(2026, 11, 8, 12, 0, 0, 0, time.UTC),
+		Result: &eval.Result{
+			Checks:    []eval.Check{{Name: "private-check", Diagnostic: "private diagnostic"}},
+			Artifacts: []eval.Artifact{{Name: "candidate:shop", URI: "sha256:" + binding.Artifacts["shop"]}},
+		},
+	}}}
+	report, err := verify.Assemble(binding, suite, evidence, 1)
+	require.NoError(t, err)
+	raw, err := json.Marshal(report)
+	require.NoError(t, err)
+	require.NoError(t, os.MkdirAll(dir, 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, report.Digest+".json"), raw, 0o600))
+	return report
 }
 
 // saveWorkspaceUpgradeCard saves and refines a confirmed card through the public
