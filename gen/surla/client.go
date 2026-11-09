@@ -32,10 +32,11 @@ type Client struct {
 	DiffEndpoint                goa.Endpoint
 	ConfigureModelEndpoint      goa.Endpoint
 	InitProjectEndpoint         goa.Endpoint
+	GenerateCodeEndpoint        goa.Endpoint
 }
 
 // NewClient initializes a "surla" service client given the endpoints.
-func NewClient(checkpointUI, goldenPath, proposeChange, reviseChange, confirmIntent, getChange, previewArchitecture, draftOverride, startLiveTarget, stopLiveTarget, verifyChange, getVerification, listVerifications, approveMerge, diff, configureModel, initProject goa.Endpoint) *Client {
+func NewClient(checkpointUI, goldenPath, proposeChange, reviseChange, confirmIntent, getChange, previewArchitecture, draftOverride, startLiveTarget, stopLiveTarget, verifyChange, getVerification, listVerifications, approveMerge, diff, configureModel, initProject, generateCode goa.Endpoint) *Client {
 	return &Client{
 		CheckpointUIEndpoint:        checkpointUI,
 		GoldenPathEndpoint:          goldenPath,
@@ -54,6 +55,7 @@ func NewClient(checkpointUI, goldenPath, proposeChange, reviseChange, confirmInt
 		DiffEndpoint:                diff,
 		ConfigureModelEndpoint:      configureModel,
 		InitProjectEndpoint:         initProject,
+		GenerateCodeEndpoint:        generateCode,
 	}
 }
 
@@ -304,4 +306,18 @@ func (c *Client) InitProject(ctx context.Context, p *InitProjectPayload) (res *I
 		return
 	}
 	return ires.(*InitProjectResult), nil
+}
+
+// GenerateCode calls the "generate_code" endpoint of the "surla" service.
+// GenerateCode may return the following errors:
+//   - "unprocessable" (type *goa.ServiceError): The selected local module is absent, replaced, or invalid; correct its local files and call again.
+//   - "not_implemented" (type *goa.ServiceError): No workspace directory is bound to this control plane.
+//   - error: internal error
+func (c *Client) GenerateCode(ctx context.Context, p *GenerateCodePayload) (res *GenerateCodeResult, err error) {
+	var ires any
+	ires, err = c.GenerateCodeEndpoint(ctx, p)
+	if err != nil {
+		return
+	}
+	return ires.(*GenerateCodeResult), nil
 }

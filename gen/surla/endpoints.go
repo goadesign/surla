@@ -32,6 +32,7 @@ type Endpoints struct {
 	Diff                goa.Endpoint
 	ConfigureModel      goa.Endpoint
 	InitProject         goa.Endpoint
+	GenerateCode        goa.Endpoint
 }
 
 // NewEndpoints wraps the methods of the "surla" service with endpoints.
@@ -54,6 +55,7 @@ func NewEndpoints(s Service) *Endpoints {
 		Diff:                NewDiffEndpoint(s),
 		ConfigureModel:      NewConfigureModelEndpoint(s),
 		InitProject:         NewInitProjectEndpoint(s),
+		GenerateCode:        NewGenerateCodeEndpoint(s),
 	}
 }
 
@@ -76,6 +78,7 @@ func (e *Endpoints) Use(m func(goa.Endpoint) goa.Endpoint) {
 	e.Diff = m(e.Diff)
 	e.ConfigureModel = m(e.ConfigureModel)
 	e.InitProject = m(e.InitProject)
+	e.GenerateCode = m(e.GenerateCode)
 }
 
 // NewCheckpointUIEndpoint returns an endpoint function that calls the method
@@ -225,5 +228,14 @@ func NewInitProjectEndpoint(s Service) goa.Endpoint {
 	return func(ctx context.Context, req any) (any, error) {
 		p := req.(*InitProjectPayload)
 		return s.InitProject(ctx, p)
+	}
+}
+
+// NewGenerateCodeEndpoint returns an endpoint function that calls the method
+// "generate_code" of service "surla".
+func NewGenerateCodeEndpoint(s Service) goa.Endpoint {
+	return func(ctx context.Context, req any) (any, error) {
+		p := req.(*GenerateCodePayload)
+		return s.GenerateCode(ctx, p)
 	}
 }

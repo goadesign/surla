@@ -23,7 +23,7 @@ import (
 //	command (subcommand1|subcommand2|...)
 func UsageCommands() []string {
 	return []string{
-		"surla (checkpoint-ui|golden-path|propose-change|revise-change|confirm-intent|get-change|preview-architecture|draft-override|start-live-target|stop-live-target|verify-change|get-verification|list-verifications|approve-merge|diff|configure-model|init-project)",
+		"surla (checkpoint-ui|golden-path|propose-change|revise-change|confirm-intent|get-change|preview-architecture|draft-override|start-live-target|stop-live-target|verify-change|get-verification|list-verifications|approve-merge|diff|configure-model|init-project|generate-code)",
 	}
 }
 
@@ -112,6 +112,9 @@ func ParseEndpoint(
 
 		surlaInitProjectFlags    = flag.NewFlagSet("init-project", flag.ExitOnError)
 		surlaInitProjectBodyFlag = new(cliStringFlag)
+
+		surlaGenerateCodeFlags    = flag.NewFlagSet("generate-code", flag.ExitOnError)
+		surlaGenerateCodeBodyFlag = new(cliStringFlag)
 	)
 	surlaProposeChangeFlags.Var(surlaProposeChangeBodyFlag, "body", "")
 	surlaReviseChangeFlags.Var(surlaReviseChangeBodyFlag, "body", "")
@@ -128,6 +131,7 @@ func ParseEndpoint(
 	surlaDiffFlags.Var(surlaDiffBodyFlag, "body", "")
 	surlaConfigureModelFlags.Var(surlaConfigureModelBodyFlag, "body", "")
 	surlaInitProjectFlags.Var(surlaInitProjectBodyFlag, "body", "")
+	surlaGenerateCodeFlags.Var(surlaGenerateCodeBodyFlag, "body", "")
 
 	surlaFlags.Usage = surlaUsage
 	surlaCheckpointUIFlags.Usage = surlaCheckpointUIUsage
@@ -147,6 +151,7 @@ func ParseEndpoint(
 	surlaDiffFlags.Usage = surlaDiffUsage
 	surlaConfigureModelFlags.Usage = surlaConfigureModelUsage
 	surlaInitProjectFlags.Usage = surlaInitProjectUsage
+	surlaGenerateCodeFlags.Usage = surlaGenerateCodeUsage
 
 	if err := flag.CommandLine.Parse(os.Args[1:]); err != nil {
 		return nil, nil, err
@@ -233,6 +238,9 @@ func ParseEndpoint(
 			case "init-project":
 				epf = surlaInitProjectFlags
 
+			case "generate-code":
+				epf = surlaGenerateCodeFlags
+
 			}
 
 		}
@@ -306,6 +314,9 @@ func ParseEndpoint(
 			case "init-project":
 				endpoint = c.InitProject()
 				data, err = surlac.BuildInitProjectPayload(surlaInitProjectBodyFlag.value)
+			case "generate-code":
+				endpoint = c.GenerateCode()
+				data, err = surlac.BuildGenerateCodePayload(surlaGenerateCodeBodyFlag.value)
 			}
 		}
 	}
@@ -338,6 +349,7 @@ func surlaUsage() {
 	fmt.Fprintln(os.Stderr, `    diff: Compare evaluated Goa designs and go.mod directives without emitting a blanket compatibility verdict.`)
 	fmt.Fprintln(os.Stderr, `    configure-model: Configure or switch the active CP1 semantic analyzer and CP3 live-target model provider and model name or gRPC model gateway on a running control plane without restarting.`)
 	fmt.Fprintln(os.Stderr, `    init-project: Initialize a new Surla starter project directory inside the server's bound workspace, generating the candidate Go module, Goa and Goa-AI code, and the eval/ verification harness, and switch the server's active workspace to that project.`)
+	fmt.Fprintln(os.Stderr, `    generate-code: Read the active workspace's application module, or its public local eval/ module when target is eval, compile that module's edited Goa design in Surla's sandbox, and atomically replace its gen/ directory. Preserve top-level user files and their permissions and leave go.mod and go.sum unchanged. Return the written paths and warnings; a warning after gen/ publication still means generation succeeded. The tool compiles the design only; it does not build the application or run tests. Fix a rejected design and call again on the same running server.`)
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Additional help:")
 	fmt.Fprintf(os.Stderr, "    %s surla COMMAND --help\n", os.Args[0])
@@ -642,4 +654,22 @@ func surlaInitProjectUsage() {
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Example:")
 	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "surla init-project --body '{\n      \"dir\": \"shop\",\n      \"module_path\": \"example.com/shop\"\n   }'")
+}
+
+func surlaGenerateCodeUsage() {
+	// Header with flags
+	fmt.Fprintf(os.Stderr, "%s [flags] surla generate-code", os.Args[0])
+	fmt.Fprint(os.Stderr, " -body JSON")
+	fmt.Fprintln(os.Stderr)
+
+	// Description
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, `Read the active workspace's application module, or its public local eval/ module when target is eval, compile that module's edited Goa design in Surla's sandbox, and atomically replace its gen/ directory. Preserve top-level user files and their permissions and leave go.mod and go.sum unchanged. Return the written paths and warnings; a warning after gen/ publication still means generation succeeded. The tool compiles the design only; it does not build the application or run tests. Fix a rejected design and call again on the same running server.`)
+
+	// Flags list
+	fmt.Fprintln(os.Stderr, `    -body JSON: `)
+
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, "Example:")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "surla generate-code --body '{\n      \"target\": \"eval\"\n   }'")
 }

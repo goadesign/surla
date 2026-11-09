@@ -36,6 +36,7 @@ type Server struct {
 	Diff                http.Handler
 	ConfigureModel      http.Handler
 	InitProject         http.Handler
+	GenerateCode        http.Handler
 }
 
 // MountPoint holds information about the mounted endpoints.
@@ -82,6 +83,7 @@ func New(
 			{"Diff", "POST", "/diff"},
 			{"ConfigureModel", "POST", "/cp1/model"},
 			{"InitProject", "POST", "/workspace/init"},
+			{"GenerateCode", "POST", "/workspace/generate"},
 		},
 		CheckpointUI:        NewCheckpointUIHandler(e.CheckpointUI, mux, decoder, encoder, errhandler, formatter),
 		GoldenPath:          NewGoldenPathHandler(e.GoldenPath, mux, decoder, encoder, errhandler, formatter),
@@ -100,6 +102,7 @@ func New(
 		Diff:                NewDiffHandler(e.Diff, mux, decoder, encoder, errhandler, formatter),
 		ConfigureModel:      NewConfigureModelHandler(e.ConfigureModel, mux, decoder, encoder, errhandler, formatter),
 		InitProject:         NewInitProjectHandler(e.InitProject, mux, decoder, encoder, errhandler, formatter),
+		GenerateCode:        NewGenerateCodeHandler(e.GenerateCode, mux, decoder, encoder, errhandler, formatter),
 	}
 }
 
@@ -125,6 +128,7 @@ func (s *Server) Use(m func(http.Handler) http.Handler) {
 	s.Diff = m(s.Diff)
 	s.ConfigureModel = m(s.ConfigureModel)
 	s.InitProject = m(s.InitProject)
+	s.GenerateCode = m(s.GenerateCode)
 }
 
 // MethodNames returns the methods served.
@@ -149,6 +153,7 @@ func Mount(mux goahttp.Muxer, h *Server) {
 	MountDiffHandler(mux, h.Diff)
 	MountConfigureModelHandler(mux, h.ConfigureModel)
 	MountInitProjectHandler(mux, h.InitProject)
+	MountGenerateCodeHandler(mux, h.GenerateCode)
 }
 
 // Mount configures the mux to serve the surla endpoints.
@@ -1013,6 +1018,59 @@ func NewInitProjectHandler(
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := context.WithValue(r.Context(), goahttp.AcceptTypeKey, r.Header.Get("Accept"))
 		ctx = context.WithValue(ctx, goa.MethodKey, "init_project")
+		ctx = context.WithValue(ctx, goa.ServiceKey, "surla")
+		payload, err := decodeRequest(r)
+		if err != nil {
+			if err := encodeError(ctx, w, err); err != nil && errhandler != nil {
+				errhandler(ctx, w, err)
+			}
+			return
+		}
+		res, err := endpoint(ctx, payload)
+		if err != nil {
+			if err := encodeError(ctx, w, err); err != nil && errhandler != nil {
+				errhandler(ctx, w, err)
+			}
+			return
+		}
+		if err := encodeResponse(ctx, w, res); err != nil {
+			if errhandler != nil {
+				errhandler(ctx, w, err)
+			}
+		}
+	})
+}
+
+// MountGenerateCodeHandler configures the mux to serve the "surla" service
+// "generate_code" endpoint.
+func MountGenerateCodeHandler(mux goahttp.Muxer, h http.Handler) {
+	f, ok := h.(http.HandlerFunc)
+	if !ok {
+		f = func(w http.ResponseWriter, r *http.Request) {
+			h.ServeHTTP(w, r)
+		}
+	}
+	mux.Handle("POST", "/workspace/generate", f)
+}
+
+// NewGenerateCodeHandler creates a HTTP handler which loads the HTTP request
+// and calls the "surla" service "generate_code" endpoint.
+func NewGenerateCodeHandler(
+	endpoint goa.Endpoint,
+	mux goahttp.Muxer,
+	decoder func(*http.Request) goahttp.Decoder,
+	encoder func(context.Context, http.ResponseWriter) goahttp.Encoder,
+	errhandler func(context.Context, http.ResponseWriter, error),
+	formatter func(ctx context.Context, err error) goahttp.Statuser,
+) http.Handler {
+	var (
+		decodeRequest  = DecodeGenerateCodeRequest(mux, decoder)
+		encodeResponse = EncodeGenerateCodeResponse(encoder)
+		encodeError    = EncodeGenerateCodeError(encoder, formatter)
+	)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := context.WithValue(r.Context(), goahttp.AcceptTypeKey, r.Header.Get("Accept"))
+		ctx = context.WithValue(ctx, goa.MethodKey, "generate_code")
 		ctx = context.WithValue(ctx, goa.ServiceKey, "surla")
 		payload, err := decodeRequest(r)
 		if err != nil {

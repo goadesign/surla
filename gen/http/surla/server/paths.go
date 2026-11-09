@@ -93,3 +93,8 @@ func ConfigureModelSurlaPath() string {
 func InitProjectSurlaPath() string {
 	return "/workspace/init"
 }
+
+// GenerateCodeSurlaPath returns the URL path to the surla service generate_code HTTP endpoint.
+func GenerateCodeSurlaPath() string {
+	return "/workspace/generate"
+}

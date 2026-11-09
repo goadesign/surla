@@ -449,3 +449,24 @@ func BuildInitProjectPayload(surlaInitProjectBody *string) (*surla.InitProjectPa
 
 	return v, nil
 }
+
+// BuildGenerateCodePayload builds the payload for the surla generate_code
+// endpoint from CLI flags.
+func BuildGenerateCodePayload(surlaGenerateCodeBody *string) (*surla.GenerateCodePayload, error) {
+	var err error
+	var body GenerateCodeRequestBody
+	{
+		if surlaGenerateCodeBody == nil {
+			return nil, fmt.Errorf("missing required flag --body")
+		}
+		err = json.Unmarshal([]byte(*surlaGenerateCodeBody), &body)
+		if err != nil {
+			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"target\": \"eval\"\n   }'")
+		}
+	}
+	v := &surla.GenerateCodePayload{
+		Target: body.Target,
+	}
+
+	return v, nil
+}

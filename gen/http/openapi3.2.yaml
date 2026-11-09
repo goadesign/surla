@@ -1895,6 +1895,66 @@ paths:
                                 name: not_implemented
                                 temporary: false
                                 timeout: false
+    /workspace/generate:
+        post:
+            tags:
+                - surla
+            summary: generate_code surla
+            description: Read the active workspace's application module, or its public local eval/ module when target is eval, compile that module's edited Goa design in Surla's sandbox, and atomically replace its gen/ directory. Preserve top-level user files and their permissions and leave go.mod and go.sum unchanged. Return the written paths and warnings; a warning after gen/ publication still means generation succeeded. The tool compiles the design only; it does not build the application or run tests. Fix a rejected design and call again on the same running server.
+            operationId: surla#generate_code
+            requestBody:
+                description: Request body for generate_code.
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/GenerateCodePayload'
+                        example:
+                            target: eval
+            responses:
+                "200":
+                    description: OK response.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/GenerateCodeResult'
+                            example:
+                                files_written:
+                                    - Nihil nihil ad laboriosam.
+                                    - Autem et.
+                                    - Rem fugiat aspernatur.
+                                target: eval
+                                warnings:
+                                    - Quis libero quia ipsa exercitationem dolorem et.
+                                    - Ut recusandae.
+                                    - Fugit officia numquam dolorem voluptas.
+                                    - Cum enim quia ut consequatur consequatur quae.
+                "422":
+                    description: 'unprocessable: The selected local module is absent, replaced, or invalid; correct its local files and call again.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: unprocessable
+                                temporary: false
+                                timeout: false
+                "501":
+                    description: 'not_implemented: No workspace directory is bound to this control plane.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: not_implemented
+                                temporary: false
+                                timeout: false
     /workspace/init:
         post:
             tags:
@@ -3221,6 +3281,66 @@ components:
                 - input_summary
                 - expected_outcome
                 - verification_kind
+        GenerateCodePayload:
+            type: object
+            properties:
+                target:
+                    type: string
+                    description: 'Module to regenerate: candidate (the application, the default when omitted) or eval (the local eval/ module).'
+                    example: eval
+                    enum:
+                        - candidate
+                        - eval
+            description: Request body for generate_code.
+            example:
+                target: eval
+        GenerateCodeResult:
+            type: object
+            properties:
+                files_written:
+                    type: array
+                    items:
+                        type: string
+                        example: Nihil nihil ad laboriosam.
+                    description: Sorted paths relative to the selected module that were written, including AGENTS_QUICKSTART.md when produced and written successfully.
+                    example:
+                        - Nihil nihil ad laboriosam.
+                        - Autem et.
+                        - Rem fugiat aspernatur.
+                target:
+                    type: string
+                    description: Module that received the generated files.
+                    example: eval
+                    enum:
+                        - candidate
+                        - eval
+                warnings:
+                    type: array
+                    items:
+                        type: string
+                        example: Quis libero quia ipsa exercitationem dolorem et.
+                    description: Problems that did not prevent gen/ publication, such as incomplete cleanup or a guide that could not be written.
+                    example:
+                        - Quis libero quia ipsa exercitationem dolorem et.
+                        - Ut recusandae.
+                        - Fugit officia numquam dolorem voluptas.
+                        - Cum enim quia ut consequatur consequatur quae.
+            description: Generated files written in the selected local module and warnings about auxiliary work. Generation compiles the design only; it does not build the application or run tests.
+            example:
+                files_written:
+                    - Nihil nihil ad laboriosam.
+                    - Autem et.
+                    - Rem fugiat aspernatur.
+                target: eval
+                warnings:
+                    - Quis libero quia ipsa exercitationem dolorem et.
+                    - Ut recusandae.
+                    - Fugit officia numquam dolorem voluptas.
+                    - Cum enim quia ut consequatur consequatur quae.
+            required:
+                - target
+                - files_written
+                - warnings
         InitProjectPayload:
             type: object
             properties:

@@ -104,8 +104,14 @@ type (
 	// buildError reports a harness program that did not compile. Its message
 	// carries the compiler's diagnostics unchanged.
 	buildError struct {
-		// err is the compile error, with the build log.
+		// err is the raw compile failure. When output is empty it preserves
+		// the original full message for non-diagnostic failures too.
 		err error
+		// output is compiler output from a completed ordinary error exit, kept
+		// once so network callers can receive it without operator error paths.
+		output string
+		// paths identifies only this evaluator's allocated directories.
+		paths diagnosticPaths
 	}
 
 	// stuckBuildError reports an evaluator build whose process group did not
@@ -228,7 +234,10 @@ func (r Result) Summary() string {
 
 // Error returns the compile error and its diagnostics.
 func (e *buildError) Error() string {
-	return e.err.Error()
+	if e.output == "" {
+		return e.err.Error()
+	}
+	return fmt.Sprintf("%s (%s)", e.err, e.output)
 }
 
 // Unwrap returns the compile error.
@@ -348,7 +357,7 @@ func evaluate(ctx context.Context, files map[string]string, workDir string) (Res
 func runSandboxed(ctx context.Context, files map[string]string, workDir, program string, args func(stateDir string) []string, collect func(stateDir string) error) (goa listedModule, err error) {
 	target, err := validateSnapshot(files)
 	if err != nil {
-		return listedModule{}, err
+		return listedModule{}, &snapshotError{err}
 	}
 	evalMod, err := evaluatorGoMod()
 	if err != nil {
@@ -383,6 +392,10 @@ func runSandboxed(ctx context.Context, files map[string]string, workDir, program
 	if err := os.WriteFile(filepath.Join(buildDir, "main.go"), []byte(main), 0o600); err != nil {
 		return listedModule{}, fmt.Errorf("write evaluator main.go: %w", err)
 	}
+	paths := diagnosticPaths{
+		source: filepath.Join(buildDir, "target"), temporary: tmpDir, work: workDir,
+		goroot: tc.goroot, modCache: tc.modCache,
+	}
 	gocmd := goCommand{bin: filepath.Join(tc.goroot, "bin", "go")}
 	goa, err = prepareHarnessModule(ctx, gocmd, buildDir, target, evalMod, logDir)
 	if err != nil {
@@ -408,6 +421,11 @@ func runSandboxed(ctx context.Context, files map[string]string, workDir, program
 		logBytes, readErr := os.ReadFile(buildLog)
 		if readErr != nil {
 			return goa, &buildError{err: withExit71Guidance(ctx, fmt.Errorf("compile Goa design: %w", err))}
+		}
+		if diagnosticExit(ctx, err) {
+			return goa, &buildError{
+				err: fmt.Errorf("compile Goa design: %w", err), output: strings.TrimSpace(string(logBytes)), paths: paths,
+			}
 		}
 		return goa, &buildError{err: withExit71Guidance(ctx, fmt.Errorf("compile Goa design: %w (%s)", err, strings.TrimSpace(string(logBytes))))}
 	}

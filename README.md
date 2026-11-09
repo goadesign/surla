@@ -98,7 +98,7 @@ surla preview -dir examples/orders
 surla diff --old-dir examples/orders --new-dir examples/orders
 ```
 
-After you edit a module's `design/`, `surla gen -dir <module>` regenerates its `gen/` inside the same sandbox and swaps it in atomically. It needs the module to use `goa.design/goa/v3` `v3.35.1-0.20261103205041-35e789e8f9b1` or later, and doesn't yet support gRPC designs; see [`surla gen`](docs/REFERENCE.md#surla-gen).
+After you edit a module's `design/`, `surla gen -dir <module>` regenerates its `gen/` inside the same sandbox and swaps it in atomically. From a connected coding agent, call [`generate_code`](docs/REFERENCE.md#mcp-tools) to regenerate the active application module, or pass `target: "eval"` for its public local `eval/` module, without uploading source or restarting the server. Generation compiles the design only; build the application and run its tests before verification. It needs the module to use `goa.design/goa/v3` `v3.35.1-0.20261103205041-35e789e8f9b1` or later, and doesn't yet support gRPC designs; see [`surla gen`](docs/REFERENCE.md#surla-gen).
 
 ### 2. Connect Your Coding Agent to the Surla Control Plane (`surla serve`)
 
