@@ -243,11 +243,13 @@ func retainAndExit(reason error, dirs ...string) {
 	os.Exit(2)
 }
 
-// drainTrustedSuiteRun waits for the run's owner to record a terminal state,
-// even after an assertion failed, so t.TempDir cleanup never removes
-// directories a detached run still writes. If the state cannot be read, is
-// unexpected, or the owner does not finish within journeyOwnerWait, it keeps
-// dirs by exiting the test binary before that cleanup.
+// drainTrustedSuiteRun waits, even after an assertion failed, until the run
+// has a saved report, the only terminal state that shows its supervisor
+// finished and cleaned up, so t.TempDir cleanup never removes directories a
+// detached run still uses. A run without a report may also be a supervisor
+// that exited before writing its result, so its cleanup is uncertain; that,
+// an unreadable or unexpected state, or no report within journeyOwnerWait
+// keeps dirs by exiting the test binary before that cleanup.
 func drainTrustedSuiteRun(runsDir, runID string, dirs ...string) {
 	deadline := time.NewTimer(journeyOwnerWait)
 	defer deadline.Stop()
@@ -259,8 +261,10 @@ func drainTrustedSuiteRun(runsDir, runID string, dirs ...string) {
 			retainAndExit(fmt.Errorf("read verification run %s: %w", runID, err), dirs...)
 		}
 		switch state.Kind {
-		case verifyrun.StateCompleted, verifyrun.StateNotCompleted:
+		case verifyrun.StateCompleted:
 			return
+		case verifyrun.StateNotCompleted:
+			retainAndExit(fmt.Errorf("verification run %s ended without a report, so its process cleanup is unconfirmed: %s", runID, state.Result.Summary), dirs...)
 		case verifyrun.StateRunning:
 		default:
 			retainAndExit(fmt.Errorf("verification run %s is in unexpected state %s", runID, state.Kind), dirs...)
