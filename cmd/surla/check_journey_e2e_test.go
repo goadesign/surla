@@ -31,43 +31,67 @@ import (
 // downloads the starter's modules.
 const journeyCallTimeout = 10 * time.Minute
 
-// goCmpRequire adds a real third-party test dependency the way a developer
-// edits go.mod by hand: a requirement with no go.sum entry yet.
-const goCmpRequire = "\nrequire github.com/google/go-cmp v0.6.0\n"
-
-// goCmpTest is a test in package dependencycheck that uses go-cmp.
-const goCmpTest = `package dependencycheck
+// Journey A adds rsc.io/binaryregexp v0.2.0, a small published module with
+// no dependencies, the way a developer edits go.mod by hand: a requirement
+// with no go.sum entry yet.
+const (
+	regexpModule  = "rsc.io/binaryregexp"
+	regexpRequire = "\nrequire rsc.io/binaryregexp v0.2.0\n"
+	regexpTest    = `package dependencycheck
 
 import (
 	"testing"
 
-	"github.com/google/go-cmp/cmp"
+	"rsc.io/binaryregexp"
 )
 
-func TestDiff(t *testing.T) {
-	if d := cmp.Diff("a", "a"); d != "" {
-		t.Fatal(d)
+func TestMatch(t *testing.T) {
+	if !binaryregexp.MustCompile("a+").MatchString("aa") {
+		t.Fatal("no match")
 	}
 }
 `
+)
 
-// syncRequire and syncTest add a second, different dependency to a go.work
-// member, so the root module's go-cmp sums cannot satisfy it.
+// Journey B: the root and eval modules each replace example.com/workdep
+// with a dependency-free base copy, so their own go.sum files need nothing
+// for it. go.work replaces the same module with a workspace copy whose
+// identical API imports rsc.io/qr v0.2.0. Only the workspace graph needs
+// rsc.io/qr, so its checksums can come only from go.work.sum: the read-only
+// check must fail on writing go.work.sum, and update_dependencies must write
+// it. The testdata directories are replace targets, not checked modules.
 const (
-	syncRequire = "\nrequire golang.org/x/sync v0.7.0\n"
-	syncTest    = `package dependencycheck
+	qrModule      = "rsc.io/qr"
+	workdepModule = "module example.com/workdep\n\ngo 1.21\n"
+	workdepBase   = `package workdep
+
+// Name names the copy in use.
+func Name() string { return "base" }
+`
+	workdepWorkspace = `package workdep
+
+import "rsc.io/qr"
+
+// Name names the copy in use.
+func Name() string {
+	if _, err := qr.Encode("surla", qr.L); err != nil {
+		return err.Error()
+	}
+	return "workspace"
+}
+`
+	workdepRequire = "\nrequire example.com/workdep v0.0.0\n"
+	workdepTest    = `package workdepcheck
 
 import (
 	"testing"
 
-	"golang.org/x/sync/errgroup"
+	"example.com/workdep"
 )
 
-func TestGroup(t *testing.T) {
-	var g errgroup.Group
-	g.Go(func() error { return nil })
-	if err := g.Wait(); err != nil {
-		t.Fatal(err)
+func TestName(t *testing.T) {
+	if workdep.Name() == "" {
+		t.Fatal("empty name")
 	}
 }
 `
@@ -128,9 +152,10 @@ func TestCheckProjectRepairsDependenciesOnOneServer(t *testing.T) {
 	})
 
 	t.Run("missing go.sum entry is repaired in place", func(t *testing.T) {
-		appendFile(t, filepath.Join(dir, "go.mod"), goCmpRequire)
-		writeJourneyFile(t, filepath.Join(dir, "dependencycheck", "diff_test.go"), goCmpTest)
 		goSumBefore := readJourneyFile(t, filepath.Join(dir, "go.sum"))
+		require.NotContains(t, goSumBefore, regexpModule, "premise: the starter has no checksum for the new dependency")
+		appendFile(t, filepath.Join(dir, "go.mod"), regexpRequire)
+		writeJourneyFile(t, filepath.Join(dir, "dependencycheck", "match_test.go"), regexpTest)
 
 		failed := journeyCheck(t, client)
 		require.False(t, failed.Passed, failed.Message)
@@ -140,41 +165,53 @@ func TestCheckProjectRepairsDependenciesOnOneServer(t *testing.T) {
 
 		repaired := journeyUpdate(t, client)
 		assert.Contains(t, repaired.FilesWritten, "go.sum", repaired.Message)
-		assert.Contains(t, readJourneyFile(t, filepath.Join(dir, "go.sum")), "github.com/google/go-cmp v0.6.0 h1:")
+		assert.Contains(t, readJourneyFile(t, filepath.Join(dir, "go.sum")), regexpModule+" v0.2.0 h1:")
 
 		passed := journeyCheck(t, client)
 		assert.True(t, passed.Passed, passed.Message)
 		assertUncommitted(t, dir, "go.mod", "go.sum", "dependencycheck/")
 	})
 
-	t.Run("go.work workspace member dependency is repaired in place", func(t *testing.T) {
+	t.Run("workspace-only checksums are repaired into go.work.sum", func(t *testing.T) {
 		evalDir := filepath.Join(dir, "eval")
-		goWork := "go " + goVersion(t, filepath.Join(dir, "go.mod")) + "\n\nuse (\n\t.\n\t./eval\n)\n"
+		writeJourneyFile(t, filepath.Join(dir, "testdata", "deps", "base", "go.mod"), workdepModule)
+		writeJourneyFile(t, filepath.Join(dir, "testdata", "deps", "base", "workdep.go"), workdepBase)
+		writeJourneyFile(t, filepath.Join(dir, "testdata", "deps", "workspace", "go.mod"), workdepModule+"\nrequire rsc.io/qr v0.2.0\n")
+		writeJourneyFile(t, filepath.Join(dir, "testdata", "deps", "workspace", "workdep.go"), workdepWorkspace)
+		appendFile(t, filepath.Join(dir, "go.mod"), workdepRequire+"\nreplace example.com/workdep => ./testdata/deps/base\n")
+		appendFile(t, filepath.Join(evalDir, "go.mod"), workdepRequire+"\nreplace example.com/workdep => ../testdata/deps/base\n")
+		writeJourneyFile(t, filepath.Join(dir, "workdepcheck", "name_test.go"), workdepTest)
+		writeJourneyFile(t, filepath.Join(evalDir, "workdepcheck", "name_test.go"), workdepTest)
+
+		// Standalone, each module resolves workdep to the base copy and
+		// passes with its current files.
+		standalone := journeyCheck(t, client)
+		require.True(t, standalone.Passed, "premise: the modules pass without the workspace: %s", standalone.Message)
+		for _, sum := range []string{filepath.Join(dir, "go.sum"), filepath.Join(evalDir, "go.sum")} {
+			require.NotContains(t, readJourneyFile(t, sum), qrModule, "premise: %s has no checksum for the workspace-only module", sum)
+		}
+		require.NoFileExists(t, filepath.Join(dir, "go.work.sum"))
+
+		goWork := "go " + goVersion(t, filepath.Join(dir, "go.mod")) +
+			"\n\nuse (\n\t.\n\t./eval\n)\n\nreplace example.com/workdep => ./testdata/deps/workspace\n"
 		writeJourneyFile(t, filepath.Join(dir, "go.work"), goWork)
-		appendFile(t, filepath.Join(evalDir, "go.mod"), syncRequire)
-		writeJourneyFile(t, filepath.Join(evalDir, "dependencycheck", "group_test.go"), syncTest)
 
 		failed := journeyCheck(t, client)
 		require.False(t, failed.Passed, failed.Message)
 		assert.Contains(t, failed.Message, "call update_dependencies")
+		output := journeyOutput(t, client, failed.OpID)
+		assert.Contains(t, output, "go.work.sum")
+		assert.Contains(t, output, "read-only file system")
+		require.NoFileExists(t, filepath.Join(dir, "go.work.sum"), "check_project never writes the workspace")
 
 		repaired := journeyUpdate(t, client)
-		assert.Contains(t, repaired.FilesWritten, "eval/go.sum", repaired.Message)
+		assert.Contains(t, repaired.FilesWritten, "go.work.sum", repaired.Message)
+		assert.Contains(t, readJourneyFile(t, filepath.Join(dir, "go.work.sum")), qrModule+" v0.2.0 h1:")
 		assert.Equal(t, goWork, readJourneyFile(t, filepath.Join(dir, "go.work")), "go.work is never written")
-		// Whether the workspace graph needs go.work.sum entries is Go's
-		// decision; record what it did.
-		if workSum, err := os.ReadFile(filepath.Join(dir, "go.work.sum")); err == nil {
-			assert.Contains(t, repaired.FilesWritten, "go.work.sum")
-			t.Logf("go.work.sum written with %d lines", strings.Count(string(workSum), "\n"))
-		} else {
-			require.ErrorIs(t, err, os.ErrNotExist)
-			assert.NotContains(t, repaired.FilesWritten, "go.work.sum")
-			t.Log("go.work.sum not needed for this workspace graph")
-		}
 
 		passed := journeyCheck(t, client)
 		assert.True(t, passed.Passed, passed.Message)
-		assertUncommitted(t, dir, "go.work", "eval/go.mod", "eval/go.sum", "eval/dependencycheck/")
+		assertUncommitted(t, dir, "go.work", "go.work.sum", "testdata/deps/", "workdepcheck/")
 	})
 }
 
