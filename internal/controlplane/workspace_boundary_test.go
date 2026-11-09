@@ -393,12 +393,13 @@ func TestNewAndInitProjectPreserveSignificantPathWhitespace(t *testing.T) {
 			CardsDir:     extCards,
 			InitStageDir: filepath.Join(wsWithSpace, "stage"),
 		})
-		require.ErrorContains(t, err, "must be outside the workspace")
+		require.ErrorContains(t, err, "must be outside workspace")
 	})
 
 	t.Run("accepts_exterior_paths_with_trailing_and_interior_spaces", func(t *testing.T) {
 		t.Parallel()
-		root := t.TempDir()
+		root, err := abspath.Eval(t.TempDir())
+		require.NoError(t, err)
 		ws := filepath.Join(root, "ws")
 		extParentWithSpace := filepath.Join(root, "ws ")
 		cardsWithSpace := filepath.Join(extParentWithSpace, "cards ")

@@ -530,10 +530,10 @@ func TestPrepareCommitsInitialScaffoldAndStripsRedirectingGitEnv(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
 	t.Setenv("GIT_CONFIG_GLOBAL", "/dev/null")
-	t.Setenv("GIT_AUTHOR_NAME", "")
-	t.Setenv("GIT_AUTHOR_EMAIL", "")
-	t.Setenv("GIT_COMMITTER_NAME", "")
-	t.Setenv("GIT_COMMITTER_EMAIL", "")
+	for _, k := range []string{"GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL", "GIT_COMMITTER_NAME", "GIT_COMMITTER_EMAIL", "EMAIL"} {
+		t.Setenv(k, "")
+		require.NoError(t, os.Unsetenv(k))
+	}
 	t.Setenv("GIT_CONFIG_COUNT", "7")
 	t.Setenv("GIT_CONFIG_KEY_0", "user.name")
 	t.Setenv("GIT_CONFIG_VALUE_0", "Config Count Operator")

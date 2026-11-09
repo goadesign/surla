@@ -292,8 +292,9 @@ func configureServeWorkspace(cfg serveConfig) (ws workspaceServeConfig, err erro
 		if err != nil {
 			return workspaceServeConfig{}, err
 		}
+		var startupVerErr error
 		startupCtx, cancel := context.WithTimeout(context.Background(), gitReadTimeout)
-		startupVerification, startupVerErr := starterVerificationAtHEAD(
+		startupVerification, startupVerErr = starterVerificationAtHEAD(
 			startupCtx,
 			initialWorkspaceRoot,
 			operatorRunsDir,
