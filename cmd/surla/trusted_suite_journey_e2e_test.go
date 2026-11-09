@@ -9,7 +9,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -20,9 +19,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	goahttp "goa.design/goa/v3/http"
 
-	genmcpclient "github.com/goadesign/surla/gen/jsonrpc/mcp_surla/client"
 	genmcpsurla "github.com/goadesign/surla/gen/mcp_surla"
 	gensurla "github.com/goadesign/surla/gen/surla"
 	"github.com/goadesign/surla/internal/controlplane"
@@ -33,18 +30,6 @@ type (
 	// trustedSuiteAnalyzer supplies one confirmed public example. This test
 	// checks evaluator ownership, not semantic analysis or provider quality.
 	trustedSuiteAnalyzer struct{}
-
-	// trustedSuiteServer owns one real server and its generated MCP client.
-	trustedSuiteServer struct {
-		// cp owns live process cleanup and the private state directory lock.
-		cp *controlplane.ControlPlane
-		// http serves the authenticated generated HTTP and MCP handlers.
-		http *httptest.Server
-		// client calls the real MCP endpoint with the test operator credential.
-		client *genmcpsurla.Client
-		// cardsDir and runsDir locate evaluator-owned evidence, outside source.
-		cardsDir, runsDir string
-	}
 )
 
 // TestMain lets selfCommand launch the test executable's real verify-run
@@ -74,34 +59,6 @@ func TestMain(m *testing.M) {
 		os.Exit(0)
 	}
 	os.Exit(m.Run())
-}
-
-// newTrustedSuiteServer reconstructs the composition root from cfg, keeping
-// its real workspace resolver and executable command. Only CP1 is scripted.
-func newTrustedSuiteServer(t *testing.T, cfg serveConfig) *trustedSuiteServer {
-	t.Helper()
-	opts, err := serveOptions(cfg, func(string) string { return "" }, os.Environ())
-	require.NoError(t, err)
-	opts.Analyzer = trustedSuiteAnalyzer{}
-	opts.Live.StartTimeout = 3 * time.Minute
-	cp, err := controlplane.New(opts)
-	require.NoError(t, err)
-	srv := httptest.NewServer(controlplane.NewHTTPHandler(cp,
-		controlplane.NewTokenAuthenticator(map[string]controlplane.Principal{
-			"test-token": {ID: "operator@example.com"},
-		})))
-	scheme, host, err := parseServerOrigin(srv.URL)
-	require.NoError(t, err)
-	transport := genmcpclient.NewClient(scheme, host,
-		&bearerDoer{client: srv.Client(), token: "test-token"},
-		goahttp.RequestEncoder, goahttp.ResponseDecoder, false)
-	s := &trustedSuiteServer{
-		cp: cp, http: srv,
-		client:   &genmcpsurla.Client{ToolsCallEndpoint: transport.ToolsCall()},
-		cardsDir: opts.CardsDir, runsDir: opts.RunsDir,
-	}
-	t.Cleanup(func() { s.close(t) })
-	return s
 }
 
 // trustedSuiteCommit commits only the harmless evaluator comment and returns
@@ -265,14 +222,6 @@ func (trustedSuiteAnalyzer) Analyze(context.Context, string, string) (controlpla
 // semantic revision behavior.
 func (trustedSuiteAnalyzer) Revise(context.Context, controlplane.CP1PriorCard, string, string) (controlplane.CP1RevisionSemanticAnalysis, error) {
 	return controlplane.CP1RevisionSemanticAnalysis{}, errors.New("revision is outside this test's journey")
-}
-
-// close releases the server and the live process owner; repeated cleanup is
-// safe after an explicit restart or a failed assertion.
-func (s *trustedSuiteServer) close(t *testing.T) {
-	t.Helper()
-	s.http.Close()
-	closeTrustedSuiteControlPlane(t, s.cp)
 }
 
 // closeTrustedSuiteControlPlane waits for the real live-process owner to stop
