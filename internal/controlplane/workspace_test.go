@@ -423,16 +423,36 @@ func TestInitProjectErrorAndSpanClassificationAndEndToEndTransition(t *testing.T
 		defer cp.Close()
 
 		badDir := "../escape"
-		_, err = cp.InitProject(aliceCtx, &gensurla.InitProjectPayload{
-			ModulePath: "example.com/shop",
-			Dir:        &badDir,
-		})
-		var svcErr *goa.ServiceError
-		require.ErrorAs(t, err, &svcErr)
-		assert.Equal(t, "unprocessable", svcErr.Name)
+		cases := []struct {
+			modulePath string
+			dir        *string
+			wantErr    string
+		}{
+			{"example.com/shop", &badDir, "direct child directory"},
+			{"not a path", nil, "module_path"},
+			{"example.com/my-shop", nil, "must end in a service name"},
+			{"example.com/Shop", nil, "must end in a service name"},
+			{"example.com/1shop", nil, "must end in a service name"},
+			{"example.com/func", nil, "must end in a service name"},
+			{"example.com/main", nil, "must end in a service name"},
+		}
+		for _, tc := range cases {
+			t.Run(tc.modulePath, func(t *testing.T) {
+				_, err := cp.InitProject(aliceCtx, &gensurla.InitProjectPayload{
+					ModulePath: tc.modulePath,
+					Dir:        tc.dir,
+				})
+				var svcErr *goa.ServiceError
+				require.ErrorAs(t, err, &svcErr)
+				assert.Equal(t, "unprocessable", svcErr.Name)
+				assert.ErrorContains(t, err, tc.wantErr)
+			})
+		}
 		spans := exp.GetSpans()
-		require.Len(t, spans, 1)
-		assert.Equal(t, codes.Unset, spans[0].Status.Code)
+		require.Len(t, spans, len(cases))
+		for _, span := range spans {
+			assert.Equal(t, codes.Unset, span.Status.Code)
+		}
 	})
 
 	t.Run("corrupt_card_in_precondition_scan_fails_with_internal_fault", func(t *testing.T) {
@@ -623,7 +643,7 @@ func TestInitProjectErrorAndSpanClassificationAndEndToEndTransition(t *testing.T
 		defer cp.Close()
 
 		res, err := cp.InitProject(aliceCtx, &gensurla.InitProjectPayload{
-			ModulePath: "example.com/shop",
+			ModulePath: " \t example.com/shop \n",
 		})
 		require.NoError(t, err)
 		assert.Equal(t, "shop", res.ServiceName)

@@ -277,6 +277,27 @@ func SurlaVersion(info *debug.BuildInfo) string {
 	return ""
 }
 
+// LayoutForModule validates a Go module path and returns the service and command
+// names Init writes for it. Starter generation and workspace initialization use
+// the same rule: the last path element must contain lowercase letters and digits,
+// start with a letter, and be neither a Go keyword nor main. For example,
+// example.com/shop returns service shop and candidate command ./cmd/shop.
+// Invalid module paths or service names return an error without running tooling.
+func LayoutForModule(modulePath string) (Layout, error) {
+	if err := module.CheckPath(modulePath); err != nil {
+		return Layout{}, fmt.Errorf("%q: %w", modulePath, err)
+	}
+	name := path.Base(modulePath)
+	if !lowerAlnum.MatchString(name) || !token.IsIdentifier(name) || name == "main" {
+		return Layout{}, fmt.Errorf("%q must end in a service name of lowercase letters and digits starting with a letter, other than a Go keyword or main, such as example.com/shop", modulePath)
+	}
+	return Layout{
+		Service:          name,
+		CandidatePackage: "./cmd/" + name,
+		SuiteCommand:     "./cmd/" + name + "-evals",
+	}, nil
+}
+
 // StarterLayout parses a starter project's go.mod and SuiteDir/go.mod, which
 // the caller read from one commit, without running Go tooling or project code.
 // It checks that the root module path ends in a valid service name and that
@@ -291,9 +312,9 @@ func StarterLayout(rootGoMod, evalGoMod []byte) (Layout, error) {
 		return Layout{}, errors.New("go.mod does not declare a module path")
 	}
 	modulePath := rootMod.Module.Mod.Path
-	layout, err := layoutForModule(modulePath, "go.mod module")
+	layout, err := LayoutForModule(modulePath)
 	if err != nil {
-		return Layout{}, err
+		return Layout{}, fmt.Errorf("go.mod module %w", err)
 	}
 	evalFile := SuiteDir + "/go.mod"
 	evalMod, err := modfile.ParseLax(evalFile, evalGoMod, nil)
@@ -399,30 +420,12 @@ func prepare(ctx context.Context, o Options, run Runner, gen Generator, commitRe
 	return d.Name, stage, commit, nil
 }
 
-// layoutForModule validates modulePath using Surla's starter service-name rule
-// and returns the corresponding starter Layout. label names the source of
-// modulePath in error messages (such as "-module" or "go.mod module").
-func layoutForModule(modulePath, label string) (Layout, error) {
-	if err := module.CheckPath(modulePath); err != nil {
-		return Layout{}, fmt.Errorf("%s %q: %w", label, modulePath, err)
-	}
-	name := path.Base(modulePath)
-	if !lowerAlnum.MatchString(name) || !token.IsIdentifier(name) || name == "main" {
-		return Layout{}, fmt.Errorf("%s %q must end in a service name of lowercase letters and digits starting with a letter, other than a Go keyword or main, such as example.com/shop", label, modulePath)
-	}
-	return Layout{
-		Service:          name,
-		CandidatePackage: "./cmd/" + name,
-		SuiteCommand:     "./cmd/" + name + "-evals",
-	}, nil
-}
-
 // newData validates o and returns the template data, with the Go, Goa,
 // Goa-AI and Model versions read from Surla's own go.mod.
 func newData(o Options) (data, error) {
-	layout, err := layoutForModule(o.Module, "-module")
+	layout, err := LayoutForModule(o.Module)
 	if err != nil {
-		return data{}, err
+		return data{}, fmt.Errorf("-module %w", err)
 	}
 	if !ValidVersion(o.SurlaVersion) {
 		return data{}, fmt.Errorf("Surla version %q is not an exact module version such as v0.0.0-20261104215521-580509970fb6", o.SurlaVersion)
