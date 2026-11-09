@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -58,7 +59,8 @@ func TestGenerateCodeHTTPMCPAndIteration(t *testing.T) {
 	writeGenerationFiles(t, filepath.Join(workspace, "eval"), snapshot)
 	writeGenerationFiles(t, filepath.Join(workspace, "eval"), map[string]string{"gen/stale/old.go": "eval old\n"})
 	evalBefore := generationFiles(t, workspace, "eval")
-	cp := newControlPlane(t, Options{WorkspaceDir: workspace})
+	privateCards := filepath.Join(t.TempDir(), "operator\"slash\\storage")
+	cp := newControlPlane(t, Options{WorkspaceDir: workspace, CardsDir: privateCards})
 	srv := httptest.NewServer(NewHTTPHandler(cp, NewTokenAuthenticator(map[string]Principal{
 		"generation-token": {ID: "developer@example.com"},
 	})))
@@ -140,12 +142,80 @@ func TestGenerateCodeHTTPMCPAndIteration(t *testing.T) {
 	writeGenerationFiles(t, workspace, map[string]string{"design/design.go": updated + "\nvar _ = MissingSourceSymbol\n"})
 	_, err = httpClient.GenerateCode(ctx, &gensurla.GenerateCodePayload{})
 	require.Error(t, err)
-	assert.Equal(t, "unprocessable", goaErrorName(err))
+	var httpFailure *goahttp.ClientError
+	require.ErrorAs(t, err, &httpFailure)
+	assert.True(t, httpFailure.Fault, "the generated client preserves the HTTP 500 failure")
 	assert.ErrorContains(t, err, "undefined: MissingSourceSymbol")
 	assert.ErrorContains(t, err, "call generate_code again")
 	assert.NotContains(t, err.Error(), cp.cards.dir)
 	assert.NotContains(t, err.Error(), "surla-designeval-")
 	assert.Equal(t, candidateBeforeEval, generationFiles(t, workspace, "gen"))
+
+	// Both designs compile as Go but fail inside the sandboxed generator.
+	// Their explanations must survive the MCP protocol-error path, followed
+	// by successful generation after correction on this same server.
+	for _, failure := range []struct {
+		name, design, want string
+	}{
+		{
+			name:   "invalid DSL",
+			design: strings.Replace(updated, "Payload(String)", `Payload(func() { Attribute("id", String); Required("missing") })`, 1),
+			want:   `required field "missing" does not exist`,
+		},
+		{
+			name:   "unsupported gRPC finalization",
+			design: strings.Replace(updated, `Method("get_order", func() {`, `Method("get_order", func() { GRPC(func() {})`, 1),
+			want:   ".proto (finalizer)",
+		},
+	} {
+		t.Run(failure.name, func(t *testing.T) {
+			writeGenerationFiles(t, workspace, map[string]string{"design/design.go": failure.design})
+			_, err := mcpClient.ToolsCall(ctx, &genmcpsurla.ToolsCallPayload{Name: "generate_code", Arguments: []byte(`{}`)})
+			require.Error(t, err, "a failed generation uses the MCP protocol-error path")
+			assert.ErrorContains(t, err, "evaluating the design and generating files")
+			assert.ErrorContains(t, err, failure.want)
+			assert.ErrorContains(t, err, "call generate_code again on the same server")
+			assert.NotContains(t, err.Error(), filepath.Base(privateCards))
+			quotedBase := strconv.Quote(filepath.Base(privateCards))
+			assert.NotContains(t, err.Error(), quotedBase[1:len(quotedBase)-1])
+			assert.Equal(t, candidateBeforeEval, generationFiles(t, workspace, "gen"))
+			writeGenerationFiles(t, workspace, map[string]string{"design/design.go": updated})
+			result, err := httpClient.GenerateCode(ctx, &gensurla.GenerateCodePayload{})
+			require.NoError(t, err)
+			assert.Equal(t, first.FilesWritten, result.FilesWritten)
+		})
+	}
+
+	// A real Go build cache setup failure also exits 1. It is reported as
+	// an operation failure with safe details, without blaming source code.
+	// Preserve the valid cache so restoring it proves same-server recovery.
+	entries, err := os.ReadDir(filepath.Join(cp.cards.dir, "designeval"))
+	require.NoError(t, err)
+	entries = slices.DeleteFunc(entries, func(entry os.DirEntry) bool {
+		return !strings.HasPrefix(entry.Name(), "surla-designeval-work-")
+	})
+	require.Len(t, entries, 1)
+	cache := filepath.Join(cp.cards.dir, "designeval", entries[0].Name(), "gocache")
+	info, err = os.Stat(cache)
+	require.NoError(t, err)
+	require.True(t, info.IsDir())
+	require.NoError(t, os.Rename(cache, cache+"-saved"))
+	require.NoError(t, os.WriteFile(cache, []byte("cache directory replaced by a file\n"), 0o600))
+	_, cacheErr := httpClient.GenerateCode(ctx, &gensurla.GenerateCodePayload{})
+	require.NoError(t, os.Remove(cache))
+	require.NoError(t, os.Rename(cache+"-saved", cache))
+	require.Error(t, cacheErr)
+	require.ErrorAs(t, cacheErr, &httpFailure)
+	assert.True(t, httpFailure.Fault)
+	assert.ErrorContains(t, cacheErr, "failed while compiling the design")
+	assert.ErrorContains(t, cacheErr, "failed to initialize build cache")
+	assert.NotContains(t, cacheErr.Error(), "The design did not compile")
+	assert.NotContains(t, cacheErr.Error(), privateCards)
+	quotedCards := strconv.Quote(privateCards)
+	assert.NotContains(t, cacheErr.Error(), quotedCards[1:len(quotedCards)-1])
+	assert.Equal(t, candidateBeforeEval, generationFiles(t, workspace, "gen"))
+	_, err = httpClient.GenerateCode(ctx, &gensurla.GenerateCodePayload{})
+	require.NoError(t, err)
 
 	require.NoError(t, cp.Close())
 	_, err = cp.GenerateCode(WithPrincipal(ctx, Principal{ID: "developer@example.com"}), &gensurla.GenerateCodePayload{})

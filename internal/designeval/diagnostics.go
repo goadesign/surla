@@ -1,17 +1,18 @@
-// This file separates caller-safe design diagnostics from operator failures.
+// This file exposes failed generation phases and safe sandbox output while
+// preserving the complete original error for CLI callers and operator traces.
 package designeval
 
 import (
-	"context"
 	"errors"
-	"os/exec"
+	"fmt"
 	"path/filepath"
+	"strconv"
 	"strings"
 )
 
 type (
-	// diagnosticPaths identifies only directories this evaluator allocated. Caller
-	// diagnostics replace these exact prefixes; raw errors preserve them.
+	// diagnosticPaths identifies the exact directories supplied to the build
+	// and execution sandboxes. Only their known path spellings are replaced.
 	diagnosticPaths struct {
 		// source is the staged copy of the caller's module.
 		source string
@@ -24,93 +25,79 @@ type (
 		// modCache is the operator's read-only module cache.
 		modCache string
 	}
-	// snapshotError marks an error produced exclusively from the caller's
-	// supplied files, before operator files or processes are accessed.
-	snapshotError struct{ error }
-	// moduleCommandError preserves the go command's raw failure and its output
-	// once. Only a completed, noncanceled command with readable output creates it.
-	moduleCommandError struct {
-		// err is the command failure without appended output.
+	// phaseError identifies the operation in progress when evaluation failed.
+	// It makes no claim about whether source, storage, or setup caused failure.
+	phaseError struct {
+		// phase is the owner-selected operation description, never raw output.
+		phase string
+		// err retains every original cause, including cleanup failures.
 		err error
-		// output is the existing diagnostic tail, including its leading newline.
+	}
+	// sandboxOutputError retains output from an offline sandbox once. Module
+	// commands outside that sandbox never construct it because their output
+	// can include operator proxy credentials and private configuration.
+	sandboxOutputError struct {
+		// err is the operation failure without appended output.
+		err error
+		// output is the original sandbox output, without another formatted copy.
 		output string
+		// paths identifies the exact private directories used by this sandbox.
+		paths diagnosticPaths
 	}
 )
 
-// SourceDiagnostic returns a recovery message for a rejected snapshot or a
-// compiler/module command that completed with diagnostics. HTTP and MCP callers
-// use it to explain which local source or dependency to fix, while retaining
-// err unchanged for traces and CLI output. Exact evaluator-owned directory
-// prefixes are replaced with source-relative or descriptive paths.
-//
-// Setup, log-read, cancellation, process-cleanup, and filesystem failures return
-// false. A join with multiple independent causes also returns false, even if
-// one cause is a source diagnostic: it may include an operator cleanup failure.
-func SourceDiagnostic(err error) (string, bool) {
-	for err != nil {
-		switch e := err.(type) {
-		case *snapshotError:
-			return "The local module cannot be generated: " + e.Error() + ". Correct the module files and call generate_code again.", true
-		case *buildError:
-			if e.output != "" {
-				return "The design did not compile:\n" + e.paths.forCaller(e.output) +
-					"\nCorrect the design or its module dependencies and call generate_code again." +
-					" If the compiler reports that generator.CompleteSources is undefined, update the module's goa.design/goa/v3 requirement or versioned replacement to " +
-					completeSourcesGoa + " or later, run go mod tidy, and call generate_code again.", true
-			}
-			return "", false
-		case *moduleCommandError:
-			// Module commands use the operator's Go proxy and HOME settings.
-			// Their output can contain credentials or private configuration,
-			// so none of that output crosses the HTTP or MCP edge.
-			return "The design's module dependencies could not be loaded. Check the design's imports, run go mod tidy in the selected local module, and call generate_code again. If loading still fails, ask the server operator to inspect the trace for dependency-access details.", true
-		case interface{ Unwrap() []error }:
-			causes := e.Unwrap()
-			if len(causes) != 1 {
-				return "", false
-			}
-			err = causes[0]
-		default:
-			err = errors.Unwrap(err)
-		}
+// GenerationDiagnostic describes the phase where generation failed and any
+// available sandbox output, with exact private directory names replaced. HTTP
+// and MCP callers receive this message while CLI callers and traces keep err
+// unchanged. A compiler error exit does not distinguish invalid source from
+// cache, disk, or setup failures, so this function never makes that verdict.
+// Module-loading stderr is always withheld because those commands use operator
+// HOME and proxy settings outside the sandbox.
+func GenerationDiagnostic(err error) string {
+	phase := "starting the design compiler"
+	var operation *phaseError
+	if errors.As(err, &operation) {
+		phase = operation.phase
 	}
-	return "", false
+	message := "Code generation failed while " + phase + "."
+	var sandbox *sandboxOutputError
+	if errors.As(err, &sandbox) && sandbox.output != "" {
+		message += "\nSandbox output:\n" + sandbox.paths.forCaller(sandbox.output)
+	}
+	var build *buildError
+	if errors.As(err, &build) {
+		message += "\nIf the compiler reports that generator.CompleteSources is undefined, the module needs a goa.design/goa/v3 requirement or versioned replacement at " + completeSourcesGoa + " or later."
+	}
+	return message
 }
 
-// Error reproduces the existing Go command error and diagnostic tail.
-func (e *moduleCommandError) Error() string { return e.err.Error() + e.output }
+// Error preserves the original CLI and trace error text without adding a phase.
+func (e *phaseError) Error() string { return e.err.Error() }
 
-// Unwrap preserves the command's exit status for existing evaluator callers.
-func (e *moduleCommandError) Unwrap() error { return e.err }
+// Unwrap preserves the original error causes for Go callers.
+func (e *phaseError) Unwrap() error { return e.err }
 
-// Unwrap preserves the original snapshot validation error for Go callers.
-func (e *snapshotError) Unwrap() error { return e.error }
+// Error reproduces the existing parenthesized sandbox-output error text.
+func (e *sandboxOutputError) Error() string { return fmt.Sprintf("%s (%s)", e.err, e.output) }
 
-// diagnosticExit requires a completed Go command with the ordinary error exit
-// code. Cancellation, sandbox-launch errors, and setup failures have different
-// causes or exit codes and must not be described as source rejections.
-func diagnosticExit(ctx context.Context, err error) bool {
-	var exit *exec.ExitError
-	return ctx.Err() == nil && errors.As(err, &exit) && exit.ExitCode() == 1
-}
+// Unwrap preserves the sandbox's actual failure without inferring its cause.
+func (e *sandboxOutputError) Unwrap() error { return e.err }
 
-// forCaller maps only known evaluator-owned prefixes. It never changes the
-// underlying error or guesses which arbitrary paths belong to the operator.
+// forCaller replaces only exact known directory names, both as raw text and as
+// the interior of a Go %q string. Replacing the encoded spelling is necessary
+// for filenames containing quotes, backslashes, control bytes, or invalid UTF-8.
+// Raw errors and their output remain unchanged.
 func (p diagnosticPaths) forCaller(output string) string {
 	for _, mapping := range []struct{ from, to string }{
-		{p.source, ""}, {p.temporary, "<generation>/"}, {p.work, "<compiler>/"},
-		{p.goroot, "<toolchain>/"}, {p.modCache, "<modules>/"},
+		{p.source, "."}, {p.temporary, "<generation>"}, {p.work, "<compiler>"},
+		{p.goroot, "<toolchain>"}, {p.modCache, "<modules>"},
 	} {
 		if mapping.from != "" {
 			from := filepath.Clean(mapping.from)
-			output = strings.ReplaceAll(output, from+string(filepath.Separator), mapping.to)
-			// A diagnostic may name the directory itself, rather than a
-			// child file. That exact allocated path is private as well.
-			bare := strings.TrimSuffix(mapping.to, "/")
-			if bare == "" {
-				bare = "."
+			quoted := strconv.Quote(from)
+			for _, spelling := range []string{from, quoted[1 : len(quoted)-1]} {
+				output = strings.ReplaceAll(output, spelling, mapping.to)
 			}
-			output = strings.ReplaceAll(output, from, bare)
 		}
 	}
 	return output

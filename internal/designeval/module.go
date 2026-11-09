@@ -252,12 +252,7 @@ func (g goCommand) runTo(ctx context.Context, dir, logPath, outPath string, args
 	cmd.Env = goEnv()
 	cmd.Stdout, cmd.Stderr = stdout, stderr
 	if err := cmd.Run(); err != nil {
-		output := tail(logPath)
-		cause := fmt.Errorf("go %s: %w", strings.Join(args, " "), err)
-		if diagnosticExit(ctx, err) && output != "" {
-			return &moduleCommandError{err: cause, output: output}
-		}
-		return fmt.Errorf("%w%s", cause, output)
+		return fmt.Errorf("go %s: %w%s", strings.Join(args, " "), err, tail(logPath))
 	}
 	return nil
 }

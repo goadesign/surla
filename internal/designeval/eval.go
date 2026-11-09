@@ -104,14 +104,8 @@ type (
 	// buildError reports a harness program that did not compile. Its message
 	// carries the compiler's diagnostics unchanged.
 	buildError struct {
-		// err is the raw compile failure. When output is empty it preserves
-		// the original full message for non-diagnostic failures too.
+		// err is the raw compile failure, including any sandbox output.
 		err error
-		// output is compiler output from a completed ordinary error exit, kept
-		// once so network callers can receive it without operator error paths.
-		output string
-		// paths identifies only this evaluator's allocated directories.
-		paths diagnosticPaths
 	}
 
 	// stuckBuildError reports an evaluator build whose process group did not
@@ -234,10 +228,7 @@ func (r Result) Summary() string {
 
 // Error returns the compile error and its diagnostics.
 func (e *buildError) Error() string {
-	if e.output == "" {
-		return e.err.Error()
-	}
-	return fmt.Sprintf("%s (%s)", e.err, e.output)
+	return e.err.Error()
 }
 
 // Unwrap returns the compile error.
@@ -355,10 +346,17 @@ func evaluate(ctx context.Context, files map[string]string, workDir string) (Res
 // returns the Goa module the build selected, and a *buildError when the
 // program does not compile.
 func runSandboxed(ctx context.Context, files map[string]string, workDir, program string, args func(stateDir string) []string, collect func(stateDir string) error) (goa listedModule, err error) {
+	phase := "checking the local module files"
+	defer func() {
+		if err != nil {
+			err = &phaseError{phase: phase, err: err}
+		}
+	}()
 	target, err := validateSnapshot(files)
 	if err != nil {
-		return listedModule{}, &snapshotError{err}
+		return listedModule{}, err
 	}
+	phase = "preparing the design compiler"
 	evalMod, err := evaluatorGoMod()
 	if err != nil {
 		return listedModule{}, err
@@ -368,12 +366,19 @@ func runSandboxed(ctx context.Context, files map[string]string, workDir, program
 		return listedModule{}, err
 	}
 
+	phase = "preparing the temporary compiler files"
 	tmpDir, err := os.MkdirTemp(filepath.Dir(workDir), "surla-designeval-*")
 	if err != nil {
 		return listedModule{}, fmt.Errorf("create temp dir: %w", err)
 	}
 	storeDir := filepath.Join(tmpDir, "store")
-	defer func() { err = releaseTemp(tmpDir, storeDir, err) }()
+	defer func() {
+		operationErr := err
+		err = releaseTemp(tmpDir, storeDir, err)
+		if operationErr == nil && err != nil {
+			phase = "removing the temporary compiler files"
+		}
+	}()
 
 	buildDir := filepath.Join(tmpDir, "build")
 	outDir := filepath.Join(tmpDir, "out")
@@ -397,6 +402,7 @@ func runSandboxed(ctx context.Context, files map[string]string, workDir, program
 		goroot: tc.goroot, modCache: tc.modCache,
 	}
 	gocmd := goCommand{bin: filepath.Join(tc.goroot, "bin", "go")}
+	phase = "loading the design module dependencies"
 	goa, err = prepareHarnessModule(ctx, gocmd, buildDir, target, evalMod, logDir)
 	if err != nil {
 		return listedModule{}, err
@@ -404,6 +410,7 @@ func runSandboxed(ctx context.Context, files map[string]string, workDir, program
 
 	rawBin := filepath.Join(outDir, "designeval-bin")
 	buildLog := filepath.Join(tmpDir, "build.log")
+	phase = "compiling the design"
 	if err := candidate.Build(ctx, candidate.BuildSpec{
 		SourceDir: buildDir,
 		ModuleDir: buildDir,
@@ -422,14 +429,12 @@ func runSandboxed(ctx context.Context, files map[string]string, workDir, program
 		if readErr != nil {
 			return goa, &buildError{err: withExit71Guidance(ctx, fmt.Errorf("compile Goa design: %w", err))}
 		}
-		if diagnosticExit(ctx, err) {
-			return goa, &buildError{
-				err: fmt.Errorf("compile Goa design: %w", err), output: strings.TrimSpace(string(logBytes)), paths: paths,
-			}
-		}
-		return goa, &buildError{err: withExit71Guidance(ctx, fmt.Errorf("compile Goa design: %w (%s)", err, strings.TrimSpace(string(logBytes))))}
+		return goa, &buildError{err: withExit71Guidance(ctx, &sandboxOutputError{
+			err: fmt.Errorf("compile Goa design: %w", err), output: strings.TrimSpace(string(logBytes)), paths: paths,
+		})}
 	}
 
+	phase = "starting the sandboxed design generator"
 	art, err := candidate.Pin(storeDir, rawBin)
 	if err != nil {
 		return goa, fmt.Errorf("pin design evaluator binary: %w", err)
@@ -442,13 +447,17 @@ func runSandboxed(ctx context.Context, files map[string]string, workDir, program
 	if err != nil {
 		return goa, fmt.Errorf("exec sandboxed design evaluator: %w", err)
 	}
+	phase = "evaluating the design and generating files"
 	if waitErr := proc.Wait(); waitErr != nil {
 		excerpt, _, exErr := proc.Excerpt(16 << 10)
 		if exErr != nil {
 			return goa, withExit71Guidance(ctx, fmt.Errorf("evaluate Goa design in sandbox: %w", waitErr))
 		}
-		return goa, withExit71Guidance(ctx, fmt.Errorf("evaluate Goa design in sandbox: %w (%s)", waitErr, strings.TrimSpace(excerpt)))
+		return goa, withExit71Guidance(ctx, &sandboxOutputError{
+			err: fmt.Errorf("evaluate Goa design in sandbox: %w", waitErr), output: strings.TrimSpace(excerpt), paths: paths,
+		})
 	}
+	phase = "reading the generated output"
 	return goa, collect(stateDir)
 }
 

@@ -109,12 +109,8 @@ func (c *ControlPlane) GenerateCode(
 	}
 	generated, err := c.evaluator.Generate(genCtx, files)
 	if err != nil {
-		if diagnostic, ok := designeval.SourceDiagnostic(err); ok {
-			span.RecordError(err)
-			span.SetStatus(codes.Error, "compile the local generation module")
-			return nil, gensurla.MakeUnprocessable(errors.New(diagnostic))
-		}
-		return nil, failGenerateFault(span, "code generation failed; inspect the server trace for diagnostic details", err)
+		message := designeval.GenerationDiagnostic(err) + "\nCorrect any reported local design or dependency problem, or ask the server operator to address compiler setup, storage, or dependency access. Then call generate_code again on the same server."
+		return nil, failGenerateFault(span, message, err)
 	}
 	if err := reportProgress(genCtx, 2, 3, "Publishing generated files"); err != nil {
 		return nil, failGenerateFault(span, "could not report code-generation progress; call again", err)
