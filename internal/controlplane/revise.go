@@ -8,17 +8,18 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"slices"
 	"strings"
 	"unicode/utf8"
 
 	gensurla "github.com/goadesign/surla/gen/surla"
+	gencompletions "github.com/goadesign/surla/gen/surla/completions"
 	"github.com/goadesign/surla/internal/goldenpath"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
+	"goa.design/goa-ai/runtime/agent/completion"
 	"goa.design/goa-ai/runtime/agent/model"
 	goahttp "goa.design/goa/v3/http"
 	goa "goa.design/goa/v3/pkg"
@@ -459,13 +460,13 @@ func formatCP1ReviseUserPrompt(prior CP1PriorCard, promptText, designSource stri
 	), nil
 }
 
-// completeStructuredAnalysis runs one structured CP1 model completion with systemPrompt
-// and userPrompt for the given schemaName and schemaBytes, and strictly decodes into target T.
+// completeStructuredAnalysis runs one generated CP1 completion and applies the
+// CP1 rejection contract: only a sole model validation failure is a caller-visible
+// rejection, and even valid JSON is rejected when the provider reached its output limit.
 func completeStructuredAnalysis[T any](
 	ctx context.Context,
 	client model.Client,
-	schemaName string,
-	schemaBytes []byte,
+	spec completion.Spec[T],
 	systemPrompt, userPrompt string,
 ) (T, error) {
 	var zero T
@@ -491,13 +492,9 @@ func completeStructuredAnalysis[T any](
 				},
 			},
 		},
-		StructuredOutput: &model.StructuredOutput{
-			Name:   schemaName,
-			Schema: schemaBytes,
-		},
 		MaxTokens: cp1AnalysisMaxOutputTokens,
 	}
-	resp, err := client.Complete(ctx, req)
+	resp, err := completion.Complete(ctx, client, req, spec)
 	if err != nil {
 		if ovErr, ok := exactOutputValidation(err); ok {
 			if ovErr.Kind() == model.OutputValidationOutputLimited {
@@ -513,32 +510,13 @@ func completeStructuredAnalysis[T any](
 		}
 		return zero, fmt.Errorf("cp1 model completion: %w", err)
 	}
-	if resp.OutputLimited {
+	if resp.ModelResponse.OutputLimited {
 		return zero, newAnalysisRejected(
 			"provider stopped at output limit",
 			errors.New("cp1 model response reached output limit"),
 		)
 	}
-	raw := extractAssistantText(resp)
-	if raw == "" {
-		return zero, newAnalysisRejected(
-			"model returned empty analysis text",
-			errors.New("cp1 model returned empty analysis"),
-		)
-	}
-	var parsed T
-	dec := json.NewDecoder(strings.NewReader(raw))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&parsed); err != nil {
-		return zero, newAnalysisRejected("model returned malformed analysis JSON", err)
-	}
-	if err := dec.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
-		return zero, newAnalysisRejected(
-			"model returned malformed analysis JSON",
-			errors.New("cp1 model analysis contains trailing JSON tokens"),
-		)
-	}
-	return parsed, nil
+	return resp.Value, nil
 }
 
 // completeAnalysis runs one structured CP1 model completion with systemPrompt
@@ -550,14 +528,17 @@ func (a *ModelCP1Analyzer) completeAnalysis(
 	if a == nil {
 		return CP1SemanticAnalysis{}, errors.New("cp1 model client is required")
 	}
-	return completeStructuredAnalysis[CP1SemanticAnalysis](
+	response, err := completeStructuredAnalysis(
 		ctx,
 		a.client,
-		"cp1_change_card_analysis",
-		cp1AnalysisJSONSchema,
+		gencompletions.SpecCp1ChangeCardAnalysis(),
 		systemPrompt,
 		userPrompt,
 	)
+	if err != nil {
+		return CP1SemanticAnalysis{}, err
+	}
+	return cp1AnalysisFromCompletion(response), nil
 }
 
 // completeReviseAnalysis runs one structured CP1 revision completion with systemPrompt
@@ -569,12 +550,80 @@ func (a *ModelCP1Analyzer) completeReviseAnalysis(
 	if a == nil {
 		return CP1RevisionSemanticAnalysis{}, errors.New("cp1 model client is required")
 	}
-	return completeStructuredAnalysis[CP1RevisionSemanticAnalysis](
+	response, err := completeStructuredAnalysis(
 		ctx,
 		a.client,
-		"cp1_revise_change_card_analysis",
-		cp1ReviseAnalysisJSONSchema,
+		gencompletions.SpecCp1ReviseChangeCardAnalysis(),
 		systemPrompt,
 		userPrompt,
 	)
+	if err != nil {
+		return CP1RevisionSemanticAnalysis{}, err
+	}
+	return cp1RevisionAnalysisFromCompletion(response), nil
+}
+
+// cp1AnalysisFromCompletion adapts the generated final response to the public
+// analyzer interface. Generated validation has already checked required values;
+// the result owns its collections and keeps the model's optional view unchanged.
+func cp1AnalysisFromCompletion(
+	response *gencompletions.Cp1ChangeCardAnalysisResult,
+) CP1SemanticAnalysis {
+	analysis := CP1SemanticAnalysis{
+		Summary:            response.Summary,
+		Ambiguities:        make([]CP1ModelAmbiguity, len(response.Ambiguities)),
+		Examples:           make([]CP1ModelExample, len(response.Examples)),
+		PreservedBehaviors: response.PreservedBehaviors,
+		UIComposition:      response.UIComposition,
+	}
+	for i, ambiguity := range response.Ambiguities {
+		analysis.Ambiguities[i] = CP1ModelAmbiguity{
+			Question: ambiguity.Question,
+			Options:  ambiguity.Options,
+		}
+	}
+	for i, example := range response.Examples {
+		analysis.Examples[i] = CP1ModelExample{
+			Scenario:         example.Scenario,
+			InputSummary:     example.InputSummary,
+			ExpectedOutcome:  example.ExpectedOutcome,
+			VerificationKind: example.VerificationKind,
+		}
+	}
+	return analysis
+}
+
+// cp1RevisionAnalysisFromCompletion adapts the generated revision response to the
+// public analyzer interface. An absent prior_id becomes the interface's empty
+// string for a new example; string slices and the optional view keep their values.
+func cp1RevisionAnalysisFromCompletion(
+	response *gencompletions.Cp1ReviseChangeCardAnalysisResult,
+) CP1RevisionSemanticAnalysis {
+	analysis := CP1RevisionSemanticAnalysis{
+		Summary:            response.Summary,
+		Ambiguities:        make([]CP1ModelAmbiguity, len(response.Ambiguities)),
+		Examples:           make([]CP1RevisionModelExample, len(response.Examples)),
+		RemovedExampleIDs:  response.RemovedExampleIds,
+		PreservedBehaviors: response.PreservedBehaviors,
+		UIComposition:      response.UIComposition,
+	}
+	for i, ambiguity := range response.Ambiguities {
+		analysis.Ambiguities[i] = CP1ModelAmbiguity{
+			Question: ambiguity.Question,
+			Options:  ambiguity.Options,
+		}
+	}
+	for i, example := range response.Examples {
+		converted := CP1RevisionModelExample{
+			Scenario:         example.Scenario,
+			InputSummary:     example.InputSummary,
+			ExpectedOutcome:  example.ExpectedOutcome,
+			VerificationKind: example.VerificationKind,
+		}
+		if example.PriorID != nil {
+			converted.PriorID = *example.PriorID
+		}
+		analysis.Examples[i] = converted
+	}
+	return analysis
 }

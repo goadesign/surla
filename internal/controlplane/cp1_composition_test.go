@@ -248,34 +248,10 @@ func TestReportProgressWithoutARequestedTokenIsANoOp(t *testing.T) {
 }
 
 // TestCP1ModelContractDescribesQuestionsAndExamples verifies the CP1 model
-// contract for the card's open questions and examples: every ambiguity and
-// example field the model fills has a description in the structured-output
-// schema, and both the proposal and the revision prompt carry the rules that
-// span fields. It checks the contract the model receives, not how a model
-// behaves with it.
+// prompts for the card's open questions and examples: both prompts carry the
+// rules that span fields. Generated completion descriptions are checked in
+// TestCP1CompletionDescriptionsPreserveModelContract.
 func TestCP1ModelContractDescribesQuestionsAndExamples(t *testing.T) {
-	var schema struct {
-		Properties map[string]struct {
-			Description string `json:"description"`
-			Items       struct {
-				Properties map[string]struct {
-					Description string `json:"description"`
-				} `json:"properties"`
-			} `json:"items"`
-		} `json:"properties"`
-	}
-	require.NoError(t, json.Unmarshal(cp1AnalysisJSONSchema, &schema))
-	for field, itemFields := range map[string][]string{
-		"ambiguities": {"question", "options"},
-		"examples":    {"scenario", "input_summary", "expected_outcome", "verification_kind"},
-	} {
-		prop, ok := schema.Properties[field]
-		require.True(t, ok, "schema declares %s", field)
-		assert.NotEmpty(t, strings.TrimSpace(prop.Description), "%s has a description", field)
-		for _, name := range itemFields {
-			assert.NotEmpty(t, strings.TrimSpace(prop.Items.Properties[name].Description), "%s.%s has a description", field, name)
-		}
-	}
 	for name, prompt := range map[string]string{
 		"proposal": goldenpath.ArchitectSystemPrompt(),
 		"revision": goldenpath.ArchitectReviseSystemPrompt(),

@@ -283,88 +283,6 @@ var (
 	//
 	//go:embed checkpoint.html
 	checkpointUIHTML string
-
-	// cp1AnalysisJSONSchema is the canonical JSON Schema (Draft 2020-12) enforced
-	// at the goa-ai model.Client boundary for CP1 semantic analysis.
-	cp1AnalysisJSONSchema = []byte(`{
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "type": "object",
-  "additionalProperties": false,
-  "required": ["summary", "ambiguities", "examples", "preserved_behaviors"],
-  "properties": {
-    "summary": {
-      "type": "string",
-      "minLength": 1
-    },
-    "ambiguities": {
-      "type": "array",
-      "description": "Open product, domain, or operational choices that only the requester can make. Leave out details the request, design, or playbook already settle.",
-      "items": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": ["question", "options"],
-        "properties": {
-          "question": {
-            "type": "string",
-            "minLength": 1,
-            "description": "One decision the requester must make, in plain language, saying what the choice changes."
-          },
-          "options": {
-            "type": "array",
-            "minItems": 2,
-            "description": "Distinct, self-contained choices; each states the behavior it selects and what follows from it.",
-            "items": {
-              "type": "string",
-              "minLength": 1
-            }
-          }
-        }
-      }
-    },
-    "examples": {
-      "type": "array",
-      "minItems": 1,
-      "description": "Concrete acceptance examples drawn from the request and the design, never placeholder text; each becomes a check the change must pass.",
-      "items": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": ["scenario", "input_summary", "expected_outcome", "verification_kind"],
-        "properties": {
-          "scenario": {
-            "type": "string",
-            "minLength": 1,
-            "description": "Short name of the situation, in the requester's domain terms."
-          },
-          "input_summary": {
-            "type": "string",
-            "minLength": 1,
-            "description": "The actual request, inputs, and starting state in this scenario."
-          },
-          "expected_outcome": {
-            "type": "string",
-            "minLength": 1,
-            "description": "The observable result or refusal that must hold."
-          },
-          "verification_kind": {
-            "type": "string",
-            "enum": ["deterministic", "model_judged"],
-            "description": "deterministic when code can check the outcome directly; model_judged when checking it needs judgment."
-          }
-        }
-      }
-    },
-    "preserved_behaviors": {
-      "type": "array",
-      "items": {
-        "type": "string",
-        "minLength": 1
-      }
-    },
-    "ui_composition": {
-      "type": "string"
-    }
-  }
-}`)
 )
 
 // WithPrincipal returns a child context carrying the authenticated Principal.
@@ -482,9 +400,8 @@ func NewModelCP1Analyzer(client model.Client) *ModelCP1Analyzer {
 	return &ModelCP1Analyzer{client: client}
 }
 
-// Analyze invokes the underlying Goa-AI model.Client with a JSON Schema
-// StructuredOutput contract for CP1 semantic analysis and strictly decodes the
-// validated CP1SemanticAnalysis response.
+// Analyze invokes the underlying Goa-AI model.Client with the generated CP1
+// completion contract and returns its decoded semantic analysis.
 func (a *ModelCP1Analyzer) Analyze(ctx context.Context, promptText, designSource string) (CP1SemanticAnalysis, error) {
 	return a.completeAnalysis(
 		ctx,
@@ -842,22 +759,6 @@ func (c *ControlPlane) Diff(ctx context.Context, p *gensurla.DiffPayload) (*gens
 		VersionDeltas:        rep.VersionDeltas,
 		Summary:              rep.Summary,
 	}, nil
-}
-
-// extractAssistantText concatenates TextPart payloads from a model.Response.
-func extractAssistantText(resp *model.Response) string {
-	if resp == nil {
-		return ""
-	}
-	var b strings.Builder
-	for _, msg := range resp.Content {
-		for _, part := range msg.Parts {
-			if tp, ok := part.(model.TextPart); ok {
-				b.WriteString(tp.Text)
-			}
-		}
-	}
-	return b.String()
 }
 
 // computeCanonicalRevision computes a collision-free SHA-256 hex digest over
