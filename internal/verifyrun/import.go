@@ -1,10 +1,12 @@
 // This file implements one-time snapshot preparation of legacy workspace
 // verification runs and reports for `surla serve -import-legacy-workspace`,
-// and resolves configured report directories to their published imported
-// subdirectories.
+// loads the recorded original workspace report paths from
+// `<imported>/runs/imported_paths.json`, and resolves configured report
+// directories to their published imported subdirectories.
 package verifyrun
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -317,6 +319,52 @@ func ResolveImportedReportDir(publishedReportsRoot, initialWorkspaceRoot, config
 		return "", fmt.Errorf("imported report directory %s is not a regular directory", candidate)
 	}
 	return candidate, nil
+}
+
+// LoadImportedReportPaths reads and strictly validates `<importedRunsDir>/imported_paths.json`
+// without following symlinks, returning the sorted, deduplicated list of clean
+// absolute `<64-lowercase-hex>.json` original workspace report paths recorded
+// during legacy workspace import. A valid version-1 file with no `report_files`
+// returns (nil, nil); an empty importedRunsDir, a missing `imported_paths.json`,
+// symlinks, non-regular files, unknown JSON fields, trailing data, unsupported
+// schema versions, non-clean or relative paths, and non-hex basenames return an
+// error.
+func LoadImportedReportPaths(importedRunsDir string) ([]string, error) {
+	if importedRunsDir == "" {
+		return nil, errors.New("imported runs directory is required")
+	}
+	path := filepath.Join(importedRunsDir, importedPathsFile)
+	raw, err := readRegularFileNoFollow(path)
+	if err != nil {
+		return nil, fmt.Errorf("read %s: %w", path, err)
+	}
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.DisallowUnknownFields()
+	var recorded importedWorkspacePaths
+	if err := dec.Decode(&recorded); err != nil {
+		return nil, fmt.Errorf("decode %s: %w", path, err)
+	}
+	if err := dec.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		return nil, fmt.Errorf("decode %s: unexpected trailing data", path)
+	}
+	if recorded.Version != 1 {
+		return nil, fmt.Errorf("decode %s: unsupported version %d", path, recorded.Version)
+	}
+	if len(recorded.ReportFiles) == 0 {
+		return nil, nil
+	}
+	out := make([]string, 0, len(recorded.ReportFiles))
+	for _, p := range recorded.ReportFiles {
+		if p == "" || strings.IndexByte(p, 0) >= 0 || !filepath.IsAbs(p) || filepath.Clean(p) != p {
+			return nil, fmt.Errorf("decode %s: report path %q must be a clean absolute path", path, p)
+		}
+		if !isHexReportFilename(filepath.Base(p)) {
+			return nil, fmt.Errorf("decode %s: report path %q must have a <64-lowercase-hex>.json basename", path, p)
+		}
+		out = append(out, p)
+	}
+	slices.Sort(out)
+	return slices.Compact(out), nil
 }
 
 // normalizeProtectedRoots resolves wsRoot and protectedDirs via

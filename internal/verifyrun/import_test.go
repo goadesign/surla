@@ -1,3 +1,5 @@
+// These tests verify legacy workspace snapshot preparation, imported report
+// directory resolution, and strict loading of recorded imported report paths.
 package verifyrun
 
 import (
@@ -399,6 +401,13 @@ func TestPrepareSnapshotAndResolveImportedReportDirCoverProtectedMonorepoRoots(t
 		filepath.Join(evalMono, "run-reports", runDigest),
 	}, paths.ReportFiles)
 
+	loadedPaths, err := LoadImportedReportPaths(stageRunsDir)
+	require.NoError(t, err)
+	assert.Equal(t, []string{
+		filepath.Join(evalMono, "promo-reports", promoDigest),
+		filepath.Join(evalMono, "run-reports", runDigest),
+	}, loadedPaths)
+
 	// Even if a builder later replaces monorepoRoot/promo-reports with a symlink inside R, ResolveImportedReportDir resolves without following symlinks inside R.
 	require.NoError(t, os.RemoveAll(monoPromoReportsDir))
 	require.NoError(t, os.Symlink(externalReportsDir, monoPromoReportsDir))
@@ -412,4 +421,164 @@ func TestPrepareSnapshotAndResolveImportedReportDirCoverProtectedMonorepoRoots(t
 	resolvedExt, err := ResolveImportedReportDir(publishedReportsRoot, wsRoot, externalReportsDir, protectedDirs...)
 	require.NoError(t, err)
 	assert.Equal(t, externalReportsDir, resolvedExt)
+}
+
+// TestLoadImportedReportPaths verifies strict loading and validation of
+// <importedRunsDir>/imported_paths.json across valid empty and populated lists,
+// duplicates, missing directories/files, unknown fields, trailing data, invalid
+// versions, relative or uncleaned paths, non-hex basenames, symlinks, and
+// non-regular files.
+func TestLoadImportedReportPaths(t *testing.T) {
+	t.Parallel()
+	hexA := strings.Repeat("a", 64) + ".json"
+	hexB := strings.Repeat("b", 64) + ".json"
+	pathA := filepath.Join("/workspace/reports", hexA)
+	pathB := filepath.Join("/workspace/Caf\u00e9/reports", hexB)
+
+	paths, err := LoadImportedReportPaths("")
+	require.ErrorContains(t, err, "imported runs directory is required")
+	assert.Nil(t, paths)
+
+	missingDir := filepath.Join(t.TempDir(), "missing-runs")
+	paths, err = LoadImportedReportPaths(missingDir)
+	require.ErrorIs(t, err, os.ErrNotExist)
+	assert.Nil(t, paths)
+
+	emptyDir := t.TempDir()
+	paths, err = LoadImportedReportPaths(emptyDir)
+	require.ErrorIs(t, err, os.ErrNotExist)
+	assert.Nil(t, paths)
+
+	t.Run("prepare_snapshot_cards_only_writes_empty_version1_record", func(t *testing.T) {
+		t.Parallel()
+		root := t.TempDir()
+		wsRoot := filepath.Join(root, "workspace")
+		require.NoError(t, os.MkdirAll(wsRoot, 0o700))
+		stageRunsDir := filepath.Join(root, "stage", "runs")
+		stageReportsRoot := filepath.Join(root, "stage", "reports")
+		publishedReportsRoot := filepath.Join(root, "imported", "reports")
+		releaseLocks, err := PrepareSnapshot("", "", stageRunsDir, stageReportsRoot, publishedReportsRoot, wsRoot, nil)
+		require.NoError(t, err)
+		require.NoError(t, releaseLocks())
+
+		got, err := LoadImportedReportPaths(stageRunsDir)
+		require.NoError(t, err)
+		assert.Nil(t, got)
+	})
+
+	for _, tc := range []struct {
+		// name identifies the imported_paths.json payload under test.
+		name string
+		// raw is the file content written to imported_paths.json.
+		raw string
+		// want is the expected sorted deduplicated slice when valid.
+		want []string
+		// wantErr is the substring expected in the returned error when invalid.
+		wantErr string
+	}{
+		{
+			name: "empty_report_files",
+			raw:  `{"version":1}`,
+			want: nil,
+		},
+		{
+			name: "valid_sorted_and_deduplicated",
+			raw:  `{"version":1,"report_files":["` + pathA + `","` + pathB + `","` + pathA + `"]}`,
+			want: []string{pathB, pathA},
+		},
+		{
+			name:    "unknown_field",
+			raw:     `{"version":1,"extra":true}`,
+			wantErr: "unknown field",
+		},
+		{
+			name:    "trailing_data",
+			raw:     `{"version":1}{}`,
+			wantErr: "unexpected trailing data",
+		},
+		{
+			name:    "version_zero",
+			raw:     `{"version":0}`,
+			wantErr: "unsupported version 0",
+		},
+		{
+			name:    "version_two",
+			raw:     `{"version":2,"report_files":["` + pathA + `"]}`,
+			wantErr: "unsupported version 2",
+		},
+		{
+			name:    "empty_path_element",
+			raw:     `{"version":1,"report_files":[""]}`,
+			wantErr: "must be a clean absolute path",
+		},
+		{
+			name:    "relative_path",
+			raw:     `{"version":1,"report_files":["reports/` + hexA + `"]}`,
+			wantErr: "must be a clean absolute path",
+		},
+		{
+			name:    "uncleaned_dotdot_path",
+			raw:     `{"version":1,"report_files":["/workspace/sub/../reports/` + hexA + `"]}`,
+			wantErr: "must be a clean absolute path",
+		},
+		{
+			name:    "uncleaned_double_slash_path",
+			raw:     `{"version":1,"report_files":["/workspace//reports/` + hexA + `"]}`,
+			wantErr: "must be a clean absolute path",
+		},
+		{
+			name:    "nul_byte_in_path",
+			raw:     `{"version":1,"report_files":["/workspace/rep\u0000orts/` + hexA + `"]}`,
+			wantErr: "must be a clean absolute path",
+		},
+		{
+			name:    "non_hex_basename",
+			raw:     `{"version":1,"report_files":["/workspace/reports/public-fixture.json"]}`,
+			wantErr: "must have a <64-lowercase-hex>.json basename",
+		},
+		{
+			name:    "uppercase_hex_basename",
+			raw:     `{"version":1,"report_files":["/workspace/reports/` + strings.Repeat("A", 64) + `.json"]}`,
+			wantErr: "must have a <64-lowercase-hex>.json basename",
+		},
+		{
+			name:    "short_hex_basename",
+			raw:     `{"version":1,"report_files":["/workspace/reports/` + strings.Repeat("a", 63) + `.json"]}`,
+			wantErr: "must have a <64-lowercase-hex>.json basename",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			dir := t.TempDir()
+			require.NoError(t, os.WriteFile(filepath.Join(dir, importedPathsFile), []byte(tc.raw), 0o600))
+			got, err := LoadImportedReportPaths(dir)
+			if tc.wantErr != "" {
+				require.ErrorContains(t, err, tc.wantErr)
+				assert.Nil(t, got)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, got)
+		})
+	}
+
+	t.Run("symlink_rejected", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		target := filepath.Join(dir, "target.json")
+		require.NoError(t, os.WriteFile(target, []byte(`{"version":1}`), 0o600))
+		require.NoError(t, os.Symlink(target, filepath.Join(dir, importedPathsFile)))
+		got, err := LoadImportedReportPaths(dir)
+		require.Error(t, err)
+		assert.Nil(t, got)
+	})
+
+	t.Run("directory_rejected", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		require.NoError(t, os.Mkdir(filepath.Join(dir, importedPathsFile), 0o700))
+		got, err := LoadImportedReportPaths(dir)
+		require.ErrorContains(t, err, "is not a regular file")
+		assert.Nil(t, got)
+	})
 }
