@@ -119,10 +119,10 @@ func copyGrant(ctx context.Context, rootFD int, workspaceRel string, workspaceID
 			return grantCopy{}, err
 		}
 	}
-	if c.workspaceRel == "." && hasGoMod(rootFD, ".") {
-		c.out.modules = append(c.out.modules, ".")
-	}
 	if err := c.copyDir(rootFD, ".", dst); err != nil {
+		return grantCopy{}, err
+	}
+	if err := c.recordIfModule(".", dst); err != nil {
 		return grantCopy{}, err
 	}
 	slices.Sort(c.out.modules)
@@ -206,10 +206,10 @@ func (c *grantCopier) copyEntry(dirFD int, rel, name, dst string, recordedNames 
 		if err := os.Mkdir(target, 0o700); err != nil {
 			return fmt.Errorf("create %s: %w", target, err)
 		}
-		if c.isModuleRoot(dirFD, name, rel) {
-			c.addModule(rel)
-		}
 		if err := c.copyDir(fd, rel, target); err != nil {
+			return err
+		}
+		if err := c.recordIfModule(rel, target); err != nil {
 			return err
 		}
 		return os.Chmod(target, info.Mode().Perm()|0o700)
@@ -357,47 +357,37 @@ func sameEntry(a, b int, aStat unix.Stat_t) (bool, error) {
 	return filepath.Base(aPath) == filepath.Base(bPath), nil
 }
 
-// isModuleRoot reports whether the directory name in dirFD, at
-// grant-relative rel, is a module root that go test ./... would visit from
-// the workspace: inside the workspace, not under testdata, vendor or a
-// directory whose name starts with "." or "_", and holding a go.mod file or
-// symlink.
-func (c *grantCopier) isModuleRoot(dirFD int, name, rel string) bool {
+// recordIfModule records the copied directory at grant-relative rel,
+// copied to target, as a module when go test ./... from the workspace would
+// treat it as a module root: it is the workspace or inside it, not under
+// testdata, vendor or a directory whose name starts with "." or "_", and its
+// copy holds go.mod as a regular file or a symlink. It reads the finished
+// copy, exactly what Go in the container receives, without following a
+// link: Go resolves the link there, so a missing or outside target makes
+// that module's go command fail instead of silently dropping its packages.
+// It fails only when the copy itself cannot be read.
+func (c *grantCopier) recordIfModule(rel, target string) error {
 	wsRel, ok := c.workspaceRelative(rel)
 	if !ok {
-		return false
+		return nil
 	}
 	if wsRel != "." {
 		for _, part := range strings.Split(wsRel, "/") {
 			if part == "testdata" || part == "vendor" || strings.HasPrefix(part, ".") || strings.HasPrefix(part, "_") {
-				return false
+				return nil
 			}
 		}
 	}
-	return hasGoMod(dirFD, name)
-}
-
-// hasGoMod reports whether directory name in dirFD holds a go.mod entry
-// that Go's ./... treats as a nested module root: a regular file or a
-// symlink. The host never follows the link; the copy keeps it raw, and Go in
-// the container resolves it, so a link whose target is missing or outside
-// the copy makes that module's go command fail instead of silently dropping
-// its packages.
-func hasGoMod(dirFD int, name string) bool {
-	var st unix.Stat_t
-	if err := unix.Fstatat(dirFD, name+"/go.mod", &st, unix.AT_SYMLINK_NOFOLLOW); err != nil {
-		return false
-	}
-	mode := st.Mode & unix.S_IFMT
-	return mode == unix.S_IFREG || mode == unix.S_IFLNK
-}
-
-// addModule records the workspace-relative module directory for the
-// grant-relative directory rel.
-func (c *grantCopier) addModule(rel string) {
-	if wsRel, ok := c.workspaceRelative(rel); ok {
+	info, err := os.Lstat(filepath.Join(target, "go.mod"))
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		return nil
+	case err != nil:
+		return fmt.Errorf("read the copied go.mod of %s: %w", rel, err)
+	case info.Mode().IsRegular() || info.Mode()&fs.ModeSymlink != 0:
 		c.out.modules = append(c.out.modules, wsRel)
 	}
+	return nil
 }
 
 // workspaceRelative returns rel relative to the workspace, and whether rel
