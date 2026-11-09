@@ -71,8 +71,8 @@ jobs:
           fi
 
   # e2e runs the end-to-end suites: the verifier building and running the
-  # orders platform in the sandbox, surla init generating a starter project
-  # whose candidate and evaluator build and pass in the sandbox, and the
+  # orders platform in the sandbox, starter generation and live/verification
+  # journeys whose candidate and evaluator build and pass in the sandbox, and the
   # orders acceptance suite against real orders processes and a Temporal dev
   # server.
   e2e:
@@ -104,10 +104,10 @@ jobs:
         # private workspaces. Run it anew with a deadline for both cold builds.
         run: go test -race -count=1 -timeout 20m -tags e2e ./internal/verify </dev/null
       - name: Generation journeys end to end
-        # surla gen against host goa gen, and surla init followed by surla gen
-        # on a fresh starter, each through the sandboxed generator. -count=1
-        # keeps a cached result from skipping the journeys. 15m is a budget
-        # for the package, not a measured or guaranteed duration.
+        # Compare surla gen with host goa gen, then initialize a starter over
+        # MCP, regenerate both modules and run one live/verification journey.
+        # -count=1 keeps a cached result from skipping these checks. 15m is a
+        # package budget, not a measured or guaranteed duration.
         run: go test -race -count=1 -timeout 15m -tags e2e ./cmd/surla </dev/null
       - name: Starter project end to end
         # The live CP3 journey test builds and runs a generated starter in
