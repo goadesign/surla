@@ -398,6 +398,10 @@ func TestCopyGrantRefusesAReplacedNestedWorkspace(t *testing.T) {
 	assert.Contains(t, err.Error(), "the workspace directory was replaced")
 }
 
+// TestCopyGrantTreatsSymlinkedGoModAsAModule verifies that a nested
+// directory whose go.mod is a symlink, even a dangling one, is listed as its
+// own module and that the link is copied raw and never recorded as a
+// publishable manifest.
 func TestCopyGrantTreatsSymlinkedGoModAsAModule(t *testing.T) {
 	// Go's ./... stops at a nested directory whose go.mod is a symlink, so
 	// that directory is its own module and must be checked separately; the

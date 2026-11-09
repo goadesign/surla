@@ -549,6 +549,9 @@ func TestRecoverCheckOperationsKeepsScratchItCannotAttribute(t *testing.T) {
 	}
 }
 
+// TestPublishManifestRefusesALinkedGoModInTheCopy verifies that
+// update_dependencies refuses to publish a go.mod that is a symlink and
+// leaves both the live link and its target unchanged.
 func TestPublishManifestRefusesALinkedGoModInTheCopy(t *testing.T) {
 	// A module whose go.mod is a symlink is checked, but update_dependencies
 	// never writes through or replaces the link.
