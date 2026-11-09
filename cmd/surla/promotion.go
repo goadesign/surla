@@ -4,17 +4,14 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
-	"strings"
 	"syscall"
 
 	"github.com/goadesign/surla/internal/controlplane"
@@ -94,70 +91,9 @@ func (t *releaseTarget) CurrentInputs(_ context.Context, candidateCommit string)
 }
 
 // LoadReport returns the full report the evaluator saved under digest in
-// report_dir. approve_merge's payload validation guarantees digest is 64
-// lowercase hex characters.
+// report_dir.
 func (t *releaseTarget) LoadReport(_ context.Context, digest string) (verify.Report, error) {
 	return verifyrun.LoadReport(t.cfg.ReportDir, digest)
-}
-
-// loadPromotionConfig reads and validates -promotion-config. An empty path
-// means approve_merge stays unavailable; any missing field, unknown field,
-// trailing data, suite_commit that is not a full commit ID, or binary name
-// that is not a distinct artifact name stops startup. Relative directories
-// are resolved against the working directory once, here.
-func loadPromotionConfig(path string) (controlplane.PromotionTarget, error) {
-	if path == "" {
-		return nil, nil
-	}
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("read -promotion-config: %w", err)
-	}
-	dec := json.NewDecoder(bytes.NewReader(raw))
-	dec.DisallowUnknownFields()
-	var f promotionFile
-	if err := dec.Decode(&f); err != nil {
-		return nil, fmt.Errorf("decode -promotion-config %s: %w", path, err)
-	}
-	if err := dec.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
-		return nil, fmt.Errorf("decode -promotion-config %s: data after the configuration", path)
-	}
-	var missing []string
-	for _, field := range []struct{ name, value string }{
-		{"report_dir", f.ReportDir}, {"release_dir", f.ReleaseDir}, {"suite_id", f.SuiteID},
-		{"suite_commit", f.SuiteCommit}, {"environment", f.Environment},
-	} {
-		if field.value == "" {
-			missing = append(missing, field.name)
-		}
-	}
-	if len(f.Binaries) == 0 {
-		missing = append(missing, "binaries")
-	}
-	if len(missing) > 0 {
-		return nil, fmt.Errorf("-promotion-config %s is missing %s", path, strings.Join(missing, ", "))
-	}
-	if !verify.IsCommitID(f.SuiteCommit) {
-		return nil, fmt.Errorf("-promotion-config %s: suite_commit %q must be a full commit ID (40 or 64 lowercase hex characters)", path, f.SuiteCommit)
-	}
-	seen := make(map[string]bool, len(f.Binaries))
-	for _, name := range f.Binaries {
-		if err := verify.ValidateArtifactName(name); err != nil {
-			return nil, fmt.Errorf("-promotion-config %s: %w", path, err)
-		}
-		if seen[name] {
-			return nil, fmt.Errorf("-promotion-config %s: binary %q is listed twice", path, name)
-		}
-		seen[name] = true
-	}
-	for _, dir := range []*string{&f.ReportDir, &f.ReleaseDir} {
-		abs, err := filepath.Abs(*dir)
-		if err != nil {
-			return nil, fmt.Errorf("-promotion-config %s: %w", path, err)
-		}
-		*dir = abs
-	}
-	return &releaseTarget{cfg: f}, nil
 }
 
 // hashFile returns the hex SHA-256 digest of the regular file name inside

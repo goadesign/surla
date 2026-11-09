@@ -25,6 +25,8 @@ func NewMCPExecutor(caller mcpruntime.Caller) runtime.ToolCallExecutor {
 		switch call.Name {
 		case gensurla.ApproveMerge:
 			return runtime.ExecuteMCPTool(ctx, caller, call, "approve_merge", gensurla.SpecApproveMerge())
+		case gensurla.CheckProject:
+			return runtime.ExecuteMCPTool(ctx, caller, call, "check_project", gensurla.SpecCheckProject())
 		case gensurla.ConfigureModel:
 			return runtime.ExecuteMCPTool(ctx, caller, call, "configure_model", gensurla.SpecConfigureModel())
 		case gensurla.ConfirmIntent:
@@ -33,22 +35,30 @@ func NewMCPExecutor(caller mcpruntime.Caller) runtime.ToolCallExecutor {
 			return runtime.ExecuteMCPTool(ctx, caller, call, "diff", gensurla.SpecDiff())
 		case gensurla.DraftOverride:
 			return runtime.ExecuteMCPTool(ctx, caller, call, "draft_override", gensurla.SpecDraftOverride())
+		case gensurla.GenerateCode:
+			return runtime.ExecuteMCPTool(ctx, caller, call, "generate_code", gensurla.SpecGenerateCode())
 		case gensurla.GetChange:
 			return runtime.ExecuteMCPTool(ctx, caller, call, "get_change", gensurla.SpecGetChange())
 		case gensurla.GetVerification:
 			return runtime.ExecuteMCPTool(ctx, caller, call, "get_verification", gensurla.SpecGetVerification())
+		case gensurla.InitProject:
+			return runtime.ExecuteMCPTool(ctx, caller, call, "init_project", gensurla.SpecInitProject())
 		case gensurla.ListVerifications:
 			return runtime.ExecuteMCPTool(ctx, caller, call, "list_verifications", gensurla.SpecListVerifications())
 		case gensurla.PreviewArchitecture:
 			return runtime.ExecuteMCPTool(ctx, caller, call, "preview_architecture", gensurla.SpecPreviewArchitecture())
 		case gensurla.ProposeChange:
 			return runtime.ExecuteMCPTool(ctx, caller, call, "propose_change", gensurla.SpecProposeChange())
+		case gensurla.ReadCheckOutput:
+			return runtime.ExecuteMCPTool(ctx, caller, call, "read_check_output", gensurla.SpecReadCheckOutput())
 		case gensurla.ReviseChange:
 			return runtime.ExecuteMCPTool(ctx, caller, call, "revise_change", gensurla.SpecReviseChange())
 		case gensurla.StartLiveTarget:
 			return runtime.ExecuteMCPTool(ctx, caller, call, "start_live_target", gensurla.SpecStartLiveTarget())
 		case gensurla.StopLiveTarget:
 			return runtime.ExecuteMCPTool(ctx, caller, call, "stop_live_target", gensurla.SpecStopLiveTarget())
+		case gensurla.UpdateDependencies:
+			return runtime.ExecuteMCPTool(ctx, caller, call, "update_dependencies", gensurla.SpecUpdateDependencies())
 		case gensurla.VerifyChange:
 			return runtime.ExecuteMCPTool(ctx, caller, call, "verify_change", gensurla.SpecVerifyChange())
 		default:

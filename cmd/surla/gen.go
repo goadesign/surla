@@ -2,33 +2,24 @@ package main
 
 import (
 	"context"
-	"crypto/rand"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
-	"io/fs"
 	"maps"
 	"os"
 	"os/signal"
-	"path"
-	"path/filepath"
 	"slices"
 	"strings"
 	"syscall"
 
-	"golang.org/x/sys/unix"
-
 	"github.com/goadesign/surla/internal/designeval"
+	"github.com/goadesign/surla/internal/genpublish"
 )
 
 // quickstartGuide is the one generated file outside gen/: goa-ai's guide for
 // coding agents, written at the module root.
 const quickstartGuide = "AGENTS_QUICKSTART.md"
-
-// renameatx is unix.RenameatxNp; gen_test.go replaces it to inject failures
-// into the exchange.
-var renameatx = unix.RenameatxNp
 
 // runGen regenerates the gen/ directory of the design module in -dir from its
 // design, inside Surla's sandbox, and replaces gen/ in one atomic exchange.
@@ -37,9 +28,10 @@ var renameatx = unix.RenameatxNp
 // publication ends, generates with a design evaluator it owns
 // (designeval.Evaluator.Generate), and writes the result into a new
 // .surla-gen-<random> directory in the module. Before the exchange it
-// rejects any path outside gen/ other than the root agent guide, writes and
-// syncs every file, closes the evaluator, and checks for cancellation; any
-// failure until then leaves gen/ untouched and returns an error. The exchange
+// closes the evaluator, then genpublish.Publish rejects any path outside
+// gen/ other than the root agent guide, writes and syncs every file, and
+// checks for cancellation. Any failure until then leaves gen/ untouched and
+// returns an error. The exchange
 // swaps the staged gen/ with the current one (or moves it in when there is
 // none) with renameatx_np on the two held directory handles. That is the
 // success point: afterwards the command returns nil, and writing the agent
@@ -54,7 +46,7 @@ func runGen(args []string, stdout, stderr io.Writer) (err error) {
 	if fs.NArg() > 0 {
 		return fmt.Errorf("unexpected arguments %q", fs.Args())
 	}
-	cleanDir, root, err := openModuleRoot(*dir)
+	cleanDir, root, err := designeval.OpenModuleRoot(*dir)
 	if err != nil {
 		return err
 	}
@@ -71,7 +63,7 @@ func runGen(args []string, stdout, stderr io.Writer) (err error) {
 			err = errors.Join(err, closeErr)
 		}
 	}()
-	files, err := readModuleSnapshotFromRoot(cleanDir, root)
+	files, err := designeval.ReadModuleSnapshotFromRoot(cleanDir, root)
 	if err != nil {
 		return err
 	}
@@ -93,58 +85,30 @@ func runGen(args []string, stdout, stderr io.Writer) (err error) {
 	if err != nil {
 		return err
 	}
-	guide, hasGuide := generated[quickstartGuide]
-	delete(generated, quickstartGuide)
-	for p := range generated {
-		if p != path.Clean(p) || !strings.HasPrefix(p, "gen/") || strings.HasPrefix(p, "/") {
-			return fmt.Errorf("refusing to write %q: generated files must be inside gen/", p)
-		}
-	}
-
-	if leftovers := leftoverStages(root); len(leftovers) > 0 {
-		fmt.Fprintf(stderr, "warning: %s holds staging directories from earlier runs, which surla gen leaves alone: %s\n",
-			cleanDir, strings.Join(leftovers, ", "))
-	}
-	stage, err := newStage(root)
-	if err != nil {
-		return err
-	}
-	defer func() {
-		if !published {
-			err = errors.Join(err, stage.cleanup(root))
-		}
-	}()
-	if err := stage.write(root, generated); err != nil {
-		return err
-	}
-
-	// Everything that can fail runs before the exchange, so a failure leaves
-	// gen/ untouched.
+	// The command owns its evaluator; a failed close leaves gen/ untouched.
 	evClosed = true
 	if err := ev.Close(); err != nil {
 		return err
 	}
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	if err := stage.exchange(root); err != nil {
-		return err
-	}
-	published = true
-
-	fmt.Fprintf(stdout, "gen/ updated in %s\n", cleanDir)
-	if hasGuide {
-		if err := writeGuide(root, guide); err != nil {
-			fmt.Fprintf(stderr, "warning: gen/ was updated; %s was not: %v\n", quickstartGuide, err)
+	result, publishErr := genpublish.Publish(ctx, root, generated)
+	published = publishErr == nil
+	if published {
+		fmt.Fprintf(stdout, "gen/ updated in %s\n", cleanDir)
+		for _, group := range []struct {
+			label string
+			paths []string
+		}{{"added", result.Added}, {"changed", result.Changed}, {"removed", result.Removed}} {
+			fmt.Fprintf(stdout, "%s: %d\n", group.label, len(group.paths))
+			for _, p := range group.paths {
+				fmt.Fprintf(stdout, "  %s\n", p)
+			}
 		}
 	}
-	report, reportErr := stage.report(root)
-	fmt.Fprint(stdout, report)
-	if reportErr != nil {
-		fmt.Fprintf(stderr, "warning: could not list every change: %v\n", reportErr)
+	for _, warning := range result.Warnings {
+		fmt.Fprintf(stderr, "warning: %s\n", warning)
 	}
-	if err := stage.cleanup(root); err != nil {
-		fmt.Fprintf(stderr, "warning: %v\n", err)
+	if publishErr != nil {
+		return publishErr
 	}
 	if missing := missingRequirements(files, generated); len(missing) > 0 {
 		fmt.Fprintf(stdout, "The generated code imports %s, which go.mod does not require. Run `go mod tidy` in %s.\n",
@@ -157,72 +121,6 @@ func runGen(args []string, stdout, stderr io.Writer) (err error) {
 		" check that hand-written code such as internal/ and cmd/ still matches it"+
 		" before you run surla verify or start a live target.")
 	fmt.Fprintln(stdout, "Next: surla preview -dir", cleanDir)
-	return nil
-}
-
-// openModuleRoot opens dir as an os.Root after checking that dir is not a
-// symbolic link and that the opened directory is the one checked.
-func openModuleRoot(dir string) (string, *os.Root, error) {
-	cleanDir := filepath.Clean(dir)
-	lstatInfo, err := os.Lstat(cleanDir)
-	if err != nil {
-		return "", nil, err
-	}
-	if lstatInfo.Mode()&fs.ModeSymlink != 0 {
-		return "", nil, fmt.Errorf("%s is a symbolic link; a design snapshot holds only regular files", dir)
-	}
-	root, err := os.OpenRoot(cleanDir)
-	if err != nil {
-		return "", nil, err
-	}
-	rootInfo, err := root.Stat(".")
-	if err != nil {
-		return "", nil, errors.Join(err, root.Close())
-	}
-	if !os.SameFile(lstatInfo, rootInfo) {
-		return "", nil, errors.Join(fmt.Errorf("%s changed while opening design snapshot root", dir), root.Close())
-	}
-	return cleanDir, root, nil
-}
-
-// writeGuide writes the agent guide at the module root through a temporary
-// file renamed over the old one, both inside root.
-func writeGuide(root *os.Root, content []byte) error {
-	tmp := "." + quickstartGuide + ".surla-" + strings.ToLower(rand.Text())
-	if err := writeSynced(root, tmp, content, 0o644); err != nil {
-		return errors.Join(err, removeIfPresent(root, tmp))
-	}
-	if err := root.Rename(tmp, quickstartGuide); err != nil {
-		return errors.Join(err, removeIfPresent(root, tmp))
-	}
-	return nil
-}
-
-// writeSynced creates name inside root, which must not exist, with exactly
-// the permission bits perm (whatever the umask), writes content, syncs it and
-// closes it.
-func writeSynced(root *os.Root, name string, content []byte, perm os.FileMode) error {
-	f, err := root.OpenFile(name, os.O_CREATE|os.O_EXCL|os.O_WRONLY, perm)
-	if err != nil {
-		return err
-	}
-	if err := f.Chmod(perm); err != nil {
-		return errors.Join(err, f.Close())
-	}
-	if _, err := f.Write(content); err != nil {
-		return errors.Join(err, f.Close())
-	}
-	if err := f.Sync(); err != nil {
-		return errors.Join(err, f.Close())
-	}
-	return f.Close()
-}
-
-// removeIfPresent removes name inside root, treating a missing name as done.
-func removeIfPresent(root *os.Root, name string) error {
-	if err := root.Remove(name); err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return err
-	}
 	return nil
 }
 
@@ -247,25 +145,4 @@ func missingRequirements(files map[string]string, generated map[string][]byte) [
 		}
 	}
 	return slices.Sorted(maps.Keys(seen))
-}
-
-// leftoverStages returns the names of .surla-gen-* entries in the module
-// root, sorted. A directory that cannot be read yields none.
-func leftoverStages(root *os.Root) []string {
-	dir, err := root.Open(".")
-	if err != nil {
-		return nil
-	}
-	names, err := dir.Readdirnames(-1)
-	if err := errors.Join(err, dir.Close()); err != nil {
-		return nil
-	}
-	var out []string
-	for _, n := range names {
-		if strings.HasPrefix(n, ".surla-gen-") {
-			out = append(out, n)
-		}
-	}
-	slices.Sort(out)
-	return out
 }

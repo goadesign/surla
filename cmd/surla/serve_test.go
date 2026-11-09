@@ -57,33 +57,33 @@ func TestNewCP1AnalyzerSelectsModelFromFlags(t *testing.T) {
 		wantAnalyzer bool
 		wantErr      string
 	}{
-		{name: "no model flags leaves CP1 unconfigured", cfg: serveConfig{}, env: env},
-		{name: "gateway", cfg: serveConfig{gatewayAddr: "127.0.0.1:9090"}, env: env, wantAnalyzer: true},
-		{name: "anthropic", cfg: serveConfig{provider: "anthropic", modelName: "claude-test"}, env: env, wantAnalyzer: true},
-		{name: "openai", cfg: serveConfig{provider: "openai", modelName: "gpt-test"}, env: env, wantAnalyzer: true},
+		{name: "no model flags leaves CP1 unconfigured", cfg: serveConfig{checkTimeout: defaultCheckTimeout}, env: env},
+		{name: "gateway", cfg: serveConfig{checkTimeout: defaultCheckTimeout, gatewayAddr: "127.0.0.1:9090"}, env: env, wantAnalyzer: true},
+		{name: "anthropic", cfg: serveConfig{checkTimeout: defaultCheckTimeout, provider: "anthropic", modelName: "claude-test"}, env: env, wantAnalyzer: true},
+		{name: "openai", cfg: serveConfig{checkTimeout: defaultCheckTimeout, provider: "openai", modelName: "gpt-test"}, env: env, wantAnalyzer: true},
 		{
 			name:    "gateway with model name",
-			cfg:     serveConfig{gatewayAddr: "127.0.0.1:9090", modelName: "claude-test"},
+			cfg:     serveConfig{checkTimeout: defaultCheckTimeout, gatewayAddr: "127.0.0.1:9090", modelName: "claude-test"},
 			env:     env,
 			wantErr: "-model-gateway-addr cannot be combined",
 		},
 		{
 			name:    "gateway with provider",
-			cfg:     serveConfig{gatewayAddr: "127.0.0.1:9090", provider: "anthropic"},
+			cfg:     serveConfig{checkTimeout: defaultCheckTimeout, gatewayAddr: "127.0.0.1:9090", provider: "anthropic"},
 			env:     env,
 			wantErr: "-model-gateway-addr cannot be combined",
 		},
-		{name: "provider without model", cfg: serveConfig{provider: "anthropic"}, env: env, wantErr: "must be set together"},
-		{name: "model without provider", cfg: serveConfig{modelName: "claude-test"}, env: env, wantErr: "must be set together"},
+		{name: "provider without model", cfg: serveConfig{checkTimeout: defaultCheckTimeout, provider: "anthropic"}, env: env, wantErr: "must be set together"},
+		{name: "model without provider", cfg: serveConfig{checkTimeout: defaultCheckTimeout, modelName: "claude-test"}, env: env, wantErr: "must be set together"},
 		{
 			name:    "unknown provider",
-			cfg:     serveConfig{provider: "Anthropic", modelName: "claude-test"},
+			cfg:     serveConfig{checkTimeout: defaultCheckTimeout, provider: "Anthropic", modelName: "claude-test"},
 			env:     env,
 			wantErr: `unsupported -model-provider "Anthropic"`,
 		},
 		{
 			name:    "missing api key",
-			cfg:     serveConfig{provider: "openai", modelName: "gpt-test"},
+			cfg:     serveConfig{checkTimeout: defaultCheckTimeout, provider: "openai", modelName: "gpt-test"},
 			env:     map[string]string{"ANTHROPIC_API_KEY": "test-anthropic-key"},
 			wantErr: "-model-provider openai requires OPENAI_API_KEY",
 		},
@@ -173,15 +173,15 @@ func TestLoadSwarmProfilesDecodesStrictly(t *testing.T) {
 }
 
 func TestServeOptionsDerivesLiveTargetsFromVerification(t *testing.T) {
+	isolateServeWorkspace(t)
 	path := filepath.Join(t.TempDir(), "verification.json")
 	require.NoError(t, os.WriteFile(path, []byte(`{"runs_dir":"/r","report_dir":"/p","candidate_repo":"/c","candidate_module":".","suite_module":".","binaries":{"app":"./cmd/app"},`+
 		`"suite_repo":"/s","suite_commit":"`+strings.Repeat("a", 40)+`","suite_command":"./cmd/evals","timeout":"20m"}`), 0o600))
-	opts, err := serveOptions(serveConfig{verificationPath: path}, func(string) string { return "" },
+	opts, err := serveOptions(serveConfig{checkTimeout: defaultCheckTimeout, verificationPath: path}, func(string) string { return "" },
 		[]string{"PATH=/bin", "SURLA_AUTH_TOKEN=secret", "ANTHROPIC_API_KEY=k"})
 	require.NoError(t, err)
-	if opts.CloseAnalyzer != nil {
-		assert.NoError(t, opts.CloseAnalyzer())
-	}
+	defer closeServeOptions(t, opts)
+	assert.Nil(t, opts.ResolveVerification, "explicit -verification-config must not set starter ResolveVerification")
 	require.NotNil(t, opts.Live)
 	assert.Equal(t, opts.Verification.Command, opts.Live.Command)
 	assert.Equal(t, 20*time.Minute, opts.Live.StartTimeout)
@@ -195,11 +195,11 @@ func TestLiveTargetEnvCarriesServesModelChoice(t *testing.T) {
 		cfg  serveConfig
 		want []string
 	}{
-		{name: "direct provider", cfg: serveConfig{provider: "anthropic", modelName: "claude-x"},
+		{name: "direct provider", cfg: serveConfig{checkTimeout: defaultCheckTimeout, provider: "anthropic", modelName: "claude-x"},
 			want: []string{"PATH=/bin", "ANTHROPIC_API_KEY=k", "SURLA_LIVE_MODEL_PROVIDER=anthropic", "SURLA_LIVE_MODEL_NAME=claude-x"}},
-		{name: "gateway", cfg: serveConfig{gatewayAddr: "127.0.0.1:9090"},
+		{name: "gateway", cfg: serveConfig{checkTimeout: defaultCheckTimeout, gatewayAddr: "127.0.0.1:9090"},
 			want: []string{"PATH=/bin", "ANTHROPIC_API_KEY=k", "SURLA_LIVE_MODEL_GATEWAY=127.0.0.1:9090"}},
-		{name: "no model", cfg: serveConfig{},
+		{name: "no model", cfg: serveConfig{checkTimeout: defaultCheckTimeout},
 			want: []string{"PATH=/bin", "ANTHROPIC_API_KEY=k"}},
 	}
 	for _, tc := range cases {
@@ -210,11 +210,12 @@ func TestLiveTargetEnvCarriesServesModelChoice(t *testing.T) {
 }
 
 func TestServeOptionsWiresAnalyzerAndProfiles(t *testing.T) {
+	isolateServeWorkspace(t)
 	path := filepath.Join(t.TempDir(), "profiles.json")
 	require.NoError(t, os.WriteFile(path, []byte(`[{"id":"a","provider":"openai","model":"m","family":"gpt"}]`), 0o600))
 
 	opts, err := serveOptions(
-		serveConfig{provider: "openai", modelName: "gpt-test", swarmProfilesPath: path},
+		serveConfig{checkTimeout: defaultCheckTimeout, provider: "openai", modelName: "gpt-test", swarmProfilesPath: path},
 		func(string) string { return "test-key" },
 		nil,
 	)
@@ -224,24 +225,28 @@ func TestServeOptionsWiresAnalyzerAndProfiles(t *testing.T) {
 	assert.Equal(t, []swarm.ProviderProfile{{ID: "a", Provider: "openai", Model: "m", Family: "gpt"}}, opts.SwarmProfiles)
 	assert.Nil(t, opts.TargetUpdater)
 	assert.Nil(t, opts.CloseAnalyzer, "direct provider client has no transport connection to close")
+	closeServeOptions(t, opts)
 
-	opts, err = serveOptions(serveConfig{gatewayAddr: "127.0.0.1:9090"}, func(string) string { return "" }, nil)
+	opts, err = serveOptions(serveConfig{checkTimeout: defaultCheckTimeout, gatewayAddr: "127.0.0.1:9090"}, func(string) string { return "" }, nil)
 	require.NoError(t, err)
 	assert.NotNil(t, opts.Analyzer)
 	require.NotNil(t, opts.CloseAnalyzer)
-	assert.NoError(t, opts.CloseAnalyzer())
+	closeServeOptions(t, opts)
 
-	opts, err = serveOptions(serveConfig{}, func(string) string { return "" }, nil)
+	opts, err = serveOptions(serveConfig{checkTimeout: defaultCheckTimeout}, func(string) string { return "" }, nil)
 	require.NoError(t, err)
 	assert.Nil(t, opts.Analyzer)
 	assert.NotNil(t, opts.ModelBuilder)
 	assert.Nil(t, opts.SwarmProfiles)
 	assert.Nil(t, opts.Verification)
+	assert.NotNil(t, opts.ResolveVerification)
 	require.NotNil(t, opts.Live)
-	assert.Empty(t, opts.Live.Command)
+	assert.Len(t, opts.Live.Command, 1)
+	assert.Equal(t, defaultProjectVerifyTimeout, opts.Live.StartTimeout)
 	assert.Nil(t, opts.CloseAnalyzer)
+	closeServeOptions(t, opts)
 
-	_, err = serveOptions(serveConfig{swarmProfilesPath: filepath.Join(t.TempDir(), "missing.json")}, os.Getenv, nil)
+	_, err = serveOptions(serveConfig{checkTimeout: defaultCheckTimeout, swarmProfilesPath: filepath.Join(t.TempDir(), "missing.json")}, os.Getenv, nil)
 	require.ErrorContains(t, err, "read -swarm-profiles")
 }
 
@@ -257,11 +262,12 @@ func TestResolveStartupModelConfigAndServeOptionsAutoDetection(t *testing.T) {
 	}{
 		{
 			name: "anthropic key auto-detects claude-sonnet-4-6 without verification config",
-			cfg:  serveConfig{},
+			cfg:  serveConfig{checkTimeout: defaultCheckTimeout},
 			env:  map[string]string{"ANTHROPIC_API_KEY": "ant-k"},
 			wantCfg: serveConfig{
-				provider:  "anthropic",
-				modelName: defaultAnthropicModel,
+				checkTimeout: defaultCheckTimeout,
+				provider:     "anthropic",
+				modelName:    defaultAnthropicModel,
 			},
 			wantAnalyzer: true,
 			wantLiveEnv: []string{
@@ -274,11 +280,12 @@ func TestResolveStartupModelConfigAndServeOptionsAutoDetection(t *testing.T) {
 		},
 		{
 			name: "openai key auto-detects gpt-5.4-mini when anthropic key is absent",
-			cfg:  serveConfig{},
+			cfg:  serveConfig{checkTimeout: defaultCheckTimeout},
 			env:  map[string]string{"OPENAI_API_KEY": "oai-k"},
 			wantCfg: serveConfig{
-				provider:  "openai",
-				modelName: defaultOpenAIModel,
+				checkTimeout: defaultCheckTimeout,
+				provider:     "openai",
+				modelName:    defaultOpenAIModel,
 			},
 			wantAnalyzer: true,
 			wantLiveEnv: []string{
@@ -291,14 +298,15 @@ func TestResolveStartupModelConfigAndServeOptionsAutoDetection(t *testing.T) {
 		},
 		{
 			name: "both keys prefer anthropic claude-sonnet-4-6 when model flags are omitted",
-			cfg:  serveConfig{},
+			cfg:  serveConfig{checkTimeout: defaultCheckTimeout},
 			env: map[string]string{
 				"ANTHROPIC_API_KEY": "ant-k",
 				"OPENAI_API_KEY":    "oai-k",
 			},
 			wantCfg: serveConfig{
-				provider:  "anthropic",
-				modelName: defaultAnthropicModel,
+				checkTimeout: defaultCheckTimeout,
+				provider:     "anthropic",
+				modelName:    defaultAnthropicModel,
 			},
 			wantAnalyzer: true,
 			wantLiveEnv: []string{
@@ -312,16 +320,18 @@ func TestResolveStartupModelConfigAndServeOptionsAutoDetection(t *testing.T) {
 		{
 			name: "explicit model flags override auto-detection when both keys are present",
 			cfg: serveConfig{
-				provider:  "openai",
-				modelName: "gpt-5.4",
+				checkTimeout: defaultCheckTimeout,
+				provider:     "openai",
+				modelName:    "gpt-5.4",
 			},
 			env: map[string]string{
 				"ANTHROPIC_API_KEY": "ant-k",
 				"OPENAI_API_KEY":    "oai-k",
 			},
 			wantCfg: serveConfig{
-				provider:  "openai",
-				modelName: "gpt-5.4",
+				checkTimeout: defaultCheckTimeout,
+				provider:     "openai",
+				modelName:    "gpt-5.4",
 			},
 			wantAnalyzer: true,
 			wantLiveEnv: []string{
@@ -334,12 +344,12 @@ func TestResolveStartupModelConfigAndServeOptionsAutoDetection(t *testing.T) {
 		},
 		{
 			name: "whitespace-only keys leave CP1 unconfigured",
-			cfg:  serveConfig{},
+			cfg:  serveConfig{checkTimeout: defaultCheckTimeout},
 			env: map[string]string{
 				"ANTHROPIC_API_KEY": "   ",
 				"OPENAI_API_KEY":    "\t\n",
 			},
-			wantCfg:      serveConfig{},
+			wantCfg:      serveConfig{checkTimeout: defaultCheckTimeout},
 			wantAnalyzer: false,
 			wantLiveEnv: []string{
 				"PATH=/bin",
@@ -350,20 +360,22 @@ func TestResolveStartupModelConfigAndServeOptionsAutoDetection(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
+			isolateServeWorkspace(t)
 			getenv := func(k string) string { return tc.env[k] }
 			assert.Equal(t, tc.wantCfg, resolveStartupModelConfig(tc.cfg, getenv))
 			opts, err := serveOptions(tc.cfg, getenv, baseEnviron)
 			require.NoError(t, err)
 			assert.Equal(t, tc.wantAnalyzer, opts.Analyzer != nil)
-			assert.Nil(t, opts.Verification, "no verification config was supplied")
+			assert.Nil(t, opts.Verification, "no verification config was supplied and empty workspace has no committed starter")
+			assert.NotNil(t, opts.ResolveVerification)
 			require.NotNil(t, opts.Live)
-			assert.Empty(t, opts.Live.Command)
-			assert.Zero(t, opts.Live.StartTimeout)
+			assert.Len(t, opts.Live.Command, 1)
+			assert.Equal(t, defaultProjectVerifyTimeout, opts.Live.StartTimeout)
 			assert.Equal(t, tc.wantLiveEnv, opts.Live.Env)
-			opts.CardsDir = t.TempDir()
 			var statusBuf bytes.Buffer
 			writeServeStatus(&statusBuf, &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 8090}, opts, "")
-			assert.Contains(t, statusBuf.String(), "surla: CP3 (draft_override, start_live_target): compiled_rule is on; prompt_template is off")
+			assert.Contains(t, statusBuf.String(), "surla: CP3 (draft_override, start_live_target): compiled_rule is on; prompt_template is on once start_live_target runs a candidate commit")
+			assert.Contains(t, statusBuf.String(), "surla: CP4 (verify_change, get_verification, list_verifications): workspace ")
 			cp, err := controlplane.New(opts)
 			require.NoError(t, err)
 			t.Cleanup(func() { require.NoError(t, cp.Close()) })
@@ -397,9 +409,10 @@ func TestServeConfigureModelOverHTTPAndMCPSwitchesFromUnconfiguredToGatewayAndPr
 	provider := &scriptedCP1Provider{analysis: string(analysis)}
 	gatewayAddr := startModelGateway(t, provider)
 
+	isolateServeWorkspace(t)
 	env := map[string]string{}
 	opts, err := serveOptions(
-		serveConfig{cardsDir: t.TempDir()},
+		serveConfig{checkTimeout: defaultCheckTimeout, cardsDir: t.TempDir(), cardsDirExplicit: true},
 		func(k string) string { return env[k] },
 		[]string{"PATH=/bin", "SURLA_AUTH_TOKEN=secret"},
 	)
@@ -525,7 +538,12 @@ func TestServeGatewayModeAnswersProposeChangeOverHTTP(t *testing.T) {
 	provider := &scriptedCP1Provider{analysis: string(analysis)}
 	gatewayAddr := startModelGateway(t, provider)
 
-	opts, err := serveOptions(serveConfig{gatewayAddr: gatewayAddr, cardsDir: t.TempDir()}, func(string) string { return "" }, nil)
+	isolateServeWorkspace(t)
+	opts, err := serveOptions(
+		serveConfig{checkTimeout: defaultCheckTimeout, gatewayAddr: gatewayAddr, cardsDir: t.TempDir(), cardsDirExplicit: true},
+		func(string) string { return "" },
+		nil,
+	)
 	require.NoError(t, err)
 	cp, err := controlplane.New(opts)
 	require.NoError(t, err)

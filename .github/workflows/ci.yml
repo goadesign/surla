@@ -1,35 +1,65 @@
-# CI runs every test suite, type-checks the checkpoint viewer, and checks
-# that generated files match their sources, on each pull request and each
-# push to main. All jobs run on macOS:
-# Surla's candidate sandbox uses sandbox-exec, so its tests skip elsewhere.
-# The jobs use no secrets; the suites drive scripted models, not real ones.
+# Pushes run the short Go suites and generated-code checks in parallel.
+# Nightly and manually requested runs keep every sandbox and native journey.
+# All model calls use scripted providers; these jobs need no model credentials.
+# Real Docker coverage requires the separate e2e,docker tags and a local engine.
 name: CI
 
 on:
   pull_request:
   push:
     branches: [main]
+  schedule:
+    - cron: '17 7 * * *'
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.ref }}-${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
   cancel-in-progress: true
 
 env:
   CI: "true"
-  # Temporal CLI the orders acceptance suite starts as its dev server.
   TEMPORAL_CLI_VERSION: 1.7.2
   TEMPORAL_CLI_SHA256: 561ac68bdb6c16c8e8cbbd49f12578218ff1776007c3f3ae0d0196c8c9a73e79
 
 jobs:
-  # tests formats, vets and runs the race-enabled unit tests of all three Go
-  # modules, then regenerates code and fails if anything differs from what
-  # is committed.
   tests:
+    name: Go (${{ matrix.module }})
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
     runs-on: macos-latest
-    timeout-minutes: 30
+    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      matrix:
+        module: [., examples/orders, examples/orders-eval]
+    defaults:
+      run:
+        working-directory: ${{ matrix.module }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: "**/go.sum"
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        if: matrix.module == '.'
+        with:
+          node-version: 26.0.0
+          cache: npm
+          cache-dependency-path: ui/checkpoint/package-lock.json
+      - name: Vet and short race tests
+        # JSON output retains individual test durations in the job log.
+        run: |
+          go vet ./... </dev/null
+          go test -race -short -timeout 3m -json ./... </dev/null
+
+  generated:
+    name: Generated code and viewer
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
+    runs-on: macos-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
@@ -47,17 +77,9 @@ jobs:
           if [ -n "$unformatted" ]; then
             echo "These files need gofmt:"; echo "$unformatted"; exit 1
           fi
-      - name: Vet and test
-        run: |
-          for module in . examples/orders examples/orders-eval; do
-            echo "::group::$module"
-            (cd "$module" && go vet ./... && go test -race ./...) </dev/null
-            echo "::endgroup::"
-          done
-      - name: Type-check the viewer and check generated files
+      - name: Type-check and regenerate
         run: |
           npm ci --prefix ui/checkpoint --no-audit --no-fund </dev/null
-          # esbuild strips TypeScript types without checking them.
           npm --prefix ui/checkpoint run typecheck </dev/null
           go run goa.design/goa/v3/cmd/goa gen github.com/goadesign/surla/design </dev/null
           go run goa.design/goa/v3/cmd/goa gen github.com/goadesign/surla/design/targetprompt -o internal/targetprompt </dev/null
@@ -65,31 +87,72 @@ jobs:
           (cd examples/orders-eval && go run goa.design/goa/v3/cmd/goa gen github.com/goadesign/surla/examples/orders-eval/design) </dev/null
           node ui/checkpoint/build.mjs --check </dev/null
           if [ -n "$(git status --porcelain)" ]; then
-            echo "Generated files differ from the committed ones; run goa gen and node ui/checkpoint/build.mjs:"
+            echo "Generated files differ from the committed ones:"
             git status --porcelain; git diff --stat; exit 1
           fi
 
-  # e2e runs the end-to-end suites: the verifier building and running the
-  # orders platform in the sandbox, surla init generating a starter project
-  # whose candidate and evaluator build and pass in the sandbox, and the
-  # orders acceptance suite against real orders processes and a Temporal dev
-  # server.
-  e2e:
+  full:
+    name: Full / ${{ matrix.suite }}
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: macos-latest
-    # The four test steps below have Go binary alarms of 10m (verifier), 15m
-    # (generation journeys), 60m (starter) and 10m (orders; Go's default).
-    # 100m adds about 5m for checkout, setup, the Temporal CLI, compiling the
-    # test binaries, module downloads and post-steps. It is an estimate, not
-    # an upper bound: a binary alarm does not cover compilation or setup, so
-    # this job limit can still end a run before a step's own alarm.
-    timeout-minutes: 100
+    # Package alarms exclude compilation and setup; job limits remain backstops.
+    timeout-minutes: ${{ matrix.job_timeout }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - suite: unit-root
+            module: .
+            args: ./...
+            test_timeout: 20m
+            job_timeout: 30
+          - suite: unit-orders
+            module: examples/orders
+            args: ./...
+            test_timeout: 20m
+            job_timeout: 30
+          - suite: unit-evaluator
+            module: examples/orders-eval
+            args: ./...
+            test_timeout: 20m
+            job_timeout: 30
+          - suite: verifier
+            module: .
+            args: -tags=e2e ./internal/verify
+            test_timeout: 20m
+            job_timeout: 25
+          - suite: generation
+            module: .
+            args: -tags=e2e ./cmd/surla
+            test_timeout: 40m
+            job_timeout: 45
+          - suite: starter
+            module: .
+            args: -tags=scaffold ./internal/scaffold
+            test_timeout: 60m
+            job_timeout: 65
+          - suite: orders-acceptance
+            module: examples/orders-eval
+            args: -tags=e2e ./acceptance
+            test_timeout: 10m
+            job_timeout: 15
+    defaults:
+      run:
+        working-directory: ${{ matrix.module }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
         with:
           go-version-file: go.mod
           cache-dependency-path: "**/go.sum"
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        if: matrix.suite == 'unit-root'
+        with:
+          node-version: 26.0.0
+          cache: npm
+          cache-dependency-path: ui/checkpoint/package-lock.json
       - name: Install the Temporal CLI
+        if: matrix.suite == 'verifier' || matrix.suite == 'orders-acceptance'
         run: |
           archive="temporal_cli_${TEMPORAL_CLI_VERSION}_darwin_arm64.tar.gz"
           curl -fsSL -o "$RUNNER_TEMP/$archive" \
@@ -98,25 +161,5 @@ jobs:
           mkdir -p "$RUNNER_TEMP/bin"
           tar -xzf "$RUNNER_TEMP/$archive" -C "$RUNNER_TEMP/bin" temporal
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
-      - name: Verifier end to end
-        run: go test -race -tags e2e ./internal/verify </dev/null
-      - name: Generation journeys end to end
-        # surla gen against host goa gen, and surla init followed by surla gen
-        # on a fresh starter, each through the sandboxed generator. -count=1
-        # keeps a cached result from skipping the journeys. 15m is a budget
-        # for the package, not a measured or guaranteed duration.
-        run: go test -race -count=1 -timeout 15m -tags e2e ./cmd/surla </dev/null
-      - name: Starter project end to end
-        # The live CP3 journey test builds and runs a generated starter in
-        # the sandbox four times (two live targets and two verifications). It
-        # configures wait budgets of 10m per live start and 15m per
-        # verification phase, 50m together; those are waits, not a bound on
-        # the test's runtime. In one CI run the whole package took
-        # 32.4m. 60m is a backstop above those budgets, not a measured or
-        # guaranteed duration. -count=1 makes the journeys run every time:
-        # setup-go restores Go's build cache, which can hold a cached test
-        # result.
-        run: go test -race -count=1 -timeout 60m -tags scaffold ./internal/scaffold </dev/null
-      - name: Orders acceptance end to end
-        working-directory: examples/orders-eval
-        run: go test -race -tags e2e ./acceptance </dev/null
+      - name: Run the full suite
+        run: go test -race -count=1 -timeout ${{ matrix.test_timeout }} -json ${{ matrix.args }} </dev/null

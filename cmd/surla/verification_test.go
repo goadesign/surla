@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"path"
@@ -9,10 +10,19 @@ import (
 	"testing"
 	"time"
 
-	"github.com/goadesign/surla/internal/verify"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	gensurla "github.com/goadesign/surla/gen/surla"
+	"github.com/goadesign/surla/internal/controlplane"
+	"github.com/goadesign/surla/internal/verify"
 )
+
+// capturingCP1Analyzer is a CP1Analyzer test double that records designSource.
+type capturingCP1Analyzer struct {
+	// onAnalyze is called with the designSource passed to Analyze.
+	onAnalyze func(designSource string)
+}
 
 func TestLoadVerificationConfigReadsTheOperatorsPlanStrictly(t *testing.T) {
 	cfg, err := loadVerificationConfig("")
@@ -82,8 +92,10 @@ func TestLoadProjectVerificationConfigDerivesTheStarterPlanFromHEAD(t *testing.T
 			project := filepath.Join(repo, filepath.FromSlash(tc.projectPath))
 			writeStarter(t, project, tc.module)
 			head := gitCommitAll(t, repo, "starter")
+			runsDir := filepath.Join(t.TempDir(), "runs")
+			reportDir := filepath.Join(t.TempDir(), "reports")
 
-			cfg, err := loadProjectConfig(t.Context(), project)
+			cfg, err := starterVerificationAtHEAD(t.Context(), project, runsDir, reportDir)
 			require.NoError(t, err)
 			suiteModule := "eval"
 			if tc.wantModule != "." {
@@ -97,9 +109,9 @@ func TestLoadProjectVerificationConfigDerivesTheStarterPlanFromHEAD(t *testing.T
 				SuiteCommit:     head,
 				SuiteModule:     suiteModule,
 				SuiteCommand:    "./cmd/" + tc.wantService + "-evals",
-				ReportDir:       filepath.Join(project, "reports"),
+				ReportDir:       reportDir,
 			}, cfg.Plan)
-			assert.Equal(t, filepath.Join(project, ".surla", "runs"), cfg.RunsDir)
+			assert.Equal(t, runsDir, cfg.RunsDir)
 			assert.Equal(t, 30*time.Minute, cfg.Timeout)
 			require.Len(t, cfg.Command, 1, "runs re-execute this surla executable")
 		})
@@ -111,14 +123,17 @@ func TestLoadProjectVerificationConfigDerivesTheStarterPlanFromHEAD(t *testing.T
 		writeStarter(t, project, "example.com/shop")
 		gitCommitAll(t, repo, "starter")
 		for _, start := range []struct{ dir, arg string }{{project, "."}, {repo, "services/shop"}} {
+			isolateServeWorkspace(t)
 			t.Chdir(start.dir)
-			cfg, err := resolveVerificationConfig(serveConfig{projectDir: start.arg, projectSet: true})
+			ws, err := configureServeWorkspace(serveConfig{checkTimeout: defaultCheckTimeout, projectDir: start.arg, projectSet: true})
 			require.NoError(t, err, "-project %s from %s", start.arg, start.dir)
-			assert.Equal(t, repo, cfg.Plan.CandidateRepo)
-			assert.Equal(t, "services/shop", cfg.Plan.CandidateModule)
-			assert.Equal(t, "services/shop/eval", cfg.Plan.SuiteModule)
-			assert.Equal(t, filepath.Join(project, ".surla", "runs"), cfg.RunsDir)
-			assert.Equal(t, filepath.Join(project, "reports"), cfg.Plan.ReportDir)
+			require.NotNil(t, ws.verification)
+			assert.Equal(t, repo, ws.verification.Plan.CandidateRepo)
+			assert.Equal(t, "services/shop", ws.verification.Plan.CandidateModule)
+			assert.Equal(t, "services/shop/eval", ws.verification.Plan.SuiteModule)
+			assertOutsideDirectory(t, ws.verification.RunsDir, project)
+			assertOutsideDirectory(t, ws.verification.Plan.ReportDir, project)
+			require.NoError(t, ws.closeProjectLock())
 		}
 	})
 
@@ -133,18 +148,21 @@ func TestLoadProjectVerificationConfigDerivesTheStarterPlanFromHEAD(t *testing.T
 		writeStarter(t, other, "example.com/other")
 		gitCommitAll(t, other, "other starter")
 		require.NoError(t, os.Symlink(nested, filepath.Join(other, "alias")))
-		t.Chdir(other)
 
 		// Keep the raw parent component: filepath.Join would erase the link.
 		for _, arg := range []string{"alias/..", other + "/alias/.."} {
-			cfg, err := resolveVerificationConfig(serveConfig{projectDir: arg, projectSet: true})
+			isolateServeWorkspace(t)
+			t.Chdir(other)
+			ws, err := configureServeWorkspace(serveConfig{checkTimeout: defaultCheckTimeout, projectDir: arg, projectSet: true})
 			require.NoError(t, err, "-project %s", arg)
-			assert.Equal(t, repo, cfg.Plan.CandidateRepo, "-project %s", arg)
-			assert.Equal(t, repo, cfg.Plan.SuiteRepo, "-project %s", arg)
-			assert.Equal(t, head, cfg.Plan.SuiteCommit, "-project %s", arg)
-			assert.Equal(t, map[string]string{"shop": "./cmd/shop"}, cfg.Plan.Binaries)
-			assert.Equal(t, filepath.Join(repo, ".surla", "runs"), cfg.RunsDir)
-			assert.Equal(t, filepath.Join(repo, "reports"), cfg.Plan.ReportDir)
+			require.NotNil(t, ws.verification)
+			assert.Equal(t, repo, ws.verification.Plan.CandidateRepo, "-project %s", arg)
+			assert.Equal(t, repo, ws.verification.Plan.SuiteRepo, "-project %s", arg)
+			assert.Equal(t, head, ws.verification.Plan.SuiteCommit, "-project %s", arg)
+			assert.Equal(t, map[string]string{"shop": "./cmd/shop"}, ws.verification.Plan.Binaries)
+			assertOutsideDirectory(t, ws.verification.RunsDir, repo)
+			assertOutsideDirectory(t, ws.verification.Plan.ReportDir, repo)
+			require.NoError(t, ws.closeProjectLock())
 		}
 	})
 
@@ -155,7 +173,7 @@ func TestLoadProjectVerificationConfigDerivesTheStarterPlanFromHEAD(t *testing.T
 		require.NoError(t, os.WriteFile(filepath.Join(repo, "go.mod"), []byte("module example.com/other\n"), 0o600))
 		require.NoError(t, os.RemoveAll(filepath.Join(repo, "cmd")))
 
-		cfg, err := loadProjectConfig(t.Context(), repo)
+		cfg, err := starterVerificationAtHEAD(t.Context(), repo, filepath.Join(t.TempDir(), "runs"), filepath.Join(t.TempDir(), "reports"))
 		require.NoError(t, err)
 		assert.Equal(t, head, cfg.Plan.SuiteCommit)
 		assert.Equal(t, map[string]string{"shop": "./cmd/shop"}, cfg.Plan.Binaries)
@@ -165,7 +183,9 @@ func TestLoadProjectVerificationConfigDerivesTheStarterPlanFromHEAD(t *testing.T
 		repo := newGitRepo(t)
 		writeStarter(t, repo, "example.com/shop")
 		first := gitCommitAll(t, repo, "starter")
-		cfg, err := loadProjectConfig(t.Context(), repo)
+		runsDir := filepath.Join(t.TempDir(), "runs")
+		reportDir := filepath.Join(t.TempDir(), "reports")
+		cfg, err := starterVerificationAtHEAD(t.Context(), repo, runsDir, reportDir)
 		require.NoError(t, err)
 
 		require.NoError(t, os.WriteFile(filepath.Join(repo, "eval", "NOTES"), []byte("new scenario\n"), 0o600))
@@ -173,7 +193,7 @@ func TestLoadProjectVerificationConfigDerivesTheStarterPlanFromHEAD(t *testing.T
 		require.NotEqual(t, first, second)
 		assert.Equal(t, first, cfg.Plan.SuiteCommit, "the loaded plan keeps the startup commit")
 
-		restarted, err := loadProjectConfig(t.Context(), repo)
+		restarted, err := starterVerificationAtHEAD(t.Context(), repo, runsDir, reportDir)
 		require.NoError(t, err)
 		assert.Equal(t, second, restarted.Plan.SuiteCommit, "a restart selects the new HEAD")
 	})
@@ -187,7 +207,7 @@ func TestLoadProjectVerificationConfigDerivesTheStarterPlanFromHEAD(t *testing.T
 		require.NoError(t, os.WriteFile(filepath.Join(worktree, "eval", "NOTES"), []byte("feature suite\n"), 0o600))
 		head := gitCommitAll(t, worktree, "feature suite")
 
-		cfg, err := loadProjectConfig(t.Context(), worktree)
+		cfg, err := starterVerificationAtHEAD(t.Context(), worktree, filepath.Join(t.TempDir(), "runs"), filepath.Join(t.TempDir(), "reports"))
 		require.NoError(t, err)
 		assert.Equal(t, worktree, cfg.Plan.CandidateRepo)
 		assert.Equal(t, head, cfg.Plan.SuiteCommit, "the worktree's HEAD, not the main checkout's")
@@ -202,7 +222,7 @@ func TestLoadProjectVerificationConfigDerivesTheStarterPlanFromHEAD(t *testing.T
 		head := gitCommitAll(t, repo, "starter")
 		t.Setenv("GIT_DIR", filepath.Join(other, ".git"))
 
-		cfg, err := loadProjectConfig(t.Context(), repo)
+		cfg, err := starterVerificationAtHEAD(t.Context(), repo, filepath.Join(t.TempDir(), "runs"), filepath.Join(t.TempDir(), "reports"))
 		require.NoError(t, err)
 		assert.Equal(t, head, cfg.Plan.SuiteCommit)
 		assert.Equal(t, map[string]string{"shop": "./cmd/shop"}, cfg.Plan.Binaries)
@@ -289,9 +309,11 @@ func TestLoadProjectVerificationConfigRejectsUnusableProjects(t *testing.T) {
 		{
 			name: "git older than 2.45",
 			prepare: func(t *testing.T) string {
+				realGit, err := exec.LookPath("git")
+				require.NoError(t, err)
 				fakeBin := t.TempDir()
-				// Git 2.44 and older print this for an unknown top-level option.
-				script := "#!/bin/sh\nprintf 'unknown option: --no-lazy-fetch\\nusage: git [-v | --version] [-h | --help]\\n' >&2\nexit 129\n"
+				// Git 2.44 and older print this for the unknown --no-lazy-fetch top-level option.
+				script := "#!/bin/sh\nfor arg in \"$@\"; do\n  if [ \"$arg\" = \"--no-lazy-fetch\" ]; then\n    printf 'unknown option: --no-lazy-fetch\\nusage: git [-v | --version] [-h | --help]\\n' >&2\n    exit 129\n  fi\ndone\nexec \"" + realGit + "\" \"$@\"\n"
 				require.NoError(t, os.WriteFile(filepath.Join(fakeBin, "git"), []byte(script), 0o700))
 				t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
 				return t.TempDir()
@@ -330,26 +352,121 @@ func TestLoadProjectVerificationConfigRejectsUnusableProjects(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := loadProjectConfig(t.Context(), tc.prepare(t))
+			isolateServeWorkspace(t)
+			dir := tc.prepare(t)
+			_, err := starterVerificationAtHEAD(t.Context(), dir, filepath.Join(t.TempDir(), "runs"), filepath.Join(t.TempDir(), "reports"))
 			require.ErrorContains(t, err, tc.wantErr)
+
+			ws, wsErr := configureServeWorkspace(serveConfig{checkTimeout: defaultCheckTimeout, projectDir: dir, projectSet: true})
+			if wsErr != nil {
+				require.ErrorContains(t, wsErr, tc.wantErr)
+				return
+			}
+			t.Cleanup(func() {
+				if ws.closeProjectLock != nil {
+					assert.NoError(t, ws.closeProjectLock())
+				}
+			})
+			assert.Nil(t, ws.verification)
+			require.NotNil(t, ws.resolveVerification)
+			_, resolveErr := ws.resolveVerification(t.Context(), ws.workspaceDir, "")
+			require.ErrorContains(t, resolveErr, tc.wantErr)
 		})
 	}
 }
 
-// TestResolveVerificationConfigChoosesOneSource checks how serve picks its
-// verification configuration: -project and -verification-config exclude each
-// other, an explicitly empty -project is an error, and with neither,
-// verification stays off.
-func TestResolveVerificationConfigChoosesOneSource(t *testing.T) {
-	cfg, err := resolveVerificationConfig(serveConfig{})
-	require.NoError(t, err)
-	assert.Nil(t, cfg, "with neither flag, verification is off")
+// TestConfigureServeWorkspaceSupportsIndependentProjectAndVerificationConfig
+// verifies that -project (workspace binding) and -verification-config (external
+// evaluator suite) compose independently, and that an explicitly empty
+// -project="" flag is rejected.
+func TestConfigureServeWorkspaceSupportsIndependentProjectAndVerificationConfig(t *testing.T) {
+	isolateServeWorkspace(t)
 
-	_, err = resolveVerificationConfig(serveConfig{projectDir: ".", projectSet: true, verificationPath: "v.json"})
-	assert.ErrorContains(t, err, "-project and -verification-config cannot be used together")
-
-	_, err = resolveVerificationConfig(serveConfig{projectSet: true})
+	_, err := configureServeWorkspace(serveConfig{checkTimeout: defaultCheckTimeout, projectSet: true})
 	assert.ErrorContains(t, err, "-project requires a directory")
+
+	root := t.TempDir()
+	opsSessionDir := filepath.Join(root, "ops", "session")
+	shopDir := filepath.Join(root, "work", "shop")
+	require.NoError(t, os.MkdirAll(opsSessionDir, 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Join(shopDir, "design"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(shopDir, "design", "design.go"), []byte("package design\n// shop workspace design\n"), 0o644))
+	runTestGit(t, filepath.Join(root, "work"), "init", "-q")
+
+	// Simulate Git <= 2.44 (rejecting --no-lazy-fetch) to verify that explicit
+	// -verification-config and CP1 flows succeed without requiring Git 2.45.
+	realGit, err := exec.LookPath("git")
+	require.NoError(t, err)
+	fakeBin := filepath.Join(root, "fake-git-244")
+	require.NoError(t, os.MkdirAll(fakeBin, 0o700))
+	script := "#!/bin/sh\nfor arg in \"$@\"; do\n  if [ \"$arg\" = \"--no-lazy-fetch\" ]; then\n    printf 'unknown option: --no-lazy-fetch\\nusage: git [-v | --version] [-h | --help]\\n' >&2\n    exit 129\n  fi\ndone\nexec \"" + realGit + "\" \"$@\"\n"
+	require.NoError(t, os.WriteFile(filepath.Join(fakeBin, "git"), []byte(script), 0o700))
+	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	verPath := filepath.Join(root, "ops", "shop-eval.json")
+	verContent := `{"runs_dir":"` + filepath.Join(root, "ops", "runs") + `","report_dir":"` + filepath.Join(root, "ops", "reports") + `",` +
+		`"candidate_repo":"` + shopDir + `","candidate_module":".","binaries":{"shop":"./cmd/shop"},` +
+		`"suite_repo":"` + filepath.Join(root, "ops", "eval-repo") + `","suite_commit":"` + strings.Repeat("d", 40) + `",` +
+		`"suite_module":".","suite_command":"./cmd/shop-evals","timeout":"15m"}`
+	require.NoError(t, os.WriteFile(verPath, []byte(verContent), 0o600))
+
+	t.Chdir(opsSessionDir)
+	opts, err := serveOptions(
+		serveConfig{
+			checkTimeout:     defaultCheckTimeout,
+			projectDir:       shopDir,
+			projectSet:       true,
+			verificationPath: verPath,
+		},
+		func(string) string { return "" },
+		nil,
+	)
+	require.NoError(t, err)
+	require.NotNil(t, opts.Verification)
+	assert.Nil(t, opts.ResolveVerification, "explicit -verification-config must not fall back to starter verification resolution")
+	assert.Equal(t, filepath.Join(root, "ops", "eval-repo"), opts.Verification.Plan.SuiteRepo)
+	assert.Equal(t, 15*time.Minute, opts.Verification.Timeout)
+
+	var seenDesignSource string
+	opts.Analyzer = &capturingCP1Analyzer{
+		onAnalyze: func(designSource string) { seenDesignSource = designSource },
+	}
+	cp, err := controlplane.New(opts)
+	require.NoError(t, err)
+	defer cp.Close()
+
+	alice := controlplane.WithPrincipal(context.Background(), controlplane.Principal{ID: "alice@example.com"})
+	_, err = cp.ProposeChange(alice, &gensurla.ProposeChangePayload{
+		ChangeID: "chg-shop-with-external-eval",
+		Prompt:   "Add coupon validation",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, seenDesignSource, "shop workspace design", "-project must bind shopDir for CP1 workspace design reads even when -verification-config is set")
+}
+
+// Analyze records designSource and returns a confirmed CP1SemanticAnalysis.
+func (a *capturingCP1Analyzer) Analyze(_ context.Context, _, designSource string) (controlplane.CP1SemanticAnalysis, error) {
+	if a.onAnalyze != nil {
+		a.onAnalyze(designSource)
+	}
+	return controlplane.CP1SemanticAnalysis{
+		Summary: "Add coupon validation.",
+		Examples: []controlplane.CP1ModelExample{{
+			Scenario:         "Apply valid coupon",
+			InputSummary:     "Valid coupon code",
+			ExpectedOutcome:  "Discounts order total",
+			VerificationKind: "deterministic",
+		}},
+		PreservedBehaviors: []string{"existing checkout remains unchanged"},
+	}, nil
+}
+
+// Revise satisfies controlplane.CP1Analyzer for capturingCP1Analyzer.
+func (a *capturingCP1Analyzer) Revise(_ context.Context, _ controlplane.CP1PriorCard, _, designSource string) (controlplane.CP1RevisionSemanticAnalysis, error) {
+	if a.onAnalyze != nil {
+		a.onAnalyze(designSource)
+	}
+	return controlplane.CP1RevisionSemanticAnalysis{}, nil
 }
 
 // isolateGitConfig points HOME and XDG_CONFIG_HOME at empty directories for

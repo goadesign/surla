@@ -386,7 +386,12 @@ func (c *ControlPlane) confirm(principal Principal, p *gensurla.ConfirmIntentPay
 		return existing, false, nil
 	}
 	confirmed.RequestRevision = rev
-	if err := c.cards.save(storedChangeCard{card: confirmed, owner: record.owner, designSource: record.designSource}); err != nil {
+	if err := c.cards.save(storedChangeCard{
+		card:         confirmed,
+		owner:        record.owner,
+		designSource: record.designSource,
+		sourceOrigin: record.sourceOrigin,
+	}); err != nil {
 		return nil, false, err
 	}
 	return confirmed, true, nil

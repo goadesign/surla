@@ -19,6 +19,9 @@ import (
 // of paths and compiler output. It runs real sandboxed builds, so it needs
 // macOS.
 func TestPrepareNamesTheBuildLogOnlyInThePrivateError(t *testing.T) {
+	if testing.Short() {
+		t.Skip("runs the sandboxed Go toolchain; the full suite (go test without -short) covers it")
+	}
 	if runtime.GOOS != "darwin" {
 		t.Skip("the build sandbox is implemented with sandbox-exec on macOS")
 	}

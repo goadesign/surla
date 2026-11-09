@@ -37,6 +37,9 @@ var _ = Service("orders", func() {
 `
 
 func TestGenPublishesGenAndLeavesNothingBehind(t *testing.T) {
+	if testing.Short() {
+		t.Skip("runs the sandboxed Go toolchain; the full suite (go test without -short) covers it")
+	}
 	tmp := t.TempDir()
 	t.Setenv("TMPDIR", tmp)
 	dir := writeModule(t, testmodule.Snapshot(t, completeSourcesGoa, genDesign))
@@ -44,6 +47,7 @@ func TestGenPublishesGenAndLeavesNothingBehind(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 	require.NoError(t, runGen([]string{"-dir", dir}, &stdout, &stderr))
+	assert.Empty(t, stderr.String(), "successful publication does not emit warnings")
 	assert.Contains(t, stdout.String(), "gen/ updated")
 	assert.Contains(t, stdout.String(), "removed: 1\n  gen/stale/old.go")
 	notice := strings.Index(stdout.String(), "surla gen did not build the whole application against the new gen/")
@@ -58,6 +62,9 @@ func TestGenPublishesGenAndLeavesNothingBehind(t *testing.T) {
 }
 
 func TestGenRefusesAGoaWithoutCompleteSourcesAndChangesNothing(t *testing.T) {
+	if testing.Short() {
+		t.Skip("runs the sandboxed Go toolchain; the full suite (go test without -short) covers it")
+	}
 	tmp := t.TempDir()
 	t.Setenv("TMPDIR", tmp)
 	dir := writeModule(t, testmodule.Snapshot(t, preCompleteSourcesGoa, genDesign))

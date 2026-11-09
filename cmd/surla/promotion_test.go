@@ -29,7 +29,7 @@ type confirmedAnalyzer struct{}
 var suiteCommit = strings.Repeat("b", 40)
 
 // TestLoadPromotionConfig checks that only a complete configuration with
-// distinct plain binary names starts serve.
+// distinct plain binary names outside the bound workspace starts serve.
 func TestLoadPromotionConfig(t *testing.T) {
 	valid := `{"report_dir":"/r","release_dir":"/rel","suite_id":"orders","suite_commit":"` + suiteCommit +
 		`","environment":"sim","binaries":["orders","orders-worker"]}`
@@ -57,9 +57,12 @@ func TestLoadPromotionConfig(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			path := filepath.Join(t.TempDir(), "promotion.json")
+			root := t.TempDir()
+			wsDir := filepath.Join(root, "ws")
+			require.NoError(t, os.MkdirAll(wsDir, 0o755))
+			path := filepath.Join(root, "promotion.json")
 			require.NoError(t, os.WriteFile(path, []byte(c.content), 0o600))
-			target, err := loadPromotionConfig(path)
+			target, _, err := loadWorkspacePromotionTarget(path, root, wsDir, wsDir, "")
 			if c.wantErr != "" {
 				assert.ErrorContains(t, err, c.wantErr)
 				return
@@ -68,24 +71,27 @@ func TestLoadPromotionConfig(t *testing.T) {
 			assert.NotNil(t, target)
 		})
 	}
-	target, err := loadPromotionConfig("")
-	require.NoError(t, err)
-	assert.Nil(t, target, "no file leaves approve_merge unavailable")
 
-	// Relative directories are resolved against the working directory once,
-	// at load, so a later change of directory cannot move them.
-	work := t.TempDir()
-	t.Chdir(work)
-	path := filepath.Join(t.TempDir(), "promotion.json")
+	// Relative directories are resolved against baseDir once, at load, and
+	// paths inside the workspace are rejected.
+	root := t.TempDir()
+	baseDir, err := filepath.EvalSymlinks(filepath.Join(root, "ops"))
+	if err != nil {
+		require.NoError(t, os.MkdirAll(filepath.Join(root, "ops"), 0o755))
+		baseDir, err = filepath.EvalSymlinks(filepath.Join(root, "ops"))
+		require.NoError(t, err)
+	}
+	wsDir, err := filepath.EvalSymlinks(t.TempDir())
+	require.NoError(t, err)
+	path := filepath.Join(baseDir, "promotion.json")
 	relative := strings.Replace(strings.Replace(valid, `"/r"`, `"reports"`, 1), `"/rel"`, `"release"`, 1)
 	require.NoError(t, os.WriteFile(path, []byte(relative), 0o600))
-	target, err = loadPromotionConfig(path)
-	require.NoError(t, err)
-	wd, err := os.Getwd()
+	target, gotReportDir, err := loadWorkspacePromotionTarget(path, baseDir, wsDir, wsDir, "")
 	require.NoError(t, err)
 	cfg := target.(*releaseTarget).cfg
-	assert.Equal(t, filepath.Join(wd, "reports"), cfg.ReportDir)
-	assert.Equal(t, filepath.Join(wd, "release"), cfg.ReleaseDir)
+	assert.Equal(t, filepath.Join(baseDir, "reports"), gotReportDir)
+	assert.Equal(t, filepath.Join(baseDir, "reports"), cfg.ReportDir)
+	assert.Equal(t, filepath.Join(baseDir, "release"), cfg.ReleaseDir)
 }
 
 // TestReleaseTargetMeasuresStagedBinaries checks that CurrentInputs hashes
@@ -260,11 +266,13 @@ func (a confirmedAnalyzer) Revise(ctx context.Context, prior controlplane.CP1Pri
 // with the given release and report directories.
 func newReleaseTarget(t *testing.T, release, reports string) controlplane.PromotionTarget {
 	t.Helper()
-	path := filepath.Join(t.TempDir(), "promotion.json")
+	dir := t.TempDir()
+	wsDir := t.TempDir()
+	path := filepath.Join(dir, "promotion.json")
 	content := `{"report_dir":"` + reports + `","release_dir":"` + release + `","suite_id":"orders","suite_commit":"` +
 		suiteCommit + `","environment":"sim","binaries":["orders","orders-worker"]}`
 	require.NoError(t, os.WriteFile(path, []byte(content), 0o600))
-	target, err := loadPromotionConfig(path)
+	target, _, err := loadWorkspacePromotionTarget(path, dir, wsDir, wsDir, "")
 	require.NoError(t, err)
 	return target
 }

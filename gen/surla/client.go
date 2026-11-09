@@ -31,10 +31,15 @@ type Client struct {
 	ApproveMergeEndpoint        goa.Endpoint
 	DiffEndpoint                goa.Endpoint
 	ConfigureModelEndpoint      goa.Endpoint
+	InitProjectEndpoint         goa.Endpoint
+	GenerateCodeEndpoint        goa.Endpoint
+	CheckProjectEndpoint        goa.Endpoint
+	UpdateDependenciesEndpoint  goa.Endpoint
+	ReadCheckOutputEndpoint     goa.Endpoint
 }
 
 // NewClient initializes a "surla" service client given the endpoints.
-func NewClient(checkpointUI, goldenPath, proposeChange, reviseChange, confirmIntent, getChange, previewArchitecture, draftOverride, startLiveTarget, stopLiveTarget, verifyChange, getVerification, listVerifications, approveMerge, diff, configureModel goa.Endpoint) *Client {
+func NewClient(checkpointUI, goldenPath, proposeChange, reviseChange, confirmIntent, getChange, previewArchitecture, draftOverride, startLiveTarget, stopLiveTarget, verifyChange, getVerification, listVerifications, approveMerge, diff, configureModel, initProject, generateCode, checkProject, updateDependencies, readCheckOutput goa.Endpoint) *Client {
 	return &Client{
 		CheckpointUIEndpoint:        checkpointUI,
 		GoldenPathEndpoint:          goldenPath,
@@ -52,6 +57,11 @@ func NewClient(checkpointUI, goldenPath, proposeChange, reviseChange, confirmInt
 		ApproveMergeEndpoint:        approveMerge,
 		DiffEndpoint:                diff,
 		ConfigureModelEndpoint:      configureModel,
+		InitProjectEndpoint:         initProject,
+		GenerateCodeEndpoint:        generateCode,
+		CheckProjectEndpoint:        checkProject,
+		UpdateDependenciesEndpoint:  updateDependencies,
+		ReadCheckOutputEndpoint:     readCheckOutput,
 	}
 }
 
@@ -287,4 +297,79 @@ func (c *Client) ConfigureModel(ctx context.Context, p *ConfigureModelPayload) (
 		return
 	}
 	return ires.(*ModelConfigResult), nil
+}
+
+// InitProject calls the "init_project" endpoint of the "surla" service.
+// InitProject may return the following errors:
+//   - "conflict" (type *goa.ServiceError): The workspace or target directory is already initialized.
+//   - "unprocessable" (type *goa.ServiceError): The module path or child directory name is invalid.
+//   - "not_implemented" (type *goa.ServiceError): This control plane has no bound workspace or starter generator configured.
+//   - error: internal error
+func (c *Client) InitProject(ctx context.Context, p *InitProjectPayload) (res *InitProjectResult, err error) {
+	var ires any
+	ires, err = c.InitProjectEndpoint(ctx, p)
+	if err != nil {
+		return
+	}
+	return ires.(*InitProjectResult), nil
+}
+
+// GenerateCode calls the "generate_code" endpoint of the "surla" service.
+// GenerateCode may return the following errors:
+//   - "unprocessable" (type *goa.ServiceError): The selected local module is absent, replaced, or invalid; correct its local files and call again.
+//   - "not_implemented" (type *goa.ServiceError): No workspace directory is bound to this control plane.
+//   - error: internal error
+func (c *Client) GenerateCode(ctx context.Context, p *GenerateCodePayload) (res *GenerateCodeResult, err error) {
+	var ires any
+	ires, err = c.GenerateCodeEndpoint(ctx, p)
+	if err != nil {
+		return
+	}
+	return ires.(*GenerateCodeResult), nil
+}
+
+// CheckProject calls the "check_project" endpoint of the "surla" service.
+// CheckProject may return the following errors:
+//   - "unprocessable" (type *goa.ServiceError): The workspace contains no Go module.
+//   - "not_implemented" (type *goa.ServiceError): No workspace directory is bound to this control plane.
+//   - "unavailable" (type *goa.ServiceError): No local Docker engine is usable: docker is missing, the engine does not answer or is not local, or the Go image cannot be pulled.
+//   - error: internal error
+func (c *Client) CheckProject(ctx context.Context) (res *CheckProjectResult, err error) {
+	var ires any
+	ires, err = c.CheckProjectEndpoint(ctx, nil)
+	if err != nil {
+		return
+	}
+	return ires.(*CheckProjectResult), nil
+}
+
+// UpdateDependencies calls the "update_dependencies" endpoint of the "surla"
+// service.
+// UpdateDependencies may return the following errors:
+//   - "unprocessable" (type *goa.ServiceError): The workspace contains no Go module.
+//   - "not_implemented" (type *goa.ServiceError): No workspace directory is bound to this control plane.
+//   - "unavailable" (type *goa.ServiceError): No local Docker engine is usable: docker is missing, the engine does not answer or is not local, or the Go image cannot be pulled.
+//   - error: internal error
+func (c *Client) UpdateDependencies(ctx context.Context) (res *UpdateDependenciesResult, err error) {
+	var ires any
+	ires, err = c.UpdateDependenciesEndpoint(ctx, nil)
+	if err != nil {
+		return
+	}
+	return ires.(*UpdateDependenciesResult), nil
+}
+
+// ReadCheckOutput calls the "read_check_output" endpoint of the "surla"
+// service.
+// ReadCheckOutput may return the following errors:
+//   - "not_found" (type *goa.ServiceError): No output exists for this op_id.
+//   - "unprocessable" (type *goa.ServiceError): The cursor is malformed or belongs to another operation.
+//   - error: internal error
+func (c *Client) ReadCheckOutput(ctx context.Context, p *ReadCheckOutputPayload) (res *CheckOutputPage, err error) {
+	var ires any
+	ires, err = c.ReadCheckOutputEndpoint(ctx, p)
+	if err != nil {
+		return
+	}
+	return ires.(*CheckOutputPage), nil
 }

@@ -150,9 +150,6 @@ func BuildPreviewArchitecturePayload(surlaPreviewArchitectureBody *string) (*sur
 		if err != nil {
 			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"architect_paths\": [\n         \"Voluptas velit quia rerum.\",\n         \"Odit aut perspiciatis aut aut.\",\n         \"Quasi delectus incidunt ipsum.\",\n         \"Non sequi qui nisi pariatur a.\"\n      ],\n      \"builders\": [\n         {\n            \"name\": \"Libero cupiditate occaecati natus sed.\",\n            \"paths\": [\n               \"At recusandae.\",\n               \"Ea ipsa sed ullam et quas.\",\n               \"Quia perferendis rerum.\",\n               \"Praesentium quia beatae dolorem vel.\"\n            ],\n            \"preferred_profile_id\": \"Unde ut in.\"\n         },\n         {\n            \"name\": \"Libero cupiditate occaecati natus sed.\",\n            \"paths\": [\n               \"At recusandae.\",\n               \"Ea ipsa sed ullam et quas.\",\n               \"Quia perferendis rerum.\",\n               \"Praesentium quia beatae dolorem vel.\"\n            ],\n            \"preferred_profile_id\": \"Unde ut in.\"\n         },\n         {\n            \"name\": \"Libero cupiditate occaecati natus sed.\",\n            \"paths\": [\n               \"At recusandae.\",\n               \"Ea ipsa sed ullam et quas.\",\n               \"Quia perferendis rerum.\",\n               \"Praesentium quia beatae dolorem vel.\"\n            ],\n            \"preferred_profile_id\": \"Unde ut in.\"\n         },\n         {\n            \"name\": \"Libero cupiditate occaecati natus sed.\",\n            \"paths\": [\n               \"At recusandae.\",\n               \"Ea ipsa sed ullam et quas.\",\n               \"Quia perferendis rerum.\",\n               \"Praesentium quia beatae dolorem vel.\"\n            ],\n            \"preferred_profile_id\": \"Unde ut in.\"\n         }\n      ],\n      \"change_id\": \"Vel libero.\",\n      \"design\": {\n         \"files\": {\n            \"Doloribus repellat aut eveniet nesciunt natus labore.\": \"Dolores magni.\",\n            \"Quaerat vitae quas rerum.\": \"Vel in molestias et quaerat.\"\n         }\n      },\n      \"eval_paths\": [\n         \"Minima veritatis sint eius qui.\",\n         \"Nemo quas.\",\n         \"Fuga doloribus illum.\"\n      ],\n      \"request_revision\": \"Quisquam mollitia.\"\n   }'")
 		}
-		if body.Design == nil {
-			err = goa.MergeErrors(err, goa.MissingFieldError("design", "body"))
-		}
 		if body.Design != nil {
 			if err2 := validateDesignSnapshotRequestBody(body.Design, "body.design"); err2 != nil {
 				err = goa.MergeErrors(err, err2)
@@ -420,6 +417,77 @@ func BuildConfigureModelPayload(surlaConfigureModelBody *string) (*surla.Configu
 		Provider:    body.Provider,
 		ModelName:   body.ModelName,
 		GatewayAddr: body.GatewayAddr,
+	}
+
+	return v, nil
+}
+
+// BuildInitProjectPayload builds the payload for the surla init_project
+// endpoint from CLI flags.
+func BuildInitProjectPayload(surlaInitProjectBody *string) (*surla.InitProjectPayload, error) {
+	var err error
+	var body InitProjectRequestBody
+	{
+		if surlaInitProjectBody == nil {
+			return nil, fmt.Errorf("missing required flag --body")
+		}
+		err = json.Unmarshal([]byte(*surlaInitProjectBody), &body)
+		if err != nil {
+			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"dir\": \"shop\",\n      \"module_path\": \"example.com/shop\"\n   }'")
+		}
+		if utf8.RuneCountInString(body.ModulePath) < 3 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.module_path", body.ModulePath, utf8.RuneCountInString(body.ModulePath), 3, true))
+		}
+		if err != nil {
+			return nil, err
+		}
+	}
+	v := &surla.InitProjectPayload{
+		ModulePath: body.ModulePath,
+		Dir:        body.Dir,
+	}
+
+	return v, nil
+}
+
+// BuildGenerateCodePayload builds the payload for the surla generate_code
+// endpoint from CLI flags.
+func BuildGenerateCodePayload(surlaGenerateCodeBody *string) (*surla.GenerateCodePayload, error) {
+	var err error
+	var body GenerateCodeRequestBody
+	{
+		if surlaGenerateCodeBody == nil {
+			return nil, fmt.Errorf("missing required flag --body")
+		}
+		err = json.Unmarshal([]byte(*surlaGenerateCodeBody), &body)
+		if err != nil {
+			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"target\": \"eval\"\n   }'")
+		}
+	}
+	v := &surla.GenerateCodePayload{
+		Target: body.Target,
+	}
+
+	return v, nil
+}
+
+// BuildReadCheckOutputPayload builds the payload for the surla
+// read_check_output endpoint from CLI flags.
+func BuildReadCheckOutputPayload(surlaReadCheckOutputBody *string) (*surla.ReadCheckOutputPayload, error) {
+	var err error
+	var body ReadCheckOutputRequestBody
+	{
+		if surlaReadCheckOutputBody == nil {
+			return nil, fmt.Errorf("missing required flag --body")
+		}
+		err = json.Unmarshal([]byte(*surlaReadCheckOutputBody), &body)
+		if err != nil {
+			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"cursor\": \"Vero quia facilis et vel distinctio.\",\n      \"op_id\": \"Quo doloribus amet similique.\"\n   }'")
+		}
+	}
+	v := &surla.ReadCheckOutputPayload{
+		OpID:   body.OpID,
+		Cursor: body.Cursor,
 	}
 
 	return v, nil

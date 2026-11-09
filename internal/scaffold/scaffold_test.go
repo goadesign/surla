@@ -9,7 +9,9 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime/debug"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -36,6 +38,101 @@ func TestValidVersionAcceptsOnlyExactVersions(t *testing.T) {
 		"1.2.3":   false,
 	} {
 		assert.Equal(t, want, ValidVersion(v), v)
+	}
+}
+
+func TestSurlaVersionReadsSurlaModuleFromStandaloneAndEmbeddedBuildInfo(t *testing.T) {
+	assert.Equal(t, "", SurlaVersion(nil))
+	assert.Equal(t, published, SurlaVersion(&debug.BuildInfo{
+		Main: debug.Module{
+			Path:    surlaModule,
+			Version: published,
+		},
+	}))
+	assert.Equal(t, "", SurlaVersion(&debug.BuildInfo{
+		Main: debug.Module{
+			Path:    surlaModule,
+			Version: "(devel)",
+		},
+	}))
+	// Embedded host application counterexample: Main.Version is the host app's
+	// version (v2.4.1), while Surla's version lives in Deps.
+	assert.Equal(t, published, SurlaVersion(&debug.BuildInfo{
+		Main: debug.Module{
+			Path:    "example.com/host-app",
+			Version: "v2.4.1",
+		},
+		Deps: []*debug.Module{
+			{
+				Path:    "example.com/other",
+				Version: "v1.0.0",
+			},
+			{
+				Path:    surlaModule,
+				Version: published,
+			},
+		},
+	}))
+	assert.Equal(t, "", SurlaVersion(&debug.BuildInfo{
+		Main: debug.Module{
+			Path:    "example.com/host-app",
+			Version: "v2.4.1",
+		},
+		Deps: []*debug.Module{
+			{
+				Path:    surlaModule,
+				Version: published,
+				Replace: &debug.Module{
+					Path: "../surla",
+				},
+			},
+		},
+	}))
+	assert.Equal(t, "v0.2.0", SurlaVersion(&debug.BuildInfo{
+		Main: debug.Module{
+			Path:    "example.com/host-app",
+			Version: "v2.4.1",
+		},
+		Deps: []*debug.Module{
+			{
+				Path:    surlaModule,
+				Version: "v0.1.0",
+				Replace: &debug.Module{
+					Path:    surlaModule,
+					Version: "v0.2.0",
+				},
+			},
+		},
+	}))
+}
+
+// TestLayoutForModulePreservesStarterNames checks the shared service-name rule
+// without running a generator, including names reserved only by generated code.
+func TestLayoutForModulePreservesStarterNames(t *testing.T) {
+	t.Parallel()
+	for _, name := range []string{"shop", "shop2", "errors", "helper", "service", "catalog", "string"} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			got, err := LayoutForModule("example.com/" + name)
+			require.NoError(t, err)
+			assert.Equal(t, Layout{
+				Service:          name,
+				CandidatePackage: "./cmd/" + name,
+				SuiteCommand:     "./cmd/" + name + "-evals",
+			}, got)
+		})
+	}
+	for _, modulePath := range []string{
+		"", "not a path", "example.com/my-shop", "example.com/Shop",
+		"example.com/1shop", "example.com/func", "example.com/main",
+		" example.com/shop ",
+	} {
+		t.Run(modulePath, func(t *testing.T) {
+			t.Parallel()
+			got, err := LayoutForModule(modulePath)
+			assert.Error(t, err)
+			assert.Empty(t, got)
+		})
 	}
 }
 
@@ -190,8 +287,8 @@ func TestInitWritesTheProjectWithTheServiceName(t *testing.T) {
 	assertOnly(t, tmp)
 	assert.Equal(t, "bakery", name)
 	assert.Equal(t, []string{
-		"go mod tidy", "go mod tidy", "go vet ./...",
-		"go mod tidy", "go get github.com/goadesign/surla@" + published, "go mod tidy", "go vet ./...",
+		"go mod tidy", "go mod tidy", "go vet ./...", "go test ./...",
+		"go mod tidy", "go get github.com/goadesign/surla@" + published, "go mod tidy", "go vet ./...", "go test ./...",
 	}, ran, "no command generates code on the host")
 	require.Len(t, gen.inputs, 2, "one generation per module")
 	assert.Equal(t, []string{"design/design.go", "design/model.go", "go.mod", "go.sum"}, slices.Sorted(maps.Keys(gen.inputs[0])))
@@ -371,7 +468,14 @@ func TestInitReadmeFirstRunSnippetsMatchTheProject(t *testing.T) {
 		assert.Contains(t, readme, "`"+m[1]+"`", "README names scenario %s", m[1])
 	}
 
-	config := between(t, readme, "cat > .surla/verification.json <<EOF\n", "\nEOF\n")
+	rootGoMod, err := os.ReadFile(filepath.Join(dir, "go.mod"))
+	require.NoError(t, err)
+	evalGoMod, err := os.ReadFile(filepath.Join(dir, "eval", "go.mod"))
+	require.NoError(t, err)
+	layout, err := StarterLayout(rootGoMod, evalGoMod)
+	require.NoError(t, err)
+
+	config := between(t, readme, "cat > ../bakery-ops/verification.json <<EOF\n", "\nEOF\n")
 	assert.NotContains(t, config, "$PWD", "paths stay relative so any valid project path writes valid JSON")
 	config = strings.ReplaceAll(config, "$(git rev-parse HEAD)", strings.Repeat("a", 40))
 	var fields map[string]any
@@ -382,13 +486,22 @@ func TestInitReadmeFirstRunSnippetsMatchTheProject(t *testing.T) {
 		"binaries", "candidate_module", "candidate_repo", "report_dir", "runs_dir",
 		"suite_command", "suite_commit", "suite_module", "suite_repo", "timeout",
 	}, slices.Sorted(maps.Keys(fields)))
-	assert.Equal(t, map[string]any{"bakery": "./cmd/bakery"}, fields["binaries"])
-	assert.Equal(t, "./cmd/bakery-evals", fields["suite_command"])
+	assert.Equal(t, map[string]any{layout.Service: layout.CandidatePackage}, fields["binaries"])
+	assert.Equal(t, layout.SuiteCommand, fields["suite_command"])
+	assert.Equal(t, SuiteDir, fields["suite_module"])
+	assert.Equal(t, "../bakery-ops/runs", fields["runs_dir"])
+	assert.Equal(t, "../bakery-ops/reports", fields["report_dir"])
 	assert.Equal(t, ".", fields["candidate_repo"])
 	assert.Equal(t, ".", fields["suite_repo"])
 	assert.Contains(t, readme, "-project .")
-	assert.Contains(t, readme, "-verification-config .surla/verification.json")
-	assert.Contains(t, readme, "-report-dir reports -builder-view")
+	assert.Contains(t, readme, "-project . -verification-config ../bakery-ops/verification.json")
+	assert.Contains(t, readme, "operator-private\nstorage outside the repository")
+	assert.Contains(t, readme, "If you created this project over MCP with `init_project`")
+	assert.Contains(t, readme, "If you created this project from the CLI with `surla init`")
+	assert.Contains(t, readme, "restores\nthe initial suite commit saved in `workspace.json`")
+	assert.Contains(t, readme, "`\"services/bakery\"` and `\"services/bakery/eval\"`")
+	assert.Contains(t, readme, "REPORT_DIR=\"$VERIFY_DIR/reports\"")
+	assert.Contains(t, readme, "-report-dir \"$REPORT_DIR\" -builder-view")
 	assert.Contains(t, readme, "while `-builder-view` hides holdout scenario names and checks\nin the completed report JSON and summary line (if a run fails before writing a\nreport, `stderr` prints operator setup/execution failure diagnostics).")
 	assert.Contains(t, readme, "-model-provider openai -model-name \"$MODEL_NAME\"")
 	assert.Contains(t, readme, "surla://golden-path")
@@ -423,7 +536,7 @@ func TestInitReadmeFirstRunSnippetsMatchTheProject(t *testing.T) {
 
 	proposal := between(t, readme, "To start a change,", "To try prompt wording")
 	assert.Contains(t, proposal, "`propose_change`")
-	assert.Contains(t, proposal, "`design/*.go` files as `design_source`")
+	assert.Contains(t, proposal, "reads `design/*.go` from the workspace automatically when\n`design_source` is omitted")
 	assert.Contains(t, proposal, "`confirm_intent`")
 	assert.Contains(t, proposal, "`request_revision`")
 
@@ -431,6 +544,159 @@ func TestInitReadmeFirstRunSnippetsMatchTheProject(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, strings.Split(string(ignore), "\n"), "/.surla/")
 	assert.Contains(t, strings.Split(string(ignore), "\n"), "/.mcp.json")
+}
+
+// TestPrepareCommitsInitialScaffoldAndStripsRedirectingGitEnv verifies that
+// Prepare runs `go test ./...` in both modules and creates the initial Git
+// commit in the protected staging directory using the operator's Git identity
+// (including via GIT_CONFIG_COUNT) while stripping inherited
+// repository-redirecting GIT_* variables and neutralizing hooks, fsmonitor,
+// templates, attributes, and clean/smudge filters.
+func TestPrepareCommitsInitialScaffoldAndStripsRedirectingGitEnv(t *testing.T) {
+	parent := t.TempDir()
+	dir := filepath.Join(parent, "shop")
+	work := t.TempDir()
+	poisonRepo := t.TempDir()
+	hookDir := t.TempDir()
+	tmplDir := t.TempDir()
+	attrDir := t.TempDir()
+
+	hookMarker := filepath.Join(t.TempDir(), "hook-ran")
+	hookScript := "#!/bin/sh\ntouch " + strconv.Quote(hookMarker) + "\nexit 1\n"
+	require.NoError(t, os.WriteFile(filepath.Join(hookDir, "pre-commit"), []byte(hookScript), 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(hookDir, "commit-msg"), []byte(hookScript), 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(hookDir, "post-commit"), []byte(hookScript), 0o700))
+	require.NoError(t, os.MkdirAll(filepath.Join(tmplDir, "hooks"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(tmplDir, "hooks", "pre-commit"), []byte(hookScript), 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(tmplDir, "poison-template-file"), []byte("poison"), 0o600))
+	attrFile := filepath.Join(attrDir, "gitattributes")
+	require.NoError(t, os.WriteFile(attrFile, []byte("* filter=rot\n"), 0o600))
+
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+	t.Setenv("GIT_CONFIG_GLOBAL", "/dev/null")
+	for _, k := range []string{"GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL", "GIT_COMMITTER_NAME", "GIT_COMMITTER_EMAIL", "EMAIL"} {
+		t.Setenv(k, "")
+		require.NoError(t, os.Unsetenv(k))
+	}
+	t.Setenv("GIT_CONFIG_COUNT", "7")
+	t.Setenv("GIT_CONFIG_KEY_0", "user.name")
+	t.Setenv("GIT_CONFIG_VALUE_0", "Config Count Operator")
+	t.Setenv("GIT_CONFIG_KEY_1", "user.email")
+	t.Setenv("GIT_CONFIG_VALUE_1", "count-operator@example.com")
+	t.Setenv("GIT_CONFIG_KEY_2", "core.hooksPath")
+	t.Setenv("GIT_CONFIG_VALUE_2", hookDir)
+	t.Setenv("GIT_CONFIG_KEY_3", "core.fsmonitor")
+	t.Setenv("GIT_CONFIG_VALUE_3", filepath.Join(hookDir, "pre-commit"))
+	t.Setenv("GIT_CONFIG_KEY_4", "init.templateDir")
+	t.Setenv("GIT_CONFIG_VALUE_4", tmplDir)
+	t.Setenv("GIT_CONFIG_KEY_5", "core.attributesFile")
+	t.Setenv("GIT_CONFIG_VALUE_5", attrFile)
+	t.Setenv("GIT_CONFIG_KEY_6", "filter.rot.clean")
+	t.Setenv("GIT_CONFIG_VALUE_6", "sh -c 'touch "+hookMarker+"; exit 1'")
+	t.Setenv("GIT_DIR", filepath.Join(poisonRepo, ".git"))
+	t.Setenv("GIT_WORK_TREE", poisonRepo)
+	t.Setenv("GIT_TEMPLATE_DIR", tmplDir)
+
+	var ran []string
+	run := func(ctx context.Context, moduleDir, logPath string, args ...string) error {
+		ran = append(ran, strings.Join(args, " "))
+		if len(args) > 0 && args[0] == "git" {
+			return RunCommand(ctx, moduleDir, logPath, args...)
+		}
+		if err := os.WriteFile(logPath, []byte("ok\n"), 0o600); err != nil {
+			return err
+		}
+		return fakeGo(moduleDir, args)
+	}
+	gen := &fakeGenerator{pkgs: []string{"shop"}, extra: map[string]string{quickstartGuide: "guide\n"}}
+	name, stagePath, commit, err := Prepare(
+		t.Context(),
+		Options{Dir: dir, WorkDir: work, Module: "example.com/shop", SurlaVersion: published},
+		run,
+		gen,
+	)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		assert.NoError(t, os.RemoveAll(stagePath))
+	})
+	assert.Equal(t, "shop", name)
+	assert.Regexp(t, `^([0-9a-f]{40}|[0-9a-f]{64})$`, commit)
+	gitPrefix := "git -c core.hooksPath=/dev/null -c core.fsmonitor=false -c core.worktree= -c init.templateDir= -c core.attributesFile=/dev/null -c core.autocrlf=false -c core.safecrlf=false"
+	repoPrefix := gitPrefix + " --git-dir=.git --work-tree=."
+	assert.Equal(t, []string{
+		"go mod tidy", "go mod tidy", "go vet ./...", "go test ./...",
+		"go mod tidy", "go get github.com/goadesign/surla@" + published, "go mod tidy", "go vet ./...", "go test ./...",
+		gitPrefix + " init --template=",
+		repoPrefix + " add -A",
+		repoPrefix + " commit --no-verify -m Initial scaffold",
+		repoPrefix + " rev-parse --verify HEAD^{commit}",
+	}, ran)
+	_, err = os.Stat(hookMarker)
+	assert.ErrorIs(t, err, os.ErrNotExist, "hooks, fsmonitor, templates, and clean filters must not execute")
+	_, err = os.Stat(filepath.Join(stagePath, ".git", "poison-template-file"))
+	assert.ErrorIs(t, err, os.ErrNotExist, "init.templateDir and GIT_TEMPLATE_DIR must not copy files into .git")
+	_, err = os.Stat(filepath.Join(poisonRepo, ".git"))
+	assert.ErrorIs(t, err, os.ErrNotExist, "RunCommand must strip inherited GIT_DIR and GIT_WORK_TREE")
+	_, err = os.Stat(filepath.Join(stagePath, ".git"))
+	require.NoError(t, err, "staged project has its own .git directory")
+}
+
+// TestPrepareFailsClosedWhenGitIdentityIsMissing verifies that Prepare fails
+// without fabricating a fallback author when the operator has no configured
+// Git identity, retains the failed command log, and removes the staged tree.
+func TestPrepareFailsClosedWhenGitIdentityIsMissing(t *testing.T) {
+	parent := t.TempDir()
+	dir := filepath.Join(parent, "shop")
+	work := t.TempDir()
+
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+	t.Setenv("GIT_CONFIG_GLOBAL", "/dev/null")
+	t.Setenv("GIT_AUTHOR_NAME", "")
+	t.Setenv("GIT_AUTHOR_EMAIL", "")
+	t.Setenv("GIT_COMMITTER_NAME", "")
+	t.Setenv("GIT_COMMITTER_EMAIL", "")
+	t.Setenv("EMAIL", "")
+
+	run := func(ctx context.Context, moduleDir, logPath string, args ...string) error {
+		if len(args) > 0 && args[0] == "git" {
+			return RunCommand(ctx, moduleDir, logPath, args...)
+		}
+		if err := os.WriteFile(logPath, []byte("ok\n"), 0o600); err != nil {
+			return err
+		}
+		return fakeGo(moduleDir, args)
+	}
+	gen := &fakeGenerator{pkgs: []string{"shop"}}
+	_, _, _, err := Prepare(
+		t.Context(),
+		Options{Dir: dir, WorkDir: work, Module: "example.com/shop", SurlaVersion: published},
+		run,
+		gen,
+	)
+	var step *StepError
+	require.ErrorAs(t, err, &step)
+	assert.Equal(t, []string{
+		"git",
+		"-c", "core.hooksPath=/dev/null",
+		"-c", "core.fsmonitor=false",
+		"-c", "core.worktree=",
+		"-c", "init.templateDir=",
+		"-c", "core.attributesFile=/dev/null",
+		"-c", "core.autocrlf=false",
+		"-c", "core.safecrlf=false",
+		"--git-dir=.git",
+		"--work-tree=.",
+		"commit",
+		"--no-verify",
+		"-m",
+		"Initial scaffold",
+	}, step.Args)
+	assert.FileExists(t, step.Log)
+	assertOnly(t, parent)
 }
 
 // TestStarterLayoutValidatesModulesAndDerivesPaths verifies that StarterLayout

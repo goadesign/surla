@@ -71,6 +71,25 @@ type (
 		// hashed into request_revision.
 		UnverifiedApproval *UnverifiedApprovalItemTransport `json:"unverified_approval,omitempty"`
 	}
+	// CheckProjectPayloadTransport is the internal JSON transport type for CheckProjectPayload.
+	// It lives in the toolset-local http package and is used only for JSON
+	// decode + validation (missing-field detection) before transforming into
+	// the public tool type.
+	CheckProjectPayloadTransport struct {
+	}
+	// CheckProjectResultTransport is the internal JSON transport type for CheckProjectResult.
+	// It lives in the toolset-local http package and is used only for JSON
+	// decode + validation (missing-field detection) before transforming into
+	// the public tool type.
+	CheckProjectResultTransport struct {
+		// Operation identifier; pass it to read_check_output to read the full output.
+		OpID *string `json:"op_id"`
+		// True only when go test ./... exited 0 in every module.
+		Passed *bool `json:"passed"`
+		// At most 16 KiB: the modules tested, the first failure and the end of its
+		// output, and how to read the rest.
+		Message *string `json:"message"`
+	}
 	// ConfigureModelPayloadTransport is the internal JSON transport type for ConfigureModelPayload.
 	// It lives in the toolset-local http package and is used only for JSON
 	// decode + validation (missing-field detection) before transforming into
@@ -220,6 +239,29 @@ type (
 		// Operator-facing status explanation.
 		Message *string `json:"message"`
 	}
+	// GenerateCodePayloadTransport is the internal JSON transport type for GenerateCodePayload.
+	// It lives in the toolset-local http package and is used only for JSON
+	// decode + validation (missing-field detection) before transforming into
+	// the public tool type.
+	GenerateCodePayloadTransport struct {
+		// Module to regenerate: candidate (the application, the default when omitted)
+		// or eval (the local eval/ module).
+		Target *string `json:"target,omitempty"`
+	}
+	// GenerateCodeResultTransport is the internal JSON transport type for GenerateCodeResult.
+	// It lives in the toolset-local http package and is used only for JSON
+	// decode + validation (missing-field detection) before transforming into
+	// the public tool type.
+	GenerateCodeResultTransport struct {
+		// Module that received the generated files.
+		Target *string `json:"target"`
+		// Sorted paths relative to the selected module that were written, including
+		// AGENTS_QUICKSTART.md when produced and written successfully.
+		FilesWritten []string `json:"files_written"`
+		// Problems that did not prevent gen/ publication, such as incomplete cleanup
+		// or a guide that could not be written.
+		Warnings []string `json:"warnings"`
+	}
 	// GetChangePayloadTransport is the internal JSON transport type for GetChangePayload.
 	// It lives in the toolset-local http package and is used only for JSON
 	// decode + validation (missing-field detection) before transforming into
@@ -303,6 +345,34 @@ type (
 		// Exactly one of running, completed or not_completed.
 		State *State `json:"state"`
 	}
+	// InitProjectPayloadTransport is the internal JSON transport type for InitProjectPayload.
+	// It lives in the toolset-local http package and is used only for JSON
+	// decode + validation (missing-field detection) before transforming into
+	// the public tool type.
+	InitProjectPayloadTransport struct {
+		// Go module path of the new service (for example example.com/shop).
+		ModulePath *string `json:"module_path"`
+		// Direct child directory name inside the bound workspace root. When omitted or
+		// empty, defaults to the service name derived from module_path.
+		Dir *string `json:"dir,omitempty"`
+	}
+	// InitProjectResultTransport is the internal JSON transport type for InitProjectResult.
+	// It lives in the toolset-local http package and is used only for JSON
+	// decode + validation (missing-field detection) before transforming into
+	// the public tool type.
+	InitProjectResultTransport struct {
+		// Physical directory path of the newly created starter project (now the
+		// server's active workspace).
+		Dir *string `json:"dir"`
+		// Initialized Go module path.
+		ModulePath *string `json:"module_path"`
+		// Derived service name.
+		ServiceName *string `json:"service_name"`
+		// Full commit ID of the initial starter commit created in the initialized
+		// repository (40 or 64 lowercase hex characters); start_live_target and
+		// verify_change take this commit ID.
+		Commit *string `json:"commit"`
+	}
 	// ListVerificationsPayloadTransport is the internal JSON transport type for ListVerificationsPayload.
 	// It lives in the toolset-local http package and is used only for JSON
 	// decode + validation (missing-field detection) before transforming into
@@ -330,8 +400,10 @@ type (
 		ChangeID *string `json:"change_id"`
 		// Expected CP1 request_revision digest.
 		RequestRevision *string `json:"request_revision"`
-		// Candidate module whose Goa and Goa-AI design is evaluated.
-		Design *DesignSnapshotTransport `json:"design"`
+		// Candidate module whose Goa and Goa-AI design is evaluated. When omitted on a
+		// server with a bound workspace, Surla reads the candidate module snapshot
+		// from the bound workspace.
+		Design *DesignSnapshotTransport `json:"design,omitempty"`
 		// Optional explicit builder path scopes for proposing a Chorus build roster.
 		// When omitted, preview_architecture returns a solo preview with swarm.status
 		// unconfigured and no missing_roles.
@@ -380,8 +452,9 @@ type (
 		// Operator feature request.
 		Prompt *string `json:"prompt"`
 		// Current Goa design source of the target (its design/*.go files) for the CP1
-		// model to read. If omitted, CP1 receives no current design; supply the
-		// relevant design source when you want it considered.
+		// model to read. When omitted on a server with a bound workspace, Surla reads
+		// design/*.go from the bound workspace; when omitted without a bound
+		// workspace, CP1 receives no current design.
 		DesignSource *string `json:"design_source,omitempty"`
 	}
 	// ProposeChangeResultTransport is the internal JSON transport type for ProposeChangeResult.
@@ -431,6 +504,31 @@ type (
 		// hashed into request_revision.
 		UnverifiedApproval *UnverifiedApprovalItemTransport `json:"unverified_approval,omitempty"`
 	}
+	// ReadCheckOutputPayloadTransport is the internal JSON transport type for ReadCheckOutputPayload.
+	// It lives in the toolset-local http package and is used only for JSON
+	// decode + validation (missing-field detection) before transforming into
+	// the public tool type.
+	ReadCheckOutputPayloadTransport struct {
+		// Operation identifier returned by check_project or update_dependencies.
+		OpID *string `json:"op_id"`
+		// Opaque next_cursor from the previous page; omit for the first page.
+		Cursor *string `json:"cursor,omitempty"`
+	}
+	// ReadCheckOutputResultTransport is the internal JSON transport type for ReadCheckOutputResult.
+	// It lives in the toolset-local http package and is used only for JSON
+	// decode + validation (missing-field detection) before transforming into
+	// the public tool type.
+	ReadCheckOutputResultTransport struct {
+		// The page text.
+		Text *string `json:"text"`
+		// Cursor for the following page; absent when this page reaches the end.
+		NextCursor *string `json:"next_cursor,omitempty"`
+		// Total bytes captured for the operation.
+		CapturedBytes *int64 `json:"captured_bytes"`
+		// Bytes the operation produced beyond its capture limit and did not keep;
+		// nonzero means the output has a stated gap.
+		DroppedBytes *int64 `json:"dropped_bytes"`
+	}
 	// ReviseChangePayloadTransport is the internal JSON transport type for ReviseChangePayload.
 	// It lives in the toolset-local http package and is used only for JSON
 	// decode + validation (missing-field detection) before transforming into
@@ -443,7 +541,9 @@ type (
 		// Revised operator feature request.
 		Prompt *string `json:"prompt"`
 		// Updated Goa design source of the target (its design/*.go files) for the CP1
-		// model to read; when omitted, the card's saved design source is used again.
+		// model to read. When omitted on a workspace-backed card with a bound
+		// workspace, Surla re-reads design/*.go from the bound workspace; otherwise
+		// the card's saved design source is used again.
 		DesignSource *string `json:"design_source,omitempty"`
 	}
 	// ReviseChangeResultTransport is the internal JSON transport type for ReviseChangeResult.
@@ -529,6 +629,26 @@ type (
 		// running.
 		Stopped *bool `json:"stopped"`
 		// Operator-facing status explanation.
+		Message *string `json:"message"`
+	}
+	// UpdateDependenciesPayloadTransport is the internal JSON transport type for UpdateDependenciesPayload.
+	// It lives in the toolset-local http package and is used only for JSON
+	// decode + validation (missing-field detection) before transforming into
+	// the public tool type.
+	UpdateDependenciesPayloadTransport struct {
+	}
+	// UpdateDependenciesResultTransport is the internal JSON transport type for UpdateDependenciesResult.
+	// It lives in the toolset-local http package and is used only for JSON
+	// decode + validation (missing-field detection) before transforming into
+	// the public tool type.
+	UpdateDependenciesResultTransport struct {
+		// Operation identifier; pass it to read_check_output to read the full output.
+		OpID *string `json:"op_id"`
+		// Workspace-relative go.mod, go.sum and go.work.sum files whose bytes changed
+		// and were written.
+		FilesWritten []string `json:"files_written"`
+		// At most 16 KiB: what was updated, and Go's message for any module that could
+		// not be.
 		Message *string `json:"message"`
 	}
 	// VerifyChangePayloadTransport is the internal JSON transport type for VerifyChangePayload.

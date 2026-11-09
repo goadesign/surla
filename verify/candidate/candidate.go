@@ -203,11 +203,15 @@ func Exec(ctx context.Context, a Artifact, spec Spec) (*Process, error) {
 		return nil, fmt.Errorf("resolve state directory: %w", err)
 	}
 	binary := a.path
-	logPath, err := filepath.Abs(spec.LogFile)
-	if err != nil || spec.LogFile == "" {
-		return nil, fmt.Errorf("log file is required: %q", spec.LogFile)
+	logPath, err := abspath.EvalMissing(spec.LogFile)
+	if err != nil {
+		return nil, fmt.Errorf("resolve log file %q: %w", spec.LogFile, err)
 	}
-	if rel, err := filepath.Rel(stateDir, resolvedOrSelf(filepath.Dir(logPath))); err == nil && !strings.HasPrefix(rel, "..") {
+	inside, err := abspath.Within(stateDir, logPath)
+	if err != nil {
+		return nil, fmt.Errorf("check log file outside candidate state directory: %w", err)
+	}
+	if inside {
 		return nil, fmt.Errorf("log file %s must lie outside the candidate state directory", logPath)
 	}
 	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
@@ -535,15 +539,6 @@ func resolvedArtifact(path, digest string) (Artifact, error) {
 		return Artifact{}, fmt.Errorf("resolve pinned copy: %w", err)
 	}
 	return Artifact{path: resolved, digest: digest}, nil
-}
-
-// resolvedOrSelf resolves symlinks in path, or returns path unchanged when it
-// does not exist yet.
-func resolvedOrSelf(path string) string {
-	if r, err := filepath.EvalSymlinks(path); err == nil {
-		return r
-	}
-	return path
 }
 
 // quote renders s as a sandbox profile string literal.

@@ -230,69 +230,99 @@ func writeVerifySummary(w io.Writer, report verify.Report, builderView bool) {
 	fmt.Fprintf(w, "%s (report %s)\n", line, report.Digest)
 }
 
-// resolveVerificationConfig selects and loads the operator's CP3/CP4 target
-// configuration from either -project or -verification-config, rejecting
-// supplying both flags at once.
-func resolveVerificationConfig(cfg serveConfig) (*controlplane.VerificationConfig, error) {
-	if cfg.projectSet && cfg.verificationPath != "" {
-		return nil, errors.New("-project and -verification-config cannot be used together")
+// starterVerificationAtHEAD derives a VerificationConfig from the starter
+// layout committed at HEAD in workspaceDir and places RunsDir at runsDir and
+// ReportDir at reportDir. Every git read shares ctx's deadline.
+func starterVerificationAtHEAD(
+	ctx context.Context,
+	workspaceDir, runsDir, reportDir string,
+) (*controlplane.VerificationConfig, error) {
+	repoRoot, prefix, err := resolveStarterRepo(ctx, workspaceDir)
+	if err != nil {
+		return nil, err
 	}
-	if cfg.projectSet {
-		if cfg.projectDir == "" {
-			return nil, errors.New("-project requires a directory")
-		}
-		ctx, cancel := context.WithTimeout(context.Background(), gitReadTimeout)
-		defer cancel()
-		return loadProjectConfig(ctx, cfg.projectDir)
+	headOut, err := runGitRead(ctx, repoRoot, "rev-parse", "--verify", "HEAD^{commit}")
+	if err != nil {
+		return nil, fmt.Errorf(
+			"-project %s has no committed HEAD (run git add -A && git commit -m 'Initial scaffold' first, or initialize a starter project with init_project): %w",
+			workspaceDir,
+			err,
+		)
 	}
-	return loadVerificationConfig(cfg.verificationPath)
+	suiteCommit := strings.TrimSpace(string(headOut))
+	return starterVerificationFromRepoCommit(ctx, workspaceDir, repoRoot, prefix, suiteCommit, runsDir, reportDir)
 }
 
-// loadProjectConfig derives a VerificationConfig from the starter layout
-// committed at HEAD in dir, the -project value: it resolves HEAD once, reads
-// both go.mod files and checks both command directories at that commit, pins
-// SuiteCommit to it, and places RunsDir at <dir>/.surla/runs and ReportDir at
-// <dir>/reports. Every git read shares ctx's deadline.
-func loadProjectConfig(ctx context.Context, dir string) (*controlplane.VerificationConfig, error) {
+// starterVerificationAtCommit derives a VerificationConfig from the starter
+// layout committed at pinnedCommit in workspaceDir and places RunsDir at
+// runsDir and ReportDir at reportDir.
+func starterVerificationAtCommit(
+	ctx context.Context,
+	workspaceDir, pinnedCommit, runsDir, reportDir string,
+) (*controlplane.VerificationConfig, error) {
+	if !verify.IsCommitID(pinnedCommit) {
+		return nil, fmt.Errorf("-project %s: suite commit %q is not a full commit ID", workspaceDir, pinnedCommit)
+	}
+	repoRoot, prefix, err := resolveStarterRepo(ctx, workspaceDir)
+	if err != nil {
+		return nil, err
+	}
+	headOut, err := runGitRead(ctx, repoRoot, "rev-parse", "--verify", pinnedCommit+"^{commit}")
+	if err != nil {
+		return nil, fmt.Errorf("-project %s is missing pinned evaluator suite commit %s: %w", workspaceDir, pinnedCommit, err)
+	}
+	suiteCommit := strings.TrimSpace(string(headOut))
+	return starterVerificationFromRepoCommit(ctx, workspaceDir, repoRoot, prefix, suiteCommit, runsDir, reportDir)
+}
+
+// resolveStarterRepo resolves dir to its physical path and queries git for its
+// repository root and slash-separated prefix within that repository.
+func resolveStarterRepo(ctx context.Context, dir string) (repoRoot, prefix string, err error) {
 	info, err := os.Stat(dir)
 	if err != nil {
-		return nil, fmt.Errorf("read -project %s: %w", dir, err)
+		return "", "", fmt.Errorf("read -project %s: %w", dir, err)
 	}
 	if !info.IsDir() {
-		return nil, fmt.Errorf("-project %s is not a directory", dir)
+		return "", "", fmt.Errorf("-project %s is not a directory", dir)
 	}
 	// Resolve from the working directory without cleaning parent components
 	// before following symlinks: alias/.. must name the linked directory's parent.
 	projectRoot, err := abspath.Eval(dir)
 	if err != nil {
-		return nil, fmt.Errorf("resolve -project %s: %w", dir, err)
+		return "", "", fmt.Errorf("resolve -project %s: %w", dir, err)
 	}
 	// Git reports the repository root and the project's path inside it, such
 	// as "services/shop/" or "" at the root, one per line.
 	topOut, err := runGitRead(ctx, projectRoot, "rev-parse", "--show-toplevel", "--show-prefix")
 	if err != nil {
 		if strings.Contains(err.Error(), "not a git repository") {
-			return nil, fmt.Errorf("-project %s is not inside a git repository"+
-				" (run git init && git add -A && git commit -m 'Initial scaffold' first): %w", dir, err)
+			return "", "", fmt.Errorf(
+				"-project %s is not inside a git repository (run git init && git add -A && git commit -m 'Initial scaffold' first, or initialize a starter project with init_project): %w",
+				dir,
+				err,
+			)
 		}
-		return nil, fmt.Errorf("-project %s: find its git repository: %w", dir, err)
+		return "", "", fmt.Errorf("-project %s: find its git repository: %w", dir, err)
 	}
 	lines := strings.Split(strings.TrimSuffix(string(topOut), "\n"), "\n")
 	if len(lines) != 2 {
-		return nil, fmt.Errorf("-project %s: git rev-parse printed %q, want the repository root and prefix", dir, topOut)
+		return "", "", fmt.Errorf("-project %s: git rev-parse printed %q, want the repository root and prefix", dir, topOut)
 	}
-	repoRoot := lines[0]
-	headOut, err := runGitRead(ctx, repoRoot, "rev-parse", "--verify", "HEAD^{commit}")
-	if err != nil {
-		return nil, fmt.Errorf("-project %s has no committed HEAD (run git add -A && git commit -m 'Initial scaffold' first): %w",
-			dir, err)
-	}
-	suiteCommit := strings.TrimSpace(string(headOut))
+	return lines[0], lines[1], nil
+}
 
+// starterVerificationFromRepoCommit reads both starter go.mod files and checks
+// both command directories at suiteCommit in repoRoot, returning a
+// VerificationConfig pinned to suiteCommit with RunsDir and ReportDir placed at
+// runsDir and reportDir.
+func starterVerificationFromRepoCommit(
+	ctx context.Context,
+	dir, repoRoot, prefix, suiteCommit, runsDir, reportDir string,
+) (*controlplane.VerificationConfig, error) {
 	// Module directories and committed paths are slash-separated and relative
 	// to the repository root: "." and "eval" for a project at the root,
 	// "services/shop" and "services/shop/eval" for one nested in it.
-	candidateModule := path.Clean("./" + lines[1])
+	candidateModule := path.Clean("./" + prefix)
 	suiteModule := path.Join(candidateModule, scaffold.SuiteDir)
 	rootGoMod, err := readGitBlob(ctx, repoRoot, suiteCommit, path.Join(candidateModule, "go.mod"), dir)
 	if err != nil {
@@ -321,7 +351,7 @@ func loadProjectConfig(ctx context.Context, dir string) (*controlplane.Verificat
 	}
 	return &controlplane.VerificationConfig{
 		Timeout: defaultProjectVerifyTimeout,
-		RunsDir: filepath.Join(projectRoot, ".surla", "runs"),
+		RunsDir: runsDir,
 		Plan: verify.Plan{
 			CandidateRepo:   repoRoot,
 			CandidateModule: candidateModule,
@@ -330,7 +360,7 @@ func loadProjectConfig(ctx context.Context, dir string) (*controlplane.Verificat
 			SuiteCommit:     suiteCommit,
 			SuiteModule:     suiteModule,
 			SuiteCommand:    layout.SuiteCommand,
-			ReportDir:       filepath.Join(projectRoot, "reports"),
+			ReportDir:       reportDir,
 		},
 		Command: self,
 	}, nil
@@ -425,7 +455,7 @@ func runGitRead(ctx context.Context, dir string, args ...string) ([]byte, error)
 // different repository, objects or configuration than the -project
 // directory's own, plus settings that disable terminal prompts and the
 // system-wide configuration file and keep git's messages in English, which
-// loadProjectConfig matches.
+// resolveStarterRepo matches.
 func cleanGitEnv() []string {
 	var env []string
 	for _, kv := range os.Environ() {

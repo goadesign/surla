@@ -6,10 +6,8 @@ package main
 import (
 	"errors"
 	"fmt"
-	"io/fs"
 	"os"
 	"path/filepath"
-	"strings"
 	"syscall"
 
 	"golang.org/x/sys/unix"
@@ -105,16 +103,16 @@ func physicalLocalRoots(roots []string) ([]string, error) {
 // search its entries: Go removes populated temporary children through their
 // parent, which requires read permission as well as allocation permission.
 func createProtectedDir(candidate string, protected []string) (string, error) {
-	physical, err := resolveMissingPath(candidate)
+	physical, err := abspath.EvalMissing(candidate)
 	if err != nil {
 		return "", err
 	}
 	for _, root := range protected {
-		rel, err := filepath.Rel(root, physical)
+		inside, err := abspath.Within(root, physical)
 		if err != nil {
 			return "", err
 		}
-		if rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		if inside {
 			return "", fmt.Errorf("operator directory %s must be outside workspace %s", physical, root)
 		}
 	}
@@ -129,25 +127,6 @@ func createProtectedDir(candidate string, protected []string) (string, error) {
 		return "", fmt.Errorf("operator directory %s must allow allocating and cleaning up temporary files: %w", physical, err)
 	}
 	return physical, nil
-}
-
-// resolveMissingPath follows existing ancestors and appends only absent names.
-func resolveMissingPath(candidate string) (string, error) {
-	var missing []string
-	for {
-		physical, err := abspath.Eval(candidate)
-		if err == nil {
-			for i := len(missing) - 1; i >= 0; i-- {
-				physical = filepath.Join(physical, missing[i])
-			}
-			return physical, nil
-		}
-		if !errors.Is(err, fs.ErrNotExist) {
-			return "", err
-		}
-		missing = append(missing, filepath.Base(candidate))
-		candidate = filepath.Dir(candidate)
-	}
 }
 
 // requireSameDevice rejects staging that a single directory rename cannot use.

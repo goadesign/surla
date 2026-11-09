@@ -129,7 +129,7 @@ paths:
             tags:
                 - surla
             summary: verify_change surla
-            description: Start Checkpoint 4 verification of a candidate commit for the owner's confirmed Change Card revision and return its run_id at once. The server builds the commit in Surla's sandbox and runs the evaluator suite the operator configured, in a separate process that keeps running when the caller disconnects or the server restarts; get_verification reads its state. Only the builder view of the report is ever returned. A server started without verification configured (surla serve -verification-config) rejects every call.
+            description: Start Checkpoint 4 verification of a candidate commit for the owner's confirmed Change Card revision and return its run_id at once. The server builds the commit in Surla's sandbox and runs the evaluator suite the operator configured, in a separate process that keeps running when the caller disconnects or the server restarts; get_verification reads its state. Only the builder view of the report is ever returned. Requires a committed starter project in the bound workspace or -verification-config.
             operationId: surla#verify_change
             parameters:
                 - name: change_id
@@ -387,7 +387,7 @@ paths:
             tags:
                 - surla
             summary: preview_architecture surla
-            description: Extract and validate the Checkpoint 2 C4 container topology, tool contracts, Goa-AI guardrails, and proposed Chorus swarm roster from a candidate Goa design bound to a confirmed Change Card. Apart from the swarm roster, the result reports what the design declares; it does not compare the design with the Change Card's requirements.
+            description: Extract and validate the Checkpoint 2 C4 container topology, tool contracts, Goa-AI guardrails, and proposed Chorus swarm roster from a candidate Goa design bound to a confirmed Change Card. When design is omitted and a workspace is bound, Surla reads the candidate module snapshot from the bound workspace. Apart from the swarm roster, the result reports what the design declares; it does not compare the design with the Change Card's requirements.
             operationId: surla#preview_architecture
             parameters:
                 - name: preview_architecture_request_body
@@ -398,7 +398,6 @@ paths:
                     required:
                         - change_id
                         - request_revision
-                        - design
             responses:
                 "200":
                     description: OK response.
@@ -470,7 +469,7 @@ paths:
             tags:
                 - surla
             summary: propose_change surla
-            description: Evaluate a feature request at Checkpoint 1, surfacing concrete examples and any genuine domain ambiguity. The analysis considers the target's current design only when it is sent in design_source.
+            description: Evaluate a feature request at Checkpoint 1, surfacing concrete examples and any genuine domain ambiguity. When design_source is omitted and a workspace is bound, Surla reads design/*.go from the bound workspace.
             operationId: surla#propose_change
             parameters:
                 - name: propose_change_request_body
@@ -549,7 +548,7 @@ paths:
             tags:
                 - surla
             summary: revise_change surla
-            description: 'Revise an existing Checkpoint 1 Change Card with new or changed operator requirements bound to its current request_revision. Re-analyzes the revised prompt and design source with the prior card''s prompt, summary, confirmed answers, open questions, examples and preserved behaviors as context, and saves a new revision in needs_confirmation status for operator review. The new revision''s answers, confirmed_by and any approval are cleared: earlier decisions remain only where the analysis restated them in its summary, examples or preserved behaviors.'
+            description: 'Revise an existing Checkpoint 1 Change Card with new or changed operator requirements bound to its current request_revision. Re-analyzes the revised prompt and design source (re-reading design/*.go from the bound workspace when design_source is omitted on a workspace-backed card) with the prior card''s prompt, summary, confirmed answers, open questions, examples and preserved behaviors as context, and saves a new revision in needs_confirmation status for operator review. The new revision''s answers, confirmed_by and any approval are cleared: earlier decisions remain only where the analysis restated them in its summary, examples or preserved behaviors.'
             operationId: surla#revise_change
             parameters:
                 - name: revise_change_request_body
@@ -741,7 +740,7 @@ paths:
             tags:
                 - surla
             summary: start_live_target surla
-            description: Build a candidate commit exactly as Checkpoint 4 does and run it, with the operator's evaluator suite, as this server's one live CP3 target, then bind draft_override to it. A running target is stopped first, so there is never more than one. The target runs until stop_live_target, a later start_live_target, its own exit, or this server's shutdown; a server restart leaves none running. Requires Checkpoint 4 verification to be configured (surla serve -verification-config), because the build and launch settings come from it.
+            description: Build a candidate commit exactly as Checkpoint 4 does and run it, with the operator's evaluator suite, as this server's one live CP3 target, then bind draft_override to it. A running target is stopped first, so there is never more than one. The target runs until stop_live_target, a later start_live_target, its own exit, or this server's shutdown; a server restart leaves none running. Requires a committed starter project in the bound workspace or -verification-config.
             operationId: surla#start_live_target
             parameters:
                 - name: start_live_target_request_body
@@ -819,7 +818,7 @@ paths:
             tags:
                 - surla
             summary: draft_override surla
-            description: 'Apply a Fast Draft Mode prompt override on the bound target or reject a compiled-rule prompt hack. A prompt_template override needs a bound target: on surla serve, that is the live target start_live_target runs, which requires surla serve -verification-config. On a live target started with start_live_target, a rejected update leaves the target''s text unchanged; update_not_confirmed means the target may or may not have applied it.'
+            description: 'Apply a Fast Draft Mode prompt override on the bound target or reject a compiled-rule prompt hack. A prompt_template override needs a bound target: on surla serve, that is the live target start_live_target runs. On a live target started with start_live_target, a rejected update leaves the target''s text unchanged; update_not_confirmed means the target may or may not have applied it.'
             operationId: surla#draft_override
             parameters:
                 - name: draft_override_request_body
@@ -957,6 +956,275 @@ paths:
                     description: 'not_implemented: This server has no verification configuration, so it cannot read verification runs.'
                     schema:
                         $ref: '#/definitions/SurlaGetVerificationNotImplementedResponseBody'
+                    examples:
+                        application/vnd.goa.error:
+                            fault: false
+                            id: 123abc
+                            message: parameter 'p' must be an integer
+                            name: not_implemented
+                            temporary: false
+                            timeout: false
+            schemes:
+                - http
+    /workspace/check:
+        post:
+            tags:
+                - surla
+            summary: check_project surla
+            description: Copy the active workspace's live files (uncommitted edits included) into a protected per-operation copy and run go test ./... for every Go module in it, each in a Linux container with no network. Nothing in the workspace changes. Returns passed and a bounded message; read the full output with read_check_output.
+            operationId: surla#check_project
+            responses:
+                "200":
+                    description: OK response.
+                    schema:
+                        $ref: '#/definitions/CheckProjectResult'
+                        required:
+                            - op_id
+                            - passed
+                            - message
+                "422":
+                    description: 'unprocessable: The workspace contains no Go module.'
+                    schema:
+                        $ref: '#/definitions/SurlaCheckProjectUnprocessableResponseBody'
+                    examples:
+                        application/vnd.goa.error:
+                            fault: false
+                            id: 123abc
+                            message: parameter 'p' must be an integer
+                            name: unprocessable
+                            temporary: false
+                            timeout: false
+                "501":
+                    description: 'not_implemented: No workspace directory is bound to this control plane.'
+                    schema:
+                        $ref: '#/definitions/SurlaCheckProjectNotImplementedResponseBody'
+                    examples:
+                        application/vnd.goa.error:
+                            fault: false
+                            id: 123abc
+                            message: parameter 'p' must be an integer
+                            name: not_implemented
+                            temporary: false
+                            timeout: false
+                "503":
+                    description: 'unavailable: No local Docker engine is usable: docker is missing, the engine does not answer or is not local, or the Go image cannot be pulled.'
+                    schema:
+                        $ref: '#/definitions/SurlaCheckProjectUnavailableResponseBody'
+                    examples:
+                        application/vnd.goa.error:
+                            fault: false
+                            id: 123abc
+                            message: parameter 'p' must be an integer
+                            name: unavailable
+                            temporary: false
+                            timeout: false
+            schemes:
+                - http
+    /workspace/check/output:
+        post:
+            tags:
+                - surla
+            summary: read_check_output surla
+            description: Return one page of at most 16 KiB of the full output a check_project or update_dependencies operation captured, with a cursor for the next page and the count of bytes not captured.
+            operationId: surla#read_check_output
+            parameters:
+                - name: read_check_output_request_body
+                  in: body
+                  required: true
+                  schema:
+                    $ref: '#/definitions/ReadCheckOutputPayload'
+                    required:
+                        - op_id
+            responses:
+                "200":
+                    description: OK response.
+                    schema:
+                        $ref: '#/definitions/CheckOutputPage'
+                        required:
+                            - text
+                            - captured_bytes
+                            - dropped_bytes
+                "404":
+                    description: 'not_found: No output exists for this op_id.'
+                    schema:
+                        $ref: '#/definitions/SurlaReadCheckOutputNotFoundResponseBody'
+                    examples:
+                        application/vnd.goa.error:
+                            fault: false
+                            id: 123abc
+                            message: parameter 'p' must be an integer
+                            name: not_found
+                            temporary: false
+                            timeout: false
+                "422":
+                    description: 'unprocessable: The cursor is malformed or belongs to another operation.'
+                    schema:
+                        $ref: '#/definitions/SurlaReadCheckOutputUnprocessableResponseBody'
+                    examples:
+                        application/vnd.goa.error:
+                            fault: false
+                            id: 123abc
+                            message: parameter 'p' must be an integer
+                            name: unprocessable
+                            temporary: false
+                            timeout: false
+            schemes:
+                - http
+    /workspace/dependencies:
+        post:
+            tags:
+                - surla
+            summary: update_dependencies surla
+            description: Run go mod tidy for every Go module of the active workspace in a protected copy inside Linux containers, then write only the changed go.mod, go.sum and go.work.sum files back to the workspace through verified handles. A symlinked manifest or one edited during the call is refused for that module.
+            operationId: surla#update_dependencies
+            responses:
+                "200":
+                    description: OK response.
+                    schema:
+                        $ref: '#/definitions/UpdateDependenciesResult'
+                        required:
+                            - op_id
+                            - files_written
+                            - message
+                "422":
+                    description: 'unprocessable: The workspace contains no Go module.'
+                    schema:
+                        $ref: '#/definitions/SurlaUpdateDependenciesUnprocessableResponseBody'
+                    examples:
+                        application/vnd.goa.error:
+                            fault: false
+                            id: 123abc
+                            message: parameter 'p' must be an integer
+                            name: unprocessable
+                            temporary: false
+                            timeout: false
+                "501":
+                    description: 'not_implemented: No workspace directory is bound to this control plane.'
+                    schema:
+                        $ref: '#/definitions/SurlaUpdateDependenciesNotImplementedResponseBody'
+                    examples:
+                        application/vnd.goa.error:
+                            fault: false
+                            id: 123abc
+                            message: parameter 'p' must be an integer
+                            name: not_implemented
+                            temporary: false
+                            timeout: false
+                "503":
+                    description: 'unavailable: No local Docker engine is usable: docker is missing, the engine does not answer or is not local, or the Go image cannot be pulled.'
+                    schema:
+                        $ref: '#/definitions/SurlaUpdateDependenciesUnavailableResponseBody'
+                    examples:
+                        application/vnd.goa.error:
+                            fault: false
+                            id: 123abc
+                            message: parameter 'p' must be an integer
+                            name: unavailable
+                            temporary: false
+                            timeout: false
+            schemes:
+                - http
+    /workspace/generate:
+        post:
+            tags:
+                - surla
+            summary: generate_code surla
+            description: Read the active workspace's application module, or its public local eval/ module when target is eval, compile that module's edited Goa design in Surla's sandbox, and atomically replace its gen/ directory. Preserve top-level user files and their permissions and leave go.mod and go.sum unchanged. Return the written paths and warnings; a warning after gen/ publication still means generation succeeded. The tool compiles the design only; it does not build the application or run tests. Fix a rejected design and call again on the same running server.
+            operationId: surla#generate_code
+            parameters:
+                - name: generate_code_request_body
+                  in: body
+                  required: true
+                  schema:
+                    $ref: '#/definitions/GenerateCodePayload'
+            responses:
+                "200":
+                    description: OK response.
+                    schema:
+                        $ref: '#/definitions/GenerateCodeResult'
+                        required:
+                            - target
+                            - files_written
+                            - warnings
+                "422":
+                    description: 'unprocessable: The selected local module is absent, replaced, or invalid; correct its local files and call again.'
+                    schema:
+                        $ref: '#/definitions/SurlaGenerateCodeUnprocessableResponseBody'
+                    examples:
+                        application/vnd.goa.error:
+                            fault: false
+                            id: 123abc
+                            message: parameter 'p' must be an integer
+                            name: unprocessable
+                            temporary: false
+                            timeout: false
+                "501":
+                    description: 'not_implemented: No workspace directory is bound to this control plane.'
+                    schema:
+                        $ref: '#/definitions/SurlaGenerateCodeNotImplementedResponseBody'
+                    examples:
+                        application/vnd.goa.error:
+                            fault: false
+                            id: 123abc
+                            message: parameter 'p' must be an integer
+                            name: not_implemented
+                            temporary: false
+                            timeout: false
+            schemes:
+                - http
+    /workspace/init:
+        post:
+            tags:
+                - surla
+            summary: init_project surla
+            description: Initialize a new Surla starter project directory inside the server's bound workspace, generating the candidate Go module, Goa and Goa-AI code, and the eval/ verification harness, creating the initial Git commit, and switching the server's active workspace and trusted evaluator suite commit to that project. When the request includes a progressToken, the tool sends MCP progress updates as starter generation/tests, initial commit creation, and publication start.
+            operationId: surla#init_project
+            parameters:
+                - name: init_project_request_body
+                  in: body
+                  required: true
+                  schema:
+                    $ref: '#/definitions/InitProjectPayload'
+                    required:
+                        - module_path
+            responses:
+                "200":
+                    description: OK response.
+                    schema:
+                        $ref: '#/definitions/InitProjectResult'
+                        required:
+                            - dir
+                            - module_path
+                            - service_name
+                            - commit
+                "409":
+                    description: 'conflict: The workspace or target directory is already initialized.'
+                    schema:
+                        $ref: '#/definitions/SurlaInitProjectConflictResponseBody'
+                    examples:
+                        application/vnd.goa.error:
+                            fault: false
+                            id: 123abc
+                            message: parameter 'p' must be an integer
+                            name: conflict
+                            temporary: false
+                            timeout: false
+                "422":
+                    description: 'unprocessable: The module path or child directory name is invalid.'
+                    schema:
+                        $ref: '#/definitions/SurlaInitProjectUnprocessableResponseBody'
+                    examples:
+                        application/vnd.goa.error:
+                            fault: false
+                            id: 123abc
+                            message: parameter 'p' must be an integer
+                            name: unprocessable
+                            temporary: false
+                            timeout: false
+                "501":
+                    description: 'not_implemented: This control plane has no bound workspace or starter generator configured.'
+                    schema:
+                        $ref: '#/definitions/SurlaInitProjectNotImplementedResponseBody'
                     examples:
                         application/vnd.goa.error:
                             fault: false
@@ -1895,6 +2163,63 @@ definitions:
             - examples
             - preserved_behaviors
             - request_revision
+    CheckOutputPage:
+        title: CheckOutputPage
+        type: object
+        properties:
+            captured_bytes:
+                type: integer
+                description: Total bytes captured for the operation.
+                example: 8386127994778990586
+                format: int64
+            dropped_bytes:
+                type: integer
+                description: Bytes the operation produced beyond its capture limit and did not keep; nonzero means the output has a stated gap.
+                example: 8153869448844237652
+                format: int64
+            next_cursor:
+                type: string
+                description: Cursor for the following page; absent when this page reaches the end.
+                example: Aut occaecati possimus maiores architecto.
+            text:
+                type: string
+                description: The page text.
+                example: Esse vel sed aut perspiciatis quibusdam.
+        description: One page of at most 16 KiB of a check operation's captured output.
+        example:
+            captured_bytes: 8386127994778990586
+            dropped_bytes: 8153869448844237652
+            next_cursor: Aut occaecati possimus maiores architecto.
+            text: Esse vel sed aut perspiciatis quibusdam.
+        required:
+            - text
+            - captured_bytes
+            - dropped_bytes
+    CheckProjectResult:
+        title: CheckProjectResult
+        type: object
+        properties:
+            message:
+                type: string
+                description: 'At most 16 KiB: the modules tested, the first failure and the end of its output, and how to read the rest.'
+                example: Quo qui voluptatem qui nisi ullam.
+            op_id:
+                type: string
+                description: Operation identifier; pass it to read_check_output to read the full output.
+                example: Voluptatem assumenda earum iste.
+            passed:
+                type: boolean
+                description: True only when go test ./... exited 0 in every module.
+                example: false
+        description: Outcome of running every Go module's tests in a protected copy of the workspace inside Linux containers.
+        example:
+            message: Quo qui voluptatem qui nisi ullam.
+            op_id: Voluptatem assumenda earum iste.
+            passed: false
+        required:
+            - op_id
+            - passed
+            - message
     ConfigureModelPayload:
         title: ConfigureModelPayload
         type: object
@@ -2196,6 +2521,117 @@ definitions:
             - input_summary
             - expected_outcome
             - verification_kind
+    GenerateCodePayload:
+        title: GenerateCodePayload
+        type: object
+        properties:
+            target:
+                type: string
+                description: 'Module to regenerate: candidate (the application, the default when omitted) or eval (the local eval/ module).'
+                example: eval
+                enum:
+                    - candidate
+                    - eval
+        example:
+            target: eval
+    GenerateCodeResult:
+        title: GenerateCodeResult
+        type: object
+        properties:
+            files_written:
+                type: array
+                items:
+                    type: string
+                    example: Nihil nihil ad laboriosam.
+                description: Sorted paths relative to the selected module that were written, including AGENTS_QUICKSTART.md when produced and written successfully.
+                example:
+                    - Nihil nihil ad laboriosam.
+                    - Autem et.
+                    - Rem fugiat aspernatur.
+            target:
+                type: string
+                description: Module that received the generated files.
+                example: eval
+                enum:
+                    - candidate
+                    - eval
+            warnings:
+                type: array
+                items:
+                    type: string
+                    example: Quis libero quia ipsa exercitationem dolorem et.
+                description: Problems that did not prevent gen/ publication, such as incomplete cleanup or a guide that could not be written.
+                example:
+                    - Quis libero quia ipsa exercitationem dolorem et.
+                    - Ut recusandae.
+                    - Fugit officia numquam dolorem voluptas.
+                    - Cum enim quia ut consequatur consequatur quae.
+        description: Generated files written in the selected local module and warnings about auxiliary work. Generation compiles the design only; it does not build the application or run tests.
+        example:
+            files_written:
+                - Nihil nihil ad laboriosam.
+                - Autem et.
+                - Rem fugiat aspernatur.
+            target: eval
+            warnings:
+                - Quis libero quia ipsa exercitationem dolorem et.
+                - Ut recusandae.
+                - Fugit officia numquam dolorem voluptas.
+                - Cum enim quia ut consequatur consequatur quae.
+        required:
+            - target
+            - files_written
+            - warnings
+    InitProjectPayload:
+        title: InitProjectPayload
+        type: object
+        properties:
+            dir:
+                type: string
+                description: Direct child directory name inside the bound workspace root. When omitted or empty, defaults to the service name derived from module_path.
+                example: shop
+            module_path:
+                type: string
+                description: Go module path of the new service (for example example.com/shop).
+                example: example.com/shop
+                minLength: 3
+        example:
+            dir: shop
+            module_path: example.com/shop
+        required:
+            - module_path
+    InitProjectResult:
+        title: InitProjectResult
+        type: object
+        properties:
+            commit:
+                type: string
+                description: Full commit ID of the initial starter commit created in the initialized repository (40 or 64 lowercase hex characters); start_live_target and verify_change take this commit ID.
+                example: 0ac14c4500b9541d889f2a933126c41e0f75837d556ed1563d8b94e6e2684dd9
+                pattern: ^([0-9a-f]{40}|[0-9a-f]{64})$
+            dir:
+                type: string
+                description: Physical directory path of the newly created starter project (now the server's active workspace).
+                example: Exercitationem mollitia illo incidunt.
+            module_path:
+                type: string
+                description: Initialized Go module path.
+                example: Voluptates soluta.
+            service_name:
+                type: string
+                description: Derived service name.
+                example: Quis aliquam repellendus sit modi.
+        description: Newly initialized Surla starter project directory, derived service identity, and initial Git commit.
+        example:
+            commit: 0ac14c4500b9541d889f2a933126c41e0f75837d556ed1563d8b94e6e2684dd9
+            dir: Exercitationem mollitia illo incidunt.
+            module_path: Voluptates soluta.
+            service_name: Quis aliquam repellendus sit modi.
+        required:
+            - dir
+            - module_path
+            - service_name
+            - commit
     LiveTargetResult:
         title: LiveTargetResult
         type: object
@@ -2364,7 +2800,6 @@ definitions:
         required:
             - change_id
             - request_revision
-            - design
     ProposeChangePayload:
         title: ProposeChangePayload
         type: object
@@ -2375,7 +2810,7 @@ definitions:
                 example: Ipsum soluta officiis facilis dolorem quae.
             design_source:
                 type: string
-                description: Current Goa design source of the target (its design/*.go files) for the CP1 model to read. If omitted, CP1 receives no current design; supply the relevant design source when you want it considered.
+                description: Current Goa design source of the target (its design/*.go files) for the CP1 model to read. When omitted on a server with a bound workspace, Surla reads design/*.go from the bound workspace; when omitted without a bound workspace, CP1 receives no current design.
                 example: Quia placeat maiores voluptatem voluptatem.
             prompt:
                 type: string
@@ -2388,6 +2823,23 @@ definitions:
         required:
             - change_id
             - prompt
+    ReadCheckOutputPayload:
+        title: ReadCheckOutputPayload
+        type: object
+        properties:
+            cursor:
+                type: string
+                description: Opaque next_cursor from the previous page; omit for the first page.
+                example: Vero quia facilis et vel distinctio.
+            op_id:
+                type: string
+                description: Operation identifier returned by check_project or update_dependencies.
+                example: Quo doloribus amet similique.
+        example:
+            cursor: Vero quia facilis et vel distinctio.
+            op_id: Quo doloribus amet similique.
+        required:
+            - op_id
     ReviseChangePayload:
         title: ReviseChangePayload
         type: object
@@ -2398,7 +2850,7 @@ definitions:
                 example: Optio ratione suscipit et neque officia.
             design_source:
                 type: string
-                description: Updated Goa design source of the target (its design/*.go files) for the CP1 model to read; when omitted, the card's saved design source is used again.
+                description: Updated Goa design source of the target (its design/*.go files) for the CP1 model to read. When omitted on a workspace-backed card with a bound workspace, Surla re-reads design/*.go from the bound workspace; otherwise the card's saved design source is used again.
                 example: Qui itaque.
             prompt:
                 type: string
@@ -2622,6 +3074,135 @@ definitions:
             - timeout
             - fault
     SurlaApproveMergeUnprocessableResponseBody:
+        title: 'Mediatype identifier: application/vnd.goa.error; view=default'
+        type: object
+        properties:
+            fault:
+                type: boolean
+                description: Is the error a server-side fault?
+                example: false
+            id:
+                type: string
+                description: ID is a unique identifier for this particular occurrence of the problem.
+                example: 123abc
+            message:
+                type: string
+                description: Message is a human-readable explanation specific to this occurrence of the problem.
+                example: parameter 'p' must be an integer
+            name:
+                type: string
+                description: Name is the name of this class of errors.
+                example: bad_request
+            temporary:
+                type: boolean
+                description: Is the error temporary?
+                example: true
+            timeout:
+                type: boolean
+                description: Is the error a timeout?
+                example: false
+        description: Error response result type (default view)
+        example:
+            fault: false
+            id: 123abc
+            message: parameter 'p' must be an integer
+            name: bad_request
+            temporary: true
+            timeout: false
+        required:
+            - name
+            - id
+            - message
+            - temporary
+            - timeout
+            - fault
+    SurlaCheckProjectNotImplementedResponseBody:
+        title: 'Mediatype identifier: application/vnd.goa.error; view=default'
+        type: object
+        properties:
+            fault:
+                type: boolean
+                description: Is the error a server-side fault?
+                example: false
+            id:
+                type: string
+                description: ID is a unique identifier for this particular occurrence of the problem.
+                example: 123abc
+            message:
+                type: string
+                description: Message is a human-readable explanation specific to this occurrence of the problem.
+                example: parameter 'p' must be an integer
+            name:
+                type: string
+                description: Name is the name of this class of errors.
+                example: bad_request
+            temporary:
+                type: boolean
+                description: Is the error temporary?
+                example: false
+            timeout:
+                type: boolean
+                description: Is the error a timeout?
+                example: true
+        description: Error response result type (default view)
+        example:
+            fault: false
+            id: 123abc
+            message: parameter 'p' must be an integer
+            name: bad_request
+            temporary: false
+            timeout: true
+        required:
+            - name
+            - id
+            - message
+            - temporary
+            - timeout
+            - fault
+    SurlaCheckProjectUnavailableResponseBody:
+        title: 'Mediatype identifier: application/vnd.goa.error; view=default'
+        type: object
+        properties:
+            fault:
+                type: boolean
+                description: Is the error a server-side fault?
+                example: true
+            id:
+                type: string
+                description: ID is a unique identifier for this particular occurrence of the problem.
+                example: 123abc
+            message:
+                type: string
+                description: Message is a human-readable explanation specific to this occurrence of the problem.
+                example: parameter 'p' must be an integer
+            name:
+                type: string
+                description: Name is the name of this class of errors.
+                example: bad_request
+            temporary:
+                type: boolean
+                description: Is the error temporary?
+                example: false
+            timeout:
+                type: boolean
+                description: Is the error a timeout?
+                example: true
+        description: Error response result type (default view)
+        example:
+            fault: true
+            id: 123abc
+            message: parameter 'p' must be an integer
+            name: bad_request
+            temporary: false
+            timeout: true
+        required:
+            - name
+            - id
+            - message
+            - temporary
+            - timeout
+            - fault
+    SurlaCheckProjectUnprocessableResponseBody:
         title: 'Mediatype identifier: application/vnd.goa.error; view=default'
         type: object
         properties:
@@ -3137,6 +3718,92 @@ definitions:
             - temporary
             - timeout
             - fault
+    SurlaGenerateCodeNotImplementedResponseBody:
+        title: 'Mediatype identifier: application/vnd.goa.error; view=default'
+        type: object
+        properties:
+            fault:
+                type: boolean
+                description: Is the error a server-side fault?
+                example: false
+            id:
+                type: string
+                description: ID is a unique identifier for this particular occurrence of the problem.
+                example: 123abc
+            message:
+                type: string
+                description: Message is a human-readable explanation specific to this occurrence of the problem.
+                example: parameter 'p' must be an integer
+            name:
+                type: string
+                description: Name is the name of this class of errors.
+                example: bad_request
+            temporary:
+                type: boolean
+                description: Is the error temporary?
+                example: true
+            timeout:
+                type: boolean
+                description: Is the error a timeout?
+                example: false
+        description: Error response result type (default view)
+        example:
+            fault: false
+            id: 123abc
+            message: parameter 'p' must be an integer
+            name: bad_request
+            temporary: true
+            timeout: false
+        required:
+            - name
+            - id
+            - message
+            - temporary
+            - timeout
+            - fault
+    SurlaGenerateCodeUnprocessableResponseBody:
+        title: 'Mediatype identifier: application/vnd.goa.error; view=default'
+        type: object
+        properties:
+            fault:
+                type: boolean
+                description: Is the error a server-side fault?
+                example: true
+            id:
+                type: string
+                description: ID is a unique identifier for this particular occurrence of the problem.
+                example: 123abc
+            message:
+                type: string
+                description: Message is a human-readable explanation specific to this occurrence of the problem.
+                example: parameter 'p' must be an integer
+            name:
+                type: string
+                description: Name is the name of this class of errors.
+                example: bad_request
+            temporary:
+                type: boolean
+                description: Is the error temporary?
+                example: true
+            timeout:
+                type: boolean
+                description: Is the error a timeout?
+                example: false
+        description: Error response result type (default view)
+        example:
+            fault: true
+            id: 123abc
+            message: parameter 'p' must be an integer
+            name: bad_request
+            temporary: true
+            timeout: false
+        required:
+            - name
+            - id
+            - message
+            - temporary
+            - timeout
+            - fault
     SurlaGetChangeForbiddenResponseBody:
         title: 'Mediatype identifier: application/vnd.goa.error; view=default'
         type: object
@@ -3344,6 +4011,135 @@ definitions:
             message: parameter 'p' must be an integer
             name: bad_request
             temporary: false
+            timeout: false
+        required:
+            - name
+            - id
+            - message
+            - temporary
+            - timeout
+            - fault
+    SurlaInitProjectConflictResponseBody:
+        title: 'Mediatype identifier: application/vnd.goa.error; view=default'
+        type: object
+        properties:
+            fault:
+                type: boolean
+                description: Is the error a server-side fault?
+                example: true
+            id:
+                type: string
+                description: ID is a unique identifier for this particular occurrence of the problem.
+                example: 123abc
+            message:
+                type: string
+                description: Message is a human-readable explanation specific to this occurrence of the problem.
+                example: parameter 'p' must be an integer
+            name:
+                type: string
+                description: Name is the name of this class of errors.
+                example: bad_request
+            temporary:
+                type: boolean
+                description: Is the error temporary?
+                example: true
+            timeout:
+                type: boolean
+                description: Is the error a timeout?
+                example: false
+        description: Error response result type (default view)
+        example:
+            fault: true
+            id: 123abc
+            message: parameter 'p' must be an integer
+            name: bad_request
+            temporary: true
+            timeout: false
+        required:
+            - name
+            - id
+            - message
+            - temporary
+            - timeout
+            - fault
+    SurlaInitProjectNotImplementedResponseBody:
+        title: 'Mediatype identifier: application/vnd.goa.error; view=default'
+        type: object
+        properties:
+            fault:
+                type: boolean
+                description: Is the error a server-side fault?
+                example: false
+            id:
+                type: string
+                description: ID is a unique identifier for this particular occurrence of the problem.
+                example: 123abc
+            message:
+                type: string
+                description: Message is a human-readable explanation specific to this occurrence of the problem.
+                example: parameter 'p' must be an integer
+            name:
+                type: string
+                description: Name is the name of this class of errors.
+                example: bad_request
+            temporary:
+                type: boolean
+                description: Is the error temporary?
+                example: true
+            timeout:
+                type: boolean
+                description: Is the error a timeout?
+                example: false
+        description: Error response result type (default view)
+        example:
+            fault: false
+            id: 123abc
+            message: parameter 'p' must be an integer
+            name: bad_request
+            temporary: true
+            timeout: false
+        required:
+            - name
+            - id
+            - message
+            - temporary
+            - timeout
+            - fault
+    SurlaInitProjectUnprocessableResponseBody:
+        title: 'Mediatype identifier: application/vnd.goa.error; view=default'
+        type: object
+        properties:
+            fault:
+                type: boolean
+                description: Is the error a server-side fault?
+                example: false
+            id:
+                type: string
+                description: ID is a unique identifier for this particular occurrence of the problem.
+                example: 123abc
+            message:
+                type: string
+                description: Message is a human-readable explanation specific to this occurrence of the problem.
+                example: parameter 'p' must be an integer
+            name:
+                type: string
+                description: Name is the name of this class of errors.
+                example: bad_request
+            temporary:
+                type: boolean
+                description: Is the error temporary?
+                example: true
+            timeout:
+                type: boolean
+                description: Is the error a timeout?
+                example: false
+        description: Error response result type (default view)
+        example:
+            fault: false
+            id: 123abc
+            message: parameter 'p' must be an integer
+            name: bad_request
+            temporary: true
             timeout: false
         required:
             - name
@@ -3825,6 +4621,92 @@ definitions:
             - temporary
             - timeout
             - fault
+    SurlaReadCheckOutputNotFoundResponseBody:
+        title: 'Mediatype identifier: application/vnd.goa.error; view=default'
+        type: object
+        properties:
+            fault:
+                type: boolean
+                description: Is the error a server-side fault?
+                example: true
+            id:
+                type: string
+                description: ID is a unique identifier for this particular occurrence of the problem.
+                example: 123abc
+            message:
+                type: string
+                description: Message is a human-readable explanation specific to this occurrence of the problem.
+                example: parameter 'p' must be an integer
+            name:
+                type: string
+                description: Name is the name of this class of errors.
+                example: bad_request
+            temporary:
+                type: boolean
+                description: Is the error temporary?
+                example: true
+            timeout:
+                type: boolean
+                description: Is the error a timeout?
+                example: true
+        description: Error response result type (default view)
+        example:
+            fault: true
+            id: 123abc
+            message: parameter 'p' must be an integer
+            name: bad_request
+            temporary: true
+            timeout: true
+        required:
+            - name
+            - id
+            - message
+            - temporary
+            - timeout
+            - fault
+    SurlaReadCheckOutputUnprocessableResponseBody:
+        title: 'Mediatype identifier: application/vnd.goa.error; view=default'
+        type: object
+        properties:
+            fault:
+                type: boolean
+                description: Is the error a server-side fault?
+                example: false
+            id:
+                type: string
+                description: ID is a unique identifier for this particular occurrence of the problem.
+                example: 123abc
+            message:
+                type: string
+                description: Message is a human-readable explanation specific to this occurrence of the problem.
+                example: parameter 'p' must be an integer
+            name:
+                type: string
+                description: Name is the name of this class of errors.
+                example: bad_request
+            temporary:
+                type: boolean
+                description: Is the error temporary?
+                example: false
+            timeout:
+                type: boolean
+                description: Is the error a timeout?
+                example: true
+        description: Error response result type (default view)
+        example:
+            fault: false
+            id: 123abc
+            message: parameter 'p' must be an integer
+            name: bad_request
+            temporary: false
+            timeout: true
+        required:
+            - name
+            - id
+            - message
+            - temporary
+            - timeout
+            - fault
     SurlaReviseChangeAnalysisRejectedResponseBody:
         title: 'Mediatype identifier: application/vnd.goa.error; view=default'
         type: object
@@ -4205,6 +5087,135 @@ definitions:
             name: bad_request
             temporary: false
             timeout: true
+        required:
+            - name
+            - id
+            - message
+            - temporary
+            - timeout
+            - fault
+    SurlaUpdateDependenciesNotImplementedResponseBody:
+        title: 'Mediatype identifier: application/vnd.goa.error; view=default'
+        type: object
+        properties:
+            fault:
+                type: boolean
+                description: Is the error a server-side fault?
+                example: true
+            id:
+                type: string
+                description: ID is a unique identifier for this particular occurrence of the problem.
+                example: 123abc
+            message:
+                type: string
+                description: Message is a human-readable explanation specific to this occurrence of the problem.
+                example: parameter 'p' must be an integer
+            name:
+                type: string
+                description: Name is the name of this class of errors.
+                example: bad_request
+            temporary:
+                type: boolean
+                description: Is the error temporary?
+                example: true
+            timeout:
+                type: boolean
+                description: Is the error a timeout?
+                example: false
+        description: Error response result type (default view)
+        example:
+            fault: true
+            id: 123abc
+            message: parameter 'p' must be an integer
+            name: bad_request
+            temporary: true
+            timeout: false
+        required:
+            - name
+            - id
+            - message
+            - temporary
+            - timeout
+            - fault
+    SurlaUpdateDependenciesUnavailableResponseBody:
+        title: 'Mediatype identifier: application/vnd.goa.error; view=default'
+        type: object
+        properties:
+            fault:
+                type: boolean
+                description: Is the error a server-side fault?
+                example: true
+            id:
+                type: string
+                description: ID is a unique identifier for this particular occurrence of the problem.
+                example: 123abc
+            message:
+                type: string
+                description: Message is a human-readable explanation specific to this occurrence of the problem.
+                example: parameter 'p' must be an integer
+            name:
+                type: string
+                description: Name is the name of this class of errors.
+                example: bad_request
+            temporary:
+                type: boolean
+                description: Is the error temporary?
+                example: true
+            timeout:
+                type: boolean
+                description: Is the error a timeout?
+                example: false
+        description: Error response result type (default view)
+        example:
+            fault: true
+            id: 123abc
+            message: parameter 'p' must be an integer
+            name: bad_request
+            temporary: true
+            timeout: false
+        required:
+            - name
+            - id
+            - message
+            - temporary
+            - timeout
+            - fault
+    SurlaUpdateDependenciesUnprocessableResponseBody:
+        title: 'Mediatype identifier: application/vnd.goa.error; view=default'
+        type: object
+        properties:
+            fault:
+                type: boolean
+                description: Is the error a server-side fault?
+                example: true
+            id:
+                type: string
+                description: ID is a unique identifier for this particular occurrence of the problem.
+                example: 123abc
+            message:
+                type: string
+                description: Message is a human-readable explanation specific to this occurrence of the problem.
+                example: parameter 'p' must be an integer
+            name:
+                type: string
+                description: Name is the name of this class of errors.
+                example: bad_request
+            temporary:
+                type: boolean
+                description: Is the error temporary?
+                example: true
+            timeout:
+                type: boolean
+                description: Is the error a timeout?
+                example: false
+        description: Error response result type (default view)
+        example:
+            fault: true
+            id: 123abc
+            message: parameter 'p' must be an integer
+            name: bad_request
+            temporary: true
+            timeout: false
         required:
             - name
             - id
@@ -4791,6 +5802,38 @@ definitions:
         required:
             - approval
             - reason
+    UpdateDependenciesResult:
+        title: UpdateDependenciesResult
+        type: object
+        properties:
+            files_written:
+                type: array
+                items:
+                    type: string
+                    example: Corporis commodi ipsam autem quo esse.
+                description: Workspace-relative go.mod, go.sum and go.work.sum files whose bytes changed and were written.
+                example:
+                    - Corporis commodi ipsam autem quo esse.
+                    - Aut qui.
+            message:
+                type: string
+                description: 'At most 16 KiB: what was updated, and Go''s message for any module that could not be.'
+                example: Autem facilis est ullam blanditiis.
+            op_id:
+                type: string
+                description: Operation identifier; pass it to read_check_output to read the full output.
+                example: Ipsam eveniet repellat quaerat ut.
+        description: Go module manifests rewritten in the workspace after go mod tidy ran in a protected copy.
+        example:
+            files_written:
+                - Corporis commodi ipsam autem quo esse.
+                - Aut qui.
+            message: Autem facilis est ullam blanditiis.
+            op_id: Ipsam eveniet repellat quaerat ut.
+        required:
+            - op_id
+            - files_written
+            - message
     VerificationCheck:
         title: VerificationCheck
         type: object

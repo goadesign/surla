@@ -56,12 +56,13 @@ func (c *ControlPlane) VerifyChange(ctx context.Context, p *gensurla.VerifyChang
 	if !ok {
 		return nil, errors.New("authenticated principal is required")
 	}
-	if c.verification == nil {
-		return nil, gensurla.MakeNotImplemented(errVerificationUnavailable)
+	verCfg, err := c.resolveVerificationConfig(ctx)
+	if err != nil {
+		return nil, err
 	}
 	c.mu.RLock()
+	defer c.mu.RUnlock()
 	record, exists, err := c.cards.load(p.ChangeID)
-	c.mu.RUnlock()
 	switch {
 	case err != nil:
 		return nil, err
@@ -75,21 +76,21 @@ func (c *ControlPlane) VerifyChange(ctx context.Context, p *gensurla.VerifyChang
 		return nil, gensurla.MakeConflict(fmt.Errorf("request_revision mismatch for %q: got %q, want %q", p.ChangeID, p.RequestRevision, record.card.RequestRevision))
 	}
 	runID := verifyrun.NewRunID()
-	plan := c.verification.Plan
+	plan := verCfg.Plan
 	plan.CandidateCommit = p.CandidateCommit
 	plan.RequestRevision = p.RequestRevision
 	// The work directory lives inside the run's own directory, which only
 	// the evaluator can read; it is kept as the run's evidence.
-	plan.WorkDir = filepath.Join(c.verification.RunsDir, runID, "work")
+	plan.WorkDir = filepath.Join(verCfg.RunsDir, runID, "work")
 	req := verifyrun.Request{
 		RunID:      runID,
 		Owner:      principal.ID,
 		ChangeID:   p.ChangeID,
 		AcceptedAt: time.Now().UTC(),
-		Timeout:    c.verification.Timeout,
+		Timeout:    verCfg.Timeout,
 		Plan:       plan,
 	}
-	if _, err := verifyrun.Start(c.verification.RunsDir, req, c.verification.Command); err != nil {
+	if _, err := verifyrun.Start(verCfg.RunsDir, req, verCfg.Command); err != nil {
 		return nil, fmt.Errorf("start verification: %w", err)
 	}
 	return statusResult(req, verifyrun.State{Kind: verifyrun.StateRunning}), nil
@@ -105,14 +106,17 @@ func (c *ControlPlane) GetVerification(ctx context.Context, p *gensurla.GetVerif
 	if !ok {
 		return nil, errors.New("authenticated principal is required")
 	}
-	if c.verification == nil {
+	runsDir := c.effectiveRunsDir()
+	if runsDir == "" {
 		return nil, gensurla.MakeNotImplemented(errVerificationUnavailable)
 	}
 	_, span := otel.Tracer("surla/controlplane").Start(ctx, "surla.controlplane.get_verification",
 		trace.WithAttributes(attribute.String("surla.run_id", p.RunID)))
 	defer span.End()
 
-	req, state, err := verifyrun.Read(c.verification.RunsDir, p.RunID)
+	c.mu.RLock()
+	req, state, err := verifyrun.Read(runsDir, p.RunID)
+	c.mu.RUnlock()
 	switch {
 	case req.Owner == "" && errors.Is(err, fs.ErrNotExist):
 		return nil, gensurla.MakeNotFound(fmt.Errorf("unknown run_id %q", p.RunID))
@@ -138,7 +142,8 @@ func (c *ControlPlane) ListVerifications(ctx context.Context, p *gensurla.ListVe
 	if !ok {
 		return nil, errors.New("authenticated principal is required")
 	}
-	if c.verification == nil {
+	runsDir := c.effectiveRunsDir()
+	if runsDir == "" {
 		return nil, gensurla.MakeNotImplemented(errVerificationUnavailable)
 	}
 	_, span := otel.Tracer("surla/controlplane").Start(ctx, "surla.controlplane.list_verifications",
@@ -147,6 +152,23 @@ func (c *ControlPlane) ListVerifications(ctx context.Context, p *gensurla.ListVe
 
 	c.mu.RLock()
 	record, exists, err := c.cards.load(p.ChangeID)
+	if err == nil && exists && record.owner == principal.ID {
+		runs, listErr := verifyrun.List(runsDir, principal.ID, p.ChangeID)
+		c.mu.RUnlock()
+		if listErr != nil {
+			span.RecordError(listErr)
+			span.SetStatus(codes.Error, "list verification runs")
+			return nil, fmt.Errorf("list verifications for %q: saved verification records could not be read", p.ChangeID)
+		}
+		out := make([]*gensurla.VerificationStatusResult, 0, len(runs))
+		for _, r := range runs {
+			out = append(out, statusResult(r.Request, r.State))
+		}
+		return &gensurla.VerificationListResult{
+			ChangeID: p.ChangeID,
+			Runs:     out,
+		}, nil
+	}
 	c.mu.RUnlock()
 	switch {
 	case err != nil:
@@ -155,23 +177,36 @@ func (c *ControlPlane) ListVerifications(ctx context.Context, p *gensurla.ListVe
 		return nil, fmt.Errorf("list verifications for %q: saved change card could not be read", p.ChangeID)
 	case !exists:
 		return nil, gensurla.MakeNotFound(fmt.Errorf("unknown change_id %q", p.ChangeID))
-	case record.owner != principal.ID:
+	default:
 		return nil, gensurla.MakeForbidden(fmt.Errorf("principal %q is not the owner of change_id %q", principal.ID, p.ChangeID))
 	}
-	runs, err := verifyrun.List(c.verification.RunsDir, principal.ID, p.ChangeID)
+}
+
+// effectiveRunsDir returns the verification runs directory configured via
+// Options.RunsDir or directly on Verification.
+func (c *ControlPlane) effectiveRunsDir() string {
+	if c.runsDir != "" {
+		return c.runsDir
+	}
+	if c.verification != nil && c.verification.RunsDir != "" {
+		return c.verification.RunsDir
+	}
+	return ""
+}
+
+// resolveVerificationConfig resolves a VerificationConfig dynamically from the
+// currently bound workspace directory and suite commit when ResolveVerification
+// is set, or returns the static VerificationConfig, validating that RunsDir and
+// ReportDir lie outside both initialWorkspaceRoot and activeWorkspaceDir.
+func (c *ControlPlane) resolveVerificationConfig(ctx context.Context) (*VerificationConfig, error) {
+	cfg, err := c.resolveActiveVerification(ctx)
 	if err != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "list verification runs")
-		return nil, fmt.Errorf("list verifications for %q: saved verification records could not be read", p.ChangeID)
+		return nil, gensurla.MakeNotImplemented(err)
 	}
-	out := make([]*gensurla.VerificationStatusResult, 0, len(runs))
-	for _, r := range runs {
-		out = append(out, statusResult(r.Request, r.State))
+	if cfg == nil {
+		return nil, gensurla.MakeNotImplemented(errVerificationUnavailable)
 	}
-	return &gensurla.VerificationListResult{
-		ChangeID: p.ChangeID,
-		Runs:     out,
-	}, nil
+	return cfg, nil
 }
 
 // statusResult returns the wire form of a run: its request and its state,

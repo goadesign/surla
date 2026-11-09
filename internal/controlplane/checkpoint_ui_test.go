@@ -24,6 +24,9 @@ import (
 // preview state, and renders exact `request_revision` and `design_digest`
 // values for CP1, CP2, and CP3 tool results.
 func TestCheckpointUIMCPAppsHandshakeAndToolResultRendering(t *testing.T) {
+	if testing.Short() {
+		t.Skip("runs the sandboxed Go toolchain; the full suite (go test without -short) covers it")
+	}
 	ctx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
 	analysisJSON, err := json.Marshal(CP1SemanticAnalysis{
 		Summary: "Route refunds >= $50 to manager approval.",

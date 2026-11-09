@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"golang.org/x/sys/unix"
 
@@ -37,11 +36,11 @@ func newInitStage(target, workDir string) (*initStage, error) {
 	if err != nil {
 		return nil, fmt.Errorf("resolve init work directory: %w", err)
 	}
-	rel, err := filepath.Rel(parentPath, workPath)
+	inside, err := abspath.Within(parentPath, workPath)
 	if err != nil {
 		return nil, err
 	}
-	if rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+	if inside {
 		return nil, fmt.Errorf("init work directory %s must be outside project parent %s", workPath, parentPath)
 	}
 	var source, destination unix.Stat_t
@@ -72,9 +71,6 @@ func newInitStage(target, workDir string) (*initStage, error) {
 // publish moves the completed tree without replacing any existing target.
 // Rename is the final fallible step: an error leaves the target unchanged.
 func (s *initStage) publish() error {
-	if err := os.Chmod(s.path, 0o755); err != nil {
-		return fmt.Errorf("set project permissions: %w", err)
-	}
 	if err := unix.RenamexNp(s.path, s.target, unix.RENAME_EXCL); err != nil {
 		return fmt.Errorf("move project into %s: %w", s.target, err)
 	}

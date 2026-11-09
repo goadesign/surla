@@ -576,6 +576,14 @@ func readRequest(dir string) (Request, error) {
 	if err != nil {
 		return Request{}, fmt.Errorf("read run request: %w", err)
 	}
+	return decodeRequest(filepath.Base(dir), raw)
+}
+
+// decodeRequest strictly decodes raw request.json bytes for wantRunID and
+// validates its directory identity, owner, and acceptance time. Once Decode
+// succeeds, req is returned alongside any validation error so callers can still
+// check req.Owner before reporting read failures.
+func decodeRequest(wantRunID string, raw []byte) (Request, error) {
 	dec := json.NewDecoder(bytes.NewReader(raw))
 	dec.DisallowUnknownFields()
 	var req Request
@@ -585,7 +593,6 @@ func readRequest(dir string) (Request, error) {
 	if err := dec.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
 		return req, errors.New("decode run request: unexpected trailing data")
 	}
-	wantRunID := filepath.Base(dir)
 	if !runIDPattern.MatchString(req.RunID) || req.RunID != wantRunID {
 		return req, fmt.Errorf("decode run request: run_id %q does not match directory %q", req.RunID, wantRunID)
 	}

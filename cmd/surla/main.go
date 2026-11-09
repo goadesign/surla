@@ -12,12 +12,11 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"io/fs"
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"os/signal"
-	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -35,9 +34,11 @@ import (
 	"github.com/goadesign/surla/internal/controlplane"
 	"github.com/goadesign/surla/internal/designeval"
 	"github.com/goadesign/surla/internal/diff"
+	"github.com/goadesign/surla/internal/scaffold"
 	"github.com/goadesign/surla/internal/swarm"
 	"github.com/goadesign/surla/internal/verify"
 	"github.com/goadesign/surla/internal/verifyrun"
+	"github.com/goadesign/surla/verify/candidate"
 )
 
 // serveConfig holds the optional `surla serve` flags that choose the CP1
@@ -53,25 +54,37 @@ type serveConfig struct {
 	modelName string
 	// swarmProfilesPath is the path of a JSON array of swarm.ProviderProfile.
 	swarmProfilesPath string
-	// projectDir is the path of a starter project created by `surla init`
-	// from whose committed HEAD `surla serve -project` derives its CP3/CP4
-	// verification configuration; mutually exclusive with verificationPath.
+	// projectDir is the bound workspace directory (default: the startup working
+	// directory); when verificationPath is empty and the workspace holds a
+	// committed starter project at startup (or after init_project), CP3/CP4
+	// verification pins its evaluator suite to that starter commit.
 	projectDir string
 	// projectSet reports whether -project was explicitly passed on the CLI.
 	projectSet bool
 	// verificationPath is the path of the operator's CP4 verification
-	// configuration (see loadVerificationConfig); empty disables
-	// verify_change, get_verification and list_verifications unless
-	// projectDir is set.
+	// configuration (see loadVerificationConfig); empty derives CP4
+	// verification from a committed starter workspace when present.
 	verificationPath string
 	// promotionPath is the path of the operator's CP5 promotion
-	// configuration (see loadPromotionConfig); empty leaves approve_merge
+	// configuration (see loadWorkspacePromotionTarget); empty leaves approve_merge
 	// unavailable.
 	promotionPath string
 	// cardsDir is the directory where CP1 Change Cards are saved, so a
 	// restarted serve returns them.
 	cardsDir string
+	// cardsDirExplicit reports whether -cards-dir was explicitly passed on the
+	// CLI.
+	cardsDirExplicit bool
+	// importLegacyWorkspace reports whether -import-legacy-workspace was passed
+	// on the CLI to perform the one-time operator-vouched legacy import.
+	importLegacyWorkspace bool
+	// checkTimeout bounds one whole check_project or update_dependencies
+	// operation (copy, image pull and every container).
+	checkTimeout time.Duration
 }
+
+// defaultCheckTimeout is the default -check-timeout.
+const defaultCheckTimeout = 20 * time.Minute
 
 // binaryFlags collects repeated `-binary name=pkg` flags for `surla verify`
 // into verify.Plan.Binaries, rejecting malformed entries and repeated names.
@@ -224,14 +237,19 @@ func runServe(args []string) (err error) {
 	fs.StringVar(&cfg.swarmProfilesPath, "swarm-profiles", "", "JSON file listing the coding-agent provider profiles used for CP2 swarm plans")
 	fs.StringVar(&cfg.cardsDir, "cards-dir", ".surla/cards", "directory where CP1 Change Cards are saved so they survive restarts; one surla serve at a time may use it")
 	fs.StringVar(&cfg.promotionPath, "promotion-config", "", "JSON file with the CP5 report directory, required suite and environment, and release directory of staged binaries that approve_merge checks; it approves staged binaries for a fresh launch, never a running service")
-	fs.StringVar(&cfg.projectDir, "project", "", "starter project directory created by surla init; derives CP3/CP4 verification from its committed HEAD (excludes -verification-config)")
+	fs.StringVar(&cfg.projectDir, "project", "", "project workspace directory (default: working directory); derives CP3/CP4 verification from its committed starter HEAD at startup (or the commit created by init_project) when -verification-config is omitted")
 	fs.StringVar(&cfg.verificationPath, "verification-config", "", "JSON file with the CP4 candidate, evaluator suite, runs and reports configuration used by verify_change")
+	fs.BoolVar(&cfg.importLegacyWorkspace, "import-legacy-workspace", false, "import existing workspace .surla/cards, .surla/runs, and reports/ once into protected operator storage before starting")
+	fs.DurationVar(&cfg.checkTimeout, "check-timeout", defaultCheckTimeout, "how long one check_project or update_dependencies operation may take, including copying the workspace, pulling the Go image and running every module's containers")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 	fs.Visit(func(f *flag.Flag) {
-		if f.Name == "project" {
+		switch f.Name {
+		case "project":
 			cfg.projectSet = true
+		case "cards-dir":
+			cfg.cardsDirExplicit = true
 		}
 	})
 	// Flag parsing stops at the first non-flag argument, so anything left over
@@ -266,7 +284,11 @@ func runServe(args []string) (err error) {
 	if err != nil {
 		return err
 	}
-	writeServeStatus(os.Stderr, ln.Addr().(*net.TCPAddr), opts, cfg.projectDir)
+	starterProject := cfg.projectDir
+	if cfg.verificationPath != "" {
+		starterProject = ""
+	}
+	writeServeStatus(os.Stderr, ln.Addr().(*net.TCPAddr), opts, starterProject)
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
@@ -335,7 +357,7 @@ func writeServeStatus(w io.Writer, addr *net.TCPAddr, opts controlplane.Options,
 			len(opts.SwarmProfiles), noun)
 	}
 	switch {
-	case opts.TargetUpdater == nil && opts.Verification != nil && opts.Live != nil:
+	case opts.TargetUpdater == nil && (opts.Verification != nil || opts.ResolveVerification != nil) && opts.Live != nil:
 		root := controlplane.LiveRoot(opts.CardsDir)
 		fmt.Fprintf(w, "surla: CP3 (draft_override, start_live_target): compiled_rule is on; prompt_template is on once start_live_target runs a candidate commit (live targets in %s)\n", root)
 		writeLeftoverLiveDirs(w, root)
@@ -345,14 +367,18 @@ func writeServeStatus(w io.Writer, addr *net.TCPAddr, opts controlplane.Options,
 	default:
 		fmt.Fprintln(w, "surla: CP3 (draft_override): on")
 	}
-	if opts.Verification == nil {
-		fmt.Fprintln(w, "surla: CP4 (verify_change, get_verification, list_verifications): off"+
-			" (set -project or -verification-config, or run surla verify on the CLI)")
-	} else {
+	switch {
+	case opts.Verification != nil:
 		fmt.Fprintf(w, "surla: CP4 (verify_change, get_verification, list_verifications): on (runs in %s, reports in %s, evaluator suite commit %s)\n",
 			opts.Verification.RunsDir, opts.Verification.Plan.ReportDir, opts.Verification.Plan.SuiteCommit)
+	case opts.ResolveVerification != nil:
+		fmt.Fprintf(w, "surla: CP4 (verify_change, get_verification, list_verifications): workspace %s (runs in %s; activates after init_project or when started in a committed starter repository)\n",
+			opts.WorkspaceDir, opts.RunsDir)
+	default:
+		fmt.Fprintln(w, "surla: CP4 (verify_change, get_verification, list_verifications): off"+
+			" (set -project or -verification-config, or run surla verify on the CLI)")
 	}
-	if project != "" {
+	if project != "" && opts.Verification != nil {
 		fmt.Fprintf(w, "surla: -project %s: the evaluator suite commit is the project's HEAD at startup;"+
 			" commit and restart surla serve to use a later suite\n", project)
 	}
@@ -364,7 +390,7 @@ func writeServeStatus(w io.Writer, addr *net.TCPAddr, opts controlplane.Options,
 }
 
 // runPreview reads the design module in -dir (default: the current directory)
-// with readModuleSnapshot, evaluates it with a design evaluator it owns, and
+// with designeval.ReadModuleSnapshot, evaluates it with a design evaluator it owns, and
 // writes the result with writePreviewResult: indented JSON to w and a one-line
 // summary to stderr. It records nothing and calls no model. SIGINT and SIGTERM
 // cancel the evaluation. On every return it closes the evaluator, which
@@ -378,7 +404,7 @@ func runPreview(args []string, w, stderr io.Writer) (err error) {
 	if fs.NArg() > 0 {
 		return fmt.Errorf("unexpected arguments %q", fs.Args())
 	}
-	files, err := readModuleSnapshot(*dir)
+	files, err := designeval.ReadModuleSnapshot(*dir)
 	if err != nil {
 		return err
 	}
@@ -413,7 +439,7 @@ func writePreviewResult(stdout, stderr io.Writer, res designeval.Result) error {
 }
 
 // runDiff compares two design modules on disk, each read into a snapshot with
-// readModuleSnapshot, and writes the structured diff JSON report to stdout.
+// designeval.ReadModuleSnapshot, and writes the structured diff JSON report to stdout.
 // Both evaluations share one design evaluator it owns. SIGINT and SIGTERM
 // cancel them. On every return it closes the evaluator, which removes its
 // build workspace, and returns that error with any other.
@@ -430,11 +456,11 @@ func runDiff(args []string) (err error) {
 	if *oldDir == "" || *newDir == "" {
 		return errors.New("--old-dir and --new-dir are required")
 	}
-	oldFiles, err := readModuleSnapshot(*oldDir)
+	oldFiles, err := designeval.ReadModuleSnapshot(*oldDir)
 	if err != nil {
 		return err
 	}
-	newFiles, err := readModuleSnapshot(*newDir)
+	newFiles, err := designeval.ReadModuleSnapshot(*newDir)
 	if err != nil {
 		return err
 	}
@@ -676,87 +702,6 @@ func isSHA256Hex(s string) bool {
 	return true
 }
 
-// readModuleSnapshot reads the module rooted at dir into a design snapshot:
-// its go.mod, go.sum and every non-test .go file, keyed by slash-separated
-// path relative to dir. Hidden, vendor and testdata directories and nested
-// modules are skipped. A symbolic link at dir or anywhere in the module is an
-// error, and both directory inspection and regular-file reads go through one
-// os.Root handle opened on dir, so a replaced parent directory cannot escape
-// dir. Raw file bytes are preserved as read for local preview and diff.
-func readModuleSnapshot(dir string) (files map[string]string, err error) {
-	cleanDir, root, err := openModuleRoot(dir)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { err = errors.Join(err, root.Close()) }()
-	return readModuleSnapshotFromRoot(cleanDir, root)
-}
-
-// readModuleSnapshotFromRoot walks root and reads its module snapshot files
-// relative to root. cleanDir is used only to format diagnostic paths.
-func readModuleSnapshotFromRoot(cleanDir string, root *os.Root) (map[string]string, error) {
-	files := map[string]string{}
-	err := fs.WalkDir(root.FS(), ".", func(rel string, d fs.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
-		}
-		if d.Type()&fs.ModeSymlink != 0 {
-			return fmt.Errorf("%s is a symbolic link; a design snapshot holds only regular files",
-				filepath.Join(cleanDir, filepath.FromSlash(rel)))
-		}
-		if d.IsDir() {
-			name := d.Name()
-			switch {
-			case rel == ".":
-				return nil
-			case strings.HasPrefix(name, ".") || name == "vendor" || name == "testdata":
-				return fs.SkipDir
-			}
-			if _, err := root.Lstat(filepath.FromSlash(rel + "/go.mod")); err == nil {
-				return fs.SkipDir
-			}
-			return nil
-		}
-		keep := rel == "go.mod" || rel == "go.sum" ||
-			(strings.HasSuffix(rel, ".go") && !strings.HasSuffix(rel, "_test.go"))
-		if !keep || !d.Type().IsRegular() {
-			return nil
-		}
-		f, err := openSnapshotFile(root, rel)
-		if err != nil {
-			return fmt.Errorf("read %s: %w", filepath.Join(cleanDir, filepath.FromSlash(rel)), err)
-		}
-		b, readErr := io.ReadAll(f)
-		if err := errors.Join(readErr, f.Close()); err != nil {
-			return fmt.Errorf("read %s: %w", filepath.Join(cleanDir, filepath.FromSlash(rel)), err)
-		}
-		files[rel] = string(b)
-		return nil
-	})
-	if err != nil {
-		return nil, err
-	}
-	return files, nil
-}
-
-// openSnapshotFile opens the regular file at slash-separated path rel inside
-// root without following symbolic links or blocking on special files, and
-// checks that the opened descriptor is a regular file.
-func openSnapshotFile(root *os.Root, rel string) (*os.File, error) {
-	f, err := root.OpenFile(filepath.FromSlash(rel), os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
-	if err != nil {
-		return nil, err
-	}
-	info, err := f.Stat()
-	if err == nil && !info.Mode().IsRegular() {
-		err = fmt.Errorf("%s is not a regular file", rel)
-	}
-	if err != nil {
-		return nil, errors.Join(err, f.Close())
-	}
-	return f, nil
-}
-
 // serveOptions builds the control-plane Options for `surla serve` from cfg.
 // getenv supplies provider API keys. When all model flags are empty,
 // resolveStartupModelConfig auto-detects anthropic/claude-sonnet-4-6 from
@@ -772,36 +717,94 @@ func serveOptions(
 	if err != nil {
 		return controlplane.Options{}, err
 	}
-	verification, err := resolveVerificationConfig(cfg)
-	if err != nil {
-		return controlplane.Options{}, err
-	}
-	promotion, err := loadPromotionConfig(cfg.promotionPath)
-	if err != nil {
-		return controlplane.Options{}, err
-	}
 	resolvedCfg := resolveStartupModelConfig(cfg, getenv)
 	analyzer, closeModel, err := newCP1Analyzer(resolvedCfg, getenv)
 	if err != nil {
 		return controlplane.Options{}, err
 	}
+	cleanupModel := func() error {
+		if closeModel != nil {
+			return closeModel()
+		}
+		return nil
+	}
+
+	ws, err := configureServeWorkspace(cfg)
+	if err != nil {
+		return controlplane.Options{}, errors.Join(err, cleanupModel())
+	}
 	live := &controlplane.LiveConfig{
 		Env: liveTargetEnv(environ, resolvedCfg),
 	}
-	if verification != nil {
-		live.Command = verification.Command
-		live.StartTimeout = verification.Timeout
+	if ws.verification != nil {
+		live.Command = ws.verification.Command
+		live.StartTimeout = ws.verification.Timeout
+	} else if ws.resolveVerification != nil {
+		self, selfErr := selfCommand()
+		if selfErr != nil {
+			var lockErr error
+			if ws.closeProjectLock != nil {
+				lockErr = ws.closeProjectLock()
+			}
+			return controlplane.Options{}, errors.Join(selfErr, cleanupModel(), lockErr)
+		}
+		live.Command = self
+		live.StartTimeout = defaultProjectVerifyTimeout
+	}
+	goProxyEnv, err := operatorGoProxyEnv(ws.evalWorkDir)
+	if err != nil {
+		return controlplane.Options{}, errors.Join(err, cleanupModel(), ws.closeProjectLock())
 	}
 	return controlplane.Options{
-		CardsDir:        cfg.cardsDir,
-		Analyzer:        analyzer,
-		CloseAnalyzer:   closeModel,
-		ModelBuilder:    newModelBuilder(getenv, environ),
-		SwarmProfiles:   profiles,
-		Verification:    verification,
-		PromotionTarget: promotion,
-		Live:            live,
+		CardsDir:               ws.cardsDir,
+		WorkspaceDir:           ws.workspaceDir,
+		InitStageDir:           ws.initStageDir,
+		Evaluator:              designeval.NewEvaluatorInDir(ws.evalWorkDir),
+		NewGenerator:           func() scaffold.Generator { return designeval.NewEvaluatorInDir(ws.evalWorkDir) },
+		SurlaVersion:           surlaBuildVersion(),
+		Analyzer:               analyzer,
+		CloseAnalyzer:          closeModel,
+		ModelBuilder:           newModelBuilder(getenv, environ),
+		SwarmProfiles:          profiles,
+		Verification:           ws.verification,
+		RunsDir:                ws.runsDir,
+		ResolveVerification:    ws.resolveVerification,
+		PromotionTarget:        ws.promotionTarget,
+		ResolvePromotionTarget: ws.resolvePromotionTarget,
+		Live:                   live,
+		CloseProjectLock:       ws.closeProjectLock,
+		Checker:                candidate.NewContainerRunner(),
+		CheckTimeout:           cfg.checkTimeout,
+		ImportedReports:        ws.importedReports,
+		GoProxyEnv:             goProxyEnv,
 	}, nil
+}
+
+// operatorGoProxyEnv returns the operator's module proxy and checksum
+// settings as KEY=value for dependency-download containers. It runs the
+// trusted go command in dir, an operator-owned directory with no Go files,
+// so no workspace go.mod, go.work or go.env influences the values. Empty
+// values are omitted so the container's Go uses its defaults.
+func operatorGoProxyEnv(dir string) ([]string, error) {
+	names := []string{"GOPROXY", "GOSUMDB", "GOPRIVATE", "GONOPROXY", "GONOSUMDB", "GOINSECURE"}
+	cmd := exec.Command("go", append([]string{"env", "-json"}, names...)...)
+	cmd.Dir = dir
+	cmd.Env = append(os.Environ(), "GOWORK=off", "GOFLAGS=")
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("read the operator's Go proxy settings with go env: %w", err)
+	}
+	var values map[string]string
+	if err := json.Unmarshal(out, &values); err != nil {
+		return nil, fmt.Errorf("decode go env output: %w", err)
+	}
+	var env []string
+	for _, name := range names {
+		if v := values[name]; v != "" {
+			env = append(env, name+"="+v)
+		}
+	}
+	return env, nil
 }
 
 // resolveStartupModelConfig selects the default direct provider and model when

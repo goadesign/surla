@@ -15,6 +15,9 @@ import (
 // TestToolCardsPreserveCompiledInputChoices verifies that compilation shows all
 // declared choices without guessing which binder the application will install.
 func TestToolCardsPreserveCompiledInputChoices(t *testing.T) {
+	if testing.Short() {
+		t.Skip("runs the sandboxed Go toolchain; the full suite (go test without -short) covers it")
+	}
 	files := testmodule.Snapshot(t, "", `package design
 import (
  . "goa.design/goa-ai/dsl"

@@ -122,7 +122,14 @@ func (c *ControlPlane) StartLiveTarget(ctx context.Context, p *gensurla.StartLiv
 	if _, ok := PrincipalFromContext(ctx); !ok {
 		return nil, errors.New("authenticated principal is required")
 	}
-	if c.verification == nil || !c.liveConfigured {
+	if !c.liveConfigured {
+		return nil, gensurla.MakeLiveTargetUnavailable(errors.New("this server has no verification configuration, so it cannot build or run a live target"))
+	}
+	verCfg, err := c.resolveActiveVerification(ctx)
+	if err != nil {
+		return nil, gensurla.MakeLiveTargetUnavailable(err)
+	}
+	if verCfg == nil {
 		return nil, gensurla.MakeLiveTargetUnavailable(errors.New("this server has no verification configuration, so it cannot build or run a live target"))
 	}
 	ctx, span := otel.Tracer("surla/controlplane").Start(ctx, "controlplane.start_live_target",
@@ -143,13 +150,17 @@ func (c *ControlPlane) StartLiveTarget(ctx context.Context, p *gensurla.StartLiv
 	if err != nil {
 		return nil, err
 	}
-	plan := c.verification.Plan
+	plan := verCfg.Plan
 	plan.CandidateCommit = p.CandidateCommit
 	timeout := c.liveTimeout
 	if timeout <= 0 {
 		timeout = startTimeoutDefault
 	}
-	proc, err := verifyrun.LaunchLive(c.liveRoot, plan, key, c.liveCommand, c.liveEnv())
+	cmd := c.liveCommand
+	if len(cmd) == 0 {
+		cmd = verCfg.Command
+	}
+	proc, err := verifyrun.LaunchLive(c.liveRoot, plan, key, cmd, c.liveEnv())
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "live target did not launch")

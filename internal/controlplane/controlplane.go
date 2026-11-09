@@ -16,9 +16,12 @@ import (
 	"fmt"
 	"maps"
 	"net/http"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
+	"time"
 	"unicode/utf8"
 
 	gensurlahttp "github.com/goadesign/surla/gen/http/surla/server"
@@ -28,8 +31,10 @@ import (
 	"github.com/goadesign/surla/internal/designeval"
 	"github.com/goadesign/surla/internal/diff"
 	"github.com/goadesign/surla/internal/goldenpath"
+	"github.com/goadesign/surla/internal/scaffold"
 	"github.com/goadesign/surla/internal/swarm"
 	"github.com/goadesign/surla/internal/verify"
+	"github.com/goadesign/surla/verify/candidate"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -103,6 +108,52 @@ type (
 		// Change Cards, one file per card. It is required, and one process at
 		// a time may use it.
 		CardsDir string
+		// WorkspaceDir is the initial filesystem workspace bound to this
+		// control plane. When set, cards, runs, and reports must live outside
+		// it, and CP1/CP2/CP3/CP4/CP5 can read or derive project inputs from
+		// the bound workspace.
+		WorkspaceDir string
+		// InitStageDir is an optional operator-owned staging parent directory
+		// outside WorkspaceDir on the same filesystem device used by
+		// init_project before atomic publication.
+		InitStageDir string
+		// Checker runs check_project and update_dependencies containers on
+		// the local Docker engine. When nil, both tools return
+		// not_implemented.
+		Checker *candidate.ContainerRunner
+		// CheckTimeout bounds one whole check or dependency operation. It
+		// must be positive when Checker is set; New rejects zero or a
+		// negative value. Per-operation directories live under CardsDir,
+		// whose exclusive lock makes this server their only owner.
+		CheckTimeout time.Duration
+		// ImportedReports are the validated absolute original report paths
+		// recorded by -import-legacy-workspace; check copies never include
+		// the entries the kernel resolves them to.
+		ImportedReports []string
+		// GoProxyEnv holds the operator's GOPROXY, GOSUMDB, GOPRIVATE,
+		// GONOPROXY, GONOSUMDB and GOINSECURE settings as KEY=value, passed
+		// to dependency-download containers and nothing else.
+		GoProxyEnv []string
+		// Evaluator evaluates Goa design snapshots for preview_architecture and
+		// diff. When nil, New constructs a default designeval.Evaluator (using
+		// <CardsDir>/designeval as its protected temporary parent when
+		// WorkspaceDir is set). When a host supplies Evaluator for a bound
+		// workspace, it must construct it with designeval.NewEvaluatorInDir
+		// using a protected directory outside WorkspaceDir.
+		Evaluator *designeval.Evaluator
+		// NewGenerator constructs a fresh scaffold.Generator for each
+		// init_project call. When nil, InitProject constructs a fresh
+		// designeval.NewEvaluatorInDir("<CardsDir>/designeval") per call. When
+		// a host supplies NewGenerator, each returned generator must use a
+		// protected directory outside WorkspaceDir.
+		NewGenerator func() scaffold.Generator
+		// InitRunner runs external commands (`git`, `go`) during init_project.
+		// When nil, scaffold.RunCommand is used.
+		InitRunner scaffold.Runner
+		// SurlaVersion is the exact canonical Surla module version pinned in
+		// `eval/go.mod` by init_project. When empty, init_project returns
+		// not_implemented.
+		SurlaVersion string
 		// Analyzer performs CP1 semantic analysis via a model call.
 		Analyzer CP1Analyzer
 		// CloseAnalyzer releases the transport owned by Analyzer (such as a
@@ -120,19 +171,38 @@ type (
 		// proposing Chorus multi-agent role assignments at CP2.
 		SwarmProfiles []swarm.ProviderProfile
 		// PromotionTarget supplies CP5 verification reports and current
-		// promotion inputs. Without it approve_merge fails.
+		// promotion inputs. Without it or ResolvePromotionTarget, approve_merge
+		// fails.
 		PromotionTarget PromotionTarget
-		// Verification is the operator's CP4 configuration. Without it
-		// verify_change, get_verification and list_verifications fail.
+		// ResolvePromotionTarget dynamically resolves a PromotionTarget from
+		// the currently bound workspace directory when PromotionTarget is nil.
+		ResolvePromotionTarget func(ctx context.Context, workspaceDir string) (PromotionTarget, error)
+		// Verification is the operator's static CP4 configuration. When nil,
+		// RunsDir and ResolveVerification supply dynamic workspace-derived CP4
+		// configuration.
 		Verification *VerificationConfig
+		// RunsDir is the protected verification runs directory used by
+		// get_verification, list_verifications, and init_project when
+		// Verification is nil.
+		RunsDir string
+		// ResolveVerification dynamically resolves a VerificationConfig from
+		// the currently bound workspace directory and its trusted starter suite
+		// commit (set by init_project or restored from workspace.json, or empty
+		// when the workspace was not initialized via init_project) for
+		// verify_change and start_live_target.
+		ResolveVerification func(ctx context.Context, workspaceDir, suiteCommit string) (*VerificationConfig, error)
 		// Live lets start_live_target build and run CP3 live targets with
 		// Verification's plan, in <CardsDir>/live. Without it, or without
-		// Verification, start_live_target fails.
+		// Verification/ResolveVerification, start_live_target fails.
 		Live *LiveConfig
+		// CloseProjectLock releases the operator project directory's shared
+		// import lock when ControlPlane.Close releases CardsDir (or if New
+		// fails).
+		CloseProjectLock func() error
 	}
 
 	// storedChangeCard holds a versioned Change Card alongside its authenticated
-	// owner principal and original design source snapshot.
+	// owner principal, original design source snapshot, and design source origin.
 	storedChangeCard struct {
 		// card is the latest versioned ChangeCardResult.
 		card *gensurla.ChangeCardResult
@@ -140,6 +210,9 @@ type (
 		owner string
 		// designSource is the Goa design source snapshot inspected at CP1.
 		designSource string
+		// sourceOrigin records whether designSource was supplied by the caller
+		// ("supplied") or read from the bound workspace ("workspace").
+		sourceOrigin string
 	}
 
 	// canonicalAnswerPair is a deterministic key/value entry for JSON hashing.
@@ -204,12 +277,76 @@ type (
 		// promotionTarget supplies CP5 reports and current promotion inputs;
 		// nil when the host bound none.
 		promotionTarget PromotionTarget
-		// verification is the operator's CP4 configuration, or nil.
+		// resolvePromotionTarget dynamically resolves a PromotionTarget from
+		// the currently bound workspace when promotionTarget is nil.
+		resolvePromotionTarget func(ctx context.Context, workspaceDir string) (PromotionTarget, error)
+		// verification is the operator's static CP4 configuration, or nil.
 		verification *VerificationConfig
+		// runsDir is the protected verification runs directory when
+		// verification is nil.
+		runsDir string
+		// resolveVerification dynamically resolves a VerificationConfig from
+		// the currently bound workspace and its trusted starter suite commit.
+		resolveVerification func(ctx context.Context, workspaceDir, suiteCommit string) (*VerificationConfig, error)
 		// evaluator evaluates designs for preview_architecture and diff. It
 		// creates its build workspace on the first evaluation, and Close
 		// removes it.
 		evaluator *designeval.Evaluator
+		// workspaceMu serializes InitProject and guards activeWorkspaceDir,
+		// boundWorkspaceDev, boundWorkspaceIno, and boundSuiteCommit.
+		workspaceMu sync.RWMutex
+		// initialWorkspaceRoot is the cleaned physical path of
+		// Options.WorkspaceDir at startup, or empty when unbound.
+		initialWorkspaceRoot string
+		// protectedDirs holds the deduplicated physical paths of
+		// initialWorkspaceRoot and its enclosing Git working tree root,
+		// computed once at startup.
+		protectedDirs []string
+		// initialWorkspaceDev and initialWorkspaceIno record the device and
+		// inode of initialWorkspaceRoot at startup.
+		initialWorkspaceDev uint64
+		initialWorkspaceIno uint64
+		// activeWorkspaceDir is the currently bound workspace directory.
+		activeWorkspaceDir string
+		// boundWorkspaceDev and boundWorkspaceIno record the device and inode
+		// of activeWorkspaceDir.
+		boundWorkspaceDev uint64
+		boundWorkspaceIno uint64
+		// boundSuiteCommit is the trusted initial starter commit recorded by
+		// init_project or restored from workspace.json.
+		boundSuiteCommit string
+		// initStageDir is Options.InitStageDir.
+		initStageDir string
+		// checker is Options.Checker.
+		checker *candidate.ContainerRunner
+		// checkWorkDir is <cards dir>/check-work when Checker is set, the
+		// parent of per-operation directories; empty otherwise. The card
+		// store's exclusive lock makes this server its only owner.
+		checkWorkDir string
+		// checkTimeout is Options.CheckTimeout.
+		checkTimeout time.Duration
+		// importedReports is Options.ImportedReports.
+		importedReports []string
+		// goProxyEnv is Options.GoProxyEnv.
+		goProxyEnv []string
+		// checkOps counts running check operations so Close can wait for
+		// their containers to be removed.
+		checkOps sync.WaitGroup
+		// newGenerator constructs a fresh scaffold.Generator for each
+		// InitProject call when non-nil.
+		newGenerator func() scaffold.Generator
+		// initRunner runs external commands during InitProject.
+		initRunner scaffold.Runner
+		// surlaVersion pins the Surla module version in eval/go.mod during
+		// InitProject.
+		surlaVersion string
+		// closeProjectLock releases the operator project directory's shared
+		// import lock when Close releases cards.
+		closeProjectLock func() error
+		// initStepHook is an optional test hook invoked in InitProject at
+		// "after_wal" (after Step 1 writeWorkspaceRecord before RenameatxNp)
+		// and "after_rename" (after RenameatxNp and Fsync before verifyPublishedTarget).
+		initStepHook func(step string)
 		// liveState holds the live CP3 target state.
 		liveState
 	}
@@ -295,19 +432,50 @@ func NewTokenAuthenticator(tokens map[string]Principal) RequestAuthenticator {
 // creates the directory when missing and holds its lock until Close; it fails
 // when CardsDir is empty or another process holds the lock.
 func New(opts Options) (*ControlPlane, error) {
+	cleanupFailedNew := func() error {
+		var evalErr, lockErr error
+		if opts.Evaluator != nil {
+			evalErr = opts.Evaluator.Close()
+		}
+		if opts.CloseProjectLock != nil {
+			lockErr = opts.CloseProjectLock()
+		}
+		return errors.Join(closeInitialAnalyzer(opts.CloseAnalyzer), evalErr, lockErr)
+	}
 	if opts.TargetUpdater != nil && opts.Live != nil {
 		err := errors.New("set either TargetUpdater or Live, not both: draft_override sends prompt text to exactly one target")
-		return nil, errors.Join(err, closeInitialAnalyzer(opts.CloseAnalyzer))
+		return nil, errors.Join(err, cleanupFailedNew())
+	}
+	surlaVersion := strings.TrimSpace(opts.SurlaVersion)
+	if surlaVersion != "" && !scaffold.ValidVersion(surlaVersion) {
+		err := fmt.Errorf("surla version %q must be a canonical semantic version such as v0.1.0", opts.SurlaVersion)
+		return nil, errors.Join(err, cleanupFailedNew())
+	}
+	wsRoot, wsDev, wsIno, err := openWorkspaceRootAndStat(opts.WorkspaceDir)
+	if err != nil {
+		return nil, errors.Join(err, cleanupFailedNew())
+	}
+	runsDir, initStageDir, verCfg, protectedDirs, err := normalizeAndValidateStartupPaths(opts, wsRoot)
+	if err != nil {
+		return nil, errors.Join(err, cleanupFailedNew())
 	}
 	cards, err := openCardStore(opts.CardsDir)
 	if err != nil {
-		return nil, errors.Join(err, closeInitialAnalyzer(opts.CloseAnalyzer))
+		return nil, errors.Join(err, cleanupFailedNew())
+	}
+	eval := opts.Evaluator
+	if eval == nil {
+		if wsRoot != "" {
+			eval = designeval.NewEvaluatorInDir(filepath.Join(cards.dir, "designeval"))
+		} else {
+			eval = designeval.NewEvaluator()
+		}
 	}
 	var initialLiveEnv []string
 	if opts.Live != nil {
 		initialLiveEnv = opts.Live.Env
 	}
-	return &ControlPlane{
+	cp := &ControlPlane{
 		cards: cards,
 		activeModel: &modelHandle{
 			analyzer: opts.Analyzer,
@@ -315,14 +483,54 @@ func New(opts Options) (*ControlPlane, error) {
 			closeFn:  opts.CloseAnalyzer,
 			refs:     1,
 		},
-		modelBuilder:    opts.ModelBuilder,
-		targetUpdater:   opts.TargetUpdater,
-		swarmProfiles:   opts.SwarmProfiles,
-		promotionTarget: opts.PromotionTarget,
-		verification:    opts.Verification,
-		evaluator:       designeval.NewEvaluator(),
-		liveState:       newLiveState(opts.Live, opts.CardsDir),
-	}, nil
+		modelBuilder:           opts.ModelBuilder,
+		targetUpdater:          opts.TargetUpdater,
+		swarmProfiles:          opts.SwarmProfiles,
+		promotionTarget:        opts.PromotionTarget,
+		resolvePromotionTarget: opts.ResolvePromotionTarget,
+		verification:           verCfg,
+		runsDir:                runsDir,
+		resolveVerification:    opts.ResolveVerification,
+		evaluator:              eval,
+		initialWorkspaceRoot:   wsRoot,
+		protectedDirs:          protectedDirs,
+		initialWorkspaceDev:    wsDev,
+		initialWorkspaceIno:    wsIno,
+		activeWorkspaceDir:     wsRoot,
+		boundWorkspaceDev:      wsDev,
+		boundWorkspaceIno:      wsIno,
+		initStageDir:           initStageDir,
+		checker:                opts.Checker,
+		checkTimeout:           opts.CheckTimeout,
+		importedReports:        opts.ImportedReports,
+		goProxyEnv:             opts.GoProxyEnv,
+		newGenerator:           opts.NewGenerator,
+		initRunner:             opts.InitRunner,
+		surlaVersion:           surlaVersion,
+		closeProjectLock:       opts.CloseProjectLock,
+		liveState:              newLiveState(opts.Live, cards.dir),
+	}
+	if err := cp.restoreWorkspace(); err != nil {
+		return nil, errors.Join(err, cp.Close())
+	}
+	if err := validateStartupSeparation(cards.dir, runsDir, initStageDir, verCfg, protectedDirs...); err != nil {
+		return nil, errors.Join(err, cp.Close())
+	}
+	if opts.Checker != nil {
+		if opts.CheckTimeout <= 0 {
+			return nil, errors.Join(fmt.Errorf("check timeout must be positive, got %s", opts.CheckTimeout), cp.Close())
+		}
+		cp.checkWorkDir = filepath.Join(cards.dir, "check-work")
+		if err := os.MkdirAll(cp.checkWorkDir, 0o700); err != nil {
+			return nil, errors.Join(fmt.Errorf("create check work directory: %w", err), cp.Close())
+		}
+		// Retry removal of containers that a previous server with this card
+		// store could not confirm. A failed retry keeps its directory for
+		// Close and the next start, and its span records the failure, so it
+		// does not stop this server from starting.
+		cp.recoverCheckOperations()
+	}
+	return cp, nil
 }
 
 // NewHTTPHandler mounts both the Goa HTTP endpoints and the MCP JSON-RPC
@@ -405,8 +613,19 @@ func (c *ControlPlane) ProposeChange(ctx context.Context, p *gensurla.ProposeCha
 		c.releaseModel(ctx, model)
 	}()
 	var designSrc string
-	if p.DesignSource != nil {
+	sourceOrigin := sourceOriginSupplied
+	switch {
+	case p.DesignSource != nil:
 		designSrc = *p.DesignSource
+	default:
+		wsDir, wsDev, wsIno := c.currentWorkspaceTarget()
+		if wsDir != "" {
+			designSrc, err = readWorkspaceDesignSource(wsDir, wsDev, wsIno)
+			if err != nil {
+				return nil, err
+			}
+			sourceOrigin = sourceOriginWorkspace
+		}
 	}
 
 	c.mu.RLock()
@@ -513,7 +732,12 @@ func (c *ControlPlane) ProposeChange(ctx context.Context, p *gensurla.ProposeCha
 	if exists {
 		return nil, gensurla.MakeConflict(fmt.Errorf("change_id %q already exists", p.ChangeID))
 	}
-	if err := c.cards.save(storedChangeCard{card: card, owner: principal.ID, designSource: designSrc}); err != nil {
+	if err := c.cards.save(storedChangeCard{
+		card:         card,
+		owner:        principal.ID,
+		designSource: designSrc,
+		sourceOrigin: sourceOrigin,
+	}); err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "save cp1 change card")
 		return nil, err
@@ -524,26 +748,44 @@ func (c *ControlPlane) ProposeChange(ctx context.Context, p *gensurla.ProposeCha
 // Close shuts the control plane down. It first refuses new live targets,
 // then stops the live target, then cancels the design evaluations in
 // progress, waits for them, and removes their build workspace, and finally
-// releases the cards directory so another process can use it. It always
-// attempts the evaluator cleanup, and joins its error with any other. If the
-// live target cannot be confirmed stopped, the cards directory stays locked
-// on this and every later call, because the target's processes may still use
-// it. Card cleanup waits for a card read or save in progress; requests that
-// reach the cards afterwards, such as one still waiting on a model or
-// promotion target, fail without writing. A later call returns the same
-// evaluator result and, if the live target could not be stopped, the same
-// failure; the cards directory is released only once.
+// releases the cards directory and operator project lock so another process can
+// use them. It always attempts the evaluator cleanup, and joins its error with
+// any other. If the live target cannot be confirmed stopped, the cards
+// directory and operator project lock stay locked on this and every later call,
+// because the target's processes may still use them. Card cleanup waits for a
+// card read or save in progress; requests that reach the cards afterwards,
+// such as one still waiting on a model or promotion target, fail without
+// writing. A later call returns the same evaluator result and, if the live
+// target could not be stopped, the same failure; the cards directory and
+// project lock are released only once.
 func (c *ControlPlane) Close() error {
 	c.cancelServer()
+	// Wait out any check admission in progress: an operation admitted under
+	// workspaceMu before this point is already registered, and every later
+	// one sees the server context ended and is refused (see
+	// admitCheckOperation).
+	c.workspaceMu.Lock()
+	c.workspaceMu.Unlock()
+	// Running checks see the server context end, remove their containers
+	// and return; then any container still unconfirmed gets one more try.
+	c.checkOps.Wait()
+	checkErr := c.recoverCheckOperations()
 	liveErr := c.closeLive()
 	evalErr := c.evaluator.Close()
 	modelErr := c.closeModel()
 	if liveErr != nil {
 		return errors.Join(evalErr, modelErr, fmt.Errorf("stop live target; cards directory %s stays locked: %w", c.cards.dir, liveErr))
 	}
+	c.workspaceMu.Lock()
+	defer c.workspaceMu.Unlock()
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return errors.Join(evalErr, modelErr, c.cards.close())
+	var lockErr error
+	if c.closeProjectLock != nil {
+		lockErr = c.closeProjectLock()
+		c.closeProjectLock = nil
+	}
+	return errors.Join(evalErr, modelErr, checkErr, c.cards.close(), lockErr)
 }
 
 // GetChange returns the current Change Card for change_id to its owner. It
@@ -604,10 +846,27 @@ func (c *ControlPlane) PreviewArchitecture(ctx context.Context, p *gensurla.Prev
 		return nil, gensurla.MakeConflict(fmt.Errorf("request_revision mismatch for %q: got %q, want %q", p.ChangeID, p.RequestRevision, record.card.RequestRevision))
 	}
 
+	var designFiles map[string]string
+	switch {
+	case p.Design != nil:
+		designFiles = p.Design.Files
+	default:
+		wsDir, wsDev, wsIno := c.currentWorkspaceTarget()
+		if wsDir == "" {
+			return nil, gensurla.MakeUnprocessable(errors.New(
+				"design is required when no workspace directory is bound to this control plane",
+			))
+		}
+		designFiles, err = readWorkspaceModuleSnapshot(wsDir, wsDev, wsIno)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	if err := reportProgress(ctx, 0, 2, "Evaluating the candidate design in the sandbox"); err != nil {
 		return nil, err
 	}
-	evaluated, err := c.evaluator.Evaluate(ctx, p.Design.Files)
+	evaluated, err := c.evaluator.Evaluate(ctx, designFiles)
 	if err != nil {
 		return nil, err
 	}
@@ -623,7 +882,7 @@ func (c *ControlPlane) PreviewArchitecture(ctx context.Context, p *gensurla.Prev
 		}
 	}
 
-	designDigest := designeval.SnapshotDigest(p.Design.Files)
+	designDigest := designeval.SnapshotDigest(designFiles)
 	swarmItem, err := planSwarmRoster(
 		p.ChangeID,
 		designDigest,

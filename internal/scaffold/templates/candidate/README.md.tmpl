@@ -1,7 +1,8 @@
 # [[.Name]]
 
-A starter Goa / Goa-AI service created by `surla init`, with a starter
-evaluator suite that `surla verify` can run against it.
+A starter Goa / Goa-AI service created by `surla init` or the `init_project`
+MCP tool, with a starter evaluator suite that `surla verify` and `verify_change`
+can run against it.
 
 ## What is here
 
@@ -20,11 +21,12 @@ evaluator suite that `surla verify` can run against it.
   generated decoder runs when you want missing headers to answer `401`.
   `design/model.go` declares the C4 architecture model.
 - `gen/` is generated from `design/`. After changing `design/`, run `surla gen`
-  in this directory: it runs Goa's generator for this module inside Surla's
-  sandbox. Never edit `gen/`. `surla gen` does not build the whole
-  application against the new `gen/`, so after a design change, update the
-  hand-written code in `internal/` and `cmd/` to match it before you verify a
-  commit or start a live target.
+  in this directory (or call the `generate_code` MCP tool when connected to
+  `surla serve`): it runs Goa's generator for this module inside Surla's
+  sandbox. Never edit `gen/`. `surla gen` and `generate_code` do not build the
+  whole application against the new `gen/`, so after a design change, update
+  the hand-written code in `internal/` and `cmd/` to match it before you verify
+  a commit or start a live target.
   `AGENTS_QUICKSTART.md` is generated with it and maps the agent, its tools
   and the generated packages for coding agents (in a Surla project, use
   `surla gen` and `surla verify` in place of the guide's `goa gen` and
@@ -67,41 +69,60 @@ read.
 
 ## Next steps
 
+If you created this project over MCP with `init_project`, `surla serve` has
+already initialized the Git repository, created the initial commit (`commit` in
+`init_project`'s result), bound the server to this directory (`dir`), and
+pinned the evaluator suite to that initial commit: continue directly with
+`propose_change`, `confirm_intent`, `preview_architecture`, `generate_code`,
+`start_live_target`, and `verify_change` on the running server (when you later
+edit and commit implementation changes as a new commit, pass that new commit ID
+as `candidate_commit` to `start_live_target` and `verify_change`).
+
+If you created this project from the CLI with `surla init`, initialize the Git
+repository, make the first commit, and run `surla preview` and `surla verify`:
+
 ```sh
 git init
 git add .gitignore README.md AGENTS_QUICKSTART.md go.mod go.sum design gen internal cmd eval
 git commit -m "Start [[.Name]] from surla init"
 surla preview -dir .
-WORK_DIR="$(mktemp -d)/work"
+VERIFY_DIR="$(mktemp -d)"
+WORK_DIR="$VERIFY_DIR/work"
+REPORT_DIR="$VERIFY_DIR/reports"
 surla verify \
   -candidate-repo . -candidate-commit "$(git rev-parse HEAD)" -binary [[.Name]]=./cmd/[[.Name]] \
   -suite-repo . -suite-commit "$(git rev-parse HEAD)" -suite-module eval -suite-command ./cmd/[[.Name]]-evals \
-  -request-revision starter -work-dir "$WORK_DIR" -report-dir reports -builder-view
+  -request-revision starter -work-dir "$WORK_DIR" -report-dir "$REPORT_DIR" -builder-view
 ```
 
 `surla verify` keeps `$WORK_DIR` after the run: it holds the clones, the
 built binaries, and the evaluator's private evidence, including each build's
-log and each step's output in `$WORK_DIR/evidence/`. `-report-dir reports`
-always writes the full verification report as `reports/<digest>.json` (used by
-`surla approve`), while `-builder-view` hides holdout scenario names and checks
+log and each step's output in `$WORK_DIR/evidence/`. `-report-dir "$REPORT_DIR"`
+always writes the full verification report outside the repository as
+`$REPORT_DIR/<digest>.json` (used by `surla approve`), while `-builder-view` hides holdout scenario names and checks
 in the completed report JSON and summary line (if a run fails before writing a
 report, `stderr` prints operator setup/execution failure diagnostics). Do not
-share `$WORK_DIR`, `reports/`, or setup/execution failure output with coding
+share `$WORK_DIR`, `$REPORT_DIR`, or setup/execution failure output with coding
 agents that build the service.
 
 ## Connect a coding agent and try a live target
 
-After the first commit, start `surla serve` from this directory with
+If `surla serve` is not already running (for example, after `surla init` and the
+first commit above), start `surla serve` from this directory with
 `-project .`, a bearer token of your choice, and a model. `-project` needs Git
 2.45 or newer. `-project .` reads
 this starter layout from the current `HEAD` commit, pins the evaluator suite
-to that commit for `start_live_target` and `verify_change`, and writes runs to
-`.surla/runs` and reports to `reports/` (restart `surla serve` to trust a
-later `HEAD` commit). `.gitignore` keeps `.surla/`, which also holds Change
-Cards, run state and live targets, out of the repository. `-model-provider
-anthropic` reads `ANTHROPIC_API_KEY`, `-model-provider openai` reads
-`OPENAI_API_KEY`, and `-model-gateway-addr` uses a goa-ai model gateway
-instead. Set `MODEL_NAME` to a model your provider offers:
+to that commit for `start_live_target` and `verify_change`, and stores Change
+Cards, verification runs, full reports, and live targets in operator-private
+storage outside the repository (when started directly on a committed CLI
+project, restart `surla serve` to trust a later `HEAD` suite commit; when the
+project was created by `init_project`, restarting the original server restores
+the initial suite commit saved in `workspace.json` unless you start `surla serve`
+directly on the child project directory or pass `-verification-config`).
+`-model-provider anthropic` reads `ANTHROPIC_API_KEY`,
+`-model-provider openai` reads `OPENAI_API_KEY`, and `-model-gateway-addr`
+uses a goa-ai model gateway instead. Set `MODEL_NAME` to a model your provider
+offers:
 
 ```sh
 export SURLA_AUTH_TOKEN="choose-a-secret"
@@ -119,16 +140,25 @@ surla serve -principal you@example.com \
   -project .
 ```
 
-To pin a specific suite commit without following `HEAD` on restart, or to use
-a separate evaluator repository, write `.surla/verification.json` and pass
-`-verification-config .surla/verification.json` instead of `-project .`:
+When `surla serve` is started from a standalone starter repository root
+(`-project .`), you can pin a specific suite commit without following `HEAD` on
+restart, or use a separate evaluator repository, by writing
+`../[[.Name]]-ops/verification.json` outside the bound workspace and its
+enclosing Git working tree and passing
+`-project . -verification-config ../[[.Name]]-ops/verification.json` (if this
+project is a subdirectory inside an enclosing monorepo or a child directory
+inside a parent workspace bound before `init_project`, place the `<ops>`
+directory outside the entire bound workspace and enclosing Git working tree
+root, set `candidate_repo` and `suite_repo` to the Git repository root, and set
+`candidate_module` and `suite_module` to the repository-relative module paths,
+such as `"services/[[.Name]]"` and `"services/[[.Name]]/eval"`):
 
 ```sh
-mkdir -p .surla
-cat > .surla/verification.json <<EOF
+mkdir -p ../[[.Name]]-ops
+cat > ../[[.Name]]-ops/verification.json <<EOF
 {
-  "runs_dir": ".surla/runs",
-  "report_dir": "reports",
+  "runs_dir": "../[[.Name]]-ops/runs",
+  "report_dir": "../[[.Name]]-ops/reports",
   "candidate_repo": ".",
   "candidate_module": ".",
   "binaries": {"[[.Name]]": "./cmd/[[.Name]]"},
@@ -166,18 +196,20 @@ Other coding agents take the same URL and header in their own configuration
 files.
 
 To start a change, ask your coding agent to call `propose_change` with your
-request and this project's `design/*.go` files as `design_source`, so the
-analysis considers the current design; without them, it receives no current
-design. Answer the card's questions and confirm it with `confirm_intent`.
-The confirmed card's `request_revision` is the value to verify and approve
-the change with.
+request. When `surla serve` is bound to this workspace (`-project .`),
+`propose_change` reads `design/*.go` from the workspace automatically when
+`design_source` is omitted (or pass `design_source` explicitly when targeting
+a different design). Answer the card's questions and confirm it with
+`confirm_intent`. The confirmed card's `request_revision` is the value to
+verify and approve the change with.
 
 To try prompt wording on a running `[[.Name]]` before you verify it,
-call `start_live_target` with a full commit ID, such as the output of
-`git rev-parse HEAD`, then `draft_override` with
+call `start_live_target` with the full commit ID of the candidate you want to
+run (the initial `commit` returned by `init_project`, or `git rev-parse HEAD`
+after committing your changes), then `draft_override` with
 `prompt_id` `[[.Name]].helper.system`. A draft lasts only as long as that
 target: to keep it, write the text into `internal/helper/planner.go`, commit,
-and verify that commit.
+and pass that new commit ID to `verify_change` (or `surla verify`).
 
 `-request-revision` names the confirmed change request the report is for.
 `starter` is only a local label; when a change goes through the Surla server,

@@ -243,6 +243,9 @@ func TestCP1RejectsMalformedOrUnknownFieldsViaStructuredOutput(t *testing.T) {
 // CP2 design evaluation, Golden Path MCP resource serving, proposed swarm
 // planning, CP3 Fast Draft Mode prompt overrides, and bearer-token authentication.
 func TestCP2EvaluatedArchitecturePreviewCP3FastDraftAndTokenAuthenticator(t *testing.T) {
+	if testing.Short() {
+		t.Skip("runs the sandboxed Go toolchain; the full suite (go test without -short) covers it")
+	}
 	ctx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
 	clearAnalysis := CP1SemanticAnalysis{
 		Summary:     "Refunds with item_subtotal_cents < 5000 auto-approve; >= 5000 require manager approval.",
@@ -413,15 +416,21 @@ var _ = Service("orders", func() {
 		toolNames = append(toolNames, tool.Name)
 	}
 	assert.ElementsMatch(t, []string{
-		"propose_change", "revise_change", "confirm_intent", "get_change", "configure_model", "preview_architecture", "draft_override", "approve_merge", "diff",
+		"propose_change", "revise_change", "confirm_intent", "get_change", "configure_model", "init_project", "generate_code", "preview_architecture", "draft_override", "approve_merge", "diff",
 		"start_live_target", "stop_live_target",
 		"verify_change", "get_verification", "list_verifications",
+		"check_project", "update_dependencies", "read_check_output",
 	}, toolNames)
 	// Every checkpoint tool, diff included, links the checkpoint viewer so an
-	// MCP Apps host can render its result; configure_model is a server model
-	// setter without a checkpoint UI view.
+	// MCP Apps host can render its result; configure_model, init_project,
+	// generate_code, check_project, update_dependencies and read_check_output
+	// are server/workspace tools without a checkpoint UI view.
+	workspaceTools := map[string]bool{
+		"configure_model": true, "init_project": true, "generate_code": true,
+		"check_project": true, "update_dependencies": true, "read_check_output": true,
+	}
 	for _, tool := range toolsRes.Tools {
-		if tool.Name == "configure_model" {
+		if workspaceTools[tool.Name] {
 			if strings.Contains(string(tool.Meta), "resourceUri") {
 				t.Fatalf("tool %q unexpectedly links a UI resource: _meta=%s", tool.Name, tool.Meta)
 			}

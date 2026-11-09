@@ -28,6 +28,7 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
+	"runtime/debug"
 	"slices"
 	"strings"
 	"syscall"
@@ -130,6 +131,9 @@ type (
 	StepError struct {
 		// Args is the command line.
 		Args []string
+		// Summary is a caller-safe command summary without internal git override
+		// flags, such as "go mod tidy" or "git commit".
+		Summary string
 		// Module is the module directory it ran in: "." or "eval".
 		Module string
 		// Log is the file holding its complete output; Init keeps it.
@@ -179,6 +183,10 @@ var (
 	// digits starting with a letter, so Goa generates a Go package of the
 	// same name.
 	lowerAlnum = regexp.MustCompile(`^[a-z][a-z0-9]*$`)
+
+	// commitHexPattern matches a full 40- or 64-character lowercase hex Git
+	// commit ID.
+	commitHexPattern = regexp.MustCompile(`^([0-9a-f]{40}|[0-9a-f]{64})$`)
 )
 
 // Init creates the project described by o, running every command with run
@@ -186,69 +194,43 @@ var (
 // returning. It returns the service name. On error the target is unchanged.
 // Logs of failed commands are retained, and a command whose child cleanup is
 // unconfirmed also retains its stage.
-func Init(ctx context.Context, o Options, run Runner, gen Generator) (name string, err error) {
-	genClosed := false
-	defer func() {
-		if !genClosed {
-			err = errors.Join(err, gen.Close())
-		}
-	}()
-	d, err := newData(o)
+func Init(ctx context.Context, o Options, run Runner, gen Generator) (string, error) {
+	name, stage, _, err := prepare(ctx, o, run, gen, false)
 	if err != nil {
 		return "", err
-	}
-	target, err := filepath.Abs(o.Dir)
-	if err != nil {
-		return "", err
-	}
-	if _, err := os.Lstat(target); err == nil {
-		return "", fmt.Errorf(
-			"%s already exists; surla init only creates a new directory (pass a new path such as -dir %s, or change to the parent directory and remove an empty directory first)",
-			target,
-			filepath.Join(target, d.Name),
-		)
-	} else if !errors.Is(err, fs.ErrNotExist) {
-		return "", fmt.Errorf("check %s: %w", target, err)
-	}
-	stage, err := newInitStage(target, o.WorkDir)
-	if err != nil {
-		return "", err
-	}
-	staging, logs := stage.path, stage.logs
-	if err := build(ctx, staging, logs, d, run, gen); err != nil {
-		var stuck *stuckError
-		if errors.As(err, &stuck) {
-			return "", fmt.Errorf("%w; the staging directory %s is kept because processes may still use it", err, staging)
-		}
-		return "", errors.Join(err, os.RemoveAll(staging))
-	}
-	// The generator's processes worked on their own copies of the files, so
-	// whatever its Close reports, nothing of it uses the staging directory.
-	// It is closed and the context checked before publishing, so a project
-	// appears only when generation is fully over and Init was not canceled.
-	genClosed = true
-	if err := errors.Join(gen.Close(), ctx.Err()); err != nil {
-		return "", errors.Join(err, os.RemoveAll(logs), os.RemoveAll(staging))
-	}
-	// Every step succeeded, so the logs are no longer needed. They are removed
-	// before publishing so that the exclusive rename is the last thing that can
-	// fail. A successful publication cannot be reported as a failed init.
-	if err := os.RemoveAll(logs); err != nil {
-		return "", errors.Join(fmt.Errorf("remove command logs: %w", err), os.RemoveAll(staging))
 	}
 	if err := stage.publish(); err != nil {
-		return "", errors.Join(err, os.RemoveAll(staging))
+		return "", errors.Join(err, os.RemoveAll(stage.path))
 	}
-	return d.Name, nil
+	return name, nil
+}
+
+// Prepare builds and tests the starter project described by o inside a new
+// protected staging directory under o.WorkDir, initializes its Git repository
+// and records its initial commit ("Initial scaffold") without publishing it to
+// o.Dir, closing gen and removing command logs on success. It returns the
+// derived service name, the completed physical staging directory path, and the
+// initial commit ID so the caller can record its write-ahead log and publish
+// the directory atomically. On error the target is unchanged, failed-command
+// logs are retained, and a command whose child cleanup is unconfirmed also
+// retains its staging directory.
+func Prepare(ctx context.Context, o Options, run Runner, gen Generator) (name, stagePath, commit string, err error) {
+	name, stage, commit, err := prepare(ctx, o, run, gen, true)
+	if err != nil {
+		return "", "", "", err
+	}
+	return name, stage.path, commit, nil
 }
 
 // RunCommand runs args in dir as its own process group with GOWORK=off, so a
-// go.work file around dir cannot change the new modules, and writes the
-// combined output to a new file at logPath. Go command temporary files also
-// use that protected log directory rather than inherited TMPDIR or GOTMPDIR,
-// including Go's saved GOTMPDIR setting. When ctx ends the group gets SIGTERM,
-// then SIGKILL; a group that does not exit is reported as a stuck
-// error so Init keeps the staging directory its processes may still use.
+// go.work file around dir cannot change the new modules, strips inherited
+// repository-redirecting Git variables while preserving operator author and
+// config variables, and writes the combined output to a new file at logPath.
+// Go command temporary files also use that protected log directory rather than
+// inherited TMPDIR or GOTMPDIR, including Go's saved GOTMPDIR setting. When ctx
+// ends the group gets SIGTERM, then SIGKILL; a group that does not exit is
+// reported as a stuck error so Init keeps the staging directory its processes
+// may still use.
 func RunCommand(ctx context.Context, dir, logPath string, args ...string) error {
 	log, err := os.OpenFile(logPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if err != nil {
@@ -256,11 +238,7 @@ func RunCommand(ctx context.Context, dir, logPath string, args ...string) error 
 	}
 	cmd := exec.CommandContext(ctx, args[0], args[1:]...)
 	cmd.Dir = dir
-	cmd.Env = append(os.Environ(),
-		"GOWORK=off",
-		"TMPDIR="+filepath.Dir(logPath),
-		"GOTMPDIR="+filepath.Dir(logPath),
-	)
+	cmd.Env = commandEnv(filepath.Dir(logPath))
 	cmd.Stdout, cmd.Stderr = log, log
 	runErr, stopErr := procgroup.Run(cmd, syscall.SIGTERM, stopGrace, stopTimeout)
 	if stopErr != nil {
@@ -277,6 +255,49 @@ func ValidVersion(v string) bool {
 	return semver.IsValid(v) && semver.Canonical(v) == v
 }
 
+// SurlaVersion returns the exact canonical github.com/goadesign/surla module
+// version recorded in info, or empty when info is nil, Surla is an unpublished
+// "(devel)" build or local replacement, or info records no valid Surla version.
+// When the binary's main module is github.com/goadesign/surla, it checks
+// info.Main; when Surla is embedded as a dependency of another main module, it
+// checks the github.com/goadesign/surla entry in info.Deps and never uses the
+// host application's info.Main.Version.
+func SurlaVersion(info *debug.BuildInfo) string {
+	if info == nil {
+		return ""
+	}
+	if info.Main.Path == surlaModule {
+		return moduleSurlaVersion(&info.Main)
+	}
+	for _, dep := range info.Deps {
+		if dep != nil && dep.Path == surlaModule {
+			return moduleSurlaVersion(dep)
+		}
+	}
+	return ""
+}
+
+// LayoutForModule validates a Go module path and returns the service and command
+// names Init writes for it. Starter generation and workspace initialization use
+// the same rule: the last path element must contain lowercase letters and digits,
+// start with a letter, and be neither a Go keyword nor main. For example,
+// example.com/shop returns service shop and candidate command ./cmd/shop.
+// Invalid module paths or service names return an error without running tooling.
+func LayoutForModule(modulePath string) (Layout, error) {
+	if err := module.CheckPath(modulePath); err != nil {
+		return Layout{}, fmt.Errorf("%q: %w", modulePath, err)
+	}
+	name := path.Base(modulePath)
+	if !lowerAlnum.MatchString(name) || !token.IsIdentifier(name) || name == "main" {
+		return Layout{}, fmt.Errorf("%q must end in a service name of lowercase letters and digits starting with a letter, other than a Go keyword or main, such as example.com/shop", modulePath)
+	}
+	return Layout{
+		Service:          name,
+		CandidatePackage: "./cmd/" + name,
+		SuiteCommand:     "./cmd/" + name + "-evals",
+	}, nil
+}
+
 // StarterLayout parses a starter project's go.mod and SuiteDir/go.mod, which
 // the caller read from one commit, without running Go tooling or project code.
 // It checks that the root module path ends in a valid service name and that
@@ -291,9 +312,9 @@ func StarterLayout(rootGoMod, evalGoMod []byte) (Layout, error) {
 		return Layout{}, errors.New("go.mod does not declare a module path")
 	}
 	modulePath := rootMod.Module.Mod.Path
-	layout, err := layoutForModule(modulePath, "go.mod module")
+	layout, err := LayoutForModule(modulePath)
 	if err != nil {
-		return Layout{}, err
+		return Layout{}, fmt.Errorf("go.mod module %w", err)
 	}
 	evalFile := SuiteDir + "/go.mod"
 	evalMod, err := modfile.ParseLax(evalFile, evalGoMod, nil)
@@ -329,30 +350,82 @@ func (e *stuckError) Unwrap() error {
 	return e.err
 }
 
-// layoutForModule validates modulePath using Surla's starter service-name rule
-// and returns the corresponding starter Layout. label names the source of
-// modulePath in error messages (such as "-module" or "go.mod module").
-func layoutForModule(modulePath, label string) (Layout, error) {
-	if err := module.CheckPath(modulePath); err != nil {
-		return Layout{}, fmt.Errorf("%s %q: %w", label, modulePath, err)
+// prepare validates o, builds and tests the starter project in a protected
+// staging directory under o.WorkDir, closes gen, optionally records the initial
+// Git commit in the staged repository when commitRepo is true, and removes
+// command logs once every step succeeds.
+func prepare(ctx context.Context, o Options, run Runner, gen Generator, commitRepo bool) (name string, stage *initStage, commit string, err error) {
+	genClosed := false
+	defer func() {
+		if !genClosed {
+			err = errors.Join(err, gen.Close())
+		}
+	}()
+	d, err := newData(o)
+	if err != nil {
+		return "", nil, "", err
 	}
-	name := path.Base(modulePath)
-	if !lowerAlnum.MatchString(name) || !token.IsIdentifier(name) || name == "main" {
-		return Layout{}, fmt.Errorf("%s %q must end in a service name of lowercase letters and digits starting with a letter, other than a Go keyword or main, such as example.com/shop", label, modulePath)
+	target, err := filepath.Abs(o.Dir)
+	if err != nil {
+		return "", nil, "", err
 	}
-	return Layout{
-		Service:          name,
-		CandidatePackage: "./cmd/" + name,
-		SuiteCommand:     "./cmd/" + name + "-evals",
-	}, nil
+	if _, err := os.Lstat(target); err == nil {
+		return "", nil, "", fmt.Errorf(
+			"%s already exists; surla init only creates a new directory (pass a new path such as -dir %s, or change to the parent directory and remove an empty directory first)",
+			target,
+			filepath.Join(target, d.Name),
+		)
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return "", nil, "", fmt.Errorf("check %s: %w", target, err)
+	}
+	stage, err = newInitStage(target, o.WorkDir)
+	if err != nil {
+		return "", nil, "", err
+	}
+	staging, logs := stage.path, stage.logs
+	if err := build(ctx, staging, logs, d, run, gen); err != nil {
+		var stuck *stuckError
+		if errors.As(err, &stuck) {
+			return "", nil, "", fmt.Errorf("%w; the staging directory %s is kept because processes may still use it", err, staging)
+		}
+		return "", nil, "", errors.Join(err, os.RemoveAll(staging))
+	}
+	// The generator's processes worked on their own copies of the files, so
+	// whatever its Close reports, nothing of it uses the staging directory.
+	// It is closed and the context checked before publishing, so a project
+	// appears only when generation is fully over and Init was not canceled.
+	genClosed = true
+	if err := errors.Join(gen.Close(), ctx.Err()); err != nil {
+		return "", nil, "", errors.Join(err, os.RemoveAll(logs), os.RemoveAll(staging))
+	}
+	if commitRepo {
+		commit, err = commitScaffold(ctx, staging, logs, run)
+		if err != nil {
+			var stuck *stuckError
+			if errors.As(err, &stuck) {
+				return "", nil, "", fmt.Errorf("%w; the staging directory %s is kept because processes may still use it", err, staging)
+			}
+			return "", nil, "", errors.Join(err, os.RemoveAll(staging))
+		}
+	}
+	// Every step succeeded, so the logs are no longer needed. They are removed
+	// before publishing so that the exclusive rename is the last thing that can
+	// fail. A successful publication cannot be reported as a failed init.
+	if err := os.RemoveAll(logs); err != nil {
+		return "", nil, "", errors.Join(fmt.Errorf("remove command logs: %w", err), os.RemoveAll(staging))
+	}
+	if err := os.Chmod(staging, 0o755); err != nil {
+		return "", nil, "", errors.Join(fmt.Errorf("set project permissions: %w", err), os.RemoveAll(staging))
+	}
+	return d.Name, stage, commit, nil
 }
 
 // newData validates o and returns the template data, with the Go, Goa,
 // Goa-AI and Model versions read from Surla's own go.mod.
 func newData(o Options) (data, error) {
-	layout, err := layoutForModule(o.Module, "-module")
+	layout, err := LayoutForModule(o.Module)
 	if err != nil {
-		return data{}, err
+		return data{}, fmt.Errorf("-module %w", err)
 	}
 	if !ValidVersion(o.SurlaVersion) {
 		return data{}, fmt.Errorf("Surla version %q is not an exact module version such as v0.0.0-20261104215521-580509970fb6", o.SurlaVersion)
@@ -384,10 +457,13 @@ func newData(o Options) (data, error) {
 
 // build creates both modules under root. For each module it writes go.mod and
 // design/, resolves the design's dependencies, generates code with gen,
-// writes the remaining files, tidies again and vets. The evaluator module
-// pins the exact Surla version with go get before generation: the final tidy
-// then keeps that version instead of picking another, and the code is
-// generated with whatever Goa versions it requires.
+// writes the remaining files, tidies again, vets, and runs `go test ./...`
+// (which compiles and checks every package in the candidate module and runs
+// the non-e2e package tests in the evaluator module without starting a live
+// model-backed CP4 verification run). The evaluator module pins the exact
+// Surla version with go get before generation: the final tidy then keeps that
+// version instead of picking another, and the code is generated with whatever
+// Goa versions it requires.
 func build(ctx context.Context, root, logs string, d data, run Runner, gen Generator) error {
 	for _, m := range []moduleStep{
 		{dir: ".", templates: "templates/candidate", path: d.Module},
@@ -419,12 +495,113 @@ func build(ctx context.Context, root, logs string, d data, run Runner, gen Gener
 		if _, err := render(dir, m.templates, d, func(p string) bool { return !isDesignFile(p) }); err != nil {
 			return err
 		}
-		steps = [][]string{{"go", "mod", "tidy"}, {"go", "vet", "./..."}}
+		steps = [][]string{{"go", "mod", "tidy"}, {"go", "vet", "./..."}, {"go", "test", "./..."}}
 		if err := runAll(ctx, dir, m.dir, logs, steps, run); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// commitScaffold initializes a Git repository in staging, commits all
+// generated starter files as "Initial scaffold", and returns the verified
+// commit ID of HEAD. Explicit -c overrides neutralize hooks, fsmonitor,
+// templates, worktree redirection, and attribute/CRLF filters even when set
+// via GIT_CONFIG_GLOBAL, GIT_CONFIG_SYSTEM, GIT_CONFIG_COUNT, or
+// GIT_CONFIG_PARAMETERS, while preserving the operator's author/committer
+// identity and commit signing configuration.
+func commitScaffold(ctx context.Context, staging, logs string, run Runner) (string, error) {
+	gitFlags := []string{
+		"-c", "core.hooksPath=/dev/null",
+		"-c", "core.fsmonitor=false",
+		"-c", "core.worktree=",
+		"-c", "init.templateDir=",
+		"-c", "core.attributesFile=/dev/null",
+		"-c", "core.autocrlf=false",
+		"-c", "core.safecrlf=false",
+	}
+	repoFlags := append(slices.Clone(gitFlags), "--git-dir=.git", "--work-tree=.")
+	steps := [][]string{
+		append(append([]string{"git"}, gitFlags...), "init", "--template="),
+		append(append([]string{"git"}, repoFlags...), "add", "-A"),
+		append(append([]string{"git"}, repoFlags...), "commit", "--no-verify", "-m", "Initial scaffold"),
+	}
+	if err := runAll(ctx, staging, ".", logs, steps, run); err != nil {
+		return "", err
+	}
+	revArgs := append(append([]string{"git"}, repoFlags...), "rev-parse", "--verify", "HEAD^{commit}")
+	log, err := newLogPath(logs, ".", revArgs)
+	if err != nil {
+		return "", err
+	}
+	if err := run(ctx, staging, log, revArgs...); err != nil {
+		step := &StepError{Args: revArgs, Summary: "git rev-parse", Module: ".", Log: log, Err: err}
+		var stuck *stuckError
+		if errors.As(err, &stuck) {
+			return "", step
+		}
+		tail, tailErr := readTail(log)
+		step.Tail = tail
+		return "", errors.Join(step, tailErr)
+	}
+	out, err := os.ReadFile(log)
+	if err != nil {
+		return "", fmt.Errorf("read git rev-parse output: %w", err)
+	}
+	commit := strings.TrimSpace(string(out))
+	if !commitHexPattern.MatchString(commit) {
+		return "", &StepError{
+			Args:    revArgs,
+			Summary: "git rev-parse",
+			Module:  ".",
+			Log:     log,
+			Tail:    commit,
+			Err:     fmt.Errorf("git rev-parse returned %q, want a 40- or 64-character lowercase hex commit ID", commit),
+		}
+	}
+	return commit, nil
+}
+
+// commandEnv returns os.Environ() with repository-, worktree-, index-, object-,
+// template-, and attribute-redirecting Git variables removed and isolated
+// Go/Git non-interactive settings appended, while preserving the operator's
+// Git identity and commit signing configuration.
+func commandEnv(logDir string) []string {
+	base := os.Environ()
+	env := make([]string, 0, len(base)+5)
+	for _, kv := range base {
+		key, _, _ := strings.Cut(kv, "=")
+		switch key {
+		case "GIT_DIR",
+			"GIT_WORK_TREE",
+			"GIT_INDEX_FILE",
+			"GIT_OBJECT_DIRECTORY",
+			"GIT_ALTERNATE_OBJECT_DIRECTORIES",
+			"GIT_COMMON_DIR",
+			"GIT_REPLACE_REF_BASE",
+			"GIT_TEMPLATE_DIR",
+			"GIT_NAMESPACE",
+			"GIT_CEILING_DIRECTORIES",
+			"GIT_DISCOVERY_ACROSS_FILESYSTEM",
+			"GIT_PREFIX",
+			"GIT_SUPER_PREFIX",
+			"GIT_SHALLOW_FILE",
+			"GIT_ATTR_NOSYSTEM",
+			"GIT_TERMINAL_PROMPT",
+			"GOWORK",
+			"TMPDIR",
+			"GOTMPDIR":
+			continue
+		}
+		env = append(env, kv)
+	}
+	return append(env,
+		"GIT_TERMINAL_PROMPT=0",
+		"GIT_ATTR_NOSYSTEM=1",
+		"GOWORK=off",
+		"TMPDIR="+logDir,
+		"GOTMPDIR="+logDir,
+	)
 }
 
 // runAll runs each command in dir in order, each logging to its own new file
@@ -436,7 +613,7 @@ func runAll(ctx context.Context, dir, moduleDir, logs string, steps [][]string, 
 			return err
 		}
 		if err := run(ctx, dir, log, args...); err != nil {
-			step := &StepError{Args: args, Module: moduleDir, Log: log, Err: err}
+			step := &StepError{Args: args, Summary: stepSummary(args), Module: moduleDir, Log: log, Err: err}
 			var stuck *stuckError
 			if errors.As(err, &stuck) {
 				// Processes may still be writing the log, so it is not read.
@@ -497,12 +674,39 @@ func newLogPath(logs, moduleDir string, args []string) (string, error) {
 	if module == "." {
 		module = "root"
 	}
-	// Every step is "go <verb> ...", so the verb names the step.
-	f, err := os.CreateTemp(logs, module+"-"+args[1]+"-*.log")
+	f, err := os.CreateTemp(logs, module+"-"+stepVerb(args)+"-*.log")
 	if err != nil {
 		return "", fmt.Errorf("create command log: %w", err)
 	}
 	return f.Name(), errors.Join(f.Close(), os.Remove(f.Name()))
+}
+
+// stepSummary returns a caller-safe command summary for args without internal
+// git override flags, such as "go mod tidy" or "git commit".
+func stepSummary(args []string) string {
+	if len(args) > 0 && args[0] == "git" {
+		return "git " + stepVerb(args)
+	}
+	return strings.Join(args, " ")
+}
+
+// stepVerb returns the subcommand verb (such as "mod", "vet", "init", or
+// "commit") used to name a command's log file.
+func stepVerb(args []string) string {
+	for i := 1; i < len(args); i++ {
+		if args[i] == "-c" {
+			i++
+			continue
+		}
+		if strings.HasPrefix(args[i], "-") {
+			continue
+		}
+		return args[i]
+	}
+	if len(args) > 1 {
+		return args[1]
+	}
+	return "cmd"
 }
 
 // generatedServicePackage returns the package Goa generated for the
@@ -598,4 +802,23 @@ func readTail(path string) (string, error) {
 		return "", fmt.Errorf("read command log: %w", err)
 	}
 	return prefix + string(b), nil
+}
+
+// moduleSurlaVersion returns the canonical github.com/goadesign/surla version
+// from m, honoring a version replacement of github.com/goadesign/surla and
+// returning empty for local directory or foreign-module replacements.
+func moduleSurlaVersion(m *debug.Module) string {
+	if m == nil {
+		return ""
+	}
+	if m.Replace != nil {
+		if m.Replace.Path == surlaModule && ValidVersion(m.Replace.Version) {
+			return m.Replace.Version
+		}
+		return ""
+	}
+	if ValidVersion(m.Version) {
+		return m.Version
+	}
+	return ""
 }

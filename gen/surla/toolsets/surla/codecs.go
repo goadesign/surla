@@ -38,6 +38,22 @@ func ApproveMergeResultCodec() tools.JSONCodec[*ApproveMergeResult] {
 	}
 }
 
+// CheckProjectPayloadCodec returns a fresh codec for *CheckProjectPayload.
+func CheckProjectPayloadCodec() tools.JSONCodec[*CheckProjectPayload] {
+	return tools.JSONCodec[*CheckProjectPayload]{
+		ToJSON:   MarshalCheckProjectPayload,
+		FromJSON: UnmarshalCheckProjectPayload,
+	}
+}
+
+// CheckProjectResultCodec returns a fresh codec for *CheckProjectResult.
+func CheckProjectResultCodec() tools.JSONCodec[*CheckProjectResult] {
+	return tools.JSONCodec[*CheckProjectResult]{
+		ToJSON:   MarshalCheckProjectResult,
+		FromJSON: UnmarshalCheckProjectResult,
+	}
+}
+
 // ConfigureModelPayloadCodec returns a fresh codec for *ConfigureModelPayload.
 func ConfigureModelPayloadCodec() tools.JSONCodec[*ConfigureModelPayload] {
 	return tools.JSONCodec[*ConfigureModelPayload]{
@@ -102,6 +118,22 @@ func DraftOverrideResultCodec() tools.JSONCodec[*DraftOverrideResult] {
 	}
 }
 
+// GenerateCodePayloadCodec returns a fresh codec for *GenerateCodePayload.
+func GenerateCodePayloadCodec() tools.JSONCodec[*GenerateCodePayload] {
+	return tools.JSONCodec[*GenerateCodePayload]{
+		ToJSON:   MarshalGenerateCodePayload,
+		FromJSON: UnmarshalGenerateCodePayload,
+	}
+}
+
+// GenerateCodeResultCodec returns a fresh codec for *GenerateCodeResult.
+func GenerateCodeResultCodec() tools.JSONCodec[*GenerateCodeResult] {
+	return tools.JSONCodec[*GenerateCodeResult]{
+		ToJSON:   MarshalGenerateCodeResult,
+		FromJSON: UnmarshalGenerateCodeResult,
+	}
+}
+
 // GetChangePayloadCodec returns a fresh codec for *GetChangePayload.
 func GetChangePayloadCodec() tools.JSONCodec[*GetChangePayload] {
 	return tools.JSONCodec[*GetChangePayload]{
@@ -131,6 +163,22 @@ func GetVerificationResultCodec() tools.JSONCodec[*GetVerificationResult] {
 	return tools.JSONCodec[*GetVerificationResult]{
 		ToJSON:   MarshalGetVerificationResult,
 		FromJSON: UnmarshalGetVerificationResult,
+	}
+}
+
+// InitProjectPayloadCodec returns a fresh codec for *InitProjectPayload.
+func InitProjectPayloadCodec() tools.JSONCodec[*InitProjectPayload] {
+	return tools.JSONCodec[*InitProjectPayload]{
+		ToJSON:   MarshalInitProjectPayload,
+		FromJSON: UnmarshalInitProjectPayload,
+	}
+}
+
+// InitProjectResultCodec returns a fresh codec for *InitProjectResult.
+func InitProjectResultCodec() tools.JSONCodec[*InitProjectResult] {
+	return tools.JSONCodec[*InitProjectResult]{
+		ToJSON:   MarshalInitProjectResult,
+		FromJSON: UnmarshalInitProjectResult,
 	}
 }
 
@@ -182,6 +230,22 @@ func ProposeChangeResultCodec() tools.JSONCodec[*ProposeChangeResult] {
 	}
 }
 
+// ReadCheckOutputPayloadCodec returns a fresh codec for *ReadCheckOutputPayload.
+func ReadCheckOutputPayloadCodec() tools.JSONCodec[*ReadCheckOutputPayload] {
+	return tools.JSONCodec[*ReadCheckOutputPayload]{
+		ToJSON:   MarshalReadCheckOutputPayload,
+		FromJSON: UnmarshalReadCheckOutputPayload,
+	}
+}
+
+// ReadCheckOutputResultCodec returns a fresh codec for *ReadCheckOutputResult.
+func ReadCheckOutputResultCodec() tools.JSONCodec[*ReadCheckOutputResult] {
+	return tools.JSONCodec[*ReadCheckOutputResult]{
+		ToJSON:   MarshalReadCheckOutputResult,
+		FromJSON: UnmarshalReadCheckOutputResult,
+	}
+}
+
 // ReviseChangePayloadCodec returns a fresh codec for *ReviseChangePayload.
 func ReviseChangePayloadCodec() tools.JSONCodec[*ReviseChangePayload] {
 	return tools.JSONCodec[*ReviseChangePayload]{
@@ -230,6 +294,22 @@ func StopLiveTargetResultCodec() tools.JSONCodec[*StopLiveTargetResult] {
 	}
 }
 
+// UpdateDependenciesPayloadCodec returns a fresh codec for *UpdateDependenciesPayload.
+func UpdateDependenciesPayloadCodec() tools.JSONCodec[*UpdateDependenciesPayload] {
+	return tools.JSONCodec[*UpdateDependenciesPayload]{
+		ToJSON:   MarshalUpdateDependenciesPayload,
+		FromJSON: UnmarshalUpdateDependenciesPayload,
+	}
+}
+
+// UpdateDependenciesResultCodec returns a fresh codec for *UpdateDependenciesResult.
+func UpdateDependenciesResultCodec() tools.JSONCodec[*UpdateDependenciesResult] {
+	return tools.JSONCodec[*UpdateDependenciesResult]{
+		ToJSON:   MarshalUpdateDependenciesResult,
+		FromJSON: UnmarshalUpdateDependenciesResult,
+	}
+}
+
 // VerifyChangePayloadCodec returns a fresh codec for *VerifyChangePayload.
 func VerifyChangePayloadCodec() tools.JSONCodec[*VerifyChangePayload] {
 	return tools.JSONCodec[*VerifyChangePayload]{
@@ -271,6 +351,32 @@ var (
 		},
 		FromJSON: func(data []byte) (any, error) {
 			return UnmarshalApproveMergeResult(data)
+		},
+	}
+	// checkProjectPayloadCodec provides an untyped codec for *CheckProjectPayload.
+	checkProjectPayloadCodec = tools.JSONCodec[any]{
+		ToJSON: func(v any) ([]byte, error) {
+			// Prefer typed marshal when the value matches the expected type.
+			if typed, ok := v.(*CheckProjectPayload); ok {
+				return MarshalCheckProjectPayload(typed)
+			}
+			return nil, fmt.Errorf("invalid value type for *CheckProjectPayload: %T", v)
+		},
+		FromJSON: func(data []byte) (any, error) {
+			return UnmarshalCheckProjectPayload(data)
+		},
+	}
+	// checkProjectResultCodec provides an untyped codec for *CheckProjectResult.
+	checkProjectResultCodec = tools.JSONCodec[any]{
+		ToJSON: func(v any) ([]byte, error) {
+			// Prefer typed marshal when the value matches the expected type.
+			if typed, ok := v.(*CheckProjectResult); ok {
+				return MarshalCheckProjectResult(typed)
+			}
+			return nil, fmt.Errorf("invalid value type for *CheckProjectResult: %T", v)
+		},
+		FromJSON: func(data []byte) (any, error) {
+			return UnmarshalCheckProjectResult(data)
 		},
 	}
 	// configureModelPayloadCodec provides an untyped codec for *ConfigureModelPayload.
@@ -377,6 +483,32 @@ var (
 			return UnmarshalDraftOverrideResult(data)
 		},
 	}
+	// generateCodePayloadCodec provides an untyped codec for *GenerateCodePayload.
+	generateCodePayloadCodec = tools.JSONCodec[any]{
+		ToJSON: func(v any) ([]byte, error) {
+			// Prefer typed marshal when the value matches the expected type.
+			if typed, ok := v.(*GenerateCodePayload); ok {
+				return MarshalGenerateCodePayload(typed)
+			}
+			return nil, fmt.Errorf("invalid value type for *GenerateCodePayload: %T", v)
+		},
+		FromJSON: func(data []byte) (any, error) {
+			return UnmarshalGenerateCodePayload(data)
+		},
+	}
+	// generateCodeResultCodec provides an untyped codec for *GenerateCodeResult.
+	generateCodeResultCodec = tools.JSONCodec[any]{
+		ToJSON: func(v any) ([]byte, error) {
+			// Prefer typed marshal when the value matches the expected type.
+			if typed, ok := v.(*GenerateCodeResult); ok {
+				return MarshalGenerateCodeResult(typed)
+			}
+			return nil, fmt.Errorf("invalid value type for *GenerateCodeResult: %T", v)
+		},
+		FromJSON: func(data []byte) (any, error) {
+			return UnmarshalGenerateCodeResult(data)
+		},
+	}
 	// getChangePayloadCodec provides an untyped codec for *GetChangePayload.
 	getChangePayloadCodec = tools.JSONCodec[any]{
 		ToJSON: func(v any) ([]byte, error) {
@@ -427,6 +559,32 @@ var (
 		},
 		FromJSON: func(data []byte) (any, error) {
 			return UnmarshalGetVerificationResult(data)
+		},
+	}
+	// initProjectPayloadCodec provides an untyped codec for *InitProjectPayload.
+	initProjectPayloadCodec = tools.JSONCodec[any]{
+		ToJSON: func(v any) ([]byte, error) {
+			// Prefer typed marshal when the value matches the expected type.
+			if typed, ok := v.(*InitProjectPayload); ok {
+				return MarshalInitProjectPayload(typed)
+			}
+			return nil, fmt.Errorf("invalid value type for *InitProjectPayload: %T", v)
+		},
+		FromJSON: func(data []byte) (any, error) {
+			return UnmarshalInitProjectPayload(data)
+		},
+	}
+	// initProjectResultCodec provides an untyped codec for *InitProjectResult.
+	initProjectResultCodec = tools.JSONCodec[any]{
+		ToJSON: func(v any) ([]byte, error) {
+			// Prefer typed marshal when the value matches the expected type.
+			if typed, ok := v.(*InitProjectResult); ok {
+				return MarshalInitProjectResult(typed)
+			}
+			return nil, fmt.Errorf("invalid value type for *InitProjectResult: %T", v)
+		},
+		FromJSON: func(data []byte) (any, error) {
+			return UnmarshalInitProjectResult(data)
 		},
 	}
 	// listVerificationsPayloadCodec provides an untyped codec for *ListVerificationsPayload.
@@ -507,6 +665,32 @@ var (
 			return UnmarshalProposeChangeResult(data)
 		},
 	}
+	// readCheckOutputPayloadCodec provides an untyped codec for *ReadCheckOutputPayload.
+	readCheckOutputPayloadCodec = tools.JSONCodec[any]{
+		ToJSON: func(v any) ([]byte, error) {
+			// Prefer typed marshal when the value matches the expected type.
+			if typed, ok := v.(*ReadCheckOutputPayload); ok {
+				return MarshalReadCheckOutputPayload(typed)
+			}
+			return nil, fmt.Errorf("invalid value type for *ReadCheckOutputPayload: %T", v)
+		},
+		FromJSON: func(data []byte) (any, error) {
+			return UnmarshalReadCheckOutputPayload(data)
+		},
+	}
+	// readCheckOutputResultCodec provides an untyped codec for *ReadCheckOutputResult.
+	readCheckOutputResultCodec = tools.JSONCodec[any]{
+		ToJSON: func(v any) ([]byte, error) {
+			// Prefer typed marshal when the value matches the expected type.
+			if typed, ok := v.(*ReadCheckOutputResult); ok {
+				return MarshalReadCheckOutputResult(typed)
+			}
+			return nil, fmt.Errorf("invalid value type for *ReadCheckOutputResult: %T", v)
+		},
+		FromJSON: func(data []byte) (any, error) {
+			return UnmarshalReadCheckOutputResult(data)
+		},
+	}
 	// reviseChangePayloadCodec provides an untyped codec for *ReviseChangePayload.
 	reviseChangePayloadCodec = tools.JSONCodec[any]{
 		ToJSON: func(v any) ([]byte, error) {
@@ -583,6 +767,32 @@ var (
 		},
 		FromJSON: func(data []byte) (any, error) {
 			return UnmarshalStopLiveTargetResult(data)
+		},
+	}
+	// updateDependenciesPayloadCodec provides an untyped codec for *UpdateDependenciesPayload.
+	updateDependenciesPayloadCodec = tools.JSONCodec[any]{
+		ToJSON: func(v any) ([]byte, error) {
+			// Prefer typed marshal when the value matches the expected type.
+			if typed, ok := v.(*UpdateDependenciesPayload); ok {
+				return MarshalUpdateDependenciesPayload(typed)
+			}
+			return nil, fmt.Errorf("invalid value type for *UpdateDependenciesPayload: %T", v)
+		},
+		FromJSON: func(data []byte) (any, error) {
+			return UnmarshalUpdateDependenciesPayload(data)
+		},
+	}
+	// updateDependenciesResultCodec provides an untyped codec for *UpdateDependenciesResult.
+	updateDependenciesResultCodec = tools.JSONCodec[any]{
+		ToJSON: func(v any) ([]byte, error) {
+			// Prefer typed marshal when the value matches the expected type.
+			if typed, ok := v.(*UpdateDependenciesResult); ok {
+				return MarshalUpdateDependenciesResult(typed)
+			}
+			return nil, fmt.Errorf("invalid value type for *UpdateDependenciesResult: %T", v)
+		},
+		FromJSON: func(data []byte) (any, error) {
+			return UnmarshalUpdateDependenciesResult(data)
 		},
 	}
 	// verifyChangePayloadCodec provides an untyped codec for *VerifyChangePayload.
@@ -882,6 +1092,32 @@ var approveMergeResultFields = []tools.FieldMetadata{
 		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("reason")},
 		JSONType:    "string",
 		Description: "Explanation of why the recorded approval could not be verified against current promotion inputs and how to recover.",
+	},
+}
+var checkProjectPayloadFields = []tools.FieldMetadata{
+	{
+		JSONType: "object",
+	},
+}
+var checkProjectResultFields = []tools.FieldMetadata{
+	{
+		JSONType:    "object",
+		Description: "Outcome of running every Go module's tests in a protected copy of the workspace inside Linux containers.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("op_id")},
+		JSONType:    "string",
+		Description: "Operation identifier; pass it to read_check_output to read the full output.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("passed")},
+		JSONType:    "boolean",
+		Description: "True only when go test ./... exited 0 in every module.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("message")},
+		JSONType:    "string",
+		Description: "At most 16 KiB: the modules tested, the first failure and the end of its output, and how to read the rest.",
 	},
 }
 var configureModelPayloadFields = []tools.FieldMetadata{
@@ -1370,6 +1606,48 @@ var draftOverrideResultFields = []tools.FieldMetadata{
 		Path:        []tools.FieldPathSegment{tools.FixedField("message")},
 		JSONType:    "string",
 		Description: "Operator-facing status explanation.",
+	},
+}
+var generateCodePayloadFields = []tools.FieldMetadata{
+	{
+		JSONType:    "object",
+		Description: "Selects the application module or its public local eval/ module for code generation from the active workspace's files.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("target")},
+		JSONType:    "string",
+		Description: "Module to regenerate: candidate (the application, the default when omitted) or eval (the local eval/ module).",
+	},
+}
+var generateCodeResultFields = []tools.FieldMetadata{
+	{
+		JSONType:    "object",
+		Description: "Generated files written in the selected local module and warnings about auxiliary work. Generation compiles the design only; it does not build the application or run tests.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("target")},
+		JSONType:    "string",
+		Description: "Module that received the generated files.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("files_written")},
+		JSONType:    "array",
+		Description: "Sorted paths relative to the selected module that were written, including AGENTS_QUICKSTART.md when produced and written successfully.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("files_written"), tools.DynamicField{}},
+		JSONType:    "string",
+		Description: "Sorted paths relative to the selected module that were written, including AGENTS_QUICKSTART.md when produced and written successfully.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("warnings")},
+		JSONType:    "array",
+		Description: "Problems that did not prevent gen/ publication, such as incomplete cleanup or a guide that could not be written.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("warnings"), tools.DynamicField{}},
+		JSONType:    "string",
+		Description: "Problems that did not prevent gen/ publication, such as incomplete cleanup or a guide that could not be written.",
 	},
 }
 var getChangePayloadFields = []tools.FieldMetadata{
@@ -2009,6 +2287,48 @@ var getVerificationResultFields = []tools.FieldMetadata{
 		},
 	},
 }
+var initProjectPayloadFields = []tools.FieldMetadata{
+	{
+		JSONType:    "object",
+		Description: "Go module path and optional direct child directory name for initializing a new Surla starter project inside the bound workspace.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("module_path")},
+		JSONType:    "string",
+		Description: "Go module path of the new service (for example example.com/shop).",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("dir")},
+		JSONType:    "string",
+		Description: "Direct child directory name inside the bound workspace root. When omitted or empty, defaults to the service name derived from module_path.",
+	},
+}
+var initProjectResultFields = []tools.FieldMetadata{
+	{
+		JSONType:    "object",
+		Description: "Newly initialized Surla starter project directory, derived service identity, and initial Git commit.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("dir")},
+		JSONType:    "string",
+		Description: "Physical directory path of the newly created starter project (now the server's active workspace).",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("module_path")},
+		JSONType:    "string",
+		Description: "Initialized Go module path.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("service_name")},
+		JSONType:    "string",
+		Description: "Derived service name.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("commit")},
+		JSONType:    "string",
+		Description: "Full commit ID of the initial starter commit created in the initialized repository (40 or 64 lowercase hex characters); start_live_target and verify_change take this commit ID.",
+	},
+}
 var listVerificationsPayloadFields = []tools.FieldMetadata{
 	{
 		JSONType:    "object",
@@ -2422,7 +2742,7 @@ var previewArchitecturePayloadFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("design")},
 		JSONType:    "object",
-		Description: "Candidate module whose Goa and Goa-AI design is evaluated.",
+		Description: "Candidate module whose Goa and Goa-AI design is evaluated. When omitted on a server with a bound workspace, Surla reads the candidate module snapshot from the bound workspace.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("design"), tools.FixedField("files")},
@@ -2849,7 +3169,7 @@ var proposeChangePayloadFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("design_source")},
 		JSONType:    "string",
-		Description: "Current Goa design source of the target (its design/*.go files) for the CP1 model to read. If omitted, CP1 receives no current design; supply the relevant design source when you want it considered.",
+		Description: "Current Goa design source of the target (its design/*.go files) for the CP1 model to read. When omitted on a server with a bound workspace, Surla reads design/*.go from the bound workspace; when omitted without a bound workspace, CP1 receives no current design.",
 	},
 }
 var proposeChangeResultFields = []tools.FieldMetadata{
@@ -3098,6 +3418,48 @@ var proposeChangeResultFields = []tools.FieldMetadata{
 		Description: "Explanation of why the recorded approval could not be verified against current promotion inputs and how to recover.",
 	},
 }
+var readCheckOutputPayloadFields = []tools.FieldMetadata{
+	{
+		JSONType:    "object",
+		Description: "Selects a page of the full output that check_project or update_dependencies captured.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("op_id")},
+		JSONType:    "string",
+		Description: "Operation identifier returned by check_project or update_dependencies.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("cursor")},
+		JSONType:    "string",
+		Description: "Opaque next_cursor from the previous page; omit for the first page.",
+	},
+}
+var readCheckOutputResultFields = []tools.FieldMetadata{
+	{
+		JSONType:    "object",
+		Description: "One page of at most 16 KiB of a check operation's captured output.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("text")},
+		JSONType:    "string",
+		Description: "The page text.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("next_cursor")},
+		JSONType:    "string",
+		Description: "Cursor for the following page; absent when this page reaches the end.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("captured_bytes")},
+		JSONType:    "integer",
+		Description: "Total bytes captured for the operation.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("dropped_bytes")},
+		JSONType:    "integer",
+		Description: "Bytes the operation produced beyond its capture limit and did not keep; nonzero means the output has a stated gap.",
+	},
+}
 var reviseChangePayloadFields = []tools.FieldMetadata{
 	{
 		JSONType:    "object",
@@ -3121,7 +3483,7 @@ var reviseChangePayloadFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("design_source")},
 		JSONType:    "string",
-		Description: "Updated Goa design source of the target (its design/*.go files) for the CP1 model to read; when omitted, the card's saved design source is used again.",
+		Description: "Updated Goa design source of the target (its design/*.go files) for the CP1 model to read. When omitted on a workspace-backed card with a bound workspace, Surla re-reads design/*.go from the bound workspace; otherwise the card's saved design source is used again.",
 	},
 }
 var reviseChangeResultFields = []tools.FieldMetadata{
@@ -3421,6 +3783,37 @@ var stopLiveTargetResultFields = []tools.FieldMetadata{
 		Path:        []tools.FieldPathSegment{tools.FixedField("message")},
 		JSONType:    "string",
 		Description: "Operator-facing status explanation.",
+	},
+}
+var updateDependenciesPayloadFields = []tools.FieldMetadata{
+	{
+		JSONType: "object",
+	},
+}
+var updateDependenciesResultFields = []tools.FieldMetadata{
+	{
+		JSONType:    "object",
+		Description: "Go module manifests rewritten in the workspace after go mod tidy ran in a protected copy.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("op_id")},
+		JSONType:    "string",
+		Description: "Operation identifier; pass it to read_check_output to read the full output.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("files_written")},
+		JSONType:    "array",
+		Description: "Workspace-relative go.mod, go.sum and go.work.sum files whose bytes changed and were written.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("files_written"), tools.DynamicField{}},
+		JSONType:    "string",
+		Description: "Workspace-relative go.mod, go.sum and go.work.sum files whose bytes changed and were written.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("message")},
+		JSONType:    "string",
+		Description: "At most 16 KiB: what was updated, and Go's message for any module that could not be.",
 	},
 }
 var verifyChangePayloadFields = []tools.FieldMetadata{
@@ -3879,6 +4272,23 @@ func enrichApproveMergeResultValidationError(err error) error {
 	}
 	return tools.NewValidationError(ve.Error(), issues, m)
 }
+func enrichCheckProjectResultValidationError(err error) error {
+	var ve *tools.ValidationError
+	if !errors.As(err, &ve) {
+		return err
+	}
+	issues := ve.Issues()
+	if len(issues) == 0 {
+		return err
+	}
+	m := make(map[string]string)
+	for _, is := range issues {
+		if field, ok := tools.LookupFieldMetadata(checkProjectResultFields, is.Field); ok && field.Description != "" {
+			m[is.Field] = field.Description
+		}
+	}
+	return tools.NewValidationError(ve.Error(), issues, m)
+}
 func enrichConfigureModelPayloadValidationError(err error) error {
 	var ve *tools.ValidationError
 	if !errors.As(err, &ve) {
@@ -4015,6 +4425,40 @@ func enrichDraftOverrideResultValidationError(err error) error {
 	}
 	return tools.NewValidationError(ve.Error(), issues, m)
 }
+func enrichGenerateCodePayloadValidationError(err error) error {
+	var ve *tools.ValidationError
+	if !errors.As(err, &ve) {
+		return err
+	}
+	issues := ve.Issues()
+	if len(issues) == 0 {
+		return err
+	}
+	m := make(map[string]string)
+	for _, is := range issues {
+		if field, ok := tools.LookupFieldMetadata(generateCodePayloadFields, is.Field); ok && field.Description != "" {
+			m[is.Field] = field.Description
+		}
+	}
+	return tools.NewValidationError(ve.Error(), issues, m)
+}
+func enrichGenerateCodeResultValidationError(err error) error {
+	var ve *tools.ValidationError
+	if !errors.As(err, &ve) {
+		return err
+	}
+	issues := ve.Issues()
+	if len(issues) == 0 {
+		return err
+	}
+	m := make(map[string]string)
+	for _, is := range issues {
+		if field, ok := tools.LookupFieldMetadata(generateCodeResultFields, is.Field); ok && field.Description != "" {
+			m[is.Field] = field.Description
+		}
+	}
+	return tools.NewValidationError(ve.Error(), issues, m)
+}
 func enrichGetChangePayloadValidationError(err error) error {
 	var ve *tools.ValidationError
 	if !errors.As(err, &ve) {
@@ -4078,6 +4522,40 @@ func enrichGetVerificationResultValidationError(err error) error {
 	m := make(map[string]string)
 	for _, is := range issues {
 		if field, ok := tools.LookupFieldMetadata(getVerificationResultFields, is.Field); ok && field.Description != "" {
+			m[is.Field] = field.Description
+		}
+	}
+	return tools.NewValidationError(ve.Error(), issues, m)
+}
+func enrichInitProjectPayloadValidationError(err error) error {
+	var ve *tools.ValidationError
+	if !errors.As(err, &ve) {
+		return err
+	}
+	issues := ve.Issues()
+	if len(issues) == 0 {
+		return err
+	}
+	m := make(map[string]string)
+	for _, is := range issues {
+		if field, ok := tools.LookupFieldMetadata(initProjectPayloadFields, is.Field); ok && field.Description != "" {
+			m[is.Field] = field.Description
+		}
+	}
+	return tools.NewValidationError(ve.Error(), issues, m)
+}
+func enrichInitProjectResultValidationError(err error) error {
+	var ve *tools.ValidationError
+	if !errors.As(err, &ve) {
+		return err
+	}
+	issues := ve.Issues()
+	if len(issues) == 0 {
+		return err
+	}
+	m := make(map[string]string)
+	for _, is := range issues {
+		if field, ok := tools.LookupFieldMetadata(initProjectResultFields, is.Field); ok && field.Description != "" {
 			m[is.Field] = field.Description
 		}
 	}
@@ -4185,6 +4663,40 @@ func enrichProposeChangeResultValidationError(err error) error {
 	}
 	return tools.NewValidationError(ve.Error(), issues, m)
 }
+func enrichReadCheckOutputPayloadValidationError(err error) error {
+	var ve *tools.ValidationError
+	if !errors.As(err, &ve) {
+		return err
+	}
+	issues := ve.Issues()
+	if len(issues) == 0 {
+		return err
+	}
+	m := make(map[string]string)
+	for _, is := range issues {
+		if field, ok := tools.LookupFieldMetadata(readCheckOutputPayloadFields, is.Field); ok && field.Description != "" {
+			m[is.Field] = field.Description
+		}
+	}
+	return tools.NewValidationError(ve.Error(), issues, m)
+}
+func enrichReadCheckOutputResultValidationError(err error) error {
+	var ve *tools.ValidationError
+	if !errors.As(err, &ve) {
+		return err
+	}
+	issues := ve.Issues()
+	if len(issues) == 0 {
+		return err
+	}
+	m := make(map[string]string)
+	for _, is := range issues {
+		if field, ok := tools.LookupFieldMetadata(readCheckOutputResultFields, is.Field); ok && field.Description != "" {
+			m[is.Field] = field.Description
+		}
+	}
+	return tools.NewValidationError(ve.Error(), issues, m)
+}
 func enrichReviseChangePayloadValidationError(err error) error {
 	var ve *tools.ValidationError
 	if !errors.As(err, &ve) {
@@ -4270,6 +4782,23 @@ func enrichStopLiveTargetResultValidationError(err error) error {
 	}
 	return tools.NewValidationError(ve.Error(), issues, m)
 }
+func enrichUpdateDependenciesResultValidationError(err error) error {
+	var ve *tools.ValidationError
+	if !errors.As(err, &ve) {
+		return err
+	}
+	issues := ve.Issues()
+	if len(issues) == 0 {
+		return err
+	}
+	m := make(map[string]string)
+	for _, is := range issues {
+		if field, ok := tools.LookupFieldMetadata(updateDependenciesResultFields, is.Field); ok && field.Description != "" {
+			m[is.Field] = field.Description
+		}
+	}
+	return tools.NewValidationError(ve.Error(), issues, m)
+}
 func enrichVerifyChangePayloadValidationError(err error) error {
 	var ve *tools.ValidationError
 	if !errors.As(err, &ve) {
@@ -4346,6 +4875,68 @@ func invalidApproveMergeResultFieldTypeError(err error) error {
 		field = "$payload"
 	}
 	metadata, ok := tools.LookupFieldMetadata(approveMergeResultFields, field)
+	if !ok || metadata.JSONType == "" {
+		return err
+	}
+	actual := generatedUnmarshalJSONType(typeErr.Value)
+	if actual == "" {
+		return err
+	}
+	return tools.NewValidationError(
+		err.Error(),
+		[]*tools.FieldIssue{
+			{
+				Field:            field,
+				Constraint:       "invalid_field_type",
+				ExpectedJSONType: metadata.JSONType,
+				ActualJSONType:   actual,
+			},
+		},
+		nil,
+	)
+}
+func invalidCheckProjectPayloadFieldTypeError(err error) error {
+	var typeErr *json.UnmarshalTypeError
+	if !errors.As(err, &typeErr) {
+		return err
+	}
+	field := typeErr.Field
+	field = strings.TrimPrefix(field, "CheckProjectPayloadTransport.")
+	if field == "" {
+		field = "$payload"
+	}
+	metadata, ok := tools.LookupFieldMetadata(checkProjectPayloadFields, field)
+	if !ok || metadata.JSONType == "" {
+		return err
+	}
+	actual := generatedUnmarshalJSONType(typeErr.Value)
+	if actual == "" {
+		return err
+	}
+	return tools.NewValidationError(
+		err.Error(),
+		[]*tools.FieldIssue{
+			{
+				Field:            field,
+				Constraint:       "invalid_field_type",
+				ExpectedJSONType: metadata.JSONType,
+				ActualJSONType:   actual,
+			},
+		},
+		nil,
+	)
+}
+func invalidCheckProjectResultFieldTypeError(err error) error {
+	var typeErr *json.UnmarshalTypeError
+	if !errors.As(err, &typeErr) {
+		return err
+	}
+	field := typeErr.Field
+	field = strings.TrimPrefix(field, "CheckProjectResultTransport.")
+	if field == "" {
+		field = "$payload"
+	}
+	metadata, ok := tools.LookupFieldMetadata(checkProjectResultFields, field)
 	if !ok || metadata.JSONType == "" {
 		return err
 	}
@@ -4614,6 +5205,68 @@ func invalidDraftOverrideResultFieldTypeError(err error) error {
 		nil,
 	)
 }
+func invalidGenerateCodePayloadFieldTypeError(err error) error {
+	var typeErr *json.UnmarshalTypeError
+	if !errors.As(err, &typeErr) {
+		return err
+	}
+	field := typeErr.Field
+	field = strings.TrimPrefix(field, "GenerateCodePayloadTransport.")
+	if field == "" {
+		field = "$payload"
+	}
+	metadata, ok := tools.LookupFieldMetadata(generateCodePayloadFields, field)
+	if !ok || metadata.JSONType == "" {
+		return err
+	}
+	actual := generatedUnmarshalJSONType(typeErr.Value)
+	if actual == "" {
+		return err
+	}
+	return tools.NewValidationError(
+		err.Error(),
+		[]*tools.FieldIssue{
+			{
+				Field:            field,
+				Constraint:       "invalid_field_type",
+				ExpectedJSONType: metadata.JSONType,
+				ActualJSONType:   actual,
+			},
+		},
+		nil,
+	)
+}
+func invalidGenerateCodeResultFieldTypeError(err error) error {
+	var typeErr *json.UnmarshalTypeError
+	if !errors.As(err, &typeErr) {
+		return err
+	}
+	field := typeErr.Field
+	field = strings.TrimPrefix(field, "GenerateCodeResultTransport.")
+	if field == "" {
+		field = "$payload"
+	}
+	metadata, ok := tools.LookupFieldMetadata(generateCodeResultFields, field)
+	if !ok || metadata.JSONType == "" {
+		return err
+	}
+	actual := generatedUnmarshalJSONType(typeErr.Value)
+	if actual == "" {
+		return err
+	}
+	return tools.NewValidationError(
+		err.Error(),
+		[]*tools.FieldIssue{
+			{
+				Field:            field,
+				Constraint:       "invalid_field_type",
+				ExpectedJSONType: metadata.JSONType,
+				ActualJSONType:   actual,
+			},
+		},
+		nil,
+	)
+}
 func invalidGetChangePayloadFieldTypeError(err error) error {
 	var typeErr *json.UnmarshalTypeError
 	if !errors.As(err, &typeErr) {
@@ -4718,6 +5371,68 @@ func invalidGetVerificationResultFieldTypeError(err error) error {
 		field = "$payload"
 	}
 	metadata, ok := tools.LookupFieldMetadata(getVerificationResultFields, field)
+	if !ok || metadata.JSONType == "" {
+		return err
+	}
+	actual := generatedUnmarshalJSONType(typeErr.Value)
+	if actual == "" {
+		return err
+	}
+	return tools.NewValidationError(
+		err.Error(),
+		[]*tools.FieldIssue{
+			{
+				Field:            field,
+				Constraint:       "invalid_field_type",
+				ExpectedJSONType: metadata.JSONType,
+				ActualJSONType:   actual,
+			},
+		},
+		nil,
+	)
+}
+func invalidInitProjectPayloadFieldTypeError(err error) error {
+	var typeErr *json.UnmarshalTypeError
+	if !errors.As(err, &typeErr) {
+		return err
+	}
+	field := typeErr.Field
+	field = strings.TrimPrefix(field, "InitProjectPayloadTransport.")
+	if field == "" {
+		field = "$payload"
+	}
+	metadata, ok := tools.LookupFieldMetadata(initProjectPayloadFields, field)
+	if !ok || metadata.JSONType == "" {
+		return err
+	}
+	actual := generatedUnmarshalJSONType(typeErr.Value)
+	if actual == "" {
+		return err
+	}
+	return tools.NewValidationError(
+		err.Error(),
+		[]*tools.FieldIssue{
+			{
+				Field:            field,
+				Constraint:       "invalid_field_type",
+				ExpectedJSONType: metadata.JSONType,
+				ActualJSONType:   actual,
+			},
+		},
+		nil,
+	)
+}
+func invalidInitProjectResultFieldTypeError(err error) error {
+	var typeErr *json.UnmarshalTypeError
+	if !errors.As(err, &typeErr) {
+		return err
+	}
+	field := typeErr.Field
+	field = strings.TrimPrefix(field, "InitProjectResultTransport.")
+	if field == "" {
+		field = "$payload"
+	}
+	metadata, ok := tools.LookupFieldMetadata(initProjectResultFields, field)
 	if !ok || metadata.JSONType == "" {
 		return err
 	}
@@ -4924,6 +5639,68 @@ func invalidProposeChangeResultFieldTypeError(err error) error {
 		nil,
 	)
 }
+func invalidReadCheckOutputPayloadFieldTypeError(err error) error {
+	var typeErr *json.UnmarshalTypeError
+	if !errors.As(err, &typeErr) {
+		return err
+	}
+	field := typeErr.Field
+	field = strings.TrimPrefix(field, "ReadCheckOutputPayloadTransport.")
+	if field == "" {
+		field = "$payload"
+	}
+	metadata, ok := tools.LookupFieldMetadata(readCheckOutputPayloadFields, field)
+	if !ok || metadata.JSONType == "" {
+		return err
+	}
+	actual := generatedUnmarshalJSONType(typeErr.Value)
+	if actual == "" {
+		return err
+	}
+	return tools.NewValidationError(
+		err.Error(),
+		[]*tools.FieldIssue{
+			{
+				Field:            field,
+				Constraint:       "invalid_field_type",
+				ExpectedJSONType: metadata.JSONType,
+				ActualJSONType:   actual,
+			},
+		},
+		nil,
+	)
+}
+func invalidReadCheckOutputResultFieldTypeError(err error) error {
+	var typeErr *json.UnmarshalTypeError
+	if !errors.As(err, &typeErr) {
+		return err
+	}
+	field := typeErr.Field
+	field = strings.TrimPrefix(field, "ReadCheckOutputResultTransport.")
+	if field == "" {
+		field = "$payload"
+	}
+	metadata, ok := tools.LookupFieldMetadata(readCheckOutputResultFields, field)
+	if !ok || metadata.JSONType == "" {
+		return err
+	}
+	actual := generatedUnmarshalJSONType(typeErr.Value)
+	if actual == "" {
+		return err
+	}
+	return tools.NewValidationError(
+		err.Error(),
+		[]*tools.FieldIssue{
+			{
+				Field:            field,
+				Constraint:       "invalid_field_type",
+				ExpectedJSONType: metadata.JSONType,
+				ActualJSONType:   actual,
+			},
+		},
+		nil,
+	)
+}
 func invalidReviseChangePayloadFieldTypeError(err error) error {
 	var typeErr *json.UnmarshalTypeError
 	if !errors.As(err, &typeErr) {
@@ -5090,6 +5867,68 @@ func invalidStopLiveTargetResultFieldTypeError(err error) error {
 		field = "$payload"
 	}
 	metadata, ok := tools.LookupFieldMetadata(stopLiveTargetResultFields, field)
+	if !ok || metadata.JSONType == "" {
+		return err
+	}
+	actual := generatedUnmarshalJSONType(typeErr.Value)
+	if actual == "" {
+		return err
+	}
+	return tools.NewValidationError(
+		err.Error(),
+		[]*tools.FieldIssue{
+			{
+				Field:            field,
+				Constraint:       "invalid_field_type",
+				ExpectedJSONType: metadata.JSONType,
+				ActualJSONType:   actual,
+			},
+		},
+		nil,
+	)
+}
+func invalidUpdateDependenciesPayloadFieldTypeError(err error) error {
+	var typeErr *json.UnmarshalTypeError
+	if !errors.As(err, &typeErr) {
+		return err
+	}
+	field := typeErr.Field
+	field = strings.TrimPrefix(field, "UpdateDependenciesPayloadTransport.")
+	if field == "" {
+		field = "$payload"
+	}
+	metadata, ok := tools.LookupFieldMetadata(updateDependenciesPayloadFields, field)
+	if !ok || metadata.JSONType == "" {
+		return err
+	}
+	actual := generatedUnmarshalJSONType(typeErr.Value)
+	if actual == "" {
+		return err
+	}
+	return tools.NewValidationError(
+		err.Error(),
+		[]*tools.FieldIssue{
+			{
+				Field:            field,
+				Constraint:       "invalid_field_type",
+				ExpectedJSONType: metadata.JSONType,
+				ActualJSONType:   actual,
+			},
+		},
+		nil,
+	)
+}
+func invalidUpdateDependenciesResultFieldTypeError(err error) error {
+	var typeErr *json.UnmarshalTypeError
+	if !errors.As(err, &typeErr) {
+		return err
+	}
+	field := typeErr.Field
+	field = strings.TrimPrefix(field, "UpdateDependenciesResultTransport.")
+	if field == "" {
+		field = "$payload"
+	}
+	metadata, ok := tools.LookupFieldMetadata(updateDependenciesResultFields, field)
 	if !ok || metadata.JSONType == "" {
 		return err
 	}
@@ -5343,6 +6182,82 @@ func UnmarshalApproveMergeResult(data []byte) (*ApproveMergeResult, error) {
 	}
 	if in.UnverifiedApproval != nil {
 		out.UnverifiedApproval = decodeUnverifiedApprovalItemTransportToUnverifiedApprovalItem(in.UnverifiedApproval)
+	}
+	return out, nil
+}
+
+// MarshalCheckProjectPayload serializes *CheckProjectPayload into JSON.
+func MarshalCheckProjectPayload(v *CheckProjectPayload) ([]byte, error) {
+	if v == nil {
+		return nil, fmt.Errorf("checkProjectPayload is nil")
+	}
+	in := v
+	_ = in
+	var out *toolhttp.CheckProjectPayloadTransport
+	out = &toolhttp.CheckProjectPayloadTransport{}
+	return json.Marshal(out)
+}
+
+// UnmarshalCheckProjectPayload deserializes JSON into *CheckProjectPayload.
+func UnmarshalCheckProjectPayload(data []byte) (*CheckProjectPayload, error) {
+	if len(data) == 0 {
+		var v *CheckProjectPayload
+		return v, nil
+	}
+	var tv toolhttp.CheckProjectPayloadTransport
+	if err := validateStopLiveTargetPayloadJSON(data); err != nil {
+		return nil, invalidCheckProjectPayloadFieldTypeError(err)
+	}
+	if err := json.Unmarshal(data, &tv); err != nil {
+		return nil, invalidCheckProjectPayloadFieldTypeError(err)
+	}
+	in := &tv
+	_ = in
+	var out *CheckProjectPayload
+	out = &CheckProjectPayload{}
+	return out, nil
+}
+
+// MarshalCheckProjectResult serializes *CheckProjectResult into JSON.
+func MarshalCheckProjectResult(v *CheckProjectResult) ([]byte, error) {
+	if v == nil {
+		return nil, fmt.Errorf("checkProjectResult is nil")
+	}
+	in := v
+	_ = in
+	var out *toolhttp.CheckProjectResultTransport
+	out = &toolhttp.CheckProjectResultTransport{
+		OpID:    &in.OpID,
+		Passed:  &in.Passed,
+		Message: &in.Message,
+	}
+	return json.Marshal(out)
+}
+
+// UnmarshalCheckProjectResult deserializes JSON into *CheckProjectResult.
+func UnmarshalCheckProjectResult(data []byte) (*CheckProjectResult, error) {
+	if len(data) == 0 {
+		return nil, fmt.Errorf("checkProjectResult JSON is empty")
+	}
+	var tv toolhttp.CheckProjectResultTransport
+	if err := validateCheckProjectResultJSON(data); err != nil {
+		return nil, invalidCheckProjectResultFieldTypeError(err)
+	}
+	if err := json.Unmarshal(data, &tv); err != nil {
+		return nil, invalidCheckProjectResultFieldTypeError(err)
+	}
+	if err := toolhttp.ValidateCheckProjectResultTransport(&tv); err != nil {
+		err = newValidationError(err)
+		err = enrichCheckProjectResultValidationError(err)
+		return nil, err
+	}
+	in := &tv
+	_ = in
+	var out *CheckProjectResult
+	out = &CheckProjectResult{
+		OpID:    *in.OpID,
+		Passed:  *in.Passed,
+		Message: *in.Message,
 	}
 	return out, nil
 }
@@ -5837,6 +6752,102 @@ func UnmarshalDraftOverrideResult(data []byte) (*DraftOverrideResult, error) {
 	return out, nil
 }
 
+// MarshalGenerateCodePayload serializes *GenerateCodePayload into JSON.
+func MarshalGenerateCodePayload(v *GenerateCodePayload) ([]byte, error) {
+	if v == nil {
+		return nil, fmt.Errorf("generateCodePayload is nil")
+	}
+	in := v
+	_ = in
+	var out *toolhttp.GenerateCodePayloadTransport
+	out = &toolhttp.GenerateCodePayloadTransport{
+		Target: in.Target,
+	}
+	return json.Marshal(out)
+}
+
+// UnmarshalGenerateCodePayload deserializes JSON into *GenerateCodePayload.
+func UnmarshalGenerateCodePayload(data []byte) (*GenerateCodePayload, error) {
+	if len(data) == 0 {
+		return nil, fmt.Errorf("generateCodePayload JSON is empty")
+	}
+	var tv toolhttp.GenerateCodePayloadTransport
+	if err := validateGenerateCodePayloadJSON(data); err != nil {
+		return nil, invalidGenerateCodePayloadFieldTypeError(err)
+	}
+	if err := json.Unmarshal(data, &tv); err != nil {
+		return nil, invalidGenerateCodePayloadFieldTypeError(err)
+	}
+	if err := toolhttp.ValidateGenerateCodePayloadTransport(&tv); err != nil {
+		err = newValidationError(err)
+		err = enrichGenerateCodePayloadValidationError(err)
+		return nil, err
+	}
+	in := &tv
+	_ = in
+	var out *GenerateCodePayload
+	out = &GenerateCodePayload{
+		Target: in.Target,
+	}
+	return out, nil
+}
+
+// MarshalGenerateCodeResult serializes *GenerateCodeResult into JSON.
+func MarshalGenerateCodeResult(v *GenerateCodeResult) ([]byte, error) {
+	if v == nil {
+		return nil, fmt.Errorf("generateCodeResult is nil")
+	}
+	in := v
+	_ = in
+	var out *toolhttp.GenerateCodeResultTransport
+	out = &toolhttp.GenerateCodeResultTransport{
+		Target: &in.Target,
+	}
+	out.FilesWritten = make([]string, len(in.FilesWritten))
+	for i, val := range in.FilesWritten {
+		out.FilesWritten[i] = val
+	}
+	out.Warnings = make([]string, len(in.Warnings))
+	for i, val := range in.Warnings {
+		out.Warnings[i] = val
+	}
+	return json.Marshal(out)
+}
+
+// UnmarshalGenerateCodeResult deserializes JSON into *GenerateCodeResult.
+func UnmarshalGenerateCodeResult(data []byte) (*GenerateCodeResult, error) {
+	if len(data) == 0 {
+		return nil, fmt.Errorf("generateCodeResult JSON is empty")
+	}
+	var tv toolhttp.GenerateCodeResultTransport
+	if err := validateGenerateCodeResultJSON(data); err != nil {
+		return nil, invalidGenerateCodeResultFieldTypeError(err)
+	}
+	if err := json.Unmarshal(data, &tv); err != nil {
+		return nil, invalidGenerateCodeResultFieldTypeError(err)
+	}
+	if err := toolhttp.ValidateGenerateCodeResultTransport(&tv); err != nil {
+		err = newValidationError(err)
+		err = enrichGenerateCodeResultValidationError(err)
+		return nil, err
+	}
+	in := &tv
+	_ = in
+	var out *GenerateCodeResult
+	out = &GenerateCodeResult{
+		Target: *in.Target,
+	}
+	out.FilesWritten = make([]string, len(in.FilesWritten))
+	for i, val := range in.FilesWritten {
+		out.FilesWritten[i] = val
+	}
+	out.Warnings = make([]string, len(in.Warnings))
+	for i, val := range in.Warnings {
+		out.Warnings[i] = val
+	}
+	return out, nil
+}
+
 // MarshalGetChangePayload serializes *GetChangePayload into JSON.
 func MarshalGetChangePayload(v *GetChangePayload) ([]byte, error) {
 	if v == nil {
@@ -6155,6 +7166,94 @@ func UnmarshalGetVerificationResult(data []byte) (*GetVerificationResult, error)
 	return out, nil
 }
 
+// MarshalInitProjectPayload serializes *InitProjectPayload into JSON.
+func MarshalInitProjectPayload(v *InitProjectPayload) ([]byte, error) {
+	if v == nil {
+		return nil, fmt.Errorf("initProjectPayload is nil")
+	}
+	in := v
+	_ = in
+	var out *toolhttp.InitProjectPayloadTransport
+	out = &toolhttp.InitProjectPayloadTransport{
+		ModulePath: &in.ModulePath,
+		Dir:        in.Dir,
+	}
+	return json.Marshal(out)
+}
+
+// UnmarshalInitProjectPayload deserializes JSON into *InitProjectPayload.
+func UnmarshalInitProjectPayload(data []byte) (*InitProjectPayload, error) {
+	if len(data) == 0 {
+		return nil, fmt.Errorf("initProjectPayload JSON is empty")
+	}
+	var tv toolhttp.InitProjectPayloadTransport
+	if err := validateInitProjectPayloadJSON(data); err != nil {
+		return nil, invalidInitProjectPayloadFieldTypeError(err)
+	}
+	if err := json.Unmarshal(data, &tv); err != nil {
+		return nil, invalidInitProjectPayloadFieldTypeError(err)
+	}
+	if err := toolhttp.ValidateInitProjectPayloadTransport(&tv); err != nil {
+		err = newValidationError(err)
+		err = enrichInitProjectPayloadValidationError(err)
+		return nil, err
+	}
+	in := &tv
+	_ = in
+	var out *InitProjectPayload
+	out = &InitProjectPayload{
+		ModulePath: *in.ModulePath,
+		Dir:        in.Dir,
+	}
+	return out, nil
+}
+
+// MarshalInitProjectResult serializes *InitProjectResult into JSON.
+func MarshalInitProjectResult(v *InitProjectResult) ([]byte, error) {
+	if v == nil {
+		return nil, fmt.Errorf("initProjectResult is nil")
+	}
+	in := v
+	_ = in
+	var out *toolhttp.InitProjectResultTransport
+	out = &toolhttp.InitProjectResultTransport{
+		Dir:         &in.Dir,
+		ModulePath:  &in.ModulePath,
+		ServiceName: &in.ServiceName,
+		Commit:      &in.Commit,
+	}
+	return json.Marshal(out)
+}
+
+// UnmarshalInitProjectResult deserializes JSON into *InitProjectResult.
+func UnmarshalInitProjectResult(data []byte) (*InitProjectResult, error) {
+	if len(data) == 0 {
+		return nil, fmt.Errorf("initProjectResult JSON is empty")
+	}
+	var tv toolhttp.InitProjectResultTransport
+	if err := validateInitProjectResultJSON(data); err != nil {
+		return nil, invalidInitProjectResultFieldTypeError(err)
+	}
+	if err := json.Unmarshal(data, &tv); err != nil {
+		return nil, invalidInitProjectResultFieldTypeError(err)
+	}
+	if err := toolhttp.ValidateInitProjectResultTransport(&tv); err != nil {
+		err = newValidationError(err)
+		err = enrichInitProjectResultValidationError(err)
+		return nil, err
+	}
+	in := &tv
+	_ = in
+	var out *InitProjectResult
+	out = &InitProjectResult{
+		Dir:         *in.Dir,
+		ModulePath:  *in.ModulePath,
+		ServiceName: *in.ServiceName,
+		Commit:      *in.Commit,
+	}
+	return out, nil
+}
+
 // MarshalListVerificationsPayload serializes *ListVerificationsPayload into JSON.
 func MarshalListVerificationsPayload(v *ListVerificationsPayload) ([]byte, error) {
 	if v == nil {
@@ -6263,7 +7362,9 @@ func MarshalPreviewArchitecturePayload(v *PreviewArchitecturePayload) ([]byte, e
 		ChangeID:        &in.ChangeID,
 		RequestRevision: &in.RequestRevision,
 	}
-	out.Design = encodeDesignSnapshotToDesignSnapshotTransport(in.Design)
+	if in.Design != nil {
+		out.Design = encodeDesignSnapshotToDesignSnapshotTransport(in.Design)
+	}
 	if in.Builders != nil {
 		out.Builders = make([]*toolhttp.BuilderScopeItemTransport, len(in.Builders))
 		for i, val := range in.Builders {
@@ -6313,7 +7414,9 @@ func UnmarshalPreviewArchitecturePayload(data []byte) (*PreviewArchitecturePaylo
 		ChangeID:        *in.ChangeID,
 		RequestRevision: *in.RequestRevision,
 	}
-	out.Design = decodeDesignSnapshotTransportToDesignSnapshot(in.Design)
+	if in.Design != nil {
+		out.Design = decodeDesignSnapshotTransportToDesignSnapshot(in.Design)
+	}
 	if in.Builders != nil {
 		out.Builders = make([]*BuilderScopeItem, len(in.Builders))
 		for i, val := range in.Builders {
@@ -6621,6 +7724,94 @@ func UnmarshalProposeChangeResult(data []byte) (*ProposeChangeResult, error) {
 	}
 	if in.UnverifiedApproval != nil {
 		out.UnverifiedApproval = decodeUnverifiedApprovalItemTransportToUnverifiedApprovalItem(in.UnverifiedApproval)
+	}
+	return out, nil
+}
+
+// MarshalReadCheckOutputPayload serializes *ReadCheckOutputPayload into JSON.
+func MarshalReadCheckOutputPayload(v *ReadCheckOutputPayload) ([]byte, error) {
+	if v == nil {
+		return nil, fmt.Errorf("readCheckOutputPayload is nil")
+	}
+	in := v
+	_ = in
+	var out *toolhttp.ReadCheckOutputPayloadTransport
+	out = &toolhttp.ReadCheckOutputPayloadTransport{
+		OpID:   &in.OpID,
+		Cursor: in.Cursor,
+	}
+	return json.Marshal(out)
+}
+
+// UnmarshalReadCheckOutputPayload deserializes JSON into *ReadCheckOutputPayload.
+func UnmarshalReadCheckOutputPayload(data []byte) (*ReadCheckOutputPayload, error) {
+	if len(data) == 0 {
+		return nil, fmt.Errorf("readCheckOutputPayload JSON is empty")
+	}
+	var tv toolhttp.ReadCheckOutputPayloadTransport
+	if err := validateReadCheckOutputPayloadJSON(data); err != nil {
+		return nil, invalidReadCheckOutputPayloadFieldTypeError(err)
+	}
+	if err := json.Unmarshal(data, &tv); err != nil {
+		return nil, invalidReadCheckOutputPayloadFieldTypeError(err)
+	}
+	if err := toolhttp.ValidateReadCheckOutputPayloadTransport(&tv); err != nil {
+		err = newValidationError(err)
+		err = enrichReadCheckOutputPayloadValidationError(err)
+		return nil, err
+	}
+	in := &tv
+	_ = in
+	var out *ReadCheckOutputPayload
+	out = &ReadCheckOutputPayload{
+		OpID:   *in.OpID,
+		Cursor: in.Cursor,
+	}
+	return out, nil
+}
+
+// MarshalReadCheckOutputResult serializes *ReadCheckOutputResult into JSON.
+func MarshalReadCheckOutputResult(v *ReadCheckOutputResult) ([]byte, error) {
+	if v == nil {
+		return nil, fmt.Errorf("readCheckOutputResult is nil")
+	}
+	in := v
+	_ = in
+	var out *toolhttp.ReadCheckOutputResultTransport
+	out = &toolhttp.ReadCheckOutputResultTransport{
+		Text:          &in.Text,
+		NextCursor:    in.NextCursor,
+		CapturedBytes: &in.CapturedBytes,
+		DroppedBytes:  &in.DroppedBytes,
+	}
+	return json.Marshal(out)
+}
+
+// UnmarshalReadCheckOutputResult deserializes JSON into *ReadCheckOutputResult.
+func UnmarshalReadCheckOutputResult(data []byte) (*ReadCheckOutputResult, error) {
+	if len(data) == 0 {
+		return nil, fmt.Errorf("readCheckOutputResult JSON is empty")
+	}
+	var tv toolhttp.ReadCheckOutputResultTransport
+	if err := validateReadCheckOutputResultJSON(data); err != nil {
+		return nil, invalidReadCheckOutputResultFieldTypeError(err)
+	}
+	if err := json.Unmarshal(data, &tv); err != nil {
+		return nil, invalidReadCheckOutputResultFieldTypeError(err)
+	}
+	if err := toolhttp.ValidateReadCheckOutputResultTransport(&tv); err != nil {
+		err = newValidationError(err)
+		err = enrichReadCheckOutputResultValidationError(err)
+		return nil, err
+	}
+	in := &tv
+	_ = in
+	var out *ReadCheckOutputResult
+	out = &ReadCheckOutputResult{
+		Text:          *in.Text,
+		NextCursor:    in.NextCursor,
+		CapturedBytes: *in.CapturedBytes,
+		DroppedBytes:  *in.DroppedBytes,
 	}
 	return out, nil
 }
@@ -6953,6 +8144,88 @@ func UnmarshalStopLiveTargetResult(data []byte) (*StopLiveTargetResult, error) {
 	out = &StopLiveTargetResult{
 		Stopped: *in.Stopped,
 		Message: *in.Message,
+	}
+	return out, nil
+}
+
+// MarshalUpdateDependenciesPayload serializes *UpdateDependenciesPayload into JSON.
+func MarshalUpdateDependenciesPayload(v *UpdateDependenciesPayload) ([]byte, error) {
+	if v == nil {
+		return nil, fmt.Errorf("updateDependenciesPayload is nil")
+	}
+	in := v
+	_ = in
+	var out *toolhttp.UpdateDependenciesPayloadTransport
+	out = &toolhttp.UpdateDependenciesPayloadTransport{}
+	return json.Marshal(out)
+}
+
+// UnmarshalUpdateDependenciesPayload deserializes JSON into *UpdateDependenciesPayload.
+func UnmarshalUpdateDependenciesPayload(data []byte) (*UpdateDependenciesPayload, error) {
+	if len(data) == 0 {
+		var v *UpdateDependenciesPayload
+		return v, nil
+	}
+	var tv toolhttp.UpdateDependenciesPayloadTransport
+	if err := validateStopLiveTargetPayloadJSON(data); err != nil {
+		return nil, invalidUpdateDependenciesPayloadFieldTypeError(err)
+	}
+	if err := json.Unmarshal(data, &tv); err != nil {
+		return nil, invalidUpdateDependenciesPayloadFieldTypeError(err)
+	}
+	in := &tv
+	_ = in
+	var out *UpdateDependenciesPayload
+	out = &UpdateDependenciesPayload{}
+	return out, nil
+}
+
+// MarshalUpdateDependenciesResult serializes *UpdateDependenciesResult into JSON.
+func MarshalUpdateDependenciesResult(v *UpdateDependenciesResult) ([]byte, error) {
+	if v == nil {
+		return nil, fmt.Errorf("updateDependenciesResult is nil")
+	}
+	in := v
+	_ = in
+	var out *toolhttp.UpdateDependenciesResultTransport
+	out = &toolhttp.UpdateDependenciesResultTransport{
+		OpID:    &in.OpID,
+		Message: &in.Message,
+	}
+	out.FilesWritten = make([]string, len(in.FilesWritten))
+	for i, val := range in.FilesWritten {
+		out.FilesWritten[i] = val
+	}
+	return json.Marshal(out)
+}
+
+// UnmarshalUpdateDependenciesResult deserializes JSON into *UpdateDependenciesResult.
+func UnmarshalUpdateDependenciesResult(data []byte) (*UpdateDependenciesResult, error) {
+	if len(data) == 0 {
+		return nil, fmt.Errorf("updateDependenciesResult JSON is empty")
+	}
+	var tv toolhttp.UpdateDependenciesResultTransport
+	if err := validateUpdateDependenciesResultJSON(data); err != nil {
+		return nil, invalidUpdateDependenciesResultFieldTypeError(err)
+	}
+	if err := json.Unmarshal(data, &tv); err != nil {
+		return nil, invalidUpdateDependenciesResultFieldTypeError(err)
+	}
+	if err := toolhttp.ValidateUpdateDependenciesResultTransport(&tv); err != nil {
+		err = newValidationError(err)
+		err = enrichUpdateDependenciesResultValidationError(err)
+		return nil, err
+	}
+	in := &tv
+	_ = in
+	var out *UpdateDependenciesResult
+	out = &UpdateDependenciesResult{
+		OpID:    *in.OpID,
+		Message: *in.Message,
+	}
+	out.FilesWritten = make([]string, len(in.FilesWritten))
+	for i, val := range in.FilesWritten {
+		out.FilesWritten[i] = val
 	}
 	return out, nil
 }
@@ -7341,6 +8614,86 @@ func validateConfigureModelResultJSON(data []byte) error {
 	return validateConfigureModelResultJSONValue("", root, "")
 }
 
+// validateInitProjectPayloadJSON parses one JSON document and checks the exact value
+// shapes known from this generated Goa type.
+func validateInitProjectPayloadJSON(data []byte) error {
+	root, err := readStrictToolJSON(data)
+	if err != nil {
+		return err
+	}
+	return validateInitProjectPayloadJSONValue("", root, "")
+}
+
+// validateInitProjectResultJSON parses one JSON document and checks the exact value
+// shapes known from this generated Goa type.
+func validateInitProjectResultJSON(data []byte) error {
+	root, err := readStrictToolJSON(data)
+	if err != nil {
+		return err
+	}
+	return validateInitProjectResultJSONValue("", root, "")
+}
+
+// validateGenerateCodePayloadJSON parses one JSON document and checks the exact value
+// shapes known from this generated Goa type.
+func validateGenerateCodePayloadJSON(data []byte) error {
+	root, err := readStrictToolJSON(data)
+	if err != nil {
+		return err
+	}
+	return validateGenerateCodePayloadJSONValue("", root, "")
+}
+
+// validateGenerateCodeResultJSON parses one JSON document and checks the exact value
+// shapes known from this generated Goa type.
+func validateGenerateCodeResultJSON(data []byte) error {
+	root, err := readStrictToolJSON(data)
+	if err != nil {
+		return err
+	}
+	return validateGenerateCodeResultJSONValue("", root, "")
+}
+
+// validateCheckProjectResultJSON parses one JSON document and checks the exact value
+// shapes known from this generated Goa type.
+func validateCheckProjectResultJSON(data []byte) error {
+	root, err := readStrictToolJSON(data)
+	if err != nil {
+		return err
+	}
+	return validateCheckProjectResultJSONValue("", root, "")
+}
+
+// validateUpdateDependenciesResultJSON parses one JSON document and checks the exact value
+// shapes known from this generated Goa type.
+func validateUpdateDependenciesResultJSON(data []byte) error {
+	root, err := readStrictToolJSON(data)
+	if err != nil {
+		return err
+	}
+	return validateUpdateDependenciesResultJSONValue("", root, "")
+}
+
+// validateReadCheckOutputPayloadJSON parses one JSON document and checks the exact value
+// shapes known from this generated Goa type.
+func validateReadCheckOutputPayloadJSON(data []byte) error {
+	root, err := readStrictToolJSON(data)
+	if err != nil {
+		return err
+	}
+	return validateReadCheckOutputPayloadJSONValue("", root, "")
+}
+
+// validateReadCheckOutputResultJSON parses one JSON document and checks the exact value
+// shapes known from this generated Goa type.
+func validateReadCheckOutputResultJSON(data []byte) error {
+	root, err := readStrictToolJSON(data)
+	if err != nil {
+		return err
+	}
+	return validateReadCheckOutputResultJSONValue("", root, "")
+}
+
 // readStrictToolJSON checks the complete JSON document for malformed text and
 // duplicate members, then returns values with their original number text.
 func readStrictToolJSON(data []byte) (any, error) {
@@ -7493,7 +8846,7 @@ func validateProposeChangePayloadJSONValue(path string, value any, description s
 		case "design_source":
 			if err := validateStringJSONValue(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Current Goa design source of the target (its design/*.go files) for the CP1 model to read. If omitted, CP1 receives no current design; supply the relevant design source when you want it considered.",
+				typed[key], "Current Goa design source of the target (its design/*.go files) for the CP1 model to read. When omitted on a server with a bound workspace, Surla reads design/*.go from the bound workspace; when omitted without a bound workspace, CP1 receives no current design.",
 			); err != nil {
 				return err
 			}
@@ -8113,7 +9466,7 @@ func validateReviseChangePayloadJSONValue(path string, value any, description st
 		case "design_source":
 			if err := validateStringJSONValue(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Updated Goa design source of the target (its design/*.go files) for the CP1 model to read; when omitted, the card's saved design source is used again.",
+				typed[key], "Updated Goa design source of the target (its design/*.go files) for the CP1 model to read. When omitted on a workspace-backed card with a bound workspace, Surla re-reads design/*.go from the bound workspace; otherwise the card's saved design source is used again.",
 			); err != nil {
 				return err
 			}
@@ -8283,7 +9636,7 @@ func validatePreviewArchitecturePayloadJSONValue(path string, value any, descrip
 		case "design":
 			if err := validatePreviewArchitecturePayloadDesignSnapshotTransportJSONValue(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Candidate module whose Goa and Goa-AI design is evaluated.",
+				typed[key], "Candidate module whose Goa and Goa-AI design is evaluated. When omitted on a server with a bound workspace, Surla reads the candidate module snapshot from the bound workspace.",
 			); err != nil {
 				return err
 			}
@@ -10561,6 +11914,425 @@ func validateConfigureModelResultJSONValue(path string, value any, description s
 				"provider",
 			})
 		}
+	}
+	return nil
+}
+
+// validateInitProjectPayloadJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateInitProjectPayloadJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "dir":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Direct child directory name inside the bound workspace root. When omitted or empty, defaults to the service name derived from module_path.",
+			); err != nil {
+				return err
+			}
+		case "module_path":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Go module path of the new service (for example example.com/shop).",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"dir",
+				"module_path",
+			})
+		}
+	}
+	return nil
+}
+
+// validateInitProjectResultJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateInitProjectResultJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "commit":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Full commit ID of the initial starter commit created in the initialized repository (40 or 64 lowercase hex characters); start_live_target and verify_change take this commit ID.",
+			); err != nil {
+				return err
+			}
+		case "dir":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Physical directory path of the newly created starter project (now the server's active workspace).",
+			); err != nil {
+				return err
+			}
+		case "module_path":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Initialized Go module path.",
+			); err != nil {
+				return err
+			}
+		case "service_name":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Derived service name.",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"commit",
+				"dir",
+				"module_path",
+				"service_name",
+			})
+		}
+	}
+	return nil
+}
+
+// validateGenerateCodePayloadJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateGenerateCodePayloadJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "target":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Module to regenerate: candidate (the application, the default when omitted) or eval (the local eval/ module).",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"target",
+			})
+		}
+	}
+	return nil
+}
+
+// validateGenerateCodeResultJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateGenerateCodeResultJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "files_written":
+			if err := validateProposeChangeResultAmbiguityQuestionTransportOptionsJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Sorted paths relative to the selected module that were written, including AGENTS_QUICKSTART.md when produced and written successfully.",
+			); err != nil {
+				return err
+			}
+		case "target":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Module that received the generated files.",
+			); err != nil {
+				return err
+			}
+		case "warnings":
+			if err := validateProposeChangeResultAmbiguityQuestionTransportOptionsJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Problems that did not prevent gen/ publication, such as incomplete cleanup or a guide that could not be written.",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"files_written",
+				"target",
+				"warnings",
+			})
+		}
+	}
+	return nil
+}
+
+// validateCheckProjectResultJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateCheckProjectResultJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "message":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "At most 16 KiB: the modules tested, the first failure and the end of its output, and how to read the rest.",
+			); err != nil {
+				return err
+			}
+		case "op_id":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Operation identifier; pass it to read_check_output to read the full output.",
+			); err != nil {
+				return err
+			}
+		case "passed":
+			if err := validateBooleanJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "True only when go test ./... exited 0 in every module.",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"message",
+				"op_id",
+				"passed",
+			})
+		}
+	}
+	return nil
+}
+
+// validateUpdateDependenciesResultJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateUpdateDependenciesResultJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "files_written":
+			if err := validateProposeChangeResultAmbiguityQuestionTransportOptionsJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Workspace-relative go.mod, go.sum and go.work.sum files whose bytes changed and were written.",
+			); err != nil {
+				return err
+			}
+		case "message":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "At most 16 KiB: what was updated, and Go's message for any module that could not be.",
+			); err != nil {
+				return err
+			}
+		case "op_id":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Operation identifier; pass it to read_check_output to read the full output.",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"files_written",
+				"message",
+				"op_id",
+			})
+		}
+	}
+	return nil
+}
+
+// validateReadCheckOutputPayloadJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateReadCheckOutputPayloadJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "cursor":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Opaque next_cursor from the previous page; omit for the first page.",
+			); err != nil {
+				return err
+			}
+		case "op_id":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Operation identifier returned by check_project or update_dependencies.",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"cursor",
+				"op_id",
+			})
+		}
+	}
+	return nil
+}
+
+// validateReadCheckOutputResultJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateReadCheckOutputResultJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "captured_bytes":
+			if err := validateInt64JSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Total bytes captured for the operation.",
+			); err != nil {
+				return err
+			}
+		case "dropped_bytes":
+			if err := validateInt64JSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Bytes the operation produced beyond its capture limit and did not keep; nonzero means the output has a stated gap.",
+			); err != nil {
+				return err
+			}
+		case "next_cursor":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Cursor for the following page; absent when this page reaches the end.",
+			); err != nil {
+				return err
+			}
+		case "text":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "The page text.",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"captured_bytes",
+				"dropped_bytes",
+				"next_cursor",
+				"text",
+			})
+		}
+	}
+	return nil
+}
+
+// validateInt64JSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateInt64JSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "integer", "null", description)
+	}
+	typed, ok := value.(json.Number)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "integer", decodedJSONType(value), description)
+	}
+	if _, err := strconv.ParseInt(typed.String(), 10, 64); err != nil {
+		return invalidGeneratedFieldTypeError(field, "integer", "number", description)
 	}
 	return nil
 }

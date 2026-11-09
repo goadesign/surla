@@ -23,6 +23,7 @@ import (
 
 	"github.com/goadesign/surla"
 	gensurla "github.com/goadesign/surla/gen/surla"
+	"github.com/goadesign/surla/internal/abspath"
 	"github.com/goadesign/surla/internal/procgroup"
 	"github.com/goadesign/surla/verify/candidate"
 	"golang.org/x/mod/modfile"
@@ -90,6 +91,8 @@ type (
 		// goroot is the resolved Go toolchain root.
 		goroot string
 		// modCache is the read-only Go module cache directory.
+		// Dependency preparation may create it; before a build it is resolved
+		// to the same physical directory the sandbox uses.
 		modCache string
 	}
 
@@ -104,7 +107,7 @@ type (
 	// buildError reports a harness program that did not compile. Its message
 	// carries the compiler's diagnostics unchanged.
 	buildError struct {
-		// err is the compile error, with the build log.
+		// err is the raw compile failure, including any sandbox output.
 		err error
 	}
 
@@ -346,10 +349,17 @@ func evaluate(ctx context.Context, files map[string]string, workDir string) (Res
 // returns the Goa module the build selected, and a *buildError when the
 // program does not compile.
 func runSandboxed(ctx context.Context, files map[string]string, workDir, program string, args func(stateDir string) []string, collect func(stateDir string) error) (goa listedModule, err error) {
+	phase := "checking the local module files"
+	defer func() {
+		if err != nil {
+			err = &phaseError{phase: phase, err: err}
+		}
+	}()
 	target, err := validateSnapshot(files)
 	if err != nil {
-		return listedModule{}, err
+		return listedModule{}, &snapshotValidationError{err: err}
 	}
+	phase = "preparing the design compiler"
 	evalMod, err := evaluatorGoMod()
 	if err != nil {
 		return listedModule{}, err
@@ -359,12 +369,19 @@ func runSandboxed(ctx context.Context, files map[string]string, workDir, program
 		return listedModule{}, err
 	}
 
+	phase = "preparing the temporary compiler files"
 	tmpDir, err := os.MkdirTemp(filepath.Dir(workDir), "surla-designeval-*")
 	if err != nil {
 		return listedModule{}, fmt.Errorf("create temp dir: %w", err)
 	}
 	storeDir := filepath.Join(tmpDir, "store")
-	defer func() { err = releaseTemp(tmpDir, storeDir, err) }()
+	defer func() {
+		operationErr := err
+		err = releaseTemp(tmpDir, storeDir, err)
+		if operationErr == nil && err != nil {
+			phase = "removing the temporary compiler files"
+		}
+	}()
 
 	buildDir := filepath.Join(tmpDir, "build")
 	outDir := filepath.Join(tmpDir, "out")
@@ -384,13 +401,26 @@ func runSandboxed(ctx context.Context, files map[string]string, workDir, program
 		return listedModule{}, fmt.Errorf("write evaluator main.go: %w", err)
 	}
 	gocmd := goCommand{bin: filepath.Join(tc.goroot, "bin", "go")}
+	phase = "loading the design module dependencies"
 	goa, err = prepareHarnessModule(ctx, gocmd, buildDir, target, evalMod, logDir)
 	if err != nil {
 		return listedModule{}, err
 	}
+	// The dependency loader owns creation of a missing module cache. Resolve
+	// the directory it used before passing that fact to the build and its
+	// diagnostic output, whose sandbox uses physical paths.
+	tc.modCache, err = abspath.Eval(tc.modCache)
+	if err != nil {
+		return goa, fmt.Errorf("resolve compiler module cache: %w", err)
+	}
+	paths := diagnosticPaths{
+		source: filepath.Join(buildDir, "target"), temporary: tmpDir, work: workDir,
+		goroot: tc.goroot, modCache: tc.modCache,
+	}
 
 	rawBin := filepath.Join(outDir, "designeval-bin")
 	buildLog := filepath.Join(tmpDir, "build.log")
+	phase = "compiling the design"
 	if err := candidate.Build(ctx, candidate.BuildSpec{
 		SourceDir: buildDir,
 		ModuleDir: buildDir,
@@ -409,9 +439,12 @@ func runSandboxed(ctx context.Context, files map[string]string, workDir, program
 		if readErr != nil {
 			return goa, &buildError{err: withExit71Guidance(ctx, fmt.Errorf("compile Goa design: %w", err))}
 		}
-		return goa, &buildError{err: withExit71Guidance(ctx, fmt.Errorf("compile Goa design: %w (%s)", err, strings.TrimSpace(string(logBytes))))}
+		return goa, &buildError{err: withExit71Guidance(ctx, &sandboxOutputError{
+			err: fmt.Errorf("compile Goa design: %w", err), output: strings.TrimSpace(string(logBytes)), paths: paths,
+		})}
 	}
 
+	phase = "starting the sandboxed design generator"
 	art, err := candidate.Pin(storeDir, rawBin)
 	if err != nil {
 		return goa, fmt.Errorf("pin design evaluator binary: %w", err)
@@ -424,13 +457,17 @@ func runSandboxed(ctx context.Context, files map[string]string, workDir, program
 	if err != nil {
 		return goa, fmt.Errorf("exec sandboxed design evaluator: %w", err)
 	}
+	phase = "evaluating the design and generating files"
 	if waitErr := proc.Wait(); waitErr != nil {
 		excerpt, _, exErr := proc.Excerpt(16 << 10)
 		if exErr != nil {
 			return goa, withExit71Guidance(ctx, fmt.Errorf("evaluate Goa design in sandbox: %w", waitErr))
 		}
-		return goa, withExit71Guidance(ctx, fmt.Errorf("evaluate Goa design in sandbox: %w (%s)", waitErr, strings.TrimSpace(excerpt)))
+		return goa, withExit71Guidance(ctx, &sandboxOutputError{
+			err: fmt.Errorf("evaluate Goa design in sandbox: %w", waitErr), output: strings.TrimSpace(excerpt), paths: paths,
+		})
 	}
+	phase = "reading the generated output"
 	return goa, collect(stateDir)
 }
 
@@ -447,8 +484,9 @@ func withExit71Guidance(ctx context.Context, err error) error {
 	return err
 }
 
-// resolveToolchainEnv resolves the Go toolchain root and module cache for one
-// evaluation with the go command on PATH. ctx bounds it.
+// resolveToolchainEnv reads the selected Go settings and resolves the toolchain
+// root before using its go binary. The selected module cache may not exist yet;
+// runSandboxed resolves it after dependency preparation. ctx bounds the command.
 func resolveToolchainEnv(ctx context.Context) (toolchainEnv, error) {
 	out, err := exec.CommandContext(ctx, "go", "env", "GOROOT", "GOMODCACHE").Output()
 	if err != nil {
@@ -458,7 +496,11 @@ func resolveToolchainEnv(ctx context.Context) (toolchainEnv, error) {
 	if len(lines) < 2 || strings.TrimSpace(lines[0]) == "" || strings.TrimSpace(lines[1]) == "" {
 		return toolchainEnv{}, fmt.Errorf("unexpected go env output %q", string(out))
 	}
-	return toolchainEnv{goroot: strings.TrimSpace(lines[0]), modCache: strings.TrimSpace(lines[1])}, nil
+	goroot, err := abspath.Eval(strings.TrimSpace(lines[0]))
+	if err != nil {
+		return toolchainEnv{}, fmt.Errorf("resolve compiler toolchain directory: %w", err)
+	}
+	return toolchainEnv{goroot: goroot, modCache: strings.TrimSpace(lines[1])}, nil
 }
 
 // evaluatorGoMod returns the go.mod Surla was built from (surla.GoMod), which
@@ -539,7 +581,13 @@ func (e *Evaluator) admit() (string, error) {
 		if err != nil {
 			return "", fmt.Errorf("create design evaluator workspace: %w", err)
 		}
-		e.workDir = dir
+		physical, err := abspath.Eval(dir)
+		if err != nil {
+			// No operation has used this empty allocation yet. Remove only
+			// that directory if resolving its physical path fails.
+			return "", errors.Join(fmt.Errorf("resolve design evaluator workspace: %w", err), os.Remove(dir))
+		}
+		e.workDir = physical
 	}
 	e.active.Add(1)
 	return e.workDir, nil
