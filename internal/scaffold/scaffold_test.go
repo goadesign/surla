@@ -106,6 +106,36 @@ func TestSurlaVersionReadsSurlaModuleFromStandaloneAndEmbeddedBuildInfo(t *testi
 	}))
 }
 
+// TestLayoutForModulePreservesStarterNames checks the shared service-name rule
+// without running a generator, including names reserved only by generated code.
+func TestLayoutForModulePreservesStarterNames(t *testing.T) {
+	t.Parallel()
+	for _, name := range []string{"shop", "shop2", "errors", "helper", "service", "catalog", "string"} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			got, err := LayoutForModule("example.com/" + name)
+			require.NoError(t, err)
+			assert.Equal(t, Layout{
+				Service:          name,
+				CandidatePackage: "./cmd/" + name,
+				SuiteCommand:     "./cmd/" + name + "-evals",
+			}, got)
+		})
+	}
+	for _, modulePath := range []string{
+		"", "not a path", "example.com/my-shop", "example.com/Shop",
+		"example.com/1shop", "example.com/func", "example.com/main",
+		" example.com/shop ",
+	} {
+		t.Run(modulePath, func(t *testing.T) {
+			t.Parallel()
+			got, err := LayoutForModule(modulePath)
+			assert.Error(t, err)
+			assert.Empty(t, got)
+		})
+	}
+}
+
 func TestNewDataValidatesTheModuleAndReadsSurlasVersions(t *testing.T) {
 	d, err := newData(Options{Module: "example.com/shop", SurlaVersion: published})
 	require.NoError(t, err)

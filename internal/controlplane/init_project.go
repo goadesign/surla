@@ -7,11 +7,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"go/token"
 	"io/fs"
 	"os"
 	"os/exec"
-	"path"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -23,7 +21,6 @@ import (
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 	goa "goa.design/goa/v3/pkg"
-	"golang.org/x/mod/module"
 	"golang.org/x/sys/unix"
 
 	gensurla "github.com/goadesign/surla/gen/surla"
@@ -50,8 +47,6 @@ var (
 	// initDirNamePattern matches a valid single child directory name for
 	// `init_project`.
 	initDirNamePattern = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._-]*$`)
-	// serviceNamePattern matches a valid Goa starter service name.
-	serviceNamePattern = regexp.MustCompile(`^[a-z][a-z0-9]*$`)
 	// hexRunDirPattern matches a 32-character lowercase hex verification run ID.
 	hexRunDirPattern = regexp.MustCompile(`^[0-9a-f]{32}$`)
 	// projectMarkerNames lists top-level files and directories whose presence in
@@ -79,11 +74,12 @@ func (c *ControlPlane) InitProject(
 		return nil, gensurla.MakeUnprocessable(errors.New("module_path is required"))
 	}
 	modulePath := strings.TrimSpace(p.ModulePath)
-	serviceName, err := deriveStarterServiceName(modulePath)
+	layout, err := scaffold.LayoutForModule(modulePath)
 	if err != nil {
 		recordInitRefused(span, "invalid_module_path")
-		return nil, gensurla.MakeUnprocessable(err)
+		return nil, gensurla.MakeUnprocessable(fmt.Errorf("module_path %w", err))
 	}
+	serviceName := layout.Service
 	targetBase := serviceName
 	if p.Dir != nil && *p.Dir != "" {
 		targetBase = *p.Dir
@@ -463,22 +459,6 @@ func (c *ControlPlane) makeInitGenerator(defaultTempParent string) scaffold.Gene
 		return c.newGenerator()
 	}
 	return designeval.NewEvaluatorInDir(defaultTempParent)
-}
-
-// deriveStarterServiceName validates modulePath and returns its derived Goa
-// starter service name.
-func deriveStarterServiceName(modulePath string) (string, error) {
-	if err := module.CheckPath(modulePath); err != nil {
-		return "", fmt.Errorf("module_path %q: %w", modulePath, err)
-	}
-	name := path.Base(modulePath)
-	if !serviceNamePattern.MatchString(name) || !token.IsIdentifier(name) || name == "main" {
-		return "", fmt.Errorf(
-			"module_path %q must end in a service name of lowercase letters and digits starting with a letter, other than a Go keyword or main, such as example.com/shop",
-			modulePath,
-		)
-	}
-	return name, nil
 }
 
 // validateInitDirName checks that name is a single direct child directory name
