@@ -211,7 +211,7 @@ func (c *ControlPlane) startCheckOperation(ctx context.Context) (*checkOperation
 	engine, err := c.checker.Open(ctx, op.path("docker-config"))
 	if err == nil {
 		op.engine = engine
-		op.owner = checkOwner{Docker: engine.Docker(), Host: engine.Host()}
+		op.owner = checkOwner{Docker: engine.Docker(), Host: engine.Host(), Containers: []string{}}
 		err = engine.EnsureImage(ctx)
 	}
 	if err != nil {
@@ -446,9 +446,11 @@ func (c *ControlPlane) recoverCheckOperations() (retErr error) {
 			errs = append(errs, err)
 			continue
 		}
-		var owner checkOwner
-		if err := json.Unmarshal(raw, &owner); err != nil {
-			errs = append(errs, fmt.Errorf("decode %s: %w", filepath.Join(dir, ownerFile), err))
+		owner, err := decodeCheckOwner(raw, e.Name())
+		if err != nil {
+			// Which containers may still pin this directory is unknown, so it
+			// stays whole.
+			errs = append(errs, fmt.Errorf("decode %s; kept the operation directory: %w", filepath.Join(dir, ownerFile), err))
 			continue
 		}
 		engine := c.checker.Reopen(owner.Docker, owner.Host, filepath.Join(dir, "docker-config"))
@@ -456,7 +458,7 @@ func (c *ControlPlane) recoverCheckOperations() (retErr error) {
 			attribute.String("surla.check.op_id", e.Name()),
 			attribute.Int("surla.check.containers", len(owner.Containers)),
 		))
-		var left []string
+		left := []string{}
 		for _, name := range owner.Containers {
 			if err := engine.Remove(name); err != nil {
 				left = append(left, name)
@@ -467,11 +469,42 @@ func (c *ControlPlane) recoverCheckOperations() (retErr error) {
 		if len(left) == 0 {
 			errs = append(errs, removeOperationScratch(dir))
 		}
-		if raw, err := json.Marshal(owner); err == nil {
-			errs = append(errs, os.WriteFile(filepath.Join(dir, ownerFile), raw, 0o600))
+		raw, err = json.Marshal(owner)
+		if err != nil {
+			errs = append(errs, err)
+			continue
 		}
+		errs = append(errs, os.WriteFile(filepath.Join(dir, ownerFile), raw, 0o600))
 	}
 	return errors.Join(errs...)
+}
+
+// decodeCheckOwner strictly decodes the recovery record of operation id:
+// one JSON object with exactly the docker path (absolute), the local engine
+// endpoint (unix://) and the containers array (present, possibly empty),
+// each container named surla-check-<id>-<n>. Anything else is an error, so
+// recovery never acts on a record it does not fully understand.
+func decodeCheckOwner(raw []byte, id string) (checkOwner, error) {
+	var owner checkOwner
+	if err := decodeStrictObject(raw, &owner); err != nil {
+		return checkOwner{}, err
+	}
+	switch {
+	case !filepath.IsAbs(owner.Docker):
+		return checkOwner{}, fmt.Errorf("docker %q is not an absolute path", owner.Docker)
+	case !strings.HasPrefix(owner.Host, "unix://"):
+		return checkOwner{}, fmt.Errorf("host %q is not a local engine endpoint", owner.Host)
+	case owner.Containers == nil:
+		return checkOwner{}, errors.New("containers is required")
+	}
+	prefix := "surla-check-" + id + "-"
+	for _, name := range owner.Containers {
+		n, ok := strings.CutPrefix(name, prefix)
+		if !ok || n == "" || strings.Trim(n, "0123456789") != "" {
+			return checkOwner{}, fmt.Errorf("container %q does not belong to operation %s", name, id)
+		}
+	}
+	return owner, nil
 }
 
 // removeOperationScratch removes everything in an operation directory except
@@ -677,8 +710,8 @@ func (w *capWriter) size() int64 {
 	return w.captured
 }
 
-// tail returns at most n bytes ending at end, starting no earlier than
-// start, read back from the output file.
+// tail returns the end of the output between start and end as at most n
+// bytes of valid UTF-8 text, read back from the output file.
 func (w *capWriter) tail(start, end int64, n int) string {
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -698,7 +731,16 @@ func (w *capWriter) tail(start, end int64, n int) string {
 			buf = buf[1:]
 		}
 	}
-	return string(buf)
+	// Invalid bytes grow to U+FFFD in the text the caller receives; keep the
+	// last n bytes of that text, starting on a character.
+	text := validText(buf)
+	if cut := len(text) - max(n, 0); cut > 0 {
+		text = text[cut:]
+		for len(text) > 0 && !utf8.RuneStart(text[0]) {
+			text = text[1:]
+		}
+	}
+	return text
 }
 
 // close closes the file, records the byte counts for read_check_output,

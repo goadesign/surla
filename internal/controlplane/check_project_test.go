@@ -1,10 +1,13 @@
 package controlplane
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http/httptest"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -14,10 +17,12 @@ import (
 	"time"
 	"unicode/utf8"
 
+	genhttpclient "github.com/goadesign/surla/gen/http/surla/client"
 	gensurla "github.com/goadesign/surla/gen/surla"
 	"github.com/goadesign/surla/verify/candidate"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	goahttp "goa.design/goa/v3/http"
 	goa "goa.design/goa/v3/pkg"
 )
 
@@ -423,6 +428,127 @@ func TestCheckAdmissionIsOrderedWithClose(t *testing.T) {
 	assert.Len(t, entries, 1, "no new operation directory")
 }
 
+func TestReadCheckOutputBudgetsTheTextTheCallerReceives(t *testing.T) {
+	// Arbitrary test output: invalid bytes (each becomes a 3-byte U+FFFD),
+	// multi-byte characters and ASCII, read through the generated HTTP
+	// client so the budget is checked after transport.
+	raw := append(bytes.Repeat([]byte{0xff}, maxCheckMessageBytes), []byte(strings.Repeat("é", 5000)+"ok")...)
+	cp := newControlPlane(t, Options{Checker: candidate.NewContainerRunner(), CheckTimeout: time.Minute})
+	id := strings.Repeat("ab", 16)
+	writeTree(t, filepath.Join(cp.checkWorkDir, id), map[string]string{
+		outputFile:     string(raw),
+		outputMetaFile: fmt.Sprintf(`{"captured":%d,"dropped":0}`, len(raw)),
+	})
+	srv := httptest.NewServer(NewHTTPHandler(cp, NewTokenAuthenticator(map[string]Principal{
+		"generation-token": {ID: "developer@example.com"},
+	})))
+	t.Cleanup(srv.Close)
+	origin, err := url.Parse(srv.URL)
+	require.NoError(t, err)
+	transport := genhttpclient.NewClient(origin.Scheme, origin.Host, generationDoer{client: srv.Client()}, goahttp.RequestEncoder, goahttp.ResponseDecoder, false)
+	client := &gensurla.Client{ReadCheckOutputEndpoint: transport.ReadCheckOutput()}
+
+	var got strings.Builder
+	p := &gensurla.ReadCheckOutputPayload{OpID: id}
+	pages := 0
+	for {
+		page, err := client.ReadCheckOutput(context.Background(), p)
+		require.NoError(t, err)
+		pages++
+		assert.LessOrEqual(t, len(page.Text), maxCheckMessageBytes, "page %d", pages)
+		assert.True(t, utf8.ValidString(page.Text))
+		assert.Equal(t, int64(len(raw)), page.CapturedBytes)
+		got.WriteString(page.Text)
+		if page.NextCursor == nil {
+			break
+		}
+		if p.Cursor != nil {
+			assert.NotEqual(t, *p.Cursor, *page.NextCursor, "the cursor advances")
+		}
+		p.Cursor = page.NextCursor
+	}
+	assert.Equal(t, validText(raw), got.String(), "the pages hold every captured byte, invalid ones as U+FFFD")
+	// A page holds 5461 replacement characters (16383 bytes), so the 16384
+	// invalid bytes fill three pages with one left; it and the 10002 bytes
+	// of "é…ok" fit the fourth.
+	assert.Equal(t, 4, pages)
+}
+
+func TestReadCheckOutputRefusesDamagedOutput(t *testing.T) {
+	ctx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
+	cases := []struct {
+		name    string
+		output  string
+		meta    string
+		wantErr string
+	}{
+		{name: "output shorter than its accounting", output: "short", meta: `{"captured":100,"dropped":0}`, wantErr: "ends before byte 100"},
+		{name: "null accounting", output: "x", meta: `null`, wantErr: "not a JSON object"},
+		{name: "unknown field", output: "x", meta: `{"captured":1,"dropped":0,"extra":1}`, wantErr: "unknown field"},
+		{name: "trailing data", output: "x", meta: `{"captured":1,"dropped":0} {}`, wantErr: "trailing data"},
+		{name: "missing count", output: "x", meta: `{"captured":1}`, wantErr: "captured and dropped are required"},
+		{name: "negative count", output: "x", meta: `{"captured":1,"dropped":-1}`, wantErr: "out of range"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			workDir := realTempDir(t)
+			id := strings.Repeat("ab", 16)
+			writeTree(t, filepath.Join(workDir, id), map[string]string{outputFile: tc.output, outputMetaFile: tc.meta})
+			c := &ControlPlane{checkWorkDir: workDir}
+			page, err := c.ReadCheckOutput(ctx, &gensurla.ReadCheckOutputPayload{OpID: id})
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tc.wantErr)
+			assert.Nil(t, page)
+		})
+	}
+}
+
+func TestRecoverCheckOperationsKeepsScratchItCannotAttribute(t *testing.T) {
+	id := strings.Repeat("ef", 16)
+	cases := []struct {
+		name      string
+		owner     string
+		wantKept  bool
+		wantError string
+	}{
+		{name: "null", owner: `null`, wantKept: true, wantError: "not a JSON object"},
+		{name: "unknown field", owner: `{"docker":"/usr/local/bin/docker","host":"unix:///var/run/docker.sock","containers":[],"extra":1}`, wantKept: true, wantError: "unknown field"},
+		{name: "trailing data", owner: `{"docker":"/usr/local/bin/docker","host":"unix:///var/run/docker.sock","containers":[]} {}`, wantKept: true, wantError: "trailing data"},
+		{name: "missing containers", owner: `{"docker":"/usr/local/bin/docker","host":"unix:///var/run/docker.sock"}`, wantKept: true, wantError: "containers is required"},
+		{name: "relative docker", owner: `{"docker":"docker","host":"unix:///var/run/docker.sock","containers":[]}`, wantKept: true, wantError: "not an absolute path"},
+		{name: "remote engine", owner: `{"docker":"/usr/local/bin/docker","host":"tcp://build.example:2376","containers":[]}`, wantKept: true, wantError: "not a local engine endpoint"},
+		{name: "foreign container", owner: `{"docker":"/usr/local/bin/docker","host":"unix:///var/run/docker.sock","containers":["production-db"]}`, wantKept: true, wantError: "does not belong to operation"},
+		{name: "completed operation with no containers left", owner: `{"docker":"/usr/local/bin/docker","host":"unix:///var/run/docker.sock","containers":[]}`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			workDir := realTempDir(t)
+			writeTree(t, filepath.Join(workDir, id), map[string]string{
+				"src/go.mod": "module example.com/shop\n",
+				ownerFile:    tc.owner,
+				outputFile:   "out\n",
+			})
+			// A zero runner has no command: any engine action would panic,
+			// so passing proves recovery took none.
+			c := &ControlPlane{checker: &candidate.ContainerRunner{}, checkWorkDir: workDir}
+			err := c.recoverCheckOperations()
+			if tc.wantError != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tc.wantError)
+				assert.Contains(t, err.Error(), "kept the operation directory")
+			} else {
+				require.NoError(t, err)
+			}
+			if tc.wantKept {
+				assert.FileExists(t, filepath.Join(workDir, id, "src", "go.mod"))
+			} else {
+				assert.NoDirExists(t, filepath.Join(workDir, id, "src"))
+			}
+			assert.FileExists(t, filepath.Join(workDir, id, outputFile))
+		})
+	}
+}
+
 // runGitForTest runs a trusted git command in dir for a test fixture.
 func runGitForTest(t *testing.T, dir string, args ...string) {
 	t.Helper()
@@ -535,6 +661,16 @@ func TestResultMessagesAreBoundedAsAWhole(t *testing.T) {
 		assert.Contains(t, msg, "services/module-2999 failed: go test exited 1. 1 other module step(s) also failed.")
 		assert.Contains(t, msg, "--- FAIL: TestLast")
 		assert.True(t, strings.HasSuffix(msg, "Output after byte "+fmt.Sprint(len(output))+" was not captured: 7 bytes dropped."))
+	})
+	t.Run("check fails with invalid bytes in its output", func(t *testing.T) {
+		raw := strings.Repeat("\xff", 40<<10)
+		op := newOp(t, raw, 0)
+		op.copy.modules = []string{"."}
+		f := moduleOutcome{dir: ".", step: "test", exitCode: 2, start: 0, end: int64(len(raw))}
+		msg := op.message([]moduleOutcome{f})
+		assert.True(t, utf8.ValidString(msg))
+		assert.LessOrEqual(t, len(msg), maxCheckMessageBytes, "the replacement characters fit the budget")
+		assert.Contains(t, msg, "\ufffd")
 	})
 	t.Run("update with many refused files", func(t *testing.T) {
 		op := newOp(t, "", 0)
