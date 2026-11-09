@@ -1,3 +1,6 @@
+// This file checks that the evaluator commit init_project pins reaches both
+// consumers of the resolved verification plan, live targets and
+// verification runs, before and after the server reopens its card store.
 package controlplane
 
 import (
