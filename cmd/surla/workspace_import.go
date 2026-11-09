@@ -111,10 +111,49 @@ func importLegacyWorkspace(
 		return fmt.Errorf("check imported workspace state in %s: %w", operatorProjectDir, err)
 	}
 
+	var startupExternalVer *controlplane.VerificationConfig
+	var verPath string
+	if cfg.verificationPath != "" {
+		verPath = resolveAgainstBase(startupBaseDir, cfg.verificationPath)
+		startupExternalVer, err = loadWorkspaceVerificationConfig(verPath, startupBaseDir, initialWorkspaceRoot, initialWorkspaceRoot)
+		if err != nil {
+			return err
+		}
+	}
+
+	effectivePromotionPath := filepath.Join(operatorProjectDir, "promotion.json")
+	hasPromotionConfig := false
+	if cfg.promotionPath != "" {
+		effectivePromotionPath = resolveAgainstBase(startupBaseDir, cfg.promotionPath)
+		hasPromotionConfig = true
+	} else if _, statErr := os.Lstat(effectivePromotionPath); statErr == nil {
+		hasPromotionConfig = true
+	} else if !errors.Is(statErr, fs.ErrNotExist) {
+		return fmt.Errorf("stat promotion config %s: %w", effectivePromotionPath, statErr)
+	}
+	var (
+		configuredReportDirs []string
+		promoReportInsideWS  bool
+	)
+	if hasPromotionConfig {
+		if err := validatePromotionPathSeparation(effectivePromotionPath, initialWorkspaceRoot, initialWorkspaceRoot); err != nil {
+			return err
+		}
+		promoFile, err := decodePromotionFileAtBase(effectivePromotionPath, startupBaseDir)
+		if err != nil {
+			return err
+		}
+		configuredReportDirs = append(configuredReportDirs, promoFile.ReportDir)
+		promoReportInsideWS, err = verifyrun.IsWorkspaceReportDir(initialWorkspaceRoot, promoFile.ReportDir)
+		if err != nil {
+			return fmt.Errorf("-promotion-config %s: %w", effectivePromotionPath, err)
+		}
+	}
+
 	startupCardsDir := resolveAgainstBase(startupBaseDir, ".surla/cards")
 	caseC3 := !cfg.cardsDirExplicit && isWithinOrEqualDir(startupCardsDir, initialWorkspaceRoot)
 	starterMode := cfg.verificationPath == ""
-	if !caseC3 && !starterMode {
+	if !caseC3 && !starterMode && !promoReportInsideWS {
 		return errors.New("cannot import legacy workspace: no workspace-interior .surla/ store is applicable when both -cards-dir and -verification-config point outside the workspace")
 	}
 
@@ -184,7 +223,7 @@ func importLegacyWorkspace(
 		}
 	}
 
-	if starterMode {
+	if starterMode || promoReportInsideWS {
 		for _, dirSpec := range []struct {
 			path      string
 			allowLive bool
@@ -244,14 +283,37 @@ func importLegacyWorkspace(
 		}
 	}
 
-	if starterMode {
+	var stagedSelectedCardsDir string
+	switch {
+	case cfg.cardsDirExplicit:
+		stagedSelectedCardsDir = resolveAgainstBase(startupBaseDir, cfg.cardsDir)
+	case !isWithinOrEqualDir(startupCardsDir, initialWorkspaceRoot):
+		stagedSelectedCardsDir = startupCardsDir
+	default:
+		stagedSelectedCardsDir = filepath.Join(stageDir, "cards-"+cardsHash)
+	}
+	probeWorkspaceDir := peekRestoredWorkspaceDir(stagedSelectedCardsDir, initialWorkspaceRoot)
+	if starterMode && probeWorkspaceDir != initialWorkspaceRoot {
+		configuredReportDirs = append(configuredReportDirs, filepath.Join(probeWorkspaceDir, "reports"))
+	}
+
+	if starterMode || promoReportInsideWS {
+		var (
+			legacyRunsDir           string
+			legacyDefaultReportsDir string
+		)
+		if starterMode {
+			legacyRunsDir = filepath.Join(initialWorkspaceRoot, ".surla", "runs")
+			legacyDefaultReportsDir = filepath.Join(initialWorkspaceRoot, "reports")
+		}
 		unlockRuns, err := verifyrun.PrepareSnapshot(
-			filepath.Join(initialWorkspaceRoot, ".surla", "runs"),
-			filepath.Join(initialWorkspaceRoot, "reports"),
+			legacyRunsDir,
+			legacyDefaultReportsDir,
 			filepath.Join(stageDir, "runs"),
 			filepath.Join(stageDir, "reports"),
 			filepath.Join(operatorProjectDir, "imported", "reports"),
 			initialWorkspaceRoot,
+			configuredReportDirs...,
 		)
 		if unlockRuns != nil {
 			defer func() {
@@ -259,6 +321,31 @@ func importLegacyWorkspace(
 			}()
 		}
 		if err != nil {
+			return err
+		}
+	}
+
+	// Prevalidate the complete post-import configuration before irreversible
+	// RenameatxNp publication so a rejected configuration never leaves imported/
+	// published on disk.
+	if cfg.cardsDirExplicit {
+		if err := validateWorkspaceDirSeparation("cards directory", stagedSelectedCardsDir, initialWorkspaceRoot, probeWorkspaceDir); err != nil {
+			return err
+		}
+	}
+	if cfg.verificationPath != "" {
+		if err := validateVerificationConfigSeparation(verPath, startupExternalVer, initialWorkspaceRoot, probeWorkspaceDir); err != nil {
+			return err
+		}
+	}
+	if hasPromotionConfig {
+		if _, _, err := loadWorkspacePromotionTarget(
+			effectivePromotionPath,
+			startupBaseDir,
+			initialWorkspaceRoot,
+			probeWorkspaceDir,
+			filepath.Join(stageDir, "reports"),
+		); err != nil {
 			return err
 		}
 	}

@@ -43,20 +43,23 @@ const (
 	defaultImportedReportSubdir = "default"
 )
 
-// PrepareSnapshot stages a verified copy of legacyRunsDir and
-// legacyDefaultReportsDir into stageRunsDir and stageReportsRoot before
-// atomic publication of <operatorProjectDir>/imported. It verifies that no
-// legacy run directory holds an active lock (acquiring LOCK_SH|LOCK_NB on every
-// legacy run lock and returning releaseLocks so the caller keeps them held
-// until RenameatxNp completes), omits unaccepted run folders where request.json
-// is absent, copies default and custom workspace report files verbatim into
-// distinct subdirectories under stageReportsRoot, copies completed, interrupted
-// (unlocked without result.json), and corrupt published run records without
-// modifying legacy originals, rewrites workspace-interior Plan.ReportDir paths
-// to their published imported locations, and writes
+// PrepareSnapshot stages a verified copy of legacyRunsDir,
+// legacyDefaultReportsDir, and any workspace-interior configuredReportDirs into
+// stageRunsDir and stageReportsRoot before atomic publication of
+// <operatorProjectDir>/imported. It verifies that no legacy run directory holds
+// an active lock (acquiring LOCK_SH|LOCK_NB on every existing legacy run lock
+// and returning releaseLocks so the caller keeps them held until RenameatxNp
+// completes), omits unaccepted run folders where request.json is absent,
+// preserves lock absence (and original lock bytes when present) for accepted
+// run records, copies default, configured, and run-referenced workspace report
+// files verbatim into distinct subdirectories under stageReportsRoot, copies
+// completed, interrupted (unlocked without result.json), and corrupt published
+// run records without modifying legacy originals, rewrites workspace-interior
+// Plan.ReportDir paths to their published imported locations, and writes
 // <stageRunsDir>/imported_paths.json.
 func PrepareSnapshot(
 	legacyRunsDir, legacyDefaultReportsDir, stageRunsDir, stageReportsRoot, publishedReportsRoot, initialWorkspaceRoot string,
+	configuredReportDirs ...string,
 ) (releaseLocks func() error, err error) {
 	wsRoot, err := evalExistingAncestor(initialWorkspaceRoot)
 	if err != nil {
@@ -85,12 +88,37 @@ func PrepareSnapshot(
 	}()
 
 	var recordedReportFiles []string
-	copiedReportDirs := map[string]bool{
-		defaultImportedReportSubdir: true,
+	copiedReportDirs := make(map[string]bool)
+	if legacyDefaultReportsDir != "" {
+		copiedReportDirs[defaultImportedReportSubdir] = true
+		defaultStageSubdir := filepath.Join(stageReportsRoot, defaultImportedReportSubdir)
+		if err := copyLegacyReportDir(wsRoot, legacyDefaultReportsDir, defaultStageSubdir, &recordedReportFiles); err != nil {
+			return nil, err
+		}
 	}
-	defaultStageSubdir := filepath.Join(stageReportsRoot, defaultImportedReportSubdir)
-	if err := copyLegacyReportDir(wsRoot, legacyDefaultReportsDir, defaultStageSubdir, &recordedReportFiles); err != nil {
-		return nil, err
+	for _, cfgReportDir := range configuredReportDirs {
+		if cfgReportDir == "" {
+			continue
+		}
+		cleanReportDir, insideWS, err := resolveWorkspaceReportPath(wsRoot, cfgReportDir)
+		if err != nil {
+			return nil, fmt.Errorf("resolve configured report_dir %s: %w", cfgReportDir, err)
+		}
+		if !insideWS {
+			continue
+		}
+		dirKey := importedReportDirKey(wsRoot, cleanReportDir)
+		if !copiedReportDirs[dirKey] {
+			copiedReportDirs[dirKey] = true
+			if err := copyLegacyReportDir(
+				wsRoot,
+				cleanReportDir,
+				filepath.Join(stageReportsRoot, dirKey),
+				&recordedReportFiles,
+			); err != nil {
+				return nil, err
+			}
+		}
 	}
 
 	runEntries, err := readNonSymlinkDir(legacyRunsDir)
@@ -111,18 +139,22 @@ func PrepareSnapshot(
 			return nil, fmt.Errorf("legacy run entry %s is not a regular directory", srcRunDir)
 		}
 		lockPath := filepath.Join(srcRunDir, lockFile)
-		if _, statErr := os.Lstat(lockPath); !errors.Is(statErr, fs.ErrNotExist) {
-			lockF, err := openSharedNonblockingLock(lockPath)
-			if err != nil {
-				if errors.Is(err, syscall.EWOULDBLOCK) {
-					return nil, fmt.Errorf(
-						"legacy verification run %s has an active writer; wait for or stop all legacy verification runs before running -import-legacy-workspace",
-						name,
-					)
-				}
-				return nil, fmt.Errorf("lock legacy verification run %s: %w", name, err)
-			}
+		var (
+			hasLock   bool
+			lockBytes []byte
+		)
+		if lockF, rawLock, lockErr := openSharedNonblockingLock(lockPath); lockErr == nil {
+			hasLock = true
+			lockBytes = rawLock
 			heldLocks = append(heldLocks, lockF)
+		} else if !errors.Is(lockErr, fs.ErrNotExist) {
+			if errors.Is(lockErr, syscall.EWOULDBLOCK) {
+				return nil, fmt.Errorf(
+					"legacy verification run %s has an active writer; wait for or stop all legacy verification runs before running -import-legacy-workspace",
+					name,
+				)
+			}
+			return nil, fmt.Errorf("lock legacy verification run %s: %w", name, lockErr)
 		}
 
 		reqBytes, hasRequest, err := readOptionalRegularFileNoFollow(filepath.Join(srcRunDir, requestFile))
@@ -171,8 +203,10 @@ func PrepareSnapshot(
 		if err := os.Mkdir(dstRunDir, 0o700); err != nil {
 			return nil, fmt.Errorf("create staged run directory %s: %w", name, err)
 		}
-		if err := writeRegularFileNoFollow(filepath.Join(dstRunDir, lockFile), nil, 0o600); err != nil {
-			return nil, fmt.Errorf("write staged run lock %s: %w", name, err)
+		if hasLock {
+			if err := writeRegularFileNoFollow(filepath.Join(dstRunDir, lockFile), lockBytes, 0o600); err != nil {
+				return nil, fmt.Errorf("write staged run lock %s: %w", name, err)
+			}
 		}
 		if err := writeRegularFileNoFollow(filepath.Join(dstRunDir, requestFile), reqBytes, 0o600); err != nil {
 			return nil, fmt.Errorf("write staged run request %s: %w", name, err)
@@ -206,6 +240,20 @@ func PrepareSnapshot(
 		return nil, fmt.Errorf("sync staged reports directory %s: %w", stageReportsRoot, err)
 	}
 	return closeHeldLocks, nil
+}
+
+// IsWorkspaceReportDir reports whether configuredReportDir resolves inside
+// initialWorkspaceRoot without following symlinks inside initialWorkspaceRoot.
+func IsWorkspaceReportDir(initialWorkspaceRoot, configuredReportDir string) (bool, error) {
+	if initialWorkspaceRoot == "" || configuredReportDir == "" {
+		return false, nil
+	}
+	wsRoot, err := evalExistingAncestor(initialWorkspaceRoot)
+	if err != nil {
+		return false, err
+	}
+	_, insideWS, err := resolveWorkspaceReportPath(wsRoot, configuredReportDir)
+	return insideWS, err
 }
 
 // ResolveImportedReportDir maps a configured workspace-interior report
@@ -393,12 +441,13 @@ func readNonSymlinkDir(dir string) ([]os.DirEntry, error) {
 	return os.ReadDir(dir)
 }
 
-// openSharedNonblockingLock opens path without following symlinks and acquires
-// a non-blocking shared flock lock.
-func openSharedNonblockingLock(path string) (*os.File, error) {
+// openSharedNonblockingLock opens path without following symlinks, acquires a
+// non-blocking shared flock lock, and reads its contents while keeping the
+// descriptor open.
+func openSharedNonblockingLock(path string) (*os.File, []byte, error) {
 	f, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	info, err := f.Stat()
 	if err == nil && !info.Mode().IsRegular() {
@@ -407,10 +456,14 @@ func openSharedNonblockingLock(path string) (*os.File, error) {
 	if err == nil {
 		err = syscall.Flock(int(f.Fd()), syscall.LOCK_SH|syscall.LOCK_NB)
 	}
-	if err != nil {
-		return nil, errors.Join(err, f.Close())
+	var raw []byte
+	if err == nil {
+		raw, err = io.ReadAll(f)
 	}
-	return f, nil
+	if err != nil {
+		return nil, nil, errors.Join(err, f.Close())
+	}
+	return f, raw, nil
 }
 
 // readRegularFileNoFollow reads path without following symlinks and requires a

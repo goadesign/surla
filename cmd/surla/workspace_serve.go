@@ -74,6 +74,9 @@ const (
 // directories, optional `-import-legacy-workspace` cutover, and dynamic
 // verification/promotion resolvers for `surla serve`.
 func configureServeWorkspace(cfg serveConfig) (ws workspaceServeConfig, err error) {
+	if cfg.projectSet && cfg.verificationPath != "" {
+		return workspaceServeConfig{}, errors.New("-project and -verification-config cannot be used together")
+	}
 	wd, err := os.Getwd()
 	if err != nil {
 		return workspaceServeConfig{}, err
@@ -195,13 +198,14 @@ func configureServeWorkspace(cfg serveConfig) (ws workspaceServeConfig, err erro
 	}
 
 	probeWorkspaceDir := peekRestoredWorkspaceDir(cardsDir, initialWorkspaceRoot)
+	if cfg.cardsDirExplicit {
+		if err := validateWorkspaceDirSeparation("cards directory", cardsDir, initialWorkspaceRoot, probeWorkspaceDir); err != nil {
+			return workspaceServeConfig{}, err
+		}
+	}
 	effectivePromotionPath := filepath.Join(operatorProjectDir, "promotion.json")
 	if cfg.promotionPath != "" {
 		effectivePromotionPath = resolveAgainstBase(startupBaseDir, cfg.promotionPath)
-	}
-	starterFallbackReportDir := defaultReportDir
-	if cfg.verificationPath != "" {
-		starterFallbackReportDir = ""
 	}
 
 	var startupPromotion controlplane.PromotionTarget
@@ -212,7 +216,6 @@ func configureServeWorkspace(cfg serveConfig) (ws workspaceServeConfig, err erro
 			initialWorkspaceRoot,
 			probeWorkspaceDir,
 			operatorReportsRoot,
-			starterFallbackReportDir,
 		)
 		if err != nil {
 			return workspaceServeConfig{}, err
@@ -231,7 +234,6 @@ func configureServeWorkspace(cfg serveConfig) (ws workspaceServeConfig, err erro
 			initialWorkspaceRoot,
 			activeWorkspaceDir,
 			operatorReportsRoot,
-			starterFallbackReportDir,
 		)
 		if err != nil {
 			return nil, gensurla.MakeUnprocessable(err)
@@ -281,7 +283,6 @@ func configureServeWorkspace(cfg serveConfig) (ws workspaceServeConfig, err erro
 					initialWorkspaceRoot,
 					activeWorkspaceDir,
 					operatorReportsRoot,
-					defaultReportDir,
 				)
 				if loadErr != nil {
 					return "", loadErr
@@ -393,7 +394,7 @@ func validateVerificationConfigSeparation(
 // `report_dir`, and `release_dir` lie strictly outside initialWorkspaceRoot and
 // activeWorkspaceDir.
 func loadWorkspacePromotionTarget(
-	promoPath, baseDir, initialWorkspaceRoot, activeWorkspaceDir, operatorReportsRoot, fallbackReportDir string,
+	promoPath, baseDir, initialWorkspaceRoot, activeWorkspaceDir, operatorReportsRoot string,
 ) (controlplane.PromotionTarget, string, error) {
 	if err := validatePromotionPathSeparation(promoPath, initialWorkspaceRoot, activeWorkspaceDir); err != nil {
 		return nil, "", err
@@ -435,10 +436,7 @@ func loadWorkspacePromotionTarget(
 	}
 	f.ReportDir = physReport
 	f.ReleaseDir = physRelease
-	return &releaseTarget{
-		cfg:               f,
-		fallbackReportDir: fallbackReportDir,
-	}, physReport, nil
+	return &releaseTarget{cfg: f}, physReport, nil
 }
 
 // validatePromotionPathSeparation checks that promoPath itself lies outside

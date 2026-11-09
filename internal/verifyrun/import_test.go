@@ -39,11 +39,12 @@ func TestPrepareSnapshotSkipsUnacceptedRunsAndPreservesCompletedInterruptedAndCo
 	require.NoError(t, os.MkdirAll(filepath.Join(legacyRunsDir, unacceptedID), 0o700))
 	require.NoError(t, os.WriteFile(filepath.Join(legacyRunsDir, unacceptedID, lockFile), nil, 0o600))
 
-	// 2. Completed run with default workspace ReportDir: must rewrite Plan.ReportDir to <publishedReportsRoot>/default.
+	// 2. Completed run with default workspace ReportDir and non-empty lock bytes: must preserve lock bytes and rewrite Plan.ReportDir to <publishedReportsRoot>/default.
 	completedID := strings.Repeat("1", 32)
 	completedDir := filepath.Join(legacyRunsDir, completedID)
 	require.NoError(t, os.MkdirAll(completedDir, 0o700))
-	require.NoError(t, os.WriteFile(filepath.Join(completedDir, lockFile), nil, 0o600))
+	lockPayload := []byte("supervisor-lock-bytes\n")
+	require.NoError(t, os.WriteFile(filepath.Join(completedDir, lockFile), lockPayload, 0o600))
 	completedReq := Request{
 		RunID:      completedID,
 		Owner:      "alice",
@@ -92,6 +93,39 @@ func TestPrepareSnapshotSkipsUnacceptedRunsAndPreservesCompletedInterruptedAndCo
 	require.NoError(t, os.WriteFile(filepath.Join(corruptDir, lockFile), nil, 0o600))
 	require.NoError(t, os.WriteFile(filepath.Join(corruptDir, requestFile), []byte(`{"run_id":"bad"}trailing`), 0o600))
 
+	// 5. Missing-lock accepted run with valid request.json and completed result.json: lock absence must be preserved so Read/List fail with open run lock error.
+	missingLockWithResID := strings.Repeat("4", 32)
+	missingLockWithResDir := filepath.Join(legacyRunsDir, missingLockWithResID)
+	require.NoError(t, os.MkdirAll(missingLockWithResDir, 0o700))
+	missingLockWithResReq := Request{
+		RunID:      missingLockWithResID,
+		Owner:      "alice",
+		ChangeID:   "CHG-1",
+		AcceptedAt: time.Date(2026, 11, 8, 12, 3, 0, 0, time.UTC),
+		Timeout:    2 * time.Minute,
+		Plan:       verify.Plan{ReportDir: legacyReportsDir},
+	}
+	mlResReqBytes, err := json.Marshal(missingLockWithResReq)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(missingLockWithResDir, requestFile), mlResReqBytes, 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(missingLockWithResDir, resultFile), resBytes, 0o600))
+
+	// 6. Missing-lock accepted run with valid request.json and missing result.json: lock absence must be preserved so Read/List fail with open run lock error instead of interrupted.
+	missingLockNoResID := strings.Repeat("5", 32)
+	missingLockNoResDir := filepath.Join(legacyRunsDir, missingLockNoResID)
+	require.NoError(t, os.MkdirAll(missingLockNoResDir, 0o700))
+	missingLockNoResReq := Request{
+		RunID:      missingLockNoResID,
+		Owner:      "alice",
+		ChangeID:   "CHG-1",
+		AcceptedAt: time.Date(2026, 11, 8, 12, 4, 0, 0, time.UTC),
+		Timeout:    2 * time.Minute,
+		Plan:       verify.Plan{ReportDir: legacyReportsDir},
+	}
+	mlNoResReqBytes, err := json.Marshal(missingLockNoResReq)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(missingLockNoResDir, requestFile), mlNoResReqBytes, 0o600))
+
 	stageDir := filepath.Join(root, "stage")
 	stageRunsDir := filepath.Join(stageDir, "runs")
 	stageReportsRoot := filepath.Join(stageDir, "reports")
@@ -115,12 +149,15 @@ func TestPrepareSnapshotSkipsUnacceptedRunsAndPreservesCompletedInterruptedAndCo
 	_, err = os.Stat(filepath.Join(legacyRunsDir, unacceptedID, lockFile))
 	assert.NoError(t, err)
 
-	// Completed run is readable and its Plan.ReportDir points to <publishedReportsRoot>/default.
+	// Completed run is readable, preserves original lock bytes, and its Plan.ReportDir points to <publishedReportsRoot>/default.
 	gotReq, gotState, err := Read(stageRunsDir, completedID)
 	require.NoError(t, err)
 	assert.Equal(t, StateNotCompleted, gotState.Kind)
 	assert.Equal(t, FailureExecution, gotState.Result.Failure)
 	assert.Equal(t, filepath.Join(publishedReportsRoot, "default"), gotReq.Plan.ReportDir)
+	copiedLockBytes, err := os.ReadFile(filepath.Join(stageRunsDir, completedID, lockFile))
+	require.NoError(t, err)
+	assert.Equal(t, lockPayload, copiedLockBytes)
 
 	// Legacy original request.json is untouched.
 	origCompletedReqBytes, err := os.ReadFile(filepath.Join(completedDir, requestFile))
@@ -140,9 +177,23 @@ func TestPrepareSnapshotSkipsUnacceptedRunsAndPreservesCompletedInterruptedAndCo
 	require.ErrorContains(t, err, "unexpected trailing data")
 	_, err = List(stageRunsDir, "alice", "CHG-1")
 	require.ErrorContains(t, err, "unexpected trailing data")
-
-	// Removing the corrupt run lets List return both valid imported runs in AcceptedAt descending order.
 	require.NoError(t, os.RemoveAll(filepath.Join(stageRunsDir, corruptID)))
+
+	// Both missing-lock runs preserve lock absence and fail Read and List with open run lock (os.ErrNotExist).
+	for _, mlID := range []string{missingLockWithResID, missingLockNoResID} {
+		_, statErr := os.Stat(filepath.Join(stageRunsDir, mlID, lockFile))
+		assert.ErrorIs(t, statErr, os.ErrNotExist)
+		mlReq, _, readErr := Read(stageRunsDir, mlID)
+		require.ErrorContains(t, readErr, "open run lock")
+		assert.ErrorIs(t, readErr, os.ErrNotExist)
+		assert.Equal(t, "alice", mlReq.Owner)
+		_, listErr := List(stageRunsDir, "alice", "CHG-1")
+		require.ErrorContains(t, listErr, "open run lock")
+		assert.ErrorIs(t, listErr, os.ErrNotExist)
+		require.NoError(t, os.RemoveAll(filepath.Join(stageRunsDir, mlID)))
+	}
+
+	// Removing the corrupt and missing-lock runs lets List return both valid imported runs in AcceptedAt descending order.
 	runs, err := List(stageRunsDir, "alice", "CHG-1")
 	require.NoError(t, err)
 	require.Len(t, runs, 2)

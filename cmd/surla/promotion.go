@@ -12,7 +12,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -54,10 +53,6 @@ type (
 	releaseTarget struct {
 		// cfg is the validated configuration.
 		cfg promotionFile
-		// fallbackReportDir is the default operator report directory in starter
-		// mode, consulted only when LoadReport in cfg.ReportDir returns
-		// fs.ErrNotExist.
-		fallbackReportDir string
 	}
 )
 
@@ -99,17 +94,9 @@ func (t *releaseTarget) CurrentInputs(_ context.Context, candidateCommit string)
 }
 
 // LoadReport returns the full report the evaluator saved under digest in
-// report_dir. When report_dir returns fs.ErrNotExist and fallbackReportDir is
-// set to a distinct directory, LoadReport falls back to fallbackReportDir so
-// starter verification reports written before a custom promotion report_dir was
-// configured remain loadable without duplicate writes. Any error other than
-// fs.ErrNotExist returns immediately.
+// report_dir.
 func (t *releaseTarget) LoadReport(_ context.Context, digest string) (verify.Report, error) {
-	rep, err := verifyrun.LoadReport(t.cfg.ReportDir, digest)
-	if err == nil || !errors.Is(err, fs.ErrNotExist) || t.fallbackReportDir == "" || t.cfg.ReportDir == t.fallbackReportDir {
-		return rep, err
-	}
-	return verifyrun.LoadReport(t.fallbackReportDir, digest)
+	return verifyrun.LoadReport(t.cfg.ReportDir, digest)
 }
 
 // loadPromotionConfig reads and validates -promotion-config. An empty path
