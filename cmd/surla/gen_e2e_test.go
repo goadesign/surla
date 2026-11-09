@@ -159,11 +159,12 @@ func TestGenOnAFreshStarterChangesNothingAndKeepsModulesApart(t *testing.T) {
 	}
 	assert.Equal(t, created, files(t, dir, "."), "regenerating an untouched starter changes no byte")
 
-	// A server started on the already committed project must keep its startup
-	// suite, too. Reuse this same project while its HEAD is still trusted A.
-	startupCfg := cfg
-	startupCfg.projectDir, startupCfg.cardsDir = dir, t.TempDir()
-	startup := newTrustedSuiteServer(t, startupCfg)
+	// One native journey proves the initializing server builds, starts and
+	// verifies the builder's later commit B against the evaluator commit A it
+	// pinned. Which commit a restarted or directly started server pins is a
+	// server decision made before any build, covered by the fast resolver and
+	// consumer tests (TestLiveAndVerificationUseTheWorkspacePinnedSuite and
+	// TestConfigureServeWorkspacePinsSuiteCommitAndRejectsSymlinkParentEscape).
 	commentPath := filepath.Join(evalDir, "design", "design.go")
 	source, err := os.ReadFile(commentPath)
 	require.NoError(t, err)
@@ -172,15 +173,6 @@ func TestGenOnAFreshStarterChangesNothingAndKeepsModulesApart(t *testing.T) {
 	require.NotEqual(t, initialized.Commit, candidateCommit)
 
 	assertTrustedSuiteJourney(t, client, opts.CardsDir, opts.RunsDir, candidateCommit, initialized.Commit, "initialized")
-	srv.Close()
-	closeTrustedSuiteControlPlane(t, cp)
-	// Reconstruct from the original empty parent, using its saved private
-	// state; the child project now has builder commit B at HEAD.
-	restored := newTrustedSuiteServer(t, cfg)
-	assertTrustedSuiteJourney(t, restored.client, restored.cardsDir, restored.runsDir, candidateCommit, initialized.Commit, "restored")
-	restored.close(t)
-	assertTrustedSuiteJourney(t, startup.client, startup.cardsDir, startup.runsDir, candidateCommit, initialized.Commit, "startup")
-	startup.close(t)
 
 	edits := []struct {
 		// module is the module directory surla gen runs in.
