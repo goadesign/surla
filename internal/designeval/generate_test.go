@@ -16,6 +16,9 @@ import (
 const preCompleteSourcesGoa = "v3.35.1-0.20261102054348-8481e49a6c89"
 
 func TestGenerateReturnsWhatGoaGenWrites(t *testing.T) {
+	if testing.Short() {
+		t.Skip("runs the sandboxed Go toolchain; the full suite (go test without -short) covers it")
+	}
 	files := testmodule.Snapshot(t, completeSourcesGoa, minimalDesign)
 	out, err := testEvaluator.Generate(t.Context(), files)
 	require.NoError(t, err)
@@ -32,6 +35,9 @@ func TestGenerateReturnsWhatGoaGenWrites(t *testing.T) {
 }
 
 func TestGenerateNeedsAGoaWithCompleteSources(t *testing.T) {
+	if testing.Short() {
+		t.Skip("runs the sandboxed Go toolchain; the full suite (go test without -short) covers it")
+	}
 	cases := []struct {
 		name string
 		// files is the target module.
@@ -91,6 +97,9 @@ func TestGenerateNeedsAGoaWithCompleteSources(t *testing.T) {
 }
 
 func TestGenerateRefusesAGRPCDesign(t *testing.T) {
+	if testing.Short() {
+		t.Skip("runs the sandboxed Go toolchain; the full suite (go test without -short) covers it")
+	}
 	design := strings.Replace(minimalDesign, `Method("get_order", func() {`, "Method(\"get_order\", func() {\n\t\tGRPC(func() {})", 1)
 	_, err := testEvaluator.Generate(t.Context(), testmodule.Snapshot(t, completeSourcesGoa, design))
 	require.Error(t, err)

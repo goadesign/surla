@@ -14,6 +14,9 @@ import (
 )
 
 func TestEvaluateTreatsArchiveLookingTextAsPlainGo(t *testing.T) {
+	if testing.Short() {
+		t.Skip("runs the sandboxed Go toolchain; the full suite (go test without -short) covers it")
+	}
 	design := strings.Replace(minimalDesign, `Service("orders"`, "Service(\"orders\", func() {\n\tDescription(`first line\n-- example.go --\nlast line`)\n})\n\nvar _ = Service(\"orders2\"", 1)
 	res, err := testEvaluator.Evaluate(t.Context(), testmodule.Snapshot(t, "", design))
 	require.NoError(t, err)
@@ -43,6 +46,9 @@ func TestEvaluateRefusesToUpgradeTheTargetsGenerator(t *testing.T) {
 }
 
 func TestEvaluateKeepsTheTargetsOwnCoreVersions(t *testing.T) {
+	if testing.Short() {
+		t.Skip("runs the sandboxed Go toolchain; the full suite (go test without -short) covers it")
+	}
 	// A target pinned at an older goa than Surla's own is evaluated with
 	// its own version, not upgraded to Surla's and then rejected.
 	for _, goa := range []string{preCompleteSourcesGoa, ""} {
@@ -53,12 +59,18 @@ func TestEvaluateKeepsTheTargetsOwnCoreVersions(t *testing.T) {
 }
 
 func TestEvaluateUsesTheTargetsOwnGeneratorVersion(t *testing.T) {
+	if testing.Short() {
+		t.Skip("runs the sandboxed Go toolchain; the full suite (go test without -short) covers it")
+	}
 	res, err := testEvaluator.Evaluate(t.Context(), testmodule.Snapshot(t, "", minimalDesign))
 	require.NoError(t, err)
 	assert.Contains(t, res.Declarations, "Service:orders/Method:get_order")
 }
 
 func TestEvaluateUsesTheBuildToolchainToResolveModules(t *testing.T) {
+	if testing.Short() {
+		t.Skip("runs the sandboxed Go toolchain; the full suite (go test without -short) covers it")
+	}
 	// Module resolution must run with the toolchain the sandboxed build
 	// compiles with, never whatever go is first on PATH: a design may require
 	// that toolchain's exact Go version while PATH holds an older go.

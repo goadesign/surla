@@ -130,6 +130,9 @@ func (s *recordingPreviewService) PreviewArchitecture(_ context.Context, p *gens
 }
 
 func TestRunPreviewChangeEndToEndThroughControlPlane(t *testing.T) {
+	if testing.Short() {
+		t.Skip("runs the sandboxed Go toolchain; the full suite (go test without -short) covers it")
+	}
 	files := writeTidyPreviewModule(t)
 	profiles := []swarm.ProviderProfile{
 		{

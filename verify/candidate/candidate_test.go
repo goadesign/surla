@@ -364,6 +364,9 @@ func freePort(t *testing.T) int {
 }
 
 func TestBuildDeniesReadsOutsideTheModule(t *testing.T) {
+	if testing.Short() {
+		t.Skip("runs the sandboxed Go toolchain; the full suite (go test without -short) covers it")
+	}
 	if runtime.GOOS != "darwin" {
 		t.Skip("the sandbox is implemented with sandbox-exec on macOS")
 	}
@@ -419,6 +422,9 @@ func goEnv(t *testing.T, name string) string {
 }
 
 func TestBuildReadsOnlyItsSourceDir(t *testing.T) {
+	if testing.Short() {
+		t.Skip("runs the sandboxed Go toolchain; the full suite (go test without -short) covers it")
+	}
 	if runtime.GOOS != "darwin" {
 		t.Skip("the sandbox is implemented with sandbox-exec on macOS")
 	}
@@ -496,6 +502,9 @@ func TestBuildReadsOnlyItsSourceDir(t *testing.T) {
 // the build sandbox and checks the three outcomes a caller acts on: a test
 // binary, no tests, and a compile error.
 func TestBuildTestReportsWhetherThePackageHasTests(t *testing.T) {
+	if testing.Short() {
+		t.Skip("runs the sandboxed Go toolchain; the full suite (go test without -short) covers it")
+	}
 	if runtime.GOOS != "darwin" {
 		t.Skip("the sandbox is implemented with sandbox-exec on macOS")
 	}
@@ -780,6 +789,9 @@ func TestBuildTestRejectsBeforeRunningTheToolchain(t *testing.T) {
 // linked outside SourceDir, and a replace directive leaving it, are denied by
 // the sandbox although the same module builds outside it.
 func TestBuildTestReadsOnlyItsSourceDir(t *testing.T) {
+	if testing.Short() {
+		t.Skip("runs the sandboxed Go toolchain; the full suite (go test without -short) covers it")
+	}
 	if runtime.GOOS != "darwin" {
 		t.Skip("the sandbox is implemented with sandbox-exec on macOS")
 	}
@@ -846,6 +858,9 @@ func TestBuildTestReadsOnlyItsSourceDir(t *testing.T) {
 // directory, and a test that starts a child process fails because the sandbox
 // denies starting it.
 func TestBuildTestBinaryRunsUnderExec(t *testing.T) {
+	if testing.Short() {
+		t.Skip("runs the sandboxed Go toolchain; the full suite (go test without -short) covers it")
+	}
 	if runtime.GOOS != "darwin" {
 		t.Skip("the sandbox is implemented with sandbox-exec on macOS")
 	}

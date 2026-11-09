@@ -18,6 +18,9 @@ import (
 )
 
 func TestEvaluateEnforcesSandboxOnDesignInitAndBuildsJSONSchemas(t *testing.T) {
+	if testing.Short() {
+		t.Skip("runs the sandboxed Go toolchain; the full suite (go test without -short) covers it")
+	}
 	ctx := context.Background()
 
 	// Create a secret file outside the evaluator's sandbox state directory.
@@ -87,6 +90,9 @@ var _ = Service("orders", func() {
 // guidance when a non-canceled sandboxed command exits with status 71, while
 // leaving ordinary compiler errors and canceled runs unchanged.
 func TestSandboxedExit71AppendsConditionalRecoveryGuidance(t *testing.T) {
+	if testing.Short() {
+		t.Skip("runs the sandboxed Go toolchain; the full suite (go test without -short) covers it")
+	}
 	ctx := t.Context()
 
 	exit71Design := `package design

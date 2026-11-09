@@ -16,6 +16,9 @@ import (
 // TestModelRelationshipsUseResolvedScopedIdentities exercises the real evaluator
 // with same-named containers and an outgoing component relationship.
 func TestModelRelationshipsUseResolvedScopedIdentities(t *testing.T) {
+	if testing.Short() {
+		t.Skip("runs the sandboxed Go toolchain; the full suite (go test without -short) covers it")
+	}
 	var previous Result
 	for _, destination := range []string{"First/API", "Second/API"} {
 		t.Run(destination, func(t *testing.T) {
