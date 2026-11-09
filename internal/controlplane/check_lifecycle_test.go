@@ -39,8 +39,8 @@ type (
 	fakeDockerCall struct {
 		// Args and Env carry the CLI invocation from the fake docker process.
 		Args, Env []string
-		// Stdout and Stderr hold the scripted output written back by the CLI.
-		Stdout, Stderr string
+		// Stdout and Stderr hold the raw bytes written back by the CLI.
+		Stdout, Stderr []byte
 		// ExitCode is the process exit status returned by the fake docker CLI.
 		ExitCode int
 	}
@@ -119,10 +119,10 @@ func main() {
 	body, err := json.Marshal(struct{ Args, Env []string }{os.Args[1:], os.Environ()}); must(err)
 	resp, err := http.Post(strings.TrimSpace(string(rawURL))+"/invoke", "application/json", bytes.NewReader(body)); must(err)
 	defer resp.Body.Close()
-	var out struct{ Stdout, Stderr string; ExitCode int }
+	var out struct{ Stdout, Stderr []byte; ExitCode int }
 	must(json.NewDecoder(resp.Body).Decode(&out))
-	_, err = os.Stdout.WriteString(out.Stdout); must(err)
-	_, err = os.Stderr.WriteString(out.Stderr); must(err)
+	_, err = os.Stdout.Write(out.Stdout); must(err)
+	_, err = os.Stderr.Write(out.Stderr); must(err)
 	os.Exit(out.ExitCode)
 }
 `
@@ -869,78 +869,79 @@ func (d *fakeDockerDaemon) dispatch(req fakeDockerCall) fakeDockerCall {
 	args := req.Args
 	if len(args) >= 2 && args[0] == "context" && args[1] == "inspect" {
 		d.contextInspects.Add(1)
-		return fakeDockerCall{Stdout: d.hostURI + "\n"}
+		return fakeDockerCall{Stdout: []byte(d.hostURI + "\n")}
 	}
 	if len(args) < 3 || args[0] != "--host" {
-		return fakeDockerCall{Stderr: "missing --host\n", ExitCode: 1}
+		return fakeDockerCall{Stderr: []byte("missing --host\n"), ExitCode: 1}
 	}
 	dockerConfig, envErr := validateStrippedDockerEnv(req.Env)
 	if envErr != nil {
-		return fakeDockerCall{Stderr: envErr.Error() + "\n", ExitCode: 1}
+		return fakeDockerCall{Stderr: []byte(envErr.Error() + "\n"), ExitCode: 1}
 	}
 	sub := args[2:]
 	switch sub[0] {
 	case "version":
-		return fakeDockerCall{Stdout: "linux\n"}
+		return fakeDockerCall{Stdout: []byte("linux\n")}
 	case "image":
 		if !d.imagePresent {
-			return fakeDockerCall{Stderr: "Error: No such image\n", ExitCode: 1}
+			return fakeDockerCall{Stderr: []byte("Error: No such image\n"), ExitCode: 1}
 		}
-		return fakeDockerCall{Stdout: "[]\n"}
+		return fakeDockerCall{Stdout: []byte("[]\n")}
 	case "pull":
 		if len(sub) != 2 || sub[1] != candidate.CheckImage {
-			return fakeDockerCall{Stderr: "unexpected pull args\n", ExitCode: 1}
+			return fakeDockerCall{Stderr: []byte("unexpected pull args\n"), ExitCode: 1}
 		}
 		d.imagePresent = true
 		d.pulls.Add(1)
-		return fakeDockerCall{Stdout: "pulled\n"}
+		return fakeDockerCall{Stdout: []byte("pulled\n")}
 	case "create":
 		c, err := parseCreateContainer(sub[1:], dockerConfig)
 		if err != nil {
-			return fakeDockerCall{Stderr: err.Error() + "\n", ExitCode: 1}
+			return fakeDockerCall{Stderr: []byte(err.Error() + "\n"), ExitCode: 1}
 		}
 		d.containers = append(d.containers, c)
-		return fakeDockerCall{Stdout: c.Name + "\n"}
+		return fakeDockerCall{Stdout: []byte(c.Name + "\n")}
 	case "start":
 		if len(sub) != 3 || sub[1] != "--attach" {
-			return fakeDockerCall{Stderr: "unexpected start args\n", ExitCode: 1}
+			return fakeDockerCall{Stderr: []byte("unexpected start args\n"), ExitCode: 1}
 		}
 		c := d.findContainer(sub[2], false)
 		if c == nil {
-			return fakeDockerCall{Stderr: "No such container\n", ExitCode: 1}
+			return fakeDockerCall{Stderr: []byte("No such container\n"), ExitCode: 1}
 		}
-		var out fakeDockerCall
+		var stdout, stderr string
+		var code int
 		if onStart := d.onStart; onStart != nil {
 			d.mu.Unlock()
-			out.Stdout, out.Stderr, out.ExitCode = onStart(c)
+			stdout, stderr, code = onStart(c)
 			d.mu.Lock()
 		}
-		c.ExitCode = out.ExitCode
-		return out
+		c.ExitCode = code
+		return fakeDockerCall{Stdout: []byte(stdout), Stderr: []byte(stderr), ExitCode: code}
 	case "wait":
 		if len(sub) == 2 {
 			if c := d.findContainer(sub[1], false); c != nil {
-				return fakeDockerCall{Stdout: fmt.Sprintf("%d\n", c.ExitCode)}
+				return fakeDockerCall{Stdout: fmt.Appendf(nil, "%d\n", c.ExitCode)}
 			}
 		}
-		return fakeDockerCall{Stderr: "No such container\n", ExitCode: 1}
+		return fakeDockerCall{Stderr: []byte("No such container\n"), ExitCode: 1}
 	case "rm":
 		if len(sub) != 3 || sub[1] != "--force" {
-			return fakeDockerCall{Stderr: "unexpected rm args\n", ExitCode: 1}
+			return fakeDockerCall{Stderr: []byte("unexpected rm args\n"), ExitCode: 1}
 		}
 		name := sub[2]
 		d.removes.Add(1)
 		d.rmCounts[name]++
 		if d.failRemove[name] {
-			return fakeDockerCall{Stderr: "daemon blocked removal\n", ExitCode: 1}
+			return fakeDockerCall{Stderr: []byte("daemon blocked removal\n"), ExitCode: 1}
 		}
 		if c := d.findContainer(name, true); c != nil {
 			c.Removed = true
-			return fakeDockerCall{Stdout: name + "\n"}
+			return fakeDockerCall{Stdout: []byte(name + "\n")}
 		}
-		return fakeDockerCall{Stderr: "No such container: " + name + "\n", ExitCode: 1}
+		return fakeDockerCall{Stderr: []byte("No such container: " + name + "\n"), ExitCode: 1}
 	default:
-		return fakeDockerCall{Stderr: "unknown subcommand\n", ExitCode: 1}
+		return fakeDockerCall{Stderr: []byte("unknown subcommand\n"), ExitCode: 1}
 	}
 }
 
