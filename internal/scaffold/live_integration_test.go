@@ -1,8 +1,9 @@
 //go:build scaffold
 
 // This file is an external test package: it drives a generated starter
-// through the control plane, and the control plane imports this package to
-// initialize projects, so an internal test here would form an import cycle.
+// through the control plane, and the control plane imports the starter
+// package (scaffold) to initialize projects, so an internal test here would
+// form an import cycle.
 package scaffold_test
 
 import (
@@ -33,10 +34,6 @@ import (
 	"github.com/goadesign/surla/internal/verify"
 )
 
-// published is the Surla version the starter's go.mod pins; it exists on the
-// module proxy. It matches the internal tests' fixture of the same name.
-const published = "v0.0.0-20261104215521-580509970fb6"
-
 // scriptedAnalyzer is a scripted CP1 analyzer: it returns a fixed analysis
 // with no open questions, so it proves the Change Card plumbing, not live
 // CP1 model judgment.
@@ -52,6 +49,10 @@ type echoStream struct {
 	chunks   []model.Chunk
 	response *model.Response
 }
+
+// published is the Surla version the starter's go.mod pins; it exists on the
+// module proxy. It matches the internal tests' fixture of the same name.
+const published = "v0.0.0-20261104215521-580509970fb6"
 
 // TestStarterLiveTargetAppliesADraftToTheNextModelRequest creates a real
 // starter project, commits it as C1, and runs the full CP3 journey through the
