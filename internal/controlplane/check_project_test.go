@@ -428,6 +428,71 @@ func TestCheckAdmissionIsOrderedWithClose(t *testing.T) {
 	assert.Len(t, entries, 1, "no new operation directory")
 }
 
+// TestCheckFinishPreservesFailureCauses verifies that output recovery leaves
+// named error flags, joined capture and container failures, and timeout causes
+// available to callers without changing scratch retention.
+func TestCheckFinishPreservesFailureCauses(t *testing.T) {
+	for _, named := range []bool{false, true} {
+		for _, keepContainer := range []bool{false, true} {
+			t.Run(fmt.Sprintf("named=%t/keep_container=%t", named, keepContainer), func(t *testing.T) {
+				cp := &ControlPlane{}
+				cp.checkOps.Add(1)
+				dir := realTempDir(t)
+				require.NoError(t, os.Mkdir(filepath.Join(dir, "src"), 0o700))
+				out, err := newCapWriter(filepath.Join(dir, outputFile))
+				require.NoError(t, err)
+				_, err = out.Write([]byte("saved before failure\n"))
+				require.NoError(t, err)
+				captureErr := errors.New("capture stopped")
+				out.err = captureErr
+				var cause error = fmt.Errorf("operation timed out: %w", context.DeadlineExceeded)
+				var original *goa.ServiceError
+				if named {
+					original = goa.NewServiceError(cause, "unavailable", true, true, false)
+					cause = original
+				}
+				op := &checkOperation{
+					c: cp, id: strings.Repeat("ab", 16), dir: dir, out: out,
+					grantFD: -1, workspaceFD: -1,
+				}
+				var cleanupErr *candidate.CleanupError
+				if keepContainer {
+					cleanupErr = &candidate.CleanupError{Name: "surla-check-" + op.id + "-0", Err: errors.New("removal failed")}
+					op.owner.Containers = []string{cleanupErr.Name}
+					cause = errors.Join(cause, cleanupErr)
+				}
+				err = op.finish(cause)
+				require.Error(t, err)
+				assert.ErrorIs(t, err, context.DeadlineExceeded)
+				assert.ErrorIs(t, err, captureErr)
+				assert.Contains(t, err.Error(), `read_check_output(op_id: "`+op.id+`")`)
+				assert.Contains(t, err.Error(), "capture stopped")
+				if named {
+					var serviceErr *goa.ServiceError
+					require.ErrorAs(t, err, &serviceErr)
+					assert.ErrorIs(t, err, original)
+					assert.NotEqual(t, original.ID, serviceErr.ID)
+					assert.Equal(t, original.Name, serviceErr.Name)
+					assert.Equal(t, original.Timeout, serviceErr.Timeout)
+					assert.Equal(t, original.Temporary, serviceErr.Temporary)
+					assert.Equal(t, original.Fault, serviceErr.Fault)
+					assert.Equal(t, err.Error(), serviceErr.Message)
+				}
+				if keepContainer {
+					var got *candidate.CleanupError
+					require.ErrorAs(t, err, &got)
+					assert.Same(t, cleanupErr, got)
+					assert.Contains(t, err.Error(), "removal failed")
+					assert.DirExists(t, filepath.Join(dir, "src"))
+				} else {
+					assert.NoDirExists(t, filepath.Join(dir, "src"))
+				}
+				assert.FileExists(t, filepath.Join(dir, outputMetaFile))
+			})
+		}
+	}
+}
+
 func TestReadCheckOutputBudgetsTheTextTheCallerReceives(t *testing.T) {
 	// Arbitrary test output: invalid bytes (each becomes a 3-byte U+FFFD),
 	// multi-byte characters and ASCII, read through the generated HTTP
