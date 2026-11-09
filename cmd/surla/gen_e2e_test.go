@@ -79,6 +79,7 @@ func TestGenOnAFreshStarterChangesNothingAndKeepsModulesApart(t *testing.T) {
 	gatewayAddr := startModelGateway(t, provider)
 	workspace := t.TempDir()
 	cfg := serveConfig{
+		checkTimeout:     defaultCheckTimeout,
 		projectDir:       workspace,
 		projectSet:       true,
 		cardsDir:         t.TempDir(),

@@ -55,9 +55,6 @@ type (
 		resolvePromotionTarget func(ctx context.Context, workspaceDir string) (controlplane.PromotionTarget, error)
 		// closeProjectLock releases the shared lock on <operatorProjectDir>/import.lock.
 		closeProjectLock func() error
-		// checkWorkDir is the operator-owned parent of per-operation
-		// check_project and update_dependencies directories.
-		checkWorkDir string
 		// importedReports are the original report paths recorded by
 		// -import-legacy-workspace, empty when no import happened.
 		importedReports []string
@@ -294,10 +291,6 @@ func configureServeWorkspace(cfg serveConfig) (ws workspaceServeConfig, err erro
 	if err := markOperatorPrivateDir(evalWorkDir); err != nil {
 		return workspaceServeConfig{}, err
 	}
-	checkWorkDir := filepath.Join(operatorProjectDir, "check-work")
-	if err := markOperatorPrivateDir(checkWorkDir); err != nil {
-		return workspaceServeConfig{}, err
-	}
 
 	var (
 		runsDir             string
@@ -377,7 +370,6 @@ func configureServeWorkspace(cfg serveConfig) (ws workspaceServeConfig, err erro
 		cardsDir:               cardsDir,
 		initStageDir:           initStageDir,
 		evalWorkDir:            evalWorkDir,
-		checkWorkDir:           checkWorkDir,
 		importedReports:        importedReports,
 		runsDir:                runsDir,
 		verification:           startupVerification,

@@ -751,7 +751,7 @@ func serveOptions(
 		live.Command = self
 		live.StartTimeout = defaultProjectVerifyTimeout
 	}
-	goProxyEnv, err := operatorGoProxyEnv(ws.checkWorkDir)
+	goProxyEnv, err := operatorGoProxyEnv(ws.evalWorkDir)
 	if err != nil {
 		return controlplane.Options{}, errors.Join(err, cleanupModel(), ws.closeProjectLock())
 	}
@@ -774,7 +774,6 @@ func serveOptions(
 		Live:                   live,
 		CloseProjectLock:       ws.closeProjectLock,
 		Checker:                candidate.NewContainerRunner(),
-		CheckWorkDir:           ws.checkWorkDir,
 		CheckTimeout:           cfg.checkTimeout,
 		ImportedReports:        ws.importedReports,
 		GoProxyEnv:             goProxyEnv,

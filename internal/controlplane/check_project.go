@@ -26,8 +26,6 @@ import (
 	"golang.org/x/sys/unix"
 
 	gensurla "github.com/goadesign/surla/gen/surla"
-	"github.com/goadesign/surla/internal/abspath"
-	"github.com/goadesign/surla/internal/verify"
 	"github.com/goadesign/surla/verify/candidate"
 )
 
@@ -40,16 +38,23 @@ type (
 		c *ControlPlane
 		// id is the random operation ID, also the directory name.
 		id string
-		// dir is <CheckWorkDir>/<id>.
+		// dir is <cards dir>/check-work/<id>.
 		dir string
 		// grantRoot is the live grant's path when the operation started. It
 		// names the source mount point inside containers and nothing else.
 		grantRoot string
 		// grantFD holds the live grant directory open for the whole
 		// operation, reached from the identity-verified workspace root. The
-		// copy reads through it and update_dependencies writes through it,
-		// so a path component replaced mid-operation cannot redirect either.
+		// copy reads through it, so a path component replaced mid-operation
+		// cannot redirect it.
 		grantFD int
+		// workspaceFD holds the identity-verified workspace open for the
+		// whole operation; update_dependencies writes workspace manifests
+		// through it.
+		workspaceFD int
+		// workspaceID is the verified workspace's identity; the copy refuses
+		// a workspace path that resolves to anything else.
+		workspaceID fileID
 		// workspaceRel is the workspace's slash path inside the grant, "."
 		// when they are the same directory.
 		workspaceRel string
@@ -161,23 +166,22 @@ func (c *ControlPlane) startCheckOperation(ctx context.Context) (*checkOperation
 	if err != nil {
 		return nil, err
 	}
-	op := &checkOperation{c: c, id: newOperationID(), grantFD: -1}
-	op.grantRoot, op.workspaceRel, op.grantFD, err = openGrant(ctx, wsRoot, physWS)
-	if err := errors.Join(err, wsRoot.Close()); err != nil {
-		return nil, errors.Join(err, closeFD(op.grantFD))
+	op := &checkOperation{c: c, id: newOperationID(), grantFD: -1, workspaceFD: -1}
+	if err := errors.Join(op.openLive(wsRoot, physWS, c.protectedDirs), wsRoot.Close()); err != nil {
+		return nil, errors.Join(err, op.closeLive())
 	}
 	op.dir = filepath.Join(c.checkWorkDir, op.id)
 	trace.SpanFromContext(ctx).SetAttributes(attribute.String("surla.check.op_id", op.id))
 	for _, d := range []string{op.dir, op.path("src"), op.path("modcache"), op.path("docker-config")} {
 		if err := os.Mkdir(d, 0o700); err != nil {
-			return nil, errors.Join(fmt.Errorf("create check directory %s: %w", d, err), closeFD(op.grantFD))
+			return nil, errors.Join(fmt.Errorf("create check directory %s: %w", d, err), op.closeLive())
 		}
 	}
 	if op.out, err = newCapWriter(op.path(outputFile)); err != nil {
-		return nil, errors.Join(err, closeFD(op.grantFD))
+		return nil, errors.Join(err, op.closeLive())
 	}
 	c.checkOps.Add(1)
-	op.copy, err = copyGrant(ctx, op.grantFD, op.workspaceRel, op.path("src"), c.importedReports)
+	op.copy, err = copyGrant(ctx, op.grantFD, op.workspaceRel, op.workspaceID, op.path("src"), c.importedReports)
 	if err != nil {
 		var changed *errSourceChanged
 		switch {
@@ -298,7 +302,7 @@ func (op *checkOperation) runGo(ctx context.Context, mod, step, network string, 
 // removal keeps the whole directory.
 func (op *checkOperation) finish(cause error) error {
 	defer op.c.checkOps.Done()
-	closeErr := errors.Join(op.out.close(), closeFD(op.grantFD))
+	closeErr := errors.Join(op.out.close(), op.closeLive())
 	if len(op.owner.Containers) > 0 {
 		return errors.Join(cause, closeErr, fmt.Errorf("kept %s because container %s may still exist; remove it with docker rm -f %s", op.dir, op.owner.Containers[0], op.owner.Containers[0]))
 	}
@@ -379,14 +383,22 @@ func (op *checkOperation) writeOwner() error {
 	return os.Rename(tmp, op.path(ownerFile))
 }
 
-// recoverCheckOperations retries the removal of every container a kept
-// operation recorded, using that operation's recorded endpoint, and
-// removes the scratch directories of operations whose containers are all
-// confirmed gone. Directories with unconfirmed containers stay.
-func (c *ControlPlane) recoverCheckOperations() error {
+// recoverCheckOperations runs when no operation of this server is active
+// (in New and in Close after every operation returned); the card store's
+// exclusive lock guarantees no other server shares checkWorkDir. For each
+// operation directory it retries the removal of every container the
+// operation recorded, using that operation's recorded endpoint, and removes
+// the scratch of operations whose containers are all confirmed gone. An
+// operation with no owner.json never created a container (the record is
+// saved before each create), so its scratch is removed directly. The
+// captured output always stays; directories with unconfirmed containers
+// stay whole. Failures are recorded on the recovery span and returned.
+func (c *ControlPlane) recoverCheckOperations() (retErr error) {
 	if c.checker == nil || c.checkWorkDir == "" {
 		return nil
 	}
+	_, span := otel.Tracer("surla/controlplane").Start(context.Background(), "surla.controlplane.recover_check_operations")
+	defer func() { endCheckSpan(span, retErr) }()
 	entries, err := os.ReadDir(c.checkWorkDir)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -402,6 +414,8 @@ func (c *ControlPlane) recoverCheckOperations() error {
 		dir := filepath.Join(c.checkWorkDir, e.Name())
 		raw, err := os.ReadFile(filepath.Join(dir, ownerFile))
 		if errors.Is(err, os.ErrNotExist) {
+			span.AddEvent("ownerless_scratch_removed", trace.WithAttributes(attribute.String("surla.check.op_id", e.Name())))
+			errs = append(errs, removeOperationScratch(dir))
 			continue
 		}
 		if err != nil {
@@ -414,6 +428,10 @@ func (c *ControlPlane) recoverCheckOperations() error {
 			continue
 		}
 		engine := c.checker.Reopen(owner.Docker, owner.Host, filepath.Join(dir, "docker-config"))
+		span.AddEvent("retained_containers_retried", trace.WithAttributes(
+			attribute.String("surla.check.op_id", e.Name()),
+			attribute.Int("surla.check.containers", len(owner.Containers)),
+		))
 		var left []string
 		for _, name := range owner.Containers {
 			if err := engine.Remove(name); err != nil {
@@ -457,64 +475,74 @@ func removeOperationScratch(dir string) error {
 	return errors.Join(errs...)
 }
 
-// validateCheckWorkSeparation fails unless checkWorkDir lies outside every
-// protected workspace root, so a builder can never write into, or read, an
-// operation's copy, module cache or output through the workspace.
-func validateCheckWorkSeparation(checkWorkDir string, protectedDirs ...string) error {
-	phys, err := abspath.EvalMissing(checkWorkDir)
-	if err != nil {
-		return fmt.Errorf("resolve check work directory %s: %w", checkWorkDir, err)
-	}
-	for _, ws := range protectedDirs {
-		if ws == "" {
-			continue
-		}
-		inside, err := abspath.Within(ws, phys)
-		if err != nil {
-			return err
-		}
-		if inside {
-			return fmt.Errorf("check work directory %s must be outside workspace %s", checkWorkDir, ws)
-		}
-	}
-	return nil
-}
-
-// openGrant resolves the grant (the outermost source root containing the
-// identity-verified workspace held as wsRoot at physWS) and returns its
-// path, the workspace's slash path inside it, and a descriptor of it. The
-// descriptor is reached by walking ".." up from the held workspace once per
-// path component between them, so it names the tree that contains the
-// verified workspace even if a component of the grant's path is renamed or
-// replaced afterwards.
-func openGrant(ctx context.Context, wsRoot *os.Root, physWS string) (string, string, int, error) {
-	roots, err := verify.WorkspaceBoundaryRoots(ctx, physWS)
-	if err != nil {
-		return "", "", -1, fmt.Errorf("resolve the workspace's source boundary: %w", err)
-	}
-	grantRoot := outermost(roots)
-	rel, err := filepath.Rel(grantRoot, physWS)
+// openLive binds the operation to the live source. The grant is the
+// outermost source root this server accepted at startup (the initial
+// workspace or its enclosing Git working tree), never re-derived from Git
+// metadata that may have changed since. The active workspace, verified by
+// identity and held as wsRoot at physWS, must lie inside it. openLive holds
+// the workspace and the grant open: the grant is reached by walking ".." up
+// from the held workspace, and the workspace's identity is recorded so the
+// copy and every publication either act on the verified directories or
+// refuse.
+func (op *checkOperation) openLive(wsRoot *os.Root, physWS string, accepted []string) error {
+	op.grantRoot = outermost(accepted)
+	rel, err := filepath.Rel(op.grantRoot, physWS)
 	if err != nil || !filepath.IsLocal(rel) && rel != "." {
-		return "", "", -1, fmt.Errorf("workspace %s is not inside its source boundary %s", physWS, grantRoot)
+		return gensurla.MakeUnprocessable(fmt.Errorf("workspace %s is outside %s, the source directory this server accepted at startup; restart surla serve from the workspace", physWS, op.grantRoot))
 	}
+	op.workspaceRel = filepath.ToSlash(rel)
 	ws, err := wsRoot.Open(".")
 	if err != nil {
-		return "", "", -1, fmt.Errorf("open the workspace: %w", err)
+		return fmt.Errorf("open the workspace: %w", err)
 	}
-	fd, err := unix.Openat(int(ws.Fd()), ".", openDirFlags, 0)
+	op.workspaceFD, err = unix.Openat(int(ws.Fd()), ".", openDirFlags, 0)
 	if err := errors.Join(err, ws.Close()); err != nil {
-		return "", "", -1, errors.Join(fmt.Errorf("hold the workspace: %w", err), closeFD(fd))
+		return fmt.Errorf("hold the workspace: %w", err)
+	}
+	var st unix.Stat_t
+	if err := unix.Fstat(op.workspaceFD, &st); err != nil {
+		return fmt.Errorf("hold the workspace: %w", err)
+	}
+	op.workspaceID = fileID{dev: st.Dev, ino: st.Ino}
+	fd, err := unix.Openat(op.workspaceFD, ".", openDirFlags, 0)
+	if err != nil {
+		return fmt.Errorf("hold the workspace: %w", err)
 	}
 	if rel != "." {
-		for range strings.Split(filepath.ToSlash(rel), "/") {
+		for range strings.Split(op.workspaceRel, "/") {
 			parent, err := unix.Openat(fd, "..", openDirFlags, 0)
 			if err := errors.Join(err, unix.Close(fd)); err != nil {
-				return "", "", -1, errors.Join(fmt.Errorf("hold the workspace's source boundary %s: %w", grantRoot, err), closeFD(parent))
+				return errors.Join(fmt.Errorf("hold the source directory %s: %w", op.grantRoot, err), closeFD(parent))
 			}
 			fd = parent
 		}
 	}
-	return grantRoot, filepath.ToSlash(rel), fd, nil
+	op.grantFD = fd
+	return nil
+}
+
+// liveDirAt opens the grant-relative directory rel of the live source
+// without following a link. A directory inside the workspace is reached from
+// the held workspace, so a replaced workspace path is never written; one
+// outside it (a go.work above the workspace) from the held grant.
+func (op *checkOperation) liveDirAt(rel string) (int, error) {
+	if op.workspaceRel == "." {
+		return openDirAt(op.workspaceFD, rel)
+	}
+	if rel == op.workspaceRel {
+		return openDirAt(op.workspaceFD, ".")
+	}
+	if inner, ok := strings.CutPrefix(rel, op.workspaceRel+"/"); ok {
+		return openDirAt(op.workspaceFD, inner)
+	}
+	return openDirAt(op.grantFD, rel)
+}
+
+// closeLive releases the held workspace and grant.
+func (op *checkOperation) closeLive() error {
+	err := errors.Join(closeFD(op.workspaceFD), closeFD(op.grantFD))
+	op.workspaceFD, op.grantFD = -1, -1
+	return err
 }
 
 // closeFD closes fd when it is open (non-negative).

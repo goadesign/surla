@@ -117,11 +117,10 @@ type (
 		// the local Docker engine. When nil, both tools return
 		// not_implemented.
 		Checker *candidate.ContainerRunner
-		// CheckWorkDir is the operator-owned parent of per-operation check
-		// directories. It must lie outside WorkspaceDir and its enclosing
-		// Git working tree.
-		CheckWorkDir string
-		// CheckTimeout bounds one whole check or dependency operation.
+		// CheckTimeout bounds one whole check or dependency operation. It
+		// must be positive when Checker is set; New rejects zero or a
+		// negative value. Per-operation directories live under CardsDir,
+		// whose exclusive lock makes this server their only owner.
 		CheckTimeout time.Duration
 		// ImportedReports are the validated absolute original report paths
 		// recorded by -import-legacy-workspace; check copies never include
@@ -281,7 +280,9 @@ type (
 		initStageDir string
 		// checker is Options.Checker.
 		checker *candidate.ContainerRunner
-		// checkWorkDir is Options.CheckWorkDir.
+		// checkWorkDir is <cards dir>/check-work when Checker is set, the
+		// parent of per-operation directories; empty otherwise. The card
+		// store's exclusive lock makes this server its only owner.
 		checkWorkDir string
 		// checkTimeout is Options.CheckTimeout.
 		checkTimeout time.Duration
@@ -461,7 +462,6 @@ func New(opts Options) (*ControlPlane, error) {
 		boundWorkspaceIno:      wsIno,
 		initStageDir:           initStageDir,
 		checker:                opts.Checker,
-		checkWorkDir:           opts.CheckWorkDir,
 		checkTimeout:           opts.CheckTimeout,
 		importedReports:        opts.ImportedReports,
 		goProxyEnv:             opts.GoProxyEnv,
@@ -477,16 +477,19 @@ func New(opts Options) (*ControlPlane, error) {
 	if err := validateStartupSeparation(cards.dir, runsDir, initStageDir, verCfg, protectedDirs...); err != nil {
 		return nil, errors.Join(err, cp.Close())
 	}
-	if opts.CheckWorkDir != "" {
-		if err := validateCheckWorkSeparation(opts.CheckWorkDir, protectedDirs...); err != nil {
-			return nil, errors.Join(err, cp.Close())
+	if opts.Checker != nil {
+		if opts.CheckTimeout <= 0 {
+			return nil, errors.Join(fmt.Errorf("check timeout must be positive, got %s", opts.CheckTimeout), cp.Close())
 		}
-		if err := os.MkdirAll(opts.CheckWorkDir, 0o700); err != nil {
+		cp.checkWorkDir = filepath.Join(cards.dir, "check-work")
+		if err := os.MkdirAll(cp.checkWorkDir, 0o700); err != nil {
 			return nil, errors.Join(fmt.Errorf("create check work directory: %w", err), cp.Close())
 		}
-		// Retry removal of containers that a previous server could not
-		// confirm; their directories stay until removal is confirmed.
-		_ = cp.recoverCheckOperations()
+		// Retry removal of containers that a previous server with this card
+		// store could not confirm. A failed retry keeps its directory for
+		// Close and the next start, and its span records the failure, so it
+		// does not stop this server from starting.
+		cp.recoverCheckOperations()
 	}
 	return cp, nil
 }

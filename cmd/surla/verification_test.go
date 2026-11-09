@@ -125,7 +125,7 @@ func TestLoadProjectVerificationConfigDerivesTheStarterPlanFromHEAD(t *testing.T
 		for _, start := range []struct{ dir, arg string }{{project, "."}, {repo, "services/shop"}} {
 			isolateServeWorkspace(t)
 			t.Chdir(start.dir)
-			ws, err := configureServeWorkspace(serveConfig{projectDir: start.arg, projectSet: true})
+			ws, err := configureServeWorkspace(serveConfig{checkTimeout: defaultCheckTimeout, projectDir: start.arg, projectSet: true})
 			require.NoError(t, err, "-project %s from %s", start.arg, start.dir)
 			require.NotNil(t, ws.verification)
 			assert.Equal(t, repo, ws.verification.Plan.CandidateRepo)
@@ -153,7 +153,7 @@ func TestLoadProjectVerificationConfigDerivesTheStarterPlanFromHEAD(t *testing.T
 		for _, arg := range []string{"alias/..", other + "/alias/.."} {
 			isolateServeWorkspace(t)
 			t.Chdir(other)
-			ws, err := configureServeWorkspace(serveConfig{projectDir: arg, projectSet: true})
+			ws, err := configureServeWorkspace(serveConfig{checkTimeout: defaultCheckTimeout, projectDir: arg, projectSet: true})
 			require.NoError(t, err, "-project %s", arg)
 			require.NotNil(t, ws.verification)
 			assert.Equal(t, repo, ws.verification.Plan.CandidateRepo, "-project %s", arg)
@@ -357,7 +357,7 @@ func TestLoadProjectVerificationConfigRejectsUnusableProjects(t *testing.T) {
 			_, err := starterVerificationAtHEAD(t.Context(), dir, filepath.Join(t.TempDir(), "runs"), filepath.Join(t.TempDir(), "reports"))
 			require.ErrorContains(t, err, tc.wantErr)
 
-			ws, wsErr := configureServeWorkspace(serveConfig{projectDir: dir, projectSet: true})
+			ws, wsErr := configureServeWorkspace(serveConfig{checkTimeout: defaultCheckTimeout, projectDir: dir, projectSet: true})
 			if wsErr != nil {
 				require.ErrorContains(t, wsErr, tc.wantErr)
 				return
@@ -382,7 +382,7 @@ func TestLoadProjectVerificationConfigRejectsUnusableProjects(t *testing.T) {
 func TestConfigureServeWorkspaceSupportsIndependentProjectAndVerificationConfig(t *testing.T) {
 	isolateServeWorkspace(t)
 
-	_, err := configureServeWorkspace(serveConfig{projectSet: true})
+	_, err := configureServeWorkspace(serveConfig{checkTimeout: defaultCheckTimeout, projectSet: true})
 	assert.ErrorContains(t, err, "-project requires a directory")
 
 	root := t.TempDir()
@@ -413,6 +413,7 @@ func TestConfigureServeWorkspaceSupportsIndependentProjectAndVerificationConfig(
 	t.Chdir(opsSessionDir)
 	opts, err := serveOptions(
 		serveConfig{
+			checkTimeout:     defaultCheckTimeout,
 			projectDir:       shopDir,
 			projectSet:       true,
 			verificationPath: verPath,

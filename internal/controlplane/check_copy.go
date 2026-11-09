@@ -46,6 +46,9 @@ type (
 		// workspaceRel is the workspace's slash path relative to the grant
 		// root, "." when they are the same directory.
 		workspaceRel string
+		// workspaceID is the verified workspace's identity; a directory at
+		// workspaceRel with any other identity was replaced.
+		workspaceID fileID
 		// recorded maps each recorded original report's parent directory to
 		// the report basenames recorded in it.
 		recorded map[string][]string
@@ -63,8 +66,7 @@ type (
 		err error
 	}
 
-	// fileID is a file's device and inode: the identity the kernel resolves
-	// every alias of a name to.
+	// fileID is a file's device and inode.
 	fileID struct {
 		// dev is the device number.
 		dev int32
@@ -91,23 +93,31 @@ const openEntryFlags = unix.O_RDONLY | unix.O_SYMLINK | unix.O_NONBLOCK | unix.O
 
 // copyGrant copies the grant held open as rootFD into dst, which must exist
 // and be empty. workspaceRel is the active workspace's slash path inside the
-// grant ("." when they are the same directory), and importedReports are the
-// validated absolute original report paths the import recorded. It skips
-// .git and .surla* entries, any entry the kernel resolves as the directory's
-// .git or .surla (a case or Unicode alias on a case-insensitive volume), and
-// every entry the kernel resolves as a recorded original report at the
-// moment its entry is decided; it copies every other regular file (keeping
-// its mode), directory and symlink (with its raw target). It stops with
-// ctx's error when ctx ends.
-func copyGrant(ctx context.Context, rootFD int, workspaceRel, dst string, importedReports []string) (grantCopy, error) {
+// grant ("." when they are the same directory), workspaceID is the verified
+// workspace's identity, and importedReports are the validated absolute
+// original report paths the import recorded. It skips .git and .surla*
+// entries, any entry the kernel resolves as the directory's .git or .surla
+// (a case or Unicode alias on a case-insensitive volume), and every entry
+// the kernel resolves as a recorded original report, each decided when its
+// entry is opened; it copies every other regular file (keeping its mode),
+// directory and symlink (with its raw target). It refuses a workspace path
+// that no longer resolves to the verified workspace, and stops with ctx's
+// error when ctx ends.
+func copyGrant(ctx context.Context, rootFD int, workspaceRel string, workspaceID fileID, dst string, importedReports []string) (grantCopy, error) {
 	c := &grantCopier{
 		ctx:          ctx,
 		workspaceRel: workspaceRel,
+		workspaceID:  workspaceID,
 		recorded:     map[string][]string{},
 		out:          grantCopy{manifests: map[string][]byte{}},
 	}
 	for _, p := range importedReports {
 		c.recorded[filepath.Dir(p)] = append(c.recorded[filepath.Dir(p)], filepath.Base(p))
+	}
+	if c.workspaceRel == "." {
+		if err := c.requireWorkspace(rootFD, "."); err != nil {
+			return grantCopy{}, err
+		}
 	}
 	if c.workspaceRel == "." && hasRegularGoMod(rootFD, ".") {
 		c.out.modules = append(c.out.modules, ".")
@@ -140,24 +150,24 @@ func (c *grantCopier) copyDir(dirFD int, rel, dst string) error {
 	if err != nil {
 		return fmt.Errorf("resolve recorded reports for %s: %w", rel, err)
 	}
-	protected, err := protectedIDs(dirFD)
-	if err != nil {
-		return fmt.Errorf("resolve .git and .surla in %s: %w", rel, err)
-	}
 	for _, name := range names {
 		if name == ".git" || strings.HasPrefix(name, ".surla") {
 			continue
 		}
-		if err := c.copyEntry(dirFD, path.Join(rel, name), name, dst, recordedNames, protected); err != nil {
+		if err := c.copyEntry(dirFD, path.Join(rel, name), name, dst, recordedNames); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-// copyEntry copies one entry of dirFD unless it is one of the protected
-// directories or the kernel resolves one of recordedNames in dirFD to it.
-func (c *grantCopier) copyEntry(dirFD int, rel, name, dst string, recordedNames []string, protected []fileID) error {
+// protectedNames are the directories a copy never includes under any name
+// the kernel resolves to them.
+var protectedNames = []string{".git", ".surla"}
+
+// copyEntry copies one entry of dirFD unless the kernel currently resolves
+// .git, .surla or one of recordedNames in dirFD to it.
+func (c *grantCopier) copyEntry(dirFD int, rel, name, dst string, recordedNames []string) error {
 	if err := c.ctx.Err(); err != nil {
 		return err
 	}
@@ -167,14 +177,14 @@ func (c *grantCopier) copyEntry(dirFD int, rel, name, dst string, recordedNames 
 	}
 	f := os.NewFile(uintptr(fd), rel)
 	defer f.Close()
-	var st unix.Stat_t
-	if err := unix.Fstat(fd, &st); err != nil {
+	excluded, err := isRecordedReport(dirFD, fd, protectedNames)
+	if err != nil {
 		return &errSourceChanged{rel: rel, err: err}
 	}
-	if slices.Contains(protected, fileID{dev: st.Dev, ino: st.Ino}) {
+	if excluded {
 		return nil
 	}
-	excluded, err := isRecordedReport(dirFD, fd, recordedNames)
+	excluded, err = isRecordedReport(dirFD, fd, recordedNames)
 	if err != nil {
 		return &errSourceChanged{rel: rel, err: err}
 	}
@@ -188,6 +198,11 @@ func (c *grantCopier) copyEntry(dirFD int, rel, name, dst string, recordedNames 
 	target := filepath.Join(dst, name)
 	switch {
 	case info.Mode().IsDir():
+		if rel == c.workspaceRel {
+			if err := c.requireWorkspace(fd, rel); err != nil {
+				return err
+			}
+		}
 		if err := os.Mkdir(target, 0o700); err != nil {
 			return fmt.Errorf("create %s: %w", target, err)
 		}
@@ -238,33 +253,25 @@ func (c *grantCopier) copyFile(f *os.File, rel, target string, perm fs.FileMode)
 	return nil
 }
 
+// requireWorkspace fails with errSourceChanged unless the open directory fd
+// at grant-relative rel is the verified workspace.
+func (c *grantCopier) requireWorkspace(fd int, rel string) error {
+	var st unix.Stat_t
+	if err := unix.Fstat(fd, &st); err != nil {
+		return &errSourceChanged{rel: rel, err: err}
+	}
+	if (fileID{dev: st.Dev, ino: st.Ino}) != c.workspaceID {
+		return &errSourceChanged{rel: rel, err: errors.New("the workspace directory was replaced")}
+	}
+	return nil
+}
+
 // Read implements io.Reader, failing with ctx's error once ctx ends.
 func (r ctxReader) Read(p []byte) (int, error) {
 	if err := r.ctx.Err(); err != nil {
 		return 0, err
 	}
 	return r.r.Read(p)
-}
-
-// protectedIDs returns the identities of the .git and .surla entries the
-// kernel resolves in dirFD. On a case-insensitive volume a stored .SURLA or
-// .Git is the same directory Surla and Git open as .surla or .git, so the
-// copy excludes it by identity; a distinct directory on a case-sensitive
-// volume has its own identity and is copied.
-func protectedIDs(dirFD int) ([]fileID, error) {
-	var ids []fileID
-	for _, name := range []string{".git", ".surla"} {
-		var st unix.Stat_t
-		err := unix.Fstatat(dirFD, name, &st, unix.AT_SYMLINK_NOFOLLOW)
-		if errors.Is(err, unix.ENOENT) {
-			continue
-		}
-		if err != nil {
-			return nil, err
-		}
-		ids = append(ids, fileID{dev: st.Dev, ino: st.Ino})
-	}
-	return ids, nil
 }
 
 // recordedNamesFor returns the recorded report basenames whose recorded

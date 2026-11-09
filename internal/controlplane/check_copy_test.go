@@ -45,7 +45,15 @@ func copyGrantPath(t *testing.T, ctx context.Context, grant, workspaceDir, dst s
 	fd, err := syscall.Open(grant, openDirFlags, 0)
 	require.NoError(t, err)
 	defer func() { require.NoError(t, syscall.Close(fd)) }()
-	return copyGrant(ctx, fd, filepath.ToSlash(rel), dst, reports)
+	return copyGrant(ctx, fd, filepath.ToSlash(rel), identityOf(t, workspaceDir), dst, reports)
+}
+
+// identityOf returns the device and inode of the directory at p.
+func identityOf(t *testing.T, p string) fileID {
+	t.Helper()
+	var st syscall.Stat_t
+	require.NoError(t, syscall.Stat(p, &st))
+	return fileID{dev: st.Dev, ino: st.Ino}
 }
 
 // copiedFiles lists the slash paths of every non-directory entry under root.
@@ -252,7 +260,7 @@ func TestCopyEntryReportsVanishedEntry(t *testing.T) {
 	require.NoError(t, err)
 	defer syscall.Close(fd)
 	c := &grantCopier{ctx: context.Background(), workspaceRel: ".", recorded: map[string][]string{}, out: grantCopy{manifests: map[string][]byte{}}}
-	err = c.copyEntry(fd, "gone.txt", "gone.txt", realTempDir(t), nil, nil)
+	err = c.copyEntry(fd, "gone.txt", "gone.txt", realTempDir(t), nil)
 	var changed *errSourceChanged
 	require.True(t, errors.As(err, &changed))
 	assert.Contains(t, err.Error(), "the workspace changed while check_project was copying gone.txt")
@@ -346,4 +354,46 @@ func (r *endlessReader) Read(p []byte) (int, error) {
 		r.cancel()
 	}
 	return len(p), nil
+}
+
+func TestCopyEntryDecidesProtectedAliasWhenItOpensTheEntry(t *testing.T) {
+	// The directory was listed with .SURLA in it; .SURLA is then replaced by
+	// a new directory before its entry is decided. The decision uses the
+	// current kernel resolution, so the replacement is still excluded.
+	grant := realTempDir(t)
+	if !caseInsensitive(t, grant) {
+		t.Skip("needs a case-insensitive volume")
+	}
+	writeTree(t, grant, map[string]string{".SURLA/runs/old.txt": "old\n"})
+	fd, err := syscall.Open(grant, openDirFlags, 0)
+	require.NoError(t, err)
+	defer func() { require.NoError(t, syscall.Close(fd)) }()
+	names, err := readDirNames(fd)
+	require.NoError(t, err)
+	require.Contains(t, names, ".SURLA")
+	require.NoError(t, os.RemoveAll(filepath.Join(grant, ".SURLA")))
+	writeTree(t, grant, map[string]string{".SURLA/runs/work/suite/main.go": "package main\n"})
+
+	dst := realTempDir(t)
+	c := &grantCopier{ctx: context.Background(), workspaceRel: ".", recorded: map[string][]string{}, out: grantCopy{manifests: map[string][]byte{}}}
+	require.NoError(t, c.copyEntry(fd, ".SURLA", ".SURLA", dst, nil))
+	assert.Empty(t, copiedFiles(t, dst))
+}
+
+func TestCopyGrantRefusesAReplacedNestedWorkspace(t *testing.T) {
+	// grant=/repo, workspace=/repo/app: app is replaced after the server
+	// verified it, so the copy refuses instead of reading the replacement.
+	grant := realTempDir(t)
+	writeTree(t, grant, map[string]string{"app/go.mod": "module example.com/app\n"})
+	verified := identityOf(t, filepath.Join(grant, "app"))
+	require.NoError(t, os.Rename(filepath.Join(grant, "app"), filepath.Join(grant, "app-old")))
+	writeTree(t, grant, map[string]string{"app/go.mod": "module example.com/replacement\n"})
+
+	fd, err := syscall.Open(grant, openDirFlags, 0)
+	require.NoError(t, err)
+	defer func() { require.NoError(t, syscall.Close(fd)) }()
+	_, err = copyGrant(context.Background(), fd, "app", verified, realTempDir(t), nil)
+	var changed *errSourceChanged
+	require.ErrorAs(t, err, &changed)
+	assert.Contains(t, err.Error(), "the workspace directory was replaced")
 }

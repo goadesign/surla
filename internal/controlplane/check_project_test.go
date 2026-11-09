@@ -6,12 +6,15 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"syscall"
 	"testing"
+	"time"
 
 	gensurla "github.com/goadesign/surla/gen/surla"
+	"github.com/goadesign/surla/verify/candidate"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	goa "goa.design/goa/v3/pkg"
@@ -26,11 +29,14 @@ func newPublishOp(t *testing.T, grant string, before map[string][]byte) *checkOp
 	require.NoError(t, os.Mkdir(filepath.Join(dir, "src"), 0o700))
 	fd, err := syscall.Open(grant, openDirFlags, 0)
 	require.NoError(t, err)
-	t.Cleanup(func() { require.NoError(t, syscall.Close(fd)) })
+	wsFD, err := syscall.Open(grant, openDirFlags, 0)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, errors.Join(syscall.Close(fd), syscall.Close(wsFD))) })
 	return &checkOperation{
 		dir:          dir,
 		grantRoot:    grant,
 		grantFD:      fd,
+		workspaceFD:  wsFD,
 		workspaceRel: ".",
 		copy:         grantCopy{modules: []string{"."}, manifests: before},
 	}
@@ -165,6 +171,117 @@ func TestPublishManifestWritesThroughTheHeldGrant(t *testing.T) {
 	got, err = os.ReadFile(filepath.Join(grant, "go.sum"))
 	require.NoError(t, err)
 	assert.Equal(t, "old\n", string(got), "the replacement directory is untouched")
+}
+
+func TestPublishManifestWritesThroughTheVerifiedNestedWorkspace(t *testing.T) {
+	// grant=/repo, workspace=/repo/app: app is replaced while go mod tidy
+	// runs. The write goes to the verified app, never the replacement.
+	repo := realTempDir(t)
+	writeTree(t, repo, map[string]string{"app/go.mod": "module example.com/app\n", "app/go.sum": "old\n"})
+	ws, err := os.OpenRoot(filepath.Join(repo, "app"))
+	require.NoError(t, err)
+	op := &checkOperation{dir: realTempDir(t), grantFD: -1, workspaceFD: -1}
+	require.NoError(t, op.openLive(ws, filepath.Join(repo, "app"), []string{filepath.Join(repo, "app"), repo}))
+	require.NoError(t, ws.Close())
+	t.Cleanup(func() { require.NoError(t, op.closeLive()) })
+	assert.Equal(t, repo, op.grantRoot)
+	assert.Equal(t, "app", op.workspaceRel)
+	op.copy = grantCopy{modules: []string{"."}, manifests: map[string][]byte{"app/go.sum": []byte("old\n")}}
+	writeTree(t, op.path("src"), map[string]string{"app/go.sum": "new\n"})
+	require.NoError(t, os.Rename(filepath.Join(repo, "app"), filepath.Join(repo, "app-old")))
+	writeTree(t, repo, map[string]string{"app/go.sum": "old\n"})
+
+	changed, err := op.publishManifest("app/go.sum")
+	require.NoError(t, err)
+	assert.True(t, changed)
+	got, err := os.ReadFile(filepath.Join(repo, "app-old", "go.sum"))
+	require.NoError(t, err)
+	assert.Equal(t, "new\n", string(got))
+	got, err = os.ReadFile(filepath.Join(repo, "app", "go.sum"))
+	require.NoError(t, err)
+	assert.Equal(t, "old\n", string(got), "the replacement is untouched")
+}
+
+func TestOpenLiveUsesTheSourceRootsAcceptedAtStartup(t *testing.T) {
+	parent := realTempDir(t)
+	repo := filepath.Join(parent, "repo")
+	writeTree(t, parent, map[string]string{
+		"repo/app/go.mod":          "module example.com/app\n",
+		"repo/app/child/go.mod":    "module example.com/child\n",
+		"operator-private/key.txt": "private\n",
+	})
+	runGitForTest(t, repo, "init", "-q")
+	accepted := []string{filepath.Join(repo, "app"), repo}
+	// Git metadata changed after startup now names the parent as the
+	// working tree; the accepted roots still bound the operation.
+	runGitForTest(t, repo, "config", "core.worktree", parent)
+
+	cases := []struct {
+		name    string
+		ws      string
+		wantRel string
+		wantErr string
+	}{
+		{name: "initial workspace", ws: filepath.Join(repo, "app"), wantRel: "app"},
+		{name: "init_project child of the initial workspace", ws: filepath.Join(repo, "app", "child"), wantRel: "app/child"},
+		{name: "outside the accepted roots", ws: filepath.Join(parent, "operator-private"), wantErr: "outside " + repo},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			root, err := os.OpenRoot(tc.ws)
+			require.NoError(t, err)
+			defer func() { require.NoError(t, root.Close()) }()
+			op := &checkOperation{grantFD: -1, workspaceFD: -1}
+			err = op.openLive(root, tc.ws, accepted)
+			defer func() { require.NoError(t, op.closeLive()) }()
+			if tc.wantErr != "" {
+				assertServiceError(t, err, "unprocessable")
+				assert.Contains(t, err.Error(), tc.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, repo, op.grantRoot)
+			assert.Equal(t, tc.wantRel, op.workspaceRel)
+			dst := realTempDir(t)
+			_, err = copyGrant(context.Background(), op.grantFD, op.workspaceRel, op.workspaceID, dst, nil)
+			require.NoError(t, err)
+			assert.NotContains(t, copiedFiles(t, dst), "operator-private/key.txt")
+			assert.Contains(t, copiedFiles(t, dst), "app/go.mod")
+		})
+	}
+}
+
+// runGitForTest runs a trusted git command in dir for a test fixture.
+func runGitForTest(t *testing.T, dir string, args ...string) {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	out, err := cmd.CombinedOutput()
+	require.NoError(t, err, string(out))
+}
+
+func TestRecoverCheckOperationsRemovesScratchOfOperationsWithoutContainers(t *testing.T) {
+	// The server stopped after copying but before saving owner.json, so no
+	// container was ever created: the scratch goes, the output stays.
+	workDir := realTempDir(t)
+	id := strings.Repeat("ef", 16)
+	writeTree(t, filepath.Join(workDir, id), map[string]string{
+		"src/go.mod":   "module example.com/shop\n",
+		outputFile:     "copied\n",
+		outputMetaFile: `{"captured":7,"dropped":0}`,
+	})
+	writeTree(t, workDir, map[string]string{"not-an-operation/keep.txt": "x"})
+	c := &ControlPlane{checker: &candidate.ContainerRunner{}, checkWorkDir: workDir}
+	require.NoError(t, c.recoverCheckOperations())
+	assert.ElementsMatch(t, []string{id + "/" + outputFile, id + "/" + outputMetaFile, "not-an-operation/keep.txt"}, copiedFiles(t, workDir))
+}
+
+func TestNewRejectsANonPositiveCheckTimeout(t *testing.T) {
+	for _, timeout := range []time.Duration{0, -time.Second} {
+		_, err := New(Options{CardsDir: filepath.Join(realTempDir(t), "cards"), Checker: candidate.NewContainerRunner(), CheckTimeout: timeout})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "check timeout must be positive")
+	}
 }
 
 func TestPublishManifestsReportsAWrittenFileWhoseSyncFailed(t *testing.T) {

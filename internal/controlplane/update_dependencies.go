@@ -169,7 +169,7 @@ func (op *checkOperation) publishManifest(rel string) (bool, error) {
 	if !afterOK || (beforeOK && bytes.Equal(before, after)) {
 		return false, nil
 	}
-	dirFD, err := openDirAt(op.grantFD, path.Dir(rel))
+	dirFD, err := op.liveDirAt(path.Dir(rel))
 	if err != nil {
 		return false, err
 	}
