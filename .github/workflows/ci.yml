@@ -1,8 +1,9 @@
-# CI runs every test suite, type-checks the checkpoint viewer, and checks
+# CI runs unit and macOS sandbox tests, type-checks the checkpoint viewer, and checks
 # that generated files match their sources, on each pull request and each
 # push to main. All jobs run on macOS:
 # Surla's candidate sandbox uses sandbox-exec, so its tests skip elsewhere.
 # The jobs use no secrets; the suites drive scripted models, not real ones.
+# Docker tests require the e2e,docker tags and a local Linux Docker engine.
 name: CI
 
 on:
