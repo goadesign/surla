@@ -30,7 +30,9 @@ jobs:
   # is committed.
   tests:
     runs-on: macos-latest
-    timeout-minutes: 30
+    # Package alarms exclude compilation and vet. Allow the three module
+    # checks plus setup and generation; this job budget remains an estimate.
+    timeout-minutes: 70
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
@@ -52,7 +54,7 @@ jobs:
         run: |
           for module in . examples/orders examples/orders-eval; do
             echo "::group::$module"
-            (cd "$module" && go vet ./... && go test -race ./...) </dev/null
+            (cd "$module" && go vet ./... && go test -race -timeout 20m ./...) </dev/null
             echo "::endgroup::"
           done
       - name: Type-check the viewer and check generated files
@@ -77,13 +79,13 @@ jobs:
   # server.
   e2e:
     runs-on: macos-latest
-    # The four test steps below have Go binary alarms of 20m (verifier), 15m
+    # The four test steps below have Go binary alarms of 20m (verifier), 40m
     # (generation journeys), 60m (starter) and 10m (orders; Go's default).
-    # 110m adds about 5m for checkout, setup, the Temporal CLI, compiling the
+    # 135m adds about 5m for checkout, setup, the Temporal CLI, compiling the
     # test binaries, module downloads and post-steps. It is an estimate, not
     # an upper bound: a binary alarm does not cover compilation or setup, so
     # this job limit can still end a run before a step's own alarm.
-    timeout-minutes: 110
+    timeout-minutes: 135
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
@@ -106,9 +108,10 @@ jobs:
       - name: Generation journeys end to end
         # Compare surla gen with host goa gen, then initialize a starter over
         # MCP, regenerate both modules and run one live/verification journey.
-        # -count=1 keeps a cached result from skipping these checks. 15m is a
-        # package budget, not a measured or guaranteed duration.
-        run: go test -race -count=1 -timeout 15m -tags e2e ./cmd/surla </dev/null
+        # The server owns 30m live-start and verification limits. 40m is a
+        # whole-package budget, not their sum or a guaranteed runtime.
+        # -count=1 keeps a cached result from skipping these checks.
+        run: go test -race -count=1 -timeout 40m -tags e2e ./cmd/surla </dev/null
       - name: Starter project end to end
         # The live CP3 journey test builds and runs a generated starter in
         # the sandbox four times (two live targets and two verifications). It
