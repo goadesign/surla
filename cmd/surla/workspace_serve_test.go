@@ -746,3 +746,30 @@ func assertOutsideDirectory(t *testing.T, child, root string) {
 	require.NoError(t, err)
 	assert.False(t, inside, "%s must be outside %s", child, root)
 }
+
+// TestImportLegacyWorkspaceCardsOnlyPublishesEmptyReportRecord verifies that a
+// cards-only import (no legacy runs or reports) still publishes
+// imported/runs/imported_paths.json as an explicit empty version 1 record, so
+// a later missing record means lost state, never "nothing to exclude".
+func TestImportLegacyWorkspaceCardsOnlyPublishesEmptyReportRecord(t *testing.T) {
+	root := t.TempDir()
+	cfgRoot := filepath.Join(root, "user-config")
+	wsDir := filepath.Join(root, "workspace")
+	require.NoError(t, os.MkdirAll(cfgRoot, 0o700))
+	legacyCardsDir := filepath.Join(wsDir, ".surla", "cards")
+	require.NoError(t, os.MkdirAll(legacyCardsDir, 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(legacyCardsDir, strings.Repeat("c", 64)+".json"), []byte(`{"card":{"ChangeID":"CHG-2"}}`), 0o600))
+
+	priorConfigDir := userConfigDir
+	userConfigDir = func() (string, error) { return cfgRoot, nil }
+	t.Cleanup(func() { userConfigDir = priorConfigDir })
+	t.Chdir(wsDir)
+
+	importedCfg, err := configureServeWorkspace(serveConfig{importLegacyWorkspace: true})
+	require.NoError(t, err)
+	require.NoError(t, importedCfg.closeProjectLock())
+
+	raw, err := os.ReadFile(filepath.Join(importedCfg.runsDir, "imported_paths.json"))
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"version":1}`, string(raw))
+}

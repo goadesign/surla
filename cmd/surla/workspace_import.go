@@ -335,14 +335,21 @@ func importLegacyWorkspace(
 		stagedSelectedCardsDir = filepath.Join(stageDir, "cards-"+cardsHash)
 	}
 
-	if importRunsAndReports {
+	// Every import publishes imported/runs/imported_paths.json, explicitly
+	// empty for a cards-only import, so a missing record on an imported server
+	// always means lost state rather than "no original reports to exclude".
+	{
 		var (
 			legacyRunsDir           string
 			legacyDefaultReportsDir string
+			snapshotReportDirs      []string
 		)
-		if starterMode || hasLegacyWSRunsOrReports {
-			legacyRunsDir = filepath.Join(initialWorkspaceRoot, ".surla", "runs")
-			legacyDefaultReportsDir = filepath.Join(initialWorkspaceRoot, "reports")
+		if importRunsAndReports {
+			snapshotReportDirs = configuredReportDirs
+			if starterMode || hasLegacyWSRunsOrReports {
+				legacyRunsDir = filepath.Join(initialWorkspaceRoot, ".surla", "runs")
+				legacyDefaultReportsDir = filepath.Join(initialWorkspaceRoot, "reports")
+			}
 		}
 		stagedRunsDir := filepath.Join(stageDir, "runs")
 		stagedReportsDir := filepath.Join(stageDir, "reports")
@@ -354,7 +361,7 @@ func importLegacyWorkspace(
 			filepath.Join(operatorProjectDir, "imported", "reports"),
 			initialWorkspaceRoot,
 			protectedDirs,
-			configuredReportDirs...,
+			snapshotReportDirs...,
 		)
 		if unlockRuns != nil {
 			defer func() {
