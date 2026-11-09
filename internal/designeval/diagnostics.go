@@ -33,6 +33,13 @@ type (
 		// err retains every original cause, including cleanup failures.
 		err error
 	}
+	// snapshotValidationError contains only errors derived from caller-supplied
+	// strings by validateSnapshot, before operator files or commands are used.
+	// Its original detail is safe for the caller, including missing-file remedies.
+	snapshotValidationError struct {
+		// err is the unchanged validation failure and its original Go causes.
+		err error
+	}
 	// sandboxOutputError retains output from an offline sandbox once. Module
 	// commands outside that sandbox never construct it because their output
 	// can include operator proxy credentials and private configuration.
@@ -60,6 +67,10 @@ func GenerationDiagnostic(err error) string {
 		phase = operation.phase
 	}
 	message := "Code generation failed while " + phase + "."
+	var validation *snapshotValidationError
+	if errors.As(err, &validation) {
+		message += "\n" + validation.Error()
+	}
 	var sandbox *sandboxOutputError
 	if errors.As(err, &sandbox) && sandbox.output != "" {
 		message += "\nSandbox output:\n" + sandbox.paths.forCaller(sandbox.output)
@@ -76,6 +87,12 @@ func (e *phaseError) Error() string { return e.err.Error() }
 
 // Unwrap preserves the original error causes for Go callers.
 func (e *phaseError) Unwrap() error { return e.err }
+
+// Error preserves the original validation error text for CLI and trace callers.
+func (e *snapshotValidationError) Error() string { return e.err.Error() }
+
+// Unwrap preserves the validator's original error causes for Go callers.
+func (e *snapshotValidationError) Unwrap() error { return e.err }
 
 // Error reproduces the existing parenthesized sandbox-output error text.
 func (e *sandboxOutputError) Error() string { return fmt.Sprintf("%s (%s)", e.err, e.output) }

@@ -23,6 +23,7 @@ import (
 
 	"github.com/goadesign/surla"
 	gensurla "github.com/goadesign/surla/gen/surla"
+	"github.com/goadesign/surla/internal/abspath"
 	"github.com/goadesign/surla/internal/procgroup"
 	"github.com/goadesign/surla/verify/candidate"
 	"golang.org/x/mod/modfile"
@@ -90,6 +91,8 @@ type (
 		// goroot is the resolved Go toolchain root.
 		goroot string
 		// modCache is the read-only Go module cache directory.
+		// Dependency preparation may create it; before a build it is resolved
+		// to the same physical directory the sandbox uses.
 		modCache string
 	}
 
@@ -354,7 +357,7 @@ func runSandboxed(ctx context.Context, files map[string]string, workDir, program
 	}()
 	target, err := validateSnapshot(files)
 	if err != nil {
-		return listedModule{}, err
+		return listedModule{}, &snapshotValidationError{err: err}
 	}
 	phase = "preparing the design compiler"
 	evalMod, err := evaluatorGoMod()
@@ -397,15 +400,22 @@ func runSandboxed(ctx context.Context, files map[string]string, workDir, program
 	if err := os.WriteFile(filepath.Join(buildDir, "main.go"), []byte(main), 0o600); err != nil {
 		return listedModule{}, fmt.Errorf("write evaluator main.go: %w", err)
 	}
-	paths := diagnosticPaths{
-		source: filepath.Join(buildDir, "target"), temporary: tmpDir, work: workDir,
-		goroot: tc.goroot, modCache: tc.modCache,
-	}
 	gocmd := goCommand{bin: filepath.Join(tc.goroot, "bin", "go")}
 	phase = "loading the design module dependencies"
 	goa, err = prepareHarnessModule(ctx, gocmd, buildDir, target, evalMod, logDir)
 	if err != nil {
 		return listedModule{}, err
+	}
+	// The dependency loader owns creation of a missing module cache. Resolve
+	// the directory it used before passing that fact to the build and its
+	// diagnostic output, whose sandbox uses physical paths.
+	tc.modCache, err = abspath.Eval(tc.modCache)
+	if err != nil {
+		return goa, fmt.Errorf("resolve compiler module cache: %w", err)
+	}
+	paths := diagnosticPaths{
+		source: filepath.Join(buildDir, "target"), temporary: tmpDir, work: workDir,
+		goroot: tc.goroot, modCache: tc.modCache,
 	}
 
 	rawBin := filepath.Join(outDir, "designeval-bin")
@@ -474,8 +484,9 @@ func withExit71Guidance(ctx context.Context, err error) error {
 	return err
 }
 
-// resolveToolchainEnv resolves the Go toolchain root and module cache for one
-// evaluation with the go command on PATH. ctx bounds it.
+// resolveToolchainEnv reads the selected Go settings and resolves the toolchain
+// root before using its go binary. The selected module cache may not exist yet;
+// runSandboxed resolves it after dependency preparation. ctx bounds the command.
 func resolveToolchainEnv(ctx context.Context) (toolchainEnv, error) {
 	out, err := exec.CommandContext(ctx, "go", "env", "GOROOT", "GOMODCACHE").Output()
 	if err != nil {
@@ -485,7 +496,11 @@ func resolveToolchainEnv(ctx context.Context) (toolchainEnv, error) {
 	if len(lines) < 2 || strings.TrimSpace(lines[0]) == "" || strings.TrimSpace(lines[1]) == "" {
 		return toolchainEnv{}, fmt.Errorf("unexpected go env output %q", string(out))
 	}
-	return toolchainEnv{goroot: strings.TrimSpace(lines[0]), modCache: strings.TrimSpace(lines[1])}, nil
+	goroot, err := abspath.Eval(strings.TrimSpace(lines[0]))
+	if err != nil {
+		return toolchainEnv{}, fmt.Errorf("resolve compiler toolchain directory: %w", err)
+	}
+	return toolchainEnv{goroot: goroot, modCache: strings.TrimSpace(lines[1])}, nil
 }
 
 // evaluatorGoMod returns the go.mod Surla was built from (surla.GoMod), which
@@ -566,7 +581,13 @@ func (e *Evaluator) admit() (string, error) {
 		if err != nil {
 			return "", fmt.Errorf("create design evaluator workspace: %w", err)
 		}
-		e.workDir = dir
+		physical, err := abspath.Eval(dir)
+		if err != nil {
+			// No operation has used this empty allocation yet. Remove only
+			// that directory if resolving its physical path fails.
+			return "", errors.Join(fmt.Errorf("resolve design evaluator workspace: %w", err), os.Remove(dir))
+		}
+		e.workDir = physical
 	}
 	e.active.Add(1)
 	return e.workDir, nil

@@ -4,11 +4,15 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	"github.com/goadesign/surla/internal/testmodule"
 )
 
 // TestGenerationDiagnosticReportsFactsWithoutBlamingSource verifies phase and
@@ -73,4 +77,89 @@ func TestGenerationDiagnosticMapsExactEscapedPaths(t *testing.T) {
 			assert.Equal(t, "exit status 1 ("+raw+")", failure.Error(), "raw CLI/trace text is unchanged")
 		})
 	}
+}
+
+// TestGenerationDiagnosticPreservesSnapshotValidationDetail exercises the
+// validator's exact safe provenance before commands or temporary files run.
+func TestGenerationDiagnosticPreservesSnapshotValidationDetail(t *testing.T) {
+	for _, test := range []struct {
+		name, mod, want     string
+		omitSum, omitDesign bool
+	}{
+		{name: "missing checksum file", omitSum: true, want: "run `go mod tidy`"},
+		{name: "malformed module", mod: "module (\n", want: "parse snapshot go.mod"},
+		{name: "missing design", omitDesign: true, want: "design snapshot has no design/*.go file"},
+		{name: "local replacement", mod: "module example.com/design\ngo 1.24\nreplace example.com/local => ./local\n", want: "only versioned replacements are supported"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			files := validSnapshotStub()
+			if test.mod != "" {
+				files["go.mod"] = test.mod
+			}
+			if test.omitSum {
+				delete(files, "go.sum")
+			}
+			if test.omitDesign {
+				delete(files, "design/design.go")
+			}
+			ev := NewEvaluatorInDir(t.TempDir())
+			t.Cleanup(func() { assert.NoError(t, ev.Close()) })
+			_, err := ev.Generate(t.Context(), files)
+			require.Error(t, err)
+			var validation *snapshotValidationError
+			require.ErrorAs(t, err, &validation)
+			assert.Equal(t, validation.err.Error(), err.Error(), "raw CLI/trace text is unchanged")
+			assert.Contains(t, GenerationDiagnostic(err), test.want)
+		})
+	}
+}
+
+// TestGenerationUsesPhysicalOperatorPaths observes the exact facts supplied to
+// a real sandboxed Go build, despite relative and symlinked owner settings.
+func TestGenerationUsesPhysicalOperatorPaths(t *testing.T) {
+	files := testmodule.Snapshot(t, "", minimalDesign)
+	toolchain, err := resolveToolchainEnv(t.Context())
+	require.NoError(t, err)
+	modCache, err := filepath.EvalSymlinks(toolchain.modCache)
+	require.NoError(t, err)
+	root := t.TempDir()
+	t.Chdir(root)
+	require.NoError(t, os.Mkdir("physical\"compiler\\storage", 0o700))
+	require.NoError(t, os.Symlink("physical\"compiler\\storage", "compiler-link"))
+	require.NoError(t, os.Symlink(toolchain.goroot, "toolchain-link"))
+	require.NoError(t, os.Symlink(modCache, "modules-link"))
+	t.Setenv("GOROOT", filepath.Join(root, "toolchain-link"))
+	t.Setenv("GOMODCACHE", filepath.Join(root, "modules-link"))
+	ev := NewEvaluatorInDir(filepath.Join("compiler-link", "work"))
+	t.Cleanup(func() { assert.NoError(t, ev.Close()) })
+	work, err := ev.admit()
+	require.NoError(t, err)
+	ev.finish(nil)
+	require.NoError(t, os.WriteFile(filepath.Join(work, "gocache"), []byte("a file prevents cache setup\n"), 0o600))
+	_, err = ev.Generate(t.Context(), files)
+	require.ErrorContains(t, err, "failed to initialize build cache")
+	var output *sandboxOutputError
+	require.ErrorAs(t, err, &output)
+	assert.Equal(t, toolchain.goroot, output.paths.goroot)
+	assert.Equal(t, modCache, output.paths.modCache)
+	assert.Equal(t, work, output.paths.work)
+	assert.Equal(t, filepath.Dir(work), filepath.Dir(output.paths.temporary))
+	assert.Equal(t, filepath.Join(output.paths.temporary, "build", "target"), output.paths.source)
+	diagnostic := GenerationDiagnostic(err)
+	assert.NotContains(t, diagnostic, work)
+	assert.NotContains(t, diagnostic, filepath.Base(filepath.Dir(filepath.Dir(work))))
+	quoted := strconv.Quote(work)
+	assert.NotContains(t, diagnostic, quoted[1:len(quoted)-1])
+	assert.Contains(t, diagnostic, "<compiler>/gocache")
+}
+
+// TestToolchainSettingsLeaveMissingModuleCacheForGo preserves first-run Go
+// behavior: reading settings does not create a module cache before loading deps.
+func TestToolchainSettingsLeaveMissingModuleCacheForGo(t *testing.T) {
+	cache := filepath.Join(t.TempDir(), "not-created-yet")
+	t.Setenv("GOMODCACHE", cache)
+	settings, err := resolveToolchainEnv(t.Context())
+	require.NoError(t, err)
+	assert.Equal(t, cache, settings.modCache)
+	assert.NoDirExists(t, cache)
 }
