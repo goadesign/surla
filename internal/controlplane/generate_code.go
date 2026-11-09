@@ -125,6 +125,13 @@ func (c *ControlPlane) GenerateCode(
 	res = &gensurla.GenerateCodeResult{
 		Target: target, FilesWritten: published.WrittenFiles, Warnings: published.Warnings,
 	}
+	// The service requires both lists even when publication returned no entries.
+	if len(res.FilesWritten) == 0 {
+		res.FilesWritten = []string{}
+	}
+	if len(res.Warnings) == 0 {
+		res.Warnings = []string{}
+	}
 	span.AddEvent("generated_files_published", trace.WithAttributes(attribute.Int("files_written", len(res.FilesWritten))))
 	if err := reportProgress(genCtx, 3, 3, "Generated files updated; application build and tests still need to run"); err != nil {
 		span.RecordError(err)

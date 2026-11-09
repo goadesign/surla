@@ -119,8 +119,18 @@ func TestGenerateCodeHTTPMCPAndIteration(t *testing.T) {
 	updated := strings.Replace(generationDesign, `Service("orders", func() {`, `Service("orders", func() { Description("edited on the running server")`, 1)
 	writeGenerationFiles(t, workspace, map[string]string{"design/design.go": updated})
 	candidate := "candidate"
-	second, err := httpClient.GenerateCode(ctx, &gensurla.GenerateCodePayload{Target: &candidate})
+	second, err := cp.GenerateCode(
+		WithPrincipal(ctx, Principal{ID: "developer@example.com"}),
+		&gensurla.GenerateCodePayload{Target: &candidate},
+	)
 	require.NoError(t, err)
+	require.NoError(t, gensurla.ValidateGenerateCodeResultValue(second))
+	assert.Empty(t, second.Warnings)
+	encoded, err := gensurla.EncodeGenerateCodeResult(second)
+	require.NoError(t, err)
+	decoded, err := gensurla.DecodeGenerateCodeResult(encoded)
+	require.NoError(t, err)
+	assert.Equal(t, second, decoded, "direct results satisfy the same required collection contract as HTTP/MCP")
 	assert.Equal(t, first.FilesWritten, second.FilesWritten)
 	assert.Contains(t, generationFiles(t, workspace, "gen")["gen/orders/service.go"], "edited on the running server")
 	assert.Equal(t, evalBefore, generationFiles(t, workspace, "eval"))
