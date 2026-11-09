@@ -89,12 +89,13 @@ func TestGenOnAFreshStarterChangesNothingAndKeepsModulesApart(t *testing.T) {
 	opts, err := serveOptions(cfg, func(string) string { return "" }, os.Environ())
 	require.NoError(t, err)
 	opts.Analyzer = trustedSuiteAnalyzer{}
-	opts.Live.StartTimeout = 3 * time.Minute
 	// A test executable has no released module version in its build info.
 	opts.SurlaVersion = starterSurlaVersion
 	cp, err := controlplane.New(opts)
 	require.NoError(t, err)
-	t.Cleanup(func() { closeTrustedSuiteControlPlane(t, cp) })
+	// Registered after the temporary directories, so it runs before they
+	// are removed.
+	t.Cleanup(func() { closeRetaining(cp, workspace, opts.CardsDir, opts.RunsDir) })
 	auth := controlplane.NewTokenAuthenticator(map[string]controlplane.Principal{
 		"test-token": {ID: "operator@example.com"},
 	})

@@ -11,7 +11,6 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"net/http/httptest"
 	"os"
 	"os/exec"
@@ -134,7 +133,7 @@ func TestCheckProjectRepairsDependenciesOnOneServer(t *testing.T) {
 	require.NoError(t, err)
 	// Registered after the temporary directories, so it runs before they
 	// are removed.
-	t.Cleanup(func() { closeRetainingMounts(cp, workspace, opts.CardsDir) })
+	t.Cleanup(func() { closeRetaining(cp, workspace, opts.CardsDir) })
 	srv := httptest.NewServer(controlplane.NewHTTPHandler(cp, controlplane.NewTokenAuthenticator(map[string]controlplane.Principal{
 		"test-token": {ID: "operator@example.com"},
 	})))
@@ -218,27 +217,6 @@ func TestCheckProjectRepairsDependenciesOnOneServer(t *testing.T) {
 		assert.True(t, passed.Passed, passed.Message)
 		assertUncommitted(t, dir, "go.work", "go.work.sum", "testdata/deps/", "workdepcheck/")
 	})
-}
-
-// closeRetainingMounts closes the server, which removes its containers. If
-// Close fails or does not return within 45 seconds, a container may still
-// mount the workspace or the card store's check directories, so the test
-// binary exits before t.TempDir cleanup deletes them, after printing the
-// paths to inspect and the error.
-func closeRetainingMounts(cp *controlplane.ControlPlane, workspace, cardsDir string) {
-	done := make(chan error, 1)
-	go func() { done <- cp.Close() }()
-	var err error
-	select {
-	case err = <-done:
-	case <-time.After(45 * time.Second):
-		err = fmt.Errorf("Close did not return within 45s")
-	}
-	if err == nil {
-		return
-	}
-	fmt.Fprintf(os.Stderr, "check journey: kept %s and %s because a container may still mount them: %v\n", workspace, cardsDir, err)
-	os.Exit(2)
 }
 
 // journeyCall runs one MCP tool call that must complete without a tool error

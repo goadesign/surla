@@ -13,7 +13,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"syscall"
 	"testing"
 	"time"
 
@@ -32,26 +31,21 @@ type (
 	trustedSuiteAnalyzer struct{}
 )
 
+// journeyOwnerWait bounds each client wait on a server-owned operation in
+// these journeys: the owner's own limit, defaultProjectVerifyTimeout, which
+// serveOptions gives a live start and the starter resolver saves as a
+// verification run's timeout, plus the owner's stop path (stop grace 45s,
+// group stop 30s, executor wait 5s). The owner therefore reports its own
+// timeout or terminal state first when it can; the wait does not guarantee
+// the owner finished if its I/O fails.
+const journeyOwnerWait = defaultProjectVerifyTimeout + 2*time.Minute
+
 // TestMain lets selfCommand launch the test executable's real verify-run
-// implementation. Other invocations retain the ordinary Go testing entrypoint.
+// implementation. A detached verification supervisor stops its run at the
+// run's saved timeout, as in production. Other invocations retain the
+// ordinary Go testing entrypoint.
 func TestMain(m *testing.M) {
 	if len(os.Args) > 1 && os.Args[1] == "verify-run" {
-		if len(os.Args) == 4 && os.Args[2] == "supervise" {
-			// Bound detached test runs while preserving the supervisor's actual
-			// SIGTERM handling, which stops and reaps its executor process group.
-			watchdog := time.AfterFunc(4*time.Minute, func() {
-				if err := syscall.Kill(os.Getpid(), syscall.SIGTERM); err != nil {
-					fmt.Fprintln(os.Stderr, err)
-				}
-			})
-			err := runVerifyRun(os.Args[2:])
-			watchdog.Stop()
-			if err != nil {
-				fmt.Fprintln(os.Stderr, err)
-				os.Exit(1)
-			}
-			os.Exit(0)
-		}
 		if err := runVerifyRun(os.Args[2:]); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
@@ -117,7 +111,7 @@ func assertTrustedSuiteJourney(t *testing.T, client *genmcpsurla.Client,
 	cardsDir, runsDir, candidateCommit, suiteCommit, changeID string,
 ) {
 	t.Helper()
-	liveCtx, cancelLive := context.WithTimeout(t.Context(), 4*time.Minute)
+	liveCtx, cancelLive := context.WithTimeout(t.Context(), journeyOwnerWait)
 	defer cancelLive()
 	args, err := gensurla.EncodeStartLiveTargetPayload(&gensurla.StartLiveTargetPayload{CandidateCommit: candidateCommit})
 	require.NoError(t, err)
@@ -143,7 +137,7 @@ func assertTrustedSuiteJourney(t *testing.T, client *genmcpsurla.Client,
 	require.NoError(t, err)
 	assert.Empty(t, liveDirs, "stopping the live target removes its processes and directory")
 
-	phase, cancel := context.WithTimeout(t.Context(), 5*time.Minute)
+	phase, cancel := context.WithTimeout(t.Context(), journeyOwnerWait)
 	defer cancel()
 	args, err = gensurla.EncodeProposeChangePayload(&gensurla.ProposeChangePayload{
 		ChangeID: changeID, Prompt: "Keep answering price questions.",
@@ -161,8 +155,8 @@ func assertTrustedSuiteJourney(t *testing.T, client *genmcpsurla.Client,
 	require.NotEmpty(t, run.RunID)
 	runID := run.RunID
 	// A failed assertion must not remove t.TempDir while a detached run is
-	// still writing. The child watchdog drives real supervisor cleanup.
-	defer drainTrustedSuiteRun(t, runsDir, runID)
+	// still writing; the run's own saved timeout stops it.
+	defer drainTrustedSuiteRun(runsDir, runID, cardsDir, runsDir)
 	args, err = gensurla.EncodeGetVerificationPayload(&gensurla.GetVerificationPayload{RunID: runID})
 	require.NoError(t, err)
 	ticker := time.NewTicker(200 * time.Millisecond)
@@ -224,45 +218,56 @@ func (trustedSuiteAnalyzer) Revise(context.Context, controlplane.CP1PriorCard, s
 	return controlplane.CP1RevisionSemanticAnalysis{}, errors.New("revision is outside this test's journey")
 }
 
-// closeTrustedSuiteControlPlane waits for the real live-process owner to stop
-// within its documented cleanup interval before test directories are removed.
-func closeTrustedSuiteControlPlane(t *testing.T, cp *controlplane.ControlPlane) {
-	t.Helper()
+// closeRetaining closes the server, which stops its live target and removes
+// its check containers. If Close fails or does not return within 45 seconds,
+// a process may still use dirs, so it keeps them by exiting the test binary
+// before t.TempDir cleanup.
+func closeRetaining(cp *controlplane.ControlPlane, dirs ...string) {
 	done := make(chan error, 1)
 	go func() { done <- cp.Close() }()
 	select {
 	case err := <-done:
-		assert.NoError(t, err)
+		if err != nil {
+			retainAndExit(fmt.Errorf("close the server: %w", err), dirs...)
+		}
 	case <-time.After(45 * time.Second):
-		t.Error("control plane did not finish live process cleanup within 45s")
+		retainAndExit(errors.New("the server did not close within 45s"), dirs...)
 	}
 }
 
-// drainTrustedSuiteRun waits for the owner's terminal state even after an
-// assertion fails. It stops immediately on an invalid or unreadable state.
-func drainTrustedSuiteRun(t *testing.T, runsDir, runID string) {
-	t.Helper()
-	deadline := time.NewTimer(5 * time.Minute)
+// retainAndExit prints the kept directories and the reason, then exits the
+// test binary so t.TempDir cleanup cannot delete what a still-running process
+// may use.
+func retainAndExit(reason error, dirs ...string) {
+	fmt.Fprintf(os.Stderr, "e2e: kept %s: %v\n", strings.Join(dirs, ", "), reason)
+	os.Exit(2)
+}
+
+// drainTrustedSuiteRun waits for the run's owner to record a terminal state,
+// even after an assertion failed, so t.TempDir cleanup never removes
+// directories a detached run still writes. If the state cannot be read, is
+// unexpected, or the owner does not finish within journeyOwnerWait, it keeps
+// dirs by exiting the test binary before that cleanup.
+func drainTrustedSuiteRun(runsDir, runID string, dirs ...string) {
+	deadline := time.NewTimer(journeyOwnerWait)
 	defer deadline.Stop()
 	ticker := time.NewTicker(200 * time.Millisecond)
 	defer ticker.Stop()
 	for {
 		_, state, err := verifyrun.Read(runsDir, runID)
-		if !assert.NoError(t, err, "read accepted verification during cleanup") {
-			return
+		if err != nil {
+			retainAndExit(fmt.Errorf("read verification run %s: %w", runID, err), dirs...)
 		}
 		switch state.Kind {
 		case verifyrun.StateCompleted, verifyrun.StateNotCompleted:
 			return
 		case verifyrun.StateRunning:
 		default:
-			t.Errorf("unexpected verification cleanup state: %s", state.Kind)
-			return
+			retainAndExit(fmt.Errorf("verification run %s is in unexpected state %s", runID, state.Kind), dirs...)
 		}
 		select {
 		case <-deadline.C:
-			t.Error("accepted verification did not finish process cleanup within 5m")
-			return
+			retainAndExit(fmt.Errorf("verification run %s did not finish within %s", runID, journeyOwnerWait), dirs...)
 		case <-ticker.C:
 		}
 	}
