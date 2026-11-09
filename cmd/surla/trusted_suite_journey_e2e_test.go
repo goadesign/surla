@@ -136,8 +136,20 @@ func trustedSuiteCall(t *testing.T, ctx context.Context, client *genmcpsurla.Cli
 	require.NoError(t, err)
 	complete, ok := result.Outcome.AsComplete()
 	require.True(t, ok, "%s must complete in this call", name)
-	require.False(t, complete.IsError != nil && *complete.IsError, "%s: %+v", name, complete.Content)
+	require.False(t, complete.IsError != nil && *complete.IsError, "%s: %s", name, toolErrorText(complete.Content))
 	return complete.StructuredContent
+}
+
+// toolErrorText joins the text items of an MCP tool result, the
+// builder-safe message a failing tool returns, so a test failure shows it.
+func toolErrorText(content []*genmcpsurla.ContentItem) string {
+	var texts []string
+	for _, item := range content {
+		if item != nil && item.Text != nil {
+			texts = append(texts, *item.Text)
+		}
+	}
+	return strings.Join(texts, "\n")
 }
 
 // assertTrustedSuiteJourney starts and stops a real live candidate, then

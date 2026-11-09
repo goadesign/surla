@@ -251,7 +251,7 @@ func journeyCall(t *testing.T, client *genmcpsurla.Client, name string, args []b
 	require.NoError(t, err)
 	complete, ok := result.Outcome.AsComplete()
 	require.True(t, ok, "%s completes in the same MCP call", name)
-	require.False(t, complete.IsError != nil && *complete.IsError, "%s: %+v", name, complete.Content)
+	require.False(t, complete.IsError != nil && *complete.IsError, "%s: %s", name, toolErrorText(complete.Content))
 	return complete.StructuredContent
 }
 
