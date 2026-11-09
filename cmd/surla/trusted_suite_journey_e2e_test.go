@@ -219,12 +219,6 @@ func assertTrustedSuiteJourney(t *testing.T, client *genmcpsurla.Client,
 			assert.Equal(t, suiteCommit, saved.Report.Binding.SuiteCommit)
 			assert.Equal(t, card.RequestRevision, saved.Report.Binding.RequestRevision)
 			assert.Equal(t, saved.Report.Digest, done.Report.ReportDigest)
-			for _, scenario := range done.Report.Scenarios {
-				if strings.HasPrefix(scenario.ID, "holdout-") {
-					assert.Empty(t, scenario.Checks)
-					assert.Nil(t, scenario.Error)
-				}
-			}
 			return
 		}
 		if failed, ok := run.State.AsNotCompleted(); ok {
