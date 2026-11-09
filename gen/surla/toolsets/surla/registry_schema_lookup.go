@@ -19,30 +19,32 @@ func ToolSchema(name tools.Ident) (*genregistry.ToolSchema, bool) {
 	switch name {
 	case "surla.approve_merge":
 		return declarations.schema1(), true
-	case "surla.confirm_intent":
+	case "surla.configure_model":
 		return declarations.schema64(), true
+	case "surla.confirm_intent":
+		return declarations.schema80(), true
 	case "surla.diff":
-		return declarations.schema141(), true
+		return declarations.schema157(), true
 	case "surla.draft_override":
-		return declarations.schema170(), true
+		return declarations.schema186(), true
 	case "surla.get_change":
-		return declarations.schema187(), true
+		return declarations.schema203(), true
 	case "surla.get_verification":
-		return declarations.schema244(), true
+		return declarations.schema260(), true
 	case "surla.list_verifications":
-		return declarations.schema290(), true
+		return declarations.schema306(), true
 	case "surla.preview_architecture":
-		return declarations.schema339(), true
+		return declarations.schema355(), true
 	case "surla.propose_change":
-		return declarations.schema444(), true
+		return declarations.schema460(), true
 	case "surla.revise_change":
-		return declarations.schema505(), true
+		return declarations.schema521(), true
 	case "surla.start_live_target":
-		return declarations.schema568(), true
+		return declarations.schema584(), true
 	case "surla.stop_live_target":
-		return declarations.schema580(), true
+		return declarations.schema596(), true
 	case "surla.verify_change":
-		return declarations.schema589(), true
+		return declarations.schema605(), true
 	default:
 		return nil, false
 	}

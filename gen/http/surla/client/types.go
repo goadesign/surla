@@ -10,6 +10,7 @@ package client
 import (
 	"bytes"
 	"encoding/json"
+	"unicode/utf8"
 
 	surla "github.com/goadesign/surla/gen/surla"
 	goa "goa.design/goa/v3/pkg"
@@ -131,6 +132,21 @@ type DiffRequestBody struct {
 	Old *DesignSnapshotRequestBody `form:"old" json:"old" xml:"old"`
 	// Candidate design module.
 	New *DesignSnapshotRequestBody `form:"new" json:"new" xml:"new"`
+}
+
+// ConfigureModelRequestBody is the type of the "surla" service
+// "configure_model" endpoint HTTP request body.
+type ConfigureModelRequestBody struct {
+	// Direct model provider name when configuring a direct provider; must be
+	// paired with model_name and omitted when gateway_addr is set.
+	Provider *string `form:"provider,omitempty" json:"provider,omitempty" xml:"provider,omitempty"`
+	// Provider model identifier when configuring a direct provider (for example
+	// claude-sonnet-4-6 or gpt-5.4-mini); must be paired with provider and omitted
+	// when gateway_addr is set.
+	ModelName *string `form:"model_name,omitempty" json:"model_name,omitempty" xml:"model_name,omitempty"`
+	// Plaintext gRPC host:port of a running goa-ai model gateway; mutually
+	// exclusive with provider and model_name.
+	GatewayAddr *string `form:"gateway_addr,omitempty" json:"gateway_addr,omitempty" xml:"gateway_addr,omitempty"`
 }
 
 // ProposeChangeResponseBody is the type of the "surla" service
@@ -487,6 +503,17 @@ type DiffResponseBody struct {
 	VersionDeltas []string `form:"version_deltas,omitempty" json:"version_deltas,omitempty" xml:"version_deltas,omitempty"`
 	// Human-readable structural diff summary.
 	Summary *string `form:"summary,omitempty" json:"summary,omitempty" xml:"summary,omitempty"`
+}
+
+// ConfigureModelResponseBody is the type of the "surla" service
+// "configure_model" endpoint HTTP response body.
+type ConfigureModelResponseBody struct {
+	// Active direct model provider when a direct provider is configured.
+	Provider *string `form:"provider,omitempty" json:"provider,omitempty" xml:"provider,omitempty"`
+	// Active model identifier when a direct provider is configured.
+	ModelName *string `form:"model_name,omitempty" json:"model_name,omitempty" xml:"model_name,omitempty"`
+	// Active gRPC model gateway host:port when a model gateway is configured.
+	GatewayAddr *string `form:"gateway_addr,omitempty" json:"gateway_addr,omitempty" xml:"gateway_addr,omitempty"`
 }
 
 // ProposeChangeConflictResponseBody is the type of the "surla" service
@@ -1275,6 +1302,43 @@ type ApproveMergeNotImplementedResponseBody struct {
 	Fault *bool `form:"fault,omitempty" json:"fault,omitempty" xml:"fault,omitempty"`
 }
 
+// ConfigureModelUnprocessableResponseBody is the type of the "surla" service
+// "configure_model" endpoint HTTP response body for the "unprocessable" error.
+type ConfigureModelUnprocessableResponseBody struct {
+	// Name is the name of this class of errors.
+	Name *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID *string `form:"id,omitempty" json:"id,omitempty" xml:"id,omitempty"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message *string `form:"message,omitempty" json:"message,omitempty" xml:"message,omitempty"`
+	// Is the error temporary?
+	Temporary *bool `form:"temporary,omitempty" json:"temporary,omitempty" xml:"temporary,omitempty"`
+	// Is the error a timeout?
+	Timeout *bool `form:"timeout,omitempty" json:"timeout,omitempty" xml:"timeout,omitempty"`
+	// Is the error a server-side fault?
+	Fault *bool `form:"fault,omitempty" json:"fault,omitempty" xml:"fault,omitempty"`
+}
+
+// ConfigureModelNotImplementedResponseBody is the type of the "surla" service
+// "configure_model" endpoint HTTP response body for the "not_implemented"
+// error.
+type ConfigureModelNotImplementedResponseBody struct {
+	// Name is the name of this class of errors.
+	Name *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID *string `form:"id,omitempty" json:"id,omitempty" xml:"id,omitempty"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message *string `form:"message,omitempty" json:"message,omitempty" xml:"message,omitempty"`
+	// Is the error temporary?
+	Temporary *bool `form:"temporary,omitempty" json:"temporary,omitempty" xml:"temporary,omitempty"`
+	// Is the error a timeout?
+	Timeout *bool `form:"timeout,omitempty" json:"timeout,omitempty" xml:"timeout,omitempty"`
+	// Is the error a server-side fault?
+	Fault *bool `form:"fault,omitempty" json:"fault,omitempty" xml:"fault,omitempty"`
+}
+
 // AmbiguityQuestionResponseBody is used to define fields on response body
 // types.
 type AmbiguityQuestionResponseBody struct {
@@ -1964,6 +2028,17 @@ func NewDiffRequestBody(p *surla.DiffPayload) *DiffRequestBody {
 	}
 	if p.New != nil {
 		body.New = marshalSurlaDesignSnapshotToDesignSnapshotRequestBody(p.New)
+	}
+	return body
+}
+
+// NewConfigureModelRequestBody builds the HTTP request body from the payload
+// of the "configure_model" endpoint of the "surla" service.
+func NewConfigureModelRequestBody(p *surla.ConfigureModelPayload) *ConfigureModelRequestBody {
+	body := &ConfigureModelRequestBody{
+		Provider:    p.Provider,
+		ModelName:   p.ModelName,
+		GatewayAddr: p.GatewayAddr,
 	}
 	return body
 }
@@ -3099,6 +3174,48 @@ func NewDiffResultOK(body *DiffResponseBody) *surla.DiffResult {
 	return v
 }
 
+// NewConfigureModelModelConfigResultOK builds a "surla" service
+// "configure_model" endpoint result from a HTTP "OK" response.
+func NewConfigureModelModelConfigResultOK(body *ConfigureModelResponseBody) *surla.ModelConfigResult {
+	v := &surla.ModelConfigResult{
+		Provider:    body.Provider,
+		ModelName:   body.ModelName,
+		GatewayAddr: body.GatewayAddr,
+	}
+
+	return v
+}
+
+// NewConfigureModelUnprocessable builds a surla service configure_model
+// endpoint unprocessable error.
+func NewConfigureModelUnprocessable(body *ConfigureModelUnprocessableResponseBody) *goa.ServiceError {
+	v := &goa.ServiceError{
+		Name:      *body.Name,
+		ID:        *body.ID,
+		Message:   *body.Message,
+		Temporary: *body.Temporary,
+		Timeout:   *body.Timeout,
+		Fault:     *body.Fault,
+	}
+
+	return v
+}
+
+// NewConfigureModelNotImplemented builds a surla service configure_model
+// endpoint not_implemented error.
+func NewConfigureModelNotImplemented(body *ConfigureModelNotImplementedResponseBody) *goa.ServiceError {
+	v := &goa.ServiceError{
+		Name:      *body.Name,
+		ID:        *body.ID,
+		Message:   *body.Message,
+		Temporary: *body.Temporary,
+		Timeout:   *body.Timeout,
+		Fault:     *body.Fault,
+	}
+
+	return v
+}
+
 // ValidateProposeChangeResponseBody runs the validations defined on
 // ProposeChangeResponseBody
 func ValidateProposeChangeResponseBody(body *ProposeChangeResponseBody) (err error) {
@@ -3675,6 +3792,27 @@ func ValidateDiffResponseBody(body *DiffResponseBody) (err error) {
 	}
 	if body.Summary == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("summary", "body"))
+	}
+	return
+}
+
+// ValidateConfigureModelResponseBody runs the validations defined on
+// ConfigureModelResponseBody
+func ValidateConfigureModelResponseBody(body *ConfigureModelResponseBody) (err error) {
+	if body.Provider != nil {
+		if !(*body.Provider == "anthropic" || *body.Provider == "openai") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.provider", *body.Provider, []any{"anthropic", "openai"}))
+		}
+	}
+	if body.ModelName != nil {
+		if utf8.RuneCountInString(*body.ModelName) < 1 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.model_name", *body.ModelName, utf8.RuneCountInString(*body.ModelName), 1, true))
+		}
+	}
+	if body.GatewayAddr != nil {
+		if utf8.RuneCountInString(*body.GatewayAddr) < 1 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.gateway_addr", *body.GatewayAddr, utf8.RuneCountInString(*body.GatewayAddr), 1, true))
+		}
 	}
 	return
 }
@@ -4690,6 +4828,54 @@ func ValidateApproveMergeUnprocessableResponseBody(body *ApproveMergeUnprocessab
 // ValidateApproveMergeNotImplementedResponseBody runs the validations defined
 // on ApproveMergeNotImplementedResponseBody
 func ValidateApproveMergeNotImplementedResponseBody(body *ApproveMergeNotImplementedResponseBody) (err error) {
+	if body.Name == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
+	}
+	if body.ID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("id", "body"))
+	}
+	if body.Message == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("message", "body"))
+	}
+	if body.Temporary == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("temporary", "body"))
+	}
+	if body.Timeout == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("timeout", "body"))
+	}
+	if body.Fault == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("fault", "body"))
+	}
+	return
+}
+
+// ValidateConfigureModelUnprocessableResponseBody runs the validations defined
+// on ConfigureModelUnprocessableResponseBody
+func ValidateConfigureModelUnprocessableResponseBody(body *ConfigureModelUnprocessableResponseBody) (err error) {
+	if body.Name == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
+	}
+	if body.ID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("id", "body"))
+	}
+	if body.Message == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("message", "body"))
+	}
+	if body.Temporary == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("temporary", "body"))
+	}
+	if body.Timeout == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("timeout", "body"))
+	}
+	if body.Fault == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("fault", "body"))
+	}
+	return
+}
+
+// ValidateConfigureModelNotImplementedResponseBody runs the validations
+// defined on ConfigureModelNotImplementedResponseBody
+func ValidateConfigureModelNotImplementedResponseBody(body *ConfigureModelNotImplementedResponseBody) (err error) {
 	if body.Name == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
 	}

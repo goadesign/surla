@@ -130,9 +130,11 @@ var helpWords = []string{"help", "-h", "-help", "--help"}
 // model choice serve passes to live targets' evaluator suites (see
 // liveTargetEnv and docs/REFERENCE.md).
 const (
-	liveModelProviderEnv = "SURLA_LIVE_MODEL_PROVIDER"
-	liveModelNameEnv     = "SURLA_LIVE_MODEL_NAME"
-	liveModelGatewayEnv  = "SURLA_LIVE_MODEL_GATEWAY"
+	liveModelProviderEnv  = "SURLA_LIVE_MODEL_PROVIDER"
+	liveModelNameEnv      = "SURLA_LIVE_MODEL_NAME"
+	liveModelGatewayEnv   = "SURLA_LIVE_MODEL_GATEWAY"
+	defaultAnthropicModel = "claude-sonnet-4-6"
+	defaultOpenAIModel    = "gpt-5.4-mini"
 )
 
 // apiKeyEnv maps each supported direct model provider to the environment
@@ -244,11 +246,10 @@ func runServe(args []string) (err error) {
 	if !utf8.ValidString(*principalID) {
 		return errors.New("-principal must be valid UTF-8")
 	}
-	opts, closeModel, err := serveOptions(cfg, os.Getenv, os.Environ())
+	opts, err := serveOptions(cfg, os.Getenv, os.Environ())
 	if err != nil {
 		return err
 	}
-	defer func() { err = errors.Join(err, closeModel()) }()
 	auth := controlplane.NewTokenAuthenticator(map[string]controlplane.Principal{
 		token: {ID: strings.TrimSpace(*principalID)},
 	})
@@ -319,7 +320,7 @@ func writeServeStatus(w io.Writer, addr *net.TCPAddr, opts controlplane.Options,
 	fmt.Fprintf(w, "surla: saving Change Cards in %s\n", opts.CardsDir)
 	if opts.Analyzer == nil {
 		fmt.Fprintln(w, "surla: CP1 (propose_change, revise_change): off — no model is configured to analyze change requests"+
-			" (set -model-provider and -model-name, or -model-gateway-addr); confirm_intent and get_change are on")
+			" (export ANTHROPIC_API_KEY or OPENAI_API_KEY, set -model-provider and -model-name or -model-gateway-addr, or call configure_model); confirm_intent and get_change are on")
 	} else {
 		fmt.Fprintln(w, "surla: CP1 (propose_change, revise_change, confirm_intent, get_change): on")
 	}
@@ -334,7 +335,7 @@ func writeServeStatus(w io.Writer, addr *net.TCPAddr, opts controlplane.Options,
 			len(opts.SwarmProfiles), noun)
 	}
 	switch {
-	case opts.TargetUpdater == nil && opts.Live != nil:
+	case opts.TargetUpdater == nil && opts.Verification != nil && opts.Live != nil:
 		root := controlplane.LiveRoot(opts.CardsDir)
 		fmt.Fprintf(w, "surla: CP3 (draft_override, start_live_target): compiled_rule is on; prompt_template is on once start_live_target runs a candidate commit (live targets in %s)\n", root)
 		writeLeftoverLiveDirs(w, root)
@@ -757,39 +758,101 @@ func openSnapshotFile(root *os.Root, rel string) (*os.File, error) {
 }
 
 // serveOptions builds the control-plane Options for `surla serve` from cfg.
-// getenv supplies provider API keys. The returned close function releases the
-// model gateway connection, if any, and returns nil when no connection was
-// opened. With no model flags the Analyzer stays nil, and with no
-// -swarm-profiles the profiles stay nil, so the server still answers diff,
-// golden-path and compiled_rule requests without credentials.
-func serveOptions(cfg serveConfig, getenv func(string) string, environ []string) (controlplane.Options, func() error, error) {
+// getenv supplies provider API keys. When all model flags are empty,
+// resolveStartupModelConfig auto-detects anthropic/claude-sonnet-4-6 from
+// ANTHROPIC_API_KEY or openai/gpt-5.4-mini from OPENAI_API_KEY. With neither
+// flags nor API keys set, Analyzer stays nil and configure_model can activate
+// a model gateway later without restarting.
+func serveOptions(
+	cfg serveConfig,
+	getenv func(string) string,
+	environ []string,
+) (controlplane.Options, error) {
 	profiles, err := loadSwarmProfiles(cfg.swarmProfilesPath)
 	if err != nil {
-		return controlplane.Options{}, nil, err
+		return controlplane.Options{}, err
 	}
 	verification, err := resolveVerificationConfig(cfg)
 	if err != nil {
-		return controlplane.Options{}, nil, err
+		return controlplane.Options{}, err
 	}
 	promotion, err := loadPromotionConfig(cfg.promotionPath)
 	if err != nil {
-		return controlplane.Options{}, nil, err
+		return controlplane.Options{}, err
 	}
-	analyzer, closeModel, err := newCP1Analyzer(cfg, getenv)
+	resolvedCfg := resolveStartupModelConfig(cfg, getenv)
+	analyzer, closeModel, err := newCP1Analyzer(resolvedCfg, getenv)
 	if err != nil {
-		return controlplane.Options{}, nil, err
+		return controlplane.Options{}, err
 	}
-	var live *controlplane.LiveConfig
+	live := &controlplane.LiveConfig{
+		Env: liveTargetEnv(environ, resolvedCfg),
+	}
 	if verification != nil {
-		live = &controlplane.LiveConfig{
-			Command: verification.Command, Env: liveTargetEnv(environ, cfg),
-			StartTimeout: verification.Timeout,
-		}
+		live.Command = verification.Command
+		live.StartTimeout = verification.Timeout
 	}
 	return controlplane.Options{
-		CardsDir: cfg.cardsDir, Analyzer: analyzer, SwarmProfiles: profiles, Verification: verification,
-		PromotionTarget: promotion, Live: live,
-	}, closeModel, nil
+		CardsDir:        cfg.cardsDir,
+		Analyzer:        analyzer,
+		CloseAnalyzer:   closeModel,
+		ModelBuilder:    newModelBuilder(getenv, environ),
+		SwarmProfiles:   profiles,
+		Verification:    verification,
+		PromotionTarget: promotion,
+		Live:            live,
+	}, nil
+}
+
+// resolveStartupModelConfig selects the default direct provider and model when
+// all model flags are empty and ANTHROPIC_API_KEY or OPENAI_API_KEY is set in
+// getenv. Any explicit model flag returns cfg unchanged so newCP1Analyzer
+// enforces flag validation.
+func resolveStartupModelConfig(cfg serveConfig, getenv func(string) string) serveConfig {
+	if cfg.gatewayAddr != "" || cfg.provider != "" || cfg.modelName != "" {
+		return cfg
+	}
+	switch {
+	case strings.TrimSpace(getenv("ANTHROPIC_API_KEY")) != "":
+		cfg.provider = "anthropic"
+		cfg.modelName = defaultAnthropicModel
+	case strings.TrimSpace(getenv("OPENAI_API_KEY")) != "":
+		cfg.provider = "openai"
+		cfg.modelName = defaultOpenAIModel
+	}
+	return cfg
+}
+
+// newModelBuilder returns the ModelBuilder callback that constructs replacement
+// CP1 analyzers and CP3 live-target environments for configure_model.
+func newModelBuilder(getenv func(string) string, environ []string) controlplane.ModelBuilder {
+	return func(p *gensurla.ConfigureModelPayload) (controlplane.CP1Analyzer, []string, func() error, error) {
+		var nextCfg serveConfig
+		if p.GatewayAddr != nil {
+			nextCfg.gatewayAddr = *p.GatewayAddr
+		}
+		if p.Provider != nil {
+			nextCfg.provider = *p.Provider
+		}
+		if p.ModelName != nil {
+			nextCfg.modelName = *p.ModelName
+		}
+		if nextCfg.provider != "" {
+			if env, ok := apiKeyEnv[nextCfg.provider]; ok && strings.TrimSpace(getenv(env)) == "" {
+				return nil, nil, nil, gensurla.MakeUnprocessable(fmt.Errorf(
+					"provider %s requires %s in surla serve's environment; set %s and restart surla serve, or call configure_model with gateway_addr to attach a running model gateway",
+					nextCfg.provider,
+					env,
+					env,
+				))
+			}
+		}
+		analyzer, closeFn, err := newCP1Analyzer(nextCfg, getenv)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		return analyzer, liveTargetEnv(environ, nextCfg), closeFn, nil
+	}
 }
 
 // liveTargetEnv returns the environment live targets start with: serve's own,
@@ -843,8 +906,10 @@ func writeLeftoverLiveDirs(w io.Writer, root string) {
 // client when gatewayAddr is set, a direct provider client when provider and
 // modelName are set, or nil when neither is set. Mixed or partial model flags
 // and a missing provider API key are errors; key values never appear in them.
-func newCP1Analyzer(cfg serveConfig, getenv func(string) string) (controlplane.CP1Analyzer, func() error, error) {
-	noop := func() error { return nil }
+func newCP1Analyzer(
+	cfg serveConfig,
+	getenv func(string) string,
+) (controlplane.CP1Analyzer, func() error, error) {
 	switch {
 	case cfg.gatewayAddr != "" && (cfg.provider != "" || cfg.modelName != ""):
 		return nil, nil, errors.New("-model-gateway-addr cannot be combined with -model-provider or -model-name; the gateway chooses the model")
@@ -859,7 +924,7 @@ func newCP1Analyzer(cfg serveConfig, getenv func(string) string) (controlplane.C
 		}
 		return controlplane.NewModelCP1Analyzer(client), conn.Close, nil
 	case cfg.provider == "" && cfg.modelName == "":
-		return nil, noop, nil
+		return nil, nil, nil
 	case cfg.provider == "" || cfg.modelName == "":
 		return nil, nil, errors.New("-model-provider and -model-name must be set together")
 	}
@@ -879,7 +944,7 @@ func newCP1Analyzer(cfg serveConfig, getenv func(string) string) (controlplane.C
 	if err != nil {
 		return nil, nil, fmt.Errorf("%s model client: %w", cfg.provider, err)
 	}
-	return controlplane.NewModelCP1Analyzer(client), noop, nil
+	return controlplane.NewModelCP1Analyzer(client), nil, nil
 }
 
 // loadSwarmProfiles decodes the JSON array of swarm.ProviderProfile at path,

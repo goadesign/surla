@@ -34,6 +34,7 @@ type Server struct {
 	ListVerifications   http.Handler
 	ApproveMerge        http.Handler
 	Diff                http.Handler
+	ConfigureModel      http.Handler
 }
 
 // MountPoint holds information about the mounted endpoints.
@@ -78,6 +79,7 @@ func New(
 			{"ListVerifications", "GET", "/changes/{change_id}/verifications"},
 			{"ApproveMerge", "POST", "/changes/approve"},
 			{"Diff", "POST", "/diff"},
+			{"ConfigureModel", "POST", "/cp1/model"},
 		},
 		CheckpointUI:        NewCheckpointUIHandler(e.CheckpointUI, mux, decoder, encoder, errhandler, formatter),
 		GoldenPath:          NewGoldenPathHandler(e.GoldenPath, mux, decoder, encoder, errhandler, formatter),
@@ -94,6 +96,7 @@ func New(
 		ListVerifications:   NewListVerificationsHandler(e.ListVerifications, mux, decoder, encoder, errhandler, formatter),
 		ApproveMerge:        NewApproveMergeHandler(e.ApproveMerge, mux, decoder, encoder, errhandler, formatter),
 		Diff:                NewDiffHandler(e.Diff, mux, decoder, encoder, errhandler, formatter),
+		ConfigureModel:      NewConfigureModelHandler(e.ConfigureModel, mux, decoder, encoder, errhandler, formatter),
 	}
 }
 
@@ -117,6 +120,7 @@ func (s *Server) Use(m func(http.Handler) http.Handler) {
 	s.ListVerifications = m(s.ListVerifications)
 	s.ApproveMerge = m(s.ApproveMerge)
 	s.Diff = m(s.Diff)
+	s.ConfigureModel = m(s.ConfigureModel)
 }
 
 // MethodNames returns the methods served.
@@ -139,6 +143,7 @@ func Mount(mux goahttp.Muxer, h *Server) {
 	MountListVerificationsHandler(mux, h.ListVerifications)
 	MountApproveMergeHandler(mux, h.ApproveMerge)
 	MountDiffHandler(mux, h.Diff)
+	MountConfigureModelHandler(mux, h.ConfigureModel)
 }
 
 // Mount configures the mux to serve the surla endpoints.
@@ -897,6 +902,59 @@ func NewDiffHandler(
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := context.WithValue(r.Context(), goahttp.AcceptTypeKey, r.Header.Get("Accept"))
 		ctx = context.WithValue(ctx, goa.MethodKey, "diff")
+		ctx = context.WithValue(ctx, goa.ServiceKey, "surla")
+		payload, err := decodeRequest(r)
+		if err != nil {
+			if err := encodeError(ctx, w, err); err != nil && errhandler != nil {
+				errhandler(ctx, w, err)
+			}
+			return
+		}
+		res, err := endpoint(ctx, payload)
+		if err != nil {
+			if err := encodeError(ctx, w, err); err != nil && errhandler != nil {
+				errhandler(ctx, w, err)
+			}
+			return
+		}
+		if err := encodeResponse(ctx, w, res); err != nil {
+			if errhandler != nil {
+				errhandler(ctx, w, err)
+			}
+		}
+	})
+}
+
+// MountConfigureModelHandler configures the mux to serve the "surla" service
+// "configure_model" endpoint.
+func MountConfigureModelHandler(mux goahttp.Muxer, h http.Handler) {
+	f, ok := h.(http.HandlerFunc)
+	if !ok {
+		f = func(w http.ResponseWriter, r *http.Request) {
+			h.ServeHTTP(w, r)
+		}
+	}
+	mux.Handle("POST", "/cp1/model", f)
+}
+
+// NewConfigureModelHandler creates a HTTP handler which loads the HTTP request
+// and calls the "surla" service "configure_model" endpoint.
+func NewConfigureModelHandler(
+	endpoint goa.Endpoint,
+	mux goahttp.Muxer,
+	decoder func(*http.Request) goahttp.Decoder,
+	encoder func(context.Context, http.ResponseWriter) goahttp.Encoder,
+	errhandler func(context.Context, http.ResponseWriter, error),
+	formatter func(ctx context.Context, err error) goahttp.Statuser,
+) http.Handler {
+	var (
+		decodeRequest  = DecodeConfigureModelRequest(mux, decoder)
+		encodeResponse = EncodeConfigureModelResponse(encoder)
+		encodeError    = EncodeConfigureModelError(encoder, formatter)
+	)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := context.WithValue(r.Context(), goahttp.AcceptTypeKey, r.Header.Get("Accept"))
+		ctx = context.WithValue(ctx, goa.MethodKey, "configure_model")
 		ctx = context.WithValue(ctx, goa.ServiceKey, "surla")
 		payload, err := decodeRequest(r)
 		if err != nil {

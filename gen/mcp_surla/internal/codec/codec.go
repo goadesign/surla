@@ -346,6 +346,76 @@ func ValidateApproveMergeResultUnverifiedApprovalItemTransport(value *ApproveMer
 	return err
 }
 
+// ConfigureModelPayloadTransport stores JSON fields until they have been validated.
+type ConfigureModelPayloadTransport struct {
+	// Direct model provider name when configuring a direct provider; must be
+	// paired with model_name and omitted when gateway_addr is set.
+	Provider *string `json:"provider,omitempty"`
+	// Provider model identifier when configuring a direct provider (for example
+	// claude-sonnet-4-6 or gpt-5.4-mini); must be paired with provider and omitted
+	// when gateway_addr is set.
+	ModelName *string `json:"model_name,omitempty"`
+	// Plaintext gRPC host:port of a running goa-ai model gateway; mutually
+	// exclusive with provider and model_name.
+	GatewayAddr *string `json:"gateway_addr,omitempty"`
+}
+
+// ValidateConfigureModelPayloadTransport checks decoded JSON before it becomes a service value.
+func ValidateConfigureModelPayloadTransport(value *ConfigureModelPayloadTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.Provider != nil {
+		if !(*value.Provider == "anthropic" || *value.Provider == "openai") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.provider", *value.Provider, []any{"anthropic", "openai"}))
+		}
+	}
+	if value.ModelName != nil {
+		if utf8.RuneCountInString(*value.ModelName) < 1 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.model_name", *value.ModelName, utf8.RuneCountInString(*value.ModelName), 1, true))
+		}
+	}
+	if value.GatewayAddr != nil {
+		if utf8.RuneCountInString(*value.GatewayAddr) < 1 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.gateway_addr", *value.GatewayAddr, utf8.RuneCountInString(*value.GatewayAddr), 1, true))
+		}
+	}
+	return err
+}
+
+// ConfigureModelResultTransport stores JSON fields until they have been validated.
+type ConfigureModelResultTransport struct {
+	// Active direct model provider when a direct provider is configured.
+	Provider *string `json:"provider,omitempty"`
+	// Active model identifier when a direct provider is configured.
+	ModelName *string `json:"model_name,omitempty"`
+	// Active gRPC model gateway host:port when a model gateway is configured.
+	GatewayAddr *string `json:"gateway_addr,omitempty"`
+}
+
+// ValidateConfigureModelResultTransport checks decoded JSON before it becomes a service value.
+func ValidateConfigureModelResultTransport(value *ConfigureModelResultTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.Provider != nil {
+		if !(*value.Provider == "anthropic" || *value.Provider == "openai") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.provider", *value.Provider, []any{"anthropic", "openai"}))
+		}
+	}
+	if value.ModelName != nil {
+		if utf8.RuneCountInString(*value.ModelName) < 1 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.model_name", *value.ModelName, utf8.RuneCountInString(*value.ModelName), 1, true))
+		}
+	}
+	if value.GatewayAddr != nil {
+		if utf8.RuneCountInString(*value.GatewayAddr) < 1 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.gateway_addr", *value.GatewayAddr, utf8.RuneCountInString(*value.GatewayAddr), 1, true))
+		}
+	}
+	return err
+}
+
 // ConfirmIntentPayloadExampleItemTransport stores JSON fields until they have been validated.
 type ConfirmIntentPayloadExampleItemTransport struct {
 	// Stable example identifier. Default code-assigned IDs use check_01, check_02,
@@ -3947,6 +4017,53 @@ func EncodeApproveMergeResult(in *surla.ChangeCardResult) ([]byte, error) {
 	data, err := json.Marshal(body)
 	if err != nil {
 		return nil, fmt.Errorf("encode ApproveMergeResult JSON: %w", err)
+	}
+	return data, nil
+}
+
+// DecodeConfigureModelPayload checks JSON field names from the Goa design and returns a service value.
+func DecodeConfigureModelPayload(data []byte) (out *surla.ConfigureModelPayload, err error) {
+	var body *ConfigureModelPayloadTransport
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&body); err != nil {
+		return out, fmt.Errorf("decode ConfigureModelPayload JSON: %w", err)
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		if err == nil {
+			return out, fmt.Errorf("decode ConfigureModelPayload JSON: multiple JSON values")
+		}
+		return out, fmt.Errorf("decode ConfigureModelPayload JSON after first value: %w", err)
+	}
+	if err := ValidateConfigureModelPayloadTransport(body); err != nil {
+		return out, fmt.Errorf("validate ConfigureModelPayload JSON: %w", err)
+	}
+	{
+		out = &surla.ConfigureModelPayload{
+			Provider:    body.Provider,
+			ModelName:   body.ModelName,
+			GatewayAddr: body.GatewayAddr,
+		}
+	}
+	return out, nil
+}
+
+// EncodeConfigureModelResult turns a service value into JSON using the field names in the Goa design.
+func EncodeConfigureModelResult(in *surla.ModelConfigResult) ([]byte, error) {
+	var body *ConfigureModelResultTransport
+	{
+		body = &ConfigureModelResultTransport{
+			Provider:    in.Provider,
+			ModelName:   in.ModelName,
+			GatewayAddr: in.GatewayAddr,
+		}
+	}
+	if err := ValidateConfigureModelResultTransport(body); err != nil {
+		return nil, fmt.Errorf("validate ConfigureModelResult JSON: %w", err)
+	}
+	data, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("encode ConfigureModelResult JSON: %w", err)
 	}
 	return data, nil
 }

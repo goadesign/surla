@@ -1285,6 +1285,90 @@ func DecodeDiffRequest(mux goahttp.Muxer, decoder func(*http.Request) goahttp.De
 	}
 }
 
+// EncodeConfigureModelResponse returns an encoder for responses returned by
+// the surla configure_model endpoint.
+func EncodeConfigureModelResponse(encoder func(context.Context, http.ResponseWriter) goahttp.Encoder) func(context.Context, http.ResponseWriter, any) error {
+	return func(ctx context.Context, w http.ResponseWriter, v any) error {
+		res, _ := v.(*surla.ModelConfigResult)
+		enc := encoder(ctx, w)
+		body := NewConfigureModelResponseBody(res)
+		w.WriteHeader(http.StatusOK)
+		return enc.Encode(body)
+	}
+}
+
+// DecodeConfigureModelRequest returns a decoder for requests sent to the surla
+// configure_model endpoint.
+func DecodeConfigureModelRequest(mux goahttp.Muxer, decoder func(*http.Request) goahttp.Decoder) func(*http.Request) (*surla.ConfigureModelPayload, error) {
+	return func(r *http.Request) (*surla.ConfigureModelPayload, error) {
+		var payload *surla.ConfigureModelPayload
+		var (
+			body ConfigureModelRequestBody
+			err  error
+		)
+		err = decoder(r).Decode(&body)
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				return payload, goa.MissingPayloadError()
+			}
+			var gerr *goa.ServiceError
+			if errors.As(err, &gerr) {
+				return payload, gerr
+			}
+			return payload, goa.DecodePayloadError(err.Error())
+		}
+		err = ValidateConfigureModelRequestBody(&body)
+		if err != nil {
+			return payload, err
+		}
+		payload = NewConfigureModelPayload(&body)
+
+		return payload, nil
+	}
+}
+
+// EncodeConfigureModelError returns an encoder for errors returned by the
+// configure_model surla endpoint.
+func EncodeConfigureModelError(encoder func(context.Context, http.ResponseWriter) goahttp.Encoder, formatter func(ctx context.Context, err error) goahttp.Statuser) func(context.Context, http.ResponseWriter, error) error {
+	encodeError := goahttp.ErrorEncoder(encoder, formatter)
+	return func(ctx context.Context, w http.ResponseWriter, v error) error {
+		var en goa.GoaErrorNamer
+		if !errors.As(v, &en) {
+			return encodeError(ctx, w, v)
+		}
+		switch en.GoaErrorName() {
+		case "unprocessable":
+			var res *goa.ServiceError
+			errors.As(v, &res)
+			enc := encoder(ctx, w)
+			var body any
+			if formatter != nil {
+				body = formatter(ctx, res)
+			} else {
+				body = NewConfigureModelUnprocessableResponseBody(res)
+			}
+			w.Header().Set("goa-error", res.GoaErrorName())
+			w.WriteHeader(http.StatusUnprocessableEntity)
+			return enc.Encode(body)
+		case "not_implemented":
+			var res *goa.ServiceError
+			errors.As(v, &res)
+			enc := encoder(ctx, w)
+			var body any
+			if formatter != nil {
+				body = formatter(ctx, res)
+			} else {
+				body = NewConfigureModelNotImplementedResponseBody(res)
+			}
+			w.Header().Set("goa-error", res.GoaErrorName())
+			w.WriteHeader(http.StatusNotImplemented)
+			return enc.Encode(body)
+		default:
+			return encodeError(ctx, w, v)
+		}
+	}
+}
+
 // marshalSurlaAmbiguityQuestionToAmbiguityQuestionResponseBody builds a value
 // of type *AmbiguityQuestionResponseBody from a value of type
 // *surla.AmbiguityQuestion.

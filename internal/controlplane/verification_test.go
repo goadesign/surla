@@ -330,7 +330,12 @@ func TestListVerifications(t *testing.T) {
 			PreservedBehaviors: []string{},
 		})
 		require.NoError(t, err)
-		cp.analyzer = NewModelCP1Analyzer(newStubModelClient(t, string(revisedAnalysis)))
+		providerName, modelID := "anthropic", string(revisedAnalysis)
+		_, err = cp.ConfigureModel(alice, &gensurla.ConfigureModelPayload{
+			Provider:  &providerName,
+			ModelName: &modelID,
+		})
+		require.NoError(t, err)
 		revised, err := cp.ReviseChange(alice, &gensurla.ReviseChangePayload{
 			ChangeID:        "chg",
 			RequestRevision: card.RequestRevision,
@@ -392,7 +397,13 @@ func verificationSetup(t *testing.T) (*ControlPlane, *gensurla.ChangeCardResult,
 	})
 	require.NoError(t, err)
 	cfg := verificationConfig(t)
-	cp := newControlPlane(t, Options{Analyzer: NewModelCP1Analyzer(newStubModelClient(t, string(analysis))), Verification: cfg})
+	cp := newControlPlane(t, Options{
+		Analyzer: NewModelCP1Analyzer(newStubModelClient(t, string(analysis))),
+		ModelBuilder: func(p *gensurla.ConfigureModelPayload) (CP1Analyzer, []string, func() error, error) {
+			return NewModelCP1Analyzer(newStubModelClient(t, *p.ModelName)), nil, nil, nil
+		},
+		Verification: cfg,
+	})
 	card, err := cp.ProposeChange(WithPrincipal(context.Background(), Principal{ID: "alice@example.com"}),
 		&gensurla.ProposeChangePayload{ChangeID: "chg", Prompt: "Refunds up to $50 are instant."})
 	require.NoError(t, err)

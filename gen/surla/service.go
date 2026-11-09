@@ -115,6 +115,10 @@ type Service interface {
 	// Compare evaluated Goa designs and go.mod directives without emitting a
 	// blanket compatibility verdict.
 	Diff(context.Context, *DiffPayload) (res *DiffResult, err error)
+	// Configure or switch the active CP1 semantic analyzer and CP3 live-target
+	// model provider and model name or gRPC model gateway on a running control
+	// plane without restarting.
+	ConfigureModel(context.Context, *ConfigureModelPayload) (res *ModelConfigResult, err error)
 }
 
 // APIName is the name of the API as defined in the design.
@@ -131,7 +135,7 @@ const ServiceName = "surla"
 // MethodNames lists the service method names as defined in the design. These
 // are the same values that are set in the endpoint request contexts under the
 // MethodKey key.
-var MethodNames = [15]string{"checkpoint_ui", "golden_path", "propose_change", "revise_change", "confirm_intent", "get_change", "preview_architecture", "draft_override", "start_live_target", "stop_live_target", "verify_change", "get_verification", "list_verifications", "approve_merge", "diff"}
+var MethodNames = [16]string{"checkpoint_ui", "golden_path", "propose_change", "revise_change", "confirm_intent", "get_change", "preview_architecture", "draft_override", "start_live_target", "stop_live_target", "verify_change", "get_verification", "list_verifications", "approve_merge", "diff", "configure_model"}
 
 // Evaluated Goa-AI cost, safety, history, and cache policy for a single agent.
 type AgentPolicyItem struct {
@@ -332,6 +336,21 @@ type ChangeCardResult struct {
 	UnverifiedApproval *UnverifiedApprovalItem
 }
 
+// ConfigureModelPayload is the payload type of the surla service
+// configure_model method.
+type ConfigureModelPayload struct {
+	// Direct model provider name when configuring a direct provider; must be
+	// paired with model_name and omitted when gateway_addr is set.
+	Provider *string
+	// Provider model identifier when configuring a direct provider (for example
+	// claude-sonnet-4-6 or gpt-5.4-mini); must be paired with provider and omitted
+	// when gateway_addr is set.
+	ModelName *string
+	// Plaintext gRPC host:port of a running goa-ai model gateway; mutually
+	// exclusive with provider and model_name.
+	GatewayAddr *string
+}
+
 // ConfirmIntentPayload is the payload type of the surla service confirm_intent
 // method.
 type ConfirmIntentPayload struct {
@@ -456,6 +475,17 @@ type LiveTargetResult struct {
 	URL string
 	// Operator-facing status explanation.
 	Message string
+}
+
+// ModelConfigResult is the result type of the surla service configure_model
+// method.
+type ModelConfigResult struct {
+	// Active direct model provider when a direct provider is configured.
+	Provider *string
+	// Active model identifier when a direct provider is configured.
+	ModelName *string
+	// Active gRPC model gateway host:port when a model gateway is configured.
+	GatewayAddr *string
 }
 
 // PreviewArchitecturePayload is the payload type of the surla service
@@ -1408,6 +1438,43 @@ func validatejsonChangeCardResultTransport(value *jsonChangeCardResultTransport)
 	return err
 }
 
+// jsonConfigureModelPayloadTransport stores JSON fields until they have been validated.
+type jsonConfigureModelPayloadTransport struct {
+	// Direct model provider name when configuring a direct provider; must be
+	// paired with model_name and omitted when gateway_addr is set.
+	Provider *string `json:"provider,omitempty"`
+	// Provider model identifier when configuring a direct provider (for example
+	// claude-sonnet-4-6 or gpt-5.4-mini); must be paired with provider and omitted
+	// when gateway_addr is set.
+	ModelName *string `json:"model_name,omitempty"`
+	// Plaintext gRPC host:port of a running goa-ai model gateway; mutually
+	// exclusive with provider and model_name.
+	GatewayAddr *string `json:"gateway_addr,omitempty"`
+}
+
+// validatejsonConfigureModelPayloadTransport checks decoded JSON before it becomes a service value.
+func validatejsonConfigureModelPayloadTransport(value *jsonConfigureModelPayloadTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.Provider != nil {
+		if !(*value.Provider == "anthropic" || *value.Provider == "openai") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.provider", *value.Provider, []any{"anthropic", "openai"}))
+		}
+	}
+	if value.ModelName != nil {
+		if utf8.RuneCountInString(*value.ModelName) < 1 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.model_name", *value.ModelName, utf8.RuneCountInString(*value.ModelName), 1, true))
+		}
+	}
+	if value.GatewayAddr != nil {
+		if utf8.RuneCountInString(*value.GatewayAddr) < 1 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.gateway_addr", *value.GatewayAddr, utf8.RuneCountInString(*value.GatewayAddr), 1, true))
+		}
+	}
+	return err
+}
+
 // jsonConfirmIntentPayloadTransport stores JSON fields until they have been validated.
 type jsonConfirmIntentPayloadTransport struct {
 	// Change identifier.
@@ -1727,6 +1794,39 @@ func validatejsonLiveTargetResultTransport(value *jsonLiveTargetResultTransport)
 	}
 	if value.Message == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("message", "body"))
+	}
+	return err
+}
+
+// jsonModelConfigResultTransport stores JSON fields until they have been validated.
+type jsonModelConfigResultTransport struct {
+	// Active direct model provider when a direct provider is configured.
+	Provider *string `json:"provider,omitempty"`
+	// Active model identifier when a direct provider is configured.
+	ModelName *string `json:"model_name,omitempty"`
+	// Active gRPC model gateway host:port when a model gateway is configured.
+	GatewayAddr *string `json:"gateway_addr,omitempty"`
+}
+
+// validatejsonModelConfigResultTransport checks decoded JSON before it becomes a service value.
+func validatejsonModelConfigResultTransport(value *jsonModelConfigResultTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.Provider != nil {
+		if !(*value.Provider == "anthropic" || *value.Provider == "openai") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.provider", *value.Provider, []any{"anthropic", "openai"}))
+		}
+	}
+	if value.ModelName != nil {
+		if utf8.RuneCountInString(*value.ModelName) < 1 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.model_name", *value.ModelName, utf8.RuneCountInString(*value.ModelName), 1, true))
+		}
+	}
+	if value.GatewayAddr != nil {
+		if utf8.RuneCountInString(*value.GatewayAddr) < 1 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.gateway_addr", *value.GatewayAddr, utf8.RuneCountInString(*value.GatewayAddr), 1, true))
+		}
 	}
 	return err
 }
@@ -2716,6 +2816,26 @@ func validateUnverifiedApprovalItemOriginal(value *UnverifiedApprovalItem) (err 
 	return err
 }
 
+// validateConfigureModelPayloadOriginal checks the original typed value before JSON conversion.
+func validateConfigureModelPayloadOriginal(value *ConfigureModelPayload) (err error) {
+	if value.Provider != nil {
+		if !(*value.Provider == "anthropic" || *value.Provider == "openai") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("value.provider", *value.Provider, []any{"anthropic", "openai"}))
+		}
+	}
+	if value.ModelName != nil {
+		if utf8.RuneCountInString(*value.ModelName) < 1 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("value.model_name", *value.ModelName, utf8.RuneCountInString(*value.ModelName), 1, true))
+		}
+	}
+	if value.GatewayAddr != nil {
+		if utf8.RuneCountInString(*value.GatewayAddr) < 1 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("value.gateway_addr", *value.GatewayAddr, utf8.RuneCountInString(*value.GatewayAddr), 1, true))
+		}
+	}
+	return err
+}
+
 // validateConfirmIntentPayloadOriginal checks the original typed value before JSON conversion.
 func validateConfirmIntentPayloadOriginal(value *ConfirmIntentPayload) (err error) {
 	if value.Answers == nil {
@@ -2792,6 +2912,26 @@ func validateDraftOverridePayloadOriginal(value *DraftOverridePayload) (err erro
 func validateListVerificationsPayloadOriginal(value *ListVerificationsPayload) (err error) {
 	if utf8.RuneCountInString(value.ChangeID) < 1 {
 		err = goa.MergeErrors(err, goa.InvalidLengthError("value.change_id", value.ChangeID, utf8.RuneCountInString(value.ChangeID), 1, true))
+	}
+	return err
+}
+
+// validateModelConfigResultOriginal checks the original typed value before JSON conversion.
+func validateModelConfigResultOriginal(value *ModelConfigResult) (err error) {
+	if value.Provider != nil {
+		if !(*value.Provider == "anthropic" || *value.Provider == "openai") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("value.provider", *value.Provider, []any{"anthropic", "openai"}))
+		}
+	}
+	if value.ModelName != nil {
+		if utf8.RuneCountInString(*value.ModelName) < 1 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("value.model_name", *value.ModelName, utf8.RuneCountInString(*value.ModelName), 1, true))
+		}
+	}
+	if value.GatewayAddr != nil {
+		if utf8.RuneCountInString(*value.GatewayAddr) < 1 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("value.gateway_addr", *value.GatewayAddr, utf8.RuneCountInString(*value.GatewayAddr), 1, true))
+		}
 	}
 	return err
 }
@@ -4314,6 +4454,95 @@ func DecodeChangeCardResult(data []byte) (out *ChangeCardResult, err error) {
 	return out, nil
 }
 
+// EncodeConfigureModelPayload turns a service value into JSON using the field names in the Goa design.
+func EncodeConfigureModelPayload(in *ConfigureModelPayload) ([]byte, error) {
+	if err := checkConfigureModelPayloadValue(in); err != nil {
+		return nil, fmt.Errorf("encode ConfigureModelPayload JSON: %w", err)
+	}
+	if err := validateConfigureModelPayloadOriginal(in); err != nil {
+		return nil, fmt.Errorf("validate ConfigureModelPayload value: %w", err)
+	}
+	var body *jsonConfigureModelPayloadTransport
+	{
+		body = &jsonConfigureModelPayloadTransport{
+			Provider:    in.Provider,
+			ModelName:   in.ModelName,
+			GatewayAddr: in.GatewayAddr,
+		}
+	}
+	if err := validatejsonConfigureModelPayloadTransport(body); err != nil {
+		return nil, fmt.Errorf("validate ConfigureModelPayload JSON: %w", err)
+	}
+	data, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("encode ConfigureModelPayload JSON: %w", err)
+	}
+	return data, nil
+}
+
+// ValidateConfigureModelPayloadValue checks the original Go fields against their declared constraints.
+// It returns validation errors without encoding the value as JSON.
+
+func ValidateConfigureModelPayloadValue(in *ConfigureModelPayload) error {
+	if err := checkConfigureModelPayloadValue(in); err != nil {
+		return fmt.Errorf("validate ConfigureModelPayload value: %w", err)
+	}
+	if err := validateConfigureModelPayloadOriginal(in); err != nil {
+		return fmt.Errorf("validate ConfigureModelPayload value: %w", err)
+	}
+
+	if in == nil {
+		return goa.MissingFieldError("result", "ConfigureModelPayload")
+	}
+
+	var body *jsonConfigureModelPayloadTransport
+	{
+		body = &jsonConfigureModelPayloadTransport{
+			Provider:    in.Provider,
+			ModelName:   in.ModelName,
+			GatewayAddr: in.GatewayAddr,
+		}
+	}
+	if err := validatejsonConfigureModelPayloadTransport(body); err != nil {
+		return fmt.Errorf("validate ConfigureModelPayload value: %w", err)
+	}
+	return nil
+}
+
+// DecodeConfigureModelPayload checks JSON field names from the Goa design and returns a service value.
+func DecodeConfigureModelPayload(data []byte) (out *ConfigureModelPayload, err error) {
+	root, err := readStrictJSON(data)
+	if err != nil {
+		return out, fmt.Errorf("decode ConfigureModelPayload JSON: %w", err)
+	}
+	if err := validateConfigureModelPayloadJSONValue("", root, ""); err != nil {
+		return out, fmt.Errorf("decode ConfigureModelPayload JSON: %w", err)
+	}
+	var body *jsonConfigureModelPayloadTransport
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&body); err != nil {
+		return out, fmt.Errorf("decode ConfigureModelPayload JSON: %w", err)
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		if err == nil {
+			return out, fmt.Errorf("decode ConfigureModelPayload JSON: multiple JSON values")
+		}
+		return out, fmt.Errorf("decode ConfigureModelPayload JSON after first value: %w", err)
+	}
+	if err := validatejsonConfigureModelPayloadTransport(body); err != nil {
+		return out, fmt.Errorf("validate ConfigureModelPayload JSON: %w", err)
+	}
+	{
+		out = &ConfigureModelPayload{
+			Provider:    body.Provider,
+			ModelName:   body.ModelName,
+			GatewayAddr: body.GatewayAddr,
+		}
+	}
+	return out, nil
+}
+
 // EncodeConfirmIntentPayload turns a service value into JSON using the field names in the Goa design.
 func EncodeConfirmIntentPayload(in *ConfirmIntentPayload) ([]byte, error) {
 	if err := checkConfirmIntentPayloadValue(in); err != nil {
@@ -5339,6 +5568,95 @@ func DecodeLiveTargetResult(data []byte) (out *LiveTargetResult, err error) {
 			CandidateCommit: *body.CandidateCommit,
 			URL:             *body.URL,
 			Message:         *body.Message,
+		}
+	}
+	return out, nil
+}
+
+// EncodeModelConfigResult turns a service value into JSON using the field names in the Goa design.
+func EncodeModelConfigResult(in *ModelConfigResult) ([]byte, error) {
+	if err := checkModelConfigResultValue(in); err != nil {
+		return nil, fmt.Errorf("encode ModelConfigResult JSON: %w", err)
+	}
+	if err := validateModelConfigResultOriginal(in); err != nil {
+		return nil, fmt.Errorf("validate ModelConfigResult value: %w", err)
+	}
+	var body *jsonModelConfigResultTransport
+	{
+		body = &jsonModelConfigResultTransport{
+			Provider:    in.Provider,
+			ModelName:   in.ModelName,
+			GatewayAddr: in.GatewayAddr,
+		}
+	}
+	if err := validatejsonModelConfigResultTransport(body); err != nil {
+		return nil, fmt.Errorf("validate ModelConfigResult JSON: %w", err)
+	}
+	data, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("encode ModelConfigResult JSON: %w", err)
+	}
+	return data, nil
+}
+
+// ValidateModelConfigResultValue checks the original Go fields against their declared constraints.
+// It returns validation errors without encoding the value as JSON.
+
+func ValidateModelConfigResultValue(in *ModelConfigResult) error {
+	if err := checkModelConfigResultValue(in); err != nil {
+		return fmt.Errorf("validate ModelConfigResult value: %w", err)
+	}
+	if err := validateModelConfigResultOriginal(in); err != nil {
+		return fmt.Errorf("validate ModelConfigResult value: %w", err)
+	}
+
+	if in == nil {
+		return goa.MissingFieldError("result", "ModelConfigResult")
+	}
+
+	var body *jsonModelConfigResultTransport
+	{
+		body = &jsonModelConfigResultTransport{
+			Provider:    in.Provider,
+			ModelName:   in.ModelName,
+			GatewayAddr: in.GatewayAddr,
+		}
+	}
+	if err := validatejsonModelConfigResultTransport(body); err != nil {
+		return fmt.Errorf("validate ModelConfigResult value: %w", err)
+	}
+	return nil
+}
+
+// DecodeModelConfigResult checks JSON field names from the Goa design and returns a service value.
+func DecodeModelConfigResult(data []byte) (out *ModelConfigResult, err error) {
+	root, err := readStrictJSON(data)
+	if err != nil {
+		return out, fmt.Errorf("decode ModelConfigResult JSON: %w", err)
+	}
+	if err := validateModelConfigResultJSONValue("", root, ""); err != nil {
+		return out, fmt.Errorf("decode ModelConfigResult JSON: %w", err)
+	}
+	var body *jsonModelConfigResultTransport
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&body); err != nil {
+		return out, fmt.Errorf("decode ModelConfigResult JSON: %w", err)
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		if err == nil {
+			return out, fmt.Errorf("decode ModelConfigResult JSON: multiple JSON values")
+		}
+		return out, fmt.Errorf("decode ModelConfigResult JSON after first value: %w", err)
+	}
+	if err := validatejsonModelConfigResultTransport(body); err != nil {
+		return out, fmt.Errorf("validate ModelConfigResult JSON: %w", err)
+	}
+	{
+		out = &ModelConfigResult{
+			Provider:    body.Provider,
+			ModelName:   body.ModelName,
+			GatewayAddr: body.GatewayAddr,
 		}
 	}
 	return out, nil
@@ -10175,6 +10493,58 @@ func validateChangeCardResultJSONValue8(path string, value any, description stri
 	return nil
 }
 
+// validateConfigureModelPayloadJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateConfigureModelPayloadJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "gateway_addr":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Plaintext gRPC host:port of a running goa-ai model gateway; mutually exclusive with provider and model_name.",
+			); err != nil {
+				return err
+			}
+		case "model_name":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Provider model identifier when configuring a direct provider (for example claude-sonnet-4-6 or gpt-5.4-mini); must be paired with provider and omitted when gateway_addr is set.",
+			); err != nil {
+				return err
+			}
+		case "provider":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Direct model provider name when configuring a direct provider; must be paired with model_name and omitted when gateway_addr is set.",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"gateway_addr",
+				"model_name",
+				"provider",
+			})
+		}
+	}
+	return nil
+}
+
 // validateConfirmIntentPayloadJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
 func validateConfirmIntentPayloadJSONValue(path string, value any, description string) error {
 	field := path
@@ -10838,6 +11208,58 @@ func validateLiveTargetResultJSONValue(path string, value any, description strin
 				"candidate_commit",
 				"message",
 				"url",
+			})
+		}
+	}
+	return nil
+}
+
+// validateModelConfigResultJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateModelConfigResultJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "gateway_addr":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Active gRPC model gateway host:port when a model gateway is configured.",
+			); err != nil {
+				return err
+			}
+		case "model_name":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Active model identifier when a direct provider is configured.",
+			); err != nil {
+				return err
+			}
+		case "provider":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Active direct model provider when a direct provider is configured.",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"gateway_addr",
+				"model_name",
+				"provider",
 			})
 		}
 	}
@@ -12525,6 +12947,48 @@ func checkChangeCardResultUnverifiedApprovalItemValue(in *UnverifiedApprovalItem
 	return nil
 }
 
+// checkConfigureModelPayloadValue checks text and cycles before conversion.
+func checkConfigureModelPayloadValue(in *ConfigureModelPayload) error {
+	if in == nil {
+		return fmt.Errorf("missing root value")
+	}
+	active := make(map[any]bool)
+	if err := checkConfigureModelPayloadConfigureModelPayloadValue(in, "$", active); err != nil {
+		return err
+	}
+	return nil
+}
+
+// checkConfigureModelPayloadConfigureModelPayloadValue checks one generated value on the active path.
+func checkConfigureModelPayloadConfigureModelPayloadValue(in *ConfigureModelPayload, field string, active map[any]bool) error {
+	if in == nil {
+		return nil
+	}
+	if active[in] {
+		return fmt.Errorf("%s: cyclic Go value", field)
+	}
+	active[in] = true
+	defer delete(active, in)
+	if in != nil {
+		if in.Provider != nil {
+			if !utf8.ValidString(string(*in.Provider)) {
+				return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "provider", false))
+			}
+		}
+		if in.ModelName != nil {
+			if !utf8.ValidString(string(*in.ModelName)) {
+				return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "model_name", false))
+			}
+		}
+		if in.GatewayAddr != nil {
+			if !utf8.ValidString(string(*in.GatewayAddr)) {
+				return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "gateway_addr", false))
+			}
+		}
+	}
+	return nil
+}
+
 // checkConfirmIntentPayloadValue checks text and cycles before conversion.
 func checkConfirmIntentPayloadValue(in *ConfirmIntentPayload) error {
 	if in == nil {
@@ -12907,6 +13371,48 @@ func checkLiveTargetResultLiveTargetResultValue(in *LiveTargetResult, field stri
 		}
 		if !utf8.ValidString(string(in.Message)) {
 			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "message", false))
+		}
+	}
+	return nil
+}
+
+// checkModelConfigResultValue checks text and cycles before conversion.
+func checkModelConfigResultValue(in *ModelConfigResult) error {
+	if in == nil {
+		return fmt.Errorf("missing root value")
+	}
+	active := make(map[any]bool)
+	if err := checkModelConfigResultModelConfigResultValue(in, "$", active); err != nil {
+		return err
+	}
+	return nil
+}
+
+// checkModelConfigResultModelConfigResultValue checks one generated value on the active path.
+func checkModelConfigResultModelConfigResultValue(in *ModelConfigResult, field string, active map[any]bool) error {
+	if in == nil {
+		return nil
+	}
+	if active[in] {
+		return fmt.Errorf("%s: cyclic Go value", field)
+	}
+	active[in] = true
+	defer delete(active, in)
+	if in != nil {
+		if in.Provider != nil {
+			if !utf8.ValidString(string(*in.Provider)) {
+				return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "provider", false))
+			}
+		}
+		if in.ModelName != nil {
+			if !utf8.ValidString(string(*in.ModelName)) {
+				return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "model_name", false))
+			}
+		}
+		if in.GatewayAddr != nil {
+			if !utf8.ValidString(string(*in.GatewayAddr)) {
+				return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "gateway_addr", false))
+			}
 		}
 	}
 	return nil

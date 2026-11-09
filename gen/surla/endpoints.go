@@ -30,6 +30,7 @@ type Endpoints struct {
 	ListVerifications   goa.Endpoint
 	ApproveMerge        goa.Endpoint
 	Diff                goa.Endpoint
+	ConfigureModel      goa.Endpoint
 }
 
 // NewEndpoints wraps the methods of the "surla" service with endpoints.
@@ -50,6 +51,7 @@ func NewEndpoints(s Service) *Endpoints {
 		ListVerifications:   NewListVerificationsEndpoint(s),
 		ApproveMerge:        NewApproveMergeEndpoint(s),
 		Diff:                NewDiffEndpoint(s),
+		ConfigureModel:      NewConfigureModelEndpoint(s),
 	}
 }
 
@@ -70,6 +72,7 @@ func (e *Endpoints) Use(m func(goa.Endpoint) goa.Endpoint) {
 	e.ListVerifications = m(e.ListVerifications)
 	e.ApproveMerge = m(e.ApproveMerge)
 	e.Diff = m(e.Diff)
+	e.ConfigureModel = m(e.ConfigureModel)
 }
 
 // NewCheckpointUIEndpoint returns an endpoint function that calls the method
@@ -201,5 +204,14 @@ func NewDiffEndpoint(s Service) goa.Endpoint {
 	return func(ctx context.Context, req any) (any, error) {
 		p := req.(*DiffPayload)
 		return s.Diff(ctx, p)
+	}
+}
+
+// NewConfigureModelEndpoint returns an endpoint function that calls the method
+// "configure_model" of service "surla".
+func NewConfigureModelEndpoint(s Service) goa.Endpoint {
+	return func(ctx context.Context, req any) (any, error) {
+		p := req.(*ConfigureModelPayload)
+		return s.ConfigureModel(ctx, p)
 	}
 }

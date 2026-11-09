@@ -96,6 +96,46 @@ func ValidateApproveMergeResultTransport(body *ApproveMergeResultTransport) (err
 	return
 }
 
+// ValidateConfigureModelPayloadTransport runs the validations defined on ConfigureModelPayloadTransport.
+func ValidateConfigureModelPayloadTransport(body *ConfigureModelPayloadTransport) (err error) {
+	if body.Provider != nil {
+		if !(*body.Provider == "anthropic" || *body.Provider == "openai") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.provider", *body.Provider, []any{"anthropic", "openai"}))
+		}
+	}
+	if body.ModelName != nil {
+		if utf8.RuneCountInString(*body.ModelName) < 1 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.model_name", *body.ModelName, utf8.RuneCountInString(*body.ModelName), 1, true))
+		}
+	}
+	if body.GatewayAddr != nil {
+		if utf8.RuneCountInString(*body.GatewayAddr) < 1 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.gateway_addr", *body.GatewayAddr, utf8.RuneCountInString(*body.GatewayAddr), 1, true))
+		}
+	}
+	return
+}
+
+// ValidateConfigureModelResultTransport runs the validations defined on ConfigureModelResultTransport.
+func ValidateConfigureModelResultTransport(body *ConfigureModelResultTransport) (err error) {
+	if body.Provider != nil {
+		if !(*body.Provider == "anthropic" || *body.Provider == "openai") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.provider", *body.Provider, []any{"anthropic", "openai"}))
+		}
+	}
+	if body.ModelName != nil {
+		if utf8.RuneCountInString(*body.ModelName) < 1 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.model_name", *body.ModelName, utf8.RuneCountInString(*body.ModelName), 1, true))
+		}
+	}
+	if body.GatewayAddr != nil {
+		if utf8.RuneCountInString(*body.GatewayAddr) < 1 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.gateway_addr", *body.GatewayAddr, utf8.RuneCountInString(*body.GatewayAddr), 1, true))
+		}
+	}
+	return
+}
+
 // ValidateConfirmIntentPayloadTransport runs the validations defined on ConfirmIntentPayloadTransport.
 func ValidateConfirmIntentPayloadTransport(body *ConfirmIntentPayloadTransport) (err error) {
 	if body.ChangeID == nil {
