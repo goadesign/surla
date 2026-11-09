@@ -484,10 +484,11 @@ func requireEmptyOperatorStore(dir string, allowEmptyLive bool) error {
 }
 
 // requireNoUnimportedImplicitLegacyStore verifies before normal (non-imported)
-// startup that no selected implicit legacy store (.surla/cards, .surla/runs, or
-// reports/) contains durable records. When an unimported implicit legacy store
-// holds records, startup fails before creating divergent state in the new
-// operator store and instructs the operator to run -import-legacy-workspace.
+// startup that no selected implicit cards store or workspace runs or reports
+// contains durable records. Workspace runs and reports require import even
+// with an external verification config so check_project receives the original
+// report paths to exclude. Startup instructs the operator to run
+// -import-legacy-workspace before accepting new work.
 func requireNoUnimportedImplicitLegacyStore(
 	startupBaseDir, initialWorkspaceRoot string,
 	cfg serveConfig,
@@ -528,29 +529,27 @@ func requireNoUnimportedImplicitLegacyStore(
 			}
 		}
 	}
-	if cfg.verificationPath == "" {
-		wsLegacyRunsDir := filepath.Join(initialWorkspaceRoot, ".surla", "runs")
-		hasRuns, err := hasAcceptedLegacyRuns(wsLegacyRunsDir)
-		if err != nil {
-			return err
-		}
-		if hasRuns {
-			return fmt.Errorf(
-				"legacy workspace state found in %s; run surla serve -import-legacy-workspace with writers stopped to import existing cards, verification runs, and reports into protected operator storage before starting surla serve",
-				wsLegacyRunsDir,
-			)
-		}
-		wsLegacyReportsDir := filepath.Join(initialWorkspaceRoot, "reports")
-		hasReports, err := hasLegacyHexJSONRecords(wsLegacyReportsDir)
-		if err != nil {
-			return err
-		}
-		if hasReports {
-			return fmt.Errorf(
-				"legacy workspace state found in %s; run surla serve -import-legacy-workspace with writers stopped to import existing cards, verification runs, and reports into protected operator storage before starting surla serve",
-				wsLegacyReportsDir,
-			)
-		}
+	wsLegacyRunsDir := filepath.Join(initialWorkspaceRoot, ".surla", "runs")
+	hasRuns, err := hasAcceptedLegacyRuns(wsLegacyRunsDir)
+	if err != nil {
+		return err
+	}
+	if hasRuns {
+		return fmt.Errorf(
+			"legacy workspace state found in %s; run surla serve -import-legacy-workspace with writers stopped to import existing cards, verification runs, and reports into protected operator storage before starting surla serve",
+			wsLegacyRunsDir,
+		)
+	}
+	wsLegacyReportsDir := filepath.Join(initialWorkspaceRoot, "reports")
+	hasReports, err := hasLegacyHexJSONRecords(wsLegacyReportsDir)
+	if err != nil {
+		return err
+	}
+	if hasReports {
+		return fmt.Errorf(
+			"legacy workspace state found in %s; run surla serve -import-legacy-workspace with writers stopped to import existing cards, verification runs, and reports into protected operator storage before starting surla serve",
+			wsLegacyReportsDir,
+		)
 	}
 	return nil
 }
