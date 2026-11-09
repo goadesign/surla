@@ -23,8 +23,9 @@ import (
 // live target's launch plan (live.json) and the verification run's request
 // (request.json), on the server that initialized the workspace and on a
 // server reopened from the same card store, while the candidate is a later
-// builder commit. Both tools resolve their plan through the same owner; the
-// processes they start are this test binary, so no Go build runs.
+// builder commit. Both tools resolve their plan through the same owner. The
+// live target is this test binary and the verification supervisor is a shell
+// that exits at once, so no Go build runs.
 func TestLiveAndVerificationUseTheWorkspacePinnedSuite(t *testing.T) {
 	self, err := os.Executable()
 	require.NoError(t, err)
@@ -80,6 +81,9 @@ func TestLiveAndVerificationUseTheWorkspacePinnedSuite(t *testing.T) {
 
 	initServer, err := New(options())
 	require.NoError(t, err)
+	// Close is idempotent: this also covers a failure before the explicit
+	// Close below.
+	t.Cleanup(func() { assert.NoError(t, initServer.Close()) })
 	_, err = initServer.InitProject(alice, &gensurla.InitProjectPayload{ModulePath: "example.com/shop"})
 	require.NoError(t, err)
 	t.Run("server that initialized the workspace", func(t *testing.T) {
