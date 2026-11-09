@@ -23,6 +23,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
+	goa "goa.design/goa/v3/pkg"
 	"golang.org/x/sys/unix"
 
 	gensurla "github.com/goadesign/surla/gen/surla"
@@ -322,15 +323,32 @@ func (op *checkOperation) runGo(ctx context.Context, mod, step, network string, 
 // finish releases the grant, closes the output, then removes the
 // operation's copy, module cache and work directories once no container
 // still pins them, keeping the output for read_check_output. It returns
-// cause joined with any capture or cleanup failure; an unconfirmed container
-// removal keeps the whole directory.
+// cause joined with any capture or cleanup failure, with the operation ID
+// needed to read saved output; an unconfirmed container removal keeps the
+// whole directory. Named service errors retain their name and flags.
 func (op *checkOperation) finish(cause error) error {
 	defer op.c.checkOps.Done()
 	closeErr := errors.Join(op.out.close(), op.closeLive())
+	var cleanupErr error
 	if len(op.owner.Containers) > 0 {
-		return errors.Join(cause, closeErr, fmt.Errorf("kept %s because container %s may still exist; remove it with docker rm -f %s", op.dir, op.owner.Containers[0], op.owner.Containers[0]))
+		cleanupErr = fmt.Errorf("kept %s because container %s may still exist; remove it with docker rm -f %s", op.dir, op.owner.Containers[0], op.owner.Containers[0])
+	} else {
+		cleanupErr = removeOperationScratch(op.dir)
 	}
-	return errors.Join(cause, closeErr, removeOperationScratch(op.dir))
+	err := errors.Join(cause, closeErr, cleanupErr)
+	if err == nil {
+		return nil
+	}
+	withOutput := fmt.Errorf("%w\nRead saved output with read_check_output(op_id: %q); output may be incomplete.", err, op.id)
+	var serviceErr *goa.ServiceError
+	if errors.As(err, &serviceErr) {
+		// HTTP encoders select the named service error through errors.As, so
+		// its message must include the output ID and every joined failure.
+		result := goa.NewServiceError(err, serviceErr.Name, serviceErr.Timeout, serviceErr.Temporary, serviceErr.Fault)
+		result.Message = withOutput.Error()
+		return result
+	}
+	return withOutput
 }
 
 // message is the result message: the modules tested, then the first

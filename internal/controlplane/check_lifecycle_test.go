@@ -6,9 +6,13 @@ package controlplane
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"sync"
@@ -21,6 +25,7 @@ import (
 	gensurla "github.com/goadesign/surla/gen/surla"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	goahttp "goa.design/goa/v3/http"
 )
 
 // pinnedCheck holds the retained state from a CheckProject call whose rm failed.
@@ -34,6 +39,123 @@ type pinnedCheck struct {
 // lifecycleWaitTimeout bounds synchronization waits in concurrent lifecycle tests
 // so a regression that ends a request early fails promptly instead of hanging.
 const lifecycleWaitTimeout = 15 * time.Second
+
+// TestCheckFailuresReturnReadableOutput verifies that both tools expose their
+// saved output ID through HTTP and MCP on engine and cleanup failures, while
+// preserving named HTTP statuses and directories pinned by containers.
+func TestCheckFailuresReturnReadableOutput(t *testing.T) {
+	installFakeDocker(t)
+	daemon := newFakeDockerDaemon(t)
+	idPattern := regexp.MustCompile(`read_check_output\(op_id: "([0-9a-f]{32})"\)`)
+	output := "output before cleanup failed\n" + strings.Repeat("x", maxCheckMessageBytes) + "\nlast saved output\n"
+	for _, tool := range []string{"check_project", "update_dependencies"} {
+		for _, transport := range []string{"http", "mcp"} {
+			for _, failure := range []struct {
+				name, message string
+				status        int
+			}{
+				{"container_cleanup", "daemon blocked removal", http.StatusInternalServerError},
+				{"unavailable", "needs a local Docker engine", http.StatusServiceUnavailable},
+				{"unprocessable", "no Go module", http.StatusUnprocessableEntity},
+			} {
+				t.Run(tool+"/"+transport+"/"+failure.name, func(t *testing.T) {
+					t.Setenv("DOCKER_HOST", daemon.hostURI)
+					workspace := newShopModule(t, nil)
+					if failure.name == "unprocessable" {
+						workspace = realTempDir(t)
+					}
+					clients := newCheckTestServer(t, Options{WorkspaceDir: workspace})
+					if failure.name == "unavailable" {
+						t.Setenv("DOCKER_HOST", "tcp://remote.example.test:2375")
+					}
+					var pinned atomic.Value
+					daemon.setOnStart(func(c *recordedContainer) (string, string, int) {
+						pinned.Store(c.Name)
+						daemon.setFailRemove(c.Name, true)
+						return output, "", 0
+					})
+					// Let the server's existing shutdown recovery remove a pinned
+					// container after the assertions finish.
+					t.Cleanup(func() {
+						if name, ok := pinned.Load().(string); ok {
+							daemon.setFailRemove(name, false)
+						}
+					})
+					var message string
+					if transport == "http" {
+						route := "/workspace/check"
+						if tool == "update_dependencies" {
+							route = "/workspace/dependencies"
+						}
+						req := httptest.NewRequest(http.MethodPost, route, nil)
+						req.Header.Set("Authorization", "Bearer generation-token")
+						response := httptest.NewRecorder()
+						NewHTTPHandler(clients.cp, NewTokenAuthenticator(map[string]Principal{
+							"generation-token": {ID: "developer@example.com"},
+						})).ServeHTTP(response, req)
+						require.Equal(t, failure.status, response.Code)
+						var body goahttp.ErrorResponse
+						require.NoError(t, json.Unmarshal(response.Body.Bytes(), &body))
+						message = body.Message
+						if failure.name != "container_cleanup" {
+							assert.Equal(t, failure.name, body.Name)
+							assert.False(t, body.Fault)
+						}
+					} else {
+						call, err := clients.mcpClient.ToolsCall(t.Context(), &genmcpsurla.ToolsCallPayload{
+							Name: tool, Arguments: json.RawMessage(`{}`),
+						})
+						require.NoError(t, err)
+						complete, ok := call.Outcome.AsComplete()
+						require.True(t, ok)
+						require.NotNil(t, complete.IsError)
+						require.True(t, *complete.IsError)
+						require.Len(t, complete.Content, 1)
+						require.NotNil(t, complete.Content[0].Text)
+						message = *complete.Content[0].Text
+					}
+					assert.Contains(t, message, failure.message)
+					assert.Contains(t, message, "output may be incomplete")
+					match := idPattern.FindStringSubmatch(message)
+					require.Len(t, match, 2, message)
+					opID := match[1]
+					var saved strings.Builder
+					payload := &gensurla.ReadCheckOutputPayload{OpID: opID}
+					for pages := 0; ; pages++ {
+						require.Less(t, pages, 3, "saved output must finish within three pages")
+						var page *gensurla.CheckOutputPage
+						if transport == "http" {
+							var err error
+							page, err = clients.httpClient.ReadCheckOutput(t.Context(), payload)
+							require.NoError(t, err)
+						} else {
+							args, err := gensurla.EncodeReadCheckOutputPayload(payload)
+							require.NoError(t, err)
+							page = callMCPTool(t, clients.mcpClient, "read_check_output", string(args), gensurla.DecodeCheckOutputPage)
+						}
+						saved.WriteString(page.Text)
+						if page.NextCursor == nil {
+							break
+						}
+						payload.Cursor = page.NextCursor
+					}
+					assert.Contains(t, saved.String(), "==> modules:")
+					opDir := filepath.Join(clients.cp.checkWorkDir, opID)
+					if failure.name == "container_cleanup" {
+						name, ok := pinned.Load().(string)
+						require.True(t, ok)
+						assert.Contains(t, saved.String(), output)
+						assert.DirExists(t, filepath.Join(opDir, "src"))
+						assert.Equal(t, []string{name}, readOwnerRecord(t, opDir).Containers)
+						assert.Equal(t, 1, daemon.removeCount(name))
+					} else {
+						assert.NoDirExists(t, filepath.Join(opDir, "src"))
+					}
+				})
+			}
+		}
+	}
+}
 
 // TestCheckProjectLifecycle verifies context-inspect resolution when DOCKER_HOST
 // is unset, digest pull on cache miss, Phase 1 (networked go list, read-only
