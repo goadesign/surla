@@ -28,8 +28,9 @@ can run against it.
   your uncommitted files with `check_project` as described in "Next steps".
   `AGENTS_QUICKSTART.md` is generated with it and maps the agent, its tools
   and the generated packages for coding agents. Its `goa gen`, `goa example`
-  and `go run` commands run code on your machine outside Surla's sandbox; in
-  this project, follow "Next steps" instead.
+  and `go run` commands run code on your machine outside Surla's sandbox, and
+  this starter already includes what `goa example` would scaffold; in this
+  project, follow "Next steps" instead.
 - `internal/helper` is the agent's planner and `internal/service` implements the
   service. `Service.Ask` builds an in-memory runtime and store per question
   because this starter has no multi-turn sessions or `Confirmation` tools, and
@@ -58,7 +59,7 @@ can run against it.
   `[[.Name]]` for `surla serve`'s `start_live_target`, planning with the model
   `surla serve` was started with. After changing
   `eval/design/`, regenerate its code with
-  `surla gen -dir eval`.
+  `surla gen -dir eval` (or call `generate_code` with `target: "eval"`).
 
 The evaluator suite lives in this repository, so anyone who can read the code
 can read its scenarios. Its `holdout` tag only hides that scenario's details
@@ -71,23 +72,26 @@ read.
 If you created this project over MCP with `init_project`, `surla serve` has
 already initialized the Git repository, created the initial commit (`commit` in
 `init_project`'s result), bound the server to this directory (`dir`), and
-pinned the evaluator suite to that initial commit. For each change, use the
-running server:
+pinned the evaluator suite to that initial commit. If you created it from the
+CLI, first make the initial commit and start `surla serve` as described below.
+
+For each change, with `surla serve` running on this directory:
 
 1. Describe and check the change with `propose_change`, `confirm_intent` and
    `preview_architecture`.
-2. Edit `design/` and call `generate_code` (with `target: "eval"` after editing
-   `eval/design/`), then update the hand-written code.
+2. When you edit `design/`, call `generate_code` (with `target: "eval"` when
+   you edit `eval/design/`); then update the hand-written code.
 3. Call `check_project` to build and test your uncommitted files, this module
    and `eval/`, in Linux containers (Docker required). When its message
    reports a missing `go.sum` or `go.work.sum` entry or a `go.mod` update, call
-   `update_dependencies` and check again. `read_check_output` returns the full
-   output for the `op_id` in either result.
+   `update_dependencies` and check again. `read_check_output` returns the
+   captured output, page by page, for the `op_id` in either result.
 4. Commit, then pass the new commit ID as `candidate_commit` to
    `start_live_target` and `verify_change`.
 
-See the MCP tools reference in Surla's `docs/REFERENCE.md` for each tool's
-inputs and results.
+See the
+[MCP tools reference](https://github.com/goadesign/surla/blob/main/docs/REFERENCE.md#mcp-tools)
+for each tool's inputs and results.
 
 If you created this project from the CLI with `surla init`, initialize the Git
 repository, make the first commit, and run `surla preview` and `surla verify`:
