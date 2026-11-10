@@ -507,19 +507,13 @@ func TestInitReadmeFirstRunSnippetsMatchTheProject(t *testing.T) {
 	assert.Contains(t, readme, "surla://golden-path")
 	assert.Contains(t, readme, "http://127.0.0.1:8090/golden-path")
 	assert.Contains(t, readme, "planner.ToolFailureProvider")
-	// The guide's host commands are named as outside the sandbox, and each
-	// change regenerates, then builds and tests uncommitted files with
-	// check_project, then commits, in that order.
-	assert.Contains(t, readme, "Its `goa gen`, `goa example`\n  and `go run` commands run code on your machine outside Surla's sandbox")
+	// Each change is described, regenerated, built and tested uncommitted
+	// with check_project, committed, then verified, in that order; keeping a
+	// drafted prompt follows the same order.
 	steps := between(t, readme, "For each change, with `surla serve` running on this directory:", "## Connect")
-	last := -1
-	for _, step := range []string{"call `generate_code`", "Call `check_project`", "`update_dependencies`", "`read_check_output`", "Commit, then pass"} {
-		at := strings.Index(steps, step)
-		require.GreaterOrEqual(t, at, 0, "missing step %q", step)
-		assert.Greater(t, at, last, "step %q is out of order", step)
-		last = at
-	}
-	assert.Contains(t, readme, "The CLI has no command that builds and tests\nuncommitted files")
+	assertInOrder(t, steps, "`propose_change`", "`generate_code`", "`check_project`", "`update_dependencies`", "`read_check_output`", "Commit,", "`verify_change`")
+	draft := between(t, readme, "To try prompt wording on a running", "`-request-revision`")
+	assertInOrder(t, draft, "`check_project`", "commit,", "`verify_change`")
 
 	candDesign, err := os.ReadFile(filepath.Join(dir, "design", "design.go"))
 	require.NoError(t, err)
@@ -546,10 +540,9 @@ func TestInitReadmeFirstRunSnippetsMatchTheProject(t *testing.T) {
 	assert.Equal(t, "Bearer ${SURLA_AUTH_TOKEN}", server.Headers["Authorization"])
 	assert.Contains(t, readme, "export SURLA_AUTH_TOKEN=")
 
-	proposal := between(t, readme, "To start a change,", "To try prompt wording")
+	proposal := between(t, readme, "Then follow \"Next steps\" for each change.", "To try prompt wording")
 	assert.Contains(t, proposal, "`propose_change`")
-	assert.Contains(t, proposal, "reads `design/*.go` from the workspace automatically when\n`design_source` is omitted")
-	assert.Contains(t, proposal, "`confirm_intent`")
+	assert.Contains(t, proposal, "automatically when `design_source` is omitted")
 	assert.Contains(t, proposal, "`request_revision`")
 
 	ignore, err := os.ReadFile(filepath.Join(dir, ".gitignore"))
@@ -852,6 +845,19 @@ func assertOnly(t *testing.T, dir string, names ...string) {
 		got = append(got, e.Name())
 	}
 	assert.ElementsMatch(t, names, got)
+}
+
+// assertInOrder checks that each of parts occurs in s after the previous one.
+func assertInOrder(t *testing.T, s string, parts ...string) {
+	t.Helper()
+	last := -1
+	for _, p := range parts {
+		at := strings.Index(s[last+1:], p)
+		if !assert.GreaterOrEqual(t, at, 0, "missing %q after the previous step", p) {
+			return
+		}
+		last += 1 + at
+	}
 }
 
 // between returns the text of s after the first start and before the next

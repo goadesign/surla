@@ -73,19 +73,22 @@ If you created this project over MCP with `init_project`, `surla serve` has
 already initialized the Git repository, created the initial commit (`commit` in
 `init_project`'s result), bound the server to this directory (`dir`), and
 pinned the evaluator suite to that initial commit. If you created it from the
-CLI, first make the initial commit and start `surla serve` as described below.
+CLI, first make the initial commit, then start `surla serve` and register it
+with your coding agent as described in "Connect a coding agent" below.
 
 For each change, with `surla serve` running on this directory:
 
-1. Describe and check the change with `propose_change`, `confirm_intent` and
-   `preview_architecture`.
-2. When you edit `design/`, call `generate_code` (with `target: "eval"` when
-   you edit `eval/design/`); then update the hand-written code.
+1. Describe the change with `propose_change` and `confirm_intent`, and
+   preview its architecture with `preview_architecture`.
+2. Edit the code. When you edit `design/`, first call `generate_code` (with
+   `target: "eval"` when you edit `eval/design/`), then update the hand-written
+   code to match.
 3. Call `check_project` to build and test your uncommitted files, this module
-   and `eval/`, in Linux containers (Docker required). When its message
-   reports a missing `go.sum` or `go.work.sum` entry or a `go.mod` update, call
-   `update_dependencies` and check again. `read_check_output` returns the
-   captured output, page by page, for the `op_id` in either result.
+   and `eval/`, in Linux containers (Docker required). When it cannot download
+   dependencies and its output shows a missing `go.sum` or `go.work.sum` entry
+   or a `go.mod` update, call `update_dependencies` and check again.
+   `read_check_output` returns the captured output, page by page, for the
+   `op_id` in either result.
 4. Commit, then pass the new commit ID as `candidate_commit` to
    `start_live_target` and `verify_change`.
 
@@ -122,8 +125,8 @@ agents that build the service.
 
 `surla verify` checks a commit. The CLI has no command that builds and tests
 uncommitted files, so for later changes, start `surla serve` in this directory
-(see the next section) and run the `check_project` loop in "Next steps" above
-before you commit.
+and connect your coding agent (see "Connect a coding agent" below), and run the
+`check_project` loop in "Next steps" above before you commit.
 
 ## Connect a coding agent and try a live target
 
@@ -215,21 +218,20 @@ exported. `.mcp.json` holds that reference, not the token itself, and
 Other coding agents take the same URL and header in their own configuration
 files.
 
-To start a change, ask your coding agent to call `propose_change` with your
-request. When `surla serve` is bound to this workspace (`-project .`),
-`propose_change` reads `design/*.go` from the workspace automatically when
-`design_source` is omitted (or pass `design_source` explicitly when targeting
-a different design). Answer the card's questions and confirm it with
-`confirm_intent`. The confirmed card's `request_revision` is the value to
-verify and approve the change with.
+Then follow "Next steps" for each change. When `surla serve` is bound to this
+workspace (`-project .`), `propose_change` reads `design/*.go` from the
+workspace automatically when `design_source` is omitted (or pass
+`design_source` explicitly when targeting a different design). The confirmed
+card's `request_revision` is the value to verify and approve the change with.
 
 To try prompt wording on a running `[[.Name]]` before you verify it,
 call `start_live_target` with the full commit ID of the candidate you want to
 run (the initial `commit` returned by `init_project`, or `git rev-parse HEAD`
 after committing your changes), then `draft_override` with
 `prompt_id` `[[.Name]].helper.system`. A draft lasts only as long as that
-target: to keep it, write the text into `internal/helper/planner.go`, commit,
-and pass that new commit ID to `verify_change` (or `surla verify`).
+target: to keep it, write the text into `internal/helper/planner.go`, run
+`check_project`, commit, and pass that new commit ID to `verify_change` (or
+`surla verify`).
 
 `-request-revision` names the confirmed change request the report is for.
 `starter` is only a local label; when a change goes through the Surla server,
