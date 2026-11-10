@@ -253,7 +253,7 @@ func (e *stuckBuildError) Unwrap() error {
 // workDir as the build's shared HOME, TMPDIR and GOCACHE.
 func generate(ctx context.Context, files map[string]string, workDir string) (map[string][]byte, error) {
 	var out map[string][]byte
-	goa, err := runSandboxed(ctx, files, workDir, generateMainTemplate,
+	goa, err := runSandboxed(ctx, files, workDir, generateProgram(),
 		func(stateDir string) []string {
 			// One literal argument, which Goa copies into generated headers.
 			return []string{"-sources", filepath.Join(stateDir, "sources.json"), "--cmd=$ surla gen"}
@@ -322,7 +322,7 @@ func readSources(stateDir string) (_ map[string][]byte, err error) {
 // workDir as the build's shared HOME, TMPDIR and GOCACHE.
 func evaluate(ctx context.Context, files map[string]string, workDir string) (Result, error) {
 	var res Result
-	_, err := runSandboxed(ctx, files, workDir, harnessMainTemplate,
+	_, err := runSandboxed(ctx, files, workDir, map[string]string{"main.go": harnessMainTemplate},
 		func(stateDir string) []string {
 			return []string{"-out", filepath.Join(stateDir, "evaluated.json")}
 		},
@@ -339,16 +339,16 @@ func evaluate(ctx context.Context, files map[string]string, workDir string) (Res
 	return res, err
 }
 
-// runSandboxed stages the module snapshot, compiles program (a harness
-// template whose {{DESIGN_IMPORT}} and {{GEN_IMPORT}} name the target's
-// packages) with candidate.Build against the target's own dependency
+// runSandboxed stages the module snapshot, compiles program (the main
+// package's files by name, whose {{DESIGN_IMPORT}} and {{GEN_IMPORT}} name
+// the target's packages) with candidate.Build against the target's own dependency
 // versions, and runs it with candidate.Exec and args(stateDir). collect then
 // reads the program's output from stateDir. Everything happens in a temporary
 // directory of its own, with workDir as the build's shared HOME, TMPDIR and
 // GOCACHE; releaseTemp removes it, or keeps it after a stuck build. It
 // returns the Goa module the build selected, and a *buildError when the
 // program does not compile.
-func runSandboxed(ctx context.Context, files map[string]string, workDir, program string, args func(stateDir string) []string, collect func(stateDir string) error) (goa listedModule, err error) {
+func runSandboxed(ctx context.Context, files map[string]string, workDir string, program map[string]string, args func(stateDir string) []string, collect func(stateDir string) error) (goa listedModule, err error) {
 	phase := "checking the local module files"
 	defer func() {
 		if err != nil {
@@ -395,10 +395,12 @@ func runSandboxed(ctx context.Context, files map[string]string, workDir, program
 	if err := stageSnapshot(filepath.Join(buildDir, "target"), files); err != nil {
 		return listedModule{}, err
 	}
-	main := strings.ReplaceAll(program, "{{DESIGN_IMPORT}}", strconv.Quote(target.Module.Mod.Path+"/design"))
-	main = strings.ReplaceAll(main, "{{GEN_IMPORT}}", strconv.Quote(target.Module.Mod.Path+"/gen"))
-	if err := os.WriteFile(filepath.Join(buildDir, "main.go"), []byte(main), 0o600); err != nil {
-		return listedModule{}, fmt.Errorf("write evaluator main.go: %w", err)
+	for name, src := range program {
+		src = strings.ReplaceAll(src, "{{DESIGN_IMPORT}}", strconv.Quote(target.Module.Mod.Path+"/design"))
+		src = strings.ReplaceAll(src, "{{GEN_IMPORT}}", strconv.Quote(target.Module.Mod.Path+"/gen"))
+		if err := os.WriteFile(filepath.Join(buildDir, name), []byte(src), 0o600); err != nil {
+			return listedModule{}, fmt.Errorf("write evaluator %s: %w", name, err)
+		}
 	}
 	gocmd := goCommand{bin: filepath.Join(tc.goroot, "bin", "go")}
 	phase = "loading the design module dependencies"
