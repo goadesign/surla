@@ -445,9 +445,16 @@ func TestConfigureServeWorkspaceSupportsIndependentProjectAndVerificationConfig(
 }
 
 // Analyze records designSource and returns a confirmed CP1SemanticAnalysis.
-func (a *capturingCP1Analyzer) Analyze(_ context.Context, _ string, design controlplane.CP1Design) (controlplane.CP1SemanticAnalysis, error) {
+func (a *capturingCP1Analyzer) Analyze(
+	_ context.Context,
+	_ string,
+	design controlplane.CP1Design,
+) (controlplane.CP1SemanticAnalysis, error) {
 	if a.onAnalyze != nil {
-		designSource, _ := design.CanonicalSource()
+		designSource, err := design.CanonicalSource()
+		if err != nil {
+			return controlplane.CP1SemanticAnalysis{}, err
+		}
 		a.onAnalyze(designSource)
 	}
 	return controlplane.CP1SemanticAnalysis{
@@ -463,9 +470,17 @@ func (a *capturingCP1Analyzer) Analyze(_ context.Context, _ string, design contr
 }
 
 // Revise satisfies controlplane.CP1Analyzer for capturingCP1Analyzer.
-func (a *capturingCP1Analyzer) Revise(_ context.Context, _ controlplane.CP1PriorCard, _ string, design controlplane.CP1Design) (controlplane.CP1RevisionSemanticAnalysis, error) {
+func (a *capturingCP1Analyzer) Revise(
+	_ context.Context,
+	_ controlplane.CP1PriorCard,
+	_ string,
+	design controlplane.CP1Design,
+) (controlplane.CP1RevisionSemanticAnalysis, error) {
 	if a.onAnalyze != nil {
-		designSource, _ := design.CanonicalSource()
+		designSource, err := design.CanonicalSource()
+		if err != nil {
+			return controlplane.CP1RevisionSemanticAnalysis{}, err
+		}
 		a.onAnalyze(designSource)
 	}
 	return controlplane.CP1RevisionSemanticAnalysis{}, nil
