@@ -119,19 +119,22 @@ func withGoaReplace(t *testing.T, required, replaced string) map[string]string {
 }
 
 // TestGenerateWritesSurlasQuickstartSections runs the sandboxed generation
-// program on a design with an agent and no evaluation suite. Its
-// AGENTS_QUICKSTART.md carries Surla's header, liftoff, evaluations and
-// golden-rules sections, and keeps Goa-AI's description of the design and
-// of the generated example code.
+// program on designs with an agent, without and with an evaluation suite.
+// AGENTS_QUICKSTART.md carries Surla's header, liftoff and golden-rules
+// sections, and Surla's evaluations section only when no suite is declared;
+// Goa-AI's description of the design, its suites and the generated example
+// code stays.
 func TestGenerateWritesSurlasQuickstartSections(t *testing.T) {
 	if testing.Short() {
 		t.Skip("runs the sandboxed Go toolchain; the full suite (go test without -short) covers it")
 	}
-	files := testmodule.Snapshot(t, "", `package design
+	const design = `package design
 import (
  . "goa.design/goa-ai/dsl"
+ evaldsl "goa.design/goa-ai/eval/dsl"
  . "goa.design/goa/v3/dsl"
 )
+var _ = evaldsl.Suite
 var _ = Service("helpdesk", func() {
  Agent("triage", "Routes support questions", func() {
   Use("lookup", func() {
@@ -140,16 +143,39 @@ var _ = Service("helpdesk", func() {
     Return(func() { Attribute("title", String); Required("title") })
    })
   })
+  SUITE
  })
-})`)
-	out, err := testEvaluator.Generate(t.Context(), files)
-	require.NoError(t, err)
-	guide := string(out[quickstartPath])
-	require.NotEmpty(t, guide)
-	for _, name := range []string{"header", "liftoff", "evaluations", "golden-rules"} {
-		assert.Contains(t, guide, quickstartSections[name], "Surla's %s section", name)
+})`
+	const suite = `evaldsl.Suite("routing", func() {
+   Description("Routes questions to the right queue.")
+   Timeout("30s")
+   evaldsl.Scenario("billing_question", func() { Description("A billing question is routed to billing.") })
+  })`
+	cases := []struct {
+		name, suite string
+		replaced    []string
+		kept        string
+	}{
+		{"no suite", "", []string{"header", "liftoff", "evaluations", "golden-rules"}, ""},
+		{"declared suite", suite, []string{"header", "liftoff", "golden-rules"}, "### Suite `routing`"},
 	}
-	assert.Contains(t, guide, "helpdesk.triage", "Goa-AI's design overview stays")
-	assert.Contains(t, guide, "### Understanding the Generated Code", "Goa-AI's liftoff-guide stays")
-	assert.NotContains(t, guide, "goa example <module>/design")
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			files := testmodule.Snapshot(t, "", strings.Replace(design, "SUITE", tc.suite, 1))
+			out, err := testEvaluator.Generate(t.Context(), files)
+			require.NoError(t, err)
+			guide := string(out[quickstartPath])
+			require.NotEmpty(t, guide)
+			for _, name := range tc.replaced {
+				assert.Contains(t, guide, quickstartSections[name], "Surla's %s section", name)
+			}
+			assert.Contains(t, guide, "helpdesk.triage", "Goa-AI's design overview stays")
+			assert.Contains(t, guide, "### Understanding the Generated Code", "Goa-AI's liftoff-guide stays")
+			assert.NotContains(t, guide, "goa example <module>/design")
+			if tc.kept != "" {
+				assert.Contains(t, guide, tc.kept, "Goa-AI's suite description stays")
+				assert.NotContains(t, guide, quickstartSections["evaluations"])
+			}
+		})
+	}
 }
