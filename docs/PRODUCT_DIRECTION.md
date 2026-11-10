@@ -7,8 +7,8 @@ Surla does today. Where this page and an older planning document disagree
 (for example [`PRESS_RELEASE.md`](../PRESS_RELEASE.md) or
 [`PROPOSAL.md`](../PROPOSAL.md)), this page states the current intent.
 
-[Decisions](#decisions) are settled. [Proposals](#proposals) are how the
-design currently plans to meet them; they are not settled and can change.
+[Decisions](#decisions) are settled. [Open questions](#open-questions) are
+not.
 
 ## The product in five lines
 
@@ -26,8 +26,8 @@ design currently plans to meet them; they are not settled and can change.
 4. **Out of scope.** A catalogue or console of cloud services, deploying
    or applying infrastructure, and an application builder for non-technical
    users.
-5. **Delivery.** Proposed: an MCP App inside the assistant the user already
-   works in. See [Proposals](#proposals).
+5. **Delivery.** An MCP App inside the assistant the user already works in,
+   with the same page served by `surla serve` for hosts that cannot show it.
 
 ## Decisions
 
@@ -49,6 +49,7 @@ deployment.
   workflow engine or an external provider is an element with relationships;
   where things run is the deployment view. Surla adds no separate lists for
   "depends on" or "runs on".
+
 ### The model is a guide and thought partner
 
 The model proposes an architecture, gives its reasons, lays out the
@@ -60,7 +61,8 @@ The user engages as little or as much as they want:
 - **A little.** Accept the proposal and decide only the choices Surla
   raises.
 - **Some.** Walk through the choices with the guide.
-- **A lot.** Reshape the architecture and have Surla check the result.
+- **A lot.** Reshape the architecture, by saying what to change or by
+  editing the diagram, and have Surla check the result.
 
 Between the user's decisions the agent continues on its own. It stops for a
 decision only the user can make, and for a verdict.
@@ -105,21 +107,23 @@ well as application code.
   infrastructure or deploy. Recording an approval does not merge, deploy or
   apply anything.
 
-## Proposals
-
-These are the current design's answers. None is settled.
-
 ### One workspace
 
 Deciding, trying the result, reading the verdict and looking at evidence
 all happen in the architecture workspace, with the affected elements marked
 on the diagram, so that a change has no separate sequence of screens.
 
-### Reshape by saying, not by dragging
+### Reshape by saying, or on the diagram
 
-The user selects an element or says what to change. The guide edits the
-design code and the diagram redraws with the difference marked. Surla does
-not offer a drag-and-drop diagram editor.
+The user changes the architecture in either of two ways, and the design
+code stays the source of truth for both.
+
+- **By saying.** The user selects an element or says what to change. The
+  guide edits the design code and the diagram redraws with the difference
+  marked.
+- **On the diagram.** The user adds, edits and removes elements and
+  relationships directly. Surla reuses Model's diagram editor, or pieces of
+  it, where that is practical.
 
 ### Every view says what it shows
 
@@ -135,8 +139,7 @@ not offer a drag-and-drop diagram editor.
 
 Surla validates the Terraform files and compares them with the deployment
 view, reporting an element with no resource and a resource missing from the
-diagram. Which checks need the user's cloud credentials, and who runs
-`terraform plan`, is open.
+diagram.
 
 ### Delivered as an MCP App
 
@@ -149,3 +152,13 @@ diagram. Which checks need the user's cloud credentials, and who runs
   state persistence as future work, so Surla does not rely on a view
   surviving between turns.
 - **Outside an MCP Apps host,** `surla serve` serves the same page.
+
+## Open questions
+
+- **Who runs `terraform plan`.** Planning needs cloud credentials. Whether
+  Surla runs it with credentials the user supplies, or the user runs it, is
+  not decided.
+- **How an edit on the diagram reaches the design code.** Model's editor
+  moves elements today; it does not add, rename or remove them. How much of
+  it Surla can reuse, and whether a diagram edit is applied by rewriting the
+  code directly or by asking the guide to, is under study.
