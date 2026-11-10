@@ -1,5 +1,5 @@
 // Package shadcn provides accessible, composable shadcn/ui React components
-// tailored for the sandboxed Surla Checkpoint Studio.
+// tailored for the sandboxed Surla Architecture Workspace.
 
 import React from "react";
 
@@ -57,7 +57,7 @@ export function CardContent({ className = "", children, ...rest }: CardProps) {
 }
 
 export interface BadgeProps extends React.HTMLAttributes<HTMLSpanElement> {
-  variant?: "default" | "accent" | "destructive";
+  variant?: "default" | "accent" | "success" | "warning" | "destructive";
   children?: React.ReactNode;
 }
 
@@ -66,6 +66,10 @@ export function Badge({ variant = "default", className = "", children, ...rest }
   const variantCls =
     variant === "accent"
       ? "shadcn-badge-accent"
+      : variant === "success"
+      ? "shadcn-badge-success"
+      : variant === "warning"
+      ? "shadcn-badge-warning"
       : variant === "destructive"
       ? "shadcn-badge-destructive"
       : "";

@@ -1,6 +1,6 @@
-// Package components provides the Checkpoint 1 Change Card editor, combining
-// the OpenUI Decision Workspace with the always-available canonical shadcn/ui
-// CP1 inspector over a single shared draft context.
+// Package components provides the Change Card decision and approval editor,
+// combining the OpenUI Decision Workspace with the always-available canonical
+// shadcn/ui inspector over a single shared draft context.
 
 import React, { useEffect, useRef } from "react";
 import { flushSync } from "react-dom";
@@ -194,11 +194,31 @@ export function CP1EditorView({
   return (
     <CP1DraftContext.Provider value={ctxValue}>
       <Card className="surla-meta">
-        <h2>
-          {card.status === "confirmed"
-            ? "Confirmed Change Decision"
-            : "Review & Confirm Change Intent"}
-        </h2>
+        <div className="surla-region-header">
+          <div className="surla-region-title-group">
+            <h2>
+              {card.status === "confirmed"
+                ? "Confirmed Change Decision"
+                : "Review & Confirm Change Intent"}
+            </h2>
+          </div>
+          <div className="surla-toolbar-actions">
+            <Badge variant={card.status === "confirmed" ? "success" : "warning"}>
+              {card.status === "confirmed" ? "Confirmed" : "Needs confirmation"}
+            </Badge>
+            {card.approval ? <Badge variant="success">Approval recorded</Badge> : null}
+            {card.unverified_approval ? <Badge variant="warning">Approval unverified</Badge> : null}
+            {!cp4Open ? (
+              <Button
+                id="surla-load-verifications"
+                disabled={loadingVerifications}
+                onClick={onLoadVerifications}
+              >
+                {loadingVerifications ? "Loading saved verifications..." : "View saved verifications"}
+              </Button>
+            ) : null}
+          </div>
+        </div>
         {card.status === "confirmed" && ambiguities.length > 0 ? (
           <div id="surla-confirmed-decisions" role="region" aria-label="Confirmed Decisions">
             <p>
@@ -215,9 +235,6 @@ export function CP1EditorView({
           </div>
         ) : null}
         <p>
-          <Badge>{card.status === "confirmed" ? "Confirmed" : "Needs confirmation"}</Badge>
-          {card.approval ? <Badge variant="accent">Approval recorded</Badge> : null}
-          {card.unverified_approval ? <Badge>Approval unverified</Badge> : null}
           <strong>
             {card.status === "confirmed" && ambiguities.length > 0
               ? "Initial Proposal Summary: "
@@ -242,17 +259,6 @@ export function CP1EditorView({
             request_revision: <code>{card.request_revision}</code>
           </p>
         </details>
-        {!cp4Open ? (
-          <div className="surla-field-row">
-            <Button
-              id="surla-load-verifications"
-              disabled={loadingVerifications}
-              onClick={onLoadVerifications}
-            >
-              {loadingVerifications ? "Loading saved verifications..." : "View saved verifications"}
-            </Button>
-          </div>
-        ) : null}
       </Card>
 
       {card.approval ? (
@@ -260,12 +266,21 @@ export function CP1EditorView({
           id="surla-cp5-approval"
           className="surla-card"
           role="region"
-          aria-label="Checkpoint 5 Promotion Approval"
+          aria-label="Recorded Promotion Approval"
         >
-          <div className="surla-field-row">
-            <h3>Checkpoint 5 Promotion Approval</h3>
-            <Badge variant="accent">Approval recorded</Badge>
-            <Badge>No merge or deploy side effect</Badge>
+          <div className="surla-region-header">
+            <div className="surla-field-row">
+              <h3>Recorded Promotion Approval</h3>
+              <Badge variant="success">Approval recorded</Badge>
+              <Badge>No merge or deploy side effect</Badge>
+            </div>
+            <Button
+              id="surla-cp5-refresh-approval"
+              disabled={rpcInFlight}
+              onClick={onLoadLatestCard}
+            >
+              Check current approval
+            </Button>
           </div>
           <p>
             Approval recorded by bearer principal <code>{card.approval.approved_by}</code> for this
@@ -273,13 +288,6 @@ export function CP1EditorView({
             does not merge branches or deploy binaries. This record describes the verified inputs
             below; check the current approval to see whether they still match the promotion target.
           </p>
-          <Button
-            id="surla-cp5-refresh-approval"
-            disabled={rpcInFlight}
-            onClick={onLoadLatestCard}
-          >
-            Check current approval
-          </Button>
           {draftDirty ? (
             <Alert id="surla-cp5-approval-dirty-warning" variant="warning" role="status">
               <strong>Unsaved draft edits detected: </strong>
@@ -327,24 +335,26 @@ export function CP1EditorView({
           id="surla-cp5-unverified-approval"
           className="surla-card"
           role="region"
-          aria-label="Unverified Checkpoint 5 Promotion Approval"
+          aria-label="Unverified Promotion Approval"
         >
-          <div className="surla-field-row">
-            <h3>Saved Checkpoint 5 Promotion Approval (Unverified)</h3>
-            <Badge>Inputs not verified on this read</Badge>
-            <Badge>No merge or deploy side effect</Badge>
+          <div className="surla-region-header">
+            <div className="surla-field-row">
+              <h3>Saved Promotion Approval (Unverified)</h3>
+              <Badge variant="warning">Inputs not verified on this read</Badge>
+              <Badge>No merge or deploy side effect</Badge>
+            </div>
+            <Button
+              id="surla-cp5-refresh-approval"
+              disabled={rpcInFlight}
+              onClick={onLoadLatestCard}
+            >
+              Check current approval
+            </Button>
           </div>
           <Alert id="surla-cp5-unverified-approval-reason" variant="warning" role="status">
             <strong>Saved approval could not be verified: </strong>
             {card.unverified_approval.reason}
           </Alert>
-          <Button
-            id="surla-cp5-refresh-approval"
-            disabled={rpcInFlight}
-            onClick={onLoadLatestCard}
-          >
-            Check current approval
-          </Button>
           {draftDirty ? (
             <Alert id="surla-cp5-approval-dirty-warning" variant="warning" role="status">
               <strong>Unsaved draft edits detected: </strong>
@@ -573,9 +583,9 @@ export function CP1EditorView({
         )}
 
         <h3>{"Concrete Examples (" + draftExamples.length + ")"}</h3>
-        <ul>
+        <ul className="surla-compact-list">
           {draftExamples.map((ex, idx) => (
-            <li key={ex.id} data-example-index={String(idx)}>
+            <li key={ex.id} className="surla-example-card" data-example-index={String(idx)}>
               <div>
                 <strong>{ex.scenario}</strong>
                 {" — Input: " + ex.input_summary + " -> Expected: " + ex.expected_outcome + " "}
