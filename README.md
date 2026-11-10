@@ -171,6 +171,7 @@ To run the full independent verification suite (`surla verify` and `surla approv
 - **[How Surla Works (`docs/HOW_IT_WORKS.md`)](docs/HOW_IT_WORKS.md)** — Walk through the 5 checkpoints (`CP1`–`CP5`), the proposed cross-model team, fast draft overrides, and OS-isolated verification.
 - **[Golden Path Architecture (`docs/ARCHITECTURE_PLAYBOOK.md`)](docs/ARCHITECTURE_PLAYBOOK.md)** — Explore the 7 Golden Path rules that keep Surla platforms maintainable and see how the Goa Design suite powers them.
 - **[CLI, MCP & Repo Reference (`docs/REFERENCE.md`)](docs/REFERENCE.md)** — Configure MCP clients (Claude Code, Cursor, Gemini CLI, and Codex), browse the MCP tools and CLI flags, and run the [`examples/orders`](examples/orders/) reference suite.
+- **[Product Direction (`docs/PRODUCT_DIRECTION.md`)](docs/PRODUCT_DIRECTION.md)** — What Surla is meant to be, who it is for, and the product decisions that follow.
 - **[Architecture Proposal (`PROPOSAL.md`)](PROPOSAL.md)** & **[Product Vision (`PRESS_RELEASE.md`)](PRESS_RELEASE.md)** — Read the full system design, threat model, and Working Backwards press release.
 
 ## License

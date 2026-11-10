@@ -459,6 +459,7 @@ The full suite runs nightly at 07:17 UTC and on a manual **Run workflow** reques
 ├── docs/
 │   ├── HOW_IT_WORKS.md           # The 5 checkpoints, Chorus routing & independent verification
 │   ├── ARCHITECTURE_PLAYBOOK.md  # Golden Path rules & Goa Design suite overview
+│   ├── PRODUCT_DIRECTION.md      # Who Surla is for and the product decisions that follow
 │   └── REFERENCE.md              # MCP tools/resources, CLI flags & repo layout
 ├── internal/
 │   ├── controlplane/             # CP1–CP5 handlers, bearer auth, embedded checkpoint viewer, CP1 schema validator
