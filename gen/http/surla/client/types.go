@@ -616,6 +616,17 @@ type ReadCheckOutputResponseBody struct {
 	DroppedBytes *int64 `form:"dropped_bytes,omitempty" json:"dropped_bytes,omitempty" xml:"dropped_bytes,omitempty"`
 }
 
+// ListTracesResponseBody is the type of the "surla" service "list_traces"
+// endpoint HTTP response body.
+type ListTracesResponseBody struct {
+	// Matching spans found in this page's bounded disk window.
+	Spans []*TraceSpanResponseBody `form:"spans,omitempty" json:"spans,omitempty" xml:"spans,omitempty"`
+	// True when older records have not yet been examined.
+	HasMore *bool `form:"has_more,omitempty" json:"has_more,omitempty" xml:"has_more,omitempty"`
+	// Cursor to examine the next older window; present only when has_more is true.
+	NextCursor *string `form:"next_cursor,omitempty" json:"next_cursor,omitempty" xml:"next_cursor,omitempty"`
+}
+
 // ProposeChangeConflictResponseBody is the type of the "surla" service
 // "propose_change" endpoint HTTP response body for the "conflict" error.
 type ProposeChangeConflictResponseBody struct {
@@ -1677,6 +1688,42 @@ type ReadCheckOutputUnprocessableResponseBody struct {
 	Fault *bool `form:"fault,omitempty" json:"fault,omitempty" xml:"fault,omitempty"`
 }
 
+// ListTracesUnprocessableResponseBody is the type of the "surla" service
+// "list_traces" endpoint HTTP response body for the "unprocessable" error.
+type ListTracesUnprocessableResponseBody struct {
+	// Name is the name of this class of errors.
+	Name *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID *string `form:"id,omitempty" json:"id,omitempty" xml:"id,omitempty"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message *string `form:"message,omitempty" json:"message,omitempty" xml:"message,omitempty"`
+	// Is the error temporary?
+	Temporary *bool `form:"temporary,omitempty" json:"temporary,omitempty" xml:"temporary,omitempty"`
+	// Is the error a timeout?
+	Timeout *bool `form:"timeout,omitempty" json:"timeout,omitempty" xml:"timeout,omitempty"`
+	// Is the error a server-side fault?
+	Fault *bool `form:"fault,omitempty" json:"fault,omitempty" xml:"fault,omitempty"`
+}
+
+// ListTracesNotImplementedResponseBody is the type of the "surla" service
+// "list_traces" endpoint HTTP response body for the "not_implemented" error.
+type ListTracesNotImplementedResponseBody struct {
+	// Name is the name of this class of errors.
+	Name *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID *string `form:"id,omitempty" json:"id,omitempty" xml:"id,omitempty"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message *string `form:"message,omitempty" json:"message,omitempty" xml:"message,omitempty"`
+	// Is the error temporary?
+	Temporary *bool `form:"temporary,omitempty" json:"temporary,omitempty" xml:"temporary,omitempty"`
+	// Is the error a timeout?
+	Timeout *bool `form:"timeout,omitempty" json:"timeout,omitempty" xml:"timeout,omitempty"`
+	// Is the error a server-side fault?
+	Fault *bool `form:"fault,omitempty" json:"fault,omitempty" xml:"fault,omitempty"`
+}
+
 // AmbiguityQuestionResponseBody is used to define fields on response body
 // types.
 type AmbiguityQuestionResponseBody struct {
@@ -1993,6 +2040,35 @@ type VerificationStatusResultResponseBody struct {
 	AcceptedAt *string `form:"accepted_at,omitempty" json:"accepted_at,omitempty" xml:"accepted_at,omitempty"`
 	// Exactly one of running, completed or not_completed.
 	State *StateResponseBody `form:"state,omitempty" json:"state,omitempty" xml:"state,omitempty"`
+}
+
+// TraceSpanResponseBody is used to define fields on response body types.
+type TraceSpanResponseBody struct {
+	// OpenTelemetry trace identifier.
+	TraceID *string `form:"trace_id,omitempty" json:"trace_id,omitempty" xml:"trace_id,omitempty"`
+	// OpenTelemetry span identifier.
+	SpanID *string `form:"span_id,omitempty" json:"span_id,omitempty" xml:"span_id,omitempty"`
+	// Parent span identifier; empty when this span has no parent.
+	ParentSpanID *string `form:"parent_span_id,omitempty" json:"parent_span_id,omitempty" xml:"parent_span_id,omitempty"`
+	// Operation name, at most 128 bytes.
+	Name *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
+	// Operation start time in UTC.
+	StartTime *string `form:"start_time,omitempty" json:"start_time,omitempty" xml:"start_time,omitempty"`
+	// Operation finish time in UTC.
+	EndTime *string `form:"end_time,omitempty" json:"end_time,omitempty" xml:"end_time,omitempty"`
+	// Elapsed milliseconds.
+	DurationMs *int64 `form:"duration_ms,omitempty" json:"duration_ms,omitempty" xml:"duration_ms,omitempty"`
+	// Original span status: unset, ok, or error. An unset status does not
+	// establish success.
+	Status *string `form:"status,omitempty" json:"status,omitempty" xml:"status,omitempty"`
+	// Safe operation summary, at most 2048 bytes; never a raw error message.
+	Summary *string `form:"summary,omitempty" json:"summary,omitempty" xml:"summary,omitempty"`
+	// Selected operation identifiers and results; at most six values of 1024 bytes
+	// each.
+	Attributes map[string]string `form:"attributes,omitempty" json:"attributes,omitempty" xml:"attributes,omitempty"`
+	// True when text was shortened to fit this diagnostic record; use operator
+	// telemetry for the full values.
+	Shortened *bool `form:"shortened,omitempty" json:"shortened,omitempty" xml:"shortened,omitempty"`
 }
 
 // ExampleItemRequestBody is used to define fields on request body types.
@@ -3849,6 +3925,55 @@ func NewReadCheckOutputUnprocessable(body *ReadCheckOutputUnprocessableResponseB
 	return v
 }
 
+// NewListTracesTraceListOK builds a "surla" service "list_traces" endpoint
+// result from a HTTP "OK" response.
+func NewListTracesTraceListOK(body *ListTracesResponseBody) *surla.TraceList {
+	v := &surla.TraceList{
+		HasMore:    *body.HasMore,
+		NextCursor: body.NextCursor,
+	}
+	v.Spans = make([]*surla.TraceSpan, len(body.Spans))
+	for i, val := range body.Spans {
+		if val == nil {
+			v.Spans[i] = nil
+			continue
+		}
+		v.Spans[i] = unmarshalTraceSpanResponseBodyToSurlaTraceSpan(val)
+	}
+
+	return v
+}
+
+// NewListTracesUnprocessable builds a surla service list_traces endpoint
+// unprocessable error.
+func NewListTracesUnprocessable(body *ListTracesUnprocessableResponseBody) *goa.ServiceError {
+	v := &goa.ServiceError{
+		Name:      *body.Name,
+		ID:        *body.ID,
+		Message:   *body.Message,
+		Temporary: *body.Temporary,
+		Timeout:   *body.Timeout,
+		Fault:     *body.Fault,
+	}
+
+	return v
+}
+
+// NewListTracesNotImplemented builds a surla service list_traces endpoint
+// not_implemented error.
+func NewListTracesNotImplemented(body *ListTracesNotImplementedResponseBody) *goa.ServiceError {
+	v := &goa.ServiceError{
+		Name:      *body.Name,
+		ID:        *body.ID,
+		Message:   *body.Message,
+		Temporary: *body.Temporary,
+		Timeout:   *body.Timeout,
+		Fault:     *body.Fault,
+	}
+
+	return v
+}
+
 // ValidateProposeChangeResponseBody runs the validations defined on
 // ProposeChangeResponseBody
 func ValidateProposeChangeResponseBody(body *ProposeChangeResponseBody) (err error) {
@@ -4532,6 +4657,25 @@ func ValidateReadCheckOutputResponseBody(body *ReadCheckOutputResponseBody) (err
 	}
 	if body.DroppedBytes == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("dropped_bytes", "body"))
+	}
+	return
+}
+
+// ValidateListTracesResponseBody runs the validations defined on
+// ListTracesResponseBody
+func ValidateListTracesResponseBody(body *ListTracesResponseBody) (err error) {
+	if body.Spans == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("spans", "body"))
+	}
+	if body.HasMore == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("has_more", "body"))
+	}
+	for _, e := range body.Spans {
+		if e != nil {
+			if err2 := validateTraceSpanResponseBody(e, "body.spans[*]"); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
 	}
 	return
 }
@@ -5928,6 +6072,54 @@ func ValidateReadCheckOutputUnprocessableResponseBody(body *ReadCheckOutputUnpro
 	return
 }
 
+// ValidateListTracesUnprocessableResponseBody runs the validations defined on
+// ListTracesUnprocessableResponseBody
+func ValidateListTracesUnprocessableResponseBody(body *ListTracesUnprocessableResponseBody) (err error) {
+	if body.Name == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
+	}
+	if body.ID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("id", "body"))
+	}
+	if body.Message == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("message", "body"))
+	}
+	if body.Temporary == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("temporary", "body"))
+	}
+	if body.Timeout == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("timeout", "body"))
+	}
+	if body.Fault == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("fault", "body"))
+	}
+	return
+}
+
+// ValidateListTracesNotImplementedResponseBody runs the validations defined on
+// ListTracesNotImplementedResponseBody
+func ValidateListTracesNotImplementedResponseBody(body *ListTracesNotImplementedResponseBody) (err error) {
+	if body.Name == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
+	}
+	if body.ID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("id", "body"))
+	}
+	if body.Message == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("message", "body"))
+	}
+	if body.Temporary == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("temporary", "body"))
+	}
+	if body.Timeout == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("timeout", "body"))
+	}
+	if body.Fault == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("fault", "body"))
+	}
+	return
+}
+
 // ValidateAmbiguityQuestionResponseBody runs the validations defined on
 // AmbiguityQuestion
 func ValidateAmbiguityQuestionResponseBody(body *AmbiguityQuestionResponseBody) (err error) {
@@ -6938,6 +7130,105 @@ func validateVerificationStatusResultResponseBody(body *VerificationStatusResult
 			}
 		}
 
+	}
+	return
+}
+
+// ValidateTraceSpanResponseBody runs the validations defined on TraceSpan
+func ValidateTraceSpanResponseBody(body *TraceSpanResponseBody) (err error) {
+	if body.TraceID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("trace_id", "body"))
+	}
+	if body.SpanID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("span_id", "body"))
+	}
+	if body.ParentSpanID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("parent_span_id", "body"))
+	}
+	if body.Name == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
+	}
+	if body.StartTime == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("start_time", "body"))
+	}
+	if body.EndTime == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("end_time", "body"))
+	}
+	if body.DurationMs == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("duration_ms", "body"))
+	}
+	if body.Status == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("status", "body"))
+	}
+	if body.Summary == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("summary", "body"))
+	}
+	if body.Attributes == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("attributes", "body"))
+	}
+	if body.Shortened == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("shortened", "body"))
+	}
+	if body.StartTime != nil {
+		err = goa.MergeErrors(err, goa.ValidateFormat("body.start_time", *body.StartTime, goa.FormatDateTime))
+	}
+	if body.EndTime != nil {
+		err = goa.MergeErrors(err, goa.ValidateFormat("body.end_time", *body.EndTime, goa.FormatDateTime))
+	}
+	if body.Status != nil {
+		if !(*body.Status == "unset" || *body.Status == "ok" || *body.Status == "error") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.status", *body.Status, []any{"unset", "ok", "error"}))
+		}
+	}
+	return
+}
+
+// validateTraceSpanResponseBody checks TraceSpan and reports errors using the
+// path supplied by its caller
+func validateTraceSpanResponseBody(body *TraceSpanResponseBody, path string) (err error) {
+	if body.TraceID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("trace_id", path))
+	}
+	if body.SpanID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("span_id", path))
+	}
+	if body.ParentSpanID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("parent_span_id", path))
+	}
+	if body.Name == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("name", path))
+	}
+	if body.StartTime == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("start_time", path))
+	}
+	if body.EndTime == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("end_time", path))
+	}
+	if body.DurationMs == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("duration_ms", path))
+	}
+	if body.Status == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("status", path))
+	}
+	if body.Summary == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("summary", path))
+	}
+	if body.Attributes == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("attributes", path))
+	}
+	if body.Shortened == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("shortened", path))
+	}
+	if body.StartTime != nil {
+		err = goa.MergeErrors(err, goa.ValidateFormat(path+".start_time", *body.StartTime, goa.FormatDateTime))
+	}
+	if body.EndTime != nil {
+		err = goa.MergeErrors(err, goa.ValidateFormat(path+".end_time", *body.EndTime, goa.FormatDateTime))
+	}
+	if body.Status != nil {
+		if !(*body.Status == "unset" || *body.Status == "ok" || *body.Status == "error") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError(path+".status", *body.Status, []any{"unset", "ok", "error"}))
+		}
 	}
 	return
 }

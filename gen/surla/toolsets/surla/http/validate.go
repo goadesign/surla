@@ -506,6 +506,42 @@ func ValidateInitProjectResultTransport(body *InitProjectResultTransport) (err e
 	return
 }
 
+// ValidateListTracesPayloadTransport runs the validations defined on ListTracesPayloadTransport.
+func ValidateListTracesPayloadTransport(body *ListTracesPayloadTransport) (err error) {
+	if body.Status != nil {
+		if !(*body.Status == "all" || *body.Status == "error" || *body.Status == "ok") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.status", *body.Status, []any{"all", "error", "ok"}))
+		}
+	}
+	if body.Limit != nil {
+		if *body.Limit < 1 {
+			err = goa.MergeErrors(err, goa.InvalidRangeError("body.limit", *body.Limit, 1, true))
+		}
+		if *body.Limit > 100 {
+			err = goa.MergeErrors(err, goa.InvalidRangeError("body.limit", *body.Limit, 100, false))
+		}
+	}
+	return
+}
+
+// ValidateListTracesResultTransport runs the validations defined on ListTracesResultTransport.
+func ValidateListTracesResultTransport(body *ListTracesResultTransport) (err error) {
+	if body.Spans == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("spans", "body"))
+	}
+	if body.HasMore == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("has_more", "body"))
+	}
+	for _, e := range body.Spans {
+		if e != nil {
+			if err2 := ValidateTraceSpanTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	return
+}
+
 // ValidateListVerificationsPayloadTransport runs the validations defined on ListVerificationsPayloadTransport.
 func ValidateListVerificationsPayloadTransport(body *ListVerificationsPayloadTransport) (err error) {
 	if body.ChangeID == nil {
@@ -1230,6 +1266,55 @@ func ValidateToolInputBindingItemTransport(body *ToolInputBindingItemTransport) 
 	}
 	if body.InjectedFields == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("injected_fields", "body"))
+	}
+	return
+}
+
+// ValidateTraceSpanTransport runs the validations defined on TraceSpanTransport.
+func ValidateTraceSpanTransport(body *TraceSpanTransport) (err error) {
+	if body.TraceID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("trace_id", "body"))
+	}
+	if body.SpanID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("span_id", "body"))
+	}
+	if body.ParentSpanID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("parent_span_id", "body"))
+	}
+	if body.Name == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
+	}
+	if body.StartTime == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("start_time", "body"))
+	}
+	if body.EndTime == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("end_time", "body"))
+	}
+	if body.DurationMs == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("duration_ms", "body"))
+	}
+	if body.Status == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("status", "body"))
+	}
+	if body.Summary == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("summary", "body"))
+	}
+	if body.Attributes == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("attributes", "body"))
+	}
+	if body.Shortened == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("shortened", "body"))
+	}
+	if body.StartTime != nil {
+		err = goa.MergeErrors(err, goa.ValidateFormat("body.start_time", *body.StartTime, goa.FormatDateTime))
+	}
+	if body.EndTime != nil {
+		err = goa.MergeErrors(err, goa.ValidateFormat("body.end_time", *body.EndTime, goa.FormatDateTime))
+	}
+	if body.Status != nil {
+		if !(*body.Status == "unset" || *body.Status == "ok" || *body.Status == "error") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.status", *body.Status, []any{"unset", "ok", "error"}))
+		}
 	}
 	return
 }

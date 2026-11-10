@@ -215,6 +215,26 @@ export interface VerificationListResult {
   runs: VerificationStatusResult[];
 }
 
+export interface TraceSpan {
+  attributes: Record<string, string>;
+  duration_ms: number;
+  end_time: string;
+  name: string;
+  parent_span_id: string;
+  shortened: boolean;
+  span_id: string;
+  start_time: string;
+  status: "unset" | "ok" | "error";
+  summary: string;
+  trace_id: string;
+}
+
+export interface TraceList {
+  has_more: boolean;
+  next_cursor?: string;
+  spans: TraceSpan[];
+}
+
 export interface LiveTargetResult {
   candidate_commit: string;
   message: string;
@@ -1420,6 +1440,92 @@ const GENERATED_RESULT_SCHEMAS: Record<string, JSONSchemaNode> = {
       }
     }
   },
+  "TraceList": {
+    "type": "object",
+    "required": [
+      "spans",
+      "has_more"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "has_more": {
+        "type": "boolean"
+      },
+      "next_cursor": {
+        "type": "string"
+      },
+      "spans": {
+        "type": "array",
+        "items": {
+          "$ref": "#/$defs/TraceSpan"
+        }
+      }
+    },
+    "$defs": {
+      "TraceSpan": {
+        "type": "object",
+        "required": [
+          "trace_id",
+          "span_id",
+          "parent_span_id",
+          "name",
+          "start_time",
+          "end_time",
+          "duration_ms",
+          "status",
+          "summary",
+          "attributes",
+          "shortened"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "attributes": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "duration_ms": {
+            "type": "integer"
+          },
+          "end_time": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "name": {
+            "type": "string"
+          },
+          "parent_span_id": {
+            "type": "string"
+          },
+          "shortened": {
+            "type": "boolean"
+          },
+          "span_id": {
+            "type": "string"
+          },
+          "start_time": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "unset",
+              "ok",
+              "error"
+            ]
+          },
+          "summary": {
+            "type": "string"
+          },
+          "trace_id": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
   "LiveTargetResult": {
     "type": "object",
     "required": [
@@ -1590,6 +1696,11 @@ export function isVerificationStatusResult(p: unknown): p is VerificationStatusR
 // isVerificationListResult validates the generated CP4 saved-run list.
 export function isVerificationListResult(p: unknown): p is VerificationListResult {
   return validateGeneratedRoot("VerificationListResult", p);
+}
+
+// isTraceList validates the generated safe operation history page.
+export function isTraceList(p: unknown): p is TraceList {
+  return validateGeneratedRoot("TraceList", p);
 }
 
 // isLiveTargetResult validates a start_live_target result.

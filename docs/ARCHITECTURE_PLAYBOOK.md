@@ -46,6 +46,25 @@ When a platform needs custom generated files or wants to tailor artifacts produc
 
 ## How the Goa Design Suite Fits Together
 
+Surla's control plane records its own operation diagnostics through
+OpenTelemetry. `controlplane.New` opens existing safe trace history while
+holding the Change Card directory lock; `controlplane.Options.TracerProvider`
+binds the host's SDK provider to that instance's operations at construction.
+Without a provider, `list_traces` returns `not_implemented` with setup instructions.
+Each recorded operation saves its
+bounded safe view through `internal/traceview` when its own span ends. Identity
+stays with that local write; it is not attached to the exported span or chosen
+by a provider-wide processor.
+`ControlPlane.ListTraces` reads caller-owned pages from that file, and
+`ControlPlane.Close` waits for owned checks and evaluator cleanup and closes the
+file before releasing the card lock. It does not wait for in-flight CP1 analysis;
+spans ending after closure are not saved. Instances sharing a provider keep
+separate histories. The standalone
+`runServe` composition root owns the tracer provider and optional full OTLP
+exporter; embedded hosts own theirs. Export retains original span fields,
+events and status without added identity metadata. See [Operation diagnostics](REFERENCE.md#operation-diagnostics)
+for the caller experience and recording limits.
+
 - **[Goa](https://github.com/goadesign/goa)** — Compiles `design/*.go` into HTTP, gRPC, OpenAPI, CLI, and validation packages (`goa gen`)—plus in-memory `generator.Sources` for sandboxed design evaluation—at **0 LLM tokens**.
 - **[Goa-AI](https://github.com/goadesign/goa-ai)** — Adds `Agent`, `Toolset`, `MCP`, durable Temporal workflows, `eval` suites, gRPC model gateways, and runtime token controls (`Inject`, `BindField`, `BoundedResult`, `ServerData`, `Cache`, `Compress`).
 - **[Pulse](https://github.com/goadesign/pulse)** — Streams live agent events (`pulse/streaming`) and coordinates distributed rate limits and replicated state maps (`pulse/rmap`) over Redis.

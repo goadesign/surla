@@ -490,9 +490,27 @@ func (a *MCPAdapter) invokeMCPMethod18(ctx context.Context, payload *surla.ReadC
 	return result, nil
 }
 
-// invokeMCPMethod19 sends validated input to the configured CheckpointUI endpoint
+// invokeMCPMethod19 sends validated input to the configured ListTraces endpoint
 // and returns its declared result. An unexpected Go type is an internal error.
-func (a *MCPAdapter) invokeMCPMethod19(ctx context.Context) (string, error) {
+func (a *MCPAdapter) invokeMCPMethod19(ctx context.Context, payload *surla.ListTracesPayload) (*surla.TraceList, error) {
+	// The original endpoint middleware observes its authored service and method.
+	ctx = context.WithValue(ctx, goa.ServiceKey, "surla")
+	ctx = context.WithValue(ctx, goa.MethodKey, "list_traces")
+	raw, err := a.endpoints.ListTraces(ctx, payload)
+	var zero *surla.TraceList
+	if err != nil {
+		return zero, err
+	}
+	result, ok := raw.(*surla.TraceList)
+	if !ok {
+		return zero, &endpointResultError{method: "ListTraces"}
+	}
+	return result, nil
+}
+
+// invokeMCPMethod20 sends validated input to the configured CheckpointUI endpoint
+// and returns its declared result. An unexpected Go type is an internal error.
+func (a *MCPAdapter) invokeMCPMethod20(ctx context.Context) (string, error) {
 	// The original endpoint middleware observes its authored service and method.
 	ctx = context.WithValue(ctx, goa.ServiceKey, "surla")
 	ctx = context.WithValue(ctx, goa.MethodKey, "checkpoint_ui")
@@ -508,9 +526,9 @@ func (a *MCPAdapter) invokeMCPMethod19(ctx context.Context) (string, error) {
 	return result, nil
 }
 
-// invokeMCPMethod20 sends validated input to the configured GoldenPath endpoint
+// invokeMCPMethod21 sends validated input to the configured GoldenPath endpoint
 // and returns its declared result. An unexpected Go type is an internal error.
-func (a *MCPAdapter) invokeMCPMethod20(ctx context.Context) (string, error) {
+func (a *MCPAdapter) invokeMCPMethod21(ctx context.Context) (string, error) {
 	// The original endpoint middleware observes its authored service and method.
 	ctx = context.WithValue(ctx, goa.ServiceKey, "surla")
 	ctx = context.WithValue(ctx, goa.MethodKey, "golden_path")
@@ -614,6 +632,12 @@ func (a *MCPAdapter) ToolsList(ctx context.Context, p *ToolsListPayload) (*Tools
 			Description:  stringPtr("Initialize a new Surla starter project inside the bound workspace directory, create its initial Git commit, and switch the server's active workspace to that project. Returns the created commit ID in commit for start_live_target and verify_change."),
 			InputSchema:  json.RawMessage("{\"$defs\":{\"InitProjectPayload\":{\"description\":\"Go module path and optional direct child directory name for initializing a new Surla starter project inside the bound workspace.\",\"properties\":{\"dir\":{\"description\":\"Direct child directory name inside the bound workspace root. When omitted or empty, defaults to the service name derived from module_path.\",\"type\":\"string\"},\"module_path\":{\"description\":\"Go module path of the new service (for example example.com/shop).\",\"minLength\":3,\"type\":\"string\"}},\"required\":[\"module_path\"],\"title\":\"InitProjectPayload\",\"type\":\"object\"}},\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Go module path and optional direct child directory name for initializing a new Surla starter project inside the bound workspace.\",\"properties\":{\"dir\":{\"description\":\"Direct child directory name inside the bound workspace root. When omitted or empty, defaults to the service name derived from module_path.\",\"type\":\"string\"},\"module_path\":{\"description\":\"Go module path of the new service (for example example.com/shop).\",\"minLength\":3,\"type\":\"string\"}},\"required\":[\"module_path\"],\"title\":\"InitProjectPayload\",\"type\":\"object\"}"),
 			OutputSchema: json.RawMessage("{\"$defs\":{\"InitProjectResult\":{\"description\":\"Newly initialized Surla starter project directory, derived service identity, and initial Git commit.\",\"properties\":{\"commit\":{\"description\":\"Full commit ID of the initial starter commit created in the initialized repository (40 or 64 lowercase hex characters); start_live_target and verify_change take this commit ID.\",\"pattern\":\"^([0-9a-f]{40}|[0-9a-f]{64})$\",\"type\":\"string\"},\"dir\":{\"description\":\"Physical directory path of the newly created starter project (now the server's active workspace).\",\"type\":\"string\"},\"module_path\":{\"description\":\"Initialized Go module path.\",\"type\":\"string\"},\"service_name\":{\"description\":\"Derived service name.\",\"type\":\"string\"}},\"required\":[\"dir\",\"module_path\",\"service_name\",\"commit\"],\"title\":\"InitProjectResult\",\"type\":\"object\"}},\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Newly initialized Surla starter project directory, derived service identity, and initial Git commit.\",\"properties\":{\"commit\":{\"description\":\"Full commit ID of the initial starter commit created in the initialized repository (40 or 64 lowercase hex characters); start_live_target and verify_change take this commit ID.\",\"pattern\":\"^([0-9a-f]{40}|[0-9a-f]{64})$\",\"type\":\"string\"},\"dir\":{\"description\":\"Physical directory path of the newly created starter project (now the server's active workspace).\",\"type\":\"string\"},\"module_path\":{\"description\":\"Initialized Go module path.\",\"type\":\"string\"},\"service_name\":{\"description\":\"Derived service name.\",\"type\":\"string\"}},\"required\":[\"dir\",\"module_path\",\"service_name\",\"commit\"],\"title\":\"InitProjectResult\",\"type\":\"object\"}"),
+		},
+		{
+			Name:         "list_traces",
+			Description:  stringPtr("Read your saved operation diagnostics, newest first. status filters all spans, recorded errors, or spans without an error status. Empty spans with has_more true still leaves older history to examine: pass next_cursor as cursor with the same filter. Omit cursor to refresh. Summaries exclude raw errors and inputs; unset status does not prove success. No top-level span currently exists for preview_architecture, verify_change, approve_merge, confirm_intent, get_change, diff or non-live draft_override; requests rejected before span creation and separate verification processes are also absent. An instrumented child operation may appear separately. not_implemented means the server operator must enable recording; it is not an empty history."),
+			InputSchema:  json.RawMessage("{\"$defs\":{\"ListTracesPayload\":{\"description\":\"Read a bounded page of saved operation diagnostics for the authenticated caller, newest first. Keep the filter unchanged when reading older pages.\",\"properties\":{\"cursor\":{\"description\":\"Opaque next_cursor from the previous page; omit to refresh from the newest records.\",\"type\":\"string\"},\"limit\":{\"default\":20,\"description\":\"Maximum matching spans returned; a page may contain fewer because each call scans at most 256 KiB.\",\"format\":\"int64\",\"maximum\":100,\"minimum\":1,\"type\":\"integer\"},\"status\":{\"default\":\"all\",\"description\":\"all for every status, error for recorded failures, or ok for spans without an error status (including unset).\",\"enum\":[\"all\",\"error\",\"ok\"],\"type\":\"string\"}},\"title\":\"ListTracesPayload\",\"type\":\"object\"}},\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Read a bounded page of saved operation diagnostics for the authenticated caller, newest first. Keep the filter unchanged when reading older pages.\",\"properties\":{\"cursor\":{\"description\":\"Opaque next_cursor from the previous page; omit to refresh from the newest records.\",\"type\":\"string\"},\"limit\":{\"default\":20,\"description\":\"Maximum matching spans returned; a page may contain fewer because each call scans at most 256 KiB.\",\"format\":\"int64\",\"maximum\":100,\"minimum\":1,\"type\":\"integer\"},\"status\":{\"default\":\"all\",\"description\":\"all for every status, error for recorded failures, or ok for spans without an error status (including unset).\",\"enum\":[\"all\",\"error\",\"ok\"],\"type\":\"string\"}},\"title\":\"ListTracesPayload\",\"type\":\"object\"}"),
+			OutputSchema: json.RawMessage("{\"$defs\":{\"TraceList\":{\"description\":\"One newest-first diagnostic page. An empty spans array with has_more true means older records remain, not that the complete history contains no matches.\",\"properties\":{\"has_more\":{\"description\":\"True when older records have not yet been examined.\",\"type\":\"boolean\"},\"next_cursor\":{\"description\":\"Cursor to examine the next older window; present only when has_more is true.\",\"type\":\"string\"},\"spans\":{\"description\":\"Matching spans found in this page's bounded disk window.\",\"items\":{\"$ref\":\"#/$defs/TraceSpan\"},\"type\":\"array\"}},\"required\":[\"spans\",\"has_more\"],\"title\":\"TraceList\",\"type\":\"object\"},\"TraceSpan\":{\"additionalProperties\":false,\"description\":\"Safe diagnostic details of one completed operation belonging to the authenticated caller. Raw errors, prompts, events, credentials, and filesystem paths are not included. OpenTelemetry export, when configured by the operator, retains the original spans.\",\"properties\":{\"attributes\":{\"additionalProperties\":{\"type\":\"string\"},\"description\":\"Selected operation identifiers and results; at most six values of 1024 bytes each.\",\"type\":\"object\"},\"duration_ms\":{\"description\":\"Elapsed milliseconds.\",\"format\":\"int64\",\"type\":\"integer\"},\"end_time\":{\"description\":\"Operation finish time in UTC.\",\"format\":\"date-time\",\"type\":\"string\"},\"name\":{\"description\":\"Operation name, at most 128 bytes.\",\"type\":\"string\"},\"parent_span_id\":{\"description\":\"Parent span identifier; empty when this span has no parent.\",\"type\":\"string\"},\"shortened\":{\"description\":\"True when text was shortened to fit this diagnostic record; use operator telemetry for the full values.\",\"type\":\"boolean\"},\"span_id\":{\"description\":\"OpenTelemetry span identifier.\",\"type\":\"string\"},\"start_time\":{\"description\":\"Operation start time in UTC.\",\"format\":\"date-time\",\"type\":\"string\"},\"status\":{\"description\":\"Original span status: unset, ok, or error. An unset status does not establish success.\",\"enum\":[\"unset\",\"ok\",\"error\"],\"type\":\"string\"},\"summary\":{\"description\":\"Safe operation summary, at most 2048 bytes; never a raw error message.\",\"type\":\"string\"},\"trace_id\":{\"description\":\"OpenTelemetry trace identifier.\",\"type\":\"string\"}},\"required\":[\"trace_id\",\"span_id\",\"parent_span_id\",\"name\",\"start_time\",\"end_time\",\"duration_ms\",\"status\",\"summary\",\"attributes\",\"shortened\"],\"title\":\"TraceSpan\",\"type\":\"object\"}},\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"One newest-first diagnostic page. An empty spans array with has_more true means older records remain, not that the complete history contains no matches.\",\"properties\":{\"has_more\":{\"description\":\"True when older records have not yet been examined.\",\"type\":\"boolean\"},\"next_cursor\":{\"description\":\"Cursor to examine the next older window; present only when has_more is true.\",\"type\":\"string\"},\"spans\":{\"description\":\"Matching spans found in this page's bounded disk window.\",\"items\":{\"$ref\":\"#/$defs/TraceSpan\"},\"type\":\"array\"}},\"required\":[\"spans\",\"has_more\"],\"title\":\"TraceList\",\"type\":\"object\"}"),
 		},
 		{
 			Name:         "list_verifications",
@@ -995,6 +1019,36 @@ func (a *MCPAdapter) ToolsCall(ctx context.Context, p *ToolsCallPayload) (*Tools
 			Content:           []*ContentItem{},
 			StructuredContent: json.RawMessage(encoded),
 		})}, nil
+	case "list_traces":
+		arguments := p.Arguments
+		if len(arguments) == 0 {
+			arguments = json.RawMessage("{}")
+		}
+		payload, err := mcpcodec.DecodeListTracesPayload(arguments)
+		if err != nil {
+			return toolCallError("invalid arguments: " + err.Error()), nil
+		}
+		result, err := a.invokeMCPMethod19(ctx, payload)
+		if err != nil {
+			failure := a.mapError(err, isEndpointFault(err))
+			span.RecordError(failure.err)
+			span.SetStatus(codes.Error, failure.err.Error())
+			if failure.internal {
+				return nil, failure.err
+			}
+			return toolCallError(failure.err.Error()), nil
+		}
+		encoded, err := mcpcodec.EncodeListTracesResult(result)
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+			return nil, goa.PermanentError("internal_error", "%s", err.Error())
+		}
+		return &ToolsCallResult{Outcome: NewToolsCallOutcomeComplete(&ToolsCallCompleteResult{
+			Meta:              resultMeta(),
+			Content:           []*ContentItem{},
+			StructuredContent: json.RawMessage(encoded),
+		})}, nil
 	case "list_verifications":
 		arguments := p.Arguments
 		if len(arguments) == 0 {
@@ -1287,7 +1341,7 @@ func (a *MCPAdapter) ResourcesRead(ctx context.Context, p *ResourcesReadPayload)
 
 	switch p.URI {
 	case "surla://golden-path":
-		result, err := a.invokeMCPMethod20(ctx)
+		result, err := a.invokeMCPMethod21(ctx)
 		if err != nil {
 			span.RecordError(err)
 			span.SetStatus(codes.Error, err.Error())
@@ -1303,7 +1357,7 @@ func (a *MCPAdapter) ResourcesRead(ctx context.Context, p *ResourcesReadPayload)
 
 		return &ResourcesReadResult{Outcome: NewResourcesReadOutcomeComplete(res)}, nil
 	case "ui://surla/checkpoint":
-		result, err := a.invokeMCPMethod19(ctx)
+		result, err := a.invokeMCPMethod20(ctx)
 		if err != nil {
 			span.RecordError(err)
 			span.SetStatus(codes.Error, err.Error())

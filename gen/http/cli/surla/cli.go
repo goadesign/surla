@@ -23,7 +23,7 @@ import (
 //	command (subcommand1|subcommand2|...)
 func UsageCommands() []string {
 	return []string{
-		"surla (checkpoint-ui|golden-path|propose-change|revise-change|confirm-intent|get-change|preview-architecture|draft-override|start-live-target|stop-live-target|verify-change|get-verification|list-verifications|approve-merge|diff|configure-model|init-project|generate-code|check-project|update-dependencies|read-check-output)",
+		"surla (checkpoint-ui|golden-path|propose-change|revise-change|confirm-intent|get-change|preview-architecture|draft-override|start-live-target|stop-live-target|verify-change|get-verification|list-verifications|approve-merge|diff|configure-model|init-project|generate-code|check-project|update-dependencies|read-check-output|list-traces)",
 	}
 }
 
@@ -122,6 +122,11 @@ func ParseEndpoint(
 
 		surlaReadCheckOutputFlags    = flag.NewFlagSet("read-check-output", flag.ExitOnError)
 		surlaReadCheckOutputBodyFlag = new(cliStringFlag)
+
+		surlaListTracesFlags      = flag.NewFlagSet("list-traces", flag.ExitOnError)
+		surlaListTracesStatusFlag = surlaListTracesFlags.String("status", "all", "")
+		surlaListTracesLimitFlag  = surlaListTracesFlags.String("limit", "20", "")
+		surlaListTracesCursorFlag = new(cliStringFlag)
 	)
 	surlaProposeChangeFlags.Var(surlaProposeChangeBodyFlag, "body", "")
 	surlaReviseChangeFlags.Var(surlaReviseChangeBodyFlag, "body", "")
@@ -140,6 +145,7 @@ func ParseEndpoint(
 	surlaInitProjectFlags.Var(surlaInitProjectBodyFlag, "body", "")
 	surlaGenerateCodeFlags.Var(surlaGenerateCodeBodyFlag, "body", "")
 	surlaReadCheckOutputFlags.Var(surlaReadCheckOutputBodyFlag, "body", "")
+	surlaListTracesFlags.Var(surlaListTracesCursorFlag, "cursor", "")
 
 	surlaFlags.Usage = surlaUsage
 	surlaCheckpointUIFlags.Usage = surlaCheckpointUIUsage
@@ -163,6 +169,7 @@ func ParseEndpoint(
 	surlaCheckProjectFlags.Usage = surlaCheckProjectUsage
 	surlaUpdateDependenciesFlags.Usage = surlaUpdateDependenciesUsage
 	surlaReadCheckOutputFlags.Usage = surlaReadCheckOutputUsage
+	surlaListTracesFlags.Usage = surlaListTracesUsage
 
 	if err := flag.CommandLine.Parse(os.Args[1:]); err != nil {
 		return nil, nil, err
@@ -261,6 +268,9 @@ func ParseEndpoint(
 			case "read-check-output":
 				epf = surlaReadCheckOutputFlags
 
+			case "list-traces":
+				epf = surlaListTracesFlags
+
 			}
 
 		}
@@ -344,6 +354,9 @@ func ParseEndpoint(
 			case "read-check-output":
 				endpoint = c.ReadCheckOutput()
 				data, err = surlac.BuildReadCheckOutputPayload(surlaReadCheckOutputBodyFlag.value)
+			case "list-traces":
+				endpoint = c.ListTraces()
+				data, err = surlac.BuildListTracesPayload(*surlaListTracesStatusFlag, *surlaListTracesLimitFlag, surlaListTracesCursorFlag.value)
 			}
 		}
 	}
@@ -380,6 +393,7 @@ func surlaUsage() {
 	fmt.Fprintln(os.Stderr, `    check-project: Copy the active workspace's live files (uncommitted edits included) into a protected per-operation copy and run go test ./... for every Go module in it, each in a Linux container with no network. Nothing in the workspace changes. Returns passed and a bounded message; read the full output with read_check_output.`)
 	fmt.Fprintln(os.Stderr, `    update-dependencies: Run go mod tidy for every Go module of the active workspace in a protected copy inside Linux containers, then write only the changed go.mod, go.sum and go.work.sum files back to the workspace through verified handles. A symlinked manifest or one edited during the call is refused for that module.`)
 	fmt.Fprintln(os.Stderr, `    read-check-output: Return one page of at most 16 KiB of the full output a check_project or update_dependencies operation captured, with a cursor for the next page and the count of bytes not captured.`)
+	fmt.Fprintln(os.Stderr, `    list-traces: Read the authenticated caller's saved operation diagnostics from the control plane's private storage. Return bounded safe summaries newest first, without reading the entire file. Older pages and later refreshes work on the same running server and after restart. Recording is automatic in surla serve; an embedded host must provide Options.TracerProvider when constructing its control plane. No top-level operation span currently exists for preview_architecture, verify_change, approve_merge, confirm_intent, get_change, diff or non-live draft_override, so their failures need not appear; an instrumented child operation may still appear separately. Requests rejected before their span starts and separate verification processes are also absent.`)
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Additional help:")
 	fmt.Fprintf(os.Stderr, "    %s surla COMMAND --help\n", os.Args[0])
@@ -752,4 +766,26 @@ func surlaReadCheckOutputUsage() {
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Example:")
 	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "surla read-check-output --body '{\n      \"cursor\": \"Vero quia facilis et vel distinctio.\",\n      \"op_id\": \"Quo doloribus amet similique.\"\n   }'")
+}
+
+func surlaListTracesUsage() {
+	// Header with flags
+	fmt.Fprintf(os.Stderr, "%s [flags] surla list-traces", os.Args[0])
+	fmt.Fprint(os.Stderr, " -status STRING")
+	fmt.Fprint(os.Stderr, " -limit INT")
+	fmt.Fprint(os.Stderr, " -cursor STRING")
+	fmt.Fprintln(os.Stderr)
+
+	// Description
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, `Read the authenticated caller's saved operation diagnostics from the control plane's private storage. Return bounded safe summaries newest first, without reading the entire file. Older pages and later refreshes work on the same running server and after restart. Recording is automatic in surla serve; an embedded host must provide Options.TracerProvider when constructing its control plane. No top-level operation span currently exists for preview_architecture, verify_change, approve_merge, confirm_intent, get_change, diff or non-live draft_override, so their failures need not appear; an instrumented child operation may still appear separately. Requests rejected before their span starts and separate verification processes are also absent.`)
+
+	// Flags list
+	fmt.Fprintln(os.Stderr, `    -status STRING: `)
+	fmt.Fprintln(os.Stderr, `    -limit INT: `)
+	fmt.Fprintln(os.Stderr, `    -cursor STRING: `)
+
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, "Example:")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "surla list-traces --status \"all\" --limit 92 --cursor \"Qui sed.\"")
 }

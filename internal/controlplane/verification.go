@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"time"
 
-	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
@@ -110,7 +109,7 @@ func (c *ControlPlane) GetVerification(ctx context.Context, p *gensurla.GetVerif
 	if runsDir == "" {
 		return nil, gensurla.MakeNotImplemented(errVerificationUnavailable)
 	}
-	_, span := otel.Tracer("surla/controlplane").Start(ctx, "surla.controlplane.get_verification",
+	_, span := c.tracer("surla/controlplane").Start(ctx, "surla.controlplane.get_verification",
 		trace.WithAttributes(attribute.String("surla.run_id", p.RunID)))
 	defer span.End()
 
@@ -146,7 +145,7 @@ func (c *ControlPlane) ListVerifications(ctx context.Context, p *gensurla.ListVe
 	if runsDir == "" {
 		return nil, gensurla.MakeNotImplemented(errVerificationUnavailable)
 	}
-	_, span := otel.Tracer("surla/controlplane").Start(ctx, "surla.controlplane.list_verifications",
+	_, span := c.tracer("surla/controlplane").Start(ctx, "surla.controlplane.list_verifications",
 		trace.WithAttributes(attribute.String("surla.change_id", p.ChangeID)))
 	defer span.End()
 

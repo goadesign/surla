@@ -12,6 +12,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"strconv"
 	"unicode/utf8"
 
 	surla "github.com/goadesign/surla/gen/surla"
@@ -1768,6 +1769,112 @@ func EncodeReadCheckOutputError(encoder func(context.Context, http.ResponseWrite
 	}
 }
 
+// EncodeListTracesResponse returns an encoder for responses returned by the
+// surla list_traces endpoint.
+func EncodeListTracesResponse(encoder func(context.Context, http.ResponseWriter) goahttp.Encoder) func(context.Context, http.ResponseWriter, any) error {
+	return func(ctx context.Context, w http.ResponseWriter, v any) error {
+		res, _ := v.(*surla.TraceList)
+		enc := encoder(ctx, w)
+		body := NewListTracesResponseBody(res)
+		w.WriteHeader(http.StatusOK)
+		return enc.Encode(body)
+	}
+}
+
+// DecodeListTracesRequest returns a decoder for requests sent to the surla
+// list_traces endpoint.
+func DecodeListTracesRequest(mux goahttp.Muxer, decoder func(*http.Request) goahttp.Decoder) func(*http.Request) (*surla.ListTracesPayload, error) {
+	return func(r *http.Request) (*surla.ListTracesPayload, error) {
+		var payload *surla.ListTracesPayload
+		var (
+			status string
+			limit  int
+			cursor *string
+			err    error
+		)
+		qp := r.URL.Query()
+		statusRaw := qp.Get("status")
+		if statusRaw != "" {
+			status = statusRaw
+		} else {
+			status = "all"
+		}
+		if !(status == "all" || status == "error" || status == "ok") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("status", status, []any{"all", "error", "ok"}))
+		}
+		{
+			limitRaw := qp.Get("limit")
+			if limitRaw == "" {
+				limit = 20
+			} else {
+				v, err2 := strconv.ParseInt(limitRaw, 10, strconv.IntSize)
+				if err2 != nil {
+					err = goa.MergeErrors(err, goa.InvalidFieldTypeError("limit", limitRaw, "integer"))
+				}
+				limit = int(v)
+			}
+		}
+		if limit < 1 {
+			err = goa.MergeErrors(err, goa.InvalidRangeError("limit", limit, 1, true))
+		}
+		if limit > 100 {
+			err = goa.MergeErrors(err, goa.InvalidRangeError("limit", limit, 100, false))
+		}
+		cursorRaw := qp.Get("cursor")
+		if cursorRaw != "" {
+			cursor = &cursorRaw
+		}
+		if err != nil {
+			return payload, err
+		}
+		payload = NewListTracesPayload(status, limit, cursor)
+
+		return payload, nil
+	}
+}
+
+// EncodeListTracesError returns an encoder for errors returned by the
+// list_traces surla endpoint.
+func EncodeListTracesError(encoder func(context.Context, http.ResponseWriter) goahttp.Encoder, formatter func(ctx context.Context, err error) goahttp.Statuser) func(context.Context, http.ResponseWriter, error) error {
+	encodeError := goahttp.ErrorEncoder(encoder, formatter)
+	return func(ctx context.Context, w http.ResponseWriter, v error) error {
+		var en goa.GoaErrorNamer
+		if !errors.As(v, &en) {
+			return encodeError(ctx, w, v)
+		}
+		switch en.GoaErrorName() {
+		case "unprocessable":
+			var res *goa.ServiceError
+			errors.As(v, &res)
+			enc := encoder(ctx, w)
+			var body any
+			if formatter != nil {
+				body = formatter(ctx, res)
+			} else {
+				body = NewListTracesUnprocessableResponseBody(res)
+			}
+			w.Header().Set("goa-error", res.GoaErrorName())
+			w.WriteHeader(http.StatusUnprocessableEntity)
+			return enc.Encode(body)
+		case "not_implemented":
+			var res *goa.ServiceError
+			errors.As(v, &res)
+			enc := encoder(ctx, w)
+			var body any
+			if formatter != nil {
+				body = formatter(ctx, res)
+			} else {
+				body = NewListTracesNotImplementedResponseBody(res)
+			}
+			w.Header().Set("goa-error", res.GoaErrorName())
+			w.WriteHeader(http.StatusNotImplemented)
+			return enc.Encode(body)
+		default:
+			return encodeError(ctx, w, v)
+		}
+	}
+}
+
 // marshalSurlaAmbiguityQuestionToAmbiguityQuestionResponseBody builds a value
 // of type *AmbiguityQuestionResponseBody from a value of type
 // *surla.AmbiguityQuestion.
@@ -2210,6 +2317,33 @@ func marshalSurlaVerificationStatusResultToVerificationStatusResultResponseBody(
 			u := res.State
 			u.SetNotCompleted((*VerificationNotCompletedResponseBody)(obj))
 			res.State = u
+		}
+	}
+
+	return res
+}
+
+// marshalSurlaTraceSpanToTraceSpanResponseBody builds a value of type
+// *TraceSpanResponseBody from a value of type *surla.TraceSpan.
+func marshalSurlaTraceSpanToTraceSpanResponseBody(v *surla.TraceSpan) *TraceSpanResponseBody {
+	res := &TraceSpanResponseBody{
+		TraceID:      v.TraceID,
+		SpanID:       v.SpanID,
+		ParentSpanID: v.ParentSpanID,
+		Name:         v.Name,
+		StartTime:    v.StartTime,
+		EndTime:      v.EndTime,
+		DurationMs:   v.DurationMs,
+		Status:       v.Status,
+		Summary:      v.Summary,
+		Shortened:    v.Shortened,
+	}
+	if v.Attributes != nil {
+		res.Attributes = make(map[string]string, len(v.Attributes))
+		for key, val := range v.Attributes {
+			tk := key
+			tv := val
+			res.Attributes[tk] = tv
 		}
 	}
 

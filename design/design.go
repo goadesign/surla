@@ -1017,4 +1017,5 @@ var _ = Service("surla", func() {
 			Response("unprocessable", StatusUnprocessableEntity)
 		})
 	})
+	traceMethods()
 })

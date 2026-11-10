@@ -1745,6 +1745,126 @@ paths:
                                 name: update_not_confirmed
                                 temporary: false
                                 timeout: false
+    /traces:
+        get:
+            tags:
+                - surla
+            summary: list_traces surla
+            description: Read the authenticated caller's saved operation diagnostics from the control plane's private storage. Return bounded safe summaries newest first, without reading the entire file. Older pages and later refreshes work on the same running server and after restart. Recording is automatic in surla serve; an embedded host must provide Options.TracerProvider when constructing its control plane. No top-level operation span currently exists for preview_architecture, verify_change, approve_merge, confirm_intent, get_change, diff or non-live draft_override, so their failures need not appear; an instrumented child operation may still appear separately. Requests rejected before their span starts and separate verification processes are also absent.
+            operationId: surla#list_traces
+            parameters:
+                - name: status
+                  in: query
+                  description: all for every status, error for recorded failures, or ok for spans without an error status (including unset).
+                  allowEmptyValue: true
+                  schema:
+                    type: string
+                    description: all for every status, error for recorded failures, or ok for spans without an error status (including unset).
+                    default: all
+                    example: all
+                    enum:
+                        - all
+                        - error
+                        - ok
+                  example: all
+                - name: limit
+                  in: query
+                  description: Maximum matching spans returned; a page may contain fewer because each call scans at most 256 KiB.
+                  allowEmptyValue: true
+                  schema:
+                    type: integer
+                    description: Maximum matching spans returned; a page may contain fewer because each call scans at most 256 KiB.
+                    default: 20
+                    example: 92
+                    format: int64
+                    minimum: 1
+                    maximum: 100
+                  example: 92
+                - name: cursor
+                  in: query
+                  description: Opaque next_cursor from the previous page; omit to refresh from the newest records.
+                  allowEmptyValue: true
+                  schema:
+                    type: string
+                    description: Opaque next_cursor from the previous page; omit to refresh from the newest records.
+                    example: Qui sed.
+                  example: Qui sed.
+            responses:
+                "200":
+                    description: OK response.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/TraceList'
+                            example:
+                                has_more: true
+                                next_cursor: Earum sed sint accusantium eligendi.
+                                spans:
+                                    - attributes:
+                                        Vitae cumque sapiente at.: Odit perspiciatis aut voluptatibus sint rem maxime.
+                                        Voluptatem voluptas voluptatem possimus doloremque.: Vero facere voluptas.
+                                      duration_ms: 8269916860477394451
+                                      end_time: "1990-08-13T14:15:47Z"
+                                      name: Quo assumenda dolores molestiae similique fugit.
+                                      parent_span_id: Fugit consequuntur et sequi.
+                                      shortened: true
+                                      span_id: Voluptas voluptas magni sed exercitationem dolore sapiente.
+                                      start_time: "1981-10-17T16:13:51Z"
+                                      status: ok
+                                      summary: Fuga molestiae suscipit.
+                                      trace_id: Perferendis omnis ut iste aliquid.
+                                    - attributes:
+                                        Vitae cumque sapiente at.: Odit perspiciatis aut voluptatibus sint rem maxime.
+                                        Voluptatem voluptas voluptatem possimus doloremque.: Vero facere voluptas.
+                                      duration_ms: 8269916860477394451
+                                      end_time: "1990-08-13T14:15:47Z"
+                                      name: Quo assumenda dolores molestiae similique fugit.
+                                      parent_span_id: Fugit consequuntur et sequi.
+                                      shortened: true
+                                      span_id: Voluptas voluptas magni sed exercitationem dolore sapiente.
+                                      start_time: "1981-10-17T16:13:51Z"
+                                      status: ok
+                                      summary: Fuga molestiae suscipit.
+                                      trace_id: Perferendis omnis ut iste aliquid.
+                                    - attributes:
+                                        Vitae cumque sapiente at.: Odit perspiciatis aut voluptatibus sint rem maxime.
+                                        Voluptatem voluptas voluptatem possimus doloremque.: Vero facere voluptas.
+                                      duration_ms: 8269916860477394451
+                                      end_time: "1990-08-13T14:15:47Z"
+                                      name: Quo assumenda dolores molestiae similique fugit.
+                                      parent_span_id: Fugit consequuntur et sequi.
+                                      shortened: true
+                                      span_id: Voluptas voluptas magni sed exercitationem dolore sapiente.
+                                      start_time: "1981-10-17T16:13:51Z"
+                                      status: ok
+                                      summary: Fuga molestiae suscipit.
+                                      trace_id: Perferendis omnis ut iste aliquid.
+                "422":
+                    description: 'unprocessable: The cursor is invalid; omit it to refresh the history.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: unprocessable
+                                temporary: false
+                                timeout: false
+                "501":
+                    description: 'not_implemented: Recording is not configured; the server operator must supply controlplane.Options.TracerProvider when constructing the embedded control plane, or use surla serve for automatic recording.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: not_implemented
+                                temporary: false
+                                timeout: false
     /ui/checkpoint:
         get:
             tags:
@@ -4241,6 +4361,195 @@ components:
             required:
                 - args_schema
                 - injected_fields
+        TraceList:
+            type: object
+            properties:
+                has_more:
+                    type: boolean
+                    description: True when older records have not yet been examined.
+                    example: true
+                next_cursor:
+                    type: string
+                    description: Cursor to examine the next older window; present only when has_more is true.
+                    example: Earum sed sint accusantium eligendi.
+                spans:
+                    type: array
+                    items:
+                        $ref: '#/components/schemas/TraceSpan'
+                    description: Matching spans found in this page's bounded disk window.
+                    example:
+                        - attributes:
+                            Vitae cumque sapiente at.: Odit perspiciatis aut voluptatibus sint rem maxime.
+                            Voluptatem voluptas voluptatem possimus doloremque.: Vero facere voluptas.
+                          duration_ms: 8269916860477394451
+                          end_time: "1990-08-13T14:15:47Z"
+                          name: Quo assumenda dolores molestiae similique fugit.
+                          parent_span_id: Fugit consequuntur et sequi.
+                          shortened: true
+                          span_id: Voluptas voluptas magni sed exercitationem dolore sapiente.
+                          start_time: "1981-10-17T16:13:51Z"
+                          status: ok
+                          summary: Fuga molestiae suscipit.
+                          trace_id: Perferendis omnis ut iste aliquid.
+                        - attributes:
+                            Vitae cumque sapiente at.: Odit perspiciatis aut voluptatibus sint rem maxime.
+                            Voluptatem voluptas voluptatem possimus doloremque.: Vero facere voluptas.
+                          duration_ms: 8269916860477394451
+                          end_time: "1990-08-13T14:15:47Z"
+                          name: Quo assumenda dolores molestiae similique fugit.
+                          parent_span_id: Fugit consequuntur et sequi.
+                          shortened: true
+                          span_id: Voluptas voluptas magni sed exercitationem dolore sapiente.
+                          start_time: "1981-10-17T16:13:51Z"
+                          status: ok
+                          summary: Fuga molestiae suscipit.
+                          trace_id: Perferendis omnis ut iste aliquid.
+                        - attributes:
+                            Vitae cumque sapiente at.: Odit perspiciatis aut voluptatibus sint rem maxime.
+                            Voluptatem voluptas voluptatem possimus doloremque.: Vero facere voluptas.
+                          duration_ms: 8269916860477394451
+                          end_time: "1990-08-13T14:15:47Z"
+                          name: Quo assumenda dolores molestiae similique fugit.
+                          parent_span_id: Fugit consequuntur et sequi.
+                          shortened: true
+                          span_id: Voluptas voluptas magni sed exercitationem dolore sapiente.
+                          start_time: "1981-10-17T16:13:51Z"
+                          status: ok
+                          summary: Fuga molestiae suscipit.
+                          trace_id: Perferendis omnis ut iste aliquid.
+            description: One newest-first diagnostic page. An empty spans array with has_more true means older records remain, not that the complete history contains no matches.
+            example:
+                has_more: true
+                next_cursor: Earum sed sint accusantium eligendi.
+                spans:
+                    - attributes:
+                        Vitae cumque sapiente at.: Odit perspiciatis aut voluptatibus sint rem maxime.
+                        Voluptatem voluptas voluptatem possimus doloremque.: Vero facere voluptas.
+                      duration_ms: 8269916860477394451
+                      end_time: "1990-08-13T14:15:47Z"
+                      name: Quo assumenda dolores molestiae similique fugit.
+                      parent_span_id: Fugit consequuntur et sequi.
+                      shortened: true
+                      span_id: Voluptas voluptas magni sed exercitationem dolore sapiente.
+                      start_time: "1981-10-17T16:13:51Z"
+                      status: ok
+                      summary: Fuga molestiae suscipit.
+                      trace_id: Perferendis omnis ut iste aliquid.
+                    - attributes:
+                        Vitae cumque sapiente at.: Odit perspiciatis aut voluptatibus sint rem maxime.
+                        Voluptatem voluptas voluptatem possimus doloremque.: Vero facere voluptas.
+                      duration_ms: 8269916860477394451
+                      end_time: "1990-08-13T14:15:47Z"
+                      name: Quo assumenda dolores molestiae similique fugit.
+                      parent_span_id: Fugit consequuntur et sequi.
+                      shortened: true
+                      span_id: Voluptas voluptas magni sed exercitationem dolore sapiente.
+                      start_time: "1981-10-17T16:13:51Z"
+                      status: ok
+                      summary: Fuga molestiae suscipit.
+                      trace_id: Perferendis omnis ut iste aliquid.
+                    - attributes:
+                        Vitae cumque sapiente at.: Odit perspiciatis aut voluptatibus sint rem maxime.
+                        Voluptatem voluptas voluptatem possimus doloremque.: Vero facere voluptas.
+                      duration_ms: 8269916860477394451
+                      end_time: "1990-08-13T14:15:47Z"
+                      name: Quo assumenda dolores molestiae similique fugit.
+                      parent_span_id: Fugit consequuntur et sequi.
+                      shortened: true
+                      span_id: Voluptas voluptas magni sed exercitationem dolore sapiente.
+                      start_time: "1981-10-17T16:13:51Z"
+                      status: ok
+                      summary: Fuga molestiae suscipit.
+                      trace_id: Perferendis omnis ut iste aliquid.
+            required:
+                - spans
+                - has_more
+        TraceSpan:
+            type: object
+            properties:
+                attributes:
+                    type: object
+                    description: Selected operation identifiers and results; at most six values of 1024 bytes each.
+                    example:
+                        Vitae cumque sapiente at.: Odit perspiciatis aut voluptatibus sint rem maxime.
+                        Voluptatem voluptas voluptatem possimus doloremque.: Vero facere voluptas.
+                    additionalProperties:
+                        type: string
+                        example: Odit perspiciatis aut voluptatibus sint rem maxime.
+                duration_ms:
+                    type: integer
+                    description: Elapsed milliseconds.
+                    example: 8269916860477394451
+                    format: int64
+                end_time:
+                    type: string
+                    description: Operation finish time in UTC.
+                    example: "1990-08-13T14:15:47Z"
+                    format: date-time
+                name:
+                    type: string
+                    description: Operation name, at most 128 bytes.
+                    example: Quo assumenda dolores molestiae similique fugit.
+                parent_span_id:
+                    type: string
+                    description: Parent span identifier; empty when this span has no parent.
+                    example: Fugit consequuntur et sequi.
+                shortened:
+                    type: boolean
+                    description: True when text was shortened to fit this diagnostic record; use operator telemetry for the full values.
+                    example: true
+                span_id:
+                    type: string
+                    description: OpenTelemetry span identifier.
+                    example: Voluptas voluptas magni sed exercitationem dolore sapiente.
+                start_time:
+                    type: string
+                    description: Operation start time in UTC.
+                    example: "1981-10-17T16:13:51Z"
+                    format: date-time
+                status:
+                    type: string
+                    description: 'Original span status: unset, ok, or error. An unset status does not establish success.'
+                    example: ok
+                    enum:
+                        - unset
+                        - ok
+                        - error
+                summary:
+                    type: string
+                    description: Safe operation summary, at most 2048 bytes; never a raw error message.
+                    example: Fuga molestiae suscipit.
+                trace_id:
+                    type: string
+                    description: OpenTelemetry trace identifier.
+                    example: Perferendis omnis ut iste aliquid.
+            description: Safe diagnostic details of one completed operation belonging to the authenticated caller. Raw errors, prompts, events, credentials, and filesystem paths are not included. OpenTelemetry export, when configured by the operator, retains the original spans.
+            example:
+                attributes:
+                    Vitae cumque sapiente at.: Odit perspiciatis aut voluptatibus sint rem maxime.
+                    Voluptatem voluptas voluptatem possimus doloremque.: Vero facere voluptas.
+                duration_ms: 8269916860477394451
+                end_time: "1990-08-13T14:15:47Z"
+                name: Quo assumenda dolores molestiae similique fugit.
+                parent_span_id: Fugit consequuntur et sequi.
+                shortened: true
+                span_id: Voluptas voluptas magni sed exercitationem dolore sapiente.
+                start_time: "1981-10-17T16:13:51Z"
+                status: ok
+                summary: Fuga molestiae suscipit.
+                trace_id: Perferendis omnis ut iste aliquid.
+            required:
+                - trace_id
+                - span_id
+                - parent_span_id
+                - name
+                - start_time
+                - end_time
+                - duration_ms
+                - status
+                - summary
+                - attributes
+                - shortened
         UICompositionItem:
             type: object
             properties:

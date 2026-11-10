@@ -616,6 +616,17 @@ type ReadCheckOutputResponseBody struct {
 	DroppedBytes int64 `form:"dropped_bytes" json:"dropped_bytes" xml:"dropped_bytes"`
 }
 
+// ListTracesResponseBody is the type of the "surla" service "list_traces"
+// endpoint HTTP response body.
+type ListTracesResponseBody struct {
+	// Matching spans found in this page's bounded disk window.
+	Spans []*TraceSpanResponseBody `form:"spans" json:"spans" xml:"spans"`
+	// True when older records have not yet been examined.
+	HasMore bool `form:"has_more" json:"has_more" xml:"has_more"`
+	// Cursor to examine the next older window; present only when has_more is true.
+	NextCursor *string `form:"next_cursor,omitempty" json:"next_cursor,omitempty" xml:"next_cursor,omitempty"`
+}
+
 // ProposeChangeConflictResponseBody is the type of the "surla" service
 // "propose_change" endpoint HTTP response body for the "conflict" error.
 type ProposeChangeConflictResponseBody struct {
@@ -1677,6 +1688,42 @@ type ReadCheckOutputUnprocessableResponseBody struct {
 	Fault bool `form:"fault" json:"fault" xml:"fault"`
 }
 
+// ListTracesUnprocessableResponseBody is the type of the "surla" service
+// "list_traces" endpoint HTTP response body for the "unprocessable" error.
+type ListTracesUnprocessableResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
+// ListTracesNotImplementedResponseBody is the type of the "surla" service
+// "list_traces" endpoint HTTP response body for the "not_implemented" error.
+type ListTracesNotImplementedResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
 // AmbiguityQuestionResponseBody is used to define fields on response body
 // types.
 type AmbiguityQuestionResponseBody struct {
@@ -1993,6 +2040,35 @@ type VerificationStatusResultResponseBody struct {
 	AcceptedAt string `form:"accepted_at" json:"accepted_at" xml:"accepted_at"`
 	// Exactly one of running, completed or not_completed.
 	State StateResponseBody `form:"state" json:"state" xml:"state"`
+}
+
+// TraceSpanResponseBody is used to define fields on response body types.
+type TraceSpanResponseBody struct {
+	// OpenTelemetry trace identifier.
+	TraceID string `form:"trace_id" json:"trace_id" xml:"trace_id"`
+	// OpenTelemetry span identifier.
+	SpanID string `form:"span_id" json:"span_id" xml:"span_id"`
+	// Parent span identifier; empty when this span has no parent.
+	ParentSpanID string `form:"parent_span_id" json:"parent_span_id" xml:"parent_span_id"`
+	// Operation name, at most 128 bytes.
+	Name string `form:"name" json:"name" xml:"name"`
+	// Operation start time in UTC.
+	StartTime string `form:"start_time" json:"start_time" xml:"start_time"`
+	// Operation finish time in UTC.
+	EndTime string `form:"end_time" json:"end_time" xml:"end_time"`
+	// Elapsed milliseconds.
+	DurationMs int64 `form:"duration_ms" json:"duration_ms" xml:"duration_ms"`
+	// Original span status: unset, ok, or error. An unset status does not
+	// establish success.
+	Status string `form:"status" json:"status" xml:"status"`
+	// Safe operation summary, at most 2048 bytes; never a raw error message.
+	Summary string `form:"summary" json:"summary" xml:"summary"`
+	// Selected operation identifiers and results; at most six values of 1024 bytes
+	// each.
+	Attributes map[string]string `form:"attributes" json:"attributes" xml:"attributes"`
+	// True when text was shortened to fit this diagnostic record; use operator
+	// telemetry for the full values.
+	Shortened bool `form:"shortened" json:"shortened" xml:"shortened"`
 }
 
 // ExampleItemRequestBody is used to define fields on request body types.
@@ -2871,6 +2947,28 @@ func NewReadCheckOutputResponseBody(res *surla.CheckOutputPage) *ReadCheckOutput
 	return body
 }
 
+// NewListTracesResponseBody builds the HTTP response body from the result of
+// the "list_traces" endpoint of the "surla" service.
+func NewListTracesResponseBody(res *surla.TraceList) *ListTracesResponseBody {
+	body := &ListTracesResponseBody{
+		HasMore:    res.HasMore,
+		NextCursor: res.NextCursor,
+	}
+	if res.Spans != nil {
+		body.Spans = make([]*TraceSpanResponseBody, len(res.Spans))
+		for i, val := range res.Spans {
+			if val == nil {
+				body.Spans[i] = nil
+				continue
+			}
+			body.Spans[i] = marshalSurlaTraceSpanToTraceSpanResponseBody(val)
+		}
+	} else {
+		body.Spans = []*TraceSpanResponseBody{}
+	}
+	return body
+}
+
 // NewProposeChangeConflictResponseBody builds the HTTP response body from the
 // result of the "propose_change" endpoint of the "surla" service.
 func NewProposeChangeConflictResponseBody(res *goa.ServiceError) *ProposeChangeConflictResponseBody {
@@ -3691,6 +3789,34 @@ func NewReadCheckOutputUnprocessableResponseBody(res *goa.ServiceError) *ReadChe
 	return body
 }
 
+// NewListTracesUnprocessableResponseBody builds the HTTP response body from
+// the result of the "list_traces" endpoint of the "surla" service.
+func NewListTracesUnprocessableResponseBody(res *goa.ServiceError) *ListTracesUnprocessableResponseBody {
+	body := &ListTracesUnprocessableResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
+// NewListTracesNotImplementedResponseBody builds the HTTP response body from
+// the result of the "list_traces" endpoint of the "surla" service.
+func NewListTracesNotImplementedResponseBody(res *goa.ServiceError) *ListTracesNotImplementedResponseBody {
+	body := &ListTracesNotImplementedResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
 // NewProposeChangePayload builds a surla service propose_change endpoint
 // payload.
 func NewProposeChangePayload(body *ProposeChangeRequestBody) *surla.ProposeChangePayload {
@@ -3894,6 +4020,16 @@ func NewReadCheckOutputPayload(body *ReadCheckOutputRequestBody) *surla.ReadChec
 		OpID:   *body.OpID,
 		Cursor: body.Cursor,
 	}
+
+	return v
+}
+
+// NewListTracesPayload builds a surla service list_traces endpoint payload.
+func NewListTracesPayload(status string, limit int, cursor *string) *surla.ListTracesPayload {
+	v := &surla.ListTracesPayload{}
+	v.Status = status
+	v.Limit = limit
+	v.Cursor = cursor
 
 	return v
 }

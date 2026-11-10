@@ -16,7 +16,6 @@ import (
 	"slices"
 	"strings"
 
-	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sys/unix"
@@ -48,8 +47,15 @@ func (c *ControlPlane) UpdateDependencies(ctx context.Context) (res *gensurla.Up
 	if _, ok := PrincipalFromContext(ctx); !ok {
 		return nil, errors.New("authenticated principal is required")
 	}
-	ctx, span := otel.Tracer("surla/controlplane").Start(ctx, "surla.controlplane.update_dependencies")
-	defer func() { endCheckSpan(span, retErr) }()
+	ctx, span := c.tracer("surla/controlplane").Start(ctx, "surla.controlplane.update_dependencies")
+	if err := c.admitCheckOperation(); err != nil {
+		endCheckSpan(span, err)
+		return nil, err
+	}
+	defer func() {
+		endCheckSpan(span, retErr)
+		c.checkOps.Done()
+	}()
 	ctx, cancel := c.checkDeadline(ctx)
 	defer cancel()
 	op, err := c.startCheckOperation(ctx)

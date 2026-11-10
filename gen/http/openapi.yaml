@@ -888,6 +888,71 @@ paths:
                             timeout: false
             schemes:
                 - http
+    /traces:
+        get:
+            tags:
+                - surla
+            summary: list_traces surla
+            description: Read the authenticated caller's saved operation diagnostics from the control plane's private storage. Return bounded safe summaries newest first, without reading the entire file. Older pages and later refreshes work on the same running server and after restart. Recording is automatic in surla serve; an embedded host must provide Options.TracerProvider when constructing its control plane. No top-level operation span currently exists for preview_architecture, verify_change, approve_merge, confirm_intent, get_change, diff or non-live draft_override, so their failures need not appear; an instrumented child operation may still appear separately. Requests rejected before their span starts and separate verification processes are also absent.
+            operationId: surla#list_traces
+            parameters:
+                - name: status
+                  in: query
+                  description: all for every status, error for recorded failures, or ok for spans without an error status (including unset).
+                  required: false
+                  type: string
+                  default: all
+                  enum:
+                    - all
+                    - error
+                    - ok
+                - name: limit
+                  in: query
+                  description: Maximum matching spans returned; a page may contain fewer because each call scans at most 256 KiB.
+                  required: false
+                  type: integer
+                  default: 20
+                  maximum: 100
+                  minimum: 1
+                - name: cursor
+                  in: query
+                  description: Opaque next_cursor from the previous page; omit to refresh from the newest records.
+                  required: false
+                  type: string
+            responses:
+                "200":
+                    description: OK response.
+                    schema:
+                        $ref: '#/definitions/TraceList'
+                        required:
+                            - spans
+                            - has_more
+                "422":
+                    description: 'unprocessable: The cursor is invalid; omit it to refresh the history.'
+                    schema:
+                        $ref: '#/definitions/SurlaListTracesUnprocessableResponseBody'
+                    examples:
+                        application/vnd.goa.error:
+                            fault: false
+                            id: 123abc
+                            message: parameter 'p' must be an integer
+                            name: unprocessable
+                            temporary: false
+                            timeout: false
+                "501":
+                    description: 'not_implemented: Recording is not configured; the server operator must supply controlplane.Options.TracerProvider when constructing the embedded control plane, or use surla serve for automatic recording.'
+                    schema:
+                        $ref: '#/definitions/SurlaListTracesNotImplementedResponseBody'
+                    examples:
+                        application/vnd.goa.error:
+                            fault: false
+                            id: 123abc
+                            message: parameter 'p' must be an integer
+                            name: not_implemented
+                            temporary: false
+                            timeout: false
+            schemes:
+                - http
     /ui/checkpoint:
         get:
             tags:
@@ -4148,6 +4213,92 @@ definitions:
             - temporary
             - timeout
             - fault
+    SurlaListTracesNotImplementedResponseBody:
+        title: 'Mediatype identifier: application/vnd.goa.error; view=default'
+        type: object
+        properties:
+            fault:
+                type: boolean
+                description: Is the error a server-side fault?
+                example: true
+            id:
+                type: string
+                description: ID is a unique identifier for this particular occurrence of the problem.
+                example: 123abc
+            message:
+                type: string
+                description: Message is a human-readable explanation specific to this occurrence of the problem.
+                example: parameter 'p' must be an integer
+            name:
+                type: string
+                description: Name is the name of this class of errors.
+                example: bad_request
+            temporary:
+                type: boolean
+                description: Is the error temporary?
+                example: false
+            timeout:
+                type: boolean
+                description: Is the error a timeout?
+                example: false
+        description: Error response result type (default view)
+        example:
+            fault: true
+            id: 123abc
+            message: parameter 'p' must be an integer
+            name: bad_request
+            temporary: false
+            timeout: false
+        required:
+            - name
+            - id
+            - message
+            - temporary
+            - timeout
+            - fault
+    SurlaListTracesUnprocessableResponseBody:
+        title: 'Mediatype identifier: application/vnd.goa.error; view=default'
+        type: object
+        properties:
+            fault:
+                type: boolean
+                description: Is the error a server-side fault?
+                example: true
+            id:
+                type: string
+                description: ID is a unique identifier for this particular occurrence of the problem.
+                example: 123abc
+            message:
+                type: string
+                description: Message is a human-readable explanation specific to this occurrence of the problem.
+                example: parameter 'p' must be an integer
+            name:
+                type: string
+                description: Name is the name of this class of errors.
+                example: bad_request
+            temporary:
+                type: boolean
+                description: Is the error temporary?
+                example: true
+            timeout:
+                type: boolean
+                description: Is the error a timeout?
+                example: true
+        description: Error response result type (default view)
+        example:
+            fault: true
+            id: 123abc
+            message: parameter 'p' must be an integer
+            name: bad_request
+            temporary: true
+            timeout: true
+        required:
+            - name
+            - id
+            - message
+            - temporary
+            - timeout
+            - fault
     SurlaListVerificationsForbiddenResponseBody:
         title: 'Mediatype identifier: application/vnd.goa.error; view=default'
         type: object
@@ -5757,6 +5908,197 @@ definitions:
         required:
             - args_schema
             - injected_fields
+    TraceList:
+        title: TraceList
+        type: object
+        properties:
+            has_more:
+                type: boolean
+                description: True when older records have not yet been examined.
+                example: true
+            next_cursor:
+                type: string
+                description: Cursor to examine the next older window; present only when has_more is true.
+                example: Earum sed sint accusantium eligendi.
+            spans:
+                type: array
+                items:
+                    $ref: '#/definitions/TraceSpan'
+                description: Matching spans found in this page's bounded disk window.
+                example:
+                    - attributes:
+                        Vitae cumque sapiente at.: Odit perspiciatis aut voluptatibus sint rem maxime.
+                        Voluptatem voluptas voluptatem possimus doloremque.: Vero facere voluptas.
+                      duration_ms: 8269916860477394451
+                      end_time: "1990-08-13T14:15:47Z"
+                      name: Quo assumenda dolores molestiae similique fugit.
+                      parent_span_id: Fugit consequuntur et sequi.
+                      shortened: true
+                      span_id: Voluptas voluptas magni sed exercitationem dolore sapiente.
+                      start_time: "1981-10-17T16:13:51Z"
+                      status: ok
+                      summary: Fuga molestiae suscipit.
+                      trace_id: Perferendis omnis ut iste aliquid.
+                    - attributes:
+                        Vitae cumque sapiente at.: Odit perspiciatis aut voluptatibus sint rem maxime.
+                        Voluptatem voluptas voluptatem possimus doloremque.: Vero facere voluptas.
+                      duration_ms: 8269916860477394451
+                      end_time: "1990-08-13T14:15:47Z"
+                      name: Quo assumenda dolores molestiae similique fugit.
+                      parent_span_id: Fugit consequuntur et sequi.
+                      shortened: true
+                      span_id: Voluptas voluptas magni sed exercitationem dolore sapiente.
+                      start_time: "1981-10-17T16:13:51Z"
+                      status: ok
+                      summary: Fuga molestiae suscipit.
+                      trace_id: Perferendis omnis ut iste aliquid.
+                    - attributes:
+                        Vitae cumque sapiente at.: Odit perspiciatis aut voluptatibus sint rem maxime.
+                        Voluptatem voluptas voluptatem possimus doloremque.: Vero facere voluptas.
+                      duration_ms: 8269916860477394451
+                      end_time: "1990-08-13T14:15:47Z"
+                      name: Quo assumenda dolores molestiae similique fugit.
+                      parent_span_id: Fugit consequuntur et sequi.
+                      shortened: true
+                      span_id: Voluptas voluptas magni sed exercitationem dolore sapiente.
+                      start_time: "1981-10-17T16:13:51Z"
+                      status: ok
+                      summary: Fuga molestiae suscipit.
+                      trace_id: Perferendis omnis ut iste aliquid.
+        description: One newest-first diagnostic page. An empty spans array with has_more true means older records remain, not that the complete history contains no matches.
+        example:
+            has_more: true
+            next_cursor: Earum sed sint accusantium eligendi.
+            spans:
+                - attributes:
+                    Vitae cumque sapiente at.: Odit perspiciatis aut voluptatibus sint rem maxime.
+                    Voluptatem voluptas voluptatem possimus doloremque.: Vero facere voluptas.
+                  duration_ms: 8269916860477394451
+                  end_time: "1990-08-13T14:15:47Z"
+                  name: Quo assumenda dolores molestiae similique fugit.
+                  parent_span_id: Fugit consequuntur et sequi.
+                  shortened: true
+                  span_id: Voluptas voluptas magni sed exercitationem dolore sapiente.
+                  start_time: "1981-10-17T16:13:51Z"
+                  status: ok
+                  summary: Fuga molestiae suscipit.
+                  trace_id: Perferendis omnis ut iste aliquid.
+                - attributes:
+                    Vitae cumque sapiente at.: Odit perspiciatis aut voluptatibus sint rem maxime.
+                    Voluptatem voluptas voluptatem possimus doloremque.: Vero facere voluptas.
+                  duration_ms: 8269916860477394451
+                  end_time: "1990-08-13T14:15:47Z"
+                  name: Quo assumenda dolores molestiae similique fugit.
+                  parent_span_id: Fugit consequuntur et sequi.
+                  shortened: true
+                  span_id: Voluptas voluptas magni sed exercitationem dolore sapiente.
+                  start_time: "1981-10-17T16:13:51Z"
+                  status: ok
+                  summary: Fuga molestiae suscipit.
+                  trace_id: Perferendis omnis ut iste aliquid.
+                - attributes:
+                    Vitae cumque sapiente at.: Odit perspiciatis aut voluptatibus sint rem maxime.
+                    Voluptatem voluptas voluptatem possimus doloremque.: Vero facere voluptas.
+                  duration_ms: 8269916860477394451
+                  end_time: "1990-08-13T14:15:47Z"
+                  name: Quo assumenda dolores molestiae similique fugit.
+                  parent_span_id: Fugit consequuntur et sequi.
+                  shortened: true
+                  span_id: Voluptas voluptas magni sed exercitationem dolore sapiente.
+                  start_time: "1981-10-17T16:13:51Z"
+                  status: ok
+                  summary: Fuga molestiae suscipit.
+                  trace_id: Perferendis omnis ut iste aliquid.
+        required:
+            - spans
+            - has_more
+    TraceSpan:
+        title: TraceSpan
+        type: object
+        properties:
+            attributes:
+                type: object
+                description: Selected operation identifiers and results; at most six values of 1024 bytes each.
+                example:
+                    Vitae cumque sapiente at.: Odit perspiciatis aut voluptatibus sint rem maxime.
+                    Voluptatem voluptas voluptatem possimus doloremque.: Vero facere voluptas.
+                additionalProperties:
+                    type: string
+                    example: Odit perspiciatis aut voluptatibus sint rem maxime.
+            duration_ms:
+                type: integer
+                description: Elapsed milliseconds.
+                example: 8269916860477394451
+                format: int64
+            end_time:
+                type: string
+                description: Operation finish time in UTC.
+                example: "1990-08-13T14:15:47Z"
+                format: date-time
+            name:
+                type: string
+                description: Operation name, at most 128 bytes.
+                example: Quo assumenda dolores molestiae similique fugit.
+            parent_span_id:
+                type: string
+                description: Parent span identifier; empty when this span has no parent.
+                example: Fugit consequuntur et sequi.
+            shortened:
+                type: boolean
+                description: True when text was shortened to fit this diagnostic record; use operator telemetry for the full values.
+                example: true
+            span_id:
+                type: string
+                description: OpenTelemetry span identifier.
+                example: Voluptas voluptas magni sed exercitationem dolore sapiente.
+            start_time:
+                type: string
+                description: Operation start time in UTC.
+                example: "1981-10-17T16:13:51Z"
+                format: date-time
+            status:
+                type: string
+                description: 'Original span status: unset, ok, or error. An unset status does not establish success.'
+                example: ok
+                enum:
+                    - unset
+                    - ok
+                    - error
+            summary:
+                type: string
+                description: Safe operation summary, at most 2048 bytes; never a raw error message.
+                example: Fuga molestiae suscipit.
+            trace_id:
+                type: string
+                description: OpenTelemetry trace identifier.
+                example: Perferendis omnis ut iste aliquid.
+        description: Safe diagnostic details of one completed operation belonging to the authenticated caller. Raw errors, prompts, events, credentials, and filesystem paths are not included. OpenTelemetry export, when configured by the operator, retains the original spans.
+        example:
+            attributes:
+                Vitae cumque sapiente at.: Odit perspiciatis aut voluptatibus sint rem maxime.
+                Voluptatem voluptas voluptatem possimus doloremque.: Vero facere voluptas.
+            duration_ms: 8269916860477394451
+            end_time: "1990-08-13T14:15:47Z"
+            name: Quo assumenda dolores molestiae similique fugit.
+            parent_span_id: Fugit consequuntur et sequi.
+            shortened: true
+            span_id: Voluptas voluptas magni sed exercitationem dolore sapiente.
+            start_time: "1981-10-17T16:13:51Z"
+            status: ok
+            summary: Fuga molestiae suscipit.
+            trace_id: Perferendis omnis ut iste aliquid.
+        required:
+            - trace_id
+            - span_id
+            - parent_span_id
+            - name
+            - start_time
+            - end_time
+            - duration_ms
+            - status
+            - summary
+            - attributes
+            - shortened
     UICompositionItem:
         title: UICompositionItem
         type: object

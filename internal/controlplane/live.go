@@ -15,7 +15,6 @@ import (
 	goahttp "goa.design/goa/v3/http"
 	goa "goa.design/goa/v3/pkg"
 
-	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
@@ -132,7 +131,7 @@ func (c *ControlPlane) StartLiveTarget(ctx context.Context, p *gensurla.StartLiv
 	if verCfg == nil {
 		return nil, gensurla.MakeLiveTargetUnavailable(errors.New("this server has no verification configuration, so it cannot build or run a live target"))
 	}
-	ctx, span := otel.Tracer("surla/controlplane").Start(ctx, "controlplane.start_live_target",
+	ctx, span := c.tracer("surla/controlplane").Start(ctx, "controlplane.start_live_target",
 		trace.WithAttributes(attribute.String("candidate_commit", p.CandidateCommit)))
 	defer span.End()
 
@@ -215,7 +214,7 @@ func (c *ControlPlane) StopLiveTarget(ctx context.Context) (*gensurla.StopLiveTa
 	if _, ok := PrincipalFromContext(ctx); !ok {
 		return nil, errors.New("authenticated principal is required")
 	}
-	_, span := otel.Tracer("surla/controlplane").Start(ctx, "controlplane.stop_live_target")
+	_, span := c.tracer("surla/controlplane").Start(ctx, "controlplane.stop_live_target")
 	defer span.End()
 	c.liveMu.Lock()
 	defer c.liveMu.Unlock()
@@ -237,7 +236,7 @@ func (c *ControlPlane) StopLiveTarget(ctx context.Context) (*gensurla.StopLiveTa
 // as ended when the target stopped meanwhile. Target messages are untrusted,
 // so they go only to the span.
 func (c *ControlPlane) draftLive(ctx context.Context, lt *liveTarget, promptID, template string) (*gensurla.DraftOverrideResult, error) {
-	ctx, span := otel.Tracer("surla/controlplane").Start(ctx, "controlplane.draft_live",
+	ctx, span := c.tracer("surla/controlplane").Start(ctx, "controlplane.draft_live",
 		trace.WithAttributes(attribute.String("prompt_id", promptID), attribute.String("candidate_commit", lt.commit)))
 	defer span.End()
 	res, err := lt.client.OverridePrompt(ctx, &genprompts.OverridePromptPayload{Key: lt.key, PromptID: promptID, Template: template})
@@ -284,7 +283,7 @@ func (c *ControlPlane) watchLive(lt *liveTarget) {
 		return
 	}
 	if err := c.stopOwnedLocked(); err != nil {
-		_, span := otel.Tracer("surla/controlplane").Start(context.Background(), "controlplane.live_target_ended")
+		_, span := c.tracer("surla/controlplane").Start(context.Background(), "controlplane.live_target_ended")
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "stop ended live target failed")
 		span.End()

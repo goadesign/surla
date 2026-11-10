@@ -11,7 +11,6 @@ import (
 	gensurla "github.com/goadesign/surla/gen/surla"
 	gencompletions "github.com/goadesign/surla/gen/surla/completions"
 	"github.com/goadesign/surla/internal/goldenpath"
-	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
@@ -177,7 +176,7 @@ func (c *ControlPlane) ConfigureModel(
 		return nil, errors.New("authenticated principal is required")
 	}
 
-	ctx, span := otel.Tracer("surla/controlplane").Start(ctx, "surla.controlplane.configure_model")
+	ctx, span := c.tracer("surla/controlplane").Start(ctx, "surla.controlplane.configure_model")
 	defer span.End()
 
 	normalized, provider, modelName, gatewayAddr, err := validateConfigureModelPayload(p)
@@ -396,7 +395,7 @@ func (c *ControlPlane) retireModel(ctx context.Context, h *modelHandle) error {
 	if closeFn == nil {
 		return nil
 	}
-	_, span := otel.Tracer("surla/controlplane").Start(ctx, "surla.controlplane.retire_model")
+	_, span := c.tracer("surla/controlplane").Start(ctx, "surla.controlplane.retire_model")
 	defer span.End()
 	if err := closeFn(); err != nil {
 		span.RecordError(err)

@@ -17,7 +17,6 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 
 	gensurla "github.com/goadesign/surla/gen/surla"
@@ -35,7 +34,7 @@ func (c *ControlPlane) ReadCheckOutput(ctx context.Context, p *gensurla.ReadChec
 	if _, ok := PrincipalFromContext(ctx); !ok {
 		return nil, errors.New("authenticated principal is required")
 	}
-	_, span := otel.Tracer("surla/controlplane").Start(ctx, "surla.controlplane.read_check_output")
+	_, span := c.tracer("surla/controlplane").Start(ctx, "surla.controlplane.read_check_output")
 	span.SetAttributes(attribute.String("surla.check.op_id", p.OpID))
 	defer func() { endCheckSpan(span, retErr) }()
 	if !opIDPattern.MatchString(p.OpID) || c.checkWorkDir == "" {

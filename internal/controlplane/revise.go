@@ -15,7 +15,6 @@ import (
 	gensurla "github.com/goadesign/surla/gen/surla"
 	gencompletions "github.com/goadesign/surla/gen/surla/completions"
 	"github.com/goadesign/surla/internal/goldenpath"
-	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
@@ -182,7 +181,7 @@ func (c *ControlPlane) ReviseChange(
 	}
 	prior := buildCP1PriorCard(record.card)
 
-	ctx, span := otel.Tracer("surla/controlplane").Start(
+	ctx, span := c.tracer("surla/controlplane").Start(
 		ctx,
 		"surla.controlplane.revise_change",
 		trace.WithAttributes(attribute.String("surla.change_id", p.ChangeID)),

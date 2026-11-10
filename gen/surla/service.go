@@ -152,6 +152,18 @@ type Service interface {
 	// update_dependencies operation captured, with a cursor for the next page and
 	// the count of bytes not captured.
 	ReadCheckOutput(context.Context, *ReadCheckOutputPayload) (res *CheckOutputPage, err error)
+	// Read the authenticated caller's saved operation diagnostics from the control
+	// plane's private storage. Return bounded safe summaries newest first, without
+	// reading the entire file. Older pages and later refreshes work on the same
+	// running server and after restart. Recording is automatic in surla serve; an
+	// embedded host must provide Options.TracerProvider when constructing its
+	// control plane. No top-level operation span currently exists for
+	// preview_architecture, verify_change, approve_merge, confirm_intent,
+	// get_change, diff or non-live draft_override, so their failures need not
+	// appear; an instrumented child operation may still appear separately.
+	// Requests rejected before their span starts and separate verification
+	// processes are also absent.
+	ListTraces(context.Context, *ListTracesPayload) (res *TraceList, err error)
 }
 
 // APIName is the name of the API as defined in the design.
@@ -168,7 +180,7 @@ const ServiceName = "surla"
 // MethodNames lists the service method names as defined in the design. These
 // are the same values that are set in the endpoint request contexts under the
 // MethodKey key.
-var MethodNames = [21]string{"checkpoint_ui", "golden_path", "propose_change", "revise_change", "confirm_intent", "get_change", "preview_architecture", "draft_override", "start_live_target", "stop_live_target", "verify_change", "get_verification", "list_verifications", "approve_merge", "diff", "configure_model", "init_project", "generate_code", "check_project", "update_dependencies", "read_check_output"}
+var MethodNames = [22]string{"checkpoint_ui", "golden_path", "propose_change", "revise_change", "confirm_intent", "get_change", "preview_architecture", "draft_override", "start_live_target", "stop_live_target", "verify_change", "get_verification", "list_verifications", "approve_merge", "diff", "configure_model", "init_project", "generate_code", "check_project", "update_dependencies", "read_check_output", "list_traces"}
 
 // Evaluated Goa-AI cost, safety, history, and cache policy for a single agent.
 type AgentPolicyItem struct {
@@ -564,6 +576,20 @@ type InitProjectResult struct {
 	Commit string
 }
 
+// ListTracesPayload is the payload type of the surla service list_traces
+// method.
+type ListTracesPayload struct {
+	// all for every status, error for recorded failures, or ok for spans without
+	// an error status (including unset).
+	Status string
+	// Maximum matching spans returned; a page may contain fewer because each call
+	// scans at most 256 KiB.
+	Limit int
+	// Opaque next_cursor from the previous page; omit to refresh from the newest
+	// records.
+	Cursor *string
+}
+
 // ListVerificationsPayload is the payload type of the surla service
 // list_verifications method.
 type ListVerificationsPayload struct {
@@ -776,6 +802,48 @@ type ToolInputBindingItem struct {
 	LookupTextOnlyArgsSchema *string
 	// Compiler-listed fields supplied outside the ordinary bound model input.
 	InjectedFields []string
+}
+
+// TraceList is the result type of the surla service list_traces method.
+type TraceList struct {
+	// Matching spans found in this page's bounded disk window.
+	Spans []*TraceSpan
+	// True when older records have not yet been examined.
+	HasMore bool
+	// Cursor to examine the next older window; present only when has_more is true.
+	NextCursor *string
+}
+
+// Safe diagnostic details of one completed operation belonging to the
+// authenticated caller. Raw errors, prompts, events, credentials, and
+// filesystem paths are not included. OpenTelemetry export, when configured by
+// the operator, retains the original spans.
+type TraceSpan struct {
+	// OpenTelemetry trace identifier.
+	TraceID string
+	// OpenTelemetry span identifier.
+	SpanID string
+	// Parent span identifier; empty when this span has no parent.
+	ParentSpanID string
+	// Operation name, at most 128 bytes.
+	Name string
+	// Operation start time in UTC.
+	StartTime string
+	// Operation finish time in UTC.
+	EndTime string
+	// Elapsed milliseconds.
+	DurationMs int64
+	// Original span status: unset, ok, or error. An unset status does not
+	// establish success.
+	Status string
+	// Safe operation summary, at most 2048 bytes; never a raw error message.
+	Summary string
+	// Selected operation identifiers and results; at most six values of 1024 bytes
+	// each.
+	Attributes map[string]string
+	// True when text was shortened to fit this diagnostic record; use operator
+	// telemetry for the full values.
+	Shortened bool
 }
 
 // Model-authored OpenUI Lang decision view for exactly one Change Card
@@ -2081,6 +2149,40 @@ func validatejsonInitProjectResultTransport(value *jsonInitProjectResultTranspor
 	return err
 }
 
+// jsonListTracesPayloadTransport stores JSON fields until they have been validated.
+type jsonListTracesPayloadTransport struct {
+	// all for every status, error for recorded failures, or ok for spans without
+	// an error status (including unset).
+	Status *string `json:"status,omitempty"`
+	// Maximum matching spans returned; a page may contain fewer because each call
+	// scans at most 256 KiB.
+	Limit *listTracesPayloadIntTransport `json:"limit,omitempty"`
+	// Opaque next_cursor from the previous page; omit to refresh from the newest
+	// records.
+	Cursor *string `json:"cursor,omitempty"`
+}
+
+// validatejsonListTracesPayloadTransport checks decoded JSON before it becomes a service value.
+func validatejsonListTracesPayloadTransport(value *jsonListTracesPayloadTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.Status != nil {
+		if !(*value.Status == "all" || *value.Status == "error" || *value.Status == "ok") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.status", *value.Status, []any{"all", "error", "ok"}))
+		}
+	}
+	if value.Limit != nil {
+		if int(*value.Limit) < 1 {
+			err = goa.MergeErrors(err, goa.InvalidRangeError("body.limit", int(*value.Limit), 1, true))
+		}
+		if int(*value.Limit) > 100 {
+			err = goa.MergeErrors(err, goa.InvalidRangeError("body.limit", int(*value.Limit), 100, false))
+		}
+	}
+	return err
+}
+
 // jsonListVerificationsPayloadTransport stores JSON fields until they have been validated.
 type jsonListVerificationsPayloadTransport struct {
 	// Change Card identifier.
@@ -2570,6 +2672,118 @@ func validatejsonToolInputBindingItemTransport(value *jsonToolInputBindingItemTr
 	return err
 }
 
+// jsonTraceListTransport stores JSON fields until they have been validated.
+type jsonTraceListTransport struct {
+	// Matching spans found in this page's bounded disk window.
+	Spans []*jsonTraceSpanTransport `json:"spans"`
+	// True when older records have not yet been examined.
+	HasMore *bool `json:"has_more"`
+	// Cursor to examine the next older window; present only when has_more is true.
+	NextCursor *string `json:"next_cursor,omitempty"`
+}
+
+// validatejsonTraceListTransport checks decoded JSON before it becomes a service value.
+func validatejsonTraceListTransport(value *jsonTraceListTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.Spans == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("spans", "body"))
+	}
+	if value.HasMore == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("has_more", "body"))
+	}
+	for _, e := range value.Spans {
+		if e != nil {
+			if err2 := validatejsonTraceSpanTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	return err
+}
+
+// jsonTraceSpanTransport stores JSON fields until they have been validated.
+type jsonTraceSpanTransport struct {
+	// OpenTelemetry trace identifier.
+	TraceID *string `json:"trace_id"`
+	// OpenTelemetry span identifier.
+	SpanID *string `json:"span_id"`
+	// Parent span identifier; empty when this span has no parent.
+	ParentSpanID *string `json:"parent_span_id"`
+	// Operation name, at most 128 bytes.
+	Name *string `json:"name"`
+	// Operation start time in UTC.
+	StartTime *string `json:"start_time"`
+	// Operation finish time in UTC.
+	EndTime *string `json:"end_time"`
+	// Elapsed milliseconds.
+	DurationMs *traceListInt64Transport `json:"duration_ms"`
+	// Original span status: unset, ok, or error. An unset status does not
+	// establish success.
+	Status *string `json:"status"`
+	// Safe operation summary, at most 2048 bytes; never a raw error message.
+	Summary *string `json:"summary"`
+	// Selected operation identifiers and results; at most six values of 1024 bytes
+	// each.
+	Attributes map[string]string `json:"attributes"`
+	// True when text was shortened to fit this diagnostic record; use operator
+	// telemetry for the full values.
+	Shortened *bool `json:"shortened"`
+}
+
+// validatejsonTraceSpanTransport checks decoded JSON before it becomes a service value.
+func validatejsonTraceSpanTransport(value *jsonTraceSpanTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.TraceID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("trace_id", "body"))
+	}
+	if value.SpanID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("span_id", "body"))
+	}
+	if value.ParentSpanID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("parent_span_id", "body"))
+	}
+	if value.Name == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
+	}
+	if value.StartTime == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("start_time", "body"))
+	}
+	if value.EndTime == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("end_time", "body"))
+	}
+	if value.DurationMs == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("duration_ms", "body"))
+	}
+	if value.Status == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("status", "body"))
+	}
+	if value.Summary == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("summary", "body"))
+	}
+	if value.Attributes == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("attributes", "body"))
+	}
+	if value.Shortened == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("shortened", "body"))
+	}
+	if value.StartTime != nil {
+		err = goa.MergeErrors(err, goa.ValidateFormat("body.start_time", *value.StartTime, goa.FormatDateTime))
+	}
+	if value.EndTime != nil {
+		err = goa.MergeErrors(err, goa.ValidateFormat("body.end_time", *value.EndTime, goa.FormatDateTime))
+	}
+	if value.Status != nil {
+		if !(*value.Status == "unset" || *value.Status == "ok" || *value.Status == "error") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.status", *value.Status, []any{"unset", "ok", "error"}))
+		}
+	}
+	return err
+}
+
 // jsonUICompositionItemTransport stores JSON fields until they have been validated.
 type jsonUICompositionItemTransport struct {
 	// OpenUI Lang program composed by the CP1 model from the Surla decision
@@ -2983,6 +3197,46 @@ func validatejsonVerifyChangePayloadTransport(value *jsonVerifyChangePayloadTran
 	return err
 }
 
+// listTracesPayloadIntTransport stores JSON fields until they have been validated.
+type listTracesPayloadIntTransport int
+
+// UnmarshalJSON reads an exact whole JSON number and stores it within this type's
+// declared range. Decimal and exponent spellings do not change its value.
+func (value *listTracesPayloadIntTransport) UnmarshalJSON(data []byte) error {
+	number, err := rawjson.DecodeInteger[int](data)
+	if err != nil {
+		return fmt.Errorf("decode listTracesPayloadIntTransport integer: %w", err)
+	}
+	*value = listTracesPayloadIntTransport(number)
+	return nil
+}
+
+// ValidatelistTracesPayloadIntTransport checks decoded JSON before it becomes a service value.
+func ValidatelistTracesPayloadIntTransport(value listTracesPayloadIntTransport) (err error) {
+
+	return err
+}
+
+// traceListInt64Transport stores JSON fields until they have been validated.
+type traceListInt64Transport int64
+
+// UnmarshalJSON reads an exact whole JSON number and stores it within this type's
+// declared range. Decimal and exponent spellings do not change its value.
+func (value *traceListInt64Transport) UnmarshalJSON(data []byte) error {
+	number, err := rawjson.DecodeInteger[int64](data)
+	if err != nil {
+		return fmt.Errorf("decode traceListInt64Transport integer: %w", err)
+	}
+	*value = traceListInt64Transport(number)
+	return nil
+}
+
+// ValidatetraceListInt64Transport checks decoded JSON before it becomes a service value.
+func ValidatetraceListInt64Transport(value traceListInt64Transport) (err error) {
+
+	return err
+}
+
 // validateAmbiguityQuestionOriginal checks the original typed value before JSON conversion.
 func validateAmbiguityQuestionOriginal(value *AmbiguityQuestion) (err error) {
 	if value.Options == nil {
@@ -3329,6 +3583,20 @@ func validateInitProjectResultOriginal(value *InitProjectResult) (err error) {
 	return err
 }
 
+// validateListTracesPayloadOriginal checks the original typed value before JSON conversion.
+func validateListTracesPayloadOriginal(value *ListTracesPayload) (err error) {
+	if !(value.Status == "all" || value.Status == "error" || value.Status == "ok") {
+		err = goa.MergeErrors(err, goa.InvalidEnumValueError("value.status", value.Status, []any{"all", "error", "ok"}))
+	}
+	if value.Limit < 1 {
+		err = goa.MergeErrors(err, goa.InvalidRangeError("value.limit", value.Limit, 1, true))
+	}
+	if value.Limit > 100 {
+		err = goa.MergeErrors(err, goa.InvalidRangeError("value.limit", value.Limit, 100, false))
+	}
+	return err
+}
+
 // validateListVerificationsPayloadOriginal checks the original typed value before JSON conversion.
 func validateListVerificationsPayloadOriginal(value *ListVerificationsPayload) (err error) {
 	if utf8.RuneCountInString(value.ChangeID) < 1 {
@@ -3377,6 +3645,34 @@ func validatePreviewArchitecturePayloadOriginal(value *PreviewArchitecturePayloa
 // validateStartLiveTargetPayloadOriginal checks the original typed value before JSON conversion.
 func validateStartLiveTargetPayloadOriginal(value *StartLiveTargetPayload) (err error) {
 	err = goa.MergeErrors(err, goa.ValidatePattern("value.candidate_commit", value.CandidateCommit, "^([0-9a-f]{40}|[0-9a-f]{64})$"))
+	return err
+}
+
+// validateTraceListOriginal checks the original typed value before JSON conversion.
+func validateTraceListOriginal(value *TraceList) (err error) {
+	if value.Spans == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("spans", "value"))
+	}
+	for _, e := range value.Spans {
+		if e != nil {
+			if err2 := validateTraceSpanOriginal(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	return err
+}
+
+// validateTraceSpanOriginal checks the original typed value before JSON conversion.
+func validateTraceSpanOriginal(value *TraceSpan) (err error) {
+	if value.Attributes == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("attributes", "value"))
+	}
+	err = goa.MergeErrors(err, goa.ValidateFormat("value.start_time", value.StartTime, goa.FormatDateTime))
+	err = goa.MergeErrors(err, goa.ValidateFormat("value.end_time", value.EndTime, goa.FormatDateTime))
+	if !(value.Status == "unset" || value.Status == "ok" || value.Status == "error") {
+		err = goa.MergeErrors(err, goa.InvalidEnumValueError("value.status", value.Status, []any{"unset", "ok", "error"}))
+	}
 	return err
 }
 
@@ -6374,6 +6670,107 @@ func DecodeInitProjectResult(data []byte) (out *InitProjectResult, err error) {
 	return out, nil
 }
 
+// EncodeListTracesPayload turns a service value into JSON using the field names in the Goa design.
+func EncodeListTracesPayload(in *ListTracesPayload) ([]byte, error) {
+	if err := checkListTracesPayloadValue(in); err != nil {
+		return nil, fmt.Errorf("encode ListTracesPayload JSON: %w", err)
+	}
+	if err := validateListTracesPayloadOriginal(in); err != nil {
+		return nil, fmt.Errorf("validate ListTracesPayload value: %w", err)
+	}
+	var body *jsonListTracesPayloadTransport
+	{
+		body = &jsonListTracesPayloadTransport{
+			Status: &in.Status,
+			Cursor: in.Cursor,
+		}
+		limit := listTracesPayloadIntTransport(in.Limit)
+		body.Limit = &limit
+	}
+	if err := validatejsonListTracesPayloadTransport(body); err != nil {
+		return nil, fmt.Errorf("validate ListTracesPayload JSON: %w", err)
+	}
+	data, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("encode ListTracesPayload JSON: %w", err)
+	}
+	return data, nil
+}
+
+// ValidateListTracesPayloadValue checks the original Go fields against their declared constraints.
+// It returns validation errors without encoding the value as JSON.
+
+func ValidateListTracesPayloadValue(in *ListTracesPayload) error {
+	if err := checkListTracesPayloadValue(in); err != nil {
+		return fmt.Errorf("validate ListTracesPayload value: %w", err)
+	}
+	if err := validateListTracesPayloadOriginal(in); err != nil {
+		return fmt.Errorf("validate ListTracesPayload value: %w", err)
+	}
+
+	if in == nil {
+		return goa.MissingFieldError("result", "ListTracesPayload")
+	}
+
+	var body *jsonListTracesPayloadTransport
+	{
+		body = &jsonListTracesPayloadTransport{
+			Status: &in.Status,
+			Cursor: in.Cursor,
+		}
+		limit := listTracesPayloadIntTransport(in.Limit)
+		body.Limit = &limit
+	}
+	if err := validatejsonListTracesPayloadTransport(body); err != nil {
+		return fmt.Errorf("validate ListTracesPayload value: %w", err)
+	}
+	return nil
+}
+
+// DecodeListTracesPayload checks JSON field names from the Goa design and returns a service value.
+func DecodeListTracesPayload(data []byte) (out *ListTracesPayload, err error) {
+	root, err := readStrictJSON(data)
+	if err != nil {
+		return out, fmt.Errorf("decode ListTracesPayload JSON: %w", err)
+	}
+	if err := validateListTracesPayloadJSONValue("", root, ""); err != nil {
+		return out, fmt.Errorf("decode ListTracesPayload JSON: %w", err)
+	}
+	var body *jsonListTracesPayloadTransport
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&body); err != nil {
+		return out, fmt.Errorf("decode ListTracesPayload JSON: %w", err)
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		if err == nil {
+			return out, fmt.Errorf("decode ListTracesPayload JSON: multiple JSON values")
+		}
+		return out, fmt.Errorf("decode ListTracesPayload JSON after first value: %w", err)
+	}
+	if err := validatejsonListTracesPayloadTransport(body); err != nil {
+		return out, fmt.Errorf("validate ListTracesPayload JSON: %w", err)
+	}
+	{
+		out = &ListTracesPayload{
+			Cursor: body.Cursor,
+		}
+		if body.Status != nil {
+			out.Status = *body.Status
+		}
+		if body.Limit != nil {
+			out.Limit = int(*body.Limit)
+		}
+		if body.Status == nil {
+			out.Status = "all"
+		}
+		if body.Limit == nil {
+			out.Limit = 20
+		}
+	}
+	return out, nil
+}
+
 // EncodeListVerificationsPayload turns a service value into JSON using the field names in the Goa design.
 func EncodeListVerificationsPayload(in *ListVerificationsPayload) ([]byte, error) {
 	if err := checkListVerificationsPayloadValue(in); err != nil {
@@ -7688,6 +8085,246 @@ func DecodeToolInputBindingItem(data []byte) (out *ToolInputBindingItem, err err
 		out.InjectedFields = make([]string, len(body.InjectedFields))
 		for i, val := range body.InjectedFields {
 			out.InjectedFields[i] = val
+		}
+	}
+	return out, nil
+}
+
+// EncodeTraceList turns a service value into JSON using the field names in the Goa design.
+func EncodeTraceList(in *TraceList) ([]byte, error) {
+	if err := checkTraceListValue(in); err != nil {
+		return nil, fmt.Errorf("encode TraceList JSON: %w", err)
+	}
+	if err := validateTraceListOriginal(in); err != nil {
+		return nil, fmt.Errorf("validate TraceList value: %w", err)
+	}
+	var body *jsonTraceListTransport
+	{
+		body = &jsonTraceListTransport{
+			HasMore:    &in.HasMore,
+			NextCursor: in.NextCursor,
+		}
+		body.Spans = make([]*jsonTraceSpanTransport, len(in.Spans))
+		for i, val := range in.Spans {
+			if val == nil {
+				body.Spans[i] = nil
+				continue
+			}
+			body.Spans[i] = encodeTraceSpanToTraceSpanTransport(val)
+		}
+	}
+	if err := validatejsonTraceListTransport(body); err != nil {
+		return nil, fmt.Errorf("validate TraceList JSON: %w", err)
+	}
+	data, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("encode TraceList JSON: %w", err)
+	}
+	return data, nil
+}
+
+// ValidateTraceListValue checks the original Go fields against their declared constraints.
+// It returns validation errors without encoding the value as JSON.
+
+func ValidateTraceListValue(in *TraceList) error {
+	if err := checkTraceListValue(in); err != nil {
+		return fmt.Errorf("validate TraceList value: %w", err)
+	}
+	if err := validateTraceListOriginal(in); err != nil {
+		return fmt.Errorf("validate TraceList value: %w", err)
+	}
+
+	if in == nil {
+		return goa.MissingFieldError("result", "TraceList")
+	}
+
+	var body *jsonTraceListTransport
+	{
+		body = &jsonTraceListTransport{
+			HasMore:    &in.HasMore,
+			NextCursor: in.NextCursor,
+		}
+		body.Spans = make([]*jsonTraceSpanTransport, len(in.Spans))
+		for i, val := range in.Spans {
+			if val == nil {
+				body.Spans[i] = nil
+				continue
+			}
+			body.Spans[i] = encodeTraceSpanToTraceSpanTransport(val)
+		}
+	}
+	if err := validatejsonTraceListTransport(body); err != nil {
+		return fmt.Errorf("validate TraceList value: %w", err)
+	}
+	return nil
+}
+
+// DecodeTraceList checks JSON field names from the Goa design and returns a service value.
+func DecodeTraceList(data []byte) (out *TraceList, err error) {
+	root, err := readStrictJSON(data)
+	if err != nil {
+		return out, fmt.Errorf("decode TraceList JSON: %w", err)
+	}
+	if err := validateTraceListJSONValue("", root, ""); err != nil {
+		return out, fmt.Errorf("decode TraceList JSON: %w", err)
+	}
+	var body *jsonTraceListTransport
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&body); err != nil {
+		return out, fmt.Errorf("decode TraceList JSON: %w", err)
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		if err == nil {
+			return out, fmt.Errorf("decode TraceList JSON: multiple JSON values")
+		}
+		return out, fmt.Errorf("decode TraceList JSON after first value: %w", err)
+	}
+	if err := validatejsonTraceListTransport(body); err != nil {
+		return out, fmt.Errorf("validate TraceList JSON: %w", err)
+	}
+	{
+		out = &TraceList{
+			HasMore:    *body.HasMore,
+			NextCursor: body.NextCursor,
+		}
+		out.Spans = make([]*TraceSpan, len(body.Spans))
+		for i, val := range body.Spans {
+			if val == nil {
+				out.Spans[i] = nil
+				continue
+			}
+			out.Spans[i] = decodeTraceSpanTransportToTraceSpan(val)
+		}
+	}
+	return out, nil
+}
+
+// EncodeTraceSpan turns a service value into JSON using the field names in the Goa design.
+func EncodeTraceSpan(in *TraceSpan) ([]byte, error) {
+	if err := checkTraceSpanValue(in); err != nil {
+		return nil, fmt.Errorf("encode TraceSpan JSON: %w", err)
+	}
+	if err := validateTraceSpanOriginal(in); err != nil {
+		return nil, fmt.Errorf("validate TraceSpan value: %w", err)
+	}
+	var body *jsonTraceSpanTransport
+	{
+		body = &jsonTraceSpanTransport{
+			TraceID:      &in.TraceID,
+			SpanID:       &in.SpanID,
+			ParentSpanID: &in.ParentSpanID,
+			Name:         &in.Name,
+			StartTime:    &in.StartTime,
+			EndTime:      &in.EndTime,
+			Status:       &in.Status,
+			Summary:      &in.Summary,
+			Shortened:    &in.Shortened,
+		}
+		durationMs := traceListInt64Transport(in.DurationMs)
+		body.DurationMs = &durationMs
+		body.Attributes = make(map[string]string, len(in.Attributes))
+		for key, val := range in.Attributes {
+			tk := key
+			tv := val
+			body.Attributes[tk] = tv
+		}
+	}
+	if err := validatejsonTraceSpanTransport(body); err != nil {
+		return nil, fmt.Errorf("validate TraceSpan JSON: %w", err)
+	}
+	data, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("encode TraceSpan JSON: %w", err)
+	}
+	return data, nil
+}
+
+// ValidateTraceSpanValue checks the original Go fields against their declared constraints.
+// It returns validation errors without encoding the value as JSON.
+
+func ValidateTraceSpanValue(in *TraceSpan) error {
+	if err := checkTraceSpanValue(in); err != nil {
+		return fmt.Errorf("validate TraceSpan value: %w", err)
+	}
+	if err := validateTraceSpanOriginal(in); err != nil {
+		return fmt.Errorf("validate TraceSpan value: %w", err)
+	}
+
+	if in == nil {
+		return goa.MissingFieldError("result", "TraceSpan")
+	}
+
+	var body *jsonTraceSpanTransport
+	{
+		body = &jsonTraceSpanTransport{
+			TraceID:      &in.TraceID,
+			SpanID:       &in.SpanID,
+			ParentSpanID: &in.ParentSpanID,
+			Name:         &in.Name,
+			StartTime:    &in.StartTime,
+			EndTime:      &in.EndTime,
+			Status:       &in.Status,
+			Summary:      &in.Summary,
+			Shortened:    &in.Shortened,
+		}
+		durationMs := traceListInt64Transport(in.DurationMs)
+		body.DurationMs = &durationMs
+		body.Attributes = make(map[string]string, len(in.Attributes))
+		for key, val := range in.Attributes {
+			tk := key
+			tv := val
+			body.Attributes[tk] = tv
+		}
+	}
+	if err := validatejsonTraceSpanTransport(body); err != nil {
+		return fmt.Errorf("validate TraceSpan value: %w", err)
+	}
+	return nil
+}
+
+// DecodeTraceSpan checks JSON field names from the Goa design and returns a service value.
+func DecodeTraceSpan(data []byte) (out *TraceSpan, err error) {
+	root, err := readStrictJSON(data)
+	if err != nil {
+		return out, fmt.Errorf("decode TraceSpan JSON: %w", err)
+	}
+	if err := validateTraceListJSONValue3("", root, ""); err != nil {
+		return out, fmt.Errorf("decode TraceSpan JSON: %w", err)
+	}
+	var body *jsonTraceSpanTransport
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&body); err != nil {
+		return out, fmt.Errorf("decode TraceSpan JSON: %w", err)
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		if err == nil {
+			return out, fmt.Errorf("decode TraceSpan JSON: multiple JSON values")
+		}
+		return out, fmt.Errorf("decode TraceSpan JSON after first value: %w", err)
+	}
+	if err := validatejsonTraceSpanTransport(body); err != nil {
+		return out, fmt.Errorf("validate TraceSpan JSON: %w", err)
+	}
+	{
+		out = &TraceSpan{
+			TraceID:      *body.TraceID,
+			SpanID:       *body.SpanID,
+			ParentSpanID: *body.ParentSpanID,
+			Name:         *body.Name,
+			StartTime:    *body.StartTime,
+			EndTime:      *body.EndTime,
+			DurationMs:   int64(*body.DurationMs),
+			Status:       *body.Status,
+			Summary:      *body.Summary,
+			Shortened:    *body.Shortened,
+		}
+		out.Attributes = make(map[string]string, len(body.Attributes))
+		for key, val := range body.Attributes {
+			tk := key
+			tv := val
+			out.Attributes[tk] = tv
 		}
 	}
 	return out, nil
@@ -9112,6 +9749,29 @@ func decodeToolInputBindingItemTransportToToolInputBindingItem(v *jsonToolInputB
 	return res
 }
 
+func decodeTraceSpanTransportToTraceSpan(v *jsonTraceSpanTransport) *TraceSpan {
+	res := &TraceSpan{
+		TraceID:      *v.TraceID,
+		SpanID:       *v.SpanID,
+		ParentSpanID: *v.ParentSpanID,
+		Name:         *v.Name,
+		StartTime:    *v.StartTime,
+		EndTime:      *v.EndTime,
+		DurationMs:   int64(*v.DurationMs),
+		Status:       *v.Status,
+		Summary:      *v.Summary,
+		Shortened:    *v.Shortened,
+	}
+	res.Attributes = make(map[string]string, len(v.Attributes))
+	for key, val := range v.Attributes {
+		tk := key
+		tv := val
+		res.Attributes[tk] = tv
+	}
+
+	return res
+}
+
 func decodeUICompositionItemTransportToUICompositionItem(v *jsonUICompositionItemTransport) *UICompositionItem {
 	res := &UICompositionItem{
 		Program:             *v.Program,
@@ -9498,6 +10158,30 @@ func encodeToolInputBindingItemToToolInputBindingItemTransport(v *ToolInputBindi
 	res.InjectedFields = make([]string, len(v.InjectedFields))
 	for i, val := range v.InjectedFields {
 		res.InjectedFields[i] = val
+	}
+
+	return res
+}
+
+func encodeTraceSpanToTraceSpanTransport(v *TraceSpan) *jsonTraceSpanTransport {
+	res := &jsonTraceSpanTransport{
+		TraceID:      &v.TraceID,
+		SpanID:       &v.SpanID,
+		ParentSpanID: &v.ParentSpanID,
+		Name:         &v.Name,
+		StartTime:    &v.StartTime,
+		EndTime:      &v.EndTime,
+		Status:       &v.Status,
+		Summary:      &v.Summary,
+		Shortened:    &v.Shortened,
+	}
+	durationMs := traceListInt64Transport(v.DurationMs)
+	res.DurationMs = &durationMs
+	res.Attributes = make(map[string]string, len(v.Attributes))
+	for key, val := range v.Attributes {
+		tk := key
+		tv := val
+		res.Attributes[tk] = tv
 	}
 
 	return res
@@ -12645,6 +13329,58 @@ func validateInitProjectResultJSONValue(path string, value any, description stri
 	return nil
 }
 
+// validateListTracesPayloadJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateListTracesPayloadJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "cursor":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Opaque next_cursor from the previous page; omit to refresh from the newest records.",
+			); err != nil {
+				return err
+			}
+		case "limit":
+			if err := validateAgentPolicyItemJSONValue4(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Maximum matching spans returned; a page may contain fewer because each call scans at most 256 KiB.",
+			); err != nil {
+				return err
+			}
+		case "status":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "all for every status, error for recorded failures, or ok for spans without an error status (including unset).",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"cursor",
+				"limit",
+				"status",
+			})
+		}
+	}
+	return nil
+}
+
 // validateListVerificationsPayloadJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
 func validateListVerificationsPayloadJSONValue(path string, value any, description string) error {
 	field := path
@@ -13167,6 +13903,230 @@ func validateStopLiveTargetResultJSONValue(path string, value any, description s
 				"message",
 				"stopped",
 			})
+		}
+	}
+	return nil
+}
+
+// validateTraceListJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateTraceListJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "has_more":
+			if err := validateAgentPolicyItemJSONValue3(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "True when older records have not yet been examined.",
+			); err != nil {
+				return err
+			}
+		case "next_cursor":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Cursor to examine the next older window; present only when has_more is true.",
+			); err != nil {
+				return err
+			}
+		case "spans":
+			if err := validateTraceListJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Matching spans found in this page's bounded disk window.",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"has_more",
+				"next_cursor",
+				"spans",
+			})
+		}
+	}
+	return nil
+}
+
+// validateTraceListJSONValue2 checks one value whose JSON shape is fixed by the generated Goa type.
+func validateTraceListJSONValue2(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "array", "null", description)
+	}
+	typed, ok := value.([]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "array", decodedJSONType(value), description)
+	}
+	for index, item := range typed {
+		if item == nil {
+			continue
+		}
+		if err := validateTraceListJSONValue3(
+			generatedJSONChildPath(path, strconv.Itoa(index), true),
+			item, description,
+		); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateTraceListJSONValue3 checks one value whose JSON shape is fixed by the generated Goa type.
+func validateTraceListJSONValue3(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "attributes":
+			if err := validateTraceListJSONValue4(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Selected operation identifiers and results; at most six values of 1024 bytes each.",
+			); err != nil {
+				return err
+			}
+		case "duration_ms":
+			if err := validateCheckOutputPageJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Elapsed milliseconds.",
+			); err != nil {
+				return err
+			}
+		case "end_time":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Operation finish time in UTC.",
+			); err != nil {
+				return err
+			}
+		case "name":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Operation name, at most 128 bytes.",
+			); err != nil {
+				return err
+			}
+		case "parent_span_id":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Parent span identifier; empty when this span has no parent.",
+			); err != nil {
+				return err
+			}
+		case "shortened":
+			if err := validateAgentPolicyItemJSONValue3(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "True when text was shortened to fit this diagnostic record; use operator telemetry for the full values.",
+			); err != nil {
+				return err
+			}
+		case "span_id":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "OpenTelemetry span identifier.",
+			); err != nil {
+				return err
+			}
+		case "start_time":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Operation start time in UTC.",
+			); err != nil {
+				return err
+			}
+		case "status":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Original span status: unset, ok, or error. An unset status does not establish success.",
+			); err != nil {
+				return err
+			}
+		case "summary":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Safe operation summary, at most 2048 bytes; never a raw error message.",
+			); err != nil {
+				return err
+			}
+		case "trace_id":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "OpenTelemetry trace identifier.",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"attributes",
+				"duration_ms",
+				"end_time",
+				"name",
+				"parent_span_id",
+				"shortened",
+				"span_id",
+				"start_time",
+				"status",
+				"summary",
+				"trace_id",
+			})
+		}
+	}
+	return nil
+}
+
+// validateTraceListJSONValue4 checks one value whose JSON shape is fixed by the generated Goa type.
+func validateTraceListJSONValue4(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		if err := validateAgentPolicyItemJSONValue2(
+			generatedJSONChildPath(path, key, true),
+			typed[key], description,
+		); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -15167,6 +16127,41 @@ func checkInitProjectResultInitProjectResultValue(in *InitProjectResult, field s
 	return nil
 }
 
+// checkListTracesPayloadValue checks text and cycles before conversion.
+func checkListTracesPayloadValue(in *ListTracesPayload) error {
+	if in == nil {
+		return fmt.Errorf("missing root value")
+	}
+	active := make(map[any]bool)
+	if err := checkListTracesPayloadListTracesPayloadValue(in, "$", active); err != nil {
+		return err
+	}
+	return nil
+}
+
+// checkListTracesPayloadListTracesPayloadValue checks one generated value on the active path.
+func checkListTracesPayloadListTracesPayloadValue(in *ListTracesPayload, field string, active map[any]bool) error {
+	if in == nil {
+		return nil
+	}
+	if active[in] {
+		return fmt.Errorf("%s: cyclic Go value", field)
+	}
+	active[in] = true
+	defer delete(active, in)
+	if in != nil {
+		if !utf8.ValidString(string(in.Status)) {
+			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "status", false))
+		}
+		if in.Cursor != nil {
+			if !utf8.ValidString(string(*in.Cursor)) {
+				return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "cursor", false))
+			}
+		}
+	}
+	return nil
+}
+
 // checkListVerificationsPayloadValue checks text and cycles before conversion.
 func checkListVerificationsPayloadValue(in *ListVerificationsPayload) error {
 	if in == nil {
@@ -15549,6 +16544,105 @@ func checkToolInputBindingItemValue(in *ToolInputBindingItem) error {
 	}
 	active := make(map[any]bool)
 	if err := checkArchitecturePreviewResultToolInputBindingItemValue(in, "$", active); err != nil {
+		return err
+	}
+	return nil
+}
+
+// checkTraceListValue checks text and cycles before conversion.
+func checkTraceListValue(in *TraceList) error {
+	if in == nil {
+		return fmt.Errorf("missing root value")
+	}
+	active := make(map[any]bool)
+	if err := checkTraceListTraceListValue(in, "$", active); err != nil {
+		return err
+	}
+	return nil
+}
+
+// checkTraceListTraceListValue checks one generated value on the active path.
+func checkTraceListTraceListValue(in *TraceList, field string, active map[any]bool) error {
+	if in == nil {
+		return nil
+	}
+	if active[in] {
+		return fmt.Errorf("%s: cyclic Go value", field)
+	}
+	active[in] = true
+	defer delete(active, in)
+	if in != nil {
+		for index1, item1 := range in.Spans {
+			_ = index1
+			_ = item1
+			if err := checkTraceListTraceSpanValue(item1, generatedJSONChildPath(generatedJSONChildPath(field, "spans", false), strconv.Itoa(index1), true), active); err != nil {
+				return err
+			}
+		}
+		if in.NextCursor != nil {
+			if !utf8.ValidString(string(*in.NextCursor)) {
+				return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "next_cursor", false))
+			}
+		}
+	}
+	return nil
+}
+
+// checkTraceListTraceSpanValue checks one generated value on the active path.
+func checkTraceListTraceSpanValue(in *TraceSpan, field string, active map[any]bool) error {
+	if in == nil {
+		return nil
+	}
+	if active[in] {
+		return fmt.Errorf("%s: cyclic Go value", field)
+	}
+	active[in] = true
+	defer delete(active, in)
+	if in != nil {
+		if !utf8.ValidString(string(in.TraceID)) {
+			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "trace_id", false))
+		}
+		if !utf8.ValidString(string(in.SpanID)) {
+			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "span_id", false))
+		}
+		if !utf8.ValidString(string(in.ParentSpanID)) {
+			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "parent_span_id", false))
+		}
+		if !utf8.ValidString(string(in.Name)) {
+			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "name", false))
+		}
+		if !utf8.ValidString(string(in.StartTime)) {
+			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "start_time", false))
+		}
+		if !utf8.ValidString(string(in.EndTime)) {
+			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "end_time", false))
+		}
+		if !utf8.ValidString(string(in.Status)) {
+			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "status", false))
+		}
+		if !utf8.ValidString(string(in.Summary)) {
+			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "summary", false))
+		}
+		for key1, item1 := range in.Attributes {
+			_ = item1
+			if !utf8.ValidString(string(key1)) {
+				return fmt.Errorf("%s: invalid UTF-8 map key", generatedJSONChildPath(field, "attributes", false))
+			}
+			if !utf8.ValidString(string(item1)) {
+				return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(generatedJSONChildPath(field, "attributes", false), string(key1), true))
+			}
+		}
+	}
+	return nil
+}
+
+// checkTraceSpanValue checks text and cycles before conversion.
+func checkTraceSpanValue(in *TraceSpan) error {
+	if in == nil {
+		return fmt.Errorf("missing root value")
+	}
+	active := make(map[any]bool)
+	if err := checkTraceListTraceSpanValue(in, "$", active); err != nil {
 		return err
 	}
 	return nil

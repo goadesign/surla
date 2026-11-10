@@ -182,6 +182,22 @@ func InitProjectResultCodec() tools.JSONCodec[*InitProjectResult] {
 	}
 }
 
+// ListTracesPayloadCodec returns a fresh codec for *ListTracesPayload.
+func ListTracesPayloadCodec() tools.JSONCodec[*ListTracesPayload] {
+	return tools.JSONCodec[*ListTracesPayload]{
+		ToJSON:   MarshalListTracesPayload,
+		FromJSON: UnmarshalListTracesPayload,
+	}
+}
+
+// ListTracesResultCodec returns a fresh codec for *ListTracesResult.
+func ListTracesResultCodec() tools.JSONCodec[*ListTracesResult] {
+	return tools.JSONCodec[*ListTracesResult]{
+		ToJSON:   MarshalListTracesResult,
+		FromJSON: UnmarshalListTracesResult,
+	}
+}
+
 // ListVerificationsPayloadCodec returns a fresh codec for *ListVerificationsPayload.
 func ListVerificationsPayloadCodec() tools.JSONCodec[*ListVerificationsPayload] {
 	return tools.JSONCodec[*ListVerificationsPayload]{
@@ -585,6 +601,32 @@ var (
 		},
 		FromJSON: func(data []byte) (any, error) {
 			return UnmarshalInitProjectResult(data)
+		},
+	}
+	// listTracesPayloadCodec provides an untyped codec for *ListTracesPayload.
+	listTracesPayloadCodec = tools.JSONCodec[any]{
+		ToJSON: func(v any) ([]byte, error) {
+			// Prefer typed marshal when the value matches the expected type.
+			if typed, ok := v.(*ListTracesPayload); ok {
+				return MarshalListTracesPayload(typed)
+			}
+			return nil, fmt.Errorf("invalid value type for *ListTracesPayload: %T", v)
+		},
+		FromJSON: func(data []byte) (any, error) {
+			return UnmarshalListTracesPayload(data)
+		},
+	}
+	// listTracesResultCodec provides an untyped codec for *ListTracesResult.
+	listTracesResultCodec = tools.JSONCodec[any]{
+		ToJSON: func(v any) ([]byte, error) {
+			// Prefer typed marshal when the value matches the expected type.
+			if typed, ok := v.(*ListTracesResult); ok {
+				return MarshalListTracesResult(typed)
+			}
+			return nil, fmt.Errorf("invalid value type for *ListTracesResult: %T", v)
+		},
+		FromJSON: func(data []byte) (any, error) {
+			return UnmarshalListTracesResult(data)
 		},
 	}
 	// listVerificationsPayloadCodec provides an untyped codec for *ListVerificationsPayload.
@@ -2327,6 +2369,113 @@ var initProjectResultFields = []tools.FieldMetadata{
 		Path:        []tools.FieldPathSegment{tools.FixedField("commit")},
 		JSONType:    "string",
 		Description: "Full commit ID of the initial starter commit created in the initialized repository (40 or 64 lowercase hex characters); start_live_target and verify_change take this commit ID.",
+	},
+}
+var listTracesPayloadFields = []tools.FieldMetadata{
+	{
+		JSONType:    "object",
+		Description: "Read a bounded page of saved operation diagnostics for the authenticated caller, newest first. Keep the filter unchanged when reading older pages.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("status")},
+		JSONType:    "string",
+		Description: "all for every status, error for recorded failures, or ok for spans without an error status (including unset).",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("limit")},
+		JSONType:    "integer",
+		Description: "Maximum matching spans returned; a page may contain fewer because each call scans at most 256 KiB.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("cursor")},
+		JSONType:    "string",
+		Description: "Opaque next_cursor from the previous page; omit to refresh from the newest records.",
+	},
+}
+var listTracesResultFields = []tools.FieldMetadata{
+	{
+		JSONType:    "object",
+		Description: "One newest-first diagnostic page. An empty spans array with has_more true means older records remain, not that the complete history contains no matches.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("spans")},
+		JSONType:    "array",
+		Description: "Matching spans found in this page's bounded disk window.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("spans"), tools.DynamicField{}},
+		JSONType:    "object",
+		Description: "Matching spans found in this page's bounded disk window.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("spans"), tools.DynamicField{}, tools.FixedField("trace_id")},
+		JSONType:    "string",
+		Description: "OpenTelemetry trace identifier.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("spans"), tools.DynamicField{}, tools.FixedField("span_id")},
+		JSONType:    "string",
+		Description: "OpenTelemetry span identifier.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("spans"), tools.DynamicField{}, tools.FixedField("parent_span_id")},
+		JSONType:    "string",
+		Description: "Parent span identifier; empty when this span has no parent.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("spans"), tools.DynamicField{}, tools.FixedField("name")},
+		JSONType:    "string",
+		Description: "Operation name, at most 128 bytes.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("spans"), tools.DynamicField{}, tools.FixedField("start_time")},
+		JSONType:    "string",
+		Description: "Operation start time in UTC.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("spans"), tools.DynamicField{}, tools.FixedField("end_time")},
+		JSONType:    "string",
+		Description: "Operation finish time in UTC.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("spans"), tools.DynamicField{}, tools.FixedField("duration_ms")},
+		JSONType:    "integer",
+		Description: "Elapsed milliseconds.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("spans"), tools.DynamicField{}, tools.FixedField("status")},
+		JSONType:    "string",
+		Description: "Original span status: unset, ok, or error. An unset status does not establish success.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("spans"), tools.DynamicField{}, tools.FixedField("summary")},
+		JSONType:    "string",
+		Description: "Safe operation summary, at most 2048 bytes; never a raw error message.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("spans"), tools.DynamicField{}, tools.FixedField("attributes")},
+		JSONType:    "object",
+		Description: "Selected operation identifiers and results; at most six values of 1024 bytes each.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("spans"), tools.DynamicField{}, tools.FixedField("attributes"), tools.DynamicField{}},
+		JSONType:    "string",
+		Description: "Selected operation identifiers and results; at most six values of 1024 bytes each.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("spans"), tools.DynamicField{}, tools.FixedField("shortened")},
+		JSONType:    "boolean",
+		Description: "True when text was shortened to fit this diagnostic record; use operator telemetry for the full values.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("has_more")},
+		JSONType:    "boolean",
+		Description: "True when older records have not yet been examined.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("next_cursor")},
+		JSONType:    "string",
+		Description: "Cursor to examine the next older window; present only when has_more is true.",
 	},
 }
 var listVerificationsPayloadFields = []tools.FieldMetadata{
@@ -4561,6 +4710,40 @@ func enrichInitProjectResultValidationError(err error) error {
 	}
 	return tools.NewValidationError(ve.Error(), issues, m)
 }
+func enrichListTracesPayloadValidationError(err error) error {
+	var ve *tools.ValidationError
+	if !errors.As(err, &ve) {
+		return err
+	}
+	issues := ve.Issues()
+	if len(issues) == 0 {
+		return err
+	}
+	m := make(map[string]string)
+	for _, is := range issues {
+		if field, ok := tools.LookupFieldMetadata(listTracesPayloadFields, is.Field); ok && field.Description != "" {
+			m[is.Field] = field.Description
+		}
+	}
+	return tools.NewValidationError(ve.Error(), issues, m)
+}
+func enrichListTracesResultValidationError(err error) error {
+	var ve *tools.ValidationError
+	if !errors.As(err, &ve) {
+		return err
+	}
+	issues := ve.Issues()
+	if len(issues) == 0 {
+		return err
+	}
+	m := make(map[string]string)
+	for _, is := range issues {
+		if field, ok := tools.LookupFieldMetadata(listTracesResultFields, is.Field); ok && field.Description != "" {
+			m[is.Field] = field.Description
+		}
+	}
+	return tools.NewValidationError(ve.Error(), issues, m)
+}
 func enrichListVerificationsPayloadValidationError(err error) error {
 	var ve *tools.ValidationError
 	if !errors.As(err, &ve) {
@@ -5433,6 +5616,68 @@ func invalidInitProjectResultFieldTypeError(err error) error {
 		field = "$payload"
 	}
 	metadata, ok := tools.LookupFieldMetadata(initProjectResultFields, field)
+	if !ok || metadata.JSONType == "" {
+		return err
+	}
+	actual := generatedUnmarshalJSONType(typeErr.Value)
+	if actual == "" {
+		return err
+	}
+	return tools.NewValidationError(
+		err.Error(),
+		[]*tools.FieldIssue{
+			{
+				Field:            field,
+				Constraint:       "invalid_field_type",
+				ExpectedJSONType: metadata.JSONType,
+				ActualJSONType:   actual,
+			},
+		},
+		nil,
+	)
+}
+func invalidListTracesPayloadFieldTypeError(err error) error {
+	var typeErr *json.UnmarshalTypeError
+	if !errors.As(err, &typeErr) {
+		return err
+	}
+	field := typeErr.Field
+	field = strings.TrimPrefix(field, "ListTracesPayloadTransport.")
+	if field == "" {
+		field = "$payload"
+	}
+	metadata, ok := tools.LookupFieldMetadata(listTracesPayloadFields, field)
+	if !ok || metadata.JSONType == "" {
+		return err
+	}
+	actual := generatedUnmarshalJSONType(typeErr.Value)
+	if actual == "" {
+		return err
+	}
+	return tools.NewValidationError(
+		err.Error(),
+		[]*tools.FieldIssue{
+			{
+				Field:            field,
+				Constraint:       "invalid_field_type",
+				ExpectedJSONType: metadata.JSONType,
+				ActualJSONType:   actual,
+			},
+		},
+		nil,
+	)
+}
+func invalidListTracesResultFieldTypeError(err error) error {
+	var typeErr *json.UnmarshalTypeError
+	if !errors.As(err, &typeErr) {
+		return err
+	}
+	field := typeErr.Field
+	field = strings.TrimPrefix(field, "ListTracesResultTransport.")
+	if field == "" {
+		field = "$payload"
+	}
+	metadata, ok := tools.LookupFieldMetadata(listTracesResultFields, field)
 	if !ok || metadata.JSONType == "" {
 		return err
 	}
@@ -7254,6 +7499,118 @@ func UnmarshalInitProjectResult(data []byte) (*InitProjectResult, error) {
 	return out, nil
 }
 
+// MarshalListTracesPayload serializes *ListTracesPayload into JSON.
+func MarshalListTracesPayload(v *ListTracesPayload) ([]byte, error) {
+	if v == nil {
+		return nil, fmt.Errorf("listTracesPayload is nil")
+	}
+	in := v
+	_ = in
+	var out *toolhttp.ListTracesPayloadTransport
+	out = &toolhttp.ListTracesPayloadTransport{
+		Status: &in.Status,
+		Limit:  &in.Limit,
+		Cursor: in.Cursor,
+	}
+	return json.Marshal(out)
+}
+
+// UnmarshalListTracesPayload deserializes JSON into *ListTracesPayload.
+func UnmarshalListTracesPayload(data []byte) (*ListTracesPayload, error) {
+	if len(data) == 0 {
+		return nil, fmt.Errorf("listTracesPayload JSON is empty")
+	}
+	var tv toolhttp.ListTracesPayloadTransport
+	if err := validateListTracesPayloadJSON(data); err != nil {
+		return nil, invalidListTracesPayloadFieldTypeError(err)
+	}
+	if err := json.Unmarshal(data, &tv); err != nil {
+		return nil, invalidListTracesPayloadFieldTypeError(err)
+	}
+	if err := toolhttp.ValidateListTracesPayloadTransport(&tv); err != nil {
+		err = newValidationError(err)
+		err = enrichListTracesPayloadValidationError(err)
+		return nil, err
+	}
+	in := &tv
+	_ = in
+	var out *ListTracesPayload
+	out = &ListTracesPayload{
+		Cursor: in.Cursor,
+	}
+	if in.Status != nil {
+		out.Status = *in.Status
+	}
+	if in.Limit != nil {
+		out.Limit = *in.Limit
+	}
+	if in.Status == nil {
+		out.Status = "all"
+	}
+	if in.Limit == nil {
+		out.Limit = 20
+	}
+	return out, nil
+}
+
+// MarshalListTracesResult serializes *ListTracesResult into JSON.
+func MarshalListTracesResult(v *ListTracesResult) ([]byte, error) {
+	if v == nil {
+		return nil, fmt.Errorf("listTracesResult is nil")
+	}
+	in := v
+	_ = in
+	var out *toolhttp.ListTracesResultTransport
+	out = &toolhttp.ListTracesResultTransport{
+		HasMore:    &in.HasMore,
+		NextCursor: in.NextCursor,
+	}
+	out.Spans = make([]*toolhttp.TraceSpanTransport, len(in.Spans))
+	for i, val := range in.Spans {
+		if val == nil {
+			out.Spans[i] = nil
+			continue
+		}
+		out.Spans[i] = encodeTraceSpanToTraceSpanTransport(val)
+	}
+	return json.Marshal(out)
+}
+
+// UnmarshalListTracesResult deserializes JSON into *ListTracesResult.
+func UnmarshalListTracesResult(data []byte) (*ListTracesResult, error) {
+	if len(data) == 0 {
+		return nil, fmt.Errorf("listTracesResult JSON is empty")
+	}
+	var tv toolhttp.ListTracesResultTransport
+	if err := validateListTracesResultJSON(data); err != nil {
+		return nil, invalidListTracesResultFieldTypeError(err)
+	}
+	if err := json.Unmarshal(data, &tv); err != nil {
+		return nil, invalidListTracesResultFieldTypeError(err)
+	}
+	if err := toolhttp.ValidateListTracesResultTransport(&tv); err != nil {
+		err = newValidationError(err)
+		err = enrichListTracesResultValidationError(err)
+		return nil, err
+	}
+	in := &tv
+	_ = in
+	var out *ListTracesResult
+	out = &ListTracesResult{
+		HasMore:    *in.HasMore,
+		NextCursor: in.NextCursor,
+	}
+	out.Spans = make([]*TraceSpan, len(in.Spans))
+	for i, val := range in.Spans {
+		if val == nil {
+			out.Spans[i] = nil
+			continue
+		}
+		out.Spans[i] = decodeTraceSpanTransportToTraceSpan(val)
+	}
+	return out, nil
+}
+
 // MarshalListVerificationsPayload serializes *ListVerificationsPayload into JSON.
 func MarshalListVerificationsPayload(v *ListVerificationsPayload) ([]byte, error) {
 	if v == nil {
@@ -8692,6 +9049,26 @@ func validateReadCheckOutputResultJSON(data []byte) error {
 		return err
 	}
 	return validateReadCheckOutputResultJSONValue("", root, "")
+}
+
+// validateListTracesPayloadJSON parses one JSON document and checks the exact value
+// shapes known from this generated Goa type.
+func validateListTracesPayloadJSON(data []byte) error {
+	root, err := readStrictToolJSON(data)
+	if err != nil {
+		return err
+	}
+	return validateListTracesPayloadJSONValue("", root, "")
+}
+
+// validateListTracesResultJSON parses one JSON document and checks the exact value
+// shapes known from this generated Goa type.
+func validateListTracesResultJSON(data []byte) error {
+	root, err := readStrictToolJSON(data)
+	if err != nil {
+		return err
+	}
+	return validateListTracesResultJSONValue("", root, "")
 }
 
 // readStrictToolJSON checks the complete JSON document for malformed text and
@@ -12337,6 +12714,250 @@ func validateInt64JSONValue(path string, value any, description string) error {
 	return nil
 }
 
+// validateListTracesPayloadJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateListTracesPayloadJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "cursor":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Opaque next_cursor from the previous page; omit to refresh from the newest records.",
+			); err != nil {
+				return err
+			}
+		case "limit":
+			if err := validateIntJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Maximum matching spans returned; a page may contain fewer because each call scans at most 256 KiB.",
+			); err != nil {
+				return err
+			}
+		case "status":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "all for every status, error for recorded failures, or ok for spans without an error status (including unset).",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"cursor",
+				"limit",
+				"status",
+			})
+		}
+	}
+	return nil
+}
+
+// validateListTracesResultJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateListTracesResultJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "has_more":
+			if err := validateBooleanJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "True when older records have not yet been examined.",
+			); err != nil {
+				return err
+			}
+		case "next_cursor":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Cursor to examine the next older window; present only when has_more is true.",
+			); err != nil {
+				return err
+			}
+		case "spans":
+			if err := validateListTracesResultRootSpansJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Matching spans found in this page's bounded disk window.",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"has_more",
+				"next_cursor",
+				"spans",
+			})
+		}
+	}
+	return nil
+}
+
+// validateListTracesResultRootSpansJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateListTracesResultRootSpansJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "array", "null", description)
+	}
+	typed, ok := value.([]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "array", decodedJSONType(value), description)
+	}
+	for index, item := range typed {
+		if err := validateListTracesResultTraceSpanTransportJSONValue(
+			generatedJSONChildPath(path, strconv.Itoa(index), true),
+			item, description,
+		); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateListTracesResultTraceSpanTransportJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateListTracesResultTraceSpanTransportJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "attributes":
+			if err := validateProposeChangeResultRootAnswersJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Selected operation identifiers and results; at most six values of 1024 bytes each.",
+			); err != nil {
+				return err
+			}
+		case "duration_ms":
+			if err := validateInt64JSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Elapsed milliseconds.",
+			); err != nil {
+				return err
+			}
+		case "end_time":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Operation finish time in UTC.",
+			); err != nil {
+				return err
+			}
+		case "name":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Operation name, at most 128 bytes.",
+			); err != nil {
+				return err
+			}
+		case "parent_span_id":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Parent span identifier; empty when this span has no parent.",
+			); err != nil {
+				return err
+			}
+		case "shortened":
+			if err := validateBooleanJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "True when text was shortened to fit this diagnostic record; use operator telemetry for the full values.",
+			); err != nil {
+				return err
+			}
+		case "span_id":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "OpenTelemetry span identifier.",
+			); err != nil {
+				return err
+			}
+		case "start_time":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Operation start time in UTC.",
+			); err != nil {
+				return err
+			}
+		case "status":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Original span status: unset, ok, or error. An unset status does not establish success.",
+			); err != nil {
+				return err
+			}
+		case "summary":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Safe operation summary, at most 2048 bytes; never a raw error message.",
+			); err != nil {
+				return err
+			}
+		case "trace_id":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "OpenTelemetry trace identifier.",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"attributes",
+				"duration_ms",
+				"end_time",
+				"name",
+				"parent_span_id",
+				"shortened",
+				"span_id",
+				"start_time",
+				"status",
+				"summary",
+				"trace_id",
+			})
+		}
+	}
+	return nil
+}
+
 // generatedJSONChildPath keeps fixed object fields dotted. After an array index
 // or caller-defined map key, it uses slash-separated paths so later keys stay clear.
 func generatedJSONChildPath(path, key string, useSlashPath bool) string {
@@ -12768,6 +13389,50 @@ func encodeVerificationNotCompletedToVerificationNotCompletedTransport(v *Verifi
 		Kind:    &v.Kind,
 		Stage:   &v.Stage,
 		Summary: &v.Summary,
+	}
+
+	return res
+}
+func decodeTraceSpanTransportToTraceSpan(v *toolhttp.TraceSpanTransport) *TraceSpan {
+	res := &TraceSpan{
+		TraceID:      *v.TraceID,
+		SpanID:       *v.SpanID,
+		ParentSpanID: *v.ParentSpanID,
+		Name:         *v.Name,
+		StartTime:    *v.StartTime,
+		EndTime:      *v.EndTime,
+		DurationMs:   *v.DurationMs,
+		Status:       *v.Status,
+		Summary:      *v.Summary,
+		Shortened:    *v.Shortened,
+	}
+	res.Attributes = make(map[string]string, len(v.Attributes))
+	for key, val := range v.Attributes {
+		tk := key
+		tv := val
+		res.Attributes[tk] = tv
+	}
+
+	return res
+}
+func encodeTraceSpanToTraceSpanTransport(v *TraceSpan) *toolhttp.TraceSpanTransport {
+	res := &toolhttp.TraceSpanTransport{
+		TraceID:      &v.TraceID,
+		SpanID:       &v.SpanID,
+		ParentSpanID: &v.ParentSpanID,
+		Name:         &v.Name,
+		StartTime:    &v.StartTime,
+		EndTime:      &v.EndTime,
+		DurationMs:   &v.DurationMs,
+		Status:       &v.Status,
+		Summary:      &v.Summary,
+		Shortened:    &v.Shortened,
+	}
+	res.Attributes = make(map[string]string, len(v.Attributes))
+	for key, val := range v.Attributes {
+		tk := key
+		tv := val
+		res.Attributes[tk] = tv
 	}
 
 	return res

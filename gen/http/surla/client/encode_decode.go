@@ -15,6 +15,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 
 	surla "github.com/goadesign/surla/gen/surla"
 	goahttp "goa.design/goa/v3/http"
@@ -2528,6 +2529,121 @@ func DecodeReadCheckOutputResponse(decoder func(*http.Response) goahttp.Decoder,
 	}
 }
 
+// BuildListTracesRequest instantiates a HTTP request object with method and
+// path set to call the "surla" service "list_traces" endpoint
+func (c *Client) BuildListTracesRequest(ctx context.Context, v any) (*http.Request, error) {
+	u := &url.URL{Scheme: c.scheme, Host: c.host, Path: ListTracesSurlaPath()}
+	req, err := http.NewRequest("GET", u.String(), nil)
+	if err != nil {
+		return nil, goahttp.ErrInvalidURL("surla", "list_traces", u.String(), err)
+	}
+	if ctx != nil {
+		req = req.WithContext(ctx)
+	}
+
+	return req, nil
+}
+
+// EncodeListTracesRequest returns an encoder for requests sent to the surla
+// list_traces server.
+func EncodeListTracesRequest(encoder func(*http.Request) goahttp.Encoder) func(*http.Request, any) error {
+	return func(req *http.Request, v any) error {
+		p, ok := v.(*surla.ListTracesPayload)
+		if !ok {
+			return goahttp.ErrInvalidType("surla", "list_traces", "*surla.ListTracesPayload", v)
+		}
+		values := req.URL.Query()
+		values.Add("status", p.Status)
+		values.Add("limit", strconv.Itoa(p.Limit))
+		if p.Cursor != nil {
+			values.Add("cursor", *p.Cursor)
+		}
+		req.URL.RawQuery = values.Encode()
+		return nil
+	}
+}
+
+// DecodeListTracesResponse returns a decoder for responses returned by the
+// surla list_traces endpoint. restoreBody controls whether the response body
+// should be restored after having been read.
+// DecodeListTracesResponse may return the following errors:
+//   - "unprocessable" (type *goa.ServiceError): http.StatusUnprocessableEntity
+//   - "not_implemented" (type *goa.ServiceError): http.StatusNotImplemented
+//   - error: internal error
+func DecodeListTracesResponse(decoder func(*http.Response) goahttp.Decoder, restoreBody bool) func(*http.Response) (any, error) {
+	return func(resp *http.Response) (result any, decodeErr error) {
+		responseBody := resp.Body
+		if restoreBody {
+			b, readErr := io.ReadAll(responseBody)
+			closeErr := responseBody.Close()
+			if err := errors.Join(readErr, closeErr); err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "list_traces", err)
+			}
+			resp.Body = io.NopCloser(bytes.NewBuffer(b))
+			defer func() {
+				resp.Body = io.NopCloser(bytes.NewBuffer(b))
+			}()
+		} else {
+			defer func() {
+				if err := responseBody.Close(); err != nil {
+					decodeErr = errors.Join(decodeErr, goahttp.ErrDecodingError("surla", "list_traces", err))
+				}
+			}()
+		}
+		switch resp.StatusCode {
+		case http.StatusOK:
+			var (
+				body ListTracesResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "list_traces", err)
+			}
+			err = ValidateListTracesResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("surla", "list_traces", err)
+			}
+			res := NewListTracesTraceListOK(&body)
+			return res, nil
+		case http.StatusUnprocessableEntity:
+			var (
+				body ListTracesUnprocessableResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "list_traces", err)
+			}
+			err = ValidateListTracesUnprocessableResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("surla", "list_traces", err)
+			}
+			return nil, NewListTracesUnprocessable(&body)
+		case http.StatusNotImplemented:
+			var (
+				body ListTracesNotImplementedResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "list_traces", err)
+			}
+			err = ValidateListTracesNotImplementedResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("surla", "list_traces", err)
+			}
+			return nil, NewListTracesNotImplemented(&body)
+		default:
+			body, err := io.ReadAll(resp.Body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "list_traces", err)
+			}
+			return nil, goahttp.ErrInvalidResponse("surla", "list_traces", resp.StatusCode, string(body))
+		}
+	}
+}
+
 // unmarshalAmbiguityQuestionResponseBodyToSurlaAmbiguityQuestion builds a
 // value of type *surla.AmbiguityQuestion from a value of type
 // *AmbiguityQuestionResponseBody.
@@ -2993,6 +3109,31 @@ func unmarshalVerificationStatusResultResponseBodyToSurlaVerificationStatusResul
 		u := res.State
 		u.SetNotCompleted((*surla.VerificationNotCompleted)(obj))
 		res.State = u
+	}
+
+	return res
+}
+
+// unmarshalTraceSpanResponseBodyToSurlaTraceSpan builds a value of type
+// *surla.TraceSpan from a value of type *TraceSpanResponseBody.
+func unmarshalTraceSpanResponseBodyToSurlaTraceSpan(v *TraceSpanResponseBody) *surla.TraceSpan {
+	res := &surla.TraceSpan{
+		TraceID:      *v.TraceID,
+		SpanID:       *v.SpanID,
+		ParentSpanID: *v.ParentSpanID,
+		Name:         *v.Name,
+		StartTime:    *v.StartTime,
+		EndTime:      *v.EndTime,
+		DurationMs:   *v.DurationMs,
+		Status:       *v.Status,
+		Summary:      *v.Summary,
+		Shortened:    *v.Shortened,
+	}
+	res.Attributes = make(map[string]string, len(v.Attributes))
+	for key, val := range v.Attributes {
+		tk := key
+		tv := val
+		res.Attributes[tk] = tv
 	}
 
 	return res

@@ -295,6 +295,7 @@ function generateTypesModule() {
       rawByTool["surla.list_verifications"],
       "VerificationListResult"
     ),
+    TraceList: compactSchema(rawByTool["surla.list_traces"], "TraceList"),
     LiveTargetResult: compactSchema(
       rawByTool["surla.start_live_target"],
       "LiveTargetResult"
@@ -480,6 +481,11 @@ export function isVerificationStatusResult(p: unknown): p is VerificationStatusR
 // isVerificationListResult validates the generated CP4 saved-run list.
 export function isVerificationListResult(p: unknown): p is VerificationListResult {
   return validateGeneratedRoot("VerificationListResult", p);
+}
+
+// isTraceList validates the generated safe operation history page.
+export function isTraceList(p: unknown): p is TraceList {
+  return validateGeneratedRoot("TraceList", p);
 }
 
 // isLiveTargetResult validates a start_live_target result.
