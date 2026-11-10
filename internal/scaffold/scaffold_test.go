@@ -511,9 +511,11 @@ func TestInitReadmeFirstRunSnippetsMatchTheProject(t *testing.T) {
 	// with check_project, committed, then verified, in that order; keeping a
 	// drafted prompt follows the same order.
 	steps := between(t, readme, "For each change, with `surla serve` running on this directory:", "## Connect")
-	assertInOrder(t, steps, "`propose_change`", "`generate_code`", "`check_project`", "`update_dependencies`", "`read_check_output`", "Commit,", "`verify_change`")
+	assertInOrder(t, steps, "`propose_change`", "`confirm_intent`", "`generate_code`", "`check_project`", "`update_dependencies`", "`read_check_output`", "Commit,", "`verify_change`")
 	draft := between(t, readme, "To try prompt wording on a running", "`-request-revision`")
 	assertInOrder(t, draft, "`check_project`", "commit,", "`verify_change`")
+	cli := between(t, readme, "`surla verify` checks a commit.", "## Connect")
+	assertInOrder(t, cli, "`check_project`", "before you commit")
 
 	candDesign, err := os.ReadFile(filepath.Join(dir, "design", "design.go"))
 	require.NoError(t, err)
