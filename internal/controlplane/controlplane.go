@@ -361,13 +361,14 @@ const (
 	TargetKindPromptTemplate = "prompt_template"
 	// TargetKindCompiledRule identifies a compiled Go business rule that cannot be overridden via prompt store.
 	TargetKindCompiledRule = "compiled_rule"
-	// cp1AnalysisMaxOutputTokens is the output allowance for the one CP1
-	// inference that writes the structured Change Card analysis, including
-	// reasoning tokens counted against that allowance. It caps that response
-	// only, not the cost of a whole change. Providers such as
-	// Anthropic require a positive allowance on every request. A response the
-	// provider marks OutputLimited fails Analyze even when its JSON parses, so
-	// no card is stored from an analysis that may be incomplete.
+	// cp1AnalysisMaxOutputTokens is the output allowance for each CP1 model
+	// turn (both Phase 1 read_design inspection turns and the final structured
+	// Change Card completion), including reasoning tokens counted against that
+	// allowance. It caps one model response only, not the cost of a whole
+	// request or change. Providers such as Anthropic require a positive
+	// allowance on every request. A response the provider marks OutputLimited
+	// fails Analyze even when its JSON or tool call parses, so no card is stored
+	// from an incomplete turn.
 	cp1AnalysisMaxOutputTokens = 16384
 )
 
@@ -668,7 +669,7 @@ func (c *ControlPlane) ProposeChange(ctx context.Context, p *gensurla.ProposeCha
 				err,
 			)
 		} else {
-			span.SetAttributes(attribute.String("surla.public_summary", cp1SafeFaultSummary(false, cp1FaultProvider)))
+			span.SetAttributes(attribute.String("surla.public_summary", cp1SafeAnalyzerErrorSummary(false, err)))
 			if containsAnalysisRejected(err) {
 				err = unclassifiedCP1Error{cause: err}
 			}
@@ -744,7 +745,7 @@ func (c *ControlPlane) ProposeChange(ctx context.Context, p *gensurla.ProposeCha
 		return nil, err
 	}
 	if exists {
-		span.SetAttributes(attribute.String("surla.public_summary", "Change Card ID already exists (the existing Change Card was unchanged); call get_change or choose a new change_id."))
+		span.SetAttributes(attribute.String("surla.public_summary", "Change Card ID already exists (this request did not overwrite the existing Change Card); call get_change or choose a new change_id."))
 		return nil, gensurla.MakeConflict(fmt.Errorf("change_id %q already exists", p.ChangeID))
 	}
 	if err := c.cards.save(storedChangeCard{

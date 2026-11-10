@@ -20,6 +20,7 @@ import (
 	"goa.design/goa-ai/runtime/agent/completion"
 	"goa.design/goa-ai/runtime/agent/model"
 	"goa.design/goa-ai/runtime/agent/rawjson"
+	goa "goa.design/goa/v3/pkg"
 )
 
 type (
@@ -47,14 +48,13 @@ type (
 		err error
 	}
 
-	// cp1FaultStage classifies the internal failure stage for a non-rejection
+	// cp1FaultStage classifies the internal failure stage for a non-analyzer
 	// CP1 propose_change or revise_change span summary.
 	cp1FaultStage uint8
 
 	// readDesignArgs decodes a model.Client-validated read_design tool payload.
 	readDesignArgs struct {
-		// Path names an exact manifest path to read, or empty when omitted to read
-		// all manifest files in one call.
+		// Path names the exact relative manifest path to read.
 		Path string `json:"path"`
 	}
 )
@@ -62,8 +62,6 @@ type (
 const (
 	// cp1FaultProgress indicates MCP progress reporting failed before saving.
 	cp1FaultProgress cp1FaultStage = iota + 1
-	// cp1FaultProvider indicates model inference or transport failed before saving.
-	cp1FaultProvider
 	// cp1FaultRevision indicates canonical revision hashing failed before saving.
 	cp1FaultRevision
 	// cp1FaultStorageRead indicates loading Change Card storage failed before saving.
@@ -73,18 +71,13 @@ const (
 	// card version was persisted is unconfirmed until get_change is checked.
 	cp1FaultStorageSave
 
-	// cp1InspectionMaxOutputTokens bounds the output tokens for one Phase 1
-	// read_design inspection tool turn.
-	cp1InspectionMaxOutputTokens = 2048
-
 	// maxReadDesignTurnsCap caps the maximum number of tool inspection turns
 	// allowed in Phase 1 read_design inspection.
 	maxReadDesignTurnsCap = 8
 
 	// cp1Phase1InstructionHeader gives Phase 1 read_design turns an inspection-only
-	// role so the model selects and reads relevant design files without spending
-	// the 2,048-token inspection allowance writing Change Card JSON or UI
-	// compositions.
+	// role so the model selects and reads relevant design files without writing
+	// Change Card JSON or UI compositions before Phase 2.
 	cp1Phase1InstructionHeader = "Inspect the Goa workspace's design/*.go files to gather the design context relevant to the feature request. Do not write a Change Card, JSON analysis, or UI composition during inspection; a separate structured step produces the Change Card after inspection finishes."
 )
 
@@ -147,17 +140,17 @@ func (r *cp1Rejection) Unwrap() error {
 }
 
 // mustBuildReadDesignToolDefinition constructs the model.ToolDefinition for
-// read_design from its static JSON schema.
+// read_design from its static JSON schema requiring an exact manifest path.
 func mustBuildReadDesignToolDefinition() *model.ToolDefinition {
 	input, err := model.AdvertisedToolInputFromSchema(
-		rawjson.Message(`{"type":"object","properties":{"path":{"type":"string","minLength":1}},"additionalProperties":false}`),
+		rawjson.Message(`{"type":"object","properties":{"path":{"type":"string","minLength":1}},"required":["path"],"additionalProperties":false}`),
 	)
 	if err != nil {
 		panic(fmt.Sprintf("build read_design tool input schema: %v", err))
 	}
 	return &model.ToolDefinition{
 		Name:        "read_design",
-		Description: "Read Goa design file(s) from the bound workspace design/ directory. Omit path to read all design/*.go files in the manifest, or pass an exact relative path listed in the workspace design manifest.",
+		Description: "Read one Goa design file from the bound workspace design/ directory by exact relative path listed in the workspace design manifest. Multiple read_design calls may be issued in parallel in a single turn.",
 		Input:       input,
 	}
 }
@@ -187,16 +180,60 @@ func cp1RejectionKind(err error) (string, bool) {
 	return "", false
 }
 
-// cp1SafeRejectionSummary returns a strictly code-authored diagnostic summary
-// for a rejected CP1 propose or revise span. It uses only compile-time string
-// constants and never interpolates caller prompts, model-authored text, or
-// external analyzer error messages.
+// isOutputLimitedValidation reports whether ovErr rejected a response that
+// stopped at the provider's output token limit, including tool-call rejections
+// whose primary Kind is tool_arguments or tool_identity.
+func isOutputLimitedValidation(ovErr *model.OutputValidationError) (bool, error) {
+	if ovErr.Kind() == model.OutputValidationOutputLimited {
+		return true, nil
+	}
+	rejected, err := ovErr.RejectedResponse()
+	if err != nil {
+		return false, fmt.Errorf("inspect rejected cp1 response: %w", err)
+	}
+	return rejected != nil && rejected.OutputLimited, nil
+}
+
+// isPureContextError reports whether err is (or wraps solely) target without
+// crossing a named Goa ServiceError or joining an independent non-target error.
+func isPureContextError(err, target error) bool {
+	if err == nil {
+		return false
+	}
+	if err == target {
+		return true
+	}
+	if _, ok := err.(goa.GoaErrorNamer); ok {
+		return false
+	}
+	if joined, ok := err.(interface{ Unwrap() []error }); ok {
+		children := joined.Unwrap()
+		if len(children) == 0 {
+			return false
+		}
+		for _, child := range children {
+			if !isPureContextError(child, target) {
+				return false
+			}
+		}
+		return true
+	}
+	if wrapped, ok := err.(interface{ Unwrap() error }); ok {
+		return isPureContextError(wrapped.Unwrap(), target)
+	}
+	return false
+}
+
+// cp1SafeRejectionSummary returns a strictly code-authored, request-scoped
+// diagnostic summary for a rejected CP1 propose or revise span. It uses only
+// compile-time string constants and never interpolates caller prompts,
+// model-authored text, or external analyzer error messages.
 func cp1SafeRejectionSummary(revise bool, rejectionKind string, hasKind bool) string {
-	outcome := "no Change Card was saved"
+	outcome := "this request did not save a Change Card"
 	prefix := "CP1 analysis rejected"
 	retryCall := "propose_change"
 	if revise {
-		outcome = "the saved Change Card was unchanged"
+		outcome = "this request did not modify the Change Card"
 		prefix = "CP1 revision rejected"
 		retryCall = "revise_change"
 	}
@@ -227,23 +264,48 @@ func recordCP1RejectionSpan(span trace.Span, revise bool, err error) {
 	span.SetAttributes(attrs...)
 }
 
-// cp1SafeFaultSummary returns a strictly code-authored diagnostic summary for a
-// non-rejection CP1 propose or revise fault span. Because MCP masks internal
-// server faults from tool callers, each summary states truthfully whether card
-// persistence was untouched or unconfirmed and names the concrete operator or
-// retry action without exposing prompts, model text, credentials, or host paths.
+// cp1SafeAnalyzerErrorSummary returns a strictly code-authored, request-scoped
+// diagnostic summary for a non-rejection error returned by CP1Analyzer.Analyze
+// or CP1Analyzer.Revise, distinguishing declared unprocessable inputs and pure
+// context cancellation/deadlines from server/analyzer faults without claiming
+// unproven internal causes.
+func cp1SafeAnalyzerErrorSummary(revise bool, err error) string {
+	outcome := "this request did not save a Change Card"
+	op := "CP1 analysis"
+	retryCall := "propose_change"
+	if revise {
+		outcome = "this request did not modify the Change Card"
+		op = "CP1 revision"
+		retryCall = "revise_change"
+	}
+	if _, ok := asUnprocessable(err); ok {
+		return fmt.Sprintf("%s rejected the request as unprocessable (%s); revise the request inputs and retry %s.", op, outcome, retryCall)
+	}
+	if isPureContextError(err, context.DeadlineExceeded) {
+		return fmt.Sprintf("%s timed out before completion (%s); retry %s or ask the server operator to check model responsiveness.", op, outcome, retryCall)
+	}
+	if isPureContextError(err, context.Canceled) {
+		return fmt.Sprintf("%s was canceled before completion (%s); retry %s if still needed.", op, outcome, retryCall)
+	}
+	return fmt.Sprintf("%s failed before completion (%s); ask the server operator to check server diagnostics and model configuration before retrying.", op, outcome)
+}
+
+// cp1SafeFaultSummary returns a strictly code-authored, request-scoped
+// diagnostic summary for a non-analyzer CP1 propose or revise fault span.
+// Because MCP masks internal server faults from tool callers, each summary
+// states truthfully whether this request's write ran or remained unconfirmed
+// and names the concrete operator or retry action without exposing prompts,
+// model text, credentials, or host paths.
 func cp1SafeFaultSummary(revise bool, stage cp1FaultStage) string {
-	outcome := "no Change Card was saved"
+	outcome := "this request did not save a Change Card"
 	op := "CP1 analysis"
 	if revise {
-		outcome = "the saved Change Card was unchanged"
+		outcome = "this request did not modify the Change Card"
 		op = "CP1 revision"
 	}
 	switch stage {
 	case cp1FaultProgress:
 		return fmt.Sprintf("%s failed while reporting progress (%s); retry or ask the server operator to check server diagnostics.", op, outcome)
-	case cp1FaultProvider:
-		return fmt.Sprintf("%s failed due to a model provider or transport fault (%s); ask the server operator to check server diagnostics and model configuration before retrying.", op, outcome)
 	case cp1FaultRevision:
 		return fmt.Sprintf("%s failed while encoding the card revision (%s); ask the server operator to check server diagnostics.", op, outcome)
 	case cp1FaultStorageRead:
@@ -295,7 +357,7 @@ func buildPhase1SystemPrompt(designFiles map[string]string, maxTurns int) string
 	}
 	fmt.Fprintf(
 		&sb,
-		"\nYou have up to %d inspection turns to call read_design: omit path to read all files in one call, or call read_design (including multiple parallel calls in a single turn) with exact manifest paths relevant to the request. Each successful read_design result includes remaining_turns. When you have read the relevant design files (or if none are needed), reply briefly with no tool calls to finish inspection.\n",
+		"\nYou have up to %d inspection turns to call read_design (including multiple parallel calls in a single turn) with exact manifest paths relevant to the request. Each successful read_design result includes remaining_turns. When you have read the relevant design files (or if none are needed), reply briefly with no tool calls to finish inspection.\n",
 		maxTurns,
 	)
 	return sb.String()
@@ -317,6 +379,11 @@ func formatWorkspacePhase2Design(
 	if len(readPaths) == 0 {
 		sb.WriteString("\n(no design files were read during inspection)")
 		return sb.String()
+	}
+	if len(readPaths) < len(designFiles) {
+		sb.WriteString("\nInspected design files (other manifest files were not read during inspection):")
+	} else {
+		sb.WriteString("\nInspected design files:")
 	}
 	for _, p := range readPaths {
 		fmt.Fprintf(&sb, "\n--- %s ---\n%s", p, designFiles[p])
@@ -388,9 +455,10 @@ func (d CP1Design) isWorkspace() bool {
 // returns the sorted manifest paths read during inspection. Goa-AI's
 // model.Client owns request cloning, response isolation, and structural
 // validation of advertised tool names and payloads before Complete returns;
-// Phase 1 handles OutputValidationError recovery, resolves exact manifest paths
-// against the in-memory snapshot, and fails with inspection_budget_exhausted
-// only when the final allowed turn ends with an unresolved manifest path error.
+// Phase 1 checks rejected responses for OutputLimited before attempting
+// RecoveryCorrection, resolves exact manifest paths against the in-memory
+// snapshot, and fails with inspection_budget_exhausted only when the final
+// allowed turn ends with an unresolved manifest path error.
 func (a *ModelCP1Analyzer) runPhase1Inspection(
 	ctx context.Context,
 	initialUserPrompt string,
@@ -421,12 +489,16 @@ func (a *ModelCP1Analyzer) runPhase1Inspection(
 		phase1Req := &model.Request{
 			Messages:  messages,
 			Tools:     []*model.ToolDefinition{readDesignToolDef},
-			MaxTokens: cp1InspectionMaxOutputTokens,
+			MaxTokens: cp1AnalysisMaxOutputTokens,
 		}
 		resp, err := a.client.Complete(ctx, phase1Req)
 		if err != nil {
 			if ovErr, ok := exactOutputValidation(err); ok {
-				if ovErr.Kind() == model.OutputValidationOutputLimited {
+				limited, limErr := isOutputLimitedValidation(ovErr)
+				if limErr != nil {
+					return nil, fmt.Errorf("cp1 design inspection: %w", limErr)
+				}
+				if limited {
 					return nil, newCP1Rejection(
 						string(model.OutputValidationOutputLimited),
 						"provider stopped at output limit; shorten the request before retrying",
@@ -434,7 +506,10 @@ func (a *ModelCP1Analyzer) runPhase1Inspection(
 					)
 				}
 				if ovErr.RecoveryCorrection() != "" && turn+1 < maxInspectionTurns {
-					messages = appendCP1UserPart(messages, model.TextPart{Text: ovErr.RecoveryCorrection()})
+					reminder := "Your previous read_design tool call was rejected before it could run.\n" +
+						ovErr.RecoveryCorrection() +
+						"\nCall read_design with a valid relative path from the workspace design manifest, or reply with no tool calls when finished."
+					messages = appendCP1UserPart(messages, model.TextPart{Text: reminder})
 					continue
 				}
 				return nil, newCP1Rejection(
@@ -469,25 +544,6 @@ func (a *ModelCP1Analyzer) runPhase1Inspection(
 			var args readDesignArgs
 			if err := json.Unmarshal(call.Payload, &args); err != nil {
 				return nil, fmt.Errorf("decode validated read_design payload: %w", err)
-			}
-
-			if args.Path == "" {
-				allFiles := make([]any, 0, len(sortedManifestPaths))
-				for _, p := range sortedManifestPaths {
-					readFiles[p] = true
-					allFiles = append(allFiles, map[string]any{
-						"path":    p,
-						"content": designFiles[p],
-					})
-				}
-				resultParts = append(resultParts, model.ToolResultPart{
-					ToolUseID: call.ID,
-					Content: map[string]any{
-						"files":           allFiles,
-						"remaining_turns": remainingTurns,
-					},
-				})
-				continue
 			}
 
 			content, ok := designFiles[args.Path]

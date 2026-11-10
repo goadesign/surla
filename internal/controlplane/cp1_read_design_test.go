@@ -1,6 +1,7 @@
 // This file tests the Checkpoint 1 two-phase `read_design` inspection loop,
-// strict payload and saved-workspace decoders, and offline Anthropic and OpenAI
-// request encoding across direct and gRPC gateway model clients.
+// strict payload and saved-workspace decoders, combined output-limit plus
+// tool-validation rejections, and offline Anthropic and OpenAI request encoding
+// across direct and gRPC gateway model clients.
 package controlplane
 
 import (
@@ -84,10 +85,11 @@ var clientFactories = []struct {
 	},
 }
 
-// TestCP1TwoPhaseReadDesign_SelectiveOmitAndLargeWorkspaces verifies selective
-// single-file inspection, omit-path read-all, and multi-file workspaces larger
-// than maxReadDesignTurnsCap (10 files across 8 valid inspection turns).
-func TestCP1TwoPhaseReadDesign_SelectiveOmitAndLargeWorkspaces(t *testing.T) {
+// TestCP1TwoPhaseReadDesign_SelectiveParallelAndLargeWorkspaces verifies
+// selective single-file inspection, parallel multi-file reads in one turn, and
+// multi-file workspaces larger than maxReadDesignTurnsCap (10 files across 8
+// valid inspection turns).
+func TestCP1TwoPhaseReadDesign_SelectiveParallelAndLargeWorkspaces(t *testing.T) {
 	aliceCtx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
 
 	for _, cf := range clientFactories {
@@ -123,13 +125,14 @@ func TestCP1TwoPhaseReadDesign_SelectiveOmitAndLargeWorkspaces(t *testing.T) {
 
 				for i, req := range q.requests {
 					assertAlternatingRoles(t, req.Messages)
+					assert.Equal(t, cp1AnalysisMaxOutputTokens, req.MaxTokens)
 					if i < 3 {
-						assert.Equal(t, cp1InspectionMaxOutputTokens, req.MaxTokens)
 						require.Len(t, req.Tools, 1)
 						assert.Equal(t, "read_design", req.Tools[0].Name)
 						phase1Sys := req.Messages[0].Parts[0].(model.TextPart).Text
 						assert.Contains(t, phase1Sys, "Workspace design manifest:")
 						assert.Contains(t, phase1Sys, "Do not write a Change Card")
+						assert.NotContains(t, phase1Sys, "omit path")
 						assert.NotContains(t, phase1Sys, "Return structured JSON")
 						assert.NotContains(t, phase1Sys, "ui_composition")
 					}
@@ -145,7 +148,6 @@ func TestCP1TwoPhaseReadDesign_SelectiveOmitAndLargeWorkspaces(t *testing.T) {
 				// Tools empty, full card-writing instructions, sorted read files, and
 				// unread file bodies omitted.
 				phase2 := q.requests[3]
-				assert.Equal(t, cp1AnalysisMaxOutputTokens, phase2.MaxTokens)
 				assert.Empty(t, phase2.Tools)
 				require.NotNil(t, phase2.StructuredOutput)
 				require.Len(t, phase2.Messages, 2)
@@ -157,6 +159,7 @@ func TestCP1TwoPhaseReadDesign_SelectiveOmitAndLargeWorkspaces(t *testing.T) {
 				require.Len(t, phase2.Messages[1].Parts, 1)
 				phase2Text := phase2.Messages[1].Parts[0].(model.TextPart).Text
 				assert.Contains(t, phase2Text, "Workspace design manifest:")
+				assert.Contains(t, phase2Text, "Inspected design files (other manifest files were not read during inspection):")
 				assert.Contains(t, phase2Text, "- design/unused.go (")
 				assert.NotContains(t, phase2Text, "unread design body")
 				assert.Contains(t, phase2Text, "--- design/design.go ---\npackage design\n// main design")
@@ -169,14 +172,33 @@ func TestCP1TwoPhaseReadDesign_SelectiveOmitAndLargeWorkspaces(t *testing.T) {
 				)
 			})
 
-			t.Run("omit_path_read_all_transitions_immediately", func(t *testing.T) {
+			t.Run("parallel_calls_reading_all_files_transition_immediately", func(t *testing.T) {
 				wsDir := setupWorkspaceWithFiles(t, map[string]string{
 					"design/design.go": "package design\n// main design\n",
 					"design/orders.go": "package design\n// orders design\n",
 				})
 				q := &queuedModelClient{
 					responses: []queuedModelTurn{
-						toolUseTurn("call_all", "read_design", `{ }`),
+						{
+							resp: &model.Response{
+								Content: []model.Message{{
+									Role: model.ConversationRoleAssistant,
+									Parts: []model.Part{
+										model.ToolUsePart{
+											ID:    "call_orders",
+											Name:  "read_design",
+											Input: rawjson.Message(`{"path":"design/orders.go"}`),
+										},
+										model.ToolUsePart{
+											ID:    "call_design",
+											Name:  "read_design",
+											Input: rawjson.Message(`{"path":"design/design.go"}`),
+										},
+									},
+								}},
+								StopReason: "tool_use",
+							},
+						},
 						jsonAnswerTurn(validAnalysisJSON),
 					},
 				}
@@ -187,7 +209,7 @@ func TestCP1TwoPhaseReadDesign_SelectiveOmitAndLargeWorkspaces(t *testing.T) {
 				})
 
 				card, err := cp.ProposeChange(aliceCtx, &gensurla.ProposeChangePayload{
-					ChangeID: "chg-omit-path",
+					ChangeID: "chg-parallel",
 					Prompt:   "Add order refunds",
 				})
 				require.NoError(t, err)
@@ -197,6 +219,7 @@ func TestCP1TwoPhaseReadDesign_SelectiveOmitAndLargeWorkspaces(t *testing.T) {
 				assert.Empty(t, phase2.Tools)
 				require.Len(t, phase2.Messages, 2)
 				phase2Text := phase2.Messages[1].Parts[0].(model.TextPart).Text
+				assert.Contains(t, phase2Text, "\nInspected design files:\n")
 				assert.Contains(t, phase2Text, "--- design/design.go ---")
 				assert.Contains(t, phase2Text, "--- design/orders.go ---")
 			})
@@ -255,8 +278,10 @@ func TestCP1TwoPhaseReadDesign_SelectiveOmitAndLargeWorkspaces(t *testing.T) {
 
 // TestCP1TwoPhaseReadDesign_StopAndPathCases verifies zero-tool completion,
 // Unicode and space-containing paths, unknown-path recovery, metadata and
-// ThoughtSignature preservation without slice aliasing, output-limit cutoffs,
-// RecoveryCorrection, and unresolved-error budget exhaustion.
+// ThoughtSignature preservation without slice aliasing, output-limit cutoffs
+// (including combined output-limited invalid tool arguments across direct and
+// gateway clients), RecoveryCorrection framing, and unresolved-error budget
+// exhaustion.
 func TestCP1TwoPhaseReadDesign_StopAndPathCases(t *testing.T) {
 	aliceCtx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
 
@@ -394,49 +419,69 @@ func TestCP1TwoPhaseReadDesign_StopAndPathCases(t *testing.T) {
 	t.Run("output_limited_and_recovery_and_unresolved_error_budget", func(t *testing.T) {
 		wsDir := setupWorkspaceWithFiles(t, map[string]string{"design/design.go": "package design\n"})
 
-		// 1. OutputLimited response flag checked before ToolCalls().
-		qLim := &queuedModelClient{
-			responses: []queuedModelTurn{{
-				resp: &model.Response{
-					OutputLimited: true,
-					StopReason:    "max_tokens",
-					Content: []model.Message{{
-						Role: model.ConversationRoleAssistant,
-						Parts: []model.Part{model.ToolUsePart{
-							ID: "call_lim", Name: "read_design", Input: rawjson.Message(`{}`),
-						}},
-					}},
-				},
-			}},
+		// 1. OutputLimited response flag checked across valid tool input, invalid
+		// tool_arguments (where RequestContract classifies as tool_arguments with
+		// RecoveryCorrection), and unadvertised tool names across BOTH direct
+		// model.NewClient and gateway.NewGRPCClient boundaries without retrying.
+		for _, cf := range clientFactories {
+			for _, limCase := range []struct {
+				name     string
+				toolName string
+				rawInput string
+			}{
+				{name: "valid_tool_args", toolName: "read_design", rawInput: `{"path":"design/design.go"}`},
+				{name: "empty_path_tool_args", toolName: "read_design", rawInput: `{"path":""}`},
+				{name: "missing_path_tool_args", toolName: "read_design", rawInput: `{}`},
+				{name: "unadvertised_tool", toolName: "other_tool", rawInput: `{}`},
+			} {
+				t.Run(cf.name+"/"+limCase.name, func(t *testing.T) {
+					qLim := &queuedModelClient{
+						responses: []queuedModelTurn{
+							{
+								resp: &model.Response{
+									OutputLimited: true,
+									StopReason:    "max_tokens",
+									Content: []model.Message{{
+										Role: model.ConversationRoleAssistant,
+										Parts: []model.Part{model.ToolUsePart{
+											ID:    "call_lim",
+											Name:  limCase.toolName,
+											Input: rawjson.Message(limCase.rawInput),
+										}},
+									}},
+								},
+							},
+							// Queued valid fallback proves runPhase1Inspection never retries after OutputLimited.
+							toolUseTurn("call_retry", "read_design", `{"path":"design/design.go"}`),
+							jsonAnswerTurn(validAnalysisJSON),
+						},
+					}
+					cpLim := newControlPlane(t, Options{
+						CardsDir:     t.TempDir(),
+						WorkspaceDir: wsDir,
+						Analyzer:     NewModelCP1Analyzer(cf.buildFn(t, qLim)),
+					})
+					_, err := cpLim.ProposeChange(aliceCtx, &gensurla.ProposeChangePayload{
+						ChangeID: "chg-lim",
+						Prompt:   "P",
+					})
+					require.Error(t, err)
+					assert.Contains(t, err.Error(), "provider stopped at output limit; shorten the request before retrying")
+					kind, ok := cp1RejectionKind(err)
+					assert.True(t, ok)
+					assert.Equal(t, "output_limited", kind)
+					assert.Len(t, qLim.requests, 1, "OutputLimited tool turn must reject immediately without recovery retry")
+					_, getErr := cpLim.GetChange(aliceCtx, &gensurla.GetChangePayload{ChangeID: "chg-lim"})
+					require.Error(t, getErr)
+				})
+			}
 		}
-		cpLim := newControlPlane(t, Options{
-			CardsDir: t.TempDir(), WorkspaceDir: wsDir,
-			Analyzer: NewModelCP1Analyzer(newQueuedModelClient(t, qLim)),
-		})
-		_, err := cpLim.ProposeChange(aliceCtx, &gensurla.ProposeChangePayload{ChangeID: "chg-lim", Prompt: "P"})
-		require.Error(t, err)
-		kind, ok := cp1RejectionKind(err)
-		assert.True(t, ok)
-		assert.Equal(t, "output_limited", kind)
 
-		// 2. RecoveryCorrection retries within budget and fails on final turn.
-		baseErr, err := model.RestoreOutputValidationError(
-			model.OutputValidationStructuredOutput,
-			errors.New("invalid tool input"),
-			model.ResponseEvidence{},
-			nil,
-		)
-		require.NoError(t, err)
-		correctable, err := model.RestoreCorrectableOutputValidationError(
-			baseErr,
-			"pass a valid JSON object with path property",
-		)
-		require.NoError(t, err)
-
+		// 2. Non-output-limited schema failure recovers with framed guidance within budget.
 		qRec := &queuedModelClient{
 			responses: []queuedModelTurn{
-				{err: correctable},
-				toolUseTurn("call_ok", "read_design", `{}`),
+				toolUseTurn("call_bad", "read_design", `{}`),
+				toolUseTurn("call_ok", "read_design", `{"path":"design/design.go"}`),
 				jsonAnswerTurn(validAnalysisJSON),
 			},
 		}
@@ -444,11 +489,13 @@ func TestCP1TwoPhaseReadDesign_StopAndPathCases(t *testing.T) {
 			CardsDir: t.TempDir(), WorkspaceDir: wsDir,
 			Analyzer: NewModelCP1Analyzer(newQueuedModelClient(t, qRec)),
 		})
-		_, err = cpRec.ProposeChange(aliceCtx, &gensurla.ProposeChangePayload{ChangeID: "chg-rec", Prompt: "P"})
+		_, err := cpRec.ProposeChange(aliceCtx, &gensurla.ProposeChangePayload{ChangeID: "chg-rec", Prompt: "P"})
 		require.NoError(t, err)
 		assertAlternatingRoles(t, qRec.requests[1].Messages)
 		recMsg := qRec.requests[1].Messages[len(qRec.requests[1].Messages)-1]
-		assert.Equal(t, "pass a valid JSON object with path property", recMsg.Parts[1].(model.TextPart).Text)
+		reminderText := recMsg.Parts[1].(model.TextPart).Text
+		assert.Contains(t, reminderText, "Your previous read_design tool call was rejected before it could run.")
+		assert.Contains(t, reminderText, "path")
 
 		// 3. Unresolved tool error on final turn (3 turns for 1 file) -> inspection_budget_exhausted.
 		qExh := &queuedModelClient{
@@ -464,7 +511,7 @@ func TestCP1TwoPhaseReadDesign_StopAndPathCases(t *testing.T) {
 		})
 		_, err = cpExh.ProposeChange(aliceCtx, &gensurla.ProposeChangePayload{ChangeID: "chg-exh", Prompt: "P"})
 		require.Error(t, err)
-		kind, ok = cp1RejectionKind(err)
+		kind, ok := cp1RejectionKind(err)
 		assert.True(t, ok)
 		assert.Equal(t, "inspection_budget_exhausted", kind)
 	})
@@ -508,9 +555,9 @@ func TestCP1TwoPhaseReadDesign_SingleTurnAndWorkspaceRevise(t *testing.T) {
 		cardsDir := t.TempDir()
 		q := &queuedModelClient{
 			responses: []queuedModelTurn{
-				toolUseTurn("call_1", "read_design", `{}`),
+				toolUseTurn("call_1", "read_design", `{"path":"design/design.go"}`),
 				jsonAnswerTurn(validAnalysisJSON),
-				toolUseTurn("call_r2", "read_design", `{}`),
+				toolUseTurn("call_r2", "read_design", `{"path":"design/design.go"}`),
 				jsonAnswerTurn(validRevisionAnalysisJSON),
 			},
 		}
@@ -534,7 +581,7 @@ func TestCP1TwoPhaseReadDesign_SingleTurnAndWorkspaceRevise(t *testing.T) {
 		require.NoError(t, cp.Close())
 		qUnbound := &queuedModelClient{
 			responses: []queuedModelTurn{
-				toolUseTurn("call_r3", "read_design", `{}`),
+				toolUseTurn("call_r3", "read_design", `{"path":"design/design.go"}`),
 				jsonAnswerTurn(validRevisionAnalysisJSON),
 			},
 		}
@@ -555,10 +602,10 @@ func TestCP1TwoPhaseReadDesign_SingleTurnAndWorkspaceRevise(t *testing.T) {
 	})
 }
 
-// TestCP1TwoPhaseReadDesign_RealProviderAdapters exercises Phase 1 read_design
-// tool encoding and Phase 2 toolless structured completion through the real
-// Goa-AI Anthropic Messages and OpenAI Responses adapters with offline SDK
-// transports (zero network calls).
+// TestCP1TwoPhaseReadDesign_RealProviderAdapters exercises multi-turn Phase 1
+// read_design tool history encoding and Phase 2 toolless structured completion
+// through the real Goa-AI Anthropic Messages and OpenAI Responses adapters with
+// offline SDK transports (zero network calls).
 func TestCP1TwoPhaseReadDesign_RealProviderAdapters(t *testing.T) {
 	aliceCtx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
 	wsDir := setupWorkspaceWithFiles(t, map[string]string{
@@ -620,8 +667,6 @@ func TestCP1TwoPhaseReadDesign_RealProviderAdapters(t *testing.T) {
 	})
 
 	t.Run("openai_responses_adapter", func(t *testing.T) {
-		// OpenAI strict schema projects optional read_design.path to nullable, so
-		// omit-path arrives from OpenAI as `{"path":null}` and is normalized to `{}`.
 		oai := &scriptedOpenAIResponses{
 			responses: []*responses.Response{
 				mustOpenAIResponse(t, `[{
@@ -629,8 +674,15 @@ func TestCP1TwoPhaseReadDesign_RealProviderAdapters(t *testing.T) {
 					"type":"function_call",
 					"call_id":"call_01",
 					"name":"read_design",
-					"arguments":"{\"path\":null}",
+					"arguments":"{\"path\":\"design/api.go\"}",
 					"status":"completed"
+				}]`),
+				mustOpenAIResponse(t, `[{
+					"id":"msg_01",
+					"type":"message",
+					"role":"assistant",
+					"status":"completed",
+					"content":[{"type":"output_text","text":"Inspected design/api.go.","annotations":[],"logprobs":[]}]
 				}]`),
 				mustOpenAIResponse(t, fmt.Sprintf(`[{
 					"id":"msg_02",
@@ -658,18 +710,25 @@ func TestCP1TwoPhaseReadDesign_RealProviderAdapters(t *testing.T) {
 		})
 		require.NoError(t, err)
 		assert.Equal(t, "Order refund processing.", card.Summary)
-		require.Len(t, oai.requests, 2)
+		require.Len(t, oai.requests, 3)
 
-		// Phase 1 advertises strict read_design function tool.
+		// Phase 1 Turn 0 advertises strict read_design function tool; Turn 1 replays
+		// function_call and function_call_output items through the OpenAI encoder.
 		require.Len(t, oai.requests[0].Tools, 1)
+		require.Len(t, oai.requests[1].Tools, 1)
+		turn1Wire, err := json.Marshal(oai.requests[1])
+		require.NoError(t, err)
+		assert.Contains(t, string(turn1Wire), `"function_call"`)
+		assert.Contains(t, string(turn1Wire), `"function_call_output"`)
+		assert.Contains(t, string(turn1Wire), `"call_01"`)
 
-		// Phase 2 has zero tools, zero function_call history items, and both read files.
-		phase2 := oai.requests[1]
+		// Phase 2 has zero tools, zero function_call history items, and only the read file.
+		phase2 := oai.requests[2]
 		assert.Empty(t, phase2.Tools)
 		phase2Wire, err := json.Marshal(phase2)
 		require.NoError(t, err)
 		assert.Contains(t, string(phase2Wire), "edge API contract")
-		assert.Contains(t, string(phase2Wire), "unread orders internal contract")
+		assert.NotContains(t, string(phase2Wire), "unread orders internal contract")
 		assert.NotContains(t, string(phase2Wire), "call_01")
 	})
 }
@@ -688,12 +747,13 @@ func TestCP1DecodersRejectInvalidInputs(t *testing.T) {
 		raw      string
 		wantKind string
 	}{
-		{name: "unadvertised_tool", toolName: "other_tool", raw: `{}`, wantKind: string(model.OutputValidationToolIdentity)},
+		{name: "unadvertised_tool", toolName: "other_tool", raw: `{"path":"design/design.go"}`, wantKind: string(model.OutputValidationToolIdentity)},
 		{name: "empty_raw", toolName: "read_design", raw: ``, wantKind: string(model.OutputValidationToolArguments)},
 		{name: "literal_null", toolName: "read_design", raw: `null`, wantKind: string(model.OutputValidationToolArguments)},
+		{name: "missing_path", toolName: "read_design", raw: `{}`, wantKind: string(model.OutputValidationToolArguments)},
 		{name: "null_path", toolName: "read_design", raw: `{"path":null}`, wantKind: string(model.OutputValidationToolArguments)},
 		{name: "empty_path", toolName: "read_design", raw: `{"path":""}`, wantKind: string(model.OutputValidationToolArguments)},
-		{name: "unknown_field", toolName: "read_design", raw: `{"other":"x"}`, wantKind: string(model.OutputValidationToolArguments)},
+		{name: "unknown_field", toolName: "read_design", raw: `{"path":"design/design.go","other":"x"}`, wantKind: string(model.OutputValidationToolArguments)},
 	} {
 		t.Run("model_client_tool_validation/"+tc.name, func(t *testing.T) {
 			// 1 file -> maxInspectionTurns = 3; 3 invalid tool turns exhaust recovery and

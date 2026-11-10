@@ -1,12 +1,14 @@
 // This file tests code-authored CP1 OpenTelemetry span attributes
 // (`surla.cp1.rejection_kind` and `surla.public_summary`) across `propose_change`
-// and `revise_change` successes, rejections, and faults, verifying that prompts,
-// model text, credentials, and host filesystem paths never enter trace summaries.
+// and `revise_change` successes, rejections, conflicts, declared unprocessable
+// errors, cancellations, and server faults, verifying request-scoped
+// persistence claims and secret/path exclusion.
 package controlplane
 
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -22,9 +24,11 @@ import (
 )
 
 // TestCP1SpanAttributes_CodeAuthoredAndSecretExclusion verifies that
-// surla.public_summary is strictly code-authored across success, model
-// rejection, semantic validation rejection (including model-returned prior_id),
-// unconfirmed storage_save faults, and unclassified external rejections.
+// surla.public_summary is strictly code-authored and request-scoped across
+// success, model rejection, semantic validation rejection (including
+// model-returned prior_id), concurrent request_revision conflicts, declared
+// unprocessable errors, pure context cancellation/timeout, mixed fault joins,
+// and unconfirmed storage_save faults.
 func TestCP1SpanAttributes_CodeAuthoredAndSecretExclusion(t *testing.T) {
 	exp := tracetest.NewInMemoryExporter()
 	tp := sdktrace.NewTracerProvider(sdktrace.WithSyncer(exp))
@@ -45,10 +49,10 @@ func TestCP1SpanAttributes_CodeAuthoredAndSecretExclusion(t *testing.T) {
 	q := &queuedModelClient{
 		responses: []queuedModelTurn{
 			// 1. ProposeChange success (confirmed)
-			toolUseTurn("c1", "read_design", `{}`),
+			toolUseTurn("c1", "read_design", `{"path":"design/design.go"}`),
 			jsonAnswerTurn(secretSummaryJSON),
 			// 2. ReviseChange semantic_validation rejection with secret prior_id
-			toolUseTurn("c2", "read_design", `{}`),
+			toolUseTurn("c2", "read_design", `{"path":"design/design.go"}`),
 			jsonAnswerTurn(secretPriorIDReviseJSON),
 			// 3. ProposeChange output_limited rejection
 			{
@@ -61,15 +65,15 @@ func TestCP1SpanAttributes_CodeAuthoredAndSecretExclusion(t *testing.T) {
 					}},
 				},
 			},
-			// 4. ProposeChange non-rejection provider fault
+			// 4. ProposeChange non-rejection provider/analyzer fault
 			{
 				err: errors.New("private-provider-credential-secret"),
 			},
 			// 5. ProposeChange valid response followed by card save storage fault
-			toolUseTurn("call-save", "read_design", `{}`),
+			toolUseTurn("call-save", "read_design", `{"path":"design/design.go"}`),
 			jsonAnswerTurn(secretSummaryJSON),
 			// 6. ReviseChange valid response followed by card save storage fault
-			toolUseTurn("call-rev-save", "read_design", `{}`),
+			toolUseTurn("call-rev-save", "read_design", `{"path":"design/design.go"}`),
 			jsonAnswerTurn(validSecretReviseJSON),
 		},
 	}
@@ -93,7 +97,8 @@ func TestCP1SpanAttributes_CodeAuthoredAndSecretExclusion(t *testing.T) {
 	assert.False(t, hasRej)
 
 	// ReviseChange fails semantic validation with model-invented prior_id; caller
-	// error retains diagnostic detail, while surla.public_summary excludes it.
+	// error retains diagnostic detail, while surla.public_summary excludes it and
+	// uses request-scoped persistence wording.
 	_, err = cp.ReviseChange(aliceCtx, &gensurla.ReviseChangePayload{
 		ChangeID: "chg-span", RequestRevision: card.RequestRevision, Prompt: "private-revise-prompt-secret",
 	})
@@ -105,7 +110,7 @@ func TestCP1SpanAttributes_CodeAuthoredAndSecretExclusion(t *testing.T) {
 	assert.Equal(t, "semantic_validation", rejKind.AsString())
 	revSummary, ok := findSpanAttr(reviseSpan.Attributes, "surla.public_summary")
 	require.True(t, ok)
-	assert.Equal(t, "CP1 revision rejected: model output failed Change Card semantic validation (the saved Change Card was unchanged); retry revise_change.", revSummary.AsString())
+	assert.Equal(t, "CP1 revision rejected: model output failed Change Card semantic validation (this request did not modify the Change Card); retry revise_change.", revSummary.AsString())
 	assert.NotContains(t, revSummary.AsString(), "private-")
 
 	// OutputLimited rejection records output_limited and excludes model output.
@@ -119,11 +124,11 @@ func TestCP1SpanAttributes_CodeAuthoredAndSecretExclusion(t *testing.T) {
 	assert.Equal(t, "output_limited", rejKind.AsString())
 	limSummary, ok := findSpanAttr(limSpan.Attributes, "surla.public_summary")
 	require.True(t, ok)
-	assert.Equal(t, "CP1 analysis rejected: provider stopped at output limit (no Change Card was saved); shorten the request and retry propose_change.", limSummary.AsString())
+	assert.Equal(t, "CP1 analysis rejected: provider stopped at output limit (this request did not save a Change Card); shorten the request and retry propose_change.", limSummary.AsString())
 	assert.NotContains(t, limSummary.AsString(), "private-")
 
-	// Non-rejection provider fault records operator recovery without leaking
-	// provider error strings or setting surla.cp1.rejection_kind.
+	// Non-rejection analyzer fault records operator recovery with request-scoped
+	// persistence claim and without claiming unproven sub-component causes.
 	_, err = cp.ProposeChange(aliceCtx, &gensurla.ProposeChangePayload{
 		ChangeID: "chg-span-fault", Prompt: "private-user-prompt-secret",
 	})
@@ -133,8 +138,7 @@ func TestCP1SpanAttributes_CodeAuthoredAndSecretExclusion(t *testing.T) {
 	assert.False(t, hasRej)
 	faultSummary, ok := findSpanAttr(faultSpan.Attributes, "surla.public_summary")
 	require.True(t, ok)
-	assert.Contains(t, faultSummary.AsString(), "operator")
-	assert.Contains(t, faultSummary.AsString(), "no Change Card was saved")
+	assert.Equal(t, "CP1 analysis failed before completion (this request did not save a Change Card); ask the server operator to check server diagnostics and model configuration before retrying.", faultSummary.AsString())
 	assert.NotContains(t, faultSummary.AsString(), "private-")
 
 	// Card save storage faults on both ProposeChange and ReviseChange state that
@@ -155,7 +159,6 @@ func TestCP1SpanAttributes_CodeAuthoredAndSecretExclusion(t *testing.T) {
 	assert.Contains(t, saveSummary.AsString(), "get_change")
 	assert.Contains(t, saveSummary.AsString(), "preserve your request")
 	assert.Contains(t, saveSummary.AsString(), "operator")
-	assert.NotContains(t, saveSummary.AsString(), "no Change Card was saved")
 	assert.NotContains(t, saveSummary.AsString(), "private-")
 	assert.NotContains(t, saveSummary.AsString(), cardsDir)
 
@@ -170,31 +173,146 @@ func TestCP1SpanAttributes_CodeAuthoredAndSecretExclusion(t *testing.T) {
 	assert.Contains(t, revSaveSummary.AsString(), "get_change")
 	assert.Contains(t, revSaveSummary.AsString(), "preserve your request")
 	assert.Contains(t, revSaveSummary.AsString(), "operator")
-	assert.NotContains(t, revSaveSummary.AsString(), "the saved Change Card was unchanged")
 	assert.NotContains(t, revSaveSummary.AsString(), "private-")
 	assert.NotContains(t, revSaveSummary.AsString(), cardsDir)
+}
 
-	// Bare external ServiceError rejection neither leaks its message into
-	// surla.public_summary nor guesses surla.cp1.rejection_kind.
-	cpCustom := newControlPlane(t, Options{
+// TestCP1SpanAttributes_AnalyzerErrorKindsAndConcurrentConflicts verifies
+// request-scoped span summaries for bare custom rejections, declared
+// unprocessable errors, pure context cancellation and deadline expiry, mixed
+// fault joins, and concurrent ReviseChange request_revision conflicts.
+func TestCP1SpanAttributes_AnalyzerErrorKindsAndConcurrentConflicts(t *testing.T) {
+	exp := tracetest.NewInMemoryExporter()
+	tp := sdktrace.NewTracerProvider(sdktrace.WithSyncer(exp))
+	prev := otel.GetTracerProvider()
+	otel.SetTracerProvider(tp)
+	t.Cleanup(func() {
+		otel.SetTracerProvider(prev)
+		require.NoError(t, tp.Shutdown(context.Background()))
+	})
+
+	aliceCtx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
+	sharedRejected := newAnalysisRejected("private-custom-rejection", errors.New("cause"))
+
+	startedA, releaseA := make(chan struct{}), make(chan struct{})
+	cp := newControlPlane(t, Options{
 		CardsDir: t.TempDir(),
 		Analyzer: &stubCP1Analyzer{
-			analyzeFn: func(context.Context, string, CP1Design) (CP1SemanticAnalysis, error) {
-				return CP1SemanticAnalysis{}, newAnalysisRejected("private-custom-analyzer-detail", errors.New("cause"))
+			analyzeFn: func(_ context.Context, promptText string, _ CP1Design) (CP1SemanticAnalysis, error) {
+				switch promptText {
+				case "seed":
+					return CP1SemanticAnalysis{
+						Summary: "Seed",
+						Examples: []CP1ModelExample{{
+							Scenario: "S", InputSummary: "I", ExpectedOutcome: "O", VerificationKind: "deterministic",
+						}},
+					}, nil
+				case "custom_rejection":
+					return CP1SemanticAnalysis{}, sharedRejected
+				case "unprocessable":
+					return CP1SemanticAnalysis{}, fmt.Errorf("wrap: %w", gensurla.MakeUnprocessable(errors.New("private-unprocessable-detail")))
+				case "canceled":
+					return CP1SemanticAnalysis{}, fmt.Errorf("cp1 turn: %w", context.Canceled)
+				case "deadline":
+					return CP1SemanticAnalysis{}, fmt.Errorf("cp1 turn: %w", context.DeadlineExceeded)
+				case "mixed_join":
+					return CP1SemanticAnalysis{}, errors.Join(sharedRejected, context.Canceled)
+				default:
+					return CP1SemanticAnalysis{}, errors.New("private-unexpected-fault")
+				}
+			},
+			reviseFn: func(_ context.Context, prior CP1PriorCard, promptText string, _ CP1Design) (CP1RevisionSemanticAnalysis, error) {
+				if promptText == "hold" {
+					close(startedA)
+					<-releaseA
+				}
+				return CP1RevisionSemanticAnalysis{
+					Summary: "Updated by " + promptText,
+					Examples: []CP1RevisionModelExample{{
+						PriorID: prior.Examples[0].ID, Scenario: "S", InputSummary: "I", ExpectedOutcome: "O", VerificationKind: "deterministic",
+					}},
+					RemovedExampleIDs: []string{},
+				}, nil
 			},
 		},
 	})
-	_, err = cpCustom.ProposeChange(aliceCtx, &gensurla.ProposeChangePayload{
-		ChangeID: "chg-custom", Prompt: "P",
+
+	seed, err := cp.ProposeChange(aliceCtx, &gensurla.ProposeChangePayload{ChangeID: "chg-seed", Prompt: "seed"})
+	require.NoError(t, err)
+
+	for _, tc := range []struct {
+		prompt      string
+		wantSummary string
+	}{
+		{
+			prompt:      "custom_rejection",
+			wantSummary: "CP1 analysis rejected (this request did not save a Change Card); retry propose_change.",
+		},
+		{
+			prompt:      "unprocessable",
+			wantSummary: "CP1 analysis rejected the request as unprocessable (this request did not save a Change Card); revise the request inputs and retry propose_change.",
+		},
+		{
+			prompt:      "canceled",
+			wantSummary: "CP1 analysis was canceled before completion (this request did not save a Change Card); retry propose_change if still needed.",
+		},
+		{
+			prompt:      "deadline",
+			wantSummary: "CP1 analysis timed out before completion (this request did not save a Change Card); retry propose_change or ask the server operator to check model responsiveness.",
+		},
+		{
+			prompt:      "mixed_join",
+			wantSummary: "CP1 analysis failed before completion (this request did not save a Change Card); ask the server operator to check server diagnostics and model configuration before retrying.",
+		},
+	} {
+		t.Run(tc.prompt, func(t *testing.T) {
+			_, err := cp.ProposeChange(aliceCtx, &gensurla.ProposeChangePayload{
+				ChangeID: "chg-" + tc.prompt,
+				Prompt:   tc.prompt,
+			})
+			require.Error(t, err)
+			sp := lastSpanByName(t, exp.GetSpans(), "surla.controlplane.propose_change")
+			_, hasRej := findSpanAttr(sp.Attributes, "surla.cp1.rejection_kind")
+			assert.False(t, hasRej)
+			got, ok := findSpanAttr(sp.Attributes, "surla.public_summary")
+			require.True(t, ok)
+			assert.Equal(t, tc.wantSummary, got.AsString())
+			assert.NotContains(t, got.AsString(), "private-")
+		})
+	}
+
+	// Concurrent ReviseChange conflict: Request B updates chg-seed while Request A
+	// is in flight, so Request A hits request_revision conflict and its span
+	// summary claims only that Request A did not modify the Change Card.
+	revErrCh := make(chan error, 1)
+	go func() {
+		_, rErr := cp.ReviseChange(aliceCtx, &gensurla.ReviseChangePayload{
+			ChangeID: "chg-seed", RequestRevision: seed.RequestRevision, Prompt: "hold",
+		})
+		revErrCh <- rErr
+	}()
+	<-startedA
+
+	revB, err := cp.ReviseChange(aliceCtx, &gensurla.ReviseChangePayload{
+		ChangeID: "chg-seed", RequestRevision: seed.RequestRevision, Prompt: "fast",
 	})
-	require.Error(t, err)
-	customSpan := lastSpanByName(t, exp.GetSpans(), "surla.controlplane.propose_change")
-	_, hasRej = findSpanAttr(customSpan.Attributes, "surla.cp1.rejection_kind")
-	assert.False(t, hasRej, "bare ServiceError without typed kind must not guess semantic_validation")
-	customSummary, ok := findSpanAttr(customSpan.Attributes, "surla.public_summary")
+	require.NoError(t, err)
+	close(releaseA)
+
+	errA := <-revErrCh
+	require.Error(t, errA)
+	conflictSpan := lastSpanByName(t, exp.GetSpans(), "surla.controlplane.revise_change")
+	conflictSummary, ok := findSpanAttr(conflictSpan.Attributes, "surla.public_summary")
 	require.True(t, ok)
-	assert.Equal(t, "CP1 analysis rejected (no Change Card was saved); retry propose_change.", customSummary.AsString())
-	assert.NotContains(t, customSummary.AsString(), "private-")
+	assert.Equal(
+		t,
+		"Change Card request_revision changed concurrently (this request did not modify the Change Card); call get_change and retry revise_change.",
+		conflictSummary.AsString(),
+	)
+
+	saved, err := cp.GetChange(aliceCtx, &gensurla.GetChangePayload{ChangeID: "chg-seed"})
+	require.NoError(t, err)
+	assert.Equal(t, revB.RequestRevision, saved.RequestRevision)
 }
 
 // lastSpanByName returns the most recent span with name from spans.

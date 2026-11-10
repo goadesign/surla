@@ -209,7 +209,7 @@ func (c *ControlPlane) ReviseChange(
 				err,
 			)
 		} else {
-			span.SetAttributes(attribute.String("surla.public_summary", cp1SafeFaultSummary(true, cp1FaultProvider)))
+			span.SetAttributes(attribute.String("surla.public_summary", cp1SafeAnalyzerErrorSummary(true, err)))
 			if containsAnalysisRejected(err) {
 				err = unclassifiedCP1Error{cause: err}
 			}
@@ -284,11 +284,11 @@ func (c *ControlPlane) ReviseChange(
 		return nil, gensurla.MakeNotFound(fmt.Errorf("unknown change_id %q", p.ChangeID))
 	}
 	if current.owner != principal.ID {
-		span.SetAttributes(attribute.String("surla.public_summary", "Caller does not own this Change Card (the saved Change Card was unchanged)."))
+		span.SetAttributes(attribute.String("surla.public_summary", "Caller does not own this Change Card (this request did not modify the Change Card)."))
 		return nil, gensurla.MakeForbidden(fmt.Errorf("principal %q is not the owner of change_id %q", principal.ID, p.ChangeID))
 	}
 	if current.card.RequestRevision != p.RequestRevision {
-		span.SetAttributes(attribute.String("surla.public_summary", "Change Card request_revision changed concurrently (the saved Change Card was unchanged); call get_change and retry revise_change."))
+		span.SetAttributes(attribute.String("surla.public_summary", "Change Card request_revision changed concurrently (this request did not modify the Change Card); call get_change and retry revise_change."))
 		return nil, gensurla.MakeConflict(fmt.Errorf(
 			"request_revision mismatch for %q: got %q, want %q",
 			p.ChangeID,
