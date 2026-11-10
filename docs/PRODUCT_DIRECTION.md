@@ -81,6 +81,60 @@ proposal. A choice the playbook settles is not offered as a choice.
   within the rule. If the user still chooses to break it, Surla allows it,
   records the exception, and marks it on the diagram until it is removed.
 
+### Major work starts from what happens
+
+For a new platform or a major feature, the guide first drafts a timeline of
+domain events — what happens in the user's domain — before proposing
+architecture for it. The method is Event Storming. A small change skips
+this step.
+
+- **Plain labels.** The timeline's notes are named in plain words — for
+  example "what happens" rather than "domain event" — and the interface
+  does not use the method's own vocabulary.
+- **It leads to the architecture.** Open questions on the timeline become
+  the choices Surla raises, unless the playbook already settles them. How
+  the notes group suggests where boundaries could go; the user and the
+  guide settle them.
+- **It stays.** The timeline stays current as a view of the platform after
+  the architecture exists, and is meant to be linked to the diagrams.
+
+### Domain-driven design, without the vocabulary
+
+Surla applies the principles of domain-driven design and does not ask the
+user to know them. Each appears in plain words, with the established term
+available to those who look for it.
+
+- **Boundaries follow meaning.** A boundary is drawn where a set of words
+  and rules stays consistent (a bounded context). The groups on the
+  timeline inform where boundaries go; a group is not automatically one
+  service.
+- **Within a boundary, one name for one thing.** Inside each boundary, the
+  same words name each thing on the timeline and in its design, code and
+  docs (ubiquitous language). Two boundaries may use the same word
+  differently.
+- **A service knows only what another exposes.** That is its API and its
+  public messages: typed and declared in the design (published language).
+  It never sees another service's tables or internal types.
+- **Translate at the edge.** Where an outside system models things
+  differently, a translator at the boundary keeps that model out
+  (anti-corruption layer).
+
+### Events where they fit
+
+Surla does not default to an event-driven architecture and does not avoid
+one. The playbook's rule decides: use events when several consumers need
+the same fact or the producer must not wait, and never for a step that
+must commit or fail atomically. Where that leaves a real choice, the user
+decides it. [Pulse](https://github.com/goadesign/pulse) carries events and
+is part of Surla's toolset with Goa, Goa-AI and Model.
+
+### Four words the experience is held to
+
+The experience is held to four words: delightful, intuitive, street smart,
+and faithful to Google's user experience standards. Established methods
+are woven in so that their benefit arrives without the experience feeling
+like a method.
+
 ### No walls of text
 
 A screen guides without asking the user to read paragraphs: one headline, a
@@ -158,6 +212,10 @@ diagram.
 - **Who runs `terraform plan`.** Planning against a cloud account needs
   that account's credentials. Whether Surla runs it with credentials the
   user supplies, or the user runs it, is not decided.
+- **How the timeline is stored and linked.** The design code is the source
+  of truth for the architecture. Where the timeline of domain events is
+  kept, and how a note stays linked to the elements that implement it, is
+  not decided.
 - **How an edit on the diagram reaches the design code.** Model's editor
   moves elements today; it does not add, rename or remove them. How much of
   it Surla can reuse, and whether a diagram edit is applied by rewriting the
