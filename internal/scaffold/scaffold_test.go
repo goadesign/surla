@@ -507,7 +507,15 @@ func TestInitReadmeFirstRunSnippetsMatchTheProject(t *testing.T) {
 	assert.Contains(t, readme, "surla://golden-path")
 	assert.Contains(t, readme, "http://127.0.0.1:8090/golden-path")
 	assert.Contains(t, readme, "planner.ToolFailureProvider")
-	assert.Contains(t, readme, "use\n  `surla gen` and `surla verify` in place of the guide's `goa gen` and\n  `go run` commands")
+	// Each change is described, regenerated, built and tested uncommitted
+	// with check_project, committed, then verified, in that order; keeping a
+	// drafted prompt follows the same order.
+	steps := between(t, readme, "For each change, with `surla serve` running on this directory:", "## Connect")
+	assertInOrder(t, steps, "`propose_change`", "`confirm_intent`", "`generate_code`", "`check_project`", "`update_dependencies`", "`read_check_output`", "Commit,", "`verify_change`")
+	draft := between(t, readme, "To try prompt wording on a running", "`-request-revision`")
+	assertInOrder(t, draft, "`check_project`", "commit,", "`verify_change`")
+	cli := between(t, readme, "`surla verify` checks a commit.", "## Connect")
+	assertInOrder(t, cli, "`check_project`", "before you commit")
 
 	candDesign, err := os.ReadFile(filepath.Join(dir, "design", "design.go"))
 	require.NoError(t, err)
@@ -534,10 +542,9 @@ func TestInitReadmeFirstRunSnippetsMatchTheProject(t *testing.T) {
 	assert.Equal(t, "Bearer ${SURLA_AUTH_TOKEN}", server.Headers["Authorization"])
 	assert.Contains(t, readme, "export SURLA_AUTH_TOKEN=")
 
-	proposal := between(t, readme, "To start a change,", "To try prompt wording")
+	proposal := between(t, readme, "Then follow \"Next steps\" for each change.", "To try prompt wording")
 	assert.Contains(t, proposal, "`propose_change`")
-	assert.Contains(t, proposal, "reads `design/*.go` from the workspace automatically when\n`design_source` is omitted")
-	assert.Contains(t, proposal, "`confirm_intent`")
+	assert.Contains(t, proposal, "automatically when `design_source` is omitted")
 	assert.Contains(t, proposal, "`request_revision`")
 
 	ignore, err := os.ReadFile(filepath.Join(dir, ".gitignore"))
@@ -840,6 +847,19 @@ func assertOnly(t *testing.T, dir string, names ...string) {
 		got = append(got, e.Name())
 	}
 	assert.ElementsMatch(t, names, got)
+}
+
+// assertInOrder checks that each of parts occurs in s after the previous one.
+func assertInOrder(t *testing.T, s string, parts ...string) {
+	t.Helper()
+	last := -1
+	for _, p := range parts {
+		at := strings.Index(s[last+1:], p)
+		if !assert.GreaterOrEqual(t, at, 0, "missing %q after the previous step", p) {
+			return
+		}
+		last += 1 + at
+	}
 }
 
 // between returns the text of s after the first start and before the next
