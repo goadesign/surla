@@ -143,7 +143,9 @@ diagram. Which checks need the user's cloud credentials, and who runs
 - **In the conversation,** a small card shows one moment — a proposal, a
   decision, a verdict — with a small diagram and one action.
 - **Full screen,** the same app is the architecture workspace.
-- **State lives on the Surla server.** The MCP Apps specification dated
-  2026-01-26 sends a view its tool input once and lists state persistence
-  as future work, so each view is rebuilt from what the server holds.
+- **State lives on the Surla server.** A view can then be rebuilt at any
+  time from what the server holds. The MCP Apps specification dated
+  2026-01-26 leaves it to the host how long a view stays mounted and lists
+  state persistence as future work, so Surla does not rely on a view
+  surviving between turns.
 - **Outside an MCP Apps host,** `surla serve` serves the same page.
