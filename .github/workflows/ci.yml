@@ -29,10 +29,10 @@ jobs:
     name: Go (${{ matrix.module }})
     if: github.event_name == 'push' || github.event_name == 'pull_request'
     runs-on: macos-latest
-    # The root module's first run after its go.sum changes starts with no Go
-    # cache and compiles every dependency with the race detector, which takes
-    # longer than five minutes. It must finish for its cache to be saved.
-    timeout-minutes: ${{ matrix.module == '.' && 10 || 5 }}
+    # A module's first run after its go.sum changes starts with no Go cache and
+    # compiles every dependency with the race detector, which can take longer
+    # than five minutes. The run must finish for its cache to be saved.
+    timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
