@@ -155,9 +155,9 @@ diagram.
 
 ## Open questions
 
-- **Who runs `terraform plan`.** Planning needs cloud credentials. Whether
-  Surla runs it with credentials the user supplies, or the user runs it, is
-  not decided.
+- **Who runs `terraform plan`.** Planning against a cloud account needs
+  that account's credentials. Whether Surla runs it with credentials the
+  user supplies, or the user runs it, is not decided.
 - **How an edit on the diagram reaches the design code.** Model's editor
   moves elements today; it does not add, rename or remove them. How much of
   it Surla can reuse, and whether a diagram edit is applied by rewriting the
