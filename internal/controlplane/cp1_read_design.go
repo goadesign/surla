@@ -1,7 +1,7 @@
 // This file owns the Checkpoint 1 Goa design value type (CP1Design), the Phase 1
-// read_design tool definition and bounded inspection loop, the Phase 2
-// structured Change Card completion execution, and code-authored CP1 span
-// diagnostic summaries.
+// read_design tool definition and bounded inspection loop, workspace design
+// formatting for Phase 2 structured Change Card completion, and code-authored
+// CP1 span diagnostic summaries.
 package controlplane
 
 import (
@@ -46,9 +46,26 @@ type (
 		// err is the underlying cause or ServiceError.
 		err error
 	}
+
+	// cp1FaultStage classifies the internal failure stage for a non-rejection
+	// CP1 propose_change or revise_change span summary.
+	cp1FaultStage uint8
 )
 
 const (
+	// cp1FaultProgress indicates MCP progress reporting failed before saving.
+	cp1FaultProgress cp1FaultStage = iota + 1
+	// cp1FaultProvider indicates model inference or transport failed before saving.
+	cp1FaultProvider
+	// cp1FaultRevision indicates canonical revision hashing failed before saving.
+	cp1FaultRevision
+	// cp1FaultStorageRead indicates loading Change Card storage failed before saving.
+	cp1FaultStorageRead
+	// cp1FaultStorageSave indicates saving or syncing Change Card storage failed;
+	// because directory sync can fail after atomic file rename, whether the new
+	// card version was persisted is unconfirmed until get_change is checked.
+	cp1FaultStorageSave
+
 	// cp1InspectionMaxOutputTokens bounds the output tokens for one Phase 1
 	// read_design inspection tool turn.
 	cp1InspectionMaxOutputTokens = 2048
@@ -56,10 +73,6 @@ const (
 	// maxReadDesignTurnsCap caps the maximum number of tool inspection turns
 	// allowed in Phase 1 read_design inspection.
 	maxReadDesignTurnsCap = 8
-
-	// cp1Phase2UserPrompt instructs the model to emit the final structured
-	// Change Card analysis JSON after Phase 1 file inspection completes.
-	cp1Phase2UserPrompt = "Produce the Change Card analysis JSON matching the schema."
 )
 
 var (
@@ -108,6 +121,16 @@ func (d CP1Design) CanonicalSource() (string, error) {
 		return "", fmt.Errorf("encode workspace design source: %w", err)
 	}
 	return strings.TrimSuffix(buf.String(), "\n"), nil
+}
+
+// Error returns the underlying error text.
+func (r *cp1Rejection) Error() string {
+	return r.err.Error()
+}
+
+// Unwrap returns the underlying error.
+func (r *cp1Rejection) Unwrap() error {
+	return r.err
 }
 
 // mustBuildReadDesignToolDefinition constructs the model.ToolDefinition for
@@ -193,10 +216,10 @@ func recordCP1RejectionSpan(span trace.Span, revise bool, err error) {
 
 // cp1SafeFaultSummary returns a strictly code-authored diagnostic summary for a
 // non-rejection CP1 propose or revise fault span. Because MCP masks internal
-// server faults from tool callers, each summary states whether any Change Card
-// was saved or modified and names the concrete operator or retry action without
-// exposing prompts, model text, credentials, or host paths.
-func cp1SafeFaultSummary(revise bool, stage string) string {
+// server faults from tool callers, each summary states truthfully whether card
+// persistence was untouched or unconfirmed and names the concrete operator or
+// retry action without exposing prompts, model text, credentials, or host paths.
+func cp1SafeFaultSummary(revise bool, stage cp1FaultStage) string {
 	outcome := "no Change Card was saved"
 	op := "CP1 analysis"
 	if revise {
@@ -204,18 +227,21 @@ func cp1SafeFaultSummary(revise bool, stage string) string {
 		op = "CP1 revision"
 	}
 	switch stage {
-	case "progress":
+	case cp1FaultProgress:
 		return fmt.Sprintf("%s failed while reporting progress (%s); retry or ask the server operator to check server diagnostics.", op, outcome)
-	case "provider":
+	case cp1FaultProvider:
 		return fmt.Sprintf("%s failed due to a model provider or transport fault (%s); ask the server operator to check server diagnostics and model configuration before retrying.", op, outcome)
-	case "revision":
+	case cp1FaultRevision:
 		return fmt.Sprintf("%s failed while encoding the card revision (%s); ask the server operator to check server diagnostics.", op, outcome)
-	case "storage_read":
+	case cp1FaultStorageRead:
 		return fmt.Sprintf("%s could not read Change Card storage (%s); preserve your request and ask the server operator to check private card storage.", op, outcome)
-	case "storage_save":
-		return fmt.Sprintf("%s could not save the Change Card (%s); preserve your request and ask the server operator to restore private card storage before retrying.", op, outcome)
+	case cp1FaultStorageSave:
+		if revise {
+			return "CP1 revision could not confirm Change Card save; preserve your request, call get_change to check the saved card revision, and ask the server operator to check private card storage before retrying."
+		}
+		return "CP1 analysis could not confirm Change Card save; preserve your request, call get_change to check whether the card was saved, and ask the server operator to check private card storage before retrying."
 	default:
-		return fmt.Sprintf("%s failed (%s); ask the server operator to check server diagnostics.", op, outcome)
+		panic(fmt.Sprintf("unknown cp1FaultStage %d", stage))
 	}
 }
 
@@ -292,7 +318,11 @@ func decodeReadDesignPayload(raw rawjson.Message) (string, error) {
 // buildPhase1SystemPrompt composes the base system prompt with the sorted
 // workspace design manifest, the inspection turn budget, and instructions for
 // calling read_design.
-func buildPhase1SystemPrompt(baseSystemPrompt string, designFiles map[string]string, maxTurns int) string {
+func buildPhase1SystemPrompt(
+	baseSystemPrompt string,
+	designFiles map[string]string,
+	maxTurns int,
+) string {
 	paths := slices.Sorted(maps.Keys(designFiles))
 	var sb strings.Builder
 	sb.WriteString(baseSystemPrompt)
@@ -308,9 +338,35 @@ func buildPhase1SystemPrompt(baseSystemPrompt string, designFiles map[string]str
 	return sb.String()
 }
 
+// formatWorkspacePhase2Design formats the sorted workspace design/*.go manifest
+// and the contents of the manifest files read during Phase 1 inspection in
+// deterministic path order for Phase 2 structured Change Card completion.
+func formatWorkspacePhase2Design(
+	designFiles map[string]string,
+	readPaths []string,
+) string {
+	manifestPaths := slices.Sorted(maps.Keys(designFiles))
+	var sb strings.Builder
+	sb.WriteString("Workspace design manifest:\n")
+	for _, p := range manifestPaths {
+		fmt.Fprintf(&sb, "- %s (%d bytes)\n", p, len(designFiles[p]))
+	}
+	if len(readPaths) == 0 {
+		sb.WriteString("\n(no design files were read during inspection)")
+		return sb.String()
+	}
+	for _, p := range readPaths {
+		fmt.Fprintf(&sb, "\n--- %s ---\n%s", p, designFiles[p])
+		if !strings.HasSuffix(designFiles[p], "\n") {
+			sb.WriteByte('\n')
+		}
+	}
+	return strings.TrimSuffix(sb.String(), "\n")
+}
+
 // cloneResponseMessages converts a value slice of provider response messages
 // into deeply owned *model.Message pointers via model.CloneMessages so later
-// turns cannot alias or mutate earlier request transcripts.
+// Phase 1 turns cannot alias or mutate earlier request transcripts.
 func cloneResponseMessages(content []model.Message) ([]*model.Message, error) {
 	if len(content) == 0 {
 		return nil, nil
@@ -324,9 +380,7 @@ func cloneResponseMessages(content []model.Message) ([]*model.Message, error) {
 
 // appendCP1UserPart appends part to the conversation's user turn while
 // preserving strict alternating user/assistant message roles required by model
-// providers: when the trailing message already has role user (such as after
-// ToolResultPart blocks or a Turn 0 validation recovery), part is appended to a
-// copy of that message; otherwise a new user message is appended.
+// providers when a Phase 1 validation recovery follows an existing user turn.
 func appendCP1UserPart(messages []*model.Message, part model.Part) []*model.Message {
 	if n := len(messages); n > 0 && messages[n-1].Role == model.ConversationRoleUser {
 		prev := messages[n-1]
@@ -342,60 +396,12 @@ func appendCP1UserPart(messages []*model.Message, part model.Part) []*model.Mess
 	})
 }
 
-// completeStructuredMessages runs a typed structured completion using a cloned
-// copy of messages and spec, mapping output limit and validation failures into
-// typed cp1Rejection errors.
-func completeStructuredMessages[T any](
-	ctx context.Context,
-	client model.Client,
-	spec completion.Spec[T],
-	messages []*model.Message,
-) (T, error) {
-	var zero T
-	if client == nil {
-		return zero, errors.New("cp1 model client is required")
-	}
-	cloned, err := model.CloneMessages(messages)
-	if err != nil {
-		return zero, fmt.Errorf("clone cp1 completion messages: %w", err)
-	}
-	req := &model.Request{
-		Messages:  cloned,
-		MaxTokens: cp1AnalysisMaxOutputTokens,
-	}
-	resp, err := completion.Complete(ctx, client, req, spec)
-	if err != nil {
-		if ovErr, ok := exactOutputValidation(err); ok {
-			if ovErr.Kind() == model.OutputValidationOutputLimited {
-				return zero, newCP1Rejection(
-					string(model.OutputValidationOutputLimited),
-					"provider stopped at output limit; shorten the request before retrying",
-					err,
-				)
-			}
-			return zero, newCP1Rejection(
-				string(ovErr.Kind()),
-				fmt.Sprintf("model output failed %q validation", ovErr.Kind()),
-				err,
-			)
-		}
-		return zero, fmt.Errorf("cp1 model completion: %w", err)
-	}
-	if resp.ModelResponse.OutputLimited {
-		return zero, newCP1Rejection(
-			string(model.OutputValidationOutputLimited),
-			"provider stopped at output limit",
-			errors.New("cp1 model response reached output limit"),
-		)
-	}
-	return resp.Value, nil
-}
-
 // inspectAndComplete executes either the single-turn structured completion (for
-// supplied or empty-workspace designs) or the two-phase inspection loop followed
-// by structured completion (for non-empty workspace designs). baseUserPrompt
-// contains the formatted request (and prior card for revisions) without an
-// inline Design section, which is appended only on the single-turn path.
+// supplied or empty-workspace designs) or the Phase 1 read_design inspection
+// loop followed by single-turn structured completion over the manifest and read
+// files (for non-empty workspace designs). Phase 2 never replays Phase 1 tool
+// blocks into completion.Complete, keeping one toolless completion contract
+// across all direct and gateway model providers.
 func inspectAndComplete[T any](
 	ctx context.Context,
 	a *ModelCP1Analyzer,
@@ -407,16 +413,21 @@ func inspectAndComplete[T any](
 	if a == nil {
 		return zero, errors.New("cp1 model client is required")
 	}
-	if !design.isWorkspace() || len(design.files) == 0 {
-		singleTurnPrompt := baseUserPrompt + "\n\nDesign:\n" + formatCP1DesignSection(design.supplied)
-		return completeStructuredAnalysis(ctx, a.client, spec, baseSystemPrompt, singleTurnPrompt)
+	designSection := formatCP1DesignSection(design.supplied)
+	if design.isWorkspace() && len(design.files) > 0 {
+		readPaths, err := a.runPhase1Inspection(ctx, baseSystemPrompt, baseUserPrompt, design.files)
+		if err != nil {
+			return zero, err
+		}
+		designSection = formatWorkspacePhase2Design(design.files, readPaths)
 	}
-	messages, err := a.runPhase1Inspection(ctx, baseSystemPrompt, baseUserPrompt, design.files)
-	if err != nil {
-		return zero, err
-	}
-	messages = appendCP1UserPart(messages, model.TextPart{Text: cp1Phase2UserPrompt})
-	return completeStructuredMessages(ctx, a.client, spec, messages)
+	return completeStructuredAnalysis(
+		ctx,
+		a.client,
+		spec,
+		baseSystemPrompt,
+		baseUserPrompt+"\n\nDesign:\n"+designSection,
+	)
 }
 
 // isWorkspace reports whether d originated from a bound workspace snapshot.
@@ -424,27 +435,17 @@ func (d CP1Design) isWorkspace() bool {
 	return d.origin == sourceOriginWorkspace
 }
 
-// Error returns the underlying error text.
-func (r *cp1Rejection) Error() string {
-	return r.err.Error()
-}
-
-// Unwrap returns the underlying error.
-func (r *cp1Rejection) Unwrap() error {
-	return r.err
-}
-
-// runPhase1Inspection executes the bounded read_design tool inspection loop.
-// Phase 1 transitions to Phase 2 as soon as the model returns zero tool calls,
-// all manifest files have been read without error, or the final allowed
-// inspection turn completes its requested file reads without tool errors; it
-// fails with inspection_budget_exhausted only when the final allowed turn ends
-// with an unresolved tool error.
+// runPhase1Inspection executes the bounded read_design tool inspection loop and
+// returns the sorted manifest paths read during inspection. Phase 1 finishes as
+// soon as the model returns zero tool calls, all manifest files have been read
+// without error, or the final allowed inspection turn completes its requested
+// file reads without tool errors; it fails with inspection_budget_exhausted
+// only when the final allowed turn ends with an unresolved tool error.
 func (a *ModelCP1Analyzer) runPhase1Inspection(
 	ctx context.Context,
 	baseSystemPrompt, initialUserPrompt string,
 	designFiles map[string]string,
-) ([]*model.Message, error) {
+) ([]string, error) {
 	if a.client == nil {
 		return nil, errors.New("cp1 model client is required")
 	}
@@ -508,14 +509,14 @@ func (a *ModelCP1Analyzer) runPhase1Inspection(
 		}
 
 		toolCalls := resp.ToolCalls()
+		if len(toolCalls) == 0 {
+			return slices.Sorted(maps.Keys(readFiles)), nil
+		}
 		clonedRespMsgs, err := cloneResponseMessages(resp.Content)
 		if err != nil {
 			return nil, fmt.Errorf("clone cp1 inspection response: %w", err)
 		}
 		messages = append(messages, clonedRespMsgs...)
-		if len(toolCalls) == 0 {
-			return messages, nil
-		}
 
 		remainingTurns := maxInspectionTurns - 1 - turn
 		turnHadToolError := false
@@ -583,14 +584,14 @@ func (a *ModelCP1Analyzer) runPhase1Inspection(
 			})
 		}
 
+		if !turnHadToolError && (len(readFiles) == len(designFiles) || turn == maxInspectionTurns-1) {
+			return slices.Sorted(maps.Keys(readFiles)), nil
+		}
+
 		messages = append(messages, &model.Message{
 			Role:  model.ConversationRoleUser,
 			Parts: resultParts,
 		})
-
-		if !turnHadToolError && (len(readFiles) == len(designFiles) || turn == maxInspectionTurns-1) {
-			return messages, nil
-		}
 	}
 
 	return nil, newCP1Rejection(

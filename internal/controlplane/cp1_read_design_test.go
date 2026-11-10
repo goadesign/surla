@@ -1,23 +1,29 @@
 // This file tests the Checkpoint 1 two-phase `read_design` inspection loop,
-// strict payload and saved-workspace decoders, and code-authored CP1
-// OpenTelemetry span attributes across direct and gRPC gateway model clients.
+// strict payload and saved-workspace decoders, and offline Anthropic and OpenAI
+// request encoding across direct and gRPC gateway model clients.
 package controlplane
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
+	anthropicsdk "github.com/anthropics/anthropic-sdk-go"
+	anthropicoption "github.com/anthropics/anthropic-sdk-go/option"
+	anthropicstream "github.com/anthropics/anthropic-sdk-go/packages/ssestream"
 	gensurla "github.com/goadesign/surla/gen/surla"
+	openaioption "github.com/openai/openai-go/v3/option"
+	openaistream "github.com/openai/openai-go/v3/packages/ssestream"
+	"github.com/openai/openai-go/v3/responses"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/attribute"
-	sdktrace "go.opentelemetry.io/otel/sdk/trace"
-	"go.opentelemetry.io/otel/sdk/trace/tracetest"
+	"goa.design/goa-ai/features/model/anthropic"
+	"goa.design/goa-ai/features/model/openai"
 	"goa.design/goa-ai/runtime/agent/model"
 	"goa.design/goa-ai/runtime/agent/rawjson"
 )
@@ -26,11 +32,34 @@ type (
 	// modelClientFactory builds a model.Client backed either directly by
 	// queuedModelClient or through an in-process gRPC model gateway.
 	modelClientFactory func(t *testing.T, q *queuedModelClient) model.Client
+
+	// scriptedAnthropicMessages implements anthropic.MessagesClient offline by
+	// recording encoded requests and returning scripted provider messages.
+	scriptedAnthropicMessages struct {
+		// responses holds the queued Anthropic messages returned per New call.
+		responses []*anthropicsdk.Message
+		// requests records each encoded MessageNewParams sent by the adapter.
+		requests []anthropicsdk.MessageNewParams
+	}
+
+	// scriptedOpenAIResponses implements openai.ResponsesClient offline by
+	// recording encoded requests and returning scripted Responses API payloads.
+	scriptedOpenAIResponses struct {
+		// responses holds the queued OpenAI responses returned per New call.
+		responses []*responses.Response
+		// requests records each encoded ResponseNewParams sent by the adapter.
+		requests []responses.ResponseNewParams
+	}
 )
 
 const (
 	// validAnalysisJSON is a valid CP1ChangeCardAnalysis response JSON string.
 	validAnalysisJSON = `{"summary":"Order refund processing.","ambiguities":[],"examples":[{"scenario":"Standard refund","input_summary":"Refund $10","expected_outcome":"Success","verification_kind":"deterministic"}],"preserved_behaviors":["Existing orders unchanged"]}`
+
+	// validOpenAIStrictAnalysisJSON is a valid CP1ChangeCardAnalysis wire JSON
+	// string for OpenAI strict structured output, where optional ui_composition
+	// is projected as nullable and required on the wire.
+	validOpenAIStrictAnalysisJSON = `{"summary":"Order refund processing.","ambiguities":[],"examples":[{"scenario":"Standard refund","input_summary":"Refund $10","expected_outcome":"Success","verification_kind":"deterministic"}],"preserved_behaviors":["Existing orders unchanged"],"ui_composition":null}`
 
 	// validRevisionAnalysisJSON is a valid CP1ReviseChangeCardAnalysis response JSON string.
 	validRevisionAnalysisJSON = `{"summary":"Revised order refund processing.","ambiguities":[],"examples":[{"prior_id":"check_01","scenario":"Standard refund","input_summary":"Refund $10","expected_outcome":"Success","verification_kind":"deterministic"}],"removed_example_ids":[],"preserved_behaviors":["Existing orders unchanged"]}`
@@ -67,12 +96,14 @@ func TestCP1TwoPhaseReadDesign_SelectiveOmitAndLargeWorkspaces(t *testing.T) {
 				wsDir := setupWorkspaceWithFiles(t, map[string]string{
 					"design/design.go": "package design\n// main design\n",
 					"design/orders.go": "package design\n// orders design\n",
+					"design/unused.go": "package design\n// unread design body\n",
 				})
-				// 2 files -> maxInspectionTurns = min(2+2, 8) = 4.
+				// 3 files -> maxInspectionTurns = min(3+2, 8) = 5.
 				q := &queuedModelClient{
 					responses: []queuedModelTurn{
-						toolUseTurn("call_1", "read_design", `{"path":"design/design.go"}`),
-						toolUseTurn("call_2", "read_design", `{"path":"design/orders.go"}`),
+						toolUseTurn("call_1", "read_design", `{"path":"design/orders.go"}`),
+						toolUseTurn("call_2", "read_design", `{"path":"design/design.go"}`),
+						jsonAnswerTurn("Inspection complete."),
 						jsonAnswerTurn(validAnalysisJSON),
 					},
 				}
@@ -88,30 +119,45 @@ func TestCP1TwoPhaseReadDesign_SelectiveOmitAndLargeWorkspaces(t *testing.T) {
 				})
 				require.NoError(t, err)
 				assert.Equal(t, "Order refund processing.", card.Summary)
-				require.Len(t, q.requests, 3)
+				require.Len(t, q.requests, 4)
 
 				for i, req := range q.requests {
 					assertAlternatingRoles(t, req.Messages)
-					if i < 2 {
+					if i < 3 {
 						assert.Equal(t, cp1InspectionMaxOutputTokens, req.MaxTokens)
 						require.Len(t, req.Tools, 1)
 						assert.Equal(t, "read_design", req.Tools[0].Name)
 					}
 				}
-				// Turn 1 receives Turn 0's tool result with remaining_turns = 3.
+				// Turn 1 receives Turn 0's tool result with remaining_turns = 4.
 				turn1Last := q.requests[1].Messages[len(q.requests[1].Messages)-1]
 				resMap := turn1Last.Parts[0].(model.ToolResultPart).Content.(map[string]any)
-				assert.Equal(t, "design/design.go", resMap["path"])
-				assert.Contains(t, resMap["content"], "main design")
-				assert.Equal(t, "3", fmt.Sprint(resMap["remaining_turns"]))
+				assert.Equal(t, "design/orders.go", resMap["path"])
+				assert.Contains(t, resMap["content"], "orders design")
+				assert.Equal(t, "4", fmt.Sprint(resMap["remaining_turns"]))
 
-				// Phase 2 request has no tools and ends with [ToolResultPart, TextPart].
-				phase2 := q.requests[2]
+				// Phase 2 is a clean 2-message [System, User] structured request with
+				// Tools empty, sorted read files, and unread file bodies omitted.
+				phase2 := q.requests[3]
 				assert.Equal(t, cp1AnalysisMaxOutputTokens, phase2.MaxTokens)
 				assert.Empty(t, phase2.Tools)
-				lastMsg := phase2.Messages[len(phase2.Messages)-1]
-				require.Len(t, lastMsg.Parts, 2)
-				assert.Contains(t, lastMsg.Parts[1].(model.TextPart).Text, cp1Phase2UserPrompt)
+				require.NotNil(t, phase2.StructuredOutput)
+				require.Len(t, phase2.Messages, 2)
+				assert.Equal(t, model.ConversationRoleSystem, phase2.Messages[0].Role)
+				assert.Equal(t, model.ConversationRoleUser, phase2.Messages[1].Role)
+				require.Len(t, phase2.Messages[1].Parts, 1)
+				phase2Text := phase2.Messages[1].Parts[0].(model.TextPart).Text
+				assert.Contains(t, phase2Text, "Workspace design manifest:")
+				assert.Contains(t, phase2Text, "- design/unused.go (")
+				assert.NotContains(t, phase2Text, "unread design body")
+				assert.Contains(t, phase2Text, "--- design/design.go ---\npackage design\n// main design")
+				assert.Contains(t, phase2Text, "--- design/orders.go ---\npackage design\n// orders design")
+				assert.Less(
+					t,
+					strings.Index(phase2Text, "--- design/design.go ---"),
+					strings.Index(phase2Text, "--- design/orders.go ---"),
+					"Phase 2 read files must appear in deterministic sorted path order",
+				)
 			})
 
 			t.Run("omit_path_read_all_transitions_immediately", func(t *testing.T) {
@@ -138,7 +184,12 @@ func TestCP1TwoPhaseReadDesign_SelectiveOmitAndLargeWorkspaces(t *testing.T) {
 				require.NoError(t, err)
 				assert.Equal(t, "Order refund processing.", card.Summary)
 				require.Len(t, q.requests, 2)
-				assertAlternatingRoles(t, q.requests[1].Messages)
+				phase2 := q.requests[1]
+				assert.Empty(t, phase2.Tools)
+				require.Len(t, phase2.Messages, 2)
+				phase2Text := phase2.Messages[1].Parts[0].(model.TextPart).Text
+				assert.Contains(t, phase2Text, "--- design/design.go ---")
+				assert.Contains(t, phase2Text, "--- design/orders.go ---")
 			})
 
 			t.Run("ten_file_workspace_succeeds_after_eight_selective_turns", func(t *testing.T) {
@@ -146,7 +197,7 @@ func TestCP1TwoPhaseReadDesign_SelectiveOmitAndLargeWorkspaces(t *testing.T) {
 				turns := make([]queuedModelTurn, 0, 9)
 				for i := range 10 {
 					rel := fmt.Sprintf("design/svc_%02d.go", i)
-					files[rel] = fmt.Sprintf("package design\n// svc %02d\n", i)
+					files[rel] = fmt.Sprintf("package design\n// svc %02d body\n", i)
 					if i < maxReadDesignTurnsCap {
 						turns = append(turns, toolUseTurn(
 							fmt.Sprintf("call_%d", i),
@@ -171,13 +222,23 @@ func TestCP1TwoPhaseReadDesign_SelectiveOmitAndLargeWorkspaces(t *testing.T) {
 				require.NoError(t, err)
 				assert.Equal(t, "Order refund processing.", card.Summary)
 				require.Len(t, q.requests, maxReadDesignTurnsCap+1)
-				// Verify final inspection turn's result reported remaining_turns == 0 and reached Phase 2.
+
+				// Final Phase 1 request (turn index 7) receives turn 6's result with remaining_turns == 1.
+				lastPhase1 := q.requests[maxReadDesignTurnsCap-1]
+				lastPhase1Msg := lastPhase1.Messages[len(lastPhase1.Messages)-1]
+				resMap := lastPhase1Msg.Parts[0].(model.ToolResultPart).Content.(map[string]any)
+				assert.Equal(t, "design/svc_06.go", resMap["path"])
+				assert.Equal(t, "1", fmt.Sprint(resMap["remaining_turns"]))
+
+				// Phase 2 carries all 8 read files (including turn 7's svc_07.go) and omits unread svc_08/svc_09 bodies.
 				phase2 := q.requests[maxReadDesignTurnsCap]
-				assertAlternatingRoles(t, phase2.Messages)
-				lastMsg := phase2.Messages[len(phase2.Messages)-1]
-				resMap := lastMsg.Parts[0].(model.ToolResultPart).Content.(map[string]any)
-				assert.Equal(t, "design/svc_07.go", resMap["path"])
-				assert.Equal(t, "0", fmt.Sprint(resMap["remaining_turns"]))
+				assert.Empty(t, phase2.Tools)
+				require.Len(t, phase2.Messages, 2)
+				phase2Text := phase2.Messages[1].Parts[0].(model.TextPart).Text
+				assert.Contains(t, phase2Text, "--- design/svc_07.go ---\npackage design\n// svc 07 body")
+				assert.Contains(t, phase2Text, "- design/svc_08.go (")
+				assert.NotContains(t, phase2Text, "svc 08 body")
+				assert.NotContains(t, phase2Text, "svc 09 body")
 			})
 		})
 	}
@@ -191,7 +252,7 @@ func TestCP1TwoPhaseReadDesign_StopAndPathCases(t *testing.T) {
 	aliceCtx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
 
 	t.Run("zero_tool_call_completion", func(t *testing.T) {
-		wsDir := setupWorkspaceWithFiles(t, map[string]string{"design/design.go": "package design\n"})
+		wsDir := setupWorkspaceWithFiles(t, map[string]string{"design/design.go": "package design\n// body\n"})
 		q := &queuedModelClient{
 			responses: []queuedModelTurn{
 				jsonAnswerTurn("I have enough context from the manifest."),
@@ -210,10 +271,13 @@ func TestCP1TwoPhaseReadDesign_StopAndPathCases(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, "Order refund processing.", card.Summary)
 		require.Len(t, q.requests, 2)
-		assertAlternatingRoles(t, q.requests[1].Messages)
-		asstMsg := q.requests[1].Messages[len(q.requests[1].Messages)-2]
-		assert.Equal(t, model.ConversationRoleAssistant, asstMsg.Role)
-		assert.Contains(t, asstMsg.Parts[0].(model.TextPart).Text, "I have enough context")
+		phase2 := q.requests[1]
+		assert.Empty(t, phase2.Tools)
+		require.Len(t, phase2.Messages, 2)
+		phase2Text := phase2.Messages[1].Parts[0].(model.TextPart).Text
+		assert.Contains(t, phase2Text, "Workspace design manifest:\n- design/design.go (")
+		assert.Contains(t, phase2Text, "(no design files were read during inspection)")
+		assert.NotContains(t, phase2Text, "// body")
 	})
 
 	t.Run("non_ascii_and_space_paths_plus_unknown_recovery", func(t *testing.T) {
@@ -252,6 +316,7 @@ func TestCP1TwoPhaseReadDesign_StopAndPathCases(t *testing.T) {
 		wsDir := setupWorkspaceWithFiles(t, map[string]string{
 			"design/a.go": "package design\n",
 			"design/b.go": "package design\n",
+			"design/c.go": "package design\n",
 		})
 		q := &queuedModelClient{
 			responses: []queuedModelTurn{
@@ -278,6 +343,7 @@ func TestCP1TwoPhaseReadDesign_StopAndPathCases(t *testing.T) {
 					},
 				},
 				toolUseTurn("call_b", "read_design", `{"path":"design/b.go"}`),
+				jsonAnswerTurn("Done inspecting."),
 				jsonAnswerTurn(validAnalysisJSON),
 			},
 		}
@@ -291,9 +357,10 @@ func TestCP1TwoPhaseReadDesign_StopAndPathCases(t *testing.T) {
 			Prompt:   "Add feature",
 		})
 		require.NoError(t, err)
-		require.Len(t, q.requests, 3)
+		require.Len(t, q.requests, 4)
 
-		// Mutating q.requests[1] after the fact must not affect q.requests[2].
+		// Both Phase 1 follow-up turns (requests[1] and requests[2]) replay Turn 0's
+		// assistant message without sharing mutable maps or slices.
 		var asst1, asst2 *model.Message
 		for _, m := range q.requests[1].Messages {
 			if m.Role == model.ConversationRoleAssistant {
@@ -451,9 +518,9 @@ func TestCP1TwoPhaseReadDesign_SingleTurnAndWorkspaceRevise(t *testing.T) {
 		})
 		require.NoError(t, err)
 		assert.Equal(t, "Revised order refund processing.", revised.Summary)
-		resObj := q.requests[3].Messages[len(q.requests[3].Messages)-1].Parts[0].(model.ToolResultPart).Content.(map[string]any)
-		filesList := resObj["files"].([]any)
-		assert.Contains(t, filesList[0].(map[string]any)["content"], "v2 design")
+		r2Phase2Text := q.requests[3].Messages[1].Parts[0].(model.TextPart).Text
+		assert.Contains(t, r2Phase2Text, "--- design/design.go ---\npackage design\n// v2 design")
+		assert.NotContains(t, r2Phase2Text, "v1 design")
 
 		require.NoError(t, cp.Close())
 		qUnbound := &queuedModelClient{
@@ -474,6 +541,127 @@ func TestCP1TwoPhaseReadDesign_SingleTurnAndWorkspaceRevise(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, "Revised order refund processing.", revisedUnbound.Summary)
 		require.Len(t, qUnbound.requests, 2)
+		r3Phase2Text := qUnbound.requests[1].Messages[1].Parts[0].(model.TextPart).Text
+		assert.Contains(t, r3Phase2Text, "--- design/design.go ---\npackage design\n// v2 design")
+	})
+}
+
+// TestCP1TwoPhaseReadDesign_RealProviderAdapters exercises Phase 1 read_design
+// tool encoding and Phase 2 toolless structured completion through the real
+// Goa-AI Anthropic Messages and OpenAI Responses adapters with offline SDK
+// transports (zero network calls).
+func TestCP1TwoPhaseReadDesign_RealProviderAdapters(t *testing.T) {
+	aliceCtx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
+	wsDir := setupWorkspaceWithFiles(t, map[string]string{
+		"design/api.go":    "package design\n// edge API contract\n",
+		"design/orders.go": "package design\n// unread orders internal contract\n",
+	})
+
+	t.Run("anthropic_messages_adapter", func(t *testing.T) {
+		msgs := &scriptedAnthropicMessages{
+			responses: []*anthropicsdk.Message{
+				mustAnthropicMessage(t, []map[string]any{{
+					"type":  "tool_use",
+					"id":    "toolu_01",
+					"name":  "read_design",
+					"input": map[string]any{"path": "design/api.go"},
+				}}, "tool_use"),
+				mustAnthropicMessage(t, []map[string]any{{
+					"type": "text",
+					"text": "Inspected the relevant edge API contract.",
+				}}, "end_turn"),
+				mustAnthropicMessage(t, []map[string]any{{
+					"type": "text",
+					"text": validAnalysisJSON,
+				}}, "end_turn"),
+			},
+		}
+		client, err := anthropic.New(msgs, anthropic.Options{
+			DefaultModel: string(anthropicsdk.ModelClaudeSonnet4_5_20250929),
+		})
+		require.NoError(t, err)
+
+		cp := newControlPlane(t, Options{
+			CardsDir:     t.TempDir(),
+			WorkspaceDir: wsDir,
+			Analyzer:     NewModelCP1Analyzer(client),
+		})
+		card, err := cp.ProposeChange(aliceCtx, &gensurla.ProposeChangePayload{
+			ChangeID: "chg-anthropic",
+			Prompt:   "Add order refunds",
+		})
+		require.NoError(t, err)
+		assert.Equal(t, "Order refund processing.", card.Summary)
+		require.Len(t, msgs.requests, 3)
+
+		// Phase 1 turns advertise read_design; Turn 1 replays tool_use + tool_result.
+		require.Len(t, msgs.requests[0].Tools, 1)
+		require.Len(t, msgs.requests[1].Tools, 1)
+		require.Len(t, msgs.requests[1].Messages, 3)
+
+		// Phase 2 sends a clean single-user-message structured completion with zero tools.
+		phase2 := msgs.requests[2]
+		assert.Empty(t, phase2.Tools)
+		require.Len(t, phase2.Messages, 1)
+		phase2Wire, err := json.Marshal(phase2)
+		require.NoError(t, err)
+		assert.Contains(t, string(phase2Wire), "edge API contract")
+		assert.NotContains(t, string(phase2Wire), "unread orders internal contract")
+		assert.NotContains(t, string(phase2Wire), "toolu_01")
+	})
+
+	t.Run("openai_responses_adapter", func(t *testing.T) {
+		// OpenAI strict schema projects optional read_design.path to nullable, so
+		// omit-path arrives from OpenAI as `{"path":null}` and is normalized to `{}`.
+		oai := &scriptedOpenAIResponses{
+			responses: []*responses.Response{
+				mustOpenAIResponse(t, `[{
+					"id":"fc_01",
+					"type":"function_call",
+					"call_id":"call_01",
+					"name":"read_design",
+					"arguments":"{\"path\":null}",
+					"status":"completed"
+				}]`),
+				mustOpenAIResponse(t, fmt.Sprintf(`[{
+					"id":"msg_02",
+					"type":"message",
+					"role":"assistant",
+					"status":"completed",
+					"content":[{"type":"output_text","text":%q,"annotations":[],"logprobs":[]}]
+				}]`, validOpenAIStrictAnalysisJSON)),
+			},
+		}
+		client, err := openai.New(openai.Options{
+			Client:       oai,
+			DefaultModel: "gpt-5.4",
+		})
+		require.NoError(t, err)
+
+		cp := newControlPlane(t, Options{
+			CardsDir:     t.TempDir(),
+			WorkspaceDir: wsDir,
+			Analyzer:     NewModelCP1Analyzer(client),
+		})
+		card, err := cp.ProposeChange(aliceCtx, &gensurla.ProposeChangePayload{
+			ChangeID: "chg-openai",
+			Prompt:   "Add order refunds",
+		})
+		require.NoError(t, err)
+		assert.Equal(t, "Order refund processing.", card.Summary)
+		require.Len(t, oai.requests, 2)
+
+		// Phase 1 advertises strict read_design function tool.
+		require.Len(t, oai.requests[0].Tools, 1)
+
+		// Phase 2 has zero tools, zero function_call history items, and both read files.
+		phase2 := oai.requests[1]
+		assert.Empty(t, phase2.Tools)
+		phase2Wire, err := json.Marshal(phase2)
+		require.NoError(t, err)
+		assert.Contains(t, string(phase2Wire), "edge API contract")
+		assert.Contains(t, string(phase2Wire), "unread orders internal contract")
+		assert.NotContains(t, string(phase2Wire), "call_01")
 	})
 }
 
@@ -530,156 +718,59 @@ func TestCP1DecodersRejectInvalidInputs(t *testing.T) {
 	}
 }
 
-// TestCP1SpanAttributes_CodeAuthoredAndSecretExclusion verifies that
-// surla.public_summary is strictly code-authored across success, model
-// rejection, semantic validation rejection (including model-returned prior_id),
-// and unclassified external analyzer rejections without guessing rejection_kind.
-func TestCP1SpanAttributes_CodeAuthoredAndSecretExclusion(t *testing.T) {
-	exp := tracetest.NewInMemoryExporter()
-	tp := sdktrace.NewTracerProvider(sdktrace.WithSyncer(exp))
-	prev := otel.GetTracerProvider()
-	otel.SetTracerProvider(tp)
-	t.Cleanup(func() {
-		otel.SetTracerProvider(prev)
-		require.NoError(t, tp.Shutdown(context.Background()))
-	})
-
-	aliceCtx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
-	wsDir := setupWorkspaceWithFiles(t, map[string]string{"design/design.go": "package design\n"})
-
-	secretSummaryJSON := `{"summary":"private-prompt-paraphrase-secret","ambiguities":[],"examples":[{"scenario":"S","input_summary":"I","expected_outcome":"O","verification_kind":"deterministic"}],"preserved_behaviors":[]}`
-	secretPriorIDReviseJSON := `{"summary":"Revised","ambiguities":[],"examples":[{"prior_id":"private-model-prior-id-secret","scenario":"S","input_summary":"I","expected_outcome":"O","verification_kind":"deterministic"}],"removed_example_ids":["check_01"],"preserved_behaviors":[]}`
-
-	q := &queuedModelClient{
-		responses: []queuedModelTurn{
-			// 1. ProposeChange success (confirmed)
-			toolUseTurn("c1", "read_design", `{}`),
-			jsonAnswerTurn(secretSummaryJSON),
-			// 2. ReviseChange semantic_validation rejection with secret prior_id
-			toolUseTurn("c2", "read_design", `{}`),
-			jsonAnswerTurn(secretPriorIDReviseJSON),
-			// 3. ProposeChange output_limited rejection
-			{
-				resp: &model.Response{
-					OutputLimited: true,
-					StopReason:    "max_tokens",
-					Content: []model.Message{{
-						Role:  model.ConversationRoleAssistant,
-						Parts: []model.Part{model.TextPart{Text: "private-truncated-secret"}},
-					}},
-				},
-			},
-			// 4. ProposeChange non-rejection provider fault
-			{
-				err: errors.New("private-provider-credential-secret"),
-			},
-			// 5. ProposeChange valid response followed by card save storage fault
-			toolUseTurn("call-save", "read_design", `{}`),
-			jsonAnswerTurn(secretSummaryJSON),
-		},
+// New records body and returns the next scripted Anthropic response.
+func (m *scriptedAnthropicMessages) New(
+	_ context.Context,
+	body anthropicsdk.MessageNewParams,
+	_ ...anthropicoption.RequestOption,
+) (*anthropicsdk.Message, error) {
+	idx := len(m.requests)
+	m.requests = append(m.requests, body)
+	if idx >= len(m.responses) {
+		return nil, fmt.Errorf("unexpected anthropic call %d", idx)
 	}
-	cardsDir := t.TempDir()
-	cp := newControlPlane(t, Options{
-		CardsDir:     cardsDir,
-		WorkspaceDir: wsDir,
-		Analyzer:     NewModelCP1Analyzer(newQueuedModelClient(t, q)),
-	})
+	return m.responses[idx], nil
+}
 
-	card, err := cp.ProposeChange(aliceCtx, &gensurla.ProposeChangePayload{
-		ChangeID: "chg-span", Prompt: "private-user-prompt-secret",
-	})
-	require.NoError(t, err)
-	proposeSpan := lastSpanByName(t, exp.GetSpans(), "surla.controlplane.propose_change")
-	pubSummary, ok := findSpanAttr(proposeSpan.Attributes, "surla.public_summary")
-	require.True(t, ok)
-	assert.Equal(t, "Proposed Change Card (confirmed).", pubSummary.AsString())
-	assert.NotContains(t, pubSummary.AsString(), "private-")
-	_, hasRej := findSpanAttr(proposeSpan.Attributes, "surla.cp1.rejection_kind")
-	assert.False(t, hasRej)
+// NewStreaming is unused because the CP1 analyzer only calls Complete.
+func (m *scriptedAnthropicMessages) NewStreaming(
+	context.Context,
+	anthropicsdk.MessageNewParams,
+	...anthropicoption.RequestOption,
+) *anthropicstream.Stream[anthropicsdk.MessageStreamEventUnion] {
+	panic("streaming not used by CP1 analyzer")
+}
 
-	// ReviseChange fails semantic validation with model-invented prior_id; caller
-	// error retains diagnostic detail, while surla.public_summary excludes it.
-	_, err = cp.ReviseChange(aliceCtx, &gensurla.ReviseChangePayload{
-		ChangeID: "chg-span", RequestRevision: card.RequestRevision, Prompt: "private-revise-prompt-secret",
-	})
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "private-model-prior-id-secret")
-	reviseSpan := lastSpanByName(t, exp.GetSpans(), "surla.controlplane.revise_change")
-	rejKind, ok := findSpanAttr(reviseSpan.Attributes, "surla.cp1.rejection_kind")
-	require.True(t, ok)
-	assert.Equal(t, "semantic_validation", rejKind.AsString())
-	revSummary, ok := findSpanAttr(reviseSpan.Attributes, "surla.public_summary")
-	require.True(t, ok)
-	assert.Equal(t, "CP1 revision rejected: model output failed Change Card semantic validation (the saved Change Card was unchanged); retry revise_change.", revSummary.AsString())
-	assert.NotContains(t, revSummary.AsString(), "private-")
+// CountTokens is unused because the CP1 analyzer does not count tokens.
+func (m *scriptedAnthropicMessages) CountTokens(
+	context.Context,
+	anthropicsdk.MessageCountTokensParams,
+	...anthropicoption.RequestOption,
+) (*anthropicsdk.MessageTokensCount, error) {
+	return nil, errors.New("token counting not used by CP1 analyzer")
+}
 
-	// OutputLimited rejection records output_limited and excludes model output.
-	_, err = cp.ProposeChange(aliceCtx, &gensurla.ProposeChangePayload{
-		ChangeID: "chg-span-lim", Prompt: "private-user-prompt-secret",
-	})
-	require.Error(t, err)
-	limSpan := lastSpanByName(t, exp.GetSpans(), "surla.controlplane.propose_change")
-	rejKind, ok = findSpanAttr(limSpan.Attributes, "surla.cp1.rejection_kind")
-	require.True(t, ok)
-	assert.Equal(t, "output_limited", rejKind.AsString())
-	limSummary, ok := findSpanAttr(limSpan.Attributes, "surla.public_summary")
-	require.True(t, ok)
-	assert.Equal(t, "CP1 analysis rejected: provider stopped at output limit (no Change Card was saved); shorten the request and retry propose_change.", limSummary.AsString())
-	assert.NotContains(t, limSummary.AsString(), "private-")
+// New records body and returns the next scripted OpenAI Responses API payload.
+func (m *scriptedOpenAIResponses) New(
+	_ context.Context,
+	body responses.ResponseNewParams,
+	_ ...openaioption.RequestOption,
+) (*responses.Response, error) {
+	idx := len(m.requests)
+	m.requests = append(m.requests, body)
+	if idx >= len(m.responses) {
+		return nil, fmt.Errorf("unexpected openai call %d", idx)
+	}
+	return m.responses[idx], nil
+}
 
-	// Non-rejection provider fault records operator recovery without leaking
-	// provider error strings or setting surla.cp1.rejection_kind.
-	_, err = cp.ProposeChange(aliceCtx, &gensurla.ProposeChangePayload{
-		ChangeID: "chg-span-fault", Prompt: "private-user-prompt-secret",
-	})
-	require.Error(t, err)
-	faultSpan := lastSpanByName(t, exp.GetSpans(), "surla.controlplane.propose_change")
-	_, hasRej = findSpanAttr(faultSpan.Attributes, "surla.cp1.rejection_kind")
-	assert.False(t, hasRej)
-	faultSummary, ok := findSpanAttr(faultSpan.Attributes, "surla.public_summary")
-	require.True(t, ok)
-	assert.Contains(t, faultSummary.AsString(), "operator")
-	assert.Contains(t, faultSummary.AsString(), "no Change Card was saved")
-	assert.NotContains(t, faultSummary.AsString(), "private-")
-
-	// Card save storage fault records operator storage recovery without leaking
-	// host filesystem paths or setting surla.cp1.rejection_kind.
-	require.NoError(t, os.Mkdir(filepath.Join(cardsDir, stagingFile), 0o700))
-	_, err = cp.ProposeChange(aliceCtx, &gensurla.ProposeChangePayload{
-		ChangeID: "chg-span-save-fault", Prompt: "private-user-prompt-secret",
-	})
-	require.Error(t, err)
-	saveSpan := lastSpanByName(t, exp.GetSpans(), "surla.controlplane.propose_change")
-	_, hasRej = findSpanAttr(saveSpan.Attributes, "surla.cp1.rejection_kind")
-	assert.False(t, hasRej)
-	saveSummary, ok := findSpanAttr(saveSpan.Attributes, "surla.public_summary")
-	require.True(t, ok)
-	assert.Contains(t, saveSummary.AsString(), "operator")
-	assert.Contains(t, saveSummary.AsString(), "preserve your request")
-	assert.NotContains(t, saveSummary.AsString(), "private-")
-	assert.NotContains(t, saveSummary.AsString(), cardsDir)
-
-	// Bare external ServiceError rejection neither leaks its message into
-	// surla.public_summary nor guesses surla.cp1.rejection_kind.
-	cpCustom := newControlPlane(t, Options{
-		CardsDir: t.TempDir(),
-		Analyzer: &stubCP1Analyzer{
-			analyzeFn: func(context.Context, string, CP1Design) (CP1SemanticAnalysis, error) {
-				return CP1SemanticAnalysis{}, newAnalysisRejected("private-custom-analyzer-detail", errors.New("cause"))
-			},
-		},
-	})
-	_, err = cpCustom.ProposeChange(aliceCtx, &gensurla.ProposeChangePayload{
-		ChangeID: "chg-custom", Prompt: "P",
-	})
-	require.Error(t, err)
-	customSpan := lastSpanByName(t, exp.GetSpans(), "surla.controlplane.propose_change")
-	_, hasRej = findSpanAttr(customSpan.Attributes, "surla.cp1.rejection_kind")
-	assert.False(t, hasRej, "bare ServiceError without typed kind must not guess semantic_validation")
-	customSummary, ok := findSpanAttr(customSpan.Attributes, "surla.public_summary")
-	require.True(t, ok)
-	assert.Equal(t, "CP1 analysis rejected (no Change Card was saved); retry propose_change.", customSummary.AsString())
-	assert.NotContains(t, customSummary.AsString(), "private-")
+// NewStreaming is unused because the CP1 analyzer only calls Complete.
+func (m *scriptedOpenAIResponses) NewStreaming(
+	context.Context,
+	responses.ResponseNewParams,
+	...openaioption.RequestOption,
+) *openaistream.Stream[responses.ResponseStreamEventUnion] {
+	panic("streaming not used by CP1 analyzer")
 }
 
 // toolUseTurn constructs a scripted Phase 1 tool-call response turn.
@@ -725,28 +816,6 @@ func setupWorkspaceWithFiles(t *testing.T, files map[string]string) string {
 	return wsDir
 }
 
-// lastSpanByName returns the most recent span with name from spans.
-func lastSpanByName(t *testing.T, spans []tracetest.SpanStub, name string) tracetest.SpanStub {
-	t.Helper()
-	for i := len(spans) - 1; i >= 0; i-- {
-		if spans[i].Name == name {
-			return spans[i]
-		}
-	}
-	t.Fatalf("span %q not found", name)
-	return tracetest.SpanStub{}
-}
-
-// findSpanAttr finds the attribute value for key in attrs.
-func findSpanAttr(attrs []attribute.KeyValue, key attribute.Key) (attribute.Value, bool) {
-	for _, attr := range attrs {
-		if attr.Key == key {
-			return attr.Value, true
-		}
-	}
-	return attribute.Value{}, false
-}
-
 // assertAlternatingRoles verifies that after the leading system message, no two
 // adjacent messages share the same conversation role.
 func assertAlternatingRoles(t *testing.T, msgs []*model.Message) {
@@ -763,4 +832,43 @@ func assertAlternatingRoles(t *testing.T, msgs []*model.Message) {
 		}
 		prev = m.Role
 	}
+}
+
+// mustAnthropicMessage constructs a provider-shaped Anthropic Message value.
+func mustAnthropicMessage(t *testing.T, content []map[string]any, stopReason string) *anthropicsdk.Message {
+	t.Helper()
+	raw, err := json.Marshal(map[string]any{
+		"id":          "msg_test",
+		"type":        "message",
+		"role":        "assistant",
+		"model":       "claude-sonnet-4-5-20250929",
+		"content":     content,
+		"stop_reason": stopReason,
+		"usage":       map[string]any{"input_tokens": 12, "output_tokens": 18},
+	})
+	require.NoError(t, err)
+	var msg anthropicsdk.Message
+	require.NoError(t, json.Unmarshal(raw, &msg))
+	return &msg
+}
+
+// mustOpenAIResponse constructs a provider-shaped OpenAI Responses API value.
+func mustOpenAIResponse(t *testing.T, outputArrayJSON string) *responses.Response {
+	t.Helper()
+	raw := fmt.Sprintf(`{
+		"id":"resp_test",
+		"model":"gpt-5.4",
+		"status":"completed",
+		"usage":{
+			"input_tokens":12,
+			"input_tokens_details":{"cached_tokens":0},
+			"output_tokens":18,
+			"output_tokens_details":{"reasoning_tokens":0},
+			"total_tokens":30
+		},
+		"output":%s
+	}`, outputArrayJSON)
+	var resp responses.Response
+	require.NoError(t, json.Unmarshal([]byte(raw), &resp))
+	return &resp
 }

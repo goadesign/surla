@@ -650,7 +650,7 @@ func (c *ControlPlane) ProposeChange(ctx context.Context, p *gensurla.ProposeCha
 	defer span.End()
 
 	if err := reportProgress(ctx, 0, 1, "Analyzing the feature request with the CP1 model"); err != nil {
-		span.SetAttributes(attribute.String("surla.public_summary", cp1SafeFaultSummary(false, "progress")))
+		span.SetAttributes(attribute.String("surla.public_summary", cp1SafeFaultSummary(false, cp1FaultProgress)))
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "report cp1 analysis progress")
 		return nil, err
@@ -668,7 +668,7 @@ func (c *ControlPlane) ProposeChange(ctx context.Context, p *gensurla.ProposeCha
 				err,
 			)
 		} else {
-			span.SetAttributes(attribute.String("surla.public_summary", cp1SafeFaultSummary(false, "provider")))
+			span.SetAttributes(attribute.String("surla.public_summary", cp1SafeFaultSummary(false, cp1FaultProvider)))
 			if containsAnalysisRejected(err) {
 				err = unclassifiedCP1Error{cause: err}
 			}
@@ -678,7 +678,7 @@ func (c *ControlPlane) ProposeChange(ctx context.Context, p *gensurla.ProposeCha
 		return nil, err
 	}
 	if err := reportProgress(ctx, 1, 1, "Validating the CP1 analysis"); err != nil {
-		span.SetAttributes(attribute.String("surla.public_summary", cp1SafeFaultSummary(false, "progress")))
+		span.SetAttributes(attribute.String("surla.public_summary", cp1SafeFaultSummary(false, cp1FaultProgress)))
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "report cp1 validation progress")
 		return nil, err
@@ -722,7 +722,7 @@ func (c *ControlPlane) ProposeChange(ctx context.Context, p *gensurla.ProposeCha
 	}
 	rev, err := computeCanonicalRevision(card, principal.ID, designSrc)
 	if err != nil {
-		span.SetAttributes(attribute.String("surla.public_summary", cp1SafeFaultSummary(false, "revision")))
+		span.SetAttributes(attribute.String("surla.public_summary", cp1SafeFaultSummary(false, cp1FaultRevision)))
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "compute cp1 card revision")
 		return nil, err
@@ -738,7 +738,7 @@ func (c *ControlPlane) ProposeChange(ctx context.Context, p *gensurla.ProposeCha
 	defer c.mu.Unlock()
 	_, exists, err := c.cards.load(p.ChangeID)
 	if err != nil {
-		span.SetAttributes(attribute.String("surla.public_summary", cp1SafeFaultSummary(false, "storage_read")))
+		span.SetAttributes(attribute.String("surla.public_summary", cp1SafeFaultSummary(false, cp1FaultStorageRead)))
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "load cp1 change card")
 		return nil, err
@@ -753,7 +753,7 @@ func (c *ControlPlane) ProposeChange(ctx context.Context, p *gensurla.ProposeCha
 		designSource: designSrc,
 		sourceOrigin: sourceOrigin,
 	}); err != nil {
-		span.SetAttributes(attribute.String("surla.public_summary", cp1SafeFaultSummary(false, "storage_save")))
+		span.SetAttributes(attribute.String("surla.public_summary", cp1SafeFaultSummary(false, cp1FaultStorageSave)))
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "save cp1 change card")
 		return nil, err

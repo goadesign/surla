@@ -464,7 +464,10 @@ func readWorkspaceModuleSnapshot(wsDir string, expectedDev, expectedIno uint64) 
 // not exist or contains no non-test `.go` files, it returns
 // `(WorkspaceCP1Design(nil), "", nil)` so a card proposed before `init_project`
 // has an empty design source and does not block initialization.
-func readWorkspaceCP1Design(wsDir string, expectedDev, expectedIno uint64) (CP1Design, string, error) {
+func readWorkspaceCP1Design(
+	wsDir string,
+	expectedDev, expectedIno uint64,
+) (CP1Design, string, error) {
 	cleanDir, root, err := openModuleRootWithIdentity(wsDir, expectedDev, expectedIno)
 	if err != nil {
 		return CP1Design{}, "", err

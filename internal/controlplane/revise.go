@@ -190,7 +190,7 @@ func (c *ControlPlane) ReviseChange(
 	defer span.End()
 
 	if err := reportProgress(ctx, 0, 1, "Revising the Change Card with the CP1 model"); err != nil {
-		span.SetAttributes(attribute.String("surla.public_summary", cp1SafeFaultSummary(true, "progress")))
+		span.SetAttributes(attribute.String("surla.public_summary", cp1SafeFaultSummary(true, cp1FaultProgress)))
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "report cp1 revision progress")
 		return nil, err
@@ -209,7 +209,7 @@ func (c *ControlPlane) ReviseChange(
 				err,
 			)
 		} else {
-			span.SetAttributes(attribute.String("surla.public_summary", cp1SafeFaultSummary(true, "provider")))
+			span.SetAttributes(attribute.String("surla.public_summary", cp1SafeFaultSummary(true, cp1FaultProvider)))
 			if containsAnalysisRejected(err) {
 				err = unclassifiedCP1Error{cause: err}
 			}
@@ -219,7 +219,7 @@ func (c *ControlPlane) ReviseChange(
 		return nil, err
 	}
 	if err := reportProgress(ctx, 1, 1, "Validating the revised CP1 analysis"); err != nil {
-		span.SetAttributes(attribute.String("surla.public_summary", cp1SafeFaultSummary(true, "progress")))
+		span.SetAttributes(attribute.String("surla.public_summary", cp1SafeFaultSummary(true, cp1FaultProgress)))
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "report cp1 validation progress")
 		return nil, err
@@ -257,7 +257,7 @@ func (c *ControlPlane) ReviseChange(
 	}
 	rev, err := computeCanonicalRevision(revised, principal.ID, designSrc)
 	if err != nil {
-		span.SetAttributes(attribute.String("surla.public_summary", cp1SafeFaultSummary(true, "revision")))
+		span.SetAttributes(attribute.String("surla.public_summary", cp1SafeFaultSummary(true, cp1FaultRevision)))
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "compute revised cp1 card revision")
 		return nil, err
@@ -274,7 +274,7 @@ func (c *ControlPlane) ReviseChange(
 	defer c.mu.Unlock()
 	current, exists, err := c.cards.load(p.ChangeID)
 	if err != nil {
-		span.SetAttributes(attribute.String("surla.public_summary", cp1SafeFaultSummary(true, "storage_read")))
+		span.SetAttributes(attribute.String("surla.public_summary", cp1SafeFaultSummary(true, cp1FaultStorageRead)))
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "load cp1 change card")
 		return nil, err
@@ -302,7 +302,7 @@ func (c *ControlPlane) ReviseChange(
 		designSource: designSrc,
 		sourceOrigin: nextOrigin,
 	}); err != nil {
-		span.SetAttributes(attribute.String("surla.public_summary", cp1SafeFaultSummary(true, "storage_save")))
+		span.SetAttributes(attribute.String("surla.public_summary", cp1SafeFaultSummary(true, cp1FaultStorageSave)))
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "save revised cp1 change card")
 		return nil, err
@@ -528,25 +528,57 @@ func completeStructuredAnalysis[T any](
 	spec completion.Spec[T],
 	systemPrompt, userPrompt string,
 ) (T, error) {
-	messages := []*model.Message{
-		{
-			Role: model.ConversationRoleSystem,
-			Parts: []model.Part{
-				model.TextPart{
-					Text: systemPrompt,
-				},
-			},
-		},
-		{
-			Role: model.ConversationRoleUser,
-			Parts: []model.Part{
-				model.TextPart{
-					Text: userPrompt,
-				},
-			},
-		},
+	var zero T
+	if client == nil {
+		return zero, errors.New("cp1 model client is required")
 	}
-	return completeStructuredMessages(ctx, client, spec, messages)
+	req := &model.Request{
+		Messages: []*model.Message{
+			{
+				Role: model.ConversationRoleSystem,
+				Parts: []model.Part{
+					model.TextPart{
+						Text: systemPrompt,
+					},
+				},
+			},
+			{
+				Role: model.ConversationRoleUser,
+				Parts: []model.Part{
+					model.TextPart{
+						Text: userPrompt,
+					},
+				},
+			},
+		},
+		MaxTokens: cp1AnalysisMaxOutputTokens,
+	}
+	resp, err := completion.Complete(ctx, client, req, spec)
+	if err != nil {
+		if ovErr, ok := exactOutputValidation(err); ok {
+			if ovErr.Kind() == model.OutputValidationOutputLimited {
+				return zero, newCP1Rejection(
+					string(model.OutputValidationOutputLimited),
+					"provider stopped at output limit; shorten the request before retrying",
+					err,
+				)
+			}
+			return zero, newCP1Rejection(
+				string(ovErr.Kind()),
+				fmt.Sprintf("model output failed %q validation", ovErr.Kind()),
+				err,
+			)
+		}
+		return zero, fmt.Errorf("cp1 model completion: %w", err)
+	}
+	if resp.ModelResponse.OutputLimited {
+		return zero, newCP1Rejection(
+			string(model.OutputValidationOutputLimited),
+			"provider stopped at output limit",
+			errors.New("cp1 model response reached output limit"),
+		)
+	}
+	return resp.Value, nil
 }
 
 // cp1AnalysisFromCompletion adapts the generated final response to the public
