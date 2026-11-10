@@ -1,6 +1,7 @@
 // This file loads the quickstart section texts for package designeval. The
 // generation program instead receives them as Go string literals from
-// generateProgram, because it is compiled in the target module.
+// generateProgram, because it is compiled in the harness module, where this
+// package's embedded files are not available.
 package designeval
 
 import (

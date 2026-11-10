@@ -1,8 +1,9 @@
 // This file is compiled twice: as part of package designeval, where its tests
-// run, and, with its package clause changed to main, as the second source
-// file of the generation program that Evaluator.Generate builds inside the
-// target module. It may therefore import only packages every target module
-// that uses Goa-AI already has: the standard library, Goa, and Goa-AI.
+// run, and, with its package clause changed to main, as a source file of the
+// generation program that Evaluator.Generate builds in its harness module.
+// That module requires Goa, Goa-AI and goa.design/model at the target's
+// versions, or the evaluator's when the target does not require one, so this
+// file may import only the standard library, Goa and Goa-AI.
 package designeval
 
 import (
