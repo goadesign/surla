@@ -5,6 +5,14 @@
 // supports today.
 package designeval
 
+import (
+	"fmt"
+	"maps"
+	"slices"
+	"strconv"
+	"strings"
+)
+
 // generateMainTemplate is the generation program. It evaluates the design,
 // asks Goa for the complete gen output with generator.CompleteSources, adds
 // the gen/goa.json version file the gen command writes, and saves every path
@@ -12,7 +20,8 @@ package designeval
 // --cmd=<text> argument, which Goa's codegen.CommandLine copies into each
 // generated file's header; the flag is registered only so parsing accepts it.
 // {{DESIGN_IMPORT}} and {{GEN_IMPORT}} are replaced with the target module's
-// design package and generated package import paths.
+// design package and generated package import paths. Before generating, it
+// registers surlaQuickstart, which generateProgram compiles alongside it.
 const generateMainTemplate = `package main
 
 import (
@@ -41,6 +50,7 @@ func main() {
 	flag.String("cmd", "", "Command line recorded in generated file headers")
 	flag.Parse()
 
+	codegen.RegisterPluginLast("surla-quickstart", "gen", nil, surlaQuickstart)
 	if err := eval.RunDSL(); err != nil {
 		fail(err)
 	}
@@ -80,3 +90,26 @@ func fail(err error) {
 	os.Exit(1)
 }
 `
+
+// generateProgram returns the generation program's files: main.go from
+// generateMainTemplate, quickstart.go (the surlaQuickstart plugin, with its
+// package clause changed to main), and quickstart_sections.go, which declares
+// quickstartSections as Go string literals because the program cannot read
+// this package's embedded files.
+func generateProgram() map[string]string {
+	_, plugin, ok := strings.Cut(quickstartSource, "\npackage designeval\n")
+	if !ok {
+		panic("quickstart.go has no package designeval clause")
+	}
+	var sections strings.Builder
+	sections.WriteString("package main\n\nvar quickstartSections = map[string]string{\n")
+	for _, name := range slices.Sorted(maps.Keys(quickstartSections)) {
+		fmt.Fprintf(&sections, "\t%s: %s,\n", strconv.Quote(name), strconv.Quote(quickstartSections[name]))
+	}
+	sections.WriteString("}\n")
+	return map[string]string{
+		"main.go":                generateMainTemplate,
+		"quickstart.go":          "package main\n" + plugin,
+		"quickstart_sections.go": sections.String(),
+	}
+}

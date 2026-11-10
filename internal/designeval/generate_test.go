@@ -117,3 +117,39 @@ func withGoaReplace(t *testing.T, required, replaced string) map[string]string {
 	}
 	return testmodule.Tidy(t, files)
 }
+
+// TestGenerateWritesSurlasQuickstartSections runs the sandboxed generation
+// program on a design with an agent and no evaluation suite. Its
+// AGENTS_QUICKSTART.md carries Surla's header, liftoff, evaluations and
+// golden-rules sections, and keeps Goa-AI's description of the design and
+// of the generated example code.
+func TestGenerateWritesSurlasQuickstartSections(t *testing.T) {
+	if testing.Short() {
+		t.Skip("runs the sandboxed Go toolchain; the full suite (go test without -short) covers it")
+	}
+	files := testmodule.Snapshot(t, "", `package design
+import (
+ . "goa.design/goa-ai/dsl"
+ . "goa.design/goa/v3/dsl"
+)
+var _ = Service("helpdesk", func() {
+ Agent("triage", "Routes support questions", func() {
+  Use("lookup", func() {
+   Tool("find_ticket", "Find a ticket", func() {
+    Args(func() { Attribute("id", String); Required("id") })
+    Return(func() { Attribute("title", String); Required("title") })
+   })
+  })
+ })
+})`)
+	out, err := testEvaluator.Generate(t.Context(), files)
+	require.NoError(t, err)
+	guide := string(out[quickstartPath])
+	require.NotEmpty(t, guide)
+	for _, name := range []string{"header", "liftoff", "evaluations", "golden-rules"} {
+		assert.Contains(t, guide, quickstartSections[name], "Surla's %s section", name)
+	}
+	assert.Contains(t, guide, "helpdesk.triage", "Goa-AI's design overview stays")
+	assert.Contains(t, guide, "### Understanding the Generated Code", "Goa-AI's liftoff-guide stays")
+	assert.NotContains(t, guide, "goa example <module>/design")
+}

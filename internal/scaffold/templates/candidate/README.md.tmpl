@@ -27,10 +27,8 @@ can run against it.
   hand-written code in `internal/` and `cmd/` to match it, then build and test
   your uncommitted files with `check_project` as described in "Next steps".
   `AGENTS_QUICKSTART.md` is generated with it and maps the agent, its tools
-  and the generated packages for coding agents. Its `goa gen`, `goa example`
-  and `go run` commands run code on your machine outside Surla's sandbox, and
-  this starter already includes what `goa example` would scaffold; in this
-  project, follow "Next steps" instead.
+  and the generated packages for coding agents; it names the same Surla tools
+  as "Next steps" for generating, checking and verifying this project.
 - `internal/helper` is the agent's planner and `internal/service` implements the
   service. `Service.Ask` builds an in-memory runtime and store per question
   because this starter has no multi-turn sessions or `Confirmation` tools, and
