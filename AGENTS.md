@@ -48,7 +48,11 @@ comments, tests, fixtures, docs, commits, branches, issues, or pull requests.
    completion, or a material finding, state the result, evidence, uncertainty,
    and next step. Disclose failed/skipped checks; explain mistakes before
    repairing them. Track outcomes with statuses updated in place and evidence
-   linked once, not a command diary.
+   linked once, not a command diary. A background task finishing (a watcher,
+   a CI watch, a subagent) is not by itself a reason to message the requester:
+   reply only when it closes a milestone, needs a decision, or reports a
+   failure they must know about. Never report that a fix took effect until
+   the evidence that proves it is in hand.
 6. **Run tools non-interactively and bounded.** Set `CI=true` and close stdin
    for package runners and CLIs (`node`, `npx`, `gh`). Bound long waits by a
    wall-clock deadline; exit on success, failure, unexpected state, or timeout.
@@ -102,6 +106,13 @@ stated in writing before the first edit or recommendation:
    one running server, without CLI escape steps or phase-specific restarts.
    A developer should build and test working-tree changes before committing
    them. Correct a backwards workflow before adding a flag, warning, or hook.
+   Before designing or redesigning a user-facing surface, write down who the
+   primary user is, what they get from Surla, the built-in rules that are not
+   negotiable, and what is out of scope, from `README.md`, the embedded
+   playbook (`internal/goldenpath/GOLDEN_PATH.md`), and the requester's own
+   statements. If any of those is a guess, ask that one question before
+   producing screens; finishing authorized work does not cover guessing the
+   product's purpose or its user.
    For a usability report with multiple findings, first identify the shared
    workflow problems across the whole journey, then choose individual fixes.
 1. **Current behavior and callers.** Give an example and inventory every
@@ -206,6 +217,12 @@ status checks that return raw failure evidence without diagnosis or writes.
 Use Astra 6 only when requested. Give unrelated work a fresh agent. Assign
 write ownership and tell agents to preserve others' edits. Explain important
 results yourself; the user may not see the subagent's work.
+
+When you review another agent's change, run the review through a fresh
+read-only subagent and relay its verdict. Never approve a head that has not
+been read end to end, and state which files a review did not cover. An agent
+doing design or deep implementation for the user does not also coordinate
+the other agents; if asked to do both, say so and ask which to hand off.
 
 Before resolving a merge or rebase conflict, read both sides' PR descriptions,
 discussion, commits, and linked decisions. State each intended outcome and
