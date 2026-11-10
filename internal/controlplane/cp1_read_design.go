@@ -50,6 +50,13 @@ type (
 	// cp1FaultStage classifies the internal failure stage for a non-rejection
 	// CP1 propose_change or revise_change span summary.
 	cp1FaultStage uint8
+
+	// readDesignArgs decodes a model.Client-validated read_design tool payload.
+	readDesignArgs struct {
+		// Path names an exact manifest path to read, or empty when omitted to read
+		// all manifest files in one call.
+		Path string `json:"path"`
+	}
 )
 
 const (
@@ -73,6 +80,12 @@ const (
 	// maxReadDesignTurnsCap caps the maximum number of tool inspection turns
 	// allowed in Phase 1 read_design inspection.
 	maxReadDesignTurnsCap = 8
+
+	// cp1Phase1InstructionHeader gives Phase 1 read_design turns an inspection-only
+	// role so the model selects and reads relevant design files without spending
+	// the 2,048-token inspection allowance writing Change Card JSON or UI
+	// compositions.
+	cp1Phase1InstructionHeader = "Inspect the Goa workspace's design/*.go files to gather the design context relevant to the feature request. Do not write a Change Card, JSON analysis, or UI composition during inspection; a separate structured step produces the Change Card after inspection finishes."
 )
 
 var (
@@ -269,70 +282,20 @@ func decodeSavedWorkspaceCP1Design(designSrc string) (CP1Design, error) {
 	return WorkspaceCP1Design(files), nil
 }
 
-// decodeReadDesignPayload decodes the raw JSON payload for a read_design tool
-// call, requiring a single JSON object `{}` or `{"path": "<non-empty string>"}`
-// and rejecting empty/whitespace raw bytes, null, unknown fields, trailing JSON
-// tokens, explicit null path values, and empty path strings.
-func decodeReadDesignPayload(raw rawjson.Message) (string, error) {
-	if len(bytes.TrimSpace(raw)) == 0 {
-		return "", errors.New("expected JSON object payload, got empty input")
-	}
-	var fields map[string]rawjson.Message
-	dec := json.NewDecoder(bytes.NewReader(raw))
-	if err := dec.Decode(&fields); err != nil {
-		return "", err
-	}
-	var extra any
-	if err := dec.Decode(&extra); !errors.Is(err, io.EOF) {
-		return "", errors.New("unexpected trailing data after JSON payload")
-	}
-	if fields == nil {
-		return "", errors.New("expected JSON object payload, got null")
-	}
-	for k := range fields {
-		if k != "path" {
-			return "", fmt.Errorf("unknown field %q", k)
-		}
-	}
-	rawPath, hasPath := fields["path"]
-	if !hasPath {
-		return "", nil
-	}
-	var path *string
-	pathDec := json.NewDecoder(bytes.NewReader(rawPath))
-	if err := pathDec.Decode(&path); err != nil {
-		return "", fmt.Errorf("invalid path: %w", err)
-	}
-	if err := pathDec.Decode(&extra); !errors.Is(err, io.EOF) {
-		return "", errors.New("unexpected trailing data in path")
-	}
-	if path == nil {
-		return "", errors.New("path must be a non-empty string when provided, got null")
-	}
-	if *path == "" {
-		return "", errors.New("path must be non-empty when provided; omit path to read all files")
-	}
-	return *path, nil
-}
-
-// buildPhase1SystemPrompt composes the base system prompt with the sorted
-// workspace design manifest, the inspection turn budget, and instructions for
-// calling read_design.
-func buildPhase1SystemPrompt(
-	baseSystemPrompt string,
-	designFiles map[string]string,
-	maxTurns int,
-) string {
+// buildPhase1SystemPrompt composes an inspection-only system prompt containing
+// the sorted workspace design manifest, the inspection turn budget, and
+// instructions for calling read_design without Change Card output rules.
+func buildPhase1SystemPrompt(designFiles map[string]string, maxTurns int) string {
 	paths := slices.Sorted(maps.Keys(designFiles))
 	var sb strings.Builder
-	sb.WriteString(baseSystemPrompt)
+	sb.WriteString(cp1Phase1InstructionHeader)
 	sb.WriteString("\n\nWorkspace design manifest:\n")
 	for _, p := range paths {
 		fmt.Fprintf(&sb, "- %s (%d bytes)\n", p, len(designFiles[p]))
 	}
 	fmt.Fprintf(
 		&sb,
-		"\nYou have up to %d inspection turns to call read_design: omit path to read all files in one call, or call read_design (including multiple parallel calls in a single turn) with exact manifest paths relevant to the request. Each successful read_design result includes remaining_turns. When you have the design context you need, stop calling tools.\n",
+		"\nYou have up to %d inspection turns to call read_design: omit path to read all files in one call, or call read_design (including multiple parallel calls in a single turn) with exact manifest paths relevant to the request. Each successful read_design result includes remaining_turns. When you have read the relevant design files (or if none are needed), reply briefly with no tool calls to finish inspection.\n",
 		maxTurns,
 	)
 	return sb.String()
@@ -362,20 +325,6 @@ func formatWorkspacePhase2Design(
 		}
 	}
 	return strings.TrimSuffix(sb.String(), "\n")
-}
-
-// cloneResponseMessages converts a value slice of provider response messages
-// into deeply owned *model.Message pointers via model.CloneMessages so later
-// Phase 1 turns cannot alias or mutate earlier request transcripts.
-func cloneResponseMessages(content []model.Message) ([]*model.Message, error) {
-	if len(content) == 0 {
-		return nil, nil
-	}
-	ptrs := make([]*model.Message, len(content))
-	for i := range content {
-		ptrs[i] = &content[i]
-	}
-	return model.CloneMessages(ptrs)
 }
 
 // appendCP1UserPart appends part to the conversation's user turn while
@@ -415,7 +364,7 @@ func inspectAndComplete[T any](
 	}
 	designSection := formatCP1DesignSection(design.supplied)
 	if design.isWorkspace() && len(design.files) > 0 {
-		readPaths, err := a.runPhase1Inspection(ctx, baseSystemPrompt, baseUserPrompt, design.files)
+		readPaths, err := a.runPhase1Inspection(ctx, baseUserPrompt, design.files)
 		if err != nil {
 			return zero, err
 		}
@@ -436,14 +385,15 @@ func (d CP1Design) isWorkspace() bool {
 }
 
 // runPhase1Inspection executes the bounded read_design tool inspection loop and
-// returns the sorted manifest paths read during inspection. Phase 1 finishes as
-// soon as the model returns zero tool calls, all manifest files have been read
-// without error, or the final allowed inspection turn completes its requested
-// file reads without tool errors; it fails with inspection_budget_exhausted
-// only when the final allowed turn ends with an unresolved tool error.
+// returns the sorted manifest paths read during inspection. Goa-AI's
+// model.Client owns request cloning, response isolation, and structural
+// validation of advertised tool names and payloads before Complete returns;
+// Phase 1 handles OutputValidationError recovery, resolves exact manifest paths
+// against the in-memory snapshot, and fails with inspection_budget_exhausted
+// only when the final allowed turn ends with an unresolved manifest path error.
 func (a *ModelCP1Analyzer) runPhase1Inspection(
 	ctx context.Context,
-	baseSystemPrompt, initialUserPrompt string,
+	initialUserPrompt string,
 	designFiles map[string]string,
 ) ([]string, error) {
 	if a.client == nil {
@@ -454,7 +404,7 @@ func (a *ModelCP1Analyzer) runPhase1Inspection(
 		{
 			Role: model.ConversationRoleSystem,
 			Parts: []model.Part{
-				model.TextPart{Text: buildPhase1SystemPrompt(baseSystemPrompt, designFiles, maxInspectionTurns)},
+				model.TextPart{Text: buildPhase1SystemPrompt(designFiles, maxInspectionTurns)},
 			},
 		},
 		{
@@ -468,12 +418,8 @@ func (a *ModelCP1Analyzer) runPhase1Inspection(
 	readFiles := make(map[string]bool, len(designFiles))
 
 	for turn := range maxInspectionTurns {
-		reqMessages, err := model.CloneMessages(messages)
-		if err != nil {
-			return nil, fmt.Errorf("clone cp1 inspection messages: %w", err)
-		}
 		phase1Req := &model.Request{
-			Messages:  reqMessages,
+			Messages:  messages,
 			Tools:     []*model.ToolDefinition{readDesignToolDef},
 			MaxTokens: cp1InspectionMaxOutputTokens,
 		}
@@ -512,38 +458,20 @@ func (a *ModelCP1Analyzer) runPhase1Inspection(
 		if len(toolCalls) == 0 {
 			return slices.Sorted(maps.Keys(readFiles)), nil
 		}
-		clonedRespMsgs, err := cloneResponseMessages(resp.Content)
-		if err != nil {
-			return nil, fmt.Errorf("clone cp1 inspection response: %w", err)
+		for i := range resp.Content {
+			messages = append(messages, &resp.Content[i])
 		}
-		messages = append(messages, clonedRespMsgs...)
 
 		remainingTurns := maxInspectionTurns - 1 - turn
 		turnHadToolError := false
 		resultParts := make([]model.Part, 0, len(toolCalls))
 		for _, call := range toolCalls {
-			if call.Name != "read_design" {
-				turnHadToolError = true
-				resultParts = append(resultParts, model.ToolResultPart{
-					ToolUseID: call.ID,
-					IsError:   true,
-					Content:   fmt.Sprintf("unknown tool %q; available tools: read_design", call.Name),
-				})
-				continue
+			var args readDesignArgs
+			if err := json.Unmarshal(call.Payload, &args); err != nil {
+				return nil, fmt.Errorf("decode validated read_design payload: %w", err)
 			}
 
-			path, decodeErr := decodeReadDesignPayload(call.Payload)
-			if decodeErr != nil {
-				turnHadToolError = true
-				resultParts = append(resultParts, model.ToolResultPart{
-					ToolUseID: call.ID,
-					IsError:   true,
-					Content:   fmt.Sprintf("invalid read_design payload: %s", decodeErr.Error()),
-				})
-				continue
-			}
-
-			if path == "" {
+			if args.Path == "" {
 				allFiles := make([]any, 0, len(sortedManifestPaths))
 				for _, p := range sortedManifestPaths {
 					readFiles[p] = true
@@ -562,22 +490,22 @@ func (a *ModelCP1Analyzer) runPhase1Inspection(
 				continue
 			}
 
-			content, ok := designFiles[path]
+			content, ok := designFiles[args.Path]
 			if !ok {
 				turnHadToolError = true
 				resultParts = append(resultParts, model.ToolResultPart{
 					ToolUseID: call.ID,
 					IsError:   true,
-					Content:   fmt.Sprintf("unknown design file %q; available files: %s", path, strings.Join(sortedManifestPaths, ", ")),
+					Content:   fmt.Sprintf("unknown design file %q; available files: %s", args.Path, strings.Join(sortedManifestPaths, ", ")),
 				})
 				continue
 			}
 
-			readFiles[path] = true
+			readFiles[args.Path] = true
 			resultParts = append(resultParts, model.ToolResultPart{
 				ToolUseID: call.ID,
 				Content: map[string]any{
-					"path":            path,
+					"path":            args.Path,
 					"content":         content,
 					"remaining_turns": remainingTurns,
 				},

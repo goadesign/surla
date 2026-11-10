@@ -127,6 +127,11 @@ func TestCP1TwoPhaseReadDesign_SelectiveOmitAndLargeWorkspaces(t *testing.T) {
 						assert.Equal(t, cp1InspectionMaxOutputTokens, req.MaxTokens)
 						require.Len(t, req.Tools, 1)
 						assert.Equal(t, "read_design", req.Tools[0].Name)
+						phase1Sys := req.Messages[0].Parts[0].(model.TextPart).Text
+						assert.Contains(t, phase1Sys, "Workspace design manifest:")
+						assert.Contains(t, phase1Sys, "Do not write a Change Card")
+						assert.NotContains(t, phase1Sys, "Return structured JSON")
+						assert.NotContains(t, phase1Sys, "ui_composition")
 					}
 				}
 				// Turn 1 receives Turn 0's tool result with remaining_turns = 4.
@@ -137,13 +142,17 @@ func TestCP1TwoPhaseReadDesign_SelectiveOmitAndLargeWorkspaces(t *testing.T) {
 				assert.Equal(t, "4", fmt.Sprint(resMap["remaining_turns"]))
 
 				// Phase 2 is a clean 2-message [System, User] structured request with
-				// Tools empty, sorted read files, and unread file bodies omitted.
+				// Tools empty, full card-writing instructions, sorted read files, and
+				// unread file bodies omitted.
 				phase2 := q.requests[3]
 				assert.Equal(t, cp1AnalysisMaxOutputTokens, phase2.MaxTokens)
 				assert.Empty(t, phase2.Tools)
 				require.NotNil(t, phase2.StructuredOutput)
 				require.Len(t, phase2.Messages, 2)
 				assert.Equal(t, model.ConversationRoleSystem, phase2.Messages[0].Role)
+				phase2Sys := phase2.Messages[0].Parts[0].(model.TextPart).Text
+				assert.Contains(t, phase2Sys, "Return structured JSON")
+				assert.Contains(t, phase2Sys, "ui_composition")
 				assert.Equal(t, model.ConversationRoleUser, phase2.Messages[1].Role)
 				require.Len(t, phase2.Messages[1].Parts, 1)
 				phase2Text := phase2.Messages[1].Parts[0].(model.TextPart).Text
@@ -665,34 +674,50 @@ func TestCP1TwoPhaseReadDesign_RealProviderAdapters(t *testing.T) {
 	})
 }
 
-// TestCP1DecodersRejectInvalidInputs verifies boundary rejection on both
-// decodeReadDesignPayload and decodeSavedWorkspaceCP1Design.
+// TestCP1DecodersRejectInvalidInputs verifies that Goa-AI's model.Client owns
+// Phase 1 tool-name and schema validation (recovering within budget and
+// rejecting when exhausted) and that decodeSavedWorkspaceCP1Design strictly
+// rejects malformed stored workspace JSON.
 func TestCP1DecodersRejectInvalidInputs(t *testing.T) {
+	aliceCtx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
+	wsDir := setupWorkspaceWithFiles(t, map[string]string{"design/design.go": "package design\n"})
+
 	for _, tc := range []struct {
-		name    string
-		raw     string
-		want    string
-		wantErr bool
+		name     string
+		toolName string
+		raw      string
+		wantKind string
 	}{
-		{name: "empty_object", raw: `{}`, want: ""},
-		{name: "spaced_empty_object", raw: `{ }`, want: ""},
-		{name: "valid_unicode_path", raw: `{"path":"design/注文.go"}`, want: "design/注文.go"},
-		{name: "empty_raw", raw: ``, wantErr: true},
-		{name: "whitespace_raw", raw: `   `, wantErr: true},
-		{name: "literal_null", raw: `null`, wantErr: true},
-		{name: "null_path", raw: `{"path":null}`, wantErr: true},
-		{name: "empty_path", raw: `{"path":""}`, wantErr: true},
-		{name: "unknown_field", raw: `{"other":"x"}`, wantErr: true},
-		{name: "trailing_tokens", raw: `{}{}`, wantErr: true},
+		{name: "unadvertised_tool", toolName: "other_tool", raw: `{}`, wantKind: string(model.OutputValidationToolIdentity)},
+		{name: "empty_raw", toolName: "read_design", raw: ``, wantKind: string(model.OutputValidationToolArguments)},
+		{name: "literal_null", toolName: "read_design", raw: `null`, wantKind: string(model.OutputValidationToolArguments)},
+		{name: "null_path", toolName: "read_design", raw: `{"path":null}`, wantKind: string(model.OutputValidationToolArguments)},
+		{name: "empty_path", toolName: "read_design", raw: `{"path":""}`, wantKind: string(model.OutputValidationToolArguments)},
+		{name: "unknown_field", toolName: "read_design", raw: `{"other":"x"}`, wantKind: string(model.OutputValidationToolArguments)},
 	} {
-		t.Run("read_design_payload/"+tc.name, func(t *testing.T) {
-			got, err := decodeReadDesignPayload(rawjson.Message(tc.raw))
-			if tc.wantErr {
-				require.Error(t, err)
-				return
+		t.Run("model_client_tool_validation/"+tc.name, func(t *testing.T) {
+			// 1 file -> maxInspectionTurns = 3; 3 invalid tool turns exhaust recovery and
+			// return model.Client's typed OutputValidationKind.
+			q := &queuedModelClient{
+				responses: []queuedModelTurn{
+					toolUseTurn("c1", tc.toolName, tc.raw),
+					toolUseTurn("c2", tc.toolName, tc.raw),
+					toolUseTurn("c3", tc.toolName, tc.raw),
+				},
 			}
-			require.NoError(t, err)
-			assert.Equal(t, tc.want, got)
+			cp := newControlPlane(t, Options{
+				CardsDir:     t.TempDir(),
+				WorkspaceDir: wsDir,
+				Analyzer:     NewModelCP1Analyzer(newQueuedModelClient(t, q)),
+			})
+			_, err := cp.ProposeChange(aliceCtx, &gensurla.ProposeChangePayload{
+				ChangeID: "chg-" + tc.name,
+				Prompt:   "Test validation",
+			})
+			require.Error(t, err)
+			kind, ok := cp1RejectionKind(err)
+			require.True(t, ok)
+			assert.Equal(t, tc.wantKind, kind)
 		})
 	}
 
