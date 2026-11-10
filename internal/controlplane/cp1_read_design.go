@@ -391,19 +391,15 @@ func formatWorkspacePhase2Design(
 	return strings.TrimSuffix(sb.String(), "\n")
 }
 
-// appendCP1UserPart appends part to the conversation's user turn while
-// preserving strict alternating user/assistant message roles required by model
-// providers when a Phase 1 validation recovery follows an existing user turn.
+// appendCP1UserPart appends part to the loop-owned conversation's trailing user
+// message (or appends a new user message after an assistant turn) so recovery
+// reminders preserve strict alternating user/assistant message roles.
 func appendCP1UserPart(messages []*model.Message, part model.Part) []*model.Message {
 	if n := len(messages); n > 0 && messages[n-1].Role == model.ConversationRoleUser {
-		prev := messages[n-1]
-		copied := *prev
-		copied.Parts = append(slices.Clone(prev.Parts), part)
-		out := slices.Clone(messages)
-		out[n-1] = &copied
-		return out
+		messages[n-1].Parts = append(messages[n-1].Parts, part)
+		return messages
 	}
-	return append(slices.Clone(messages), &model.Message{
+	return append(messages, &model.Message{
 		Role:  model.ConversationRoleUser,
 		Parts: []model.Part{part},
 	})
