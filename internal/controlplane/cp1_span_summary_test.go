@@ -54,7 +54,8 @@ func TestCP1SpanAttributes_CodeAuthoredAndSecretExclusion(t *testing.T) {
 			// 2. ReviseChange semantic_validation rejection with secret prior_id
 			toolUseTurn("c2", "read_design", `{"path":"design/design.go"}`),
 			jsonAnswerTurn(secretPriorIDReviseJSON),
-			// 3. ProposeChange output_limited rejection
+			// 3. ProposeChange final Phase 2 output_limited rejection
+			toolUseTurn("c3", "read_design", `{"path":"design/design.go"}`),
 			{
 				resp: &model.Response{
 					OutputLimited: true,

@@ -416,65 +416,105 @@ func TestCP1TwoPhaseReadDesign_StopAndPathCases(t *testing.T) {
 		assert.Equal(t, "thought-sig-opaque", asst2.Parts[1].(model.ToolUsePart).ThoughtSignature)
 	})
 
-	t.Run("output_limited_and_recovery_and_unresolved_error_budget", func(t *testing.T) {
-		wsDir := setupWorkspaceWithFiles(t, map[string]string{"design/design.go": "package design\n"})
+	t.Run("output_limited_batch_nonexecution_recovery_and_final_card_rejection", func(t *testing.T) {
+		wsDir := setupWorkspaceWithFiles(t, map[string]string{
+			"design/design.go": "package design\n// design body\n",
+			"design/skip.go":   "package design\n// skipped body\n",
+		})
 
-		// 1. OutputLimited response flag checked across valid tool input, invalid
-		// tool_arguments (where RequestContract classifies as tool_arguments with
-		// RecoveryCorrection), and unadvertised tool names across BOTH direct
-		// model.NewClient and gateway.NewGRPCClient boundaries without retrying.
+		// 1. Canonical OutputLimited tool batch never executes its read_design call,
+		// never replays unexecuted tool_use parts, and allows a valid selection on
+		// the next turn (and OutputLimited no-tool response finishes inspection),
+		// while an OutputLimited final Phase 2 completion rejects with output_limited
+		// across both direct and gRPC gateway clients.
 		for _, cf := range clientFactories {
-			for _, limCase := range []struct {
-				name     string
-				toolName string
-				rawInput string
-			}{
-				{name: "valid_tool_args", toolName: "read_design", rawInput: `{"path":"design/design.go"}`},
-				{name: "empty_path_tool_args", toolName: "read_design", rawInput: `{"path":""}`},
-				{name: "missing_path_tool_args", toolName: "read_design", rawInput: `{}`},
-				{name: "unadvertised_tool", toolName: "other_tool", rawInput: `{}`},
-			} {
-				t.Run(cf.name+"/"+limCase.name, func(t *testing.T) {
-					qLim := &queuedModelClient{
-						responses: []queuedModelTurn{
-							{
-								resp: &model.Response{
-									OutputLimited: true,
-									StopReason:    "max_tokens",
-									Content: []model.Message{{
-										Role: model.ConversationRoleAssistant,
-										Parts: []model.Part{model.ToolUsePart{
-											ID:    "call_lim",
-											Name:  limCase.toolName,
-											Input: rawjson.Message(limCase.rawInput),
-										}},
+			t.Run(cf.name, func(t *testing.T) {
+				qBatch := &queuedModelClient{
+					responses: []queuedModelTurn{
+						{
+							resp: &model.Response{
+								OutputLimited: true,
+								StopReason:    "max_tokens",
+								Content: []model.Message{{
+									Role: model.ConversationRoleAssistant,
+									Parts: []model.Part{model.ToolUsePart{
+										ID:    "call_lim_skip",
+										Name:  "read_design",
+										Input: rawjson.Message(`{"path":"design/skip.go"}`),
 									}},
-								},
+								}},
 							},
-							// Queued valid fallback proves runPhase1Inspection never retries after OutputLimited.
-							toolUseTurn("call_retry", "read_design", `{"path":"design/design.go"}`),
-							jsonAnswerTurn(validAnalysisJSON),
 						},
-					}
-					cpLim := newControlPlane(t, Options{
-						CardsDir:     t.TempDir(),
-						WorkspaceDir: wsDir,
-						Analyzer:     NewModelCP1Analyzer(cf.buildFn(t, qLim)),
-					})
-					_, err := cpLim.ProposeChange(aliceCtx, &gensurla.ProposeChangePayload{
-						ChangeID: "chg-lim",
-						Prompt:   "P",
-					})
-					require.Error(t, err)
-					assert.Contains(t, err.Error(), "provider stopped at output limit; shorten the request before retrying")
-					kind, ok := cp1RejectionKind(err)
-					assert.True(t, ok)
-					assert.Equal(t, "output_limited", kind)
-					assert.Len(t, qLim.requests, 1, "OutputLimited tool turn must reject immediately without recovery retry")
-					_, getErr := cpLim.GetChange(aliceCtx, &gensurla.GetChangePayload{ChangeID: "chg-lim"})
-					require.Error(t, getErr)
+						toolUseTurn("call_ok", "read_design", `{"path":"design/design.go"}`),
+						{
+							resp: &model.Response{
+								OutputLimited: true,
+								StopReason:    "max_tokens",
+								Content: []model.Message{{
+									Role:  model.ConversationRoleAssistant,
+									Parts: []model.Part{model.TextPart{Text: "Finished selecting."}},
+								}},
+							},
+						},
+						jsonAnswerTurn(validAnalysisJSON),
+					},
+				}
+				cpBatch := newControlPlane(t, Options{
+					CardsDir:     t.TempDir(),
+					WorkspaceDir: wsDir,
+					Analyzer:     NewModelCP1Analyzer(cf.buildFn(t, qBatch)),
 				})
-			}
+				card, err := cpBatch.ProposeChange(aliceCtx, &gensurla.ProposeChangePayload{
+					ChangeID: "chg-lim-recover",
+					Prompt:   "P",
+				})
+				require.NoError(t, err)
+				assert.Equal(t, "Order refund processing.", card.Summary)
+				require.Len(t, qBatch.requests, 4)
+
+				// Turn 1 carries the non-execution reminder without replaying call_lim_skip.
+				assertAlternatingRoles(t, qBatch.requests[1].Messages)
+				for _, m := range qBatch.requests[1].Messages {
+					assert.NotEqual(t, model.ConversationRoleAssistant, m.Role)
+				}
+				// Phase 2 contains design/design.go and omits design/skip.go (never executed).
+				phase2Text := qBatch.requests[3].Messages[1].Parts[0].(model.TextPart).Text
+				assert.Contains(t, phase2Text, "// design body")
+				assert.NotContains(t, phase2Text, "// skipped body")
+
+				// Final Phase 2 OutputLimited completion still rejects without saving a card.
+				qFinalLim := &queuedModelClient{
+					responses: []queuedModelTurn{
+						toolUseTurn("call_1", "read_design", `{"path":"design/design.go"}`),
+						jsonAnswerTurn("Done."),
+						{
+							resp: &model.Response{
+								OutputLimited: true,
+								StopReason:    "max_tokens",
+								Content: []model.Message{{
+									Role:  model.ConversationRoleAssistant,
+									Parts: []model.Part{model.TextPart{Text: validAnalysisJSON}},
+								}},
+							},
+						},
+					},
+				}
+				cpFinalLim := newControlPlane(t, Options{
+					CardsDir:     t.TempDir(),
+					WorkspaceDir: wsDir,
+					Analyzer:     NewModelCP1Analyzer(cf.buildFn(t, qFinalLim)),
+				})
+				_, err = cpFinalLim.ProposeChange(aliceCtx, &gensurla.ProposeChangePayload{
+					ChangeID: "chg-final-lim",
+					Prompt:   "P",
+				})
+				require.Error(t, err)
+				kind, ok := cp1RejectionKind(err)
+				assert.True(t, ok)
+				assert.Equal(t, "output_limited", kind)
+				_, getErr := cpFinalLim.GetChange(aliceCtx, &gensurla.GetChangePayload{ChangeID: "chg-final-lim"})
+				require.Error(t, getErr)
+			})
 		}
 
 		// 2. Non-output-limited schema failure recovers with framed guidance within budget.
@@ -482,6 +522,7 @@ func TestCP1TwoPhaseReadDesign_StopAndPathCases(t *testing.T) {
 			responses: []queuedModelTurn{
 				toolUseTurn("call_bad", "read_design", `{}`),
 				toolUseTurn("call_ok", "read_design", `{"path":"design/design.go"}`),
+				jsonAnswerTurn("Done."),
 				jsonAnswerTurn(validAnalysisJSON),
 			},
 		}
@@ -499,10 +540,6 @@ func TestCP1TwoPhaseReadDesign_StopAndPathCases(t *testing.T) {
 
 		// 3. Unknown manifest path or recoverable tool_arguments error on the final
 		// inspection turn proceeds to Phase 2 with the manifest and already-read files.
-		twoFileWS := setupWorkspaceWithFiles(t, map[string]string{
-			"design/design.go": "package design\n// read on turn 0\n",
-			"design/other.go":  "package design\n// unread\n",
-		})
 		// 2 files -> maxInspectionTurns = 4.
 		qLastTurnPath := &queuedModelClient{
 			responses: []queuedModelTurn{
@@ -514,15 +551,15 @@ func TestCP1TwoPhaseReadDesign_StopAndPathCases(t *testing.T) {
 			},
 		}
 		cpLastTurnPath := newControlPlane(t, Options{
-			CardsDir: t.TempDir(), WorkspaceDir: twoFileWS,
+			CardsDir: t.TempDir(), WorkspaceDir: wsDir,
 			Analyzer: NewModelCP1Analyzer(newQueuedModelClient(t, qLastTurnPath)),
 		})
 		_, err = cpLastTurnPath.ProposeChange(aliceCtx, &gensurla.ProposeChangePayload{ChangeID: "chg-last-path", Prompt: "P"})
 		require.NoError(t, err)
 		require.Len(t, qLastTurnPath.requests, 5)
 		lastPathPhase2 := qLastTurnPath.requests[4].Messages[1].Parts[0].(model.TextPart).Text
-		assert.Contains(t, lastPathPhase2, "--- design/design.go ---\npackage design\n// read on turn 0")
-		assert.NotContains(t, lastPathPhase2, "// unread")
+		assert.Contains(t, lastPathPhase2, "--- design/design.go ---\npackage design\n// design body")
+		assert.NotContains(t, lastPathPhase2, "// skipped body")
 	})
 }
 
@@ -625,36 +662,16 @@ func TestCP1TwoPhaseReadDesign_RealProviderAdapters(t *testing.T) {
 	t.Run("anthropic_messages_adapter", func(t *testing.T) {
 		msgs := &scriptedAnthropicMessages{
 			responses: []*anthropicsdk.Message{
-				mustAnthropicMessage(t, []map[string]any{{
-					"type":  "tool_use",
-					"id":    "toolu_01",
-					"name":  "read_design",
-					"input": map[string]any{"path": "design/api.go"},
-				}}, "tool_use"),
-				mustAnthropicMessage(t, []map[string]any{{
-					"type": "text",
-					"text": "Inspected the relevant edge API contract.",
-				}}, "end_turn"),
-				mustAnthropicMessage(t, []map[string]any{{
-					"type": "text",
-					"text": validAnalysisJSON,
-				}}, "end_turn"),
+				mustAnthropicMessage(t, []map[string]any{{"type": "tool_use", "id": "toolu_01", "name": "read_design", "input": map[string]any{"path": "design/api.go"}}}, "tool_use"),
+				mustAnthropicMessage(t, []map[string]any{{"type": "text", "text": "Inspected the relevant edge API contract."}}, "end_turn"),
+				mustAnthropicMessage(t, []map[string]any{{"type": "text", "text": validAnalysisJSON}}, "end_turn"),
 			},
 		}
-		client, err := anthropic.New(msgs, anthropic.Options{
-			DefaultModel: string(anthropicsdk.ModelClaudeSonnet4_5_20250929),
-		})
+		client, err := anthropic.New(msgs, anthropic.Options{DefaultModel: string(anthropicsdk.ModelClaudeSonnet4_5_20250929)})
 		require.NoError(t, err)
 
-		cp := newControlPlane(t, Options{
-			CardsDir:     t.TempDir(),
-			WorkspaceDir: wsDir,
-			Analyzer:     NewModelCP1Analyzer(client),
-		})
-		card, err := cp.ProposeChange(aliceCtx, &gensurla.ProposeChangePayload{
-			ChangeID: "chg-anthropic",
-			Prompt:   "Add order refunds",
-		})
+		cp := newControlPlane(t, Options{CardsDir: t.TempDir(), WorkspaceDir: wsDir, Analyzer: NewModelCP1Analyzer(client)})
+		card, err := cp.ProposeChange(aliceCtx, &gensurla.ProposeChangePayload{ChangeID: "chg-anthropic", Prompt: "Add order refunds"})
 		require.NoError(t, err)
 		assert.Equal(t, "Order refund processing.", card.Summary)
 		require.Len(t, msgs.requests, 3)
@@ -676,63 +693,40 @@ func TestCP1TwoPhaseReadDesign_RealProviderAdapters(t *testing.T) {
 	})
 
 	t.Run("openai_responses_adapter", func(t *testing.T) {
+		var truncatedIncomplete responses.Response
+		require.NoError(t, json.Unmarshal([]byte(`{"id":"resp_trunc","model":"gpt-5.4","status":"incomplete","incomplete_details":{"reason":"max_output_tokens"},"usage":{"input_tokens":12,"input_tokens_details":{"cached_tokens":0},"output_tokens":18,"output_tokens_details":{"reasoning_tokens":0},"total_tokens":30},"output":[{"id":"fc_trunc","type":"function_call","call_id":"call_trunc","name":"read_design","arguments":"{\"path\":\"design/ap","status":"incomplete"}]}`), &truncatedIncomplete))
+
 		oai := &scriptedOpenAIResponses{
 			responses: []*responses.Response{
-				mustOpenAIResponse(t, `[{
-					"id":"fc_01",
-					"type":"function_call",
-					"call_id":"call_01",
-					"name":"read_design",
-					"arguments":"{\"path\":\"design/api.go\"}",
-					"status":"completed"
-				}]`),
-				mustOpenAIResponse(t, `[{
-					"id":"msg_01",
-					"type":"message",
-					"role":"assistant",
-					"status":"completed",
-					"content":[{"type":"output_text","text":"Inspected design/api.go.","annotations":[],"logprobs":[]}]
-				}]`),
-				mustOpenAIResponse(t, fmt.Sprintf(`[{
-					"id":"msg_02",
-					"type":"message",
-					"role":"assistant",
-					"status":"completed",
-					"content":[{"type":"output_text","text":%q,"annotations":[],"logprobs":[]}]
-				}]`, validOpenAIStrictAnalysisJSON)),
+				&truncatedIncomplete,
+				mustOpenAIResponse(t, `[{"id":"fc_01","type":"function_call","call_id":"call_01","name":"read_design","arguments":"{\"path\":\"design/api.go\"}","status":"completed"}]`),
+				mustOpenAIResponse(t, `[{"id":"msg_01","type":"message","role":"assistant","status":"completed","content":[{"type":"output_text","text":"Inspected design/api.go.","annotations":[],"logprobs":[]}]}]`),
+				mustOpenAIResponse(t, fmt.Sprintf(`[{"id":"msg_02","type":"message","role":"assistant","status":"completed","content":[{"type":"output_text","text":%q,"annotations":[],"logprobs":[]}]}]`, validOpenAIStrictAnalysisJSON)),
 			},
 		}
-		client, err := openai.New(openai.Options{
-			Client:       oai,
-			DefaultModel: "gpt-5.4",
-		})
+		client, err := openai.New(openai.Options{Client: oai, DefaultModel: "gpt-5.4"})
 		require.NoError(t, err)
 
-		cp := newControlPlane(t, Options{
-			CardsDir:     t.TempDir(),
-			WorkspaceDir: wsDir,
-			Analyzer:     NewModelCP1Analyzer(client),
-		})
-		card, err := cp.ProposeChange(aliceCtx, &gensurla.ProposeChangePayload{
-			ChangeID: "chg-openai",
-			Prompt:   "Add order refunds",
-		})
+		cp := newControlPlane(t, Options{CardsDir: t.TempDir(), WorkspaceDir: wsDir, Analyzer: NewModelCP1Analyzer(client)})
+		card, err := cp.ProposeChange(aliceCtx, &gensurla.ProposeChangePayload{ChangeID: "chg-openai", Prompt: "Add order refunds"})
 		require.NoError(t, err)
 		assert.Equal(t, "Order refund processing.", card.Summary)
-		require.Len(t, oai.requests, 3)
+		require.Len(t, oai.requests, 4)
 
-		// Phase 1 Turn 0 advertises strict read_design function tool; Turn 1 replays
-		// function_call and function_call_output items through the OpenAI encoder.
+		// Turn 0 truncated incomplete call executes no read and recovers cleanly;
+		// Turn 2 replays Turn 1's valid function_call and function_call_output items.
 		require.Len(t, oai.requests[0].Tools, 1)
 		require.Len(t, oai.requests[1].Tools, 1)
-		turn1Wire, err := json.Marshal(oai.requests[1])
+		require.Len(t, oai.requests[2].Tools, 1)
+		turn2Wire, err := json.Marshal(oai.requests[2])
 		require.NoError(t, err)
-		assert.Contains(t, string(turn1Wire), `"function_call"`)
-		assert.Contains(t, string(turn1Wire), `"function_call_output"`)
-		assert.Contains(t, string(turn1Wire), `"call_01"`)
+		assert.Contains(t, string(turn2Wire), `"function_call"`)
+		assert.Contains(t, string(turn2Wire), `"function_call_output"`)
+		assert.Contains(t, string(turn2Wire), `"call_01"`)
+		assert.NotContains(t, string(turn2Wire), `"call_trunc"`)
 
 		// Phase 2 has zero tools, zero function_call history items, and only the read file.
-		phase2 := oai.requests[2]
+		phase2 := oai.requests[3]
 		assert.Empty(t, phase2.Tools)
 		phase2Wire, err := json.Marshal(phase2)
 		require.NoError(t, err)
@@ -974,19 +968,7 @@ func mustAnthropicMessage(
 // mustOpenAIResponse constructs a provider-shaped OpenAI Responses API value.
 func mustOpenAIResponse(t *testing.T, outputArrayJSON string) *responses.Response {
 	t.Helper()
-	raw := fmt.Sprintf(`{
-		"id":"resp_test",
-		"model":"gpt-5.4",
-		"status":"completed",
-		"usage":{
-			"input_tokens":12,
-			"input_tokens_details":{"cached_tokens":0},
-			"output_tokens":18,
-			"output_tokens_details":{"reasoning_tokens":0},
-			"total_tokens":30
-		},
-		"output":%s
-	}`, outputArrayJSON)
+	raw := fmt.Sprintf(`{"id":"resp_test","model":"gpt-5.4","status":"completed","usage":{"input_tokens":12,"input_tokens_details":{"cached_tokens":0},"output_tokens":18,"output_tokens_details":{"reasoning_tokens":0},"total_tokens":30},"output":%s}`, outputArrayJSON)
 	var resp responses.Response
 	require.NoError(t, json.Unmarshal([]byte(raw), &resp))
 	return &resp

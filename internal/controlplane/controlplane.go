@@ -366,9 +366,10 @@ const (
 	// Change Card completion), including reasoning tokens counted against that
 	// allowance. It caps one model response only, not the cost of a whole
 	// request or change. Providers such as Anthropic require a positive
-	// allowance on every request. A response the provider marks OutputLimited
-	// fails Analyze even when its JSON or tool call parses, so no card is stored
-	// from an incomplete turn.
+	// allowance on every request. During Phase 1 inspection, an OutputLimited
+	// tool batch is never executed; on the final structured completion, a
+	// response marked OutputLimited fails Analyze or Revise even when its JSON
+	// parses, so no card is stored from an incomplete final analysis.
 	cp1AnalysisMaxOutputTokens = 16384
 )
 

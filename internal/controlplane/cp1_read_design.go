@@ -180,20 +180,6 @@ func cp1RejectionKind(err error) (string, bool) {
 	return "", false
 }
 
-// isOutputLimitedValidation reports whether ovErr rejected a response that
-// stopped at the provider's output token limit, including tool-call rejections
-// whose primary Kind is tool_arguments or tool_identity.
-func isOutputLimitedValidation(ovErr *model.OutputValidationError) (bool, error) {
-	if ovErr.Kind() == model.OutputValidationOutputLimited {
-		return true, nil
-	}
-	rejected, err := ovErr.RejectedResponse()
-	if err != nil {
-		return false, fmt.Errorf("inspect rejected cp1 response: %w", err)
-	}
-	return rejected != nil && rejected.OutputLimited, nil
-}
-
 // isPureContextError reports whether err is (or wraps solely) target without
 // crossing a named Goa ServiceError or joining an independent non-target error.
 func isPureContextError(err, target error) bool {
@@ -466,10 +452,11 @@ func (d CP1Design) isWorkspace() bool {
 // returns the sorted manifest paths read during inspection. Goa-AI's
 // model.Client owns request cloning, response isolation, and structural
 // validation of advertised tool names and payloads before Complete returns;
-// Phase 1 checks rejected responses for OutputLimited before attempting
-// RecoveryCorrection, resolves exact manifest paths against the in-memory
-// snapshot, and proceeds to Phase 2 with the manifest and already-read files
-// once all files are read or the inspection turn budget is reached.
+// Phase 1 never executes or replays an output-limited or rejected tool batch,
+// recovers correctable tool-argument rejections within the remaining turn
+// budget, resolves exact manifest paths against the in-memory snapshot, and
+// proceeds to Phase 2 with the manifest and already-read files once inspection
+// finishes or reaches its turn budget.
 func (a *ModelCP1Analyzer) runPhase1Inspection(
 	ctx context.Context,
 	initialUserPrompt string,
@@ -505,17 +492,6 @@ func (a *ModelCP1Analyzer) runPhase1Inspection(
 		resp, err := a.client.Complete(ctx, phase1Req)
 		if err != nil {
 			if ovErr, ok := exactOutputValidation(err); ok {
-				limited, limErr := isOutputLimitedValidation(ovErr)
-				if limErr != nil {
-					return nil, fmt.Errorf("cp1 design inspection: %w", limErr)
-				}
-				if limited {
-					return nil, newCP1Rejection(
-						string(model.OutputValidationOutputLimited),
-						"provider stopped at output limit; shorten the request before retrying",
-						err,
-					)
-				}
 				if ovErr.RecoveryCorrection() != "" {
 					if turn+1 == maxInspectionTurns {
 						return slices.Sorted(maps.Keys(readFiles)), nil
@@ -535,17 +511,17 @@ func (a *ModelCP1Analyzer) runPhase1Inspection(
 			return nil, fmt.Errorf("cp1 design inspection: %w", err)
 		}
 
-		if resp.OutputLimited {
-			return nil, newCP1Rejection(
-				string(model.OutputValidationOutputLimited),
-				"provider stopped at output limit; shorten the request before retrying",
-				errors.New("cp1 design inspection response reached output limit"),
-			)
-		}
-
 		toolCalls := resp.ToolCalls()
 		if len(toolCalls) == 0 {
 			return slices.Sorted(maps.Keys(readFiles)), nil
+		}
+		if resp.OutputLimited {
+			if turn+1 == maxInspectionTurns {
+				return slices.Sorted(maps.Keys(readFiles)), nil
+			}
+			reminder := "Your previous response stopped at the output token limit before completing its read_design tool calls, so none of those calls ran. Call read_design for only the most relevant manifest paths (fewer calls per turn), or reply with no tool calls when finished."
+			messages = appendCP1UserPart(messages, model.TextPart{Text: reminder})
+			continue
 		}
 		for i := range resp.Content {
 			messages = append(messages, &resp.Content[i])
