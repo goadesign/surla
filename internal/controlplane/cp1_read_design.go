@@ -42,7 +42,7 @@ type (
 	// underlying ServiceError or failure.
 	cp1Rejection struct {
 		// kind classifies the rejection reason ("output_limited", "structured_output",
-		// "inspection_budget_exhausted", "semantic_validation", etc.).
+		// "semantic_validation", etc.).
 		kind string
 		// err is the underlying cause or ServiceError.
 		err error
@@ -240,15 +240,25 @@ func cp1SafeRejectionSummary(revise bool, rejectionKind string, hasKind bool) st
 	if !hasKind {
 		return fmt.Sprintf("%s (%s); retry %s.", prefix, outcome, retryCall)
 	}
-	switch rejectionKind {
-	case string(model.OutputValidationOutputLimited):
+	switch model.OutputValidationKind(rejectionKind) {
+	case model.OutputValidationOutputLimited:
 		return fmt.Sprintf("%s: provider stopped at output limit (%s); shorten the request and retry %s.", prefix, outcome, retryCall)
-	case "inspection_budget_exhausted":
-		return fmt.Sprintf("%s: design inspection exhausted turn budget with unresolved file errors (%s); retry %s.", prefix, outcome, retryCall)
 	case "semantic_validation":
 		return fmt.Sprintf("%s: model output failed Change Card semantic validation (%s); retry %s.", prefix, outcome, retryCall)
-	default:
+	case model.OutputValidationStructuredOutput:
 		return fmt.Sprintf("%s: model output failed structured validation (%s); retry %s.", prefix, outcome, retryCall)
+	case model.OutputValidationToolIdentity,
+		model.OutputValidationToolArguments,
+		model.OutputValidationToolChoice:
+		return fmt.Sprintf("%s: model design-inspection tool call was invalid (%s); retry %s.", prefix, outcome, retryCall)
+	case model.OutputValidationResponseShape,
+		model.OutputValidationOutputBounds:
+		return fmt.Sprintf("%s: model response was incomplete or malformed (%s); shorten the request or retry %s.", prefix, outcome, retryCall)
+	case model.OutputValidationStreamProtocol,
+		model.OutputValidationUsage:
+		return fmt.Sprintf("%s: model provider returned invalid protocol or token-usage metadata (%s); retry %s or ask the server operator to check model configuration.", prefix, outcome, retryCall)
+	default:
+		return fmt.Sprintf("%s (%s); retry %s.", prefix, outcome, retryCall)
 	}
 }
 
@@ -330,7 +340,6 @@ func decodeSavedWorkspaceCP1Design(designSrc string) (CP1Design, error) {
 	}
 	var files map[string]string
 	dec := json.NewDecoder(strings.NewReader(designSrc))
-	dec.DisallowUnknownFields()
 	if err := dec.Decode(&files); err != nil {
 		return CP1Design{}, fmt.Errorf("decode saved workspace design: %w", err)
 	}
@@ -457,8 +466,8 @@ func (d CP1Design) isWorkspace() bool {
 // validation of advertised tool names and payloads before Complete returns;
 // Phase 1 checks rejected responses for OutputLimited before attempting
 // RecoveryCorrection, resolves exact manifest paths against the in-memory
-// snapshot, and fails with inspection_budget_exhausted only when the final
-// allowed turn ends with an unresolved manifest path error.
+// snapshot, and proceeds to Phase 2 with the manifest and already-read files
+// once all files are read or the inspection turn budget is reached.
 func (a *ModelCP1Analyzer) runPhase1Inspection(
 	ctx context.Context,
 	initialUserPrompt string,
@@ -505,7 +514,10 @@ func (a *ModelCP1Analyzer) runPhase1Inspection(
 						err,
 					)
 				}
-				if ovErr.RecoveryCorrection() != "" && turn+1 < maxInspectionTurns {
+				if ovErr.RecoveryCorrection() != "" {
+					if turn+1 == maxInspectionTurns {
+						return slices.Sorted(maps.Keys(readFiles)), nil
+					}
 					reminder := "Your previous read_design tool call was rejected before it could run.\n" +
 						ovErr.RecoveryCorrection() +
 						"\nCall read_design with a valid relative path from the workspace design manifest, or reply with no tool calls when finished."
@@ -538,7 +550,6 @@ func (a *ModelCP1Analyzer) runPhase1Inspection(
 		}
 
 		remainingTurns := maxInspectionTurns - 1 - turn
-		turnHadToolError := false
 		resultParts := make([]model.Part, 0, len(toolCalls))
 		for _, call := range toolCalls {
 			var args readDesignArgs
@@ -548,7 +559,6 @@ func (a *ModelCP1Analyzer) runPhase1Inspection(
 
 			content, ok := designFiles[args.Path]
 			if !ok {
-				turnHadToolError = true
 				resultParts = append(resultParts, model.ToolResultPart{
 					ToolUseID: call.ID,
 					IsError:   true,
@@ -568,7 +578,7 @@ func (a *ModelCP1Analyzer) runPhase1Inspection(
 			})
 		}
 
-		if !turnHadToolError && (len(readFiles) == len(designFiles) || turn == maxInspectionTurns-1) {
+		if len(readFiles) == len(designFiles) || turn == maxInspectionTurns-1 {
 			return slices.Sorted(maps.Keys(readFiles)), nil
 		}
 
@@ -578,9 +588,5 @@ func (a *ModelCP1Analyzer) runPhase1Inspection(
 		})
 	}
 
-	return nil, newCP1Rejection(
-		"inspection_budget_exhausted",
-		"cp1 design inspection exhausted turn budget before completing file inspection",
-		errors.New("cp1 read_design loop exceeded maxInspectionTurns with unresolved tool error"),
-	)
+	return slices.Sorted(maps.Keys(readFiles)), nil
 }

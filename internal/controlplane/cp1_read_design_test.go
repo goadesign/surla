@@ -497,23 +497,32 @@ func TestCP1TwoPhaseReadDesign_StopAndPathCases(t *testing.T) {
 		assert.Contains(t, reminderText, "Your previous read_design tool call was rejected before it could run.")
 		assert.Contains(t, reminderText, "path")
 
-		// 3. Unresolved tool error on final turn (3 turns for 1 file) -> inspection_budget_exhausted.
-		qExh := &queuedModelClient{
+		// 3. Unknown manifest path or recoverable tool_arguments error on the final
+		// inspection turn proceeds to Phase 2 with the manifest and already-read files.
+		twoFileWS := setupWorkspaceWithFiles(t, map[string]string{
+			"design/design.go": "package design\n// read on turn 0\n",
+			"design/other.go":  "package design\n// unread\n",
+		})
+		// 2 files -> maxInspectionTurns = 4.
+		qLastTurnPath := &queuedModelClient{
 			responses: []queuedModelTurn{
-				toolUseTurn("c1", "read_design", `{"path":"design/bad1.go"}`),
-				toolUseTurn("c2", "read_design", `{"path":"design/bad2.go"}`),
-				toolUseTurn("c3", "read_design", `{"path":"design/bad3.go"}`),
+				toolUseTurn("c1", "read_design", `{"path":"design/design.go"}`),
+				toolUseTurn("c2", "read_design", `{"path":"design/bad1.go"}`),
+				toolUseTurn("c3", "read_design", `{"path":"design/bad2.go"}`),
+				toolUseTurn("c4", "read_design", `{"path":"design/bad3.go"}`),
+				jsonAnswerTurn(validAnalysisJSON),
 			},
 		}
-		cpExh := newControlPlane(t, Options{
-			CardsDir: t.TempDir(), WorkspaceDir: wsDir,
-			Analyzer: NewModelCP1Analyzer(newQueuedModelClient(t, qExh)),
+		cpLastTurnPath := newControlPlane(t, Options{
+			CardsDir: t.TempDir(), WorkspaceDir: twoFileWS,
+			Analyzer: NewModelCP1Analyzer(newQueuedModelClient(t, qLastTurnPath)),
 		})
-		_, err = cpExh.ProposeChange(aliceCtx, &gensurla.ProposeChangePayload{ChangeID: "chg-exh", Prompt: "P"})
-		require.Error(t, err)
-		kind, ok := cp1RejectionKind(err)
-		assert.True(t, ok)
-		assert.Equal(t, "inspection_budget_exhausted", kind)
+		_, err = cpLastTurnPath.ProposeChange(aliceCtx, &gensurla.ProposeChangePayload{ChangeID: "chg-last-path", Prompt: "P"})
+		require.NoError(t, err)
+		require.Len(t, qLastTurnPath.requests, 5)
+		lastPathPhase2 := qLastTurnPath.requests[4].Messages[1].Parts[0].(model.TextPart).Text
+		assert.Contains(t, lastPathPhase2, "--- design/design.go ---\npackage design\n// read on turn 0")
+		assert.NotContains(t, lastPathPhase2, "// unread")
 	})
 }
 
@@ -734,35 +743,57 @@ func TestCP1TwoPhaseReadDesign_RealProviderAdapters(t *testing.T) {
 }
 
 // TestCP1DecodersRejectInvalidInputs verifies that Goa-AI's model.Client owns
-// Phase 1 tool-name and schema validation (recovering within budget and
-// rejecting when exhausted) and that decodeSavedWorkspaceCP1Design strictly
-// rejects malformed stored workspace JSON.
+// Phase 1 tool-name and schema validation (immediately rejecting unadvertised
+// tool names and rejecting invalid read_design payloads with recovery reminders
+// before proceeding to Phase 2 on the final inspection turn) and that
+// decodeSavedWorkspaceCP1Design strictly rejects malformed stored workspace JSON.
 func TestCP1DecodersRejectInvalidInputs(t *testing.T) {
 	aliceCtx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
-	wsDir := setupWorkspaceWithFiles(t, map[string]string{"design/design.go": "package design\n"})
+	wsDir := setupWorkspaceWithFiles(t, map[string]string{"design/design.go": "package design\n// body\n"})
+
+	t.Run("model_client_tool_validation/unadvertised_tool", func(t *testing.T) {
+		q := &queuedModelClient{
+			responses: []queuedModelTurn{
+				toolUseTurn("c1", "other_tool", `{"path":"design/design.go"}`),
+			},
+		}
+		cp := newControlPlane(t, Options{
+			CardsDir:     t.TempDir(),
+			WorkspaceDir: wsDir,
+			Analyzer:     NewModelCP1Analyzer(newQueuedModelClient(t, q)),
+		})
+		_, err := cp.ProposeChange(aliceCtx, &gensurla.ProposeChangePayload{
+			ChangeID: "chg-unadvertised",
+			Prompt:   "Test validation",
+		})
+		require.Error(t, err)
+		kind, ok := cp1RejectionKind(err)
+		require.True(t, ok)
+		assert.Equal(t, string(model.OutputValidationToolIdentity), kind)
+		assert.Len(t, q.requests, 1)
+	})
 
 	for _, tc := range []struct {
-		name     string
-		toolName string
-		raw      string
-		wantKind string
+		name string
+		raw  string
 	}{
-		{name: "unadvertised_tool", toolName: "other_tool", raw: `{"path":"design/design.go"}`, wantKind: string(model.OutputValidationToolIdentity)},
-		{name: "empty_raw", toolName: "read_design", raw: ``, wantKind: string(model.OutputValidationToolArguments)},
-		{name: "literal_null", toolName: "read_design", raw: `null`, wantKind: string(model.OutputValidationToolArguments)},
-		{name: "missing_path", toolName: "read_design", raw: `{}`, wantKind: string(model.OutputValidationToolArguments)},
-		{name: "null_path", toolName: "read_design", raw: `{"path":null}`, wantKind: string(model.OutputValidationToolArguments)},
-		{name: "empty_path", toolName: "read_design", raw: `{"path":""}`, wantKind: string(model.OutputValidationToolArguments)},
-		{name: "unknown_field", toolName: "read_design", raw: `{"path":"design/design.go","other":"x"}`, wantKind: string(model.OutputValidationToolArguments)},
+		{name: "empty_raw", raw: ``},
+		{name: "literal_null", raw: `null`},
+		{name: "missing_path", raw: `{}`},
+		{name: "null_path", raw: `{"path":null}`},
+		{name: "empty_path", raw: `{"path":""}`},
+		{name: "unknown_field", raw: `{"path":"design/design.go","other":"x"}`},
 	} {
 		t.Run("model_client_tool_validation/"+tc.name, func(t *testing.T) {
-			// 1 file -> maxInspectionTurns = 3; 3 invalid tool turns exhaust recovery and
-			// return model.Client's typed OutputValidationKind.
+			// 1 file -> maxInspectionTurns = 3; invalid read_design payloads are rejected
+			// by model.Client (never reading design.go), send recovery reminders on turns
+			// 0 and 1, and proceed to Phase 2 with no read files on the final turn.
 			q := &queuedModelClient{
 				responses: []queuedModelTurn{
-					toolUseTurn("c1", tc.toolName, tc.raw),
-					toolUseTurn("c2", tc.toolName, tc.raw),
-					toolUseTurn("c3", tc.toolName, tc.raw),
+					toolUseTurn("c1", "read_design", tc.raw),
+					toolUseTurn("c2", "read_design", tc.raw),
+					toolUseTurn("c3", "read_design", tc.raw),
+					jsonAnswerTurn(validAnalysisJSON),
 				},
 			}
 			cp := newControlPlane(t, Options{
@@ -774,10 +805,11 @@ func TestCP1DecodersRejectInvalidInputs(t *testing.T) {
 				ChangeID: "chg-" + tc.name,
 				Prompt:   "Test validation",
 			})
-			require.Error(t, err)
-			kind, ok := cp1RejectionKind(err)
-			require.True(t, ok)
-			assert.Equal(t, tc.wantKind, kind)
+			require.NoError(t, err)
+			require.Len(t, q.requests, 4)
+			phase2Text := q.requests[3].Messages[1].Parts[0].(model.TextPart).Text
+			assert.Contains(t, phase2Text, "(no design files were read during inspection)")
+			assert.NotContains(t, phase2Text, "// body")
 		})
 	}
 

@@ -313,6 +313,55 @@ func TestCP1SpanAttributes_AnalyzerErrorKindsAndConcurrentConflicts(t *testing.T
 	saved, err := cp.GetChange(aliceCtx, &gensurla.GetChangePayload{ChangeID: "chg-seed"})
 	require.NoError(t, err)
 	assert.Equal(t, revB.RequestRevision, saved.RequestRevision)
+
+	// Closed OutputValidationKind categories produce truthful category-specific
+	// summaries rather than blaming structured output validation for tool,
+	// shape/bounds, or protocol/usage errors.
+	for _, rc := range []struct {
+		kind        string
+		wantSummary string
+	}{
+		{
+			kind:        string(model.OutputValidationStructuredOutput),
+			wantSummary: "CP1 analysis rejected: model output failed structured validation (this request did not save a Change Card); retry propose_change.",
+		},
+		{
+			kind:        string(model.OutputValidationToolIdentity),
+			wantSummary: "CP1 analysis rejected: model design-inspection tool call was invalid (this request did not save a Change Card); retry propose_change.",
+		},
+		{
+			kind:        string(model.OutputValidationToolArguments),
+			wantSummary: "CP1 analysis rejected: model design-inspection tool call was invalid (this request did not save a Change Card); retry propose_change.",
+		},
+		{
+			kind:        string(model.OutputValidationToolChoice),
+			wantSummary: "CP1 analysis rejected: model design-inspection tool call was invalid (this request did not save a Change Card); retry propose_change.",
+		},
+		{
+			kind:        string(model.OutputValidationResponseShape),
+			wantSummary: "CP1 analysis rejected: model response was incomplete or malformed (this request did not save a Change Card); shorten the request or retry propose_change.",
+		},
+		{
+			kind:        string(model.OutputValidationOutputBounds),
+			wantSummary: "CP1 analysis rejected: model response was incomplete or malformed (this request did not save a Change Card); shorten the request or retry propose_change.",
+		},
+		{
+			kind:        string(model.OutputValidationStreamProtocol),
+			wantSummary: "CP1 analysis rejected: model provider returned invalid protocol or token-usage metadata (this request did not save a Change Card); retry propose_change or ask the server operator to check model configuration.",
+		},
+		{
+			kind:        string(model.OutputValidationUsage),
+			wantSummary: "CP1 analysis rejected: model provider returned invalid protocol or token-usage metadata (this request did not save a Change Card); retry propose_change or ask the server operator to check model configuration.",
+		},
+		{
+			kind:        "unknown_future_kind",
+			wantSummary: "CP1 analysis rejected (this request did not save a Change Card); retry propose_change.",
+		},
+	} {
+		t.Run("rejection_summary/"+rc.kind, func(t *testing.T) {
+			assert.Equal(t, rc.wantSummary, cp1SafeRejectionSummary(false, rc.kind, true))
+		})
+	}
 }
 
 // lastSpanByName returns the most recent span with name from spans.
