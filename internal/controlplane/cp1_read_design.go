@@ -1,6 +1,7 @@
 // This file owns the Checkpoint 1 Goa design value type (CP1Design), the Phase 1
-// read_design tool definition and bounded inspection loop, and the Phase 2
-// structured Change Card completion execution.
+// read_design tool definition and bounded inspection loop, the Phase 2
+// structured Change Card completion execution, and code-authored CP1 span
+// diagnostic summaries.
 package controlplane
 
 import (
@@ -14,6 +15,8 @@ import (
 	"slices"
 	"strings"
 
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 	"goa.design/goa-ai/runtime/agent/completion"
 	"goa.design/goa-ai/runtime/agent/model"
 	"goa.design/goa-ai/runtime/agent/rawjson"
@@ -32,13 +35,6 @@ type (
 		// files holds the snapshot of workspace design/*.go file contents keyed by
 		// relative path.
 		files map[string]string
-	}
-
-	// readDesignPayload models the JSON argument payload for the read_design tool.
-	readDesignPayload struct {
-		// Path is an optional relative path to a specific design file in the manifest.
-		// When omitted or empty, read_design reads all files in the manifest.
-		Path *string `json:"path,omitempty"`
 	}
 
 	// cp1Rejection carries a Checkpoint 1 analysis rejection kind alongside its
@@ -80,17 +76,16 @@ func SuppliedCP1Design(source string) CP1Design {
 	}
 }
 
-// WorkspaceCP1Design constructs a CP1Design from a snapshot of workspace
-// design files. The files map is cloned defensively so subsequent caller
-// mutations cannot affect the design.
+// WorkspaceCP1Design constructs a CP1Design taking ownership of a freshly built
+// workspace design/*.go snapshot map. Callers must not mutate files after
+// calling WorkspaceCP1Design.
 func WorkspaceCP1Design(files map[string]string) CP1Design {
-	var cloned map[string]string
-	if len(files) > 0 {
-		cloned = maps.Clone(files)
+	if len(files) == 0 {
+		files = nil
 	}
 	return CP1Design{
 		origin: sourceOriginWorkspace,
-		files:  cloned,
+		files:  files,
 	}
 }
 
@@ -141,18 +136,56 @@ func newCP1Rejection(kind, reason string, cause error) error {
 	}
 }
 
-// cp1RejectionKind returns the typed rejection kind from err, falling back to
-// the OutputValidationError kind if present or "semantic_validation".
-func cp1RejectionKind(err error) string {
+// cp1RejectionKind returns the typed rejection kind recorded on err when err
+// carries a cp1Rejection or model.OutputValidationError. It never guesses a
+// fallback kind when neither is present.
+func cp1RejectionKind(err error) (string, bool) {
 	var r *cp1Rejection
 	if errors.As(err, &r) && r.kind != "" {
-		return r.kind
+		return r.kind, true
 	}
 	var ovErr *model.OutputValidationError
 	if errors.As(err, &ovErr) && ovErr.Kind() != "" {
-		return string(ovErr.Kind())
+		return string(ovErr.Kind()), true
 	}
-	return "semantic_validation"
+	return "", false
+}
+
+// cp1SafeRejectionSummary returns a strictly code-authored diagnostic summary
+// for a rejected CP1 propose or revise span. It never interpolates caller
+// prompts, model-authored text, or external analyzer error messages.
+func cp1SafeRejectionSummary(revise bool, rejectionKind string, hasKind bool) string {
+	outcome := "no Change Card was saved."
+	prefix := "CP1 analysis rejected"
+	if revise {
+		outcome = "the saved Change Card was unchanged."
+		prefix = "CP1 revision rejected"
+	}
+	if !hasKind {
+		return prefix + "; " + outcome
+	}
+	switch rejectionKind {
+	case string(model.OutputValidationOutputLimited):
+		return prefix + ": provider stopped at output limit; shorten the request before retrying (" + outcome[:len(outcome)-1] + ")."
+	case "inspection_budget_exhausted":
+		return prefix + ": design inspection exhausted turn budget with unresolved file errors; " + outcome
+	case "semantic_validation":
+		return prefix + ": model output failed Change Card semantic validation; " + outcome
+	default:
+		return fmt.Sprintf("%s: model output failed %q validation; %s", prefix, rejectionKind, outcome)
+	}
+}
+
+// recordCP1RejectionSpan attaches the typed rejection kind (when known) and a
+// strictly code-authored public summary onto span.
+func recordCP1RejectionSpan(span trace.Span, revise bool, err error) {
+	kind, hasKind := cp1RejectionKind(err)
+	attrs := make([]attribute.KeyValue, 0, 2)
+	if hasKind {
+		attrs = append(attrs, attribute.String("surla.cp1.rejection_kind", kind))
+	}
+	attrs = append(attrs, attribute.String("surla.public_summary", cp1SafeRejectionSummary(revise, kind, hasKind)))
+	span.SetAttributes(attrs...)
 }
 
 // decodeSavedWorkspaceCP1Design decodes a stored workspace Change Card's
@@ -180,35 +213,55 @@ func decodeSavedWorkspaceCP1Design(designSrc string) (CP1Design, error) {
 }
 
 // decodeReadDesignPayload decodes the raw JSON payload for a read_design tool
-// call, disallowing unknown fields and trailing data and treating empty/{} as
-// omitting path.
+// call, requiring a single JSON object `{}` or `{"path": "<non-empty string>"}`
+// and rejecting empty/whitespace raw bytes, null, unknown fields, trailing JSON
+// tokens, explicit null path values, and empty path strings.
 func decodeReadDesignPayload(raw rawjson.Message) (string, error) {
-	if len(raw) == 0 {
-		return "", nil
+	if len(bytes.TrimSpace(raw)) == 0 {
+		return "", errors.New("expected JSON object payload, got empty input")
 	}
-	trimmed := strings.TrimSpace(string(raw))
-	if trimmed == "" || trimmed == "{}" {
-		return "", nil
-	}
-	var p readDesignPayload
+	var fields map[string]rawjson.Message
 	dec := json.NewDecoder(bytes.NewReader(raw))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&p); err != nil {
+	if err := dec.Decode(&fields); err != nil {
 		return "", err
 	}
 	var extra any
 	if err := dec.Decode(&extra); !errors.Is(err, io.EOF) {
 		return "", errors.New("unexpected trailing data after JSON payload")
 	}
-	if p.Path == nil {
+	if fields == nil {
+		return "", errors.New("expected JSON object payload, got null")
+	}
+	for k := range fields {
+		if k != "path" {
+			return "", fmt.Errorf("unknown field %q", k)
+		}
+	}
+	rawPath, hasPath := fields["path"]
+	if !hasPath {
 		return "", nil
 	}
-	return *p.Path, nil
+	var path *string
+	pathDec := json.NewDecoder(bytes.NewReader(rawPath))
+	if err := pathDec.Decode(&path); err != nil {
+		return "", fmt.Errorf("invalid path: %w", err)
+	}
+	if err := pathDec.Decode(&extra); !errors.Is(err, io.EOF) {
+		return "", errors.New("unexpected trailing data in path")
+	}
+	if path == nil {
+		return "", errors.New("path must be a non-empty string when provided, got null")
+	}
+	if *path == "" {
+		return "", errors.New("path must be non-empty when provided; omit path to read all files")
+	}
+	return *path, nil
 }
 
 // buildPhase1SystemPrompt composes the base system prompt with the sorted
-// workspace design manifest and instructions for calling read_design.
-func buildPhase1SystemPrompt(baseSystemPrompt string, designFiles map[string]string) string {
+// workspace design manifest, the inspection turn budget, and instructions for
+// calling read_design.
+func buildPhase1SystemPrompt(baseSystemPrompt string, designFiles map[string]string, maxTurns int) string {
 	paths := slices.Sorted(maps.Keys(designFiles))
 	var sb strings.Builder
 	sb.WriteString(baseSystemPrompt)
@@ -216,8 +269,26 @@ func buildPhase1SystemPrompt(baseSystemPrompt string, designFiles map[string]str
 	for _, p := range paths {
 		fmt.Fprintf(&sb, "- %s (%d bytes)\n", p, len(designFiles[p]))
 	}
-	sb.WriteString("\nYou may call read_design (omitting path to read all files, or passing an exact manifest path) to inspect the design files relevant to the request. When you are ready to produce the Change Card analysis, stop calling tools.\n")
+	fmt.Fprintf(
+		&sb,
+		"\nYou have up to %d inspection turns to call read_design: omit path to read all files in one call, or call read_design (including multiple parallel calls in a single turn) with exact manifest paths relevant to the request. Each successful read_design result includes remaining_turns. When you have the design context you need, stop calling tools.\n",
+		maxTurns,
+	)
 	return sb.String()
+}
+
+// cloneResponseMessages converts a value slice of provider response messages
+// into deeply owned *model.Message pointers via model.CloneMessages so later
+// turns cannot alias or mutate earlier request transcripts.
+func cloneResponseMessages(content []model.Message) ([]*model.Message, error) {
+	if len(content) == 0 {
+		return nil, nil
+	}
+	ptrs := make([]*model.Message, len(content))
+	for i := range content {
+		ptrs[i] = &content[i]
+	}
+	return model.CloneMessages(ptrs)
 }
 
 // appendCP1UserPart appends part to the conversation's user turn while
@@ -240,9 +311,9 @@ func appendCP1UserPart(messages []*model.Message, part model.Part) []*model.Mess
 	})
 }
 
-// completeStructuredMessages runs a typed structured completion using the
-// provided spec and messages slice, mapping output limit and validation
-// failures into typed cp1Rejection errors.
+// completeStructuredMessages runs a typed structured completion using a cloned
+// copy of messages and spec, mapping output limit and validation failures into
+// typed cp1Rejection errors.
 func completeStructuredMessages[T any](
 	ctx context.Context,
 	client model.Client,
@@ -253,8 +324,12 @@ func completeStructuredMessages[T any](
 	if client == nil {
 		return zero, errors.New("cp1 model client is required")
 	}
+	cloned, err := model.CloneMessages(messages)
+	if err != nil {
+		return zero, fmt.Errorf("clone cp1 completion messages: %w", err)
+	}
 	req := &model.Request{
-		Messages:  messages,
+		Messages:  cloned,
 		MaxTokens: cp1AnalysisMaxOutputTokens,
 	}
 	resp, err := completion.Complete(ctx, client, req, spec)
@@ -287,23 +362,25 @@ func completeStructuredMessages[T any](
 
 // inspectAndComplete executes either the single-turn structured completion (for
 // supplied or empty-workspace designs) or the two-phase inspection loop followed
-// by structured completion (for non-empty workspace designs).
+// by structured completion (for non-empty workspace designs). baseUserPrompt
+// contains the formatted request (and prior card for revisions) without an
+// inline Design section, which is appended only on the single-turn path.
 func inspectAndComplete[T any](
 	ctx context.Context,
 	a *ModelCP1Analyzer,
-	baseSystemPrompt, singleTurnUserPrompt string,
+	baseSystemPrompt, baseUserPrompt string,
 	design CP1Design,
 	spec completion.Spec[T],
-	initialUserPrompt string,
 ) (T, error) {
 	var zero T
 	if a == nil {
 		return zero, errors.New("cp1 model client is required")
 	}
 	if !design.isWorkspace() || len(design.files) == 0 {
-		return completeStructuredAnalysis(ctx, a.client, spec, baseSystemPrompt, singleTurnUserPrompt)
+		singleTurnPrompt := baseUserPrompt + "\n\nDesign:\n" + formatCP1DesignSection(design.supplied)
+		return completeStructuredAnalysis(ctx, a.client, spec, baseSystemPrompt, singleTurnPrompt)
 	}
-	messages, err := a.runPhase1Inspection(ctx, baseSystemPrompt, initialUserPrompt, design.files)
+	messages, err := a.runPhase1Inspection(ctx, baseSystemPrompt, baseUserPrompt, design.files)
 	if err != nil {
 		return zero, err
 	}
@@ -326,9 +403,12 @@ func (r *cp1Rejection) Unwrap() error {
 	return r.err
 }
 
-// runPhase1Inspection executes the multi-turn read_design tool inspection loop
-// until the model chooses to stop, all manifest files are read, or the turn
-// budget is exhausted.
+// runPhase1Inspection executes the bounded read_design tool inspection loop.
+// Phase 1 transitions to Phase 2 as soon as the model returns zero tool calls,
+// all manifest files have been read without error, or the final allowed
+// inspection turn completes its requested file reads without tool errors; it
+// fails with inspection_budget_exhausted only when the final allowed turn ends
+// with an unresolved tool error.
 func (a *ModelCP1Analyzer) runPhase1Inspection(
 	ctx context.Context,
 	baseSystemPrompt, initialUserPrompt string,
@@ -337,11 +417,12 @@ func (a *ModelCP1Analyzer) runPhase1Inspection(
 	if a.client == nil {
 		return nil, errors.New("cp1 model client is required")
 	}
+	maxInspectionTurns := min(len(designFiles)+2, maxReadDesignTurnsCap)
 	messages := []*model.Message{
 		{
 			Role: model.ConversationRoleSystem,
 			Parts: []model.Part{
-				model.TextPart{Text: buildPhase1SystemPrompt(baseSystemPrompt, designFiles)},
+				model.TextPart{Text: buildPhase1SystemPrompt(baseSystemPrompt, designFiles, maxInspectionTurns)},
 			},
 		},
 		{
@@ -352,12 +433,15 @@ func (a *ModelCP1Analyzer) runPhase1Inspection(
 		},
 	}
 	sortedManifestPaths := slices.Sorted(maps.Keys(designFiles))
-	maxInspectionTurns := min(len(designFiles)+2, maxReadDesignTurnsCap)
 	readFiles := make(map[string]bool, len(designFiles))
 
 	for turn := range maxInspectionTurns {
+		reqMessages, err := model.CloneMessages(messages)
+		if err != nil {
+			return nil, fmt.Errorf("clone cp1 inspection messages: %w", err)
+		}
 		phase1Req := &model.Request{
-			Messages:  messages,
+			Messages:  reqMessages,
 			Tools:     []*model.ToolDefinition{readDesignToolDef},
 			MaxTokens: cp1InspectionMaxOutputTokens,
 		}
@@ -393,13 +477,16 @@ func (a *ModelCP1Analyzer) runPhase1Inspection(
 		}
 
 		toolCalls := resp.ToolCalls()
-		for i := range resp.Content {
-			messages = append(messages, &resp.Content[i])
+		clonedRespMsgs, err := cloneResponseMessages(resp.Content)
+		if err != nil {
+			return nil, fmt.Errorf("clone cp1 inspection response: %w", err)
 		}
+		messages = append(messages, clonedRespMsgs...)
 		if len(toolCalls) == 0 {
 			return messages, nil
 		}
 
+		remainingTurns := maxInspectionTurns - 1 - turn
 		turnHadToolError := false
 		resultParts := make([]model.Part, 0, len(toolCalls))
 		for _, call := range toolCalls {
@@ -435,7 +522,10 @@ func (a *ModelCP1Analyzer) runPhase1Inspection(
 				}
 				resultParts = append(resultParts, model.ToolResultPart{
 					ToolUseID: call.ID,
-					Content:   allFiles,
+					Content: map[string]any{
+						"files":           allFiles,
+						"remaining_turns": remainingTurns,
+					},
 				})
 				continue
 			}
@@ -455,8 +545,9 @@ func (a *ModelCP1Analyzer) runPhase1Inspection(
 			resultParts = append(resultParts, model.ToolResultPart{
 				ToolUseID: call.ID,
 				Content: map[string]any{
-					"path":    path,
-					"content": content,
+					"path":            path,
+					"content":         content,
+					"remaining_turns": remainingTurns,
 				},
 			})
 		}
@@ -466,7 +557,7 @@ func (a *ModelCP1Analyzer) runPhase1Inspection(
 			Parts: resultParts,
 		})
 
-		if !turnHadToolError && len(readFiles) == len(designFiles) {
+		if !turnHadToolError && (len(readFiles) == len(designFiles) || turn == maxInspectionTurns-1) {
 			return messages, nil
 		}
 	}
@@ -474,6 +565,6 @@ func (a *ModelCP1Analyzer) runPhase1Inspection(
 	return nil, newCP1Rejection(
 		"inspection_budget_exhausted",
 		"cp1 design inspection exhausted turn budget before completing file inspection",
-		errors.New("cp1 read_design loop exceeded maxInspectionTurns"),
+		errors.New("cp1 read_design loop exceeded maxInspectionTurns with unresolved tool error"),
 	)
 }

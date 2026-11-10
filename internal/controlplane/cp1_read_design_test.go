@@ -1,14 +1,12 @@
-// Package controlplane provides the core business logic and state management
-// for the Surla control plane.
-//
-// This file tests the Checkpoint 1 two-phase `read_design` inspection loop and
-// typed CP1 OpenTelemetry span attributes across both direct model clients and
-// gRPC model gateway boundaries.
+// This file tests the Checkpoint 1 two-phase `read_design` inspection loop,
+// strict payload and saved-workspace decoders, and code-authored CP1
+// OpenTelemetry span attributes across direct and gRPC gateway model clients.
 package controlplane
 
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -38,7 +36,7 @@ const (
 	validRevisionAnalysisJSON = `{"summary":"Revised order refund processing.","ambiguities":[],"examples":[{"prior_id":"check_01","scenario":"Standard refund","input_summary":"Refund $10","expected_outcome":"Success","verification_kind":"deterministic"}],"removed_example_ids":[],"preserved_behaviors":["Existing orders unchanged"]}`
 )
 
-// clientFactories provides the test matrix for both direct and gRPC gateway model clients.
+// clientFactories exercises both direct and gRPC gateway model client boundaries.
 var clientFactories = []struct {
 	name    string
 	buildFn modelClientFactory
@@ -57,94 +55,63 @@ var clientFactories = []struct {
 	},
 }
 
-// TestCP1TwoPhaseReadDesign_SelectiveAndOmitPath verifies that multi-file
-// workspaces run Phase 1 read_design tool turns and transition to Phase 2
-// either upon reading each file selectively or via omit-path read-all.
-func TestCP1TwoPhaseReadDesign_SelectiveAndOmitPath(t *testing.T) {
+// TestCP1TwoPhaseReadDesign_SelectiveOmitAndLargeWorkspaces verifies selective
+// single-file inspection, omit-path read-all, and multi-file workspaces larger
+// than maxReadDesignTurnsCap (10 files across 8 valid inspection turns).
+func TestCP1TwoPhaseReadDesign_SelectiveOmitAndLargeWorkspaces(t *testing.T) {
+	aliceCtx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
+
 	for _, cf := range clientFactories {
 		t.Run(cf.name, func(t *testing.T) {
-			t.Run("selective_single_file_inspection", func(t *testing.T) {
+			t.Run("selective_inspection_and_remaining_turns", func(t *testing.T) {
 				wsDir := setupWorkspaceWithFiles(t, map[string]string{
 					"design/design.go": "package design\n// main design\n",
 					"design/orders.go": "package design\n// orders design\n",
 				})
+				// 2 files -> maxInspectionTurns = min(2+2, 8) = 4.
 				q := &queuedModelClient{
 					responses: []queuedModelTurn{
-						// Turn 0: Model inspects design/design.go
-						{
-							resp: &model.Response{
-								Content: []model.Message{{
-									Role: model.ConversationRoleAssistant,
-									Parts: []model.Part{
-										model.ToolUsePart{
-											ID:    "call_1",
-											Name:  "read_design",
-											Input: rawjson.Message(`{"path":"design/design.go"}`),
-										},
-									},
-								}},
-								StopReason: "tool_use",
-							},
-						},
-						// Turn 1: Model inspects design/orders.go (completing manifest)
-						{
-							resp: &model.Response{
-								Content: []model.Message{{
-									Role: model.ConversationRoleAssistant,
-									Parts: []model.Part{
-										model.ToolUsePart{
-											ID:    "call_2",
-											Name:  "read_design",
-											Input: rawjson.Message(`{"path":"design/orders.go"}`),
-										},
-									},
-								}},
-								StopReason: "tool_use",
-							},
-						},
-						// Turn 2: Phase 2 structured completion
-						{
-							resp: &model.Response{
-								Content: []model.Message{{
-									Role:  model.ConversationRoleAssistant,
-									Parts: []model.Part{model.TextPart{Text: validAnalysisJSON}},
-								}},
-								StopReason: "stop",
-							},
-						},
+						toolUseTurn("call_1", "read_design", `{"path":"design/design.go"}`),
+						toolUseTurn("call_2", "read_design", `{"path":"design/orders.go"}`),
+						jsonAnswerTurn(validAnalysisJSON),
 					},
 				}
-
-				cardsDir := t.TempDir()
-				client := cf.buildFn(t, q)
 				cp := newControlPlane(t, Options{
-					CardsDir:     cardsDir,
+					CardsDir:     t.TempDir(),
 					WorkspaceDir: wsDir,
-					Analyzer:     NewModelCP1Analyzer(client),
+					Analyzer:     NewModelCP1Analyzer(cf.buildFn(t, q)),
 				})
 
-				aliceCtx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
 				card, err := cp.ProposeChange(aliceCtx, &gensurla.ProposeChangePayload{
 					ChangeID: "chg-selective",
 					Prompt:   "Add order refunds",
 				})
 				require.NoError(t, err)
 				assert.Equal(t, "Order refund processing.", card.Summary)
-				assert.Len(t, q.requests, 3)
+				require.Len(t, q.requests, 3)
 
-				// Verify Phase 1 turns
-				assert.Equal(t, cp1InspectionMaxOutputTokens, q.requests[0].MaxTokens)
-				assert.Len(t, q.requests[0].Tools, 1)
-				assert.Equal(t, "read_design", q.requests[0].Tools[0].Name)
+				for i, req := range q.requests {
+					assertAlternatingRoles(t, req.Messages)
+					if i < 2 {
+						assert.Equal(t, cp1InspectionMaxOutputTokens, req.MaxTokens)
+						require.Len(t, req.Tools, 1)
+						assert.Equal(t, "read_design", req.Tools[0].Name)
+					}
+				}
+				// Turn 1 receives Turn 0's tool result with remaining_turns = 3.
+				turn1Last := q.requests[1].Messages[len(q.requests[1].Messages)-1]
+				resMap := turn1Last.Parts[0].(model.ToolResultPart).Content.(map[string]any)
+				assert.Equal(t, "design/design.go", resMap["path"])
+				assert.Contains(t, resMap["content"], "main design")
+				assert.Equal(t, "3", fmt.Sprint(resMap["remaining_turns"]))
 
-				// Verify Phase 2 turn
-				assert.Equal(t, cp1AnalysisMaxOutputTokens, q.requests[2].MaxTokens)
-				assert.Empty(t, q.requests[2].Tools)
-				assertAlternatingRoles(t, q.requests[2].Messages)
-				lastMsg := q.requests[2].Messages[len(q.requests[2].Messages)-1]
-				assert.Equal(t, model.ConversationRoleUser, lastMsg.Role)
+				// Phase 2 request has no tools and ends with [ToolResultPart, TextPart].
+				phase2 := q.requests[2]
+				assert.Equal(t, cp1AnalysisMaxOutputTokens, phase2.MaxTokens)
+				assert.Empty(t, phase2.Tools)
+				lastMsg := phase2.Messages[len(phase2.Messages)-1]
 				require.Len(t, lastMsg.Parts, 2)
-				assert.Contains(t, lastMsg.Parts[1].(model.TextPart).Text, "Produce the Change Card analysis JSON matching the schema.")
+				assert.Contains(t, lastMsg.Parts[1].(model.TextPart).Text, cp1Phase2UserPrompt)
 			})
 
 			t.Run("omit_path_read_all_transitions_immediately", func(t *testing.T) {
@@ -154,831 +121,420 @@ func TestCP1TwoPhaseReadDesign_SelectiveAndOmitPath(t *testing.T) {
 				})
 				q := &queuedModelClient{
 					responses: []queuedModelTurn{
-						// Turn 0: Model calls read_design with omit-path ({})
-						{
-							resp: &model.Response{
-								Content: []model.Message{{
-									Role: model.ConversationRoleAssistant,
-									Parts: []model.Part{
-										model.ToolUsePart{
-											ID:    "call_all",
-											Name:  "read_design",
-											Input: rawjson.Message(`{}`),
-										},
-									},
-								}},
-								StopReason: "tool_use",
-							},
-						},
-						// Turn 1: Phase 2 structured completion (triggered by Stop Outcome 3)
-						{
-							resp: &model.Response{
-								Content: []model.Message{{
-									Role:  model.ConversationRoleAssistant,
-									Parts: []model.Part{model.TextPart{Text: validAnalysisJSON}},
-								}},
-								StopReason: "stop",
-							},
-						},
+						toolUseTurn("call_all", "read_design", `{ }`),
+						jsonAnswerTurn(validAnalysisJSON),
 					},
 				}
-
-				cardsDir := t.TempDir()
-				client := cf.buildFn(t, q)
 				cp := newControlPlane(t, Options{
-					CardsDir:     cardsDir,
+					CardsDir:     t.TempDir(),
 					WorkspaceDir: wsDir,
-					Analyzer:     NewModelCP1Analyzer(client),
+					Analyzer:     NewModelCP1Analyzer(cf.buildFn(t, q)),
 				})
 
-				aliceCtx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
 				card, err := cp.ProposeChange(aliceCtx, &gensurla.ProposeChangePayload{
 					ChangeID: "chg-omit-path",
 					Prompt:   "Add order refunds",
 				})
 				require.NoError(t, err)
 				assert.Equal(t, "Order refund processing.", card.Summary)
-				assert.Len(t, q.requests, 2)
+				require.Len(t, q.requests, 2)
+				assertAlternatingRoles(t, q.requests[1].Messages)
+			})
+
+			t.Run("ten_file_workspace_succeeds_after_eight_selective_turns", func(t *testing.T) {
+				files := make(map[string]string, 10)
+				turns := make([]queuedModelTurn, 0, 9)
+				for i := range 10 {
+					rel := fmt.Sprintf("design/svc_%02d.go", i)
+					files[rel] = fmt.Sprintf("package design\n// svc %02d\n", i)
+					if i < maxReadDesignTurnsCap {
+						turns = append(turns, toolUseTurn(
+							fmt.Sprintf("call_%d", i),
+							"read_design",
+							fmt.Sprintf(`{"path":%q}`, rel),
+						))
+					}
+				}
+				turns = append(turns, jsonAnswerTurn(validAnalysisJSON))
+				wsDir := setupWorkspaceWithFiles(t, files)
+				q := &queuedModelClient{responses: turns}
+				cp := newControlPlane(t, Options{
+					CardsDir:     t.TempDir(),
+					WorkspaceDir: wsDir,
+					Analyzer:     NewModelCP1Analyzer(cf.buildFn(t, q)),
+				})
+
+				card, err := cp.ProposeChange(aliceCtx, &gensurla.ProposeChangePayload{
+					ChangeID: "chg-ten-files",
+					Prompt:   "Update services",
+				})
+				require.NoError(t, err)
+				assert.Equal(t, "Order refund processing.", card.Summary)
+				require.Len(t, q.requests, maxReadDesignTurnsCap+1)
+				// Verify final inspection turn's result reported remaining_turns == 0 and reached Phase 2.
+				phase2 := q.requests[maxReadDesignTurnsCap]
+				assertAlternatingRoles(t, phase2.Messages)
+				lastMsg := phase2.Messages[len(phase2.Messages)-1]
+				resMap := lastMsg.Parts[0].(model.ToolResultPart).Content.(map[string]any)
+				assert.Equal(t, "design/svc_07.go", resMap["path"])
+				assert.Equal(t, "0", fmt.Sprint(resMap["remaining_turns"]))
 			})
 		})
 	}
 }
 
-// TestCP1TwoPhaseReadDesign_ModelChosenZeroTool verifies Stop Outcome 2:
-// when the model returns 0 tool calls in Phase 1, it immediately transitions
-// to Phase 2 with its assistant message preserved.
-func TestCP1TwoPhaseReadDesign_ModelChosenZeroTool(t *testing.T) {
-	wsDir := setupWorkspaceWithFiles(t, map[string]string{
-		"design/design.go": "package design\n",
-	})
-	q := &queuedModelClient{
-		responses: []queuedModelTurn{
-			// Turn 0: Model returns 0 tool calls, only assistant text
-			{
-				resp: &model.Response{
-					Content: []model.Message{{
-						Role:  model.ConversationRoleAssistant,
-						Parts: []model.Part{model.TextPart{Text: "I have enough context from the manifest."}},
-					}},
-					StopReason: "stop",
-				},
-			},
-			// Turn 1: Phase 2 structured completion
-			{
-				resp: &model.Response{
-					Content: []model.Message{{
-						Role:  model.ConversationRoleAssistant,
-						Parts: []model.Part{model.TextPart{Text: validAnalysisJSON}},
-					}},
-					StopReason: "stop",
-				},
-			},
-		},
-	}
-
-	cardsDir := t.TempDir()
-	cp := newControlPlane(t, Options{
-		CardsDir:     cardsDir,
-		WorkspaceDir: wsDir,
-		Analyzer:     NewModelCP1Analyzer(newQueuedModelClient(t, q)),
-	})
-
+// TestCP1TwoPhaseReadDesign_StopAndPathCases verifies zero-tool completion,
+// Unicode and space-containing paths, unknown-path recovery, metadata and
+// ThoughtSignature preservation without slice aliasing, output-limit cutoffs,
+// RecoveryCorrection, and unresolved-error budget exhaustion.
+func TestCP1TwoPhaseReadDesign_StopAndPathCases(t *testing.T) {
 	aliceCtx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
-	card, err := cp.ProposeChange(aliceCtx, &gensurla.ProposeChangePayload{
-		ChangeID: "chg-zero-tool",
-		Prompt:   "Add feature",
-	})
-	require.NoError(t, err)
-	assert.Equal(t, "Order refund processing.", card.Summary)
-	assert.Len(t, q.requests, 2)
 
-	// Check that Phase 2 transcript includes the assistant message before the Phase 2 prompt
-	phase2Req := q.requests[1]
-	require.GreaterOrEqual(t, len(phase2Req.Messages), 4)
-	asstMsg := phase2Req.Messages[len(phase2Req.Messages)-2]
-	assert.Equal(t, model.ConversationRoleAssistant, asstMsg.Role)
-	assert.Contains(t, asstMsg.Parts[0].(model.TextPart).Text, "I have enough context")
-	finalUserMsg := phase2Req.Messages[len(phase2Req.Messages)-1]
-	assert.Equal(t, model.ConversationRoleUser, finalUserMsg.Role)
-}
-
-// TestCP1TwoPhaseReadDesign_NonASCIIAndSpaces verifies that paths with non-ASCII
-// characters (e.g. design/注文.go) and spaces (design/order rules.go) pass
-// payload decoding and can be inspected without error.
-func TestCP1TwoPhaseReadDesign_NonASCIIAndSpaces(t *testing.T) {
-	wsDir := setupWorkspaceWithFiles(t, map[string]string{
-		"design/注文.go":          "package design\n// Japanese order design\n",
-		"design/order rules.go": "package design\n// order rules\n",
-	})
-	q := &queuedModelClient{
-		responses: []queuedModelTurn{
-			// Turn 0: Model calls read_design on non-ASCII path
-			{
-				resp: &model.Response{
-					Content: []model.Message{{
-						Role: model.ConversationRoleAssistant,
-						Parts: []model.Part{
-							model.ToolUsePart{
-								ID:    "call_unicode",
-								Name:  "read_design",
-								Input: rawjson.Message(`{"path":"design/注文.go"}`),
-							},
-						},
-					}},
-					StopReason: "tool_use",
-				},
+	t.Run("zero_tool_call_completion", func(t *testing.T) {
+		wsDir := setupWorkspaceWithFiles(t, map[string]string{"design/design.go": "package design\n"})
+		q := &queuedModelClient{
+			responses: []queuedModelTurn{
+				jsonAnswerTurn("I have enough context from the manifest."),
+				jsonAnswerTurn(validAnalysisJSON),
 			},
-			// Turn 1: Model calls read_design on path with space
-			{
-				resp: &model.Response{
-					Content: []model.Message{{
-						Role: model.ConversationRoleAssistant,
-						Parts: []model.Part{
-							model.ToolUsePart{
-								ID:    "call_space",
-								Name:  "read_design",
-								Input: rawjson.Message(`{"path":"design/order rules.go"}`),
-							},
-						},
-					}},
-					StopReason: "tool_use",
-				},
-			},
-			// Turn 2: Phase 2 completion
-			{
-				resp: &model.Response{
-					Content: []model.Message{{
-						Role:  model.ConversationRoleAssistant,
-						Parts: []model.Part{model.TextPart{Text: validAnalysisJSON}},
-					}},
-					StopReason: "stop",
-				},
-			},
-		},
-	}
-
-	cardsDir := t.TempDir()
-	cp := newControlPlane(t, Options{
-		CardsDir:     cardsDir,
-		WorkspaceDir: wsDir,
-		Analyzer:     NewModelCP1Analyzer(newQueuedModelClient(t, q)),
-	})
-
-	aliceCtx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
-	card, err := cp.ProposeChange(aliceCtx, &gensurla.ProposeChangePayload{
-		ChangeID: "chg-unicode",
-		Prompt:   "Support Japanese orders",
-	})
-	require.NoError(t, err)
-	assert.Equal(t, "Order refund processing.", card.Summary)
-	assert.Len(t, q.requests, 3)
-}
-
-// TestCP1TwoPhaseReadDesign_UnknownPathAndRecovery verifies that unknown paths
-// return IsError: true tool results listing available manifest files, and the
-// model can recover on the subsequent turn.
-func TestCP1TwoPhaseReadDesign_UnknownPathAndRecovery(t *testing.T) {
-	wsDir := setupWorkspaceWithFiles(t, map[string]string{
-		"design/design.go": "package design\n",
-	})
-	q := &queuedModelClient{
-		responses: []queuedModelTurn{
-			// Turn 0: Model calls read_design with unknown path
-			{
-				resp: &model.Response{
-					Content: []model.Message{{
-						Role: model.ConversationRoleAssistant,
-						Parts: []model.Part{
-							model.ToolUsePart{
-								ID:    "call_unknown",
-								Name:  "read_design",
-								Input: rawjson.Message(`{"path":"design/missing.go"}`),
-							},
-						},
-					}},
-					StopReason: "tool_use",
-				},
-			},
-			// Turn 1: Model recovers by calling valid path
-			{
-				resp: &model.Response{
-					Content: []model.Message{{
-						Role: model.ConversationRoleAssistant,
-						Parts: []model.Part{
-							model.ToolUsePart{
-								ID:    "call_valid",
-								Name:  "read_design",
-								Input: rawjson.Message(`{"path":"design/design.go"}`),
-							},
-						},
-					}},
-					StopReason: "tool_use",
-				},
-			},
-			// Turn 2: Phase 2 completion
-			{
-				resp: &model.Response{
-					Content: []model.Message{{
-						Role:  model.ConversationRoleAssistant,
-						Parts: []model.Part{model.TextPart{Text: validAnalysisJSON}},
-					}},
-					StopReason: "stop",
-				},
-			},
-		},
-	}
-
-	cardsDir := t.TempDir()
-	cp := newControlPlane(t, Options{
-		CardsDir:     cardsDir,
-		WorkspaceDir: wsDir,
-		Analyzer:     NewModelCP1Analyzer(newQueuedModelClient(t, q)),
-	})
-
-	aliceCtx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
-	card, err := cp.ProposeChange(aliceCtx, &gensurla.ProposeChangePayload{
-		ChangeID: "chg-recovery",
-		Prompt:   "Add feature",
-	})
-	require.NoError(t, err)
-	assert.Equal(t, "Order refund processing.", card.Summary)
-	assert.Len(t, q.requests, 3)
-
-	// Check that Turn 1 received the tool error result
-	turn1Msg := q.requests[1].Messages[len(q.requests[1].Messages)-1]
-	require.Equal(t, model.ConversationRoleUser, turn1Msg.Role)
-	toolRes, ok := turn1Msg.Parts[0].(model.ToolResultPart)
-	require.True(t, ok)
-	assert.True(t, toolRes.IsError)
-	assert.Contains(t, toolRes.Content.(string), `unknown design file "design/missing.go"`)
-	assert.Contains(t, toolRes.Content.(string), "design/design.go")
-}
-
-// TestCP1TwoPhaseReadDesign_PreservesMetadataAndThoughtSignature verifies that
-// Meta, ThinkingPart, and ToolUsePart.ThoughtSignature from Phase 1 are
-// preserved into Phase 2 requests.
-func TestCP1TwoPhaseReadDesign_PreservesMetadataAndThoughtSignature(t *testing.T) {
-	wsDir := setupWorkspaceWithFiles(t, map[string]string{
-		"design/design.go": "package design\n",
-	})
-	q := &queuedModelClient{
-		responses: []queuedModelTurn{
-			// Turn 0: Model returns tool use with Meta, ThinkingPart, and ThoughtSignature
-			{
-				resp: &model.Response{
-					Content: []model.Message{{
-						Role: model.ConversationRoleAssistant,
-						Meta: map[string]any{"provider_request_id": "req-12345"},
-						Parts: []model.Part{
-							model.ThinkingPart{
-								Text:      "Checking design requirements...",
-								Signature: "sig-thinking-token",
-								Final:     true,
-							},
-							model.ToolUsePart{
-								ID:               "call_with_sig",
-								Name:             "read_design",
-								Input:            rawjson.Message(`{"path":"design/design.go"}`),
-								ThoughtSignature: "thought-sig-opaque",
-							},
-						},
-					}},
-					StopReason: "tool_use",
-				},
-			},
-			// Turn 1: Phase 2 completion
-			{
-				resp: &model.Response{
-					Content: []model.Message{{
-						Role:  model.ConversationRoleAssistant,
-						Parts: []model.Part{model.TextPart{Text: validAnalysisJSON}},
-					}},
-					StopReason: "stop",
-				},
-			},
-		},
-	}
-
-	cardsDir := t.TempDir()
-	cp := newControlPlane(t, Options{
-		CardsDir:     cardsDir,
-		WorkspaceDir: wsDir,
-		Analyzer:     NewModelCP1Analyzer(newQueuedModelClient(t, q)),
-	})
-
-	aliceCtx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
-	card, err := cp.ProposeChange(aliceCtx, &gensurla.ProposeChangePayload{
-		ChangeID: "chg-metadata",
-		Prompt:   "Add feature",
-	})
-	require.NoError(t, err)
-	assert.Equal(t, "Order refund processing.", card.Summary)
-	assert.Len(t, q.requests, 2)
-
-	// Verify Phase 2 transcript preserves all fields
-	phase2Messages := q.requests[1].Messages
-	var foundAsst *model.Message
-	for _, m := range phase2Messages {
-		if m.Role == model.ConversationRoleAssistant {
-			foundAsst = m
-			break
 		}
-	}
-	require.NotNil(t, foundAsst)
-	assert.Equal(t, "req-12345", foundAsst.Meta["provider_request_id"])
-	require.Len(t, foundAsst.Parts, 2)
-	thinking, ok := foundAsst.Parts[0].(model.ThinkingPart)
-	require.True(t, ok)
-	assert.Equal(t, "sig-thinking-token", thinking.Signature)
-	toolUse, ok := foundAsst.Parts[1].(model.ToolUsePart)
-	require.True(t, ok)
-	assert.Equal(t, "thought-sig-opaque", toolUse.ThoughtSignature)
-}
-
-// TestCP1TwoPhaseReadDesign_OutputLimitedCutoff verifies that Phase 1 fails
-// immediately with OutputValidationOutputLimited rejection when the model
-// response exceeds token allowances.
-func TestCP1TwoPhaseReadDesign_OutputLimitedCutoff(t *testing.T) {
-	wsDir := setupWorkspaceWithFiles(t, map[string]string{
-		"design/design.go": "package design\n",
+		cp := newControlPlane(t, Options{
+			CardsDir:     t.TempDir(),
+			WorkspaceDir: wsDir,
+			Analyzer:     NewModelCP1Analyzer(newQueuedModelClient(t, q)),
+		})
+		card, err := cp.ProposeChange(aliceCtx, &gensurla.ProposeChangePayload{
+			ChangeID: "chg-zero-tool",
+			Prompt:   "Add feature",
+		})
+		require.NoError(t, err)
+		assert.Equal(t, "Order refund processing.", card.Summary)
+		require.Len(t, q.requests, 2)
+		assertAlternatingRoles(t, q.requests[1].Messages)
+		asstMsg := q.requests[1].Messages[len(q.requests[1].Messages)-2]
+		assert.Equal(t, model.ConversationRoleAssistant, asstMsg.Role)
+		assert.Contains(t, asstMsg.Parts[0].(model.TextPart).Text, "I have enough context")
 	})
 
-	t.Run("resp_OutputLimited_true_before_tool_calls", func(t *testing.T) {
+	t.Run("non_ascii_and_space_paths_plus_unknown_recovery", func(t *testing.T) {
+		wsDir := setupWorkspaceWithFiles(t, map[string]string{
+			"design/注文.go":          "package design\n// Japanese order design\n",
+			"design/order rules.go": "package design\n// order rules\n",
+		})
+		q := &queuedModelClient{
+			responses: []queuedModelTurn{
+				toolUseTurn("call_unknown", "read_design", `{"path":"design/missing.go"}`),
+				toolUseTurn("call_unicode", "read_design", `{"path":"design/注文.go"}`),
+				toolUseTurn("call_space", "read_design", `{"path":"design/order rules.go"}`),
+				jsonAnswerTurn(validAnalysisJSON),
+			},
+		}
+		cp := newControlPlane(t, Options{
+			CardsDir:     t.TempDir(),
+			WorkspaceDir: wsDir,
+			Analyzer:     NewModelCP1Analyzer(newQueuedModelClient(t, q)),
+		})
+		card, err := cp.ProposeChange(aliceCtx, &gensurla.ProposeChangePayload{
+			ChangeID: "chg-unicode",
+			Prompt:   "Support Japanese orders",
+		})
+		require.NoError(t, err)
+		assert.Equal(t, "Order refund processing.", card.Summary)
+		require.Len(t, q.requests, 4)
+
+		errPart := q.requests[1].Messages[len(q.requests[1].Messages)-1].Parts[0].(model.ToolResultPart)
+		assert.True(t, errPart.IsError)
+		assert.Contains(t, errPart.Content.(string), `unknown design file "design/missing.go"`)
+		assert.Contains(t, errPart.Content.(string), "design/注文.go")
+	})
+
+	t.Run("preserves_metadata_thinking_and_isolates_request_slices", func(t *testing.T) {
+		wsDir := setupWorkspaceWithFiles(t, map[string]string{
+			"design/a.go": "package design\n",
+			"design/b.go": "package design\n",
+		})
 		q := &queuedModelClient{
 			responses: []queuedModelTurn{
 				{
 					resp: &model.Response{
-						OutputLimited: true,
-						StopReason:    "max_tokens",
 						Content: []model.Message{{
 							Role: model.ConversationRoleAssistant,
+							Meta: map[string]any{"provider_request_id": "req-12345"},
 							Parts: []model.Part{
+								model.ThinkingPart{
+									Text:      "Checking design requirements...",
+									Signature: "sig-thinking-token",
+									Final:     true,
+								},
 								model.ToolUsePart{
-									ID:    "truncated_tool_call",
-									Name:  "read_design",
-									Input: rawjson.Message(`{"path":"design/design.go"}`),
+									ID:               "call_sig",
+									Name:             "read_design",
+									Input:            rawjson.Message(`{"path":"design/a.go"}`),
+									ThoughtSignature: "thought-sig-opaque",
 								},
 							},
 						}},
+						StopReason: "tool_use",
 					},
 				},
+				toolUseTurn("call_b", "read_design", `{"path":"design/b.go"}`),
+				jsonAnswerTurn(validAnalysisJSON),
 			},
 		}
-
-		cardsDir := t.TempDir()
 		cp := newControlPlane(t, Options{
-			CardsDir:     cardsDir,
+			CardsDir:     t.TempDir(),
 			WorkspaceDir: wsDir,
 			Analyzer:     NewModelCP1Analyzer(newQueuedModelClient(t, q)),
 		})
-
-		aliceCtx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
 		_, err := cp.ProposeChange(aliceCtx, &gensurla.ProposeChangePayload{
-			ChangeID: "chg-limited-phase1",
+			ChangeID: "chg-meta",
 			Prompt:   "Add feature",
 		})
-		require.Error(t, err)
-		se, ok := asAnalysisRejected(err)
-		require.True(t, ok)
-		assert.Contains(t, se.Message, "provider stopped at output limit; shorten the request before retrying")
-		assert.Equal(t, "output_limited", cp1RejectionKind(err))
+		require.NoError(t, err)
+		require.Len(t, q.requests, 3)
+
+		// Mutating q.requests[1] after the fact must not affect q.requests[2].
+		var asst1, asst2 *model.Message
+		for _, m := range q.requests[1].Messages {
+			if m.Role == model.ConversationRoleAssistant {
+				asst1 = m
+				break
+			}
+		}
+		for _, m := range q.requests[2].Messages {
+			if m.Role == model.ConversationRoleAssistant {
+				asst2 = m
+				break
+			}
+		}
+		require.NotNil(t, asst1)
+		require.NotNil(t, asst2)
+		asst1.Meta["provider_request_id"] = "mutated"
+		assert.Equal(t, "req-12345", asst2.Meta["provider_request_id"])
+		assert.Equal(t, "sig-thinking-token", asst2.Parts[0].(model.ThinkingPart).Signature)
+		assert.Equal(t, "thought-sig-opaque", asst2.Parts[1].(model.ToolUsePart).ThoughtSignature)
 	})
 
-	t.Run("output_validation_error_output_limited", func(t *testing.T) {
-		ovErr, err := model.RestoreOutputValidationError(
-			model.OutputValidationOutputLimited,
-			errors.New("hit token limit"),
+	t.Run("output_limited_and_recovery_and_unresolved_error_budget", func(t *testing.T) {
+		wsDir := setupWorkspaceWithFiles(t, map[string]string{"design/design.go": "package design\n"})
+
+		// 1. OutputLimited response flag checked before ToolCalls().
+		qLim := &queuedModelClient{
+			responses: []queuedModelTurn{{
+				resp: &model.Response{
+					OutputLimited: true,
+					StopReason:    "max_tokens",
+					Content: []model.Message{{
+						Role: model.ConversationRoleAssistant,
+						Parts: []model.Part{model.ToolUsePart{
+							ID: "call_lim", Name: "read_design", Input: rawjson.Message(`{}`),
+						}},
+					}},
+				},
+			}},
+		}
+		cpLim := newControlPlane(t, Options{
+			CardsDir: t.TempDir(), WorkspaceDir: wsDir,
+			Analyzer: NewModelCP1Analyzer(newQueuedModelClient(t, qLim)),
+		})
+		_, err := cpLim.ProposeChange(aliceCtx, &gensurla.ProposeChangePayload{ChangeID: "chg-lim", Prompt: "P"})
+		require.Error(t, err)
+		kind, ok := cp1RejectionKind(err)
+		assert.True(t, ok)
+		assert.Equal(t, "output_limited", kind)
+
+		// 2. RecoveryCorrection retries within budget and fails on final turn.
+		baseErr, err := model.RestoreOutputValidationError(
+			model.OutputValidationStructuredOutput,
+			errors.New("invalid tool input"),
 			model.ResponseEvidence{},
 			nil,
 		)
 		require.NoError(t, err)
-
-		q := &queuedModelClient{
-			responses: []queuedModelTurn{{err: ovErr}},
-		}
-
-		cardsDir := t.TempDir()
-		cp := newControlPlane(t, Options{
-			CardsDir:     cardsDir,
-			WorkspaceDir: wsDir,
-			Analyzer:     NewModelCP1Analyzer(newQueuedModelClient(t, q)),
-		})
-
-		aliceCtx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
-		_, err = cp.ProposeChange(aliceCtx, &gensurla.ProposeChangePayload{
-			ChangeID: "chg-limited-ov-err",
-			Prompt:   "Add feature",
-		})
-		require.Error(t, err)
-		se, ok := asAnalysisRejected(err)
-		require.True(t, ok)
-		assert.Contains(t, se.Message, "provider stopped at output limit; shorten the request before retrying")
-		assert.Equal(t, "output_limited", cp1RejectionKind(err))
-	})
-}
-
-// TestCP1TwoPhaseReadDesign_RecoveryCorrection verifies that correctable model
-// output validation errors append the recovery correction as a user message and
-// continue to the next turn, but reject if the budget is exhausted.
-func TestCP1TwoPhaseReadDesign_RecoveryCorrection(t *testing.T) {
-	wsDir := setupWorkspaceWithFiles(t, map[string]string{
-		"design/design.go": "package design\n",
-	})
-
-	baseErr, err := model.RestoreOutputValidationError(
-		model.OutputValidationStructuredOutput,
-		errors.New("invalid tool input"),
-		model.ResponseEvidence{},
-		nil,
-	)
-	require.NoError(t, err)
-	correctable, err := model.RestoreCorrectableOutputValidationError(
-		baseErr,
-		"pass a valid JSON object with path property",
-	)
-	require.NoError(t, err)
-
-	t.Run("recovers_on_next_turn", func(t *testing.T) {
-		q := &queuedModelClient{
-			responses: []queuedModelTurn{
-				// Turn 0: fails with correctable error
-				{err: correctable},
-				// Turn 1: model recovers and calls read_design
-				{
-					resp: &model.Response{
-						Content: []model.Message{{
-							Role: model.ConversationRoleAssistant,
-							Parts: []model.Part{
-								model.ToolUsePart{
-									ID:    "call_recovered",
-									Name:  "read_design",
-									Input: rawjson.Message(`{}`),
-								},
-							},
-						}},
-						StopReason: "tool_use",
-					},
-				},
-				// Turn 2: Phase 2 completion
-				{
-					resp: &model.Response{
-						Content: []model.Message{{
-							Role:  model.ConversationRoleAssistant,
-							Parts: []model.Part{model.TextPart{Text: validAnalysisJSON}},
-						}},
-						StopReason: "stop",
-					},
-				},
-			},
-		}
-
-		cardsDir := t.TempDir()
-		cp := newControlPlane(t, Options{
-			CardsDir:     cardsDir,
-			WorkspaceDir: wsDir,
-			Analyzer:     NewModelCP1Analyzer(newQueuedModelClient(t, q)),
-		})
-
-		aliceCtx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
-		card, err := cp.ProposeChange(aliceCtx, &gensurla.ProposeChangePayload{
-			ChangeID: "chg-recover-turn",
-			Prompt:   "Add feature",
-		})
+		correctable, err := model.RestoreCorrectableOutputValidationError(
+			baseErr,
+			"pass a valid JSON object with path property",
+		)
 		require.NoError(t, err)
-		assert.Equal(t, "Order refund processing.", card.Summary)
-		assert.Len(t, q.requests, 3)
 
-		// Turn 1 request must merge the recovery correction into the trailing user turn
-		assertAlternatingRoles(t, q.requests[1].Messages)
-		recoveryMsg := q.requests[1].Messages[len(q.requests[1].Messages)-1]
-		require.Equal(t, model.ConversationRoleUser, recoveryMsg.Role)
-		require.Len(t, recoveryMsg.Parts, 2)
-		assert.Equal(t, "pass a valid JSON object with path property", recoveryMsg.Parts[1].(model.TextPart).Text)
-	})
-
-	t.Run("last_turn_exhaustion_fails_without_retry", func(t *testing.T) {
-		// 1 file -> maxInspectionTurns = min(1+2, 8) = 3
-		q := &queuedModelClient{
+		qRec := &queuedModelClient{
 			responses: []queuedModelTurn{
 				{err: correctable},
-				{err: correctable},
-				{err: correctable},
+				toolUseTurn("call_ok", "read_design", `{}`),
+				jsonAnswerTurn(validAnalysisJSON),
 			},
 		}
-
-		cardsDir := t.TempDir()
-		cp := newControlPlane(t, Options{
-			CardsDir:     cardsDir,
-			WorkspaceDir: wsDir,
-			Analyzer:     NewModelCP1Analyzer(newQueuedModelClient(t, q)),
+		cpRec := newControlPlane(t, Options{
+			CardsDir: t.TempDir(), WorkspaceDir: wsDir,
+			Analyzer: NewModelCP1Analyzer(newQueuedModelClient(t, qRec)),
 		})
+		_, err = cpRec.ProposeChange(aliceCtx, &gensurla.ProposeChangePayload{ChangeID: "chg-rec", Prompt: "P"})
+		require.NoError(t, err)
+		assertAlternatingRoles(t, qRec.requests[1].Messages)
+		recMsg := qRec.requests[1].Messages[len(qRec.requests[1].Messages)-1]
+		assert.Equal(t, "pass a valid JSON object with path property", recMsg.Parts[1].(model.TextPart).Text)
 
-		aliceCtx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
-		_, err := cp.ProposeChange(aliceCtx, &gensurla.ProposeChangePayload{
-			ChangeID: "chg-recover-exhaust",
-			Prompt:   "Add feature",
+		// 3. Unresolved tool error on final turn (3 turns for 1 file) -> inspection_budget_exhausted.
+		qExh := &queuedModelClient{
+			responses: []queuedModelTurn{
+				toolUseTurn("c1", "read_design", `{"path":"design/bad1.go"}`),
+				toolUseTurn("c2", "read_design", `{"path":"design/bad2.go"}`),
+				toolUseTurn("c3", "read_design", `{"path":"design/bad3.go"}`),
+			},
+		}
+		cpExh := newControlPlane(t, Options{
+			CardsDir: t.TempDir(), WorkspaceDir: wsDir,
+			Analyzer: NewModelCP1Analyzer(newQueuedModelClient(t, qExh)),
 		})
+		_, err = cpExh.ProposeChange(aliceCtx, &gensurla.ProposeChangePayload{ChangeID: "chg-exh", Prompt: "P"})
 		require.Error(t, err)
-		se, ok := asAnalysisRejected(err)
-		require.True(t, ok)
-		assert.Contains(t, se.Message, `model output failed "structured_output" validation`)
-		assert.Equal(t, "structured_output", cp1RejectionKind(err))
+		kind, ok = cp1RejectionKind(err)
+		assert.True(t, ok)
+		assert.Equal(t, "inspection_budget_exhausted", kind)
 	})
 }
 
-// TestCP1TwoPhaseReadDesign_TurnBudgetExhaustion verifies Stop Outcome 4:
-// when the model exceeds maxInspectionTurns without completing inspection,
-// it rejects with "inspection_budget_exhausted".
-func TestCP1TwoPhaseReadDesign_TurnBudgetExhaustion(t *testing.T) {
-	wsDir := setupWorkspaceWithFiles(t, map[string]string{
-		"design/design.go": "package design\n",
-	})
-	// 1 file -> maxInspectionTurns = min(1+2, 8) = 3 turns
-	q := &queuedModelClient{
-		responses: []queuedModelTurn{
-			// Turn 0: Unknown path
-			{
-				resp: &model.Response{
-					Content: []model.Message{{
-						Role: model.ConversationRoleAssistant,
-						Parts: []model.Part{
-							model.ToolUsePart{ID: "call_1", Name: "read_design", Input: rawjson.Message(`{"path":"design/bad1.go"}`)},
-						},
-					}},
-					StopReason: "tool_use",
-				},
-			},
-			// Turn 1: Unknown path again
-			{
-				resp: &model.Response{
-					Content: []model.Message{{
-						Role: model.ConversationRoleAssistant,
-						Parts: []model.Part{
-							model.ToolUsePart{ID: "call_2", Name: "read_design", Input: rawjson.Message(`{"path":"design/bad2.go"}`)},
-						},
-					}},
-					StopReason: "tool_use",
-				},
-			},
-			// Turn 2: Unknown path again (exhausting budget)
-			{
-				resp: &model.Response{
-					Content: []model.Message{{
-						Role: model.ConversationRoleAssistant,
-						Parts: []model.Part{
-							model.ToolUsePart{ID: "call_3", Name: "read_design", Input: rawjson.Message(`{"path":"design/bad3.go"}`)},
-						},
-					}},
-					StopReason: "tool_use",
-				},
-			},
-		},
-	}
-
-	cardsDir := t.TempDir()
-	cp := newControlPlane(t, Options{
-		CardsDir:     cardsDir,
-		WorkspaceDir: wsDir,
-		Analyzer:     NewModelCP1Analyzer(newQueuedModelClient(t, q)),
-	})
-
+// TestCP1TwoPhaseReadDesign_SingleTurnAndWorkspaceRevise verifies empty
+// workspaces, caller-supplied designs, Case R2 live workspace re-reads, and
+// Case R3 unbound saved workspace JSON decoding.
+func TestCP1TwoPhaseReadDesign_SingleTurnAndWorkspaceRevise(t *testing.T) {
 	aliceCtx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
-	_, err := cp.ProposeChange(aliceCtx, &gensurla.ProposeChangePayload{
-		ChangeID: "chg-budget",
-		Prompt:   "Add feature",
-	})
-	require.Error(t, err)
-	se, ok := asAnalysisRejected(err)
-	require.True(t, ok)
-	assert.Contains(t, se.Message, "exhausted turn budget before completing file inspection")
-	assert.Equal(t, "inspection_budget_exhausted", cp1RejectionKind(err))
-}
 
-// TestCP1TwoPhaseReadDesign_EmptyWorkspaceAndSupplied verifies that empty
-// workspaces (0 design files) and caller-supplied designs make exactly 1 model
-// call skipping Phase 1.
-func TestCP1TwoPhaseReadDesign_EmptyWorkspaceAndSupplied(t *testing.T) {
-	t.Run("empty_workspace_skips_phase1", func(t *testing.T) {
-		wsDir := t.TempDir()
-		require.NoError(t, os.WriteFile(filepath.Join(wsDir, "go.mod"), []byte("module example.com/test\n\ngo 1.23\n"), 0o644))
-
-		q := &queuedModelClient{
-			responses: []queuedModelTurn{
-				{
-					resp: &model.Response{
-						Content: []model.Message{{
-							Role:  model.ConversationRoleAssistant,
-							Parts: []model.Part{model.TextPart{Text: validAnalysisJSON}},
-						}},
-						StopReason: "stop",
-					},
-				},
-			},
-		}
-
-		cardsDir := t.TempDir()
-		cp := newControlPlane(t, Options{
-			CardsDir:     cardsDir,
-			WorkspaceDir: wsDir,
-			Analyzer:     NewModelCP1Analyzer(newQueuedModelClient(t, q)),
+	t.Run("empty_workspace_and_supplied_skip_phase1", func(t *testing.T) {
+		emptyWS := t.TempDir()
+		require.NoError(t, os.WriteFile(filepath.Join(emptyWS, "go.mod"), []byte("module example.com/test\n\ngo 1.23\n"), 0o644))
+		qEmpty := &queuedModelClient{responses: []queuedModelTurn{jsonAnswerTurn(validAnalysisJSON)}}
+		cpEmpty := newControlPlane(t, Options{
+			CardsDir: t.TempDir(), WorkspaceDir: emptyWS,
+			Analyzer: NewModelCP1Analyzer(newQueuedModelClient(t, qEmpty)),
 		})
-
-		aliceCtx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
-		card, err := cp.ProposeChange(aliceCtx, &gensurla.ProposeChangePayload{
-			ChangeID: "chg-empty-ws",
-			Prompt:   "Add feature",
-		})
+		_, err := cpEmpty.ProposeChange(aliceCtx, &gensurla.ProposeChangePayload{ChangeID: "chg-empty", Prompt: "P"})
 		require.NoError(t, err)
-		assert.Equal(t, "Order refund processing.", card.Summary)
-		assert.Len(t, q.requests, 1)
-		assert.Contains(t, q.requests[0].Messages[1].Parts[0].(model.TextPart).Text, "(no Goa design source was supplied")
-	})
-
-	t.Run("supplied_design_skips_phase1", func(t *testing.T) {
-		q := &queuedModelClient{
-			responses: []queuedModelTurn{
-				{
-					resp: &model.Response{
-						Content: []model.Message{{
-							Role:  model.ConversationRoleAssistant,
-							Parts: []model.Part{model.TextPart{Text: validAnalysisJSON}},
-						}},
-						StopReason: "stop",
-					},
-				},
-			},
-		}
-
-		cardsDir := t.TempDir()
-		cp := newControlPlane(t, Options{
-			CardsDir: cardsDir,
-			Analyzer: NewModelCP1Analyzer(newQueuedModelClient(t, q)),
-		})
+		require.Len(t, qEmpty.requests, 1)
+		assert.Contains(t, qEmpty.requests[0].Messages[1].Parts[0].(model.TextPart).Text, "(no Goa design source was supplied")
 
 		supplied := "package design\n// explicit design\n"
-		aliceCtx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
-		card, err := cp.ProposeChange(aliceCtx, &gensurla.ProposeChangePayload{
-			ChangeID:     "chg-supplied",
-			Prompt:       "Add feature",
-			DesignSource: &supplied,
+		qSup := &queuedModelClient{responses: []queuedModelTurn{jsonAnswerTurn(validAnalysisJSON)}}
+		cpSup := newControlPlane(t, Options{
+			CardsDir: t.TempDir(),
+			Analyzer: NewModelCP1Analyzer(newQueuedModelClient(t, qSup)),
+		})
+		_, err = cpSup.ProposeChange(aliceCtx, &gensurla.ProposeChangePayload{
+			ChangeID: "chg-sup", Prompt: "P", DesignSource: &supplied,
 		})
 		require.NoError(t, err)
-		assert.Equal(t, "Order refund processing.", card.Summary)
-		assert.Len(t, q.requests, 1)
-		assert.Contains(t, q.requests[0].Messages[1].Parts[0].(model.TextPart).Text, "explicit design")
+		require.Len(t, qSup.requests, 1)
+		assert.Contains(t, qSup.requests[0].Messages[1].Parts[0].(model.TextPart).Text, "explicit design")
 	})
-}
 
-// TestCP1TwoPhaseReadDesign_ReviseChangeWorkspaceReReadAndSavedDecode verifies
-// Case R2 (re-reading modified workspace files on ReviseChange) and Case R3
-// (decoding saved workspace JSON on an unbound control plane).
-func TestCP1TwoPhaseReadDesign_ReviseChangeWorkspaceReReadAndSavedDecode(t *testing.T) {
-	wsDir := setupWorkspaceWithFiles(t, map[string]string{
-		"design/design.go": "package design\n// v1 design\n",
-	})
-	cardsDir := t.TempDir()
-
-	q := &queuedModelClient{
-		responses: []queuedModelTurn{
-			// Propose Turn 0: read_design
-			{
-				resp: &model.Response{
-					Content: []model.Message{{
-						Role: model.ConversationRoleAssistant,
-						Parts: []model.Part{
-							model.ToolUsePart{ID: "call_1", Name: "read_design", Input: rawjson.Message(`{}`)},
-						},
-					}},
-					StopReason: "tool_use",
-				},
+	t.Run("revise_case_R2_reread_and_case_R3_unbound_decode", func(t *testing.T) {
+		wsDir := setupWorkspaceWithFiles(t, map[string]string{"design/design.go": "package design\n// v1 design\n"})
+		cardsDir := t.TempDir()
+		q := &queuedModelClient{
+			responses: []queuedModelTurn{
+				toolUseTurn("call_1", "read_design", `{}`),
+				jsonAnswerTurn(validAnalysisJSON),
+				toolUseTurn("call_r2", "read_design", `{}`),
+				jsonAnswerTurn(validRevisionAnalysisJSON),
 			},
-			// Propose Turn 1: structured completion
-			{
-				resp: &model.Response{
-					Content: []model.Message{{
-						Role:  model.ConversationRoleAssistant,
-						Parts: []model.Part{model.TextPart{Text: validAnalysisJSON}},
-					}},
-					StopReason: "stop",
-				},
-			},
-		},
-	}
+		}
+		cp := newControlPlane(t, Options{
+			CardsDir: cardsDir, WorkspaceDir: wsDir,
+			Analyzer: NewModelCP1Analyzer(newQueuedModelClient(t, q)),
+		})
+		card, err := cp.ProposeChange(aliceCtx, &gensurla.ProposeChangePayload{ChangeID: "chg-rev", Prompt: "Add refunds"})
+		require.NoError(t, err)
 
-	cp := newControlPlane(t, Options{
-		CardsDir:     cardsDir,
-		WorkspaceDir: wsDir,
-		Analyzer:     NewModelCP1Analyzer(newQueuedModelClient(t, q)),
-	})
-
-	aliceCtx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
-	card, err := cp.ProposeChange(aliceCtx, &gensurla.ProposeChangePayload{
-		ChangeID: "chg-revise-cases",
-		Prompt:   "Add refunds",
-	})
-	require.NoError(t, err)
-
-	t.Run("case_R2_live_workspace_reread", func(t *testing.T) {
-		// Update design.go on disk to v2
 		require.NoError(t, os.WriteFile(filepath.Join(wsDir, "design/design.go"), []byte("package design\n// v2 design\n"), 0o644))
-
-		q.mu.Lock()
-		q.responses = append(q.responses,
-			// Revise Turn 0: read_design
-			queuedModelTurn{
-				resp: &model.Response{
-					Content: []model.Message{{
-						Role: model.ConversationRoleAssistant,
-						Parts: []model.Part{
-							model.ToolUsePart{ID: "call_r2", Name: "read_design", Input: rawjson.Message(`{}`)},
-						},
-					}},
-					StopReason: "tool_use",
-				},
-			},
-			// Revise Turn 1: structured revision completion
-			queuedModelTurn{
-				resp: &model.Response{
-					Content: []model.Message{{
-						Role:  model.ConversationRoleAssistant,
-						Parts: []model.Part{model.TextPart{Text: validRevisionAnalysisJSON}},
-					}},
-					StopReason: "stop",
-				},
-			},
-		)
-		q.mu.Unlock()
-
 		revised, err := cp.ReviseChange(aliceCtx, &gensurla.ReviseChangePayload{
-			ChangeID:        "chg-revise-cases",
-			RequestRevision: card.RequestRevision,
-			Prompt:          "Updated prompt",
+			ChangeID: "chg-rev", RequestRevision: card.RequestRevision, Prompt: "Updated prompt",
 		})
 		require.NoError(t, err)
 		assert.Equal(t, "Revised order refund processing.", revised.Summary)
-
-		// Check tool result content had v2 in the combined final user message
-		assertAlternatingRoles(t, q.requests[3].Messages)
-		toolResultMsg := q.requests[3].Messages[len(q.requests[3].Messages)-1]
-		toolResult := toolResultMsg.Parts[0].(model.ToolResultPart)
-		filesList := toolResult.Content.([]any)
+		resObj := q.requests[3].Messages[len(q.requests[3].Messages)-1].Parts[0].(model.ToolResultPart).Content.(map[string]any)
+		filesList := resObj["files"].([]any)
 		assert.Contains(t, filesList[0].(map[string]any)["content"], "v2 design")
-	})
 
-	t.Run("case_R3_unbound_workspace_saved_decode", func(t *testing.T) {
 		require.NoError(t, cp.Close())
-
-		// Create unbound control plane with same CardsDir
 		qUnbound := &queuedModelClient{
 			responses: []queuedModelTurn{
-				// Revise Turn 0: read_design
-				{
-					resp: &model.Response{
-						Content: []model.Message{{
-							Role: model.ConversationRoleAssistant,
-							Parts: []model.Part{
-								model.ToolUsePart{ID: "call_r3", Name: "read_design", Input: rawjson.Message(`{}`)},
-							},
-						}},
-						StopReason: "tool_use",
-					},
-				},
-				// Revise Turn 1: structured revision completion
-				{
-					resp: &model.Response{
-						Content: []model.Message{{
-							Role:  model.ConversationRoleAssistant,
-							Parts: []model.Part{model.TextPart{Text: validRevisionAnalysisJSON}},
-						}},
-						StopReason: "stop",
-					},
-				},
+				toolUseTurn("call_r3", "read_design", `{}`),
+				jsonAnswerTurn(validRevisionAnalysisJSON),
 			},
 		}
-
 		cpUnbound := newControlPlane(t, Options{
 			CardsDir: cardsDir,
 			Analyzer: NewModelCP1Analyzer(newQueuedModelClient(t, qUnbound)),
 		})
-
-		currentCard, err := cpUnbound.GetChange(aliceCtx, &gensurla.GetChangePayload{ChangeID: "chg-revise-cases"})
+		got, err := cpUnbound.GetChange(aliceCtx, &gensurla.GetChangePayload{ChangeID: "chg-rev"})
 		require.NoError(t, err)
-
-		revised, err := cpUnbound.ReviseChange(aliceCtx, &gensurla.ReviseChangePayload{
-			ChangeID:        "chg-revise-cases",
-			RequestRevision: currentCard.RequestRevision,
-			Prompt:          "Unbound revise prompt",
+		revisedUnbound, err := cpUnbound.ReviseChange(aliceCtx, &gensurla.ReviseChangePayload{
+			ChangeID: "chg-rev", RequestRevision: got.RequestRevision, Prompt: "Unbound revise",
 		})
 		require.NoError(t, err)
-		assert.Equal(t, "Revised order refund processing.", revised.Summary)
-		assert.Len(t, qUnbound.requests, 2)
+		assert.Equal(t, "Revised order refund processing.", revisedUnbound.Summary)
+		require.Len(t, qUnbound.requests, 2)
 	})
 }
 
-// TestCP1SpanAttributes_SuccessAndRejection verifies that surla.public_summary
-// and surla.cp1.rejection_kind attributes are recorded on propose_change and
-// revise_change OpenTelemetry spans.
-func TestCP1SpanAttributes_SuccessAndRejection(t *testing.T) {
+// TestCP1DecodersRejectInvalidInputs verifies boundary rejection on both
+// decodeReadDesignPayload and decodeSavedWorkspaceCP1Design.
+func TestCP1DecodersRejectInvalidInputs(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		raw     string
+		want    string
+		wantErr bool
+	}{
+		{name: "empty_object", raw: `{}`, want: ""},
+		{name: "spaced_empty_object", raw: `{ }`, want: ""},
+		{name: "valid_unicode_path", raw: `{"path":"design/注文.go"}`, want: "design/注文.go"},
+		{name: "empty_raw", raw: ``, wantErr: true},
+		{name: "whitespace_raw", raw: `   `, wantErr: true},
+		{name: "literal_null", raw: `null`, wantErr: true},
+		{name: "null_path", raw: `{"path":null}`, wantErr: true},
+		{name: "empty_path", raw: `{"path":""}`, wantErr: true},
+		{name: "unknown_field", raw: `{"other":"x"}`, wantErr: true},
+		{name: "trailing_tokens", raw: `{}{}`, wantErr: true},
+	} {
+		t.Run("read_design_payload/"+tc.name, func(t *testing.T) {
+			got, err := decodeReadDesignPayload(rawjson.Message(tc.raw))
+			if tc.wantErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, got)
+		})
+	}
+
+	for _, tc := range []struct {
+		name    string
+		raw     string
+		wantErr bool
+	}{
+		{name: "empty_string", raw: ""},
+		{name: "valid_object", raw: `{"design/design.go":"package design\n"}`},
+		{name: "literal_null", raw: "null", wantErr: true},
+		{name: "wrong_value_type", raw: `{"design/design.go":123}`, wantErr: true},
+		{name: "trailing_tokens", raw: `{"design/design.go":"x"}{}`, wantErr: true},
+	} {
+		t.Run("saved_workspace_design/"+tc.name, func(t *testing.T) {
+			_, err := decodeSavedWorkspaceCP1Design(tc.raw)
+			if tc.wantErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+		})
+	}
+}
+
+// TestCP1SpanAttributes_CodeAuthoredAndSecretExclusion verifies that
+// surla.public_summary is strictly code-authored across success, model
+// rejection, semantic validation rejection (including model-returned prior_id),
+// and unclassified external analyzer rejections without guessing rejection_kind.
+func TestCP1SpanAttributes_CodeAuthoredAndSecretExclusion(t *testing.T) {
 	exp := tracetest.NewInMemoryExporter()
 	tp := sdktrace.NewTracerProvider(sdktrace.WithSyncer(exp))
 	prev := otel.GetTracerProvider()
@@ -988,198 +544,134 @@ func TestCP1SpanAttributes_SuccessAndRejection(t *testing.T) {
 		require.NoError(t, tp.Shutdown(context.Background()))
 	})
 
-	wsDir := setupWorkspaceWithFiles(t, map[string]string{
-		"design/design.go": "package design\n",
-	})
-	cardsDir := t.TempDir()
+	aliceCtx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
+	wsDir := setupWorkspaceWithFiles(t, map[string]string{"design/design.go": "package design\n"})
+
+	secretSummaryJSON := `{"summary":"private-prompt-paraphrase-secret","ambiguities":[],"examples":[{"scenario":"S","input_summary":"I","expected_outcome":"O","verification_kind":"deterministic"}],"preserved_behaviors":[]}`
+	secretPriorIDReviseJSON := `{"summary":"Revised","ambiguities":[],"examples":[{"prior_id":"private-model-prior-id-secret","scenario":"S","input_summary":"I","expected_outcome":"O","verification_kind":"deterministic"}],"removed_example_ids":["check_01"],"preserved_behaviors":[]}`
 
 	q := &queuedModelClient{
 		responses: []queuedModelTurn{
-			// Propose 1: success
+			// 1. ProposeChange success (confirmed)
+			toolUseTurn("c1", "read_design", `{}`),
+			jsonAnswerTurn(secretSummaryJSON),
+			// 2. ReviseChange semantic_validation rejection with secret prior_id
+			toolUseTurn("c2", "read_design", `{}`),
+			jsonAnswerTurn(secretPriorIDReviseJSON),
+			// 3. ProposeChange output_limited rejection
 			{
 				resp: &model.Response{
-					Content: []model.Message{{
-						Role: model.ConversationRoleAssistant,
-						Parts: []model.Part{
-							model.ToolUsePart{ID: "call_1", Name: "read_design", Input: rawjson.Message(`{}`)},
-						},
-					}},
-					StopReason: "tool_use",
-				},
-			},
-			{
-				resp: &model.Response{
+					OutputLimited: true,
+					StopReason:    "max_tokens",
 					Content: []model.Message{{
 						Role:  model.ConversationRoleAssistant,
-						Parts: []model.Part{model.TextPart{Text: validAnalysisJSON}},
+						Parts: []model.Part{model.TextPart{Text: "private-truncated-secret"}},
 					}},
-					StopReason: "stop",
 				},
 			},
 		},
 	}
-
 	cp := newControlPlane(t, Options{
-		CardsDir:     cardsDir,
+		CardsDir:     t.TempDir(),
 		WorkspaceDir: wsDir,
 		Analyzer:     NewModelCP1Analyzer(newQueuedModelClient(t, q)),
 	})
-	aliceCtx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
 
-	// 1. ProposeChange success
 	card, err := cp.ProposeChange(aliceCtx, &gensurla.ProposeChangePayload{
-		ChangeID: "chg-span-success",
-		Prompt:   "Add refunds",
+		ChangeID: "chg-span", Prompt: "private-user-prompt-secret",
 	})
 	require.NoError(t, err)
+	proposeSpan := lastSpanByName(t, exp.GetSpans(), "surla.controlplane.propose_change")
+	pubSummary, ok := findSpanAttr(proposeSpan.Attributes, "surla.public_summary")
+	require.True(t, ok)
+	assert.Equal(t, "Proposed Change Card (confirmed).", pubSummary.AsString())
+	assert.NotContains(t, pubSummary.AsString(), "private-")
+	_, hasRej := findSpanAttr(proposeSpan.Attributes, "surla.cp1.rejection_kind")
+	assert.False(t, hasRej)
 
-	spans := exp.GetSpans()
-	require.NotEmpty(t, spans)
-	proposeSpan := findSpanByName(spans, "surla.controlplane.propose_change")
-	require.NotNil(t, proposeSpan)
-	val, ok := findSpanAttr(proposeSpan.Attributes, "surla.public_summary")
-	assert.True(t, ok)
-	assert.Equal(t, card.Summary, val.AsString())
-	_, hasRejectionKind := findSpanAttr(proposeSpan.Attributes, "surla.cp1.rejection_kind")
-	assert.False(t, hasRejectionKind, "successful span must not have rejection_kind")
-
-	// 2. ReviseChange success
-	q.mu.Lock()
-	q.responses = append(q.responses,
-		queuedModelTurn{
-			resp: &model.Response{
-				Content: []model.Message{{
-					Role: model.ConversationRoleAssistant,
-					Parts: []model.Part{
-						model.ToolUsePart{ID: "call_rev", Name: "read_design", Input: rawjson.Message(`{}`)},
-					},
-				}},
-				StopReason: "tool_use",
-			},
-		},
-		queuedModelTurn{
-			resp: &model.Response{
-				Content: []model.Message{{
-					Role:  model.ConversationRoleAssistant,
-					Parts: []model.Part{model.TextPart{Text: validRevisionAnalysisJSON}},
-				}},
-				StopReason: "stop",
-			},
-		},
-	)
-	q.mu.Unlock()
-
-	revised, err := cp.ReviseChange(aliceCtx, &gensurla.ReviseChangePayload{
-		ChangeID:        "chg-span-success",
-		RequestRevision: card.RequestRevision,
-		Prompt:          "Updated prompt",
-	})
-	require.NoError(t, err)
-
-	spans = exp.GetSpans()
-	reviseSpan := findSpanByName(spans, "surla.controlplane.revise_change")
-	require.NotNil(t, reviseSpan)
-	val, ok = findSpanAttr(reviseSpan.Attributes, "surla.public_summary")
-	assert.True(t, ok)
-	assert.Equal(t, revised.Summary, val.AsString())
-
-	// 3. ProposeChange analysis_rejected (OutputLimited)
-	q.mu.Lock()
-	q.responses = append(q.responses, queuedModelTurn{
-		resp: &model.Response{
-			OutputLimited: true,
-			StopReason:    "max_tokens",
-			Content: []model.Message{{
-				Role: model.ConversationRoleAssistant,
-				Parts: []model.Part{
-					model.ToolUsePart{
-						ID:    "call_span_lim",
-						Name:  "read_design",
-						Input: rawjson.Message(`{}`),
-					},
-				},
-			}},
-		},
-	})
-	q.mu.Unlock()
-
-	_, err = cp.ProposeChange(aliceCtx, &gensurla.ProposeChangePayload{
-		ChangeID: "chg-span-rejected",
-		Prompt:   "Fail with output limit",
+	// ReviseChange fails semantic validation with model-invented prior_id; caller
+	// error retains diagnostic detail, while surla.public_summary excludes it.
+	_, err = cp.ReviseChange(aliceCtx, &gensurla.ReviseChangePayload{
+		ChangeID: "chg-span", RequestRevision: card.RequestRevision, Prompt: "private-revise-prompt-secret",
 	})
 	require.Error(t, err)
-	se, ok := asAnalysisRejected(err)
+	assert.Contains(t, err.Error(), "private-model-prior-id-secret")
+	reviseSpan := lastSpanByName(t, exp.GetSpans(), "surla.controlplane.revise_change")
+	rejKind, ok := findSpanAttr(reviseSpan.Attributes, "surla.cp1.rejection_kind")
 	require.True(t, ok)
+	assert.Equal(t, "semantic_validation", rejKind.AsString())
+	revSummary, ok := findSpanAttr(reviseSpan.Attributes, "surla.public_summary")
+	require.True(t, ok)
+	assert.Equal(t, "CP1 revision rejected: model output failed Change Card semantic validation; the saved Change Card was unchanged.", revSummary.AsString())
+	assert.NotContains(t, revSummary.AsString(), "private-")
 
-	spans = exp.GetSpans()
-	var lastProposeSpan *tracetest.SpanStub
-	for i := len(spans) - 1; i >= 0; i-- {
-		if spans[i].Name == "surla.controlplane.propose_change" {
-			lastProposeSpan = &spans[i]
-			break
-		}
-	}
-	require.NotNil(t, lastProposeSpan)
-	rejKindVal, ok := findSpanAttr(lastProposeSpan.Attributes, "surla.cp1.rejection_kind")
-	assert.True(t, ok)
-	assert.Equal(t, "output_limited", rejKindVal.AsString())
-	summaryVal, ok := findSpanAttr(lastProposeSpan.Attributes, "surla.public_summary")
-	assert.True(t, ok)
-	assert.Equal(t, se.Message, summaryVal.AsString())
-
-	// 4. ProposeChange semantic_validation rejection (duplicate ambiguity options)
-	invalidSemanticJSON := `{"summary":"Valid summary","ambiguities":[{"question":"Which option?","options":["option-a","option-a"]}],"examples":[{"scenario":"S","input_summary":"I","expected_outcome":"O","verification_kind":"deterministic"}],"preserved_behaviors":[]}`
-	q.mu.Lock()
-	q.responses = append(q.responses,
-		queuedModelTurn{
-			resp: &model.Response{
-				Content: []model.Message{{
-					Role: model.ConversationRoleAssistant,
-					Parts: []model.Part{
-						model.ToolUsePart{ID: "call_sem", Name: "read_design", Input: rawjson.Message(`{}`)},
-					},
-				}},
-				StopReason: "tool_use",
-			},
-		},
-		queuedModelTurn{
-			resp: &model.Response{
-				Content: []model.Message{{
-					Role:  model.ConversationRoleAssistant,
-					Parts: []model.Part{model.TextPart{Text: invalidSemanticJSON}},
-				}},
-				StopReason: "stop",
-			},
-		},
-	)
-	q.mu.Unlock()
-
+	// OutputLimited rejection records output_limited and excludes model output.
 	_, err = cp.ProposeChange(aliceCtx, &gensurla.ProposeChangePayload{
-		ChangeID: "chg-span-semantic-fail",
-		Prompt:   "Fail with semantic validation",
+		ChangeID: "chg-span-lim", Prompt: "private-user-prompt-secret",
 	})
 	require.Error(t, err)
-	se, ok = asAnalysisRejected(err)
+	limSpan := lastSpanByName(t, exp.GetSpans(), "surla.controlplane.propose_change")
+	rejKind, ok = findSpanAttr(limSpan.Attributes, "surla.cp1.rejection_kind")
 	require.True(t, ok)
+	assert.Equal(t, "output_limited", rejKind.AsString())
+	limSummary, ok := findSpanAttr(limSpan.Attributes, "surla.public_summary")
+	require.True(t, ok)
+	assert.NotContains(t, limSummary.AsString(), "private-")
 
-	spans = exp.GetSpans()
-	for i := len(spans) - 1; i >= 0; i-- {
-		if spans[i].Name == "surla.controlplane.propose_change" {
-			lastProposeSpan = &spans[i]
-			break
-		}
-	}
-	require.NotNil(t, lastProposeSpan)
-	rejKindVal, ok = findSpanAttr(lastProposeSpan.Attributes, "surla.cp1.rejection_kind")
-	assert.True(t, ok)
-	assert.Equal(t, "semantic_validation", rejKindVal.AsString())
-	summaryVal, ok = findSpanAttr(lastProposeSpan.Attributes, "surla.public_summary")
-	assert.True(t, ok)
-	assert.Equal(t, se.Message, summaryVal.AsString())
+	// Bare external ServiceError rejection neither leaks its message into
+	// surla.public_summary nor guesses surla.cp1.rejection_kind.
+	cpCustom := newControlPlane(t, Options{
+		CardsDir: t.TempDir(),
+		Analyzer: &stubCP1Analyzer{
+			analyzeFn: func(context.Context, string, CP1Design) (CP1SemanticAnalysis, error) {
+				return CP1SemanticAnalysis{}, newAnalysisRejected("private-custom-analyzer-detail", errors.New("cause"))
+			},
+		},
+	})
+	_, err = cpCustom.ProposeChange(aliceCtx, &gensurla.ProposeChangePayload{
+		ChangeID: "chg-custom", Prompt: "P",
+	})
+	require.Error(t, err)
+	customSpan := lastSpanByName(t, exp.GetSpans(), "surla.controlplane.propose_change")
+	_, hasRej = findSpanAttr(customSpan.Attributes, "surla.cp1.rejection_kind")
+	assert.False(t, hasRej, "bare ServiceError without typed kind must not guess semantic_validation")
+	customSummary, ok := findSpanAttr(customSpan.Attributes, "surla.public_summary")
+	require.True(t, ok)
+	assert.Equal(t, "CP1 analysis rejected; no Change Card was saved.", customSummary.AsString())
+	assert.NotContains(t, customSummary.AsString(), "private-")
 }
 
-// setupWorkspaceWithFiles creates a valid Go module workspace containing the
-// specified relative design file paths and contents.
+// toolUseTurn constructs a scripted Phase 1 tool-call response turn.
+func toolUseTurn(id, name, inputJSON string) queuedModelTurn {
+	return queuedModelTurn{
+		resp: &model.Response{
+			Content: []model.Message{{
+				Role: model.ConversationRoleAssistant,
+				Parts: []model.Part{model.ToolUsePart{
+					ID:    id,
+					Name:  name,
+					Input: rawjson.Message(inputJSON),
+				}},
+			}},
+			StopReason: "tool_use",
+		},
+	}
+}
+
+// jsonAnswerTurn constructs a scripted assistant text response turn.
+func jsonAnswerTurn(text string) queuedModelTurn {
+	return queuedModelTurn{
+		resp: &model.Response{
+			Content: []model.Message{{
+				Role:  model.ConversationRoleAssistant,
+				Parts: []model.Part{model.TextPart{Text: text}},
+			}},
+			StopReason: "stop",
+		},
+	}
+}
+
+// setupWorkspaceWithFiles creates a valid Go module workspace containing files.
 func setupWorkspaceWithFiles(t *testing.T, files map[string]string) string {
 	t.Helper()
 	wsDir := t.TempDir()
@@ -1192,14 +684,16 @@ func setupWorkspaceWithFiles(t *testing.T, files map[string]string) string {
 	return wsDir
 }
 
-// findSpanByName locates the first span with matching name in spans.
-func findSpanByName(spans []tracetest.SpanStub, name string) *tracetest.SpanStub {
-	for i := range spans {
+// lastSpanByName returns the most recent span with name from spans.
+func lastSpanByName(t *testing.T, spans []tracetest.SpanStub, name string) tracetest.SpanStub {
+	t.Helper()
+	for i := len(spans) - 1; i >= 0; i-- {
 		if spans[i].Name == name {
-			return &spans[i]
+			return spans[i]
 		}
 	}
-	return nil
+	t.Fatalf("span %q not found", name)
+	return tracetest.SpanStub{}
 }
 
 // findSpanAttr finds the attribute value for key in attrs.

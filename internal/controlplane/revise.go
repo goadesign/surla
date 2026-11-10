@@ -68,35 +68,25 @@ type (
 )
 
 // Revise invokes the underlying Goa-AI model.Client with the prior Change Card
-// semantic context, the revised operator prompt, and the target Goa design
-// source, and strictly decodes the validated CP1RevisionSemanticAnalysis response.
+// semantic context, the revised operator prompt, and the target Goa design, and
+// strictly decodes the validated CP1RevisionSemanticAnalysis response.
 func (a *ModelCP1Analyzer) Revise(
 	ctx context.Context,
 	prior CP1PriorCard,
 	promptText string,
 	design CP1Design,
 ) (CP1RevisionSemanticAnalysis, error) {
-	singleTurnPrompt, err := formatCP1ReviseUserPrompt(prior, promptText, design.supplied)
+	baseUserPrompt, err := formatCP1ReviseBasePrompt(prior, promptText)
 	if err != nil {
 		return CP1RevisionSemanticAnalysis{}, err
 	}
-	priorJSON, err := json.Marshal(prior)
-	if err != nil {
-		return CP1RevisionSemanticAnalysis{}, fmt.Errorf("marshal prior cp1 change card: %w", err)
-	}
-	initialUserPrompt := fmt.Sprintf(
-		"Prior Change Card:\n%s\n\nRevised Request:\n%s",
-		string(priorJSON),
-		promptText,
-	)
 	response, err := inspectAndComplete(
 		ctx,
 		a,
 		goldenpath.ArchitectReviseSystemPrompt(),
-		singleTurnPrompt,
+		baseUserPrompt,
 		design,
 		gencompletions.SpecCp1ReviseChangeCardAnalysis(),
-		initialUserPrompt,
 	)
 	if err != nil {
 		return CP1RevisionSemanticAnalysis{}, err
@@ -207,8 +197,8 @@ func (c *ControlPlane) ReviseChange(
 	analysis, err := model.analyzer.Revise(ctx, prior, p.Prompt, design)
 	if err != nil {
 		if se, ok := asAnalysisRejected(err); ok {
-			rejectionKind := cp1RejectionKind(err)
-			se = newAnalysisRejected(
+			recordCP1RejectionSpan(span, true, err)
+			err = newAnalysisRejected(
 				fmt.Sprintf(
 					"cp1 analysis rejected (%s): this revise_change request did not modify Change Card %q; retry revise_change with request_revision %s (and design_source when updating the Goa design), or call get_change if another request may have updated the card",
 					se.Message,
@@ -217,11 +207,6 @@ func (c *ControlPlane) ReviseChange(
 				),
 				err,
 			)
-			span.SetAttributes(
-				attribute.String("surla.cp1.rejection_kind", rejectionKind),
-				attribute.String("surla.public_summary", se.Message),
-			)
-			err = se
 		} else if containsAnalysisRejected(err) {
 			err = unclassifiedCP1Error{cause: err}
 		}
@@ -237,6 +222,8 @@ func (c *ControlPlane) ReviseChange(
 
 	summary, ambiguities, examples, preserved, err := validateCP1RevisionAnalysis(p.ChangeID, record.card.Examples, analysis)
 	if err != nil {
+		cause := &cp1Rejection{kind: "semantic_validation", err: err}
+		recordCP1RejectionSpan(span, true, cause)
 		se := newAnalysisRejected(
 			fmt.Sprintf(
 				"cp1 analysis rejected (%s): this revise_change request did not modify Change Card %q; retry revise_change with request_revision %s (and design_source when updating the Goa design), or call get_change if another request may have updated the card",
@@ -244,11 +231,7 @@ func (c *ControlPlane) ReviseChange(
 				p.ChangeID,
 				p.RequestRevision,
 			),
-			&cp1Rejection{kind: "semantic_validation", err: err},
-		)
-		span.SetAttributes(
-			attribute.String("surla.cp1.rejection_kind", "semantic_validation"),
-			attribute.String("surla.public_summary", se.Message),
+			cause,
 		)
 		span.RecordError(se)
 		span.SetStatus(codes.Error, "validate revised cp1 analysis")
@@ -313,7 +296,7 @@ func (c *ControlPlane) ReviseChange(
 		span.SetStatus(codes.Error, "save revised cp1 change card")
 		return nil, err
 	}
-	span.SetAttributes(attribute.String("surla.public_summary", revised.Summary))
+	span.SetAttributes(attribute.String("surla.public_summary", "Revised Change Card (needs_confirmation)."))
 	return revised, nil
 }
 
@@ -511,18 +494,17 @@ func formatCP1DesignSection(designSource string) string {
 	return "(no Goa design source was supplied — do not assume or invent service splits, endpoints, or fixture IDs that are not stated in the request or prior card)"
 }
 
-// formatCP1ReviseUserPrompt formats the prior Change Card context, the revised
-// operator request, and the target Goa design source for ModelCP1Analyzer.Revise.
-func formatCP1ReviseUserPrompt(prior CP1PriorCard, promptText, designSource string) (string, error) {
+// formatCP1ReviseBasePrompt formats the prior Change Card JSON and the revised
+// operator request once for ModelCP1Analyzer.Revise.
+func formatCP1ReviseBasePrompt(prior CP1PriorCard, promptText string) (string, error) {
 	priorJSON, err := json.Marshal(prior)
 	if err != nil {
 		return "", fmt.Errorf("marshal prior cp1 change card: %w", err)
 	}
 	return fmt.Sprintf(
-		"Prior Change Card:\n%s\n\nRevised Request:\n%s\n\nDesign:\n%s",
+		"Prior Change Card:\n%s\n\nRevised Request:\n%s",
 		string(priorJSON),
 		promptText,
-		formatCP1DesignSection(designSource),
 	), nil
 }
 

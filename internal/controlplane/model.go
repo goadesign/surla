@@ -142,20 +142,13 @@ func (a *ModelCP1Analyzer) Analyze(
 	promptText string,
 	design CP1Design,
 ) (CP1SemanticAnalysis, error) {
-	singleTurnPrompt := fmt.Sprintf(
-		"Request:\n%s\n\nDesign:\n%s",
-		promptText,
-		formatCP1DesignSection(design.supplied),
-	)
-	initialUserPrompt := "Request:\n" + promptText
 	response, err := inspectAndComplete(
 		ctx,
 		a,
 		goldenpath.ArchitectSystemPrompt(),
-		singleTurnPrompt,
+		"Request:\n"+promptText,
 		design,
 		gencompletions.SpecCp1ChangeCardAnalysis(),
-		initialUserPrompt,
 	)
 	if err != nil {
 		return CP1SemanticAnalysis{}, err
