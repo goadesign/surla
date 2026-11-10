@@ -91,7 +91,8 @@ Event Storming. A small change skips this step.
   or what triggers it, rules, open questions, and other systems. The
   interface does not use the method's own vocabulary.
 - **It leads to the architecture.** The open questions on the timeline are
-  the decisions only the user can make. Groups of notes become services.
+  the decisions only the user can make. How the notes group suggests where
+  service boundaries could go; the user and the guide settle them.
 - **It stays.** The timeline remains a view of the platform, linked to the
   diagrams: selecting a note shows the parts that implement it, and
   selecting a part shows its notes.
@@ -102,8 +103,10 @@ Surla applies the principles of domain-driven design and does not ask the
 user to know them. Each appears in plain words, with the established term
 available to those who look for it.
 
-- **Groups become services.** A group of related notes on the timeline is
-  one service with its own data (a bounded context).
+- **Boundaries follow meaning.** A boundary is drawn where a set of words
+  and rules stays consistent (a bounded context). The groups on the
+  timeline inform where boundaries go; a group is not automatically one
+  service.
 - **One name for one thing.** The words on the timeline are the names in
   the design, the code and the docs (ubiquitous language).
 - **A service knows only what another exposes.** That is its API and its
