@@ -20,17 +20,16 @@ can run against it.
   `Required(...)`), check for a missing header in HTTP middleware before the
   generated decoder runs when you want missing headers to answer `401`.
   `design/model.go` declares the C4 architecture model.
-- `gen/` is generated from `design/`. After changing `design/`, run `surla gen`
-  in this directory (or call the `generate_code` MCP tool when connected to
-  `surla serve`): it runs Goa's generator for this module inside Surla's
-  sandbox. Never edit `gen/`. `surla gen` and `generate_code` do not build the
-  whole application against the new `gen/`, so after a design change, update
-  the hand-written code in `internal/` and `cmd/` to match it before you verify
-  a commit or start a live target.
+- `gen/` is generated from `design/`. After changing `design/`, call the
+  `generate_code` MCP tool when connected to `surla serve` (or run `surla gen`
+  in this directory): it runs Goa's generator for this module inside Surla's
+  sandbox. Never edit `gen/`. Generation compiles the design only, so update the
+  hand-written code in `internal/` and `cmd/` to match it, then build and test
+  your uncommitted files with `check_project` as described in "Next steps".
   `AGENTS_QUICKSTART.md` is generated with it and maps the agent, its tools
-  and the generated packages for coding agents (in a Surla project, use
-  `surla gen` and `surla verify` in place of the guide's `goa gen` and
-  `go run` commands).
+  and the generated packages for coding agents. Its `goa gen`, `goa example`
+  and `go run` commands run code on your machine outside Surla's sandbox; in
+  this project, follow "Next steps" instead.
 - `internal/helper` is the agent's planner and `internal/service` implements the
   service. `Service.Ask` builds an in-memory runtime and store per question
   because this starter has no multi-turn sessions or `Confirmation` tools, and
@@ -72,11 +71,23 @@ read.
 If you created this project over MCP with `init_project`, `surla serve` has
 already initialized the Git repository, created the initial commit (`commit` in
 `init_project`'s result), bound the server to this directory (`dir`), and
-pinned the evaluator suite to that initial commit: continue directly with
-`propose_change`, `confirm_intent`, `preview_architecture`, `generate_code`,
-`start_live_target`, and `verify_change` on the running server (when you later
-edit and commit implementation changes as a new commit, pass that new commit ID
-as `candidate_commit` to `start_live_target` and `verify_change`).
+pinned the evaluator suite to that initial commit. For each change, use the
+running server:
+
+1. Describe and check the change with `propose_change`, `confirm_intent` and
+   `preview_architecture`.
+2. Edit `design/` and call `generate_code` (with `target: "eval"` after editing
+   `eval/design/`), then update the hand-written code.
+3. Call `check_project` to build and test your uncommitted files, this module
+   and `eval/`, in Linux containers (Docker required). When its message
+   reports a missing `go.sum` or `go.work.sum` entry or a `go.mod` update, call
+   `update_dependencies` and check again. `read_check_output` returns the full
+   output for the `op_id` in either result.
+4. Commit, then pass the new commit ID as `candidate_commit` to
+   `start_live_target` and `verify_change`.
+
+See the MCP tools reference in Surla's `docs/REFERENCE.md` for each tool's
+inputs and results.
 
 If you created this project from the CLI with `surla init`, initialize the Git
 repository, make the first commit, and run `surla preview` and `surla verify`:
@@ -104,6 +115,11 @@ in the completed report JSON and summary line (if a run fails before writing a
 report, `stderr` prints operator setup/execution failure diagnostics). Do not
 share `$WORK_DIR`, `$REPORT_DIR`, or setup/execution failure output with coding
 agents that build the service.
+
+`surla verify` checks a commit. The CLI has no command that builds and tests
+uncommitted files, so for later changes, start `surla serve` in this directory
+(see the next section) and run the `check_project` loop in "Next steps" above
+before you commit.
 
 ## Connect a coding agent and try a live target
 

@@ -507,7 +507,14 @@ func TestInitReadmeFirstRunSnippetsMatchTheProject(t *testing.T) {
 	assert.Contains(t, readme, "surla://golden-path")
 	assert.Contains(t, readme, "http://127.0.0.1:8090/golden-path")
 	assert.Contains(t, readme, "planner.ToolFailureProvider")
-	assert.Contains(t, readme, "use\n  `surla gen` and `surla verify` in place of the guide's `goa gen` and\n  `go run` commands")
+	// The guide's host commands are named as outside the sandbox, and the
+	// README's own loop builds and tests uncommitted files before a commit.
+	assert.Contains(t, readme, "Its `goa gen`, `goa example`\n  and `go run` commands run code on your machine outside Surla's sandbox")
+	for _, step := range []string{"`generate_code`", "Call `check_project` to build and test your uncommitted files", "call\n   `update_dependencies` and check again", "`read_check_output`", "Commit, then pass the new commit ID as `candidate_commit`"} {
+		assert.Contains(t, readme, step)
+	}
+	assert.Contains(t, readme, "The CLI has no command that builds and tests\nuncommitted files")
+	assert.NotContains(t, readme, "in place of the guide's `goa gen`")
 
 	candDesign, err := os.ReadFile(filepath.Join(dir, "design", "design.go"))
 	require.NoError(t, err)
