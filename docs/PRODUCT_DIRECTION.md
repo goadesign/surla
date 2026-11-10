@@ -49,6 +49,10 @@ deployment.
   workflow engine or an external provider is an element with relationships;
   where things run is the deployment view. Surla adds no separate lists for
   "depends on" or "runs on".
+- **The diagrams are held to the same standard as the rest.** How a
+  diagram looks is part of the experience, not a given of the tool that
+  draws it. Where Model's rendering falls short, Model is changed and
+  released; Surla does not draw its own substitute.
 
 ### The model is a guide and thought partner
 
@@ -91,6 +95,11 @@ this step.
 - **Plain labels.** The timeline's notes are named in plain words — for
   example "what happens" rather than "domain event" — and the interface
   does not use the method's own vocabulary.
+- **The user edits it first.** Before Surla proposes architecture, the
+  user can add, change and remove notes on the timeline. They do it on the
+  timeline itself or by saying it to the guide, including from a chat
+  client that talks to Surla over MCP. Both ways change the same timeline,
+  and the architecture Surla proposes next follows the edited one.
 - **It leads to the architecture.** Open questions on the timeline become
   the choices Surla raises, unless the playbook already settles them. How
   the notes group suggests where boundaries could go; the user and the
@@ -216,6 +225,9 @@ diagram.
   of truth for the architecture. Where the timeline of domain events is
   kept, and how a note stays linked to the elements that implement it, is
   not decided.
+- **How an edit to the timeline is saved.** Which part of Surla saves a
+  note the user adds, changes or removes, and what an MCP client calls to
+  make the same edit, is not decided.
 - **How an edit on the diagram reaches the design code.** Model's editor
   moves elements today; it does not add, rename or remove them. How much of
   it Surla can reuse, and whether a diagram edit is applied by rewriting the
