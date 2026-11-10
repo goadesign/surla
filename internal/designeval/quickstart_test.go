@@ -93,6 +93,7 @@ func TestQuickstartSectionsKeepGoaAIsLayout(t *testing.T) {
 		}
 	}
 	assert.Contains(t, quickstartSections["liftoff"], "`check_project`")
+	assert.Contains(t, quickstartSections["header"], "section 2 names them", "the header points at liftoff, part 2")
 	assert.Contains(t, quickstartSections["golden-rules"], "`generate_code`")
 }
 
