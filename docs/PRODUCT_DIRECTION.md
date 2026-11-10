@@ -7,6 +7,9 @@ Surla does today. Where this page and an older planning document disagree
 (for example [`PRESS_RELEASE.md`](../PRESS_RELEASE.md) or
 [`PROPOSAL.md`](../PROPOSAL.md)), this page states the current intent.
 
+[Decisions](#decisions) are settled. [Proposals](#proposals) are how the
+design currently plans to meet them; they are not settled and can change.
+
 ## The product in five lines
 
 1. **User.** A technical builder — a backend or platform engineer, or an
@@ -20,11 +23,11 @@ Surla does today. Where this page and an older planning document disagree
    independent verifier proving the result.
 3. **Rules that do not bend.** They are listed under
    [Decisions](#decisions).
-4. **Out of scope.** A drag-and-drop diagram editor, a catalogue or console
-   of cloud services, provisioning, and an application builder for
-   non-technical users.
-5. **Delivery.** An MCP App inside the assistant the user already works in,
-   with the same page served by `surla serve` for hosts that cannot show it.
+4. **Out of scope.** A catalogue or console of cloud services, deploying
+   or applying infrastructure, and an application builder for non-technical
+   users.
+5. **Delivery.** Proposed: an MCP App inside the assistant the user already
+   works in. See [Proposals](#proposals).
 
 ## Decisions
 
@@ -46,14 +49,6 @@ deployment.
   workflow engine or an external provider is an element with relationships;
   where things run is the deployment view. Surla adds no separate lists for
   "depends on" or "runs on".
-- **Each element carries a state.** Planned, changing, or checked. "Checked"
-  means an independent check passed for a named commit in a named
-  environment. Surla never shows a platform as running: it does not observe
-  that.
-- **The view always says what it shows.** A proposal, a build in progress, a
-  checked commit, or a design read from an existing repository that has not
-  been checked.
-
 ### The model is a guide and thought partner
 
 The model proposes an architecture, gives its reasons, lays out the
@@ -65,9 +60,7 @@ The user engages as little or as much as they want:
 - **A little.** Accept the proposal and decide only the choices Surla
   raises.
 - **Some.** Walk through the choices with the guide.
-- **A lot.** Reshape the architecture by saying what to change. The guide
-  edits the design code and the diagram redraws with the difference marked.
-  The user does not drag boxes.
+- **A lot.** Reshape the architecture and have Surla check the result.
 
 Between the user's decisions the agent continues on its own. It stops for a
 decision only the user can make, and for a verdict.
@@ -93,12 +86,6 @@ few one-line points, and at most one primary action. Detail is one step
 away. The interface uses the vocabulary of the user's platform and of
 software architecture, not Surla's internal terms.
 
-### One workspace
-
-Deciding, trying the result, reading the verdict and looking at evidence
-all happen in the architecture workspace, with the affected elements marked
-on the diagram. There is no separate sequence of screens for a change.
-
 ### The builder never grades its own work
 
 The verifier is independent of the agents that wrote the code, and hidden
@@ -112,21 +99,51 @@ well as application code.
   user says. The coding agent writes the Terraform from the deployment
   view, the same way it writes service code, and reuses the Terraform
   conventions the repository already has.
-- **Surla checks the Terraform.** It validates the files without cloud
-  credentials and checks that they match the deployment view: every element
-  has a resource, and no resource is missing from the diagram.
-- **Deployment is separate and explicit.** `terraform plan` and
-  `terraform apply` need the user's credentials and are the user's to run.
-  Recording an approval does not merge, deploy or apply anything.
+- **Surla can produce Terraform.** It is written the way service code is,
+  and checked independently of the agent that wrote it.
+- **Deployment is separate and explicit.** Surla does not apply
+  infrastructure or deploy. Recording an approval does not merge, deploy or
+  apply anything.
+
+## Proposals
+
+These are the current design's answers. None is settled.
+
+### One workspace
+
+Deciding, trying the result, reading the verdict and looking at evidence
+all happen in the architecture workspace, with the affected elements marked
+on the diagram, so that a change has no separate sequence of screens.
+
+### Reshape by saying, not by dragging
+
+The user selects an element or says what to change. The guide edits the
+design code and the diagram redraws with the difference marked. Surla does
+not offer a drag-and-drop diagram editor.
+
+### Every view says what it shows
+
+- **Each element carries a state.** Planned, changing, or checked. "Checked"
+  means an independent check passed for a named commit in a named
+  environment.
+- **The view names its subject.** A proposal, a build in progress, a checked
+  commit, or a design read from an existing repository that has not been
+  checked. Surla does not show a platform as running, because it does not
+  observe that.
+
+### Checking Terraform
+
+Surla validates the Terraform files and compares them with the deployment
+view, reporting an element with no resource and a resource missing from the
+diagram. Which checks need the user's cloud credentials, and who runs
+`terraform plan`, is open.
 
 ### Delivered as an MCP App
-
-Surla's interface is an MCP App in the user's assistant.
 
 - **In the conversation,** a small card shows one moment — a proposal, a
   decision, a verdict — with a small diagram and one action.
 - **Full screen,** the same app is the architecture workspace.
-- **State lives on the Surla server.** An MCP App view belongs to one tool
-  call and is not kept between turns, so every view is rebuilt from what
-  the server holds.
+- **State lives on the Surla server.** The MCP Apps specification dated
+  2026-01-26 sends a view its tool input once and lists state persistence
+  as future work, so each view is rebuilt from what the server holds.
 - **Outside an MCP Apps host,** `surla serve` serves the same page.
