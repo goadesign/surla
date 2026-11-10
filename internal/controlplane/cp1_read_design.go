@@ -236,7 +236,7 @@ func cp1SafeRejectionSummary(revise bool, rejectionKind string, hasKind bool) st
 	case model.OutputValidationToolIdentity,
 		model.OutputValidationToolArguments,
 		model.OutputValidationToolChoice:
-		return fmt.Sprintf("%s: model design-inspection tool call was invalid (%s); retry %s.", prefix, outcome, retryCall)
+		return fmt.Sprintf("%s: model tool call was invalid (%s); retry %s.", prefix, outcome, retryCall)
 	case model.OutputValidationResponseShape:
 		return fmt.Sprintf("%s: model response failed response-shape validation (%s); retry %s.", prefix, outcome, retryCall)
 	case model.OutputValidationOutputBounds:

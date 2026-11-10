@@ -66,14 +66,18 @@ func TestCP1SpanAttributes_CodeAuthoredAndSecretExclusion(t *testing.T) {
 					}},
 				},
 			},
-			// 4. ProposeChange non-rejection provider/analyzer fault
+			// 4. ProposeChange inline-design final completion malformed tool ID
+			// (skips Phase 1 inspection, proving tool_identity summary stays
+			// phase-neutral through real canonical model validation).
+			toolUseTurn("", "private-unexpected-tool-secret", `{}`),
+			// 5. ProposeChange non-rejection provider/analyzer fault
 			{
 				err: errors.New("private-provider-credential-secret"),
 			},
-			// 5. ProposeChange valid response followed by card save storage fault
+			// 6. ProposeChange valid response followed by card save storage fault
 			toolUseTurn("call-save", "read_design", `{"path":"design/design.go"}`),
 			jsonAnswerTurn(secretSummaryJSON),
-			// 6. ReviseChange valid response followed by card save storage fault
+			// 7. ReviseChange valid response followed by card save storage fault
 			toolUseTurn("call-rev-save", "read_design", `{"path":"design/design.go"}`),
 			jsonAnswerTurn(validSecretReviseJSON),
 		},
@@ -127,6 +131,30 @@ func TestCP1SpanAttributes_CodeAuthoredAndSecretExclusion(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, "CP1 analysis rejected: provider stopped at output limit (this request did not save a Change Card); shorten the request and retry propose_change.", limSummary.AsString())
 	assert.NotContains(t, limSummary.AsString(), "private-")
+
+	// Inline-design final completion with a missing tool-use ID skips Phase 1
+	// inspection and fails canonical model validation with tool_identity; the
+	// span records phase-neutral tool-call wording without leaking tool names.
+	inlineDesign := "package design\n"
+	_, err = cp.ProposeChange(aliceCtx, &gensurla.ProposeChangePayload{
+		ChangeID:     "chg-span-final-tool-id",
+		Prompt:       "private-user-prompt-secret",
+		DesignSource: &inlineDesign,
+	})
+	require.Error(t, err)
+	toolIDSpan := lastSpanByName(t, exp.GetSpans(), "surla.controlplane.propose_change")
+	rejKind, ok = findSpanAttr(toolIDSpan.Attributes, "surla.cp1.rejection_kind")
+	require.True(t, ok)
+	assert.Equal(t, "tool_identity", rejKind.AsString())
+	toolIDSummary, ok := findSpanAttr(toolIDSpan.Attributes, "surla.public_summary")
+	require.True(t, ok)
+	assert.Equal(
+		t,
+		"CP1 analysis rejected: model tool call was invalid (this request did not save a Change Card); retry propose_change.",
+		toolIDSummary.AsString(),
+	)
+	assert.NotContains(t, toolIDSummary.AsString(), "private-")
+	assert.NotContains(t, toolIDSummary.AsString(), "design-inspection")
 
 	// Non-rejection analyzer fault records operator recovery with request-scoped
 	// persistence claim and without claiming unproven sub-component causes.
@@ -328,15 +356,15 @@ func TestCP1SpanAttributes_AnalyzerErrorKindsAndConcurrentConflicts(t *testing.T
 		},
 		{
 			kind:        string(model.OutputValidationToolIdentity),
-			wantSummary: "CP1 analysis rejected: model design-inspection tool call was invalid (this request did not save a Change Card); retry propose_change.",
+			wantSummary: "CP1 analysis rejected: model tool call was invalid (this request did not save a Change Card); retry propose_change.",
 		},
 		{
 			kind:        string(model.OutputValidationToolArguments),
-			wantSummary: "CP1 analysis rejected: model design-inspection tool call was invalid (this request did not save a Change Card); retry propose_change.",
+			wantSummary: "CP1 analysis rejected: model tool call was invalid (this request did not save a Change Card); retry propose_change.",
 		},
 		{
 			kind:        string(model.OutputValidationToolChoice),
-			wantSummary: "CP1 analysis rejected: model design-inspection tool call was invalid (this request did not save a Change Card); retry propose_change.",
+			wantSummary: "CP1 analysis rejected: model tool call was invalid (this request did not save a Change Card); retry propose_change.",
 		},
 		{
 			kind:        string(model.OutputValidationResponseShape),
