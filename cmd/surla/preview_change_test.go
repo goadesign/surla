@@ -87,12 +87,16 @@ var (
 )
 
 // Analyze returns a.analysis for every CP1 ProposeChange call.
-func (a staticCP1Analyzer) Analyze(context.Context, string, string) (controlplane.CP1SemanticAnalysis, error) {
+func (a staticCP1Analyzer) Analyze(
+	context.Context, string, controlplane.CP1Design,
+) (controlplane.CP1SemanticAnalysis, error) {
 	return a.analysis, nil
 }
 
 // Revise returns a revision analysis derived from a.analysis for every CP1 ReviseChange call.
-func (a staticCP1Analyzer) Revise(_ context.Context, prior controlplane.CP1PriorCard, _, _ string) (controlplane.CP1RevisionSemanticAnalysis, error) {
+func (a staticCP1Analyzer) Revise(
+	_ context.Context, prior controlplane.CP1PriorCard, _ string, _ controlplane.CP1Design,
+) (controlplane.CP1RevisionSemanticAnalysis, error) {
 	revExamples := make([]controlplane.CP1RevisionModelExample, 0, len(a.analysis.Examples))
 	var removed []string
 	for i, ex := range a.analysis.Examples {

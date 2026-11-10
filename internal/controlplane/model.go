@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	gensurla "github.com/goadesign/surla/gen/surla"
+	gencompletions "github.com/goadesign/surla/gen/surla/completions"
 	"github.com/goadesign/surla/internal/goldenpath"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -25,11 +26,20 @@ type (
 		// Analyze inspects the prompt and design source and returns structured
 		// summary, open domain questions, concrete examples, and preserved
 		// behaviors.
-		Analyze(ctx context.Context, promptText, designSource string) (CP1SemanticAnalysis, error)
+		Analyze(
+			ctx context.Context,
+			promptText string,
+			design CP1Design,
+		) (CP1SemanticAnalysis, error)
 		// Revise re-analyzes a revised prompt and design source against the
 		// prior Change Card's confirmed decisions, open questions, examples,
 		// and preserved behaviors.
-		Revise(ctx context.Context, prior CP1PriorCard, promptText, designSource string) (CP1RevisionSemanticAnalysis, error)
+		Revise(
+			ctx context.Context,
+			prior CP1PriorCard,
+			promptText string,
+			design CP1Design,
+		) (CP1RevisionSemanticAnalysis, error)
 	}
 
 	// CP1ModelAmbiguity is an open domain question returned by a CP1Analyzer
@@ -138,13 +148,21 @@ func NewModelCP1Analyzer(client model.Client) *ModelCP1Analyzer {
 // completion contract and returns its decoded semantic analysis.
 func (a *ModelCP1Analyzer) Analyze(
 	ctx context.Context,
-	promptText, designSource string,
+	promptText string,
+	design CP1Design,
 ) (CP1SemanticAnalysis, error) {
-	return a.completeAnalysis(
+	response, err := inspectAndComplete(
 		ctx,
+		a,
 		goldenpath.ArchitectSystemPrompt(),
-		fmt.Sprintf("Request:\n%s\n\nDesign:\n%s", promptText, formatCP1DesignSection(designSource)),
+		"Request:\n"+promptText,
+		design,
+		gencompletions.SpecCp1ChangeCardAnalysis(),
 	)
+	if err != nil {
+		return CP1SemanticAnalysis{}, err
+	}
+	return cp1AnalysisFromCompletion(response), nil
 }
 
 // ConfigureModel switches the control plane's active CP1 semantic analyzer and

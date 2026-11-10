@@ -191,7 +191,9 @@ func buildLogs(t *testing.T, runsDir, runID string) string {
 }
 
 // Analyze returns a fixed analysis with no open questions.
-func (scriptedAnalyzer) Analyze(context.Context, string, string) (controlplane.CP1SemanticAnalysis, error) {
+func (scriptedAnalyzer) Analyze(
+	context.Context, string, controlplane.CP1Design,
+) (controlplane.CP1SemanticAnalysis, error) {
 	return controlplane.CP1SemanticAnalysis{
 		Summary: "Answer price questions in a friendlier tone.",
 		Examples: []controlplane.CP1ModelExample{{
@@ -204,7 +206,12 @@ func (scriptedAnalyzer) Analyze(context.Context, string, string) (controlplane.C
 
 // Revise is never called by this journey; it returns a fixed revision analysis,
 // so the scripted analyzer satisfies controlplane.CP1Analyzer.
-func (a scriptedAnalyzer) Revise(ctx context.Context, prior controlplane.CP1PriorCard, prompt, design string) (controlplane.CP1RevisionSemanticAnalysis, error) {
+func (a scriptedAnalyzer) Revise(
+	ctx context.Context,
+	prior controlplane.CP1PriorCard,
+	prompt string,
+	design controlplane.CP1Design,
+) (controlplane.CP1RevisionSemanticAnalysis, error) {
 	analysis, err := a.Analyze(ctx, prompt, design)
 	if err != nil {
 		return controlplane.CP1RevisionSemanticAnalysis{}, err

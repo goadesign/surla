@@ -457,34 +457,37 @@ func readWorkspaceModuleSnapshot(wsDir string, expectedDev, expectedIno uint64) 
 	return files, nil
 }
 
-// readWorkspaceDesignSource reads `design/*.go` files from the bound workspace
+// readWorkspaceCP1Design reads `design/*.go` files from the bound workspace
 // through an identity-verified `*os.Root` handle, closes the handle before
-// returning, and validates that every file path and body is valid UTF-8. When
-// `design/` does not exist or contains no non-test `.go` files, it returns
-// `("", nil)` so a card proposed before `init_project` has an empty
-// `designSource` and does not block initialization.
-func readWorkspaceDesignSource(wsDir string, expectedDev, expectedIno uint64) (string, error) {
+// returning, validates that every file path and body is valid UTF-8, and returns
+// both the CP1Design value and its canonical source string. When `design/` does
+// not exist or contains no non-test `.go` files, it returns
+// `(WorkspaceCP1Design(nil), "", nil)` so a card proposed before `init_project`
+// has an empty design source and does not block initialization.
+func readWorkspaceCP1Design(
+	wsDir string,
+	expectedDev, expectedIno uint64,
+) (CP1Design, string, error) {
 	cleanDir, root, err := openModuleRootWithIdentity(wsDir, expectedDev, expectedIno)
 	if err != nil {
-		return "", err
+		return CP1Design{}, "", err
 	}
 	files, readErr := designeval.ReadDesignFilesFromRoot(cleanDir, root)
 	if err := errors.Join(readErr, root.Close()); err != nil {
-		return "", gensurla.MakeUnprocessable(err)
+		return CP1Design{}, "", gensurla.MakeUnprocessable(err)
 	}
 	if len(files) == 0 {
-		return "", nil
+		return WorkspaceCP1Design(nil), "", nil
 	}
 	if err := designeval.ValidateUTF8Snapshot(files); err != nil {
-		return "", gensurla.MakeUnprocessable(err)
+		return CP1Design{}, "", gensurla.MakeUnprocessable(err)
 	}
-	var buf bytes.Buffer
-	enc := json.NewEncoder(&buf)
-	enc.SetEscapeHTML(false)
-	if err := enc.Encode(files); err != nil {
-		return "", fmt.Errorf("encode workspace design source: %w", err)
+	d := WorkspaceCP1Design(files)
+	canonicalSrc, err := d.CanonicalSource()
+	if err != nil {
+		return CP1Design{}, "", err
 	}
-	return strings.TrimSuffix(buf.String(), "\n"), nil
+	return d, canonicalSrc, nil
 }
 
 // normalizeAndValidateStartupPaths resolves configured operator storage paths

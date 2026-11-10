@@ -37,9 +37,9 @@ import (
 // analyzer turns.
 type stubCP1Analyzer struct {
 	// analyzeFn handles Analyze calls.
-	analyzeFn func(ctx context.Context, promptText, designSource string) (CP1SemanticAnalysis, error)
+	analyzeFn func(ctx context.Context, promptText string, design CP1Design) (CP1SemanticAnalysis, error)
 	// reviseFn handles Revise calls.
-	reviseFn func(ctx context.Context, prior CP1PriorCard, promptText, designSource string) (CP1RevisionSemanticAnalysis, error)
+	reviseFn func(ctx context.Context, prior CP1PriorCard, promptText string, design CP1Design) (CP1RevisionSemanticAnalysis, error)
 }
 
 // TestCP1AnalysisRejectedContractAcrossModelBoundaries verifies that:
@@ -315,7 +315,7 @@ func TestCP1AnalysisRejectedContractAcrossModelBoundaries(t *testing.T) {
 		calls := 0
 		cp := newControlPlane(t, Options{
 			Analyzer: &stubCP1Analyzer{
-				analyzeFn: func(context.Context, string, string) (CP1SemanticAnalysis, error) {
+				analyzeFn: func(context.Context, string, CP1Design) (CP1SemanticAnalysis, error) {
 					calls++
 					if calls == 1 {
 						return CP1SemanticAnalysis{
@@ -392,7 +392,7 @@ func TestCP1AnalysisRejectedConcurrentMutationCounterexample(t *testing.T) {
 	callNum := 0
 	cp := newControlPlane(t, Options{
 		Analyzer: &stubCP1Analyzer{
-			analyzeFn: func(context.Context, string, string) (CP1SemanticAnalysis, error) {
+			analyzeFn: func(context.Context, string, CP1Design) (CP1SemanticAnalysis, error) {
 				callNum++
 				if callNum == 1 {
 					close(startedA)
@@ -465,7 +465,7 @@ func TestCP1ReusedAnalyzerErrorImmutabilityAndSaveSpanRecording(t *testing.T) {
 
 	reusedCP := newControlPlane(t, Options{
 		Analyzer: &stubCP1Analyzer{
-			analyzeFn: func(_ context.Context, promptText, _ string) (CP1SemanticAnalysis, error) {
+			analyzeFn: func(_ context.Context, promptText string, _ CP1Design) (CP1SemanticAnalysis, error) {
 				if promptText == "seed" {
 					return CP1SemanticAnalysis{
 						Summary: "Seed summary.",
@@ -476,7 +476,7 @@ func TestCP1ReusedAnalyzerErrorImmutabilityAndSaveSpanRecording(t *testing.T) {
 				}
 				return CP1SemanticAnalysis{}, wrappedShared
 			},
-			reviseFn: func(context.Context, CP1PriorCard, string, string) (CP1RevisionSemanticAnalysis, error) {
+			reviseFn: func(context.Context, CP1PriorCard, string, CP1Design) (CP1RevisionSemanticAnalysis, error) {
 				return CP1RevisionSemanticAnalysis{}, sharedRejected
 			},
 		},
@@ -543,7 +543,7 @@ func TestCP1ReusedAnalyzerErrorImmutabilityAndSaveSpanRecording(t *testing.T) {
 	mixedNamedTurn := 0
 	mixedNamedCP := newControlPlane(t, Options{
 		Analyzer: &stubCP1Analyzer{
-			analyzeFn: func(_ context.Context, promptText, _ string) (CP1SemanticAnalysis, error) {
+			analyzeFn: func(_ context.Context, promptText string, _ CP1Design) (CP1SemanticAnalysis, error) {
 				if promptText == "seed" {
 					return CP1SemanticAnalysis{
 						Summary: "Seed summary.",
@@ -561,7 +561,7 @@ func TestCP1ReusedAnalyzerErrorImmutabilityAndSaveSpanRecording(t *testing.T) {
 				}
 				return CP1SemanticAnalysis{}, errors.Join(sharedRejected, independentAnalyzerFault)
 			},
-			reviseFn: func(_ context.Context, _ CP1PriorCard, promptText, _ string) (CP1RevisionSemanticAnalysis, error) {
+			reviseFn: func(_ context.Context, _ CP1PriorCard, promptText string, _ CP1Design) (CP1RevisionSemanticAnalysis, error) {
 				if err, ok := classifyPromptError(promptText); ok {
 					return CP1RevisionSemanticAnalysis{}, err
 				}
@@ -722,7 +722,7 @@ func TestCP1ReusedAnalyzerErrorImmutabilityAndSaveSpanRecording(t *testing.T) {
 	saveFailCP, err := New(Options{
 		CardsDir: cardsDir,
 		Analyzer: &stubCP1Analyzer{
-			analyzeFn: func(context.Context, string, string) (CP1SemanticAnalysis, error) {
+			analyzeFn: func(context.Context, string, CP1Design) (CP1SemanticAnalysis, error) {
 				return CP1SemanticAnalysis{
 					Summary: "Valid summary.",
 					Examples: []CP1ModelExample{{
@@ -730,7 +730,7 @@ func TestCP1ReusedAnalyzerErrorImmutabilityAndSaveSpanRecording(t *testing.T) {
 					}},
 				}, nil
 			},
-			reviseFn: func(_ context.Context, prior CP1PriorCard, _, _ string) (CP1RevisionSemanticAnalysis, error) {
+			reviseFn: func(_ context.Context, prior CP1PriorCard, _ string, _ CP1Design) (CP1RevisionSemanticAnalysis, error) {
 				var priorID string
 				if len(prior.Examples) > 0 {
 					priorID = prior.Examples[0].ID
@@ -792,7 +792,7 @@ func TestCP1ReusedAnalyzerErrorImmutabilityAndSaveSpanRecording(t *testing.T) {
 	conflictTurns := 0
 	conflictCP := newControlPlane(t, Options{
 		Analyzer: &stubCP1Analyzer{
-			analyzeFn: func(context.Context, string, string) (CP1SemanticAnalysis, error) {
+			analyzeFn: func(context.Context, string, CP1Design) (CP1SemanticAnalysis, error) {
 				conflictTurns++
 				if conflictTurns == 1 {
 					close(startedConflict)
@@ -895,13 +895,23 @@ func TestFormatCP1DesignSectionPreservesDesignAndSpecializesEmpty(t *testing.T) 
 }
 
 // Analyze delegates to analyzeFn.
-func (s *stubCP1Analyzer) Analyze(ctx context.Context, promptText, designSource string) (CP1SemanticAnalysis, error) {
-	return s.analyzeFn(ctx, promptText, designSource)
+func (s *stubCP1Analyzer) Analyze(
+	ctx context.Context, promptText string, design CP1Design,
+) (CP1SemanticAnalysis, error) {
+	if s.analyzeFn != nil {
+		return s.analyzeFn(ctx, promptText, design)
+	}
+	return CP1SemanticAnalysis{}, nil
 }
 
 // Revise delegates to reviseFn.
-func (s *stubCP1Analyzer) Revise(ctx context.Context, prior CP1PriorCard, promptText, designSource string) (CP1RevisionSemanticAnalysis, error) {
-	return s.reviseFn(ctx, prior, promptText, designSource)
+func (s *stubCP1Analyzer) Revise(
+	ctx context.Context, prior CP1PriorCard, promptText string, design CP1Design,
+) (CP1RevisionSemanticAnalysis, error) {
+	if s.reviseFn != nil {
+		return s.reviseFn(ctx, prior, promptText, design)
+	}
+	return CP1RevisionSemanticAnalysis{}, nil
 }
 
 // runAsyncProposeChange runs cp.ProposeChange in a background goroutine and

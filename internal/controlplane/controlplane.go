@@ -361,13 +361,15 @@ const (
 	TargetKindPromptTemplate = "prompt_template"
 	// TargetKindCompiledRule identifies a compiled Go business rule that cannot be overridden via prompt store.
 	TargetKindCompiledRule = "compiled_rule"
-	// cp1AnalysisMaxOutputTokens is the output allowance for the one CP1
-	// inference that writes the structured Change Card analysis, including
-	// reasoning tokens counted against that allowance. It caps that response
-	// only, not the cost of a whole change. Providers such as
-	// Anthropic require a positive allowance on every request. A response the
-	// provider marks OutputLimited fails Analyze even when its JSON parses, so
-	// no card is stored from an analysis that may be incomplete.
+	// cp1AnalysisMaxOutputTokens is the output allowance for each CP1 model
+	// turn (both Phase 1 read_design inspection turns and the final structured
+	// Change Card completion), including reasoning tokens counted against that
+	// allowance. It caps one model response only, not the cost of a whole
+	// request or change. Providers such as Anthropic require a positive
+	// allowance on every request. During Phase 1 inspection, an OutputLimited
+	// tool batch is never executed; on the final structured completion, a
+	// response marked OutputLimited fails Analyze or Revise even when its JSON
+	// parses, so no card is stored from an incomplete final analysis.
 	cp1AnalysisMaxOutputTokens = 16384
 )
 
@@ -612,19 +614,23 @@ func (c *ControlPlane) ProposeChange(ctx context.Context, p *gensurla.ProposeCha
 	defer func() {
 		c.releaseModel(ctx, model)
 	}()
+	var design CP1Design
 	var designSrc string
 	sourceOrigin := sourceOriginSupplied
 	switch {
 	case p.DesignSource != nil:
 		designSrc = *p.DesignSource
+		design = SuppliedCP1Design(designSrc)
 	default:
 		wsDir, wsDev, wsIno := c.currentWorkspaceTarget()
 		if wsDir != "" {
-			designSrc, err = readWorkspaceDesignSource(wsDir, wsDev, wsIno)
+			design, designSrc, err = readWorkspaceCP1Design(wsDir, wsDev, wsIno)
 			if err != nil {
 				return nil, err
 			}
 			sourceOrigin = sourceOriginWorkspace
+		} else {
+			design = SuppliedCP1Design("")
 		}
 	}
 
@@ -646,13 +652,15 @@ func (c *ControlPlane) ProposeChange(ctx context.Context, p *gensurla.ProposeCha
 	defer span.End()
 
 	if err := reportProgress(ctx, 0, 1, "Analyzing the feature request with the CP1 model"); err != nil {
+		span.SetAttributes(attribute.String("surla.public_summary", cp1SafeFaultSummary(false, cp1FaultProgress)))
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "report cp1 analysis progress")
 		return nil, err
 	}
-	analysis, err := model.analyzer.Analyze(ctx, p.Prompt, designSrc)
+	analysis, err := model.analyzer.Analyze(ctx, p.Prompt, design)
 	if err != nil {
 		if se, ok := asAnalysisRejected(err); ok {
+			recordCP1RejectionSpan(span, false, err)
 			err = newAnalysisRejected(
 				fmt.Sprintf(
 					"cp1 analysis rejected (%s): this propose_change request did not save Change Card %q; retry propose_change (including design_source when evaluating an existing Goa design), or call get_change if another request may have created the card",
@@ -661,14 +669,18 @@ func (c *ControlPlane) ProposeChange(ctx context.Context, p *gensurla.ProposeCha
 				),
 				err,
 			)
-		} else if containsAnalysisRejected(err) {
-			err = unclassifiedCP1Error{cause: err}
+		} else {
+			span.SetAttributes(attribute.String("surla.public_summary", cp1SafeAnalyzerErrorSummary(false, err)))
+			if containsAnalysisRejected(err) {
+				err = unclassifiedCP1Error{cause: err}
+			}
 		}
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "analyze cp1 change card")
 		return nil, err
 	}
 	if err := reportProgress(ctx, 1, 1, "Validating the CP1 analysis"); err != nil {
+		span.SetAttributes(attribute.String("surla.public_summary", cp1SafeFaultSummary(false, cp1FaultProgress)))
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "report cp1 validation progress")
 		return nil, err
@@ -676,13 +688,15 @@ func (c *ControlPlane) ProposeChange(ctx context.Context, p *gensurla.ProposeCha
 
 	summary, ambiguities, examples, preserved, err := validateCP1Analysis(p.ChangeID, analysis)
 	if err != nil {
+		cause := &cp1Rejection{kind: "semantic_validation", err: err}
+		recordCP1RejectionSpan(span, false, cause)
 		se := newAnalysisRejected(
 			fmt.Sprintf(
 				"cp1 analysis rejected (%s): this propose_change request did not save Change Card %q; retry propose_change (including design_source when evaluating an existing Goa design), or call get_change if another request may have created the card",
 				err.Error(),
 				p.ChangeID,
 			),
-			err,
+			cause,
 		)
 		span.RecordError(se)
 		span.SetStatus(codes.Error, "validate cp1 analysis")
@@ -710,6 +724,7 @@ func (c *ControlPlane) ProposeChange(ctx context.Context, p *gensurla.ProposeCha
 	}
 	rev, err := computeCanonicalRevision(card, principal.ID, designSrc)
 	if err != nil {
+		span.SetAttributes(attribute.String("surla.public_summary", cp1SafeFaultSummary(false, cp1FaultRevision)))
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "compute cp1 card revision")
 		return nil, err
@@ -725,11 +740,13 @@ func (c *ControlPlane) ProposeChange(ctx context.Context, p *gensurla.ProposeCha
 	defer c.mu.Unlock()
 	_, exists, err := c.cards.load(p.ChangeID)
 	if err != nil {
+		span.SetAttributes(attribute.String("surla.public_summary", cp1SafeFaultSummary(false, cp1FaultStorageRead)))
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "load cp1 change card")
 		return nil, err
 	}
 	if exists {
+		span.SetAttributes(attribute.String("surla.public_summary", "Change Card ID already exists (this request did not overwrite the existing Change Card); call get_change or choose a new change_id."))
 		return nil, gensurla.MakeConflict(fmt.Errorf("change_id %q already exists", p.ChangeID))
 	}
 	if err := c.cards.save(storedChangeCard{
@@ -738,10 +755,12 @@ func (c *ControlPlane) ProposeChange(ctx context.Context, p *gensurla.ProposeCha
 		designSource: designSrc,
 		sourceOrigin: sourceOrigin,
 	}); err != nil {
+		span.SetAttributes(attribute.String("surla.public_summary", cp1SafeFaultSummary(false, cp1FaultStorageSave)))
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "save cp1 change card")
 		return nil, err
 	}
+	span.SetAttributes(attribute.String("surla.public_summary", fmt.Sprintf("Proposed Change Card (%s).", status)))
 	return card, nil
 }
 

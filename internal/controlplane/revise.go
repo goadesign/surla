@@ -68,18 +68,30 @@ type (
 )
 
 // Revise invokes the underlying Goa-AI model.Client with the prior Change Card
-// semantic context, the revised operator prompt, and the target Goa design
-// source, and strictly decodes the validated CP1RevisionSemanticAnalysis response.
+// semantic context, the revised operator prompt, and the target Goa design, and
+// strictly decodes the validated CP1RevisionSemanticAnalysis response.
 func (a *ModelCP1Analyzer) Revise(
 	ctx context.Context,
 	prior CP1PriorCard,
-	promptText, designSource string,
+	promptText string,
+	design CP1Design,
 ) (CP1RevisionSemanticAnalysis, error) {
-	userPrompt, err := formatCP1ReviseUserPrompt(prior, promptText, designSource)
+	baseUserPrompt, err := formatCP1ReviseBasePrompt(prior, promptText)
 	if err != nil {
 		return CP1RevisionSemanticAnalysis{}, err
 	}
-	return a.completeReviseAnalysis(ctx, goldenpath.ArchitectReviseSystemPrompt(), userPrompt)
+	response, err := inspectAndComplete(
+		ctx,
+		a,
+		goldenpath.ArchitectReviseSystemPrompt(),
+		baseUserPrompt,
+		design,
+		gencompletions.SpecCp1ReviseChangeCardAnalysis(),
+	)
+	if err != nil {
+		return CP1RevisionSemanticAnalysis{}, err
+	}
+	return cp1RevisionAnalysisFromCompletion(response), nil
 }
 
 // ReviseChange re-evaluates an existing Checkpoint 1 Change Card against a
@@ -139,7 +151,8 @@ func (c *ControlPlane) ReviseChange(
 		))
 	}
 
-	designSrc := record.designSource
+	var design CP1Design
+	var designSrc string
 	nextOrigin := record.sourceOrigin
 	if nextOrigin == "" {
 		nextOrigin = sourceOriginSupplied
@@ -148,14 +161,24 @@ func (c *ControlPlane) ReviseChange(
 	case p.DesignSource != nil:
 		designSrc = *p.DesignSource
 		nextOrigin = sourceOriginSupplied
+		design = SuppliedCP1Design(designSrc)
 	case nextOrigin == sourceOriginWorkspace:
 		wsDir, wsDev, wsIno := c.currentWorkspaceTarget()
 		if wsDir != "" {
-			designSrc, err = readWorkspaceDesignSource(wsDir, wsDev, wsIno)
+			design, designSrc, err = readWorkspaceCP1Design(wsDir, wsDev, wsIno)
+			if err != nil {
+				return nil, err
+			}
+		} else {
+			designSrc = record.designSource
+			design, err = decodeSavedWorkspaceCP1Design(designSrc)
 			if err != nil {
 				return nil, err
 			}
 		}
+	default:
+		designSrc = record.designSource
+		design = SuppliedCP1Design(designSrc)
 	}
 	prior := buildCP1PriorCard(record.card)
 
@@ -167,13 +190,15 @@ func (c *ControlPlane) ReviseChange(
 	defer span.End()
 
 	if err := reportProgress(ctx, 0, 1, "Revising the Change Card with the CP1 model"); err != nil {
+		span.SetAttributes(attribute.String("surla.public_summary", cp1SafeFaultSummary(true, cp1FaultProgress)))
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "report cp1 revision progress")
 		return nil, err
 	}
-	analysis, err := model.analyzer.Revise(ctx, prior, p.Prompt, designSrc)
+	analysis, err := model.analyzer.Revise(ctx, prior, p.Prompt, design)
 	if err != nil {
 		if se, ok := asAnalysisRejected(err); ok {
+			recordCP1RejectionSpan(span, true, err)
 			err = newAnalysisRejected(
 				fmt.Sprintf(
 					"cp1 analysis rejected (%s): this revise_change request did not modify Change Card %q; retry revise_change with request_revision %s (and design_source when updating the Goa design), or call get_change if another request may have updated the card",
@@ -183,14 +208,18 @@ func (c *ControlPlane) ReviseChange(
 				),
 				err,
 			)
-		} else if containsAnalysisRejected(err) {
-			err = unclassifiedCP1Error{cause: err}
+		} else {
+			span.SetAttributes(attribute.String("surla.public_summary", cp1SafeAnalyzerErrorSummary(true, err)))
+			if containsAnalysisRejected(err) {
+				err = unclassifiedCP1Error{cause: err}
+			}
 		}
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "revise cp1 change card")
 		return nil, err
 	}
 	if err := reportProgress(ctx, 1, 1, "Validating the revised CP1 analysis"); err != nil {
+		span.SetAttributes(attribute.String("surla.public_summary", cp1SafeFaultSummary(true, cp1FaultProgress)))
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "report cp1 validation progress")
 		return nil, err
@@ -198,6 +227,8 @@ func (c *ControlPlane) ReviseChange(
 
 	summary, ambiguities, examples, preserved, err := validateCP1RevisionAnalysis(p.ChangeID, record.card.Examples, analysis)
 	if err != nil {
+		cause := &cp1Rejection{kind: "semantic_validation", err: err}
+		recordCP1RejectionSpan(span, true, cause)
 		se := newAnalysisRejected(
 			fmt.Sprintf(
 				"cp1 analysis rejected (%s): this revise_change request did not modify Change Card %q; retry revise_change with request_revision %s (and design_source when updating the Goa design), or call get_change if another request may have updated the card",
@@ -205,7 +236,7 @@ func (c *ControlPlane) ReviseChange(
 				p.ChangeID,
 				p.RequestRevision,
 			),
-			err,
+			cause,
 		)
 		span.RecordError(se)
 		span.SetStatus(codes.Error, "validate revised cp1 analysis")
@@ -226,6 +257,7 @@ func (c *ControlPlane) ReviseChange(
 	}
 	rev, err := computeCanonicalRevision(revised, principal.ID, designSrc)
 	if err != nil {
+		span.SetAttributes(attribute.String("surla.public_summary", cp1SafeFaultSummary(true, cp1FaultRevision)))
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "compute revised cp1 card revision")
 		return nil, err
@@ -242,17 +274,21 @@ func (c *ControlPlane) ReviseChange(
 	defer c.mu.Unlock()
 	current, exists, err := c.cards.load(p.ChangeID)
 	if err != nil {
+		span.SetAttributes(attribute.String("surla.public_summary", cp1SafeFaultSummary(true, cp1FaultStorageRead)))
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "load cp1 change card")
 		return nil, err
 	}
 	if !exists {
+		span.SetAttributes(attribute.String("surla.public_summary", "Change Card was not found; check change_id or call propose_change."))
 		return nil, gensurla.MakeNotFound(fmt.Errorf("unknown change_id %q", p.ChangeID))
 	}
 	if current.owner != principal.ID {
+		span.SetAttributes(attribute.String("surla.public_summary", "Caller does not own this Change Card (this request did not modify the Change Card)."))
 		return nil, gensurla.MakeForbidden(fmt.Errorf("principal %q is not the owner of change_id %q", principal.ID, p.ChangeID))
 	}
 	if current.card.RequestRevision != p.RequestRevision {
+		span.SetAttributes(attribute.String("surla.public_summary", "Change Card request_revision changed concurrently (this request did not modify the Change Card); call get_change and retry revise_change."))
 		return nil, gensurla.MakeConflict(fmt.Errorf(
 			"request_revision mismatch for %q: got %q, want %q",
 			p.ChangeID,
@@ -266,10 +302,12 @@ func (c *ControlPlane) ReviseChange(
 		designSource: designSrc,
 		sourceOrigin: nextOrigin,
 	}); err != nil {
+		span.SetAttributes(attribute.String("surla.public_summary", cp1SafeFaultSummary(true, cp1FaultStorageSave)))
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "save revised cp1 change card")
 		return nil, err
 	}
+	span.SetAttributes(attribute.String("surla.public_summary", "Revised Change Card (needs_confirmation)."))
 	return revised, nil
 }
 
@@ -467,18 +505,17 @@ func formatCP1DesignSection(designSource string) string {
 	return "(no Goa design source was supplied — do not assume or invent service splits, endpoints, or fixture IDs that are not stated in the request or prior card)"
 }
 
-// formatCP1ReviseUserPrompt formats the prior Change Card context, the revised
-// operator request, and the target Goa design source for ModelCP1Analyzer.Revise.
-func formatCP1ReviseUserPrompt(prior CP1PriorCard, promptText, designSource string) (string, error) {
+// formatCP1ReviseBasePrompt formats the prior Change Card JSON and the revised
+// operator request once for ModelCP1Analyzer.Revise.
+func formatCP1ReviseBasePrompt(prior CP1PriorCard, promptText string) (string, error) {
 	priorJSON, err := json.Marshal(prior)
 	if err != nil {
 		return "", fmt.Errorf("marshal prior cp1 change card: %w", err)
 	}
 	return fmt.Sprintf(
-		"Prior Change Card:\n%s\n\nRevised Request:\n%s\n\nDesign:\n%s",
+		"Prior Change Card:\n%s\n\nRevised Request:\n%s",
 		string(priorJSON),
 		promptText,
-		formatCP1DesignSection(designSource),
 	), nil
 }
 
@@ -520,12 +557,14 @@ func completeStructuredAnalysis[T any](
 	if err != nil {
 		if ovErr, ok := exactOutputValidation(err); ok {
 			if ovErr.Kind() == model.OutputValidationOutputLimited {
-				return zero, newAnalysisRejected(
+				return zero, newCP1Rejection(
+					string(model.OutputValidationOutputLimited),
 					"provider stopped at output limit; shorten the request before retrying",
 					err,
 				)
 			}
-			return zero, newAnalysisRejected(
+			return zero, newCP1Rejection(
+				string(ovErr.Kind()),
 				fmt.Sprintf("model output failed %q validation", ovErr.Kind()),
 				err,
 			)
@@ -533,56 +572,13 @@ func completeStructuredAnalysis[T any](
 		return zero, fmt.Errorf("cp1 model completion: %w", err)
 	}
 	if resp.ModelResponse.OutputLimited {
-		return zero, newAnalysisRejected(
+		return zero, newCP1Rejection(
+			string(model.OutputValidationOutputLimited),
 			"provider stopped at output limit",
 			errors.New("cp1 model response reached output limit"),
 		)
 	}
 	return resp.Value, nil
-}
-
-// completeAnalysis runs one structured CP1 model completion with systemPrompt
-// and userPrompt and strictly decodes the resulting CP1SemanticAnalysis.
-func (a *ModelCP1Analyzer) completeAnalysis(
-	ctx context.Context,
-	systemPrompt, userPrompt string,
-) (CP1SemanticAnalysis, error) {
-	if a == nil {
-		return CP1SemanticAnalysis{}, errors.New("cp1 model client is required")
-	}
-	response, err := completeStructuredAnalysis(
-		ctx,
-		a.client,
-		gencompletions.SpecCp1ChangeCardAnalysis(),
-		systemPrompt,
-		userPrompt,
-	)
-	if err != nil {
-		return CP1SemanticAnalysis{}, err
-	}
-	return cp1AnalysisFromCompletion(response), nil
-}
-
-// completeReviseAnalysis runs one structured CP1 revision completion with systemPrompt
-// and userPrompt and strictly decodes the resulting CP1RevisionSemanticAnalysis.
-func (a *ModelCP1Analyzer) completeReviseAnalysis(
-	ctx context.Context,
-	systemPrompt, userPrompt string,
-) (CP1RevisionSemanticAnalysis, error) {
-	if a == nil {
-		return CP1RevisionSemanticAnalysis{}, errors.New("cp1 model client is required")
-	}
-	response, err := completeStructuredAnalysis(
-		ctx,
-		a.client,
-		gencompletions.SpecCp1ReviseChangeCardAnalysis(),
-		systemPrompt,
-		userPrompt,
-	)
-	if err != nil {
-		return CP1RevisionSemanticAnalysis{}, err
-	}
-	return cp1RevisionAnalysisFromCompletion(response), nil
 }
 
 // cp1AnalysisFromCompletion adapts the generated final response to the public
