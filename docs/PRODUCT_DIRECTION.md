@@ -51,8 +51,8 @@ deployment.
   "depends on" or "runs on".
 - **The diagrams are held to the same standard as the rest.** How a
   diagram looks is part of the experience, not a given of the tool that
-  draws it. Where Model's rendering falls short, Model is changed and
-  released; Surla does not draw its own substitute.
+  draws it. Where Model's rendering falls short, Model itself can be
+  changed and released.
 
 ### The model is a guide and thought partner
 
