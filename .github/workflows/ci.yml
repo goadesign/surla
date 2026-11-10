@@ -57,10 +57,10 @@ jobs:
           cache: npm
           cache-dependency-path: ui/checkpoint/package-lock.json
       - name: Vet and short race tests
-        # JSON output retains individual test durations in the job log.
+        # Full vet checks share the race build with tests instead of compiling
+        # a separate plain build. JSON retains individual test durations.
         run: |
-          go vet ./... </dev/null
-          go test -race -short -timeout 3m -json ./... </dev/null
+          go test -race -vet=all -short -timeout 3m -json ./... </dev/null
 
   generated:
     name: Generated code and viewer
