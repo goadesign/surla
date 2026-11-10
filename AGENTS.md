@@ -220,9 +220,7 @@ results yourself; the user may not see the subagent's work.
 
 When you review another agent's change, run the review through a fresh
 read-only subagent and relay its verdict. Never approve a head that has not
-been read end to end, and state which files a review did not cover. An agent
-doing design or deep implementation for the user does not also coordinate
-the other agents; if asked to do both, say so and ask which to hand off.
+been read end to end, and state which files a review did not cover.
 
 Before resolving a merge or rebase conflict, read both sides' PR descriptions,
 discussion, commits, and linked decisions. State each intended outcome and
