@@ -104,9 +104,8 @@ this step.
   from what starts it to an outcome — for example, a customer asks for a
   refund over the limit, a manager approves it, and the refund is paid.
   Each flow results in an end-to-end test of the built platform. A
-  different agent from the builder writes the tests. Generated scaffolds
-  help that agent implement the interactions and assertions; scaffolding
-  alone is not a working test.
+  different agent from the builder writes the tests. The plugin generates
+  test scaffolds; how much of each test it generates remains to be decided.
 - **It leads to the architecture.** Open questions on the timeline become
   the choices Surla raises, unless the playbook already settles them. How
   the notes group suggests where boundaries could go; the user and the
@@ -115,16 +114,17 @@ this step.
   the architecture exists, and is meant to be linked to the diagrams.
 
 The timeline, called a Story, is written in a Go domain-specific language
-(DSL) and versioned with the repository. A Goa plugin generates test
+(DSL) and versioned in the platform's repository. A Goa plugin generates test
 scaffolds and pictures from that source. The plugin starts in Surla and
 must remain easy to move if it later needs its own home.
 
 When the user edits the Story through the timeline or chat, the guide
-changes its source code. Evaluation runs asynchronously and redraws the
-result. Drafts and incomplete flows must evaluate cleanly so the user can
-refine them in place. Steps have explicit stable keys, and actors name
-roles such as a customer or manager, rather than architecture elements
-such as an API or worker.
+changes its source code. Surla evaluates the changed Story in the background
+and redraws the timeline. Drafts and incomplete flows must evaluate cleanly
+so the user can refine them in place. Steps have explicit stable keys so
+renaming a step can preserve its identity. Actors name roles such as a
+customer or manager, rather than architecture elements such as an API or
+worker.
 
 ### Domain-driven design, without the vocabulary
 
@@ -206,7 +206,7 @@ code stays the source of truth for both.
 - **On the diagram.** The user adds, edits and removes elements and
   relationships through diagram gestures. A gesture gives the guide an
   instruction to edit the design code; Surla evaluates that code and
-  redraws the diagram. Moving an element to improve its layout remains a
+  redraws the diagram. Moving an element to improve its layout is a
   direct layout edit. Surla reuses Model's diagram editor, or pieces of it,
   where that is practical.
 
@@ -246,12 +246,11 @@ diagram.
 - **Story vocabulary and links.** The Story's Go DSL vocabulary, what
   marks the start and end of a flow, and how a step stays linked to the
   design elements and tests that implement it are not decided.
-- **How confirmed flows reach independent test authors.** Tests must use
-  the confirmed Story revision, rather than a copy the builder can change.
-  How Surla pins that revision, accepts the independently authored tests,
-  and follows later Story edits without using stale evidence is not
-  decided. The plugin generates scaffolds; the exact test-writing
-  workflow remains to be designed.
+- **Which Story version the test writer reads.** The Story lives in files
+  the builder can edit. Whether the test-writing agent must read the
+  version the user confirmed, and how Surla would ensure that, is not
+  decided. The test-writing workflow and how tests follow later Story
+  edits also remain to be designed.
 - **How editing instructions reach the guide.** The guide edits source
   for Story and architecture changes. Which diagram gestures Surla offers
   and how the UI or an MCP client delivers those instructions are not
