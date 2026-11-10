@@ -152,27 +152,30 @@ func cp1RejectionKind(err error) (string, bool) {
 }
 
 // cp1SafeRejectionSummary returns a strictly code-authored diagnostic summary
-// for a rejected CP1 propose or revise span. It never interpolates caller
-// prompts, model-authored text, or external analyzer error messages.
+// for a rejected CP1 propose or revise span. It uses only compile-time string
+// constants and never interpolates caller prompts, model-authored text, or
+// external analyzer error messages.
 func cp1SafeRejectionSummary(revise bool, rejectionKind string, hasKind bool) string {
-	outcome := "no Change Card was saved."
+	outcome := "no Change Card was saved"
 	prefix := "CP1 analysis rejected"
+	retryCall := "propose_change"
 	if revise {
-		outcome = "the saved Change Card was unchanged."
+		outcome = "the saved Change Card was unchanged"
 		prefix = "CP1 revision rejected"
+		retryCall = "revise_change"
 	}
 	if !hasKind {
-		return prefix + "; " + outcome
+		return fmt.Sprintf("%s (%s); retry %s.", prefix, outcome, retryCall)
 	}
 	switch rejectionKind {
 	case string(model.OutputValidationOutputLimited):
-		return prefix + ": provider stopped at output limit; shorten the request before retrying (" + outcome[:len(outcome)-1] + ")."
+		return fmt.Sprintf("%s: provider stopped at output limit (%s); shorten the request and retry %s.", prefix, outcome, retryCall)
 	case "inspection_budget_exhausted":
-		return prefix + ": design inspection exhausted turn budget with unresolved file errors; " + outcome
+		return fmt.Sprintf("%s: design inspection exhausted turn budget with unresolved file errors (%s); retry %s.", prefix, outcome, retryCall)
 	case "semantic_validation":
-		return prefix + ": model output failed Change Card semantic validation; " + outcome
+		return fmt.Sprintf("%s: model output failed Change Card semantic validation (%s); retry %s.", prefix, outcome, retryCall)
 	default:
-		return fmt.Sprintf("%s: model output failed %q validation; %s", prefix, rejectionKind, outcome)
+		return fmt.Sprintf("%s: model output failed structured validation (%s); retry %s.", prefix, outcome, retryCall)
 	}
 }
 
@@ -186,6 +189,34 @@ func recordCP1RejectionSpan(span trace.Span, revise bool, err error) {
 	}
 	attrs = append(attrs, attribute.String("surla.public_summary", cp1SafeRejectionSummary(revise, kind, hasKind)))
 	span.SetAttributes(attrs...)
+}
+
+// cp1SafeFaultSummary returns a strictly code-authored diagnostic summary for a
+// non-rejection CP1 propose or revise fault span. Because MCP masks internal
+// server faults from tool callers, each summary states whether any Change Card
+// was saved or modified and names the concrete operator or retry action without
+// exposing prompts, model text, credentials, or host paths.
+func cp1SafeFaultSummary(revise bool, stage string) string {
+	outcome := "no Change Card was saved"
+	op := "CP1 analysis"
+	if revise {
+		outcome = "the saved Change Card was unchanged"
+		op = "CP1 revision"
+	}
+	switch stage {
+	case "progress":
+		return fmt.Sprintf("%s failed while reporting progress (%s); retry or ask the server operator to check server diagnostics.", op, outcome)
+	case "provider":
+		return fmt.Sprintf("%s failed due to a model provider or transport fault (%s); ask the server operator to check server diagnostics and model configuration before retrying.", op, outcome)
+	case "revision":
+		return fmt.Sprintf("%s failed while encoding the card revision (%s); ask the server operator to check server diagnostics.", op, outcome)
+	case "storage_read":
+		return fmt.Sprintf("%s could not read Change Card storage (%s); preserve your request and ask the server operator to check private card storage.", op, outcome)
+	case "storage_save":
+		return fmt.Sprintf("%s could not save the Change Card (%s); preserve your request and ask the server operator to restore private card storage before retrying.", op, outcome)
+	default:
+		return fmt.Sprintf("%s failed (%s); ask the server operator to check server diagnostics.", op, outcome)
+	}
 }
 
 // decodeSavedWorkspaceCP1Design decodes a stored workspace Change Card's

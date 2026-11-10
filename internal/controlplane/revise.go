@@ -190,6 +190,7 @@ func (c *ControlPlane) ReviseChange(
 	defer span.End()
 
 	if err := reportProgress(ctx, 0, 1, "Revising the Change Card with the CP1 model"); err != nil {
+		span.SetAttributes(attribute.String("surla.public_summary", cp1SafeFaultSummary(true, "progress")))
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "report cp1 revision progress")
 		return nil, err
@@ -207,14 +208,18 @@ func (c *ControlPlane) ReviseChange(
 				),
 				err,
 			)
-		} else if containsAnalysisRejected(err) {
-			err = unclassifiedCP1Error{cause: err}
+		} else {
+			span.SetAttributes(attribute.String("surla.public_summary", cp1SafeFaultSummary(true, "provider")))
+			if containsAnalysisRejected(err) {
+				err = unclassifiedCP1Error{cause: err}
+			}
 		}
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "revise cp1 change card")
 		return nil, err
 	}
 	if err := reportProgress(ctx, 1, 1, "Validating the revised CP1 analysis"); err != nil {
+		span.SetAttributes(attribute.String("surla.public_summary", cp1SafeFaultSummary(true, "progress")))
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "report cp1 validation progress")
 		return nil, err
@@ -252,6 +257,7 @@ func (c *ControlPlane) ReviseChange(
 	}
 	rev, err := computeCanonicalRevision(revised, principal.ID, designSrc)
 	if err != nil {
+		span.SetAttributes(attribute.String("surla.public_summary", cp1SafeFaultSummary(true, "revision")))
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "compute revised cp1 card revision")
 		return nil, err
@@ -268,17 +274,21 @@ func (c *ControlPlane) ReviseChange(
 	defer c.mu.Unlock()
 	current, exists, err := c.cards.load(p.ChangeID)
 	if err != nil {
+		span.SetAttributes(attribute.String("surla.public_summary", cp1SafeFaultSummary(true, "storage_read")))
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "load cp1 change card")
 		return nil, err
 	}
 	if !exists {
+		span.SetAttributes(attribute.String("surla.public_summary", "Change Card was not found; check change_id or call propose_change."))
 		return nil, gensurla.MakeNotFound(fmt.Errorf("unknown change_id %q", p.ChangeID))
 	}
 	if current.owner != principal.ID {
+		span.SetAttributes(attribute.String("surla.public_summary", "Caller does not own this Change Card (the saved Change Card was unchanged)."))
 		return nil, gensurla.MakeForbidden(fmt.Errorf("principal %q is not the owner of change_id %q", principal.ID, p.ChangeID))
 	}
 	if current.card.RequestRevision != p.RequestRevision {
+		span.SetAttributes(attribute.String("surla.public_summary", "Change Card request_revision changed concurrently (the saved Change Card was unchanged); call get_change and retry revise_change."))
 		return nil, gensurla.MakeConflict(fmt.Errorf(
 			"request_revision mismatch for %q: got %q, want %q",
 			p.ChangeID,
@@ -292,6 +302,7 @@ func (c *ControlPlane) ReviseChange(
 		designSource: designSrc,
 		sourceOrigin: nextOrigin,
 	}); err != nil {
+		span.SetAttributes(attribute.String("surla.public_summary", cp1SafeFaultSummary(true, "storage_save")))
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "save revised cp1 change card")
 		return nil, err

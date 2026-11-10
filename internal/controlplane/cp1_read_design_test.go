@@ -569,10 +569,18 @@ func TestCP1SpanAttributes_CodeAuthoredAndSecretExclusion(t *testing.T) {
 					}},
 				},
 			},
+			// 4. ProposeChange non-rejection provider fault
+			{
+				err: errors.New("private-provider-credential-secret"),
+			},
+			// 5. ProposeChange valid response followed by card save storage fault
+			toolUseTurn("call-save", "read_design", `{}`),
+			jsonAnswerTurn(secretSummaryJSON),
 		},
 	}
+	cardsDir := t.TempDir()
 	cp := newControlPlane(t, Options{
-		CardsDir:     t.TempDir(),
+		CardsDir:     cardsDir,
 		WorkspaceDir: wsDir,
 		Analyzer:     NewModelCP1Analyzer(newQueuedModelClient(t, q)),
 	})
@@ -602,7 +610,7 @@ func TestCP1SpanAttributes_CodeAuthoredAndSecretExclusion(t *testing.T) {
 	assert.Equal(t, "semantic_validation", rejKind.AsString())
 	revSummary, ok := findSpanAttr(reviseSpan.Attributes, "surla.public_summary")
 	require.True(t, ok)
-	assert.Equal(t, "CP1 revision rejected: model output failed Change Card semantic validation; the saved Change Card was unchanged.", revSummary.AsString())
+	assert.Equal(t, "CP1 revision rejected: model output failed Change Card semantic validation (the saved Change Card was unchanged); retry revise_change.", revSummary.AsString())
 	assert.NotContains(t, revSummary.AsString(), "private-")
 
 	// OutputLimited rejection records output_limited and excludes model output.
@@ -616,7 +624,40 @@ func TestCP1SpanAttributes_CodeAuthoredAndSecretExclusion(t *testing.T) {
 	assert.Equal(t, "output_limited", rejKind.AsString())
 	limSummary, ok := findSpanAttr(limSpan.Attributes, "surla.public_summary")
 	require.True(t, ok)
+	assert.Equal(t, "CP1 analysis rejected: provider stopped at output limit (no Change Card was saved); shorten the request and retry propose_change.", limSummary.AsString())
 	assert.NotContains(t, limSummary.AsString(), "private-")
+
+	// Non-rejection provider fault records operator recovery without leaking
+	// provider error strings or setting surla.cp1.rejection_kind.
+	_, err = cp.ProposeChange(aliceCtx, &gensurla.ProposeChangePayload{
+		ChangeID: "chg-span-fault", Prompt: "private-user-prompt-secret",
+	})
+	require.Error(t, err)
+	faultSpan := lastSpanByName(t, exp.GetSpans(), "surla.controlplane.propose_change")
+	_, hasRej = findSpanAttr(faultSpan.Attributes, "surla.cp1.rejection_kind")
+	assert.False(t, hasRej)
+	faultSummary, ok := findSpanAttr(faultSpan.Attributes, "surla.public_summary")
+	require.True(t, ok)
+	assert.Contains(t, faultSummary.AsString(), "operator")
+	assert.Contains(t, faultSummary.AsString(), "no Change Card was saved")
+	assert.NotContains(t, faultSummary.AsString(), "private-")
+
+	// Card save storage fault records operator storage recovery without leaking
+	// host filesystem paths or setting surla.cp1.rejection_kind.
+	require.NoError(t, os.Mkdir(filepath.Join(cardsDir, stagingFile), 0o700))
+	_, err = cp.ProposeChange(aliceCtx, &gensurla.ProposeChangePayload{
+		ChangeID: "chg-span-save-fault", Prompt: "private-user-prompt-secret",
+	})
+	require.Error(t, err)
+	saveSpan := lastSpanByName(t, exp.GetSpans(), "surla.controlplane.propose_change")
+	_, hasRej = findSpanAttr(saveSpan.Attributes, "surla.cp1.rejection_kind")
+	assert.False(t, hasRej)
+	saveSummary, ok := findSpanAttr(saveSpan.Attributes, "surla.public_summary")
+	require.True(t, ok)
+	assert.Contains(t, saveSummary.AsString(), "operator")
+	assert.Contains(t, saveSummary.AsString(), "preserve your request")
+	assert.NotContains(t, saveSummary.AsString(), "private-")
+	assert.NotContains(t, saveSummary.AsString(), cardsDir)
 
 	// Bare external ServiceError rejection neither leaks its message into
 	// surla.public_summary nor guesses surla.cp1.rejection_kind.
@@ -637,7 +678,7 @@ func TestCP1SpanAttributes_CodeAuthoredAndSecretExclusion(t *testing.T) {
 	assert.False(t, hasRej, "bare ServiceError without typed kind must not guess semantic_validation")
 	customSummary, ok := findSpanAttr(customSpan.Attributes, "surla.public_summary")
 	require.True(t, ok)
-	assert.Equal(t, "CP1 analysis rejected; no Change Card was saved.", customSummary.AsString())
+	assert.Equal(t, "CP1 analysis rejected (no Change Card was saved); retry propose_change.", customSummary.AsString())
 	assert.NotContains(t, customSummary.AsString(), "private-")
 }
 

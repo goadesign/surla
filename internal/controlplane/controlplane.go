@@ -650,6 +650,7 @@ func (c *ControlPlane) ProposeChange(ctx context.Context, p *gensurla.ProposeCha
 	defer span.End()
 
 	if err := reportProgress(ctx, 0, 1, "Analyzing the feature request with the CP1 model"); err != nil {
+		span.SetAttributes(attribute.String("surla.public_summary", cp1SafeFaultSummary(false, "progress")))
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "report cp1 analysis progress")
 		return nil, err
@@ -666,14 +667,18 @@ func (c *ControlPlane) ProposeChange(ctx context.Context, p *gensurla.ProposeCha
 				),
 				err,
 			)
-		} else if containsAnalysisRejected(err) {
-			err = unclassifiedCP1Error{cause: err}
+		} else {
+			span.SetAttributes(attribute.String("surla.public_summary", cp1SafeFaultSummary(false, "provider")))
+			if containsAnalysisRejected(err) {
+				err = unclassifiedCP1Error{cause: err}
+			}
 		}
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "analyze cp1 change card")
 		return nil, err
 	}
 	if err := reportProgress(ctx, 1, 1, "Validating the CP1 analysis"); err != nil {
+		span.SetAttributes(attribute.String("surla.public_summary", cp1SafeFaultSummary(false, "progress")))
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "report cp1 validation progress")
 		return nil, err
@@ -717,6 +722,7 @@ func (c *ControlPlane) ProposeChange(ctx context.Context, p *gensurla.ProposeCha
 	}
 	rev, err := computeCanonicalRevision(card, principal.ID, designSrc)
 	if err != nil {
+		span.SetAttributes(attribute.String("surla.public_summary", cp1SafeFaultSummary(false, "revision")))
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "compute cp1 card revision")
 		return nil, err
@@ -732,11 +738,13 @@ func (c *ControlPlane) ProposeChange(ctx context.Context, p *gensurla.ProposeCha
 	defer c.mu.Unlock()
 	_, exists, err := c.cards.load(p.ChangeID)
 	if err != nil {
+		span.SetAttributes(attribute.String("surla.public_summary", cp1SafeFaultSummary(false, "storage_read")))
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "load cp1 change card")
 		return nil, err
 	}
 	if exists {
+		span.SetAttributes(attribute.String("surla.public_summary", "Change Card ID already exists (the existing Change Card was unchanged); call get_change or choose a new change_id."))
 		return nil, gensurla.MakeConflict(fmt.Errorf("change_id %q already exists", p.ChangeID))
 	}
 	if err := c.cards.save(storedChangeCard{
@@ -745,6 +753,7 @@ func (c *ControlPlane) ProposeChange(ctx context.Context, p *gensurla.ProposeCha
 		designSource: designSrc,
 		sourceOrigin: sourceOrigin,
 	}); err != nil {
+		span.SetAttributes(attribute.String("surla.public_summary", cp1SafeFaultSummary(false, "storage_save")))
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "save cp1 change card")
 		return nil, err
