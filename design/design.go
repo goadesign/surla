@@ -977,7 +977,7 @@ var _ = Service("surla", func() {
 		Error("unprocessable", ErrorResult, "The workspace contains no Go module.")
 		Error("not_implemented", ErrorResult, "No workspace directory is bound to this control plane.")
 		Error("unavailable", ErrorResult, "No local Docker engine is usable: docker is missing, the engine does not answer or is not local, or the Go image cannot be pulled.")
-		Tool("check_project", "Run the workspace's Go tests on the current uncommitted files in an isolated Linux container. No input. Returns passed and a message with the first failure; when it says the output was cut, read the rest with read_check_output(op_id). If the message says go.sum or go.work.sum needs entries, call update_dependencies and check again.")
+		Tool("check_project", "Run the workspace's Go tests on the current uncommitted files in an isolated Linux container. No input. Returns passed and a message with the first failure; when it says the output was cut, read the rest with read_check_output(op_id). If the message says go.sum or go.work.sum needs entries or go.mod needs an update, call update_dependencies and check again.")
 		HTTP(func() {
 			POST("/workspace/check")
 			Response(StatusOK)
@@ -993,7 +993,7 @@ var _ = Service("surla", func() {
 		Error("unprocessable", ErrorResult, "The workspace contains no Go module.")
 		Error("not_implemented", ErrorResult, "No workspace directory is bound to this control plane.")
 		Error("unavailable", ErrorResult, "No local Docker engine is usable: docker is missing, the engine does not answer or is not local, or the Go image cannot be pulled.")
-		Tool("update_dependencies", "Add missing requirements and checksums for the workspace's Go modules (go mod tidy) and write the changed go.mod, go.sum and go.work.sum. No input. Call it when check_project reports a missing go.sum or go.work.sum entry, then call check_project again.")
+		Tool("update_dependencies", "Add missing requirements and checksums for the workspace's Go modules (go mod tidy) and write the changed go.mod, go.sum and go.work.sum. No input. Call it when check_project reports a missing go.sum or go.work.sum entry or a needed go.mod update, then call check_project again.")
 		HTTP(func() {
 			POST("/workspace/dependencies")
 			Response(StatusOK)

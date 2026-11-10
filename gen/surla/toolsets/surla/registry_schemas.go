@@ -988,7 +988,7 @@ func (registryDeclarations) field63() *genregistry.ToolFieldMetadata {
 
 // schema64 constructs one generated schema declaration.
 func (declarations registryDeclarations) schema64() *genregistry.ToolSchema {
-	registryText1 := "Run the workspace's Go tests on the current uncommitted files in an isolated Linux container. No input. Returns passed and a message with the first failure; when it says the output was cut, read the rest with read_check_output(op_id). If the message says go.sum or go.work.sum needs entries, call update_dependencies and check again."
+	registryText1 := "Run the workspace's Go tests on the current uncommitted files in an isolated Linux container. No input. Returns passed and a message with the first failure; when it says the output was cut, read the rest with read_check_output(op_id). If the message says go.sum or go.work.sum needs entries or go.mod needs an update, call update_dependencies and check again."
 	return &genregistry.ToolSchema{
 		Name:                   "surla.check_project",
 		Description:            &registryText1,
@@ -999,16 +999,16 @@ func (declarations registryDeclarations) schema64() *genregistry.ToolSchema {
 			Kind:  "service",
 			Title: "Check Project",
 			Search: &genregistry.ToolSearchDocument{
-				Length: 66,
-				Terms:  map[string]int{"a": 1, "again": 1, "an": 1, "and": 2, "call": 1, "check": 4, "container": 1, "current": 1, "cut": 1, "dependencies": 1, "entries": 1, "failure": 1, "files": 1, "first": 1, "go": 3, "id": 1, "if": 1, "in": 1, "input": 1, "isolated": 1, "it": 1, "linux": 1, "message": 2, "needs": 1, "no": 1, "on": 1, "op": 1, "or": 1, "output": 2, "passed": 1, "project": 2, "read": 2, "rest": 1, "returns": 1, "run": 1, "s": 1, "says": 2, "sum": 2, "surla": 1, "tests": 1, "the": 6, "uncommitted": 1, "update": 1, "was": 1, "when": 1, "with": 2, "work": 1, "workspace": 1},
+				Length: 72,
+				Terms:  map[string]int{"a": 1, "again": 1, "an": 2, "and": 2, "call": 1, "check": 4, "container": 1, "current": 1, "cut": 1, "dependencies": 1, "entries": 1, "failure": 1, "files": 1, "first": 1, "go": 4, "id": 1, "if": 1, "in": 1, "input": 1, "isolated": 1, "it": 1, "linux": 1, "message": 2, "mod": 1, "needs": 2, "no": 1, "on": 1, "op": 1, "or": 2, "output": 2, "passed": 1, "project": 2, "read": 2, "rest": 1, "returns": 1, "run": 1, "s": 1, "says": 2, "sum": 2, "surla": 1, "tests": 1, "the": 6, "uncommitted": 1, "update": 2, "was": 1, "when": 1, "with": 2, "work": 1, "workspace": 1},
 			},
 			RequiresUI: false,
 			TextOnly: &genregistry.TextOnlyToolContract{
 				ExecutionSchema: []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"properties\":{},\"type\":\"object\"}"),
-				Description:     "Run the workspace's Go tests on the current uncommitted files in an isolated Linux container. No input. Returns passed and a message with the first failure; when it says the output was cut, read the rest with read_check_output(op_id). If the message says go.sum or go.work.sum needs entries, call update_dependencies and check again.",
+				Description:     "Run the workspace's Go tests on the current uncommitted files in an isolated Linux container. No input. Returns passed and a message with the first failure; when it says the output was cut, read the rest with read_check_output(op_id). If the message says go.sum or go.work.sum needs entries or go.mod needs an update, call update_dependencies and check again.",
 				Search: &genregistry.ToolSearchDocument{
-					Length: 66,
-					Terms:  map[string]int{"a": 1, "again": 1, "an": 1, "and": 2, "call": 1, "check": 4, "container": 1, "current": 1, "cut": 1, "dependencies": 1, "entries": 1, "failure": 1, "files": 1, "first": 1, "go": 3, "id": 1, "if": 1, "in": 1, "input": 1, "isolated": 1, "it": 1, "linux": 1, "message": 2, "needs": 1, "no": 1, "on": 1, "op": 1, "or": 1, "output": 2, "passed": 1, "project": 2, "read": 2, "rest": 1, "returns": 1, "run": 1, "s": 1, "says": 2, "sum": 2, "surla": 1, "tests": 1, "the": 6, "uncommitted": 1, "update": 1, "was": 1, "when": 1, "with": 2, "work": 1, "workspace": 1},
+					Length: 72,
+					Terms:  map[string]int{"a": 1, "again": 1, "an": 2, "and": 2, "call": 1, "check": 4, "container": 1, "current": 1, "cut": 1, "dependencies": 1, "entries": 1, "failure": 1, "files": 1, "first": 1, "go": 4, "id": 1, "if": 1, "in": 1, "input": 1, "isolated": 1, "it": 1, "linux": 1, "message": 2, "mod": 1, "needs": 2, "no": 1, "on": 1, "op": 1, "or": 2, "output": 2, "passed": 1, "project": 2, "read": 2, "rest": 1, "returns": 1, "run": 1, "s": 1, "says": 2, "sum": 2, "surla": 1, "tests": 1, "the": 6, "uncommitted": 1, "update": 2, "was": 1, "when": 1, "with": 2, "work": 1, "workspace": 1},
 				},
 				PayloadSchema: []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"properties\":{},\"type\":\"object\"}"),
 				Payload:       declarations.metadata72(),
@@ -10316,7 +10316,7 @@ func (registryDeclarations) field658() *genregistry.ToolFieldMetadata {
 
 // schema659 constructs one generated schema declaration.
 func (declarations registryDeclarations) schema659() *genregistry.ToolSchema {
-	registryText1 := "Add missing requirements and checksums for the workspace's Go modules (go mod tidy) and write the changed go.mod, go.sum and go.work.sum. No input. Call it when check_project reports a missing go.sum or go.work.sum entry, then call check_project again."
+	registryText1 := "Add missing requirements and checksums for the workspace's Go modules (go mod tidy) and write the changed go.mod, go.sum and go.work.sum. No input. Call it when check_project reports a missing go.sum or go.work.sum entry or a needed go.mod update, then call check_project again."
 	return &genregistry.ToolSchema{
 		Name:                   "surla.update_dependencies",
 		Description:            &registryText1,
@@ -10327,16 +10327,16 @@ func (declarations registryDeclarations) schema659() *genregistry.ToolSchema {
 			Kind:  "service",
 			Title: "Update Dependencies",
 			Search: &genregistry.ToolSearchDocument{
-				Length: 53,
-				Terms:  map[string]int{"a": 1, "add": 1, "again": 1, "and": 3, "call": 2, "changed": 1, "check": 2, "checksums": 1, "dependencies": 2, "entry": 1, "for": 1, "go": 7, "input": 1, "it": 1, "missing": 2, "mod": 2, "modules": 1, "no": 1, "or": 1, "project": 2, "reports": 1, "requirements": 1, "s": 1, "sum": 4, "surla": 1, "the": 2, "then": 1, "tidy": 1, "update": 2, "when": 1, "work": 2, "workspace": 1, "write": 1},
+				Length: 59,
+				Terms:  map[string]int{"a": 2, "add": 1, "again": 1, "and": 3, "call": 2, "changed": 1, "check": 2, "checksums": 1, "dependencies": 2, "entry": 1, "for": 1, "go": 8, "input": 1, "it": 1, "missing": 2, "mod": 3, "modules": 1, "needed": 1, "no": 1, "or": 2, "project": 2, "reports": 1, "requirements": 1, "s": 1, "sum": 4, "surla": 1, "the": 2, "then": 1, "tidy": 1, "update": 3, "when": 1, "work": 2, "workspace": 1, "write": 1},
 			},
 			RequiresUI: false,
 			TextOnly: &genregistry.TextOnlyToolContract{
 				ExecutionSchema: []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"properties\":{},\"type\":\"object\"}"),
-				Description:     "Add missing requirements and checksums for the workspace's Go modules (go mod tidy) and write the changed go.mod, go.sum and go.work.sum. No input. Call it when check_project reports a missing go.sum or go.work.sum entry, then call check_project again.",
+				Description:     "Add missing requirements and checksums for the workspace's Go modules (go mod tidy) and write the changed go.mod, go.sum and go.work.sum. No input. Call it when check_project reports a missing go.sum or go.work.sum entry or a needed go.mod update, then call check_project again.",
 				Search: &genregistry.ToolSearchDocument{
-					Length: 53,
-					Terms:  map[string]int{"a": 1, "add": 1, "again": 1, "and": 3, "call": 2, "changed": 1, "check": 2, "checksums": 1, "dependencies": 2, "entry": 1, "for": 1, "go": 7, "input": 1, "it": 1, "missing": 2, "mod": 2, "modules": 1, "no": 1, "or": 1, "project": 2, "reports": 1, "requirements": 1, "s": 1, "sum": 4, "surla": 1, "the": 2, "then": 1, "tidy": 1, "update": 2, "when": 1, "work": 2, "workspace": 1, "write": 1},
+					Length: 59,
+					Terms:  map[string]int{"a": 2, "add": 1, "again": 1, "and": 3, "call": 2, "changed": 1, "check": 2, "checksums": 1, "dependencies": 2, "entry": 1, "for": 1, "go": 8, "input": 1, "it": 1, "missing": 2, "mod": 3, "modules": 1, "needed": 1, "no": 1, "or": 2, "project": 2, "reports": 1, "requirements": 1, "s": 1, "sum": 4, "surla": 1, "the": 2, "then": 1, "tidy": 1, "update": 3, "when": 1, "work": 2, "workspace": 1, "write": 1},
 				},
 				PayloadSchema: []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"properties\":{},\"type\":\"object\"}"),
 				Payload:       declarations.metadata668(),
