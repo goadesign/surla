@@ -339,19 +339,19 @@ func TestCP1SpanAttributes_AnalyzerErrorKindsAndConcurrentConflicts(t *testing.T
 		},
 		{
 			kind:        string(model.OutputValidationResponseShape),
-			wantSummary: "CP1 analysis rejected: model response was incomplete or malformed (this request did not save a Change Card); shorten the request or retry propose_change.",
+			wantSummary: "CP1 analysis rejected: model response failed response-shape validation (this request did not save a Change Card); retry propose_change.",
 		},
 		{
 			kind:        string(model.OutputValidationOutputBounds),
-			wantSummary: "CP1 analysis rejected: model response was incomplete or malformed (this request did not save a Change Card); shorten the request or retry propose_change.",
+			wantSummary: "CP1 analysis rejected: model response exceeded output size or structure bounds (this request did not save a Change Card); shorten the request and retry propose_change.",
 		},
 		{
 			kind:        string(model.OutputValidationStreamProtocol),
-			wantSummary: "CP1 analysis rejected: model provider returned invalid protocol or token-usage metadata (this request did not save a Change Card); retry propose_change or ask the server operator to check model configuration.",
+			wantSummary: "CP1 analysis rejected: model response failed stream-protocol validation (this request did not save a Change Card); retry propose_change or ask the server operator to check server diagnostics.",
 		},
 		{
 			kind:        string(model.OutputValidationUsage),
-			wantSummary: "CP1 analysis rejected: model provider returned invalid protocol or token-usage metadata (this request did not save a Change Card); retry propose_change or ask the server operator to check model configuration.",
+			wantSummary: "CP1 analysis rejected: model response failed token-usage validation (this request did not save a Change Card); retry propose_change or ask the server operator to check server diagnostics.",
 		},
 		{
 			kind:        "unknown_future_kind",

@@ -251,12 +251,14 @@ func cp1SafeRejectionSummary(revise bool, rejectionKind string, hasKind bool) st
 		model.OutputValidationToolArguments,
 		model.OutputValidationToolChoice:
 		return fmt.Sprintf("%s: model design-inspection tool call was invalid (%s); retry %s.", prefix, outcome, retryCall)
-	case model.OutputValidationResponseShape,
-		model.OutputValidationOutputBounds:
-		return fmt.Sprintf("%s: model response was incomplete or malformed (%s); shorten the request or retry %s.", prefix, outcome, retryCall)
-	case model.OutputValidationStreamProtocol,
-		model.OutputValidationUsage:
-		return fmt.Sprintf("%s: model provider returned invalid protocol or token-usage metadata (%s); retry %s or ask the server operator to check model configuration.", prefix, outcome, retryCall)
+	case model.OutputValidationResponseShape:
+		return fmt.Sprintf("%s: model response failed response-shape validation (%s); retry %s.", prefix, outcome, retryCall)
+	case model.OutputValidationOutputBounds:
+		return fmt.Sprintf("%s: model response exceeded output size or structure bounds (%s); shorten the request and retry %s.", prefix, outcome, retryCall)
+	case model.OutputValidationStreamProtocol:
+		return fmt.Sprintf("%s: model response failed stream-protocol validation (%s); retry %s or ask the server operator to check server diagnostics.", prefix, outcome, retryCall)
+	case model.OutputValidationUsage:
+		return fmt.Sprintf("%s: model response failed token-usage validation (%s); retry %s or ask the server operator to check server diagnostics.", prefix, outcome, retryCall)
 	default:
 		return fmt.Sprintf("%s (%s); retry %s.", prefix, outcome, retryCall)
 	}
