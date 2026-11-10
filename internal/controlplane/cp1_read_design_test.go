@@ -140,9 +140,11 @@ func TestCP1TwoPhaseReadDesign_SelectiveAndOmitPath(t *testing.T) {
 				// Verify Phase 2 turn
 				assert.Equal(t, cp1AnalysisMaxOutputTokens, q.requests[2].MaxTokens)
 				assert.Empty(t, q.requests[2].Tools)
+				assertAlternatingRoles(t, q.requests[2].Messages)
 				lastMsg := q.requests[2].Messages[len(q.requests[2].Messages)-1]
 				assert.Equal(t, model.ConversationRoleUser, lastMsg.Role)
-				assert.Contains(t, lastMsg.Parts[0].(model.TextPart).Text, "Produce the Change Card analysis JSON matching the schema.")
+				require.Len(t, lastMsg.Parts, 2)
+				assert.Contains(t, lastMsg.Parts[1].(model.TextPart).Text, "Produce the Change Card analysis JSON matching the schema.")
 			})
 
 			t.Run("omit_path_read_all_transitions_immediately", func(t *testing.T) {
@@ -646,10 +648,12 @@ func TestCP1TwoPhaseReadDesign_RecoveryCorrection(t *testing.T) {
 		assert.Equal(t, "Order refund processing.", card.Summary)
 		assert.Len(t, q.requests, 3)
 
-		// Turn 1 request must have the recovery correction message appended
+		// Turn 1 request must merge the recovery correction into the trailing user turn
+		assertAlternatingRoles(t, q.requests[1].Messages)
 		recoveryMsg := q.requests[1].Messages[len(q.requests[1].Messages)-1]
 		require.Equal(t, model.ConversationRoleUser, recoveryMsg.Role)
-		assert.Equal(t, "pass a valid JSON object with path property", recoveryMsg.Parts[0].(model.TextPart).Text)
+		require.Len(t, recoveryMsg.Parts, 2)
+		assert.Equal(t, "pass a valid JSON object with path property", recoveryMsg.Parts[1].(model.TextPart).Text)
 	})
 
 	t.Run("last_turn_exhaustion_fails_without_retry", func(t *testing.T) {
@@ -913,8 +917,9 @@ func TestCP1TwoPhaseReadDesign_ReviseChangeWorkspaceReReadAndSavedDecode(t *test
 		require.NoError(t, err)
 		assert.Equal(t, "Revised order refund processing.", revised.Summary)
 
-		// Check tool result content had v2
-		toolResultMsg := q.requests[3].Messages[len(q.requests[3].Messages)-2]
+		// Check tool result content had v2 in the combined final user message
+		assertAlternatingRoles(t, q.requests[3].Messages)
+		toolResultMsg := q.requests[3].Messages[len(q.requests[3].Messages)-1]
 		toolResult := toolResultMsg.Parts[0].(model.ToolResultPart)
 		filesList := toolResult.Content.([]any)
 		assert.Contains(t, filesList[0].(map[string]any)["content"], "v2 design")
@@ -1205,4 +1210,22 @@ func findSpanAttr(attrs []attribute.KeyValue, key attribute.Key) (attribute.Valu
 		}
 	}
 	return attribute.Value{}, false
+}
+
+// assertAlternatingRoles verifies that after the leading system message, no two
+// adjacent messages share the same conversation role.
+func assertAlternatingRoles(t *testing.T, msgs []*model.Message) {
+	t.Helper()
+	var prev model.ConversationRole
+	for i, m := range msgs {
+		require.NotNil(t, m, "message %d", i)
+		if m.Role == model.ConversationRoleSystem {
+			assert.Zero(t, i, "system message must lead the transcript")
+			continue
+		}
+		if prev != "" {
+			assert.NotEqual(t, prev, m.Role, "adjacent messages at %d must alternate user and assistant roles", i)
+		}
+		prev = m.Role
+	}
 }

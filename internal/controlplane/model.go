@@ -148,8 +148,9 @@ func (a *ModelCP1Analyzer) Analyze(
 		formatCP1DesignSection(design.supplied),
 	)
 	initialUserPrompt := "Request:\n" + promptText
-	response, err := a.inspectAndComplete(
+	response, err := inspectAndComplete(
 		ctx,
+		a,
 		goldenpath.ArchitectSystemPrompt(),
 		singleTurnPrompt,
 		design,

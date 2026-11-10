@@ -89,8 +89,9 @@ func (a *ModelCP1Analyzer) Revise(
 		string(priorJSON),
 		promptText,
 	)
-	response, err := a.inspectAndComplete(
+	response, err := inspectAndComplete(
 		ctx,
+		a,
 		goldenpath.ArchitectReviseSystemPrompt(),
 		singleTurnPrompt,
 		design,
@@ -180,16 +181,9 @@ func (c *ControlPlane) ReviseChange(
 			}
 		} else {
 			designSrc = record.designSource
-			if designSrc == "" {
-				design = WorkspaceCP1Design(nil)
-			} else {
-				var files map[string]string
-				dec := json.NewDecoder(strings.NewReader(designSrc))
-				dec.DisallowUnknownFields()
-				if err := dec.Decode(&files); err != nil {
-					return nil, fmt.Errorf("decode saved workspace design: %w", err)
-				}
-				design = WorkspaceCP1Design(files)
+			design, err = decodeSavedWorkspaceCP1Design(designSrc)
+			if err != nil {
+				return nil, err
 			}
 		}
 	default:
