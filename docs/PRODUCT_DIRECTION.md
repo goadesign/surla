@@ -81,6 +81,53 @@ proposal. A choice the playbook settles is not offered as a choice.
   within the rule. If the user still chooses to break it, Surla allows it,
   records the exception, and marks it on the diagram until it is removed.
 
+### Major work starts from what happens
+
+For a new platform or a major feature, the guide first drafts a timeline of
+what happens in the user's domain, before any architecture. The method is
+Event Storming. A small change skips this step.
+
+- **Plain labels.** The notes are named in plain words: what happens, who
+  or what triggers it, rules, open questions, and other systems. The
+  interface does not use the method's own vocabulary.
+- **It leads to the architecture.** The open questions on the timeline are
+  the decisions only the user can make. Groups of notes become services.
+- **It stays.** The timeline remains a view of the platform, linked to the
+  diagrams: selecting a note shows the parts that implement it, and
+  selecting a part shows its notes.
+
+### Domain-driven design, without the vocabulary
+
+Surla applies the principles of domain-driven design and does not ask the
+user to know them. Each appears in plain words, with the established term
+available to those who look for it.
+
+- **Groups become services.** A group of related notes on the timeline is
+  one service with its own data (a bounded context).
+- **One name for one thing.** The words on the timeline are the names in
+  the design, the code and the docs (ubiquitous language).
+- **A service knows only what another exposes.** That is its API and its
+  public messages: typed, versioned, and declared in the design (published
+  language). It never sees another service's tables or internal types.
+- **Translate at the edge.** Where an outside system models things
+  differently, a translator at the boundary keeps that model out
+  (anti-corruption layer).
+
+### Events where they fit
+
+Surla does not default to an event-driven architecture and does not avoid
+one. The playbook's rule decides: use events when several consumers need
+the same fact or the producer must not wait, and never for a step that
+must commit or fail atomically. Where that leaves a real choice, the user
+decides it. [Pulse](https://github.com/goadesign/pulse) carries events and
+is part of Surla's toolset with Goa, Goa-AI and Model.
+
+### Four words the experience is held to
+
+In order: delightful, intuitive, street smart, and faithful to Google's
+user experience standards. Established methods are woven in so that their
+benefit arrives without the experience feeling like a method.
+
 ### No walls of text
 
 A screen guides without asking the user to read paragraphs: one headline, a
