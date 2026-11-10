@@ -325,7 +325,7 @@ func TestSavedCardCompatibilityWithPrior12FieldReader(t *testing.T) {
 }
 
 // Analyze waits for release, then returns a card with no open questions.
-func (a *heldAnalyzer) Analyze(context.Context, string, string) (CP1SemanticAnalysis, error) {
+func (a *heldAnalyzer) Analyze(context.Context, string, CP1Design) (CP1SemanticAnalysis, error) {
 	close(a.started)
 	<-a.release
 	return CP1SemanticAnalysis{
@@ -338,8 +338,8 @@ func (a *heldAnalyzer) Analyze(context.Context, string, string) (CP1SemanticAnal
 }
 
 // Revise delegates to Analyze and accounts for prior examples so heldAnalyzer satisfies CP1Analyzer.
-func (a *heldAnalyzer) Revise(ctx context.Context, prior CP1PriorCard, promptText, designSource string) (CP1RevisionSemanticAnalysis, error) {
-	analysis, err := a.Analyze(ctx, promptText, designSource)
+func (a *heldAnalyzer) Revise(ctx context.Context, prior CP1PriorCard, promptText string, design CP1Design) (CP1RevisionSemanticAnalysis, error) {
+	analysis, err := a.Analyze(ctx, promptText, design)
 	if err != nil {
 		return CP1RevisionSemanticAnalysis{}, err
 	}

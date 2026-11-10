@@ -568,7 +568,7 @@ func TestModelLifecycleBarriersAcrossCloseAndConfigureModel(t *testing.T) {
 				var close1Count atomic.Int32
 				var close2Count atomic.Int32
 				fast2 := &stubCP1Analyzer{
-					analyzeFn: func(context.Context, string, string) (CP1SemanticAnalysis, error) {
+					analyzeFn: func(context.Context, string, CP1Design) (CP1SemanticAnalysis, error) {
 						return CP1SemanticAnalysis{
 							Summary: "Fast model 2",
 							Examples: []CP1ModelExample{{
@@ -701,7 +701,7 @@ func TestModelLifecycleBarriersAcrossCloseAndConfigureModel(t *testing.T) {
 			release2()
 		}
 		fast3 := &stubCP1Analyzer{
-			analyzeFn: func(context.Context, string, string) (CP1SemanticAnalysis, error) {
+			analyzeFn: func(context.Context, string, CP1Design) (CP1SemanticAnalysis, error) {
 				return CP1SemanticAnalysis{
 					Summary: "Model 3",
 					Examples: []CP1ModelExample{{

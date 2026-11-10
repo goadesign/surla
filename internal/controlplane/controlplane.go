@@ -612,19 +612,23 @@ func (c *ControlPlane) ProposeChange(ctx context.Context, p *gensurla.ProposeCha
 	defer func() {
 		c.releaseModel(ctx, model)
 	}()
+	var design CP1Design
 	var designSrc string
 	sourceOrigin := sourceOriginSupplied
 	switch {
 	case p.DesignSource != nil:
 		designSrc = *p.DesignSource
+		design = SuppliedCP1Design(designSrc)
 	default:
 		wsDir, wsDev, wsIno := c.currentWorkspaceTarget()
 		if wsDir != "" {
-			designSrc, err = readWorkspaceDesignSource(wsDir, wsDev, wsIno)
+			design, designSrc, err = readWorkspaceCP1Design(wsDir, wsDev, wsIno)
 			if err != nil {
 				return nil, err
 			}
 			sourceOrigin = sourceOriginWorkspace
+		} else {
+			design = SuppliedCP1Design("")
 		}
 	}
 
@@ -650,10 +654,11 @@ func (c *ControlPlane) ProposeChange(ctx context.Context, p *gensurla.ProposeCha
 		span.SetStatus(codes.Error, "report cp1 analysis progress")
 		return nil, err
 	}
-	analysis, err := model.analyzer.Analyze(ctx, p.Prompt, designSrc)
+	analysis, err := model.analyzer.Analyze(ctx, p.Prompt, design)
 	if err != nil {
 		if se, ok := asAnalysisRejected(err); ok {
-			err = newAnalysisRejected(
+			rejectionKind := cp1RejectionKind(err)
+			se = newAnalysisRejected(
 				fmt.Sprintf(
 					"cp1 analysis rejected (%s): this propose_change request did not save Change Card %q; retry propose_change (including design_source when evaluating an existing Goa design), or call get_change if another request may have created the card",
 					se.Message,
@@ -661,6 +666,11 @@ func (c *ControlPlane) ProposeChange(ctx context.Context, p *gensurla.ProposeCha
 				),
 				err,
 			)
+			span.SetAttributes(
+				attribute.String("surla.cp1.rejection_kind", rejectionKind),
+				attribute.String("surla.public_summary", se.Message),
+			)
+			err = se
 		} else if containsAnalysisRejected(err) {
 			err = unclassifiedCP1Error{cause: err}
 		}
@@ -682,7 +692,11 @@ func (c *ControlPlane) ProposeChange(ctx context.Context, p *gensurla.ProposeCha
 				err.Error(),
 				p.ChangeID,
 			),
-			err,
+			&cp1Rejection{kind: "semantic_validation", err: err},
+		)
+		span.SetAttributes(
+			attribute.String("surla.cp1.rejection_kind", "semantic_validation"),
+			attribute.String("surla.public_summary", se.Message),
 		)
 		span.RecordError(se)
 		span.SetStatus(codes.Error, "validate cp1 analysis")
@@ -742,6 +756,7 @@ func (c *ControlPlane) ProposeChange(ctx context.Context, p *gensurla.ProposeCha
 		span.SetStatus(codes.Error, "save cp1 change card")
 		return nil, err
 	}
+	span.SetAttributes(attribute.String("surla.public_summary", card.Summary))
 	return card, nil
 }
 

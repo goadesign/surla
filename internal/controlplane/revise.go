@@ -73,13 +73,34 @@ type (
 func (a *ModelCP1Analyzer) Revise(
 	ctx context.Context,
 	prior CP1PriorCard,
-	promptText, designSource string,
+	promptText string,
+	design CP1Design,
 ) (CP1RevisionSemanticAnalysis, error) {
-	userPrompt, err := formatCP1ReviseUserPrompt(prior, promptText, designSource)
+	singleTurnPrompt, err := formatCP1ReviseUserPrompt(prior, promptText, design.supplied)
 	if err != nil {
 		return CP1RevisionSemanticAnalysis{}, err
 	}
-	return a.completeReviseAnalysis(ctx, goldenpath.ArchitectReviseSystemPrompt(), userPrompt)
+	priorJSON, err := json.Marshal(prior)
+	if err != nil {
+		return CP1RevisionSemanticAnalysis{}, fmt.Errorf("marshal prior cp1 change card: %w", err)
+	}
+	initialUserPrompt := fmt.Sprintf(
+		"Prior Change Card:\n%s\n\nRevised Request:\n%s",
+		string(priorJSON),
+		promptText,
+	)
+	response, err := a.inspectAndComplete(
+		ctx,
+		goldenpath.ArchitectReviseSystemPrompt(),
+		singleTurnPrompt,
+		design,
+		gencompletions.SpecCp1ReviseChangeCardAnalysis(),
+		initialUserPrompt,
+	)
+	if err != nil {
+		return CP1RevisionSemanticAnalysis{}, err
+	}
+	return cp1RevisionAnalysisFromCompletion(response), nil
 }
 
 // ReviseChange re-evaluates an existing Checkpoint 1 Change Card against a
@@ -139,7 +160,8 @@ func (c *ControlPlane) ReviseChange(
 		))
 	}
 
-	designSrc := record.designSource
+	var design CP1Design
+	var designSrc string
 	nextOrigin := record.sourceOrigin
 	if nextOrigin == "" {
 		nextOrigin = sourceOriginSupplied
@@ -148,14 +170,31 @@ func (c *ControlPlane) ReviseChange(
 	case p.DesignSource != nil:
 		designSrc = *p.DesignSource
 		nextOrigin = sourceOriginSupplied
+		design = SuppliedCP1Design(designSrc)
 	case nextOrigin == sourceOriginWorkspace:
 		wsDir, wsDev, wsIno := c.currentWorkspaceTarget()
 		if wsDir != "" {
-			designSrc, err = readWorkspaceDesignSource(wsDir, wsDev, wsIno)
+			design, designSrc, err = readWorkspaceCP1Design(wsDir, wsDev, wsIno)
 			if err != nil {
 				return nil, err
 			}
+		} else {
+			designSrc = record.designSource
+			if designSrc == "" {
+				design = WorkspaceCP1Design(nil)
+			} else {
+				var files map[string]string
+				dec := json.NewDecoder(strings.NewReader(designSrc))
+				dec.DisallowUnknownFields()
+				if err := dec.Decode(&files); err != nil {
+					return nil, fmt.Errorf("decode saved workspace design: %w", err)
+				}
+				design = WorkspaceCP1Design(files)
+			}
 		}
+	default:
+		designSrc = record.designSource
+		design = SuppliedCP1Design(designSrc)
 	}
 	prior := buildCP1PriorCard(record.card)
 
@@ -171,10 +210,11 @@ func (c *ControlPlane) ReviseChange(
 		span.SetStatus(codes.Error, "report cp1 revision progress")
 		return nil, err
 	}
-	analysis, err := model.analyzer.Revise(ctx, prior, p.Prompt, designSrc)
+	analysis, err := model.analyzer.Revise(ctx, prior, p.Prompt, design)
 	if err != nil {
 		if se, ok := asAnalysisRejected(err); ok {
-			err = newAnalysisRejected(
+			rejectionKind := cp1RejectionKind(err)
+			se = newAnalysisRejected(
 				fmt.Sprintf(
 					"cp1 analysis rejected (%s): this revise_change request did not modify Change Card %q; retry revise_change with request_revision %s (and design_source when updating the Goa design), or call get_change if another request may have updated the card",
 					se.Message,
@@ -183,6 +223,11 @@ func (c *ControlPlane) ReviseChange(
 				),
 				err,
 			)
+			span.SetAttributes(
+				attribute.String("surla.cp1.rejection_kind", rejectionKind),
+				attribute.String("surla.public_summary", se.Message),
+			)
+			err = se
 		} else if containsAnalysisRejected(err) {
 			err = unclassifiedCP1Error{cause: err}
 		}
@@ -205,7 +250,11 @@ func (c *ControlPlane) ReviseChange(
 				p.ChangeID,
 				p.RequestRevision,
 			),
-			err,
+			&cp1Rejection{kind: "semantic_validation", err: err},
+		)
+		span.SetAttributes(
+			attribute.String("surla.cp1.rejection_kind", "semantic_validation"),
+			attribute.String("surla.public_summary", se.Message),
 		)
 		span.RecordError(se)
 		span.SetStatus(codes.Error, "validate revised cp1 analysis")
@@ -270,6 +319,7 @@ func (c *ControlPlane) ReviseChange(
 		span.SetStatus(codes.Error, "save revised cp1 change card")
 		return nil, err
 	}
+	span.SetAttributes(attribute.String("surla.public_summary", revised.Summary))
 	return revised, nil
 }
 
@@ -491,98 +541,25 @@ func completeStructuredAnalysis[T any](
 	spec completion.Spec[T],
 	systemPrompt, userPrompt string,
 ) (T, error) {
-	var zero T
-	if client == nil {
-		return zero, errors.New("cp1 model client is required")
-	}
-	req := &model.Request{
-		Messages: []*model.Message{
-			{
-				Role: model.ConversationRoleSystem,
-				Parts: []model.Part{
-					model.TextPart{
-						Text: systemPrompt,
-					},
-				},
-			},
-			{
-				Role: model.ConversationRoleUser,
-				Parts: []model.Part{
-					model.TextPart{
-						Text: userPrompt,
-					},
+	messages := []*model.Message{
+		{
+			Role: model.ConversationRoleSystem,
+			Parts: []model.Part{
+				model.TextPart{
+					Text: systemPrompt,
 				},
 			},
 		},
-		MaxTokens: cp1AnalysisMaxOutputTokens,
+		{
+			Role: model.ConversationRoleUser,
+			Parts: []model.Part{
+				model.TextPart{
+					Text: userPrompt,
+				},
+			},
+		},
 	}
-	resp, err := completion.Complete(ctx, client, req, spec)
-	if err != nil {
-		if ovErr, ok := exactOutputValidation(err); ok {
-			if ovErr.Kind() == model.OutputValidationOutputLimited {
-				return zero, newAnalysisRejected(
-					"provider stopped at output limit; shorten the request before retrying",
-					err,
-				)
-			}
-			return zero, newAnalysisRejected(
-				fmt.Sprintf("model output failed %q validation", ovErr.Kind()),
-				err,
-			)
-		}
-		return zero, fmt.Errorf("cp1 model completion: %w", err)
-	}
-	if resp.ModelResponse.OutputLimited {
-		return zero, newAnalysisRejected(
-			"provider stopped at output limit",
-			errors.New("cp1 model response reached output limit"),
-		)
-	}
-	return resp.Value, nil
-}
-
-// completeAnalysis runs one structured CP1 model completion with systemPrompt
-// and userPrompt and strictly decodes the resulting CP1SemanticAnalysis.
-func (a *ModelCP1Analyzer) completeAnalysis(
-	ctx context.Context,
-	systemPrompt, userPrompt string,
-) (CP1SemanticAnalysis, error) {
-	if a == nil {
-		return CP1SemanticAnalysis{}, errors.New("cp1 model client is required")
-	}
-	response, err := completeStructuredAnalysis(
-		ctx,
-		a.client,
-		gencompletions.SpecCp1ChangeCardAnalysis(),
-		systemPrompt,
-		userPrompt,
-	)
-	if err != nil {
-		return CP1SemanticAnalysis{}, err
-	}
-	return cp1AnalysisFromCompletion(response), nil
-}
-
-// completeReviseAnalysis runs one structured CP1 revision completion with systemPrompt
-// and userPrompt and strictly decodes the resulting CP1RevisionSemanticAnalysis.
-func (a *ModelCP1Analyzer) completeReviseAnalysis(
-	ctx context.Context,
-	systemPrompt, userPrompt string,
-) (CP1RevisionSemanticAnalysis, error) {
-	if a == nil {
-		return CP1RevisionSemanticAnalysis{}, errors.New("cp1 model client is required")
-	}
-	response, err := completeStructuredAnalysis(
-		ctx,
-		a.client,
-		gencompletions.SpecCp1ReviseChangeCardAnalysis(),
-		systemPrompt,
-		userPrompt,
-	)
-	if err != nil {
-		return CP1RevisionSemanticAnalysis{}, err
-	}
-	return cp1RevisionAnalysisFromCompletion(response), nil
+	return completeStructuredMessages(ctx, client, spec, messages)
 }
 
 // cp1AnalysisFromCompletion adapts the generated final response to the public

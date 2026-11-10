@@ -852,7 +852,11 @@ func TestCP1WorkspaceDesignSourceProvenanceAcrossProposeReviseAndReopen(t *testi
 
 	var capturedSources []string
 	analyzer := &stubCP1Analyzer{
-		analyzeFn: func(_ context.Context, prompt, designSource string) (CP1SemanticAnalysis, error) {
+		analyzeFn: func(_ context.Context, prompt string, design CP1Design) (CP1SemanticAnalysis, error) {
+			designSource, err := design.CanonicalSource()
+			if err != nil {
+				return CP1SemanticAnalysis{}, err
+			}
 			capturedSources = append(capturedSources, designSource)
 			return CP1SemanticAnalysis{
 				Summary: "Summary for " + prompt,
@@ -867,7 +871,11 @@ func TestCP1WorkspaceDesignSourceProvenanceAcrossProposeReviseAndReopen(t *testi
 				PreservedBehaviors: []string{"existing orders continue to work"},
 			}, nil
 		},
-		reviseFn: func(_ context.Context, prior CP1PriorCard, prompt, designSource string) (CP1RevisionSemanticAnalysis, error) {
+		reviseFn: func(_ context.Context, prior CP1PriorCard, prompt string, design CP1Design) (CP1RevisionSemanticAnalysis, error) {
+			designSource, err := design.CanonicalSource()
+			if err != nil {
+				return CP1RevisionSemanticAnalysis{}, err
+			}
 			capturedSources = append(capturedSources, designSource)
 			revExamples := make([]CP1RevisionModelExample, 0, len(prior.Examples))
 			for _, ex := range prior.Examples {

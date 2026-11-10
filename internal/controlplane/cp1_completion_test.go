@@ -165,9 +165,9 @@ func TestCP1CompletionPreservesRequestSettings(t *testing.T) {
 			analyzer := NewModelCP1Analyzer(newQueuedModelClient(t, q))
 			var err error
 			if revision {
-				_, err = analyzer.Revise(context.Background(), CP1PriorCard{}, "Request", "Design")
+				_, err = analyzer.Revise(context.Background(), CP1PriorCard{}, "Request", SuppliedCP1Design("Design"))
 			} else {
-				_, err = analyzer.Analyze(context.Background(), "Request", "Design")
+				_, err = analyzer.Analyze(context.Background(), "Request", SuppliedCP1Design("Design"))
 			}
 			require.NoError(t, err)
 			req := q.lastRequest()
@@ -206,7 +206,7 @@ func TestCP1CompletionRejectsInvalidResponseEnvelopes(t *testing.T) {
 			q := &queuedModelClient{responses: []queuedModelTurn{{resp: &model.Response{
 				Content: tc.content, StopReason: "stop",
 			}}}}
-			_, err := NewModelCP1Analyzer(newQueuedModelClient(t, q)).Analyze(context.Background(), "Request", "Design")
+			_, err := NewModelCP1Analyzer(newQueuedModelClient(t, q)).Analyze(context.Background(), "Request", SuppliedCP1Design("Design"))
 			if tc.valid {
 				assert.NoError(t, err)
 				return
