@@ -1,6 +1,6 @@
-// Package components renders Checkpoint 2 C4 Architecture Previews, Structural
-// Design Diffs, Checkpoint 3 Fast Draft Overrides, and Incoming CP1 Change Card
-// notifications using shadcn/ui primitives.
+// Package components renders C4 Architecture Previews, Structural Design Diffs,
+// Fast Draft Overrides, Live Target views, and Incoming Change Card notifications
+// inside the Surla Architecture Workspace.
 
 import React from "react";
 import {
@@ -227,7 +227,7 @@ export function C4GraphSVG({
   );
 }
 
-// ArchitecturePreviewView renders a Checkpoint 2 C4 Architecture Preview.
+// ArchitecturePreviewView renders a C4 Architecture Preview inside the workspace.
 export function ArchitecturePreviewView({
   preview,
   loadedCard,
@@ -249,8 +249,23 @@ export function ArchitecturePreviewView({
   return (
     <>
       <Card className="surla-meta">
-        <h2>{"Architecture Preview: " + preview.system_name}</h2>
-        <p>{preview.banner}</p>
+        <div className="surla-region-header">
+          <div className="surla-region-title-group">
+            <h2>{"Architecture Preview: " + preview.system_name}</h2>
+            <p>{preview.banner}</p>
+          </div>
+          {!sameCardLoaded ? (
+            <div className="surla-toolbar-actions">
+              <Button
+                id="surla-open-change-card"
+                disabled={loadingCard}
+                onClick={onOpenChangeCard}
+              >
+                {loadingCard ? "Loading Change Card..." : "Load Change Card"}
+              </Button>
+            </div>
+          ) : null}
+        </div>
         <p id="surla-cp2-session-note">
           Session preview for this candidate design snapshot (not saved on the server; re-run
           preview_architecture after editing design/*.go).
@@ -279,17 +294,6 @@ export function ArchitecturePreviewView({
             {cardLoadError}
           </Alert>
         ) : null}
-        {!sameCardLoaded ? (
-          <div className="surla-field-row">
-            <Button
-              id="surla-open-change-card"
-              disabled={loadingCard}
-              onClick={onOpenChangeCard}
-            >
-              {loadingCard ? "Loading Change Card..." : "Load Change Card (CP1 / CP5)"}
-            </Button>
-          </div>
-        ) : null}
         <details className="surla-details">
           <summary>Details</summary>
           <p>
@@ -308,70 +312,83 @@ export function ArchitecturePreviewView({
             " edges)"}
         </h3>
         <C4GraphSVG containers={preview.containers} edges={preview.edges} />
-        <h3>{"C4 Containers (" + preview.containers.length + ")"}</h3>
-        <ul>
-          {preview.containers.map((c) => (
-            <li key={c.id}>
-              <Badge>{c.kind}</Badge>
-              <code>{c.id}</code>
-              {" (" + c.name + "): " + c.description}
-            </li>
-          ))}
-        </ul>
-        <h3>{"Directed Contract Edges (" + preview.edges.length + ")"}</h3>
-        <ul>
-          {preview.edges.map((e, idx) => (
-            <li key={String(idx)}>
-              <code>{e.from_id}</code>
-              {" -> "}
-              <code>{e.to_id}</code>
-              {" [" + e.protocol + "]"}
-            </li>
-          ))}
-        </ul>
-        <h3>{"Evaluated Agent Policies (" + preview.agent_policies.length + ")"}</h3>
-        <ul>
-          {preview.agent_policies.map((p) => (
-            <li key={p.agent_id}>
-              <code>{p.agent_id}</code>
-              {": time_budget=" +
-                p.max_execution_seconds +
-                "s, max_tool_calls=" +
-                p.max_tool_calls +
-                ", max_recovery_turns=" +
-                p.max_recovery_turns +
-                ", history=" +
-                p.compress_at_turns +
-                "/" +
-                p.keep_recent_turns +
-                ", cache_after_system=" +
-                p.cache_after_system +
-                ", cache_after_tools=" +
-                p.cache_after_tools}
-            </li>
-          ))}
-        </ul>
-        <h3>{"Evaluated Tool Guardrails (" + preview.tools.length + ")"}</h3>
-        <p id="surla-cp2-confirmation-note">
-          A Confirmation badge means the design requires approval before that tool runs. It does
-          not show that the service asks the right person and continues after their answer:
-          implement that flow and verify it. The <code translate="no">examples/orders</code> project in the Surla
-          repository shows one, a manager approving refunds.
-        </p>
-        <ul>
-          {preview.tools.map((t) => (
-            <li key={t.id}>
-              <code>{t.id}</code>
-              {" (" + t.toolset + "): " + t.description + " "}
-              {t.injected_fields.length > 0 ? (
-                <Badge>{"Inject: " + t.injected_fields.join(", ")}</Badge>
-              ) : null}
-              {t.requires_confirmation ? <Badge>Confirmation</Badge> : null}
-              {t.bounded_result ? <Badge>BoundedResult</Badge> : null}
-              {t.requires_ui ? <Badge>UI required</Badge> : null}
-            </li>
-          ))}
-        </ul>
+        <div className="surla-arch-grid">
+          <div className="surla-panel-section">
+            <h3>{"C4 Containers (" + preview.containers.length + ")"}</h3>
+            <ul className="surla-compact-list">
+              {preview.containers.map((c) => (
+                <li key={c.id}>
+                  <Badge>{c.kind}</Badge>
+                  <code>{c.id}</code>
+                  {" (" + c.name + "): " + c.description}
+                </li>
+              ))}
+            </ul>
+            <h3>{"Directed Contract Edges (" + preview.edges.length + ")"}</h3>
+            <ul className="surla-compact-list">
+              {preview.edges.map((e, idx) => (
+                <li key={String(idx)}>
+                  <code>{e.from_id}</code>
+                  {" -> "}
+                  <code>{e.to_id}</code>
+                  {" [" + e.protocol + "]"}
+                </li>
+              ))}
+            </ul>
+          </div>
+          <div className="surla-panel-section">
+            <h3>{"Evaluated Agent Policies (" + preview.agent_policies.length + ")"}</h3>
+            <ul className="surla-compact-list">
+              {preview.agent_policies.map((p) => (
+                <li key={p.agent_id}>
+                  <code>{p.agent_id}</code>
+                  {": time_budget=" +
+                    p.max_execution_seconds +
+                    "s, max_tool_calls=" +
+                    p.max_tool_calls +
+                    ", max_recovery_turns=" +
+                    p.max_recovery_turns +
+                    ", history=" +
+                    p.compress_at_turns +
+                    "/" +
+                    p.keep_recent_turns +
+                    ", cache_after_system=" +
+                    p.cache_after_system +
+                    ", cache_after_tools=" +
+                    p.cache_after_tools}
+                </li>
+              ))}
+            </ul>
+            <h3>{"Evaluated Tool Guardrails (" + preview.tools.length + ")"}</h3>
+            <p id="surla-cp2-confirmation-note">
+              A Confirmation badge means the design requires approval before that tool runs. It does
+              not show that the service asks the right person and continues after their answer:
+              implement that flow and verify it. The <code translate="no">examples/orders</code> project in the Surla
+              repository shows one, a manager approving refunds.
+            </p>
+            <ul className="surla-compact-list">
+              {preview.tools.map((t) => (
+                <li key={t.id}>
+                  <code>{t.id}</code>
+                  {" (" + t.toolset + "): " + t.description + " "}
+                  {t.injected_fields.length > 0 ? (
+                    <Badge>{"Inject: " + t.injected_fields.join(", ")}</Badge>
+                  ) : null}
+                  {t.requires_confirmation ? <Badge variant="warning">Confirmation</Badge> : null}
+                  {t.bounded_result ? <Badge>BoundedResult</Badge> : null}
+                  {t.requires_ui ? <Badge variant="accent">UI required</Badge> : null}
+                  <details className="surla-details">
+                    <summary>Tool schemas</summary>
+                    <p>
+                      args_schema: <code>{t.args_schema}</code> · return_schema:{" "}
+                      <code>{t.return_schema}</code>
+                    </p>
+                  </details>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
       </Card>
       <Card className="surla-card">
         <h3>{"Proposed Chorus Swarm (" + preview.swarm.status + ")"}</h3>
@@ -388,7 +405,7 @@ export function ArchitecturePreviewView({
           </p>
         )}
         {preview.swarm.assignments.length > 0 ? (
-          <ul>
+          <ul className="surla-compact-list">
             {preview.swarm.assignments.map((r) => (
               <li key={r.handle}>
                 <code>{"@" + r.handle}</code>
@@ -436,7 +453,7 @@ function DiffList({
     return <p>{emptyText}</p>;
   }
   return (
-    <ul>
+    <ul className="surla-compact-list">
       {items.map((decl, idx) => (
         <li key={String(idx)}>
           <Badge>{prefix}</Badge>
@@ -447,7 +464,7 @@ function DiffList({
   );
 }
 
-// DiffResultView renders an unbound Checkpoint 2 structural diff.
+// DiffResultView renders an unbound structural design diff.
 export function DiffResultView({ diff }: { diff: DiffResult }) {
   return (
     <>
@@ -455,7 +472,7 @@ export function DiffResultView({ diff }: { diff: DiffResult }) {
         <h2>Structural Goa &amp; Goa-AI Design Diff</h2>
         <p>{diff.summary}</p>
         <p>
-          Standalone structural comparison (unbound to a CP1 Change Card or request_revision).
+          Standalone structural comparison (unbound to a Change Card or request_revision).
         </p>
         <details className="surla-details">
           <summary>Details</summary>
@@ -494,7 +511,7 @@ export function DiffResultView({ diff }: { diff: DiffResult }) {
   );
 }
 
-// DraftOverrideView renders a Checkpoint 3 Fast Draft Override result.
+// DraftOverrideView renders a Fast Draft Override result.
 export function DraftOverrideView({ draft }: { draft: DraftOverrideResult }) {
   return (
     <Card className="surla-meta">
@@ -516,17 +533,20 @@ export function DraftOverrideView({ draft }: { draft: DraftOverrideResult }) {
   );
 }
 
-// LiveTargetView renders the CP3 live target a start_live_target call started
+// LiveTargetView renders the live target a start_live_target call started
 // or the outcome of stop_live_target. The commit stays in Details; the
 // heading and message say what the operator can do next.
 export function LiveTargetView({ result }: { result: LiveTargetResult | StopLiveTargetResult }) {
   if ("url" in result) {
     return (
       <Card className="surla-meta">
-        <h2>Live Target Running</h2>
+        <div className="surla-region-header">
+          <h2>Live Target Running</h2>
+          <Badge variant="success">Running</Badge>
+        </div>
         <p>{result.message}</p>
         <p>
-          The target listens at <code>{result.url}</code>, a loopback address on the Surla server's host. Send prompt text
+          The target listens at <code>{result.url}</code>, a loopback address on the Surla server&apos;s host. Send prompt text
           with draft_override. Drafts are not verified, and starting another target discards them: commit the accepted
           text and run verification.
         </p>
@@ -547,7 +567,7 @@ export function LiveTargetView({ result }: { result: LiveTargetResult | StopLive
   );
 }
 
-// IncomingChangeCardView renders a notification banner when a new CP1 Change Card
+// IncomingChangeCardView renders a notification banner when a new Change Card
 // arrives while the operator has unsaved draft edits or an in-flight RPC.
 export function IncomingChangeCardView({
   incomingCard,

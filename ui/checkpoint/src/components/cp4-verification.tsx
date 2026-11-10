@@ -126,7 +126,7 @@ export function VerificationView({
             </Button>
             {sameCardLoaded ? (
               <Button id="surla-return-change-card" onClick={onReturnToChangeCard}>
-                Return to Change Card (CP1 / CP5)
+                Return to Decisions &amp; Approval
               </Button>
             ) : (
               <Button
@@ -134,7 +134,7 @@ export function VerificationView({
                 disabled={loadingCard}
                 onClick={onOpenChangeCard}
               >
-                {loadingCard ? "Loading Change Card..." : "Load Change Card (CP1 / CP5)"}
+                {loadingCard ? "Loading Change Card..." : "Load Change Card"}
               </Button>
             )}
           </div>
@@ -174,7 +174,7 @@ export function VerificationView({
             </Button>
             {sameCardLoaded ? (
               <Button id="surla-return-change-card" onClick={onReturnToChangeCard}>
-                Return to Change Card (CP1 / CP5)
+                Return to Decisions &amp; Approval
               </Button>
             ) : (
               <Button
@@ -182,7 +182,7 @@ export function VerificationView({
                 disabled={loadingCard}
                 onClick={onOpenChangeCard}
               >
-                {loadingCard ? "Loading Change Card..." : "Load Change Card (CP1 / CP5)"}
+                {loadingCard ? "Loading Change Card..." : "Load Change Card"}
               </Button>
             )}
           </div>
@@ -221,7 +221,7 @@ export function VerificationView({
           </Button>
           {sameCardLoaded ? (
             <Button id="surla-return-change-card" onClick={onReturnToChangeCard}>
-              Return to Change Card (CP1 / CP5)
+              Return to Decisions &amp; Approval
             </Button>
           ) : (
             <Button
@@ -229,7 +229,7 @@ export function VerificationView({
               disabled={loadingCard}
               onClick={onOpenChangeCard}
             >
-              {loadingCard ? "Loading Change Card..." : "Load Change Card (CP1 / CP5)"}
+              {loadingCard ? "Loading Change Card..." : "Load Change Card"}
             </Button>
           )}
         </div>
@@ -254,7 +254,29 @@ export function VerificationView({
       aria-labelledby="surla-cp4-title"
       aria-busy={checking || loadingList ? "true" : undefined}
     >
-      <h2 id="surla-cp4-title">{title}</h2>
+      <div className="surla-region-header">
+        <div className="surla-region-title-group">
+          <h2 id="surla-cp4-title">{title}</h2>
+        </div>
+        <div className="surla-toolbar-actions">
+          <Badge
+            variant={
+              state.type === "completed"
+                ? state.value.report.passed
+                  ? "success"
+                  : "destructive"
+                : state.type === "running"
+                ? "accent"
+                : "warning"
+            }
+          >
+            {"candidate " + run.candidate_commit.slice(0, 7)}
+          </Badge>
+          {state.type === "completed" ? (
+            <Badge>{state.value.suite_id + " (" + state.value.environment + ")"}</Badge>
+          ) : null}
+        </div>
+      </div>
       {displayedCardRevision !== null && displayedCardRevision !== run.request_revision ? (
         <Alert variant="warning" role="status" id="surla-cp4-different-revision">
           This result applies to a different saved Change Card revision
@@ -368,7 +390,7 @@ export function VerificationView({
             disabled={loadingCard}
             onClick={onOpenChangeCard}
           >
-            {loadingCard ? "Loading Change Card..." : "Load Change Card (CP1 / CP5)"}
+            {loadingCard ? "Loading Change Card..." : "Load Change Card"}
           </Button>
         ) : null}
       </div>
@@ -435,7 +457,7 @@ function CompletedReport({ report }: { report: BuilderVerificationReport }) {
                     {scenario.checks.map((check, index) => (
                       <li key={index}>
                         <strong>{check.name}</strong>{" "}
-                        <Badge variant={check.passed ? "default" : "destructive"}>
+                        <Badge variant={check.passed ? "success" : "destructive"}>
                           {check.passed ? "Passed" : "Failed"}
                         </Badge>
                         {check.diagnostic ? <p>{check.diagnostic}</p> : null}
@@ -463,7 +485,7 @@ function ScenarioOutcome({ scenario }: { scenario: VerificationScenario }) {
   return (
     <>
       <span>{scenario.id}</span>{" "}
-      <Badge variant={scenario.outcome === "passed" ? "default" : "destructive"}>
+      <Badge variant={scenario.outcome === "passed" ? "success" : "destructive"}>
         {scenarioOutcomeLabels[scenario.outcome]}
       </Badge>
     </>

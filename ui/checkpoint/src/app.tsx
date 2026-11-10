@@ -1,8 +1,9 @@
-// Package main implements the Surla Checkpoint Studio MCP Apps guest bridge,
-// coordinating the session navigation bar (#surla-checkpoint-nav), the
-// two-region layout (#surla-cp1-editor and #surla-result-view), JSON-RPC 2.0
-// host lifecycle notifications, theme synchronization, and synchronous React 19
-// rendering.
+// Package main implements the Surla Architecture Workspace MCP Apps guest
+// bridge, coordinating the persistent workspace navigation bar
+// (#surla-checkpoint-nav), the displayed-subject context strip
+// (#surla-workspace-context), the two-region layout (#surla-cp1-editor and
+// #surla-result-view), JSON-RPC 2.0 host lifecycle notifications, theme
+// synchronization, and synchronous React 19 rendering.
 
 import React from "react";
 import { flushSync } from "react-dom";
@@ -270,28 +271,173 @@ function validateVerificationListPayload(
   return null;
 }
 
-// bootstrapCheckpointApp mounts the Checkpoint Studio inside the MCP Apps host
-// document and registers the window postMessage bridge.
+// WorkspaceSubjectDescriptor describes the exact displayed subject of an editor
+// or result region without retaining or caching a duplicate copy of session state.
+interface WorkspaceSubjectDescriptor {
+  // role identifies whether this descriptor describes the Change Card editor,
+  // an incoming Change Card banner, or the active result view.
+  role: "editor" | "incoming" | "result";
+  // label is the human-readable prefix shown in the workspace context strip.
+  label: string;
+  // stage names the workspace stage being shown.
+  stage: string;
+  // changeId is set only when the displayed payload itself is bound to a Change Card.
+  changeId?: string;
+  // requestRevision is set only when the displayed payload itself carries a request_revision.
+  requestRevision?: string;
+  // detail summarizes secondary state (such as status, design digest, run ID, or diff summary).
+  detail?: string;
+}
+
+// describeActiveResultSubject derives the subject of #surla-result-view strictly
+// from the displayed activeResult payload and selected verification run, never
+// falling back to activeEditor.card. Unbound views such as cp2-diff and cp3
+// carry no changeId or requestRevision.
+function describeActiveResultSubject(
+  activeResult: ActiveResultState | null,
+  previewState: ArchitecturePreviewResult | null,
+  diffState: DiffResult | null,
+  draftOverrideState: DraftOverrideResult | null,
+  liveTargetState: LiveTargetResult | StopLiveTargetResult | null,
+  displayedRun: VerificationStatusResult | null,
+  selectedVerificationChangeId: string | null,
+  bothRegionsShown: boolean
+): WorkspaceSubjectDescriptor | null {
+  if (!activeResult || activeResult.kind === "cp1-incoming-card") {
+    return null;
+  }
+  const label = bothRegionsShown ? "Displayed view" : "Showing";
+  if (activeResult.kind === "cp2-architecture-preview") {
+    if (!previewState) {
+      return null;
+    }
+    return {
+      role: "result",
+      label,
+      stage: "Architecture · " + previewState.system_name,
+      changeId: previewState.change_id,
+      requestRevision: previewState.request_revision,
+      detail: "design " + previewState.design_digest.slice(0, 15),
+    };
+  }
+  if (activeResult.kind === "cp2-diff") {
+    if (!diffState) {
+      return null;
+    }
+    return {
+      role: "result",
+      label,
+      stage: "Design Diff",
+      detail: diffState.has_changes
+        ? "Standalone comparison · contract changes detected"
+        : "Standalone comparison · no contract changes",
+    };
+  }
+  if (activeResult.kind === "cp3-draft-override" || activeResult.kind === "cp3-live-target") {
+    let detail = "Fast draft update";
+    if (liveTargetState && "url" in liveTargetState) {
+      detail =
+        "Live target " +
+        liveTargetState.url +
+        " · commit " +
+        liveTargetState.candidate_commit.slice(0, 7);
+    } else if (liveTargetState) {
+      detail = liveTargetState.stopped ? "Live target stopped" : "No live target running";
+    } else if (draftOverrideState?.prompt_version) {
+      detail = "Draft override · " + draftOverrideState.prompt_version;
+    }
+    return {
+      role: "result",
+      label,
+      stage: "Try & Prompts",
+      detail,
+    };
+  }
+  if (activeResult.kind === "cp4-verification") {
+    if (displayedRun) {
+      return {
+        role: "result",
+        label,
+        stage: "Proof",
+        changeId: displayedRun.change_id,
+        requestRevision: displayedRun.request_revision,
+        detail:
+          "run " +
+          displayedRun.run_id.slice(0, 8) +
+          " · commit " +
+          displayedRun.candidate_commit.slice(0, 7),
+      };
+    }
+    return {
+      role: "result",
+      label,
+      stage: "Proof",
+      changeId: selectedVerificationChangeId || undefined,
+      detail: "saved verification runs",
+    };
+  }
+  if (activeResult.kind === "partial-input") {
+    return {
+      role: "result",
+      label,
+      stage: "Streaming input",
+    };
+  }
+  if (activeResult.kind === "error") {
+    return {
+      role: "result",
+      label,
+      stage: "Tool error",
+    };
+  }
+  return {
+    role: "result",
+    label,
+    stage: "Cancelled",
+  };
+}
+
+// bootstrapCheckpointApp mounts the Surla Architecture Workspace inside the MCP
+// Apps host document and registers the window postMessage bridge.
 export function bootstrapCheckpointApp() {
   const rawRootEl = document.getElementById("surla-checkpoint-root");
   const rawStatusEl = document.getElementById("surla-checkpoint-status");
-  const viewEl = document.getElementById("surla-checkpoint-view");
-  if (!rawRootEl || !rawStatusEl || !viewEl) {
+  const rawViewEl = document.getElementById("surla-checkpoint-view");
+  if (!rawRootEl || !rawStatusEl || !rawViewEl) {
     return;
   }
   const rootEl: HTMLElement = rawRootEl;
   const statusEl: HTMLElement = rawStatusEl;
+  const viewEl: HTMLElement = rawViewEl;
+
+  if (document && typeof document.title === "string") {
+    document.title = "Surla Architecture Workspace";
+  }
+  const headerEl = rootEl.querySelector("header");
+  if (headerEl) {
+    headerEl.className = "surla-workspace-header";
+    const h1 = headerEl.querySelector("h1");
+    if (h1) {
+      h1.textContent = "Surla Architecture Workspace";
+    }
+    const p = headerEl.querySelector("p");
+    if (p) {
+      p.textContent =
+        "Review and confirm domain decisions, architecture, live prompts, verification proof, and promotion approvals in one workspace.";
+    }
+  }
+  viewEl.setAttribute("aria-label", "Workspace View");
 
   let navRegionEl = document.getElementById("surla-checkpoint-nav");
   if (!navRegionEl) {
     navRegionEl = document.createElement("nav");
     navRegionEl.setAttribute("id", "surla-checkpoint-nav");
-    navRegionEl.setAttribute("aria-label", "Checkpoint views");
     navRegionEl.hidden = true;
     if (viewEl.parentNode) {
       viewEl.parentNode.insertBefore(navRegionEl, viewEl);
     }
   }
+  navRegionEl.setAttribute("aria-label", "Workspace stages");
   const navEl: HTMLElement = navRegionEl;
 
   const editorRegionEl = document.createElement("div");
@@ -342,6 +488,12 @@ export function bootstrapCheckpointApp() {
   const cardLoadErrors = new Map<string, string>();
   let activeResult: ActiveResultState | null = null;
 
+  // resolveDisplayedVerificationRun returns the selected VerificationStatusResult
+  // snapshot when one is currently selected in runsById.
+  function resolveDisplayedVerificationRun(): VerificationStatusResult | null {
+    return selectedRunId !== null ? runsById.get(selectedRunId) ?? null : null;
+  }
+
   // isViewingChangeResult reports whether the active result view currently
   // displays a CP2 preview or CP4 verification view for changeId.
   function isViewingChangeResult(changeId: string): boolean {
@@ -349,8 +501,7 @@ export function bootstrapCheckpointApp() {
       return previewState !== null && previewState.change_id === changeId;
     }
     if (activeResult?.kind === "cp4-verification") {
-      const displayedRun =
-        selectedRunId !== null ? runsById.get(selectedRunId) ?? null : null;
+      const displayedRun = resolveDisplayedVerificationRun();
       const effectiveId = displayedRun
         ? displayedRun.change_id
         : selectedVerificationChangeId || "";
@@ -411,8 +562,9 @@ export function bootstrapCheckpointApp() {
     delete resultRegionEl.dataset.runId;
   }
 
-  // syncNavRegion renders the session navigation bar when two or more
-  // checkpoints are available in the session.
+  // syncNavRegion renders the persistent workspace navigation bar whenever at
+  // least one stage is present in the session, along with the displayed-subject
+  // context strip (#surla-workspace-context).
   function syncNavRegion() {
     if (rootEl.dataset.state === "terminated") {
       navEl.hidden = true;
@@ -435,7 +587,7 @@ export function bootstrapCheckpointApp() {
     if (activeEditor !== null) {
       tabs.push({
         id: "surla-nav-cp1",
-        label: "Change Card (CP1 / CP5)",
+        label: "Decisions & Approval",
         active: cp1Active,
         onClick: handleReturnToChangeCard,
       });
@@ -443,7 +595,7 @@ export function bootstrapCheckpointApp() {
     if (previewState !== null) {
       tabs.push({
         id: "surla-nav-cp2",
-        label: "Architecture Preview (CP2)",
+        label: "Architecture",
         active: activeResult?.kind === "cp2-architecture-preview",
         onClick: () => {
           if (!previewState) {
@@ -463,7 +615,7 @@ export function bootstrapCheckpointApp() {
     if (diffState !== null) {
       tabs.push({
         id: "surla-nav-diff",
-        label: "Design Diff (CP2)",
+        label: "Design Diff",
         active: activeResult?.kind === "cp2-diff",
         onClick: () => {
           if (!diffState) {
@@ -482,7 +634,7 @@ export function bootstrapCheckpointApp() {
     if (draftOverrideState !== null || liveTargetState !== null) {
       tabs.push({
         id: "surla-nav-cp3",
-        label: "Prompt & Live Target (CP3)",
+        label: "Try & Prompts",
         active:
           activeResult?.kind === "cp3-draft-override" ||
           activeResult?.kind === "cp3-live-target",
@@ -509,7 +661,7 @@ export function bootstrapCheckpointApp() {
     if (selectedVerificationChangeId !== null) {
       tabs.push({
         id: "surla-nav-cp4",
-        label: "Verification (CP4)",
+        label: "Proof",
         active: activeResult?.kind === "cp4-verification",
         onClick: () => {
           if (!selectedVerificationChangeId) {
@@ -531,7 +683,53 @@ export function bootstrapCheckpointApp() {
       });
     }
 
-    if (tabs.length < 2) {
+    const bothRegionsShown =
+      activeEditor !== null &&
+      editorOpen &&
+      activeResult !== null &&
+      activeResult.kind !== "cp1-incoming-card";
+
+    const subjects: WorkspaceSubjectDescriptor[] = [];
+    if (activeEditor !== null && editorOpen) {
+      subjects.push({
+        role: "editor",
+        label: bothRegionsShown ? "Protected editor" : "Showing",
+        stage: "Decisions & Approval",
+        changeId: activeEditor.card.change_id,
+        requestRevision: activeEditor.card.request_revision,
+        detail:
+          activeEditor.card.status === "confirmed" ? "confirmed" : "needs confirmation",
+      });
+      if (activeResult?.kind === "cp1-incoming-card" && activeEditor.incomingCard) {
+        subjects.push({
+          role: "incoming",
+          label: "Incoming card",
+          stage: "Updated Change Card",
+          changeId: activeEditor.incomingCard.change_id,
+          requestRevision: activeEditor.incomingCard.request_revision,
+          detail:
+            activeEditor.incomingCard.status === "confirmed"
+              ? "confirmed"
+              : "needs confirmation",
+        });
+      }
+    }
+
+    const resultSubject = describeActiveResultSubject(
+      activeResult,
+      previewState,
+      diffState,
+      draftOverrideState,
+      liveTargetState,
+      resolveDisplayedVerificationRun(),
+      selectedVerificationChangeId,
+      bothRegionsShown
+    );
+    if (resultSubject !== null) {
+      subjects.push(resultSubject);
+    }
+
+    if (tabs.length < 1 && subjects.length < 1) {
       navEl.hidden = true;
       flushSync(() => {
         navRoot.render(null);
@@ -543,17 +741,61 @@ export function bootstrapCheckpointApp() {
     flushSync(() => {
       navRoot.render(
         <>
-          {tabs.map((tab) => (
-            <Button
-              key={tab.id}
-              id={tab.id}
-              variant="pill"
-              aria-current={tab.active ? "page" : undefined}
-              onClick={tab.onClick}
+          {tabs.length >= 1 ? (
+            <div className="surla-nav-tabs">
+              {tabs.map((tab) => (
+                <Button
+                  key={tab.id}
+                  id={tab.id}
+                  variant="pill"
+                  aria-current={tab.active ? "page" : undefined}
+                  onClick={tab.onClick}
+                >
+                  {tab.label}
+                </Button>
+              ))}
+            </div>
+          ) : null}
+          {subjects.length >= 1 ? (
+            <div
+              id="surla-workspace-context"
+              className="surla-workspace-context"
+              role="region"
+              aria-label="Displayed workspace subject"
             >
-              {tab.label}
-            </Button>
-          ))}
+              {subjects.map((subj) => (
+                <div
+                  key={subj.role}
+                  id={"surla-context-" + subj.role}
+                  className="surla-subject-item"
+                  data-subject-role={subj.role}
+                  data-change-id={subj.changeId}
+                  data-request-revision={subj.requestRevision}
+                >
+                  <span className="surla-subject-label">{subj.label}</span>{" "}
+                  <strong>{subj.stage}</strong>
+                  {subj.changeId ? (
+                    <>
+                      {" · "}
+                      <code>{subj.changeId}</code>
+                    </>
+                  ) : null}
+                  {subj.requestRevision ? (
+                    <>
+                      {" · "}
+                      <code>{subj.requestRevision.slice(0, 15)}</code>
+                    </>
+                  ) : null}
+                  {subj.detail ? (
+                    <>
+                      {" · "}
+                      <span>{subj.detail}</span>
+                    </>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          ) : null}
         </>
       );
     });
@@ -686,8 +928,7 @@ export function bootstrapCheckpointApp() {
     }
     if (res.kind === "cp4-verification") {
       const changeId = selectedVerificationChangeId || "";
-      const displayedRun =
-        selectedRunId !== null ? runsById.get(selectedRunId) ?? null : null;
+      const displayedRun = resolveDisplayedVerificationRun();
       if (displayedRun) {
         resultRegionEl.dataset.runId = displayedRun.run_id;
         resultRegionEl.dataset.changeId = displayedRun.change_id;
@@ -795,6 +1036,10 @@ export function bootstrapCheckpointApp() {
 
   // syncAllRegions synchronizes the editor, result, and session nav regions.
   function syncAllRegions() {
+    viewEl.classList.toggle(
+      "surla-split-workspace",
+      Boolean(activeEditor !== null && editorOpen && activeResult !== null)
+    );
     syncEditorRegion();
     syncResultRegion();
     syncNavRegion();

@@ -169,7 +169,9 @@ async function main() {
     expect(runButtons.length === 2, "fresh list notification did not render both run buttons");
     expect(runButtons[0].textContent.includes("2026-10-31T12:00:00.9Z") && runButtons[1].textContent.includes("2026-10-31T12:00:00.1Z"), "sub-second accepted_at timestamps were not preserved in run buttons");
     expect(runButtons[0].textContent.includes("candidate " + input.subSecondLate.candidate_commit.slice(0, 7)), "candidate commit prefix missing in run button");
-    expect(doc.querySelector("#surla-open-change-card")?.textContent.includes("Load Change Card (CP1 / CP5)"), "fresh list notification without loaded card omitted #surla-open-change-card");
+    expect(doc.querySelector("#surla-open-change-card")?.textContent.includes("Load Change Card"), "fresh list notification without loaded card omitted #surla-open-change-card");
+    expect(!doc.querySelector("#surla-checkpoint-nav").hidden && doc.querySelector("#surla-nav-cp4")?.getAttribute("aria-current") === "page", "fresh single-stage list notification did not show persistent #surla-checkpoint-nav");
+    expect(doc.querySelector("#surla-context-result")?.dataset.changeId === input.subSecondLate.change_id && doc.querySelector("#surla-context-result")?.dataset.requestRevision === input.subSecondLate.request_revision && !doc.querySelector("#surla-context-editor"), "fresh list notification did not derive #surla-context-result strictly from selected run");
     // Switch to second listed run and back.
     runButtons[1].click();
     expect(doc.querySelector("#surla-result-view").dataset.runId === input.subSecondEarly.run_id && runButtons[1].getAttribute("aria-pressed") === "true", "clicking second run button did not switch displayed run");
@@ -266,11 +268,12 @@ async function main() {
   // Non-waterfall session navigation (R1 report -> revised R2 -> edit+confirm actual R3 -> old R1 report, retained CP2/CP3 navigation with both CP3 panels visible, and correlated #surla-open-change-card across B -> LoadB -> select/receive C -> B completes/fails, dirty drafts, and pending confirmation).
   {
     const h=open(); await turn();
+    const nav = h.doc.querySelector("#surla-checkpoint-nav");
+    expect(!nav.hidden && h.doc.querySelector("#surla-nav-cp1")?.getAttribute("aria-current") === "page" && h.doc.querySelector("#surla-context-editor")?.dataset.changeId === input.approved.change_id && !h.doc.querySelector("#surla-context-result"), "initial single-stage card did not show persistent nav bar and editor subject context");
     // 1. View R1 run while R1 card is clean: #surla-cp1-editor unmounts, #surla-checkpoint-nav shows CP1 and CP4 tabs (no CP2/CP3).
     h.notify(input.passed);
     expect(!h.field(), "clean CP1 editor remained mounted when CP4 run arrived");
-    const nav = h.doc.querySelector("#surla-checkpoint-nav");
-    expect(!nav.hidden && h.doc.querySelector("#surla-nav-cp1") && h.doc.querySelector("#surla-nav-cp4").getAttribute("aria-current") === "page" && !h.doc.querySelector("#surla-nav-cp2") && !h.doc.querySelector("#surla-nav-cp3"), "nav bar did not show only CP1 and CP4 when CP2/CP3 were skipped");
+    expect(!nav.hidden && h.doc.querySelector("#surla-nav-cp1") && h.doc.querySelector("#surla-nav-cp4").getAttribute("aria-current") === "page" && !h.doc.querySelector("#surla-nav-cp2") && !h.doc.querySelector("#surla-nav-cp3") && !h.doc.querySelector("#surla-context-editor") && h.doc.querySelector("#surla-context-result")?.dataset.requestRevision === input.passed.request_revision, "nav bar did not show only CP1 and CP4 with result-only subject when CP2/CP3 were skipped");
     // 2. Receive revised R2 card (input.revisedR2), verify #surla-prior-revision shows R1, edit example on R2, confirm into actual R3 (input.confirmedR3), and return to old R1 report via #surla-nav-cp4.
     h.notify(input.revisedR2);
     expect(h.field() && !h.doc.querySelector("#surla-cp4-verification"), "revised R2 notification did not mount CP1 editor");
@@ -299,7 +302,7 @@ async function main() {
     h.doc.querySelector("#surla-nav-cp2").click();
     expect(h.doc.querySelector("#surla-result-view").dataset.state === "cp2-architecture-preview" && h.doc.querySelector("#surla-nav-cp2").getAttribute("aria-current") === "page", "#surla-nav-cp2 did not restore retained CP2 preview");
     h.doc.querySelector("#surla-nav-diff").click();
-    expect(h.doc.querySelector("#surla-result-view").dataset.state === "cp2-diff", "#surla-nav-diff did not restore retained CP2 diff");
+    expect(h.doc.querySelector("#surla-result-view").dataset.state === "cp2-diff" && h.doc.querySelector("#surla-context-result")?.dataset.changeId === undefined && h.doc.querySelector("#surla-context-result")?.dataset.requestRevision === undefined && !h.doc.querySelector("#surla-context-editor"), "#surla-nav-diff did not restore retained CP2 diff with unbound subject context");
     h.doc.querySelector("#surla-nav-cp3").click();
     expect(h.text().includes("Fast Draft Update") && h.text().includes("Live Target Running"), "#surla-nav-cp3 did not render both retained CP3 results");
     // Reverse arrival order (live_target then draft_override) also renders both CP3 results.
@@ -317,6 +320,7 @@ async function main() {
     h.doc.querySelector("#surla-nav-cp1").click();
     h.edit("Dirty edit on Card A before loading Card B");
     h.notify(runCardB);
+    expect(h.doc.querySelector("#surla-context-editor")?.dataset.changeId === input.confirmedR3.change_id && h.doc.querySelector("#surla-context-editor")?.dataset.requestRevision === input.confirmedR3.request_revision && h.doc.querySelector("#surla-context-result")?.dataset.changeId === "chg-card-b" && h.doc.querySelector("#surla-context-result")?.dataset.requestRevision === runCardB.request_revision, "simultaneous protected editor and foreign verification result did not show distinct editor and result subject items");
     h.doc.querySelector("#surla-open-change-card").click();
     const lateOpenBErrReq = h.calls[h.calls.length - 1];
     h.notify(runCardC);
