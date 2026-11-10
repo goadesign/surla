@@ -107,12 +107,12 @@ stated in writing before the first edit or recommendation:
    A developer should build and test working-tree changes before committing
    them. Correct a backwards workflow before adding a flag, warning, or hook.
    Before designing or redesigning a user-facing surface, write down in five
-   lines who the primary user is, what they get from Surla, the built-in rules that are not
-   negotiable, and what is out of scope, from `README.md`, the embedded
-   playbook (`internal/goldenpath/GOLDEN_PATH.md`), and the requester's own
-   statements. If any of those is a guess, ask that one question before
-   producing screens; finishing authorized work does not cover guessing the
-   product's purpose or its user.
+   lines who the primary user is, what they get from Surla, the built-in
+   rules that are not negotiable, and what is out of scope, from `README.md`,
+   the embedded playbook (`internal/goldenpath/GOLDEN_PATH.md`), and the
+   requester's own statements. If any of those is a guess, ask that one
+   question before producing screens; finishing authorized work does not
+   cover guessing the product's purpose or its user.
    For a usability report with multiple findings, first identify the shared
    workflow problems across the whole journey, then choose individual fixes.
 1. **Current behavior and callers.** Give an example and inventory every
