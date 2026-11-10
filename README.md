@@ -90,7 +90,7 @@ surla preview -dir /tmp/shop
 surla help
 ```
 
-Or clone this repository to inspect and diff the included [`examples/orders`](examples/orders/README.md) reference platform (from a checkout, you can run either the installed `surla` binary or `go run ./cmd/surla`; when running `go run ./cmd/surla init` from a checkout, pass `-surla-version v0.0.0-20261104215521-580509970fb6`):
+Or clone this repository to inspect and diff the included [`examples/orders`](examples/orders/README.md) reference platform (from a checkout, you can run either the installed `surla` binary or `go run ./cmd/surla`; when running `go run ./cmd/surla init` from a checkout, pass `-surla-version v0.0.0-20261110163737-d9beac313142`):
 
 ```bash
 git clone https://github.com/goadesign/surla.git

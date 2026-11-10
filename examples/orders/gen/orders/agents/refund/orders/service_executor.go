@@ -18,6 +18,7 @@ import (
 	planner "goa.design/goa-ai/runtime/agent/planner"
 	runtime "goa.design/goa-ai/runtime/agent/runtime"
 	tools "goa.design/goa-ai/runtime/agent/tools"
+	"goa.design/goa-ai/runtime/toolregistry"
 )
 
 // This file calls the Goa service methods used by orders tools.
@@ -216,6 +217,20 @@ func NewRefundOrdersExec(opts ...ExecOpt) runtime.ToolCallExecutor {
 				return runtime.Executed(failedServiceCallResult(
 					call,
 					err,
+					func(name string) (planner.FailureKind, bool) {
+						switch name {
+						case "unauthorized":
+							return planner.FailureDomainRejection, true
+						case "forbidden":
+							return planner.FailureDomainRejection, true
+						case "not_found":
+							return planner.FailureDomainRejection, true
+						case "invalid_refund":
+							return planner.FailureDomainRejection, true
+						default:
+							return "", false
+						}
+					},
 				)), nil
 			}
 			var result any
@@ -291,6 +306,20 @@ func NewRefundOrdersExec(opts ...ExecOpt) runtime.ToolCallExecutor {
 				return runtime.Executed(failedServiceCallResult(
 					call,
 					err,
+					func(name string) (planner.FailureKind, bool) {
+						switch name {
+						case "unauthorized":
+							return planner.FailureDomainRejection, true
+						case "forbidden":
+							return planner.FailureDomainRejection, true
+						case "not_found":
+							return planner.FailureDomainRejection, true
+						case "invalid_refund":
+							return planner.FailureDomainRejection, true
+						default:
+							return "", false
+						}
+					},
 				)), nil
 			}
 			var result any
@@ -357,6 +386,20 @@ func NewRefundOrdersExec(opts ...ExecOpt) runtime.ToolCallExecutor {
 				return runtime.Executed(failedServiceCallResult(
 					call,
 					err,
+					func(name string) (planner.FailureKind, bool) {
+						switch name {
+						case "unauthorized":
+							return planner.FailureDomainRejection, true
+						case "forbidden":
+							return planner.FailureDomainRejection, true
+						case "not_found":
+							return planner.FailureDomainRejection, true
+						case "invalid_refund":
+							return planner.FailureDomainRejection, true
+						default:
+							return "", false
+						}
+					},
 				)), nil
 			}
 			var result any
@@ -432,6 +475,20 @@ func NewRefundOrdersExec(opts ...ExecOpt) runtime.ToolCallExecutor {
 				return runtime.Executed(failedServiceCallResult(
 					call,
 					err,
+					func(name string) (planner.FailureKind, bool) {
+						switch name {
+						case "unauthorized":
+							return planner.FailureDomainRejection, true
+						case "forbidden":
+							return planner.FailureDomainRejection, true
+						case "not_found":
+							return planner.FailureDomainRejection, true
+						case "invalid_refund":
+							return planner.FailureDomainRejection, true
+						default:
+							return "", false
+						}
+					},
 				)), nil
 			}
 			var result any
@@ -474,18 +531,27 @@ func failedServiceToolResult(name tools.Ident, err error) *planner.ToolResult {
 	}
 }
 
-// failedServiceCallResult preserves a failure supplied by the service.
+// failedServiceCallResult preserves a failure supplied by the service or
+// maps an eligible declared error to a domain rejection or unavailable failure.
 // Other errors become internal failures that end the run.
-func failedServiceCallResult(call *runtime.ToolCall, err error) *planner.ToolResult {
+func failedServiceCallResult(call *runtime.ToolCall, err error, declared ...func(string) (planner.FailureKind, bool)) *planner.ToolResult {
 	var provider planner.ToolFailureProvider
-	if !errors.As(err, &provider) {
-		return failedServiceToolResult(call.Name, err)
+	if errors.As(err, &provider) {
+		failure := planner.CloneToolFailure(provider.ToolFailure(call.Name))
+		return &planner.ToolResult{
+			Name:    call.Name,
+			Failure: failure,
+		}
 	}
-	failure := planner.CloneToolFailure(provider.ToolFailure(call.Name))
-	return &planner.ToolResult{
-		Name:    call.Name,
-		Failure: failure,
+	if len(declared) > 0 && declared[0] != nil {
+		if eligible := toolregistry.EligibleDeclaredToolFailure(err, declared[0]); eligible != nil {
+			return &planner.ToolResult{
+				Name:    call.Name,
+				Failure: eligible,
+			}
+		}
 	}
+	return failedServiceToolResult(call.Name, err)
 }
 
 // invalidServiceToolCall returns the validation issues needed to correct a tool request.
