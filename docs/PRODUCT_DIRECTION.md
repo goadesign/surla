@@ -103,13 +103,28 @@ this step.
 - **Its flows become end-to-end tests.** A flow on the timeline is a path
   from what starts it to an outcome — for example, a customer asks for a
   refund over the limit, a manager approves it, and the refund is paid.
-  Each flow results in an end-to-end test of the built platform.
+  Each flow results in an end-to-end test of the built platform. A
+  different agent from the builder writes the tests. Generated scaffolds
+  help that agent implement the interactions and assertions; scaffolding
+  alone is not a working test.
 - **It leads to the architecture.** Open questions on the timeline become
   the choices Surla raises, unless the playbook already settles them. How
   the notes group suggests where boundaries could go; the user and the
   guide settle them.
 - **It stays.** The timeline stays current as a view of the platform after
   the architecture exists, and is meant to be linked to the diagrams.
+
+The timeline, called a Story, is written in a Go domain-specific language
+(DSL) and versioned with the repository. A Goa plugin generates test
+scaffolds and pictures from that source. The plugin starts in Surla and
+must remain easy to move if it later needs its own home.
+
+When the user edits the Story through the timeline or chat, the guide
+changes its source code. Evaluation runs asynchronously and redraws the
+result. Drafts and incomplete flows must evaluate cleanly so the user can
+refine them in place. Steps have explicit stable keys, and actors name
+roles such as a customer or manager, rather than architecture elements
+such as an API or worker.
 
 ### Domain-driven design, without the vocabulary
 
@@ -189,8 +204,11 @@ code stays the source of truth for both.
   guide edits the design code and the diagram redraws with the difference
   marked.
 - **On the diagram.** The user adds, edits and removes elements and
-  relationships directly. Surla reuses Model's diagram editor, or pieces of
-  it, where that is practical.
+  relationships through diagram gestures. A gesture gives the guide an
+  instruction to edit the design code; Surla evaluates that code and
+  redraws the diagram. Moving an element to improve its layout remains a
+  direct layout edit. Surla reuses Model's diagram editor, or pieces of it,
+  where that is practical.
 
 ### Every view says what it shows
 
@@ -225,17 +243,16 @@ diagram.
 - **Who runs `terraform plan`.** Planning against a cloud account needs
   that account's credentials. Whether Surla runs it with credentials the
   user supplies, or the user runs it, is not decided.
-- **How the timeline is stored and linked.** The design code is the source
-  of truth for the architecture. Where the timeline of domain events is
-  kept, and how a note stays linked to the elements that implement it, is
-  not decided.
-- **How a flow becomes an end-to-end test.** What marks where a flow starts
-  and ends, who writes its test, and how the test follows a later edit to
-  the timeline, is not decided.
-- **How an edit to the timeline is saved.** Which part of Surla saves a
-  note the user adds, changes or removes, and what an MCP client calls to
-  make the same edit, is not decided.
-- **How an edit on the diagram reaches the design code.** Model's editor
-  moves elements today; it does not add, rename or remove them. How much of
-  it Surla can reuse, and whether a diagram edit is applied by rewriting the
-  code directly or by asking the guide to, is under study.
+- **Story vocabulary and links.** The Story's Go DSL vocabulary, what
+  marks the start and end of a flow, and how a step stays linked to the
+  design elements and tests that implement it are not decided.
+- **How confirmed flows reach independent test authors.** Tests must use
+  the confirmed Story revision, rather than a copy the builder can change.
+  How Surla pins that revision, accepts the independently authored tests,
+  and follows later Story edits without using stale evidence is not
+  decided. The plugin generates scaffolds; the exact test-writing
+  workflow remains to be designed.
+- **How editing instructions reach the guide.** The guide edits source
+  for Story and architecture changes. Which diagram gestures Surla offers
+  and how the UI or an MCP client delivers those instructions are not
+  decided.
