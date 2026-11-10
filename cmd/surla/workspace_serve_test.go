@@ -280,7 +280,7 @@ func TestImportLegacyWorkspaceSnapshotsConfiguredPromotionReportsAndIsolatesRoot
 		WorkspaceDir:           importedCfg.workspaceDir,
 		PromotionTarget:        importedCfg.promotionTarget,
 		ResolvePromotionTarget: importedCfg.resolvePromotionTarget,
-		SurlaVersion:           "v0.0.0-20261104215521-580509970fb6",
+		SurlaVersion:           "v0.0.0-20261110163737-d9beac313142",
 	})
 	require.NoError(t, err)
 	defer cp.Close()
@@ -684,7 +684,7 @@ func TestConfigureServeWorkspaceMonorepoSeparationAndLegacyImport(t *testing.T) 
 		WorkspaceDir:           importedBCfg.workspaceDir,
 		PromotionTarget:        importedBCfg.promotionTarget,
 		ResolvePromotionTarget: importedBCfg.resolvePromotionTarget,
-		SurlaVersion:           "v0.0.0-20261104215521-580509970fb6",
+		SurlaVersion:           "v0.0.0-20261110163737-d9beac313142",
 	})
 	require.NoError(t, err)
 	defer cpB.Close()

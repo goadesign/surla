@@ -14,6 +14,7 @@ import (
 
 	orders "github.com/goadesign/surla/examples/orders/gen/orders"
 	"goa.design/goa-ai/runtime/agent"
+	planner "goa.design/goa-ai/runtime/agent/planner"
 	run "goa.design/goa-ai/runtime/agent/run"
 	tools "goa.design/goa-ai/runtime/agent/tools"
 	"goa.design/goa-ai/runtime/toolregistry"
@@ -125,7 +126,27 @@ func (p *Provider) HandleToolCall(ctx context.Context, msg toolregistry.ToolCall
 		methodIn := InitContinueOrdersMethodPayload(args)
 		methodOut, err := p.svc.ListOrders(ctx, methodIn)
 		if err != nil {
-			return toolregistry.NewToolResultServiceErrorMessage(msg.RegistrationToken, msg.ToolUseID, msg.Tool, toolErrorCode(err), err), nil
+			return toolregistry.NewToolResultDeclaredServiceErrorMessage(
+				msg.RegistrationToken,
+				msg.ToolUseID,
+				msg.Tool,
+				toolErrorCode(err),
+				err,
+				func(name string) (planner.FailureKind, bool) {
+					switch name {
+					case "unauthorized":
+						return planner.FailureDomainRejection, true
+					case "forbidden":
+						return planner.FailureDomainRejection, true
+					case "not_found":
+						return planner.FailureDomainRejection, true
+					case "invalid_refund":
+						return planner.FailureDomainRejection, true
+					default:
+						return "", false
+					}
+				},
+			), nil
 		}
 		result := InitContinueOrdersToolResult(methodOut)
 		resultJSON, err := ContinueOrdersResultCodec().ToJSON(result)
@@ -184,7 +205,27 @@ func (p *Provider) HandleToolCall(ctx context.Context, msg toolregistry.ToolCall
 		methodIn := InitIssueStoreCreditMethodPayload(args)
 		methodOut, err := p.svc.IssueStoreCredit(ctx, methodIn)
 		if err != nil {
-			return toolregistry.NewToolResultServiceErrorMessage(msg.RegistrationToken, msg.ToolUseID, msg.Tool, toolErrorCode(err), err), nil
+			return toolregistry.NewToolResultDeclaredServiceErrorMessage(
+				msg.RegistrationToken,
+				msg.ToolUseID,
+				msg.Tool,
+				toolErrorCode(err),
+				err,
+				func(name string) (planner.FailureKind, bool) {
+					switch name {
+					case "unauthorized":
+						return planner.FailureDomainRejection, true
+					case "forbidden":
+						return planner.FailureDomainRejection, true
+					case "not_found":
+						return planner.FailureDomainRejection, true
+					case "invalid_refund":
+						return planner.FailureDomainRejection, true
+					default:
+						return "", false
+					}
+				},
+			), nil
 		}
 		result := InitIssueStoreCreditToolResult(methodOut)
 		resultJSON, err := IssueStoreCreditResultCodec().ToJSON(result)
@@ -240,7 +281,27 @@ func (p *Provider) HandleToolCall(ctx context.Context, msg toolregistry.ToolCall
 		methodIn := InitListOrdersMethodPayload(args)
 		methodOut, err := p.svc.ListOrders(ctx, methodIn)
 		if err != nil {
-			return toolregistry.NewToolResultServiceErrorMessage(msg.RegistrationToken, msg.ToolUseID, msg.Tool, toolErrorCode(err), err), nil
+			return toolregistry.NewToolResultDeclaredServiceErrorMessage(
+				msg.RegistrationToken,
+				msg.ToolUseID,
+				msg.Tool,
+				toolErrorCode(err),
+				err,
+				func(name string) (planner.FailureKind, bool) {
+					switch name {
+					case "unauthorized":
+						return planner.FailureDomainRejection, true
+					case "forbidden":
+						return planner.FailureDomainRejection, true
+					case "not_found":
+						return planner.FailureDomainRejection, true
+					case "invalid_refund":
+						return planner.FailureDomainRejection, true
+					default:
+						return "", false
+					}
+				},
+			), nil
 		}
 		result := InitListOrdersToolResult(methodOut)
 		resultJSON, err := ListOrdersResultCodec().ToJSON(result)
@@ -291,7 +352,27 @@ func (p *Provider) HandleToolCall(ctx context.Context, msg toolregistry.ToolCall
 		methodIn := InitRequestRefundMethodPayload(args)
 		methodOut, err := p.svc.RequestRefund(ctx, methodIn)
 		if err != nil {
-			return toolregistry.NewToolResultServiceErrorMessage(msg.RegistrationToken, msg.ToolUseID, msg.Tool, toolErrorCode(err), err), nil
+			return toolregistry.NewToolResultDeclaredServiceErrorMessage(
+				msg.RegistrationToken,
+				msg.ToolUseID,
+				msg.Tool,
+				toolErrorCode(err),
+				err,
+				func(name string) (planner.FailureKind, bool) {
+					switch name {
+					case "unauthorized":
+						return planner.FailureDomainRejection, true
+					case "forbidden":
+						return planner.FailureDomainRejection, true
+					case "not_found":
+						return planner.FailureDomainRejection, true
+					case "invalid_refund":
+						return planner.FailureDomainRejection, true
+					default:
+						return "", false
+					}
+				},
+			), nil
 		}
 		result := InitRequestRefundToolResult(methodOut)
 		resultJSON, err := RequestRefundResultCodec().ToJSON(result)

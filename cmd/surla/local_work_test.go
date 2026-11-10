@@ -18,7 +18,7 @@ import (
 )
 
 // starterVersionForWorkTest is parsed by the CLI but never downloaded.
-const starterVersionForWorkTest = "v0.0.0-20261104215521-580509970fb6"
+const starterVersionForWorkTest = "v0.0.0-20261110163737-d9beac313142"
 
 // TestLocalWorkStaysOutsideStartupAndTargets includes a builder-writable
 // TMPDIR and an arbitrary CLI target unrelated to the startup directory.
