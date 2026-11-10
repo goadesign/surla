@@ -129,8 +129,9 @@ is part of Surla's toolset with Goa, Goa-AI and Model.
 ### Four words the experience is held to
 
 The experience is held to four words: delightful, intuitive, street smart,
-and faithful to Google's user experience standards. Established methods are woven in so that their
-benefit arrives without the experience feeling like a method.
+and faithful to Google's user experience standards. Established methods
+are woven in so that their benefit arrives without the experience feeling
+like a method.
 
 ### No walls of text
 
