@@ -45,9 +45,10 @@ jobs:
       - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
         with:
           go-version-file: go.mod
-          # setup-go names its cache after these files alone, and a saved cache
-          # is never replaced. Each job hashes only what it builds, so a job
-          # that builds less cannot save the cache another job needs.
+          # setup-go names its cache after the runner, the Go version and a
+          # hash of these files, and never replaces a saved cache. Hashing this
+          # module's go.sum alone keeps the generated-code job and the other
+          # modules' jobs from saving the cache this job needs.
           cache-dependency-path: ${{ matrix.module }}/go.sum
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         if: matrix.module == '.'
@@ -72,8 +73,8 @@ jobs:
         with:
           go-version-file: go.mod
           # This job builds the generator and the viewer, not the test
-          # binaries. Hashing the viewer's lock file with go.sum gives it a
-          # cache of its own, separate from the root module's test job.
+          # binaries. The viewer's lock file is hashed with go.sum only to
+          # give this job a cache name different from the root test job's.
           cache-dependency-path: |
             go.sum
             ui/checkpoint/package-lock.json
