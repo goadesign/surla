@@ -100,6 +100,12 @@ this step.
   timeline itself or by saying it to the guide, including from a chat
   client that talks to Surla over MCP. Both ways change the same timeline,
   and the architecture Surla proposes next follows the edited one.
+- **Its flows become end-to-end tests.** A flow on the timeline is a path
+  from what starts it to an outcome — for example, a customer asks for a
+  refund over the limit, a manager approves it, and the refund is paid.
+  Each flow results in an end-to-end test of the built platform, so what
+  the user confirmed on the timeline is what the platform is checked
+  against.
 - **It leads to the architecture.** Open questions on the timeline become
   the choices Surla raises, unless the playbook already settles them. How
   the notes group suggests where boundaries could go; the user and the
@@ -225,6 +231,9 @@ diagram.
   of truth for the architecture. Where the timeline of domain events is
   kept, and how a note stays linked to the elements that implement it, is
   not decided.
+- **How a flow becomes an end-to-end test.** What marks where a flow starts
+  and ends, who writes its test, and how the test follows a later edit to
+  the timeline, is not decided.
 - **How an edit to the timeline is saved.** Which part of Surla saves a
   note the user adds, changes or removes, and what an MCP client calls to
   make the same edit, is not decided.
