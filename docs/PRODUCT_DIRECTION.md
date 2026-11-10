@@ -103,9 +103,7 @@ this step.
 - **Its flows become end-to-end tests.** A flow on the timeline is a path
   from what starts it to an outcome — for example, a customer asks for a
   refund over the limit, a manager approves it, and the refund is paid.
-  Each flow results in an end-to-end test of the built platform, so what
-  the user confirmed on the timeline is what the platform is checked
-  against.
+  Each flow results in an end-to-end test of the built platform.
 - **It leads to the architecture.** Open questions on the timeline become
   the choices Surla raises, unless the playbook already settles them. How
   the notes group suggests where boundaries could go; the user and the
