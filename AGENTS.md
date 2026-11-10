@@ -106,8 +106,8 @@ stated in writing before the first edit or recommendation:
    one running server, without CLI escape steps or phase-specific restarts.
    A developer should build and test working-tree changes before committing
    them. Correct a backwards workflow before adding a flag, warning, or hook.
-   Before designing or redesigning a user-facing surface, write down who the
-   primary user is, what they get from Surla, the built-in rules that are not
+   Before designing or redesigning a user-facing surface, write down in five
+   lines who the primary user is, what they get from Surla, the built-in rules that are not
    negotiable, and what is out of scope, from `README.md`, the embedded
    playbook (`internal/goldenpath/GOLDEN_PATH.md`), and the requester's own
    statements. If any of those is a guess, ask that one question before
@@ -218,9 +218,10 @@ Use Astra 6 only when requested. Give unrelated work a fresh agent. Assign
 write ownership and tell agents to preserve others' edits. Explain important
 results yourself; the user may not see the subagent's work.
 
-When you review another agent's change, run the review through a fresh
-read-only subagent and relay its verdict. Never approve a head that has not
-been read end to end, and state which files a review did not cover.
+When you are asked to approve another agent's change, hand the review to a
+fresh read-only subagent and relay its verdict; that subagent reads the
+change itself and reports directly. Never approve a head that has not been
+read end to end, and state which files a review did not cover.
 
 Before resolving a merge or rebase conflict, read both sides' PR descriptions,
 discussion, commits, and linked decisions. State each intended outcome and
