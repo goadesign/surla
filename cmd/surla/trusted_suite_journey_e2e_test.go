@@ -201,7 +201,9 @@ func assertTrustedSuiteJourney(t *testing.T, client *genmcpsurla.Client,
 
 // Analyze returns a fixed public example with no open questions, so the real
 // CP1 persistence path saves a confirmed card without contacting a provider.
-func (trustedSuiteAnalyzer) Analyze(context.Context, string, controlplane.CP1Design) (controlplane.CP1SemanticAnalysis, error) {
+func (trustedSuiteAnalyzer) Analyze(
+	context.Context, string, controlplane.CP1Design,
+) (controlplane.CP1SemanticAnalysis, error) {
 	return controlplane.CP1SemanticAnalysis{
 		Summary: "Keep answering price questions.",
 		Examples: []controlplane.CP1ModelExample{{
@@ -214,7 +216,9 @@ func (trustedSuiteAnalyzer) Analyze(context.Context, string, controlplane.CP1Des
 
 // Revise is unused because this test proves the existing evaluator pin, not
 // semantic revision behavior.
-func (trustedSuiteAnalyzer) Revise(context.Context, controlplane.CP1PriorCard, string, controlplane.CP1Design) (controlplane.CP1RevisionSemanticAnalysis, error) {
+func (trustedSuiteAnalyzer) Revise(
+	context.Context, controlplane.CP1PriorCard, string, controlplane.CP1Design,
+) (controlplane.CP1RevisionSemanticAnalysis, error) {
 	return controlplane.CP1RevisionSemanticAnalysis{}, errors.New("revision is outside this test's journey")
 }
 

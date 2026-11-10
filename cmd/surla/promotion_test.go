@@ -228,7 +228,9 @@ func TestApproveMergeChecksTheStagedRelease(t *testing.T) {
 }
 
 // Analyze returns a summary and one example with no open questions.
-func (confirmedAnalyzer) Analyze(context.Context, string, controlplane.CP1Design) (controlplane.CP1SemanticAnalysis, error) {
+func (confirmedAnalyzer) Analyze(
+	context.Context, string, controlplane.CP1Design,
+) (controlplane.CP1SemanticAnalysis, error) {
 	return controlplane.CP1SemanticAnalysis{
 		Summary: "Refunds up to $50 are instant.",
 		Examples: []controlplane.CP1ModelExample{{
@@ -239,7 +241,12 @@ func (confirmedAnalyzer) Analyze(context.Context, string, controlplane.CP1Design
 }
 
 // Revise returns the same fixed analysis as Analyze for tests that only exercise CP5.
-func (a confirmedAnalyzer) Revise(ctx context.Context, prior controlplane.CP1PriorCard, prompt string, design controlplane.CP1Design) (controlplane.CP1RevisionSemanticAnalysis, error) {
+func (a confirmedAnalyzer) Revise(
+	ctx context.Context,
+	prior controlplane.CP1PriorCard,
+	prompt string,
+	design controlplane.CP1Design,
+) (controlplane.CP1RevisionSemanticAnalysis, error) {
 	analysis, err := a.Analyze(ctx, prompt, design)
 	if err != nil {
 		return controlplane.CP1RevisionSemanticAnalysis{}, err

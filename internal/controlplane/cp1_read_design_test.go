@@ -860,7 +860,9 @@ func assertAlternatingRoles(t *testing.T, msgs []*model.Message) {
 }
 
 // mustAnthropicMessage constructs a provider-shaped Anthropic Message value.
-func mustAnthropicMessage(t *testing.T, content []map[string]any, stopReason string) *anthropicsdk.Message {
+func mustAnthropicMessage(
+	t *testing.T, content []map[string]any, stopReason string,
+) *anthropicsdk.Message {
 	t.Helper()
 	raw, err := json.Marshal(map[string]any{
 		"id":          "msg_test",

@@ -895,7 +895,9 @@ func TestFormatCP1DesignSectionPreservesDesignAndSpecializesEmpty(t *testing.T) 
 }
 
 // Analyze delegates to analyzeFn.
-func (s *stubCP1Analyzer) Analyze(ctx context.Context, promptText string, design CP1Design) (CP1SemanticAnalysis, error) {
+func (s *stubCP1Analyzer) Analyze(
+	ctx context.Context, promptText string, design CP1Design,
+) (CP1SemanticAnalysis, error) {
 	if s.analyzeFn != nil {
 		return s.analyzeFn(ctx, promptText, design)
 	}
@@ -903,7 +905,9 @@ func (s *stubCP1Analyzer) Analyze(ctx context.Context, promptText string, design
 }
 
 // Revise delegates to reviseFn.
-func (s *stubCP1Analyzer) Revise(ctx context.Context, prior CP1PriorCard, promptText string, design CP1Design) (CP1RevisionSemanticAnalysis, error) {
+func (s *stubCP1Analyzer) Revise(
+	ctx context.Context, prior CP1PriorCard, promptText string, design CP1Design,
+) (CP1RevisionSemanticAnalysis, error) {
 	if s.reviseFn != nil {
 		return s.reviseFn(ctx, prior, promptText, design)
 	}

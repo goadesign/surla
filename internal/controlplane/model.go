@@ -26,11 +26,20 @@ type (
 		// Analyze inspects the prompt and design source and returns structured
 		// summary, open domain questions, concrete examples, and preserved
 		// behaviors.
-		Analyze(ctx context.Context, promptText string, design CP1Design) (CP1SemanticAnalysis, error)
+		Analyze(
+			ctx context.Context,
+			promptText string,
+			design CP1Design,
+		) (CP1SemanticAnalysis, error)
 		// Revise re-analyzes a revised prompt and design source against the
 		// prior Change Card's confirmed decisions, open questions, examples,
 		// and preserved behaviors.
-		Revise(ctx context.Context, prior CP1PriorCard, promptText string, design CP1Design) (CP1RevisionSemanticAnalysis, error)
+		Revise(
+			ctx context.Context,
+			prior CP1PriorCard,
+			promptText string,
+			design CP1Design,
+		) (CP1RevisionSemanticAnalysis, error)
 	}
 
 	// CP1ModelAmbiguity is an open domain question returned by a CP1Analyzer

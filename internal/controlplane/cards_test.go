@@ -338,7 +338,9 @@ func (a *heldAnalyzer) Analyze(context.Context, string, CP1Design) (CP1SemanticA
 }
 
 // Revise delegates to Analyze and accounts for prior examples so heldAnalyzer satisfies CP1Analyzer.
-func (a *heldAnalyzer) Revise(ctx context.Context, prior CP1PriorCard, promptText string, design CP1Design) (CP1RevisionSemanticAnalysis, error) {
+func (a *heldAnalyzer) Revise(
+	ctx context.Context, prior CP1PriorCard, promptText string, design CP1Design,
+) (CP1RevisionSemanticAnalysis, error) {
 	analysis, err := a.Analyze(ctx, promptText, design)
 	if err != nil {
 		return CP1RevisionSemanticAnalysis{}, err
