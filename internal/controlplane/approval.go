@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"maps"
 
-	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
@@ -179,7 +178,7 @@ func (c *ControlPlane) currentCard(
 		}
 		return &unverified, nil
 	}
-	ctx, span := otel.Tracer("github.com/goadesign/surla/internal/controlplane").Start(
+	ctx, span := c.tracer("github.com/goadesign/surla/internal/controlplane").Start(
 		ctx,
 		"controlplane.check_approval",
 		trace.WithAttributes(

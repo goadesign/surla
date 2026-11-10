@@ -9,7 +9,6 @@ import (
 	"os"
 	"path/filepath"
 
-	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
@@ -33,7 +32,7 @@ func (c *ControlPlane) GenerateCode(
 	if _, ok := PrincipalFromContext(ctx); !ok {
 		return nil, errors.New("authenticated principal is required")
 	}
-	ctx, span := otel.Tracer("surla/controlplane").Start(ctx, "surla.controlplane.generate_code")
+	ctx, span := c.tracer("surla/controlplane").Start(ctx, "surla.controlplane.generate_code")
 	defer span.End()
 	target := "candidate"
 	if p.Target != nil {

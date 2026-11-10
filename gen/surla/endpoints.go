@@ -36,6 +36,7 @@ type Endpoints struct {
 	CheckProject        goa.Endpoint
 	UpdateDependencies  goa.Endpoint
 	ReadCheckOutput     goa.Endpoint
+	ListTraces          goa.Endpoint
 }
 
 // NewEndpoints wraps the methods of the "surla" service with endpoints.
@@ -62,6 +63,7 @@ func NewEndpoints(s Service) *Endpoints {
 		CheckProject:        NewCheckProjectEndpoint(s),
 		UpdateDependencies:  NewUpdateDependenciesEndpoint(s),
 		ReadCheckOutput:     NewReadCheckOutputEndpoint(s),
+		ListTraces:          NewListTracesEndpoint(s),
 	}
 }
 
@@ -88,6 +90,7 @@ func (e *Endpoints) Use(m func(goa.Endpoint) goa.Endpoint) {
 	e.CheckProject = m(e.CheckProject)
 	e.UpdateDependencies = m(e.UpdateDependencies)
 	e.ReadCheckOutput = m(e.ReadCheckOutput)
+	e.ListTraces = m(e.ListTraces)
 }
 
 // NewCheckpointUIEndpoint returns an endpoint function that calls the method
@@ -271,5 +274,14 @@ func NewReadCheckOutputEndpoint(s Service) goa.Endpoint {
 	return func(ctx context.Context, req any) (any, error) {
 		p := req.(*ReadCheckOutputPayload)
 		return s.ReadCheckOutput(ctx, p)
+	}
+}
+
+// NewListTracesEndpoint returns an endpoint function that calls the method
+// "list_traces" of service "surla".
+func NewListTracesEndpoint(s Service) goa.Endpoint {
+	return func(ctx context.Context, req any) (any, error) {
+		p := req.(*ListTracesPayload)
+		return s.ListTraces(ctx, p)
 	}
 }

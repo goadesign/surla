@@ -180,6 +180,12 @@ When `propose_change` or `revise_change` inspects non-empty workspace `design/*.
   - **Input:** `op_id`, `cursor?` → **Output:** `CheckOutputPage` (`text` of at most 16 KiB, `next_cursor?`, `captured_bytes`, `dropped_bytes`).
   - Use the `op_id` from a `check_project` or `update_dependencies` result, or from its error message when an operation failed after opening its output capture. A failed operation's output may be incomplete; the operation still reports failure.
   - Returns one page of an operation's captured output. Omit `cursor` for the first page and pass `next_cursor` for the next; `next_cursor` is absent at the end. Each operation keeps at most 64 MiB of output; `dropped_bytes` counts what was not kept. `text` is valid UTF-8: each byte of output that is not valid UTF-8 appears as U+FFFD, and a page never ends inside a multi-byte character, so one page can cover fewer than 16 KiB of captured bytes. Returns an error when the saved output is shorter than its recorded size. Returns `not_found` when no output exists for `op_id`, and `unprocessable` for a malformed or foreign cursor.
+- **`list_traces`** (`GET /traces`)
+  - **Input:** `status?` (`all`, `error`, or `ok`, default `all`), `limit?` (1–100, default 20), `cursor?` → **Output:** `TraceList` (`spans`, `has_more`, `next_cursor?`).
+  - Reads the authenticated caller's saved operation diagnostics, newest first. For example, call with `{"status":"error"}` to inspect recorded failures. A span contains its operation name, safe summary, timestamps, duration, original status, and selected identifiers and results. Raw errors, events, prompts and credentials are excluded. `shortened: true` marks text shortened to fit the safe record.
+  - Each call examines at most 256 KiB of history. An empty `spans` array with `has_more: true` leaves older history unexamined: pass `next_cursor` as `cursor` with the same filter to continue. Omit the cursor to refresh from the newest records. `unprocessable` (HTTP 422) means the cursor is invalid; refresh without it. Storage failures return a path-free message asking the server operator to check private storage.
+  - `error` selects spans whose operation recorded an error status; `ok` selects spans without that status, including `unset`. An `unset` status does not prove success. A test run with `passed: false` is a completed check result, so its span keeps that result rather than becoming an operation error. See [Operation diagnostics](#operation-diagnostics) for recording and coverage.
+  - `not_implemented` (HTTP 501) means recording was not configured when the embedded control plane was constructed. The server operator must supply `controlplane.Options.TracerProvider`, or use `surla serve` for automatic recording; this is not an empty history.
 - **`propose_change`** (`POST /changes/propose`)
   - **Input:** `change_id`, `prompt`, `design_source?` → **Output:** `ChangeCardResult`
   - Analyzes a feature request at `CP1` using the embedded Golden Path prompt, saving the card (`card`, `owner`, `design_source`, and optional `source_origin`) atomically as `<cards_dir>/<sha256(change_id)>.json` under `controlplane.Options.CardsDir` and returning concrete `examples` (assigned deterministic `check_01`, `check_02`, ... IDs matching `goa-ai/eval` `validateID`), `ambiguities`, `preserved_behaviors`, and a canonical `request_revision` digest. When `design_source` is omitted and `controlplane.Options.WorkspaceDir` is bound, `propose_change` reads `design/*.go` from the active workspace automatically, records `source_origin: "workspace"`, and gives the CP1 model the sorted `design/*.go` manifest so it can selectively read files via `read_design` before producing the Change Card analysis (or runs a single completion with no design when the workspace has no `design/*.go` files yet); pass `design_source` explicitly to analyze an inline design string in a single completion instead. When the final structured Change Card completion fails output validation or stops at the output limit (or any inspection turn fails with a non-correctable output validation error), `propose_change` returns `analysis_rejected` (HTTP `502`) without saving the card. When the model also composed a decision view, the card carries `ui_composition` (`program`, `composed_for_revision`): it is presentation only, never hashed into `request_revision`, and dropped when `confirm_intent` changes answers or examples. When the request includes a `progressToken`, the tool sends MCP progress updates before and after CP1 model analysis.
@@ -253,6 +259,67 @@ Changing this contract is a breaking change for every target that implements it.
   - Serves the stateless MCP Apps checkpoint viewer (`internal/controlplane/checkpoint.html`, built from [`ui/checkpoint/`](../ui/checkpoint/)). It completes the `ui/initialize` → `ui/notifications/initialized` host handshake and renders results delivered by the host via `ui/notifications/tool-result`, without server-retained preview state: the `CP1` Change Card form (saving through `confirm_intent` and recovering with `get_change` via host `tools/call`, displaying the previous saved revision in `#surla-prior-revision` when transitioning between revisions of the same `change_id`, keeping only changed draft answers and examples in `#surla-preserved-draft` across stale-revision conflicts or when switching to an incoming Change Card via `#surla-replace-incoming-card`, rendering the `#surla-cp5-approval` panel for a current approval check when `approval` is present or `#surla-cp5-unverified-approval` with `#surla-cp5-refresh-approval` when `unverified_approval` is present on the card, and refreshing a retained editor card via `get_change` after an applied `CP3` override without losing unsaved draft edits), the optional OpenUI decision view from `ui_composition` (labeled as a model-proposed illustration and sharing the form's draft), `CP2` architecture previews (a keyboard-focusable scrollable C4 graph region above inspectable lists and an expandable `#surla-cp2-swarm-manifest` Chorus manifest), unbound structural diffs, `CP3` draft results, and `CP4` verification results (`verify_change` and `get_verification`, with `#surla-cp4-verification` marked `aria-busy="true"` while a correlated `Check status` read is in flight and full `ForBuilders()` scenario/check counts and binding details when `completed`, while preserving any dirty `CP1` draft). Interactive role-switching and replay controls, and `openui.v1` action dispatch, remain planned; see [`docs/HOW_IT_WORKS.md`](HOW_IT_WORKS.md#checkpoint-3-cp3-fast-draft-overrides--live-sandbox-walkthrough).
 
 ---
+
+### Operation diagnostics
+
+`surla serve` records safe summaries of authenticated, instrumented operations
+without collector setup. In the checkpoint viewer, open **Traces** to inspect
+recorded errors, switch to **All statuses** or **Without error status**, and
+load older pages or refresh. Each page replaces the prior page. These reads
+leave unsaved Change Card edits and the Save action available. If a read fails,
+**Retry from newest** starts again without the failed cursor.
+
+The control plane owns `<cards_dir>/traces.jsonl` under the same directory lock
+as its Change Cards. It creates the file only when the first authenticated span
+finishes, saves no in-memory history, and reads the saved file after restart.
+Opening an existing history rejects symlinks, non-regular files and permissions
+other than `0600` before repairing an incomplete final append. Each safe record is at most 64 KiB;
+operation names, summaries and attribute values can be shortened, as reported
+by `shortened`. The private file contains a SHA-256 hash of the authenticated
+principal for read isolation; neither the principal ID nor this hash appears
+in API results or is added to exported spans. The hash is not anonymization;
+keep the diagnostic file private.
+
+The operator terminal prints one line with the safe summary, status description
+and recorded exception messages when a `propose_change` or `revise_change`
+operation span ends with an error status. This includes storage faults as well
+as analysis failures. This output can contain private provider evidence; keep it
+operator-only. It stays quiet for expected negative results.
+Only recording spans created by this control plane for authenticated operations
+enter its history, including reads of diagnostics and verification status. Host
+and third-party spans, spans the host's sampling settings do not record, and
+separate verification or evaluator processes are not covered. A request rejected
+before its operation span starts also leaves no record: for example, a duplicate
+`change_id`, missing model configuration or failed workspace read in
+`propose_change`, or a missing card, forbidden access or stale revision in
+`revise_change`. Decoding and authentication failures before span creation are
+also absent.
+No top-level operation span currently exists for `preview_architecture`,
+`verify_change`, `approve_merge`, `confirm_intent`, `get_change`, `diff`, or
+non-live `draft_override`. Their failures need not appear; a separately
+instrumented child operation, such as an approval check inside `get_change`,
+may still appear under its own name.
+Spans that finish after `ControlPlane.Close` releases diagnostic storage are
+not saved; closing the control plane does not wait for an in-flight CP1 analyzer.
+Missing history is not evidence that an operation succeeded.
+
+To send full spans to an operator's OpenTelemetry collector, set
+`OTEL_EXPORTER_OTLP_ENDPOINT` (the collector base URL) or
+`OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` (the complete HTTP trace-export URL) before
+starting `surla serve`. The trace-specific variable takes precedence. The
+standard OTLP/HTTP exporter handles its remaining environment settings. This
+export retains original span fields, events and status without added identity
+metadata. Export is independent of the safe caller view;
+restrict access to the collector accordingly. With neither endpoint set,
+Surla makes no collector requests. An embedded host owns its OpenTelemetry
+provider and supplies `controlplane.Options.TracerProvider` to `controlplane.New`
+to bind recording to that instance's operations from construction. Without it,
+`list_traces` returns `not_implemented` with setup instructions. Several control
+planes may share the same provider; their private histories stay separate.
+Close the control plane first so its work
+finishes while exporters remain active, then shut down the host provider.
+The append-only file grows with completed operations; to discard its history,
+stop Surla before removing `traces.jsonl`.
 
 ## CLI Reference
 

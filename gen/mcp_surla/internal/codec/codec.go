@@ -15,6 +15,7 @@ import (
 	"unicode/utf8"
 
 	surla "github.com/goadesign/surla/gen/surla"
+	rawjson "goa.design/goa-ai/runtime/agent/rawjson"
 	goa "goa.design/goa/v3/pkg"
 )
 
@@ -1727,6 +1728,172 @@ func ValidateInitProjectResultTransport(value *InitProjectResultTransport) (err 
 	}
 	if value.Commit != nil {
 		err = goa.MergeErrors(err, goa.ValidatePattern("body.commit", *value.Commit, "^([0-9a-f]{40}|[0-9a-f]{64})$"))
+	}
+	return err
+}
+
+// ListTracesPayloadIntTransport stores JSON fields until they have been validated.
+type ListTracesPayloadIntTransport int
+
+// UnmarshalJSON reads an exact whole JSON number and stores it within this type's
+// declared range. Decimal and exponent spellings do not change its value.
+func (value *ListTracesPayloadIntTransport) UnmarshalJSON(data []byte) error {
+	number, err := rawjson.DecodeInteger[int](data)
+	if err != nil {
+		return fmt.Errorf("decode ListTracesPayloadIntTransport integer: %w", err)
+	}
+	*value = ListTracesPayloadIntTransport(number)
+	return nil
+}
+
+// ValidateListTracesPayloadIntTransport checks decoded JSON before it becomes a service value.
+func ValidateListTracesPayloadIntTransport(value ListTracesPayloadIntTransport) (err error) {
+
+	return err
+}
+
+// ListTracesPayloadTransport stores JSON fields until they have been validated.
+type ListTracesPayloadTransport struct {
+	// all for every status, error for recorded failures, or ok for spans without
+	// an error status (including unset).
+	Status *string `json:"status,omitempty"`
+	// Maximum matching spans returned; a page may contain fewer because each call
+	// scans at most 256 KiB.
+	Limit *ListTracesPayloadIntTransport `json:"limit,omitempty"`
+	// Opaque next_cursor from the previous page; omit to refresh from the newest
+	// records.
+	Cursor *string `json:"cursor,omitempty"`
+}
+
+// ValidateListTracesPayloadTransport checks decoded JSON before it becomes a service value.
+func ValidateListTracesPayloadTransport(value *ListTracesPayloadTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.Status != nil {
+		if !(*value.Status == "all" || *value.Status == "error" || *value.Status == "ok") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.status", *value.Status, []any{"all", "error", "ok"}))
+		}
+	}
+	if value.Limit != nil {
+		if int(*value.Limit) < 1 {
+			err = goa.MergeErrors(err, goa.InvalidRangeError("body.limit", int(*value.Limit), 1, true))
+		}
+		if int(*value.Limit) > 100 {
+			err = goa.MergeErrors(err, goa.InvalidRangeError("body.limit", int(*value.Limit), 100, false))
+		}
+	}
+	return err
+}
+
+// ListTracesResultTraceSpanTransport stores JSON fields until they have been validated.
+type ListTracesResultTraceSpanTransport struct {
+	// OpenTelemetry trace identifier.
+	TraceID *string `json:"trace_id"`
+	// OpenTelemetry span identifier.
+	SpanID *string `json:"span_id"`
+	// Parent span identifier; empty when this span has no parent.
+	ParentSpanID *string `json:"parent_span_id"`
+	// Operation name, at most 128 bytes.
+	Name *string `json:"name"`
+	// Operation start time in UTC.
+	StartTime *string `json:"start_time"`
+	// Operation finish time in UTC.
+	EndTime *string `json:"end_time"`
+	// Elapsed milliseconds.
+	DurationMs *int64 `json:"duration_ms"`
+	// Original span status: unset, ok, or error. An unset status does not
+	// establish success.
+	Status *string `json:"status"`
+	// Safe operation summary, at most 2048 bytes; never a raw error message.
+	Summary *string `json:"summary"`
+	// Selected operation identifiers and results; at most six values of 1024 bytes
+	// each.
+	Attributes map[string]string `json:"attributes"`
+	// True when text was shortened to fit this diagnostic record; use operator
+	// telemetry for the full values.
+	Shortened *bool `json:"shortened"`
+}
+
+// ValidateListTracesResultTraceSpanTransport checks decoded JSON before it becomes a service value.
+func ValidateListTracesResultTraceSpanTransport(value *ListTracesResultTraceSpanTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.TraceID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("trace_id", "body"))
+	}
+	if value.SpanID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("span_id", "body"))
+	}
+	if value.ParentSpanID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("parent_span_id", "body"))
+	}
+	if value.Name == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
+	}
+	if value.StartTime == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("start_time", "body"))
+	}
+	if value.EndTime == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("end_time", "body"))
+	}
+	if value.DurationMs == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("duration_ms", "body"))
+	}
+	if value.Status == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("status", "body"))
+	}
+	if value.Summary == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("summary", "body"))
+	}
+	if value.Attributes == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("attributes", "body"))
+	}
+	if value.Shortened == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("shortened", "body"))
+	}
+	if value.StartTime != nil {
+		err = goa.MergeErrors(err, goa.ValidateFormat("body.start_time", *value.StartTime, goa.FormatDateTime))
+	}
+	if value.EndTime != nil {
+		err = goa.MergeErrors(err, goa.ValidateFormat("body.end_time", *value.EndTime, goa.FormatDateTime))
+	}
+	if value.Status != nil {
+		if !(*value.Status == "unset" || *value.Status == "ok" || *value.Status == "error") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.status", *value.Status, []any{"unset", "ok", "error"}))
+		}
+	}
+	return err
+}
+
+// ListTracesResultTransport stores JSON fields until they have been validated.
+type ListTracesResultTransport struct {
+	// Matching spans found in this page's bounded disk window.
+	Spans []*ListTracesResultTraceSpanTransport `json:"spans"`
+	// True when older records have not yet been examined.
+	HasMore *bool `json:"has_more"`
+	// Cursor to examine the next older window; present only when has_more is true.
+	NextCursor *string `json:"next_cursor,omitempty"`
+}
+
+// ValidateListTracesResultTransport checks decoded JSON before it becomes a service value.
+func ValidateListTracesResultTransport(value *ListTracesResultTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.Spans == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("spans", "body"))
+	}
+	if value.HasMore == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("has_more", "body"))
+	}
+	for _, e := range value.Spans {
+		if e != nil {
+			if err2 := ValidateListTracesResultTraceSpanTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
 	}
 	return err
 }
@@ -4787,6 +4954,70 @@ func EncodeInitProjectResult(in *surla.InitProjectResult) ([]byte, error) {
 	return data, nil
 }
 
+// DecodeListTracesPayload checks JSON field names from the Goa design and returns a service value.
+func DecodeListTracesPayload(data []byte) (out *surla.ListTracesPayload, err error) {
+	var body *ListTracesPayloadTransport
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&body); err != nil {
+		return out, fmt.Errorf("decode ListTracesPayload JSON: %w", err)
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		if err == nil {
+			return out, fmt.Errorf("decode ListTracesPayload JSON: multiple JSON values")
+		}
+		return out, fmt.Errorf("decode ListTracesPayload JSON after first value: %w", err)
+	}
+	if err := ValidateListTracesPayloadTransport(body); err != nil {
+		return out, fmt.Errorf("validate ListTracesPayload JSON: %w", err)
+	}
+	{
+		out = &surla.ListTracesPayload{
+			Cursor: body.Cursor,
+		}
+		if body.Status != nil {
+			out.Status = *body.Status
+		}
+		if body.Limit != nil {
+			out.Limit = int(*body.Limit)
+		}
+		if body.Status == nil {
+			out.Status = "all"
+		}
+		if body.Limit == nil {
+			out.Limit = 20
+		}
+	}
+	return out, nil
+}
+
+// EncodeListTracesResult turns a service value into JSON using the field names in the Goa design.
+func EncodeListTracesResult(in *surla.TraceList) ([]byte, error) {
+	var body *ListTracesResultTransport
+	{
+		body = &ListTracesResultTransport{
+			HasMore:    &in.HasMore,
+			NextCursor: in.NextCursor,
+		}
+		body.Spans = make([]*ListTracesResultTraceSpanTransport, len(in.Spans))
+		for i, val := range in.Spans {
+			if val == nil {
+				body.Spans[i] = nil
+				continue
+			}
+			body.Spans[i] = encodeTraceSpanToListTracesResultTraceSpanTransport(val)
+		}
+	}
+	if err := ValidateListTracesResultTransport(body); err != nil {
+		return nil, fmt.Errorf("validate ListTracesResult JSON: %w", err)
+	}
+	data, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("encode ListTracesResult JSON: %w", err)
+	}
+	return data, nil
+}
+
 // DecodeListVerificationsPayload checks JSON field names from the Goa design and returns a service value.
 func DecodeListVerificationsPayload(data []byte) (out *surla.ListVerificationsPayload, err error) {
 	var body *ListVerificationsPayloadTransport
@@ -5897,6 +6128,29 @@ func encodeToolInputBindingItemToPreviewArchitectureResultToolInputBindingItemTr
 	res.InjectedFields = make([]string, len(v.InjectedFields))
 	for i, val := range v.InjectedFields {
 		res.InjectedFields[i] = val
+	}
+
+	return res
+}
+
+func encodeTraceSpanToListTracesResultTraceSpanTransport(v *surla.TraceSpan) *ListTracesResultTraceSpanTransport {
+	res := &ListTracesResultTraceSpanTransport{
+		TraceID:      &v.TraceID,
+		SpanID:       &v.SpanID,
+		ParentSpanID: &v.ParentSpanID,
+		Name:         &v.Name,
+		StartTime:    &v.StartTime,
+		EndTime:      &v.EndTime,
+		DurationMs:   &v.DurationMs,
+		Status:       &v.Status,
+		Summary:      &v.Summary,
+		Shortened:    &v.Shortened,
+	}
+	res.Attributes = make(map[string]string, len(v.Attributes))
+	for key, val := range v.Attributes {
+		tk := key
+		tv := val
+		res.Attributes[tk] = tv
 	}
 
 	return res

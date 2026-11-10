@@ -16,7 +16,6 @@ import (
 	"time"
 	"unsafe"
 
-	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
@@ -66,7 +65,7 @@ func (c *ControlPlane) InitProject(
 		return nil, errors.New("authenticated principal is required")
 	}
 
-	ctx, span := otel.Tracer("surla/controlplane").Start(ctx, "surla.controlplane.init_project")
+	ctx, span := c.tracer("surla/controlplane").Start(ctx, "surla.controlplane.init_project")
 	defer span.End()
 
 	if p == nil || strings.TrimSpace(p.ModulePath) == "" {

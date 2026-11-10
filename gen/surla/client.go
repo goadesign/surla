@@ -36,10 +36,11 @@ type Client struct {
 	CheckProjectEndpoint        goa.Endpoint
 	UpdateDependenciesEndpoint  goa.Endpoint
 	ReadCheckOutputEndpoint     goa.Endpoint
+	ListTracesEndpoint          goa.Endpoint
 }
 
 // NewClient initializes a "surla" service client given the endpoints.
-func NewClient(checkpointUI, goldenPath, proposeChange, reviseChange, confirmIntent, getChange, previewArchitecture, draftOverride, startLiveTarget, stopLiveTarget, verifyChange, getVerification, listVerifications, approveMerge, diff, configureModel, initProject, generateCode, checkProject, updateDependencies, readCheckOutput goa.Endpoint) *Client {
+func NewClient(checkpointUI, goldenPath, proposeChange, reviseChange, confirmIntent, getChange, previewArchitecture, draftOverride, startLiveTarget, stopLiveTarget, verifyChange, getVerification, listVerifications, approveMerge, diff, configureModel, initProject, generateCode, checkProject, updateDependencies, readCheckOutput, listTraces goa.Endpoint) *Client {
 	return &Client{
 		CheckpointUIEndpoint:        checkpointUI,
 		GoldenPathEndpoint:          goldenPath,
@@ -62,6 +63,7 @@ func NewClient(checkpointUI, goldenPath, proposeChange, reviseChange, confirmInt
 		CheckProjectEndpoint:        checkProject,
 		UpdateDependenciesEndpoint:  updateDependencies,
 		ReadCheckOutputEndpoint:     readCheckOutput,
+		ListTracesEndpoint:          listTraces,
 	}
 }
 
@@ -372,4 +374,18 @@ func (c *Client) ReadCheckOutput(ctx context.Context, p *ReadCheckOutputPayload)
 		return
 	}
 	return ires.(*CheckOutputPage), nil
+}
+
+// ListTraces calls the "list_traces" endpoint of the "surla" service.
+// ListTraces may return the following errors:
+//   - "unprocessable" (type *goa.ServiceError): The cursor is invalid; omit it to refresh the history.
+//   - "not_implemented" (type *goa.ServiceError): Recording is not configured; the server operator must supply controlplane.Options.TracerProvider when constructing the embedded control plane, or use surla serve for automatic recording.
+//   - error: internal error
+func (c *Client) ListTraces(ctx context.Context, p *ListTracesPayload) (res *TraceList, err error) {
+	var ires any
+	ires, err = c.ListTracesEndpoint(ctx, p)
+	if err != nil {
+		return
+	}
+	return ires.(*TraceList), nil
 }

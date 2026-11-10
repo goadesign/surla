@@ -40,6 +40,7 @@ type Server struct {
 	CheckProject        http.Handler
 	UpdateDependencies  http.Handler
 	ReadCheckOutput     http.Handler
+	ListTraces          http.Handler
 }
 
 // MountPoint holds information about the mounted endpoints.
@@ -90,6 +91,7 @@ func New(
 			{"CheckProject", "POST", "/workspace/check"},
 			{"UpdateDependencies", "POST", "/workspace/dependencies"},
 			{"ReadCheckOutput", "POST", "/workspace/check/output"},
+			{"ListTraces", "GET", "/traces"},
 		},
 		CheckpointUI:        NewCheckpointUIHandler(e.CheckpointUI, mux, decoder, encoder, errhandler, formatter),
 		GoldenPath:          NewGoldenPathHandler(e.GoldenPath, mux, decoder, encoder, errhandler, formatter),
@@ -112,6 +114,7 @@ func New(
 		CheckProject:        NewCheckProjectHandler(e.CheckProject, mux, decoder, encoder, errhandler, formatter),
 		UpdateDependencies:  NewUpdateDependenciesHandler(e.UpdateDependencies, mux, decoder, encoder, errhandler, formatter),
 		ReadCheckOutput:     NewReadCheckOutputHandler(e.ReadCheckOutput, mux, decoder, encoder, errhandler, formatter),
+		ListTraces:          NewListTracesHandler(e.ListTraces, mux, decoder, encoder, errhandler, formatter),
 	}
 }
 
@@ -141,6 +144,7 @@ func (s *Server) Use(m func(http.Handler) http.Handler) {
 	s.CheckProject = m(s.CheckProject)
 	s.UpdateDependencies = m(s.UpdateDependencies)
 	s.ReadCheckOutput = m(s.ReadCheckOutput)
+	s.ListTraces = m(s.ListTraces)
 }
 
 // MethodNames returns the methods served.
@@ -169,6 +173,7 @@ func Mount(mux goahttp.Muxer, h *Server) {
 	MountCheckProjectHandler(mux, h.CheckProject)
 	MountUpdateDependenciesHandler(mux, h.UpdateDependencies)
 	MountReadCheckOutputHandler(mux, h.ReadCheckOutput)
+	MountListTracesHandler(mux, h.ListTraces)
 }
 
 // Mount configures the mux to serve the surla endpoints.
@@ -1231,6 +1236,59 @@ func NewReadCheckOutputHandler(
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := context.WithValue(r.Context(), goahttp.AcceptTypeKey, r.Header.Get("Accept"))
 		ctx = context.WithValue(ctx, goa.MethodKey, "read_check_output")
+		ctx = context.WithValue(ctx, goa.ServiceKey, "surla")
+		payload, err := decodeRequest(r)
+		if err != nil {
+			if err := encodeError(ctx, w, err); err != nil && errhandler != nil {
+				errhandler(ctx, w, err)
+			}
+			return
+		}
+		res, err := endpoint(ctx, payload)
+		if err != nil {
+			if err := encodeError(ctx, w, err); err != nil && errhandler != nil {
+				errhandler(ctx, w, err)
+			}
+			return
+		}
+		if err := encodeResponse(ctx, w, res); err != nil {
+			if errhandler != nil {
+				errhandler(ctx, w, err)
+			}
+		}
+	})
+}
+
+// MountListTracesHandler configures the mux to serve the "surla" service
+// "list_traces" endpoint.
+func MountListTracesHandler(mux goahttp.Muxer, h http.Handler) {
+	f, ok := h.(http.HandlerFunc)
+	if !ok {
+		f = func(w http.ResponseWriter, r *http.Request) {
+			h.ServeHTTP(w, r)
+		}
+	}
+	mux.Handle("GET", "/traces", f)
+}
+
+// NewListTracesHandler creates a HTTP handler which loads the HTTP request and
+// calls the "surla" service "list_traces" endpoint.
+func NewListTracesHandler(
+	endpoint goa.Endpoint,
+	mux goahttp.Muxer,
+	decoder func(*http.Request) goahttp.Decoder,
+	encoder func(context.Context, http.ResponseWriter) goahttp.Encoder,
+	errhandler func(context.Context, http.ResponseWriter, error),
+	formatter func(ctx context.Context, err error) goahttp.Statuser,
+) http.Handler {
+	var (
+		decodeRequest  = DecodeListTracesRequest(mux, decoder)
+		encodeResponse = EncodeListTracesResponse(encoder)
+		encodeError    = EncodeListTracesError(encoder, formatter)
+	)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := context.WithValue(r.Context(), goahttp.AcceptTypeKey, r.Header.Get("Accept"))
+		ctx = context.WithValue(ctx, goa.MethodKey, "list_traces")
 		ctx = context.WithValue(ctx, goa.ServiceKey, "surla")
 		payload, err := decodeRequest(r)
 		if err != nil {

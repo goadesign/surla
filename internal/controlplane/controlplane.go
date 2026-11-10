@@ -33,11 +33,12 @@ import (
 	"github.com/goadesign/surla/internal/goldenpath"
 	"github.com/goadesign/surla/internal/scaffold"
 	"github.com/goadesign/surla/internal/swarm"
+	"github.com/goadesign/surla/internal/traceview"
 	"github.com/goadesign/surla/internal/verify"
 	"github.com/goadesign/surla/verify/candidate"
-	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
 	"goa.design/goa-ai/runtime/mcp"
 	goahttp "goa.design/goa/v3/http"
@@ -108,6 +109,12 @@ type (
 		// Change Cards, one file per card. It is required, and one process at
 		// a time may use it.
 		CardsDir string
+		// TracerProvider optionally supplies the host-owned SDK provider used
+		// to record authenticated operation diagnostics from construction.
+		// When nil, operations keep global telemetry but ListTraces returns
+		// not_implemented. The host shuts down this provider after Close, or
+		// if New fails; the control plane never shuts it down.
+		TracerProvider *sdktrace.TracerProvider
 		// WorkspaceDir is the initial filesystem workspace bound to this
 		// control plane. When set, cards, runs, and reports must live outside
 		// it, and CP1/CP2/CP3/CP4/CP5 can read or derive project inputs from
@@ -252,6 +259,11 @@ type (
 
 	// ControlPlane implements gensurla.Service.
 	ControlPlane struct {
+		// traces owns the bounded diagnostic records under the card-store lock.
+		traces *traceview.Store
+		// traceProvider is fixed at construction; only this control plane's
+		// operation tracers record into its private store.
+		traceProvider *sdktrace.TracerProvider
 		// mu serializes every read-check-write of a saved card in this
 		// process; the cards directory lock keeps other processes out.
 		mu sync.RWMutex
@@ -465,6 +477,10 @@ func New(opts Options) (*ControlPlane, error) {
 	if err != nil {
 		return nil, errors.Join(err, cleanupFailedNew())
 	}
+	traces, err := traceview.Open(cards.dir)
+	if err != nil {
+		return nil, errors.Join(err, cards.close(), cleanupFailedNew())
+	}
 	eval := opts.Evaluator
 	if eval == nil {
 		if wsRoot != "" {
@@ -478,7 +494,9 @@ func New(opts Options) (*ControlPlane, error) {
 		initialLiveEnv = opts.Live.Env
 	}
 	cp := &ControlPlane{
-		cards: cards,
+		cards:         cards,
+		traces:        traces,
+		traceProvider: opts.TracerProvider,
 		activeModel: &modelHandle{
 			analyzer: opts.Analyzer,
 			liveEnv:  initialLiveEnv,
@@ -644,7 +662,7 @@ func (c *ControlPlane) ProposeChange(ctx context.Context, p *gensurla.ProposeCha
 		return nil, gensurla.MakeConflict(fmt.Errorf("change_id %q already exists", p.ChangeID))
 	}
 
-	ctx, span := otel.Tracer("surla/controlplane").Start(
+	ctx, span := c.tracer("surla/controlplane").Start(
 		ctx,
 		"surla.controlplane.propose_change",
 		trace.WithAttributes(attribute.String("surla.change_id", p.ChangeID)),
@@ -768,7 +786,10 @@ func (c *ControlPlane) ProposeChange(ctx context.Context, p *gensurla.ProposeCha
 // then stops the live target, then cancels the design evaluations in
 // progress, waits for them, and removes their build workspace, and finally
 // releases the cards directory and operator project lock so another process can
-// use them. It always attempts the evaluator cleanup, and joins its error with
+// use them. Local tracing stays active through owned work and cleanup; its
+// file then closes, and later spans are discarded. The host flushes its other
+// exporters afterward.
+// It always attempts the evaluator cleanup, and joins its error with
 // any other. If the live target cannot be confirmed stopped, the cards
 // directory and operator project lock stay locked on this and every later call,
 // because the target's processes may still use them. Card cleanup waits for a
@@ -804,7 +825,7 @@ func (c *ControlPlane) Close() error {
 		lockErr = c.closeProjectLock()
 		c.closeProjectLock = nil
 	}
-	return errors.Join(evalErr, modelErr, checkErr, c.cards.close(), lockErr)
+	return errors.Join(evalErr, modelErr, checkErr, c.traces.Close(), c.cards.close(), lockErr)
 }
 
 // GetChange returns the current Change Card for change_id to its owner. It

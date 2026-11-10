@@ -152,6 +152,20 @@ li { margin-bottom: 0.35rem; }
 .surla-verification-details dd { margin: 0.1rem 0 0; }
 .surla-verification-scenarios > li { margin-bottom: 0.65rem; }
 
+/* Diagnostics use a separate inline region, leaving the editable card intact. */
+.surla-trace-view { margin: 0.5rem 0 0.85rem; }
+.surla-trace-panel { margin-top: 0.65rem; padding: 0.85rem 0; border-block: 1px solid var(--border); }
+.surla-trace-panel h2 { margin-top: 0; }
+.surla-trace-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.35rem; margin-block: 0.5rem; }
+.surla-trace-list { list-style: none; margin: 0.75rem 0; padding: 0; }
+.surla-trace-list > li { padding-block: 0.75rem; border-top: 1px solid var(--border); overflow-wrap: anywhere; }
+.surla-trace-heading { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0.35rem 1rem; }
+.surla-trace-heading strong { min-width: 0; overflow-wrap: anywhere; }
+.surla-trace-heading > span { font-size: 0.83rem; }
+.surla-trace-panel > p, .surla-trace-list > li > p { max-inline-size: 75ch; }
+.surla-trace-details dt { font-weight: 600; margin-top: 0.4rem; }
+.surla-trace-details dd { margin: 0.15rem 0; }
+
 .shadcn-badge, .surla-badge {
   display: inline-flex;
   align-items: center;

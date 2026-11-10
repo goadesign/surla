@@ -100,6 +100,10 @@ type Client struct {
 	// read_check_output endpoint.
 	ReadCheckOutputDoer goahttp.Doer
 
+	// ListTraces Doer is the HTTP client used to make requests to the list_traces
+	// endpoint.
+	ListTracesDoer goahttp.Doer
+
 	// RestoreResponseBody controls whether the response bodies are reset after
 	// decoding so they can be read again.
 	RestoreResponseBody bool
@@ -141,6 +145,7 @@ func NewClient(
 		CheckProjectDoer:        doer,
 		UpdateDependenciesDoer:  doer,
 		ReadCheckOutputDoer:     doer,
+		ListTracesDoer:          doer,
 		RestoreResponseBody:     restoreBody,
 		scheme:                  scheme,
 		host:                    host,
@@ -608,6 +613,30 @@ func (c *Client) ReadCheckOutput() goa.Endpoint {
 		resp, err := c.ReadCheckOutputDoer.Do(req)
 		if err != nil {
 			return nil, goahttp.ErrRequestError("surla", "read_check_output", err)
+		}
+		return decodeResponse(resp)
+	}
+}
+
+// ListTraces returns an endpoint that makes HTTP requests to the surla service
+// list_traces server.
+func (c *Client) ListTraces() goa.Endpoint {
+	var (
+		encodeRequest  = EncodeListTracesRequest(c.encoder)
+		decodeResponse = DecodeListTracesResponse(c.decoder, c.RestoreResponseBody)
+	)
+	return func(ctx context.Context, v any) (any, error) {
+		req, err := c.BuildListTracesRequest(ctx, v)
+		if err != nil {
+			return nil, err
+		}
+		err = encodeRequest(req, v)
+		if err != nil {
+			return nil, err
+		}
+		resp, err := c.ListTracesDoer.Do(req)
+		if err != nil {
+			return nil, goahttp.ErrRequestError("surla", "list_traces", err)
 		}
 		return decodeResponse(resp)
 	}

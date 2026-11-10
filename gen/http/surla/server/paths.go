@@ -113,3 +113,8 @@ func UpdateDependenciesSurlaPath() string {
 func ReadCheckOutputSurlaPath() string {
 	return "/workspace/check/output"
 }
+
+// ListTracesSurlaPath returns the URL path to the surla service list_traces HTTP endpoint.
+func ListTracesSurlaPath() string {
+	return "/traces"
+}

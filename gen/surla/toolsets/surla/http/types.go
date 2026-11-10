@@ -373,6 +373,33 @@ type (
 		// verify_change take this commit ID.
 		Commit *string `json:"commit"`
 	}
+	// ListTracesPayloadTransport is the internal JSON transport type for ListTracesPayload.
+	// It lives in the toolset-local http package and is used only for JSON
+	// decode + validation (missing-field detection) before transforming into
+	// the public tool type.
+	ListTracesPayloadTransport struct {
+		// all for every status, error for recorded failures, or ok for spans without
+		// an error status (including unset).
+		Status *string `json:"status,omitempty"`
+		// Maximum matching spans returned; a page may contain fewer because each call
+		// scans at most 256 KiB.
+		Limit *int `json:"limit,omitempty"`
+		// Opaque next_cursor from the previous page; omit to refresh from the newest
+		// records.
+		Cursor *string `json:"cursor,omitempty"`
+	}
+	// ListTracesResultTransport is the internal JSON transport type for ListTracesResult.
+	// It lives in the toolset-local http package and is used only for JSON
+	// decode + validation (missing-field detection) before transforming into
+	// the public tool type.
+	ListTracesResultTransport struct {
+		// Matching spans found in this page's bounded disk window.
+		Spans []*TraceSpanTransport `json:"spans"`
+		// True when older records have not yet been examined.
+		HasMore *bool `json:"has_more"`
+		// Cursor to examine the next older window; present only when has_more is true.
+		NextCursor *string `json:"next_cursor,omitempty"`
+	}
 	// ListVerificationsPayloadTransport is the internal JSON transport type for ListVerificationsPayload.
 	// It lives in the toolset-local http package and is used only for JSON
 	// decode + validation (missing-field detection) before transforming into
@@ -930,6 +957,37 @@ type (
 		LookupTextOnlyArgsSchema *string `json:"lookup_text_only_args_schema,omitempty"`
 		// Compiler-listed fields supplied outside the ordinary bound model input.
 		InjectedFields []string `json:"injected_fields"`
+	}
+	// TraceSpanTransport is the internal JSON transport type for TraceSpanTransport.
+	// It lives in the toolset-local http package and is used only for JSON
+	// decode + validation (missing-field detection) before transforming into
+	// the public tool type.
+	TraceSpanTransport struct {
+		// OpenTelemetry trace identifier.
+		TraceID *string `json:"trace_id"`
+		// OpenTelemetry span identifier.
+		SpanID *string `json:"span_id"`
+		// Parent span identifier; empty when this span has no parent.
+		ParentSpanID *string `json:"parent_span_id"`
+		// Operation name, at most 128 bytes.
+		Name *string `json:"name"`
+		// Operation start time in UTC.
+		StartTime *string `json:"start_time"`
+		// Operation finish time in UTC.
+		EndTime *string `json:"end_time"`
+		// Elapsed milliseconds.
+		DurationMs *int64 `json:"duration_ms"`
+		// Original span status: unset, ok, or error. An unset status does not
+		// establish success.
+		Status *string `json:"status"`
+		// Safe operation summary, at most 2048 bytes; never a raw error message.
+		Summary *string `json:"summary"`
+		// Selected operation identifiers and results; at most six values of 1024 bytes
+		// each.
+		Attributes map[string]string `json:"attributes"`
+		// True when text was shortened to fit this diagnostic record; use operator
+		// telemetry for the full values.
+		Shortened *bool `json:"shortened"`
 	}
 	// UICompositionItemTransport is the internal JSON transport type for UICompositionItemTransport.
 	// It lives in the toolset-local http package and is used only for JSON

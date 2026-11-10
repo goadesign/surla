@@ -19,7 +19,6 @@ import (
 	"sync"
 	"unicode/utf8"
 
-	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
@@ -119,8 +118,15 @@ func (c *ControlPlane) CheckProject(ctx context.Context) (res *gensurla.CheckPro
 	if _, ok := PrincipalFromContext(ctx); !ok {
 		return nil, errors.New("authenticated principal is required")
 	}
-	ctx, span := otel.Tracer("surla/controlplane").Start(ctx, "surla.controlplane.check_project")
-	defer func() { endCheckSpan(span, retErr) }()
+	ctx, span := c.tracer("surla/controlplane").Start(ctx, "surla.controlplane.check_project")
+	if err := c.admitCheckOperation(); err != nil {
+		endCheckSpan(span, err)
+		return nil, err
+	}
+	defer func() {
+		endCheckSpan(span, retErr)
+		c.checkOps.Done()
+	}()
 	ctx, cancel := c.checkDeadline(ctx)
 	defer cancel()
 	op, err := c.startCheckOperation(ctx)
@@ -154,41 +160,30 @@ func (c *ControlPlane) CheckProject(ctx context.Context) (res *gensurla.CheckPro
 
 // startCheckOperation binds the active workspace, creates the operation
 // directory, copies the grant and opens the engine. Errors are already
-// the caller-facing service errors.
+// the caller-facing service errors. The public request owns admission until
+// its final span ends, including when setup fails.
 func (c *ControlPlane) startCheckOperation(ctx context.Context) (*checkOperation, error) {
-	if c.checker == nil || c.checkWorkDir == "" {
-		return nil, gensurla.MakeNotImplemented(errors.New("check_project is not configured on this server"))
-	}
-	if err := c.admitCheckOperation(); err != nil {
-		return nil, err
-	}
-	// From here the operation is registered: every return either calls
-	// op.finish, which ends the registration, or abort.
-	abort := func(err error) (*checkOperation, error) {
-		c.checkOps.Done()
-		return nil, err
-	}
 	wsDir, dev, ino := c.currentWorkspaceTarget()
 	if wsDir == "" {
-		return abort(gensurla.MakeNotImplemented(errors.New("no workspace directory is bound to this control plane")))
+		return nil, gensurla.MakeNotImplemented(errors.New("no workspace directory is bound to this control plane"))
 	}
 	_, wsRoot, err := openModuleRootWithIdentity(wsDir, dev, ino)
 	if err != nil {
-		return abort(err)
+		return nil, err
 	}
 	op := &checkOperation{c: c, id: newOperationID(), grantFD: -1, workspaceFD: -1}
 	if err := errors.Join(op.openLive(wsRoot, c.protectedDirs), wsRoot.Close()); err != nil {
-		return abort(errors.Join(err, op.closeLive()))
+		return nil, errors.Join(err, op.closeLive())
 	}
 	op.dir = filepath.Join(c.checkWorkDir, op.id)
 	trace.SpanFromContext(ctx).SetAttributes(attribute.String("surla.check.op_id", op.id))
 	for _, d := range []string{op.dir, op.path("src"), op.path("modcache"), op.path("docker-config")} {
 		if err := os.Mkdir(d, 0o700); err != nil {
-			return abort(errors.Join(fmt.Errorf("create check directory %s: %w", d, err), op.closeLive()))
+			return nil, errors.Join(fmt.Errorf("create check directory %s: %w", d, err), op.closeLive())
 		}
 	}
 	if op.out, err = newCapWriter(op.path(outputFile)); err != nil {
-		return abort(errors.Join(err, op.closeLive()))
+		return nil, errors.Join(err, op.closeLive())
 	}
 	op.copy, err = copyGrant(ctx, op.grantFD, op.workspaceRel, op.workspaceID, op.path("src"), c.importedReports)
 	if err != nil {
@@ -231,6 +226,9 @@ func (c *ControlPlane) startCheckOperation(ctx context.Context) (*checkOperation
 // Close waits on checkOps, and every later one sees serverCtx ended. Admitted
 // operations still run concurrently.
 func (c *ControlPlane) admitCheckOperation() error {
+	if c.checker == nil || c.checkWorkDir == "" {
+		return gensurla.MakeNotImplemented(errors.New("check_project is not configured on this server"))
+	}
 	c.workspaceMu.RLock()
 	defer c.workspaceMu.RUnlock()
 	if c.serverCtx.Err() != nil {
@@ -327,7 +325,6 @@ func (op *checkOperation) runGo(ctx context.Context, mod, step, network string, 
 // needed to read saved output; an unconfirmed container removal keeps the
 // whole directory. Named service errors retain their name and flags.
 func (op *checkOperation) finish(cause error) error {
-	defer op.c.checkOps.Done()
 	closeErr := errors.Join(op.out.close(), op.closeLive())
 	var cleanupErr error
 	if len(op.owner.Containers) > 0 {
@@ -439,7 +436,7 @@ func (c *ControlPlane) recoverCheckOperations() (retErr error) {
 	if c.checker == nil || c.checkWorkDir == "" {
 		return nil
 	}
-	_, span := otel.Tracer("surla/controlplane").Start(context.Background(), "surla.controlplane.recover_check_operations")
+	_, span := c.tracer("surla/controlplane").Start(context.Background(), "surla.controlplane.recover_check_operations")
 	defer func() { endCheckSpan(span, retErr) }()
 	entries, err := os.ReadDir(c.checkWorkDir)
 	if err != nil {

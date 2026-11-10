@@ -17,6 +17,7 @@ import {
 } from "./components/c4-graph";
 import { CP1EditorView } from "./components/cp1-editor";
 import { VerificationView } from "./components/cp4-verification";
+import { TraceDrawer, TraceFilter } from "./components/trace-drawer";
 import { Alert, Button, Card } from "./components/shadcn";
 import { isDraftDirty, PreservedDraft } from "./context/cp1-draft";
 import {
@@ -29,6 +30,7 @@ import {
   StopLiveTargetResult,
   VerificationListResult,
   VerificationStatusResult,
+  TraceList,
   isArchitecturePreviewResult,
   isChangeCardResult,
   isDiffResult,
@@ -38,6 +40,7 @@ import {
   isStopLiveTargetResult,
   isVerificationListResult,
   isVerificationStatusResult,
+  isTraceList,
 } from "./types";
 
 // Initialization has its own request ID; editor calls start after it.
@@ -304,6 +307,15 @@ export function bootstrapCheckpointApp() {
   const navRoot: Root = createRoot(navEl);
   const editorRoot: Root = createRoot(editorRegionEl);
   const resultRoot: Root = createRoot(resultRegionEl);
+
+  const traceRegionEl = document.createElement("aside");
+  traceRegionEl.setAttribute("aria-label", "Operation diagnostics");
+  viewEl.before(traceRegionEl);
+  const traceRoot: Root = createRoot(traceRegionEl);
+  let traceOpen = false;
+  let traceFilter: TraceFilter = "error";
+  let tracePage: TraceList | null = null;
+  let traceError: string | null = null;
 
   let initPending = false;
   let nextRequestId = 2;
@@ -786,6 +798,59 @@ export function bootstrapCheckpointApp() {
     syncEditorRegion();
     syncResultRegion();
     syncNavRegion();
+    syncTraceRegion();
+  }
+
+  // loadTracePage uses the existing host transport without taking the editor's
+  // request slot. Filtering and paging are serialized by their own pending call.
+  function loadTracePage(cursor?: string) {
+    if (hasPendingTraceRead()) return;
+    traceError = null;
+    callHostTool(
+      "list_traces",
+      { status: traceFilter, limit: 20, ...(cursor ? { cursor } : {}) },
+      isTraceList,
+      (page) => { tracePage = page; },
+      (message) => { traceError = message; },
+      () => { syncAllRegions(); }
+    );
+  }
+
+  // hasPendingTraceRead derives waiting state from the real outstanding call.
+  function hasPendingTraceRead(): boolean {
+    for (const request of pendingRequests.values()) {
+      if (request.params.name === "list_traces") return true;
+    }
+    return false;
+  }
+
+  // syncTraceRegion updates only diagnostics; the CP1 editor stays mounted.
+  function syncTraceRegion() {
+    if (rootEl.dataset.state === "terminated") {
+      flushSync(() => traceRoot.render(null));
+      return;
+    }
+    flushSync(() => traceRoot.render(
+      <TraceDrawer
+        open={traceOpen}
+        filter={traceFilter}
+        page={tracePage}
+        error={traceError}
+        busy={hasPendingTraceRead()}
+        onToggle={() => {
+          traceOpen = !traceOpen;
+          if (traceOpen && tracePage === null) loadTracePage();
+          syncAllRegions();
+        }}
+        onFilter={(filter) => {
+          traceFilter = filter;
+          tracePage = null;
+          loadTracePage();
+        }}
+        onRefresh={() => loadTracePage()}
+        onOlder={() => loadTracePage(tracePage?.next_cursor)}
+      />
+    ));
   }
 
   // callHostTool correlates one request and validates its response once. Its
@@ -1807,6 +1872,7 @@ export function bootstrapCheckpointApp() {
       applyHostTheme(msg.result);
       rootEl.dataset.initialized = "true";
       statusEl.textContent = "Ready. Waiting for the next checkpoint...";
+      syncTraceRegion();
       window.parent.postMessage(
         { jsonrpc: "2.0", method: "ui/notifications/initialized", params: {} },
         "*"

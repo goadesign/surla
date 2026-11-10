@@ -313,6 +313,27 @@ type (
 		// verify_change take this commit ID.
 		Commit string
 	}
+	// ListTracesPayload defines the JSON payload for the surla.list_traces tool.
+	ListTracesPayload = struct {
+		// all for every status, error for recorded failures, or ok for spans without
+		// an error status (including unset).
+		Status string
+		// Maximum matching spans returned; a page may contain fewer because each call
+		// scans at most 256 KiB.
+		Limit int
+		// Opaque next_cursor from the previous page; omit to refresh from the newest
+		// records.
+		Cursor *string
+	}
+	// ListTracesResult defines the JSON result for the surla.list_traces tool.
+	ListTracesResult = struct {
+		// Matching spans found in this page's bounded disk window.
+		Spans []*TraceSpan
+		// True when older records have not yet been examined.
+		HasMore bool
+		// Cursor to examine the next older window; present only when has_more is true.
+		NextCursor *string
+	}
 	// ListVerificationsPayload defines the JSON payload for the surla.list_verifications tool.
 	ListVerificationsPayload = struct {
 		// Change Card identifier.
@@ -777,6 +798,34 @@ type (
 		LookupTextOnlyArgsSchema *string
 		// Compiler-listed fields supplied outside the ordinary bound model input.
 		InjectedFields []string
+	}
+	// TraceSpan is a nested type used by the generated JSON contract.
+	TraceSpan = struct {
+		// OpenTelemetry trace identifier.
+		TraceID string
+		// OpenTelemetry span identifier.
+		SpanID string
+		// Parent span identifier; empty when this span has no parent.
+		ParentSpanID string
+		// Operation name, at most 128 bytes.
+		Name string
+		// Operation start time in UTC.
+		StartTime string
+		// Operation finish time in UTC.
+		EndTime string
+		// Elapsed milliseconds.
+		DurationMs int64
+		// Original span status: unset, ok, or error. An unset status does not
+		// establish success.
+		Status string
+		// Safe operation summary, at most 2048 bytes; never a raw error message.
+		Summary string
+		// Selected operation identifiers and results; at most six values of 1024 bytes
+		// each.
+		Attributes map[string]string
+		// True when text was shortened to fit this diagnostic record; use operator
+		// telemetry for the full values.
+		Shortened bool
 	}
 	// UICompositionItem is a nested type used by the generated JSON contract.
 	UICompositionItem = struct {

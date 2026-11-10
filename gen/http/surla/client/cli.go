@@ -10,6 +10,7 @@ package client
 import (
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"unicode/utf8"
 
 	surla "github.com/goadesign/surla/gen/surla"
@@ -489,6 +490,52 @@ func BuildReadCheckOutputPayload(surlaReadCheckOutputBody *string) (*surla.ReadC
 		OpID:   body.OpID,
 		Cursor: body.Cursor,
 	}
+
+	return v, nil
+}
+
+// BuildListTracesPayload builds the payload for the surla list_traces endpoint
+// from CLI flags.
+func BuildListTracesPayload(surlaListTracesStatus string, surlaListTracesLimit string, surlaListTracesCursor *string) (*surla.ListTracesPayload, error) {
+	var err error
+	var status string
+	{
+		status = surlaListTracesStatus
+		if !(status == "all" || status == "error" || status == "ok") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("status", status, []any{"all", "error", "ok"}))
+		}
+		if err != nil {
+			return nil, err
+		}
+	}
+	var limit int
+	{
+		var v int64
+		v, err = strconv.ParseInt(surlaListTracesLimit, 10, strconv.IntSize)
+		limit = int(v)
+		if err != nil {
+			return nil, fmt.Errorf("invalid value for limit, must be INT")
+		}
+		if limit < 1 {
+			err = goa.MergeErrors(err, goa.InvalidRangeError("limit", limit, 1, true))
+		}
+		if limit > 100 {
+			err = goa.MergeErrors(err, goa.InvalidRangeError("limit", limit, 100, false))
+		}
+		if err != nil {
+			return nil, err
+		}
+	}
+	var cursor *string
+	{
+		if surlaListTracesCursor != nil {
+			cursor = surlaListTracesCursor
+		}
+	}
+	v := &surla.ListTracesPayload{}
+	v.Status = status
+	v.Limit = limit
+	v.Cursor = cursor
 
 	return v, nil
 }

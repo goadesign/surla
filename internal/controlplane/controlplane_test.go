@@ -420,14 +420,17 @@ var _ = Service("orders", func() {
 		"start_live_target", "stop_live_target",
 		"verify_change", "get_verification", "list_verifications",
 		"check_project", "update_dependencies", "read_check_output",
+		"list_traces",
 	}, toolNames)
 	// Every checkpoint tool, diff included, links the checkpoint viewer so an
 	// MCP Apps host can render its result; configure_model, init_project,
 	// generate_code, check_project, update_dependencies and read_check_output
-	// are server/workspace tools without a checkpoint UI view.
+	// are server/workspace tools without a checkpoint UI view. list_traces is
+	// also a data tool; the viewer reads it through its separate Traces control.
 	workspaceTools := map[string]bool{
 		"configure_model": true, "init_project": true, "generate_code": true,
 		"check_project": true, "update_dependencies": true, "read_check_output": true,
+		"list_traces": true,
 	}
 	for _, tool := range toolsRes.Tools {
 		if workspaceTools[tool.Name] {

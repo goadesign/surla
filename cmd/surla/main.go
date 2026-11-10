@@ -39,6 +39,7 @@ import (
 	"github.com/goadesign/surla/internal/verify"
 	"github.com/goadesign/surla/internal/verifyrun"
 	"github.com/goadesign/surla/verify/candidate"
+	"go.opentelemetry.io/otel"
 )
 
 // serveConfig holds the optional `surla serve` flags that choose the CP1
@@ -264,10 +265,25 @@ func runServe(args []string) (err error) {
 	if !utf8.ValidString(*principalID) {
 		return errors.New("-principal must be valid UTF-8")
 	}
+	tracerProvider, err := newTraceProvider(context.Background(), os.Stderr, os.Getenv)
+	if err != nil {
+		return err
+	}
+	previousProvider := otel.GetTracerProvider()
+	otel.SetTracerProvider(tracerProvider)
+	defer func() {
+		// The later control-plane defer finishes owned work and closes its file
+		// first. This also flushes startup evidence when construction fails.
+		flushCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		err = errors.Join(err, tracerProvider.Shutdown(flushCtx))
+		otel.SetTracerProvider(previousProvider)
+	}()
 	opts, err := serveOptions(cfg, os.Getenv, os.Environ())
 	if err != nil {
 		return err
 	}
+	opts.TracerProvider = tracerProvider
 	auth := controlplane.NewTokenAuthenticator(map[string]controlplane.Principal{
 		token: {ID: strings.TrimSpace(*principalID)},
 	})
