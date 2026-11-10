@@ -84,18 +84,19 @@ proposal. A choice the playbook settles is not offered as a choice.
 ### Major work starts from what happens
 
 For a new platform or a major feature, the guide first drafts a timeline of
-domain events — what happens in the user's domain — before any
-architecture. The method is Event Storming. A small change skips this step.
+domain events — what happens in the user's domain — before proposing
+architecture for it. The method is Event Storming. A small change skips
+this step.
 
-- **Plain labels.** The timeline is made of notes, named in plain words:
-  what happens, who or what triggers it, rules, open questions, and other
-  systems. The interface does not use the method's own vocabulary.
+- **Plain labels.** The timeline's notes are named in plain words — for
+  example "what happens" rather than "domain event" — and the interface
+  does not use the method's own vocabulary.
 - **It leads to the architecture.** Open questions on the timeline become
   the choices Surla raises, unless the playbook already settles them. How
-  the notes group suggests where service boundaries could go; the user and
-  the guide settle them.
-- **It stays.** The timeline remains a view of the platform after the
-  architecture exists, and is meant to be linked to the diagrams.
+  the notes group suggests where boundaries could go; the user and the
+  guide settle them.
+- **It stays.** The timeline stays current as a view of the platform after
+  the architecture exists, and is meant to be linked to the diagrams.
 
 ### Domain-driven design, without the vocabulary
 
@@ -108,8 +109,9 @@ available to those who look for it.
   timeline inform where boundaries go; a group is not automatically one
   service.
 - **Within a boundary, one name for one thing.** Inside each boundary, the
-  words on the timeline are the names in its design, code and docs
-  (ubiquitous language). Two boundaries may use the same word differently.
+  same words name each thing on the timeline and in its design, code and
+  docs (ubiquitous language). Two boundaries may use the same word
+  differently.
 - **A service knows only what another exposes.** That is its API and its
   public messages: typed and declared in the design (published language).
   It never sees another service's tables or internal types.
