@@ -6,7 +6,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -187,15 +186,13 @@ func TestProposeChangeAutoConfirmsACardWithoutQuestions(t *testing.T) {
 	assert.Equal(t, `{"design/design.go":"package design // refunds\n"}`, stored.designSource)
 }
 
-// TestChangeAnalysisIsRejectedAtTheBoundary verifies that the generated MCP
-// and HTTP decoders reject an analysis that breaks a structural rule (a
-// missing analysis, a blank or missing required field, a null list element,
-// too few options or examples, or an unknown verification_kind) before the
-// service runs, and that the service rejects the rules that span fields
-// (repeated options) as unprocessable. The MCP codec also rejects a field the
-// contract does not declare, such as a caller-chosen ambiguity ID; the HTTP
-// decoder ignores it, so the code-assigned ID still wins. No rejected case
-// saves a card.
+// TestChangeAnalysisIsRejectedAtTheBoundary verifies that the MCP and HTTP
+// entries reject an analysis that breaks a structural rule (a missing
+// analysis, a blank or missing required field, a null list element, too few
+// options or examples, or an unknown verification_kind) or that carries a
+// field the contract does not declare (such as a caller-chosen ambiguity ID)
+// before the service runs, and that the service rejects the rules that span
+// fields (repeated options) as unprocessable. No rejected case saves a card.
 func TestChangeAnalysisIsRejectedAtTheBoundary(t *testing.T) {
 	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
 	cp := newControlPlane(t, Options{})
@@ -251,18 +248,19 @@ func TestChangeAnalysisIsRejectedAtTheBoundary(t *testing.T) {
 			assert.Contains(t, body, tc.want)
 		})
 	}
-	for i, tc := range undeclared {
-		t.Run("http ignores "+tc.name, func(t *testing.T) {
-			changeID := fmt.Sprintf("chg-undeclared-%d", i)
-			status, body := postJSON(t, srv.URL+"/changes/propose", "alice-token", strings.Replace(tc.payload, `"change_id":"chg"`, `"change_id":"`+changeID+`"`, 1))
-			require.Equal(t, http.StatusOK, status, body)
-			var card gensurla.ChangeCardResult
-			require.NoError(t, json.Unmarshal([]byte(body), &struct {
-				Ambiguities *[]*gensurla.AmbiguityQuestion `json:"ambiguities"`
-			}{&card.Ambiguities}))
-			for _, q := range card.Ambiguities {
-				assert.Equal(t, changeID+"-ambiguity-01", q.ID, "the code-assigned ID wins over an undeclared caller field")
+	for _, tc := range undeclared {
+		t.Run("http refuses "+tc.name, func(t *testing.T) {
+			status, body := postJSON(t, srv.URL+"/changes/propose", "alice-token", tc.payload)
+			assert.Equal(t, http.StatusBadRequest, status, body)
+			var refusal struct {
+				Name    string `json:"name"`
+				Message string `json:"message"`
+				Fault   bool   `json:"fault"`
 			}
+			require.NoError(t, json.Unmarshal([]byte(body), &refusal), body)
+			assert.Equal(t, "decode_payload", refusal.Name)
+			assert.Equal(t, `json: unknown field "`+tc.want+`"`, refusal.Message)
+			assert.False(t, refusal.Fault)
 		})
 	}
 
@@ -293,6 +291,90 @@ func TestChangeAnalysisIsRejectedAtTheBoundary(t *testing.T) {
 	require.False(t, complete.IsError != nil && *complete.IsError)
 	status, body = postJSON(t, srv.URL+"/changes/propose", "alice-token", strings.Replace(analysis(valid), `"change_id":"chg"`, `"change_id":"chg-http"`, 1))
 	assert.Equal(t, http.StatusOK, status, body)
+}
+
+// TestHTTPRoutesRefuseUndeclaredJSONFields verifies that strict JSON decoding
+// covers every HTTP route that reads a JSON body, not only the analysis
+// routes: a configure_model body with a field the design does not declare is
+// refused with 400 decode_payload before the service runs, while the same
+// body without it reaches the service, which on this host answers 501.
+func TestHTTPRoutesRefuseUndeclaredJSONFields(t *testing.T) {
+	cp := newControlPlane(t, Options{})
+	srv := httptest.NewServer(NewHTTPHandler(cp, NewTokenAuthenticator(map[string]Principal{"alice-token": {ID: "alice@example.com"}})))
+	t.Cleanup(srv.Close)
+
+	status, body := postJSON(t, srv.URL+"/cp1/model", "alice-token", `{"gateway_addr":"127.0.0.1:9090","timeout":"5s"}`)
+	assert.Equal(t, http.StatusBadRequest, status, body)
+	var refusal struct {
+		Name    string `json:"name"`
+		Message string `json:"message"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(body), &refusal), body)
+	assert.Equal(t, "decode_payload", refusal.Name)
+	assert.Equal(t, `json: unknown field "timeout"`, refusal.Message)
+
+	status, body = postJSON(t, srv.URL+"/cp1/model", "alice-token", `{"gateway_addr":"127.0.0.1:9090"}`)
+	assert.Equal(t, http.StatusNotImplemented, status, body)
+}
+
+// TestGoCallersGetTheDesignRules verifies that a Go caller of ProposeChange
+// or ReviseChange, which bypasses the HTTP and MCP decoders, is held to the
+// same structural rules: a blank summary, no examples, a null question, an
+// unknown verification_kind, a missing analysis or a change_id that is not
+// valid UTF-8 is refused as unprocessable and saves nothing.
+func TestGoCallersGetTheDesignRules(t *testing.T) {
+	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
+	cp := newControlPlane(t, Options{})
+	saved := mustPropose(t, cp, alice, "chg", "Refunds up to $50 are instant.", refundAnalysis("Refunds up to $50 are instant."))
+
+	blankSummary := refundAnalysis(" \n\t")
+	noExamples := refundAnalysis("Refunds up to $50 are instant.")
+	noExamples.Examples = []*gensurla.CP1AnalysisExample{}
+	nullQuestion := refundAnalysis("Refunds up to $50 are instant.", nil)
+	unknownKind := refundAnalysis("Refunds up to $50 are instant.")
+	unknownKind.Examples[0].VerificationKind = "eyeballed"
+	for _, tc := range []struct {
+		name     string
+		changeID string
+		analysis *gensurla.CP1Analysis
+		want     string
+	}{
+		{"blank summary", "chg-blank", blankSummary, "summary"},
+		{"no examples", "chg-none", noExamples, "examples"},
+		{"null question", "chg-null", nullQuestion, "ambiguities"},
+		{"unknown verification_kind", "chg-kind", unknownKind, "verification_kind"},
+		{"missing analysis", "chg-missing", nil, "analysis"},
+		{"change_id not valid UTF-8", "chg\xff", refundAnalysis("Refunds up to $50 are instant."), "invalid UTF-8"},
+	} {
+		t.Run("propose "+tc.name, func(t *testing.T) {
+			_, err := cp.ProposeChange(alice, &gensurla.ProposeChangePayload{ChangeID: tc.changeID, Prompt: "Refunds up to $50 are instant.", Analysis: tc.analysis})
+			assertServiceError(t, err, "unprocessable")
+			assert.ErrorContains(t, err, tc.want)
+			_, ok, err := cp.cards.load(tc.changeID)
+			require.NoError(t, err)
+			assert.False(t, ok, "a refused proposal saves nothing")
+		})
+	}
+
+	check01 := "check_01"
+	_, err := cp.ReviseChange(alice, &gensurla.ReviseChangePayload{
+		ChangeID: "chg", RequestRevision: saved.RequestRevision, Prompt: "Refunds up to $60 are instant.",
+		Analysis: &gensurla.CP1RevisionAnalysis{
+			Summary:     "",
+			Ambiguities: []*gensurla.CP1AnalysisAmbiguity{},
+			Examples: []*gensurla.CP1RevisionAnalysisExample{{
+				PriorID: &check01, Scenario: "Refund at the limit", InputSummary: "Order total $60.00",
+				ExpectedOutcome: "Instant store credit", VerificationKind: "deterministic",
+			}},
+			RemovedExampleIds:  []string{},
+			PreservedBehaviors: []string{},
+		},
+	})
+	assertServiceError(t, err, "unprocessable")
+	assert.ErrorContains(t, err, "summary")
+	current, err := cp.GetChange(alice, &gensurla.GetChangePayload{ChangeID: "chg"})
+	require.NoError(t, err)
+	assert.Equal(t, saved.RequestRevision, current.RequestRevision, "a refused revision leaves the card unchanged")
 }
 
 // TestCP2EvaluatedArchitecturePreviewCP3FastDraftAndTokenAuthenticator verifies

@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"unicode/utf8"
 
 	gensurla "github.com/goadesign/surla/gen/surla"
 	"go.opentelemetry.io/otel/attribute"
@@ -17,18 +16,21 @@ import (
 
 // ReviseChange saves the next revision of an existing Checkpoint 1 Change
 // Card from the caller's revised feature request and analysis, bound to the
-// card's current request_revision. Only the card's owner may revise it. The
-// generated HTTP and MCP decoders have already checked the analysis's
-// structure; ReviseChange checks the rules that span fields: every current
-// example is kept (examples[].prior_id) or dropped (removed_example_ids)
-// exactly once, and each ambiguity's options are distinct. Kept examples keep
-// their IDs, new examples get the lowest unused check_NN ID, and the revision
-// is saved in needs_confirmation status with no answers, confirmed_by or
-// approval. The design source is design_source when given; otherwise a
-// workspace-backed card records design/*.go from the bound workspace again
-// and any other card keeps its saved design source. The card is saved only if
-// it still has the caller's request_revision; a broken rule or an unreadable
-// workspace design is unprocessable and leaves the card unchanged.
+// card's current request_revision. Only the card's owner may revise it. It
+// first checks p against the design's rules with the generated
+// gensurla.ValidateReviseChangePayloadValue, so a Go caller gets the same
+// structural checks the HTTP and MCP decoders apply. It then checks the rules
+// that span fields: every current example is kept (examples[].prior_id) or
+// dropped (removed_example_ids) exactly once, and each ambiguity's options
+// are distinct. Kept examples keep their IDs, new examples get the lowest
+// unused check_NN ID, and the revision is saved in needs_confirmation status
+// with no answers, confirmed_by or approval. The design source is
+// design_source when given; otherwise a workspace-backed card records
+// design/*.go from the bound workspace again and any other card keeps its
+// saved design source. The card is saved only if it still has the caller's
+// request_revision; a payload that breaks a rule, a blank change_id,
+// request_revision or prompt, or an unreadable workspace design is
+// unprocessable and leaves the card unchanged.
 func (c *ControlPlane) ReviseChange(
 	ctx context.Context,
 	p *gensurla.ReviseChangePayload,
@@ -37,15 +39,13 @@ func (c *ControlPlane) ReviseChange(
 	if !ok {
 		return nil, errors.New("authenticated principal is required")
 	}
-	if p == nil ||
-		strings.TrimSpace(p.ChangeID) == "" ||
-		strings.TrimSpace(p.RequestRevision) == "" ||
-		strings.TrimSpace(p.Prompt) == "" ||
-		p.Analysis == nil {
-		return nil, gensurla.MakeUnprocessable(errors.New("change_id, request_revision, prompt, and analysis are required"))
+	if err := gensurla.ValidateReviseChangePayloadValue(p); err != nil {
+		return nil, gensurla.MakeUnprocessable(err)
 	}
-	if !utf8.ValidString(p.ChangeID) {
-		return nil, gensurla.MakeUnprocessable(errors.New("change_id must be valid UTF-8"))
+	if strings.TrimSpace(p.ChangeID) == "" ||
+		strings.TrimSpace(p.RequestRevision) == "" ||
+		strings.TrimSpace(p.Prompt) == "" {
+		return nil, gensurla.MakeUnprocessable(errors.New("change_id, request_revision, and prompt are required"))
 	}
 
 	// Phase 1: read the current card without holding the write lock, because

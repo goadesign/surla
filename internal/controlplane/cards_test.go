@@ -421,7 +421,8 @@ func TestChangeIDsMustBeValidUTF8(t *testing.T) {
 	cp := newControlPlane(t, Options{})
 	_, err := cp.ProposeChange(WithPrincipal(context.Background(), Principal{ID: "alice@example.com"}),
 		&gensurla.ProposeChangePayload{ChangeID: "chg\xff", Prompt: "Refunds up to $50 are instant.", Analysis: refundAnalysis("Refunds up to $50 are instant.")})
-	assert.ErrorContains(t, err, "change_id must be valid UTF-8")
+	assertServiceError(t, err, "unprocessable")
+	assert.ErrorContains(t, err, `["change_id"]: invalid UTF-8`)
 }
 
 // TestPrincipalIDsMustBeValidUTF8 checks that a principal whose ID holds

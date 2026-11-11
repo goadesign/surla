@@ -527,14 +527,17 @@ func New(opts Options) (*ControlPlane, error) {
 }
 
 // NewHTTPHandler mounts both the Goa HTTP endpoints and the MCP JSON-RPC
-// server (`/mcp`) for svc onto a single HTTP handler protected by auth.
+// server (`/mcp`) for svc onto a single HTTP handler protected by auth. The
+// HTTP endpoints decode JSON bodies with strictJSONRequestDecoder; the MCP
+// server keeps Goa's decoder for its JSON-RPC envelope, because its generated
+// tool codecs already refuse undeclared argument fields.
 func NewHTTPHandler(svc gensurla.Service, auth RequestAuthenticator) http.Handler {
 	mux := goahttp.NewMuxer()
 	endpoints := gensurla.NewEndpoints(svc)
 	httpServer := gensurlahttp.New(
 		endpoints,
 		mux,
-		goahttp.RequestDecoder,
+		strictJSONRequestDecoder,
 		goahttp.ResponseEncoder,
 		nil,
 		nil,
@@ -578,29 +581,30 @@ func (c *ControlPlane) GoldenPath(_ context.Context) (string, error) {
 }
 
 // ProposeChange saves a new Checkpoint 1 (CP1) Change Card from the caller's
-// feature request and analysis. The generated HTTP and MCP decoders have
-// already checked the analysis's structure; ProposeChange checks the rule that
-// spans fields (each ambiguity's options are distinct), numbers ambiguities
+// feature request and analysis. It first checks p against the design's rules
+// with the generated gensurla.ValidateProposeChangePayloadValue, so a Go
+// caller gets the same structural checks the HTTP and MCP decoders apply
+// (required, non-blank and valid UTF-8 text, minimum counts, enums, no null
+// list items); invalid UTF-8 matters because a change_id saved as U+FFFD
+// could not be found again. It then checks the rule that spans fields (each
+// ambiguity's options are distinct), numbers ambiguities
 // <change_id>-ambiguity-NN and examples check_NN in list order, records the
 // design source (design_source when given, else design/*.go from the bound
 // workspace, else none), and binds the card to the authenticated principal.
 // A card without ambiguities is saved confirmed by its owner; otherwise it
 // waits in needs_confirmation. A change_id that already has a card is a
-// conflict; a broken rule or an unreadable workspace design is unprocessable,
-// and neither saves anything.
+// conflict; a payload that breaks a rule, a blank change_id or prompt, or an
+// unreadable workspace design is unprocessable, and none saves anything.
 func (c *ControlPlane) ProposeChange(ctx context.Context, p *gensurla.ProposeChangePayload) (*gensurla.ChangeCardResult, error) {
 	principal, ok := PrincipalFromContext(ctx)
 	if !ok {
 		return nil, errors.New("authenticated principal is required")
 	}
-	if p == nil || strings.TrimSpace(p.ChangeID) == "" || strings.TrimSpace(p.Prompt) == "" || p.Analysis == nil {
-		return nil, gensurla.MakeUnprocessable(errors.New("change_id, prompt, and analysis are required"))
+	if err := gensurla.ValidateProposeChangePayloadValue(p); err != nil {
+		return nil, gensurla.MakeUnprocessable(err)
 	}
-	// A saved card is found by its change_id; invalid UTF-8 would be saved as
-	// U+FFFD and the card could not be found again. HTTP and MCP requests
-	// are already valid, so only Go callers can send such an ID.
-	if !utf8.ValidString(p.ChangeID) {
-		return nil, gensurla.MakeUnprocessable(errors.New("change_id must be valid UTF-8"))
+	if strings.TrimSpace(p.ChangeID) == "" || strings.TrimSpace(p.Prompt) == "" {
+		return nil, gensurla.MakeUnprocessable(errors.New("change_id and prompt are required"))
 	}
 	var designSrc string
 	sourceOrigin := sourceOriginSupplied
@@ -925,6 +929,22 @@ func (c *ControlPlane) Diff(ctx context.Context, p *gensurla.DiffPayload) (*gens
 		VersionDeltas:        rep.VersionDeltas,
 		Summary:              rep.Summary,
 	}, nil
+}
+
+// strictJSONRequestDecoder is the request body decoder of every HTTP route
+// NewHTTPHandler mounts. It returns goahttp.RequestDecoder's decoder for r's
+// Content-Type and, when that is a JSON decoder (application/json, or no
+// Content-Type), makes it refuse object fields the route's design does not
+// declare, at any depth. The generated route decoder reports such a body as a
+// decode_payload error, HTTP 400, naming the field; for example a
+// propose_change analysis carrying a caller-chosen ambiguity "id". Bodies in
+// other formats Goa accepts (XML, gob, text) decode exactly as before.
+func strictJSONRequestDecoder(r *http.Request) goahttp.Decoder {
+	dec := goahttp.RequestDecoder(r)
+	if jsonDec, ok := dec.(*json.Decoder); ok {
+		jsonDec.DisallowUnknownFields()
+	}
+	return dec
 }
 
 // computeCanonicalRevision computes a collision-free SHA-256 hex digest over
