@@ -3,6 +3,7 @@ package controlplane
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -234,4 +235,277 @@ var _ = Service("orders", func() {})
 	require.NotEmpty(t, complete.Content)
 	require.NotNil(t, complete.Content[0].Text)
 	assert.Contains(t, *complete.Content[0].Text, `change_id "chg" must be confirmed before architecture preview (status "needs_confirmation")`)
+}
+
+// TestAnalysisTextsMustHoldMoreThanWhitespace verifies the design's non-blank
+// rule on every required analysis text (summary, question, option, scenario,
+// input_summary, expected_outcome and preserved behavior) of propose_change
+// and revise_change. A text made only of whitespace, as unicode.IsSpace
+// defines it (ASCII, U+00A0, U+2003, U+3000, U+0085 or a mix), is refused and
+// nothing is saved: every case through the Go method, representative cases
+// through the MCP tool and the HTTP route. A text with any other character,
+// including one made only of U+200B or U+FEFF, is saved byte for byte as sent,
+// surrounding whitespace included.
+func TestAnalysisTextsMustHoldMoreThanWhitespace(t *testing.T) {
+	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
+	cp := newControlPlane(t, Options{})
+	adapter := genmcpadapter.NewMCPAdapter(gensurla.NewEndpoints(cp), nil)
+	srv := httptest.NewServer(NewHTTPHandler(cp, NewTokenAuthenticator(map[string]Principal{"alice-token": {ID: "alice@example.com"}})))
+	t.Cleanup(srv.Close)
+
+	// The test source names each character by code point so it stays ASCII.
+	noBreakSpace := string(rune(0x00a0))
+	emSpace := string(rune(0x2003))
+	ideographicSpace := string(rune(0x3000))
+	nextLine := string(rune(0x0085))
+	byteOrderMark := string(rune(0xfeff))
+	zeroWidthSpace := string(rune(0x200b))
+	check01 := "check_01"
+
+	// proposal and revision build the analyses with every required text
+	// passed through text, so one case can pad or replace all of them.
+	proposal := func(text func(string) string) *gensurla.CP1Analysis {
+		return &gensurla.CP1Analysis{
+			Summary: text("Refunds up to $50 are instant."),
+			Ambiguities: []*gensurla.CP1AnalysisAmbiguity{{
+				Question: text("Is $50.00 itself instant?"),
+				Options:  []string{"instant", text("manager")},
+			}},
+			Examples: []*gensurla.CP1AnalysisExample{{
+				Scenario: text("Refund at the limit"), InputSummary: text("Order total $50.00"),
+				ExpectedOutcome: text("Instant store credit"), VerificationKind: "deterministic",
+			}},
+			PreservedBehaviors: []string{text("Cross-tenant order lookups return 404 Not Found.")},
+		}
+	}
+	revision := func(text func(string) string) *gensurla.CP1RevisionAnalysis {
+		return &gensurla.CP1RevisionAnalysis{
+			Summary: text("Refunds up to $50 are instant."),
+			Ambiguities: []*gensurla.CP1AnalysisAmbiguity{{
+				Question: text("Is $50.00 itself instant?"),
+				Options:  []string{"instant", text("manager")},
+			}},
+			Examples: []*gensurla.CP1RevisionAnalysisExample{{
+				PriorID: &check01, Scenario: text("Refund at the limit"), InputSummary: text("Order total $50.00"),
+				ExpectedOutcome: text("Instant store credit"), VerificationKind: "deterministic",
+			}},
+			RemovedExampleIds:  []string{},
+			PreservedBehaviors: []string{text("Cross-tenant order lookups return 404 Not Found.")},
+		}
+	}
+	asSent := func(s string) string { return s }
+
+	// The generated encoder refuses a payload that breaks the design, so a
+	// refused text is encoded as placeholder and swapped in afterwards by
+	// withText to reach the MCP and HTTP decoders as sent.
+	const placeholder = "text-under-test"
+	withText := func(t *testing.T, args json.RawMessage, text string) json.RawMessage {
+		t.Helper()
+		quoted, err := json.Marshal(text)
+		require.NoError(t, err)
+		require.Equal(t, 1, strings.Count(string(args), `"`+placeholder+`"`))
+		return json.RawMessage(strings.Replace(string(args), `"`+placeholder+`"`, string(quoted), 1))
+	}
+
+	// send calls propose_change or revise_change through entry, the Go method
+	// with payload or the MCP tool and HTTP route with args, and reports whether
+	// the call was accepted, with the refusal message otherwise.
+	send := func(t *testing.T, entry string, payload any, args json.RawMessage) (bool, string) {
+		t.Helper()
+		var (
+			tool, route string
+			goErr       error
+		)
+		switch p := payload.(type) {
+		case *gensurla.ProposeChangePayload:
+			tool, route = "propose_change", "/changes/propose"
+			if entry == "go" {
+				_, goErr = cp.ProposeChange(alice, p)
+			}
+		case *gensurla.ReviseChangePayload:
+			tool, route = "revise_change", "/changes/revise"
+			if entry == "go" {
+				_, goErr = cp.ReviseChange(alice, p)
+			}
+		}
+		switch entry {
+		case "go":
+			if goErr != nil {
+				assertServiceError(t, goErr, "unprocessable")
+				return false, goErr.Error()
+			}
+			return true, ""
+		case "mcp":
+			res, err := adapter.ToolsCall(alice, &genmcpadapter.ToolsCallPayload{Name: tool, Arguments: args})
+			require.NoError(t, err)
+			complete, ok := res.Outcome.AsComplete()
+			require.True(t, ok)
+			if complete.IsError == nil || !*complete.IsError {
+				return true, ""
+			}
+			require.NotEmpty(t, complete.Content)
+			require.NotNil(t, complete.Content[0].Text)
+			assert.Contains(t, *complete.Content[0].Text, "invalid arguments")
+			return false, *complete.Content[0].Text
+		default:
+			status, body := postJSON(t, srv.URL+route, "alice-token", string(args))
+			if status == http.StatusOK {
+				return true, ""
+			}
+			assert.Equal(t, http.StatusBadRequest, status, body)
+			return false, body
+		}
+	}
+	type (
+		// textField is one required analysis text and how to set it in a
+		// proposal and in a revision.
+		textField struct {
+			name    string
+			propose func(*gensurla.CP1Analysis, string)
+			revise  func(*gensurla.CP1RevisionAnalysis, string)
+		}
+		// blankText is a value made only of whitespace.
+		blankText struct{ name, value string }
+	)
+	fields := []textField{
+		{"summary", func(a *gensurla.CP1Analysis, v string) { a.Summary = v }, func(a *gensurla.CP1RevisionAnalysis, v string) { a.Summary = v }},
+		{"question", func(a *gensurla.CP1Analysis, v string) { a.Ambiguities[0].Question = v }, func(a *gensurla.CP1RevisionAnalysis, v string) { a.Ambiguities[0].Question = v }},
+		{"options", func(a *gensurla.CP1Analysis, v string) { a.Ambiguities[0].Options[1] = v }, func(a *gensurla.CP1RevisionAnalysis, v string) { a.Ambiguities[0].Options[1] = v }},
+		{"scenario", func(a *gensurla.CP1Analysis, v string) { a.Examples[0].Scenario = v }, func(a *gensurla.CP1RevisionAnalysis, v string) { a.Examples[0].Scenario = v }},
+		{"input_summary", func(a *gensurla.CP1Analysis, v string) { a.Examples[0].InputSummary = v }, func(a *gensurla.CP1RevisionAnalysis, v string) { a.Examples[0].InputSummary = v }},
+		{"expected_outcome", func(a *gensurla.CP1Analysis, v string) { a.Examples[0].ExpectedOutcome = v }, func(a *gensurla.CP1RevisionAnalysis, v string) { a.Examples[0].ExpectedOutcome = v }},
+		{"preserved_behaviors", func(a *gensurla.CP1Analysis, v string) { a.PreservedBehaviors[0] = v }, func(a *gensurla.CP1RevisionAnalysis, v string) { a.PreservedBehaviors[0] = v }},
+	}
+	blanks := []blankText{
+		{"empty", ""},
+		{"ASCII space", " "},
+		{"ASCII whitespace", " \t\n\r\f"},
+		{"vertical tab", "\v"},
+		{"no-break space", noBreakSpace},
+		{"em space", emSpace},
+		{"ideographic space", ideographicSpace},
+		{"next line", nextLine},
+		{"ASCII and Unicode spaces", " " + noBreakSpace + "\t" + ideographicSpace + "\n" + emSpace},
+	}
+
+	// refuse sends a proposal and a revision of the saved card current whose
+	// field holds only blank through entry and checks that both are refused
+	// for that field.
+	current := mustPropose(t, cp, alice, "chg-revise", "Refunds up to $50 are instant.", proposal(asSent))
+	refuse := func(t *testing.T, entry string, field textField, blank blankText) {
+		t.Helper()
+		proposed := proposal(asSent)
+		field.propose(proposed, placeholder)
+		propose := &gensurla.ProposeChangePayload{
+			ChangeID: "chg-blank", Prompt: "Refunds up to $50 are instant.", Analysis: proposed,
+		}
+		args := withText(t, proposeArgs(t, propose), blank.value)
+		field.propose(proposed, blank.value)
+		ok, msg := send(t, entry, propose, args)
+		assert.False(t, ok, "propose_change accepted a blank %s", field.name)
+		assert.Contains(t, msg, field.name)
+
+		revised := revision(asSent)
+		field.revise(revised, placeholder)
+		revise := &gensurla.ReviseChangePayload{
+			ChangeID: "chg-revise", RequestRevision: current.RequestRevision,
+			Prompt: "Refunds up to $50 are instant.", Analysis: revised,
+		}
+		args = withText(t, reviseArgs(t, revise), blank.value)
+		field.revise(revised, blank.value)
+		ok, msg = send(t, entry, revise, args)
+		assert.False(t, ok, "revise_change accepted a blank %s", field.name)
+		assert.Contains(t, msg, field.name)
+	}
+
+	// Every field and kind of whitespace is checked at the Go method, the
+	// cheapest entry, which runs the generated validators. The MCP and HTTP
+	// decoders run the same validators, so one kind of whitespace per field
+	// shows their refusal.
+	transportBlank := map[string]string{
+		"summary":             "no-break space",
+		"options":             "ASCII and Unicode spaces",
+		"preserved_behaviors": "next line",
+	}
+	for _, field := range fields {
+		for _, blank := range blanks {
+			t.Run("refuses "+field.name+" "+blank.name+" via go", func(t *testing.T) {
+				refuse(t, "go", field, blank)
+			})
+			if transportBlank[field.name] != blank.name {
+				continue
+			}
+			for _, entry := range []string{"mcp", "http"} {
+				t.Run("refuses "+field.name+" "+blank.name+" via "+entry, func(t *testing.T) {
+					refuse(t, entry, field, blank)
+				})
+			}
+		}
+	}
+	_, saved, err := cp.cards.load("chg-blank")
+	require.NoError(t, err)
+	assert.False(t, saved, "no refused proposal saves a card")
+	unchanged, err := cp.GetChange(alice, &gensurla.GetChangePayload{ChangeID: "chg-revise"})
+	require.NoError(t, err)
+	assert.Equal(t, current.RequestRevision, unchanged.RequestRevision, "no refused revision changes the card")
+
+	// U+200B and U+FEFF are not whitespace (unicode.IsSpace reports false), so
+	// a value made of them is text.
+	accepted := []struct {
+		name       string
+		text       func(string) string
+		transports bool
+	}{
+		{"no-break spaces around text", func(s string) string { return noBreakSpace + s + noBreakSpace }, true},
+		{"ASCII and Unicode spaces around text", func(s string) string { return " \t" + noBreakSpace + s + ideographicSpace + "\n" }, false},
+		{"zero width space", func(string) string { return zeroWidthSpace }, false},
+		{"byte order mark", func(string) string { return byteOrderMark }, false},
+		{"byte order mark and spaces", func(string) string { return byteOrderMark + " " + noBreakSpace }, false},
+	}
+	for i, tc := range accepted {
+		entries := []string{"go"}
+		if tc.transports {
+			entries = append(entries, "mcp", "http")
+		}
+		for _, entry := range entries {
+			t.Run("saves "+tc.name+" as sent via "+entry, func(t *testing.T) {
+				changeID := fmt.Sprintf("chg-padded-%d-%s", i, entry)
+				propose := &gensurla.ProposeChangePayload{
+					ChangeID: changeID, Prompt: "Refunds up to $50 are instant.", Analysis: proposal(tc.text),
+				}
+				ok, msg := send(t, entry, propose, proposeArgs(t, propose))
+				require.True(t, ok, msg)
+				proposed, err := cp.GetChange(alice, &gensurla.GetChangePayload{ChangeID: changeID})
+				require.NoError(t, err)
+				assertCardTexts(t, proposed, tc.text)
+
+				revise := &gensurla.ReviseChangePayload{
+					ChangeID: changeID, RequestRevision: proposed.RequestRevision,
+					Prompt: "Refunds up to $50 are instant, tax included.", Analysis: revision(tc.text),
+				}
+				ok, msg = send(t, entry, revise, reviseArgs(t, revise))
+				require.True(t, ok, msg)
+				revised, err := cp.GetChange(alice, &gensurla.GetChangePayload{ChangeID: changeID})
+				require.NoError(t, err)
+				assert.Equal(t, "Refunds up to $50 are instant, tax included.", revised.Prompt, "the revision was saved")
+				assertCardTexts(t, revised, tc.text)
+			})
+		}
+	}
+}
+
+// assertCardTexts checks that card holds, byte for byte, the analysis texts
+// TestAnalysisTextsMustHoldMoreThanWhitespace sent through text.
+func assertCardTexts(t *testing.T, card *gensurla.ChangeCardResult, text func(string) string) {
+	t.Helper()
+	assert.Equal(t, text("Refunds up to $50 are instant."), card.Summary)
+	require.Len(t, card.Ambiguities, 1)
+	assert.Equal(t, text("Is $50.00 itself instant?"), card.Ambiguities[0].Question)
+	assert.Equal(t, []string{"instant", text("manager")}, card.Ambiguities[0].Options)
+	require.Len(t, card.Examples, 1)
+	assert.Equal(t, "check_01", card.Examples[0].ID)
+	assert.Equal(t, text("Refund at the limit"), card.Examples[0].Scenario)
+	assert.Equal(t, text("Order total $50.00"), card.Examples[0].InputSummary)
+	assert.Equal(t, text("Instant store credit"), card.Examples[0].ExpectedOutcome)
+	assert.Equal(t, []string{text("Cross-tenant order lookups return 404 Not Found.")}, card.PreservedBehaviors)
 }

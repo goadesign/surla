@@ -1710,7 +1710,7 @@ func validatejsonCP1AnalysisAmbiguityTransport(value *jsonCP1AnalysisAmbiguityTr
 		err = goa.MergeErrors(err, goa.MissingFieldError("options", "body"))
 	}
 	if value.Question != nil {
-		err = goa.MergeErrors(err, goa.ValidatePattern("body.question", *value.Question, "\\S"))
+		err = goa.MergeErrors(err, goa.ValidatePattern("body.question", *value.Question, "[^\\t\\n\\v\\f\\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]"))
 	}
 	if len(value.Options) < 2 {
 		err = goa.MergeErrors(err, goa.InvalidLengthError("body.options", value.Options, len(value.Options), 2, true))
@@ -1720,7 +1720,7 @@ func validatejsonCP1AnalysisAmbiguityTransport(value *jsonCP1AnalysisAmbiguityTr
 			err = goa.MergeErrors(err, goa.MissingFieldError("body.options", "[*]"))
 		}
 		if e != nil {
-			err = goa.MergeErrors(err, goa.ValidatePattern("body.options[*]", *e, "\\S"))
+			err = goa.MergeErrors(err, goa.ValidatePattern("body.options[*]", *e, "[^\\t\\n\\v\\f\\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]"))
 		}
 	}
 	return err
@@ -1758,13 +1758,13 @@ func validatejsonCP1AnalysisExampleTransport(value *jsonCP1AnalysisExampleTransp
 		err = goa.MergeErrors(err, goa.MissingFieldError("verification_kind", "body"))
 	}
 	if value.Scenario != nil {
-		err = goa.MergeErrors(err, goa.ValidatePattern("body.scenario", *value.Scenario, "\\S"))
+		err = goa.MergeErrors(err, goa.ValidatePattern("body.scenario", *value.Scenario, "[^\\t\\n\\v\\f\\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]"))
 	}
 	if value.InputSummary != nil {
-		err = goa.MergeErrors(err, goa.ValidatePattern("body.input_summary", *value.InputSummary, "\\S"))
+		err = goa.MergeErrors(err, goa.ValidatePattern("body.input_summary", *value.InputSummary, "[^\\t\\n\\v\\f\\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]"))
 	}
 	if value.ExpectedOutcome != nil {
-		err = goa.MergeErrors(err, goa.ValidatePattern("body.expected_outcome", *value.ExpectedOutcome, "\\S"))
+		err = goa.MergeErrors(err, goa.ValidatePattern("body.expected_outcome", *value.ExpectedOutcome, "[^\\t\\n\\v\\f\\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]"))
 	}
 	if value.VerificationKind != nil {
 		if !(*value.VerificationKind == "deterministic" || *value.VerificationKind == "model_judged") {
@@ -1818,7 +1818,7 @@ func validatejsonCP1AnalysisTransport(value *jsonCP1AnalysisTransport) (err erro
 		err = goa.MergeErrors(err, goa.MissingFieldError("preserved_behaviors", "body"))
 	}
 	if value.Summary != nil {
-		err = goa.MergeErrors(err, goa.ValidatePattern("body.summary", *value.Summary, "\\S"))
+		err = goa.MergeErrors(err, goa.ValidatePattern("body.summary", *value.Summary, "[^\\t\\n\\v\\f\\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]"))
 	}
 	for _, e := range value.Ambiguities {
 		if e == nil {
@@ -1848,7 +1848,7 @@ func validatejsonCP1AnalysisTransport(value *jsonCP1AnalysisTransport) (err erro
 			err = goa.MergeErrors(err, goa.MissingFieldError("body.preserved_behaviors", "[*]"))
 		}
 		if e != nil {
-			err = goa.MergeErrors(err, goa.ValidatePattern("body.preserved_behaviors[*]", *e, "\\S"))
+			err = goa.MergeErrors(err, goa.ValidatePattern("body.preserved_behaviors[*]", *e, "[^\\t\\n\\v\\f\\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]"))
 		}
 	}
 	return err
@@ -1895,13 +1895,13 @@ func validatejsonCP1RevisionAnalysisExampleTransport(value *jsonCP1RevisionAnaly
 		}
 	}
 	if value.Scenario != nil {
-		err = goa.MergeErrors(err, goa.ValidatePattern("body.scenario", *value.Scenario, "\\S"))
+		err = goa.MergeErrors(err, goa.ValidatePattern("body.scenario", *value.Scenario, "[^\\t\\n\\v\\f\\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]"))
 	}
 	if value.InputSummary != nil {
-		err = goa.MergeErrors(err, goa.ValidatePattern("body.input_summary", *value.InputSummary, "\\S"))
+		err = goa.MergeErrors(err, goa.ValidatePattern("body.input_summary", *value.InputSummary, "[^\\t\\n\\v\\f\\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]"))
 	}
 	if value.ExpectedOutcome != nil {
-		err = goa.MergeErrors(err, goa.ValidatePattern("body.expected_outcome", *value.ExpectedOutcome, "\\S"))
+		err = goa.MergeErrors(err, goa.ValidatePattern("body.expected_outcome", *value.ExpectedOutcome, "[^\\t\\n\\v\\f\\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]"))
 	}
 	if value.VerificationKind != nil {
 		if !(*value.VerificationKind == "deterministic" || *value.VerificationKind == "model_judged") {
@@ -1963,7 +1963,7 @@ func validatejsonCP1RevisionAnalysisTransport(value *jsonCP1RevisionAnalysisTran
 		err = goa.MergeErrors(err, goa.MissingFieldError("preserved_behaviors", "body"))
 	}
 	if value.Summary != nil {
-		err = goa.MergeErrors(err, goa.ValidatePattern("body.summary", *value.Summary, "\\S"))
+		err = goa.MergeErrors(err, goa.ValidatePattern("body.summary", *value.Summary, "[^\\t\\n\\v\\f\\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]"))
 	}
 	for _, e := range value.Ambiguities {
 		if e == nil {
@@ -2003,7 +2003,7 @@ func validatejsonCP1RevisionAnalysisTransport(value *jsonCP1RevisionAnalysisTran
 			err = goa.MergeErrors(err, goa.MissingFieldError("body.preserved_behaviors", "[*]"))
 		}
 		if e != nil {
-			err = goa.MergeErrors(err, goa.ValidatePattern("body.preserved_behaviors[*]", *e, "\\S"))
+			err = goa.MergeErrors(err, goa.ValidatePattern("body.preserved_behaviors[*]", *e, "[^\\t\\n\\v\\f\\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]"))
 		}
 	}
 	return err
@@ -3880,7 +3880,7 @@ func validateCP1AnalysisOriginal(value *CP1Analysis) (err error) {
 	if value.PreservedBehaviors == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("preserved_behaviors", "value"))
 	}
-	err = goa.MergeErrors(err, goa.ValidatePattern("value.summary", value.Summary, "\\S"))
+	err = goa.MergeErrors(err, goa.ValidatePattern("value.summary", value.Summary, "[^\\t\\n\\v\\f\\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]"))
 	for _, e := range value.Ambiguities {
 		if e == nil {
 			err = goa.MergeErrors(err, goa.MissingFieldError("value.ambiguities", "[*]"))
@@ -3905,7 +3905,7 @@ func validateCP1AnalysisOriginal(value *CP1Analysis) (err error) {
 		}
 	}
 	for _, e := range value.PreservedBehaviors {
-		err = goa.MergeErrors(err, goa.ValidatePattern("value.preserved_behaviors[*]", e, "\\S"))
+		err = goa.MergeErrors(err, goa.ValidatePattern("value.preserved_behaviors[*]", e, "[^\\t\\n\\v\\f\\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]"))
 	}
 	return err
 }
@@ -3915,21 +3915,21 @@ func validateCP1AnalysisAmbiguityOriginal(value *CP1AnalysisAmbiguity) (err erro
 	if value.Options == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("options", "value"))
 	}
-	err = goa.MergeErrors(err, goa.ValidatePattern("value.question", value.Question, "\\S"))
+	err = goa.MergeErrors(err, goa.ValidatePattern("value.question", value.Question, "[^\\t\\n\\v\\f\\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]"))
 	if len(value.Options) < 2 {
 		err = goa.MergeErrors(err, goa.InvalidLengthError("value.options", value.Options, len(value.Options), 2, true))
 	}
 	for _, e := range value.Options {
-		err = goa.MergeErrors(err, goa.ValidatePattern("value.options[*]", e, "\\S"))
+		err = goa.MergeErrors(err, goa.ValidatePattern("value.options[*]", e, "[^\\t\\n\\v\\f\\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]"))
 	}
 	return err
 }
 
 // validateCP1AnalysisExampleOriginal checks the original typed value before JSON conversion.
 func validateCP1AnalysisExampleOriginal(value *CP1AnalysisExample) (err error) {
-	err = goa.MergeErrors(err, goa.ValidatePattern("value.scenario", value.Scenario, "\\S"))
-	err = goa.MergeErrors(err, goa.ValidatePattern("value.input_summary", value.InputSummary, "\\S"))
-	err = goa.MergeErrors(err, goa.ValidatePattern("value.expected_outcome", value.ExpectedOutcome, "\\S"))
+	err = goa.MergeErrors(err, goa.ValidatePattern("value.scenario", value.Scenario, "[^\\t\\n\\v\\f\\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]"))
+	err = goa.MergeErrors(err, goa.ValidatePattern("value.input_summary", value.InputSummary, "[^\\t\\n\\v\\f\\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]"))
+	err = goa.MergeErrors(err, goa.ValidatePattern("value.expected_outcome", value.ExpectedOutcome, "[^\\t\\n\\v\\f\\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]"))
 	if !(value.VerificationKind == "deterministic" || value.VerificationKind == "model_judged") {
 		err = goa.MergeErrors(err, goa.InvalidEnumValueError("value.verification_kind", value.VerificationKind, []any{"deterministic", "model_judged"}))
 	}
@@ -3950,7 +3950,7 @@ func validateCP1RevisionAnalysisOriginal(value *CP1RevisionAnalysis) (err error)
 	if value.PreservedBehaviors == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("preserved_behaviors", "value"))
 	}
-	err = goa.MergeErrors(err, goa.ValidatePattern("value.summary", value.Summary, "\\S"))
+	err = goa.MergeErrors(err, goa.ValidatePattern("value.summary", value.Summary, "[^\\t\\n\\v\\f\\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]"))
 	for _, e := range value.Ambiguities {
 		if e == nil {
 			err = goa.MergeErrors(err, goa.MissingFieldError("value.ambiguities", "[*]"))
@@ -3980,7 +3980,7 @@ func validateCP1RevisionAnalysisOriginal(value *CP1RevisionAnalysis) (err error)
 		}
 	}
 	for _, e := range value.PreservedBehaviors {
-		err = goa.MergeErrors(err, goa.ValidatePattern("value.preserved_behaviors[*]", e, "\\S"))
+		err = goa.MergeErrors(err, goa.ValidatePattern("value.preserved_behaviors[*]", e, "[^\\t\\n\\v\\f\\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]"))
 	}
 	return err
 }
@@ -3992,9 +3992,9 @@ func validateCP1RevisionAnalysisExampleOriginal(value *CP1RevisionAnalysisExampl
 			err = goa.MergeErrors(err, goa.InvalidLengthError("value.prior_id", *value.PriorID, utf8.RuneCountInString(*value.PriorID), 1, true))
 		}
 	}
-	err = goa.MergeErrors(err, goa.ValidatePattern("value.scenario", value.Scenario, "\\S"))
-	err = goa.MergeErrors(err, goa.ValidatePattern("value.input_summary", value.InputSummary, "\\S"))
-	err = goa.MergeErrors(err, goa.ValidatePattern("value.expected_outcome", value.ExpectedOutcome, "\\S"))
+	err = goa.MergeErrors(err, goa.ValidatePattern("value.scenario", value.Scenario, "[^\\t\\n\\v\\f\\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]"))
+	err = goa.MergeErrors(err, goa.ValidatePattern("value.input_summary", value.InputSummary, "[^\\t\\n\\v\\f\\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]"))
+	err = goa.MergeErrors(err, goa.ValidatePattern("value.expected_outcome", value.ExpectedOutcome, "[^\\t\\n\\v\\f\\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]"))
 	if !(value.VerificationKind == "deterministic" || value.VerificationKind == "model_judged") {
 		err = goa.MergeErrors(err, goa.InvalidEnumValueError("value.verification_kind", value.VerificationKind, []any{"deterministic", "model_judged"}))
 	}

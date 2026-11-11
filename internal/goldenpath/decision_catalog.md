@@ -24,8 +24,8 @@ WorkflowTimeline(title: string, steps: WorkflowStep[]) — Ordered workflow sequ
 WorkflowStep(step: string, actor: string, detail: string, gate?: string) — A single workflow step showing the step name, actor, detail, and optional policy gate.
 ImpactCallout(variant: "info" | "warning", title: string, summary: string) — Callout banner highlighting a preserved contract invariant or architectural trade-off.
 Always start with root = DecisionWorkspace(title, children).
-ambiguityIndex is a 1-based integer index (1..N) into the returned ambiguities array.
-exampleIndex is an optional 1-based integer index (1..M) into the returned examples array.
+ambiguityIndex is a 1-based integer index (1..N) into the ambiguities array of the analysis you send.
+exampleIndex is an optional 1-based integer index (1..M) into the examples array of the analysis you send.
 In PolicySimulatorRow, outcomes must be a string array with the exact same length and order as the referenced ambiguity's options array.
 Never emit Query(), Mutation(), $variables, or @Action steps.
 
@@ -59,7 +59,7 @@ Before finishing, walk your output and verify:
 1. root = DecisionWorkspace(...) is the FIRST line (for optimal streaming).
 2. Every referenced name is defined. Every defined name (other than root) is reachable from root.
 
-- Refer to ambiguities ONLY by 1-based `ambiguityIndex` (1..N matching the `ambiguities` array order in your JSON output). Never invent `<change_id>-ambiguity-NN` IDs.
-- Refer to confirmation examples ONLY by 1-based `exampleIndex` (1..M matching the `examples` array order in your JSON output).
+- Refer to ambiguities ONLY by 1-based `ambiguityIndex` (1..N matching the `ambiguities` array order in the analysis you send). Never invent `<change_id>-ambiguity-NN` IDs.
+- Refer to confirmation examples ONLY by 1-based `exampleIndex` (1..M matching the `examples` array order in the analysis you send).
 - In `PolicySimulatorRow`, `outcomes` MUST be a string array with one non-empty outcome string per option in the exact order of `ambiguities[ambiguityIndex - 1].options`.
 - Never emit `Query(...)`, `Mutation(...)`, `$variables`, or `@Action` steps.

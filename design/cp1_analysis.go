@@ -8,7 +8,14 @@ import . "goa.design/goa/v3/dsl"
 // nonBlank is the pattern every required analysis text matches: it contains at
 // least one character that is not whitespace. Surla saves the text exactly as
 // sent, surrounding whitespace included.
-const nonBlank = `\S`
+//
+// Whitespace is exactly what Go's unicode.IsSpace reports, the characters
+// strings.TrimSpace removes. The class writes them out instead of using \s,
+// whose meaning differs between Go's regexp, which the generated validators
+// use, and ECMA-262, which JSON Schema consumers of the MCP tool schemas and
+// the OpenAPI document use; written out, both accept and reject the same
+// strings. Zero-width characters such as U+200B are not whitespace.
+const nonBlank = "[^\\t\\n\\v\\f\\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]"
 
 // CP1AnalysisAmbiguity is one open question the requester must answer.
 var CP1AnalysisAmbiguity = Type("CP1AnalysisAmbiguity", func() {

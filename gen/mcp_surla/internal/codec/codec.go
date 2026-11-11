@@ -2828,7 +2828,7 @@ func ValidateProposeChangePayloadCP1AnalysisAmbiguityTransport(value *ProposeCha
 		err = goa.MergeErrors(err, goa.MissingFieldError("options", "body"))
 	}
 	if value.Question != nil {
-		err = goa.MergeErrors(err, goa.ValidatePattern("body.question", *value.Question, "\\S"))
+		err = goa.MergeErrors(err, goa.ValidatePattern("body.question", *value.Question, "[^\\t\\n\\v\\f\\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]"))
 	}
 	if len(value.Options) < 2 {
 		err = goa.MergeErrors(err, goa.InvalidLengthError("body.options", value.Options, len(value.Options), 2, true))
@@ -2838,7 +2838,7 @@ func ValidateProposeChangePayloadCP1AnalysisAmbiguityTransport(value *ProposeCha
 			err = goa.MergeErrors(err, goa.MissingFieldError("body.options", "[*]"))
 		}
 		if e != nil {
-			err = goa.MergeErrors(err, goa.ValidatePattern("body.options[*]", *e, "\\S"))
+			err = goa.MergeErrors(err, goa.ValidatePattern("body.options[*]", *e, "[^\\t\\n\\v\\f\\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]"))
 		}
 	}
 	return err
@@ -2876,13 +2876,13 @@ func ValidateProposeChangePayloadCP1AnalysisExampleTransport(value *ProposeChang
 		err = goa.MergeErrors(err, goa.MissingFieldError("verification_kind", "body"))
 	}
 	if value.Scenario != nil {
-		err = goa.MergeErrors(err, goa.ValidatePattern("body.scenario", *value.Scenario, "\\S"))
+		err = goa.MergeErrors(err, goa.ValidatePattern("body.scenario", *value.Scenario, "[^\\t\\n\\v\\f\\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]"))
 	}
 	if value.InputSummary != nil {
-		err = goa.MergeErrors(err, goa.ValidatePattern("body.input_summary", *value.InputSummary, "\\S"))
+		err = goa.MergeErrors(err, goa.ValidatePattern("body.input_summary", *value.InputSummary, "[^\\t\\n\\v\\f\\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]"))
 	}
 	if value.ExpectedOutcome != nil {
-		err = goa.MergeErrors(err, goa.ValidatePattern("body.expected_outcome", *value.ExpectedOutcome, "\\S"))
+		err = goa.MergeErrors(err, goa.ValidatePattern("body.expected_outcome", *value.ExpectedOutcome, "[^\\t\\n\\v\\f\\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]"))
 	}
 	if value.VerificationKind != nil {
 		if !(*value.VerificationKind == "deterministic" || *value.VerificationKind == "model_judged") {
@@ -2936,7 +2936,7 @@ func ValidateProposeChangePayloadCP1AnalysisTransport(value *ProposeChangePayloa
 		err = goa.MergeErrors(err, goa.MissingFieldError("preserved_behaviors", "body"))
 	}
 	if value.Summary != nil {
-		err = goa.MergeErrors(err, goa.ValidatePattern("body.summary", *value.Summary, "\\S"))
+		err = goa.MergeErrors(err, goa.ValidatePattern("body.summary", *value.Summary, "[^\\t\\n\\v\\f\\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]"))
 	}
 	for _, e := range value.Ambiguities {
 		if e == nil {
@@ -2966,7 +2966,7 @@ func ValidateProposeChangePayloadCP1AnalysisTransport(value *ProposeChangePayloa
 			err = goa.MergeErrors(err, goa.MissingFieldError("body.preserved_behaviors", "[*]"))
 		}
 		if e != nil {
-			err = goa.MergeErrors(err, goa.ValidatePattern("body.preserved_behaviors[*]", *e, "\\S"))
+			err = goa.MergeErrors(err, goa.ValidatePattern("body.preserved_behaviors[*]", *e, "[^\\t\\n\\v\\f\\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]"))
 		}
 	}
 	return err
@@ -3368,7 +3368,7 @@ func ValidateReviseChangePayloadCP1AnalysisAmbiguityTransport(value *ReviseChang
 		err = goa.MergeErrors(err, goa.MissingFieldError("options", "body"))
 	}
 	if value.Question != nil {
-		err = goa.MergeErrors(err, goa.ValidatePattern("body.question", *value.Question, "\\S"))
+		err = goa.MergeErrors(err, goa.ValidatePattern("body.question", *value.Question, "[^\\t\\n\\v\\f\\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]"))
 	}
 	if len(value.Options) < 2 {
 		err = goa.MergeErrors(err, goa.InvalidLengthError("body.options", value.Options, len(value.Options), 2, true))
@@ -3378,7 +3378,7 @@ func ValidateReviseChangePayloadCP1AnalysisAmbiguityTransport(value *ReviseChang
 			err = goa.MergeErrors(err, goa.MissingFieldError("body.options", "[*]"))
 		}
 		if e != nil {
-			err = goa.MergeErrors(err, goa.ValidatePattern("body.options[*]", *e, "\\S"))
+			err = goa.MergeErrors(err, goa.ValidatePattern("body.options[*]", *e, "[^\\t\\n\\v\\f\\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]"))
 		}
 	}
 	return err
@@ -3425,13 +3425,13 @@ func ValidateReviseChangePayloadCP1RevisionAnalysisExampleTransport(value *Revis
 		}
 	}
 	if value.Scenario != nil {
-		err = goa.MergeErrors(err, goa.ValidatePattern("body.scenario", *value.Scenario, "\\S"))
+		err = goa.MergeErrors(err, goa.ValidatePattern("body.scenario", *value.Scenario, "[^\\t\\n\\v\\f\\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]"))
 	}
 	if value.InputSummary != nil {
-		err = goa.MergeErrors(err, goa.ValidatePattern("body.input_summary", *value.InputSummary, "\\S"))
+		err = goa.MergeErrors(err, goa.ValidatePattern("body.input_summary", *value.InputSummary, "[^\\t\\n\\v\\f\\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]"))
 	}
 	if value.ExpectedOutcome != nil {
-		err = goa.MergeErrors(err, goa.ValidatePattern("body.expected_outcome", *value.ExpectedOutcome, "\\S"))
+		err = goa.MergeErrors(err, goa.ValidatePattern("body.expected_outcome", *value.ExpectedOutcome, "[^\\t\\n\\v\\f\\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]"))
 	}
 	if value.VerificationKind != nil {
 		if !(*value.VerificationKind == "deterministic" || *value.VerificationKind == "model_judged") {
@@ -3493,7 +3493,7 @@ func ValidateReviseChangePayloadCP1RevisionAnalysisTransport(value *ReviseChange
 		err = goa.MergeErrors(err, goa.MissingFieldError("preserved_behaviors", "body"))
 	}
 	if value.Summary != nil {
-		err = goa.MergeErrors(err, goa.ValidatePattern("body.summary", *value.Summary, "\\S"))
+		err = goa.MergeErrors(err, goa.ValidatePattern("body.summary", *value.Summary, "[^\\t\\n\\v\\f\\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]"))
 	}
 	for _, e := range value.Ambiguities {
 		if e == nil {
@@ -3533,7 +3533,7 @@ func ValidateReviseChangePayloadCP1RevisionAnalysisTransport(value *ReviseChange
 			err = goa.MergeErrors(err, goa.MissingFieldError("body.preserved_behaviors", "[*]"))
 		}
 		if e != nil {
-			err = goa.MergeErrors(err, goa.ValidatePattern("body.preserved_behaviors[*]", *e, "\\S"))
+			err = goa.MergeErrors(err, goa.ValidatePattern("body.preserved_behaviors[*]", *e, "[^\\t\\n\\v\\f\\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]"))
 		}
 	}
 	return err

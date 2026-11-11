@@ -1141,35 +1141,35 @@ paths:
                             analysis:
                                 ambiguities:
                                     - options:
-                                        - "\U00013F97"
-                                        - "\U0001705C"
-                                        - "\U000B84A0"
-                                      question: "\U0001DE8F"
+                                        - "\U000556D5"
+                                        - "\U00103058"
+                                        - "\U0001E633"
+                                      question: "\U00064B88"
                                     - options:
-                                        - "\U00013F97"
-                                        - "\U0001705C"
-                                        - "\U000B84A0"
-                                      question: "\U0001DE8F"
+                                        - "\U000556D5"
+                                        - "\U00103058"
+                                        - "\U0001E633"
+                                      question: "\U00064B88"
                                     - options:
-                                        - "\U00013F97"
-                                        - "\U0001705C"
-                                        - "\U000B84A0"
-                                      question: "\U0001DE8F"
+                                        - "\U000556D5"
+                                        - "\U00103058"
+                                        - "\U0001E633"
+                                      question: "\U00064B88"
                                 examples:
-                                    - expected_outcome: "\U00020EB3"
-                                      input_summary: "\U00010082"
-                                      scenario: "\U000414FE"
+                                    - expected_outcome: "\U0001195A"
+                                      input_summary: "\U00092B7A"
+                                      scenario: "\U0001B54F"
                                       verification_kind: deterministic
-                                    - expected_outcome: "\U00020EB3"
-                                      input_summary: "\U00010082"
-                                      scenario: "\U000414FE"
+                                    - expected_outcome: "\U0001195A"
+                                      input_summary: "\U00092B7A"
+                                      scenario: "\U0001B54F"
                                       verification_kind: deterministic
                                 preserved_behaviors:
-                                    - "\U0005C1E3"
-                                    - "\U000312C9"
-                                    - "\U000ABF3D"
-                                    - "\U00059975"
-                                summary: "\U000913C4"
+                                    - "\U0005CE6E"
+                                    - "\U000A550E"
+                                    - "\U000D207B"
+                                    - "\U0002A06F"
+                                summary: "\U000FB38A"
                                 ui_composition: In optio et.
                             change_id: Ipsum soluta officiis facilis dolorem quae.
                             design_source: Quia placeat maiores voluptatem voluptatem.
@@ -1297,40 +1297,40 @@ paths:
                             analysis:
                                 ambiguities:
                                     - options:
-                                        - "\U00013F97"
-                                        - "\U0001705C"
-                                        - "\U000B84A0"
-                                      question: "\U0001DE8F"
+                                        - "\U000556D5"
+                                        - "\U00103058"
+                                        - "\U0001E633"
+                                      question: "\U00064B88"
                                     - options:
-                                        - "\U00013F97"
-                                        - "\U0001705C"
-                                        - "\U000B84A0"
-                                      question: "\U0001DE8F"
+                                        - "\U000556D5"
+                                        - "\U00103058"
+                                        - "\U0001E633"
+                                      question: "\U00064B88"
                                     - options:
-                                        - "\U00013F97"
-                                        - "\U0001705C"
-                                        - "\U000B84A0"
-                                      question: "\U0001DE8F"
+                                        - "\U000556D5"
+                                        - "\U00103058"
+                                        - "\U0001E633"
+                                      question: "\U00064B88"
                                     - options:
-                                        - "\U00013F97"
-                                        - "\U0001705C"
-                                        - "\U000B84A0"
-                                      question: "\U0001DE8F"
+                                        - "\U000556D5"
+                                        - "\U00103058"
+                                        - "\U0001E633"
+                                      question: "\U00064B88"
                                 examples:
-                                    - expected_outcome: "\U0007143D"
-                                      input_summary: "\U000BBB9F"
+                                    - expected_outcome: "\U00092D5E"
+                                      input_summary: ፤
                                       prior_id: te
-                                      scenario: "\U000622F7"
+                                      scenario: "\U0008A024"
                                       verification_kind: model_judged
                                 preserved_behaviors:
-                                    - "\U0007F741"
-                                    - "\U000B442B"
-                                    - 䩄
-                                    - "\U00025645"
+                                    - "\U000FA9CA"
+                                    - "\U000C31D4"
+                                    - "\U0002C4FA"
+                                    - "\U000E9EB6"
                                 removed_example_ids:
                                     - swo
                                     - u
-                                summary: "\U0004E964"
+                                summary: "\U000AA915"
                                 ui_composition: Sed tempora quos nobis odio ab.
                             change_id: Optio ratione suscipit et neque officia.
                             design_source: Qui itaque.
@@ -3083,52 +3083,52 @@ components:
                     description: 'Open questions only the requester can answer: product, domain, or operational choices that change observable behavior or service boundaries. Do not ask about details the request or the design already settle; state them in summary, or in examples when they change an observable outcome. Send an empty list when nothing is open.'
                     example:
                         - options:
-                            - "\U00013F97"
-                            - "\U0001705C"
-                            - "\U000B84A0"
-                          question: "\U0001DE8F"
+                            - "\U000556D5"
+                            - "\U00103058"
+                            - "\U0001E633"
+                          question: "\U00064B88"
                         - options:
-                            - "\U00013F97"
-                            - "\U0001705C"
-                            - "\U000B84A0"
-                          question: "\U0001DE8F"
+                            - "\U000556D5"
+                            - "\U00103058"
+                            - "\U0001E633"
+                          question: "\U00064B88"
                         - options:
-                            - "\U00013F97"
-                            - "\U0001705C"
-                            - "\U000B84A0"
-                          question: "\U0001DE8F"
+                            - "\U000556D5"
+                            - "\U00103058"
+                            - "\U0001E633"
+                          question: "\U00064B88"
                 examples:
                     type: array
                     items:
                         $ref: '#/components/schemas/CP1AnalysisExample'
                     description: Concrete acceptance examples drawn from the request and the design, never placeholder text; each becomes a check the change must pass.
                     example:
-                        - expected_outcome: "\U00020EB3"
-                          input_summary: "\U00010082"
-                          scenario: "\U000414FE"
+                        - expected_outcome: "\U0001195A"
+                          input_summary: "\U00092B7A"
+                          scenario: "\U0001B54F"
                           verification_kind: deterministic
-                        - expected_outcome: "\U00020EB3"
-                          input_summary: "\U00010082"
-                          scenario: "\U000414FE"
+                        - expected_outcome: "\U0001195A"
+                          input_summary: "\U00092B7A"
+                          scenario: "\U0001B54F"
                           verification_kind: deterministic
                     minItems: 1
                 preserved_behaviors:
                     type: array
                     items:
                         type: string
-                        example: "\U0005C1E3"
-                        pattern: \S
+                        example: "\U0005CE6E"
+                        pattern: "[^\\t\\n\\v\\f\\r \N   - \L\P  　]"
                     description: Existing behaviors and contract rules of the target that the change must keep, each stated concretely; empty when none apply.
                     example:
-                        - "\U0005C1E3"
-                        - "\U000312C9"
-                        - "\U000ABF3D"
-                        - "\U00059975"
+                        - "\U0005CE6E"
+                        - "\U000A550E"
+                        - "\U000D207B"
+                        - "\U0002A06F"
                 summary:
                     type: string
                     description: Plain-English description of the requested behavior, including the details the request or the design already settle.
-                    example: "\U000913C4"
-                    pattern: \S
+                    example: "\U000FB38A"
+                    pattern: "[^\\t\\n\\v\\f\\r \N   - \L\P  　]"
                 ui_composition:
                     type: string
                     description: Optional OpenUI Lang program that helps the requester decide the open questions, built only from the decision components the surla://golden-path resource lists. Refer to an ambiguity or example only by its 1-based position in this analysis (1 is the first); never invent identifiers. Surla saves it unchanged without checking it; the checkpoint viewer validates and renders it. Omit it when a plain card is clearer.
@@ -3137,35 +3137,35 @@ components:
             example:
                 ambiguities:
                     - options:
-                        - "\U00013F97"
-                        - "\U0001705C"
-                        - "\U000B84A0"
-                      question: "\U0001DE8F"
+                        - "\U000556D5"
+                        - "\U00103058"
+                        - "\U0001E633"
+                      question: "\U00064B88"
                     - options:
-                        - "\U00013F97"
-                        - "\U0001705C"
-                        - "\U000B84A0"
-                      question: "\U0001DE8F"
+                        - "\U000556D5"
+                        - "\U00103058"
+                        - "\U0001E633"
+                      question: "\U00064B88"
                     - options:
-                        - "\U00013F97"
-                        - "\U0001705C"
-                        - "\U000B84A0"
-                      question: "\U0001DE8F"
+                        - "\U000556D5"
+                        - "\U00103058"
+                        - "\U0001E633"
+                      question: "\U00064B88"
                 examples:
-                    - expected_outcome: "\U00020EB3"
-                      input_summary: "\U00010082"
-                      scenario: "\U000414FE"
+                    - expected_outcome: "\U0001195A"
+                      input_summary: "\U00092B7A"
+                      scenario: "\U0001B54F"
                       verification_kind: deterministic
-                    - expected_outcome: "\U00020EB3"
-                      input_summary: "\U00010082"
-                      scenario: "\U000414FE"
+                    - expected_outcome: "\U0001195A"
+                      input_summary: "\U00092B7A"
+                      scenario: "\U0001B54F"
                       verification_kind: deterministic
                 preserved_behaviors:
-                    - "\U0005C1E3"
-                    - "\U000312C9"
-                    - "\U000ABF3D"
-                    - "\U00059975"
-                summary: "\U000913C4"
+                    - "\U0005CE6E"
+                    - "\U000A550E"
+                    - "\U000D207B"
+                    - "\U0002A06F"
+                summary: "\U000FB38A"
                 ui_composition: In optio et.
             required:
                 - summary
@@ -3179,26 +3179,26 @@ components:
                     type: array
                     items:
                         type: string
-                        example: "\U00013F97"
-                        pattern: \S
+                        example: "\U000556D5"
+                        pattern: "[^\\t\\n\\v\\f\\r \N   - \L\P  　]"
                     description: At least two distinct, self-contained choices; each states the behavior it selects and what follows from it. The requester's answer must be exactly one of these strings.
                     example:
-                        - "\U00013F97"
-                        - "\U0001705C"
-                        - "\U000B84A0"
+                        - "\U000556D5"
+                        - "\U00103058"
+                        - "\U0001E633"
                     minItems: 2
                 question:
                     type: string
                     description: The decision in plain language, saying what the choice changes.
-                    example: "\U0001DE8F"
-                    pattern: \S
+                    example: "\U00064B88"
+                    pattern: "[^\\t\\n\\v\\f\\r \N   - \L\P  　]"
             description: One product, domain, or operational choice only the requester can make. Surla gives it the ID <change_id>-ambiguity-NN, numbered in list order.
             example:
                 options:
-                    - "\U00013F97"
-                    - "\U0001705C"
-                    - "\U000B84A0"
-                question: "\U0001DE8F"
+                    - "\U000556D5"
+                    - "\U00103058"
+                    - "\U0001E633"
+                question: "\U00064B88"
             required:
                 - question
                 - options
@@ -3208,18 +3208,18 @@ components:
                 expected_outcome:
                     type: string
                     description: The observable result or refusal that must hold.
-                    example: "\U00020EB3"
-                    pattern: \S
+                    example: "\U0001195A"
+                    pattern: "[^\\t\\n\\v\\f\\r \N   - \L\P  　]"
                 input_summary:
                     type: string
                     description: The actual request, inputs, and starting state in this scenario, with real values from the request and the design, never placeholders.
-                    example: "\U00010082"
-                    pattern: \S
+                    example: "\U00092B7A"
+                    pattern: "[^\\t\\n\\v\\f\\r \N   - \L\P  　]"
                 scenario:
                     type: string
                     description: Short name of the situation, in the requester's domain terms.
-                    example: "\U000414FE"
-                    pattern: \S
+                    example: "\U0001B54F"
+                    pattern: "[^\\t\\n\\v\\f\\r \N   - \L\P  　]"
                 verification_kind:
                     type: string
                     description: deterministic when code can check the outcome directly; model_judged when checking it needs judgment.
@@ -3229,9 +3229,9 @@ components:
                         - model_judged
             description: One concrete acceptance example that becomes a check the change must pass. Surla gives it the ID check_01, check_02, ... in list order.
             example:
-                expected_outcome: "\U00020EB3"
-                input_summary: "\U00010082"
-                scenario: "\U000414FE"
+                expected_outcome: "\U0001195A"
+                input_summary: "\U00092B7A"
+                scenario: "\U0001B54F"
                 verification_kind: deterministic
             required:
                 - scenario
@@ -3248,49 +3248,49 @@ components:
                     description: 'Open questions only the requester can answer: product, domain, or operational choices that change observable behavior or service boundaries. Do not ask about details the request, the design or a confirmed answer already settle; state them in summary, or in examples when they change an observable outcome. Send an empty list when nothing is open.'
                     example:
                         - options:
-                            - "\U00013F97"
-                            - "\U0001705C"
-                            - "\U000B84A0"
-                          question: "\U0001DE8F"
+                            - "\U000556D5"
+                            - "\U00103058"
+                            - "\U0001E633"
+                          question: "\U00064B88"
                         - options:
-                            - "\U00013F97"
-                            - "\U0001705C"
-                            - "\U000B84A0"
-                          question: "\U0001DE8F"
+                            - "\U000556D5"
+                            - "\U00103058"
+                            - "\U0001E633"
+                          question: "\U00064B88"
                         - options:
-                            - "\U00013F97"
-                            - "\U0001705C"
-                            - "\U000B84A0"
-                          question: "\U0001DE8F"
+                            - "\U000556D5"
+                            - "\U00103058"
+                            - "\U0001E633"
+                          question: "\U00064B88"
                         - options:
-                            - "\U00013F97"
-                            - "\U0001705C"
-                            - "\U000B84A0"
-                          question: "\U0001DE8F"
+                            - "\U000556D5"
+                            - "\U00103058"
+                            - "\U0001E633"
+                          question: "\U00064B88"
                 examples:
                     type: array
                     items:
                         $ref: '#/components/schemas/CP1RevisionAnalysisExample'
                     description: Concrete acceptance examples drawn from the revised request and the design. Give prior_id for each current example you keep or edit; omit it for new ones.
                     example:
-                        - expected_outcome: "\U0007143D"
-                          input_summary: "\U000BBB9F"
+                        - expected_outcome: "\U00092D5E"
+                          input_summary: ፤
                           prior_id: te
-                          scenario: "\U000622F7"
+                          scenario: "\U0008A024"
                           verification_kind: model_judged
                     minItems: 1
                 preserved_behaviors:
                     type: array
                     items:
                         type: string
-                        example: "\U0007F741"
-                        pattern: \S
+                        example: "\U000FA9CA"
+                        pattern: "[^\\t\\n\\v\\f\\r \N   - \L\P  　]"
                     description: Existing behaviors and contract rules of the target that the change must keep, each stated concretely; empty when none apply.
                     example:
-                        - "\U0007F741"
-                        - "\U000B442B"
-                        - 䩄
-                        - "\U00025645"
+                        - "\U000FA9CA"
+                        - "\U000C31D4"
+                        - "\U0002C4FA"
+                        - "\U000E9EB6"
                 removed_example_ids:
                     type: array
                     items:
@@ -3304,8 +3304,8 @@ components:
                 summary:
                     type: string
                     description: Plain-English description of the revised behavior, including the details the request, the design or confirmed answers already settle.
-                    example: "\U0004E964"
-                    pattern: \S
+                    example: "\U000AA915"
+                    pattern: "[^\\t\\n\\v\\f\\r \N   - \L\P  　]"
                 ui_composition:
                     type: string
                     description: Optional OpenUI Lang program that helps the requester decide the open questions, built only from the decision components the surla://golden-path resource lists. Refer to an ambiguity or example only by its 1-based position in this analysis (1 is the first); never invent identifiers. Surla saves it unchanged without checking it; the checkpoint viewer validates and renders it. Omit it when a plain card is clearer.
@@ -3314,40 +3314,40 @@ components:
             example:
                 ambiguities:
                     - options:
-                        - "\U00013F97"
-                        - "\U0001705C"
-                        - "\U000B84A0"
-                      question: "\U0001DE8F"
+                        - "\U000556D5"
+                        - "\U00103058"
+                        - "\U0001E633"
+                      question: "\U00064B88"
                     - options:
-                        - "\U00013F97"
-                        - "\U0001705C"
-                        - "\U000B84A0"
-                      question: "\U0001DE8F"
+                        - "\U000556D5"
+                        - "\U00103058"
+                        - "\U0001E633"
+                      question: "\U00064B88"
                     - options:
-                        - "\U00013F97"
-                        - "\U0001705C"
-                        - "\U000B84A0"
-                      question: "\U0001DE8F"
+                        - "\U000556D5"
+                        - "\U00103058"
+                        - "\U0001E633"
+                      question: "\U00064B88"
                     - options:
-                        - "\U00013F97"
-                        - "\U0001705C"
-                        - "\U000B84A0"
-                      question: "\U0001DE8F"
+                        - "\U000556D5"
+                        - "\U00103058"
+                        - "\U0001E633"
+                      question: "\U00064B88"
                 examples:
-                    - expected_outcome: "\U0007143D"
-                      input_summary: "\U000BBB9F"
+                    - expected_outcome: "\U00092D5E"
+                      input_summary: ፤
                       prior_id: te
-                      scenario: "\U000622F7"
+                      scenario: "\U0008A024"
                       verification_kind: model_judged
                 preserved_behaviors:
-                    - "\U0007F741"
-                    - "\U000B442B"
-                    - 䩄
-                    - "\U00025645"
+                    - "\U000FA9CA"
+                    - "\U000C31D4"
+                    - "\U0002C4FA"
+                    - "\U000E9EB6"
                 removed_example_ids:
                     - swo
                     - u
-                summary: "\U0004E964"
+                summary: "\U000AA915"
                 ui_composition: Sed tempora quos nobis odio ab.
             required:
                 - summary
@@ -3361,13 +3361,13 @@ components:
                 expected_outcome:
                     type: string
                     description: The observable result or refusal that must hold.
-                    example: "\U0007143D"
-                    pattern: \S
+                    example: "\U00092D5E"
+                    pattern: "[^\\t\\n\\v\\f\\r \N   - \L\P  　]"
                 input_summary:
                     type: string
                     description: The actual request, inputs, and starting state in this scenario, with real values from the request and the design, never placeholders.
-                    example: "\U000BBB9F"
-                    pattern: \S
+                    example: ፤
+                    pattern: "[^\\t\\n\\v\\f\\r \N   - \L\P  　]"
                 prior_id:
                     type: string
                     description: ID of the current card's example this one keeps or edits, exactly as the card shows it; the example keeps that ID. Omit it for a new example, which gets the lowest check_NN ID the current and revised cards do not use.
@@ -3376,8 +3376,8 @@ components:
                 scenario:
                     type: string
                     description: Short name of the situation, in the requester's domain terms.
-                    example: "\U000622F7"
-                    pattern: \S
+                    example: "\U0008A024"
+                    pattern: "[^\\t\\n\\v\\f\\r \N   - \L\P  　]"
                 verification_kind:
                     type: string
                     description: deterministic when code can check the outcome directly; model_judged when checking it needs judgment.
@@ -3387,10 +3387,10 @@ components:
                         - model_judged
             description: 'One concrete acceptance example of the revised card: a current example kept or edited in place (prior_id set), or a new one.'
             example:
-                expected_outcome: "\U0007143D"
-                input_summary: "\U000BBB9F"
+                expected_outcome: "\U00092D5E"
+                input_summary: ፤
                 prior_id: te
-                scenario: "\U000622F7"
+                scenario: "\U0008A024"
                 verification_kind: model_judged
             required:
                 - scenario
@@ -4267,35 +4267,35 @@ components:
                 analysis:
                     ambiguities:
                         - options:
-                            - "\U00013F97"
-                            - "\U0001705C"
-                            - "\U000B84A0"
-                          question: "\U0001DE8F"
+                            - "\U000556D5"
+                            - "\U00103058"
+                            - "\U0001E633"
+                          question: "\U00064B88"
                         - options:
-                            - "\U00013F97"
-                            - "\U0001705C"
-                            - "\U000B84A0"
-                          question: "\U0001DE8F"
+                            - "\U000556D5"
+                            - "\U00103058"
+                            - "\U0001E633"
+                          question: "\U00064B88"
                         - options:
-                            - "\U00013F97"
-                            - "\U0001705C"
-                            - "\U000B84A0"
-                          question: "\U0001DE8F"
+                            - "\U000556D5"
+                            - "\U00103058"
+                            - "\U0001E633"
+                          question: "\U00064B88"
                     examples:
-                        - expected_outcome: "\U00020EB3"
-                          input_summary: "\U00010082"
-                          scenario: "\U000414FE"
+                        - expected_outcome: "\U0001195A"
+                          input_summary: "\U00092B7A"
+                          scenario: "\U0001B54F"
                           verification_kind: deterministic
-                        - expected_outcome: "\U00020EB3"
-                          input_summary: "\U00010082"
-                          scenario: "\U000414FE"
+                        - expected_outcome: "\U0001195A"
+                          input_summary: "\U00092B7A"
+                          scenario: "\U0001B54F"
                           verification_kind: deterministic
                     preserved_behaviors:
-                        - "\U0005C1E3"
-                        - "\U000312C9"
-                        - "\U000ABF3D"
-                        - "\U00059975"
-                    summary: "\U000913C4"
+                        - "\U0005CE6E"
+                        - "\U000A550E"
+                        - "\U000D207B"
+                        - "\U0002A06F"
+                    summary: "\U000FB38A"
                     ui_composition: In optio et.
                 change_id: Ipsum soluta officiis facilis dolorem quae.
                 design_source: Quia placeat maiores voluptatem voluptatem.
@@ -4347,40 +4347,40 @@ components:
                 analysis:
                     ambiguities:
                         - options:
-                            - "\U00013F97"
-                            - "\U0001705C"
-                            - "\U000B84A0"
-                          question: "\U0001DE8F"
+                            - "\U000556D5"
+                            - "\U00103058"
+                            - "\U0001E633"
+                          question: "\U00064B88"
                         - options:
-                            - "\U00013F97"
-                            - "\U0001705C"
-                            - "\U000B84A0"
-                          question: "\U0001DE8F"
+                            - "\U000556D5"
+                            - "\U00103058"
+                            - "\U0001E633"
+                          question: "\U00064B88"
                         - options:
-                            - "\U00013F97"
-                            - "\U0001705C"
-                            - "\U000B84A0"
-                          question: "\U0001DE8F"
+                            - "\U000556D5"
+                            - "\U00103058"
+                            - "\U0001E633"
+                          question: "\U00064B88"
                         - options:
-                            - "\U00013F97"
-                            - "\U0001705C"
-                            - "\U000B84A0"
-                          question: "\U0001DE8F"
+                            - "\U000556D5"
+                            - "\U00103058"
+                            - "\U0001E633"
+                          question: "\U00064B88"
                     examples:
-                        - expected_outcome: "\U0007143D"
-                          input_summary: "\U000BBB9F"
+                        - expected_outcome: "\U00092D5E"
+                          input_summary: ፤
                           prior_id: te
-                          scenario: "\U000622F7"
+                          scenario: "\U0008A024"
                           verification_kind: model_judged
                     preserved_behaviors:
-                        - "\U0007F741"
-                        - "\U000B442B"
-                        - 䩄
-                        - "\U00025645"
+                        - "\U000FA9CA"
+                        - "\U000C31D4"
+                        - "\U0002C4FA"
+                        - "\U000E9EB6"
                     removed_example_ids:
                         - swo
                         - u
-                    summary: "\U0004E964"
+                    summary: "\U000AA915"
                     ui_composition: Sed tempora quos nobis odio ab.
                 change_id: Optio ratione suscipit et neque officia.
                 design_source: Qui itaque.
