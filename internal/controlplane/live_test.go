@@ -62,8 +62,15 @@ type fakeTarget struct {
 
 // TestMain lets the test binary act as the live executor (`verify-run live`)
 // and as the evaluator suite's --live mode, so StartLiveTarget runs real
-// processes.
+// processes, and as the check helper (`check-run`) and a server that tests
+// kill mid-operation (`check-host <cards> <workspace> <tool>`).
 func TestMain(m *testing.M) {
+	if len(os.Args) == 2 && os.Args[1] == "check-run" {
+		os.Exit(runTestCheckHelper())
+	}
+	if len(os.Args) == 5 && os.Args[1] == "check-host" {
+		os.Exit(checkHost(os.Args[2], os.Args[3], os.Args[4]))
+	}
 	if len(os.Args) == 4 && os.Args[1] == "verify-run" && os.Args[2] == "live" {
 		if err := verifyrun.Live(os.Args[3], fakeLivePrepare, os.Stdout, os.Stderr); err != nil {
 			fmt.Fprintln(os.Stderr, err)

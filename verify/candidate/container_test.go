@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -52,42 +53,121 @@ func newScriptedEngine(reply func(args []string) (string, string, error)) (*Engi
 	return r.Reopen("/usr/local/bin/docker", "unix:///var/run/docker.sock", "/ops/check-work/op1/docker-config"), s
 }
 
-func TestEngineRunRemovesContainerOnEveryPath(t *testing.T) {
+// TestEngineCreateReportsOnlyAnAnsweredCreate checks that Create returns nil
+// only when docker create exited 0, reports any other exit with the
+// engine's text, and neither starts nor removes the container.
+func TestEngineCreateReportsOnlyAnAnsweredCreate(t *testing.T) {
 	cases := []struct {
-		name     string
-		failVerb string
-		cancel   bool
-		wantCode int
-		wantErr  string
+		name    string
+		stderr  string
+		err     error
+		wantErr string
 	}{
-		{name: "passes", wantCode: 0},
-		{name: "test failure exit code comes from wait", wantCode: 1},
-		{name: "create fails", failVerb: "create", wantCode: -1, wantErr: "create container"},
-		{name: "wait fails", failVerb: "wait", wantCode: -1, wantErr: "wait for container"},
-		{name: "canceled during start", failVerb: "start", cancel: true, wantCode: -1, wantErr: "context canceled"},
+		{name: "created"},
+		{name: "engine refuses", stderr: "Error response from daemon: Conflict", err: errors.New("exit status 1"), wantErr: "create container surla-check-op1-0"},
+		{name: "connection lost", stderr: "error during connect: EOF", err: errors.New("exit status 1"), wantErr: "error during connect: EOF"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			e, s := newScriptedEngine(func([]string) (string, string, error) {
+				return "", tc.stderr, tc.err
+			})
+			err := e.Create(context.Background(), ContainerSpec{Name: "surla-check-op1-0", Operation: "op1", Network: "none", User: "501:20", WorkDir: "/w"})
+			if tc.wantErr == "" {
+				require.NoError(t, err)
+			} else {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tc.wantErr)
+			}
+			require.Len(t, s.calls, 1, "Create neither starts nor removes")
+			assert.Equal(t, "create", verb(s.calls[0]))
+		})
+	}
+}
+
+// TestEngineCreateIsNotAbandonedWhenItsContextEnds cancels the caller's
+// context while create is in flight and checks that the docker command's own
+// context stays live, so the engine's answer is still observed.
+func TestEngineCreateIsNotAbandonedWhenItsContextEnds(t *testing.T) {
+	// The operation is canceled while create is in flight: the docker
+	// command keeps its context, so the engine's answer is still observed.
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	var during error
+	r := &ContainerRunner{command: func(cmdCtx context.Context, _ string, _, _ []string, _, _ io.Writer) error {
+		cancel()
+		during = cmdCtx.Err()
+		return nil
+	}}
+	e := r.Reopen("/usr/local/bin/docker", "unix:///var/run/docker.sock", "/ops/check-work/op1/docker-config")
+	require.NoError(t, e.Create(ctx, ContainerSpec{Name: "surla-check-op1-0", Operation: "op1", Network: "none", User: "501:20", WorkDir: "/w"}))
+	assert.NoError(t, during, "the create kept its context after the operation's ended")
+}
+
+// TestAnswerContextEndsGraceAfterItsParent checks the bound on an answered
+// request: it outlives its parent's cancellation within the grace, ends when
+// stopped, and ends on its own once the grace has passed.
+func TestAnswerContextEndsGraceAfterItsParent(t *testing.T) {
+	t.Run("outlives its parent within the grace", func(t *testing.T) {
+		parent, cancel := context.WithCancel(context.Background())
+		answer, stop := answerContext(parent, time.Hour)
+		cancel()
+		assert.NoError(t, answer.Err())
+		stop()
+		assert.ErrorIs(t, answer.Err(), context.Canceled, "stop ends it")
+	})
+	t.Run("ends once the grace has passed", func(t *testing.T) {
+		parent, cancel := context.WithCancel(context.Background())
+		answer, stop := answerContext(parent, time.Millisecond)
+		defer stop()
+		cancel()
+		select {
+		case <-answer.Done():
+		case <-time.After(10 * time.Second):
+			t.Fatal("the answer context outlived its grace")
+		}
+	})
+}
+
+// TestEngineStartReportsTheContainersExit checks that Start returns the exit
+// code docker wait reports, separates a broken output stream from a test
+// failure, stops on cancellation, and never creates or removes.
+func TestEngineStartReportsTheContainersExit(t *testing.T) {
+	cases := []struct {
+		name      string
+		startErr  error
+		waitCode  int
+		waitErr   error
+		cancel    bool
+		wantCode  int
+		wantErr   string
+		wantCalls []string
+	}{
+		{name: "passes", wantCode: 0, wantCalls: []string{"start", "wait"}},
+		{name: "test failure exit code comes from wait", startErr: exitError(t, 1), waitCode: 1, wantCode: 1, wantCalls: []string{"start", "wait"}},
+		{name: "wait fails", waitErr: errors.New("exit status 1"), wantCode: -1, wantErr: "wait for container", wantCalls: []string{"start", "wait"}},
+		{name: "canceled during start", startErr: errors.New("signal: killed"), cancel: true, wantCode: -1, wantErr: "context canceled", wantCalls: []string{"start"}},
+		{name: "stream breaks and the container exited 0", startErr: errors.New("unexpected EOF"), wantCode: -1, wantErr: "stream the output of container surla-check-op1-0, which exited 0", wantCalls: []string{"start", "wait"}},
+		{name: "start fails differently from the container's exit", startErr: exitError(t, 1), waitCode: 2, wantCode: -1, wantErr: "which exited 2", wantCalls: []string{"start", "wait"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 			e, s := newScriptedEngine(func(args []string) (string, string, error) {
-				v := verb(args)
-				if v == tc.failVerb {
+				switch verb(args) {
+				case "start":
 					if tc.cancel {
 						cancel()
 					}
-					return "", "boom", errors.New("exit status 1")
-				}
-				switch v {
-				case "start":
-					return "=== RUN TestX\n", "", nil
+					return "=== RUN TestX\n", "", tc.startErr
 				case "wait":
-					return fmt.Sprintf("%d\n", tc.wantCode), "", nil
+					return fmt.Sprintf("%d\n", tc.waitCode), "", tc.waitErr
 				}
 				return "", "", nil
 			})
 			var out bytes.Buffer
-			code, err := e.Run(ctx, ContainerSpec{Name: "surla-check-op1-0", Operation: "op1", Network: "none", User: "501:20", WorkDir: "/w"}, &out)
+			code, err := e.Start(ctx, "surla-check-op1-0", &out)
 			assert.Equal(t, tc.wantCode, code)
 			if tc.wantErr == "" {
 				require.NoError(t, err)
@@ -95,44 +175,12 @@ func TestEngineRunRemovesContainerOnEveryPath(t *testing.T) {
 				require.Error(t, err)
 				assert.Contains(t, err.Error(), tc.wantErr)
 			}
-			last := s.calls[len(s.calls)-1]
-			assert.Equal(t, []string{"--host", "unix:///var/run/docker.sock", "rm", "--force", "surla-check-op1-0"}, last)
-		})
-	}
-}
-
-func TestEngineRunSeparatesStreamFailureFromTestFailure(t *testing.T) {
-	cases := []struct {
-		name     string
-		startErr error
-		waitCode int
-		wantCode int
-		wantErr  string
-	}{
-		{name: "stream breaks and the container exited 0", startErr: errors.New("unexpected EOF"), waitCode: 0, wantCode: -1, wantErr: "stream the output of container surla-check-op1-0, which exited 0"},
-		{name: "start repeats the container's non-zero exit", startErr: exitError(t, 1), waitCode: 1, wantCode: 1},
-		{name: "start fails differently from the container's exit", startErr: exitError(t, 1), waitCode: 2, wantCode: -1, wantErr: "which exited 2"},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			e, s := newScriptedEngine(func(args []string) (string, string, error) {
-				switch verb(args) {
-				case "start":
-					return "", "", tc.startErr
-				case "wait":
-					return fmt.Sprintf("%d\n", tc.waitCode), "", nil
-				}
-				return "", "", nil
-			})
-			code, err := e.Run(context.Background(), ContainerSpec{Name: "surla-check-op1-0", Network: "none"}, io.Discard)
-			assert.Equal(t, tc.wantCode, code)
-			if tc.wantErr == "" {
-				require.NoError(t, err)
-			} else {
-				require.Error(t, err)
-				assert.Contains(t, err.Error(), tc.wantErr)
+			var verbs []string
+			for _, c := range s.calls {
+				verbs = append(verbs, verb(c))
 			}
-			assert.Equal(t, "rm", verb(s.calls[len(s.calls)-1]), "the container is removed")
+			assert.Equal(t, tc.wantCalls, verbs, "Start never creates or removes")
+			assert.Equal(t, "=== RUN TestX\n", out.String())
 		})
 	}
 }
@@ -175,35 +223,88 @@ func TestMountOptionKeepsCommaAndQuotePathsAsOneField(t *testing.T) {
 	assert.Equal(t, "type=bind,source=/ops/src,target=/w", opt)
 }
 
-func TestEngineRunReportsUnconfirmedCleanup(t *testing.T) {
-	e, _ := newScriptedEngine(func(args []string) (string, string, error) {
-		switch verb(args) {
-		case "wait":
-			return "0\n", "", nil
-		case "rm":
-			return "", "Cannot connect to the Docker daemon", errors.New("exit status 1")
-		}
-		return "", "", nil
+// TestEngineRemoveReportsUnconfirmedCleanup checks that a failed docker rm
+// --force is a *CleanupError naming the container to remove by hand.
+func TestEngineRemoveReportsUnconfirmedCleanup(t *testing.T) {
+	e, _ := newScriptedEngine(func([]string) (string, string, error) {
+		return "", "Cannot connect to the Docker daemon", errors.New("exit status 1")
 	})
-	_, err := e.Run(context.Background(), ContainerSpec{Name: "surla-check-op1-0", Network: "none"}, io.Discard)
+	err := e.Remove("surla-check-op1-0")
 	var cleanup *CleanupError
 	require.ErrorAs(t, err, &cleanup)
 	assert.Equal(t, "surla-check-op1-0", cleanup.Name)
 	assert.Contains(t, err.Error(), "docker rm -f surla-check-op1-0")
 }
 
-func TestEngineRemoveTreatsMissingContainerAsRemoved(t *testing.T) {
-	e, _ := newScriptedEngine(func([]string) (string, string, error) {
-		return "", "Error response from daemon: No such container: surla-check-op1-0", errors.New("exit status 1")
-	})
-	assert.NoError(t, e.Remove("surla-check-op1-0"))
+// TestEngineRemoveNeverReadsItsOutput checks that Remove's result depends on
+// docker rm's exit status alone: its text is never read as evidence that a
+// container is gone.
+func TestEngineRemoveNeverReadsItsOutput(t *testing.T) {
+	cases := []struct {
+		name    string
+		stderr  string
+		err     error
+		wantErr bool
+	}{
+		// docker rm --force can exit 0 for a container that does not
+		// exist: exit 0 only says the command ran.
+		{name: "exit 0", wantErr: false},
+		{name: "a failure whose text looks like absence is still a failure", stderr: "Error response from daemon: No such container: surla-check-op1-0", err: errors.New("exit status 1"), wantErr: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			e, s := newScriptedEngine(func([]string) (string, string, error) {
+				return "", tc.stderr, tc.err
+			})
+			err := e.Remove("surla-check-op1-0")
+			if tc.wantErr {
+				var cleanup *CleanupError
+				require.ErrorAs(t, err, &cleanup)
+			} else {
+				require.NoError(t, err)
+			}
+			assert.Equal(t, []string{"--host", "unix:///var/run/docker.sock", "rm", "--force", "surla-check-op1-0"}, s.calls[0])
+		})
+	}
+}
+
+// TestEngineListReturnsTheLabelledNames checks the exact listing List sends
+// and that it returns every listed name, and an error that proves nothing
+// when the listing fails.
+func TestEngineListReturnsTheLabelledNames(t *testing.T) {
+	cases := []struct {
+		name      string
+		stdout    string
+		err       error
+		wantNames []string
+		wantErr   string
+	}{
+		{name: "none", wantNames: []string{}},
+		{name: "created and exited", stdout: "surla-check-op1-0\nsurla-check-op1-1\n", wantNames: []string{"surla-check-op1-0", "surla-check-op1-1"}},
+		{name: "several names of one container", stdout: "surla-check-op1-0,alias\n", wantNames: []string{"surla-check-op1-0", "alias"}},
+		{name: "failed listing proves nothing", err: errors.New("exit status 1"), wantErr: "list the containers of operation op1"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			e, s := newScriptedEngine(func([]string) (string, string, error) {
+				return tc.stdout, "", tc.err
+			})
+			names, err := e.List("op1")
+			if tc.wantErr != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tc.wantErr)
+				assert.Nil(t, names)
+			} else {
+				require.NoError(t, err)
+				assert.Equal(t, tc.wantNames, names)
+			}
+			assert.Equal(t, []string{"--host", "unix:///var/run/docker.sock", "container", "ls", "--all", "--filter", "label=surla.check=op1", "--format", "{{.Names}}"}, s.calls[0])
+		})
+	}
 }
 
 func TestEngineCreateArgsAndPrivateConfig(t *testing.T) {
-	e, s := newScriptedEngine(func(args []string) (string, string, error) {
-		if verb(args) == "wait" {
-			return "0\n", "", nil
-		}
+	e, s := newScriptedEngine(func([]string) (string, string, error) {
 		return "", "", nil
 	})
 	spec := ContainerSpec{
@@ -216,8 +317,7 @@ func TestEngineCreateArgsAndPrivateConfig(t *testing.T) {
 		Env:  []string{"GOMODCACHE=/gomodcache", "GOPROXY=off"},
 		Args: []string{"test", "./..."},
 	}
-	_, err := e.Run(context.Background(), spec, io.Discard)
-	require.NoError(t, err)
+	require.NoError(t, e.Create(context.Background(), spec))
 	assert.Equal(t, []string{
 		"--host", "unix:///var/run/docker.sock",
 		"create",

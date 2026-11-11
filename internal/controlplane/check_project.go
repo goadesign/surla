@@ -1,7 +1,9 @@
 // This file implements check_project: copy the active workspace's live grant
 // into a per-operation directory and run go test ./... for every workspace
 // module in Linux containers, after downloading dependencies against a
-// read-only copy. Each operation owns its directory, containers and output.
+// read-only copy. surla serve binds the workspace and creates and locks the
+// operation's directory; the check helper process (check_helper.go) then
+// owns that directory, its containers and its output until it exits.
 package controlplane
 
 import (
@@ -15,8 +17,10 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
+	"time"
 	"unicode/utf8"
 
 	"go.opentelemetry.io/otel/attribute"
@@ -30,12 +34,12 @@ import (
 )
 
 type (
-	// checkOperation is one check_project or update_dependencies call: its
-	// private directory, its engine and the containers it starts. Only the
-	// goroutine serving the call uses it.
+	// checkOperation is one check_project or update_dependencies operation:
+	// its private directory, the live source it reads and writes, its engine
+	// and the containers it starts. surla serve fills the live-source fields
+	// when it binds the workspace; the check helper owns the rest. Only one
+	// goroutine uses it.
 	checkOperation struct {
-		// c is the control plane serving the call.
-		c *ControlPlane
 		// id is the random operation ID, also the directory name.
 		id string
 		// dir is <cards dir>/check-work/<id>.
@@ -60,6 +64,16 @@ type (
 		workspaceRel string
 		// copy is the result of copying the grant into dir/src.
 		copy grantCopy
+		// checker resolves the operation's engine.
+		checker *candidate.ContainerRunner
+		// checkTimeout is the operator's -check-timeout, named in messages
+		// about operations that ran out of time.
+		checkTimeout time.Duration
+		// goProxyEnv is the operator's module proxy settings for download
+		// containers.
+		goProxyEnv []string
+		// importedReports are the original report paths the copy leaves out.
+		importedReports []string
 		// engine is the operation's resolved local Docker engine.
 		engine *candidate.Engine
 		// out captures every container's output.
@@ -68,18 +82,6 @@ type (
 		owner checkOwner
 		// containers counts containers created so far, for unique names.
 		containers int
-	}
-
-	// checkOwner is the operation's recovery record: the engine every command
-	// targeted and the containers not yet confirmed removed. Close and the
-	// next startup retry removal with exactly this endpoint.
-	checkOwner struct {
-		// Docker is the docker executable the operation used.
-		Docker string `json:"docker"`
-		// Host is the resolved local engine endpoint.
-		Host string `json:"host"`
-		// Containers are names whose removal is not yet confirmed.
-		Containers []string `json:"containers"`
 	}
 
 	// moduleOutcome is one module's result within an operation.
@@ -112,8 +114,9 @@ const (
 
 // CheckProject copies the active workspace's live files into a protected
 // per-operation copy and runs go test ./... for every Go module in it in
-// Linux containers, never changing the workspace. It requires an
-// authenticated principal.
+// Linux containers, never changing the workspace. The work runs in a check
+// helper process that finishes and cleans up the operation even if this
+// server dies. It requires an authenticated principal.
 func (c *ControlPlane) CheckProject(ctx context.Context) (res *gensurla.CheckProjectResult, retErr error) {
 	if _, ok := PrincipalFromContext(ctx); !ok {
 		return nil, errors.New("authenticated principal is required")
@@ -129,94 +132,12 @@ func (c *ControlPlane) CheckProject(ctx context.Context) (res *gensurla.CheckPro
 	}()
 	ctx, cancel := c.checkDeadline(ctx)
 	defer cancel()
-	op, err := c.startCheckOperation(ctx)
+	result, err := c.runCheckHelper(ctx, checkToolProject)
 	if err != nil {
 		return nil, err
 	}
-	var failures []moduleOutcome
-	for _, mod := range op.copy.modules {
-		if f, ok, err := op.runGo(ctx, mod, "download", "bridge", true, op.c.goProxyEnv, "list", "-deps", "-test", "./..."); err != nil {
-			return nil, op.finish(err)
-		} else if !ok {
-			failures = append(failures, f)
-			continue
-		}
-		if f, ok, err := op.runGo(ctx, mod, "test", "none", false, []string{"GOPROXY=off"}, "test", "./..."); err != nil {
-			return nil, op.finish(err)
-		} else if !ok {
-			failures = append(failures, f)
-		}
-	}
-	if err := op.finish(nil); err != nil {
-		return nil, err
-	}
-	span.SetAttributes(attribute.Bool("surla.check.passed", len(failures) == 0))
-	return &gensurla.CheckProjectResult{
-		OpID:    op.id,
-		Passed:  len(failures) == 0,
-		Message: op.message(failures),
-	}, nil
-}
-
-// startCheckOperation binds the active workspace, creates the operation
-// directory, copies the grant and opens the engine. Errors are already
-// the caller-facing service errors. The public request owns admission until
-// its final span ends, including when setup fails.
-func (c *ControlPlane) startCheckOperation(ctx context.Context) (*checkOperation, error) {
-	wsDir, dev, ino := c.currentWorkspaceTarget()
-	if wsDir == "" {
-		return nil, gensurla.MakeNotImplemented(errors.New("no workspace directory is bound to this control plane"))
-	}
-	_, wsRoot, err := openModuleRootWithIdentity(wsDir, dev, ino)
-	if err != nil {
-		return nil, err
-	}
-	op := &checkOperation{c: c, id: newOperationID(), grantFD: -1, workspaceFD: -1}
-	if err := errors.Join(op.openLive(wsRoot, c.protectedDirs), wsRoot.Close()); err != nil {
-		return nil, errors.Join(err, op.closeLive())
-	}
-	op.dir = filepath.Join(c.checkWorkDir, op.id)
-	trace.SpanFromContext(ctx).SetAttributes(attribute.String("surla.check.op_id", op.id))
-	for _, d := range []string{op.dir, op.path("src"), op.path("modcache"), op.path("docker-config")} {
-		if err := os.Mkdir(d, 0o700); err != nil {
-			return nil, errors.Join(fmt.Errorf("create check directory %s: %w", d, err), op.closeLive())
-		}
-	}
-	if op.out, err = newCapWriter(op.path(outputFile)); err != nil {
-		return nil, errors.Join(err, op.closeLive())
-	}
-	op.copy, err = copyGrant(ctx, op.grantFD, op.workspaceRel, op.workspaceID, op.path("src"), c.importedReports)
-	if err != nil {
-		var changed *errSourceChanged
-		switch {
-		case ctx.Err() != nil:
-			return nil, op.finish(fmt.Errorf("check exceeded -check-timeout (%s) or was canceled while copying the workspace: %w", c.checkTimeout, err))
-		case errors.As(err, &changed):
-			return nil, op.finish(err)
-		}
-		return nil, op.finish(fmt.Errorf("copy the workspace: %w", err))
-	}
-	for _, p := range op.copy.skipped {
-		fmt.Fprintf(op.out, "note: %s is not a regular file, directory or symlink and was not copied\n", p)
-	}
-	fmt.Fprintf(op.out, "==> modules: %s\n", strings.Join(op.copy.modules, ", "))
-	trace.SpanFromContext(ctx).SetAttributes(attribute.Int("surla.check.modules", len(op.copy.modules)))
-	if len(op.copy.modules) == 0 {
-		return nil, op.finish(gensurla.MakeUnprocessable(errors.New("the workspace contains no Go module (no go.mod)")))
-	}
-	engine, err := c.checker.Open(ctx, op.path("docker-config"))
-	if err == nil {
-		op.engine = engine
-		op.owner = checkOwner{Docker: engine.Docker(), Host: engine.Host(), Containers: []string{}}
-		err = engine.EnsureImage(ctx)
-	}
-	if err != nil {
-		if errors.Is(err, candidate.ErrEngineUnavailable) {
-			return nil, op.finish(gensurla.MakeUnavailable(err))
-		}
-		return nil, op.finish(err)
-	}
-	return op, nil
+	span.SetAttributes(attribute.Bool("surla.check.passed", result.Check.Passed))
+	return result.Check, nil
 }
 
 // admitCheckOperation registers a new operation with checkOps, or refuses it
@@ -247,18 +168,214 @@ func (c *ControlPlane) checkDeadline(ctx context.Context) (context.Context, cont
 	return ctx, func() { stop(); cancel() }
 }
 
+// recoverCheckOperations runs when no operation of this server is active
+// (in New and in Close after every operation returned); the card store's
+// exclusive lock guarantees no other server shares checkWorkDir. It skips
+// every operation directory whose lock is held, because a check helper,
+// possibly started by an earlier server, still owns it. For each other
+// directory it settles every recorded container with that operation's
+// recorded endpoint through confirmRemoved: an entry whose create was
+// answered is dropped once a listing no longer shows it after its removal;
+// any other entry only once a listing has shown it, it was removed, and a
+// later listing no longer does. An operation with no owner.json never
+// created a container (the record is saved before each create), so its
+// scratch is removed directly; so is the scratch of an operation whose
+// entries left were all never started (stateCreationPending), while those
+// entries stay recorded. The captured output always stays; a directory with
+// an entry that may have run stays whole. Every kept entry is an event on
+// the recovery span; failures to remove or list are also returned, while an
+// entry kept only because no listing has shown it is not a failure.
+func (c *ControlPlane) recoverCheckOperations() (retErr error) {
+	if c.checker == nil || c.checkWorkDir == "" {
+		return nil
+	}
+	_, span := c.tracer("surla/controlplane").Start(context.Background(), "surla.controlplane.recover_check_operations")
+	defer func() { endCheckSpan(span, retErr) }()
+	entries, err := os.ReadDir(c.checkWorkDir)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		return err
+	}
+	var errs []error
+	for _, e := range entries {
+		if !e.IsDir() || !opIDPattern.MatchString(e.Name()) {
+			continue
+		}
+		errs = append(errs, c.recoverCheckOperation(span, e.Name()))
+	}
+	return errors.Join(errs...)
+}
+
+// recoverCheckOperation recovers the operation directory id under the
+// directory's own lock, or skips it while a check helper holds that lock.
+func (c *ControlPlane) recoverCheckOperation(span trace.Span, id string) error {
+	dir := filepath.Join(c.checkWorkDir, id)
+	fd, err := unix.Open(dir, openDirFlags, 0)
+	if err != nil {
+		return fmt.Errorf("open operation directory %s: %w", dir, err)
+	}
+	defer unix.Close(fd)
+	if err := unix.Flock(fd, unix.LOCK_EX|unix.LOCK_NB); err != nil {
+		if errors.Is(err, unix.EWOULDBLOCK) {
+			span.AddEvent("operation_in_progress_skipped", trace.WithAttributes(attribute.String("surla.check.op_id", id)))
+			return nil
+		}
+		return fmt.Errorf("lock operation directory %s: %w", dir, err)
+	}
+	raw, err := os.ReadFile(filepath.Join(dir, ownerFile))
+	if errors.Is(err, os.ErrNotExist) {
+		span.AddEvent("ownerless_scratch_removed", trace.WithAttributes(attribute.String("surla.check.op_id", id)))
+		return removeOperationScratch(dir)
+	}
+	if err != nil {
+		return err
+	}
+	owner, err := decodeCheckOwner(raw, id)
+	if err != nil {
+		// Which containers may still pin this directory is unknown, so it
+		// stays whole.
+		return fmt.Errorf("decode %s; kept the operation directory: %w", filepath.Join(dir, ownerFile), err)
+	}
+	engine := c.checker.Reopen(owner.Docker, owner.Host, filepath.Join(dir, "docker-config"))
+	span.AddEvent("retained_containers_retried", trace.WithAttributes(
+		attribute.String("surla.check.op_id", id),
+		attribute.Int("surla.check.containers", len(owner.Containers)),
+	))
+	var errs []error
+	kept := []ownedContainer{}
+	for _, c := range owner.Containers {
+		err := confirmRemoved(engine, id, c)
+		if err == nil {
+			continue
+		}
+		kept = append(kept, c)
+		span.AddEvent("record_kept", trace.WithAttributes(
+			attribute.String("surla.check.container", c.Name),
+			attribute.String("surla.check.state", string(c.State)),
+			attribute.String("surla.check.reason", err.Error()),
+		))
+		// An entry no listing has shown is the expected state of a create
+		// that was never confirmed, not a failed recovery.
+		if !errors.Is(err, errCreateUnconfirmed) {
+			errs = append(errs, err)
+		}
+	}
+	owner.Containers = kept
+	if owner.scratchUnused() {
+		errs = append(errs, removeOperationScratch(dir))
+	}
+	errs = append(errs, writeOwnerRecord(dir, owner))
+	return errors.Join(errs...)
+}
+
+// checkProject runs check_project's operation inside the check helper: it
+// prepares the operation, runs go list -deps -test ./... then go test ./...
+// for every module, and finishes the operation directory. Errors are the
+// caller-facing errors, already joined with the output ID by finish.
+func (op *checkOperation) checkProject(ctx context.Context) (*gensurla.CheckProjectResult, error) {
+	if err := op.start(ctx); err != nil {
+		return nil, err
+	}
+	var failures []moduleOutcome
+	for _, mod := range op.copy.modules {
+		if f, ok, err := op.runGo(ctx, mod, "download", "bridge", true, op.goProxyEnv, "list", "-deps", "-test", "./..."); err != nil {
+			return nil, op.finish(err)
+		} else if !ok {
+			failures = append(failures, f)
+			continue
+		}
+		if f, ok, err := op.runGo(ctx, mod, "test", "none", false, []string{"GOPROXY=off"}, "test", "./..."); err != nil {
+			return nil, op.finish(err)
+		} else if !ok {
+			failures = append(failures, f)
+		}
+	}
+	if err := op.finish(nil); err != nil {
+		return nil, err
+	}
+	trace.SpanFromContext(ctx).SetAttributes(attribute.Bool("surla.check.passed", len(failures) == 0))
+	return &gensurla.CheckProjectResult{
+		OpID:    op.id,
+		Passed:  len(failures) == 0,
+		Message: op.message(failures),
+	}, nil
+}
+
+// start prepares the operation directory surla serve created and locked:
+// the copy, module cache and Docker configuration directories, the output
+// capture, the copy of the live grant, and the engine with its image. Errors
+// are the caller-facing errors; once the output exists they come from
+// finish.
+func (op *checkOperation) start(ctx context.Context) error {
+	for _, d := range []string{op.path("src"), op.path("modcache"), op.path("docker-config")} {
+		if err := os.Mkdir(d, 0o700); err != nil {
+			return errors.Join(fmt.Errorf("create check directory %s: %w", d, err), op.closeLive())
+		}
+	}
+	var err error
+	if op.out, err = newCapWriter(op.path(outputFile)); err != nil {
+		return errors.Join(err, op.closeLive())
+	}
+	op.copy, err = copyGrant(ctx, op.grantFD, op.workspaceRel, op.workspaceID, op.path("src"), op.importedReports)
+	if err != nil {
+		var changed *errSourceChanged
+		switch {
+		case ctx.Err() != nil:
+			return op.finish(fmt.Errorf("check exceeded -check-timeout (%s) or was canceled while copying the workspace: %w", op.checkTimeout, err))
+		case errors.As(err, &changed):
+			return op.finish(err)
+		}
+		return op.finish(fmt.Errorf("copy the workspace: %w", err))
+	}
+	for _, p := range op.copy.skipped {
+		fmt.Fprintf(op.out, "note: %s is not a regular file, directory or symlink and was not copied\n", p)
+	}
+	fmt.Fprintf(op.out, "==> modules: %s\n", strings.Join(op.copy.modules, ", "))
+	trace.SpanFromContext(ctx).SetAttributes(attribute.Int("surla.check.modules", len(op.copy.modules)))
+	if len(op.copy.modules) == 0 {
+		return op.finish(gensurla.MakeUnprocessable(errors.New("the workspace contains no Go module (no go.mod)")))
+	}
+	engine, err := op.checker.Open(ctx, op.path("docker-config"))
+	if err == nil {
+		op.engine = engine
+		op.owner = checkOwner{Version: ownerVersion, Docker: engine.Docker(), Host: engine.Host(), Containers: []ownedContainer{}}
+		err = engine.EnsureImage(ctx)
+	}
+	if err != nil {
+		if errors.Is(err, candidate.ErrEngineUnavailable) {
+			return op.finish(gensurla.MakeUnavailable(err))
+		}
+		return op.finish(err)
+	}
+	return nil
+}
+
 // runGo runs one go command for the workspace module mod in a new container
 // and reports whether it exited 0. A non-zero exit is an outcome, not an
 // error; err reports engine failures, the deadline and unconfirmed cleanup.
+// It sends nothing once ctx has ended. Otherwise it records the container
+// as stateCreationPending before create is sent, and settle removes it on
+// every path afterwards.
 func (op *checkOperation) runGo(ctx context.Context, mod, step, network string, srcReadOnly bool, extraEnv []string, args ...string) (moduleOutcome, bool, error) {
+	if err := ctx.Err(); err != nil {
+		return moduleOutcome{}, false, fmt.Errorf("check exceeded -check-timeout (%s) or was canceled before %s of %s: %w", op.checkTimeout, step, mod, err)
+	}
 	name := fmt.Sprintf("surla-check-%s-%d", op.id, op.containers)
 	work := op.path(fmt.Sprintf("work-%d", op.containers))
 	op.containers++
 	if err := os.MkdirAll(filepath.Join(work, "tmp"), 0o700); err != nil {
 		return moduleOutcome{}, false, fmt.Errorf("create container work directory: %w", err)
 	}
-	op.owner.Containers = append(op.owner.Containers, name)
+	ctx, span := checkTracer(ctx).Start(ctx, "surla.check.container", trace.WithAttributes(
+		attribute.String("surla.check.container", name),
+		attribute.String("surla.check.module", mod),
+		attribute.String("surla.check.step", step),
+	))
+	op.owner.Containers = append(op.owner.Containers, ownedContainer{Name: name, State: stateCreationPending})
 	if err := op.writeOwner(); err != nil {
+		endCheckSpan(span, err)
 		return moduleOutcome{}, false, err
 	}
 	env := append([]string{
@@ -287,50 +404,105 @@ func (op *checkOperation) runGo(ctx context.Context, mod, step, network string, 
 	}
 	fmt.Fprintf(op.out, "==> %s %s: go %s\n", step, mod, strings.Join(args, " "))
 	start := op.out.size()
-	code, err := op.engine.Run(ctx, spec, op.out)
+	code, err := op.runContainer(ctx, spec)
 	end := op.out.size()
-	var cleanup *candidate.CleanupError
-	if errors.As(err, &cleanup) {
-		// The container may still exist and pin this directory; owner.json
-		// keeps its name for Close and the next startup.
+	if err != nil && ctx.Err() != nil {
+		err = fmt.Errorf("check exceeded -check-timeout (%s) or was canceled during %s of %s: %w", op.checkTimeout, step, mod, err)
+	}
+	if kept := op.settle(ctx, name); kept != nil {
+		// The container may still exist or still appear; owner.json keeps
+		// its entry for Close and the next startup, and finish keeps the
+		// scratch while an entry may have run.
+		err = errors.Join(err, kept)
+		endCheckSpan(span, err)
 		return moduleOutcome{}, false, err
 	}
-	// Run removed the container, so it no longer pins anything.
-	op.owner.Containers = op.owner.Containers[:len(op.owner.Containers)-1]
-	if werr := op.writeOwner(); werr != nil {
-		return moduleOutcome{}, false, errors.Join(err, werr)
-	}
 	if err != nil {
-		if ctx.Err() != nil {
-			return moduleOutcome{}, false, fmt.Errorf("check exceeded -check-timeout (%s) or was canceled during %s of %s: %w", op.c.checkTimeout, step, mod, err)
-		}
+		endCheckSpan(span, err)
 		return moduleOutcome{}, false, err
 	}
 	fmt.Fprintf(op.out, "<== %s %s: exit %d\n", step, mod, code)
-	trace.SpanFromContext(ctx).AddEvent("go_command_exited", trace.WithAttributes(
+	span.AddEvent("go_command_exited", trace.WithAttributes(
 		attribute.String("surla.check.module", mod),
 		attribute.String("surla.check.step", step),
 		attribute.Int("surla.check.exit_code", code),
 	))
+	span.End()
 	if code != 0 {
 		return moduleOutcome{dir: mod, step: step, exitCode: code, start: start, end: end}, false, nil
 	}
 	return moduleOutcome{}, true, nil
 }
 
+// runContainer creates container spec.Name, records the engine's answer,
+// and only then starts it, returning its exit code. The entry is
+// stateCreationPending on entry; it becomes stateCreationAnswered, and
+// owner.json is rewritten, once the engine confirms the create, so start is
+// never sent for a container whose record could still say it never ran. An
+// error leaves the entry as last recorded.
+func (op *checkOperation) runContainer(ctx context.Context, spec candidate.ContainerSpec) (int, error) {
+	createCtx, span := checkTracer(ctx).Start(ctx, "surla.check.container.create")
+	err := op.engine.Create(createCtx, spec)
+	endCheckSpan(span, err)
+	if err != nil {
+		return -1, err
+	}
+	op.owner.Containers[op.entry(spec.Name)].State = stateCreationAnswered
+	if err := op.writeOwner(); err != nil {
+		return -1, err
+	}
+	runCtx, span := checkTracer(ctx).Start(ctx, "surla.check.container.run")
+	code, err := op.engine.Start(runCtx, spec.Name, op.out)
+	span.SetAttributes(attribute.Int("surla.check.exit_code", code))
+	endCheckSpan(span, err)
+	return code, err
+}
+
+// settle removes container name after its run and updates the operation's
+// record through confirmRemoved: an entry it confirms gone is dropped and
+// owner.json rewritten; any other entry is kept in its state and its
+// *candidate.CleanupError returned.
+func (op *checkOperation) settle(ctx context.Context, name string) error {
+	c := op.owner.Containers[op.entry(name)]
+	_, span := checkTracer(ctx).Start(ctx, "surla.check.container.remove", trace.WithAttributes(
+		attribute.String("surla.check.container", name),
+		attribute.String("surla.check.state", string(c.State)),
+	))
+	if err := confirmRemoved(op.engine, op.id, c); err != nil {
+		span.AddEvent("record_kept", trace.WithAttributes(attribute.String("surla.check.reason", err.Error())))
+		endCheckSpan(span, err)
+		return err
+	}
+	op.owner.Containers = slices.Delete(op.owner.Containers, op.entry(name), op.entry(name)+1)
+	err := op.writeOwner()
+	span.AddEvent("container_removed")
+	endCheckSpan(span, err)
+	return err
+}
+
 // finish releases the grant, closes the output, then removes the
-// operation's copy, module cache and work directories once no container
-// still pins them, keeping the output for read_check_output. It returns
-// cause joined with any capture or cleanup failure, with the operation ID
-// needed to read saved output; an unconfirmed container removal keeps the
-// whole directory. Named service errors retain their name and flags.
+// operation's copy, module cache and work directories unless a recorded
+// container may still use them: one whose create was answered or whose
+// record cannot say, and whose removal is not confirmed. Entries whose
+// create was never confirmed never ran, so their scratch goes while their
+// names stay recorded with the output for read_check_output. It returns
+// cause joined with any capture or cleanup failure and with any kept entry,
+// with the operation ID needed to read saved output. Named service errors
+// retain their name and flags.
 func (op *checkOperation) finish(cause error) error {
 	closeErr := errors.Join(op.out.close(), op.closeLive())
 	var cleanupErr error
-	if len(op.owner.Containers) > 0 {
-		cleanupErr = fmt.Errorf("kept %s because container %s may still exist; remove it with docker rm -f %s", op.dir, op.owner.Containers[0], op.owner.Containers[0])
-	} else {
+	if op.owner.scratchUnused() {
 		cleanupErr = removeOperationScratch(op.dir)
+	}
+	for _, c := range op.owner.Containers {
+		if c.State != stateCreationPending {
+			cleanupErr = errors.Join(cleanupErr, fmt.Errorf("kept %s because container %s may still exist; remove it with docker rm -f %s", op.dir, c.Name, c.Name))
+			break
+		}
+	}
+	if len(op.owner.Containers) > 0 && op.owner.scratchUnused() {
+		cleanupErr = errors.Join(cleanupErr, fmt.Errorf("kept the record of container %s in %s: its creation was never confirmed, so it may still appear; surla serve looks for it at every start and shutdown", op.owner.Containers[0].Name, op.dir))
 	}
 	err := errors.Join(cause, closeErr, cleanupErr)
 	if err == nil {
@@ -408,118 +580,20 @@ func (op *checkOperation) path(name string) string {
 	return filepath.Join(op.dir, name)
 }
 
-// writeOwner saves the recovery record before a container is created and
-// after one is confirmed removed.
+// writeOwner saves the operation's recovery record: before each create,
+// once the engine confirms it, and after a confirmed removal.
 func (op *checkOperation) writeOwner() error {
-	raw, err := json.Marshal(op.owner)
-	if err != nil {
-		return err
-	}
-	tmp := op.path(ownerFile + ".tmp")
-	if err := os.WriteFile(tmp, raw, 0o600); err != nil {
-		return fmt.Errorf("write %s: %w", ownerFile, err)
-	}
-	return os.Rename(tmp, op.path(ownerFile))
+	return writeOwnerRecord(op.dir, op.owner)
 }
 
-// recoverCheckOperations runs when no operation of this server is active
-// (in New and in Close after every operation returned); the card store's
-// exclusive lock guarantees no other server shares checkWorkDir. For each
-// operation directory it retries the removal of every container the
-// operation recorded, using that operation's recorded endpoint, and removes
-// the scratch of operations whose containers are all confirmed gone. An
-// operation with no owner.json never created a container (the record is
-// saved before each create), so its scratch is removed directly. The
-// captured output always stays; directories with unconfirmed containers
-// stay whole. Failures are recorded on the recovery span and returned.
-func (c *ControlPlane) recoverCheckOperations() (retErr error) {
-	if c.checker == nil || c.checkWorkDir == "" {
-		return nil
+// entry returns the index of the recorded container name, which runGo
+// recorded before any later step refers to it.
+func (op *checkOperation) entry(name string) int {
+	i := slices.IndexFunc(op.owner.Containers, func(c ownedContainer) bool { return c.Name == name })
+	if i < 0 {
+		panic(fmt.Sprintf("container %s of operation %s is not recorded", name, op.id))
 	}
-	_, span := c.tracer("surla/controlplane").Start(context.Background(), "surla.controlplane.recover_check_operations")
-	defer func() { endCheckSpan(span, retErr) }()
-	entries, err := os.ReadDir(c.checkWorkDir)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return nil
-		}
-		return err
-	}
-	var errs []error
-	for _, e := range entries {
-		if !e.IsDir() || !opIDPattern.MatchString(e.Name()) {
-			continue
-		}
-		dir := filepath.Join(c.checkWorkDir, e.Name())
-		raw, err := os.ReadFile(filepath.Join(dir, ownerFile))
-		if errors.Is(err, os.ErrNotExist) {
-			span.AddEvent("ownerless_scratch_removed", trace.WithAttributes(attribute.String("surla.check.op_id", e.Name())))
-			errs = append(errs, removeOperationScratch(dir))
-			continue
-		}
-		if err != nil {
-			errs = append(errs, err)
-			continue
-		}
-		owner, err := decodeCheckOwner(raw, e.Name())
-		if err != nil {
-			// Which containers may still pin this directory is unknown, so it
-			// stays whole.
-			errs = append(errs, fmt.Errorf("decode %s; kept the operation directory: %w", filepath.Join(dir, ownerFile), err))
-			continue
-		}
-		engine := c.checker.Reopen(owner.Docker, owner.Host, filepath.Join(dir, "docker-config"))
-		span.AddEvent("retained_containers_retried", trace.WithAttributes(
-			attribute.String("surla.check.op_id", e.Name()),
-			attribute.Int("surla.check.containers", len(owner.Containers)),
-		))
-		left := []string{}
-		for _, name := range owner.Containers {
-			if err := engine.Remove(name); err != nil {
-				left = append(left, name)
-				errs = append(errs, err)
-			}
-		}
-		owner.Containers = left
-		if len(left) == 0 {
-			errs = append(errs, removeOperationScratch(dir))
-		}
-		raw, err = json.Marshal(owner)
-		if err != nil {
-			errs = append(errs, err)
-			continue
-		}
-		errs = append(errs, os.WriteFile(filepath.Join(dir, ownerFile), raw, 0o600))
-	}
-	return errors.Join(errs...)
-}
-
-// decodeCheckOwner strictly decodes the recovery record of operation id:
-// one JSON object with exactly the docker path (absolute), the local engine
-// endpoint (unix://) and the containers array (present, possibly empty),
-// each container named surla-check-<id>-<n>. Anything else is an error, so
-// recovery never acts on a record it does not fully understand.
-func decodeCheckOwner(raw []byte, id string) (checkOwner, error) {
-	var owner checkOwner
-	if err := decodeStrictObject(raw, &owner); err != nil {
-		return checkOwner{}, err
-	}
-	switch {
-	case !filepath.IsAbs(owner.Docker):
-		return checkOwner{}, fmt.Errorf("docker %q is not an absolute path", owner.Docker)
-	case !strings.HasPrefix(owner.Host, "unix://"):
-		return checkOwner{}, fmt.Errorf("host %q is not a local engine endpoint", owner.Host)
-	case owner.Containers == nil:
-		return checkOwner{}, errors.New("containers is required")
-	}
-	prefix := "surla-check-" + id + "-"
-	for _, name := range owner.Containers {
-		n, ok := strings.CutPrefix(name, prefix)
-		if !ok || n == "" || strings.Trim(n, "0123456789") != "" {
-			return checkOwner{}, fmt.Errorf("container %q does not belong to operation %s", name, id)
-		}
-	}
-	return owner, nil
+	return i
 }
 
 // removeOperationScratch removes everything in an operation directory except
@@ -647,6 +721,13 @@ func endCheckSpan(span trace.Span, err error) {
 		span.SetStatus(codes.Error, "check operation failed")
 	}
 	span.End()
+}
+
+// checkTracer returns a tracer from the provider of the span in ctx, so a
+// check helper's spans join the trace surla serve passed it, and code run
+// without a span records nothing.
+func checkTracer(ctx context.Context) trace.Tracer {
+	return trace.SpanFromContext(ctx).TracerProvider().Tracer("surla/controlplane")
 }
 
 // newOperationID returns a random 32-hex operation ID.

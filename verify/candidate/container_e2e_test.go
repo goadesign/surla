@@ -12,6 +12,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -223,13 +224,27 @@ func stopOnUncertainRemoval(f *containerFixture, name string, err error) {
 }
 
 // executeContainer delivers one result without calling testing helpers from a
-// worker goroutine. Engine.Run owns removal on every return path.
+// worker goroutine. runContainer owns removal on every return path.
 func executeContainer(
 	ctx context.Context, engine *Engine, spec ContainerSpec, log *os.File,
 	done chan<- containerRun,
 ) {
-	code, err := engine.Run(ctx, spec, log)
+	code, err := runContainer(ctx, engine, spec, log)
 	done <- containerRun{code: code, err: err}
+}
+
+// runContainer creates, starts and always removes one container, as the
+// check helper does, and joins an unconfirmed removal to the result.
+func runContainer(ctx context.Context, engine *Engine, spec ContainerSpec, out io.Writer) (code int, err error) {
+	defer func() {
+		if rmErr := engine.Remove(spec.Name); rmErr != nil {
+			err = errors.Join(err, rmErr)
+		}
+	}()
+	if err := engine.Create(ctx, spec); err != nil {
+		return -1, err
+	}
+	return engine.Start(ctx, spec.Name, out)
 }
 
 // run invokes the production runner and checks no labelled container remains.
@@ -241,7 +256,7 @@ func (f *containerFixture) run(
 	ctx, cancel := context.WithTimeout(parent, containerCommandTimeout)
 	defer cancel()
 	spec, log := f.command(t, module, network, readonly, args...)
-	code, err := f.engine.Run(ctx, spec, log)
+	code, err := runContainer(ctx, f.engine, spec, log)
 	stopOnUncertainRemoval(f, spec.Name, err)
 	closeErr := log.Close()
 	f.requireRemoved(t)

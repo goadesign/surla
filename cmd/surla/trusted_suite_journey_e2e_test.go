@@ -1,7 +1,8 @@
 //go:build e2e
 
-// This file supplies the real verification subprocess entrypoint and fixtures
-// for the starter's authenticated MCP journey, without a second scaffold build.
+// This file supplies the real verification and check helper subprocess
+// entrypoints and the fixtures for the starter's authenticated MCP journey,
+// without a second scaffold build.
 package main
 
 import (
@@ -36,12 +37,19 @@ import (
 const journeyOwnerWait = defaultProjectVerifyTimeout + 2*time.Minute
 
 // TestMain lets selfCommand launch the test executable's real verify-run
-// implementation. A detached verification supervisor stops its run at the
-// run's saved timeout, as in production. Other invocations retain the
-// ordinary Go testing entrypoint.
+// and check-run implementations. A detached verification supervisor stops
+// its run at the run's saved timeout, as in production. Other invocations
+// retain the ordinary Go testing entrypoint.
 func TestMain(m *testing.M) {
 	if len(os.Args) > 1 && os.Args[1] == "verify-run" {
 		if err := runVerifyRun(os.Args[2:]); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		os.Exit(0)
+	}
+	if len(os.Args) > 1 && os.Args[1] == "check-run" {
+		if err := runCheckRun(os.Args[2:]); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}

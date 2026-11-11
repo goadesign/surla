@@ -3,6 +3,7 @@
 package controlplane
 
 import (
+	"context"
 	"encoding/csv"
 	"encoding/json"
 	"flag"
@@ -52,6 +53,9 @@ type (
 		Env, Args []string
 		// DockerConfig is the DOCKER_CONFIG directory passed in the CLI environment.
 		DockerConfig string
+		// State is "created", "running" or "exited". A labelled listing
+		// reports a container in every state until it is removed.
+		State string
 		// Removed reports whether docker rm --force confirmed removal.
 		Removed bool
 		// ExitCode is the exit status recorded when docker start --attach finished.
@@ -61,6 +65,12 @@ type (
 	// containerStartFunc simulates container execution during docker start --attach.
 	containerStartFunc func(c *recordedContainer) (string, string, int)
 
+	// beforeCallFunc runs, outside the daemon's lock, when a docker invocation
+	// arrives and before it is handled. ctx ends when the docker process that
+	// sent it is gone, so a test can hold one verb mid-request and see whether
+	// its sender was killed.
+	beforeCallFunc func(ctx context.Context, verb string)
+
 	// fakeDockerDaemon serves scripted Docker CLI responses for one unix://
 	// endpoint file inside t.TempDir without talking to a real container engine.
 	fakeDockerDaemon struct {
@@ -68,6 +78,8 @@ type (
 		serverURL, hostURI string
 		// pulls, contextInspects, and removes count pull, context, and rm calls.
 		pulls, contextInspects, removes atomic.Int64
+		// calls counts every docker invocation that reached the daemon.
+		calls atomic.Int64
 		// mu guards all fields below.
 		mu sync.Mutex
 		// imagePresent reports whether CheckImage has been pulled onto this daemon.
@@ -80,6 +92,13 @@ type (
 		failRemove map[string]bool
 		// onStart runs outside mu during docker start --attach.
 		onStart containerStartFunc
+		// beforeCall runs outside mu before each invocation is handled.
+		beforeCall beforeCallFunc
+		// failCreate makes docker create fail with a daemon error, creating
+		// nothing.
+		failCreate bool
+		// failList makes docker container ls fail.
+		failList bool
 	}
 
 	// checkClients bundles a test server's ControlPlane and HTTP/MCP clients.
@@ -210,11 +229,21 @@ func parseCreateContainer(args []string, dockerConfig string) (*recordedContaine
 	return c, nil
 }
 
+// testCheckHelper starts this test binary in TestMain's check-run role, the
+// check helper surla serve would start as `surla check-run`.
+func testCheckHelper(t testing.TB) CheckHelper {
+	t.Helper()
+	self, err := os.Executable()
+	require.NoError(t, err)
+	return func() *exec.Cmd { return exec.Command(self, "check-run") }
+}
+
 // newCheckTestServer mounts NewHTTPHandler with ContainerRunner defaults and bearer auth.
 func newCheckTestServer(t *testing.T, opts Options) checkClients {
 	t.Helper()
 	opts.CardsDir = filepath.Join(realTempDir(t), "cards")
 	opts.Checker = candidate.NewContainerRunner()
+	opts.CheckHelper = testCheckHelper(t)
 	opts.CheckTimeout = 30 * time.Second
 	cp := newControlPlane(t, opts)
 	srv := httptest.NewServer(NewHTTPHandler(cp, NewTokenAuthenticator(map[string]Principal{
@@ -242,6 +271,7 @@ func openCheckCP(t *testing.T, cardsDir, workspace string) *ControlPlane {
 		CardsDir:     cardsDir,
 		WorkspaceDir: workspace,
 		Checker:      candidate.NewContainerRunner(),
+		CheckHelper:  testCheckHelper(t),
 		CheckTimeout: 30 * time.Second,
 	}
 	cp, err := New(opts)
@@ -332,6 +362,19 @@ func (d *fakeDockerDaemon) handleInvoke(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	d.calls.Add(1)
+	d.mu.Lock()
+	before := d.beforeCall
+	d.mu.Unlock()
+	if before != nil {
+		args := req.Args
+		if len(args) >= 2 && args[0] == "--host" {
+			args = args[2:]
+		}
+		if len(args) > 0 {
+			before(r.Context(), args[0])
+		}
+	}
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(d.dispatch(req)); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -371,10 +414,14 @@ func (d *fakeDockerDaemon) dispatch(req fakeDockerCall) fakeDockerCall {
 		d.pulls.Add(1)
 		return fakeDockerCall{Stdout: []byte("pulled\n")}
 	case "create":
+		if d.failCreate {
+			return fakeDockerCall{Stderr: []byte("Error response from daemon: mounts denied\n"), ExitCode: 1}
+		}
 		c, err := parseCreateContainer(sub[1:], dockerConfig)
 		if err != nil {
 			return fakeDockerCall{Stderr: []byte(err.Error() + "\n"), ExitCode: 1}
 		}
+		c.State = "created"
 		d.containers = append(d.containers, c)
 		return fakeDockerCall{Stdout: []byte(c.Name + "\n")}
 	case "start":
@@ -387,11 +434,13 @@ func (d *fakeDockerDaemon) dispatch(req fakeDockerCall) fakeDockerCall {
 		}
 		var stdout, stderr string
 		var code int
+		c.State = "running"
 		if onStart := d.onStart; onStart != nil {
 			d.mu.Unlock()
 			stdout, stderr, code = onStart(c)
 			d.mu.Lock()
 		}
+		c.State = "exited"
 		c.ExitCode = code
 		return fakeDockerCall{Stdout: []byte(stdout), Stderr: []byte(stderr), ExitCode: code}
 	case "wait":
@@ -401,6 +450,22 @@ func (d *fakeDockerDaemon) dispatch(req fakeDockerCall) fakeDockerCall {
 			}
 		}
 		return fakeDockerCall{Stderr: []byte("No such container\n"), ExitCode: 1}
+	case "container":
+		label, ok := strings.CutPrefix(strings.Join(sub, " "), "container ls --all --filter label=")
+		label, format, cut := strings.Cut(label, " --format ")
+		if !ok || !cut || format != "{{.Names}}" || strings.Contains(label, " ") {
+			return fakeDockerCall{Stderr: []byte("unexpected container args\n"), ExitCode: 1}
+		}
+		if d.failList {
+			return fakeDockerCall{Stderr: []byte("Error response from daemon: list failed\n"), ExitCode: 1}
+		}
+		var names strings.Builder
+		for _, c := range d.containers {
+			if c.Label == label && !c.Removed {
+				names.WriteString(c.Name + "\n")
+			}
+		}
+		return fakeDockerCall{Stdout: []byte(names.String())}
 	case "rm":
 		if len(sub) != 3 || sub[1] != "--force" {
 			return fakeDockerCall{Stderr: []byte("unexpected rm args\n"), ExitCode: 1}
@@ -415,7 +480,9 @@ func (d *fakeDockerDaemon) dispatch(req fakeDockerCall) fakeDockerCall {
 			c.Removed = true
 			return fakeDockerCall{Stdout: []byte(name + "\n")}
 		}
-		return fakeDockerCall{Stderr: []byte("No such container: " + name + "\n"), ExitCode: 1}
+		// Docker can report a missing container this way: exit 0, no
+		// output.
+		return fakeDockerCall{}
 	default:
 		return fakeDockerCall{Stderr: []byte("unknown subcommand\n"), ExitCode: 1}
 	}
@@ -456,6 +523,53 @@ func (d *fakeDockerDaemon) setOnStart(fn containerStartFunc) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	d.onStart = fn
+}
+
+// setBeforeCall installs the hook run before each invocation is handled.
+func (d *fakeDockerDaemon) setBeforeCall(fn beforeCallFunc) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.beforeCall = fn
+}
+
+// setFailCreate configures whether docker create fails with a daemon error.
+func (d *fakeDockerDaemon) setFailCreate(fail bool) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.failCreate = fail
+}
+
+// setFailList configures whether docker container ls fails.
+func (d *fakeDockerDaemon) setFailList(fail bool) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.failList = fail
+}
+
+// addRunning records a container that is running on the daemon, as one an
+// earlier server created and started would be.
+func (d *fakeDockerDaemon) addRunning(name, label string) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.containers = append(d.containers, &recordedContainer{Name: name, Label: label, State: "running"})
+}
+
+// addCreated records a container that was created and never started, as a
+// create answered after its sender stopped waiting would leave.
+func (d *fakeDockerDaemon) addCreated(name, label string) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.containers = append(d.containers, &recordedContainer{Name: name, Label: label, State: "created"})
+}
+
+// container returns a snapshot of the recorded container name, or false.
+func (d *fakeDockerDaemon) container(name string) (recordedContainer, bool) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if c := d.findContainer(name, false); c != nil {
+		return *c, true
+	}
+	return recordedContainer{}, false
 }
 
 // setFailRemove configures whether docker rm --force fails for container name.
