@@ -47,7 +47,7 @@ With no model flags and neither key set, live targets receive no model choice. C
 <a id="register-surla-in-mcpjson"></a>
 ### Register Surla in Your MCP Client
 
-For **local `stdio` (`surla mcp`)**, configure your coding agent to launch `surla mcp` in your workspace directory (pass optional flags such as `"-principal", "operator@example.com"` or `"-swarm-profiles", "./swarm-profiles.json"` in `args` when needed):
+For **local `stdio` (`surla mcp`)**, install the **[Claude Code plugin (`docs/CLAUDE_PLUGIN.md`)](CLAUDE_PLUGIN.md)** or configure your coding agent to launch `surla mcp` in your workspace directory (pass optional flags such as `"-principal", "operator@example.com"` or `"-swarm-profiles", "./swarm-profiles.json"` in `args` when needed):
 
 - **Claude Code / Cursor / Gemini CLI (`stdio`)** — save `.mcp.json`, `.cursor/mcp.json`, or `.gemini/settings.json`:
 
@@ -564,6 +564,7 @@ The full suite runs nightly at 07:17 UTC and on a manual **Run workflow** reques
 │       ├── main.go               # CLI entrypoint (`surla init`, `surla mcp`, `surla serve`, `surla preview`, `surla preview-change`, `surla diff`, `surla gen`, `surla verify`, `surla approve`, and `surla version`)
 │       └── mcp.go                # Local `stdio` MCP server composition root (`surla mcp`)
 ├── docs/
+│   ├── CLAUDE_PLUGIN.md          # Claude Code plugin installation, verification & recovery
 │   ├── HOW_IT_WORKS.md           # The 5 checkpoints, Chorus routing & independent verification
 │   ├── ARCHITECTURE_PLAYBOOK.md  # Golden Path rules & Goa Design suite overview
 │   ├── PRODUCT_DIRECTION.md      # Who Surla is for and the product decisions that follow
