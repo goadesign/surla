@@ -11,7 +11,7 @@ require (
 	go.opentelemetry.io/otel/sdk v1.47.0
 	go.opentelemetry.io/otel/trace v1.47.0
 	go.opentelemetry.io/proto/otlp v1.11.0
-	goa.design/goa-ai v0.90.1-0.20261110011046-f32bd628f2bf
+	goa.design/goa-ai v0.90.1-0.20261111075239-0114fb9d40d3
 	goa.design/goa/v3 v3.35.1-0.20261103205041-35e789e8f9b1
 	goa.design/model v1.16.11-0.20261030164016-5e17c2e932fb
 	golang.org/x/mod v0.42.0

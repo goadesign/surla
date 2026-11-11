@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 
 	mcpsurla "github.com/goadesign/surla/gen/mcp_surla"
 	mcpruntime "goa.design/goa-ai/runtime/mcp"
@@ -908,4 +909,465 @@ func mcpLegacyResult(value any, mode mcpLegacyMode) (any, error) {
 	default:
 		return nil, fmt.Errorf("older MCP encoder received unsupported result %T", value)
 	}
+}
+
+// ServeStdio reads newline-delimited MCP JSON-RPC messages from r, dispatches
+// requests through endpoints, and writes newline-delimited responses and
+// notifications to w. ServeStdio takes ownership of r and w and closes both
+// streams before returning.
+func ServeStdio(
+	ctx context.Context,
+	r, w *os.File,
+	endpoints *mcpsurla.Endpoints,
+) error {
+	if endpoints == nil {
+		return errors.New("mcp: endpoints are required")
+	}
+	return mcpruntime.ServeStdio(ctx, r, w, func(ctx context.Context, req *jsonrpc.RawRequest, legacy bool) *jsonrpc.Response {
+		return dispatchStdio(ctx, endpoints, req, legacy)
+	})
+}
+
+func dispatchStdio(
+	ctx context.Context,
+	endpoints *mcpsurla.Endpoints,
+	req *jsonrpc.RawRequest,
+	legacy bool,
+) *jsonrpc.Response {
+	switch req.Method {
+	case "initialize":
+		if !legacy {
+			return jsonrpc.MakeErrorResponse(req.ID, jsonrpc.MethodNotFound, "Method not found", nil)
+		}
+		req.Method = "server/discover"
+	case "ping":
+		if !legacy {
+			return jsonrpc.MakeErrorResponse(req.ID, jsonrpc.MethodNotFound, "Method not found", nil)
+		}
+		return jsonrpc.MakeSuccessResponse(req.ID, struct{}{})
+	}
+	var mode mcpLegacyMode
+	switch req.Method {
+	case "server/discover":
+		return callStdioServerDiscover(ctx, endpoints, req, legacy, mode)
+	case "tools/list":
+		return callStdioToolsList(ctx, endpoints, req, legacy, mode)
+	case "tools/call":
+		return callStdioToolsCall(ctx, endpoints, req, legacy, mode)
+	case "resources/list":
+		return callStdioResourcesList(ctx, endpoints, req, legacy, mode)
+	case "resources/read":
+		return callStdioResourcesRead(ctx, endpoints, req, legacy, mode)
+	case "resources/templates/list":
+		return callStdioResourcesTemplatesList(ctx, endpoints, req, legacy, mode)
+	default:
+		return jsonrpc.MakeErrorResponse(req.ID, jsonrpc.MethodNotFound, "Method not found", nil)
+	}
+}
+
+func callStdioServerDiscover(
+	ctx context.Context,
+	endpoints *mcpsurla.Endpoints,
+	req *jsonrpc.RawRequest,
+	legacy bool,
+	mode mcpLegacyMode,
+) *jsonrpc.Response {
+	ctx = context.WithValue(ctx, goa.MethodKey, "server/discover")
+	ctx = context.WithValue(ctx, goa.ServiceKey, "mcp_surla")
+	var body ServerDiscoverRequestBody
+	if err := json.NewDecoder(bytes.NewReader(req.Params)).Decode(&body); err != nil {
+		if errors.Is(err, io.EOF) {
+			err = goa.MissingPayloadError()
+		} else {
+			var gerr *goa.ServiceError
+			if !errors.As(err, &gerr) {
+				err = goa.DecodePayloadError(err.Error())
+			}
+		}
+		return jsonrpc.MakeErrorResponse(req.ID, jsonrpc.InvalidParams, err.Error(), nil)
+	}
+	if err := ValidateServerDiscoverRequestBody(&body); err != nil {
+		return jsonrpc.MakeErrorResponse(req.ID, jsonrpc.InvalidParams, err.Error(), nil)
+	}
+	params := NewServerDiscoverDiscoverPayload(&body)
+	res, err := endpoints.ServerDiscover(ctx, params)
+	if err != nil {
+		return jsonrpc.MakeErrorResponse(req.ID, jsonrpc.InternalError, err.Error(), nil)
+	}
+	bodyOut := NewServerDiscoverResponseBody(res.(*mcpsurla.DiscoverResult))
+	var result any = bodyOut
+	if legacy {
+		var legacyErr error
+		result, legacyErr = mcpLegacyResult(bodyOut, mode)
+		if legacyErr != nil {
+			var failure *mcpruntime.Error
+			if errors.As(legacyErr, &failure) {
+				return jsonrpc.MakeErrorResponse(req.ID, jsonrpc.Code(failure.Code), failure.Message, failure.Data)
+			}
+			return jsonrpc.MakeErrorResponse(req.ID, jsonrpc.InternalError, legacyErr.Error(), nil)
+		}
+	}
+	return jsonrpc.MakeSuccessResponse(req.ID, result)
+}
+
+func callStdioToolsList(
+	ctx context.Context,
+	endpoints *mcpsurla.Endpoints,
+	req *jsonrpc.RawRequest,
+	legacy bool,
+	mode mcpLegacyMode,
+) *jsonrpc.Response {
+	ctx = context.WithValue(ctx, goa.MethodKey, "tools/list")
+	ctx = context.WithValue(ctx, goa.ServiceKey, "mcp_surla")
+	var body ToolsListRequestBody
+	if err := json.NewDecoder(bytes.NewReader(req.Params)).Decode(&body); err != nil {
+		if errors.Is(err, io.EOF) {
+			err = goa.MissingPayloadError()
+		} else {
+			var gerr *goa.ServiceError
+			if !errors.As(err, &gerr) {
+				err = goa.DecodePayloadError(err.Error())
+			}
+		}
+		return jsonrpc.MakeErrorResponse(req.ID, jsonrpc.InvalidParams, err.Error(), nil)
+	}
+	if err := ValidateToolsListRequestBody(&body); err != nil {
+		return jsonrpc.MakeErrorResponse(req.ID, jsonrpc.InvalidParams, err.Error(), nil)
+	}
+	params := NewToolsListPayload(&body)
+	res, err := endpoints.ToolsList(ctx, params)
+	if err != nil {
+		var en goa.GoaErrorNamer
+		if errors.As(err, &en) {
+			switch en.GoaErrorName() {
+			case "invalid_params":
+				var res *goa.ServiceError
+				if !errors.As(err, &res) {
+					panic("JSON-RPC error name does not match its generated service error type")
+				}
+				body := NewToolsListInvalidParamsResponseBody(res)
+				data := struct {
+					Name string                              `json:"name"`
+					Body *ToolsListInvalidParamsResponseBody `json:"body"`
+				}{
+					Name: "invalid_params",
+					Body: body,
+				}
+				return jsonrpc.MakeErrorResponse(req.ID, -32602, err.Error(), data)
+			}
+		}
+		return jsonrpc.MakeErrorResponse(req.ID, jsonrpc.InternalError, err.Error(), nil)
+	}
+	bodyOut := NewToolsListResponseBody(res.(*mcpsurla.ToolsListResult))
+	var result any = bodyOut
+	if legacy {
+		var legacyErr error
+		result, legacyErr = mcpLegacyResult(bodyOut, mode)
+		if legacyErr != nil {
+			var failure *mcpruntime.Error
+			if errors.As(legacyErr, &failure) {
+				return jsonrpc.MakeErrorResponse(req.ID, jsonrpc.Code(failure.Code), failure.Message, failure.Data)
+			}
+			return jsonrpc.MakeErrorResponse(req.ID, jsonrpc.InternalError, legacyErr.Error(), nil)
+		}
+	}
+	return jsonrpc.MakeSuccessResponse(req.ID, result)
+}
+
+func callStdioToolsCall(
+	ctx context.Context,
+	endpoints *mcpsurla.Endpoints,
+	req *jsonrpc.RawRequest,
+	legacy bool,
+	mode mcpLegacyMode,
+) *jsonrpc.Response {
+	ctx = context.WithValue(ctx, goa.MethodKey, "tools/call")
+	ctx = context.WithValue(ctx, goa.ServiceKey, "mcp_surla")
+	var body ToolsCallRequestBody
+	if err := json.NewDecoder(bytes.NewReader(req.Params)).Decode(&body); err != nil {
+		if errors.Is(err, io.EOF) {
+			err = goa.MissingPayloadError()
+		} else {
+			var gerr *goa.ServiceError
+			if !errors.As(err, &gerr) {
+				err = goa.DecodePayloadError(err.Error())
+			}
+		}
+		return jsonrpc.MakeErrorResponse(req.ID, jsonrpc.InvalidParams, err.Error(), nil)
+	}
+	if err := ValidateToolsCallRequestBody(&body); err != nil {
+		return jsonrpc.MakeErrorResponse(req.ID, jsonrpc.InvalidParams, err.Error(), nil)
+	}
+	params := NewToolsCallPayload(&body)
+	res, err := endpoints.ToolsCall(ctx, params)
+	if err != nil {
+		var en goa.GoaErrorNamer
+		if errors.As(err, &en) {
+			switch en.GoaErrorName() {
+			case "invalid_params":
+				var res *goa.ServiceError
+				if !errors.As(err, &res) {
+					panic("JSON-RPC error name does not match its generated service error type")
+				}
+				body := NewToolsCallInvalidParamsResponseBody(res)
+				data := struct {
+					Name string                              `json:"name"`
+					Body *ToolsCallInvalidParamsResponseBody `json:"body"`
+				}{
+					Name: "invalid_params",
+					Body: body,
+				}
+				return jsonrpc.MakeErrorResponse(req.ID, -32602, err.Error(), data)
+			case "internal_error":
+				var res *goa.ServiceError
+				if !errors.As(err, &res) {
+					panic("JSON-RPC error name does not match its generated service error type")
+				}
+				body := NewToolsCallInternalErrorResponseBody(res)
+				data := struct {
+					Name string                              `json:"name"`
+					Body *ToolsCallInternalErrorResponseBody `json:"body"`
+				}{
+					Name: "internal_error",
+					Body: body,
+				}
+				return jsonrpc.MakeErrorResponse(req.ID, -32603, err.Error(), data)
+			case "missing_client_capability":
+				var res *mcpsurla.MissingClientCapabilityError
+				if !errors.As(err, &res) {
+					panic("JSON-RPC error name does not match its generated service error type")
+				}
+				body := NewToolsCallMissingClientCapabilityResponseBody(res)
+				return jsonrpc.MakeErrorResponse(req.ID, -32021, err.Error(), body)
+			}
+		}
+		return jsonrpc.MakeErrorResponse(req.ID, jsonrpc.InternalError, err.Error(), nil)
+	}
+	bodyOut := NewToolsCallResponseBody(res.(*mcpsurla.ToolsCallResult))
+	var result any = bodyOut
+	if legacy {
+		var legacyErr error
+		result, legacyErr = mcpLegacyResult(bodyOut, mode)
+		if legacyErr != nil {
+			var failure *mcpruntime.Error
+			if errors.As(legacyErr, &failure) {
+				return jsonrpc.MakeErrorResponse(req.ID, jsonrpc.Code(failure.Code), failure.Message, failure.Data)
+			}
+			return jsonrpc.MakeErrorResponse(req.ID, jsonrpc.InternalError, legacyErr.Error(), nil)
+		}
+	}
+	return jsonrpc.MakeSuccessResponse(req.ID, result)
+}
+
+func callStdioResourcesList(
+	ctx context.Context,
+	endpoints *mcpsurla.Endpoints,
+	req *jsonrpc.RawRequest,
+	legacy bool,
+	mode mcpLegacyMode,
+) *jsonrpc.Response {
+	ctx = context.WithValue(ctx, goa.MethodKey, "resources/list")
+	ctx = context.WithValue(ctx, goa.ServiceKey, "mcp_surla")
+	var body ResourcesListRequestBody
+	if err := json.NewDecoder(bytes.NewReader(req.Params)).Decode(&body); err != nil {
+		if errors.Is(err, io.EOF) {
+			err = goa.MissingPayloadError()
+		} else {
+			var gerr *goa.ServiceError
+			if !errors.As(err, &gerr) {
+				err = goa.DecodePayloadError(err.Error())
+			}
+		}
+		return jsonrpc.MakeErrorResponse(req.ID, jsonrpc.InvalidParams, err.Error(), nil)
+	}
+	if err := ValidateResourcesListRequestBody(&body); err != nil {
+		return jsonrpc.MakeErrorResponse(req.ID, jsonrpc.InvalidParams, err.Error(), nil)
+	}
+	params := NewResourcesListPayload(&body)
+	res, err := endpoints.ResourcesList(ctx, params)
+	if err != nil {
+		var en goa.GoaErrorNamer
+		if errors.As(err, &en) {
+			switch en.GoaErrorName() {
+			case "invalid_params":
+				var res *goa.ServiceError
+				if !errors.As(err, &res) {
+					panic("JSON-RPC error name does not match its generated service error type")
+				}
+				body := NewResourcesListInvalidParamsResponseBody(res)
+				data := struct {
+					Name string                                  `json:"name"`
+					Body *ResourcesListInvalidParamsResponseBody `json:"body"`
+				}{
+					Name: "invalid_params",
+					Body: body,
+				}
+				return jsonrpc.MakeErrorResponse(req.ID, -32602, err.Error(), data)
+			}
+		}
+		return jsonrpc.MakeErrorResponse(req.ID, jsonrpc.InternalError, err.Error(), nil)
+	}
+	bodyOut := NewResourcesListResponseBody(res.(*mcpsurla.ResourcesListResult))
+	var result any = bodyOut
+	if legacy {
+		var legacyErr error
+		result, legacyErr = mcpLegacyResult(bodyOut, mode)
+		if legacyErr != nil {
+			var failure *mcpruntime.Error
+			if errors.As(legacyErr, &failure) {
+				return jsonrpc.MakeErrorResponse(req.ID, jsonrpc.Code(failure.Code), failure.Message, failure.Data)
+			}
+			return jsonrpc.MakeErrorResponse(req.ID, jsonrpc.InternalError, legacyErr.Error(), nil)
+		}
+	}
+	return jsonrpc.MakeSuccessResponse(req.ID, result)
+}
+
+func callStdioResourcesRead(
+	ctx context.Context,
+	endpoints *mcpsurla.Endpoints,
+	req *jsonrpc.RawRequest,
+	legacy bool,
+	mode mcpLegacyMode,
+) *jsonrpc.Response {
+	ctx = context.WithValue(ctx, goa.MethodKey, "resources/read")
+	ctx = context.WithValue(ctx, goa.ServiceKey, "mcp_surla")
+	var body ResourcesReadRequestBody
+	if err := json.NewDecoder(bytes.NewReader(req.Params)).Decode(&body); err != nil {
+		if errors.Is(err, io.EOF) {
+			err = goa.MissingPayloadError()
+		} else {
+			var gerr *goa.ServiceError
+			if !errors.As(err, &gerr) {
+				err = goa.DecodePayloadError(err.Error())
+			}
+		}
+		return jsonrpc.MakeErrorResponse(req.ID, jsonrpc.InvalidParams, err.Error(), nil)
+	}
+	if err := ValidateResourcesReadRequestBody(&body); err != nil {
+		return jsonrpc.MakeErrorResponse(req.ID, jsonrpc.InvalidParams, err.Error(), nil)
+	}
+	params := NewResourcesReadPayload(&body)
+	res, err := endpoints.ResourcesRead(ctx, params)
+	if err != nil {
+		var en goa.GoaErrorNamer
+		if errors.As(err, &en) {
+			switch en.GoaErrorName() {
+			case "invalid_params":
+				var res *goa.ServiceError
+				if !errors.As(err, &res) {
+					panic("JSON-RPC error name does not match its generated service error type")
+				}
+				body := NewResourcesReadInvalidParamsResponseBody(res)
+				data := struct {
+					Name string                                  `json:"name"`
+					Body *ResourcesReadInvalidParamsResponseBody `json:"body"`
+				}{
+					Name: "invalid_params",
+					Body: body,
+				}
+				return jsonrpc.MakeErrorResponse(req.ID, -32602, err.Error(), data)
+			case "internal_error":
+				var res *goa.ServiceError
+				if !errors.As(err, &res) {
+					panic("JSON-RPC error name does not match its generated service error type")
+				}
+				body := NewResourcesReadInternalErrorResponseBody(res)
+				data := struct {
+					Name string                                  `json:"name"`
+					Body *ResourcesReadInternalErrorResponseBody `json:"body"`
+				}{
+					Name: "internal_error",
+					Body: body,
+				}
+				return jsonrpc.MakeErrorResponse(req.ID, -32603, err.Error(), data)
+			case "missing_client_capability":
+				var res *mcpsurla.MissingClientCapabilityError
+				if !errors.As(err, &res) {
+					panic("JSON-RPC error name does not match its generated service error type")
+				}
+				body := NewResourcesReadMissingClientCapabilityResponseBody(res)
+				return jsonrpc.MakeErrorResponse(req.ID, -32021, err.Error(), body)
+			}
+		}
+		return jsonrpc.MakeErrorResponse(req.ID, jsonrpc.InternalError, err.Error(), nil)
+	}
+	bodyOut := NewResourcesReadResponseBody(res.(*mcpsurla.ResourcesReadResult))
+	var result any = bodyOut
+	if legacy {
+		var legacyErr error
+		result, legacyErr = mcpLegacyResult(bodyOut, mode)
+		if legacyErr != nil {
+			var failure *mcpruntime.Error
+			if errors.As(legacyErr, &failure) {
+				return jsonrpc.MakeErrorResponse(req.ID, jsonrpc.Code(failure.Code), failure.Message, failure.Data)
+			}
+			return jsonrpc.MakeErrorResponse(req.ID, jsonrpc.InternalError, legacyErr.Error(), nil)
+		}
+	}
+	return jsonrpc.MakeSuccessResponse(req.ID, result)
+}
+
+func callStdioResourcesTemplatesList(
+	ctx context.Context,
+	endpoints *mcpsurla.Endpoints,
+	req *jsonrpc.RawRequest,
+	legacy bool,
+	mode mcpLegacyMode,
+) *jsonrpc.Response {
+	ctx = context.WithValue(ctx, goa.MethodKey, "resources/templates/list")
+	ctx = context.WithValue(ctx, goa.ServiceKey, "mcp_surla")
+	var body ResourcesTemplatesListRequestBody
+	if err := json.NewDecoder(bytes.NewReader(req.Params)).Decode(&body); err != nil {
+		if errors.Is(err, io.EOF) {
+			err = goa.MissingPayloadError()
+		} else {
+			var gerr *goa.ServiceError
+			if !errors.As(err, &gerr) {
+				err = goa.DecodePayloadError(err.Error())
+			}
+		}
+		return jsonrpc.MakeErrorResponse(req.ID, jsonrpc.InvalidParams, err.Error(), nil)
+	}
+	if err := ValidateResourcesTemplatesListRequestBody(&body); err != nil {
+		return jsonrpc.MakeErrorResponse(req.ID, jsonrpc.InvalidParams, err.Error(), nil)
+	}
+	params := NewResourcesTemplatesListResourceTemplatesListPayload(&body)
+	res, err := endpoints.ResourcesTemplatesList(ctx, params)
+	if err != nil {
+		var en goa.GoaErrorNamer
+		if errors.As(err, &en) {
+			switch en.GoaErrorName() {
+			case "invalid_params":
+				var res *goa.ServiceError
+				if !errors.As(err, &res) {
+					panic("JSON-RPC error name does not match its generated service error type")
+				}
+				body := NewResourcesTemplatesListInvalidParamsResponseBody(res)
+				data := struct {
+					Name string                                           `json:"name"`
+					Body *ResourcesTemplatesListInvalidParamsResponseBody `json:"body"`
+				}{
+					Name: "invalid_params",
+					Body: body,
+				}
+				return jsonrpc.MakeErrorResponse(req.ID, -32602, err.Error(), data)
+			}
+		}
+		return jsonrpc.MakeErrorResponse(req.ID, jsonrpc.InternalError, err.Error(), nil)
+	}
+	bodyOut := NewResourcesTemplatesListResponseBody(res.(*mcpsurla.ResourceTemplatesListResult))
+	var result any = bodyOut
+	if legacy {
+		var legacyErr error
+		result, legacyErr = mcpLegacyResult(bodyOut, mode)
+		if legacyErr != nil {
+			var failure *mcpruntime.Error
+			if errors.As(legacyErr, &failure) {
+				return jsonrpc.MakeErrorResponse(req.ID, jsonrpc.Code(failure.Code), failure.Message, failure.Data)
+			}
+			return jsonrpc.MakeErrorResponse(req.ID, jsonrpc.InternalError, legacyErr.Error(), nil)
+		}
+	}
+	return jsonrpc.MakeSuccessResponse(req.ID, result)
 }
