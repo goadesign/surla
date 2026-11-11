@@ -36,7 +36,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        module: [., examples/orders, examples/orders-eval]
+        module: [., story, examples/orders, examples/orders-eval]
     defaults:
       run:
         working-directory: ${{ matrix.module }}
@@ -44,7 +44,7 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
         with:
-          go-version-file: go.mod
+          go-version-file: ${{ matrix.module }}/go.mod
           # setup-go names its cache after the runner, the Go version and a
           # hash of these files, and never replaces a saved cache. Hashing this
           # module's go.sum alone keeps the generated-code job and the other
@@ -123,6 +123,11 @@ jobs:
             args: ./...
             test_timeout: 20m
             job_timeout: 30
+          - suite: unit-story
+            module: story
+            args: ./...
+            test_timeout: 3m
+            job_timeout: 10
           - suite: unit-evaluator
             module: examples/orders-eval
             args: ./...
@@ -155,7 +160,7 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
         with:
-          go-version-file: go.mod
+          go-version-file: ${{ matrix.module }}/go.mod
           cache-dependency-path: ${{ matrix.module }}/go.sum
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         if: matrix.suite == 'unit-root'
