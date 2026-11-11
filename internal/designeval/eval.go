@@ -52,7 +52,7 @@ type (
 	// Evaluator evaluates design snapshots for one owner, such as a
 	// ControlPlane or one `surla preview` or `surla diff` command. Its
 	// evaluations share one private build workspace (the evaluator build's
-	// HOME, TMPDIR and GOCACHE), so later evaluations reuse compiled
+	// TMPDIR and GOCACHE), so later evaluations reuse compiled
 	// dependencies. The workspace is created by the first admitted Evaluate,
 	// never by NewEvaluator, and Close removes it. Evaluate may be called
 	// concurrently. After Close, Evaluate fails and creates nothing. The owner
@@ -250,7 +250,7 @@ func (e *stuckBuildError) Unwrap() error {
 }
 
 // generate runs one generation in a temporary directory of its own, with
-// workDir as the build's shared HOME, TMPDIR and GOCACHE.
+// workDir as the build's shared TMPDIR and GOCACHE.
 func generate(ctx context.Context, files map[string]string, workDir string) (map[string][]byte, error) {
 	var out map[string][]byte
 	goa, err := runSandboxed(ctx, files, workDir, generateProgram(),
@@ -319,7 +319,7 @@ func readSources(stateDir string) (_ map[string][]byte, err error) {
 }
 
 // evaluate runs one evaluation in a temporary directory of its own, with
-// workDir as the build's shared HOME, TMPDIR and GOCACHE.
+// workDir as the build's shared TMPDIR and GOCACHE.
 func evaluate(ctx context.Context, files map[string]string, workDir string) (Result, error) {
 	var res Result
 	_, err := runSandboxed(ctx, files, workDir, map[string]string{"main.go": harnessMainTemplate},
@@ -344,7 +344,7 @@ func evaluate(ctx context.Context, files map[string]string, workDir string) (Res
 // the target's packages) with candidate.Build against the target's own dependency
 // versions, and runs it with candidate.Exec and args(stateDir). collect then
 // reads the program's output from stateDir. Everything happens in a temporary
-// directory of its own, with workDir as the build's shared HOME, TMPDIR and
+// directory of its own, with workDir as the build's shared TMPDIR and
 // GOCACHE; releaseTemp removes it, or keeps it after a stuck build. It
 // returns the Goa module the build selected, and a *buildError when the
 // program does not compile.

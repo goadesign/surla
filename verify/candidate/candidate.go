@@ -257,7 +257,7 @@ type BuildSpec struct {
 	GOROOT string
 	// ModCache is the already populated module cache, read-only.
 	ModCache string
-	// WorkDir is a private writable directory for HOME, TMPDIR and GOCACHE.
+	// WorkDir is a private writable directory for TMPDIR and GOCACHE.
 	WorkDir string
 	// LogFile receives the build's output; it must lie outside ModuleDir.
 	LogFile string
@@ -553,7 +553,8 @@ func quote(s string) string {
 // opening LogFile resolves to the same file as spec.Out. The fixed
 // environment keeps the build offline (GOPROXY=off), on the selected toolchain
 // (GOTOOLCHAIN=local), unable to change go.mod (-mod=readonly), and free of
-// cgo, with HOME, TMPDIR and GOCACHE inside WorkDir.
+// cgo, with TMPDIR and GOCACHE inside WorkDir and no HOME, so os.UserConfigDir
+// leaves Go telemetry disabled without starting its detached child process.
 func (b resolvedBuild) goRun(
 	ctx context.Context,
 	run func(*exec.Cmd) error,
@@ -587,7 +588,6 @@ func (b resolvedBuild) goRun(
 	cmd.Dir = spec.ModuleDir
 	cmd.Env = []string{
 		"PATH=" + filepath.Join(spec.GOROOT, "bin") + ":/usr/bin:/bin",
-		"HOME=" + spec.WorkDir,
 		"TMPDIR=" + spec.WorkDir,
 		"GOROOT=" + spec.GOROOT,
 		"GOCACHE=" + filepath.Join(spec.WorkDir, "gocache"),
@@ -596,7 +596,6 @@ func (b resolvedBuild) goRun(
 		"GOFLAGS=-mod=readonly",
 		"GOPROXY=off",
 		"GONOSUMDB=*",
-		"GOTELEMETRY=off",
 		"CGO_ENABLED=0",
 	}
 	cmd.Stdout, cmd.Stderr = logFile, logFile
