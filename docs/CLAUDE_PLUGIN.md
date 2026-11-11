@@ -121,11 +121,16 @@ Code permission rules or a separate user account.
 
 ## Update or remove
 
-Updates are not automatic. To take a newer plugin:
+Updates are not automatic. From the project root, refresh the catalog and
+update the installed plugin:
 
 ```sh
 claude plugin marketplace update surla
+claude plugin update surla@surla --scope project
 ```
+
+Then close and reopen the session (or run `/reload-plugins` in a terminal
+session) so Claude Code loads the updated plugin.
 
 To remove it from a project:
 
