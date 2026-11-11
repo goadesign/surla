@@ -99,10 +99,14 @@ func init() {
 }
 var _ = Service("orders", func() { Method("get", func() { Payload(String); Result(String); HTTP(func() { GET("/{id}") }) }) })
 `)
-	_, err = ev.Evaluate(t.Context(), files)
-	require.NoError(t, err)
-	_, err = ev.Generate(t.Context(), files)
-	require.NoError(t, err)
+	var evalErr, genErr error
+	var wg sync.WaitGroup
+	wg.Go(func() { _, evalErr = ev.Evaluate(t.Context(), files) })
+	wg.Go(func() { _, genErr = ev.Generate(t.Context(), files) })
+	wg.Wait()
+	require.NoError(t, evalErr)
+	require.NoError(t, genErr)
+	assert.Equal(t, []string{"gocache"}, entries(t, ev.workDir), "completed builds leave only the Go build cache in the shared workspace")
 	assert.Empty(t, entries(t, tmp), "neither operation allocates under inherited TMPDIR")
 	require.NoError(t, ev.Close())
 	assert.Empty(t, entries(t, parent))

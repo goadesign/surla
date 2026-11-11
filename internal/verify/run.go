@@ -119,7 +119,7 @@ type (
 		goroot string
 		// modCache is the module cache holding the candidate's dependencies.
 		modCache string
-		// workDir is the build's private HOME, TMPDIR and GOCACHE.
+		// workDir is the build's private TMPDIR and GOCACHE.
 		workDir string
 	}
 )
