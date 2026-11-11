@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -11,6 +12,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -782,6 +784,99 @@ func TestBuildTestRejectsBeforeRunningTheToolchain(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, "bin", string(got))
 	})
+}
+
+// TestBuildRunsWithoutHomeOrTelemetry checks that Build and BuildTest omit
+// HOME and GOTELEMETRY from the compiler environment while keeping TMPDIR and
+// GOCACHE in WorkDir, so Go telemetry stays disabled without starting a
+// detached child process or creating a user config directory in WorkDir.
+func TestBuildRunsWithoutHomeOrTelemetry(t *testing.T) {
+	if testing.Short() {
+		t.Skip("runs the sandboxed Go toolchain; the full suite (go test without -short) covers it")
+	}
+	if runtime.GOOS != "darwin" {
+		t.Skip("the sandbox is implemented with sandbox-exec on macOS")
+	}
+	mod := writeModule(t, map[string]string{
+		"go.mod": libGoMod, "main.go": "package main\n\nfunc main() {}\n",
+		"main_test.go": "package main\n\nimport \"testing\"\n\nfunc TestMainBuild(t *testing.T) {}\n",
+	})
+	runPair := func(workDir string, failFirst bool) [2]error {
+		var readyWg, doneWg sync.WaitGroup
+		readyWg.Add(2)
+		var errs [2]error
+		for i, isTestBuild := range []bool{false, true} {
+			doneWg.Go(func() {
+				var entered bool
+				defer func() {
+					if !entered {
+						readyWg.Done()
+					}
+				}()
+				dir := t.TempDir()
+				spec := testBuildSpec(t, mod, mod, filepath.Join(dir, "out"), filepath.Join(dir, "build.log"))
+				spec.WorkDir = workDir
+				run := func(cmd *exec.Cmd) error {
+					entered = true
+					readyWg.Done()
+					readyWg.Wait()
+					if failFirst && i == 0 {
+						return errors.New("injected runner error")
+					}
+					for _, entry := range cmd.Env {
+						if strings.HasPrefix(entry, "HOME=") || strings.HasPrefix(entry, "GOTELEMETRY=") {
+							return fmt.Errorf("unexpected compiler env entry %q", entry)
+						}
+					}
+					envCmd := exec.Command(filepath.Join(spec.GOROOT, "bin", "go"), "env", "GOTELEMETRY")
+					envCmd.Env = cmd.Env
+					if out, err := envCmd.CombinedOutput(); err != nil || strings.TrimSpace(string(out)) != "off" {
+						return fmt.Errorf("go env GOTELEMETRY = %q (%v), want off", out, err)
+					}
+					return cmd.Run()
+				}
+				var err error
+				if isTestBuild {
+					var hasTests bool
+					hasTests, err = BuildTest(t.Context(), spec, run)
+					if err == nil && !hasTests {
+						err = errors.New("expected test binary")
+					}
+				} else {
+					err = Build(t.Context(), spec, run)
+				}
+				if err == nil {
+					_, err = os.Stat(spec.Out)
+				}
+				errs[i] = err
+			})
+		}
+		doneWg.Wait()
+		return errs
+	}
+	shared := t.TempDir()
+	failErrs := runPair(shared, true)
+	require.ErrorContains(t, failErrs[0], "injected runner error")
+	require.NoError(t, failErrs[1])
+	for _, err := range runPair(shared, false) {
+		require.NoError(t, err)
+	}
+	assert.NoDirExists(t, filepath.Join(shared, "Library"))
+	assert.DirExists(t, filepath.Join(shared, "gocache"))
+	require.NoError(t, os.RemoveAll(shared))
+
+	failSpec := testBuildSpec(t, mod, mod, filepath.Join(t.TempDir(), "out"), filepath.Join(t.TempDir(), "build.log"))
+	require.NoError(t, os.WriteFile(filepath.Join(failSpec.WorkDir, "gocache"), []byte("not a directory"), 0o600))
+	require.Error(t, Build(t.Context(), failSpec, (*exec.Cmd).Run))
+	logText, err := os.ReadFile(failSpec.LogFile)
+	require.NoError(t, err)
+	assert.Contains(t, string(logText), "failed to initialize build cache")
+	assert.NoDirExists(t, filepath.Join(failSpec.WorkDir, "Library"))
+	require.NoError(t, os.RemoveAll(failSpec.WorkDir))
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	assert.ErrorIs(t, Build(ctx, testBuildSpec(t, mod, mod, filepath.Join(t.TempDir(), "out"), filepath.Join(t.TempDir(), "build.log")), (*exec.Cmd).Run), context.Canceled)
 }
 
 // TestBuildTestReadsOnlyItsSourceDir mirrors TestBuildReadsOnlyItsSourceDir for
