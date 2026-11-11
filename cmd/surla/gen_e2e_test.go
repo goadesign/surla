@@ -172,7 +172,10 @@ func TestGenOnAFreshStarterChangesNothingAndKeepsModulesApart(t *testing.T) {
 	candidateCommit := trustedSuiteCommit(t, dir)
 	require.NotEqual(t, initialized.Commit, candidateCommit)
 
-	assertTrustedSuiteJourney(t, client, opts.CardsDir, opts.RunsDir, candidateCommit, initialized.Commit, "initialized")
+	// The operator adds promotion once the project and its pinned evaluator
+	// suite commit exist; the running server picks it up without a restart.
+	promotion := writeStarterPromotion(t, workspace, initialized.ServiceName, initialized.Commit)
+	assertTrustedSuiteJourney(t, client, opts.CardsDir, opts.RunsDir, candidateCommit, initialized.Commit, "initialized", promotion)
 
 	edits := []struct {
 		// module is the module directory surla gen runs in.

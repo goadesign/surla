@@ -21,6 +21,7 @@ import (
 
 	genmcpsurla "github.com/goadesign/surla/gen/mcp_surla"
 	gensurla "github.com/goadesign/surla/gen/surla"
+	"github.com/goadesign/surla/internal/abspath"
 	"github.com/goadesign/surla/internal/controlplane"
 	"github.com/goadesign/surla/internal/verifyrun"
 )
@@ -97,16 +98,53 @@ func toolErrorText(content []*genmcpsurla.ContentItem) string {
 	return strings.Join(texts, "\n")
 }
 
+// writeStarterPromotion writes the operator's promotion configuration for the
+// starter project service, whose evaluator suite is pinned at suiteCommit, to
+// <operator-project-dir>/promotion.json, the file surla serve reads on every
+// verification and approval when -promotion-config is not given, so the
+// operator can add it after init_project without restarting. It finds that
+// directory for workspace, the bound workspace, the way surla serve does
+// (abspath.Stored, defaultOperatorRoot and sha256HexString).
+// report_dir is the operator's default reports directory, so verification
+// writes its reports where approval reads them; release_dir is a new empty
+// directory outside the workspace. The suite ID and environment are the ones
+// the starter's evaluator suite declares.
+func writeStarterPromotion(t *testing.T, workspace, service, suiteCommit string) promotionFile {
+	t.Helper()
+	root, err := abspath.Stored(workspace)
+	require.NoError(t, err)
+	opRoot, err := defaultOperatorRoot(root)
+	require.NoError(t, err)
+	projectDir := filepath.Join(opRoot, "project-"+sha256HexString(root))
+	promotion := promotionFile{
+		ReportDir:   filepath.Join(projectDir, "reports"),
+		ReleaseDir:  filepath.Join(t.TempDir(), "releases"),
+		SuiteID:     service + "_acceptance",
+		SuiteCommit: suiteCommit,
+		Environment: "scripted-model",
+		Binaries:    []string{service},
+	}
+	require.NoError(t, os.Mkdir(promotion.ReleaseDir, 0o700))
+	raw, err := json.Marshal(promotion)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "promotion.json"), raw, 0o600))
+	return promotion
+}
+
 // assertTrustedSuiteJourney starts and stops a real live candidate, then walks
 // the Change Card journey a coding agent follows through MCP on a server with
 // no model provider key: propose_change with the agent's own analysis (one
 // open question), confirm_intent with the answer, preview_architecture of the
-// workspace design, and verify_change of the candidate. It checks the saved
-// plan and full report retain the operator's suite commit and the confirmed
-// revision. No suite payload is replaced or executed outside the existing
-// candidate sandbox.
+// workspace design, verify_change of the candidate, and approve_merge of the
+// passed report against the operator's promotion configuration. It checks the
+// saved plan and full report retain the operator's suite commit and the
+// confirmed revision. The operator stages the binaries that verification
+// built and measured for the candidate commit, copied from the run's retained
+// work directory into a complete <release_dir>/<commit>/ published by one
+// rename; nothing is rebuilt, and no suite payload is replaced or executed
+// outside the existing candidate sandbox.
 func assertTrustedSuiteJourney(t *testing.T, client *genmcpsurla.Client,
-	cardsDir, runsDir, candidateCommit, suiteCommit, changeID string,
+	cardsDir, runsDir, candidateCommit, suiteCommit, changeID string, promotion promotionFile,
 ) {
 	t.Helper()
 	liveCtx, cancelLive := context.WithTimeout(t.Context(), journeyOwnerWait)
@@ -191,28 +229,16 @@ func assertTrustedSuiteJourney(t *testing.T, client *genmcpsurla.Client,
 	require.NoError(t, err)
 	ticker := time.NewTicker(200 * time.Millisecond)
 	defer ticker.Stop()
+	var done *gensurla.VerificationCompleted
 	for {
 		require.Equal(t, runID, run.RunID)
 		assert.Equal(t, card.ChangeID, run.ChangeID)
 		assert.Equal(t, card.RequestRevision, run.RequestRevision)
 		assert.Equal(t, candidateCommit, run.CandidateCommit)
 		assert.Equal(t, suiteCommit, run.SuiteCommit)
-		if done, ok := run.State.AsCompleted(); ok {
-			require.NotNil(t, done.Report)
-			assert.True(t, done.Report.Passed, "starter's scripted evaluator must pass")
-			req, saved, err := verifyrun.Read(runsDir, run.RunID)
-			require.NoError(t, err)
-			require.Equal(t, verifyrun.StateCompleted, saved.Kind)
-			assert.Equal(t, "operator@example.com", req.Owner)
-			assert.Equal(t, card.ChangeID, req.ChangeID)
-			assert.Equal(t, candidateCommit, req.Plan.CandidateCommit)
-			assert.Equal(t, suiteCommit, req.Plan.SuiteCommit)
-			assert.Equal(t, card.RequestRevision, req.Plan.RequestRevision)
-			assert.Equal(t, candidateCommit, saved.Report.Binding.CandidateCommit)
-			assert.Equal(t, suiteCommit, saved.Report.Binding.SuiteCommit)
-			assert.Equal(t, card.RequestRevision, saved.Report.Binding.RequestRevision)
-			assert.Equal(t, saved.Report.Digest, done.Report.ReportDigest)
-			return
+		if completed, ok := run.State.AsCompleted(); ok {
+			done = completed
+			break
 		}
 		if failed, ok := run.State.AsNotCompleted(); ok {
 			t.Fatalf("verification ended without a report: %+v", failed)
@@ -227,6 +253,65 @@ func assertTrustedSuiteJourney(t *testing.T, client *genmcpsurla.Client,
 		run, err = gensurla.DecodeVerificationStatusResult(trustedSuiteCall(t, phase, client, "get_verification", args))
 		require.NoError(t, err)
 	}
+	require.NotNil(t, done.Report)
+	require.True(t, done.Report.Passed, "starter's scripted evaluator must pass")
+	req, saved, err := verifyrun.Read(runsDir, run.RunID)
+	require.NoError(t, err)
+	require.Equal(t, verifyrun.StateCompleted, saved.Kind)
+	assert.Equal(t, "operator@example.com", req.Owner)
+	assert.Equal(t, card.ChangeID, req.ChangeID)
+	assert.Equal(t, candidateCommit, req.Plan.CandidateCommit)
+	assert.Equal(t, suiteCommit, req.Plan.SuiteCommit)
+	assert.Equal(t, card.RequestRevision, req.Plan.RequestRevision)
+	assert.Equal(t, promotion.ReportDir, req.Plan.ReportDir, "verification writes reports where the promotion target reads them")
+	assert.Equal(t, candidateCommit, saved.Report.Binding.CandidateCommit)
+	assert.Equal(t, suiteCommit, saved.Report.Binding.SuiteCommit)
+	assert.Equal(t, card.RequestRevision, saved.Report.Binding.RequestRevision)
+	assert.Equal(t, saved.Report.Digest, done.Report.ReportDigest)
+
+	// The operator stages the binaries this verification built and measured
+	// for the candidate commit, from the run's retained work directory, as one
+	// complete <release_dir>/<commit>/ directory.
+	staged := make(map[string]string, len(promotion.Binaries))
+	for _, name := range promotion.Binaries {
+		built, err := os.ReadFile(filepath.Join(req.Plan.WorkDir, "candidate-bin", name))
+		require.NoError(t, err)
+		require.Equal(t, saved.Report.Binding.Artifacts[name], digestOf(string(built)),
+			"the staged %s is the binary the report measured", name)
+		staged[name] = string(built)
+	}
+	publish(t, promotion.ReleaseDir, candidateCommit, staged)
+
+	args, err = gensurla.EncodeApproveMergePayload(&gensurla.ApproveMergePayload{
+		ChangeID: card.ChangeID, RequestRevision: card.RequestRevision,
+		CandidateCommit: candidateCommit, ReportDigest: done.Report.ReportDigest,
+	})
+	require.NoError(t, err)
+	approved, err := gensurla.DecodeChangeCardResult(trustedSuiteCall(t, phase, client, "approve_merge", args))
+	require.NoError(t, err)
+	assert.Equal(t, card.RequestRevision, approved.RequestRevision, "approval does not change the card's revision")
+	want := &gensurla.ApprovalItem{
+		ApprovedBy:      "operator@example.com",
+		ReportDigest:    done.Report.ReportDigest,
+		CandidateCommit: candidateCommit,
+		SuiteID:         promotion.SuiteID,
+		SuiteCommit:     suiteCommit,
+		Environment:     promotion.Environment,
+		Artifacts:       saved.Report.Binding.Artifacts,
+		ScenarioCount:   saved.Report.Counts.Required,
+	}
+	assert.Equal(t, want, approved.Approval)
+	assert.Nil(t, approved.UnverifiedApproval)
+	assert.Equal(t, promotion.SuiteID, saved.Report.Binding.SuiteID)
+	assert.Equal(t, promotion.Environment, saved.Report.Binding.Environment)
+
+	args, err = gensurla.EncodeGetChangePayload(&gensurla.GetChangePayload{ChangeID: card.ChangeID})
+	require.NoError(t, err)
+	read, err := gensurla.DecodeChangeCardResult(trustedSuiteCall(t, phase, client, "get_change", args))
+	require.NoError(t, err)
+	assert.Equal(t, card.RequestRevision, read.RequestRevision)
+	assert.Equal(t, want, read.Approval, "the saved approval still matches the staged release")
+	assert.Nil(t, read.UnverifiedApproval)
 }
 
 // closeRetaining closes the server, which stops its live target and removes
