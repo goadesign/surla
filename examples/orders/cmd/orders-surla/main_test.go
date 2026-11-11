@@ -42,7 +42,7 @@ func TestServeOwnsItsListenerUntilCancellation(t *testing.T) {
 	require.True(t, scanner.Scan(), "server did not report its cards directory")
 	assert.Equal(t, "orders-surla: saving Change Cards in "+cardsDir, scanner.Text())
 	require.True(t, scanner.Scan(), "server did not report its limited configuration")
-	assert.Contains(t, scanner.Text(), "not configured")
+	assert.Equal(t, "orders-surla: CP4 verification and CP5 promotion are not configured", scanner.Text())
 	require.ErrorContains(t, serve(ctx, cfg, io.Discard), "is in use by another process")
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimSuffix(endpoint, "/mcp")+"/ui/checkpoint", nil)
 	require.NoError(t, err)

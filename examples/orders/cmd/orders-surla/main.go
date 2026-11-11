@@ -3,8 +3,10 @@
 // SURLA_AUTH_TOKEN authenticates MCP callers, and ORDERS_PROMPTS_TOKEN grants
 // this host the target API's prompts:manage permission.
 //
-// This host has no CP1 model, CP4 verifier, or CP5 promotion target. Its
-// control plane comes from the exact Surla version in this module's go.mod.
+// Callers propose and revise Change Cards by sending their own analysis of the
+// request, so this host needs no model connection. It has no CP4 verifier and
+// no CP5 promotion target. Its control plane comes from the exact Surla
+// version in this module's go.mod.
 package main
 
 import (
@@ -158,7 +160,7 @@ func serve(ctx context.Context, cfg config, output io.Writer) (err error) {
 	srv := &http.Server{Handler: handler, ReadHeaderTimeout: 10 * time.Second}
 	fmt.Fprintf(output, "orders-surla: CP3 reference host on http://%s/mcp\n", listener.Addr())
 	fmt.Fprintf(output, "orders-surla: saving Change Cards in %s\n", cfg.cardsDir)
-	fmt.Fprintln(output, "orders-surla: CP1 analysis, CP4 verification, and CP5 promotion are not configured")
+	fmt.Fprintln(output, "orders-surla: CP4 verification and CP5 promotion are not configured")
 	finished := make(chan error, 1)
 	go func() { finished <- srv.Serve(listener) }()
 	select {

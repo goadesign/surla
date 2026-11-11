@@ -3,7 +3,7 @@ module github.com/goadesign/surla/examples/orders
 go 1.27.3
 
 require (
-	github.com/goadesign/surla v0.0.0-20261110163737-d9beac313142
+	github.com/goadesign/surla v0.0.0-20261111052818-cd11c4a90452
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/uuid v1.6.0
 	github.com/stretchr/testify v1.12.1
