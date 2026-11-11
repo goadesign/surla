@@ -1,4 +1,4 @@
-// Package designeval evaluates Go/Goa/Goa-AI/Model design sources by compiling a
+// Package designeval evaluates Go/Goa/Goa-AI/Model/Story design sources by compiling a
 // standalone evaluator binary and executing it inside verify/candidate.Exec's
 // OS-enforced single-process sandbox. Registered generators return source bytes;
 // the evaluator hashes those bytes and reads Goa-AI's existing tool catalogs.
@@ -15,7 +15,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -30,8 +29,8 @@ import (
 )
 
 type (
-	// Result holds the canonical declarations, C4 topology, agent policies, and
-	// tool contracts extracted from an evaluated Goa/Goa-AI/Model design.
+	// Result holds the canonical declarations, C4 topology, agent policies,
+	// tool contracts, and domain Stories extracted from an evaluated design.
 	Result struct {
 		// SystemName is the evaluated API name, Model system name, or primary service name.
 		SystemName string `json:"system_name"`
@@ -47,7 +46,80 @@ type (
 		// Tools lists the public tools selected by each agent, with compiled input
 		// choices; it does not claim which binding the application installs.
 		Tools []*gensurla.ToolContractItem `json:"tools"`
+		// Stories lists the domain Stories declared by the design, in declaration order.
+		Stories []StorySummary `json:"stories,omitempty"`
 	}
+
+	// StorySummary describes one evaluated domain Story in declaration order.
+	StorySummary struct {
+		// Name is the human-facing Story title.
+		Name string `json:"name"`
+		// Description is the optional longer explanation of the Story.
+		Description string `json:"description,omitempty"`
+		// Actors lists the domain roles declared in the Story, in declaration order.
+		Actors []StoryActor `json:"actors,omitempty"`
+		// Flows lists the timeline paths declared in the Story, in declaration order.
+		Flows []StoryFlow `json:"flows,omitempty"`
+	}
+
+	// StoryActor describes one domain role declared in a Story.
+	StoryActor struct {
+		// Key is the raw Story-scoped actor key.
+		Key string `json:"key"`
+		// Title is the human-facing actor label.
+		Title string `json:"title"`
+		// Description is the optional longer explanation of the actor role.
+		Description string `json:"description,omitempty"`
+	}
+
+	// StoryFlow describes one ordered timeline path through a Story.
+	StoryFlow struct {
+		// Key is the raw Story-scoped flow key.
+		Key string `json:"key"`
+		// Title is the human-facing flow title.
+		Title string `json:"title"`
+		// Description is the optional longer explanation of the flow.
+		Description string `json:"description,omitempty"`
+		// Complete reports whether the flow has a start, at least one outcome,
+		// and no open questions on the flow or any of its steps.
+		Complete bool `json:"complete"`
+		// Steps lists the starting, intermediate, and outcome steps in declaration order.
+		Steps []StoryStep `json:"steps,omitempty"`
+		// Questions lists the unresolved flow-level decisions in declaration order.
+		Questions []StoryQuestion `json:"questions,omitempty"`
+	}
+
+	// StoryStep describes one starting event, intermediate action, or outcome in a flow.
+	StoryStep struct {
+		// Key is the raw flow-scoped step key.
+		Key string `json:"key"`
+		// ActorKey is the Story-scoped key of the actor performing or observing the step.
+		ActorKey string `json:"actor_key"`
+		// Summary is the step's timeline sticky-note sentence.
+		Summary string `json:"summary"`
+		// Description is the optional longer explanation of the step.
+		Description string `json:"description,omitempty"`
+		// Kind is "start", "step", or "outcome".
+		Kind string `json:"kind"`
+		// Questions lists the unresolved step-level decisions in declaration order.
+		Questions []StoryQuestion `json:"questions,omitempty"`
+	}
+
+	// StoryQuestion records an unresolved decision attached to a flow or step.
+	StoryQuestion struct {
+		// Key is the raw flow-scoped question key.
+		Key string `json:"key"`
+		// Prompt is the human-facing question text.
+		Prompt string `json:"prompt"`
+		// Description is the optional longer context for the question.
+		Description string `json:"description,omitempty"`
+		// Options lists suggested choices in declaration order.
+		Options []string `json:"options,omitempty"`
+	}
+
+	// harnessProgram returns the main package files by name for the target's
+	// loaded module set, with {{DESIGN_IMPORT}} and {{GEN_IMPORT}} placeholders.
+	harnessProgram func(loaded map[string]bool) map[string]string
 
 	// Evaluator evaluates design snapshots for one owner, such as a
 	// ControlPlane or one `surla preview` or `surla diff` command. Its
@@ -163,10 +235,10 @@ func NewEvaluatorInDir(tempParentDir string) *Evaluator {
 	return e
 }
 
-// Evaluate evaluates the Goa/Goa-AI/Model design in a module snapshot and
-// returns its declarations, C4 topology, agent policies and tool contracts.
-// It runs until it finishes, ctx ends, or Close is called, and fails at once
-// after Close.
+// Evaluate evaluates the Goa/Goa-AI/Model/Story design in a module snapshot
+// and returns its declarations, C4 topology, agent policies, tool contracts,
+// and domain Stories. It runs until it finishes, ctx ends, or Close is called,
+// and fails at once after Close.
 //
 // files is the module's exact content keyed by module-relative path (see
 // validateSnapshot). The snapshot is staged byte for byte; no host path it
@@ -253,7 +325,8 @@ func (e *stuckBuildError) Unwrap() error {
 // workDir as the build's shared TMPDIR and GOCACHE.
 func generate(ctx context.Context, files map[string]string, workDir string) (map[string][]byte, error) {
 	var out map[string][]byte
-	goa, err := runSandboxed(ctx, files, workDir, generateProgram(),
+	goa, err := runSandboxed(ctx, files, workDir,
+		func(map[string]bool) map[string]string { return generateProgram() },
 		func(stateDir string) []string {
 			// One literal argument, which Goa copies into generated headers.
 			return []string{"-sources", filepath.Join(stateDir, "sources.json"), "--cmd=$ surla gen"}
@@ -322,7 +395,7 @@ func readSources(stateDir string) (_ map[string][]byte, err error) {
 // workDir as the build's shared TMPDIR and GOCACHE.
 func evaluate(ctx context.Context, files map[string]string, workDir string) (Result, error) {
 	var res Result
-	_, err := runSandboxed(ctx, files, workDir, map[string]string{"main.go": harnessMainTemplate},
+	_, err := runSandboxed(ctx, files, workDir, evaluateProgram,
 		func(stateDir string) []string {
 			return []string{"-out", filepath.Join(stateDir, "evaluated.json")}
 		},
@@ -340,15 +413,18 @@ func evaluate(ctx context.Context, files map[string]string, workDir string) (Res
 }
 
 // runSandboxed stages the module snapshot, compiles program (the main
-// package's files by name, whose {{DESIGN_IMPORT}} and {{GEN_IMPORT}} name
-// the target's packages) with candidate.Build against the target's own dependency
-// versions, and runs it with candidate.Exec and args(stateDir). collect then
-// reads the program's output from stateDir. Everything happens in a temporary
-// directory of its own, with workDir as the build's shared TMPDIR and
-// GOCACHE; releaseTemp removes it, or keeps it after a stuck build. It
-// returns the Goa module the build selected, and a *buildError when the
-// program does not compile.
-func runSandboxed(ctx context.Context, files map[string]string, workDir string, program map[string]string, args func(stateDir string) []string, collect func(stateDir string) error) (goa listedModule, err error) {
+// package's files by name for the target's loaded module set, whose
+// {{DESIGN_IMPORT}} and {{GEN_IMPORT}} name the target's packages) with
+// candidate.Build against the target's own dependency versions, and runs it
+// with candidate.Exec and args(stateDir). collect then reads the program's
+// output from stateDir. Everything happens in a temporary directory of its
+// own, with workDir as the build's shared TMPDIR and GOCACHE; releaseTemp
+// removes it, or keeps it after a stuck build. It returns the Goa module the
+// build selected, and a *buildError when the program does not compile.
+func runSandboxed(
+	ctx context.Context, files map[string]string, workDir string, program harnessProgram,
+	args func(stateDir string) []string, collect func(stateDir string) error,
+) (goa listedModule, err error) {
 	phase := "checking the local module files"
 	defer func() {
 		if err != nil {
@@ -395,16 +471,9 @@ func runSandboxed(ctx context.Context, files map[string]string, workDir string, 
 	if err := stageSnapshot(filepath.Join(buildDir, "target"), files); err != nil {
 		return listedModule{}, err
 	}
-	for name, src := range program {
-		src = strings.ReplaceAll(src, "{{DESIGN_IMPORT}}", strconv.Quote(target.Module.Mod.Path+"/design"))
-		src = strings.ReplaceAll(src, "{{GEN_IMPORT}}", strconv.Quote(target.Module.Mod.Path+"/gen"))
-		if err := os.WriteFile(filepath.Join(buildDir, name), []byte(src), 0o600); err != nil {
-			return listedModule{}, fmt.Errorf("write evaluator %s: %w", name, err)
-		}
-	}
 	gocmd := goCommand{bin: filepath.Join(tc.goroot, "bin", "go")}
 	phase = "loading the design module dependencies"
-	goa, err = prepareHarnessModule(ctx, gocmd, buildDir, target, evalMod, logDir)
+	goa, err = prepareHarnessModule(ctx, gocmd, buildDir, logDir, target, evalMod, program)
 	if err != nil {
 		return listedModule{}, err
 	}

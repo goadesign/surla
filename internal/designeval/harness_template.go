@@ -1,11 +1,30 @@
-// Package designeval holds the standalone Goa/Goa-AI/Model evaluator source
-// template compiled and executed inside verify/candidate.Exec's OS-enforced sandbox.
+// Package designeval holds the standalone Goa/Goa-AI/Model/Story evaluator
+// source template compiled and executed inside verify/candidate.Exec's
+// OS-enforced sandbox.
 package designeval
+
+import "strings"
 
 const (
 	// harnessMainTemplate is the standalone evaluator program compiled and
 	// executed inside candidate.Exec against the temporary design package.
 	harnessMainTemplate = harnessMainHead + harnessMainHelpers + harnessGeneratedHelpers
+
+	// harnessStoryOutputField adds the Story summary slice to the harness
+	// output struct when the target module loads the portable Story DSL module.
+	harnessStoryOutputField = "\n\t\tStories       []storySummary    `json:\"stories,omitempty\"`"
+
+	// harnessStoryPreEval records whether the target declared a Goa API or
+	// Service before eval.RunDSL synthesizes a default API expression.
+	harnessStoryPreEval = "\n\thadGoaAPI := goaexpr.Root.API != nil || len(goaexpr.Root.Services) > 0"
+
+	// harnessStoryRecordCall invokes recordStoryRoot when the target module
+	// loads the portable Story DSL module.
+	harnessStoryRecordCall = "\n\trecordStoryRoot(&out)"
+
+	// harnessStoryAPIGuard skips Goa's synthesized default API when a design
+	// declares Stories without declaring a Goa API or Service.
+	harnessStoryAPIGuard = "(hadGoaAPI || len(out.Stories) == 0) && "
 
 	// harnessMainHead contains the package declarations, structured record types,
 	// and main evaluation flow of the standalone evaluator program.
@@ -98,7 +117,7 @@ type (
 		Containers    []c4Container     ` + "`json:\"containers\"`" + `
 		Edges         []c4Edge          ` + "`json:\"edges\"`" + `
 		AgentPolicies []agentPolicy     ` + "`json:\"agent_policies\"`" + `
-		Tools         []toolContract    ` + "`json:\"tools\"`" + `
+		Tools         []toolContract    ` + "`json:\"tools\"`" + `{{STORY_OUTPUT_FIELD}}
 	}
 
 	schemaDecl struct {
@@ -234,7 +253,7 @@ type (
 
 func main() {
 	outPath := flag.String("out", "", "Output JSON path")
-	flag.Parse()
+	flag.Parse(){{STORY_PRE_EVAL}}
 
 	if err := eval.RunDSL(); err != nil {
 		fmt.Fprintln(os.Stderr, err.Error())
@@ -279,7 +298,7 @@ func main() {
 	if err := recordGeneratedSources(&out, sources); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
-	}
+	}{{STORY_RECORD_CALL}}
 
 	api := goaexpr.Root.API
 	for _, sch := range goaexpr.Root.Schemes {
@@ -287,7 +306,7 @@ func main() {
 			out.Declarations["SecurityScheme:"+sch.SchemeName] = mustJSON(describeSecurityScheme(sch))
 		}
 	}
-	if api != nil && api.Name != "" && api.Name != "api" {
+	if {{STORY_API_GUARD}}api != nil && api.Name != "" && api.Name != "api" {
 		out.SystemName = api.Name
 		decl := apiDecl{
 			Name:        api.Name,
@@ -577,4 +596,146 @@ func main() {
 	os.Stdout.Write(rawOut)
 }
 `
+
+	// harnessStoryTemplate extracts evaluated Stories from
+	// github.com/goadesign/surla/story/expr when the target design loads the
+	// portable Story DSL module.
+	harnessStoryTemplate = `package main
+
+import (
+	"slices"
+
+	storyexpr "github.com/goadesign/surla/story/expr"
 )
+
+type (
+	storySummary struct {
+		Name        string       ` + "`json:\"name\"`" + `
+		Description string       ` + "`json:\"description,omitempty\"`" + `
+		Actors      []storyActor ` + "`json:\"actors,omitempty\"`" + `
+		Flows       []storyFlow  ` + "`json:\"flows,omitempty\"`" + `
+	}
+
+	storyActor struct {
+		Key         string ` + "`json:\"key\"`" + `
+		Title       string ` + "`json:\"title\"`" + `
+		Description string ` + "`json:\"description,omitempty\"`" + `
+	}
+
+	storyFlow struct {
+		Key         string          ` + "`json:\"key\"`" + `
+		Title       string          ` + "`json:\"title\"`" + `
+		Description string          ` + "`json:\"description,omitempty\"`" + `
+		Complete    bool            ` + "`json:\"complete\"`" + `
+		Steps       []storyStep     ` + "`json:\"steps,omitempty\"`" + `
+		Questions   []storyQuestion ` + "`json:\"questions,omitempty\"`" + `
+	}
+
+	storyStep struct {
+		Key         string          ` + "`json:\"key\"`" + `
+		ActorKey    string          ` + "`json:\"actor_key\"`" + `
+		Summary     string          ` + "`json:\"summary\"`" + `
+		Description string          ` + "`json:\"description,omitempty\"`" + `
+		Kind        string          ` + "`json:\"kind\"`" + `
+		Questions   []storyQuestion ` + "`json:\"questions,omitempty\"`" + `
+	}
+
+	storyQuestion struct {
+		Key         string   ` + "`json:\"key\"`" + `
+		Prompt      string   ` + "`json:\"prompt\"`" + `
+		Description string   ` + "`json:\"description,omitempty\"`" + `
+		Options     []string ` + "`json:\"options,omitempty\"`" + `
+	}
+)
+
+func recordStoryRoot(out *output) {
+	if storyexpr.Root == nil {
+		return
+	}
+	for _, st := range storyexpr.Root.Stories {
+		if st == nil {
+			continue
+		}
+		summary := storySummary{
+			Name:        st.Name,
+			Description: st.Description,
+		}
+		for _, actor := range st.Actors {
+			if actor == nil {
+				continue
+			}
+			summary.Actors = append(summary.Actors, storyActor{
+				Key:         actor.Key,
+				Title:       actor.Title,
+				Description: actor.Description,
+			})
+		}
+		for _, flow := range st.Flows {
+			if flow == nil {
+				continue
+			}
+			flowSummary := storyFlow{
+				Key:         flow.Key,
+				Title:       flow.Title,
+				Description: flow.Description,
+				Complete:    flow.Complete(),
+				Questions:   describeStoryQuestions(flow.Questions),
+			}
+			for _, step := range flow.Steps {
+				if step == nil {
+					continue
+				}
+				flowSummary.Steps = append(flowSummary.Steps, storyStep{
+					Key:         step.Key,
+					ActorKey:    step.ActorKey,
+					Summary:     step.Summary,
+					Description: step.Description,
+					Kind:        string(step.Kind),
+					Questions:   describeStoryQuestions(step.Questions),
+				})
+			}
+			summary.Flows = append(summary.Flows, flowSummary)
+		}
+		out.Stories = append(out.Stories, summary)
+	}
+}
+
+func describeStoryQuestions(questions []*storyexpr.QuestionExpr) []storyQuestion {
+	var out []storyQuestion
+	for _, q := range questions {
+		if q == nil {
+			continue
+		}
+		out = append(out, storyQuestion{
+			Key:         q.Key,
+			Prompt:      q.Prompt,
+			Description: q.Description,
+			Options:     slices.Clone(q.Options),
+		})
+	}
+	return out
+}
+`
+)
+
+// evaluateProgram returns the evaluator harness sources for the target's
+// loaded modules, omitting Story extraction when the target does not load the
+// portable Story DSL module.
+func evaluateProgram(loaded map[string]bool) map[string]string {
+	var field, preEval, call, apiGuard string
+	if loaded[harnessStoryModule] {
+		field = harnessStoryOutputField
+		preEval = harnessStoryPreEval
+		call = harnessStoryRecordCall
+		apiGuard = harnessStoryAPIGuard
+	}
+	mainSrc := strings.ReplaceAll(harnessMainTemplate, "{{STORY_OUTPUT_FIELD}}", field)
+	mainSrc = strings.ReplaceAll(mainSrc, "{{STORY_PRE_EVAL}}", preEval)
+	mainSrc = strings.ReplaceAll(mainSrc, "{{STORY_RECORD_CALL}}", call)
+	mainSrc = strings.ReplaceAll(mainSrc, "{{STORY_API_GUARD}}", apiGuard)
+	files := map[string]string{"main.go": mainSrc}
+	if loaded[harnessStoryModule] {
+		files["story.go"] = harnessStoryTemplate
+	}
+	return files
+}

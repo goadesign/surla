@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 
 	"golang.org/x/mod/modfile"
@@ -48,6 +49,10 @@ const (
 	// versions come from the target when it requires them; otherwise from the
 	// evaluator's own go.mod.
 	harnessGoaModule, harnessGoaAIModule, harnessModelModule = "goa.design/goa/v3", "goa.design/goa-ai", "goa.design/model"
+	// harnessStoryModule is the portable Story DSL module. The harness imports
+	// and requires it only when the target's design packages load it, using
+	// the exact version the target selects.
+	harnessStoryModule = "github.com/goadesign/surla/story"
 )
 
 // prepareHarnessModule makes buildDir a module that builds the evaluator
@@ -59,11 +64,12 @@ const (
 //     -mod=readonly, so a go.mod or go.sum that is missing a dependency or a
 //     checksum fails here instead of being filled in, and records which
 //     modules provide the code the design loads;
-//  2. writes the harness go.mod requiring the target (replaced by the staged
-//     copy) and the generator modules, each at the target's required version
-//     or, when the target does not require it, the evaluator's, and resolves
-//     it, which may write only
-//     the harness's own go.mod and go.sum;
+//  2. stages the harness program files for that loaded module set and writes
+//     the harness go.mod requiring the target (replaced by the staged copy),
+//     the generator modules, each at the target's required version or, when
+//     the target does not require it, the evaluator's, and the portable Story
+//     module at the target's selected version when the design loads it, then
+//     resolves it, which may write only the harness's own go.mod and go.sum;
 //  3. requires each of those modules, and each generator module (goa,
 //     goa-ai, model) the target requires, to keep exactly the target's version
 //     in the harness build: an evaluator that would upgrade one, such as an
@@ -74,11 +80,21 @@ const (
 // the evaluator's own go.mod, which supplies generator versions the target
 // does not require. It returns the Goa module the harness build selects, with
 // its replacement if any, so a failed build can name it.
-func prepareHarnessModule(ctx context.Context, gocmd goCommand, buildDir string, target *modfile.File, evalMod *modfile.File, logDir string) (listedModule, error) {
+func prepareHarnessModule(
+	ctx context.Context, gocmd goCommand, buildDir, logDir string,
+	target, evalMod *modfile.File, program harnessProgram,
+) (listedModule, error) {
 	targetDir := filepath.Join(buildDir, "target")
 	loaded, err := gocmd.designModules(ctx, targetDir, filepath.Join(logDir, "target-load.log"))
 	if err != nil {
 		return listedModule{}, fmt.Errorf("target module is incomplete or unresolvable: %w", err)
+	}
+	for name, src := range program(loaded) {
+		src = strings.ReplaceAll(src, "{{DESIGN_IMPORT}}", strconv.Quote(target.Module.Mod.Path+"/design"))
+		src = strings.ReplaceAll(src, "{{GEN_IMPORT}}", strconv.Quote(target.Module.Mod.Path+"/gen"))
+		if err := os.WriteFile(filepath.Join(buildDir, name), []byte(src), 0o600); err != nil {
+			return listedModule{}, fmt.Errorf("write evaluator %s: %w", name, err)
+		}
 	}
 	for _, core := range []string{harnessGoaModule, harnessGoaAIModule, harnessModelModule} {
 		if _, ok := requiredVersion(target, core); ok {
@@ -116,6 +132,17 @@ func prepareHarnessModule(ctx context.Context, gocmd goCommand, buildDir string,
 		}
 		if err := harness.AddRequire(core, version); err != nil {
 			return listedModule{}, fmt.Errorf("write harness go.mod: %w", err)
+		}
+	}
+	if loaded[harnessStoryModule] {
+		storyMod, ok := targetModules[harnessStoryModule]
+		if !ok || (!storyMod.Main && storyMod.Version == "") {
+			return listedModule{}, fmt.Errorf("target module loads %s without a selected version", harnessStoryModule)
+		}
+		if !storyMod.Main {
+			if err := harness.AddRequire(harnessStoryModule, storyMod.Version); err != nil {
+				return listedModule{}, fmt.Errorf("write harness go.mod: %w", err)
+			}
 		}
 	}
 	for _, r := range target.Replace {
