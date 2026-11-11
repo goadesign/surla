@@ -23,11 +23,14 @@ type ProposeChangeRequestBody struct {
 	ChangeID *string `form:"change_id,omitempty" json:"change_id,omitempty" xml:"change_id,omitempty"`
 	// Operator feature request.
 	Prompt *string `form:"prompt,omitempty" json:"prompt,omitempty" xml:"prompt,omitempty"`
-	// Current Goa design source of the target (its design/*.go files) for the CP1
-	// model to read. When omitted on a server with a bound workspace, Surla reads
-	// design/*.go from the bound workspace; when omitted without a bound
-	// workspace, CP1 receives no current design.
+	// Goa design source the analysis was made against (the target's design/*.go
+	// files). Surla saves it with the card and includes it in request_revision; it
+	// does not interpret it. When omitted on a server with a bound workspace,
+	// Surla records design/*.go from the bound workspace; when omitted without a
+	// bound workspace, the card records no design.
 	DesignSource *string `form:"design_source,omitempty" json:"design_source,omitempty" xml:"design_source,omitempty"`
+	// Your analysis of prompt against the target's current design.
+	Analysis *CP1AnalysisRequestBody `form:"analysis,omitempty" json:"analysis,omitempty" xml:"analysis,omitempty"`
 }
 
 // ReviseChangeRequestBody is the type of the "surla" service "revise_change"
@@ -39,11 +42,15 @@ type ReviseChangeRequestBody struct {
 	RequestRevision *string `form:"request_revision,omitempty" json:"request_revision,omitempty" xml:"request_revision,omitempty"`
 	// Revised operator feature request.
 	Prompt *string `form:"prompt,omitempty" json:"prompt,omitempty" xml:"prompt,omitempty"`
-	// Updated Goa design source of the target (its design/*.go files) for the CP1
-	// model to read. When omitted on a workspace-backed card with a bound
-	// workspace, Surla re-reads design/*.go from the bound workspace; otherwise
-	// the card's saved design source is used again.
+	// Updated Goa design source the analysis was made against (the target's
+	// design/*.go files). Surla saves it with the card and includes it in
+	// request_revision; it does not interpret it. When omitted on a
+	// workspace-backed card with a bound workspace, Surla records design/*.go from
+	// the bound workspace again; otherwise the card's saved design source is kept.
 	DesignSource *string `form:"design_source,omitempty" json:"design_source,omitempty" xml:"design_source,omitempty"`
+	// Your analysis of the revised prompt against the current card and the
+	// target's current design.
+	Analysis *CP1RevisionAnalysisRequestBody `form:"analysis,omitempty" json:"analysis,omitempty" xml:"analysis,omitempty"`
 }
 
 // ConfirmIntentRequestBody is the type of the "surla" service "confirm_intent"
@@ -209,8 +216,8 @@ type ProposeChangeResponseBody struct {
 	ConfirmedBy *string `form:"confirmed_by,omitempty" json:"confirmed_by,omitempty" xml:"confirmed_by,omitempty"`
 	// SHA-256 digest of the canonical versioned Change Card.
 	RequestRevision string `form:"request_revision" json:"request_revision" xml:"request_revision"`
-	// Decision view the CP1 model composed for this revision, when it produced
-	// one. A confirm_intent that changes answers or examples returns the new
+	// Decision view the caller composed for this revision in its analysis, when it
+	// sent one. A confirm_intent that changes answers or examples returns the new
 	// revision without it.
 	UIComposition *UICompositionItemResponseBody `form:"ui_composition,omitempty" json:"ui_composition,omitempty" xml:"ui_composition,omitempty"`
 	// Checkpoint 5 approval of this revision, present only while it is verified
@@ -255,8 +262,8 @@ type ReviseChangeResponseBody struct {
 	ConfirmedBy *string `form:"confirmed_by,omitempty" json:"confirmed_by,omitempty" xml:"confirmed_by,omitempty"`
 	// SHA-256 digest of the canonical versioned Change Card.
 	RequestRevision string `form:"request_revision" json:"request_revision" xml:"request_revision"`
-	// Decision view the CP1 model composed for this revision, when it produced
-	// one. A confirm_intent that changes answers or examples returns the new
+	// Decision view the caller composed for this revision in its analysis, when it
+	// sent one. A confirm_intent that changes answers or examples returns the new
 	// revision without it.
 	UIComposition *UICompositionItemResponseBody `form:"ui_composition,omitempty" json:"ui_composition,omitempty" xml:"ui_composition,omitempty"`
 	// Checkpoint 5 approval of this revision, present only while it is verified
@@ -301,8 +308,8 @@ type ConfirmIntentResponseBody struct {
 	ConfirmedBy *string `form:"confirmed_by,omitempty" json:"confirmed_by,omitempty" xml:"confirmed_by,omitempty"`
 	// SHA-256 digest of the canonical versioned Change Card.
 	RequestRevision string `form:"request_revision" json:"request_revision" xml:"request_revision"`
-	// Decision view the CP1 model composed for this revision, when it produced
-	// one. A confirm_intent that changes answers or examples returns the new
+	// Decision view the caller composed for this revision in its analysis, when it
+	// sent one. A confirm_intent that changes answers or examples returns the new
 	// revision without it.
 	UIComposition *UICompositionItemResponseBody `form:"ui_composition,omitempty" json:"ui_composition,omitempty" xml:"ui_composition,omitempty"`
 	// Checkpoint 5 approval of this revision, present only while it is verified
@@ -347,8 +354,8 @@ type GetChangeResponseBody struct {
 	ConfirmedBy *string `form:"confirmed_by,omitempty" json:"confirmed_by,omitempty" xml:"confirmed_by,omitempty"`
 	// SHA-256 digest of the canonical versioned Change Card.
 	RequestRevision string `form:"request_revision" json:"request_revision" xml:"request_revision"`
-	// Decision view the CP1 model composed for this revision, when it produced
-	// one. A confirm_intent that changes answers or examples returns the new
+	// Decision view the caller composed for this revision in its analysis, when it
+	// sent one. A confirm_intent that changes answers or examples returns the new
 	// revision without it.
 	UIComposition *UICompositionItemResponseBody `form:"ui_composition,omitempty" json:"ui_composition,omitempty" xml:"ui_composition,omitempty"`
 	// Checkpoint 5 approval of this revision, present only while it is verified
@@ -501,8 +508,8 @@ type ApproveMergeResponseBody struct {
 	ConfirmedBy *string `form:"confirmed_by,omitempty" json:"confirmed_by,omitempty" xml:"confirmed_by,omitempty"`
 	// SHA-256 digest of the canonical versioned Change Card.
 	RequestRevision string `form:"request_revision" json:"request_revision" xml:"request_revision"`
-	// Decision view the CP1 model composed for this revision, when it produced
-	// one. A confirm_intent that changes answers or examples returns the new
+	// Decision view the caller composed for this revision in its analysis, when it
+	// sent one. A confirm_intent that changes answers or examples returns the new
 	// revision without it.
 	UIComposition *UICompositionItemResponseBody `form:"ui_composition,omitempty" json:"ui_composition,omitempty" xml:"ui_composition,omitempty"`
 	// Checkpoint 5 approval of this revision, present only while it is verified
@@ -663,43 +670,6 @@ type ProposeChangeUnprocessableResponseBody struct {
 	Fault bool `form:"fault" json:"fault" xml:"fault"`
 }
 
-// ProposeChangeNotImplementedResponseBody is the type of the "surla" service
-// "propose_change" endpoint HTTP response body for the "not_implemented" error.
-type ProposeChangeNotImplementedResponseBody struct {
-	// Name is the name of this class of errors.
-	Name string `form:"name" json:"name" xml:"name"`
-	// ID is a unique identifier for this particular occurrence of the problem.
-	ID string `form:"id" json:"id" xml:"id"`
-	// Message is a human-readable explanation specific to this occurrence of the
-	// problem.
-	Message string `form:"message" json:"message" xml:"message"`
-	// Is the error temporary?
-	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
-	// Is the error a timeout?
-	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
-	// Is the error a server-side fault?
-	Fault bool `form:"fault" json:"fault" xml:"fault"`
-}
-
-// ProposeChangeAnalysisRejectedResponseBody is the type of the "surla" service
-// "propose_change" endpoint HTTP response body for the "analysis_rejected"
-// error.
-type ProposeChangeAnalysisRejectedResponseBody struct {
-	// Name is the name of this class of errors.
-	Name string `form:"name" json:"name" xml:"name"`
-	// ID is a unique identifier for this particular occurrence of the problem.
-	ID string `form:"id" json:"id" xml:"id"`
-	// Message is a human-readable explanation specific to this occurrence of the
-	// problem.
-	Message string `form:"message" json:"message" xml:"message"`
-	// Is the error temporary?
-	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
-	// Is the error a timeout?
-	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
-	// Is the error a server-side fault?
-	Fault bool `form:"fault" json:"fault" xml:"fault"`
-}
-
 // ReviseChangeNotFoundResponseBody is the type of the "surla" service
 // "revise_change" endpoint HTTP response body for the "not_found" error.
 type ReviseChangeNotFoundResponseBody struct {
@@ -757,43 +727,6 @@ type ReviseChangeConflictResponseBody struct {
 // ReviseChangeUnprocessableResponseBody is the type of the "surla" service
 // "revise_change" endpoint HTTP response body for the "unprocessable" error.
 type ReviseChangeUnprocessableResponseBody struct {
-	// Name is the name of this class of errors.
-	Name string `form:"name" json:"name" xml:"name"`
-	// ID is a unique identifier for this particular occurrence of the problem.
-	ID string `form:"id" json:"id" xml:"id"`
-	// Message is a human-readable explanation specific to this occurrence of the
-	// problem.
-	Message string `form:"message" json:"message" xml:"message"`
-	// Is the error temporary?
-	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
-	// Is the error a timeout?
-	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
-	// Is the error a server-side fault?
-	Fault bool `form:"fault" json:"fault" xml:"fault"`
-}
-
-// ReviseChangeNotImplementedResponseBody is the type of the "surla" service
-// "revise_change" endpoint HTTP response body for the "not_implemented" error.
-type ReviseChangeNotImplementedResponseBody struct {
-	// Name is the name of this class of errors.
-	Name string `form:"name" json:"name" xml:"name"`
-	// ID is a unique identifier for this particular occurrence of the problem.
-	ID string `form:"id" json:"id" xml:"id"`
-	// Message is a human-readable explanation specific to this occurrence of the
-	// problem.
-	Message string `form:"message" json:"message" xml:"message"`
-	// Is the error temporary?
-	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
-	// Is the error a timeout?
-	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
-	// Is the error a server-side fault?
-	Fault bool `form:"fault" json:"fault" xml:"fault"`
-}
-
-// ReviseChangeAnalysisRejectedResponseBody is the type of the "surla" service
-// "revise_change" endpoint HTTP response body for the "analysis_rejected"
-// error.
-type ReviseChangeAnalysisRejectedResponseBody struct {
 	// Name is the name of this class of errors.
 	Name string `form:"name" json:"name" xml:"name"`
 	// ID is a unique identifier for this particular occurrence of the problem.
@@ -1754,11 +1687,10 @@ type ExampleItemResponseBody struct {
 // UICompositionItemResponseBody is used to define fields on response body
 // types.
 type UICompositionItemResponseBody struct {
-	// OpenUI Lang program composed by the CP1 model from the Surla decision
-	// component catalog, exactly as the model returned it. The server does not
-	// check it; the checkpoint viewer validates it and shows its error state, with
-	// the rest of the card still usable, when the program is not a valid
-	// composition.
+	// OpenUI Lang program from the analysis's ui_composition, exactly as the
+	// caller sent it. The server does not check it; the checkpoint viewer
+	// validates it and shows its error state, with the rest of the card still
+	// usable, when the program is not a valid composition.
 	Program string `form:"program" json:"program" xml:"program"`
 	// request_revision of the Change Card this program was composed for.
 	ComposedForRevision string `form:"composed_for_revision" json:"composed_for_revision" xml:"composed_for_revision"`
@@ -2069,6 +2001,108 @@ type TraceSpanResponseBody struct {
 	// True when text was shortened to fit this diagnostic record; use operator
 	// telemetry for the full values.
 	Shortened bool `form:"shortened" json:"shortened" xml:"shortened"`
+}
+
+// CP1AnalysisRequestBody is used to define fields on request body types.
+type CP1AnalysisRequestBody struct {
+	// Plain-English description of the requested behavior, including the details
+	// the request or the design already settle.
+	Summary *string `form:"summary,omitempty" json:"summary,omitempty" xml:"summary,omitempty"`
+	// Open questions only the requester can answer: product, domain, or
+	// operational choices that change observable behavior or service boundaries.
+	// Do not ask about details the request or the design already settle; state
+	// them in summary, or in examples when they change an observable outcome. Send
+	// an empty list when nothing is open.
+	Ambiguities []*CP1AnalysisAmbiguityRequestBody `form:"ambiguities,omitempty" json:"ambiguities,omitempty" xml:"ambiguities,omitempty"`
+	// Concrete acceptance examples drawn from the request and the design, never
+	// placeholder text; each becomes a check the change must pass.
+	Examples []*CP1AnalysisExampleRequestBody `form:"examples,omitempty" json:"examples,omitempty" xml:"examples,omitempty"`
+	// Existing behaviors and contract rules of the target that the change must
+	// keep, each stated concretely; empty when none apply.
+	PreservedBehaviors []*string `form:"preserved_behaviors,omitempty" json:"preserved_behaviors,omitempty" xml:"preserved_behaviors,omitempty"`
+	// Optional OpenUI Lang program that helps the requester decide the open
+	// questions, built only from the decision components the surla://golden-path
+	// resource lists. Refer to an ambiguity or example only by its 1-based
+	// position in this analysis (1 is the first); never invent identifiers. Surla
+	// saves it unchanged without checking it; the checkpoint viewer validates and
+	// renders it. Omit it when a plain card is clearer.
+	UIComposition *string `form:"ui_composition,omitempty" json:"ui_composition,omitempty" xml:"ui_composition,omitempty"`
+}
+
+// CP1AnalysisAmbiguityRequestBody is used to define fields on request body
+// types.
+type CP1AnalysisAmbiguityRequestBody struct {
+	// The decision in plain language, saying what the choice changes.
+	Question *string `form:"question,omitempty" json:"question,omitempty" xml:"question,omitempty"`
+	// At least two distinct, self-contained choices; each states the behavior it
+	// selects and what follows from it. The requester's answer must be exactly one
+	// of these strings.
+	Options []*string `form:"options,omitempty" json:"options,omitempty" xml:"options,omitempty"`
+}
+
+// CP1AnalysisExampleRequestBody is used to define fields on request body types.
+type CP1AnalysisExampleRequestBody struct {
+	// Short name of the situation, in the requester's domain terms.
+	Scenario *string `form:"scenario,omitempty" json:"scenario,omitempty" xml:"scenario,omitempty"`
+	// The actual request, inputs, and starting state in this scenario, with real
+	// values from the request and the design, never placeholders.
+	InputSummary *string `form:"input_summary,omitempty" json:"input_summary,omitempty" xml:"input_summary,omitempty"`
+	// The observable result or refusal that must hold.
+	ExpectedOutcome *string `form:"expected_outcome,omitempty" json:"expected_outcome,omitempty" xml:"expected_outcome,omitempty"`
+	// deterministic when code can check the outcome directly; model_judged when
+	// checking it needs judgment.
+	VerificationKind *string `form:"verification_kind,omitempty" json:"verification_kind,omitempty" xml:"verification_kind,omitempty"`
+}
+
+// CP1RevisionAnalysisRequestBody is used to define fields on request body
+// types.
+type CP1RevisionAnalysisRequestBody struct {
+	// Plain-English description of the revised behavior, including the details the
+	// request, the design or confirmed answers already settle.
+	Summary *string `form:"summary,omitempty" json:"summary,omitempty" xml:"summary,omitempty"`
+	// Open questions only the requester can answer: product, domain, or
+	// operational choices that change observable behavior or service boundaries.
+	// Do not ask about details the request, the design or a confirmed answer
+	// already settle; state them in summary, or in examples when they change an
+	// observable outcome. Send an empty list when nothing is open.
+	Ambiguities []*CP1AnalysisAmbiguityRequestBody `form:"ambiguities,omitempty" json:"ambiguities,omitempty" xml:"ambiguities,omitempty"`
+	// Concrete acceptance examples drawn from the revised request and the design.
+	// Give prior_id for each current example you keep or edit; omit it for new
+	// ones.
+	Examples []*CP1RevisionAnalysisExampleRequestBody `form:"examples,omitempty" json:"examples,omitempty" xml:"examples,omitempty"`
+	// IDs of the current card's examples this revision drops. Every current
+	// example ID appears exactly once, either as an examples[].prior_id or here;
+	// send an empty list when none are dropped.
+	RemovedExampleIds []*string `form:"removed_example_ids,omitempty" json:"removed_example_ids,omitempty" xml:"removed_example_ids,omitempty"`
+	// Existing behaviors and contract rules of the target that the change must
+	// keep, each stated concretely; empty when none apply.
+	PreservedBehaviors []*string `form:"preserved_behaviors,omitempty" json:"preserved_behaviors,omitempty" xml:"preserved_behaviors,omitempty"`
+	// Optional OpenUI Lang program that helps the requester decide the open
+	// questions, built only from the decision components the surla://golden-path
+	// resource lists. Refer to an ambiguity or example only by its 1-based
+	// position in this analysis (1 is the first); never invent identifiers. Surla
+	// saves it unchanged without checking it; the checkpoint viewer validates and
+	// renders it. Omit it when a plain card is clearer.
+	UIComposition *string `form:"ui_composition,omitempty" json:"ui_composition,omitempty" xml:"ui_composition,omitempty"`
+}
+
+// CP1RevisionAnalysisExampleRequestBody is used to define fields on request
+// body types.
+type CP1RevisionAnalysisExampleRequestBody struct {
+	// ID of the current card's example this one keeps or edits, exactly as the
+	// card shows it; the example keeps that ID. Omit it for a new example, which
+	// gets the lowest check_NN ID the current and revised cards do not use.
+	PriorID *string `form:"prior_id,omitempty" json:"prior_id,omitempty" xml:"prior_id,omitempty"`
+	// Short name of the situation, in the requester's domain terms.
+	Scenario *string `form:"scenario,omitempty" json:"scenario,omitempty" xml:"scenario,omitempty"`
+	// The actual request, inputs, and starting state in this scenario, with real
+	// values from the request and the design, never placeholders.
+	InputSummary *string `form:"input_summary,omitempty" json:"input_summary,omitempty" xml:"input_summary,omitempty"`
+	// The observable result or refusal that must hold.
+	ExpectedOutcome *string `form:"expected_outcome,omitempty" json:"expected_outcome,omitempty" xml:"expected_outcome,omitempty"`
+	// deterministic when code can check the outcome directly; model_judged when
+	// checking it needs judgment.
+	VerificationKind *string `form:"verification_kind,omitempty" json:"verification_kind,omitempty" xml:"verification_kind,omitempty"`
 }
 
 // ExampleItemRequestBody is used to define fields on request body types.
@@ -2997,34 +3031,6 @@ func NewProposeChangeUnprocessableResponseBody(res *goa.ServiceError) *ProposeCh
 	return body
 }
 
-// NewProposeChangeNotImplementedResponseBody builds the HTTP response body
-// from the result of the "propose_change" endpoint of the "surla" service.
-func NewProposeChangeNotImplementedResponseBody(res *goa.ServiceError) *ProposeChangeNotImplementedResponseBody {
-	body := &ProposeChangeNotImplementedResponseBody{
-		Name:      res.Name,
-		ID:        res.ID,
-		Message:   res.Message,
-		Temporary: res.Temporary,
-		Timeout:   res.Timeout,
-		Fault:     res.Fault,
-	}
-	return body
-}
-
-// NewProposeChangeAnalysisRejectedResponseBody builds the HTTP response body
-// from the result of the "propose_change" endpoint of the "surla" service.
-func NewProposeChangeAnalysisRejectedResponseBody(res *goa.ServiceError) *ProposeChangeAnalysisRejectedResponseBody {
-	body := &ProposeChangeAnalysisRejectedResponseBody{
-		Name:      res.Name,
-		ID:        res.ID,
-		Message:   res.Message,
-		Temporary: res.Temporary,
-		Timeout:   res.Timeout,
-		Fault:     res.Fault,
-	}
-	return body
-}
-
 // NewReviseChangeNotFoundResponseBody builds the HTTP response body from the
 // result of the "revise_change" endpoint of the "surla" service.
 func NewReviseChangeNotFoundResponseBody(res *goa.ServiceError) *ReviseChangeNotFoundResponseBody {
@@ -3071,34 +3077,6 @@ func NewReviseChangeConflictResponseBody(res *goa.ServiceError) *ReviseChangeCon
 // the result of the "revise_change" endpoint of the "surla" service.
 func NewReviseChangeUnprocessableResponseBody(res *goa.ServiceError) *ReviseChangeUnprocessableResponseBody {
 	body := &ReviseChangeUnprocessableResponseBody{
-		Name:      res.Name,
-		ID:        res.ID,
-		Message:   res.Message,
-		Temporary: res.Temporary,
-		Timeout:   res.Timeout,
-		Fault:     res.Fault,
-	}
-	return body
-}
-
-// NewReviseChangeNotImplementedResponseBody builds the HTTP response body from
-// the result of the "revise_change" endpoint of the "surla" service.
-func NewReviseChangeNotImplementedResponseBody(res *goa.ServiceError) *ReviseChangeNotImplementedResponseBody {
-	body := &ReviseChangeNotImplementedResponseBody{
-		Name:      res.Name,
-		ID:        res.ID,
-		Message:   res.Message,
-		Temporary: res.Temporary,
-		Timeout:   res.Timeout,
-		Fault:     res.Fault,
-	}
-	return body
-}
-
-// NewReviseChangeAnalysisRejectedResponseBody builds the HTTP response body
-// from the result of the "revise_change" endpoint of the "surla" service.
-func NewReviseChangeAnalysisRejectedResponseBody(res *goa.ServiceError) *ReviseChangeAnalysisRejectedResponseBody {
-	body := &ReviseChangeAnalysisRejectedResponseBody{
 		Name:      res.Name,
 		ID:        res.ID,
 		Message:   res.Message,
@@ -3825,6 +3803,7 @@ func NewProposeChangePayload(body *ProposeChangeRequestBody) *surla.ProposeChang
 		Prompt:       *body.Prompt,
 		DesignSource: body.DesignSource,
 	}
+	v.Analysis = unmarshalCP1AnalysisRequestBodyToSurlaCP1Analysis(body.Analysis)
 
 	return v
 }
@@ -3837,6 +3816,7 @@ func NewReviseChangePayload(body *ReviseChangeRequestBody) *surla.ReviseChangePa
 		Prompt:          *body.Prompt,
 		DesignSource:    body.DesignSource,
 	}
+	v.Analysis = unmarshalCP1RevisionAnalysisRequestBodyToSurlaCP1RevisionAnalysis(body.Analysis)
 
 	return v
 }
@@ -4043,6 +4023,14 @@ func ValidateProposeChangeRequestBody(body *ProposeChangeRequestBody) (err error
 	if body.Prompt == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("prompt", "body"))
 	}
+	if body.Analysis == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("analysis", "body"))
+	}
+	if body.Analysis != nil {
+		if err2 := validateCP1AnalysisRequestBody(body.Analysis, "body.analysis"); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		}
+	}
 	return
 }
 
@@ -4057,6 +4045,14 @@ func ValidateReviseChangeRequestBody(body *ReviseChangeRequestBody) (err error) 
 	}
 	if body.Prompt == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("prompt", "body"))
+	}
+	if body.Analysis == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("analysis", "body"))
+	}
+	if body.Analysis != nil {
+		if err2 := validateCP1RevisionAnalysisRequestBody(body.Analysis, "body.analysis"); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		}
 	}
 	return
 }
@@ -4250,6 +4246,430 @@ func ValidateGenerateCodeRequestBody(body *GenerateCodeRequestBody) (err error) 
 func ValidateReadCheckOutputRequestBody(body *ReadCheckOutputRequestBody) (err error) {
 	if body.OpID == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("op_id", "body"))
+	}
+	return
+}
+
+// ValidateCP1AnalysisRequestBody runs the validations defined on CP1Analysis
+func ValidateCP1AnalysisRequestBody(body *CP1AnalysisRequestBody) (err error) {
+	if body.Summary == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("summary", "body"))
+	}
+	if body.Ambiguities == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("ambiguities", "body"))
+	}
+	if body.Examples == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("examples", "body"))
+	}
+	if body.PreservedBehaviors == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("preserved_behaviors", "body"))
+	}
+	if body.Summary != nil {
+		err = goa.MergeErrors(err, goa.ValidatePattern("body.summary", *body.Summary, "[^\\t\\n\\v\\f\\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]"))
+	}
+	for _, e := range body.Ambiguities {
+		if e == nil {
+			err = goa.MergeErrors(err, goa.MissingFieldError("body.ambiguities", "[*]"))
+		}
+		if e != nil {
+			if err2 := validateCP1AnalysisAmbiguityRequestBody(e, "body.ambiguities[*]"); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	if len(body.Examples) < 1 {
+		err = goa.MergeErrors(err, goa.InvalidLengthError("body.examples", body.Examples, len(body.Examples), 1, true))
+	}
+	for _, e := range body.Examples {
+		if e == nil {
+			err = goa.MergeErrors(err, goa.MissingFieldError("body.examples", "[*]"))
+		}
+		if e != nil {
+			if err2 := validateCP1AnalysisExampleRequestBody(e, "body.examples[*]"); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	for _, e := range body.PreservedBehaviors {
+		if e == nil {
+			err = goa.MergeErrors(err, goa.MissingFieldError("body.preserved_behaviors", "[*]"))
+		}
+		if e != nil {
+			err = goa.MergeErrors(err, goa.ValidatePattern("body.preserved_behaviors[*]", *e, "[^\\t\\n\\v\\f\\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]"))
+		}
+	}
+	return
+}
+
+// validateCP1AnalysisRequestBody checks CP1Analysis and reports errors using
+// the path supplied by its caller
+func validateCP1AnalysisRequestBody(body *CP1AnalysisRequestBody, path string) (err error) {
+	if body.Summary == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("summary", path))
+	}
+	if body.Ambiguities == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("ambiguities", path))
+	}
+	if body.Examples == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("examples", path))
+	}
+	if body.PreservedBehaviors == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("preserved_behaviors", path))
+	}
+	if body.Summary != nil {
+		err = goa.MergeErrors(err, goa.ValidatePattern(path+".summary", *body.Summary, "[^\\t\\n\\v\\f\\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]"))
+	}
+	for _, e := range body.Ambiguities {
+		if e == nil {
+			err = goa.MergeErrors(err, goa.MissingFieldError(path+".ambiguities", "[*]"))
+		}
+		if e != nil {
+			if err2 := validateCP1AnalysisAmbiguityRequestBody(e, path+".ambiguities[*]"); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	if len(body.Examples) < 1 {
+		err = goa.MergeErrors(err, goa.InvalidLengthError(path+".examples", body.Examples, len(body.Examples), 1, true))
+	}
+	for _, e := range body.Examples {
+		if e == nil {
+			err = goa.MergeErrors(err, goa.MissingFieldError(path+".examples", "[*]"))
+		}
+		if e != nil {
+			if err2 := validateCP1AnalysisExampleRequestBody(e, path+".examples[*]"); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	for _, e := range body.PreservedBehaviors {
+		if e == nil {
+			err = goa.MergeErrors(err, goa.MissingFieldError(path+".preserved_behaviors", "[*]"))
+		}
+		if e != nil {
+			err = goa.MergeErrors(err, goa.ValidatePattern(path+".preserved_behaviors[*]", *e, "[^\\t\\n\\v\\f\\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]"))
+		}
+	}
+	return
+}
+
+// ValidateCP1AnalysisAmbiguityRequestBody runs the validations defined on
+// CP1AnalysisAmbiguity
+func ValidateCP1AnalysisAmbiguityRequestBody(body *CP1AnalysisAmbiguityRequestBody) (err error) {
+	if body.Question == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("question", "body"))
+	}
+	if body.Options == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("options", "body"))
+	}
+	if body.Question != nil {
+		err = goa.MergeErrors(err, goa.ValidatePattern("body.question", *body.Question, "[^\\t\\n\\v\\f\\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]"))
+	}
+	if len(body.Options) < 2 {
+		err = goa.MergeErrors(err, goa.InvalidLengthError("body.options", body.Options, len(body.Options), 2, true))
+	}
+	for _, e := range body.Options {
+		if e == nil {
+			err = goa.MergeErrors(err, goa.MissingFieldError("body.options", "[*]"))
+		}
+		if e != nil {
+			err = goa.MergeErrors(err, goa.ValidatePattern("body.options[*]", *e, "[^\\t\\n\\v\\f\\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]"))
+		}
+	}
+	return
+}
+
+// validateCP1AnalysisAmbiguityRequestBody checks CP1AnalysisAmbiguity and
+// reports errors using the path supplied by its caller
+func validateCP1AnalysisAmbiguityRequestBody(body *CP1AnalysisAmbiguityRequestBody, path string) (err error) {
+	if body.Question == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("question", path))
+	}
+	if body.Options == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("options", path))
+	}
+	if body.Question != nil {
+		err = goa.MergeErrors(err, goa.ValidatePattern(path+".question", *body.Question, "[^\\t\\n\\v\\f\\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]"))
+	}
+	if len(body.Options) < 2 {
+		err = goa.MergeErrors(err, goa.InvalidLengthError(path+".options", body.Options, len(body.Options), 2, true))
+	}
+	for _, e := range body.Options {
+		if e == nil {
+			err = goa.MergeErrors(err, goa.MissingFieldError(path+".options", "[*]"))
+		}
+		if e != nil {
+			err = goa.MergeErrors(err, goa.ValidatePattern(path+".options[*]", *e, "[^\\t\\n\\v\\f\\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]"))
+		}
+	}
+	return
+}
+
+// ValidateCP1AnalysisExampleRequestBody runs the validations defined on
+// CP1AnalysisExample
+func ValidateCP1AnalysisExampleRequestBody(body *CP1AnalysisExampleRequestBody) (err error) {
+	if body.Scenario == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("scenario", "body"))
+	}
+	if body.InputSummary == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("input_summary", "body"))
+	}
+	if body.ExpectedOutcome == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("expected_outcome", "body"))
+	}
+	if body.VerificationKind == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("verification_kind", "body"))
+	}
+	if body.Scenario != nil {
+		err = goa.MergeErrors(err, goa.ValidatePattern("body.scenario", *body.Scenario, "[^\\t\\n\\v\\f\\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]"))
+	}
+	if body.InputSummary != nil {
+		err = goa.MergeErrors(err, goa.ValidatePattern("body.input_summary", *body.InputSummary, "[^\\t\\n\\v\\f\\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]"))
+	}
+	if body.ExpectedOutcome != nil {
+		err = goa.MergeErrors(err, goa.ValidatePattern("body.expected_outcome", *body.ExpectedOutcome, "[^\\t\\n\\v\\f\\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]"))
+	}
+	if body.VerificationKind != nil {
+		if !(*body.VerificationKind == "deterministic" || *body.VerificationKind == "model_judged") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.verification_kind", *body.VerificationKind, []any{"deterministic", "model_judged"}))
+		}
+	}
+	return
+}
+
+// validateCP1AnalysisExampleRequestBody checks CP1AnalysisExample and reports
+// errors using the path supplied by its caller
+func validateCP1AnalysisExampleRequestBody(body *CP1AnalysisExampleRequestBody, path string) (err error) {
+	if body.Scenario == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("scenario", path))
+	}
+	if body.InputSummary == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("input_summary", path))
+	}
+	if body.ExpectedOutcome == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("expected_outcome", path))
+	}
+	if body.VerificationKind == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("verification_kind", path))
+	}
+	if body.Scenario != nil {
+		err = goa.MergeErrors(err, goa.ValidatePattern(path+".scenario", *body.Scenario, "[^\\t\\n\\v\\f\\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]"))
+	}
+	if body.InputSummary != nil {
+		err = goa.MergeErrors(err, goa.ValidatePattern(path+".input_summary", *body.InputSummary, "[^\\t\\n\\v\\f\\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]"))
+	}
+	if body.ExpectedOutcome != nil {
+		err = goa.MergeErrors(err, goa.ValidatePattern(path+".expected_outcome", *body.ExpectedOutcome, "[^\\t\\n\\v\\f\\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]"))
+	}
+	if body.VerificationKind != nil {
+		if !(*body.VerificationKind == "deterministic" || *body.VerificationKind == "model_judged") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError(path+".verification_kind", *body.VerificationKind, []any{"deterministic", "model_judged"}))
+		}
+	}
+	return
+}
+
+// ValidateCP1RevisionAnalysisRequestBody runs the validations defined on
+// CP1RevisionAnalysis
+func ValidateCP1RevisionAnalysisRequestBody(body *CP1RevisionAnalysisRequestBody) (err error) {
+	if body.Summary == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("summary", "body"))
+	}
+	if body.Ambiguities == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("ambiguities", "body"))
+	}
+	if body.Examples == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("examples", "body"))
+	}
+	if body.RemovedExampleIds == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("removed_example_ids", "body"))
+	}
+	if body.PreservedBehaviors == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("preserved_behaviors", "body"))
+	}
+	if body.Summary != nil {
+		err = goa.MergeErrors(err, goa.ValidatePattern("body.summary", *body.Summary, "[^\\t\\n\\v\\f\\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]"))
+	}
+	for _, e := range body.Ambiguities {
+		if e == nil {
+			err = goa.MergeErrors(err, goa.MissingFieldError("body.ambiguities", "[*]"))
+		}
+		if e != nil {
+			if err2 := validateCP1AnalysisAmbiguityRequestBody(e, "body.ambiguities[*]"); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	if len(body.Examples) < 1 {
+		err = goa.MergeErrors(err, goa.InvalidLengthError("body.examples", body.Examples, len(body.Examples), 1, true))
+	}
+	for _, e := range body.Examples {
+		if e == nil {
+			err = goa.MergeErrors(err, goa.MissingFieldError("body.examples", "[*]"))
+		}
+		if e != nil {
+			if err2 := validateCP1RevisionAnalysisExampleRequestBody(e, "body.examples[*]"); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	for _, e := range body.RemovedExampleIds {
+		if e == nil {
+			err = goa.MergeErrors(err, goa.MissingFieldError("body.removed_example_ids", "[*]"))
+		}
+		if e != nil {
+			if utf8.RuneCountInString(*e) < 1 {
+				err = goa.MergeErrors(err, goa.InvalidLengthError("body.removed_example_ids[*]", *e, utf8.RuneCountInString(*e), 1, true))
+			}
+		}
+	}
+	for _, e := range body.PreservedBehaviors {
+		if e == nil {
+			err = goa.MergeErrors(err, goa.MissingFieldError("body.preserved_behaviors", "[*]"))
+		}
+		if e != nil {
+			err = goa.MergeErrors(err, goa.ValidatePattern("body.preserved_behaviors[*]", *e, "[^\\t\\n\\v\\f\\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]"))
+		}
+	}
+	return
+}
+
+// validateCP1RevisionAnalysisRequestBody checks CP1RevisionAnalysis and
+// reports errors using the path supplied by its caller
+func validateCP1RevisionAnalysisRequestBody(body *CP1RevisionAnalysisRequestBody, path string) (err error) {
+	if body.Summary == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("summary", path))
+	}
+	if body.Ambiguities == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("ambiguities", path))
+	}
+	if body.Examples == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("examples", path))
+	}
+	if body.RemovedExampleIds == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("removed_example_ids", path))
+	}
+	if body.PreservedBehaviors == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("preserved_behaviors", path))
+	}
+	if body.Summary != nil {
+		err = goa.MergeErrors(err, goa.ValidatePattern(path+".summary", *body.Summary, "[^\\t\\n\\v\\f\\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]"))
+	}
+	for _, e := range body.Ambiguities {
+		if e == nil {
+			err = goa.MergeErrors(err, goa.MissingFieldError(path+".ambiguities", "[*]"))
+		}
+		if e != nil {
+			if err2 := validateCP1AnalysisAmbiguityRequestBody(e, path+".ambiguities[*]"); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	if len(body.Examples) < 1 {
+		err = goa.MergeErrors(err, goa.InvalidLengthError(path+".examples", body.Examples, len(body.Examples), 1, true))
+	}
+	for _, e := range body.Examples {
+		if e == nil {
+			err = goa.MergeErrors(err, goa.MissingFieldError(path+".examples", "[*]"))
+		}
+		if e != nil {
+			if err2 := validateCP1RevisionAnalysisExampleRequestBody(e, path+".examples[*]"); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	for _, e := range body.RemovedExampleIds {
+		if e == nil {
+			err = goa.MergeErrors(err, goa.MissingFieldError(path+".removed_example_ids", "[*]"))
+		}
+		if e != nil {
+			if utf8.RuneCountInString(*e) < 1 {
+				err = goa.MergeErrors(err, goa.InvalidLengthError(path+".removed_example_ids[*]", *e, utf8.RuneCountInString(*e), 1, true))
+			}
+		}
+	}
+	for _, e := range body.PreservedBehaviors {
+		if e == nil {
+			err = goa.MergeErrors(err, goa.MissingFieldError(path+".preserved_behaviors", "[*]"))
+		}
+		if e != nil {
+			err = goa.MergeErrors(err, goa.ValidatePattern(path+".preserved_behaviors[*]", *e, "[^\\t\\n\\v\\f\\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]"))
+		}
+	}
+	return
+}
+
+// ValidateCP1RevisionAnalysisExampleRequestBody runs the validations defined
+// on CP1RevisionAnalysisExample
+func ValidateCP1RevisionAnalysisExampleRequestBody(body *CP1RevisionAnalysisExampleRequestBody) (err error) {
+	if body.Scenario == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("scenario", "body"))
+	}
+	if body.InputSummary == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("input_summary", "body"))
+	}
+	if body.ExpectedOutcome == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("expected_outcome", "body"))
+	}
+	if body.VerificationKind == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("verification_kind", "body"))
+	}
+	if body.PriorID != nil {
+		if utf8.RuneCountInString(*body.PriorID) < 1 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.prior_id", *body.PriorID, utf8.RuneCountInString(*body.PriorID), 1, true))
+		}
+	}
+	if body.Scenario != nil {
+		err = goa.MergeErrors(err, goa.ValidatePattern("body.scenario", *body.Scenario, "[^\\t\\n\\v\\f\\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]"))
+	}
+	if body.InputSummary != nil {
+		err = goa.MergeErrors(err, goa.ValidatePattern("body.input_summary", *body.InputSummary, "[^\\t\\n\\v\\f\\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]"))
+	}
+	if body.ExpectedOutcome != nil {
+		err = goa.MergeErrors(err, goa.ValidatePattern("body.expected_outcome", *body.ExpectedOutcome, "[^\\t\\n\\v\\f\\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]"))
+	}
+	if body.VerificationKind != nil {
+		if !(*body.VerificationKind == "deterministic" || *body.VerificationKind == "model_judged") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.verification_kind", *body.VerificationKind, []any{"deterministic", "model_judged"}))
+		}
+	}
+	return
+}
+
+// validateCP1RevisionAnalysisExampleRequestBody checks
+// CP1RevisionAnalysisExample and reports errors using the path supplied by its
+// caller
+func validateCP1RevisionAnalysisExampleRequestBody(body *CP1RevisionAnalysisExampleRequestBody, path string) (err error) {
+	if body.Scenario == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("scenario", path))
+	}
+	if body.InputSummary == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("input_summary", path))
+	}
+	if body.ExpectedOutcome == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("expected_outcome", path))
+	}
+	if body.VerificationKind == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("verification_kind", path))
+	}
+	if body.PriorID != nil {
+		if utf8.RuneCountInString(*body.PriorID) < 1 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError(path+".prior_id", *body.PriorID, utf8.RuneCountInString(*body.PriorID), 1, true))
+		}
+	}
+	if body.Scenario != nil {
+		err = goa.MergeErrors(err, goa.ValidatePattern(path+".scenario", *body.Scenario, "[^\\t\\n\\v\\f\\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]"))
+	}
+	if body.InputSummary != nil {
+		err = goa.MergeErrors(err, goa.ValidatePattern(path+".input_summary", *body.InputSummary, "[^\\t\\n\\v\\f\\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]"))
+	}
+	if body.ExpectedOutcome != nil {
+		err = goa.MergeErrors(err, goa.ValidatePattern(path+".expected_outcome", *body.ExpectedOutcome, "[^\\t\\n\\v\\f\\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]"))
+	}
+	if body.VerificationKind != nil {
+		if !(*body.VerificationKind == "deterministic" || *body.VerificationKind == "model_judged") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError(path+".verification_kind", *body.VerificationKind, []any{"deterministic", "model_judged"}))
+		}
 	}
 	return
 }

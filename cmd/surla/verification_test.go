@@ -2,6 +2,9 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path"
@@ -17,12 +20,6 @@ import (
 	"github.com/goadesign/surla/internal/controlplane"
 	"github.com/goadesign/surla/internal/verify"
 )
-
-// capturingCP1Analyzer is a CP1Analyzer test double that records designSource.
-type capturingCP1Analyzer struct {
-	// onAnalyze is called with the designSource passed to Analyze.
-	onAnalyze func(designSource string)
-}
 
 func TestLoadVerificationConfigReadsTheOperatorsPlanStrictly(t *testing.T) {
 	cfg, err := loadVerificationConfig("")
@@ -427,10 +424,6 @@ func TestConfigureServeWorkspaceSupportsIndependentProjectAndVerificationConfig(
 	assert.Equal(t, filepath.Join(root, "ops", "eval-repo"), opts.Verification.Plan.SuiteRepo)
 	assert.Equal(t, 15*time.Minute, opts.Verification.Timeout)
 
-	var seenDesignSource string
-	opts.Analyzer = &capturingCP1Analyzer{
-		onAnalyze: func(designSource string) { seenDesignSource = designSource },
-	}
 	cp, err := controlplane.New(opts)
 	require.NoError(t, err)
 	defer cp.Close()
@@ -439,51 +432,30 @@ func TestConfigureServeWorkspaceSupportsIndependentProjectAndVerificationConfig(
 	_, err = cp.ProposeChange(alice, &gensurla.ProposeChangePayload{
 		ChangeID: "chg-shop-with-external-eval",
 		Prompt:   "Add coupon validation",
+		Analysis: &gensurla.CP1Analysis{
+			Summary:     "Add coupon validation.",
+			Ambiguities: []*gensurla.CP1AnalysisAmbiguity{},
+			Examples: []*gensurla.CP1AnalysisExample{{
+				Scenario:         "Apply valid coupon",
+				InputSummary:     "Valid coupon code SAVE10 on a $50.00 order",
+				ExpectedOutcome:  "Discounts the order total to $45.00",
+				VerificationKind: "deterministic",
+			}},
+			PreservedBehaviors: []string{"Checkout without a coupon is unchanged."},
+		},
 	})
 	require.NoError(t, err)
-	assert.Contains(t, seenDesignSource, "shop workspace design", "-project must bind shopDir for CP1 workspace design reads even when -verification-config is set")
-}
-
-// Analyze records designSource and returns a confirmed CP1SemanticAnalysis.
-func (a *capturingCP1Analyzer) Analyze(
-	_ context.Context,
-	_ string,
-	design controlplane.CP1Design,
-) (controlplane.CP1SemanticAnalysis, error) {
-	if a.onAnalyze != nil {
-		designSource, err := design.CanonicalSource()
-		if err != nil {
-			return controlplane.CP1SemanticAnalysis{}, err
-		}
-		a.onAnalyze(designSource)
+	// The saved card records the design source it was proposed against.
+	sum := sha256.Sum256([]byte("chg-shop-with-external-eval"))
+	raw, err := os.ReadFile(filepath.Join(opts.CardsDir, hex.EncodeToString(sum[:])+".json"))
+	require.NoError(t, err)
+	var saved struct {
+		DesignSource string `json:"design_source"`
+		SourceOrigin string `json:"source_origin"`
 	}
-	return controlplane.CP1SemanticAnalysis{
-		Summary: "Add coupon validation.",
-		Examples: []controlplane.CP1ModelExample{{
-			Scenario:         "Apply valid coupon",
-			InputSummary:     "Valid coupon code",
-			ExpectedOutcome:  "Discounts order total",
-			VerificationKind: "deterministic",
-		}},
-		PreservedBehaviors: []string{"existing checkout remains unchanged"},
-	}, nil
-}
-
-// Revise satisfies controlplane.CP1Analyzer for capturingCP1Analyzer.
-func (a *capturingCP1Analyzer) Revise(
-	_ context.Context,
-	_ controlplane.CP1PriorCard,
-	_ string,
-	design controlplane.CP1Design,
-) (controlplane.CP1RevisionSemanticAnalysis, error) {
-	if a.onAnalyze != nil {
-		designSource, err := design.CanonicalSource()
-		if err != nil {
-			return controlplane.CP1RevisionSemanticAnalysis{}, err
-		}
-		a.onAnalyze(designSource)
-	}
-	return controlplane.CP1RevisionSemanticAnalysis{}, nil
+	require.NoError(t, json.Unmarshal(raw, &saved))
+	assert.Contains(t, saved.DesignSource, "shop workspace design", "-project must bind shopDir for CP1 workspace design reads even when -verification-config is set")
+	assert.Equal(t, "workspace", saved.SourceOrigin)
 }
 
 // isolateGitConfig points HOME and XDG_CONFIG_HOME at empty directories for

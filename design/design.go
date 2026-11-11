@@ -37,21 +37,23 @@ var ExampleItem = Type("ExampleItem", func() {
 
 // ProposeChangePayload is the input to the CP1 propose_change tool.
 var ProposeChangePayload = Type("ProposeChangePayload", func() {
-	Description("Operator feature request submitted for Checkpoint 1 ambiguity and example analysis.")
+	Description("Operator feature request and the caller's analysis of it, saved as a new Checkpoint 1 Change Card.")
 	Attribute("change_id", String, "Unique change identifier.")
 	Attribute("prompt", String, "Operator feature request.")
-	Attribute("design_source", String, "Current Goa design source of the target (its design/*.go files) for the CP1 model to read. When omitted on a server with a bound workspace, Surla reads design/*.go from the bound workspace; when omitted without a bound workspace, CP1 receives no current design.")
-	Required("change_id", "prompt")
+	Attribute("design_source", String, "Goa design source the analysis was made against (the target's design/*.go files). Surla saves it with the card and includes it in request_revision; it does not interpret it. When omitted on a server with a bound workspace, Surla records design/*.go from the bound workspace; when omitted without a bound workspace, the card records no design.")
+	Attribute("analysis", CP1Analysis, "Your analysis of prompt against the target's current design.")
+	Required("change_id", "prompt", "analysis")
 })
 
 // ReviseChangePayload is the input to the CP1 revise_change tool.
 var ReviseChangePayload = Type("ReviseChangePayload", func() {
-	Description("Revised operator feature request submitted for an existing Checkpoint 1 Change Card.")
+	Description("Revised operator feature request and the caller's analysis of it, saved as the next revision of an existing Checkpoint 1 Change Card.")
 	Attribute("change_id", String, "Change identifier.")
 	Attribute("request_revision", String, "Current CP1 request_revision digest being revised.")
 	Attribute("prompt", String, "Revised operator feature request.")
-	Attribute("design_source", String, "Updated Goa design source of the target (its design/*.go files) for the CP1 model to read. When omitted on a workspace-backed card with a bound workspace, Surla re-reads design/*.go from the bound workspace; otherwise the card's saved design source is used again.")
-	Required("change_id", "request_revision", "prompt")
+	Attribute("design_source", String, "Updated Goa design source the analysis was made against (the target's design/*.go files). Surla saves it with the card and includes it in request_revision; it does not interpret it. When omitted on a workspace-backed card with a bound workspace, Surla records design/*.go from the bound workspace again; otherwise the card's saved design source is kept.")
+	Attribute("analysis", CP1RevisionAnalysis, "Your analysis of the revised prompt against the current card and the target's current design.")
+	Required("change_id", "request_revision", "prompt", "analysis")
 })
 
 // GetChangePayload is the input to the get_change tool.
@@ -160,7 +162,7 @@ var ConfigureModelPayload = Type("ConfigureModelPayload", func() {
 
 // ModelConfigResult is the output of the configure_model tool.
 var ModelConfigResult = Type("ModelConfigResult", func() {
-	Description("Active CP1 and live-target model configuration after configure_model succeeds.")
+	Description("Model configuration that live targets started afterwards receive, after configure_model succeeds.")
 	Attribute("provider", String, "Active direct model provider when a direct provider is configured.", func() {
 		Enum("anthropic", "openai")
 	})
@@ -172,11 +174,11 @@ var ModelConfigResult = Type("ModelConfigResult", func() {
 	})
 })
 
-// UICompositionItem is an optional model-authored decision view for one
+// UICompositionItem is an optional caller-authored decision view for one
 // Change Card revision.
 var UICompositionItem = Type("UICompositionItem", func() {
-	Description("Model-authored OpenUI Lang decision view for exactly one Change Card revision. It is presentation only: it is never hashed into request_revision, confirm_intent never reads it, and it describes the card only while composed_for_revision equals the card's request_revision.")
-	Attribute("program", String, "OpenUI Lang program composed by the CP1 model from the Surla decision component catalog, exactly as the model returned it. The server does not check it; the checkpoint viewer validates it and shows its error state, with the rest of the card still usable, when the program is not a valid composition.")
+	Description("Caller-authored OpenUI Lang decision view for exactly one Change Card revision. It is presentation only: it is never hashed into request_revision, confirm_intent never reads it, and it describes the card only while composed_for_revision equals the card's request_revision.")
+	Attribute("program", String, "OpenUI Lang program from the analysis's ui_composition, exactly as the caller sent it. The server does not check it; the checkpoint viewer validates it and shows its error state, with the rest of the card still usable, when the program is not a valid composition.")
 	Attribute("composed_for_revision", String, "request_revision of the Change Card this program was composed for.")
 	Required("program", "composed_for_revision")
 })
@@ -220,7 +222,7 @@ var ChangeCardResult = Type("ChangeCardResult", func() {
 	Attribute("preserved_behaviors", ArrayOf(String), "Existing contract invariants preserved by this change.")
 	Attribute("confirmed_by", String, "Authenticated principal that confirmed the Change Card.")
 	Attribute("request_revision", String, "SHA-256 digest of the canonical versioned Change Card.")
-	Attribute("ui_composition", UICompositionItem, "Decision view the CP1 model composed for this revision, when it produced one. A confirm_intent that changes answers or examples returns the new revision without it.")
+	Attribute("ui_composition", UICompositionItem, "Decision view the caller composed for this revision in its analysis, when it sent one. A confirm_intent that changes answers or examples returns the new revision without it.")
 	Attribute("approval", ApprovalItem, "Checkpoint 5 approval of this revision, present only while it is verified against the promotion target's current inputs on this read. It is absent before approve_merge succeeds, whenever the target's suite, environment or binary digests have changed since, and whenever current inputs cannot be verified (see unverified_approval). It is never hashed into request_revision.")
 	Attribute("unverified_approval", UnverifiedApprovalItem, "Saved Checkpoint 5 approval of this revision when current promotion inputs could not be verified on this read (because no promotion target is configured or the target could not report its current inputs). At most one of approval or unverified_approval is set. It is never saved to disk or hashed into request_revision.")
 	Required("change_id", "status", "prompt", "summary", "examples", "preserved_behaviors", "request_revision")
@@ -638,13 +640,6 @@ var VerificationListResult = Type("VerificationListResult", func() {
 var _ = Service("surla", func() {
 	Description("Surla MCP software factory control plane.")
 
-	Completion("cp1_change_card_analysis", func() {
-		Return(CP1Analysis)
-	})
-	Completion("cp1_revise_change_card_analysis", func() {
-		Return(CP1RevisionAnalysis)
-	})
-
 	MCP("surla", "1.0.0")
 	JSONRPC(func() {
 		POST("/mcp")
@@ -661,7 +656,7 @@ var _ = Service("surla", func() {
 	})
 
 	Method("golden_path", func() {
-		Description("Serve the Surla Golden Path architecture playbook for Goa-AI agentic platforms.")
+		Description("Serve the Surla Golden Path architecture playbook for Goa-AI agentic platforms, followed by the decision component catalog for the optional ui_composition of a propose_change or revise_change analysis.")
 		Result(String)
 		Resource("golden_path", "surla://golden-path", "text/markdown")
 		HTTP(func() {
@@ -671,14 +666,12 @@ var _ = Service("surla", func() {
 	})
 
 	Method("propose_change", func() {
-		Description("Evaluate a feature request at Checkpoint 1, surfacing concrete examples and any genuine domain ambiguity. When design_source is omitted and a workspace is bound, Surla reads design/*.go from the bound workspace.")
+		Description("Save a new Checkpoint 1 Change Card from a feature request and the caller's analysis of it. Surla checks the analysis's structure and cross-field rules, gives ambiguities the IDs <change_id>-ambiguity-NN and examples the IDs check_01, check_02, ... in list order, binds the card to the authenticated owner, records the design source (design/*.go from the bound workspace when design_source is omitted), and computes request_revision. A card without ambiguities is confirmed at once; otherwise it waits for confirm_intent. Surla runs no model for this step and cannot judge whether the analysis is complete or correct.")
 		Payload(ProposeChangePayload)
 		Result(ChangeCardResult)
 		Error("conflict", ErrorResult, "A Change Card with this change_id already exists; use revise_change or a new change_id.")
-		Error("unprocessable", ErrorResult, "The request could not be accepted; the message states which required field or constraint failed.")
-		Error("not_implemented", ErrorResult, "This control plane has no Checkpoint 1 analyzer configured.")
-		Error("analysis_rejected", ErrorResult, "The Checkpoint 1 model response did not satisfy the analysis contract or stopped at the output limit; this request did not save or modify the Change Card.")
-		Tool("propose_change", "Propose a feature change and generate a Checkpoint 1 Change Card. When design_source is omitted and a workspace is bound, Surla reads design/*.go from the bound workspace.", func() {
+		Error("unprocessable", ErrorResult, "The request could not be accepted: change_id or prompt is blank, an ambiguity repeats an option, or the bound workspace's design/*.go could not be read. The message says which; nothing was saved.")
+		Tool("propose_change", "Propose a feature change as a Checkpoint 1 Change Card. Read the target's design/*.go and the surla://golden-path playbook first, then send the request in prompt with your analysis of it: a summary, the open questions only the requester can answer (an empty list when none), concrete examples that become checks, and the existing behaviors the change must keep. Surla assigns the IDs and request_revision and saves the card; a card without open questions is confirmed at once. When design_source is omitted and a workspace is bound, Surla records design/*.go from the bound workspace.", func() {
 			ToolUI("ui://surla/checkpoint")
 		})
 		HTTP(func() {
@@ -686,22 +679,18 @@ var _ = Service("surla", func() {
 			Response(StatusOK)
 			Response("conflict", StatusConflict)
 			Response("unprocessable", StatusUnprocessableEntity)
-			Response("not_implemented", StatusNotImplemented)
-			Response("analysis_rejected", StatusBadGateway)
 		})
 	})
 
 	Method("revise_change", func() {
-		Description("Revise an existing Checkpoint 1 Change Card with new or changed operator requirements bound to its current request_revision. Re-analyzes the revised prompt and design source (re-reading design/*.go from the bound workspace when design_source is omitted on a workspace-backed card) with the prior card's prompt, summary, confirmed answers, open questions, examples and preserved behaviors as context, and saves a new revision in needs_confirmation status for operator review. The new revision's answers, confirmed_by and any approval are cleared: earlier decisions remain only where the analysis restated them in its summary, examples or preserved behaviors.")
+		Description("Save the next revision of an existing Checkpoint 1 Change Card from a revised feature request and the caller's analysis of it, bound to the card's current request_revision. The analysis accounts for every current example exactly once, keeping or editing it through prior_id or dropping it through removed_example_ids. Surla keeps the IDs of kept examples, gives new examples the lowest check_NN ID neither card uses, records design/*.go from the bound workspace again when design_source is omitted on a workspace-backed card (otherwise keeps the card's saved design source), and saves the new revision in needs_confirmation status for operator review. The new revision's answers, confirmed_by and any approval are cleared: earlier decisions remain only where the analysis restates them in its summary, examples or preserved behaviors. Surla runs no model for this step and cannot judge whether the analysis is complete or correct.")
 		Payload(ReviseChangePayload)
 		Result(ChangeCardResult)
 		Error("not_found", ErrorResult, "No Change Card exists with this change_id.")
 		Error("forbidden", ErrorResult, "The authenticated principal does not own this Change Card.")
 		Error("conflict", ErrorResult, "The card's request_revision changed; read the current revision with get_change.")
-		Error("unprocessable", ErrorResult, "The request could not be accepted; the message states which required field or constraint failed.")
-		Error("not_implemented", ErrorResult, "This control plane has no Checkpoint 1 analyzer configured.")
-		Error("analysis_rejected", ErrorResult, "The Checkpoint 1 model response did not satisfy the analysis contract or stopped at the output limit; this request did not save or modify the Change Card.")
-		Tool("revise_change", "Revise an existing Checkpoint 1 Change Card with updated requirements bound to its current request_revision. The new revision's answers, confirmed_by and any approval are cleared, so it needs confirmation again; earlier decisions remain only where the analysis restated them in its summary, examples or preserved behaviors.", func() {
+		Error("unprocessable", ErrorResult, "The request could not be accepted: change_id, request_revision or prompt is blank, an ambiguity repeats an option, the analysis does not account for every current example exactly once, or the bound workspace's design/*.go could not be read. The message says which; the card did not change.")
+		Tool("revise_change", "Revise an existing Checkpoint 1 Change Card with updated requirements bound to its current request_revision. Send the revised request in prompt with a new analysis made against the current card (as get_change returns it) and the target's design: keep or edit each current example through prior_id, list the dropped ones in removed_example_ids, and restate the confirmed decisions that still hold in summary, examples or preserved_behaviors. The new revision's answers, confirmed_by and any approval are cleared, so it needs confirmation again.", func() {
 			ToolUI("ui://surla/checkpoint")
 		})
 		HTTP(func() {
@@ -711,8 +700,6 @@ var _ = Service("surla", func() {
 			Response("forbidden", StatusForbidden)
 			Response("conflict", StatusConflict)
 			Response("unprocessable", StatusUnprocessableEntity)
-			Response("not_implemented", StatusNotImplemented)
-			Response("analysis_rejected", StatusBadGateway)
 		})
 	})
 
@@ -925,12 +912,12 @@ var _ = Service("surla", func() {
 	})
 
 	Method("configure_model", func() {
-		Description("Configure or switch the active CP1 semantic analyzer and CP3 live-target model provider and model name or gRPC model gateway on a running control plane without restarting.")
+		Description("Choose, on a running control plane without restarting, the model that CP3 live targets started afterwards receive: a direct provider and model name (using that provider's API key from surla serve's environment) or a running gRPC model gateway. start_live_target passes the choice to the target's evaluator suite as SURLA_LIVE_MODEL_PROVIDER and SURLA_LIVE_MODEL_NAME, or as SURLA_LIVE_MODEL_GATEWAY.")
 		Payload(ConfigureModelPayload)
 		Result(ModelConfigResult)
 		Error("unprocessable", ErrorResult, "The model provider, model name, gateway address, or required environment credential is invalid.")
 		Error("not_implemented", ErrorResult, "Runtime model reconfiguration is not configured on this control plane.")
-		Tool("configure_model", "Switch the active CP1 and live-target model provider and model name (such as anthropic/claude-sonnet-4-6 or openai/gpt-5.4-mini, using the API key in surla serve's environment) or attach a running model gateway address without restarting surla serve.")
+		Tool("configure_model", "Switch the model provider and model name (such as anthropic/claude-sonnet-4-6 or openai/gpt-5.4-mini, using the API key in surla serve's environment) or attach a running model gateway address, without restarting surla serve. Live targets that start_live_target starts afterwards plan with this model.")
 		HTTP(func() {
 			POST("/cp1/model")
 			Response(StatusOK)

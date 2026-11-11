@@ -212,8 +212,8 @@ type ApproveMergeResultTransport struct {
 	ConfirmedBy *string `json:"confirmed_by,omitempty"`
 	// SHA-256 digest of the canonical versioned Change Card.
 	RequestRevision *string `json:"request_revision"`
-	// Decision view the CP1 model composed for this revision, when it produced
-	// one. A confirm_intent that changes answers or examples returns the new
+	// Decision view the caller composed for this revision in its analysis, when it
+	// sent one. A confirm_intent that changes answers or examples returns the new
 	// revision without it.
 	UIComposition *ApproveMergeResultUICompositionItemTransport `json:"ui_composition,omitempty"`
 	// Checkpoint 5 approval of this revision, present only while it is verified
@@ -295,11 +295,10 @@ func ValidateApproveMergeResultTransport(value *ApproveMergeResultTransport) (er
 
 // ApproveMergeResultUICompositionItemTransport stores JSON fields until they have been validated.
 type ApproveMergeResultUICompositionItemTransport struct {
-	// OpenUI Lang program composed by the CP1 model from the Surla decision
-	// component catalog, exactly as the model returned it. The server does not
-	// check it; the checkpoint viewer validates it and shows its error state, with
-	// the rest of the card still usable, when the program is not a valid
-	// composition.
+	// OpenUI Lang program from the analysis's ui_composition, exactly as the
+	// caller sent it. The server does not check it; the checkpoint viewer
+	// validates it and shows its error state, with the rest of the card still
+	// usable, when the program is not a valid composition.
 	Program *string `json:"program"`
 	// request_revision of the Change Card this program was composed for.
 	ComposedForRevision *string `json:"composed_for_revision"`
@@ -686,8 +685,8 @@ type ConfirmIntentResultTransport struct {
 	ConfirmedBy *string `json:"confirmed_by,omitempty"`
 	// SHA-256 digest of the canonical versioned Change Card.
 	RequestRevision *string `json:"request_revision"`
-	// Decision view the CP1 model composed for this revision, when it produced
-	// one. A confirm_intent that changes answers or examples returns the new
+	// Decision view the caller composed for this revision in its analysis, when it
+	// sent one. A confirm_intent that changes answers or examples returns the new
 	// revision without it.
 	UIComposition *ConfirmIntentResultUICompositionItemTransport `json:"ui_composition,omitempty"`
 	// Checkpoint 5 approval of this revision, present only while it is verified
@@ -769,11 +768,10 @@ func ValidateConfirmIntentResultTransport(value *ConfirmIntentResultTransport) (
 
 // ConfirmIntentResultUICompositionItemTransport stores JSON fields until they have been validated.
 type ConfirmIntentResultUICompositionItemTransport struct {
-	// OpenUI Lang program composed by the CP1 model from the Surla decision
-	// component catalog, exactly as the model returned it. The server does not
-	// check it; the checkpoint viewer validates it and shows its error state, with
-	// the rest of the card still usable, when the program is not a valid
-	// composition.
+	// OpenUI Lang program from the analysis's ui_composition, exactly as the
+	// caller sent it. The server does not check it; the checkpoint viewer
+	// validates it and shows its error state, with the rest of the card still
+	// usable, when the program is not a valid composition.
 	Program *string `json:"program"`
 	// request_revision of the Change Card this program was composed for.
 	ComposedForRevision *string `json:"composed_for_revision"`
@@ -1196,8 +1194,8 @@ type GetChangeResultTransport struct {
 	ConfirmedBy *string `json:"confirmed_by,omitempty"`
 	// SHA-256 digest of the canonical versioned Change Card.
 	RequestRevision *string `json:"request_revision"`
-	// Decision view the CP1 model composed for this revision, when it produced
-	// one. A confirm_intent that changes answers or examples returns the new
+	// Decision view the caller composed for this revision in its analysis, when it
+	// sent one. A confirm_intent that changes answers or examples returns the new
 	// revision without it.
 	UIComposition *GetChangeResultUICompositionItemTransport `json:"ui_composition,omitempty"`
 	// Checkpoint 5 approval of this revision, present only while it is verified
@@ -1279,11 +1277,10 @@ func ValidateGetChangeResultTransport(value *GetChangeResultTransport) (err erro
 
 // GetChangeResultUICompositionItemTransport stores JSON fields until they have been validated.
 type GetChangeResultUICompositionItemTransport struct {
-	// OpenUI Lang program composed by the CP1 model from the Surla decision
-	// component catalog, exactly as the model returned it. The server does not
-	// check it; the checkpoint viewer validates it and shows its error state, with
-	// the rest of the card still usable, when the program is not a valid
-	// composition.
+	// OpenUI Lang program from the analysis's ui_composition, exactly as the
+	// caller sent it. The server does not check it; the checkpoint viewer
+	// validates it and shows its error state, with the rest of the card still
+	// usable, when the program is not a valid composition.
 	Program *string `json:"program"`
 	// request_revision of the Change Card this program was composed for.
 	ComposedForRevision *string `json:"composed_for_revision"`
@@ -2809,17 +2806,186 @@ func ValidatePreviewArchitectureResultTransport(value *PreviewArchitectureResult
 	return err
 }
 
+// ProposeChangePayloadCP1AnalysisAmbiguityTransport stores JSON fields until they have been validated.
+type ProposeChangePayloadCP1AnalysisAmbiguityTransport struct {
+	// The decision in plain language, saying what the choice changes.
+	Question *string `json:"question"`
+	// At least two distinct, self-contained choices; each states the behavior it
+	// selects and what follows from it. The requester's answer must be exactly one
+	// of these strings.
+	Options []*string `json:"options"`
+}
+
+// ValidateProposeChangePayloadCP1AnalysisAmbiguityTransport checks decoded JSON before it becomes a service value.
+func ValidateProposeChangePayloadCP1AnalysisAmbiguityTransport(value *ProposeChangePayloadCP1AnalysisAmbiguityTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.Question == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("question", "body"))
+	}
+	if value.Options == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("options", "body"))
+	}
+	if value.Question != nil {
+		err = goa.MergeErrors(err, goa.ValidatePattern("body.question", *value.Question, "[^\\t\\n\\v\\f\\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]"))
+	}
+	if len(value.Options) < 2 {
+		err = goa.MergeErrors(err, goa.InvalidLengthError("body.options", value.Options, len(value.Options), 2, true))
+	}
+	for _, e := range value.Options {
+		if e == nil {
+			err = goa.MergeErrors(err, goa.MissingFieldError("body.options", "[*]"))
+		}
+		if e != nil {
+			err = goa.MergeErrors(err, goa.ValidatePattern("body.options[*]", *e, "[^\\t\\n\\v\\f\\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]"))
+		}
+	}
+	return err
+}
+
+// ProposeChangePayloadCP1AnalysisExampleTransport stores JSON fields until they have been validated.
+type ProposeChangePayloadCP1AnalysisExampleTransport struct {
+	// Short name of the situation, in the requester's domain terms.
+	Scenario *string `json:"scenario"`
+	// The actual request, inputs, and starting state in this scenario, with real
+	// values from the request and the design, never placeholders.
+	InputSummary *string `json:"input_summary"`
+	// The observable result or refusal that must hold.
+	ExpectedOutcome *string `json:"expected_outcome"`
+	// deterministic when code can check the outcome directly; model_judged when
+	// checking it needs judgment.
+	VerificationKind *string `json:"verification_kind"`
+}
+
+// ValidateProposeChangePayloadCP1AnalysisExampleTransport checks decoded JSON before it becomes a service value.
+func ValidateProposeChangePayloadCP1AnalysisExampleTransport(value *ProposeChangePayloadCP1AnalysisExampleTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.Scenario == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("scenario", "body"))
+	}
+	if value.InputSummary == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("input_summary", "body"))
+	}
+	if value.ExpectedOutcome == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("expected_outcome", "body"))
+	}
+	if value.VerificationKind == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("verification_kind", "body"))
+	}
+	if value.Scenario != nil {
+		err = goa.MergeErrors(err, goa.ValidatePattern("body.scenario", *value.Scenario, "[^\\t\\n\\v\\f\\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]"))
+	}
+	if value.InputSummary != nil {
+		err = goa.MergeErrors(err, goa.ValidatePattern("body.input_summary", *value.InputSummary, "[^\\t\\n\\v\\f\\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]"))
+	}
+	if value.ExpectedOutcome != nil {
+		err = goa.MergeErrors(err, goa.ValidatePattern("body.expected_outcome", *value.ExpectedOutcome, "[^\\t\\n\\v\\f\\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]"))
+	}
+	if value.VerificationKind != nil {
+		if !(*value.VerificationKind == "deterministic" || *value.VerificationKind == "model_judged") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.verification_kind", *value.VerificationKind, []any{"deterministic", "model_judged"}))
+		}
+	}
+	return err
+}
+
+// ProposeChangePayloadCP1AnalysisTransport stores JSON fields until they have been validated.
+type ProposeChangePayloadCP1AnalysisTransport struct {
+	// Plain-English description of the requested behavior, including the details
+	// the request or the design already settle.
+	Summary *string `json:"summary"`
+	// Open questions only the requester can answer: product, domain, or
+	// operational choices that change observable behavior or service boundaries.
+	// Do not ask about details the request or the design already settle; state
+	// them in summary, or in examples when they change an observable outcome. Send
+	// an empty list when nothing is open.
+	Ambiguities []*ProposeChangePayloadCP1AnalysisAmbiguityTransport `json:"ambiguities"`
+	// Concrete acceptance examples drawn from the request and the design, never
+	// placeholder text; each becomes a check the change must pass.
+	Examples []*ProposeChangePayloadCP1AnalysisExampleTransport `json:"examples"`
+	// Existing behaviors and contract rules of the target that the change must
+	// keep, each stated concretely; empty when none apply.
+	PreservedBehaviors []*string `json:"preserved_behaviors"`
+	// Optional OpenUI Lang program that helps the requester decide the open
+	// questions, built only from the decision components the surla://golden-path
+	// resource lists. Refer to an ambiguity or example only by its 1-based
+	// position in this analysis (1 is the first); never invent identifiers. Surla
+	// saves it unchanged without checking it; the checkpoint viewer validates and
+	// renders it. Omit it when a plain card is clearer.
+	UIComposition *string `json:"ui_composition,omitempty"`
+}
+
+// ValidateProposeChangePayloadCP1AnalysisTransport checks decoded JSON before it becomes a service value.
+func ValidateProposeChangePayloadCP1AnalysisTransport(value *ProposeChangePayloadCP1AnalysisTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.Summary == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("summary", "body"))
+	}
+	if value.Ambiguities == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("ambiguities", "body"))
+	}
+	if value.Examples == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("examples", "body"))
+	}
+	if value.PreservedBehaviors == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("preserved_behaviors", "body"))
+	}
+	if value.Summary != nil {
+		err = goa.MergeErrors(err, goa.ValidatePattern("body.summary", *value.Summary, "[^\\t\\n\\v\\f\\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]"))
+	}
+	for _, e := range value.Ambiguities {
+		if e == nil {
+			err = goa.MergeErrors(err, goa.MissingFieldError("body.ambiguities", "[*]"))
+		}
+		if e != nil {
+			if err2 := ValidateProposeChangePayloadCP1AnalysisAmbiguityTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	if len(value.Examples) < 1 {
+		err = goa.MergeErrors(err, goa.InvalidLengthError("body.examples", value.Examples, len(value.Examples), 1, true))
+	}
+	for _, e := range value.Examples {
+		if e == nil {
+			err = goa.MergeErrors(err, goa.MissingFieldError("body.examples", "[*]"))
+		}
+		if e != nil {
+			if err2 := ValidateProposeChangePayloadCP1AnalysisExampleTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	for _, e := range value.PreservedBehaviors {
+		if e == nil {
+			err = goa.MergeErrors(err, goa.MissingFieldError("body.preserved_behaviors", "[*]"))
+		}
+		if e != nil {
+			err = goa.MergeErrors(err, goa.ValidatePattern("body.preserved_behaviors[*]", *e, "[^\\t\\n\\v\\f\\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]"))
+		}
+	}
+	return err
+}
+
 // ProposeChangePayloadTransport stores JSON fields until they have been validated.
 type ProposeChangePayloadTransport struct {
 	// Unique change identifier.
 	ChangeID *string `json:"change_id"`
 	// Operator feature request.
 	Prompt *string `json:"prompt"`
-	// Current Goa design source of the target (its design/*.go files) for the CP1
-	// model to read. When omitted on a server with a bound workspace, Surla reads
-	// design/*.go from the bound workspace; when omitted without a bound
-	// workspace, CP1 receives no current design.
+	// Goa design source the analysis was made against (the target's design/*.go
+	// files). Surla saves it with the card and includes it in request_revision; it
+	// does not interpret it. When omitted on a server with a bound workspace,
+	// Surla records design/*.go from the bound workspace; when omitted without a
+	// bound workspace, the card records no design.
 	DesignSource *string `json:"design_source,omitempty"`
+	// Your analysis of prompt against the target's current design.
+	Analysis *ProposeChangePayloadCP1AnalysisTransport `json:"analysis"`
 }
 
 // ValidateProposeChangePayloadTransport checks decoded JSON before it becomes a service value.
@@ -2832,6 +2998,14 @@ func ValidateProposeChangePayloadTransport(value *ProposeChangePayloadTransport)
 	}
 	if value.Prompt == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("prompt", "body"))
+	}
+	if value.Analysis == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("analysis", "body"))
+	}
+	if value.Analysis != nil {
+		if err2 := ValidateProposeChangePayloadCP1AnalysisTransport(value.Analysis); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		}
 	}
 	return err
 }
@@ -2989,8 +3163,8 @@ type ProposeChangeResultTransport struct {
 	ConfirmedBy *string `json:"confirmed_by,omitempty"`
 	// SHA-256 digest of the canonical versioned Change Card.
 	RequestRevision *string `json:"request_revision"`
-	// Decision view the CP1 model composed for this revision, when it produced
-	// one. A confirm_intent that changes answers or examples returns the new
+	// Decision view the caller composed for this revision in its analysis, when it
+	// sent one. A confirm_intent that changes answers or examples returns the new
 	// revision without it.
 	UIComposition *ProposeChangeResultUICompositionItemTransport `json:"ui_composition,omitempty"`
 	// Checkpoint 5 approval of this revision, present only while it is verified
@@ -3072,11 +3246,10 @@ func ValidateProposeChangeResultTransport(value *ProposeChangeResultTransport) (
 
 // ProposeChangeResultUICompositionItemTransport stores JSON fields until they have been validated.
 type ProposeChangeResultUICompositionItemTransport struct {
-	// OpenUI Lang program composed by the CP1 model from the Surla decision
-	// component catalog, exactly as the model returned it. The server does not
-	// check it; the checkpoint viewer validates it and shows its error state, with
-	// the rest of the card still usable, when the program is not a valid
-	// composition.
+	// OpenUI Lang program from the analysis's ui_composition, exactly as the
+	// caller sent it. The server does not check it; the checkpoint viewer
+	// validates it and shows its error state, with the rest of the card still
+	// usable, when the program is not a valid composition.
 	Program *string `json:"program"`
 	// request_revision of the Change Card this program was composed for.
 	ComposedForRevision *string `json:"composed_for_revision"`
@@ -3173,6 +3346,199 @@ func ValidateReadCheckOutputResultTransport(value *ReadCheckOutputResultTranspor
 	return err
 }
 
+// ReviseChangePayloadCP1AnalysisAmbiguityTransport stores JSON fields until they have been validated.
+type ReviseChangePayloadCP1AnalysisAmbiguityTransport struct {
+	// The decision in plain language, saying what the choice changes.
+	Question *string `json:"question"`
+	// At least two distinct, self-contained choices; each states the behavior it
+	// selects and what follows from it. The requester's answer must be exactly one
+	// of these strings.
+	Options []*string `json:"options"`
+}
+
+// ValidateReviseChangePayloadCP1AnalysisAmbiguityTransport checks decoded JSON before it becomes a service value.
+func ValidateReviseChangePayloadCP1AnalysisAmbiguityTransport(value *ReviseChangePayloadCP1AnalysisAmbiguityTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.Question == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("question", "body"))
+	}
+	if value.Options == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("options", "body"))
+	}
+	if value.Question != nil {
+		err = goa.MergeErrors(err, goa.ValidatePattern("body.question", *value.Question, "[^\\t\\n\\v\\f\\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]"))
+	}
+	if len(value.Options) < 2 {
+		err = goa.MergeErrors(err, goa.InvalidLengthError("body.options", value.Options, len(value.Options), 2, true))
+	}
+	for _, e := range value.Options {
+		if e == nil {
+			err = goa.MergeErrors(err, goa.MissingFieldError("body.options", "[*]"))
+		}
+		if e != nil {
+			err = goa.MergeErrors(err, goa.ValidatePattern("body.options[*]", *e, "[^\\t\\n\\v\\f\\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]"))
+		}
+	}
+	return err
+}
+
+// ReviseChangePayloadCP1RevisionAnalysisExampleTransport stores JSON fields until they have been validated.
+type ReviseChangePayloadCP1RevisionAnalysisExampleTransport struct {
+	// ID of the current card's example this one keeps or edits, exactly as the
+	// card shows it; the example keeps that ID. Omit it for a new example, which
+	// gets the lowest check_NN ID the current and revised cards do not use.
+	PriorID *string `json:"prior_id,omitempty"`
+	// Short name of the situation, in the requester's domain terms.
+	Scenario *string `json:"scenario"`
+	// The actual request, inputs, and starting state in this scenario, with real
+	// values from the request and the design, never placeholders.
+	InputSummary *string `json:"input_summary"`
+	// The observable result or refusal that must hold.
+	ExpectedOutcome *string `json:"expected_outcome"`
+	// deterministic when code can check the outcome directly; model_judged when
+	// checking it needs judgment.
+	VerificationKind *string `json:"verification_kind"`
+}
+
+// ValidateReviseChangePayloadCP1RevisionAnalysisExampleTransport checks decoded JSON before it becomes a service value.
+func ValidateReviseChangePayloadCP1RevisionAnalysisExampleTransport(value *ReviseChangePayloadCP1RevisionAnalysisExampleTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.Scenario == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("scenario", "body"))
+	}
+	if value.InputSummary == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("input_summary", "body"))
+	}
+	if value.ExpectedOutcome == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("expected_outcome", "body"))
+	}
+	if value.VerificationKind == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("verification_kind", "body"))
+	}
+	if value.PriorID != nil {
+		if utf8.RuneCountInString(*value.PriorID) < 1 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.prior_id", *value.PriorID, utf8.RuneCountInString(*value.PriorID), 1, true))
+		}
+	}
+	if value.Scenario != nil {
+		err = goa.MergeErrors(err, goa.ValidatePattern("body.scenario", *value.Scenario, "[^\\t\\n\\v\\f\\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]"))
+	}
+	if value.InputSummary != nil {
+		err = goa.MergeErrors(err, goa.ValidatePattern("body.input_summary", *value.InputSummary, "[^\\t\\n\\v\\f\\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]"))
+	}
+	if value.ExpectedOutcome != nil {
+		err = goa.MergeErrors(err, goa.ValidatePattern("body.expected_outcome", *value.ExpectedOutcome, "[^\\t\\n\\v\\f\\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]"))
+	}
+	if value.VerificationKind != nil {
+		if !(*value.VerificationKind == "deterministic" || *value.VerificationKind == "model_judged") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.verification_kind", *value.VerificationKind, []any{"deterministic", "model_judged"}))
+		}
+	}
+	return err
+}
+
+// ReviseChangePayloadCP1RevisionAnalysisTransport stores JSON fields until they have been validated.
+type ReviseChangePayloadCP1RevisionAnalysisTransport struct {
+	// Plain-English description of the revised behavior, including the details the
+	// request, the design or confirmed answers already settle.
+	Summary *string `json:"summary"`
+	// Open questions only the requester can answer: product, domain, or
+	// operational choices that change observable behavior or service boundaries.
+	// Do not ask about details the request, the design or a confirmed answer
+	// already settle; state them in summary, or in examples when they change an
+	// observable outcome. Send an empty list when nothing is open.
+	Ambiguities []*ReviseChangePayloadCP1AnalysisAmbiguityTransport `json:"ambiguities"`
+	// Concrete acceptance examples drawn from the revised request and the design.
+	// Give prior_id for each current example you keep or edit; omit it for new
+	// ones.
+	Examples []*ReviseChangePayloadCP1RevisionAnalysisExampleTransport `json:"examples"`
+	// IDs of the current card's examples this revision drops. Every current
+	// example ID appears exactly once, either as an examples[].prior_id or here;
+	// send an empty list when none are dropped.
+	RemovedExampleIds []*string `json:"removed_example_ids"`
+	// Existing behaviors and contract rules of the target that the change must
+	// keep, each stated concretely; empty when none apply.
+	PreservedBehaviors []*string `json:"preserved_behaviors"`
+	// Optional OpenUI Lang program that helps the requester decide the open
+	// questions, built only from the decision components the surla://golden-path
+	// resource lists. Refer to an ambiguity or example only by its 1-based
+	// position in this analysis (1 is the first); never invent identifiers. Surla
+	// saves it unchanged without checking it; the checkpoint viewer validates and
+	// renders it. Omit it when a plain card is clearer.
+	UIComposition *string `json:"ui_composition,omitempty"`
+}
+
+// ValidateReviseChangePayloadCP1RevisionAnalysisTransport checks decoded JSON before it becomes a service value.
+func ValidateReviseChangePayloadCP1RevisionAnalysisTransport(value *ReviseChangePayloadCP1RevisionAnalysisTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.Summary == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("summary", "body"))
+	}
+	if value.Ambiguities == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("ambiguities", "body"))
+	}
+	if value.Examples == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("examples", "body"))
+	}
+	if value.RemovedExampleIds == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("removed_example_ids", "body"))
+	}
+	if value.PreservedBehaviors == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("preserved_behaviors", "body"))
+	}
+	if value.Summary != nil {
+		err = goa.MergeErrors(err, goa.ValidatePattern("body.summary", *value.Summary, "[^\\t\\n\\v\\f\\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]"))
+	}
+	for _, e := range value.Ambiguities {
+		if e == nil {
+			err = goa.MergeErrors(err, goa.MissingFieldError("body.ambiguities", "[*]"))
+		}
+		if e != nil {
+			if err2 := ValidateReviseChangePayloadCP1AnalysisAmbiguityTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	if len(value.Examples) < 1 {
+		err = goa.MergeErrors(err, goa.InvalidLengthError("body.examples", value.Examples, len(value.Examples), 1, true))
+	}
+	for _, e := range value.Examples {
+		if e == nil {
+			err = goa.MergeErrors(err, goa.MissingFieldError("body.examples", "[*]"))
+		}
+		if e != nil {
+			if err2 := ValidateReviseChangePayloadCP1RevisionAnalysisExampleTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	for _, e := range value.RemovedExampleIds {
+		if e == nil {
+			err = goa.MergeErrors(err, goa.MissingFieldError("body.removed_example_ids", "[*]"))
+		}
+		if e != nil {
+			if utf8.RuneCountInString(*e) < 1 {
+				err = goa.MergeErrors(err, goa.InvalidLengthError("body.removed_example_ids[*]", *e, utf8.RuneCountInString(*e), 1, true))
+			}
+		}
+	}
+	for _, e := range value.PreservedBehaviors {
+		if e == nil {
+			err = goa.MergeErrors(err, goa.MissingFieldError("body.preserved_behaviors", "[*]"))
+		}
+		if e != nil {
+			err = goa.MergeErrors(err, goa.ValidatePattern("body.preserved_behaviors[*]", *e, "[^\\t\\n\\v\\f\\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]"))
+		}
+	}
+	return err
+}
+
 // ReviseChangePayloadTransport stores JSON fields until they have been validated.
 type ReviseChangePayloadTransport struct {
 	// Change identifier.
@@ -3181,11 +3547,15 @@ type ReviseChangePayloadTransport struct {
 	RequestRevision *string `json:"request_revision"`
 	// Revised operator feature request.
 	Prompt *string `json:"prompt"`
-	// Updated Goa design source of the target (its design/*.go files) for the CP1
-	// model to read. When omitted on a workspace-backed card with a bound
-	// workspace, Surla re-reads design/*.go from the bound workspace; otherwise
-	// the card's saved design source is used again.
+	// Updated Goa design source the analysis was made against (the target's
+	// design/*.go files). Surla saves it with the card and includes it in
+	// request_revision; it does not interpret it. When omitted on a
+	// workspace-backed card with a bound workspace, Surla records design/*.go from
+	// the bound workspace again; otherwise the card's saved design source is kept.
 	DesignSource *string `json:"design_source,omitempty"`
+	// Your analysis of the revised prompt against the current card and the
+	// target's current design.
+	Analysis *ReviseChangePayloadCP1RevisionAnalysisTransport `json:"analysis"`
 }
 
 // ValidateReviseChangePayloadTransport checks decoded JSON before it becomes a service value.
@@ -3201,6 +3571,14 @@ func ValidateReviseChangePayloadTransport(value *ReviseChangePayloadTransport) (
 	}
 	if value.Prompt == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("prompt", "body"))
+	}
+	if value.Analysis == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("analysis", "body"))
+	}
+	if value.Analysis != nil {
+		if err2 := ValidateReviseChangePayloadCP1RevisionAnalysisTransport(value.Analysis); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		}
 	}
 	return err
 }
@@ -3358,8 +3736,8 @@ type ReviseChangeResultTransport struct {
 	ConfirmedBy *string `json:"confirmed_by,omitempty"`
 	// SHA-256 digest of the canonical versioned Change Card.
 	RequestRevision *string `json:"request_revision"`
-	// Decision view the CP1 model composed for this revision, when it produced
-	// one. A confirm_intent that changes answers or examples returns the new
+	// Decision view the caller composed for this revision in its analysis, when it
+	// sent one. A confirm_intent that changes answers or examples returns the new
 	// revision without it.
 	UIComposition *ReviseChangeResultUICompositionItemTransport `json:"ui_composition,omitempty"`
 	// Checkpoint 5 approval of this revision, present only while it is verified
@@ -3441,11 +3819,10 @@ func ValidateReviseChangeResultTransport(value *ReviseChangeResultTransport) (er
 
 // ReviseChangeResultUICompositionItemTransport stores JSON fields until they have been validated.
 type ReviseChangeResultUICompositionItemTransport struct {
-	// OpenUI Lang program composed by the CP1 model from the Surla decision
-	// component catalog, exactly as the model returned it. The server does not
-	// check it; the checkpoint viewer validates it and shows its error state, with
-	// the rest of the card still usable, when the program is not a valid
-	// composition.
+	// OpenUI Lang program from the analysis's ui_composition, exactly as the
+	// caller sent it. The server does not check it; the checkpoint viewer
+	// validates it and shows its error state, with the rest of the card still
+	// usable, when the program is not a valid composition.
 	Program *string `json:"program"`
 	// request_revision of the Change Card this program was composed for.
 	ComposedForRevision *string `json:"composed_for_revision"`
@@ -5198,6 +5575,7 @@ func DecodeProposeChangePayload(data []byte) (out *surla.ProposeChangePayload, e
 			Prompt:       *body.Prompt,
 			DesignSource: body.DesignSource,
 		}
+		out.Analysis = decodeProposeChangePayloadCP1AnalysisTransportToCP1Analysis(body.Analysis)
 	}
 	return out, nil
 }
@@ -5335,6 +5713,7 @@ func DecodeReviseChangePayload(data []byte) (out *surla.ReviseChangePayload, err
 			Prompt:          *body.Prompt,
 			DesignSource:    body.DesignSource,
 		}
+		out.Analysis = decodeReviseChangePayloadCP1RevisionAnalysisTransportToCP1RevisionAnalysis(body.Analysis)
 	}
 	return out, nil
 }
@@ -5625,6 +6004,115 @@ func decodePreviewArchitecturePayloadDesignSnapshotTransportToDesignSnapshot(v *
 		tk := key
 		tv := val
 		res.Files[tk] = tv
+	}
+
+	return res
+}
+
+func decodeProposeChangePayloadCP1AnalysisAmbiguityTransportToCP1AnalysisAmbiguity(v *ProposeChangePayloadCP1AnalysisAmbiguityTransport) *surla.CP1AnalysisAmbiguity {
+	res := &surla.CP1AnalysisAmbiguity{
+		Question: *v.Question,
+	}
+	res.Options = make([]string, len(v.Options))
+	for i, val := range v.Options {
+		res.Options[i] = *val
+	}
+
+	return res
+}
+
+func decodeProposeChangePayloadCP1AnalysisExampleTransportToCP1AnalysisExample(v *ProposeChangePayloadCP1AnalysisExampleTransport) *surla.CP1AnalysisExample {
+	res := &surla.CP1AnalysisExample{
+		Scenario:         *v.Scenario,
+		InputSummary:     *v.InputSummary,
+		ExpectedOutcome:  *v.ExpectedOutcome,
+		VerificationKind: *v.VerificationKind,
+	}
+
+	return res
+}
+
+func decodeProposeChangePayloadCP1AnalysisTransportToCP1Analysis(v *ProposeChangePayloadCP1AnalysisTransport) *surla.CP1Analysis {
+	res := &surla.CP1Analysis{
+		Summary:       *v.Summary,
+		UIComposition: v.UIComposition,
+	}
+	res.Ambiguities = make([]*surla.CP1AnalysisAmbiguity, len(v.Ambiguities))
+	for i, val := range v.Ambiguities {
+		if val == nil {
+			res.Ambiguities[i] = nil
+			continue
+		}
+		res.Ambiguities[i] = decodeProposeChangePayloadCP1AnalysisAmbiguityTransportToCP1AnalysisAmbiguity(val)
+	}
+	res.Examples = make([]*surla.CP1AnalysisExample, len(v.Examples))
+	for i, val := range v.Examples {
+		if val == nil {
+			res.Examples[i] = nil
+			continue
+		}
+		res.Examples[i] = decodeProposeChangePayloadCP1AnalysisExampleTransportToCP1AnalysisExample(val)
+	}
+	res.PreservedBehaviors = make([]string, len(v.PreservedBehaviors))
+	for i, val := range v.PreservedBehaviors {
+		res.PreservedBehaviors[i] = *val
+	}
+
+	return res
+}
+
+func decodeReviseChangePayloadCP1AnalysisAmbiguityTransportToCP1AnalysisAmbiguity(v *ReviseChangePayloadCP1AnalysisAmbiguityTransport) *surla.CP1AnalysisAmbiguity {
+	res := &surla.CP1AnalysisAmbiguity{
+		Question: *v.Question,
+	}
+	res.Options = make([]string, len(v.Options))
+	for i, val := range v.Options {
+		res.Options[i] = *val
+	}
+
+	return res
+}
+
+func decodeReviseChangePayloadCP1RevisionAnalysisExampleTransportToCP1RevisionAnalysisExample(v *ReviseChangePayloadCP1RevisionAnalysisExampleTransport) *surla.CP1RevisionAnalysisExample {
+	res := &surla.CP1RevisionAnalysisExample{
+		PriorID:          v.PriorID,
+		Scenario:         *v.Scenario,
+		InputSummary:     *v.InputSummary,
+		ExpectedOutcome:  *v.ExpectedOutcome,
+		VerificationKind: *v.VerificationKind,
+	}
+
+	return res
+}
+
+func decodeReviseChangePayloadCP1RevisionAnalysisTransportToCP1RevisionAnalysis(v *ReviseChangePayloadCP1RevisionAnalysisTransport) *surla.CP1RevisionAnalysis {
+	res := &surla.CP1RevisionAnalysis{
+		Summary:       *v.Summary,
+		UIComposition: v.UIComposition,
+	}
+	res.Ambiguities = make([]*surla.CP1AnalysisAmbiguity, len(v.Ambiguities))
+	for i, val := range v.Ambiguities {
+		if val == nil {
+			res.Ambiguities[i] = nil
+			continue
+		}
+		res.Ambiguities[i] = decodeReviseChangePayloadCP1AnalysisAmbiguityTransportToCP1AnalysisAmbiguity(val)
+	}
+	res.Examples = make([]*surla.CP1RevisionAnalysisExample, len(v.Examples))
+	for i, val := range v.Examples {
+		if val == nil {
+			res.Examples[i] = nil
+			continue
+		}
+		res.Examples[i] = decodeReviseChangePayloadCP1RevisionAnalysisExampleTransportToCP1RevisionAnalysisExample(val)
+	}
+	res.RemovedExampleIds = make([]string, len(v.RemovedExampleIds))
+	for i, val := range v.RemovedExampleIds {
+		res.RemovedExampleIds[i] = *val
+	}
+	res.PreservedBehaviors = make([]string, len(v.PreservedBehaviors))
+	for i, val := range v.PreservedBehaviors {
+		res.PreservedBehaviors[i] = *val
 	}
 
 	return res

@@ -75,7 +75,7 @@ func TestGenOnAFreshStarterChangesNothingAndKeepsModulesApart(t *testing.T) {
 	for _, name := range []string{"ANTHROPIC_API_KEY", "OPENAI_API_KEY", liveModelGatewayEnv, liveModelProviderEnv, liveModelNameEnv} {
 		t.Setenv(name, "")
 	}
-	provider := &scriptedCP1Provider{}
+	provider := &scriptedModelProvider{}
 	gatewayAddr := startModelGateway(t, provider)
 	workspace := t.TempDir()
 	cfg := serveConfig{
@@ -88,7 +88,6 @@ func TestGenOnAFreshStarterChangesNothingAndKeepsModulesApart(t *testing.T) {
 	}
 	opts, err := serveOptions(cfg, func(string) string { return "" }, os.Environ())
 	require.NoError(t, err)
-	opts.Analyzer = trustedSuiteAnalyzer{}
 	// A test executable has no released module version in its build info.
 	opts.SurlaVersion = starterSurlaVersion
 	cp, err := controlplane.New(opts)
@@ -173,7 +172,10 @@ func TestGenOnAFreshStarterChangesNothingAndKeepsModulesApart(t *testing.T) {
 	candidateCommit := trustedSuiteCommit(t, dir)
 	require.NotEqual(t, initialized.Commit, candidateCommit)
 
-	assertTrustedSuiteJourney(t, client, opts.CardsDir, opts.RunsDir, candidateCommit, initialized.Commit, "initialized")
+	// The operator adds promotion once the project and its pinned evaluator
+	// suite commit exist; the running server picks it up without a restart.
+	promotion := writeStarterPromotion(t, workspace, initialized.ServiceName, initialized.Commit)
+	assertTrustedSuiteJourney(t, client, opts.CardsDir, opts.RunsDir, candidateCommit, initialized.Commit, "initialized", promotion)
 
 	edits := []struct {
 		// module is the module directory surla gen runs in.

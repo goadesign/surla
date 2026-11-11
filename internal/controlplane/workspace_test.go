@@ -833,9 +833,11 @@ func TestCloseDrainsAndCancelsInFlightInitProjectBeforeReleasingLocks(t *testing
 }
 
 // TestCP1WorkspaceDesignSourceProvenanceAcrossProposeReviseAndReopen verifies that
-// workspace-derived CP1 Change Cards re-read updated workspace design files on
-// ReviseChange after reopening ControlPlane, while caller-supplied DesignSource
-// cards preserve their supplied source across ReviseChange.
+// a workspace-derived Change Card records the bound workspace's design/*.go
+// and records the updated files again on ReviseChange after the control plane
+// is reopened, while a card proposed with design_source keeps that supplied
+// source across ReviseChange. The design source is saved and hashed into
+// request_revision; nothing interprets it.
 func TestCP1WorkspaceDesignSourceProvenanceAcrossProposeReviseAndReopen(t *testing.T) {
 	t.Parallel()
 	aliceCtx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
@@ -850,66 +852,52 @@ func TestCP1WorkspaceDesignSourceProvenanceAcrossProposeReviseAndReopen(t *testi
 	const suppliedDesign = "package design\n// explicit caller-supplied design\n"
 	require.NoError(t, os.WriteFile(filepath.Join(designDir, "design.go"), []byte(designV1), 0o644))
 
-	var capturedSources []string
-	analyzer := &stubCP1Analyzer{
-		analyzeFn: func(_ context.Context, prompt string, design CP1Design) (CP1SemanticAnalysis, error) {
-			designSource, err := design.CanonicalSource()
-			if err != nil {
-				return CP1SemanticAnalysis{}, err
-			}
-			capturedSources = append(capturedSources, designSource)
-			return CP1SemanticAnalysis{
-				Summary: "Summary for " + prompt,
-				Examples: []CP1ModelExample{
-					{
-						Scenario:         "Price an item",
-						InputSummary:     "1 item",
-						ExpectedOutcome:  "Returns total",
-						VerificationKind: "deterministic",
-					},
-				},
-				PreservedBehaviors: []string{"existing orders continue to work"},
-			}, nil
-		},
-		reviseFn: func(_ context.Context, prior CP1PriorCard, prompt string, design CP1Design) (CP1RevisionSemanticAnalysis, error) {
-			designSource, err := design.CanonicalSource()
-			if err != nil {
-				return CP1RevisionSemanticAnalysis{}, err
-			}
-			capturedSources = append(capturedSources, designSource)
-			revExamples := make([]CP1RevisionModelExample, 0, len(prior.Examples))
-			for _, ex := range prior.Examples {
-				revExamples = append(revExamples, CP1RevisionModelExample{
-					PriorID:          ex.ID,
-					Scenario:         ex.Scenario,
-					InputSummary:     ex.InputSummary,
-					ExpectedOutcome:  ex.ExpectedOutcome,
-					VerificationKind: ex.VerificationKind,
-				})
-			}
-			return CP1RevisionSemanticAnalysis{
-				Summary:            "Revised summary for " + prompt,
-				Examples:           revExamples,
-				PreservedBehaviors: prior.PreservedBehaviors,
-			}, nil
-		},
+	proposal := func(summary string) *gensurla.CP1Analysis {
+		return &gensurla.CP1Analysis{
+			Summary:     summary,
+			Ambiguities: []*gensurla.CP1AnalysisAmbiguity{},
+			Examples: []*gensurla.CP1AnalysisExample{{
+				Scenario: "Price an item", InputSummary: "1 item at $10.00", ExpectedOutcome: "Returns total $10.00", VerificationKind: "deterministic",
+			}},
+			PreservedBehaviors: []string{"Existing orders continue to price as before."},
+		}
+	}
+	revision := func(summary string) *gensurla.CP1RevisionAnalysis {
+		priorID := "check_01"
+		return &gensurla.CP1RevisionAnalysis{
+			Summary:     summary,
+			Ambiguities: []*gensurla.CP1AnalysisAmbiguity{},
+			Examples: []*gensurla.CP1RevisionAnalysisExample{{
+				PriorID: &priorID, Scenario: "Price an item", InputSummary: "1 item at $10.00", ExpectedOutcome: "Returns total $10.00", VerificationKind: "deterministic",
+			}},
+			RemovedExampleIds:  []string{},
+			PreservedBehaviors: []string{"Existing orders continue to price as before."},
+		}
+	}
+	savedSource := func(cp *ControlPlane, changeID string) (string, string) {
+		t.Helper()
+		rec, ok, err := cp.cards.load(changeID)
+		require.NoError(t, err)
+		require.True(t, ok)
+		return rec.designSource, rec.sourceOrigin
 	}
 
 	cp1, err := New(Options{
 		CardsDir:     cardsDir,
 		WorkspaceDir: wsDir,
-		Analyzer:     analyzer,
 	})
 	require.NoError(t, err)
 
-	// 1. ProposeChange with nil DesignSource reads design/design.go (v1) from the bound workspace.
+	// 1. ProposeChange with nil DesignSource records design/design.go (v1) from the bound workspace.
 	wsCard, err := cp1.ProposeChange(aliceCtx, &gensurla.ProposeChangePayload{
 		ChangeID: "chg-workspace-origin",
 		Prompt:   "Add loyalty discount",
+		Analysis: proposal("Loyal customers get a discount."),
 	})
 	require.NoError(t, err)
-	require.Len(t, capturedSources, 1)
-	assert.Contains(t, capturedSources[0], "v1 workspace design")
+	src, origin := savedSource(cp1, wsCard.ChangeID)
+	assert.Contains(t, src, "v1 workspace design")
+	assert.Equal(t, sourceOriginWorkspace, origin)
 
 	// 2. ProposeChange with explicit DesignSource records caller-supplied provenance.
 	suppliedCopy := suppliedDesign
@@ -917,10 +905,12 @@ func TestCP1WorkspaceDesignSourceProvenanceAcrossProposeReviseAndReopen(t *testi
 		ChangeID:     "chg-supplied-origin",
 		Prompt:       "Add tax breakdown",
 		DesignSource: &suppliedCopy,
+		Analysis:     proposal("Receipts show tax separately."),
 	})
 	require.NoError(t, err)
-	require.Len(t, capturedSources, 2)
-	assert.Equal(t, suppliedDesign, capturedSources[1])
+	src, origin = savedSource(cp1, supCard.ChangeID)
+	assert.Equal(t, suppliedDesign, src)
+	assert.Equal(t, sourceOriginSupplied, origin)
 
 	require.NoError(t, cp1.Close())
 
@@ -929,30 +919,34 @@ func TestCP1WorkspaceDesignSourceProvenanceAcrossProposeReviseAndReopen(t *testi
 	cp2, err := New(Options{
 		CardsDir:     cardsDir,
 		WorkspaceDir: wsDir,
-		Analyzer:     analyzer,
 	})
 	require.NoError(t, err)
 	defer cp2.Close()
 
-	// 3. ReviseChange with nil DesignSource on the workspace-origin card re-reads v2 from disk.
-	_, err = cp2.ReviseChange(aliceCtx, &gensurla.ReviseChangePayload{
+	// 3. ReviseChange with nil DesignSource on the workspace-origin card records v2 from disk.
+	revisedWS, err := cp2.ReviseChange(aliceCtx, &gensurla.ReviseChangePayload{
 		ChangeID:        wsCard.ChangeID,
 		RequestRevision: wsCard.RequestRevision,
 		Prompt:          "Add loyalty discount with cap",
+		Analysis:        revision("Loyal customers get a discount capped at $20."),
 	})
 	require.NoError(t, err)
-	require.Len(t, capturedSources, 3)
-	assert.Contains(t, capturedSources[2], "v2 workspace design")
+	src, origin = savedSource(cp2, wsCard.ChangeID)
+	assert.Contains(t, src, "v2 workspace design")
+	assert.Equal(t, sourceOriginWorkspace, origin)
+	assert.Equal(t, "check_01", revisedWS.Examples[0].ID)
 
 	// 4. ReviseChange with nil DesignSource on the supplied-origin card preserves the caller-supplied design.
 	_, err = cp2.ReviseChange(aliceCtx, &gensurla.ReviseChangePayload{
 		ChangeID:        supCard.ChangeID,
 		RequestRevision: supCard.RequestRevision,
 		Prompt:          "Add tax breakdown with rounding",
+		Analysis:        revision("Receipts show tax separately, rounded half up."),
 	})
 	require.NoError(t, err)
-	require.Len(t, capturedSources, 4)
-	assert.Equal(t, suppliedDesign, capturedSources[3])
+	src, origin = savedSource(cp2, supCard.ChangeID)
+	assert.Equal(t, suppliedDesign, src)
+	assert.Equal(t, sourceOriginSupplied, origin)
 }
 
 // Generate returns a single stub generated Go source file for g.pkg.

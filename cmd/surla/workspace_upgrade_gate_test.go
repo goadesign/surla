@@ -288,7 +288,6 @@ func saveWorkspaceUpgradeCard(t *testing.T, workspace string) *gensurla.ChangeCa
 	t.Helper()
 	cp, err := controlplane.New(controlplane.Options{
 		CardsDir: filepath.Join(workspace, ".surla", "cards"),
-		Analyzer: confirmedAnalyzer{},
 	})
 	require.NoError(t, err)
 	t.Cleanup(func() { assert.NoError(t, cp.Close()) })
@@ -298,6 +297,7 @@ func saveWorkspaceUpgradeCard(t *testing.T, workspace string) *gensurla.ChangeCa
 	proposed, err := cp.ProposeChange(alice, &gensurla.ProposeChangePayload{
 		ChangeID: "chg-workspace-upgrade",
 		Prompt:   "Refunds up to $50 are instant.",
+		Analysis: confirmedAnalysis(),
 	})
 	require.NoError(t, err)
 	require.NotEmpty(t, proposed.Examples)

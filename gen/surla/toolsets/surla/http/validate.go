@@ -672,6 +672,14 @@ func ValidateProposeChangePayloadTransport(body *ProposeChangePayloadTransport) 
 	if body.Prompt == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("prompt", "body"))
 	}
+	if body.Analysis == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("analysis", "body"))
+	}
+	if body.Analysis != nil {
+		if err2 := ValidateCP1AnalysisTransport(body.Analysis); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		}
+	}
 	return
 }
 
@@ -767,6 +775,14 @@ func ValidateReviseChangePayloadTransport(body *ReviseChangePayloadTransport) (e
 	}
 	if body.Prompt == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("prompt", "body"))
+	}
+	if body.Analysis == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("analysis", "body"))
+	}
+	if body.Analysis != nil {
+		if err2 := ValidateCP1RevisionAnalysisTransport(body.Analysis); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		}
 	}
 	return
 }
@@ -1105,6 +1121,213 @@ func ValidateC4EdgeItemTransport(body *C4EdgeItemTransport) (err error) {
 	}
 	if body.Protocol == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("protocol", "body"))
+	}
+	return
+}
+
+// ValidateCP1AnalysisAmbiguityTransport runs the validations defined on CP1AnalysisAmbiguityTransport.
+func ValidateCP1AnalysisAmbiguityTransport(body *CP1AnalysisAmbiguityTransport) (err error) {
+	if body.Question == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("question", "body"))
+	}
+	if body.Options == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("options", "body"))
+	}
+	if body.Question != nil {
+		err = goa.MergeErrors(err, goa.ValidatePattern("body.question", *body.Question, "[^\\t\\n\\v\\f\\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]"))
+	}
+	if len(body.Options) < 2 {
+		err = goa.MergeErrors(err, goa.InvalidLengthError("body.options", body.Options, len(body.Options), 2, true))
+	}
+	for _, e := range body.Options {
+		if e == nil {
+			err = goa.MergeErrors(err, goa.MissingFieldError("body.options", "[*]"))
+		}
+		if e != nil {
+			err = goa.MergeErrors(err, goa.ValidatePattern("body.options[*]", *e, "[^\\t\\n\\v\\f\\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]"))
+		}
+	}
+	return
+}
+
+// ValidateCP1AnalysisExampleTransport runs the validations defined on CP1AnalysisExampleTransport.
+func ValidateCP1AnalysisExampleTransport(body *CP1AnalysisExampleTransport) (err error) {
+	if body.Scenario == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("scenario", "body"))
+	}
+	if body.InputSummary == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("input_summary", "body"))
+	}
+	if body.ExpectedOutcome == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("expected_outcome", "body"))
+	}
+	if body.VerificationKind == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("verification_kind", "body"))
+	}
+	if body.Scenario != nil {
+		err = goa.MergeErrors(err, goa.ValidatePattern("body.scenario", *body.Scenario, "[^\\t\\n\\v\\f\\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]"))
+	}
+	if body.InputSummary != nil {
+		err = goa.MergeErrors(err, goa.ValidatePattern("body.input_summary", *body.InputSummary, "[^\\t\\n\\v\\f\\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]"))
+	}
+	if body.ExpectedOutcome != nil {
+		err = goa.MergeErrors(err, goa.ValidatePattern("body.expected_outcome", *body.ExpectedOutcome, "[^\\t\\n\\v\\f\\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]"))
+	}
+	if body.VerificationKind != nil {
+		if !(*body.VerificationKind == "deterministic" || *body.VerificationKind == "model_judged") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.verification_kind", *body.VerificationKind, []any{"deterministic", "model_judged"}))
+		}
+	}
+	return
+}
+
+// ValidateCP1AnalysisTransport runs the validations defined on CP1AnalysisTransport.
+func ValidateCP1AnalysisTransport(body *CP1AnalysisTransport) (err error) {
+	if body.Summary == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("summary", "body"))
+	}
+	if body.Ambiguities == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("ambiguities", "body"))
+	}
+	if body.Examples == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("examples", "body"))
+	}
+	if body.PreservedBehaviors == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("preserved_behaviors", "body"))
+	}
+	if body.Summary != nil {
+		err = goa.MergeErrors(err, goa.ValidatePattern("body.summary", *body.Summary, "[^\\t\\n\\v\\f\\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]"))
+	}
+	for _, e := range body.Ambiguities {
+		if e == nil {
+			err = goa.MergeErrors(err, goa.MissingFieldError("body.ambiguities", "[*]"))
+		}
+		if e != nil {
+			if err2 := ValidateCP1AnalysisAmbiguityTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	if len(body.Examples) < 1 {
+		err = goa.MergeErrors(err, goa.InvalidLengthError("body.examples", body.Examples, len(body.Examples), 1, true))
+	}
+	for _, e := range body.Examples {
+		if e == nil {
+			err = goa.MergeErrors(err, goa.MissingFieldError("body.examples", "[*]"))
+		}
+		if e != nil {
+			if err2 := ValidateCP1AnalysisExampleTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	for _, e := range body.PreservedBehaviors {
+		if e == nil {
+			err = goa.MergeErrors(err, goa.MissingFieldError("body.preserved_behaviors", "[*]"))
+		}
+		if e != nil {
+			err = goa.MergeErrors(err, goa.ValidatePattern("body.preserved_behaviors[*]", *e, "[^\\t\\n\\v\\f\\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]"))
+		}
+	}
+	return
+}
+
+// ValidateCP1RevisionAnalysisExampleTransport runs the validations defined on CP1RevisionAnalysisExampleTransport.
+func ValidateCP1RevisionAnalysisExampleTransport(body *CP1RevisionAnalysisExampleTransport) (err error) {
+	if body.Scenario == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("scenario", "body"))
+	}
+	if body.InputSummary == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("input_summary", "body"))
+	}
+	if body.ExpectedOutcome == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("expected_outcome", "body"))
+	}
+	if body.VerificationKind == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("verification_kind", "body"))
+	}
+	if body.PriorID != nil {
+		if utf8.RuneCountInString(*body.PriorID) < 1 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.prior_id", *body.PriorID, utf8.RuneCountInString(*body.PriorID), 1, true))
+		}
+	}
+	if body.Scenario != nil {
+		err = goa.MergeErrors(err, goa.ValidatePattern("body.scenario", *body.Scenario, "[^\\t\\n\\v\\f\\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]"))
+	}
+	if body.InputSummary != nil {
+		err = goa.MergeErrors(err, goa.ValidatePattern("body.input_summary", *body.InputSummary, "[^\\t\\n\\v\\f\\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]"))
+	}
+	if body.ExpectedOutcome != nil {
+		err = goa.MergeErrors(err, goa.ValidatePattern("body.expected_outcome", *body.ExpectedOutcome, "[^\\t\\n\\v\\f\\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]"))
+	}
+	if body.VerificationKind != nil {
+		if !(*body.VerificationKind == "deterministic" || *body.VerificationKind == "model_judged") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.verification_kind", *body.VerificationKind, []any{"deterministic", "model_judged"}))
+		}
+	}
+	return
+}
+
+// ValidateCP1RevisionAnalysisTransport runs the validations defined on CP1RevisionAnalysisTransport.
+func ValidateCP1RevisionAnalysisTransport(body *CP1RevisionAnalysisTransport) (err error) {
+	if body.Summary == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("summary", "body"))
+	}
+	if body.Ambiguities == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("ambiguities", "body"))
+	}
+	if body.Examples == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("examples", "body"))
+	}
+	if body.RemovedExampleIds == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("removed_example_ids", "body"))
+	}
+	if body.PreservedBehaviors == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("preserved_behaviors", "body"))
+	}
+	if body.Summary != nil {
+		err = goa.MergeErrors(err, goa.ValidatePattern("body.summary", *body.Summary, "[^\\t\\n\\v\\f\\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]"))
+	}
+	for _, e := range body.Ambiguities {
+		if e == nil {
+			err = goa.MergeErrors(err, goa.MissingFieldError("body.ambiguities", "[*]"))
+		}
+		if e != nil {
+			if err2 := ValidateCP1AnalysisAmbiguityTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	if len(body.Examples) < 1 {
+		err = goa.MergeErrors(err, goa.InvalidLengthError("body.examples", body.Examples, len(body.Examples), 1, true))
+	}
+	for _, e := range body.Examples {
+		if e == nil {
+			err = goa.MergeErrors(err, goa.MissingFieldError("body.examples", "[*]"))
+		}
+		if e != nil {
+			if err2 := ValidateCP1RevisionAnalysisExampleTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	for _, e := range body.RemovedExampleIds {
+		if e == nil {
+			err = goa.MergeErrors(err, goa.MissingFieldError("body.removed_example_ids", "[*]"))
+		}
+		if e != nil {
+			if utf8.RuneCountInString(*e) < 1 {
+				err = goa.MergeErrors(err, goa.InvalidLengthError("body.removed_example_ids[*]", *e, utf8.RuneCountInString(*e), 1, true))
+			}
+		}
+	}
+	for _, e := range body.PreservedBehaviors {
+		if e == nil {
+			err = goa.MergeErrors(err, goa.MissingFieldError("body.preserved_behaviors", "[*]"))
+		}
+		if e != nil {
+			err = goa.MergeErrors(err, goa.ValidatePattern("body.preserved_behaviors[*]", *e, "[^\\t\\n\\v\\f\\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]"))
+		}
 	}
 	return
 }

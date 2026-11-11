@@ -1013,12 +1013,12 @@ var approveMergeResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("ui_composition")},
 		JSONType:    "object",
-		Description: "Decision view the CP1 model composed for this revision, when it produced one. A confirm_intent that changes answers or examples returns the new revision without it.",
+		Description: "Decision view the caller composed for this revision in its analysis, when it sent one. A confirm_intent that changes answers or examples returns the new revision without it.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("ui_composition"), tools.FixedField("program")},
 		JSONType:    "string",
-		Description: "OpenUI Lang program composed by the CP1 model from the Surla decision component catalog, exactly as the model returned it. The server does not check it; the checkpoint viewer validates it and shows its error state, with the rest of the card still usable, when the program is not a valid composition.",
+		Description: "OpenUI Lang program from the analysis's ui_composition, exactly as the caller sent it. The server does not check it; the checkpoint viewer validates it and shows its error state, with the rest of the card still usable, when the program is not a valid composition.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("ui_composition"), tools.FixedField("composed_for_revision")},
@@ -1186,7 +1186,7 @@ var configureModelPayloadFields = []tools.FieldMetadata{
 var configureModelResultFields = []tools.FieldMetadata{
 	{
 		JSONType:    "object",
-		Description: "Active CP1 and live-target model configuration after configure_model succeeds.",
+		Description: "Model configuration that live targets started afterwards receive, after configure_model succeeds.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("provider")},
@@ -1388,12 +1388,12 @@ var confirmIntentResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("ui_composition")},
 		JSONType:    "object",
-		Description: "Decision view the CP1 model composed for this revision, when it produced one. A confirm_intent that changes answers or examples returns the new revision without it.",
+		Description: "Decision view the caller composed for this revision in its analysis, when it sent one. A confirm_intent that changes answers or examples returns the new revision without it.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("ui_composition"), tools.FixedField("program")},
 		JSONType:    "string",
-		Description: "OpenUI Lang program composed by the CP1 model from the Surla decision component catalog, exactly as the model returned it. The server does not check it; the checkpoint viewer validates it and shows its error state, with the rest of the card still usable, when the program is not a valid composition.",
+		Description: "OpenUI Lang program from the analysis's ui_composition, exactly as the caller sent it. The server does not check it; the checkpoint viewer validates it and shows its error state, with the rest of the card still usable, when the program is not a valid composition.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("ui_composition"), tools.FixedField("composed_for_revision")},
@@ -1826,12 +1826,12 @@ var getChangeResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("ui_composition")},
 		JSONType:    "object",
-		Description: "Decision view the CP1 model composed for this revision, when it produced one. A confirm_intent that changes answers or examples returns the new revision without it.",
+		Description: "Decision view the caller composed for this revision in its analysis, when it sent one. A confirm_intent that changes answers or examples returns the new revision without it.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("ui_composition"), tools.FixedField("program")},
 		JSONType:    "string",
-		Description: "OpenUI Lang program composed by the CP1 model from the Surla decision component catalog, exactly as the model returned it. The server does not check it; the checkpoint viewer validates it and shows its error state, with the rest of the card still usable, when the program is not a valid composition.",
+		Description: "OpenUI Lang program from the analysis's ui_composition, exactly as the caller sent it. The server does not check it; the checkpoint viewer validates it and shows its error state, with the rest of the card still usable, when the program is not a valid composition.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("ui_composition"), tools.FixedField("composed_for_revision")},
@@ -3303,7 +3303,7 @@ var previewArchitectureResultFields = []tools.FieldMetadata{
 var proposeChangePayloadFields = []tools.FieldMetadata{
 	{
 		JSONType:    "object",
-		Description: "Operator feature request submitted for Checkpoint 1 ambiguity and example analysis.",
+		Description: "Operator feature request and the caller's analysis of it, saved as a new Checkpoint 1 Change Card.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("change_id")},
@@ -3318,7 +3318,87 @@ var proposeChangePayloadFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("design_source")},
 		JSONType:    "string",
-		Description: "Current Goa design source of the target (its design/*.go files) for the CP1 model to read. When omitted on a server with a bound workspace, Surla reads design/*.go from the bound workspace; when omitted without a bound workspace, CP1 receives no current design.",
+		Description: "Goa design source the analysis was made against (the target's design/*.go files). Surla saves it with the card and includes it in request_revision; it does not interpret it. When omitted on a server with a bound workspace, Surla records design/*.go from the bound workspace; when omitted without a bound workspace, the card records no design.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("analysis")},
+		JSONType:    "object",
+		Description: "Your analysis of prompt against the target's current design.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("analysis"), tools.FixedField("summary")},
+		JSONType:    "string",
+		Description: "Plain-English description of the requested behavior, including the details the request or the design already settle.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("analysis"), tools.FixedField("ambiguities")},
+		JSONType:    "array",
+		Description: "Open questions only the requester can answer: product, domain, or operational choices that change observable behavior or service boundaries. Do not ask about details the request or the design already settle; state them in summary, or in examples when they change an observable outcome. Send an empty list when nothing is open.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("analysis"), tools.FixedField("ambiguities"), tools.DynamicField{}},
+		JSONType:    "object",
+		Description: "Open questions only the requester can answer: product, domain, or operational choices that change observable behavior or service boundaries. Do not ask about details the request or the design already settle; state them in summary, or in examples when they change an observable outcome. Send an empty list when nothing is open.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("analysis"), tools.FixedField("ambiguities"), tools.DynamicField{}, tools.FixedField("question")},
+		JSONType:    "string",
+		Description: "The decision in plain language, saying what the choice changes.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("analysis"), tools.FixedField("ambiguities"), tools.DynamicField{}, tools.FixedField("options")},
+		JSONType:    "array",
+		Description: "At least two distinct, self-contained choices; each states the behavior it selects and what follows from it. The requester's answer must be exactly one of these strings.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("analysis"), tools.FixedField("ambiguities"), tools.DynamicField{}, tools.FixedField("options"), tools.DynamicField{}},
+		JSONType:    "string",
+		Description: "At least two distinct, self-contained choices; each states the behavior it selects and what follows from it. The requester's answer must be exactly one of these strings.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("analysis"), tools.FixedField("examples")},
+		JSONType:    "array",
+		Description: "Concrete acceptance examples drawn from the request and the design, never placeholder text; each becomes a check the change must pass.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("analysis"), tools.FixedField("examples"), tools.DynamicField{}},
+		JSONType:    "object",
+		Description: "Concrete acceptance examples drawn from the request and the design, never placeholder text; each becomes a check the change must pass.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("analysis"), tools.FixedField("examples"), tools.DynamicField{}, tools.FixedField("scenario")},
+		JSONType:    "string",
+		Description: "Short name of the situation, in the requester's domain terms.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("analysis"), tools.FixedField("examples"), tools.DynamicField{}, tools.FixedField("input_summary")},
+		JSONType:    "string",
+		Description: "The actual request, inputs, and starting state in this scenario, with real values from the request and the design, never placeholders.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("analysis"), tools.FixedField("examples"), tools.DynamicField{}, tools.FixedField("expected_outcome")},
+		JSONType:    "string",
+		Description: "The observable result or refusal that must hold.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("analysis"), tools.FixedField("examples"), tools.DynamicField{}, tools.FixedField("verification_kind")},
+		JSONType:    "string",
+		Description: "deterministic when code can check the outcome directly; model_judged when checking it needs judgment.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("analysis"), tools.FixedField("preserved_behaviors")},
+		JSONType:    "array",
+		Description: "Existing behaviors and contract rules of the target that the change must keep, each stated concretely; empty when none apply.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("analysis"), tools.FixedField("preserved_behaviors"), tools.DynamicField{}},
+		JSONType:    "string",
+		Description: "Existing behaviors and contract rules of the target that the change must keep, each stated concretely; empty when none apply.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("analysis"), tools.FixedField("ui_composition")},
+		JSONType:    "string",
+		Description: "Optional OpenUI Lang program that helps the requester decide the open questions, built only from the decision components the surla://golden-path resource lists. Refer to an ambiguity or example only by its 1-based position in this analysis (1 is the first); never invent identifiers. Surla saves it unchanged without checking it; the checkpoint viewer validates and renders it. Omit it when a plain card is clearer.",
 	},
 }
 var proposeChangeResultFields = []tools.FieldMetadata{
@@ -3444,12 +3524,12 @@ var proposeChangeResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("ui_composition")},
 		JSONType:    "object",
-		Description: "Decision view the CP1 model composed for this revision, when it produced one. A confirm_intent that changes answers or examples returns the new revision without it.",
+		Description: "Decision view the caller composed for this revision in its analysis, when it sent one. A confirm_intent that changes answers or examples returns the new revision without it.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("ui_composition"), tools.FixedField("program")},
 		JSONType:    "string",
-		Description: "OpenUI Lang program composed by the CP1 model from the Surla decision component catalog, exactly as the model returned it. The server does not check it; the checkpoint viewer validates it and shows its error state, with the rest of the card still usable, when the program is not a valid composition.",
+		Description: "OpenUI Lang program from the analysis's ui_composition, exactly as the caller sent it. The server does not check it; the checkpoint viewer validates it and shows its error state, with the rest of the card still usable, when the program is not a valid composition.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("ui_composition"), tools.FixedField("composed_for_revision")},
@@ -3612,7 +3692,7 @@ var readCheckOutputResultFields = []tools.FieldMetadata{
 var reviseChangePayloadFields = []tools.FieldMetadata{
 	{
 		JSONType:    "object",
-		Description: "Revised operator feature request submitted for an existing Checkpoint 1 Change Card.",
+		Description: "Revised operator feature request and the caller's analysis of it, saved as the next revision of an existing Checkpoint 1 Change Card.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("change_id")},
@@ -3632,7 +3712,102 @@ var reviseChangePayloadFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("design_source")},
 		JSONType:    "string",
-		Description: "Updated Goa design source of the target (its design/*.go files) for the CP1 model to read. When omitted on a workspace-backed card with a bound workspace, Surla re-reads design/*.go from the bound workspace; otherwise the card's saved design source is used again.",
+		Description: "Updated Goa design source the analysis was made against (the target's design/*.go files). Surla saves it with the card and includes it in request_revision; it does not interpret it. When omitted on a workspace-backed card with a bound workspace, Surla records design/*.go from the bound workspace again; otherwise the card's saved design source is kept.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("analysis")},
+		JSONType:    "object",
+		Description: "Your analysis of the revised prompt against the current card and the target's current design.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("analysis"), tools.FixedField("summary")},
+		JSONType:    "string",
+		Description: "Plain-English description of the revised behavior, including the details the request, the design or confirmed answers already settle.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("analysis"), tools.FixedField("ambiguities")},
+		JSONType:    "array",
+		Description: "Open questions only the requester can answer: product, domain, or operational choices that change observable behavior or service boundaries. Do not ask about details the request, the design or a confirmed answer already settle; state them in summary, or in examples when they change an observable outcome. Send an empty list when nothing is open.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("analysis"), tools.FixedField("ambiguities"), tools.DynamicField{}},
+		JSONType:    "object",
+		Description: "Open questions only the requester can answer: product, domain, or operational choices that change observable behavior or service boundaries. Do not ask about details the request, the design or a confirmed answer already settle; state them in summary, or in examples when they change an observable outcome. Send an empty list when nothing is open.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("analysis"), tools.FixedField("ambiguities"), tools.DynamicField{}, tools.FixedField("question")},
+		JSONType:    "string",
+		Description: "The decision in plain language, saying what the choice changes.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("analysis"), tools.FixedField("ambiguities"), tools.DynamicField{}, tools.FixedField("options")},
+		JSONType:    "array",
+		Description: "At least two distinct, self-contained choices; each states the behavior it selects and what follows from it. The requester's answer must be exactly one of these strings.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("analysis"), tools.FixedField("ambiguities"), tools.DynamicField{}, tools.FixedField("options"), tools.DynamicField{}},
+		JSONType:    "string",
+		Description: "At least two distinct, self-contained choices; each states the behavior it selects and what follows from it. The requester's answer must be exactly one of these strings.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("analysis"), tools.FixedField("examples")},
+		JSONType:    "array",
+		Description: "Concrete acceptance examples drawn from the revised request and the design. Give prior_id for each current example you keep or edit; omit it for new ones.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("analysis"), tools.FixedField("examples"), tools.DynamicField{}},
+		JSONType:    "object",
+		Description: "Concrete acceptance examples drawn from the revised request and the design. Give prior_id for each current example you keep or edit; omit it for new ones.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("analysis"), tools.FixedField("examples"), tools.DynamicField{}, tools.FixedField("prior_id")},
+		JSONType:    "string",
+		Description: "ID of the current card's example this one keeps or edits, exactly as the card shows it; the example keeps that ID. Omit it for a new example, which gets the lowest check_NN ID the current and revised cards do not use.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("analysis"), tools.FixedField("examples"), tools.DynamicField{}, tools.FixedField("scenario")},
+		JSONType:    "string",
+		Description: "Short name of the situation, in the requester's domain terms.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("analysis"), tools.FixedField("examples"), tools.DynamicField{}, tools.FixedField("input_summary")},
+		JSONType:    "string",
+		Description: "The actual request, inputs, and starting state in this scenario, with real values from the request and the design, never placeholders.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("analysis"), tools.FixedField("examples"), tools.DynamicField{}, tools.FixedField("expected_outcome")},
+		JSONType:    "string",
+		Description: "The observable result or refusal that must hold.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("analysis"), tools.FixedField("examples"), tools.DynamicField{}, tools.FixedField("verification_kind")},
+		JSONType:    "string",
+		Description: "deterministic when code can check the outcome directly; model_judged when checking it needs judgment.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("analysis"), tools.FixedField("removed_example_ids")},
+		JSONType:    "array",
+		Description: "IDs of the current card's examples this revision drops. Every current example ID appears exactly once, either as an examples[].prior_id or here; send an empty list when none are dropped.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("analysis"), tools.FixedField("removed_example_ids"), tools.DynamicField{}},
+		JSONType:    "string",
+		Description: "IDs of the current card's examples this revision drops. Every current example ID appears exactly once, either as an examples[].prior_id or here; send an empty list when none are dropped.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("analysis"), tools.FixedField("preserved_behaviors")},
+		JSONType:    "array",
+		Description: "Existing behaviors and contract rules of the target that the change must keep, each stated concretely; empty when none apply.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("analysis"), tools.FixedField("preserved_behaviors"), tools.DynamicField{}},
+		JSONType:    "string",
+		Description: "Existing behaviors and contract rules of the target that the change must keep, each stated concretely; empty when none apply.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("analysis"), tools.FixedField("ui_composition")},
+		JSONType:    "string",
+		Description: "Optional OpenUI Lang program that helps the requester decide the open questions, built only from the decision components the surla://golden-path resource lists. Refer to an ambiguity or example only by its 1-based position in this analysis (1 is the first); never invent identifiers. Surla saves it unchanged without checking it; the checkpoint viewer validates and renders it. Omit it when a plain card is clearer.",
 	},
 }
 var reviseChangeResultFields = []tools.FieldMetadata{
@@ -3758,12 +3933,12 @@ var reviseChangeResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("ui_composition")},
 		JSONType:    "object",
-		Description: "Decision view the CP1 model composed for this revision, when it produced one. A confirm_intent that changes answers or examples returns the new revision without it.",
+		Description: "Decision view the caller composed for this revision in its analysis, when it sent one. A confirm_intent that changes answers or examples returns the new revision without it.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("ui_composition"), tools.FixedField("program")},
 		JSONType:    "string",
-		Description: "OpenUI Lang program composed by the CP1 model from the Surla decision component catalog, exactly as the model returned it. The server does not check it; the checkpoint viewer validates it and shows its error state, with the rest of the card still usable, when the program is not a valid composition.",
+		Description: "OpenUI Lang program from the analysis's ui_composition, exactly as the caller sent it. The server does not check it; the checkpoint viewer validates it and shows its error state, with the rest of the card still usable, when the program is not a valid composition.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("ui_composition"), tools.FixedField("composed_for_revision")},
@@ -7926,6 +8101,7 @@ func MarshalProposeChangePayload(v *ProposeChangePayload) ([]byte, error) {
 		Prompt:       &in.Prompt,
 		DesignSource: in.DesignSource,
 	}
+	out.Analysis = encodeCP1AnalysisToCP1AnalysisTransport(in.Analysis)
 	return json.Marshal(out)
 }
 
@@ -7954,6 +8130,7 @@ func UnmarshalProposeChangePayload(data []byte) (*ProposeChangePayload, error) {
 		Prompt:       *in.Prompt,
 		DesignSource: in.DesignSource,
 	}
+	out.Analysis = decodeCP1AnalysisTransportToCP1Analysis(in.Analysis)
 	return out, nil
 }
 
@@ -8187,6 +8364,7 @@ func MarshalReviseChangePayload(v *ReviseChangePayload) ([]byte, error) {
 		Prompt:          &in.Prompt,
 		DesignSource:    in.DesignSource,
 	}
+	out.Analysis = encodeCP1RevisionAnalysisToCP1RevisionAnalysisTransport(in.Analysis)
 	return json.Marshal(out)
 }
 
@@ -8216,6 +8394,7 @@ func UnmarshalReviseChangePayload(data []byte) (*ReviseChangePayload, error) {
 		Prompt:          *in.Prompt,
 		DesignSource:    in.DesignSource,
 	}
+	out.Analysis = decodeCP1RevisionAnalysisTransportToCP1RevisionAnalysis(in.Analysis)
 	return out, nil
 }
 
@@ -9213,6 +9392,13 @@ func validateProposeChangePayloadJSONValue(path string, value any, description s
 	sort.Strings(keys)
 	for _, key := range keys {
 		switch key {
+		case "analysis":
+			if err := validateProposeChangePayloadCP1AnalysisTransportJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Your analysis of prompt against the target's current design.",
+			); err != nil {
+				return err
+			}
 		case "change_id":
 			if err := validateStringJSONValue(
 				generatedJSONChildPath(path, key, false),
@@ -9223,7 +9409,7 @@ func validateProposeChangePayloadJSONValue(path string, value any, description s
 		case "design_source":
 			if err := validateStringJSONValue(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Current Goa design source of the target (its design/*.go files) for the CP1 model to read. When omitted on a server with a bound workspace, Surla reads design/*.go from the bound workspace; when omitted without a bound workspace, CP1 receives no current design.",
+				typed[key], "Goa design source the analysis was made against (the target's design/*.go files). Surla saves it with the card and includes it in request_revision; it does not interpret it. When omitted on a server with a bound workspace, Surla records design/*.go from the bound workspace; when omitted without a bound workspace, the card records no design.",
 			); err != nil {
 				return err
 			}
@@ -9236,10 +9422,171 @@ func validateProposeChangePayloadJSONValue(path string, value any, description s
 			}
 		default:
 			return unknownJSONFieldError(path, key, []string{
+				"analysis",
 				"change_id",
 				"design_source",
 				"prompt",
 			})
+		}
+	}
+	return nil
+}
+
+// validateProposeChangePayloadCP1AnalysisTransportJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateProposeChangePayloadCP1AnalysisTransportJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "ambiguities":
+			if err := validateProposeChangePayloadCP1AnalysisTransportAmbiguitiesJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Open questions only the requester can answer: product, domain, or operational choices that change observable behavior or service boundaries. Do not ask about details the request or the design already settle; state them in summary, or in examples when they change an observable outcome. Send an empty list when nothing is open.",
+			); err != nil {
+				return err
+			}
+		case "examples":
+			if err := validateProposeChangePayloadCP1AnalysisTransportExamplesJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Concrete acceptance examples drawn from the request and the design, never placeholder text; each becomes a check the change must pass.",
+			); err != nil {
+				return err
+			}
+		case "preserved_behaviors":
+			if err := validateProposeChangePayloadCP1AnalysisAmbiguityTransportOptionsJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Existing behaviors and contract rules of the target that the change must keep, each stated concretely; empty when none apply.",
+			); err != nil {
+				return err
+			}
+		case "summary":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Plain-English description of the requested behavior, including the details the request or the design already settle.",
+			); err != nil {
+				return err
+			}
+		case "ui_composition":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Optional OpenUI Lang program that helps the requester decide the open questions, built only from the decision components the surla://golden-path resource lists. Refer to an ambiguity or example only by its 1-based position in this analysis (1 is the first); never invent identifiers. Surla saves it unchanged without checking it; the checkpoint viewer validates and renders it. Omit it when a plain card is clearer.",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"ambiguities",
+				"examples",
+				"preserved_behaviors",
+				"summary",
+				"ui_composition",
+			})
+		}
+	}
+	return nil
+}
+
+// validateProposeChangePayloadCP1AnalysisTransportAmbiguitiesJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateProposeChangePayloadCP1AnalysisTransportAmbiguitiesJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "array", "null", description)
+	}
+	typed, ok := value.([]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "array", decodedJSONType(value), description)
+	}
+	for index, item := range typed {
+		if err := validateProposeChangePayloadCP1AnalysisAmbiguityTransportJSONValue(
+			generatedJSONChildPath(path, strconv.Itoa(index), true),
+			item, description,
+		); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateProposeChangePayloadCP1AnalysisAmbiguityTransportJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateProposeChangePayloadCP1AnalysisAmbiguityTransportJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "options":
+			if err := validateProposeChangePayloadCP1AnalysisAmbiguityTransportOptionsJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "At least two distinct, self-contained choices; each states the behavior it selects and what follows from it. The requester's answer must be exactly one of these strings.",
+			); err != nil {
+				return err
+			}
+		case "question":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "The decision in plain language, saying what the choice changes.",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"options",
+				"question",
+			})
+		}
+	}
+	return nil
+}
+
+// validateProposeChangePayloadCP1AnalysisAmbiguityTransportOptionsJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateProposeChangePayloadCP1AnalysisAmbiguityTransportOptionsJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "array", "null", description)
+	}
+	typed, ok := value.([]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "array", decodedJSONType(value), description)
+	}
+	for index, item := range typed {
+		if err := validateStringJSONValue(
+			generatedJSONChildPath(path, strconv.Itoa(index), true),
+			item, description,
+		); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -9257,6 +9604,90 @@ func validateStringJSONValue(path string, value any, description string) error {
 	_, ok := value.(string)
 	if !ok {
 		return invalidGeneratedFieldTypeError(field, "string", decodedJSONType(value), description)
+	}
+	return nil
+}
+
+// validateProposeChangePayloadCP1AnalysisTransportExamplesJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateProposeChangePayloadCP1AnalysisTransportExamplesJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "array", "null", description)
+	}
+	typed, ok := value.([]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "array", decodedJSONType(value), description)
+	}
+	for index, item := range typed {
+		if err := validateProposeChangePayloadCP1AnalysisExampleTransportJSONValue(
+			generatedJSONChildPath(path, strconv.Itoa(index), true),
+			item, description,
+		); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateProposeChangePayloadCP1AnalysisExampleTransportJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateProposeChangePayloadCP1AnalysisExampleTransportJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "expected_outcome":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "The observable result or refusal that must hold.",
+			); err != nil {
+				return err
+			}
+		case "input_summary":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "The actual request, inputs, and starting state in this scenario, with real values from the request and the design, never placeholders.",
+			); err != nil {
+				return err
+			}
+		case "scenario":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Short name of the situation, in the requester's domain terms.",
+			); err != nil {
+				return err
+			}
+		case "verification_kind":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "deterministic when code can check the outcome directly; model_judged when checking it needs judgment.",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"expected_outcome",
+				"input_summary",
+				"scenario",
+				"verification_kind",
+			})
+		}
 	}
 	return nil
 }
@@ -9324,7 +9755,7 @@ func validateProposeChangeResultJSONValue(path string, value any, description st
 				return err
 			}
 		case "preserved_behaviors":
-			if err := validateProposeChangeResultAmbiguityQuestionTransportOptionsJSONValue(
+			if err := validateProposeChangePayloadCP1AnalysisAmbiguityTransportOptionsJSONValue(
 				generatedJSONChildPath(path, key, false),
 				typed[key], "Existing contract invariants preserved by this change.",
 			); err != nil {
@@ -9361,7 +9792,7 @@ func validateProposeChangeResultJSONValue(path string, value any, description st
 		case "ui_composition":
 			if err := validateProposeChangeResultUICompositionItemTransportJSONValue(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Decision view the CP1 model composed for this revision, when it produced one. A confirm_intent that changes answers or examples returns the new revision without it.",
+				typed[key], "Decision view the caller composed for this revision in its analysis, when it sent one. A confirm_intent that changes answers or examples returns the new revision without it.",
 			); err != nil {
 				return err
 			}
@@ -9445,7 +9876,7 @@ func validateProposeChangeResultAmbiguityQuestionTransportJSONValue(path string,
 				return err
 			}
 		case "options":
-			if err := validateProposeChangeResultAmbiguityQuestionTransportOptionsJSONValue(
+			if err := validateProposeChangePayloadCP1AnalysisAmbiguityTransportOptionsJSONValue(
 				generatedJSONChildPath(path, key, false),
 				typed[key], "Concrete resolution choices.",
 			); err != nil {
@@ -9464,30 +9895,6 @@ func validateProposeChangeResultAmbiguityQuestionTransportJSONValue(path string,
 				"options",
 				"question",
 			})
-		}
-	}
-	return nil
-}
-
-// validateProposeChangeResultAmbiguityQuestionTransportOptionsJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
-func validateProposeChangeResultAmbiguityQuestionTransportOptionsJSONValue(path string, value any, description string) error {
-	field := path
-	if field == "" {
-		field = "$payload"
-	}
-	if value == nil {
-		return invalidGeneratedFieldTypeError(field, "array", "null", description)
-	}
-	typed, ok := value.([]any)
-	if !ok {
-		return invalidGeneratedFieldTypeError(field, "array", decodedJSONType(value), description)
-	}
-	for index, item := range typed {
-		if err := validateStringJSONValue(
-			generatedJSONChildPath(path, strconv.Itoa(index), true),
-			item, description,
-		); err != nil {
-			return err
 		}
 	}
 	return nil
@@ -9755,7 +10162,7 @@ func validateProposeChangeResultUICompositionItemTransportJSONValue(path string,
 		case "program":
 			if err := validateStringJSONValue(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "OpenUI Lang program composed by the CP1 model from the Surla decision component catalog, exactly as the model returned it. The server does not check it; the checkpoint viewer validates it and shows its error state, with the rest of the card still usable, when the program is not a valid composition.",
+				typed[key], "OpenUI Lang program from the analysis's ui_composition, exactly as the caller sent it. The server does not check it; the checkpoint viewer validates it and shows its error state, with the rest of the card still usable, when the program is not a valid composition.",
 			); err != nil {
 				return err
 			}
@@ -9833,6 +10240,13 @@ func validateReviseChangePayloadJSONValue(path string, value any, description st
 	sort.Strings(keys)
 	for _, key := range keys {
 		switch key {
+		case "analysis":
+			if err := validateReviseChangePayloadCP1RevisionAnalysisTransportJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Your analysis of the revised prompt against the current card and the target's current design.",
+			); err != nil {
+				return err
+			}
 		case "change_id":
 			if err := validateStringJSONValue(
 				generatedJSONChildPath(path, key, false),
@@ -9843,7 +10257,7 @@ func validateReviseChangePayloadJSONValue(path string, value any, description st
 		case "design_source":
 			if err := validateStringJSONValue(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Updated Goa design source of the target (its design/*.go files) for the CP1 model to read. When omitted on a workspace-backed card with a bound workspace, Surla re-reads design/*.go from the bound workspace; otherwise the card's saved design source is used again.",
+				typed[key], "Updated Goa design source the analysis was made against (the target's design/*.go files). Surla saves it with the card and includes it in request_revision; it does not interpret it. When omitted on a workspace-backed card with a bound workspace, Surla records design/*.go from the bound workspace again; otherwise the card's saved design source is kept.",
 			); err != nil {
 				return err
 			}
@@ -9863,10 +10277,179 @@ func validateReviseChangePayloadJSONValue(path string, value any, description st
 			}
 		default:
 			return unknownJSONFieldError(path, key, []string{
+				"analysis",
 				"change_id",
 				"design_source",
 				"prompt",
 				"request_revision",
+			})
+		}
+	}
+	return nil
+}
+
+// validateReviseChangePayloadCP1RevisionAnalysisTransportJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateReviseChangePayloadCP1RevisionAnalysisTransportJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "ambiguities":
+			if err := validateProposeChangePayloadCP1AnalysisTransportAmbiguitiesJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Open questions only the requester can answer: product, domain, or operational choices that change observable behavior or service boundaries. Do not ask about details the request, the design or a confirmed answer already settle; state them in summary, or in examples when they change an observable outcome. Send an empty list when nothing is open.",
+			); err != nil {
+				return err
+			}
+		case "examples":
+			if err := validateReviseChangePayloadCP1RevisionAnalysisTransportExamplesJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Concrete acceptance examples drawn from the revised request and the design. Give prior_id for each current example you keep or edit; omit it for new ones.",
+			); err != nil {
+				return err
+			}
+		case "preserved_behaviors":
+			if err := validateProposeChangePayloadCP1AnalysisAmbiguityTransportOptionsJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Existing behaviors and contract rules of the target that the change must keep, each stated concretely; empty when none apply.",
+			); err != nil {
+				return err
+			}
+		case "removed_example_ids":
+			if err := validateProposeChangePayloadCP1AnalysisAmbiguityTransportOptionsJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "IDs of the current card's examples this revision drops. Every current example ID appears exactly once, either as an examples[].prior_id or here; send an empty list when none are dropped.",
+			); err != nil {
+				return err
+			}
+		case "summary":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Plain-English description of the revised behavior, including the details the request, the design or confirmed answers already settle.",
+			); err != nil {
+				return err
+			}
+		case "ui_composition":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Optional OpenUI Lang program that helps the requester decide the open questions, built only from the decision components the surla://golden-path resource lists. Refer to an ambiguity or example only by its 1-based position in this analysis (1 is the first); never invent identifiers. Surla saves it unchanged without checking it; the checkpoint viewer validates and renders it. Omit it when a plain card is clearer.",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"ambiguities",
+				"examples",
+				"preserved_behaviors",
+				"removed_example_ids",
+				"summary",
+				"ui_composition",
+			})
+		}
+	}
+	return nil
+}
+
+// validateReviseChangePayloadCP1RevisionAnalysisTransportExamplesJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateReviseChangePayloadCP1RevisionAnalysisTransportExamplesJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "array", "null", description)
+	}
+	typed, ok := value.([]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "array", decodedJSONType(value), description)
+	}
+	for index, item := range typed {
+		if err := validateReviseChangePayloadCP1RevisionAnalysisExampleTransportJSONValue(
+			generatedJSONChildPath(path, strconv.Itoa(index), true),
+			item, description,
+		); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateReviseChangePayloadCP1RevisionAnalysisExampleTransportJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateReviseChangePayloadCP1RevisionAnalysisExampleTransportJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "expected_outcome":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "The observable result or refusal that must hold.",
+			); err != nil {
+				return err
+			}
+		case "input_summary":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "The actual request, inputs, and starting state in this scenario, with real values from the request and the design, never placeholders.",
+			); err != nil {
+				return err
+			}
+		case "prior_id":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "ID of the current card's example this one keeps or edits, exactly as the card shows it; the example keeps that ID. Omit it for a new example, which gets the lowest check_NN ID the current and revised cards do not use.",
+			); err != nil {
+				return err
+			}
+		case "scenario":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Short name of the situation, in the requester's domain terms.",
+			); err != nil {
+				return err
+			}
+		case "verification_kind":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "deterministic when code can check the outcome directly; model_judged when checking it needs judgment.",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"expected_outcome",
+				"input_summary",
+				"prior_id",
+				"scenario",
+				"verification_kind",
 			})
 		}
 	}
@@ -9990,7 +10573,7 @@ func validatePreviewArchitecturePayloadJSONValue(path string, value any, descrip
 	for _, key := range keys {
 		switch key {
 		case "architect_paths":
-			if err := validateProposeChangeResultAmbiguityQuestionTransportOptionsJSONValue(
+			if err := validateProposeChangePayloadCP1AnalysisAmbiguityTransportOptionsJSONValue(
 				generatedJSONChildPath(path, key, false),
 				typed[key], "Optional repository-relative path globs for an @architect role in the proposed Chorus roster (requires builders).",
 			); err != nil {
@@ -10018,7 +10601,7 @@ func validatePreviewArchitecturePayloadJSONValue(path string, value any, descrip
 				return err
 			}
 		case "eval_paths":
-			if err := validateProposeChangeResultAmbiguityQuestionTransportOptionsJSONValue(
+			if err := validateProposeChangePayloadCP1AnalysisAmbiguityTransportOptionsJSONValue(
 				generatedJSONChildPath(path, key, false),
 				typed[key], "Optional repository or evaluator-workspace relative path globs for an @eval-author role in the proposed Chorus roster (requires builders).",
 			); err != nil {
@@ -10097,7 +10680,7 @@ func validatePreviewArchitecturePayloadBuilderScopeItemTransportJSONValue(path s
 				return err
 			}
 		case "paths":
-			if err := validateProposeChangeResultAmbiguityQuestionTransportOptionsJSONValue(
+			if err := validateProposeChangePayloadCP1AnalysisAmbiguityTransportOptionsJSONValue(
 				generatedJSONChildPath(path, key, false),
 				typed[key], "Repository-relative path globs owned by this builder.",
 			); err != nil {
@@ -10606,7 +11189,7 @@ func validatePreviewArchitectureResultSwarmPlanItemTransportJSONValue(path strin
 				return err
 			}
 		case "missing_roles":
-			if err := validateProposeChangeResultAmbiguityQuestionTransportOptionsJSONValue(
+			if err := validateProposeChangePayloadCP1AnalysisAmbiguityTransportOptionsJSONValue(
 				generatedJSONChildPath(path, key, false),
 				typed[key], "Requested roles lacking an authenticated capable profile when status is unconfigured (with builder scopes supplied) or missing_capability; omitted on solo previews with no builder scopes.",
 			); err != nil {
@@ -10722,7 +11305,7 @@ func validatePreviewArchitectureResultSwarmRoleItemTransportJSONValue(path strin
 				return err
 			}
 		case "owned_paths":
-			if err := validateProposeChangeResultAmbiguityQuestionTransportOptionsJSONValue(
+			if err := validateProposeChangePayloadCP1AnalysisAmbiguityTransportOptionsJSONValue(
 				generatedJSONChildPath(path, key, false),
 				typed[key], "Repository or workspace path globs owned by this role for Chorus coordination.",
 			); err != nil {
@@ -10846,7 +11429,7 @@ func validatePreviewArchitectureResultToolContractItemTransportJSONValue(path st
 				return err
 			}
 		case "injected_fields":
-			if err := validateProposeChangeResultAmbiguityQuestionTransportOptionsJSONValue(
+			if err := validateProposeChangePayloadCP1AnalysisAmbiguityTransportOptionsJSONValue(
 				generatedJSONChildPath(path, key, false),
 				typed[key], "Compiler-listed runtime or provider fields omitted from the provider model input.",
 			); err != nil {
@@ -10949,7 +11532,7 @@ func validatePreviewArchitectureResultToolInputBindingItemTransportJSONValue(pat
 				return err
 			}
 		case "injected_fields":
-			if err := validateProposeChangeResultAmbiguityQuestionTransportOptionsJSONValue(
+			if err := validateProposeChangePayloadCP1AnalysisAmbiguityTransportOptionsJSONValue(
 				generatedJSONChildPath(path, key, false),
 				typed[key], "Compiler-listed fields supplied outside the ordinary bound model input.",
 			); err != nil {
@@ -12136,7 +12719,7 @@ func validateDiffResultJSONValue(path string, value any, description string) err
 	for _, key := range keys {
 		switch key {
 		case "added_declarations":
-			if err := validateProposeChangeResultAmbiguityQuestionTransportOptionsJSONValue(
+			if err := validateProposeChangePayloadCP1AnalysisAmbiguityTransportOptionsJSONValue(
 				generatedJSONChildPath(path, key, false),
 				typed[key], "Added scoped declarations.",
 			); err != nil {
@@ -12150,14 +12733,14 @@ func validateDiffResultJSONValue(path string, value any, description string) err
 				return err
 			}
 		case "modified_declarations":
-			if err := validateProposeChangeResultAmbiguityQuestionTransportOptionsJSONValue(
+			if err := validateProposeChangePayloadCP1AnalysisAmbiguityTransportOptionsJSONValue(
 				generatedJSONChildPath(path, key, false),
 				typed[key], "Declarations whose evaluated schema, route, or policy changed.",
 			); err != nil {
 				return err
 			}
 		case "removed_declarations":
-			if err := validateProposeChangeResultAmbiguityQuestionTransportOptionsJSONValue(
+			if err := validateProposeChangePayloadCP1AnalysisAmbiguityTransportOptionsJSONValue(
 				generatedJSONChildPath(path, key, false),
 				typed[key], "Removed scoped declarations.",
 			); err != nil {
@@ -12171,7 +12754,7 @@ func validateDiffResultJSONValue(path string, value any, description string) err
 				return err
 			}
 		case "version_deltas":
-			if err := validateProposeChangeResultAmbiguityQuestionTransportOptionsJSONValue(
+			if err := validateProposeChangePayloadCP1AnalysisAmbiguityTransportOptionsJSONValue(
 				generatedJSONChildPath(path, key, false),
 				typed[key], "Changed module require, replace, or exclude directives.",
 			); err != nil {
@@ -12456,7 +13039,7 @@ func validateGenerateCodeResultJSONValue(path string, value any, description str
 	for _, key := range keys {
 		switch key {
 		case "files_written":
-			if err := validateProposeChangeResultAmbiguityQuestionTransportOptionsJSONValue(
+			if err := validateProposeChangePayloadCP1AnalysisAmbiguityTransportOptionsJSONValue(
 				generatedJSONChildPath(path, key, false),
 				typed[key], "Sorted paths relative to the selected module that were written, including AGENTS_QUICKSTART.md when produced and written successfully.",
 			); err != nil {
@@ -12470,7 +13053,7 @@ func validateGenerateCodeResultJSONValue(path string, value any, description str
 				return err
 			}
 		case "warnings":
-			if err := validateProposeChangeResultAmbiguityQuestionTransportOptionsJSONValue(
+			if err := validateProposeChangePayloadCP1AnalysisAmbiguityTransportOptionsJSONValue(
 				generatedJSONChildPath(path, key, false),
 				typed[key], "Problems that did not prevent gen/ publication, such as incomplete cleanup or a guide that could not be written.",
 			); err != nil {
@@ -12560,7 +13143,7 @@ func validateUpdateDependenciesResultJSONValue(path string, value any, descripti
 	for _, key := range keys {
 		switch key {
 		case "files_written":
-			if err := validateProposeChangeResultAmbiguityQuestionTransportOptionsJSONValue(
+			if err := validateProposeChangePayloadCP1AnalysisAmbiguityTransportOptionsJSONValue(
 				generatedJSONChildPath(path, key, false),
 				typed[key], "Workspace-relative go.mod, go.sum and go.work.sum files whose bytes changed and were written.",
 			); err != nil {
@@ -13769,6 +14352,198 @@ func encodeSwarmRoleItemToSwarmRoleItemTransport(v *SwarmRoleItem) *toolhttp.Swa
 	res.OwnedPaths = make([]string, len(v.OwnedPaths))
 	for i, val := range v.OwnedPaths {
 		res.OwnedPaths[i] = val
+	}
+
+	return res
+}
+func decodeCP1AnalysisTransportToCP1Analysis(v *toolhttp.CP1AnalysisTransport) *CP1Analysis {
+	res := &CP1Analysis{
+		Summary:       *v.Summary,
+		UIComposition: v.UIComposition,
+	}
+	res.Ambiguities = make([]*CP1AnalysisAmbiguity, len(v.Ambiguities))
+	for i, val := range v.Ambiguities {
+		if val == nil {
+			res.Ambiguities[i] = nil
+			continue
+		}
+		res.Ambiguities[i] = decodeCP1AnalysisAmbiguityTransportToCP1AnalysisAmbiguity(val)
+	}
+	res.Examples = make([]*CP1AnalysisExample, len(v.Examples))
+	for i, val := range v.Examples {
+		if val == nil {
+			res.Examples[i] = nil
+			continue
+		}
+		res.Examples[i] = decodeCP1AnalysisExampleTransportToCP1AnalysisExample(val)
+	}
+	res.PreservedBehaviors = make([]string, len(v.PreservedBehaviors))
+	for i, val := range v.PreservedBehaviors {
+		res.PreservedBehaviors[i] = *val
+	}
+
+	return res
+}
+func decodeCP1AnalysisAmbiguityTransportToCP1AnalysisAmbiguity(v *toolhttp.CP1AnalysisAmbiguityTransport) *CP1AnalysisAmbiguity {
+	res := &CP1AnalysisAmbiguity{
+		Question: *v.Question,
+	}
+	res.Options = make([]string, len(v.Options))
+	for i, val := range v.Options {
+		res.Options[i] = *val
+	}
+
+	return res
+}
+func decodeCP1AnalysisExampleTransportToCP1AnalysisExample(v *toolhttp.CP1AnalysisExampleTransport) *CP1AnalysisExample {
+	res := &CP1AnalysisExample{
+		Scenario:         *v.Scenario,
+		InputSummary:     *v.InputSummary,
+		ExpectedOutcome:  *v.ExpectedOutcome,
+		VerificationKind: *v.VerificationKind,
+	}
+
+	return res
+}
+func encodeCP1AnalysisToCP1AnalysisTransport(v *CP1Analysis) *toolhttp.CP1AnalysisTransport {
+	res := &toolhttp.CP1AnalysisTransport{
+		Summary:       &v.Summary,
+		UIComposition: v.UIComposition,
+	}
+	res.Ambiguities = make([]*toolhttp.CP1AnalysisAmbiguityTransport, len(v.Ambiguities))
+	for i, val := range v.Ambiguities {
+		if val == nil {
+			res.Ambiguities[i] = nil
+			continue
+		}
+		res.Ambiguities[i] = encodeCP1AnalysisAmbiguityToCP1AnalysisAmbiguityTransport(val)
+	}
+	res.Examples = make([]*toolhttp.CP1AnalysisExampleTransport, len(v.Examples))
+	for i, val := range v.Examples {
+		if val == nil {
+			res.Examples[i] = nil
+			continue
+		}
+		res.Examples[i] = encodeCP1AnalysisExampleToCP1AnalysisExampleTransport(val)
+	}
+	res.PreservedBehaviors = make([]*string, len(v.PreservedBehaviors))
+	for i, val := range v.PreservedBehaviors {
+		var transformed string
+		transformed = val
+		res.PreservedBehaviors[i] = &transformed
+	}
+
+	return res
+}
+func encodeCP1AnalysisAmbiguityToCP1AnalysisAmbiguityTransport(v *CP1AnalysisAmbiguity) *toolhttp.CP1AnalysisAmbiguityTransport {
+	res := &toolhttp.CP1AnalysisAmbiguityTransport{
+		Question: &v.Question,
+	}
+	res.Options = make([]*string, len(v.Options))
+	for i, val := range v.Options {
+		var transformed string
+		transformed = val
+		res.Options[i] = &transformed
+	}
+
+	return res
+}
+func encodeCP1AnalysisExampleToCP1AnalysisExampleTransport(v *CP1AnalysisExample) *toolhttp.CP1AnalysisExampleTransport {
+	res := &toolhttp.CP1AnalysisExampleTransport{
+		Scenario:         &v.Scenario,
+		InputSummary:     &v.InputSummary,
+		ExpectedOutcome:  &v.ExpectedOutcome,
+		VerificationKind: &v.VerificationKind,
+	}
+
+	return res
+}
+func decodeCP1RevisionAnalysisTransportToCP1RevisionAnalysis(v *toolhttp.CP1RevisionAnalysisTransport) *CP1RevisionAnalysis {
+	res := &CP1RevisionAnalysis{
+		Summary:       *v.Summary,
+		UIComposition: v.UIComposition,
+	}
+	res.Ambiguities = make([]*CP1AnalysisAmbiguity, len(v.Ambiguities))
+	for i, val := range v.Ambiguities {
+		if val == nil {
+			res.Ambiguities[i] = nil
+			continue
+		}
+		res.Ambiguities[i] = decodeCP1AnalysisAmbiguityTransportToCP1AnalysisAmbiguity(val)
+	}
+	res.Examples = make([]*CP1RevisionAnalysisExample, len(v.Examples))
+	for i, val := range v.Examples {
+		if val == nil {
+			res.Examples[i] = nil
+			continue
+		}
+		res.Examples[i] = decodeCP1RevisionAnalysisExampleTransportToCP1RevisionAnalysisExample(val)
+	}
+	res.RemovedExampleIds = make([]string, len(v.RemovedExampleIds))
+	for i, val := range v.RemovedExampleIds {
+		res.RemovedExampleIds[i] = *val
+	}
+	res.PreservedBehaviors = make([]string, len(v.PreservedBehaviors))
+	for i, val := range v.PreservedBehaviors {
+		res.PreservedBehaviors[i] = *val
+	}
+
+	return res
+}
+func decodeCP1RevisionAnalysisExampleTransportToCP1RevisionAnalysisExample(v *toolhttp.CP1RevisionAnalysisExampleTransport) *CP1RevisionAnalysisExample {
+	res := &CP1RevisionAnalysisExample{
+		PriorID:          v.PriorID,
+		Scenario:         *v.Scenario,
+		InputSummary:     *v.InputSummary,
+		ExpectedOutcome:  *v.ExpectedOutcome,
+		VerificationKind: *v.VerificationKind,
+	}
+
+	return res
+}
+func encodeCP1RevisionAnalysisToCP1RevisionAnalysisTransport(v *CP1RevisionAnalysis) *toolhttp.CP1RevisionAnalysisTransport {
+	res := &toolhttp.CP1RevisionAnalysisTransport{
+		Summary:       &v.Summary,
+		UIComposition: v.UIComposition,
+	}
+	res.Ambiguities = make([]*toolhttp.CP1AnalysisAmbiguityTransport, len(v.Ambiguities))
+	for i, val := range v.Ambiguities {
+		if val == nil {
+			res.Ambiguities[i] = nil
+			continue
+		}
+		res.Ambiguities[i] = encodeCP1AnalysisAmbiguityToCP1AnalysisAmbiguityTransport(val)
+	}
+	res.Examples = make([]*toolhttp.CP1RevisionAnalysisExampleTransport, len(v.Examples))
+	for i, val := range v.Examples {
+		if val == nil {
+			res.Examples[i] = nil
+			continue
+		}
+		res.Examples[i] = encodeCP1RevisionAnalysisExampleToCP1RevisionAnalysisExampleTransport(val)
+	}
+	res.RemovedExampleIds = make([]*string, len(v.RemovedExampleIds))
+	for i, val := range v.RemovedExampleIds {
+		var transformed string
+		transformed = val
+		res.RemovedExampleIds[i] = &transformed
+	}
+	res.PreservedBehaviors = make([]*string, len(v.PreservedBehaviors))
+	for i, val := range v.PreservedBehaviors {
+		var transformed string
+		transformed = val
+		res.PreservedBehaviors[i] = &transformed
+	}
+
+	return res
+}
+func encodeCP1RevisionAnalysisExampleToCP1RevisionAnalysisExampleTransport(v *CP1RevisionAnalysisExample) *toolhttp.CP1RevisionAnalysisExampleTransport {
+	res := &toolhttp.CP1RevisionAnalysisExampleTransport{
+		PriorID:          v.PriorID,
+		Scenario:         &v.Scenario,
+		InputSummary:     &v.InputSummary,
+		ExpectedOutcome:  &v.ExpectedOutcome,
+		VerificationKind: &v.VerificationKind,
 	}
 
 	return res

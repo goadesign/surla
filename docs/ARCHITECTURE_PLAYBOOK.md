@@ -4,7 +4,7 @@
 
 When coding agents build a platform from scratch without architectural guardrails, they default to fragile shortcuts: every service exposes ad-hoc HTTP JSON routes, every package calls LLM provider SDKs directly with no central rate limiting or cost tracking, `tenant_id` is passed inside LLM prompt arguments, and multi-step workflows run in fragile in-memory goroutines that lose state on deploy.
 
-Surla embeds a single-source-of-truth **Golden Path Playbook** ([`internal/goldenpath/GOLDEN_PATH.md`](../internal/goldenpath/GOLDEN_PATH.md)) and serves it both as an MCP resource (`surla://golden-path`) and as the foundational system prompt for Checkpoint 1 architectural analysis.
+Surla embeds a single-source-of-truth **Golden Path Playbook** ([`internal/goldenpath/GOLDEN_PATH.md`](../internal/goldenpath/GOLDEN_PATH.md)) and serves it as an MCP resource (`surla://golden-path`) that a coding agent reads before it writes the Checkpoint 1 analysis it sends with `propose_change` or `revise_change`. The same resource ends with the decision component catalog for that analysis's optional `ui_composition`.
 
 ---
 
@@ -57,8 +57,7 @@ stays with that local write; it is not attached to the exported span or chosen
 by a provider-wide processor.
 `ControlPlane.ListTraces` reads caller-owned pages from that file, and
 `ControlPlane.Close` waits for owned checks and evaluator cleanup and closes the
-file before releasing the card lock. It does not wait for in-flight CP1 analysis;
-spans ending after closure are not saved. Instances sharing a provider keep
+file before releasing the card lock; spans ending after closure are not saved. Instances sharing a provider keep
 separate histories. The standalone
 `runServe` composition root owns the tracer provider and optional full OTLP
 exporter; embedded hosts own theirs. Export retains original span fields,

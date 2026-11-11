@@ -313,33 +313,27 @@ func TestListVerifications(t *testing.T) {
 		writeCompletedRun(runLate, time.Date(2026, 10, 31, 12, 0, 0, 900_000_000, time.UTC))
 
 		// Revise the card into needs_confirmation; prior R1 runs must remain discoverable.
-		revisedAnalysis, err := json.Marshal(CP1RevisionSemanticAnalysis{
-			Summary: "Refunds up to $50 require a reason.",
-			Ambiguities: []CP1ModelAmbiguity{{
-				Question: "Which reasons are allowed?",
-				Options:  []string{"damaged_item", "any_reason"},
-			}},
-			Examples: []CP1RevisionModelExample{{
-				PriorID:          "check_01",
-				Scenario:         "Refund at the limit",
-				InputSummary:     "Order total $50.00",
-				ExpectedOutcome:  "Instant store credit",
-				VerificationKind: "deterministic",
-			}},
-			RemovedExampleIDs:  []string{},
-			PreservedBehaviors: []string{},
-		})
-		require.NoError(t, err)
-		providerName, modelID := "anthropic", string(revisedAnalysis)
-		_, err = cp.ConfigureModel(alice, &gensurla.ConfigureModelPayload{
-			Provider:  &providerName,
-			ModelName: &modelID,
-		})
-		require.NoError(t, err)
+		priorID := "check_01"
 		revised, err := cp.ReviseChange(alice, &gensurla.ReviseChangePayload{
 			ChangeID:        "chg",
 			RequestRevision: card.RequestRevision,
 			Prompt:          "Require a refund reason.",
+			Analysis: &gensurla.CP1RevisionAnalysis{
+				Summary: "Refunds up to $50 require a reason.",
+				Ambiguities: []*gensurla.CP1AnalysisAmbiguity{{
+					Question: "Which reasons are allowed?",
+					Options:  []string{"damaged_item", "any_reason"},
+				}},
+				Examples: []*gensurla.CP1RevisionAnalysisExample{{
+					PriorID:          &priorID,
+					Scenario:         "Refund at the limit",
+					InputSummary:     "Order total $50.00",
+					ExpectedOutcome:  "Instant store credit",
+					VerificationKind: "deterministic",
+				}},
+				RemovedExampleIds:  []string{},
+				PreservedBehaviors: []string{},
+			},
 		})
 		require.NoError(t, err)
 		require.Equal(t, StatusNeedsConfirmation, revised.Status)
@@ -386,26 +380,21 @@ func TestListVerifications(t *testing.T) {
 // and a confirmed card owned by alice.
 func verificationSetup(t *testing.T) (*ControlPlane, *gensurla.ChangeCardResult, *VerificationConfig) {
 	t.Helper()
-	analysis, err := json.Marshal(CP1SemanticAnalysis{
+	analysis := &gensurla.CP1Analysis{
 		Summary:     "Refunds up to $50 are instant.",
-		Ambiguities: []CP1ModelAmbiguity{},
-		Examples: []CP1ModelExample{{
+		Ambiguities: []*gensurla.CP1AnalysisAmbiguity{},
+		Examples: []*gensurla.CP1AnalysisExample{{
 			Scenario: "Refund at the limit", InputSummary: "Order total $50.00",
 			ExpectedOutcome: "Instant store credit", VerificationKind: "deterministic",
 		}},
 		PreservedBehaviors: []string{},
-	})
-	require.NoError(t, err)
+	}
 	cfg := verificationConfig(t)
 	cp := newControlPlane(t, Options{
-		Analyzer: NewModelCP1Analyzer(newStubModelClient(t, string(analysis))),
-		ModelBuilder: func(p *gensurla.ConfigureModelPayload) (CP1Analyzer, []string, func() error, error) {
-			return NewModelCP1Analyzer(newStubModelClient(t, *p.ModelName)), nil, nil, nil
-		},
 		Verification: cfg,
 	})
 	card, err := cp.ProposeChange(WithPrincipal(context.Background(), Principal{ID: "alice@example.com"}),
-		&gensurla.ProposeChangePayload{ChangeID: "chg", Prompt: "Refunds up to $50 are instant."})
+		&gensurla.ProposeChangePayload{ChangeID: "chg", Prompt: "Refunds up to $50 are instant.", Analysis: analysis})
 	require.NoError(t, err)
 	require.Equal(t, StatusConfirmed, card.Status)
 	return cp, card, cfg

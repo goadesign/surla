@@ -12,7 +12,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -30,37 +29,34 @@ import (
 )
 
 type (
-	// scriptedCP1Provider is a model.Provider served by a local model gateway in
-	// tests. It answers every Complete call with one fixed CP1 analysis and
-	// records the output allowance the gateway forwarded.
-	scriptedCP1Provider struct {
-		// analysis is the JSON CP1 analysis returned as assistant text.
-		analysis string
-		// maxTokens is the MaxTokens of the last request the gateway delivered.
-		maxTokens atomic.Int64
-	}
+	// scriptedModelProvider is a model.Provider served by a local model
+	// gateway in tests, standing in for the model a live target plans with.
+	// It answers every Complete call with an empty assistant text.
+	scriptedModelProvider struct{}
 
 	// noopTargetUpdater is a TargetPromptUpdater stub used to verify CP3
 	// startup status formatting when a host binds TargetUpdater.
 	noopTargetUpdater struct{}
 )
 
-func TestNewCP1AnalyzerSelectsModelFromFlags(t *testing.T) {
+// TestValidateModelConfigChecksModelFlags verifies the -model-* flag rules
+// serve applies at startup: no flags, a gateway alone, or a provider with a
+// model name and that provider's API key; key values never appear in errors.
+func TestValidateModelConfigChecksModelFlags(t *testing.T) {
 	env := map[string]string{
 		"ANTHROPIC_API_KEY": "test-anthropic-key",
 		"OPENAI_API_KEY":    "test-openai-key",
 	}
 	cases := []struct {
-		name         string
-		cfg          serveConfig
-		env          map[string]string
-		wantAnalyzer bool
-		wantErr      string
+		name    string
+		cfg     serveConfig
+		env     map[string]string
+		wantErr string
 	}{
-		{name: "no model flags leaves CP1 unconfigured", cfg: serveConfig{checkTimeout: defaultCheckTimeout}, env: env},
-		{name: "gateway", cfg: serveConfig{checkTimeout: defaultCheckTimeout, gatewayAddr: "127.0.0.1:9090"}, env: env, wantAnalyzer: true},
-		{name: "anthropic", cfg: serveConfig{checkTimeout: defaultCheckTimeout, provider: "anthropic", modelName: "claude-test"}, env: env, wantAnalyzer: true},
-		{name: "openai", cfg: serveConfig{checkTimeout: defaultCheckTimeout, provider: "openai", modelName: "gpt-test"}, env: env, wantAnalyzer: true},
+		{name: "no model flags", cfg: serveConfig{checkTimeout: defaultCheckTimeout}, env: env},
+		{name: "gateway", cfg: serveConfig{checkTimeout: defaultCheckTimeout, gatewayAddr: "127.0.0.1:9090"}, env: env},
+		{name: "anthropic", cfg: serveConfig{checkTimeout: defaultCheckTimeout, provider: "anthropic", modelName: "claude-test"}, env: env},
+		{name: "openai", cfg: serveConfig{checkTimeout: defaultCheckTimeout, provider: "openai", modelName: "gpt-test"}, env: env},
 		{
 			name:    "gateway with model name",
 			cfg:     serveConfig{checkTimeout: defaultCheckTimeout, gatewayAddr: "127.0.0.1:9090", modelName: "claude-test"},
@@ -90,24 +86,44 @@ func TestNewCP1AnalyzerSelectsModelFromFlags(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			analyzer, closeModel, err := newCP1Analyzer(tc.cfg, func(k string) string { return tc.env[k] })
-			if tc.wantErr != "" {
-				require.Error(t, err)
-				assert.Contains(t, err.Error(), tc.wantErr)
-				assert.NotContains(t, err.Error(), "test-anthropic-key")
-				assert.NotContains(t, err.Error(), "test-openai-key")
+			err := validateModelConfig(tc.cfg, func(k string) string { return tc.env[k] })
+			if tc.wantErr == "" {
+				require.NoError(t, err)
 				return
 			}
-			require.NoError(t, err)
-			assert.Equal(t, tc.wantAnalyzer, analyzer != nil)
-			if tc.cfg.gatewayAddr != "" {
-				require.NotNil(t, closeModel)
-				assert.NoError(t, closeModel())
-			} else {
-				assert.Nil(t, closeModel)
-			}
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tc.wantErr)
+			assert.NotContains(t, err.Error(), "test-anthropic-key")
+			assert.NotContains(t, err.Error(), "test-openai-key")
 		})
 	}
+}
+
+// TestNewLiveModelEnvBuildsTheLiveTargetEnvironment verifies the callback
+// configure_model uses on surla serve: a gateway or a provider whose key is
+// in serve's environment yields serve's environment, without its bearer
+// token, plus the SURLA_LIVE_MODEL_* choice; a provider whose key is missing
+// is refused as unprocessable and names the key, never its value.
+func TestNewLiveModelEnvBuildsTheLiveTargetEnvironment(t *testing.T) {
+	environ := []string{"PATH=/bin", "SURLA_AUTH_TOKEN=secret", "ANTHROPIC_API_KEY=ant-k"}
+	env := map[string]string{"ANTHROPIC_API_KEY": "ant-k"}
+	build := newLiveModelEnv(func(k string) string { return env[k] }, environ)
+	gw, provider, model, other := "127.0.0.1:9090", "anthropic", "claude-sonnet-4-6", "openai"
+
+	got, err := build(&gensurla.ConfigureModelPayload{GatewayAddr: &gw})
+	require.NoError(t, err)
+	assert.Equal(t, []string{"PATH=/bin", "ANTHROPIC_API_KEY=ant-k", "SURLA_LIVE_MODEL_GATEWAY=127.0.0.1:9090"}, got)
+
+	got, err = build(&gensurla.ConfigureModelPayload{Provider: &provider, ModelName: &model})
+	require.NoError(t, err)
+	assert.Equal(t, []string{"PATH=/bin", "ANTHROPIC_API_KEY=ant-k", "SURLA_LIVE_MODEL_PROVIDER=anthropic", "SURLA_LIVE_MODEL_NAME=claude-sonnet-4-6"}, got)
+
+	_, err = build(&gensurla.ConfigureModelPayload{Provider: &other, ModelName: &model})
+	var se *goa.ServiceError
+	require.ErrorAs(t, err, &se)
+	assert.Equal(t, "unprocessable", se.GoaErrorName())
+	assert.Contains(t, err.Error(), "provider openai requires OPENAI_API_KEY in surla serve's environment")
+	assert.NotContains(t, err.Error(), "ant-k")
 }
 
 func TestLoadSwarmProfilesDecodesStrictly(t *testing.T) {
@@ -209,7 +225,7 @@ func TestLiveTargetEnvCarriesServesModelChoice(t *testing.T) {
 	}
 }
 
-func TestServeOptionsWiresAnalyzerAndProfiles(t *testing.T) {
+func TestServeOptionsWiresLiveModelEnvAndProfiles(t *testing.T) {
 	isolateServeWorkspace(t)
 	path := filepath.Join(t.TempDir(), "profiles.json")
 	require.NoError(t, os.WriteFile(path, []byte(`[{"id":"a","provider":"openai","model":"m","family":"gpt"}]`), 0o600))
@@ -220,30 +236,29 @@ func TestServeOptionsWiresAnalyzerAndProfiles(t *testing.T) {
 		nil,
 	)
 	require.NoError(t, err)
-	assert.NotNil(t, opts.Analyzer)
-	assert.NotNil(t, opts.ModelBuilder)
+	assert.NotNil(t, opts.LiveModelEnv)
 	assert.Equal(t, []swarm.ProviderProfile{{ID: "a", Provider: "openai", Model: "m", Family: "gpt"}}, opts.SwarmProfiles)
 	assert.Nil(t, opts.TargetUpdater)
-	assert.Nil(t, opts.CloseAnalyzer, "direct provider client has no transport connection to close")
+	require.NotNil(t, opts.Live)
+	assert.Equal(t, []string{"SURLA_LIVE_MODEL_PROVIDER=openai", "SURLA_LIVE_MODEL_NAME=gpt-test"}, opts.Live.Env)
 	closeServeOptions(t, opts)
 
 	opts, err = serveOptions(serveConfig{checkTimeout: defaultCheckTimeout, gatewayAddr: "127.0.0.1:9090"}, func(string) string { return "" }, nil)
 	require.NoError(t, err)
-	assert.NotNil(t, opts.Analyzer)
-	require.NotNil(t, opts.CloseAnalyzer)
+	require.NotNil(t, opts.Live)
+	assert.Equal(t, []string{"SURLA_LIVE_MODEL_GATEWAY=127.0.0.1:9090"}, opts.Live.Env)
 	closeServeOptions(t, opts)
 
 	opts, err = serveOptions(serveConfig{checkTimeout: defaultCheckTimeout}, func(string) string { return "" }, nil)
 	require.NoError(t, err)
-	assert.Nil(t, opts.Analyzer)
-	assert.NotNil(t, opts.ModelBuilder)
+	assert.NotNil(t, opts.LiveModelEnv)
 	assert.Nil(t, opts.SwarmProfiles)
 	assert.Nil(t, opts.Verification)
 	assert.NotNil(t, opts.ResolveVerification)
 	require.NotNil(t, opts.Live)
 	assert.Len(t, opts.Live.Command, 1)
 	assert.Equal(t, defaultProjectVerifyTimeout, opts.Live.StartTimeout)
-	assert.Nil(t, opts.CloseAnalyzer)
+	assert.Empty(t, opts.Live.Env, "no model flags and no keys pass no model choice to live targets")
 	closeServeOptions(t, opts)
 
 	_, err = serveOptions(serveConfig{checkTimeout: defaultCheckTimeout, swarmProfilesPath: filepath.Join(t.TempDir(), "missing.json")}, os.Getenv, nil)
@@ -253,12 +268,11 @@ func TestServeOptionsWiresAnalyzerAndProfiles(t *testing.T) {
 func TestResolveStartupModelConfigAndServeOptionsAutoDetection(t *testing.T) {
 	baseEnviron := []string{"PATH=/bin", "SURLA_AUTH_TOKEN=secret", "ANTHROPIC_API_KEY=ant-k", "OPENAI_API_KEY=oai-k"}
 	cases := []struct {
-		name         string
-		cfg          serveConfig
-		env          map[string]string
-		wantCfg      serveConfig
-		wantAnalyzer bool
-		wantLiveEnv  []string
+		name        string
+		cfg         serveConfig
+		env         map[string]string
+		wantCfg     serveConfig
+		wantLiveEnv []string
 	}{
 		{
 			name: "anthropic key auto-detects claude-sonnet-4-6 without verification config",
@@ -269,7 +283,6 @@ func TestResolveStartupModelConfigAndServeOptionsAutoDetection(t *testing.T) {
 				provider:     "anthropic",
 				modelName:    defaultAnthropicModel,
 			},
-			wantAnalyzer: true,
 			wantLiveEnv: []string{
 				"PATH=/bin",
 				"ANTHROPIC_API_KEY=ant-k",
@@ -287,7 +300,6 @@ func TestResolveStartupModelConfigAndServeOptionsAutoDetection(t *testing.T) {
 				provider:     "openai",
 				modelName:    defaultOpenAIModel,
 			},
-			wantAnalyzer: true,
 			wantLiveEnv: []string{
 				"PATH=/bin",
 				"ANTHROPIC_API_KEY=ant-k",
@@ -308,7 +320,6 @@ func TestResolveStartupModelConfigAndServeOptionsAutoDetection(t *testing.T) {
 				provider:     "anthropic",
 				modelName:    defaultAnthropicModel,
 			},
-			wantAnalyzer: true,
 			wantLiveEnv: []string{
 				"PATH=/bin",
 				"ANTHROPIC_API_KEY=ant-k",
@@ -333,7 +344,6 @@ func TestResolveStartupModelConfigAndServeOptionsAutoDetection(t *testing.T) {
 				provider:     "openai",
 				modelName:    "gpt-5.4",
 			},
-			wantAnalyzer: true,
 			wantLiveEnv: []string{
 				"PATH=/bin",
 				"ANTHROPIC_API_KEY=ant-k",
@@ -343,14 +353,13 @@ func TestResolveStartupModelConfigAndServeOptionsAutoDetection(t *testing.T) {
 			},
 		},
 		{
-			name: "whitespace-only keys leave CP1 unconfigured",
+			name: "whitespace-only keys leave live targets without a model choice",
 			cfg:  serveConfig{checkTimeout: defaultCheckTimeout},
 			env: map[string]string{
 				"ANTHROPIC_API_KEY": "   ",
 				"OPENAI_API_KEY":    "\t\n",
 			},
-			wantCfg:      serveConfig{checkTimeout: defaultCheckTimeout},
-			wantAnalyzer: false,
+			wantCfg: serveConfig{checkTimeout: defaultCheckTimeout},
 			wantLiveEnv: []string{
 				"PATH=/bin",
 				"ANTHROPIC_API_KEY=ant-k",
@@ -365,7 +374,6 @@ func TestResolveStartupModelConfigAndServeOptionsAutoDetection(t *testing.T) {
 			assert.Equal(t, tc.wantCfg, resolveStartupModelConfig(tc.cfg, getenv))
 			opts, err := serveOptions(tc.cfg, getenv, baseEnviron)
 			require.NoError(t, err)
-			assert.Equal(t, tc.wantAnalyzer, opts.Analyzer != nil)
 			assert.Nil(t, opts.Verification, "no verification config was supplied and empty workspace has no committed starter")
 			assert.NotNil(t, opts.ResolveVerification)
 			require.NotNil(t, opts.Live)
@@ -391,24 +399,13 @@ func TestResolveStartupModelConfigAndServeOptionsAutoDetection(t *testing.T) {
 	}
 }
 
-func TestServeConfigureModelOverHTTPAndMCPSwitchesFromUnconfiguredToGatewayAndProvider(
-	t *testing.T,
-) {
-	analysis, err := json.Marshal(controlplane.CP1SemanticAnalysis{
-		Summary:     "Give VIP customers instant store credit up to $150.",
-		Ambiguities: []controlplane.CP1ModelAmbiguity{},
-		Examples: []controlplane.CP1ModelExample{{
-			Scenario:         "VIP refund under the limit",
-			InputSummary:     "VIP customer, $120.00 total",
-			ExpectedOutcome:  "Instant store credit, no manager approval",
-			VerificationKind: "deterministic",
-		}},
-		PreservedBehaviors: []string{"Non-VIP refunds over $50.00 still wait for a manager."},
-	})
-	require.NoError(t, err)
-	provider := &scriptedCP1Provider{analysis: string(analysis)}
-	gatewayAddr := startModelGateway(t, provider)
-
+// TestServeProposesWithoutAModelAndConfigureModelSwitchesTheLiveTargetModel
+// starts serve with no model flags and no provider keys, proposes a change
+// over authenticated HTTP with the caller's analysis (no model is needed),
+// then switches the live-target model with POST /cp1/model: a provider whose
+// key is missing is refused with 422, and a gateway or a provider whose key
+// is present is accepted.
+func TestServeProposesWithoutAModelAndConfigureModelSwitchesTheLiveTargetModel(t *testing.T) {
 	isolateServeWorkspace(t)
 	env := map[string]string{}
 	opts, err := serveOptions(
@@ -417,7 +414,6 @@ func TestServeConfigureModelOverHTTPAndMCPSwitchesFromUnconfiguredToGatewayAndPr
 		[]string{"PATH=/bin", "SURLA_AUTH_TOKEN=secret"},
 	)
 	require.NoError(t, err)
-	assert.Nil(t, opts.Analyzer, "starts unconfigured when no model flags or API keys are set")
 
 	cp, err := controlplane.New(opts)
 	require.NoError(t, err)
@@ -427,143 +423,27 @@ func TestServeConfigureModelOverHTTPAndMCPSwitchesFromUnconfiguredToGatewayAndPr
 	})
 	srv := httptest.NewServer(controlplane.NewHTTPHandler(cp, auth))
 	t.Cleanup(srv.Close)
-
-	// 1. ProposeChange while unconfigured returns 501 naming configure_model.
-	proposeReq := func(changeID string) *http.Response {
-		req, reqErr := http.NewRequest(http.MethodPost, srv.URL+"/changes/propose",
-			strings.NewReader(`{"change_id":"`+changeID+`","prompt":"VIP customers get instant store credit up to $150."}`))
+	post := func(path, body string) (int, []byte) {
+		req, reqErr := http.NewRequest(http.MethodPost, srv.URL+path, strings.NewReader(body))
 		require.NoError(t, reqErr)
 		req.Header.Set("Authorization", "Bearer test-token")
 		req.Header.Set("Content-Type", "application/json")
 		resp, doErr := http.DefaultClient.Do(req)
 		require.NoError(t, doErr)
-		return resp
+		defer resp.Body.Close()
+		var out bytes.Buffer
+		_, readErr := out.ReadFrom(resp.Body)
+		require.NoError(t, readErr)
+		return resp.StatusCode, out.Bytes()
 	}
-	unconfResp := proposeReq("vip-unconf")
-	var unconfBody struct {
-		Message string `json:"message"`
-		Fault   bool   `json:"fault"`
-	}
-	require.NoError(t, json.NewDecoder(unconfResp.Body).Decode(&unconfBody))
-	require.NoError(t, unconfResp.Body.Close())
-	assert.Equal(t, http.StatusNotImplemented, unconfResp.StatusCode)
-	assert.False(t, unconfBody.Fault)
-	assert.Contains(t, unconfBody.Message, "call configure_model")
 
-	// 2. Calling POST /cp1/model with a direct provider whose API key is missing returns 422.
-	missingKeyReq, err := http.NewRequest(http.MethodPost, srv.URL+"/cp1/model",
-		strings.NewReader(`{"provider":"openai","model_name":"gpt-5.4-mini"}`))
-	require.NoError(t, err)
-	missingKeyReq.Header.Set("Authorization", "Bearer test-token")
-	missingKeyReq.Header.Set("Content-Type", "application/json")
-	missingKeyResp, err := http.DefaultClient.Do(missingKeyReq)
-	require.NoError(t, err)
-	var missingKeyBody struct {
-		Message string `json:"message"`
-		Fault   bool   `json:"fault"`
-	}
-	require.NoError(t, json.NewDecoder(missingKeyResp.Body).Decode(&missingKeyBody))
-	require.NoError(t, missingKeyResp.Body.Close())
-	assert.Equal(t, http.StatusUnprocessableEntity, missingKeyResp.StatusCode)
-	assert.False(t, missingKeyBody.Fault)
-	assert.Contains(t, missingKeyBody.Message, "provider openai requires OPENAI_API_KEY in surla serve's environment")
-
-	// 3. Calling POST /cp1/model with gateway_addr attaches the running gateway and enables propose_change.
-	gwReq, err := http.NewRequest(http.MethodPost, srv.URL+"/cp1/model",
-		strings.NewReader(`{"gateway_addr":"`+gatewayAddr+`"}`))
-	require.NoError(t, err)
-	gwReq.Header.Set("Authorization", "Bearer test-token")
-	gwReq.Header.Set("Content-Type", "application/json")
-	gwResp, err := http.DefaultClient.Do(gwReq)
-	require.NoError(t, err)
-	var gwResult struct {
-		Provider    *string `json:"provider"`
-		ModelName   *string `json:"model_name"`
-		GatewayAddr *string `json:"gateway_addr"`
-	}
-	require.NoError(t, json.NewDecoder(gwResp.Body).Decode(&gwResult))
-	require.NoError(t, gwResp.Body.Close())
-	require.Equal(t, http.StatusOK, gwResp.StatusCode)
-	assert.Nil(t, gwResult.Provider)
-	assert.Nil(t, gwResult.ModelName)
-	require.NotNil(t, gwResult.GatewayAddr)
-	assert.Equal(t, gatewayAddr, *gwResult.GatewayAddr)
-
-	okResp := proposeReq("vip-refunds")
-	require.NoError(t, okResp.Body.Close())
-	assert.Equal(t, http.StatusOK, okResp.StatusCode)
-
-	// 4. Calling configure_model with provider + model_name succeeds when the key is present in getenv.
-	env["ANTHROPIC_API_KEY"] = "test-anthropic-key"
-	provReq, err := http.NewRequest(http.MethodPost, srv.URL+"/cp1/model",
-		strings.NewReader(`{"provider":"anthropic","model_name":"claude-sonnet-4-6"}`))
-	require.NoError(t, err)
-	provReq.Header.Set("Authorization", "Bearer test-token")
-	provReq.Header.Set("Content-Type", "application/json")
-	provResp, err := http.DefaultClient.Do(provReq)
-	require.NoError(t, err)
-	var provResult struct {
-		Provider    *string `json:"provider"`
-		ModelName   *string `json:"model_name"`
-		GatewayAddr *string `json:"gateway_addr"`
-	}
-	require.NoError(t, json.NewDecoder(provResp.Body).Decode(&provResult))
-	require.NoError(t, provResp.Body.Close())
-	require.Equal(t, http.StatusOK, provResp.StatusCode)
-	require.NotNil(t, provResult.Provider)
-	require.NotNil(t, provResult.ModelName)
-	assert.Equal(t, "anthropic", *provResult.Provider)
-	assert.Equal(t, "claude-sonnet-4-6", *provResult.ModelName)
-	assert.Nil(t, provResult.GatewayAddr)
-}
-
-// TestServeGatewayModeAnswersProposeChangeOverHTTP drives the path that used
-// to fail: serve options built with -model-gateway-addr, a real gRPC model
-// gateway, and an authenticated HTTP propose_change call. A clear request
-// (no open questions) comes back confirmed with code-owned check IDs and a
-// SHA-256 request revision, and the CP1 output allowance reaches the provider.
-func TestServeGatewayModeAnswersProposeChangeOverHTTP(t *testing.T) {
-	analysis, err := json.Marshal(controlplane.CP1SemanticAnalysis{
-		Summary:     "Give VIP customers instant store credit up to $150.",
-		Ambiguities: []controlplane.CP1ModelAmbiguity{},
-		Examples: []controlplane.CP1ModelExample{{
-			Scenario:         "VIP refund under the limit",
-			InputSummary:     "VIP customer, $120.00 total",
-			ExpectedOutcome:  "Instant store credit, no manager approval",
-			VerificationKind: "deterministic",
-		}},
-		PreservedBehaviors: []string{"Non-VIP refunds over $50.00 still wait for a manager."},
-	})
-	require.NoError(t, err)
-	provider := &scriptedCP1Provider{analysis: string(analysis)}
-	gatewayAddr := startModelGateway(t, provider)
-
-	isolateServeWorkspace(t)
-	opts, err := serveOptions(
-		serveConfig{checkTimeout: defaultCheckTimeout, gatewayAddr: gatewayAddr, cardsDir: t.TempDir(), cardsDirExplicit: true},
-		func(string) string { return "" },
-		nil,
-	)
-	require.NoError(t, err)
-	cp, err := controlplane.New(opts)
-	require.NoError(t, err)
-	t.Cleanup(func() { assert.NoError(t, cp.Close()) })
-	auth := controlplane.NewTokenAuthenticator(map[string]controlplane.Principal{
-		"test-token": {ID: "operator@example.com"},
-	})
-	srv := httptest.NewServer(controlplane.NewHTTPHandler(cp, auth))
-	t.Cleanup(srv.Close)
-
-	req, err := http.NewRequest(http.MethodPost, srv.URL+"/changes/propose",
-		strings.NewReader(`{"change_id":"vip-refunds","prompt":"VIP customers get instant store credit up to $150."}`))
-	require.NoError(t, err)
-	req.Header.Set("Authorization", "Bearer test-token")
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := http.DefaultClient.Do(req)
-	require.NoError(t, err)
-	defer resp.Body.Close()
-	require.Equal(t, http.StatusOK, resp.StatusCode)
-
+	// 1. propose_change succeeds with the caller's analysis and no model.
+	status, body := post("/changes/propose", `{"change_id":"vip-refunds","prompt":"VIP customers get instant store credit up to $150.",`+
+		`"analysis":{"summary":"Give VIP customers instant store credit up to $150.","ambiguities":[],`+
+		`"examples":[{"scenario":"VIP refund under the limit","input_summary":"VIP customer, $120.00 total",`+
+		`"expected_outcome":"Instant store credit, no manager approval","verification_kind":"deterministic"}],`+
+		`"preserved_behaviors":["Non-VIP refunds over $50.00 still wait for a manager."]}}`)
+	require.Equal(t, http.StatusOK, status, string(body))
 	var card struct {
 		Status          string  `json:"status"`
 		ConfirmedBy     *string `json:"confirmed_by"`
@@ -572,14 +452,54 @@ func TestServeGatewayModeAnswersProposeChangeOverHTTP(t *testing.T) {
 			ID string `json:"id"`
 		} `json:"examples"`
 	}
-	require.NoError(t, json.NewDecoder(resp.Body).Decode(&card))
+	require.NoError(t, json.Unmarshal(body, &card))
 	assert.Equal(t, controlplane.StatusConfirmed, card.Status)
 	require.NotNil(t, card.ConfirmedBy)
 	assert.Equal(t, "operator@example.com", *card.ConfirmedBy)
 	require.Len(t, card.Examples, 1)
 	assert.Equal(t, "check_01", card.Examples[0].ID)
 	assert.Regexp(t, regexp.MustCompile(`^[0-9a-f]{64}$`), card.RequestRevision)
-	assert.EqualValues(t, 16384, provider.maxTokens.Load(), "CP1 output allowance must reach the provider through the gateway")
+
+	// 2. A direct provider whose API key is missing is refused with 422.
+	status, body = post("/cp1/model", `{"provider":"openai","model_name":"gpt-5.4-mini"}`)
+	var missingKeyBody struct {
+		Message string `json:"message"`
+		Fault   bool   `json:"fault"`
+	}
+	require.NoError(t, json.Unmarshal(body, &missingKeyBody))
+	assert.Equal(t, http.StatusUnprocessableEntity, status)
+	assert.False(t, missingKeyBody.Fault)
+	assert.Contains(t, missingKeyBody.Message, "provider openai requires OPENAI_API_KEY in surla serve's environment")
+
+	// 3. A gateway address is accepted.
+	status, body = post("/cp1/model", `{"gateway_addr":"127.0.0.1:9090"}`)
+	require.Equal(t, http.StatusOK, status, string(body))
+	var gwResult struct {
+		Provider    *string `json:"provider"`
+		ModelName   *string `json:"model_name"`
+		GatewayAddr *string `json:"gateway_addr"`
+	}
+	require.NoError(t, json.Unmarshal(body, &gwResult))
+	assert.Nil(t, gwResult.Provider)
+	assert.Nil(t, gwResult.ModelName)
+	require.NotNil(t, gwResult.GatewayAddr)
+	assert.Equal(t, "127.0.0.1:9090", *gwResult.GatewayAddr)
+
+	// 4. A provider and model name are accepted once the key is in serve's environment.
+	env["ANTHROPIC_API_KEY"] = "test-anthropic-key"
+	status, body = post("/cp1/model", `{"provider":"anthropic","model_name":"claude-sonnet-4-6"}`)
+	require.Equal(t, http.StatusOK, status, string(body))
+	var provResult struct {
+		Provider    *string `json:"provider"`
+		ModelName   *string `json:"model_name"`
+		GatewayAddr *string `json:"gateway_addr"`
+	}
+	require.NoError(t, json.Unmarshal(body, &provResult))
+	require.NotNil(t, provResult.Provider)
+	require.NotNil(t, provResult.ModelName)
+	assert.Equal(t, "anthropic", *provResult.Provider)
+	assert.Equal(t, "claude-sonnet-4-6", *provResult.ModelName)
+	assert.Nil(t, provResult.GatewayAddr)
 }
 
 func TestWriteServeStatusNamesTheBoundAddressAndOffFeatures(t *testing.T) {
@@ -592,13 +512,13 @@ func TestWriteServeStatusNamesTheBoundAddressAndOffFeatures(t *testing.T) {
 		want       string
 	}{
 		{
-			name: "loopback without a model",
+			name: "loopback with only CP1 and CP2 preview on",
 			addr: &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 51234},
 			opts: controlplane.Options{CardsDir: ".surla/cards"},
 			want: `surla: serving on http://127.0.0.1:51234
 surla: connect MCP clients to http://127.0.0.1:51234/mcp with the bearer token (architecture guide: surla://golden-path or http://127.0.0.1:51234/golden-path)
 surla: saving Change Cards in .surla/cards
-surla: CP1 (propose_change, revise_change): off — no model is configured to analyze change requests (export ANTHROPIC_API_KEY or OPENAI_API_KEY, set -model-provider and -model-name or -model-gateway-addr, or call configure_model); confirm_intent and get_change are on
+surla: CP1 (propose_change, revise_change, confirm_intent, get_change): on
 surla: CP2 (preview_architecture): design preview is on; swarm roster is off (set -swarm-profiles)
 surla: CP3 (draft_override, start_live_target): compiled_rule is on; prompt_template is off (set -project or -verification-config, then call start_live_target with a commit; or edit the prompt's source text, commit, and verify the commit)
 surla: CP4 (verify_change, get_verification, list_verifications): off (set -project or -verification-config, or run surla verify on the CLI)
@@ -606,13 +526,13 @@ surla: CP5 (approve_merge): off (set -promotion-config, or run surla approve on 
 `,
 		},
 		{
-			name: "all IPv4 interfaces without a model",
+			name: "all IPv4 interfaces",
 			addr: &net.TCPAddr{IP: net.IPv4zero, Port: 8090},
 			opts: controlplane.Options{CardsDir: ".surla/cards"},
 			want: `surla: serving on http://localhost:8090
 surla: connect MCP clients to http://localhost:8090/mcp with the bearer token (architecture guide: surla://golden-path or http://localhost:8090/golden-path)
 surla: saving Change Cards in .surla/cards
-surla: CP1 (propose_change, revise_change): off — no model is configured to analyze change requests (export ANTHROPIC_API_KEY or OPENAI_API_KEY, set -model-provider and -model-name or -model-gateway-addr, or call configure_model); confirm_intent and get_change are on
+surla: CP1 (propose_change, revise_change, confirm_intent, get_change): on
 surla: CP2 (preview_architecture): design preview is on; swarm roster is off (set -swarm-profiles)
 surla: CP3 (draft_override, start_live_target): compiled_rule is on; prompt_template is off (set -project or -verification-config, then call start_live_target with a commit; or edit the prompt's source text, commit, and verify the commit)
 surla: CP4 (verify_change, get_verification, list_verifications): off (set -project or -verification-config, or run surla verify on the CLI)
@@ -629,7 +549,7 @@ surla: CP5 (approve_merge): off (set -promotion-config, or run surla approve on 
 			want: `surla: serving on http://127.0.0.1:8090
 surla: connect MCP clients to http://127.0.0.1:8090/mcp with the bearer token (architecture guide: surla://golden-path or http://127.0.0.1:8090/golden-path)
 surla: saving Change Cards in .surla/cards
-surla: CP1 (propose_change, revise_change): off — no model is configured to analyze change requests (export ANTHROPIC_API_KEY or OPENAI_API_KEY, set -model-provider and -model-name or -model-gateway-addr, or call configure_model); confirm_intent and get_change are on
+surla: CP1 (propose_change, revise_change, confirm_intent, get_change): on
 surla: CP2 (preview_architecture): on (1 swarm profile loaded; pass builders in the request to propose a roster)
 surla: CP3 (draft_override, start_live_target): compiled_rule is on; prompt_template is off (set -project or -verification-config, then call start_live_target with a commit; or edit the prompt's source text, commit, and verify the commit)
 surla: CP4 (verify_change, get_verification, list_verifications): off (set -project or -verification-config, or run surla verify on the CLI)
@@ -641,7 +561,6 @@ surla: CP5 (approve_merge): off (set -promotion-config, or run surla approve on 
 			addr: &net.TCPAddr{IP: net.IPv6unspecified, Port: 8090},
 			opts: controlplane.Options{
 				CardsDir:        "/var/lib/surla/cards",
-				Analyzer:        controlplane.NewModelCP1Analyzer(nil),
 				SwarmProfiles:   []swarm.ProviderProfile{{ID: "claude-a"}, {ID: "gpt-b"}},
 				TargetUpdater:   noopTargetUpdater{},
 				Verification:    &controlplane.VerificationConfig{RunsDir: "/var/lib/surla/runs", Plan: fixedSuite},
@@ -679,7 +598,7 @@ surla: CP5 (approve_merge): on
 		want: `surla: serving on http://127.0.0.1:8090
 surla: connect MCP clients to http://127.0.0.1:8090/mcp with the bearer token (architecture guide: surla://golden-path or http://127.0.0.1:8090/golden-path)
 surla: saving Change Cards in ` + cardsDir + `
-surla: CP1 (propose_change, revise_change): off — no model is configured to analyze change requests (export ANTHROPIC_API_KEY or OPENAI_API_KEY, set -model-provider and -model-name or -model-gateway-addr, or call configure_model); confirm_intent and get_change are on
+surla: CP1 (propose_change, revise_change, confirm_intent, get_change): on
 surla: CP2 (preview_architecture): design preview is on; swarm roster is off (set -swarm-profiles)
 surla: CP3 (draft_override, start_live_target): compiled_rule is on; prompt_template is on once start_live_target runs a candidate commit (live targets in ` + liveRoot + `)
 surla: CP3: an earlier surla serve using this cards directory left live target directory ` + leftover + `; its files were kept
@@ -709,7 +628,7 @@ surla: CP5 (approve_merge): off (set -promotion-config, or run surla approve on 
 		want: `surla: serving on http://127.0.0.1:8090
 surla: connect MCP clients to http://127.0.0.1:8090/mcp with the bearer token (architecture guide: surla://golden-path or http://127.0.0.1:8090/golden-path)
 surla: saving Change Cards in ` + cardsDir + `
-surla: CP1 (propose_change, revise_change): off — no model is configured to analyze change requests (export ANTHROPIC_API_KEY or OPENAI_API_KEY, set -model-provider and -model-name or -model-gateway-addr, or call configure_model); confirm_intent and get_change are on
+surla: CP1 (propose_change, revise_change, confirm_intent, get_change): on
 surla: CP2 (preview_architecture): design preview is on; swarm roster is off (set -swarm-profiles)
 surla: CP3 (draft_override, start_live_target): compiled_rule is on; prompt_template is on once start_live_target runs a candidate commit (live targets in ` + liveRoot + `)
 surla: CP3: an earlier surla serve using this cards directory left live target directory ` + leftover + `; its files were kept
@@ -737,7 +656,7 @@ surla: CP5 (approve_merge): off (set -promotion-config, or run surla approve on 
 		want: `surla: serving on http://127.0.0.1:8090
 surla: connect MCP clients to http://127.0.0.1:8090/mcp with the bearer token (architecture guide: surla://golden-path or http://127.0.0.1:8090/golden-path)
 surla: saving Change Cards in /srv/cards
-surla: CP1 (propose_change, revise_change): off — no model is configured to analyze change requests (export ANTHROPIC_API_KEY or OPENAI_API_KEY, set -model-provider and -model-name or -model-gateway-addr, or call configure_model); confirm_intent and get_change are on
+surla: CP1 (propose_change, revise_change, confirm_intent, get_change): on
 surla: CP2 (preview_architecture): design preview is on; swarm roster is off (set -swarm-profiles)
 surla: CP3 (draft_override, start_live_target): compiled_rule is on; prompt_template is off (set -project or -verification-config, then call start_live_target with a commit; or edit the prompt's source text, commit, and verify the commit)
 surla: CP4 (verify_change, get_verification, list_verifications): on (runs in /srv/runs, reports in /srv/reports, evaluator suite commit ` + suite + `)
@@ -753,21 +672,20 @@ surla: CP5 (approve_merge): off (set -promotion-config, or run surla approve on 
 	}
 }
 
-// Complete returns the scripted CP1 analysis as assistant text.
-func (p *scriptedCP1Provider) Complete(_ context.Context, req *model.Request) (*model.Response, error) {
-	p.maxTokens.Store(int64(req.MaxTokens))
+// Complete returns an empty assistant text.
+func (*scriptedModelProvider) Complete(context.Context, *model.Request) (*model.Response, error) {
 	return &model.Response{
 		Content: []model.Message{{
 			Role:  model.ConversationRoleAssistant,
-			Parts: []model.Part{model.TextPart{Text: p.analysis}},
+			Parts: []model.Part{model.TextPart{}},
 		}},
 		StopReason: "stop",
 	}, nil
 }
 
-// Stream is unused because the CP1 analyzer only calls Complete.
-func (p *scriptedCP1Provider) Stream(_ context.Context, _ *model.Request) (model.Streamer, error) {
-	return nil, errors.New("streaming not used by CP1 analyzer")
+// Stream is unused: callers of this provider only call Complete.
+func (*scriptedModelProvider) Stream(context.Context, *model.Request) (model.Streamer, error) {
+	return nil, errors.New("streaming is not scripted")
 }
 
 // ApplyPromptOverride satisfies controlplane.TargetPromptUpdater for status tests.

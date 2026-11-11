@@ -90,9 +90,7 @@ func (c *Client) GoldenPath(ctx context.Context) (res string, err error) {
 // ProposeChange calls the "propose_change" endpoint of the "surla" service.
 // ProposeChange may return the following errors:
 //   - "conflict" (type *goa.ServiceError): A Change Card with this change_id already exists; use revise_change or a new change_id.
-//   - "unprocessable" (type *goa.ServiceError): The request could not be accepted; the message states which required field or constraint failed.
-//   - "not_implemented" (type *goa.ServiceError): This control plane has no Checkpoint 1 analyzer configured.
-//   - "analysis_rejected" (type *goa.ServiceError): The Checkpoint 1 model response did not satisfy the analysis contract or stopped at the output limit; this request did not save or modify the Change Card.
+//   - "unprocessable" (type *goa.ServiceError): The request could not be accepted: change_id or prompt is blank, an ambiguity repeats an option, or the bound workspace's design/*.go could not be read. The message says which; nothing was saved.
 //   - error: internal error
 func (c *Client) ProposeChange(ctx context.Context, p *ProposeChangePayload) (res *ChangeCardResult, err error) {
 	var ires any
@@ -108,9 +106,7 @@ func (c *Client) ProposeChange(ctx context.Context, p *ProposeChangePayload) (re
 //   - "not_found" (type *goa.ServiceError): No Change Card exists with this change_id.
 //   - "forbidden" (type *goa.ServiceError): The authenticated principal does not own this Change Card.
 //   - "conflict" (type *goa.ServiceError): The card's request_revision changed; read the current revision with get_change.
-//   - "unprocessable" (type *goa.ServiceError): The request could not be accepted; the message states which required field or constraint failed.
-//   - "not_implemented" (type *goa.ServiceError): This control plane has no Checkpoint 1 analyzer configured.
-//   - "analysis_rejected" (type *goa.ServiceError): The Checkpoint 1 model response did not satisfy the analysis contract or stopped at the output limit; this request did not save or modify the Change Card.
+//   - "unprocessable" (type *goa.ServiceError): The request could not be accepted: change_id, request_revision or prompt is blank, an ambiguity repeats an option, the analysis does not account for every current example exactly once, or the bound workspace's design/*.go could not be read. The message says which; the card did not change.
 //   - error: internal error
 func (c *Client) ReviseChange(ctx context.Context, p *ReviseChangePayload) (res *ChangeCardResult, err error) {
 	var ires any

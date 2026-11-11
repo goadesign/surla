@@ -60,17 +60,14 @@ go run ./cmd/surla diff --old-dir examples/orders --new-dir examples/orders
 
 ## 2. Inspect CP1–CP3 via `surla serve` & the MCP Apps Checkpoint Viewer
 
-Start the Surla control plane with the included illustrative multi-family swarm profile file ([`swarm-profiles.example.json`](swarm-profiles.example.json)). Note that `swarm-profiles.example.json` is an operator-edited example where `"authenticated": true` is an operator assertion (not a live credential probe), and setting `ANTHROPIC_API_KEY` for CP1 analysis does not itself establish credentials for the OpenAI or Google coding-agent CLIs listed in the file:
+Start the Surla control plane with the included illustrative multi-family swarm profile file ([`swarm-profiles.example.json`](swarm-profiles.example.json)). Note that `swarm-profiles.example.json` is an operator-edited example where `"authenticated": true` is an operator assertion (not a live credential probe). No model key is needed for these checkpoints: your coding agent writes the Change Card analysis it sends with `propose_change`, and Surla saves it without running a model:
 
 ```bash
 export SURLA_AUTH_TOKEN="dev-secret-token"
-export ANTHROPIC_API_KEY="sk-ant-..."
 
 go run ./cmd/surla serve \
   -addr 127.0.0.1:8090 \
   -principal operator@example.com \
-  -model-provider anthropic \
-  -model-name claude-opus-4-6 \
   -swarm-profiles ./examples/orders/swarm-profiles.example.json
 ```
 

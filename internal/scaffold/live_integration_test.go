@@ -34,11 +34,6 @@ import (
 	"github.com/goadesign/surla/internal/verify"
 )
 
-// scriptedAnalyzer is a scripted CP1 analyzer: it returns a fixed analysis
-// with no open questions, so it proves the Change Card plumbing, not live
-// CP1 model judgment.
-type scriptedAnalyzer struct{}
-
 // echoSystem is a model provider that answers every request with the system
 // text it received, so a test sees which prompt text a service sent.
 type echoSystem struct{}
@@ -64,8 +59,9 @@ const published = "v0.0.0-20261110163737-d9beac313142"
 // text, and the card keeps its revision. The builder then writes that text
 // into source and commits C2: a live target for C2 sends it with no draft,
 // and verify_change of C2 for the same card passes. A second card skips CP3
-// and verifies C1 directly. The CP1 analyzer is scripted. It needs the
-// network and, for the sandbox, macOS.
+// and verifies C1 directly. Each card is proposed with a fixed analysis, as a
+// coding agent would send it. It needs the network and, for the sandbox,
+// macOS.
 func TestStarterLiveTargetAppliesADraftToTheNextModelRequest(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "shop")
 	name, err := scaffold.Init(t.Context(), scaffold.Options{Dir: dir, WorkDir: t.TempDir(), Module: "example.com/shop", SurlaVersion: published}, scaffold.RunCommand, designeval.NewEvaluator())
@@ -82,7 +78,6 @@ func TestStarterLiveTargetAppliesADraftToTheNextModelRequest(t *testing.T) {
 	cardsDir, runsDir := t.TempDir(), t.TempDir()
 	cp, err := controlplane.New(controlplane.Options{
 		CardsDir: cardsDir,
-		Analyzer: scriptedAnalyzer{},
 		Verification: &controlplane.VerificationConfig{
 			RunsDir: runsDir,
 			Plan: verify.Plan{
@@ -190,55 +185,23 @@ func buildLogs(t *testing.T, runsDir, runID string) string {
 	return b.String()
 }
 
-// Analyze returns a fixed analysis with no open questions.
-func (scriptedAnalyzer) Analyze(
-	context.Context, string, controlplane.CP1Design,
-) (controlplane.CP1SemanticAnalysis, error) {
-	return controlplane.CP1SemanticAnalysis{
-		Summary: "Answer price questions in a friendlier tone.",
-		Examples: []controlplane.CP1ModelExample{{
-			Scenario: "Tea price", InputSummary: "How much is tea?",
-			ExpectedOutcome: "Answers $3.50", VerificationKind: "deterministic",
-		}},
-		PreservedBehaviors: []string{"Prices come only from lookup_price."},
-	}, nil
-}
-
-// Revise is never called by this journey; it returns a fixed revision analysis,
-// so the scripted analyzer satisfies controlplane.CP1Analyzer.
-func (a scriptedAnalyzer) Revise(
-	ctx context.Context,
-	prior controlplane.CP1PriorCard,
-	prompt string,
-	design controlplane.CP1Design,
-) (controlplane.CP1RevisionSemanticAnalysis, error) {
-	analysis, err := a.Analyze(ctx, prompt, design)
-	if err != nil {
-		return controlplane.CP1RevisionSemanticAnalysis{}, err
-	}
-	var priorID string
-	if len(prior.Examples) > 0 {
-		priorID = prior.Examples[0].ID
-	}
-	return controlplane.CP1RevisionSemanticAnalysis{
-		Summary: analysis.Summary,
-		Examples: []controlplane.CP1RevisionModelExample{{
-			PriorID:          priorID,
-			Scenario:         analysis.Examples[0].Scenario,
-			InputSummary:     analysis.Examples[0].InputSummary,
-			ExpectedOutcome:  analysis.Examples[0].ExpectedOutcome,
-			VerificationKind: analysis.Examples[0].VerificationKind,
-		}},
-		RemovedExampleIDs:  []string{},
-		PreservedBehaviors: analysis.PreservedBehaviors,
-	}, nil
-}
-
-// confirmCard proposes changeID with the scripted analyzer and confirms it,
-// returning the confirmed card.
+// confirmCard proposes changeID with a fixed analysis that has no open
+// questions and confirms it, returning the confirmed card.
 func confirmCard(t *testing.T, cp *controlplane.ControlPlane, ctx context.Context, changeID string) *gensurla.ChangeCardResult {
 	t.Helper()
-	card, err := cp.ProposeChange(ctx, &gensurla.ProposeChangePayload{ChangeID: changeID, Prompt: "Answer price questions in a friendlier tone."})
+	card, err := cp.ProposeChange(ctx, &gensurla.ProposeChangePayload{
+		ChangeID: changeID,
+		Prompt:   "Answer price questions in a friendlier tone.",
+		Analysis: &gensurla.CP1Analysis{
+			Summary:     "Answer price questions in a friendlier tone.",
+			Ambiguities: []*gensurla.CP1AnalysisAmbiguity{},
+			Examples: []*gensurla.CP1AnalysisExample{{
+				Scenario: "Tea price", InputSummary: "How much is tea?",
+				ExpectedOutcome: "Answers $3.50", VerificationKind: "deterministic",
+			}},
+			PreservedBehaviors: []string{"Prices come only from lookup_price."},
+		},
+	})
 	require.NoError(t, err)
 	if card.Status != controlplane.StatusConfirmed {
 		card, err = cp.ConfirmIntent(ctx, &gensurla.ConfirmIntentPayload{

@@ -101,15 +101,15 @@ func TestCheckpointUIOpenUIDecisionStudioAndStreaming(t *testing.T) {
 		`callout = ImpactCallout("warning", "Tenant Isolation Invariant", "Cross-tenant lookups always return 404.")`,
 	}, "\n")
 
-	analysisJSON, err := json.Marshal(CP1SemanticAnalysis{
+	analysis := &gensurla.CP1Analysis{
 		Summary: "Route refunds >= $50 to manager approval.",
-		Ambiguities: []CP1ModelAmbiguity{
+		Ambiguities: []*gensurla.CP1AnalysisAmbiguity{
 			{
 				Question: "Does the $50 limit include tax?",
 				Options:  []string{"subtotal_only", "total_with_tax"},
 			},
 		},
-		Examples: []CP1ModelExample{
+		Examples: []*gensurla.CP1AnalysisExample{
 			{
 				Scenario:         "Borderline $48 order",
 				InputSummary:     "$48 subtotal + $4 tax",
@@ -125,14 +125,9 @@ func TestCheckpointUIOpenUIDecisionStudioAndStreaming(t *testing.T) {
 		},
 		PreservedBehaviors: []string{"Cross-tenant lookups return 404."},
 		UIComposition:      &validOpenUIProgram,
-	})
-	if err != nil {
-		t.Fatalf("marshal analysisJSON: %v", err)
 	}
 
-	cp := newControlPlane(t, Options{
-		Analyzer: NewModelCP1Analyzer(newStubModelClient(t, string(analysisJSON))),
-	})
+	cp := newControlPlane(t, Options{})
 	adapter := genmcpadapter.NewMCPAdapter(gensurla.NewEndpoints(cp), nil)
 
 	resRead, err := adapter.ResourcesRead(ctx, &genmcpadapter.ResourcesReadPayload{URI: "ui://surla/checkpoint"})
@@ -151,9 +146,10 @@ func TestCheckpointUIOpenUIDecisionStudioAndStreaming(t *testing.T) {
 	}
 	scriptBody := extractCheckpointScript(t, htmlDoc)
 
-	proposeArgs, err := json.Marshal(map[string]any{
-		"change_id": "chg-openui",
-		"prompt":    "Route refunds >= $50 to manager approval.",
+	proposeArgs, err := gensurla.EncodeProposeChangePayload(&gensurla.ProposeChangePayload{
+		ChangeID: "chg-openui",
+		Prompt:   "Route refunds >= $50 to manager approval.",
+		Analysis: analysis,
 	})
 	if err != nil {
 		t.Fatalf("marshal proposeArgs: %v", err)

@@ -253,6 +253,46 @@ func TestUnknownAndTrailingStoredFieldsReject(t *testing.T) {
 
 }
 
+// TestHistorySavedByAnEarlierServerStillLists opens a trace file that an
+// earlier server saved, holding a refused propose_change record with the
+// surla.cp1.rejection_kind attribute that no current operation writes, and
+// checks that the record still loads and is listed as saved, and that the
+// file keeps accepting new records.
+func TestHistorySavedByAnEarlierServerStillLists(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	// The record exactly as an earlier server wrote it when its model's
+	// response failed structured validation.
+	saved := `{"principal_hash":"` + principalHash("alice") + `","span":{` +
+		`"TraceID":"0af7651916cd43dd8448eb211c80319c","SpanID":"b7ad6b7169203331","ParentSpanID":"",` +
+		`"Name":"surla.controlplane.propose_change",` +
+		`"StartTime":"2026-11-01T12:00:00Z","EndTime":"2026-11-01T12:00:02.5Z","DurationMs":2500,"Status":"error",` +
+		`"Summary":"CP1 analysis rejected: model output failed structured validation (this request did not save a Change Card); retry propose_change.",` +
+		`"Attributes":{"surla.change_id":"chg-old","surla.cp1.rejection_kind":"structured_output"},"Shortened":false}}` + "\n"
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "traces.jsonl"), []byte(saved), 0o600))
+
+	s, err := Open(dir)
+	require.NoError(t, err)
+	t.Cleanup(func() { assert.NoError(t, s.Close()) })
+	page, err := s.List("alice", "error", 20, nil)
+	require.NoError(t, err)
+	require.Len(t, page.Spans, 1)
+	assert.Equal(t, &gensurla.TraceSpan{
+		TraceID: "0af7651916cd43dd8448eb211c80319c", SpanID: "b7ad6b7169203331",
+		Name:      "surla.controlplane.propose_change",
+		StartTime: "2026-11-01T12:00:00Z", EndTime: "2026-11-01T12:00:02.5Z", DurationMs: 2500, Status: "error",
+		Summary:    "CP1 analysis rejected: model output failed structured validation (this request did not save a Change Card); retry propose_change.",
+		Attributes: map[string]string{"surla.change_id": "chg-old", "surla.cp1.rejection_kind": "structured_output"},
+	}, page.Spans[0])
+
+	require.NoError(t, s.Record("alice", testSpan(1, codes.Error)))
+	page, err = s.List("alice", "error", 20, nil)
+	require.NoError(t, err)
+	require.Len(t, page.Spans, 2, "the saved record and the new one are listed, newest first")
+	assert.Equal(t, "operation-1", page.Spans[0].Name)
+	assert.Equal(t, "surla.controlplane.propose_change", page.Spans[1].Name)
+}
+
 // TestFailedCheckResultKeepsItsOriginalStatus protects a valid negative result:
 // failed tests are not an operation error, and no exporter rewrites that fact.
 func TestFailedCheckResultKeepsItsOriginalStatus(t *testing.T) {

@@ -13,16 +13,8 @@ import (
 	gensurla "github.com/goadesign/surla/gen/surla"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 )
-
-// heldAnalyzer answers once release is closed, so a test can close the
-// control plane while ProposeChange waits on the model.
-type heldAnalyzer struct {
-	// started is closed when Analyze is called.
-	started chan struct{}
-	// release lets Analyze return.
-	release chan struct{}
-}
 
 // TestCardsSurviveANewControlPlane confirms a card, closes the control plane,
 // and checks that a new one on the same directory serves the same card,
@@ -31,22 +23,13 @@ func TestCardsSurviveANewControlPlane(t *testing.T) {
 	dir := t.TempDir()
 	cfg := verificationConfig(t)
 	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
-	analysis, err := json.Marshal(CP1SemanticAnalysis{
-		Summary: "Refunds up to $50 are instant.",
-		Ambiguities: []CP1ModelAmbiguity{{
-			Question: "Does the limit include tax?", Options: []string{"with_tax", "without_tax"},
-		}},
-		Examples: []CP1ModelExample{{
-			Scenario: "Refund at the limit", InputSummary: "Order total $50.00",
-			ExpectedOutcome: "Instant store credit", VerificationKind: "deterministic",
-		}},
-		PreservedBehaviors: []string{"Managers approve larger refunds."},
+	analysis := refundAnalysis("Refunds up to $50 are instant.", &gensurla.CP1AnalysisAmbiguity{
+		Question: "Does the limit include tax?", Options: []string{"with_tax", "without_tax"},
 	})
-	require.NoError(t, err)
 
-	first, err := New(Options{CardsDir: dir, Analyzer: NewModelCP1Analyzer(newStubModelClient(t, string(analysis))), Verification: cfg})
+	first, err := New(Options{CardsDir: dir, Verification: cfg})
 	require.NoError(t, err)
-	proposed, err := first.ProposeChange(alice, &gensurla.ProposeChangePayload{ChangeID: "chg", Prompt: "Refunds up to $50 are instant."})
+	proposed, err := first.ProposeChange(alice, &gensurla.ProposeChangePayload{ChangeID: "chg", Prompt: "Refunds up to $50 are instant.", Analysis: analysis})
 	require.NoError(t, err)
 	require.Equal(t, StatusNeedsConfirmation, proposed.Status)
 	confirmed, err := first.ConfirmIntent(alice, &gensurla.ConfirmIntentPayload{
@@ -58,7 +41,7 @@ func TestCardsSurviveANewControlPlane(t *testing.T) {
 	require.Equal(t, StatusConfirmed, confirmed.Status)
 	require.NoError(t, first.Close())
 
-	restarted := newControlPlane(t, Options{CardsDir: dir, Analyzer: NewModelCP1Analyzer(newStubModelClient(t, string(analysis))), Verification: cfg})
+	restarted := newControlPlane(t, Options{CardsDir: dir, Verification: cfg})
 	got, err := restarted.GetChange(alice, &gensurla.GetChangePayload{ChangeID: "chg"})
 	require.NoError(t, err)
 	assert.Equal(t, confirmed, got, "the saved card comes back unchanged")
@@ -80,7 +63,7 @@ func TestCardsSurviveANewControlPlane(t *testing.T) {
 	_, running := run.State.AsRunning()
 	assert.True(t, running, "a restarted control plane verifies a card confirmed before the restart")
 
-	_, err = restarted.ProposeChange(alice, &gensurla.ProposeChangePayload{ChangeID: "chg", Prompt: "Again."})
+	_, err = restarted.ProposeChange(alice, &gensurla.ProposeChangePayload{ChangeID: "chg", Prompt: "Again.", Analysis: analysis})
 	assert.ErrorContains(t, err, "already exists")
 }
 
@@ -157,30 +140,115 @@ func TestCardFilesStayInsideTheDirectory(t *testing.T) {
 	assert.NotEqual(t, cp.cards.path("Req-1"), cp.cards.path("req-1"), "IDs differing only in case get different files")
 }
 
-// TestRequestsFinishingAfterCloseDoNotWrite closes the control plane while a
-// proposal waits on the model and checks that the proposal writes nothing to
-// the directory a new control plane now holds.
+// TestRequestsFinishingAfterCloseDoNotWrite closes the control plane while an
+// approve_merge waits on the promotion target and checks that the approval
+// writes nothing to the directory a new control plane now holds.
 func TestRequestsFinishingAfterCloseDoNotWrite(t *testing.T) {
 	dir := t.TempDir()
-	model := &heldAnalyzer{started: make(chan struct{}), release: make(chan struct{})}
-	cp, err := New(Options{CardsDir: dir, Analyzer: model})
+	inputs := PromotionInputs{
+		SuiteID: "orders_acceptance", SuiteCommit: "suite-1", Environment: "sim",
+		Artifacts: map[string]string{"orders": "d1"},
+	}
+	target := &promotionTargetStub{inputs: inputs, loading: make(chan struct{}), release: make(chan struct{})}
+	cp, err := New(Options{CardsDir: dir, PromotionTarget: target})
 	require.NoError(t, err)
+	card := saveCard(t, cp, nil)
+	const commit = "0123456789abcdef0123456789abcdef01234567"
+	target.report = passingReport(t, card.RequestRevision, commit, inputs)
 	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
-	proposed := make(chan error, 1)
+	approved := make(chan error, 1)
 	go func() {
-		_, err := cp.ProposeChange(alice, &gensurla.ProposeChangePayload{ChangeID: "late", Prompt: "Refunds up to $50 are instant."})
-		proposed <- err
+		_, err := cp.ApproveMerge(alice, &gensurla.ApproveMergePayload{
+			ChangeID: "chg", RequestRevision: card.RequestRevision, CandidateCommit: commit, ReportDigest: target.report.Digest,
+		})
+		approved <- err
 	}()
-	<-model.started
+	<-target.loading
 	require.NoError(t, cp.Close())
 	next := newControlPlane(t, Options{CardsDir: dir})
-	close(model.release)
+	close(target.release)
 
-	assert.ErrorIs(t, <-proposed, errCardsClosed, "the request that outlived Close fails")
-	_, saved, err := next.cards.load("late")
+	assert.ErrorIs(t, <-approved, errCardsClosed, "the request that outlived Close fails")
+	saved, ok, err := next.cards.load("chg")
 	require.NoError(t, err)
-	assert.False(t, saved, "and writes nothing to the directory the next control plane holds")
+	require.True(t, ok)
+	assert.Nil(t, saved.card.Approval, "and writes nothing to the directory the next control plane holds")
 	assert.NoError(t, cp.Close(), "closing twice does nothing")
+}
+
+// TestProposalsAndRevisionsFinishingAfterCloseDoNotWrite holds a
+// propose_change or revise_change at its span start, before it checks and
+// saves the card, closes the control plane, lets a new control plane take
+// the cards directory, and then releases the request. The request fails with
+// errCardsClosed and writes nothing to the directory the new control plane
+// holds: no card for a proposal, and the card unchanged for a revision.
+func TestProposalsAndRevisionsFinishingAfterCloseDoNotWrite(t *testing.T) {
+	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
+	// open returns a control plane on a new cards directory whose next span
+	// named held stops at its start until hold is released.
+	open := func(t *testing.T, held string) (*ControlPlane, *spanHold, string) {
+		t.Helper()
+		dir := t.TempDir()
+		hold := &spanHold{name: held, started: make(chan struct{}), release: make(chan struct{})}
+		tp := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(hold))
+		t.Cleanup(func() { assert.NoError(t, tp.Shutdown(context.Background())) })
+		return newControlPlane(t, Options{CardsDir: dir, TracerProvider: tp}), hold, dir
+	}
+
+	t.Run("propose_change", func(t *testing.T) {
+		cp, hold, dir := open(t, "surla.controlplane.propose_change")
+		hold.armed.Store(true)
+		done := hold.run(t, func() error {
+			_, err := cp.ProposeChange(alice, &gensurla.ProposeChangePayload{
+				ChangeID: "late", Prompt: "Refunds up to $50 are instant.", Analysis: refundAnalysis("Refunds up to $50 are instant."),
+			})
+			return err
+		})
+		require.NoError(t, cp.Close())
+		next := newControlPlane(t, Options{CardsDir: dir})
+		hold.releaseOnce()
+
+		assert.ErrorIs(t, awaitHeld(t, done), errCardsClosed, "the proposal that outlived Close fails")
+		_, saved, err := next.cards.load("late")
+		require.NoError(t, err)
+		assert.False(t, saved, "and saves no card in the directory the next control plane holds")
+	})
+
+	t.Run("revise_change", func(t *testing.T) {
+		cp, hold, dir := open(t, "surla.controlplane.revise_change")
+		card := mustPropose(t, cp, alice, "chg", "Refunds up to $50 are instant.", refundAnalysis("Refunds up to $50 are instant."))
+		before, err := os.ReadFile(cp.cards.path("chg"))
+		require.NoError(t, err)
+		hold.armed.Store(true)
+		check01 := "check_01"
+		done := hold.run(t, func() error {
+			_, err := cp.ReviseChange(alice, &gensurla.ReviseChangePayload{
+				ChangeID: "chg", RequestRevision: card.RequestRevision, Prompt: "Refunds up to $60 are instant.",
+				Analysis: &gensurla.CP1RevisionAnalysis{
+					Summary:     "Refunds up to $60 are instant.",
+					Ambiguities: []*gensurla.CP1AnalysisAmbiguity{},
+					Examples: []*gensurla.CP1RevisionAnalysisExample{{
+						PriorID: &check01, Scenario: "Refund at the limit", InputSummary: "Order total $60.00",
+						ExpectedOutcome: "Instant store credit", VerificationKind: "deterministic",
+					}},
+					RemovedExampleIds:  []string{},
+					PreservedBehaviors: []string{},
+				},
+			})
+			return err
+		})
+		require.NoError(t, cp.Close())
+		next := newControlPlane(t, Options{CardsDir: dir})
+		hold.releaseOnce()
+
+		assert.ErrorIs(t, awaitHeld(t, done), errCardsClosed, "the revision that outlived Close fails")
+		after, err := os.ReadFile(next.cards.path("chg"))
+		require.NoError(t, err)
+		assert.Equal(t, string(before), string(after), "and leaves the card in the directory the next control plane holds unchanged")
+		got, err := next.GetChange(alice, &gensurla.GetChangePayload{ChangeID: "chg"})
+		require.NoError(t, err)
+		assert.Equal(t, card.RequestRevision, got.RequestRevision)
+	})
 }
 
 // TestAFailedSaveKeepsThePreviousCard makes the directory read-only and
@@ -350,71 +418,6 @@ func TestSavedCardCompatibilityWithPrior12FieldReader(t *testing.T) {
 	}
 }
 
-// Analyze waits for release, then returns a card with no open questions.
-func (a *heldAnalyzer) Analyze(context.Context, string, CP1Design) (CP1SemanticAnalysis, error) {
-	close(a.started)
-	<-a.release
-	return CP1SemanticAnalysis{
-		Summary: "Refunds up to $50 are instant.",
-		Examples: []CP1ModelExample{{
-			Scenario: "Refund at the limit", InputSummary: "Order total $50.00",
-			ExpectedOutcome: "Instant store credit", VerificationKind: "deterministic",
-		}},
-	}, nil
-}
-
-// Revise delegates to Analyze and accounts for prior examples so heldAnalyzer satisfies CP1Analyzer.
-func (a *heldAnalyzer) Revise(
-	ctx context.Context, prior CP1PriorCard, promptText string, design CP1Design,
-) (CP1RevisionSemanticAnalysis, error) {
-	analysis, err := a.Analyze(ctx, promptText, design)
-	if err != nil {
-		return CP1RevisionSemanticAnalysis{}, err
-	}
-	revExamples := make([]CP1RevisionModelExample, 0, len(analysis.Examples))
-	var removed []string
-	if len(prior.Examples) > 0 {
-		for i, ex := range prior.Examples {
-			if i < len(analysis.Examples) {
-				revExamples = append(revExamples, CP1RevisionModelExample{
-					PriorID:          ex.ID,
-					Scenario:         analysis.Examples[i].Scenario,
-					InputSummary:     analysis.Examples[i].InputSummary,
-					ExpectedOutcome:  analysis.Examples[i].ExpectedOutcome,
-					VerificationKind: analysis.Examples[i].VerificationKind,
-				})
-			} else {
-				removed = append(removed, ex.ID)
-			}
-		}
-		for i := len(prior.Examples); i < len(analysis.Examples); i++ {
-			revExamples = append(revExamples, CP1RevisionModelExample{
-				Scenario:         analysis.Examples[i].Scenario,
-				InputSummary:     analysis.Examples[i].InputSummary,
-				ExpectedOutcome:  analysis.Examples[i].ExpectedOutcome,
-				VerificationKind: analysis.Examples[i].VerificationKind,
-			})
-		}
-	} else {
-		for _, ex := range analysis.Examples {
-			revExamples = append(revExamples, CP1RevisionModelExample{
-				Scenario:         ex.Scenario,
-				InputSummary:     ex.InputSummary,
-				ExpectedOutcome:  ex.ExpectedOutcome,
-				VerificationKind: ex.VerificationKind,
-			})
-		}
-	}
-	return CP1RevisionSemanticAnalysis{
-		Summary:            analysis.Summary,
-		Ambiguities:        analysis.Ambiguities,
-		Examples:           revExamples,
-		RemovedExampleIDs:  removed,
-		PreservedBehaviors: analysis.PreservedBehaviors,
-		UIComposition:      analysis.UIComposition,
-	}, nil
-}
-
 // saveCard saves a confirmed card "chg" owned by alice, with approval, in
 // cp's store and returns it.
 func saveCard(t *testing.T, cp *ControlPlane, approval *gensurla.ApprovalItem) *gensurla.ChangeCardResult {
@@ -519,17 +522,18 @@ func TestStagingDoesNotFollowLinks(t *testing.T) {
 func TestChangeIDsMustBeValidUTF8(t *testing.T) {
 	cp := newControlPlane(t, Options{})
 	_, err := cp.ProposeChange(WithPrincipal(context.Background(), Principal{ID: "alice@example.com"}),
-		&gensurla.ProposeChangePayload{ChangeID: "chg\xff", Prompt: "Refunds up to $50 are instant."})
-	assert.ErrorContains(t, err, "change_id must be valid UTF-8")
+		&gensurla.ProposeChangePayload{ChangeID: "chg\xff", Prompt: "Refunds up to $50 are instant.", Analysis: refundAnalysis("Refunds up to $50 are instant.")})
+	assertServiceError(t, err, "unprocessable")
+	assert.ErrorContains(t, err, `["change_id"]: invalid UTF-8`)
 }
 
 // TestPrincipalIDsMustBeValidUTF8 checks that a principal whose ID holds
 // invalid UTF-8, which only a Go authenticator can supply, is treated as
 // unauthenticated, so no card is saved under an owner it could not match.
 func TestPrincipalIDsMustBeValidUTF8(t *testing.T) {
-	cp := newControlPlane(t, Options{Analyzer: &heldAnalyzer{started: make(chan struct{}), release: make(chan struct{})}})
+	cp := newControlPlane(t, Options{})
 	bad := WithPrincipal(context.Background(), Principal{ID: "alice\xff"})
-	_, err := cp.ProposeChange(bad, &gensurla.ProposeChangePayload{ChangeID: "chg", Prompt: "Refunds up to $50 are instant."})
+	_, err := cp.ProposeChange(bad, &gensurla.ProposeChangePayload{ChangeID: "chg", Prompt: "Refunds up to $50 are instant.", Analysis: refundAnalysis("Refunds up to $50 are instant.")})
 	assert.ErrorContains(t, err, "authenticated principal is required")
 	_, err = cp.GetChange(bad, &gensurla.GetChangePayload{ChangeID: "chg"})
 	assert.ErrorContains(t, err, "authenticated principal is required")

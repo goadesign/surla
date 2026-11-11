@@ -48,8 +48,8 @@ type (
 		ConfirmedBy *string
 		// SHA-256 digest of the canonical versioned Change Card.
 		RequestRevision string
-		// Decision view the CP1 model composed for this revision, when it produced
-		// one. A confirm_intent that changes answers or examples returns the new
+		// Decision view the caller composed for this revision in its analysis, when it
+		// sent one. A confirm_intent that changes answers or examples returns the new
 		// revision without it.
 		UIComposition *UICompositionItem
 		// Checkpoint 5 approval of this revision, present only while it is verified
@@ -143,8 +143,8 @@ type (
 		ConfirmedBy *string
 		// SHA-256 digest of the canonical versioned Change Card.
 		RequestRevision string
-		// Decision view the CP1 model composed for this revision, when it produced
-		// one. A confirm_intent that changes answers or examples returns the new
+		// Decision view the caller composed for this revision in its analysis, when it
+		// sent one. A confirm_intent that changes answers or examples returns the new
 		// revision without it.
 		UIComposition *UICompositionItem
 		// Checkpoint 5 approval of this revision, present only while it is verified
@@ -252,8 +252,8 @@ type (
 		ConfirmedBy *string
 		// SHA-256 digest of the canonical versioned Change Card.
 		RequestRevision string
-		// Decision view the CP1 model composed for this revision, when it produced
-		// one. A confirm_intent that changes answers or examples returns the new
+		// Decision view the caller composed for this revision in its analysis, when it
+		// sent one. A confirm_intent that changes answers or examples returns the new
 		// revision without it.
 		UIComposition *UICompositionItem
 		// Checkpoint 5 approval of this revision, present only while it is verified
@@ -397,11 +397,14 @@ type (
 		ChangeID string
 		// Operator feature request.
 		Prompt string
-		// Current Goa design source of the target (its design/*.go files) for the CP1
-		// model to read. When omitted on a server with a bound workspace, Surla reads
-		// design/*.go from the bound workspace; when omitted without a bound
-		// workspace, CP1 receives no current design.
+		// Goa design source the analysis was made against (the target's design/*.go
+		// files). Surla saves it with the card and includes it in request_revision; it
+		// does not interpret it. When omitted on a server with a bound workspace,
+		// Surla records design/*.go from the bound workspace; when omitted without a
+		// bound workspace, the card records no design.
 		DesignSource *string
+		// Your analysis of prompt against the target's current design.
+		Analysis *CP1Analysis
 	}
 	// ProposeChangeResult defines the JSON result for the surla.propose_change tool.
 	ProposeChangeResult = struct {
@@ -430,8 +433,8 @@ type (
 		ConfirmedBy *string
 		// SHA-256 digest of the canonical versioned Change Card.
 		RequestRevision string
-		// Decision view the CP1 model composed for this revision, when it produced
-		// one. A confirm_intent that changes answers or examples returns the new
+		// Decision view the caller composed for this revision in its analysis, when it
+		// sent one. A confirm_intent that changes answers or examples returns the new
 		// revision without it.
 		UIComposition *UICompositionItem
 		// Checkpoint 5 approval of this revision, present only while it is verified
@@ -474,11 +477,15 @@ type (
 		RequestRevision string
 		// Revised operator feature request.
 		Prompt string
-		// Updated Goa design source of the target (its design/*.go files) for the CP1
-		// model to read. When omitted on a workspace-backed card with a bound
-		// workspace, Surla re-reads design/*.go from the bound workspace; otherwise
-		// the card's saved design source is used again.
+		// Updated Goa design source the analysis was made against (the target's
+		// design/*.go files). Surla saves it with the card and includes it in
+		// request_revision; it does not interpret it. When omitted on a
+		// workspace-backed card with a bound workspace, Surla records design/*.go from
+		// the bound workspace again; otherwise the card's saved design source is kept.
 		DesignSource *string
+		// Your analysis of the revised prompt against the current card and the
+		// target's current design.
+		Analysis *CP1RevisionAnalysis
 	}
 	// ReviseChangeResult defines the JSON result for the surla.revise_change tool.
 	ReviseChangeResult = struct {
@@ -507,8 +514,8 @@ type (
 		ConfirmedBy *string
 		// SHA-256 digest of the canonical versioned Change Card.
 		RequestRevision string
-		// Decision view the CP1 model composed for this revision, when it produced
-		// one. A confirm_intent that changes answers or examples returns the new
+		// Decision view the caller composed for this revision in its analysis, when it
+		// sent one. A confirm_intent that changes answers or examples returns the new
 		// revision without it.
 		UIComposition *UICompositionItem
 		// Checkpoint 5 approval of this revision, present only while it is verified
@@ -685,6 +692,100 @@ type (
 		// Contract or transport relationship.
 		Protocol string
 	}
+	// CP1Analysis is a nested type used by the generated JSON contract.
+	CP1Analysis = struct {
+		// Plain-English description of the requested behavior, including the details
+		// the request or the design already settle.
+		Summary string
+		// Open questions only the requester can answer: product, domain, or
+		// operational choices that change observable behavior or service boundaries.
+		// Do not ask about details the request or the design already settle; state
+		// them in summary, or in examples when they change an observable outcome. Send
+		// an empty list when nothing is open.
+		Ambiguities []*CP1AnalysisAmbiguity
+		// Concrete acceptance examples drawn from the request and the design, never
+		// placeholder text; each becomes a check the change must pass.
+		Examples []*CP1AnalysisExample
+		// Existing behaviors and contract rules of the target that the change must
+		// keep, each stated concretely; empty when none apply.
+		PreservedBehaviors []string
+		// Optional OpenUI Lang program that helps the requester decide the open
+		// questions, built only from the decision components the surla://golden-path
+		// resource lists. Refer to an ambiguity or example only by its 1-based
+		// position in this analysis (1 is the first); never invent identifiers. Surla
+		// saves it unchanged without checking it; the checkpoint viewer validates and
+		// renders it. Omit it when a plain card is clearer.
+		UIComposition *string
+	}
+	// CP1AnalysisAmbiguity is a nested type used by the generated JSON contract.
+	CP1AnalysisAmbiguity = struct {
+		// The decision in plain language, saying what the choice changes.
+		Question string
+		// At least two distinct, self-contained choices; each states the behavior it
+		// selects and what follows from it. The requester's answer must be exactly one
+		// of these strings.
+		Options []string
+	}
+	// CP1AnalysisExample is a nested type used by the generated JSON contract.
+	CP1AnalysisExample = struct {
+		// Short name of the situation, in the requester's domain terms.
+		Scenario string
+		// The actual request, inputs, and starting state in this scenario, with real
+		// values from the request and the design, never placeholders.
+		InputSummary string
+		// The observable result or refusal that must hold.
+		ExpectedOutcome string
+		// deterministic when code can check the outcome directly; model_judged when
+		// checking it needs judgment.
+		VerificationKind string
+	}
+	// CP1RevisionAnalysis is a nested type used by the generated JSON contract.
+	CP1RevisionAnalysis = struct {
+		// Plain-English description of the revised behavior, including the details the
+		// request, the design or confirmed answers already settle.
+		Summary string
+		// Open questions only the requester can answer: product, domain, or
+		// operational choices that change observable behavior or service boundaries.
+		// Do not ask about details the request, the design or a confirmed answer
+		// already settle; state them in summary, or in examples when they change an
+		// observable outcome. Send an empty list when nothing is open.
+		Ambiguities []*CP1AnalysisAmbiguity
+		// Concrete acceptance examples drawn from the revised request and the design.
+		// Give prior_id for each current example you keep or edit; omit it for new
+		// ones.
+		Examples []*CP1RevisionAnalysisExample
+		// IDs of the current card's examples this revision drops. Every current
+		// example ID appears exactly once, either as an examples[].prior_id or here;
+		// send an empty list when none are dropped.
+		RemovedExampleIds []string
+		// Existing behaviors and contract rules of the target that the change must
+		// keep, each stated concretely; empty when none apply.
+		PreservedBehaviors []string
+		// Optional OpenUI Lang program that helps the requester decide the open
+		// questions, built only from the decision components the surla://golden-path
+		// resource lists. Refer to an ambiguity or example only by its 1-based
+		// position in this analysis (1 is the first); never invent identifiers. Surla
+		// saves it unchanged without checking it; the checkpoint viewer validates and
+		// renders it. Omit it when a plain card is clearer.
+		UIComposition *string
+	}
+	// CP1RevisionAnalysisExample is a nested type used by the generated JSON contract.
+	CP1RevisionAnalysisExample = struct {
+		// ID of the current card's example this one keeps or edits, exactly as the
+		// card shows it; the example keeps that ID. Omit it for a new example, which
+		// gets the lowest check_NN ID the current and revised cards do not use.
+		PriorID *string
+		// Short name of the situation, in the requester's domain terms.
+		Scenario string
+		// The actual request, inputs, and starting state in this scenario, with real
+		// values from the request and the design, never placeholders.
+		InputSummary string
+		// The observable result or refusal that must hold.
+		ExpectedOutcome string
+		// deterministic when code can check the outcome directly; model_judged when
+		// checking it needs judgment.
+		VerificationKind string
+	}
 	// DesignSnapshot is a nested type used by the generated JSON contract.
 	DesignSnapshot = struct {
 		// File contents keyed by module-relative path, such as design/design.go or
@@ -829,11 +930,10 @@ type (
 	}
 	// UICompositionItem is a nested type used by the generated JSON contract.
 	UICompositionItem = struct {
-		// OpenUI Lang program composed by the CP1 model from the Surla decision
-		// component catalog, exactly as the model returned it. The server does not
-		// check it; the checkpoint viewer validates it and shows its error state, with
-		// the rest of the card still usable, when the program is not a valid
-		// composition.
+		// OpenUI Lang program from the analysis's ui_composition, exactly as the
+		// caller sent it. The server does not check it; the checkpoint viewer
+		// validates it and shows its error state, with the rest of the card still
+		// usable, when the program is not a valid composition.
 		Program string
 		// request_revision of the Change Card this program was composed for.
 		ComposedForRevision string

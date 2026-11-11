@@ -543,36 +543,28 @@ func (s *checkpointVerificationService) ListVerifications(
 func verificationJourneyFixtures(t *testing.T, card *gensurlatools.GetChangeResult, input map[string]any) {
 	t.Helper()
 	ctx := WithPrincipal(t.Context(), Principal{ID: "approval-owner@example.invalid"})
-	analysis := CP1SemanticAnalysis{
-		Summary:     "Refunds above $50 require a manager.",
-		Ambiguities: []CP1ModelAmbiguity{},
-		Examples: []CP1ModelExample{{
-			Scenario: "Refund above $50", InputSummary: "Order total $75",
-			ExpectedOutcome: "Wait for manager approval", VerificationKind: "deterministic",
+	// analysis and reviseAnalysis are the caller's analyses in their MCP wire
+	// form, as a coding agent sends them.
+	analysis := map[string]any{
+		"summary":     "Refunds above $50 require a manager.",
+		"ambiguities": []any{},
+		"examples": []map[string]any{{
+			"scenario": "Refund above $50", "input_summary": "Order total $75",
+			"expected_outcome": "Wait for manager approval", "verification_kind": "deterministic",
 		}},
-		PreservedBehaviors: []string{},
+		"preserved_behaviors": []string{},
 	}
-	reviseAnalysis := CP1RevisionSemanticAnalysis{
-		Summary:     "Refunds above $50 require a manager and audit log.",
-		Ambiguities: []CP1ModelAmbiguity{},
-		Examples: []CP1RevisionModelExample{{
-			PriorID:          "check_01",
-			Scenario:         "Refund above $50",
-			InputSummary:     "Order total $75",
-			ExpectedOutcome:  "Wait for manager approval",
-			VerificationKind: "deterministic",
+	reviseAnalysis := map[string]any{
+		"summary":     "Refunds above $50 require a manager and audit log.",
+		"ambiguities": []any{},
+		"examples": []map[string]any{{
+			"prior_id": "check_01", "scenario": "Refund above $50", "input_summary": "Order total $75",
+			"expected_outcome": "Wait for manager approval", "verification_kind": "deterministic",
 		}},
-		RemovedExampleIDs:  []string{},
-		PreservedBehaviors: []string{},
+		"removed_example_ids": []string{},
+		"preserved_behaviors": []string{},
 	}
-	q := &queuedModelClient{}
-	q.enqueueJSON(t, analysis)
-	q.enqueueJSON(t, reviseAnalysis)
-	q.enqueueJSON(t, analysis)
-	q.enqueueJSON(t, analysis)
-	cp := newControlPlane(t, Options{
-		Analyzer: NewModelCP1Analyzer(newQueuedModelClient(t, q)),
-	})
+	cp := newControlPlane(t, Options{})
 	adapter := genmcpadapter.NewMCPAdapter(gensurla.NewEndpoints(cp), nil)
 	callTool := func(name string, args any) json.RawMessage {
 		rawArgs, err := json.Marshal(args)
@@ -585,18 +577,20 @@ func verificationJourneyFixtures(t *testing.T, card *gensurlatools.GetChangeResu
 		require.NotEmpty(t, complete.StructuredContent)
 		return json.RawMessage(complete.StructuredContent)
 	}
-	proposeR1 := callTool("propose_change", map[string]string{
+	proposeR1 := callTool("propose_change", map[string]any{
 		"change_id": card.ChangeID,
 		"prompt":    "Refunds above $50 require a manager.",
+		"analysis":  analysis,
 	})
 	proposeCard, err := gensurlatools.UnmarshalProposeChangeResult(proposeR1)
 	require.NoError(t, err)
 	require.Equal(t, card.RequestRevision, proposeCard.RequestRevision)
 
-	revisedR2 := callTool("revise_change", map[string]string{
+	revisedR2 := callTool("revise_change", map[string]any{
 		"change_id":        card.ChangeID,
 		"request_revision": card.RequestRevision,
 		"prompt":           "Refunds above $50 require a manager and audit log.",
+		"analysis":         reviseAnalysis,
 	})
 	r2Card, err := gensurlatools.UnmarshalReviseChangeResult(revisedR2)
 	require.NoError(t, err)
@@ -626,13 +620,15 @@ func verificationJourneyFixtures(t *testing.T, card *gensurlatools.GetChangeResu
 
 	input["revisedR2"] = revisedR2
 	input["confirmedR3"] = confirmedR3
-	input["toStringCard"] = callTool("propose_change", map[string]string{
+	input["toStringCard"] = callTool("propose_change", map[string]any{
 		"change_id": "toString",
 		"prompt":    "Refunds above $50 require a manager.",
+		"analysis":  analysis,
 	})
-	input["cardB"] = callTool("propose_change", map[string]string{
+	input["cardB"] = callTool("propose_change", map[string]any{
 		"change_id": "chg-card-b",
 		"prompt":    "Refunds above $50 require a manager.",
+		"analysis":  analysis,
 	})
 
 	cp2Preview, err := gensurlatools.MarshalPreviewArchitectureResult(&gensurlatools.PreviewArchitectureResult{

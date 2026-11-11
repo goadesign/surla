@@ -403,8 +403,8 @@ export const surlaDecisionLibrary = createLibrary({
       ],
       notes: [
         "Always start with root = DecisionWorkspace(title, children).",
-        "ambiguityIndex is a 1-based integer index (1..N) into the returned ambiguities array.",
-        "exampleIndex is an optional 1-based integer index (1..M) into the returned examples array.",
+        "ambiguityIndex is a 1-based integer index (1..N) into the ambiguities array of the analysis you send.",
+        "exampleIndex is an optional 1-based integer index (1..M) into the examples array of the analysis you send.",
         "In PolicySimulatorRow, outcomes must be a string array with the exact same length and order as the referenced ambiguity's options array.",
         "Never emit Query(), Mutation(), $variables, or @Action steps.",
       ],
@@ -681,15 +681,16 @@ export function validateCompletedOpenUI(
   return { ok: true };
 }
 
-// generateDecisionCatalogMarkdown exports the OpenUI prompt catalog for embedding
-// in the Go controlplane's CP1 semantic analyzer prompt.
+// generateDecisionCatalogMarkdown exports the OpenUI component catalog that the
+// surla://golden-path resource serves to a coding agent composing the optional
+// ui_composition of a propose_change or revise_change analysis.
 export function generateDecisionCatalogMarkdown(): string {
   return surlaDecisionLibrary.prompt({
     preamble:
       "When emitting `ui_composition` for a Surla CP1 Change Card, write a valid `openui-lang` program starting with `root = DecisionWorkspace(...)` using ONLY the components below.",
     additionalRules: [
-      "Refer to ambiguities ONLY by 1-based `ambiguityIndex` (1..N matching the `ambiguities` array order in your JSON output). Never invent `<change_id>-ambiguity-NN` IDs.",
-      "Refer to confirmation examples ONLY by 1-based `exampleIndex` (1..M matching the `examples` array order in your JSON output).",
+      "Refer to ambiguities ONLY by 1-based `ambiguityIndex` (1..N matching the `ambiguities` array order in the analysis you send). Never invent `<change_id>-ambiguity-NN` IDs.",
+      "Refer to confirmation examples ONLY by 1-based `exampleIndex` (1..M matching the `examples` array order in the analysis you send).",
       "In `PolicySimulatorRow`, `outcomes` MUST be a string array with one non-empty outcome string per option in the exact order of `ambiguities[ambiguityIndex - 1].options`.",
       "Never emit `Query(...)`, `Mutation(...)`, `$variables`, or `@Action` steps.",
     ],

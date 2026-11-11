@@ -122,32 +122,6 @@ func EncodeProposeChangeError(encoder func(context.Context, http.ResponseWriter)
 			w.Header().Set("goa-error", res.GoaErrorName())
 			w.WriteHeader(http.StatusUnprocessableEntity)
 			return enc.Encode(body)
-		case "not_implemented":
-			var res *goa.ServiceError
-			errors.As(v, &res)
-			enc := encoder(ctx, w)
-			var body any
-			if formatter != nil {
-				body = formatter(ctx, res)
-			} else {
-				body = NewProposeChangeNotImplementedResponseBody(res)
-			}
-			w.Header().Set("goa-error", res.GoaErrorName())
-			w.WriteHeader(http.StatusNotImplemented)
-			return enc.Encode(body)
-		case "analysis_rejected":
-			var res *goa.ServiceError
-			errors.As(v, &res)
-			enc := encoder(ctx, w)
-			var body any
-			if formatter != nil {
-				body = formatter(ctx, res)
-			} else {
-				body = NewProposeChangeAnalysisRejectedResponseBody(res)
-			}
-			w.Header().Set("goa-error", res.GoaErrorName())
-			w.WriteHeader(http.StatusBadGateway)
-			return enc.Encode(body)
 		default:
 			return encodeError(ctx, w, v)
 		}
@@ -257,32 +231,6 @@ func EncodeReviseChangeError(encoder func(context.Context, http.ResponseWriter) 
 			}
 			w.Header().Set("goa-error", res.GoaErrorName())
 			w.WriteHeader(http.StatusUnprocessableEntity)
-			return enc.Encode(body)
-		case "not_implemented":
-			var res *goa.ServiceError
-			errors.As(v, &res)
-			enc := encoder(ctx, w)
-			var body any
-			if formatter != nil {
-				body = formatter(ctx, res)
-			} else {
-				body = NewReviseChangeNotImplementedResponseBody(res)
-			}
-			w.Header().Set("goa-error", res.GoaErrorName())
-			w.WriteHeader(http.StatusNotImplemented)
-			return enc.Encode(body)
-		case "analysis_rejected":
-			var res *goa.ServiceError
-			errors.As(v, &res)
-			enc := encoder(ctx, w)
-			var body any
-			if formatter != nil {
-				body = formatter(ctx, res)
-			} else {
-				body = NewReviseChangeAnalysisRejectedResponseBody(res)
-			}
-			w.Header().Set("goa-error", res.GoaErrorName())
-			w.WriteHeader(http.StatusBadGateway)
 			return enc.Encode(body)
 		default:
 			return encodeError(ctx, w, v)
@@ -1875,6 +1823,66 @@ func EncodeListTracesError(encoder func(context.Context, http.ResponseWriter) go
 	}
 }
 
+// unmarshalCP1AnalysisRequestBodyToSurlaCP1Analysis builds a value of type
+// *surla.CP1Analysis from a value of type *CP1AnalysisRequestBody.
+func unmarshalCP1AnalysisRequestBodyToSurlaCP1Analysis(v *CP1AnalysisRequestBody) *surla.CP1Analysis {
+	res := &surla.CP1Analysis{
+		Summary:       *v.Summary,
+		UIComposition: v.UIComposition,
+	}
+	res.Ambiguities = make([]*surla.CP1AnalysisAmbiguity, len(v.Ambiguities))
+	for i, val := range v.Ambiguities {
+		if val == nil {
+			res.Ambiguities[i] = nil
+			continue
+		}
+		res.Ambiguities[i] = unmarshalCP1AnalysisAmbiguityRequestBodyToSurlaCP1AnalysisAmbiguity(val)
+	}
+	res.Examples = make([]*surla.CP1AnalysisExample, len(v.Examples))
+	for i, val := range v.Examples {
+		if val == nil {
+			res.Examples[i] = nil
+			continue
+		}
+		res.Examples[i] = unmarshalCP1AnalysisExampleRequestBodyToSurlaCP1AnalysisExample(val)
+	}
+	res.PreservedBehaviors = make([]string, len(v.PreservedBehaviors))
+	for i, val := range v.PreservedBehaviors {
+		res.PreservedBehaviors[i] = *val
+	}
+
+	return res
+}
+
+// unmarshalCP1AnalysisAmbiguityRequestBodyToSurlaCP1AnalysisAmbiguity builds a
+// value of type *surla.CP1AnalysisAmbiguity from a value of type
+// *CP1AnalysisAmbiguityRequestBody.
+func unmarshalCP1AnalysisAmbiguityRequestBodyToSurlaCP1AnalysisAmbiguity(v *CP1AnalysisAmbiguityRequestBody) *surla.CP1AnalysisAmbiguity {
+	res := &surla.CP1AnalysisAmbiguity{
+		Question: *v.Question,
+	}
+	res.Options = make([]string, len(v.Options))
+	for i, val := range v.Options {
+		res.Options[i] = *val
+	}
+
+	return res
+}
+
+// unmarshalCP1AnalysisExampleRequestBodyToSurlaCP1AnalysisExample builds a
+// value of type *surla.CP1AnalysisExample from a value of type
+// *CP1AnalysisExampleRequestBody.
+func unmarshalCP1AnalysisExampleRequestBodyToSurlaCP1AnalysisExample(v *CP1AnalysisExampleRequestBody) *surla.CP1AnalysisExample {
+	res := &surla.CP1AnalysisExample{
+		Scenario:         *v.Scenario,
+		InputSummary:     *v.InputSummary,
+		ExpectedOutcome:  *v.ExpectedOutcome,
+		VerificationKind: *v.VerificationKind,
+	}
+
+	return res
+}
+
 // marshalSurlaAmbiguityQuestionToAmbiguityQuestionResponseBody builds a value
 // of type *AmbiguityQuestionResponseBody from a value of type
 // *surla.AmbiguityQuestion.
@@ -1954,6 +1962,57 @@ func marshalSurlaUnverifiedApprovalItemToUnverifiedApprovalItemResponseBody(v *s
 	}
 	if v.Approval != nil {
 		res.Approval = marshalSurlaApprovalItemToApprovalItemResponseBody(v.Approval)
+	}
+
+	return res
+}
+
+// unmarshalCP1RevisionAnalysisRequestBodyToSurlaCP1RevisionAnalysis builds a
+// value of type *surla.CP1RevisionAnalysis from a value of type
+// *CP1RevisionAnalysisRequestBody.
+func unmarshalCP1RevisionAnalysisRequestBodyToSurlaCP1RevisionAnalysis(v *CP1RevisionAnalysisRequestBody) *surla.CP1RevisionAnalysis {
+	res := &surla.CP1RevisionAnalysis{
+		Summary:       *v.Summary,
+		UIComposition: v.UIComposition,
+	}
+	res.Ambiguities = make([]*surla.CP1AnalysisAmbiguity, len(v.Ambiguities))
+	for i, val := range v.Ambiguities {
+		if val == nil {
+			res.Ambiguities[i] = nil
+			continue
+		}
+		res.Ambiguities[i] = unmarshalCP1AnalysisAmbiguityRequestBodyToSurlaCP1AnalysisAmbiguity(val)
+	}
+	res.Examples = make([]*surla.CP1RevisionAnalysisExample, len(v.Examples))
+	for i, val := range v.Examples {
+		if val == nil {
+			res.Examples[i] = nil
+			continue
+		}
+		res.Examples[i] = unmarshalCP1RevisionAnalysisExampleRequestBodyToSurlaCP1RevisionAnalysisExample(val)
+	}
+	res.RemovedExampleIds = make([]string, len(v.RemovedExampleIds))
+	for i, val := range v.RemovedExampleIds {
+		res.RemovedExampleIds[i] = *val
+	}
+	res.PreservedBehaviors = make([]string, len(v.PreservedBehaviors))
+	for i, val := range v.PreservedBehaviors {
+		res.PreservedBehaviors[i] = *val
+	}
+
+	return res
+}
+
+// unmarshalCP1RevisionAnalysisExampleRequestBodyToSurlaCP1RevisionAnalysisExample
+// builds a value of type *surla.CP1RevisionAnalysisExample from a value of
+// type *CP1RevisionAnalysisExampleRequestBody.
+func unmarshalCP1RevisionAnalysisExampleRequestBodyToSurlaCP1RevisionAnalysisExample(v *CP1RevisionAnalysisExampleRequestBody) *surla.CP1RevisionAnalysisExample {
+	res := &surla.CP1RevisionAnalysisExample{
+		PriorID:          v.PriorID,
+		Scenario:         *v.Scenario,
+		InputSummary:     *v.InputSummary,
+		ExpectedOutcome:  *v.ExpectedOutcome,
+		VerificationKind: *v.VerificationKind,
 	}
 
 	return res

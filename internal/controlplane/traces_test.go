@@ -30,7 +30,6 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"go.opentelemetry.io/otel/trace"
-	"goa.design/goa-ai/runtime/agent/model"
 	goahttp "goa.design/goa/v3/http"
 )
 
@@ -152,12 +151,12 @@ func TestTraceHistoryHTTPAndMCP(t *testing.T) {
 	parentCtx, parent := cp.tracer("surla/controlplane").Start(alice, "operation-parent")
 	_, failed := cp.tracer("surla/controlplane").Start(parentCtx, "operation-failed")
 	failed.SetAttributes(
-		attribute.String(traceview.SummaryAttribute, "The model response could not be used. Retry the request."),
+		attribute.String(traceview.SummaryAttribute, cp1SafeFaultSummary(false, cp1FaultStorageSave)),
 		attribute.String("surla.change_id", "change-1"),
 		attribute.String("raw.secret", "/private/operator/key"),
 	)
-	failed.RecordError(errors.New("private model content"))
-	failed.SetStatus(codes.Error, "private model content")
+	failed.RecordError(errors.New("private storage content"))
+	failed.SetStatus(codes.Error, "private storage content")
 	failed.End()
 	parent.End()
 	bob := WithPrincipal(t.Context(), Principal{ID: "bob@example.com"})
@@ -187,9 +186,10 @@ func TestTraceHistoryHTTPAndMCP(t *testing.T) {
 	assert.Equal(t, parent.SpanContext().SpanID().String(), view.ParentSpanID)
 	assert.Equal(t, "error", view.Status)
 	assert.Equal(t, map[string]string{"surla.change_id": "change-1"}, view.Attributes)
+	assert.Equal(t, cp1SafeFaultSummary(false, cp1FaultStorageSave), view.Summary)
 	raw, err := json.Marshal(page)
 	require.NoError(t, err)
-	for _, private := range []string{"alice@example.com", "bob@example.com", "private model content", "raw.secret", "/private/operator/key", "bob-private-error"} {
+	for _, private := range []string{"alice@example.com", "bob@example.com", "private storage content", "raw.secret", "/private/operator/key", "bob-private-error"} {
 		assert.NotContains(t, string(raw), private)
 	}
 
@@ -238,7 +238,7 @@ func TestTraceHistoryHTTPAndMCP(t *testing.T) {
 	}
 	ended := full.GetSpans()
 	require.GreaterOrEqual(t, len(ended), 4)
-	assert.Equal(t, "private model content", ended[0].Status.Description)
+	assert.Equal(t, "private storage content", ended[0].Status.Description)
 	assert.Equal(t, "exception", ended[0].Events[0].Name)
 	assert.Contains(t, ended[0].Attributes, attribute.String("raw.secret", "/private/operator/key"))
 	for _, span := range ended {
@@ -339,12 +339,14 @@ func TestTraceToolReadsSavedHistoryAfterRestart(t *testing.T) {
 }
 
 // TestCP1FailuresProduceSafeSavedRecovery exercises the production annotation
-// owners through real analysis and generated MCP result decoding. No fixture
-// sets diagnostic attributes on its spans.
+// owners through real proposals and revisions and generated MCP result
+// decoding. No fixture sets diagnostic attributes on its spans. A revision
+// that breaks the example accounting is the caller's to fix, so its span
+// carries a code-authored summary without error status; a save that fails is
+// a server fault the operator must look at.
 func TestCP1FailuresProduceSafeSavedRecovery(t *testing.T) {
-	q := &queuedModelClient{}
 	tp := sdktrace.NewTracerProvider()
-	cp := newControlPlane(t, Options{Analyzer: NewModelCP1Analyzer(newQueuedModelClient(t, q)), TracerProvider: tp})
+	cp := newControlPlane(t, Options{TracerProvider: tp})
 	previous := otel.GetTracerProvider()
 	otel.SetTracerProvider(tp)
 	t.Cleanup(func() {
@@ -353,91 +355,70 @@ func TestCP1FailuresProduceSafeSavedRecovery(t *testing.T) {
 		assert.NoError(t, tp.Shutdown(context.Background()))
 	})
 	ctx := WithPrincipal(t.Context(), Principal{ID: "alice@example.com"})
-	valid := json.RawMessage(strings.Replace(cp1CompletionJSON, "Summary", "private-model-summary", 1))
-	q.enqueueJSON(t, valid)
 	seed, err := cp.ProposeChange(ctx, &gensurla.ProposeChangePayload{
-		ChangeID: "existing", Prompt: "private-feature-request",
+		ChangeID: "existing", Prompt: "private-feature-request", Analysis: refundAnalysis("private-analysis-summary"),
 	})
 	require.NoError(t, err)
 
-	q.responses = append(q.responses, queuedModelTurn{resp: &model.Response{
-		OutputLimited: true,
-		StopReason:    "private-provider-stop-reason",
-		Content: []model.Message{{
-			Role:  model.ConversationRoleAssistant,
-			Parts: []model.Part{model.TextPart{Text: string(valid)}},
-		}},
-	}})
-	_, err = cp.ProposeChange(ctx, &gensurla.ProposeChangePayload{
-		ChangeID: "limited", Prompt: "private-feature-request",
-	})
-	assertServiceError(t, err, "analysis_rejected")
-	q.responses = append(q.responses, queuedModelTurn{err: errors.New("private-provider-credential-failure")})
-	_, err = cp.ProposeChange(ctx, &gensurla.ProposeChangePayload{
-		ChangeID: "provider-fault", Prompt: "private-feature-request",
-	})
-	require.Error(t, err)
-
-	q.enqueueJSON(t, CP1RevisionSemanticAnalysis{
-		Summary: "private-model-summary", Ambiguities: []CP1ModelAmbiguity{},
-		Examples: []CP1RevisionModelExample{{
-			PriorID: "private-model-reference", Scenario: "Example", InputSummary: "Input",
-			ExpectedOutcome: "Result", VerificationKind: "deterministic",
-		}},
-		RemovedExampleIDs: []string{}, PreservedBehaviors: []string{},
-	})
+	reference := "private-analysis-reference"
 	_, err = cp.ReviseChange(ctx, &gensurla.ReviseChangePayload{
 		ChangeID: "existing", RequestRevision: seed.RequestRevision, Prompt: "private-feature-request",
+		Analysis: &gensurla.CP1RevisionAnalysis{
+			Summary: "private-analysis-summary", Ambiguities: []*gensurla.CP1AnalysisAmbiguity{},
+			Examples: []*gensurla.CP1RevisionAnalysisExample{{
+				PriorID: &reference, Scenario: "Refund at the limit", InputSummary: "Order total $50.00",
+				ExpectedOutcome: "Instant store credit", VerificationKind: "deterministic",
+			}},
+			RemovedExampleIds: []string{}, PreservedBehaviors: []string{},
+		},
 	})
-	assertServiceError(t, err, "analysis_rejected")
+	assertServiceError(t, err, "unprocessable")
 	unchanged, err := cp.GetChange(ctx, &gensurla.GetChangePayload{ChangeID: "existing"})
 	require.NoError(t, err)
 	assert.Equal(t, seed.RequestRevision, unchanged.RequestRevision)
 
 	// The existing card-store fault fixture makes only the final save fail.
 	require.NoError(t, os.Mkdir(filepath.Join(cp.cards.dir, stagingFile), 0o700))
-	q.enqueueJSON(t, valid)
 	_, err = cp.ProposeChange(ctx, &gensurla.ProposeChangePayload{
-		ChangeID: "save-fault", Prompt: "private-feature-request",
+		ChangeID: "save-fault", Prompt: "private-feature-request", Analysis: refundAnalysis("private-analysis-summary"),
 	})
 	require.Error(t, err)
 	adapter := genmcpsurla.NewMCPAdapter(gensurla.NewEndpoints(cp), nil)
 	result, err := adapter.ToolsCall(ctx, &genmcpsurla.ToolsCallPayload{
-		Name: "list_traces", Arguments: json.RawMessage(`{"status":"error","limit":100}`),
+		Name: "list_traces", Arguments: json.RawMessage(`{"status":"all","limit":100}`),
 	})
 	require.NoError(t, err)
 	complete, ok := result.Outcome.AsComplete()
 	require.True(t, ok)
 	page, err := gensurlatools.UnmarshalListTracesResult(complete.StructuredContent)
 	require.NoError(t, err)
-	var failures int
+	seen := map[string]string{}
 	for _, span := range page.Spans {
 		if span.Name != "surla.controlplane.propose_change" && span.Name != "surla.controlplane.revise_change" {
 			continue
 		}
-		failures++
-		assert.NotContains(t, span.Summary, "Read the tool error", span.Attributes)
-		switch span.Attributes["surla.change_id"] {
-		case "limited":
-			assert.Equal(t, "output_limited", span.Attributes["surla.cp1.rejection_kind"])
-			assert.Contains(t, strings.ToLower(span.Summary), "shorten")
-		case "existing":
-			assert.Equal(t, "semantic_validation", span.Attributes["surla.cp1.rejection_kind"])
-			assert.Contains(t, strings.ToLower(span.Summary), "retry")
-		case "provider-fault", "save-fault":
+		key := span.Name + " " + span.Attributes["surla.change_id"]
+		seen[key] = span.Status
+		switch key {
+		case "surla.controlplane.propose_change existing":
+			assert.Equal(t, "Proposed Change Card (confirmed).", span.Summary)
+		case "surla.controlplane.revise_change existing":
+			assert.NotEqual(t, "error", span.Status, "a broken revision rule is the caller's input, not a server failure")
+			assert.Contains(t, span.Summary, "retry revise_change")
+		case "surla.controlplane.propose_change save-fault":
+			assert.Equal(t, "error", span.Status)
 			assert.Contains(t, strings.ToLower(span.Summary), "operator")
 		default:
-			t.Errorf("unexpected CP1 failure: %+v", span)
+			t.Errorf("unexpected CP1 span: %+v", span)
 		}
 	}
-	assert.Equal(t, 4, failures)
-	// Check success as well: a model-authored card summary belongs to the card,
-	// not to the safe diagnostic file or any caller-visible diagnostic page.
+	assert.Len(t, seen, 3)
+	// A caller-authored card summary belongs to the card, not to the safe
+	// diagnostic file or any caller-visible diagnostic page.
 	raw, err := os.ReadFile(filepath.Join(cp.cards.dir, "traces.jsonl"))
 	require.NoError(t, err)
 	for _, secret := range []string{
-		"private-feature-request", "private-model-summary", "private-model-reference",
-		"private-provider-stop-reason", "private-provider-credential-failure", "alice@example.com",
+		"private-feature-request", "private-analysis-summary", "private-analysis-reference", "alice@example.com",
 	} {
 		assert.NotContains(t, string(raw), secret)
 		assert.NotContains(t, string(complete.StructuredContent), secret)

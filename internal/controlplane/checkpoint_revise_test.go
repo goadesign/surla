@@ -39,7 +39,6 @@ func TestCheckpointUIReviseLifecyclePriorComparisonAndUnverifiedApproval(t *test
 	ctx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
 	const commit = "2222222222222222222222222222222222222222"
 
-	client := &queuedModelClient{}
 	inputs := PromotionInputs{
 		SuiteID:     "orders_acceptance",
 		SuiteCommit: "3333333333333333333333333333333333333333",
@@ -48,7 +47,6 @@ func TestCheckpointUIReviseLifecyclePriorComparisonAndUnverifiedApproval(t *test
 	}
 	target := &promotionTargetStub{inputs: inputs}
 	cp := newControlPlane(t, Options{
-		Analyzer:        NewModelCP1Analyzer(newQueuedModelClient(t, client)),
 		PromotionTarget: target,
 	})
 	adapter := genmcpadapter.NewMCPAdapter(gensurla.NewEndpoints(cp), nil)
@@ -59,7 +57,7 @@ func TestCheckpointUIReviseLifecyclePriorComparisonAndUnverifiedApproval(t *test
 	require.True(t, ok)
 	htmlDoc := *completeRes.Contents[0].Text
 
-	callMCPTool := func(t *testing.T, name string, args map[string]any) json.RawMessage {
+	callMCPTool := func(t *testing.T, name string, args any) json.RawMessage {
 		t.Helper()
 		rawArgs, err := json.Marshal(args)
 		require.NoError(t, err)
@@ -78,40 +76,41 @@ func TestCheckpointUIReviseLifecyclePriorComparisonAndUnverifiedApproval(t *test
 	}
 
 	// Mint R1 (0 ambiguities -> auto-confirmed).
-	client.enqueueJSON(t, CP1SemanticAnalysis{
-		Summary:     "Refunds up to $50 are instant.",
-		Ambiguities: []CP1ModelAmbiguity{},
-		Examples: []CP1ModelExample{
-			{Scenario: "Refund under $50", InputSummary: "$40 subtotal", ExpectedOutcome: "Instant refund", VerificationKind: "deterministic"},
+	r1Raw := callMCPTool(t, "propose_change", proposeArgs(t, &gensurla.ProposeChangePayload{
+		ChangeID: "chg-rev-ui",
+		Prompt:   "Refunds up to $50 are instant.",
+		Analysis: &gensurla.CP1Analysis{
+			Summary:     "Refunds up to $50 are instant.",
+			Ambiguities: []*gensurla.CP1AnalysisAmbiguity{},
+			Examples: []*gensurla.CP1AnalysisExample{
+				{Scenario: "Refund under $50", InputSummary: "$40 subtotal", ExpectedOutcome: "Instant refund", VerificationKind: "deterministic"},
+			},
+			PreservedBehaviors: []string{"Cross-tenant lookups return 404."},
 		},
-		PreservedBehaviors: []string{"Cross-tenant lookups return 404."},
-	})
-	r1Raw := callMCPTool(t, "propose_change", map[string]any{
-		"change_id": "chg-rev-ui",
-		"prompt":    "Refunds up to $50 are instant.",
-	})
+	}))
 	var r1Card wireCardRef
 	require.NoError(t, json.Unmarshal(r1Raw, &r1Card))
 
 	// Mint R2 via revise_change (1 ambiguity, 2 examples -> needs_confirmation, no ui_composition).
-	r2Analysis := CP1RevisionSemanticAnalysis{
+	check01, check02 := "check_01", "check_02"
+	r2Analysis := gensurla.CP1RevisionAnalysis{
 		Summary: "Refunds up to $50 are instant; refunds over $50 require approval.",
-		Ambiguities: []CP1ModelAmbiguity{
+		Ambiguities: []*gensurla.CP1AnalysisAmbiguity{
 			{Question: "Does the $50 limit include tax?", Options: []string{"subtotal_only", "total_with_tax"}},
 		},
-		Examples: []CP1RevisionModelExample{
-			{PriorID: "check_01", Scenario: "Refund under $50", InputSummary: "$40 subtotal", ExpectedOutcome: "Instant refund", VerificationKind: "deterministic"},
+		Examples: []*gensurla.CP1RevisionAnalysisExample{
+			{PriorID: &check01, Scenario: "Refund under $50", InputSummary: "$40 subtotal", ExpectedOutcome: "Instant refund", VerificationKind: "deterministic"},
 			{Scenario: "Refund over $50", InputSummary: "$75 subtotal", ExpectedOutcome: "Manager approval", VerificationKind: "deterministic"},
 		},
-		RemovedExampleIDs:  []string{},
+		RemovedExampleIds:  []string{},
 		PreservedBehaviors: []string{"Cross-tenant lookups return 404."},
 	}
-	client.enqueueJSON(t, r2Analysis)
-	r2Raw := callMCPTool(t, "revise_change", map[string]any{
-		"change_id":        "chg-rev-ui",
-		"request_revision": r1Card.RequestRevision,
-		"prompt":           "Refunds up to $50 are instant; refunds over $50 require approval.",
-	})
+	r2Raw := callMCPTool(t, "revise_change", reviseArgs(t, &gensurla.ReviseChangePayload{
+		ChangeID:        "chg-rev-ui",
+		RequestRevision: r1Card.RequestRevision,
+		Prompt:          "Refunds up to $50 are instant; refunds over $50 require approval.",
+		Analysis:        &r2Analysis,
+	}))
 	var r2Card wireCardRef
 	require.NoError(t, json.Unmarshal(r2Raw, &r2Card))
 
@@ -121,17 +120,17 @@ func TestCheckpointUIReviseLifecyclePriorComparisonAndUnverifiedApproval(t *test
 		`callout = ImpactCallout("info", "Illustration V1", "Initial OpenUI callout.")`,
 	}, "\n")
 	r2AnalysisWithProgramA := r2Analysis
-	r2AnalysisWithProgramA.Examples = []CP1RevisionModelExample{
-		{PriorID: "check_01", Scenario: "Refund under $50", InputSummary: "$40 subtotal", ExpectedOutcome: "Instant refund", VerificationKind: "deterministic"},
-		{PriorID: "check_02", Scenario: "Refund over $50", InputSummary: "$75 subtotal", ExpectedOutcome: "Manager approval", VerificationKind: "deterministic"},
+	r2AnalysisWithProgramA.Examples = []*gensurla.CP1RevisionAnalysisExample{
+		{PriorID: &check01, Scenario: "Refund under $50", InputSummary: "$40 subtotal", ExpectedOutcome: "Instant refund", VerificationKind: "deterministic"},
+		{PriorID: &check02, Scenario: "Refund over $50", InputSummary: "$75 subtotal", ExpectedOutcome: "Manager approval", VerificationKind: "deterministic"},
 	}
 	r2AnalysisWithProgramA.UIComposition = &r2ProgramA
-	client.enqueueJSON(t, r2AnalysisWithProgramA)
-	r2WithProgramARaw := callMCPTool(t, "revise_change", map[string]any{
-		"change_id":        "chg-rev-ui",
-		"request_revision": r2Card.RequestRevision,
-		"prompt":           "Refunds up to $50 are instant; refunds over $50 require approval.",
-	})
+	r2WithProgramARaw := callMCPTool(t, "revise_change", reviseArgs(t, &gensurla.ReviseChangePayload{
+		ChangeID:        "chg-rev-ui",
+		RequestRevision: r2Card.RequestRevision,
+		Prompt:          "Refunds up to $50 are instant; refunds over $50 require approval.",
+		Analysis:        &r2AnalysisWithProgramA,
+	}))
 	var r2ProgramACard wireCardRef
 	require.NoError(t, json.Unmarshal(r2WithProgramARaw, &r2ProgramACard))
 	require.Equal(t, r2Card.RequestRevision, r2ProgramACard.RequestRevision)
@@ -142,12 +141,12 @@ func TestCheckpointUIReviseLifecyclePriorComparisonAndUnverifiedApproval(t *test
 	}, "\n")
 	r2AnalysisWithProgramB := r2AnalysisWithProgramA
 	r2AnalysisWithProgramB.UIComposition = &r2ProgramB
-	client.enqueueJSON(t, r2AnalysisWithProgramB)
-	r2WithProgramBRaw := callMCPTool(t, "revise_change", map[string]any{
-		"change_id":        "chg-rev-ui",
-		"request_revision": r2Card.RequestRevision,
-		"prompt":           "Refunds up to $50 are instant; refunds over $50 require approval.",
-	})
+	r2WithProgramBRaw := callMCPTool(t, "revise_change", reviseArgs(t, &gensurla.ReviseChangePayload{
+		ChangeID:        "chg-rev-ui",
+		RequestRevision: r2Card.RequestRevision,
+		Prompt:          "Refunds up to $50 are instant; refunds over $50 require approval.",
+		Analysis:        &r2AnalysisWithProgramB,
+	}))
 	var r2ProgramBCard wireCardRef
 	require.NoError(t, json.Unmarshal(r2WithProgramBRaw, &r2ProgramBCard))
 	require.Equal(t, r2Card.RequestRevision, r2ProgramBCard.RequestRevision)
@@ -188,41 +187,41 @@ func TestCheckpointUIReviseLifecyclePriorComparisonAndUnverifiedApproval(t *test
 	target.inputsErr = nil
 
 	// Mint R3 via revise_change on R2Confirmed.
-	client.enqueueJSON(t, CP1RevisionSemanticAnalysis{
-		Summary: "Refunds up to $50 (subtotal only) are instant and emit a webhook.",
-		Ambiguities: []CP1ModelAmbiguity{
-			{Question: "Should webhook retries use exponential backoff?", Options: []string{"exponential_backoff", "fixed_delay"}},
+	r3Raw := callMCPTool(t, "revise_change", reviseArgs(t, &gensurla.ReviseChangePayload{
+		ChangeID:        "chg-rev-ui",
+		RequestRevision: r2ConfirmedCard.RequestRevision,
+		Prompt:          "Refunds up to $50 are instant, require approval over $50, and emit a webhook.",
+		Analysis: &gensurla.CP1RevisionAnalysis{
+			Summary: "Refunds up to $50 (subtotal only) are instant and emit a webhook.",
+			Ambiguities: []*gensurla.CP1AnalysisAmbiguity{
+				{Question: "Should webhook retries use exponential backoff?", Options: []string{"exponential_backoff", "fixed_delay"}},
+			},
+			Examples: []*gensurla.CP1RevisionAnalysisExample{
+				{PriorID: &check01, Scenario: "Refund under $50", InputSummary: "$40 subtotal", ExpectedOutcome: "Instant refund + webhook", VerificationKind: "deterministic"},
+			},
+			RemovedExampleIds: []string{"check_02"},
+			PreservedBehaviors: []string{
+				"Cross-tenant lookups return 404.",
+				"The $50 limit applies to subtotal_only.",
+			},
 		},
-		Examples: []CP1RevisionModelExample{
-			{PriorID: "check_01", Scenario: "Refund under $50", InputSummary: "$40 subtotal", ExpectedOutcome: "Instant refund + webhook", VerificationKind: "deterministic"},
-		},
-		RemovedExampleIDs: []string{"check_02"},
-		PreservedBehaviors: []string{
-			"Cross-tenant lookups return 404.",
-			"The $50 limit applies to subtotal_only.",
-		},
-	})
-	r3Raw := callMCPTool(t, "revise_change", map[string]any{
-		"change_id":        "chg-rev-ui",
-		"request_revision": r2ConfirmedCard.RequestRevision,
-		"prompt":           "Refunds up to $50 are instant, require approval over $50, and emit a webhook.",
-	})
+	}))
 	var r3Card wireCardRef
 	require.NoError(t, json.Unmarshal(r3Raw, &r3Card))
 
 	// Mint cardOther for a different change_id.
-	client.enqueueJSON(t, CP1SemanticAnalysis{
-		Summary:     "Other change card summary.",
-		Ambiguities: []CP1ModelAmbiguity{},
-		Examples: []CP1ModelExample{
-			{Scenario: "Other scenario", InputSummary: "Other input", ExpectedOutcome: "Other outcome", VerificationKind: "deterministic"},
+	otherRaw := callMCPTool(t, "propose_change", proposeArgs(t, &gensurla.ProposeChangePayload{
+		ChangeID: "chg-other",
+		Prompt:   "Show the order's shipping carrier on its receipt.",
+		Analysis: &gensurla.CP1Analysis{
+			Summary:     "Receipts name the carrier that ships the order.",
+			Ambiguities: []*gensurla.CP1AnalysisAmbiguity{},
+			Examples: []*gensurla.CP1AnalysisExample{
+				{Scenario: "Shipped order receipt", InputSummary: "Order shipped with a ground carrier", ExpectedOutcome: "Receipt names the ground carrier", VerificationKind: "deterministic"},
+			},
+			PreservedBehaviors: []string{},
 		},
-		PreservedBehaviors: []string{},
-	})
-	otherRaw := callMCPTool(t, "propose_change", map[string]any{
-		"change_id": "chg-other",
-		"prompt":    "Other change card prompt.",
-	})
+	}))
 
 	nodePath, err := exec.LookPath("node")
 	if err != nil {

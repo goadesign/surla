@@ -1,7 +1,7 @@
-// This file tests runtime model configuration (`configure_model` / `POST /cp1/model`),
-// reference-counted model handle retirement across in-flight `ProposeChange`,
-// `ReviseChange`, and `Close`, OpenTelemetry SDK exported span events and
-// statuses, and live-target environment propagation (`liveEnv`).
+// This file tests runtime model configuration (`configure_model` /
+// `POST /cp1/model`): payload validation, refusal and fault classification
+// across Go, HTTP and MCP with their exported OpenTelemetry spans, and the
+// live-target environment (`liveEnv`) that a later start_live_target receives.
 
 package controlplane
 
@@ -9,15 +9,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"strings"
-	"sync"
-	"sync/atomic"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -26,22 +22,19 @@ import (
 	"go.opentelemetry.io/otel/codes"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
-	goa "goa.design/goa/v3/pkg"
 
 	genmcpadapter "github.com/goadesign/surla/gen/mcp_surla"
 	gensurla "github.com/goadesign/surla/gen/surla"
 )
 
 // TestConfigureModelValidationTelemetryAndLiveEnv verifies ConfigureModel's
-// authentication, payload normalization and cross-field validation, capability
-// and credential refusal span events ("model_configuration_refused"), exact
-// single/duplicate-refusal vs. mixed/distinct-leaf ModelBuilder error
-// classification across Go, HTTP, MCP, and exported OpenTelemetry SDK spans,
-// bounded "model_configured" event attributes (preserving arbitrarily long
-// accepted model_name and gateway_addr values without leaking them into
-// telemetry), retired-model cleanup span isolation ("surla.controlplane.retire_model"),
-// liveEnv propagation across StartLiveTarget, and CloseAnalyzer cleanup when
-// controlplane.New fails validation.
+// authentication, payload normalization and cross-field validation, the
+// refusal events ("model_configuration_refused") for an invalid payload, a
+// host without Options.LiveModelEnv and a missing provider key, the server
+// fault a LiveModelEnv failure is, bounded "model_configured" event
+// attributes (keeping arbitrarily long accepted model_name and gateway_addr
+// values out of telemetry), and that every refusal or fault leaves the
+// current live-target environment in place.
 func TestConfigureModelValidationTelemetryAndLiveEnv(t *testing.T) {
 	prevProvider := otel.GetTracerProvider()
 	sr := tracetest.NewSpanRecorder()
@@ -53,46 +46,7 @@ func TestConfigureModelValidationTelemetryAndLiveEnv(t *testing.T) {
 	})
 
 	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
-	summaryJSON := func(summary string) string {
-		raw, err := json.Marshal(CP1SemanticAnalysis{
-			Summary:     summary,
-			Ambiguities: []CP1ModelAmbiguity{},
-			Examples: []CP1ModelExample{{
-				Scenario:         "Refund at limit",
-				InputSummary:     "$50",
-				ExpectedOutcome:  "Instant credit",
-				VerificationKind: "deterministic",
-			}},
-			PreservedBehaviors: []string{},
-		})
-		require.NoError(t, err)
-		return string(raw)
-	}
-
-	t.Run("controlplane.New closes initial analyzer when validation fails", func(t *testing.T) {
-		var closed atomic.Int32
-		_, err := New(Options{
-			CloseAnalyzer: func() error {
-				closed.Add(1)
-				return nil
-			},
-		})
-		require.ErrorContains(t, err, "cards directory is required")
-		assert.EqualValues(t, 1, closed.Load())
-
-		var conflictClosed atomic.Int32
-		_, err = New(Options{
-			CardsDir:      t.TempDir(),
-			TargetUpdater: staticUpdater{},
-			Live:          &LiveConfig{},
-			CloseAnalyzer: func() error {
-				conflictClosed.Add(1)
-				return nil
-			},
-		})
-		require.ErrorContains(t, err, "set either TargetUpdater or Live")
-		assert.EqualValues(t, 1, conflictClosed.Load())
-	})
+	initialEnv := []string{"SURLA_LIVE_MODEL_PROVIDER=anthropic", "SURLA_LIVE_MODEL_NAME=claude-sonnet-4-6"}
 
 	t.Run("unauthenticated ConfigureModel is rejected before starting a span", func(t *testing.T) {
 		sr.Reset()
@@ -103,16 +57,12 @@ func TestConfigureModelValidationTelemetryAndLiveEnv(t *testing.T) {
 		assert.Empty(t, endedSpansByName(sr, "surla.controlplane.configure_model"))
 	})
 
-	t.Run("reconfiguration unavailable records refusal event without error status and preserves fixed analyzer", func(t *testing.T) {
+	t.Run("reconfiguration unavailable records refusal event without error status and keeps the live environment", func(t *testing.T) {
 		sr.Reset()
-		cp := newControlPlane(t, Options{
-			Analyzer: NewModelCP1Analyzer(newStubModelClient(t, summaryJSON("Fixed host analyzer"))),
-			Live:     &LiveConfig{Env: []string{"SURLA_LIVE_MODEL_PROVIDER=anthropic", "SURLA_LIVE_MODEL_NAME=claude-fixed"}},
-		})
+		cp := newControlPlane(t, Options{Live: &LiveConfig{Env: initialEnv}})
 		gw := "127.0.0.1:9090"
 		_, err := cp.ConfigureModel(alice, &gensurla.ConfigureModelPayload{GatewayAddr: &gw})
-		require.Error(t, err)
-		assert.Equal(t, "not_implemented", goaErrorName(err))
+		assertServiceError(t, err, "not_implemented")
 		assert.ErrorContains(t, err, msgModelReconfigUnavailable)
 
 		spans := endedSpansByName(sr, "surla.controlplane.configure_model")
@@ -122,23 +72,18 @@ func TestConfigureModelValidationTelemetryAndLiveEnv(t *testing.T) {
 		assert.Equal(t, map[string]map[string]string{
 			"model_configuration_refused": {"surla.model.refusal_reason": "reconfiguration_unavailable"},
 		}, nonExceptionEvents(spans[0]))
-
-		card, err := cp.ProposeChange(alice, &gensurla.ProposeChangePayload{ChangeID: "chg-fixed", Prompt: "Test fixed analyzer"})
-		require.NoError(t, err)
-		assert.Equal(t, "Fixed host analyzer", card.Summary)
-		assert.Equal(t, []string{"SURLA_LIVE_MODEL_PROVIDER=anthropic", "SURLA_LIVE_MODEL_NAME=claude-fixed"}, cp.liveEnv())
+		assert.Equal(t, initialEnv, cp.liveEnv())
 	})
 
-	t.Run("payload and ModelBuilder refusal vs fault classification across Go HTTP MCP and exported spans", func(t *testing.T) {
-		var buildErr error
+	t.Run("payload and LiveModelEnv refusal vs fault classification across Go HTTP MCP and exported spans", func(t *testing.T) {
+		var envErr error
 		cp := newControlPlane(t, Options{
-			Analyzer: NewModelCP1Analyzer(newStubModelClient(t, summaryJSON("Initial model"))),
-			Live:     &LiveConfig{Env: []string{"SURLA_LIVE_MODEL_PROVIDER=anthropic", "SURLA_LIVE_MODEL_NAME=claude-sonnet-4-6"}},
-			ModelBuilder: func(*gensurla.ConfigureModelPayload) (CP1Analyzer, []string, func() error, error) {
-				if buildErr != nil {
-					return nil, nil, nil, buildErr
+			Live: &LiveConfig{Env: initialEnv},
+			LiveModelEnv: func(*gensurla.ConfigureModelPayload) ([]string, error) {
+				if envErr != nil {
+					return nil, envErr
 				}
-				return NewModelCP1Analyzer(newStubModelClient(t, summaryJSON("Unused"))), nil, nil, nil
+				return []string{"SURLA_LIVE_MODEL_GATEWAY=unused"}, nil
 			},
 		})
 		handler := NewHTTPHandler(cp, NewTokenAuthenticator(map[string]Principal{
@@ -164,8 +109,7 @@ func TestConfigureModelValidationTelemetryAndLiveEnv(t *testing.T) {
 			t.Run(tc.name, func(t *testing.T) {
 				sr.Reset()
 				_, err := cp.ConfigureModel(alice, tc.payload)
-				require.Error(t, err)
-				assert.Equal(t, "unprocessable", goaErrorName(err))
+				assertServiceError(t, err, "unprocessable")
 				assert.ErrorContains(t, err, tc.wantErr)
 
 				spans := endedSpansByName(sr, "surla.controlplane.configure_model")
@@ -178,18 +122,6 @@ func TestConfigureModelValidationTelemetryAndLiveEnv(t *testing.T) {
 			})
 		}
 
-		// Pure missing-key refusals (direct, wrapped, and duplicate-joined of the same refusal leaf)
-		// remain expected 422 refusals across Go, HTTP, MCP, and exported spans.
-		missingKeyCause := errors.New("provider openai requires OPENAI_API_KEY in surla serve's environment")
-		sameRefusal := gensurla.MakeUnprocessable(missingKeyCause)
-		pureRefusalCases := []struct {
-			name string
-			err  error
-		}{
-			{name: "direct unprocessable refusal", err: sameRefusal},
-			{name: "wrapped unprocessable refusal", err: fmt.Errorf("check provider credentials: %w", sameRefusal)},
-			{name: "duplicate join of same unprocessable refusal", err: errors.Join(sameRefusal, sameRefusal)},
-		}
 		reqBodyJSON, err := json.Marshal(map[string]any{"provider": "openai", "model_name": "gpt-5.4-mini"})
 		require.NoError(t, err)
 		assertSpanOutcome := func(t *testing.T, wantCode codes.Code, wantExceptions []string, wantEvents map[string]map[string]string) {
@@ -227,104 +159,59 @@ func TestConfigureModelValidationTelemetryAndLiveEnv(t *testing.T) {
 			assert.True(t, *complete.IsError)
 			assertSpanOutcome(t, wantSpanCode, wantExceptions, wantEvents)
 		}
+
+		// A missing provider key is an expected 422 refusal across Go, HTTP,
+		// MCP and exported spans, whether returned directly or wrapped.
+		missingKeyCause := errors.New("provider openai requires OPENAI_API_KEY in surla serve's environment")
+		refusal := gensurla.MakeUnprocessable(missingKeyCause)
 		missingKeyEvents := map[string]map[string]string{
 			"model_configuration_refused": {"surla.model.refusal_reason": "missing_api_key"},
 		}
-		for _, tc := range pureRefusalCases {
+		for _, tc := range []struct {
+			name string
+			err  error
+		}{
+			{name: "direct unprocessable refusal", err: refusal},
+			{name: "wrapped unprocessable refusal", err: errors.Join(refusal)},
+		} {
 			t.Run(tc.name, func(t *testing.T) {
-				buildErr = tc.err
+				envErr = tc.err
 				sr.Reset()
-				_, goErr := cp.ConfigureModel(alice, &gensurla.ConfigureModelPayload{
-					Provider:  strPtr("openai"),
-					ModelName: strPtr("gpt-5.4-mini"),
-				})
-				require.Error(t, goErr)
-				assert.ErrorIs(t, goErr, sameRefusal)
+				_, goErr := cp.ConfigureModel(alice, &gensurla.ConfigureModelPayload{Provider: strPtr("openai"), ModelName: strPtr("gpt-5.4-mini")})
+				assert.ErrorIs(t, goErr, refusal)
 				assert.ErrorIs(t, goErr, missingKeyCause)
 				assertSpanOutcome(t, codes.Unset, nil, missingKeyEvents)
 				assertHTTPAndMCP(t, http.StatusUnprocessableEntity, "unprocessable", false, codes.Unset, nil, missingKeyEvents)
 			})
 		}
 
-		// Mixed, distinct-leaf, or unrelated named Goa errors from ModelBuilder are server
-		// faults (HTTP 500 fault:true, span RecordError + codes.Error, zero refusal events)
-		// while keeping all causes accessible via errors.Is and errors.As.
-		distinctRefusal := gensurla.MakeUnprocessable(errors.New("second distinct unprocessable leaf"))
-		independentCleanupErr := errors.New("close partial gateway transport failed")
-		unexpectedNotImpl := gensurla.MakeNotImplemented(errors.New("unexpected builder not_implemented"))
-		unexpectedConflict := gensurla.MakeConflict(errors.New("unexpected builder conflict"))
-		unexpectedAnalysisRejected := gensurla.MakeAnalysisRejected(errors.New("unexpected builder analysis_rejected"))
-		faultCases := []struct {
-			name       string
-			err        error
-			wantCauses []error
-		}{
-			{name: "plain constructor failure", err: independentCleanupErr, wantCauses: []error{independentCleanupErr}},
-			{name: "unprocessable joined with independent cleanup failure", err: errors.Join(sameRefusal, independentCleanupErr), wantCauses: []error{sameRefusal, missingKeyCause, independentCleanupErr}},
-			{name: "unprocessable joined with context cancellation", err: errors.Join(sameRefusal, context.Canceled), wantCauses: []error{sameRefusal, missingKeyCause, context.Canceled}},
-			{name: "two distinct unprocessable leaves joined", err: errors.Join(sameRefusal, distinctRefusal), wantCauses: []error{sameRefusal, distinctRefusal}},
-			{name: "unexpected not_implemented from ModelBuilder", err: errors.Join(unexpectedNotImpl, independentCleanupErr), wantCauses: []error{unexpectedNotImpl, independentCleanupErr}},
-			{name: "unrelated conflict ServiceError from ModelBuilder", err: unexpectedConflict, wantCauses: []error{unexpectedConflict}},
-			{name: "unrelated conflict ServiceError joined with independent failure", err: errors.Join(unexpectedConflict, independentCleanupErr), wantCauses: []error{unexpectedConflict, independentCleanupErr}},
-			{name: "unrelated analysis_rejected ServiceError from ModelBuilder", err: unexpectedAnalysisRejected, wantCauses: []error{unexpectedAnalysisRejected}},
-		}
-		for _, tc := range faultCases {
-			t.Run(tc.name, func(t *testing.T) {
-				buildErr = tc.err
-				sr.Reset()
-				_, goErr := cp.ConfigureModel(alice, &gensurla.ConfigureModelPayload{
-					Provider:  strPtr("openai"),
-					ModelName: strPtr("gpt-5.4-mini"),
-				})
-				require.Error(t, goErr)
-				for _, cause := range tc.wantCauses {
-					assert.ErrorIs(t, goErr, cause)
-				}
-				var targetSE *goa.ServiceError
-				if errors.As(tc.err, &targetSE) {
-					var gotSE *goa.ServiceError
-					assert.ErrorAs(t, goErr, &gotSE)
-				}
-				assertSpanOutcome(t, codes.Error, []string{tc.err.Error()}, nil)
-				assertHTTPAndMCP(t, http.StatusInternalServerError, "fault", true, codes.Error, []string{tc.err.Error()}, nil)
-			})
-		}
+		// Any other LiveModelEnv failure is a server fault: HTTP 500 with
+		// fault true, span RecordError with error status, and no refusal event.
+		t.Run("unexpected LiveModelEnv failure", func(t *testing.T) {
+			fault := errors.New("read operator environment failed")
+			envErr = fault
+			sr.Reset()
+			_, goErr := cp.ConfigureModel(alice, &gensurla.ConfigureModelPayload{Provider: strPtr("openai"), ModelName: strPtr("gpt-5.4-mini")})
+			assert.ErrorIs(t, goErr, fault)
+			assertSpanOutcome(t, codes.Error, []string{fault.Error()}, nil)
+			assertHTTPAndMCP(t, http.StatusInternalServerError, "fault", true, codes.Error, []string{fault.Error()}, nil)
+		})
 
-		// Active model and liveEnv remain untouched after all refusals and faults.
-		card, err := cp.ProposeChange(alice, &gensurla.ProposeChangePayload{ChangeID: "chg-still-active", Prompt: "Still active"})
-		require.NoError(t, err)
-		assert.Equal(t, "Initial model", card.Summary)
-		assert.Equal(t, []string{"SURLA_LIVE_MODEL_PROVIDER=anthropic", "SURLA_LIVE_MODEL_NAME=claude-sonnet-4-6"}, cp.liveEnv())
+		assert.Equal(t, initialEnv, cp.liveEnv(), "no refusal or fault changes the live-target environment")
 	})
 
 	t.Run("successful provider and gateway transitions record bounded telemetry and preserve long accepted names", func(t *testing.T) {
-		var closeInitialCalls atomic.Int32
-		var closeSecondCalls atomic.Int32
 		cp := newControlPlane(t, Options{
-			Analyzer: NewModelCP1Analyzer(newStubModelClient(t, summaryJSON("Initial anthropic"))),
-			CloseAnalyzer: func() error {
-				closeInitialCalls.Add(1)
-				return errors.New("retire initial transport warning")
-			},
-			Live: &LiveConfig{Env: []string{"SURLA_LIVE_MODEL_PROVIDER=anthropic", "SURLA_LIVE_MODEL_NAME=claude-sonnet-4-6"}},
-			ModelBuilder: func(p *gensurla.ConfigureModelPayload) (CP1Analyzer, []string, func() error, error) {
+			Live: &LiveConfig{Env: initialEnv},
+			LiveModelEnv: func(p *gensurla.ConfigureModelPayload) ([]string, error) {
 				if p.GatewayAddr != nil {
-					return NewModelCP1Analyzer(newStubModelClient(t, summaryJSON("Gateway "+*p.GatewayAddr))),
-						[]string{"SURLA_LIVE_MODEL_GATEWAY=" + *p.GatewayAddr},
-						nil,
-						nil
+					return []string{"SURLA_LIVE_MODEL_GATEWAY=" + *p.GatewayAddr}, nil
 				}
-				return NewModelCP1Analyzer(newStubModelClient(t, summaryJSON("Provider "+*p.Provider+"/"+*p.ModelName))),
-					[]string{"SURLA_LIVE_MODEL_PROVIDER=" + *p.Provider, "SURLA_LIVE_MODEL_NAME=" + *p.ModelName},
-					func() error {
-						closeSecondCalls.Add(1)
-						return nil
-					},
-					nil
+				return []string{"SURLA_LIVE_MODEL_PROVIDER=" + *p.Provider, "SURLA_LIVE_MODEL_NAME=" + *p.ModelName}, nil
 			},
 		})
 
-		// 1. Switch from initial anthropic (whose closeFn returns an error) to a long openai model_name.
+		// 1. Switch to a long openai model_name; surrounding whitespace is trimmed.
 		sr.Reset()
 		longModelName := "gpt-5.4-mini-custom-" + strings.Repeat("m", 4096)
 		prov, paddedModelName := "  openai ", " "+longModelName+"  "
@@ -338,12 +225,11 @@ func TestConfigureModelValidationTelemetryAndLiveEnv(t *testing.T) {
 		assert.Equal(t, "openai", *res.Provider)
 		assert.Equal(t, longModelName, *res.ModelName)
 		assert.Nil(t, res.GatewayAddr)
-		assert.EqualValues(t, 1, closeInitialCalls.Load())
 		assert.Equal(t, []string{"SURLA_LIVE_MODEL_PROVIDER=openai", "SURLA_LIVE_MODEL_NAME=" + longModelName}, cp.liveEnv())
 
 		cfgSpans := endedSpansByName(sr, "surla.controlplane.configure_model")
 		require.Len(t, cfgSpans, 1)
-		assert.Equal(t, codes.Unset, cfgSpans[0].Status().Code, "old transport retirement failure must not mark configure_model failed")
+		assert.Equal(t, codes.Unset, cfgSpans[0].Status().Code)
 		assert.Empty(t, exceptionMessages(cfgSpans[0]))
 		assert.Empty(t, cfgSpans[0].Attributes())
 		assert.Equal(t, map[string]map[string]string{
@@ -353,15 +239,6 @@ func TestConfigureModelValidationTelemetryAndLiveEnv(t *testing.T) {
 			},
 		}, nonExceptionEvents(cfgSpans[0]))
 		assertSpanNeverContainsValue(t, cfgSpans[0], longModelName)
-
-		retireSpans := endedSpansByName(sr, "surla.controlplane.retire_model")
-		require.Len(t, retireSpans, 1)
-		assert.Equal(t, codes.Error, retireSpans[0].Status().Code)
-		assert.Equal(t, []string{"retire initial transport warning"}, exceptionMessages(retireSpans[0]))
-
-		card1, err := cp.ProposeChange(alice, &gensurla.ProposeChangePayload{ChangeID: "chg-oai", Prompt: "Use openai"})
-		require.NoError(t, err)
-		assert.Equal(t, "Provider openai/"+longModelName, card1.Summary)
 
 		// 2. Switch via MCP tools/call to a long gateway_addr.
 		sr.Reset()
@@ -374,7 +251,6 @@ func TestConfigureModelValidationTelemetryAndLiveEnv(t *testing.T) {
 		complete, ok := mcpRes.Outcome.AsComplete()
 		require.True(t, ok)
 		assert.False(t, complete.IsError != nil && *complete.IsError)
-		assert.EqualValues(t, 1, closeSecondCalls.Load())
 		assert.Equal(t, []string{"SURLA_LIVE_MODEL_GATEWAY=" + longGatewayAddr}, cp.liveEnv())
 
 		cfgSpans = endedSpansByName(sr, "surla.controlplane.configure_model")
@@ -387,10 +263,6 @@ func TestConfigureModelValidationTelemetryAndLiveEnv(t *testing.T) {
 			},
 		}, nonExceptionEvents(cfgSpans[0]))
 		assertSpanNeverContainsValue(t, cfgSpans[0], longGatewayAddr)
-
-		card2, err := cp.ProposeChange(alice, &gensurla.ProposeChangePayload{ChangeID: "chg-gw", Prompt: "Use gateway"})
-		require.NoError(t, err)
-		assert.Equal(t, "Gateway "+longGatewayAddr, card2.Summary)
 	})
 
 	t.Run("StartLiveTarget launches child process with updated model liveEnv across ConfigureModel transitions", func(t *testing.T) {
@@ -416,18 +288,12 @@ func TestConfigureModelValidationTelemetryAndLiveEnv(t *testing.T) {
 					"SURLA_LIVE_MODEL_NAME=claude-sonnet-4-6",
 				),
 			},
-			ModelBuilder: func(p *gensurla.ConfigureModelPayload) (CP1Analyzer, []string, func() error, error) {
+			LiveModelEnv: func(p *gensurla.ConfigureModelPayload) ([]string, error) {
 				base := append(os.Environ(), liveTargetModeEnv+"=serve")
 				if p.GatewayAddr != nil {
-					return NewModelCP1Analyzer(newStubModelClient(t, summaryJSON("gw"))),
-						append(base, "SURLA_LIVE_MODEL_GATEWAY="+*p.GatewayAddr),
-						nil,
-						nil
+					return append(base, "SURLA_LIVE_MODEL_GATEWAY="+*p.GatewayAddr), nil
 				}
-				return NewModelCP1Analyzer(newStubModelClient(t, summaryJSON("prov"))),
-					append(base, "SURLA_LIVE_MODEL_PROVIDER="+*p.Provider, "SURLA_LIVE_MODEL_NAME="+*p.ModelName),
-					nil,
-					nil
+				return append(base, "SURLA_LIVE_MODEL_PROVIDER="+*p.Provider, "SURLA_LIVE_MODEL_NAME="+*p.ModelName), nil
 			},
 		})
 		require.NoError(t, err)
@@ -458,462 +324,6 @@ func TestConfigureModelValidationTelemetryAndLiveEnv(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, "PROVIDER=\nNAME=\nGATEWAY=127.0.0.1:9090\nTOKEN=\n", string(gotEnv))
 	})
-}
-
-// TestModelLifecycleBarriersAcrossCloseAndConfigureModel exercises deterministic
-// channel barriers (zero sleeps, zero busy-loops) across:
-//  1. In-flight ProposeChange (Analyze) and separately ReviseChange (Revise)
-//     when ControlPlane.Close runs with a CloseAnalyzer spy.
-//  2. In-flight ProposeChange and separately ReviseChange when ConfigureModel
-//     switches to a new model (including when the retired model's closeFn fails).
-//  3. Retiring a superseded model handle when releaseModel runs without an
-//     enclosing operation span (such as an early pre-span exit).
-//  4. Overlapping switches (model 1 -> model 2 -> model 3) while calls A and B
-//     are held in flight on models 1 and 2.
-//  5. ModelBuilder completing after ControlPlane.Close has already closed the
-//     control plane.
-func TestModelLifecycleBarriersAcrossCloseAndConfigureModel(t *testing.T) {
-	prevProvider := otel.GetTracerProvider()
-	sr := tracetest.NewSpanRecorder()
-	tp := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(sr))
-	otel.SetTracerProvider(tp)
-	t.Cleanup(func() {
-		otel.SetTracerProvider(prevProvider)
-		require.NoError(t, tp.Shutdown(context.Background()))
-	})
-
-	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
-
-	t.Run("Close during in-flight ProposeChange waits to call CloseAnalyzer until Analyze finishes", func(t *testing.T) {
-		dir := t.TempDir()
-		held, releaseHeld := newHeldAnalyzer(t)
-		var closeCount atomic.Int32
-		cp, err := New(Options{
-			CardsDir: dir,
-			Analyzer: held,
-			CloseAnalyzer: func() error {
-				closeCount.Add(1)
-				return nil
-			},
-		})
-		require.NoError(t, err)
-
-		proposeErrCh := startAsync(t, "in-flight ProposeChange", releaseHeld, func() error {
-			_, pErr := cp.ProposeChange(alice, &gensurla.ProposeChangePayload{
-				ChangeID: "chg-inflight-propose",
-				Prompt:   "Refunds up to $50 are instant.",
-			})
-			return pErr
-		})
-		awaitSignal(t, held.started, "ProposeChange entered Analyze")
-
-		require.NoError(t, runBounded(t, "Close while ProposeChange in flight", releaseHeld, cp.Close))
-		assert.EqualValues(t, 0, closeCount.Load(), "CloseAnalyzer must not be called while Analyze is still in flight")
-
-		releaseHeld()
-		assert.ErrorIs(t, awaitResult(t, proposeErrCh, "ProposeChange exit after release"), errCardsClosed)
-		assert.EqualValues(t, 1, closeCount.Load(), "CloseAnalyzer must be called once Analyze returns")
-		assert.NoFileExists(t, cp.cards.path("chg-inflight-propose"))
-
-		require.NoError(t, runBounded(t, "second Close", releaseHeld, cp.Close))
-		assert.EqualValues(t, 1, closeCount.Load(), "second Close must not call CloseAnalyzer again")
-	})
-
-	t.Run("Close during in-flight ReviseChange waits to call CloseAnalyzer and preserves saved card", func(t *testing.T) {
-		dir := t.TempDir()
-		held, releaseHeld := newHeldAnalyzer(t)
-		var closeCount atomic.Int32
-		cp, err := New(Options{
-			CardsDir: dir,
-			Analyzer: held,
-			CloseAnalyzer: func() error {
-				closeCount.Add(1)
-				return nil
-			},
-		})
-		require.NoError(t, err)
-		saved := saveCard(t, cp, nil)
-		beforeBytes, err := os.ReadFile(cp.cards.path("chg"))
-		require.NoError(t, err)
-
-		reviseErrCh := startAsync(t, "in-flight ReviseChange", releaseHeld, func() error {
-			_, rErr := cp.ReviseChange(alice, &gensurla.ReviseChangePayload{
-				ChangeID:        "chg",
-				RequestRevision: saved.RequestRevision,
-				Prompt:          "Revise while closing.",
-			})
-			return rErr
-		})
-		awaitSignal(t, held.started, "ReviseChange entered Revise")
-
-		require.NoError(t, runBounded(t, "Close while ReviseChange in flight", releaseHeld, cp.Close))
-		assert.EqualValues(t, 0, closeCount.Load(), "CloseAnalyzer must not be called while Revise is still in flight")
-
-		releaseHeld()
-		assert.ErrorIs(t, awaitResult(t, reviseErrCh, "ReviseChange exit after release"), errCardsClosed)
-		assert.EqualValues(t, 1, closeCount.Load(), "CloseAnalyzer must be called once Revise returns")
-		afterBytes, err := os.ReadFile(cp.cards.path("chg"))
-		require.NoError(t, err)
-		assert.Equal(t, string(beforeBytes), string(afterBytes), "saved card bytes must remain unchanged")
-
-		require.NoError(t, runBounded(t, "second Close", releaseHeld, cp.Close))
-		assert.EqualValues(t, 1, closeCount.Load(), "second Close must not call CloseAnalyzer again")
-	})
-
-	t.Run("ConfigureModel during in-flight ProposeChange and ReviseChange switches immediately and retires old handle on completion", func(t *testing.T) {
-		for _, op := range []string{"propose", "revise"} {
-			t.Run(op, func(t *testing.T) {
-				sr.Reset()
-				held1, release1 := newHeldAnalyzer(t)
-				var close1Count atomic.Int32
-				var close2Count atomic.Int32
-				fast2 := &stubCP1Analyzer{
-					analyzeFn: func(context.Context, string, CP1Design) (CP1SemanticAnalysis, error) {
-						return CP1SemanticAnalysis{
-							Summary: "Fast model 2",
-							Examples: []CP1ModelExample{{
-								Scenario: "Fast", InputSummary: "$10", ExpectedOutcome: "Instant", VerificationKind: "deterministic",
-							}},
-						}, nil
-					},
-				}
-				cp := newControlPlane(t, Options{
-					Analyzer: held1,
-					CloseAnalyzer: func() error {
-						close1Count.Add(1)
-						return errors.New("close1 transport error")
-					},
-					ModelBuilder: func(*gensurla.ConfigureModelPayload) (CP1Analyzer, []string, func() error, error) {
-						return fast2, nil, func() error {
-							close2Count.Add(1)
-							return nil
-						}, nil
-					},
-				})
-				saved := saveCard(t, cp, nil)
-
-				inflightCh := startAsync(t, "in-flight "+op, release1, func() error {
-					if op == "propose" {
-						_, err := cp.ProposeChange(alice, &gensurla.ProposeChangePayload{
-							ChangeID: "chg-held-1",
-							Prompt:   "Held on model 1",
-						})
-						return err
-					}
-					_, err := cp.ReviseChange(alice, &gensurla.ReviseChangePayload{
-						ChangeID:        "chg",
-						RequestRevision: saved.RequestRevision,
-						Prompt:          "Held revise on model 1",
-					})
-					return err
-				})
-				awaitSignal(t, held1.started, op+" entered held1")
-
-				gw := "127.0.0.1:9090"
-				err := runBounded(t, "ConfigureModel while "+op+" in flight", release1, func() error {
-					_, cErr := cp.ConfigureModel(alice, &gensurla.ConfigureModelPayload{GatewayAddr: &gw})
-					return cErr
-				})
-				require.NoError(t, err)
-				assert.EqualValues(t, 0, close1Count.Load(), "model 1 must not close while call 1 is in flight")
-
-				// A new call immediately uses fast2 without waiting for held1.
-				var card2 *gensurla.ChangeCardResult
-				err = runBounded(t, "ProposeChange on fast2 while held1 in flight", release1, func() error {
-					var pErr error
-					card2, pErr = cp.ProposeChange(alice, &gensurla.ProposeChangePayload{
-						ChangeID: "chg-fast-2",
-						Prompt:   "Runs on model 2",
-					})
-					return pErr
-				})
-				require.NoError(t, err)
-				assert.Equal(t, "Fast model 2", card2.Summary)
-
-				release1()
-				require.NoError(t, awaitResult(t, inflightCh, op+" exit after release1"))
-				assert.EqualValues(t, 1, close1Count.Load(), "model 1 closes once when the in-flight call finishes")
-
-				retireSpans := endedSpansByName(sr, "surla.controlplane.retire_model")
-				require.Len(t, retireSpans, 1)
-				assert.Equal(t, codes.Error, retireSpans[0].Status().Code)
-				assert.Equal(t, []string{"close1 transport error"}, exceptionMessages(retireSpans[0]))
-
-				opSpanName := "surla.controlplane.propose_change"
-				if op == "revise" {
-					opSpanName = "surla.controlplane.revise_change"
-				}
-				opSpans := endedSpansByName(sr, opSpanName)
-				require.NotEmpty(t, opSpans)
-				assert.Equal(t, codes.Unset, opSpans[0].Status().Code, "completed analysis span must not be marked failed by old-model retirement")
-			})
-		}
-	})
-
-	t.Run("releaseModel without an operation span records a standalone ended retire_model span when superseded", func(t *testing.T) {
-		sr.Reset()
-		var close1Count atomic.Int32
-		cp := newControlPlane(t, Options{
-			Analyzer: &stubCP1Analyzer{},
-			CloseAnalyzer: func() error {
-				close1Count.Add(1)
-				return errors.New("pre-span retire error")
-			},
-			ModelBuilder: func(*gensurla.ConfigureModelPayload) (CP1Analyzer, []string, func() error, error) {
-				return &stubCP1Analyzer{}, nil, nil, nil
-			},
-		})
-
-		heldHandle, err := cp.acquireModel()
-		require.NoError(t, err)
-		require.NotNil(t, heldHandle)
-		var releaseOnce sync.Once
-		releaseHandle := func() {
-			releaseOnce.Do(func() {
-				cp.releaseModel(alice, heldHandle)
-			})
-		}
-		t.Cleanup(releaseHandle)
-
-		gw := "127.0.0.1:9090"
-		err = runBounded(t, "ConfigureModel while acquired handle held", releaseHandle, func() error {
-			_, cErr := cp.ConfigureModel(alice, &gensurla.ConfigureModelPayload{GatewayAddr: &gw})
-			return cErr
-		})
-		require.NoError(t, err)
-		assert.EqualValues(t, 0, close1Count.Load(), "superseded model must remain open while acquired reference is held")
-
-		sr.Reset()
-		releaseHandle()
-		assert.EqualValues(t, 1, close1Count.Load())
-
-		retireSpans := endedSpansByName(sr, "surla.controlplane.retire_model")
-		require.Len(t, retireSpans, 1)
-		assert.Equal(t, codes.Error, retireSpans[0].Status().Code)
-		assert.Equal(t, []string{"pre-span retire error"}, exceptionMessages(retireSpans[0]))
-	})
-
-	t.Run("overlapping switches model 1 -> model 2 -> model 3 retire each handle once as its call completes", func(t *testing.T) {
-		held1, release1 := newHeldAnalyzer(t)
-		held2, release2 := newHeldAnalyzer(t)
-		releaseAll := func() {
-			release1()
-			release2()
-		}
-		fast3 := &stubCP1Analyzer{
-			analyzeFn: func(context.Context, string, CP1Design) (CP1SemanticAnalysis, error) {
-				return CP1SemanticAnalysis{
-					Summary: "Model 3",
-					Examples: []CP1ModelExample{{
-						Scenario: "M3", InputSummary: "$30", ExpectedOutcome: "Instant", VerificationKind: "deterministic",
-					}},
-				}, nil
-			},
-		}
-		var close1, close2, close3 atomic.Int32
-		var step atomic.Int32
-		cp, err := New(Options{
-			CardsDir: t.TempDir(),
-			Analyzer: held1,
-			CloseAnalyzer: func() error {
-				close1.Add(1)
-				return nil
-			},
-			ModelBuilder: func(*gensurla.ConfigureModelPayload) (CP1Analyzer, []string, func() error, error) {
-				if step.Add(1) == 1 {
-					return held2, nil, func() error {
-						close2.Add(1)
-						return nil
-					}, nil
-				}
-				return fast3, nil, func() error {
-					close3.Add(1)
-					return nil
-				}, nil
-			},
-		})
-		require.NoError(t, err)
-
-		callA := startAsync(t, "callA on model 1", releaseAll, func() error {
-			_, aErr := cp.ProposeChange(alice, &gensurla.ProposeChangePayload{ChangeID: "call-a", Prompt: "On model 1"})
-			return aErr
-		})
-		awaitSignal(t, held1.started, "callA entered held1")
-
-		gw2 := "127.0.0.1:9002"
-		require.NoError(t, runBounded(t, "switch to model 2", releaseAll, func() error {
-			_, cErr := cp.ConfigureModel(alice, &gensurla.ConfigureModelPayload{GatewayAddr: &gw2})
-			return cErr
-		}))
-
-		callB := startAsync(t, "callB on model 2", releaseAll, func() error {
-			_, bErr := cp.ProposeChange(alice, &gensurla.ProposeChangePayload{ChangeID: "call-b", Prompt: "On model 2"})
-			return bErr
-		})
-		awaitSignal(t, held2.started, "callB entered held2")
-
-		gw3 := "127.0.0.1:9003"
-		require.NoError(t, runBounded(t, "switch to model 3", releaseAll, func() error {
-			_, cErr := cp.ConfigureModel(alice, &gensurla.ConfigureModelPayload{GatewayAddr: &gw3})
-			return cErr
-		}))
-		assert.EqualValues(t, 0, close1.Load())
-		assert.EqualValues(t, 0, close2.Load())
-		assert.EqualValues(t, 0, close3.Load())
-
-		var cardC *gensurla.ChangeCardResult
-		require.NoError(t, runBounded(t, "callC on model 3", releaseAll, func() error {
-			var cErr error
-			cardC, cErr = cp.ProposeChange(alice, &gensurla.ProposeChangePayload{ChangeID: "call-c", Prompt: "On model 3"})
-			return cErr
-		}))
-		assert.Equal(t, "Model 3", cardC.Summary)
-
-		release2()
-		require.NoError(t, awaitResult(t, callB, "callB exit after release2"))
-		assert.EqualValues(t, 0, close1.Load())
-		assert.EqualValues(t, 1, close2.Load())
-		assert.EqualValues(t, 0, close3.Load())
-
-		release1()
-		require.NoError(t, awaitResult(t, callA, "callA exit after release1"))
-		assert.EqualValues(t, 1, close1.Load())
-		assert.EqualValues(t, 1, close2.Load())
-		assert.EqualValues(t, 0, close3.Load())
-
-		require.NoError(t, runBounded(t, "Close after overlapping switches", releaseAll, cp.Close))
-		assert.EqualValues(t, 1, close1.Load())
-		assert.EqualValues(t, 1, close2.Load())
-		assert.EqualValues(t, 1, close3.Load())
-	})
-
-	t.Run("ModelBuilder finishing after Close retires newly built model immediately and returns errCardsClosed", func(t *testing.T) {
-		sr.Reset()
-		builderStarted := make(chan struct{})
-		builderRelease := make(chan struct{})
-		var releaseOnce sync.Once
-		releaseBuilder := func() {
-			releaseOnce.Do(func() {
-				close(builderRelease)
-			})
-		}
-		t.Cleanup(releaseBuilder)
-
-		var close1, close2 atomic.Int32
-		cp, err := New(Options{
-			CardsDir: t.TempDir(),
-			Analyzer: &stubCP1Analyzer{},
-			CloseAnalyzer: func() error {
-				close1.Add(1)
-				return nil
-			},
-			ModelBuilder: func(*gensurla.ConfigureModelPayload) (CP1Analyzer, []string, func() error, error) {
-				close(builderStarted)
-				<-builderRelease
-				return &stubCP1Analyzer{}, nil, func() error {
-					close2.Add(1)
-					return nil
-				}, nil
-			},
-		})
-		require.NoError(t, err)
-
-		cfgErrCh := startAsync(t, "ConfigureModel blocked in ModelBuilder", releaseBuilder, func() error {
-			gw := "127.0.0.1:9090"
-			_, cErr := cp.ConfigureModel(alice, &gensurla.ConfigureModelPayload{GatewayAddr: &gw})
-			return cErr
-		})
-		awaitSignal(t, builderStarted, "ModelBuilder entered")
-
-		require.NoError(t, runBounded(t, "Close while ModelBuilder in flight", releaseBuilder, cp.Close))
-		assert.EqualValues(t, 1, close1.Load(), "initial model 1 closes on Close")
-		assert.EqualValues(t, 0, close2.Load())
-
-		releaseBuilder()
-		assert.ErrorIs(t, awaitResult(t, cfgErrCh, "ConfigureModel exit after Close"), errCardsClosed)
-		assert.EqualValues(t, 1, close2.Load(), "newly built model 2 must be retired immediately when Close raced with ModelBuilder")
-
-		cfgSpans := endedSpansByName(sr, "surla.controlplane.configure_model")
-		require.Len(t, cfgSpans, 1)
-		assert.Equal(t, codes.Error, cfgSpans[0].Status().Code)
-		assert.Empty(t, nonExceptionEvents(cfgSpans[0]))
-
-		retireSpans := endedSpansByName(sr, "surla.controlplane.retire_model")
-		require.Len(t, retireSpans, 2, "both model 1 and model 2 retirement spans are recorded")
-
-		require.NoError(t, runBounded(t, "second Close", releaseBuilder, cp.Close))
-		assert.EqualValues(t, 1, close1.Load())
-		assert.EqualValues(t, 1, close2.Load())
-	})
-}
-
-// newHeldAnalyzer constructs a heldAnalyzer and returns a sync.Once-guarded
-// release function that is also registered with t.Cleanup.
-func newHeldAnalyzer(t *testing.T) (*heldAnalyzer, func()) {
-	t.Helper()
-	h := &heldAnalyzer{
-		started: make(chan struct{}),
-		release: make(chan struct{}),
-	}
-	var once sync.Once
-	releaseFn := func() {
-		once.Do(func() {
-			close(h.release)
-		})
-	}
-	t.Cleanup(releaseFn)
-	return h, releaseFn
-}
-
-// startAsync runs fn in a background goroutine, returns its result channel,
-// and registers a t.Cleanup hook that invokes release (if non-nil) and waits
-// with a bounded deadline for the goroutine to exit.
-func startAsync[T any](t *testing.T, label string, release func(), fn func() T) <-chan T {
-	t.Helper()
-	ch := make(chan T, 1)
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		ch <- fn()
-	}()
-	t.Cleanup(func() {
-		if release != nil {
-			release()
-		}
-		awaitSignal(t, done, label+" cleanup drain")
-	})
-	return ch
-}
-
-// runBounded executes fn via startAsync and awaits its result within a bounded
-// 5-second deadline so a regression that blocks ConfigureModel or Close on an
-// in-flight analyzer fails locally and releases held goroutines cleanly.
-func runBounded[T any](t *testing.T, label string, release func(), fn func() T) T {
-	t.Helper()
-	return awaitResult(t, startAsync(t, label, release, fn), label)
-}
-
-// awaitSignal waits up to 5 seconds for ch to receive or close.
-func awaitSignal(t *testing.T, ch <-chan struct{}, label string) {
-	t.Helper()
-	select {
-	case <-ch:
-	case <-time.After(5 * time.Second):
-		require.FailNowf(t, "timed out waiting for signal", "%s did not arrive within 5s", label)
-	}
-}
-
-// awaitResult waits up to 5 seconds for ch to deliver a value.
-func awaitResult[T any](t *testing.T, ch <-chan T, label string) T {
-	t.Helper()
-	select {
-	case v := <-ch:
-		return v
-	case <-time.After(5 * time.Second):
-		var zero T
-		require.FailNowf(t, "timed out waiting for result", "%s did not complete within 5s", label)
-		return zero
-	}
 }
 
 // endedSpansByName returns all ended spans from sr matching the given name.

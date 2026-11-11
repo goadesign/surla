@@ -39,16 +39,6 @@ func TestLiveAndVerificationUseTheWorkspacePinnedSuite(t *testing.T) {
 	for _, d := range []string{wsDir, runsDir, reportsDir} {
 		require.NoError(t, os.MkdirAll(d, 0o700))
 	}
-	analysis, err := json.Marshal(CP1SemanticAnalysis{
-		Summary:     "Refunds up to $50 are instant.",
-		Ambiguities: []CP1ModelAmbiguity{},
-		Examples: []CP1ModelExample{{
-			Scenario: "Refund at the limit", InputSummary: "Order total $50.00",
-			ExpectedOutcome: "Instant store credit", VerificationKind: "deterministic",
-		}},
-		PreservedBehaviors: []string{},
-	})
-	require.NoError(t, err)
 	options := func() Options {
 		return Options{
 			CardsDir:     filepath.Join(root, "cards"),
@@ -58,7 +48,6 @@ func TestLiveAndVerificationUseTheWorkspacePinnedSuite(t *testing.T) {
 			SurlaVersion: testSurlaVersion,
 			InitRunner:   fakeInitRunner,
 			NewGenerator: func() scaffold.Generator { return &fakeInitGenerator{pkg: "shop"} },
-			Analyzer:     NewModelCP1Analyzer(newStubModelClient(t, string(analysis))),
 			ResolveVerification: func(_ context.Context, workspaceDir, suiteCommit string) (*VerificationConfig, error) {
 				return &VerificationConfig{
 					RunsDir: runsDir,
@@ -124,7 +113,7 @@ func assertPinnedSuite(t *testing.T, cp *ControlPlane, cardsDir, runsDir, change
 	require.NoError(t, err)
 	assert.True(t, stopped.Stopped)
 
-	card, err := cp.ProposeChange(alice, &gensurla.ProposeChangePayload{ChangeID: changeID, Prompt: "Refunds up to $50 are instant."})
+	card, err := cp.ProposeChange(alice, &gensurla.ProposeChangePayload{ChangeID: changeID, Prompt: "Refunds up to $50 are instant.", Analysis: refundAnalysis("Refunds up to $50 are instant.")})
 	require.NoError(t, err)
 	require.Equal(t, StatusConfirmed, card.Status)
 	run, err := cp.VerifyChange(alice, &gensurla.VerifyChangePayload{ChangeID: card.ChangeID, RequestRevision: card.RequestRevision, CandidateCommit: candidate})
