@@ -151,12 +151,12 @@ func TestTraceHistoryHTTPAndMCP(t *testing.T) {
 	parentCtx, parent := cp.tracer("surla/controlplane").Start(alice, "operation-parent")
 	_, failed := cp.tracer("surla/controlplane").Start(parentCtx, "operation-failed")
 	failed.SetAttributes(
-		attribute.String(traceview.SummaryAttribute, "The model response could not be used. Retry the request."),
+		attribute.String(traceview.SummaryAttribute, cp1SafeFaultSummary(false, cp1FaultStorageSave)),
 		attribute.String("surla.change_id", "change-1"),
 		attribute.String("raw.secret", "/private/operator/key"),
 	)
-	failed.RecordError(errors.New("private model content"))
-	failed.SetStatus(codes.Error, "private model content")
+	failed.RecordError(errors.New("private storage content"))
+	failed.SetStatus(codes.Error, "private storage content")
 	failed.End()
 	parent.End()
 	bob := WithPrincipal(t.Context(), Principal{ID: "bob@example.com"})
@@ -186,9 +186,10 @@ func TestTraceHistoryHTTPAndMCP(t *testing.T) {
 	assert.Equal(t, parent.SpanContext().SpanID().String(), view.ParentSpanID)
 	assert.Equal(t, "error", view.Status)
 	assert.Equal(t, map[string]string{"surla.change_id": "change-1"}, view.Attributes)
+	assert.Equal(t, cp1SafeFaultSummary(false, cp1FaultStorageSave), view.Summary)
 	raw, err := json.Marshal(page)
 	require.NoError(t, err)
-	for _, private := range []string{"alice@example.com", "bob@example.com", "private model content", "raw.secret", "/private/operator/key", "bob-private-error"} {
+	for _, private := range []string{"alice@example.com", "bob@example.com", "private storage content", "raw.secret", "/private/operator/key", "bob-private-error"} {
 		assert.NotContains(t, string(raw), private)
 	}
 
@@ -237,7 +238,7 @@ func TestTraceHistoryHTTPAndMCP(t *testing.T) {
 	}
 	ended := full.GetSpans()
 	require.GreaterOrEqual(t, len(ended), 4)
-	assert.Equal(t, "private model content", ended[0].Status.Description)
+	assert.Equal(t, "private storage content", ended[0].Status.Description)
 	assert.Equal(t, "exception", ended[0].Events[0].Name)
 	assert.Contains(t, ended[0].Attributes, attribute.String("raw.secret", "/private/operator/key"))
 	for _, span := range ended {

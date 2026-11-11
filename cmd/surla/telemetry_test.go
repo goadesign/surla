@@ -1,4 +1,5 @@
-// These tests use a local collector and scripted spans; no model or provider
+// These tests use a local collector and scripted spans shaped like the ones
+// propose_change and revise_change record today; no model or provider
 // requests are made. They verify the operator export and safe local view apart.
 package main
 
@@ -29,7 +30,20 @@ import (
 
 // TestStandaloneTelemetryKeepsFullOTLPAndSafeDiagnostics uses the actual OTLP
 // HTTP exporter, including the standard configured endpoint and flush path.
+// The scripted propose_change and revise_change spans carry the summaries and
+// status descriptions those operations record: a save fault and a storage
+// read fault, which the operator terminal prints with their private error
+// text, and a refused revision, which it does not print because a refused
+// analysis is not a server fault.
 func TestStandaloneTelemetryKeepsFullOTLPAndSafeDiagnostics(t *testing.T) {
+	const (
+		proposalSaveFault = "CP1 proposal could not confirm Change Card save; preserve your request, " +
+			"call get_change to check whether the card was saved, and ask the server operator to check private card storage before retrying."
+		revisionReadFault = "CP1 revision could not read Change Card storage (this request did not modify the Change Card); " +
+			"preserve your request and ask the server operator to check private card storage."
+		revisionRefused = "Change Card analysis broke a revision rule (this request did not modify the Change Card); " +
+			"correct the analysis and retry revise_change."
+	)
 	requests := make(chan []byte, 1)
 	collector := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "/v1/traces", r.URL.Path)
@@ -68,24 +82,27 @@ func TestStandaloneTelemetryKeepsFullOTLPAndSafeDiagnostics(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { assert.NoError(t, cp.Close()) })
 	auth := controlplane.WithPrincipal(t.Context(), controlplane.Principal{ID: "alice@example.com"})
-	ctx, failed := tp.Tracer("surla/controlplane").Start(auth, "surla.controlplane.propose_change")
+	_, failed := tp.Tracer("surla/controlplane").Start(auth, "surla.controlplane.propose_change")
 	failed.SetAttributes(
-		attribute.String(traceview.SummaryAttribute, "The response could not be used. Retry this request."),
-		attribute.String("surla.cp1.rejection_kind", "structured_output"),
-		attribute.String("raw.secret", "private-provider-content"),
+		attribute.String("surla.change_id", "chg-save-fault"),
+		attribute.String(traceview.SummaryAttribute, proposalSaveFault),
 	)
-	failed.RecordError(errors.New("private-provider-content"))
-	failed.SetStatus(codes.Error, "private-provider-content")
-	_, child := tp.Tracer("test").Start(ctx, "model.complete")
-	child.RecordError(errors.New("private-provider-content"))
-	child.SetStatus(codes.Error, "private-provider-content")
-	child.End()
+	failed.RecordError(errors.New("save change card: private-storage-content"))
+	failed.SetStatus(codes.Error, "save cp1 change card")
 	failed.End()
-	_, expected := tp.Tracer("surla/controlplane").Start(auth, "surla.controlplane.revise_change")
-	expected.End()
+	_, refused := tp.Tracer("surla/controlplane").Start(auth, "surla.controlplane.revise_change")
+	refused.SetAttributes(
+		attribute.String("surla.change_id", "chg-refused"),
+		attribute.String(traceview.SummaryAttribute, revisionRefused),
+	)
+	refused.End()
 	_, fault := tp.Tracer("surla/controlplane").Start(auth, "surla.controlplane.revise_change")
-	fault.RecordError(errors.New("provider rejected credentials: 401"))
-	fault.SetStatus(codes.Error, "revise cp1 change card")
+	fault.SetAttributes(
+		attribute.String("surla.change_id", "chg-read-fault"),
+		attribute.String(traceview.SummaryAttribute, revisionReadFault),
+	)
+	fault.RecordError(errors.New("decode change card: private-storage-content"))
+	fault.SetStatus(codes.Error, "load cp1 change card")
 	fault.End()
 	_, unowned := tp.Tracer("test").Start(t.Context(), "surla.controlplane.propose_change")
 	unowned.SetStatus(codes.Error, "unowned-private-content")
@@ -109,23 +126,26 @@ func TestStandaloneTelemetryKeepsFullOTLPAndSafeDiagnostics(t *testing.T) {
 			count += len(scope.Spans)
 		}
 	}
-	assert.Equal(t, 6, count, "full export preserves even spans outside the caller view")
-	assert.Contains(t, string(raw), "private-provider-content")
+	assert.Equal(t, 5, count, "full export preserves even spans outside the caller view")
+	assert.Contains(t, string(raw), "private-storage-content")
 	assert.Contains(t, string(raw), "unowned-private-content")
 	assert.NotContains(t, string(raw), "alice@example.com")
 	assert.NotContains(t, string(raw), "surla.principal_hash")
-	assert.Equal(t, 2, strings.Count(terminal.String(), "\n"))
-	assert.Contains(t, terminal.String(), "provider rejected credentials: 401")
-	assert.Contains(t, terminal.String(), "revise cp1 change card")
-	assert.Contains(t, terminal.String(), "The response could not be used. Retry this request.")
-	assert.Contains(t, terminal.String(), "private-provider-content")
+	assert.Equal(t, 2, strings.Count(terminal.String(), "\n"), "only the two faults are printed")
+	for _, want := range []string{
+		proposalSaveFault, "save cp1 change card", "save change card: private-storage-content",
+		revisionReadFault, "load cp1 change card", "decode change card: private-storage-content",
+	} {
+		assert.Contains(t, terminal.String(), want)
+	}
+	assert.NotContains(t, terminal.String(), revisionRefused, "a refused analysis is not printed as a fault")
 	page, err := cp.ListTraces(auth, &gensurla.ListTracesPayload{Status: "all", Limit: 100})
 	require.NoError(t, err)
 	require.Len(t, page.Spans, 1)
 	assert.Equal(t, "surla.controlplane.propose_change", page.Spans[0].Name)
 	safe, err := json.Marshal(page)
 	require.NoError(t, err)
-	assert.NotContains(t, string(safe), "private-provider-content")
+	assert.NotContains(t, string(safe), "private-storage-content")
 	assert.NotContains(t, string(safe), "unowned-private-content")
 	assert.NotContains(t, string(safe), "alice@example.com")
 }

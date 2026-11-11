@@ -3,8 +3,8 @@
 // operators: its exact text on success, refused analyses, conflicts, missing
 // or foreign cards and storage faults, error status only for real faults, and
 // that no span carries the caller's request content, bearer token or host
-// paths. Concurrent cases hold one request at its span start, after it read
-// the card and before it saves, so another request can change the card.
+// paths. Concurrent cases hold one request at its span start, before it
+// checks and saves the card, so another request can change the card.
 package controlplane
 
 import (
@@ -29,10 +29,11 @@ import (
 
 type (
 	// spanHold is a span processor that blocks the next span with a given
-	// name in OnStart, once armed, until the test releases it. propose_change
-	// and revise_change start their span after reading the card and before
-	// checking and saving, so a held request lets the test change the card in
-	// between.
+	// name in OnStart, once armed, until the test releases it.
+	// propose_change starts its span before it checks and saves the card, and
+	// revise_change after its first read of the card and before it checks it
+	// again and saves, so a held request lets the test change the card, or
+	// close the control plane, in between.
 	spanHold struct {
 		// name is the span name to hold.
 		name string
@@ -206,8 +207,8 @@ func TestCP1SpanSummariesAreCodeAuthoredAndExcludeRequestContent(t *testing.T) {
 }
 
 // TestCP1ConcurrentChangesKeepTheWinningCard holds one propose_change or
-// revise_change after it read the card and before it saves, changes the card
-// meanwhile, and checks that the held request refuses to overwrite the
+// revise_change at its span start, before it checks and saves the card,
+// changes the card meanwhile, and checks that the held request refuses to overwrite the
 // change, says in its span summary that only this request did not save, and
 // leaves the other request's card intact: a concurrent proposal of the same
 // change_id, a concurrent revision or confirmation, a card removed, a card

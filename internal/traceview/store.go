@@ -376,6 +376,10 @@ func decodeSpan(line []byte) (savedSpan, error) {
 }
 
 // diagnosticAttribute owns the closed set used by both writing and file loads.
+// No current operation writes surla.cp1.rejection_kind, but trace files
+// saved by earlier servers contain it on refused propose_change and
+// revise_change records, and every saved record must still load, so the key
+// stays in the set.
 func diagnosticAttribute(key string) bool {
 	switch key {
 	case "surla.change_id", "surla.run_id", "surla.cp1.rejection_kind",

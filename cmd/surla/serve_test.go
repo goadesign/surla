@@ -31,11 +31,8 @@ import (
 type (
 	// scriptedModelProvider is a model.Provider served by a local model
 	// gateway in tests, standing in for the model a live target plans with.
-	// It answers every Complete call with one fixed assistant text.
-	scriptedModelProvider struct {
-		// text is the assistant text returned for every Complete call.
-		text string
-	}
+	// It answers every Complete call with an empty assistant text.
+	scriptedModelProvider struct{}
 
 	// noopTargetUpdater is a TargetPromptUpdater stub used to verify CP3
 	// startup status formatting when a host binds TargetUpdater.
@@ -675,19 +672,19 @@ surla: CP5 (approve_merge): off (set -promotion-config, or run surla approve on 
 	}
 }
 
-// Complete returns the scripted assistant text.
-func (p *scriptedModelProvider) Complete(context.Context, *model.Request) (*model.Response, error) {
+// Complete returns an empty assistant text.
+func (*scriptedModelProvider) Complete(context.Context, *model.Request) (*model.Response, error) {
 	return &model.Response{
 		Content: []model.Message{{
 			Role:  model.ConversationRoleAssistant,
-			Parts: []model.Part{model.TextPart{Text: p.text}},
+			Parts: []model.Part{model.TextPart{}},
 		}},
 		StopReason: "stop",
 	}, nil
 }
 
 // Stream is unused: callers of this provider only call Complete.
-func (p *scriptedModelProvider) Stream(context.Context, *model.Request) (model.Streamer, error) {
+func (*scriptedModelProvider) Stream(context.Context, *model.Request) (model.Streamer, error) {
 	return nil, errors.New("streaming is not scripted")
 }
 

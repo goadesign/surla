@@ -12,6 +12,7 @@ import (
 	gensurla "github.com/goadesign/surla/gen/surla"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 )
 
 // TestCardsSurviveANewControlPlane confirms a card, closes the control plane,
@@ -147,6 +148,81 @@ func TestRequestsFinishingAfterCloseDoNotWrite(t *testing.T) {
 	require.True(t, ok)
 	assert.Nil(t, saved.card.Approval, "and writes nothing to the directory the next control plane holds")
 	assert.NoError(t, cp.Close(), "closing twice does nothing")
+}
+
+// TestProposalsAndRevisionsFinishingAfterCloseDoNotWrite holds a
+// propose_change or revise_change at its span start, before it checks and
+// saves the card, closes the control plane, lets a new control plane take
+// the cards directory, and then releases the request. The request fails with
+// errCardsClosed and writes nothing to the directory the new control plane
+// holds: no card for a proposal, and the card unchanged for a revision.
+func TestProposalsAndRevisionsFinishingAfterCloseDoNotWrite(t *testing.T) {
+	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
+	// open returns a control plane on a new cards directory whose next span
+	// named held stops at its start until hold is released.
+	open := func(t *testing.T, held string) (*ControlPlane, *spanHold, string) {
+		t.Helper()
+		dir := t.TempDir()
+		hold := &spanHold{name: held, started: make(chan struct{}), release: make(chan struct{})}
+		tp := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(hold))
+		t.Cleanup(func() { assert.NoError(t, tp.Shutdown(context.Background())) })
+		return newControlPlane(t, Options{CardsDir: dir, TracerProvider: tp}), hold, dir
+	}
+
+	t.Run("propose_change", func(t *testing.T) {
+		cp, hold, dir := open(t, "surla.controlplane.propose_change")
+		hold.armed.Store(true)
+		done := hold.run(t, func() error {
+			_, err := cp.ProposeChange(alice, &gensurla.ProposeChangePayload{
+				ChangeID: "late", Prompt: "Refunds up to $50 are instant.", Analysis: refundAnalysis("Refunds up to $50 are instant."),
+			})
+			return err
+		})
+		require.NoError(t, cp.Close())
+		next := newControlPlane(t, Options{CardsDir: dir})
+		hold.releaseOnce()
+
+		assert.ErrorIs(t, awaitHeld(t, done), errCardsClosed, "the proposal that outlived Close fails")
+		_, saved, err := next.cards.load("late")
+		require.NoError(t, err)
+		assert.False(t, saved, "and saves no card in the directory the next control plane holds")
+	})
+
+	t.Run("revise_change", func(t *testing.T) {
+		cp, hold, dir := open(t, "surla.controlplane.revise_change")
+		card := mustPropose(t, cp, alice, "chg", "Refunds up to $50 are instant.", refundAnalysis("Refunds up to $50 are instant."))
+		before, err := os.ReadFile(cp.cards.path("chg"))
+		require.NoError(t, err)
+		hold.armed.Store(true)
+		check01 := "check_01"
+		done := hold.run(t, func() error {
+			_, err := cp.ReviseChange(alice, &gensurla.ReviseChangePayload{
+				ChangeID: "chg", RequestRevision: card.RequestRevision, Prompt: "Refunds up to $60 are instant.",
+				Analysis: &gensurla.CP1RevisionAnalysis{
+					Summary:     "Refunds up to $60 are instant.",
+					Ambiguities: []*gensurla.CP1AnalysisAmbiguity{},
+					Examples: []*gensurla.CP1RevisionAnalysisExample{{
+						PriorID: &check01, Scenario: "Refund at the limit", InputSummary: "Order total $60.00",
+						ExpectedOutcome: "Instant store credit", VerificationKind: "deterministic",
+					}},
+					RemovedExampleIds:  []string{},
+					PreservedBehaviors: []string{},
+				},
+			})
+			return err
+		})
+		require.NoError(t, cp.Close())
+		next := newControlPlane(t, Options{CardsDir: dir})
+		hold.releaseOnce()
+
+		assert.ErrorIs(t, awaitHeld(t, done), errCardsClosed, "the revision that outlived Close fails")
+		after, err := os.ReadFile(next.cards.path("chg"))
+		require.NoError(t, err)
+		assert.Equal(t, string(before), string(after), "and leaves the card in the directory the next control plane holds unchanged")
+		got, err := next.GetChange(alice, &gensurla.GetChangePayload{ChangeID: "chg"})
+		require.NoError(t, err)
+		assert.Equal(t, card.RequestRevision, got.RequestRevision)
+	})
 }
 
 // TestAFailedSaveKeepsThePreviousCard makes the directory read-only and
