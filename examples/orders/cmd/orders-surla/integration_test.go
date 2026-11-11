@@ -149,6 +149,50 @@ func TestMCPAndTargetFailuresNeverSaveAnOverride(t *testing.T) {
 	assert.Contains(t, string(result.Content), "no promotion target")
 }
 
+// TestMCPProposalNeedsNoModelAndStaysWithItsOperator sends propose_change with
+// the caller's own analysis to a host that has no model connection. The host
+// saves the Change Card for the authenticated operator, get_change returns the
+// same card, and the orders API receives no request.
+func TestMCPProposalNeedsNoModelAndStaysWithItsOperator(t *testing.T) {
+	target := newTarget(t)
+	host := newHost(t, target.server.URL, targetToken(t, "prompts:manage"))
+	args, err := gensurlatools.MarshalProposeChangePayload(&gensurlatools.ProposeChangePayload{
+		ChangeID: "one-sentence-refund-answers",
+		Prompt:   "Refund answers should fit in one sentence.",
+		Analysis: &gensurlatools.CP1Analysis{
+			Summary:     "Keep refund answers to one sentence.",
+			Ambiguities: []*gensurlatools.CP1AnalysisAmbiguity{},
+			Examples: []*gensurlatools.CP1AnalysisExample{{
+				Scenario:         "Customer asks where a refund is",
+				InputSummary:     "A customer with one pending refund asks for its status",
+				ExpectedOutcome:  "The answer is a single sentence",
+				VerificationKind: "model_judged",
+			}},
+			PreservedBehaviors: []string{"Refunds above the limit still wait for a manager."},
+		},
+	})
+	require.NoError(t, err)
+	result := callTool(t, host, "propose_change", args)
+	require.False(t, result.IsError, "%s", result.Content)
+	proposed, err := gensurlatools.UnmarshalProposeChangeResult(result.StructuredContent)
+	require.NoError(t, err)
+	assert.Equal(t, "confirmed", proposed.Status, "a proposal with no open question needs no answer")
+	require.NotNil(t, proposed.ConfirmedBy)
+	assert.Equal(t, "operator", *proposed.ConfirmedBy)
+	require.Len(t, proposed.Examples, 1)
+	assert.Equal(t, "check_01", proposed.Examples[0].ID)
+	assert.Equal(t, "The answer is a single sentence", proposed.Examples[0].ExpectedOutcome)
+	args, err = gensurlatools.MarshalGetChangePayload(&gensurlatools.GetChangePayload{ChangeID: proposed.ChangeID})
+	require.NoError(t, err)
+	result = callTool(t, host, "get_change", args)
+	require.False(t, result.IsError, "%s", result.Content)
+	saved, err := gensurlatools.UnmarshalGetChangeResult(result.StructuredContent)
+	require.NoError(t, err)
+	assert.Equal(t, proposed.RequestRevision, saved.RequestRevision)
+	assert.Equal(t, proposed.Examples, saved.Examples)
+	assert.Equal(t, int64(0), target.updates.Load(), "proposing a change never calls the orders API")
+}
+
 // TestTargetRedirectNeverReceivesAnOperationOrCredential proves that a
 // response cannot choose another recipient or replace a PUT with a GET that
 // falsely reports success. Both servers use the same host and different
