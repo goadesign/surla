@@ -437,16 +437,13 @@ Serving the current checkpoint HTML over HTTP is existing behavior; a working
 standalone-page client and timeline-to-guide editing handoff remain to build.
 The current guest requires an MCP Apps parent and supplies neither that
 standalone client nor a host-chat message method. A prototype export does not
-prove those interactions work. Live provider and host studies remain subject
-to their existing hold; deterministic checks must not be described as live
-evidence.
+prove those interactions work. Deterministic checks must not be described as
+evidence from real model execution or host interaction.
 
 ### Review and verification limits
 
-This proposal needs one independent review before it is frozen. Review must
-check that scoped workers and authoring ownership support the journey without
-giving builders grader-selection authority, that Story-only input works
-before architecture exists, and that legacy verification callers retain their
-behavior. Real attached-host enforcement and managed model execution remain
-unverified until those adapters exist and can be tested under the separate
-live-run authorization.
+The implementation must preserve scoped-worker and authoring ownership, keep
+Story-only input usable before architecture exists, and retain legacy
+verification behavior. Managed model execution and attached-host permission
+enforcement require integration checks against real adapters; mocked
+transports alone do not establish those properties.
