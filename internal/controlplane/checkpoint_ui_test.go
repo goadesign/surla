@@ -28,15 +28,15 @@ func TestCheckpointUIMCPAppsHandshakeAndToolResultRendering(t *testing.T) {
 		t.Skip("runs the sandboxed Go toolchain; the full suite (go test without -short) covers it")
 	}
 	ctx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
-	analysisJSON, err := json.Marshal(CP1SemanticAnalysis{
+	analysis := &gensurla.CP1Analysis{
 		Summary: "Route refunds >= $50 to manager approval.",
-		Ambiguities: []CP1ModelAmbiguity{
+		Ambiguities: []*gensurla.CP1AnalysisAmbiguity{
 			{
 				Question: "Does the $50 limit include tax?",
 				Options:  []string{"subtotal_only", "total_with_tax"},
 			},
 		},
-		Examples: []CP1ModelExample{
+		Examples: []*gensurla.CP1AnalysisExample{
 			{
 				Scenario:         "Refund under $50",
 				InputSummary:     "$40 subtotal",
@@ -45,9 +45,6 @@ func TestCheckpointUIMCPAppsHandshakeAndToolResultRendering(t *testing.T) {
 			},
 		},
 		PreservedBehaviors: []string{"Cross-tenant lookups return 404."},
-	})
-	if err != nil {
-		t.Fatalf("marshal analysis: %v", err)
 	}
 
 	targetStore := prompt.NewInMemoryStore()
@@ -60,7 +57,6 @@ func TestCheckpointUIMCPAppsHandshakeAndToolResultRendering(t *testing.T) {
 		},
 	}
 	cp := newControlPlane(t, Options{
-		Analyzer:        NewModelCP1Analyzer(newStubModelClient(t, string(analysisJSON))),
 		TargetUpdater:   &boundTargetPromptUpdater{store: targetStore},
 		PromotionTarget: promotionTarget,
 		SwarmProfiles: []swarm.ProviderProfile{
@@ -115,9 +111,10 @@ func TestCheckpointUIMCPAppsHandshakeAndToolResultRendering(t *testing.T) {
 	}
 
 	// Execute real MCP ToolsCall operations for CP1, CP2, and CP3 to obtain wire results.
-	proposeArgs, err := json.Marshal(map[string]any{
-		"change_id": "chg-ui-test",
-		"prompt":    "Route refunds >= $50 to manager approval.",
+	proposeArgs, err := gensurla.EncodeProposeChangePayload(&gensurla.ProposeChangePayload{
+		ChangeID: "chg-ui-test",
+		Prompt:   "Route refunds >= $50 to manager approval.",
+		Analysis: analysis,
 	})
 	if err != nil {
 		t.Fatalf("marshal proposeArgs: %v", err)

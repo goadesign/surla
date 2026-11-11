@@ -681,8 +681,9 @@ export function validateCompletedOpenUI(
   return { ok: true };
 }
 
-// generateDecisionCatalogMarkdown exports the OpenUI prompt catalog for embedding
-// in the Go controlplane's CP1 semantic analyzer prompt.
+// generateDecisionCatalogMarkdown exports the OpenUI component catalog that the
+// surla://golden-path resource serves to a coding agent composing the optional
+// ui_composition of a propose_change or revise_change analysis.
 export function generateDecisionCatalogMarkdown(): string {
   return surlaDecisionLibrary.prompt({
     preamble:

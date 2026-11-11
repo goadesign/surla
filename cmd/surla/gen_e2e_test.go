@@ -75,7 +75,7 @@ func TestGenOnAFreshStarterChangesNothingAndKeepsModulesApart(t *testing.T) {
 	for _, name := range []string{"ANTHROPIC_API_KEY", "OPENAI_API_KEY", liveModelGatewayEnv, liveModelProviderEnv, liveModelNameEnv} {
 		t.Setenv(name, "")
 	}
-	provider := &scriptedCP1Provider{}
+	provider := &scriptedModelProvider{}
 	gatewayAddr := startModelGateway(t, provider)
 	workspace := t.TempDir()
 	cfg := serveConfig{
@@ -88,7 +88,6 @@ func TestGenOnAFreshStarterChangesNothingAndKeepsModulesApart(t *testing.T) {
 	}
 	opts, err := serveOptions(cfg, func(string) string { return "" }, os.Environ())
 	require.NoError(t, err)
-	opts.Analyzer = trustedSuiteAnalyzer{}
 	// A test executable has no released module version in its build info.
 	opts.SurlaVersion = starterSurlaVersion
 	cp, err := controlplane.New(opts)

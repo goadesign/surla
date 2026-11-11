@@ -141,17 +141,18 @@ func TestImportLegacyWorkspaceSnapshotsConfiguredPromotionReportsAndIsolatesRoot
 	seedCardsDir := filepath.Join(root, "seed-cards")
 	seedCP, err := controlplane.New(controlplane.Options{
 		CardsDir: seedCardsDir,
-		Analyzer: confirmedAnalyzer{},
 	})
 	require.NoError(t, err)
 	cardExisting, err := seedCP.ProposeChange(alice, &gensurla.ProposeChangePayload{
 		ChangeID: "chg-existing",
 		Prompt:   "Refunds up to $50 are instant.",
+		Analysis: confirmedAnalysis(),
 	})
 	require.NoError(t, err)
 	cardNew, err := seedCP.ProposeChange(alice, &gensurla.ProposeChangePayload{
 		ChangeID: "chg-new",
 		Prompt:   "Refunds up to $50 are instant.",
+		Analysis: confirmedAnalysis(),
 	})
 	require.NoError(t, err)
 	require.NoError(t, seedCP.Close())
@@ -610,12 +611,12 @@ func TestConfigureServeWorkspaceMonorepoSeparationAndLegacyImport(t *testing.T) 
 	seedCardsDir := filepath.Join(root, "seed-cards-b")
 	seedCP, err := controlplane.New(controlplane.Options{
 		CardsDir: seedCardsDir,
-		Analyzer: confirmedAnalyzer{},
 	})
 	require.NoError(t, err)
 	cardB, err := seedCP.ProposeChange(alice, &gensurla.ProposeChangePayload{
 		ChangeID: "chg-mono-2",
 		Prompt:   "Refunds up to $50 are instant.",
+		Analysis: confirmedAnalysis(),
 	})
 	require.NoError(t, err)
 	require.NoError(t, seedCP.Close())
@@ -724,16 +725,13 @@ func isolateServeWorkspace(t *testing.T) string {
 	return wsDir
 }
 
-// closeServeOptions releases the evaluator, analyzer, and project lock owned by
-// opts when a test constructs serveOptions without handing opts to
+// closeServeOptions releases the evaluator and project lock owned by opts
+// when a test constructs serveOptions without handing opts to
 // controlplane.New.
 func closeServeOptions(t *testing.T, opts controlplane.Options) {
 	t.Helper()
 	if opts.Evaluator != nil {
 		assert.NoError(t, opts.Evaluator.Close())
-	}
-	if opts.CloseAnalyzer != nil {
-		assert.NoError(t, opts.CloseAnalyzer())
 	}
 	if opts.CloseProjectLock != nil {
 		assert.NoError(t, opts.CloseProjectLock())
@@ -903,11 +901,11 @@ func TestConfigureServeWorkspaceKeepsHistoryAcrossSpellingsOfTheWorkspace(t *tes
 				}
 				ws, err := configureServeWorkspace(cfg)
 				require.NoError(t, err, st)
-				cp, err := controlplane.New(controlplane.Options{CardsDir: ws.cardsDir, WorkspaceDir: ws.workspaceDir, RunsDir: ws.runsDir, Analyzer: confirmedAnalyzer{}})
+				cp, err := controlplane.New(controlplane.Options{CardsDir: ws.cardsDir, WorkspaceDir: ws.workspaceDir, RunsDir: ws.runsDir})
 				require.NoError(t, err, st)
 				if i == 0 {
 					first = ws
-					_, err = cp.ProposeChange(alice, &gensurla.ProposeChangePayload{ChangeID: "chg-1", Prompt: "Refunds up to $50 are instant."})
+					_, err = cp.ProposeChange(alice, &gensurla.ProposeChangePayload{ChangeID: "chg-1", Prompt: "Refunds up to $50 are instant.", Analysis: confirmedAnalysis()})
 					require.NoError(t, err)
 				} else {
 					assert.Equal(t, first.workspaceDir, ws.workspaceDir, st)

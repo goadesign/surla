@@ -41,12 +41,12 @@ func ToolSchemas() []*genregistry.ToolSchema {
 		declarations.schema374(),
 		declarations.schema423(),
 		declarations.schema528(),
-		declarations.schema589(),
-		declarations.schema604(),
-		declarations.schema667(),
-		declarations.schema679(),
-		declarations.schema688(),
-		declarations.schema699(),
+		declarations.schema621(),
+		declarations.schema636(),
+		declarations.schema737(),
+		declarations.schema749(),
+		declarations.schema758(),
+		declarations.schema769(),
 	}
 } // schema1 constructs one generated schema declaration.
 func (declarations registryDeclarations) schema1() *genregistry.ToolSchema {
@@ -56,7 +56,7 @@ func (declarations registryDeclarations) schema1() *genregistry.ToolSchema {
 		Description:            &registryText1,
 		PayloadSchema:          []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Identifies the confirmed Change Card revision, the candidate commit being promoted, and the evaluator-written verification report to check. The report itself and the expected suite, environment and binary digests come from the control plane's promotion target, never from the caller.\",\"properties\":{\"candidate_commit\":{\"description\":\"Full commit ID of the candidate being promoted (40 or 64 lowercase hex characters).\",\"pattern\":\"^([0-9a-f]{40}|[0-9a-f]{64})$\",\"type\":\"string\"},\"change_id\":{\"description\":\"Confirmed Change Card identifier.\",\"type\":\"string\"},\"report_digest\":{\"description\":\"SHA-256 digest of the CP4 verification report written by surla verify (64 lowercase hex characters).\",\"pattern\":\"^[0-9a-f]{64}$\",\"type\":\"string\"},\"request_revision\":{\"description\":\"Current request_revision of the confirmed Change Card.\",\"type\":\"string\"}},\"required\":[\"change_id\",\"request_revision\",\"candidate_commit\",\"report_digest\"],\"type\":\"object\"}"),
 		ExecutionPayloadSchema: []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Identifies the confirmed Change Card revision, the candidate commit being promoted, and the evaluator-written verification report to check. The report itself and the expected suite, environment and binary digests come from the control plane's promotion target, never from the caller.\",\"properties\":{\"candidate_commit\":{\"description\":\"Full commit ID of the candidate being promoted (40 or 64 lowercase hex characters).\",\"pattern\":\"^([0-9a-f]{40}|[0-9a-f]{64})$\",\"type\":\"string\"},\"change_id\":{\"description\":\"Confirmed Change Card identifier.\",\"type\":\"string\"},\"report_digest\":{\"description\":\"SHA-256 digest of the CP4 verification report written by surla verify (64 lowercase hex characters).\",\"pattern\":\"^[0-9a-f]{64}$\",\"type\":\"string\"},\"request_revision\":{\"description\":\"Current request_revision of the confirmed Change Card.\",\"type\":\"string\"}},\"required\":[\"change_id\",\"request_revision\",\"candidate_commit\",\"report_digest\"],\"type\":\"object\"}"),
-		ResultSchema:           []byte("{\"$defs\":{\"AmbiguityQuestion\":{\"additionalProperties\":false,\"description\":\"Domain ambiguity surfaced with concrete examples at Checkpoint 1.\",\"properties\":{\"id\":{\"description\":\"Stable question identifier.\",\"type\":\"string\"},\"options\":{\"description\":\"Concrete resolution choices.\",\"items\":{\"type\":\"string\"},\"type\":\"array\"},\"question\":{\"description\":\"Plain-English question for the operator.\",\"type\":\"string\"}},\"required\":[\"id\",\"question\",\"options\"],\"title\":\"AmbiguityQuestion\",\"type\":\"object\"},\"ApprovalItem\":{\"additionalProperties\":false,\"description\":\"Checkpoint 5 approval recorded by approve_merge after the evaluator-written verification report passed and matched the change being promoted: the exact candidate commit, suite, environment and binary digests it checked. It is saved with the card in the control plane's cards directory, merges and deploys nothing, is replaced by the next successful approve_merge for the same revision, and is dropped when confirm_intent or revise_change mints a new request_revision. get_change and confirm_intent return it in approval only while the promotion target's current suite, environment and binary digests still equal the ones it records, or in unverified_approval when current promotion inputs cannot be verified on that read.\",\"properties\":{\"approved_by\":{\"description\":\"Authenticated bearer principal that owns the card and called approve_merge. Bearer authentication does not prove that a human, rather than a coding agent, made the call.\",\"type\":\"string\"},\"artifacts\":{\"additionalProperties\":{\"type\":\"string\"},\"description\":\"SHA-256 digest of each candidate binary the promotion target measured, keyed by binary name.\",\"type\":\"object\"},\"candidate_commit\":{\"description\":\"Candidate commit the report was checked against.\",\"type\":\"string\"},\"environment\":{\"description\":\"Dependency profile the promotion target requires, such as sim.\",\"type\":\"string\"},\"report_digest\":{\"description\":\"SHA-256 digest of the approved CP4 verification report.\",\"type\":\"string\"},\"scenario_count\":{\"description\":\"Number of declared evaluator scenarios, every one of which passed.\",\"format\":\"int64\",\"type\":\"integer\"},\"suite_commit\":{\"description\":\"Evaluator suite commit the promotion target requires.\",\"type\":\"string\"},\"suite_id\":{\"description\":\"Evaluator suite the promotion target requires.\",\"type\":\"string\"}},\"required\":[\"approved_by\",\"report_digest\",\"candidate_commit\",\"suite_id\",\"suite_commit\",\"environment\",\"artifacts\",\"scenario_count\"],\"title\":\"ApprovalItem\",\"type\":\"object\"},\"ExampleItem\":{\"additionalProperties\":false,\"description\":\"Concrete input and expected outcome confirmed at Checkpoint 1.\",\"properties\":{\"expected_outcome\":{\"description\":\"Expected side effect and response behavior.\",\"type\":\"string\"},\"id\":{\"description\":\"Stable example identifier. Default code-assigned IDs use check_01, check_02, ... (valid goa-ai/eval Scenario names). confirm_intent preserves caller-chosen IDs.\",\"type\":\"string\"},\"input_summary\":{\"description\":\"Representative user request and domain fixture state.\",\"type\":\"string\"},\"scenario\":{\"description\":\"Plain-English scenario description.\",\"type\":\"string\"},\"verification_kind\":{\"description\":\"Evaluator check classification (deterministic or model_judged).\",\"enum\":[\"deterministic\",\"model_judged\"],\"type\":\"string\"}},\"required\":[\"id\",\"scenario\",\"input_summary\",\"expected_outcome\",\"verification_kind\"],\"title\":\"ExampleItem\",\"type\":\"object\"},\"UICompositionItem\":{\"additionalProperties\":false,\"description\":\"Model-authored OpenUI Lang decision view for exactly one Change Card revision. It is presentation only: it is never hashed into request_revision, confirm_intent never reads it, and it describes the card only while composed_for_revision equals the card's request_revision.\",\"properties\":{\"composed_for_revision\":{\"description\":\"request_revision of the Change Card this program was composed for.\",\"type\":\"string\"},\"program\":{\"description\":\"OpenUI Lang program composed by the CP1 model from the Surla decision component catalog, exactly as the model returned it. The server does not check it; the checkpoint viewer validates it and shows its error state, with the rest of the card still usable, when the program is not a valid composition.\",\"type\":\"string\"}},\"required\":[\"program\",\"composed_for_revision\"],\"title\":\"UICompositionItem\",\"type\":\"object\"},\"UnverifiedApprovalItem\":{\"additionalProperties\":false,\"description\":\"Saved Checkpoint 5 promotion approval recorded on the Change Card whose current promotion inputs could not be verified on this read.\",\"properties\":{\"approval\":{\"$ref\":\"#/$defs/ApprovalItem\",\"description\":\"Recorded promotion approval from the Change Card.\"},\"reason\":{\"description\":\"Explanation of why the recorded approval could not be verified against current promotion inputs and how to recover.\",\"type\":\"string\"}},\"required\":[\"approval\",\"reason\"],\"title\":\"UnverifiedApprovalItem\",\"type\":\"object\"}},\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Checkpoint 1 Change Card containing examples, preserved behaviors, and audit metadata.\",\"properties\":{\"ambiguities\":{\"description\":\"Domain questions surfaced at CP1, retained for audit after confirmation.\",\"items\":{\"$ref\":\"#/$defs/AmbiguityQuestion\"},\"type\":\"array\"},\"answers\":{\"additionalProperties\":{\"type\":\"string\"},\"description\":\"Owner-confirmed answers keyed by ambiguity question ID when status is confirmed and ambiguities is non-empty (empty when a confirmed card has no ambiguity questions). Each answer equals one of its question's declared options and takes precedence over open phrasing in summary.\",\"type\":\"object\"},\"approval\":{\"$ref\":\"#/$defs/ApprovalItem\",\"description\":\"Checkpoint 5 approval of this revision, present only while it is verified against the promotion target's current inputs on this read. It is absent before approve_merge succeeds, whenever the target's suite, environment or binary digests have changed since, and whenever current inputs cannot be verified (see unverified_approval). It is never hashed into request_revision.\"},\"change_id\":{\"description\":\"Change identifier.\",\"type\":\"string\"},\"confirmed_by\":{\"description\":\"Authenticated principal that confirmed the Change Card.\",\"type\":\"string\"},\"examples\":{\"description\":\"Concrete examples mapped to evaluator checks.\",\"items\":{\"$ref\":\"#/$defs/ExampleItem\"},\"type\":\"array\"},\"preserved_behaviors\":{\"description\":\"Existing contract invariants preserved by this change.\",\"items\":{\"type\":\"string\"},\"type\":\"array\"},\"prompt\":{\"description\":\"Operator feature request for this revision.\",\"type\":\"string\"},\"request_revision\":{\"description\":\"SHA-256 digest of the canonical versioned Change Card.\",\"type\":\"string\"},\"status\":{\"description\":\"Checkpoint status (needs_confirmation or confirmed).\",\"enum\":[\"needs_confirmation\",\"confirmed\"],\"type\":\"string\"},\"summary\":{\"description\":\"Plain-English summary of the proposed change from propose_change or revise_change. confirm_intent does not rewrite this text; when status is confirmed, answers records the owner's resolutions for ambiguities.\",\"type\":\"string\"},\"ui_composition\":{\"$ref\":\"#/$defs/UICompositionItem\",\"description\":\"Decision view the CP1 model composed for this revision, when it produced one. A confirm_intent that changes answers or examples returns the new revision without it.\"},\"unverified_approval\":{\"$ref\":\"#/$defs/UnverifiedApprovalItem\",\"description\":\"Saved Checkpoint 5 approval of this revision when current promotion inputs could not be verified on this read (because no promotion target is configured or the target could not report its current inputs). At most one of approval or unverified_approval is set. It is never saved to disk or hashed into request_revision.\"}},\"required\":[\"change_id\",\"status\",\"prompt\",\"summary\",\"examples\",\"preserved_behaviors\",\"request_revision\"],\"type\":\"object\"}"),
+		ResultSchema:           []byte("{\"$defs\":{\"AmbiguityQuestion\":{\"additionalProperties\":false,\"description\":\"Domain ambiguity surfaced with concrete examples at Checkpoint 1.\",\"properties\":{\"id\":{\"description\":\"Stable question identifier.\",\"type\":\"string\"},\"options\":{\"description\":\"Concrete resolution choices.\",\"items\":{\"type\":\"string\"},\"type\":\"array\"},\"question\":{\"description\":\"Plain-English question for the operator.\",\"type\":\"string\"}},\"required\":[\"id\",\"question\",\"options\"],\"title\":\"AmbiguityQuestion\",\"type\":\"object\"},\"ApprovalItem\":{\"additionalProperties\":false,\"description\":\"Checkpoint 5 approval recorded by approve_merge after the evaluator-written verification report passed and matched the change being promoted: the exact candidate commit, suite, environment and binary digests it checked. It is saved with the card in the control plane's cards directory, merges and deploys nothing, is replaced by the next successful approve_merge for the same revision, and is dropped when confirm_intent or revise_change mints a new request_revision. get_change and confirm_intent return it in approval only while the promotion target's current suite, environment and binary digests still equal the ones it records, or in unverified_approval when current promotion inputs cannot be verified on that read.\",\"properties\":{\"approved_by\":{\"description\":\"Authenticated bearer principal that owns the card and called approve_merge. Bearer authentication does not prove that a human, rather than a coding agent, made the call.\",\"type\":\"string\"},\"artifacts\":{\"additionalProperties\":{\"type\":\"string\"},\"description\":\"SHA-256 digest of each candidate binary the promotion target measured, keyed by binary name.\",\"type\":\"object\"},\"candidate_commit\":{\"description\":\"Candidate commit the report was checked against.\",\"type\":\"string\"},\"environment\":{\"description\":\"Dependency profile the promotion target requires, such as sim.\",\"type\":\"string\"},\"report_digest\":{\"description\":\"SHA-256 digest of the approved CP4 verification report.\",\"type\":\"string\"},\"scenario_count\":{\"description\":\"Number of declared evaluator scenarios, every one of which passed.\",\"format\":\"int64\",\"type\":\"integer\"},\"suite_commit\":{\"description\":\"Evaluator suite commit the promotion target requires.\",\"type\":\"string\"},\"suite_id\":{\"description\":\"Evaluator suite the promotion target requires.\",\"type\":\"string\"}},\"required\":[\"approved_by\",\"report_digest\",\"candidate_commit\",\"suite_id\",\"suite_commit\",\"environment\",\"artifacts\",\"scenario_count\"],\"title\":\"ApprovalItem\",\"type\":\"object\"},\"ExampleItem\":{\"additionalProperties\":false,\"description\":\"Concrete input and expected outcome confirmed at Checkpoint 1.\",\"properties\":{\"expected_outcome\":{\"description\":\"Expected side effect and response behavior.\",\"type\":\"string\"},\"id\":{\"description\":\"Stable example identifier. Default code-assigned IDs use check_01, check_02, ... (valid goa-ai/eval Scenario names). confirm_intent preserves caller-chosen IDs.\",\"type\":\"string\"},\"input_summary\":{\"description\":\"Representative user request and domain fixture state.\",\"type\":\"string\"},\"scenario\":{\"description\":\"Plain-English scenario description.\",\"type\":\"string\"},\"verification_kind\":{\"description\":\"Evaluator check classification (deterministic or model_judged).\",\"enum\":[\"deterministic\",\"model_judged\"],\"type\":\"string\"}},\"required\":[\"id\",\"scenario\",\"input_summary\",\"expected_outcome\",\"verification_kind\"],\"title\":\"ExampleItem\",\"type\":\"object\"},\"UICompositionItem\":{\"additionalProperties\":false,\"description\":\"Caller-authored OpenUI Lang decision view for exactly one Change Card revision. It is presentation only: it is never hashed into request_revision, confirm_intent never reads it, and it describes the card only while composed_for_revision equals the card's request_revision.\",\"properties\":{\"composed_for_revision\":{\"description\":\"request_revision of the Change Card this program was composed for.\",\"type\":\"string\"},\"program\":{\"description\":\"OpenUI Lang program from the analysis's ui_composition, exactly as the caller sent it. The server does not check it; the checkpoint viewer validates it and shows its error state, with the rest of the card still usable, when the program is not a valid composition.\",\"type\":\"string\"}},\"required\":[\"program\",\"composed_for_revision\"],\"title\":\"UICompositionItem\",\"type\":\"object\"},\"UnverifiedApprovalItem\":{\"additionalProperties\":false,\"description\":\"Saved Checkpoint 5 promotion approval recorded on the Change Card whose current promotion inputs could not be verified on this read.\",\"properties\":{\"approval\":{\"$ref\":\"#/$defs/ApprovalItem\",\"description\":\"Recorded promotion approval from the Change Card.\"},\"reason\":{\"description\":\"Explanation of why the recorded approval could not be verified against current promotion inputs and how to recover.\",\"type\":\"string\"}},\"required\":[\"approval\",\"reason\"],\"title\":\"UnverifiedApprovalItem\",\"type\":\"object\"}},\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Checkpoint 1 Change Card containing examples, preserved behaviors, and audit metadata.\",\"properties\":{\"ambiguities\":{\"description\":\"Domain questions surfaced at CP1, retained for audit after confirmation.\",\"items\":{\"$ref\":\"#/$defs/AmbiguityQuestion\"},\"type\":\"array\"},\"answers\":{\"additionalProperties\":{\"type\":\"string\"},\"description\":\"Owner-confirmed answers keyed by ambiguity question ID when status is confirmed and ambiguities is non-empty (empty when a confirmed card has no ambiguity questions). Each answer equals one of its question's declared options and takes precedence over open phrasing in summary.\",\"type\":\"object\"},\"approval\":{\"$ref\":\"#/$defs/ApprovalItem\",\"description\":\"Checkpoint 5 approval of this revision, present only while it is verified against the promotion target's current inputs on this read. It is absent before approve_merge succeeds, whenever the target's suite, environment or binary digests have changed since, and whenever current inputs cannot be verified (see unverified_approval). It is never hashed into request_revision.\"},\"change_id\":{\"description\":\"Change identifier.\",\"type\":\"string\"},\"confirmed_by\":{\"description\":\"Authenticated principal that confirmed the Change Card.\",\"type\":\"string\"},\"examples\":{\"description\":\"Concrete examples mapped to evaluator checks.\",\"items\":{\"$ref\":\"#/$defs/ExampleItem\"},\"type\":\"array\"},\"preserved_behaviors\":{\"description\":\"Existing contract invariants preserved by this change.\",\"items\":{\"type\":\"string\"},\"type\":\"array\"},\"prompt\":{\"description\":\"Operator feature request for this revision.\",\"type\":\"string\"},\"request_revision\":{\"description\":\"SHA-256 digest of the canonical versioned Change Card.\",\"type\":\"string\"},\"status\":{\"description\":\"Checkpoint status (needs_confirmation or confirmed).\",\"enum\":[\"needs_confirmation\",\"confirmed\"],\"type\":\"string\"},\"summary\":{\"description\":\"Plain-English summary of the proposed change from propose_change or revise_change. confirm_intent does not rewrite this text; when status is confirmed, answers records the owner's resolutions for ambiguities.\",\"type\":\"string\"},\"ui_composition\":{\"$ref\":\"#/$defs/UICompositionItem\",\"description\":\"Decision view the caller composed for this revision in its analysis, when it sent one. A confirm_intent that changes answers or examples returns the new revision without it.\"},\"unverified_approval\":{\"$ref\":\"#/$defs/UnverifiedApprovalItem\",\"description\":\"Saved Checkpoint 5 approval of this revision when current promotion inputs could not be verified on this read (because no promotion target is configured or the target could not report its current inputs). At most one of approval or unverified_approval is set. It is never saved to disk or hashed into request_revision.\"}},\"required\":[\"change_id\",\"status\",\"prompt\",\"summary\",\"examples\",\"preserved_behaviors\",\"request_revision\"],\"type\":\"object\"}"),
 		ConsumerContract: &genregistry.ConsumerContract{
 			Kind:  "service",
 			Title: "Approve Merge",
@@ -164,7 +164,7 @@ func (declarations registryDeclarations) metadata8() *genregistry.ToolTypeMetada
 	registryText1 := "ApproveMergeResult"
 	return &genregistry.ToolTypeMetadata{
 		Name:                     &registryText1,
-		SchemaWithoutRootExample: []byte("{\"$defs\":{\"AmbiguityQuestion\":{\"additionalProperties\":false,\"description\":\"Domain ambiguity surfaced with concrete examples at Checkpoint 1.\",\"properties\":{\"id\":{\"description\":\"Stable question identifier.\",\"type\":\"string\"},\"options\":{\"description\":\"Concrete resolution choices.\",\"items\":{\"type\":\"string\"},\"type\":\"array\"},\"question\":{\"description\":\"Plain-English question for the operator.\",\"type\":\"string\"}},\"required\":[\"id\",\"question\",\"options\"],\"title\":\"AmbiguityQuestion\",\"type\":\"object\"},\"ApprovalItem\":{\"additionalProperties\":false,\"description\":\"Checkpoint 5 approval recorded by approve_merge after the evaluator-written verification report passed and matched the change being promoted: the exact candidate commit, suite, environment and binary digests it checked. It is saved with the card in the control plane's cards directory, merges and deploys nothing, is replaced by the next successful approve_merge for the same revision, and is dropped when confirm_intent or revise_change mints a new request_revision. get_change and confirm_intent return it in approval only while the promotion target's current suite, environment and binary digests still equal the ones it records, or in unverified_approval when current promotion inputs cannot be verified on that read.\",\"properties\":{\"approved_by\":{\"description\":\"Authenticated bearer principal that owns the card and called approve_merge. Bearer authentication does not prove that a human, rather than a coding agent, made the call.\",\"type\":\"string\"},\"artifacts\":{\"additionalProperties\":{\"type\":\"string\"},\"description\":\"SHA-256 digest of each candidate binary the promotion target measured, keyed by binary name.\",\"type\":\"object\"},\"candidate_commit\":{\"description\":\"Candidate commit the report was checked against.\",\"type\":\"string\"},\"environment\":{\"description\":\"Dependency profile the promotion target requires, such as sim.\",\"type\":\"string\"},\"report_digest\":{\"description\":\"SHA-256 digest of the approved CP4 verification report.\",\"type\":\"string\"},\"scenario_count\":{\"description\":\"Number of declared evaluator scenarios, every one of which passed.\",\"format\":\"int64\",\"type\":\"integer\"},\"suite_commit\":{\"description\":\"Evaluator suite commit the promotion target requires.\",\"type\":\"string\"},\"suite_id\":{\"description\":\"Evaluator suite the promotion target requires.\",\"type\":\"string\"}},\"required\":[\"approved_by\",\"report_digest\",\"candidate_commit\",\"suite_id\",\"suite_commit\",\"environment\",\"artifacts\",\"scenario_count\"],\"title\":\"ApprovalItem\",\"type\":\"object\"},\"ExampleItem\":{\"additionalProperties\":false,\"description\":\"Concrete input and expected outcome confirmed at Checkpoint 1.\",\"properties\":{\"expected_outcome\":{\"description\":\"Expected side effect and response behavior.\",\"type\":\"string\"},\"id\":{\"description\":\"Stable example identifier. Default code-assigned IDs use check_01, check_02, ... (valid goa-ai/eval Scenario names). confirm_intent preserves caller-chosen IDs.\",\"type\":\"string\"},\"input_summary\":{\"description\":\"Representative user request and domain fixture state.\",\"type\":\"string\"},\"scenario\":{\"description\":\"Plain-English scenario description.\",\"type\":\"string\"},\"verification_kind\":{\"description\":\"Evaluator check classification (deterministic or model_judged).\",\"enum\":[\"deterministic\",\"model_judged\"],\"type\":\"string\"}},\"required\":[\"id\",\"scenario\",\"input_summary\",\"expected_outcome\",\"verification_kind\"],\"title\":\"ExampleItem\",\"type\":\"object\"},\"UICompositionItem\":{\"additionalProperties\":false,\"description\":\"Model-authored OpenUI Lang decision view for exactly one Change Card revision. It is presentation only: it is never hashed into request_revision, confirm_intent never reads it, and it describes the card only while composed_for_revision equals the card's request_revision.\",\"properties\":{\"composed_for_revision\":{\"description\":\"request_revision of the Change Card this program was composed for.\",\"type\":\"string\"},\"program\":{\"description\":\"OpenUI Lang program composed by the CP1 model from the Surla decision component catalog, exactly as the model returned it. The server does not check it; the checkpoint viewer validates it and shows its error state, with the rest of the card still usable, when the program is not a valid composition.\",\"type\":\"string\"}},\"required\":[\"program\",\"composed_for_revision\"],\"title\":\"UICompositionItem\",\"type\":\"object\"},\"UnverifiedApprovalItem\":{\"additionalProperties\":false,\"description\":\"Saved Checkpoint 5 promotion approval recorded on the Change Card whose current promotion inputs could not be verified on this read.\",\"properties\":{\"approval\":{\"$ref\":\"#/$defs/ApprovalItem\",\"description\":\"Recorded promotion approval from the Change Card.\"},\"reason\":{\"description\":\"Explanation of why the recorded approval could not be verified against current promotion inputs and how to recover.\",\"type\":\"string\"}},\"required\":[\"approval\",\"reason\"],\"title\":\"UnverifiedApprovalItem\",\"type\":\"object\"}},\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Checkpoint 1 Change Card containing examples, preserved behaviors, and audit metadata.\",\"properties\":{\"ambiguities\":{\"description\":\"Domain questions surfaced at CP1, retained for audit after confirmation.\",\"items\":{\"$ref\":\"#/$defs/AmbiguityQuestion\"},\"type\":\"array\"},\"answers\":{\"additionalProperties\":{\"type\":\"string\"},\"description\":\"Owner-confirmed answers keyed by ambiguity question ID when status is confirmed and ambiguities is non-empty (empty when a confirmed card has no ambiguity questions). Each answer equals one of its question's declared options and takes precedence over open phrasing in summary.\",\"type\":\"object\"},\"approval\":{\"$ref\":\"#/$defs/ApprovalItem\",\"description\":\"Checkpoint 5 approval of this revision, present only while it is verified against the promotion target's current inputs on this read. It is absent before approve_merge succeeds, whenever the target's suite, environment or binary digests have changed since, and whenever current inputs cannot be verified (see unverified_approval). It is never hashed into request_revision.\"},\"change_id\":{\"description\":\"Change identifier.\",\"type\":\"string\"},\"confirmed_by\":{\"description\":\"Authenticated principal that confirmed the Change Card.\",\"type\":\"string\"},\"examples\":{\"description\":\"Concrete examples mapped to evaluator checks.\",\"items\":{\"$ref\":\"#/$defs/ExampleItem\"},\"type\":\"array\"},\"preserved_behaviors\":{\"description\":\"Existing contract invariants preserved by this change.\",\"items\":{\"type\":\"string\"},\"type\":\"array\"},\"prompt\":{\"description\":\"Operator feature request for this revision.\",\"type\":\"string\"},\"request_revision\":{\"description\":\"SHA-256 digest of the canonical versioned Change Card.\",\"type\":\"string\"},\"status\":{\"description\":\"Checkpoint status (needs_confirmation or confirmed).\",\"enum\":[\"needs_confirmation\",\"confirmed\"],\"type\":\"string\"},\"summary\":{\"description\":\"Plain-English summary of the proposed change from propose_change or revise_change. confirm_intent does not rewrite this text; when status is confirmed, answers records the owner's resolutions for ambiguities.\",\"type\":\"string\"},\"ui_composition\":{\"$ref\":\"#/$defs/UICompositionItem\",\"description\":\"Decision view the CP1 model composed for this revision, when it produced one. A confirm_intent that changes answers or examples returns the new revision without it.\"},\"unverified_approval\":{\"$ref\":\"#/$defs/UnverifiedApprovalItem\",\"description\":\"Saved Checkpoint 5 approval of this revision when current promotion inputs could not be verified on this read (because no promotion target is configured or the target could not report its current inputs). At most one of approval or unverified_approval is set. It is never saved to disk or hashed into request_revision.\"}},\"required\":[\"change_id\",\"status\",\"prompt\",\"summary\",\"examples\",\"preserved_behaviors\",\"request_revision\"],\"type\":\"object\"}"),
+		SchemaWithoutRootExample: []byte("{\"$defs\":{\"AmbiguityQuestion\":{\"additionalProperties\":false,\"description\":\"Domain ambiguity surfaced with concrete examples at Checkpoint 1.\",\"properties\":{\"id\":{\"description\":\"Stable question identifier.\",\"type\":\"string\"},\"options\":{\"description\":\"Concrete resolution choices.\",\"items\":{\"type\":\"string\"},\"type\":\"array\"},\"question\":{\"description\":\"Plain-English question for the operator.\",\"type\":\"string\"}},\"required\":[\"id\",\"question\",\"options\"],\"title\":\"AmbiguityQuestion\",\"type\":\"object\"},\"ApprovalItem\":{\"additionalProperties\":false,\"description\":\"Checkpoint 5 approval recorded by approve_merge after the evaluator-written verification report passed and matched the change being promoted: the exact candidate commit, suite, environment and binary digests it checked. It is saved with the card in the control plane's cards directory, merges and deploys nothing, is replaced by the next successful approve_merge for the same revision, and is dropped when confirm_intent or revise_change mints a new request_revision. get_change and confirm_intent return it in approval only while the promotion target's current suite, environment and binary digests still equal the ones it records, or in unverified_approval when current promotion inputs cannot be verified on that read.\",\"properties\":{\"approved_by\":{\"description\":\"Authenticated bearer principal that owns the card and called approve_merge. Bearer authentication does not prove that a human, rather than a coding agent, made the call.\",\"type\":\"string\"},\"artifacts\":{\"additionalProperties\":{\"type\":\"string\"},\"description\":\"SHA-256 digest of each candidate binary the promotion target measured, keyed by binary name.\",\"type\":\"object\"},\"candidate_commit\":{\"description\":\"Candidate commit the report was checked against.\",\"type\":\"string\"},\"environment\":{\"description\":\"Dependency profile the promotion target requires, such as sim.\",\"type\":\"string\"},\"report_digest\":{\"description\":\"SHA-256 digest of the approved CP4 verification report.\",\"type\":\"string\"},\"scenario_count\":{\"description\":\"Number of declared evaluator scenarios, every one of which passed.\",\"format\":\"int64\",\"type\":\"integer\"},\"suite_commit\":{\"description\":\"Evaluator suite commit the promotion target requires.\",\"type\":\"string\"},\"suite_id\":{\"description\":\"Evaluator suite the promotion target requires.\",\"type\":\"string\"}},\"required\":[\"approved_by\",\"report_digest\",\"candidate_commit\",\"suite_id\",\"suite_commit\",\"environment\",\"artifacts\",\"scenario_count\"],\"title\":\"ApprovalItem\",\"type\":\"object\"},\"ExampleItem\":{\"additionalProperties\":false,\"description\":\"Concrete input and expected outcome confirmed at Checkpoint 1.\",\"properties\":{\"expected_outcome\":{\"description\":\"Expected side effect and response behavior.\",\"type\":\"string\"},\"id\":{\"description\":\"Stable example identifier. Default code-assigned IDs use check_01, check_02, ... (valid goa-ai/eval Scenario names). confirm_intent preserves caller-chosen IDs.\",\"type\":\"string\"},\"input_summary\":{\"description\":\"Representative user request and domain fixture state.\",\"type\":\"string\"},\"scenario\":{\"description\":\"Plain-English scenario description.\",\"type\":\"string\"},\"verification_kind\":{\"description\":\"Evaluator check classification (deterministic or model_judged).\",\"enum\":[\"deterministic\",\"model_judged\"],\"type\":\"string\"}},\"required\":[\"id\",\"scenario\",\"input_summary\",\"expected_outcome\",\"verification_kind\"],\"title\":\"ExampleItem\",\"type\":\"object\"},\"UICompositionItem\":{\"additionalProperties\":false,\"description\":\"Caller-authored OpenUI Lang decision view for exactly one Change Card revision. It is presentation only: it is never hashed into request_revision, confirm_intent never reads it, and it describes the card only while composed_for_revision equals the card's request_revision.\",\"properties\":{\"composed_for_revision\":{\"description\":\"request_revision of the Change Card this program was composed for.\",\"type\":\"string\"},\"program\":{\"description\":\"OpenUI Lang program from the analysis's ui_composition, exactly as the caller sent it. The server does not check it; the checkpoint viewer validates it and shows its error state, with the rest of the card still usable, when the program is not a valid composition.\",\"type\":\"string\"}},\"required\":[\"program\",\"composed_for_revision\"],\"title\":\"UICompositionItem\",\"type\":\"object\"},\"UnverifiedApprovalItem\":{\"additionalProperties\":false,\"description\":\"Saved Checkpoint 5 promotion approval recorded on the Change Card whose current promotion inputs could not be verified on this read.\",\"properties\":{\"approval\":{\"$ref\":\"#/$defs/ApprovalItem\",\"description\":\"Recorded promotion approval from the Change Card.\"},\"reason\":{\"description\":\"Explanation of why the recorded approval could not be verified against current promotion inputs and how to recover.\",\"type\":\"string\"}},\"required\":[\"approval\",\"reason\"],\"title\":\"UnverifiedApprovalItem\",\"type\":\"object\"}},\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Checkpoint 1 Change Card containing examples, preserved behaviors, and audit metadata.\",\"properties\":{\"ambiguities\":{\"description\":\"Domain questions surfaced at CP1, retained for audit after confirmation.\",\"items\":{\"$ref\":\"#/$defs/AmbiguityQuestion\"},\"type\":\"array\"},\"answers\":{\"additionalProperties\":{\"type\":\"string\"},\"description\":\"Owner-confirmed answers keyed by ambiguity question ID when status is confirmed and ambiguities is non-empty (empty when a confirmed card has no ambiguity questions). Each answer equals one of its question's declared options and takes precedence over open phrasing in summary.\",\"type\":\"object\"},\"approval\":{\"$ref\":\"#/$defs/ApprovalItem\",\"description\":\"Checkpoint 5 approval of this revision, present only while it is verified against the promotion target's current inputs on this read. It is absent before approve_merge succeeds, whenever the target's suite, environment or binary digests have changed since, and whenever current inputs cannot be verified (see unverified_approval). It is never hashed into request_revision.\"},\"change_id\":{\"description\":\"Change identifier.\",\"type\":\"string\"},\"confirmed_by\":{\"description\":\"Authenticated principal that confirmed the Change Card.\",\"type\":\"string\"},\"examples\":{\"description\":\"Concrete examples mapped to evaluator checks.\",\"items\":{\"$ref\":\"#/$defs/ExampleItem\"},\"type\":\"array\"},\"preserved_behaviors\":{\"description\":\"Existing contract invariants preserved by this change.\",\"items\":{\"type\":\"string\"},\"type\":\"array\"},\"prompt\":{\"description\":\"Operator feature request for this revision.\",\"type\":\"string\"},\"request_revision\":{\"description\":\"SHA-256 digest of the canonical versioned Change Card.\",\"type\":\"string\"},\"status\":{\"description\":\"Checkpoint status (needs_confirmation or confirmed).\",\"enum\":[\"needs_confirmation\",\"confirmed\"],\"type\":\"string\"},\"summary\":{\"description\":\"Plain-English summary of the proposed change from propose_change or revise_change. confirm_intent does not rewrite this text; when status is confirmed, answers records the owner's resolutions for ambiguities.\",\"type\":\"string\"},\"ui_composition\":{\"$ref\":\"#/$defs/UICompositionItem\",\"description\":\"Decision view the caller composed for this revision in its analysis, when it sent one. A confirm_intent that changes answers or examples returns the new revision without it.\"},\"unverified_approval\":{\"$ref\":\"#/$defs/UnverifiedApprovalItem\",\"description\":\"Saved Checkpoint 5 approval of this revision when current promotion inputs could not be verified on this read (because no promotion target is configured or the target could not report its current inputs). At most one of approval or unverified_approval is set. It is never saved to disk or hashed into request_revision.\"}},\"required\":[\"change_id\",\"status\",\"prompt\",\"summary\",\"examples\",\"preserved_behaviors\",\"request_revision\"],\"type\":\"object\"}"),
 		Fields: []*genregistry.ToolFieldMetadata{
 			declarations.field9(),
 			declarations.field10(),
@@ -554,7 +554,7 @@ func (registryDeclarations) field32() *genregistry.ToolFieldMetadata {
 // field33 constructs one generated field declaration.
 func (registryDeclarations) field33() *genregistry.ToolFieldMetadata {
 	registryText1 := "object"
-	registryText2 := "Decision view the CP1 model composed for this revision, when it produced one. A confirm_intent that changes answers or examples returns the new revision without it."
+	registryText2 := "Decision view the caller composed for this revision in its analysis, when it sent one. A confirm_intent that changes answers or examples returns the new revision without it."
 	return &genregistry.ToolFieldMetadata{
 		Path: []*genregistry.ToolFieldPathSegment{
 			{Segment: genregistry.NewToolFieldSegmentField("ui_composition")},
@@ -567,7 +567,7 @@ func (registryDeclarations) field33() *genregistry.ToolFieldMetadata {
 // field34 constructs one generated field declaration.
 func (registryDeclarations) field34() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
-	registryText2 := "OpenUI Lang program composed by the CP1 model from the Surla decision component catalog, exactly as the model returned it. The server does not check it; the checkpoint viewer validates it and shows its error state, with the rest of the card still usable, when the program is not a valid composition."
+	registryText2 := "OpenUI Lang program from the analysis's ui_composition, exactly as the caller sent it. The server does not check it; the checkpoint viewer validates it and shows its error state, with the rest of the card still usable, when the program is not a valid composition."
 	return &genregistry.ToolFieldMetadata{
 		Path: []*genregistry.ToolFieldPathSegment{
 			{Segment: genregistry.NewToolFieldSegmentField("ui_composition")},
@@ -1126,27 +1126,27 @@ func (registryDeclarations) field73() *genregistry.ToolFieldMetadata {
 
 // schema74 constructs one generated schema declaration.
 func (declarations registryDeclarations) schema74() *genregistry.ToolSchema {
-	registryText1 := "Switch the active CP1 and live-target model provider and model name (such as anthropic/claude-sonnet-4-6 or openai/gpt-5.4-mini, using the API key in surla serve's environment) or attach a running model gateway address without restarting surla serve."
+	registryText1 := "Switch the model provider and model name (such as anthropic/claude-sonnet-4-6 or openai/gpt-5.4-mini, using the API key in surla serve's environment) or attach a running model gateway address, without restarting surla serve. Live targets that start_live_target starts afterwards plan with this model."
 	return &genregistry.ToolSchema{
 		Name:                   "surla.configure_model",
 		Description:            &registryText1,
 		PayloadSchema:          []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Selects either a direct model provider and model name (using the API key already present in surla serve's process environment) or a running goa-ai model gateway address.\",\"properties\":{\"gateway_addr\":{\"description\":\"Plaintext gRPC host:port of a running goa-ai model gateway; mutually exclusive with provider and model_name.\",\"example\":\"127.0.0.1:9090\",\"minLength\":1,\"type\":\"string\"},\"model_name\":{\"description\":\"Provider model identifier when configuring a direct provider (for example claude-sonnet-4-6 or gpt-5.4-mini); must be paired with provider and omitted when gateway_addr is set.\",\"example\":\"claude-sonnet-4-6\",\"minLength\":1,\"type\":\"string\"},\"provider\":{\"description\":\"Direct model provider name when configuring a direct provider; must be paired with model_name and omitted when gateway_addr is set.\",\"enum\":[\"anthropic\",\"openai\"],\"example\":\"anthropic\",\"type\":\"string\"}},\"type\":\"object\"}"),
 		ExecutionPayloadSchema: []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Selects either a direct model provider and model name (using the API key already present in surla serve's process environment) or a running goa-ai model gateway address.\",\"properties\":{\"gateway_addr\":{\"description\":\"Plaintext gRPC host:port of a running goa-ai model gateway; mutually exclusive with provider and model_name.\",\"example\":\"127.0.0.1:9090\",\"minLength\":1,\"type\":\"string\"},\"model_name\":{\"description\":\"Provider model identifier when configuring a direct provider (for example claude-sonnet-4-6 or gpt-5.4-mini); must be paired with provider and omitted when gateway_addr is set.\",\"example\":\"claude-sonnet-4-6\",\"minLength\":1,\"type\":\"string\"},\"provider\":{\"description\":\"Direct model provider name when configuring a direct provider; must be paired with model_name and omitted when gateway_addr is set.\",\"enum\":[\"anthropic\",\"openai\"],\"example\":\"anthropic\",\"type\":\"string\"}},\"type\":\"object\"}"),
-		ResultSchema:           []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Active CP1 and live-target model configuration after configure_model succeeds.\",\"properties\":{\"gateway_addr\":{\"description\":\"Active gRPC model gateway host:port when a model gateway is configured.\",\"minLength\":1,\"type\":\"string\"},\"model_name\":{\"description\":\"Active model identifier when a direct provider is configured.\",\"minLength\":1,\"type\":\"string\"},\"provider\":{\"description\":\"Active direct model provider when a direct provider is configured.\",\"enum\":[\"anthropic\",\"openai\"],\"type\":\"string\"}},\"type\":\"object\"}"),
+		ResultSchema:           []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Model configuration that live targets started afterwards receive, after configure_model succeeds.\",\"properties\":{\"gateway_addr\":{\"description\":\"Active gRPC model gateway host:port when a model gateway is configured.\",\"minLength\":1,\"type\":\"string\"},\"model_name\":{\"description\":\"Active model identifier when a direct provider is configured.\",\"minLength\":1,\"type\":\"string\"},\"provider\":{\"description\":\"Active direct model provider when a direct provider is configured.\",\"enum\":[\"anthropic\",\"openai\"],\"type\":\"string\"}},\"type\":\"object\"}"),
 		ConsumerContract: &genregistry.ConsumerContract{
 			Kind:  "service",
 			Title: "Configure Model",
 			Search: &genregistry.ToolSearchDocument{
-				Length: 50,
-				Terms:  map[string]int{"4": 2, "5": 1, "6": 1, "a": 1, "active": 1, "address": 1, "and": 2, "anthropic": 1, "api": 1, "as": 1, "attach": 1, "claude": 1, "configure": 2, "cp1": 1, "environment": 1, "gateway": 1, "gpt": 1, "in": 1, "key": 1, "live": 1, "mini": 1, "model": 5, "name": 1, "openai": 1, "or": 2, "provider": 1, "restarting": 1, "running": 1, "s": 1, "serve": 2, "sonnet": 1, "such": 1, "surla": 3, "switch": 1, "target": 1, "the": 2, "using": 1, "without": 1},
+				Length: 57,
+				Terms:  map[string]int{"4": 2, "5": 1, "6": 1, "a": 1, "address": 1, "afterwards": 1, "and": 1, "anthropic": 1, "api": 1, "as": 1, "attach": 1, "claude": 1, "configure": 2, "environment": 1, "gateway": 1, "gpt": 1, "in": 1, "key": 1, "live": 2, "mini": 1, "model": 6, "name": 1, "openai": 1, "or": 2, "plan": 1, "provider": 1, "restarting": 1, "running": 1, "s": 1, "serve": 2, "sonnet": 1, "start": 1, "starts": 1, "such": 1, "surla": 3, "switch": 1, "target": 1, "targets": 1, "that": 1, "the": 2, "this": 1, "using": 1, "with": 1, "without": 1},
 			},
 			RequiresUI: false,
 			TextOnly: &genregistry.TextOnlyToolContract{
 				ExecutionSchema: []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Selects either a direct model provider and model name (using the API key already present in surla serve's process environment) or a running goa-ai model gateway address.\",\"properties\":{\"gateway_addr\":{\"description\":\"Plaintext gRPC host:port of a running goa-ai model gateway; mutually exclusive with provider and model_name.\",\"example\":\"127.0.0.1:9090\",\"minLength\":1,\"type\":\"string\"},\"model_name\":{\"description\":\"Provider model identifier when configuring a direct provider (for example claude-sonnet-4-6 or gpt-5.4-mini); must be paired with provider and omitted when gateway_addr is set.\",\"example\":\"claude-sonnet-4-6\",\"minLength\":1,\"type\":\"string\"},\"provider\":{\"description\":\"Direct model provider name when configuring a direct provider; must be paired with model_name and omitted when gateway_addr is set.\",\"enum\":[\"anthropic\",\"openai\"],\"example\":\"anthropic\",\"type\":\"string\"}},\"type\":\"object\"}"),
-				Description:     "Switch the active CP1 and live-target model provider and model name (such as anthropic/claude-sonnet-4-6 or openai/gpt-5.4-mini, using the API key in surla serve's environment) or attach a running model gateway address without restarting surla serve.",
+				Description:     "Switch the model provider and model name (such as anthropic/claude-sonnet-4-6 or openai/gpt-5.4-mini, using the API key in surla serve's environment) or attach a running model gateway address, without restarting surla serve. Live targets that start_live_target starts afterwards plan with this model.",
 				Search: &genregistry.ToolSearchDocument{
-					Length: 50,
-					Terms:  map[string]int{"4": 2, "5": 1, "6": 1, "a": 1, "active": 1, "address": 1, "and": 2, "anthropic": 1, "api": 1, "as": 1, "attach": 1, "claude": 1, "configure": 2, "cp1": 1, "environment": 1, "gateway": 1, "gpt": 1, "in": 1, "key": 1, "live": 1, "mini": 1, "model": 5, "name": 1, "openai": 1, "or": 2, "provider": 1, "restarting": 1, "running": 1, "s": 1, "serve": 2, "sonnet": 1, "such": 1, "surla": 3, "switch": 1, "target": 1, "the": 2, "using": 1, "without": 1},
+					Length: 57,
+					Terms:  map[string]int{"4": 2, "5": 1, "6": 1, "a": 1, "address": 1, "afterwards": 1, "and": 1, "anthropic": 1, "api": 1, "as": 1, "attach": 1, "claude": 1, "configure": 2, "environment": 1, "gateway": 1, "gpt": 1, "in": 1, "key": 1, "live": 2, "mini": 1, "model": 6, "name": 1, "openai": 1, "or": 2, "plan": 1, "provider": 1, "restarting": 1, "running": 1, "s": 1, "serve": 2, "sonnet": 1, "start": 1, "starts": 1, "such": 1, "surla": 3, "switch": 1, "target": 1, "targets": 1, "that": 1, "the": 2, "this": 1, "using": 1, "with": 1, "without": 1},
 				},
 				PayloadSchema: []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Selects either a direct model provider and model name (using the API key already present in surla serve's process environment) or a running goa-ai model gateway address.\",\"properties\":{\"gateway_addr\":{\"description\":\"Plaintext gRPC host:port of a running goa-ai model gateway; mutually exclusive with provider and model_name.\",\"example\":\"127.0.0.1:9090\",\"minLength\":1,\"type\":\"string\"},\"model_name\":{\"description\":\"Provider model identifier when configuring a direct provider (for example claude-sonnet-4-6 or gpt-5.4-mini); must be paired with provider and omitted when gateway_addr is set.\",\"example\":\"claude-sonnet-4-6\",\"minLength\":1,\"type\":\"string\"},\"provider\":{\"description\":\"Direct model provider name when configuring a direct provider; must be paired with model_name and omitted when gateway_addr is set.\",\"enum\":[\"anthropic\",\"openai\"],\"example\":\"anthropic\",\"type\":\"string\"}},\"type\":\"object\"}"),
 				Payload:       declarations.metadata85(),
@@ -1226,7 +1226,7 @@ func (declarations registryDeclarations) metadata80() *genregistry.ToolTypeMetad
 	registryText1 := "ConfigureModelResult"
 	return &genregistry.ToolTypeMetadata{
 		Name:                     &registryText1,
-		SchemaWithoutRootExample: []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Active CP1 and live-target model configuration after configure_model succeeds.\",\"properties\":{\"gateway_addr\":{\"description\":\"Active gRPC model gateway host:port when a model gateway is configured.\",\"minLength\":1,\"type\":\"string\"},\"model_name\":{\"description\":\"Active model identifier when a direct provider is configured.\",\"minLength\":1,\"type\":\"string\"},\"provider\":{\"description\":\"Active direct model provider when a direct provider is configured.\",\"enum\":[\"anthropic\",\"openai\"],\"type\":\"string\"}},\"type\":\"object\"}"),
+		SchemaWithoutRootExample: []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Model configuration that live targets started afterwards receive, after configure_model succeeds.\",\"properties\":{\"gateway_addr\":{\"description\":\"Active gRPC model gateway host:port when a model gateway is configured.\",\"minLength\":1,\"type\":\"string\"},\"model_name\":{\"description\":\"Active model identifier when a direct provider is configured.\",\"minLength\":1,\"type\":\"string\"},\"provider\":{\"description\":\"Active direct model provider when a direct provider is configured.\",\"enum\":[\"anthropic\",\"openai\"],\"type\":\"string\"}},\"type\":\"object\"}"),
 		Fields: []*genregistry.ToolFieldMetadata{
 			declarations.field81(),
 			declarations.field82(),
@@ -1239,7 +1239,7 @@ func (declarations registryDeclarations) metadata80() *genregistry.ToolTypeMetad
 // field81 constructs one generated field declaration.
 func (registryDeclarations) field81() *genregistry.ToolFieldMetadata {
 	registryText1 := "object"
-	registryText2 := "Active CP1 and live-target model configuration after configure_model succeeds."
+	registryText2 := "Model configuration that live targets started afterwards receive, after configure_model succeeds."
 	return &genregistry.ToolFieldMetadata{
 		JSONType:    &registryText1,
 		Description: &registryText2,
@@ -1357,7 +1357,7 @@ func (declarations registryDeclarations) schema90() *genregistry.ToolSchema {
 		Description:            &registryText1,
 		PayloadSchema:          []byte("{\"$defs\":{\"ExampleItem\":{\"additionalProperties\":false,\"description\":\"Concrete input and expected outcome confirmed at Checkpoint 1.\",\"properties\":{\"expected_outcome\":{\"description\":\"Expected side effect and response behavior.\",\"type\":\"string\"},\"id\":{\"description\":\"Stable example identifier. Default code-assigned IDs use check_01, check_02, ... (valid goa-ai/eval Scenario names). confirm_intent preserves caller-chosen IDs.\",\"type\":\"string\"},\"input_summary\":{\"description\":\"Representative user request and domain fixture state.\",\"type\":\"string\"},\"scenario\":{\"description\":\"Plain-English scenario description.\",\"type\":\"string\"},\"verification_kind\":{\"description\":\"Evaluator check classification (deterministic or model_judged).\",\"enum\":[\"deterministic\",\"model_judged\"],\"type\":\"string\"}},\"required\":[\"id\",\"scenario\",\"input_summary\",\"expected_outcome\",\"verification_kind\"],\"title\":\"ExampleItem\",\"type\":\"object\"}},\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Operator confirmation of Checkpoint 1 ambiguity answers and concrete examples.\",\"properties\":{\"answers\":{\"additionalProperties\":{\"type\":\"string\"},\"description\":\"Selected resolution per ambiguity question ID. Answer every current question, and give each value exactly as one string from that question's options, character for character. To record a decision that no option expresses, call revise_change with that decision in prompt.\",\"type\":\"object\"},\"change_id\":{\"description\":\"Change identifier.\",\"type\":\"string\"},\"examples\":{\"description\":\"The complete confirmed example table, including examples you edited or added. Keep an existing example's id when you edit it, and give an example you add a new, unique, non-blank id; ids are saved as sent.\",\"items\":{\"$ref\":\"#/$defs/ExampleItem\"},\"type\":\"array\"},\"request_revision\":{\"description\":\"Reviewed CP1 request_revision digest being confirmed.\",\"type\":\"string\"}},\"required\":[\"change_id\",\"request_revision\",\"answers\",\"examples\"],\"type\":\"object\"}"),
 		ExecutionPayloadSchema: []byte("{\"$defs\":{\"ExampleItem\":{\"additionalProperties\":false,\"description\":\"Concrete input and expected outcome confirmed at Checkpoint 1.\",\"properties\":{\"expected_outcome\":{\"description\":\"Expected side effect and response behavior.\",\"type\":\"string\"},\"id\":{\"description\":\"Stable example identifier. Default code-assigned IDs use check_01, check_02, ... (valid goa-ai/eval Scenario names). confirm_intent preserves caller-chosen IDs.\",\"type\":\"string\"},\"input_summary\":{\"description\":\"Representative user request and domain fixture state.\",\"type\":\"string\"},\"scenario\":{\"description\":\"Plain-English scenario description.\",\"type\":\"string\"},\"verification_kind\":{\"description\":\"Evaluator check classification (deterministic or model_judged).\",\"enum\":[\"deterministic\",\"model_judged\"],\"type\":\"string\"}},\"required\":[\"id\",\"scenario\",\"input_summary\",\"expected_outcome\",\"verification_kind\"],\"title\":\"ExampleItem\",\"type\":\"object\"}},\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Operator confirmation of Checkpoint 1 ambiguity answers and concrete examples.\",\"properties\":{\"answers\":{\"additionalProperties\":{\"type\":\"string\"},\"description\":\"Selected resolution per ambiguity question ID. Answer every current question, and give each value exactly as one string from that question's options, character for character. To record a decision that no option expresses, call revise_change with that decision in prompt.\",\"type\":\"object\"},\"change_id\":{\"description\":\"Change identifier.\",\"type\":\"string\"},\"examples\":{\"description\":\"The complete confirmed example table, including examples you edited or added. Keep an existing example's id when you edit it, and give an example you add a new, unique, non-blank id; ids are saved as sent.\",\"items\":{\"$ref\":\"#/$defs/ExampleItem\"},\"type\":\"array\"},\"request_revision\":{\"description\":\"Reviewed CP1 request_revision digest being confirmed.\",\"type\":\"string\"}},\"required\":[\"change_id\",\"request_revision\",\"answers\",\"examples\"],\"type\":\"object\"}"),
-		ResultSchema:           []byte("{\"$defs\":{\"AmbiguityQuestion\":{\"additionalProperties\":false,\"description\":\"Domain ambiguity surfaced with concrete examples at Checkpoint 1.\",\"properties\":{\"id\":{\"description\":\"Stable question identifier.\",\"type\":\"string\"},\"options\":{\"description\":\"Concrete resolution choices.\",\"items\":{\"type\":\"string\"},\"type\":\"array\"},\"question\":{\"description\":\"Plain-English question for the operator.\",\"type\":\"string\"}},\"required\":[\"id\",\"question\",\"options\"],\"title\":\"AmbiguityQuestion\",\"type\":\"object\"},\"ApprovalItem\":{\"additionalProperties\":false,\"description\":\"Checkpoint 5 approval recorded by approve_merge after the evaluator-written verification report passed and matched the change being promoted: the exact candidate commit, suite, environment and binary digests it checked. It is saved with the card in the control plane's cards directory, merges and deploys nothing, is replaced by the next successful approve_merge for the same revision, and is dropped when confirm_intent or revise_change mints a new request_revision. get_change and confirm_intent return it in approval only while the promotion target's current suite, environment and binary digests still equal the ones it records, or in unverified_approval when current promotion inputs cannot be verified on that read.\",\"properties\":{\"approved_by\":{\"description\":\"Authenticated bearer principal that owns the card and called approve_merge. Bearer authentication does not prove that a human, rather than a coding agent, made the call.\",\"type\":\"string\"},\"artifacts\":{\"additionalProperties\":{\"type\":\"string\"},\"description\":\"SHA-256 digest of each candidate binary the promotion target measured, keyed by binary name.\",\"type\":\"object\"},\"candidate_commit\":{\"description\":\"Candidate commit the report was checked against.\",\"type\":\"string\"},\"environment\":{\"description\":\"Dependency profile the promotion target requires, such as sim.\",\"type\":\"string\"},\"report_digest\":{\"description\":\"SHA-256 digest of the approved CP4 verification report.\",\"type\":\"string\"},\"scenario_count\":{\"description\":\"Number of declared evaluator scenarios, every one of which passed.\",\"format\":\"int64\",\"type\":\"integer\"},\"suite_commit\":{\"description\":\"Evaluator suite commit the promotion target requires.\",\"type\":\"string\"},\"suite_id\":{\"description\":\"Evaluator suite the promotion target requires.\",\"type\":\"string\"}},\"required\":[\"approved_by\",\"report_digest\",\"candidate_commit\",\"suite_id\",\"suite_commit\",\"environment\",\"artifacts\",\"scenario_count\"],\"title\":\"ApprovalItem\",\"type\":\"object\"},\"ExampleItem\":{\"additionalProperties\":false,\"description\":\"Concrete input and expected outcome confirmed at Checkpoint 1.\",\"properties\":{\"expected_outcome\":{\"description\":\"Expected side effect and response behavior.\",\"type\":\"string\"},\"id\":{\"description\":\"Stable example identifier. Default code-assigned IDs use check_01, check_02, ... (valid goa-ai/eval Scenario names). confirm_intent preserves caller-chosen IDs.\",\"type\":\"string\"},\"input_summary\":{\"description\":\"Representative user request and domain fixture state.\",\"type\":\"string\"},\"scenario\":{\"description\":\"Plain-English scenario description.\",\"type\":\"string\"},\"verification_kind\":{\"description\":\"Evaluator check classification (deterministic or model_judged).\",\"enum\":[\"deterministic\",\"model_judged\"],\"type\":\"string\"}},\"required\":[\"id\",\"scenario\",\"input_summary\",\"expected_outcome\",\"verification_kind\"],\"title\":\"ExampleItem\",\"type\":\"object\"},\"UICompositionItem\":{\"additionalProperties\":false,\"description\":\"Model-authored OpenUI Lang decision view for exactly one Change Card revision. It is presentation only: it is never hashed into request_revision, confirm_intent never reads it, and it describes the card only while composed_for_revision equals the card's request_revision.\",\"properties\":{\"composed_for_revision\":{\"description\":\"request_revision of the Change Card this program was composed for.\",\"type\":\"string\"},\"program\":{\"description\":\"OpenUI Lang program composed by the CP1 model from the Surla decision component catalog, exactly as the model returned it. The server does not check it; the checkpoint viewer validates it and shows its error state, with the rest of the card still usable, when the program is not a valid composition.\",\"type\":\"string\"}},\"required\":[\"program\",\"composed_for_revision\"],\"title\":\"UICompositionItem\",\"type\":\"object\"},\"UnverifiedApprovalItem\":{\"additionalProperties\":false,\"description\":\"Saved Checkpoint 5 promotion approval recorded on the Change Card whose current promotion inputs could not be verified on this read.\",\"properties\":{\"approval\":{\"$ref\":\"#/$defs/ApprovalItem\",\"description\":\"Recorded promotion approval from the Change Card.\"},\"reason\":{\"description\":\"Explanation of why the recorded approval could not be verified against current promotion inputs and how to recover.\",\"type\":\"string\"}},\"required\":[\"approval\",\"reason\"],\"title\":\"UnverifiedApprovalItem\",\"type\":\"object\"}},\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Checkpoint 1 Change Card containing examples, preserved behaviors, and audit metadata.\",\"properties\":{\"ambiguities\":{\"description\":\"Domain questions surfaced at CP1, retained for audit after confirmation.\",\"items\":{\"$ref\":\"#/$defs/AmbiguityQuestion\"},\"type\":\"array\"},\"answers\":{\"additionalProperties\":{\"type\":\"string\"},\"description\":\"Owner-confirmed answers keyed by ambiguity question ID when status is confirmed and ambiguities is non-empty (empty when a confirmed card has no ambiguity questions). Each answer equals one of its question's declared options and takes precedence over open phrasing in summary.\",\"type\":\"object\"},\"approval\":{\"$ref\":\"#/$defs/ApprovalItem\",\"description\":\"Checkpoint 5 approval of this revision, present only while it is verified against the promotion target's current inputs on this read. It is absent before approve_merge succeeds, whenever the target's suite, environment or binary digests have changed since, and whenever current inputs cannot be verified (see unverified_approval). It is never hashed into request_revision.\"},\"change_id\":{\"description\":\"Change identifier.\",\"type\":\"string\"},\"confirmed_by\":{\"description\":\"Authenticated principal that confirmed the Change Card.\",\"type\":\"string\"},\"examples\":{\"description\":\"Concrete examples mapped to evaluator checks.\",\"items\":{\"$ref\":\"#/$defs/ExampleItem\"},\"type\":\"array\"},\"preserved_behaviors\":{\"description\":\"Existing contract invariants preserved by this change.\",\"items\":{\"type\":\"string\"},\"type\":\"array\"},\"prompt\":{\"description\":\"Operator feature request for this revision.\",\"type\":\"string\"},\"request_revision\":{\"description\":\"SHA-256 digest of the canonical versioned Change Card.\",\"type\":\"string\"},\"status\":{\"description\":\"Checkpoint status (needs_confirmation or confirmed).\",\"enum\":[\"needs_confirmation\",\"confirmed\"],\"type\":\"string\"},\"summary\":{\"description\":\"Plain-English summary of the proposed change from propose_change or revise_change. confirm_intent does not rewrite this text; when status is confirmed, answers records the owner's resolutions for ambiguities.\",\"type\":\"string\"},\"ui_composition\":{\"$ref\":\"#/$defs/UICompositionItem\",\"description\":\"Decision view the CP1 model composed for this revision, when it produced one. A confirm_intent that changes answers or examples returns the new revision without it.\"},\"unverified_approval\":{\"$ref\":\"#/$defs/UnverifiedApprovalItem\",\"description\":\"Saved Checkpoint 5 approval of this revision when current promotion inputs could not be verified on this read (because no promotion target is configured or the target could not report its current inputs). At most one of approval or unverified_approval is set. It is never saved to disk or hashed into request_revision.\"}},\"required\":[\"change_id\",\"status\",\"prompt\",\"summary\",\"examples\",\"preserved_behaviors\",\"request_revision\"],\"type\":\"object\"}"),
+		ResultSchema:           []byte("{\"$defs\":{\"AmbiguityQuestion\":{\"additionalProperties\":false,\"description\":\"Domain ambiguity surfaced with concrete examples at Checkpoint 1.\",\"properties\":{\"id\":{\"description\":\"Stable question identifier.\",\"type\":\"string\"},\"options\":{\"description\":\"Concrete resolution choices.\",\"items\":{\"type\":\"string\"},\"type\":\"array\"},\"question\":{\"description\":\"Plain-English question for the operator.\",\"type\":\"string\"}},\"required\":[\"id\",\"question\",\"options\"],\"title\":\"AmbiguityQuestion\",\"type\":\"object\"},\"ApprovalItem\":{\"additionalProperties\":false,\"description\":\"Checkpoint 5 approval recorded by approve_merge after the evaluator-written verification report passed and matched the change being promoted: the exact candidate commit, suite, environment and binary digests it checked. It is saved with the card in the control plane's cards directory, merges and deploys nothing, is replaced by the next successful approve_merge for the same revision, and is dropped when confirm_intent or revise_change mints a new request_revision. get_change and confirm_intent return it in approval only while the promotion target's current suite, environment and binary digests still equal the ones it records, or in unverified_approval when current promotion inputs cannot be verified on that read.\",\"properties\":{\"approved_by\":{\"description\":\"Authenticated bearer principal that owns the card and called approve_merge. Bearer authentication does not prove that a human, rather than a coding agent, made the call.\",\"type\":\"string\"},\"artifacts\":{\"additionalProperties\":{\"type\":\"string\"},\"description\":\"SHA-256 digest of each candidate binary the promotion target measured, keyed by binary name.\",\"type\":\"object\"},\"candidate_commit\":{\"description\":\"Candidate commit the report was checked against.\",\"type\":\"string\"},\"environment\":{\"description\":\"Dependency profile the promotion target requires, such as sim.\",\"type\":\"string\"},\"report_digest\":{\"description\":\"SHA-256 digest of the approved CP4 verification report.\",\"type\":\"string\"},\"scenario_count\":{\"description\":\"Number of declared evaluator scenarios, every one of which passed.\",\"format\":\"int64\",\"type\":\"integer\"},\"suite_commit\":{\"description\":\"Evaluator suite commit the promotion target requires.\",\"type\":\"string\"},\"suite_id\":{\"description\":\"Evaluator suite the promotion target requires.\",\"type\":\"string\"}},\"required\":[\"approved_by\",\"report_digest\",\"candidate_commit\",\"suite_id\",\"suite_commit\",\"environment\",\"artifacts\",\"scenario_count\"],\"title\":\"ApprovalItem\",\"type\":\"object\"},\"ExampleItem\":{\"additionalProperties\":false,\"description\":\"Concrete input and expected outcome confirmed at Checkpoint 1.\",\"properties\":{\"expected_outcome\":{\"description\":\"Expected side effect and response behavior.\",\"type\":\"string\"},\"id\":{\"description\":\"Stable example identifier. Default code-assigned IDs use check_01, check_02, ... (valid goa-ai/eval Scenario names). confirm_intent preserves caller-chosen IDs.\",\"type\":\"string\"},\"input_summary\":{\"description\":\"Representative user request and domain fixture state.\",\"type\":\"string\"},\"scenario\":{\"description\":\"Plain-English scenario description.\",\"type\":\"string\"},\"verification_kind\":{\"description\":\"Evaluator check classification (deterministic or model_judged).\",\"enum\":[\"deterministic\",\"model_judged\"],\"type\":\"string\"}},\"required\":[\"id\",\"scenario\",\"input_summary\",\"expected_outcome\",\"verification_kind\"],\"title\":\"ExampleItem\",\"type\":\"object\"},\"UICompositionItem\":{\"additionalProperties\":false,\"description\":\"Caller-authored OpenUI Lang decision view for exactly one Change Card revision. It is presentation only: it is never hashed into request_revision, confirm_intent never reads it, and it describes the card only while composed_for_revision equals the card's request_revision.\",\"properties\":{\"composed_for_revision\":{\"description\":\"request_revision of the Change Card this program was composed for.\",\"type\":\"string\"},\"program\":{\"description\":\"OpenUI Lang program from the analysis's ui_composition, exactly as the caller sent it. The server does not check it; the checkpoint viewer validates it and shows its error state, with the rest of the card still usable, when the program is not a valid composition.\",\"type\":\"string\"}},\"required\":[\"program\",\"composed_for_revision\"],\"title\":\"UICompositionItem\",\"type\":\"object\"},\"UnverifiedApprovalItem\":{\"additionalProperties\":false,\"description\":\"Saved Checkpoint 5 promotion approval recorded on the Change Card whose current promotion inputs could not be verified on this read.\",\"properties\":{\"approval\":{\"$ref\":\"#/$defs/ApprovalItem\",\"description\":\"Recorded promotion approval from the Change Card.\"},\"reason\":{\"description\":\"Explanation of why the recorded approval could not be verified against current promotion inputs and how to recover.\",\"type\":\"string\"}},\"required\":[\"approval\",\"reason\"],\"title\":\"UnverifiedApprovalItem\",\"type\":\"object\"}},\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Checkpoint 1 Change Card containing examples, preserved behaviors, and audit metadata.\",\"properties\":{\"ambiguities\":{\"description\":\"Domain questions surfaced at CP1, retained for audit after confirmation.\",\"items\":{\"$ref\":\"#/$defs/AmbiguityQuestion\"},\"type\":\"array\"},\"answers\":{\"additionalProperties\":{\"type\":\"string\"},\"description\":\"Owner-confirmed answers keyed by ambiguity question ID when status is confirmed and ambiguities is non-empty (empty when a confirmed card has no ambiguity questions). Each answer equals one of its question's declared options and takes precedence over open phrasing in summary.\",\"type\":\"object\"},\"approval\":{\"$ref\":\"#/$defs/ApprovalItem\",\"description\":\"Checkpoint 5 approval of this revision, present only while it is verified against the promotion target's current inputs on this read. It is absent before approve_merge succeeds, whenever the target's suite, environment or binary digests have changed since, and whenever current inputs cannot be verified (see unverified_approval). It is never hashed into request_revision.\"},\"change_id\":{\"description\":\"Change identifier.\",\"type\":\"string\"},\"confirmed_by\":{\"description\":\"Authenticated principal that confirmed the Change Card.\",\"type\":\"string\"},\"examples\":{\"description\":\"Concrete examples mapped to evaluator checks.\",\"items\":{\"$ref\":\"#/$defs/ExampleItem\"},\"type\":\"array\"},\"preserved_behaviors\":{\"description\":\"Existing contract invariants preserved by this change.\",\"items\":{\"type\":\"string\"},\"type\":\"array\"},\"prompt\":{\"description\":\"Operator feature request for this revision.\",\"type\":\"string\"},\"request_revision\":{\"description\":\"SHA-256 digest of the canonical versioned Change Card.\",\"type\":\"string\"},\"status\":{\"description\":\"Checkpoint status (needs_confirmation or confirmed).\",\"enum\":[\"needs_confirmation\",\"confirmed\"],\"type\":\"string\"},\"summary\":{\"description\":\"Plain-English summary of the proposed change from propose_change or revise_change. confirm_intent does not rewrite this text; when status is confirmed, answers records the owner's resolutions for ambiguities.\",\"type\":\"string\"},\"ui_composition\":{\"$ref\":\"#/$defs/UICompositionItem\",\"description\":\"Decision view the caller composed for this revision in its analysis, when it sent one. A confirm_intent that changes answers or examples returns the new revision without it.\"},\"unverified_approval\":{\"$ref\":\"#/$defs/UnverifiedApprovalItem\",\"description\":\"Saved Checkpoint 5 approval of this revision when current promotion inputs could not be verified on this read (because no promotion target is configured or the target could not report its current inputs). At most one of approval or unverified_approval is set. It is never saved to disk or hashed into request_revision.\"}},\"required\":[\"change_id\",\"status\",\"prompt\",\"summary\",\"examples\",\"preserved_behaviors\",\"request_revision\"],\"type\":\"object\"}"),
 		ConsumerContract: &genregistry.ConsumerContract{
 			Kind:  "service",
 			Title: "Confirm Intent",
@@ -1575,7 +1575,7 @@ func (declarations registryDeclarations) metadata104() *genregistry.ToolTypeMeta
 	registryText1 := "ConfirmIntentResult"
 	return &genregistry.ToolTypeMetadata{
 		Name:                     &registryText1,
-		SchemaWithoutRootExample: []byte("{\"$defs\":{\"AmbiguityQuestion\":{\"additionalProperties\":false,\"description\":\"Domain ambiguity surfaced with concrete examples at Checkpoint 1.\",\"properties\":{\"id\":{\"description\":\"Stable question identifier.\",\"type\":\"string\"},\"options\":{\"description\":\"Concrete resolution choices.\",\"items\":{\"type\":\"string\"},\"type\":\"array\"},\"question\":{\"description\":\"Plain-English question for the operator.\",\"type\":\"string\"}},\"required\":[\"id\",\"question\",\"options\"],\"title\":\"AmbiguityQuestion\",\"type\":\"object\"},\"ApprovalItem\":{\"additionalProperties\":false,\"description\":\"Checkpoint 5 approval recorded by approve_merge after the evaluator-written verification report passed and matched the change being promoted: the exact candidate commit, suite, environment and binary digests it checked. It is saved with the card in the control plane's cards directory, merges and deploys nothing, is replaced by the next successful approve_merge for the same revision, and is dropped when confirm_intent or revise_change mints a new request_revision. get_change and confirm_intent return it in approval only while the promotion target's current suite, environment and binary digests still equal the ones it records, or in unverified_approval when current promotion inputs cannot be verified on that read.\",\"properties\":{\"approved_by\":{\"description\":\"Authenticated bearer principal that owns the card and called approve_merge. Bearer authentication does not prove that a human, rather than a coding agent, made the call.\",\"type\":\"string\"},\"artifacts\":{\"additionalProperties\":{\"type\":\"string\"},\"description\":\"SHA-256 digest of each candidate binary the promotion target measured, keyed by binary name.\",\"type\":\"object\"},\"candidate_commit\":{\"description\":\"Candidate commit the report was checked against.\",\"type\":\"string\"},\"environment\":{\"description\":\"Dependency profile the promotion target requires, such as sim.\",\"type\":\"string\"},\"report_digest\":{\"description\":\"SHA-256 digest of the approved CP4 verification report.\",\"type\":\"string\"},\"scenario_count\":{\"description\":\"Number of declared evaluator scenarios, every one of which passed.\",\"format\":\"int64\",\"type\":\"integer\"},\"suite_commit\":{\"description\":\"Evaluator suite commit the promotion target requires.\",\"type\":\"string\"},\"suite_id\":{\"description\":\"Evaluator suite the promotion target requires.\",\"type\":\"string\"}},\"required\":[\"approved_by\",\"report_digest\",\"candidate_commit\",\"suite_id\",\"suite_commit\",\"environment\",\"artifacts\",\"scenario_count\"],\"title\":\"ApprovalItem\",\"type\":\"object\"},\"ExampleItem\":{\"additionalProperties\":false,\"description\":\"Concrete input and expected outcome confirmed at Checkpoint 1.\",\"properties\":{\"expected_outcome\":{\"description\":\"Expected side effect and response behavior.\",\"type\":\"string\"},\"id\":{\"description\":\"Stable example identifier. Default code-assigned IDs use check_01, check_02, ... (valid goa-ai/eval Scenario names). confirm_intent preserves caller-chosen IDs.\",\"type\":\"string\"},\"input_summary\":{\"description\":\"Representative user request and domain fixture state.\",\"type\":\"string\"},\"scenario\":{\"description\":\"Plain-English scenario description.\",\"type\":\"string\"},\"verification_kind\":{\"description\":\"Evaluator check classification (deterministic or model_judged).\",\"enum\":[\"deterministic\",\"model_judged\"],\"type\":\"string\"}},\"required\":[\"id\",\"scenario\",\"input_summary\",\"expected_outcome\",\"verification_kind\"],\"title\":\"ExampleItem\",\"type\":\"object\"},\"UICompositionItem\":{\"additionalProperties\":false,\"description\":\"Model-authored OpenUI Lang decision view for exactly one Change Card revision. It is presentation only: it is never hashed into request_revision, confirm_intent never reads it, and it describes the card only while composed_for_revision equals the card's request_revision.\",\"properties\":{\"composed_for_revision\":{\"description\":\"request_revision of the Change Card this program was composed for.\",\"type\":\"string\"},\"program\":{\"description\":\"OpenUI Lang program composed by the CP1 model from the Surla decision component catalog, exactly as the model returned it. The server does not check it; the checkpoint viewer validates it and shows its error state, with the rest of the card still usable, when the program is not a valid composition.\",\"type\":\"string\"}},\"required\":[\"program\",\"composed_for_revision\"],\"title\":\"UICompositionItem\",\"type\":\"object\"},\"UnverifiedApprovalItem\":{\"additionalProperties\":false,\"description\":\"Saved Checkpoint 5 promotion approval recorded on the Change Card whose current promotion inputs could not be verified on this read.\",\"properties\":{\"approval\":{\"$ref\":\"#/$defs/ApprovalItem\",\"description\":\"Recorded promotion approval from the Change Card.\"},\"reason\":{\"description\":\"Explanation of why the recorded approval could not be verified against current promotion inputs and how to recover.\",\"type\":\"string\"}},\"required\":[\"approval\",\"reason\"],\"title\":\"UnverifiedApprovalItem\",\"type\":\"object\"}},\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Checkpoint 1 Change Card containing examples, preserved behaviors, and audit metadata.\",\"properties\":{\"ambiguities\":{\"description\":\"Domain questions surfaced at CP1, retained for audit after confirmation.\",\"items\":{\"$ref\":\"#/$defs/AmbiguityQuestion\"},\"type\":\"array\"},\"answers\":{\"additionalProperties\":{\"type\":\"string\"},\"description\":\"Owner-confirmed answers keyed by ambiguity question ID when status is confirmed and ambiguities is non-empty (empty when a confirmed card has no ambiguity questions). Each answer equals one of its question's declared options and takes precedence over open phrasing in summary.\",\"type\":\"object\"},\"approval\":{\"$ref\":\"#/$defs/ApprovalItem\",\"description\":\"Checkpoint 5 approval of this revision, present only while it is verified against the promotion target's current inputs on this read. It is absent before approve_merge succeeds, whenever the target's suite, environment or binary digests have changed since, and whenever current inputs cannot be verified (see unverified_approval). It is never hashed into request_revision.\"},\"change_id\":{\"description\":\"Change identifier.\",\"type\":\"string\"},\"confirmed_by\":{\"description\":\"Authenticated principal that confirmed the Change Card.\",\"type\":\"string\"},\"examples\":{\"description\":\"Concrete examples mapped to evaluator checks.\",\"items\":{\"$ref\":\"#/$defs/ExampleItem\"},\"type\":\"array\"},\"preserved_behaviors\":{\"description\":\"Existing contract invariants preserved by this change.\",\"items\":{\"type\":\"string\"},\"type\":\"array\"},\"prompt\":{\"description\":\"Operator feature request for this revision.\",\"type\":\"string\"},\"request_revision\":{\"description\":\"SHA-256 digest of the canonical versioned Change Card.\",\"type\":\"string\"},\"status\":{\"description\":\"Checkpoint status (needs_confirmation or confirmed).\",\"enum\":[\"needs_confirmation\",\"confirmed\"],\"type\":\"string\"},\"summary\":{\"description\":\"Plain-English summary of the proposed change from propose_change or revise_change. confirm_intent does not rewrite this text; when status is confirmed, answers records the owner's resolutions for ambiguities.\",\"type\":\"string\"},\"ui_composition\":{\"$ref\":\"#/$defs/UICompositionItem\",\"description\":\"Decision view the CP1 model composed for this revision, when it produced one. A confirm_intent that changes answers or examples returns the new revision without it.\"},\"unverified_approval\":{\"$ref\":\"#/$defs/UnverifiedApprovalItem\",\"description\":\"Saved Checkpoint 5 approval of this revision when current promotion inputs could not be verified on this read (because no promotion target is configured or the target could not report its current inputs). At most one of approval or unverified_approval is set. It is never saved to disk or hashed into request_revision.\"}},\"required\":[\"change_id\",\"status\",\"prompt\",\"summary\",\"examples\",\"preserved_behaviors\",\"request_revision\"],\"type\":\"object\"}"),
+		SchemaWithoutRootExample: []byte("{\"$defs\":{\"AmbiguityQuestion\":{\"additionalProperties\":false,\"description\":\"Domain ambiguity surfaced with concrete examples at Checkpoint 1.\",\"properties\":{\"id\":{\"description\":\"Stable question identifier.\",\"type\":\"string\"},\"options\":{\"description\":\"Concrete resolution choices.\",\"items\":{\"type\":\"string\"},\"type\":\"array\"},\"question\":{\"description\":\"Plain-English question for the operator.\",\"type\":\"string\"}},\"required\":[\"id\",\"question\",\"options\"],\"title\":\"AmbiguityQuestion\",\"type\":\"object\"},\"ApprovalItem\":{\"additionalProperties\":false,\"description\":\"Checkpoint 5 approval recorded by approve_merge after the evaluator-written verification report passed and matched the change being promoted: the exact candidate commit, suite, environment and binary digests it checked. It is saved with the card in the control plane's cards directory, merges and deploys nothing, is replaced by the next successful approve_merge for the same revision, and is dropped when confirm_intent or revise_change mints a new request_revision. get_change and confirm_intent return it in approval only while the promotion target's current suite, environment and binary digests still equal the ones it records, or in unverified_approval when current promotion inputs cannot be verified on that read.\",\"properties\":{\"approved_by\":{\"description\":\"Authenticated bearer principal that owns the card and called approve_merge. Bearer authentication does not prove that a human, rather than a coding agent, made the call.\",\"type\":\"string\"},\"artifacts\":{\"additionalProperties\":{\"type\":\"string\"},\"description\":\"SHA-256 digest of each candidate binary the promotion target measured, keyed by binary name.\",\"type\":\"object\"},\"candidate_commit\":{\"description\":\"Candidate commit the report was checked against.\",\"type\":\"string\"},\"environment\":{\"description\":\"Dependency profile the promotion target requires, such as sim.\",\"type\":\"string\"},\"report_digest\":{\"description\":\"SHA-256 digest of the approved CP4 verification report.\",\"type\":\"string\"},\"scenario_count\":{\"description\":\"Number of declared evaluator scenarios, every one of which passed.\",\"format\":\"int64\",\"type\":\"integer\"},\"suite_commit\":{\"description\":\"Evaluator suite commit the promotion target requires.\",\"type\":\"string\"},\"suite_id\":{\"description\":\"Evaluator suite the promotion target requires.\",\"type\":\"string\"}},\"required\":[\"approved_by\",\"report_digest\",\"candidate_commit\",\"suite_id\",\"suite_commit\",\"environment\",\"artifacts\",\"scenario_count\"],\"title\":\"ApprovalItem\",\"type\":\"object\"},\"ExampleItem\":{\"additionalProperties\":false,\"description\":\"Concrete input and expected outcome confirmed at Checkpoint 1.\",\"properties\":{\"expected_outcome\":{\"description\":\"Expected side effect and response behavior.\",\"type\":\"string\"},\"id\":{\"description\":\"Stable example identifier. Default code-assigned IDs use check_01, check_02, ... (valid goa-ai/eval Scenario names). confirm_intent preserves caller-chosen IDs.\",\"type\":\"string\"},\"input_summary\":{\"description\":\"Representative user request and domain fixture state.\",\"type\":\"string\"},\"scenario\":{\"description\":\"Plain-English scenario description.\",\"type\":\"string\"},\"verification_kind\":{\"description\":\"Evaluator check classification (deterministic or model_judged).\",\"enum\":[\"deterministic\",\"model_judged\"],\"type\":\"string\"}},\"required\":[\"id\",\"scenario\",\"input_summary\",\"expected_outcome\",\"verification_kind\"],\"title\":\"ExampleItem\",\"type\":\"object\"},\"UICompositionItem\":{\"additionalProperties\":false,\"description\":\"Caller-authored OpenUI Lang decision view for exactly one Change Card revision. It is presentation only: it is never hashed into request_revision, confirm_intent never reads it, and it describes the card only while composed_for_revision equals the card's request_revision.\",\"properties\":{\"composed_for_revision\":{\"description\":\"request_revision of the Change Card this program was composed for.\",\"type\":\"string\"},\"program\":{\"description\":\"OpenUI Lang program from the analysis's ui_composition, exactly as the caller sent it. The server does not check it; the checkpoint viewer validates it and shows its error state, with the rest of the card still usable, when the program is not a valid composition.\",\"type\":\"string\"}},\"required\":[\"program\",\"composed_for_revision\"],\"title\":\"UICompositionItem\",\"type\":\"object\"},\"UnverifiedApprovalItem\":{\"additionalProperties\":false,\"description\":\"Saved Checkpoint 5 promotion approval recorded on the Change Card whose current promotion inputs could not be verified on this read.\",\"properties\":{\"approval\":{\"$ref\":\"#/$defs/ApprovalItem\",\"description\":\"Recorded promotion approval from the Change Card.\"},\"reason\":{\"description\":\"Explanation of why the recorded approval could not be verified against current promotion inputs and how to recover.\",\"type\":\"string\"}},\"required\":[\"approval\",\"reason\"],\"title\":\"UnverifiedApprovalItem\",\"type\":\"object\"}},\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Checkpoint 1 Change Card containing examples, preserved behaviors, and audit metadata.\",\"properties\":{\"ambiguities\":{\"description\":\"Domain questions surfaced at CP1, retained for audit after confirmation.\",\"items\":{\"$ref\":\"#/$defs/AmbiguityQuestion\"},\"type\":\"array\"},\"answers\":{\"additionalProperties\":{\"type\":\"string\"},\"description\":\"Owner-confirmed answers keyed by ambiguity question ID when status is confirmed and ambiguities is non-empty (empty when a confirmed card has no ambiguity questions). Each answer equals one of its question's declared options and takes precedence over open phrasing in summary.\",\"type\":\"object\"},\"approval\":{\"$ref\":\"#/$defs/ApprovalItem\",\"description\":\"Checkpoint 5 approval of this revision, present only while it is verified against the promotion target's current inputs on this read. It is absent before approve_merge succeeds, whenever the target's suite, environment or binary digests have changed since, and whenever current inputs cannot be verified (see unverified_approval). It is never hashed into request_revision.\"},\"change_id\":{\"description\":\"Change identifier.\",\"type\":\"string\"},\"confirmed_by\":{\"description\":\"Authenticated principal that confirmed the Change Card.\",\"type\":\"string\"},\"examples\":{\"description\":\"Concrete examples mapped to evaluator checks.\",\"items\":{\"$ref\":\"#/$defs/ExampleItem\"},\"type\":\"array\"},\"preserved_behaviors\":{\"description\":\"Existing contract invariants preserved by this change.\",\"items\":{\"type\":\"string\"},\"type\":\"array\"},\"prompt\":{\"description\":\"Operator feature request for this revision.\",\"type\":\"string\"},\"request_revision\":{\"description\":\"SHA-256 digest of the canonical versioned Change Card.\",\"type\":\"string\"},\"status\":{\"description\":\"Checkpoint status (needs_confirmation or confirmed).\",\"enum\":[\"needs_confirmation\",\"confirmed\"],\"type\":\"string\"},\"summary\":{\"description\":\"Plain-English summary of the proposed change from propose_change or revise_change. confirm_intent does not rewrite this text; when status is confirmed, answers records the owner's resolutions for ambiguities.\",\"type\":\"string\"},\"ui_composition\":{\"$ref\":\"#/$defs/UICompositionItem\",\"description\":\"Decision view the caller composed for this revision in its analysis, when it sent one. A confirm_intent that changes answers or examples returns the new revision without it.\"},\"unverified_approval\":{\"$ref\":\"#/$defs/UnverifiedApprovalItem\",\"description\":\"Saved Checkpoint 5 approval of this revision when current promotion inputs could not be verified on this read (because no promotion target is configured or the target could not report its current inputs). At most one of approval or unverified_approval is set. It is never saved to disk or hashed into request_revision.\"}},\"required\":[\"change_id\",\"status\",\"prompt\",\"summary\",\"examples\",\"preserved_behaviors\",\"request_revision\"],\"type\":\"object\"}"),
 		Fields: []*genregistry.ToolFieldMetadata{
 			declarations.field105(),
 			declarations.field106(),
@@ -1965,7 +1965,7 @@ func (registryDeclarations) field128() *genregistry.ToolFieldMetadata {
 // field129 constructs one generated field declaration.
 func (registryDeclarations) field129() *genregistry.ToolFieldMetadata {
 	registryText1 := "object"
-	registryText2 := "Decision view the CP1 model composed for this revision, when it produced one. A confirm_intent that changes answers or examples returns the new revision without it."
+	registryText2 := "Decision view the caller composed for this revision in its analysis, when it sent one. A confirm_intent that changes answers or examples returns the new revision without it."
 	return &genregistry.ToolFieldMetadata{
 		Path: []*genregistry.ToolFieldPathSegment{
 			{Segment: genregistry.NewToolFieldSegmentField("ui_composition")},
@@ -1978,7 +1978,7 @@ func (registryDeclarations) field129() *genregistry.ToolFieldMetadata {
 // field130 constructs one generated field declaration.
 func (registryDeclarations) field130() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
-	registryText2 := "OpenUI Lang program composed by the CP1 model from the Surla decision component catalog, exactly as the model returned it. The server does not check it; the checkpoint viewer validates it and shows its error state, with the rest of the card still usable, when the program is not a valid composition."
+	registryText2 := "OpenUI Lang program from the analysis's ui_composition, exactly as the caller sent it. The server does not check it; the checkpoint viewer validates it and shows its error state, with the rest of the card still usable, when the program is not a valid composition."
 	return &genregistry.ToolFieldMetadata{
 		Path: []*genregistry.ToolFieldPathSegment{
 			{Segment: genregistry.NewToolFieldSegmentField("ui_composition")},
@@ -3377,7 +3377,7 @@ func (declarations registryDeclarations) schema227() *genregistry.ToolSchema {
 		Description:            &registryText1,
 		PayloadSchema:          []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Identifies the Change Card the authenticated owner wants to read.\",\"properties\":{\"change_id\":{\"description\":\"Change identifier.\",\"type\":\"string\"}},\"required\":[\"change_id\"],\"type\":\"object\"}"),
 		ExecutionPayloadSchema: []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Identifies the Change Card the authenticated owner wants to read.\",\"properties\":{\"change_id\":{\"description\":\"Change identifier.\",\"type\":\"string\"}},\"required\":[\"change_id\"],\"type\":\"object\"}"),
-		ResultSchema:           []byte("{\"$defs\":{\"AmbiguityQuestion\":{\"additionalProperties\":false,\"description\":\"Domain ambiguity surfaced with concrete examples at Checkpoint 1.\",\"properties\":{\"id\":{\"description\":\"Stable question identifier.\",\"type\":\"string\"},\"options\":{\"description\":\"Concrete resolution choices.\",\"items\":{\"type\":\"string\"},\"type\":\"array\"},\"question\":{\"description\":\"Plain-English question for the operator.\",\"type\":\"string\"}},\"required\":[\"id\",\"question\",\"options\"],\"title\":\"AmbiguityQuestion\",\"type\":\"object\"},\"ApprovalItem\":{\"additionalProperties\":false,\"description\":\"Checkpoint 5 approval recorded by approve_merge after the evaluator-written verification report passed and matched the change being promoted: the exact candidate commit, suite, environment and binary digests it checked. It is saved with the card in the control plane's cards directory, merges and deploys nothing, is replaced by the next successful approve_merge for the same revision, and is dropped when confirm_intent or revise_change mints a new request_revision. get_change and confirm_intent return it in approval only while the promotion target's current suite, environment and binary digests still equal the ones it records, or in unverified_approval when current promotion inputs cannot be verified on that read.\",\"properties\":{\"approved_by\":{\"description\":\"Authenticated bearer principal that owns the card and called approve_merge. Bearer authentication does not prove that a human, rather than a coding agent, made the call.\",\"type\":\"string\"},\"artifacts\":{\"additionalProperties\":{\"type\":\"string\"},\"description\":\"SHA-256 digest of each candidate binary the promotion target measured, keyed by binary name.\",\"type\":\"object\"},\"candidate_commit\":{\"description\":\"Candidate commit the report was checked against.\",\"type\":\"string\"},\"environment\":{\"description\":\"Dependency profile the promotion target requires, such as sim.\",\"type\":\"string\"},\"report_digest\":{\"description\":\"SHA-256 digest of the approved CP4 verification report.\",\"type\":\"string\"},\"scenario_count\":{\"description\":\"Number of declared evaluator scenarios, every one of which passed.\",\"format\":\"int64\",\"type\":\"integer\"},\"suite_commit\":{\"description\":\"Evaluator suite commit the promotion target requires.\",\"type\":\"string\"},\"suite_id\":{\"description\":\"Evaluator suite the promotion target requires.\",\"type\":\"string\"}},\"required\":[\"approved_by\",\"report_digest\",\"candidate_commit\",\"suite_id\",\"suite_commit\",\"environment\",\"artifacts\",\"scenario_count\"],\"title\":\"ApprovalItem\",\"type\":\"object\"},\"ExampleItem\":{\"additionalProperties\":false,\"description\":\"Concrete input and expected outcome confirmed at Checkpoint 1.\",\"properties\":{\"expected_outcome\":{\"description\":\"Expected side effect and response behavior.\",\"type\":\"string\"},\"id\":{\"description\":\"Stable example identifier. Default code-assigned IDs use check_01, check_02, ... (valid goa-ai/eval Scenario names). confirm_intent preserves caller-chosen IDs.\",\"type\":\"string\"},\"input_summary\":{\"description\":\"Representative user request and domain fixture state.\",\"type\":\"string\"},\"scenario\":{\"description\":\"Plain-English scenario description.\",\"type\":\"string\"},\"verification_kind\":{\"description\":\"Evaluator check classification (deterministic or model_judged).\",\"enum\":[\"deterministic\",\"model_judged\"],\"type\":\"string\"}},\"required\":[\"id\",\"scenario\",\"input_summary\",\"expected_outcome\",\"verification_kind\"],\"title\":\"ExampleItem\",\"type\":\"object\"},\"UICompositionItem\":{\"additionalProperties\":false,\"description\":\"Model-authored OpenUI Lang decision view for exactly one Change Card revision. It is presentation only: it is never hashed into request_revision, confirm_intent never reads it, and it describes the card only while composed_for_revision equals the card's request_revision.\",\"properties\":{\"composed_for_revision\":{\"description\":\"request_revision of the Change Card this program was composed for.\",\"type\":\"string\"},\"program\":{\"description\":\"OpenUI Lang program composed by the CP1 model from the Surla decision component catalog, exactly as the model returned it. The server does not check it; the checkpoint viewer validates it and shows its error state, with the rest of the card still usable, when the program is not a valid composition.\",\"type\":\"string\"}},\"required\":[\"program\",\"composed_for_revision\"],\"title\":\"UICompositionItem\",\"type\":\"object\"},\"UnverifiedApprovalItem\":{\"additionalProperties\":false,\"description\":\"Saved Checkpoint 5 promotion approval recorded on the Change Card whose current promotion inputs could not be verified on this read.\",\"properties\":{\"approval\":{\"$ref\":\"#/$defs/ApprovalItem\",\"description\":\"Recorded promotion approval from the Change Card.\"},\"reason\":{\"description\":\"Explanation of why the recorded approval could not be verified against current promotion inputs and how to recover.\",\"type\":\"string\"}},\"required\":[\"approval\",\"reason\"],\"title\":\"UnverifiedApprovalItem\",\"type\":\"object\"}},\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Checkpoint 1 Change Card containing examples, preserved behaviors, and audit metadata.\",\"properties\":{\"ambiguities\":{\"description\":\"Domain questions surfaced at CP1, retained for audit after confirmation.\",\"items\":{\"$ref\":\"#/$defs/AmbiguityQuestion\"},\"type\":\"array\"},\"answers\":{\"additionalProperties\":{\"type\":\"string\"},\"description\":\"Owner-confirmed answers keyed by ambiguity question ID when status is confirmed and ambiguities is non-empty (empty when a confirmed card has no ambiguity questions). Each answer equals one of its question's declared options and takes precedence over open phrasing in summary.\",\"type\":\"object\"},\"approval\":{\"$ref\":\"#/$defs/ApprovalItem\",\"description\":\"Checkpoint 5 approval of this revision, present only while it is verified against the promotion target's current inputs on this read. It is absent before approve_merge succeeds, whenever the target's suite, environment or binary digests have changed since, and whenever current inputs cannot be verified (see unverified_approval). It is never hashed into request_revision.\"},\"change_id\":{\"description\":\"Change identifier.\",\"type\":\"string\"},\"confirmed_by\":{\"description\":\"Authenticated principal that confirmed the Change Card.\",\"type\":\"string\"},\"examples\":{\"description\":\"Concrete examples mapped to evaluator checks.\",\"items\":{\"$ref\":\"#/$defs/ExampleItem\"},\"type\":\"array\"},\"preserved_behaviors\":{\"description\":\"Existing contract invariants preserved by this change.\",\"items\":{\"type\":\"string\"},\"type\":\"array\"},\"prompt\":{\"description\":\"Operator feature request for this revision.\",\"type\":\"string\"},\"request_revision\":{\"description\":\"SHA-256 digest of the canonical versioned Change Card.\",\"type\":\"string\"},\"status\":{\"description\":\"Checkpoint status (needs_confirmation or confirmed).\",\"enum\":[\"needs_confirmation\",\"confirmed\"],\"type\":\"string\"},\"summary\":{\"description\":\"Plain-English summary of the proposed change from propose_change or revise_change. confirm_intent does not rewrite this text; when status is confirmed, answers records the owner's resolutions for ambiguities.\",\"type\":\"string\"},\"ui_composition\":{\"$ref\":\"#/$defs/UICompositionItem\",\"description\":\"Decision view the CP1 model composed for this revision, when it produced one. A confirm_intent that changes answers or examples returns the new revision without it.\"},\"unverified_approval\":{\"$ref\":\"#/$defs/UnverifiedApprovalItem\",\"description\":\"Saved Checkpoint 5 approval of this revision when current promotion inputs could not be verified on this read (because no promotion target is configured or the target could not report its current inputs). At most one of approval or unverified_approval is set. It is never saved to disk or hashed into request_revision.\"}},\"required\":[\"change_id\",\"status\",\"prompt\",\"summary\",\"examples\",\"preserved_behaviors\",\"request_revision\"],\"type\":\"object\"}"),
+		ResultSchema:           []byte("{\"$defs\":{\"AmbiguityQuestion\":{\"additionalProperties\":false,\"description\":\"Domain ambiguity surfaced with concrete examples at Checkpoint 1.\",\"properties\":{\"id\":{\"description\":\"Stable question identifier.\",\"type\":\"string\"},\"options\":{\"description\":\"Concrete resolution choices.\",\"items\":{\"type\":\"string\"},\"type\":\"array\"},\"question\":{\"description\":\"Plain-English question for the operator.\",\"type\":\"string\"}},\"required\":[\"id\",\"question\",\"options\"],\"title\":\"AmbiguityQuestion\",\"type\":\"object\"},\"ApprovalItem\":{\"additionalProperties\":false,\"description\":\"Checkpoint 5 approval recorded by approve_merge after the evaluator-written verification report passed and matched the change being promoted: the exact candidate commit, suite, environment and binary digests it checked. It is saved with the card in the control plane's cards directory, merges and deploys nothing, is replaced by the next successful approve_merge for the same revision, and is dropped when confirm_intent or revise_change mints a new request_revision. get_change and confirm_intent return it in approval only while the promotion target's current suite, environment and binary digests still equal the ones it records, or in unverified_approval when current promotion inputs cannot be verified on that read.\",\"properties\":{\"approved_by\":{\"description\":\"Authenticated bearer principal that owns the card and called approve_merge. Bearer authentication does not prove that a human, rather than a coding agent, made the call.\",\"type\":\"string\"},\"artifacts\":{\"additionalProperties\":{\"type\":\"string\"},\"description\":\"SHA-256 digest of each candidate binary the promotion target measured, keyed by binary name.\",\"type\":\"object\"},\"candidate_commit\":{\"description\":\"Candidate commit the report was checked against.\",\"type\":\"string\"},\"environment\":{\"description\":\"Dependency profile the promotion target requires, such as sim.\",\"type\":\"string\"},\"report_digest\":{\"description\":\"SHA-256 digest of the approved CP4 verification report.\",\"type\":\"string\"},\"scenario_count\":{\"description\":\"Number of declared evaluator scenarios, every one of which passed.\",\"format\":\"int64\",\"type\":\"integer\"},\"suite_commit\":{\"description\":\"Evaluator suite commit the promotion target requires.\",\"type\":\"string\"},\"suite_id\":{\"description\":\"Evaluator suite the promotion target requires.\",\"type\":\"string\"}},\"required\":[\"approved_by\",\"report_digest\",\"candidate_commit\",\"suite_id\",\"suite_commit\",\"environment\",\"artifacts\",\"scenario_count\"],\"title\":\"ApprovalItem\",\"type\":\"object\"},\"ExampleItem\":{\"additionalProperties\":false,\"description\":\"Concrete input and expected outcome confirmed at Checkpoint 1.\",\"properties\":{\"expected_outcome\":{\"description\":\"Expected side effect and response behavior.\",\"type\":\"string\"},\"id\":{\"description\":\"Stable example identifier. Default code-assigned IDs use check_01, check_02, ... (valid goa-ai/eval Scenario names). confirm_intent preserves caller-chosen IDs.\",\"type\":\"string\"},\"input_summary\":{\"description\":\"Representative user request and domain fixture state.\",\"type\":\"string\"},\"scenario\":{\"description\":\"Plain-English scenario description.\",\"type\":\"string\"},\"verification_kind\":{\"description\":\"Evaluator check classification (deterministic or model_judged).\",\"enum\":[\"deterministic\",\"model_judged\"],\"type\":\"string\"}},\"required\":[\"id\",\"scenario\",\"input_summary\",\"expected_outcome\",\"verification_kind\"],\"title\":\"ExampleItem\",\"type\":\"object\"},\"UICompositionItem\":{\"additionalProperties\":false,\"description\":\"Caller-authored OpenUI Lang decision view for exactly one Change Card revision. It is presentation only: it is never hashed into request_revision, confirm_intent never reads it, and it describes the card only while composed_for_revision equals the card's request_revision.\",\"properties\":{\"composed_for_revision\":{\"description\":\"request_revision of the Change Card this program was composed for.\",\"type\":\"string\"},\"program\":{\"description\":\"OpenUI Lang program from the analysis's ui_composition, exactly as the caller sent it. The server does not check it; the checkpoint viewer validates it and shows its error state, with the rest of the card still usable, when the program is not a valid composition.\",\"type\":\"string\"}},\"required\":[\"program\",\"composed_for_revision\"],\"title\":\"UICompositionItem\",\"type\":\"object\"},\"UnverifiedApprovalItem\":{\"additionalProperties\":false,\"description\":\"Saved Checkpoint 5 promotion approval recorded on the Change Card whose current promotion inputs could not be verified on this read.\",\"properties\":{\"approval\":{\"$ref\":\"#/$defs/ApprovalItem\",\"description\":\"Recorded promotion approval from the Change Card.\"},\"reason\":{\"description\":\"Explanation of why the recorded approval could not be verified against current promotion inputs and how to recover.\",\"type\":\"string\"}},\"required\":[\"approval\",\"reason\"],\"title\":\"UnverifiedApprovalItem\",\"type\":\"object\"}},\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Checkpoint 1 Change Card containing examples, preserved behaviors, and audit metadata.\",\"properties\":{\"ambiguities\":{\"description\":\"Domain questions surfaced at CP1, retained for audit after confirmation.\",\"items\":{\"$ref\":\"#/$defs/AmbiguityQuestion\"},\"type\":\"array\"},\"answers\":{\"additionalProperties\":{\"type\":\"string\"},\"description\":\"Owner-confirmed answers keyed by ambiguity question ID when status is confirmed and ambiguities is non-empty (empty when a confirmed card has no ambiguity questions). Each answer equals one of its question's declared options and takes precedence over open phrasing in summary.\",\"type\":\"object\"},\"approval\":{\"$ref\":\"#/$defs/ApprovalItem\",\"description\":\"Checkpoint 5 approval of this revision, present only while it is verified against the promotion target's current inputs on this read. It is absent before approve_merge succeeds, whenever the target's suite, environment or binary digests have changed since, and whenever current inputs cannot be verified (see unverified_approval). It is never hashed into request_revision.\"},\"change_id\":{\"description\":\"Change identifier.\",\"type\":\"string\"},\"confirmed_by\":{\"description\":\"Authenticated principal that confirmed the Change Card.\",\"type\":\"string\"},\"examples\":{\"description\":\"Concrete examples mapped to evaluator checks.\",\"items\":{\"$ref\":\"#/$defs/ExampleItem\"},\"type\":\"array\"},\"preserved_behaviors\":{\"description\":\"Existing contract invariants preserved by this change.\",\"items\":{\"type\":\"string\"},\"type\":\"array\"},\"prompt\":{\"description\":\"Operator feature request for this revision.\",\"type\":\"string\"},\"request_revision\":{\"description\":\"SHA-256 digest of the canonical versioned Change Card.\",\"type\":\"string\"},\"status\":{\"description\":\"Checkpoint status (needs_confirmation or confirmed).\",\"enum\":[\"needs_confirmation\",\"confirmed\"],\"type\":\"string\"},\"summary\":{\"description\":\"Plain-English summary of the proposed change from propose_change or revise_change. confirm_intent does not rewrite this text; when status is confirmed, answers records the owner's resolutions for ambiguities.\",\"type\":\"string\"},\"ui_composition\":{\"$ref\":\"#/$defs/UICompositionItem\",\"description\":\"Decision view the caller composed for this revision in its analysis, when it sent one. A confirm_intent that changes answers or examples returns the new revision without it.\"},\"unverified_approval\":{\"$ref\":\"#/$defs/UnverifiedApprovalItem\",\"description\":\"Saved Checkpoint 5 approval of this revision when current promotion inputs could not be verified on this read (because no promotion target is configured or the target could not report its current inputs). At most one of approval or unverified_approval is set. It is never saved to disk or hashed into request_revision.\"}},\"required\":[\"change_id\",\"status\",\"prompt\",\"summary\",\"examples\",\"preserved_behaviors\",\"request_revision\"],\"type\":\"object\"}"),
 		ConsumerContract: &genregistry.ConsumerContract{
 			Kind:  "service",
 			Title: "Get Change",
@@ -3443,7 +3443,7 @@ func (declarations registryDeclarations) metadata231() *genregistry.ToolTypeMeta
 	registryText1 := "GetChangeResult"
 	return &genregistry.ToolTypeMetadata{
 		Name:                     &registryText1,
-		SchemaWithoutRootExample: []byte("{\"$defs\":{\"AmbiguityQuestion\":{\"additionalProperties\":false,\"description\":\"Domain ambiguity surfaced with concrete examples at Checkpoint 1.\",\"properties\":{\"id\":{\"description\":\"Stable question identifier.\",\"type\":\"string\"},\"options\":{\"description\":\"Concrete resolution choices.\",\"items\":{\"type\":\"string\"},\"type\":\"array\"},\"question\":{\"description\":\"Plain-English question for the operator.\",\"type\":\"string\"}},\"required\":[\"id\",\"question\",\"options\"],\"title\":\"AmbiguityQuestion\",\"type\":\"object\"},\"ApprovalItem\":{\"additionalProperties\":false,\"description\":\"Checkpoint 5 approval recorded by approve_merge after the evaluator-written verification report passed and matched the change being promoted: the exact candidate commit, suite, environment and binary digests it checked. It is saved with the card in the control plane's cards directory, merges and deploys nothing, is replaced by the next successful approve_merge for the same revision, and is dropped when confirm_intent or revise_change mints a new request_revision. get_change and confirm_intent return it in approval only while the promotion target's current suite, environment and binary digests still equal the ones it records, or in unverified_approval when current promotion inputs cannot be verified on that read.\",\"properties\":{\"approved_by\":{\"description\":\"Authenticated bearer principal that owns the card and called approve_merge. Bearer authentication does not prove that a human, rather than a coding agent, made the call.\",\"type\":\"string\"},\"artifacts\":{\"additionalProperties\":{\"type\":\"string\"},\"description\":\"SHA-256 digest of each candidate binary the promotion target measured, keyed by binary name.\",\"type\":\"object\"},\"candidate_commit\":{\"description\":\"Candidate commit the report was checked against.\",\"type\":\"string\"},\"environment\":{\"description\":\"Dependency profile the promotion target requires, such as sim.\",\"type\":\"string\"},\"report_digest\":{\"description\":\"SHA-256 digest of the approved CP4 verification report.\",\"type\":\"string\"},\"scenario_count\":{\"description\":\"Number of declared evaluator scenarios, every one of which passed.\",\"format\":\"int64\",\"type\":\"integer\"},\"suite_commit\":{\"description\":\"Evaluator suite commit the promotion target requires.\",\"type\":\"string\"},\"suite_id\":{\"description\":\"Evaluator suite the promotion target requires.\",\"type\":\"string\"}},\"required\":[\"approved_by\",\"report_digest\",\"candidate_commit\",\"suite_id\",\"suite_commit\",\"environment\",\"artifacts\",\"scenario_count\"],\"title\":\"ApprovalItem\",\"type\":\"object\"},\"ExampleItem\":{\"additionalProperties\":false,\"description\":\"Concrete input and expected outcome confirmed at Checkpoint 1.\",\"properties\":{\"expected_outcome\":{\"description\":\"Expected side effect and response behavior.\",\"type\":\"string\"},\"id\":{\"description\":\"Stable example identifier. Default code-assigned IDs use check_01, check_02, ... (valid goa-ai/eval Scenario names). confirm_intent preserves caller-chosen IDs.\",\"type\":\"string\"},\"input_summary\":{\"description\":\"Representative user request and domain fixture state.\",\"type\":\"string\"},\"scenario\":{\"description\":\"Plain-English scenario description.\",\"type\":\"string\"},\"verification_kind\":{\"description\":\"Evaluator check classification (deterministic or model_judged).\",\"enum\":[\"deterministic\",\"model_judged\"],\"type\":\"string\"}},\"required\":[\"id\",\"scenario\",\"input_summary\",\"expected_outcome\",\"verification_kind\"],\"title\":\"ExampleItem\",\"type\":\"object\"},\"UICompositionItem\":{\"additionalProperties\":false,\"description\":\"Model-authored OpenUI Lang decision view for exactly one Change Card revision. It is presentation only: it is never hashed into request_revision, confirm_intent never reads it, and it describes the card only while composed_for_revision equals the card's request_revision.\",\"properties\":{\"composed_for_revision\":{\"description\":\"request_revision of the Change Card this program was composed for.\",\"type\":\"string\"},\"program\":{\"description\":\"OpenUI Lang program composed by the CP1 model from the Surla decision component catalog, exactly as the model returned it. The server does not check it; the checkpoint viewer validates it and shows its error state, with the rest of the card still usable, when the program is not a valid composition.\",\"type\":\"string\"}},\"required\":[\"program\",\"composed_for_revision\"],\"title\":\"UICompositionItem\",\"type\":\"object\"},\"UnverifiedApprovalItem\":{\"additionalProperties\":false,\"description\":\"Saved Checkpoint 5 promotion approval recorded on the Change Card whose current promotion inputs could not be verified on this read.\",\"properties\":{\"approval\":{\"$ref\":\"#/$defs/ApprovalItem\",\"description\":\"Recorded promotion approval from the Change Card.\"},\"reason\":{\"description\":\"Explanation of why the recorded approval could not be verified against current promotion inputs and how to recover.\",\"type\":\"string\"}},\"required\":[\"approval\",\"reason\"],\"title\":\"UnverifiedApprovalItem\",\"type\":\"object\"}},\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Checkpoint 1 Change Card containing examples, preserved behaviors, and audit metadata.\",\"properties\":{\"ambiguities\":{\"description\":\"Domain questions surfaced at CP1, retained for audit after confirmation.\",\"items\":{\"$ref\":\"#/$defs/AmbiguityQuestion\"},\"type\":\"array\"},\"answers\":{\"additionalProperties\":{\"type\":\"string\"},\"description\":\"Owner-confirmed answers keyed by ambiguity question ID when status is confirmed and ambiguities is non-empty (empty when a confirmed card has no ambiguity questions). Each answer equals one of its question's declared options and takes precedence over open phrasing in summary.\",\"type\":\"object\"},\"approval\":{\"$ref\":\"#/$defs/ApprovalItem\",\"description\":\"Checkpoint 5 approval of this revision, present only while it is verified against the promotion target's current inputs on this read. It is absent before approve_merge succeeds, whenever the target's suite, environment or binary digests have changed since, and whenever current inputs cannot be verified (see unverified_approval). It is never hashed into request_revision.\"},\"change_id\":{\"description\":\"Change identifier.\",\"type\":\"string\"},\"confirmed_by\":{\"description\":\"Authenticated principal that confirmed the Change Card.\",\"type\":\"string\"},\"examples\":{\"description\":\"Concrete examples mapped to evaluator checks.\",\"items\":{\"$ref\":\"#/$defs/ExampleItem\"},\"type\":\"array\"},\"preserved_behaviors\":{\"description\":\"Existing contract invariants preserved by this change.\",\"items\":{\"type\":\"string\"},\"type\":\"array\"},\"prompt\":{\"description\":\"Operator feature request for this revision.\",\"type\":\"string\"},\"request_revision\":{\"description\":\"SHA-256 digest of the canonical versioned Change Card.\",\"type\":\"string\"},\"status\":{\"description\":\"Checkpoint status (needs_confirmation or confirmed).\",\"enum\":[\"needs_confirmation\",\"confirmed\"],\"type\":\"string\"},\"summary\":{\"description\":\"Plain-English summary of the proposed change from propose_change or revise_change. confirm_intent does not rewrite this text; when status is confirmed, answers records the owner's resolutions for ambiguities.\",\"type\":\"string\"},\"ui_composition\":{\"$ref\":\"#/$defs/UICompositionItem\",\"description\":\"Decision view the CP1 model composed for this revision, when it produced one. A confirm_intent that changes answers or examples returns the new revision without it.\"},\"unverified_approval\":{\"$ref\":\"#/$defs/UnverifiedApprovalItem\",\"description\":\"Saved Checkpoint 5 approval of this revision when current promotion inputs could not be verified on this read (because no promotion target is configured or the target could not report its current inputs). At most one of approval or unverified_approval is set. It is never saved to disk or hashed into request_revision.\"}},\"required\":[\"change_id\",\"status\",\"prompt\",\"summary\",\"examples\",\"preserved_behaviors\",\"request_revision\"],\"type\":\"object\"}"),
+		SchemaWithoutRootExample: []byte("{\"$defs\":{\"AmbiguityQuestion\":{\"additionalProperties\":false,\"description\":\"Domain ambiguity surfaced with concrete examples at Checkpoint 1.\",\"properties\":{\"id\":{\"description\":\"Stable question identifier.\",\"type\":\"string\"},\"options\":{\"description\":\"Concrete resolution choices.\",\"items\":{\"type\":\"string\"},\"type\":\"array\"},\"question\":{\"description\":\"Plain-English question for the operator.\",\"type\":\"string\"}},\"required\":[\"id\",\"question\",\"options\"],\"title\":\"AmbiguityQuestion\",\"type\":\"object\"},\"ApprovalItem\":{\"additionalProperties\":false,\"description\":\"Checkpoint 5 approval recorded by approve_merge after the evaluator-written verification report passed and matched the change being promoted: the exact candidate commit, suite, environment and binary digests it checked. It is saved with the card in the control plane's cards directory, merges and deploys nothing, is replaced by the next successful approve_merge for the same revision, and is dropped when confirm_intent or revise_change mints a new request_revision. get_change and confirm_intent return it in approval only while the promotion target's current suite, environment and binary digests still equal the ones it records, or in unverified_approval when current promotion inputs cannot be verified on that read.\",\"properties\":{\"approved_by\":{\"description\":\"Authenticated bearer principal that owns the card and called approve_merge. Bearer authentication does not prove that a human, rather than a coding agent, made the call.\",\"type\":\"string\"},\"artifacts\":{\"additionalProperties\":{\"type\":\"string\"},\"description\":\"SHA-256 digest of each candidate binary the promotion target measured, keyed by binary name.\",\"type\":\"object\"},\"candidate_commit\":{\"description\":\"Candidate commit the report was checked against.\",\"type\":\"string\"},\"environment\":{\"description\":\"Dependency profile the promotion target requires, such as sim.\",\"type\":\"string\"},\"report_digest\":{\"description\":\"SHA-256 digest of the approved CP4 verification report.\",\"type\":\"string\"},\"scenario_count\":{\"description\":\"Number of declared evaluator scenarios, every one of which passed.\",\"format\":\"int64\",\"type\":\"integer\"},\"suite_commit\":{\"description\":\"Evaluator suite commit the promotion target requires.\",\"type\":\"string\"},\"suite_id\":{\"description\":\"Evaluator suite the promotion target requires.\",\"type\":\"string\"}},\"required\":[\"approved_by\",\"report_digest\",\"candidate_commit\",\"suite_id\",\"suite_commit\",\"environment\",\"artifacts\",\"scenario_count\"],\"title\":\"ApprovalItem\",\"type\":\"object\"},\"ExampleItem\":{\"additionalProperties\":false,\"description\":\"Concrete input and expected outcome confirmed at Checkpoint 1.\",\"properties\":{\"expected_outcome\":{\"description\":\"Expected side effect and response behavior.\",\"type\":\"string\"},\"id\":{\"description\":\"Stable example identifier. Default code-assigned IDs use check_01, check_02, ... (valid goa-ai/eval Scenario names). confirm_intent preserves caller-chosen IDs.\",\"type\":\"string\"},\"input_summary\":{\"description\":\"Representative user request and domain fixture state.\",\"type\":\"string\"},\"scenario\":{\"description\":\"Plain-English scenario description.\",\"type\":\"string\"},\"verification_kind\":{\"description\":\"Evaluator check classification (deterministic or model_judged).\",\"enum\":[\"deterministic\",\"model_judged\"],\"type\":\"string\"}},\"required\":[\"id\",\"scenario\",\"input_summary\",\"expected_outcome\",\"verification_kind\"],\"title\":\"ExampleItem\",\"type\":\"object\"},\"UICompositionItem\":{\"additionalProperties\":false,\"description\":\"Caller-authored OpenUI Lang decision view for exactly one Change Card revision. It is presentation only: it is never hashed into request_revision, confirm_intent never reads it, and it describes the card only while composed_for_revision equals the card's request_revision.\",\"properties\":{\"composed_for_revision\":{\"description\":\"request_revision of the Change Card this program was composed for.\",\"type\":\"string\"},\"program\":{\"description\":\"OpenUI Lang program from the analysis's ui_composition, exactly as the caller sent it. The server does not check it; the checkpoint viewer validates it and shows its error state, with the rest of the card still usable, when the program is not a valid composition.\",\"type\":\"string\"}},\"required\":[\"program\",\"composed_for_revision\"],\"title\":\"UICompositionItem\",\"type\":\"object\"},\"UnverifiedApprovalItem\":{\"additionalProperties\":false,\"description\":\"Saved Checkpoint 5 promotion approval recorded on the Change Card whose current promotion inputs could not be verified on this read.\",\"properties\":{\"approval\":{\"$ref\":\"#/$defs/ApprovalItem\",\"description\":\"Recorded promotion approval from the Change Card.\"},\"reason\":{\"description\":\"Explanation of why the recorded approval could not be verified against current promotion inputs and how to recover.\",\"type\":\"string\"}},\"required\":[\"approval\",\"reason\"],\"title\":\"UnverifiedApprovalItem\",\"type\":\"object\"}},\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Checkpoint 1 Change Card containing examples, preserved behaviors, and audit metadata.\",\"properties\":{\"ambiguities\":{\"description\":\"Domain questions surfaced at CP1, retained for audit after confirmation.\",\"items\":{\"$ref\":\"#/$defs/AmbiguityQuestion\"},\"type\":\"array\"},\"answers\":{\"additionalProperties\":{\"type\":\"string\"},\"description\":\"Owner-confirmed answers keyed by ambiguity question ID when status is confirmed and ambiguities is non-empty (empty when a confirmed card has no ambiguity questions). Each answer equals one of its question's declared options and takes precedence over open phrasing in summary.\",\"type\":\"object\"},\"approval\":{\"$ref\":\"#/$defs/ApprovalItem\",\"description\":\"Checkpoint 5 approval of this revision, present only while it is verified against the promotion target's current inputs on this read. It is absent before approve_merge succeeds, whenever the target's suite, environment or binary digests have changed since, and whenever current inputs cannot be verified (see unverified_approval). It is never hashed into request_revision.\"},\"change_id\":{\"description\":\"Change identifier.\",\"type\":\"string\"},\"confirmed_by\":{\"description\":\"Authenticated principal that confirmed the Change Card.\",\"type\":\"string\"},\"examples\":{\"description\":\"Concrete examples mapped to evaluator checks.\",\"items\":{\"$ref\":\"#/$defs/ExampleItem\"},\"type\":\"array\"},\"preserved_behaviors\":{\"description\":\"Existing contract invariants preserved by this change.\",\"items\":{\"type\":\"string\"},\"type\":\"array\"},\"prompt\":{\"description\":\"Operator feature request for this revision.\",\"type\":\"string\"},\"request_revision\":{\"description\":\"SHA-256 digest of the canonical versioned Change Card.\",\"type\":\"string\"},\"status\":{\"description\":\"Checkpoint status (needs_confirmation or confirmed).\",\"enum\":[\"needs_confirmation\",\"confirmed\"],\"type\":\"string\"},\"summary\":{\"description\":\"Plain-English summary of the proposed change from propose_change or revise_change. confirm_intent does not rewrite this text; when status is confirmed, answers records the owner's resolutions for ambiguities.\",\"type\":\"string\"},\"ui_composition\":{\"$ref\":\"#/$defs/UICompositionItem\",\"description\":\"Decision view the caller composed for this revision in its analysis, when it sent one. A confirm_intent that changes answers or examples returns the new revision without it.\"},\"unverified_approval\":{\"$ref\":\"#/$defs/UnverifiedApprovalItem\",\"description\":\"Saved Checkpoint 5 approval of this revision when current promotion inputs could not be verified on this read (because no promotion target is configured or the target could not report its current inputs). At most one of approval or unverified_approval is set. It is never saved to disk or hashed into request_revision.\"}},\"required\":[\"change_id\",\"status\",\"prompt\",\"summary\",\"examples\",\"preserved_behaviors\",\"request_revision\"],\"type\":\"object\"}"),
 		Fields: []*genregistry.ToolFieldMetadata{
 			declarations.field232(),
 			declarations.field233(),
@@ -3833,7 +3833,7 @@ func (registryDeclarations) field255() *genregistry.ToolFieldMetadata {
 // field256 constructs one generated field declaration.
 func (registryDeclarations) field256() *genregistry.ToolFieldMetadata {
 	registryText1 := "object"
-	registryText2 := "Decision view the CP1 model composed for this revision, when it produced one. A confirm_intent that changes answers or examples returns the new revision without it."
+	registryText2 := "Decision view the caller composed for this revision in its analysis, when it sent one. A confirm_intent that changes answers or examples returns the new revision without it."
 	return &genregistry.ToolFieldMetadata{
 		Path: []*genregistry.ToolFieldPathSegment{
 			{Segment: genregistry.NewToolFieldSegmentField("ui_composition")},
@@ -3846,7 +3846,7 @@ func (registryDeclarations) field256() *genregistry.ToolFieldMetadata {
 // field257 constructs one generated field declaration.
 func (registryDeclarations) field257() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
-	registryText2 := "OpenUI Lang program composed by the CP1 model from the Surla decision component catalog, exactly as the model returned it. The server does not check it; the checkpoint viewer validates it and shows its error state, with the rest of the card still usable, when the program is not a valid composition."
+	registryText2 := "OpenUI Lang program from the analysis's ui_composition, exactly as the caller sent it. The server does not check it; the checkpoint viewer validates it and shows its error state, with the rest of the card still usable, when the program is not a valid composition."
 	return &genregistry.ToolFieldMetadata{
 		Path: []*genregistry.ToolFieldPathSegment{
 			{Segment: genregistry.NewToolFieldSegmentField("ui_composition")},
@@ -8397,33 +8397,33 @@ func (registryDeclarations) field527() *genregistry.ToolFieldMetadata {
 
 // schema528 constructs one generated schema declaration.
 func (declarations registryDeclarations) schema528() *genregistry.ToolSchema {
-	registryText1 := "Propose a feature change and generate a Checkpoint 1 Change Card. When design_source is omitted and a workspace is bound, Surla reads design/*.go from the bound workspace."
+	registryText1 := "Propose a feature change as a Checkpoint 1 Change Card. Read the target's design/*.go and the surla://golden-path playbook first, then send the request in prompt with your analysis of it: a summary, the open questions only the requester can answer (an empty list when none), concrete examples that become checks, and the existing behaviors the change must keep. Surla assigns the IDs and request_revision and saves the card; a card without open questions is confirmed at once. When design_source is omitted and a workspace is bound, Surla records design/*.go from the bound workspace."
 	return &genregistry.ToolSchema{
 		Name:                   "surla.propose_change",
 		Description:            &registryText1,
-		PayloadSchema:          []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Operator feature request submitted for Checkpoint 1 ambiguity and example analysis.\",\"properties\":{\"change_id\":{\"description\":\"Unique change identifier.\",\"type\":\"string\"},\"design_source\":{\"description\":\"Current Goa design source of the target (its design/*.go files) for the CP1 model to read. When omitted on a server with a bound workspace, Surla reads design/*.go from the bound workspace; when omitted without a bound workspace, CP1 receives no current design.\",\"type\":\"string\"},\"prompt\":{\"description\":\"Operator feature request.\",\"type\":\"string\"}},\"required\":[\"change_id\",\"prompt\"],\"type\":\"object\"}"),
-		ExecutionPayloadSchema: []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Operator feature request submitted for Checkpoint 1 ambiguity and example analysis.\",\"properties\":{\"change_id\":{\"description\":\"Unique change identifier.\",\"type\":\"string\"},\"design_source\":{\"description\":\"Current Goa design source of the target (its design/*.go files) for the CP1 model to read. When omitted on a server with a bound workspace, Surla reads design/*.go from the bound workspace; when omitted without a bound workspace, CP1 receives no current design.\",\"type\":\"string\"},\"prompt\":{\"description\":\"Operator feature request.\",\"type\":\"string\"}},\"required\":[\"change_id\",\"prompt\"],\"type\":\"object\"}"),
-		ResultSchema:           []byte("{\"$defs\":{\"AmbiguityQuestion\":{\"additionalProperties\":false,\"description\":\"Domain ambiguity surfaced with concrete examples at Checkpoint 1.\",\"properties\":{\"id\":{\"description\":\"Stable question identifier.\",\"type\":\"string\"},\"options\":{\"description\":\"Concrete resolution choices.\",\"items\":{\"type\":\"string\"},\"type\":\"array\"},\"question\":{\"description\":\"Plain-English question for the operator.\",\"type\":\"string\"}},\"required\":[\"id\",\"question\",\"options\"],\"title\":\"AmbiguityQuestion\",\"type\":\"object\"},\"ApprovalItem\":{\"additionalProperties\":false,\"description\":\"Checkpoint 5 approval recorded by approve_merge after the evaluator-written verification report passed and matched the change being promoted: the exact candidate commit, suite, environment and binary digests it checked. It is saved with the card in the control plane's cards directory, merges and deploys nothing, is replaced by the next successful approve_merge for the same revision, and is dropped when confirm_intent or revise_change mints a new request_revision. get_change and confirm_intent return it in approval only while the promotion target's current suite, environment and binary digests still equal the ones it records, or in unverified_approval when current promotion inputs cannot be verified on that read.\",\"properties\":{\"approved_by\":{\"description\":\"Authenticated bearer principal that owns the card and called approve_merge. Bearer authentication does not prove that a human, rather than a coding agent, made the call.\",\"type\":\"string\"},\"artifacts\":{\"additionalProperties\":{\"type\":\"string\"},\"description\":\"SHA-256 digest of each candidate binary the promotion target measured, keyed by binary name.\",\"type\":\"object\"},\"candidate_commit\":{\"description\":\"Candidate commit the report was checked against.\",\"type\":\"string\"},\"environment\":{\"description\":\"Dependency profile the promotion target requires, such as sim.\",\"type\":\"string\"},\"report_digest\":{\"description\":\"SHA-256 digest of the approved CP4 verification report.\",\"type\":\"string\"},\"scenario_count\":{\"description\":\"Number of declared evaluator scenarios, every one of which passed.\",\"format\":\"int64\",\"type\":\"integer\"},\"suite_commit\":{\"description\":\"Evaluator suite commit the promotion target requires.\",\"type\":\"string\"},\"suite_id\":{\"description\":\"Evaluator suite the promotion target requires.\",\"type\":\"string\"}},\"required\":[\"approved_by\",\"report_digest\",\"candidate_commit\",\"suite_id\",\"suite_commit\",\"environment\",\"artifacts\",\"scenario_count\"],\"title\":\"ApprovalItem\",\"type\":\"object\"},\"ExampleItem\":{\"additionalProperties\":false,\"description\":\"Concrete input and expected outcome confirmed at Checkpoint 1.\",\"properties\":{\"expected_outcome\":{\"description\":\"Expected side effect and response behavior.\",\"type\":\"string\"},\"id\":{\"description\":\"Stable example identifier. Default code-assigned IDs use check_01, check_02, ... (valid goa-ai/eval Scenario names). confirm_intent preserves caller-chosen IDs.\",\"type\":\"string\"},\"input_summary\":{\"description\":\"Representative user request and domain fixture state.\",\"type\":\"string\"},\"scenario\":{\"description\":\"Plain-English scenario description.\",\"type\":\"string\"},\"verification_kind\":{\"description\":\"Evaluator check classification (deterministic or model_judged).\",\"enum\":[\"deterministic\",\"model_judged\"],\"type\":\"string\"}},\"required\":[\"id\",\"scenario\",\"input_summary\",\"expected_outcome\",\"verification_kind\"],\"title\":\"ExampleItem\",\"type\":\"object\"},\"UICompositionItem\":{\"additionalProperties\":false,\"description\":\"Model-authored OpenUI Lang decision view for exactly one Change Card revision. It is presentation only: it is never hashed into request_revision, confirm_intent never reads it, and it describes the card only while composed_for_revision equals the card's request_revision.\",\"properties\":{\"composed_for_revision\":{\"description\":\"request_revision of the Change Card this program was composed for.\",\"type\":\"string\"},\"program\":{\"description\":\"OpenUI Lang program composed by the CP1 model from the Surla decision component catalog, exactly as the model returned it. The server does not check it; the checkpoint viewer validates it and shows its error state, with the rest of the card still usable, when the program is not a valid composition.\",\"type\":\"string\"}},\"required\":[\"program\",\"composed_for_revision\"],\"title\":\"UICompositionItem\",\"type\":\"object\"},\"UnverifiedApprovalItem\":{\"additionalProperties\":false,\"description\":\"Saved Checkpoint 5 promotion approval recorded on the Change Card whose current promotion inputs could not be verified on this read.\",\"properties\":{\"approval\":{\"$ref\":\"#/$defs/ApprovalItem\",\"description\":\"Recorded promotion approval from the Change Card.\"},\"reason\":{\"description\":\"Explanation of why the recorded approval could not be verified against current promotion inputs and how to recover.\",\"type\":\"string\"}},\"required\":[\"approval\",\"reason\"],\"title\":\"UnverifiedApprovalItem\",\"type\":\"object\"}},\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Checkpoint 1 Change Card containing examples, preserved behaviors, and audit metadata.\",\"properties\":{\"ambiguities\":{\"description\":\"Domain questions surfaced at CP1, retained for audit after confirmation.\",\"items\":{\"$ref\":\"#/$defs/AmbiguityQuestion\"},\"type\":\"array\"},\"answers\":{\"additionalProperties\":{\"type\":\"string\"},\"description\":\"Owner-confirmed answers keyed by ambiguity question ID when status is confirmed and ambiguities is non-empty (empty when a confirmed card has no ambiguity questions). Each answer equals one of its question's declared options and takes precedence over open phrasing in summary.\",\"type\":\"object\"},\"approval\":{\"$ref\":\"#/$defs/ApprovalItem\",\"description\":\"Checkpoint 5 approval of this revision, present only while it is verified against the promotion target's current inputs on this read. It is absent before approve_merge succeeds, whenever the target's suite, environment or binary digests have changed since, and whenever current inputs cannot be verified (see unverified_approval). It is never hashed into request_revision.\"},\"change_id\":{\"description\":\"Change identifier.\",\"type\":\"string\"},\"confirmed_by\":{\"description\":\"Authenticated principal that confirmed the Change Card.\",\"type\":\"string\"},\"examples\":{\"description\":\"Concrete examples mapped to evaluator checks.\",\"items\":{\"$ref\":\"#/$defs/ExampleItem\"},\"type\":\"array\"},\"preserved_behaviors\":{\"description\":\"Existing contract invariants preserved by this change.\",\"items\":{\"type\":\"string\"},\"type\":\"array\"},\"prompt\":{\"description\":\"Operator feature request for this revision.\",\"type\":\"string\"},\"request_revision\":{\"description\":\"SHA-256 digest of the canonical versioned Change Card.\",\"type\":\"string\"},\"status\":{\"description\":\"Checkpoint status (needs_confirmation or confirmed).\",\"enum\":[\"needs_confirmation\",\"confirmed\"],\"type\":\"string\"},\"summary\":{\"description\":\"Plain-English summary of the proposed change from propose_change or revise_change. confirm_intent does not rewrite this text; when status is confirmed, answers records the owner's resolutions for ambiguities.\",\"type\":\"string\"},\"ui_composition\":{\"$ref\":\"#/$defs/UICompositionItem\",\"description\":\"Decision view the CP1 model composed for this revision, when it produced one. A confirm_intent that changes answers or examples returns the new revision without it.\"},\"unverified_approval\":{\"$ref\":\"#/$defs/UnverifiedApprovalItem\",\"description\":\"Saved Checkpoint 5 approval of this revision when current promotion inputs could not be verified on this read (because no promotion target is configured or the target could not report its current inputs). At most one of approval or unverified_approval is set. It is never saved to disk or hashed into request_revision.\"}},\"required\":[\"change_id\",\"status\",\"prompt\",\"summary\",\"examples\",\"preserved_behaviors\",\"request_revision\"],\"type\":\"object\"}"),
+		PayloadSchema:          []byte("{\"$defs\":{\"CP1Analysis\":{\"additionalProperties\":false,\"description\":\"Your analysis of the feature request against the target's current Goa design (its design/*.go files) and the Golden Path playbook served at surla://golden-path. Surla saves it as the Change Card after checking its structure and cross-field rules; it cannot judge whether the analysis is complete or correct.\",\"properties\":{\"ambiguities\":{\"description\":\"Open questions only the requester can answer: product, domain, or operational choices that change observable behavior or service boundaries. Do not ask about details the request or the design already settle; state them in summary, or in examples when they change an observable outcome. Send an empty list when nothing is open.\",\"items\":{\"$ref\":\"#/$defs/CP1AnalysisAmbiguity\"},\"type\":\"array\"},\"examples\":{\"description\":\"Concrete acceptance examples drawn from the request and the design, never placeholder text; each becomes a check the change must pass.\",\"items\":{\"$ref\":\"#/$defs/CP1AnalysisExample\"},\"minItems\":1,\"type\":\"array\"},\"preserved_behaviors\":{\"description\":\"Existing behaviors and contract rules of the target that the change must keep, each stated concretely; empty when none apply.\",\"items\":{\"pattern\":\"\\\\S\",\"type\":\"string\"},\"type\":\"array\"},\"summary\":{\"description\":\"Plain-English description of the requested behavior, including the details the request or the design already settle.\",\"pattern\":\"\\\\S\",\"type\":\"string\"},\"ui_composition\":{\"description\":\"Optional OpenUI Lang program that helps the requester decide the open questions, built only from the decision components the surla://golden-path resource lists. Refer to an ambiguity or example only by its 1-based position in this analysis (1 is the first); never invent identifiers. Surla saves it unchanged without checking it; the checkpoint viewer validates and renders it. Omit it when a plain card is clearer.\",\"type\":\"string\"}},\"required\":[\"summary\",\"ambiguities\",\"examples\",\"preserved_behaviors\"],\"title\":\"CP1Analysis\",\"type\":\"object\"},\"CP1AnalysisAmbiguity\":{\"additionalProperties\":false,\"description\":\"One product, domain, or operational choice only the requester can make. Surla gives it the ID \\u003cchange_id\\u003e-ambiguity-NN, numbered in list order.\",\"properties\":{\"options\":{\"description\":\"At least two distinct, self-contained choices; each states the behavior it selects and what follows from it. The requester's answer must be exactly one of these strings.\",\"items\":{\"pattern\":\"\\\\S\",\"type\":\"string\"},\"minItems\":2,\"type\":\"array\"},\"question\":{\"description\":\"The decision in plain language, saying what the choice changes.\",\"pattern\":\"\\\\S\",\"type\":\"string\"}},\"required\":[\"question\",\"options\"],\"title\":\"CP1AnalysisAmbiguity\",\"type\":\"object\"},\"CP1AnalysisExample\":{\"additionalProperties\":false,\"description\":\"One concrete acceptance example that becomes a check the change must pass. Surla gives it the ID check_01, check_02, ... in list order.\",\"properties\":{\"expected_outcome\":{\"description\":\"The observable result or refusal that must hold.\",\"pattern\":\"\\\\S\",\"type\":\"string\"},\"input_summary\":{\"description\":\"The actual request, inputs, and starting state in this scenario, with real values from the request and the design, never placeholders.\",\"pattern\":\"\\\\S\",\"type\":\"string\"},\"scenario\":{\"description\":\"Short name of the situation, in the requester's domain terms.\",\"pattern\":\"\\\\S\",\"type\":\"string\"},\"verification_kind\":{\"description\":\"deterministic when code can check the outcome directly; model_judged when checking it needs judgment.\",\"enum\":[\"deterministic\",\"model_judged\"],\"type\":\"string\"}},\"required\":[\"scenario\",\"input_summary\",\"expected_outcome\",\"verification_kind\"],\"title\":\"CP1AnalysisExample\",\"type\":\"object\"}},\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Operator feature request and the caller's analysis of it, saved as a new Checkpoint 1 Change Card.\",\"properties\":{\"analysis\":{\"$ref\":\"#/$defs/CP1Analysis\",\"description\":\"Your analysis of prompt against the target's current design.\"},\"change_id\":{\"description\":\"Unique change identifier.\",\"type\":\"string\"},\"design_source\":{\"description\":\"Goa design source the analysis was made against (the target's design/*.go files). Surla saves it with the card and includes it in request_revision; it does not interpret it. When omitted on a server with a bound workspace, Surla records design/*.go from the bound workspace; when omitted without a bound workspace, the card records no design.\",\"type\":\"string\"},\"prompt\":{\"description\":\"Operator feature request.\",\"type\":\"string\"}},\"required\":[\"change_id\",\"prompt\",\"analysis\"],\"type\":\"object\"}"),
+		ExecutionPayloadSchema: []byte("{\"$defs\":{\"CP1Analysis\":{\"additionalProperties\":false,\"description\":\"Your analysis of the feature request against the target's current Goa design (its design/*.go files) and the Golden Path playbook served at surla://golden-path. Surla saves it as the Change Card after checking its structure and cross-field rules; it cannot judge whether the analysis is complete or correct.\",\"properties\":{\"ambiguities\":{\"description\":\"Open questions only the requester can answer: product, domain, or operational choices that change observable behavior or service boundaries. Do not ask about details the request or the design already settle; state them in summary, or in examples when they change an observable outcome. Send an empty list when nothing is open.\",\"items\":{\"$ref\":\"#/$defs/CP1AnalysisAmbiguity\"},\"type\":\"array\"},\"examples\":{\"description\":\"Concrete acceptance examples drawn from the request and the design, never placeholder text; each becomes a check the change must pass.\",\"items\":{\"$ref\":\"#/$defs/CP1AnalysisExample\"},\"minItems\":1,\"type\":\"array\"},\"preserved_behaviors\":{\"description\":\"Existing behaviors and contract rules of the target that the change must keep, each stated concretely; empty when none apply.\",\"items\":{\"pattern\":\"\\\\S\",\"type\":\"string\"},\"type\":\"array\"},\"summary\":{\"description\":\"Plain-English description of the requested behavior, including the details the request or the design already settle.\",\"pattern\":\"\\\\S\",\"type\":\"string\"},\"ui_composition\":{\"description\":\"Optional OpenUI Lang program that helps the requester decide the open questions, built only from the decision components the surla://golden-path resource lists. Refer to an ambiguity or example only by its 1-based position in this analysis (1 is the first); never invent identifiers. Surla saves it unchanged without checking it; the checkpoint viewer validates and renders it. Omit it when a plain card is clearer.\",\"type\":\"string\"}},\"required\":[\"summary\",\"ambiguities\",\"examples\",\"preserved_behaviors\"],\"title\":\"CP1Analysis\",\"type\":\"object\"},\"CP1AnalysisAmbiguity\":{\"additionalProperties\":false,\"description\":\"One product, domain, or operational choice only the requester can make. Surla gives it the ID \\u003cchange_id\\u003e-ambiguity-NN, numbered in list order.\",\"properties\":{\"options\":{\"description\":\"At least two distinct, self-contained choices; each states the behavior it selects and what follows from it. The requester's answer must be exactly one of these strings.\",\"items\":{\"pattern\":\"\\\\S\",\"type\":\"string\"},\"minItems\":2,\"type\":\"array\"},\"question\":{\"description\":\"The decision in plain language, saying what the choice changes.\",\"pattern\":\"\\\\S\",\"type\":\"string\"}},\"required\":[\"question\",\"options\"],\"title\":\"CP1AnalysisAmbiguity\",\"type\":\"object\"},\"CP1AnalysisExample\":{\"additionalProperties\":false,\"description\":\"One concrete acceptance example that becomes a check the change must pass. Surla gives it the ID check_01, check_02, ... in list order.\",\"properties\":{\"expected_outcome\":{\"description\":\"The observable result or refusal that must hold.\",\"pattern\":\"\\\\S\",\"type\":\"string\"},\"input_summary\":{\"description\":\"The actual request, inputs, and starting state in this scenario, with real values from the request and the design, never placeholders.\",\"pattern\":\"\\\\S\",\"type\":\"string\"},\"scenario\":{\"description\":\"Short name of the situation, in the requester's domain terms.\",\"pattern\":\"\\\\S\",\"type\":\"string\"},\"verification_kind\":{\"description\":\"deterministic when code can check the outcome directly; model_judged when checking it needs judgment.\",\"enum\":[\"deterministic\",\"model_judged\"],\"type\":\"string\"}},\"required\":[\"scenario\",\"input_summary\",\"expected_outcome\",\"verification_kind\"],\"title\":\"CP1AnalysisExample\",\"type\":\"object\"}},\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Operator feature request and the caller's analysis of it, saved as a new Checkpoint 1 Change Card.\",\"properties\":{\"analysis\":{\"$ref\":\"#/$defs/CP1Analysis\",\"description\":\"Your analysis of prompt against the target's current design.\"},\"change_id\":{\"description\":\"Unique change identifier.\",\"type\":\"string\"},\"design_source\":{\"description\":\"Goa design source the analysis was made against (the target's design/*.go files). Surla saves it with the card and includes it in request_revision; it does not interpret it. When omitted on a server with a bound workspace, Surla records design/*.go from the bound workspace; when omitted without a bound workspace, the card records no design.\",\"type\":\"string\"},\"prompt\":{\"description\":\"Operator feature request.\",\"type\":\"string\"}},\"required\":[\"change_id\",\"prompt\",\"analysis\"],\"type\":\"object\"}"),
+		ResultSchema:           []byte("{\"$defs\":{\"AmbiguityQuestion\":{\"additionalProperties\":false,\"description\":\"Domain ambiguity surfaced with concrete examples at Checkpoint 1.\",\"properties\":{\"id\":{\"description\":\"Stable question identifier.\",\"type\":\"string\"},\"options\":{\"description\":\"Concrete resolution choices.\",\"items\":{\"type\":\"string\"},\"type\":\"array\"},\"question\":{\"description\":\"Plain-English question for the operator.\",\"type\":\"string\"}},\"required\":[\"id\",\"question\",\"options\"],\"title\":\"AmbiguityQuestion\",\"type\":\"object\"},\"ApprovalItem\":{\"additionalProperties\":false,\"description\":\"Checkpoint 5 approval recorded by approve_merge after the evaluator-written verification report passed and matched the change being promoted: the exact candidate commit, suite, environment and binary digests it checked. It is saved with the card in the control plane's cards directory, merges and deploys nothing, is replaced by the next successful approve_merge for the same revision, and is dropped when confirm_intent or revise_change mints a new request_revision. get_change and confirm_intent return it in approval only while the promotion target's current suite, environment and binary digests still equal the ones it records, or in unverified_approval when current promotion inputs cannot be verified on that read.\",\"properties\":{\"approved_by\":{\"description\":\"Authenticated bearer principal that owns the card and called approve_merge. Bearer authentication does not prove that a human, rather than a coding agent, made the call.\",\"type\":\"string\"},\"artifacts\":{\"additionalProperties\":{\"type\":\"string\"},\"description\":\"SHA-256 digest of each candidate binary the promotion target measured, keyed by binary name.\",\"type\":\"object\"},\"candidate_commit\":{\"description\":\"Candidate commit the report was checked against.\",\"type\":\"string\"},\"environment\":{\"description\":\"Dependency profile the promotion target requires, such as sim.\",\"type\":\"string\"},\"report_digest\":{\"description\":\"SHA-256 digest of the approved CP4 verification report.\",\"type\":\"string\"},\"scenario_count\":{\"description\":\"Number of declared evaluator scenarios, every one of which passed.\",\"format\":\"int64\",\"type\":\"integer\"},\"suite_commit\":{\"description\":\"Evaluator suite commit the promotion target requires.\",\"type\":\"string\"},\"suite_id\":{\"description\":\"Evaluator suite the promotion target requires.\",\"type\":\"string\"}},\"required\":[\"approved_by\",\"report_digest\",\"candidate_commit\",\"suite_id\",\"suite_commit\",\"environment\",\"artifacts\",\"scenario_count\"],\"title\":\"ApprovalItem\",\"type\":\"object\"},\"ExampleItem\":{\"additionalProperties\":false,\"description\":\"Concrete input and expected outcome confirmed at Checkpoint 1.\",\"properties\":{\"expected_outcome\":{\"description\":\"Expected side effect and response behavior.\",\"type\":\"string\"},\"id\":{\"description\":\"Stable example identifier. Default code-assigned IDs use check_01, check_02, ... (valid goa-ai/eval Scenario names). confirm_intent preserves caller-chosen IDs.\",\"type\":\"string\"},\"input_summary\":{\"description\":\"Representative user request and domain fixture state.\",\"type\":\"string\"},\"scenario\":{\"description\":\"Plain-English scenario description.\",\"type\":\"string\"},\"verification_kind\":{\"description\":\"Evaluator check classification (deterministic or model_judged).\",\"enum\":[\"deterministic\",\"model_judged\"],\"type\":\"string\"}},\"required\":[\"id\",\"scenario\",\"input_summary\",\"expected_outcome\",\"verification_kind\"],\"title\":\"ExampleItem\",\"type\":\"object\"},\"UICompositionItem\":{\"additionalProperties\":false,\"description\":\"Caller-authored OpenUI Lang decision view for exactly one Change Card revision. It is presentation only: it is never hashed into request_revision, confirm_intent never reads it, and it describes the card only while composed_for_revision equals the card's request_revision.\",\"properties\":{\"composed_for_revision\":{\"description\":\"request_revision of the Change Card this program was composed for.\",\"type\":\"string\"},\"program\":{\"description\":\"OpenUI Lang program from the analysis's ui_composition, exactly as the caller sent it. The server does not check it; the checkpoint viewer validates it and shows its error state, with the rest of the card still usable, when the program is not a valid composition.\",\"type\":\"string\"}},\"required\":[\"program\",\"composed_for_revision\"],\"title\":\"UICompositionItem\",\"type\":\"object\"},\"UnverifiedApprovalItem\":{\"additionalProperties\":false,\"description\":\"Saved Checkpoint 5 promotion approval recorded on the Change Card whose current promotion inputs could not be verified on this read.\",\"properties\":{\"approval\":{\"$ref\":\"#/$defs/ApprovalItem\",\"description\":\"Recorded promotion approval from the Change Card.\"},\"reason\":{\"description\":\"Explanation of why the recorded approval could not be verified against current promotion inputs and how to recover.\",\"type\":\"string\"}},\"required\":[\"approval\",\"reason\"],\"title\":\"UnverifiedApprovalItem\",\"type\":\"object\"}},\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Checkpoint 1 Change Card containing examples, preserved behaviors, and audit metadata.\",\"properties\":{\"ambiguities\":{\"description\":\"Domain questions surfaced at CP1, retained for audit after confirmation.\",\"items\":{\"$ref\":\"#/$defs/AmbiguityQuestion\"},\"type\":\"array\"},\"answers\":{\"additionalProperties\":{\"type\":\"string\"},\"description\":\"Owner-confirmed answers keyed by ambiguity question ID when status is confirmed and ambiguities is non-empty (empty when a confirmed card has no ambiguity questions). Each answer equals one of its question's declared options and takes precedence over open phrasing in summary.\",\"type\":\"object\"},\"approval\":{\"$ref\":\"#/$defs/ApprovalItem\",\"description\":\"Checkpoint 5 approval of this revision, present only while it is verified against the promotion target's current inputs on this read. It is absent before approve_merge succeeds, whenever the target's suite, environment or binary digests have changed since, and whenever current inputs cannot be verified (see unverified_approval). It is never hashed into request_revision.\"},\"change_id\":{\"description\":\"Change identifier.\",\"type\":\"string\"},\"confirmed_by\":{\"description\":\"Authenticated principal that confirmed the Change Card.\",\"type\":\"string\"},\"examples\":{\"description\":\"Concrete examples mapped to evaluator checks.\",\"items\":{\"$ref\":\"#/$defs/ExampleItem\"},\"type\":\"array\"},\"preserved_behaviors\":{\"description\":\"Existing contract invariants preserved by this change.\",\"items\":{\"type\":\"string\"},\"type\":\"array\"},\"prompt\":{\"description\":\"Operator feature request for this revision.\",\"type\":\"string\"},\"request_revision\":{\"description\":\"SHA-256 digest of the canonical versioned Change Card.\",\"type\":\"string\"},\"status\":{\"description\":\"Checkpoint status (needs_confirmation or confirmed).\",\"enum\":[\"needs_confirmation\",\"confirmed\"],\"type\":\"string\"},\"summary\":{\"description\":\"Plain-English summary of the proposed change from propose_change or revise_change. confirm_intent does not rewrite this text; when status is confirmed, answers records the owner's resolutions for ambiguities.\",\"type\":\"string\"},\"ui_composition\":{\"$ref\":\"#/$defs/UICompositionItem\",\"description\":\"Decision view the caller composed for this revision in its analysis, when it sent one. A confirm_intent that changes answers or examples returns the new revision without it.\"},\"unverified_approval\":{\"$ref\":\"#/$defs/UnverifiedApprovalItem\",\"description\":\"Saved Checkpoint 5 approval of this revision when current promotion inputs could not be verified on this read (because no promotion target is configured or the target could not report its current inputs). At most one of approval or unverified_approval is set. It is never saved to disk or hashed into request_revision.\"}},\"required\":[\"change_id\",\"status\",\"prompt\",\"summary\",\"examples\",\"preserved_behaviors\",\"request_revision\"],\"type\":\"object\"}"),
 		ConsumerContract: &genregistry.ConsumerContract{
 			Kind:  "service",
 			Title: "Propose Change",
 			Search: &genregistry.ToolSearchDocument{
-				Length: 34,
-				Terms:  map[string]int{"1": 1, "a": 3, "and": 2, "bound": 2, "card": 1, "change": 4, "checkpoint": 1, "design": 2, "feature": 1, "from": 1, "generate": 1, "go": 1, "is": 2, "omitted": 1, "propose": 3, "reads": 1, "source": 1, "surla": 2, "the": 1, "when": 1, "workspace": 2},
+				Length: 105,
+				Terms:  map[string]int{"1": 1, "a": 5, "an": 1, "analysis": 1, "and": 5, "answer": 1, "as": 1, "assigns": 1, "at": 1, "become": 1, "behaviors": 1, "bound": 2, "can": 1, "card": 3, "change": 5, "checkpoint": 1, "checks": 1, "concrete": 1, "confirmed": 1, "design": 3, "empty": 1, "examples": 1, "existing": 1, "feature": 1, "first": 1, "from": 1, "go": 2, "golden": 1, "ids": 1, "in": 1, "is": 3, "it": 1, "keep": 1, "list": 1, "must": 1, "none": 1, "of": 1, "omitted": 1, "once": 1, "only": 1, "open": 2, "path": 1, "playbook": 1, "prompt": 1, "propose": 3, "questions": 2, "read": 1, "records": 1, "request": 2, "requester": 1, "revision": 1, "s": 1, "saves": 1, "send": 1, "source": 1, "summary": 1, "surla": 4, "target": 1, "that": 1, "the": 10, "then": 1, "when": 2, "with": 1, "without": 1, "workspace": 2, "your": 1},
 			},
 			RequiresUI: false,
 			TextOnly: &genregistry.TextOnlyToolContract{
-				ExecutionSchema: []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Operator feature request submitted for Checkpoint 1 ambiguity and example analysis.\",\"properties\":{\"change_id\":{\"description\":\"Unique change identifier.\",\"type\":\"string\"},\"design_source\":{\"description\":\"Current Goa design source of the target (its design/*.go files) for the CP1 model to read. When omitted on a server with a bound workspace, Surla reads design/*.go from the bound workspace; when omitted without a bound workspace, CP1 receives no current design.\",\"type\":\"string\"},\"prompt\":{\"description\":\"Operator feature request.\",\"type\":\"string\"}},\"required\":[\"change_id\",\"prompt\"],\"type\":\"object\"}"),
-				Description:     "Propose a feature change and generate a Checkpoint 1 Change Card. When design_source is omitted and a workspace is bound, Surla reads design/*.go from the bound workspace.",
+				ExecutionSchema: []byte("{\"$defs\":{\"CP1Analysis\":{\"additionalProperties\":false,\"description\":\"Your analysis of the feature request against the target's current Goa design (its design/*.go files) and the Golden Path playbook served at surla://golden-path. Surla saves it as the Change Card after checking its structure and cross-field rules; it cannot judge whether the analysis is complete or correct.\",\"properties\":{\"ambiguities\":{\"description\":\"Open questions only the requester can answer: product, domain, or operational choices that change observable behavior or service boundaries. Do not ask about details the request or the design already settle; state them in summary, or in examples when they change an observable outcome. Send an empty list when nothing is open.\",\"items\":{\"$ref\":\"#/$defs/CP1AnalysisAmbiguity\"},\"type\":\"array\"},\"examples\":{\"description\":\"Concrete acceptance examples drawn from the request and the design, never placeholder text; each becomes a check the change must pass.\",\"items\":{\"$ref\":\"#/$defs/CP1AnalysisExample\"},\"minItems\":1,\"type\":\"array\"},\"preserved_behaviors\":{\"description\":\"Existing behaviors and contract rules of the target that the change must keep, each stated concretely; empty when none apply.\",\"items\":{\"pattern\":\"\\\\S\",\"type\":\"string\"},\"type\":\"array\"},\"summary\":{\"description\":\"Plain-English description of the requested behavior, including the details the request or the design already settle.\",\"pattern\":\"\\\\S\",\"type\":\"string\"},\"ui_composition\":{\"description\":\"Optional OpenUI Lang program that helps the requester decide the open questions, built only from the decision components the surla://golden-path resource lists. Refer to an ambiguity or example only by its 1-based position in this analysis (1 is the first); never invent identifiers. Surla saves it unchanged without checking it; the checkpoint viewer validates and renders it. Omit it when a plain card is clearer.\",\"type\":\"string\"}},\"required\":[\"summary\",\"ambiguities\",\"examples\",\"preserved_behaviors\"],\"title\":\"CP1Analysis\",\"type\":\"object\"},\"CP1AnalysisAmbiguity\":{\"additionalProperties\":false,\"description\":\"One product, domain, or operational choice only the requester can make. Surla gives it the ID \\u003cchange_id\\u003e-ambiguity-NN, numbered in list order.\",\"properties\":{\"options\":{\"description\":\"At least two distinct, self-contained choices; each states the behavior it selects and what follows from it. The requester's answer must be exactly one of these strings.\",\"items\":{\"pattern\":\"\\\\S\",\"type\":\"string\"},\"minItems\":2,\"type\":\"array\"},\"question\":{\"description\":\"The decision in plain language, saying what the choice changes.\",\"pattern\":\"\\\\S\",\"type\":\"string\"}},\"required\":[\"question\",\"options\"],\"title\":\"CP1AnalysisAmbiguity\",\"type\":\"object\"},\"CP1AnalysisExample\":{\"additionalProperties\":false,\"description\":\"One concrete acceptance example that becomes a check the change must pass. Surla gives it the ID check_01, check_02, ... in list order.\",\"properties\":{\"expected_outcome\":{\"description\":\"The observable result or refusal that must hold.\",\"pattern\":\"\\\\S\",\"type\":\"string\"},\"input_summary\":{\"description\":\"The actual request, inputs, and starting state in this scenario, with real values from the request and the design, never placeholders.\",\"pattern\":\"\\\\S\",\"type\":\"string\"},\"scenario\":{\"description\":\"Short name of the situation, in the requester's domain terms.\",\"pattern\":\"\\\\S\",\"type\":\"string\"},\"verification_kind\":{\"description\":\"deterministic when code can check the outcome directly; model_judged when checking it needs judgment.\",\"enum\":[\"deterministic\",\"model_judged\"],\"type\":\"string\"}},\"required\":[\"scenario\",\"input_summary\",\"expected_outcome\",\"verification_kind\"],\"title\":\"CP1AnalysisExample\",\"type\":\"object\"}},\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Operator feature request and the caller's analysis of it, saved as a new Checkpoint 1 Change Card.\",\"properties\":{\"analysis\":{\"$ref\":\"#/$defs/CP1Analysis\",\"description\":\"Your analysis of prompt against the target's current design.\"},\"change_id\":{\"description\":\"Unique change identifier.\",\"type\":\"string\"},\"design_source\":{\"description\":\"Goa design source the analysis was made against (the target's design/*.go files). Surla saves it with the card and includes it in request_revision; it does not interpret it. When omitted on a server with a bound workspace, Surla records design/*.go from the bound workspace; when omitted without a bound workspace, the card records no design.\",\"type\":\"string\"},\"prompt\":{\"description\":\"Operator feature request.\",\"type\":\"string\"}},\"required\":[\"change_id\",\"prompt\",\"analysis\"],\"type\":\"object\"}"),
+				Description:     "Propose a feature change as a Checkpoint 1 Change Card. Read the target's design/*.go and the surla://golden-path playbook first, then send the request in prompt with your analysis of it: a summary, the open questions only the requester can answer (an empty list when none), concrete examples that become checks, and the existing behaviors the change must keep. Surla assigns the IDs and request_revision and saves the card; a card without open questions is confirmed at once. When design_source is omitted and a workspace is bound, Surla records design/*.go from the bound workspace.",
 				Search: &genregistry.ToolSearchDocument{
-					Length: 34,
-					Terms:  map[string]int{"1": 1, "a": 3, "and": 2, "bound": 2, "card": 1, "change": 4, "checkpoint": 1, "design": 2, "feature": 1, "from": 1, "generate": 1, "go": 1, "is": 2, "omitted": 1, "propose": 3, "reads": 1, "source": 1, "surla": 2, "the": 1, "when": 1, "workspace": 2},
+					Length: 105,
+					Terms:  map[string]int{"1": 1, "a": 5, "an": 1, "analysis": 1, "and": 5, "answer": 1, "as": 1, "assigns": 1, "at": 1, "become": 1, "behaviors": 1, "bound": 2, "can": 1, "card": 3, "change": 5, "checkpoint": 1, "checks": 1, "concrete": 1, "confirmed": 1, "design": 3, "empty": 1, "examples": 1, "existing": 1, "feature": 1, "first": 1, "from": 1, "go": 2, "golden": 1, "ids": 1, "in": 1, "is": 3, "it": 1, "keep": 1, "list": 1, "must": 1, "none": 1, "of": 1, "omitted": 1, "once": 1, "only": 1, "open": 2, "path": 1, "playbook": 1, "prompt": 1, "propose": 3, "questions": 2, "read": 1, "records": 1, "request": 2, "requester": 1, "revision": 1, "s": 1, "saves": 1, "send": 1, "source": 1, "summary": 1, "surla": 4, "target": 1, "that": 1, "the": 10, "then": 1, "when": 2, "with": 1, "without": 1, "workspace": 2, "your": 1},
 				},
-				PayloadSchema: []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Operator feature request submitted for Checkpoint 1 ambiguity and example analysis.\",\"properties\":{\"change_id\":{\"description\":\"Unique change identifier.\",\"type\":\"string\"},\"design_source\":{\"description\":\"Current Goa design source of the target (its design/*.go files) for the CP1 model to read. When omitted on a server with a bound workspace, Surla reads design/*.go from the bound workspace; when omitted without a bound workspace, CP1 receives no current design.\",\"type\":\"string\"},\"prompt\":{\"description\":\"Operator feature request.\",\"type\":\"string\"}},\"required\":[\"change_id\",\"prompt\"],\"type\":\"object\"}"),
-				Payload:       declarations.metadata584(),
+				PayloadSchema: []byte("{\"$defs\":{\"CP1Analysis\":{\"additionalProperties\":false,\"description\":\"Your analysis of the feature request against the target's current Goa design (its design/*.go files) and the Golden Path playbook served at surla://golden-path. Surla saves it as the Change Card after checking its structure and cross-field rules; it cannot judge whether the analysis is complete or correct.\",\"properties\":{\"ambiguities\":{\"description\":\"Open questions only the requester can answer: product, domain, or operational choices that change observable behavior or service boundaries. Do not ask about details the request or the design already settle; state them in summary, or in examples when they change an observable outcome. Send an empty list when nothing is open.\",\"items\":{\"$ref\":\"#/$defs/CP1AnalysisAmbiguity\"},\"type\":\"array\"},\"examples\":{\"description\":\"Concrete acceptance examples drawn from the request and the design, never placeholder text; each becomes a check the change must pass.\",\"items\":{\"$ref\":\"#/$defs/CP1AnalysisExample\"},\"minItems\":1,\"type\":\"array\"},\"preserved_behaviors\":{\"description\":\"Existing behaviors and contract rules of the target that the change must keep, each stated concretely; empty when none apply.\",\"items\":{\"pattern\":\"\\\\S\",\"type\":\"string\"},\"type\":\"array\"},\"summary\":{\"description\":\"Plain-English description of the requested behavior, including the details the request or the design already settle.\",\"pattern\":\"\\\\S\",\"type\":\"string\"},\"ui_composition\":{\"description\":\"Optional OpenUI Lang program that helps the requester decide the open questions, built only from the decision components the surla://golden-path resource lists. Refer to an ambiguity or example only by its 1-based position in this analysis (1 is the first); never invent identifiers. Surla saves it unchanged without checking it; the checkpoint viewer validates and renders it. Omit it when a plain card is clearer.\",\"type\":\"string\"}},\"required\":[\"summary\",\"ambiguities\",\"examples\",\"preserved_behaviors\"],\"title\":\"CP1Analysis\",\"type\":\"object\"},\"CP1AnalysisAmbiguity\":{\"additionalProperties\":false,\"description\":\"One product, domain, or operational choice only the requester can make. Surla gives it the ID \\u003cchange_id\\u003e-ambiguity-NN, numbered in list order.\",\"properties\":{\"options\":{\"description\":\"At least two distinct, self-contained choices; each states the behavior it selects and what follows from it. The requester's answer must be exactly one of these strings.\",\"items\":{\"pattern\":\"\\\\S\",\"type\":\"string\"},\"minItems\":2,\"type\":\"array\"},\"question\":{\"description\":\"The decision in plain language, saying what the choice changes.\",\"pattern\":\"\\\\S\",\"type\":\"string\"}},\"required\":[\"question\",\"options\"],\"title\":\"CP1AnalysisAmbiguity\",\"type\":\"object\"},\"CP1AnalysisExample\":{\"additionalProperties\":false,\"description\":\"One concrete acceptance example that becomes a check the change must pass. Surla gives it the ID check_01, check_02, ... in list order.\",\"properties\":{\"expected_outcome\":{\"description\":\"The observable result or refusal that must hold.\",\"pattern\":\"\\\\S\",\"type\":\"string\"},\"input_summary\":{\"description\":\"The actual request, inputs, and starting state in this scenario, with real values from the request and the design, never placeholders.\",\"pattern\":\"\\\\S\",\"type\":\"string\"},\"scenario\":{\"description\":\"Short name of the situation, in the requester's domain terms.\",\"pattern\":\"\\\\S\",\"type\":\"string\"},\"verification_kind\":{\"description\":\"deterministic when code can check the outcome directly; model_judged when checking it needs judgment.\",\"enum\":[\"deterministic\",\"model_judged\"],\"type\":\"string\"}},\"required\":[\"scenario\",\"input_summary\",\"expected_outcome\",\"verification_kind\"],\"title\":\"CP1AnalysisExample\",\"type\":\"object\"}},\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Operator feature request and the caller's analysis of it, saved as a new Checkpoint 1 Change Card.\",\"properties\":{\"analysis\":{\"$ref\":\"#/$defs/CP1Analysis\",\"description\":\"Your analysis of prompt against the target's current design.\"},\"change_id\":{\"description\":\"Unique change identifier.\",\"type\":\"string\"},\"design_source\":{\"description\":\"Goa design source the analysis was made against (the target's design/*.go files). Surla saves it with the card and includes it in request_revision; it does not interpret it. When omitted on a server with a bound workspace, Surla records design/*.go from the bound workspace; when omitted without a bound workspace, the card records no design.\",\"type\":\"string\"},\"prompt\":{\"description\":\"Operator feature request.\",\"type\":\"string\"}},\"required\":[\"change_id\",\"prompt\",\"analysis\"],\"type\":\"object\"}"),
+				Payload:       declarations.metadata600(),
 			},
 			Payload: declarations.metadata529(),
-			Result:  declarations.metadata534(),
+			Result:  declarations.metadata550(),
 		},
 	}
 }
@@ -8433,12 +8433,28 @@ func (declarations registryDeclarations) metadata529() *genregistry.ToolTypeMeta
 	registryText1 := "ProposeChangePayload"
 	return &genregistry.ToolTypeMetadata{
 		Name:                     &registryText1,
-		SchemaWithoutRootExample: []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Operator feature request submitted for Checkpoint 1 ambiguity and example analysis.\",\"properties\":{\"change_id\":{\"description\":\"Unique change identifier.\",\"type\":\"string\"},\"design_source\":{\"description\":\"Current Goa design source of the target (its design/*.go files) for the CP1 model to read. When omitted on a server with a bound workspace, Surla reads design/*.go from the bound workspace; when omitted without a bound workspace, CP1 receives no current design.\",\"type\":\"string\"},\"prompt\":{\"description\":\"Operator feature request.\",\"type\":\"string\"}},\"required\":[\"change_id\",\"prompt\"],\"type\":\"object\"}"),
+		SchemaWithoutRootExample: []byte("{\"$defs\":{\"CP1Analysis\":{\"additionalProperties\":false,\"description\":\"Your analysis of the feature request against the target's current Goa design (its design/*.go files) and the Golden Path playbook served at surla://golden-path. Surla saves it as the Change Card after checking its structure and cross-field rules; it cannot judge whether the analysis is complete or correct.\",\"properties\":{\"ambiguities\":{\"description\":\"Open questions only the requester can answer: product, domain, or operational choices that change observable behavior or service boundaries. Do not ask about details the request or the design already settle; state them in summary, or in examples when they change an observable outcome. Send an empty list when nothing is open.\",\"items\":{\"$ref\":\"#/$defs/CP1AnalysisAmbiguity\"},\"type\":\"array\"},\"examples\":{\"description\":\"Concrete acceptance examples drawn from the request and the design, never placeholder text; each becomes a check the change must pass.\",\"items\":{\"$ref\":\"#/$defs/CP1AnalysisExample\"},\"minItems\":1,\"type\":\"array\"},\"preserved_behaviors\":{\"description\":\"Existing behaviors and contract rules of the target that the change must keep, each stated concretely; empty when none apply.\",\"items\":{\"pattern\":\"\\\\S\",\"type\":\"string\"},\"type\":\"array\"},\"summary\":{\"description\":\"Plain-English description of the requested behavior, including the details the request or the design already settle.\",\"pattern\":\"\\\\S\",\"type\":\"string\"},\"ui_composition\":{\"description\":\"Optional OpenUI Lang program that helps the requester decide the open questions, built only from the decision components the surla://golden-path resource lists. Refer to an ambiguity or example only by its 1-based position in this analysis (1 is the first); never invent identifiers. Surla saves it unchanged without checking it; the checkpoint viewer validates and renders it. Omit it when a plain card is clearer.\",\"type\":\"string\"}},\"required\":[\"summary\",\"ambiguities\",\"examples\",\"preserved_behaviors\"],\"title\":\"CP1Analysis\",\"type\":\"object\"},\"CP1AnalysisAmbiguity\":{\"additionalProperties\":false,\"description\":\"One product, domain, or operational choice only the requester can make. Surla gives it the ID \\u003cchange_id\\u003e-ambiguity-NN, numbered in list order.\",\"properties\":{\"options\":{\"description\":\"At least two distinct, self-contained choices; each states the behavior it selects and what follows from it. The requester's answer must be exactly one of these strings.\",\"items\":{\"pattern\":\"\\\\S\",\"type\":\"string\"},\"minItems\":2,\"type\":\"array\"},\"question\":{\"description\":\"The decision in plain language, saying what the choice changes.\",\"pattern\":\"\\\\S\",\"type\":\"string\"}},\"required\":[\"question\",\"options\"],\"title\":\"CP1AnalysisAmbiguity\",\"type\":\"object\"},\"CP1AnalysisExample\":{\"additionalProperties\":false,\"description\":\"One concrete acceptance example that becomes a check the change must pass. Surla gives it the ID check_01, check_02, ... in list order.\",\"properties\":{\"expected_outcome\":{\"description\":\"The observable result or refusal that must hold.\",\"pattern\":\"\\\\S\",\"type\":\"string\"},\"input_summary\":{\"description\":\"The actual request, inputs, and starting state in this scenario, with real values from the request and the design, never placeholders.\",\"pattern\":\"\\\\S\",\"type\":\"string\"},\"scenario\":{\"description\":\"Short name of the situation, in the requester's domain terms.\",\"pattern\":\"\\\\S\",\"type\":\"string\"},\"verification_kind\":{\"description\":\"deterministic when code can check the outcome directly; model_judged when checking it needs judgment.\",\"enum\":[\"deterministic\",\"model_judged\"],\"type\":\"string\"}},\"required\":[\"scenario\",\"input_summary\",\"expected_outcome\",\"verification_kind\"],\"title\":\"CP1AnalysisExample\",\"type\":\"object\"}},\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Operator feature request and the caller's analysis of it, saved as a new Checkpoint 1 Change Card.\",\"properties\":{\"analysis\":{\"$ref\":\"#/$defs/CP1Analysis\",\"description\":\"Your analysis of prompt against the target's current design.\"},\"change_id\":{\"description\":\"Unique change identifier.\",\"type\":\"string\"},\"design_source\":{\"description\":\"Goa design source the analysis was made against (the target's design/*.go files). Surla saves it with the card and includes it in request_revision; it does not interpret it. When omitted on a server with a bound workspace, Surla records design/*.go from the bound workspace; when omitted without a bound workspace, the card records no design.\",\"type\":\"string\"},\"prompt\":{\"description\":\"Operator feature request.\",\"type\":\"string\"}},\"required\":[\"change_id\",\"prompt\",\"analysis\"],\"type\":\"object\"}"),
 		Fields: []*genregistry.ToolFieldMetadata{
 			declarations.field530(),
 			declarations.field531(),
 			declarations.field532(),
 			declarations.field533(),
+			declarations.field534(),
+			declarations.field535(),
+			declarations.field536(),
+			declarations.field537(),
+			declarations.field538(),
+			declarations.field539(),
+			declarations.field540(),
+			declarations.field541(),
+			declarations.field542(),
+			declarations.field543(),
+			declarations.field544(),
+			declarations.field545(),
+			declarations.field546(),
+			declarations.field547(),
+			declarations.field548(),
+			declarations.field549(),
 		},
 	}
 }
@@ -8446,7 +8462,7 @@ func (declarations registryDeclarations) metadata529() *genregistry.ToolTypeMeta
 // field530 constructs one generated field declaration.
 func (registryDeclarations) field530() *genregistry.ToolFieldMetadata {
 	registryText1 := "object"
-	registryText2 := "Operator feature request submitted for Checkpoint 1 ambiguity and example analysis."
+	registryText2 := "Operator feature request and the caller's analysis of it, saved as a new Checkpoint 1 Change Card."
 	return &genregistry.ToolFieldMetadata{
 		JSONType:    &registryText1,
 		Description: &registryText2,
@@ -8482,7 +8498,7 @@ func (registryDeclarations) field532() *genregistry.ToolFieldMetadata {
 // field533 constructs one generated field declaration.
 func (registryDeclarations) field533() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
-	registryText2 := "Current Goa design source of the target (its design/*.go files) for the CP1 model to read. When omitted on a server with a bound workspace, Surla reads design/*.go from the bound workspace; when omitted without a bound workspace, CP1 receives no current design."
+	registryText2 := "Goa design source the analysis was made against (the target's design/*.go files). Surla saves it with the card and includes it in request_revision; it does not interpret it. When omitted on a server with a bound workspace, Surla records design/*.go from the bound workspace; when omitted without a bound workspace, the card records no design."
 	return &genregistry.ToolFieldMetadata{
 		Path: []*genregistry.ToolFieldPathSegment{
 			{Segment: genregistry.NewToolFieldSegmentField("design_source")},
@@ -8492,29 +8508,254 @@ func (registryDeclarations) field533() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// metadata534 constructs one generated metadata declaration.
-func (declarations registryDeclarations) metadata534() *genregistry.ToolTypeMetadata {
+// field534 constructs one generated field declaration.
+func (registryDeclarations) field534() *genregistry.ToolFieldMetadata {
+	registryText1 := "object"
+	registryText2 := "Your analysis of prompt against the target's current design."
+	return &genregistry.ToolFieldMetadata{
+		Path: []*genregistry.ToolFieldPathSegment{
+			{Segment: genregistry.NewToolFieldSegmentField("analysis")},
+		},
+		JSONType:    &registryText1,
+		Description: &registryText2,
+	}
+}
+
+// field535 constructs one generated field declaration.
+func (registryDeclarations) field535() *genregistry.ToolFieldMetadata {
+	registryText1 := "string"
+	registryText2 := "Plain-English description of the requested behavior, including the details the request or the design already settle."
+	return &genregistry.ToolFieldMetadata{
+		Path: []*genregistry.ToolFieldPathSegment{
+			{Segment: genregistry.NewToolFieldSegmentField("analysis")},
+			{Segment: genregistry.NewToolFieldSegmentField("summary")},
+		},
+		JSONType:    &registryText1,
+		Description: &registryText2,
+	}
+}
+
+// field536 constructs one generated field declaration.
+func (registryDeclarations) field536() *genregistry.ToolFieldMetadata {
+	registryText1 := "array"
+	registryText2 := "Open questions only the requester can answer: product, domain, or operational choices that change observable behavior or service boundaries. Do not ask about details the request or the design already settle; state them in summary, or in examples when they change an observable outcome. Send an empty list when nothing is open."
+	return &genregistry.ToolFieldMetadata{
+		Path: []*genregistry.ToolFieldPathSegment{
+			{Segment: genregistry.NewToolFieldSegmentField("analysis")},
+			{Segment: genregistry.NewToolFieldSegmentField("ambiguities")},
+		},
+		JSONType:    &registryText1,
+		Description: &registryText2,
+	}
+}
+
+// field537 constructs one generated field declaration.
+func (registryDeclarations) field537() *genregistry.ToolFieldMetadata {
+	registryText1 := "object"
+	registryText2 := "Open questions only the requester can answer: product, domain, or operational choices that change observable behavior or service boundaries. Do not ask about details the request or the design already settle; state them in summary, or in examples when they change an observable outcome. Send an empty list when nothing is open."
+	return &genregistry.ToolFieldMetadata{
+		Path: []*genregistry.ToolFieldPathSegment{
+			{Segment: genregistry.NewToolFieldSegmentField("analysis")},
+			{Segment: genregistry.NewToolFieldSegmentField("ambiguities")},
+			{Segment: genregistry.NewToolFieldSegmentElement(&genregistry.ToolCollectionElement{})},
+		},
+		JSONType:    &registryText1,
+		Description: &registryText2,
+	}
+}
+
+// field538 constructs one generated field declaration.
+func (registryDeclarations) field538() *genregistry.ToolFieldMetadata {
+	registryText1 := "string"
+	registryText2 := "The decision in plain language, saying what the choice changes."
+	return &genregistry.ToolFieldMetadata{
+		Path: []*genregistry.ToolFieldPathSegment{
+			{Segment: genregistry.NewToolFieldSegmentField("analysis")},
+			{Segment: genregistry.NewToolFieldSegmentField("ambiguities")},
+			{Segment: genregistry.NewToolFieldSegmentElement(&genregistry.ToolCollectionElement{})},
+			{Segment: genregistry.NewToolFieldSegmentField("question")},
+		},
+		JSONType:    &registryText1,
+		Description: &registryText2,
+	}
+}
+
+// field539 constructs one generated field declaration.
+func (registryDeclarations) field539() *genregistry.ToolFieldMetadata {
+	registryText1 := "array"
+	registryText2 := "At least two distinct, self-contained choices; each states the behavior it selects and what follows from it. The requester's answer must be exactly one of these strings."
+	return &genregistry.ToolFieldMetadata{
+		Path: []*genregistry.ToolFieldPathSegment{
+			{Segment: genregistry.NewToolFieldSegmentField("analysis")},
+			{Segment: genregistry.NewToolFieldSegmentField("ambiguities")},
+			{Segment: genregistry.NewToolFieldSegmentElement(&genregistry.ToolCollectionElement{})},
+			{Segment: genregistry.NewToolFieldSegmentField("options")},
+		},
+		JSONType:    &registryText1,
+		Description: &registryText2,
+	}
+}
+
+// field540 constructs one generated field declaration.
+func (registryDeclarations) field540() *genregistry.ToolFieldMetadata {
+	registryText1 := "string"
+	registryText2 := "At least two distinct, self-contained choices; each states the behavior it selects and what follows from it. The requester's answer must be exactly one of these strings."
+	return &genregistry.ToolFieldMetadata{
+		Path: []*genregistry.ToolFieldPathSegment{
+			{Segment: genregistry.NewToolFieldSegmentField("analysis")},
+			{Segment: genregistry.NewToolFieldSegmentField("ambiguities")},
+			{Segment: genregistry.NewToolFieldSegmentElement(&genregistry.ToolCollectionElement{})},
+			{Segment: genregistry.NewToolFieldSegmentField("options")},
+			{Segment: genregistry.NewToolFieldSegmentElement(&genregistry.ToolCollectionElement{})},
+		},
+		JSONType:    &registryText1,
+		Description: &registryText2,
+	}
+}
+
+// field541 constructs one generated field declaration.
+func (registryDeclarations) field541() *genregistry.ToolFieldMetadata {
+	registryText1 := "array"
+	registryText2 := "Concrete acceptance examples drawn from the request and the design, never placeholder text; each becomes a check the change must pass."
+	return &genregistry.ToolFieldMetadata{
+		Path: []*genregistry.ToolFieldPathSegment{
+			{Segment: genregistry.NewToolFieldSegmentField("analysis")},
+			{Segment: genregistry.NewToolFieldSegmentField("examples")},
+		},
+		JSONType:    &registryText1,
+		Description: &registryText2,
+	}
+}
+
+// field542 constructs one generated field declaration.
+func (registryDeclarations) field542() *genregistry.ToolFieldMetadata {
+	registryText1 := "object"
+	registryText2 := "Concrete acceptance examples drawn from the request and the design, never placeholder text; each becomes a check the change must pass."
+	return &genregistry.ToolFieldMetadata{
+		Path: []*genregistry.ToolFieldPathSegment{
+			{Segment: genregistry.NewToolFieldSegmentField("analysis")},
+			{Segment: genregistry.NewToolFieldSegmentField("examples")},
+			{Segment: genregistry.NewToolFieldSegmentElement(&genregistry.ToolCollectionElement{})},
+		},
+		JSONType:    &registryText1,
+		Description: &registryText2,
+	}
+}
+
+// field543 constructs one generated field declaration.
+func (registryDeclarations) field543() *genregistry.ToolFieldMetadata {
+	registryText1 := "string"
+	registryText2 := "Short name of the situation, in the requester's domain terms."
+	return &genregistry.ToolFieldMetadata{
+		Path: []*genregistry.ToolFieldPathSegment{
+			{Segment: genregistry.NewToolFieldSegmentField("analysis")},
+			{Segment: genregistry.NewToolFieldSegmentField("examples")},
+			{Segment: genregistry.NewToolFieldSegmentElement(&genregistry.ToolCollectionElement{})},
+			{Segment: genregistry.NewToolFieldSegmentField("scenario")},
+		},
+		JSONType:    &registryText1,
+		Description: &registryText2,
+	}
+}
+
+// field544 constructs one generated field declaration.
+func (registryDeclarations) field544() *genregistry.ToolFieldMetadata {
+	registryText1 := "string"
+	registryText2 := "The actual request, inputs, and starting state in this scenario, with real values from the request and the design, never placeholders."
+	return &genregistry.ToolFieldMetadata{
+		Path: []*genregistry.ToolFieldPathSegment{
+			{Segment: genregistry.NewToolFieldSegmentField("analysis")},
+			{Segment: genregistry.NewToolFieldSegmentField("examples")},
+			{Segment: genregistry.NewToolFieldSegmentElement(&genregistry.ToolCollectionElement{})},
+			{Segment: genregistry.NewToolFieldSegmentField("input_summary")},
+		},
+		JSONType:    &registryText1,
+		Description: &registryText2,
+	}
+}
+
+// field545 constructs one generated field declaration.
+func (registryDeclarations) field545() *genregistry.ToolFieldMetadata {
+	registryText1 := "string"
+	registryText2 := "The observable result or refusal that must hold."
+	return &genregistry.ToolFieldMetadata{
+		Path: []*genregistry.ToolFieldPathSegment{
+			{Segment: genregistry.NewToolFieldSegmentField("analysis")},
+			{Segment: genregistry.NewToolFieldSegmentField("examples")},
+			{Segment: genregistry.NewToolFieldSegmentElement(&genregistry.ToolCollectionElement{})},
+			{Segment: genregistry.NewToolFieldSegmentField("expected_outcome")},
+		},
+		JSONType:    &registryText1,
+		Description: &registryText2,
+	}
+}
+
+// field546 constructs one generated field declaration.
+func (registryDeclarations) field546() *genregistry.ToolFieldMetadata {
+	registryText1 := "string"
+	registryText2 := "deterministic when code can check the outcome directly; model_judged when checking it needs judgment."
+	return &genregistry.ToolFieldMetadata{
+		Path: []*genregistry.ToolFieldPathSegment{
+			{Segment: genregistry.NewToolFieldSegmentField("analysis")},
+			{Segment: genregistry.NewToolFieldSegmentField("examples")},
+			{Segment: genregistry.NewToolFieldSegmentElement(&genregistry.ToolCollectionElement{})},
+			{Segment: genregistry.NewToolFieldSegmentField("verification_kind")},
+		},
+		JSONType:    &registryText1,
+		Description: &registryText2,
+	}
+}
+
+// field547 constructs one generated field declaration.
+func (registryDeclarations) field547() *genregistry.ToolFieldMetadata {
+	registryText1 := "array"
+	registryText2 := "Existing behaviors and contract rules of the target that the change must keep, each stated concretely; empty when none apply."
+	return &genregistry.ToolFieldMetadata{
+		Path: []*genregistry.ToolFieldPathSegment{
+			{Segment: genregistry.NewToolFieldSegmentField("analysis")},
+			{Segment: genregistry.NewToolFieldSegmentField("preserved_behaviors")},
+		},
+		JSONType:    &registryText1,
+		Description: &registryText2,
+	}
+}
+
+// field548 constructs one generated field declaration.
+func (registryDeclarations) field548() *genregistry.ToolFieldMetadata {
+	registryText1 := "string"
+	registryText2 := "Existing behaviors and contract rules of the target that the change must keep, each stated concretely; empty when none apply."
+	return &genregistry.ToolFieldMetadata{
+		Path: []*genregistry.ToolFieldPathSegment{
+			{Segment: genregistry.NewToolFieldSegmentField("analysis")},
+			{Segment: genregistry.NewToolFieldSegmentField("preserved_behaviors")},
+			{Segment: genregistry.NewToolFieldSegmentElement(&genregistry.ToolCollectionElement{})},
+		},
+		JSONType:    &registryText1,
+		Description: &registryText2,
+	}
+}
+
+// field549 constructs one generated field declaration.
+func (registryDeclarations) field549() *genregistry.ToolFieldMetadata {
+	registryText1 := "string"
+	registryText2 := "Optional OpenUI Lang program that helps the requester decide the open questions, built only from the decision components the surla://golden-path resource lists. Refer to an ambiguity or example only by its 1-based position in this analysis (1 is the first); never invent identifiers. Surla saves it unchanged without checking it; the checkpoint viewer validates and renders it. Omit it when a plain card is clearer."
+	return &genregistry.ToolFieldMetadata{
+		Path: []*genregistry.ToolFieldPathSegment{
+			{Segment: genregistry.NewToolFieldSegmentField("analysis")},
+			{Segment: genregistry.NewToolFieldSegmentField("ui_composition")},
+		},
+		JSONType:    &registryText1,
+		Description: &registryText2,
+	}
+}
+
+// metadata550 constructs one generated metadata declaration.
+func (declarations registryDeclarations) metadata550() *genregistry.ToolTypeMetadata {
 	registryText1 := "ProposeChangeResult"
 	return &genregistry.ToolTypeMetadata{
 		Name:                     &registryText1,
-		SchemaWithoutRootExample: []byte("{\"$defs\":{\"AmbiguityQuestion\":{\"additionalProperties\":false,\"description\":\"Domain ambiguity surfaced with concrete examples at Checkpoint 1.\",\"properties\":{\"id\":{\"description\":\"Stable question identifier.\",\"type\":\"string\"},\"options\":{\"description\":\"Concrete resolution choices.\",\"items\":{\"type\":\"string\"},\"type\":\"array\"},\"question\":{\"description\":\"Plain-English question for the operator.\",\"type\":\"string\"}},\"required\":[\"id\",\"question\",\"options\"],\"title\":\"AmbiguityQuestion\",\"type\":\"object\"},\"ApprovalItem\":{\"additionalProperties\":false,\"description\":\"Checkpoint 5 approval recorded by approve_merge after the evaluator-written verification report passed and matched the change being promoted: the exact candidate commit, suite, environment and binary digests it checked. It is saved with the card in the control plane's cards directory, merges and deploys nothing, is replaced by the next successful approve_merge for the same revision, and is dropped when confirm_intent or revise_change mints a new request_revision. get_change and confirm_intent return it in approval only while the promotion target's current suite, environment and binary digests still equal the ones it records, or in unverified_approval when current promotion inputs cannot be verified on that read.\",\"properties\":{\"approved_by\":{\"description\":\"Authenticated bearer principal that owns the card and called approve_merge. Bearer authentication does not prove that a human, rather than a coding agent, made the call.\",\"type\":\"string\"},\"artifacts\":{\"additionalProperties\":{\"type\":\"string\"},\"description\":\"SHA-256 digest of each candidate binary the promotion target measured, keyed by binary name.\",\"type\":\"object\"},\"candidate_commit\":{\"description\":\"Candidate commit the report was checked against.\",\"type\":\"string\"},\"environment\":{\"description\":\"Dependency profile the promotion target requires, such as sim.\",\"type\":\"string\"},\"report_digest\":{\"description\":\"SHA-256 digest of the approved CP4 verification report.\",\"type\":\"string\"},\"scenario_count\":{\"description\":\"Number of declared evaluator scenarios, every one of which passed.\",\"format\":\"int64\",\"type\":\"integer\"},\"suite_commit\":{\"description\":\"Evaluator suite commit the promotion target requires.\",\"type\":\"string\"},\"suite_id\":{\"description\":\"Evaluator suite the promotion target requires.\",\"type\":\"string\"}},\"required\":[\"approved_by\",\"report_digest\",\"candidate_commit\",\"suite_id\",\"suite_commit\",\"environment\",\"artifacts\",\"scenario_count\"],\"title\":\"ApprovalItem\",\"type\":\"object\"},\"ExampleItem\":{\"additionalProperties\":false,\"description\":\"Concrete input and expected outcome confirmed at Checkpoint 1.\",\"properties\":{\"expected_outcome\":{\"description\":\"Expected side effect and response behavior.\",\"type\":\"string\"},\"id\":{\"description\":\"Stable example identifier. Default code-assigned IDs use check_01, check_02, ... (valid goa-ai/eval Scenario names). confirm_intent preserves caller-chosen IDs.\",\"type\":\"string\"},\"input_summary\":{\"description\":\"Representative user request and domain fixture state.\",\"type\":\"string\"},\"scenario\":{\"description\":\"Plain-English scenario description.\",\"type\":\"string\"},\"verification_kind\":{\"description\":\"Evaluator check classification (deterministic or model_judged).\",\"enum\":[\"deterministic\",\"model_judged\"],\"type\":\"string\"}},\"required\":[\"id\",\"scenario\",\"input_summary\",\"expected_outcome\",\"verification_kind\"],\"title\":\"ExampleItem\",\"type\":\"object\"},\"UICompositionItem\":{\"additionalProperties\":false,\"description\":\"Model-authored OpenUI Lang decision view for exactly one Change Card revision. It is presentation only: it is never hashed into request_revision, confirm_intent never reads it, and it describes the card only while composed_for_revision equals the card's request_revision.\",\"properties\":{\"composed_for_revision\":{\"description\":\"request_revision of the Change Card this program was composed for.\",\"type\":\"string\"},\"program\":{\"description\":\"OpenUI Lang program composed by the CP1 model from the Surla decision component catalog, exactly as the model returned it. The server does not check it; the checkpoint viewer validates it and shows its error state, with the rest of the card still usable, when the program is not a valid composition.\",\"type\":\"string\"}},\"required\":[\"program\",\"composed_for_revision\"],\"title\":\"UICompositionItem\",\"type\":\"object\"},\"UnverifiedApprovalItem\":{\"additionalProperties\":false,\"description\":\"Saved Checkpoint 5 promotion approval recorded on the Change Card whose current promotion inputs could not be verified on this read.\",\"properties\":{\"approval\":{\"$ref\":\"#/$defs/ApprovalItem\",\"description\":\"Recorded promotion approval from the Change Card.\"},\"reason\":{\"description\":\"Explanation of why the recorded approval could not be verified against current promotion inputs and how to recover.\",\"type\":\"string\"}},\"required\":[\"approval\",\"reason\"],\"title\":\"UnverifiedApprovalItem\",\"type\":\"object\"}},\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Checkpoint 1 Change Card containing examples, preserved behaviors, and audit metadata.\",\"properties\":{\"ambiguities\":{\"description\":\"Domain questions surfaced at CP1, retained for audit after confirmation.\",\"items\":{\"$ref\":\"#/$defs/AmbiguityQuestion\"},\"type\":\"array\"},\"answers\":{\"additionalProperties\":{\"type\":\"string\"},\"description\":\"Owner-confirmed answers keyed by ambiguity question ID when status is confirmed and ambiguities is non-empty (empty when a confirmed card has no ambiguity questions). Each answer equals one of its question's declared options and takes precedence over open phrasing in summary.\",\"type\":\"object\"},\"approval\":{\"$ref\":\"#/$defs/ApprovalItem\",\"description\":\"Checkpoint 5 approval of this revision, present only while it is verified against the promotion target's current inputs on this read. It is absent before approve_merge succeeds, whenever the target's suite, environment or binary digests have changed since, and whenever current inputs cannot be verified (see unverified_approval). It is never hashed into request_revision.\"},\"change_id\":{\"description\":\"Change identifier.\",\"type\":\"string\"},\"confirmed_by\":{\"description\":\"Authenticated principal that confirmed the Change Card.\",\"type\":\"string\"},\"examples\":{\"description\":\"Concrete examples mapped to evaluator checks.\",\"items\":{\"$ref\":\"#/$defs/ExampleItem\"},\"type\":\"array\"},\"preserved_behaviors\":{\"description\":\"Existing contract invariants preserved by this change.\",\"items\":{\"type\":\"string\"},\"type\":\"array\"},\"prompt\":{\"description\":\"Operator feature request for this revision.\",\"type\":\"string\"},\"request_revision\":{\"description\":\"SHA-256 digest of the canonical versioned Change Card.\",\"type\":\"string\"},\"status\":{\"description\":\"Checkpoint status (needs_confirmation or confirmed).\",\"enum\":[\"needs_confirmation\",\"confirmed\"],\"type\":\"string\"},\"summary\":{\"description\":\"Plain-English summary of the proposed change from propose_change or revise_change. confirm_intent does not rewrite this text; when status is confirmed, answers records the owner's resolutions for ambiguities.\",\"type\":\"string\"},\"ui_composition\":{\"$ref\":\"#/$defs/UICompositionItem\",\"description\":\"Decision view the CP1 model composed for this revision, when it produced one. A confirm_intent that changes answers or examples returns the new revision without it.\"},\"unverified_approval\":{\"$ref\":\"#/$defs/UnverifiedApprovalItem\",\"description\":\"Saved Checkpoint 5 approval of this revision when current promotion inputs could not be verified on this read (because no promotion target is configured or the target could not report its current inputs). At most one of approval or unverified_approval is set. It is never saved to disk or hashed into request_revision.\"}},\"required\":[\"change_id\",\"status\",\"prompt\",\"summary\",\"examples\",\"preserved_behaviors\",\"request_revision\"],\"type\":\"object\"}"),
+		SchemaWithoutRootExample: []byte("{\"$defs\":{\"AmbiguityQuestion\":{\"additionalProperties\":false,\"description\":\"Domain ambiguity surfaced with concrete examples at Checkpoint 1.\",\"properties\":{\"id\":{\"description\":\"Stable question identifier.\",\"type\":\"string\"},\"options\":{\"description\":\"Concrete resolution choices.\",\"items\":{\"type\":\"string\"},\"type\":\"array\"},\"question\":{\"description\":\"Plain-English question for the operator.\",\"type\":\"string\"}},\"required\":[\"id\",\"question\",\"options\"],\"title\":\"AmbiguityQuestion\",\"type\":\"object\"},\"ApprovalItem\":{\"additionalProperties\":false,\"description\":\"Checkpoint 5 approval recorded by approve_merge after the evaluator-written verification report passed and matched the change being promoted: the exact candidate commit, suite, environment and binary digests it checked. It is saved with the card in the control plane's cards directory, merges and deploys nothing, is replaced by the next successful approve_merge for the same revision, and is dropped when confirm_intent or revise_change mints a new request_revision. get_change and confirm_intent return it in approval only while the promotion target's current suite, environment and binary digests still equal the ones it records, or in unverified_approval when current promotion inputs cannot be verified on that read.\",\"properties\":{\"approved_by\":{\"description\":\"Authenticated bearer principal that owns the card and called approve_merge. Bearer authentication does not prove that a human, rather than a coding agent, made the call.\",\"type\":\"string\"},\"artifacts\":{\"additionalProperties\":{\"type\":\"string\"},\"description\":\"SHA-256 digest of each candidate binary the promotion target measured, keyed by binary name.\",\"type\":\"object\"},\"candidate_commit\":{\"description\":\"Candidate commit the report was checked against.\",\"type\":\"string\"},\"environment\":{\"description\":\"Dependency profile the promotion target requires, such as sim.\",\"type\":\"string\"},\"report_digest\":{\"description\":\"SHA-256 digest of the approved CP4 verification report.\",\"type\":\"string\"},\"scenario_count\":{\"description\":\"Number of declared evaluator scenarios, every one of which passed.\",\"format\":\"int64\",\"type\":\"integer\"},\"suite_commit\":{\"description\":\"Evaluator suite commit the promotion target requires.\",\"type\":\"string\"},\"suite_id\":{\"description\":\"Evaluator suite the promotion target requires.\",\"type\":\"string\"}},\"required\":[\"approved_by\",\"report_digest\",\"candidate_commit\",\"suite_id\",\"suite_commit\",\"environment\",\"artifacts\",\"scenario_count\"],\"title\":\"ApprovalItem\",\"type\":\"object\"},\"ExampleItem\":{\"additionalProperties\":false,\"description\":\"Concrete input and expected outcome confirmed at Checkpoint 1.\",\"properties\":{\"expected_outcome\":{\"description\":\"Expected side effect and response behavior.\",\"type\":\"string\"},\"id\":{\"description\":\"Stable example identifier. Default code-assigned IDs use check_01, check_02, ... (valid goa-ai/eval Scenario names). confirm_intent preserves caller-chosen IDs.\",\"type\":\"string\"},\"input_summary\":{\"description\":\"Representative user request and domain fixture state.\",\"type\":\"string\"},\"scenario\":{\"description\":\"Plain-English scenario description.\",\"type\":\"string\"},\"verification_kind\":{\"description\":\"Evaluator check classification (deterministic or model_judged).\",\"enum\":[\"deterministic\",\"model_judged\"],\"type\":\"string\"}},\"required\":[\"id\",\"scenario\",\"input_summary\",\"expected_outcome\",\"verification_kind\"],\"title\":\"ExampleItem\",\"type\":\"object\"},\"UICompositionItem\":{\"additionalProperties\":false,\"description\":\"Caller-authored OpenUI Lang decision view for exactly one Change Card revision. It is presentation only: it is never hashed into request_revision, confirm_intent never reads it, and it describes the card only while composed_for_revision equals the card's request_revision.\",\"properties\":{\"composed_for_revision\":{\"description\":\"request_revision of the Change Card this program was composed for.\",\"type\":\"string\"},\"program\":{\"description\":\"OpenUI Lang program from the analysis's ui_composition, exactly as the caller sent it. The server does not check it; the checkpoint viewer validates it and shows its error state, with the rest of the card still usable, when the program is not a valid composition.\",\"type\":\"string\"}},\"required\":[\"program\",\"composed_for_revision\"],\"title\":\"UICompositionItem\",\"type\":\"object\"},\"UnverifiedApprovalItem\":{\"additionalProperties\":false,\"description\":\"Saved Checkpoint 5 promotion approval recorded on the Change Card whose current promotion inputs could not be verified on this read.\",\"properties\":{\"approval\":{\"$ref\":\"#/$defs/ApprovalItem\",\"description\":\"Recorded promotion approval from the Change Card.\"},\"reason\":{\"description\":\"Explanation of why the recorded approval could not be verified against current promotion inputs and how to recover.\",\"type\":\"string\"}},\"required\":[\"approval\",\"reason\"],\"title\":\"UnverifiedApprovalItem\",\"type\":\"object\"}},\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Checkpoint 1 Change Card containing examples, preserved behaviors, and audit metadata.\",\"properties\":{\"ambiguities\":{\"description\":\"Domain questions surfaced at CP1, retained for audit after confirmation.\",\"items\":{\"$ref\":\"#/$defs/AmbiguityQuestion\"},\"type\":\"array\"},\"answers\":{\"additionalProperties\":{\"type\":\"string\"},\"description\":\"Owner-confirmed answers keyed by ambiguity question ID when status is confirmed and ambiguities is non-empty (empty when a confirmed card has no ambiguity questions). Each answer equals one of its question's declared options and takes precedence over open phrasing in summary.\",\"type\":\"object\"},\"approval\":{\"$ref\":\"#/$defs/ApprovalItem\",\"description\":\"Checkpoint 5 approval of this revision, present only while it is verified against the promotion target's current inputs on this read. It is absent before approve_merge succeeds, whenever the target's suite, environment or binary digests have changed since, and whenever current inputs cannot be verified (see unverified_approval). It is never hashed into request_revision.\"},\"change_id\":{\"description\":\"Change identifier.\",\"type\":\"string\"},\"confirmed_by\":{\"description\":\"Authenticated principal that confirmed the Change Card.\",\"type\":\"string\"},\"examples\":{\"description\":\"Concrete examples mapped to evaluator checks.\",\"items\":{\"$ref\":\"#/$defs/ExampleItem\"},\"type\":\"array\"},\"preserved_behaviors\":{\"description\":\"Existing contract invariants preserved by this change.\",\"items\":{\"type\":\"string\"},\"type\":\"array\"},\"prompt\":{\"description\":\"Operator feature request for this revision.\",\"type\":\"string\"},\"request_revision\":{\"description\":\"SHA-256 digest of the canonical versioned Change Card.\",\"type\":\"string\"},\"status\":{\"description\":\"Checkpoint status (needs_confirmation or confirmed).\",\"enum\":[\"needs_confirmation\",\"confirmed\"],\"type\":\"string\"},\"summary\":{\"description\":\"Plain-English summary of the proposed change from propose_change or revise_change. confirm_intent does not rewrite this text; when status is confirmed, answers records the owner's resolutions for ambiguities.\",\"type\":\"string\"},\"ui_composition\":{\"$ref\":\"#/$defs/UICompositionItem\",\"description\":\"Decision view the caller composed for this revision in its analysis, when it sent one. A confirm_intent that changes answers or examples returns the new revision without it.\"},\"unverified_approval\":{\"$ref\":\"#/$defs/UnverifiedApprovalItem\",\"description\":\"Saved Checkpoint 5 approval of this revision when current promotion inputs could not be verified on this read (because no promotion target is configured or the target could not report its current inputs). At most one of approval or unverified_approval is set. It is never saved to disk or hashed into request_revision.\"}},\"required\":[\"change_id\",\"status\",\"prompt\",\"summary\",\"examples\",\"preserved_behaviors\",\"request_revision\"],\"type\":\"object\"}"),
 		Fields: []*genregistry.ToolFieldMetadata{
-			declarations.field535(),
-			declarations.field536(),
-			declarations.field537(),
-			declarations.field538(),
-			declarations.field539(),
-			declarations.field540(),
-			declarations.field541(),
-			declarations.field542(),
-			declarations.field543(),
-			declarations.field544(),
-			declarations.field545(),
-			declarations.field546(),
-			declarations.field547(),
-			declarations.field548(),
-			declarations.field549(),
-			declarations.field550(),
 			declarations.field551(),
 			declarations.field552(),
 			declarations.field553(),
@@ -8548,12 +8789,28 @@ func (declarations registryDeclarations) metadata534() *genregistry.ToolTypeMeta
 			declarations.field581(),
 			declarations.field582(),
 			declarations.field583(),
+			declarations.field584(),
+			declarations.field585(),
+			declarations.field586(),
+			declarations.field587(),
+			declarations.field588(),
+			declarations.field589(),
+			declarations.field590(),
+			declarations.field591(),
+			declarations.field592(),
+			declarations.field593(),
+			declarations.field594(),
+			declarations.field595(),
+			declarations.field596(),
+			declarations.field597(),
+			declarations.field598(),
+			declarations.field599(),
 		},
 	}
 }
 
-// field535 constructs one generated field declaration.
-func (registryDeclarations) field535() *genregistry.ToolFieldMetadata {
+// field551 constructs one generated field declaration.
+func (registryDeclarations) field551() *genregistry.ToolFieldMetadata {
 	registryText1 := "object"
 	registryText2 := "Checkpoint 1 Change Card containing examples, preserved behaviors, and audit metadata."
 	return &genregistry.ToolFieldMetadata{
@@ -8562,8 +8819,8 @@ func (registryDeclarations) field535() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field536 constructs one generated field declaration.
-func (registryDeclarations) field536() *genregistry.ToolFieldMetadata {
+// field552 constructs one generated field declaration.
+func (registryDeclarations) field552() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
 	registryText2 := "Change identifier."
 	return &genregistry.ToolFieldMetadata{
@@ -8575,8 +8832,8 @@ func (registryDeclarations) field536() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field537 constructs one generated field declaration.
-func (registryDeclarations) field537() *genregistry.ToolFieldMetadata {
+// field553 constructs one generated field declaration.
+func (registryDeclarations) field553() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
 	registryText2 := "Checkpoint status (needs_confirmation or confirmed)."
 	return &genregistry.ToolFieldMetadata{
@@ -8588,8 +8845,8 @@ func (registryDeclarations) field537() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field538 constructs one generated field declaration.
-func (registryDeclarations) field538() *genregistry.ToolFieldMetadata {
+// field554 constructs one generated field declaration.
+func (registryDeclarations) field554() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
 	registryText2 := "Operator feature request for this revision."
 	return &genregistry.ToolFieldMetadata{
@@ -8601,8 +8858,8 @@ func (registryDeclarations) field538() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field539 constructs one generated field declaration.
-func (registryDeclarations) field539() *genregistry.ToolFieldMetadata {
+// field555 constructs one generated field declaration.
+func (registryDeclarations) field555() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
 	registryText2 := "Plain-English summary of the proposed change from propose_change or revise_change. confirm_intent does not rewrite this text; when status is confirmed, answers records the owner's resolutions for ambiguities."
 	return &genregistry.ToolFieldMetadata{
@@ -8614,8 +8871,8 @@ func (registryDeclarations) field539() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field540 constructs one generated field declaration.
-func (registryDeclarations) field540() *genregistry.ToolFieldMetadata {
+// field556 constructs one generated field declaration.
+func (registryDeclarations) field556() *genregistry.ToolFieldMetadata {
 	registryText1 := "array"
 	registryText2 := "Domain questions surfaced at CP1, retained for audit after confirmation."
 	return &genregistry.ToolFieldMetadata{
@@ -8627,8 +8884,8 @@ func (registryDeclarations) field540() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field541 constructs one generated field declaration.
-func (registryDeclarations) field541() *genregistry.ToolFieldMetadata {
+// field557 constructs one generated field declaration.
+func (registryDeclarations) field557() *genregistry.ToolFieldMetadata {
 	registryText1 := "object"
 	registryText2 := "Domain questions surfaced at CP1, retained for audit after confirmation."
 	return &genregistry.ToolFieldMetadata{
@@ -8641,8 +8898,8 @@ func (registryDeclarations) field541() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field542 constructs one generated field declaration.
-func (registryDeclarations) field542() *genregistry.ToolFieldMetadata {
+// field558 constructs one generated field declaration.
+func (registryDeclarations) field558() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
 	registryText2 := "Stable question identifier."
 	return &genregistry.ToolFieldMetadata{
@@ -8656,8 +8913,8 @@ func (registryDeclarations) field542() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field543 constructs one generated field declaration.
-func (registryDeclarations) field543() *genregistry.ToolFieldMetadata {
+// field559 constructs one generated field declaration.
+func (registryDeclarations) field559() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
 	registryText2 := "Plain-English question for the operator."
 	return &genregistry.ToolFieldMetadata{
@@ -8671,8 +8928,8 @@ func (registryDeclarations) field543() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field544 constructs one generated field declaration.
-func (registryDeclarations) field544() *genregistry.ToolFieldMetadata {
+// field560 constructs one generated field declaration.
+func (registryDeclarations) field560() *genregistry.ToolFieldMetadata {
 	registryText1 := "array"
 	registryText2 := "Concrete resolution choices."
 	return &genregistry.ToolFieldMetadata{
@@ -8686,8 +8943,8 @@ func (registryDeclarations) field544() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field545 constructs one generated field declaration.
-func (registryDeclarations) field545() *genregistry.ToolFieldMetadata {
+// field561 constructs one generated field declaration.
+func (registryDeclarations) field561() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
 	registryText2 := "Concrete resolution choices."
 	return &genregistry.ToolFieldMetadata{
@@ -8702,8 +8959,8 @@ func (registryDeclarations) field545() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field546 constructs one generated field declaration.
-func (registryDeclarations) field546() *genregistry.ToolFieldMetadata {
+// field562 constructs one generated field declaration.
+func (registryDeclarations) field562() *genregistry.ToolFieldMetadata {
 	registryText1 := "object"
 	registryText2 := "Owner-confirmed answers keyed by ambiguity question ID when status is confirmed and ambiguities is non-empty (empty when a confirmed card has no ambiguity questions). Each answer equals one of its question's declared options and takes precedence over open phrasing in summary."
 	return &genregistry.ToolFieldMetadata{
@@ -8715,8 +8972,8 @@ func (registryDeclarations) field546() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field547 constructs one generated field declaration.
-func (registryDeclarations) field547() *genregistry.ToolFieldMetadata {
+// field563 constructs one generated field declaration.
+func (registryDeclarations) field563() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
 	registryText2 := "Owner-confirmed answers keyed by ambiguity question ID when status is confirmed and ambiguities is non-empty (empty when a confirmed card has no ambiguity questions). Each answer equals one of its question's declared options and takes precedence over open phrasing in summary."
 	return &genregistry.ToolFieldMetadata{
@@ -8729,8 +8986,8 @@ func (registryDeclarations) field547() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field548 constructs one generated field declaration.
-func (registryDeclarations) field548() *genregistry.ToolFieldMetadata {
+// field564 constructs one generated field declaration.
+func (registryDeclarations) field564() *genregistry.ToolFieldMetadata {
 	registryText1 := "array"
 	registryText2 := "Concrete examples mapped to evaluator checks."
 	return &genregistry.ToolFieldMetadata{
@@ -8742,8 +8999,8 @@ func (registryDeclarations) field548() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field549 constructs one generated field declaration.
-func (registryDeclarations) field549() *genregistry.ToolFieldMetadata {
+// field565 constructs one generated field declaration.
+func (registryDeclarations) field565() *genregistry.ToolFieldMetadata {
 	registryText1 := "object"
 	registryText2 := "Concrete examples mapped to evaluator checks."
 	return &genregistry.ToolFieldMetadata{
@@ -8756,8 +9013,8 @@ func (registryDeclarations) field549() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field550 constructs one generated field declaration.
-func (registryDeclarations) field550() *genregistry.ToolFieldMetadata {
+// field566 constructs one generated field declaration.
+func (registryDeclarations) field566() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
 	registryText2 := "Stable example identifier. Default code-assigned IDs use check_01, check_02, ... (valid goa-ai/eval Scenario names). confirm_intent preserves caller-chosen IDs."
 	return &genregistry.ToolFieldMetadata{
@@ -8771,8 +9028,8 @@ func (registryDeclarations) field550() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field551 constructs one generated field declaration.
-func (registryDeclarations) field551() *genregistry.ToolFieldMetadata {
+// field567 constructs one generated field declaration.
+func (registryDeclarations) field567() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
 	registryText2 := "Plain-English scenario description."
 	return &genregistry.ToolFieldMetadata{
@@ -8786,8 +9043,8 @@ func (registryDeclarations) field551() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field552 constructs one generated field declaration.
-func (registryDeclarations) field552() *genregistry.ToolFieldMetadata {
+// field568 constructs one generated field declaration.
+func (registryDeclarations) field568() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
 	registryText2 := "Representative user request and domain fixture state."
 	return &genregistry.ToolFieldMetadata{
@@ -8801,8 +9058,8 @@ func (registryDeclarations) field552() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field553 constructs one generated field declaration.
-func (registryDeclarations) field553() *genregistry.ToolFieldMetadata {
+// field569 constructs one generated field declaration.
+func (registryDeclarations) field569() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
 	registryText2 := "Expected side effect and response behavior."
 	return &genregistry.ToolFieldMetadata{
@@ -8816,8 +9073,8 @@ func (registryDeclarations) field553() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field554 constructs one generated field declaration.
-func (registryDeclarations) field554() *genregistry.ToolFieldMetadata {
+// field570 constructs one generated field declaration.
+func (registryDeclarations) field570() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
 	registryText2 := "Evaluator check classification (deterministic or model_judged)."
 	return &genregistry.ToolFieldMetadata{
@@ -8831,8 +9088,8 @@ func (registryDeclarations) field554() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field555 constructs one generated field declaration.
-func (registryDeclarations) field555() *genregistry.ToolFieldMetadata {
+// field571 constructs one generated field declaration.
+func (registryDeclarations) field571() *genregistry.ToolFieldMetadata {
 	registryText1 := "array"
 	registryText2 := "Existing contract invariants preserved by this change."
 	return &genregistry.ToolFieldMetadata{
@@ -8844,8 +9101,8 @@ func (registryDeclarations) field555() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field556 constructs one generated field declaration.
-func (registryDeclarations) field556() *genregistry.ToolFieldMetadata {
+// field572 constructs one generated field declaration.
+func (registryDeclarations) field572() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
 	registryText2 := "Existing contract invariants preserved by this change."
 	return &genregistry.ToolFieldMetadata{
@@ -8858,8 +9115,8 @@ func (registryDeclarations) field556() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field557 constructs one generated field declaration.
-func (registryDeclarations) field557() *genregistry.ToolFieldMetadata {
+// field573 constructs one generated field declaration.
+func (registryDeclarations) field573() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
 	registryText2 := "Authenticated principal that confirmed the Change Card."
 	return &genregistry.ToolFieldMetadata{
@@ -8871,8 +9128,8 @@ func (registryDeclarations) field557() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field558 constructs one generated field declaration.
-func (registryDeclarations) field558() *genregistry.ToolFieldMetadata {
+// field574 constructs one generated field declaration.
+func (registryDeclarations) field574() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
 	registryText2 := "SHA-256 digest of the canonical versioned Change Card."
 	return &genregistry.ToolFieldMetadata{
@@ -8884,10 +9141,10 @@ func (registryDeclarations) field558() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field559 constructs one generated field declaration.
-func (registryDeclarations) field559() *genregistry.ToolFieldMetadata {
+// field575 constructs one generated field declaration.
+func (registryDeclarations) field575() *genregistry.ToolFieldMetadata {
 	registryText1 := "object"
-	registryText2 := "Decision view the CP1 model composed for this revision, when it produced one. A confirm_intent that changes answers or examples returns the new revision without it."
+	registryText2 := "Decision view the caller composed for this revision in its analysis, when it sent one. A confirm_intent that changes answers or examples returns the new revision without it."
 	return &genregistry.ToolFieldMetadata{
 		Path: []*genregistry.ToolFieldPathSegment{
 			{Segment: genregistry.NewToolFieldSegmentField("ui_composition")},
@@ -8897,10 +9154,10 @@ func (registryDeclarations) field559() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field560 constructs one generated field declaration.
-func (registryDeclarations) field560() *genregistry.ToolFieldMetadata {
+// field576 constructs one generated field declaration.
+func (registryDeclarations) field576() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
-	registryText2 := "OpenUI Lang program composed by the CP1 model from the Surla decision component catalog, exactly as the model returned it. The server does not check it; the checkpoint viewer validates it and shows its error state, with the rest of the card still usable, when the program is not a valid composition."
+	registryText2 := "OpenUI Lang program from the analysis's ui_composition, exactly as the caller sent it. The server does not check it; the checkpoint viewer validates it and shows its error state, with the rest of the card still usable, when the program is not a valid composition."
 	return &genregistry.ToolFieldMetadata{
 		Path: []*genregistry.ToolFieldPathSegment{
 			{Segment: genregistry.NewToolFieldSegmentField("ui_composition")},
@@ -8911,8 +9168,8 @@ func (registryDeclarations) field560() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field561 constructs one generated field declaration.
-func (registryDeclarations) field561() *genregistry.ToolFieldMetadata {
+// field577 constructs one generated field declaration.
+func (registryDeclarations) field577() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
 	registryText2 := "request_revision of the Change Card this program was composed for."
 	return &genregistry.ToolFieldMetadata{
@@ -8925,8 +9182,8 @@ func (registryDeclarations) field561() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field562 constructs one generated field declaration.
-func (registryDeclarations) field562() *genregistry.ToolFieldMetadata {
+// field578 constructs one generated field declaration.
+func (registryDeclarations) field578() *genregistry.ToolFieldMetadata {
 	registryText1 := "object"
 	registryText2 := "Checkpoint 5 approval of this revision, present only while it is verified against the promotion target's current inputs on this read. It is absent before approve_merge succeeds, whenever the target's suite, environment or binary digests have changed since, and whenever current inputs cannot be verified (see unverified_approval). It is never hashed into request_revision."
 	return &genregistry.ToolFieldMetadata{
@@ -8938,8 +9195,8 @@ func (registryDeclarations) field562() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field563 constructs one generated field declaration.
-func (registryDeclarations) field563() *genregistry.ToolFieldMetadata {
+// field579 constructs one generated field declaration.
+func (registryDeclarations) field579() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
 	registryText2 := "Authenticated bearer principal that owns the card and called approve_merge. Bearer authentication does not prove that a human, rather than a coding agent, made the call."
 	return &genregistry.ToolFieldMetadata{
@@ -8952,8 +9209,8 @@ func (registryDeclarations) field563() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field564 constructs one generated field declaration.
-func (registryDeclarations) field564() *genregistry.ToolFieldMetadata {
+// field580 constructs one generated field declaration.
+func (registryDeclarations) field580() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
 	registryText2 := "SHA-256 digest of the approved CP4 verification report."
 	return &genregistry.ToolFieldMetadata{
@@ -8966,8 +9223,8 @@ func (registryDeclarations) field564() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field565 constructs one generated field declaration.
-func (registryDeclarations) field565() *genregistry.ToolFieldMetadata {
+// field581 constructs one generated field declaration.
+func (registryDeclarations) field581() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
 	registryText2 := "Candidate commit the report was checked against."
 	return &genregistry.ToolFieldMetadata{
@@ -8980,8 +9237,8 @@ func (registryDeclarations) field565() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field566 constructs one generated field declaration.
-func (registryDeclarations) field566() *genregistry.ToolFieldMetadata {
+// field582 constructs one generated field declaration.
+func (registryDeclarations) field582() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
 	registryText2 := "Evaluator suite the promotion target requires."
 	return &genregistry.ToolFieldMetadata{
@@ -8994,8 +9251,8 @@ func (registryDeclarations) field566() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field567 constructs one generated field declaration.
-func (registryDeclarations) field567() *genregistry.ToolFieldMetadata {
+// field583 constructs one generated field declaration.
+func (registryDeclarations) field583() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
 	registryText2 := "Evaluator suite commit the promotion target requires."
 	return &genregistry.ToolFieldMetadata{
@@ -9008,8 +9265,8 @@ func (registryDeclarations) field567() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field568 constructs one generated field declaration.
-func (registryDeclarations) field568() *genregistry.ToolFieldMetadata {
+// field584 constructs one generated field declaration.
+func (registryDeclarations) field584() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
 	registryText2 := "Dependency profile the promotion target requires, such as sim."
 	return &genregistry.ToolFieldMetadata{
@@ -9022,8 +9279,8 @@ func (registryDeclarations) field568() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field569 constructs one generated field declaration.
-func (registryDeclarations) field569() *genregistry.ToolFieldMetadata {
+// field585 constructs one generated field declaration.
+func (registryDeclarations) field585() *genregistry.ToolFieldMetadata {
 	registryText1 := "object"
 	registryText2 := "SHA-256 digest of each candidate binary the promotion target measured, keyed by binary name."
 	return &genregistry.ToolFieldMetadata{
@@ -9036,8 +9293,8 @@ func (registryDeclarations) field569() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field570 constructs one generated field declaration.
-func (registryDeclarations) field570() *genregistry.ToolFieldMetadata {
+// field586 constructs one generated field declaration.
+func (registryDeclarations) field586() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
 	registryText2 := "SHA-256 digest of each candidate binary the promotion target measured, keyed by binary name."
 	return &genregistry.ToolFieldMetadata{
@@ -9051,8 +9308,8 @@ func (registryDeclarations) field570() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field571 constructs one generated field declaration.
-func (registryDeclarations) field571() *genregistry.ToolFieldMetadata {
+// field587 constructs one generated field declaration.
+func (registryDeclarations) field587() *genregistry.ToolFieldMetadata {
 	registryText1 := "integer"
 	registryText2 := "Number of declared evaluator scenarios, every one of which passed."
 	return &genregistry.ToolFieldMetadata{
@@ -9065,8 +9322,8 @@ func (registryDeclarations) field571() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field572 constructs one generated field declaration.
-func (registryDeclarations) field572() *genregistry.ToolFieldMetadata {
+// field588 constructs one generated field declaration.
+func (registryDeclarations) field588() *genregistry.ToolFieldMetadata {
 	registryText1 := "object"
 	registryText2 := "Saved Checkpoint 5 approval of this revision when current promotion inputs could not be verified on this read (because no promotion target is configured or the target could not report its current inputs). At most one of approval or unverified_approval is set. It is never saved to disk or hashed into request_revision."
 	return &genregistry.ToolFieldMetadata{
@@ -9078,8 +9335,8 @@ func (registryDeclarations) field572() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field573 constructs one generated field declaration.
-func (registryDeclarations) field573() *genregistry.ToolFieldMetadata {
+// field589 constructs one generated field declaration.
+func (registryDeclarations) field589() *genregistry.ToolFieldMetadata {
 	registryText1 := "object"
 	registryText2 := "Recorded promotion approval from the Change Card."
 	return &genregistry.ToolFieldMetadata{
@@ -9092,8 +9349,8 @@ func (registryDeclarations) field573() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field574 constructs one generated field declaration.
-func (registryDeclarations) field574() *genregistry.ToolFieldMetadata {
+// field590 constructs one generated field declaration.
+func (registryDeclarations) field590() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
 	registryText2 := "Authenticated bearer principal that owns the card and called approve_merge. Bearer authentication does not prove that a human, rather than a coding agent, made the call."
 	return &genregistry.ToolFieldMetadata{
@@ -9107,8 +9364,8 @@ func (registryDeclarations) field574() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field575 constructs one generated field declaration.
-func (registryDeclarations) field575() *genregistry.ToolFieldMetadata {
+// field591 constructs one generated field declaration.
+func (registryDeclarations) field591() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
 	registryText2 := "SHA-256 digest of the approved CP4 verification report."
 	return &genregistry.ToolFieldMetadata{
@@ -9122,8 +9379,8 @@ func (registryDeclarations) field575() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field576 constructs one generated field declaration.
-func (registryDeclarations) field576() *genregistry.ToolFieldMetadata {
+// field592 constructs one generated field declaration.
+func (registryDeclarations) field592() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
 	registryText2 := "Candidate commit the report was checked against."
 	return &genregistry.ToolFieldMetadata{
@@ -9137,8 +9394,8 @@ func (registryDeclarations) field576() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field577 constructs one generated field declaration.
-func (registryDeclarations) field577() *genregistry.ToolFieldMetadata {
+// field593 constructs one generated field declaration.
+func (registryDeclarations) field593() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
 	registryText2 := "Evaluator suite the promotion target requires."
 	return &genregistry.ToolFieldMetadata{
@@ -9152,8 +9409,8 @@ func (registryDeclarations) field577() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field578 constructs one generated field declaration.
-func (registryDeclarations) field578() *genregistry.ToolFieldMetadata {
+// field594 constructs one generated field declaration.
+func (registryDeclarations) field594() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
 	registryText2 := "Evaluator suite commit the promotion target requires."
 	return &genregistry.ToolFieldMetadata{
@@ -9167,8 +9424,8 @@ func (registryDeclarations) field578() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field579 constructs one generated field declaration.
-func (registryDeclarations) field579() *genregistry.ToolFieldMetadata {
+// field595 constructs one generated field declaration.
+func (registryDeclarations) field595() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
 	registryText2 := "Dependency profile the promotion target requires, such as sim."
 	return &genregistry.ToolFieldMetadata{
@@ -9182,8 +9439,8 @@ func (registryDeclarations) field579() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field580 constructs one generated field declaration.
-func (registryDeclarations) field580() *genregistry.ToolFieldMetadata {
+// field596 constructs one generated field declaration.
+func (registryDeclarations) field596() *genregistry.ToolFieldMetadata {
 	registryText1 := "object"
 	registryText2 := "SHA-256 digest of each candidate binary the promotion target measured, keyed by binary name."
 	return &genregistry.ToolFieldMetadata{
@@ -9197,8 +9454,8 @@ func (registryDeclarations) field580() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field581 constructs one generated field declaration.
-func (registryDeclarations) field581() *genregistry.ToolFieldMetadata {
+// field597 constructs one generated field declaration.
+func (registryDeclarations) field597() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
 	registryText2 := "SHA-256 digest of each candidate binary the promotion target measured, keyed by binary name."
 	return &genregistry.ToolFieldMetadata{
@@ -9213,8 +9470,8 @@ func (registryDeclarations) field581() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field582 constructs one generated field declaration.
-func (registryDeclarations) field582() *genregistry.ToolFieldMetadata {
+// field598 constructs one generated field declaration.
+func (registryDeclarations) field598() *genregistry.ToolFieldMetadata {
 	registryText1 := "integer"
 	registryText2 := "Number of declared evaluator scenarios, every one of which passed."
 	return &genregistry.ToolFieldMetadata{
@@ -9228,8 +9485,8 @@ func (registryDeclarations) field582() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field583 constructs one generated field declaration.
-func (registryDeclarations) field583() *genregistry.ToolFieldMetadata {
+// field599 constructs one generated field declaration.
+func (registryDeclarations) field599() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
 	registryText2 := "Explanation of why the recorded approval could not be verified against current promotion inputs and how to recover."
 	return &genregistry.ToolFieldMetadata{
@@ -9242,33 +9499,49 @@ func (registryDeclarations) field583() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// metadata584 constructs one generated metadata declaration.
-func (declarations registryDeclarations) metadata584() *genregistry.ToolTypeMetadata {
+// metadata600 constructs one generated metadata declaration.
+func (declarations registryDeclarations) metadata600() *genregistry.ToolTypeMetadata {
 	registryText1 := "ProposeChangePayload"
 	return &genregistry.ToolTypeMetadata{
 		Name:                     &registryText1,
-		SchemaWithoutRootExample: []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Operator feature request submitted for Checkpoint 1 ambiguity and example analysis.\",\"properties\":{\"change_id\":{\"description\":\"Unique change identifier.\",\"type\":\"string\"},\"design_source\":{\"description\":\"Current Goa design source of the target (its design/*.go files) for the CP1 model to read. When omitted on a server with a bound workspace, Surla reads design/*.go from the bound workspace; when omitted without a bound workspace, CP1 receives no current design.\",\"type\":\"string\"},\"prompt\":{\"description\":\"Operator feature request.\",\"type\":\"string\"}},\"required\":[\"change_id\",\"prompt\"],\"type\":\"object\"}"),
+		SchemaWithoutRootExample: []byte("{\"$defs\":{\"CP1Analysis\":{\"additionalProperties\":false,\"description\":\"Your analysis of the feature request against the target's current Goa design (its design/*.go files) and the Golden Path playbook served at surla://golden-path. Surla saves it as the Change Card after checking its structure and cross-field rules; it cannot judge whether the analysis is complete or correct.\",\"properties\":{\"ambiguities\":{\"description\":\"Open questions only the requester can answer: product, domain, or operational choices that change observable behavior or service boundaries. Do not ask about details the request or the design already settle; state them in summary, or in examples when they change an observable outcome. Send an empty list when nothing is open.\",\"items\":{\"$ref\":\"#/$defs/CP1AnalysisAmbiguity\"},\"type\":\"array\"},\"examples\":{\"description\":\"Concrete acceptance examples drawn from the request and the design, never placeholder text; each becomes a check the change must pass.\",\"items\":{\"$ref\":\"#/$defs/CP1AnalysisExample\"},\"minItems\":1,\"type\":\"array\"},\"preserved_behaviors\":{\"description\":\"Existing behaviors and contract rules of the target that the change must keep, each stated concretely; empty when none apply.\",\"items\":{\"pattern\":\"\\\\S\",\"type\":\"string\"},\"type\":\"array\"},\"summary\":{\"description\":\"Plain-English description of the requested behavior, including the details the request or the design already settle.\",\"pattern\":\"\\\\S\",\"type\":\"string\"},\"ui_composition\":{\"description\":\"Optional OpenUI Lang program that helps the requester decide the open questions, built only from the decision components the surla://golden-path resource lists. Refer to an ambiguity or example only by its 1-based position in this analysis (1 is the first); never invent identifiers. Surla saves it unchanged without checking it; the checkpoint viewer validates and renders it. Omit it when a plain card is clearer.\",\"type\":\"string\"}},\"required\":[\"summary\",\"ambiguities\",\"examples\",\"preserved_behaviors\"],\"title\":\"CP1Analysis\",\"type\":\"object\"},\"CP1AnalysisAmbiguity\":{\"additionalProperties\":false,\"description\":\"One product, domain, or operational choice only the requester can make. Surla gives it the ID \\u003cchange_id\\u003e-ambiguity-NN, numbered in list order.\",\"properties\":{\"options\":{\"description\":\"At least two distinct, self-contained choices; each states the behavior it selects and what follows from it. The requester's answer must be exactly one of these strings.\",\"items\":{\"pattern\":\"\\\\S\",\"type\":\"string\"},\"minItems\":2,\"type\":\"array\"},\"question\":{\"description\":\"The decision in plain language, saying what the choice changes.\",\"pattern\":\"\\\\S\",\"type\":\"string\"}},\"required\":[\"question\",\"options\"],\"title\":\"CP1AnalysisAmbiguity\",\"type\":\"object\"},\"CP1AnalysisExample\":{\"additionalProperties\":false,\"description\":\"One concrete acceptance example that becomes a check the change must pass. Surla gives it the ID check_01, check_02, ... in list order.\",\"properties\":{\"expected_outcome\":{\"description\":\"The observable result or refusal that must hold.\",\"pattern\":\"\\\\S\",\"type\":\"string\"},\"input_summary\":{\"description\":\"The actual request, inputs, and starting state in this scenario, with real values from the request and the design, never placeholders.\",\"pattern\":\"\\\\S\",\"type\":\"string\"},\"scenario\":{\"description\":\"Short name of the situation, in the requester's domain terms.\",\"pattern\":\"\\\\S\",\"type\":\"string\"},\"verification_kind\":{\"description\":\"deterministic when code can check the outcome directly; model_judged when checking it needs judgment.\",\"enum\":[\"deterministic\",\"model_judged\"],\"type\":\"string\"}},\"required\":[\"scenario\",\"input_summary\",\"expected_outcome\",\"verification_kind\"],\"title\":\"CP1AnalysisExample\",\"type\":\"object\"}},\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Operator feature request and the caller's analysis of it, saved as a new Checkpoint 1 Change Card.\",\"properties\":{\"analysis\":{\"$ref\":\"#/$defs/CP1Analysis\",\"description\":\"Your analysis of prompt against the target's current design.\"},\"change_id\":{\"description\":\"Unique change identifier.\",\"type\":\"string\"},\"design_source\":{\"description\":\"Goa design source the analysis was made against (the target's design/*.go files). Surla saves it with the card and includes it in request_revision; it does not interpret it. When omitted on a server with a bound workspace, Surla records design/*.go from the bound workspace; when omitted without a bound workspace, the card records no design.\",\"type\":\"string\"},\"prompt\":{\"description\":\"Operator feature request.\",\"type\":\"string\"}},\"required\":[\"change_id\",\"prompt\",\"analysis\"],\"type\":\"object\"}"),
 		Fields: []*genregistry.ToolFieldMetadata{
-			declarations.field585(),
-			declarations.field586(),
-			declarations.field587(),
-			declarations.field588(),
+			declarations.field601(),
+			declarations.field602(),
+			declarations.field603(),
+			declarations.field604(),
+			declarations.field605(),
+			declarations.field606(),
+			declarations.field607(),
+			declarations.field608(),
+			declarations.field609(),
+			declarations.field610(),
+			declarations.field611(),
+			declarations.field612(),
+			declarations.field613(),
+			declarations.field614(),
+			declarations.field615(),
+			declarations.field616(),
+			declarations.field617(),
+			declarations.field618(),
+			declarations.field619(),
+			declarations.field620(),
 		},
 	}
 }
 
-// field585 constructs one generated field declaration.
-func (registryDeclarations) field585() *genregistry.ToolFieldMetadata {
+// field601 constructs one generated field declaration.
+func (registryDeclarations) field601() *genregistry.ToolFieldMetadata {
 	registryText1 := "object"
-	registryText2 := "Operator feature request submitted for Checkpoint 1 ambiguity and example analysis."
+	registryText2 := "Operator feature request and the caller's analysis of it, saved as a new Checkpoint 1 Change Card."
 	return &genregistry.ToolFieldMetadata{
 		JSONType:    &registryText1,
 		Description: &registryText2,
 	}
 }
 
-// field586 constructs one generated field declaration.
-func (registryDeclarations) field586() *genregistry.ToolFieldMetadata {
+// field602 constructs one generated field declaration.
+func (registryDeclarations) field602() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
 	registryText2 := "Unique change identifier."
 	return &genregistry.ToolFieldMetadata{
@@ -9280,8 +9553,8 @@ func (registryDeclarations) field586() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field587 constructs one generated field declaration.
-func (registryDeclarations) field587() *genregistry.ToolFieldMetadata {
+// field603 constructs one generated field declaration.
+func (registryDeclarations) field603() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
 	registryText2 := "Operator feature request."
 	return &genregistry.ToolFieldMetadata{
@@ -9293,10 +9566,10 @@ func (registryDeclarations) field587() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field588 constructs one generated field declaration.
-func (registryDeclarations) field588() *genregistry.ToolFieldMetadata {
+// field604 constructs one generated field declaration.
+func (registryDeclarations) field604() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
-	registryText2 := "Current Goa design source of the target (its design/*.go files) for the CP1 model to read. When omitted on a server with a bound workspace, Surla reads design/*.go from the bound workspace; when omitted without a bound workspace, CP1 receives no current design."
+	registryText2 := "Goa design source the analysis was made against (the target's design/*.go files). Surla saves it with the card and includes it in request_revision; it does not interpret it. When omitted on a server with a bound workspace, Surla records design/*.go from the bound workspace; when omitted without a bound workspace, the card records no design."
 	return &genregistry.ToolFieldMetadata{
 		Path: []*genregistry.ToolFieldPathSegment{
 			{Segment: genregistry.NewToolFieldSegmentField("design_source")},
@@ -9306,8 +9579,249 @@ func (registryDeclarations) field588() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// schema589 constructs one generated schema declaration.
-func (declarations registryDeclarations) schema589() *genregistry.ToolSchema {
+// field605 constructs one generated field declaration.
+func (registryDeclarations) field605() *genregistry.ToolFieldMetadata {
+	registryText1 := "object"
+	registryText2 := "Your analysis of prompt against the target's current design."
+	return &genregistry.ToolFieldMetadata{
+		Path: []*genregistry.ToolFieldPathSegment{
+			{Segment: genregistry.NewToolFieldSegmentField("analysis")},
+		},
+		JSONType:    &registryText1,
+		Description: &registryText2,
+	}
+}
+
+// field606 constructs one generated field declaration.
+func (registryDeclarations) field606() *genregistry.ToolFieldMetadata {
+	registryText1 := "string"
+	registryText2 := "Plain-English description of the requested behavior, including the details the request or the design already settle."
+	return &genregistry.ToolFieldMetadata{
+		Path: []*genregistry.ToolFieldPathSegment{
+			{Segment: genregistry.NewToolFieldSegmentField("analysis")},
+			{Segment: genregistry.NewToolFieldSegmentField("summary")},
+		},
+		JSONType:    &registryText1,
+		Description: &registryText2,
+	}
+}
+
+// field607 constructs one generated field declaration.
+func (registryDeclarations) field607() *genregistry.ToolFieldMetadata {
+	registryText1 := "array"
+	registryText2 := "Open questions only the requester can answer: product, domain, or operational choices that change observable behavior or service boundaries. Do not ask about details the request or the design already settle; state them in summary, or in examples when they change an observable outcome. Send an empty list when nothing is open."
+	return &genregistry.ToolFieldMetadata{
+		Path: []*genregistry.ToolFieldPathSegment{
+			{Segment: genregistry.NewToolFieldSegmentField("analysis")},
+			{Segment: genregistry.NewToolFieldSegmentField("ambiguities")},
+		},
+		JSONType:    &registryText1,
+		Description: &registryText2,
+	}
+}
+
+// field608 constructs one generated field declaration.
+func (registryDeclarations) field608() *genregistry.ToolFieldMetadata {
+	registryText1 := "object"
+	registryText2 := "Open questions only the requester can answer: product, domain, or operational choices that change observable behavior or service boundaries. Do not ask about details the request or the design already settle; state them in summary, or in examples when they change an observable outcome. Send an empty list when nothing is open."
+	return &genregistry.ToolFieldMetadata{
+		Path: []*genregistry.ToolFieldPathSegment{
+			{Segment: genregistry.NewToolFieldSegmentField("analysis")},
+			{Segment: genregistry.NewToolFieldSegmentField("ambiguities")},
+			{Segment: genregistry.NewToolFieldSegmentElement(&genregistry.ToolCollectionElement{})},
+		},
+		JSONType:    &registryText1,
+		Description: &registryText2,
+	}
+}
+
+// field609 constructs one generated field declaration.
+func (registryDeclarations) field609() *genregistry.ToolFieldMetadata {
+	registryText1 := "string"
+	registryText2 := "The decision in plain language, saying what the choice changes."
+	return &genregistry.ToolFieldMetadata{
+		Path: []*genregistry.ToolFieldPathSegment{
+			{Segment: genregistry.NewToolFieldSegmentField("analysis")},
+			{Segment: genregistry.NewToolFieldSegmentField("ambiguities")},
+			{Segment: genregistry.NewToolFieldSegmentElement(&genregistry.ToolCollectionElement{})},
+			{Segment: genregistry.NewToolFieldSegmentField("question")},
+		},
+		JSONType:    &registryText1,
+		Description: &registryText2,
+	}
+}
+
+// field610 constructs one generated field declaration.
+func (registryDeclarations) field610() *genregistry.ToolFieldMetadata {
+	registryText1 := "array"
+	registryText2 := "At least two distinct, self-contained choices; each states the behavior it selects and what follows from it. The requester's answer must be exactly one of these strings."
+	return &genregistry.ToolFieldMetadata{
+		Path: []*genregistry.ToolFieldPathSegment{
+			{Segment: genregistry.NewToolFieldSegmentField("analysis")},
+			{Segment: genregistry.NewToolFieldSegmentField("ambiguities")},
+			{Segment: genregistry.NewToolFieldSegmentElement(&genregistry.ToolCollectionElement{})},
+			{Segment: genregistry.NewToolFieldSegmentField("options")},
+		},
+		JSONType:    &registryText1,
+		Description: &registryText2,
+	}
+}
+
+// field611 constructs one generated field declaration.
+func (registryDeclarations) field611() *genregistry.ToolFieldMetadata {
+	registryText1 := "string"
+	registryText2 := "At least two distinct, self-contained choices; each states the behavior it selects and what follows from it. The requester's answer must be exactly one of these strings."
+	return &genregistry.ToolFieldMetadata{
+		Path: []*genregistry.ToolFieldPathSegment{
+			{Segment: genregistry.NewToolFieldSegmentField("analysis")},
+			{Segment: genregistry.NewToolFieldSegmentField("ambiguities")},
+			{Segment: genregistry.NewToolFieldSegmentElement(&genregistry.ToolCollectionElement{})},
+			{Segment: genregistry.NewToolFieldSegmentField("options")},
+			{Segment: genregistry.NewToolFieldSegmentElement(&genregistry.ToolCollectionElement{})},
+		},
+		JSONType:    &registryText1,
+		Description: &registryText2,
+	}
+}
+
+// field612 constructs one generated field declaration.
+func (registryDeclarations) field612() *genregistry.ToolFieldMetadata {
+	registryText1 := "array"
+	registryText2 := "Concrete acceptance examples drawn from the request and the design, never placeholder text; each becomes a check the change must pass."
+	return &genregistry.ToolFieldMetadata{
+		Path: []*genregistry.ToolFieldPathSegment{
+			{Segment: genregistry.NewToolFieldSegmentField("analysis")},
+			{Segment: genregistry.NewToolFieldSegmentField("examples")},
+		},
+		JSONType:    &registryText1,
+		Description: &registryText2,
+	}
+}
+
+// field613 constructs one generated field declaration.
+func (registryDeclarations) field613() *genregistry.ToolFieldMetadata {
+	registryText1 := "object"
+	registryText2 := "Concrete acceptance examples drawn from the request and the design, never placeholder text; each becomes a check the change must pass."
+	return &genregistry.ToolFieldMetadata{
+		Path: []*genregistry.ToolFieldPathSegment{
+			{Segment: genregistry.NewToolFieldSegmentField("analysis")},
+			{Segment: genregistry.NewToolFieldSegmentField("examples")},
+			{Segment: genregistry.NewToolFieldSegmentElement(&genregistry.ToolCollectionElement{})},
+		},
+		JSONType:    &registryText1,
+		Description: &registryText2,
+	}
+}
+
+// field614 constructs one generated field declaration.
+func (registryDeclarations) field614() *genregistry.ToolFieldMetadata {
+	registryText1 := "string"
+	registryText2 := "Short name of the situation, in the requester's domain terms."
+	return &genregistry.ToolFieldMetadata{
+		Path: []*genregistry.ToolFieldPathSegment{
+			{Segment: genregistry.NewToolFieldSegmentField("analysis")},
+			{Segment: genregistry.NewToolFieldSegmentField("examples")},
+			{Segment: genregistry.NewToolFieldSegmentElement(&genregistry.ToolCollectionElement{})},
+			{Segment: genregistry.NewToolFieldSegmentField("scenario")},
+		},
+		JSONType:    &registryText1,
+		Description: &registryText2,
+	}
+}
+
+// field615 constructs one generated field declaration.
+func (registryDeclarations) field615() *genregistry.ToolFieldMetadata {
+	registryText1 := "string"
+	registryText2 := "The actual request, inputs, and starting state in this scenario, with real values from the request and the design, never placeholders."
+	return &genregistry.ToolFieldMetadata{
+		Path: []*genregistry.ToolFieldPathSegment{
+			{Segment: genregistry.NewToolFieldSegmentField("analysis")},
+			{Segment: genregistry.NewToolFieldSegmentField("examples")},
+			{Segment: genregistry.NewToolFieldSegmentElement(&genregistry.ToolCollectionElement{})},
+			{Segment: genregistry.NewToolFieldSegmentField("input_summary")},
+		},
+		JSONType:    &registryText1,
+		Description: &registryText2,
+	}
+}
+
+// field616 constructs one generated field declaration.
+func (registryDeclarations) field616() *genregistry.ToolFieldMetadata {
+	registryText1 := "string"
+	registryText2 := "The observable result or refusal that must hold."
+	return &genregistry.ToolFieldMetadata{
+		Path: []*genregistry.ToolFieldPathSegment{
+			{Segment: genregistry.NewToolFieldSegmentField("analysis")},
+			{Segment: genregistry.NewToolFieldSegmentField("examples")},
+			{Segment: genregistry.NewToolFieldSegmentElement(&genregistry.ToolCollectionElement{})},
+			{Segment: genregistry.NewToolFieldSegmentField("expected_outcome")},
+		},
+		JSONType:    &registryText1,
+		Description: &registryText2,
+	}
+}
+
+// field617 constructs one generated field declaration.
+func (registryDeclarations) field617() *genregistry.ToolFieldMetadata {
+	registryText1 := "string"
+	registryText2 := "deterministic when code can check the outcome directly; model_judged when checking it needs judgment."
+	return &genregistry.ToolFieldMetadata{
+		Path: []*genregistry.ToolFieldPathSegment{
+			{Segment: genregistry.NewToolFieldSegmentField("analysis")},
+			{Segment: genregistry.NewToolFieldSegmentField("examples")},
+			{Segment: genregistry.NewToolFieldSegmentElement(&genregistry.ToolCollectionElement{})},
+			{Segment: genregistry.NewToolFieldSegmentField("verification_kind")},
+		},
+		JSONType:    &registryText1,
+		Description: &registryText2,
+	}
+}
+
+// field618 constructs one generated field declaration.
+func (registryDeclarations) field618() *genregistry.ToolFieldMetadata {
+	registryText1 := "array"
+	registryText2 := "Existing behaviors and contract rules of the target that the change must keep, each stated concretely; empty when none apply."
+	return &genregistry.ToolFieldMetadata{
+		Path: []*genregistry.ToolFieldPathSegment{
+			{Segment: genregistry.NewToolFieldSegmentField("analysis")},
+			{Segment: genregistry.NewToolFieldSegmentField("preserved_behaviors")},
+		},
+		JSONType:    &registryText1,
+		Description: &registryText2,
+	}
+}
+
+// field619 constructs one generated field declaration.
+func (registryDeclarations) field619() *genregistry.ToolFieldMetadata {
+	registryText1 := "string"
+	registryText2 := "Existing behaviors and contract rules of the target that the change must keep, each stated concretely; empty when none apply."
+	return &genregistry.ToolFieldMetadata{
+		Path: []*genregistry.ToolFieldPathSegment{
+			{Segment: genregistry.NewToolFieldSegmentField("analysis")},
+			{Segment: genregistry.NewToolFieldSegmentField("preserved_behaviors")},
+			{Segment: genregistry.NewToolFieldSegmentElement(&genregistry.ToolCollectionElement{})},
+		},
+		JSONType:    &registryText1,
+		Description: &registryText2,
+	}
+}
+
+// field620 constructs one generated field declaration.
+func (registryDeclarations) field620() *genregistry.ToolFieldMetadata {
+	registryText1 := "string"
+	registryText2 := "Optional OpenUI Lang program that helps the requester decide the open questions, built only from the decision components the surla://golden-path resource lists. Refer to an ambiguity or example only by its 1-based position in this analysis (1 is the first); never invent identifiers. Surla saves it unchanged without checking it; the checkpoint viewer validates and renders it. Omit it when a plain card is clearer."
+	return &genregistry.ToolFieldMetadata{
+		Path: []*genregistry.ToolFieldPathSegment{
+			{Segment: genregistry.NewToolFieldSegmentField("analysis")},
+			{Segment: genregistry.NewToolFieldSegmentField("ui_composition")},
+		},
+		JSONType:    &registryText1,
+		Description: &registryText2,
+	}
+}
+
+// schema621 constructs one generated schema declaration.
+func (declarations registryDeclarations) schema621() *genregistry.ToolSchema {
 	registryText1 := "Read the next page of a check_project or update_dependencies output. Pass op_id from that result and next_cursor from the previous page; omit cursor for the first page. dropped_bytes > 0 means part of the output was not captured."
 	return &genregistry.ToolSchema{
 		Name:                   "surla.read_check_output",
@@ -9331,30 +9845,30 @@ func (declarations registryDeclarations) schema589() *genregistry.ToolSchema {
 					Terms:  map[string]int{"0": 1, "a": 1, "and": 1, "bytes": 1, "captured": 1, "check": 3, "cursor": 2, "dependencies": 1, "dropped": 1, "first": 1, "for": 1, "from": 2, "id": 1, "means": 1, "next": 2, "not": 1, "of": 2, "omit": 1, "op": 1, "or": 1, "output": 4, "page": 3, "part": 1, "pass": 1, "previous": 1, "project": 1, "read": 3, "result": 1, "surla": 1, "that": 1, "the": 4, "update": 1, "was": 1},
 				},
 				PayloadSchema: []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Selects a page of the full output that check_project or update_dependencies captured.\",\"properties\":{\"cursor\":{\"description\":\"Opaque next_cursor from the previous page; omit for the first page.\",\"type\":\"string\"},\"op_id\":{\"description\":\"Operation identifier returned by check_project or update_dependencies.\",\"type\":\"string\"}},\"required\":[\"op_id\"],\"type\":\"object\"}"),
-				Payload:       declarations.metadata600(),
+				Payload:       declarations.metadata632(),
 			},
-			Payload: declarations.metadata590(),
-			Result:  declarations.metadata594(),
+			Payload: declarations.metadata622(),
+			Result:  declarations.metadata626(),
 		},
 	}
 }
 
-// metadata590 constructs one generated metadata declaration.
-func (declarations registryDeclarations) metadata590() *genregistry.ToolTypeMetadata {
+// metadata622 constructs one generated metadata declaration.
+func (declarations registryDeclarations) metadata622() *genregistry.ToolTypeMetadata {
 	registryText1 := "ReadCheckOutputPayload"
 	return &genregistry.ToolTypeMetadata{
 		Name:                     &registryText1,
 		SchemaWithoutRootExample: []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Selects a page of the full output that check_project or update_dependencies captured.\",\"properties\":{\"cursor\":{\"description\":\"Opaque next_cursor from the previous page; omit for the first page.\",\"type\":\"string\"},\"op_id\":{\"description\":\"Operation identifier returned by check_project or update_dependencies.\",\"type\":\"string\"}},\"required\":[\"op_id\"],\"type\":\"object\"}"),
 		Fields: []*genregistry.ToolFieldMetadata{
-			declarations.field591(),
-			declarations.field592(),
-			declarations.field593(),
+			declarations.field623(),
+			declarations.field624(),
+			declarations.field625(),
 		},
 	}
 }
 
-// field591 constructs one generated field declaration.
-func (registryDeclarations) field591() *genregistry.ToolFieldMetadata {
+// field623 constructs one generated field declaration.
+func (registryDeclarations) field623() *genregistry.ToolFieldMetadata {
 	registryText1 := "object"
 	registryText2 := "Selects a page of the full output that check_project or update_dependencies captured."
 	return &genregistry.ToolFieldMetadata{
@@ -9363,8 +9877,8 @@ func (registryDeclarations) field591() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field592 constructs one generated field declaration.
-func (registryDeclarations) field592() *genregistry.ToolFieldMetadata {
+// field624 constructs one generated field declaration.
+func (registryDeclarations) field624() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
 	registryText2 := "Operation identifier returned by check_project or update_dependencies."
 	return &genregistry.ToolFieldMetadata{
@@ -9376,8 +9890,8 @@ func (registryDeclarations) field592() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field593 constructs one generated field declaration.
-func (registryDeclarations) field593() *genregistry.ToolFieldMetadata {
+// field625 constructs one generated field declaration.
+func (registryDeclarations) field625() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
 	registryText2 := "Opaque next_cursor from the previous page; omit for the first page."
 	return &genregistry.ToolFieldMetadata{
@@ -9389,24 +9903,24 @@ func (registryDeclarations) field593() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// metadata594 constructs one generated metadata declaration.
-func (declarations registryDeclarations) metadata594() *genregistry.ToolTypeMetadata {
+// metadata626 constructs one generated metadata declaration.
+func (declarations registryDeclarations) metadata626() *genregistry.ToolTypeMetadata {
 	registryText1 := "ReadCheckOutputResult"
 	return &genregistry.ToolTypeMetadata{
 		Name:                     &registryText1,
 		SchemaWithoutRootExample: []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"One page of at most 16 KiB of a check operation's captured output.\",\"properties\":{\"captured_bytes\":{\"description\":\"Total bytes captured for the operation.\",\"format\":\"int64\",\"type\":\"integer\"},\"dropped_bytes\":{\"description\":\"Bytes the operation produced beyond its capture limit and did not keep; nonzero means the output has a stated gap.\",\"format\":\"int64\",\"type\":\"integer\"},\"next_cursor\":{\"description\":\"Cursor for the following page; absent when this page reaches the end.\",\"type\":\"string\"},\"text\":{\"description\":\"The page text.\",\"type\":\"string\"}},\"required\":[\"text\",\"captured_bytes\",\"dropped_bytes\"],\"type\":\"object\"}"),
 		Fields: []*genregistry.ToolFieldMetadata{
-			declarations.field595(),
-			declarations.field596(),
-			declarations.field597(),
-			declarations.field598(),
-			declarations.field599(),
+			declarations.field627(),
+			declarations.field628(),
+			declarations.field629(),
+			declarations.field630(),
+			declarations.field631(),
 		},
 	}
 }
 
-// field595 constructs one generated field declaration.
-func (registryDeclarations) field595() *genregistry.ToolFieldMetadata {
+// field627 constructs one generated field declaration.
+func (registryDeclarations) field627() *genregistry.ToolFieldMetadata {
 	registryText1 := "object"
 	registryText2 := "One page of at most 16 KiB of a check operation's captured output."
 	return &genregistry.ToolFieldMetadata{
@@ -9415,8 +9929,8 @@ func (registryDeclarations) field595() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field596 constructs one generated field declaration.
-func (registryDeclarations) field596() *genregistry.ToolFieldMetadata {
+// field628 constructs one generated field declaration.
+func (registryDeclarations) field628() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
 	registryText2 := "The page text."
 	return &genregistry.ToolFieldMetadata{
@@ -9428,8 +9942,8 @@ func (registryDeclarations) field596() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field597 constructs one generated field declaration.
-func (registryDeclarations) field597() *genregistry.ToolFieldMetadata {
+// field629 constructs one generated field declaration.
+func (registryDeclarations) field629() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
 	registryText2 := "Cursor for the following page; absent when this page reaches the end."
 	return &genregistry.ToolFieldMetadata{
@@ -9441,8 +9955,8 @@ func (registryDeclarations) field597() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field598 constructs one generated field declaration.
-func (registryDeclarations) field598() *genregistry.ToolFieldMetadata {
+// field630 constructs one generated field declaration.
+func (registryDeclarations) field630() *genregistry.ToolFieldMetadata {
 	registryText1 := "integer"
 	registryText2 := "Total bytes captured for the operation."
 	return &genregistry.ToolFieldMetadata{
@@ -9454,8 +9968,8 @@ func (registryDeclarations) field598() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field599 constructs one generated field declaration.
-func (registryDeclarations) field599() *genregistry.ToolFieldMetadata {
+// field631 constructs one generated field declaration.
+func (registryDeclarations) field631() *genregistry.ToolFieldMetadata {
 	registryText1 := "integer"
 	registryText2 := "Bytes the operation produced beyond its capture limit and did not keep; nonzero means the output has a stated gap."
 	return &genregistry.ToolFieldMetadata{
@@ -9467,22 +9981,22 @@ func (registryDeclarations) field599() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// metadata600 constructs one generated metadata declaration.
-func (declarations registryDeclarations) metadata600() *genregistry.ToolTypeMetadata {
+// metadata632 constructs one generated metadata declaration.
+func (declarations registryDeclarations) metadata632() *genregistry.ToolTypeMetadata {
 	registryText1 := "ReadCheckOutputPayload"
 	return &genregistry.ToolTypeMetadata{
 		Name:                     &registryText1,
 		SchemaWithoutRootExample: []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Selects a page of the full output that check_project or update_dependencies captured.\",\"properties\":{\"cursor\":{\"description\":\"Opaque next_cursor from the previous page; omit for the first page.\",\"type\":\"string\"},\"op_id\":{\"description\":\"Operation identifier returned by check_project or update_dependencies.\",\"type\":\"string\"}},\"required\":[\"op_id\"],\"type\":\"object\"}"),
 		Fields: []*genregistry.ToolFieldMetadata{
-			declarations.field601(),
-			declarations.field602(),
-			declarations.field603(),
+			declarations.field633(),
+			declarations.field634(),
+			declarations.field635(),
 		},
 	}
 }
 
-// field601 constructs one generated field declaration.
-func (registryDeclarations) field601() *genregistry.ToolFieldMetadata {
+// field633 constructs one generated field declaration.
+func (registryDeclarations) field633() *genregistry.ToolFieldMetadata {
 	registryText1 := "object"
 	registryText2 := "Selects a page of the full output that check_project or update_dependencies captured."
 	return &genregistry.ToolFieldMetadata{
@@ -9491,8 +10005,8 @@ func (registryDeclarations) field601() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field602 constructs one generated field declaration.
-func (registryDeclarations) field602() *genregistry.ToolFieldMetadata {
+// field634 constructs one generated field declaration.
+func (registryDeclarations) field634() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
 	registryText2 := "Operation identifier returned by check_project or update_dependencies."
 	return &genregistry.ToolFieldMetadata{
@@ -9504,8 +10018,8 @@ func (registryDeclarations) field602() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field603 constructs one generated field declaration.
-func (registryDeclarations) field603() *genregistry.ToolFieldMetadata {
+// field635 constructs one generated field declaration.
+func (registryDeclarations) field635() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
 	registryText2 := "Opaque next_cursor from the previous page; omit for the first page."
 	return &genregistry.ToolFieldMetadata{
@@ -9517,150 +10031,46 @@ func (registryDeclarations) field603() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// schema604 constructs one generated schema declaration.
-func (declarations registryDeclarations) schema604() *genregistry.ToolSchema {
-	registryText1 := "Revise an existing Checkpoint 1 Change Card with updated requirements bound to its current request_revision. The new revision's answers, confirmed_by and any approval are cleared, so it needs confirmation again; earlier decisions remain only where the analysis restated them in its summary, examples or preserved behaviors."
+// schema636 constructs one generated schema declaration.
+func (declarations registryDeclarations) schema636() *genregistry.ToolSchema {
+	registryText1 := "Revise an existing Checkpoint 1 Change Card with updated requirements bound to its current request_revision. Send the revised request in prompt with a new analysis made against the current card (as get_change returns it) and the target's design: keep or edit each current example through prior_id, list the dropped ones in removed_example_ids, and restate the confirmed decisions that still hold in summary, examples or preserved_behaviors. The new revision's answers, confirmed_by and any approval are cleared, so it needs confirmation again."
 	return &genregistry.ToolSchema{
 		Name:                   "surla.revise_change",
 		Description:            &registryText1,
-		PayloadSchema:          []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Revised operator feature request submitted for an existing Checkpoint 1 Change Card.\",\"properties\":{\"change_id\":{\"description\":\"Change identifier.\",\"type\":\"string\"},\"design_source\":{\"description\":\"Updated Goa design source of the target (its design/*.go files) for the CP1 model to read. When omitted on a workspace-backed card with a bound workspace, Surla re-reads design/*.go from the bound workspace; otherwise the card's saved design source is used again.\",\"type\":\"string\"},\"prompt\":{\"description\":\"Revised operator feature request.\",\"type\":\"string\"},\"request_revision\":{\"description\":\"Current CP1 request_revision digest being revised.\",\"type\":\"string\"}},\"required\":[\"change_id\",\"request_revision\",\"prompt\"],\"type\":\"object\"}"),
-		ExecutionPayloadSchema: []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Revised operator feature request submitted for an existing Checkpoint 1 Change Card.\",\"properties\":{\"change_id\":{\"description\":\"Change identifier.\",\"type\":\"string\"},\"design_source\":{\"description\":\"Updated Goa design source of the target (its design/*.go files) for the CP1 model to read. When omitted on a workspace-backed card with a bound workspace, Surla re-reads design/*.go from the bound workspace; otherwise the card's saved design source is used again.\",\"type\":\"string\"},\"prompt\":{\"description\":\"Revised operator feature request.\",\"type\":\"string\"},\"request_revision\":{\"description\":\"Current CP1 request_revision digest being revised.\",\"type\":\"string\"}},\"required\":[\"change_id\",\"request_revision\",\"prompt\"],\"type\":\"object\"}"),
-		ResultSchema:           []byte("{\"$defs\":{\"AmbiguityQuestion\":{\"additionalProperties\":false,\"description\":\"Domain ambiguity surfaced with concrete examples at Checkpoint 1.\",\"properties\":{\"id\":{\"description\":\"Stable question identifier.\",\"type\":\"string\"},\"options\":{\"description\":\"Concrete resolution choices.\",\"items\":{\"type\":\"string\"},\"type\":\"array\"},\"question\":{\"description\":\"Plain-English question for the operator.\",\"type\":\"string\"}},\"required\":[\"id\",\"question\",\"options\"],\"title\":\"AmbiguityQuestion\",\"type\":\"object\"},\"ApprovalItem\":{\"additionalProperties\":false,\"description\":\"Checkpoint 5 approval recorded by approve_merge after the evaluator-written verification report passed and matched the change being promoted: the exact candidate commit, suite, environment and binary digests it checked. It is saved with the card in the control plane's cards directory, merges and deploys nothing, is replaced by the next successful approve_merge for the same revision, and is dropped when confirm_intent or revise_change mints a new request_revision. get_change and confirm_intent return it in approval only while the promotion target's current suite, environment and binary digests still equal the ones it records, or in unverified_approval when current promotion inputs cannot be verified on that read.\",\"properties\":{\"approved_by\":{\"description\":\"Authenticated bearer principal that owns the card and called approve_merge. Bearer authentication does not prove that a human, rather than a coding agent, made the call.\",\"type\":\"string\"},\"artifacts\":{\"additionalProperties\":{\"type\":\"string\"},\"description\":\"SHA-256 digest of each candidate binary the promotion target measured, keyed by binary name.\",\"type\":\"object\"},\"candidate_commit\":{\"description\":\"Candidate commit the report was checked against.\",\"type\":\"string\"},\"environment\":{\"description\":\"Dependency profile the promotion target requires, such as sim.\",\"type\":\"string\"},\"report_digest\":{\"description\":\"SHA-256 digest of the approved CP4 verification report.\",\"type\":\"string\"},\"scenario_count\":{\"description\":\"Number of declared evaluator scenarios, every one of which passed.\",\"format\":\"int64\",\"type\":\"integer\"},\"suite_commit\":{\"description\":\"Evaluator suite commit the promotion target requires.\",\"type\":\"string\"},\"suite_id\":{\"description\":\"Evaluator suite the promotion target requires.\",\"type\":\"string\"}},\"required\":[\"approved_by\",\"report_digest\",\"candidate_commit\",\"suite_id\",\"suite_commit\",\"environment\",\"artifacts\",\"scenario_count\"],\"title\":\"ApprovalItem\",\"type\":\"object\"},\"ExampleItem\":{\"additionalProperties\":false,\"description\":\"Concrete input and expected outcome confirmed at Checkpoint 1.\",\"properties\":{\"expected_outcome\":{\"description\":\"Expected side effect and response behavior.\",\"type\":\"string\"},\"id\":{\"description\":\"Stable example identifier. Default code-assigned IDs use check_01, check_02, ... (valid goa-ai/eval Scenario names). confirm_intent preserves caller-chosen IDs.\",\"type\":\"string\"},\"input_summary\":{\"description\":\"Representative user request and domain fixture state.\",\"type\":\"string\"},\"scenario\":{\"description\":\"Plain-English scenario description.\",\"type\":\"string\"},\"verification_kind\":{\"description\":\"Evaluator check classification (deterministic or model_judged).\",\"enum\":[\"deterministic\",\"model_judged\"],\"type\":\"string\"}},\"required\":[\"id\",\"scenario\",\"input_summary\",\"expected_outcome\",\"verification_kind\"],\"title\":\"ExampleItem\",\"type\":\"object\"},\"UICompositionItem\":{\"additionalProperties\":false,\"description\":\"Model-authored OpenUI Lang decision view for exactly one Change Card revision. It is presentation only: it is never hashed into request_revision, confirm_intent never reads it, and it describes the card only while composed_for_revision equals the card's request_revision.\",\"properties\":{\"composed_for_revision\":{\"description\":\"request_revision of the Change Card this program was composed for.\",\"type\":\"string\"},\"program\":{\"description\":\"OpenUI Lang program composed by the CP1 model from the Surla decision component catalog, exactly as the model returned it. The server does not check it; the checkpoint viewer validates it and shows its error state, with the rest of the card still usable, when the program is not a valid composition.\",\"type\":\"string\"}},\"required\":[\"program\",\"composed_for_revision\"],\"title\":\"UICompositionItem\",\"type\":\"object\"},\"UnverifiedApprovalItem\":{\"additionalProperties\":false,\"description\":\"Saved Checkpoint 5 promotion approval recorded on the Change Card whose current promotion inputs could not be verified on this read.\",\"properties\":{\"approval\":{\"$ref\":\"#/$defs/ApprovalItem\",\"description\":\"Recorded promotion approval from the Change Card.\"},\"reason\":{\"description\":\"Explanation of why the recorded approval could not be verified against current promotion inputs and how to recover.\",\"type\":\"string\"}},\"required\":[\"approval\",\"reason\"],\"title\":\"UnverifiedApprovalItem\",\"type\":\"object\"}},\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Checkpoint 1 Change Card containing examples, preserved behaviors, and audit metadata.\",\"properties\":{\"ambiguities\":{\"description\":\"Domain questions surfaced at CP1, retained for audit after confirmation.\",\"items\":{\"$ref\":\"#/$defs/AmbiguityQuestion\"},\"type\":\"array\"},\"answers\":{\"additionalProperties\":{\"type\":\"string\"},\"description\":\"Owner-confirmed answers keyed by ambiguity question ID when status is confirmed and ambiguities is non-empty (empty when a confirmed card has no ambiguity questions). Each answer equals one of its question's declared options and takes precedence over open phrasing in summary.\",\"type\":\"object\"},\"approval\":{\"$ref\":\"#/$defs/ApprovalItem\",\"description\":\"Checkpoint 5 approval of this revision, present only while it is verified against the promotion target's current inputs on this read. It is absent before approve_merge succeeds, whenever the target's suite, environment or binary digests have changed since, and whenever current inputs cannot be verified (see unverified_approval). It is never hashed into request_revision.\"},\"change_id\":{\"description\":\"Change identifier.\",\"type\":\"string\"},\"confirmed_by\":{\"description\":\"Authenticated principal that confirmed the Change Card.\",\"type\":\"string\"},\"examples\":{\"description\":\"Concrete examples mapped to evaluator checks.\",\"items\":{\"$ref\":\"#/$defs/ExampleItem\"},\"type\":\"array\"},\"preserved_behaviors\":{\"description\":\"Existing contract invariants preserved by this change.\",\"items\":{\"type\":\"string\"},\"type\":\"array\"},\"prompt\":{\"description\":\"Operator feature request for this revision.\",\"type\":\"string\"},\"request_revision\":{\"description\":\"SHA-256 digest of the canonical versioned Change Card.\",\"type\":\"string\"},\"status\":{\"description\":\"Checkpoint status (needs_confirmation or confirmed).\",\"enum\":[\"needs_confirmation\",\"confirmed\"],\"type\":\"string\"},\"summary\":{\"description\":\"Plain-English summary of the proposed change from propose_change or revise_change. confirm_intent does not rewrite this text; when status is confirmed, answers records the owner's resolutions for ambiguities.\",\"type\":\"string\"},\"ui_composition\":{\"$ref\":\"#/$defs/UICompositionItem\",\"description\":\"Decision view the CP1 model composed for this revision, when it produced one. A confirm_intent that changes answers or examples returns the new revision without it.\"},\"unverified_approval\":{\"$ref\":\"#/$defs/UnverifiedApprovalItem\",\"description\":\"Saved Checkpoint 5 approval of this revision when current promotion inputs could not be verified on this read (because no promotion target is configured or the target could not report its current inputs). At most one of approval or unverified_approval is set. It is never saved to disk or hashed into request_revision.\"}},\"required\":[\"change_id\",\"status\",\"prompt\",\"summary\",\"examples\",\"preserved_behaviors\",\"request_revision\"],\"type\":\"object\"}"),
+		PayloadSchema:          []byte("{\"$defs\":{\"CP1AnalysisAmbiguity\":{\"additionalProperties\":false,\"description\":\"One product, domain, or operational choice only the requester can make. Surla gives it the ID \\u003cchange_id\\u003e-ambiguity-NN, numbered in list order.\",\"properties\":{\"options\":{\"description\":\"At least two distinct, self-contained choices; each states the behavior it selects and what follows from it. The requester's answer must be exactly one of these strings.\",\"items\":{\"pattern\":\"\\\\S\",\"type\":\"string\"},\"minItems\":2,\"type\":\"array\"},\"question\":{\"description\":\"The decision in plain language, saying what the choice changes.\",\"pattern\":\"\\\\S\",\"type\":\"string\"}},\"required\":[\"question\",\"options\"],\"title\":\"CP1AnalysisAmbiguity\",\"type\":\"object\"},\"CP1RevisionAnalysis\":{\"additionalProperties\":false,\"description\":\"Your analysis of the revised request against the current Change Card (as get_change returns it at request_revision), the target's current Goa design, and the Golden Path playbook served at surla://golden-path. A confirmed answer stays settled unless the revised request or design contradicts it: do not ask it again, and restate it in summary, examples or preserved_behaviors, because the revised card drops every answer. An explicit instruction in the revised request or design replaces the decisions, examples and preserved behaviors it affects. An unanswered question stays in ambiguities unless the revised request or design answers it or removes its scope. Everything else on the current card stays unless the revised request or design changes it. Surla checks the structure and the example accounting; it cannot judge whether the analysis is complete or correct.\",\"properties\":{\"ambiguities\":{\"description\":\"Open questions only the requester can answer: product, domain, or operational choices that change observable behavior or service boundaries. Do not ask about details the request, the design or a confirmed answer already settle; state them in summary, or in examples when they change an observable outcome. Send an empty list when nothing is open.\",\"items\":{\"$ref\":\"#/$defs/CP1AnalysisAmbiguity\"},\"type\":\"array\"},\"examples\":{\"description\":\"Concrete acceptance examples drawn from the revised request and the design. Give prior_id for each current example you keep or edit; omit it for new ones.\",\"items\":{\"$ref\":\"#/$defs/CP1RevisionAnalysisExample\"},\"minItems\":1,\"type\":\"array\"},\"preserved_behaviors\":{\"description\":\"Existing behaviors and contract rules of the target that the change must keep, each stated concretely; empty when none apply.\",\"items\":{\"pattern\":\"\\\\S\",\"type\":\"string\"},\"type\":\"array\"},\"removed_example_ids\":{\"description\":\"IDs of the current card's examples this revision drops. Every current example ID appears exactly once, either as an examples[].prior_id or here; send an empty list when none are dropped.\",\"items\":{\"minLength\":1,\"type\":\"string\"},\"type\":\"array\"},\"summary\":{\"description\":\"Plain-English description of the revised behavior, including the details the request, the design or confirmed answers already settle.\",\"pattern\":\"\\\\S\",\"type\":\"string\"},\"ui_composition\":{\"description\":\"Optional OpenUI Lang program that helps the requester decide the open questions, built only from the decision components the surla://golden-path resource lists. Refer to an ambiguity or example only by its 1-based position in this analysis (1 is the first); never invent identifiers. Surla saves it unchanged without checking it; the checkpoint viewer validates and renders it. Omit it when a plain card is clearer.\",\"type\":\"string\"}},\"required\":[\"summary\",\"ambiguities\",\"examples\",\"removed_example_ids\",\"preserved_behaviors\"],\"title\":\"CP1RevisionAnalysis\",\"type\":\"object\"},\"CP1RevisionAnalysisExample\":{\"additionalProperties\":false,\"description\":\"One concrete acceptance example of the revised card: a current example kept or edited in place (prior_id set), or a new one.\",\"properties\":{\"expected_outcome\":{\"description\":\"The observable result or refusal that must hold.\",\"pattern\":\"\\\\S\",\"type\":\"string\"},\"input_summary\":{\"description\":\"The actual request, inputs, and starting state in this scenario, with real values from the request and the design, never placeholders.\",\"pattern\":\"\\\\S\",\"type\":\"string\"},\"prior_id\":{\"description\":\"ID of the current card's example this one keeps or edits, exactly as the card shows it; the example keeps that ID. Omit it for a new example, which gets the lowest check_NN ID the current and revised cards do not use.\",\"minLength\":1,\"type\":\"string\"},\"scenario\":{\"description\":\"Short name of the situation, in the requester's domain terms.\",\"pattern\":\"\\\\S\",\"type\":\"string\"},\"verification_kind\":{\"description\":\"deterministic when code can check the outcome directly; model_judged when checking it needs judgment.\",\"enum\":[\"deterministic\",\"model_judged\"],\"type\":\"string\"}},\"required\":[\"scenario\",\"input_summary\",\"expected_outcome\",\"verification_kind\"],\"title\":\"CP1RevisionAnalysisExample\",\"type\":\"object\"}},\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Revised operator feature request and the caller's analysis of it, saved as the next revision of an existing Checkpoint 1 Change Card.\",\"properties\":{\"analysis\":{\"$ref\":\"#/$defs/CP1RevisionAnalysis\",\"description\":\"Your analysis of the revised prompt against the current card and the target's current design.\"},\"change_id\":{\"description\":\"Change identifier.\",\"type\":\"string\"},\"design_source\":{\"description\":\"Updated Goa design source the analysis was made against (the target's design/*.go files). Surla saves it with the card and includes it in request_revision; it does not interpret it. When omitted on a workspace-backed card with a bound workspace, Surla records design/*.go from the bound workspace again; otherwise the card's saved design source is kept.\",\"type\":\"string\"},\"prompt\":{\"description\":\"Revised operator feature request.\",\"type\":\"string\"},\"request_revision\":{\"description\":\"Current CP1 request_revision digest being revised.\",\"type\":\"string\"}},\"required\":[\"change_id\",\"request_revision\",\"prompt\",\"analysis\"],\"type\":\"object\"}"),
+		ExecutionPayloadSchema: []byte("{\"$defs\":{\"CP1AnalysisAmbiguity\":{\"additionalProperties\":false,\"description\":\"One product, domain, or operational choice only the requester can make. Surla gives it the ID \\u003cchange_id\\u003e-ambiguity-NN, numbered in list order.\",\"properties\":{\"options\":{\"description\":\"At least two distinct, self-contained choices; each states the behavior it selects and what follows from it. The requester's answer must be exactly one of these strings.\",\"items\":{\"pattern\":\"\\\\S\",\"type\":\"string\"},\"minItems\":2,\"type\":\"array\"},\"question\":{\"description\":\"The decision in plain language, saying what the choice changes.\",\"pattern\":\"\\\\S\",\"type\":\"string\"}},\"required\":[\"question\",\"options\"],\"title\":\"CP1AnalysisAmbiguity\",\"type\":\"object\"},\"CP1RevisionAnalysis\":{\"additionalProperties\":false,\"description\":\"Your analysis of the revised request against the current Change Card (as get_change returns it at request_revision), the target's current Goa design, and the Golden Path playbook served at surla://golden-path. A confirmed answer stays settled unless the revised request or design contradicts it: do not ask it again, and restate it in summary, examples or preserved_behaviors, because the revised card drops every answer. An explicit instruction in the revised request or design replaces the decisions, examples and preserved behaviors it affects. An unanswered question stays in ambiguities unless the revised request or design answers it or removes its scope. Everything else on the current card stays unless the revised request or design changes it. Surla checks the structure and the example accounting; it cannot judge whether the analysis is complete or correct.\",\"properties\":{\"ambiguities\":{\"description\":\"Open questions only the requester can answer: product, domain, or operational choices that change observable behavior or service boundaries. Do not ask about details the request, the design or a confirmed answer already settle; state them in summary, or in examples when they change an observable outcome. Send an empty list when nothing is open.\",\"items\":{\"$ref\":\"#/$defs/CP1AnalysisAmbiguity\"},\"type\":\"array\"},\"examples\":{\"description\":\"Concrete acceptance examples drawn from the revised request and the design. Give prior_id for each current example you keep or edit; omit it for new ones.\",\"items\":{\"$ref\":\"#/$defs/CP1RevisionAnalysisExample\"},\"minItems\":1,\"type\":\"array\"},\"preserved_behaviors\":{\"description\":\"Existing behaviors and contract rules of the target that the change must keep, each stated concretely; empty when none apply.\",\"items\":{\"pattern\":\"\\\\S\",\"type\":\"string\"},\"type\":\"array\"},\"removed_example_ids\":{\"description\":\"IDs of the current card's examples this revision drops. Every current example ID appears exactly once, either as an examples[].prior_id or here; send an empty list when none are dropped.\",\"items\":{\"minLength\":1,\"type\":\"string\"},\"type\":\"array\"},\"summary\":{\"description\":\"Plain-English description of the revised behavior, including the details the request, the design or confirmed answers already settle.\",\"pattern\":\"\\\\S\",\"type\":\"string\"},\"ui_composition\":{\"description\":\"Optional OpenUI Lang program that helps the requester decide the open questions, built only from the decision components the surla://golden-path resource lists. Refer to an ambiguity or example only by its 1-based position in this analysis (1 is the first); never invent identifiers. Surla saves it unchanged without checking it; the checkpoint viewer validates and renders it. Omit it when a plain card is clearer.\",\"type\":\"string\"}},\"required\":[\"summary\",\"ambiguities\",\"examples\",\"removed_example_ids\",\"preserved_behaviors\"],\"title\":\"CP1RevisionAnalysis\",\"type\":\"object\"},\"CP1RevisionAnalysisExample\":{\"additionalProperties\":false,\"description\":\"One concrete acceptance example of the revised card: a current example kept or edited in place (prior_id set), or a new one.\",\"properties\":{\"expected_outcome\":{\"description\":\"The observable result or refusal that must hold.\",\"pattern\":\"\\\\S\",\"type\":\"string\"},\"input_summary\":{\"description\":\"The actual request, inputs, and starting state in this scenario, with real values from the request and the design, never placeholders.\",\"pattern\":\"\\\\S\",\"type\":\"string\"},\"prior_id\":{\"description\":\"ID of the current card's example this one keeps or edits, exactly as the card shows it; the example keeps that ID. Omit it for a new example, which gets the lowest check_NN ID the current and revised cards do not use.\",\"minLength\":1,\"type\":\"string\"},\"scenario\":{\"description\":\"Short name of the situation, in the requester's domain terms.\",\"pattern\":\"\\\\S\",\"type\":\"string\"},\"verification_kind\":{\"description\":\"deterministic when code can check the outcome directly; model_judged when checking it needs judgment.\",\"enum\":[\"deterministic\",\"model_judged\"],\"type\":\"string\"}},\"required\":[\"scenario\",\"input_summary\",\"expected_outcome\",\"verification_kind\"],\"title\":\"CP1RevisionAnalysisExample\",\"type\":\"object\"}},\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Revised operator feature request and the caller's analysis of it, saved as the next revision of an existing Checkpoint 1 Change Card.\",\"properties\":{\"analysis\":{\"$ref\":\"#/$defs/CP1RevisionAnalysis\",\"description\":\"Your analysis of the revised prompt against the current card and the target's current design.\"},\"change_id\":{\"description\":\"Change identifier.\",\"type\":\"string\"},\"design_source\":{\"description\":\"Updated Goa design source the analysis was made against (the target's design/*.go files). Surla saves it with the card and includes it in request_revision; it does not interpret it. When omitted on a workspace-backed card with a bound workspace, Surla records design/*.go from the bound workspace again; otherwise the card's saved design source is kept.\",\"type\":\"string\"},\"prompt\":{\"description\":\"Revised operator feature request.\",\"type\":\"string\"},\"request_revision\":{\"description\":\"Current CP1 request_revision digest being revised.\",\"type\":\"string\"}},\"required\":[\"change_id\",\"request_revision\",\"prompt\",\"analysis\"],\"type\":\"object\"}"),
+		ResultSchema:           []byte("{\"$defs\":{\"AmbiguityQuestion\":{\"additionalProperties\":false,\"description\":\"Domain ambiguity surfaced with concrete examples at Checkpoint 1.\",\"properties\":{\"id\":{\"description\":\"Stable question identifier.\",\"type\":\"string\"},\"options\":{\"description\":\"Concrete resolution choices.\",\"items\":{\"type\":\"string\"},\"type\":\"array\"},\"question\":{\"description\":\"Plain-English question for the operator.\",\"type\":\"string\"}},\"required\":[\"id\",\"question\",\"options\"],\"title\":\"AmbiguityQuestion\",\"type\":\"object\"},\"ApprovalItem\":{\"additionalProperties\":false,\"description\":\"Checkpoint 5 approval recorded by approve_merge after the evaluator-written verification report passed and matched the change being promoted: the exact candidate commit, suite, environment and binary digests it checked. It is saved with the card in the control plane's cards directory, merges and deploys nothing, is replaced by the next successful approve_merge for the same revision, and is dropped when confirm_intent or revise_change mints a new request_revision. get_change and confirm_intent return it in approval only while the promotion target's current suite, environment and binary digests still equal the ones it records, or in unverified_approval when current promotion inputs cannot be verified on that read.\",\"properties\":{\"approved_by\":{\"description\":\"Authenticated bearer principal that owns the card and called approve_merge. Bearer authentication does not prove that a human, rather than a coding agent, made the call.\",\"type\":\"string\"},\"artifacts\":{\"additionalProperties\":{\"type\":\"string\"},\"description\":\"SHA-256 digest of each candidate binary the promotion target measured, keyed by binary name.\",\"type\":\"object\"},\"candidate_commit\":{\"description\":\"Candidate commit the report was checked against.\",\"type\":\"string\"},\"environment\":{\"description\":\"Dependency profile the promotion target requires, such as sim.\",\"type\":\"string\"},\"report_digest\":{\"description\":\"SHA-256 digest of the approved CP4 verification report.\",\"type\":\"string\"},\"scenario_count\":{\"description\":\"Number of declared evaluator scenarios, every one of which passed.\",\"format\":\"int64\",\"type\":\"integer\"},\"suite_commit\":{\"description\":\"Evaluator suite commit the promotion target requires.\",\"type\":\"string\"},\"suite_id\":{\"description\":\"Evaluator suite the promotion target requires.\",\"type\":\"string\"}},\"required\":[\"approved_by\",\"report_digest\",\"candidate_commit\",\"suite_id\",\"suite_commit\",\"environment\",\"artifacts\",\"scenario_count\"],\"title\":\"ApprovalItem\",\"type\":\"object\"},\"ExampleItem\":{\"additionalProperties\":false,\"description\":\"Concrete input and expected outcome confirmed at Checkpoint 1.\",\"properties\":{\"expected_outcome\":{\"description\":\"Expected side effect and response behavior.\",\"type\":\"string\"},\"id\":{\"description\":\"Stable example identifier. Default code-assigned IDs use check_01, check_02, ... (valid goa-ai/eval Scenario names). confirm_intent preserves caller-chosen IDs.\",\"type\":\"string\"},\"input_summary\":{\"description\":\"Representative user request and domain fixture state.\",\"type\":\"string\"},\"scenario\":{\"description\":\"Plain-English scenario description.\",\"type\":\"string\"},\"verification_kind\":{\"description\":\"Evaluator check classification (deterministic or model_judged).\",\"enum\":[\"deterministic\",\"model_judged\"],\"type\":\"string\"}},\"required\":[\"id\",\"scenario\",\"input_summary\",\"expected_outcome\",\"verification_kind\"],\"title\":\"ExampleItem\",\"type\":\"object\"},\"UICompositionItem\":{\"additionalProperties\":false,\"description\":\"Caller-authored OpenUI Lang decision view for exactly one Change Card revision. It is presentation only: it is never hashed into request_revision, confirm_intent never reads it, and it describes the card only while composed_for_revision equals the card's request_revision.\",\"properties\":{\"composed_for_revision\":{\"description\":\"request_revision of the Change Card this program was composed for.\",\"type\":\"string\"},\"program\":{\"description\":\"OpenUI Lang program from the analysis's ui_composition, exactly as the caller sent it. The server does not check it; the checkpoint viewer validates it and shows its error state, with the rest of the card still usable, when the program is not a valid composition.\",\"type\":\"string\"}},\"required\":[\"program\",\"composed_for_revision\"],\"title\":\"UICompositionItem\",\"type\":\"object\"},\"UnverifiedApprovalItem\":{\"additionalProperties\":false,\"description\":\"Saved Checkpoint 5 promotion approval recorded on the Change Card whose current promotion inputs could not be verified on this read.\",\"properties\":{\"approval\":{\"$ref\":\"#/$defs/ApprovalItem\",\"description\":\"Recorded promotion approval from the Change Card.\"},\"reason\":{\"description\":\"Explanation of why the recorded approval could not be verified against current promotion inputs and how to recover.\",\"type\":\"string\"}},\"required\":[\"approval\",\"reason\"],\"title\":\"UnverifiedApprovalItem\",\"type\":\"object\"}},\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Checkpoint 1 Change Card containing examples, preserved behaviors, and audit metadata.\",\"properties\":{\"ambiguities\":{\"description\":\"Domain questions surfaced at CP1, retained for audit after confirmation.\",\"items\":{\"$ref\":\"#/$defs/AmbiguityQuestion\"},\"type\":\"array\"},\"answers\":{\"additionalProperties\":{\"type\":\"string\"},\"description\":\"Owner-confirmed answers keyed by ambiguity question ID when status is confirmed and ambiguities is non-empty (empty when a confirmed card has no ambiguity questions). Each answer equals one of its question's declared options and takes precedence over open phrasing in summary.\",\"type\":\"object\"},\"approval\":{\"$ref\":\"#/$defs/ApprovalItem\",\"description\":\"Checkpoint 5 approval of this revision, present only while it is verified against the promotion target's current inputs on this read. It is absent before approve_merge succeeds, whenever the target's suite, environment or binary digests have changed since, and whenever current inputs cannot be verified (see unverified_approval). It is never hashed into request_revision.\"},\"change_id\":{\"description\":\"Change identifier.\",\"type\":\"string\"},\"confirmed_by\":{\"description\":\"Authenticated principal that confirmed the Change Card.\",\"type\":\"string\"},\"examples\":{\"description\":\"Concrete examples mapped to evaluator checks.\",\"items\":{\"$ref\":\"#/$defs/ExampleItem\"},\"type\":\"array\"},\"preserved_behaviors\":{\"description\":\"Existing contract invariants preserved by this change.\",\"items\":{\"type\":\"string\"},\"type\":\"array\"},\"prompt\":{\"description\":\"Operator feature request for this revision.\",\"type\":\"string\"},\"request_revision\":{\"description\":\"SHA-256 digest of the canonical versioned Change Card.\",\"type\":\"string\"},\"status\":{\"description\":\"Checkpoint status (needs_confirmation or confirmed).\",\"enum\":[\"needs_confirmation\",\"confirmed\"],\"type\":\"string\"},\"summary\":{\"description\":\"Plain-English summary of the proposed change from propose_change or revise_change. confirm_intent does not rewrite this text; when status is confirmed, answers records the owner's resolutions for ambiguities.\",\"type\":\"string\"},\"ui_composition\":{\"$ref\":\"#/$defs/UICompositionItem\",\"description\":\"Decision view the caller composed for this revision in its analysis, when it sent one. A confirm_intent that changes answers or examples returns the new revision without it.\"},\"unverified_approval\":{\"$ref\":\"#/$defs/UnverifiedApprovalItem\",\"description\":\"Saved Checkpoint 5 approval of this revision when current promotion inputs could not be verified on this read (because no promotion target is configured or the target could not report its current inputs). At most one of approval or unverified_approval is set. It is never saved to disk or hashed into request_revision.\"}},\"required\":[\"change_id\",\"status\",\"prompt\",\"summary\",\"examples\",\"preserved_behaviors\",\"request_revision\"],\"type\":\"object\"}"),
 		ConsumerContract: &genregistry.ConsumerContract{
 			Kind:  "service",
 			Title: "Revise Change",
 			Search: &genregistry.ToolSearchDocument{
-				Length: 54,
-				Terms:  map[string]int{"1": 1, "again": 1, "an": 1, "analysis": 1, "and": 1, "answers": 1, "any": 1, "approval": 1, "are": 1, "behaviors": 1, "bound": 1, "by": 1, "card": 1, "change": 3, "checkpoint": 1, "cleared": 1, "confirmation": 1, "confirmed": 1, "current": 1, "decisions": 1, "earlier": 1, "examples": 1, "existing": 1, "in": 1, "it": 1, "its": 2, "needs": 1, "new": 1, "only": 1, "or": 1, "preserved": 1, "remain": 1, "request": 1, "requirements": 1, "restated": 1, "revise": 3, "revision": 2, "s": 1, "so": 1, "summary": 1, "surla": 1, "the": 2, "them": 1, "to": 1, "updated": 1, "where": 1, "with": 1},
+				Length: 94,
+				Terms:  map[string]int{"1": 1, "a": 1, "again": 1, "against": 1, "an": 1, "analysis": 1, "and": 3, "answers": 1, "any": 1, "approval": 1, "are": 1, "as": 1, "behaviors": 1, "bound": 1, "by": 1, "card": 2, "change": 4, "checkpoint": 1, "cleared": 1, "confirmation": 1, "confirmed": 2, "current": 3, "decisions": 1, "design": 1, "dropped": 1, "each": 1, "edit": 1, "example": 2, "examples": 1, "existing": 1, "get": 1, "hold": 1, "id": 1, "ids": 1, "in": 3, "it": 2, "its": 1, "keep": 1, "list": 1, "made": 1, "needs": 1, "new": 2, "ones": 1, "or": 2, "preserved": 1, "prior": 1, "prompt": 1, "removed": 1, "request": 2, "requirements": 1, "restate": 1, "returns": 1, "revise": 3, "revised": 1, "revision": 2, "s": 2, "send": 1, "so": 1, "still": 1, "summary": 1, "surla": 1, "target": 1, "that": 1, "the": 6, "through": 1, "to": 1, "updated": 1, "with": 2},
 			},
 			RequiresUI: false,
 			TextOnly: &genregistry.TextOnlyToolContract{
-				ExecutionSchema: []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Revised operator feature request submitted for an existing Checkpoint 1 Change Card.\",\"properties\":{\"change_id\":{\"description\":\"Change identifier.\",\"type\":\"string\"},\"design_source\":{\"description\":\"Updated Goa design source of the target (its design/*.go files) for the CP1 model to read. When omitted on a workspace-backed card with a bound workspace, Surla re-reads design/*.go from the bound workspace; otherwise the card's saved design source is used again.\",\"type\":\"string\"},\"prompt\":{\"description\":\"Revised operator feature request.\",\"type\":\"string\"},\"request_revision\":{\"description\":\"Current CP1 request_revision digest being revised.\",\"type\":\"string\"}},\"required\":[\"change_id\",\"request_revision\",\"prompt\"],\"type\":\"object\"}"),
-				Description:     "Revise an existing Checkpoint 1 Change Card with updated requirements bound to its current request_revision. The new revision's answers, confirmed_by and any approval are cleared, so it needs confirmation again; earlier decisions remain only where the analysis restated them in its summary, examples or preserved behaviors.",
+				ExecutionSchema: []byte("{\"$defs\":{\"CP1AnalysisAmbiguity\":{\"additionalProperties\":false,\"description\":\"One product, domain, or operational choice only the requester can make. Surla gives it the ID \\u003cchange_id\\u003e-ambiguity-NN, numbered in list order.\",\"properties\":{\"options\":{\"description\":\"At least two distinct, self-contained choices; each states the behavior it selects and what follows from it. The requester's answer must be exactly one of these strings.\",\"items\":{\"pattern\":\"\\\\S\",\"type\":\"string\"},\"minItems\":2,\"type\":\"array\"},\"question\":{\"description\":\"The decision in plain language, saying what the choice changes.\",\"pattern\":\"\\\\S\",\"type\":\"string\"}},\"required\":[\"question\",\"options\"],\"title\":\"CP1AnalysisAmbiguity\",\"type\":\"object\"},\"CP1RevisionAnalysis\":{\"additionalProperties\":false,\"description\":\"Your analysis of the revised request against the current Change Card (as get_change returns it at request_revision), the target's current Goa design, and the Golden Path playbook served at surla://golden-path. A confirmed answer stays settled unless the revised request or design contradicts it: do not ask it again, and restate it in summary, examples or preserved_behaviors, because the revised card drops every answer. An explicit instruction in the revised request or design replaces the decisions, examples and preserved behaviors it affects. An unanswered question stays in ambiguities unless the revised request or design answers it or removes its scope. Everything else on the current card stays unless the revised request or design changes it. Surla checks the structure and the example accounting; it cannot judge whether the analysis is complete or correct.\",\"properties\":{\"ambiguities\":{\"description\":\"Open questions only the requester can answer: product, domain, or operational choices that change observable behavior or service boundaries. Do not ask about details the request, the design or a confirmed answer already settle; state them in summary, or in examples when they change an observable outcome. Send an empty list when nothing is open.\",\"items\":{\"$ref\":\"#/$defs/CP1AnalysisAmbiguity\"},\"type\":\"array\"},\"examples\":{\"description\":\"Concrete acceptance examples drawn from the revised request and the design. Give prior_id for each current example you keep or edit; omit it for new ones.\",\"items\":{\"$ref\":\"#/$defs/CP1RevisionAnalysisExample\"},\"minItems\":1,\"type\":\"array\"},\"preserved_behaviors\":{\"description\":\"Existing behaviors and contract rules of the target that the change must keep, each stated concretely; empty when none apply.\",\"items\":{\"pattern\":\"\\\\S\",\"type\":\"string\"},\"type\":\"array\"},\"removed_example_ids\":{\"description\":\"IDs of the current card's examples this revision drops. Every current example ID appears exactly once, either as an examples[].prior_id or here; send an empty list when none are dropped.\",\"items\":{\"minLength\":1,\"type\":\"string\"},\"type\":\"array\"},\"summary\":{\"description\":\"Plain-English description of the revised behavior, including the details the request, the design or confirmed answers already settle.\",\"pattern\":\"\\\\S\",\"type\":\"string\"},\"ui_composition\":{\"description\":\"Optional OpenUI Lang program that helps the requester decide the open questions, built only from the decision components the surla://golden-path resource lists. Refer to an ambiguity or example only by its 1-based position in this analysis (1 is the first); never invent identifiers. Surla saves it unchanged without checking it; the checkpoint viewer validates and renders it. Omit it when a plain card is clearer.\",\"type\":\"string\"}},\"required\":[\"summary\",\"ambiguities\",\"examples\",\"removed_example_ids\",\"preserved_behaviors\"],\"title\":\"CP1RevisionAnalysis\",\"type\":\"object\"},\"CP1RevisionAnalysisExample\":{\"additionalProperties\":false,\"description\":\"One concrete acceptance example of the revised card: a current example kept or edited in place (prior_id set), or a new one.\",\"properties\":{\"expected_outcome\":{\"description\":\"The observable result or refusal that must hold.\",\"pattern\":\"\\\\S\",\"type\":\"string\"},\"input_summary\":{\"description\":\"The actual request, inputs, and starting state in this scenario, with real values from the request and the design, never placeholders.\",\"pattern\":\"\\\\S\",\"type\":\"string\"},\"prior_id\":{\"description\":\"ID of the current card's example this one keeps or edits, exactly as the card shows it; the example keeps that ID. Omit it for a new example, which gets the lowest check_NN ID the current and revised cards do not use.\",\"minLength\":1,\"type\":\"string\"},\"scenario\":{\"description\":\"Short name of the situation, in the requester's domain terms.\",\"pattern\":\"\\\\S\",\"type\":\"string\"},\"verification_kind\":{\"description\":\"deterministic when code can check the outcome directly; model_judged when checking it needs judgment.\",\"enum\":[\"deterministic\",\"model_judged\"],\"type\":\"string\"}},\"required\":[\"scenario\",\"input_summary\",\"expected_outcome\",\"verification_kind\"],\"title\":\"CP1RevisionAnalysisExample\",\"type\":\"object\"}},\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Revised operator feature request and the caller's analysis of it, saved as the next revision of an existing Checkpoint 1 Change Card.\",\"properties\":{\"analysis\":{\"$ref\":\"#/$defs/CP1RevisionAnalysis\",\"description\":\"Your analysis of the revised prompt against the current card and the target's current design.\"},\"change_id\":{\"description\":\"Change identifier.\",\"type\":\"string\"},\"design_source\":{\"description\":\"Updated Goa design source the analysis was made against (the target's design/*.go files). Surla saves it with the card and includes it in request_revision; it does not interpret it. When omitted on a workspace-backed card with a bound workspace, Surla records design/*.go from the bound workspace again; otherwise the card's saved design source is kept.\",\"type\":\"string\"},\"prompt\":{\"description\":\"Revised operator feature request.\",\"type\":\"string\"},\"request_revision\":{\"description\":\"Current CP1 request_revision digest being revised.\",\"type\":\"string\"}},\"required\":[\"change_id\",\"request_revision\",\"prompt\",\"analysis\"],\"type\":\"object\"}"),
+				Description:     "Revise an existing Checkpoint 1 Change Card with updated requirements bound to its current request_revision. Send the revised request in prompt with a new analysis made against the current card (as get_change returns it) and the target's design: keep or edit each current example through prior_id, list the dropped ones in removed_example_ids, and restate the confirmed decisions that still hold in summary, examples or preserved_behaviors. The new revision's answers, confirmed_by and any approval are cleared, so it needs confirmation again.",
 				Search: &genregistry.ToolSearchDocument{
-					Length: 54,
-					Terms:  map[string]int{"1": 1, "again": 1, "an": 1, "analysis": 1, "and": 1, "answers": 1, "any": 1, "approval": 1, "are": 1, "behaviors": 1, "bound": 1, "by": 1, "card": 1, "change": 3, "checkpoint": 1, "cleared": 1, "confirmation": 1, "confirmed": 1, "current": 1, "decisions": 1, "earlier": 1, "examples": 1, "existing": 1, "in": 1, "it": 1, "its": 2, "needs": 1, "new": 1, "only": 1, "or": 1, "preserved": 1, "remain": 1, "request": 1, "requirements": 1, "restated": 1, "revise": 3, "revision": 2, "s": 1, "so": 1, "summary": 1, "surla": 1, "the": 2, "them": 1, "to": 1, "updated": 1, "where": 1, "with": 1},
+					Length: 94,
+					Terms:  map[string]int{"1": 1, "a": 1, "again": 1, "against": 1, "an": 1, "analysis": 1, "and": 3, "answers": 1, "any": 1, "approval": 1, "are": 1, "as": 1, "behaviors": 1, "bound": 1, "by": 1, "card": 2, "change": 4, "checkpoint": 1, "cleared": 1, "confirmation": 1, "confirmed": 2, "current": 3, "decisions": 1, "design": 1, "dropped": 1, "each": 1, "edit": 1, "example": 2, "examples": 1, "existing": 1, "get": 1, "hold": 1, "id": 1, "ids": 1, "in": 3, "it": 2, "its": 1, "keep": 1, "list": 1, "made": 1, "needs": 1, "new": 2, "ones": 1, "or": 2, "preserved": 1, "prior": 1, "prompt": 1, "removed": 1, "request": 2, "requirements": 1, "restate": 1, "returns": 1, "revise": 3, "revised": 1, "revision": 2, "s": 2, "send": 1, "so": 1, "still": 1, "summary": 1, "surla": 1, "target": 1, "that": 1, "the": 6, "through": 1, "to": 1, "updated": 1, "with": 2},
 				},
-				PayloadSchema: []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Revised operator feature request submitted for an existing Checkpoint 1 Change Card.\",\"properties\":{\"change_id\":{\"description\":\"Change identifier.\",\"type\":\"string\"},\"design_source\":{\"description\":\"Updated Goa design source of the target (its design/*.go files) for the CP1 model to read. When omitted on a workspace-backed card with a bound workspace, Surla re-reads design/*.go from the bound workspace; otherwise the card's saved design source is used again.\",\"type\":\"string\"},\"prompt\":{\"description\":\"Revised operator feature request.\",\"type\":\"string\"},\"request_revision\":{\"description\":\"Current CP1 request_revision digest being revised.\",\"type\":\"string\"}},\"required\":[\"change_id\",\"request_revision\",\"prompt\"],\"type\":\"object\"}"),
-				Payload:       declarations.metadata661(),
+				PayloadSchema: []byte("{\"$defs\":{\"CP1AnalysisAmbiguity\":{\"additionalProperties\":false,\"description\":\"One product, domain, or operational choice only the requester can make. Surla gives it the ID \\u003cchange_id\\u003e-ambiguity-NN, numbered in list order.\",\"properties\":{\"options\":{\"description\":\"At least two distinct, self-contained choices; each states the behavior it selects and what follows from it. The requester's answer must be exactly one of these strings.\",\"items\":{\"pattern\":\"\\\\S\",\"type\":\"string\"},\"minItems\":2,\"type\":\"array\"},\"question\":{\"description\":\"The decision in plain language, saying what the choice changes.\",\"pattern\":\"\\\\S\",\"type\":\"string\"}},\"required\":[\"question\",\"options\"],\"title\":\"CP1AnalysisAmbiguity\",\"type\":\"object\"},\"CP1RevisionAnalysis\":{\"additionalProperties\":false,\"description\":\"Your analysis of the revised request against the current Change Card (as get_change returns it at request_revision), the target's current Goa design, and the Golden Path playbook served at surla://golden-path. A confirmed answer stays settled unless the revised request or design contradicts it: do not ask it again, and restate it in summary, examples or preserved_behaviors, because the revised card drops every answer. An explicit instruction in the revised request or design replaces the decisions, examples and preserved behaviors it affects. An unanswered question stays in ambiguities unless the revised request or design answers it or removes its scope. Everything else on the current card stays unless the revised request or design changes it. Surla checks the structure and the example accounting; it cannot judge whether the analysis is complete or correct.\",\"properties\":{\"ambiguities\":{\"description\":\"Open questions only the requester can answer: product, domain, or operational choices that change observable behavior or service boundaries. Do not ask about details the request, the design or a confirmed answer already settle; state them in summary, or in examples when they change an observable outcome. Send an empty list when nothing is open.\",\"items\":{\"$ref\":\"#/$defs/CP1AnalysisAmbiguity\"},\"type\":\"array\"},\"examples\":{\"description\":\"Concrete acceptance examples drawn from the revised request and the design. Give prior_id for each current example you keep or edit; omit it for new ones.\",\"items\":{\"$ref\":\"#/$defs/CP1RevisionAnalysisExample\"},\"minItems\":1,\"type\":\"array\"},\"preserved_behaviors\":{\"description\":\"Existing behaviors and contract rules of the target that the change must keep, each stated concretely; empty when none apply.\",\"items\":{\"pattern\":\"\\\\S\",\"type\":\"string\"},\"type\":\"array\"},\"removed_example_ids\":{\"description\":\"IDs of the current card's examples this revision drops. Every current example ID appears exactly once, either as an examples[].prior_id or here; send an empty list when none are dropped.\",\"items\":{\"minLength\":1,\"type\":\"string\"},\"type\":\"array\"},\"summary\":{\"description\":\"Plain-English description of the revised behavior, including the details the request, the design or confirmed answers already settle.\",\"pattern\":\"\\\\S\",\"type\":\"string\"},\"ui_composition\":{\"description\":\"Optional OpenUI Lang program that helps the requester decide the open questions, built only from the decision components the surla://golden-path resource lists. Refer to an ambiguity or example only by its 1-based position in this analysis (1 is the first); never invent identifiers. Surla saves it unchanged without checking it; the checkpoint viewer validates and renders it. Omit it when a plain card is clearer.\",\"type\":\"string\"}},\"required\":[\"summary\",\"ambiguities\",\"examples\",\"removed_example_ids\",\"preserved_behaviors\"],\"title\":\"CP1RevisionAnalysis\",\"type\":\"object\"},\"CP1RevisionAnalysisExample\":{\"additionalProperties\":false,\"description\":\"One concrete acceptance example of the revised card: a current example kept or edited in place (prior_id set), or a new one.\",\"properties\":{\"expected_outcome\":{\"description\":\"The observable result or refusal that must hold.\",\"pattern\":\"\\\\S\",\"type\":\"string\"},\"input_summary\":{\"description\":\"The actual request, inputs, and starting state in this scenario, with real values from the request and the design, never placeholders.\",\"pattern\":\"\\\\S\",\"type\":\"string\"},\"prior_id\":{\"description\":\"ID of the current card's example this one keeps or edits, exactly as the card shows it; the example keeps that ID. Omit it for a new example, which gets the lowest check_NN ID the current and revised cards do not use.\",\"minLength\":1,\"type\":\"string\"},\"scenario\":{\"description\":\"Short name of the situation, in the requester's domain terms.\",\"pattern\":\"\\\\S\",\"type\":\"string\"},\"verification_kind\":{\"description\":\"deterministic when code can check the outcome directly; model_judged when checking it needs judgment.\",\"enum\":[\"deterministic\",\"model_judged\"],\"type\":\"string\"}},\"required\":[\"scenario\",\"input_summary\",\"expected_outcome\",\"verification_kind\"],\"title\":\"CP1RevisionAnalysisExample\",\"type\":\"object\"}},\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Revised operator feature request and the caller's analysis of it, saved as the next revision of an existing Checkpoint 1 Change Card.\",\"properties\":{\"analysis\":{\"$ref\":\"#/$defs/CP1RevisionAnalysis\",\"description\":\"Your analysis of the revised prompt against the current card and the target's current design.\"},\"change_id\":{\"description\":\"Change identifier.\",\"type\":\"string\"},\"design_source\":{\"description\":\"Updated Goa design source the analysis was made against (the target's design/*.go files). Surla saves it with the card and includes it in request_revision; it does not interpret it. When omitted on a workspace-backed card with a bound workspace, Surla records design/*.go from the bound workspace again; otherwise the card's saved design source is kept.\",\"type\":\"string\"},\"prompt\":{\"description\":\"Revised operator feature request.\",\"type\":\"string\"},\"request_revision\":{\"description\":\"Current CP1 request_revision digest being revised.\",\"type\":\"string\"}},\"required\":[\"change_id\",\"request_revision\",\"prompt\",\"analysis\"],\"type\":\"object\"}"),
+				Payload:       declarations.metadata712(),
 			},
-			Payload: declarations.metadata605(),
-			Result:  declarations.metadata611(),
+			Payload: declarations.metadata637(),
+			Result:  declarations.metadata662(),
 		},
 	}
 }
 
-// metadata605 constructs one generated metadata declaration.
-func (declarations registryDeclarations) metadata605() *genregistry.ToolTypeMetadata {
+// metadata637 constructs one generated metadata declaration.
+func (declarations registryDeclarations) metadata637() *genregistry.ToolTypeMetadata {
 	registryText1 := "ReviseChangePayload"
 	return &genregistry.ToolTypeMetadata{
 		Name:                     &registryText1,
-		SchemaWithoutRootExample: []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Revised operator feature request submitted for an existing Checkpoint 1 Change Card.\",\"properties\":{\"change_id\":{\"description\":\"Change identifier.\",\"type\":\"string\"},\"design_source\":{\"description\":\"Updated Goa design source of the target (its design/*.go files) for the CP1 model to read. When omitted on a workspace-backed card with a bound workspace, Surla re-reads design/*.go from the bound workspace; otherwise the card's saved design source is used again.\",\"type\":\"string\"},\"prompt\":{\"description\":\"Revised operator feature request.\",\"type\":\"string\"},\"request_revision\":{\"description\":\"Current CP1 request_revision digest being revised.\",\"type\":\"string\"}},\"required\":[\"change_id\",\"request_revision\",\"prompt\"],\"type\":\"object\"}"),
+		SchemaWithoutRootExample: []byte("{\"$defs\":{\"CP1AnalysisAmbiguity\":{\"additionalProperties\":false,\"description\":\"One product, domain, or operational choice only the requester can make. Surla gives it the ID \\u003cchange_id\\u003e-ambiguity-NN, numbered in list order.\",\"properties\":{\"options\":{\"description\":\"At least two distinct, self-contained choices; each states the behavior it selects and what follows from it. The requester's answer must be exactly one of these strings.\",\"items\":{\"pattern\":\"\\\\S\",\"type\":\"string\"},\"minItems\":2,\"type\":\"array\"},\"question\":{\"description\":\"The decision in plain language, saying what the choice changes.\",\"pattern\":\"\\\\S\",\"type\":\"string\"}},\"required\":[\"question\",\"options\"],\"title\":\"CP1AnalysisAmbiguity\",\"type\":\"object\"},\"CP1RevisionAnalysis\":{\"additionalProperties\":false,\"description\":\"Your analysis of the revised request against the current Change Card (as get_change returns it at request_revision), the target's current Goa design, and the Golden Path playbook served at surla://golden-path. A confirmed answer stays settled unless the revised request or design contradicts it: do not ask it again, and restate it in summary, examples or preserved_behaviors, because the revised card drops every answer. An explicit instruction in the revised request or design replaces the decisions, examples and preserved behaviors it affects. An unanswered question stays in ambiguities unless the revised request or design answers it or removes its scope. Everything else on the current card stays unless the revised request or design changes it. Surla checks the structure and the example accounting; it cannot judge whether the analysis is complete or correct.\",\"properties\":{\"ambiguities\":{\"description\":\"Open questions only the requester can answer: product, domain, or operational choices that change observable behavior or service boundaries. Do not ask about details the request, the design or a confirmed answer already settle; state them in summary, or in examples when they change an observable outcome. Send an empty list when nothing is open.\",\"items\":{\"$ref\":\"#/$defs/CP1AnalysisAmbiguity\"},\"type\":\"array\"},\"examples\":{\"description\":\"Concrete acceptance examples drawn from the revised request and the design. Give prior_id for each current example you keep or edit; omit it for new ones.\",\"items\":{\"$ref\":\"#/$defs/CP1RevisionAnalysisExample\"},\"minItems\":1,\"type\":\"array\"},\"preserved_behaviors\":{\"description\":\"Existing behaviors and contract rules of the target that the change must keep, each stated concretely; empty when none apply.\",\"items\":{\"pattern\":\"\\\\S\",\"type\":\"string\"},\"type\":\"array\"},\"removed_example_ids\":{\"description\":\"IDs of the current card's examples this revision drops. Every current example ID appears exactly once, either as an examples[].prior_id or here; send an empty list when none are dropped.\",\"items\":{\"minLength\":1,\"type\":\"string\"},\"type\":\"array\"},\"summary\":{\"description\":\"Plain-English description of the revised behavior, including the details the request, the design or confirmed answers already settle.\",\"pattern\":\"\\\\S\",\"type\":\"string\"},\"ui_composition\":{\"description\":\"Optional OpenUI Lang program that helps the requester decide the open questions, built only from the decision components the surla://golden-path resource lists. Refer to an ambiguity or example only by its 1-based position in this analysis (1 is the first); never invent identifiers. Surla saves it unchanged without checking it; the checkpoint viewer validates and renders it. Omit it when a plain card is clearer.\",\"type\":\"string\"}},\"required\":[\"summary\",\"ambiguities\",\"examples\",\"removed_example_ids\",\"preserved_behaviors\"],\"title\":\"CP1RevisionAnalysis\",\"type\":\"object\"},\"CP1RevisionAnalysisExample\":{\"additionalProperties\":false,\"description\":\"One concrete acceptance example of the revised card: a current example kept or edited in place (prior_id set), or a new one.\",\"properties\":{\"expected_outcome\":{\"description\":\"The observable result or refusal that must hold.\",\"pattern\":\"\\\\S\",\"type\":\"string\"},\"input_summary\":{\"description\":\"The actual request, inputs, and starting state in this scenario, with real values from the request and the design, never placeholders.\",\"pattern\":\"\\\\S\",\"type\":\"string\"},\"prior_id\":{\"description\":\"ID of the current card's example this one keeps or edits, exactly as the card shows it; the example keeps that ID. Omit it for a new example, which gets the lowest check_NN ID the current and revised cards do not use.\",\"minLength\":1,\"type\":\"string\"},\"scenario\":{\"description\":\"Short name of the situation, in the requester's domain terms.\",\"pattern\":\"\\\\S\",\"type\":\"string\"},\"verification_kind\":{\"description\":\"deterministic when code can check the outcome directly; model_judged when checking it needs judgment.\",\"enum\":[\"deterministic\",\"model_judged\"],\"type\":\"string\"}},\"required\":[\"scenario\",\"input_summary\",\"expected_outcome\",\"verification_kind\"],\"title\":\"CP1RevisionAnalysisExample\",\"type\":\"object\"}},\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Revised operator feature request and the caller's analysis of it, saved as the next revision of an existing Checkpoint 1 Change Card.\",\"properties\":{\"analysis\":{\"$ref\":\"#/$defs/CP1RevisionAnalysis\",\"description\":\"Your analysis of the revised prompt against the current card and the target's current design.\"},\"change_id\":{\"description\":\"Change identifier.\",\"type\":\"string\"},\"design_source\":{\"description\":\"Updated Goa design source the analysis was made against (the target's design/*.go files). Surla saves it with the card and includes it in request_revision; it does not interpret it. When omitted on a workspace-backed card with a bound workspace, Surla records design/*.go from the bound workspace again; otherwise the card's saved design source is kept.\",\"type\":\"string\"},\"prompt\":{\"description\":\"Revised operator feature request.\",\"type\":\"string\"},\"request_revision\":{\"description\":\"Current CP1 request_revision digest being revised.\",\"type\":\"string\"}},\"required\":[\"change_id\",\"request_revision\",\"prompt\",\"analysis\"],\"type\":\"object\"}"),
 		Fields: []*genregistry.ToolFieldMetadata{
-			declarations.field606(),
-			declarations.field607(),
-			declarations.field608(),
-			declarations.field609(),
-			declarations.field610(),
-		},
-	}
-}
-
-// field606 constructs one generated field declaration.
-func (registryDeclarations) field606() *genregistry.ToolFieldMetadata {
-	registryText1 := "object"
-	registryText2 := "Revised operator feature request submitted for an existing Checkpoint 1 Change Card."
-	return &genregistry.ToolFieldMetadata{
-		JSONType:    &registryText1,
-		Description: &registryText2,
-	}
-}
-
-// field607 constructs one generated field declaration.
-func (registryDeclarations) field607() *genregistry.ToolFieldMetadata {
-	registryText1 := "string"
-	registryText2 := "Change identifier."
-	return &genregistry.ToolFieldMetadata{
-		Path: []*genregistry.ToolFieldPathSegment{
-			{Segment: genregistry.NewToolFieldSegmentField("change_id")},
-		},
-		JSONType:    &registryText1,
-		Description: &registryText2,
-	}
-}
-
-// field608 constructs one generated field declaration.
-func (registryDeclarations) field608() *genregistry.ToolFieldMetadata {
-	registryText1 := "string"
-	registryText2 := "Current CP1 request_revision digest being revised."
-	return &genregistry.ToolFieldMetadata{
-		Path: []*genregistry.ToolFieldPathSegment{
-			{Segment: genregistry.NewToolFieldSegmentField("request_revision")},
-		},
-		JSONType:    &registryText1,
-		Description: &registryText2,
-	}
-}
-
-// field609 constructs one generated field declaration.
-func (registryDeclarations) field609() *genregistry.ToolFieldMetadata {
-	registryText1 := "string"
-	registryText2 := "Revised operator feature request."
-	return &genregistry.ToolFieldMetadata{
-		Path: []*genregistry.ToolFieldPathSegment{
-			{Segment: genregistry.NewToolFieldSegmentField("prompt")},
-		},
-		JSONType:    &registryText1,
-		Description: &registryText2,
-	}
-}
-
-// field610 constructs one generated field declaration.
-func (registryDeclarations) field610() *genregistry.ToolFieldMetadata {
-	registryText1 := "string"
-	registryText2 := "Updated Goa design source of the target (its design/*.go files) for the CP1 model to read. When omitted on a workspace-backed card with a bound workspace, Surla re-reads design/*.go from the bound workspace; otherwise the card's saved design source is used again."
-	return &genregistry.ToolFieldMetadata{
-		Path: []*genregistry.ToolFieldPathSegment{
-			{Segment: genregistry.NewToolFieldSegmentField("design_source")},
-		},
-		JSONType:    &registryText1,
-		Description: &registryText2,
-	}
-}
-
-// metadata611 constructs one generated metadata declaration.
-func (declarations registryDeclarations) metadata611() *genregistry.ToolTypeMetadata {
-	registryText1 := "ReviseChangeResult"
-	return &genregistry.ToolTypeMetadata{
-		Name:                     &registryText1,
-		SchemaWithoutRootExample: []byte("{\"$defs\":{\"AmbiguityQuestion\":{\"additionalProperties\":false,\"description\":\"Domain ambiguity surfaced with concrete examples at Checkpoint 1.\",\"properties\":{\"id\":{\"description\":\"Stable question identifier.\",\"type\":\"string\"},\"options\":{\"description\":\"Concrete resolution choices.\",\"items\":{\"type\":\"string\"},\"type\":\"array\"},\"question\":{\"description\":\"Plain-English question for the operator.\",\"type\":\"string\"}},\"required\":[\"id\",\"question\",\"options\"],\"title\":\"AmbiguityQuestion\",\"type\":\"object\"},\"ApprovalItem\":{\"additionalProperties\":false,\"description\":\"Checkpoint 5 approval recorded by approve_merge after the evaluator-written verification report passed and matched the change being promoted: the exact candidate commit, suite, environment and binary digests it checked. It is saved with the card in the control plane's cards directory, merges and deploys nothing, is replaced by the next successful approve_merge for the same revision, and is dropped when confirm_intent or revise_change mints a new request_revision. get_change and confirm_intent return it in approval only while the promotion target's current suite, environment and binary digests still equal the ones it records, or in unverified_approval when current promotion inputs cannot be verified on that read.\",\"properties\":{\"approved_by\":{\"description\":\"Authenticated bearer principal that owns the card and called approve_merge. Bearer authentication does not prove that a human, rather than a coding agent, made the call.\",\"type\":\"string\"},\"artifacts\":{\"additionalProperties\":{\"type\":\"string\"},\"description\":\"SHA-256 digest of each candidate binary the promotion target measured, keyed by binary name.\",\"type\":\"object\"},\"candidate_commit\":{\"description\":\"Candidate commit the report was checked against.\",\"type\":\"string\"},\"environment\":{\"description\":\"Dependency profile the promotion target requires, such as sim.\",\"type\":\"string\"},\"report_digest\":{\"description\":\"SHA-256 digest of the approved CP4 verification report.\",\"type\":\"string\"},\"scenario_count\":{\"description\":\"Number of declared evaluator scenarios, every one of which passed.\",\"format\":\"int64\",\"type\":\"integer\"},\"suite_commit\":{\"description\":\"Evaluator suite commit the promotion target requires.\",\"type\":\"string\"},\"suite_id\":{\"description\":\"Evaluator suite the promotion target requires.\",\"type\":\"string\"}},\"required\":[\"approved_by\",\"report_digest\",\"candidate_commit\",\"suite_id\",\"suite_commit\",\"environment\",\"artifacts\",\"scenario_count\"],\"title\":\"ApprovalItem\",\"type\":\"object\"},\"ExampleItem\":{\"additionalProperties\":false,\"description\":\"Concrete input and expected outcome confirmed at Checkpoint 1.\",\"properties\":{\"expected_outcome\":{\"description\":\"Expected side effect and response behavior.\",\"type\":\"string\"},\"id\":{\"description\":\"Stable example identifier. Default code-assigned IDs use check_01, check_02, ... (valid goa-ai/eval Scenario names). confirm_intent preserves caller-chosen IDs.\",\"type\":\"string\"},\"input_summary\":{\"description\":\"Representative user request and domain fixture state.\",\"type\":\"string\"},\"scenario\":{\"description\":\"Plain-English scenario description.\",\"type\":\"string\"},\"verification_kind\":{\"description\":\"Evaluator check classification (deterministic or model_judged).\",\"enum\":[\"deterministic\",\"model_judged\"],\"type\":\"string\"}},\"required\":[\"id\",\"scenario\",\"input_summary\",\"expected_outcome\",\"verification_kind\"],\"title\":\"ExampleItem\",\"type\":\"object\"},\"UICompositionItem\":{\"additionalProperties\":false,\"description\":\"Model-authored OpenUI Lang decision view for exactly one Change Card revision. It is presentation only: it is never hashed into request_revision, confirm_intent never reads it, and it describes the card only while composed_for_revision equals the card's request_revision.\",\"properties\":{\"composed_for_revision\":{\"description\":\"request_revision of the Change Card this program was composed for.\",\"type\":\"string\"},\"program\":{\"description\":\"OpenUI Lang program composed by the CP1 model from the Surla decision component catalog, exactly as the model returned it. The server does not check it; the checkpoint viewer validates it and shows its error state, with the rest of the card still usable, when the program is not a valid composition.\",\"type\":\"string\"}},\"required\":[\"program\",\"composed_for_revision\"],\"title\":\"UICompositionItem\",\"type\":\"object\"},\"UnverifiedApprovalItem\":{\"additionalProperties\":false,\"description\":\"Saved Checkpoint 5 promotion approval recorded on the Change Card whose current promotion inputs could not be verified on this read.\",\"properties\":{\"approval\":{\"$ref\":\"#/$defs/ApprovalItem\",\"description\":\"Recorded promotion approval from the Change Card.\"},\"reason\":{\"description\":\"Explanation of why the recorded approval could not be verified against current promotion inputs and how to recover.\",\"type\":\"string\"}},\"required\":[\"approval\",\"reason\"],\"title\":\"UnverifiedApprovalItem\",\"type\":\"object\"}},\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Checkpoint 1 Change Card containing examples, preserved behaviors, and audit metadata.\",\"properties\":{\"ambiguities\":{\"description\":\"Domain questions surfaced at CP1, retained for audit after confirmation.\",\"items\":{\"$ref\":\"#/$defs/AmbiguityQuestion\"},\"type\":\"array\"},\"answers\":{\"additionalProperties\":{\"type\":\"string\"},\"description\":\"Owner-confirmed answers keyed by ambiguity question ID when status is confirmed and ambiguities is non-empty (empty when a confirmed card has no ambiguity questions). Each answer equals one of its question's declared options and takes precedence over open phrasing in summary.\",\"type\":\"object\"},\"approval\":{\"$ref\":\"#/$defs/ApprovalItem\",\"description\":\"Checkpoint 5 approval of this revision, present only while it is verified against the promotion target's current inputs on this read. It is absent before approve_merge succeeds, whenever the target's suite, environment or binary digests have changed since, and whenever current inputs cannot be verified (see unverified_approval). It is never hashed into request_revision.\"},\"change_id\":{\"description\":\"Change identifier.\",\"type\":\"string\"},\"confirmed_by\":{\"description\":\"Authenticated principal that confirmed the Change Card.\",\"type\":\"string\"},\"examples\":{\"description\":\"Concrete examples mapped to evaluator checks.\",\"items\":{\"$ref\":\"#/$defs/ExampleItem\"},\"type\":\"array\"},\"preserved_behaviors\":{\"description\":\"Existing contract invariants preserved by this change.\",\"items\":{\"type\":\"string\"},\"type\":\"array\"},\"prompt\":{\"description\":\"Operator feature request for this revision.\",\"type\":\"string\"},\"request_revision\":{\"description\":\"SHA-256 digest of the canonical versioned Change Card.\",\"type\":\"string\"},\"status\":{\"description\":\"Checkpoint status (needs_confirmation or confirmed).\",\"enum\":[\"needs_confirmation\",\"confirmed\"],\"type\":\"string\"},\"summary\":{\"description\":\"Plain-English summary of the proposed change from propose_change or revise_change. confirm_intent does not rewrite this text; when status is confirmed, answers records the owner's resolutions for ambiguities.\",\"type\":\"string\"},\"ui_composition\":{\"$ref\":\"#/$defs/UICompositionItem\",\"description\":\"Decision view the CP1 model composed for this revision, when it produced one. A confirm_intent that changes answers or examples returns the new revision without it.\"},\"unverified_approval\":{\"$ref\":\"#/$defs/UnverifiedApprovalItem\",\"description\":\"Saved Checkpoint 5 approval of this revision when current promotion inputs could not be verified on this read (because no promotion target is configured or the target could not report its current inputs). At most one of approval or unverified_approval is set. It is never saved to disk or hashed into request_revision.\"}},\"required\":[\"change_id\",\"status\",\"prompt\",\"summary\",\"examples\",\"preserved_behaviors\",\"request_revision\"],\"type\":\"object\"}"),
-		Fields: []*genregistry.ToolFieldMetadata{
-			declarations.field612(),
-			declarations.field613(),
-			declarations.field614(),
-			declarations.field615(),
-			declarations.field616(),
-			declarations.field617(),
-			declarations.field618(),
-			declarations.field619(),
-			declarations.field620(),
-			declarations.field621(),
-			declarations.field622(),
-			declarations.field623(),
-			declarations.field624(),
-			declarations.field625(),
-			declarations.field626(),
-			declarations.field627(),
-			declarations.field628(),
-			declarations.field629(),
-			declarations.field630(),
-			declarations.field631(),
-			declarations.field632(),
-			declarations.field633(),
-			declarations.field634(),
-			declarations.field635(),
-			declarations.field636(),
-			declarations.field637(),
 			declarations.field638(),
 			declarations.field639(),
 			declarations.field640(),
@@ -9684,22 +10094,23 @@ func (declarations registryDeclarations) metadata611() *genregistry.ToolTypeMeta
 			declarations.field658(),
 			declarations.field659(),
 			declarations.field660(),
+			declarations.field661(),
 		},
 	}
 }
 
-// field612 constructs one generated field declaration.
-func (registryDeclarations) field612() *genregistry.ToolFieldMetadata {
+// field638 constructs one generated field declaration.
+func (registryDeclarations) field638() *genregistry.ToolFieldMetadata {
 	registryText1 := "object"
-	registryText2 := "Checkpoint 1 Change Card containing examples, preserved behaviors, and audit metadata."
+	registryText2 := "Revised operator feature request and the caller's analysis of it, saved as the next revision of an existing Checkpoint 1 Change Card."
 	return &genregistry.ToolFieldMetadata{
 		JSONType:    &registryText1,
 		Description: &registryText2,
 	}
 }
 
-// field613 constructs one generated field declaration.
-func (registryDeclarations) field613() *genregistry.ToolFieldMetadata {
+// field639 constructs one generated field declaration.
+func (registryDeclarations) field639() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
 	registryText2 := "Change identifier."
 	return &genregistry.ToolFieldMetadata{
@@ -9711,8 +10122,416 @@ func (registryDeclarations) field613() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field614 constructs one generated field declaration.
-func (registryDeclarations) field614() *genregistry.ToolFieldMetadata {
+// field640 constructs one generated field declaration.
+func (registryDeclarations) field640() *genregistry.ToolFieldMetadata {
+	registryText1 := "string"
+	registryText2 := "Current CP1 request_revision digest being revised."
+	return &genregistry.ToolFieldMetadata{
+		Path: []*genregistry.ToolFieldPathSegment{
+			{Segment: genregistry.NewToolFieldSegmentField("request_revision")},
+		},
+		JSONType:    &registryText1,
+		Description: &registryText2,
+	}
+}
+
+// field641 constructs one generated field declaration.
+func (registryDeclarations) field641() *genregistry.ToolFieldMetadata {
+	registryText1 := "string"
+	registryText2 := "Revised operator feature request."
+	return &genregistry.ToolFieldMetadata{
+		Path: []*genregistry.ToolFieldPathSegment{
+			{Segment: genregistry.NewToolFieldSegmentField("prompt")},
+		},
+		JSONType:    &registryText1,
+		Description: &registryText2,
+	}
+}
+
+// field642 constructs one generated field declaration.
+func (registryDeclarations) field642() *genregistry.ToolFieldMetadata {
+	registryText1 := "string"
+	registryText2 := "Updated Goa design source the analysis was made against (the target's design/*.go files). Surla saves it with the card and includes it in request_revision; it does not interpret it. When omitted on a workspace-backed card with a bound workspace, Surla records design/*.go from the bound workspace again; otherwise the card's saved design source is kept."
+	return &genregistry.ToolFieldMetadata{
+		Path: []*genregistry.ToolFieldPathSegment{
+			{Segment: genregistry.NewToolFieldSegmentField("design_source")},
+		},
+		JSONType:    &registryText1,
+		Description: &registryText2,
+	}
+}
+
+// field643 constructs one generated field declaration.
+func (registryDeclarations) field643() *genregistry.ToolFieldMetadata {
+	registryText1 := "object"
+	registryText2 := "Your analysis of the revised prompt against the current card and the target's current design."
+	return &genregistry.ToolFieldMetadata{
+		Path: []*genregistry.ToolFieldPathSegment{
+			{Segment: genregistry.NewToolFieldSegmentField("analysis")},
+		},
+		JSONType:    &registryText1,
+		Description: &registryText2,
+	}
+}
+
+// field644 constructs one generated field declaration.
+func (registryDeclarations) field644() *genregistry.ToolFieldMetadata {
+	registryText1 := "string"
+	registryText2 := "Plain-English description of the revised behavior, including the details the request, the design or confirmed answers already settle."
+	return &genregistry.ToolFieldMetadata{
+		Path: []*genregistry.ToolFieldPathSegment{
+			{Segment: genregistry.NewToolFieldSegmentField("analysis")},
+			{Segment: genregistry.NewToolFieldSegmentField("summary")},
+		},
+		JSONType:    &registryText1,
+		Description: &registryText2,
+	}
+}
+
+// field645 constructs one generated field declaration.
+func (registryDeclarations) field645() *genregistry.ToolFieldMetadata {
+	registryText1 := "array"
+	registryText2 := "Open questions only the requester can answer: product, domain, or operational choices that change observable behavior or service boundaries. Do not ask about details the request, the design or a confirmed answer already settle; state them in summary, or in examples when they change an observable outcome. Send an empty list when nothing is open."
+	return &genregistry.ToolFieldMetadata{
+		Path: []*genregistry.ToolFieldPathSegment{
+			{Segment: genregistry.NewToolFieldSegmentField("analysis")},
+			{Segment: genregistry.NewToolFieldSegmentField("ambiguities")},
+		},
+		JSONType:    &registryText1,
+		Description: &registryText2,
+	}
+}
+
+// field646 constructs one generated field declaration.
+func (registryDeclarations) field646() *genregistry.ToolFieldMetadata {
+	registryText1 := "object"
+	registryText2 := "Open questions only the requester can answer: product, domain, or operational choices that change observable behavior or service boundaries. Do not ask about details the request, the design or a confirmed answer already settle; state them in summary, or in examples when they change an observable outcome. Send an empty list when nothing is open."
+	return &genregistry.ToolFieldMetadata{
+		Path: []*genregistry.ToolFieldPathSegment{
+			{Segment: genregistry.NewToolFieldSegmentField("analysis")},
+			{Segment: genregistry.NewToolFieldSegmentField("ambiguities")},
+			{Segment: genregistry.NewToolFieldSegmentElement(&genregistry.ToolCollectionElement{})},
+		},
+		JSONType:    &registryText1,
+		Description: &registryText2,
+	}
+}
+
+// field647 constructs one generated field declaration.
+func (registryDeclarations) field647() *genregistry.ToolFieldMetadata {
+	registryText1 := "string"
+	registryText2 := "The decision in plain language, saying what the choice changes."
+	return &genregistry.ToolFieldMetadata{
+		Path: []*genregistry.ToolFieldPathSegment{
+			{Segment: genregistry.NewToolFieldSegmentField("analysis")},
+			{Segment: genregistry.NewToolFieldSegmentField("ambiguities")},
+			{Segment: genregistry.NewToolFieldSegmentElement(&genregistry.ToolCollectionElement{})},
+			{Segment: genregistry.NewToolFieldSegmentField("question")},
+		},
+		JSONType:    &registryText1,
+		Description: &registryText2,
+	}
+}
+
+// field648 constructs one generated field declaration.
+func (registryDeclarations) field648() *genregistry.ToolFieldMetadata {
+	registryText1 := "array"
+	registryText2 := "At least two distinct, self-contained choices; each states the behavior it selects and what follows from it. The requester's answer must be exactly one of these strings."
+	return &genregistry.ToolFieldMetadata{
+		Path: []*genregistry.ToolFieldPathSegment{
+			{Segment: genregistry.NewToolFieldSegmentField("analysis")},
+			{Segment: genregistry.NewToolFieldSegmentField("ambiguities")},
+			{Segment: genregistry.NewToolFieldSegmentElement(&genregistry.ToolCollectionElement{})},
+			{Segment: genregistry.NewToolFieldSegmentField("options")},
+		},
+		JSONType:    &registryText1,
+		Description: &registryText2,
+	}
+}
+
+// field649 constructs one generated field declaration.
+func (registryDeclarations) field649() *genregistry.ToolFieldMetadata {
+	registryText1 := "string"
+	registryText2 := "At least two distinct, self-contained choices; each states the behavior it selects and what follows from it. The requester's answer must be exactly one of these strings."
+	return &genregistry.ToolFieldMetadata{
+		Path: []*genregistry.ToolFieldPathSegment{
+			{Segment: genregistry.NewToolFieldSegmentField("analysis")},
+			{Segment: genregistry.NewToolFieldSegmentField("ambiguities")},
+			{Segment: genregistry.NewToolFieldSegmentElement(&genregistry.ToolCollectionElement{})},
+			{Segment: genregistry.NewToolFieldSegmentField("options")},
+			{Segment: genregistry.NewToolFieldSegmentElement(&genregistry.ToolCollectionElement{})},
+		},
+		JSONType:    &registryText1,
+		Description: &registryText2,
+	}
+}
+
+// field650 constructs one generated field declaration.
+func (registryDeclarations) field650() *genregistry.ToolFieldMetadata {
+	registryText1 := "array"
+	registryText2 := "Concrete acceptance examples drawn from the revised request and the design. Give prior_id for each current example you keep or edit; omit it for new ones."
+	return &genregistry.ToolFieldMetadata{
+		Path: []*genregistry.ToolFieldPathSegment{
+			{Segment: genregistry.NewToolFieldSegmentField("analysis")},
+			{Segment: genregistry.NewToolFieldSegmentField("examples")},
+		},
+		JSONType:    &registryText1,
+		Description: &registryText2,
+	}
+}
+
+// field651 constructs one generated field declaration.
+func (registryDeclarations) field651() *genregistry.ToolFieldMetadata {
+	registryText1 := "object"
+	registryText2 := "Concrete acceptance examples drawn from the revised request and the design. Give prior_id for each current example you keep or edit; omit it for new ones."
+	return &genregistry.ToolFieldMetadata{
+		Path: []*genregistry.ToolFieldPathSegment{
+			{Segment: genregistry.NewToolFieldSegmentField("analysis")},
+			{Segment: genregistry.NewToolFieldSegmentField("examples")},
+			{Segment: genregistry.NewToolFieldSegmentElement(&genregistry.ToolCollectionElement{})},
+		},
+		JSONType:    &registryText1,
+		Description: &registryText2,
+	}
+}
+
+// field652 constructs one generated field declaration.
+func (registryDeclarations) field652() *genregistry.ToolFieldMetadata {
+	registryText1 := "string"
+	registryText2 := "ID of the current card's example this one keeps or edits, exactly as the card shows it; the example keeps that ID. Omit it for a new example, which gets the lowest check_NN ID the current and revised cards do not use."
+	return &genregistry.ToolFieldMetadata{
+		Path: []*genregistry.ToolFieldPathSegment{
+			{Segment: genregistry.NewToolFieldSegmentField("analysis")},
+			{Segment: genregistry.NewToolFieldSegmentField("examples")},
+			{Segment: genregistry.NewToolFieldSegmentElement(&genregistry.ToolCollectionElement{})},
+			{Segment: genregistry.NewToolFieldSegmentField("prior_id")},
+		},
+		JSONType:    &registryText1,
+		Description: &registryText2,
+	}
+}
+
+// field653 constructs one generated field declaration.
+func (registryDeclarations) field653() *genregistry.ToolFieldMetadata {
+	registryText1 := "string"
+	registryText2 := "Short name of the situation, in the requester's domain terms."
+	return &genregistry.ToolFieldMetadata{
+		Path: []*genregistry.ToolFieldPathSegment{
+			{Segment: genregistry.NewToolFieldSegmentField("analysis")},
+			{Segment: genregistry.NewToolFieldSegmentField("examples")},
+			{Segment: genregistry.NewToolFieldSegmentElement(&genregistry.ToolCollectionElement{})},
+			{Segment: genregistry.NewToolFieldSegmentField("scenario")},
+		},
+		JSONType:    &registryText1,
+		Description: &registryText2,
+	}
+}
+
+// field654 constructs one generated field declaration.
+func (registryDeclarations) field654() *genregistry.ToolFieldMetadata {
+	registryText1 := "string"
+	registryText2 := "The actual request, inputs, and starting state in this scenario, with real values from the request and the design, never placeholders."
+	return &genregistry.ToolFieldMetadata{
+		Path: []*genregistry.ToolFieldPathSegment{
+			{Segment: genregistry.NewToolFieldSegmentField("analysis")},
+			{Segment: genregistry.NewToolFieldSegmentField("examples")},
+			{Segment: genregistry.NewToolFieldSegmentElement(&genregistry.ToolCollectionElement{})},
+			{Segment: genregistry.NewToolFieldSegmentField("input_summary")},
+		},
+		JSONType:    &registryText1,
+		Description: &registryText2,
+	}
+}
+
+// field655 constructs one generated field declaration.
+func (registryDeclarations) field655() *genregistry.ToolFieldMetadata {
+	registryText1 := "string"
+	registryText2 := "The observable result or refusal that must hold."
+	return &genregistry.ToolFieldMetadata{
+		Path: []*genregistry.ToolFieldPathSegment{
+			{Segment: genregistry.NewToolFieldSegmentField("analysis")},
+			{Segment: genregistry.NewToolFieldSegmentField("examples")},
+			{Segment: genregistry.NewToolFieldSegmentElement(&genregistry.ToolCollectionElement{})},
+			{Segment: genregistry.NewToolFieldSegmentField("expected_outcome")},
+		},
+		JSONType:    &registryText1,
+		Description: &registryText2,
+	}
+}
+
+// field656 constructs one generated field declaration.
+func (registryDeclarations) field656() *genregistry.ToolFieldMetadata {
+	registryText1 := "string"
+	registryText2 := "deterministic when code can check the outcome directly; model_judged when checking it needs judgment."
+	return &genregistry.ToolFieldMetadata{
+		Path: []*genregistry.ToolFieldPathSegment{
+			{Segment: genregistry.NewToolFieldSegmentField("analysis")},
+			{Segment: genregistry.NewToolFieldSegmentField("examples")},
+			{Segment: genregistry.NewToolFieldSegmentElement(&genregistry.ToolCollectionElement{})},
+			{Segment: genregistry.NewToolFieldSegmentField("verification_kind")},
+		},
+		JSONType:    &registryText1,
+		Description: &registryText2,
+	}
+}
+
+// field657 constructs one generated field declaration.
+func (registryDeclarations) field657() *genregistry.ToolFieldMetadata {
+	registryText1 := "array"
+	registryText2 := "IDs of the current card's examples this revision drops. Every current example ID appears exactly once, either as an examples[].prior_id or here; send an empty list when none are dropped."
+	return &genregistry.ToolFieldMetadata{
+		Path: []*genregistry.ToolFieldPathSegment{
+			{Segment: genregistry.NewToolFieldSegmentField("analysis")},
+			{Segment: genregistry.NewToolFieldSegmentField("removed_example_ids")},
+		},
+		JSONType:    &registryText1,
+		Description: &registryText2,
+	}
+}
+
+// field658 constructs one generated field declaration.
+func (registryDeclarations) field658() *genregistry.ToolFieldMetadata {
+	registryText1 := "string"
+	registryText2 := "IDs of the current card's examples this revision drops. Every current example ID appears exactly once, either as an examples[].prior_id or here; send an empty list when none are dropped."
+	return &genregistry.ToolFieldMetadata{
+		Path: []*genregistry.ToolFieldPathSegment{
+			{Segment: genregistry.NewToolFieldSegmentField("analysis")},
+			{Segment: genregistry.NewToolFieldSegmentField("removed_example_ids")},
+			{Segment: genregistry.NewToolFieldSegmentElement(&genregistry.ToolCollectionElement{})},
+		},
+		JSONType:    &registryText1,
+		Description: &registryText2,
+	}
+}
+
+// field659 constructs one generated field declaration.
+func (registryDeclarations) field659() *genregistry.ToolFieldMetadata {
+	registryText1 := "array"
+	registryText2 := "Existing behaviors and contract rules of the target that the change must keep, each stated concretely; empty when none apply."
+	return &genregistry.ToolFieldMetadata{
+		Path: []*genregistry.ToolFieldPathSegment{
+			{Segment: genregistry.NewToolFieldSegmentField("analysis")},
+			{Segment: genregistry.NewToolFieldSegmentField("preserved_behaviors")},
+		},
+		JSONType:    &registryText1,
+		Description: &registryText2,
+	}
+}
+
+// field660 constructs one generated field declaration.
+func (registryDeclarations) field660() *genregistry.ToolFieldMetadata {
+	registryText1 := "string"
+	registryText2 := "Existing behaviors and contract rules of the target that the change must keep, each stated concretely; empty when none apply."
+	return &genregistry.ToolFieldMetadata{
+		Path: []*genregistry.ToolFieldPathSegment{
+			{Segment: genregistry.NewToolFieldSegmentField("analysis")},
+			{Segment: genregistry.NewToolFieldSegmentField("preserved_behaviors")},
+			{Segment: genregistry.NewToolFieldSegmentElement(&genregistry.ToolCollectionElement{})},
+		},
+		JSONType:    &registryText1,
+		Description: &registryText2,
+	}
+}
+
+// field661 constructs one generated field declaration.
+func (registryDeclarations) field661() *genregistry.ToolFieldMetadata {
+	registryText1 := "string"
+	registryText2 := "Optional OpenUI Lang program that helps the requester decide the open questions, built only from the decision components the surla://golden-path resource lists. Refer to an ambiguity or example only by its 1-based position in this analysis (1 is the first); never invent identifiers. Surla saves it unchanged without checking it; the checkpoint viewer validates and renders it. Omit it when a plain card is clearer."
+	return &genregistry.ToolFieldMetadata{
+		Path: []*genregistry.ToolFieldPathSegment{
+			{Segment: genregistry.NewToolFieldSegmentField("analysis")},
+			{Segment: genregistry.NewToolFieldSegmentField("ui_composition")},
+		},
+		JSONType:    &registryText1,
+		Description: &registryText2,
+	}
+}
+
+// metadata662 constructs one generated metadata declaration.
+func (declarations registryDeclarations) metadata662() *genregistry.ToolTypeMetadata {
+	registryText1 := "ReviseChangeResult"
+	return &genregistry.ToolTypeMetadata{
+		Name:                     &registryText1,
+		SchemaWithoutRootExample: []byte("{\"$defs\":{\"AmbiguityQuestion\":{\"additionalProperties\":false,\"description\":\"Domain ambiguity surfaced with concrete examples at Checkpoint 1.\",\"properties\":{\"id\":{\"description\":\"Stable question identifier.\",\"type\":\"string\"},\"options\":{\"description\":\"Concrete resolution choices.\",\"items\":{\"type\":\"string\"},\"type\":\"array\"},\"question\":{\"description\":\"Plain-English question for the operator.\",\"type\":\"string\"}},\"required\":[\"id\",\"question\",\"options\"],\"title\":\"AmbiguityQuestion\",\"type\":\"object\"},\"ApprovalItem\":{\"additionalProperties\":false,\"description\":\"Checkpoint 5 approval recorded by approve_merge after the evaluator-written verification report passed and matched the change being promoted: the exact candidate commit, suite, environment and binary digests it checked. It is saved with the card in the control plane's cards directory, merges and deploys nothing, is replaced by the next successful approve_merge for the same revision, and is dropped when confirm_intent or revise_change mints a new request_revision. get_change and confirm_intent return it in approval only while the promotion target's current suite, environment and binary digests still equal the ones it records, or in unverified_approval when current promotion inputs cannot be verified on that read.\",\"properties\":{\"approved_by\":{\"description\":\"Authenticated bearer principal that owns the card and called approve_merge. Bearer authentication does not prove that a human, rather than a coding agent, made the call.\",\"type\":\"string\"},\"artifacts\":{\"additionalProperties\":{\"type\":\"string\"},\"description\":\"SHA-256 digest of each candidate binary the promotion target measured, keyed by binary name.\",\"type\":\"object\"},\"candidate_commit\":{\"description\":\"Candidate commit the report was checked against.\",\"type\":\"string\"},\"environment\":{\"description\":\"Dependency profile the promotion target requires, such as sim.\",\"type\":\"string\"},\"report_digest\":{\"description\":\"SHA-256 digest of the approved CP4 verification report.\",\"type\":\"string\"},\"scenario_count\":{\"description\":\"Number of declared evaluator scenarios, every one of which passed.\",\"format\":\"int64\",\"type\":\"integer\"},\"suite_commit\":{\"description\":\"Evaluator suite commit the promotion target requires.\",\"type\":\"string\"},\"suite_id\":{\"description\":\"Evaluator suite the promotion target requires.\",\"type\":\"string\"}},\"required\":[\"approved_by\",\"report_digest\",\"candidate_commit\",\"suite_id\",\"suite_commit\",\"environment\",\"artifacts\",\"scenario_count\"],\"title\":\"ApprovalItem\",\"type\":\"object\"},\"ExampleItem\":{\"additionalProperties\":false,\"description\":\"Concrete input and expected outcome confirmed at Checkpoint 1.\",\"properties\":{\"expected_outcome\":{\"description\":\"Expected side effect and response behavior.\",\"type\":\"string\"},\"id\":{\"description\":\"Stable example identifier. Default code-assigned IDs use check_01, check_02, ... (valid goa-ai/eval Scenario names). confirm_intent preserves caller-chosen IDs.\",\"type\":\"string\"},\"input_summary\":{\"description\":\"Representative user request and domain fixture state.\",\"type\":\"string\"},\"scenario\":{\"description\":\"Plain-English scenario description.\",\"type\":\"string\"},\"verification_kind\":{\"description\":\"Evaluator check classification (deterministic or model_judged).\",\"enum\":[\"deterministic\",\"model_judged\"],\"type\":\"string\"}},\"required\":[\"id\",\"scenario\",\"input_summary\",\"expected_outcome\",\"verification_kind\"],\"title\":\"ExampleItem\",\"type\":\"object\"},\"UICompositionItem\":{\"additionalProperties\":false,\"description\":\"Caller-authored OpenUI Lang decision view for exactly one Change Card revision. It is presentation only: it is never hashed into request_revision, confirm_intent never reads it, and it describes the card only while composed_for_revision equals the card's request_revision.\",\"properties\":{\"composed_for_revision\":{\"description\":\"request_revision of the Change Card this program was composed for.\",\"type\":\"string\"},\"program\":{\"description\":\"OpenUI Lang program from the analysis's ui_composition, exactly as the caller sent it. The server does not check it; the checkpoint viewer validates it and shows its error state, with the rest of the card still usable, when the program is not a valid composition.\",\"type\":\"string\"}},\"required\":[\"program\",\"composed_for_revision\"],\"title\":\"UICompositionItem\",\"type\":\"object\"},\"UnverifiedApprovalItem\":{\"additionalProperties\":false,\"description\":\"Saved Checkpoint 5 promotion approval recorded on the Change Card whose current promotion inputs could not be verified on this read.\",\"properties\":{\"approval\":{\"$ref\":\"#/$defs/ApprovalItem\",\"description\":\"Recorded promotion approval from the Change Card.\"},\"reason\":{\"description\":\"Explanation of why the recorded approval could not be verified against current promotion inputs and how to recover.\",\"type\":\"string\"}},\"required\":[\"approval\",\"reason\"],\"title\":\"UnverifiedApprovalItem\",\"type\":\"object\"}},\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Checkpoint 1 Change Card containing examples, preserved behaviors, and audit metadata.\",\"properties\":{\"ambiguities\":{\"description\":\"Domain questions surfaced at CP1, retained for audit after confirmation.\",\"items\":{\"$ref\":\"#/$defs/AmbiguityQuestion\"},\"type\":\"array\"},\"answers\":{\"additionalProperties\":{\"type\":\"string\"},\"description\":\"Owner-confirmed answers keyed by ambiguity question ID when status is confirmed and ambiguities is non-empty (empty when a confirmed card has no ambiguity questions). Each answer equals one of its question's declared options and takes precedence over open phrasing in summary.\",\"type\":\"object\"},\"approval\":{\"$ref\":\"#/$defs/ApprovalItem\",\"description\":\"Checkpoint 5 approval of this revision, present only while it is verified against the promotion target's current inputs on this read. It is absent before approve_merge succeeds, whenever the target's suite, environment or binary digests have changed since, and whenever current inputs cannot be verified (see unverified_approval). It is never hashed into request_revision.\"},\"change_id\":{\"description\":\"Change identifier.\",\"type\":\"string\"},\"confirmed_by\":{\"description\":\"Authenticated principal that confirmed the Change Card.\",\"type\":\"string\"},\"examples\":{\"description\":\"Concrete examples mapped to evaluator checks.\",\"items\":{\"$ref\":\"#/$defs/ExampleItem\"},\"type\":\"array\"},\"preserved_behaviors\":{\"description\":\"Existing contract invariants preserved by this change.\",\"items\":{\"type\":\"string\"},\"type\":\"array\"},\"prompt\":{\"description\":\"Operator feature request for this revision.\",\"type\":\"string\"},\"request_revision\":{\"description\":\"SHA-256 digest of the canonical versioned Change Card.\",\"type\":\"string\"},\"status\":{\"description\":\"Checkpoint status (needs_confirmation or confirmed).\",\"enum\":[\"needs_confirmation\",\"confirmed\"],\"type\":\"string\"},\"summary\":{\"description\":\"Plain-English summary of the proposed change from propose_change or revise_change. confirm_intent does not rewrite this text; when status is confirmed, answers records the owner's resolutions for ambiguities.\",\"type\":\"string\"},\"ui_composition\":{\"$ref\":\"#/$defs/UICompositionItem\",\"description\":\"Decision view the caller composed for this revision in its analysis, when it sent one. A confirm_intent that changes answers or examples returns the new revision without it.\"},\"unverified_approval\":{\"$ref\":\"#/$defs/UnverifiedApprovalItem\",\"description\":\"Saved Checkpoint 5 approval of this revision when current promotion inputs could not be verified on this read (because no promotion target is configured or the target could not report its current inputs). At most one of approval or unverified_approval is set. It is never saved to disk or hashed into request_revision.\"}},\"required\":[\"change_id\",\"status\",\"prompt\",\"summary\",\"examples\",\"preserved_behaviors\",\"request_revision\"],\"type\":\"object\"}"),
+		Fields: []*genregistry.ToolFieldMetadata{
+			declarations.field663(),
+			declarations.field664(),
+			declarations.field665(),
+			declarations.field666(),
+			declarations.field667(),
+			declarations.field668(),
+			declarations.field669(),
+			declarations.field670(),
+			declarations.field671(),
+			declarations.field672(),
+			declarations.field673(),
+			declarations.field674(),
+			declarations.field675(),
+			declarations.field676(),
+			declarations.field677(),
+			declarations.field678(),
+			declarations.field679(),
+			declarations.field680(),
+			declarations.field681(),
+			declarations.field682(),
+			declarations.field683(),
+			declarations.field684(),
+			declarations.field685(),
+			declarations.field686(),
+			declarations.field687(),
+			declarations.field688(),
+			declarations.field689(),
+			declarations.field690(),
+			declarations.field691(),
+			declarations.field692(),
+			declarations.field693(),
+			declarations.field694(),
+			declarations.field695(),
+			declarations.field696(),
+			declarations.field697(),
+			declarations.field698(),
+			declarations.field699(),
+			declarations.field700(),
+			declarations.field701(),
+			declarations.field702(),
+			declarations.field703(),
+			declarations.field704(),
+			declarations.field705(),
+			declarations.field706(),
+			declarations.field707(),
+			declarations.field708(),
+			declarations.field709(),
+			declarations.field710(),
+			declarations.field711(),
+		},
+	}
+}
+
+// field663 constructs one generated field declaration.
+func (registryDeclarations) field663() *genregistry.ToolFieldMetadata {
+	registryText1 := "object"
+	registryText2 := "Checkpoint 1 Change Card containing examples, preserved behaviors, and audit metadata."
+	return &genregistry.ToolFieldMetadata{
+		JSONType:    &registryText1,
+		Description: &registryText2,
+	}
+}
+
+// field664 constructs one generated field declaration.
+func (registryDeclarations) field664() *genregistry.ToolFieldMetadata {
+	registryText1 := "string"
+	registryText2 := "Change identifier."
+	return &genregistry.ToolFieldMetadata{
+		Path: []*genregistry.ToolFieldPathSegment{
+			{Segment: genregistry.NewToolFieldSegmentField("change_id")},
+		},
+		JSONType:    &registryText1,
+		Description: &registryText2,
+	}
+}
+
+// field665 constructs one generated field declaration.
+func (registryDeclarations) field665() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
 	registryText2 := "Checkpoint status (needs_confirmation or confirmed)."
 	return &genregistry.ToolFieldMetadata{
@@ -9724,8 +10543,8 @@ func (registryDeclarations) field614() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field615 constructs one generated field declaration.
-func (registryDeclarations) field615() *genregistry.ToolFieldMetadata {
+// field666 constructs one generated field declaration.
+func (registryDeclarations) field666() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
 	registryText2 := "Operator feature request for this revision."
 	return &genregistry.ToolFieldMetadata{
@@ -9737,8 +10556,8 @@ func (registryDeclarations) field615() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field616 constructs one generated field declaration.
-func (registryDeclarations) field616() *genregistry.ToolFieldMetadata {
+// field667 constructs one generated field declaration.
+func (registryDeclarations) field667() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
 	registryText2 := "Plain-English summary of the proposed change from propose_change or revise_change. confirm_intent does not rewrite this text; when status is confirmed, answers records the owner's resolutions for ambiguities."
 	return &genregistry.ToolFieldMetadata{
@@ -9750,8 +10569,8 @@ func (registryDeclarations) field616() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field617 constructs one generated field declaration.
-func (registryDeclarations) field617() *genregistry.ToolFieldMetadata {
+// field668 constructs one generated field declaration.
+func (registryDeclarations) field668() *genregistry.ToolFieldMetadata {
 	registryText1 := "array"
 	registryText2 := "Domain questions surfaced at CP1, retained for audit after confirmation."
 	return &genregistry.ToolFieldMetadata{
@@ -9763,8 +10582,8 @@ func (registryDeclarations) field617() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field618 constructs one generated field declaration.
-func (registryDeclarations) field618() *genregistry.ToolFieldMetadata {
+// field669 constructs one generated field declaration.
+func (registryDeclarations) field669() *genregistry.ToolFieldMetadata {
 	registryText1 := "object"
 	registryText2 := "Domain questions surfaced at CP1, retained for audit after confirmation."
 	return &genregistry.ToolFieldMetadata{
@@ -9777,8 +10596,8 @@ func (registryDeclarations) field618() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field619 constructs one generated field declaration.
-func (registryDeclarations) field619() *genregistry.ToolFieldMetadata {
+// field670 constructs one generated field declaration.
+func (registryDeclarations) field670() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
 	registryText2 := "Stable question identifier."
 	return &genregistry.ToolFieldMetadata{
@@ -9792,8 +10611,8 @@ func (registryDeclarations) field619() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field620 constructs one generated field declaration.
-func (registryDeclarations) field620() *genregistry.ToolFieldMetadata {
+// field671 constructs one generated field declaration.
+func (registryDeclarations) field671() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
 	registryText2 := "Plain-English question for the operator."
 	return &genregistry.ToolFieldMetadata{
@@ -9807,8 +10626,8 @@ func (registryDeclarations) field620() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field621 constructs one generated field declaration.
-func (registryDeclarations) field621() *genregistry.ToolFieldMetadata {
+// field672 constructs one generated field declaration.
+func (registryDeclarations) field672() *genregistry.ToolFieldMetadata {
 	registryText1 := "array"
 	registryText2 := "Concrete resolution choices."
 	return &genregistry.ToolFieldMetadata{
@@ -9822,8 +10641,8 @@ func (registryDeclarations) field621() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field622 constructs one generated field declaration.
-func (registryDeclarations) field622() *genregistry.ToolFieldMetadata {
+// field673 constructs one generated field declaration.
+func (registryDeclarations) field673() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
 	registryText2 := "Concrete resolution choices."
 	return &genregistry.ToolFieldMetadata{
@@ -9838,8 +10657,8 @@ func (registryDeclarations) field622() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field623 constructs one generated field declaration.
-func (registryDeclarations) field623() *genregistry.ToolFieldMetadata {
+// field674 constructs one generated field declaration.
+func (registryDeclarations) field674() *genregistry.ToolFieldMetadata {
 	registryText1 := "object"
 	registryText2 := "Owner-confirmed answers keyed by ambiguity question ID when status is confirmed and ambiguities is non-empty (empty when a confirmed card has no ambiguity questions). Each answer equals one of its question's declared options and takes precedence over open phrasing in summary."
 	return &genregistry.ToolFieldMetadata{
@@ -9851,8 +10670,8 @@ func (registryDeclarations) field623() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field624 constructs one generated field declaration.
-func (registryDeclarations) field624() *genregistry.ToolFieldMetadata {
+// field675 constructs one generated field declaration.
+func (registryDeclarations) field675() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
 	registryText2 := "Owner-confirmed answers keyed by ambiguity question ID when status is confirmed and ambiguities is non-empty (empty when a confirmed card has no ambiguity questions). Each answer equals one of its question's declared options and takes precedence over open phrasing in summary."
 	return &genregistry.ToolFieldMetadata{
@@ -9865,8 +10684,8 @@ func (registryDeclarations) field624() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field625 constructs one generated field declaration.
-func (registryDeclarations) field625() *genregistry.ToolFieldMetadata {
+// field676 constructs one generated field declaration.
+func (registryDeclarations) field676() *genregistry.ToolFieldMetadata {
 	registryText1 := "array"
 	registryText2 := "Concrete examples mapped to evaluator checks."
 	return &genregistry.ToolFieldMetadata{
@@ -9878,8 +10697,8 @@ func (registryDeclarations) field625() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field626 constructs one generated field declaration.
-func (registryDeclarations) field626() *genregistry.ToolFieldMetadata {
+// field677 constructs one generated field declaration.
+func (registryDeclarations) field677() *genregistry.ToolFieldMetadata {
 	registryText1 := "object"
 	registryText2 := "Concrete examples mapped to evaluator checks."
 	return &genregistry.ToolFieldMetadata{
@@ -9892,8 +10711,8 @@ func (registryDeclarations) field626() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field627 constructs one generated field declaration.
-func (registryDeclarations) field627() *genregistry.ToolFieldMetadata {
+// field678 constructs one generated field declaration.
+func (registryDeclarations) field678() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
 	registryText2 := "Stable example identifier. Default code-assigned IDs use check_01, check_02, ... (valid goa-ai/eval Scenario names). confirm_intent preserves caller-chosen IDs."
 	return &genregistry.ToolFieldMetadata{
@@ -9907,8 +10726,8 @@ func (registryDeclarations) field627() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field628 constructs one generated field declaration.
-func (registryDeclarations) field628() *genregistry.ToolFieldMetadata {
+// field679 constructs one generated field declaration.
+func (registryDeclarations) field679() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
 	registryText2 := "Plain-English scenario description."
 	return &genregistry.ToolFieldMetadata{
@@ -9922,8 +10741,8 @@ func (registryDeclarations) field628() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field629 constructs one generated field declaration.
-func (registryDeclarations) field629() *genregistry.ToolFieldMetadata {
+// field680 constructs one generated field declaration.
+func (registryDeclarations) field680() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
 	registryText2 := "Representative user request and domain fixture state."
 	return &genregistry.ToolFieldMetadata{
@@ -9937,8 +10756,8 @@ func (registryDeclarations) field629() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field630 constructs one generated field declaration.
-func (registryDeclarations) field630() *genregistry.ToolFieldMetadata {
+// field681 constructs one generated field declaration.
+func (registryDeclarations) field681() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
 	registryText2 := "Expected side effect and response behavior."
 	return &genregistry.ToolFieldMetadata{
@@ -9952,8 +10771,8 @@ func (registryDeclarations) field630() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field631 constructs one generated field declaration.
-func (registryDeclarations) field631() *genregistry.ToolFieldMetadata {
+// field682 constructs one generated field declaration.
+func (registryDeclarations) field682() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
 	registryText2 := "Evaluator check classification (deterministic or model_judged)."
 	return &genregistry.ToolFieldMetadata{
@@ -9967,8 +10786,8 @@ func (registryDeclarations) field631() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field632 constructs one generated field declaration.
-func (registryDeclarations) field632() *genregistry.ToolFieldMetadata {
+// field683 constructs one generated field declaration.
+func (registryDeclarations) field683() *genregistry.ToolFieldMetadata {
 	registryText1 := "array"
 	registryText2 := "Existing contract invariants preserved by this change."
 	return &genregistry.ToolFieldMetadata{
@@ -9980,8 +10799,8 @@ func (registryDeclarations) field632() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field633 constructs one generated field declaration.
-func (registryDeclarations) field633() *genregistry.ToolFieldMetadata {
+// field684 constructs one generated field declaration.
+func (registryDeclarations) field684() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
 	registryText2 := "Existing contract invariants preserved by this change."
 	return &genregistry.ToolFieldMetadata{
@@ -9994,8 +10813,8 @@ func (registryDeclarations) field633() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field634 constructs one generated field declaration.
-func (registryDeclarations) field634() *genregistry.ToolFieldMetadata {
+// field685 constructs one generated field declaration.
+func (registryDeclarations) field685() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
 	registryText2 := "Authenticated principal that confirmed the Change Card."
 	return &genregistry.ToolFieldMetadata{
@@ -10007,8 +10826,8 @@ func (registryDeclarations) field634() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field635 constructs one generated field declaration.
-func (registryDeclarations) field635() *genregistry.ToolFieldMetadata {
+// field686 constructs one generated field declaration.
+func (registryDeclarations) field686() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
 	registryText2 := "SHA-256 digest of the canonical versioned Change Card."
 	return &genregistry.ToolFieldMetadata{
@@ -10020,10 +10839,10 @@ func (registryDeclarations) field635() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field636 constructs one generated field declaration.
-func (registryDeclarations) field636() *genregistry.ToolFieldMetadata {
+// field687 constructs one generated field declaration.
+func (registryDeclarations) field687() *genregistry.ToolFieldMetadata {
 	registryText1 := "object"
-	registryText2 := "Decision view the CP1 model composed for this revision, when it produced one. A confirm_intent that changes answers or examples returns the new revision without it."
+	registryText2 := "Decision view the caller composed for this revision in its analysis, when it sent one. A confirm_intent that changes answers or examples returns the new revision without it."
 	return &genregistry.ToolFieldMetadata{
 		Path: []*genregistry.ToolFieldPathSegment{
 			{Segment: genregistry.NewToolFieldSegmentField("ui_composition")},
@@ -10033,10 +10852,10 @@ func (registryDeclarations) field636() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field637 constructs one generated field declaration.
-func (registryDeclarations) field637() *genregistry.ToolFieldMetadata {
+// field688 constructs one generated field declaration.
+func (registryDeclarations) field688() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
-	registryText2 := "OpenUI Lang program composed by the CP1 model from the Surla decision component catalog, exactly as the model returned it. The server does not check it; the checkpoint viewer validates it and shows its error state, with the rest of the card still usable, when the program is not a valid composition."
+	registryText2 := "OpenUI Lang program from the analysis's ui_composition, exactly as the caller sent it. The server does not check it; the checkpoint viewer validates it and shows its error state, with the rest of the card still usable, when the program is not a valid composition."
 	return &genregistry.ToolFieldMetadata{
 		Path: []*genregistry.ToolFieldPathSegment{
 			{Segment: genregistry.NewToolFieldSegmentField("ui_composition")},
@@ -10047,8 +10866,8 @@ func (registryDeclarations) field637() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field638 constructs one generated field declaration.
-func (registryDeclarations) field638() *genregistry.ToolFieldMetadata {
+// field689 constructs one generated field declaration.
+func (registryDeclarations) field689() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
 	registryText2 := "request_revision of the Change Card this program was composed for."
 	return &genregistry.ToolFieldMetadata{
@@ -10061,8 +10880,8 @@ func (registryDeclarations) field638() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field639 constructs one generated field declaration.
-func (registryDeclarations) field639() *genregistry.ToolFieldMetadata {
+// field690 constructs one generated field declaration.
+func (registryDeclarations) field690() *genregistry.ToolFieldMetadata {
 	registryText1 := "object"
 	registryText2 := "Checkpoint 5 approval of this revision, present only while it is verified against the promotion target's current inputs on this read. It is absent before approve_merge succeeds, whenever the target's suite, environment or binary digests have changed since, and whenever current inputs cannot be verified (see unverified_approval). It is never hashed into request_revision."
 	return &genregistry.ToolFieldMetadata{
@@ -10074,8 +10893,8 @@ func (registryDeclarations) field639() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field640 constructs one generated field declaration.
-func (registryDeclarations) field640() *genregistry.ToolFieldMetadata {
+// field691 constructs one generated field declaration.
+func (registryDeclarations) field691() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
 	registryText2 := "Authenticated bearer principal that owns the card and called approve_merge. Bearer authentication does not prove that a human, rather than a coding agent, made the call."
 	return &genregistry.ToolFieldMetadata{
@@ -10088,8 +10907,8 @@ func (registryDeclarations) field640() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field641 constructs one generated field declaration.
-func (registryDeclarations) field641() *genregistry.ToolFieldMetadata {
+// field692 constructs one generated field declaration.
+func (registryDeclarations) field692() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
 	registryText2 := "SHA-256 digest of the approved CP4 verification report."
 	return &genregistry.ToolFieldMetadata{
@@ -10102,8 +10921,8 @@ func (registryDeclarations) field641() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field642 constructs one generated field declaration.
-func (registryDeclarations) field642() *genregistry.ToolFieldMetadata {
+// field693 constructs one generated field declaration.
+func (registryDeclarations) field693() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
 	registryText2 := "Candidate commit the report was checked against."
 	return &genregistry.ToolFieldMetadata{
@@ -10116,8 +10935,8 @@ func (registryDeclarations) field642() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field643 constructs one generated field declaration.
-func (registryDeclarations) field643() *genregistry.ToolFieldMetadata {
+// field694 constructs one generated field declaration.
+func (registryDeclarations) field694() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
 	registryText2 := "Evaluator suite the promotion target requires."
 	return &genregistry.ToolFieldMetadata{
@@ -10130,8 +10949,8 @@ func (registryDeclarations) field643() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field644 constructs one generated field declaration.
-func (registryDeclarations) field644() *genregistry.ToolFieldMetadata {
+// field695 constructs one generated field declaration.
+func (registryDeclarations) field695() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
 	registryText2 := "Evaluator suite commit the promotion target requires."
 	return &genregistry.ToolFieldMetadata{
@@ -10144,8 +10963,8 @@ func (registryDeclarations) field644() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field645 constructs one generated field declaration.
-func (registryDeclarations) field645() *genregistry.ToolFieldMetadata {
+// field696 constructs one generated field declaration.
+func (registryDeclarations) field696() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
 	registryText2 := "Dependency profile the promotion target requires, such as sim."
 	return &genregistry.ToolFieldMetadata{
@@ -10158,8 +10977,8 @@ func (registryDeclarations) field645() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field646 constructs one generated field declaration.
-func (registryDeclarations) field646() *genregistry.ToolFieldMetadata {
+// field697 constructs one generated field declaration.
+func (registryDeclarations) field697() *genregistry.ToolFieldMetadata {
 	registryText1 := "object"
 	registryText2 := "SHA-256 digest of each candidate binary the promotion target measured, keyed by binary name."
 	return &genregistry.ToolFieldMetadata{
@@ -10172,8 +10991,8 @@ func (registryDeclarations) field646() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field647 constructs one generated field declaration.
-func (registryDeclarations) field647() *genregistry.ToolFieldMetadata {
+// field698 constructs one generated field declaration.
+func (registryDeclarations) field698() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
 	registryText2 := "SHA-256 digest of each candidate binary the promotion target measured, keyed by binary name."
 	return &genregistry.ToolFieldMetadata{
@@ -10187,8 +11006,8 @@ func (registryDeclarations) field647() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field648 constructs one generated field declaration.
-func (registryDeclarations) field648() *genregistry.ToolFieldMetadata {
+// field699 constructs one generated field declaration.
+func (registryDeclarations) field699() *genregistry.ToolFieldMetadata {
 	registryText1 := "integer"
 	registryText2 := "Number of declared evaluator scenarios, every one of which passed."
 	return &genregistry.ToolFieldMetadata{
@@ -10201,8 +11020,8 @@ func (registryDeclarations) field648() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field649 constructs one generated field declaration.
-func (registryDeclarations) field649() *genregistry.ToolFieldMetadata {
+// field700 constructs one generated field declaration.
+func (registryDeclarations) field700() *genregistry.ToolFieldMetadata {
 	registryText1 := "object"
 	registryText2 := "Saved Checkpoint 5 approval of this revision when current promotion inputs could not be verified on this read (because no promotion target is configured or the target could not report its current inputs). At most one of approval or unverified_approval is set. It is never saved to disk or hashed into request_revision."
 	return &genregistry.ToolFieldMetadata{
@@ -10214,8 +11033,8 @@ func (registryDeclarations) field649() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field650 constructs one generated field declaration.
-func (registryDeclarations) field650() *genregistry.ToolFieldMetadata {
+// field701 constructs one generated field declaration.
+func (registryDeclarations) field701() *genregistry.ToolFieldMetadata {
 	registryText1 := "object"
 	registryText2 := "Recorded promotion approval from the Change Card."
 	return &genregistry.ToolFieldMetadata{
@@ -10228,8 +11047,8 @@ func (registryDeclarations) field650() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field651 constructs one generated field declaration.
-func (registryDeclarations) field651() *genregistry.ToolFieldMetadata {
+// field702 constructs one generated field declaration.
+func (registryDeclarations) field702() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
 	registryText2 := "Authenticated bearer principal that owns the card and called approve_merge. Bearer authentication does not prove that a human, rather than a coding agent, made the call."
 	return &genregistry.ToolFieldMetadata{
@@ -10243,8 +11062,8 @@ func (registryDeclarations) field651() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field652 constructs one generated field declaration.
-func (registryDeclarations) field652() *genregistry.ToolFieldMetadata {
+// field703 constructs one generated field declaration.
+func (registryDeclarations) field703() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
 	registryText2 := "SHA-256 digest of the approved CP4 verification report."
 	return &genregistry.ToolFieldMetadata{
@@ -10258,8 +11077,8 @@ func (registryDeclarations) field652() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field653 constructs one generated field declaration.
-func (registryDeclarations) field653() *genregistry.ToolFieldMetadata {
+// field704 constructs one generated field declaration.
+func (registryDeclarations) field704() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
 	registryText2 := "Candidate commit the report was checked against."
 	return &genregistry.ToolFieldMetadata{
@@ -10273,8 +11092,8 @@ func (registryDeclarations) field653() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field654 constructs one generated field declaration.
-func (registryDeclarations) field654() *genregistry.ToolFieldMetadata {
+// field705 constructs one generated field declaration.
+func (registryDeclarations) field705() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
 	registryText2 := "Evaluator suite the promotion target requires."
 	return &genregistry.ToolFieldMetadata{
@@ -10288,8 +11107,8 @@ func (registryDeclarations) field654() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field655 constructs one generated field declaration.
-func (registryDeclarations) field655() *genregistry.ToolFieldMetadata {
+// field706 constructs one generated field declaration.
+func (registryDeclarations) field706() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
 	registryText2 := "Evaluator suite commit the promotion target requires."
 	return &genregistry.ToolFieldMetadata{
@@ -10303,8 +11122,8 @@ func (registryDeclarations) field655() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field656 constructs one generated field declaration.
-func (registryDeclarations) field656() *genregistry.ToolFieldMetadata {
+// field707 constructs one generated field declaration.
+func (registryDeclarations) field707() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
 	registryText2 := "Dependency profile the promotion target requires, such as sim."
 	return &genregistry.ToolFieldMetadata{
@@ -10318,8 +11137,8 @@ func (registryDeclarations) field656() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field657 constructs one generated field declaration.
-func (registryDeclarations) field657() *genregistry.ToolFieldMetadata {
+// field708 constructs one generated field declaration.
+func (registryDeclarations) field708() *genregistry.ToolFieldMetadata {
 	registryText1 := "object"
 	registryText2 := "SHA-256 digest of each candidate binary the promotion target measured, keyed by binary name."
 	return &genregistry.ToolFieldMetadata{
@@ -10333,8 +11152,8 @@ func (registryDeclarations) field657() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field658 constructs one generated field declaration.
-func (registryDeclarations) field658() *genregistry.ToolFieldMetadata {
+// field709 constructs one generated field declaration.
+func (registryDeclarations) field709() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
 	registryText2 := "SHA-256 digest of each candidate binary the promotion target measured, keyed by binary name."
 	return &genregistry.ToolFieldMetadata{
@@ -10349,8 +11168,8 @@ func (registryDeclarations) field658() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field659 constructs one generated field declaration.
-func (registryDeclarations) field659() *genregistry.ToolFieldMetadata {
+// field710 constructs one generated field declaration.
+func (registryDeclarations) field710() *genregistry.ToolFieldMetadata {
 	registryText1 := "integer"
 	registryText2 := "Number of declared evaluator scenarios, every one of which passed."
 	return &genregistry.ToolFieldMetadata{
@@ -10364,8 +11183,8 @@ func (registryDeclarations) field659() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field660 constructs one generated field declaration.
-func (registryDeclarations) field660() *genregistry.ToolFieldMetadata {
+// field711 constructs one generated field declaration.
+func (registryDeclarations) field711() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
 	registryText2 := "Explanation of why the recorded approval could not be verified against current promotion inputs and how to recover."
 	return &genregistry.ToolFieldMetadata{
@@ -10378,639 +11197,13 @@ func (registryDeclarations) field660() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// metadata661 constructs one generated metadata declaration.
-func (declarations registryDeclarations) metadata661() *genregistry.ToolTypeMetadata {
+// metadata712 constructs one generated metadata declaration.
+func (declarations registryDeclarations) metadata712() *genregistry.ToolTypeMetadata {
 	registryText1 := "ReviseChangePayload"
 	return &genregistry.ToolTypeMetadata{
 		Name:                     &registryText1,
-		SchemaWithoutRootExample: []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Revised operator feature request submitted for an existing Checkpoint 1 Change Card.\",\"properties\":{\"change_id\":{\"description\":\"Change identifier.\",\"type\":\"string\"},\"design_source\":{\"description\":\"Updated Goa design source of the target (its design/*.go files) for the CP1 model to read. When omitted on a workspace-backed card with a bound workspace, Surla re-reads design/*.go from the bound workspace; otherwise the card's saved design source is used again.\",\"type\":\"string\"},\"prompt\":{\"description\":\"Revised operator feature request.\",\"type\":\"string\"},\"request_revision\":{\"description\":\"Current CP1 request_revision digest being revised.\",\"type\":\"string\"}},\"required\":[\"change_id\",\"request_revision\",\"prompt\"],\"type\":\"object\"}"),
+		SchemaWithoutRootExample: []byte("{\"$defs\":{\"CP1AnalysisAmbiguity\":{\"additionalProperties\":false,\"description\":\"One product, domain, or operational choice only the requester can make. Surla gives it the ID \\u003cchange_id\\u003e-ambiguity-NN, numbered in list order.\",\"properties\":{\"options\":{\"description\":\"At least two distinct, self-contained choices; each states the behavior it selects and what follows from it. The requester's answer must be exactly one of these strings.\",\"items\":{\"pattern\":\"\\\\S\",\"type\":\"string\"},\"minItems\":2,\"type\":\"array\"},\"question\":{\"description\":\"The decision in plain language, saying what the choice changes.\",\"pattern\":\"\\\\S\",\"type\":\"string\"}},\"required\":[\"question\",\"options\"],\"title\":\"CP1AnalysisAmbiguity\",\"type\":\"object\"},\"CP1RevisionAnalysis\":{\"additionalProperties\":false,\"description\":\"Your analysis of the revised request against the current Change Card (as get_change returns it at request_revision), the target's current Goa design, and the Golden Path playbook served at surla://golden-path. A confirmed answer stays settled unless the revised request or design contradicts it: do not ask it again, and restate it in summary, examples or preserved_behaviors, because the revised card drops every answer. An explicit instruction in the revised request or design replaces the decisions, examples and preserved behaviors it affects. An unanswered question stays in ambiguities unless the revised request or design answers it or removes its scope. Everything else on the current card stays unless the revised request or design changes it. Surla checks the structure and the example accounting; it cannot judge whether the analysis is complete or correct.\",\"properties\":{\"ambiguities\":{\"description\":\"Open questions only the requester can answer: product, domain, or operational choices that change observable behavior or service boundaries. Do not ask about details the request, the design or a confirmed answer already settle; state them in summary, or in examples when they change an observable outcome. Send an empty list when nothing is open.\",\"items\":{\"$ref\":\"#/$defs/CP1AnalysisAmbiguity\"},\"type\":\"array\"},\"examples\":{\"description\":\"Concrete acceptance examples drawn from the revised request and the design. Give prior_id for each current example you keep or edit; omit it for new ones.\",\"items\":{\"$ref\":\"#/$defs/CP1RevisionAnalysisExample\"},\"minItems\":1,\"type\":\"array\"},\"preserved_behaviors\":{\"description\":\"Existing behaviors and contract rules of the target that the change must keep, each stated concretely; empty when none apply.\",\"items\":{\"pattern\":\"\\\\S\",\"type\":\"string\"},\"type\":\"array\"},\"removed_example_ids\":{\"description\":\"IDs of the current card's examples this revision drops. Every current example ID appears exactly once, either as an examples[].prior_id or here; send an empty list when none are dropped.\",\"items\":{\"minLength\":1,\"type\":\"string\"},\"type\":\"array\"},\"summary\":{\"description\":\"Plain-English description of the revised behavior, including the details the request, the design or confirmed answers already settle.\",\"pattern\":\"\\\\S\",\"type\":\"string\"},\"ui_composition\":{\"description\":\"Optional OpenUI Lang program that helps the requester decide the open questions, built only from the decision components the surla://golden-path resource lists. Refer to an ambiguity or example only by its 1-based position in this analysis (1 is the first); never invent identifiers. Surla saves it unchanged without checking it; the checkpoint viewer validates and renders it. Omit it when a plain card is clearer.\",\"type\":\"string\"}},\"required\":[\"summary\",\"ambiguities\",\"examples\",\"removed_example_ids\",\"preserved_behaviors\"],\"title\":\"CP1RevisionAnalysis\",\"type\":\"object\"},\"CP1RevisionAnalysisExample\":{\"additionalProperties\":false,\"description\":\"One concrete acceptance example of the revised card: a current example kept or edited in place (prior_id set), or a new one.\",\"properties\":{\"expected_outcome\":{\"description\":\"The observable result or refusal that must hold.\",\"pattern\":\"\\\\S\",\"type\":\"string\"},\"input_summary\":{\"description\":\"The actual request, inputs, and starting state in this scenario, with real values from the request and the design, never placeholders.\",\"pattern\":\"\\\\S\",\"type\":\"string\"},\"prior_id\":{\"description\":\"ID of the current card's example this one keeps or edits, exactly as the card shows it; the example keeps that ID. Omit it for a new example, which gets the lowest check_NN ID the current and revised cards do not use.\",\"minLength\":1,\"type\":\"string\"},\"scenario\":{\"description\":\"Short name of the situation, in the requester's domain terms.\",\"pattern\":\"\\\\S\",\"type\":\"string\"},\"verification_kind\":{\"description\":\"deterministic when code can check the outcome directly; model_judged when checking it needs judgment.\",\"enum\":[\"deterministic\",\"model_judged\"],\"type\":\"string\"}},\"required\":[\"scenario\",\"input_summary\",\"expected_outcome\",\"verification_kind\"],\"title\":\"CP1RevisionAnalysisExample\",\"type\":\"object\"}},\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Revised operator feature request and the caller's analysis of it, saved as the next revision of an existing Checkpoint 1 Change Card.\",\"properties\":{\"analysis\":{\"$ref\":\"#/$defs/CP1RevisionAnalysis\",\"description\":\"Your analysis of the revised prompt against the current card and the target's current design.\"},\"change_id\":{\"description\":\"Change identifier.\",\"type\":\"string\"},\"design_source\":{\"description\":\"Updated Goa design source the analysis was made against (the target's design/*.go files). Surla saves it with the card and includes it in request_revision; it does not interpret it. When omitted on a workspace-backed card with a bound workspace, Surla records design/*.go from the bound workspace again; otherwise the card's saved design source is kept.\",\"type\":\"string\"},\"prompt\":{\"description\":\"Revised operator feature request.\",\"type\":\"string\"},\"request_revision\":{\"description\":\"Current CP1 request_revision digest being revised.\",\"type\":\"string\"}},\"required\":[\"change_id\",\"request_revision\",\"prompt\",\"analysis\"],\"type\":\"object\"}"),
 		Fields: []*genregistry.ToolFieldMetadata{
-			declarations.field662(),
-			declarations.field663(),
-			declarations.field664(),
-			declarations.field665(),
-			declarations.field666(),
-		},
-	}
-}
-
-// field662 constructs one generated field declaration.
-func (registryDeclarations) field662() *genregistry.ToolFieldMetadata {
-	registryText1 := "object"
-	registryText2 := "Revised operator feature request submitted for an existing Checkpoint 1 Change Card."
-	return &genregistry.ToolFieldMetadata{
-		JSONType:    &registryText1,
-		Description: &registryText2,
-	}
-}
-
-// field663 constructs one generated field declaration.
-func (registryDeclarations) field663() *genregistry.ToolFieldMetadata {
-	registryText1 := "string"
-	registryText2 := "Change identifier."
-	return &genregistry.ToolFieldMetadata{
-		Path: []*genregistry.ToolFieldPathSegment{
-			{Segment: genregistry.NewToolFieldSegmentField("change_id")},
-		},
-		JSONType:    &registryText1,
-		Description: &registryText2,
-	}
-}
-
-// field664 constructs one generated field declaration.
-func (registryDeclarations) field664() *genregistry.ToolFieldMetadata {
-	registryText1 := "string"
-	registryText2 := "Current CP1 request_revision digest being revised."
-	return &genregistry.ToolFieldMetadata{
-		Path: []*genregistry.ToolFieldPathSegment{
-			{Segment: genregistry.NewToolFieldSegmentField("request_revision")},
-		},
-		JSONType:    &registryText1,
-		Description: &registryText2,
-	}
-}
-
-// field665 constructs one generated field declaration.
-func (registryDeclarations) field665() *genregistry.ToolFieldMetadata {
-	registryText1 := "string"
-	registryText2 := "Revised operator feature request."
-	return &genregistry.ToolFieldMetadata{
-		Path: []*genregistry.ToolFieldPathSegment{
-			{Segment: genregistry.NewToolFieldSegmentField("prompt")},
-		},
-		JSONType:    &registryText1,
-		Description: &registryText2,
-	}
-}
-
-// field666 constructs one generated field declaration.
-func (registryDeclarations) field666() *genregistry.ToolFieldMetadata {
-	registryText1 := "string"
-	registryText2 := "Updated Goa design source of the target (its design/*.go files) for the CP1 model to read. When omitted on a workspace-backed card with a bound workspace, Surla re-reads design/*.go from the bound workspace; otherwise the card's saved design source is used again."
-	return &genregistry.ToolFieldMetadata{
-		Path: []*genregistry.ToolFieldPathSegment{
-			{Segment: genregistry.NewToolFieldSegmentField("design_source")},
-		},
-		JSONType:    &registryText1,
-		Description: &registryText2,
-	}
-}
-
-// schema667 constructs one generated schema declaration.
-func (declarations registryDeclarations) schema667() *genregistry.ToolSchema {
-	registryText1 := "Build a candidate commit and run it as this server's live CP3 target so draft_override can try prompt text on it. This first stops the target already running, which discards every prompt draft applied to it, even if the new build then fails. Prompt text survives only when it is committed. Requires a committed starter project in the bound workspace or -verification-config."
-	return &genregistry.ToolSchema{
-		Name:                   "surla.start_live_target",
-		Description:            &registryText1,
-		PayloadSchema:          []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Candidate commit to build and run as this server's live CP3 target.\",\"properties\":{\"candidate_commit\":{\"description\":\"Full commit ID to build, in the candidate repository's object format.\",\"example\":\"4f0b3c1d2e5a6978877665544332211009988776\",\"pattern\":\"^([0-9a-f]{40}|[0-9a-f]{64})$\",\"type\":\"string\"}},\"required\":[\"candidate_commit\"],\"type\":\"object\"}"),
-		ExecutionPayloadSchema: []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Candidate commit to build and run as this server's live CP3 target.\",\"properties\":{\"candidate_commit\":{\"description\":\"Full commit ID to build, in the candidate repository's object format.\",\"example\":\"4f0b3c1d2e5a6978877665544332211009988776\",\"pattern\":\"^([0-9a-f]{40}|[0-9a-f]{64})$\",\"type\":\"string\"}},\"required\":[\"candidate_commit\"],\"type\":\"object\"}"),
-		ResultSchema:           []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"The live CP3 target this server runs and binds draft_override to.\",\"properties\":{\"candidate_commit\":{\"description\":\"The commit the live target was built from.\",\"type\":\"string\"},\"message\":{\"description\":\"Operator-facing status explanation.\",\"type\":\"string\"},\"url\":{\"description\":\"Loopback origin of the running candidate, for trying requests such as its own API directly.\",\"type\":\"string\"}},\"required\":[\"candidate_commit\",\"url\",\"message\"],\"type\":\"object\"}"),
-		ConsumerContract: &genregistry.ConsumerContract{
-			Kind:  "service",
-			Title: "Start Live Target",
-			Search: &genregistry.ToolSearchDocument{
-				Length: 72,
-				Terms:  map[string]int{"a": 2, "already": 1, "and": 1, "applied": 1, "as": 1, "bound": 1, "build": 2, "can": 1, "candidate": 1, "commit": 1, "committed": 2, "config": 1, "cp3": 1, "discards": 1, "draft": 2, "even": 1, "every": 1, "fails": 1, "first": 1, "if": 1, "in": 1, "is": 1, "it": 4, "live": 3, "new": 1, "on": 1, "only": 1, "or": 1, "override": 1, "project": 1, "prompt": 3, "requires": 1, "run": 1, "running": 1, "s": 1, "server": 1, "so": 1, "start": 2, "starter": 1, "stops": 1, "surla": 1, "survives": 1, "target": 4, "text": 2, "the": 3, "then": 1, "this": 2, "to": 1, "try": 1, "verification": 1, "when": 1, "which": 1, "workspace": 1},
-			},
-			RequiresUI: false,
-			TextOnly: &genregistry.TextOnlyToolContract{
-				ExecutionSchema: []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Candidate commit to build and run as this server's live CP3 target.\",\"properties\":{\"candidate_commit\":{\"description\":\"Full commit ID to build, in the candidate repository's object format.\",\"example\":\"4f0b3c1d2e5a6978877665544332211009988776\",\"pattern\":\"^([0-9a-f]{40}|[0-9a-f]{64})$\",\"type\":\"string\"}},\"required\":[\"candidate_commit\"],\"type\":\"object\"}"),
-				Description:     "Build a candidate commit and run it as this server's live CP3 target so draft_override can try prompt text on it. This first stops the target already running, which discards every prompt draft applied to it, even if the new build then fails. Prompt text survives only when it is committed. Requires a committed starter project in the bound workspace or -verification-config.",
-				Search: &genregistry.ToolSearchDocument{
-					Length: 72,
-					Terms:  map[string]int{"a": 2, "already": 1, "and": 1, "applied": 1, "as": 1, "bound": 1, "build": 2, "can": 1, "candidate": 1, "commit": 1, "committed": 2, "config": 1, "cp3": 1, "discards": 1, "draft": 2, "even": 1, "every": 1, "fails": 1, "first": 1, "if": 1, "in": 1, "is": 1, "it": 4, "live": 3, "new": 1, "on": 1, "only": 1, "or": 1, "override": 1, "project": 1, "prompt": 3, "requires": 1, "run": 1, "running": 1, "s": 1, "server": 1, "so": 1, "start": 2, "starter": 1, "stops": 1, "surla": 1, "survives": 1, "target": 4, "text": 2, "the": 3, "then": 1, "this": 2, "to": 1, "try": 1, "verification": 1, "when": 1, "which": 1, "workspace": 1},
-				},
-				PayloadSchema: []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Candidate commit to build and run as this server's live CP3 target.\",\"properties\":{\"candidate_commit\":{\"description\":\"Full commit ID to build, in the candidate repository's object format.\",\"example\":\"4f0b3c1d2e5a6978877665544332211009988776\",\"pattern\":\"^([0-9a-f]{40}|[0-9a-f]{64})$\",\"type\":\"string\"}},\"required\":[\"candidate_commit\"],\"type\":\"object\"}"),
-				Payload:       declarations.metadata676(),
-			},
-			Payload: declarations.metadata668(),
-			Result:  declarations.metadata671(),
-		},
-	}
-}
-
-// metadata668 constructs one generated metadata declaration.
-func (declarations registryDeclarations) metadata668() *genregistry.ToolTypeMetadata {
-	registryText1 := "StartLiveTargetPayload"
-	return &genregistry.ToolTypeMetadata{
-		Name:                     &registryText1,
-		SchemaWithoutRootExample: []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Candidate commit to build and run as this server's live CP3 target.\",\"properties\":{\"candidate_commit\":{\"description\":\"Full commit ID to build, in the candidate repository's object format.\",\"example\":\"4f0b3c1d2e5a6978877665544332211009988776\",\"pattern\":\"^([0-9a-f]{40}|[0-9a-f]{64})$\",\"type\":\"string\"}},\"required\":[\"candidate_commit\"],\"type\":\"object\"}"),
-		Fields: []*genregistry.ToolFieldMetadata{
-			declarations.field669(),
-			declarations.field670(),
-		},
-	}
-}
-
-// field669 constructs one generated field declaration.
-func (registryDeclarations) field669() *genregistry.ToolFieldMetadata {
-	registryText1 := "object"
-	registryText2 := "Candidate commit to build and run as this server's live CP3 target."
-	return &genregistry.ToolFieldMetadata{
-		JSONType:    &registryText1,
-		Description: &registryText2,
-	}
-}
-
-// field670 constructs one generated field declaration.
-func (registryDeclarations) field670() *genregistry.ToolFieldMetadata {
-	registryText1 := "string"
-	registryText2 := "Full commit ID to build, in the candidate repository's object format."
-	return &genregistry.ToolFieldMetadata{
-		Path: []*genregistry.ToolFieldPathSegment{
-			{Segment: genregistry.NewToolFieldSegmentField("candidate_commit")},
-		},
-		JSONType:    &registryText1,
-		Description: &registryText2,
-	}
-}
-
-// metadata671 constructs one generated metadata declaration.
-func (declarations registryDeclarations) metadata671() *genregistry.ToolTypeMetadata {
-	registryText1 := "StartLiveTargetResult"
-	return &genregistry.ToolTypeMetadata{
-		Name:                     &registryText1,
-		SchemaWithoutRootExample: []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"The live CP3 target this server runs and binds draft_override to.\",\"properties\":{\"candidate_commit\":{\"description\":\"The commit the live target was built from.\",\"type\":\"string\"},\"message\":{\"description\":\"Operator-facing status explanation.\",\"type\":\"string\"},\"url\":{\"description\":\"Loopback origin of the running candidate, for trying requests such as its own API directly.\",\"type\":\"string\"}},\"required\":[\"candidate_commit\",\"url\",\"message\"],\"type\":\"object\"}"),
-		Fields: []*genregistry.ToolFieldMetadata{
-			declarations.field672(),
-			declarations.field673(),
-			declarations.field674(),
-			declarations.field675(),
-		},
-	}
-}
-
-// field672 constructs one generated field declaration.
-func (registryDeclarations) field672() *genregistry.ToolFieldMetadata {
-	registryText1 := "object"
-	registryText2 := "The live CP3 target this server runs and binds draft_override to."
-	return &genregistry.ToolFieldMetadata{
-		JSONType:    &registryText1,
-		Description: &registryText2,
-	}
-}
-
-// field673 constructs one generated field declaration.
-func (registryDeclarations) field673() *genregistry.ToolFieldMetadata {
-	registryText1 := "string"
-	registryText2 := "The commit the live target was built from."
-	return &genregistry.ToolFieldMetadata{
-		Path: []*genregistry.ToolFieldPathSegment{
-			{Segment: genregistry.NewToolFieldSegmentField("candidate_commit")},
-		},
-		JSONType:    &registryText1,
-		Description: &registryText2,
-	}
-}
-
-// field674 constructs one generated field declaration.
-func (registryDeclarations) field674() *genregistry.ToolFieldMetadata {
-	registryText1 := "string"
-	registryText2 := "Loopback origin of the running candidate, for trying requests such as its own API directly."
-	return &genregistry.ToolFieldMetadata{
-		Path: []*genregistry.ToolFieldPathSegment{
-			{Segment: genregistry.NewToolFieldSegmentField("url")},
-		},
-		JSONType:    &registryText1,
-		Description: &registryText2,
-	}
-}
-
-// field675 constructs one generated field declaration.
-func (registryDeclarations) field675() *genregistry.ToolFieldMetadata {
-	registryText1 := "string"
-	registryText2 := "Operator-facing status explanation."
-	return &genregistry.ToolFieldMetadata{
-		Path: []*genregistry.ToolFieldPathSegment{
-			{Segment: genregistry.NewToolFieldSegmentField("message")},
-		},
-		JSONType:    &registryText1,
-		Description: &registryText2,
-	}
-}
-
-// metadata676 constructs one generated metadata declaration.
-func (declarations registryDeclarations) metadata676() *genregistry.ToolTypeMetadata {
-	registryText1 := "StartLiveTargetPayload"
-	return &genregistry.ToolTypeMetadata{
-		Name:                     &registryText1,
-		SchemaWithoutRootExample: []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Candidate commit to build and run as this server's live CP3 target.\",\"properties\":{\"candidate_commit\":{\"description\":\"Full commit ID to build, in the candidate repository's object format.\",\"example\":\"4f0b3c1d2e5a6978877665544332211009988776\",\"pattern\":\"^([0-9a-f]{40}|[0-9a-f]{64})$\",\"type\":\"string\"}},\"required\":[\"candidate_commit\"],\"type\":\"object\"}"),
-		Fields: []*genregistry.ToolFieldMetadata{
-			declarations.field677(),
-			declarations.field678(),
-		},
-	}
-}
-
-// field677 constructs one generated field declaration.
-func (registryDeclarations) field677() *genregistry.ToolFieldMetadata {
-	registryText1 := "object"
-	registryText2 := "Candidate commit to build and run as this server's live CP3 target."
-	return &genregistry.ToolFieldMetadata{
-		JSONType:    &registryText1,
-		Description: &registryText2,
-	}
-}
-
-// field678 constructs one generated field declaration.
-func (registryDeclarations) field678() *genregistry.ToolFieldMetadata {
-	registryText1 := "string"
-	registryText2 := "Full commit ID to build, in the candidate repository's object format."
-	return &genregistry.ToolFieldMetadata{
-		Path: []*genregistry.ToolFieldPathSegment{
-			{Segment: genregistry.NewToolFieldSegmentField("candidate_commit")},
-		},
-		JSONType:    &registryText1,
-		Description: &registryText2,
-	}
-}
-
-// schema679 constructs one generated schema declaration.
-func (declarations registryDeclarations) schema679() *genregistry.ToolSchema {
-	registryText1 := "Stop this server's live CP3 target, if one runs. This discards every prompt draft applied to it; prompt text survives only when it is committed."
-	return &genregistry.ToolSchema{
-		Name:                   "surla.stop_live_target",
-		Description:            &registryText1,
-		PayloadSchema:          []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"properties\":{},\"type\":\"object\"}"),
-		ExecutionPayloadSchema: []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"properties\":{},\"type\":\"object\"}"),
-		ResultSchema:           []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Result of stopping this server's live CP3 target.\",\"properties\":{\"message\":{\"description\":\"Operator-facing status explanation.\",\"type\":\"string\"},\"stopped\":{\"description\":\"True when a live target was running and is now stopped; false when none was running.\",\"type\":\"boolean\"}},\"required\":[\"stopped\",\"message\"],\"type\":\"object\"}"),
-		ConsumerContract: &genregistry.ConsumerContract{
-			Kind:  "service",
-			Title: "Stop Live Target",
-			Search: &genregistry.ToolSearchDocument{
-				Length: 33,
-				Terms:  map[string]int{"applied": 1, "committed": 1, "cp3": 1, "discards": 1, "draft": 1, "every": 1, "if": 1, "is": 1, "it": 2, "live": 3, "one": 1, "only": 1, "prompt": 2, "runs": 1, "s": 1, "server": 1, "stop": 3, "surla": 1, "survives": 1, "target": 3, "text": 1, "this": 2, "to": 1, "when": 1},
-			},
-			RequiresUI: false,
-			TextOnly: &genregistry.TextOnlyToolContract{
-				ExecutionSchema: []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"properties\":{},\"type\":\"object\"}"),
-				Description:     "Stop this server's live CP3 target, if one runs. This discards every prompt draft applied to it; prompt text survives only when it is committed.",
-				Search: &genregistry.ToolSearchDocument{
-					Length: 33,
-					Terms:  map[string]int{"applied": 1, "committed": 1, "cp3": 1, "discards": 1, "draft": 1, "every": 1, "if": 1, "is": 1, "it": 2, "live": 3, "one": 1, "only": 1, "prompt": 2, "runs": 1, "s": 1, "server": 1, "stop": 3, "surla": 1, "survives": 1, "target": 3, "text": 1, "this": 2, "to": 1, "when": 1},
-				},
-				PayloadSchema: []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"properties\":{},\"type\":\"object\"}"),
-				Payload:       declarations.metadata686(),
-			},
-			Payload: declarations.metadata680(),
-			Result:  declarations.metadata682(),
-		},
-	}
-}
-
-// metadata680 constructs one generated metadata declaration.
-func (declarations registryDeclarations) metadata680() *genregistry.ToolTypeMetadata {
-	registryText1 := "StopLiveTargetPayload"
-	return &genregistry.ToolTypeMetadata{
-		Name:                     &registryText1,
-		SchemaWithoutRootExample: []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"properties\":{},\"type\":\"object\"}"),
-		Fields: []*genregistry.ToolFieldMetadata{
-			declarations.field681(),
-		},
-	}
-}
-
-// field681 constructs one generated field declaration.
-func (registryDeclarations) field681() *genregistry.ToolFieldMetadata {
-	registryText1 := "object"
-	return &genregistry.ToolFieldMetadata{
-		JSONType: &registryText1,
-	}
-}
-
-// metadata682 constructs one generated metadata declaration.
-func (declarations registryDeclarations) metadata682() *genregistry.ToolTypeMetadata {
-	registryText1 := "StopLiveTargetResult"
-	return &genregistry.ToolTypeMetadata{
-		Name:                     &registryText1,
-		SchemaWithoutRootExample: []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Result of stopping this server's live CP3 target.\",\"properties\":{\"message\":{\"description\":\"Operator-facing status explanation.\",\"type\":\"string\"},\"stopped\":{\"description\":\"True when a live target was running and is now stopped; false when none was running.\",\"type\":\"boolean\"}},\"required\":[\"stopped\",\"message\"],\"type\":\"object\"}"),
-		Fields: []*genregistry.ToolFieldMetadata{
-			declarations.field683(),
-			declarations.field684(),
-			declarations.field685(),
-		},
-	}
-}
-
-// field683 constructs one generated field declaration.
-func (registryDeclarations) field683() *genregistry.ToolFieldMetadata {
-	registryText1 := "object"
-	registryText2 := "Result of stopping this server's live CP3 target."
-	return &genregistry.ToolFieldMetadata{
-		JSONType:    &registryText1,
-		Description: &registryText2,
-	}
-}
-
-// field684 constructs one generated field declaration.
-func (registryDeclarations) field684() *genregistry.ToolFieldMetadata {
-	registryText1 := "boolean"
-	registryText2 := "True when a live target was running and is now stopped; false when none was running."
-	return &genregistry.ToolFieldMetadata{
-		Path: []*genregistry.ToolFieldPathSegment{
-			{Segment: genregistry.NewToolFieldSegmentField("stopped")},
-		},
-		JSONType:    &registryText1,
-		Description: &registryText2,
-	}
-}
-
-// field685 constructs one generated field declaration.
-func (registryDeclarations) field685() *genregistry.ToolFieldMetadata {
-	registryText1 := "string"
-	registryText2 := "Operator-facing status explanation."
-	return &genregistry.ToolFieldMetadata{
-		Path: []*genregistry.ToolFieldPathSegment{
-			{Segment: genregistry.NewToolFieldSegmentField("message")},
-		},
-		JSONType:    &registryText1,
-		Description: &registryText2,
-	}
-}
-
-// metadata686 constructs one generated metadata declaration.
-func (declarations registryDeclarations) metadata686() *genregistry.ToolTypeMetadata {
-	registryText1 := "StopLiveTargetPayload"
-	return &genregistry.ToolTypeMetadata{
-		Name:                     &registryText1,
-		SchemaWithoutRootExample: []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"properties\":{},\"type\":\"object\"}"),
-		Fields: []*genregistry.ToolFieldMetadata{
-			declarations.field687(),
-		},
-	}
-}
-
-// field687 constructs one generated field declaration.
-func (registryDeclarations) field687() *genregistry.ToolFieldMetadata {
-	registryText1 := "object"
-	return &genregistry.ToolFieldMetadata{
-		JSONType: &registryText1,
-	}
-}
-
-// schema688 constructs one generated schema declaration.
-func (declarations registryDeclarations) schema688() *genregistry.ToolSchema {
-	registryText1 := "Add missing requirements and checksums for the workspace's Go modules (go mod tidy) and write the changed go.mod, go.sum and go.work.sum. No input. Call it when check_project reports a missing go.sum or go.work.sum entry or a needed go.mod update, then call check_project again."
-	return &genregistry.ToolSchema{
-		Name:                   "surla.update_dependencies",
-		Description:            &registryText1,
-		PayloadSchema:          []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"properties\":{},\"type\":\"object\"}"),
-		ExecutionPayloadSchema: []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"properties\":{},\"type\":\"object\"}"),
-		ResultSchema:           []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Go module manifests rewritten in the workspace after go mod tidy ran in a protected copy.\",\"properties\":{\"files_written\":{\"description\":\"Workspace-relative go.mod, go.sum and go.work.sum files whose bytes changed and were written.\",\"items\":{\"type\":\"string\"},\"type\":\"array\"},\"message\":{\"description\":\"At most 16 KiB: what was updated, and Go's message for any module that could not be.\",\"type\":\"string\"},\"op_id\":{\"description\":\"Operation identifier; pass it to read_check_output to read the full output.\",\"type\":\"string\"}},\"required\":[\"op_id\",\"files_written\",\"message\"],\"type\":\"object\"}"),
-		ConsumerContract: &genregistry.ConsumerContract{
-			Kind:  "service",
-			Title: "Update Dependencies",
-			Search: &genregistry.ToolSearchDocument{
-				Length: 59,
-				Terms:  map[string]int{"a": 2, "add": 1, "again": 1, "and": 3, "call": 2, "changed": 1, "check": 2, "checksums": 1, "dependencies": 2, "entry": 1, "for": 1, "go": 8, "input": 1, "it": 1, "missing": 2, "mod": 3, "modules": 1, "needed": 1, "no": 1, "or": 2, "project": 2, "reports": 1, "requirements": 1, "s": 1, "sum": 4, "surla": 1, "the": 2, "then": 1, "tidy": 1, "update": 3, "when": 1, "work": 2, "workspace": 1, "write": 1},
-			},
-			RequiresUI: false,
-			TextOnly: &genregistry.TextOnlyToolContract{
-				ExecutionSchema: []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"properties\":{},\"type\":\"object\"}"),
-				Description:     "Add missing requirements and checksums for the workspace's Go modules (go mod tidy) and write the changed go.mod, go.sum and go.work.sum. No input. Call it when check_project reports a missing go.sum or go.work.sum entry or a needed go.mod update, then call check_project again.",
-				Search: &genregistry.ToolSearchDocument{
-					Length: 59,
-					Terms:  map[string]int{"a": 2, "add": 1, "again": 1, "and": 3, "call": 2, "changed": 1, "check": 2, "checksums": 1, "dependencies": 2, "entry": 1, "for": 1, "go": 8, "input": 1, "it": 1, "missing": 2, "mod": 3, "modules": 1, "needed": 1, "no": 1, "or": 2, "project": 2, "reports": 1, "requirements": 1, "s": 1, "sum": 4, "surla": 1, "the": 2, "then": 1, "tidy": 1, "update": 3, "when": 1, "work": 2, "workspace": 1, "write": 1},
-				},
-				PayloadSchema: []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"properties\":{},\"type\":\"object\"}"),
-				Payload:       declarations.metadata697(),
-			},
-			Payload: declarations.metadata689(),
-			Result:  declarations.metadata691(),
-		},
-	}
-}
-
-// metadata689 constructs one generated metadata declaration.
-func (declarations registryDeclarations) metadata689() *genregistry.ToolTypeMetadata {
-	registryText1 := "UpdateDependenciesPayload"
-	return &genregistry.ToolTypeMetadata{
-		Name:                     &registryText1,
-		SchemaWithoutRootExample: []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"properties\":{},\"type\":\"object\"}"),
-		Fields: []*genregistry.ToolFieldMetadata{
-			declarations.field690(),
-		},
-	}
-}
-
-// field690 constructs one generated field declaration.
-func (registryDeclarations) field690() *genregistry.ToolFieldMetadata {
-	registryText1 := "object"
-	return &genregistry.ToolFieldMetadata{
-		JSONType: &registryText1,
-	}
-}
-
-// metadata691 constructs one generated metadata declaration.
-func (declarations registryDeclarations) metadata691() *genregistry.ToolTypeMetadata {
-	registryText1 := "UpdateDependenciesResult"
-	return &genregistry.ToolTypeMetadata{
-		Name:                     &registryText1,
-		SchemaWithoutRootExample: []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Go module manifests rewritten in the workspace after go mod tidy ran in a protected copy.\",\"properties\":{\"files_written\":{\"description\":\"Workspace-relative go.mod, go.sum and go.work.sum files whose bytes changed and were written.\",\"items\":{\"type\":\"string\"},\"type\":\"array\"},\"message\":{\"description\":\"At most 16 KiB: what was updated, and Go's message for any module that could not be.\",\"type\":\"string\"},\"op_id\":{\"description\":\"Operation identifier; pass it to read_check_output to read the full output.\",\"type\":\"string\"}},\"required\":[\"op_id\",\"files_written\",\"message\"],\"type\":\"object\"}"),
-		Fields: []*genregistry.ToolFieldMetadata{
-			declarations.field692(),
-			declarations.field693(),
-			declarations.field694(),
-			declarations.field695(),
-			declarations.field696(),
-		},
-	}
-}
-
-// field692 constructs one generated field declaration.
-func (registryDeclarations) field692() *genregistry.ToolFieldMetadata {
-	registryText1 := "object"
-	registryText2 := "Go module manifests rewritten in the workspace after go mod tidy ran in a protected copy."
-	return &genregistry.ToolFieldMetadata{
-		JSONType:    &registryText1,
-		Description: &registryText2,
-	}
-}
-
-// field693 constructs one generated field declaration.
-func (registryDeclarations) field693() *genregistry.ToolFieldMetadata {
-	registryText1 := "string"
-	registryText2 := "Operation identifier; pass it to read_check_output to read the full output."
-	return &genregistry.ToolFieldMetadata{
-		Path: []*genregistry.ToolFieldPathSegment{
-			{Segment: genregistry.NewToolFieldSegmentField("op_id")},
-		},
-		JSONType:    &registryText1,
-		Description: &registryText2,
-	}
-}
-
-// field694 constructs one generated field declaration.
-func (registryDeclarations) field694() *genregistry.ToolFieldMetadata {
-	registryText1 := "array"
-	registryText2 := "Workspace-relative go.mod, go.sum and go.work.sum files whose bytes changed and were written."
-	return &genregistry.ToolFieldMetadata{
-		Path: []*genregistry.ToolFieldPathSegment{
-			{Segment: genregistry.NewToolFieldSegmentField("files_written")},
-		},
-		JSONType:    &registryText1,
-		Description: &registryText2,
-	}
-}
-
-// field695 constructs one generated field declaration.
-func (registryDeclarations) field695() *genregistry.ToolFieldMetadata {
-	registryText1 := "string"
-	registryText2 := "Workspace-relative go.mod, go.sum and go.work.sum files whose bytes changed and were written."
-	return &genregistry.ToolFieldMetadata{
-		Path: []*genregistry.ToolFieldPathSegment{
-			{Segment: genregistry.NewToolFieldSegmentField("files_written")},
-			{Segment: genregistry.NewToolFieldSegmentElement(&genregistry.ToolCollectionElement{})},
-		},
-		JSONType:    &registryText1,
-		Description: &registryText2,
-	}
-}
-
-// field696 constructs one generated field declaration.
-func (registryDeclarations) field696() *genregistry.ToolFieldMetadata {
-	registryText1 := "string"
-	registryText2 := "At most 16 KiB: what was updated, and Go's message for any module that could not be."
-	return &genregistry.ToolFieldMetadata{
-		Path: []*genregistry.ToolFieldPathSegment{
-			{Segment: genregistry.NewToolFieldSegmentField("message")},
-		},
-		JSONType:    &registryText1,
-		Description: &registryText2,
-	}
-}
-
-// metadata697 constructs one generated metadata declaration.
-func (declarations registryDeclarations) metadata697() *genregistry.ToolTypeMetadata {
-	registryText1 := "UpdateDependenciesPayload"
-	return &genregistry.ToolTypeMetadata{
-		Name:                     &registryText1,
-		SchemaWithoutRootExample: []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"properties\":{},\"type\":\"object\"}"),
-		Fields: []*genregistry.ToolFieldMetadata{
-			declarations.field698(),
-		},
-	}
-}
-
-// field698 constructs one generated field declaration.
-func (registryDeclarations) field698() *genregistry.ToolFieldMetadata {
-	registryText1 := "object"
-	return &genregistry.ToolFieldMetadata{
-		JSONType: &registryText1,
-	}
-}
-
-// schema699 constructs one generated schema declaration.
-func (declarations registryDeclarations) schema699() *genregistry.ToolSchema {
-	registryText1 := "Start CP4 verification of a candidate commit for the confirmed Change Card revision; returns a run_id to read with get_verification. Requires a committed starter project in the bound workspace or -verification-config."
-	return &genregistry.ToolSchema{
-		Name:                   "surla.verify_change",
-		Description:            &registryText1,
-		PayloadSchema:          []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Names the confirmed Change Card revision and the candidate commit to verify. What is built and which evaluator suite runs come from the operator's configuration of surla serve, never from the caller.\",\"properties\":{\"candidate_commit\":{\"description\":\"Full commit ID of the candidate to build and verify (40 or 64 lowercase hex characters).\",\"pattern\":\"^([0-9a-f]{40}|[0-9a-f]{64})$\",\"type\":\"string\"},\"change_id\":{\"description\":\"Confirmed Change Card identifier.\",\"type\":\"string\"},\"request_revision\":{\"description\":\"Current request_revision of the confirmed Change Card.\",\"type\":\"string\"}},\"required\":[\"change_id\",\"request_revision\",\"candidate_commit\"],\"type\":\"object\"}"),
-		ExecutionPayloadSchema: []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Names the confirmed Change Card revision and the candidate commit to verify. What is built and which evaluator suite runs come from the operator's configuration of surla serve, never from the caller.\",\"properties\":{\"candidate_commit\":{\"description\":\"Full commit ID of the candidate to build and verify (40 or 64 lowercase hex characters).\",\"pattern\":\"^([0-9a-f]{40}|[0-9a-f]{64})$\",\"type\":\"string\"},\"change_id\":{\"description\":\"Confirmed Change Card identifier.\",\"type\":\"string\"},\"request_revision\":{\"description\":\"Current request_revision of the confirmed Change Card.\",\"type\":\"string\"}},\"required\":[\"change_id\",\"request_revision\",\"candidate_commit\"],\"type\":\"object\"}"),
-		ResultSchema:           []byte("{\"$defs\":{\"BuilderVerificationReport\":{\"additionalProperties\":false,\"description\":\"The builder view of a Checkpoint 4 verification report: counts, verdict and repair scenario checks. Holdout details, evidence and logs stay with the evaluator.\",\"properties\":{\"counts\":{\"$ref\":\"#/$defs/VerificationCounts\",\"description\":\"Every declared scenario, counted by outcome.\"},\"passed\":{\"description\":\"The verdict: true only when every declared scenario passed and the suite ran cleanly.\",\"type\":\"boolean\"},\"report_digest\":{\"description\":\"SHA-256 digest of the full report the evaluator saved; approve_merge and surla approve take this digest.\",\"type\":\"string\"},\"scenarios\":{\"description\":\"Every declared scenario in declaration order.\",\"items\":{\"$ref\":\"#/$defs/VerificationScenario\"},\"type\":\"array\"},\"suite_failed\":{\"description\":\"Whether the evaluator suite itself failed or ended abnormally.\",\"type\":\"boolean\"}},\"required\":[\"report_digest\",\"counts\",\"passed\",\"suite_failed\",\"scenarios\"],\"title\":\"BuilderVerificationReport\",\"type\":\"object\"},\"VerificationCheck\":{\"additionalProperties\":false,\"description\":\"One deterministic check of a repair scenario.\",\"properties\":{\"diagnostic\":{\"description\":\"Why the check failed; empty when it passed.\",\"type\":\"string\"},\"name\":{\"description\":\"Check name.\",\"type\":\"string\"},\"passed\":{\"description\":\"Whether the check passed.\",\"type\":\"boolean\"}},\"required\":[\"name\",\"passed\"],\"title\":\"VerificationCheck\",\"type\":\"object\"},\"VerificationCompleted\":{\"additionalProperties\":false,\"description\":\"The run produced a verification report. Its verdict is report.passed.\",\"properties\":{\"environment\":{\"description\":\"Dependency profile the suite ran the candidate with, such as sim.\",\"type\":\"string\"},\"report\":{\"$ref\":\"#/$defs/BuilderVerificationReport\",\"description\":\"The builder view of the report.\"},\"suite_id\":{\"description\":\"Evaluator suite the report was produced by.\",\"type\":\"string\"}},\"required\":[\"suite_id\",\"environment\",\"report\"],\"title\":\"VerificationCompleted\",\"type\":\"object\"},\"VerificationCounts\":{\"additionalProperties\":false,\"description\":\"Every declared scenario, counted by outcome.\",\"properties\":{\"failed\":{\"description\":\"Scenarios whose checks failed.\",\"format\":\"int64\",\"type\":\"integer\"},\"harness_error\":{\"description\":\"Scenarios that could not be evaluated.\",\"format\":\"int64\",\"type\":\"integer\"},\"not_run\":{\"description\":\"Declared scenarios the suite did not report.\",\"format\":\"int64\",\"type\":\"integer\"},\"passed\":{\"description\":\"Scenarios that passed.\",\"format\":\"int64\",\"type\":\"integer\"},\"required\":{\"description\":\"Scenarios the suite declares.\",\"format\":\"int64\",\"type\":\"integer\"}},\"required\":[\"required\",\"passed\",\"failed\",\"not_run\",\"harness_error\"],\"title\":\"VerificationCounts\",\"type\":\"object\"},\"VerificationNotCompleted\":{\"additionalProperties\":false,\"description\":\"The run was accepted but did not complete: a step failed, or its processes ended or were canceled or timed out before it finished. The summary states where it stopped, without command output; full evidence, including any partial report saved while it was being stopped, stays with the evaluator.\",\"properties\":{\"kind\":{\"description\":\"execution_failed when a step failed; interrupted when the run's process ended before it finished.\",\"enum\":[\"execution_failed\",\"interrupted\"],\"type\":\"string\"},\"stage\":{\"description\":\"Where the run stopped.\",\"enum\":[\"checkout\",\"build\",\"describe\",\"suite\",\"report\",\"supervise\"],\"type\":\"string\"},\"summary\":{\"description\":\"Builder-safe description of what stopped the run; never command output.\",\"type\":\"string\"}},\"required\":[\"kind\",\"stage\",\"summary\"],\"title\":\"VerificationNotCompleted\",\"type\":\"object\"},\"VerificationRunning\":{\"additionalProperties\":false,\"description\":\"The run is still building or evaluating the candidate.\",\"properties\":{\"started_at\":{\"description\":\"When the run was accepted.\",\"format\":\"date-time\",\"type\":\"string\"}},\"required\":[\"started_at\"],\"title\":\"VerificationRunning\",\"type\":\"object\"},\"VerificationScenario\":{\"additionalProperties\":false,\"description\":\"One declared scenario as builders see it. Repair scenarios carry their name, checks and environment error; holdout scenarios appear only as holdout-\\u003cn\\u003e with their outcome.\",\"properties\":{\"checks\":{\"description\":\"The repair scenario's checks; empty for holdouts.\",\"items\":{\"$ref\":\"#/$defs/VerificationCheck\"},\"type\":\"array\"},\"error\":{\"description\":\"The repair scenario's environment error; empty for holdouts.\",\"type\":\"string\"},\"id\":{\"description\":\"Scenario name for a repair scenario, or holdout-\\u003cn\\u003e for a holdout.\",\"type\":\"string\"},\"outcome\":{\"description\":\"How the scenario ended.\",\"enum\":[\"passed\",\"failed\",\"not_run\",\"harness_error\"],\"type\":\"string\"}},\"required\":[\"id\",\"outcome\"],\"title\":\"VerificationScenario\",\"type\":\"object\"}},\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"One Checkpoint 4 verification run of a candidate commit for a confirmed Change Card revision, and its current state. The run keeps the revision it was started for, so a later confirm_intent does not change it.\",\"properties\":{\"accepted_at\":{\"description\":\"When the run was accepted.\",\"format\":\"date-time\",\"type\":\"string\"},\"candidate_commit\":{\"description\":\"Candidate commit the run builds and verifies.\",\"type\":\"string\"},\"change_id\":{\"description\":\"Change Card the run verifies.\",\"type\":\"string\"},\"request_revision\":{\"description\":\"Change Card revision the run verifies.\",\"type\":\"string\"},\"run_id\":{\"description\":\"Verification run identifier; get_verification takes it.\",\"type\":\"string\"},\"state\":{\"description\":\"Exactly one of running, completed or not_completed.\",\"oneOf\":[{\"additionalProperties\":false,\"properties\":{\"type\":{\"enum\":[\"running\"],\"type\":\"string\"},\"value\":{\"$ref\":\"#/$defs/VerificationRunning\"}},\"required\":[\"type\",\"value\"],\"type\":\"object\"},{\"additionalProperties\":false,\"properties\":{\"type\":{\"enum\":[\"completed\"],\"type\":\"string\"},\"value\":{\"$ref\":\"#/$defs/VerificationCompleted\"}},\"required\":[\"type\",\"value\"],\"type\":\"object\"},{\"additionalProperties\":false,\"properties\":{\"type\":{\"enum\":[\"not_completed\"],\"type\":\"string\"},\"value\":{\"$ref\":\"#/$defs/VerificationNotCompleted\"}},\"required\":[\"type\",\"value\"],\"type\":\"object\"}],\"type\":\"object\"},\"suite_commit\":{\"description\":\"Evaluator suite commit the operator configured for the run.\",\"type\":\"string\"}},\"required\":[\"run_id\",\"change_id\",\"request_revision\",\"candidate_commit\",\"suite_commit\",\"accepted_at\",\"state\"],\"type\":\"object\"}"),
-		ConsumerContract: &genregistry.ConsumerContract{
-			Kind:  "service",
-			Title: "Verify Change",
-			Search: &genregistry.ToolSearchDocument{
-				Length: 39,
-				Terms:  map[string]int{"a": 3, "bound": 1, "candidate": 1, "card": 1, "change": 3, "commit": 1, "committed": 1, "config": 1, "confirmed": 1, "cp4": 1, "for": 1, "get": 1, "id": 1, "in": 1, "of": 1, "or": 1, "project": 1, "read": 1, "requires": 1, "returns": 1, "revision": 1, "run": 1, "start": 1, "starter": 1, "surla": 1, "the": 2, "to": 1, "verification": 3, "verify": 2, "with": 1, "workspace": 1},
-			},
-			RequiresUI: false,
-			TextOnly: &genregistry.TextOnlyToolContract{
-				ExecutionSchema: []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Names the confirmed Change Card revision and the candidate commit to verify. What is built and which evaluator suite runs come from the operator's configuration of surla serve, never from the caller.\",\"properties\":{\"candidate_commit\":{\"description\":\"Full commit ID of the candidate to build and verify (40 or 64 lowercase hex characters).\",\"pattern\":\"^([0-9a-f]{40}|[0-9a-f]{64})$\",\"type\":\"string\"},\"change_id\":{\"description\":\"Confirmed Change Card identifier.\",\"type\":\"string\"},\"request_revision\":{\"description\":\"Current request_revision of the confirmed Change Card.\",\"type\":\"string\"}},\"required\":[\"change_id\",\"request_revision\",\"candidate_commit\"],\"type\":\"object\"}"),
-				Description:     "Start CP4 verification of a candidate commit for the confirmed Change Card revision; returns a run_id to read with get_verification. Requires a committed starter project in the bound workspace or -verification-config.",
-				Search: &genregistry.ToolSearchDocument{
-					Length: 39,
-					Terms:  map[string]int{"a": 3, "bound": 1, "candidate": 1, "card": 1, "change": 3, "commit": 1, "committed": 1, "config": 1, "confirmed": 1, "cp4": 1, "for": 1, "get": 1, "id": 1, "in": 1, "of": 1, "or": 1, "project": 1, "read": 1, "requires": 1, "returns": 1, "revision": 1, "run": 1, "start": 1, "starter": 1, "surla": 1, "the": 2, "to": 1, "verification": 3, "verify": 2, "with": 1, "workspace": 1},
-				},
-				PayloadSchema: []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Names the confirmed Change Card revision and the candidate commit to verify. What is built and which evaluator suite runs come from the operator's configuration of surla serve, never from the caller.\",\"properties\":{\"candidate_commit\":{\"description\":\"Full commit ID of the candidate to build and verify (40 or 64 lowercase hex characters).\",\"pattern\":\"^([0-9a-f]{40}|[0-9a-f]{64})$\",\"type\":\"string\"},\"change_id\":{\"description\":\"Confirmed Change Card identifier.\",\"type\":\"string\"},\"request_revision\":{\"description\":\"Current request_revision of the confirmed Change Card.\",\"type\":\"string\"}},\"required\":[\"change_id\",\"request_revision\",\"candidate_commit\"],\"type\":\"object\"}"),
-				Payload:       declarations.metadata744(),
-			},
-			Payload: declarations.metadata700(),
-			Result:  declarations.metadata705(),
-		},
-	}
-}
-
-// metadata700 constructs one generated metadata declaration.
-func (declarations registryDeclarations) metadata700() *genregistry.ToolTypeMetadata {
-	registryText1 := "VerifyChangePayload"
-	return &genregistry.ToolTypeMetadata{
-		Name:                     &registryText1,
-		SchemaWithoutRootExample: []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Names the confirmed Change Card revision and the candidate commit to verify. What is built and which evaluator suite runs come from the operator's configuration of surla serve, never from the caller.\",\"properties\":{\"candidate_commit\":{\"description\":\"Full commit ID of the candidate to build and verify (40 or 64 lowercase hex characters).\",\"pattern\":\"^([0-9a-f]{40}|[0-9a-f]{64})$\",\"type\":\"string\"},\"change_id\":{\"description\":\"Confirmed Change Card identifier.\",\"type\":\"string\"},\"request_revision\":{\"description\":\"Current request_revision of the confirmed Change Card.\",\"type\":\"string\"}},\"required\":[\"change_id\",\"request_revision\",\"candidate_commit\"],\"type\":\"object\"}"),
-		Fields: []*genregistry.ToolFieldMetadata{
-			declarations.field701(),
-			declarations.field702(),
-			declarations.field703(),
-			declarations.field704(),
-		},
-	}
-}
-
-// field701 constructs one generated field declaration.
-func (registryDeclarations) field701() *genregistry.ToolFieldMetadata {
-	registryText1 := "object"
-	registryText2 := "Names the confirmed Change Card revision and the candidate commit to verify. What is built and which evaluator suite runs come from the operator's configuration of surla serve, never from the caller."
-	return &genregistry.ToolFieldMetadata{
-		JSONType:    &registryText1,
-		Description: &registryText2,
-	}
-}
-
-// field702 constructs one generated field declaration.
-func (registryDeclarations) field702() *genregistry.ToolFieldMetadata {
-	registryText1 := "string"
-	registryText2 := "Confirmed Change Card identifier."
-	return &genregistry.ToolFieldMetadata{
-		Path: []*genregistry.ToolFieldPathSegment{
-			{Segment: genregistry.NewToolFieldSegmentField("change_id")},
-		},
-		JSONType:    &registryText1,
-		Description: &registryText2,
-	}
-}
-
-// field703 constructs one generated field declaration.
-func (registryDeclarations) field703() *genregistry.ToolFieldMetadata {
-	registryText1 := "string"
-	registryText2 := "Current request_revision of the confirmed Change Card."
-	return &genregistry.ToolFieldMetadata{
-		Path: []*genregistry.ToolFieldPathSegment{
-			{Segment: genregistry.NewToolFieldSegmentField("request_revision")},
-		},
-		JSONType:    &registryText1,
-		Description: &registryText2,
-	}
-}
-
-// field704 constructs one generated field declaration.
-func (registryDeclarations) field704() *genregistry.ToolFieldMetadata {
-	registryText1 := "string"
-	registryText2 := "Full commit ID of the candidate to build and verify (40 or 64 lowercase hex characters)."
-	return &genregistry.ToolFieldMetadata{
-		Path: []*genregistry.ToolFieldPathSegment{
-			{Segment: genregistry.NewToolFieldSegmentField("candidate_commit")},
-		},
-		JSONType:    &registryText1,
-		Description: &registryText2,
-	}
-}
-
-// metadata705 constructs one generated metadata declaration.
-func (declarations registryDeclarations) metadata705() *genregistry.ToolTypeMetadata {
-	registryText1 := "VerifyChangeResult"
-	return &genregistry.ToolTypeMetadata{
-		Name:                     &registryText1,
-		SchemaWithoutRootExample: []byte("{\"$defs\":{\"BuilderVerificationReport\":{\"additionalProperties\":false,\"description\":\"The builder view of a Checkpoint 4 verification report: counts, verdict and repair scenario checks. Holdout details, evidence and logs stay with the evaluator.\",\"properties\":{\"counts\":{\"$ref\":\"#/$defs/VerificationCounts\",\"description\":\"Every declared scenario, counted by outcome.\"},\"passed\":{\"description\":\"The verdict: true only when every declared scenario passed and the suite ran cleanly.\",\"type\":\"boolean\"},\"report_digest\":{\"description\":\"SHA-256 digest of the full report the evaluator saved; approve_merge and surla approve take this digest.\",\"type\":\"string\"},\"scenarios\":{\"description\":\"Every declared scenario in declaration order.\",\"items\":{\"$ref\":\"#/$defs/VerificationScenario\"},\"type\":\"array\"},\"suite_failed\":{\"description\":\"Whether the evaluator suite itself failed or ended abnormally.\",\"type\":\"boolean\"}},\"required\":[\"report_digest\",\"counts\",\"passed\",\"suite_failed\",\"scenarios\"],\"title\":\"BuilderVerificationReport\",\"type\":\"object\"},\"VerificationCheck\":{\"additionalProperties\":false,\"description\":\"One deterministic check of a repair scenario.\",\"properties\":{\"diagnostic\":{\"description\":\"Why the check failed; empty when it passed.\",\"type\":\"string\"},\"name\":{\"description\":\"Check name.\",\"type\":\"string\"},\"passed\":{\"description\":\"Whether the check passed.\",\"type\":\"boolean\"}},\"required\":[\"name\",\"passed\"],\"title\":\"VerificationCheck\",\"type\":\"object\"},\"VerificationCompleted\":{\"additionalProperties\":false,\"description\":\"The run produced a verification report. Its verdict is report.passed.\",\"properties\":{\"environment\":{\"description\":\"Dependency profile the suite ran the candidate with, such as sim.\",\"type\":\"string\"},\"report\":{\"$ref\":\"#/$defs/BuilderVerificationReport\",\"description\":\"The builder view of the report.\"},\"suite_id\":{\"description\":\"Evaluator suite the report was produced by.\",\"type\":\"string\"}},\"required\":[\"suite_id\",\"environment\",\"report\"],\"title\":\"VerificationCompleted\",\"type\":\"object\"},\"VerificationCounts\":{\"additionalProperties\":false,\"description\":\"Every declared scenario, counted by outcome.\",\"properties\":{\"failed\":{\"description\":\"Scenarios whose checks failed.\",\"format\":\"int64\",\"type\":\"integer\"},\"harness_error\":{\"description\":\"Scenarios that could not be evaluated.\",\"format\":\"int64\",\"type\":\"integer\"},\"not_run\":{\"description\":\"Declared scenarios the suite did not report.\",\"format\":\"int64\",\"type\":\"integer\"},\"passed\":{\"description\":\"Scenarios that passed.\",\"format\":\"int64\",\"type\":\"integer\"},\"required\":{\"description\":\"Scenarios the suite declares.\",\"format\":\"int64\",\"type\":\"integer\"}},\"required\":[\"required\",\"passed\",\"failed\",\"not_run\",\"harness_error\"],\"title\":\"VerificationCounts\",\"type\":\"object\"},\"VerificationNotCompleted\":{\"additionalProperties\":false,\"description\":\"The run was accepted but did not complete: a step failed, or its processes ended or were canceled or timed out before it finished. The summary states where it stopped, without command output; full evidence, including any partial report saved while it was being stopped, stays with the evaluator.\",\"properties\":{\"kind\":{\"description\":\"execution_failed when a step failed; interrupted when the run's process ended before it finished.\",\"enum\":[\"execution_failed\",\"interrupted\"],\"type\":\"string\"},\"stage\":{\"description\":\"Where the run stopped.\",\"enum\":[\"checkout\",\"build\",\"describe\",\"suite\",\"report\",\"supervise\"],\"type\":\"string\"},\"summary\":{\"description\":\"Builder-safe description of what stopped the run; never command output.\",\"type\":\"string\"}},\"required\":[\"kind\",\"stage\",\"summary\"],\"title\":\"VerificationNotCompleted\",\"type\":\"object\"},\"VerificationRunning\":{\"additionalProperties\":false,\"description\":\"The run is still building or evaluating the candidate.\",\"properties\":{\"started_at\":{\"description\":\"When the run was accepted.\",\"format\":\"date-time\",\"type\":\"string\"}},\"required\":[\"started_at\"],\"title\":\"VerificationRunning\",\"type\":\"object\"},\"VerificationScenario\":{\"additionalProperties\":false,\"description\":\"One declared scenario as builders see it. Repair scenarios carry their name, checks and environment error; holdout scenarios appear only as holdout-\\u003cn\\u003e with their outcome.\",\"properties\":{\"checks\":{\"description\":\"The repair scenario's checks; empty for holdouts.\",\"items\":{\"$ref\":\"#/$defs/VerificationCheck\"},\"type\":\"array\"},\"error\":{\"description\":\"The repair scenario's environment error; empty for holdouts.\",\"type\":\"string\"},\"id\":{\"description\":\"Scenario name for a repair scenario, or holdout-\\u003cn\\u003e for a holdout.\",\"type\":\"string\"},\"outcome\":{\"description\":\"How the scenario ended.\",\"enum\":[\"passed\",\"failed\",\"not_run\",\"harness_error\"],\"type\":\"string\"}},\"required\":[\"id\",\"outcome\"],\"title\":\"VerificationScenario\",\"type\":\"object\"}},\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"One Checkpoint 4 verification run of a candidate commit for a confirmed Change Card revision, and its current state. The run keeps the revision it was started for, so a later confirm_intent does not change it.\",\"properties\":{\"accepted_at\":{\"description\":\"When the run was accepted.\",\"format\":\"date-time\",\"type\":\"string\"},\"candidate_commit\":{\"description\":\"Candidate commit the run builds and verifies.\",\"type\":\"string\"},\"change_id\":{\"description\":\"Change Card the run verifies.\",\"type\":\"string\"},\"request_revision\":{\"description\":\"Change Card revision the run verifies.\",\"type\":\"string\"},\"run_id\":{\"description\":\"Verification run identifier; get_verification takes it.\",\"type\":\"string\"},\"state\":{\"description\":\"Exactly one of running, completed or not_completed.\",\"oneOf\":[{\"additionalProperties\":false,\"properties\":{\"type\":{\"enum\":[\"running\"],\"type\":\"string\"},\"value\":{\"$ref\":\"#/$defs/VerificationRunning\"}},\"required\":[\"type\",\"value\"],\"type\":\"object\"},{\"additionalProperties\":false,\"properties\":{\"type\":{\"enum\":[\"completed\"],\"type\":\"string\"},\"value\":{\"$ref\":\"#/$defs/VerificationCompleted\"}},\"required\":[\"type\",\"value\"],\"type\":\"object\"},{\"additionalProperties\":false,\"properties\":{\"type\":{\"enum\":[\"not_completed\"],\"type\":\"string\"},\"value\":{\"$ref\":\"#/$defs/VerificationNotCompleted\"}},\"required\":[\"type\",\"value\"],\"type\":\"object\"}],\"type\":\"object\"},\"suite_commit\":{\"description\":\"Evaluator suite commit the operator configured for the run.\",\"type\":\"string\"}},\"required\":[\"run_id\",\"change_id\",\"request_revision\",\"candidate_commit\",\"suite_commit\",\"accepted_at\",\"state\"],\"type\":\"object\"}"),
-		Fields: []*genregistry.ToolFieldMetadata{
-			declarations.field706(),
-			declarations.field707(),
-			declarations.field708(),
-			declarations.field709(),
-			declarations.field710(),
-			declarations.field711(),
-			declarations.field712(),
 			declarations.field713(),
 			declarations.field714(),
 			declarations.field715(),
@@ -11035,19 +11228,950 @@ func (declarations registryDeclarations) metadata705() *genregistry.ToolTypeMeta
 			declarations.field734(),
 			declarations.field735(),
 			declarations.field736(),
-			declarations.field737(),
-			declarations.field738(),
-			declarations.field739(),
-			declarations.field740(),
-			declarations.field741(),
-			declarations.field742(),
-			declarations.field743(),
 		},
 	}
 }
 
-// field706 constructs one generated field declaration.
-func (registryDeclarations) field706() *genregistry.ToolFieldMetadata {
+// field713 constructs one generated field declaration.
+func (registryDeclarations) field713() *genregistry.ToolFieldMetadata {
+	registryText1 := "object"
+	registryText2 := "Revised operator feature request and the caller's analysis of it, saved as the next revision of an existing Checkpoint 1 Change Card."
+	return &genregistry.ToolFieldMetadata{
+		JSONType:    &registryText1,
+		Description: &registryText2,
+	}
+}
+
+// field714 constructs one generated field declaration.
+func (registryDeclarations) field714() *genregistry.ToolFieldMetadata {
+	registryText1 := "string"
+	registryText2 := "Change identifier."
+	return &genregistry.ToolFieldMetadata{
+		Path: []*genregistry.ToolFieldPathSegment{
+			{Segment: genregistry.NewToolFieldSegmentField("change_id")},
+		},
+		JSONType:    &registryText1,
+		Description: &registryText2,
+	}
+}
+
+// field715 constructs one generated field declaration.
+func (registryDeclarations) field715() *genregistry.ToolFieldMetadata {
+	registryText1 := "string"
+	registryText2 := "Current CP1 request_revision digest being revised."
+	return &genregistry.ToolFieldMetadata{
+		Path: []*genregistry.ToolFieldPathSegment{
+			{Segment: genregistry.NewToolFieldSegmentField("request_revision")},
+		},
+		JSONType:    &registryText1,
+		Description: &registryText2,
+	}
+}
+
+// field716 constructs one generated field declaration.
+func (registryDeclarations) field716() *genregistry.ToolFieldMetadata {
+	registryText1 := "string"
+	registryText2 := "Revised operator feature request."
+	return &genregistry.ToolFieldMetadata{
+		Path: []*genregistry.ToolFieldPathSegment{
+			{Segment: genregistry.NewToolFieldSegmentField("prompt")},
+		},
+		JSONType:    &registryText1,
+		Description: &registryText2,
+	}
+}
+
+// field717 constructs one generated field declaration.
+func (registryDeclarations) field717() *genregistry.ToolFieldMetadata {
+	registryText1 := "string"
+	registryText2 := "Updated Goa design source the analysis was made against (the target's design/*.go files). Surla saves it with the card and includes it in request_revision; it does not interpret it. When omitted on a workspace-backed card with a bound workspace, Surla records design/*.go from the bound workspace again; otherwise the card's saved design source is kept."
+	return &genregistry.ToolFieldMetadata{
+		Path: []*genregistry.ToolFieldPathSegment{
+			{Segment: genregistry.NewToolFieldSegmentField("design_source")},
+		},
+		JSONType:    &registryText1,
+		Description: &registryText2,
+	}
+}
+
+// field718 constructs one generated field declaration.
+func (registryDeclarations) field718() *genregistry.ToolFieldMetadata {
+	registryText1 := "object"
+	registryText2 := "Your analysis of the revised prompt against the current card and the target's current design."
+	return &genregistry.ToolFieldMetadata{
+		Path: []*genregistry.ToolFieldPathSegment{
+			{Segment: genregistry.NewToolFieldSegmentField("analysis")},
+		},
+		JSONType:    &registryText1,
+		Description: &registryText2,
+	}
+}
+
+// field719 constructs one generated field declaration.
+func (registryDeclarations) field719() *genregistry.ToolFieldMetadata {
+	registryText1 := "string"
+	registryText2 := "Plain-English description of the revised behavior, including the details the request, the design or confirmed answers already settle."
+	return &genregistry.ToolFieldMetadata{
+		Path: []*genregistry.ToolFieldPathSegment{
+			{Segment: genregistry.NewToolFieldSegmentField("analysis")},
+			{Segment: genregistry.NewToolFieldSegmentField("summary")},
+		},
+		JSONType:    &registryText1,
+		Description: &registryText2,
+	}
+}
+
+// field720 constructs one generated field declaration.
+func (registryDeclarations) field720() *genregistry.ToolFieldMetadata {
+	registryText1 := "array"
+	registryText2 := "Open questions only the requester can answer: product, domain, or operational choices that change observable behavior or service boundaries. Do not ask about details the request, the design or a confirmed answer already settle; state them in summary, or in examples when they change an observable outcome. Send an empty list when nothing is open."
+	return &genregistry.ToolFieldMetadata{
+		Path: []*genregistry.ToolFieldPathSegment{
+			{Segment: genregistry.NewToolFieldSegmentField("analysis")},
+			{Segment: genregistry.NewToolFieldSegmentField("ambiguities")},
+		},
+		JSONType:    &registryText1,
+		Description: &registryText2,
+	}
+}
+
+// field721 constructs one generated field declaration.
+func (registryDeclarations) field721() *genregistry.ToolFieldMetadata {
+	registryText1 := "object"
+	registryText2 := "Open questions only the requester can answer: product, domain, or operational choices that change observable behavior or service boundaries. Do not ask about details the request, the design or a confirmed answer already settle; state them in summary, or in examples when they change an observable outcome. Send an empty list when nothing is open."
+	return &genregistry.ToolFieldMetadata{
+		Path: []*genregistry.ToolFieldPathSegment{
+			{Segment: genregistry.NewToolFieldSegmentField("analysis")},
+			{Segment: genregistry.NewToolFieldSegmentField("ambiguities")},
+			{Segment: genregistry.NewToolFieldSegmentElement(&genregistry.ToolCollectionElement{})},
+		},
+		JSONType:    &registryText1,
+		Description: &registryText2,
+	}
+}
+
+// field722 constructs one generated field declaration.
+func (registryDeclarations) field722() *genregistry.ToolFieldMetadata {
+	registryText1 := "string"
+	registryText2 := "The decision in plain language, saying what the choice changes."
+	return &genregistry.ToolFieldMetadata{
+		Path: []*genregistry.ToolFieldPathSegment{
+			{Segment: genregistry.NewToolFieldSegmentField("analysis")},
+			{Segment: genregistry.NewToolFieldSegmentField("ambiguities")},
+			{Segment: genregistry.NewToolFieldSegmentElement(&genregistry.ToolCollectionElement{})},
+			{Segment: genregistry.NewToolFieldSegmentField("question")},
+		},
+		JSONType:    &registryText1,
+		Description: &registryText2,
+	}
+}
+
+// field723 constructs one generated field declaration.
+func (registryDeclarations) field723() *genregistry.ToolFieldMetadata {
+	registryText1 := "array"
+	registryText2 := "At least two distinct, self-contained choices; each states the behavior it selects and what follows from it. The requester's answer must be exactly one of these strings."
+	return &genregistry.ToolFieldMetadata{
+		Path: []*genregistry.ToolFieldPathSegment{
+			{Segment: genregistry.NewToolFieldSegmentField("analysis")},
+			{Segment: genregistry.NewToolFieldSegmentField("ambiguities")},
+			{Segment: genregistry.NewToolFieldSegmentElement(&genregistry.ToolCollectionElement{})},
+			{Segment: genregistry.NewToolFieldSegmentField("options")},
+		},
+		JSONType:    &registryText1,
+		Description: &registryText2,
+	}
+}
+
+// field724 constructs one generated field declaration.
+func (registryDeclarations) field724() *genregistry.ToolFieldMetadata {
+	registryText1 := "string"
+	registryText2 := "At least two distinct, self-contained choices; each states the behavior it selects and what follows from it. The requester's answer must be exactly one of these strings."
+	return &genregistry.ToolFieldMetadata{
+		Path: []*genregistry.ToolFieldPathSegment{
+			{Segment: genregistry.NewToolFieldSegmentField("analysis")},
+			{Segment: genregistry.NewToolFieldSegmentField("ambiguities")},
+			{Segment: genregistry.NewToolFieldSegmentElement(&genregistry.ToolCollectionElement{})},
+			{Segment: genregistry.NewToolFieldSegmentField("options")},
+			{Segment: genregistry.NewToolFieldSegmentElement(&genregistry.ToolCollectionElement{})},
+		},
+		JSONType:    &registryText1,
+		Description: &registryText2,
+	}
+}
+
+// field725 constructs one generated field declaration.
+func (registryDeclarations) field725() *genregistry.ToolFieldMetadata {
+	registryText1 := "array"
+	registryText2 := "Concrete acceptance examples drawn from the revised request and the design. Give prior_id for each current example you keep or edit; omit it for new ones."
+	return &genregistry.ToolFieldMetadata{
+		Path: []*genregistry.ToolFieldPathSegment{
+			{Segment: genregistry.NewToolFieldSegmentField("analysis")},
+			{Segment: genregistry.NewToolFieldSegmentField("examples")},
+		},
+		JSONType:    &registryText1,
+		Description: &registryText2,
+	}
+}
+
+// field726 constructs one generated field declaration.
+func (registryDeclarations) field726() *genregistry.ToolFieldMetadata {
+	registryText1 := "object"
+	registryText2 := "Concrete acceptance examples drawn from the revised request and the design. Give prior_id for each current example you keep or edit; omit it for new ones."
+	return &genregistry.ToolFieldMetadata{
+		Path: []*genregistry.ToolFieldPathSegment{
+			{Segment: genregistry.NewToolFieldSegmentField("analysis")},
+			{Segment: genregistry.NewToolFieldSegmentField("examples")},
+			{Segment: genregistry.NewToolFieldSegmentElement(&genregistry.ToolCollectionElement{})},
+		},
+		JSONType:    &registryText1,
+		Description: &registryText2,
+	}
+}
+
+// field727 constructs one generated field declaration.
+func (registryDeclarations) field727() *genregistry.ToolFieldMetadata {
+	registryText1 := "string"
+	registryText2 := "ID of the current card's example this one keeps or edits, exactly as the card shows it; the example keeps that ID. Omit it for a new example, which gets the lowest check_NN ID the current and revised cards do not use."
+	return &genregistry.ToolFieldMetadata{
+		Path: []*genregistry.ToolFieldPathSegment{
+			{Segment: genregistry.NewToolFieldSegmentField("analysis")},
+			{Segment: genregistry.NewToolFieldSegmentField("examples")},
+			{Segment: genregistry.NewToolFieldSegmentElement(&genregistry.ToolCollectionElement{})},
+			{Segment: genregistry.NewToolFieldSegmentField("prior_id")},
+		},
+		JSONType:    &registryText1,
+		Description: &registryText2,
+	}
+}
+
+// field728 constructs one generated field declaration.
+func (registryDeclarations) field728() *genregistry.ToolFieldMetadata {
+	registryText1 := "string"
+	registryText2 := "Short name of the situation, in the requester's domain terms."
+	return &genregistry.ToolFieldMetadata{
+		Path: []*genregistry.ToolFieldPathSegment{
+			{Segment: genregistry.NewToolFieldSegmentField("analysis")},
+			{Segment: genregistry.NewToolFieldSegmentField("examples")},
+			{Segment: genregistry.NewToolFieldSegmentElement(&genregistry.ToolCollectionElement{})},
+			{Segment: genregistry.NewToolFieldSegmentField("scenario")},
+		},
+		JSONType:    &registryText1,
+		Description: &registryText2,
+	}
+}
+
+// field729 constructs one generated field declaration.
+func (registryDeclarations) field729() *genregistry.ToolFieldMetadata {
+	registryText1 := "string"
+	registryText2 := "The actual request, inputs, and starting state in this scenario, with real values from the request and the design, never placeholders."
+	return &genregistry.ToolFieldMetadata{
+		Path: []*genregistry.ToolFieldPathSegment{
+			{Segment: genregistry.NewToolFieldSegmentField("analysis")},
+			{Segment: genregistry.NewToolFieldSegmentField("examples")},
+			{Segment: genregistry.NewToolFieldSegmentElement(&genregistry.ToolCollectionElement{})},
+			{Segment: genregistry.NewToolFieldSegmentField("input_summary")},
+		},
+		JSONType:    &registryText1,
+		Description: &registryText2,
+	}
+}
+
+// field730 constructs one generated field declaration.
+func (registryDeclarations) field730() *genregistry.ToolFieldMetadata {
+	registryText1 := "string"
+	registryText2 := "The observable result or refusal that must hold."
+	return &genregistry.ToolFieldMetadata{
+		Path: []*genregistry.ToolFieldPathSegment{
+			{Segment: genregistry.NewToolFieldSegmentField("analysis")},
+			{Segment: genregistry.NewToolFieldSegmentField("examples")},
+			{Segment: genregistry.NewToolFieldSegmentElement(&genregistry.ToolCollectionElement{})},
+			{Segment: genregistry.NewToolFieldSegmentField("expected_outcome")},
+		},
+		JSONType:    &registryText1,
+		Description: &registryText2,
+	}
+}
+
+// field731 constructs one generated field declaration.
+func (registryDeclarations) field731() *genregistry.ToolFieldMetadata {
+	registryText1 := "string"
+	registryText2 := "deterministic when code can check the outcome directly; model_judged when checking it needs judgment."
+	return &genregistry.ToolFieldMetadata{
+		Path: []*genregistry.ToolFieldPathSegment{
+			{Segment: genregistry.NewToolFieldSegmentField("analysis")},
+			{Segment: genregistry.NewToolFieldSegmentField("examples")},
+			{Segment: genregistry.NewToolFieldSegmentElement(&genregistry.ToolCollectionElement{})},
+			{Segment: genregistry.NewToolFieldSegmentField("verification_kind")},
+		},
+		JSONType:    &registryText1,
+		Description: &registryText2,
+	}
+}
+
+// field732 constructs one generated field declaration.
+func (registryDeclarations) field732() *genregistry.ToolFieldMetadata {
+	registryText1 := "array"
+	registryText2 := "IDs of the current card's examples this revision drops. Every current example ID appears exactly once, either as an examples[].prior_id or here; send an empty list when none are dropped."
+	return &genregistry.ToolFieldMetadata{
+		Path: []*genregistry.ToolFieldPathSegment{
+			{Segment: genregistry.NewToolFieldSegmentField("analysis")},
+			{Segment: genregistry.NewToolFieldSegmentField("removed_example_ids")},
+		},
+		JSONType:    &registryText1,
+		Description: &registryText2,
+	}
+}
+
+// field733 constructs one generated field declaration.
+func (registryDeclarations) field733() *genregistry.ToolFieldMetadata {
+	registryText1 := "string"
+	registryText2 := "IDs of the current card's examples this revision drops. Every current example ID appears exactly once, either as an examples[].prior_id or here; send an empty list when none are dropped."
+	return &genregistry.ToolFieldMetadata{
+		Path: []*genregistry.ToolFieldPathSegment{
+			{Segment: genregistry.NewToolFieldSegmentField("analysis")},
+			{Segment: genregistry.NewToolFieldSegmentField("removed_example_ids")},
+			{Segment: genregistry.NewToolFieldSegmentElement(&genregistry.ToolCollectionElement{})},
+		},
+		JSONType:    &registryText1,
+		Description: &registryText2,
+	}
+}
+
+// field734 constructs one generated field declaration.
+func (registryDeclarations) field734() *genregistry.ToolFieldMetadata {
+	registryText1 := "array"
+	registryText2 := "Existing behaviors and contract rules of the target that the change must keep, each stated concretely; empty when none apply."
+	return &genregistry.ToolFieldMetadata{
+		Path: []*genregistry.ToolFieldPathSegment{
+			{Segment: genregistry.NewToolFieldSegmentField("analysis")},
+			{Segment: genregistry.NewToolFieldSegmentField("preserved_behaviors")},
+		},
+		JSONType:    &registryText1,
+		Description: &registryText2,
+	}
+}
+
+// field735 constructs one generated field declaration.
+func (registryDeclarations) field735() *genregistry.ToolFieldMetadata {
+	registryText1 := "string"
+	registryText2 := "Existing behaviors and contract rules of the target that the change must keep, each stated concretely; empty when none apply."
+	return &genregistry.ToolFieldMetadata{
+		Path: []*genregistry.ToolFieldPathSegment{
+			{Segment: genregistry.NewToolFieldSegmentField("analysis")},
+			{Segment: genregistry.NewToolFieldSegmentField("preserved_behaviors")},
+			{Segment: genregistry.NewToolFieldSegmentElement(&genregistry.ToolCollectionElement{})},
+		},
+		JSONType:    &registryText1,
+		Description: &registryText2,
+	}
+}
+
+// field736 constructs one generated field declaration.
+func (registryDeclarations) field736() *genregistry.ToolFieldMetadata {
+	registryText1 := "string"
+	registryText2 := "Optional OpenUI Lang program that helps the requester decide the open questions, built only from the decision components the surla://golden-path resource lists. Refer to an ambiguity or example only by its 1-based position in this analysis (1 is the first); never invent identifiers. Surla saves it unchanged without checking it; the checkpoint viewer validates and renders it. Omit it when a plain card is clearer."
+	return &genregistry.ToolFieldMetadata{
+		Path: []*genregistry.ToolFieldPathSegment{
+			{Segment: genregistry.NewToolFieldSegmentField("analysis")},
+			{Segment: genregistry.NewToolFieldSegmentField("ui_composition")},
+		},
+		JSONType:    &registryText1,
+		Description: &registryText2,
+	}
+}
+
+// schema737 constructs one generated schema declaration.
+func (declarations registryDeclarations) schema737() *genregistry.ToolSchema {
+	registryText1 := "Build a candidate commit and run it as this server's live CP3 target so draft_override can try prompt text on it. This first stops the target already running, which discards every prompt draft applied to it, even if the new build then fails. Prompt text survives only when it is committed. Requires a committed starter project in the bound workspace or -verification-config."
+	return &genregistry.ToolSchema{
+		Name:                   "surla.start_live_target",
+		Description:            &registryText1,
+		PayloadSchema:          []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Candidate commit to build and run as this server's live CP3 target.\",\"properties\":{\"candidate_commit\":{\"description\":\"Full commit ID to build, in the candidate repository's object format.\",\"example\":\"4f0b3c1d2e5a6978877665544332211009988776\",\"pattern\":\"^([0-9a-f]{40}|[0-9a-f]{64})$\",\"type\":\"string\"}},\"required\":[\"candidate_commit\"],\"type\":\"object\"}"),
+		ExecutionPayloadSchema: []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Candidate commit to build and run as this server's live CP3 target.\",\"properties\":{\"candidate_commit\":{\"description\":\"Full commit ID to build, in the candidate repository's object format.\",\"example\":\"4f0b3c1d2e5a6978877665544332211009988776\",\"pattern\":\"^([0-9a-f]{40}|[0-9a-f]{64})$\",\"type\":\"string\"}},\"required\":[\"candidate_commit\"],\"type\":\"object\"}"),
+		ResultSchema:           []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"The live CP3 target this server runs and binds draft_override to.\",\"properties\":{\"candidate_commit\":{\"description\":\"The commit the live target was built from.\",\"type\":\"string\"},\"message\":{\"description\":\"Operator-facing status explanation.\",\"type\":\"string\"},\"url\":{\"description\":\"Loopback origin of the running candidate, for trying requests such as its own API directly.\",\"type\":\"string\"}},\"required\":[\"candidate_commit\",\"url\",\"message\"],\"type\":\"object\"}"),
+		ConsumerContract: &genregistry.ConsumerContract{
+			Kind:  "service",
+			Title: "Start Live Target",
+			Search: &genregistry.ToolSearchDocument{
+				Length: 72,
+				Terms:  map[string]int{"a": 2, "already": 1, "and": 1, "applied": 1, "as": 1, "bound": 1, "build": 2, "can": 1, "candidate": 1, "commit": 1, "committed": 2, "config": 1, "cp3": 1, "discards": 1, "draft": 2, "even": 1, "every": 1, "fails": 1, "first": 1, "if": 1, "in": 1, "is": 1, "it": 4, "live": 3, "new": 1, "on": 1, "only": 1, "or": 1, "override": 1, "project": 1, "prompt": 3, "requires": 1, "run": 1, "running": 1, "s": 1, "server": 1, "so": 1, "start": 2, "starter": 1, "stops": 1, "surla": 1, "survives": 1, "target": 4, "text": 2, "the": 3, "then": 1, "this": 2, "to": 1, "try": 1, "verification": 1, "when": 1, "which": 1, "workspace": 1},
+			},
+			RequiresUI: false,
+			TextOnly: &genregistry.TextOnlyToolContract{
+				ExecutionSchema: []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Candidate commit to build and run as this server's live CP3 target.\",\"properties\":{\"candidate_commit\":{\"description\":\"Full commit ID to build, in the candidate repository's object format.\",\"example\":\"4f0b3c1d2e5a6978877665544332211009988776\",\"pattern\":\"^([0-9a-f]{40}|[0-9a-f]{64})$\",\"type\":\"string\"}},\"required\":[\"candidate_commit\"],\"type\":\"object\"}"),
+				Description:     "Build a candidate commit and run it as this server's live CP3 target so draft_override can try prompt text on it. This first stops the target already running, which discards every prompt draft applied to it, even if the new build then fails. Prompt text survives only when it is committed. Requires a committed starter project in the bound workspace or -verification-config.",
+				Search: &genregistry.ToolSearchDocument{
+					Length: 72,
+					Terms:  map[string]int{"a": 2, "already": 1, "and": 1, "applied": 1, "as": 1, "bound": 1, "build": 2, "can": 1, "candidate": 1, "commit": 1, "committed": 2, "config": 1, "cp3": 1, "discards": 1, "draft": 2, "even": 1, "every": 1, "fails": 1, "first": 1, "if": 1, "in": 1, "is": 1, "it": 4, "live": 3, "new": 1, "on": 1, "only": 1, "or": 1, "override": 1, "project": 1, "prompt": 3, "requires": 1, "run": 1, "running": 1, "s": 1, "server": 1, "so": 1, "start": 2, "starter": 1, "stops": 1, "surla": 1, "survives": 1, "target": 4, "text": 2, "the": 3, "then": 1, "this": 2, "to": 1, "try": 1, "verification": 1, "when": 1, "which": 1, "workspace": 1},
+				},
+				PayloadSchema: []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Candidate commit to build and run as this server's live CP3 target.\",\"properties\":{\"candidate_commit\":{\"description\":\"Full commit ID to build, in the candidate repository's object format.\",\"example\":\"4f0b3c1d2e5a6978877665544332211009988776\",\"pattern\":\"^([0-9a-f]{40}|[0-9a-f]{64})$\",\"type\":\"string\"}},\"required\":[\"candidate_commit\"],\"type\":\"object\"}"),
+				Payload:       declarations.metadata746(),
+			},
+			Payload: declarations.metadata738(),
+			Result:  declarations.metadata741(),
+		},
+	}
+}
+
+// metadata738 constructs one generated metadata declaration.
+func (declarations registryDeclarations) metadata738() *genregistry.ToolTypeMetadata {
+	registryText1 := "StartLiveTargetPayload"
+	return &genregistry.ToolTypeMetadata{
+		Name:                     &registryText1,
+		SchemaWithoutRootExample: []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Candidate commit to build and run as this server's live CP3 target.\",\"properties\":{\"candidate_commit\":{\"description\":\"Full commit ID to build, in the candidate repository's object format.\",\"example\":\"4f0b3c1d2e5a6978877665544332211009988776\",\"pattern\":\"^([0-9a-f]{40}|[0-9a-f]{64})$\",\"type\":\"string\"}},\"required\":[\"candidate_commit\"],\"type\":\"object\"}"),
+		Fields: []*genregistry.ToolFieldMetadata{
+			declarations.field739(),
+			declarations.field740(),
+		},
+	}
+}
+
+// field739 constructs one generated field declaration.
+func (registryDeclarations) field739() *genregistry.ToolFieldMetadata {
+	registryText1 := "object"
+	registryText2 := "Candidate commit to build and run as this server's live CP3 target."
+	return &genregistry.ToolFieldMetadata{
+		JSONType:    &registryText1,
+		Description: &registryText2,
+	}
+}
+
+// field740 constructs one generated field declaration.
+func (registryDeclarations) field740() *genregistry.ToolFieldMetadata {
+	registryText1 := "string"
+	registryText2 := "Full commit ID to build, in the candidate repository's object format."
+	return &genregistry.ToolFieldMetadata{
+		Path: []*genregistry.ToolFieldPathSegment{
+			{Segment: genregistry.NewToolFieldSegmentField("candidate_commit")},
+		},
+		JSONType:    &registryText1,
+		Description: &registryText2,
+	}
+}
+
+// metadata741 constructs one generated metadata declaration.
+func (declarations registryDeclarations) metadata741() *genregistry.ToolTypeMetadata {
+	registryText1 := "StartLiveTargetResult"
+	return &genregistry.ToolTypeMetadata{
+		Name:                     &registryText1,
+		SchemaWithoutRootExample: []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"The live CP3 target this server runs and binds draft_override to.\",\"properties\":{\"candidate_commit\":{\"description\":\"The commit the live target was built from.\",\"type\":\"string\"},\"message\":{\"description\":\"Operator-facing status explanation.\",\"type\":\"string\"},\"url\":{\"description\":\"Loopback origin of the running candidate, for trying requests such as its own API directly.\",\"type\":\"string\"}},\"required\":[\"candidate_commit\",\"url\",\"message\"],\"type\":\"object\"}"),
+		Fields: []*genregistry.ToolFieldMetadata{
+			declarations.field742(),
+			declarations.field743(),
+			declarations.field744(),
+			declarations.field745(),
+		},
+	}
+}
+
+// field742 constructs one generated field declaration.
+func (registryDeclarations) field742() *genregistry.ToolFieldMetadata {
+	registryText1 := "object"
+	registryText2 := "The live CP3 target this server runs and binds draft_override to."
+	return &genregistry.ToolFieldMetadata{
+		JSONType:    &registryText1,
+		Description: &registryText2,
+	}
+}
+
+// field743 constructs one generated field declaration.
+func (registryDeclarations) field743() *genregistry.ToolFieldMetadata {
+	registryText1 := "string"
+	registryText2 := "The commit the live target was built from."
+	return &genregistry.ToolFieldMetadata{
+		Path: []*genregistry.ToolFieldPathSegment{
+			{Segment: genregistry.NewToolFieldSegmentField("candidate_commit")},
+		},
+		JSONType:    &registryText1,
+		Description: &registryText2,
+	}
+}
+
+// field744 constructs one generated field declaration.
+func (registryDeclarations) field744() *genregistry.ToolFieldMetadata {
+	registryText1 := "string"
+	registryText2 := "Loopback origin of the running candidate, for trying requests such as its own API directly."
+	return &genregistry.ToolFieldMetadata{
+		Path: []*genregistry.ToolFieldPathSegment{
+			{Segment: genregistry.NewToolFieldSegmentField("url")},
+		},
+		JSONType:    &registryText1,
+		Description: &registryText2,
+	}
+}
+
+// field745 constructs one generated field declaration.
+func (registryDeclarations) field745() *genregistry.ToolFieldMetadata {
+	registryText1 := "string"
+	registryText2 := "Operator-facing status explanation."
+	return &genregistry.ToolFieldMetadata{
+		Path: []*genregistry.ToolFieldPathSegment{
+			{Segment: genregistry.NewToolFieldSegmentField("message")},
+		},
+		JSONType:    &registryText1,
+		Description: &registryText2,
+	}
+}
+
+// metadata746 constructs one generated metadata declaration.
+func (declarations registryDeclarations) metadata746() *genregistry.ToolTypeMetadata {
+	registryText1 := "StartLiveTargetPayload"
+	return &genregistry.ToolTypeMetadata{
+		Name:                     &registryText1,
+		SchemaWithoutRootExample: []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Candidate commit to build and run as this server's live CP3 target.\",\"properties\":{\"candidate_commit\":{\"description\":\"Full commit ID to build, in the candidate repository's object format.\",\"example\":\"4f0b3c1d2e5a6978877665544332211009988776\",\"pattern\":\"^([0-9a-f]{40}|[0-9a-f]{64})$\",\"type\":\"string\"}},\"required\":[\"candidate_commit\"],\"type\":\"object\"}"),
+		Fields: []*genregistry.ToolFieldMetadata{
+			declarations.field747(),
+			declarations.field748(),
+		},
+	}
+}
+
+// field747 constructs one generated field declaration.
+func (registryDeclarations) field747() *genregistry.ToolFieldMetadata {
+	registryText1 := "object"
+	registryText2 := "Candidate commit to build and run as this server's live CP3 target."
+	return &genregistry.ToolFieldMetadata{
+		JSONType:    &registryText1,
+		Description: &registryText2,
+	}
+}
+
+// field748 constructs one generated field declaration.
+func (registryDeclarations) field748() *genregistry.ToolFieldMetadata {
+	registryText1 := "string"
+	registryText2 := "Full commit ID to build, in the candidate repository's object format."
+	return &genregistry.ToolFieldMetadata{
+		Path: []*genregistry.ToolFieldPathSegment{
+			{Segment: genregistry.NewToolFieldSegmentField("candidate_commit")},
+		},
+		JSONType:    &registryText1,
+		Description: &registryText2,
+	}
+}
+
+// schema749 constructs one generated schema declaration.
+func (declarations registryDeclarations) schema749() *genregistry.ToolSchema {
+	registryText1 := "Stop this server's live CP3 target, if one runs. This discards every prompt draft applied to it; prompt text survives only when it is committed."
+	return &genregistry.ToolSchema{
+		Name:                   "surla.stop_live_target",
+		Description:            &registryText1,
+		PayloadSchema:          []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"properties\":{},\"type\":\"object\"}"),
+		ExecutionPayloadSchema: []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"properties\":{},\"type\":\"object\"}"),
+		ResultSchema:           []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Result of stopping this server's live CP3 target.\",\"properties\":{\"message\":{\"description\":\"Operator-facing status explanation.\",\"type\":\"string\"},\"stopped\":{\"description\":\"True when a live target was running and is now stopped; false when none was running.\",\"type\":\"boolean\"}},\"required\":[\"stopped\",\"message\"],\"type\":\"object\"}"),
+		ConsumerContract: &genregistry.ConsumerContract{
+			Kind:  "service",
+			Title: "Stop Live Target",
+			Search: &genregistry.ToolSearchDocument{
+				Length: 33,
+				Terms:  map[string]int{"applied": 1, "committed": 1, "cp3": 1, "discards": 1, "draft": 1, "every": 1, "if": 1, "is": 1, "it": 2, "live": 3, "one": 1, "only": 1, "prompt": 2, "runs": 1, "s": 1, "server": 1, "stop": 3, "surla": 1, "survives": 1, "target": 3, "text": 1, "this": 2, "to": 1, "when": 1},
+			},
+			RequiresUI: false,
+			TextOnly: &genregistry.TextOnlyToolContract{
+				ExecutionSchema: []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"properties\":{},\"type\":\"object\"}"),
+				Description:     "Stop this server's live CP3 target, if one runs. This discards every prompt draft applied to it; prompt text survives only when it is committed.",
+				Search: &genregistry.ToolSearchDocument{
+					Length: 33,
+					Terms:  map[string]int{"applied": 1, "committed": 1, "cp3": 1, "discards": 1, "draft": 1, "every": 1, "if": 1, "is": 1, "it": 2, "live": 3, "one": 1, "only": 1, "prompt": 2, "runs": 1, "s": 1, "server": 1, "stop": 3, "surla": 1, "survives": 1, "target": 3, "text": 1, "this": 2, "to": 1, "when": 1},
+				},
+				PayloadSchema: []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"properties\":{},\"type\":\"object\"}"),
+				Payload:       declarations.metadata756(),
+			},
+			Payload: declarations.metadata750(),
+			Result:  declarations.metadata752(),
+		},
+	}
+}
+
+// metadata750 constructs one generated metadata declaration.
+func (declarations registryDeclarations) metadata750() *genregistry.ToolTypeMetadata {
+	registryText1 := "StopLiveTargetPayload"
+	return &genregistry.ToolTypeMetadata{
+		Name:                     &registryText1,
+		SchemaWithoutRootExample: []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"properties\":{},\"type\":\"object\"}"),
+		Fields: []*genregistry.ToolFieldMetadata{
+			declarations.field751(),
+		},
+	}
+}
+
+// field751 constructs one generated field declaration.
+func (registryDeclarations) field751() *genregistry.ToolFieldMetadata {
+	registryText1 := "object"
+	return &genregistry.ToolFieldMetadata{
+		JSONType: &registryText1,
+	}
+}
+
+// metadata752 constructs one generated metadata declaration.
+func (declarations registryDeclarations) metadata752() *genregistry.ToolTypeMetadata {
+	registryText1 := "StopLiveTargetResult"
+	return &genregistry.ToolTypeMetadata{
+		Name:                     &registryText1,
+		SchemaWithoutRootExample: []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Result of stopping this server's live CP3 target.\",\"properties\":{\"message\":{\"description\":\"Operator-facing status explanation.\",\"type\":\"string\"},\"stopped\":{\"description\":\"True when a live target was running and is now stopped; false when none was running.\",\"type\":\"boolean\"}},\"required\":[\"stopped\",\"message\"],\"type\":\"object\"}"),
+		Fields: []*genregistry.ToolFieldMetadata{
+			declarations.field753(),
+			declarations.field754(),
+			declarations.field755(),
+		},
+	}
+}
+
+// field753 constructs one generated field declaration.
+func (registryDeclarations) field753() *genregistry.ToolFieldMetadata {
+	registryText1 := "object"
+	registryText2 := "Result of stopping this server's live CP3 target."
+	return &genregistry.ToolFieldMetadata{
+		JSONType:    &registryText1,
+		Description: &registryText2,
+	}
+}
+
+// field754 constructs one generated field declaration.
+func (registryDeclarations) field754() *genregistry.ToolFieldMetadata {
+	registryText1 := "boolean"
+	registryText2 := "True when a live target was running and is now stopped; false when none was running."
+	return &genregistry.ToolFieldMetadata{
+		Path: []*genregistry.ToolFieldPathSegment{
+			{Segment: genregistry.NewToolFieldSegmentField("stopped")},
+		},
+		JSONType:    &registryText1,
+		Description: &registryText2,
+	}
+}
+
+// field755 constructs one generated field declaration.
+func (registryDeclarations) field755() *genregistry.ToolFieldMetadata {
+	registryText1 := "string"
+	registryText2 := "Operator-facing status explanation."
+	return &genregistry.ToolFieldMetadata{
+		Path: []*genregistry.ToolFieldPathSegment{
+			{Segment: genregistry.NewToolFieldSegmentField("message")},
+		},
+		JSONType:    &registryText1,
+		Description: &registryText2,
+	}
+}
+
+// metadata756 constructs one generated metadata declaration.
+func (declarations registryDeclarations) metadata756() *genregistry.ToolTypeMetadata {
+	registryText1 := "StopLiveTargetPayload"
+	return &genregistry.ToolTypeMetadata{
+		Name:                     &registryText1,
+		SchemaWithoutRootExample: []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"properties\":{},\"type\":\"object\"}"),
+		Fields: []*genregistry.ToolFieldMetadata{
+			declarations.field757(),
+		},
+	}
+}
+
+// field757 constructs one generated field declaration.
+func (registryDeclarations) field757() *genregistry.ToolFieldMetadata {
+	registryText1 := "object"
+	return &genregistry.ToolFieldMetadata{
+		JSONType: &registryText1,
+	}
+}
+
+// schema758 constructs one generated schema declaration.
+func (declarations registryDeclarations) schema758() *genregistry.ToolSchema {
+	registryText1 := "Add missing requirements and checksums for the workspace's Go modules (go mod tidy) and write the changed go.mod, go.sum and go.work.sum. No input. Call it when check_project reports a missing go.sum or go.work.sum entry or a needed go.mod update, then call check_project again."
+	return &genregistry.ToolSchema{
+		Name:                   "surla.update_dependencies",
+		Description:            &registryText1,
+		PayloadSchema:          []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"properties\":{},\"type\":\"object\"}"),
+		ExecutionPayloadSchema: []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"properties\":{},\"type\":\"object\"}"),
+		ResultSchema:           []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Go module manifests rewritten in the workspace after go mod tidy ran in a protected copy.\",\"properties\":{\"files_written\":{\"description\":\"Workspace-relative go.mod, go.sum and go.work.sum files whose bytes changed and were written.\",\"items\":{\"type\":\"string\"},\"type\":\"array\"},\"message\":{\"description\":\"At most 16 KiB: what was updated, and Go's message for any module that could not be.\",\"type\":\"string\"},\"op_id\":{\"description\":\"Operation identifier; pass it to read_check_output to read the full output.\",\"type\":\"string\"}},\"required\":[\"op_id\",\"files_written\",\"message\"],\"type\":\"object\"}"),
+		ConsumerContract: &genregistry.ConsumerContract{
+			Kind:  "service",
+			Title: "Update Dependencies",
+			Search: &genregistry.ToolSearchDocument{
+				Length: 59,
+				Terms:  map[string]int{"a": 2, "add": 1, "again": 1, "and": 3, "call": 2, "changed": 1, "check": 2, "checksums": 1, "dependencies": 2, "entry": 1, "for": 1, "go": 8, "input": 1, "it": 1, "missing": 2, "mod": 3, "modules": 1, "needed": 1, "no": 1, "or": 2, "project": 2, "reports": 1, "requirements": 1, "s": 1, "sum": 4, "surla": 1, "the": 2, "then": 1, "tidy": 1, "update": 3, "when": 1, "work": 2, "workspace": 1, "write": 1},
+			},
+			RequiresUI: false,
+			TextOnly: &genregistry.TextOnlyToolContract{
+				ExecutionSchema: []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"properties\":{},\"type\":\"object\"}"),
+				Description:     "Add missing requirements and checksums for the workspace's Go modules (go mod tidy) and write the changed go.mod, go.sum and go.work.sum. No input. Call it when check_project reports a missing go.sum or go.work.sum entry or a needed go.mod update, then call check_project again.",
+				Search: &genregistry.ToolSearchDocument{
+					Length: 59,
+					Terms:  map[string]int{"a": 2, "add": 1, "again": 1, "and": 3, "call": 2, "changed": 1, "check": 2, "checksums": 1, "dependencies": 2, "entry": 1, "for": 1, "go": 8, "input": 1, "it": 1, "missing": 2, "mod": 3, "modules": 1, "needed": 1, "no": 1, "or": 2, "project": 2, "reports": 1, "requirements": 1, "s": 1, "sum": 4, "surla": 1, "the": 2, "then": 1, "tidy": 1, "update": 3, "when": 1, "work": 2, "workspace": 1, "write": 1},
+				},
+				PayloadSchema: []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"properties\":{},\"type\":\"object\"}"),
+				Payload:       declarations.metadata767(),
+			},
+			Payload: declarations.metadata759(),
+			Result:  declarations.metadata761(),
+		},
+	}
+}
+
+// metadata759 constructs one generated metadata declaration.
+func (declarations registryDeclarations) metadata759() *genregistry.ToolTypeMetadata {
+	registryText1 := "UpdateDependenciesPayload"
+	return &genregistry.ToolTypeMetadata{
+		Name:                     &registryText1,
+		SchemaWithoutRootExample: []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"properties\":{},\"type\":\"object\"}"),
+		Fields: []*genregistry.ToolFieldMetadata{
+			declarations.field760(),
+		},
+	}
+}
+
+// field760 constructs one generated field declaration.
+func (registryDeclarations) field760() *genregistry.ToolFieldMetadata {
+	registryText1 := "object"
+	return &genregistry.ToolFieldMetadata{
+		JSONType: &registryText1,
+	}
+}
+
+// metadata761 constructs one generated metadata declaration.
+func (declarations registryDeclarations) metadata761() *genregistry.ToolTypeMetadata {
+	registryText1 := "UpdateDependenciesResult"
+	return &genregistry.ToolTypeMetadata{
+		Name:                     &registryText1,
+		SchemaWithoutRootExample: []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Go module manifests rewritten in the workspace after go mod tidy ran in a protected copy.\",\"properties\":{\"files_written\":{\"description\":\"Workspace-relative go.mod, go.sum and go.work.sum files whose bytes changed and were written.\",\"items\":{\"type\":\"string\"},\"type\":\"array\"},\"message\":{\"description\":\"At most 16 KiB: what was updated, and Go's message for any module that could not be.\",\"type\":\"string\"},\"op_id\":{\"description\":\"Operation identifier; pass it to read_check_output to read the full output.\",\"type\":\"string\"}},\"required\":[\"op_id\",\"files_written\",\"message\"],\"type\":\"object\"}"),
+		Fields: []*genregistry.ToolFieldMetadata{
+			declarations.field762(),
+			declarations.field763(),
+			declarations.field764(),
+			declarations.field765(),
+			declarations.field766(),
+		},
+	}
+}
+
+// field762 constructs one generated field declaration.
+func (registryDeclarations) field762() *genregistry.ToolFieldMetadata {
+	registryText1 := "object"
+	registryText2 := "Go module manifests rewritten in the workspace after go mod tidy ran in a protected copy."
+	return &genregistry.ToolFieldMetadata{
+		JSONType:    &registryText1,
+		Description: &registryText2,
+	}
+}
+
+// field763 constructs one generated field declaration.
+func (registryDeclarations) field763() *genregistry.ToolFieldMetadata {
+	registryText1 := "string"
+	registryText2 := "Operation identifier; pass it to read_check_output to read the full output."
+	return &genregistry.ToolFieldMetadata{
+		Path: []*genregistry.ToolFieldPathSegment{
+			{Segment: genregistry.NewToolFieldSegmentField("op_id")},
+		},
+		JSONType:    &registryText1,
+		Description: &registryText2,
+	}
+}
+
+// field764 constructs one generated field declaration.
+func (registryDeclarations) field764() *genregistry.ToolFieldMetadata {
+	registryText1 := "array"
+	registryText2 := "Workspace-relative go.mod, go.sum and go.work.sum files whose bytes changed and were written."
+	return &genregistry.ToolFieldMetadata{
+		Path: []*genregistry.ToolFieldPathSegment{
+			{Segment: genregistry.NewToolFieldSegmentField("files_written")},
+		},
+		JSONType:    &registryText1,
+		Description: &registryText2,
+	}
+}
+
+// field765 constructs one generated field declaration.
+func (registryDeclarations) field765() *genregistry.ToolFieldMetadata {
+	registryText1 := "string"
+	registryText2 := "Workspace-relative go.mod, go.sum and go.work.sum files whose bytes changed and were written."
+	return &genregistry.ToolFieldMetadata{
+		Path: []*genregistry.ToolFieldPathSegment{
+			{Segment: genregistry.NewToolFieldSegmentField("files_written")},
+			{Segment: genregistry.NewToolFieldSegmentElement(&genregistry.ToolCollectionElement{})},
+		},
+		JSONType:    &registryText1,
+		Description: &registryText2,
+	}
+}
+
+// field766 constructs one generated field declaration.
+func (registryDeclarations) field766() *genregistry.ToolFieldMetadata {
+	registryText1 := "string"
+	registryText2 := "At most 16 KiB: what was updated, and Go's message for any module that could not be."
+	return &genregistry.ToolFieldMetadata{
+		Path: []*genregistry.ToolFieldPathSegment{
+			{Segment: genregistry.NewToolFieldSegmentField("message")},
+		},
+		JSONType:    &registryText1,
+		Description: &registryText2,
+	}
+}
+
+// metadata767 constructs one generated metadata declaration.
+func (declarations registryDeclarations) metadata767() *genregistry.ToolTypeMetadata {
+	registryText1 := "UpdateDependenciesPayload"
+	return &genregistry.ToolTypeMetadata{
+		Name:                     &registryText1,
+		SchemaWithoutRootExample: []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"properties\":{},\"type\":\"object\"}"),
+		Fields: []*genregistry.ToolFieldMetadata{
+			declarations.field768(),
+		},
+	}
+}
+
+// field768 constructs one generated field declaration.
+func (registryDeclarations) field768() *genregistry.ToolFieldMetadata {
+	registryText1 := "object"
+	return &genregistry.ToolFieldMetadata{
+		JSONType: &registryText1,
+	}
+}
+
+// schema769 constructs one generated schema declaration.
+func (declarations registryDeclarations) schema769() *genregistry.ToolSchema {
+	registryText1 := "Start CP4 verification of a candidate commit for the confirmed Change Card revision; returns a run_id to read with get_verification. Requires a committed starter project in the bound workspace or -verification-config."
+	return &genregistry.ToolSchema{
+		Name:                   "surla.verify_change",
+		Description:            &registryText1,
+		PayloadSchema:          []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Names the confirmed Change Card revision and the candidate commit to verify. What is built and which evaluator suite runs come from the operator's configuration of surla serve, never from the caller.\",\"properties\":{\"candidate_commit\":{\"description\":\"Full commit ID of the candidate to build and verify (40 or 64 lowercase hex characters).\",\"pattern\":\"^([0-9a-f]{40}|[0-9a-f]{64})$\",\"type\":\"string\"},\"change_id\":{\"description\":\"Confirmed Change Card identifier.\",\"type\":\"string\"},\"request_revision\":{\"description\":\"Current request_revision of the confirmed Change Card.\",\"type\":\"string\"}},\"required\":[\"change_id\",\"request_revision\",\"candidate_commit\"],\"type\":\"object\"}"),
+		ExecutionPayloadSchema: []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Names the confirmed Change Card revision and the candidate commit to verify. What is built and which evaluator suite runs come from the operator's configuration of surla serve, never from the caller.\",\"properties\":{\"candidate_commit\":{\"description\":\"Full commit ID of the candidate to build and verify (40 or 64 lowercase hex characters).\",\"pattern\":\"^([0-9a-f]{40}|[0-9a-f]{64})$\",\"type\":\"string\"},\"change_id\":{\"description\":\"Confirmed Change Card identifier.\",\"type\":\"string\"},\"request_revision\":{\"description\":\"Current request_revision of the confirmed Change Card.\",\"type\":\"string\"}},\"required\":[\"change_id\",\"request_revision\",\"candidate_commit\"],\"type\":\"object\"}"),
+		ResultSchema:           []byte("{\"$defs\":{\"BuilderVerificationReport\":{\"additionalProperties\":false,\"description\":\"The builder view of a Checkpoint 4 verification report: counts, verdict and repair scenario checks. Holdout details, evidence and logs stay with the evaluator.\",\"properties\":{\"counts\":{\"$ref\":\"#/$defs/VerificationCounts\",\"description\":\"Every declared scenario, counted by outcome.\"},\"passed\":{\"description\":\"The verdict: true only when every declared scenario passed and the suite ran cleanly.\",\"type\":\"boolean\"},\"report_digest\":{\"description\":\"SHA-256 digest of the full report the evaluator saved; approve_merge and surla approve take this digest.\",\"type\":\"string\"},\"scenarios\":{\"description\":\"Every declared scenario in declaration order.\",\"items\":{\"$ref\":\"#/$defs/VerificationScenario\"},\"type\":\"array\"},\"suite_failed\":{\"description\":\"Whether the evaluator suite itself failed or ended abnormally.\",\"type\":\"boolean\"}},\"required\":[\"report_digest\",\"counts\",\"passed\",\"suite_failed\",\"scenarios\"],\"title\":\"BuilderVerificationReport\",\"type\":\"object\"},\"VerificationCheck\":{\"additionalProperties\":false,\"description\":\"One deterministic check of a repair scenario.\",\"properties\":{\"diagnostic\":{\"description\":\"Why the check failed; empty when it passed.\",\"type\":\"string\"},\"name\":{\"description\":\"Check name.\",\"type\":\"string\"},\"passed\":{\"description\":\"Whether the check passed.\",\"type\":\"boolean\"}},\"required\":[\"name\",\"passed\"],\"title\":\"VerificationCheck\",\"type\":\"object\"},\"VerificationCompleted\":{\"additionalProperties\":false,\"description\":\"The run produced a verification report. Its verdict is report.passed.\",\"properties\":{\"environment\":{\"description\":\"Dependency profile the suite ran the candidate with, such as sim.\",\"type\":\"string\"},\"report\":{\"$ref\":\"#/$defs/BuilderVerificationReport\",\"description\":\"The builder view of the report.\"},\"suite_id\":{\"description\":\"Evaluator suite the report was produced by.\",\"type\":\"string\"}},\"required\":[\"suite_id\",\"environment\",\"report\"],\"title\":\"VerificationCompleted\",\"type\":\"object\"},\"VerificationCounts\":{\"additionalProperties\":false,\"description\":\"Every declared scenario, counted by outcome.\",\"properties\":{\"failed\":{\"description\":\"Scenarios whose checks failed.\",\"format\":\"int64\",\"type\":\"integer\"},\"harness_error\":{\"description\":\"Scenarios that could not be evaluated.\",\"format\":\"int64\",\"type\":\"integer\"},\"not_run\":{\"description\":\"Declared scenarios the suite did not report.\",\"format\":\"int64\",\"type\":\"integer\"},\"passed\":{\"description\":\"Scenarios that passed.\",\"format\":\"int64\",\"type\":\"integer\"},\"required\":{\"description\":\"Scenarios the suite declares.\",\"format\":\"int64\",\"type\":\"integer\"}},\"required\":[\"required\",\"passed\",\"failed\",\"not_run\",\"harness_error\"],\"title\":\"VerificationCounts\",\"type\":\"object\"},\"VerificationNotCompleted\":{\"additionalProperties\":false,\"description\":\"The run was accepted but did not complete: a step failed, or its processes ended or were canceled or timed out before it finished. The summary states where it stopped, without command output; full evidence, including any partial report saved while it was being stopped, stays with the evaluator.\",\"properties\":{\"kind\":{\"description\":\"execution_failed when a step failed; interrupted when the run's process ended before it finished.\",\"enum\":[\"execution_failed\",\"interrupted\"],\"type\":\"string\"},\"stage\":{\"description\":\"Where the run stopped.\",\"enum\":[\"checkout\",\"build\",\"describe\",\"suite\",\"report\",\"supervise\"],\"type\":\"string\"},\"summary\":{\"description\":\"Builder-safe description of what stopped the run; never command output.\",\"type\":\"string\"}},\"required\":[\"kind\",\"stage\",\"summary\"],\"title\":\"VerificationNotCompleted\",\"type\":\"object\"},\"VerificationRunning\":{\"additionalProperties\":false,\"description\":\"The run is still building or evaluating the candidate.\",\"properties\":{\"started_at\":{\"description\":\"When the run was accepted.\",\"format\":\"date-time\",\"type\":\"string\"}},\"required\":[\"started_at\"],\"title\":\"VerificationRunning\",\"type\":\"object\"},\"VerificationScenario\":{\"additionalProperties\":false,\"description\":\"One declared scenario as builders see it. Repair scenarios carry their name, checks and environment error; holdout scenarios appear only as holdout-\\u003cn\\u003e with their outcome.\",\"properties\":{\"checks\":{\"description\":\"The repair scenario's checks; empty for holdouts.\",\"items\":{\"$ref\":\"#/$defs/VerificationCheck\"},\"type\":\"array\"},\"error\":{\"description\":\"The repair scenario's environment error; empty for holdouts.\",\"type\":\"string\"},\"id\":{\"description\":\"Scenario name for a repair scenario, or holdout-\\u003cn\\u003e for a holdout.\",\"type\":\"string\"},\"outcome\":{\"description\":\"How the scenario ended.\",\"enum\":[\"passed\",\"failed\",\"not_run\",\"harness_error\"],\"type\":\"string\"}},\"required\":[\"id\",\"outcome\"],\"title\":\"VerificationScenario\",\"type\":\"object\"}},\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"One Checkpoint 4 verification run of a candidate commit for a confirmed Change Card revision, and its current state. The run keeps the revision it was started for, so a later confirm_intent does not change it.\",\"properties\":{\"accepted_at\":{\"description\":\"When the run was accepted.\",\"format\":\"date-time\",\"type\":\"string\"},\"candidate_commit\":{\"description\":\"Candidate commit the run builds and verifies.\",\"type\":\"string\"},\"change_id\":{\"description\":\"Change Card the run verifies.\",\"type\":\"string\"},\"request_revision\":{\"description\":\"Change Card revision the run verifies.\",\"type\":\"string\"},\"run_id\":{\"description\":\"Verification run identifier; get_verification takes it.\",\"type\":\"string\"},\"state\":{\"description\":\"Exactly one of running, completed or not_completed.\",\"oneOf\":[{\"additionalProperties\":false,\"properties\":{\"type\":{\"enum\":[\"running\"],\"type\":\"string\"},\"value\":{\"$ref\":\"#/$defs/VerificationRunning\"}},\"required\":[\"type\",\"value\"],\"type\":\"object\"},{\"additionalProperties\":false,\"properties\":{\"type\":{\"enum\":[\"completed\"],\"type\":\"string\"},\"value\":{\"$ref\":\"#/$defs/VerificationCompleted\"}},\"required\":[\"type\",\"value\"],\"type\":\"object\"},{\"additionalProperties\":false,\"properties\":{\"type\":{\"enum\":[\"not_completed\"],\"type\":\"string\"},\"value\":{\"$ref\":\"#/$defs/VerificationNotCompleted\"}},\"required\":[\"type\",\"value\"],\"type\":\"object\"}],\"type\":\"object\"},\"suite_commit\":{\"description\":\"Evaluator suite commit the operator configured for the run.\",\"type\":\"string\"}},\"required\":[\"run_id\",\"change_id\",\"request_revision\",\"candidate_commit\",\"suite_commit\",\"accepted_at\",\"state\"],\"type\":\"object\"}"),
+		ConsumerContract: &genregistry.ConsumerContract{
+			Kind:  "service",
+			Title: "Verify Change",
+			Search: &genregistry.ToolSearchDocument{
+				Length: 39,
+				Terms:  map[string]int{"a": 3, "bound": 1, "candidate": 1, "card": 1, "change": 3, "commit": 1, "committed": 1, "config": 1, "confirmed": 1, "cp4": 1, "for": 1, "get": 1, "id": 1, "in": 1, "of": 1, "or": 1, "project": 1, "read": 1, "requires": 1, "returns": 1, "revision": 1, "run": 1, "start": 1, "starter": 1, "surla": 1, "the": 2, "to": 1, "verification": 3, "verify": 2, "with": 1, "workspace": 1},
+			},
+			RequiresUI: false,
+			TextOnly: &genregistry.TextOnlyToolContract{
+				ExecutionSchema: []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Names the confirmed Change Card revision and the candidate commit to verify. What is built and which evaluator suite runs come from the operator's configuration of surla serve, never from the caller.\",\"properties\":{\"candidate_commit\":{\"description\":\"Full commit ID of the candidate to build and verify (40 or 64 lowercase hex characters).\",\"pattern\":\"^([0-9a-f]{40}|[0-9a-f]{64})$\",\"type\":\"string\"},\"change_id\":{\"description\":\"Confirmed Change Card identifier.\",\"type\":\"string\"},\"request_revision\":{\"description\":\"Current request_revision of the confirmed Change Card.\",\"type\":\"string\"}},\"required\":[\"change_id\",\"request_revision\",\"candidate_commit\"],\"type\":\"object\"}"),
+				Description:     "Start CP4 verification of a candidate commit for the confirmed Change Card revision; returns a run_id to read with get_verification. Requires a committed starter project in the bound workspace or -verification-config.",
+				Search: &genregistry.ToolSearchDocument{
+					Length: 39,
+					Terms:  map[string]int{"a": 3, "bound": 1, "candidate": 1, "card": 1, "change": 3, "commit": 1, "committed": 1, "config": 1, "confirmed": 1, "cp4": 1, "for": 1, "get": 1, "id": 1, "in": 1, "of": 1, "or": 1, "project": 1, "read": 1, "requires": 1, "returns": 1, "revision": 1, "run": 1, "start": 1, "starter": 1, "surla": 1, "the": 2, "to": 1, "verification": 3, "verify": 2, "with": 1, "workspace": 1},
+				},
+				PayloadSchema: []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Names the confirmed Change Card revision and the candidate commit to verify. What is built and which evaluator suite runs come from the operator's configuration of surla serve, never from the caller.\",\"properties\":{\"candidate_commit\":{\"description\":\"Full commit ID of the candidate to build and verify (40 or 64 lowercase hex characters).\",\"pattern\":\"^([0-9a-f]{40}|[0-9a-f]{64})$\",\"type\":\"string\"},\"change_id\":{\"description\":\"Confirmed Change Card identifier.\",\"type\":\"string\"},\"request_revision\":{\"description\":\"Current request_revision of the confirmed Change Card.\",\"type\":\"string\"}},\"required\":[\"change_id\",\"request_revision\",\"candidate_commit\"],\"type\":\"object\"}"),
+				Payload:       declarations.metadata814(),
+			},
+			Payload: declarations.metadata770(),
+			Result:  declarations.metadata775(),
+		},
+	}
+}
+
+// metadata770 constructs one generated metadata declaration.
+func (declarations registryDeclarations) metadata770() *genregistry.ToolTypeMetadata {
+	registryText1 := "VerifyChangePayload"
+	return &genregistry.ToolTypeMetadata{
+		Name:                     &registryText1,
+		SchemaWithoutRootExample: []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Names the confirmed Change Card revision and the candidate commit to verify. What is built and which evaluator suite runs come from the operator's configuration of surla serve, never from the caller.\",\"properties\":{\"candidate_commit\":{\"description\":\"Full commit ID of the candidate to build and verify (40 or 64 lowercase hex characters).\",\"pattern\":\"^([0-9a-f]{40}|[0-9a-f]{64})$\",\"type\":\"string\"},\"change_id\":{\"description\":\"Confirmed Change Card identifier.\",\"type\":\"string\"},\"request_revision\":{\"description\":\"Current request_revision of the confirmed Change Card.\",\"type\":\"string\"}},\"required\":[\"change_id\",\"request_revision\",\"candidate_commit\"],\"type\":\"object\"}"),
+		Fields: []*genregistry.ToolFieldMetadata{
+			declarations.field771(),
+			declarations.field772(),
+			declarations.field773(),
+			declarations.field774(),
+		},
+	}
+}
+
+// field771 constructs one generated field declaration.
+func (registryDeclarations) field771() *genregistry.ToolFieldMetadata {
+	registryText1 := "object"
+	registryText2 := "Names the confirmed Change Card revision and the candidate commit to verify. What is built and which evaluator suite runs come from the operator's configuration of surla serve, never from the caller."
+	return &genregistry.ToolFieldMetadata{
+		JSONType:    &registryText1,
+		Description: &registryText2,
+	}
+}
+
+// field772 constructs one generated field declaration.
+func (registryDeclarations) field772() *genregistry.ToolFieldMetadata {
+	registryText1 := "string"
+	registryText2 := "Confirmed Change Card identifier."
+	return &genregistry.ToolFieldMetadata{
+		Path: []*genregistry.ToolFieldPathSegment{
+			{Segment: genregistry.NewToolFieldSegmentField("change_id")},
+		},
+		JSONType:    &registryText1,
+		Description: &registryText2,
+	}
+}
+
+// field773 constructs one generated field declaration.
+func (registryDeclarations) field773() *genregistry.ToolFieldMetadata {
+	registryText1 := "string"
+	registryText2 := "Current request_revision of the confirmed Change Card."
+	return &genregistry.ToolFieldMetadata{
+		Path: []*genregistry.ToolFieldPathSegment{
+			{Segment: genregistry.NewToolFieldSegmentField("request_revision")},
+		},
+		JSONType:    &registryText1,
+		Description: &registryText2,
+	}
+}
+
+// field774 constructs one generated field declaration.
+func (registryDeclarations) field774() *genregistry.ToolFieldMetadata {
+	registryText1 := "string"
+	registryText2 := "Full commit ID of the candidate to build and verify (40 or 64 lowercase hex characters)."
+	return &genregistry.ToolFieldMetadata{
+		Path: []*genregistry.ToolFieldPathSegment{
+			{Segment: genregistry.NewToolFieldSegmentField("candidate_commit")},
+		},
+		JSONType:    &registryText1,
+		Description: &registryText2,
+	}
+}
+
+// metadata775 constructs one generated metadata declaration.
+func (declarations registryDeclarations) metadata775() *genregistry.ToolTypeMetadata {
+	registryText1 := "VerifyChangeResult"
+	return &genregistry.ToolTypeMetadata{
+		Name:                     &registryText1,
+		SchemaWithoutRootExample: []byte("{\"$defs\":{\"BuilderVerificationReport\":{\"additionalProperties\":false,\"description\":\"The builder view of a Checkpoint 4 verification report: counts, verdict and repair scenario checks. Holdout details, evidence and logs stay with the evaluator.\",\"properties\":{\"counts\":{\"$ref\":\"#/$defs/VerificationCounts\",\"description\":\"Every declared scenario, counted by outcome.\"},\"passed\":{\"description\":\"The verdict: true only when every declared scenario passed and the suite ran cleanly.\",\"type\":\"boolean\"},\"report_digest\":{\"description\":\"SHA-256 digest of the full report the evaluator saved; approve_merge and surla approve take this digest.\",\"type\":\"string\"},\"scenarios\":{\"description\":\"Every declared scenario in declaration order.\",\"items\":{\"$ref\":\"#/$defs/VerificationScenario\"},\"type\":\"array\"},\"suite_failed\":{\"description\":\"Whether the evaluator suite itself failed or ended abnormally.\",\"type\":\"boolean\"}},\"required\":[\"report_digest\",\"counts\",\"passed\",\"suite_failed\",\"scenarios\"],\"title\":\"BuilderVerificationReport\",\"type\":\"object\"},\"VerificationCheck\":{\"additionalProperties\":false,\"description\":\"One deterministic check of a repair scenario.\",\"properties\":{\"diagnostic\":{\"description\":\"Why the check failed; empty when it passed.\",\"type\":\"string\"},\"name\":{\"description\":\"Check name.\",\"type\":\"string\"},\"passed\":{\"description\":\"Whether the check passed.\",\"type\":\"boolean\"}},\"required\":[\"name\",\"passed\"],\"title\":\"VerificationCheck\",\"type\":\"object\"},\"VerificationCompleted\":{\"additionalProperties\":false,\"description\":\"The run produced a verification report. Its verdict is report.passed.\",\"properties\":{\"environment\":{\"description\":\"Dependency profile the suite ran the candidate with, such as sim.\",\"type\":\"string\"},\"report\":{\"$ref\":\"#/$defs/BuilderVerificationReport\",\"description\":\"The builder view of the report.\"},\"suite_id\":{\"description\":\"Evaluator suite the report was produced by.\",\"type\":\"string\"}},\"required\":[\"suite_id\",\"environment\",\"report\"],\"title\":\"VerificationCompleted\",\"type\":\"object\"},\"VerificationCounts\":{\"additionalProperties\":false,\"description\":\"Every declared scenario, counted by outcome.\",\"properties\":{\"failed\":{\"description\":\"Scenarios whose checks failed.\",\"format\":\"int64\",\"type\":\"integer\"},\"harness_error\":{\"description\":\"Scenarios that could not be evaluated.\",\"format\":\"int64\",\"type\":\"integer\"},\"not_run\":{\"description\":\"Declared scenarios the suite did not report.\",\"format\":\"int64\",\"type\":\"integer\"},\"passed\":{\"description\":\"Scenarios that passed.\",\"format\":\"int64\",\"type\":\"integer\"},\"required\":{\"description\":\"Scenarios the suite declares.\",\"format\":\"int64\",\"type\":\"integer\"}},\"required\":[\"required\",\"passed\",\"failed\",\"not_run\",\"harness_error\"],\"title\":\"VerificationCounts\",\"type\":\"object\"},\"VerificationNotCompleted\":{\"additionalProperties\":false,\"description\":\"The run was accepted but did not complete: a step failed, or its processes ended or were canceled or timed out before it finished. The summary states where it stopped, without command output; full evidence, including any partial report saved while it was being stopped, stays with the evaluator.\",\"properties\":{\"kind\":{\"description\":\"execution_failed when a step failed; interrupted when the run's process ended before it finished.\",\"enum\":[\"execution_failed\",\"interrupted\"],\"type\":\"string\"},\"stage\":{\"description\":\"Where the run stopped.\",\"enum\":[\"checkout\",\"build\",\"describe\",\"suite\",\"report\",\"supervise\"],\"type\":\"string\"},\"summary\":{\"description\":\"Builder-safe description of what stopped the run; never command output.\",\"type\":\"string\"}},\"required\":[\"kind\",\"stage\",\"summary\"],\"title\":\"VerificationNotCompleted\",\"type\":\"object\"},\"VerificationRunning\":{\"additionalProperties\":false,\"description\":\"The run is still building or evaluating the candidate.\",\"properties\":{\"started_at\":{\"description\":\"When the run was accepted.\",\"format\":\"date-time\",\"type\":\"string\"}},\"required\":[\"started_at\"],\"title\":\"VerificationRunning\",\"type\":\"object\"},\"VerificationScenario\":{\"additionalProperties\":false,\"description\":\"One declared scenario as builders see it. Repair scenarios carry their name, checks and environment error; holdout scenarios appear only as holdout-\\u003cn\\u003e with their outcome.\",\"properties\":{\"checks\":{\"description\":\"The repair scenario's checks; empty for holdouts.\",\"items\":{\"$ref\":\"#/$defs/VerificationCheck\"},\"type\":\"array\"},\"error\":{\"description\":\"The repair scenario's environment error; empty for holdouts.\",\"type\":\"string\"},\"id\":{\"description\":\"Scenario name for a repair scenario, or holdout-\\u003cn\\u003e for a holdout.\",\"type\":\"string\"},\"outcome\":{\"description\":\"How the scenario ended.\",\"enum\":[\"passed\",\"failed\",\"not_run\",\"harness_error\"],\"type\":\"string\"}},\"required\":[\"id\",\"outcome\"],\"title\":\"VerificationScenario\",\"type\":\"object\"}},\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"One Checkpoint 4 verification run of a candidate commit for a confirmed Change Card revision, and its current state. The run keeps the revision it was started for, so a later confirm_intent does not change it.\",\"properties\":{\"accepted_at\":{\"description\":\"When the run was accepted.\",\"format\":\"date-time\",\"type\":\"string\"},\"candidate_commit\":{\"description\":\"Candidate commit the run builds and verifies.\",\"type\":\"string\"},\"change_id\":{\"description\":\"Change Card the run verifies.\",\"type\":\"string\"},\"request_revision\":{\"description\":\"Change Card revision the run verifies.\",\"type\":\"string\"},\"run_id\":{\"description\":\"Verification run identifier; get_verification takes it.\",\"type\":\"string\"},\"state\":{\"description\":\"Exactly one of running, completed or not_completed.\",\"oneOf\":[{\"additionalProperties\":false,\"properties\":{\"type\":{\"enum\":[\"running\"],\"type\":\"string\"},\"value\":{\"$ref\":\"#/$defs/VerificationRunning\"}},\"required\":[\"type\",\"value\"],\"type\":\"object\"},{\"additionalProperties\":false,\"properties\":{\"type\":{\"enum\":[\"completed\"],\"type\":\"string\"},\"value\":{\"$ref\":\"#/$defs/VerificationCompleted\"}},\"required\":[\"type\",\"value\"],\"type\":\"object\"},{\"additionalProperties\":false,\"properties\":{\"type\":{\"enum\":[\"not_completed\"],\"type\":\"string\"},\"value\":{\"$ref\":\"#/$defs/VerificationNotCompleted\"}},\"required\":[\"type\",\"value\"],\"type\":\"object\"}],\"type\":\"object\"},\"suite_commit\":{\"description\":\"Evaluator suite commit the operator configured for the run.\",\"type\":\"string\"}},\"required\":[\"run_id\",\"change_id\",\"request_revision\",\"candidate_commit\",\"suite_commit\",\"accepted_at\",\"state\"],\"type\":\"object\"}"),
+		Fields: []*genregistry.ToolFieldMetadata{
+			declarations.field776(),
+			declarations.field777(),
+			declarations.field778(),
+			declarations.field779(),
+			declarations.field780(),
+			declarations.field781(),
+			declarations.field782(),
+			declarations.field783(),
+			declarations.field784(),
+			declarations.field785(),
+			declarations.field786(),
+			declarations.field787(),
+			declarations.field788(),
+			declarations.field789(),
+			declarations.field790(),
+			declarations.field791(),
+			declarations.field792(),
+			declarations.field793(),
+			declarations.field794(),
+			declarations.field795(),
+			declarations.field796(),
+			declarations.field797(),
+			declarations.field798(),
+			declarations.field799(),
+			declarations.field800(),
+			declarations.field801(),
+			declarations.field802(),
+			declarations.field803(),
+			declarations.field804(),
+			declarations.field805(),
+			declarations.field806(),
+			declarations.field807(),
+			declarations.field808(),
+			declarations.field809(),
+			declarations.field810(),
+			declarations.field811(),
+			declarations.field812(),
+			declarations.field813(),
+		},
+	}
+}
+
+// field776 constructs one generated field declaration.
+func (registryDeclarations) field776() *genregistry.ToolFieldMetadata {
 	registryText1 := "object"
 	registryText2 := "One Checkpoint 4 verification run of a candidate commit for a confirmed Change Card revision, and its current state. The run keeps the revision it was started for, so a later confirm_intent does not change it."
 	return &genregistry.ToolFieldMetadata{
@@ -11056,8 +12180,8 @@ func (registryDeclarations) field706() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field707 constructs one generated field declaration.
-func (registryDeclarations) field707() *genregistry.ToolFieldMetadata {
+// field777 constructs one generated field declaration.
+func (registryDeclarations) field777() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
 	registryText2 := "Verification run identifier; get_verification takes it."
 	return &genregistry.ToolFieldMetadata{
@@ -11069,8 +12193,8 @@ func (registryDeclarations) field707() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field708 constructs one generated field declaration.
-func (registryDeclarations) field708() *genregistry.ToolFieldMetadata {
+// field778 constructs one generated field declaration.
+func (registryDeclarations) field778() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
 	registryText2 := "Change Card the run verifies."
 	return &genregistry.ToolFieldMetadata{
@@ -11082,8 +12206,8 @@ func (registryDeclarations) field708() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field709 constructs one generated field declaration.
-func (registryDeclarations) field709() *genregistry.ToolFieldMetadata {
+// field779 constructs one generated field declaration.
+func (registryDeclarations) field779() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
 	registryText2 := "Change Card revision the run verifies."
 	return &genregistry.ToolFieldMetadata{
@@ -11095,8 +12219,8 @@ func (registryDeclarations) field709() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field710 constructs one generated field declaration.
-func (registryDeclarations) field710() *genregistry.ToolFieldMetadata {
+// field780 constructs one generated field declaration.
+func (registryDeclarations) field780() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
 	registryText2 := "Candidate commit the run builds and verifies."
 	return &genregistry.ToolFieldMetadata{
@@ -11108,8 +12232,8 @@ func (registryDeclarations) field710() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field711 constructs one generated field declaration.
-func (registryDeclarations) field711() *genregistry.ToolFieldMetadata {
+// field781 constructs one generated field declaration.
+func (registryDeclarations) field781() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
 	registryText2 := "Evaluator suite commit the operator configured for the run."
 	return &genregistry.ToolFieldMetadata{
@@ -11121,8 +12245,8 @@ func (registryDeclarations) field711() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field712 constructs one generated field declaration.
-func (registryDeclarations) field712() *genregistry.ToolFieldMetadata {
+// field782 constructs one generated field declaration.
+func (registryDeclarations) field782() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
 	registryText2 := "When the run was accepted."
 	return &genregistry.ToolFieldMetadata{
@@ -11134,8 +12258,8 @@ func (registryDeclarations) field712() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field713 constructs one generated field declaration.
-func (registryDeclarations) field713() *genregistry.ToolFieldMetadata {
+// field783 constructs one generated field declaration.
+func (registryDeclarations) field783() *genregistry.ToolFieldMetadata {
 	registryText1 := "object"
 	registryText2 := "Exactly one of running, completed or not_completed."
 	return &genregistry.ToolFieldMetadata{
@@ -11147,8 +12271,8 @@ func (registryDeclarations) field713() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field714 constructs one generated field declaration.
-func (registryDeclarations) field714() *genregistry.ToolFieldMetadata {
+// field784 constructs one generated field declaration.
+func (registryDeclarations) field784() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
 	return &genregistry.ToolFieldMetadata{
 		Path: []*genregistry.ToolFieldPathSegment{
@@ -11160,8 +12284,8 @@ func (registryDeclarations) field714() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field715 constructs one generated field declaration.
-func (registryDeclarations) field715() *genregistry.ToolFieldMetadata {
+// field785 constructs one generated field declaration.
+func (registryDeclarations) field785() *genregistry.ToolFieldMetadata {
 	registryText1 := "object"
 	registryText2 := "The run is still building or evaluating the candidate."
 	return &genregistry.ToolFieldMetadata{
@@ -11179,8 +12303,8 @@ func (registryDeclarations) field715() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field716 constructs one generated field declaration.
-func (registryDeclarations) field716() *genregistry.ToolFieldMetadata {
+// field786 constructs one generated field declaration.
+func (registryDeclarations) field786() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
 	registryText2 := "When the run was accepted."
 	return &genregistry.ToolFieldMetadata{
@@ -11199,8 +12323,8 @@ func (registryDeclarations) field716() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field717 constructs one generated field declaration.
-func (registryDeclarations) field717() *genregistry.ToolFieldMetadata {
+// field787 constructs one generated field declaration.
+func (registryDeclarations) field787() *genregistry.ToolFieldMetadata {
 	registryText1 := "object"
 	registryText2 := "The run produced a verification report. Its verdict is report.passed."
 	return &genregistry.ToolFieldMetadata{
@@ -11218,8 +12342,8 @@ func (registryDeclarations) field717() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field718 constructs one generated field declaration.
-func (registryDeclarations) field718() *genregistry.ToolFieldMetadata {
+// field788 constructs one generated field declaration.
+func (registryDeclarations) field788() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
 	registryText2 := "Evaluator suite the report was produced by."
 	return &genregistry.ToolFieldMetadata{
@@ -11238,8 +12362,8 @@ func (registryDeclarations) field718() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field719 constructs one generated field declaration.
-func (registryDeclarations) field719() *genregistry.ToolFieldMetadata {
+// field789 constructs one generated field declaration.
+func (registryDeclarations) field789() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
 	registryText2 := "Dependency profile the suite ran the candidate with, such as sim."
 	return &genregistry.ToolFieldMetadata{
@@ -11258,8 +12382,8 @@ func (registryDeclarations) field719() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field720 constructs one generated field declaration.
-func (registryDeclarations) field720() *genregistry.ToolFieldMetadata {
+// field790 constructs one generated field declaration.
+func (registryDeclarations) field790() *genregistry.ToolFieldMetadata {
 	registryText1 := "object"
 	registryText2 := "The builder view of the report."
 	return &genregistry.ToolFieldMetadata{
@@ -11278,8 +12402,8 @@ func (registryDeclarations) field720() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field721 constructs one generated field declaration.
-func (registryDeclarations) field721() *genregistry.ToolFieldMetadata {
+// field791 constructs one generated field declaration.
+func (registryDeclarations) field791() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
 	registryText2 := "SHA-256 digest of the full report the evaluator saved; approve_merge and surla approve take this digest."
 	return &genregistry.ToolFieldMetadata{
@@ -11299,8 +12423,8 @@ func (registryDeclarations) field721() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field722 constructs one generated field declaration.
-func (registryDeclarations) field722() *genregistry.ToolFieldMetadata {
+// field792 constructs one generated field declaration.
+func (registryDeclarations) field792() *genregistry.ToolFieldMetadata {
 	registryText1 := "object"
 	registryText2 := "Every declared scenario, counted by outcome."
 	return &genregistry.ToolFieldMetadata{
@@ -11320,8 +12444,8 @@ func (registryDeclarations) field722() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field723 constructs one generated field declaration.
-func (registryDeclarations) field723() *genregistry.ToolFieldMetadata {
+// field793 constructs one generated field declaration.
+func (registryDeclarations) field793() *genregistry.ToolFieldMetadata {
 	registryText1 := "integer"
 	registryText2 := "Scenarios the suite declares."
 	return &genregistry.ToolFieldMetadata{
@@ -11342,8 +12466,8 @@ func (registryDeclarations) field723() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field724 constructs one generated field declaration.
-func (registryDeclarations) field724() *genregistry.ToolFieldMetadata {
+// field794 constructs one generated field declaration.
+func (registryDeclarations) field794() *genregistry.ToolFieldMetadata {
 	registryText1 := "integer"
 	registryText2 := "Scenarios that passed."
 	return &genregistry.ToolFieldMetadata{
@@ -11364,8 +12488,8 @@ func (registryDeclarations) field724() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field725 constructs one generated field declaration.
-func (registryDeclarations) field725() *genregistry.ToolFieldMetadata {
+// field795 constructs one generated field declaration.
+func (registryDeclarations) field795() *genregistry.ToolFieldMetadata {
 	registryText1 := "integer"
 	registryText2 := "Scenarios whose checks failed."
 	return &genregistry.ToolFieldMetadata{
@@ -11386,8 +12510,8 @@ func (registryDeclarations) field725() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field726 constructs one generated field declaration.
-func (registryDeclarations) field726() *genregistry.ToolFieldMetadata {
+// field796 constructs one generated field declaration.
+func (registryDeclarations) field796() *genregistry.ToolFieldMetadata {
 	registryText1 := "integer"
 	registryText2 := "Declared scenarios the suite did not report."
 	return &genregistry.ToolFieldMetadata{
@@ -11408,8 +12532,8 @@ func (registryDeclarations) field726() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field727 constructs one generated field declaration.
-func (registryDeclarations) field727() *genregistry.ToolFieldMetadata {
+// field797 constructs one generated field declaration.
+func (registryDeclarations) field797() *genregistry.ToolFieldMetadata {
 	registryText1 := "integer"
 	registryText2 := "Scenarios that could not be evaluated."
 	return &genregistry.ToolFieldMetadata{
@@ -11430,8 +12554,8 @@ func (registryDeclarations) field727() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field728 constructs one generated field declaration.
-func (registryDeclarations) field728() *genregistry.ToolFieldMetadata {
+// field798 constructs one generated field declaration.
+func (registryDeclarations) field798() *genregistry.ToolFieldMetadata {
 	registryText1 := "boolean"
 	registryText2 := "The verdict: true only when every declared scenario passed and the suite ran cleanly."
 	return &genregistry.ToolFieldMetadata{
@@ -11451,8 +12575,8 @@ func (registryDeclarations) field728() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field729 constructs one generated field declaration.
-func (registryDeclarations) field729() *genregistry.ToolFieldMetadata {
+// field799 constructs one generated field declaration.
+func (registryDeclarations) field799() *genregistry.ToolFieldMetadata {
 	registryText1 := "boolean"
 	registryText2 := "Whether the evaluator suite itself failed or ended abnormally."
 	return &genregistry.ToolFieldMetadata{
@@ -11472,8 +12596,8 @@ func (registryDeclarations) field729() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field730 constructs one generated field declaration.
-func (registryDeclarations) field730() *genregistry.ToolFieldMetadata {
+// field800 constructs one generated field declaration.
+func (registryDeclarations) field800() *genregistry.ToolFieldMetadata {
 	registryText1 := "array"
 	registryText2 := "Every declared scenario in declaration order."
 	return &genregistry.ToolFieldMetadata{
@@ -11493,8 +12617,8 @@ func (registryDeclarations) field730() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field731 constructs one generated field declaration.
-func (registryDeclarations) field731() *genregistry.ToolFieldMetadata {
+// field801 constructs one generated field declaration.
+func (registryDeclarations) field801() *genregistry.ToolFieldMetadata {
 	registryText1 := "object"
 	registryText2 := "Every declared scenario in declaration order."
 	return &genregistry.ToolFieldMetadata{
@@ -11515,8 +12639,8 @@ func (registryDeclarations) field731() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field732 constructs one generated field declaration.
-func (registryDeclarations) field732() *genregistry.ToolFieldMetadata {
+// field802 constructs one generated field declaration.
+func (registryDeclarations) field802() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
 	registryText2 := "Scenario name for a repair scenario, or holdout-<n> for a holdout."
 	return &genregistry.ToolFieldMetadata{
@@ -11538,8 +12662,8 @@ func (registryDeclarations) field732() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field733 constructs one generated field declaration.
-func (registryDeclarations) field733() *genregistry.ToolFieldMetadata {
+// field803 constructs one generated field declaration.
+func (registryDeclarations) field803() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
 	registryText2 := "How the scenario ended."
 	return &genregistry.ToolFieldMetadata{
@@ -11561,8 +12685,8 @@ func (registryDeclarations) field733() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field734 constructs one generated field declaration.
-func (registryDeclarations) field734() *genregistry.ToolFieldMetadata {
+// field804 constructs one generated field declaration.
+func (registryDeclarations) field804() *genregistry.ToolFieldMetadata {
 	registryText1 := "array"
 	registryText2 := "The repair scenario's checks; empty for holdouts."
 	return &genregistry.ToolFieldMetadata{
@@ -11584,8 +12708,8 @@ func (registryDeclarations) field734() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field735 constructs one generated field declaration.
-func (registryDeclarations) field735() *genregistry.ToolFieldMetadata {
+// field805 constructs one generated field declaration.
+func (registryDeclarations) field805() *genregistry.ToolFieldMetadata {
 	registryText1 := "object"
 	registryText2 := "The repair scenario's checks; empty for holdouts."
 	return &genregistry.ToolFieldMetadata{
@@ -11608,8 +12732,8 @@ func (registryDeclarations) field735() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field736 constructs one generated field declaration.
-func (registryDeclarations) field736() *genregistry.ToolFieldMetadata {
+// field806 constructs one generated field declaration.
+func (registryDeclarations) field806() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
 	registryText2 := "Check name."
 	return &genregistry.ToolFieldMetadata{
@@ -11633,8 +12757,8 @@ func (registryDeclarations) field736() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field737 constructs one generated field declaration.
-func (registryDeclarations) field737() *genregistry.ToolFieldMetadata {
+// field807 constructs one generated field declaration.
+func (registryDeclarations) field807() *genregistry.ToolFieldMetadata {
 	registryText1 := "boolean"
 	registryText2 := "Whether the check passed."
 	return &genregistry.ToolFieldMetadata{
@@ -11658,8 +12782,8 @@ func (registryDeclarations) field737() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field738 constructs one generated field declaration.
-func (registryDeclarations) field738() *genregistry.ToolFieldMetadata {
+// field808 constructs one generated field declaration.
+func (registryDeclarations) field808() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
 	registryText2 := "Why the check failed; empty when it passed."
 	return &genregistry.ToolFieldMetadata{
@@ -11683,8 +12807,8 @@ func (registryDeclarations) field738() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field739 constructs one generated field declaration.
-func (registryDeclarations) field739() *genregistry.ToolFieldMetadata {
+// field809 constructs one generated field declaration.
+func (registryDeclarations) field809() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
 	registryText2 := "The repair scenario's environment error; empty for holdouts."
 	return &genregistry.ToolFieldMetadata{
@@ -11706,8 +12830,8 @@ func (registryDeclarations) field739() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field740 constructs one generated field declaration.
-func (registryDeclarations) field740() *genregistry.ToolFieldMetadata {
+// field810 constructs one generated field declaration.
+func (registryDeclarations) field810() *genregistry.ToolFieldMetadata {
 	registryText1 := "object"
 	registryText2 := "The run was accepted but did not complete: a step failed, or its processes ended or were canceled or timed out before it finished. The summary states where it stopped, without command output; full evidence, including any partial report saved while it was being stopped, stays with the evaluator."
 	return &genregistry.ToolFieldMetadata{
@@ -11725,8 +12849,8 @@ func (registryDeclarations) field740() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field741 constructs one generated field declaration.
-func (registryDeclarations) field741() *genregistry.ToolFieldMetadata {
+// field811 constructs one generated field declaration.
+func (registryDeclarations) field811() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
 	registryText2 := "execution_failed when a step failed; interrupted when the run's process ended before it finished."
 	return &genregistry.ToolFieldMetadata{
@@ -11745,8 +12869,8 @@ func (registryDeclarations) field741() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field742 constructs one generated field declaration.
-func (registryDeclarations) field742() *genregistry.ToolFieldMetadata {
+// field812 constructs one generated field declaration.
+func (registryDeclarations) field812() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
 	registryText2 := "Where the run stopped."
 	return &genregistry.ToolFieldMetadata{
@@ -11765,8 +12889,8 @@ func (registryDeclarations) field742() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field743 constructs one generated field declaration.
-func (registryDeclarations) field743() *genregistry.ToolFieldMetadata {
+// field813 constructs one generated field declaration.
+func (registryDeclarations) field813() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
 	registryText2 := "Builder-safe description of what stopped the run; never command output."
 	return &genregistry.ToolFieldMetadata{
@@ -11785,23 +12909,23 @@ func (registryDeclarations) field743() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// metadata744 constructs one generated metadata declaration.
-func (declarations registryDeclarations) metadata744() *genregistry.ToolTypeMetadata {
+// metadata814 constructs one generated metadata declaration.
+func (declarations registryDeclarations) metadata814() *genregistry.ToolTypeMetadata {
 	registryText1 := "VerifyChangePayload"
 	return &genregistry.ToolTypeMetadata{
 		Name:                     &registryText1,
 		SchemaWithoutRootExample: []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Names the confirmed Change Card revision and the candidate commit to verify. What is built and which evaluator suite runs come from the operator's configuration of surla serve, never from the caller.\",\"properties\":{\"candidate_commit\":{\"description\":\"Full commit ID of the candidate to build and verify (40 or 64 lowercase hex characters).\",\"pattern\":\"^([0-9a-f]{40}|[0-9a-f]{64})$\",\"type\":\"string\"},\"change_id\":{\"description\":\"Confirmed Change Card identifier.\",\"type\":\"string\"},\"request_revision\":{\"description\":\"Current request_revision of the confirmed Change Card.\",\"type\":\"string\"}},\"required\":[\"change_id\",\"request_revision\",\"candidate_commit\"],\"type\":\"object\"}"),
 		Fields: []*genregistry.ToolFieldMetadata{
-			declarations.field745(),
-			declarations.field746(),
-			declarations.field747(),
-			declarations.field748(),
+			declarations.field815(),
+			declarations.field816(),
+			declarations.field817(),
+			declarations.field818(),
 		},
 	}
 }
 
-// field745 constructs one generated field declaration.
-func (registryDeclarations) field745() *genregistry.ToolFieldMetadata {
+// field815 constructs one generated field declaration.
+func (registryDeclarations) field815() *genregistry.ToolFieldMetadata {
 	registryText1 := "object"
 	registryText2 := "Names the confirmed Change Card revision and the candidate commit to verify. What is built and which evaluator suite runs come from the operator's configuration of surla serve, never from the caller."
 	return &genregistry.ToolFieldMetadata{
@@ -11810,8 +12934,8 @@ func (registryDeclarations) field745() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field746 constructs one generated field declaration.
-func (registryDeclarations) field746() *genregistry.ToolFieldMetadata {
+// field816 constructs one generated field declaration.
+func (registryDeclarations) field816() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
 	registryText2 := "Confirmed Change Card identifier."
 	return &genregistry.ToolFieldMetadata{
@@ -11823,8 +12947,8 @@ func (registryDeclarations) field746() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field747 constructs one generated field declaration.
-func (registryDeclarations) field747() *genregistry.ToolFieldMetadata {
+// field817 constructs one generated field declaration.
+func (registryDeclarations) field817() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
 	registryText2 := "Current request_revision of the confirmed Change Card."
 	return &genregistry.ToolFieldMetadata{
@@ -11836,8 +12960,8 @@ func (registryDeclarations) field747() *genregistry.ToolFieldMetadata {
 	}
 }
 
-// field748 constructs one generated field declaration.
-func (registryDeclarations) field748() *genregistry.ToolFieldMetadata {
+// field818 constructs one generated field declaration.
+func (registryDeclarations) field818() *genregistry.ToolFieldMetadata {
 	registryText1 := "string"
 	registryText2 := "Full commit ID of the candidate to build and verify (40 or 64 lowercase hex characters)."
 	return &genregistry.ToolFieldMetadata{

@@ -115,7 +115,7 @@ func TestCheckProjectRepairsDependenciesOnOneServer(t *testing.T) {
 	for _, name := range []string{"ANTHROPIC_API_KEY", "OPENAI_API_KEY", liveModelGatewayEnv, liveModelProviderEnv, liveModelNameEnv} {
 		t.Setenv(name, "")
 	}
-	gatewayAddr := startModelGateway(t, &scriptedCP1Provider{})
+	gatewayAddr := startModelGateway(t, &scriptedModelProvider{})
 	workspace := t.TempDir()
 	opts, err := serveOptions(serveConfig{
 		checkTimeout:     defaultCheckTimeout,
@@ -126,7 +126,6 @@ func TestCheckProjectRepairsDependenciesOnOneServer(t *testing.T) {
 		gatewayAddr:      gatewayAddr,
 	}, func(string) string { return "" }, os.Environ())
 	require.NoError(t, err)
-	opts.Analyzer = trustedSuiteAnalyzer{}
 	// A test executable has no released module version in its build info.
 	opts.SurlaVersion = starterSurlaVersion
 	cp, err := controlplane.New(opts)

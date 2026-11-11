@@ -25,13 +25,6 @@ import (
 )
 
 type (
-	// staticCP1Analyzer returns one fixed CP1SemanticAnalysis for controlplane
-	// tests of `surla preview-change`.
-	staticCP1Analyzer struct {
-		// analysis is the CP1 semantic result returned for every Analyze call.
-		analysis controlplane.CP1SemanticAnalysis
-	}
-
 	// recordingPreviewService implements gensurla.Service for HTTP transport
 	// tests that inspect the exact wire payload `surla preview-change` sends.
 	recordingPreviewService struct {
@@ -86,45 +79,6 @@ var (
 	tidyPreviewModuleFiles map[string]string
 )
 
-// Analyze returns a.analysis for every CP1 ProposeChange call.
-func (a staticCP1Analyzer) Analyze(
-	context.Context, string, controlplane.CP1Design,
-) (controlplane.CP1SemanticAnalysis, error) {
-	return a.analysis, nil
-}
-
-// Revise returns a revision analysis derived from a.analysis for every CP1 ReviseChange call.
-func (a staticCP1Analyzer) Revise(
-	_ context.Context, prior controlplane.CP1PriorCard, _ string, _ controlplane.CP1Design,
-) (controlplane.CP1RevisionSemanticAnalysis, error) {
-	revExamples := make([]controlplane.CP1RevisionModelExample, 0, len(a.analysis.Examples))
-	var removed []string
-	for i, ex := range a.analysis.Examples {
-		priorID := ""
-		if i < len(prior.Examples) {
-			priorID = prior.Examples[i].ID
-		}
-		revExamples = append(revExamples, controlplane.CP1RevisionModelExample{
-			PriorID:          priorID,
-			Scenario:         ex.Scenario,
-			InputSummary:     ex.InputSummary,
-			ExpectedOutcome:  ex.ExpectedOutcome,
-			VerificationKind: ex.VerificationKind,
-		})
-	}
-	for i := len(a.analysis.Examples); i < len(prior.Examples); i++ {
-		removed = append(removed, prior.Examples[i].ID)
-	}
-	return controlplane.CP1RevisionSemanticAnalysis{
-		Summary:            a.analysis.Summary,
-		Ambiguities:        a.analysis.Ambiguities,
-		Examples:           revExamples,
-		RemovedExampleIDs:  removed,
-		PreservedBehaviors: a.analysis.PreservedBehaviors,
-		UIComposition:      a.analysis.UIComposition,
-	}, nil
-}
-
 // PreviewArchitecture records p and returns s.result.
 func (s *recordingPreviewService) PreviewArchitecture(_ context.Context, p *gensurla.PreviewArchitecturePayload) (*gensurla.ArchitecturePreviewResult, error) {
 	s.mu.Lock()
@@ -159,27 +113,26 @@ func TestRunPreviewChangeEndToEndThroughControlPlane(t *testing.T) {
 	cp, err := controlplane.New(controlplane.Options{
 		CardsDir:      t.TempDir(),
 		SwarmProfiles: profiles,
-		Analyzer: staticCP1Analyzer{
-			analysis: controlplane.CP1SemanticAnalysis{
-				Summary:     "Give VIP customers instant store credit up to €150.",
-				Ambiguities: []controlplane.CP1ModelAmbiguity{},
-				Examples: []controlplane.CP1ModelExample{{
-					Scenario:         "VIP refund within €150",
-					InputSummary:     "VIP customer, €120 order total",
-					ExpectedOutcome:  "Instant store credit",
-					VerificationKind: "deterministic",
-				}},
-				PreservedBehaviors: []string{"Non-VIP orders over €50 still require manager approval."},
-			},
-		},
 	})
 	require.NoError(t, err)
 	t.Cleanup(func() { assert.NoError(t, cp.Close()) })
 
 	aliceCtx := controlplane.WithPrincipal(context.Background(), controlplane.Principal{ID: "alice@example.com"})
+	vipAnalysis := &gensurla.CP1Analysis{
+		Summary:     "Give VIP customers instant store credit up to €150.",
+		Ambiguities: []*gensurla.CP1AnalysisAmbiguity{},
+		Examples: []*gensurla.CP1AnalysisExample{{
+			Scenario:         "VIP refund within €150",
+			InputSummary:     "VIP customer, €120 order total",
+			ExpectedOutcome:  "Instant store credit",
+			VerificationKind: "deterministic",
+		}},
+		PreservedBehaviors: []string{"Non-VIP orders over €50 still require manager approval."},
+	}
 	card, err := cp.ProposeChange(aliceCtx, &gensurla.ProposeChangePayload{
 		ChangeID: "vip-refunds",
 		Prompt:   "Give VIP customers instant store credit up to €150.",
+		Analysis: vipAnalysis,
 	})
 	require.NoError(t, err)
 	require.Equal(t, controlplane.StatusConfirmed, card.Status)
@@ -347,33 +300,33 @@ func TestRunPreviewChangeEndToEndThroughControlPlane(t *testing.T) {
 	unconfirmedCard, err := cp.ProposeChange(aliceCtx, &gensurla.ProposeChangePayload{
 		ChangeID: "pending-card",
 		Prompt:   "Ambiguous change.",
+		Analysis: vipAnalysis,
 	})
 	require.NoError(t, err)
-	// Create an unconfirmed card using a second controlplane analyzer with an ambiguity.
+	// Create an unconfirmed card on a second control plane from an analysis
+	// with an open question.
 	cpAmbiguous, err := controlplane.New(controlplane.Options{
 		CardsDir: t.TempDir(),
-		Analyzer: staticCP1Analyzer{
-			analysis: controlplane.CP1SemanticAnalysis{
-				Summary: "Needs answer.",
-				Ambiguities: []controlplane.CP1ModelAmbiguity{{
-					Question: "Include shipping?",
-					Options:  []string{"Yes", "No"},
-				}},
-				Examples: []controlplane.CP1ModelExample{{
-					Scenario:         "Example",
-					InputSummary:     "Input",
-					ExpectedOutcome:  "Outcome",
-					VerificationKind: "deterministic",
-				}},
-				PreservedBehaviors: []string{"Preserve auth."},
-			},
-		},
 	})
 	require.NoError(t, err)
 	t.Cleanup(func() { assert.NoError(t, cpAmbiguous.Close()) })
 	pending, err := cpAmbiguous.ProposeChange(aliceCtx, &gensurla.ProposeChangePayload{
 		ChangeID: "needs-confirm",
-		Prompt:   "Needs answer.",
+		Prompt:   "Give VIP customers instant store credit up to €150, shipping included or not.",
+		Analysis: &gensurla.CP1Analysis{
+			Summary: "VIP customers get instant store credit up to €150; whether shipping counts is open.",
+			Ambiguities: []*gensurla.CP1AnalysisAmbiguity{{
+				Question: "Does shipping count toward the €150 limit?",
+				Options:  []string{"Yes", "No"},
+			}},
+			Examples: []*gensurla.CP1AnalysisExample{{
+				Scenario:         "VIP order with shipping",
+				InputSummary:     "VIP customer, €140 of items and €15 shipping",
+				ExpectedOutcome:  "Instant store credit only when shipping does not count",
+				VerificationKind: "deterministic",
+			}},
+			PreservedBehaviors: []string{"Only the authenticated VIP customer can request the credit."},
+		},
 	})
 	require.NoError(t, err)
 	require.Equal(t, controlplane.StatusNeedsConfirmation, pending.Status)

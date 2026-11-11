@@ -6,37 +6,40 @@ package controlplane
 
 import (
 	"context"
+	"encoding/json"
 	"regexp"
 	"testing"
 
 	gensurla "github.com/goadesign/surla/gen/surla"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"goa.design/goa-ai/runtime/agent/model"
 )
 
-// newReviseTestControlPlane creates a test ControlPlane with a queued model client
-// returning the specified serialized JSON responses in order.
-func newReviseTestControlPlane(t *testing.T, responses ...string) (*ControlPlane, string) {
+// withProposalAnalysis returns p with its analysis decoded from analysisJSON,
+// the wire form a coding agent sends, by the generated propose_change decoder,
+// which applies the same structural validation as the MCP and HTTP transports.
+func withProposalAnalysis(t *testing.T, p *gensurla.ProposeChangePayload, analysisJSON string) *gensurla.ProposeChangePayload {
 	t.Helper()
-	cardsDir := t.TempDir()
-	qc := &queuedModelClient{}
-	for _, r := range responses {
-		qc.responses = append(qc.responses, queuedModelTurn{
-			resp: &model.Response{
-				Content: []model.Message{{
-					Role:  model.ConversationRoleAssistant,
-					Parts: []model.Part{model.TextPart{Text: r}},
-				}},
-				StopReason: "stop",
-			},
-		})
-	}
-	cp := newControlPlane(t, Options{
-		CardsDir: cardsDir,
-		Analyzer: NewModelCP1Analyzer(newQueuedModelClient(t, qc)),
+	raw, err := json.Marshal(map[string]any{"change_id": p.ChangeID, "prompt": p.Prompt, "analysis": json.RawMessage(analysisJSON)})
+	require.NoError(t, err)
+	decoded, err := gensurla.DecodeProposeChangePayload(raw)
+	require.NoError(t, err)
+	p.Analysis = decoded.Analysis
+	return p
+}
+
+// withRevisionAnalysis returns p with its analysis decoded from analysisJSON
+// by the generated revise_change decoder, as withProposalAnalysis does.
+func withRevisionAnalysis(t *testing.T, p *gensurla.ReviseChangePayload, analysisJSON string) *gensurla.ReviseChangePayload {
+	t.Helper()
+	raw, err := json.Marshal(map[string]any{
+		"change_id": p.ChangeID, "request_revision": p.RequestRevision, "prompt": p.Prompt, "analysis": json.RawMessage(analysisJSON),
 	})
-	return cp, cardsDir
+	require.NoError(t, err)
+	decoded, err := gensurla.DecodeReviseChangePayload(raw)
+	require.NoError(t, err)
+	p.Analysis = decoded.Analysis
+	return p
 }
 
 // TestProposeChangeAssignsDefaultExampleIDs_Decision2A verifies that propose_change
@@ -54,12 +57,12 @@ func TestProposeChangeAssignsDefaultExampleIDs_Decision2A(t *testing.T) {
 		],
 		"preserved_behaviors": ["Orders over $50 require manager approval."]
 	}`
-	cp, _ := newReviseTestControlPlane(t, proposalJSON)
+	cp := newControlPlane(t, Options{})
 
-	card, err := cp.ProposeChange(aliceCtx, &gensurla.ProposeChangePayload{
+	card, err := cp.ProposeChange(aliceCtx, withProposalAnalysis(t, &gensurla.ProposeChangePayload{
 		ChangeID: "feat-refunds-1",
 		Prompt:   "Instant refunds under $50.",
-	})
+	}, proposalJSON))
 	require.NoError(t, err)
 	require.Len(t, card.Examples, 3)
 
@@ -94,12 +97,12 @@ func TestReviseChangePreservesSurvivingPriorExamples_Decision1A(t *testing.T) {
 		"removed_example_ids": [],
 		"preserved_behaviors": []
 	}`
-	cp, _ := newReviseTestControlPlane(t, proposalJSON, revisionJSON)
+	cp := newControlPlane(t, Options{})
 
-	card1, err := cp.ProposeChange(aliceCtx, &gensurla.ProposeChangePayload{
+	card1, err := cp.ProposeChange(aliceCtx, withProposalAnalysis(t, &gensurla.ProposeChangePayload{
 		ChangeID: "search-feature",
 		Prompt:   "Search products.",
-	})
+	}, proposalJSON))
 	require.NoError(t, err)
 	require.Len(t, card1.Examples, 1)
 	assert.Equal(t, "check_01", card1.Examples[0].ID)
@@ -126,11 +129,11 @@ func TestReviseChangePreservesSurvivingPriorExamples_Decision1A(t *testing.T) {
 	assert.Equal(t, "ex-search", confirmed.Examples[1].ID)
 
 	// Revise the confirmed card.
-	revised, err := cp.ReviseChange(aliceCtx, &gensurla.ReviseChangePayload{
+	revised, err := cp.ReviseChange(aliceCtx, withRevisionAnalysis(t, &gensurla.ReviseChangePayload{
 		ChangeID:        "search-feature",
 		RequestRevision: confirmed.RequestRevision,
 		Prompt:          "Search products with fast filtering.",
-	})
+	}, revisionJSON))
 	require.NoError(t, err)
 	require.Len(t, revised.Examples, 2)
 	assert.Equal(t, "check_01", revised.Examples[0].ID)
@@ -163,12 +166,12 @@ func TestReviseChangeAllocatesLowestUnusedIDAbsentFromBothTables(t *testing.T) {
 			"removed_example_ids": [],
 			"preserved_behaviors": []
 		}`
-		cp, _ := newReviseTestControlPlane(t, proposalJSON, revisionJSON)
+		cp := newControlPlane(t, Options{})
 
-		card1, err := cp.ProposeChange(aliceCtx, &gensurla.ProposeChangePayload{
+		card1, err := cp.ProposeChange(aliceCtx, withProposalAnalysis(t, &gensurla.ProposeChangePayload{
 			ChangeID: "chg-gap",
 			Prompt:   "Feature.",
-		})
+		}, proposalJSON))
 		require.NoError(t, err)
 
 		// Confirm with check_01 and custom check_05.
@@ -189,11 +192,11 @@ func TestReviseChangeAllocatesLowestUnusedIDAbsentFromBothTables(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		revised, err := cp.ReviseChange(aliceCtx, &gensurla.ReviseChangePayload{
+		revised, err := cp.ReviseChange(aliceCtx, withRevisionAnalysis(t, &gensurla.ReviseChangePayload{
 			ChangeID:        "chg-gap",
 			RequestRevision: card1Conf.RequestRevision,
 			Prompt:          "Revised feature.",
-		})
+		}, revisionJSON))
 		require.NoError(t, err)
 		require.Len(t, revised.Examples, 3)
 		assert.Equal(t, "check_01", revised.Examples[0].ID)
@@ -222,22 +225,22 @@ func TestReviseChangeAllocatesLowestUnusedIDAbsentFromBothTables(t *testing.T) {
 			"removed_example_ids": ["check_01"],
 			"preserved_behaviors": []
 		}`
-		cp, _ := newReviseTestControlPlane(t, proposalJSON, revisionJSON)
+		cp := newControlPlane(t, Options{})
 
-		card1, err := cp.ProposeChange(aliceCtx, &gensurla.ProposeChangePayload{
+		card1, err := cp.ProposeChange(aliceCtx, withProposalAnalysis(t, &gensurla.ProposeChangePayload{
 			ChangeID: "chg-retired",
 			Prompt:   "Feature.",
-		})
+		}, proposalJSON))
 		require.NoError(t, err)
 		require.Len(t, card1.Examples, 2)
 		assert.Equal(t, "check_01", card1.Examples[0].ID)
 		assert.Equal(t, "check_02", card1.Examples[1].ID)
 
-		revised, err := cp.ReviseChange(aliceCtx, &gensurla.ReviseChangePayload{
+		revised, err := cp.ReviseChange(aliceCtx, withRevisionAnalysis(t, &gensurla.ReviseChangePayload{
 			ChangeID:        "chg-retired",
 			RequestRevision: card1.RequestRevision,
 			Prompt:          "Revised feature.",
-		})
+		}, revisionJSON))
 		require.NoError(t, err)
 		require.Len(t, revised.Examples, 2)
 		assert.Equal(t, "check_02", revised.Examples[0].ID)
@@ -247,7 +250,7 @@ func TestReviseChangeAllocatesLowestUnusedIDAbsentFromBothTables(t *testing.T) {
 
 // TestReviseChangeRejectsOmittedPriorExampleID_Decision1A verifies that revise_change
 // rejects any prior example omitted from both examples[*].prior_id and removed_example_ids
-// as analysis_rejected (HTTP 502), leaving the saved card untouched.
+// as unprocessable, leaving the saved card untouched.
 func TestReviseChangeRejectsOmittedPriorExampleID_Decision1A(t *testing.T) {
 	aliceCtx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
 	proposalJSON := `{
@@ -269,24 +272,21 @@ func TestReviseChangeRejectsOmittedPriorExampleID_Decision1A(t *testing.T) {
 		"removed_example_ids": [],
 		"preserved_behaviors": []
 	}`
-	cp, _ := newReviseTestControlPlane(t, proposalJSON, omissionJSON)
+	cp := newControlPlane(t, Options{})
 
-	card1, err := cp.ProposeChange(aliceCtx, &gensurla.ProposeChangePayload{
+	card1, err := cp.ProposeChange(aliceCtx, withProposalAnalysis(t, &gensurla.ProposeChangePayload{
 		ChangeID: "chg-omission",
 		Prompt:   "Feature.",
-	})
+	}, proposalJSON))
 	require.NoError(t, err)
 
-	_, err = cp.ReviseChange(aliceCtx, &gensurla.ReviseChangePayload{
+	_, err = cp.ReviseChange(aliceCtx, withRevisionAnalysis(t, &gensurla.ReviseChangePayload{
 		ChangeID:        "chg-omission",
 		RequestRevision: card1.RequestRevision,
 		Prompt:          "Revised feature.",
-	})
-	require.Error(t, err)
+	}, omissionJSON))
+	assertServiceError(t, err, "unprocessable")
 	assert.ErrorContains(t, err, `prior example ID "check_02" is omitted from both examples and removed_example_ids`)
-	se, ok := asAnalysisRejected(err)
-	require.True(t, ok, "omission must return analysis_rejected ServiceError")
-	assert.False(t, se.Fault, "analysis_rejected must not be a server fault")
 
 	// Verify saved card remains untouched.
 	saved, err := cp.GetChange(aliceCtx, &gensurla.GetChangePayload{ChangeID: "chg-omission"})
@@ -296,7 +296,7 @@ func TestReviseChangeRejectsOmittedPriorExampleID_Decision1A(t *testing.T) {
 
 // TestReviseChangeRejectsInvalidPriorAccounting_Decision1A verifies that revise_change
 // rejects unknown prior_id, duplicate prior_id, unknown removed_example_ids, duplicate
-// removed_example_ids, ID in both lists, or empty/whitespace removed entries as analysis_rejected (HTTP 502).
+// removed_example_ids, ID in both lists, or a whitespace-only removed entry as unprocessable.
 func TestReviseChangeRejectsInvalidPriorAccounting_Decision1A(t *testing.T) {
 	aliceCtx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
 
@@ -383,7 +383,7 @@ func TestReviseChangeRejectsInvalidPriorAccounting_Decision1A(t *testing.T) {
 				"removed_example_ids": ["   "],
 				"preserved_behaviors": []
 			}`,
-			wantErr: `removed_example_ids[0] is empty`,
+			wantErr: `removed_example_ids[0] references unknown prior example ID "   "`,
 		},
 	}
 
@@ -397,24 +397,21 @@ func TestReviseChangeRejectsInvalidPriorAccounting_Decision1A(t *testing.T) {
 				],
 				"preserved_behaviors": []
 			}`
-			cp, _ := newReviseTestControlPlane(t, proposalJSON, tc.reviseJSON)
+			cp := newControlPlane(t, Options{})
 
-			card1, err := cp.ProposeChange(aliceCtx, &gensurla.ProposeChangePayload{
+			card1, err := cp.ProposeChange(aliceCtx, withProposalAnalysis(t, &gensurla.ProposeChangePayload{
 				ChangeID: "chg-test",
 				Prompt:   "Feature.",
-			})
+			}, proposalJSON))
 			require.NoError(t, err)
 
-			_, err = cp.ReviseChange(aliceCtx, &gensurla.ReviseChangePayload{
+			_, err = cp.ReviseChange(aliceCtx, withRevisionAnalysis(t, &gensurla.ReviseChangePayload{
 				ChangeID:        "chg-test",
 				RequestRevision: card1.RequestRevision,
 				Prompt:          "Revised feature.",
-			})
-			require.Error(t, err)
+			}, tc.reviseJSON))
+			assertServiceError(t, err, "unprocessable")
 			assert.ErrorContains(t, err, tc.wantErr)
-			se, ok := asAnalysisRejected(err)
-			require.True(t, ok, "must return analysis_rejected ServiceError")
-			assert.False(t, se.Fault)
 
 			saved, err := cp.GetChange(aliceCtx, &gensurla.GetChangePayload{ChangeID: "chg-test"})
 			require.NoError(t, err)
@@ -438,7 +435,7 @@ func TestReviseChangeLegacySavedCardWithHyphenatedIDs(t *testing.T) {
 		"removed_example_ids": [],
 		"preserved_behaviors": []
 	}`
-	cp, cardsDir := newReviseTestControlPlane(t, revisionJSON)
+	cp := newControlPlane(t, Options{})
 
 	// Construct and save a legacy card file with feat-1-check-01 on disk.
 	legacyCard := &gensurla.ChangeCardResult{
@@ -479,11 +476,11 @@ func TestReviseChangeLegacySavedCardWithHyphenatedIDs(t *testing.T) {
 	assert.Equal(t, "feat-1-check-01", loaded.Examples[0].ID)
 
 	// Revise the legacy card.
-	revised, err := cp.ReviseChange(aliceCtx, &gensurla.ReviseChangePayload{
+	revised, err := cp.ReviseChange(aliceCtx, withRevisionAnalysis(t, &gensurla.ReviseChangePayload{
 		ChangeID:        "feat-legacy",
 		RequestRevision: loaded.RequestRevision,
 		Prompt:          "Add another check to legacy feature.",
-	})
+	}, revisionJSON))
 	require.NoError(t, err)
 	require.Len(t, revised.Examples, 2)
 	assert.Equal(t, "feat-1-check-01", revised.Examples[0].ID, "surviving legacy example preserves its exact ID")
@@ -495,7 +492,6 @@ func TestReviseChangeLegacySavedCardWithHyphenatedIDs(t *testing.T) {
 	assert.Equal(t, revised.RequestRevision, reloaded.RequestRevision)
 	assert.Equal(t, "feat-1-check-01", reloaded.Examples[0].ID)
 	assert.Equal(t, "check_01", reloaded.Examples[1].ID)
-	_ = cardsDir
 }
 
 // TestReviseChangeWhitespaceManualIDRemovalAndCollision verifies that:
@@ -551,12 +547,12 @@ func TestReviseChangeWhitespaceManualIDRemovalAndCollision(t *testing.T) {
 		"preserved_behaviors": []
 	}`
 
-	cp, _ := newReviseTestControlPlane(t, proposeR1JSON, reviseR2JSON, reviseR3JSON, reviseR4JSON)
+	cp := newControlPlane(t, Options{})
 
-	r1, err := cp.ProposeChange(aliceCtx, &gensurla.ProposeChangePayload{
+	r1, err := cp.ProposeChange(aliceCtx, withProposalAnalysis(t, &gensurla.ProposeChangePayload{
 		ChangeID: "chg-ws-ids",
 		Prompt:   "Initial feature.",
-	})
+	}, proposeR1JSON))
 	require.NoError(t, err)
 
 	// Confirm R1 with whitespace-padded manual IDs " check_01 " and " custom ".
@@ -587,11 +583,11 @@ func TestReviseChangeWhitespaceManualIDRemovalAndCollision(t *testing.T) {
 	assert.Equal(t, " custom ", confirmedR1.Examples[1].ID)
 
 	// Revise to R2: removes " custom ", keeps " check_01 ", and adds a brand-new row.
-	r2, err := cp.ReviseChange(aliceCtx, &gensurla.ReviseChangePayload{
+	r2, err := cp.ReviseChange(aliceCtx, withRevisionAnalysis(t, &gensurla.ReviseChangePayload{
 		ChangeID:        "chg-ws-ids",
 		RequestRevision: confirmedR1.RequestRevision,
 		Prompt:          "Remove custom and add a new row.",
-	})
+	}, reviseR2JSON))
 	require.NoError(t, err)
 	require.Len(t, r2.Examples, 2)
 	assert.Equal(t, " check_01 ", r2.Examples[0].ID, "kept example preserves exact whitespace-padded ID")
@@ -608,22 +604,22 @@ func TestReviseChangeWhitespaceManualIDRemovalAndCollision(t *testing.T) {
 	assert.Equal(t, StatusConfirmed, confirmedR2.Status)
 
 	// Revise to R3: removes " check_01 " and adds a new row; "check_01" is still reserved during R3 construction.
-	r3, err := cp.ReviseChange(aliceCtx, &gensurla.ReviseChangePayload{
+	r3, err := cp.ReviseChange(aliceCtx, withRevisionAnalysis(t, &gensurla.ReviseChangePayload{
 		ChangeID:        "chg-ws-ids",
 		RequestRevision: confirmedR2.RequestRevision,
 		Prompt:          "Remove padded check_01 and add a row.",
-	})
+	}, reviseR3JSON))
 	require.NoError(t, err)
 	require.Len(t, r3.Examples, 2)
 	assert.Equal(t, "check_02", r3.Examples[0].ID)
 	assert.Equal(t, "check_03", r3.Examples[1].ID, "removed ' check_01 ' is reserved during R3 construction")
 
 	// Revise to R4: " check_01 " is no longer in the immediately prior table (R3), so "check_01" is reusable.
-	r4, err := cp.ReviseChange(aliceCtx, &gensurla.ReviseChangePayload{
+	r4, err := cp.ReviseChange(aliceCtx, withRevisionAnalysis(t, &gensurla.ReviseChangePayload{
 		ChangeID:        "chg-ws-ids",
 		RequestRevision: r3.RequestRevision,
 		Prompt:          "Add another row in R4.",
-	})
+	}, reviseR4JSON))
 	require.NoError(t, err)
 	require.Len(t, r4.Examples, 3)
 	assert.Equal(t, "check_02", r4.Examples[0].ID)

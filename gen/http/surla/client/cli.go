@@ -28,13 +28,27 @@ func BuildProposeChangePayload(surlaProposeChangeBody *string) (*surla.ProposeCh
 		}
 		err = json.Unmarshal([]byte(*surlaProposeChangeBody), &body)
 		if err != nil {
-			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"change_id\": \"Ipsum soluta officiis facilis dolorem quae.\",\n      \"design_source\": \"Quia placeat maiores voluptatem voluptatem.\",\n      \"prompt\": \"Enim distinctio et sunt sunt et.\"\n   }'")
+			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"analysis\": {\n         \"ambiguities\": [\n            {\n               \"options\": [\n                  \"𓾗\",\n                  \"𗁜\",\n                  \"\U000b84a0\"\n               ],\n               \"question\": \"\U0001de8f\"\n            },\n            {\n               \"options\": [\n                  \"𓾗\",\n                  \"𗁜\",\n                  \"\U000b84a0\"\n               ],\n               \"question\": \"\U0001de8f\"\n            },\n            {\n               \"options\": [\n                  \"𓾗\",\n                  \"𗁜\",\n                  \"\U000b84a0\"\n               ],\n               \"question\": \"\U0001de8f\"\n            }\n         ],\n         \"examples\": [\n            {\n               \"expected_outcome\": \"𠺳\",\n               \"input_summary\": \"𐂂\",\n               \"scenario\": \"\U000414fe\",\n               \"verification_kind\": \"deterministic\"\n            },\n            {\n               \"expected_outcome\": \"𠺳\",\n               \"input_summary\": \"𐂂\",\n               \"scenario\": \"\U000414fe\",\n               \"verification_kind\": \"deterministic\"\n            }\n         ],\n         \"preserved_behaviors\": [\n            \"\U0005c1e3\",\n            \"𱋉\",\n            \"\U000abf3d\",\n            \"\U00059975\"\n         ],\n         \"summary\": \"\U000913c4\",\n         \"ui_composition\": \"In optio et.\"\n      },\n      \"change_id\": \"Ipsum soluta officiis facilis dolorem quae.\",\n      \"design_source\": \"Quia placeat maiores voluptatem voluptatem.\",\n      \"prompt\": \"Enim distinctio et sunt sunt et.\"\n   }'")
+		}
+		if body.Analysis == nil {
+			err = goa.MergeErrors(err, goa.MissingFieldError("analysis", "body"))
+		}
+		if body.Analysis != nil {
+			if err2 := validateCP1AnalysisRequestBody(body.Analysis, "body.analysis"); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+		if err != nil {
+			return nil, err
 		}
 	}
 	v := &surla.ProposeChangePayload{
 		ChangeID:     body.ChangeID,
 		Prompt:       body.Prompt,
 		DesignSource: body.DesignSource,
+	}
+	if body.Analysis != nil {
+		v.Analysis = marshalCP1AnalysisRequestBodyToSurlaCP1Analysis(body.Analysis)
 	}
 
 	return v, nil
@@ -51,7 +65,18 @@ func BuildReviseChangePayload(surlaReviseChangeBody *string) (*surla.ReviseChang
 		}
 		err = json.Unmarshal([]byte(*surlaReviseChangeBody), &body)
 		if err != nil {
-			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"change_id\": \"Optio ratione suscipit et neque officia.\",\n      \"design_source\": \"Qui itaque.\",\n      \"prompt\": \"Omnis est.\",\n      \"request_revision\": \"Neque dolore optio.\"\n   }'")
+			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"analysis\": {\n         \"ambiguities\": [\n            {\n               \"options\": [\n                  \"𓾗\",\n                  \"𗁜\",\n                  \"\U000b84a0\"\n               ],\n               \"question\": \"\U0001de8f\"\n            },\n            {\n               \"options\": [\n                  \"𓾗\",\n                  \"𗁜\",\n                  \"\U000b84a0\"\n               ],\n               \"question\": \"\U0001de8f\"\n            },\n            {\n               \"options\": [\n                  \"𓾗\",\n                  \"𗁜\",\n                  \"\U000b84a0\"\n               ],\n               \"question\": \"\U0001de8f\"\n            },\n            {\n               \"options\": [\n                  \"𓾗\",\n                  \"𗁜\",\n                  \"\U000b84a0\"\n               ],\n               \"question\": \"\U0001de8f\"\n            }\n         ],\n         \"examples\": [\n            {\n               \"expected_outcome\": \"\U0007143d\",\n               \"input_summary\": \"\U000bbb9f\",\n               \"prior_id\": \"te\",\n               \"scenario\": \"\U000622f7\",\n               \"verification_kind\": \"model_judged\"\n            }\n         ],\n         \"preserved_behaviors\": [\n            \"\U0007f741\",\n            \"\U000b442b\",\n            \"䩄\",\n            \"𥙅\"\n         ],\n         \"removed_example_ids\": [\n            \"swo\",\n            \"u\"\n         ],\n         \"summary\": \"\U0004e964\",\n         \"ui_composition\": \"Sed tempora quos nobis odio ab.\"\n      },\n      \"change_id\": \"Optio ratione suscipit et neque officia.\",\n      \"design_source\": \"Qui itaque.\",\n      \"prompt\": \"Omnis est.\",\n      \"request_revision\": \"Neque dolore optio.\"\n   }'")
+		}
+		if body.Analysis == nil {
+			err = goa.MergeErrors(err, goa.MissingFieldError("analysis", "body"))
+		}
+		if body.Analysis != nil {
+			if err2 := validateCP1RevisionAnalysisRequestBody(body.Analysis, "body.analysis"); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+		if err != nil {
+			return nil, err
 		}
 	}
 	v := &surla.ReviseChangePayload{
@@ -59,6 +84,9 @@ func BuildReviseChangePayload(surlaReviseChangeBody *string) (*surla.ReviseChang
 		RequestRevision: body.RequestRevision,
 		Prompt:          body.Prompt,
 		DesignSource:    body.DesignSource,
+	}
+	if body.Analysis != nil {
+		v.Analysis = marshalCP1RevisionAnalysisRequestBodyToSurlaCP1RevisionAnalysis(body.Analysis)
 	}
 
 	return v, nil

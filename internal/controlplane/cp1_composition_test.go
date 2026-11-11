@@ -1,3 +1,5 @@
+// This file tests the optional ui_composition a caller sends in its analysis,
+// and the tool descriptions that tell the caller what a good analysis holds.
 package controlplane
 
 import (
@@ -5,29 +7,28 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
-	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"goa.design/goa-ai/runtime/agent/model"
 
+	genmcpadapter "github.com/goadesign/surla/gen/mcp_surla"
 	gensurla "github.com/goadesign/surla/gen/surla"
 	"github.com/goadesign/surla/internal/goldenpath"
 )
 
 // compositionProgram is an OpenUI Lang program that refers to the card's
-// ambiguity and examples only by 1-based position, as the prompt requires.
+// ambiguity and examples only by 1-based position, as the catalog requires.
 const compositionProgram = `root = DecisionWorkspace("Refund limit", [choice, table])
 choice = AmbiguityChoiceCard(1, "Tax and shipping change who waits for a manager")
 table = PolicySimulatorTable("Who waits?", 1, [row])
 row = PolicySimulatorRow("$48 item + $6 shipping", "$54.00 total", ["Instant credit", "Waits for a manager"], 1)`
 
-// mcpResultFrame is the final JSON-RPC tools/call response frame of an MCP
-// event stream.
+// mcpResultFrame is the JSON-RPC tools/call response of an MCP request.
 type mcpResultFrame struct {
 	// ID is the JSON-RPC request ID the frame answers.
 	ID json.RawMessage `json:"id"`
@@ -40,45 +41,34 @@ type mcpResultFrame struct {
 	} `json:"result"`
 }
 
-// recordingCP1Provider is a model.Provider that records the CP1 request it
-// receives and answers with a fixed analysis.
-type recordingCP1Provider struct {
-	// analysis is the JSON returned as assistant text.
-	analysis string
-	// mu guards request.
-	mu sync.Mutex
-	// request is the last request the analyzer sent.
-	request *model.Request
-}
-
-func TestProposeChangeBindsTheModelCompositionToTheRevisionItAnalyzed(t *testing.T) {
+// TestProposeChangeBindsTheCallerCompositionToTheRevision verifies that a
+// composition in the analysis is saved byte for byte, bound to the revision it
+// was sent with, and kept out of request_revision.
+func TestProposeChangeBindsTheCallerCompositionToTheRevision(t *testing.T) {
 	ctx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
-	provider := &recordingCP1Provider{analysis: compositionAnalysis(t, &[]string{compositionProgram}[0])}
-	cp := newCompositionControlPlane(t, provider)
-
-	card, err := cp.ProposeChange(ctx, &gensurla.ProposeChangePayload{ChangeID: "chg", Prompt: "Refunds up to $50 are instant."})
+	cp := newControlPlane(t, Options{})
+	card, err := cp.ProposeChange(ctx, &gensurla.ProposeChangePayload{
+		ChangeID: "chg", Prompt: "Refunds up to $50 are instant.", Analysis: compositionAnalysis(&[]string{compositionProgram}[0]),
+	})
 	require.NoError(t, err)
-
-	req := provider.lastRequest(t)
-	require.NotEmpty(t, req.Messages)
-	system := req.Messages[0].Parts[0].(model.TextPart).Text
-	assert.Equal(t, goldenpath.ArchitectSystemPrompt(), system, "the model must see the composition instruction and catalog")
-	assert.Contains(t, system, "1-based position")
-	assert.Contains(t, string(req.StructuredOutput.Schema), `"ui_composition"`)
-
 	require.NotNil(t, card.UIComposition)
 	assert.Equal(t, compositionProgram, card.UIComposition.Program, "the program must round-trip byte for byte")
 	assert.Equal(t, card.RequestRevision, card.UIComposition.ComposedForRevision)
 	assert.Equal(t, "chg-ambiguity-01", card.Ambiguities[0].ID, "ordinal 1 in the program names this ambiguity")
 
-	plain := newCompositionControlPlane(t, &recordingCP1Provider{analysis: compositionAnalysis(t, nil)})
-	plainCard, err := plain.ProposeChange(ctx, &gensurla.ProposeChangePayload{ChangeID: "chg", Prompt: "Refunds up to $50 are instant."})
+	plain := newControlPlane(t, Options{})
+	plainCard, err := plain.ProposeChange(ctx, &gensurla.ProposeChangePayload{
+		ChangeID: "chg", Prompt: "Refunds up to $50 are instant.", Analysis: compositionAnalysis(nil),
+	})
 	require.NoError(t, err)
-	assert.Nil(t, plainCard.UIComposition, "no composition from the model means none on the card")
+	assert.Nil(t, plainCard.UIComposition, "no composition in the analysis means none on the card")
 	assert.Equal(t, plainCard.RequestRevision, card.RequestRevision, "the composition must not be part of request_revision")
 }
 
-func TestProposeChangeCarriesAnyModelCompositionVerbatim(t *testing.T) {
+// TestProposeChangeCarriesAnyCallerCompositionVerbatim verifies that the
+// server never judges a composition: an empty, blank or invalid program is
+// saved as sent, and the card's questions and examples are saved with it.
+func TestProposeChangeCarriesAnyCallerCompositionVerbatim(t *testing.T) {
 	ctx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
 	cases := []struct {
 		name    string
@@ -92,8 +82,10 @@ func TestProposeChangeCarriesAnyModelCompositionVerbatim(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			cp := newCompositionControlPlane(t, &recordingCP1Provider{analysis: compositionAnalysis(t, tc.program)})
-			card, err := cp.ProposeChange(ctx, &gensurla.ProposeChangePayload{ChangeID: "chg", Prompt: "Refunds up to $50 are instant."})
+			cp := newControlPlane(t, Options{})
+			card, err := cp.ProposeChange(ctx, &gensurla.ProposeChangePayload{
+				ChangeID: "chg", Prompt: "Refunds up to $50 are instant.", Analysis: compositionAnalysis(tc.program),
+			})
 			require.NoError(t, err, "a composition the viewer cannot use must not cost the operator the analysis")
 			require.Len(t, card.Ambiguities, 1, "the authoritative questions survive")
 			require.Len(t, card.Examples, 1, "the authoritative examples survive")
@@ -108,10 +100,15 @@ func TestProposeChangeCarriesAnyModelCompositionVerbatim(t *testing.T) {
 	}
 }
 
+// TestCompositionDescribesOnlyTheRevisionItWasComposedFor verifies that a
+// confirmation that changes answers drops the composition, and that reads
+// never restore it.
 func TestCompositionDescribesOnlyTheRevisionItWasComposedFor(t *testing.T) {
 	ctx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
-	cp := newCompositionControlPlane(t, &recordingCP1Provider{analysis: compositionAnalysis(t, &[]string{compositionProgram}[0])})
-	proposed, err := cp.ProposeChange(ctx, &gensurla.ProposeChangePayload{ChangeID: "chg", Prompt: "Refunds up to $50 are instant."})
+	cp := newControlPlane(t, Options{})
+	proposed, err := cp.ProposeChange(ctx, &gensurla.ProposeChangePayload{
+		ChangeID: "chg", Prompt: "Refunds up to $50 are instant.", Analysis: compositionAnalysis(&[]string{compositionProgram}[0]),
+	})
 	require.NoError(t, err)
 
 	first, err := cp.ConfirmIntent(ctx, &gensurla.ConfirmIntentPayload{
@@ -119,7 +116,7 @@ func TestCompositionDescribesOnlyTheRevisionItWasComposedFor(t *testing.T) {
 		Answers: map[string]string{"chg-ambiguity-01": "order_total"}, Examples: proposed.Examples,
 	})
 	require.NoError(t, err)
-	assert.Nil(t, first.UIComposition, "confirming answers creates a new revision the composition did not analyze")
+	assert.Nil(t, first.UIComposition, "confirming answers creates a new revision the composition does not describe")
 
 	read, err := cp.GetChange(ctx, &gensurla.GetChangePayload{ChangeID: "chg"})
 	require.NoError(t, err)
@@ -134,16 +131,15 @@ func TestCompositionDescribesOnlyTheRevisionItWasComposedFor(t *testing.T) {
 	assert.Nil(t, noop.UIComposition)
 }
 
+// TestCompositionSurvivesAnUnchangedResubmission verifies that an unchanged
+// confirmation keeps the composition of its revision and an edited example
+// drops it.
 func TestCompositionSurvivesAnUnchangedResubmission(t *testing.T) {
 	ctx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
-	unambiguous := compositionAnalysis(t, &[]string{compositionProgram}[0])
-	var analysis CP1SemanticAnalysis
-	require.NoError(t, json.Unmarshal([]byte(unambiguous), &analysis))
-	analysis.Ambiguities = []CP1ModelAmbiguity{}
-	raw, err := json.Marshal(analysis)
-	require.NoError(t, err)
-	cp := newCompositionControlPlane(t, &recordingCP1Provider{analysis: string(raw)})
-	proposed, err := cp.ProposeChange(ctx, &gensurla.ProposeChangePayload{ChangeID: "chg", Prompt: "Refunds up to $50 are instant."})
+	analysis := compositionAnalysis(&[]string{compositionProgram}[0])
+	analysis.Ambiguities = []*gensurla.CP1AnalysisAmbiguity{}
+	cp := newControlPlane(t, Options{})
+	proposed, err := cp.ProposeChange(ctx, &gensurla.ProposeChangePayload{ChangeID: "chg", Prompt: "Refunds up to $50 are instant.", Analysis: analysis})
 	require.NoError(t, err)
 	require.Equal(t, StatusConfirmed, proposed.Status)
 	require.NotNil(t, proposed.UIComposition)
@@ -162,16 +158,24 @@ func TestCompositionSurvivesAnUnchangedResubmission(t *testing.T) {
 		ChangeID: "chg", RequestRevision: proposed.RequestRevision, Answers: map[string]string{}, Examples: []*gensurla.ExampleItem{&ex},
 	})
 	require.NoError(t, err)
-	assert.Nil(t, changed.UIComposition, "an edited example creates a revision the composition did not analyze")
+	assert.Nil(t, changed.UIComposition, "an edited example creates a revision the composition does not describe")
 }
 
-func TestProposeChangeReportsProgressOverMCP(t *testing.T) {
-	cp := newCompositionControlPlane(t, &recordingCP1Provider{analysis: compositionAnalysis(t, &[]string{compositionProgram}[0])})
+// TestProposeChangeOverMCPCarriesTheCompositionVerbatim sends propose_change
+// through the real authenticated /mcp endpoint, as a coding agent does, and
+// checks that the composition crosses the wire byte for byte with the
+// code-assigned IDs. propose_change sends no progress notifications: there is
+// no slow step to report.
+func TestProposeChangeOverMCPCarriesTheCompositionVerbatim(t *testing.T) {
+	cp := newControlPlane(t, Options{})
 	srv := httptest.NewServer(NewHTTPHandler(cp, NewTokenAuthenticator(map[string]Principal{"alice-token": {ID: "alice@example.com"}})))
 	defer srv.Close()
 
+	args := proposeArgs(t, &gensurla.ProposeChangePayload{
+		ChangeID: "chg", Prompt: "Refunds up to $50 are instant.", Analysis: compositionAnalysis(&[]string{compositionProgram}[0]),
+	})
 	body := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{` +
-		`"name":"propose_change","arguments":{"change_id":"chg","prompt":"Refunds up to $50 are instant."},` +
+		`"name":"propose_change","arguments":` + string(args) + `,` +
 		`"_meta":{"progressToken":"p1","io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}`
 	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, srv.URL+"/mcp", strings.NewReader(body))
 	require.NoError(t, err)
@@ -185,41 +189,8 @@ func TestProposeChangeReportsProgressOverMCP(t *testing.T) {
 	require.NoError(t, err)
 	defer resp.Body.Close()
 	require.Equal(t, http.StatusOK, resp.StatusCode)
-	require.True(t, strings.HasPrefix(resp.Header.Get("Content-Type"), "text/event-stream"), "Content-Type %q", resp.Header.Get("Content-Type"))
 
-	var messages []string
-	var progress []map[string]any
-	var final *mcpResultFrame
-	scanner := bufio.NewScanner(resp.Body)
-	scanner.Buffer(make([]byte, 0, 1<<20), 1<<20)
-	for scanner.Scan() {
-		data, ok := strings.CutPrefix(scanner.Text(), "data: ")
-		if !ok {
-			continue
-		}
-		var msg struct {
-			Method string         `json:"method"`
-			Params map[string]any `json:"params"`
-		}
-		require.NoError(t, json.Unmarshal([]byte(data), &msg))
-		if msg.Method == "notifications/progress" {
-			require.Nil(t, final, "progress must arrive before the final result")
-			progress = append(progress, msg.Params)
-			messages = append(messages, msg.Params["message"].(string))
-			continue
-		}
-		require.Nil(t, final, "the stream must carry exactly one final result")
-		final = new(mcpResultFrame)
-		require.NoError(t, json.Unmarshal([]byte(data), final))
-	}
-	require.NoError(t, scanner.Err())
-	assert.Equal(t, []string{"Analyzing the feature request with the CP1 model", "Validating the CP1 analysis"}, messages)
-	for _, p := range progress {
-		assert.Equal(t, "p1", p["progressToken"])
-		assert.EqualValues(t, 1, p["total"])
-	}
-
-	require.NotNil(t, final, "the stream must end with the tools/call result")
+	final := readMCPResult(t, resp)
 	assert.JSONEq(t, `1`, string(final.ID), "the final result must answer request 1")
 	require.False(t, final.Result.IsError, "propose_change failed: %s", final.Result.StructuredContent)
 	var card struct {
@@ -227,6 +198,9 @@ func TestProposeChangeReportsProgressOverMCP(t *testing.T) {
 		Ambiguities     []struct {
 			ID string `json:"id"`
 		} `json:"ambiguities"`
+		Examples []struct {
+			ID string `json:"id"`
+		} `json:"examples"`
 		UIComposition struct {
 			Program             string `json:"program"`
 			ComposedForRevision string `json:"composed_for_revision"`
@@ -238,8 +212,12 @@ func TestProposeChangeReportsProgressOverMCP(t *testing.T) {
 	assert.NotEmpty(t, card.RequestRevision)
 	require.Len(t, card.Ambiguities, 1)
 	assert.Equal(t, "chg-ambiguity-01", card.Ambiguities[0].ID)
+	require.Len(t, card.Examples, 1)
+	assert.Equal(t, "check_01", card.Examples[0].ID)
 }
 
+// TestReportProgressWithoutARequestedTokenIsANoOp verifies reportProgress, which
+// preview_architecture uses, outside an MCP request with a progress token.
 func TestReportProgressWithoutARequestedTokenIsANoOp(t *testing.T) {
 	assert.NoError(t, reportProgress(context.Background(), 0, 1, "unused"))
 	ctx, cancel := context.WithCancel(context.Background())
@@ -247,64 +225,85 @@ func TestReportProgressWithoutARequestedTokenIsANoOp(t *testing.T) {
 	assert.True(t, errors.Is(reportProgress(ctx, 0, 1, "unused"), context.Canceled))
 }
 
-// TestCP1ModelContractDescribesQuestionsAndExamples verifies the CP1 model
-// prompts for the card's open questions and examples: both prompts carry the
-// rules that span fields. Generated completion descriptions are checked in
-// TestCP1CompletionDescriptionsPreserveModelContract.
-func TestCP1ModelContractDescribesQuestionsAndExamples(t *testing.T) {
-	for name, prompt := range map[string]string{
-		"proposal": goldenpath.ArchitectSystemPrompt(),
-		"revision": goldenpath.ArchitectReviseSystemPrompt(),
-	} {
-		assert.Contains(t, prompt, "Write the card for the requester", "%s prompt", name)
+// TestAnalysisToolsDescribeWhatAGoodAnalysisContains verifies that the
+// propose_change and revise_change contracts a coding agent reads (tool
+// descriptions and input schemas) carry the content rules for an analysis,
+// point at the playbook and decision catalog, and that the guidance resource
+// serves the decision catalog the ui_composition field names.
+func TestAnalysisToolsDescribeWhatAGoodAnalysisContains(t *testing.T) {
+	ctx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
+	cp := newControlPlane(t, Options{})
+	adapter := genmcpadapter.NewMCPAdapter(gensurla.NewEndpoints(cp), nil)
+	tools, err := adapter.ToolsList(ctx, &genmcpadapter.ToolsListPayload{})
+	require.NoError(t, err)
+	contracts := map[string]string{}
+	for _, tool := range tools.Tools {
+		require.NotNil(t, tool.Description)
+		contracts[tool.Name] = *tool.Description + "\n" + string(tool.InputSchema)
+	}
+	for _, name := range []string{"propose_change", "revise_change"} {
+		contract := contracts[name]
+		require.NotEmpty(t, contract, name)
+		for _, rule := range []string{
+			"surla://golden-path",
+			"Open questions only the requester can answer",
+			"never placeholder",
+			"decision components",
+			"1-based position",
+			"cannot judge whether the analysis is complete or correct",
+		} {
+			assert.Contains(t, contract, rule, "%s contract", name)
+		}
+		assert.Contains(t, contract, `"analysis"`, "%s takes the analysis as input", name)
+	}
+	revise := contracts["revise_change"]
+	for _, rule := range []string{"prior_id", "removed_example_ids", "exactly once", "confirmed answer stays settled", "get_change"} {
+		assert.Contains(t, revise, rule)
+	}
+
+	guide, err := cp.GoldenPath(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, goldenpath.ResourceMarkdown(), guide)
+	assert.Contains(t, guide, "PolicySimulatorTable(", "the decision catalog is served with the playbook")
+}
+
+// compositionAnalysis returns a proposal analysis with one ambiguity and one
+// example, carrying program as ui_composition when it is not nil.
+func compositionAnalysis(program *string) *gensurla.CP1Analysis {
+	return &gensurla.CP1Analysis{
+		Summary:            "Refunds up to $50 are instant.",
+		Ambiguities:        []*gensurla.CP1AnalysisAmbiguity{{Question: "Is the limit the item subtotal or the order total?", Options: []string{"item_subtotal", "order_total"}}},
+		Examples:           []*gensurla.CP1AnalysisExample{{Scenario: "Refund with shipping", InputSummary: "$48 item + $6 shipping", ExpectedOutcome: "Depends on the limit", VerificationKind: "deterministic"}},
+		PreservedBehaviors: []string{},
+		UIComposition:      program,
 	}
 }
 
-// Complete records req and returns the fixed analysis as assistant text.
-func (p *recordingCP1Provider) Complete(_ context.Context, req *model.Request) (*model.Response, error) {
-	p.mu.Lock()
-	p.request = req
-	p.mu.Unlock()
-	return &model.Response{
-		Content:    []model.Message{{Role: model.ConversationRoleAssistant, Parts: []model.Part{model.TextPart{Text: p.analysis}}}},
-		StopReason: "stop",
-	}, nil
-}
-
-// Stream is unused because the CP1 analyzer only calls Complete.
-func (p *recordingCP1Provider) Stream(context.Context, *model.Request) (model.Streamer, error) {
-	return nil, errors.New("streaming not used by CP1 analyzer")
-}
-
-// lastRequest returns the request the analyzer last sent.
-func (p *recordingCP1Provider) lastRequest(t *testing.T) *model.Request {
+// readMCPResult reads the single tools/call result from resp, whether the
+// server answered with a JSON body or an event stream. An event stream must
+// carry nothing but that result.
+func readMCPResult(t *testing.T, resp *http.Response) *mcpResultFrame {
 	t.Helper()
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	require.NotNil(t, p.request, "the analyzer sent no request")
-	return p.request
-}
-
-// compositionAnalysis returns a CP1 analysis with one ambiguity and one
-// example, carrying program as ui_composition when it is not nil.
-func compositionAnalysis(t *testing.T, program *string) string {
-	t.Helper()
-	raw, err := json.Marshal(CP1SemanticAnalysis{
-		Summary:            "Refunds up to $50 are instant.",
-		Ambiguities:        []CP1ModelAmbiguity{{Question: "Is the limit the item subtotal or the order total?", Options: []string{"item_subtotal", "order_total"}}},
-		Examples:           []CP1ModelExample{{Scenario: "Refund with shipping", InputSummary: "$48 item + $6 shipping", ExpectedOutcome: "Depends on the limit", VerificationKind: "deterministic"}},
-		PreservedBehaviors: []string{},
-		UIComposition:      program,
-	})
-	require.NoError(t, err)
-	return string(raw)
-}
-
-// newCompositionControlPlane returns a ControlPlane whose CP1 analyzer calls
-// provider through a goa-ai model client.
-func newCompositionControlPlane(t *testing.T, provider model.Provider) *ControlPlane {
-	t.Helper()
-	client, err := model.NewClient(provider)
-	require.NoError(t, err)
-	return newControlPlane(t, Options{Analyzer: NewModelCP1Analyzer(client)})
+	if !strings.HasPrefix(resp.Header.Get("Content-Type"), "text/event-stream") {
+		raw, err := io.ReadAll(resp.Body)
+		require.NoError(t, err)
+		final := new(mcpResultFrame)
+		require.NoError(t, json.Unmarshal(raw, final), string(raw))
+		return final
+	}
+	var final *mcpResultFrame
+	scanner := bufio.NewScanner(resp.Body)
+	scanner.Buffer(make([]byte, 0, 1<<20), 1<<20)
+	for scanner.Scan() {
+		data, ok := strings.CutPrefix(scanner.Text(), "data: ")
+		if !ok {
+			continue
+		}
+		require.Nil(t, final, "the stream must carry exactly one message, the result")
+		final = new(mcpResultFrame)
+		require.NoError(t, json.Unmarshal([]byte(data), final))
+	}
+	require.NoError(t, scanner.Err())
+	require.NotNil(t, final, "the response must carry the tools/call result")
+	return final
 }

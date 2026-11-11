@@ -11,10 +11,29 @@ import (
 	gensurla "github.com/goadesign/surla/gen/surla"
 )
 
-// This file holds the Checkpoint 1 checks applied to model output and to the
-// operator's confirmation: ambiguity questions and examples are validated and
-// given code-owned IDs, and answers and confirmed examples are checked before
-// a Change Card is confirmed.
+// This file holds the Checkpoint 1 checks applied to the caller's analysis and
+// to the operator's confirmation: ambiguity questions and examples are checked
+// and given code-owned IDs, and answers and confirmed examples are checked
+// before a Change Card is confirmed. It also holds the code-authored span
+// summaries propose_change and revise_change record when a request fails.
+
+type (
+	// cp1FaultStage names the step at which a propose_change or revise_change
+	// request failed for a reason other than its input, for the span summary
+	// cp1SafeFaultSummary writes.
+	cp1FaultStage uint8
+)
+
+const (
+	// cp1FaultRevision indicates canonical revision hashing failed before saving.
+	cp1FaultRevision cp1FaultStage = iota + 1
+	// cp1FaultStorageRead indicates loading Change Card storage failed before saving.
+	cp1FaultStorageRead
+	// cp1FaultStorageSave indicates saving or syncing Change Card storage failed;
+	// because directory sync can fail after atomic file rename, whether the new
+	// card version was persisted is unconfirmed until get_change is checked.
+	cp1FaultStorageSave
+)
 
 // ConfirmIntent records the owner's complete answers and example table for a
 // Change Card that needs confirmation or is already confirmed. The caller
@@ -47,32 +66,22 @@ func (c *ControlPlane) ConfirmIntent(ctx context.Context, p *gensurla.ConfirmInt
 	return c.currentCard(ctx, card)
 }
 
-// validateCP1Analysis validates all model-returned CP1 fields strictly without
-// silent coercion and assigns code-owned mechanical ambiguity and check IDs.
-func validateCP1Analysis(
+// proposedCardContent turns a proposal's analysis into Change Card content.
+// It numbers the ambiguities <changeID>-ambiguity-NN and the examples check_NN
+// in list order and returns the preserved behaviors as a new non-nil slice, so
+// a card without any hashes them as an empty list. The generated decoders have
+// already checked the analysis's structure; the error reports the one rule
+// left, an ambiguity that repeats an option.
+func proposedCardContent(
 	changeID string,
-	in CP1SemanticAnalysis,
-) (string, []*gensurla.AmbiguityQuestion, []*gensurla.ExampleItem, []string, error) {
-	if strings.TrimSpace(in.Summary) == "" {
-		return "", nil, nil, nil, errors.New("summary is required")
-	}
+	in *gensurla.CP1Analysis,
+) ([]*gensurla.AmbiguityQuestion, []*gensurla.ExampleItem, []string, error) {
 	ambiguities, err := validateAmbiguities(changeID, in.Ambiguities)
 	if err != nil {
-		return "", nil, nil, nil, err
-	}
-	if len(in.Examples) == 0 {
-		return "", nil, nil, nil, errors.New("at least one example is required")
+		return nil, nil, nil, err
 	}
 	examples := make([]*gensurla.ExampleItem, 0, len(in.Examples))
 	for i, item := range in.Examples {
-		if strings.TrimSpace(item.Scenario) == "" ||
-			strings.TrimSpace(item.InputSummary) == "" ||
-			strings.TrimSpace(item.ExpectedOutcome) == "" {
-			return "", nil, nil, nil, fmt.Errorf("examples[%d] requires non-empty scenario, input_summary, and expected_outcome", i)
-		}
-		if item.VerificationKind != "deterministic" && item.VerificationKind != "model_judged" {
-			return "", nil, nil, nil, fmt.Errorf("examples[%d] has invalid verification_kind (want \"deterministic\" or \"model_judged\")", i)
-		}
 		examples = append(examples, &gensurla.ExampleItem{
 			ID:               fmt.Sprintf("check_%02d", i+1),
 			Scenario:         item.Scenario,
@@ -81,35 +90,26 @@ func validateCP1Analysis(
 			VerificationKind: item.VerificationKind,
 		})
 	}
-	preserved := make([]string, 0, len(in.PreservedBehaviors))
-	for i, item := range in.PreservedBehaviors {
-		if strings.TrimSpace(item) == "" {
-			return "", nil, nil, nil, fmt.Errorf("preserved_behaviors[%d] is empty", i)
-		}
-		preserved = append(preserved, item)
-	}
-	return in.Summary, ambiguities, examples, preserved, nil
+	return ambiguities, examples, append(make([]string, 0, len(in.PreservedBehaviors)), in.PreservedBehaviors...), nil
 }
 
-// validateCP1RevisionAnalysis validates model-returned CP1 revision fields,
-// enforces complete accounting of prior examples across examples[].prior_id and
-// removed_example_ids, preserves IDs of kept or edited prior examples, and assigns
-// the lowest unused check_NN IDs absent from both prior and resulting tables for
-// brand-new examples.
-func validateCP1RevisionAnalysis(
+// revisedCardContent turns a revision's analysis into Change Card content
+// against priorExamples, the examples of the card revision being revised. It
+// requires every prior example ID to appear exactly once, either as an
+// examples[].prior_id or in removed_example_ids, and every ID named there to
+// be a prior example. Kept or edited examples keep their prior IDs; each new
+// example gets the lowest check_NN ID absent from both the prior and the
+// resulting tables. Ambiguities are numbered and checked as for a proposal,
+// and the preserved behaviors are returned as a new non-nil slice. The error
+// names the first broken rule.
+func revisedCardContent(
 	changeID string,
 	priorExamples []*gensurla.ExampleItem,
-	in CP1RevisionSemanticAnalysis,
-) (string, []*gensurla.AmbiguityQuestion, []*gensurla.ExampleItem, []string, error) {
-	if strings.TrimSpace(in.Summary) == "" {
-		return "", nil, nil, nil, errors.New("summary is required")
-	}
+	in *gensurla.CP1RevisionAnalysis,
+) ([]*gensurla.AmbiguityQuestion, []*gensurla.ExampleItem, []string, error) {
 	ambiguities, err := validateAmbiguities(changeID, in.Ambiguities)
 	if err != nil {
-		return "", nil, nil, nil, err
-	}
-	if len(in.Examples) == 0 {
-		return "", nil, nil, nil, errors.New("at least one example is required")
+		return nil, nil, nil, err
 	}
 
 	priorMap := make(map[string]bool, len(priorExamples))
@@ -122,47 +122,38 @@ func validateCP1RevisionAnalysis(
 		orderedPriorIDs = append(orderedPriorIDs, ex.ID)
 	}
 
-	seenRemoved := make(map[string]bool, len(in.RemovedExampleIDs))
-	for idx, remID := range in.RemovedExampleIDs {
-		if strings.TrimSpace(remID) == "" {
-			return "", nil, nil, nil, fmt.Errorf("removed_example_ids[%d] is empty", idx)
-		}
+	seenRemoved := make(map[string]bool, len(in.RemovedExampleIds))
+	for idx, remID := range in.RemovedExampleIds {
 		if !priorMap[remID] {
-			return "", nil, nil, nil, fmt.Errorf("removed_example_ids[%d] references unknown prior example ID %q", idx, remID)
+			return nil, nil, nil, fmt.Errorf("removed_example_ids[%d] references unknown prior example ID %q", idx, remID)
 		}
 		if seenRemoved[remID] {
-			return "", nil, nil, nil, fmt.Errorf("duplicate ID %q in removed_example_ids", remID)
+			return nil, nil, nil, fmt.Errorf("duplicate ID %q in removed_example_ids", remID)
 		}
 		seenRemoved[remID] = true
 	}
 
 	seenPrior := make(map[string]bool, len(in.Examples))
 	for i, item := range in.Examples {
-		if strings.TrimSpace(item.Scenario) == "" ||
-			strings.TrimSpace(item.InputSummary) == "" ||
-			strings.TrimSpace(item.ExpectedOutcome) == "" {
-			return "", nil, nil, nil, fmt.Errorf("examples[%d] requires non-empty scenario, input_summary, and expected_outcome", i)
+		if item.PriorID == nil {
+			continue
 		}
-		if item.VerificationKind != "deterministic" && item.VerificationKind != "model_judged" {
-			return "", nil, nil, nil, fmt.Errorf("examples[%d] has invalid verification_kind (want \"deterministic\" or \"model_judged\")", i)
+		priorID := *item.PriorID
+		if !priorMap[priorID] {
+			return nil, nil, nil, fmt.Errorf("examples[%d].prior_id references unknown prior example ID %q", i, priorID)
 		}
-		if item.PriorID != "" {
-			if !priorMap[item.PriorID] {
-				return "", nil, nil, nil, fmt.Errorf("examples[%d].prior_id references unknown prior example ID %q", i, item.PriorID)
-			}
-			if seenPrior[item.PriorID] {
-				return "", nil, nil, nil, fmt.Errorf("duplicate prior_id %q at examples[%d]", item.PriorID, i)
-			}
-			if seenRemoved[item.PriorID] {
-				return "", nil, nil, nil, fmt.Errorf("prior example ID %q appears in both examples[%d].prior_id and removed_example_ids", item.PriorID, i)
-			}
-			seenPrior[item.PriorID] = true
+		if seenPrior[priorID] {
+			return nil, nil, nil, fmt.Errorf("duplicate prior_id %q at examples[%d]", priorID, i)
 		}
+		if seenRemoved[priorID] {
+			return nil, nil, nil, fmt.Errorf("prior example ID %q appears in both examples[%d].prior_id and removed_example_ids", priorID, i)
+		}
+		seenPrior[priorID] = true
 	}
 
 	for _, pID := range orderedPriorIDs {
 		if !seenPrior[pID] && !seenRemoved[pID] {
-			return "", nil, nil, nil, fmt.Errorf("prior example ID %q is omitted from both examples and removed_example_ids", pID)
+			return nil, nil, nil, fmt.Errorf("prior example ID %q is omitted from both examples and removed_example_ids", pID)
 		}
 	}
 
@@ -177,8 +168,10 @@ func validateCP1RevisionAnalysis(
 
 	examples := make([]*gensurla.ExampleItem, 0, len(in.Examples))
 	for _, item := range in.Examples {
-		id := item.PriorID
-		if id == "" {
+		var id string
+		if item.PriorID != nil {
+			id = *item.PriorID
+		} else {
 			id = allocateExampleID(reserved)
 		}
 		examples = append(examples, &gensurla.ExampleItem{
@@ -189,16 +182,7 @@ func validateCP1RevisionAnalysis(
 			VerificationKind: item.VerificationKind,
 		})
 	}
-
-	preserved := make([]string, 0, len(in.PreservedBehaviors))
-	for i, item := range in.PreservedBehaviors {
-		if strings.TrimSpace(item) == "" {
-			return "", nil, nil, nil, fmt.Errorf("preserved_behaviors[%d] is empty", i)
-		}
-		preserved = append(preserved, item)
-	}
-
-	return in.Summary, ambiguities, examples, preserved, nil
+	return ambiguities, examples, append(make([]string, 0, len(in.PreservedBehaviors)), in.PreservedBehaviors...), nil
 }
 
 // allocateExampleID finds the lowest unused fmt.Sprintf("check_%02d", n) (n >= 1)
@@ -213,31 +197,24 @@ func allocateExampleID(reserved map[string]bool) string {
 	}
 }
 
-// validateAmbiguities validates that every ambiguity question has a non-empty
-// question and at least two distinct non-empty options, and assigns a
-// code-owned question ID (`<changeID>-ambiguity-NN`).
-func validateAmbiguities(changeID string, in []CP1ModelAmbiguity) ([]*gensurla.AmbiguityQuestion, error) {
+// validateAmbiguities assigns each ambiguity question its code-owned ID
+// (`<changeID>-ambiguity-NN`, in list order) and rejects a question that
+// repeats an option, comparing options both exactly and with surrounding
+// whitespace removed. It returns nil when in is empty, so a card without
+// ambiguities hashes them as null, as saved cards always have.
+func validateAmbiguities(changeID string, in []*gensurla.CP1AnalysisAmbiguity) ([]*gensurla.AmbiguityQuestion, error) {
 	if len(in) == 0 {
 		return nil, nil
 	}
 	out := make([]*gensurla.AmbiguityQuestion, 0, len(in))
 	for i, q := range in {
 		id := fmt.Sprintf("%s-ambiguity-%02d", changeID, i+1)
-		if strings.TrimSpace(q.Question) == "" {
-			return nil, fmt.Errorf("ambiguities[%d] requires non-empty question", i)
-		}
-		if len(q.Options) < 2 {
-			return nil, fmt.Errorf("ambiguity %q requires at least 2 options", id)
-		}
 		seenOpts := make(map[string]bool, len(q.Options)*2)
 		opts := make([]string, 0, len(q.Options))
 		for j, opt := range q.Options {
 			trimmed := strings.TrimSpace(opt)
-			if trimmed == "" {
-				return nil, fmt.Errorf("ambiguity %q has an empty option", id)
-			}
 			if seenOpts[opt] || seenOpts[trimmed] {
-				return nil, fmt.Errorf("ambiguity %q has duplicate option at options[%d]", id, j)
+				return nil, fmt.Errorf("ambiguity %q (ambiguities[%d]) has duplicate option at options[%d]", id, i, j)
 			}
 			seenOpts[opt] = true
 			seenOpts[trimmed] = true
@@ -330,6 +307,45 @@ func validateConfirmedExamples(in []*gensurla.ExampleItem) ([]*gensurla.ExampleI
 		})
 	}
 	return out, nil
+}
+
+// cp1RejectedAnalysisSummary returns the code-authored span summary for a
+// propose_change (revise false) or revise_change (revise true) request whose
+// analysis broke a rule that spans fields. It never repeats the caller's text;
+// the request's error message names the rule.
+func cp1RejectedAnalysisSummary(revise bool) string {
+	if revise {
+		return "Change Card analysis broke a revision rule (this request did not modify the Change Card); correct the analysis and retry revise_change."
+	}
+	return "Change Card analysis broke a proposal rule (this request did not save a Change Card); correct the analysis and retry propose_change."
+}
+
+// cp1SafeFaultSummary returns a strictly code-authored, request-scoped
+// diagnostic summary for a propose_change or revise_change fault span.
+// Because MCP masks internal server faults from tool callers, each summary
+// states truthfully whether this request's write ran or remained unconfirmed
+// and names the concrete operator or retry action without exposing prompts,
+// analysis text, credentials, or host paths.
+func cp1SafeFaultSummary(revise bool, stage cp1FaultStage) string {
+	outcome := "this request did not save a Change Card"
+	op := "CP1 proposal"
+	if revise {
+		outcome = "this request did not modify the Change Card"
+		op = "CP1 revision"
+	}
+	switch stage {
+	case cp1FaultRevision:
+		return fmt.Sprintf("%s failed while encoding the card revision (%s); ask the server operator to check server diagnostics.", op, outcome)
+	case cp1FaultStorageRead:
+		return fmt.Sprintf("%s could not read Change Card storage (%s); preserve your request and ask the server operator to check private card storage.", op, outcome)
+	case cp1FaultStorageSave:
+		if revise {
+			return "CP1 revision could not confirm Change Card save; preserve your request, call get_change to check the saved card revision, and ask the server operator to check private card storage before retrying."
+		}
+		return "CP1 proposal could not confirm Change Card save; preserve your request, call get_change to check whether the card was saved, and ask the server operator to check private card storage before retrying."
+	default:
+		panic(fmt.Sprintf("unknown cp1FaultStage %d", stage))
+	}
 }
 
 // confirm applies a confirm_intent submission under c.mu. It returns the new

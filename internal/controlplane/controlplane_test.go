@@ -3,67 +3,49 @@
 package controlplane
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
-	anthropicsdk "github.com/anthropics/anthropic-sdk-go"
-	"github.com/anthropics/anthropic-sdk-go/option"
-	"github.com/anthropics/anthropic-sdk-go/packages/ssestream"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"goa.design/goa-ai/features/model/anthropic"
 
 	genmcpadapter "github.com/goadesign/surla/gen/mcp_surla"
 	gensurla "github.com/goadesign/surla/gen/surla"
 	"github.com/goadesign/surla/internal/goldenpath"
 	"github.com/goadesign/surla/internal/swarm"
 	"github.com/goadesign/surla/internal/testmodule"
-	"goa.design/goa-ai/runtime/agent/model"
 	"goa.design/goa-ai/runtime/agent/prompt"
 )
 
 type (
-	// stubProvider implements model.Provider for testing ModelCP1Analyzer through
-	// the goa-ai model.NewClient StructuredOutput validation wrapper.
-	stubProvider struct {
-		// responseJSON is the structured JSON payload returned by Complete.
-		responseJSON string
-	}
-
 	// boundTargetPromptUpdater binds a target platform's prompt.Store to the
 	// TargetPromptUpdater contract for testing CP3 Fast Draft Mode.
 	boundTargetPromptUpdater struct {
 		// store is the target platform's prompt.Store.
 		store prompt.Store
 	}
-
-	// recordingAnthropicMessages is an anthropic.MessagesClient that records the
-	// encoded request and returns a fixed message.
-	recordingAnthropicMessages struct {
-		// resp is the message returned by New.
-		resp *anthropicsdk.Message
-		// last is the most recent request body encoded by the adapter.
-		last anthropicsdk.MessageNewParams
-		// calls counts New invocations.
-		calls int
-	}
 )
 
 // TestCP1AmbiguityResolutionStrictValidationOwnershipAndRevisionLock verifies
-// CP1 ambiguity detection, code-owned question/check IDs, authenticated owner
-// binding, and canonical revision locking.
+// that a control plane with no model configured saves the caller's analysis
+// as a Change Card with code-owned question and check IDs, keeps the caller's
+// text verbatim, binds the card to the authenticated owner, and locks
+// confirmation to the current request_revision.
 func TestCP1AmbiguityResolutionStrictValidationOwnershipAndRevisionLock(t *testing.T) {
 	aliceCtx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
 	bobCtx := WithPrincipal(context.Background(), Principal{ID: "bob@example.com"})
 
-	ambiguousAnalysis := CP1SemanticAnalysis{
+	ambiguousAnalysis := &gensurla.CP1Analysis{
 		Summary: "  Auto-approve refunds under $50 and route larger refunds to manager approval.\n",
-		Ambiguities: []CP1ModelAmbiguity{
+		Ambiguities: []*gensurla.CP1AnalysisAmbiguity{
 			{
 				Question: "  Does the $50 threshold apply to item subtotal or total order amount including tax? ",
 				Options:  []string{"item_subtotal_cents", "total_order_cents"},
@@ -73,7 +55,7 @@ func TestCP1AmbiguityResolutionStrictValidationOwnershipAndRevisionLock(t *testi
 				Options:  []string{"auto_approve_lte_5000", "require_manager_at_5000"},
 			},
 		},
-		Examples: []CP1ModelExample{
+		Examples: []*gensurla.CP1AnalysisExample{
 			{
 				Scenario:         "  Refund under $50 auto-approves  ",
 				InputSummary:     "Order subtotal $48.00, tax $4.32 ($52.32 total)",
@@ -98,20 +80,16 @@ func TestCP1AmbiguityResolutionStrictValidationOwnershipAndRevisionLock(t *testi
 			"Customer principals cannot call approve_refund.",
 		},
 	}
-	rawBytes, err := json.Marshal(ambiguousAnalysis)
-	if err != nil {
-		t.Fatalf("marshal analysis: %v", err)
-	}
 
-	cp := newControlPlane(t, Options{
-		Analyzer: NewModelCP1Analyzer(newStubModelClient(t, string(rawBytes))),
-	})
+	// No Live, LiveModelEnv or model configuration: proposing needs none.
+	cp := newControlPlane(t, Options{})
 
 	designSrc := `package design // orders service`
 	if _, err := cp.ProposeChange(context.Background(), &gensurla.ProposeChangePayload{
 		ChangeID:     "chg-refund-50",
 		Prompt:       "Refunds under $50 should be automatic, otherwise ask a manager.",
 		DesignSource: &designSrc,
+		Analysis:     ambiguousAnalysis,
 	}); err == nil {
 		t.Fatal("expected unauthenticated ProposeChange to fail")
 	}
@@ -120,123 +98,201 @@ func TestCP1AmbiguityResolutionStrictValidationOwnershipAndRevisionLock(t *testi
 		ChangeID:     "chg-refund-50",
 		Prompt:       "Refunds under $50 should be automatic, otherwise ask a manager.",
 		DesignSource: &designSrc,
+		Analysis:     ambiguousAnalysis,
 	})
-	if err != nil {
-		t.Fatalf("ProposeChange failed: %v", err)
+	require.NoError(t, err)
+	assert.Equal(t, StatusNeedsConfirmation, proposed.Status)
+	require.Len(t, proposed.Ambiguities, 2)
+	assert.Equal(t, "chg-refund-50-ambiguity-01", proposed.Ambiguities[0].ID)
+	assert.Equal(t, "chg-refund-50-ambiguity-02", proposed.Ambiguities[1].ID)
+	ids := make([]string, 0, len(proposed.Examples))
+	for _, ex := range proposed.Examples {
+		ids = append(ids, ex.ID)
 	}
-	if proposed.Status != StatusNeedsConfirmation {
-		t.Fatalf("expected status %q, got %q", StatusNeedsConfirmation, proposed.Status)
-	}
-	if len(proposed.Ambiguities) != 2 ||
-		proposed.Ambiguities[0].ID != "chg-refund-50-ambiguity-01" ||
-		proposed.Ambiguities[1].ID != "chg-refund-50-ambiguity-02" {
-		t.Fatalf("expected 2 ambiguities with code-owned IDs, got %+v", proposed.Ambiguities)
-	}
-	if len(proposed.Examples) != 3 || proposed.Examples[0].ID != "check_01" {
-		t.Fatalf("unexpected examples: %+v", proposed.Examples)
-	}
-	if proposed.Summary != ambiguousAnalysis.Summary ||
-		proposed.Ambiguities[0].Question != ambiguousAnalysis.Ambiguities[0].Question ||
-		proposed.Examples[0].Scenario != ambiguousAnalysis.Examples[0].Scenario ||
-		proposed.PreservedBehaviors[0] != ambiguousAnalysis.PreservedBehaviors[0] {
-		t.Fatalf("expected accepted authored strings to be preserved verbatim without TrimSpace rewriting")
-	}
+	assert.Equal(t, []string{"check_01", "check_02", "check_03"}, ids)
+	assert.Nil(t, proposed.ConfirmedBy, "a card with open questions is not confirmed")
+	assert.Equal(t, ambiguousAnalysis.Summary, proposed.Summary, "accepted text is kept verbatim, without trimming")
+	assert.Equal(t, ambiguousAnalysis.Ambiguities[0].Question, proposed.Ambiguities[0].Question)
+	assert.Equal(t, ambiguousAnalysis.Examples[0].Scenario, proposed.Examples[0].Scenario)
+	assert.Equal(t, ambiguousAnalysis.PreservedBehaviors, proposed.PreservedBehaviors)
+	stored, ok, err := cp.cards.load("chg-refund-50")
+	require.NoError(t, err)
+	require.True(t, ok)
+	assert.Equal(t, designSrc, stored.designSource)
+	assert.Equal(t, sourceOriginSupplied, stored.sourceOrigin)
 
 	// Attempting to overwrite an existing change_id must be rejected.
-	if _, err := cp.ProposeChange(bobCtx, &gensurla.ProposeChangePayload{
+	_, err = cp.ProposeChange(bobCtx, &gensurla.ProposeChangePayload{
 		ChangeID: "chg-refund-50",
 		Prompt:   "Attempt to clobber Alice's change_id",
-	}); err == nil {
-		t.Fatal("expected duplicate change_id in ProposeChange to be rejected")
-	}
+		Analysis: refundAnalysis("Clobber"),
+	})
+	assertServiceError(t, err, "conflict")
 
-	// Non-owner principal cannot confirm Alice's Change Card.
-	if _, err := cp.ConfirmIntent(bobCtx, &gensurla.ConfirmIntentPayload{
-		ChangeID:        "chg-refund-50",
-		RequestRevision: proposed.RequestRevision,
-		Answers: map[string]string{
-			"chg-refund-50-ambiguity-01": "item_subtotal_cents",
-			"chg-refund-50-ambiguity-02": "require_manager_at_5000",
-		},
-		Examples: proposed.Examples,
-	}); err == nil {
-		t.Fatal("expected ConfirmIntent by non-owner principal to be rejected")
+	answers := map[string]string{
+		"chg-refund-50-ambiguity-01": "item_subtotal_cents",
+		"chg-refund-50-ambiguity-02": "require_manager_at_5000",
 	}
+	// Non-owner principal cannot confirm Alice's Change Card.
+	_, err = cp.ConfirmIntent(bobCtx, &gensurla.ConfirmIntentPayload{
+		ChangeID: "chg-refund-50", RequestRevision: proposed.RequestRevision, Answers: answers, Examples: proposed.Examples,
+	})
+	assertServiceError(t, err, "forbidden")
 
 	// Stale request_revision must be rejected.
-	if _, err := cp.ConfirmIntent(aliceCtx, &gensurla.ConfirmIntentPayload{
-		ChangeID:        "chg-refund-50",
-		RequestRevision: "stale-revision",
-		Answers: map[string]string{
-			"chg-refund-50-ambiguity-01": "item_subtotal_cents",
-			"chg-refund-50-ambiguity-02": "require_manager_at_5000",
-		},
-		Examples: proposed.Examples,
-	}); err == nil {
-		t.Fatal("expected ConfirmIntent with mismatched request_revision to be rejected")
-	}
+	_, err = cp.ConfirmIntent(aliceCtx, &gensurla.ConfirmIntentPayload{
+		ChangeID: "chg-refund-50", RequestRevision: "stale-revision", Answers: answers, Examples: proposed.Examples,
+	})
+	assertServiceError(t, err, "conflict")
 
 	confirmed, err := cp.ConfirmIntent(aliceCtx, &gensurla.ConfirmIntentPayload{
-		ChangeID:        "chg-refund-50",
-		RequestRevision: proposed.RequestRevision,
-		Answers: map[string]string{
-			"chg-refund-50-ambiguity-01": "item_subtotal_cents",
-			"chg-refund-50-ambiguity-02": "require_manager_at_5000",
-		},
-		Examples: proposed.Examples,
+		ChangeID: "chg-refund-50", RequestRevision: proposed.RequestRevision, Answers: answers, Examples: proposed.Examples,
 	})
-	if err != nil {
-		t.Fatalf("ConfirmIntent failed: %v", err)
-	}
-	if confirmed.Status != StatusConfirmed {
-		t.Fatalf("expected status %q, got %q", StatusConfirmed, confirmed.Status)
-	}
-	if len(confirmed.Ambiguities) != 2 || len(confirmed.Answers) != 2 {
-		t.Fatalf("expected ambiguities and answers to be retained for audit, got %d ambiguities and %d answers", len(confirmed.Ambiguities), len(confirmed.Answers))
-	}
-	if confirmed.ConfirmedBy == nil || *confirmed.ConfirmedBy != "alice@example.com" {
-		t.Fatalf("expected ConfirmedBy alice@example.com, got %v", confirmed.ConfirmedBy)
-	}
-	if confirmed.RequestRevision == "" || confirmed.RequestRevision == proposed.RequestRevision {
-		t.Fatalf("expected new confirmed RequestRevision, got %q (proposed %q)", confirmed.RequestRevision, proposed.RequestRevision)
-	}
+	require.NoError(t, err)
+	assert.Equal(t, StatusConfirmed, confirmed.Status)
+	assert.Len(t, confirmed.Ambiguities, 2, "ambiguities are retained for audit")
+	assert.Equal(t, answers, confirmed.Answers)
+	require.NotNil(t, confirmed.ConfirmedBy)
+	assert.Equal(t, "alice@example.com", *confirmed.ConfirmedBy)
+	assert.NotEqual(t, proposed.RequestRevision, confirmed.RequestRevision)
 }
 
-// TestCP1RejectsMalformedOrUnknownFieldsViaStructuredOutput verifies that
-// invalid enum values, unknown fields, and model-supplied IDs are rejected at
-// the CP1 model boundary.
-func TestCP1RejectsMalformedOrUnknownFieldsViaStructuredOutput(t *testing.T) {
-	ctx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
-	cases := []struct {
-		name string
-		raw  string
-	}{
-		{
-			name: "invalid_verification_kind",
-			raw:  `{"summary":"Valid summary","ambiguities":[],"examples":[{"scenario":"s","input_summary":"i","expected_outcome":"o","verification_kind":"bogus_kind"}],"preserved_behaviors":[]}`,
-		},
-		{
-			name: "unknown_top_level_field",
-			raw:  `{"summary":"Valid summary","unexpected":true,"ambiguities":[],"examples":[{"scenario":"s","input_summary":"i","expected_outcome":"o","verification_kind":"deterministic"}],"preserved_behaviors":[]}`,
-		},
-		{
-			name: "model_supplied_ambiguity_id",
-			raw:  `{"summary":"Valid summary","ambiguities":[{"id":"m1","question":"q","options":["a","b"]}],"examples":[{"scenario":"s","input_summary":"i","expected_outcome":"o","verification_kind":"deterministic"}],"preserved_behaviors":[]}`,
-		},
+// TestProposeChangeAutoConfirmsACardWithoutQuestions verifies that an
+// analysis with no open questions is saved confirmed by its owner, and that a
+// proposal on a server bound to a workspace records that workspace's
+// design/*.go as the card's design source.
+func TestProposeChangeAutoConfirmsACardWithoutQuestions(t *testing.T) {
+	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
+	ws := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(ws, "design"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(ws, "design", "design.go"), []byte("package design // refunds\n"), 0o644))
+	cp := newControlPlane(t, Options{CardsDir: t.TempDir(), WorkspaceDir: ws})
+
+	card, err := cp.ProposeChange(alice, &gensurla.ProposeChangePayload{
+		ChangeID: "chg-instant",
+		Prompt:   "Refunds up to $50 are instant.",
+		Analysis: refundAnalysis("Refunds up to $50 are instant."),
+	})
+	require.NoError(t, err)
+	assert.Equal(t, StatusConfirmed, card.Status)
+	require.NotNil(t, card.ConfirmedBy)
+	assert.Equal(t, "alice@example.com", *card.ConfirmedBy)
+	assert.Empty(t, card.Ambiguities)
+	assert.Empty(t, card.Answers)
+	assert.Nil(t, card.UIComposition)
+	stored, ok, err := cp.cards.load("chg-instant")
+	require.NoError(t, err)
+	require.True(t, ok)
+	assert.Equal(t, sourceOriginWorkspace, stored.sourceOrigin)
+	assert.Equal(t, `{"design/design.go":"package design // refunds\n"}`, stored.designSource)
+}
+
+// TestChangeAnalysisIsRejectedAtTheBoundary verifies that the generated MCP
+// and HTTP decoders reject an analysis that breaks a structural rule (a
+// missing analysis, a blank or missing required field, a null list element,
+// too few options or examples, or an unknown verification_kind) before the
+// service runs, and that the service rejects the rules that span fields
+// (repeated options) as unprocessable. The MCP codec also rejects a field the
+// contract does not declare, such as a caller-chosen ambiguity ID; the HTTP
+// decoder ignores it, so the code-assigned ID still wins. No rejected case
+// saves a card.
+func TestChangeAnalysisIsRejectedAtTheBoundary(t *testing.T) {
+	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
+	cp := newControlPlane(t, Options{})
+	adapter := genmcpadapter.NewMCPAdapter(gensurla.NewEndpoints(cp), nil)
+	srv := httptest.NewServer(NewHTTPHandler(cp, NewTokenAuthenticator(map[string]Principal{"alice-token": {ID: "alice@example.com"}})))
+	t.Cleanup(srv.Close)
+
+	const example = `{"scenario":"Refund at the limit","input_summary":"Order total $50.00","expected_outcome":"Instant store credit","verification_kind":"deterministic"}`
+	analysis := func(fields string) string {
+		return `{"change_id":"chg","prompt":"Refunds up to $50 are instant.","analysis":{` + fields + `}}`
 	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			cp := newControlPlane(t, Options{
-				Analyzer: NewModelCP1Analyzer(newStubModelClient(t, tc.raw)),
-			})
-			if _, err := cp.ProposeChange(ctx, &gensurla.ProposeChangePayload{
-				ChangeID: "chg-" + tc.name,
-				Prompt:   "Test structured output validation rejection",
-			}); err == nil {
-				t.Fatalf("expected ProposeChange to reject %s", tc.name)
+	valid := `"summary":"Refunds up to $50 are instant.","ambiguities":[],"examples":[` + example + `],"preserved_behaviors":[]`
+	structural := []struct {
+		name, payload, want string
+	}{
+		{"missing analysis", `{"change_id":"chg","prompt":"Refunds up to $50 are instant."}`, "analysis"},
+		{"blank summary", analysis(strings.Replace(valid, `"summary":"Refunds up to $50 are instant."`, `"summary":" \n\t"`, 1)), "summary"},
+		{"missing summary", analysis(strings.Replace(valid, `"summary":"Refunds up to $50 are instant.",`, ``, 1)), "summary"},
+		{"missing ambiguities", analysis(strings.Replace(valid, `"ambiguities":[],`, ``, 1)), "ambiguities"},
+		{"missing preserved_behaviors", analysis(strings.Replace(valid, `,"preserved_behaviors":[]`, ``, 1)), "preserved_behaviors"},
+		{"no examples", analysis(strings.Replace(valid, `[`+example+`]`, `[]`, 1)), "examples"},
+		{"blank expected_outcome", analysis(strings.Replace(valid, `"expected_outcome":"Instant store credit"`, `"expected_outcome":"  "`, 1)), "expected_outcome"},
+		{"invalid verification_kind", analysis(strings.Replace(valid, `"deterministic"`, `"bogus_kind"`, 1)), "verification_kind"},
+		{"null example", analysis(strings.Replace(valid, `[`+example+`]`, `[null]`, 1)), "examples"},
+		{"blank preserved behavior", analysis(strings.Replace(valid, `"preserved_behaviors":[]`, `"preserved_behaviors":[" "]`, 1)), "preserved_behaviors"},
+		{"single option", analysis(strings.Replace(valid, `"ambiguities":[]`, `"ambiguities":[{"question":"Is $50.00 itself instant?","options":["instant"]}]`, 1)), "options"},
+		{"blank question", analysis(strings.Replace(valid, `"ambiguities":[]`, `"ambiguities":[{"question":"","options":["instant","manager"]}]`, 1)), "question"},
+	}
+	undeclared := []struct {
+		name, payload, want string
+	}{
+		{"caller-chosen ambiguity id", analysis(strings.Replace(valid, `"ambiguities":[]`, `"ambiguities":[{"id":"m1","question":"Is $50.00 itself instant?","options":["instant","manager"]}]`, 1)), "id"},
+		{"unknown analysis field", analysis(valid + `,"unexpected":true`), "unexpected"},
+	}
+	for _, tc := range append(structural, undeclared...) {
+		t.Run("mcp "+tc.name, func(t *testing.T) {
+			res, err := adapter.ToolsCall(alice, &genmcpadapter.ToolsCallPayload{Name: "propose_change", Arguments: json.RawMessage(tc.payload)})
+			require.NoError(t, err)
+			complete, ok := res.Outcome.AsComplete()
+			require.True(t, ok)
+			require.NotNil(t, complete.IsError)
+			assert.True(t, *complete.IsError)
+			require.NotEmpty(t, complete.Content)
+			require.NotNil(t, complete.Content[0].Text)
+			assert.Contains(t, *complete.Content[0].Text, "invalid arguments")
+			assert.Contains(t, *complete.Content[0].Text, tc.want)
+		})
+	}
+	for _, tc := range structural {
+		t.Run("http "+tc.name, func(t *testing.T) {
+			status, body := postJSON(t, srv.URL+"/changes/propose", "alice-token", tc.payload)
+			assert.Equal(t, http.StatusBadRequest, status, body)
+			assert.Contains(t, body, tc.want)
+		})
+	}
+	for i, tc := range undeclared {
+		t.Run("http ignores "+tc.name, func(t *testing.T) {
+			changeID := fmt.Sprintf("chg-undeclared-%d", i)
+			status, body := postJSON(t, srv.URL+"/changes/propose", "alice-token", strings.Replace(tc.payload, `"change_id":"chg"`, `"change_id":"`+changeID+`"`, 1))
+			require.Equal(t, http.StatusOK, status, body)
+			var card gensurla.ChangeCardResult
+			require.NoError(t, json.Unmarshal([]byte(body), &struct {
+				Ambiguities *[]*gensurla.AmbiguityQuestion `json:"ambiguities"`
+			}{&card.Ambiguities}))
+			for _, q := range card.Ambiguities {
+				assert.Equal(t, changeID+"-ambiguity-01", q.ID, "the code-assigned ID wins over an undeclared caller field")
 			}
 		})
 	}
+
+	// A repeated option is a rule across list elements: the service rejects
+	// it as unprocessable over both transports.
+	duplicate := analysis(strings.Replace(valid, `"ambiguities":[]`, `"ambiguities":[{"question":"Is $50.00 itself instant?","options":["instant"," instant "]}]`, 1))
+	res, err := adapter.ToolsCall(alice, &genmcpadapter.ToolsCallPayload{Name: "propose_change", Arguments: json.RawMessage(duplicate)})
+	require.NoError(t, err)
+	complete, ok := res.Outcome.AsComplete()
+	require.True(t, ok)
+	require.NotNil(t, complete.IsError)
+	assert.True(t, *complete.IsError)
+	require.NotNil(t, complete.Content[0].Text)
+	assert.Contains(t, *complete.Content[0].Text, `invalid analysis: ambiguity "chg-ambiguity-01" (ambiguities[0]) has duplicate option at options[1]`)
+	status, body := postJSON(t, srv.URL+"/changes/propose", "alice-token", duplicate)
+	assert.Equal(t, http.StatusUnprocessableEntity, status, body)
+	assert.Contains(t, body, "duplicate option")
+
+	_, saved, err := cp.cards.load("chg")
+	require.NoError(t, err)
+	assert.False(t, saved, "no rejected analysis saves a card")
+
+	// The same complete analysis is accepted over both transports.
+	res, err = adapter.ToolsCall(alice, &genmcpadapter.ToolsCallPayload{Name: "propose_change", Arguments: json.RawMessage(analysis(valid))})
+	require.NoError(t, err)
+	complete, ok = res.Outcome.AsComplete()
+	require.True(t, ok)
+	require.False(t, complete.IsError != nil && *complete.IsError)
+	status, body = postJSON(t, srv.URL+"/changes/propose", "alice-token", strings.Replace(analysis(valid), `"change_id":"chg"`, `"change_id":"chg-http"`, 1))
+	assert.Equal(t, http.StatusOK, status, body)
 }
 
 // TestCP2EvaluatedArchitecturePreviewCP3FastDraftAndTokenAuthenticator verifies
@@ -247,10 +303,10 @@ func TestCP2EvaluatedArchitecturePreviewCP3FastDraftAndTokenAuthenticator(t *tes
 		t.Skip("runs the sandboxed Go toolchain; the full suite (go test without -short) covers it")
 	}
 	ctx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
-	clearAnalysis := CP1SemanticAnalysis{
+	clearAnalysis := &gensurla.CP1Analysis{
 		Summary:     "Refunds with item_subtotal_cents < 5000 auto-approve; >= 5000 require manager approval.",
-		Ambiguities: []CP1ModelAmbiguity{},
-		Examples: []CP1ModelExample{
+		Ambiguities: []*gensurla.CP1AnalysisAmbiguity{},
+		Examples: []*gensurla.CP1AnalysisExample{
 			{
 				Scenario:         "Subtotal 4999 cents auto-approves",
 				InputSummary:     "item_subtotal_cents=4999",
@@ -260,14 +316,9 @@ func TestCP2EvaluatedArchitecturePreviewCP3FastDraftAndTokenAuthenticator(t *tes
 		},
 		PreservedBehaviors: []string{"Idempotency key refund/<tenant>/<order>"},
 	}
-	rawBytes, err := json.Marshal(clearAnalysis)
-	if err != nil {
-		t.Fatalf("marshal clearAnalysis: %v", err)
-	}
 
 	targetStore := prompt.NewInMemoryStore()
 	cp := newControlPlane(t, Options{
-		Analyzer:      NewModelCP1Analyzer(newStubModelClient(t, string(rawBytes))),
 		TargetUpdater: &boundTargetPromptUpdater{store: targetStore},
 	})
 
@@ -324,6 +375,7 @@ var _ = Service("orders", func() {
 		ChangeID:     "chg-clear",
 		Prompt:       "Auto-approve when item_subtotal_cents < 5000; require manager when item_subtotal_cents >= 5000.",
 		DesignSource: &candidateDesign,
+		Analysis:     clearAnalysis,
 	})
 	if err != nil {
 		t.Fatalf("ProposeChange failed: %v", err)
@@ -457,13 +509,12 @@ var _ = Service("orders", func() {
 		t.Fatalf("ResourcesRead(%s) failed: %v", goldenpath.ResourceURI, err)
 	}
 	goldenComplete, ok := goldenRes.Outcome.AsComplete()
-	if !ok || len(goldenComplete.Contents) != 1 || goldenComplete.Contents[0].Text == nil || *goldenComplete.Contents[0].Text != goldenpath.PlaybookMarkdown() {
+	if !ok || len(goldenComplete.Contents) != 1 || goldenComplete.Contents[0].Text == nil || *goldenComplete.Contents[0].Text != goldenpath.ResourceMarkdown() {
 		t.Fatalf("unexpected surla://golden-path content: %+v", goldenRes)
 	}
 
 	// CP2 with server-configured multi-family provider profiles proposes cross-family swarm roster.
 	cpWithSwarm := newControlPlane(t, Options{
-		Analyzer: NewModelCP1Analyzer(newStubModelClient(t, string(rawBytes))),
 		SwarmProfiles: []swarm.ProviderProfile{
 			{
 				ID:            "claude-opus",
@@ -508,6 +559,7 @@ var _ = Service("orders", func() {
 		ChangeID:     "chg-swarm",
 		Prompt:       "Auto-approve when item_subtotal_cents < 5000; require manager when item_subtotal_cents >= 5000.",
 		DesignSource: &candidateDesign,
+		Analysis:     clearAnalysis,
 	})
 	if err != nil {
 		t.Fatalf("ProposeChange(chg-swarm) failed: %v", err)
@@ -563,89 +615,6 @@ var _ = Service("orders", func() {
 	}
 }
 
-// TestCP1AnalyzerSendsOutputAllowanceThroughAnthropicAdapter runs the CP1
-// analyzer through the real Anthropic adapter configured as NewFromAPIKey
-// configures it (default model only, no client-wide MaxTokens). The request
-// must carry cp1AnalysisMaxOutputTokens, and a response stopped at that
-// allowance must fail without storing a Change Card, whether or not its JSON
-// happens to parse.
-func TestCP1AnalyzerSendsOutputAllowanceThroughAnthropicAdapter(t *testing.T) {
-	analysis, err := json.Marshal(CP1SemanticAnalysis{
-		Summary:            "Give VIP customers instant store credit up to $150.",
-		Ambiguities:        []CP1ModelAmbiguity{},
-		Examples:           []CP1ModelExample{{Scenario: "VIP refund", InputSummary: "$120.00 total", ExpectedOutcome: "Instant store credit", VerificationKind: "deterministic"}},
-		PreservedBehaviors: []string{},
-	})
-	if err != nil {
-		t.Fatalf("marshal analysis: %v", err)
-	}
-	ctx := WithPrincipal(context.Background(), Principal{ID: "operator@example.com"})
-
-	cases := []struct {
-		name       string
-		stopReason string
-		text       string
-		wantErr    bool
-	}{
-		{name: "complete response", stopReason: "end_turn", text: string(analysis)},
-		{name: "malformed response cut off at the allowance", stopReason: "max_tokens", text: string(analysis[:len(analysis)/2]), wantErr: true},
-		{name: "valid JSON stopped at the allowance", stopReason: "max_tokens", text: string(analysis), wantErr: true},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			msgs := &recordingAnthropicMessages{resp: anthropicTextMessage(t, tc.text, tc.stopReason)}
-			client, err := anthropic.New(msgs, anthropic.Options{DefaultModel: "claude-sonnet-4-5"})
-			if err != nil {
-				t.Fatalf("anthropic.New: %v", err)
-			}
-			cp := newControlPlane(t, Options{Analyzer: NewModelCP1Analyzer(client)})
-
-			card, err := cp.ProposeChange(ctx, &gensurla.ProposeChangePayload{ChangeID: "vip", Prompt: "VIP refunds up to $150."})
-			if msgs.calls != 1 {
-				t.Fatalf("Anthropic Messages.New calls = %d, want 1 (err: %v)", msgs.calls, err)
-			}
-			if got := msgs.last.MaxTokens; got != cp1AnalysisMaxOutputTokens {
-				t.Fatalf("encoded max_tokens = %d, want %d", got, cp1AnalysisMaxOutputTokens)
-			}
-			if !tc.wantErr {
-				if err != nil {
-					t.Fatalf("ProposeChange: %v", err)
-				}
-				if card.Status != StatusConfirmed {
-					t.Fatalf("status = %q, want %q", card.Status, StatusConfirmed)
-				}
-				return
-			}
-			if err == nil {
-				t.Fatal("ProposeChange succeeded on a cut-off response")
-			}
-			_, stored, err := cp.cards.load("vip")
-			require.NoError(t, err)
-			if stored {
-				t.Fatal("cut-off response stored a Change Card")
-			}
-		})
-	}
-}
-
-// Complete returns the preconfigured JSON payload as an assistant TextPart.
-func (s *stubProvider) Complete(_ context.Context, _ *model.Request) (*model.Response, error) {
-	return &model.Response{
-		Content: []model.Message{
-			{
-				Role:  model.ConversationRoleAssistant,
-				Parts: []model.Part{model.TextPart{Text: s.responseJSON}},
-			},
-		},
-		StopReason: "stop",
-	}, nil
-}
-
-// Stream returns an error because ModelCP1Analyzer uses synchronous Complete calls.
-func (s *stubProvider) Stream(_ context.Context, _ *model.Request) (model.Streamer, error) {
-	return nil, errors.New("streaming not used by CP1 analyzer")
-}
-
 // ApplyPromptOverride writes newContent into the target prompt.Store and returns the resolved version.
 func (u *boundTargetPromptUpdater) ApplyPromptOverride(ctx context.Context, promptID, newContent string) (string, error) {
 	id := prompt.Ident(promptID)
@@ -659,56 +628,6 @@ func (u *boundTargetPromptUpdater) ApplyPromptOverride(ctx context.Context, prom
 	return override.Version, nil
 }
 
-// New records body and returns the fixed message.
-func (m *recordingAnthropicMessages) New(_ context.Context, body anthropicsdk.MessageNewParams, _ ...option.RequestOption) (*anthropicsdk.Message, error) {
-	m.last = body
-	m.calls++
-	return m.resp, nil
-}
-
-// NewStreaming is unused because the CP1 analyzer only calls Complete.
-func (m *recordingAnthropicMessages) NewStreaming(context.Context, anthropicsdk.MessageNewParams, ...option.RequestOption) *ssestream.Stream[anthropicsdk.MessageStreamEventUnion] {
-	panic("streaming not used by CP1 analyzer")
-}
-
-// CountTokens is unused because the CP1 analyzer does not count tokens.
-func (m *recordingAnthropicMessages) CountTokens(context.Context, anthropicsdk.MessageCountTokensParams, ...option.RequestOption) (*anthropicsdk.MessageTokensCount, error) {
-	return nil, errors.New("token counting not used by CP1 analyzer")
-}
-
-// newStubModelClient wraps a stubProvider in a goa-ai model.Client.
-func newStubModelClient(t *testing.T, responseJSON string) model.Client {
-	t.Helper()
-	client, err := model.NewClient(&stubProvider{responseJSON: responseJSON})
-	if err != nil {
-		t.Fatalf("model.NewClient: %v", err)
-	}
-	return client
-}
-
-// anthropicTextMessage decodes a provider-shaped assistant message holding
-// text with the given stop reason, as the Anthropic API would return it.
-func anthropicTextMessage(t *testing.T, text, stopReason string) *anthropicsdk.Message {
-	t.Helper()
-	raw, err := json.Marshal(map[string]any{
-		"id":          "msg_test",
-		"type":        "message",
-		"role":        "assistant",
-		"model":       "claude-sonnet-4-5",
-		"content":     []map[string]any{{"type": "text", "text": text}},
-		"stop_reason": stopReason,
-		"usage":       map[string]any{"input_tokens": 10, "output_tokens": 20},
-	})
-	if err != nil {
-		t.Fatalf("marshal message: %v", err)
-	}
-	var msg anthropicsdk.Message
-	if err := json.Unmarshal(raw, &msg); err != nil {
-		t.Fatalf("decode message: %v", err)
-	}
-	return &msg
-}
-
 // TestConfirmIntentRefinesNeedsConfirmationAndConfirmedCards verifies that the
 // owner can confirm a card and later refine its answers or examples against
 // the current request_revision, that unchanged submissions return the card as
@@ -717,38 +636,14 @@ func anthropicTextMessage(t *testing.T, text, stopReason string) *anthropicsdk.M
 func TestConfirmIntentRefinesNeedsConfirmationAndConfirmedCards(t *testing.T) {
 	aliceCtx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
 	bobCtx := WithPrincipal(context.Background(), Principal{ID: "bob@example.com"})
-	example := CP1ModelExample{
-		Scenario:         "Refund at the limit",
-		InputSummary:     "Order total $50.00",
-		ExpectedOutcome:  "Instant store credit",
-		VerificationKind: "deterministic",
-	}
-	ambiguous, err := json.Marshal(CP1SemanticAnalysis{
-		Summary:            "Refunds up to $50 are instant.",
-		Ambiguities:        []CP1ModelAmbiguity{{Question: "Is $50.00 itself instant?", Options: []string{"instant", "manager"}}},
-		Examples:           []CP1ModelExample{example},
-		PreservedBehaviors: []string{},
+	ambiguous := refundAnalysis("Refunds up to $50 are instant.", &gensurla.CP1AnalysisAmbiguity{
+		Question: "Is $50.00 itself instant?", Options: []string{"instant", "manager"},
 	})
-	if err != nil {
-		t.Fatalf("marshal analysis: %v", err)
-	}
-	unambiguous, err := json.Marshal(CP1SemanticAnalysis{
-		Summary:            "Refunds up to $50 are instant.",
-		Ambiguities:        []CP1ModelAmbiguity{},
-		Examples:           []CP1ModelExample{example},
-		PreservedBehaviors: []string{},
-	})
-	if err != nil {
-		t.Fatalf("marshal analysis: %v", err)
-	}
-	propose := func(t *testing.T, analysis []byte) (*ControlPlane, *gensurla.ChangeCardResult) {
+	unambiguous := refundAnalysis("Refunds up to $50 are instant.")
+	propose := func(t *testing.T, analysis *gensurla.CP1Analysis) (*ControlPlane, *gensurla.ChangeCardResult) {
 		t.Helper()
-		cp := newControlPlane(t, Options{Analyzer: NewModelCP1Analyzer(newStubModelClient(t, string(analysis)))})
-		card, err := cp.ProposeChange(aliceCtx, &gensurla.ProposeChangePayload{ChangeID: "chg", Prompt: "Refunds up to $50 are instant."})
-		if err != nil {
-			t.Fatalf("ProposeChange: %v", err)
-		}
-		return cp, card
+		cp := newControlPlane(t, Options{})
+		return cp, mustPropose(t, cp, aliceCtx, "chg", "Refunds up to $50 are instant.", analysis)
 	}
 	confirm := func(ctx context.Context, cp *ControlPlane, rev string, answers map[string]string, examples []*gensurla.ExampleItem) (*gensurla.ChangeCardResult, error) {
 		return cp.ConfirmIntent(ctx, &gensurla.ConfirmIntentPayload{ChangeID: "chg", RequestRevision: rev, Answers: answers, Examples: examples})
@@ -845,20 +740,8 @@ func TestConfirmIntentRefinesNeedsConfirmationAndConfirmedCards(t *testing.T) {
 func TestGetChangeLetsAStaleEditorRecover(t *testing.T) {
 	aliceCtx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
 	bobCtx := WithPrincipal(context.Background(), Principal{ID: "bob@example.com"})
-	analysis, err := json.Marshal(CP1SemanticAnalysis{
-		Summary:            "Refunds up to $50 are instant.",
-		Ambiguities:        []CP1ModelAmbiguity{},
-		Examples:           []CP1ModelExample{{Scenario: "Refund at the limit", InputSummary: "Order total $50.00", ExpectedOutcome: "Instant store credit", VerificationKind: "deterministic"}},
-		PreservedBehaviors: []string{},
-	})
-	if err != nil {
-		t.Fatalf("marshal analysis: %v", err)
-	}
-	cp := newControlPlane(t, Options{Analyzer: NewModelCP1Analyzer(newStubModelClient(t, string(analysis)))})
-	start, err := cp.ProposeChange(aliceCtx, &gensurla.ProposeChangePayload{ChangeID: "chg", Prompt: "Refunds up to $50 are instant."})
-	if err != nil {
-		t.Fatalf("ProposeChange: %v", err)
-	}
+	cp := newControlPlane(t, Options{})
+	start := mustPropose(t, cp, aliceCtx, "chg", "Refunds up to $50 are instant.", refundAnalysis("Refunds up to $50 are instant."))
 	withOutcome := func(card *gensurla.ChangeCardResult, outcome string) []*gensurla.ExampleItem {
 		ex := *card.Examples[0]
 		ex.ExpectedOutcome = outcome
@@ -937,4 +820,70 @@ func newControlPlane(t *testing.T, opts Options) *ControlPlane {
 	require.NoError(t, err)
 	t.Cleanup(func() { assert.NoError(t, cp.Close()) })
 	return cp
+}
+
+// refundAnalysis returns the analysis these tests send for the instant-refund
+// feature request: summary, the given open questions (none when omitted), one
+// deterministic example at the $50.00 limit, and one tenant-isolation rule the
+// change keeps.
+func refundAnalysis(summary string, questions ...*gensurla.CP1AnalysisAmbiguity) *gensurla.CP1Analysis {
+	return &gensurla.CP1Analysis{
+		Summary:     summary,
+		Ambiguities: append([]*gensurla.CP1AnalysisAmbiguity{}, questions...),
+		Examples: []*gensurla.CP1AnalysisExample{{
+			Scenario:         "Refund at the limit",
+			InputSummary:     "Order total $50.00",
+			ExpectedOutcome:  "Instant store credit",
+			VerificationKind: "deterministic",
+		}},
+		PreservedBehaviors: []string{"Cross-tenant order lookups return 404 Not Found."},
+	}
+}
+
+// mustPropose proposes changeID with prompt and analysis as the principal in
+// ctx and fails the test when the control plane refuses it.
+func mustPropose(
+	t *testing.T,
+	cp *ControlPlane,
+	ctx context.Context,
+	changeID, prompt string,
+	analysis *gensurla.CP1Analysis,
+) *gensurla.ChangeCardResult {
+	t.Helper()
+	card, err := cp.ProposeChange(ctx, &gensurla.ProposeChangePayload{ChangeID: changeID, Prompt: prompt, Analysis: analysis})
+	require.NoError(t, err)
+	return card
+}
+
+// postJSON sends body to url with the bearer token and returns the HTTP
+// status and response body.
+func postJSON(t *testing.T, url, token, body string) (int, string) {
+	t.Helper()
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, url, bytes.NewReader([]byte(body)))
+	require.NoError(t, err)
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	var out bytes.Buffer
+	_, err = out.ReadFrom(resp.Body)
+	require.NoError(t, err)
+	return resp.StatusCode, out.String()
+}
+
+// proposeArgs encodes p as the MCP arguments of a propose_change call.
+func proposeArgs(t *testing.T, p *gensurla.ProposeChangePayload) json.RawMessage {
+	t.Helper()
+	raw, err := gensurla.EncodeProposeChangePayload(p)
+	require.NoError(t, err)
+	return raw
+}
+
+// reviseArgs encodes p as the MCP arguments of a revise_change call.
+func reviseArgs(t *testing.T, p *gensurla.ReviseChangePayload) json.RawMessage {
+	t.Helper()
+	raw, err := gensurla.EncodeReviseChangePayload(p)
+	require.NoError(t, err)
+	return raw
 }

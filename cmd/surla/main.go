@@ -24,12 +24,6 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"goa.design/goa-ai/features/model/anthropic"
-	"goa.design/goa-ai/features/model/gateway"
-	"goa.design/goa-ai/features/model/openai"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
-
 	gensurla "github.com/goadesign/surla/gen/surla"
 	"github.com/goadesign/surla/internal/controlplane"
 	"github.com/goadesign/surla/internal/designeval"
@@ -42,16 +36,20 @@ import (
 	"go.opentelemetry.io/otel"
 )
 
-// serveConfig holds the optional `surla serve` flags that choose the CP1
-// model and the swarm provider profiles. Zero values mean "not configured".
+// serveConfig holds the optional `surla serve` flags that choose the model
+// live targets plan with and the swarm provider profiles. Zero values mean
+// "not configured".
 type serveConfig struct {
 	// gatewayAddr is the host:port of a Goa-AI model gateway reached over
-	// plaintext gRPC. It excludes provider and modelName.
+	// plaintext gRPC, passed to live targets as SURLA_LIVE_MODEL_GATEWAY. It
+	// excludes provider and modelName.
 	gatewayAddr string
-	// provider is "anthropic" or "openai" for direct provider calls; it
-	// requires modelName and the provider's API key environment variable.
+	// provider is "anthropic" or "openai" for direct provider calls, passed
+	// to live targets as SURLA_LIVE_MODEL_PROVIDER; it requires modelName and
+	// the provider's API key environment variable.
 	provider string
-	// modelName is the provider model identifier used in direct mode.
+	// modelName is the provider model identifier used in direct mode, passed
+	// to live targets as SURLA_LIVE_MODEL_NAME.
 	modelName string
 	// swarmProfilesPath is the path of a JSON array of swarm.ProviderProfile.
 	swarmProfilesPath string
@@ -232,9 +230,9 @@ func runServe(args []string) (err error) {
 	principalID := fs.String("principal", "", "Authenticated operator principal ID")
 	authToken := fs.String("auth-token", "", "Bearer token required on HTTP and MCP requests (default: $SURLA_AUTH_TOKEN)")
 	var cfg serveConfig
-	fs.StringVar(&cfg.gatewayAddr, "model-gateway-addr", "", "CP1 model gateway host:port (plaintext gRPC; excludes -model-provider and -model-name)")
-	fs.StringVar(&cfg.provider, "model-provider", "", "CP1 model provider: anthropic or openai (key from ANTHROPIC_API_KEY or OPENAI_API_KEY)")
-	fs.StringVar(&cfg.modelName, "model-name", "", "CP1 model name for -model-provider")
+	fs.StringVar(&cfg.gatewayAddr, "model-gateway-addr", "", "model gateway host:port that live targets plan with (plaintext gRPC; excludes -model-provider and -model-name)")
+	fs.StringVar(&cfg.provider, "model-provider", "", "model provider that live targets plan with: anthropic or openai (key from ANTHROPIC_API_KEY or OPENAI_API_KEY)")
+	fs.StringVar(&cfg.modelName, "model-name", "", "model name for -model-provider")
 	fs.StringVar(&cfg.swarmProfilesPath, "swarm-profiles", "", "JSON file listing the coding-agent provider profiles used for CP2 swarm plans")
 	fs.StringVar(&cfg.cardsDir, "cards-dir", ".surla/cards", "directory where CP1 Change Cards are saved so they survive restarts; one surla serve at a time may use it")
 	fs.StringVar(&cfg.promotionPath, "promotion-config", "", "JSON file with the CP5 report directory, required suite and environment, and release directory of staged binaries that approve_merge checks; it approves staged binaries for a fresh launch, never a running service")
@@ -356,12 +354,7 @@ func writeServeStatus(w io.Writer, addr *net.TCPAddr, opts controlplane.Options,
 	fmt.Fprintf(w, "surla: serving on http://%s\n", host)
 	fmt.Fprintf(w, "surla: connect MCP clients to http://%s/mcp with the bearer token (architecture guide: surla://golden-path or http://%s/golden-path)\n", host, host)
 	fmt.Fprintf(w, "surla: saving Change Cards in %s\n", opts.CardsDir)
-	if opts.Analyzer == nil {
-		fmt.Fprintln(w, "surla: CP1 (propose_change, revise_change): off — no model is configured to analyze change requests"+
-			" (export ANTHROPIC_API_KEY or OPENAI_API_KEY, set -model-provider and -model-name or -model-gateway-addr, or call configure_model); confirm_intent and get_change are on")
-	} else {
-		fmt.Fprintln(w, "surla: CP1 (propose_change, revise_change, confirm_intent, get_change): on")
-	}
+	fmt.Fprintln(w, "surla: CP1 (propose_change, revise_change, confirm_intent, get_change): on")
 	if len(opts.SwarmProfiles) == 0 {
 		fmt.Fprintln(w, "surla: CP2 (preview_architecture): design preview is on; swarm roster is off (set -swarm-profiles)")
 	} else {
@@ -721,9 +714,9 @@ func isSHA256Hex(s string) bool {
 // serveOptions builds the control-plane Options for `surla serve` from cfg.
 // getenv supplies provider API keys. When all model flags are empty,
 // resolveStartupModelConfig auto-detects anthropic/claude-sonnet-4-6 from
-// ANTHROPIC_API_KEY or openai/gpt-5.4-mini from OPENAI_API_KEY. With neither
-// flags nor API keys set, Analyzer stays nil and configure_model can activate
-// a model gateway later without restarting.
+// ANTHROPIC_API_KEY or openai/gpt-5.4-mini from OPENAI_API_KEY. The chosen
+// model only reaches live targets' environment; with neither flags nor API
+// keys set, live targets get no model choice until configure_model sets one.
 func serveOptions(
 	cfg serveConfig,
 	getenv func(string) string,
@@ -734,20 +727,13 @@ func serveOptions(
 		return controlplane.Options{}, err
 	}
 	resolvedCfg := resolveStartupModelConfig(cfg, getenv)
-	analyzer, closeModel, err := newCP1Analyzer(resolvedCfg, getenv)
-	if err != nil {
+	if err := validateModelConfig(resolvedCfg, getenv); err != nil {
 		return controlplane.Options{}, err
-	}
-	cleanupModel := func() error {
-		if closeModel != nil {
-			return closeModel()
-		}
-		return nil
 	}
 
 	ws, err := configureServeWorkspace(cfg)
 	if err != nil {
-		return controlplane.Options{}, errors.Join(err, cleanupModel())
+		return controlplane.Options{}, err
 	}
 	live := &controlplane.LiveConfig{
 		Env: liveTargetEnv(environ, resolvedCfg),
@@ -762,14 +748,14 @@ func serveOptions(
 			if ws.closeProjectLock != nil {
 				lockErr = ws.closeProjectLock()
 			}
-			return controlplane.Options{}, errors.Join(selfErr, cleanupModel(), lockErr)
+			return controlplane.Options{}, errors.Join(selfErr, lockErr)
 		}
 		live.Command = self
 		live.StartTimeout = defaultProjectVerifyTimeout
 	}
 	goProxyEnv, err := operatorGoProxyEnv(ws.evalWorkDir)
 	if err != nil {
-		return controlplane.Options{}, errors.Join(err, cleanupModel(), ws.closeProjectLock())
+		return controlplane.Options{}, errors.Join(err, ws.closeProjectLock())
 	}
 	return controlplane.Options{
 		CardsDir:               ws.cardsDir,
@@ -778,9 +764,7 @@ func serveOptions(
 		Evaluator:              designeval.NewEvaluatorInDir(ws.evalWorkDir),
 		NewGenerator:           func() scaffold.Generator { return designeval.NewEvaluatorInDir(ws.evalWorkDir) },
 		SurlaVersion:           surlaBuildVersion(),
-		Analyzer:               analyzer,
-		CloseAnalyzer:          closeModel,
-		ModelBuilder:           newModelBuilder(getenv, environ),
+		LiveModelEnv:           newLiveModelEnv(getenv, environ),
 		SwarmProfiles:          profiles,
 		Verification:           ws.verification,
 		RunsDir:                ws.runsDir,
@@ -825,7 +809,7 @@ func operatorGoProxyEnv(dir string) ([]string, error) {
 
 // resolveStartupModelConfig selects the default direct provider and model when
 // all model flags are empty and ANTHROPIC_API_KEY or OPENAI_API_KEY is set in
-// getenv. Any explicit model flag returns cfg unchanged so newCP1Analyzer
+// getenv. Any explicit model flag returns cfg unchanged so validateModelConfig
 // enforces flag validation.
 func resolveStartupModelConfig(cfg serveConfig, getenv func(string) string) serveConfig {
 	if cfg.gatewayAddr != "" || cfg.provider != "" || cfg.modelName != "" {
@@ -842,10 +826,12 @@ func resolveStartupModelConfig(cfg serveConfig, getenv func(string) string) serv
 	return cfg
 }
 
-// newModelBuilder returns the ModelBuilder callback that constructs replacement
-// CP1 analyzers and CP3 live-target environments for configure_model.
-func newModelBuilder(getenv func(string) string, environ []string) controlplane.ModelBuilder {
-	return func(p *gensurla.ConfigureModelPayload) (controlplane.CP1Analyzer, []string, func() error, error) {
+// newLiveModelEnv returns the LiveModelEnv callback configure_model uses to
+// build the environment live targets start with for a new model choice. A
+// direct provider whose API key is missing from getenv is refused as
+// unprocessable, because the live target would inherit no key.
+func newLiveModelEnv(getenv func(string) string, environ []string) controlplane.LiveModelEnv {
+	return func(p *gensurla.ConfigureModelPayload) ([]string, error) {
 		var nextCfg serveConfig
 		if p.GatewayAddr != nil {
 			nextCfg.gatewayAddr = *p.GatewayAddr
@@ -858,7 +844,7 @@ func newModelBuilder(getenv func(string) string, environ []string) controlplane.
 		}
 		if nextCfg.provider != "" {
 			if env, ok := apiKeyEnv[nextCfg.provider]; ok && strings.TrimSpace(getenv(env)) == "" {
-				return nil, nil, nil, gensurla.MakeUnprocessable(fmt.Errorf(
+				return nil, gensurla.MakeUnprocessable(fmt.Errorf(
 					"provider %s requires %s in surla serve's environment; set %s and restart surla serve, or call configure_model with gateway_addr to attach a running model gateway",
 					nextCfg.provider,
 					env,
@@ -866,11 +852,7 @@ func newModelBuilder(getenv func(string) string, environ []string) controlplane.
 				))
 			}
 		}
-		analyzer, closeFn, err := newCP1Analyzer(nextCfg, getenv)
-		if err != nil {
-			return nil, nil, nil, err
-		}
-		return analyzer, liveTargetEnv(environ, nextCfg), closeFn, nil
+		return liveTargetEnv(environ, nextCfg), nil
 	}
 }
 
@@ -921,49 +903,31 @@ func writeLeftoverLiveDirs(w io.Writer, root string) {
 	}
 }
 
-// newCP1Analyzer returns the CP1 analyzer selected by cfg: a model gateway
-// client when gatewayAddr is set, a direct provider client when provider and
-// modelName are set, or nil when neither is set. Mixed or partial model flags
-// and a missing provider API key are errors; key values never appear in them.
-func newCP1Analyzer(
-	cfg serveConfig,
-	getenv func(string) string,
-) (controlplane.CP1Analyzer, func() error, error) {
+// validateModelConfig checks the model flags `surla serve` passes to live
+// targets: a gateway address alone, or a provider with a model name and that
+// provider's API key in getenv. No flags at all is valid and means live
+// targets get no model choice. Mixed or partial model flags, an unknown
+// provider and a missing provider API key are errors; key values never
+// appear in them.
+func validateModelConfig(cfg serveConfig, getenv func(string) string) error {
 	switch {
 	case cfg.gatewayAddr != "" && (cfg.provider != "" || cfg.modelName != ""):
-		return nil, nil, errors.New("-model-gateway-addr cannot be combined with -model-provider or -model-name; the gateway chooses the model")
+		return errors.New("-model-gateway-addr cannot be combined with -model-provider or -model-name; the gateway chooses the model")
 	case cfg.gatewayAddr != "":
-		conn, err := grpc.NewClient(cfg.gatewayAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
-		if err != nil {
-			return nil, nil, fmt.Errorf("connect model gateway %q: %w", cfg.gatewayAddr, err)
-		}
-		client, err := gateway.NewGRPCClient(conn)
-		if err != nil {
-			return nil, nil, errors.Join(fmt.Errorf("model gateway client: %w", err), conn.Close())
-		}
-		return controlplane.NewModelCP1Analyzer(client), conn.Close, nil
+		return nil
 	case cfg.provider == "" && cfg.modelName == "":
-		return nil, nil, nil
+		return nil
 	case cfg.provider == "" || cfg.modelName == "":
-		return nil, nil, errors.New("-model-provider and -model-name must be set together")
+		return errors.New("-model-provider and -model-name must be set together")
 	}
 	env, ok := apiKeyEnv[cfg.provider]
 	if !ok {
-		return nil, nil, fmt.Errorf("unsupported -model-provider %q (expected \"anthropic\" or \"openai\")", cfg.provider)
+		return fmt.Errorf("unsupported -model-provider %q (expected \"anthropic\" or \"openai\")", cfg.provider)
 	}
-	key := getenv(env)
-	if key == "" {
-		return nil, nil, fmt.Errorf("-model-provider %s requires %s", cfg.provider, env)
+	if getenv(env) == "" {
+		return fmt.Errorf("-model-provider %s requires %s", cfg.provider, env)
 	}
-	newClient := anthropic.NewFromAPIKey
-	if cfg.provider == "openai" {
-		newClient = openai.NewFromAPIKey
-	}
-	client, err := newClient(key, cfg.modelName)
-	if err != nil {
-		return nil, nil, fmt.Errorf("%s model client: %w", cfg.provider, err)
-	}
-	return controlplane.NewModelCP1Analyzer(client), nil, nil
+	return nil
 }
 
 // loadSwarmProfiles decodes the JSON array of swarm.ProviderProfile at path,

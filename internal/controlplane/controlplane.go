@@ -161,17 +161,10 @@ type (
 		// `eval/go.mod` by init_project. When empty, init_project returns
 		// not_implemented.
 		SurlaVersion string
-		// Analyzer performs CP1 semantic analysis via a model call.
-		Analyzer CP1Analyzer
-		// CloseAnalyzer releases the transport owned by Analyzer (such as a
-		// gRPC model gateway connection) when Analyzer is superseded by
-		// ConfigureModel, when ControlPlane.Close runs, or if New fails
-		// validation.
-		CloseAnalyzer func() error
-		// ModelBuilder constructs replacement CP1 analyzers and CP3 live-target
-		// environments when configure_model is called. Without it,
-		// configure_model returns not_implemented.
-		ModelBuilder ModelBuilder
+		// LiveModelEnv returns the CP3 live-target environment for a model
+		// choice made with configure_model. Without it, configure_model returns
+		// not_implemented.
+		LiveModelEnv LiveModelEnv
 		// TargetUpdater applies CP3 Fast Draft Mode prompt overrides to the bound target platform.
 		TargetUpdater TargetPromptUpdater
 		// SwarmProfiles lists server-configured coding-agent provider profiles for
@@ -269,19 +262,14 @@ type (
 		mu sync.RWMutex
 		// cards saves pending and confirmed CP1 Change Cards by change_id.
 		cards *cardStore
-		// modelMu serializes access to activeModel, modelClosed, and every
-		// modelHandle's reference count and closeFn.
+		// modelMu guards liveModelEnv.
 		modelMu sync.Mutex
-		// activeModel holds the currently active CP1 analyzer and CP3
-		// live-target environment snapshot. Guarded by modelMu.
-		activeModel *modelHandle
-		// modelClosed reports whether closeModel has run during Close. Guarded
-		// by modelMu.
-		modelClosed bool
-		// modelBuilder constructs replacement CP1 analyzers and CP3 live-target
-		// environments when configure_model is called, or nil when runtime
-		// model reconfiguration is not configured.
-		modelBuilder ModelBuilder
+		// liveModelEnv is the environment the next CP3 live target starts
+		// with: Options.Live.Env until configure_model replaces it.
+		liveModelEnv []string
+		// liveModelEnvFor is Options.LiveModelEnv, or nil when runtime model
+		// reconfiguration is not configured.
+		liveModelEnvFor LiveModelEnv
 		// targetUpdater applies CP3 Fast Draft Mode prompt overrides to the target platform.
 		targetUpdater TargetPromptUpdater
 		// swarmProfiles stores server-configured coding-agent provider profiles.
@@ -373,16 +361,6 @@ const (
 	TargetKindPromptTemplate = "prompt_template"
 	// TargetKindCompiledRule identifies a compiled Go business rule that cannot be overridden via prompt store.
 	TargetKindCompiledRule = "compiled_rule"
-	// cp1AnalysisMaxOutputTokens is the output allowance for each CP1 model
-	// turn (both Phase 1 read_design inspection turns and the final structured
-	// Change Card completion), including reasoning tokens counted against that
-	// allowance. It caps one model response only, not the cost of a whole
-	// request or change. Providers such as Anthropic require a positive
-	// allowance on every request. During Phase 1 inspection, an OutputLimited
-	// tool batch is never executed; on the final structured completion, a
-	// response marked OutputLimited fails Analyze or Revise even when its JSON
-	// parses, so no card is stored from an incomplete final analysis.
-	cp1AnalysisMaxOutputTokens = 16384
 )
 
 var (
@@ -454,7 +432,7 @@ func New(opts Options) (*ControlPlane, error) {
 		if opts.CloseProjectLock != nil {
 			lockErr = opts.CloseProjectLock()
 		}
-		return errors.Join(closeInitialAnalyzer(opts.CloseAnalyzer), evalErr, lockErr)
+		return errors.Join(evalErr, lockErr)
 	}
 	if opts.TargetUpdater != nil && opts.Live != nil {
 		err := errors.New("set either TargetUpdater or Live, not both: draft_override sends prompt text to exactly one target")
@@ -494,16 +472,11 @@ func New(opts Options) (*ControlPlane, error) {
 		initialLiveEnv = opts.Live.Env
 	}
 	cp := &ControlPlane{
-		cards:         cards,
-		traces:        traces,
-		traceProvider: opts.TracerProvider,
-		activeModel: &modelHandle{
-			analyzer: opts.Analyzer,
-			liveEnv:  initialLiveEnv,
-			closeFn:  opts.CloseAnalyzer,
-			refs:     1,
-		},
-		modelBuilder:           opts.ModelBuilder,
+		cards:                  cards,
+		traces:                 traces,
+		traceProvider:          opts.TracerProvider,
+		liveModelEnv:           initialLiveEnv,
+		liveModelEnvFor:        opts.LiveModelEnv,
 		targetUpdater:          opts.TargetUpdater,
 		swarmProfiles:          opts.SwarmProfiles,
 		promotionTarget:        opts.PromotionTarget,
@@ -564,7 +537,7 @@ func NewHTTPHandler(svc gensurla.Service, auth RequestAuthenticator) http.Handle
 		goahttp.RequestDecoder,
 		goahttp.ResponseEncoder,
 		nil,
-		httpErrorFormatter,
+		nil,
 	)
 	gensurlahttp.Mount(mux, httpServer)
 
@@ -597,24 +570,31 @@ func (c *ControlPlane) CheckpointUI(_ context.Context) (string, error) {
 	return checkpointUIHTML, nil
 }
 
-// GoldenPath returns the Surla Golden Path architecture playbook Markdown
-// for `surla://golden-path`.
+// GoldenPath returns the Markdown `surla://golden-path` serves: the Golden
+// Path architecture playbook followed by the decision component catalog for
+// an analysis's optional ui_composition.
 func (c *ControlPlane) GoldenPath(_ context.Context) (string, error) {
-	return goldenpath.PlaybookMarkdown(), nil
+	return goldenpath.ResourceMarkdown(), nil
 }
 
-// ProposeChange evaluates a feature request at Checkpoint 1 (CP1) via the
-// configured CP1Analyzer model call, validates all model-emitted fields
-// strictly, assigns code-owned ambiguity and example IDs, binds ownership to
-// the authenticated principal, and stops for human confirmation only when
-// genuine domain ambiguities are present.
+// ProposeChange saves a new Checkpoint 1 (CP1) Change Card from the caller's
+// feature request and analysis. The generated HTTP and MCP decoders have
+// already checked the analysis's structure; ProposeChange checks the rule that
+// spans fields (each ambiguity's options are distinct), numbers ambiguities
+// <change_id>-ambiguity-NN and examples check_NN in list order, records the
+// design source (design_source when given, else design/*.go from the bound
+// workspace, else none), and binds the card to the authenticated principal.
+// A card without ambiguities is saved confirmed by its owner; otherwise it
+// waits in needs_confirmation. A change_id that already has a card is a
+// conflict; a broken rule or an unreadable workspace design is unprocessable,
+// and neither saves anything.
 func (c *ControlPlane) ProposeChange(ctx context.Context, p *gensurla.ProposeChangePayload) (*gensurla.ChangeCardResult, error) {
 	principal, ok := PrincipalFromContext(ctx)
 	if !ok {
 		return nil, errors.New("authenticated principal is required")
 	}
-	if p == nil || strings.TrimSpace(p.ChangeID) == "" || strings.TrimSpace(p.Prompt) == "" {
-		return nil, gensurla.MakeUnprocessable(errors.New("change_id and prompt are required"))
+	if p == nil || strings.TrimSpace(p.ChangeID) == "" || strings.TrimSpace(p.Prompt) == "" || p.Analysis == nil {
+		return nil, gensurla.MakeUnprocessable(errors.New("change_id, prompt, and analysis are required"))
 	}
 	// A saved card is found by its change_id; invalid UTF-8 would be saved as
 	// U+FFFD and the card could not be found again. HTTP and MCP requests
@@ -622,105 +602,31 @@ func (c *ControlPlane) ProposeChange(ctx context.Context, p *gensurla.ProposeCha
 	if !utf8.ValidString(p.ChangeID) {
 		return nil, gensurla.MakeUnprocessable(errors.New("change_id must be valid UTF-8"))
 	}
-	model, err := c.acquireModel()
-	if err != nil {
-		return nil, err
-	}
-	if model == nil {
-		return nil, c.notConfiguredAnalyzerError()
-	}
-	defer func() {
-		c.releaseModel(ctx, model)
-	}()
-	var design CP1Design
 	var designSrc string
 	sourceOrigin := sourceOriginSupplied
-	switch {
-	case p.DesignSource != nil:
+	if p.DesignSource != nil {
 		designSrc = *p.DesignSource
-		design = SuppliedCP1Design(designSrc)
-	default:
-		wsDir, wsDev, wsIno := c.currentWorkspaceTarget()
-		if wsDir != "" {
-			design, designSrc, err = readWorkspaceCP1Design(wsDir, wsDev, wsIno)
-			if err != nil {
-				return nil, err
-			}
-			sourceOrigin = sourceOriginWorkspace
-		} else {
-			design = SuppliedCP1Design("")
+	} else if wsDir, wsDev, wsIno := c.currentWorkspaceTarget(); wsDir != "" {
+		src, err := readWorkspaceDesignSource(wsDir, wsDev, wsIno)
+		if err != nil {
+			return nil, err
 		}
+		designSrc = src
+		sourceOrigin = sourceOriginWorkspace
 	}
 
-	c.mu.RLock()
-	_, alreadyExists, err := c.cards.load(p.ChangeID)
-	c.mu.RUnlock()
-	if err != nil {
-		return nil, err
-	}
-	if alreadyExists {
-		return nil, gensurla.MakeConflict(fmt.Errorf("change_id %q already exists", p.ChangeID))
-	}
-
-	ctx, span := c.tracer("surla/controlplane").Start(
+	_, span := c.tracer("surla/controlplane").Start(
 		ctx,
 		"surla.controlplane.propose_change",
 		trace.WithAttributes(attribute.String("surla.change_id", p.ChangeID)),
 	)
 	defer span.End()
 
-	if err := reportProgress(ctx, 0, 1, "Analyzing the feature request with the CP1 model"); err != nil {
-		span.SetAttributes(attribute.String("surla.public_summary", cp1SafeFaultSummary(false, cp1FaultProgress)))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "report cp1 analysis progress")
-		return nil, err
-	}
-	analysis, err := model.analyzer.Analyze(ctx, p.Prompt, design)
+	ambiguities, examples, preserved, err := proposedCardContent(p.ChangeID, p.Analysis)
 	if err != nil {
-		if se, ok := asAnalysisRejected(err); ok {
-			recordCP1RejectionSpan(span, false, err)
-			err = newAnalysisRejected(
-				fmt.Sprintf(
-					"cp1 analysis rejected (%s): this propose_change request did not save Change Card %q; retry propose_change (including design_source when evaluating an existing Goa design), or call get_change if another request may have created the card",
-					se.Message,
-					p.ChangeID,
-				),
-				err,
-			)
-		} else {
-			span.SetAttributes(attribute.String("surla.public_summary", cp1SafeAnalyzerErrorSummary(false, err)))
-			if containsAnalysisRejected(err) {
-				err = unclassifiedCP1Error{cause: err}
-			}
-		}
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "analyze cp1 change card")
-		return nil, err
+		span.SetAttributes(attribute.String("surla.public_summary", cp1RejectedAnalysisSummary(false)))
+		return nil, gensurla.MakeUnprocessable(fmt.Errorf("invalid analysis: %w", err))
 	}
-	if err := reportProgress(ctx, 1, 1, "Validating the CP1 analysis"); err != nil {
-		span.SetAttributes(attribute.String("surla.public_summary", cp1SafeFaultSummary(false, cp1FaultProgress)))
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "report cp1 validation progress")
-		return nil, err
-	}
-
-	summary, ambiguities, examples, preserved, err := validateCP1Analysis(p.ChangeID, analysis)
-	if err != nil {
-		cause := &cp1Rejection{kind: "semantic_validation", err: err}
-		recordCP1RejectionSpan(span, false, cause)
-		se := newAnalysisRejected(
-			fmt.Sprintf(
-				"cp1 analysis rejected (%s): this propose_change request did not save Change Card %q; retry propose_change (including design_source when evaluating an existing Goa design), or call get_change if another request may have created the card",
-				err.Error(),
-				p.ChangeID,
-			),
-			cause,
-		)
-		span.RecordError(se)
-		span.SetStatus(codes.Error, "validate cp1 analysis")
-		return nil, se
-	}
-
 	status := StatusConfirmed
 	var confirmedBy *string
 	if len(ambiguities) > 0 {
@@ -734,7 +640,7 @@ func (c *ControlPlane) ProposeChange(ctx context.Context, p *gensurla.ProposeCha
 		ChangeID:           p.ChangeID,
 		Status:             status,
 		Prompt:             p.Prompt,
-		Summary:            summary,
+		Summary:            p.Analysis.Summary,
 		Ambiguities:        ambiguities,
 		Examples:           examples,
 		PreservedBehaviors: preserved,
@@ -750,8 +656,8 @@ func (c *ControlPlane) ProposeChange(ctx context.Context, p *gensurla.ProposeCha
 	card.RequestRevision = rev
 	// The composition is bound to the revision it was composed with but is
 	// not part of it: request_revision covers only the authoritative card.
-	if analysis.UIComposition != nil {
-		card.UIComposition = &gensurla.UICompositionItem{Program: *analysis.UIComposition, ComposedForRevision: rev}
+	if p.Analysis.UIComposition != nil {
+		card.UIComposition = &gensurla.UICompositionItem{Program: *p.Analysis.UIComposition, ComposedForRevision: rev}
 	}
 
 	c.mu.Lock()
@@ -794,7 +700,7 @@ func (c *ControlPlane) ProposeChange(ctx context.Context, p *gensurla.ProposeCha
 // directory and operator project lock stay locked on this and every later call,
 // because the target's processes may still use them. Card cleanup waits for a
 // card read or save in progress; requests that reach the cards afterwards,
-// such as one still waiting on a model or promotion target, fail without
+// such as one still waiting on a promotion target, fail without
 // writing. A later call returns the same evaluator result and, if the live
 // target could not be stopped, the same failure; the cards directory and
 // project lock are released only once.
@@ -812,9 +718,8 @@ func (c *ControlPlane) Close() error {
 	checkErr := c.recoverCheckOperations()
 	liveErr := c.closeLive()
 	evalErr := c.evaluator.Close()
-	modelErr := c.closeModel()
 	if liveErr != nil {
-		return errors.Join(evalErr, modelErr, fmt.Errorf("stop live target; cards directory %s stays locked: %w", c.cards.dir, liveErr))
+		return errors.Join(evalErr, fmt.Errorf("stop live target; cards directory %s stays locked: %w", c.cards.dir, liveErr))
 	}
 	c.workspaceMu.Lock()
 	defer c.workspaceMu.Unlock()
@@ -825,7 +730,7 @@ func (c *ControlPlane) Close() error {
 		lockErr = c.closeProjectLock()
 		c.closeProjectLock = nil
 	}
-	return errors.Join(evalErr, modelErr, checkErr, c.traces.Close(), c.cards.close(), lockErr)
+	return errors.Join(evalErr, checkErr, c.traces.Close(), c.cards.close(), lockErr)
 }
 
 // GetChange returns the current Change Card for change_id to its owner. It

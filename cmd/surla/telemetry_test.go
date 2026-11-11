@@ -63,7 +63,7 @@ func TestStandaloneTelemetryKeepsFullOTLPAndSafeDiagnostics(t *testing.T) {
 		assert.NoError(t, tp.Shutdown(ctx))
 	})
 	cp, err := controlplane.New(controlplane.Options{
-		CardsDir: cardsDir, Analyzer: confirmedAnalyzer{}, TracerProvider: tp,
+		CardsDir: cardsDir, TracerProvider: tp,
 	})
 	require.NoError(t, err)
 	t.Cleanup(func() { assert.NoError(t, cp.Close()) })
@@ -90,7 +90,7 @@ func TestStandaloneTelemetryKeepsFullOTLPAndSafeDiagnostics(t *testing.T) {
 	_, unowned := tp.Tracer("test").Start(t.Context(), "surla.controlplane.propose_change")
 	unowned.SetStatus(codes.Error, "unowned-private-content")
 	unowned.End()
-	_, err = cp.ProposeChange(auth, &gensurla.ProposeChangePayload{ChangeID: "local-card", Prompt: "private-feature-request"})
+	_, err = cp.ProposeChange(auth, &gensurla.ProposeChangePayload{ChangeID: "local-card", Prompt: "private-feature-request", Analysis: confirmedAnalysis()})
 	require.NoError(t, err)
 	flushCtx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()

@@ -169,26 +169,24 @@ func TestCheckpointUIRefreshesApprovalWithoutDiscardingEdits(t *testing.T) {
 func approvalRefreshCards(t *testing.T) (json.RawMessage, json.RawMessage) {
 	t.Helper()
 	ctx := WithPrincipal(t.Context(), Principal{ID: "approval-owner@example.invalid"})
-	analysis, err := json.Marshal(CP1SemanticAnalysis{
+	analysis := &gensurla.CP1Analysis{
 		Summary:     "Refunds above $50 require a manager.",
-		Ambiguities: []CP1ModelAmbiguity{},
-		Examples: []CP1ModelExample{{
+		Ambiguities: []*gensurla.CP1AnalysisAmbiguity{},
+		Examples: []*gensurla.CP1AnalysisExample{{
 			Scenario: "Refund above $50", InputSummary: "Order total $75",
 			ExpectedOutcome: "Wait for manager approval", VerificationKind: "deterministic",
 		}},
 		PreservedBehaviors: []string{},
-	})
-	require.NoError(t, err)
+	}
 	inputs := PromotionInputs{
 		SuiteID: "orders_acceptance", SuiteCommit: strings.Repeat("2", 40),
 		Environment: "sim", Artifacts: map[string]string{"orders": strings.Repeat("a", 64)},
 	}
 	target := &promotionTargetStub{inputs: inputs}
-	cp := newControlPlane(t, Options{
-		Analyzer: NewModelCP1Analyzer(newStubModelClient(t, string(analysis))), PromotionTarget: target,
-	})
+	cp := newControlPlane(t, Options{PromotionTarget: target})
 	card, err := cp.ProposeChange(ctx, &gensurla.ProposeChangePayload{
 		ChangeID: "approval-refresh", Prompt: "Refunds above $50 require a manager.",
+		Analysis: analysis,
 	})
 	require.NoError(t, err)
 	commit := strings.Repeat("1", 40)

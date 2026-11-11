@@ -26,22 +26,32 @@ type Service interface {
 	// Serve the interactive MCP Apps HTML host for Surla checkpoints.
 	CheckpointUI(context.Context) (res string, err error)
 	// Serve the Surla Golden Path architecture playbook for Goa-AI agentic
-	// platforms.
+	// platforms, followed by the decision component catalog for the optional
+	// ui_composition of a propose_change or revise_change analysis.
 	GoldenPath(context.Context) (res string, err error)
-	// Evaluate a feature request at Checkpoint 1, surfacing concrete examples and
-	// any genuine domain ambiguity. When design_source is omitted and a workspace
-	// is bound, Surla reads design/*.go from the bound workspace.
+	// Save a new Checkpoint 1 Change Card from a feature request and the caller's
+	// analysis of it. Surla checks the analysis's structure and cross-field rules,
+	// gives ambiguities the IDs <change_id>-ambiguity-NN and examples the IDs
+	// check_01, check_02, ... in list order, binds the card to the authenticated
+	// owner, records the design source (design/*.go from the bound workspace when
+	// design_source is omitted), and computes request_revision. A card without
+	// ambiguities is confirmed at once; otherwise it waits for confirm_intent.
+	// Surla runs no model for this step and cannot judge whether the analysis is
+	// complete or correct.
 	ProposeChange(context.Context, *ProposeChangePayload) (res *ChangeCardResult, err error)
-	// Revise an existing Checkpoint 1 Change Card with new or changed operator
-	// requirements bound to its current request_revision. Re-analyzes the revised
-	// prompt and design source (re-reading design/*.go from the bound workspace
-	// when design_source is omitted on a workspace-backed card) with the prior
-	// card's prompt, summary, confirmed answers, open questions, examples and
-	// preserved behaviors as context, and saves a new revision in
-	// needs_confirmation status for operator review. The new revision's answers,
-	// confirmed_by and any approval are cleared: earlier decisions remain only
-	// where the analysis restated them in its summary, examples or preserved
-	// behaviors.
+	// Save the next revision of an existing Checkpoint 1 Change Card from a
+	// revised feature request and the caller's analysis of it, bound to the card's
+	// current request_revision. The analysis accounts for every current example
+	// exactly once, keeping or editing it through prior_id or dropping it through
+	// removed_example_ids. Surla keeps the IDs of kept examples, gives new
+	// examples the lowest check_NN ID neither card uses, records design/*.go from
+	// the bound workspace again when design_source is omitted on a
+	// workspace-backed card (otherwise keeps the card's saved design source), and
+	// saves the new revision in needs_confirmation status for operator review. The
+	// new revision's answers, confirmed_by and any approval are cleared: earlier
+	// decisions remain only where the analysis restates them in its summary,
+	// examples or preserved behaviors. Surla runs no model for this step and
+	// cannot judge whether the analysis is complete or correct.
 	ReviseChange(context.Context, *ReviseChangePayload) (res *ChangeCardResult, err error)
 	// Confirm or refine a Checkpoint 1 Change Card with the complete ambiguity
 	// answers and example table, bound to its current request_revision. Changed
@@ -116,9 +126,12 @@ type Service interface {
 	// Compare evaluated Goa designs and go.mod directives without emitting a
 	// blanket compatibility verdict.
 	Diff(context.Context, *DiffPayload) (res *DiffResult, err error)
-	// Configure or switch the active CP1 semantic analyzer and CP3 live-target
-	// model provider and model name or gRPC model gateway on a running control
-	// plane without restarting.
+	// Choose, on a running control plane without restarting, the model that CP3
+	// live targets started afterwards receive: a direct provider and model name
+	// (using that provider's API key from surla serve's environment) or a running
+	// gRPC model gateway. start_live_target passes the choice to the target's
+	// evaluator suite as SURLA_LIVE_MODEL_PROVIDER and SURLA_LIVE_MODEL_NAME, or
+	// as SURLA_LIVE_MODEL_GATEWAY.
 	ConfigureModel(context.Context, *ConfigureModelPayload) (res *ModelConfigResult, err error)
 	// Initialize a new Surla starter project directory inside the server's bound
 	// workspace, generating the candidate Go module, Goa and Goa-AI code, and the
@@ -335,6 +348,124 @@ type C4EdgeItem struct {
 	Protocol string
 }
 
+// Your analysis of the feature request against the target's current Goa design
+// (its design/*.go files) and the Golden Path playbook served at
+// surla://golden-path. Surla saves it as the Change Card after checking its
+// structure and cross-field rules; it cannot judge whether the analysis is
+// complete or correct.
+type CP1Analysis struct {
+	// Plain-English description of the requested behavior, including the details
+	// the request or the design already settle.
+	Summary string
+	// Open questions only the requester can answer: product, domain, or
+	// operational choices that change observable behavior or service boundaries.
+	// Do not ask about details the request or the design already settle; state
+	// them in summary, or in examples when they change an observable outcome. Send
+	// an empty list when nothing is open.
+	Ambiguities []*CP1AnalysisAmbiguity
+	// Concrete acceptance examples drawn from the request and the design, never
+	// placeholder text; each becomes a check the change must pass.
+	Examples []*CP1AnalysisExample
+	// Existing behaviors and contract rules of the target that the change must
+	// keep, each stated concretely; empty when none apply.
+	PreservedBehaviors []string
+	// Optional OpenUI Lang program that helps the requester decide the open
+	// questions, built only from the decision components the surla://golden-path
+	// resource lists. Refer to an ambiguity or example only by its 1-based
+	// position in this analysis (1 is the first); never invent identifiers. Surla
+	// saves it unchanged without checking it; the checkpoint viewer validates and
+	// renders it. Omit it when a plain card is clearer.
+	UIComposition *string
+}
+
+// One product, domain, or operational choice only the requester can make.
+// Surla gives it the ID <change_id>-ambiguity-NN, numbered in list order.
+type CP1AnalysisAmbiguity struct {
+	// The decision in plain language, saying what the choice changes.
+	Question string
+	// At least two distinct, self-contained choices; each states the behavior it
+	// selects and what follows from it. The requester's answer must be exactly one
+	// of these strings.
+	Options []string
+}
+
+// One concrete acceptance example that becomes a check the change must pass.
+// Surla gives it the ID check_01, check_02, ... in list order.
+type CP1AnalysisExample struct {
+	// Short name of the situation, in the requester's domain terms.
+	Scenario string
+	// The actual request, inputs, and starting state in this scenario, with real
+	// values from the request and the design, never placeholders.
+	InputSummary string
+	// The observable result or refusal that must hold.
+	ExpectedOutcome string
+	// deterministic when code can check the outcome directly; model_judged when
+	// checking it needs judgment.
+	VerificationKind string
+}
+
+// Your analysis of the revised request against the current Change Card (as
+// get_change returns it at request_revision), the target's current Goa design,
+// and the Golden Path playbook served at surla://golden-path. A confirmed
+// answer stays settled unless the revised request or design contradicts it: do
+// not ask it again, and restate it in summary, examples or
+// preserved_behaviors, because the revised card drops every answer. An
+// explicit instruction in the revised request or design replaces the
+// decisions, examples and preserved behaviors it affects. An unanswered
+// question stays in ambiguities unless the revised request or design answers
+// it or removes its scope. Everything else on the current card stays unless
+// the revised request or design changes it. Surla checks the structure and the
+// example accounting; it cannot judge whether the analysis is complete or
+// correct.
+type CP1RevisionAnalysis struct {
+	// Plain-English description of the revised behavior, including the details the
+	// request, the design or confirmed answers already settle.
+	Summary string
+	// Open questions only the requester can answer: product, domain, or
+	// operational choices that change observable behavior or service boundaries.
+	// Do not ask about details the request, the design or a confirmed answer
+	// already settle; state them in summary, or in examples when they change an
+	// observable outcome. Send an empty list when nothing is open.
+	Ambiguities []*CP1AnalysisAmbiguity
+	// Concrete acceptance examples drawn from the revised request and the design.
+	// Give prior_id for each current example you keep or edit; omit it for new
+	// ones.
+	Examples []*CP1RevisionAnalysisExample
+	// IDs of the current card's examples this revision drops. Every current
+	// example ID appears exactly once, either as an examples[].prior_id or here;
+	// send an empty list when none are dropped.
+	RemovedExampleIds []string
+	// Existing behaviors and contract rules of the target that the change must
+	// keep, each stated concretely; empty when none apply.
+	PreservedBehaviors []string
+	// Optional OpenUI Lang program that helps the requester decide the open
+	// questions, built only from the decision components the surla://golden-path
+	// resource lists. Refer to an ambiguity or example only by its 1-based
+	// position in this analysis (1 is the first); never invent identifiers. Surla
+	// saves it unchanged without checking it; the checkpoint viewer validates and
+	// renders it. Omit it when a plain card is clearer.
+	UIComposition *string
+}
+
+// One concrete acceptance example of the revised card: a current example kept
+// or edited in place (prior_id set), or a new one.
+type CP1RevisionAnalysisExample struct {
+	// ID of the current card's example this one keeps or edits, exactly as the
+	// card shows it; the example keeps that ID. Omit it for a new example, which
+	// gets the lowest check_NN ID the current and revised cards do not use.
+	PriorID *string
+	// Short name of the situation, in the requester's domain terms.
+	Scenario string
+	// The actual request, inputs, and starting state in this scenario, with real
+	// values from the request and the design, never placeholders.
+	InputSummary string
+	// The observable result or refusal that must hold.
+	ExpectedOutcome string
+	// deterministic when code can check the outcome directly; model_judged when
+	// checking it needs judgment.
+	VerificationKind string
+}
+
 // ChangeCardResult is the result type of the surla service propose_change
 // method.
 type ChangeCardResult struct {
@@ -363,8 +494,8 @@ type ChangeCardResult struct {
 	ConfirmedBy *string
 	// SHA-256 digest of the canonical versioned Change Card.
 	RequestRevision string
-	// Decision view the CP1 model composed for this revision, when it produced
-	// one. A confirm_intent that changes answers or examples returns the new
+	// Decision view the caller composed for this revision in its analysis, when it
+	// sent one. A confirm_intent that changes answers or examples returns the new
 	// revision without it.
 	UIComposition *UICompositionItem
 	// Checkpoint 5 approval of this revision, present only while it is verified
@@ -650,11 +781,14 @@ type ProposeChangePayload struct {
 	ChangeID string
 	// Operator feature request.
 	Prompt string
-	// Current Goa design source of the target (its design/*.go files) for the CP1
-	// model to read. When omitted on a server with a bound workspace, Surla reads
-	// design/*.go from the bound workspace; when omitted without a bound
-	// workspace, CP1 receives no current design.
+	// Goa design source the analysis was made against (the target's design/*.go
+	// files). Surla saves it with the card and includes it in request_revision; it
+	// does not interpret it. When omitted on a server with a bound workspace,
+	// Surla records design/*.go from the bound workspace; when omitted without a
+	// bound workspace, the card records no design.
 	DesignSource *string
+	// Your analysis of prompt against the target's current design.
+	Analysis *CP1Analysis
 }
 
 // ReadCheckOutputPayload is the payload type of the surla service
@@ -675,11 +809,15 @@ type ReviseChangePayload struct {
 	RequestRevision string
 	// Revised operator feature request.
 	Prompt string
-	// Updated Goa design source of the target (its design/*.go files) for the CP1
-	// model to read. When omitted on a workspace-backed card with a bound
-	// workspace, Surla re-reads design/*.go from the bound workspace; otherwise
-	// the card's saved design source is used again.
+	// Updated Goa design source the analysis was made against (the target's
+	// design/*.go files). Surla saves it with the card and includes it in
+	// request_revision; it does not interpret it. When omitted on a
+	// workspace-backed card with a bound workspace, Surla records design/*.go from
+	// the bound workspace again; otherwise the card's saved design source is kept.
 	DesignSource *string
+	// Your analysis of the revised prompt against the current card and the
+	// target's current design.
+	Analysis *CP1RevisionAnalysis
 }
 
 // StartLiveTargetPayload is the payload type of the surla service
@@ -846,16 +984,15 @@ type TraceSpan struct {
 	Shortened bool
 }
 
-// Model-authored OpenUI Lang decision view for exactly one Change Card
+// Caller-authored OpenUI Lang decision view for exactly one Change Card
 // revision. It is presentation only: it is never hashed into request_revision,
 // confirm_intent never reads it, and it describes the card only while
 // composed_for_revision equals the card's request_revision.
 type UICompositionItem struct {
-	// OpenUI Lang program composed by the CP1 model from the Surla decision
-	// component catalog, exactly as the model returned it. The server does not
-	// check it; the checkpoint viewer validates it and shows its error state, with
-	// the rest of the card still usable, when the program is not a valid
-	// composition.
+	// OpenUI Lang program from the analysis's ui_composition, exactly as the
+	// caller sent it. The server does not check it; the checkpoint viewer
+	// validates it and shows its error state, with the rest of the card still
+	// usable, when the program is not a valid composition.
 	Program string
 	// request_revision of the Change Card this program was composed for.
 	ComposedForRevision string
@@ -1002,16 +1139,6 @@ func MakeUnprocessable(err error) *goa.ServiceError {
 	return goa.NewServiceError(err, "unprocessable", false, false, false)
 }
 
-// MakeNotImplemented builds a goa.ServiceError from an error.
-func MakeNotImplemented(err error) *goa.ServiceError {
-	return goa.NewServiceError(err, "not_implemented", false, false, false)
-}
-
-// MakeAnalysisRejected builds a goa.ServiceError from an error.
-func MakeAnalysisRejected(err error) *goa.ServiceError {
-	return goa.NewServiceError(err, "analysis_rejected", false, false, false)
-}
-
 // MakeNotFound builds a goa.ServiceError from an error.
 func MakeNotFound(err error) *goa.ServiceError {
 	return goa.NewServiceError(err, "not_found", false, false, false)
@@ -1060,6 +1187,11 @@ func MakeLiveTargetFailed(err error) *goa.ServiceError {
 // MakeLiveTargetStopFailed builds a goa.ServiceError from an error.
 func MakeLiveTargetStopFailed(err error) *goa.ServiceError {
 	return goa.NewServiceError(err, "live_target_stop_failed", false, false, false)
+}
+
+// MakeNotImplemented builds a goa.ServiceError from an error.
+func MakeNotImplemented(err error) *goa.ServiceError {
+	return goa.NewServiceError(err, "not_implemented", false, false, false)
 }
 
 // MakeUnavailable builds a goa.ServiceError from an error.
@@ -1556,6 +1688,327 @@ func validatejsonC4EdgeItemTransport(value *jsonC4EdgeItemTransport) (err error)
 	return err
 }
 
+// jsonCP1AnalysisAmbiguityTransport stores JSON fields until they have been validated.
+type jsonCP1AnalysisAmbiguityTransport struct {
+	// The decision in plain language, saying what the choice changes.
+	Question *string `json:"question"`
+	// At least two distinct, self-contained choices; each states the behavior it
+	// selects and what follows from it. The requester's answer must be exactly one
+	// of these strings.
+	Options []*string `json:"options"`
+}
+
+// validatejsonCP1AnalysisAmbiguityTransport checks decoded JSON before it becomes a service value.
+func validatejsonCP1AnalysisAmbiguityTransport(value *jsonCP1AnalysisAmbiguityTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.Question == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("question", "body"))
+	}
+	if value.Options == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("options", "body"))
+	}
+	if value.Question != nil {
+		err = goa.MergeErrors(err, goa.ValidatePattern("body.question", *value.Question, "\\S"))
+	}
+	if len(value.Options) < 2 {
+		err = goa.MergeErrors(err, goa.InvalidLengthError("body.options", value.Options, len(value.Options), 2, true))
+	}
+	for _, e := range value.Options {
+		if e == nil {
+			err = goa.MergeErrors(err, goa.MissingFieldError("body.options", "[*]"))
+		}
+		if e != nil {
+			err = goa.MergeErrors(err, goa.ValidatePattern("body.options[*]", *e, "\\S"))
+		}
+	}
+	return err
+}
+
+// jsonCP1AnalysisExampleTransport stores JSON fields until they have been validated.
+type jsonCP1AnalysisExampleTransport struct {
+	// Short name of the situation, in the requester's domain terms.
+	Scenario *string `json:"scenario"`
+	// The actual request, inputs, and starting state in this scenario, with real
+	// values from the request and the design, never placeholders.
+	InputSummary *string `json:"input_summary"`
+	// The observable result or refusal that must hold.
+	ExpectedOutcome *string `json:"expected_outcome"`
+	// deterministic when code can check the outcome directly; model_judged when
+	// checking it needs judgment.
+	VerificationKind *string `json:"verification_kind"`
+}
+
+// validatejsonCP1AnalysisExampleTransport checks decoded JSON before it becomes a service value.
+func validatejsonCP1AnalysisExampleTransport(value *jsonCP1AnalysisExampleTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.Scenario == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("scenario", "body"))
+	}
+	if value.InputSummary == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("input_summary", "body"))
+	}
+	if value.ExpectedOutcome == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("expected_outcome", "body"))
+	}
+	if value.VerificationKind == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("verification_kind", "body"))
+	}
+	if value.Scenario != nil {
+		err = goa.MergeErrors(err, goa.ValidatePattern("body.scenario", *value.Scenario, "\\S"))
+	}
+	if value.InputSummary != nil {
+		err = goa.MergeErrors(err, goa.ValidatePattern("body.input_summary", *value.InputSummary, "\\S"))
+	}
+	if value.ExpectedOutcome != nil {
+		err = goa.MergeErrors(err, goa.ValidatePattern("body.expected_outcome", *value.ExpectedOutcome, "\\S"))
+	}
+	if value.VerificationKind != nil {
+		if !(*value.VerificationKind == "deterministic" || *value.VerificationKind == "model_judged") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.verification_kind", *value.VerificationKind, []any{"deterministic", "model_judged"}))
+		}
+	}
+	return err
+}
+
+// jsonCP1AnalysisTransport stores JSON fields until they have been validated.
+type jsonCP1AnalysisTransport struct {
+	// Plain-English description of the requested behavior, including the details
+	// the request or the design already settle.
+	Summary *string `json:"summary"`
+	// Open questions only the requester can answer: product, domain, or
+	// operational choices that change observable behavior or service boundaries.
+	// Do not ask about details the request or the design already settle; state
+	// them in summary, or in examples when they change an observable outcome. Send
+	// an empty list when nothing is open.
+	Ambiguities []*jsonCP1AnalysisAmbiguityTransport `json:"ambiguities"`
+	// Concrete acceptance examples drawn from the request and the design, never
+	// placeholder text; each becomes a check the change must pass.
+	Examples []*jsonCP1AnalysisExampleTransport `json:"examples"`
+	// Existing behaviors and contract rules of the target that the change must
+	// keep, each stated concretely; empty when none apply.
+	PreservedBehaviors []*string `json:"preserved_behaviors"`
+	// Optional OpenUI Lang program that helps the requester decide the open
+	// questions, built only from the decision components the surla://golden-path
+	// resource lists. Refer to an ambiguity or example only by its 1-based
+	// position in this analysis (1 is the first); never invent identifiers. Surla
+	// saves it unchanged without checking it; the checkpoint viewer validates and
+	// renders it. Omit it when a plain card is clearer.
+	UIComposition *string `json:"ui_composition,omitempty"`
+}
+
+// validatejsonCP1AnalysisTransport checks decoded JSON before it becomes a service value.
+func validatejsonCP1AnalysisTransport(value *jsonCP1AnalysisTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.Summary == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("summary", "body"))
+	}
+	if value.Ambiguities == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("ambiguities", "body"))
+	}
+	if value.Examples == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("examples", "body"))
+	}
+	if value.PreservedBehaviors == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("preserved_behaviors", "body"))
+	}
+	if value.Summary != nil {
+		err = goa.MergeErrors(err, goa.ValidatePattern("body.summary", *value.Summary, "\\S"))
+	}
+	for _, e := range value.Ambiguities {
+		if e == nil {
+			err = goa.MergeErrors(err, goa.MissingFieldError("body.ambiguities", "[*]"))
+		}
+		if e != nil {
+			if err2 := validatejsonCP1AnalysisAmbiguityTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	if len(value.Examples) < 1 {
+		err = goa.MergeErrors(err, goa.InvalidLengthError("body.examples", value.Examples, len(value.Examples), 1, true))
+	}
+	for _, e := range value.Examples {
+		if e == nil {
+			err = goa.MergeErrors(err, goa.MissingFieldError("body.examples", "[*]"))
+		}
+		if e != nil {
+			if err2 := validatejsonCP1AnalysisExampleTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	for _, e := range value.PreservedBehaviors {
+		if e == nil {
+			err = goa.MergeErrors(err, goa.MissingFieldError("body.preserved_behaviors", "[*]"))
+		}
+		if e != nil {
+			err = goa.MergeErrors(err, goa.ValidatePattern("body.preserved_behaviors[*]", *e, "\\S"))
+		}
+	}
+	return err
+}
+
+// jsonCP1RevisionAnalysisExampleTransport stores JSON fields until they have been validated.
+type jsonCP1RevisionAnalysisExampleTransport struct {
+	// ID of the current card's example this one keeps or edits, exactly as the
+	// card shows it; the example keeps that ID. Omit it for a new example, which
+	// gets the lowest check_NN ID the current and revised cards do not use.
+	PriorID *string `json:"prior_id,omitempty"`
+	// Short name of the situation, in the requester's domain terms.
+	Scenario *string `json:"scenario"`
+	// The actual request, inputs, and starting state in this scenario, with real
+	// values from the request and the design, never placeholders.
+	InputSummary *string `json:"input_summary"`
+	// The observable result or refusal that must hold.
+	ExpectedOutcome *string `json:"expected_outcome"`
+	// deterministic when code can check the outcome directly; model_judged when
+	// checking it needs judgment.
+	VerificationKind *string `json:"verification_kind"`
+}
+
+// validatejsonCP1RevisionAnalysisExampleTransport checks decoded JSON before it becomes a service value.
+func validatejsonCP1RevisionAnalysisExampleTransport(value *jsonCP1RevisionAnalysisExampleTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.Scenario == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("scenario", "body"))
+	}
+	if value.InputSummary == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("input_summary", "body"))
+	}
+	if value.ExpectedOutcome == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("expected_outcome", "body"))
+	}
+	if value.VerificationKind == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("verification_kind", "body"))
+	}
+	if value.PriorID != nil {
+		if utf8.RuneCountInString(*value.PriorID) < 1 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.prior_id", *value.PriorID, utf8.RuneCountInString(*value.PriorID), 1, true))
+		}
+	}
+	if value.Scenario != nil {
+		err = goa.MergeErrors(err, goa.ValidatePattern("body.scenario", *value.Scenario, "\\S"))
+	}
+	if value.InputSummary != nil {
+		err = goa.MergeErrors(err, goa.ValidatePattern("body.input_summary", *value.InputSummary, "\\S"))
+	}
+	if value.ExpectedOutcome != nil {
+		err = goa.MergeErrors(err, goa.ValidatePattern("body.expected_outcome", *value.ExpectedOutcome, "\\S"))
+	}
+	if value.VerificationKind != nil {
+		if !(*value.VerificationKind == "deterministic" || *value.VerificationKind == "model_judged") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.verification_kind", *value.VerificationKind, []any{"deterministic", "model_judged"}))
+		}
+	}
+	return err
+}
+
+// jsonCP1RevisionAnalysisTransport stores JSON fields until they have been validated.
+type jsonCP1RevisionAnalysisTransport struct {
+	// Plain-English description of the revised behavior, including the details the
+	// request, the design or confirmed answers already settle.
+	Summary *string `json:"summary"`
+	// Open questions only the requester can answer: product, domain, or
+	// operational choices that change observable behavior or service boundaries.
+	// Do not ask about details the request, the design or a confirmed answer
+	// already settle; state them in summary, or in examples when they change an
+	// observable outcome. Send an empty list when nothing is open.
+	Ambiguities []*jsonCP1AnalysisAmbiguityTransport `json:"ambiguities"`
+	// Concrete acceptance examples drawn from the revised request and the design.
+	// Give prior_id for each current example you keep or edit; omit it for new
+	// ones.
+	Examples []*jsonCP1RevisionAnalysisExampleTransport `json:"examples"`
+	// IDs of the current card's examples this revision drops. Every current
+	// example ID appears exactly once, either as an examples[].prior_id or here;
+	// send an empty list when none are dropped.
+	RemovedExampleIds []*string `json:"removed_example_ids"`
+	// Existing behaviors and contract rules of the target that the change must
+	// keep, each stated concretely; empty when none apply.
+	PreservedBehaviors []*string `json:"preserved_behaviors"`
+	// Optional OpenUI Lang program that helps the requester decide the open
+	// questions, built only from the decision components the surla://golden-path
+	// resource lists. Refer to an ambiguity or example only by its 1-based
+	// position in this analysis (1 is the first); never invent identifiers. Surla
+	// saves it unchanged without checking it; the checkpoint viewer validates and
+	// renders it. Omit it when a plain card is clearer.
+	UIComposition *string `json:"ui_composition,omitempty"`
+}
+
+// validatejsonCP1RevisionAnalysisTransport checks decoded JSON before it becomes a service value.
+func validatejsonCP1RevisionAnalysisTransport(value *jsonCP1RevisionAnalysisTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.Summary == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("summary", "body"))
+	}
+	if value.Ambiguities == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("ambiguities", "body"))
+	}
+	if value.Examples == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("examples", "body"))
+	}
+	if value.RemovedExampleIds == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("removed_example_ids", "body"))
+	}
+	if value.PreservedBehaviors == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("preserved_behaviors", "body"))
+	}
+	if value.Summary != nil {
+		err = goa.MergeErrors(err, goa.ValidatePattern("body.summary", *value.Summary, "\\S"))
+	}
+	for _, e := range value.Ambiguities {
+		if e == nil {
+			err = goa.MergeErrors(err, goa.MissingFieldError("body.ambiguities", "[*]"))
+		}
+		if e != nil {
+			if err2 := validatejsonCP1AnalysisAmbiguityTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	if len(value.Examples) < 1 {
+		err = goa.MergeErrors(err, goa.InvalidLengthError("body.examples", value.Examples, len(value.Examples), 1, true))
+	}
+	for _, e := range value.Examples {
+		if e == nil {
+			err = goa.MergeErrors(err, goa.MissingFieldError("body.examples", "[*]"))
+		}
+		if e != nil {
+			if err2 := validatejsonCP1RevisionAnalysisExampleTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	for _, e := range value.RemovedExampleIds {
+		if e == nil {
+			err = goa.MergeErrors(err, goa.MissingFieldError("body.removed_example_ids", "[*]"))
+		}
+		if e != nil {
+			if utf8.RuneCountInString(*e) < 1 {
+				err = goa.MergeErrors(err, goa.InvalidLengthError("body.removed_example_ids[*]", *e, utf8.RuneCountInString(*e), 1, true))
+			}
+		}
+	}
+	for _, e := range value.PreservedBehaviors {
+		if e == nil {
+			err = goa.MergeErrors(err, goa.MissingFieldError("body.preserved_behaviors", "[*]"))
+		}
+		if e != nil {
+			err = goa.MergeErrors(err, goa.ValidatePattern("body.preserved_behaviors[*]", *e, "\\S"))
+		}
+	}
+	return err
+}
+
 // jsonChangeCardResultTransport stores JSON fields until they have been validated.
 type jsonChangeCardResultTransport struct {
 	// Change identifier.
@@ -1583,8 +2036,8 @@ type jsonChangeCardResultTransport struct {
 	ConfirmedBy *string `json:"confirmed_by,omitempty"`
 	// SHA-256 digest of the canonical versioned Change Card.
 	RequestRevision *string `json:"request_revision"`
-	// Decision view the CP1 model composed for this revision, when it produced
-	// one. A confirm_intent that changes answers or examples returns the new
+	// Decision view the caller composed for this revision in its analysis, when it
+	// sent one. A confirm_intent that changes answers or examples returns the new
 	// revision without it.
 	UIComposition *jsonUICompositionItemTransport `json:"ui_composition,omitempty"`
 	// Checkpoint 5 approval of this revision, present only while it is verified
@@ -2320,11 +2773,14 @@ type jsonProposeChangePayloadTransport struct {
 	ChangeID *string `json:"change_id"`
 	// Operator feature request.
 	Prompt *string `json:"prompt"`
-	// Current Goa design source of the target (its design/*.go files) for the CP1
-	// model to read. When omitted on a server with a bound workspace, Surla reads
-	// design/*.go from the bound workspace; when omitted without a bound
-	// workspace, CP1 receives no current design.
+	// Goa design source the analysis was made against (the target's design/*.go
+	// files). Surla saves it with the card and includes it in request_revision; it
+	// does not interpret it. When omitted on a server with a bound workspace,
+	// Surla records design/*.go from the bound workspace; when omitted without a
+	// bound workspace, the card records no design.
 	DesignSource *string `json:"design_source,omitempty"`
+	// Your analysis of prompt against the target's current design.
+	Analysis *jsonCP1AnalysisTransport `json:"analysis"`
 }
 
 // validatejsonProposeChangePayloadTransport checks decoded JSON before it becomes a service value.
@@ -2337,6 +2793,14 @@ func validatejsonProposeChangePayloadTransport(value *jsonProposeChangePayloadTr
 	}
 	if value.Prompt == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("prompt", "body"))
+	}
+	if value.Analysis == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("analysis", "body"))
+	}
+	if value.Analysis != nil {
+		if err2 := validatejsonCP1AnalysisTransport(value.Analysis); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		}
 	}
 	return err
 }
@@ -2368,11 +2832,15 @@ type jsonReviseChangePayloadTransport struct {
 	RequestRevision *string `json:"request_revision"`
 	// Revised operator feature request.
 	Prompt *string `json:"prompt"`
-	// Updated Goa design source of the target (its design/*.go files) for the CP1
-	// model to read. When omitted on a workspace-backed card with a bound
-	// workspace, Surla re-reads design/*.go from the bound workspace; otherwise
-	// the card's saved design source is used again.
+	// Updated Goa design source the analysis was made against (the target's
+	// design/*.go files). Surla saves it with the card and includes it in
+	// request_revision; it does not interpret it. When omitted on a
+	// workspace-backed card with a bound workspace, Surla records design/*.go from
+	// the bound workspace again; otherwise the card's saved design source is kept.
 	DesignSource *string `json:"design_source,omitempty"`
+	// Your analysis of the revised prompt against the current card and the
+	// target's current design.
+	Analysis *jsonCP1RevisionAnalysisTransport `json:"analysis"`
 }
 
 // validatejsonReviseChangePayloadTransport checks decoded JSON before it becomes a service value.
@@ -2388,6 +2856,14 @@ func validatejsonReviseChangePayloadTransport(value *jsonReviseChangePayloadTran
 	}
 	if value.Prompt == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("prompt", "body"))
+	}
+	if value.Analysis == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("analysis", "body"))
+	}
+	if value.Analysis != nil {
+		if err2 := validatejsonCP1RevisionAnalysisTransport(value.Analysis); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		}
 	}
 	return err
 }
@@ -2786,11 +3262,10 @@ func validatejsonTraceSpanTransport(value *jsonTraceSpanTransport) (err error) {
 
 // jsonUICompositionItemTransport stores JSON fields until they have been validated.
 type jsonUICompositionItemTransport struct {
-	// OpenUI Lang program composed by the CP1 model from the Surla decision
-	// component catalog, exactly as the model returned it. The server does not
-	// check it; the checkpoint viewer validates it and shows its error state, with
-	// the rest of the card still usable, when the program is not a valid
-	// composition.
+	// OpenUI Lang program from the analysis's ui_composition, exactly as the
+	// caller sent it. The server does not check it; the checkpoint viewer
+	// validates it and shows its error state, with the rest of the card still
+	// usable, when the program is not a valid composition.
 	Program *string `json:"program"`
 	// request_revision of the Change Card this program was composed for.
 	ComposedForRevision *string `json:"composed_for_revision"`
@@ -3394,6 +3869,138 @@ func validateVerificationScenarioOriginal(value *VerificationScenario) (err erro
 	return err
 }
 
+// validateCP1AnalysisOriginal checks the original typed value before JSON conversion.
+func validateCP1AnalysisOriginal(value *CP1Analysis) (err error) {
+	if value.Ambiguities == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("ambiguities", "value"))
+	}
+	if value.Examples == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("examples", "value"))
+	}
+	if value.PreservedBehaviors == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("preserved_behaviors", "value"))
+	}
+	err = goa.MergeErrors(err, goa.ValidatePattern("value.summary", value.Summary, "\\S"))
+	for _, e := range value.Ambiguities {
+		if e == nil {
+			err = goa.MergeErrors(err, goa.MissingFieldError("value.ambiguities", "[*]"))
+		}
+		if e != nil {
+			if err2 := validateCP1AnalysisAmbiguityOriginal(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	if len(value.Examples) < 1 {
+		err = goa.MergeErrors(err, goa.InvalidLengthError("value.examples", value.Examples, len(value.Examples), 1, true))
+	}
+	for _, e := range value.Examples {
+		if e == nil {
+			err = goa.MergeErrors(err, goa.MissingFieldError("value.examples", "[*]"))
+		}
+		if e != nil {
+			if err2 := validateCP1AnalysisExampleOriginal(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	for _, e := range value.PreservedBehaviors {
+		err = goa.MergeErrors(err, goa.ValidatePattern("value.preserved_behaviors[*]", e, "\\S"))
+	}
+	return err
+}
+
+// validateCP1AnalysisAmbiguityOriginal checks the original typed value before JSON conversion.
+func validateCP1AnalysisAmbiguityOriginal(value *CP1AnalysisAmbiguity) (err error) {
+	if value.Options == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("options", "value"))
+	}
+	err = goa.MergeErrors(err, goa.ValidatePattern("value.question", value.Question, "\\S"))
+	if len(value.Options) < 2 {
+		err = goa.MergeErrors(err, goa.InvalidLengthError("value.options", value.Options, len(value.Options), 2, true))
+	}
+	for _, e := range value.Options {
+		err = goa.MergeErrors(err, goa.ValidatePattern("value.options[*]", e, "\\S"))
+	}
+	return err
+}
+
+// validateCP1AnalysisExampleOriginal checks the original typed value before JSON conversion.
+func validateCP1AnalysisExampleOriginal(value *CP1AnalysisExample) (err error) {
+	err = goa.MergeErrors(err, goa.ValidatePattern("value.scenario", value.Scenario, "\\S"))
+	err = goa.MergeErrors(err, goa.ValidatePattern("value.input_summary", value.InputSummary, "\\S"))
+	err = goa.MergeErrors(err, goa.ValidatePattern("value.expected_outcome", value.ExpectedOutcome, "\\S"))
+	if !(value.VerificationKind == "deterministic" || value.VerificationKind == "model_judged") {
+		err = goa.MergeErrors(err, goa.InvalidEnumValueError("value.verification_kind", value.VerificationKind, []any{"deterministic", "model_judged"}))
+	}
+	return err
+}
+
+// validateCP1RevisionAnalysisOriginal checks the original typed value before JSON conversion.
+func validateCP1RevisionAnalysisOriginal(value *CP1RevisionAnalysis) (err error) {
+	if value.Ambiguities == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("ambiguities", "value"))
+	}
+	if value.Examples == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("examples", "value"))
+	}
+	if value.RemovedExampleIds == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("removed_example_ids", "value"))
+	}
+	if value.PreservedBehaviors == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("preserved_behaviors", "value"))
+	}
+	err = goa.MergeErrors(err, goa.ValidatePattern("value.summary", value.Summary, "\\S"))
+	for _, e := range value.Ambiguities {
+		if e == nil {
+			err = goa.MergeErrors(err, goa.MissingFieldError("value.ambiguities", "[*]"))
+		}
+		if e != nil {
+			if err2 := validateCP1AnalysisAmbiguityOriginal(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	if len(value.Examples) < 1 {
+		err = goa.MergeErrors(err, goa.InvalidLengthError("value.examples", value.Examples, len(value.Examples), 1, true))
+	}
+	for _, e := range value.Examples {
+		if e == nil {
+			err = goa.MergeErrors(err, goa.MissingFieldError("value.examples", "[*]"))
+		}
+		if e != nil {
+			if err2 := validateCP1RevisionAnalysisExampleOriginal(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	for _, e := range value.RemovedExampleIds {
+		if utf8.RuneCountInString(e) < 1 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("value.removed_example_ids[*]", e, utf8.RuneCountInString(e), 1, true))
+		}
+	}
+	for _, e := range value.PreservedBehaviors {
+		err = goa.MergeErrors(err, goa.ValidatePattern("value.preserved_behaviors[*]", e, "\\S"))
+	}
+	return err
+}
+
+// validateCP1RevisionAnalysisExampleOriginal checks the original typed value before JSON conversion.
+func validateCP1RevisionAnalysisExampleOriginal(value *CP1RevisionAnalysisExample) (err error) {
+	if value.PriorID != nil {
+		if utf8.RuneCountInString(*value.PriorID) < 1 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("value.prior_id", *value.PriorID, utf8.RuneCountInString(*value.PriorID), 1, true))
+		}
+	}
+	err = goa.MergeErrors(err, goa.ValidatePattern("value.scenario", value.Scenario, "\\S"))
+	err = goa.MergeErrors(err, goa.ValidatePattern("value.input_summary", value.InputSummary, "\\S"))
+	err = goa.MergeErrors(err, goa.ValidatePattern("value.expected_outcome", value.ExpectedOutcome, "\\S"))
+	if !(value.VerificationKind == "deterministic" || value.VerificationKind == "model_judged") {
+		err = goa.MergeErrors(err, goa.InvalidEnumValueError("value.verification_kind", value.VerificationKind, []any{"deterministic", "model_judged"}))
+	}
+	return err
+}
+
 // validateChangeCardResultOriginal checks the original typed value before JSON conversion.
 func validateChangeCardResultOriginal(value *ChangeCardResult) (err error) {
 	if value.Examples == nil {
@@ -3637,6 +4244,32 @@ func validatePreviewArchitecturePayloadOriginal(value *PreviewArchitecturePayloa
 			if err2 := validateBuilderScopeItemOriginal(e); err2 != nil {
 				err = goa.MergeErrors(err, err2)
 			}
+		}
+	}
+	return err
+}
+
+// validateProposeChangePayloadOriginal checks the original typed value before JSON conversion.
+func validateProposeChangePayloadOriginal(value *ProposeChangePayload) (err error) {
+	if value.Analysis == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("analysis", "value"))
+	}
+	if value.Analysis != nil {
+		if err2 := validateCP1AnalysisOriginal(value.Analysis); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		}
+	}
+	return err
+}
+
+// validateReviseChangePayloadOriginal checks the original typed value before JSON conversion.
+func validateReviseChangePayloadOriginal(value *ReviseChangePayload) (err error) {
+	if value.Analysis == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("analysis", "value"))
+	}
+	if value.Analysis != nil {
+		if err2 := validateCP1RevisionAnalysisOriginal(value.Analysis); err2 != nil {
+			err = goa.MergeErrors(err, err2)
 		}
 	}
 	return err
@@ -4956,6 +5589,608 @@ func DecodeC4EdgeItem(data []byte) (out *C4EdgeItem, err error) {
 			FromID:   *body.FromID,
 			ToID:     *body.ToID,
 			Protocol: *body.Protocol,
+		}
+	}
+	return out, nil
+}
+
+// EncodeCP1Analysis turns a service value into JSON using the field names in the Goa design.
+func EncodeCP1Analysis(in *CP1Analysis) ([]byte, error) {
+	if err := checkCP1AnalysisValue(in); err != nil {
+		return nil, fmt.Errorf("encode CP1Analysis JSON: %w", err)
+	}
+	if err := validateCP1AnalysisOriginal(in); err != nil {
+		return nil, fmt.Errorf("validate CP1Analysis value: %w", err)
+	}
+	var body *jsonCP1AnalysisTransport
+	{
+		body = &jsonCP1AnalysisTransport{
+			Summary:       &in.Summary,
+			UIComposition: in.UIComposition,
+		}
+		body.Ambiguities = make([]*jsonCP1AnalysisAmbiguityTransport, len(in.Ambiguities))
+		for i, val := range in.Ambiguities {
+			if val == nil {
+				body.Ambiguities[i] = nil
+				continue
+			}
+			body.Ambiguities[i] = encodeCP1AnalysisAmbiguityToCP1AnalysisAmbiguityTransport(val)
+		}
+		body.Examples = make([]*jsonCP1AnalysisExampleTransport, len(in.Examples))
+		for i, val := range in.Examples {
+			if val == nil {
+				body.Examples[i] = nil
+				continue
+			}
+			body.Examples[i] = encodeCP1AnalysisExampleToCP1AnalysisExampleTransport(val)
+		}
+		body.PreservedBehaviors = make([]*string, len(in.PreservedBehaviors))
+		for i, val := range in.PreservedBehaviors {
+			var transformed string
+			transformed = val
+			body.PreservedBehaviors[i] = &transformed
+		}
+	}
+	if err := validatejsonCP1AnalysisTransport(body); err != nil {
+		return nil, fmt.Errorf("validate CP1Analysis JSON: %w", err)
+	}
+	data, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("encode CP1Analysis JSON: %w", err)
+	}
+	return data, nil
+}
+
+// ValidateCP1AnalysisValue checks the original Go fields against their declared constraints.
+// It returns validation errors without encoding the value as JSON.
+
+func ValidateCP1AnalysisValue(in *CP1Analysis) error {
+	if err := checkCP1AnalysisValue(in); err != nil {
+		return fmt.Errorf("validate CP1Analysis value: %w", err)
+	}
+	if err := validateCP1AnalysisOriginal(in); err != nil {
+		return fmt.Errorf("validate CP1Analysis value: %w", err)
+	}
+
+	if in == nil {
+		return goa.MissingFieldError("result", "CP1Analysis")
+	}
+
+	var body *jsonCP1AnalysisTransport
+	{
+		body = &jsonCP1AnalysisTransport{
+			Summary:       &in.Summary,
+			UIComposition: in.UIComposition,
+		}
+		body.Ambiguities = make([]*jsonCP1AnalysisAmbiguityTransport, len(in.Ambiguities))
+		for i, val := range in.Ambiguities {
+			if val == nil {
+				body.Ambiguities[i] = nil
+				continue
+			}
+			body.Ambiguities[i] = encodeCP1AnalysisAmbiguityToCP1AnalysisAmbiguityTransport(val)
+		}
+		body.Examples = make([]*jsonCP1AnalysisExampleTransport, len(in.Examples))
+		for i, val := range in.Examples {
+			if val == nil {
+				body.Examples[i] = nil
+				continue
+			}
+			body.Examples[i] = encodeCP1AnalysisExampleToCP1AnalysisExampleTransport(val)
+		}
+		body.PreservedBehaviors = make([]*string, len(in.PreservedBehaviors))
+		for i, val := range in.PreservedBehaviors {
+			var transformed string
+			transformed = val
+			body.PreservedBehaviors[i] = &transformed
+		}
+	}
+	if err := validatejsonCP1AnalysisTransport(body); err != nil {
+		return fmt.Errorf("validate CP1Analysis value: %w", err)
+	}
+	return nil
+}
+
+// DecodeCP1Analysis checks JSON field names from the Goa design and returns a service value.
+func DecodeCP1Analysis(data []byte) (out *CP1Analysis, err error) {
+	root, err := readStrictJSON(data)
+	if err != nil {
+		return out, fmt.Errorf("decode CP1Analysis JSON: %w", err)
+	}
+	if err := validateCP1AnalysisJSONValue("", root, ""); err != nil {
+		return out, fmt.Errorf("decode CP1Analysis JSON: %w", err)
+	}
+	var body *jsonCP1AnalysisTransport
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&body); err != nil {
+		return out, fmt.Errorf("decode CP1Analysis JSON: %w", err)
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		if err == nil {
+			return out, fmt.Errorf("decode CP1Analysis JSON: multiple JSON values")
+		}
+		return out, fmt.Errorf("decode CP1Analysis JSON after first value: %w", err)
+	}
+	if err := validatejsonCP1AnalysisTransport(body); err != nil {
+		return out, fmt.Errorf("validate CP1Analysis JSON: %w", err)
+	}
+	{
+		out = &CP1Analysis{
+			Summary:       *body.Summary,
+			UIComposition: body.UIComposition,
+		}
+		out.Ambiguities = make([]*CP1AnalysisAmbiguity, len(body.Ambiguities))
+		for i, val := range body.Ambiguities {
+			if val == nil {
+				out.Ambiguities[i] = nil
+				continue
+			}
+			out.Ambiguities[i] = decodeCP1AnalysisAmbiguityTransportToCP1AnalysisAmbiguity(val)
+		}
+		out.Examples = make([]*CP1AnalysisExample, len(body.Examples))
+		for i, val := range body.Examples {
+			if val == nil {
+				out.Examples[i] = nil
+				continue
+			}
+			out.Examples[i] = decodeCP1AnalysisExampleTransportToCP1AnalysisExample(val)
+		}
+		out.PreservedBehaviors = make([]string, len(body.PreservedBehaviors))
+		for i, val := range body.PreservedBehaviors {
+			out.PreservedBehaviors[i] = *val
+		}
+	}
+	return out, nil
+}
+
+// EncodeCP1AnalysisAmbiguity turns a service value into JSON using the field names in the Goa design.
+func EncodeCP1AnalysisAmbiguity(in *CP1AnalysisAmbiguity) ([]byte, error) {
+	if err := checkCP1AnalysisAmbiguityValue(in); err != nil {
+		return nil, fmt.Errorf("encode CP1AnalysisAmbiguity JSON: %w", err)
+	}
+	if err := validateCP1AnalysisAmbiguityOriginal(in); err != nil {
+		return nil, fmt.Errorf("validate CP1AnalysisAmbiguity value: %w", err)
+	}
+	var body *jsonCP1AnalysisAmbiguityTransport
+	{
+		body = &jsonCP1AnalysisAmbiguityTransport{
+			Question: &in.Question,
+		}
+		body.Options = make([]*string, len(in.Options))
+		for i, val := range in.Options {
+			var transformed string
+			transformed = val
+			body.Options[i] = &transformed
+		}
+	}
+	if err := validatejsonCP1AnalysisAmbiguityTransport(body); err != nil {
+		return nil, fmt.Errorf("validate CP1AnalysisAmbiguity JSON: %w", err)
+	}
+	data, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("encode CP1AnalysisAmbiguity JSON: %w", err)
+	}
+	return data, nil
+}
+
+// ValidateCP1AnalysisAmbiguityValue checks the original Go fields against their declared constraints.
+// It returns validation errors without encoding the value as JSON.
+
+func ValidateCP1AnalysisAmbiguityValue(in *CP1AnalysisAmbiguity) error {
+	if err := checkCP1AnalysisAmbiguityValue(in); err != nil {
+		return fmt.Errorf("validate CP1AnalysisAmbiguity value: %w", err)
+	}
+	if err := validateCP1AnalysisAmbiguityOriginal(in); err != nil {
+		return fmt.Errorf("validate CP1AnalysisAmbiguity value: %w", err)
+	}
+
+	if in == nil {
+		return goa.MissingFieldError("result", "CP1AnalysisAmbiguity")
+	}
+
+	var body *jsonCP1AnalysisAmbiguityTransport
+	{
+		body = &jsonCP1AnalysisAmbiguityTransport{
+			Question: &in.Question,
+		}
+		body.Options = make([]*string, len(in.Options))
+		for i, val := range in.Options {
+			var transformed string
+			transformed = val
+			body.Options[i] = &transformed
+		}
+	}
+	if err := validatejsonCP1AnalysisAmbiguityTransport(body); err != nil {
+		return fmt.Errorf("validate CP1AnalysisAmbiguity value: %w", err)
+	}
+	return nil
+}
+
+// DecodeCP1AnalysisAmbiguity checks JSON field names from the Goa design and returns a service value.
+func DecodeCP1AnalysisAmbiguity(data []byte) (out *CP1AnalysisAmbiguity, err error) {
+	root, err := readStrictJSON(data)
+	if err != nil {
+		return out, fmt.Errorf("decode CP1AnalysisAmbiguity JSON: %w", err)
+	}
+	if err := validateCP1AnalysisJSONValue3("", root, ""); err != nil {
+		return out, fmt.Errorf("decode CP1AnalysisAmbiguity JSON: %w", err)
+	}
+	var body *jsonCP1AnalysisAmbiguityTransport
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&body); err != nil {
+		return out, fmt.Errorf("decode CP1AnalysisAmbiguity JSON: %w", err)
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		if err == nil {
+			return out, fmt.Errorf("decode CP1AnalysisAmbiguity JSON: multiple JSON values")
+		}
+		return out, fmt.Errorf("decode CP1AnalysisAmbiguity JSON after first value: %w", err)
+	}
+	if err := validatejsonCP1AnalysisAmbiguityTransport(body); err != nil {
+		return out, fmt.Errorf("validate CP1AnalysisAmbiguity JSON: %w", err)
+	}
+	{
+		out = &CP1AnalysisAmbiguity{
+			Question: *body.Question,
+		}
+		out.Options = make([]string, len(body.Options))
+		for i, val := range body.Options {
+			out.Options[i] = *val
+		}
+	}
+	return out, nil
+}
+
+// EncodeCP1AnalysisExample turns a service value into JSON using the field names in the Goa design.
+func EncodeCP1AnalysisExample(in *CP1AnalysisExample) ([]byte, error) {
+	if err := checkCP1AnalysisExampleValue(in); err != nil {
+		return nil, fmt.Errorf("encode CP1AnalysisExample JSON: %w", err)
+	}
+	if err := validateCP1AnalysisExampleOriginal(in); err != nil {
+		return nil, fmt.Errorf("validate CP1AnalysisExample value: %w", err)
+	}
+	var body *jsonCP1AnalysisExampleTransport
+	{
+		body = &jsonCP1AnalysisExampleTransport{
+			Scenario:         &in.Scenario,
+			InputSummary:     &in.InputSummary,
+			ExpectedOutcome:  &in.ExpectedOutcome,
+			VerificationKind: &in.VerificationKind,
+		}
+	}
+	if err := validatejsonCP1AnalysisExampleTransport(body); err != nil {
+		return nil, fmt.Errorf("validate CP1AnalysisExample JSON: %w", err)
+	}
+	data, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("encode CP1AnalysisExample JSON: %w", err)
+	}
+	return data, nil
+}
+
+// ValidateCP1AnalysisExampleValue checks the original Go fields against their declared constraints.
+// It returns validation errors without encoding the value as JSON.
+
+func ValidateCP1AnalysisExampleValue(in *CP1AnalysisExample) error {
+	if err := checkCP1AnalysisExampleValue(in); err != nil {
+		return fmt.Errorf("validate CP1AnalysisExample value: %w", err)
+	}
+	if err := validateCP1AnalysisExampleOriginal(in); err != nil {
+		return fmt.Errorf("validate CP1AnalysisExample value: %w", err)
+	}
+
+	if in == nil {
+		return goa.MissingFieldError("result", "CP1AnalysisExample")
+	}
+
+	var body *jsonCP1AnalysisExampleTransport
+	{
+		body = &jsonCP1AnalysisExampleTransport{
+			Scenario:         &in.Scenario,
+			InputSummary:     &in.InputSummary,
+			ExpectedOutcome:  &in.ExpectedOutcome,
+			VerificationKind: &in.VerificationKind,
+		}
+	}
+	if err := validatejsonCP1AnalysisExampleTransport(body); err != nil {
+		return fmt.Errorf("validate CP1AnalysisExample value: %w", err)
+	}
+	return nil
+}
+
+// DecodeCP1AnalysisExample checks JSON field names from the Goa design and returns a service value.
+func DecodeCP1AnalysisExample(data []byte) (out *CP1AnalysisExample, err error) {
+	root, err := readStrictJSON(data)
+	if err != nil {
+		return out, fmt.Errorf("decode CP1AnalysisExample JSON: %w", err)
+	}
+	if err := validateCP1AnalysisJSONValue6("", root, ""); err != nil {
+		return out, fmt.Errorf("decode CP1AnalysisExample JSON: %w", err)
+	}
+	var body *jsonCP1AnalysisExampleTransport
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&body); err != nil {
+		return out, fmt.Errorf("decode CP1AnalysisExample JSON: %w", err)
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		if err == nil {
+			return out, fmt.Errorf("decode CP1AnalysisExample JSON: multiple JSON values")
+		}
+		return out, fmt.Errorf("decode CP1AnalysisExample JSON after first value: %w", err)
+	}
+	if err := validatejsonCP1AnalysisExampleTransport(body); err != nil {
+		return out, fmt.Errorf("validate CP1AnalysisExample JSON: %w", err)
+	}
+	{
+		out = &CP1AnalysisExample{
+			Scenario:         *body.Scenario,
+			InputSummary:     *body.InputSummary,
+			ExpectedOutcome:  *body.ExpectedOutcome,
+			VerificationKind: *body.VerificationKind,
+		}
+	}
+	return out, nil
+}
+
+// EncodeCP1RevisionAnalysis turns a service value into JSON using the field names in the Goa design.
+func EncodeCP1RevisionAnalysis(in *CP1RevisionAnalysis) ([]byte, error) {
+	if err := checkCP1RevisionAnalysisValue(in); err != nil {
+		return nil, fmt.Errorf("encode CP1RevisionAnalysis JSON: %w", err)
+	}
+	if err := validateCP1RevisionAnalysisOriginal(in); err != nil {
+		return nil, fmt.Errorf("validate CP1RevisionAnalysis value: %w", err)
+	}
+	var body *jsonCP1RevisionAnalysisTransport
+	{
+		body = &jsonCP1RevisionAnalysisTransport{
+			Summary:       &in.Summary,
+			UIComposition: in.UIComposition,
+		}
+		body.Ambiguities = make([]*jsonCP1AnalysisAmbiguityTransport, len(in.Ambiguities))
+		for i, val := range in.Ambiguities {
+			if val == nil {
+				body.Ambiguities[i] = nil
+				continue
+			}
+			body.Ambiguities[i] = encodeCP1AnalysisAmbiguityToCP1AnalysisAmbiguityTransport(val)
+		}
+		body.Examples = make([]*jsonCP1RevisionAnalysisExampleTransport, len(in.Examples))
+		for i, val := range in.Examples {
+			if val == nil {
+				body.Examples[i] = nil
+				continue
+			}
+			body.Examples[i] = encodeCP1RevisionAnalysisExampleToCP1RevisionAnalysisExampleTransport(val)
+		}
+		body.RemovedExampleIds = make([]*string, len(in.RemovedExampleIds))
+		for i, val := range in.RemovedExampleIds {
+			var transformed string
+			transformed = val
+			body.RemovedExampleIds[i] = &transformed
+		}
+		body.PreservedBehaviors = make([]*string, len(in.PreservedBehaviors))
+		for i, val := range in.PreservedBehaviors {
+			var transformed string
+			transformed = val
+			body.PreservedBehaviors[i] = &transformed
+		}
+	}
+	if err := validatejsonCP1RevisionAnalysisTransport(body); err != nil {
+		return nil, fmt.Errorf("validate CP1RevisionAnalysis JSON: %w", err)
+	}
+	data, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("encode CP1RevisionAnalysis JSON: %w", err)
+	}
+	return data, nil
+}
+
+// ValidateCP1RevisionAnalysisValue checks the original Go fields against their declared constraints.
+// It returns validation errors without encoding the value as JSON.
+
+func ValidateCP1RevisionAnalysisValue(in *CP1RevisionAnalysis) error {
+	if err := checkCP1RevisionAnalysisValue(in); err != nil {
+		return fmt.Errorf("validate CP1RevisionAnalysis value: %w", err)
+	}
+	if err := validateCP1RevisionAnalysisOriginal(in); err != nil {
+		return fmt.Errorf("validate CP1RevisionAnalysis value: %w", err)
+	}
+
+	if in == nil {
+		return goa.MissingFieldError("result", "CP1RevisionAnalysis")
+	}
+
+	var body *jsonCP1RevisionAnalysisTransport
+	{
+		body = &jsonCP1RevisionAnalysisTransport{
+			Summary:       &in.Summary,
+			UIComposition: in.UIComposition,
+		}
+		body.Ambiguities = make([]*jsonCP1AnalysisAmbiguityTransport, len(in.Ambiguities))
+		for i, val := range in.Ambiguities {
+			if val == nil {
+				body.Ambiguities[i] = nil
+				continue
+			}
+			body.Ambiguities[i] = encodeCP1AnalysisAmbiguityToCP1AnalysisAmbiguityTransport(val)
+		}
+		body.Examples = make([]*jsonCP1RevisionAnalysisExampleTransport, len(in.Examples))
+		for i, val := range in.Examples {
+			if val == nil {
+				body.Examples[i] = nil
+				continue
+			}
+			body.Examples[i] = encodeCP1RevisionAnalysisExampleToCP1RevisionAnalysisExampleTransport(val)
+		}
+		body.RemovedExampleIds = make([]*string, len(in.RemovedExampleIds))
+		for i, val := range in.RemovedExampleIds {
+			var transformed string
+			transformed = val
+			body.RemovedExampleIds[i] = &transformed
+		}
+		body.PreservedBehaviors = make([]*string, len(in.PreservedBehaviors))
+		for i, val := range in.PreservedBehaviors {
+			var transformed string
+			transformed = val
+			body.PreservedBehaviors[i] = &transformed
+		}
+	}
+	if err := validatejsonCP1RevisionAnalysisTransport(body); err != nil {
+		return fmt.Errorf("validate CP1RevisionAnalysis value: %w", err)
+	}
+	return nil
+}
+
+// DecodeCP1RevisionAnalysis checks JSON field names from the Goa design and returns a service value.
+func DecodeCP1RevisionAnalysis(data []byte) (out *CP1RevisionAnalysis, err error) {
+	root, err := readStrictJSON(data)
+	if err != nil {
+		return out, fmt.Errorf("decode CP1RevisionAnalysis JSON: %w", err)
+	}
+	if err := validateCP1RevisionAnalysisJSONValue("", root, ""); err != nil {
+		return out, fmt.Errorf("decode CP1RevisionAnalysis JSON: %w", err)
+	}
+	var body *jsonCP1RevisionAnalysisTransport
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&body); err != nil {
+		return out, fmt.Errorf("decode CP1RevisionAnalysis JSON: %w", err)
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		if err == nil {
+			return out, fmt.Errorf("decode CP1RevisionAnalysis JSON: multiple JSON values")
+		}
+		return out, fmt.Errorf("decode CP1RevisionAnalysis JSON after first value: %w", err)
+	}
+	if err := validatejsonCP1RevisionAnalysisTransport(body); err != nil {
+		return out, fmt.Errorf("validate CP1RevisionAnalysis JSON: %w", err)
+	}
+	{
+		out = &CP1RevisionAnalysis{
+			Summary:       *body.Summary,
+			UIComposition: body.UIComposition,
+		}
+		out.Ambiguities = make([]*CP1AnalysisAmbiguity, len(body.Ambiguities))
+		for i, val := range body.Ambiguities {
+			if val == nil {
+				out.Ambiguities[i] = nil
+				continue
+			}
+			out.Ambiguities[i] = decodeCP1AnalysisAmbiguityTransportToCP1AnalysisAmbiguity(val)
+		}
+		out.Examples = make([]*CP1RevisionAnalysisExample, len(body.Examples))
+		for i, val := range body.Examples {
+			if val == nil {
+				out.Examples[i] = nil
+				continue
+			}
+			out.Examples[i] = decodeCP1RevisionAnalysisExampleTransportToCP1RevisionAnalysisExample(val)
+		}
+		out.RemovedExampleIds = make([]string, len(body.RemovedExampleIds))
+		for i, val := range body.RemovedExampleIds {
+			out.RemovedExampleIds[i] = *val
+		}
+		out.PreservedBehaviors = make([]string, len(body.PreservedBehaviors))
+		for i, val := range body.PreservedBehaviors {
+			out.PreservedBehaviors[i] = *val
+		}
+	}
+	return out, nil
+}
+
+// EncodeCP1RevisionAnalysisExample turns a service value into JSON using the field names in the Goa design.
+func EncodeCP1RevisionAnalysisExample(in *CP1RevisionAnalysisExample) ([]byte, error) {
+	if err := checkCP1RevisionAnalysisExampleValue(in); err != nil {
+		return nil, fmt.Errorf("encode CP1RevisionAnalysisExample JSON: %w", err)
+	}
+	if err := validateCP1RevisionAnalysisExampleOriginal(in); err != nil {
+		return nil, fmt.Errorf("validate CP1RevisionAnalysisExample value: %w", err)
+	}
+	var body *jsonCP1RevisionAnalysisExampleTransport
+	{
+		body = &jsonCP1RevisionAnalysisExampleTransport{
+			PriorID:          in.PriorID,
+			Scenario:         &in.Scenario,
+			InputSummary:     &in.InputSummary,
+			ExpectedOutcome:  &in.ExpectedOutcome,
+			VerificationKind: &in.VerificationKind,
+		}
+	}
+	if err := validatejsonCP1RevisionAnalysisExampleTransport(body); err != nil {
+		return nil, fmt.Errorf("validate CP1RevisionAnalysisExample JSON: %w", err)
+	}
+	data, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("encode CP1RevisionAnalysisExample JSON: %w", err)
+	}
+	return data, nil
+}
+
+// ValidateCP1RevisionAnalysisExampleValue checks the original Go fields against their declared constraints.
+// It returns validation errors without encoding the value as JSON.
+
+func ValidateCP1RevisionAnalysisExampleValue(in *CP1RevisionAnalysisExample) error {
+	if err := checkCP1RevisionAnalysisExampleValue(in); err != nil {
+		return fmt.Errorf("validate CP1RevisionAnalysisExample value: %w", err)
+	}
+	if err := validateCP1RevisionAnalysisExampleOriginal(in); err != nil {
+		return fmt.Errorf("validate CP1RevisionAnalysisExample value: %w", err)
+	}
+
+	if in == nil {
+		return goa.MissingFieldError("result", "CP1RevisionAnalysisExample")
+	}
+
+	var body *jsonCP1RevisionAnalysisExampleTransport
+	{
+		body = &jsonCP1RevisionAnalysisExampleTransport{
+			PriorID:          in.PriorID,
+			Scenario:         &in.Scenario,
+			InputSummary:     &in.InputSummary,
+			ExpectedOutcome:  &in.ExpectedOutcome,
+			VerificationKind: &in.VerificationKind,
+		}
+	}
+	if err := validatejsonCP1RevisionAnalysisExampleTransport(body); err != nil {
+		return fmt.Errorf("validate CP1RevisionAnalysisExample value: %w", err)
+	}
+	return nil
+}
+
+// DecodeCP1RevisionAnalysisExample checks JSON field names from the Goa design and returns a service value.
+func DecodeCP1RevisionAnalysisExample(data []byte) (out *CP1RevisionAnalysisExample, err error) {
+	root, err := readStrictJSON(data)
+	if err != nil {
+		return out, fmt.Errorf("decode CP1RevisionAnalysisExample JSON: %w", err)
+	}
+	if err := validateCP1RevisionAnalysisJSONValue4("", root, ""); err != nil {
+		return out, fmt.Errorf("decode CP1RevisionAnalysisExample JSON: %w", err)
+	}
+	var body *jsonCP1RevisionAnalysisExampleTransport
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&body); err != nil {
+		return out, fmt.Errorf("decode CP1RevisionAnalysisExample JSON: %w", err)
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		if err == nil {
+			return out, fmt.Errorf("decode CP1RevisionAnalysisExample JSON: multiple JSON values")
+		}
+		return out, fmt.Errorf("decode CP1RevisionAnalysisExample JSON after first value: %w", err)
+	}
+	if err := validatejsonCP1RevisionAnalysisExampleTransport(body); err != nil {
+		return out, fmt.Errorf("validate CP1RevisionAnalysisExample JSON: %w", err)
+	}
+	{
+		out = &CP1RevisionAnalysisExample{
+			PriorID:          body.PriorID,
+			Scenario:         *body.Scenario,
+			InputSummary:     *body.InputSummary,
+			ExpectedOutcome:  *body.ExpectedOutcome,
+			VerificationKind: *body.VerificationKind,
 		}
 	}
 	return out, nil
@@ -7192,6 +8427,9 @@ func EncodeProposeChangePayload(in *ProposeChangePayload) ([]byte, error) {
 	if err := checkProposeChangePayloadValue(in); err != nil {
 		return nil, fmt.Errorf("encode ProposeChangePayload JSON: %w", err)
 	}
+	if err := validateProposeChangePayloadOriginal(in); err != nil {
+		return nil, fmt.Errorf("validate ProposeChangePayload value: %w", err)
+	}
 	var body *jsonProposeChangePayloadTransport
 	{
 		body = &jsonProposeChangePayloadTransport{
@@ -7199,6 +8437,7 @@ func EncodeProposeChangePayload(in *ProposeChangePayload) ([]byte, error) {
 			Prompt:       &in.Prompt,
 			DesignSource: in.DesignSource,
 		}
+		body.Analysis = encodeCP1AnalysisToCP1AnalysisTransport(in.Analysis)
 	}
 	if err := validatejsonProposeChangePayloadTransport(body); err != nil {
 		return nil, fmt.Errorf("validate ProposeChangePayload JSON: %w", err)
@@ -7217,6 +8456,9 @@ func ValidateProposeChangePayloadValue(in *ProposeChangePayload) error {
 	if err := checkProposeChangePayloadValue(in); err != nil {
 		return fmt.Errorf("validate ProposeChangePayload value: %w", err)
 	}
+	if err := validateProposeChangePayloadOriginal(in); err != nil {
+		return fmt.Errorf("validate ProposeChangePayload value: %w", err)
+	}
 
 	if in == nil {
 		return goa.MissingFieldError("result", "ProposeChangePayload")
@@ -7229,6 +8471,7 @@ func ValidateProposeChangePayloadValue(in *ProposeChangePayload) error {
 			Prompt:       &in.Prompt,
 			DesignSource: in.DesignSource,
 		}
+		body.Analysis = encodeCP1AnalysisToCP1AnalysisTransport(in.Analysis)
 	}
 	if err := validatejsonProposeChangePayloadTransport(body); err != nil {
 		return fmt.Errorf("validate ProposeChangePayload value: %w", err)
@@ -7266,6 +8509,7 @@ func DecodeProposeChangePayload(data []byte) (out *ProposeChangePayload, err err
 			Prompt:       *body.Prompt,
 			DesignSource: body.DesignSource,
 		}
+		out.Analysis = decodeCP1AnalysisTransportToCP1Analysis(body.Analysis)
 	}
 	return out, nil
 }
@@ -7355,6 +8599,9 @@ func EncodeReviseChangePayload(in *ReviseChangePayload) ([]byte, error) {
 	if err := checkReviseChangePayloadValue(in); err != nil {
 		return nil, fmt.Errorf("encode ReviseChangePayload JSON: %w", err)
 	}
+	if err := validateReviseChangePayloadOriginal(in); err != nil {
+		return nil, fmt.Errorf("validate ReviseChangePayload value: %w", err)
+	}
 	var body *jsonReviseChangePayloadTransport
 	{
 		body = &jsonReviseChangePayloadTransport{
@@ -7363,6 +8610,7 @@ func EncodeReviseChangePayload(in *ReviseChangePayload) ([]byte, error) {
 			Prompt:          &in.Prompt,
 			DesignSource:    in.DesignSource,
 		}
+		body.Analysis = encodeCP1RevisionAnalysisToCP1RevisionAnalysisTransport(in.Analysis)
 	}
 	if err := validatejsonReviseChangePayloadTransport(body); err != nil {
 		return nil, fmt.Errorf("validate ReviseChangePayload JSON: %w", err)
@@ -7381,6 +8629,9 @@ func ValidateReviseChangePayloadValue(in *ReviseChangePayload) error {
 	if err := checkReviseChangePayloadValue(in); err != nil {
 		return fmt.Errorf("validate ReviseChangePayload value: %w", err)
 	}
+	if err := validateReviseChangePayloadOriginal(in); err != nil {
+		return fmt.Errorf("validate ReviseChangePayload value: %w", err)
+	}
 
 	if in == nil {
 		return goa.MissingFieldError("result", "ReviseChangePayload")
@@ -7394,6 +8645,7 @@ func ValidateReviseChangePayloadValue(in *ReviseChangePayload) error {
 			Prompt:          &in.Prompt,
 			DesignSource:    in.DesignSource,
 		}
+		body.Analysis = encodeCP1RevisionAnalysisToCP1RevisionAnalysisTransport(in.Analysis)
 	}
 	if err := validatejsonReviseChangePayloadTransport(body); err != nil {
 		return fmt.Errorf("validate ReviseChangePayload value: %w", err)
@@ -7432,6 +8684,7 @@ func DecodeReviseChangePayload(data []byte) (out *ReviseChangePayload, err error
 			Prompt:          *body.Prompt,
 			DesignSource:    body.DesignSource,
 		}
+		out.Analysis = decodeCP1RevisionAnalysisTransportToCP1RevisionAnalysis(body.Analysis)
 	}
 	return out, nil
 }
@@ -9640,6 +10893,103 @@ func decodeC4EdgeItemTransportToC4EdgeItem(v *jsonC4EdgeItemTransport) *C4EdgeIt
 	return res
 }
 
+func decodeCP1AnalysisAmbiguityTransportToCP1AnalysisAmbiguity(v *jsonCP1AnalysisAmbiguityTransport) *CP1AnalysisAmbiguity {
+	res := &CP1AnalysisAmbiguity{
+		Question: *v.Question,
+	}
+	res.Options = make([]string, len(v.Options))
+	for i, val := range v.Options {
+		res.Options[i] = *val
+	}
+
+	return res
+}
+
+func decodeCP1AnalysisExampleTransportToCP1AnalysisExample(v *jsonCP1AnalysisExampleTransport) *CP1AnalysisExample {
+	res := &CP1AnalysisExample{
+		Scenario:         *v.Scenario,
+		InputSummary:     *v.InputSummary,
+		ExpectedOutcome:  *v.ExpectedOutcome,
+		VerificationKind: *v.VerificationKind,
+	}
+
+	return res
+}
+
+func decodeCP1AnalysisTransportToCP1Analysis(v *jsonCP1AnalysisTransport) *CP1Analysis {
+	res := &CP1Analysis{
+		Summary:       *v.Summary,
+		UIComposition: v.UIComposition,
+	}
+	res.Ambiguities = make([]*CP1AnalysisAmbiguity, len(v.Ambiguities))
+	for i, val := range v.Ambiguities {
+		if val == nil {
+			res.Ambiguities[i] = nil
+			continue
+		}
+		res.Ambiguities[i] = decodeCP1AnalysisAmbiguityTransportToCP1AnalysisAmbiguity(val)
+	}
+	res.Examples = make([]*CP1AnalysisExample, len(v.Examples))
+	for i, val := range v.Examples {
+		if val == nil {
+			res.Examples[i] = nil
+			continue
+		}
+		res.Examples[i] = decodeCP1AnalysisExampleTransportToCP1AnalysisExample(val)
+	}
+	res.PreservedBehaviors = make([]string, len(v.PreservedBehaviors))
+	for i, val := range v.PreservedBehaviors {
+		res.PreservedBehaviors[i] = *val
+	}
+
+	return res
+}
+
+func decodeCP1RevisionAnalysisExampleTransportToCP1RevisionAnalysisExample(v *jsonCP1RevisionAnalysisExampleTransport) *CP1RevisionAnalysisExample {
+	res := &CP1RevisionAnalysisExample{
+		PriorID:          v.PriorID,
+		Scenario:         *v.Scenario,
+		InputSummary:     *v.InputSummary,
+		ExpectedOutcome:  *v.ExpectedOutcome,
+		VerificationKind: *v.VerificationKind,
+	}
+
+	return res
+}
+
+func decodeCP1RevisionAnalysisTransportToCP1RevisionAnalysis(v *jsonCP1RevisionAnalysisTransport) *CP1RevisionAnalysis {
+	res := &CP1RevisionAnalysis{
+		Summary:       *v.Summary,
+		UIComposition: v.UIComposition,
+	}
+	res.Ambiguities = make([]*CP1AnalysisAmbiguity, len(v.Ambiguities))
+	for i, val := range v.Ambiguities {
+		if val == nil {
+			res.Ambiguities[i] = nil
+			continue
+		}
+		res.Ambiguities[i] = decodeCP1AnalysisAmbiguityTransportToCP1AnalysisAmbiguity(val)
+	}
+	res.Examples = make([]*CP1RevisionAnalysisExample, len(v.Examples))
+	for i, val := range v.Examples {
+		if val == nil {
+			res.Examples[i] = nil
+			continue
+		}
+		res.Examples[i] = decodeCP1RevisionAnalysisExampleTransportToCP1RevisionAnalysisExample(val)
+	}
+	res.RemovedExampleIds = make([]string, len(v.RemovedExampleIds))
+	for i, val := range v.RemovedExampleIds {
+		res.RemovedExampleIds[i] = *val
+	}
+	res.PreservedBehaviors = make([]string, len(v.PreservedBehaviors))
+	for i, val := range v.PreservedBehaviors {
+		res.PreservedBehaviors[i] = *val
+	}
+
+	return res
+}
+
 func decodeDesignSnapshotTransportToDesignSnapshot(v *jsonDesignSnapshotTransport) *DesignSnapshot {
 	res := &DesignSnapshot{}
 	res.Files = make(map[string]string, len(v.Files))
@@ -10025,6 +11375,111 @@ func encodeC4EdgeItemToC4EdgeItemTransport(v *C4EdgeItem) *jsonC4EdgeItemTranspo
 		FromID:   &v.FromID,
 		ToID:     &v.ToID,
 		Protocol: &v.Protocol,
+	}
+
+	return res
+}
+
+func encodeCP1AnalysisAmbiguityToCP1AnalysisAmbiguityTransport(v *CP1AnalysisAmbiguity) *jsonCP1AnalysisAmbiguityTransport {
+	res := &jsonCP1AnalysisAmbiguityTransport{
+		Question: &v.Question,
+	}
+	res.Options = make([]*string, len(v.Options))
+	for i, val := range v.Options {
+		var transformed string
+		transformed = val
+		res.Options[i] = &transformed
+	}
+
+	return res
+}
+
+func encodeCP1AnalysisExampleToCP1AnalysisExampleTransport(v *CP1AnalysisExample) *jsonCP1AnalysisExampleTransport {
+	res := &jsonCP1AnalysisExampleTransport{
+		Scenario:         &v.Scenario,
+		InputSummary:     &v.InputSummary,
+		ExpectedOutcome:  &v.ExpectedOutcome,
+		VerificationKind: &v.VerificationKind,
+	}
+
+	return res
+}
+
+func encodeCP1AnalysisToCP1AnalysisTransport(v *CP1Analysis) *jsonCP1AnalysisTransport {
+	res := &jsonCP1AnalysisTransport{
+		Summary:       &v.Summary,
+		UIComposition: v.UIComposition,
+	}
+	res.Ambiguities = make([]*jsonCP1AnalysisAmbiguityTransport, len(v.Ambiguities))
+	for i, val := range v.Ambiguities {
+		if val == nil {
+			res.Ambiguities[i] = nil
+			continue
+		}
+		res.Ambiguities[i] = encodeCP1AnalysisAmbiguityToCP1AnalysisAmbiguityTransport(val)
+	}
+	res.Examples = make([]*jsonCP1AnalysisExampleTransport, len(v.Examples))
+	for i, val := range v.Examples {
+		if val == nil {
+			res.Examples[i] = nil
+			continue
+		}
+		res.Examples[i] = encodeCP1AnalysisExampleToCP1AnalysisExampleTransport(val)
+	}
+	res.PreservedBehaviors = make([]*string, len(v.PreservedBehaviors))
+	for i, val := range v.PreservedBehaviors {
+		var transformed string
+		transformed = val
+		res.PreservedBehaviors[i] = &transformed
+	}
+
+	return res
+}
+
+func encodeCP1RevisionAnalysisExampleToCP1RevisionAnalysisExampleTransport(v *CP1RevisionAnalysisExample) *jsonCP1RevisionAnalysisExampleTransport {
+	res := &jsonCP1RevisionAnalysisExampleTransport{
+		PriorID:          v.PriorID,
+		Scenario:         &v.Scenario,
+		InputSummary:     &v.InputSummary,
+		ExpectedOutcome:  &v.ExpectedOutcome,
+		VerificationKind: &v.VerificationKind,
+	}
+
+	return res
+}
+
+func encodeCP1RevisionAnalysisToCP1RevisionAnalysisTransport(v *CP1RevisionAnalysis) *jsonCP1RevisionAnalysisTransport {
+	res := &jsonCP1RevisionAnalysisTransport{
+		Summary:       &v.Summary,
+		UIComposition: v.UIComposition,
+	}
+	res.Ambiguities = make([]*jsonCP1AnalysisAmbiguityTransport, len(v.Ambiguities))
+	for i, val := range v.Ambiguities {
+		if val == nil {
+			res.Ambiguities[i] = nil
+			continue
+		}
+		res.Ambiguities[i] = encodeCP1AnalysisAmbiguityToCP1AnalysisAmbiguityTransport(val)
+	}
+	res.Examples = make([]*jsonCP1RevisionAnalysisExampleTransport, len(v.Examples))
+	for i, val := range v.Examples {
+		if val == nil {
+			res.Examples[i] = nil
+			continue
+		}
+		res.Examples[i] = encodeCP1RevisionAnalysisExampleToCP1RevisionAnalysisExampleTransport(val)
+	}
+	res.RemovedExampleIds = make([]*string, len(v.RemovedExampleIds))
+	for i, val := range v.RemovedExampleIds {
+		var transformed string
+		transformed = val
+		res.RemovedExampleIds[i] = &transformed
+	}
+	res.PreservedBehaviors = make([]*string, len(v.PreservedBehaviors))
+	for i, val := range v.PreservedBehaviors {
+		var transformed string
+		transformed = val
+		res.PreservedBehaviors[i] = &transformed
 	}
 
 	return res
@@ -11933,6 +13388,514 @@ func validateBuilderVerificationReportJSONValue6(path string, value any, descrip
 	return nil
 }
 
+// validateCP1AnalysisJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateCP1AnalysisJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "ambiguities":
+			if err := validateCP1AnalysisJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Open questions only the requester can answer: product, domain, or operational choices that change observable behavior or service boundaries. Do not ask about details the request or the design already settle; state them in summary, or in examples when they change an observable outcome. Send an empty list when nothing is open.",
+			); err != nil {
+				return err
+			}
+		case "examples":
+			if err := validateCP1AnalysisJSONValue5(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Concrete acceptance examples drawn from the request and the design, never placeholder text; each becomes a check the change must pass.",
+			); err != nil {
+				return err
+			}
+		case "preserved_behaviors":
+			if err := validateCP1AnalysisJSONValue7(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Existing behaviors and contract rules of the target that the change must keep, each stated concretely; empty when none apply.",
+			); err != nil {
+				return err
+			}
+		case "summary":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Plain-English description of the requested behavior, including the details the request or the design already settle.",
+			); err != nil {
+				return err
+			}
+		case "ui_composition":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Optional OpenUI Lang program that helps the requester decide the open questions, built only from the decision components the surla://golden-path resource lists. Refer to an ambiguity or example only by its 1-based position in this analysis (1 is the first); never invent identifiers. Surla saves it unchanged without checking it; the checkpoint viewer validates and renders it. Omit it when a plain card is clearer.",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"ambiguities",
+				"examples",
+				"preserved_behaviors",
+				"summary",
+				"ui_composition",
+			})
+		}
+	}
+	return nil
+}
+
+// validateCP1AnalysisJSONValue2 checks one value whose JSON shape is fixed by the generated Goa type.
+func validateCP1AnalysisJSONValue2(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "array", "null", description)
+	}
+	typed, ok := value.([]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "array", decodedJSONType(value), description)
+	}
+	for index, item := range typed {
+		if err := validateCP1AnalysisJSONValue3(
+			generatedJSONChildPath(path, strconv.Itoa(index), true),
+			item, description,
+		); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateCP1AnalysisJSONValue3 checks one value whose JSON shape is fixed by the generated Goa type.
+func validateCP1AnalysisJSONValue3(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "options":
+			if err := validateCP1AnalysisJSONValue4(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "At least two distinct, self-contained choices; each states the behavior it selects and what follows from it. The requester's answer must be exactly one of these strings.",
+			); err != nil {
+				return err
+			}
+		case "question":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "The decision in plain language, saying what the choice changes.",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"options",
+				"question",
+			})
+		}
+	}
+	return nil
+}
+
+// validateCP1AnalysisJSONValue4 checks one value whose JSON shape is fixed by the generated Goa type.
+func validateCP1AnalysisJSONValue4(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "array", "null", description)
+	}
+	typed, ok := value.([]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "array", decodedJSONType(value), description)
+	}
+	for index, item := range typed {
+		if err := validateAgentPolicyItemJSONValue2(
+			generatedJSONChildPath(path, strconv.Itoa(index), true),
+			item, description,
+		); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateCP1AnalysisJSONValue5 checks one value whose JSON shape is fixed by the generated Goa type.
+func validateCP1AnalysisJSONValue5(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "array", "null", description)
+	}
+	typed, ok := value.([]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "array", decodedJSONType(value), description)
+	}
+	for index, item := range typed {
+		if err := validateCP1AnalysisJSONValue6(
+			generatedJSONChildPath(path, strconv.Itoa(index), true),
+			item, description,
+		); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateCP1AnalysisJSONValue6 checks one value whose JSON shape is fixed by the generated Goa type.
+func validateCP1AnalysisJSONValue6(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "expected_outcome":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "The observable result or refusal that must hold.",
+			); err != nil {
+				return err
+			}
+		case "input_summary":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "The actual request, inputs, and starting state in this scenario, with real values from the request and the design, never placeholders.",
+			); err != nil {
+				return err
+			}
+		case "scenario":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Short name of the situation, in the requester's domain terms.",
+			); err != nil {
+				return err
+			}
+		case "verification_kind":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "deterministic when code can check the outcome directly; model_judged when checking it needs judgment.",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"expected_outcome",
+				"input_summary",
+				"scenario",
+				"verification_kind",
+			})
+		}
+	}
+	return nil
+}
+
+// validateCP1AnalysisJSONValue7 checks one value whose JSON shape is fixed by the generated Goa type.
+func validateCP1AnalysisJSONValue7(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "array", "null", description)
+	}
+	typed, ok := value.([]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "array", decodedJSONType(value), description)
+	}
+	for index, item := range typed {
+		if err := validateAgentPolicyItemJSONValue2(
+			generatedJSONChildPath(path, strconv.Itoa(index), true),
+			item, description,
+		); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateCP1RevisionAnalysisJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateCP1RevisionAnalysisJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "ambiguities":
+			if err := validateCP1RevisionAnalysisJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Open questions only the requester can answer: product, domain, or operational choices that change observable behavior or service boundaries. Do not ask about details the request, the design or a confirmed answer already settle; state them in summary, or in examples when they change an observable outcome. Send an empty list when nothing is open.",
+			); err != nil {
+				return err
+			}
+		case "examples":
+			if err := validateCP1RevisionAnalysisJSONValue3(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Concrete acceptance examples drawn from the revised request and the design. Give prior_id for each current example you keep or edit; omit it for new ones.",
+			); err != nil {
+				return err
+			}
+		case "preserved_behaviors":
+			if err := validateCP1RevisionAnalysisJSONValue5(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Existing behaviors and contract rules of the target that the change must keep, each stated concretely; empty when none apply.",
+			); err != nil {
+				return err
+			}
+		case "removed_example_ids":
+			if err := validateCP1RevisionAnalysisJSONValue6(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "IDs of the current card's examples this revision drops. Every current example ID appears exactly once, either as an examples[].prior_id or here; send an empty list when none are dropped.",
+			); err != nil {
+				return err
+			}
+		case "summary":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Plain-English description of the revised behavior, including the details the request, the design or confirmed answers already settle.",
+			); err != nil {
+				return err
+			}
+		case "ui_composition":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Optional OpenUI Lang program that helps the requester decide the open questions, built only from the decision components the surla://golden-path resource lists. Refer to an ambiguity or example only by its 1-based position in this analysis (1 is the first); never invent identifiers. Surla saves it unchanged without checking it; the checkpoint viewer validates and renders it. Omit it when a plain card is clearer.",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"ambiguities",
+				"examples",
+				"preserved_behaviors",
+				"removed_example_ids",
+				"summary",
+				"ui_composition",
+			})
+		}
+	}
+	return nil
+}
+
+// validateCP1RevisionAnalysisJSONValue2 checks one value whose JSON shape is fixed by the generated Goa type.
+func validateCP1RevisionAnalysisJSONValue2(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "array", "null", description)
+	}
+	typed, ok := value.([]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "array", decodedJSONType(value), description)
+	}
+	for index, item := range typed {
+		if err := validateCP1AnalysisJSONValue3(
+			generatedJSONChildPath(path, strconv.Itoa(index), true),
+			item, description,
+		); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateCP1RevisionAnalysisJSONValue3 checks one value whose JSON shape is fixed by the generated Goa type.
+func validateCP1RevisionAnalysisJSONValue3(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "array", "null", description)
+	}
+	typed, ok := value.([]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "array", decodedJSONType(value), description)
+	}
+	for index, item := range typed {
+		if err := validateCP1RevisionAnalysisJSONValue4(
+			generatedJSONChildPath(path, strconv.Itoa(index), true),
+			item, description,
+		); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateCP1RevisionAnalysisJSONValue4 checks one value whose JSON shape is fixed by the generated Goa type.
+func validateCP1RevisionAnalysisJSONValue4(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "expected_outcome":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "The observable result or refusal that must hold.",
+			); err != nil {
+				return err
+			}
+		case "input_summary":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "The actual request, inputs, and starting state in this scenario, with real values from the request and the design, never placeholders.",
+			); err != nil {
+				return err
+			}
+		case "prior_id":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "ID of the current card's example this one keeps or edits, exactly as the card shows it; the example keeps that ID. Omit it for a new example, which gets the lowest check_NN ID the current and revised cards do not use.",
+			); err != nil {
+				return err
+			}
+		case "scenario":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Short name of the situation, in the requester's domain terms.",
+			); err != nil {
+				return err
+			}
+		case "verification_kind":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "deterministic when code can check the outcome directly; model_judged when checking it needs judgment.",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"expected_outcome",
+				"input_summary",
+				"prior_id",
+				"scenario",
+				"verification_kind",
+			})
+		}
+	}
+	return nil
+}
+
+// validateCP1RevisionAnalysisJSONValue5 checks one value whose JSON shape is fixed by the generated Goa type.
+func validateCP1RevisionAnalysisJSONValue5(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "array", "null", description)
+	}
+	typed, ok := value.([]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "array", decodedJSONType(value), description)
+	}
+	for index, item := range typed {
+		if err := validateAgentPolicyItemJSONValue2(
+			generatedJSONChildPath(path, strconv.Itoa(index), true),
+			item, description,
+		); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateCP1RevisionAnalysisJSONValue6 checks one value whose JSON shape is fixed by the generated Goa type.
+func validateCP1RevisionAnalysisJSONValue6(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "array", "null", description)
+	}
+	typed, ok := value.([]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "array", decodedJSONType(value), description)
+	}
+	for index, item := range typed {
+		if err := validateAgentPolicyItemJSONValue2(
+			generatedJSONChildPath(path, strconv.Itoa(index), true),
+			item, description,
+		); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // validateChangeCardResultJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
 func validateChangeCardResultJSONValue(path string, value any, description string) error {
 	field := path
@@ -12033,7 +13996,7 @@ func validateChangeCardResultJSONValue(path string, value any, description strin
 		case "ui_composition":
 			if err := validateChangeCardResultJSONValue7(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Decision view the CP1 model composed for this revision, when it produced one. A confirm_intent that changes answers or examples returns the new revision without it.",
+				typed[key], "Decision view the caller composed for this revision in its analysis, when it sent one. A confirm_intent that changes answers or examples returns the new revision without it.",
 			); err != nil {
 				return err
 			}
@@ -12270,7 +14233,7 @@ func validateChangeCardResultJSONValue7(path string, value any, description stri
 		case "program":
 			if err := validateAgentPolicyItemJSONValue2(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "OpenUI Lang program composed by the CP1 model from the Surla decision component catalog, exactly as the model returned it. The server does not check it; the checkpoint viewer validates it and shows its error state, with the rest of the card still usable, when the program is not a valid composition.",
+				typed[key], "OpenUI Lang program from the analysis's ui_composition, exactly as the caller sent it. The server does not check it; the checkpoint viewer validates it and shows its error state, with the rest of the card still usable, when the program is not a valid composition.",
 			); err != nil {
 				return err
 			}
@@ -13692,6 +15655,13 @@ func validateProposeChangePayloadJSONValue(path string, value any, description s
 	sort.Strings(keys)
 	for _, key := range keys {
 		switch key {
+		case "analysis":
+			if err := validateCP1AnalysisJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Your analysis of prompt against the target's current design.",
+			); err != nil {
+				return err
+			}
 		case "change_id":
 			if err := validateAgentPolicyItemJSONValue2(
 				generatedJSONChildPath(path, key, false),
@@ -13702,7 +15672,7 @@ func validateProposeChangePayloadJSONValue(path string, value any, description s
 		case "design_source":
 			if err := validateAgentPolicyItemJSONValue2(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Current Goa design source of the target (its design/*.go files) for the CP1 model to read. When omitted on a server with a bound workspace, Surla reads design/*.go from the bound workspace; when omitted without a bound workspace, CP1 receives no current design.",
+				typed[key], "Goa design source the analysis was made against (the target's design/*.go files). Surla saves it with the card and includes it in request_revision; it does not interpret it. When omitted on a server with a bound workspace, Surla records design/*.go from the bound workspace; when omitted without a bound workspace, the card records no design.",
 			); err != nil {
 				return err
 			}
@@ -13715,6 +15685,7 @@ func validateProposeChangePayloadJSONValue(path string, value any, description s
 			}
 		default:
 			return unknownJSONFieldError(path, key, []string{
+				"analysis",
 				"change_id",
 				"design_source",
 				"prompt",
@@ -13788,6 +15759,13 @@ func validateReviseChangePayloadJSONValue(path string, value any, description st
 	sort.Strings(keys)
 	for _, key := range keys {
 		switch key {
+		case "analysis":
+			if err := validateCP1RevisionAnalysisJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Your analysis of the revised prompt against the current card and the target's current design.",
+			); err != nil {
+				return err
+			}
 		case "change_id":
 			if err := validateAgentPolicyItemJSONValue2(
 				generatedJSONChildPath(path, key, false),
@@ -13798,7 +15776,7 @@ func validateReviseChangePayloadJSONValue(path string, value any, description st
 		case "design_source":
 			if err := validateAgentPolicyItemJSONValue2(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Updated Goa design source of the target (its design/*.go files) for the CP1 model to read. When omitted on a workspace-backed card with a bound workspace, Surla re-reads design/*.go from the bound workspace; otherwise the card's saved design source is used again.",
+				typed[key], "Updated Goa design source the analysis was made against (the target's design/*.go files). Surla saves it with the card and includes it in request_revision; it does not interpret it. When omitted on a workspace-backed card with a bound workspace, Surla records design/*.go from the bound workspace again; otherwise the card's saved design source is kept.",
 			); err != nil {
 				return err
 			}
@@ -13818,6 +15796,7 @@ func validateReviseChangePayloadJSONValue(path string, value any, description st
 			}
 		default:
 			return unknownJSONFieldError(path, key, []string{
+				"analysis",
 				"change_id",
 				"design_source",
 				"prompt",
@@ -15388,6 +17367,245 @@ func checkC4EdgeItemValue(in *C4EdgeItem) error {
 	return nil
 }
 
+// checkCP1AnalysisValue checks text and cycles before conversion.
+func checkCP1AnalysisValue(in *CP1Analysis) error {
+	if in == nil {
+		return fmt.Errorf("missing root value")
+	}
+	active := make(map[any]bool)
+	if err := checkCP1AnalysisCP1AnalysisValue(in, "$", active); err != nil {
+		return err
+	}
+	return nil
+}
+
+// checkCP1AnalysisCP1AnalysisValue checks one generated value on the active path.
+func checkCP1AnalysisCP1AnalysisValue(in *CP1Analysis, field string, active map[any]bool) error {
+	if in == nil {
+		return nil
+	}
+	if active[in] {
+		return fmt.Errorf("%s: cyclic Go value", field)
+	}
+	active[in] = true
+	defer delete(active, in)
+	if in != nil {
+		if !utf8.ValidString(string(in.Summary)) {
+			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "summary", false))
+		}
+		for index1, item1 := range in.Ambiguities {
+			_ = index1
+			_ = item1
+			if err := checkCP1AnalysisCP1AnalysisAmbiguityValue(item1, generatedJSONChildPath(generatedJSONChildPath(field, "ambiguities", false), strconv.Itoa(index1), true), active); err != nil {
+				return err
+			}
+		}
+		for index1, item1 := range in.Examples {
+			_ = index1
+			_ = item1
+			if err := checkCP1AnalysisCP1AnalysisExampleValue(item1, generatedJSONChildPath(generatedJSONChildPath(field, "examples", false), strconv.Itoa(index1), true), active); err != nil {
+				return err
+			}
+		}
+		for index1, item1 := range in.PreservedBehaviors {
+			_ = index1
+			_ = item1
+			if !utf8.ValidString(string(item1)) {
+				return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(generatedJSONChildPath(field, "preserved_behaviors", false), strconv.Itoa(index1), true))
+			}
+		}
+		if in.UIComposition != nil {
+			if !utf8.ValidString(string(*in.UIComposition)) {
+				return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "ui_composition", false))
+			}
+		}
+	}
+	return nil
+}
+
+// checkCP1AnalysisCP1AnalysisAmbiguityValue checks one generated value on the active path.
+func checkCP1AnalysisCP1AnalysisAmbiguityValue(in *CP1AnalysisAmbiguity, field string, active map[any]bool) error {
+	if in == nil {
+		return nil
+	}
+	if active[in] {
+		return fmt.Errorf("%s: cyclic Go value", field)
+	}
+	active[in] = true
+	defer delete(active, in)
+	if in != nil {
+		if !utf8.ValidString(string(in.Question)) {
+			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "question", false))
+		}
+		for index1, item1 := range in.Options {
+			_ = index1
+			_ = item1
+			if !utf8.ValidString(string(item1)) {
+				return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(generatedJSONChildPath(field, "options", false), strconv.Itoa(index1), true))
+			}
+		}
+	}
+	return nil
+}
+
+// checkCP1AnalysisCP1AnalysisExampleValue checks one generated value on the active path.
+func checkCP1AnalysisCP1AnalysisExampleValue(in *CP1AnalysisExample, field string, active map[any]bool) error {
+	if in == nil {
+		return nil
+	}
+	if active[in] {
+		return fmt.Errorf("%s: cyclic Go value", field)
+	}
+	active[in] = true
+	defer delete(active, in)
+	if in != nil {
+		if !utf8.ValidString(string(in.Scenario)) {
+			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "scenario", false))
+		}
+		if !utf8.ValidString(string(in.InputSummary)) {
+			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "input_summary", false))
+		}
+		if !utf8.ValidString(string(in.ExpectedOutcome)) {
+			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "expected_outcome", false))
+		}
+		if !utf8.ValidString(string(in.VerificationKind)) {
+			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "verification_kind", false))
+		}
+	}
+	return nil
+}
+
+// checkCP1AnalysisAmbiguityValue checks text and cycles before conversion.
+func checkCP1AnalysisAmbiguityValue(in *CP1AnalysisAmbiguity) error {
+	if in == nil {
+		return fmt.Errorf("missing root value")
+	}
+	active := make(map[any]bool)
+	if err := checkCP1AnalysisCP1AnalysisAmbiguityValue(in, "$", active); err != nil {
+		return err
+	}
+	return nil
+}
+
+// checkCP1AnalysisExampleValue checks text and cycles before conversion.
+func checkCP1AnalysisExampleValue(in *CP1AnalysisExample) error {
+	if in == nil {
+		return fmt.Errorf("missing root value")
+	}
+	active := make(map[any]bool)
+	if err := checkCP1AnalysisCP1AnalysisExampleValue(in, "$", active); err != nil {
+		return err
+	}
+	return nil
+}
+
+// checkCP1RevisionAnalysisValue checks text and cycles before conversion.
+func checkCP1RevisionAnalysisValue(in *CP1RevisionAnalysis) error {
+	if in == nil {
+		return fmt.Errorf("missing root value")
+	}
+	active := make(map[any]bool)
+	if err := checkCP1RevisionAnalysisCP1RevisionAnalysisValue(in, "$", active); err != nil {
+		return err
+	}
+	return nil
+}
+
+// checkCP1RevisionAnalysisCP1RevisionAnalysisValue checks one generated value on the active path.
+func checkCP1RevisionAnalysisCP1RevisionAnalysisValue(in *CP1RevisionAnalysis, field string, active map[any]bool) error {
+	if in == nil {
+		return nil
+	}
+	if active[in] {
+		return fmt.Errorf("%s: cyclic Go value", field)
+	}
+	active[in] = true
+	defer delete(active, in)
+	if in != nil {
+		if !utf8.ValidString(string(in.Summary)) {
+			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "summary", false))
+		}
+		for index1, item1 := range in.Ambiguities {
+			_ = index1
+			_ = item1
+			if err := checkCP1AnalysisCP1AnalysisAmbiguityValue(item1, generatedJSONChildPath(generatedJSONChildPath(field, "ambiguities", false), strconv.Itoa(index1), true), active); err != nil {
+				return err
+			}
+		}
+		for index1, item1 := range in.Examples {
+			_ = index1
+			_ = item1
+			if err := checkCP1RevisionAnalysisCP1RevisionAnalysisExampleValue(item1, generatedJSONChildPath(generatedJSONChildPath(field, "examples", false), strconv.Itoa(index1), true), active); err != nil {
+				return err
+			}
+		}
+		for index1, item1 := range in.RemovedExampleIds {
+			_ = index1
+			_ = item1
+			if !utf8.ValidString(string(item1)) {
+				return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(generatedJSONChildPath(field, "removed_example_ids", false), strconv.Itoa(index1), true))
+			}
+		}
+		for index1, item1 := range in.PreservedBehaviors {
+			_ = index1
+			_ = item1
+			if !utf8.ValidString(string(item1)) {
+				return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(generatedJSONChildPath(field, "preserved_behaviors", false), strconv.Itoa(index1), true))
+			}
+		}
+		if in.UIComposition != nil {
+			if !utf8.ValidString(string(*in.UIComposition)) {
+				return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "ui_composition", false))
+			}
+		}
+	}
+	return nil
+}
+
+// checkCP1RevisionAnalysisCP1RevisionAnalysisExampleValue checks one generated value on the active path.
+func checkCP1RevisionAnalysisCP1RevisionAnalysisExampleValue(in *CP1RevisionAnalysisExample, field string, active map[any]bool) error {
+	if in == nil {
+		return nil
+	}
+	if active[in] {
+		return fmt.Errorf("%s: cyclic Go value", field)
+	}
+	active[in] = true
+	defer delete(active, in)
+	if in != nil {
+		if in.PriorID != nil {
+			if !utf8.ValidString(string(*in.PriorID)) {
+				return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "prior_id", false))
+			}
+		}
+		if !utf8.ValidString(string(in.Scenario)) {
+			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "scenario", false))
+		}
+		if !utf8.ValidString(string(in.InputSummary)) {
+			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "input_summary", false))
+		}
+		if !utf8.ValidString(string(in.ExpectedOutcome)) {
+			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "expected_outcome", false))
+		}
+		if !utf8.ValidString(string(in.VerificationKind)) {
+			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "verification_kind", false))
+		}
+	}
+	return nil
+}
+
+// checkCP1RevisionAnalysisExampleValue checks text and cycles before conversion.
+func checkCP1RevisionAnalysisExampleValue(in *CP1RevisionAnalysisExample) error {
+	if in == nil {
+		return fmt.Errorf("missing root value")
+	}
+	active := make(map[any]bool)
+	if err := checkCP1RevisionAnalysisCP1RevisionAnalysisExampleValue(in, "$", active); err != nil {
+		return err
+	}
+	return nil
+}
+
 // checkChangeCardResultValue checks text and cycles before conversion.
 func checkChangeCardResultValue(in *ChangeCardResult) error {
 	if in == nil {
@@ -16361,6 +18579,9 @@ func checkProposeChangePayloadProposeChangePayloadValue(in *ProposeChangePayload
 				return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "design_source", false))
 			}
 		}
+		if err := checkCP1AnalysisCP1AnalysisValue(in.Analysis, generatedJSONChildPath(field, "analysis", false), active); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -16436,6 +18657,9 @@ func checkReviseChangePayloadReviseChangePayloadValue(in *ReviseChangePayload, f
 			if !utf8.ValidString(string(*in.DesignSource)) {
 				return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "design_source", false))
 			}
+		}
+		if err := checkCP1RevisionAnalysisCP1RevisionAnalysisValue(in.Analysis, generatedJSONChildPath(field, "analysis", false), active); err != nil {
+			return err
 		}
 	}
 	return nil

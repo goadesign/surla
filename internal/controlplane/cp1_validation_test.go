@@ -101,15 +101,14 @@ func TestChangeCardHTTPErrorsAndMCPToolPreservation(t *testing.T) {
 		t.Skip("runs the sandboxed Go toolchain; the full suite (go test without -short) covers it")
 	}
 	aliceCtx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
-	ambiguousJSON, err := json.Marshal(CP1SemanticAnalysis{
+	ambiguous := &gensurla.CP1Analysis{
 		Summary:     "Refunds up to $50 are instant.",
-		Ambiguities: []CP1ModelAmbiguity{{Question: "Who approves?", Options: []string{"instant", "manager"}}},
-		Examples: []CP1ModelExample{{
+		Ambiguities: []*gensurla.CP1AnalysisAmbiguity{{Question: "Who approves?", Options: []string{"instant", "manager"}}},
+		Examples: []*gensurla.CP1AnalysisExample{{
 			Scenario: "Refund at limit", InputSummary: "$50", ExpectedOutcome: "Instant", VerificationKind: "deterministic",
 		}},
 		PreservedBehaviors: []string{},
-	})
-	require.NoError(t, err)
+	}
 	auth := NewTokenAuthenticator(map[string]Principal{
 		"alice-token": {ID: "alice@example.com"},
 		"bob-token":   {ID: "bob@example.com"},
@@ -117,14 +116,13 @@ func TestChangeCardHTTPErrorsAndMCPToolPreservation(t *testing.T) {
 	// Both preview refusals use one server so its evaluator reuses its own
 	// compiler workspace while the handler preserves each distinct error.
 	cp := newControlPlane(t, Options{
-		Analyzer:      NewModelCP1Analyzer(newStubModelClient(t, string(ambiguousJSON))),
 		SwarmProfiles: []swarm.ProviderProfile{{ID: "bad"}},
 	})
-	pending, err := cp.ProposeChange(aliceCtx, &gensurla.ProposeChangePayload{ChangeID: "chg", Prompt: "Refunds."})
+	pending, err := cp.ProposeChange(aliceCtx, &gensurla.ProposeChangePayload{ChangeID: "chg", Prompt: "Refunds.", Analysis: ambiguous})
 	require.NoError(t, err)
 	confirmed, err := cp.ConfirmIntent(aliceCtx, &gensurla.ConfirmIntentPayload{
 		ChangeID: "chg-ok", RequestRevision: func() string {
-			c, err := cp.ProposeChange(aliceCtx, &gensurla.ProposeChangePayload{ChangeID: "chg-ok", Prompt: "Refunds."})
+			c, err := cp.ProposeChange(aliceCtx, &gensurla.ProposeChangePayload{ChangeID: "chg-ok", Prompt: "Refunds.", Analysis: ambiguous})
 			require.NoError(t, err)
 			return c.RequestRevision
 		}(),
@@ -138,12 +136,28 @@ var _ = API("orders", func() {})
 var _ = Service("orders", func() {})
 `)
 	handler := NewHTTPHandler(cp, auth)
-	noAnalyzerHandler := NewHTTPHandler(newControlPlane(t, Options{}), auth)
-	adjustableNoAnalyzerHandler := NewHTTPHandler(newControlPlane(t, Options{
-		ModelBuilder: func(p *gensurla.ConfigureModelPayload) (CP1Analyzer, []string, func() error, error) {
-			return NewModelCP1Analyzer(newStubModelClient(t, string(ambiguousJSON))), nil, nil, nil
-		},
-	}), auth)
+	fixedHostHandler := NewHTTPHandler(newControlPlane(t, Options{}), auth)
+	// proposalAnalysis and revisionAnalysis are the wire forms of complete
+	// analyses, so these requests reach the service's own checks.
+	proposalAnalysis := map[string]any{
+		"summary":     "Refunds up to $50 are instant.",
+		"ambiguities": []any{},
+		"examples": []map[string]any{{
+			"scenario": "Refund at limit", "input_summary": "$50", "expected_outcome": "Instant", "verification_kind": "deterministic",
+		}},
+		"preserved_behaviors": []string{},
+	}
+	revisionAnalysis := func(priorID string) map[string]any {
+		return map[string]any{
+			"summary":     "Refunds up to $60 are instant.",
+			"ambiguities": []any{},
+			"examples": []map[string]any{{
+				"prior_id": priorID, "scenario": "Refund at limit", "input_summary": "$60", "expected_outcome": "Instant", "verification_kind": "deterministic",
+			}},
+			"removed_example_ids": []string{},
+			"preserved_behaviors": []string{},
+		}
+	}
 
 	for _, tc := range []struct {
 		name       string
@@ -156,16 +170,16 @@ var _ = Service("orders", func() {})
 		wantFault  bool
 		wantMsg    string
 	}{
-		{"propose without analyzer on fixed host", noAnalyzerHandler, http.MethodPost, "/changes/propose", "alice-token", map[string]any{"change_id": "x", "prompt": "p"}, http.StatusNotImplemented, false, msgCP1NotConfiguredFixedHost},
-		{"revise without analyzer on fixed host", noAnalyzerHandler, http.MethodPost, "/changes/revise", "alice-token", map[string]any{"change_id": "x", "request_revision": strings.Repeat("0", 64), "prompt": "p"}, http.StatusNotImplemented, false, msgCP1NotConfiguredFixedHost},
-		{"configure_model without builder on fixed host", noAnalyzerHandler, http.MethodPost, "/cp1/model", "alice-token", map[string]any{"gateway_addr": "127.0.0.1:9090"}, http.StatusNotImplemented, false, msgModelReconfigUnavailable},
-		{"configure_model without builder on configured fixed host", handler, http.MethodPost, "/cp1/model", "alice-token", map[string]any{"gateway_addr": "127.0.0.1:9090"}, http.StatusNotImplemented, false, msgModelReconfigUnavailable},
-		{"propose without analyzer on adjustable host", adjustableNoAnalyzerHandler, http.MethodPost, "/changes/propose", "alice-token", map[string]any{"change_id": "x", "prompt": "p"}, http.StatusNotImplemented, false, msgCP1NotConfiguredAdjustable},
-		{"revise without analyzer on adjustable host", adjustableNoAnalyzerHandler, http.MethodPost, "/changes/revise", "alice-token", map[string]any{"change_id": "x", "request_revision": strings.Repeat("0", 64), "prompt": "p"}, http.StatusNotImplemented, false, msgCP1NotConfiguredAdjustable},
-		{"propose duplicate change_id", handler, http.MethodPost, "/changes/propose", "alice-token", map[string]any{"change_id": "chg", "prompt": "p"}, http.StatusConflict, false, `change_id "chg" already exists`},
+		{"configure_model without LiveModelEnv on fixed host", fixedHostHandler, http.MethodPost, "/cp1/model", "alice-token", map[string]any{"gateway_addr": "127.0.0.1:9090"}, http.StatusNotImplemented, false, msgModelReconfigUnavailable},
+		{"configure_model without LiveModelEnv on configured fixed host", handler, http.MethodPost, "/cp1/model", "alice-token", map[string]any{"gateway_addr": "127.0.0.1:9090"}, http.StatusNotImplemented, false, msgModelReconfigUnavailable},
+		{"propose duplicate change_id", handler, http.MethodPost, "/changes/propose", "alice-token", map[string]any{"change_id": "chg", "prompt": "p", "analysis": proposalAnalysis}, http.StatusConflict, false, `change_id "chg" already exists`},
+		{"propose blank prompt", handler, http.MethodPost, "/changes/propose", "alice-token", map[string]any{"change_id": "blank", "prompt": "  ", "analysis": proposalAnalysis}, http.StatusUnprocessableEntity, false, "change_id, prompt, and analysis are required"},
+		{"revise unknown change_id", handler, http.MethodPost, "/changes/revise", "alice-token", map[string]any{"change_id": "missing", "request_revision": strings.Repeat("0", 64), "prompt": "p", "analysis": revisionAnalysis("check_01")}, http.StatusNotFound, false, `unknown change_id "missing"`},
+		{"revise another owner's card", handler, http.MethodPost, "/changes/revise", "bob-token", map[string]any{"change_id": "chg", "request_revision": pending.RequestRevision, "prompt": "p", "analysis": revisionAnalysis("check_01")}, http.StatusForbidden, false, `principal "bob@example.com" is not the owner of change_id "chg"`},
+		{"revise with an unknown prior example", handler, http.MethodPost, "/changes/revise", "alice-token", map[string]any{"change_id": "chg", "request_revision": pending.RequestRevision, "prompt": "p", "analysis": revisionAnalysis("check_09")}, http.StatusUnprocessableEntity, false, `invalid analysis: examples[0].prior_id references unknown prior example ID "check_09"`},
 		{"get_change unknown", handler, http.MethodGet, "/changes/missing", "alice-token", nil, http.StatusNotFound, false, `unknown change_id "missing"`},
 		{"get_change wrong owner", handler, http.MethodGet, "/changes/chg", "bob-token", nil, http.StatusForbidden, false, `principal "bob@example.com" is not the owner of change_id "chg"`},
-		{"revise stale revision", handler, http.MethodPost, "/changes/revise", "alice-token", map[string]any{"change_id": "chg", "request_revision": strings.Repeat("0", 64), "prompt": "p"}, http.StatusConflict, false, "request_revision mismatch"},
+		{"revise stale revision", handler, http.MethodPost, "/changes/revise", "alice-token", map[string]any{"change_id": "chg", "request_revision": strings.Repeat("0", 64), "prompt": "p", "analysis": revisionAnalysis("check_01")}, http.StatusConflict, false, "request_revision mismatch"},
 		{"confirm invalid answer", handler, http.MethodPost, "/changes/confirm", "alice-token", map[string]any{
 			"change_id":        "chg",
 			"request_revision": pending.RequestRevision,

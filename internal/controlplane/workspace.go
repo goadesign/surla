@@ -457,37 +457,39 @@ func readWorkspaceModuleSnapshot(wsDir string, expectedDev, expectedIno uint64) 
 	return files, nil
 }
 
-// readWorkspaceCP1Design reads `design/*.go` files from the bound workspace
+// readWorkspaceDesignSource reads `design/*.go` files from the bound workspace
 // through an identity-verified `*os.Root` handle, closes the handle before
-// returning, validates that every file path and body is valid UTF-8, and returns
-// both the CP1Design value and its canonical source string. When `design/` does
-// not exist or contains no non-test `.go` files, it returns
-// `(WorkspaceCP1Design(nil), "", nil)` so a card proposed before `init_project`
-// has an empty design source and does not block initialization.
-func readWorkspaceCP1Design(
-	wsDir string,
-	expectedDev, expectedIno uint64,
-) (CP1Design, string, error) {
+// returning, validates that every file path and body is valid UTF-8, and
+// returns the design source a Change Card records for them: the files as a
+// JSON object keyed by module-relative path, with HTML characters unescaped
+// and no trailing newline. That exact text is saved as the card's
+// design_source and hashed into its request_revision, so it must not change
+// for the same files. When `design/` does not exist or contains no non-test
+// `.go` files, it returns "" so a card proposed before `init_project` has an
+// empty design source and does not block initialization. A workspace that was
+// replaced or cannot be read is unprocessable.
+func readWorkspaceDesignSource(wsDir string, expectedDev, expectedIno uint64) (string, error) {
 	cleanDir, root, err := openModuleRootWithIdentity(wsDir, expectedDev, expectedIno)
 	if err != nil {
-		return CP1Design{}, "", err
+		return "", err
 	}
 	files, readErr := designeval.ReadDesignFilesFromRoot(cleanDir, root)
 	if err := errors.Join(readErr, root.Close()); err != nil {
-		return CP1Design{}, "", gensurla.MakeUnprocessable(err)
+		return "", gensurla.MakeUnprocessable(err)
 	}
 	if len(files) == 0 {
-		return WorkspaceCP1Design(nil), "", nil
+		return "", nil
 	}
 	if err := designeval.ValidateUTF8Snapshot(files); err != nil {
-		return CP1Design{}, "", gensurla.MakeUnprocessable(err)
+		return "", gensurla.MakeUnprocessable(err)
 	}
-	d := WorkspaceCP1Design(files)
-	canonicalSrc, err := d.CanonicalSource()
-	if err != nil {
-		return CP1Design{}, "", err
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(files); err != nil {
+		return "", fmt.Errorf("encode workspace design source: %w", err)
 	}
-	return d, canonicalSrc, nil
+	return strings.TrimSuffix(buf.String(), "\n"), nil
 }
 
 // normalizeAndValidateStartupPaths resolves configured operator storage paths

@@ -11,20 +11,25 @@ import (
 )
 
 // TestConfirmIntentKeepsCallerExampleIDs verifies the example id contract
-// ExampleItem describes: CP1 assigns ids to the examples it proposes, and
+// ExampleItem describes: propose_change assigns ids to the analysis's examples, and
 // confirm_intent keeps an edited example's existing id and an added example's
 // caller-chosen id exactly as sent, in a new revision.
 func TestConfirmIntentKeepsCallerExampleIDs(t *testing.T) {
 	ctx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
-	analysis := `{"summary":"Refunds up to $50 are instant.","ambiguities":[],` +
-		`"examples":[{"scenario":"Small refund","input_summary":"$20 order","expected_outcome":"Instant credit","verification_kind":"deterministic"}],` +
-		`"preserved_behaviors":[]}`
-	cp := newControlPlane(t, Options{Analyzer: NewModelCP1Analyzer(newStubModelClient(t, analysis))})
-	proposed, err := cp.ProposeChange(ctx, &gensurla.ProposeChangePayload{ChangeID: "refunds", Prompt: "Instant refunds up to $50"})
+	analysis := &gensurla.CP1Analysis{
+		Summary:     "Refunds up to $50 are instant.",
+		Ambiguities: []*gensurla.CP1AnalysisAmbiguity{},
+		Examples: []*gensurla.CP1AnalysisExample{{
+			Scenario: "Small refund", InputSummary: "$20 order", ExpectedOutcome: "Instant credit", VerificationKind: "deterministic",
+		}},
+		PreservedBehaviors: []string{},
+	}
+	cp := newControlPlane(t, Options{})
+	proposed, err := cp.ProposeChange(ctx, &gensurla.ProposeChangePayload{ChangeID: "refunds", Prompt: "Instant refunds up to $50", Analysis: analysis})
 	require.NoError(t, err)
 	require.Len(t, proposed.Examples, 1)
 	assignedID := proposed.Examples[0].ID
-	assert.Equal(t, "check_01", assignedID, "CP1 assigns ids to the examples it proposes")
+	assert.Equal(t, "check_01", assignedID, "propose_change assigns ids to the examples it saves")
 
 	edited := *proposed.Examples[0]
 	edited.ExpectedOutcome = "Instant store credit"

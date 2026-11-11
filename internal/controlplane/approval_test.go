@@ -84,16 +84,15 @@ func TestApproveMergeRecordsApprovalOnlyForTheCheckedRevision(t *testing.T) {
 	aliceCtx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
 	bobCtx := WithPrincipal(context.Background(), Principal{ID: "bob@example.com"})
 	const commit = "0123456789abcdef0123456789abcdef01234567"
-	analysis, err := json.Marshal(CP1SemanticAnalysis{
+	analysis := &gensurla.CP1Analysis{
 		Summary:     "Refunds up to $50 are instant.",
-		Ambiguities: []CP1ModelAmbiguity{},
-		Examples: []CP1ModelExample{{
+		Ambiguities: []*gensurla.CP1AnalysisAmbiguity{},
+		Examples: []*gensurla.CP1AnalysisExample{{
 			Scenario: "Refund at the limit", InputSummary: "Order total $50.00",
 			ExpectedOutcome: "Instant store credit", VerificationKind: "deterministic",
 		}},
 		PreservedBehaviors: []string{},
-	})
-	require.NoError(t, err)
+	}
 	inputs := PromotionInputs{
 		SuiteID: "orders_acceptance", SuiteCommit: "suite-1", Environment: "sim",
 		Artifacts: map[string]string{"orders": "d1"},
@@ -105,10 +104,9 @@ func TestApproveMergeRecordsApprovalOnlyForTheCheckedRevision(t *testing.T) {
 		t.Helper()
 		target := &promotionTargetStub{inputs: inputs}
 		cp := newControlPlane(t, Options{
-			Analyzer:        NewModelCP1Analyzer(newStubModelClient(t, string(analysis))),
 			PromotionTarget: target,
 		})
-		card, err := cp.ProposeChange(aliceCtx, &gensurla.ProposeChangePayload{ChangeID: "chg", Prompt: "Refunds up to $50 are instant."})
+		card, err := cp.ProposeChange(aliceCtx, &gensurla.ProposeChangePayload{ChangeID: "chg", Prompt: "Refunds up to $50 are instant.", Analysis: analysis})
 		require.NoError(t, err)
 		require.Equal(t, StatusConfirmed, card.Status)
 		target.report = passingReport(t, card.RequestRevision, commit, inputs)
@@ -338,21 +336,19 @@ func TestApproveMergeRecordsApprovalOnlyForTheCheckedRevision(t *testing.T) {
 	})
 
 	t.Run("card still needs confirmation", func(t *testing.T) {
-		ambiguous, err := json.Marshal(CP1SemanticAnalysis{
+		ambiguous := &gensurla.CP1Analysis{
 			Summary:     "Refunds up to $50 are instant.",
-			Ambiguities: []CP1ModelAmbiguity{{Question: "Is $50.00 itself instant?", Options: []string{"instant", "manager"}}},
-			Examples: []CP1ModelExample{{
+			Ambiguities: []*gensurla.CP1AnalysisAmbiguity{{Question: "Is $50.00 itself instant?", Options: []string{"instant", "manager"}}},
+			Examples: []*gensurla.CP1AnalysisExample{{
 				Scenario: "Refund at the limit", InputSummary: "Order total $50.00",
 				ExpectedOutcome: "Instant store credit", VerificationKind: "deterministic",
 			}},
 			PreservedBehaviors: []string{},
-		})
-		require.NoError(t, err)
+		}
 		cp := newControlPlane(t, Options{
-			Analyzer:        NewModelCP1Analyzer(newStubModelClient(t, string(ambiguous))),
 			PromotionTarget: &promotionTargetStub{inputs: inputs},
 		})
-		card, err := cp.ProposeChange(aliceCtx, &gensurla.ProposeChangePayload{ChangeID: "chg", Prompt: "Refunds up to $50 are instant."})
+		card, err := cp.ProposeChange(aliceCtx, &gensurla.ProposeChangePayload{ChangeID: "chg", Prompt: "Refunds up to $50 are instant.", Analysis: ambiguous})
 		require.NoError(t, err)
 		_, err = approve(aliceCtx, cp, card, strings.Repeat("0", 64))
 		assert.ErrorContains(t, err, "must be confirmed")
@@ -452,16 +448,15 @@ func TestCurrentCardAllFiveApprovalStatesAndSpanRecording(t *testing.T) {
 	const commit = "0123456789abcdef0123456789abcdef01234567"
 	const secretHostPath = "/var/lib/surla/secret-releases/0123456789abcdef0123456789abcdef01234567/orders"
 
-	analysis, err := json.Marshal(CP1SemanticAnalysis{
+	analysis := &gensurla.CP1Analysis{
 		Summary:     "Refunds up to $50 are instant.",
-		Ambiguities: []CP1ModelAmbiguity{},
-		Examples: []CP1ModelExample{{
+		Ambiguities: []*gensurla.CP1AnalysisAmbiguity{},
+		Examples: []*gensurla.CP1AnalysisExample{{
 			Scenario: "Refund at the limit", InputSummary: "Order total $50.00",
 			ExpectedOutcome: "Instant store credit", VerificationKind: "deterministic",
 		}},
 		PreservedBehaviors: []string{},
-	})
-	require.NoError(t, err)
+	}
 	inputs := PromotionInputs{
 		SuiteID: "orders_acceptance", SuiteCommit: "suite-1", Environment: "sim",
 		Artifacts: map[string]string{"orders": "d1"},
@@ -471,7 +466,6 @@ func TestCurrentCardAllFiveApprovalStatesAndSpanRecording(t *testing.T) {
 	target := &promotionTargetStub{inputs: inputs}
 	cp := newControlPlane(t, Options{
 		CardsDir:        cardsDir,
-		Analyzer:        NewModelCP1Analyzer(newStubModelClient(t, string(analysis))),
 		PromotionTarget: target,
 	})
 	srv := httptest.NewServer(NewHTTPHandler(cp, NewTokenAuthenticator(map[string]Principal{"alice-token": {ID: "alice@example.com"}})))
@@ -593,7 +587,7 @@ func TestCurrentCardAllFiveApprovalStatesAndSpanRecording(t *testing.T) {
 	}
 
 	// State 1: no record.
-	card, err := cp.ProposeChange(aliceCtx, &gensurla.ProposeChangePayload{ChangeID: "chg", Prompt: "Refunds up to $50 are instant."})
+	card, err := cp.ProposeChange(aliceCtx, &gensurla.ProposeChangePayload{ChangeID: "chg", Prompt: "Refunds up to $50 are instant.", Analysis: analysis})
 	require.NoError(t, err)
 	for _, got := range []*gensurla.ChangeCardResult{
 		mustGetChange(t, cp, aliceCtx, "chg"),
@@ -678,7 +672,6 @@ func TestCurrentCardAllFiveApprovalStatesAndSpanRecording(t *testing.T) {
 	require.NoError(t, cp.Close())
 	cpNoTarget := newControlPlane(t, Options{
 		CardsDir: cardsDir,
-		Analyzer: NewModelCP1Analyzer(newStubModelClient(t, string(analysis))),
 	})
 	srvNoTarget := httptest.NewServer(NewHTTPHandler(cpNoTarget, NewTokenAuthenticator(map[string]Principal{"alice-token": {ID: "alice@example.com"}})))
 	t.Cleanup(srvNoTarget.Close)

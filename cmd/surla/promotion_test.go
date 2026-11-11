@@ -21,10 +21,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// confirmedAnalyzer proposes a card with no open questions, so it is
-// confirmed at once.
-type confirmedAnalyzer struct{}
-
 // suiteCommit is the evaluator suite commit these tests require.
 var suiteCommit = strings.Repeat("b", 40)
 
@@ -172,9 +168,9 @@ func TestApproveMergeChecksTheStagedRelease(t *testing.T) {
 	// The card is confirmed first, then the evaluator's report for its
 	// revision is saved, and serve restarts with the promotion target.
 	cardsDir := t.TempDir()
-	cp, err := controlplane.New(controlplane.Options{CardsDir: cardsDir, Analyzer: confirmedAnalyzer{}})
+	cp, err := controlplane.New(controlplane.Options{CardsDir: cardsDir})
 	require.NoError(t, err)
-	card, err := cp.ProposeChange(alice, &gensurla.ProposeChangePayload{ChangeID: "chg", Prompt: "Refunds up to $50 are instant."})
+	card, err := cp.ProposeChange(alice, &gensurla.ProposeChangePayload{ChangeID: "chg", Prompt: "Refunds up to $50 are instant.", Analysis: confirmedAnalysis()})
 	require.NoError(t, err)
 	require.NoError(t, cp.Close())
 	report := saveReport(t, verify.Binding{
@@ -227,46 +223,20 @@ func TestApproveMergeChecksTheStagedRelease(t *testing.T) {
 	assert.NotContains(t, got.UnverifiedApproval.Reason, release)
 }
 
-// Analyze returns a summary and one example with no open questions.
-func (confirmedAnalyzer) Analyze(
-	context.Context, string, controlplane.CP1Design,
-) (controlplane.CP1SemanticAnalysis, error) {
-	return controlplane.CP1SemanticAnalysis{
-		Summary: "Refunds up to $50 are instant.",
-		Examples: []controlplane.CP1ModelExample{{
+// confirmedAnalysis returns the analysis these tests propose: the
+// instant-refund request with no open questions, so the card is confirmed at
+// once, one deterministic example at the $50.00 limit, and no preserved
+// behaviors.
+func confirmedAnalysis() *gensurla.CP1Analysis {
+	return &gensurla.CP1Analysis{
+		Summary:     "Refunds up to $50 are instant.",
+		Ambiguities: []*gensurla.CP1AnalysisAmbiguity{},
+		Examples: []*gensurla.CP1AnalysisExample{{
 			Scenario: "Refund at the limit", InputSummary: "Order total $50.00",
 			ExpectedOutcome: "Instant store credit", VerificationKind: "deterministic",
 		}},
-	}, nil
-}
-
-// Revise returns the same fixed analysis as Analyze for tests that only exercise CP5.
-func (a confirmedAnalyzer) Revise(
-	ctx context.Context,
-	prior controlplane.CP1PriorCard,
-	prompt string,
-	design controlplane.CP1Design,
-) (controlplane.CP1RevisionSemanticAnalysis, error) {
-	analysis, err := a.Analyze(ctx, prompt, design)
-	if err != nil {
-		return controlplane.CP1RevisionSemanticAnalysis{}, err
+		PreservedBehaviors: []string{},
 	}
-	var priorID string
-	if len(prior.Examples) > 0 {
-		priorID = prior.Examples[0].ID
-	}
-	return controlplane.CP1RevisionSemanticAnalysis{
-		Summary: analysis.Summary,
-		Examples: []controlplane.CP1RevisionModelExample{{
-			PriorID:          priorID,
-			Scenario:         analysis.Examples[0].Scenario,
-			InputSummary:     analysis.Examples[0].InputSummary,
-			ExpectedOutcome:  analysis.Examples[0].ExpectedOutcome,
-			VerificationKind: analysis.Examples[0].VerificationKind,
-		}},
-		RemovedExampleIDs:  []string{},
-		PreservedBehaviors: analysis.PreservedBehaviors,
-	}, nil
 }
 
 // newReleaseTarget loads a promotion configuration for the orders binaries

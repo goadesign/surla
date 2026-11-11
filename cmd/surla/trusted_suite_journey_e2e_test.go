@@ -25,12 +25,6 @@ import (
 	"github.com/goadesign/surla/internal/verifyrun"
 )
 
-type (
-	// trustedSuiteAnalyzer supplies one confirmed public example. This test
-	// checks evaluator ownership, not semantic analysis or provider quality.
-	trustedSuiteAnalyzer struct{}
-)
-
 // journeyOwnerWait bounds each client wait on a server-owned operation in
 // these journeys: the owner's own limit, defaultProjectVerifyTimeout, which
 // serveOptions gives a live start and the starter resolver saves as a
@@ -103,10 +97,14 @@ func toolErrorText(content []*genmcpsurla.ContentItem) string {
 	return strings.Join(texts, "\n")
 }
 
-// assertTrustedSuiteJourney starts and stops a real live candidate, then
-// verifies that candidate through MCP and checks the saved plan and full report
-// retain the operator's suite commit. No suite payload is replaced or executed
-// outside the existing candidate sandbox.
+// assertTrustedSuiteJourney starts and stops a real live candidate, then walks
+// the Change Card journey a coding agent follows through MCP on a server with
+// no model provider key: propose_change with the agent's own analysis (one
+// open question), confirm_intent with the answer, preview_architecture of the
+// workspace design, and verify_change of the candidate. It checks the saved
+// plan and full report retain the operator's suite commit and the confirmed
+// revision. No suite payload is replaced or executed outside the existing
+// candidate sandbox.
 func assertTrustedSuiteJourney(t *testing.T, client *genmcpsurla.Client,
 	cardsDir, runsDir, candidateCommit, suiteCommit, changeID string,
 ) {
@@ -141,11 +139,43 @@ func assertTrustedSuiteJourney(t *testing.T, client *genmcpsurla.Client,
 	defer cancel()
 	args, err = gensurla.EncodeProposeChangePayload(&gensurla.ProposeChangePayload{
 		ChangeID: changeID, Prompt: "Keep answering price questions.",
+		Analysis: &gensurla.CP1Analysis{
+			Summary: "The helper keeps answering price questions through the price API.",
+			Ambiguities: []*gensurla.CP1AnalysisAmbiguity{{
+				Question: "Should the helper quote prices for items that are out of stock?",
+				Options:  []string{"Quote the price", "Say the item is unavailable"},
+			}},
+			Examples: []*gensurla.CP1AnalysisExample{{
+				Scenario: "Price question", InputSummary: "Ask for an item's price.",
+				ExpectedOutcome: "Return its price.", VerificationKind: "deterministic",
+			}},
+			PreservedBehaviors: []string{"The price API remains available."},
+		},
 	})
 	require.NoError(t, err)
-	card, err := gensurla.DecodeChangeCardResult(trustedSuiteCall(t, phase, client, "propose_change", args))
+	proposed, err := gensurla.DecodeChangeCardResult(trustedSuiteCall(t, phase, client, "propose_change", args))
+	require.NoError(t, err)
+	require.Equal(t, controlplane.StatusNeedsConfirmation, proposed.Status)
+	require.Len(t, proposed.Ambiguities, 1)
+	require.Len(t, proposed.Examples, 1)
+	assert.Equal(t, "check_01", proposed.Examples[0].ID, "Surla assigns the example ID")
+	args, err = gensurla.EncodeConfirmIntentPayload(&gensurla.ConfirmIntentPayload{
+		ChangeID: changeID, RequestRevision: proposed.RequestRevision,
+		Answers:  map[string]string{proposed.Ambiguities[0].ID: "Quote the price"},
+		Examples: proposed.Examples,
+	})
+	require.NoError(t, err)
+	card, err := gensurla.DecodeChangeCardResult(trustedSuiteCall(t, phase, client, "confirm_intent", args))
 	require.NoError(t, err)
 	require.Equal(t, controlplane.StatusConfirmed, card.Status)
+	args, err = gensurla.EncodePreviewArchitecturePayload(&gensurla.PreviewArchitecturePayload{
+		ChangeID: card.ChangeID, RequestRevision: card.RequestRevision,
+	})
+	require.NoError(t, err)
+	preview, err := gensurla.DecodeArchitecturePreviewResult(trustedSuiteCall(t, phase, client, "preview_architecture", args))
+	require.NoError(t, err)
+	assert.Equal(t, card.RequestRevision, preview.RequestRevision)
+	assert.NotEmpty(t, preview.Containers, "the starter's design declares its service")
 	args, err = gensurla.EncodeVerifyChangePayload(&gensurla.VerifyChangePayload{
 		ChangeID: card.ChangeID, RequestRevision: card.RequestRevision, CandidateCommit: candidateCommit,
 	})
@@ -197,29 +227,6 @@ func assertTrustedSuiteJourney(t *testing.T, client *genmcpsurla.Client,
 		run, err = gensurla.DecodeVerificationStatusResult(trustedSuiteCall(t, phase, client, "get_verification", args))
 		require.NoError(t, err)
 	}
-}
-
-// Analyze returns a fixed public example with no open questions, so the real
-// CP1 persistence path saves a confirmed card without contacting a provider.
-func (trustedSuiteAnalyzer) Analyze(
-	context.Context, string, controlplane.CP1Design,
-) (controlplane.CP1SemanticAnalysis, error) {
-	return controlplane.CP1SemanticAnalysis{
-		Summary: "Keep answering price questions.",
-		Examples: []controlplane.CP1ModelExample{{
-			Scenario: "Price question", InputSummary: "Ask for an item's price.",
-			ExpectedOutcome: "Return its price.", VerificationKind: "deterministic",
-		}},
-		PreservedBehaviors: []string{"The price API remains available."},
-	}, nil
-}
-
-// Revise is unused because this test proves the existing evaluator pin, not
-// semantic revision behavior.
-func (trustedSuiteAnalyzer) Revise(
-	context.Context, controlplane.CP1PriorCard, string, controlplane.CP1Design,
-) (controlplane.CP1RevisionSemanticAnalysis, error) {
-	return controlplane.CP1RevisionSemanticAnalysis{}, errors.New("revision is outside this test's journey")
 }
 
 // closeRetaining closes the server, which stops its live target and removes
