@@ -236,9 +236,9 @@ type AmbiguityQuestion struct {
 // digests still equal the ones it records, or in unverified_approval when
 // current promotion inputs cannot be verified on that read.
 type ApprovalItem struct {
-	// Authenticated bearer principal that owns the card and called approve_merge.
-	// Bearer authentication does not prove that a human, rather than a coding
-	// agent, made the call.
+	// Authenticated principal that owns the card and called approve_merge.
+	// Authentication does not prove that a human, rather than a coding agent, made
+	// the call.
 	ApprovedBy string
 	// SHA-256 digest of the approved CP4 verification report.
 	ReportDigest string
@@ -1360,9 +1360,9 @@ func validatejsonAmbiguityQuestionTransport(value *jsonAmbiguityQuestionTranspor
 
 // jsonApprovalItemTransport stores JSON fields until they have been validated.
 type jsonApprovalItemTransport struct {
-	// Authenticated bearer principal that owns the card and called approve_merge.
-	// Bearer authentication does not prove that a human, rather than a coding
-	// agent, made the call.
+	// Authenticated principal that owns the card and called approve_merge.
+	// Authentication does not prove that a human, rather than a coding agent, made
+	// the call.
 	ApprovedBy *string `json:"approved_by"`
 	// SHA-256 digest of the approved CP4 verification report.
 	ReportDigest *string `json:"report_digest"`
@@ -12017,7 +12017,7 @@ func validateApprovalItemJSONValue(path string, value any, description string) e
 		case "approved_by":
 			if err := validateAgentPolicyItemJSONValue2(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Authenticated bearer principal that owns the card and called approve_merge. Bearer authentication does not prove that a human, rather than a coding agent, made the call.",
+				typed[key], "Authenticated principal that owns the card and called approve_merge. Authentication does not prove that a human, rather than a coding agent, made the call.",
 			); err != nil {
 				return err
 			}

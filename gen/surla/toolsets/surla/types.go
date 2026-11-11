@@ -628,9 +628,9 @@ type (
 	}
 	// ApprovalItem is a nested type used by the generated JSON contract.
 	ApprovalItem = struct {
-		// Authenticated bearer principal that owns the card and called approve_merge.
-		// Bearer authentication does not prove that a human, rather than a coding
-		// agent, made the call.
+		// Authenticated principal that owns the card and called approve_merge.
+		// Authentication does not prove that a human, rather than a coding agent, made
+		// the call.
 		ApprovedBy string
 		// SHA-256 digest of the approved CP4 verification report.
 		ReportDigest string

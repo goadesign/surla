@@ -88,9 +88,9 @@ func ValidateApproveMergeResultAmbiguityQuestionTransport(value *ApproveMergeRes
 
 // ApproveMergeResultApprovalItemTransport stores JSON fields until they have been validated.
 type ApproveMergeResultApprovalItemTransport struct {
-	// Authenticated bearer principal that owns the card and called approve_merge.
-	// Bearer authentication does not prove that a human, rather than a coding
-	// agent, made the call.
+	// Authenticated principal that owns the card and called approve_merge.
+	// Authentication does not prove that a human, rather than a coding agent, made
+	// the call.
 	ApprovedBy *string `json:"approved_by"`
 	// SHA-256 digest of the approved CP4 verification report.
 	ReportDigest *string `json:"report_digest"`
@@ -561,9 +561,9 @@ func ValidateConfirmIntentResultAmbiguityQuestionTransport(value *ConfirmIntentR
 
 // ConfirmIntentResultApprovalItemTransport stores JSON fields until they have been validated.
 type ConfirmIntentResultApprovalItemTransport struct {
-	// Authenticated bearer principal that owns the card and called approve_merge.
-	// Bearer authentication does not prove that a human, rather than a coding
-	// agent, made the call.
+	// Authenticated principal that owns the card and called approve_merge.
+	// Authentication does not prove that a human, rather than a coding agent, made
+	// the call.
 	ApprovedBy *string `json:"approved_by"`
 	// SHA-256 digest of the approved CP4 verification report.
 	ReportDigest *string `json:"report_digest"`
@@ -1070,9 +1070,9 @@ func ValidateGetChangeResultAmbiguityQuestionTransport(value *GetChangeResultAmb
 
 // GetChangeResultApprovalItemTransport stores JSON fields until they have been validated.
 type GetChangeResultApprovalItemTransport struct {
-	// Authenticated bearer principal that owns the card and called approve_merge.
-	// Bearer authentication does not prove that a human, rather than a coding
-	// agent, made the call.
+	// Authenticated principal that owns the card and called approve_merge.
+	// Authentication does not prove that a human, rather than a coding agent, made
+	// the call.
 	ApprovedBy *string `json:"approved_by"`
 	// SHA-256 digest of the approved CP4 verification report.
 	ReportDigest *string `json:"report_digest"`
@@ -3039,9 +3039,9 @@ func ValidateProposeChangeResultAmbiguityQuestionTransport(value *ProposeChangeR
 
 // ProposeChangeResultApprovalItemTransport stores JSON fields until they have been validated.
 type ProposeChangeResultApprovalItemTransport struct {
-	// Authenticated bearer principal that owns the card and called approve_merge.
-	// Bearer authentication does not prove that a human, rather than a coding
-	// agent, made the call.
+	// Authenticated principal that owns the card and called approve_merge.
+	// Authentication does not prove that a human, rather than a coding agent, made
+	// the call.
 	ApprovedBy *string `json:"approved_by"`
 	// SHA-256 digest of the approved CP4 verification report.
 	ReportDigest *string `json:"report_digest"`
@@ -3612,9 +3612,9 @@ func ValidateReviseChangeResultAmbiguityQuestionTransport(value *ReviseChangeRes
 
 // ReviseChangeResultApprovalItemTransport stores JSON fields until they have been validated.
 type ReviseChangeResultApprovalItemTransport struct {
-	// Authenticated bearer principal that owns the card and called approve_merge.
-	// Bearer authentication does not prove that a human, rather than a coding
-	// agent, made the call.
+	// Authenticated principal that owns the card and called approve_merge.
+	// Authentication does not prove that a human, rather than a coding agent, made
+	// the call.
 	ApprovedBy *string `json:"approved_by"`
 	// SHA-256 digest of the approved CP4 verification report.
 	ReportDigest *string `json:"report_digest"`
