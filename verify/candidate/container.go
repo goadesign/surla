@@ -80,8 +80,8 @@ type (
 	}
 
 	// CleanupError reports a container whose removal could not be confirmed.
-	// The caller must keep every directory the container mounts until a
-	// later removal succeeds.
+	// The caller must keep every directory a started container may mount
+	// until a later removal is confirmed.
 	CleanupError struct {
 		// Name is the container name to remove with docker rm -f.
 		Name string
@@ -101,8 +101,10 @@ const (
 	CheckImage = "golang:1.27.3@sha256:e519d3b0a5b285e5aa53ab9eef02bc6bbb9cb04608389b743a136a9ce75f0d1e"
 	// checkLabel labels every check container with its operation ID.
 	checkLabel = "surla.check"
-	// removeTimeout bounds one docker rm -f, run with a fresh context so it
-	// survives the cancellation that triggered it.
+	// removeTimeout bounds the cleanup work a cancellation may still do: one
+	// docker rm -f, run with a fresh context so it survives the cancellation
+	// that triggered it, and the wait for the answer to a create already sent
+	// when the cancellation came.
 	removeTimeout = 30 * time.Second
 	// pidsLimit bounds the processes one check container may start.
 	pidsLimit = "4096"
@@ -184,59 +186,100 @@ func (e *Engine) EnsureImage(ctx context.Context) error {
 	return nil
 }
 
-// Run creates the container spec describes, streams its combined output to
-// out from the first byte, waits for it, and removes it. It returns the
-// container's exit code from docker wait. Removal always runs, with a fresh
-// bounded context; when it cannot be confirmed, Run returns a *CleanupError
-// and the caller must keep the container's mounted directories.
-func (e *Engine) Run(ctx context.Context, spec ContainerSpec, out io.Writer) (exitCode int, err error) {
-	defer func() {
-		if rmErr := e.Remove(spec.Name); rmErr != nil {
-			err = errors.Join(err, rmErr)
-		}
-	}()
+// Create creates the container spec describes without starting it. It
+// returns nil only when docker create exited 0, which means the engine
+// answered that the container exists. A caller records spec.Name before
+// calling Create and may start the container only after a nil return.
+//
+// Once sent, the request is not abandoned when ctx ends: it gets
+// removeTimeout more to be answered, so a cancellation does not turn a
+// create the engine is completing into one whose outcome nobody observed.
+// Any error, including a create stopped at that bound, means the caller
+// cannot know whether the container exists or will still appear, and must
+// keep its name recorded.
+func (e *Engine) Create(ctx context.Context, spec ContainerSpec) error {
 	create, err := e.createArgs(spec)
 	if err != nil {
-		return -1, err
+		return err
 	}
+	answer, stop := answerContext(ctx, removeTimeout)
+	defer stop()
 	var stderr bytes.Buffer
-	if err := e.docker(ctx, io.Discard, &stderr, create...); err != nil {
-		return -1, fmt.Errorf("create container %s: %w: %s", spec.Name, err, strings.TrimSpace(stderr.String()))
+	if err := e.docker(answer, io.Discard, &stderr, create...); err != nil {
+		return fmt.Errorf("create container %s: %w: %s", spec.Name, err, strings.TrimSpace(stderr.String()))
 	}
+	return nil
+}
+
+// Start starts the container name that Create created, streams its
+// combined output to out from the first byte, waits for it to exit, and
+// returns its exit code from docker wait. A non-zero exit code is an
+// outcome, not an error. When ctx ends, the docker commands stop and Start
+// returns an error wrapping ctx's error; the container keeps whatever state
+// it reached, and the caller removes it with Remove.
+func (e *Engine) Start(ctx context.Context, name string, out io.Writer) (int, error) {
 	// docker start --attach streams the output. When the container exits
 	// non-zero, start exits with the same status; any other start failure
 	// means the stream, and so the captured evidence, is incomplete.
-	startErr := e.docker(ctx, out, out, "start", "--attach", spec.Name)
+	startErr := e.docker(ctx, out, out, "start", "--attach", name)
 	if startErr != nil && ctx.Err() != nil {
-		return -1, fmt.Errorf("run container %s: %w", spec.Name, ctx.Err())
+		return -1, fmt.Errorf("run container %s: %w", name, ctx.Err())
 	}
-	var waitOut bytes.Buffer
-	stderr.Reset()
-	if err := e.docker(ctx, &waitOut, &stderr, "wait", spec.Name); err != nil {
-		return -1, fmt.Errorf("wait for container %s: %w: %s", spec.Name, err, strings.TrimSpace(stderr.String()))
+	var waitOut, stderr bytes.Buffer
+	if err := e.docker(ctx, &waitOut, &stderr, "wait", name); err != nil {
+		return -1, fmt.Errorf("wait for container %s: %w: %s", name, err, strings.TrimSpace(stderr.String()))
 	}
 	code, err := strconv.Atoi(strings.TrimSpace(waitOut.String()))
 	if err != nil {
-		return -1, fmt.Errorf("container %s exit status %q: %w", spec.Name, waitOut.String(), err)
+		return -1, fmt.Errorf("container %s exit status %q: %w", name, waitOut.String(), err)
 	}
 	if startErr != nil && !mirrorsExit(startErr, code) {
-		return -1, fmt.Errorf("stream the output of container %s, which exited %d: %w", spec.Name, code, startErr)
+		return -1, fmt.Errorf("stream the output of container %s, which exited %d: %w", name, code, startErr)
 	}
 	return code, nil
 }
 
 // Remove force-removes the named container with a fresh context bounded by
-// removeTimeout. A container that does not exist counts as removed. Any
-// other failure is a *CleanupError.
+// removeTimeout, so it runs after the cancellation that triggered it. It
+// returns nil when docker rm --force exited 0, which says only that the
+// command ran: rm --force can exit 0 for a container that does not exist. A
+// nil result therefore never proves the container is gone; callers confirm
+// absence with List. Any other exit is a *CleanupError.
 func (e *Engine) Remove(name string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), removeTimeout)
 	defer cancel()
 	var stderr bytes.Buffer
-	err := e.docker(ctx, io.Discard, &stderr, "rm", "--force", name)
-	if err == nil || strings.Contains(stderr.String(), "No such container") {
-		return nil
+	if err := e.docker(ctx, io.Discard, &stderr, "rm", "--force", name); err != nil {
+		return &CleanupError{Name: name, Err: fmt.Errorf("%w: %s", err, strings.TrimSpace(stderr.String()))}
 	}
-	return &CleanupError{Name: name, Err: fmt.Errorf("%w: %s", err, strings.TrimSpace(stderr.String()))}
+	return nil
+}
+
+// List returns the names of the containers, in every state, that carry the
+// surla.check label of operation op, from docker container ls --all filtered
+// by that label. Like Remove it uses a fresh context bounded by
+// removeTimeout. A nil error means the listing completed; callers compare
+// the names exactly, and a name missing from them is a container the engine
+// did not list at that moment. A container whose create was never answered
+// may still appear later, so its absence proves nothing about it. Any
+// failure returns an error and proves nothing about which containers exist.
+func (e *Engine) List(op string) ([]string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), removeTimeout)
+	defer cancel()
+	var out, stderr bytes.Buffer
+	if err := e.docker(ctx, &out, &stderr, "container", "ls", "--all", "--filter", "label="+checkLabel+"="+op, "--format", "{{.Names}}"); err != nil {
+		return nil, fmt.Errorf("list the containers of operation %s: %w: %s", op, err, strings.TrimSpace(stderr.String()))
+	}
+	names := []string{}
+	for _, line := range strings.Split(out.String(), "\n") {
+		// A container with several names lists them comma-separated.
+		for _, name := range strings.Split(strings.TrimSpace(line), ",") {
+			if name != "" {
+				names = append(names, name)
+			}
+		}
+	}
+	return names, nil
 }
 
 // Error implements error.
@@ -254,6 +297,21 @@ func (e *CleanupError) Unwrap() error {
 // DOCKER_CONTEXT when the operator set them.
 func operatorEnv() []string {
 	return os.Environ()
+}
+
+// answerContext returns a context for a request that must not be abandoned
+// the moment ctx ends: it ends grace after ctx does, or when stop is called.
+// Create uses it so a create already sent can still be answered.
+func answerContext(ctx context.Context, grace time.Duration) (context.Context, context.CancelFunc) {
+	answer, cancel := context.WithCancel(context.WithoutCancel(ctx))
+	stopAfter := context.AfterFunc(ctx, func() {
+		timer := time.AfterFunc(grace, cancel)
+		context.AfterFunc(answer, func() { timer.Stop() })
+	})
+	return answer, func() {
+		stopAfter()
+		cancel()
+	}
 }
 
 // runDocker is the production commandFunc.

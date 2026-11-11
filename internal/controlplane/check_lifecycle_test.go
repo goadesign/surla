@@ -146,7 +146,7 @@ func TestCheckFailuresReturnReadableOutput(t *testing.T) {
 						require.True(t, ok)
 						assert.Contains(t, saved.String(), output)
 						assert.DirExists(t, filepath.Join(opDir, "src"))
-						assert.Equal(t, []string{name}, readOwnerRecord(t, opDir).Containers)
+						assert.Equal(t, []ownedContainer{{Name: name, State: stateCreationAnswered}}, readOwnerRecord(t, opDir).Containers)
 						assert.Equal(t, 1, daemon.removeCount(name))
 					} else {
 						assert.NoDirExists(t, filepath.Join(opDir, "src"))
@@ -491,7 +491,7 @@ func TestCheckOperationsRecoveryAndRetainedOwner(t *testing.T) {
 		for _, sub := range []string{"src", "modcache", "work-0", "docker-config"} {
 			assert.DirExists(t, filepath.Join(pA.opDir, sub))
 		}
-		assert.Equal(t, checkOwner{Docker: dockerBin, Host: recordedDaemon.hostURI, Containers: []string{pA.name}}, readOwnerRecord(t, pA.opDir))
+		assert.Equal(t, checkOwner{Version: ownerVersion, Docker: dockerBin, Host: recordedDaemon.hostURI, Containers: []ownedContainer{{Name: pA.name, State: stateCreationAnswered}}}, readOwnerRecord(t, pA.opDir))
 
 		// A separate server on cardsB sharing workspace never retries pA.cp's container.
 		cpB := openCheckCP(t, cardsB, workspace)
@@ -685,47 +685,34 @@ func testConcurrentCheckAndUpdate(t *testing.T, daemon *fakeDockerDaemon) {
 }
 
 // testTwoServerUpdateContention runs UpdateDependencies concurrently on two
-// distinct servers bound to the same workspace, holding srvA inside writeAtomic
-// (while srvA holds the live directory flock) until srvB attempts publication.
-// Every wait is bounded by ctx and early worker completion, and LIFO cleanup
-// drains both workers and both servers before restoring fsyncDir.
+// distinct servers bound to the same workspace, holding srvA's check helper
+// inside writeAtomic (while it holds the live directory flock) until srvB
+// attempts publication. The hold is the publish gate of TestMain's check-run
+// role. Every wait is bounded by ctx and early worker completion, and the
+// gate is released before the servers close.
 func testTwoServerUpdateContention(t *testing.T, daemon *fakeDockerDaemon) {
 	t.Helper()
 	workspace := newShopModule(t, map[string]string{"go.sum": "initial-sum\n"})
-	priorFsync := fsyncDir
-	// Registered before newCheckTestServer so LIFO teardown restores fsyncDir
-	// last, after client workers, httptest servers, and checkOps have all exited.
-	t.Cleanup(func() { fsyncDir = priorFsync })
-
 	srvA := newCheckTestServer(t, Options{WorkspaceDir: workspace})
 	srvB := newCheckTestServer(t, Options{WorkspaceDir: workspace})
+	// Registered after the servers so LIFO teardown releases a held helper
+	// before the servers wait for their operations.
+	gate := newPublishGate(t)
 	ctx, cancel := context.WithTimeout(t.Context(), lifecycleWaitTimeout)
-	bothTidying, srvAInWrite := make(chan struct{}), make(chan struct{})
+	bothTidying := make(chan struct{})
 	srvADone, srvBDone := make(chan struct{}), make(chan struct{})
 	var (
 		tidyMu      sync.Mutex
 		tidyEntered int
-		once        sync.Once
 		resA, resB  *gensurla.UpdateDependenciesResult
 		errA, errB  error
 		wg          sync.WaitGroup
 	)
 	t.Cleanup(func() {
 		cancel()
+		assert.NoError(t, gate.release())
 		wg.Wait()
 	})
-
-	fsyncDir = func(fd int) error {
-		once.Do(func() {
-			close(srvAInWrite)
-			select {
-			case <-srvADone:
-			case <-srvBDone:
-			case <-ctx.Done():
-			}
-		})
-		return priorFsync(fd)
-	}
 
 	daemon.setOnStart(func(c *recordedContainer) (string, string, int) {
 		srcMount := findMount(t, c, workspace)
@@ -750,7 +737,7 @@ func testTwoServerUpdateContention(t *testing.T, daemon *fakeDockerDaemon) {
 		}
 		assert.NoError(t, os.WriteFile(filepath.Join(srcMount.Source, "go.sum"), []byte("sum-from-b\n"), 0o644))
 		select {
-		case <-srvAInWrite:
+		case <-gate.held:
 		case <-srvADone:
 		case <-ctx.Done():
 			return "", "context canceled waiting for srvA write lock\n", 1
@@ -769,12 +756,16 @@ func testTwoServerUpdateContention(t *testing.T, daemon *fakeDockerDaemon) {
 		defer close(srvBDone)
 		resB, errB = srvB.httpClient.UpdateDependencies(ctx)
 	}()
-	for _, done := range []<-chan struct{}{srvADone, srvBDone} {
-		select {
-		case <-done:
-		case <-ctx.Done():
-			require.FailNowf(t, "timed out waiting for contending update_dependencies calls", "ctx=%v", ctx.Err())
-		}
+	select {
+	case <-srvBDone:
+	case <-ctx.Done():
+		require.FailNowf(t, "timed out waiting for srvB's contending update_dependencies call", "ctx=%v", ctx.Err())
+	}
+	require.NoError(t, gate.release())
+	select {
+	case <-srvADone:
+	case <-ctx.Done():
+		require.FailNowf(t, "timed out waiting for srvA's update_dependencies call", "ctx=%v", ctx.Err())
 	}
 	require.NoError(t, errA)
 	require.NoError(t, errB)

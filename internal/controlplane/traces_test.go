@@ -60,7 +60,7 @@ func TestCloseKeepsTracingUntilCheckRequestEnds(t *testing.T) {
 	}
 	tp := sdktrace.NewTracerProvider(sdktrace.WithSyncer(exported))
 	cp, err := New(Options{
-		CardsDir: cardsDir, Checker: candidate.NewContainerRunner(), CheckTimeout: time.Minute,
+		CardsDir: cardsDir, Checker: candidate.NewContainerRunner(), CheckHelper: testCheckHelper(t), CheckTimeout: time.Minute,
 		TracerProvider: tp,
 	})
 	require.NoError(t, err)

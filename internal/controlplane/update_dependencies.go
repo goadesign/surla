@@ -32,6 +32,9 @@ var (
 	// safely: it is a symlink, not a regular file, or changed during the
 	// call.
 	errManifestConflict = errors.New("manifest conflict")
+	// errPublicationCanceled reports a changed manifest that was not written
+	// because the operation was canceled or ran out of time first.
+	errPublicationCanceled = errors.New("the operation was canceled or exceeded -check-timeout before writing it")
 	// fsyncDir makes a rename durable; tests replace it to inject a failure
 	// after the rename succeeded.
 	fsyncDir = unix.Fsync
@@ -39,10 +42,12 @@ var (
 
 // UpdateDependencies runs go mod tidy for every Go module of the active
 // workspace in a protected copy, populates go.work.sum when the copy has a
-// go.work, and publishes only the changed manifests. Modules are published
-// one at a time with Go's normal partial semantics. Once a manifest is
-// replaced, later failures are reported next to the written paths, never
-// instead of them. It requires an authenticated principal.
+// go.work, and publishes only the changed manifests. The work runs in a
+// check helper process that finishes and cleans up the operation even if
+// this server dies. Modules are published one at a time with Go's normal
+// partial semantics. Once a manifest is replaced, later failures are
+// reported next to the written paths, never instead of them. It requires an
+// authenticated principal.
 func (c *ControlPlane) UpdateDependencies(ctx context.Context) (res *gensurla.UpdateDependenciesResult, retErr error) {
 	if _, ok := PrincipalFromContext(ctx); !ok {
 		return nil, errors.New("authenticated principal is required")
@@ -58,13 +63,28 @@ func (c *ControlPlane) UpdateDependencies(ctx context.Context) (res *gensurla.Up
 	}()
 	ctx, cancel := c.checkDeadline(ctx)
 	defer cancel()
-	op, err := c.startCheckOperation(ctx)
+	result, err := c.runCheckHelper(ctx, checkToolDependencies)
 	if err != nil {
+		return nil, err
+	}
+	return result.Update, nil
+}
+
+// updateDependencies runs update_dependencies' operation inside the check
+// helper: it prepares the operation, runs go mod tidy (and go list -deps
+// -test ./... when the copy has a go.work) for every module, publishes the
+// changed manifests of the modules that succeeded unless the operation was
+// canceled first, and finishes the operation directory. A cancellation that
+// stops publication before any file was written is an error; one that
+// stops it after some files were written leaves them reported with the
+// files that were not.
+func (op *checkOperation) updateDependencies(ctx context.Context) (*gensurla.UpdateDependenciesResult, error) {
+	if err := op.start(ctx); err != nil {
 		return nil, err
 	}
 	var failures []moduleOutcome
 	for _, mod := range op.copy.modules {
-		if f, ok, err := op.runGo(ctx, mod, "tidy", "bridge", false, op.c.goProxyEnv, "mod", "tidy"); err != nil {
+		if f, ok, err := op.runGo(ctx, mod, "tidy", "bridge", false, op.goProxyEnv, "mod", "tidy"); err != nil {
 			return nil, op.finish(err)
 		} else if !ok {
 			failures = append(failures, f)
@@ -72,26 +92,23 @@ func (c *ControlPlane) UpdateDependencies(ctx context.Context) (res *gensurla.Up
 	}
 	if op.hasGoWork() {
 		for _, mod := range op.copy.modules {
-			if f, ok, err := op.runGo(ctx, mod, "download", "bridge", false, op.c.goProxyEnv, "list", "-deps", "-test", "./..."); err != nil {
+			if f, ok, err := op.runGo(ctx, mod, "download", "bridge", false, op.goProxyEnv, "list", "-deps", "-test", "./..."); err != nil {
 				return nil, op.finish(err)
 			} else if !ok {
 				failures = append(failures, f)
 			}
 		}
 	}
-	written, notes := op.publishManifests(ctx, failures)
-	if len(written) > 0 {
-		fmt.Fprintf(op.out, "==> wrote: %s\n", strings.Join(written, ", "))
-	}
-	for _, n := range notes {
-		fmt.Fprintf(op.out, "note: %s\n", n)
+	written, notes, canceled := op.publishManifests(ctx, failures)
+	if canceled && len(written) == 0 {
+		return nil, op.finish(fmt.Errorf("check exceeded -check-timeout (%s) or was canceled before writing the dependency files; nothing was written: %w", op.checkTimeout, ctx.Err()))
 	}
 	warning := ""
 	if err := op.finish(nil); err != nil {
 		if len(written) == 0 {
 			return nil, err
 		}
-		span.RecordError(err)
+		trace.SpanFromContext(ctx).RecordError(err)
 		warning = clipText(fmt.Sprintf(" The files were written, but finishing the operation failed: %v.", err), maxCleanupWarningBytes)
 	}
 	return &gensurla.UpdateDependenciesResult{
@@ -112,10 +129,17 @@ func (op *checkOperation) hasGoWork() bool {
 }
 
 // publishManifests writes each changed manifest of every module whose tidy
-// succeeded, plus changed go.work.sum files, to the live grant. It returns
-// an initialized list of workspace-relative paths written and one note per
-// refused file or per written file whose write could not be made durable.
-func (op *checkOperation) publishManifests(ctx context.Context, failures []moduleOutcome) ([]string, []string) {
+// succeeded, plus changed go.work.sum files, to the live grant, one file at
+// a time. Before each file it checks ctx: once the operation is canceled no
+// new file is written, while a write already begun finishes. Each file
+// written or refused is logged to the output as it happens, so the output
+// stays truthful if the helper is killed between files. It returns an
+// initialized list of workspace-relative paths written, one note per file
+// refused, not written because of the cancellation, or written without
+// being made durable, and whether the cancellation stopped any file. A
+// cancellation can leave a module with its new go.mod and its old go.sum;
+// the result reports both.
+func (op *checkOperation) publishManifests(ctx context.Context, failures []moduleOutcome) ([]string, []string, bool) {
 	failed := map[string]bool{}
 	for _, f := range failures {
 		failed[f.dir] = true
@@ -138,35 +162,50 @@ func (op *checkOperation) publishManifests(ctx context.Context, failures []modul
 	span := trace.SpanFromContext(ctx)
 	written := []string{}
 	var notes []string
+	canceled := false
 	for _, rel := range candidates {
-		replaced, err := op.publishManifest(rel)
+		replaced, err := op.publishManifest(ctx, rel)
 		wsRel, relErr := filepath.Rel(op.workspaceRel, rel)
 		if relErr != nil {
 			wsRel = rel
 		}
+		note := ""
 		switch {
 		case replaced && err != nil:
 			written = append(written, wsRel)
-			notes = append(notes, fmt.Sprintf("%s was written, but making the write durable failed: %v", wsRel, err))
+			note = fmt.Sprintf("%s was written, but making the write durable failed: %v", wsRel, err)
 			span.AddEvent("manifest_written", trace.WithAttributes(attribute.String("surla.check.path", wsRel), attribute.String("surla.check.warning", err.Error())))
 		case replaced:
 			written = append(written, wsRel)
 			span.AddEvent("manifest_written", trace.WithAttributes(attribute.String("surla.check.path", wsRel)))
+		case errors.Is(err, errPublicationCanceled):
+			canceled = true
+			note = fmt.Sprintf("%s was not written: %v", wsRel, err)
+			span.AddEvent("manifest_not_written", trace.WithAttributes(attribute.String("surla.check.path", wsRel), attribute.String("surla.check.reason", err.Error())))
 		case err != nil:
-			notes = append(notes, fmt.Sprintf("%s was not written: %v", wsRel, err))
+			note = fmt.Sprintf("%s was not written: %v", wsRel, err)
 			span.AddEvent("manifest_refused", trace.WithAttributes(attribute.String("surla.check.path", wsRel), attribute.String("surla.check.reason", err.Error())))
 		}
+		if replaced {
+			fmt.Fprintf(op.out, "==> wrote: %s\n", wsRel)
+		}
+		if note != "" {
+			notes = append(notes, note)
+			fmt.Fprintf(op.out, "note: %s\n", note)
+		}
 	}
-	return written, notes
+	return written, notes, canceled
 }
 
 // publishManifest compares the copy's bytes of the grant-relative manifest
 // rel with the bytes read from the live file during the copy, and writes the
-// new bytes to the live file when they differ. Both sides are opened
-// through held directory descriptors without following a link; the live
-// side starts from the held workspace or grant. It reports whether the live
-// file was replaced: true with an error means the new bytes are in place but
-// the write could not be made durable.
+// new bytes to the live file when they differ, unless ctx has ended: a
+// changed file is then not written, and the error wraps
+// errPublicationCanceled. Both sides are opened through held directory
+// descriptors without following a link; the live side starts from the held
+// workspace or grant. It reports whether the live file was replaced: true
+// with an error means the new bytes are in place but the write could not be
+// made durable.
 //
 // The live comparison and the replacement run under an exclusive,
 // non-blocking flock of the live directory, so two update_dependencies
@@ -175,7 +214,7 @@ func (op *checkOperation) publishManifests(ctx context.Context, failures []modul
 // and calls again. An editor that does not take that lock can still write
 // the file between the comparison and the rename; edits made before the
 // comparison are always detected and kept.
-func (op *checkOperation) publishManifest(rel string) (bool, error) {
+func (op *checkOperation) publishManifest(ctx context.Context, rel string) (bool, error) {
 	after, afterOK, err := readNoFollow(op.path("src"), rel)
 	if err != nil {
 		return false, err
@@ -184,6 +223,26 @@ func (op *checkOperation) publishManifest(rel string) (bool, error) {
 	if !afterOK || (beforeOK && bytes.Equal(before, after)) {
 		return false, nil
 	}
+	if err := ctx.Err(); err != nil {
+		return false, fmt.Errorf("%w: %w", errPublicationCanceled, err)
+	}
+	_, span := checkTracer(ctx).Start(ctx, "surla.check.publish_manifest", trace.WithAttributes(attribute.String("surla.check.path", rel)))
+	replaced, err := op.replaceManifest(rel, before, beforeOK, after)
+	span.SetAttributes(attribute.Bool("surla.check.replaced", replaced))
+	if err != nil && !replaced {
+		span.AddEvent("manifest_refused", trace.WithAttributes(attribute.String("surla.check.reason", err.Error())))
+		span.End()
+		return false, err
+	}
+	endCheckSpan(span, err)
+	return replaced, err
+}
+
+// replaceManifest replaces the live manifest rel with after under the
+// directory's flock when the live bytes still equal before (or the file is
+// still absent when beforeOK is false). It reports whether the rename
+// happened; see publishManifest.
+func (op *checkOperation) replaceManifest(rel string, before []byte, beforeOK bool, after []byte) (bool, error) {
 	dirFD, err := op.liveDirAt(path.Dir(rel))
 	if err != nil {
 		return false, err
