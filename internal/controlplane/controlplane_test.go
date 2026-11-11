@@ -186,6 +186,53 @@ func TestProposeChangeAutoConfirmsACardWithoutQuestions(t *testing.T) {
 	assert.Equal(t, `{"design/design.go":"package design // refunds\n"}`, stored.designSource)
 }
 
+// TestProposeChangeRecordsTheDesignSourceItWasMadeAgainst verifies the design
+// source a card records and hashes into request_revision: none when the
+// caller sends none and no workspace is bound, design_source byte for byte
+// when sent (whitespace included), none for a bound workspace without
+// design/*.go (so the card does not block init_project), and the bound
+// workspace's design/*.go as a JSON object with HTML characters unescaped.
+func TestProposeChangeRecordsTheDesignSourceItWasMadeAgainst(t *testing.T) {
+	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
+	whitespace := "  \n\t"
+	emptyWorkspace := t.TempDir()
+	designWorkspace := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(designWorkspace, "design"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(designWorkspace, "design", "design.go"), []byte("package design // a < b && c > d\n"), 0o644))
+	for _, tc := range []struct {
+		name       string
+		workspace  string
+		design     *string
+		wantSource string
+		wantOrigin string
+	}{
+		{"no design and no workspace", "", nil, "", sourceOriginSupplied},
+		{"whitespace design_source kept as sent", "", &whitespace, whitespace, sourceOriginSupplied},
+		{"workspace without design files", emptyWorkspace, nil, "", sourceOriginWorkspace},
+		{"workspace design files", designWorkspace, nil, `{"design/design.go":"package design // a < b && c > d\n"}`, sourceOriginWorkspace},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cp := newControlPlane(t, Options{CardsDir: t.TempDir(), WorkspaceDir: tc.workspace})
+			card, err := cp.ProposeChange(alice, &gensurla.ProposeChangePayload{
+				ChangeID: "chg", Prompt: "Refunds up to $50 are instant.", DesignSource: tc.design,
+				Analysis: refundAnalysis("Refunds up to $50 are instant."),
+			})
+			require.NoError(t, err)
+			stored, ok, err := cp.cards.load("chg")
+			require.NoError(t, err)
+			require.True(t, ok)
+			assert.Equal(t, tc.wantSource, stored.designSource)
+			assert.Equal(t, tc.wantOrigin, stored.sourceOrigin)
+			rev, err := computeCanonicalRevision(stored.card, "alice@example.com", tc.wantSource)
+			require.NoError(t, err)
+			assert.Equal(t, rev, card.RequestRevision, "request_revision covers the recorded design source")
+			blocked, err := cp.cards.hasWorkspaceCardsWithFiles()
+			require.NoError(t, err)
+			assert.Equal(t, tc.workspace == designWorkspace, blocked, "only a card that recorded workspace design files blocks init_project")
+		})
+	}
+}
+
 // TestChangeAnalysisIsRejectedAtTheBoundary verifies that the MCP and HTTP
 // entries reject an analysis that breaks a structural rule (a missing
 // analysis, a blank or missing required field, a null list element, too few

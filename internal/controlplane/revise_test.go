@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"sync"
 	"testing"
 
@@ -205,6 +206,97 @@ func TestReviseChangeOverHTTPAndMCP(t *testing.T) {
 	require.NoError(t, json.Unmarshal(complete.StructuredContent, &mcpCard))
 	assert.Equal(t, StatusNeedsConfirmation, mcpCard.Status)
 	assert.Equal(t, "Refunds up to $150 are instant via MCP.", mcpCard.Summary)
+}
+
+// TestReviseChangeSavesARevisionThatOnlyItsContentDetermines verifies what a
+// revision keeps and drops: it enters needs_confirmation and clears answers,
+// confirmed_by and a recorded approval, numbers its questions afresh from 01,
+// binds its ui_composition to its own request_revision, and gets the same
+// request_revision as an earlier revision whose saved content it repeats
+// exactly, because request_revision is a digest of that content alone.
+func TestReviseChangeSavesARevisionThatOnlyItsContentDetermines(t *testing.T) {
+	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
+	cp := newControlPlane(t, Options{})
+
+	// A confirmed card with a recorded approval loses both on revision.
+	approved := saveCard(t, cp, &gensurla.ApprovalItem{
+		ApprovedBy: "alice@example.com", ReportDigest: strings.Repeat("d", 64), CandidateCommit: strings.Repeat("c", 40),
+		SuiteID: "orders", SuiteCommit: strings.Repeat("b", 40), Environment: "sim",
+		Artifacts: map[string]string{"orders": strings.Repeat("e", 64)}, ScenarioCount: 1,
+	})
+	kept := approved.Examples[0].ID
+	revised, err := cp.ReviseChange(alice, &gensurla.ReviseChangePayload{
+		ChangeID: "chg", RequestRevision: approved.RequestRevision, Prompt: "Refunds up to $60 are instant.",
+		Analysis: &gensurla.CP1RevisionAnalysis{
+			Summary:     "Refunds up to $60 are instant.",
+			Ambiguities: []*gensurla.CP1AnalysisAmbiguity{},
+			Examples: []*gensurla.CP1RevisionAnalysisExample{{
+				PriorID: &kept, Scenario: "Refund at the limit", InputSummary: "Order total $60.00",
+				ExpectedOutcome: "Instant store credit", VerificationKind: "deterministic",
+			}},
+			RemovedExampleIds:  []string{},
+			PreservedBehaviors: []string{},
+		},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, StatusNeedsConfirmation, revised.Status, "a revision without open questions still needs confirmation")
+	assert.Nil(t, revised.ConfirmedBy)
+	assert.Empty(t, revised.Answers)
+	assert.Nil(t, revised.Approval)
+	assert.Nil(t, revised.UnverifiedApproval)
+	stored, ok, err := cp.cards.load("chg")
+	require.NoError(t, err)
+	require.True(t, ok)
+	assert.Nil(t, stored.card.Approval, "the saved revision carries no approval")
+
+	// R1 -> R2 -> R3, where R3 repeats R1's content exactly.
+	question := func(q string) []*gensurla.CP1AnalysisAmbiguity {
+		return []*gensurla.CP1AnalysisAmbiguity{{Question: q, Options: []string{"item_subtotal", "order_total"}}}
+	}
+	r1 := mustPropose(t, cp, alice, "rev", "Refunds up to $50 are instant.", refundAnalysis("Refunds up to $50 are instant.", question("Is the limit the item subtotal or the order total?")[0]))
+	require.Equal(t, StatusNeedsConfirmation, r1.Status)
+	check01 := "check_01"
+	program := `root = DecisionWorkspace("Refund limit", [choice])
+choice = AmbiguityChoiceCard(1, "Shipping changes who waits")`
+	r2, err := cp.ReviseChange(alice, &gensurla.ReviseChangePayload{
+		ChangeID: "rev", RequestRevision: r1.RequestRevision, Prompt: "Refunds up to $50 are instant; shipping is open.",
+		Analysis: &gensurla.CP1RevisionAnalysis{
+			Summary:     "Refunds up to $50 are instant; whether shipping counts is open.",
+			Ambiguities: question("Does shipping count toward the limit?"),
+			Examples: []*gensurla.CP1RevisionAnalysisExample{{
+				PriorID: &check01, Scenario: "Refund at the limit", InputSummary: "Order total $50.00",
+				ExpectedOutcome: "Instant store credit", VerificationKind: "deterministic",
+			}},
+			RemovedExampleIds:  []string{},
+			PreservedBehaviors: []string{"Cross-tenant order lookups return 404 Not Found."},
+			UIComposition:      &program,
+		},
+	})
+	require.NoError(t, err)
+	require.Len(t, r2.Ambiguities, 1)
+	assert.Equal(t, "rev-ambiguity-01", r2.Ambiguities[0].ID, "a revision numbers its questions afresh")
+	assert.Equal(t, "Does shipping count toward the limit?", r2.Ambiguities[0].Question)
+	require.NotNil(t, r2.UIComposition)
+	assert.Equal(t, program, r2.UIComposition.Program)
+	assert.Equal(t, r2.RequestRevision, r2.UIComposition.ComposedForRevision, "the composition is bound to the revision it was sent with")
+	assert.NotEqual(t, r1.RequestRevision, r2.RequestRevision)
+
+	r3, err := cp.ReviseChange(alice, &gensurla.ReviseChangePayload{
+		ChangeID: "rev", RequestRevision: r2.RequestRevision, Prompt: r1.Prompt,
+		Analysis: &gensurla.CP1RevisionAnalysis{
+			Summary:     r1.Summary,
+			Ambiguities: question(r1.Ambiguities[0].Question),
+			Examples: []*gensurla.CP1RevisionAnalysisExample{{
+				PriorID: &check01, Scenario: r1.Examples[0].Scenario, InputSummary: r1.Examples[0].InputSummary,
+				ExpectedOutcome: r1.Examples[0].ExpectedOutcome, VerificationKind: r1.Examples[0].VerificationKind,
+			}},
+			RemovedExampleIds:  []string{},
+			PreservedBehaviors: r1.PreservedBehaviors,
+		},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, r1.RequestRevision, r3.RequestRevision, "request_revision is a digest of the card's content alone")
+	assert.Nil(t, r3.UIComposition, "a revision sent without a composition carries none")
 }
 
 // TestReviseChangeConcurrentRevisionsSaveOnlyOne starts several revisions of
