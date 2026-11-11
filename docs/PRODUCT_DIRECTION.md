@@ -105,6 +105,11 @@ this step.
   refund over the limit, a manager approves it, and the refund is paid.
   Each flow results in an end-to-end test of the built platform. An agent
   that did not write the platform code writes the tests.
+- **Finished flows are built; drafts wait.** Surla builds and tests the
+  flows that are finished. A flow that is still a draft stays editable, is
+  left out of that build, and is clearly shown as untested. A draft does
+  not stop the finished flows from being built, and the user never has to
+  delete a draft idea to build.
 - **It leads to the architecture.** Open questions on the timeline become
   the choices Surla raises, unless the playbook already settles them. How
   the notes group suggests where boundaries could go; the user and the
@@ -184,9 +189,15 @@ well as application code.
   conventions the repository already has.
 - **Surla can produce Terraform.** It is written the way service code is,
   and checked independently of the agent that wrote it.
-- **Deployment is separate and explicit.** Surla does not apply
-  infrastructure or deploy. Recording an approval does not merge, deploy or
-  apply anything.
+- **Deployment is separate and explicit.** Surla does not run
+  `terraform plan`, apply infrastructure or deploy. Planning, applying and
+  the credentials they need stay with the user. Recording an approval does
+  not merge, deploy or apply anything.
+- **A deployed copy can be checked, never created.** The user deploys the
+  platform however they choose and gives Surla its address. Surla runs the
+  same flow tests there and reports the result under that environment's own
+  name, for example "Checked in staging" beside "Checked in simulation".
+  Surla does not start or provision that environment.
 
 ### One workspace
 
@@ -239,9 +250,11 @@ diagram.
 
 ## Open questions
 
-- **Who runs `terraform plan`.** Planning against a cloud account needs
-  that account's credentials. Whether Surla runs it with credentials the
-  user supplies, or the user runs it, is not decided.
+- **Testing a deployed copy.** Running the flow tests against an address
+  the user supplies is decided; how is not. A test such as a refund could
+  have real effects there, outside services are real instead of simulated,
+  and Surla needs a way to call the platform's API in that environment.
+  None of these is decided.
 - **Story vocabulary and links.** The Story's Go DSL vocabulary, what
   marks the start and end of a flow, and how a step stays linked to the
   design elements and tests that implement it are not decided.
