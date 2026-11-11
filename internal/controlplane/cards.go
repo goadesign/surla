@@ -145,7 +145,9 @@ func PrepareCardSnapshot(legacyCardsDir, stageCardsDir string) (releaseLock func
 		}
 		f := heldLock
 		heldLock = nil
-		return f.Close()
+		// A forked child may still hold a copy before exec closes it. Release
+		// this owner's lock now rather than waiting for the last descriptor.
+		return errors.Join(syscall.Flock(int(f.Fd()), syscall.LOCK_UN), f.Close())
 	}
 	defer func() {
 		if err != nil {
@@ -254,7 +256,9 @@ func (s *cardStore) close() error {
 	if s.lock == nil {
 		return nil
 	}
-	err := s.lock.Close()
+	// A child between fork and exec can still hold a duplicate descriptor.
+	// The store owns the lock lifetime, so release it before closing our copy.
+	err := errors.Join(syscall.Flock(int(s.lock.Fd()), syscall.LOCK_UN), s.lock.Close())
 	s.lock = nil
 	return err
 }

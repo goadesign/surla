@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 
 	gensurla "github.com/goadesign/surla/gen/surla"
@@ -93,6 +94,31 @@ func TestCardsDirectoryIsHeldByOneControlPlane(t *testing.T) {
 
 	_, err = New(Options{})
 	assert.ErrorContains(t, err, "cards directory is required")
+}
+
+// TestCardStoreCloseReleasesDuplicatedLock checks the shutdown contract even
+// while another descriptor still refers to the lock, as happens between fork
+// and exec when an unrelated goroutine starts a child process.
+func TestCardStoreCloseReleasesDuplicatedLock(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	first, err := openCardStore(dir)
+	require.NoError(t, err)
+	t.Cleanup(func() { assert.NoError(t, first.close()) })
+	fd, err := syscall.Dup(int(first.lock.Fd()))
+	require.NoError(t, err)
+	duplicate := os.NewFile(uintptr(fd), "duplicated cards lock")
+	t.Cleanup(func() { assert.NoError(t, duplicate.Close()) })
+
+	_, err = openCardStore(dir)
+	require.ErrorContains(t, err, "is in use by another process")
+	require.NoError(t, first.close())
+
+	second, err := openCardStore(dir)
+	require.NoError(t, err, "Close releases the lock while the duplicate remains open")
+	t.Cleanup(func() { assert.NoError(t, second.close()) })
+	_, err = openCardStore(dir)
+	assert.ErrorContains(t, err, "is in use by another process", "the new writer still holds an exclusive lock")
 }
 
 // TestUnreadableCardsAreErrors checks that a saved card file that is not a
