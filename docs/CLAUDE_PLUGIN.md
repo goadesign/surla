@@ -38,7 +38,7 @@ You need:
 1. Install the `surla` command at the commit this page was written for:
 
    ```sh
-   go install github.com/goadesign/surla/cmd/surla@0fbab48e256e4c6a31b478ecac4e03609263e729
+   go install github.com/goadesign/surla/cmd/surla@998b5168621da29f6a6ae40e8eae1db88374af23
    ```
 
 2. Check that your shell finds it and that it has the `mcp` command:
@@ -96,7 +96,7 @@ session.
 
 **Another session already has the project open.** One Surla process at a time
 owns a project's Change Cards. A second one stops with
-`cards directory <path> is in use by another process`. Close the other
+`surla: cards directory <path> is in use by another process`. Close the other
 session, or keep working in it.
 
 **You have Change Cards saved under another owner.** `surla mcp` identifies you
