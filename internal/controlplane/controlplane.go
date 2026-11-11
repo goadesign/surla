@@ -128,10 +128,16 @@ type (
 		// the local Docker engine. When nil, both tools return
 		// not_implemented.
 		Checker *candidate.ContainerRunner
+		// CheckHelper starts the check helper process that runs each
+		// check_project and update_dependencies operation, so its containers
+		// are removed even if this server dies. It is required when Checker
+		// is set; the composition root binds it (see CheckHelper).
+		CheckHelper CheckHelper
 		// CheckTimeout bounds one whole check or dependency operation. It
 		// must be positive when Checker is set; New rejects zero or a
-		// negative value. Per-operation directories live under CardsDir,
-		// whose exclusive lock makes this server their only owner.
+		// negative value. Per-operation directories live under CardsDir; each
+		// is owned by the check helper that holds its lock, and this server's
+		// recovery acts on one only once that lock is free.
 		CheckTimeout time.Duration
 		// ImportedReports are the validated absolute original report paths
 		// recorded by -import-legacy-workspace; check copies never include
@@ -319,9 +325,14 @@ type (
 		initStageDir string
 		// checker is Options.Checker.
 		checker *candidate.ContainerRunner
+		// checkHelper is Options.CheckHelper.
+		checkHelper CheckHelper
 		// checkWorkDir is <cards dir>/check-work when Checker is set, the
 		// parent of per-operation directories; empty otherwise. The card
-		// store's exclusive lock makes this server its only owner.
+		// store's exclusive lock keeps other servers out of it; each
+		// operation directory is owned by the check helper that holds its
+		// lock, possibly started by an earlier server, and recovery acts on
+		// one only once that lock is free.
 		checkWorkDir string
 		// checkTimeout is Options.CheckTimeout.
 		checkTimeout time.Duration
@@ -330,7 +341,7 @@ type (
 		// goProxyEnv is Options.GoProxyEnv.
 		goProxyEnv []string
 		// checkOps counts running check operations so Close can wait for
-		// their containers to be removed.
+		// their check helpers to finish.
 		checkOps sync.WaitGroup
 		// newGenerator constructs a fresh scaffold.Generator for each
 		// InitProject call when non-nil.
@@ -494,6 +505,7 @@ func New(opts Options) (*ControlPlane, error) {
 		boundWorkspaceIno:      wsIno,
 		initStageDir:           initStageDir,
 		checker:                opts.Checker,
+		checkHelper:            opts.CheckHelper,
 		checkTimeout:           opts.CheckTimeout,
 		importedReports:        opts.ImportedReports,
 		goProxyEnv:             opts.GoProxyEnv,
@@ -512,6 +524,9 @@ func New(opts Options) (*ControlPlane, error) {
 	if opts.Checker != nil {
 		if opts.CheckTimeout <= 0 {
 			return nil, errors.Join(fmt.Errorf("check timeout must be positive, got %s", opts.CheckTimeout), cp.Close())
+		}
+		if opts.CheckHelper == nil {
+			return nil, errors.Join(errors.New("check operations need Options.CheckHelper when Options.Checker is set: they run in a helper process the composition root binds"), cp.Close())
 		}
 		cp.checkWorkDir = filepath.Join(cards.dir, "check-work")
 		if err := os.MkdirAll(cp.checkWorkDir, 0o700); err != nil {

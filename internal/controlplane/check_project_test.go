@@ -38,6 +38,9 @@ func newPublishOp(t *testing.T, grant string, before map[string][]byte) *checkOp
 	wsFD, err := syscall.Open(grant, openDirFlags, 0)
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, errors.Join(syscall.Close(fd), syscall.Close(wsFD))) })
+	out, err := newCapWriter(filepath.Join(dir, outputFile))
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, out.close()) })
 	return &checkOperation{
 		dir:          dir,
 		grantRoot:    grant,
@@ -45,6 +48,7 @@ func newPublishOp(t *testing.T, grant string, before map[string][]byte) *checkOp
 		workspaceFD:  wsFD,
 		workspaceRel: ".",
 		copy:         grantCopy{modules: []string{"."}, manifests: before},
+		out:          out,
 	}
 }
 
@@ -118,7 +122,7 @@ func TestPublishManifest(t *testing.T) {
 			if tc.mutate != nil {
 				tc.mutate(t, grant, src)
 			}
-			changed, err := op.publishManifest("go.sum")
+			changed, err := op.publishManifest(context.Background(), "go.sum")
 			if tc.wantErr != "" {
 				require.ErrorIs(t, err, errManifestConflict)
 				assert.Contains(t, err.Error(), tc.wantErr)
@@ -143,7 +147,7 @@ func TestPublishManifestRefusesLiveSymlinkAndKeepsItsTarget(t *testing.T) {
 	op := newPublishOp(t, grant, map[string][]byte{})
 	writeTree(t, op.path("src"), map[string]string{"go.sum": "tidy output\n"})
 
-	changed, err := op.publishManifest("go.sum")
+	changed, err := op.publishManifest(context.Background(), "go.sum")
 	require.ErrorIs(t, err, errManifestConflict)
 	assert.Contains(t, err.Error(), "is a symbolic link")
 	assert.False(t, changed)
@@ -168,7 +172,7 @@ func TestPublishManifestWritesThroughTheHeldGrant(t *testing.T) {
 	require.NoError(t, os.Rename(grant, moved))
 	writeTree(t, grant, map[string]string{"go.sum": "old\n"})
 
-	changed, err := op.publishManifest("go.sum")
+	changed, err := op.publishManifest(context.Background(), "go.sum")
 	require.NoError(t, err)
 	assert.True(t, changed)
 	got, err := os.ReadFile(filepath.Join(moved, "go.sum"))
@@ -197,7 +201,7 @@ func TestPublishManifestWritesThroughTheVerifiedNestedWorkspace(t *testing.T) {
 	require.NoError(t, os.Rename(filepath.Join(repo, "app"), filepath.Join(repo, "app-old")))
 	writeTree(t, repo, map[string]string{"app/go.sum": "old\n"})
 
-	changed, err := op.publishManifest("app/go.sum")
+	changed, err := op.publishManifest(context.Background(), "app/go.sum")
 	require.NoError(t, err)
 	assert.True(t, changed)
 	got, err := os.ReadFile(filepath.Join(repo, "app-old", "go.sum"))
@@ -335,16 +339,16 @@ func TestPublishManifestRefusesWhileAnotherWriterHoldsTheDirectory(t *testing.T)
 	holder, err := syscall.Open(grant, openDirFlags, 0)
 	require.NoError(t, err)
 	require.NoError(t, syscall.Flock(holder, syscall.LOCK_EX|syscall.LOCK_NB))
-	changed, err := second.publishManifest("go.sum")
+	changed, err := second.publishManifest(context.Background(), "go.sum")
 	require.ErrorIs(t, err, errManifestConflict)
 	assert.Contains(t, err.Error(), "another update_dependencies is writing the directory of go.sum")
 	assert.False(t, changed)
 	require.NoError(t, syscall.Close(holder))
 
-	changed, err = first.publishManifest("go.sum")
+	changed, err = first.publishManifest(context.Background(), "go.sum")
 	require.NoError(t, err)
 	assert.True(t, changed)
-	changed, err = second.publishManifest("go.sum")
+	changed, err = second.publishManifest(context.Background(), "go.sum")
 	require.ErrorIs(t, err, errManifestConflict)
 	assert.Contains(t, err.Error(), "changed during update_dependencies")
 	assert.False(t, changed)
@@ -393,7 +397,7 @@ func TestOutputKeepsMultiByteCharactersWhole(t *testing.T) {
 
 func TestCheckAdmissionIsOrderedWithClose(t *testing.T) {
 	cardsDir := filepath.Join(realTempDir(t), "cards")
-	cp, err := New(Options{CardsDir: cardsDir, Checker: candidate.NewContainerRunner(), CheckTimeout: time.Minute})
+	cp, err := New(Options{CardsDir: cardsDir, Checker: candidate.NewContainerRunner(), CheckHelper: testCheckHelper(t), CheckTimeout: time.Minute})
 	require.NoError(t, err)
 
 	// An admission is in progress (it holds the read lock between its
@@ -435,8 +439,6 @@ func TestCheckFinishPreservesFailureCauses(t *testing.T) {
 	for _, named := range []bool{false, true} {
 		for _, keepContainer := range []bool{false, true} {
 			t.Run(fmt.Sprintf("named=%t/keep_container=%t", named, keepContainer), func(t *testing.T) {
-				cp := &ControlPlane{}
-				cp.checkOps.Add(1)
 				dir := realTempDir(t)
 				require.NoError(t, os.Mkdir(filepath.Join(dir, "src"), 0o700))
 				out, err := newCapWriter(filepath.Join(dir, outputFile))
@@ -452,13 +454,13 @@ func TestCheckFinishPreservesFailureCauses(t *testing.T) {
 					cause = original
 				}
 				op := &checkOperation{
-					c: cp, id: strings.Repeat("ab", 16), dir: dir, out: out,
+					id: strings.Repeat("ab", 16), dir: dir, out: out,
 					grantFD: -1, workspaceFD: -1,
 				}
 				var cleanupErr *candidate.CleanupError
 				if keepContainer {
 					cleanupErr = &candidate.CleanupError{Name: "surla-check-" + op.id + "-0", Err: errors.New("removal failed")}
-					op.owner.Containers = []string{cleanupErr.Name}
+					op.owner.Containers = []ownedContainer{{Name: cleanupErr.Name, State: stateCreationAnswered}}
 					cause = errors.Join(cause, cleanupErr)
 				}
 				err = op.finish(cause)
@@ -498,7 +500,7 @@ func TestReadCheckOutputBudgetsTheTextTheCallerReceives(t *testing.T) {
 	// multi-byte characters and ASCII, read through the generated HTTP
 	// client so the budget is checked after transport.
 	raw := append(bytes.Repeat([]byte{0xff}, maxCheckMessageBytes), []byte(strings.Repeat("é", 5000)+"ok")...)
-	cp := newControlPlane(t, Options{Checker: candidate.NewContainerRunner(), CheckTimeout: time.Minute})
+	cp := newControlPlane(t, Options{Checker: candidate.NewContainerRunner(), CheckHelper: testCheckHelper(t), CheckTimeout: time.Minute})
 	id := strings.Repeat("ab", 16)
 	writeTree(t, filepath.Join(cp.checkWorkDir, id), map[string]string{
 		outputFile:     string(raw),
@@ -584,6 +586,15 @@ func TestRecoverCheckOperationsKeepsScratchItCannotAttribute(t *testing.T) {
 		{name: "remote engine", owner: `{"docker":"/usr/local/bin/docker","host":"tcp://build.example:2376","containers":[]}`, wantKept: true, wantError: "not a local engine endpoint"},
 		{name: "foreign container", owner: `{"docker":"/usr/local/bin/docker","host":"unix:///var/run/docker.sock","containers":["production-db"]}`, wantKept: true, wantError: "does not belong to operation"},
 		{name: "completed operation with no containers left", owner: `{"docker":"/usr/local/bin/docker","host":"unix:///var/run/docker.sock","containers":[]}`},
+		{name: "completed version 2 operation", owner: `{"version":2,"docker":"/usr/local/bin/docker","host":"unix:///var/run/docker.sock","containers":[]}`},
+		{name: "version 2 without containers", owner: `{"version":2,"docker":"/usr/local/bin/docker","host":"unix:///var/run/docker.sock"}`, wantKept: true, wantError: "containers is required"},
+		{name: "version 2 with names only", owner: `{"version":2,"docker":"/usr/local/bin/docker","host":"unix:///var/run/docker.sock","containers":["surla-check-efefefefefefefefefefefefefefefef-0"]}`, wantKept: true, wantError: "cannot unmarshal"},
+		{name: "version 2 with an unknown state", owner: `{"version":2,"docker":"/usr/local/bin/docker","host":"unix:///var/run/docker.sock","containers":[{"name":"surla-check-efefefefefefefefefefefefefefefef-0","state":"running"}]}`, wantKept: true, wantError: `state "running"`},
+		{name: "version 2 with an unknown entry field", owner: `{"version":2,"docker":"/usr/local/bin/docker","host":"unix:///var/run/docker.sock","containers":[{"name":"surla-check-efefefefefefefefefefefefefefefef-0","state":"unknown","pid":7}]}`, wantKept: true, wantError: "unknown field"},
+		{name: "version 2 with a name listed twice", owner: `{"version":2,"docker":"/usr/local/bin/docker","host":"unix:///var/run/docker.sock","containers":[{"name":"surla-check-efefefefefefefefefefefefefefefef-0","state":"unknown"},{"name":"surla-check-efefefefefefefefefefefefefefefef-0","state":"creation_answered"}]}`, wantKept: true, wantError: "listed twice"},
+		{name: "version 1 with entries", owner: `{"docker":"/usr/local/bin/docker","host":"unix:///var/run/docker.sock","containers":[{"name":"surla-check-efefefefefefefefefefefefefefefef-0","state":"unknown"}]}`, wantKept: true, wantError: "cannot unmarshal"},
+		{name: "unknown version", owner: `{"version":3,"docker":"/usr/local/bin/docker","host":"unix:///var/run/docker.sock","containers":[]}`, wantKept: true, wantError: "version 3 is not supported"},
+		{name: "foreign version 2 container", owner: `{"version":2,"docker":"/usr/local/bin/docker","host":"unix:///var/run/docker.sock","containers":[{"name":"production-db","state":"unknown"}]}`, wantKept: true, wantError: "does not belong to operation"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -629,7 +640,7 @@ func TestPublishManifestRefusesALinkedGoModInTheCopy(t *testing.T) {
 	require.NoError(t, os.MkdirAll(op.path("src/eval"), 0o755))
 	require.NoError(t, os.Symlink("../manifests/eval.mod", op.path("src/eval/go.mod")))
 
-	changed, err := op.publishManifest("eval/go.mod")
+	changed, err := op.publishManifest(context.Background(), "eval/go.mod")
 	require.ErrorIs(t, err, errManifestConflict)
 	assert.Contains(t, err.Error(), "is a symbolic link")
 	assert.False(t, changed)
@@ -683,13 +694,88 @@ func TestPublishManifestsReportsAWrittenFileWhoseSyncFailed(t *testing.T) {
 	fsyncDir = func(int) error { return syscall.EIO }
 	t.Cleanup(func() { fsyncDir = prior })
 
-	written, notes := op.publishManifests(context.Background(), nil)
+	written, notes, canceled := op.publishManifests(context.Background(), nil)
+	assert.False(t, canceled)
 	assert.Equal(t, []string{"go.sum"}, written, "a renamed file is reported written")
 	require.Len(t, notes, 1)
 	assert.Contains(t, notes[0], "go.sum was written, but making the write durable failed")
 	got, err := os.ReadFile(filepath.Join(grant, "go.sum"))
 	require.NoError(t, err)
 	assert.Equal(t, "new\n", string(got))
+}
+
+// TestPublishManifestsStopsBeforeEachFileOnceCanceled cancels publication
+// before the first file and between a module's go.mod and go.sum: no file
+// is begun after the cancellation, a file already written stays written,
+// and every file is reported, in the result and in the output, as written
+// or not written.
+func TestPublishManifestsStopsBeforeEachFileOnceCanceled(t *testing.T) {
+	cases := []struct {
+		name        string
+		cancelAfter int
+		wantWritten []string
+		wantLive    map[string]string
+	}{
+		{name: "canceled before the first file", cancelAfter: 0, wantWritten: []string{}, wantLive: map[string]string{"go.mod": "module example.com/shop\n", "go.sum": "old\n"}},
+		{name: "canceled between go.mod and go.sum", cancelAfter: 1, wantWritten: []string{"go.mod"}, wantLive: map[string]string{"go.mod": "module example.com/shop\n\nrequire example.com/x v1.0.0\n", "go.sum": "old\n"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			grant := realTempDir(t)
+			writeTree(t, grant, map[string]string{"go.mod": "module example.com/shop\n", "go.sum": "old\n"})
+			op := newPublishOp(t, grant, map[string][]byte{"go.mod": []byte("module example.com/shop\n"), "go.sum": []byte("old\n")})
+			writeTree(t, op.path("src"), map[string]string{"go.mod": "module example.com/shop\n\nrequire example.com/x v1.0.0\n", "go.sum": "new\n"})
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			if tc.cancelAfter == 0 {
+				cancel()
+			}
+			prior := fsyncDir
+			renames := 0
+			fsyncDir = func(fd int) error {
+				if renames++; renames == tc.cancelAfter {
+					cancel()
+				}
+				return prior(fd)
+			}
+			t.Cleanup(func() { fsyncDir = prior })
+
+			written, notes, canceled := op.publishManifests(ctx, nil)
+			assert.True(t, canceled)
+			assert.Equal(t, tc.wantWritten, written)
+			require.NotEmpty(t, notes)
+			assert.Contains(t, notes[len(notes)-1], "go.sum was not written: the operation was canceled or exceeded -check-timeout before writing it")
+			for name, want := range tc.wantLive {
+				assertFileContent(t, filepath.Join(grant, name), want)
+			}
+			logged, err := os.ReadFile(op.path(outputFile))
+			require.NoError(t, err)
+			for _, w := range written {
+				assert.Contains(t, string(logged), "==> wrote: "+w+"\n")
+			}
+			assert.Contains(t, string(logged), "note: go.sum was not written")
+		})
+	}
+}
+
+// TestNewRequiresACheckHelperWithAChecker checks that a control plane that
+// runs checks cannot be built without the launcher of its check helper.
+func TestNewRequiresACheckHelperWithAChecker(t *testing.T) {
+	_, err := New(Options{CardsDir: filepath.Join(realTempDir(t), "cards"), Checker: candidate.NewContainerRunner(), CheckTimeout: time.Minute})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "check operations need Options.CheckHelper")
+}
+
+// TestNewNeedsNoCheckHelperWithoutAChecker checks that a control plane that
+// does not run checks starts without a check helper, and that its check
+// tools then report not_implemented.
+func TestNewNeedsNoCheckHelperWithoutAChecker(t *testing.T) {
+	cp := newControlPlane(t, Options{CardsDir: filepath.Join(realTempDir(t), "cards")})
+	ctx := WithPrincipal(t.Context(), Principal{ID: "alice@example.com"})
+	_, err := cp.CheckProject(ctx)
+	assertServiceError(t, err, "not_implemented")
+	_, err = cp.UpdateDependencies(ctx)
+	assertServiceError(t, err, "not_implemented")
 }
 
 func TestCapWriterReportsWriteFailure(t *testing.T) {

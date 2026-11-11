@@ -204,6 +204,39 @@ func TestServeOptionsDerivesLiveTargetsFromVerification(t *testing.T) {
 	assert.Equal(t, []string{"PATH=/bin", "ANTHROPIC_API_KEY=k"}, opts.Live.Env, "serve's own bearer token never reaches a live target")
 }
 
+// TestServeOptionsBindsTheCheckHelperOnEveryServePath checks that both ways
+// surla serve finds its verification, an explicit -verification-config and
+// the workspace's starter, bind the check runner together with the launcher
+// of its check helper, `<this executable> check-run`, which each start of
+// surla serve already resolves before this change.
+func TestServeOptionsBindsTheCheckHelperOnEveryServePath(t *testing.T) {
+	self, err := selfCommand()
+	require.NoError(t, err)
+	verificationPath := filepath.Join(t.TempDir(), "verification.json")
+	require.NoError(t, os.WriteFile(verificationPath, []byte(`{"runs_dir":"/r","report_dir":"/p","candidate_repo":"/c","candidate_module":".","suite_module":".","binaries":{"app":"./cmd/app"},`+
+		`"suite_repo":"/s","suite_commit":"`+strings.Repeat("a", 40)+`","suite_command":"./cmd/evals","timeout":"20m"}`), 0o600))
+	cases := []struct {
+		name string
+		cfg  serveConfig
+	}{
+		{name: "verification config", cfg: serveConfig{checkTimeout: defaultCheckTimeout, verificationPath: verificationPath}},
+		{name: "workspace starter", cfg: serveConfig{checkTimeout: defaultCheckTimeout}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			isolateServeWorkspace(t)
+			opts, err := serveOptions(tc.cfg, func(string) string { return "" }, nil)
+			require.NoError(t, err)
+			defer closeServeOptions(t, opts)
+			require.NotNil(t, opts.Checker)
+			require.NotNil(t, opts.CheckHelper)
+			cmd := opts.CheckHelper()
+			assert.Equal(t, self[0], cmd.Path)
+			assert.Equal(t, []string{self[0], "check-run"}, cmd.Args)
+		})
+	}
+}
+
 func TestLiveTargetEnvCarriesServesModelChoice(t *testing.T) {
 	environ := []string{"PATH=/bin", "SURLA_AUTH_TOKEN=secret", "ANTHROPIC_API_KEY=k", "SURLA_LIVE_MODEL_GATEWAY=stale:1"}
 	cases := []struct {

@@ -217,6 +217,8 @@ func dispatch(sub string, args []string, stdout io.Writer) error {
 		return runVersion(args, stdout)
 	case "verify-run":
 		return runVerifyRun(args)
+	case "check-run":
+		return runCheckRun(args)
 	default:
 		return fmt.Errorf("unknown command %q; run \"surla help\" to list the commands", sub)
 	}
@@ -735,6 +737,14 @@ func serveOptions(
 	if err != nil {
 		return controlplane.Options{}, err
 	}
+	self, err := selfCommand()
+	if err != nil {
+		var lockErr error
+		if ws.closeProjectLock != nil {
+			lockErr = ws.closeProjectLock()
+		}
+		return controlplane.Options{}, errors.Join(err, lockErr)
+	}
 	live := &controlplane.LiveConfig{
 		Env: liveTargetEnv(environ, resolvedCfg),
 	}
@@ -742,14 +752,6 @@ func serveOptions(
 		live.Command = ws.verification.Command
 		live.StartTimeout = ws.verification.Timeout
 	} else if ws.resolveVerification != nil {
-		self, selfErr := selfCommand()
-		if selfErr != nil {
-			var lockErr error
-			if ws.closeProjectLock != nil {
-				lockErr = ws.closeProjectLock()
-			}
-			return controlplane.Options{}, errors.Join(selfErr, lockErr)
-		}
 		live.Command = self
 		live.StartTimeout = defaultProjectVerifyTimeout
 	}
@@ -774,6 +776,7 @@ func serveOptions(
 		Live:                   live,
 		CloseProjectLock:       ws.closeProjectLock,
 		Checker:                candidate.NewContainerRunner(),
+		CheckHelper:            checkHelperCommand(self),
 		CheckTimeout:           cfg.checkTimeout,
 		ImportedReports:        ws.importedReports,
 		GoProxyEnv:             goProxyEnv,
