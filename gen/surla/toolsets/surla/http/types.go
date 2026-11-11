@@ -757,9 +757,9 @@ type (
 	// decode + validation (missing-field detection) before transforming into
 	// the public tool type.
 	ApprovalItemTransport struct {
-		// Authenticated bearer principal that owns the card and called approve_merge.
-		// Bearer authentication does not prove that a human, rather than a coding
-		// agent, made the call.
+		// Authenticated principal that owns the card and called approve_merge.
+		// Authentication does not prove that a human, rather than a coding agent, made
+		// the call.
 		ApprovedBy *string `json:"approved_by"`
 		// SHA-256 digest of the approved CP4 verification report.
 		ReportDigest *string `json:"report_digest"`

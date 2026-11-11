@@ -1,5 +1,5 @@
 // Command surla runs the Surla MCP software factory control-plane server
-// and CLI utilities (`surla init`, `surla serve`, `surla preview`,
+// and CLI utilities (`surla init`, `surla mcp`, `surla serve`, `surla preview`,
 // `surla preview-change`, `surla diff`, `surla gen`, `surla verify`,
 // `surla approve` and `surla version`).
 // Run `surla help` for usage.
@@ -118,6 +118,7 @@ Usage:
 Commands:
 
   init            create a starter service with an agent and an evaluator suite
+  mcp             run Surla as an MCP server over standard input and output
   serve           run the Surla server that MCP clients (coding agents) connect to
   preview         print the architecture, agent policies and tool contracts a design
                   module declares; needs no server and no model key
@@ -199,6 +200,8 @@ func dispatch(sub string, args []string, stdout io.Writer) error {
 	switch sub {
 	case "init":
 		return runInit(args, stdout)
+	case "mcp":
+		return runMCP(args, os.Stdin, os.Stdout, os.Stderr)
 	case "serve":
 		return runServe(args)
 	case "preview":
@@ -232,31 +235,9 @@ func runServe(args []string) (err error) {
 	principalID := fs.String("principal", "", "Authenticated operator principal ID")
 	authToken := fs.String("auth-token", "", "Bearer token required on HTTP and MCP requests (default: $SURLA_AUTH_TOKEN)")
 	var cfg serveConfig
-	fs.StringVar(&cfg.gatewayAddr, "model-gateway-addr", "", "model gateway host:port that live targets plan with (plaintext gRPC; excludes -model-provider and -model-name)")
-	fs.StringVar(&cfg.provider, "model-provider", "", "model provider that live targets plan with: anthropic or openai (key from ANTHROPIC_API_KEY or OPENAI_API_KEY)")
-	fs.StringVar(&cfg.modelName, "model-name", "", "model name for -model-provider")
-	fs.StringVar(&cfg.swarmProfilesPath, "swarm-profiles", "", "JSON file listing the coding-agent provider profiles used for CP2 swarm plans")
-	fs.StringVar(&cfg.cardsDir, "cards-dir", ".surla/cards", "directory where CP1 Change Cards are saved so they survive restarts; one surla serve at a time may use it")
-	fs.StringVar(&cfg.promotionPath, "promotion-config", "", "JSON file with the CP5 report directory, required suite and environment, and release directory of staged binaries that approve_merge checks; it approves staged binaries for a fresh launch, never a running service")
-	fs.StringVar(&cfg.projectDir, "project", "", "project workspace directory (default: working directory); derives CP3/CP4 verification from its committed starter HEAD at startup (or the commit created by init_project) when -verification-config is omitted")
-	fs.StringVar(&cfg.verificationPath, "verification-config", "", "JSON file with the CP4 candidate, evaluator suite, runs and reports configuration used by verify_change")
-	fs.BoolVar(&cfg.importLegacyWorkspace, "import-legacy-workspace", false, "import existing workspace .surla/cards, .surla/runs, and reports/ once into protected operator storage before starting")
-	fs.DurationVar(&cfg.checkTimeout, "check-timeout", defaultCheckTimeout, "how long one check_project or update_dependencies operation may take, including copying the workspace, pulling the Go image and running every module's containers")
-	if err := fs.Parse(args); err != nil {
+	bindServeConfigFlags(fs, &cfg)
+	if err := parseServeConfigFlags(fs, args, &cfg); err != nil {
 		return err
-	}
-	fs.Visit(func(f *flag.Flag) {
-		switch f.Name {
-		case "project":
-			cfg.projectSet = true
-		case "cards-dir":
-			cfg.cardsDirExplicit = true
-		}
-	})
-	// Flag parsing stops at the first non-flag argument, so anything left over
-	// would silently drop the flags after it.
-	if fs.NArg() > 0 {
-		return fmt.Errorf("unexpected arguments %q", fs.Args())
 	}
 	token := resolveAuthToken(*authToken, os.Getenv)
 	if strings.TrimSpace(*principalID) == "" || token == "" {
@@ -326,6 +307,44 @@ func runServe(args []string) (err error) {
 	}
 }
 
+// bindServeConfigFlags registers the workspace, model, swarm, verification,
+// promotion, and check flags shared by `surla serve` and `surla mcp` on fs.
+func bindServeConfigFlags(fs *flag.FlagSet, cfg *serveConfig) {
+	fs.StringVar(&cfg.gatewayAddr, "model-gateway-addr", "", "model gateway host:port that live targets plan with (plaintext gRPC; excludes -model-provider and -model-name)")
+	fs.StringVar(&cfg.provider, "model-provider", "", "model provider that live targets plan with: anthropic or openai (key from ANTHROPIC_API_KEY or OPENAI_API_KEY)")
+	fs.StringVar(&cfg.modelName, "model-name", "", "model name for -model-provider")
+	fs.StringVar(&cfg.swarmProfilesPath, "swarm-profiles", "", "JSON file listing the coding-agent provider profiles used for CP2 swarm plans")
+	fs.StringVar(&cfg.cardsDir, "cards-dir", ".surla/cards", "directory where CP1 Change Cards are saved so they survive restarts; one surla serve at a time may use it")
+	fs.StringVar(&cfg.promotionPath, "promotion-config", "", "JSON file with the CP5 report directory, required suite and environment, and release directory of staged binaries that approve_merge checks; it approves staged binaries for a fresh launch, never a running service")
+	fs.StringVar(&cfg.projectDir, "project", "", "project workspace directory (default: working directory); derives CP3/CP4 verification from its committed starter HEAD at startup (or the commit created by init_project) when -verification-config is omitted")
+	fs.StringVar(&cfg.verificationPath, "verification-config", "", "JSON file with the CP4 candidate, evaluator suite, runs and reports configuration used by verify_change")
+	fs.BoolVar(&cfg.importLegacyWorkspace, "import-legacy-workspace", false, "import existing workspace .surla/cards, .surla/runs, and reports/ once into protected operator storage before starting")
+	fs.DurationVar(&cfg.checkTimeout, "check-timeout", defaultCheckTimeout, "how long one check_project or update_dependencies operation may take, including copying the workspace, pulling the Go image and running every module's containers")
+}
+
+// parseServeConfigFlags parses args into fs, records whether -project or
+// -cards-dir was explicitly passed on cfg, and rejects unexpected positional
+// arguments.
+func parseServeConfigFlags(fs *flag.FlagSet, args []string, cfg *serveConfig) error {
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	fs.Visit(func(f *flag.Flag) {
+		switch f.Name {
+		case "project":
+			cfg.projectSet = true
+		case "cards-dir":
+			cfg.cardsDirExplicit = true
+		}
+	})
+	// Flag parsing stops at the first non-flag argument, so anything left over
+	// would silently drop the flags after it.
+	if fs.NArg() > 0 {
+		return fmt.Errorf("unexpected arguments %q", fs.Args())
+	}
+	return nil
+}
+
 // resolveAuthToken returns the bearer token `surla serve` requires: the
 // -auth-token flag when it is set, otherwise SURLA_AUTH_TOKEN from getenv,
 // with surrounding whitespace removed. The environment is read here, after
@@ -355,6 +374,12 @@ func writeServeStatus(w io.Writer, addr *net.TCPAddr, opts controlplane.Options,
 	}
 	fmt.Fprintf(w, "surla: serving on http://%s\n", host)
 	fmt.Fprintf(w, "surla: connect MCP clients to http://%s/mcp with the bearer token (architecture guide: surla://golden-path or http://%s/golden-path)\n", host, host)
+	writeCheckpointStatus(w, opts, project)
+}
+
+// writeCheckpointStatus writes the Change Cards directory and the on/off
+// status of checkpoints CP1–CP5 to w for `surla serve` and `surla mcp`.
+func writeCheckpointStatus(w io.Writer, opts controlplane.Options, project string) {
 	fmt.Fprintf(w, "surla: saving Change Cards in %s\n", opts.CardsDir)
 	fmt.Fprintln(w, "surla: CP1 (propose_change, revise_change, confirm_intent, get_change): on")
 	if len(opts.SwarmProfiles) == 0 {

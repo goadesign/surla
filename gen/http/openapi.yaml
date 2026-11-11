@@ -1357,7 +1357,7 @@ definitions:
         properties:
             approved_by:
                 type: string
-                description: Authenticated bearer principal that owns the card and called approve_merge. Bearer authentication does not prove that a human, rather than a coding agent, made the call.
+                description: Authenticated principal that owns the card and called approve_merge. Authentication does not prove that a human, rather than a coding agent, made the call.
                 example: Quia fuga rem fugiat quasi.
             artifacts:
                 type: object

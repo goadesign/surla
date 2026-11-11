@@ -1698,9 +1698,9 @@ type UICompositionItemResponseBody struct {
 
 // ApprovalItemResponseBody is used to define fields on response body types.
 type ApprovalItemResponseBody struct {
-	// Authenticated bearer principal that owns the card and called approve_merge.
-	// Bearer authentication does not prove that a human, rather than a coding
-	// agent, made the call.
+	// Authenticated principal that owns the card and called approve_merge.
+	// Authentication does not prove that a human, rather than a coding agent, made
+	// the call.
 	ApprovedBy *string `form:"approved_by,omitempty" json:"approved_by,omitempty" xml:"approved_by,omitempty"`
 	// SHA-256 digest of the approved CP4 verification report.
 	ReportDigest *string `form:"report_digest,omitempty" json:"report_digest,omitempty" xml:"report_digest,omitempty"`
