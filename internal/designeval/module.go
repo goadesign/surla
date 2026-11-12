@@ -5,7 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"go/parser"
+	"go/token"
 	"io"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -87,11 +90,21 @@ func prepareHarnessModule(
 	targetDir := filepath.Join(buildDir, "target")
 	loaded, err := gocmd.designModules(ctx, targetDir, filepath.Join(logDir, "target-load.log"))
 	if err != nil {
+		if strings.Contains(err.Error(), harnessGoaAIModule) {
+			if wantGoaAI, ok := requiredVersion(evalMod, harnessGoaAIModule); ok {
+				return listedModule{}, fmt.Errorf(
+					"target module is incomplete or unresolvable (Surla requires %s %s): %w",
+					harnessGoaAIModule, wantGoaAI, err,
+				)
+			}
+		}
 		return listedModule{}, fmt.Errorf("target module is incomplete or unresolvable: %w", err)
 	}
-	for name, src := range program(loaded) {
+	rendered := program(loaded)
+	for name, src := range rendered {
 		src = strings.ReplaceAll(src, "{{DESIGN_IMPORT}}", strconv.Quote(target.Module.Mod.Path+"/design"))
 		src = strings.ReplaceAll(src, "{{GEN_IMPORT}}", strconv.Quote(target.Module.Mod.Path+"/gen"))
+		rendered[name] = src
 		if err := os.WriteFile(filepath.Join(buildDir, name), []byte(src), 0o600); err != nil {
 			return listedModule{}, fmt.Errorf("write evaluator %s: %w", name, err)
 		}
@@ -104,6 +117,11 @@ func prepareHarnessModule(
 	targetModules, err := gocmd.listModules(ctx, targetDir, filepath.Join(logDir, "target-modules.log"), "-mod=readonly")
 	if err != nil {
 		return listedModule{}, fmt.Errorf("list target modules: %w", err)
+	}
+	if goaAI, ok := targetModules[harnessGoaAIModule]; ok && !goaAI.Main {
+		if err := checkTargetModulePackages(ctx, gocmd, targetDir, logDir, rendered, goaAI, evalMod); err != nil {
+			return listedModule{}, err
+		}
 	}
 
 	harness := &modfile.File{}
@@ -336,4 +354,55 @@ func describe(m listedModule) string {
 		return m.Version + " => " + r
 	}
 	return m.Version
+}
+
+// checkTargetModulePackages verifies with -mod=readonly that the module
+// selected by the target provides every package under mod.Path that the
+// rendered harness files import, so missing packages fail immediately naming
+// the required version instead of triggering a module upgrade during harness
+// dependency resolution.
+func checkTargetModulePackages(
+	ctx context.Context, gocmd goCommand, targetDir, logDir string,
+	rendered map[string]string, mod listedModule, evalMod *modfile.File,
+) error {
+	pkgs, err := importedModulePackages(rendered, mod.Path)
+	if err != nil {
+		return err
+	}
+	if len(pkgs) == 0 {
+		return nil
+	}
+	args := append([]string{"list", "-mod=readonly", "-find"}, pkgs...)
+	if err := gocmd.run(ctx, targetDir, filepath.Join(logDir, "target-module-pkgs.log"), args...); err != nil {
+		wantVersion, _ := requiredVersion(evalMod, mod.Path)
+		return fmt.Errorf(
+			"target module selects %s %s, which lacks packages required by the design evaluator (Surla requires %s %s): %w",
+			mod.Path, describe(mod), mod.Path, wantVersion, err,
+		)
+	}
+	return nil
+}
+
+// importedModulePackages returns the sorted unique import paths in files that
+// equal modulePath or lie under modulePath/.
+func importedModulePackages(files map[string]string, modulePath string) ([]string, error) {
+	fset := token.NewFileSet()
+	seen := make(map[string]bool)
+	prefix := modulePath + "/"
+	for _, name := range slices.Sorted(maps.Keys(files)) {
+		parsed, err := parser.ParseFile(fset, name, files[name], parser.ImportsOnly)
+		if err != nil {
+			return nil, fmt.Errorf("parse evaluator %s imports: %w", name, err)
+		}
+		for _, imp := range parsed.Imports {
+			p, err := strconv.Unquote(imp.Path.Value)
+			if err != nil {
+				return nil, fmt.Errorf("unquote evaluator %s import %s: %w", name, imp.Path.Value, err)
+			}
+			if p == modulePath || strings.HasPrefix(p, prefix) {
+				seen[p] = true
+			}
+		}
+	}
+	return slices.Sorted(maps.Keys(seen)), nil
 }

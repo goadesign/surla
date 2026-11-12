@@ -128,3 +128,21 @@ func namedGuide(names []string) *codegen.File {
 	}
 	return f
 }
+
+func TestGenerateProgramWithStoriesParsesAsMain(t *testing.T) {
+	assert.Equal(t, generateProgram(), generateProgramWithStories(nil))
+
+	specs := []storyScenarioSpec{
+		{name: "refund_over_limit", description: "Line 1: \"quoted\" `backtick` \\backslash\\\nLine 2"},
+		{name: "blank_title_flow", description: "blank-title-flow"},
+	}
+	program := generateProgramWithStories(specs)
+	require.Len(t, program, 5)
+
+	fset := token.NewFileSet()
+	for _, name := range []string{"story_scenarios.go", "story_scenarios_data.go"} {
+		parsed, err := parser.ParseFile(fset, name, program[name], 0)
+		require.NoError(t, err, "parse %s", name)
+		assert.Equal(t, "main", parsed.Name.Name)
+	}
+}

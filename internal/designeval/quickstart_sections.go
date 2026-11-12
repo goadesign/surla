@@ -26,6 +26,12 @@ var (
 	//
 	//go:embed quickstart.go
 	quickstartSource string
+
+	// storyScenariosSource is story_scenarios.go itself, compiled inside the
+	// generation program when complete Story flows are present.
+	//
+	//go:embed story_scenarios.go
+	storyScenariosSource string
 )
 
 // mustQuickstartSections reads every embedded section text. The embed

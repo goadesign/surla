@@ -4,10 +4,12 @@ Status: engineering draft. The portable Story language
 (`github.com/goadesign/surla/story`), synchronous sandboxed typed Story
 observation in `internal/designeval` (`Evaluator.Evaluate`), in-memory
 background Story refresh in `internal/controlplane` (`refresh_story` and
-`get_story_refresh`), and adopting the observed Story into the Change Card's
+`get_story_refresh`), adopting the observed Story into the Change Card's
 saved `request_revision` (`story_refresh_op_id` on `propose_change` and
-`revise_change`) have shipped. Generated flow scaffolds, the independent
-test-authoring lifecycle, and the timeline and proof UI and MCP surfaces
+`revise_change`), and scenario scaffold generation in `internal/designeval`
+(`Evaluator.GenerateWithStories`, with no production caller until the
+independent test-authoring lifecycle lands) have shipped. The independent
+test-authoring lifecycle and the timeline and proof UI and MCP surfaces
 described here have not shipped. The [product direction](PRODUCT_DIRECTION.md)
 records the intended experience; this document defines the engineering work
 needed to deliver it.
@@ -31,10 +33,12 @@ Stable step keys keep a step's identity when its wording changes. Participants
 describe business roles, such as a customer or manager, without requiring an
 architecture to exist first.
 
-A Goa plugin generates scaffolds for an agent that did not write the
-platform code. That agent implements tests which interact with the built
-platform through its public interfaces. Generating a scaffold does not prove
-that the implemented test makes the right assertions.
+Surla's generator adapter attaches finished Story flows to the evaluator
+suite so the existing Goa-AI evaluator generator writes their hook methods on
+the suite's `Hooks` interface for an agent that did not write the platform
+code. That agent implements tests which interact with the built platform
+through its public interfaces. Generating a scaffold does not prove that the
+implemented test makes the right assertions.
 
 Surla must keep each verification result connected to the requirements it
 checked, the test program it ran and the candidate commit. Later edits must
@@ -95,7 +99,7 @@ owner which supplies its expected test and artifact inputs.
 | Read workspace design source | [`workspace.go`](../internal/controlplane/workspace.go), `readWorkspaceDesignSource`; [`snapshot.go`](../internal/designeval/snapshot.go), `ReadDesignFilesFromRoot`. Reads eligible Go files recursively under `design/`. |
 | Save and identify intent | [`controlplane.go`](../internal/controlplane/controlplane.go), `ProposeChange` and `computeCanonicalRevision`; [`revise.go`](../internal/controlplane/revise.go), `ReviseChange`; [`cp1_validation.go`](../internal/controlplane/cp1_validation.go), `confirm`; [`cards.go`](../internal/controlplane/cards.go), `cardStore` and `decodeCardBytes`. |
 | Preserve target module versions | [`module.go`](../internal/designeval/module.go), `prepareHarnessModule` and `sameVersions`. The evaluator must retain the dependency versions selected by the target. |
-| Evaluate and generate | [`eval.go`](../internal/designeval/eval.go), `Evaluator.Evaluate` and `Evaluator.Generate`; [`story_refresh.go`](../internal/controlplane/story_refresh.go), `RefreshStory` and `GetStoryRefresh`; [`generate_code.go`](../internal/controlplane/generate_code.go), `GenerateCode`. |
+| Evaluate and generate | [`eval.go`](../internal/designeval/eval.go), `Evaluator.Evaluate`, `Evaluator.Generate`, and `Evaluator.GenerateWithStories`; [`story_refresh.go`](../internal/controlplane/story_refresh.go), `RefreshStory` and `GetStoryRefresh`; [`generate_code.go`](../internal/controlplane/generate_code.go), `GenerateCode`. |
 | Check uncommitted work | [`check_project.go`](../internal/controlplane/check_project.go), `CheckProject`; [`design.go`](../design/design.go), `check_project`. The method takes no payload. |
 | Choose verification inputs | [`verification.go`](../internal/controlplane/verification.go), `VerificationConfig` and `VerifyChange`; [`workspace_serve.go`](../cmd/surla/workspace_serve.go), `configureServeWorkspace`. Builders do not choose their evaluator commit. |
 | Run and recover verification | [`verifyrun`](../internal/verifyrun), `Request`; [`verification.go`](../internal/controlplane/verification.go), `GetVerification` and `ListVerifications`. |
@@ -111,11 +115,14 @@ on Goa and the standard library, without importing Surla's control plane,
 Goa-AI, Model, or telemetry. This keeps ordinary domain descriptions usable
 before architecture exists and avoids bringing the control plane into a
 platform's dependency graph. Integration with the existing evaluator generator
-belongs with the code that already depends on that generator. The sandboxed
-harness registers a Goa evaluation root after the Story and evaluator roots.
-Its preparation phase adds scenarios for finished flows before the owning
-evaluator validates the combined suite. The portable module does not import
-the evaluator.
+belongs with the code that already depends on that generator. When
+`Evaluator.GenerateWithStories` runs with at least one finished flow, the host
+maps the saved `[]StorySummary` into scenario specifications and renders them
+into the sandboxed generation harness, which registers a Goa evaluation root
+after the evaluator suites root (`evalexpr.Root`). Its preparation phase adds
+scenarios for finished flows to the single declared suite before the owning
+evaluator validates the combined suite. Neither the portable Story module nor
+the evaluator module imports the other.
 
 A flow declares a stable key, a title, its starting step, intermediate steps,
 outcomes, and questions. Steps have stable keys and refer to declared domain
@@ -179,31 +186,57 @@ selected dependency versions instead of upgrading them for its own needs.
 
 ### Existing generator integration
 
-The portable module supplies Story syntax, expressions, and a plugin for
-Story artifacts. The Surla-owned evaluation adapter supplies evaluator
-integration inside the sandboxed harness. It is compiled only when the
-target loads the Story module, following the existing quickstart adapter
-pattern in `internal/designeval`.
+The portable module supplies Story syntax and expressions, while
+`internal/designeval` (`Evaluator.GenerateWithStories`) supplies evaluator
+scenario generation. Saved typed Stories (`[]StorySummary`) reach
+`Evaluator.GenerateWithStories(ctx, files, stories)` as server-owned input;
+the evaluator module's own design is neither edited nor made to import the
+candidate's Story. `Evaluator.Generate(ctx, files)` and all its callers
+(`generate_code`, `surla gen`, `scaffold`, and `init_project`) remain
+unchanged and never receive Stories. Only the authoring owner regenerates the
+authoring module, always passing its frozen Story input to
+`Evaluator.GenerateWithStories`, because running ordinary `surla gen` or
+`generate_code` on that module would run `Evaluator.Generate` and drop the
+flow scenarios.
 
-The adapter's evaluation root depends on both the Story and evaluator roots.
-Goa executes their DSL declarations, prepares the roots, validates them, then
-finalizes them. The adapter inserts finished-flow scenarios during preparation,
-before validation; it must not append declarations after validation or after
-generated sources have been frozen. The existing Goa-AI evaluator generator
-then writes suite interfaces under `gen/evals/<suite>/suite.go`, while the
-starter owns the runner command at `cmd/<name>-evals/main.go`. The Story
-plugin writes ordered flow/step metadata and excluded drafts, without another
-assertion or runner framework.
+One host-side mapping function converts `[]StorySummary` into the scenario
+list rendered into the generation harness (with every string literal passed
+through `strconv.Quote`) and into the returned `StoryGeneration` (`Files`,
+`Included`, and `Excluded`):
 
-Scenario names use Goa's `SnakeCase` conversion of the flow key, and hook
-methods use its `Goify` conversion of that scenario name. For example,
-`refund-over-limit` becomes `refund_over_limit` and `RefundOverLimit`, while
-the original flow and step keys remain in Story metadata. The evaluator's
-own suite validation and generator check collisions against all required
-and manually declared scenarios. Evaluator-specific reserved names belong
-there, rather than becoming restrictions on a Story that does not generate
-an evaluator. Generated implementation stubs remain create-once and return
-an error until an author implements the platform interactions.
+- Each flow is identified by `(Story name, flow key)`.
+- A flow is included when `Complete == true`; otherwise it is recorded in
+  `StoryGeneration.Excluded` as `(Story name, flow key)` and omitted from the
+  suite.
+- Scenario names use Goa's `codegen.SnakeCase(flow.Key)`, hook methods use
+  `codegen.Goify(scenarioName, true)`, and the scenario description uses
+  `flow.Title` (or `flow.Key` when `flow.Title` is blank). For example,
+  `refund-over-limit` becomes scenario `refund_over_limit` and hook method
+  `RefundOverLimit`.
+- Two included flows that map to the same scenario name or hook method (for
+  example, the same flow key in two Stories, or `a-b` and `a_b`) are rejected
+  on the host before compiling the harness, naming both source flows.
+
+When at least one flow is included, the generation harness registers a Goa
+evaluation root (`storyScenarioRoot`) that depends on Goa-AI's evaluation
+suites root (`evalexpr.Root`). During `Prepare()`, before validation runs, it
+appends `&evalexpr.ScenarioExpr{Name, Description, Suite}` to the single
+declared suite (`evalexpr.Root.Suites[0]`). During `Validate()`, it rejects
+designs declaring zero or multiple suites, naming the fix, while collisions
+with manually declared scenarios in the suite are rejected by
+`SuiteExpr.Validate()`. When no flow is finished, no scenario root is
+registered, no suite-count rule is applied, and `StoryGeneration.Files`
+equals `Evaluator.Generate(ctx, files)`'s output.
+
+Generation only regenerates `gen/`: the suite's hook interface (`Hooks` in
+`gen/evals/<suite>/suite.go`) gains one method per included flow, while the
+starter owns the runner command at `cmd/<name>-evals/main.go`. No create-once
+stub file is written. Until the author's hand-written hooks implement every
+method, the evaluator module fails to compile naming the missing methods; that
+compile failure is the unimplemented state. When a later revision removes or
+renames a flow, its method leaves the generated `Hooks` interface and
+`--describe`, while any old hand-written method on the concrete hooks type
+still compiles and is unused.
 
 ## Proposed independent test-authoring operation
 
@@ -438,12 +471,19 @@ Story with a finished refund flow and an unfinished claim evaluates; both
 remain visible, and only the refund is eligible for the build. Invalid actor
 references and duplicate domain keys fail with actionable errors.
 
-The second increment connects finished flows to the existing evaluator
-generator. Generated hooks preserve authored keys, keep existing handwritten
-implementations, and fail until implemented. Existing manually named
-scenarios and non-Story generation must continue working; combined-suite
-naming collisions must fail through the owning evaluator. This increment is
-scaffold generation, not independent test authorship or verified behavior.
+The second increment (shipped in `internal/designeval` via
+`Evaluator.GenerateWithStories`, with no production caller until the third
+increment) connects server-owned Story summaries to the existing evaluator
+generator. Finished flows attach to the single declared suite during
+preparation and add their methods to the generated `Hooks` interface in
+`gen/evals/<suite>/suite.go`, while incomplete drafts are reported in
+`StoryGeneration.Excluded`. No stub files are written; unchanged hand-written
+hooks fail to compile naming the missing methods until implemented, and
+existing hand-written methods remain untouched across regenerations. Existing
+manually named scenarios and non-Story generation (`Evaluator.Generate`)
+continue working; cross-Story flow collisions, suite-count errors, and
+combined-suite naming collisions fail with actionable errors. This increment
+is scaffold generation, not independent test authorship or verified behavior.
 
 The third increment implements durable independent authoring, the two
 execution adapters, and exact-revision suite acceptance. Acceptance must

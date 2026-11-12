@@ -11,6 +11,7 @@ import (
 	_ "goa.design/goa-ai/codegen/agent"
 	_ "goa.design/goa-ai/codegen/jsonschema"
 	_ "goa.design/goa-ai/codegen/mcp"
+	_ "goa.design/goa-ai/eval/codegen"
 	_ "goa.design/goa-ai/eval/expr"
 	_ "goa.design/goa-ai/expr/agent"
 	_ "goa.design/goa-ai/expr/mcp"
