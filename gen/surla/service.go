@@ -177,6 +177,23 @@ type Service interface {
 	// Requests rejected before their span starts and separate verification
 	// processes are also absent.
 	ListTraces(context.Context, *ListTracesPayload) (res *TraceList, err error)
+	// Read the bound workspace's Go module snapshot, compute its canonical
+	// snapshot_digest, and start or reuse the authenticated caller's in-memory
+	// Story refresh operation for that workspace. Return promptly with the
+	// operation's op_id, state, and snapshot_digest while sandboxed evaluation
+	// continues on a server-owned context that survives client disconnects.
+	// Refreshing an unchanged snapshot whose current operation is running or
+	// succeeded returns that operation without starting another evaluation;
+	// refreshing a changed snapshot or a failed operation cancels and replaces the
+	// prior operation.
+	RefreshStory(context.Context) (res *StoryRefreshResult, err error)
+	// Return the authenticated caller's current in-memory Story refresh operation
+	// for the bound workspace: op_id, state (none, running, succeeded, or failed),
+	// snapshot_digest, and the evaluated stories (empty when the design does not
+	// load the Story module) or a failure diagnostic. When no refresh has been run
+	// yet in this server process for the bound workspace, state is none with a
+	// message instructing the caller to run refresh_story.
+	GetStoryRefresh(context.Context) (res *StoryRefreshResult, err error)
 }
 
 // APIName is the name of the API as defined in the design.
@@ -193,7 +210,7 @@ const ServiceName = "surla"
 // MethodNames lists the service method names as defined in the design. These
 // are the same values that are set in the endpoint request contexts under the
 // MethodKey key.
-var MethodNames = [22]string{"checkpoint_ui", "golden_path", "propose_change", "revise_change", "confirm_intent", "get_change", "preview_architecture", "draft_override", "start_live_target", "stop_live_target", "verify_change", "get_verification", "list_verifications", "approve_merge", "diff", "configure_model", "init_project", "generate_code", "check_project", "update_dependencies", "read_check_output", "list_traces"}
+var MethodNames = [24]string{"checkpoint_ui", "golden_path", "propose_change", "revise_change", "confirm_intent", "get_change", "preview_architecture", "draft_override", "start_live_target", "stop_live_target", "verify_change", "get_verification", "list_verifications", "approve_merge", "diff", "configure_model", "init_project", "generate_code", "check_project", "update_dependencies", "read_check_output", "list_traces", "refresh_story", "get_story_refresh"}
 
 // Evaluated Goa-AI cost, safety, history, and cache policy for a single agent.
 type AgentPolicyItem struct {
@@ -835,6 +852,97 @@ type StopLiveTargetResult struct {
 	Stopped bool
 	// Operator-facing status explanation.
 	Message string
+}
+
+// Domain role declared in a Story in declaration order.
+type StoryActorItem struct {
+	// Story-scoped actor key.
+	Key string
+	// Human-facing actor label.
+	Title string
+	// Optional longer explanation of the actor role.
+	Description *string
+}
+
+// Ordered timeline path through a domain Story in declaration order.
+type StoryFlowItem struct {
+	// Story-scoped flow key.
+	Key string
+	// Human-facing flow title.
+	Title string
+	// Optional longer explanation of the flow.
+	Description *string
+	// True when the flow has a start, at least one outcome, and no open questions
+	// on the flow or any of its steps.
+	Complete bool
+	// Starting, intermediate, and outcome steps in declaration order.
+	Steps []*StoryStepItem
+	// Unresolved flow-level decisions in declaration order.
+	Questions []*StoryQuestionItem
+}
+
+// Unresolved decision attached to a Story flow or step in declaration order.
+type StoryQuestionItem struct {
+	// Flow-scoped question key.
+	Key string
+	// Human-facing question text.
+	Prompt string
+	// Optional longer context for the question.
+	Description *string
+	// Suggested choices in declaration order.
+	Options []string
+}
+
+// StoryRefreshResult is the result type of the surla service refresh_story
+// method.
+type StoryRefreshResult struct {
+	// Identifier of the caller's current Story refresh operation for the bound
+	// workspace; present when state is running, succeeded, or failed.
+	OpID *string
+	// Current operation state: none, running, succeeded, or failed.
+	State string
+	// Canonical SHA-256 digest (sha256:<hex>) of the workspace module snapshot
+	// read when this refresh started; present when state is running, succeeded, or
+	// failed.
+	SnapshotDigest *string
+	// Evaluated domain Stories in declaration order when state is succeeded (empty
+	// when the design declares no Stories or when state is none, running, or
+	// failed).
+	Stories []*StorySummaryItem
+	// Safe failure or timeout diagnostic when state is failed; omitted otherwise.
+	Diagnostic *string
+	// Summary of the current Story refresh state and next action.
+	Message string
+}
+
+// Starting event, intermediate action, or outcome in a Story flow in
+// declaration order.
+type StoryStepItem struct {
+	// Flow-scoped step key.
+	Key string
+	// Story-scoped key of the actor performing or observing the step.
+	ActorKey string
+	// Timeline sticky-note sentence for the step.
+	Summary string
+	// Optional longer explanation of the step.
+	Description *string
+	// Step position in the flow: start, step, or outcome.
+	Kind string
+	// Unresolved step-level decisions in declaration order.
+	Questions []*StoryQuestionItem
+}
+
+// Evaluated domain Story extracted from the bound workspace design in
+// declaration order.
+type StorySummaryItem struct {
+	// Human-facing Story title.
+	Name string
+	// Optional longer explanation of the Story.
+	Description *string
+	// Domain roles declared in the Story in declaration order.
+	Actors []*StoryActorItem
+	// Timeline paths declared in the Story in declaration order.
+	Flows []*StoryFlowItem
 }
 
 // Proposed Chorus role assignments and model-family diversity facts surfaced
@@ -2911,6 +3019,257 @@ func validatejsonStopLiveTargetResultTransport(value *jsonStopLiveTargetResultTr
 	return err
 }
 
+// jsonStoryActorItemTransport stores JSON fields until they have been validated.
+type jsonStoryActorItemTransport struct {
+	// Story-scoped actor key.
+	Key *string `json:"key"`
+	// Human-facing actor label.
+	Title *string `json:"title"`
+	// Optional longer explanation of the actor role.
+	Description *string `json:"description,omitempty"`
+}
+
+// validatejsonStoryActorItemTransport checks decoded JSON before it becomes a service value.
+func validatejsonStoryActorItemTransport(value *jsonStoryActorItemTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.Key == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("key", "body"))
+	}
+	if value.Title == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("title", "body"))
+	}
+	return err
+}
+
+// jsonStoryFlowItemTransport stores JSON fields until they have been validated.
+type jsonStoryFlowItemTransport struct {
+	// Story-scoped flow key.
+	Key *string `json:"key"`
+	// Human-facing flow title.
+	Title *string `json:"title"`
+	// Optional longer explanation of the flow.
+	Description *string `json:"description,omitempty"`
+	// True when the flow has a start, at least one outcome, and no open questions
+	// on the flow or any of its steps.
+	Complete *bool `json:"complete"`
+	// Starting, intermediate, and outcome steps in declaration order.
+	Steps []*jsonStoryStepItemTransport `json:"steps"`
+	// Unresolved flow-level decisions in declaration order.
+	Questions []*jsonStoryQuestionItemTransport `json:"questions"`
+}
+
+// validatejsonStoryFlowItemTransport checks decoded JSON before it becomes a service value.
+func validatejsonStoryFlowItemTransport(value *jsonStoryFlowItemTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.Key == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("key", "body"))
+	}
+	if value.Title == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("title", "body"))
+	}
+	if value.Complete == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("complete", "body"))
+	}
+	if value.Steps == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("steps", "body"))
+	}
+	if value.Questions == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("questions", "body"))
+	}
+	for _, e := range value.Steps {
+		if e != nil {
+			if err2 := validatejsonStoryStepItemTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	for _, e := range value.Questions {
+		if e != nil {
+			if err2 := validatejsonStoryQuestionItemTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	return err
+}
+
+// jsonStoryQuestionItemTransport stores JSON fields until they have been validated.
+type jsonStoryQuestionItemTransport struct {
+	// Flow-scoped question key.
+	Key *string `json:"key"`
+	// Human-facing question text.
+	Prompt *string `json:"prompt"`
+	// Optional longer context for the question.
+	Description *string `json:"description,omitempty"`
+	// Suggested choices in declaration order.
+	Options []string `json:"options"`
+}
+
+// validatejsonStoryQuestionItemTransport checks decoded JSON before it becomes a service value.
+func validatejsonStoryQuestionItemTransport(value *jsonStoryQuestionItemTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.Key == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("key", "body"))
+	}
+	if value.Prompt == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("prompt", "body"))
+	}
+	if value.Options == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("options", "body"))
+	}
+	return err
+}
+
+// jsonStoryRefreshResultTransport stores JSON fields until they have been validated.
+type jsonStoryRefreshResultTransport struct {
+	// Identifier of the caller's current Story refresh operation for the bound
+	// workspace; present when state is running, succeeded, or failed.
+	OpID *string `json:"op_id,omitempty"`
+	// Current operation state: none, running, succeeded, or failed.
+	State *string `json:"state"`
+	// Canonical SHA-256 digest (sha256:<hex>) of the workspace module snapshot
+	// read when this refresh started; present when state is running, succeeded, or
+	// failed.
+	SnapshotDigest *string `json:"snapshot_digest,omitempty"`
+	// Evaluated domain Stories in declaration order when state is succeeded (empty
+	// when the design declares no Stories or when state is none, running, or
+	// failed).
+	Stories []*jsonStorySummaryItemTransport `json:"stories"`
+	// Safe failure or timeout diagnostic when state is failed; omitted otherwise.
+	Diagnostic *string `json:"diagnostic,omitempty"`
+	// Summary of the current Story refresh state and next action.
+	Message *string `json:"message"`
+}
+
+// validatejsonStoryRefreshResultTransport checks decoded JSON before it becomes a service value.
+func validatejsonStoryRefreshResultTransport(value *jsonStoryRefreshResultTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.State == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("state", "body"))
+	}
+	if value.Stories == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("stories", "body"))
+	}
+	if value.Message == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("message", "body"))
+	}
+	if value.State != nil {
+		if !(*value.State == "none" || *value.State == "running" || *value.State == "succeeded" || *value.State == "failed") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.state", *value.State, []any{"none", "running", "succeeded", "failed"}))
+		}
+	}
+	for _, e := range value.Stories {
+		if e != nil {
+			if err2 := validatejsonStorySummaryItemTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	return err
+}
+
+// jsonStoryStepItemTransport stores JSON fields until they have been validated.
+type jsonStoryStepItemTransport struct {
+	// Flow-scoped step key.
+	Key *string `json:"key"`
+	// Story-scoped key of the actor performing or observing the step.
+	ActorKey *string `json:"actor_key"`
+	// Timeline sticky-note sentence for the step.
+	Summary *string `json:"summary"`
+	// Optional longer explanation of the step.
+	Description *string `json:"description,omitempty"`
+	// Step position in the flow: start, step, or outcome.
+	Kind *string `json:"kind"`
+	// Unresolved step-level decisions in declaration order.
+	Questions []*jsonStoryQuestionItemTransport `json:"questions"`
+}
+
+// validatejsonStoryStepItemTransport checks decoded JSON before it becomes a service value.
+func validatejsonStoryStepItemTransport(value *jsonStoryStepItemTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.Key == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("key", "body"))
+	}
+	if value.ActorKey == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("actor_key", "body"))
+	}
+	if value.Summary == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("summary", "body"))
+	}
+	if value.Kind == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("kind", "body"))
+	}
+	if value.Questions == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("questions", "body"))
+	}
+	if value.Kind != nil {
+		if !(*value.Kind == "start" || *value.Kind == "step" || *value.Kind == "outcome") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.kind", *value.Kind, []any{"start", "step", "outcome"}))
+		}
+	}
+	for _, e := range value.Questions {
+		if e != nil {
+			if err2 := validatejsonStoryQuestionItemTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	return err
+}
+
+// jsonStorySummaryItemTransport stores JSON fields until they have been validated.
+type jsonStorySummaryItemTransport struct {
+	// Human-facing Story title.
+	Name *string `json:"name"`
+	// Optional longer explanation of the Story.
+	Description *string `json:"description,omitempty"`
+	// Domain roles declared in the Story in declaration order.
+	Actors []*jsonStoryActorItemTransport `json:"actors"`
+	// Timeline paths declared in the Story in declaration order.
+	Flows []*jsonStoryFlowItemTransport `json:"flows"`
+}
+
+// validatejsonStorySummaryItemTransport checks decoded JSON before it becomes a service value.
+func validatejsonStorySummaryItemTransport(value *jsonStorySummaryItemTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.Name == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
+	}
+	if value.Actors == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("actors", "body"))
+	}
+	if value.Flows == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("flows", "body"))
+	}
+	for _, e := range value.Actors {
+		if e != nil {
+			if err2 := validatejsonStoryActorItemTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	for _, e := range value.Flows {
+		if e != nil {
+			if err2 := validatejsonStoryFlowItemTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	return err
+}
+
 // jsonSwarmPlanItemTransport stores JSON fields until they have been validated.
 type jsonSwarmPlanItemTransport struct {
 	// Roster configuration status.
@@ -4278,6 +4637,93 @@ func validateReviseChangePayloadOriginal(value *ReviseChangePayload) (err error)
 // validateStartLiveTargetPayloadOriginal checks the original typed value before JSON conversion.
 func validateStartLiveTargetPayloadOriginal(value *StartLiveTargetPayload) (err error) {
 	err = goa.MergeErrors(err, goa.ValidatePattern("value.candidate_commit", value.CandidateCommit, "^([0-9a-f]{40}|[0-9a-f]{64})$"))
+	return err
+}
+
+// validateStoryFlowItemOriginal checks the original typed value before JSON conversion.
+func validateStoryFlowItemOriginal(value *StoryFlowItem) (err error) {
+	if value.Steps == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("steps", "value"))
+	}
+	if value.Questions == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("questions", "value"))
+	}
+	for _, e := range value.Steps {
+		if e != nil {
+			if err2 := validateStoryStepItemOriginal(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	for _, e := range value.Questions {
+		if e != nil {
+			if err2 := validateStoryQuestionItemOriginal(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	return err
+}
+
+// validateStoryStepItemOriginal checks the original typed value before JSON conversion.
+func validateStoryStepItemOriginal(value *StoryStepItem) (err error) {
+	if value.Questions == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("questions", "value"))
+	}
+	if !(value.Kind == "start" || value.Kind == "step" || value.Kind == "outcome") {
+		err = goa.MergeErrors(err, goa.InvalidEnumValueError("value.kind", value.Kind, []any{"start", "step", "outcome"}))
+	}
+	for _, e := range value.Questions {
+		if e != nil {
+			if err2 := validateStoryQuestionItemOriginal(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	return err
+}
+
+// validateStoryQuestionItemOriginal checks the original typed value before JSON conversion.
+func validateStoryQuestionItemOriginal(value *StoryQuestionItem) (err error) {
+	if value.Options == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("options", "value"))
+	}
+	return err
+}
+
+// validateStoryRefreshResultOriginal checks the original typed value before JSON conversion.
+func validateStoryRefreshResultOriginal(value *StoryRefreshResult) (err error) {
+	if value.Stories == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("stories", "value"))
+	}
+	if !(value.State == "none" || value.State == "running" || value.State == "succeeded" || value.State == "failed") {
+		err = goa.MergeErrors(err, goa.InvalidEnumValueError("value.state", value.State, []any{"none", "running", "succeeded", "failed"}))
+	}
+	for _, e := range value.Stories {
+		if e != nil {
+			if err2 := validateStorySummaryItemOriginal(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	return err
+}
+
+// validateStorySummaryItemOriginal checks the original typed value before JSON conversion.
+func validateStorySummaryItemOriginal(value *StorySummaryItem) (err error) {
+	if value.Actors == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("actors", "value"))
+	}
+	if value.Flows == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("flows", "value"))
+	}
+	for _, e := range value.Flows {
+		if e != nil {
+			if err2 := validateStoryFlowItemOriginal(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
 	return err
 }
 
@@ -8852,6 +9298,702 @@ func DecodeStopLiveTargetResult(data []byte) (out *StopLiveTargetResult, err err
 	return out, nil
 }
 
+// EncodeStoryActorItem turns a service value into JSON using the field names in the Goa design.
+func EncodeStoryActorItem(in *StoryActorItem) ([]byte, error) {
+	if err := checkStoryActorItemValue(in); err != nil {
+		return nil, fmt.Errorf("encode StoryActorItem JSON: %w", err)
+	}
+	var body *jsonStoryActorItemTransport
+	{
+		body = &jsonStoryActorItemTransport{
+			Key:         &in.Key,
+			Title:       &in.Title,
+			Description: in.Description,
+		}
+	}
+	if err := validatejsonStoryActorItemTransport(body); err != nil {
+		return nil, fmt.Errorf("validate StoryActorItem JSON: %w", err)
+	}
+	data, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("encode StoryActorItem JSON: %w", err)
+	}
+	return data, nil
+}
+
+// ValidateStoryActorItemValue checks the original Go fields against their declared constraints.
+// It returns validation errors without encoding the value as JSON.
+
+func ValidateStoryActorItemValue(in *StoryActorItem) error {
+	if err := checkStoryActorItemValue(in); err != nil {
+		return fmt.Errorf("validate StoryActorItem value: %w", err)
+	}
+
+	if in == nil {
+		return goa.MissingFieldError("result", "StoryActorItem")
+	}
+
+	var body *jsonStoryActorItemTransport
+	{
+		body = &jsonStoryActorItemTransport{
+			Key:         &in.Key,
+			Title:       &in.Title,
+			Description: in.Description,
+		}
+	}
+	if err := validatejsonStoryActorItemTransport(body); err != nil {
+		return fmt.Errorf("validate StoryActorItem value: %w", err)
+	}
+	return nil
+}
+
+// DecodeStoryActorItem checks JSON field names from the Goa design and returns a service value.
+func DecodeStoryActorItem(data []byte) (out *StoryActorItem, err error) {
+	root, err := readStrictJSON(data)
+	if err != nil {
+		return out, fmt.Errorf("decode StoryActorItem JSON: %w", err)
+	}
+	if err := validateStoryActorItemJSONValue("", root, ""); err != nil {
+		return out, fmt.Errorf("decode StoryActorItem JSON: %w", err)
+	}
+	var body *jsonStoryActorItemTransport
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&body); err != nil {
+		return out, fmt.Errorf("decode StoryActorItem JSON: %w", err)
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		if err == nil {
+			return out, fmt.Errorf("decode StoryActorItem JSON: multiple JSON values")
+		}
+		return out, fmt.Errorf("decode StoryActorItem JSON after first value: %w", err)
+	}
+	if err := validatejsonStoryActorItemTransport(body); err != nil {
+		return out, fmt.Errorf("validate StoryActorItem JSON: %w", err)
+	}
+	{
+		out = &StoryActorItem{
+			Key:         *body.Key,
+			Title:       *body.Title,
+			Description: body.Description,
+		}
+	}
+	return out, nil
+}
+
+// EncodeStoryFlowItem turns a service value into JSON using the field names in the Goa design.
+func EncodeStoryFlowItem(in *StoryFlowItem) ([]byte, error) {
+	if err := checkStoryFlowItemValue(in); err != nil {
+		return nil, fmt.Errorf("encode StoryFlowItem JSON: %w", err)
+	}
+	if err := validateStoryFlowItemOriginal(in); err != nil {
+		return nil, fmt.Errorf("validate StoryFlowItem value: %w", err)
+	}
+	var body *jsonStoryFlowItemTransport
+	{
+		body = &jsonStoryFlowItemTransport{
+			Key:         &in.Key,
+			Title:       &in.Title,
+			Description: in.Description,
+			Complete:    &in.Complete,
+		}
+		body.Steps = make([]*jsonStoryStepItemTransport, len(in.Steps))
+		for i, val := range in.Steps {
+			if val == nil {
+				body.Steps[i] = nil
+				continue
+			}
+			body.Steps[i] = encodeStoryStepItemToStoryStepItemTransport(val)
+		}
+		body.Questions = make([]*jsonStoryQuestionItemTransport, len(in.Questions))
+		for i, val := range in.Questions {
+			if val == nil {
+				body.Questions[i] = nil
+				continue
+			}
+			body.Questions[i] = encodeStoryQuestionItemToStoryQuestionItemTransport(val)
+		}
+	}
+	if err := validatejsonStoryFlowItemTransport(body); err != nil {
+		return nil, fmt.Errorf("validate StoryFlowItem JSON: %w", err)
+	}
+	data, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("encode StoryFlowItem JSON: %w", err)
+	}
+	return data, nil
+}
+
+// ValidateStoryFlowItemValue checks the original Go fields against their declared constraints.
+// It returns validation errors without encoding the value as JSON.
+
+func ValidateStoryFlowItemValue(in *StoryFlowItem) error {
+	if err := checkStoryFlowItemValue(in); err != nil {
+		return fmt.Errorf("validate StoryFlowItem value: %w", err)
+	}
+	if err := validateStoryFlowItemOriginal(in); err != nil {
+		return fmt.Errorf("validate StoryFlowItem value: %w", err)
+	}
+
+	if in == nil {
+		return goa.MissingFieldError("result", "StoryFlowItem")
+	}
+
+	var body *jsonStoryFlowItemTransport
+	{
+		body = &jsonStoryFlowItemTransport{
+			Key:         &in.Key,
+			Title:       &in.Title,
+			Description: in.Description,
+			Complete:    &in.Complete,
+		}
+		body.Steps = make([]*jsonStoryStepItemTransport, len(in.Steps))
+		for i, val := range in.Steps {
+			if val == nil {
+				body.Steps[i] = nil
+				continue
+			}
+			body.Steps[i] = encodeStoryStepItemToStoryStepItemTransport(val)
+		}
+		body.Questions = make([]*jsonStoryQuestionItemTransport, len(in.Questions))
+		for i, val := range in.Questions {
+			if val == nil {
+				body.Questions[i] = nil
+				continue
+			}
+			body.Questions[i] = encodeStoryQuestionItemToStoryQuestionItemTransport(val)
+		}
+	}
+	if err := validatejsonStoryFlowItemTransport(body); err != nil {
+		return fmt.Errorf("validate StoryFlowItem value: %w", err)
+	}
+	return nil
+}
+
+// DecodeStoryFlowItem checks JSON field names from the Goa design and returns a service value.
+func DecodeStoryFlowItem(data []byte) (out *StoryFlowItem, err error) {
+	root, err := readStrictJSON(data)
+	if err != nil {
+		return out, fmt.Errorf("decode StoryFlowItem JSON: %w", err)
+	}
+	if err := validateStoryFlowItemJSONValue("", root, ""); err != nil {
+		return out, fmt.Errorf("decode StoryFlowItem JSON: %w", err)
+	}
+	var body *jsonStoryFlowItemTransport
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&body); err != nil {
+		return out, fmt.Errorf("decode StoryFlowItem JSON: %w", err)
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		if err == nil {
+			return out, fmt.Errorf("decode StoryFlowItem JSON: multiple JSON values")
+		}
+		return out, fmt.Errorf("decode StoryFlowItem JSON after first value: %w", err)
+	}
+	if err := validatejsonStoryFlowItemTransport(body); err != nil {
+		return out, fmt.Errorf("validate StoryFlowItem JSON: %w", err)
+	}
+	{
+		out = &StoryFlowItem{
+			Key:         *body.Key,
+			Title:       *body.Title,
+			Description: body.Description,
+			Complete:    *body.Complete,
+		}
+		out.Steps = make([]*StoryStepItem, len(body.Steps))
+		for i, val := range body.Steps {
+			if val == nil {
+				out.Steps[i] = nil
+				continue
+			}
+			out.Steps[i] = decodeStoryStepItemTransportToStoryStepItem(val)
+		}
+		out.Questions = make([]*StoryQuestionItem, len(body.Questions))
+		for i, val := range body.Questions {
+			if val == nil {
+				out.Questions[i] = nil
+				continue
+			}
+			out.Questions[i] = decodeStoryQuestionItemTransportToStoryQuestionItem(val)
+		}
+	}
+	return out, nil
+}
+
+// EncodeStoryQuestionItem turns a service value into JSON using the field names in the Goa design.
+func EncodeStoryQuestionItem(in *StoryQuestionItem) ([]byte, error) {
+	if err := checkStoryQuestionItemValue(in); err != nil {
+		return nil, fmt.Errorf("encode StoryQuestionItem JSON: %w", err)
+	}
+	if err := validateStoryQuestionItemOriginal(in); err != nil {
+		return nil, fmt.Errorf("validate StoryQuestionItem value: %w", err)
+	}
+	var body *jsonStoryQuestionItemTransport
+	{
+		body = &jsonStoryQuestionItemTransport{
+			Key:         &in.Key,
+			Prompt:      &in.Prompt,
+			Description: in.Description,
+		}
+		body.Options = make([]string, len(in.Options))
+		for i, val := range in.Options {
+			body.Options[i] = val
+		}
+	}
+	if err := validatejsonStoryQuestionItemTransport(body); err != nil {
+		return nil, fmt.Errorf("validate StoryQuestionItem JSON: %w", err)
+	}
+	data, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("encode StoryQuestionItem JSON: %w", err)
+	}
+	return data, nil
+}
+
+// ValidateStoryQuestionItemValue checks the original Go fields against their declared constraints.
+// It returns validation errors without encoding the value as JSON.
+
+func ValidateStoryQuestionItemValue(in *StoryQuestionItem) error {
+	if err := checkStoryQuestionItemValue(in); err != nil {
+		return fmt.Errorf("validate StoryQuestionItem value: %w", err)
+	}
+	if err := validateStoryQuestionItemOriginal(in); err != nil {
+		return fmt.Errorf("validate StoryQuestionItem value: %w", err)
+	}
+
+	if in == nil {
+		return goa.MissingFieldError("result", "StoryQuestionItem")
+	}
+
+	var body *jsonStoryQuestionItemTransport
+	{
+		body = &jsonStoryQuestionItemTransport{
+			Key:         &in.Key,
+			Prompt:      &in.Prompt,
+			Description: in.Description,
+		}
+		body.Options = make([]string, len(in.Options))
+		for i, val := range in.Options {
+			body.Options[i] = val
+		}
+	}
+	if err := validatejsonStoryQuestionItemTransport(body); err != nil {
+		return fmt.Errorf("validate StoryQuestionItem value: %w", err)
+	}
+	return nil
+}
+
+// DecodeStoryQuestionItem checks JSON field names from the Goa design and returns a service value.
+func DecodeStoryQuestionItem(data []byte) (out *StoryQuestionItem, err error) {
+	root, err := readStrictJSON(data)
+	if err != nil {
+		return out, fmt.Errorf("decode StoryQuestionItem JSON: %w", err)
+	}
+	if err := validateStoryFlowItemJSONValue3("", root, ""); err != nil {
+		return out, fmt.Errorf("decode StoryQuestionItem JSON: %w", err)
+	}
+	var body *jsonStoryQuestionItemTransport
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&body); err != nil {
+		return out, fmt.Errorf("decode StoryQuestionItem JSON: %w", err)
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		if err == nil {
+			return out, fmt.Errorf("decode StoryQuestionItem JSON: multiple JSON values")
+		}
+		return out, fmt.Errorf("decode StoryQuestionItem JSON after first value: %w", err)
+	}
+	if err := validatejsonStoryQuestionItemTransport(body); err != nil {
+		return out, fmt.Errorf("validate StoryQuestionItem JSON: %w", err)
+	}
+	{
+		out = &StoryQuestionItem{
+			Key:         *body.Key,
+			Prompt:      *body.Prompt,
+			Description: body.Description,
+		}
+		out.Options = make([]string, len(body.Options))
+		for i, val := range body.Options {
+			out.Options[i] = val
+		}
+	}
+	return out, nil
+}
+
+// EncodeStoryRefreshResult turns a service value into JSON using the field names in the Goa design.
+func EncodeStoryRefreshResult(in *StoryRefreshResult) ([]byte, error) {
+	if err := checkStoryRefreshResultValue(in); err != nil {
+		return nil, fmt.Errorf("encode StoryRefreshResult JSON: %w", err)
+	}
+	if err := validateStoryRefreshResultOriginal(in); err != nil {
+		return nil, fmt.Errorf("validate StoryRefreshResult value: %w", err)
+	}
+	var body *jsonStoryRefreshResultTransport
+	{
+		body = &jsonStoryRefreshResultTransport{
+			OpID:           in.OpID,
+			State:          &in.State,
+			SnapshotDigest: in.SnapshotDigest,
+			Diagnostic:     in.Diagnostic,
+			Message:        &in.Message,
+		}
+		body.Stories = make([]*jsonStorySummaryItemTransport, len(in.Stories))
+		for i, val := range in.Stories {
+			if val == nil {
+				body.Stories[i] = nil
+				continue
+			}
+			body.Stories[i] = encodeStorySummaryItemToStorySummaryItemTransport(val)
+		}
+	}
+	if err := validatejsonStoryRefreshResultTransport(body); err != nil {
+		return nil, fmt.Errorf("validate StoryRefreshResult JSON: %w", err)
+	}
+	data, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("encode StoryRefreshResult JSON: %w", err)
+	}
+	return data, nil
+}
+
+// ValidateStoryRefreshResultValue checks the original Go fields against their declared constraints.
+// It returns validation errors without encoding the value as JSON.
+
+func ValidateStoryRefreshResultValue(in *StoryRefreshResult) error {
+	if err := checkStoryRefreshResultValue(in); err != nil {
+		return fmt.Errorf("validate StoryRefreshResult value: %w", err)
+	}
+	if err := validateStoryRefreshResultOriginal(in); err != nil {
+		return fmt.Errorf("validate StoryRefreshResult value: %w", err)
+	}
+
+	if in == nil {
+		return goa.MissingFieldError("result", "StoryRefreshResult")
+	}
+
+	var body *jsonStoryRefreshResultTransport
+	{
+		body = &jsonStoryRefreshResultTransport{
+			OpID:           in.OpID,
+			State:          &in.State,
+			SnapshotDigest: in.SnapshotDigest,
+			Diagnostic:     in.Diagnostic,
+			Message:        &in.Message,
+		}
+		body.Stories = make([]*jsonStorySummaryItemTransport, len(in.Stories))
+		for i, val := range in.Stories {
+			if val == nil {
+				body.Stories[i] = nil
+				continue
+			}
+			body.Stories[i] = encodeStorySummaryItemToStorySummaryItemTransport(val)
+		}
+	}
+	if err := validatejsonStoryRefreshResultTransport(body); err != nil {
+		return fmt.Errorf("validate StoryRefreshResult value: %w", err)
+	}
+	return nil
+}
+
+// DecodeStoryRefreshResult checks JSON field names from the Goa design and returns a service value.
+func DecodeStoryRefreshResult(data []byte) (out *StoryRefreshResult, err error) {
+	root, err := readStrictJSON(data)
+	if err != nil {
+		return out, fmt.Errorf("decode StoryRefreshResult JSON: %w", err)
+	}
+	if err := validateStoryRefreshResultJSONValue("", root, ""); err != nil {
+		return out, fmt.Errorf("decode StoryRefreshResult JSON: %w", err)
+	}
+	var body *jsonStoryRefreshResultTransport
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&body); err != nil {
+		return out, fmt.Errorf("decode StoryRefreshResult JSON: %w", err)
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		if err == nil {
+			return out, fmt.Errorf("decode StoryRefreshResult JSON: multiple JSON values")
+		}
+		return out, fmt.Errorf("decode StoryRefreshResult JSON after first value: %w", err)
+	}
+	if err := validatejsonStoryRefreshResultTransport(body); err != nil {
+		return out, fmt.Errorf("validate StoryRefreshResult JSON: %w", err)
+	}
+	{
+		out = &StoryRefreshResult{
+			OpID:           body.OpID,
+			State:          *body.State,
+			SnapshotDigest: body.SnapshotDigest,
+			Diagnostic:     body.Diagnostic,
+			Message:        *body.Message,
+		}
+		out.Stories = make([]*StorySummaryItem, len(body.Stories))
+		for i, val := range body.Stories {
+			if val == nil {
+				out.Stories[i] = nil
+				continue
+			}
+			out.Stories[i] = decodeStorySummaryItemTransportToStorySummaryItem(val)
+		}
+	}
+	return out, nil
+}
+
+// EncodeStoryStepItem turns a service value into JSON using the field names in the Goa design.
+func EncodeStoryStepItem(in *StoryStepItem) ([]byte, error) {
+	if err := checkStoryStepItemValue(in); err != nil {
+		return nil, fmt.Errorf("encode StoryStepItem JSON: %w", err)
+	}
+	if err := validateStoryStepItemOriginal(in); err != nil {
+		return nil, fmt.Errorf("validate StoryStepItem value: %w", err)
+	}
+	var body *jsonStoryStepItemTransport
+	{
+		body = &jsonStoryStepItemTransport{
+			Key:         &in.Key,
+			ActorKey:    &in.ActorKey,
+			Summary:     &in.Summary,
+			Description: in.Description,
+			Kind:        &in.Kind,
+		}
+		body.Questions = make([]*jsonStoryQuestionItemTransport, len(in.Questions))
+		for i, val := range in.Questions {
+			if val == nil {
+				body.Questions[i] = nil
+				continue
+			}
+			body.Questions[i] = encodeStoryQuestionItemToStoryQuestionItemTransport(val)
+		}
+	}
+	if err := validatejsonStoryStepItemTransport(body); err != nil {
+		return nil, fmt.Errorf("validate StoryStepItem JSON: %w", err)
+	}
+	data, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("encode StoryStepItem JSON: %w", err)
+	}
+	return data, nil
+}
+
+// ValidateStoryStepItemValue checks the original Go fields against their declared constraints.
+// It returns validation errors without encoding the value as JSON.
+
+func ValidateStoryStepItemValue(in *StoryStepItem) error {
+	if err := checkStoryStepItemValue(in); err != nil {
+		return fmt.Errorf("validate StoryStepItem value: %w", err)
+	}
+	if err := validateStoryStepItemOriginal(in); err != nil {
+		return fmt.Errorf("validate StoryStepItem value: %w", err)
+	}
+
+	if in == nil {
+		return goa.MissingFieldError("result", "StoryStepItem")
+	}
+
+	var body *jsonStoryStepItemTransport
+	{
+		body = &jsonStoryStepItemTransport{
+			Key:         &in.Key,
+			ActorKey:    &in.ActorKey,
+			Summary:     &in.Summary,
+			Description: in.Description,
+			Kind:        &in.Kind,
+		}
+		body.Questions = make([]*jsonStoryQuestionItemTransport, len(in.Questions))
+		for i, val := range in.Questions {
+			if val == nil {
+				body.Questions[i] = nil
+				continue
+			}
+			body.Questions[i] = encodeStoryQuestionItemToStoryQuestionItemTransport(val)
+		}
+	}
+	if err := validatejsonStoryStepItemTransport(body); err != nil {
+		return fmt.Errorf("validate StoryStepItem value: %w", err)
+	}
+	return nil
+}
+
+// DecodeStoryStepItem checks JSON field names from the Goa design and returns a service value.
+func DecodeStoryStepItem(data []byte) (out *StoryStepItem, err error) {
+	root, err := readStrictJSON(data)
+	if err != nil {
+		return out, fmt.Errorf("decode StoryStepItem JSON: %w", err)
+	}
+	if err := validateStoryFlowItemJSONValue6("", root, ""); err != nil {
+		return out, fmt.Errorf("decode StoryStepItem JSON: %w", err)
+	}
+	var body *jsonStoryStepItemTransport
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&body); err != nil {
+		return out, fmt.Errorf("decode StoryStepItem JSON: %w", err)
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		if err == nil {
+			return out, fmt.Errorf("decode StoryStepItem JSON: multiple JSON values")
+		}
+		return out, fmt.Errorf("decode StoryStepItem JSON after first value: %w", err)
+	}
+	if err := validatejsonStoryStepItemTransport(body); err != nil {
+		return out, fmt.Errorf("validate StoryStepItem JSON: %w", err)
+	}
+	{
+		out = &StoryStepItem{
+			Key:         *body.Key,
+			ActorKey:    *body.ActorKey,
+			Summary:     *body.Summary,
+			Description: body.Description,
+			Kind:        *body.Kind,
+		}
+		out.Questions = make([]*StoryQuestionItem, len(body.Questions))
+		for i, val := range body.Questions {
+			if val == nil {
+				out.Questions[i] = nil
+				continue
+			}
+			out.Questions[i] = decodeStoryQuestionItemTransportToStoryQuestionItem(val)
+		}
+	}
+	return out, nil
+}
+
+// EncodeStorySummaryItem turns a service value into JSON using the field names in the Goa design.
+func EncodeStorySummaryItem(in *StorySummaryItem) ([]byte, error) {
+	if err := checkStorySummaryItemValue(in); err != nil {
+		return nil, fmt.Errorf("encode StorySummaryItem JSON: %w", err)
+	}
+	if err := validateStorySummaryItemOriginal(in); err != nil {
+		return nil, fmt.Errorf("validate StorySummaryItem value: %w", err)
+	}
+	var body *jsonStorySummaryItemTransport
+	{
+		body = &jsonStorySummaryItemTransport{
+			Name:        &in.Name,
+			Description: in.Description,
+		}
+		body.Actors = make([]*jsonStoryActorItemTransport, len(in.Actors))
+		for i, val := range in.Actors {
+			if val == nil {
+				body.Actors[i] = nil
+				continue
+			}
+			body.Actors[i] = encodeStoryActorItemToStoryActorItemTransport(val)
+		}
+		body.Flows = make([]*jsonStoryFlowItemTransport, len(in.Flows))
+		for i, val := range in.Flows {
+			if val == nil {
+				body.Flows[i] = nil
+				continue
+			}
+			body.Flows[i] = encodeStoryFlowItemToStoryFlowItemTransport(val)
+		}
+	}
+	if err := validatejsonStorySummaryItemTransport(body); err != nil {
+		return nil, fmt.Errorf("validate StorySummaryItem JSON: %w", err)
+	}
+	data, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("encode StorySummaryItem JSON: %w", err)
+	}
+	return data, nil
+}
+
+// ValidateStorySummaryItemValue checks the original Go fields against their declared constraints.
+// It returns validation errors without encoding the value as JSON.
+
+func ValidateStorySummaryItemValue(in *StorySummaryItem) error {
+	if err := checkStorySummaryItemValue(in); err != nil {
+		return fmt.Errorf("validate StorySummaryItem value: %w", err)
+	}
+	if err := validateStorySummaryItemOriginal(in); err != nil {
+		return fmt.Errorf("validate StorySummaryItem value: %w", err)
+	}
+
+	if in == nil {
+		return goa.MissingFieldError("result", "StorySummaryItem")
+	}
+
+	var body *jsonStorySummaryItemTransport
+	{
+		body = &jsonStorySummaryItemTransport{
+			Name:        &in.Name,
+			Description: in.Description,
+		}
+		body.Actors = make([]*jsonStoryActorItemTransport, len(in.Actors))
+		for i, val := range in.Actors {
+			if val == nil {
+				body.Actors[i] = nil
+				continue
+			}
+			body.Actors[i] = encodeStoryActorItemToStoryActorItemTransport(val)
+		}
+		body.Flows = make([]*jsonStoryFlowItemTransport, len(in.Flows))
+		for i, val := range in.Flows {
+			if val == nil {
+				body.Flows[i] = nil
+				continue
+			}
+			body.Flows[i] = encodeStoryFlowItemToStoryFlowItemTransport(val)
+		}
+	}
+	if err := validatejsonStorySummaryItemTransport(body); err != nil {
+		return fmt.Errorf("validate StorySummaryItem value: %w", err)
+	}
+	return nil
+}
+
+// DecodeStorySummaryItem checks JSON field names from the Goa design and returns a service value.
+func DecodeStorySummaryItem(data []byte) (out *StorySummaryItem, err error) {
+	root, err := readStrictJSON(data)
+	if err != nil {
+		return out, fmt.Errorf("decode StorySummaryItem JSON: %w", err)
+	}
+	if err := validateStoryRefreshResultJSONValue3("", root, ""); err != nil {
+		return out, fmt.Errorf("decode StorySummaryItem JSON: %w", err)
+	}
+	var body *jsonStorySummaryItemTransport
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&body); err != nil {
+		return out, fmt.Errorf("decode StorySummaryItem JSON: %w", err)
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		if err == nil {
+			return out, fmt.Errorf("decode StorySummaryItem JSON: multiple JSON values")
+		}
+		return out, fmt.Errorf("decode StorySummaryItem JSON after first value: %w", err)
+	}
+	if err := validatejsonStorySummaryItemTransport(body); err != nil {
+		return out, fmt.Errorf("validate StorySummaryItem JSON: %w", err)
+	}
+	{
+		out = &StorySummaryItem{
+			Name:        *body.Name,
+			Description: body.Description,
+		}
+		out.Actors = make([]*StoryActorItem, len(body.Actors))
+		for i, val := range body.Actors {
+			if val == nil {
+				out.Actors[i] = nil
+				continue
+			}
+			out.Actors[i] = decodeStoryActorItemTransportToStoryActorItem(val)
+		}
+		out.Flows = make([]*StoryFlowItem, len(body.Flows))
+		for i, val := range body.Flows {
+			if val == nil {
+				out.Flows[i] = nil
+				continue
+			}
+			out.Flows[i] = decodeStoryFlowItemTransportToStoryFlowItem(val)
+		}
+	}
+	return out, nil
+}
+
 // EncodeSwarmPlanItem turns a service value into JSON using the field names in the Goa design.
 func EncodeSwarmPlanItem(in *SwarmPlanItem) ([]byte, error) {
 	if err := checkSwarmPlanItemValue(in); err != nil {
@@ -11014,6 +12156,102 @@ func decodeExampleItemTransportToExampleItem(v *jsonExampleItemTransport) *Examp
 	return res
 }
 
+func decodeStoryActorItemTransportToStoryActorItem(v *jsonStoryActorItemTransport) *StoryActorItem {
+	res := &StoryActorItem{
+		Key:         *v.Key,
+		Title:       *v.Title,
+		Description: v.Description,
+	}
+
+	return res
+}
+
+func decodeStoryFlowItemTransportToStoryFlowItem(v *jsonStoryFlowItemTransport) *StoryFlowItem {
+	res := &StoryFlowItem{
+		Key:         *v.Key,
+		Title:       *v.Title,
+		Description: v.Description,
+		Complete:    *v.Complete,
+	}
+	res.Steps = make([]*StoryStepItem, len(v.Steps))
+	for i, val := range v.Steps {
+		if val == nil {
+			res.Steps[i] = nil
+			continue
+		}
+		res.Steps[i] = decodeStoryStepItemTransportToStoryStepItem(val)
+	}
+	res.Questions = make([]*StoryQuestionItem, len(v.Questions))
+	for i, val := range v.Questions {
+		if val == nil {
+			res.Questions[i] = nil
+			continue
+		}
+		res.Questions[i] = decodeStoryQuestionItemTransportToStoryQuestionItem(val)
+	}
+
+	return res
+}
+
+func decodeStoryQuestionItemTransportToStoryQuestionItem(v *jsonStoryQuestionItemTransport) *StoryQuestionItem {
+	res := &StoryQuestionItem{
+		Key:         *v.Key,
+		Prompt:      *v.Prompt,
+		Description: v.Description,
+	}
+	res.Options = make([]string, len(v.Options))
+	for i, val := range v.Options {
+		res.Options[i] = val
+	}
+
+	return res
+}
+
+func decodeStoryStepItemTransportToStoryStepItem(v *jsonStoryStepItemTransport) *StoryStepItem {
+	res := &StoryStepItem{
+		Key:         *v.Key,
+		ActorKey:    *v.ActorKey,
+		Summary:     *v.Summary,
+		Description: v.Description,
+		Kind:        *v.Kind,
+	}
+	res.Questions = make([]*StoryQuestionItem, len(v.Questions))
+	for i, val := range v.Questions {
+		if val == nil {
+			res.Questions[i] = nil
+			continue
+		}
+		res.Questions[i] = decodeStoryQuestionItemTransportToStoryQuestionItem(val)
+	}
+
+	return res
+}
+
+func decodeStorySummaryItemTransportToStorySummaryItem(v *jsonStorySummaryItemTransport) *StorySummaryItem {
+	res := &StorySummaryItem{
+		Name:        *v.Name,
+		Description: v.Description,
+	}
+	res.Actors = make([]*StoryActorItem, len(v.Actors))
+	for i, val := range v.Actors {
+		if val == nil {
+			res.Actors[i] = nil
+			continue
+		}
+		res.Actors[i] = decodeStoryActorItemTransportToStoryActorItem(val)
+	}
+	res.Flows = make([]*StoryFlowItem, len(v.Flows))
+	for i, val := range v.Flows {
+		if val == nil {
+			res.Flows[i] = nil
+			continue
+		}
+		res.Flows[i] = decodeStoryFlowItemTransportToStoryFlowItem(val)
+	}
+
+	return res
+}
+
 func decodeSwarmPlanItemTransportToSwarmPlanItem(v *jsonSwarmPlanItemTransport) *SwarmPlanItem {
 	res := &SwarmPlanItem{
 		Status:            *v.Status,
@@ -11528,6 +12766,102 @@ func encodeExampleItemToExampleItemTransport(v *ExampleItem) *jsonExampleItemTra
 		InputSummary:     &v.InputSummary,
 		ExpectedOutcome:  &v.ExpectedOutcome,
 		VerificationKind: &v.VerificationKind,
+	}
+
+	return res
+}
+
+func encodeStoryActorItemToStoryActorItemTransport(v *StoryActorItem) *jsonStoryActorItemTransport {
+	res := &jsonStoryActorItemTransport{
+		Key:         &v.Key,
+		Title:       &v.Title,
+		Description: v.Description,
+	}
+
+	return res
+}
+
+func encodeStoryFlowItemToStoryFlowItemTransport(v *StoryFlowItem) *jsonStoryFlowItemTransport {
+	res := &jsonStoryFlowItemTransport{
+		Key:         &v.Key,
+		Title:       &v.Title,
+		Description: v.Description,
+		Complete:    &v.Complete,
+	}
+	res.Steps = make([]*jsonStoryStepItemTransport, len(v.Steps))
+	for i, val := range v.Steps {
+		if val == nil {
+			res.Steps[i] = nil
+			continue
+		}
+		res.Steps[i] = encodeStoryStepItemToStoryStepItemTransport(val)
+	}
+	res.Questions = make([]*jsonStoryQuestionItemTransport, len(v.Questions))
+	for i, val := range v.Questions {
+		if val == nil {
+			res.Questions[i] = nil
+			continue
+		}
+		res.Questions[i] = encodeStoryQuestionItemToStoryQuestionItemTransport(val)
+	}
+
+	return res
+}
+
+func encodeStoryQuestionItemToStoryQuestionItemTransport(v *StoryQuestionItem) *jsonStoryQuestionItemTransport {
+	res := &jsonStoryQuestionItemTransport{
+		Key:         &v.Key,
+		Prompt:      &v.Prompt,
+		Description: v.Description,
+	}
+	res.Options = make([]string, len(v.Options))
+	for i, val := range v.Options {
+		res.Options[i] = val
+	}
+
+	return res
+}
+
+func encodeStoryStepItemToStoryStepItemTransport(v *StoryStepItem) *jsonStoryStepItemTransport {
+	res := &jsonStoryStepItemTransport{
+		Key:         &v.Key,
+		ActorKey:    &v.ActorKey,
+		Summary:     &v.Summary,
+		Description: v.Description,
+		Kind:        &v.Kind,
+	}
+	res.Questions = make([]*jsonStoryQuestionItemTransport, len(v.Questions))
+	for i, val := range v.Questions {
+		if val == nil {
+			res.Questions[i] = nil
+			continue
+		}
+		res.Questions[i] = encodeStoryQuestionItemToStoryQuestionItemTransport(val)
+	}
+
+	return res
+}
+
+func encodeStorySummaryItemToStorySummaryItemTransport(v *StorySummaryItem) *jsonStorySummaryItemTransport {
+	res := &jsonStorySummaryItemTransport{
+		Name:        &v.Name,
+		Description: v.Description,
+	}
+	res.Actors = make([]*jsonStoryActorItemTransport, len(v.Actors))
+	for i, val := range v.Actors {
+		if val == nil {
+			res.Actors[i] = nil
+			continue
+		}
+		res.Actors[i] = encodeStoryActorItemToStoryActorItemTransport(val)
+	}
+	res.Flows = make([]*jsonStoryFlowItemTransport, len(v.Flows))
+	for i, val := range v.Flows {
+		if val == nil {
+			res.Flows[i] = nil
+			continue
+		}
+		res.Flows[i] = encodeStoryFlowItemToStoryFlowItemTransport(val)
 	}
 
 	return res
@@ -15887,6 +17221,592 @@ func validateStopLiveTargetResultJSONValue(path string, value any, description s
 	return nil
 }
 
+// validateStoryActorItemJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateStoryActorItemJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "description":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Optional longer explanation of the actor role.",
+			); err != nil {
+				return err
+			}
+		case "key":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Story-scoped actor key.",
+			); err != nil {
+				return err
+			}
+		case "title":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Human-facing actor label.",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"description",
+				"key",
+				"title",
+			})
+		}
+	}
+	return nil
+}
+
+// validateStoryFlowItemJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateStoryFlowItemJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "complete":
+			if err := validateAgentPolicyItemJSONValue3(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "True when the flow has a start, at least one outcome, and no open questions on the flow or any of its steps.",
+			); err != nil {
+				return err
+			}
+		case "description":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Optional longer explanation of the flow.",
+			); err != nil {
+				return err
+			}
+		case "key":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Story-scoped flow key.",
+			); err != nil {
+				return err
+			}
+		case "questions":
+			if err := validateStoryFlowItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Unresolved flow-level decisions in declaration order.",
+			); err != nil {
+				return err
+			}
+		case "steps":
+			if err := validateStoryFlowItemJSONValue5(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Starting, intermediate, and outcome steps in declaration order.",
+			); err != nil {
+				return err
+			}
+		case "title":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Human-facing flow title.",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"complete",
+				"description",
+				"key",
+				"questions",
+				"steps",
+				"title",
+			})
+		}
+	}
+	return nil
+}
+
+// validateStoryFlowItemJSONValue2 checks one value whose JSON shape is fixed by the generated Goa type.
+func validateStoryFlowItemJSONValue2(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "array", "null", description)
+	}
+	typed, ok := value.([]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "array", decodedJSONType(value), description)
+	}
+	for index, item := range typed {
+		if item == nil {
+			continue
+		}
+		if err := validateStoryFlowItemJSONValue3(
+			generatedJSONChildPath(path, strconv.Itoa(index), true),
+			item, description,
+		); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateStoryFlowItemJSONValue3 checks one value whose JSON shape is fixed by the generated Goa type.
+func validateStoryFlowItemJSONValue3(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "description":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Optional longer context for the question.",
+			); err != nil {
+				return err
+			}
+		case "key":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Flow-scoped question key.",
+			); err != nil {
+				return err
+			}
+		case "options":
+			if err := validateStoryFlowItemJSONValue4(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Suggested choices in declaration order.",
+			); err != nil {
+				return err
+			}
+		case "prompt":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Human-facing question text.",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"description",
+				"key",
+				"options",
+				"prompt",
+			})
+		}
+	}
+	return nil
+}
+
+// validateStoryFlowItemJSONValue4 checks one value whose JSON shape is fixed by the generated Goa type.
+func validateStoryFlowItemJSONValue4(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "array", "null", description)
+	}
+	typed, ok := value.([]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "array", decodedJSONType(value), description)
+	}
+	for index, item := range typed {
+		if err := validateAgentPolicyItemJSONValue2(
+			generatedJSONChildPath(path, strconv.Itoa(index), true),
+			item, description,
+		); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateStoryFlowItemJSONValue5 checks one value whose JSON shape is fixed by the generated Goa type.
+func validateStoryFlowItemJSONValue5(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "array", "null", description)
+	}
+	typed, ok := value.([]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "array", decodedJSONType(value), description)
+	}
+	for index, item := range typed {
+		if item == nil {
+			continue
+		}
+		if err := validateStoryFlowItemJSONValue6(
+			generatedJSONChildPath(path, strconv.Itoa(index), true),
+			item, description,
+		); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateStoryFlowItemJSONValue6 checks one value whose JSON shape is fixed by the generated Goa type.
+func validateStoryFlowItemJSONValue6(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "actor_key":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Story-scoped key of the actor performing or observing the step.",
+			); err != nil {
+				return err
+			}
+		case "description":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Optional longer explanation of the step.",
+			); err != nil {
+				return err
+			}
+		case "key":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Flow-scoped step key.",
+			); err != nil {
+				return err
+			}
+		case "kind":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Step position in the flow: start, step, or outcome.",
+			); err != nil {
+				return err
+			}
+		case "questions":
+			if err := validateStoryFlowItemJSONValue7(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Unresolved step-level decisions in declaration order.",
+			); err != nil {
+				return err
+			}
+		case "summary":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Timeline sticky-note sentence for the step.",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"actor_key",
+				"description",
+				"key",
+				"kind",
+				"questions",
+				"summary",
+			})
+		}
+	}
+	return nil
+}
+
+// validateStoryFlowItemJSONValue7 checks one value whose JSON shape is fixed by the generated Goa type.
+func validateStoryFlowItemJSONValue7(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "array", "null", description)
+	}
+	typed, ok := value.([]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "array", decodedJSONType(value), description)
+	}
+	for index, item := range typed {
+		if item == nil {
+			continue
+		}
+		if err := validateStoryFlowItemJSONValue3(
+			generatedJSONChildPath(path, strconv.Itoa(index), true),
+			item, description,
+		); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateStoryRefreshResultJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateStoryRefreshResultJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "diagnostic":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Safe failure or timeout diagnostic when state is failed; omitted otherwise.",
+			); err != nil {
+				return err
+			}
+		case "message":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Summary of the current Story refresh state and next action.",
+			); err != nil {
+				return err
+			}
+		case "op_id":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Identifier of the caller's current Story refresh operation for the bound workspace; present when state is running, succeeded, or failed.",
+			); err != nil {
+				return err
+			}
+		case "snapshot_digest":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Canonical SHA-256 digest (sha256:<hex>) of the workspace module snapshot read when this refresh started; present when state is running, succeeded, or failed.",
+			); err != nil {
+				return err
+			}
+		case "state":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Current operation state: none, running, succeeded, or failed.",
+			); err != nil {
+				return err
+			}
+		case "stories":
+			if err := validateStoryRefreshResultJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Evaluated domain Stories in declaration order when state is succeeded (empty when the design declares no Stories or when state is none, running, or failed).",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"diagnostic",
+				"message",
+				"op_id",
+				"snapshot_digest",
+				"state",
+				"stories",
+			})
+		}
+	}
+	return nil
+}
+
+// validateStoryRefreshResultJSONValue2 checks one value whose JSON shape is fixed by the generated Goa type.
+func validateStoryRefreshResultJSONValue2(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "array", "null", description)
+	}
+	typed, ok := value.([]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "array", decodedJSONType(value), description)
+	}
+	for index, item := range typed {
+		if item == nil {
+			continue
+		}
+		if err := validateStoryRefreshResultJSONValue3(
+			generatedJSONChildPath(path, strconv.Itoa(index), true),
+			item, description,
+		); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateStoryRefreshResultJSONValue3 checks one value whose JSON shape is fixed by the generated Goa type.
+func validateStoryRefreshResultJSONValue3(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "actors":
+			if err := validateStoryRefreshResultJSONValue4(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Domain roles declared in the Story in declaration order.",
+			); err != nil {
+				return err
+			}
+		case "description":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Optional longer explanation of the Story.",
+			); err != nil {
+				return err
+			}
+		case "flows":
+			if err := validateStoryRefreshResultJSONValue5(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Timeline paths declared in the Story in declaration order.",
+			); err != nil {
+				return err
+			}
+		case "name":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Human-facing Story title.",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"actors",
+				"description",
+				"flows",
+				"name",
+			})
+		}
+	}
+	return nil
+}
+
+// validateStoryRefreshResultJSONValue4 checks one value whose JSON shape is fixed by the generated Goa type.
+func validateStoryRefreshResultJSONValue4(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "array", "null", description)
+	}
+	typed, ok := value.([]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "array", decodedJSONType(value), description)
+	}
+	for index, item := range typed {
+		if item == nil {
+			continue
+		}
+		if err := validateStoryActorItemJSONValue(
+			generatedJSONChildPath(path, strconv.Itoa(index), true),
+			item, description,
+		); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateStoryRefreshResultJSONValue5 checks one value whose JSON shape is fixed by the generated Goa type.
+func validateStoryRefreshResultJSONValue5(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "array", "null", description)
+	}
+	typed, ok := value.([]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "array", decodedJSONType(value), description)
+	}
+	for index, item := range typed {
+		if item == nil {
+			continue
+		}
+		if err := validateStoryFlowItemJSONValue(
+			generatedJSONChildPath(path, strconv.Itoa(index), true),
+			item, description,
+		); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // validateTraceListJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
 func validateTraceListJSONValue(path string, value any, description string) error {
 	field := path
@@ -18721,6 +20641,296 @@ func checkStopLiveTargetResultStopLiveTargetResultValue(in *StopLiveTargetResult
 		if !utf8.ValidString(string(in.Message)) {
 			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "message", false))
 		}
+	}
+	return nil
+}
+
+// checkStoryActorItemValue checks text and cycles before conversion.
+func checkStoryActorItemValue(in *StoryActorItem) error {
+	if in == nil {
+		return fmt.Errorf("missing root value")
+	}
+	active := make(map[any]bool)
+	if err := checkStoryActorItemStoryActorItemValue(in, "$", active); err != nil {
+		return err
+	}
+	return nil
+}
+
+// checkStoryActorItemStoryActorItemValue checks one generated value on the active path.
+func checkStoryActorItemStoryActorItemValue(in *StoryActorItem, field string, active map[any]bool) error {
+	if in == nil {
+		return nil
+	}
+	if active[in] {
+		return fmt.Errorf("%s: cyclic Go value", field)
+	}
+	active[in] = true
+	defer delete(active, in)
+	if in != nil {
+		if !utf8.ValidString(string(in.Key)) {
+			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "key", false))
+		}
+		if !utf8.ValidString(string(in.Title)) {
+			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "title", false))
+		}
+		if in.Description != nil {
+			if !utf8.ValidString(string(*in.Description)) {
+				return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "description", false))
+			}
+		}
+	}
+	return nil
+}
+
+// checkStoryFlowItemValue checks text and cycles before conversion.
+func checkStoryFlowItemValue(in *StoryFlowItem) error {
+	if in == nil {
+		return fmt.Errorf("missing root value")
+	}
+	active := make(map[any]bool)
+	if err := checkStoryFlowItemStoryFlowItemValue(in, "$", active); err != nil {
+		return err
+	}
+	return nil
+}
+
+// checkStoryFlowItemStoryFlowItemValue checks one generated value on the active path.
+func checkStoryFlowItemStoryFlowItemValue(in *StoryFlowItem, field string, active map[any]bool) error {
+	if in == nil {
+		return nil
+	}
+	if active[in] {
+		return fmt.Errorf("%s: cyclic Go value", field)
+	}
+	active[in] = true
+	defer delete(active, in)
+	if in != nil {
+		if !utf8.ValidString(string(in.Key)) {
+			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "key", false))
+		}
+		if !utf8.ValidString(string(in.Title)) {
+			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "title", false))
+		}
+		if in.Description != nil {
+			if !utf8.ValidString(string(*in.Description)) {
+				return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "description", false))
+			}
+		}
+		for index1, item1 := range in.Steps {
+			_ = index1
+			_ = item1
+			if err := checkStoryFlowItemStoryStepItemValue(item1, generatedJSONChildPath(generatedJSONChildPath(field, "steps", false), strconv.Itoa(index1), true), active); err != nil {
+				return err
+			}
+		}
+		for index1, item1 := range in.Questions {
+			_ = index1
+			_ = item1
+			if err := checkStoryFlowItemStoryQuestionItemValue(item1, generatedJSONChildPath(generatedJSONChildPath(field, "questions", false), strconv.Itoa(index1), true), active); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// checkStoryFlowItemStoryStepItemValue checks one generated value on the active path.
+func checkStoryFlowItemStoryStepItemValue(in *StoryStepItem, field string, active map[any]bool) error {
+	if in == nil {
+		return nil
+	}
+	if active[in] {
+		return fmt.Errorf("%s: cyclic Go value", field)
+	}
+	active[in] = true
+	defer delete(active, in)
+	if in != nil {
+		if !utf8.ValidString(string(in.Key)) {
+			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "key", false))
+		}
+		if !utf8.ValidString(string(in.ActorKey)) {
+			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "actor_key", false))
+		}
+		if !utf8.ValidString(string(in.Summary)) {
+			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "summary", false))
+		}
+		if in.Description != nil {
+			if !utf8.ValidString(string(*in.Description)) {
+				return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "description", false))
+			}
+		}
+		if !utf8.ValidString(string(in.Kind)) {
+			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "kind", false))
+		}
+		for index1, item1 := range in.Questions {
+			_ = index1
+			_ = item1
+			if err := checkStoryFlowItemStoryQuestionItemValue(item1, generatedJSONChildPath(generatedJSONChildPath(field, "questions", false), strconv.Itoa(index1), true), active); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// checkStoryFlowItemStoryQuestionItemValue checks one generated value on the active path.
+func checkStoryFlowItemStoryQuestionItemValue(in *StoryQuestionItem, field string, active map[any]bool) error {
+	if in == nil {
+		return nil
+	}
+	if active[in] {
+		return fmt.Errorf("%s: cyclic Go value", field)
+	}
+	active[in] = true
+	defer delete(active, in)
+	if in != nil {
+		if !utf8.ValidString(string(in.Key)) {
+			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "key", false))
+		}
+		if !utf8.ValidString(string(in.Prompt)) {
+			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "prompt", false))
+		}
+		if in.Description != nil {
+			if !utf8.ValidString(string(*in.Description)) {
+				return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "description", false))
+			}
+		}
+		for index1, item1 := range in.Options {
+			_ = index1
+			_ = item1
+			if !utf8.ValidString(string(item1)) {
+				return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(generatedJSONChildPath(field, "options", false), strconv.Itoa(index1), true))
+			}
+		}
+	}
+	return nil
+}
+
+// checkStoryQuestionItemValue checks text and cycles before conversion.
+func checkStoryQuestionItemValue(in *StoryQuestionItem) error {
+	if in == nil {
+		return fmt.Errorf("missing root value")
+	}
+	active := make(map[any]bool)
+	if err := checkStoryFlowItemStoryQuestionItemValue(in, "$", active); err != nil {
+		return err
+	}
+	return nil
+}
+
+// checkStoryRefreshResultValue checks text and cycles before conversion.
+func checkStoryRefreshResultValue(in *StoryRefreshResult) error {
+	if in == nil {
+		return fmt.Errorf("missing root value")
+	}
+	active := make(map[any]bool)
+	if err := checkStoryRefreshResultStoryRefreshResultValue(in, "$", active); err != nil {
+		return err
+	}
+	return nil
+}
+
+// checkStoryRefreshResultStoryRefreshResultValue checks one generated value on the active path.
+func checkStoryRefreshResultStoryRefreshResultValue(in *StoryRefreshResult, field string, active map[any]bool) error {
+	if in == nil {
+		return nil
+	}
+	if active[in] {
+		return fmt.Errorf("%s: cyclic Go value", field)
+	}
+	active[in] = true
+	defer delete(active, in)
+	if in != nil {
+		if in.OpID != nil {
+			if !utf8.ValidString(string(*in.OpID)) {
+				return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "op_id", false))
+			}
+		}
+		if !utf8.ValidString(string(in.State)) {
+			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "state", false))
+		}
+		if in.SnapshotDigest != nil {
+			if !utf8.ValidString(string(*in.SnapshotDigest)) {
+				return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "snapshot_digest", false))
+			}
+		}
+		for index1, item1 := range in.Stories {
+			_ = index1
+			_ = item1
+			if err := checkStoryRefreshResultStorySummaryItemValue(item1, generatedJSONChildPath(generatedJSONChildPath(field, "stories", false), strconv.Itoa(index1), true), active); err != nil {
+				return err
+			}
+		}
+		if in.Diagnostic != nil {
+			if !utf8.ValidString(string(*in.Diagnostic)) {
+				return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "diagnostic", false))
+			}
+		}
+		if !utf8.ValidString(string(in.Message)) {
+			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "message", false))
+		}
+	}
+	return nil
+}
+
+// checkStoryRefreshResultStorySummaryItemValue checks one generated value on the active path.
+func checkStoryRefreshResultStorySummaryItemValue(in *StorySummaryItem, field string, active map[any]bool) error {
+	if in == nil {
+		return nil
+	}
+	if active[in] {
+		return fmt.Errorf("%s: cyclic Go value", field)
+	}
+	active[in] = true
+	defer delete(active, in)
+	if in != nil {
+		if !utf8.ValidString(string(in.Name)) {
+			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "name", false))
+		}
+		if in.Description != nil {
+			if !utf8.ValidString(string(*in.Description)) {
+				return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "description", false))
+			}
+		}
+		for index1, item1 := range in.Actors {
+			_ = index1
+			_ = item1
+			if err := checkStoryActorItemStoryActorItemValue(item1, generatedJSONChildPath(generatedJSONChildPath(field, "actors", false), strconv.Itoa(index1), true), active); err != nil {
+				return err
+			}
+		}
+		for index1, item1 := range in.Flows {
+			_ = index1
+			_ = item1
+			if err := checkStoryFlowItemStoryFlowItemValue(item1, generatedJSONChildPath(generatedJSONChildPath(field, "flows", false), strconv.Itoa(index1), true), active); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// checkStoryStepItemValue checks text and cycles before conversion.
+func checkStoryStepItemValue(in *StoryStepItem) error {
+	if in == nil {
+		return fmt.Errorf("missing root value")
+	}
+	active := make(map[any]bool)
+	if err := checkStoryFlowItemStoryStepItemValue(in, "$", active); err != nil {
+		return err
+	}
+	return nil
+}
+
+// checkStorySummaryItemValue checks text and cycles before conversion.
+func checkStorySummaryItemValue(in *StorySummaryItem) error {
+	if in == nil {
+		return fmt.Errorf("missing root value")
+	}
+	active := make(map[any]bool)
+	if err := checkStoryRefreshResultStorySummaryItemValue(in, "$", active); err != nil {
+		return err
 	}
 	return nil
 }

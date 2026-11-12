@@ -269,6 +269,29 @@ type (
 		// hashed into request_revision.
 		UnverifiedApproval *UnverifiedApprovalItem
 	}
+	// GetStoryRefreshPayload defines the JSON payload for the surla.get_story_refresh tool.
+	GetStoryRefreshPayload = struct {
+	}
+	// GetStoryRefreshResult defines the JSON result for the surla.get_story_refresh tool.
+	GetStoryRefreshResult = struct {
+		// Identifier of the caller's current Story refresh operation for the bound
+		// workspace; present when state is running, succeeded, or failed.
+		OpID *string
+		// Current operation state: none, running, succeeded, or failed.
+		State string
+		// Canonical SHA-256 digest (sha256:<hex>) of the workspace module snapshot
+		// read when this refresh started; present when state is running, succeeded, or
+		// failed.
+		SnapshotDigest *string
+		// Evaluated domain Stories in declaration order when state is succeeded (empty
+		// when the design declares no Stories or when state is none, running, or
+		// failed).
+		Stories []*StorySummaryItem
+		// Safe failure or timeout diagnostic when state is failed; omitted otherwise.
+		Diagnostic *string
+		// Summary of the current Story refresh state and next action.
+		Message string
+	}
 	// GetVerificationPayload defines the JSON payload for the surla.get_verification tool.
 	GetVerificationPayload = struct {
 		// Verification run identifier returned by verify_change.
@@ -468,6 +491,29 @@ type (
 		// Bytes the operation produced beyond its capture limit and did not keep;
 		// nonzero means the output has a stated gap.
 		DroppedBytes int64
+	}
+	// RefreshStoryPayload defines the JSON payload for the surla.refresh_story tool.
+	RefreshStoryPayload = struct {
+	}
+	// RefreshStoryResult defines the JSON result for the surla.refresh_story tool.
+	RefreshStoryResult = struct {
+		// Identifier of the caller's current Story refresh operation for the bound
+		// workspace; present when state is running, succeeded, or failed.
+		OpID *string
+		// Current operation state: none, running, succeeded, or failed.
+		State string
+		// Canonical SHA-256 digest (sha256:<hex>) of the workspace module snapshot
+		// read when this refresh started; present when state is running, succeeded, or
+		// failed.
+		SnapshotDigest *string
+		// Evaluated domain Stories in declaration order when state is succeeded (empty
+		// when the design declares no Stories or when state is none, running, or
+		// failed).
+		Stories []*StorySummaryItem
+		// Safe failure or timeout diagnostic when state is failed; omitted otherwise.
+		Diagnostic *string
+		// Summary of the current Story refresh state and next action.
+		Message string
 	}
 	// ReviseChangePayload defines the JSON payload for the surla.revise_change tool.
 	ReviseChangePayload = struct {
@@ -806,6 +852,68 @@ type (
 		ExpectedOutcome string
 		// Evaluator check classification (deterministic or model_judged).
 		VerificationKind string
+	}
+	// StoryActorItem is a nested type used by the generated JSON contract.
+	StoryActorItem = struct {
+		// Story-scoped actor key.
+		Key string
+		// Human-facing actor label.
+		Title string
+		// Optional longer explanation of the actor role.
+		Description *string
+	}
+	// StoryFlowItem is a nested type used by the generated JSON contract.
+	StoryFlowItem = struct {
+		// Story-scoped flow key.
+		Key string
+		// Human-facing flow title.
+		Title string
+		// Optional longer explanation of the flow.
+		Description *string
+		// True when the flow has a start, at least one outcome, and no open questions
+		// on the flow or any of its steps.
+		Complete bool
+		// Starting, intermediate, and outcome steps in declaration order.
+		Steps []*StoryStepItem
+		// Unresolved flow-level decisions in declaration order.
+		Questions []*StoryQuestionItem
+	}
+	// StoryQuestionItem is a nested type used by the generated JSON contract.
+	StoryQuestionItem = struct {
+		// Flow-scoped question key.
+		Key string
+		// Human-facing question text.
+		Prompt string
+		// Optional longer context for the question.
+		Description *string
+		// Suggested choices in declaration order.
+		Options []string
+	}
+	// StoryStepItem is a nested type used by the generated JSON contract.
+	StoryStepItem = struct {
+		// Flow-scoped step key.
+		Key string
+		// Story-scoped key of the actor performing or observing the step.
+		ActorKey string
+		// Timeline sticky-note sentence for the step.
+		Summary string
+		// Optional longer explanation of the step.
+		Description *string
+		// Step position in the flow: start, step, or outcome.
+		Kind string
+		// Unresolved step-level decisions in declaration order.
+		Questions []*StoryQuestionItem
+	}
+	// StorySummaryItem is a nested type used by the generated JSON contract.
+	StorySummaryItem = struct {
+		// Human-facing Story title.
+		Name string
+		// Optional longer explanation of the Story.
+		Description *string
+		// Domain roles declared in the Story in declaration order.
+		Actors []*StoryActorItem
+		// Timeline paths declared in the Story in declaration order.
+		Flows []*StoryFlowItem
 	}
 	// SwarmPlanItem is a nested type used by the generated JSON contract.
 	SwarmPlanItem = struct {

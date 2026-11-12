@@ -1328,6 +1328,257 @@ func ValidateGetChangeResultUnverifiedApprovalItemTransport(value *GetChangeResu
 	return err
 }
 
+// GetStoryRefreshResultStoryActorItemTransport stores JSON fields until they have been validated.
+type GetStoryRefreshResultStoryActorItemTransport struct {
+	// Story-scoped actor key.
+	Key *string `json:"key"`
+	// Human-facing actor label.
+	Title *string `json:"title"`
+	// Optional longer explanation of the actor role.
+	Description *string `json:"description,omitempty"`
+}
+
+// ValidateGetStoryRefreshResultStoryActorItemTransport checks decoded JSON before it becomes a service value.
+func ValidateGetStoryRefreshResultStoryActorItemTransport(value *GetStoryRefreshResultStoryActorItemTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.Key == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("key", "body"))
+	}
+	if value.Title == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("title", "body"))
+	}
+	return err
+}
+
+// GetStoryRefreshResultStoryFlowItemTransport stores JSON fields until they have been validated.
+type GetStoryRefreshResultStoryFlowItemTransport struct {
+	// Story-scoped flow key.
+	Key *string `json:"key"`
+	// Human-facing flow title.
+	Title *string `json:"title"`
+	// Optional longer explanation of the flow.
+	Description *string `json:"description,omitempty"`
+	// True when the flow has a start, at least one outcome, and no open questions
+	// on the flow or any of its steps.
+	Complete *bool `json:"complete"`
+	// Starting, intermediate, and outcome steps in declaration order.
+	Steps []*GetStoryRefreshResultStoryStepItemTransport `json:"steps"`
+	// Unresolved flow-level decisions in declaration order.
+	Questions []*GetStoryRefreshResultStoryQuestionItemTransport `json:"questions"`
+}
+
+// ValidateGetStoryRefreshResultStoryFlowItemTransport checks decoded JSON before it becomes a service value.
+func ValidateGetStoryRefreshResultStoryFlowItemTransport(value *GetStoryRefreshResultStoryFlowItemTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.Key == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("key", "body"))
+	}
+	if value.Title == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("title", "body"))
+	}
+	if value.Complete == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("complete", "body"))
+	}
+	if value.Steps == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("steps", "body"))
+	}
+	if value.Questions == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("questions", "body"))
+	}
+	for _, e := range value.Steps {
+		if e != nil {
+			if err2 := ValidateGetStoryRefreshResultStoryStepItemTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	for _, e := range value.Questions {
+		if e != nil {
+			if err2 := ValidateGetStoryRefreshResultStoryQuestionItemTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	return err
+}
+
+// GetStoryRefreshResultStoryQuestionItemTransport stores JSON fields until they have been validated.
+type GetStoryRefreshResultStoryQuestionItemTransport struct {
+	// Flow-scoped question key.
+	Key *string `json:"key"`
+	// Human-facing question text.
+	Prompt *string `json:"prompt"`
+	// Optional longer context for the question.
+	Description *string `json:"description,omitempty"`
+	// Suggested choices in declaration order.
+	Options []string `json:"options"`
+}
+
+// ValidateGetStoryRefreshResultStoryQuestionItemTransport checks decoded JSON before it becomes a service value.
+func ValidateGetStoryRefreshResultStoryQuestionItemTransport(value *GetStoryRefreshResultStoryQuestionItemTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.Key == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("key", "body"))
+	}
+	if value.Prompt == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("prompt", "body"))
+	}
+	if value.Options == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("options", "body"))
+	}
+	return err
+}
+
+// GetStoryRefreshResultStoryStepItemTransport stores JSON fields until they have been validated.
+type GetStoryRefreshResultStoryStepItemTransport struct {
+	// Flow-scoped step key.
+	Key *string `json:"key"`
+	// Story-scoped key of the actor performing or observing the step.
+	ActorKey *string `json:"actor_key"`
+	// Timeline sticky-note sentence for the step.
+	Summary *string `json:"summary"`
+	// Optional longer explanation of the step.
+	Description *string `json:"description,omitempty"`
+	// Step position in the flow: start, step, or outcome.
+	Kind *string `json:"kind"`
+	// Unresolved step-level decisions in declaration order.
+	Questions []*GetStoryRefreshResultStoryQuestionItemTransport `json:"questions"`
+}
+
+// ValidateGetStoryRefreshResultStoryStepItemTransport checks decoded JSON before it becomes a service value.
+func ValidateGetStoryRefreshResultStoryStepItemTransport(value *GetStoryRefreshResultStoryStepItemTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.Key == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("key", "body"))
+	}
+	if value.ActorKey == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("actor_key", "body"))
+	}
+	if value.Summary == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("summary", "body"))
+	}
+	if value.Kind == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("kind", "body"))
+	}
+	if value.Questions == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("questions", "body"))
+	}
+	if value.Kind != nil {
+		if !(*value.Kind == "start" || *value.Kind == "step" || *value.Kind == "outcome") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.kind", *value.Kind, []any{"start", "step", "outcome"}))
+		}
+	}
+	for _, e := range value.Questions {
+		if e != nil {
+			if err2 := ValidateGetStoryRefreshResultStoryQuestionItemTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	return err
+}
+
+// GetStoryRefreshResultStorySummaryItemTransport stores JSON fields until they have been validated.
+type GetStoryRefreshResultStorySummaryItemTransport struct {
+	// Human-facing Story title.
+	Name *string `json:"name"`
+	// Optional longer explanation of the Story.
+	Description *string `json:"description,omitempty"`
+	// Domain roles declared in the Story in declaration order.
+	Actors []*GetStoryRefreshResultStoryActorItemTransport `json:"actors"`
+	// Timeline paths declared in the Story in declaration order.
+	Flows []*GetStoryRefreshResultStoryFlowItemTransport `json:"flows"`
+}
+
+// ValidateGetStoryRefreshResultStorySummaryItemTransport checks decoded JSON before it becomes a service value.
+func ValidateGetStoryRefreshResultStorySummaryItemTransport(value *GetStoryRefreshResultStorySummaryItemTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.Name == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
+	}
+	if value.Actors == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("actors", "body"))
+	}
+	if value.Flows == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("flows", "body"))
+	}
+	for _, e := range value.Actors {
+		if e != nil {
+			if err2 := ValidateGetStoryRefreshResultStoryActorItemTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	for _, e := range value.Flows {
+		if e != nil {
+			if err2 := ValidateGetStoryRefreshResultStoryFlowItemTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	return err
+}
+
+// GetStoryRefreshResultTransport stores JSON fields until they have been validated.
+type GetStoryRefreshResultTransport struct {
+	// Identifier of the caller's current Story refresh operation for the bound
+	// workspace; present when state is running, succeeded, or failed.
+	OpID *string `json:"op_id,omitempty"`
+	// Current operation state: none, running, succeeded, or failed.
+	State *string `json:"state"`
+	// Canonical SHA-256 digest (sha256:<hex>) of the workspace module snapshot
+	// read when this refresh started; present when state is running, succeeded, or
+	// failed.
+	SnapshotDigest *string `json:"snapshot_digest,omitempty"`
+	// Evaluated domain Stories in declaration order when state is succeeded (empty
+	// when the design declares no Stories or when state is none, running, or
+	// failed).
+	Stories []*GetStoryRefreshResultStorySummaryItemTransport `json:"stories"`
+	// Safe failure or timeout diagnostic when state is failed; omitted otherwise.
+	Diagnostic *string `json:"diagnostic,omitempty"`
+	// Summary of the current Story refresh state and next action.
+	Message *string `json:"message"`
+}
+
+// ValidateGetStoryRefreshResultTransport checks decoded JSON before it becomes a service value.
+func ValidateGetStoryRefreshResultTransport(value *GetStoryRefreshResultTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.State == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("state", "body"))
+	}
+	if value.Stories == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("stories", "body"))
+	}
+	if value.Message == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("message", "body"))
+	}
+	if value.State != nil {
+		if !(*value.State == "none" || *value.State == "running" || *value.State == "succeeded" || *value.State == "failed") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.state", *value.State, []any{"none", "running", "succeeded", "failed"}))
+		}
+	}
+	for _, e := range value.Stories {
+		if e != nil {
+			if err2 := ValidateGetStoryRefreshResultStorySummaryItemTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	return err
+}
+
 // GetVerificationPayloadTransport stores JSON fields until they have been validated.
 type GetVerificationPayloadTransport struct {
 	// Verification run identifier returned by verify_change.
@@ -3346,6 +3597,257 @@ func ValidateReadCheckOutputResultTransport(value *ReadCheckOutputResultTranspor
 	return err
 }
 
+// RefreshStoryResultStoryActorItemTransport stores JSON fields until they have been validated.
+type RefreshStoryResultStoryActorItemTransport struct {
+	// Story-scoped actor key.
+	Key *string `json:"key"`
+	// Human-facing actor label.
+	Title *string `json:"title"`
+	// Optional longer explanation of the actor role.
+	Description *string `json:"description,omitempty"`
+}
+
+// ValidateRefreshStoryResultStoryActorItemTransport checks decoded JSON before it becomes a service value.
+func ValidateRefreshStoryResultStoryActorItemTransport(value *RefreshStoryResultStoryActorItemTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.Key == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("key", "body"))
+	}
+	if value.Title == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("title", "body"))
+	}
+	return err
+}
+
+// RefreshStoryResultStoryFlowItemTransport stores JSON fields until they have been validated.
+type RefreshStoryResultStoryFlowItemTransport struct {
+	// Story-scoped flow key.
+	Key *string `json:"key"`
+	// Human-facing flow title.
+	Title *string `json:"title"`
+	// Optional longer explanation of the flow.
+	Description *string `json:"description,omitempty"`
+	// True when the flow has a start, at least one outcome, and no open questions
+	// on the flow or any of its steps.
+	Complete *bool `json:"complete"`
+	// Starting, intermediate, and outcome steps in declaration order.
+	Steps []*RefreshStoryResultStoryStepItemTransport `json:"steps"`
+	// Unresolved flow-level decisions in declaration order.
+	Questions []*RefreshStoryResultStoryQuestionItemTransport `json:"questions"`
+}
+
+// ValidateRefreshStoryResultStoryFlowItemTransport checks decoded JSON before it becomes a service value.
+func ValidateRefreshStoryResultStoryFlowItemTransport(value *RefreshStoryResultStoryFlowItemTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.Key == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("key", "body"))
+	}
+	if value.Title == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("title", "body"))
+	}
+	if value.Complete == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("complete", "body"))
+	}
+	if value.Steps == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("steps", "body"))
+	}
+	if value.Questions == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("questions", "body"))
+	}
+	for _, e := range value.Steps {
+		if e != nil {
+			if err2 := ValidateRefreshStoryResultStoryStepItemTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	for _, e := range value.Questions {
+		if e != nil {
+			if err2 := ValidateRefreshStoryResultStoryQuestionItemTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	return err
+}
+
+// RefreshStoryResultStoryQuestionItemTransport stores JSON fields until they have been validated.
+type RefreshStoryResultStoryQuestionItemTransport struct {
+	// Flow-scoped question key.
+	Key *string `json:"key"`
+	// Human-facing question text.
+	Prompt *string `json:"prompt"`
+	// Optional longer context for the question.
+	Description *string `json:"description,omitempty"`
+	// Suggested choices in declaration order.
+	Options []string `json:"options"`
+}
+
+// ValidateRefreshStoryResultStoryQuestionItemTransport checks decoded JSON before it becomes a service value.
+func ValidateRefreshStoryResultStoryQuestionItemTransport(value *RefreshStoryResultStoryQuestionItemTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.Key == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("key", "body"))
+	}
+	if value.Prompt == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("prompt", "body"))
+	}
+	if value.Options == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("options", "body"))
+	}
+	return err
+}
+
+// RefreshStoryResultStoryStepItemTransport stores JSON fields until they have been validated.
+type RefreshStoryResultStoryStepItemTransport struct {
+	// Flow-scoped step key.
+	Key *string `json:"key"`
+	// Story-scoped key of the actor performing or observing the step.
+	ActorKey *string `json:"actor_key"`
+	// Timeline sticky-note sentence for the step.
+	Summary *string `json:"summary"`
+	// Optional longer explanation of the step.
+	Description *string `json:"description,omitempty"`
+	// Step position in the flow: start, step, or outcome.
+	Kind *string `json:"kind"`
+	// Unresolved step-level decisions in declaration order.
+	Questions []*RefreshStoryResultStoryQuestionItemTransport `json:"questions"`
+}
+
+// ValidateRefreshStoryResultStoryStepItemTransport checks decoded JSON before it becomes a service value.
+func ValidateRefreshStoryResultStoryStepItemTransport(value *RefreshStoryResultStoryStepItemTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.Key == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("key", "body"))
+	}
+	if value.ActorKey == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("actor_key", "body"))
+	}
+	if value.Summary == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("summary", "body"))
+	}
+	if value.Kind == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("kind", "body"))
+	}
+	if value.Questions == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("questions", "body"))
+	}
+	if value.Kind != nil {
+		if !(*value.Kind == "start" || *value.Kind == "step" || *value.Kind == "outcome") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.kind", *value.Kind, []any{"start", "step", "outcome"}))
+		}
+	}
+	for _, e := range value.Questions {
+		if e != nil {
+			if err2 := ValidateRefreshStoryResultStoryQuestionItemTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	return err
+}
+
+// RefreshStoryResultStorySummaryItemTransport stores JSON fields until they have been validated.
+type RefreshStoryResultStorySummaryItemTransport struct {
+	// Human-facing Story title.
+	Name *string `json:"name"`
+	// Optional longer explanation of the Story.
+	Description *string `json:"description,omitempty"`
+	// Domain roles declared in the Story in declaration order.
+	Actors []*RefreshStoryResultStoryActorItemTransport `json:"actors"`
+	// Timeline paths declared in the Story in declaration order.
+	Flows []*RefreshStoryResultStoryFlowItemTransport `json:"flows"`
+}
+
+// ValidateRefreshStoryResultStorySummaryItemTransport checks decoded JSON before it becomes a service value.
+func ValidateRefreshStoryResultStorySummaryItemTransport(value *RefreshStoryResultStorySummaryItemTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.Name == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
+	}
+	if value.Actors == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("actors", "body"))
+	}
+	if value.Flows == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("flows", "body"))
+	}
+	for _, e := range value.Actors {
+		if e != nil {
+			if err2 := ValidateRefreshStoryResultStoryActorItemTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	for _, e := range value.Flows {
+		if e != nil {
+			if err2 := ValidateRefreshStoryResultStoryFlowItemTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	return err
+}
+
+// RefreshStoryResultTransport stores JSON fields until they have been validated.
+type RefreshStoryResultTransport struct {
+	// Identifier of the caller's current Story refresh operation for the bound
+	// workspace; present when state is running, succeeded, or failed.
+	OpID *string `json:"op_id,omitempty"`
+	// Current operation state: none, running, succeeded, or failed.
+	State *string `json:"state"`
+	// Canonical SHA-256 digest (sha256:<hex>) of the workspace module snapshot
+	// read when this refresh started; present when state is running, succeeded, or
+	// failed.
+	SnapshotDigest *string `json:"snapshot_digest,omitempty"`
+	// Evaluated domain Stories in declaration order when state is succeeded (empty
+	// when the design declares no Stories or when state is none, running, or
+	// failed).
+	Stories []*RefreshStoryResultStorySummaryItemTransport `json:"stories"`
+	// Safe failure or timeout diagnostic when state is failed; omitted otherwise.
+	Diagnostic *string `json:"diagnostic,omitempty"`
+	// Summary of the current Story refresh state and next action.
+	Message *string `json:"message"`
+}
+
+// ValidateRefreshStoryResultTransport checks decoded JSON before it becomes a service value.
+func ValidateRefreshStoryResultTransport(value *RefreshStoryResultTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.State == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("state", "body"))
+	}
+	if value.Stories == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("stories", "body"))
+	}
+	if value.Message == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("message", "body"))
+	}
+	if value.State != nil {
+		if !(*value.State == "none" || *value.State == "running" || *value.State == "succeeded" || *value.State == "failed") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.state", *value.State, []any{"none", "running", "succeeded", "failed"}))
+		}
+	}
+	for _, e := range value.Stories {
+		if e != nil {
+			if err2 := ValidateRefreshStoryResultStorySummaryItemTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	return err
+}
+
 // ReviseChangePayloadCP1AnalysisAmbiguityTransport stores JSON fields until they have been validated.
 type ReviseChangePayloadCP1AnalysisAmbiguityTransport struct {
 	// The decision in plain language, saying what the choice changes.
@@ -5205,6 +5707,36 @@ func EncodeGetChangeResult(in *surla.ChangeCardResult) ([]byte, error) {
 	return data, nil
 }
 
+// EncodeGetStoryRefreshResult turns a service value into JSON using the field names in the Goa design.
+func EncodeGetStoryRefreshResult(in *surla.StoryRefreshResult) ([]byte, error) {
+	var body *GetStoryRefreshResultTransport
+	{
+		body = &GetStoryRefreshResultTransport{
+			OpID:           in.OpID,
+			State:          &in.State,
+			SnapshotDigest: in.SnapshotDigest,
+			Diagnostic:     in.Diagnostic,
+			Message:        &in.Message,
+		}
+		body.Stories = make([]*GetStoryRefreshResultStorySummaryItemTransport, len(in.Stories))
+		for i, val := range in.Stories {
+			if val == nil {
+				body.Stories[i] = nil
+				continue
+			}
+			body.Stories[i] = encodeStorySummaryItemToGetStoryRefreshResultStorySummaryItemTransport(val)
+		}
+	}
+	if err := ValidateGetStoryRefreshResultTransport(body); err != nil {
+		return nil, fmt.Errorf("validate GetStoryRefreshResult JSON: %w", err)
+	}
+	data, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("encode GetStoryRefreshResult JSON: %w", err)
+	}
+	return data, nil
+}
+
 // DecodeGetVerificationPayload checks JSON field names from the Goa design and returns a service value.
 func DecodeGetVerificationPayload(data []byte) (out *surla.GetVerificationPayload, err error) {
 	var body *GetVerificationPayloadTransport
@@ -5685,6 +6217,36 @@ func EncodeReadCheckOutputResult(in *surla.CheckOutputPage) ([]byte, error) {
 	data, err := json.Marshal(body)
 	if err != nil {
 		return nil, fmt.Errorf("encode ReadCheckOutputResult JSON: %w", err)
+	}
+	return data, nil
+}
+
+// EncodeRefreshStoryResult turns a service value into JSON using the field names in the Goa design.
+func EncodeRefreshStoryResult(in *surla.StoryRefreshResult) ([]byte, error) {
+	var body *RefreshStoryResultTransport
+	{
+		body = &RefreshStoryResultTransport{
+			OpID:           in.OpID,
+			State:          &in.State,
+			SnapshotDigest: in.SnapshotDigest,
+			Diagnostic:     in.Diagnostic,
+			Message:        &in.Message,
+		}
+		body.Stories = make([]*RefreshStoryResultStorySummaryItemTransport, len(in.Stories))
+		for i, val := range in.Stories {
+			if val == nil {
+				body.Stories[i] = nil
+				continue
+			}
+			body.Stories[i] = encodeStorySummaryItemToRefreshStoryResultStorySummaryItemTransport(val)
+		}
+	}
+	if err := ValidateRefreshStoryResultTransport(body); err != nil {
+		return nil, fmt.Errorf("validate RefreshStoryResult JSON: %w", err)
+	}
+	data, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("encode RefreshStoryResult JSON: %w", err)
 	}
 	return data, nil
 }
@@ -6531,6 +7093,226 @@ func encodeExampleItemToReviseChangeResultExampleItemTransport(v *surla.ExampleI
 		InputSummary:     &v.InputSummary,
 		ExpectedOutcome:  &v.ExpectedOutcome,
 		VerificationKind: &v.VerificationKind,
+	}
+
+	return res
+}
+
+func encodeStoryActorItemToGetStoryRefreshResultStoryActorItemTransport(v *surla.StoryActorItem) *GetStoryRefreshResultStoryActorItemTransport {
+	res := &GetStoryRefreshResultStoryActorItemTransport{
+		Key:         &v.Key,
+		Title:       &v.Title,
+		Description: v.Description,
+	}
+
+	return res
+}
+
+func encodeStoryActorItemToRefreshStoryResultStoryActorItemTransport(v *surla.StoryActorItem) *RefreshStoryResultStoryActorItemTransport {
+	res := &RefreshStoryResultStoryActorItemTransport{
+		Key:         &v.Key,
+		Title:       &v.Title,
+		Description: v.Description,
+	}
+
+	return res
+}
+
+func encodeStoryFlowItemToGetStoryRefreshResultStoryFlowItemTransport(v *surla.StoryFlowItem) *GetStoryRefreshResultStoryFlowItemTransport {
+	res := &GetStoryRefreshResultStoryFlowItemTransport{
+		Key:         &v.Key,
+		Title:       &v.Title,
+		Description: v.Description,
+		Complete:    &v.Complete,
+	}
+	res.Steps = make([]*GetStoryRefreshResultStoryStepItemTransport, len(v.Steps))
+	for i, val := range v.Steps {
+		if val == nil {
+			res.Steps[i] = nil
+			continue
+		}
+		res.Steps[i] = encodeStoryStepItemToGetStoryRefreshResultStoryStepItemTransport(val)
+	}
+	res.Questions = make([]*GetStoryRefreshResultStoryQuestionItemTransport, len(v.Questions))
+	for i, val := range v.Questions {
+		if val == nil {
+			res.Questions[i] = nil
+			continue
+		}
+		res.Questions[i] = encodeStoryQuestionItemToGetStoryRefreshResultStoryQuestionItemTransport2(val)
+	}
+
+	return res
+}
+
+func encodeStoryFlowItemToRefreshStoryResultStoryFlowItemTransport(v *surla.StoryFlowItem) *RefreshStoryResultStoryFlowItemTransport {
+	res := &RefreshStoryResultStoryFlowItemTransport{
+		Key:         &v.Key,
+		Title:       &v.Title,
+		Description: v.Description,
+		Complete:    &v.Complete,
+	}
+	res.Steps = make([]*RefreshStoryResultStoryStepItemTransport, len(v.Steps))
+	for i, val := range v.Steps {
+		if val == nil {
+			res.Steps[i] = nil
+			continue
+		}
+		res.Steps[i] = encodeStoryStepItemToRefreshStoryResultStoryStepItemTransport(val)
+	}
+	res.Questions = make([]*RefreshStoryResultStoryQuestionItemTransport, len(v.Questions))
+	for i, val := range v.Questions {
+		if val == nil {
+			res.Questions[i] = nil
+			continue
+		}
+		res.Questions[i] = encodeStoryQuestionItemToRefreshStoryResultStoryQuestionItemTransport2(val)
+	}
+
+	return res
+}
+
+func encodeStoryQuestionItemToGetStoryRefreshResultStoryQuestionItemTransport(v *surla.StoryQuestionItem) *GetStoryRefreshResultStoryQuestionItemTransport {
+	res := &GetStoryRefreshResultStoryQuestionItemTransport{
+		Key:         &v.Key,
+		Prompt:      &v.Prompt,
+		Description: v.Description,
+	}
+	res.Options = make([]string, len(v.Options))
+	for i, val := range v.Options {
+		res.Options[i] = val
+	}
+
+	return res
+}
+
+func encodeStoryQuestionItemToGetStoryRefreshResultStoryQuestionItemTransport2(v *surla.StoryQuestionItem) *GetStoryRefreshResultStoryQuestionItemTransport {
+	res := &GetStoryRefreshResultStoryQuestionItemTransport{
+		Key:         &v.Key,
+		Prompt:      &v.Prompt,
+		Description: v.Description,
+	}
+	res.Options = make([]string, len(v.Options))
+	for i, val := range v.Options {
+		res.Options[i] = val
+	}
+
+	return res
+}
+
+func encodeStoryQuestionItemToRefreshStoryResultStoryQuestionItemTransport(v *surla.StoryQuestionItem) *RefreshStoryResultStoryQuestionItemTransport {
+	res := &RefreshStoryResultStoryQuestionItemTransport{
+		Key:         &v.Key,
+		Prompt:      &v.Prompt,
+		Description: v.Description,
+	}
+	res.Options = make([]string, len(v.Options))
+	for i, val := range v.Options {
+		res.Options[i] = val
+	}
+
+	return res
+}
+
+func encodeStoryQuestionItemToRefreshStoryResultStoryQuestionItemTransport2(v *surla.StoryQuestionItem) *RefreshStoryResultStoryQuestionItemTransport {
+	res := &RefreshStoryResultStoryQuestionItemTransport{
+		Key:         &v.Key,
+		Prompt:      &v.Prompt,
+		Description: v.Description,
+	}
+	res.Options = make([]string, len(v.Options))
+	for i, val := range v.Options {
+		res.Options[i] = val
+	}
+
+	return res
+}
+
+func encodeStoryStepItemToGetStoryRefreshResultStoryStepItemTransport(v *surla.StoryStepItem) *GetStoryRefreshResultStoryStepItemTransport {
+	res := &GetStoryRefreshResultStoryStepItemTransport{
+		Key:         &v.Key,
+		ActorKey:    &v.ActorKey,
+		Summary:     &v.Summary,
+		Description: v.Description,
+		Kind:        &v.Kind,
+	}
+	res.Questions = make([]*GetStoryRefreshResultStoryQuestionItemTransport, len(v.Questions))
+	for i, val := range v.Questions {
+		if val == nil {
+			res.Questions[i] = nil
+			continue
+		}
+		res.Questions[i] = encodeStoryQuestionItemToGetStoryRefreshResultStoryQuestionItemTransport(val)
+	}
+
+	return res
+}
+
+func encodeStoryStepItemToRefreshStoryResultStoryStepItemTransport(v *surla.StoryStepItem) *RefreshStoryResultStoryStepItemTransport {
+	res := &RefreshStoryResultStoryStepItemTransport{
+		Key:         &v.Key,
+		ActorKey:    &v.ActorKey,
+		Summary:     &v.Summary,
+		Description: v.Description,
+		Kind:        &v.Kind,
+	}
+	res.Questions = make([]*RefreshStoryResultStoryQuestionItemTransport, len(v.Questions))
+	for i, val := range v.Questions {
+		if val == nil {
+			res.Questions[i] = nil
+			continue
+		}
+		res.Questions[i] = encodeStoryQuestionItemToRefreshStoryResultStoryQuestionItemTransport(val)
+	}
+
+	return res
+}
+
+func encodeStorySummaryItemToGetStoryRefreshResultStorySummaryItemTransport(v *surla.StorySummaryItem) *GetStoryRefreshResultStorySummaryItemTransport {
+	res := &GetStoryRefreshResultStorySummaryItemTransport{
+		Name:        &v.Name,
+		Description: v.Description,
+	}
+	res.Actors = make([]*GetStoryRefreshResultStoryActorItemTransport, len(v.Actors))
+	for i, val := range v.Actors {
+		if val == nil {
+			res.Actors[i] = nil
+			continue
+		}
+		res.Actors[i] = encodeStoryActorItemToGetStoryRefreshResultStoryActorItemTransport(val)
+	}
+	res.Flows = make([]*GetStoryRefreshResultStoryFlowItemTransport, len(v.Flows))
+	for i, val := range v.Flows {
+		if val == nil {
+			res.Flows[i] = nil
+			continue
+		}
+		res.Flows[i] = encodeStoryFlowItemToGetStoryRefreshResultStoryFlowItemTransport(val)
+	}
+
+	return res
+}
+
+func encodeStorySummaryItemToRefreshStoryResultStorySummaryItemTransport(v *surla.StorySummaryItem) *RefreshStoryResultStorySummaryItemTransport {
+	res := &RefreshStoryResultStorySummaryItemTransport{
+		Name:        &v.Name,
+		Description: v.Description,
+	}
+	res.Actors = make([]*RefreshStoryResultStoryActorItemTransport, len(v.Actors))
+	for i, val := range v.Actors {
+		if val == nil {
+			res.Actors[i] = nil
+			continue
+		}
+		res.Actors[i] = encodeStoryActorItemToRefreshStoryResultStoryActorItemTransport(val)
+	}
+	res.Flows = make([]*RefreshStoryResultStoryFlowItemTransport, len(v.Flows))
+	for i, val := range v.Flows {
+		if val == nil {
+			res.Flows[i] = nil
+			continue
+		}
+		res.Flows[i] = encodeStoryFlowItemToRefreshStoryResultStoryFlowItemTransport(val)
 	}
 
 	return res

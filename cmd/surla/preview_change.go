@@ -150,8 +150,8 @@ func runPreviewChange(args []string, w io.Writer, getenv func(string) string) er
 		false,
 	).PreviewArchitecture()
 	client := gensurla.NewClient(
-		nil, nil, nil, nil, nil, nil, endpoint, nil, nil, nil, nil,
-		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
+		nil, nil, nil, nil, nil, nil, endpoint, nil, nil, nil, nil, nil,
+		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
 	)
 	sigCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()

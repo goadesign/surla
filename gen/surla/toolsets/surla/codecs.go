@@ -150,6 +150,22 @@ func GetChangeResultCodec() tools.JSONCodec[*GetChangeResult] {
 	}
 }
 
+// GetStoryRefreshPayloadCodec returns a fresh codec for *GetStoryRefreshPayload.
+func GetStoryRefreshPayloadCodec() tools.JSONCodec[*GetStoryRefreshPayload] {
+	return tools.JSONCodec[*GetStoryRefreshPayload]{
+		ToJSON:   MarshalGetStoryRefreshPayload,
+		FromJSON: UnmarshalGetStoryRefreshPayload,
+	}
+}
+
+// GetStoryRefreshResultCodec returns a fresh codec for *GetStoryRefreshResult.
+func GetStoryRefreshResultCodec() tools.JSONCodec[*GetStoryRefreshResult] {
+	return tools.JSONCodec[*GetStoryRefreshResult]{
+		ToJSON:   MarshalGetStoryRefreshResult,
+		FromJSON: UnmarshalGetStoryRefreshResult,
+	}
+}
+
 // GetVerificationPayloadCodec returns a fresh codec for *GetVerificationPayload.
 func GetVerificationPayloadCodec() tools.JSONCodec[*GetVerificationPayload] {
 	return tools.JSONCodec[*GetVerificationPayload]{
@@ -259,6 +275,22 @@ func ReadCheckOutputResultCodec() tools.JSONCodec[*ReadCheckOutputResult] {
 	return tools.JSONCodec[*ReadCheckOutputResult]{
 		ToJSON:   MarshalReadCheckOutputResult,
 		FromJSON: UnmarshalReadCheckOutputResult,
+	}
+}
+
+// RefreshStoryPayloadCodec returns a fresh codec for *RefreshStoryPayload.
+func RefreshStoryPayloadCodec() tools.JSONCodec[*RefreshStoryPayload] {
+	return tools.JSONCodec[*RefreshStoryPayload]{
+		ToJSON:   MarshalRefreshStoryPayload,
+		FromJSON: UnmarshalRefreshStoryPayload,
+	}
+}
+
+// RefreshStoryResultCodec returns a fresh codec for *RefreshStoryResult.
+func RefreshStoryResultCodec() tools.JSONCodec[*RefreshStoryResult] {
+	return tools.JSONCodec[*RefreshStoryResult]{
+		ToJSON:   MarshalRefreshStoryResult,
+		FromJSON: UnmarshalRefreshStoryResult,
 	}
 }
 
@@ -551,6 +583,32 @@ var (
 			return UnmarshalGetChangeResult(data)
 		},
 	}
+	// getStoryRefreshPayloadCodec provides an untyped codec for *GetStoryRefreshPayload.
+	getStoryRefreshPayloadCodec = tools.JSONCodec[any]{
+		ToJSON: func(v any) ([]byte, error) {
+			// Prefer typed marshal when the value matches the expected type.
+			if typed, ok := v.(*GetStoryRefreshPayload); ok {
+				return MarshalGetStoryRefreshPayload(typed)
+			}
+			return nil, fmt.Errorf("invalid value type for *GetStoryRefreshPayload: %T", v)
+		},
+		FromJSON: func(data []byte) (any, error) {
+			return UnmarshalGetStoryRefreshPayload(data)
+		},
+	}
+	// getStoryRefreshResultCodec provides an untyped codec for *GetStoryRefreshResult.
+	getStoryRefreshResultCodec = tools.JSONCodec[any]{
+		ToJSON: func(v any) ([]byte, error) {
+			// Prefer typed marshal when the value matches the expected type.
+			if typed, ok := v.(*GetStoryRefreshResult); ok {
+				return MarshalGetStoryRefreshResult(typed)
+			}
+			return nil, fmt.Errorf("invalid value type for *GetStoryRefreshResult: %T", v)
+		},
+		FromJSON: func(data []byte) (any, error) {
+			return UnmarshalGetStoryRefreshResult(data)
+		},
+	}
 	// getVerificationPayloadCodec provides an untyped codec for *GetVerificationPayload.
 	getVerificationPayloadCodec = tools.JSONCodec[any]{
 		ToJSON: func(v any) ([]byte, error) {
@@ -731,6 +789,32 @@ var (
 		},
 		FromJSON: func(data []byte) (any, error) {
 			return UnmarshalReadCheckOutputResult(data)
+		},
+	}
+	// refreshStoryPayloadCodec provides an untyped codec for *RefreshStoryPayload.
+	refreshStoryPayloadCodec = tools.JSONCodec[any]{
+		ToJSON: func(v any) ([]byte, error) {
+			// Prefer typed marshal when the value matches the expected type.
+			if typed, ok := v.(*RefreshStoryPayload); ok {
+				return MarshalRefreshStoryPayload(typed)
+			}
+			return nil, fmt.Errorf("invalid value type for *RefreshStoryPayload: %T", v)
+		},
+		FromJSON: func(data []byte) (any, error) {
+			return UnmarshalRefreshStoryPayload(data)
+		},
+	}
+	// refreshStoryResultCodec provides an untyped codec for *RefreshStoryResult.
+	refreshStoryResultCodec = tools.JSONCodec[any]{
+		ToJSON: func(v any) ([]byte, error) {
+			// Prefer typed marshal when the value matches the expected type.
+			if typed, ok := v.(*RefreshStoryResult); ok {
+				return MarshalRefreshStoryResult(typed)
+			}
+			return nil, fmt.Errorf("invalid value type for *RefreshStoryResult: %T", v)
+		},
+		FromJSON: func(data []byte) (any, error) {
+			return UnmarshalRefreshStoryResult(data)
 		},
 	}
 	// reviseChangePayloadCodec provides an untyped codec for *ReviseChangePayload.
@@ -1947,6 +2031,222 @@ var getChangeResultFields = []tools.FieldMetadata{
 		Path:        []tools.FieldPathSegment{tools.FixedField("unverified_approval"), tools.FixedField("reason")},
 		JSONType:    "string",
 		Description: "Explanation of why the recorded approval could not be verified against current promotion inputs and how to recover.",
+	},
+}
+var getStoryRefreshPayloadFields = []tools.FieldMetadata{
+	{
+		JSONType: "object",
+	},
+}
+var getStoryRefreshResultFields = []tools.FieldMetadata{
+	{
+		JSONType:    "object",
+		Description: "Current Story refresh operation for the authenticated caller and bound workspace. state is none when no refresh has run yet in this server process for the bound workspace; running while sandboxed evaluation is in progress; succeeded with the evaluated stories (empty when the design does not load the Story module); or failed with a safe diagnostic.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("op_id")},
+		JSONType:    "string",
+		Description: "Identifier of the caller's current Story refresh operation for the bound workspace; present when state is running, succeeded, or failed.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("state")},
+		JSONType:    "string",
+		Description: "Current operation state: none, running, succeeded, or failed.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("snapshot_digest")},
+		JSONType:    "string",
+		Description: "Canonical SHA-256 digest (sha256:<hex>) of the workspace module snapshot read when this refresh started; present when state is running, succeeded, or failed.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories")},
+		JSONType:    "array",
+		Description: "Evaluated domain Stories in declaration order when state is succeeded (empty when the design declares no Stories or when state is none, running, or failed).",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}},
+		JSONType:    "object",
+		Description: "Evaluated domain Stories in declaration order when state is succeeded (empty when the design declares no Stories or when state is none, running, or failed).",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("name")},
+		JSONType:    "string",
+		Description: "Human-facing Story title.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("description")},
+		JSONType:    "string",
+		Description: "Optional longer explanation of the Story.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("actors")},
+		JSONType:    "array",
+		Description: "Domain roles declared in the Story in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("actors"), tools.DynamicField{}},
+		JSONType:    "object",
+		Description: "Domain roles declared in the Story in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("actors"), tools.DynamicField{}, tools.FixedField("key")},
+		JSONType:    "string",
+		Description: "Story-scoped actor key.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("actors"), tools.DynamicField{}, tools.FixedField("title")},
+		JSONType:    "string",
+		Description: "Human-facing actor label.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("actors"), tools.DynamicField{}, tools.FixedField("description")},
+		JSONType:    "string",
+		Description: "Optional longer explanation of the actor role.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows")},
+		JSONType:    "array",
+		Description: "Timeline paths declared in the Story in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}},
+		JSONType:    "object",
+		Description: "Timeline paths declared in the Story in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("key")},
+		JSONType:    "string",
+		Description: "Story-scoped flow key.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("title")},
+		JSONType:    "string",
+		Description: "Human-facing flow title.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("description")},
+		JSONType:    "string",
+		Description: "Optional longer explanation of the flow.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("complete")},
+		JSONType:    "boolean",
+		Description: "True when the flow has a start, at least one outcome, and no open questions on the flow or any of its steps.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps")},
+		JSONType:    "array",
+		Description: "Starting, intermediate, and outcome steps in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}},
+		JSONType:    "object",
+		Description: "Starting, intermediate, and outcome steps in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}, tools.FixedField("key")},
+		JSONType:    "string",
+		Description: "Flow-scoped step key.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}, tools.FixedField("actor_key")},
+		JSONType:    "string",
+		Description: "Story-scoped key of the actor performing or observing the step.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}, tools.FixedField("summary")},
+		JSONType:    "string",
+		Description: "Timeline sticky-note sentence for the step.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}, tools.FixedField("description")},
+		JSONType:    "string",
+		Description: "Optional longer explanation of the step.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}, tools.FixedField("kind")},
+		JSONType:    "string",
+		Description: "Step position in the flow: start, step, or outcome.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}, tools.FixedField("questions")},
+		JSONType:    "array",
+		Description: "Unresolved step-level decisions in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}, tools.FixedField("questions"), tools.DynamicField{}},
+		JSONType:    "object",
+		Description: "Unresolved step-level decisions in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}, tools.FixedField("questions"), tools.DynamicField{}, tools.FixedField("key")},
+		JSONType:    "string",
+		Description: "Flow-scoped question key.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}, tools.FixedField("questions"), tools.DynamicField{}, tools.FixedField("prompt")},
+		JSONType:    "string",
+		Description: "Human-facing question text.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}, tools.FixedField("questions"), tools.DynamicField{}, tools.FixedField("description")},
+		JSONType:    "string",
+		Description: "Optional longer context for the question.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}, tools.FixedField("questions"), tools.DynamicField{}, tools.FixedField("options")},
+		JSONType:    "array",
+		Description: "Suggested choices in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}, tools.FixedField("questions"), tools.DynamicField{}, tools.FixedField("options"), tools.DynamicField{}},
+		JSONType:    "string",
+		Description: "Suggested choices in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("questions")},
+		JSONType:    "array",
+		Description: "Unresolved flow-level decisions in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("questions"), tools.DynamicField{}},
+		JSONType:    "object",
+		Description: "Unresolved flow-level decisions in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("questions"), tools.DynamicField{}, tools.FixedField("key")},
+		JSONType:    "string",
+		Description: "Flow-scoped question key.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("questions"), tools.DynamicField{}, tools.FixedField("prompt")},
+		JSONType:    "string",
+		Description: "Human-facing question text.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("questions"), tools.DynamicField{}, tools.FixedField("description")},
+		JSONType:    "string",
+		Description: "Optional longer context for the question.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("questions"), tools.DynamicField{}, tools.FixedField("options")},
+		JSONType:    "array",
+		Description: "Suggested choices in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("questions"), tools.DynamicField{}, tools.FixedField("options"), tools.DynamicField{}},
+		JSONType:    "string",
+		Description: "Suggested choices in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("diagnostic")},
+		JSONType:    "string",
+		Description: "Safe failure or timeout diagnostic when state is failed; omitted otherwise.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("message")},
+		JSONType:    "string",
+		Description: "Summary of the current Story refresh state and next action.",
 	},
 }
 var getVerificationPayloadFields = []tools.FieldMetadata{
@@ -3689,6 +3989,222 @@ var readCheckOutputResultFields = []tools.FieldMetadata{
 		Description: "Bytes the operation produced beyond its capture limit and did not keep; nonzero means the output has a stated gap.",
 	},
 }
+var refreshStoryPayloadFields = []tools.FieldMetadata{
+	{
+		JSONType: "object",
+	},
+}
+var refreshStoryResultFields = []tools.FieldMetadata{
+	{
+		JSONType:    "object",
+		Description: "Current Story refresh operation for the authenticated caller and bound workspace. state is none when no refresh has run yet in this server process for the bound workspace; running while sandboxed evaluation is in progress; succeeded with the evaluated stories (empty when the design does not load the Story module); or failed with a safe diagnostic.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("op_id")},
+		JSONType:    "string",
+		Description: "Identifier of the caller's current Story refresh operation for the bound workspace; present when state is running, succeeded, or failed.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("state")},
+		JSONType:    "string",
+		Description: "Current operation state: none, running, succeeded, or failed.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("snapshot_digest")},
+		JSONType:    "string",
+		Description: "Canonical SHA-256 digest (sha256:<hex>) of the workspace module snapshot read when this refresh started; present when state is running, succeeded, or failed.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories")},
+		JSONType:    "array",
+		Description: "Evaluated domain Stories in declaration order when state is succeeded (empty when the design declares no Stories or when state is none, running, or failed).",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}},
+		JSONType:    "object",
+		Description: "Evaluated domain Stories in declaration order when state is succeeded (empty when the design declares no Stories or when state is none, running, or failed).",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("name")},
+		JSONType:    "string",
+		Description: "Human-facing Story title.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("description")},
+		JSONType:    "string",
+		Description: "Optional longer explanation of the Story.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("actors")},
+		JSONType:    "array",
+		Description: "Domain roles declared in the Story in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("actors"), tools.DynamicField{}},
+		JSONType:    "object",
+		Description: "Domain roles declared in the Story in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("actors"), tools.DynamicField{}, tools.FixedField("key")},
+		JSONType:    "string",
+		Description: "Story-scoped actor key.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("actors"), tools.DynamicField{}, tools.FixedField("title")},
+		JSONType:    "string",
+		Description: "Human-facing actor label.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("actors"), tools.DynamicField{}, tools.FixedField("description")},
+		JSONType:    "string",
+		Description: "Optional longer explanation of the actor role.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows")},
+		JSONType:    "array",
+		Description: "Timeline paths declared in the Story in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}},
+		JSONType:    "object",
+		Description: "Timeline paths declared in the Story in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("key")},
+		JSONType:    "string",
+		Description: "Story-scoped flow key.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("title")},
+		JSONType:    "string",
+		Description: "Human-facing flow title.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("description")},
+		JSONType:    "string",
+		Description: "Optional longer explanation of the flow.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("complete")},
+		JSONType:    "boolean",
+		Description: "True when the flow has a start, at least one outcome, and no open questions on the flow or any of its steps.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps")},
+		JSONType:    "array",
+		Description: "Starting, intermediate, and outcome steps in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}},
+		JSONType:    "object",
+		Description: "Starting, intermediate, and outcome steps in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}, tools.FixedField("key")},
+		JSONType:    "string",
+		Description: "Flow-scoped step key.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}, tools.FixedField("actor_key")},
+		JSONType:    "string",
+		Description: "Story-scoped key of the actor performing or observing the step.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}, tools.FixedField("summary")},
+		JSONType:    "string",
+		Description: "Timeline sticky-note sentence for the step.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}, tools.FixedField("description")},
+		JSONType:    "string",
+		Description: "Optional longer explanation of the step.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}, tools.FixedField("kind")},
+		JSONType:    "string",
+		Description: "Step position in the flow: start, step, or outcome.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}, tools.FixedField("questions")},
+		JSONType:    "array",
+		Description: "Unresolved step-level decisions in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}, tools.FixedField("questions"), tools.DynamicField{}},
+		JSONType:    "object",
+		Description: "Unresolved step-level decisions in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}, tools.FixedField("questions"), tools.DynamicField{}, tools.FixedField("key")},
+		JSONType:    "string",
+		Description: "Flow-scoped question key.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}, tools.FixedField("questions"), tools.DynamicField{}, tools.FixedField("prompt")},
+		JSONType:    "string",
+		Description: "Human-facing question text.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}, tools.FixedField("questions"), tools.DynamicField{}, tools.FixedField("description")},
+		JSONType:    "string",
+		Description: "Optional longer context for the question.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}, tools.FixedField("questions"), tools.DynamicField{}, tools.FixedField("options")},
+		JSONType:    "array",
+		Description: "Suggested choices in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("steps"), tools.DynamicField{}, tools.FixedField("questions"), tools.DynamicField{}, tools.FixedField("options"), tools.DynamicField{}},
+		JSONType:    "string",
+		Description: "Suggested choices in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("questions")},
+		JSONType:    "array",
+		Description: "Unresolved flow-level decisions in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("questions"), tools.DynamicField{}},
+		JSONType:    "object",
+		Description: "Unresolved flow-level decisions in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("questions"), tools.DynamicField{}, tools.FixedField("key")},
+		JSONType:    "string",
+		Description: "Flow-scoped question key.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("questions"), tools.DynamicField{}, tools.FixedField("prompt")},
+		JSONType:    "string",
+		Description: "Human-facing question text.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("questions"), tools.DynamicField{}, tools.FixedField("description")},
+		JSONType:    "string",
+		Description: "Optional longer context for the question.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("questions"), tools.DynamicField{}, tools.FixedField("options")},
+		JSONType:    "array",
+		Description: "Suggested choices in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("stories"), tools.DynamicField{}, tools.FixedField("flows"), tools.DynamicField{}, tools.FixedField("questions"), tools.DynamicField{}, tools.FixedField("options"), tools.DynamicField{}},
+		JSONType:    "string",
+		Description: "Suggested choices in declaration order.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("diagnostic")},
+		JSONType:    "string",
+		Description: "Safe failure or timeout diagnostic when state is failed; omitted otherwise.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("message")},
+		JSONType:    "string",
+		Description: "Summary of the current Story refresh state and next action.",
+	},
+}
 var reviseChangePayloadFields = []tools.FieldMetadata{
 	{
 		JSONType:    "object",
@@ -4817,6 +5333,23 @@ func enrichGetChangeResultValidationError(err error) error {
 	}
 	return tools.NewValidationError(ve.Error(), issues, m)
 }
+func enrichGetStoryRefreshResultValidationError(err error) error {
+	var ve *tools.ValidationError
+	if !errors.As(err, &ve) {
+		return err
+	}
+	issues := ve.Issues()
+	if len(issues) == 0 {
+		return err
+	}
+	m := make(map[string]string)
+	for _, is := range issues {
+		if field, ok := tools.LookupFieldMetadata(getStoryRefreshResultFields, is.Field); ok && field.Description != "" {
+			m[is.Field] = field.Description
+		}
+	}
+	return tools.NewValidationError(ve.Error(), issues, m)
+}
 func enrichGetVerificationPayloadValidationError(err error) error {
 	var ve *tools.ValidationError
 	if !errors.As(err, &ve) {
@@ -5050,6 +5583,23 @@ func enrichReadCheckOutputResultValidationError(err error) error {
 	m := make(map[string]string)
 	for _, is := range issues {
 		if field, ok := tools.LookupFieldMetadata(readCheckOutputResultFields, is.Field); ok && field.Description != "" {
+			m[is.Field] = field.Description
+		}
+	}
+	return tools.NewValidationError(ve.Error(), issues, m)
+}
+func enrichRefreshStoryResultValidationError(err error) error {
+	var ve *tools.ValidationError
+	if !errors.As(err, &ve) {
+		return err
+	}
+	issues := ve.Issues()
+	if len(issues) == 0 {
+		return err
+	}
+	m := make(map[string]string)
+	for _, is := range issues {
+		if field, ok := tools.LookupFieldMetadata(refreshStoryResultFields, is.Field); ok && field.Description != "" {
 			m[is.Field] = field.Description
 		}
 	}
@@ -5687,6 +6237,68 @@ func invalidGetChangeResultFieldTypeError(err error) error {
 		nil,
 	)
 }
+func invalidGetStoryRefreshPayloadFieldTypeError(err error) error {
+	var typeErr *json.UnmarshalTypeError
+	if !errors.As(err, &typeErr) {
+		return err
+	}
+	field := typeErr.Field
+	field = strings.TrimPrefix(field, "GetStoryRefreshPayloadTransport.")
+	if field == "" {
+		field = "$payload"
+	}
+	metadata, ok := tools.LookupFieldMetadata(getStoryRefreshPayloadFields, field)
+	if !ok || metadata.JSONType == "" {
+		return err
+	}
+	actual := generatedUnmarshalJSONType(typeErr.Value)
+	if actual == "" {
+		return err
+	}
+	return tools.NewValidationError(
+		err.Error(),
+		[]*tools.FieldIssue{
+			{
+				Field:            field,
+				Constraint:       "invalid_field_type",
+				ExpectedJSONType: metadata.JSONType,
+				ActualJSONType:   actual,
+			},
+		},
+		nil,
+	)
+}
+func invalidGetStoryRefreshResultFieldTypeError(err error) error {
+	var typeErr *json.UnmarshalTypeError
+	if !errors.As(err, &typeErr) {
+		return err
+	}
+	field := typeErr.Field
+	field = strings.TrimPrefix(field, "GetStoryRefreshResultTransport.")
+	if field == "" {
+		field = "$payload"
+	}
+	metadata, ok := tools.LookupFieldMetadata(getStoryRefreshResultFields, field)
+	if !ok || metadata.JSONType == "" {
+		return err
+	}
+	actual := generatedUnmarshalJSONType(typeErr.Value)
+	if actual == "" {
+		return err
+	}
+	return tools.NewValidationError(
+		err.Error(),
+		[]*tools.FieldIssue{
+			{
+				Field:            field,
+				Constraint:       "invalid_field_type",
+				ExpectedJSONType: metadata.JSONType,
+				ActualJSONType:   actual,
+			},
+		},
+		nil,
+	)
+}
 func invalidGetVerificationPayloadFieldTypeError(err error) error {
 	var typeErr *json.UnmarshalTypeError
 	if !errors.As(err, &typeErr) {
@@ -6101,6 +6713,68 @@ func invalidReadCheckOutputResultFieldTypeError(err error) error {
 		field = "$payload"
 	}
 	metadata, ok := tools.LookupFieldMetadata(readCheckOutputResultFields, field)
+	if !ok || metadata.JSONType == "" {
+		return err
+	}
+	actual := generatedUnmarshalJSONType(typeErr.Value)
+	if actual == "" {
+		return err
+	}
+	return tools.NewValidationError(
+		err.Error(),
+		[]*tools.FieldIssue{
+			{
+				Field:            field,
+				Constraint:       "invalid_field_type",
+				ExpectedJSONType: metadata.JSONType,
+				ActualJSONType:   actual,
+			},
+		},
+		nil,
+	)
+}
+func invalidRefreshStoryPayloadFieldTypeError(err error) error {
+	var typeErr *json.UnmarshalTypeError
+	if !errors.As(err, &typeErr) {
+		return err
+	}
+	field := typeErr.Field
+	field = strings.TrimPrefix(field, "RefreshStoryPayloadTransport.")
+	if field == "" {
+		field = "$payload"
+	}
+	metadata, ok := tools.LookupFieldMetadata(refreshStoryPayloadFields, field)
+	if !ok || metadata.JSONType == "" {
+		return err
+	}
+	actual := generatedUnmarshalJSONType(typeErr.Value)
+	if actual == "" {
+		return err
+	}
+	return tools.NewValidationError(
+		err.Error(),
+		[]*tools.FieldIssue{
+			{
+				Field:            field,
+				Constraint:       "invalid_field_type",
+				ExpectedJSONType: metadata.JSONType,
+				ActualJSONType:   actual,
+			},
+		},
+		nil,
+	)
+}
+func invalidRefreshStoryResultFieldTypeError(err error) error {
+	var typeErr *json.UnmarshalTypeError
+	if !errors.As(err, &typeErr) {
+		return err
+	}
+	field := typeErr.Field
+	field = strings.TrimPrefix(field, "RefreshStoryResultTransport.")
+	if field == "" {
+		field = "$payload"
+	}
+	metadata, ok := tools.LookupFieldMetadata(refreshStoryResultFields, field)
 	if !ok || metadata.JSONType == "" {
 		return err
 	}
@@ -7436,6 +8110,102 @@ func UnmarshalGetChangeResult(data []byte) (*GetChangeResult, error) {
 	return out, nil
 }
 
+// MarshalGetStoryRefreshPayload serializes *GetStoryRefreshPayload into JSON.
+func MarshalGetStoryRefreshPayload(v *GetStoryRefreshPayload) ([]byte, error) {
+	if v == nil {
+		return nil, fmt.Errorf("getStoryRefreshPayload is nil")
+	}
+	in := v
+	_ = in
+	var out *toolhttp.GetStoryRefreshPayloadTransport
+	out = &toolhttp.GetStoryRefreshPayloadTransport{}
+	return json.Marshal(out)
+}
+
+// UnmarshalGetStoryRefreshPayload deserializes JSON into *GetStoryRefreshPayload.
+func UnmarshalGetStoryRefreshPayload(data []byte) (*GetStoryRefreshPayload, error) {
+	if len(data) == 0 {
+		var v *GetStoryRefreshPayload
+		return v, nil
+	}
+	var tv toolhttp.GetStoryRefreshPayloadTransport
+	if err := validateStopLiveTargetPayloadJSON(data); err != nil {
+		return nil, invalidGetStoryRefreshPayloadFieldTypeError(err)
+	}
+	if err := json.Unmarshal(data, &tv); err != nil {
+		return nil, invalidGetStoryRefreshPayloadFieldTypeError(err)
+	}
+	in := &tv
+	_ = in
+	var out *GetStoryRefreshPayload
+	out = &GetStoryRefreshPayload{}
+	return out, nil
+}
+
+// MarshalGetStoryRefreshResult serializes *GetStoryRefreshResult into JSON.
+func MarshalGetStoryRefreshResult(v *GetStoryRefreshResult) ([]byte, error) {
+	if v == nil {
+		return nil, fmt.Errorf("getStoryRefreshResult is nil")
+	}
+	in := v
+	_ = in
+	var out *toolhttp.GetStoryRefreshResultTransport
+	out = &toolhttp.GetStoryRefreshResultTransport{
+		OpID:           in.OpID,
+		State:          &in.State,
+		SnapshotDigest: in.SnapshotDigest,
+		Diagnostic:     in.Diagnostic,
+		Message:        &in.Message,
+	}
+	out.Stories = make([]*toolhttp.StorySummaryItemTransport, len(in.Stories))
+	for i, val := range in.Stories {
+		if val == nil {
+			out.Stories[i] = nil
+			continue
+		}
+		out.Stories[i] = encodeStorySummaryItemToStorySummaryItemTransport(val)
+	}
+	return json.Marshal(out)
+}
+
+// UnmarshalGetStoryRefreshResult deserializes JSON into *GetStoryRefreshResult.
+func UnmarshalGetStoryRefreshResult(data []byte) (*GetStoryRefreshResult, error) {
+	if len(data) == 0 {
+		return nil, fmt.Errorf("getStoryRefreshResult JSON is empty")
+	}
+	var tv toolhttp.GetStoryRefreshResultTransport
+	if err := validateRefreshStoryResultJSON(data); err != nil {
+		return nil, invalidGetStoryRefreshResultFieldTypeError(err)
+	}
+	if err := json.Unmarshal(data, &tv); err != nil {
+		return nil, invalidGetStoryRefreshResultFieldTypeError(err)
+	}
+	if err := toolhttp.ValidateGetStoryRefreshResultTransport(&tv); err != nil {
+		err = newValidationError(err)
+		err = enrichGetStoryRefreshResultValidationError(err)
+		return nil, err
+	}
+	in := &tv
+	_ = in
+	var out *GetStoryRefreshResult
+	out = &GetStoryRefreshResult{
+		OpID:           in.OpID,
+		State:          *in.State,
+		SnapshotDigest: in.SnapshotDigest,
+		Diagnostic:     in.Diagnostic,
+		Message:        *in.Message,
+	}
+	out.Stories = make([]*StorySummaryItem, len(in.Stories))
+	for i, val := range in.Stories {
+		if val == nil {
+			out.Stories[i] = nil
+			continue
+		}
+		out.Stories[i] = decodeStorySummaryItemTransportToStorySummaryItem(val)
+	}
+	return out, nil
+}
+
 // MarshalGetVerificationPayload serializes *GetVerificationPayload into JSON.
 func MarshalGetVerificationPayload(v *GetVerificationPayload) ([]byte, error) {
 	if v == nil {
@@ -8350,6 +9120,102 @@ func UnmarshalReadCheckOutputResult(data []byte) (*ReadCheckOutputResult, error)
 	return out, nil
 }
 
+// MarshalRefreshStoryPayload serializes *RefreshStoryPayload into JSON.
+func MarshalRefreshStoryPayload(v *RefreshStoryPayload) ([]byte, error) {
+	if v == nil {
+		return nil, fmt.Errorf("refreshStoryPayload is nil")
+	}
+	in := v
+	_ = in
+	var out *toolhttp.RefreshStoryPayloadTransport
+	out = &toolhttp.RefreshStoryPayloadTransport{}
+	return json.Marshal(out)
+}
+
+// UnmarshalRefreshStoryPayload deserializes JSON into *RefreshStoryPayload.
+func UnmarshalRefreshStoryPayload(data []byte) (*RefreshStoryPayload, error) {
+	if len(data) == 0 {
+		var v *RefreshStoryPayload
+		return v, nil
+	}
+	var tv toolhttp.RefreshStoryPayloadTransport
+	if err := validateStopLiveTargetPayloadJSON(data); err != nil {
+		return nil, invalidRefreshStoryPayloadFieldTypeError(err)
+	}
+	if err := json.Unmarshal(data, &tv); err != nil {
+		return nil, invalidRefreshStoryPayloadFieldTypeError(err)
+	}
+	in := &tv
+	_ = in
+	var out *RefreshStoryPayload
+	out = &RefreshStoryPayload{}
+	return out, nil
+}
+
+// MarshalRefreshStoryResult serializes *RefreshStoryResult into JSON.
+func MarshalRefreshStoryResult(v *RefreshStoryResult) ([]byte, error) {
+	if v == nil {
+		return nil, fmt.Errorf("refreshStoryResult is nil")
+	}
+	in := v
+	_ = in
+	var out *toolhttp.RefreshStoryResultTransport
+	out = &toolhttp.RefreshStoryResultTransport{
+		OpID:           in.OpID,
+		State:          &in.State,
+		SnapshotDigest: in.SnapshotDigest,
+		Diagnostic:     in.Diagnostic,
+		Message:        &in.Message,
+	}
+	out.Stories = make([]*toolhttp.StorySummaryItemTransport, len(in.Stories))
+	for i, val := range in.Stories {
+		if val == nil {
+			out.Stories[i] = nil
+			continue
+		}
+		out.Stories[i] = encodeStorySummaryItemToStorySummaryItemTransport(val)
+	}
+	return json.Marshal(out)
+}
+
+// UnmarshalRefreshStoryResult deserializes JSON into *RefreshStoryResult.
+func UnmarshalRefreshStoryResult(data []byte) (*RefreshStoryResult, error) {
+	if len(data) == 0 {
+		return nil, fmt.Errorf("refreshStoryResult JSON is empty")
+	}
+	var tv toolhttp.RefreshStoryResultTransport
+	if err := validateRefreshStoryResultJSON(data); err != nil {
+		return nil, invalidRefreshStoryResultFieldTypeError(err)
+	}
+	if err := json.Unmarshal(data, &tv); err != nil {
+		return nil, invalidRefreshStoryResultFieldTypeError(err)
+	}
+	if err := toolhttp.ValidateRefreshStoryResultTransport(&tv); err != nil {
+		err = newValidationError(err)
+		err = enrichRefreshStoryResultValidationError(err)
+		return nil, err
+	}
+	in := &tv
+	_ = in
+	var out *RefreshStoryResult
+	out = &RefreshStoryResult{
+		OpID:           in.OpID,
+		State:          *in.State,
+		SnapshotDigest: in.SnapshotDigest,
+		Diagnostic:     in.Diagnostic,
+		Message:        *in.Message,
+	}
+	out.Stories = make([]*StorySummaryItem, len(in.Stories))
+	for i, val := range in.Stories {
+		if val == nil {
+			out.Stories[i] = nil
+			continue
+		}
+		out.Stories[i] = decodeStorySummaryItemTransportToStorySummaryItem(val)
+	}
+	return out, nil
+}
+
 // MarshalReviseChangePayload serializes *ReviseChangePayload into JSON.
 func MarshalReviseChangePayload(v *ReviseChangePayload) ([]byte, error) {
 	if v == nil {
@@ -9248,6 +10114,16 @@ func validateListTracesResultJSON(data []byte) error {
 		return err
 	}
 	return validateListTracesResultJSONValue("", root, "")
+}
+
+// validateRefreshStoryResultJSON parses one JSON document and checks the exact value
+// shapes known from this generated Goa type.
+func validateRefreshStoryResultJSON(data []byte) error {
+	root, err := readStrictToolJSON(data)
+	if err != nil {
+		return err
+	}
+	return validateRefreshStoryResultJSONValue("", root, "")
 }
 
 // readStrictToolJSON checks the complete JSON document for malformed text and
@@ -13541,6 +14417,526 @@ func validateListTracesResultTraceSpanTransportJSONValue(path string, value any,
 	return nil
 }
 
+// validateRefreshStoryResultJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateRefreshStoryResultJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "diagnostic":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Safe failure or timeout diagnostic when state is failed; omitted otherwise.",
+			); err != nil {
+				return err
+			}
+		case "message":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Summary of the current Story refresh state and next action.",
+			); err != nil {
+				return err
+			}
+		case "op_id":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Identifier of the caller's current Story refresh operation for the bound workspace; present when state is running, succeeded, or failed.",
+			); err != nil {
+				return err
+			}
+		case "snapshot_digest":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Canonical SHA-256 digest (sha256:<hex>) of the workspace module snapshot read when this refresh started; present when state is running, succeeded, or failed.",
+			); err != nil {
+				return err
+			}
+		case "state":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Current operation state: none, running, succeeded, or failed.",
+			); err != nil {
+				return err
+			}
+		case "stories":
+			if err := validateRefreshStoryResultRootStoriesJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Evaluated domain Stories in declaration order when state is succeeded (empty when the design declares no Stories or when state is none, running, or failed).",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"diagnostic",
+				"message",
+				"op_id",
+				"snapshot_digest",
+				"state",
+				"stories",
+			})
+		}
+	}
+	return nil
+}
+
+// validateRefreshStoryResultRootStoriesJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateRefreshStoryResultRootStoriesJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "array", "null", description)
+	}
+	typed, ok := value.([]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "array", decodedJSONType(value), description)
+	}
+	for index, item := range typed {
+		if err := validateRefreshStoryResultStorySummaryItemTransportJSONValue(
+			generatedJSONChildPath(path, strconv.Itoa(index), true),
+			item, description,
+		); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateRefreshStoryResultStorySummaryItemTransportJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateRefreshStoryResultStorySummaryItemTransportJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "actors":
+			if err := validateRefreshStoryResultStorySummaryItemTransportActorsJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Domain roles declared in the Story in declaration order.",
+			); err != nil {
+				return err
+			}
+		case "description":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Optional longer explanation of the Story.",
+			); err != nil {
+				return err
+			}
+		case "flows":
+			if err := validateRefreshStoryResultStorySummaryItemTransportFlowsJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Timeline paths declared in the Story in declaration order.",
+			); err != nil {
+				return err
+			}
+		case "name":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Human-facing Story title.",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"actors",
+				"description",
+				"flows",
+				"name",
+			})
+		}
+	}
+	return nil
+}
+
+// validateRefreshStoryResultStorySummaryItemTransportActorsJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateRefreshStoryResultStorySummaryItemTransportActorsJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "array", "null", description)
+	}
+	typed, ok := value.([]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "array", decodedJSONType(value), description)
+	}
+	for index, item := range typed {
+		if err := validateRefreshStoryResultStoryActorItemTransportJSONValue(
+			generatedJSONChildPath(path, strconv.Itoa(index), true),
+			item, description,
+		); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateRefreshStoryResultStoryActorItemTransportJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateRefreshStoryResultStoryActorItemTransportJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "description":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Optional longer explanation of the actor role.",
+			); err != nil {
+				return err
+			}
+		case "key":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Story-scoped actor key.",
+			); err != nil {
+				return err
+			}
+		case "title":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Human-facing actor label.",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"description",
+				"key",
+				"title",
+			})
+		}
+	}
+	return nil
+}
+
+// validateRefreshStoryResultStorySummaryItemTransportFlowsJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateRefreshStoryResultStorySummaryItemTransportFlowsJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "array", "null", description)
+	}
+	typed, ok := value.([]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "array", decodedJSONType(value), description)
+	}
+	for index, item := range typed {
+		if err := validateRefreshStoryResultStoryFlowItemTransportJSONValue(
+			generatedJSONChildPath(path, strconv.Itoa(index), true),
+			item, description,
+		); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateRefreshStoryResultStoryFlowItemTransportJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateRefreshStoryResultStoryFlowItemTransportJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "complete":
+			if err := validateBooleanJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "True when the flow has a start, at least one outcome, and no open questions on the flow or any of its steps.",
+			); err != nil {
+				return err
+			}
+		case "description":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Optional longer explanation of the flow.",
+			); err != nil {
+				return err
+			}
+		case "key":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Story-scoped flow key.",
+			); err != nil {
+				return err
+			}
+		case "questions":
+			if err := validateRefreshStoryResultStoryFlowItemTransportQuestionsJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Unresolved flow-level decisions in declaration order.",
+			); err != nil {
+				return err
+			}
+		case "steps":
+			if err := validateRefreshStoryResultStoryFlowItemTransportStepsJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Starting, intermediate, and outcome steps in declaration order.",
+			); err != nil {
+				return err
+			}
+		case "title":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Human-facing flow title.",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"complete",
+				"description",
+				"key",
+				"questions",
+				"steps",
+				"title",
+			})
+		}
+	}
+	return nil
+}
+
+// validateRefreshStoryResultStoryFlowItemTransportQuestionsJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateRefreshStoryResultStoryFlowItemTransportQuestionsJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "array", "null", description)
+	}
+	typed, ok := value.([]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "array", decodedJSONType(value), description)
+	}
+	for index, item := range typed {
+		if err := validateRefreshStoryResultStoryQuestionItemTransportJSONValue(
+			generatedJSONChildPath(path, strconv.Itoa(index), true),
+			item, description,
+		); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateRefreshStoryResultStoryQuestionItemTransportJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateRefreshStoryResultStoryQuestionItemTransportJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "description":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Optional longer context for the question.",
+			); err != nil {
+				return err
+			}
+		case "key":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Flow-scoped question key.",
+			); err != nil {
+				return err
+			}
+		case "options":
+			if err := validateProposeChangePayloadCP1AnalysisAmbiguityTransportOptionsJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Suggested choices in declaration order.",
+			); err != nil {
+				return err
+			}
+		case "prompt":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Human-facing question text.",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"description",
+				"key",
+				"options",
+				"prompt",
+			})
+		}
+	}
+	return nil
+}
+
+// validateRefreshStoryResultStoryFlowItemTransportStepsJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateRefreshStoryResultStoryFlowItemTransportStepsJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "array", "null", description)
+	}
+	typed, ok := value.([]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "array", decodedJSONType(value), description)
+	}
+	for index, item := range typed {
+		if err := validateRefreshStoryResultStoryStepItemTransportJSONValue(
+			generatedJSONChildPath(path, strconv.Itoa(index), true),
+			item, description,
+		); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateRefreshStoryResultStoryStepItemTransportJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateRefreshStoryResultStoryStepItemTransportJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "actor_key":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Story-scoped key of the actor performing or observing the step.",
+			); err != nil {
+				return err
+			}
+		case "description":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Optional longer explanation of the step.",
+			); err != nil {
+				return err
+			}
+		case "key":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Flow-scoped step key.",
+			); err != nil {
+				return err
+			}
+		case "kind":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Step position in the flow: start, step, or outcome.",
+			); err != nil {
+				return err
+			}
+		case "questions":
+			if err := validateRefreshStoryResultStoryFlowItemTransportQuestionsJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Unresolved step-level decisions in declaration order.",
+			); err != nil {
+				return err
+			}
+		case "summary":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Timeline sticky-note sentence for the step.",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"actor_key",
+				"description",
+				"key",
+				"kind",
+				"questions",
+				"summary",
+			})
+		}
+	}
+	return nil
+}
+
 // generatedJSONChildPath keeps fixed object fields dotted. After an array index
 // or caller-defined map key, it uses slash-separated paths so later keys stay clear.
 func generatedJSONChildPath(path, key string, useSlashPath bool) string {
@@ -13808,6 +15204,188 @@ func encodeDesignSnapshotToDesignSnapshotTransport(v *DesignSnapshot) *toolhttp.
 		tk := key
 		tv := val
 		res.Files[tk] = tv
+	}
+
+	return res
+}
+func decodeStorySummaryItemTransportToStorySummaryItem(v *toolhttp.StorySummaryItemTransport) *StorySummaryItem {
+	res := &StorySummaryItem{
+		Name:        *v.Name,
+		Description: v.Description,
+	}
+	res.Actors = make([]*StoryActorItem, len(v.Actors))
+	for i, val := range v.Actors {
+		if val == nil {
+			res.Actors[i] = nil
+			continue
+		}
+		res.Actors[i] = decodeStoryActorItemTransportToStoryActorItem(val)
+	}
+	res.Flows = make([]*StoryFlowItem, len(v.Flows))
+	for i, val := range v.Flows {
+		if val == nil {
+			res.Flows[i] = nil
+			continue
+		}
+		res.Flows[i] = decodeStoryFlowItemTransportToStoryFlowItem(val)
+	}
+
+	return res
+}
+func decodeStoryActorItemTransportToStoryActorItem(v *toolhttp.StoryActorItemTransport) *StoryActorItem {
+	res := &StoryActorItem{
+		Key:         *v.Key,
+		Title:       *v.Title,
+		Description: v.Description,
+	}
+
+	return res
+}
+func decodeStoryFlowItemTransportToStoryFlowItem(v *toolhttp.StoryFlowItemTransport) *StoryFlowItem {
+	res := &StoryFlowItem{
+		Key:         *v.Key,
+		Title:       *v.Title,
+		Description: v.Description,
+		Complete:    *v.Complete,
+	}
+	res.Steps = make([]*StoryStepItem, len(v.Steps))
+	for i, val := range v.Steps {
+		if val == nil {
+			res.Steps[i] = nil
+			continue
+		}
+		res.Steps[i] = decodeStoryStepItemTransportToStoryStepItem(val)
+	}
+	res.Questions = make([]*StoryQuestionItem, len(v.Questions))
+	for i, val := range v.Questions {
+		if val == nil {
+			res.Questions[i] = nil
+			continue
+		}
+		res.Questions[i] = decodeStoryQuestionItemTransportToStoryQuestionItem(val)
+	}
+
+	return res
+}
+func decodeStoryStepItemTransportToStoryStepItem(v *toolhttp.StoryStepItemTransport) *StoryStepItem {
+	res := &StoryStepItem{
+		Key:         *v.Key,
+		ActorKey:    *v.ActorKey,
+		Summary:     *v.Summary,
+		Description: v.Description,
+		Kind:        *v.Kind,
+	}
+	res.Questions = make([]*StoryQuestionItem, len(v.Questions))
+	for i, val := range v.Questions {
+		if val == nil {
+			res.Questions[i] = nil
+			continue
+		}
+		res.Questions[i] = decodeStoryQuestionItemTransportToStoryQuestionItem(val)
+	}
+
+	return res
+}
+func decodeStoryQuestionItemTransportToStoryQuestionItem(v *toolhttp.StoryQuestionItemTransport) *StoryQuestionItem {
+	res := &StoryQuestionItem{
+		Key:         *v.Key,
+		Prompt:      *v.Prompt,
+		Description: v.Description,
+	}
+	res.Options = make([]string, len(v.Options))
+	for i, val := range v.Options {
+		res.Options[i] = val
+	}
+
+	return res
+}
+func encodeStorySummaryItemToStorySummaryItemTransport(v *StorySummaryItem) *toolhttp.StorySummaryItemTransport {
+	res := &toolhttp.StorySummaryItemTransport{
+		Name:        &v.Name,
+		Description: v.Description,
+	}
+	res.Actors = make([]*toolhttp.StoryActorItemTransport, len(v.Actors))
+	for i, val := range v.Actors {
+		if val == nil {
+			res.Actors[i] = nil
+			continue
+		}
+		res.Actors[i] = encodeStoryActorItemToStoryActorItemTransport(val)
+	}
+	res.Flows = make([]*toolhttp.StoryFlowItemTransport, len(v.Flows))
+	for i, val := range v.Flows {
+		if val == nil {
+			res.Flows[i] = nil
+			continue
+		}
+		res.Flows[i] = encodeStoryFlowItemToStoryFlowItemTransport(val)
+	}
+
+	return res
+}
+func encodeStoryActorItemToStoryActorItemTransport(v *StoryActorItem) *toolhttp.StoryActorItemTransport {
+	res := &toolhttp.StoryActorItemTransport{
+		Key:         &v.Key,
+		Title:       &v.Title,
+		Description: v.Description,
+	}
+
+	return res
+}
+func encodeStoryFlowItemToStoryFlowItemTransport(v *StoryFlowItem) *toolhttp.StoryFlowItemTransport {
+	res := &toolhttp.StoryFlowItemTransport{
+		Key:         &v.Key,
+		Title:       &v.Title,
+		Description: v.Description,
+		Complete:    &v.Complete,
+	}
+	res.Steps = make([]*toolhttp.StoryStepItemTransport, len(v.Steps))
+	for i, val := range v.Steps {
+		if val == nil {
+			res.Steps[i] = nil
+			continue
+		}
+		res.Steps[i] = encodeStoryStepItemToStoryStepItemTransport(val)
+	}
+	res.Questions = make([]*toolhttp.StoryQuestionItemTransport, len(v.Questions))
+	for i, val := range v.Questions {
+		if val == nil {
+			res.Questions[i] = nil
+			continue
+		}
+		res.Questions[i] = encodeStoryQuestionItemToStoryQuestionItemTransport(val)
+	}
+
+	return res
+}
+func encodeStoryStepItemToStoryStepItemTransport(v *StoryStepItem) *toolhttp.StoryStepItemTransport {
+	res := &toolhttp.StoryStepItemTransport{
+		Key:         &v.Key,
+		ActorKey:    &v.ActorKey,
+		Summary:     &v.Summary,
+		Description: v.Description,
+		Kind:        &v.Kind,
+	}
+	res.Questions = make([]*toolhttp.StoryQuestionItemTransport, len(v.Questions))
+	for i, val := range v.Questions {
+		if val == nil {
+			res.Questions[i] = nil
+			continue
+		}
+		res.Questions[i] = encodeStoryQuestionItemToStoryQuestionItemTransport(val)
+	}
+
+	return res
+}
+func encodeStoryQuestionItemToStoryQuestionItemTransport(v *StoryQuestionItem) *toolhttp.StoryQuestionItemTransport {
+	res := &toolhttp.StoryQuestionItemTransport{
+		Key:         &v.Key,
+		Prompt:      &v.Prompt,
+		Description: v.Description,
+	}
+	res.Options = make([]string, len(v.Options))
+	for i, val := range v.Options {
+		res.Options[i] = val
 	}
 
 	return res

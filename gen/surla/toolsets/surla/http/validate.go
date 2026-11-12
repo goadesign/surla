@@ -405,6 +405,32 @@ func ValidateGetChangeResultTransport(body *GetChangeResultTransport) (err error
 	return
 }
 
+// ValidateGetStoryRefreshResultTransport runs the validations defined on GetStoryRefreshResultTransport.
+func ValidateGetStoryRefreshResultTransport(body *GetStoryRefreshResultTransport) (err error) {
+	if body.State == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("state", "body"))
+	}
+	if body.Stories == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("stories", "body"))
+	}
+	if body.Message == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("message", "body"))
+	}
+	if body.State != nil {
+		if !(*body.State == "none" || *body.State == "running" || *body.State == "succeeded" || *body.State == "failed") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.state", *body.State, []any{"none", "running", "succeeded", "failed"}))
+		}
+	}
+	for _, e := range body.Stories {
+		if e != nil {
+			if err2 := ValidateStorySummaryItemTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	return
+}
+
 // ValidateGetVerificationPayloadTransport runs the validations defined on GetVerificationPayloadTransport.
 func ValidateGetVerificationPayloadTransport(body *GetVerificationPayloadTransport) (err error) {
 	if body.RunID == nil {
@@ -761,6 +787,32 @@ func ValidateReadCheckOutputResultTransport(body *ReadCheckOutputResultTransport
 	}
 	if body.DroppedBytes == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("dropped_bytes", "body"))
+	}
+	return
+}
+
+// ValidateRefreshStoryResultTransport runs the validations defined on RefreshStoryResultTransport.
+func ValidateRefreshStoryResultTransport(body *RefreshStoryResultTransport) (err error) {
+	if body.State == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("state", "body"))
+	}
+	if body.Stories == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("stories", "body"))
+	}
+	if body.Message == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("message", "body"))
+	}
+	if body.State != nil {
+		if !(*body.State == "none" || *body.State == "running" || *body.State == "succeeded" || *body.State == "failed") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.state", *body.State, []any{"none", "running", "succeeded", "failed"}))
+		}
+	}
+	for _, e := range body.Stories {
+		if e != nil {
+			if err2 := ValidateStorySummaryItemTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
 	}
 	return
 }
@@ -1360,6 +1412,125 @@ func ValidateExampleItemTransport(body *ExampleItemTransport) (err error) {
 	if body.VerificationKind != nil {
 		if !(*body.VerificationKind == "deterministic" || *body.VerificationKind == "model_judged") {
 			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.verification_kind", *body.VerificationKind, []any{"deterministic", "model_judged"}))
+		}
+	}
+	return
+}
+
+// ValidateStoryActorItemTransport runs the validations defined on StoryActorItemTransport.
+func ValidateStoryActorItemTransport(body *StoryActorItemTransport) (err error) {
+	if body.Key == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("key", "body"))
+	}
+	if body.Title == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("title", "body"))
+	}
+	return
+}
+
+// ValidateStoryFlowItemTransport runs the validations defined on StoryFlowItemTransport.
+func ValidateStoryFlowItemTransport(body *StoryFlowItemTransport) (err error) {
+	if body.Key == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("key", "body"))
+	}
+	if body.Title == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("title", "body"))
+	}
+	if body.Complete == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("complete", "body"))
+	}
+	if body.Steps == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("steps", "body"))
+	}
+	if body.Questions == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("questions", "body"))
+	}
+	for _, e := range body.Steps {
+		if e != nil {
+			if err2 := ValidateStoryStepItemTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	for _, e := range body.Questions {
+		if e != nil {
+			if err2 := ValidateStoryQuestionItemTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	return
+}
+
+// ValidateStoryQuestionItemTransport runs the validations defined on StoryQuestionItemTransport.
+func ValidateStoryQuestionItemTransport(body *StoryQuestionItemTransport) (err error) {
+	if body.Key == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("key", "body"))
+	}
+	if body.Prompt == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("prompt", "body"))
+	}
+	if body.Options == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("options", "body"))
+	}
+	return
+}
+
+// ValidateStoryStepItemTransport runs the validations defined on StoryStepItemTransport.
+func ValidateStoryStepItemTransport(body *StoryStepItemTransport) (err error) {
+	if body.Key == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("key", "body"))
+	}
+	if body.ActorKey == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("actor_key", "body"))
+	}
+	if body.Summary == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("summary", "body"))
+	}
+	if body.Kind == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("kind", "body"))
+	}
+	if body.Questions == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("questions", "body"))
+	}
+	if body.Kind != nil {
+		if !(*body.Kind == "start" || *body.Kind == "step" || *body.Kind == "outcome") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.kind", *body.Kind, []any{"start", "step", "outcome"}))
+		}
+	}
+	for _, e := range body.Questions {
+		if e != nil {
+			if err2 := ValidateStoryQuestionItemTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	return
+}
+
+// ValidateStorySummaryItemTransport runs the validations defined on StorySummaryItemTransport.
+func ValidateStorySummaryItemTransport(body *StorySummaryItemTransport) (err error) {
+	if body.Name == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
+	}
+	if body.Actors == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("actors", "body"))
+	}
+	if body.Flows == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("flows", "body"))
+	}
+	for _, e := range body.Actors {
+		if e != nil {
+			if err2 := ValidateStoryActorItemTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	for _, e := range body.Flows {
+		if e != nil {
+			if err2 := ValidateStoryFlowItemTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
 		}
 	}
 	return

@@ -2584,6 +2584,198 @@ func DecodeListTracesResponse(decoder func(*http.Response) goahttp.Decoder, rest
 	}
 }
 
+// BuildRefreshStoryRequest instantiates a HTTP request object with method and
+// path set to call the "surla" service "refresh_story" endpoint
+func (c *Client) BuildRefreshStoryRequest(ctx context.Context, v any) (*http.Request, error) {
+	u := &url.URL{Scheme: c.scheme, Host: c.host, Path: RefreshStorySurlaPath()}
+	req, err := http.NewRequest("POST", u.String(), nil)
+	if err != nil {
+		return nil, goahttp.ErrInvalidURL("surla", "refresh_story", u.String(), err)
+	}
+	if ctx != nil {
+		req = req.WithContext(ctx)
+	}
+
+	return req, nil
+}
+
+// DecodeRefreshStoryResponse returns a decoder for responses returned by the
+// surla refresh_story endpoint. restoreBody controls whether the response body
+// should be restored after having been read.
+// DecodeRefreshStoryResponse may return the following errors:
+//   - "unprocessable" (type *goa.ServiceError): http.StatusUnprocessableEntity
+//   - "not_implemented" (type *goa.ServiceError): http.StatusNotImplemented
+//   - "unavailable" (type *goa.ServiceError): http.StatusServiceUnavailable
+//   - error: internal error
+func DecodeRefreshStoryResponse(decoder func(*http.Response) goahttp.Decoder, restoreBody bool) func(*http.Response) (any, error) {
+	return func(resp *http.Response) (result any, decodeErr error) {
+		responseBody := resp.Body
+		if restoreBody {
+			b, readErr := io.ReadAll(responseBody)
+			closeErr := responseBody.Close()
+			if err := errors.Join(readErr, closeErr); err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "refresh_story", err)
+			}
+			resp.Body = io.NopCloser(bytes.NewBuffer(b))
+			defer func() {
+				resp.Body = io.NopCloser(bytes.NewBuffer(b))
+			}()
+		} else {
+			defer func() {
+				if err := responseBody.Close(); err != nil {
+					decodeErr = errors.Join(decodeErr, goahttp.ErrDecodingError("surla", "refresh_story", err))
+				}
+			}()
+		}
+		switch resp.StatusCode {
+		case http.StatusOK:
+			var (
+				body RefreshStoryResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "refresh_story", err)
+			}
+			err = ValidateRefreshStoryResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("surla", "refresh_story", err)
+			}
+			res := NewRefreshStoryStoryRefreshResultOK(&body)
+			return res, nil
+		case http.StatusUnprocessableEntity:
+			var (
+				body RefreshStoryUnprocessableResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "refresh_story", err)
+			}
+			err = ValidateRefreshStoryUnprocessableResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("surla", "refresh_story", err)
+			}
+			return nil, NewRefreshStoryUnprocessable(&body)
+		case http.StatusNotImplemented:
+			var (
+				body RefreshStoryNotImplementedResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "refresh_story", err)
+			}
+			err = ValidateRefreshStoryNotImplementedResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("surla", "refresh_story", err)
+			}
+			return nil, NewRefreshStoryNotImplemented(&body)
+		case http.StatusServiceUnavailable:
+			var (
+				body RefreshStoryUnavailableResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "refresh_story", err)
+			}
+			err = ValidateRefreshStoryUnavailableResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("surla", "refresh_story", err)
+			}
+			return nil, NewRefreshStoryUnavailable(&body)
+		default:
+			body, err := io.ReadAll(resp.Body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "refresh_story", err)
+			}
+			return nil, goahttp.ErrInvalidResponse("surla", "refresh_story", resp.StatusCode, string(body))
+		}
+	}
+}
+
+// BuildGetStoryRefreshRequest instantiates a HTTP request object with method
+// and path set to call the "surla" service "get_story_refresh" endpoint
+func (c *Client) BuildGetStoryRefreshRequest(ctx context.Context, v any) (*http.Request, error) {
+	u := &url.URL{Scheme: c.scheme, Host: c.host, Path: GetStoryRefreshSurlaPath()}
+	req, err := http.NewRequest("GET", u.String(), nil)
+	if err != nil {
+		return nil, goahttp.ErrInvalidURL("surla", "get_story_refresh", u.String(), err)
+	}
+	if ctx != nil {
+		req = req.WithContext(ctx)
+	}
+
+	return req, nil
+}
+
+// DecodeGetStoryRefreshResponse returns a decoder for responses returned by
+// the surla get_story_refresh endpoint. restoreBody controls whether the
+// response body should be restored after having been read.
+// DecodeGetStoryRefreshResponse may return the following errors:
+//   - "not_implemented" (type *goa.ServiceError): http.StatusNotImplemented
+//   - error: internal error
+func DecodeGetStoryRefreshResponse(decoder func(*http.Response) goahttp.Decoder, restoreBody bool) func(*http.Response) (any, error) {
+	return func(resp *http.Response) (result any, decodeErr error) {
+		responseBody := resp.Body
+		if restoreBody {
+			b, readErr := io.ReadAll(responseBody)
+			closeErr := responseBody.Close()
+			if err := errors.Join(readErr, closeErr); err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "get_story_refresh", err)
+			}
+			resp.Body = io.NopCloser(bytes.NewBuffer(b))
+			defer func() {
+				resp.Body = io.NopCloser(bytes.NewBuffer(b))
+			}()
+		} else {
+			defer func() {
+				if err := responseBody.Close(); err != nil {
+					decodeErr = errors.Join(decodeErr, goahttp.ErrDecodingError("surla", "get_story_refresh", err))
+				}
+			}()
+		}
+		switch resp.StatusCode {
+		case http.StatusOK:
+			var (
+				body GetStoryRefreshResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "get_story_refresh", err)
+			}
+			err = ValidateGetStoryRefreshResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("surla", "get_story_refresh", err)
+			}
+			res := NewGetStoryRefreshResultOK(&body)
+			return res, nil
+		case http.StatusNotImplemented:
+			var (
+				body GetStoryRefreshNotImplementedResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "get_story_refresh", err)
+			}
+			err = ValidateGetStoryRefreshNotImplementedResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("surla", "get_story_refresh", err)
+			}
+			return nil, NewGetStoryRefreshNotImplemented(&body)
+		default:
+			body, err := io.ReadAll(resp.Body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "get_story_refresh", err)
+			}
+			return nil, goahttp.ErrInvalidResponse("surla", "get_story_refresh", resp.StatusCode, string(body))
+		}
+	}
+}
+
 // marshalSurlaCP1AnalysisToCP1AnalysisRequestBody builds a value of type
 // *CP1AnalysisRequestBody from a value of type *surla.CP1Analysis.
 func marshalSurlaCP1AnalysisToCP1AnalysisRequestBody(v *surla.CP1Analysis) *CP1AnalysisRequestBody {
@@ -3360,6 +3552,114 @@ func unmarshalTraceSpanResponseBodyToSurlaTraceSpan(v *TraceSpanResponseBody) *s
 		tk := key
 		tv := val
 		res.Attributes[tk] = tv
+	}
+
+	return res
+}
+
+// unmarshalStorySummaryItemResponseBodyToSurlaStorySummaryItem builds a value
+// of type *surla.StorySummaryItem from a value of type
+// *StorySummaryItemResponseBody.
+func unmarshalStorySummaryItemResponseBodyToSurlaStorySummaryItem(v *StorySummaryItemResponseBody) *surla.StorySummaryItem {
+	res := &surla.StorySummaryItem{
+		Name:        *v.Name,
+		Description: v.Description,
+	}
+	res.Actors = make([]*surla.StoryActorItem, len(v.Actors))
+	for i, val := range v.Actors {
+		if val == nil {
+			res.Actors[i] = nil
+			continue
+		}
+		res.Actors[i] = unmarshalStoryActorItemResponseBodyToSurlaStoryActorItem(val)
+	}
+	res.Flows = make([]*surla.StoryFlowItem, len(v.Flows))
+	for i, val := range v.Flows {
+		if val == nil {
+			res.Flows[i] = nil
+			continue
+		}
+		res.Flows[i] = unmarshalStoryFlowItemResponseBodyToSurlaStoryFlowItem(val)
+	}
+
+	return res
+}
+
+// unmarshalStoryActorItemResponseBodyToSurlaStoryActorItem builds a value of
+// type *surla.StoryActorItem from a value of type *StoryActorItemResponseBody.
+func unmarshalStoryActorItemResponseBodyToSurlaStoryActorItem(v *StoryActorItemResponseBody) *surla.StoryActorItem {
+	res := &surla.StoryActorItem{
+		Key:         *v.Key,
+		Title:       *v.Title,
+		Description: v.Description,
+	}
+
+	return res
+}
+
+// unmarshalStoryFlowItemResponseBodyToSurlaStoryFlowItem builds a value of
+// type *surla.StoryFlowItem from a value of type *StoryFlowItemResponseBody.
+func unmarshalStoryFlowItemResponseBodyToSurlaStoryFlowItem(v *StoryFlowItemResponseBody) *surla.StoryFlowItem {
+	res := &surla.StoryFlowItem{
+		Key:         *v.Key,
+		Title:       *v.Title,
+		Description: v.Description,
+		Complete:    *v.Complete,
+	}
+	res.Steps = make([]*surla.StoryStepItem, len(v.Steps))
+	for i, val := range v.Steps {
+		if val == nil {
+			res.Steps[i] = nil
+			continue
+		}
+		res.Steps[i] = unmarshalStoryStepItemResponseBodyToSurlaStoryStepItem(val)
+	}
+	res.Questions = make([]*surla.StoryQuestionItem, len(v.Questions))
+	for i, val := range v.Questions {
+		if val == nil {
+			res.Questions[i] = nil
+			continue
+		}
+		res.Questions[i] = unmarshalStoryQuestionItemResponseBodyToSurlaStoryQuestionItem(val)
+	}
+
+	return res
+}
+
+// unmarshalStoryStepItemResponseBodyToSurlaStoryStepItem builds a value of
+// type *surla.StoryStepItem from a value of type *StoryStepItemResponseBody.
+func unmarshalStoryStepItemResponseBodyToSurlaStoryStepItem(v *StoryStepItemResponseBody) *surla.StoryStepItem {
+	res := &surla.StoryStepItem{
+		Key:         *v.Key,
+		ActorKey:    *v.ActorKey,
+		Summary:     *v.Summary,
+		Description: v.Description,
+		Kind:        *v.Kind,
+	}
+	res.Questions = make([]*surla.StoryQuestionItem, len(v.Questions))
+	for i, val := range v.Questions {
+		if val == nil {
+			res.Questions[i] = nil
+			continue
+		}
+		res.Questions[i] = unmarshalStoryQuestionItemResponseBodyToSurlaStoryQuestionItem(val)
+	}
+
+	return res
+}
+
+// unmarshalStoryQuestionItemResponseBodyToSurlaStoryQuestionItem builds a
+// value of type *surla.StoryQuestionItem from a value of type
+// *StoryQuestionItemResponseBody.
+func unmarshalStoryQuestionItemResponseBodyToSurlaStoryQuestionItem(v *StoryQuestionItemResponseBody) *surla.StoryQuestionItem {
+	res := &surla.StoryQuestionItem{
+		Key:         *v.Key,
+		Prompt:      *v.Prompt,
+		Description: v.Description,
+	}
+	res.Options = make([]string, len(v.Options))
+	for i, val := range v.Options {
+		res.Options[i] = val
 	}
 
 	return res

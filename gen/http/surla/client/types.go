@@ -634,6 +634,50 @@ type ListTracesResponseBody struct {
 	NextCursor *string `form:"next_cursor,omitempty" json:"next_cursor,omitempty" xml:"next_cursor,omitempty"`
 }
 
+// RefreshStoryResponseBody is the type of the "surla" service "refresh_story"
+// endpoint HTTP response body.
+type RefreshStoryResponseBody struct {
+	// Identifier of the caller's current Story refresh operation for the bound
+	// workspace; present when state is running, succeeded, or failed.
+	OpID *string `form:"op_id,omitempty" json:"op_id,omitempty" xml:"op_id,omitempty"`
+	// Current operation state: none, running, succeeded, or failed.
+	State *string `form:"state,omitempty" json:"state,omitempty" xml:"state,omitempty"`
+	// Canonical SHA-256 digest (sha256:<hex>) of the workspace module snapshot
+	// read when this refresh started; present when state is running, succeeded, or
+	// failed.
+	SnapshotDigest *string `form:"snapshot_digest,omitempty" json:"snapshot_digest,omitempty" xml:"snapshot_digest,omitempty"`
+	// Evaluated domain Stories in declaration order when state is succeeded (empty
+	// when the design declares no Stories or when state is none, running, or
+	// failed).
+	Stories []*StorySummaryItemResponseBody `form:"stories,omitempty" json:"stories,omitempty" xml:"stories,omitempty"`
+	// Safe failure or timeout diagnostic when state is failed; omitted otherwise.
+	Diagnostic *string `form:"diagnostic,omitempty" json:"diagnostic,omitempty" xml:"diagnostic,omitempty"`
+	// Summary of the current Story refresh state and next action.
+	Message *string `form:"message,omitempty" json:"message,omitempty" xml:"message,omitempty"`
+}
+
+// GetStoryRefreshResponseBody is the type of the "surla" service
+// "get_story_refresh" endpoint HTTP response body.
+type GetStoryRefreshResponseBody struct {
+	// Identifier of the caller's current Story refresh operation for the bound
+	// workspace; present when state is running, succeeded, or failed.
+	OpID *string `form:"op_id,omitempty" json:"op_id,omitempty" xml:"op_id,omitempty"`
+	// Current operation state: none, running, succeeded, or failed.
+	State *string `form:"state,omitempty" json:"state,omitempty" xml:"state,omitempty"`
+	// Canonical SHA-256 digest (sha256:<hex>) of the workspace module snapshot
+	// read when this refresh started; present when state is running, succeeded, or
+	// failed.
+	SnapshotDigest *string `form:"snapshot_digest,omitempty" json:"snapshot_digest,omitempty" xml:"snapshot_digest,omitempty"`
+	// Evaluated domain Stories in declaration order when state is succeeded (empty
+	// when the design declares no Stories or when state is none, running, or
+	// failed).
+	Stories []*StorySummaryItemResponseBody `form:"stories,omitempty" json:"stories,omitempty" xml:"stories,omitempty"`
+	// Safe failure or timeout diagnostic when state is failed; omitted otherwise.
+	Diagnostic *string `form:"diagnostic,omitempty" json:"diagnostic,omitempty" xml:"diagnostic,omitempty"`
+	// Summary of the current Story refresh state and next action.
+	Message *string `form:"message,omitempty" json:"message,omitempty" xml:"message,omitempty"`
+}
+
 // ProposeChangeConflictResponseBody is the type of the "surla" service
 // "propose_change" endpoint HTTP response body for the "conflict" error.
 type ProposeChangeConflictResponseBody struct {
@@ -1657,6 +1701,79 @@ type ListTracesNotImplementedResponseBody struct {
 	Fault *bool `form:"fault,omitempty" json:"fault,omitempty" xml:"fault,omitempty"`
 }
 
+// RefreshStoryUnprocessableResponseBody is the type of the "surla" service
+// "refresh_story" endpoint HTTP response body for the "unprocessable" error.
+type RefreshStoryUnprocessableResponseBody struct {
+	// Name is the name of this class of errors.
+	Name *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID *string `form:"id,omitempty" json:"id,omitempty" xml:"id,omitempty"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message *string `form:"message,omitempty" json:"message,omitempty" xml:"message,omitempty"`
+	// Is the error temporary?
+	Temporary *bool `form:"temporary,omitempty" json:"temporary,omitempty" xml:"temporary,omitempty"`
+	// Is the error a timeout?
+	Timeout *bool `form:"timeout,omitempty" json:"timeout,omitempty" xml:"timeout,omitempty"`
+	// Is the error a server-side fault?
+	Fault *bool `form:"fault,omitempty" json:"fault,omitempty" xml:"fault,omitempty"`
+}
+
+// RefreshStoryNotImplementedResponseBody is the type of the "surla" service
+// "refresh_story" endpoint HTTP response body for the "not_implemented" error.
+type RefreshStoryNotImplementedResponseBody struct {
+	// Name is the name of this class of errors.
+	Name *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID *string `form:"id,omitempty" json:"id,omitempty" xml:"id,omitempty"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message *string `form:"message,omitempty" json:"message,omitempty" xml:"message,omitempty"`
+	// Is the error temporary?
+	Temporary *bool `form:"temporary,omitempty" json:"temporary,omitempty" xml:"temporary,omitempty"`
+	// Is the error a timeout?
+	Timeout *bool `form:"timeout,omitempty" json:"timeout,omitempty" xml:"timeout,omitempty"`
+	// Is the error a server-side fault?
+	Fault *bool `form:"fault,omitempty" json:"fault,omitempty" xml:"fault,omitempty"`
+}
+
+// RefreshStoryUnavailableResponseBody is the type of the "surla" service
+// "refresh_story" endpoint HTTP response body for the "unavailable" error.
+type RefreshStoryUnavailableResponseBody struct {
+	// Name is the name of this class of errors.
+	Name *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID *string `form:"id,omitempty" json:"id,omitempty" xml:"id,omitempty"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message *string `form:"message,omitempty" json:"message,omitempty" xml:"message,omitempty"`
+	// Is the error temporary?
+	Temporary *bool `form:"temporary,omitempty" json:"temporary,omitempty" xml:"temporary,omitempty"`
+	// Is the error a timeout?
+	Timeout *bool `form:"timeout,omitempty" json:"timeout,omitempty" xml:"timeout,omitempty"`
+	// Is the error a server-side fault?
+	Fault *bool `form:"fault,omitempty" json:"fault,omitempty" xml:"fault,omitempty"`
+}
+
+// GetStoryRefreshNotImplementedResponseBody is the type of the "surla" service
+// "get_story_refresh" endpoint HTTP response body for the "not_implemented"
+// error.
+type GetStoryRefreshNotImplementedResponseBody struct {
+	// Name is the name of this class of errors.
+	Name *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID *string `form:"id,omitempty" json:"id,omitempty" xml:"id,omitempty"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message *string `form:"message,omitempty" json:"message,omitempty" xml:"message,omitempty"`
+	// Is the error temporary?
+	Temporary *bool `form:"temporary,omitempty" json:"temporary,omitempty" xml:"temporary,omitempty"`
+	// Is the error a timeout?
+	Timeout *bool `form:"timeout,omitempty" json:"timeout,omitempty" xml:"timeout,omitempty"`
+	// Is the error a server-side fault?
+	Fault *bool `form:"fault,omitempty" json:"fault,omitempty" xml:"fault,omitempty"`
+}
+
 // AmbiguityQuestionResponseBody is used to define fields on response body
 // types.
 type AmbiguityQuestionResponseBody struct {
@@ -2001,6 +2118,74 @@ type TraceSpanResponseBody struct {
 	// True when text was shortened to fit this diagnostic record; use operator
 	// telemetry for the full values.
 	Shortened *bool `form:"shortened,omitempty" json:"shortened,omitempty" xml:"shortened,omitempty"`
+}
+
+// StorySummaryItemResponseBody is used to define fields on response body types.
+type StorySummaryItemResponseBody struct {
+	// Human-facing Story title.
+	Name *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
+	// Optional longer explanation of the Story.
+	Description *string `form:"description,omitempty" json:"description,omitempty" xml:"description,omitempty"`
+	// Domain roles declared in the Story in declaration order.
+	Actors []*StoryActorItemResponseBody `form:"actors,omitempty" json:"actors,omitempty" xml:"actors,omitempty"`
+	// Timeline paths declared in the Story in declaration order.
+	Flows []*StoryFlowItemResponseBody `form:"flows,omitempty" json:"flows,omitempty" xml:"flows,omitempty"`
+}
+
+// StoryActorItemResponseBody is used to define fields on response body types.
+type StoryActorItemResponseBody struct {
+	// Story-scoped actor key.
+	Key *string `form:"key,omitempty" json:"key,omitempty" xml:"key,omitempty"`
+	// Human-facing actor label.
+	Title *string `form:"title,omitempty" json:"title,omitempty" xml:"title,omitempty"`
+	// Optional longer explanation of the actor role.
+	Description *string `form:"description,omitempty" json:"description,omitempty" xml:"description,omitempty"`
+}
+
+// StoryFlowItemResponseBody is used to define fields on response body types.
+type StoryFlowItemResponseBody struct {
+	// Story-scoped flow key.
+	Key *string `form:"key,omitempty" json:"key,omitempty" xml:"key,omitempty"`
+	// Human-facing flow title.
+	Title *string `form:"title,omitempty" json:"title,omitempty" xml:"title,omitempty"`
+	// Optional longer explanation of the flow.
+	Description *string `form:"description,omitempty" json:"description,omitempty" xml:"description,omitempty"`
+	// True when the flow has a start, at least one outcome, and no open questions
+	// on the flow or any of its steps.
+	Complete *bool `form:"complete,omitempty" json:"complete,omitempty" xml:"complete,omitempty"`
+	// Starting, intermediate, and outcome steps in declaration order.
+	Steps []*StoryStepItemResponseBody `form:"steps,omitempty" json:"steps,omitempty" xml:"steps,omitempty"`
+	// Unresolved flow-level decisions in declaration order.
+	Questions []*StoryQuestionItemResponseBody `form:"questions,omitempty" json:"questions,omitempty" xml:"questions,omitempty"`
+}
+
+// StoryStepItemResponseBody is used to define fields on response body types.
+type StoryStepItemResponseBody struct {
+	// Flow-scoped step key.
+	Key *string `form:"key,omitempty" json:"key,omitempty" xml:"key,omitempty"`
+	// Story-scoped key of the actor performing or observing the step.
+	ActorKey *string `form:"actor_key,omitempty" json:"actor_key,omitempty" xml:"actor_key,omitempty"`
+	// Timeline sticky-note sentence for the step.
+	Summary *string `form:"summary,omitempty" json:"summary,omitempty" xml:"summary,omitempty"`
+	// Optional longer explanation of the step.
+	Description *string `form:"description,omitempty" json:"description,omitempty" xml:"description,omitempty"`
+	// Step position in the flow: start, step, or outcome.
+	Kind *string `form:"kind,omitempty" json:"kind,omitempty" xml:"kind,omitempty"`
+	// Unresolved step-level decisions in declaration order.
+	Questions []*StoryQuestionItemResponseBody `form:"questions,omitempty" json:"questions,omitempty" xml:"questions,omitempty"`
+}
+
+// StoryQuestionItemResponseBody is used to define fields on response body
+// types.
+type StoryQuestionItemResponseBody struct {
+	// Flow-scoped question key.
+	Key *string `form:"key,omitempty" json:"key,omitempty" xml:"key,omitempty"`
+	// Human-facing question text.
+	Prompt *string `form:"prompt,omitempty" json:"prompt,omitempty" xml:"prompt,omitempty"`
+	// Optional longer context for the question.
+	Description *string `form:"description,omitempty" json:"description,omitempty" xml:"description,omitempty"`
+	// Suggested choices in declaration order.
+	Options []string `form:"options,omitempty" json:"options,omitempty" xml:"options,omitempty"`
 }
 
 // CP1AnalysisRequestBody is used to define fields on request body types.
@@ -3954,6 +4139,110 @@ func NewListTracesNotImplemented(body *ListTracesNotImplementedResponseBody) *go
 	return v
 }
 
+// NewRefreshStoryStoryRefreshResultOK builds a "surla" service "refresh_story"
+// endpoint result from a HTTP "OK" response.
+func NewRefreshStoryStoryRefreshResultOK(body *RefreshStoryResponseBody) *surla.StoryRefreshResult {
+	v := &surla.StoryRefreshResult{
+		OpID:           body.OpID,
+		State:          *body.State,
+		SnapshotDigest: body.SnapshotDigest,
+		Diagnostic:     body.Diagnostic,
+		Message:        *body.Message,
+	}
+	v.Stories = make([]*surla.StorySummaryItem, len(body.Stories))
+	for i, val := range body.Stories {
+		if val == nil {
+			v.Stories[i] = nil
+			continue
+		}
+		v.Stories[i] = unmarshalStorySummaryItemResponseBodyToSurlaStorySummaryItem(val)
+	}
+
+	return v
+}
+
+// NewRefreshStoryUnprocessable builds a surla service refresh_story endpoint
+// unprocessable error.
+func NewRefreshStoryUnprocessable(body *RefreshStoryUnprocessableResponseBody) *goa.ServiceError {
+	v := &goa.ServiceError{
+		Name:      *body.Name,
+		ID:        *body.ID,
+		Message:   *body.Message,
+		Temporary: *body.Temporary,
+		Timeout:   *body.Timeout,
+		Fault:     *body.Fault,
+	}
+
+	return v
+}
+
+// NewRefreshStoryNotImplemented builds a surla service refresh_story endpoint
+// not_implemented error.
+func NewRefreshStoryNotImplemented(body *RefreshStoryNotImplementedResponseBody) *goa.ServiceError {
+	v := &goa.ServiceError{
+		Name:      *body.Name,
+		ID:        *body.ID,
+		Message:   *body.Message,
+		Temporary: *body.Temporary,
+		Timeout:   *body.Timeout,
+		Fault:     *body.Fault,
+	}
+
+	return v
+}
+
+// NewRefreshStoryUnavailable builds a surla service refresh_story endpoint
+// unavailable error.
+func NewRefreshStoryUnavailable(body *RefreshStoryUnavailableResponseBody) *goa.ServiceError {
+	v := &goa.ServiceError{
+		Name:      *body.Name,
+		ID:        *body.ID,
+		Message:   *body.Message,
+		Temporary: *body.Temporary,
+		Timeout:   *body.Timeout,
+		Fault:     *body.Fault,
+	}
+
+	return v
+}
+
+// NewGetStoryRefreshResultOK builds a "surla" service "get_story_refresh"
+// endpoint result from a HTTP "OK" response.
+func NewGetStoryRefreshResultOK(body *GetStoryRefreshResponseBody) *surla.StoryRefreshResult {
+	v := &surla.StoryRefreshResult{
+		OpID:           body.OpID,
+		State:          *body.State,
+		SnapshotDigest: body.SnapshotDigest,
+		Diagnostic:     body.Diagnostic,
+		Message:        *body.Message,
+	}
+	v.Stories = make([]*surla.StorySummaryItem, len(body.Stories))
+	for i, val := range body.Stories {
+		if val == nil {
+			v.Stories[i] = nil
+			continue
+		}
+		v.Stories[i] = unmarshalStorySummaryItemResponseBodyToSurlaStorySummaryItem(val)
+	}
+
+	return v
+}
+
+// NewGetStoryRefreshNotImplemented builds a surla service get_story_refresh
+// endpoint not_implemented error.
+func NewGetStoryRefreshNotImplemented(body *GetStoryRefreshNotImplementedResponseBody) *goa.ServiceError {
+	v := &goa.ServiceError{
+		Name:      *body.Name,
+		ID:        *body.ID,
+		Message:   *body.Message,
+		Temporary: *body.Temporary,
+		Timeout:   *body.Timeout,
+		Fault:     *body.Fault,
+	}
+
+	return v
+}
+
 // ValidateProposeChangeResponseBody runs the validations defined on
 // ProposeChangeResponseBody
 func ValidateProposeChangeResponseBody(body *ProposeChangeResponseBody) (err error) {
@@ -4653,6 +4942,60 @@ func ValidateListTracesResponseBody(body *ListTracesResponseBody) (err error) {
 	for _, e := range body.Spans {
 		if e != nil {
 			if err2 := validateTraceSpanResponseBody(e, "body.spans[*]"); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	return
+}
+
+// ValidateRefreshStoryResponseBody runs the validations defined on
+// RefreshStoryResponseBody
+func ValidateRefreshStoryResponseBody(body *RefreshStoryResponseBody) (err error) {
+	if body.State == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("state", "body"))
+	}
+	if body.Stories == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("stories", "body"))
+	}
+	if body.Message == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("message", "body"))
+	}
+	if body.State != nil {
+		if !(*body.State == "none" || *body.State == "running" || *body.State == "succeeded" || *body.State == "failed") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.state", *body.State, []any{"none", "running", "succeeded", "failed"}))
+		}
+	}
+	for _, e := range body.Stories {
+		if e != nil {
+			if err2 := validateStorySummaryItemResponseBody(e, "body.stories[*]"); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	return
+}
+
+// ValidateGetStoryRefreshResponseBody runs the validations defined on
+// GetStoryRefreshResponseBody
+func ValidateGetStoryRefreshResponseBody(body *GetStoryRefreshResponseBody) (err error) {
+	if body.State == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("state", "body"))
+	}
+	if body.Stories == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("stories", "body"))
+	}
+	if body.Message == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("message", "body"))
+	}
+	if body.State != nil {
+		if !(*body.State == "none" || *body.State == "running" || *body.State == "succeeded" || *body.State == "failed") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.state", *body.State, []any{"none", "running", "succeeded", "failed"}))
+		}
+	}
+	for _, e := range body.Stories {
+		if e != nil {
+			if err2 := validateStorySummaryItemResponseBody(e, "body.stories[*]"); err2 != nil {
 				err = goa.MergeErrors(err, err2)
 			}
 		}
@@ -6004,6 +6347,102 @@ func ValidateListTracesNotImplementedResponseBody(body *ListTracesNotImplemented
 	return
 }
 
+// ValidateRefreshStoryUnprocessableResponseBody runs the validations defined
+// on RefreshStoryUnprocessableResponseBody
+func ValidateRefreshStoryUnprocessableResponseBody(body *RefreshStoryUnprocessableResponseBody) (err error) {
+	if body.Name == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
+	}
+	if body.ID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("id", "body"))
+	}
+	if body.Message == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("message", "body"))
+	}
+	if body.Temporary == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("temporary", "body"))
+	}
+	if body.Timeout == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("timeout", "body"))
+	}
+	if body.Fault == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("fault", "body"))
+	}
+	return
+}
+
+// ValidateRefreshStoryNotImplementedResponseBody runs the validations defined
+// on RefreshStoryNotImplementedResponseBody
+func ValidateRefreshStoryNotImplementedResponseBody(body *RefreshStoryNotImplementedResponseBody) (err error) {
+	if body.Name == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
+	}
+	if body.ID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("id", "body"))
+	}
+	if body.Message == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("message", "body"))
+	}
+	if body.Temporary == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("temporary", "body"))
+	}
+	if body.Timeout == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("timeout", "body"))
+	}
+	if body.Fault == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("fault", "body"))
+	}
+	return
+}
+
+// ValidateRefreshStoryUnavailableResponseBody runs the validations defined on
+// RefreshStoryUnavailableResponseBody
+func ValidateRefreshStoryUnavailableResponseBody(body *RefreshStoryUnavailableResponseBody) (err error) {
+	if body.Name == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
+	}
+	if body.ID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("id", "body"))
+	}
+	if body.Message == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("message", "body"))
+	}
+	if body.Temporary == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("temporary", "body"))
+	}
+	if body.Timeout == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("timeout", "body"))
+	}
+	if body.Fault == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("fault", "body"))
+	}
+	return
+}
+
+// ValidateGetStoryRefreshNotImplementedResponseBody runs the validations
+// defined on GetStoryRefreshNotImplementedResponseBody
+func ValidateGetStoryRefreshNotImplementedResponseBody(body *GetStoryRefreshNotImplementedResponseBody) (err error) {
+	if body.Name == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
+	}
+	if body.ID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("id", "body"))
+	}
+	if body.Message == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("message", "body"))
+	}
+	if body.Temporary == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("temporary", "body"))
+	}
+	if body.Timeout == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("timeout", "body"))
+	}
+	if body.Fault == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("fault", "body"))
+	}
+	return
+}
+
 // ValidateAmbiguityQuestionResponseBody runs the validations defined on
 // AmbiguityQuestion
 func ValidateAmbiguityQuestionResponseBody(body *AmbiguityQuestionResponseBody) (err error) {
@@ -7113,6 +7552,254 @@ func validateTraceSpanResponseBody(body *TraceSpanResponseBody, path string) (er
 		if !(*body.Status == "unset" || *body.Status == "ok" || *body.Status == "error") {
 			err = goa.MergeErrors(err, goa.InvalidEnumValueError(path+".status", *body.Status, []any{"unset", "ok", "error"}))
 		}
+	}
+	return
+}
+
+// ValidateStorySummaryItemResponseBody runs the validations defined on
+// StorySummaryItem
+func ValidateStorySummaryItemResponseBody(body *StorySummaryItemResponseBody) (err error) {
+	if body.Name == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
+	}
+	if body.Actors == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("actors", "body"))
+	}
+	if body.Flows == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("flows", "body"))
+	}
+	for _, e := range body.Actors {
+		if e != nil {
+			if err2 := validateStoryActorItemResponseBody(e, "body.actors[*]"); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	for _, e := range body.Flows {
+		if e != nil {
+			if err2 := validateStoryFlowItemResponseBody(e, "body.flows[*]"); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	return
+}
+
+// validateStorySummaryItemResponseBody checks StorySummaryItem and reports
+// errors using the path supplied by its caller
+func validateStorySummaryItemResponseBody(body *StorySummaryItemResponseBody, path string) (err error) {
+	if body.Name == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("name", path))
+	}
+	if body.Actors == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("actors", path))
+	}
+	if body.Flows == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("flows", path))
+	}
+	for _, e := range body.Actors {
+		if e != nil {
+			if err2 := validateStoryActorItemResponseBody(e, path+".actors[*]"); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	for _, e := range body.Flows {
+		if e != nil {
+			if err2 := validateStoryFlowItemResponseBody(e, path+".flows[*]"); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	return
+}
+
+// ValidateStoryActorItemResponseBody runs the validations defined on
+// StoryActorItem
+func ValidateStoryActorItemResponseBody(body *StoryActorItemResponseBody) (err error) {
+	if body.Key == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("key", "body"))
+	}
+	if body.Title == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("title", "body"))
+	}
+	return
+}
+
+// validateStoryActorItemResponseBody checks StoryActorItem and reports errors
+// using the path supplied by its caller
+func validateStoryActorItemResponseBody(body *StoryActorItemResponseBody, path string) (err error) {
+	if body.Key == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("key", path))
+	}
+	if body.Title == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("title", path))
+	}
+	return
+}
+
+// ValidateStoryFlowItemResponseBody runs the validations defined on
+// StoryFlowItem
+func ValidateStoryFlowItemResponseBody(body *StoryFlowItemResponseBody) (err error) {
+	if body.Key == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("key", "body"))
+	}
+	if body.Title == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("title", "body"))
+	}
+	if body.Complete == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("complete", "body"))
+	}
+	if body.Steps == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("steps", "body"))
+	}
+	if body.Questions == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("questions", "body"))
+	}
+	for _, e := range body.Steps {
+		if e != nil {
+			if err2 := validateStoryStepItemResponseBody(e, "body.steps[*]"); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	for _, e := range body.Questions {
+		if e != nil {
+			if err2 := validateStoryQuestionItemResponseBody(e, "body.questions[*]"); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	return
+}
+
+// validateStoryFlowItemResponseBody checks StoryFlowItem and reports errors
+// using the path supplied by its caller
+func validateStoryFlowItemResponseBody(body *StoryFlowItemResponseBody, path string) (err error) {
+	if body.Key == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("key", path))
+	}
+	if body.Title == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("title", path))
+	}
+	if body.Complete == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("complete", path))
+	}
+	if body.Steps == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("steps", path))
+	}
+	if body.Questions == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("questions", path))
+	}
+	for _, e := range body.Steps {
+		if e != nil {
+			if err2 := validateStoryStepItemResponseBody(e, path+".steps[*]"); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	for _, e := range body.Questions {
+		if e != nil {
+			if err2 := validateStoryQuestionItemResponseBody(e, path+".questions[*]"); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	return
+}
+
+// ValidateStoryStepItemResponseBody runs the validations defined on
+// StoryStepItem
+func ValidateStoryStepItemResponseBody(body *StoryStepItemResponseBody) (err error) {
+	if body.Key == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("key", "body"))
+	}
+	if body.ActorKey == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("actor_key", "body"))
+	}
+	if body.Summary == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("summary", "body"))
+	}
+	if body.Kind == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("kind", "body"))
+	}
+	if body.Questions == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("questions", "body"))
+	}
+	if body.Kind != nil {
+		if !(*body.Kind == "start" || *body.Kind == "step" || *body.Kind == "outcome") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.kind", *body.Kind, []any{"start", "step", "outcome"}))
+		}
+	}
+	for _, e := range body.Questions {
+		if e != nil {
+			if err2 := validateStoryQuestionItemResponseBody(e, "body.questions[*]"); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	return
+}
+
+// validateStoryStepItemResponseBody checks StoryStepItem and reports errors
+// using the path supplied by its caller
+func validateStoryStepItemResponseBody(body *StoryStepItemResponseBody, path string) (err error) {
+	if body.Key == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("key", path))
+	}
+	if body.ActorKey == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("actor_key", path))
+	}
+	if body.Summary == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("summary", path))
+	}
+	if body.Kind == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("kind", path))
+	}
+	if body.Questions == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("questions", path))
+	}
+	if body.Kind != nil {
+		if !(*body.Kind == "start" || *body.Kind == "step" || *body.Kind == "outcome") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError(path+".kind", *body.Kind, []any{"start", "step", "outcome"}))
+		}
+	}
+	for _, e := range body.Questions {
+		if e != nil {
+			if err2 := validateStoryQuestionItemResponseBody(e, path+".questions[*]"); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	return
+}
+
+// ValidateStoryQuestionItemResponseBody runs the validations defined on
+// StoryQuestionItem
+func ValidateStoryQuestionItemResponseBody(body *StoryQuestionItemResponseBody) (err error) {
+	if body.Key == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("key", "body"))
+	}
+	if body.Prompt == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("prompt", "body"))
+	}
+	if body.Options == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("options", "body"))
+	}
+	return
+}
+
+// validateStoryQuestionItemResponseBody checks StoryQuestionItem and reports
+// errors using the path supplied by its caller
+func validateStoryQuestionItemResponseBody(body *StoryQuestionItemResponseBody, path string) (err error) {
+	if body.Key == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("key", path))
+	}
+	if body.Prompt == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("prompt", path))
+	}
+	if body.Options == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("options", path))
 	}
 	return
 }

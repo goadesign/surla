@@ -317,6 +317,35 @@ type (
 		// hashed into request_revision.
 		UnverifiedApproval *UnverifiedApprovalItemTransport `json:"unverified_approval,omitempty"`
 	}
+	// GetStoryRefreshPayloadTransport is the internal JSON transport type for GetStoryRefreshPayload.
+	// It lives in the toolset-local http package and is used only for JSON
+	// decode + validation (missing-field detection) before transforming into
+	// the public tool type.
+	GetStoryRefreshPayloadTransport struct {
+	}
+	// GetStoryRefreshResultTransport is the internal JSON transport type for GetStoryRefreshResult.
+	// It lives in the toolset-local http package and is used only for JSON
+	// decode + validation (missing-field detection) before transforming into
+	// the public tool type.
+	GetStoryRefreshResultTransport struct {
+		// Identifier of the caller's current Story refresh operation for the bound
+		// workspace; present when state is running, succeeded, or failed.
+		OpID *string `json:"op_id,omitempty"`
+		// Current operation state: none, running, succeeded, or failed.
+		State *string `json:"state"`
+		// Canonical SHA-256 digest (sha256:<hex>) of the workspace module snapshot
+		// read when this refresh started; present when state is running, succeeded, or
+		// failed.
+		SnapshotDigest *string `json:"snapshot_digest,omitempty"`
+		// Evaluated domain Stories in declaration order when state is succeeded (empty
+		// when the design declares no Stories or when state is none, running, or
+		// failed).
+		Stories []*StorySummaryItemTransport `json:"stories"`
+		// Safe failure or timeout diagnostic when state is failed; omitted otherwise.
+		Diagnostic *string `json:"diagnostic,omitempty"`
+		// Summary of the current Story refresh state and next action.
+		Message *string `json:"message"`
+	}
 	// GetVerificationPayloadTransport is the internal JSON transport type for GetVerificationPayload.
 	// It lives in the toolset-local http package and is used only for JSON
 	// decode + validation (missing-field detection) before transforming into
@@ -558,6 +587,35 @@ type (
 		// Bytes the operation produced beyond its capture limit and did not keep;
 		// nonzero means the output has a stated gap.
 		DroppedBytes *int64 `json:"dropped_bytes"`
+	}
+	// RefreshStoryPayloadTransport is the internal JSON transport type for RefreshStoryPayload.
+	// It lives in the toolset-local http package and is used only for JSON
+	// decode + validation (missing-field detection) before transforming into
+	// the public tool type.
+	RefreshStoryPayloadTransport struct {
+	}
+	// RefreshStoryResultTransport is the internal JSON transport type for RefreshStoryResult.
+	// It lives in the toolset-local http package and is used only for JSON
+	// decode + validation (missing-field detection) before transforming into
+	// the public tool type.
+	RefreshStoryResultTransport struct {
+		// Identifier of the caller's current Story refresh operation for the bound
+		// workspace; present when state is running, succeeded, or failed.
+		OpID *string `json:"op_id,omitempty"`
+		// Current operation state: none, running, succeeded, or failed.
+		State *string `json:"state"`
+		// Canonical SHA-256 digest (sha256:<hex>) of the workspace module snapshot
+		// read when this refresh started; present when state is running, succeeded, or
+		// failed.
+		SnapshotDigest *string `json:"snapshot_digest,omitempty"`
+		// Evaluated domain Stories in declaration order when state is succeeded (empty
+		// when the design declares no Stories or when state is none, running, or
+		// failed).
+		Stories []*StorySummaryItemTransport `json:"stories"`
+		// Safe failure or timeout diagnostic when state is failed; omitted otherwise.
+		Diagnostic *string `json:"diagnostic,omitempty"`
+		// Summary of the current Story refresh state and next action.
+		Message *string `json:"message"`
 	}
 	// ReviseChangePayloadTransport is the internal JSON transport type for ReviseChangePayload.
 	// It lives in the toolset-local http package and is used only for JSON
@@ -968,6 +1026,83 @@ type (
 		ExpectedOutcome *string `json:"expected_outcome"`
 		// Evaluator check classification (deterministic or model_judged).
 		VerificationKind *string `json:"verification_kind"`
+	}
+	// StoryActorItemTransport is the internal JSON transport type for StoryActorItemTransport.
+	// It lives in the toolset-local http package and is used only for JSON
+	// decode + validation (missing-field detection) before transforming into
+	// the public tool type.
+	StoryActorItemTransport struct {
+		// Story-scoped actor key.
+		Key *string `json:"key"`
+		// Human-facing actor label.
+		Title *string `json:"title"`
+		// Optional longer explanation of the actor role.
+		Description *string `json:"description,omitempty"`
+	}
+	// StoryFlowItemTransport is the internal JSON transport type for StoryFlowItemTransport.
+	// It lives in the toolset-local http package and is used only for JSON
+	// decode + validation (missing-field detection) before transforming into
+	// the public tool type.
+	StoryFlowItemTransport struct {
+		// Story-scoped flow key.
+		Key *string `json:"key"`
+		// Human-facing flow title.
+		Title *string `json:"title"`
+		// Optional longer explanation of the flow.
+		Description *string `json:"description,omitempty"`
+		// True when the flow has a start, at least one outcome, and no open questions
+		// on the flow or any of its steps.
+		Complete *bool `json:"complete"`
+		// Starting, intermediate, and outcome steps in declaration order.
+		Steps []*StoryStepItemTransport `json:"steps"`
+		// Unresolved flow-level decisions in declaration order.
+		Questions []*StoryQuestionItemTransport `json:"questions"`
+	}
+	// StoryQuestionItemTransport is the internal JSON transport type for StoryQuestionItemTransport.
+	// It lives in the toolset-local http package and is used only for JSON
+	// decode + validation (missing-field detection) before transforming into
+	// the public tool type.
+	StoryQuestionItemTransport struct {
+		// Flow-scoped question key.
+		Key *string `json:"key"`
+		// Human-facing question text.
+		Prompt *string `json:"prompt"`
+		// Optional longer context for the question.
+		Description *string `json:"description,omitempty"`
+		// Suggested choices in declaration order.
+		Options []string `json:"options"`
+	}
+	// StoryStepItemTransport is the internal JSON transport type for StoryStepItemTransport.
+	// It lives in the toolset-local http package and is used only for JSON
+	// decode + validation (missing-field detection) before transforming into
+	// the public tool type.
+	StoryStepItemTransport struct {
+		// Flow-scoped step key.
+		Key *string `json:"key"`
+		// Story-scoped key of the actor performing or observing the step.
+		ActorKey *string `json:"actor_key"`
+		// Timeline sticky-note sentence for the step.
+		Summary *string `json:"summary"`
+		// Optional longer explanation of the step.
+		Description *string `json:"description,omitempty"`
+		// Step position in the flow: start, step, or outcome.
+		Kind *string `json:"kind"`
+		// Unresolved step-level decisions in declaration order.
+		Questions []*StoryQuestionItemTransport `json:"questions"`
+	}
+	// StorySummaryItemTransport is the internal JSON transport type for StorySummaryItemTransport.
+	// It lives in the toolset-local http package and is used only for JSON
+	// decode + validation (missing-field detection) before transforming into
+	// the public tool type.
+	StorySummaryItemTransport struct {
+		// Human-facing Story title.
+		Name *string `json:"name"`
+		// Optional longer explanation of the Story.
+		Description *string `json:"description,omitempty"`
+		// Domain roles declared in the Story in declaration order.
+		Actors []*StoryActorItemTransport `json:"actors"`
+		// Timeline paths declared in the Story in declaration order.
+		Flows []*StoryFlowItemTransport `json:"flows"`
 	}
 	// SwarmPlanItemTransport is the internal JSON transport type for SwarmPlanItemTransport.
 	// It lives in the toolset-local http package and is used only for JSON

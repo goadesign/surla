@@ -23,7 +23,7 @@ import (
 //	command (subcommand1|subcommand2|...)
 func UsageCommands() []string {
 	return []string{
-		"surla (checkpoint-ui|golden-path|propose-change|revise-change|confirm-intent|get-change|preview-architecture|draft-override|start-live-target|stop-live-target|verify-change|get-verification|list-verifications|approve-merge|diff|configure-model|init-project|generate-code|check-project|update-dependencies|read-check-output|list-traces)",
+		"surla (checkpoint-ui|golden-path|propose-change|revise-change|confirm-intent|get-change|preview-architecture|draft-override|start-live-target|stop-live-target|verify-change|get-verification|list-verifications|approve-merge|diff|configure-model|init-project|generate-code|check-project|update-dependencies|read-check-output|list-traces|refresh-story|get-story-refresh)",
 	}
 }
 
@@ -127,6 +127,10 @@ func ParseEndpoint(
 		surlaListTracesStatusFlag = surlaListTracesFlags.String("status", "all", "")
 		surlaListTracesLimitFlag  = surlaListTracesFlags.String("limit", "20", "")
 		surlaListTracesCursorFlag = new(cliStringFlag)
+
+		surlaRefreshStoryFlags = flag.NewFlagSet("refresh-story", flag.ExitOnError)
+
+		surlaGetStoryRefreshFlags = flag.NewFlagSet("get-story-refresh", flag.ExitOnError)
 	)
 	surlaProposeChangeFlags.Var(surlaProposeChangeBodyFlag, "body", "")
 	surlaReviseChangeFlags.Var(surlaReviseChangeBodyFlag, "body", "")
@@ -170,6 +174,8 @@ func ParseEndpoint(
 	surlaUpdateDependenciesFlags.Usage = surlaUpdateDependenciesUsage
 	surlaReadCheckOutputFlags.Usage = surlaReadCheckOutputUsage
 	surlaListTracesFlags.Usage = surlaListTracesUsage
+	surlaRefreshStoryFlags.Usage = surlaRefreshStoryUsage
+	surlaGetStoryRefreshFlags.Usage = surlaGetStoryRefreshUsage
 
 	if err := flag.CommandLine.Parse(os.Args[1:]); err != nil {
 		return nil, nil, err
@@ -271,6 +277,12 @@ func ParseEndpoint(
 			case "list-traces":
 				epf = surlaListTracesFlags
 
+			case "refresh-story":
+				epf = surlaRefreshStoryFlags
+
+			case "get-story-refresh":
+				epf = surlaGetStoryRefreshFlags
+
 			}
 
 		}
@@ -357,6 +369,10 @@ func ParseEndpoint(
 			case "list-traces":
 				endpoint = c.ListTraces()
 				data, err = surlac.BuildListTracesPayload(*surlaListTracesStatusFlag, *surlaListTracesLimitFlag, surlaListTracesCursorFlag.value)
+			case "refresh-story":
+				endpoint = c.RefreshStory()
+			case "get-story-refresh":
+				endpoint = c.GetStoryRefresh()
 			}
 		}
 	}
@@ -394,6 +410,8 @@ func surlaUsage() {
 	fmt.Fprintln(os.Stderr, `    update-dependencies: Run go mod tidy for every Go module of the active workspace in a protected copy inside Linux containers, then write only the changed go.mod, go.sum and go.work.sum files back to the workspace through verified handles. A symlinked manifest or one edited during the call is refused for that module.`)
 	fmt.Fprintln(os.Stderr, `    read-check-output: Return one page of at most 16 KiB of the full output a check_project or update_dependencies operation captured, with a cursor for the next page and the count of bytes not captured.`)
 	fmt.Fprintln(os.Stderr, `    list-traces: Read the authenticated caller's saved operation diagnostics from the control plane's private storage. Return bounded safe summaries newest first, without reading the entire file. Older pages and later refreshes work on the same running server and after restart. Recording is automatic in surla serve; an embedded host must provide Options.TracerProvider when constructing its control plane. No top-level operation span currently exists for preview_architecture, verify_change, approve_merge, confirm_intent, get_change, diff or non-live draft_override, so their failures need not appear; an instrumented child operation may still appear separately. Requests rejected before their span starts and separate verification processes are also absent.`)
+	fmt.Fprintln(os.Stderr, `    refresh-story: Read the bound workspace's Go module snapshot, compute its canonical snapshot_digest, and start or reuse the authenticated caller's in-memory Story refresh operation for that workspace. Return promptly with the operation's op_id, state, and snapshot_digest while sandboxed evaluation continues on a server-owned context that survives client disconnects. Refreshing an unchanged snapshot whose current operation is running or succeeded returns that operation without starting another evaluation; refreshing a changed snapshot or a failed operation cancels and replaces the prior operation.`)
+	fmt.Fprintln(os.Stderr, `    get-story-refresh: Return the authenticated caller's current in-memory Story refresh operation for the bound workspace: op_id, state (none, running, succeeded, or failed), snapshot_digest, and the evaluated stories (empty when the design does not load the Story module) or a failure diagnostic. When no refresh has been run yet in this server process for the bound workspace, state is none with a message instructing the caller to run refresh_story.`)
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Additional help:")
 	fmt.Fprintf(os.Stderr, "    %s surla COMMAND --help\n", os.Args[0])
@@ -788,4 +806,36 @@ func surlaListTracesUsage() {
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Example:")
 	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "surla list-traces --status \"all\" --limit 92 --cursor \"Qui sed.\"")
+}
+
+func surlaRefreshStoryUsage() {
+	// Header with flags
+	fmt.Fprintf(os.Stderr, "%s [flags] surla refresh-story", os.Args[0])
+	fmt.Fprintln(os.Stderr)
+
+	// Description
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, `Read the bound workspace's Go module snapshot, compute its canonical snapshot_digest, and start or reuse the authenticated caller's in-memory Story refresh operation for that workspace. Return promptly with the operation's op_id, state, and snapshot_digest while sandboxed evaluation continues on a server-owned context that survives client disconnects. Refreshing an unchanged snapshot whose current operation is running or succeeded returns that operation without starting another evaluation; refreshing a changed snapshot or a failed operation cancels and replaces the prior operation.`)
+
+	// Flags list
+
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, "Example:")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "surla refresh-story")
+}
+
+func surlaGetStoryRefreshUsage() {
+	// Header with flags
+	fmt.Fprintf(os.Stderr, "%s [flags] surla get-story-refresh", os.Args[0])
+	fmt.Fprintln(os.Stderr)
+
+	// Description
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, `Return the authenticated caller's current in-memory Story refresh operation for the bound workspace: op_id, state (none, running, succeeded, or failed), snapshot_digest, and the evaluated stories (empty when the design does not load the Story module) or a failure diagnostic. When no refresh has been run yet in this server process for the bound workspace, state is none with a message instructing the caller to run refresh_story.`)
+
+	// Flags list
+
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, "Example:")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "surla get-story-refresh")
 }

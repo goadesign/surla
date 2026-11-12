@@ -39,6 +39,8 @@ func NewMCPExecutor(caller mcpruntime.Caller) runtime.ToolCallExecutor {
 			return runtime.ExecuteMCPTool(ctx, caller, call, "generate_code", gensurla.SpecGenerateCode())
 		case gensurla.GetChange:
 			return runtime.ExecuteMCPTool(ctx, caller, call, "get_change", gensurla.SpecGetChange())
+		case gensurla.GetStoryRefresh:
+			return runtime.ExecuteMCPTool(ctx, caller, call, "get_story_refresh", gensurla.SpecGetStoryRefresh())
 		case gensurla.GetVerification:
 			return runtime.ExecuteMCPTool(ctx, caller, call, "get_verification", gensurla.SpecGetVerification())
 		case gensurla.InitProject:
@@ -53,6 +55,8 @@ func NewMCPExecutor(caller mcpruntime.Caller) runtime.ToolCallExecutor {
 			return runtime.ExecuteMCPTool(ctx, caller, call, "propose_change", gensurla.SpecProposeChange())
 		case gensurla.ReadCheckOutput:
 			return runtime.ExecuteMCPTool(ctx, caller, call, "read_check_output", gensurla.SpecReadCheckOutput())
+		case gensurla.RefreshStory:
+			return runtime.ExecuteMCPTool(ctx, caller, call, "refresh_story", gensurla.SpecRefreshStory())
 		case gensurla.ReviseChange:
 			return runtime.ExecuteMCPTool(ctx, caller, call, "revise_change", gensurla.SpecReviseChange())
 		case gensurla.StartLiveTarget:

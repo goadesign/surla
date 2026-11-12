@@ -1823,6 +1823,114 @@ func EncodeListTracesError(encoder func(context.Context, http.ResponseWriter) go
 	}
 }
 
+// EncodeRefreshStoryResponse returns an encoder for responses returned by the
+// surla refresh_story endpoint.
+func EncodeRefreshStoryResponse(encoder func(context.Context, http.ResponseWriter) goahttp.Encoder) func(context.Context, http.ResponseWriter, any) error {
+	return func(ctx context.Context, w http.ResponseWriter, v any) error {
+		res, _ := v.(*surla.StoryRefreshResult)
+		enc := encoder(ctx, w)
+		body := NewRefreshStoryResponseBody(res)
+		w.WriteHeader(http.StatusOK)
+		return enc.Encode(body)
+	}
+}
+
+// EncodeRefreshStoryError returns an encoder for errors returned by the
+// refresh_story surla endpoint.
+func EncodeRefreshStoryError(encoder func(context.Context, http.ResponseWriter) goahttp.Encoder, formatter func(ctx context.Context, err error) goahttp.Statuser) func(context.Context, http.ResponseWriter, error) error {
+	encodeError := goahttp.ErrorEncoder(encoder, formatter)
+	return func(ctx context.Context, w http.ResponseWriter, v error) error {
+		var en goa.GoaErrorNamer
+		if !errors.As(v, &en) {
+			return encodeError(ctx, w, v)
+		}
+		switch en.GoaErrorName() {
+		case "unprocessable":
+			var res *goa.ServiceError
+			errors.As(v, &res)
+			enc := encoder(ctx, w)
+			var body any
+			if formatter != nil {
+				body = formatter(ctx, res)
+			} else {
+				body = NewRefreshStoryUnprocessableResponseBody(res)
+			}
+			w.Header().Set("goa-error", res.GoaErrorName())
+			w.WriteHeader(http.StatusUnprocessableEntity)
+			return enc.Encode(body)
+		case "not_implemented":
+			var res *goa.ServiceError
+			errors.As(v, &res)
+			enc := encoder(ctx, w)
+			var body any
+			if formatter != nil {
+				body = formatter(ctx, res)
+			} else {
+				body = NewRefreshStoryNotImplementedResponseBody(res)
+			}
+			w.Header().Set("goa-error", res.GoaErrorName())
+			w.WriteHeader(http.StatusNotImplemented)
+			return enc.Encode(body)
+		case "unavailable":
+			var res *goa.ServiceError
+			errors.As(v, &res)
+			enc := encoder(ctx, w)
+			var body any
+			if formatter != nil {
+				body = formatter(ctx, res)
+			} else {
+				body = NewRefreshStoryUnavailableResponseBody(res)
+			}
+			w.Header().Set("goa-error", res.GoaErrorName())
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return enc.Encode(body)
+		default:
+			return encodeError(ctx, w, v)
+		}
+	}
+}
+
+// EncodeGetStoryRefreshResponse returns an encoder for responses returned by
+// the surla get_story_refresh endpoint.
+func EncodeGetStoryRefreshResponse(encoder func(context.Context, http.ResponseWriter) goahttp.Encoder) func(context.Context, http.ResponseWriter, any) error {
+	return func(ctx context.Context, w http.ResponseWriter, v any) error {
+		res, _ := v.(*surla.StoryRefreshResult)
+		enc := encoder(ctx, w)
+		body := NewGetStoryRefreshResponseBody(res)
+		w.WriteHeader(http.StatusOK)
+		return enc.Encode(body)
+	}
+}
+
+// EncodeGetStoryRefreshError returns an encoder for errors returned by the
+// get_story_refresh surla endpoint.
+func EncodeGetStoryRefreshError(encoder func(context.Context, http.ResponseWriter) goahttp.Encoder, formatter func(ctx context.Context, err error) goahttp.Statuser) func(context.Context, http.ResponseWriter, error) error {
+	encodeError := goahttp.ErrorEncoder(encoder, formatter)
+	return func(ctx context.Context, w http.ResponseWriter, v error) error {
+		var en goa.GoaErrorNamer
+		if !errors.As(v, &en) {
+			return encodeError(ctx, w, v)
+		}
+		switch en.GoaErrorName() {
+		case "not_implemented":
+			var res *goa.ServiceError
+			errors.As(v, &res)
+			enc := encoder(ctx, w)
+			var body any
+			if formatter != nil {
+				body = formatter(ctx, res)
+			} else {
+				body = NewGetStoryRefreshNotImplementedResponseBody(res)
+			}
+			w.Header().Set("goa-error", res.GoaErrorName())
+			w.WriteHeader(http.StatusNotImplemented)
+			return enc.Encode(body)
+		default:
+			return encodeError(ctx, w, v)
+		}
+	}
+}
+
 // unmarshalCP1AnalysisRequestBodyToSurlaCP1Analysis builds a value of type
 // *surla.CP1Analysis from a value of type *CP1AnalysisRequestBody.
 func unmarshalCP1AnalysisRequestBodyToSurlaCP1Analysis(v *CP1AnalysisRequestBody) *surla.CP1Analysis {
@@ -2404,6 +2512,138 @@ func marshalSurlaTraceSpanToTraceSpanResponseBody(v *surla.TraceSpan) *TraceSpan
 			tv := val
 			res.Attributes[tk] = tv
 		}
+	}
+
+	return res
+}
+
+// marshalSurlaStorySummaryItemToStorySummaryItemResponseBody builds a value of
+// type *StorySummaryItemResponseBody from a value of type
+// *surla.StorySummaryItem.
+func marshalSurlaStorySummaryItemToStorySummaryItemResponseBody(v *surla.StorySummaryItem) *StorySummaryItemResponseBody {
+	res := &StorySummaryItemResponseBody{
+		Name:        v.Name,
+		Description: v.Description,
+	}
+	if v.Actors != nil {
+		res.Actors = make([]*StoryActorItemResponseBody, len(v.Actors))
+		for i, val := range v.Actors {
+			if val == nil {
+				res.Actors[i] = nil
+				continue
+			}
+			res.Actors[i] = marshalSurlaStoryActorItemToStoryActorItemResponseBody(val)
+		}
+	} else {
+		res.Actors = []*StoryActorItemResponseBody{}
+	}
+	if v.Flows != nil {
+		res.Flows = make([]*StoryFlowItemResponseBody, len(v.Flows))
+		for i, val := range v.Flows {
+			if val == nil {
+				res.Flows[i] = nil
+				continue
+			}
+			res.Flows[i] = marshalSurlaStoryFlowItemToStoryFlowItemResponseBody(val)
+		}
+	} else {
+		res.Flows = []*StoryFlowItemResponseBody{}
+	}
+
+	return res
+}
+
+// marshalSurlaStoryActorItemToStoryActorItemResponseBody builds a value of
+// type *StoryActorItemResponseBody from a value of type *surla.StoryActorItem.
+func marshalSurlaStoryActorItemToStoryActorItemResponseBody(v *surla.StoryActorItem) *StoryActorItemResponseBody {
+	res := &StoryActorItemResponseBody{
+		Key:         v.Key,
+		Title:       v.Title,
+		Description: v.Description,
+	}
+
+	return res
+}
+
+// marshalSurlaStoryFlowItemToStoryFlowItemResponseBody builds a value of type
+// *StoryFlowItemResponseBody from a value of type *surla.StoryFlowItem.
+func marshalSurlaStoryFlowItemToStoryFlowItemResponseBody(v *surla.StoryFlowItem) *StoryFlowItemResponseBody {
+	res := &StoryFlowItemResponseBody{
+		Key:         v.Key,
+		Title:       v.Title,
+		Description: v.Description,
+		Complete:    v.Complete,
+	}
+	if v.Steps != nil {
+		res.Steps = make([]*StoryStepItemResponseBody, len(v.Steps))
+		for i, val := range v.Steps {
+			if val == nil {
+				res.Steps[i] = nil
+				continue
+			}
+			res.Steps[i] = marshalSurlaStoryStepItemToStoryStepItemResponseBody(val)
+		}
+	} else {
+		res.Steps = []*StoryStepItemResponseBody{}
+	}
+	if v.Questions != nil {
+		res.Questions = make([]*StoryQuestionItemResponseBody, len(v.Questions))
+		for i, val := range v.Questions {
+			if val == nil {
+				res.Questions[i] = nil
+				continue
+			}
+			res.Questions[i] = marshalSurlaStoryQuestionItemToStoryQuestionItemResponseBody(val)
+		}
+	} else {
+		res.Questions = []*StoryQuestionItemResponseBody{}
+	}
+
+	return res
+}
+
+// marshalSurlaStoryStepItemToStoryStepItemResponseBody builds a value of type
+// *StoryStepItemResponseBody from a value of type *surla.StoryStepItem.
+func marshalSurlaStoryStepItemToStoryStepItemResponseBody(v *surla.StoryStepItem) *StoryStepItemResponseBody {
+	res := &StoryStepItemResponseBody{
+		Key:         v.Key,
+		ActorKey:    v.ActorKey,
+		Summary:     v.Summary,
+		Description: v.Description,
+		Kind:        v.Kind,
+	}
+	if v.Questions != nil {
+		res.Questions = make([]*StoryQuestionItemResponseBody, len(v.Questions))
+		for i, val := range v.Questions {
+			if val == nil {
+				res.Questions[i] = nil
+				continue
+			}
+			res.Questions[i] = marshalSurlaStoryQuestionItemToStoryQuestionItemResponseBody(val)
+		}
+	} else {
+		res.Questions = []*StoryQuestionItemResponseBody{}
+	}
+
+	return res
+}
+
+// marshalSurlaStoryQuestionItemToStoryQuestionItemResponseBody builds a value
+// of type *StoryQuestionItemResponseBody from a value of type
+// *surla.StoryQuestionItem.
+func marshalSurlaStoryQuestionItemToStoryQuestionItemResponseBody(v *surla.StoryQuestionItem) *StoryQuestionItemResponseBody {
+	res := &StoryQuestionItemResponseBody{
+		Key:         v.Key,
+		Prompt:      v.Prompt,
+		Description: v.Description,
+	}
+	if v.Options != nil {
+		res.Options = make([]string, len(v.Options))
+		for i, val := range v.Options {
+			res.Options[i] = val
+		}
+	} else {
+		res.Options = []string{}
 	}
 
 	return res
