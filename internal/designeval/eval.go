@@ -437,6 +437,16 @@ func runGenerate(
 			"module's goa.design/goa/v3 requirement, or its replace directive, and go.sum, then run surla gen again",
 			err, describe(goa), completeSourcesGoa)
 	}
+	if err != nil && len(specs) > 0 && strings.Contains(err.Error(), harnessGoaAIModule) {
+		if evalMod, modErr := evaluatorGoMod(); modErr == nil {
+			if wantGoaAI, ok := requiredVersion(evalMod, harnessGoaAIModule); ok {
+				return nil, fmt.Errorf(
+					"%w (Story scenario generation requires %s %s or later)",
+					err, harnessGoaAIModule, wantGoaAI,
+				)
+			}
+		}
+	}
 	return out, err
 }
 

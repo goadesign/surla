@@ -697,29 +697,71 @@ var _ = Service("orders", func() {
 		"design/design.go": oldGoaAIFiles["design/design.go"],
 	})
 
+	t.Setenv("GOPROXY", "off")
 	for _, tc := range []struct {
-		name     string
-		files    map[string]string
-		wantDesc string
+		name  string
+		files map[string]string
 	}{
 		{
-			name:     "direct requirement on older goa-ai lacking eval packages",
-			files:    oldGoaAIFiles,
-			wantDesc: preEvalGoaAI,
+			name:  "direct requirement on older goa-ai lacking eval packages",
+			files: oldGoaAIFiles,
 		},
 		{
-			name:     "replace directive pointing to older goa-ai lacking eval packages",
-			files:    replacedGoaAIFiles,
-			wantDesc: wantGoaAI + " => goa.design/goa-ai@" + preEvalGoaAI,
+			name:  "replace directive pointing to older goa-ai lacking eval packages",
+			files: replacedGoaAIFiles,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			_, err := testEvaluator.GenerateWithStories(t.Context(), tc.files, stories)
 			require.Error(t, err)
-			assert.ErrorContains(t, err, tc.wantDesc)
-			assert.ErrorContains(t, err, "Surla requires "+harnessGoaAIModule+" "+wantGoaAI)
+			assert.ErrorContains(t, err, "Story scenario generation requires "+harnessGoaAIModule+" "+wantGoaAI+" or later")
 		})
 	}
+}
+
+func TestEvaluateAndGeneratePreserveGoaOnlyTargetWithGoModOnlyGoaAIChecksum(t *testing.T) {
+	if testing.Short() {
+		t.Skip("runs the sandboxed Go toolchain; the full suite (go test without -short) covers it")
+	}
+	// Build a tidy module that requires goa-ai, then strip goa-ai's zip
+	// checksum line from go.sum while keeping its /go.mod checksum line and a
+	// design that imports only Goa.
+	withGoaAI := testmodule.Snapshot(t, "", strings.Replace(minimalDesign, "package design\n", "package design\nimport _ \"goa.design/goa-ai/dsl\"\n", 1))
+	goaAIVer := testmodule.SurlaVersion(t, harnessGoaAIModule)
+	zipPrefix := harnessGoaAIModule + " " + goaAIVer + " h1:"
+	goModPrefix := harnessGoaAIModule + " " + goaAIVer + "/go.mod h1:"
+
+	var keptLines []string
+	hasGoModSum := false
+	for _, line := range strings.Split(withGoaAI["go.sum"], "\n") {
+		if strings.HasPrefix(line, zipPrefix) {
+			continue
+		}
+		if strings.HasPrefix(line, goModPrefix) {
+			hasGoModSum = true
+		}
+		keptLines = append(keptLines, line)
+	}
+	require.True(t, hasGoModSum, "expected /go.mod checksum line for %s %s", harnessGoaAIModule, goaAIVer)
+
+	files := map[string]string{
+		"go.mod":           withGoaAI["go.mod"],
+		"go.sum":           strings.Join(keptLines, "\n"),
+		"design/design.go": minimalDesign,
+	}
+	require.NotContains(t, files["go.sum"], zipPrefix)
+
+	res, err := testEvaluator.Evaluate(t.Context(), files)
+	require.NoError(t, err)
+	assert.Contains(t, res.Declarations, "Service:orders/Method:get_order")
+
+	genFiles, err := testEvaluator.Generate(t.Context(), files)
+	require.NoError(t, err)
+	assert.Contains(t, genFiles, "gen/orders/service.go")
+
+	storyGen, err := testEvaluator.GenerateWithStories(t.Context(), files, nil)
+	require.NoError(t, err)
+	assert.Equal(t, genFiles, storyGen.Files)
 }
 
 func TestGenerateWithStoriesFailsAfterClose(t *testing.T) {
