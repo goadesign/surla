@@ -30,6 +30,44 @@ export interface ExampleItem {
   verification_kind: "deterministic" | "model_judged";
 }
 
+export interface StoryActorItem {
+  description?: string;
+  key: string;
+  title: string;
+}
+
+export interface StoryFlowItem {
+  complete: boolean;
+  description?: string;
+  key: string;
+  questions: StoryQuestionItem[];
+  steps: StoryStepItem[];
+  title: string;
+}
+
+export interface StoryQuestionItem {
+  description?: string;
+  key: string;
+  options: string[];
+  prompt: string;
+}
+
+export interface StoryStepItem {
+  actor_key: string;
+  description?: string;
+  key: string;
+  kind: "start" | "step" | "outcome";
+  questions: StoryQuestionItem[];
+  summary: string;
+}
+
+export interface StorySummaryItem {
+  actors: StoryActorItem[];
+  description?: string;
+  flows: StoryFlowItem[];
+  name: string;
+}
+
 export interface UICompositionItem {
   composed_for_revision: string;
   program: string;
@@ -51,6 +89,7 @@ export interface ChangeCardResult {
   prompt: string;
   request_revision: string;
   status: "needs_confirmation" | "confirmed";
+  stories?: StorySummaryItem[];
   summary: string;
   ui_composition?: UICompositionItem;
   unverified_approval?: UnverifiedApprovalItem;
@@ -319,6 +358,12 @@ const GENERATED_RESULT_SCHEMAS: Record<string, JSONSchemaNode> = {
           "confirmed"
         ]
       },
+      "stories": {
+        "type": "array",
+        "items": {
+          "$ref": "#/$defs/StorySummaryItem"
+        }
+      },
       "summary": {
         "type": "string"
       },
@@ -425,6 +470,156 @@ const GENERATED_RESULT_SCHEMAS: Record<string, JSONSchemaNode> = {
               "deterministic",
               "model_judged"
             ]
+          }
+        }
+      },
+      "StoryActorItem": {
+        "type": "object",
+        "required": [
+          "key",
+          "title"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "type": "string"
+          },
+          "key": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        }
+      },
+      "StoryFlowItem": {
+        "type": "object",
+        "required": [
+          "key",
+          "title",
+          "complete",
+          "steps",
+          "questions"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "complete": {
+            "type": "boolean"
+          },
+          "description": {
+            "type": "string"
+          },
+          "key": {
+            "type": "string"
+          },
+          "questions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/StoryQuestionItem"
+            }
+          },
+          "steps": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/StoryStepItem"
+            }
+          },
+          "title": {
+            "type": "string"
+          }
+        }
+      },
+      "StoryQuestionItem": {
+        "type": "object",
+        "required": [
+          "key",
+          "prompt",
+          "options"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "type": "string"
+          },
+          "key": {
+            "type": "string"
+          },
+          "options": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "prompt": {
+            "type": "string"
+          }
+        }
+      },
+      "StoryStepItem": {
+        "type": "object",
+        "required": [
+          "key",
+          "actor_key",
+          "summary",
+          "kind",
+          "questions"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "actor_key": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "key": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "start",
+              "step",
+              "outcome"
+            ]
+          },
+          "questions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/StoryQuestionItem"
+            }
+          },
+          "summary": {
+            "type": "string"
+          }
+        }
+      },
+      "StorySummaryItem": {
+        "type": "object",
+        "required": [
+          "name",
+          "actors",
+          "flows"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "actors": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/StoryActorItem"
+            }
+          },
+          "description": {
+            "type": "string"
+          },
+          "flows": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/StoryFlowItem"
+            }
+          },
+          "name": {
+            "type": "string"
           }
         }
       },

@@ -2958,6 +2958,114 @@ func unmarshalExampleItemResponseBodyToSurlaExampleItem(v *ExampleItemResponseBo
 	return res
 }
 
+// unmarshalStorySummaryItemResponseBodyToSurlaStorySummaryItem builds a value
+// of type *surla.StorySummaryItem from a value of type
+// *StorySummaryItemResponseBody.
+func unmarshalStorySummaryItemResponseBodyToSurlaStorySummaryItem(v *StorySummaryItemResponseBody) *surla.StorySummaryItem {
+	res := &surla.StorySummaryItem{
+		Name:        *v.Name,
+		Description: v.Description,
+	}
+	res.Actors = make([]*surla.StoryActorItem, len(v.Actors))
+	for i, val := range v.Actors {
+		if val == nil {
+			res.Actors[i] = nil
+			continue
+		}
+		res.Actors[i] = unmarshalStoryActorItemResponseBodyToSurlaStoryActorItem(val)
+	}
+	res.Flows = make([]*surla.StoryFlowItem, len(v.Flows))
+	for i, val := range v.Flows {
+		if val == nil {
+			res.Flows[i] = nil
+			continue
+		}
+		res.Flows[i] = unmarshalStoryFlowItemResponseBodyToSurlaStoryFlowItem(val)
+	}
+
+	return res
+}
+
+// unmarshalStoryActorItemResponseBodyToSurlaStoryActorItem builds a value of
+// type *surla.StoryActorItem from a value of type *StoryActorItemResponseBody.
+func unmarshalStoryActorItemResponseBodyToSurlaStoryActorItem(v *StoryActorItemResponseBody) *surla.StoryActorItem {
+	res := &surla.StoryActorItem{
+		Key:         *v.Key,
+		Title:       *v.Title,
+		Description: v.Description,
+	}
+
+	return res
+}
+
+// unmarshalStoryFlowItemResponseBodyToSurlaStoryFlowItem builds a value of
+// type *surla.StoryFlowItem from a value of type *StoryFlowItemResponseBody.
+func unmarshalStoryFlowItemResponseBodyToSurlaStoryFlowItem(v *StoryFlowItemResponseBody) *surla.StoryFlowItem {
+	res := &surla.StoryFlowItem{
+		Key:         *v.Key,
+		Title:       *v.Title,
+		Description: v.Description,
+		Complete:    *v.Complete,
+	}
+	res.Steps = make([]*surla.StoryStepItem, len(v.Steps))
+	for i, val := range v.Steps {
+		if val == nil {
+			res.Steps[i] = nil
+			continue
+		}
+		res.Steps[i] = unmarshalStoryStepItemResponseBodyToSurlaStoryStepItem(val)
+	}
+	res.Questions = make([]*surla.StoryQuestionItem, len(v.Questions))
+	for i, val := range v.Questions {
+		if val == nil {
+			res.Questions[i] = nil
+			continue
+		}
+		res.Questions[i] = unmarshalStoryQuestionItemResponseBodyToSurlaStoryQuestionItem(val)
+	}
+
+	return res
+}
+
+// unmarshalStoryStepItemResponseBodyToSurlaStoryStepItem builds a value of
+// type *surla.StoryStepItem from a value of type *StoryStepItemResponseBody.
+func unmarshalStoryStepItemResponseBodyToSurlaStoryStepItem(v *StoryStepItemResponseBody) *surla.StoryStepItem {
+	res := &surla.StoryStepItem{
+		Key:         *v.Key,
+		ActorKey:    *v.ActorKey,
+		Summary:     *v.Summary,
+		Description: v.Description,
+		Kind:        *v.Kind,
+	}
+	res.Questions = make([]*surla.StoryQuestionItem, len(v.Questions))
+	for i, val := range v.Questions {
+		if val == nil {
+			res.Questions[i] = nil
+			continue
+		}
+		res.Questions[i] = unmarshalStoryQuestionItemResponseBodyToSurlaStoryQuestionItem(val)
+	}
+
+	return res
+}
+
+// unmarshalStoryQuestionItemResponseBodyToSurlaStoryQuestionItem builds a
+// value of type *surla.StoryQuestionItem from a value of type
+// *StoryQuestionItemResponseBody.
+func unmarshalStoryQuestionItemResponseBodyToSurlaStoryQuestionItem(v *StoryQuestionItemResponseBody) *surla.StoryQuestionItem {
+	res := &surla.StoryQuestionItem{
+		Key:         *v.Key,
+		Prompt:      *v.Prompt,
+		Description: v.Description,
+	}
+	res.Options = make([]string, len(v.Options))
+	for i, val := range v.Options {
+		res.Options[i] = val
+	}
+
+	return res
+}
+
 // unmarshalUICompositionItemResponseBodyToSurlaUICompositionItem builds a
 // value of type *surla.UICompositionItem from a value of type
 // *UICompositionItemResponseBody.
@@ -3552,114 +3660,6 @@ func unmarshalTraceSpanResponseBodyToSurlaTraceSpan(v *TraceSpanResponseBody) *s
 		tk := key
 		tv := val
 		res.Attributes[tk] = tv
-	}
-
-	return res
-}
-
-// unmarshalStorySummaryItemResponseBodyToSurlaStorySummaryItem builds a value
-// of type *surla.StorySummaryItem from a value of type
-// *StorySummaryItemResponseBody.
-func unmarshalStorySummaryItemResponseBodyToSurlaStorySummaryItem(v *StorySummaryItemResponseBody) *surla.StorySummaryItem {
-	res := &surla.StorySummaryItem{
-		Name:        *v.Name,
-		Description: v.Description,
-	}
-	res.Actors = make([]*surla.StoryActorItem, len(v.Actors))
-	for i, val := range v.Actors {
-		if val == nil {
-			res.Actors[i] = nil
-			continue
-		}
-		res.Actors[i] = unmarshalStoryActorItemResponseBodyToSurlaStoryActorItem(val)
-	}
-	res.Flows = make([]*surla.StoryFlowItem, len(v.Flows))
-	for i, val := range v.Flows {
-		if val == nil {
-			res.Flows[i] = nil
-			continue
-		}
-		res.Flows[i] = unmarshalStoryFlowItemResponseBodyToSurlaStoryFlowItem(val)
-	}
-
-	return res
-}
-
-// unmarshalStoryActorItemResponseBodyToSurlaStoryActorItem builds a value of
-// type *surla.StoryActorItem from a value of type *StoryActorItemResponseBody.
-func unmarshalStoryActorItemResponseBodyToSurlaStoryActorItem(v *StoryActorItemResponseBody) *surla.StoryActorItem {
-	res := &surla.StoryActorItem{
-		Key:         *v.Key,
-		Title:       *v.Title,
-		Description: v.Description,
-	}
-
-	return res
-}
-
-// unmarshalStoryFlowItemResponseBodyToSurlaStoryFlowItem builds a value of
-// type *surla.StoryFlowItem from a value of type *StoryFlowItemResponseBody.
-func unmarshalStoryFlowItemResponseBodyToSurlaStoryFlowItem(v *StoryFlowItemResponseBody) *surla.StoryFlowItem {
-	res := &surla.StoryFlowItem{
-		Key:         *v.Key,
-		Title:       *v.Title,
-		Description: v.Description,
-		Complete:    *v.Complete,
-	}
-	res.Steps = make([]*surla.StoryStepItem, len(v.Steps))
-	for i, val := range v.Steps {
-		if val == nil {
-			res.Steps[i] = nil
-			continue
-		}
-		res.Steps[i] = unmarshalStoryStepItemResponseBodyToSurlaStoryStepItem(val)
-	}
-	res.Questions = make([]*surla.StoryQuestionItem, len(v.Questions))
-	for i, val := range v.Questions {
-		if val == nil {
-			res.Questions[i] = nil
-			continue
-		}
-		res.Questions[i] = unmarshalStoryQuestionItemResponseBodyToSurlaStoryQuestionItem(val)
-	}
-
-	return res
-}
-
-// unmarshalStoryStepItemResponseBodyToSurlaStoryStepItem builds a value of
-// type *surla.StoryStepItem from a value of type *StoryStepItemResponseBody.
-func unmarshalStoryStepItemResponseBodyToSurlaStoryStepItem(v *StoryStepItemResponseBody) *surla.StoryStepItem {
-	res := &surla.StoryStepItem{
-		Key:         *v.Key,
-		ActorKey:    *v.ActorKey,
-		Summary:     *v.Summary,
-		Description: v.Description,
-		Kind:        *v.Kind,
-	}
-	res.Questions = make([]*surla.StoryQuestionItem, len(v.Questions))
-	for i, val := range v.Questions {
-		if val == nil {
-			res.Questions[i] = nil
-			continue
-		}
-		res.Questions[i] = unmarshalStoryQuestionItemResponseBodyToSurlaStoryQuestionItem(val)
-	}
-
-	return res
-}
-
-// unmarshalStoryQuestionItemResponseBodyToSurlaStoryQuestionItem builds a
-// value of type *surla.StoryQuestionItem from a value of type
-// *StoryQuestionItemResponseBody.
-func unmarshalStoryQuestionItemResponseBodyToSurlaStoryQuestionItem(v *StoryQuestionItemResponseBody) *surla.StoryQuestionItem {
-	res := &surla.StoryQuestionItem{
-		Key:         *v.Key,
-		Prompt:      *v.Prompt,
-		Description: v.Description,
-	}
-	res.Options = make([]string, len(v.Options))
-	for i, val := range v.Options {
-		res.Options[i] = val
 	}
 
 	return res

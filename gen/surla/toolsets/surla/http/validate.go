@@ -78,6 +78,13 @@ func ValidateApproveMergeResultTransport(body *ApproveMergeResultTransport) (err
 			}
 		}
 	}
+	for _, e := range body.Stories {
+		if e != nil {
+			if err2 := ValidateStorySummaryItemTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
 	if body.UIComposition != nil {
 		if err2 := ValidateUICompositionItemTransport(body.UIComposition); err2 != nil {
 			err = goa.MergeErrors(err, err2)
@@ -212,6 +219,13 @@ func ValidateConfirmIntentResultTransport(body *ConfirmIntentResultTransport) (e
 	for _, e := range body.Examples {
 		if e != nil {
 			if err2 := ValidateExampleItemTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	for _, e := range body.Stories {
+		if e != nil {
+			if err2 := ValidateStorySummaryItemTransport(e); err2 != nil {
 				err = goa.MergeErrors(err, err2)
 			}
 		}
@@ -383,6 +397,13 @@ func ValidateGetChangeResultTransport(body *GetChangeResultTransport) (err error
 	for _, e := range body.Examples {
 		if e != nil {
 			if err2 := ValidateExampleItemTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	for _, e := range body.Stories {
+		if e != nil {
+			if err2 := ValidateStorySummaryItemTransport(e); err2 != nil {
 				err = goa.MergeErrors(err, err2)
 			}
 		}
@@ -751,6 +772,13 @@ func ValidateProposeChangeResultTransport(body *ProposeChangeResultTransport) (e
 			}
 		}
 	}
+	for _, e := range body.Stories {
+		if e != nil {
+			if err2 := ValidateStorySummaryItemTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
 	if body.UIComposition != nil {
 		if err2 := ValidateUICompositionItemTransport(body.UIComposition); err2 != nil {
 			err = goa.MergeErrors(err, err2)
@@ -877,6 +905,13 @@ func ValidateReviseChangeResultTransport(body *ReviseChangeResultTransport) (err
 	for _, e := range body.Examples {
 		if e != nil {
 			if err2 := ValidateExampleItemTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	for _, e := range body.Stories {
+		if e != nil {
+			if err2 := ValidateStorySummaryItemTransport(e); err2 != nil {
 				err = goa.MergeErrors(err, err2)
 			}
 		}

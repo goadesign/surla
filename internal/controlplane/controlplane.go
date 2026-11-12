@@ -208,7 +208,8 @@ type (
 	}
 
 	// storedChangeCard holds a versioned Change Card alongside its authenticated
-	// owner principal, original design source snapshot, and design source origin.
+	// owner principal, original design source snapshot, design source origin,
+	// and optional adopted domain Stories.
 	storedChangeCard struct {
 		// card is the latest versioned ChangeCardResult.
 		card *gensurla.ChangeCardResult
@@ -219,6 +220,9 @@ type (
 		// sourceOrigin records whether designSource was supplied by the caller
 		// ("supplied") or read from the bound workspace ("workspace").
 		sourceOrigin string
+		// stories holds the evaluated domain Stories adopted for this revision,
+		// or nil when none were adopted.
+		stories []designeval.StorySummary
 	}
 
 	// canonicalAnswerPair is a deterministic key/value entry for JSON hashing.
@@ -242,6 +246,10 @@ type (
 		Prompt string `json:"prompt"`
 		// DesignSource is the Goa design source inspected at CP1.
 		DesignSource string `json:"design_source"`
+		// Stories is the ordered slice of evaluated domain Stories adopted for
+		// this revision, omitted when empty so cards without Stories keep their
+		// exact revision digest.
+		Stories []designeval.StorySummary `json:"stories,omitempty"`
 		// Summary is the plain-English summary.
 		Summary string `json:"summary"`
 		// Ambiguities is the ordered slice of surfaced domain questions.
@@ -614,11 +622,14 @@ func (c *ControlPlane) GoldenPath(_ context.Context) (string, error) {
 // could not be found again. It then checks the rule that spans fields (each
 // ambiguity's options are distinct), numbers ambiguities
 // <change_id>-ambiguity-NN and examples check_NN in list order, records the
-// design source (design_source when given, else design/*.go from the bound
-// workspace, else none), and binds the card to the authenticated principal.
-// A card without ambiguities is saved confirmed by its owner; otherwise it
-// waits in needs_confirmation. A change_id that already has a card is a
-// conflict; a payload that breaks a rule, a blank change_id or prompt, or an
+// design source and optional Stories (when story_refresh_op_id is given, the
+// design/*.go snapshot and evaluated Stories from that succeeded
+// refresh_story operation; else design_source when given; else design/*.go
+// from the bound workspace; else none), and binds the card to the
+// authenticated principal. A card without ambiguities is saved confirmed by
+// its owner; otherwise it waits in needs_confirmation. A change_id that
+// already has a card is a conflict; a payload that breaks a rule, a blank
+// change_id or prompt, an invalid or stale story_refresh_op_id, or an
 // unreadable workspace design is unprocessable, and none saves anything.
 func (c *ControlPlane) ProposeChange(ctx context.Context, p *gensurla.ProposeChangePayload) (*gensurla.ChangeCardResult, error) {
 	principal, ok := PrincipalFromContext(ctx)
@@ -632,16 +643,32 @@ func (c *ControlPlane) ProposeChange(ctx context.Context, p *gensurla.ProposeCha
 		return nil, gensurla.MakeUnprocessable(errors.New("change_id and prompt are required"))
 	}
 	var designSrc string
+	var stories []designeval.StorySummary
 	sourceOrigin := sourceOriginSupplied
-	if p.DesignSource != nil {
-		designSrc = *p.DesignSource
-	} else if wsDir, wsDev, wsIno := c.currentWorkspaceTarget(); wsDir != "" {
-		src, err := readWorkspaceDesignSource(wsDir, wsDev, wsIno)
+	switch {
+	case p.StoryRefreshOpID != nil:
+		if p.DesignSource != nil {
+			return nil, gensurla.MakeUnprocessable(errors.New(
+				"cannot combine design_source with story_refresh_op_id; omit design_source so Surla reads the workspace snapshot verified by refresh_story",
+			))
+		}
+		var err error
+		designSrc, stories, err = c.adoptStoryRefresh(principal, *p.StoryRefreshOpID)
 		if err != nil {
 			return nil, err
 		}
-		designSrc = src
 		sourceOrigin = sourceOriginWorkspace
+	case p.DesignSource != nil:
+		designSrc = *p.DesignSource
+	default:
+		if wsDir, wsDev, wsIno := c.currentWorkspaceTarget(); wsDir != "" {
+			src, err := readWorkspaceDesignSource(wsDir, wsDev, wsIno)
+			if err != nil {
+				return nil, err
+			}
+			designSrc = src
+			sourceOrigin = sourceOriginWorkspace
+		}
 	}
 
 	_, span := c.tracer("surla/controlplane").Start(
@@ -673,6 +700,7 @@ func (c *ControlPlane) ProposeChange(ctx context.Context, p *gensurla.ProposeCha
 		Ambiguities:        ambiguities,
 		Examples:           examples,
 		PreservedBehaviors: preserved,
+		Stories:            storySummaryItemsOrNil(stories),
 		ConfirmedBy:        confirmedBy,
 	}
 	rev, err := computeCanonicalRevision(card, principal.ID, designSrc)
@@ -707,6 +735,7 @@ func (c *ControlPlane) ProposeChange(ctx context.Context, p *gensurla.ProposeCha
 		owner:        principal.ID,
 		designSource: designSrc,
 		sourceOrigin: sourceOrigin,
+		stories:      stories,
 	}); err != nil {
 		span.SetAttributes(attribute.String("surla.public_summary", cp1SafeFaultSummary(false, cp1FaultStorageSave)))
 		span.RecordError(err)
@@ -999,6 +1028,7 @@ func computeCanonicalRevision(card *gensurla.ChangeCardResult, owner, designSour
 		Status:             card.Status,
 		Prompt:             card.Prompt,
 		DesignSource:       designSource,
+		Stories:            canonicalStorySummariesFromItems(card.Stories),
 		Summary:            card.Summary,
 		Ambiguities:        card.Ambiguities,
 		Answers:            answers,

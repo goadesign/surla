@@ -27,8 +27,16 @@ type ProposeChangeRequestBody struct {
 	// files). Surla saves it with the card and includes it in request_revision; it
 	// does not interpret it. When omitted on a server with a bound workspace,
 	// Surla records design/*.go from the bound workspace; when omitted without a
-	// bound workspace, the card records no design.
+	// bound workspace, the card records no design. Cannot be combined with
+	// story_refresh_op_id.
 	DesignSource *string `form:"design_source,omitempty" json:"design_source,omitempty" xml:"design_source,omitempty"`
+	// Optional op_id of a succeeded refresh_story operation for the bound
+	// workspace whose evaluated Stories this card adopts. When set, design_source
+	// must be omitted; Surla reads one workspace snapshot, requires its
+	// snapshot_digest to match the operation's, and records both the evaluated
+	// Stories and that snapshot's design/*.go on the card. Omit when the card has
+	// no Story.
+	StoryRefreshOpID *string `form:"story_refresh_op_id,omitempty" json:"story_refresh_op_id,omitempty" xml:"story_refresh_op_id,omitempty"`
 	// Your analysis of prompt against the target's current design.
 	Analysis *CP1AnalysisRequestBody `form:"analysis,omitempty" json:"analysis,omitempty" xml:"analysis,omitempty"`
 }
@@ -45,9 +53,20 @@ type ReviseChangeRequestBody struct {
 	// Updated Goa design source the analysis was made against (the target's
 	// design/*.go files). Surla saves it with the card and includes it in
 	// request_revision; it does not interpret it. When omitted on a
-	// workspace-backed card with a bound workspace, Surla records design/*.go from
-	// the bound workspace again; otherwise the card's saved design source is kept.
+	// workspace-backed card without Stories and with a bound workspace, Surla
+	// records design/*.go from the bound workspace again; otherwise the card's
+	// saved design source is kept. Cannot be set when story_refresh_op_id is set
+	// or when the card already has adopted Stories.
 	DesignSource *string `form:"design_source,omitempty" json:"design_source,omitempty" xml:"design_source,omitempty"`
+	// Optional op_id of a succeeded refresh_story operation for the bound
+	// workspace whose evaluated Stories this revision adopts. When set,
+	// design_source must be omitted and the card must not use a caller-supplied
+	// design_source; Surla reads one workspace snapshot, requires its
+	// snapshot_digest to match the operation's, and records both the evaluated
+	// Stories and that snapshot's design/*.go on the revised card. When omitted on
+	// a card that already has Stories, the card's saved Stories and saved
+	// design_source are kept together.
+	StoryRefreshOpID *string `form:"story_refresh_op_id,omitempty" json:"story_refresh_op_id,omitempty" xml:"story_refresh_op_id,omitempty"`
 	// Your analysis of the revised prompt against the current card and the
 	// target's current design.
 	Analysis *CP1RevisionAnalysisRequestBody `form:"analysis,omitempty" json:"analysis,omitempty" xml:"analysis,omitempty"`
@@ -212,6 +231,10 @@ type ProposeChangeResponseBody struct {
 	Examples []*ExampleItemResponseBody `form:"examples" json:"examples" xml:"examples"`
 	// Existing contract invariants preserved by this change.
 	PreservedBehaviors []string `form:"preserved_behaviors" json:"preserved_behaviors" xml:"preserved_behaviors"`
+	// Evaluated domain Stories adopted from refresh_story for this Change Card
+	// revision in declaration order; omitted when the card has no Stories.
+	// Included in request_revision.
+	Stories []*StorySummaryItemResponseBody `form:"stories,omitempty" json:"stories,omitempty" xml:"stories,omitempty"`
 	// Authenticated principal that confirmed the Change Card.
 	ConfirmedBy *string `form:"confirmed_by,omitempty" json:"confirmed_by,omitempty" xml:"confirmed_by,omitempty"`
 	// SHA-256 digest of the canonical versioned Change Card.
@@ -258,6 +281,10 @@ type ReviseChangeResponseBody struct {
 	Examples []*ExampleItemResponseBody `form:"examples" json:"examples" xml:"examples"`
 	// Existing contract invariants preserved by this change.
 	PreservedBehaviors []string `form:"preserved_behaviors" json:"preserved_behaviors" xml:"preserved_behaviors"`
+	// Evaluated domain Stories adopted from refresh_story for this Change Card
+	// revision in declaration order; omitted when the card has no Stories.
+	// Included in request_revision.
+	Stories []*StorySummaryItemResponseBody `form:"stories,omitempty" json:"stories,omitempty" xml:"stories,omitempty"`
 	// Authenticated principal that confirmed the Change Card.
 	ConfirmedBy *string `form:"confirmed_by,omitempty" json:"confirmed_by,omitempty" xml:"confirmed_by,omitempty"`
 	// SHA-256 digest of the canonical versioned Change Card.
@@ -304,6 +331,10 @@ type ConfirmIntentResponseBody struct {
 	Examples []*ExampleItemResponseBody `form:"examples" json:"examples" xml:"examples"`
 	// Existing contract invariants preserved by this change.
 	PreservedBehaviors []string `form:"preserved_behaviors" json:"preserved_behaviors" xml:"preserved_behaviors"`
+	// Evaluated domain Stories adopted from refresh_story for this Change Card
+	// revision in declaration order; omitted when the card has no Stories.
+	// Included in request_revision.
+	Stories []*StorySummaryItemResponseBody `form:"stories,omitempty" json:"stories,omitempty" xml:"stories,omitempty"`
 	// Authenticated principal that confirmed the Change Card.
 	ConfirmedBy *string `form:"confirmed_by,omitempty" json:"confirmed_by,omitempty" xml:"confirmed_by,omitempty"`
 	// SHA-256 digest of the canonical versioned Change Card.
@@ -350,6 +381,10 @@ type GetChangeResponseBody struct {
 	Examples []*ExampleItemResponseBody `form:"examples" json:"examples" xml:"examples"`
 	// Existing contract invariants preserved by this change.
 	PreservedBehaviors []string `form:"preserved_behaviors" json:"preserved_behaviors" xml:"preserved_behaviors"`
+	// Evaluated domain Stories adopted from refresh_story for this Change Card
+	// revision in declaration order; omitted when the card has no Stories.
+	// Included in request_revision.
+	Stories []*StorySummaryItemResponseBody `form:"stories,omitempty" json:"stories,omitempty" xml:"stories,omitempty"`
 	// Authenticated principal that confirmed the Change Card.
 	ConfirmedBy *string `form:"confirmed_by,omitempty" json:"confirmed_by,omitempty" xml:"confirmed_by,omitempty"`
 	// SHA-256 digest of the canonical versioned Change Card.
@@ -504,6 +539,10 @@ type ApproveMergeResponseBody struct {
 	Examples []*ExampleItemResponseBody `form:"examples" json:"examples" xml:"examples"`
 	// Existing contract invariants preserved by this change.
 	PreservedBehaviors []string `form:"preserved_behaviors" json:"preserved_behaviors" xml:"preserved_behaviors"`
+	// Evaluated domain Stories adopted from refresh_story for this Change Card
+	// revision in declaration order; omitted when the card has no Stories.
+	// Included in request_revision.
+	Stories []*StorySummaryItemResponseBody `form:"stories,omitempty" json:"stories,omitempty" xml:"stories,omitempty"`
 	// Authenticated principal that confirmed the Change Card.
 	ConfirmedBy *string `form:"confirmed_by,omitempty" json:"confirmed_by,omitempty" xml:"confirmed_by,omitempty"`
 	// SHA-256 digest of the canonical versioned Change Card.
@@ -638,13 +677,14 @@ type ListTracesResponseBody struct {
 // endpoint HTTP response body.
 type RefreshStoryResponseBody struct {
 	// Identifier of the caller's current Story refresh operation for the bound
-	// workspace; present when state is running, succeeded, or failed.
+	// workspace; present when state is running, succeeded, or failed. Pass it as
+	// story_refresh_op_id to propose_change or revise_change once state is
+	// succeeded to adopt the evaluated Story into a Change Card.
 	OpID *string `form:"op_id,omitempty" json:"op_id,omitempty" xml:"op_id,omitempty"`
 	// Current operation state: none, running, succeeded, or failed.
 	State string `form:"state" json:"state" xml:"state"`
-	// Canonical SHA-256 digest (sha256:<hex>) of the workspace module snapshot
-	// read when this refresh started; present when state is running, succeeded, or
-	// failed.
+	// Canonical SHA-256 digest of the workspace module snapshot read when this
+	// refresh started; present when state is running, succeeded, or failed.
 	SnapshotDigest *string `form:"snapshot_digest,omitempty" json:"snapshot_digest,omitempty" xml:"snapshot_digest,omitempty"`
 	// Evaluated domain Stories in declaration order when state is succeeded (empty
 	// when the design declares no Stories or when state is none, running, or
@@ -660,13 +700,14 @@ type RefreshStoryResponseBody struct {
 // "get_story_refresh" endpoint HTTP response body.
 type GetStoryRefreshResponseBody struct {
 	// Identifier of the caller's current Story refresh operation for the bound
-	// workspace; present when state is running, succeeded, or failed.
+	// workspace; present when state is running, succeeded, or failed. Pass it as
+	// story_refresh_op_id to propose_change or revise_change once state is
+	// succeeded to adopt the evaluated Story into a Change Card.
 	OpID *string `form:"op_id,omitempty" json:"op_id,omitempty" xml:"op_id,omitempty"`
 	// Current operation state: none, running, succeeded, or failed.
 	State string `form:"state" json:"state" xml:"state"`
-	// Canonical SHA-256 digest (sha256:<hex>) of the workspace module snapshot
-	// read when this refresh started; present when state is running, succeeded, or
-	// failed.
+	// Canonical SHA-256 digest of the workspace module snapshot read when this
+	// refresh started; present when state is running, succeeded, or failed.
 	SnapshotDigest *string `form:"snapshot_digest,omitempty" json:"snapshot_digest,omitempty" xml:"snapshot_digest,omitempty"`
 	// Evaluated domain Stories in declaration order when state is succeeded (empty
 	// when the design declares no Stories or when state is none, running, or
@@ -1801,6 +1842,74 @@ type ExampleItemResponseBody struct {
 	VerificationKind string `form:"verification_kind" json:"verification_kind" xml:"verification_kind"`
 }
 
+// StorySummaryItemResponseBody is used to define fields on response body types.
+type StorySummaryItemResponseBody struct {
+	// Human-facing Story title.
+	Name string `form:"name" json:"name" xml:"name"`
+	// Optional longer explanation of the Story.
+	Description *string `form:"description,omitempty" json:"description,omitempty" xml:"description,omitempty"`
+	// Domain roles declared in the Story in declaration order.
+	Actors []*StoryActorItemResponseBody `form:"actors" json:"actors" xml:"actors"`
+	// Timeline paths declared in the Story in declaration order.
+	Flows []*StoryFlowItemResponseBody `form:"flows" json:"flows" xml:"flows"`
+}
+
+// StoryActorItemResponseBody is used to define fields on response body types.
+type StoryActorItemResponseBody struct {
+	// Story-scoped actor key.
+	Key string `form:"key" json:"key" xml:"key"`
+	// Human-facing actor label.
+	Title string `form:"title" json:"title" xml:"title"`
+	// Optional longer explanation of the actor role.
+	Description *string `form:"description,omitempty" json:"description,omitempty" xml:"description,omitempty"`
+}
+
+// StoryFlowItemResponseBody is used to define fields on response body types.
+type StoryFlowItemResponseBody struct {
+	// Story-scoped flow key.
+	Key string `form:"key" json:"key" xml:"key"`
+	// Human-facing flow title.
+	Title string `form:"title" json:"title" xml:"title"`
+	// Optional longer explanation of the flow.
+	Description *string `form:"description,omitempty" json:"description,omitempty" xml:"description,omitempty"`
+	// True when the flow has a start, at least one outcome, and no open questions
+	// on the flow or any of its steps.
+	Complete bool `form:"complete" json:"complete" xml:"complete"`
+	// Starting, intermediate, and outcome steps in declaration order.
+	Steps []*StoryStepItemResponseBody `form:"steps" json:"steps" xml:"steps"`
+	// Unresolved flow-level decisions in declaration order.
+	Questions []*StoryQuestionItemResponseBody `form:"questions" json:"questions" xml:"questions"`
+}
+
+// StoryStepItemResponseBody is used to define fields on response body types.
+type StoryStepItemResponseBody struct {
+	// Flow-scoped step key.
+	Key string `form:"key" json:"key" xml:"key"`
+	// Story-scoped key of the actor performing or observing the step.
+	ActorKey string `form:"actor_key" json:"actor_key" xml:"actor_key"`
+	// Timeline sticky-note sentence for the step.
+	Summary string `form:"summary" json:"summary" xml:"summary"`
+	// Optional longer explanation of the step.
+	Description *string `form:"description,omitempty" json:"description,omitempty" xml:"description,omitempty"`
+	// Step position in the flow: start, step, or outcome.
+	Kind string `form:"kind" json:"kind" xml:"kind"`
+	// Unresolved step-level decisions in declaration order.
+	Questions []*StoryQuestionItemResponseBody `form:"questions" json:"questions" xml:"questions"`
+}
+
+// StoryQuestionItemResponseBody is used to define fields on response body
+// types.
+type StoryQuestionItemResponseBody struct {
+	// Flow-scoped question key.
+	Key string `form:"key" json:"key" xml:"key"`
+	// Human-facing question text.
+	Prompt string `form:"prompt" json:"prompt" xml:"prompt"`
+	// Optional longer context for the question.
+	Description *string `form:"description,omitempty" json:"description,omitempty" xml:"description,omitempty"`
+	// Suggested choices in declaration order.
+	Options []string `form:"options" json:"options" xml:"options"`
+}
+
 // UICompositionItemResponseBody is used to define fields on response body
 // types.
 type UICompositionItemResponseBody struct {
@@ -2118,74 +2227,6 @@ type TraceSpanResponseBody struct {
 	// True when text was shortened to fit this diagnostic record; use operator
 	// telemetry for the full values.
 	Shortened bool `form:"shortened" json:"shortened" xml:"shortened"`
-}
-
-// StorySummaryItemResponseBody is used to define fields on response body types.
-type StorySummaryItemResponseBody struct {
-	// Human-facing Story title.
-	Name string `form:"name" json:"name" xml:"name"`
-	// Optional longer explanation of the Story.
-	Description *string `form:"description,omitempty" json:"description,omitempty" xml:"description,omitempty"`
-	// Domain roles declared in the Story in declaration order.
-	Actors []*StoryActorItemResponseBody `form:"actors" json:"actors" xml:"actors"`
-	// Timeline paths declared in the Story in declaration order.
-	Flows []*StoryFlowItemResponseBody `form:"flows" json:"flows" xml:"flows"`
-}
-
-// StoryActorItemResponseBody is used to define fields on response body types.
-type StoryActorItemResponseBody struct {
-	// Story-scoped actor key.
-	Key string `form:"key" json:"key" xml:"key"`
-	// Human-facing actor label.
-	Title string `form:"title" json:"title" xml:"title"`
-	// Optional longer explanation of the actor role.
-	Description *string `form:"description,omitempty" json:"description,omitempty" xml:"description,omitempty"`
-}
-
-// StoryFlowItemResponseBody is used to define fields on response body types.
-type StoryFlowItemResponseBody struct {
-	// Story-scoped flow key.
-	Key string `form:"key" json:"key" xml:"key"`
-	// Human-facing flow title.
-	Title string `form:"title" json:"title" xml:"title"`
-	// Optional longer explanation of the flow.
-	Description *string `form:"description,omitempty" json:"description,omitempty" xml:"description,omitempty"`
-	// True when the flow has a start, at least one outcome, and no open questions
-	// on the flow or any of its steps.
-	Complete bool `form:"complete" json:"complete" xml:"complete"`
-	// Starting, intermediate, and outcome steps in declaration order.
-	Steps []*StoryStepItemResponseBody `form:"steps" json:"steps" xml:"steps"`
-	// Unresolved flow-level decisions in declaration order.
-	Questions []*StoryQuestionItemResponseBody `form:"questions" json:"questions" xml:"questions"`
-}
-
-// StoryStepItemResponseBody is used to define fields on response body types.
-type StoryStepItemResponseBody struct {
-	// Flow-scoped step key.
-	Key string `form:"key" json:"key" xml:"key"`
-	// Story-scoped key of the actor performing or observing the step.
-	ActorKey string `form:"actor_key" json:"actor_key" xml:"actor_key"`
-	// Timeline sticky-note sentence for the step.
-	Summary string `form:"summary" json:"summary" xml:"summary"`
-	// Optional longer explanation of the step.
-	Description *string `form:"description,omitempty" json:"description,omitempty" xml:"description,omitempty"`
-	// Step position in the flow: start, step, or outcome.
-	Kind string `form:"kind" json:"kind" xml:"kind"`
-	// Unresolved step-level decisions in declaration order.
-	Questions []*StoryQuestionItemResponseBody `form:"questions" json:"questions" xml:"questions"`
-}
-
-// StoryQuestionItemResponseBody is used to define fields on response body
-// types.
-type StoryQuestionItemResponseBody struct {
-	// Flow-scoped question key.
-	Key string `form:"key" json:"key" xml:"key"`
-	// Human-facing question text.
-	Prompt string `form:"prompt" json:"prompt" xml:"prompt"`
-	// Optional longer context for the question.
-	Description *string `form:"description,omitempty" json:"description,omitempty" xml:"description,omitempty"`
-	// Suggested choices in declaration order.
-	Options []string `form:"options" json:"options" xml:"options"`
 }
 
 // CP1AnalysisRequestBody is used to define fields on request body types.
@@ -2571,6 +2612,16 @@ func NewProposeChangeResponseBody(res *surla.ChangeCardResult) *ProposeChangeRes
 	} else {
 		body.PreservedBehaviors = []string{}
 	}
+	if res.Stories != nil {
+		body.Stories = make([]*StorySummaryItemResponseBody, len(res.Stories))
+		for i, val := range res.Stories {
+			if val == nil {
+				body.Stories[i] = nil
+				continue
+			}
+			body.Stories[i] = marshalSurlaStorySummaryItemToStorySummaryItemResponseBody(val)
+		}
+	}
 	if res.UIComposition != nil {
 		body.UIComposition = marshalSurlaUICompositionItemToUICompositionItemResponseBody(res.UIComposition)
 	}
@@ -2631,6 +2682,16 @@ func NewReviseChangeResponseBody(res *surla.ChangeCardResult) *ReviseChangeRespo
 		}
 	} else {
 		body.PreservedBehaviors = []string{}
+	}
+	if res.Stories != nil {
+		body.Stories = make([]*StorySummaryItemResponseBody, len(res.Stories))
+		for i, val := range res.Stories {
+			if val == nil {
+				body.Stories[i] = nil
+				continue
+			}
+			body.Stories[i] = marshalSurlaStorySummaryItemToStorySummaryItemResponseBody(val)
+		}
 	}
 	if res.UIComposition != nil {
 		body.UIComposition = marshalSurlaUICompositionItemToUICompositionItemResponseBody(res.UIComposition)
@@ -2693,6 +2754,16 @@ func NewConfirmIntentResponseBody(res *surla.ChangeCardResult) *ConfirmIntentRes
 	} else {
 		body.PreservedBehaviors = []string{}
 	}
+	if res.Stories != nil {
+		body.Stories = make([]*StorySummaryItemResponseBody, len(res.Stories))
+		for i, val := range res.Stories {
+			if val == nil {
+				body.Stories[i] = nil
+				continue
+			}
+			body.Stories[i] = marshalSurlaStorySummaryItemToStorySummaryItemResponseBody(val)
+		}
+	}
 	if res.UIComposition != nil {
 		body.UIComposition = marshalSurlaUICompositionItemToUICompositionItemResponseBody(res.UIComposition)
 	}
@@ -2753,6 +2824,16 @@ func NewGetChangeResponseBody(res *surla.ChangeCardResult) *GetChangeResponseBod
 		}
 	} else {
 		body.PreservedBehaviors = []string{}
+	}
+	if res.Stories != nil {
+		body.Stories = make([]*StorySummaryItemResponseBody, len(res.Stories))
+		for i, val := range res.Stories {
+			if val == nil {
+				body.Stories[i] = nil
+				continue
+			}
+			body.Stories[i] = marshalSurlaStorySummaryItemToStorySummaryItemResponseBody(val)
+		}
 	}
 	if res.UIComposition != nil {
 		body.UIComposition = marshalSurlaUICompositionItemToUICompositionItemResponseBody(res.UIComposition)
@@ -3022,6 +3103,16 @@ func NewApproveMergeResponseBody(res *surla.ChangeCardResult) *ApproveMergeRespo
 		}
 	} else {
 		body.PreservedBehaviors = []string{}
+	}
+	if res.Stories != nil {
+		body.Stories = make([]*StorySummaryItemResponseBody, len(res.Stories))
+		for i, val := range res.Stories {
+			if val == nil {
+				body.Stories[i] = nil
+				continue
+			}
+			body.Stories[i] = marshalSurlaStorySummaryItemToStorySummaryItemResponseBody(val)
+		}
 	}
 	if res.UIComposition != nil {
 		body.UIComposition = marshalSurlaUICompositionItemToUICompositionItemResponseBody(res.UIComposition)
@@ -4090,9 +4181,10 @@ func NewGetStoryRefreshNotImplementedResponseBody(res *goa.ServiceError) *GetSto
 // payload.
 func NewProposeChangePayload(body *ProposeChangeRequestBody) *surla.ProposeChangePayload {
 	v := &surla.ProposeChangePayload{
-		ChangeID:     *body.ChangeID,
-		Prompt:       *body.Prompt,
-		DesignSource: body.DesignSource,
+		ChangeID:         *body.ChangeID,
+		Prompt:           *body.Prompt,
+		DesignSource:     body.DesignSource,
+		StoryRefreshOpID: body.StoryRefreshOpID,
 	}
 	v.Analysis = unmarshalCP1AnalysisRequestBodyToSurlaCP1Analysis(body.Analysis)
 
@@ -4102,10 +4194,11 @@ func NewProposeChangePayload(body *ProposeChangeRequestBody) *surla.ProposeChang
 // NewReviseChangePayload builds a surla service revise_change endpoint payload.
 func NewReviseChangePayload(body *ReviseChangeRequestBody) *surla.ReviseChangePayload {
 	v := &surla.ReviseChangePayload{
-		ChangeID:        *body.ChangeID,
-		RequestRevision: *body.RequestRevision,
-		Prompt:          *body.Prompt,
-		DesignSource:    body.DesignSource,
+		ChangeID:         *body.ChangeID,
+		RequestRevision:  *body.RequestRevision,
+		Prompt:           *body.Prompt,
+		DesignSource:     body.DesignSource,
+		StoryRefreshOpID: body.StoryRefreshOpID,
 	}
 	v.Analysis = unmarshalCP1RevisionAnalysisRequestBodyToSurlaCP1RevisionAnalysis(body.Analysis)
 

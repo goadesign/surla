@@ -2,10 +2,11 @@
 
 Status: engineering draft. The portable Story language
 (`github.com/goadesign/surla/story`), synchronous sandboxed typed Story
-observation in `internal/designeval` (`Evaluator.Evaluate`), and in-memory
+observation in `internal/designeval` (`Evaluator.Evaluate`), in-memory
 background Story refresh in `internal/controlplane` (`refresh_story` and
-`get_story_refresh`) have shipped. Saving the observed Story on the Change
-Card's request revision, generated flow scaffolds, the independent
+`get_story_refresh`), and adopting the observed Story into the Change Card's
+saved `request_revision` (`story_refresh_op_id` on `propose_change` and
+`revise_change`) have shipped. Generated flow scaffolds, the independent
 test-authoring lifecycle, and the timeline and proof UI and MCP surfaces
 described here have not shipped. The [product direction](PRODUCT_DIRECTION.md)
 records the intended experience; this document defines the engineering work
@@ -61,8 +62,13 @@ synchronously; when the evaluated target imports
 observed typed Story (`Result.Stories`) without adding `story` to targets that
 do not import it. `refresh_story` and `get_story_refresh` evaluate the bound
 workspace's Story in the background and keep one current operation in memory
-per principal and bound workspace. Change Cards do not yet record that
-observed Story in the saved request revision.
+per principal and bound workspace. Passing a succeeded operation's `op_id` as
+`story_refresh_op_id` on `propose_change` or `revise_change` verifies the
+bound workspace snapshot digest and records the observed `stories` and
+`design/*.go` source together in the saved Change Card and its
+`request_revision` (`confirm_intent` preserves those saved `stories` without
+re-evaluating, and `revise_change` without `story_refresh_op_id` keeps the
+agreed `stories` and saved `design_source` together).
 Code generation reads the active application or its local
 `eval/` module and publishes generated files without changing its module
 requirements. `check_project` takes no input and tests every discovered Go
@@ -424,13 +430,13 @@ need their own design before this execution target is implemented.
 The first increment (shipped) delivers the portable Story language
 (`github.com/goadesign/surla/story`), synchronous sandboxed typed
 observation in `internal/designeval` (`Evaluator.Evaluate`) with
-legacy-target dependency preservation, and in-memory background Story refresh
-in `internal/controlplane` (`refresh_story` and `get_story_refresh`). A
-Go-only Story with a finished refund flow and an unfinished claim evaluates;
-both remain visible, and only the refund is eligible for the build. Invalid
-actor references and duplicate domain keys fail with actionable errors. Saving
-the observed Story on the Change Card's request revision remains to be
-delivered next.
+legacy-target dependency preservation, in-memory background Story refresh in
+`internal/controlplane` (`refresh_story` and `get_story_refresh`), and
+adopting the observed Story into the Change Card's saved `request_revision`
+(`story_refresh_op_id` on `propose_change` and `revise_change`). A Go-only
+Story with a finished refund flow and an unfinished claim evaluates; both
+remain visible, and only the refund is eligible for the build. Invalid actor
+references and duplicate domain keys fail with actionable errors.
 
 The second increment connects finished flows to the existing evaluator
 generator. Generated hooks preserve authored keys, keep existing handwritten

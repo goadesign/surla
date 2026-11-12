@@ -6,11 +6,13 @@
 package controlplane
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -20,6 +22,8 @@ import (
 
 	genmcpadapter "github.com/goadesign/surla/gen/mcp_surla"
 	gensurla "github.com/goadesign/surla/gen/surla"
+	gensurlatools "github.com/goadesign/surla/gen/surla/toolsets/surla"
+	"github.com/goadesign/surla/internal/designeval"
 )
 
 // savedCardFromEarlierServer is a card file exactly as an earlier server
@@ -348,4 +352,643 @@ func TestReviseChangeConcurrentRevisionsSaveOnlyOne(t *testing.T) {
 	current, err := cp.GetChange(alice, &gensurla.GetChangePayload{ChangeID: "chg"})
 	require.NoError(t, err)
 	assert.Equal(t, saved.RequestRevision, current.RequestRevision)
+}
+
+// TestASavedCardWithStoriesLoadsKeepsStoriesOnConfirmAndReviseAndBlocksOlderServer
+// verifies that a saved card file containing adopted Stories loads under its
+// pinned request_revision, returns Stories on GetChange, keeps Stories on
+// ConfirmIntent without re-evaluating, keeps Stories and saved design_source
+// together on ReviseChange when story_refresh_op_id is omitted even after
+// workspace design/*.go changes on disk, fails if a saved Story field is
+// modified on disk, and is rejected by a pre-Slice-B strict card reader
+// without the stories field.
+func TestASavedCardWithStoriesLoadsKeepsStoriesOnConfirmAndReviseAndBlocksOlderServer(t *testing.T) {
+	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
+	wsDir := t.TempDir()
+	writeWorkspaceFiles(t, wsDir, validWorkspaceStub("package design // refunds\n"))
+
+	seedCP := newControlPlane(t, Options{WorkspaceDir: wsDir})
+	opID := seedStoryRefreshForTest(t, seedCP, "alice@example.com", storyRefreshStateSucceeded, sampleAdoptedStories(), "")
+	program := "root = DecisionWorkspace(\"Refund limit\", [choice])\nchoice = AmbiguityChoiceCard(1)"
+	proposed, err := seedCP.ProposeChange(alice, &gensurla.ProposeChangePayload{
+		ChangeID:         "chg-story-saved",
+		Prompt:           "Refunds up to $50 are instant.",
+		StoryRefreshOpID: &opID,
+		Analysis: &gensurla.CP1Analysis{
+			Summary: "Refunds up to $50 are instant; larger refunds wait for a manager.",
+			Ambiguities: []*gensurla.CP1AnalysisAmbiguity{{
+				Question: "Is the limit the item subtotal or the order total?",
+				Options:  []string{"item_subtotal", "order_total"},
+			}},
+			Examples: []*gensurla.CP1AnalysisExample{{
+				Scenario:         "Refund at the limit",
+				InputSummary:     "Order total $50.00",
+				ExpectedOutcome:  "Instant store credit",
+				VerificationKind: "deterministic",
+			}},
+			PreservedBehaviors: []string{"Cross-tenant order lookups return 404 Not Found."},
+			UIComposition:      &program,
+		},
+	})
+	require.NoError(t, err)
+	savedBytes, err := os.ReadFile(seedCP.cards.path("chg-story-saved"))
+	require.NoError(t, err)
+
+	// Pin both the exact saved card file and its canonical request_revision.
+	const (
+		pinnedRevision = "9cd74d219f9a25454adf5187314554cd1373b187da52573bed63492184b5ae6c"
+		pinnedCardFile = `{"card":{"ChangeID":"chg-story-saved","Status":"needs_confirmation","Prompt":"Refunds up to $50 are instant.","Summary":"Refunds up to $50 are instant; larger refunds wait for a manager.","Ambiguities":[{"ID":"chg-story-saved-ambiguity-01","Question":"Is the limit the item subtotal or the order total?","Options":["item_subtotal","order_total"]}],"Answers":null,"Examples":[{"ID":"check_01","Scenario":"Refund at the limit","InputSummary":"Order total $50.00","ExpectedOutcome":"Instant store credit","VerificationKind":"deterministic"}],"PreservedBehaviors":["Cross-tenant order lookups return 404 Not Found."],"ConfirmedBy":null,"RequestRevision":"` + pinnedRevision + `","UIComposition":{"Program":"root = DecisionWorkspace(\"Refund limit\", [choice])\nchoice = AmbiguityChoiceCard(1)","ComposedForRevision":"` + pinnedRevision + `"},"Approval":null},"owner":"alice@example.com","design_source":"{\"design/design.go\":\"package design // refunds\\n\"}","source_origin":"workspace","stories":[{"name":"Order Refunds","description":"Domain timeline for customer refund requests.","actors":[{"key":"customer","title":"Customer","description":"Places orders and requests refunds."},{"key":"manager","title":"Support Manager"}],"flows":[{"key":"instant-refund","title":"Instant refund under the limit","description":"Refunds under $50 complete automatically.","complete":true,"steps":[{"key":"request-refund","actor_key":"customer","summary":"Customer requests a $25 refund","kind":"start"},{"key":"refund-paid","actor_key":"customer","summary":"Store credit is issued immediately","kind":"outcome"}]},{"key":"high-value-refund","title":"Refund over the limit","complete":false,"steps":[{"key":"request-high-refund","actor_key":"customer","summary":"Customer requests a $120 refund","kind":"start","questions":[{"key":"limit-boundary","prompt":"Is $50.00 itself instant or manager-reviewed?","description":"Boundary rule at $50.00.","options":["Instant at $50.00","Manager review at $50.00"]}]},{"key":"review-refund","actor_key":"manager","summary":"Manager reviews the refund request","kind":"step"}]}]}]}`
+	)
+	assert.Equal(t, pinnedRevision, proposed.RequestRevision)
+	assert.Equal(t, pinnedCardFile, string(savedBytes))
+
+	// Modify workspace design/design.go on disk after the card was saved so we
+	// prove confirm_intent and revise_change (without story_refresh_op_id)
+	// carry over the saved Stories and saved design_source together without
+	// re-reading or re-evaluating the workspace.
+	writeWorkspaceFiles(t, wsDir, validWorkspaceStub("package design // workspace moved on without refreshing\n"))
+	cp := newControlPlane(t, Options{WorkspaceDir: wsDir})
+	require.NoError(t, os.WriteFile(cp.cards.path("chg-story-saved"), []byte(pinnedCardFile), 0o600))
+
+	loaded, err := cp.GetChange(alice, &gensurla.GetChangePayload{ChangeID: "chg-story-saved"})
+	require.NoError(t, err)
+	assert.Equal(t, pinnedRevision, loaded.RequestRevision)
+	require.Len(t, loaded.Stories, 1)
+	assert.Equal(t, "Order Refunds", loaded.Stories[0].Name)
+	require.Len(t, loaded.Stories[0].Flows, 2)
+	assert.True(t, loaded.Stories[0].Flows[0].Complete)
+	assert.False(t, loaded.Stories[0].Flows[1].Complete)
+
+	confirmed, err := cp.ConfirmIntent(alice, &gensurla.ConfirmIntentPayload{
+		ChangeID:        "chg-story-saved",
+		RequestRevision: pinnedRevision,
+		Answers:         map[string]string{"chg-story-saved-ambiguity-01": "item_subtotal"},
+		Examples:        loaded.Examples,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, StatusConfirmed, confirmed.Status)
+	assert.Equal(t, loaded.Stories, confirmed.Stories)
+	assert.NotEqual(t, pinnedRevision, confirmed.RequestRevision)
+
+	check01 := "check_01"
+	revised, err := cp.ReviseChange(alice, &gensurla.ReviseChangePayload{
+		ChangeID:        "chg-story-saved",
+		RequestRevision: confirmed.RequestRevision,
+		Prompt:          "Refunds up to $60 are instant.",
+		Analysis: &gensurla.CP1RevisionAnalysis{
+			Summary:     "Refunds up to $60 of item subtotal are instant; larger refunds wait for a manager.",
+			Ambiguities: []*gensurla.CP1AnalysisAmbiguity{},
+			Examples: []*gensurla.CP1RevisionAnalysisExample{{
+				PriorID:          &check01,
+				Scenario:         "Refund at the limit",
+				InputSummary:     "Item subtotal $60.00",
+				ExpectedOutcome:  "Instant store credit",
+				VerificationKind: "deterministic",
+			}},
+			RemovedExampleIds:  []string{},
+			PreservedBehaviors: []string{"Cross-tenant order lookups return 404 Not Found."},
+		},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, StatusNeedsConfirmation, revised.Status)
+	assert.Equal(t, loaded.Stories, revised.Stories, "omitting story_refresh_op_id keeps the agreed Story")
+	stored, ok, err := cp.cards.load("chg-story-saved")
+	require.NoError(t, err)
+	require.True(t, ok)
+	assert.Equal(t, `{"design/design.go":"package design // refunds\n"}`, stored.designSource, "saved design_source carries over with the agreed Story")
+	assert.Equal(t, sourceOriginWorkspace, stored.sourceOrigin)
+	assert.Equal(t, sampleAdoptedStories(), stored.stories)
+
+	// Modifying any Story field on disk invalidates the saved request_revision.
+	tampered := strings.Replace(pinnedCardFile, "Store credit is issued immediately", "Cash refund is issued immediately", 1)
+	require.NoError(t, os.WriteFile(cp.cards.path("chg-story-saved"), []byte(tampered), 0o600))
+	_, err = cp.GetChange(alice, &gensurla.GetChangePayload{ChangeID: "chg-story-saved"})
+	assert.ErrorContains(t, err, "does not match its request_revision")
+
+	// A pre-Slice-B strict card reader (without the stories field) rejects a
+	// card file that has stories, which is the documented rollback constraint.
+	type preStoryCardFile struct {
+		Card         *gensurla.ChangeCardResult `json:"card"`
+		Owner        string                     `json:"owner"`
+		DesignSource string                     `json:"design_source"`
+		SourceOrigin string                     `json:"source_origin,omitempty"`
+	}
+	var oldReader preStoryCardFile
+	dec := json.NewDecoder(bytes.NewReader([]byte(pinnedCardFile)))
+	dec.DisallowUnknownFields()
+	err = dec.Decode(&oldReader)
+	assert.ErrorContains(t, err, `unknown field "stories"`)
+}
+
+// TestAdoptStoryRefreshOnProposeAndRevise verifies Story adoption across Go
+// service, HTTP, and MCP calls:
+//   - propose_change and revise_change adopt a succeeded story_refresh_op_id by
+//     reading one workspace module snapshot, verifying its SnapshotDigest, and
+//     encoding design_source from its design/ files;
+//   - ChangeCardResult.Stories is returned by propose_change, revise_change,
+//     confirm_intent, and get_change;
+//   - adding or changing a Story flow, step, actor, or question changes
+//     request_revision;
+//   - adopting a succeeded refresh with zero Stories equals adopting none
+//     (Stories is nil, omitted from the saved card file and revision digest).
+func TestAdoptStoryRefreshOnProposeAndRevise(t *testing.T) {
+	aliceCtx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
+	wsDir := t.TempDir()
+	snapshot := map[string]string{
+		"go.mod":                    "module example.com/orders\n\ngo 1.24\n",
+		"go.sum":                    "",
+		"design/design.go":          "package design // v1\n",
+		"internal/policy/policy.go": "package policy\n",
+	}
+	writeWorkspaceFiles(t, wsDir, snapshot)
+
+	cp := newControlPlane(t, Options{WorkspaceDir: wsDir})
+	srv := httptest.NewServer(NewHTTPHandler(cp, NewTokenAuthenticator(map[string]Principal{
+		"alice-token": {ID: "alice@example.com"},
+	})))
+	t.Cleanup(srv.Close)
+
+	storiesV1 := sampleAdoptedStories()
+	opV1 := seedStoryRefreshForTest(t, cp, "alice@example.com", storyRefreshStateSucceeded, storiesV1, "")
+
+	// HTTP POST /changes/propose adopts opV1.
+	proposeBody := proposeArgs(t, &gensurla.ProposeChangePayload{
+		ChangeID:         "chg-http",
+		Prompt:           "Refunds up to $50 are instant.",
+		StoryRefreshOpID: &opV1,
+		Analysis:         refundAnalysis("Refunds up to $50 are instant."),
+	})
+	status, body := postJSON(t, srv.URL+"/changes/propose", "alice-token", string(proposeBody))
+	require.Equal(t, http.StatusOK, status, body)
+	httpProposed, err := gensurlatools.UnmarshalProposeChangeResult([]byte(body))
+	require.NoError(t, err)
+	require.Len(t, httpProposed.Stories, 1)
+	assert.Equal(t, "Order Refunds", httpProposed.Stories[0].Name)
+
+	// Saved design_source encodes only the design/ entries from the verified snapshot.
+	storedHTTP, ok, err := cp.cards.load("chg-http")
+	require.NoError(t, err)
+	require.True(t, ok)
+	wantDesignSrc, err := encodeDesignSource(map[string]string{"design/design.go": "package design // v1\n"})
+	require.NoError(t, err)
+	assert.Equal(t, wantDesignSrc, storedHTTP.designSource)
+	assert.Equal(t, sourceOriginWorkspace, storedHTTP.sourceOrigin)
+
+	// MCP propose_change adopts the same succeeded opV1 on a second control
+	// plane with the same change_id and produces the exact same request_revision.
+	cpMCP := newControlPlane(t, Options{WorkspaceDir: wsDir})
+	opMCPV1 := seedStoryRefreshForTest(t, cpMCP, "alice@example.com", storyRefreshStateSucceeded, storiesV1, "")
+	adapter := genmcpadapter.NewMCPAdapter(gensurla.NewEndpoints(cpMCP), nil)
+	res, err := adapter.ToolsCall(aliceCtx, &genmcpadapter.ToolsCallPayload{
+		Name: "propose_change",
+		Arguments: proposeArgs(t, &gensurla.ProposeChangePayload{
+			ChangeID:         "chg-http",
+			Prompt:           "Refunds up to $50 are instant.",
+			StoryRefreshOpID: &opMCPV1,
+			Analysis:         refundAnalysis("Refunds up to $50 are instant."),
+		}),
+	})
+	require.NoError(t, err)
+	complete, ok := res.Outcome.AsComplete()
+	require.True(t, ok)
+	require.False(t, complete.IsError != nil && *complete.IsError, "unexpected MCP error: %+v", complete.Content)
+	mcpProposed, err := gensurlatools.UnmarshalProposeChangeResult(complete.StructuredContent)
+	require.NoError(t, err)
+	assert.Equal(t, httpProposed.RequestRevision, mcpProposed.RequestRevision)
+	assert.Equal(t, httpProposed.Stories, mcpProposed.Stories)
+
+	// Changing a flow (making high-value-refund complete with an outcome step)
+	// changes request_revision even when prompt, analysis, and design_source
+	// are identical.
+	storiesV2 := sampleAdoptedStories()
+	storiesV2[0].Flows[1].Complete = true
+	storiesV2[0].Flows[1].Steps = append(storiesV2[0].Flows[1].Steps, designeval.StoryStep{
+		Key:      "refund-approved",
+		ActorKey: "manager",
+		Summary:  "Manager approves and issues the refund",
+		Kind:     "outcome",
+	})
+	opV2 := seedStoryRefreshForTest(t, cpMCP, "alice@example.com", storyRefreshStateSucceeded, storiesV2, "")
+	check01 := "check_01"
+	revAnalysis := &gensurla.CP1RevisionAnalysis{
+		Summary:     "Refunds up to $50 are instant.",
+		Ambiguities: []*gensurla.CP1AnalysisAmbiguity{},
+		Examples: []*gensurla.CP1RevisionAnalysisExample{{
+			PriorID:          &check01,
+			Scenario:         "Refund at the limit",
+			InputSummary:     "Order total $50.00",
+			ExpectedOutcome:  "Instant store credit",
+			VerificationKind: "deterministic",
+		}},
+		RemovedExampleIds:  []string{},
+		PreservedBehaviors: []string{"Cross-tenant order lookups return 404 Not Found."},
+	}
+
+	// MCP revise_change adopts opV2 on chg-http in cpMCP.
+	res, err = adapter.ToolsCall(aliceCtx, &genmcpadapter.ToolsCallPayload{
+		Name: "revise_change",
+		Arguments: reviseArgs(t, &gensurla.ReviseChangePayload{
+			ChangeID:         "chg-http",
+			RequestRevision:  mcpProposed.RequestRevision,
+			Prompt:           "Refunds up to $50 are instant.",
+			StoryRefreshOpID: &opV2,
+			Analysis:         revAnalysis,
+		}),
+	})
+	require.NoError(t, err)
+	complete, ok = res.Outcome.AsComplete()
+	require.True(t, ok)
+	require.False(t, complete.IsError != nil && *complete.IsError)
+	mcpRevised, err := gensurlatools.UnmarshalReviseChangeResult(complete.StructuredContent)
+	require.NoError(t, err)
+	require.Len(t, mcpRevised.Stories, 1)
+	assert.True(t, mcpRevised.Stories[0].Flows[1].Complete)
+	assert.Len(t, mcpRevised.Stories[0].Flows[1].Steps, 3)
+
+	// Revising chg-http in cp without story_refresh_op_id keeps storiesV1, so its
+	// request_revision differs from mcpRevised (which adopted storiesV2).
+	keptV1, err := cp.ReviseChange(aliceCtx, &gensurla.ReviseChangePayload{
+		ChangeID:        "chg-http",
+		RequestRevision: httpProposed.RequestRevision,
+		Prompt:          "Refunds up to $50 are instant.",
+		Analysis:        revAnalysis,
+	})
+	require.NoError(t, err)
+	assert.False(t, keptV1.Stories[0].Flows[1].Complete)
+	assert.NotEqual(t, keptV1.RequestRevision, mcpRevised.RequestRevision, "adding a flow step changes request_revision")
+
+	// Adopting a succeeded refresh with zero Stories equals adopting none on
+	// both propose_change and revise_change for the same change_id.
+	opZero := seedStoryRefreshForTest(t, cp, "alice@example.com", storyRefreshStateSucceeded, nil, "")
+	proposedZero, err := cp.ProposeChange(aliceCtx, &gensurla.ProposeChangePayload{
+		ChangeID:         "chg-zero",
+		Prompt:           "Refunds up to $50 are instant.",
+		StoryRefreshOpID: &opZero,
+		Analysis:         refundAnalysis("Refunds up to $50 are instant."),
+	})
+	require.NoError(t, err)
+	assert.Nil(t, proposedZero.Stories)
+	proposedPlain := mustPropose(t, cpMCP, aliceCtx, "chg-zero", "Refunds up to $50 are instant.", refundAnalysis("Refunds up to $50 are instant."))
+	assert.Equal(t, proposedPlain.RequestRevision, proposedZero.RequestRevision)
+	rawZeroBytes, err := os.ReadFile(cp.cards.path("chg-zero"))
+	require.NoError(t, err)
+	assert.NotContains(t, string(rawZeroBytes), `"stories"`)
+
+	revisedToZero, err := cp.ReviseChange(aliceCtx, &gensurla.ReviseChangePayload{
+		ChangeID:         "chg-http",
+		RequestRevision:  keptV1.RequestRevision,
+		Prompt:           "Refunds up to $50 are instant.",
+		StoryRefreshOpID: &opZero,
+		Analysis:         revAnalysis,
+	})
+	require.NoError(t, err)
+	assert.Nil(t, revisedToZero.Stories)
+	cpPlain := newControlPlane(t, Options{WorkspaceDir: wsDir})
+	plainHTTP := mustPropose(t, cpPlain, aliceCtx, "chg-http", "Refunds up to $50 are instant.", refundAnalysis("Refunds up to $50 are instant."))
+	revisedPlain, err := cpPlain.ReviseChange(aliceCtx, &gensurla.ReviseChangePayload{
+		ChangeID:        "chg-http",
+		RequestRevision: plainHTTP.RequestRevision,
+		Prompt:          "Refunds up to $50 are instant.",
+		Analysis:        revAnalysis,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, revisedPlain.RequestRevision, revisedToZero.RequestRevision)
+}
+
+// TestAdoptStoryRefreshRejectionsLeaveCardStorageUnchanged verifies every
+// invalid story_refresh_op_id or design_source combination across
+// propose_change and revise_change: each returns an actionable unprocessable
+// error naming refresh_story and leaves card storage unchanged.
+func TestAdoptStoryRefreshRejectionsLeaveCardStorageUnchanged(t *testing.T) {
+	aliceCtx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
+	check01 := "check_01"
+	revAnalysis := &gensurla.CP1RevisionAnalysis{
+		Summary:     "Refunds up to $60 are instant.",
+		Ambiguities: []*gensurla.CP1AnalysisAmbiguity{},
+		Examples: []*gensurla.CP1RevisionAnalysisExample{{
+			PriorID:          &check01,
+			Scenario:         "Refund at the limit",
+			InputSummary:     "Order total $60.00",
+			ExpectedOutcome:  "Instant store credit",
+			VerificationKind: "deterministic",
+		}},
+		RemovedExampleIds:  []string{},
+		PreservedBehaviors: []string{"Cross-tenant order lookups return 404 Not Found."},
+	}
+	newWS := func(t *testing.T) (string, *ControlPlane, *gensurla.ChangeCardResult) {
+		t.Helper()
+		wsDir := t.TempDir()
+		writeWorkspaceFiles(t, wsDir, validWorkspaceStub("package design\n"))
+		cp := newControlPlane(t, Options{WorkspaceDir: wsDir})
+		card := mustPropose(t, cp, aliceCtx, "chg-existing", "Refunds up to $50 are instant.", refundAnalysis("Refunds up to $50 are instant."))
+		return wsDir, cp, card
+	}
+
+	cases := []struct {
+		name  string
+		setup func(t *testing.T) (cp *ControlPlane, opID string, designSrc *string, existingCard *gensurla.ChangeCardResult)
+		want  string
+	}{
+		{
+			name: "no prior refresh_story",
+			setup: func(t *testing.T) (*ControlPlane, string, *string, *gensurla.ChangeCardResult) {
+				_, cp, card := newWS(t)
+				return cp, "story-refresh-1", nil, card
+			},
+			want: "is not the current Story refresh operation for this caller and workspace; call refresh_story",
+		},
+		{
+			name: "blank story_refresh_op_id",
+			setup: func(t *testing.T) (*ControlPlane, string, *string, *gensurla.ChangeCardResult) {
+				_, cp, card := newWS(t)
+				return cp, "   ", nil, card
+			},
+			want: "story_refresh_op_id must name a succeeded refresh_story operation; call refresh_story",
+		},
+		{
+			name: "replaced story_refresh_op_id",
+			setup: func(t *testing.T) (*ControlPlane, string, *string, *gensurla.ChangeCardResult) {
+				_, cp, card := newWS(t)
+				firstOp := seedStoryRefreshForTest(t, cp, "alice@example.com", storyRefreshStateSucceeded, sampleAdoptedStories(), "")
+				_ = seedStoryRefreshForTest(t, cp, "alice@example.com", storyRefreshStateSucceeded, sampleAdoptedStories(), "")
+				return cp, firstOp, nil, card
+			},
+			want: "is not the current Story refresh operation for this caller and workspace; call refresh_story",
+		},
+		{
+			name: "another principal's story_refresh_op_id",
+			setup: func(t *testing.T) (*ControlPlane, string, *string, *gensurla.ChangeCardResult) {
+				_, cp, card := newWS(t)
+				bobOp := seedStoryRefreshForTest(t, cp, "bob@example.com", storyRefreshStateSucceeded, sampleAdoptedStories(), "")
+				return cp, bobOp, nil, card
+			},
+			want: "is not the current Story refresh operation for this caller and workspace; call refresh_story",
+		},
+		{
+			name: "running refresh_story operation",
+			setup: func(t *testing.T) (*ControlPlane, string, *string, *gensurla.ChangeCardResult) {
+				_, cp, card := newWS(t)
+				opID := seedStoryRefreshForTest(t, cp, "alice@example.com", storyRefreshStateRunning, nil, "")
+				return cp, opID, nil, card
+			},
+			want: `has state "running", not succeeded; wait for get_story_refresh to report succeeded or call refresh_story again`,
+		},
+		{
+			name: "failed refresh_story operation",
+			setup: func(t *testing.T) (*ControlPlane, string, *string, *gensurla.ChangeCardResult) {
+				_, cp, card := newWS(t)
+				opID := seedStoryRefreshForTest(t, cp, "alice@example.com", storyRefreshStateFailed, nil, "syntax error")
+				return cp, opID, nil, card
+			},
+			want: `has state "failed", not succeeded; wait for get_story_refresh to report succeeded or call refresh_story again`,
+		},
+		{
+			name: "no workspace bound",
+			setup: func(t *testing.T) (*ControlPlane, string, *string, *gensurla.ChangeCardResult) {
+				_, cp, card := newWS(t)
+				opID := seedStoryRefreshForTest(t, cp, "alice@example.com", storyRefreshStateSucceeded, sampleAdoptedStories(), "")
+				cp.workspaceMu.Lock()
+				cp.activeWorkspaceDir, cp.boundWorkspaceDev, cp.boundWorkspaceIno = "", 0, 0
+				cp.workspaceMu.Unlock()
+				return cp, opID, nil, card
+			},
+			want: "no workspace directory is bound to this control plane; start Surla from a project directory or pass -project, then call refresh_story",
+		},
+		{
+			name: "different workspace bound after refresh_story",
+			setup: func(t *testing.T) (*ControlPlane, string, *string, *gensurla.ChangeCardResult) {
+				_, cp, card := newWS(t)
+				opID := seedStoryRefreshForTest(t, cp, "alice@example.com", storyRefreshStateSucceeded, sampleAdoptedStories(), "")
+				ws2 := t.TempDir()
+				writeWorkspaceFiles(t, ws2, validWorkspaceStub("package design // ws2\n"))
+				cleanWS2, dev, ino, err := openWorkspaceRootAndStat(ws2)
+				require.NoError(t, err)
+				cp.workspaceMu.Lock()
+				cp.activeWorkspaceDir, cp.boundWorkspaceDev, cp.boundWorkspaceIno = cleanWS2, dev, ino
+				cp.workspaceMu.Unlock()
+				return cp, opID, nil, card
+			},
+			want: "is not the current Story refresh operation for this caller and workspace; call refresh_story",
+		},
+		{
+			name: "rebound workspace inode at the same path",
+			setup: func(t *testing.T) (*ControlPlane, string, *string, *gensurla.ChangeCardResult) {
+				wsDir := filepath.Join(t.TempDir(), "ws")
+				writeWorkspaceFiles(t, wsDir, validWorkspaceStub("package design\n"))
+				cp := newControlPlane(t, Options{WorkspaceDir: wsDir})
+				card := mustPropose(t, cp, aliceCtx, "chg-existing", "Refunds up to $50 are instant.", refundAnalysis("Refunds up to $50 are instant."))
+				opID := seedStoryRefreshForTest(t, cp, "alice@example.com", storyRefreshStateSucceeded, sampleAdoptedStories(), "")
+				require.NoError(t, os.RemoveAll(wsDir))
+				writeWorkspaceFiles(t, wsDir, validWorkspaceStub("package design\n"))
+				cleanWS, dev, ino, err := openWorkspaceRootAndStat(wsDir)
+				require.NoError(t, err)
+				cp.workspaceMu.Lock()
+				cp.activeWorkspaceDir, cp.boundWorkspaceDev, cp.boundWorkspaceIno = cleanWS, dev, ino
+				cp.workspaceMu.Unlock()
+				return cp, opID, nil, card
+			},
+			want: "is not the current Story refresh operation for this caller and workspace; call refresh_story",
+		},
+		{
+			name: "workspace design changed after refresh_story",
+			setup: func(t *testing.T) (*ControlPlane, string, *string, *gensurla.ChangeCardResult) {
+				wsDir, cp, card := newWS(t)
+				opID := seedStoryRefreshForTest(t, cp, "alice@example.com", storyRefreshStateSucceeded, sampleAdoptedStories(), "")
+				writeWorkspaceFiles(t, wsDir, validWorkspaceStub("package design // after\n"))
+				return cp, opID, nil, card
+			},
+			want: "no longer matches story_refresh_op_id",
+		},
+		{
+			name: "workspace non-design Go file changed after refresh_story",
+			setup: func(t *testing.T) (*ControlPlane, string, *string, *gensurla.ChangeCardResult) {
+				wsDir, cp, card := newWS(t)
+				files := validWorkspaceStub("package design\n")
+				files["internal/policy/policy.go"] = "package policy // v1\n"
+				writeWorkspaceFiles(t, wsDir, files)
+				opID := seedStoryRefreshForTest(t, cp, "alice@example.com", storyRefreshStateSucceeded, sampleAdoptedStories(), "")
+				files["internal/policy/policy.go"] = "package policy // v2\n"
+				writeWorkspaceFiles(t, wsDir, files)
+				return cp, opID, nil, card
+			},
+			want: "no longer matches story_refresh_op_id",
+		},
+		{
+			name: "caller-supplied design_source combined with story_refresh_op_id",
+			setup: func(t *testing.T) (*ControlPlane, string, *string, *gensurla.ChangeCardResult) {
+				wsDir, cp, card := newWS(t)
+				opID := seedStoryRefreshForTest(t, cp, "alice@example.com", storyRefreshStateSucceeded, sampleAdoptedStories(), "")
+				require.NoError(t, os.RemoveAll(wsDir))
+				supplied := "package design // supplied\n"
+				return cp, opID, &supplied, card
+			},
+			want: "cannot combine design_source with story_refresh_op_id; omit design_source so Surla reads the workspace snapshot verified by refresh_story",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run("propose_change/"+tc.name, func(t *testing.T) {
+			cp, opID, designSrc, _ := tc.setup(t)
+			_, err := cp.ProposeChange(aliceCtx, &gensurla.ProposeChangePayload{
+				ChangeID: "chg-new", Prompt: "Refunds up to $50 are instant.",
+				DesignSource: designSrc, StoryRefreshOpID: &opID,
+				Analysis: refundAnalysis("Refunds up to $50 are instant."),
+			})
+			assertServiceError(t, err, "unprocessable")
+			assert.ErrorContains(t, err, "refresh_story")
+			assert.ErrorContains(t, err, tc.want)
+			_, saved, loadErr := cp.cards.load("chg-new")
+			require.NoError(t, loadErr)
+			assert.False(t, saved, "rejected propose_change must not save a card")
+		})
+
+		t.Run("revise_change/"+tc.name, func(t *testing.T) {
+			cp, opID, designSrc, existing := tc.setup(t)
+			beforeBytes, err := os.ReadFile(cp.cards.path(existing.ChangeID))
+			require.NoError(t, err)
+			_, err = cp.ReviseChange(aliceCtx, &gensurla.ReviseChangePayload{
+				ChangeID: existing.ChangeID, RequestRevision: existing.RequestRevision,
+				Prompt: "Refunds up to $60 are instant.", DesignSource: designSrc,
+				StoryRefreshOpID: &opID, Analysis: revAnalysis,
+			})
+			assertServiceError(t, err, "unprocessable")
+			assert.ErrorContains(t, err, "refresh_story")
+			assert.ErrorContains(t, err, tc.want)
+			afterBytes, readErr := os.ReadFile(cp.cards.path(existing.ChangeID))
+			require.NoError(t, readErr)
+			assert.Equal(t, string(beforeBytes), string(afterBytes), "rejected revise_change must leave the saved card unchanged")
+		})
+	}
+
+	t.Run("revise_change/card with caller-supplied source_origin cannot adopt story_refresh_op_id", func(t *testing.T) {
+		wsDir, cp, _ := newWS(t)
+		supplied := "package design // supplied\n"
+		card, err := cp.ProposeChange(aliceCtx, &gensurla.ProposeChangePayload{
+			ChangeID: "chg-supplied", Prompt: "Refunds up to $50 are instant.",
+			DesignSource: &supplied, Analysis: refundAnalysis("Refunds up to $50 are instant."),
+		})
+		require.NoError(t, err)
+		opID := seedStoryRefreshForTest(t, cp, "alice@example.com", storyRefreshStateSucceeded, sampleAdoptedStories(), "")
+		require.NoError(t, os.RemoveAll(wsDir))
+		beforeBytes, err := os.ReadFile(cp.cards.path("chg-supplied"))
+		require.NoError(t, err)
+
+		_, err = cp.ReviseChange(aliceCtx, &gensurla.ReviseChangePayload{
+			ChangeID: "chg-supplied", RequestRevision: card.RequestRevision,
+			Prompt: "Refunds up to $60 are instant.", StoryRefreshOpID: &opID, Analysis: revAnalysis,
+		})
+		assertServiceError(t, err, "unprocessable")
+		assert.ErrorContains(t, err, "uses a caller-supplied design_source and cannot adopt a workspace Story from refresh_story")
+		afterBytes, err := os.ReadFile(cp.cards.path("chg-supplied"))
+		require.NoError(t, err)
+		assert.Equal(t, string(beforeBytes), string(afterBytes))
+	})
+
+	t.Run("revise_change/card with Stories cannot replace design_source with caller-supplied value", func(t *testing.T) {
+		wsDir, cp, _ := newWS(t)
+		opID := seedStoryRefreshForTest(t, cp, "alice@example.com", storyRefreshStateSucceeded, sampleAdoptedStories(), "")
+		card, err := cp.ProposeChange(aliceCtx, &gensurla.ProposeChangePayload{
+			ChangeID: "chg-has-stories", Prompt: "Refunds up to $50 are instant.",
+			StoryRefreshOpID: &opID, Analysis: refundAnalysis("Refunds up to $50 are instant."),
+		})
+		require.NoError(t, err)
+		require.NoError(t, os.RemoveAll(wsDir))
+		beforeBytes, err := os.ReadFile(cp.cards.path("chg-has-stories"))
+		require.NoError(t, err)
+
+		supplied := "package design // supplied\n"
+		_, err = cp.ReviseChange(aliceCtx, &gensurla.ReviseChangePayload{
+			ChangeID: "chg-has-stories", RequestRevision: card.RequestRevision,
+			Prompt: "Refunds up to $60 are instant.", DesignSource: &supplied, Analysis: revAnalysis,
+		})
+		assertServiceError(t, err, "unprocessable")
+		assert.ErrorContains(t, err, "has adopted Stories from refresh_story and cannot replace design_source with a caller-supplied value")
+		afterBytes, err := os.ReadFile(cp.cards.path("chg-has-stories"))
+		require.NoError(t, err)
+		assert.Equal(t, string(beforeBytes), string(afterBytes))
+	})
+}
+
+// seedStoryRefreshForTest records a Story refresh operation for principalID
+// against cp's currently bound workspace snapshot and returns its op_id.
+func seedStoryRefreshForTest(
+	t *testing.T,
+	cp *ControlPlane,
+	principalID, state string,
+	stories []designeval.StorySummary,
+	diagnostic string,
+) string {
+	t.Helper()
+	wsDir, wsDev, wsIno := cp.currentWorkspaceTarget()
+	require.NotEmpty(t, wsDir)
+	files, err := readWorkspaceSnapshotForStoryRefresh(wsDir, wsDev, wsIno)
+	require.NoError(t, err)
+	digest := designeval.SnapshotDigest(files)
+	opID, err := newStoryRefreshOpID()
+	require.NoError(t, err)
+
+	key := storyRefreshKey{
+		principalID:  principalID,
+		workspaceDir: wsDir,
+		workspaceDev: wsDev,
+		workspaceIno: wsIno,
+	}
+	cp.storyRefreshMu.Lock()
+	defer cp.storyRefreshMu.Unlock()
+	if cp.storyRefreshes == nil {
+		cp.storyRefreshes = make(map[storyRefreshKey]*storyRefreshOp)
+	}
+	cp.storyRefreshes[key] = &storyRefreshOp{
+		id:             opID,
+		state:          state,
+		snapshotDigest: digest,
+		stories:        cloneStorySummaries(stories),
+		diagnostic:     diagnostic,
+	}
+	return opID
+}
+
+// sampleAdoptedStories returns a two-flow domain Story summary fixture with
+// actors, complete and incomplete flows, and an open step question.
+func sampleAdoptedStories() []designeval.StorySummary {
+	return []designeval.StorySummary{{
+		Name:        "Order Refunds",
+		Description: "Domain timeline for customer refund requests.",
+		Actors: []designeval.StoryActor{
+			{Key: "customer", Title: "Customer", Description: "Places orders and requests refunds."},
+			{Key: "manager", Title: "Support Manager"},
+		},
+		Flows: []designeval.StoryFlow{
+			{
+				Key:         "instant-refund",
+				Title:       "Instant refund under the limit",
+				Description: "Refunds under $50 complete automatically.",
+				Complete:    true,
+				Steps: []designeval.StoryStep{
+					{Key: "request-refund", ActorKey: "customer", Summary: "Customer requests a $25 refund", Kind: "start"},
+					{Key: "refund-paid", ActorKey: "customer", Summary: "Store credit is issued immediately", Kind: "outcome"},
+				},
+			},
+			{
+				Key:      "high-value-refund",
+				Title:    "Refund over the limit",
+				Complete: false,
+				Steps: []designeval.StoryStep{
+					{
+						Key:      "request-high-refund",
+						ActorKey: "customer",
+						Summary:  "Customer requests a $120 refund",
+						Kind:     "start",
+						Questions: []designeval.StoryQuestion{{
+							Key:         "limit-boundary",
+							Prompt:      "Is $50.00 itself instant or manager-reviewed?",
+							Description: "Boundary rule at $50.00.",
+							Options:     []string{"Instant at $50.00", "Manager review at $50.00"},
+						}},
+					},
+					{Key: "review-refund", ActorKey: "manager", Summary: "Manager reviews the refund request", Kind: "step"},
+				},
+			},
+		},
+	}}
 }

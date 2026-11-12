@@ -483,10 +483,35 @@ func readWorkspaceDesignSource(wsDir string, expectedDev, expectedIno uint64) (s
 	if err := designeval.ValidateUTF8Snapshot(files); err != nil {
 		return "", gensurla.MakeUnprocessable(err)
 	}
+	return encodeDesignSource(files)
+}
+
+// designSourceFromModuleSnapshot extracts the non-test design/*.go entries from
+// a validated workspace module snapshot and encodes them with encodeDesignSource.
+func designSourceFromModuleSnapshot(files map[string]string) (string, error) {
+	var designFiles map[string]string
+	for rel, content := range files {
+		if strings.HasPrefix(rel, "design/") && strings.HasSuffix(rel, ".go") && !strings.HasSuffix(rel, "_test.go") {
+			if designFiles == nil {
+				designFiles = make(map[string]string)
+			}
+			designFiles[rel] = content
+		}
+	}
+	return encodeDesignSource(designFiles)
+}
+
+// encodeDesignSource encodes a map of design/*.go files as the canonical JSON
+// object saved in a Change Card's design_source (HTML characters unescaped, no
+// trailing newline), or "" when designFiles is empty.
+func encodeDesignSource(designFiles map[string]string) (string, error) {
+	if len(designFiles) == 0 {
+		return "", nil
+	}
 	var buf bytes.Buffer
 	enc := json.NewEncoder(&buf)
 	enc.SetEscapeHTML(false)
-	if err := enc.Encode(files); err != nil {
+	if err := enc.Encode(designFiles); err != nil {
 		return "", fmt.Errorf("encode workspace design source: %w", err)
 	}
 	return strings.TrimSuffix(buf.String(), "\n"), nil

@@ -469,7 +469,7 @@ paths:
             tags:
                 - surla
             summary: propose_change surla
-            description: Save a new Checkpoint 1 Change Card from a feature request and the caller's analysis of it. Surla checks the analysis's structure and cross-field rules, gives ambiguities the IDs <change_id>-ambiguity-NN and examples the IDs check_01, check_02, ... in list order, binds the card to the authenticated owner, records the design source (design/*.go from the bound workspace when design_source is omitted), and computes request_revision. A card without ambiguities is confirmed at once; otherwise it waits for confirm_intent. Surla runs no model for this step and cannot judge whether the analysis is complete or correct.
+            description: Save a new Checkpoint 1 Change Card from a feature request and the caller's analysis of it. Surla checks the analysis's structure and cross-field rules, gives ambiguities the IDs <change_id>-ambiguity-NN and examples the IDs check_01, check_02, ... in list order, binds the card to the authenticated owner, records the design source (or, when story_refresh_op_id is given, reads one workspace snapshot, verifies its digest against the caller's succeeded refresh_story operation, and records both its evaluated Stories and its design/*.go files), and computes request_revision. A card without ambiguities is confirmed at once; otherwise it waits for confirm_intent. Surla runs no model for this step and cannot judge whether the analysis is complete or correct.
             operationId: surla#propose_change
             parameters:
                 - name: propose_change_request_body
@@ -507,7 +507,7 @@ paths:
                             temporary: false
                             timeout: false
                 "422":
-                    description: 'unprocessable: The request could not be accepted: change_id or prompt is blank, an ambiguity repeats an option, or the bound workspace''s design/*.go could not be read. The message says which; nothing was saved.'
+                    description: 'unprocessable: The request could not be accepted: change_id or prompt is blank, an ambiguity repeats an option, story_refresh_op_id does not name a current succeeded refresh_story operation matching the bound workspace snapshot, or the bound workspace''s design/*.go could not be read. The message says which; nothing was saved.'
                     schema:
                         $ref: '#/definitions/SurlaProposeChangeUnprocessableResponseBody'
                     examples:
@@ -525,7 +525,7 @@ paths:
             tags:
                 - surla
             summary: revise_change surla
-            description: 'Save the next revision of an existing Checkpoint 1 Change Card from a revised feature request and the caller''s analysis of it, bound to the card''s current request_revision. The analysis accounts for every current example exactly once, keeping or editing it through prior_id or dropping it through removed_example_ids. Surla keeps the IDs of kept examples, gives new examples the lowest check_NN ID neither card uses, records design/*.go from the bound workspace again when design_source is omitted on a workspace-backed card (otherwise keeps the card''s saved design source), and saves the new revision in needs_confirmation status for operator review. The new revision''s answers, confirmed_by and any approval are cleared: earlier decisions remain only where the analysis restates them in its summary, examples or preserved behaviors. Surla runs no model for this step and cannot judge whether the analysis is complete or correct.'
+            description: 'Save the next revision of an existing Checkpoint 1 Change Card from a revised feature request and the caller''s analysis of it, bound to the card''s current request_revision. The analysis accounts for every current example exactly once, keeping or editing it through prior_id or dropping it through removed_example_ids. Surla keeps the IDs of kept examples, gives new examples the lowest check_NN ID neither card uses, adopts the evaluated Stories and design/*.go from the single workspace snapshot verified against story_refresh_op_id when story_refresh_op_id is given (or keeps the saved Stories and saved design_source together when story_refresh_op_id is omitted on a card with Stories, or records design/*.go from the bound workspace again when omitted on a workspace-backed card without Stories), and saves the new revision in needs_confirmation status for operator review. The new revision''s answers, confirmed_by and any approval are cleared: earlier decisions remain only where the analysis restates them in its summary, examples or preserved behaviors. Surla runs no model for this step and cannot judge whether the analysis is complete or correct.'
             operationId: surla#revise_change
             parameters:
                 - name: revise_change_request_body
@@ -588,7 +588,7 @@ paths:
                             temporary: false
                             timeout: false
                 "422":
-                    description: 'unprocessable: The request could not be accepted: change_id, request_revision or prompt is blank, an ambiguity repeats an option, the analysis does not account for every current example exactly once, or the bound workspace''s design/*.go could not be read. The message says which; the card did not change.'
+                    description: 'unprocessable: The request could not be accepted: change_id, request_revision or prompt is blank, an ambiguity repeats an option, the analysis does not account for every current example exactly once, story_refresh_op_id does not name a current succeeded refresh_story operation matching the bound workspace snapshot, or the bound workspace''s design/*.go could not be read. The message says which; the card did not change.'
                     schema:
                         $ref: '#/definitions/SurlaReviseChangeUnprocessableResponseBody'
                     examples:
@@ -2505,6 +2505,556 @@ definitions:
                 enum:
                     - needs_confirmation
                     - confirmed
+            stories:
+                type: array
+                items:
+                    $ref: '#/definitions/StorySummaryItem'
+                description: Evaluated domain Stories adopted from refresh_story for this Change Card revision in declaration order; omitted when the card has no Stories. Included in request_revision.
+                example:
+                    - actors:
+                        - description: Odio nulla itaque earum aperiam rerum.
+                          key: Velit eum laudantium quo aut.
+                          title: Alias quia maxime non illum consequatur.
+                        - description: Odio nulla itaque earum aperiam rerum.
+                          key: Velit eum laudantium quo aut.
+                          title: Alias quia maxime non illum consequatur.
+                        - description: Odio nulla itaque earum aperiam rerum.
+                          key: Velit eum laudantium quo aut.
+                          title: Alias quia maxime non illum consequatur.
+                        - description: Odio nulla itaque earum aperiam rerum.
+                          key: Velit eum laudantium quo aut.
+                          title: Alias quia maxime non illum consequatur.
+                      description: Iure ut.
+                      flows:
+                        - complete: true
+                          description: Quis ut.
+                          key: Quidem nesciunt.
+                          questions:
+                            - description: Quibusdam est aut dicta repellat quam dolorum.
+                              key: Ut porro nihil dolores qui cumque porro.
+                              options:
+                                - Excepturi deleniti ullam natus eligendi.
+                                - Harum eos quos.
+                                - Et sunt quo odit iure.
+                              prompt: Et placeat blanditiis.
+                            - description: Quibusdam est aut dicta repellat quam dolorum.
+                              key: Ut porro nihil dolores qui cumque porro.
+                              options:
+                                - Excepturi deleniti ullam natus eligendi.
+                                - Harum eos quos.
+                                - Et sunt quo odit iure.
+                              prompt: Et placeat blanditiis.
+                          steps:
+                            - actor_key: Optio explicabo delectus.
+                              description: Consequatur veniam recusandae non facilis maxime natus.
+                              key: Non optio libero.
+                              kind: step
+                              questions:
+                                - description: Quibusdam est aut dicta repellat quam dolorum.
+                                  key: Ut porro nihil dolores qui cumque porro.
+                                  options:
+                                    - Excepturi deleniti ullam natus eligendi.
+                                    - Harum eos quos.
+                                    - Et sunt quo odit iure.
+                                  prompt: Et placeat blanditiis.
+                                - description: Quibusdam est aut dicta repellat quam dolorum.
+                                  key: Ut porro nihil dolores qui cumque porro.
+                                  options:
+                                    - Excepturi deleniti ullam natus eligendi.
+                                    - Harum eos quos.
+                                    - Et sunt quo odit iure.
+                                  prompt: Et placeat blanditiis.
+                                - description: Quibusdam est aut dicta repellat quam dolorum.
+                                  key: Ut porro nihil dolores qui cumque porro.
+                                  options:
+                                    - Excepturi deleniti ullam natus eligendi.
+                                    - Harum eos quos.
+                                    - Et sunt quo odit iure.
+                                  prompt: Et placeat blanditiis.
+                              summary: Nihil sunt ea molestiae voluptate aut.
+                            - actor_key: Optio explicabo delectus.
+                              description: Consequatur veniam recusandae non facilis maxime natus.
+                              key: Non optio libero.
+                              kind: step
+                              questions:
+                                - description: Quibusdam est aut dicta repellat quam dolorum.
+                                  key: Ut porro nihil dolores qui cumque porro.
+                                  options:
+                                    - Excepturi deleniti ullam natus eligendi.
+                                    - Harum eos quos.
+                                    - Et sunt quo odit iure.
+                                  prompt: Et placeat blanditiis.
+                                - description: Quibusdam est aut dicta repellat quam dolorum.
+                                  key: Ut porro nihil dolores qui cumque porro.
+                                  options:
+                                    - Excepturi deleniti ullam natus eligendi.
+                                    - Harum eos quos.
+                                    - Et sunt quo odit iure.
+                                  prompt: Et placeat blanditiis.
+                                - description: Quibusdam est aut dicta repellat quam dolorum.
+                                  key: Ut porro nihil dolores qui cumque porro.
+                                  options:
+                                    - Excepturi deleniti ullam natus eligendi.
+                                    - Harum eos quos.
+                                    - Et sunt quo odit iure.
+                                  prompt: Et placeat blanditiis.
+                              summary: Nihil sunt ea molestiae voluptate aut.
+                            - actor_key: Optio explicabo delectus.
+                              description: Consequatur veniam recusandae non facilis maxime natus.
+                              key: Non optio libero.
+                              kind: step
+                              questions:
+                                - description: Quibusdam est aut dicta repellat quam dolorum.
+                                  key: Ut porro nihil dolores qui cumque porro.
+                                  options:
+                                    - Excepturi deleniti ullam natus eligendi.
+                                    - Harum eos quos.
+                                    - Et sunt quo odit iure.
+                                  prompt: Et placeat blanditiis.
+                                - description: Quibusdam est aut dicta repellat quam dolorum.
+                                  key: Ut porro nihil dolores qui cumque porro.
+                                  options:
+                                    - Excepturi deleniti ullam natus eligendi.
+                                    - Harum eos quos.
+                                    - Et sunt quo odit iure.
+                                  prompt: Et placeat blanditiis.
+                                - description: Quibusdam est aut dicta repellat quam dolorum.
+                                  key: Ut porro nihil dolores qui cumque porro.
+                                  options:
+                                    - Excepturi deleniti ullam natus eligendi.
+                                    - Harum eos quos.
+                                    - Et sunt quo odit iure.
+                                  prompt: Et placeat blanditiis.
+                              summary: Nihil sunt ea molestiae voluptate aut.
+                            - actor_key: Optio explicabo delectus.
+                              description: Consequatur veniam recusandae non facilis maxime natus.
+                              key: Non optio libero.
+                              kind: step
+                              questions:
+                                - description: Quibusdam est aut dicta repellat quam dolorum.
+                                  key: Ut porro nihil dolores qui cumque porro.
+                                  options:
+                                    - Excepturi deleniti ullam natus eligendi.
+                                    - Harum eos quos.
+                                    - Et sunt quo odit iure.
+                                  prompt: Et placeat blanditiis.
+                                - description: Quibusdam est aut dicta repellat quam dolorum.
+                                  key: Ut porro nihil dolores qui cumque porro.
+                                  options:
+                                    - Excepturi deleniti ullam natus eligendi.
+                                    - Harum eos quos.
+                                    - Et sunt quo odit iure.
+                                  prompt: Et placeat blanditiis.
+                                - description: Quibusdam est aut dicta repellat quam dolorum.
+                                  key: Ut porro nihil dolores qui cumque porro.
+                                  options:
+                                    - Excepturi deleniti ullam natus eligendi.
+                                    - Harum eos quos.
+                                    - Et sunt quo odit iure.
+                                  prompt: Et placeat blanditiis.
+                              summary: Nihil sunt ea molestiae voluptate aut.
+                          title: Mollitia rerum nihil consectetur excepturi aspernatur.
+                        - complete: true
+                          description: Quis ut.
+                          key: Quidem nesciunt.
+                          questions:
+                            - description: Quibusdam est aut dicta repellat quam dolorum.
+                              key: Ut porro nihil dolores qui cumque porro.
+                              options:
+                                - Excepturi deleniti ullam natus eligendi.
+                                - Harum eos quos.
+                                - Et sunt quo odit iure.
+                              prompt: Et placeat blanditiis.
+                            - description: Quibusdam est aut dicta repellat quam dolorum.
+                              key: Ut porro nihil dolores qui cumque porro.
+                              options:
+                                - Excepturi deleniti ullam natus eligendi.
+                                - Harum eos quos.
+                                - Et sunt quo odit iure.
+                              prompt: Et placeat blanditiis.
+                          steps:
+                            - actor_key: Optio explicabo delectus.
+                              description: Consequatur veniam recusandae non facilis maxime natus.
+                              key: Non optio libero.
+                              kind: step
+                              questions:
+                                - description: Quibusdam est aut dicta repellat quam dolorum.
+                                  key: Ut porro nihil dolores qui cumque porro.
+                                  options:
+                                    - Excepturi deleniti ullam natus eligendi.
+                                    - Harum eos quos.
+                                    - Et sunt quo odit iure.
+                                  prompt: Et placeat blanditiis.
+                                - description: Quibusdam est aut dicta repellat quam dolorum.
+                                  key: Ut porro nihil dolores qui cumque porro.
+                                  options:
+                                    - Excepturi deleniti ullam natus eligendi.
+                                    - Harum eos quos.
+                                    - Et sunt quo odit iure.
+                                  prompt: Et placeat blanditiis.
+                                - description: Quibusdam est aut dicta repellat quam dolorum.
+                                  key: Ut porro nihil dolores qui cumque porro.
+                                  options:
+                                    - Excepturi deleniti ullam natus eligendi.
+                                    - Harum eos quos.
+                                    - Et sunt quo odit iure.
+                                  prompt: Et placeat blanditiis.
+                              summary: Nihil sunt ea molestiae voluptate aut.
+                            - actor_key: Optio explicabo delectus.
+                              description: Consequatur veniam recusandae non facilis maxime natus.
+                              key: Non optio libero.
+                              kind: step
+                              questions:
+                                - description: Quibusdam est aut dicta repellat quam dolorum.
+                                  key: Ut porro nihil dolores qui cumque porro.
+                                  options:
+                                    - Excepturi deleniti ullam natus eligendi.
+                                    - Harum eos quos.
+                                    - Et sunt quo odit iure.
+                                  prompt: Et placeat blanditiis.
+                                - description: Quibusdam est aut dicta repellat quam dolorum.
+                                  key: Ut porro nihil dolores qui cumque porro.
+                                  options:
+                                    - Excepturi deleniti ullam natus eligendi.
+                                    - Harum eos quos.
+                                    - Et sunt quo odit iure.
+                                  prompt: Et placeat blanditiis.
+                                - description: Quibusdam est aut dicta repellat quam dolorum.
+                                  key: Ut porro nihil dolores qui cumque porro.
+                                  options:
+                                    - Excepturi deleniti ullam natus eligendi.
+                                    - Harum eos quos.
+                                    - Et sunt quo odit iure.
+                                  prompt: Et placeat blanditiis.
+                              summary: Nihil sunt ea molestiae voluptate aut.
+                            - actor_key: Optio explicabo delectus.
+                              description: Consequatur veniam recusandae non facilis maxime natus.
+                              key: Non optio libero.
+                              kind: step
+                              questions:
+                                - description: Quibusdam est aut dicta repellat quam dolorum.
+                                  key: Ut porro nihil dolores qui cumque porro.
+                                  options:
+                                    - Excepturi deleniti ullam natus eligendi.
+                                    - Harum eos quos.
+                                    - Et sunt quo odit iure.
+                                  prompt: Et placeat blanditiis.
+                                - description: Quibusdam est aut dicta repellat quam dolorum.
+                                  key: Ut porro nihil dolores qui cumque porro.
+                                  options:
+                                    - Excepturi deleniti ullam natus eligendi.
+                                    - Harum eos quos.
+                                    - Et sunt quo odit iure.
+                                  prompt: Et placeat blanditiis.
+                                - description: Quibusdam est aut dicta repellat quam dolorum.
+                                  key: Ut porro nihil dolores qui cumque porro.
+                                  options:
+                                    - Excepturi deleniti ullam natus eligendi.
+                                    - Harum eos quos.
+                                    - Et sunt quo odit iure.
+                                  prompt: Et placeat blanditiis.
+                              summary: Nihil sunt ea molestiae voluptate aut.
+                            - actor_key: Optio explicabo delectus.
+                              description: Consequatur veniam recusandae non facilis maxime natus.
+                              key: Non optio libero.
+                              kind: step
+                              questions:
+                                - description: Quibusdam est aut dicta repellat quam dolorum.
+                                  key: Ut porro nihil dolores qui cumque porro.
+                                  options:
+                                    - Excepturi deleniti ullam natus eligendi.
+                                    - Harum eos quos.
+                                    - Et sunt quo odit iure.
+                                  prompt: Et placeat blanditiis.
+                                - description: Quibusdam est aut dicta repellat quam dolorum.
+                                  key: Ut porro nihil dolores qui cumque porro.
+                                  options:
+                                    - Excepturi deleniti ullam natus eligendi.
+                                    - Harum eos quos.
+                                    - Et sunt quo odit iure.
+                                  prompt: Et placeat blanditiis.
+                                - description: Quibusdam est aut dicta repellat quam dolorum.
+                                  key: Ut porro nihil dolores qui cumque porro.
+                                  options:
+                                    - Excepturi deleniti ullam natus eligendi.
+                                    - Harum eos quos.
+                                    - Et sunt quo odit iure.
+                                  prompt: Et placeat blanditiis.
+                              summary: Nihil sunt ea molestiae voluptate aut.
+                          title: Mollitia rerum nihil consectetur excepturi aspernatur.
+                      name: Et minima.
+                    - actors:
+                        - description: Odio nulla itaque earum aperiam rerum.
+                          key: Velit eum laudantium quo aut.
+                          title: Alias quia maxime non illum consequatur.
+                        - description: Odio nulla itaque earum aperiam rerum.
+                          key: Velit eum laudantium quo aut.
+                          title: Alias quia maxime non illum consequatur.
+                        - description: Odio nulla itaque earum aperiam rerum.
+                          key: Velit eum laudantium quo aut.
+                          title: Alias quia maxime non illum consequatur.
+                        - description: Odio nulla itaque earum aperiam rerum.
+                          key: Velit eum laudantium quo aut.
+                          title: Alias quia maxime non illum consequatur.
+                      description: Iure ut.
+                      flows:
+                        - complete: true
+                          description: Quis ut.
+                          key: Quidem nesciunt.
+                          questions:
+                            - description: Quibusdam est aut dicta repellat quam dolorum.
+                              key: Ut porro nihil dolores qui cumque porro.
+                              options:
+                                - Excepturi deleniti ullam natus eligendi.
+                                - Harum eos quos.
+                                - Et sunt quo odit iure.
+                              prompt: Et placeat blanditiis.
+                            - description: Quibusdam est aut dicta repellat quam dolorum.
+                              key: Ut porro nihil dolores qui cumque porro.
+                              options:
+                                - Excepturi deleniti ullam natus eligendi.
+                                - Harum eos quos.
+                                - Et sunt quo odit iure.
+                              prompt: Et placeat blanditiis.
+                          steps:
+                            - actor_key: Optio explicabo delectus.
+                              description: Consequatur veniam recusandae non facilis maxime natus.
+                              key: Non optio libero.
+                              kind: step
+                              questions:
+                                - description: Quibusdam est aut dicta repellat quam dolorum.
+                                  key: Ut porro nihil dolores qui cumque porro.
+                                  options:
+                                    - Excepturi deleniti ullam natus eligendi.
+                                    - Harum eos quos.
+                                    - Et sunt quo odit iure.
+                                  prompt: Et placeat blanditiis.
+                                - description: Quibusdam est aut dicta repellat quam dolorum.
+                                  key: Ut porro nihil dolores qui cumque porro.
+                                  options:
+                                    - Excepturi deleniti ullam natus eligendi.
+                                    - Harum eos quos.
+                                    - Et sunt quo odit iure.
+                                  prompt: Et placeat blanditiis.
+                                - description: Quibusdam est aut dicta repellat quam dolorum.
+                                  key: Ut porro nihil dolores qui cumque porro.
+                                  options:
+                                    - Excepturi deleniti ullam natus eligendi.
+                                    - Harum eos quos.
+                                    - Et sunt quo odit iure.
+                                  prompt: Et placeat blanditiis.
+                              summary: Nihil sunt ea molestiae voluptate aut.
+                            - actor_key: Optio explicabo delectus.
+                              description: Consequatur veniam recusandae non facilis maxime natus.
+                              key: Non optio libero.
+                              kind: step
+                              questions:
+                                - description: Quibusdam est aut dicta repellat quam dolorum.
+                                  key: Ut porro nihil dolores qui cumque porro.
+                                  options:
+                                    - Excepturi deleniti ullam natus eligendi.
+                                    - Harum eos quos.
+                                    - Et sunt quo odit iure.
+                                  prompt: Et placeat blanditiis.
+                                - description: Quibusdam est aut dicta repellat quam dolorum.
+                                  key: Ut porro nihil dolores qui cumque porro.
+                                  options:
+                                    - Excepturi deleniti ullam natus eligendi.
+                                    - Harum eos quos.
+                                    - Et sunt quo odit iure.
+                                  prompt: Et placeat blanditiis.
+                                - description: Quibusdam est aut dicta repellat quam dolorum.
+                                  key: Ut porro nihil dolores qui cumque porro.
+                                  options:
+                                    - Excepturi deleniti ullam natus eligendi.
+                                    - Harum eos quos.
+                                    - Et sunt quo odit iure.
+                                  prompt: Et placeat blanditiis.
+                              summary: Nihil sunt ea molestiae voluptate aut.
+                            - actor_key: Optio explicabo delectus.
+                              description: Consequatur veniam recusandae non facilis maxime natus.
+                              key: Non optio libero.
+                              kind: step
+                              questions:
+                                - description: Quibusdam est aut dicta repellat quam dolorum.
+                                  key: Ut porro nihil dolores qui cumque porro.
+                                  options:
+                                    - Excepturi deleniti ullam natus eligendi.
+                                    - Harum eos quos.
+                                    - Et sunt quo odit iure.
+                                  prompt: Et placeat blanditiis.
+                                - description: Quibusdam est aut dicta repellat quam dolorum.
+                                  key: Ut porro nihil dolores qui cumque porro.
+                                  options:
+                                    - Excepturi deleniti ullam natus eligendi.
+                                    - Harum eos quos.
+                                    - Et sunt quo odit iure.
+                                  prompt: Et placeat blanditiis.
+                                - description: Quibusdam est aut dicta repellat quam dolorum.
+                                  key: Ut porro nihil dolores qui cumque porro.
+                                  options:
+                                    - Excepturi deleniti ullam natus eligendi.
+                                    - Harum eos quos.
+                                    - Et sunt quo odit iure.
+                                  prompt: Et placeat blanditiis.
+                              summary: Nihil sunt ea molestiae voluptate aut.
+                            - actor_key: Optio explicabo delectus.
+                              description: Consequatur veniam recusandae non facilis maxime natus.
+                              key: Non optio libero.
+                              kind: step
+                              questions:
+                                - description: Quibusdam est aut dicta repellat quam dolorum.
+                                  key: Ut porro nihil dolores qui cumque porro.
+                                  options:
+                                    - Excepturi deleniti ullam natus eligendi.
+                                    - Harum eos quos.
+                                    - Et sunt quo odit iure.
+                                  prompt: Et placeat blanditiis.
+                                - description: Quibusdam est aut dicta repellat quam dolorum.
+                                  key: Ut porro nihil dolores qui cumque porro.
+                                  options:
+                                    - Excepturi deleniti ullam natus eligendi.
+                                    - Harum eos quos.
+                                    - Et sunt quo odit iure.
+                                  prompt: Et placeat blanditiis.
+                                - description: Quibusdam est aut dicta repellat quam dolorum.
+                                  key: Ut porro nihil dolores qui cumque porro.
+                                  options:
+                                    - Excepturi deleniti ullam natus eligendi.
+                                    - Harum eos quos.
+                                    - Et sunt quo odit iure.
+                                  prompt: Et placeat blanditiis.
+                              summary: Nihil sunt ea molestiae voluptate aut.
+                          title: Mollitia rerum nihil consectetur excepturi aspernatur.
+                        - complete: true
+                          description: Quis ut.
+                          key: Quidem nesciunt.
+                          questions:
+                            - description: Quibusdam est aut dicta repellat quam dolorum.
+                              key: Ut porro nihil dolores qui cumque porro.
+                              options:
+                                - Excepturi deleniti ullam natus eligendi.
+                                - Harum eos quos.
+                                - Et sunt quo odit iure.
+                              prompt: Et placeat blanditiis.
+                            - description: Quibusdam est aut dicta repellat quam dolorum.
+                              key: Ut porro nihil dolores qui cumque porro.
+                              options:
+                                - Excepturi deleniti ullam natus eligendi.
+                                - Harum eos quos.
+                                - Et sunt quo odit iure.
+                              prompt: Et placeat blanditiis.
+                          steps:
+                            - actor_key: Optio explicabo delectus.
+                              description: Consequatur veniam recusandae non facilis maxime natus.
+                              key: Non optio libero.
+                              kind: step
+                              questions:
+                                - description: Quibusdam est aut dicta repellat quam dolorum.
+                                  key: Ut porro nihil dolores qui cumque porro.
+                                  options:
+                                    - Excepturi deleniti ullam natus eligendi.
+                                    - Harum eos quos.
+                                    - Et sunt quo odit iure.
+                                  prompt: Et placeat blanditiis.
+                                - description: Quibusdam est aut dicta repellat quam dolorum.
+                                  key: Ut porro nihil dolores qui cumque porro.
+                                  options:
+                                    - Excepturi deleniti ullam natus eligendi.
+                                    - Harum eos quos.
+                                    - Et sunt quo odit iure.
+                                  prompt: Et placeat blanditiis.
+                                - description: Quibusdam est aut dicta repellat quam dolorum.
+                                  key: Ut porro nihil dolores qui cumque porro.
+                                  options:
+                                    - Excepturi deleniti ullam natus eligendi.
+                                    - Harum eos quos.
+                                    - Et sunt quo odit iure.
+                                  prompt: Et placeat blanditiis.
+                              summary: Nihil sunt ea molestiae voluptate aut.
+                            - actor_key: Optio explicabo delectus.
+                              description: Consequatur veniam recusandae non facilis maxime natus.
+                              key: Non optio libero.
+                              kind: step
+                              questions:
+                                - description: Quibusdam est aut dicta repellat quam dolorum.
+                                  key: Ut porro nihil dolores qui cumque porro.
+                                  options:
+                                    - Excepturi deleniti ullam natus eligendi.
+                                    - Harum eos quos.
+                                    - Et sunt quo odit iure.
+                                  prompt: Et placeat blanditiis.
+                                - description: Quibusdam est aut dicta repellat quam dolorum.
+                                  key: Ut porro nihil dolores qui cumque porro.
+                                  options:
+                                    - Excepturi deleniti ullam natus eligendi.
+                                    - Harum eos quos.
+                                    - Et sunt quo odit iure.
+                                  prompt: Et placeat blanditiis.
+                                - description: Quibusdam est aut dicta repellat quam dolorum.
+                                  key: Ut porro nihil dolores qui cumque porro.
+                                  options:
+                                    - Excepturi deleniti ullam natus eligendi.
+                                    - Harum eos quos.
+                                    - Et sunt quo odit iure.
+                                  prompt: Et placeat blanditiis.
+                              summary: Nihil sunt ea molestiae voluptate aut.
+                            - actor_key: Optio explicabo delectus.
+                              description: Consequatur veniam recusandae non facilis maxime natus.
+                              key: Non optio libero.
+                              kind: step
+                              questions:
+                                - description: Quibusdam est aut dicta repellat quam dolorum.
+                                  key: Ut porro nihil dolores qui cumque porro.
+                                  options:
+                                    - Excepturi deleniti ullam natus eligendi.
+                                    - Harum eos quos.
+                                    - Et sunt quo odit iure.
+                                  prompt: Et placeat blanditiis.
+                                - description: Quibusdam est aut dicta repellat quam dolorum.
+                                  key: Ut porro nihil dolores qui cumque porro.
+                                  options:
+                                    - Excepturi deleniti ullam natus eligendi.
+                                    - Harum eos quos.
+                                    - Et sunt quo odit iure.
+                                  prompt: Et placeat blanditiis.
+                                - description: Quibusdam est aut dicta repellat quam dolorum.
+                                  key: Ut porro nihil dolores qui cumque porro.
+                                  options:
+                                    - Excepturi deleniti ullam natus eligendi.
+                                    - Harum eos quos.
+                                    - Et sunt quo odit iure.
+                                  prompt: Et placeat blanditiis.
+                              summary: Nihil sunt ea molestiae voluptate aut.
+                            - actor_key: Optio explicabo delectus.
+                              description: Consequatur veniam recusandae non facilis maxime natus.
+                              key: Non optio libero.
+                              kind: step
+                              questions:
+                                - description: Quibusdam est aut dicta repellat quam dolorum.
+                                  key: Ut porro nihil dolores qui cumque porro.
+                                  options:
+                                    - Excepturi deleniti ullam natus eligendi.
+                                    - Harum eos quos.
+                                    - Et sunt quo odit iure.
+                                  prompt: Et placeat blanditiis.
+                                - description: Quibusdam est aut dicta repellat quam dolorum.
+                                  key: Ut porro nihil dolores qui cumque porro.
+                                  options:
+                                    - Excepturi deleniti ullam natus eligendi.
+                                    - Harum eos quos.
+                                    - Et sunt quo odit iure.
+                                  prompt: Et placeat blanditiis.
+                                - description: Quibusdam est aut dicta repellat quam dolorum.
+                                  key: Ut porro nihil dolores qui cumque porro.
+                                  options:
+                                    - Excepturi deleniti ullam natus eligendi.
+                                    - Harum eos quos.
+                                    - Et sunt quo odit iure.
+                                  prompt: Et placeat blanditiis.
+                              summary: Nihil sunt ea molestiae voluptate aut.
+                          title: Mollitia rerum nihil consectetur excepturi aspernatur.
+                      name: Et minima.
             summary:
                 type: string
                 description: Plain-English summary of the proposed change from propose_change or revise_change. confirm_intent does not rewrite this text; when status is confirmed, answers records the owner's resolutions for ambiguities.
@@ -2513,7 +3063,7 @@ definitions:
                 $ref: '#/definitions/UICompositionItem'
             unverified_approval:
                 $ref: '#/definitions/UnverifiedApprovalItem'
-        description: Checkpoint 1 Change Card containing examples, preserved behaviors, and audit metadata.
+        description: Checkpoint 1 Change Card containing examples, preserved behaviors, optional adopted domain Stories, and audit metadata.
         example:
             ambiguities:
                 - id: Incidunt quasi molestias itaque tempore animi.
@@ -2570,6 +3120,551 @@ definitions:
             prompt: Ea perferendis neque.
             request_revision: Et maxime fugiat.
             status: confirmed
+            stories:
+                - actors:
+                    - description: Odio nulla itaque earum aperiam rerum.
+                      key: Velit eum laudantium quo aut.
+                      title: Alias quia maxime non illum consequatur.
+                    - description: Odio nulla itaque earum aperiam rerum.
+                      key: Velit eum laudantium quo aut.
+                      title: Alias quia maxime non illum consequatur.
+                    - description: Odio nulla itaque earum aperiam rerum.
+                      key: Velit eum laudantium quo aut.
+                      title: Alias quia maxime non illum consequatur.
+                    - description: Odio nulla itaque earum aperiam rerum.
+                      key: Velit eum laudantium quo aut.
+                      title: Alias quia maxime non illum consequatur.
+                  description: Iure ut.
+                  flows:
+                    - complete: true
+                      description: Quis ut.
+                      key: Quidem nesciunt.
+                      questions:
+                        - description: Quibusdam est aut dicta repellat quam dolorum.
+                          key: Ut porro nihil dolores qui cumque porro.
+                          options:
+                            - Excepturi deleniti ullam natus eligendi.
+                            - Harum eos quos.
+                            - Et sunt quo odit iure.
+                          prompt: Et placeat blanditiis.
+                        - description: Quibusdam est aut dicta repellat quam dolorum.
+                          key: Ut porro nihil dolores qui cumque porro.
+                          options:
+                            - Excepturi deleniti ullam natus eligendi.
+                            - Harum eos quos.
+                            - Et sunt quo odit iure.
+                          prompt: Et placeat blanditiis.
+                      steps:
+                        - actor_key: Optio explicabo delectus.
+                          description: Consequatur veniam recusandae non facilis maxime natus.
+                          key: Non optio libero.
+                          kind: step
+                          questions:
+                            - description: Quibusdam est aut dicta repellat quam dolorum.
+                              key: Ut porro nihil dolores qui cumque porro.
+                              options:
+                                - Excepturi deleniti ullam natus eligendi.
+                                - Harum eos quos.
+                                - Et sunt quo odit iure.
+                              prompt: Et placeat blanditiis.
+                            - description: Quibusdam est aut dicta repellat quam dolorum.
+                              key: Ut porro nihil dolores qui cumque porro.
+                              options:
+                                - Excepturi deleniti ullam natus eligendi.
+                                - Harum eos quos.
+                                - Et sunt quo odit iure.
+                              prompt: Et placeat blanditiis.
+                            - description: Quibusdam est aut dicta repellat quam dolorum.
+                              key: Ut porro nihil dolores qui cumque porro.
+                              options:
+                                - Excepturi deleniti ullam natus eligendi.
+                                - Harum eos quos.
+                                - Et sunt quo odit iure.
+                              prompt: Et placeat blanditiis.
+                          summary: Nihil sunt ea molestiae voluptate aut.
+                        - actor_key: Optio explicabo delectus.
+                          description: Consequatur veniam recusandae non facilis maxime natus.
+                          key: Non optio libero.
+                          kind: step
+                          questions:
+                            - description: Quibusdam est aut dicta repellat quam dolorum.
+                              key: Ut porro nihil dolores qui cumque porro.
+                              options:
+                                - Excepturi deleniti ullam natus eligendi.
+                                - Harum eos quos.
+                                - Et sunt quo odit iure.
+                              prompt: Et placeat blanditiis.
+                            - description: Quibusdam est aut dicta repellat quam dolorum.
+                              key: Ut porro nihil dolores qui cumque porro.
+                              options:
+                                - Excepturi deleniti ullam natus eligendi.
+                                - Harum eos quos.
+                                - Et sunt quo odit iure.
+                              prompt: Et placeat blanditiis.
+                            - description: Quibusdam est aut dicta repellat quam dolorum.
+                              key: Ut porro nihil dolores qui cumque porro.
+                              options:
+                                - Excepturi deleniti ullam natus eligendi.
+                                - Harum eos quos.
+                                - Et sunt quo odit iure.
+                              prompt: Et placeat blanditiis.
+                          summary: Nihil sunt ea molestiae voluptate aut.
+                        - actor_key: Optio explicabo delectus.
+                          description: Consequatur veniam recusandae non facilis maxime natus.
+                          key: Non optio libero.
+                          kind: step
+                          questions:
+                            - description: Quibusdam est aut dicta repellat quam dolorum.
+                              key: Ut porro nihil dolores qui cumque porro.
+                              options:
+                                - Excepturi deleniti ullam natus eligendi.
+                                - Harum eos quos.
+                                - Et sunt quo odit iure.
+                              prompt: Et placeat blanditiis.
+                            - description: Quibusdam est aut dicta repellat quam dolorum.
+                              key: Ut porro nihil dolores qui cumque porro.
+                              options:
+                                - Excepturi deleniti ullam natus eligendi.
+                                - Harum eos quos.
+                                - Et sunt quo odit iure.
+                              prompt: Et placeat blanditiis.
+                            - description: Quibusdam est aut dicta repellat quam dolorum.
+                              key: Ut porro nihil dolores qui cumque porro.
+                              options:
+                                - Excepturi deleniti ullam natus eligendi.
+                                - Harum eos quos.
+                                - Et sunt quo odit iure.
+                              prompt: Et placeat blanditiis.
+                          summary: Nihil sunt ea molestiae voluptate aut.
+                        - actor_key: Optio explicabo delectus.
+                          description: Consequatur veniam recusandae non facilis maxime natus.
+                          key: Non optio libero.
+                          kind: step
+                          questions:
+                            - description: Quibusdam est aut dicta repellat quam dolorum.
+                              key: Ut porro nihil dolores qui cumque porro.
+                              options:
+                                - Excepturi deleniti ullam natus eligendi.
+                                - Harum eos quos.
+                                - Et sunt quo odit iure.
+                              prompt: Et placeat blanditiis.
+                            - description: Quibusdam est aut dicta repellat quam dolorum.
+                              key: Ut porro nihil dolores qui cumque porro.
+                              options:
+                                - Excepturi deleniti ullam natus eligendi.
+                                - Harum eos quos.
+                                - Et sunt quo odit iure.
+                              prompt: Et placeat blanditiis.
+                            - description: Quibusdam est aut dicta repellat quam dolorum.
+                              key: Ut porro nihil dolores qui cumque porro.
+                              options:
+                                - Excepturi deleniti ullam natus eligendi.
+                                - Harum eos quos.
+                                - Et sunt quo odit iure.
+                              prompt: Et placeat blanditiis.
+                          summary: Nihil sunt ea molestiae voluptate aut.
+                      title: Mollitia rerum nihil consectetur excepturi aspernatur.
+                    - complete: true
+                      description: Quis ut.
+                      key: Quidem nesciunt.
+                      questions:
+                        - description: Quibusdam est aut dicta repellat quam dolorum.
+                          key: Ut porro nihil dolores qui cumque porro.
+                          options:
+                            - Excepturi deleniti ullam natus eligendi.
+                            - Harum eos quos.
+                            - Et sunt quo odit iure.
+                          prompt: Et placeat blanditiis.
+                        - description: Quibusdam est aut dicta repellat quam dolorum.
+                          key: Ut porro nihil dolores qui cumque porro.
+                          options:
+                            - Excepturi deleniti ullam natus eligendi.
+                            - Harum eos quos.
+                            - Et sunt quo odit iure.
+                          prompt: Et placeat blanditiis.
+                      steps:
+                        - actor_key: Optio explicabo delectus.
+                          description: Consequatur veniam recusandae non facilis maxime natus.
+                          key: Non optio libero.
+                          kind: step
+                          questions:
+                            - description: Quibusdam est aut dicta repellat quam dolorum.
+                              key: Ut porro nihil dolores qui cumque porro.
+                              options:
+                                - Excepturi deleniti ullam natus eligendi.
+                                - Harum eos quos.
+                                - Et sunt quo odit iure.
+                              prompt: Et placeat blanditiis.
+                            - description: Quibusdam est aut dicta repellat quam dolorum.
+                              key: Ut porro nihil dolores qui cumque porro.
+                              options:
+                                - Excepturi deleniti ullam natus eligendi.
+                                - Harum eos quos.
+                                - Et sunt quo odit iure.
+                              prompt: Et placeat blanditiis.
+                            - description: Quibusdam est aut dicta repellat quam dolorum.
+                              key: Ut porro nihil dolores qui cumque porro.
+                              options:
+                                - Excepturi deleniti ullam natus eligendi.
+                                - Harum eos quos.
+                                - Et sunt quo odit iure.
+                              prompt: Et placeat blanditiis.
+                          summary: Nihil sunt ea molestiae voluptate aut.
+                        - actor_key: Optio explicabo delectus.
+                          description: Consequatur veniam recusandae non facilis maxime natus.
+                          key: Non optio libero.
+                          kind: step
+                          questions:
+                            - description: Quibusdam est aut dicta repellat quam dolorum.
+                              key: Ut porro nihil dolores qui cumque porro.
+                              options:
+                                - Excepturi deleniti ullam natus eligendi.
+                                - Harum eos quos.
+                                - Et sunt quo odit iure.
+                              prompt: Et placeat blanditiis.
+                            - description: Quibusdam est aut dicta repellat quam dolorum.
+                              key: Ut porro nihil dolores qui cumque porro.
+                              options:
+                                - Excepturi deleniti ullam natus eligendi.
+                                - Harum eos quos.
+                                - Et sunt quo odit iure.
+                              prompt: Et placeat blanditiis.
+                            - description: Quibusdam est aut dicta repellat quam dolorum.
+                              key: Ut porro nihil dolores qui cumque porro.
+                              options:
+                                - Excepturi deleniti ullam natus eligendi.
+                                - Harum eos quos.
+                                - Et sunt quo odit iure.
+                              prompt: Et placeat blanditiis.
+                          summary: Nihil sunt ea molestiae voluptate aut.
+                        - actor_key: Optio explicabo delectus.
+                          description: Consequatur veniam recusandae non facilis maxime natus.
+                          key: Non optio libero.
+                          kind: step
+                          questions:
+                            - description: Quibusdam est aut dicta repellat quam dolorum.
+                              key: Ut porro nihil dolores qui cumque porro.
+                              options:
+                                - Excepturi deleniti ullam natus eligendi.
+                                - Harum eos quos.
+                                - Et sunt quo odit iure.
+                              prompt: Et placeat blanditiis.
+                            - description: Quibusdam est aut dicta repellat quam dolorum.
+                              key: Ut porro nihil dolores qui cumque porro.
+                              options:
+                                - Excepturi deleniti ullam natus eligendi.
+                                - Harum eos quos.
+                                - Et sunt quo odit iure.
+                              prompt: Et placeat blanditiis.
+                            - description: Quibusdam est aut dicta repellat quam dolorum.
+                              key: Ut porro nihil dolores qui cumque porro.
+                              options:
+                                - Excepturi deleniti ullam natus eligendi.
+                                - Harum eos quos.
+                                - Et sunt quo odit iure.
+                              prompt: Et placeat blanditiis.
+                          summary: Nihil sunt ea molestiae voluptate aut.
+                        - actor_key: Optio explicabo delectus.
+                          description: Consequatur veniam recusandae non facilis maxime natus.
+                          key: Non optio libero.
+                          kind: step
+                          questions:
+                            - description: Quibusdam est aut dicta repellat quam dolorum.
+                              key: Ut porro nihil dolores qui cumque porro.
+                              options:
+                                - Excepturi deleniti ullam natus eligendi.
+                                - Harum eos quos.
+                                - Et sunt quo odit iure.
+                              prompt: Et placeat blanditiis.
+                            - description: Quibusdam est aut dicta repellat quam dolorum.
+                              key: Ut porro nihil dolores qui cumque porro.
+                              options:
+                                - Excepturi deleniti ullam natus eligendi.
+                                - Harum eos quos.
+                                - Et sunt quo odit iure.
+                              prompt: Et placeat blanditiis.
+                            - description: Quibusdam est aut dicta repellat quam dolorum.
+                              key: Ut porro nihil dolores qui cumque porro.
+                              options:
+                                - Excepturi deleniti ullam natus eligendi.
+                                - Harum eos quos.
+                                - Et sunt quo odit iure.
+                              prompt: Et placeat blanditiis.
+                          summary: Nihil sunt ea molestiae voluptate aut.
+                      title: Mollitia rerum nihil consectetur excepturi aspernatur.
+                  name: Et minima.
+                - actors:
+                    - description: Odio nulla itaque earum aperiam rerum.
+                      key: Velit eum laudantium quo aut.
+                      title: Alias quia maxime non illum consequatur.
+                    - description: Odio nulla itaque earum aperiam rerum.
+                      key: Velit eum laudantium quo aut.
+                      title: Alias quia maxime non illum consequatur.
+                    - description: Odio nulla itaque earum aperiam rerum.
+                      key: Velit eum laudantium quo aut.
+                      title: Alias quia maxime non illum consequatur.
+                    - description: Odio nulla itaque earum aperiam rerum.
+                      key: Velit eum laudantium quo aut.
+                      title: Alias quia maxime non illum consequatur.
+                  description: Iure ut.
+                  flows:
+                    - complete: true
+                      description: Quis ut.
+                      key: Quidem nesciunt.
+                      questions:
+                        - description: Quibusdam est aut dicta repellat quam dolorum.
+                          key: Ut porro nihil dolores qui cumque porro.
+                          options:
+                            - Excepturi deleniti ullam natus eligendi.
+                            - Harum eos quos.
+                            - Et sunt quo odit iure.
+                          prompt: Et placeat blanditiis.
+                        - description: Quibusdam est aut dicta repellat quam dolorum.
+                          key: Ut porro nihil dolores qui cumque porro.
+                          options:
+                            - Excepturi deleniti ullam natus eligendi.
+                            - Harum eos quos.
+                            - Et sunt quo odit iure.
+                          prompt: Et placeat blanditiis.
+                      steps:
+                        - actor_key: Optio explicabo delectus.
+                          description: Consequatur veniam recusandae non facilis maxime natus.
+                          key: Non optio libero.
+                          kind: step
+                          questions:
+                            - description: Quibusdam est aut dicta repellat quam dolorum.
+                              key: Ut porro nihil dolores qui cumque porro.
+                              options:
+                                - Excepturi deleniti ullam natus eligendi.
+                                - Harum eos quos.
+                                - Et sunt quo odit iure.
+                              prompt: Et placeat blanditiis.
+                            - description: Quibusdam est aut dicta repellat quam dolorum.
+                              key: Ut porro nihil dolores qui cumque porro.
+                              options:
+                                - Excepturi deleniti ullam natus eligendi.
+                                - Harum eos quos.
+                                - Et sunt quo odit iure.
+                              prompt: Et placeat blanditiis.
+                            - description: Quibusdam est aut dicta repellat quam dolorum.
+                              key: Ut porro nihil dolores qui cumque porro.
+                              options:
+                                - Excepturi deleniti ullam natus eligendi.
+                                - Harum eos quos.
+                                - Et sunt quo odit iure.
+                              prompt: Et placeat blanditiis.
+                          summary: Nihil sunt ea molestiae voluptate aut.
+                        - actor_key: Optio explicabo delectus.
+                          description: Consequatur veniam recusandae non facilis maxime natus.
+                          key: Non optio libero.
+                          kind: step
+                          questions:
+                            - description: Quibusdam est aut dicta repellat quam dolorum.
+                              key: Ut porro nihil dolores qui cumque porro.
+                              options:
+                                - Excepturi deleniti ullam natus eligendi.
+                                - Harum eos quos.
+                                - Et sunt quo odit iure.
+                              prompt: Et placeat blanditiis.
+                            - description: Quibusdam est aut dicta repellat quam dolorum.
+                              key: Ut porro nihil dolores qui cumque porro.
+                              options:
+                                - Excepturi deleniti ullam natus eligendi.
+                                - Harum eos quos.
+                                - Et sunt quo odit iure.
+                              prompt: Et placeat blanditiis.
+                            - description: Quibusdam est aut dicta repellat quam dolorum.
+                              key: Ut porro nihil dolores qui cumque porro.
+                              options:
+                                - Excepturi deleniti ullam natus eligendi.
+                                - Harum eos quos.
+                                - Et sunt quo odit iure.
+                              prompt: Et placeat blanditiis.
+                          summary: Nihil sunt ea molestiae voluptate aut.
+                        - actor_key: Optio explicabo delectus.
+                          description: Consequatur veniam recusandae non facilis maxime natus.
+                          key: Non optio libero.
+                          kind: step
+                          questions:
+                            - description: Quibusdam est aut dicta repellat quam dolorum.
+                              key: Ut porro nihil dolores qui cumque porro.
+                              options:
+                                - Excepturi deleniti ullam natus eligendi.
+                                - Harum eos quos.
+                                - Et sunt quo odit iure.
+                              prompt: Et placeat blanditiis.
+                            - description: Quibusdam est aut dicta repellat quam dolorum.
+                              key: Ut porro nihil dolores qui cumque porro.
+                              options:
+                                - Excepturi deleniti ullam natus eligendi.
+                                - Harum eos quos.
+                                - Et sunt quo odit iure.
+                              prompt: Et placeat blanditiis.
+                            - description: Quibusdam est aut dicta repellat quam dolorum.
+                              key: Ut porro nihil dolores qui cumque porro.
+                              options:
+                                - Excepturi deleniti ullam natus eligendi.
+                                - Harum eos quos.
+                                - Et sunt quo odit iure.
+                              prompt: Et placeat blanditiis.
+                          summary: Nihil sunt ea molestiae voluptate aut.
+                        - actor_key: Optio explicabo delectus.
+                          description: Consequatur veniam recusandae non facilis maxime natus.
+                          key: Non optio libero.
+                          kind: step
+                          questions:
+                            - description: Quibusdam est aut dicta repellat quam dolorum.
+                              key: Ut porro nihil dolores qui cumque porro.
+                              options:
+                                - Excepturi deleniti ullam natus eligendi.
+                                - Harum eos quos.
+                                - Et sunt quo odit iure.
+                              prompt: Et placeat blanditiis.
+                            - description: Quibusdam est aut dicta repellat quam dolorum.
+                              key: Ut porro nihil dolores qui cumque porro.
+                              options:
+                                - Excepturi deleniti ullam natus eligendi.
+                                - Harum eos quos.
+                                - Et sunt quo odit iure.
+                              prompt: Et placeat blanditiis.
+                            - description: Quibusdam est aut dicta repellat quam dolorum.
+                              key: Ut porro nihil dolores qui cumque porro.
+                              options:
+                                - Excepturi deleniti ullam natus eligendi.
+                                - Harum eos quos.
+                                - Et sunt quo odit iure.
+                              prompt: Et placeat blanditiis.
+                          summary: Nihil sunt ea molestiae voluptate aut.
+                      title: Mollitia rerum nihil consectetur excepturi aspernatur.
+                    - complete: true
+                      description: Quis ut.
+                      key: Quidem nesciunt.
+                      questions:
+                        - description: Quibusdam est aut dicta repellat quam dolorum.
+                          key: Ut porro nihil dolores qui cumque porro.
+                          options:
+                            - Excepturi deleniti ullam natus eligendi.
+                            - Harum eos quos.
+                            - Et sunt quo odit iure.
+                          prompt: Et placeat blanditiis.
+                        - description: Quibusdam est aut dicta repellat quam dolorum.
+                          key: Ut porro nihil dolores qui cumque porro.
+                          options:
+                            - Excepturi deleniti ullam natus eligendi.
+                            - Harum eos quos.
+                            - Et sunt quo odit iure.
+                          prompt: Et placeat blanditiis.
+                      steps:
+                        - actor_key: Optio explicabo delectus.
+                          description: Consequatur veniam recusandae non facilis maxime natus.
+                          key: Non optio libero.
+                          kind: step
+                          questions:
+                            - description: Quibusdam est aut dicta repellat quam dolorum.
+                              key: Ut porro nihil dolores qui cumque porro.
+                              options:
+                                - Excepturi deleniti ullam natus eligendi.
+                                - Harum eos quos.
+                                - Et sunt quo odit iure.
+                              prompt: Et placeat blanditiis.
+                            - description: Quibusdam est aut dicta repellat quam dolorum.
+                              key: Ut porro nihil dolores qui cumque porro.
+                              options:
+                                - Excepturi deleniti ullam natus eligendi.
+                                - Harum eos quos.
+                                - Et sunt quo odit iure.
+                              prompt: Et placeat blanditiis.
+                            - description: Quibusdam est aut dicta repellat quam dolorum.
+                              key: Ut porro nihil dolores qui cumque porro.
+                              options:
+                                - Excepturi deleniti ullam natus eligendi.
+                                - Harum eos quos.
+                                - Et sunt quo odit iure.
+                              prompt: Et placeat blanditiis.
+                          summary: Nihil sunt ea molestiae voluptate aut.
+                        - actor_key: Optio explicabo delectus.
+                          description: Consequatur veniam recusandae non facilis maxime natus.
+                          key: Non optio libero.
+                          kind: step
+                          questions:
+                            - description: Quibusdam est aut dicta repellat quam dolorum.
+                              key: Ut porro nihil dolores qui cumque porro.
+                              options:
+                                - Excepturi deleniti ullam natus eligendi.
+                                - Harum eos quos.
+                                - Et sunt quo odit iure.
+                              prompt: Et placeat blanditiis.
+                            - description: Quibusdam est aut dicta repellat quam dolorum.
+                              key: Ut porro nihil dolores qui cumque porro.
+                              options:
+                                - Excepturi deleniti ullam natus eligendi.
+                                - Harum eos quos.
+                                - Et sunt quo odit iure.
+                              prompt: Et placeat blanditiis.
+                            - description: Quibusdam est aut dicta repellat quam dolorum.
+                              key: Ut porro nihil dolores qui cumque porro.
+                              options:
+                                - Excepturi deleniti ullam natus eligendi.
+                                - Harum eos quos.
+                                - Et sunt quo odit iure.
+                              prompt: Et placeat blanditiis.
+                          summary: Nihil sunt ea molestiae voluptate aut.
+                        - actor_key: Optio explicabo delectus.
+                          description: Consequatur veniam recusandae non facilis maxime natus.
+                          key: Non optio libero.
+                          kind: step
+                          questions:
+                            - description: Quibusdam est aut dicta repellat quam dolorum.
+                              key: Ut porro nihil dolores qui cumque porro.
+                              options:
+                                - Excepturi deleniti ullam natus eligendi.
+                                - Harum eos quos.
+                                - Et sunt quo odit iure.
+                              prompt: Et placeat blanditiis.
+                            - description: Quibusdam est aut dicta repellat quam dolorum.
+                              key: Ut porro nihil dolores qui cumque porro.
+                              options:
+                                - Excepturi deleniti ullam natus eligendi.
+                                - Harum eos quos.
+                                - Et sunt quo odit iure.
+                              prompt: Et placeat blanditiis.
+                            - description: Quibusdam est aut dicta repellat quam dolorum.
+                              key: Ut porro nihil dolores qui cumque porro.
+                              options:
+                                - Excepturi deleniti ullam natus eligendi.
+                                - Harum eos quos.
+                                - Et sunt quo odit iure.
+                              prompt: Et placeat blanditiis.
+                          summary: Nihil sunt ea molestiae voluptate aut.
+                        - actor_key: Optio explicabo delectus.
+                          description: Consequatur veniam recusandae non facilis maxime natus.
+                          key: Non optio libero.
+                          kind: step
+                          questions:
+                            - description: Quibusdam est aut dicta repellat quam dolorum.
+                              key: Ut porro nihil dolores qui cumque porro.
+                              options:
+                                - Excepturi deleniti ullam natus eligendi.
+                                - Harum eos quos.
+                                - Et sunt quo odit iure.
+                              prompt: Et placeat blanditiis.
+                            - description: Quibusdam est aut dicta repellat quam dolorum.
+                              key: Ut porro nihil dolores qui cumque porro.
+                              options:
+                                - Excepturi deleniti ullam natus eligendi.
+                                - Harum eos quos.
+                                - Et sunt quo odit iure.
+                              prompt: Et placeat blanditiis.
+                            - description: Quibusdam est aut dicta repellat quam dolorum.
+                              key: Ut porro nihil dolores qui cumque porro.
+                              options:
+                                - Excepturi deleniti ullam natus eligendi.
+                                - Harum eos quos.
+                                - Et sunt quo odit iure.
+                              prompt: Et placeat blanditiis.
+                          summary: Nihil sunt ea molestiae voluptate aut.
+                      title: Mollitia rerum nihil consectetur excepturi aspernatur.
+                  name: Et minima.
             summary: Et repellendus nemo.
             ui_composition:
                 composed_for_revision: Est et sit voluptatibus quibusdam quisquam.
@@ -3243,12 +4338,16 @@ definitions:
                 example: Ipsum soluta officiis facilis dolorem quae.
             design_source:
                 type: string
-                description: Goa design source the analysis was made against (the target's design/*.go files). Surla saves it with the card and includes it in request_revision; it does not interpret it. When omitted on a server with a bound workspace, Surla records design/*.go from the bound workspace; when omitted without a bound workspace, the card records no design.
+                description: Goa design source the analysis was made against (the target's design/*.go files). Surla saves it with the card and includes it in request_revision; it does not interpret it. When omitted on a server with a bound workspace, Surla records design/*.go from the bound workspace; when omitted without a bound workspace, the card records no design. Cannot be combined with story_refresh_op_id.
                 example: Quia placeat maiores voluptatem voluptatem.
             prompt:
                 type: string
                 description: Operator feature request.
                 example: Enim distinctio et sunt sunt et.
+            story_refresh_op_id:
+                type: string
+                description: Optional op_id of a succeeded refresh_story operation for the bound workspace whose evaluated Stories this card adopts. When set, design_source must be omitted; Surla reads one workspace snapshot, requires its snapshot_digest to match the operation's, and records both the evaluated Stories and that snapshot's design/*.go on the card. Omit when the card has no Story.
+                example: In eaque eveniet facere.
         example:
             analysis:
                 ambiguities:
@@ -3286,6 +4385,7 @@ definitions:
             change_id: Ipsum soluta officiis facilis dolorem quae.
             design_source: Quia placeat maiores voluptatem voluptatem.
             prompt: Enim distinctio et sunt sunt et.
+            story_refresh_op_id: In eaque eveniet facere.
         required:
             - change_id
             - prompt
@@ -3319,7 +4419,7 @@ definitions:
                 example: Optio ratione suscipit et neque officia.
             design_source:
                 type: string
-                description: Updated Goa design source the analysis was made against (the target's design/*.go files). Surla saves it with the card and includes it in request_revision; it does not interpret it. When omitted on a workspace-backed card with a bound workspace, Surla records design/*.go from the bound workspace again; otherwise the card's saved design source is kept.
+                description: Updated Goa design source the analysis was made against (the target's design/*.go files). Surla saves it with the card and includes it in request_revision; it does not interpret it. When omitted on a workspace-backed card without Stories and with a bound workspace, Surla records design/*.go from the bound workspace again; otherwise the card's saved design source is kept. Cannot be set when story_refresh_op_id is set or when the card already has adopted Stories.
                 example: Qui itaque.
             prompt:
                 type: string
@@ -3329,6 +4429,10 @@ definitions:
                 type: string
                 description: Current CP1 request_revision digest being revised.
                 example: Neque dolore optio.
+            story_refresh_op_id:
+                type: string
+                description: Optional op_id of a succeeded refresh_story operation for the bound workspace whose evaluated Stories this revision adopts. When set, design_source must be omitted and the card must not use a caller-supplied design_source; Surla reads one workspace snapshot, requires its snapshot_digest to match the operation's, and records both the evaluated Stories and that snapshot's design/*.go on the revised card. When omitted on a card that already has Stories, the card's saved Stories and saved design_source are kept together.
+                example: Assumenda tenetur minus et magnam consequatur.
         example:
             analysis:
                 ambiguities:
@@ -3372,6 +4476,7 @@ definitions:
             design_source: Qui itaque.
             prompt: Omnis est.
             request_revision: Neque dolore optio.
+            story_refresh_op_id: Assumenda tenetur minus et magnam consequatur.
         required:
             - change_id
             - request_revision
@@ -3776,11 +4881,11 @@ definitions:
                 example: Temporibus et qui dicta repellat molestiae.
             op_id:
                 type: string
-                description: Identifier of the caller's current Story refresh operation for the bound workspace; present when state is running, succeeded, or failed.
+                description: Identifier of the caller's current Story refresh operation for the bound workspace; present when state is running, succeeded, or failed. Pass it as story_refresh_op_id to propose_change or revise_change once state is succeeded to adopt the evaluated Story into a Change Card.
                 example: Non alias aliquid.
             snapshot_digest:
                 type: string
-                description: Canonical SHA-256 digest (sha256:<hex>) of the workspace module snapshot read when this refresh started; present when state is running, succeeded, or failed.
+                description: Canonical SHA-256 digest of the workspace module snapshot read when this refresh started; present when state is running, succeeded, or failed.
                 example: Incidunt voluptatem aperiam qui explicabo non rerum.
             state:
                 type: string

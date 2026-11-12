@@ -33,8 +33,10 @@ type Service interface {
 	// analysis of it. Surla checks the analysis's structure and cross-field rules,
 	// gives ambiguities the IDs <change_id>-ambiguity-NN and examples the IDs
 	// check_01, check_02, ... in list order, binds the card to the authenticated
-	// owner, records the design source (design/*.go from the bound workspace when
-	// design_source is omitted), and computes request_revision. A card without
+	// owner, records the design source (or, when story_refresh_op_id is given,
+	// reads one workspace snapshot, verifies its digest against the caller's
+	// succeeded refresh_story operation, and records both its evaluated Stories
+	// and its design/*.go files), and computes request_revision. A card without
 	// ambiguities is confirmed at once; otherwise it waits for confirm_intent.
 	// Surla runs no model for this step and cannot judge whether the analysis is
 	// complete or correct.
@@ -44,11 +46,14 @@ type Service interface {
 	// current request_revision. The analysis accounts for every current example
 	// exactly once, keeping or editing it through prior_id or dropping it through
 	// removed_example_ids. Surla keeps the IDs of kept examples, gives new
-	// examples the lowest check_NN ID neither card uses, records design/*.go from
-	// the bound workspace again when design_source is omitted on a
-	// workspace-backed card (otherwise keeps the card's saved design source), and
-	// saves the new revision in needs_confirmation status for operator review. The
-	// new revision's answers, confirmed_by and any approval are cleared: earlier
+	// examples the lowest check_NN ID neither card uses, adopts the evaluated
+	// Stories and design/*.go from the single workspace snapshot verified against
+	// story_refresh_op_id when story_refresh_op_id is given (or keeps the saved
+	// Stories and saved design_source together when story_refresh_op_id is omitted
+	// on a card with Stories, or records design/*.go from the bound workspace
+	// again when omitted on a workspace-backed card without Stories), and saves
+	// the new revision in needs_confirmation status for operator review. The new
+	// revision's answers, confirmed_by and any approval are cleared: earlier
 	// decisions remain only where the analysis restates them in its summary,
 	// examples or preserved behaviors. Surla runs no model for this step and
 	// cannot judge whether the analysis is complete or correct.
@@ -507,6 +512,10 @@ type ChangeCardResult struct {
 	Examples []*ExampleItem
 	// Existing contract invariants preserved by this change.
 	PreservedBehaviors []string
+	// Evaluated domain Stories adopted from refresh_story for this Change Card
+	// revision in declaration order; omitted when the card has no Stories.
+	// Included in request_revision.
+	Stories []*StorySummaryItem
 	// Authenticated principal that confirmed the Change Card.
 	ConfirmedBy *string
 	// SHA-256 digest of the canonical versioned Change Card.
@@ -802,8 +811,16 @@ type ProposeChangePayload struct {
 	// files). Surla saves it with the card and includes it in request_revision; it
 	// does not interpret it. When omitted on a server with a bound workspace,
 	// Surla records design/*.go from the bound workspace; when omitted without a
-	// bound workspace, the card records no design.
+	// bound workspace, the card records no design. Cannot be combined with
+	// story_refresh_op_id.
 	DesignSource *string
+	// Optional op_id of a succeeded refresh_story operation for the bound
+	// workspace whose evaluated Stories this card adopts. When set, design_source
+	// must be omitted; Surla reads one workspace snapshot, requires its
+	// snapshot_digest to match the operation's, and records both the evaluated
+	// Stories and that snapshot's design/*.go on the card. Omit when the card has
+	// no Story.
+	StoryRefreshOpID *string
 	// Your analysis of prompt against the target's current design.
 	Analysis *CP1Analysis
 }
@@ -829,9 +846,20 @@ type ReviseChangePayload struct {
 	// Updated Goa design source the analysis was made against (the target's
 	// design/*.go files). Surla saves it with the card and includes it in
 	// request_revision; it does not interpret it. When omitted on a
-	// workspace-backed card with a bound workspace, Surla records design/*.go from
-	// the bound workspace again; otherwise the card's saved design source is kept.
+	// workspace-backed card without Stories and with a bound workspace, Surla
+	// records design/*.go from the bound workspace again; otherwise the card's
+	// saved design source is kept. Cannot be set when story_refresh_op_id is set
+	// or when the card already has adopted Stories.
 	DesignSource *string
+	// Optional op_id of a succeeded refresh_story operation for the bound
+	// workspace whose evaluated Stories this revision adopts. When set,
+	// design_source must be omitted and the card must not use a caller-supplied
+	// design_source; Surla reads one workspace snapshot, requires its
+	// snapshot_digest to match the operation's, and records both the evaluated
+	// Stories and that snapshot's design/*.go on the revised card. When omitted on
+	// a card that already has Stories, the card's saved Stories and saved
+	// design_source are kept together.
+	StoryRefreshOpID *string
 	// Your analysis of the revised prompt against the current card and the
 	// target's current design.
 	Analysis *CP1RevisionAnalysis
@@ -897,13 +925,14 @@ type StoryQuestionItem struct {
 // method.
 type StoryRefreshResult struct {
 	// Identifier of the caller's current Story refresh operation for the bound
-	// workspace; present when state is running, succeeded, or failed.
+	// workspace; present when state is running, succeeded, or failed. Pass it as
+	// story_refresh_op_id to propose_change or revise_change once state is
+	// succeeded to adopt the evaluated Story into a Change Card.
 	OpID *string
 	// Current operation state: none, running, succeeded, or failed.
 	State string
-	// Canonical SHA-256 digest (sha256:<hex>) of the workspace module snapshot
-	// read when this refresh started; present when state is running, succeeded, or
-	// failed.
+	// Canonical SHA-256 digest of the workspace module snapshot read when this
+	// refresh started; present when state is running, succeeded, or failed.
 	SnapshotDigest *string
 	// Evaluated domain Stories in declaration order when state is succeeded (empty
 	// when the design declares no Stories or when state is none, running, or
@@ -2140,6 +2169,10 @@ type jsonChangeCardResultTransport struct {
 	Examples []*jsonExampleItemTransport `json:"examples"`
 	// Existing contract invariants preserved by this change.
 	PreservedBehaviors []string `json:"preserved_behaviors"`
+	// Evaluated domain Stories adopted from refresh_story for this Change Card
+	// revision in declaration order; omitted when the card has no Stories.
+	// Included in request_revision.
+	Stories []*jsonStorySummaryItemTransport `json:"stories,omitempty"`
 	// Authenticated principal that confirmed the Change Card.
 	ConfirmedBy *string `json:"confirmed_by,omitempty"`
 	// SHA-256 digest of the canonical versioned Change Card.
@@ -2203,6 +2236,13 @@ func validatejsonChangeCardResultTransport(value *jsonChangeCardResultTransport)
 	for _, e := range value.Examples {
 		if e != nil {
 			if err2 := validatejsonExampleItemTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	for _, e := range value.Stories {
+		if e != nil {
+			if err2 := validatejsonStorySummaryItemTransport(e); err2 != nil {
 				err = goa.MergeErrors(err, err2)
 			}
 		}
@@ -2885,8 +2925,16 @@ type jsonProposeChangePayloadTransport struct {
 	// files). Surla saves it with the card and includes it in request_revision; it
 	// does not interpret it. When omitted on a server with a bound workspace,
 	// Surla records design/*.go from the bound workspace; when omitted without a
-	// bound workspace, the card records no design.
+	// bound workspace, the card records no design. Cannot be combined with
+	// story_refresh_op_id.
 	DesignSource *string `json:"design_source,omitempty"`
+	// Optional op_id of a succeeded refresh_story operation for the bound
+	// workspace whose evaluated Stories this card adopts. When set, design_source
+	// must be omitted; Surla reads one workspace snapshot, requires its
+	// snapshot_digest to match the operation's, and records both the evaluated
+	// Stories and that snapshot's design/*.go on the card. Omit when the card has
+	// no Story.
+	StoryRefreshOpID *string `json:"story_refresh_op_id,omitempty"`
 	// Your analysis of prompt against the target's current design.
 	Analysis *jsonCP1AnalysisTransport `json:"analysis"`
 }
@@ -2943,9 +2991,20 @@ type jsonReviseChangePayloadTransport struct {
 	// Updated Goa design source the analysis was made against (the target's
 	// design/*.go files). Surla saves it with the card and includes it in
 	// request_revision; it does not interpret it. When omitted on a
-	// workspace-backed card with a bound workspace, Surla records design/*.go from
-	// the bound workspace again; otherwise the card's saved design source is kept.
+	// workspace-backed card without Stories and with a bound workspace, Surla
+	// records design/*.go from the bound workspace again; otherwise the card's
+	// saved design source is kept. Cannot be set when story_refresh_op_id is set
+	// or when the card already has adopted Stories.
 	DesignSource *string `json:"design_source,omitempty"`
+	// Optional op_id of a succeeded refresh_story operation for the bound
+	// workspace whose evaluated Stories this revision adopts. When set,
+	// design_source must be omitted and the card must not use a caller-supplied
+	// design_source; Surla reads one workspace snapshot, requires its
+	// snapshot_digest to match the operation's, and records both the evaluated
+	// Stories and that snapshot's design/*.go on the revised card. When omitted on
+	// a card that already has Stories, the card's saved Stories and saved
+	// design_source are kept together.
+	StoryRefreshOpID *string `json:"story_refresh_op_id,omitempty"`
 	// Your analysis of the revised prompt against the current card and the
 	// target's current design.
 	Analysis *jsonCP1RevisionAnalysisTransport `json:"analysis"`
@@ -3129,13 +3188,14 @@ func validatejsonStoryQuestionItemTransport(value *jsonStoryQuestionItemTranspor
 // jsonStoryRefreshResultTransport stores JSON fields until they have been validated.
 type jsonStoryRefreshResultTransport struct {
 	// Identifier of the caller's current Story refresh operation for the bound
-	// workspace; present when state is running, succeeded, or failed.
+	// workspace; present when state is running, succeeded, or failed. Pass it as
+	// story_refresh_op_id to propose_change or revise_change once state is
+	// succeeded to adopt the evaluated Story into a Change Card.
 	OpID *string `json:"op_id,omitempty"`
 	// Current operation state: none, running, succeeded, or failed.
 	State *string `json:"state"`
-	// Canonical SHA-256 digest (sha256:<hex>) of the workspace module snapshot
-	// read when this refresh started; present when state is running, succeeded, or
-	// failed.
+	// Canonical SHA-256 digest of the workspace module snapshot read when this
+	// refresh started; present when state is running, succeeded, or failed.
 	SnapshotDigest *string `json:"snapshot_digest,omitempty"`
 	// Evaluated domain Stories in declaration order when state is succeeded (empty
 	// when the design declares no Stories or when state is none, running, or
@@ -4385,6 +4445,13 @@ func validateChangeCardResultOriginal(value *ChangeCardResult) (err error) {
 			}
 		}
 	}
+	for _, e := range value.Stories {
+		if e != nil {
+			if err2 := validateStorySummaryItemOriginal(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
 	if value.Approval != nil {
 		if err2 := validateApprovalItemOriginal(value.Approval); err2 != nil {
 			err = goa.MergeErrors(err, err2)
@@ -4402,6 +4469,75 @@ func validateChangeCardResultOriginal(value *ChangeCardResult) (err error) {
 func validateExampleItemOriginal(value *ExampleItem) (err error) {
 	if !(value.VerificationKind == "deterministic" || value.VerificationKind == "model_judged") {
 		err = goa.MergeErrors(err, goa.InvalidEnumValueError("value.verification_kind", value.VerificationKind, []any{"deterministic", "model_judged"}))
+	}
+	return err
+}
+
+// validateStorySummaryItemOriginal checks the original typed value before JSON conversion.
+func validateStorySummaryItemOriginal(value *StorySummaryItem) (err error) {
+	if value.Actors == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("actors", "value"))
+	}
+	if value.Flows == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("flows", "value"))
+	}
+	for _, e := range value.Flows {
+		if e != nil {
+			if err2 := validateStoryFlowItemOriginal(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	return err
+}
+
+// validateStoryFlowItemOriginal checks the original typed value before JSON conversion.
+func validateStoryFlowItemOriginal(value *StoryFlowItem) (err error) {
+	if value.Steps == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("steps", "value"))
+	}
+	if value.Questions == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("questions", "value"))
+	}
+	for _, e := range value.Steps {
+		if e != nil {
+			if err2 := validateStoryStepItemOriginal(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	for _, e := range value.Questions {
+		if e != nil {
+			if err2 := validateStoryQuestionItemOriginal(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	return err
+}
+
+// validateStoryStepItemOriginal checks the original typed value before JSON conversion.
+func validateStoryStepItemOriginal(value *StoryStepItem) (err error) {
+	if value.Questions == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("questions", "value"))
+	}
+	if !(value.Kind == "start" || value.Kind == "step" || value.Kind == "outcome") {
+		err = goa.MergeErrors(err, goa.InvalidEnumValueError("value.kind", value.Kind, []any{"start", "step", "outcome"}))
+	}
+	for _, e := range value.Questions {
+		if e != nil {
+			if err2 := validateStoryQuestionItemOriginal(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	return err
+}
+
+// validateStoryQuestionItemOriginal checks the original typed value before JSON conversion.
+func validateStoryQuestionItemOriginal(value *StoryQuestionItem) (err error) {
+	if value.Options == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("options", "value"))
 	}
 	return err
 }
@@ -4640,57 +4776,6 @@ func validateStartLiveTargetPayloadOriginal(value *StartLiveTargetPayload) (err 
 	return err
 }
 
-// validateStoryFlowItemOriginal checks the original typed value before JSON conversion.
-func validateStoryFlowItemOriginal(value *StoryFlowItem) (err error) {
-	if value.Steps == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("steps", "value"))
-	}
-	if value.Questions == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("questions", "value"))
-	}
-	for _, e := range value.Steps {
-		if e != nil {
-			if err2 := validateStoryStepItemOriginal(e); err2 != nil {
-				err = goa.MergeErrors(err, err2)
-			}
-		}
-	}
-	for _, e := range value.Questions {
-		if e != nil {
-			if err2 := validateStoryQuestionItemOriginal(e); err2 != nil {
-				err = goa.MergeErrors(err, err2)
-			}
-		}
-	}
-	return err
-}
-
-// validateStoryStepItemOriginal checks the original typed value before JSON conversion.
-func validateStoryStepItemOriginal(value *StoryStepItem) (err error) {
-	if value.Questions == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("questions", "value"))
-	}
-	if !(value.Kind == "start" || value.Kind == "step" || value.Kind == "outcome") {
-		err = goa.MergeErrors(err, goa.InvalidEnumValueError("value.kind", value.Kind, []any{"start", "step", "outcome"}))
-	}
-	for _, e := range value.Questions {
-		if e != nil {
-			if err2 := validateStoryQuestionItemOriginal(e); err2 != nil {
-				err = goa.MergeErrors(err, err2)
-			}
-		}
-	}
-	return err
-}
-
-// validateStoryQuestionItemOriginal checks the original typed value before JSON conversion.
-func validateStoryQuestionItemOriginal(value *StoryQuestionItem) (err error) {
-	if value.Options == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("options", "value"))
-	}
-	return err
-}
-
 // validateStoryRefreshResultOriginal checks the original typed value before JSON conversion.
 func validateStoryRefreshResultOriginal(value *StoryRefreshResult) (err error) {
 	if value.Stories == nil {
@@ -4702,24 +4787,6 @@ func validateStoryRefreshResultOriginal(value *StoryRefreshResult) (err error) {
 	for _, e := range value.Stories {
 		if e != nil {
 			if err2 := validateStorySummaryItemOriginal(e); err2 != nil {
-				err = goa.MergeErrors(err, err2)
-			}
-		}
-	}
-	return err
-}
-
-// validateStorySummaryItemOriginal checks the original typed value before JSON conversion.
-func validateStorySummaryItemOriginal(value *StorySummaryItem) (err error) {
-	if value.Actors == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("actors", "value"))
-	}
-	if value.Flows == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("flows", "value"))
-	}
-	for _, e := range value.Flows {
-		if e != nil {
-			if err2 := validateStoryFlowItemOriginal(e); err2 != nil {
 				err = goa.MergeErrors(err, err2)
 			}
 		}
@@ -6690,6 +6757,16 @@ func EncodeChangeCardResult(in *ChangeCardResult) ([]byte, error) {
 		for i, val := range in.PreservedBehaviors {
 			body.PreservedBehaviors[i] = val
 		}
+		if in.Stories != nil {
+			body.Stories = make([]*jsonStorySummaryItemTransport, len(in.Stories))
+			for i, val := range in.Stories {
+				if val == nil {
+					body.Stories[i] = nil
+					continue
+				}
+				body.Stories[i] = encodeStorySummaryItemToStorySummaryItemTransport(val)
+			}
+		}
 		if in.UIComposition != nil {
 			body.UIComposition = encodeUICompositionItemToUICompositionItemTransport(in.UIComposition)
 		}
@@ -6764,6 +6841,16 @@ func ValidateChangeCardResultValue(in *ChangeCardResult) error {
 		body.PreservedBehaviors = make([]string, len(in.PreservedBehaviors))
 		for i, val := range in.PreservedBehaviors {
 			body.PreservedBehaviors[i] = val
+		}
+		if in.Stories != nil {
+			body.Stories = make([]*jsonStorySummaryItemTransport, len(in.Stories))
+			for i, val := range in.Stories {
+				if val == nil {
+					body.Stories[i] = nil
+					continue
+				}
+				body.Stories[i] = encodeStorySummaryItemToStorySummaryItemTransport(val)
+			}
 		}
 		if in.UIComposition != nil {
 			body.UIComposition = encodeUICompositionItemToUICompositionItemTransport(in.UIComposition)
@@ -6843,6 +6930,16 @@ func DecodeChangeCardResult(data []byte) (out *ChangeCardResult, err error) {
 		out.PreservedBehaviors = make([]string, len(body.PreservedBehaviors))
 		for i, val := range body.PreservedBehaviors {
 			out.PreservedBehaviors[i] = val
+		}
+		if body.Stories != nil {
+			out.Stories = make([]*StorySummaryItem, len(body.Stories))
+			for i, val := range body.Stories {
+				if val == nil {
+					out.Stories[i] = nil
+					continue
+				}
+				out.Stories[i] = decodeStorySummaryItemTransportToStorySummaryItem(val)
+			}
 		}
 		if body.UIComposition != nil {
 			out.UIComposition = decodeUICompositionItemTransportToUICompositionItem(body.UIComposition)
@@ -7799,7 +7896,7 @@ func DecodeExampleItem(data []byte) (out *ExampleItem, err error) {
 	if err != nil {
 		return out, fmt.Errorf("decode ExampleItem JSON: %w", err)
 	}
-	if err := validateChangeCardResultJSONValue5("", root, ""); err != nil {
+	if err := validateChangeCardResultJSONValue15("", root, ""); err != nil {
 		return out, fmt.Errorf("decode ExampleItem JSON: %w", err)
 	}
 	var body *jsonExampleItemTransport
@@ -8879,9 +8976,10 @@ func EncodeProposeChangePayload(in *ProposeChangePayload) ([]byte, error) {
 	var body *jsonProposeChangePayloadTransport
 	{
 		body = &jsonProposeChangePayloadTransport{
-			ChangeID:     &in.ChangeID,
-			Prompt:       &in.Prompt,
-			DesignSource: in.DesignSource,
+			ChangeID:         &in.ChangeID,
+			Prompt:           &in.Prompt,
+			DesignSource:     in.DesignSource,
+			StoryRefreshOpID: in.StoryRefreshOpID,
 		}
 		body.Analysis = encodeCP1AnalysisToCP1AnalysisTransport(in.Analysis)
 	}
@@ -8913,9 +9011,10 @@ func ValidateProposeChangePayloadValue(in *ProposeChangePayload) error {
 	var body *jsonProposeChangePayloadTransport
 	{
 		body = &jsonProposeChangePayloadTransport{
-			ChangeID:     &in.ChangeID,
-			Prompt:       &in.Prompt,
-			DesignSource: in.DesignSource,
+			ChangeID:         &in.ChangeID,
+			Prompt:           &in.Prompt,
+			DesignSource:     in.DesignSource,
+			StoryRefreshOpID: in.StoryRefreshOpID,
 		}
 		body.Analysis = encodeCP1AnalysisToCP1AnalysisTransport(in.Analysis)
 	}
@@ -8951,9 +9050,10 @@ func DecodeProposeChangePayload(data []byte) (out *ProposeChangePayload, err err
 	}
 	{
 		out = &ProposeChangePayload{
-			ChangeID:     *body.ChangeID,
-			Prompt:       *body.Prompt,
-			DesignSource: body.DesignSource,
+			ChangeID:         *body.ChangeID,
+			Prompt:           *body.Prompt,
+			DesignSource:     body.DesignSource,
+			StoryRefreshOpID: body.StoryRefreshOpID,
 		}
 		out.Analysis = decodeCP1AnalysisTransportToCP1Analysis(body.Analysis)
 	}
@@ -9051,10 +9151,11 @@ func EncodeReviseChangePayload(in *ReviseChangePayload) ([]byte, error) {
 	var body *jsonReviseChangePayloadTransport
 	{
 		body = &jsonReviseChangePayloadTransport{
-			ChangeID:        &in.ChangeID,
-			RequestRevision: &in.RequestRevision,
-			Prompt:          &in.Prompt,
-			DesignSource:    in.DesignSource,
+			ChangeID:         &in.ChangeID,
+			RequestRevision:  &in.RequestRevision,
+			Prompt:           &in.Prompt,
+			DesignSource:     in.DesignSource,
+			StoryRefreshOpID: in.StoryRefreshOpID,
 		}
 		body.Analysis = encodeCP1RevisionAnalysisToCP1RevisionAnalysisTransport(in.Analysis)
 	}
@@ -9086,10 +9187,11 @@ func ValidateReviseChangePayloadValue(in *ReviseChangePayload) error {
 	var body *jsonReviseChangePayloadTransport
 	{
 		body = &jsonReviseChangePayloadTransport{
-			ChangeID:        &in.ChangeID,
-			RequestRevision: &in.RequestRevision,
-			Prompt:          &in.Prompt,
-			DesignSource:    in.DesignSource,
+			ChangeID:         &in.ChangeID,
+			RequestRevision:  &in.RequestRevision,
+			Prompt:           &in.Prompt,
+			DesignSource:     in.DesignSource,
+			StoryRefreshOpID: in.StoryRefreshOpID,
 		}
 		body.Analysis = encodeCP1RevisionAnalysisToCP1RevisionAnalysisTransport(in.Analysis)
 	}
@@ -9125,10 +9227,11 @@ func DecodeReviseChangePayload(data []byte) (out *ReviseChangePayload, err error
 	}
 	{
 		out = &ReviseChangePayload{
-			ChangeID:        *body.ChangeID,
-			RequestRevision: *body.RequestRevision,
-			Prompt:          *body.Prompt,
-			DesignSource:    body.DesignSource,
+			ChangeID:         *body.ChangeID,
+			RequestRevision:  *body.RequestRevision,
+			Prompt:           *body.Prompt,
+			DesignSource:     body.DesignSource,
+			StoryRefreshOpID: body.StoryRefreshOpID,
 		}
 		out.Analysis = decodeCP1RevisionAnalysisTransportToCP1RevisionAnalysis(body.Analysis)
 	}
@@ -9353,7 +9456,7 @@ func DecodeStoryActorItem(data []byte) (out *StoryActorItem, err error) {
 	if err != nil {
 		return out, fmt.Errorf("decode StoryActorItem JSON: %w", err)
 	}
-	if err := validateStoryActorItemJSONValue("", root, ""); err != nil {
+	if err := validateChangeCardResultJSONValue20("", root, ""); err != nil {
 		return out, fmt.Errorf("decode StoryActorItem JSON: %w", err)
 	}
 	var body *jsonStoryActorItemTransport
@@ -9476,7 +9579,7 @@ func DecodeStoryFlowItem(data []byte) (out *StoryFlowItem, err error) {
 	if err != nil {
 		return out, fmt.Errorf("decode StoryFlowItem JSON: %w", err)
 	}
-	if err := validateStoryFlowItemJSONValue("", root, ""); err != nil {
+	if err := validateChangeCardResultJSONValue4("", root, ""); err != nil {
 		return out, fmt.Errorf("decode StoryFlowItem JSON: %w", err)
 	}
 	var body *jsonStoryFlowItemTransport
@@ -9590,7 +9693,7 @@ func DecodeStoryQuestionItem(data []byte) (out *StoryQuestionItem, err error) {
 	if err != nil {
 		return out, fmt.Errorf("decode StoryQuestionItem JSON: %w", err)
 	}
-	if err := validateStoryFlowItemJSONValue3("", root, ""); err != nil {
+	if err := validateChangeCardResultJSONValue6("", root, ""); err != nil {
 		return out, fmt.Errorf("decode StoryQuestionItem JSON: %w", err)
 	}
 	var body *jsonStoryQuestionItemTransport
@@ -9822,7 +9925,7 @@ func DecodeStoryStepItem(data []byte) (out *StoryStepItem, err error) {
 	if err != nil {
 		return out, fmt.Errorf("decode StoryStepItem JSON: %w", err)
 	}
-	if err := validateStoryFlowItemJSONValue6("", root, ""); err != nil {
+	if err := validateChangeCardResultJSONValue9("", root, ""); err != nil {
 		return out, fmt.Errorf("decode StoryStepItem JSON: %w", err)
 	}
 	var body *jsonStoryStepItemTransport
@@ -9951,7 +10054,7 @@ func DecodeStorySummaryItem(data []byte) (out *StorySummaryItem, err error) {
 	if err != nil {
 		return out, fmt.Errorf("decode StorySummaryItem JSON: %w", err)
 	}
-	if err := validateStoryRefreshResultJSONValue3("", root, ""); err != nil {
+	if err := validateChangeCardResultJSONValue18("", root, ""); err != nil {
 		return out, fmt.Errorf("decode StorySummaryItem JSON: %w", err)
 	}
 	var body *jsonStorySummaryItemTransport
@@ -10778,7 +10881,7 @@ func DecodeUICompositionItem(data []byte) (out *UICompositionItem, err error) {
 	if err != nil {
 		return out, fmt.Errorf("decode UICompositionItem JSON: %w", err)
 	}
-	if err := validateChangeCardResultJSONValue7("", root, ""); err != nil {
+	if err := validateChangeCardResultJSONValue11("", root, ""); err != nil {
 		return out, fmt.Errorf("decode UICompositionItem JSON: %w", err)
 	}
 	var body *jsonUICompositionItemTransport
@@ -10864,7 +10967,7 @@ func DecodeUnverifiedApprovalItem(data []byte) (out *UnverifiedApprovalItem, err
 	if err != nil {
 		return out, fmt.Errorf("decode UnverifiedApprovalItem JSON: %w", err)
 	}
-	if err := validateChangeCardResultJSONValue8("", root, ""); err != nil {
+	if err := validateChangeCardResultJSONValue12("", root, ""); err != nil {
 		return out, fmt.Errorf("decode UnverifiedApprovalItem JSON: %w", err)
 	}
 	var body *jsonUnverifiedApprovalItemTransport
@@ -15258,7 +15361,7 @@ func validateChangeCardResultJSONValue(path string, value any, description strin
 				return err
 			}
 		case "answers":
-			if err := validateChangeCardResultJSONValue3(
+			if err := validateChangeCardResultJSONValue13(
 				generatedJSONChildPath(path, key, false),
 				typed[key], "Owner-confirmed answers keyed by ambiguity question ID when status is confirmed and ambiguities is non-empty (empty when a confirmed card has no ambiguity questions). Each answer equals one of its question's declared options and takes precedence over open phrasing in summary.",
 			); err != nil {
@@ -15286,14 +15389,14 @@ func validateChangeCardResultJSONValue(path string, value any, description strin
 				return err
 			}
 		case "examples":
-			if err := validateChangeCardResultJSONValue4(
+			if err := validateChangeCardResultJSONValue14(
 				generatedJSONChildPath(path, key, false),
 				typed[key], "Concrete examples mapped to evaluator checks.",
 			); err != nil {
 				return err
 			}
 		case "preserved_behaviors":
-			if err := validateChangeCardResultJSONValue6(
+			if err := validateChangeCardResultJSONValue16(
 				generatedJSONChildPath(path, key, false),
 				typed[key], "Existing contract invariants preserved by this change.",
 			); err != nil {
@@ -15320,6 +15423,13 @@ func validateChangeCardResultJSONValue(path string, value any, description strin
 			); err != nil {
 				return err
 			}
+		case "stories":
+			if err := validateChangeCardResultJSONValue17(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Evaluated domain Stories adopted from refresh_story for this Change Card revision in declaration order; omitted when the card has no Stories. Included in request_revision.",
+			); err != nil {
+				return err
+			}
 		case "summary":
 			if err := validateAgentPolicyItemJSONValue2(
 				generatedJSONChildPath(path, key, false),
@@ -15328,14 +15438,14 @@ func validateChangeCardResultJSONValue(path string, value any, description strin
 				return err
 			}
 		case "ui_composition":
-			if err := validateChangeCardResultJSONValue7(
+			if err := validateChangeCardResultJSONValue11(
 				generatedJSONChildPath(path, key, false),
 				typed[key], "Decision view the caller composed for this revision in its analysis, when it sent one. A confirm_intent that changes answers or examples returns the new revision without it.",
 			); err != nil {
 				return err
 			}
 		case "unverified_approval":
-			if err := validateChangeCardResultJSONValue8(
+			if err := validateChangeCardResultJSONValue12(
 				generatedJSONChildPath(path, key, false),
 				typed[key], "Saved Checkpoint 5 approval of this revision when current promotion inputs could not be verified on this read (because no promotion target is configured or the target could not report its current inputs). At most one of approval or unverified_approval is set. It is never saved to disk or hashed into request_revision.",
 			); err != nil {
@@ -15353,6 +15463,7 @@ func validateChangeCardResultJSONValue(path string, value any, description strin
 				"prompt",
 				"request_revision",
 				"status",
+				"stories",
 				"summary",
 				"ui_composition",
 				"unverified_approval",
@@ -15389,8 +15500,8 @@ func validateChangeCardResultJSONValue2(path string, value any, description stri
 	return nil
 }
 
-// validateChangeCardResultJSONValue3 checks one value whose JSON shape is fixed by the generated Goa type.
-func validateChangeCardResultJSONValue3(path string, value any, description string) error {
+// validateChangeCardResultJSONValue13 checks one value whose JSON shape is fixed by the generated Goa type.
+func validateChangeCardResultJSONValue13(path string, value any, description string) error {
 	field := path
 	if field == "" {
 		field = "$payload"
@@ -15418,8 +15529,8 @@ func validateChangeCardResultJSONValue3(path string, value any, description stri
 	return nil
 }
 
-// validateChangeCardResultJSONValue4 checks one value whose JSON shape is fixed by the generated Goa type.
-func validateChangeCardResultJSONValue4(path string, value any, description string) error {
+// validateChangeCardResultJSONValue14 checks one value whose JSON shape is fixed by the generated Goa type.
+func validateChangeCardResultJSONValue14(path string, value any, description string) error {
 	field := path
 	if field == "" {
 		field = "$payload"
@@ -15435,7 +15546,7 @@ func validateChangeCardResultJSONValue4(path string, value any, description stri
 		if item == nil {
 			continue
 		}
-		if err := validateChangeCardResultJSONValue5(
+		if err := validateChangeCardResultJSONValue15(
 			generatedJSONChildPath(path, strconv.Itoa(index), true),
 			item, description,
 		); err != nil {
@@ -15445,8 +15556,8 @@ func validateChangeCardResultJSONValue4(path string, value any, description stri
 	return nil
 }
 
-// validateChangeCardResultJSONValue5 checks one value whose JSON shape is fixed by the generated Goa type.
-func validateChangeCardResultJSONValue5(path string, value any, description string) error {
+// validateChangeCardResultJSONValue15 checks one value whose JSON shape is fixed by the generated Goa type.
+func validateChangeCardResultJSONValue15(path string, value any, description string) error {
 	field := path
 	if field == "" {
 		field = "$payload"
@@ -15513,8 +15624,8 @@ func validateChangeCardResultJSONValue5(path string, value any, description stri
 	return nil
 }
 
-// validateChangeCardResultJSONValue6 checks one value whose JSON shape is fixed by the generated Goa type.
-func validateChangeCardResultJSONValue6(path string, value any, description string) error {
+// validateChangeCardResultJSONValue16 checks one value whose JSON shape is fixed by the generated Goa type.
+func validateChangeCardResultJSONValue16(path string, value any, description string) error {
 	field := path
 	if field == "" {
 		field = "$payload"
@@ -15537,8 +15648,518 @@ func validateChangeCardResultJSONValue6(path string, value any, description stri
 	return nil
 }
 
+// validateChangeCardResultJSONValue17 checks one value whose JSON shape is fixed by the generated Goa type.
+func validateChangeCardResultJSONValue17(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "array", "null", description)
+	}
+	typed, ok := value.([]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "array", decodedJSONType(value), description)
+	}
+	for index, item := range typed {
+		if item == nil {
+			continue
+		}
+		if err := validateChangeCardResultJSONValue18(
+			generatedJSONChildPath(path, strconv.Itoa(index), true),
+			item, description,
+		); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateChangeCardResultJSONValue18 checks one value whose JSON shape is fixed by the generated Goa type.
+func validateChangeCardResultJSONValue18(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "actors":
+			if err := validateChangeCardResultJSONValue19(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Domain roles declared in the Story in declaration order.",
+			); err != nil {
+				return err
+			}
+		case "description":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Optional longer explanation of the Story.",
+			); err != nil {
+				return err
+			}
+		case "flows":
+			if err := validateChangeCardResultJSONValue3(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Timeline paths declared in the Story in declaration order.",
+			); err != nil {
+				return err
+			}
+		case "name":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Human-facing Story title.",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"actors",
+				"description",
+				"flows",
+				"name",
+			})
+		}
+	}
+	return nil
+}
+
+// validateChangeCardResultJSONValue19 checks one value whose JSON shape is fixed by the generated Goa type.
+func validateChangeCardResultJSONValue19(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "array", "null", description)
+	}
+	typed, ok := value.([]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "array", decodedJSONType(value), description)
+	}
+	for index, item := range typed {
+		if item == nil {
+			continue
+		}
+		if err := validateChangeCardResultJSONValue20(
+			generatedJSONChildPath(path, strconv.Itoa(index), true),
+			item, description,
+		); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateChangeCardResultJSONValue20 checks one value whose JSON shape is fixed by the generated Goa type.
+func validateChangeCardResultJSONValue20(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "description":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Optional longer explanation of the actor role.",
+			); err != nil {
+				return err
+			}
+		case "key":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Story-scoped actor key.",
+			); err != nil {
+				return err
+			}
+		case "title":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Human-facing actor label.",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"description",
+				"key",
+				"title",
+			})
+		}
+	}
+	return nil
+}
+
+// validateChangeCardResultJSONValue3 checks one value whose JSON shape is fixed by the generated Goa type.
+func validateChangeCardResultJSONValue3(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "array", "null", description)
+	}
+	typed, ok := value.([]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "array", decodedJSONType(value), description)
+	}
+	for index, item := range typed {
+		if item == nil {
+			continue
+		}
+		if err := validateChangeCardResultJSONValue4(
+			generatedJSONChildPath(path, strconv.Itoa(index), true),
+			item, description,
+		); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateChangeCardResultJSONValue4 checks one value whose JSON shape is fixed by the generated Goa type.
+func validateChangeCardResultJSONValue4(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "complete":
+			if err := validateAgentPolicyItemJSONValue3(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "True when the flow has a start, at least one outcome, and no open questions on the flow or any of its steps.",
+			); err != nil {
+				return err
+			}
+		case "description":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Optional longer explanation of the flow.",
+			); err != nil {
+				return err
+			}
+		case "key":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Story-scoped flow key.",
+			); err != nil {
+				return err
+			}
+		case "questions":
+			if err := validateChangeCardResultJSONValue5(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Unresolved flow-level decisions in declaration order.",
+			); err != nil {
+				return err
+			}
+		case "steps":
+			if err := validateChangeCardResultJSONValue8(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Starting, intermediate, and outcome steps in declaration order.",
+			); err != nil {
+				return err
+			}
+		case "title":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Human-facing flow title.",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"complete",
+				"description",
+				"key",
+				"questions",
+				"steps",
+				"title",
+			})
+		}
+	}
+	return nil
+}
+
+// validateChangeCardResultJSONValue5 checks one value whose JSON shape is fixed by the generated Goa type.
+func validateChangeCardResultJSONValue5(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "array", "null", description)
+	}
+	typed, ok := value.([]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "array", decodedJSONType(value), description)
+	}
+	for index, item := range typed {
+		if item == nil {
+			continue
+		}
+		if err := validateChangeCardResultJSONValue6(
+			generatedJSONChildPath(path, strconv.Itoa(index), true),
+			item, description,
+		); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateChangeCardResultJSONValue6 checks one value whose JSON shape is fixed by the generated Goa type.
+func validateChangeCardResultJSONValue6(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "description":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Optional longer context for the question.",
+			); err != nil {
+				return err
+			}
+		case "key":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Flow-scoped question key.",
+			); err != nil {
+				return err
+			}
+		case "options":
+			if err := validateChangeCardResultJSONValue7(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Suggested choices in declaration order.",
+			); err != nil {
+				return err
+			}
+		case "prompt":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Human-facing question text.",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"description",
+				"key",
+				"options",
+				"prompt",
+			})
+		}
+	}
+	return nil
+}
+
 // validateChangeCardResultJSONValue7 checks one value whose JSON shape is fixed by the generated Goa type.
 func validateChangeCardResultJSONValue7(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "array", "null", description)
+	}
+	typed, ok := value.([]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "array", decodedJSONType(value), description)
+	}
+	for index, item := range typed {
+		if err := validateAgentPolicyItemJSONValue2(
+			generatedJSONChildPath(path, strconv.Itoa(index), true),
+			item, description,
+		); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateChangeCardResultJSONValue8 checks one value whose JSON shape is fixed by the generated Goa type.
+func validateChangeCardResultJSONValue8(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "array", "null", description)
+	}
+	typed, ok := value.([]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "array", decodedJSONType(value), description)
+	}
+	for index, item := range typed {
+		if item == nil {
+			continue
+		}
+		if err := validateChangeCardResultJSONValue9(
+			generatedJSONChildPath(path, strconv.Itoa(index), true),
+			item, description,
+		); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateChangeCardResultJSONValue9 checks one value whose JSON shape is fixed by the generated Goa type.
+func validateChangeCardResultJSONValue9(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "actor_key":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Story-scoped key of the actor performing or observing the step.",
+			); err != nil {
+				return err
+			}
+		case "description":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Optional longer explanation of the step.",
+			); err != nil {
+				return err
+			}
+		case "key":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Flow-scoped step key.",
+			); err != nil {
+				return err
+			}
+		case "kind":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Step position in the flow: start, step, or outcome.",
+			); err != nil {
+				return err
+			}
+		case "questions":
+			if err := validateChangeCardResultJSONValue10(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Unresolved step-level decisions in declaration order.",
+			); err != nil {
+				return err
+			}
+		case "summary":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Timeline sticky-note sentence for the step.",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"actor_key",
+				"description",
+				"key",
+				"kind",
+				"questions",
+				"summary",
+			})
+		}
+	}
+	return nil
+}
+
+// validateChangeCardResultJSONValue10 checks one value whose JSON shape is fixed by the generated Goa type.
+func validateChangeCardResultJSONValue10(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "array", "null", description)
+	}
+	typed, ok := value.([]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "array", decodedJSONType(value), description)
+	}
+	for index, item := range typed {
+		if item == nil {
+			continue
+		}
+		if err := validateChangeCardResultJSONValue6(
+			generatedJSONChildPath(path, strconv.Itoa(index), true),
+			item, description,
+		); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateChangeCardResultJSONValue11 checks one value whose JSON shape is fixed by the generated Goa type.
+func validateChangeCardResultJSONValue11(path string, value any, description string) error {
 	field := path
 	if field == "" {
 		field = "$payload"
@@ -15581,8 +16202,8 @@ func validateChangeCardResultJSONValue7(path string, value any, description stri
 	return nil
 }
 
-// validateChangeCardResultJSONValue8 checks one value whose JSON shape is fixed by the generated Goa type.
-func validateChangeCardResultJSONValue8(path string, value any, description string) error {
+// validateChangeCardResultJSONValue12 checks one value whose JSON shape is fixed by the generated Goa type.
+func validateChangeCardResultJSONValue12(path string, value any, description string) error {
 	field := path
 	if field == "" {
 		field = "$payload"
@@ -15911,7 +16532,7 @@ func validateConfirmIntentPayloadJSONValue3(path string, value any, description 
 		if item == nil {
 			continue
 		}
-		if err := validateChangeCardResultJSONValue5(
+		if err := validateChangeCardResultJSONValue15(
 			generatedJSONChildPath(path, strconv.Itoa(index), true),
 			item, description,
 		); err != nil {
@@ -17006,7 +17627,7 @@ func validateProposeChangePayloadJSONValue(path string, value any, description s
 		case "design_source":
 			if err := validateAgentPolicyItemJSONValue2(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Goa design source the analysis was made against (the target's design/*.go files). Surla saves it with the card and includes it in request_revision; it does not interpret it. When omitted on a server with a bound workspace, Surla records design/*.go from the bound workspace; when omitted without a bound workspace, the card records no design.",
+				typed[key], "Goa design source the analysis was made against (the target's design/*.go files). Surla saves it with the card and includes it in request_revision; it does not interpret it. When omitted on a server with a bound workspace, Surla records design/*.go from the bound workspace; when omitted without a bound workspace, the card records no design. Cannot be combined with story_refresh_op_id.",
 			); err != nil {
 				return err
 			}
@@ -17017,12 +17638,20 @@ func validateProposeChangePayloadJSONValue(path string, value any, description s
 			); err != nil {
 				return err
 			}
+		case "story_refresh_op_id":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Optional op_id of a succeeded refresh_story operation for the bound workspace whose evaluated Stories this card adopts. When set, design_source must be omitted; Surla reads one workspace snapshot, requires its snapshot_digest to match the operation's, and records both the evaluated Stories and that snapshot's design/*.go on the card. Omit when the card has no Story.",
+			); err != nil {
+				return err
+			}
 		default:
 			return unknownJSONFieldError(path, key, []string{
 				"analysis",
 				"change_id",
 				"design_source",
 				"prompt",
+				"story_refresh_op_id",
 			})
 		}
 	}
@@ -17110,7 +17739,7 @@ func validateReviseChangePayloadJSONValue(path string, value any, description st
 		case "design_source":
 			if err := validateAgentPolicyItemJSONValue2(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Updated Goa design source the analysis was made against (the target's design/*.go files). Surla saves it with the card and includes it in request_revision; it does not interpret it. When omitted on a workspace-backed card with a bound workspace, Surla records design/*.go from the bound workspace again; otherwise the card's saved design source is kept.",
+				typed[key], "Updated Goa design source the analysis was made against (the target's design/*.go files). Surla saves it with the card and includes it in request_revision; it does not interpret it. When omitted on a workspace-backed card without Stories and with a bound workspace, Surla records design/*.go from the bound workspace again; otherwise the card's saved design source is kept. Cannot be set when story_refresh_op_id is set or when the card already has adopted Stories.",
 			); err != nil {
 				return err
 			}
@@ -17128,6 +17757,13 @@ func validateReviseChangePayloadJSONValue(path string, value any, description st
 			); err != nil {
 				return err
 			}
+		case "story_refresh_op_id":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Optional op_id of a succeeded refresh_story operation for the bound workspace whose evaluated Stories this revision adopts. When set, design_source must be omitted and the card must not use a caller-supplied design_source; Surla reads one workspace snapshot, requires its snapshot_digest to match the operation's, and records both the evaluated Stories and that snapshot's design/*.go on the revised card. When omitted on a card that already has Stories, the card's saved Stories and saved design_source are kept together.",
+			); err != nil {
+				return err
+			}
 		default:
 			return unknownJSONFieldError(path, key, []string{
 				"analysis",
@@ -17135,6 +17771,7 @@ func validateReviseChangePayloadJSONValue(path string, value any, description st
 				"design_source",
 				"prompt",
 				"request_revision",
+				"story_refresh_op_id",
 			})
 		}
 	}
@@ -17221,375 +17858,6 @@ func validateStopLiveTargetResultJSONValue(path string, value any, description s
 	return nil
 }
 
-// validateStoryActorItemJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
-func validateStoryActorItemJSONValue(path string, value any, description string) error {
-	field := path
-	if field == "" {
-		field = "$payload"
-	}
-	if value == nil {
-		return invalidGeneratedFieldTypeError(field, "object", "null", description)
-	}
-	typed, ok := value.(map[string]any)
-	if !ok {
-		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
-	}
-	keys := make([]string, 0, len(typed))
-	for key := range typed {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	for _, key := range keys {
-		switch key {
-		case "description":
-			if err := validateAgentPolicyItemJSONValue2(
-				generatedJSONChildPath(path, key, false),
-				typed[key], "Optional longer explanation of the actor role.",
-			); err != nil {
-				return err
-			}
-		case "key":
-			if err := validateAgentPolicyItemJSONValue2(
-				generatedJSONChildPath(path, key, false),
-				typed[key], "Story-scoped actor key.",
-			); err != nil {
-				return err
-			}
-		case "title":
-			if err := validateAgentPolicyItemJSONValue2(
-				generatedJSONChildPath(path, key, false),
-				typed[key], "Human-facing actor label.",
-			); err != nil {
-				return err
-			}
-		default:
-			return unknownJSONFieldError(path, key, []string{
-				"description",
-				"key",
-				"title",
-			})
-		}
-	}
-	return nil
-}
-
-// validateStoryFlowItemJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
-func validateStoryFlowItemJSONValue(path string, value any, description string) error {
-	field := path
-	if field == "" {
-		field = "$payload"
-	}
-	if value == nil {
-		return invalidGeneratedFieldTypeError(field, "object", "null", description)
-	}
-	typed, ok := value.(map[string]any)
-	if !ok {
-		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
-	}
-	keys := make([]string, 0, len(typed))
-	for key := range typed {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	for _, key := range keys {
-		switch key {
-		case "complete":
-			if err := validateAgentPolicyItemJSONValue3(
-				generatedJSONChildPath(path, key, false),
-				typed[key], "True when the flow has a start, at least one outcome, and no open questions on the flow or any of its steps.",
-			); err != nil {
-				return err
-			}
-		case "description":
-			if err := validateAgentPolicyItemJSONValue2(
-				generatedJSONChildPath(path, key, false),
-				typed[key], "Optional longer explanation of the flow.",
-			); err != nil {
-				return err
-			}
-		case "key":
-			if err := validateAgentPolicyItemJSONValue2(
-				generatedJSONChildPath(path, key, false),
-				typed[key], "Story-scoped flow key.",
-			); err != nil {
-				return err
-			}
-		case "questions":
-			if err := validateStoryFlowItemJSONValue2(
-				generatedJSONChildPath(path, key, false),
-				typed[key], "Unresolved flow-level decisions in declaration order.",
-			); err != nil {
-				return err
-			}
-		case "steps":
-			if err := validateStoryFlowItemJSONValue5(
-				generatedJSONChildPath(path, key, false),
-				typed[key], "Starting, intermediate, and outcome steps in declaration order.",
-			); err != nil {
-				return err
-			}
-		case "title":
-			if err := validateAgentPolicyItemJSONValue2(
-				generatedJSONChildPath(path, key, false),
-				typed[key], "Human-facing flow title.",
-			); err != nil {
-				return err
-			}
-		default:
-			return unknownJSONFieldError(path, key, []string{
-				"complete",
-				"description",
-				"key",
-				"questions",
-				"steps",
-				"title",
-			})
-		}
-	}
-	return nil
-}
-
-// validateStoryFlowItemJSONValue2 checks one value whose JSON shape is fixed by the generated Goa type.
-func validateStoryFlowItemJSONValue2(path string, value any, description string) error {
-	field := path
-	if field == "" {
-		field = "$payload"
-	}
-	if value == nil {
-		return invalidGeneratedFieldTypeError(field, "array", "null", description)
-	}
-	typed, ok := value.([]any)
-	if !ok {
-		return invalidGeneratedFieldTypeError(field, "array", decodedJSONType(value), description)
-	}
-	for index, item := range typed {
-		if item == nil {
-			continue
-		}
-		if err := validateStoryFlowItemJSONValue3(
-			generatedJSONChildPath(path, strconv.Itoa(index), true),
-			item, description,
-		); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// validateStoryFlowItemJSONValue3 checks one value whose JSON shape is fixed by the generated Goa type.
-func validateStoryFlowItemJSONValue3(path string, value any, description string) error {
-	field := path
-	if field == "" {
-		field = "$payload"
-	}
-	if value == nil {
-		return invalidGeneratedFieldTypeError(field, "object", "null", description)
-	}
-	typed, ok := value.(map[string]any)
-	if !ok {
-		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
-	}
-	keys := make([]string, 0, len(typed))
-	for key := range typed {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	for _, key := range keys {
-		switch key {
-		case "description":
-			if err := validateAgentPolicyItemJSONValue2(
-				generatedJSONChildPath(path, key, false),
-				typed[key], "Optional longer context for the question.",
-			); err != nil {
-				return err
-			}
-		case "key":
-			if err := validateAgentPolicyItemJSONValue2(
-				generatedJSONChildPath(path, key, false),
-				typed[key], "Flow-scoped question key.",
-			); err != nil {
-				return err
-			}
-		case "options":
-			if err := validateStoryFlowItemJSONValue4(
-				generatedJSONChildPath(path, key, false),
-				typed[key], "Suggested choices in declaration order.",
-			); err != nil {
-				return err
-			}
-		case "prompt":
-			if err := validateAgentPolicyItemJSONValue2(
-				generatedJSONChildPath(path, key, false),
-				typed[key], "Human-facing question text.",
-			); err != nil {
-				return err
-			}
-		default:
-			return unknownJSONFieldError(path, key, []string{
-				"description",
-				"key",
-				"options",
-				"prompt",
-			})
-		}
-	}
-	return nil
-}
-
-// validateStoryFlowItemJSONValue4 checks one value whose JSON shape is fixed by the generated Goa type.
-func validateStoryFlowItemJSONValue4(path string, value any, description string) error {
-	field := path
-	if field == "" {
-		field = "$payload"
-	}
-	if value == nil {
-		return invalidGeneratedFieldTypeError(field, "array", "null", description)
-	}
-	typed, ok := value.([]any)
-	if !ok {
-		return invalidGeneratedFieldTypeError(field, "array", decodedJSONType(value), description)
-	}
-	for index, item := range typed {
-		if err := validateAgentPolicyItemJSONValue2(
-			generatedJSONChildPath(path, strconv.Itoa(index), true),
-			item, description,
-		); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// validateStoryFlowItemJSONValue5 checks one value whose JSON shape is fixed by the generated Goa type.
-func validateStoryFlowItemJSONValue5(path string, value any, description string) error {
-	field := path
-	if field == "" {
-		field = "$payload"
-	}
-	if value == nil {
-		return invalidGeneratedFieldTypeError(field, "array", "null", description)
-	}
-	typed, ok := value.([]any)
-	if !ok {
-		return invalidGeneratedFieldTypeError(field, "array", decodedJSONType(value), description)
-	}
-	for index, item := range typed {
-		if item == nil {
-			continue
-		}
-		if err := validateStoryFlowItemJSONValue6(
-			generatedJSONChildPath(path, strconv.Itoa(index), true),
-			item, description,
-		); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// validateStoryFlowItemJSONValue6 checks one value whose JSON shape is fixed by the generated Goa type.
-func validateStoryFlowItemJSONValue6(path string, value any, description string) error {
-	field := path
-	if field == "" {
-		field = "$payload"
-	}
-	if value == nil {
-		return invalidGeneratedFieldTypeError(field, "object", "null", description)
-	}
-	typed, ok := value.(map[string]any)
-	if !ok {
-		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
-	}
-	keys := make([]string, 0, len(typed))
-	for key := range typed {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	for _, key := range keys {
-		switch key {
-		case "actor_key":
-			if err := validateAgentPolicyItemJSONValue2(
-				generatedJSONChildPath(path, key, false),
-				typed[key], "Story-scoped key of the actor performing or observing the step.",
-			); err != nil {
-				return err
-			}
-		case "description":
-			if err := validateAgentPolicyItemJSONValue2(
-				generatedJSONChildPath(path, key, false),
-				typed[key], "Optional longer explanation of the step.",
-			); err != nil {
-				return err
-			}
-		case "key":
-			if err := validateAgentPolicyItemJSONValue2(
-				generatedJSONChildPath(path, key, false),
-				typed[key], "Flow-scoped step key.",
-			); err != nil {
-				return err
-			}
-		case "kind":
-			if err := validateAgentPolicyItemJSONValue2(
-				generatedJSONChildPath(path, key, false),
-				typed[key], "Step position in the flow: start, step, or outcome.",
-			); err != nil {
-				return err
-			}
-		case "questions":
-			if err := validateStoryFlowItemJSONValue7(
-				generatedJSONChildPath(path, key, false),
-				typed[key], "Unresolved step-level decisions in declaration order.",
-			); err != nil {
-				return err
-			}
-		case "summary":
-			if err := validateAgentPolicyItemJSONValue2(
-				generatedJSONChildPath(path, key, false),
-				typed[key], "Timeline sticky-note sentence for the step.",
-			); err != nil {
-				return err
-			}
-		default:
-			return unknownJSONFieldError(path, key, []string{
-				"actor_key",
-				"description",
-				"key",
-				"kind",
-				"questions",
-				"summary",
-			})
-		}
-	}
-	return nil
-}
-
-// validateStoryFlowItemJSONValue7 checks one value whose JSON shape is fixed by the generated Goa type.
-func validateStoryFlowItemJSONValue7(path string, value any, description string) error {
-	field := path
-	if field == "" {
-		field = "$payload"
-	}
-	if value == nil {
-		return invalidGeneratedFieldTypeError(field, "array", "null", description)
-	}
-	typed, ok := value.([]any)
-	if !ok {
-		return invalidGeneratedFieldTypeError(field, "array", decodedJSONType(value), description)
-	}
-	for index, item := range typed {
-		if item == nil {
-			continue
-		}
-		if err := validateStoryFlowItemJSONValue3(
-			generatedJSONChildPath(path, strconv.Itoa(index), true),
-			item, description,
-		); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 // validateStoryRefreshResultJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
 func validateStoryRefreshResultJSONValue(path string, value any, description string) error {
 	field := path
@@ -17627,14 +17895,14 @@ func validateStoryRefreshResultJSONValue(path string, value any, description str
 		case "op_id":
 			if err := validateAgentPolicyItemJSONValue2(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Identifier of the caller's current Story refresh operation for the bound workspace; present when state is running, succeeded, or failed.",
+				typed[key], "Identifier of the caller's current Story refresh operation for the bound workspace; present when state is running, succeeded, or failed. Pass it as story_refresh_op_id to propose_change or revise_change once state is succeeded to adopt the evaluated Story into a Change Card.",
 			); err != nil {
 				return err
 			}
 		case "snapshot_digest":
 			if err := validateAgentPolicyItemJSONValue2(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Canonical SHA-256 digest (sha256:<hex>) of the workspace module snapshot read when this refresh started; present when state is running, succeeded, or failed.",
+				typed[key], "Canonical SHA-256 digest of the workspace module snapshot read when this refresh started; present when state is running, succeeded, or failed.",
 			); err != nil {
 				return err
 			}
@@ -17683,121 +17951,7 @@ func validateStoryRefreshResultJSONValue2(path string, value any, description st
 		if item == nil {
 			continue
 		}
-		if err := validateStoryRefreshResultJSONValue3(
-			generatedJSONChildPath(path, strconv.Itoa(index), true),
-			item, description,
-		); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// validateStoryRefreshResultJSONValue3 checks one value whose JSON shape is fixed by the generated Goa type.
-func validateStoryRefreshResultJSONValue3(path string, value any, description string) error {
-	field := path
-	if field == "" {
-		field = "$payload"
-	}
-	if value == nil {
-		return invalidGeneratedFieldTypeError(field, "object", "null", description)
-	}
-	typed, ok := value.(map[string]any)
-	if !ok {
-		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
-	}
-	keys := make([]string, 0, len(typed))
-	for key := range typed {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	for _, key := range keys {
-		switch key {
-		case "actors":
-			if err := validateStoryRefreshResultJSONValue4(
-				generatedJSONChildPath(path, key, false),
-				typed[key], "Domain roles declared in the Story in declaration order.",
-			); err != nil {
-				return err
-			}
-		case "description":
-			if err := validateAgentPolicyItemJSONValue2(
-				generatedJSONChildPath(path, key, false),
-				typed[key], "Optional longer explanation of the Story.",
-			); err != nil {
-				return err
-			}
-		case "flows":
-			if err := validateStoryRefreshResultJSONValue5(
-				generatedJSONChildPath(path, key, false),
-				typed[key], "Timeline paths declared in the Story in declaration order.",
-			); err != nil {
-				return err
-			}
-		case "name":
-			if err := validateAgentPolicyItemJSONValue2(
-				generatedJSONChildPath(path, key, false),
-				typed[key], "Human-facing Story title.",
-			); err != nil {
-				return err
-			}
-		default:
-			return unknownJSONFieldError(path, key, []string{
-				"actors",
-				"description",
-				"flows",
-				"name",
-			})
-		}
-	}
-	return nil
-}
-
-// validateStoryRefreshResultJSONValue4 checks one value whose JSON shape is fixed by the generated Goa type.
-func validateStoryRefreshResultJSONValue4(path string, value any, description string) error {
-	field := path
-	if field == "" {
-		field = "$payload"
-	}
-	if value == nil {
-		return invalidGeneratedFieldTypeError(field, "array", "null", description)
-	}
-	typed, ok := value.([]any)
-	if !ok {
-		return invalidGeneratedFieldTypeError(field, "array", decodedJSONType(value), description)
-	}
-	for index, item := range typed {
-		if item == nil {
-			continue
-		}
-		if err := validateStoryActorItemJSONValue(
-			generatedJSONChildPath(path, strconv.Itoa(index), true),
-			item, description,
-		); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// validateStoryRefreshResultJSONValue5 checks one value whose JSON shape is fixed by the generated Goa type.
-func validateStoryRefreshResultJSONValue5(path string, value any, description string) error {
-	field := path
-	if field == "" {
-		field = "$payload"
-	}
-	if value == nil {
-		return invalidGeneratedFieldTypeError(field, "array", "null", description)
-	}
-	typed, ok := value.([]any)
-	if !ok {
-		return invalidGeneratedFieldTypeError(field, "array", decodedJSONType(value), description)
-	}
-	for index, item := range typed {
-		if item == nil {
-			continue
-		}
-		if err := validateStoryFlowItemJSONValue(
+		if err := validateChangeCardResultJSONValue18(
 			generatedJSONChildPath(path, strconv.Itoa(index), true),
 			item, description,
 		); err != nil {
@@ -19591,6 +19745,13 @@ func checkChangeCardResultChangeCardResultValue(in *ChangeCardResult, field stri
 				return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(generatedJSONChildPath(field, "preserved_behaviors", false), strconv.Itoa(index1), true))
 			}
 		}
+		for index1, item1 := range in.Stories {
+			_ = index1
+			_ = item1
+			if err := checkChangeCardResultStorySummaryItemValue(item1, generatedJSONChildPath(generatedJSONChildPath(field, "stories", false), strconv.Itoa(index1), true), active); err != nil {
+				return err
+			}
+		}
 		if in.ConfirmedBy != nil {
 			if !utf8.ValidString(string(*in.ConfirmedBy)) {
 				return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "confirmed_by", false))
@@ -19637,6 +19798,181 @@ func checkChangeCardResultExampleItemValue(in *ExampleItem, field string, active
 		}
 		if !utf8.ValidString(string(in.VerificationKind)) {
 			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "verification_kind", false))
+		}
+	}
+	return nil
+}
+
+// checkChangeCardResultStorySummaryItemValue checks one generated value on the active path.
+func checkChangeCardResultStorySummaryItemValue(in *StorySummaryItem, field string, active map[any]bool) error {
+	if in == nil {
+		return nil
+	}
+	if active[in] {
+		return fmt.Errorf("%s: cyclic Go value", field)
+	}
+	active[in] = true
+	defer delete(active, in)
+	if in != nil {
+		if !utf8.ValidString(string(in.Name)) {
+			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "name", false))
+		}
+		if in.Description != nil {
+			if !utf8.ValidString(string(*in.Description)) {
+				return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "description", false))
+			}
+		}
+		for index1, item1 := range in.Actors {
+			_ = index1
+			_ = item1
+			if err := checkChangeCardResultStoryActorItemValue(item1, generatedJSONChildPath(generatedJSONChildPath(field, "actors", false), strconv.Itoa(index1), true), active); err != nil {
+				return err
+			}
+		}
+		for index1, item1 := range in.Flows {
+			_ = index1
+			_ = item1
+			if err := checkChangeCardResultStoryFlowItemValue(item1, generatedJSONChildPath(generatedJSONChildPath(field, "flows", false), strconv.Itoa(index1), true), active); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// checkChangeCardResultStoryActorItemValue checks one generated value on the active path.
+func checkChangeCardResultStoryActorItemValue(in *StoryActorItem, field string, active map[any]bool) error {
+	if in == nil {
+		return nil
+	}
+	if active[in] {
+		return fmt.Errorf("%s: cyclic Go value", field)
+	}
+	active[in] = true
+	defer delete(active, in)
+	if in != nil {
+		if !utf8.ValidString(string(in.Key)) {
+			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "key", false))
+		}
+		if !utf8.ValidString(string(in.Title)) {
+			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "title", false))
+		}
+		if in.Description != nil {
+			if !utf8.ValidString(string(*in.Description)) {
+				return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "description", false))
+			}
+		}
+	}
+	return nil
+}
+
+// checkChangeCardResultStoryFlowItemValue checks one generated value on the active path.
+func checkChangeCardResultStoryFlowItemValue(in *StoryFlowItem, field string, active map[any]bool) error {
+	if in == nil {
+		return nil
+	}
+	if active[in] {
+		return fmt.Errorf("%s: cyclic Go value", field)
+	}
+	active[in] = true
+	defer delete(active, in)
+	if in != nil {
+		if !utf8.ValidString(string(in.Key)) {
+			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "key", false))
+		}
+		if !utf8.ValidString(string(in.Title)) {
+			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "title", false))
+		}
+		if in.Description != nil {
+			if !utf8.ValidString(string(*in.Description)) {
+				return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "description", false))
+			}
+		}
+		for index1, item1 := range in.Steps {
+			_ = index1
+			_ = item1
+			if err := checkChangeCardResultStoryStepItemValue(item1, generatedJSONChildPath(generatedJSONChildPath(field, "steps", false), strconv.Itoa(index1), true), active); err != nil {
+				return err
+			}
+		}
+		for index1, item1 := range in.Questions {
+			_ = index1
+			_ = item1
+			if err := checkChangeCardResultStoryQuestionItemValue(item1, generatedJSONChildPath(generatedJSONChildPath(field, "questions", false), strconv.Itoa(index1), true), active); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// checkChangeCardResultStoryStepItemValue checks one generated value on the active path.
+func checkChangeCardResultStoryStepItemValue(in *StoryStepItem, field string, active map[any]bool) error {
+	if in == nil {
+		return nil
+	}
+	if active[in] {
+		return fmt.Errorf("%s: cyclic Go value", field)
+	}
+	active[in] = true
+	defer delete(active, in)
+	if in != nil {
+		if !utf8.ValidString(string(in.Key)) {
+			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "key", false))
+		}
+		if !utf8.ValidString(string(in.ActorKey)) {
+			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "actor_key", false))
+		}
+		if !utf8.ValidString(string(in.Summary)) {
+			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "summary", false))
+		}
+		if in.Description != nil {
+			if !utf8.ValidString(string(*in.Description)) {
+				return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "description", false))
+			}
+		}
+		if !utf8.ValidString(string(in.Kind)) {
+			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "kind", false))
+		}
+		for index1, item1 := range in.Questions {
+			_ = index1
+			_ = item1
+			if err := checkChangeCardResultStoryQuestionItemValue(item1, generatedJSONChildPath(generatedJSONChildPath(field, "questions", false), strconv.Itoa(index1), true), active); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// checkChangeCardResultStoryQuestionItemValue checks one generated value on the active path.
+func checkChangeCardResultStoryQuestionItemValue(in *StoryQuestionItem, field string, active map[any]bool) error {
+	if in == nil {
+		return nil
+	}
+	if active[in] {
+		return fmt.Errorf("%s: cyclic Go value", field)
+	}
+	active[in] = true
+	defer delete(active, in)
+	if in != nil {
+		if !utf8.ValidString(string(in.Key)) {
+			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "key", false))
+		}
+		if !utf8.ValidString(string(in.Prompt)) {
+			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "prompt", false))
+		}
+		if in.Description != nil {
+			if !utf8.ValidString(string(*in.Description)) {
+				return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "description", false))
+			}
+		}
+		for index1, item1 := range in.Options {
+			_ = index1
+			_ = item1
+			if !utf8.ValidString(string(item1)) {
+				return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(generatedJSONChildPath(field, "options", false), strconv.Itoa(index1), true))
+			}
 		}
 	}
 	return nil
@@ -20499,6 +20835,11 @@ func checkProposeChangePayloadProposeChangePayloadValue(in *ProposeChangePayload
 				return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "design_source", false))
 			}
 		}
+		if in.StoryRefreshOpID != nil {
+			if !utf8.ValidString(string(*in.StoryRefreshOpID)) {
+				return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "story_refresh_op_id", false))
+			}
+		}
 		if err := checkCP1AnalysisCP1AnalysisValue(in.Analysis, generatedJSONChildPath(field, "analysis", false), active); err != nil {
 			return err
 		}
@@ -20578,6 +20919,11 @@ func checkReviseChangePayloadReviseChangePayloadValue(in *ReviseChangePayload, f
 				return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "design_source", false))
 			}
 		}
+		if in.StoryRefreshOpID != nil {
+			if !utf8.ValidString(string(*in.StoryRefreshOpID)) {
+				return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "story_refresh_op_id", false))
+			}
+		}
 		if err := checkCP1RevisionAnalysisCP1RevisionAnalysisValue(in.Analysis, generatedJSONChildPath(field, "analysis", false), active); err != nil {
 			return err
 		}
@@ -20651,34 +20997,8 @@ func checkStoryActorItemValue(in *StoryActorItem) error {
 		return fmt.Errorf("missing root value")
 	}
 	active := make(map[any]bool)
-	if err := checkStoryActorItemStoryActorItemValue(in, "$", active); err != nil {
+	if err := checkChangeCardResultStoryActorItemValue(in, "$", active); err != nil {
 		return err
-	}
-	return nil
-}
-
-// checkStoryActorItemStoryActorItemValue checks one generated value on the active path.
-func checkStoryActorItemStoryActorItemValue(in *StoryActorItem, field string, active map[any]bool) error {
-	if in == nil {
-		return nil
-	}
-	if active[in] {
-		return fmt.Errorf("%s: cyclic Go value", field)
-	}
-	active[in] = true
-	defer delete(active, in)
-	if in != nil {
-		if !utf8.ValidString(string(in.Key)) {
-			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "key", false))
-		}
-		if !utf8.ValidString(string(in.Title)) {
-			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "title", false))
-		}
-		if in.Description != nil {
-			if !utf8.ValidString(string(*in.Description)) {
-				return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "description", false))
-			}
-		}
 	}
 	return nil
 }
@@ -20689,120 +21009,8 @@ func checkStoryFlowItemValue(in *StoryFlowItem) error {
 		return fmt.Errorf("missing root value")
 	}
 	active := make(map[any]bool)
-	if err := checkStoryFlowItemStoryFlowItemValue(in, "$", active); err != nil {
+	if err := checkChangeCardResultStoryFlowItemValue(in, "$", active); err != nil {
 		return err
-	}
-	return nil
-}
-
-// checkStoryFlowItemStoryFlowItemValue checks one generated value on the active path.
-func checkStoryFlowItemStoryFlowItemValue(in *StoryFlowItem, field string, active map[any]bool) error {
-	if in == nil {
-		return nil
-	}
-	if active[in] {
-		return fmt.Errorf("%s: cyclic Go value", field)
-	}
-	active[in] = true
-	defer delete(active, in)
-	if in != nil {
-		if !utf8.ValidString(string(in.Key)) {
-			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "key", false))
-		}
-		if !utf8.ValidString(string(in.Title)) {
-			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "title", false))
-		}
-		if in.Description != nil {
-			if !utf8.ValidString(string(*in.Description)) {
-				return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "description", false))
-			}
-		}
-		for index1, item1 := range in.Steps {
-			_ = index1
-			_ = item1
-			if err := checkStoryFlowItemStoryStepItemValue(item1, generatedJSONChildPath(generatedJSONChildPath(field, "steps", false), strconv.Itoa(index1), true), active); err != nil {
-				return err
-			}
-		}
-		for index1, item1 := range in.Questions {
-			_ = index1
-			_ = item1
-			if err := checkStoryFlowItemStoryQuestionItemValue(item1, generatedJSONChildPath(generatedJSONChildPath(field, "questions", false), strconv.Itoa(index1), true), active); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
-}
-
-// checkStoryFlowItemStoryStepItemValue checks one generated value on the active path.
-func checkStoryFlowItemStoryStepItemValue(in *StoryStepItem, field string, active map[any]bool) error {
-	if in == nil {
-		return nil
-	}
-	if active[in] {
-		return fmt.Errorf("%s: cyclic Go value", field)
-	}
-	active[in] = true
-	defer delete(active, in)
-	if in != nil {
-		if !utf8.ValidString(string(in.Key)) {
-			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "key", false))
-		}
-		if !utf8.ValidString(string(in.ActorKey)) {
-			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "actor_key", false))
-		}
-		if !utf8.ValidString(string(in.Summary)) {
-			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "summary", false))
-		}
-		if in.Description != nil {
-			if !utf8.ValidString(string(*in.Description)) {
-				return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "description", false))
-			}
-		}
-		if !utf8.ValidString(string(in.Kind)) {
-			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "kind", false))
-		}
-		for index1, item1 := range in.Questions {
-			_ = index1
-			_ = item1
-			if err := checkStoryFlowItemStoryQuestionItemValue(item1, generatedJSONChildPath(generatedJSONChildPath(field, "questions", false), strconv.Itoa(index1), true), active); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
-}
-
-// checkStoryFlowItemStoryQuestionItemValue checks one generated value on the active path.
-func checkStoryFlowItemStoryQuestionItemValue(in *StoryQuestionItem, field string, active map[any]bool) error {
-	if in == nil {
-		return nil
-	}
-	if active[in] {
-		return fmt.Errorf("%s: cyclic Go value", field)
-	}
-	active[in] = true
-	defer delete(active, in)
-	if in != nil {
-		if !utf8.ValidString(string(in.Key)) {
-			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "key", false))
-		}
-		if !utf8.ValidString(string(in.Prompt)) {
-			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "prompt", false))
-		}
-		if in.Description != nil {
-			if !utf8.ValidString(string(*in.Description)) {
-				return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "description", false))
-			}
-		}
-		for index1, item1 := range in.Options {
-			_ = index1
-			_ = item1
-			if !utf8.ValidString(string(item1)) {
-				return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(generatedJSONChildPath(field, "options", false), strconv.Itoa(index1), true))
-			}
-		}
 	}
 	return nil
 }
@@ -20813,7 +21021,7 @@ func checkStoryQuestionItemValue(in *StoryQuestionItem) error {
 		return fmt.Errorf("missing root value")
 	}
 	active := make(map[any]bool)
-	if err := checkStoryFlowItemStoryQuestionItemValue(in, "$", active); err != nil {
+	if err := checkChangeCardResultStoryQuestionItemValue(in, "$", active); err != nil {
 		return err
 	}
 	return nil
@@ -20858,7 +21066,7 @@ func checkStoryRefreshResultStoryRefreshResultValue(in *StoryRefreshResult, fiel
 		for index1, item1 := range in.Stories {
 			_ = index1
 			_ = item1
-			if err := checkStoryRefreshResultStorySummaryItemValue(item1, generatedJSONChildPath(generatedJSONChildPath(field, "stories", false), strconv.Itoa(index1), true), active); err != nil {
+			if err := checkChangeCardResultStorySummaryItemValue(item1, generatedJSONChildPath(generatedJSONChildPath(field, "stories", false), strconv.Itoa(index1), true), active); err != nil {
 				return err
 			}
 		}
@@ -20874,50 +21082,13 @@ func checkStoryRefreshResultStoryRefreshResultValue(in *StoryRefreshResult, fiel
 	return nil
 }
 
-// checkStoryRefreshResultStorySummaryItemValue checks one generated value on the active path.
-func checkStoryRefreshResultStorySummaryItemValue(in *StorySummaryItem, field string, active map[any]bool) error {
-	if in == nil {
-		return nil
-	}
-	if active[in] {
-		return fmt.Errorf("%s: cyclic Go value", field)
-	}
-	active[in] = true
-	defer delete(active, in)
-	if in != nil {
-		if !utf8.ValidString(string(in.Name)) {
-			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "name", false))
-		}
-		if in.Description != nil {
-			if !utf8.ValidString(string(*in.Description)) {
-				return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "description", false))
-			}
-		}
-		for index1, item1 := range in.Actors {
-			_ = index1
-			_ = item1
-			if err := checkStoryActorItemStoryActorItemValue(item1, generatedJSONChildPath(generatedJSONChildPath(field, "actors", false), strconv.Itoa(index1), true), active); err != nil {
-				return err
-			}
-		}
-		for index1, item1 := range in.Flows {
-			_ = index1
-			_ = item1
-			if err := checkStoryFlowItemStoryFlowItemValue(item1, generatedJSONChildPath(generatedJSONChildPath(field, "flows", false), strconv.Itoa(index1), true), active); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
-}
-
 // checkStoryStepItemValue checks text and cycles before conversion.
 func checkStoryStepItemValue(in *StoryStepItem) error {
 	if in == nil {
 		return fmt.Errorf("missing root value")
 	}
 	active := make(map[any]bool)
-	if err := checkStoryFlowItemStoryStepItemValue(in, "$", active); err != nil {
+	if err := checkChangeCardResultStoryStepItemValue(in, "$", active); err != nil {
 		return err
 	}
 	return nil
@@ -20929,7 +21100,7 @@ func checkStorySummaryItemValue(in *StorySummaryItem) error {
 		return fmt.Errorf("missing root value")
 	}
 	active := make(map[any]bool)
-	if err := checkStoryRefreshResultStorySummaryItemValue(in, "$", active); err != nil {
+	if err := checkChangeCardResultStorySummaryItemValue(in, "$", active); err != nil {
 		return err
 	}
 	return nil
