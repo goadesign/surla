@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	gensurla "github.com/goadesign/surla/gen/surla"
+	"github.com/goadesign/surla/internal/designeval"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
@@ -24,13 +25,17 @@ import (
 // dropped (removed_example_ids) exactly once, and each ambiguity's options
 // are distinct. Kept examples keep their IDs, new examples get the lowest
 // unused check_NN ID, and the revision is saved in needs_confirmation status
-// with no answers, confirmed_by or approval. The design source is
-// design_source when given; otherwise a workspace-backed card records
-// design/*.go from the bound workspace again and any other card keeps its
-// saved design source. The card is saved only if it still has the caller's
-// request_revision; a payload that breaks a rule, a blank change_id,
-// request_revision or prompt, or an unreadable workspace design is
-// unprocessable and leaves the card unchanged.
+// with no answers, confirmed_by or approval. When story_refresh_op_id is
+// given on a workspace-backed card, the revision adopts the evaluated Stories
+// and design/*.go snapshot from that succeeded refresh_story operation; when
+// story_refresh_op_id is omitted on a card that already has Stories, the
+// saved Stories and saved design source carry over together; otherwise the
+// design source is design_source when given, design/*.go from the bound
+// workspace for a workspace-backed card, or the card's saved design source.
+// The card is saved only if it still has the caller's request_revision; a
+// payload that breaks a rule, a blank change_id, request_revision or prompt,
+// an invalid or stale story_refresh_op_id, or an unreadable workspace design
+// is unprocessable and leaves the card unchanged.
 func (c *ControlPlane) ReviseChange(
 	ctx context.Context,
 	p *gensurla.ReviseChangePayload,
@@ -74,7 +79,33 @@ func (c *ControlPlane) ReviseChange(
 
 	designSrc := record.designSource
 	nextOrigin := record.sourceOrigin
+	var nextStories []designeval.StorySummary
 	switch {
+	case p.StoryRefreshOpID != nil:
+		if p.DesignSource != nil {
+			return nil, gensurla.MakeUnprocessable(errors.New(
+				"cannot combine design_source with story_refresh_op_id; omit design_source so Surla reads the workspace snapshot verified by refresh_story",
+			))
+		}
+		if record.sourceOrigin != sourceOriginWorkspace {
+			return nil, gensurla.MakeUnprocessable(fmt.Errorf(
+				"change card %q uses a caller-supplied design_source and cannot adopt a workspace Story from refresh_story",
+				p.ChangeID,
+			))
+		}
+		designSrc, nextStories, err = c.adoptStoryRefresh(principal, *p.StoryRefreshOpID)
+		if err != nil {
+			return nil, err
+		}
+		nextOrigin = sourceOriginWorkspace
+	case len(record.stories) > 0:
+		if p.DesignSource != nil {
+			return nil, gensurla.MakeUnprocessable(fmt.Errorf(
+				"change card %q has adopted Stories from refresh_story and cannot replace design_source with a caller-supplied value; omit design_source to keep the agreed Story or pass story_refresh_op_id from refresh_story",
+				p.ChangeID,
+			))
+		}
+		nextStories = cloneStorySummaries(record.stories)
 	case p.DesignSource != nil:
 		designSrc = *p.DesignSource
 		nextOrigin = sourceOriginSupplied
@@ -113,6 +144,7 @@ func (c *ControlPlane) ReviseChange(
 		Ambiguities:        ambiguities,
 		Examples:           examples,
 		PreservedBehaviors: preserved,
+		Stories:            storySummaryItemsOrNil(nextStories),
 	}
 	rev, err := computeCanonicalRevision(revised, principal.ID, designSrc)
 	if err != nil {
@@ -162,6 +194,7 @@ func (c *ControlPlane) ReviseChange(
 		owner:        principal.ID,
 		designSource: designSrc,
 		sourceOrigin: nextOrigin,
+		stories:      nextStories,
 	}); err != nil {
 		span.SetAttributes(attribute.String("surla.public_summary", cp1SafeFaultSummary(true, cp1FaultStorageSave)))
 		span.RecordError(err)

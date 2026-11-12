@@ -27,8 +27,16 @@ type ProposeChangeRequestBody struct {
 	// files). Surla saves it with the card and includes it in request_revision; it
 	// does not interpret it. When omitted on a server with a bound workspace,
 	// Surla records design/*.go from the bound workspace; when omitted without a
-	// bound workspace, the card records no design.
+	// bound workspace, the card records no design. Cannot be combined with
+	// story_refresh_op_id.
 	DesignSource *string `form:"design_source,omitempty" json:"design_source,omitempty" xml:"design_source,omitempty"`
+	// Optional op_id of a succeeded refresh_story operation for the bound
+	// workspace whose evaluated Stories this card adopts. When set, design_source
+	// must be omitted; Surla reads one workspace snapshot, requires its
+	// snapshot_digest to match the operation's, and records both the evaluated
+	// Stories and that snapshot's design/*.go on the card. Omit when the card has
+	// no Story.
+	StoryRefreshOpID *string `form:"story_refresh_op_id,omitempty" json:"story_refresh_op_id,omitempty" xml:"story_refresh_op_id,omitempty"`
 	// Your analysis of prompt against the target's current design.
 	Analysis *CP1AnalysisRequestBody `form:"analysis" json:"analysis" xml:"analysis"`
 }
@@ -45,9 +53,20 @@ type ReviseChangeRequestBody struct {
 	// Updated Goa design source the analysis was made against (the target's
 	// design/*.go files). Surla saves it with the card and includes it in
 	// request_revision; it does not interpret it. When omitted on a
-	// workspace-backed card with a bound workspace, Surla records design/*.go from
-	// the bound workspace again; otherwise the card's saved design source is kept.
+	// workspace-backed card without Stories and with a bound workspace, Surla
+	// records design/*.go from the bound workspace again; otherwise the card's
+	// saved design source is kept. Cannot be set when story_refresh_op_id is set
+	// or when the card already has adopted Stories.
 	DesignSource *string `form:"design_source,omitempty" json:"design_source,omitempty" xml:"design_source,omitempty"`
+	// Optional op_id of a succeeded refresh_story operation for the bound
+	// workspace whose evaluated Stories this revision adopts. When set,
+	// design_source must be omitted and the card must not use a caller-supplied
+	// design_source; Surla reads one workspace snapshot, requires its
+	// snapshot_digest to match the operation's, and records both the evaluated
+	// Stories and that snapshot's design/*.go on the revised card. When omitted on
+	// a card that already has Stories, the card's saved Stories and saved
+	// design_source are kept together.
+	StoryRefreshOpID *string `form:"story_refresh_op_id,omitempty" json:"story_refresh_op_id,omitempty" xml:"story_refresh_op_id,omitempty"`
 	// Your analysis of the revised prompt against the current card and the
 	// target's current design.
 	Analysis *CP1RevisionAnalysisRequestBody `form:"analysis" json:"analysis" xml:"analysis"`
@@ -212,6 +231,10 @@ type ProposeChangeResponseBody struct {
 	Examples []*ExampleItemResponseBody `form:"examples,omitempty" json:"examples,omitempty" xml:"examples,omitempty"`
 	// Existing contract invariants preserved by this change.
 	PreservedBehaviors []string `form:"preserved_behaviors,omitempty" json:"preserved_behaviors,omitempty" xml:"preserved_behaviors,omitempty"`
+	// Evaluated domain Stories adopted from refresh_story for this Change Card
+	// revision in declaration order; omitted when the card has no Stories.
+	// Included in request_revision.
+	Stories []*StorySummaryItemResponseBody `form:"stories,omitempty" json:"stories,omitempty" xml:"stories,omitempty"`
 	// Authenticated principal that confirmed the Change Card.
 	ConfirmedBy *string `form:"confirmed_by,omitempty" json:"confirmed_by,omitempty" xml:"confirmed_by,omitempty"`
 	// SHA-256 digest of the canonical versioned Change Card.
@@ -258,6 +281,10 @@ type ReviseChangeResponseBody struct {
 	Examples []*ExampleItemResponseBody `form:"examples,omitempty" json:"examples,omitempty" xml:"examples,omitempty"`
 	// Existing contract invariants preserved by this change.
 	PreservedBehaviors []string `form:"preserved_behaviors,omitempty" json:"preserved_behaviors,omitempty" xml:"preserved_behaviors,omitempty"`
+	// Evaluated domain Stories adopted from refresh_story for this Change Card
+	// revision in declaration order; omitted when the card has no Stories.
+	// Included in request_revision.
+	Stories []*StorySummaryItemResponseBody `form:"stories,omitempty" json:"stories,omitempty" xml:"stories,omitempty"`
 	// Authenticated principal that confirmed the Change Card.
 	ConfirmedBy *string `form:"confirmed_by,omitempty" json:"confirmed_by,omitempty" xml:"confirmed_by,omitempty"`
 	// SHA-256 digest of the canonical versioned Change Card.
@@ -304,6 +331,10 @@ type ConfirmIntentResponseBody struct {
 	Examples []*ExampleItemResponseBody `form:"examples,omitempty" json:"examples,omitempty" xml:"examples,omitempty"`
 	// Existing contract invariants preserved by this change.
 	PreservedBehaviors []string `form:"preserved_behaviors,omitempty" json:"preserved_behaviors,omitempty" xml:"preserved_behaviors,omitempty"`
+	// Evaluated domain Stories adopted from refresh_story for this Change Card
+	// revision in declaration order; omitted when the card has no Stories.
+	// Included in request_revision.
+	Stories []*StorySummaryItemResponseBody `form:"stories,omitempty" json:"stories,omitempty" xml:"stories,omitempty"`
 	// Authenticated principal that confirmed the Change Card.
 	ConfirmedBy *string `form:"confirmed_by,omitempty" json:"confirmed_by,omitempty" xml:"confirmed_by,omitempty"`
 	// SHA-256 digest of the canonical versioned Change Card.
@@ -350,6 +381,10 @@ type GetChangeResponseBody struct {
 	Examples []*ExampleItemResponseBody `form:"examples,omitempty" json:"examples,omitempty" xml:"examples,omitempty"`
 	// Existing contract invariants preserved by this change.
 	PreservedBehaviors []string `form:"preserved_behaviors,omitempty" json:"preserved_behaviors,omitempty" xml:"preserved_behaviors,omitempty"`
+	// Evaluated domain Stories adopted from refresh_story for this Change Card
+	// revision in declaration order; omitted when the card has no Stories.
+	// Included in request_revision.
+	Stories []*StorySummaryItemResponseBody `form:"stories,omitempty" json:"stories,omitempty" xml:"stories,omitempty"`
 	// Authenticated principal that confirmed the Change Card.
 	ConfirmedBy *string `form:"confirmed_by,omitempty" json:"confirmed_by,omitempty" xml:"confirmed_by,omitempty"`
 	// SHA-256 digest of the canonical versioned Change Card.
@@ -504,6 +539,10 @@ type ApproveMergeResponseBody struct {
 	Examples []*ExampleItemResponseBody `form:"examples,omitempty" json:"examples,omitempty" xml:"examples,omitempty"`
 	// Existing contract invariants preserved by this change.
 	PreservedBehaviors []string `form:"preserved_behaviors,omitempty" json:"preserved_behaviors,omitempty" xml:"preserved_behaviors,omitempty"`
+	// Evaluated domain Stories adopted from refresh_story for this Change Card
+	// revision in declaration order; omitted when the card has no Stories.
+	// Included in request_revision.
+	Stories []*StorySummaryItemResponseBody `form:"stories,omitempty" json:"stories,omitempty" xml:"stories,omitempty"`
 	// Authenticated principal that confirmed the Change Card.
 	ConfirmedBy *string `form:"confirmed_by,omitempty" json:"confirmed_by,omitempty" xml:"confirmed_by,omitempty"`
 	// SHA-256 digest of the canonical versioned Change Card.
@@ -638,13 +677,14 @@ type ListTracesResponseBody struct {
 // endpoint HTTP response body.
 type RefreshStoryResponseBody struct {
 	// Identifier of the caller's current Story refresh operation for the bound
-	// workspace; present when state is running, succeeded, or failed.
+	// workspace; present when state is running, succeeded, or failed. Pass it as
+	// story_refresh_op_id to propose_change or revise_change once state is
+	// succeeded to adopt the evaluated Story into a Change Card.
 	OpID *string `form:"op_id,omitempty" json:"op_id,omitempty" xml:"op_id,omitempty"`
 	// Current operation state: none, running, succeeded, or failed.
 	State *string `form:"state,omitempty" json:"state,omitempty" xml:"state,omitempty"`
-	// Canonical SHA-256 digest (sha256:<hex>) of the workspace module snapshot
-	// read when this refresh started; present when state is running, succeeded, or
-	// failed.
+	// Canonical SHA-256 digest of the workspace module snapshot read when this
+	// refresh started; present when state is running, succeeded, or failed.
 	SnapshotDigest *string `form:"snapshot_digest,omitempty" json:"snapshot_digest,omitempty" xml:"snapshot_digest,omitempty"`
 	// Evaluated domain Stories in declaration order when state is succeeded (empty
 	// when the design declares no Stories or when state is none, running, or
@@ -660,13 +700,14 @@ type RefreshStoryResponseBody struct {
 // "get_story_refresh" endpoint HTTP response body.
 type GetStoryRefreshResponseBody struct {
 	// Identifier of the caller's current Story refresh operation for the bound
-	// workspace; present when state is running, succeeded, or failed.
+	// workspace; present when state is running, succeeded, or failed. Pass it as
+	// story_refresh_op_id to propose_change or revise_change once state is
+	// succeeded to adopt the evaluated Story into a Change Card.
 	OpID *string `form:"op_id,omitempty" json:"op_id,omitempty" xml:"op_id,omitempty"`
 	// Current operation state: none, running, succeeded, or failed.
 	State *string `form:"state,omitempty" json:"state,omitempty" xml:"state,omitempty"`
-	// Canonical SHA-256 digest (sha256:<hex>) of the workspace module snapshot
-	// read when this refresh started; present when state is running, succeeded, or
-	// failed.
+	// Canonical SHA-256 digest of the workspace module snapshot read when this
+	// refresh started; present when state is running, succeeded, or failed.
 	SnapshotDigest *string `form:"snapshot_digest,omitempty" json:"snapshot_digest,omitempty" xml:"snapshot_digest,omitempty"`
 	// Evaluated domain Stories in declaration order when state is succeeded (empty
 	// when the design declares no Stories or when state is none, running, or
@@ -1801,6 +1842,74 @@ type ExampleItemResponseBody struct {
 	VerificationKind *string `form:"verification_kind,omitempty" json:"verification_kind,omitempty" xml:"verification_kind,omitempty"`
 }
 
+// StorySummaryItemResponseBody is used to define fields on response body types.
+type StorySummaryItemResponseBody struct {
+	// Human-facing Story title.
+	Name *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
+	// Optional longer explanation of the Story.
+	Description *string `form:"description,omitempty" json:"description,omitempty" xml:"description,omitempty"`
+	// Domain roles declared in the Story in declaration order.
+	Actors []*StoryActorItemResponseBody `form:"actors,omitempty" json:"actors,omitempty" xml:"actors,omitempty"`
+	// Timeline paths declared in the Story in declaration order.
+	Flows []*StoryFlowItemResponseBody `form:"flows,omitempty" json:"flows,omitempty" xml:"flows,omitempty"`
+}
+
+// StoryActorItemResponseBody is used to define fields on response body types.
+type StoryActorItemResponseBody struct {
+	// Story-scoped actor key.
+	Key *string `form:"key,omitempty" json:"key,omitempty" xml:"key,omitempty"`
+	// Human-facing actor label.
+	Title *string `form:"title,omitempty" json:"title,omitempty" xml:"title,omitempty"`
+	// Optional longer explanation of the actor role.
+	Description *string `form:"description,omitempty" json:"description,omitempty" xml:"description,omitempty"`
+}
+
+// StoryFlowItemResponseBody is used to define fields on response body types.
+type StoryFlowItemResponseBody struct {
+	// Story-scoped flow key.
+	Key *string `form:"key,omitempty" json:"key,omitempty" xml:"key,omitempty"`
+	// Human-facing flow title.
+	Title *string `form:"title,omitempty" json:"title,omitempty" xml:"title,omitempty"`
+	// Optional longer explanation of the flow.
+	Description *string `form:"description,omitempty" json:"description,omitempty" xml:"description,omitempty"`
+	// True when the flow has a start, at least one outcome, and no open questions
+	// on the flow or any of its steps.
+	Complete *bool `form:"complete,omitempty" json:"complete,omitempty" xml:"complete,omitempty"`
+	// Starting, intermediate, and outcome steps in declaration order.
+	Steps []*StoryStepItemResponseBody `form:"steps,omitempty" json:"steps,omitempty" xml:"steps,omitempty"`
+	// Unresolved flow-level decisions in declaration order.
+	Questions []*StoryQuestionItemResponseBody `form:"questions,omitempty" json:"questions,omitempty" xml:"questions,omitempty"`
+}
+
+// StoryStepItemResponseBody is used to define fields on response body types.
+type StoryStepItemResponseBody struct {
+	// Flow-scoped step key.
+	Key *string `form:"key,omitempty" json:"key,omitempty" xml:"key,omitempty"`
+	// Story-scoped key of the actor performing or observing the step.
+	ActorKey *string `form:"actor_key,omitempty" json:"actor_key,omitempty" xml:"actor_key,omitempty"`
+	// Timeline sticky-note sentence for the step.
+	Summary *string `form:"summary,omitempty" json:"summary,omitempty" xml:"summary,omitempty"`
+	// Optional longer explanation of the step.
+	Description *string `form:"description,omitempty" json:"description,omitempty" xml:"description,omitempty"`
+	// Step position in the flow: start, step, or outcome.
+	Kind *string `form:"kind,omitempty" json:"kind,omitempty" xml:"kind,omitempty"`
+	// Unresolved step-level decisions in declaration order.
+	Questions []*StoryQuestionItemResponseBody `form:"questions,omitempty" json:"questions,omitempty" xml:"questions,omitempty"`
+}
+
+// StoryQuestionItemResponseBody is used to define fields on response body
+// types.
+type StoryQuestionItemResponseBody struct {
+	// Flow-scoped question key.
+	Key *string `form:"key,omitempty" json:"key,omitempty" xml:"key,omitempty"`
+	// Human-facing question text.
+	Prompt *string `form:"prompt,omitempty" json:"prompt,omitempty" xml:"prompt,omitempty"`
+	// Optional longer context for the question.
+	Description *string `form:"description,omitempty" json:"description,omitempty" xml:"description,omitempty"`
+	// Suggested choices in declaration order.
+	Options []string `form:"options,omitempty" json:"options,omitempty" xml:"options,omitempty"`
+}
+
 // UICompositionItemResponseBody is used to define fields on response body
 // types.
 type UICompositionItemResponseBody struct {
@@ -2118,74 +2227,6 @@ type TraceSpanResponseBody struct {
 	// True when text was shortened to fit this diagnostic record; use operator
 	// telemetry for the full values.
 	Shortened *bool `form:"shortened,omitempty" json:"shortened,omitempty" xml:"shortened,omitempty"`
-}
-
-// StorySummaryItemResponseBody is used to define fields on response body types.
-type StorySummaryItemResponseBody struct {
-	// Human-facing Story title.
-	Name *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
-	// Optional longer explanation of the Story.
-	Description *string `form:"description,omitempty" json:"description,omitempty" xml:"description,omitempty"`
-	// Domain roles declared in the Story in declaration order.
-	Actors []*StoryActorItemResponseBody `form:"actors,omitempty" json:"actors,omitempty" xml:"actors,omitempty"`
-	// Timeline paths declared in the Story in declaration order.
-	Flows []*StoryFlowItemResponseBody `form:"flows,omitempty" json:"flows,omitempty" xml:"flows,omitempty"`
-}
-
-// StoryActorItemResponseBody is used to define fields on response body types.
-type StoryActorItemResponseBody struct {
-	// Story-scoped actor key.
-	Key *string `form:"key,omitempty" json:"key,omitempty" xml:"key,omitempty"`
-	// Human-facing actor label.
-	Title *string `form:"title,omitempty" json:"title,omitempty" xml:"title,omitempty"`
-	// Optional longer explanation of the actor role.
-	Description *string `form:"description,omitempty" json:"description,omitempty" xml:"description,omitempty"`
-}
-
-// StoryFlowItemResponseBody is used to define fields on response body types.
-type StoryFlowItemResponseBody struct {
-	// Story-scoped flow key.
-	Key *string `form:"key,omitempty" json:"key,omitempty" xml:"key,omitempty"`
-	// Human-facing flow title.
-	Title *string `form:"title,omitempty" json:"title,omitempty" xml:"title,omitempty"`
-	// Optional longer explanation of the flow.
-	Description *string `form:"description,omitempty" json:"description,omitempty" xml:"description,omitempty"`
-	// True when the flow has a start, at least one outcome, and no open questions
-	// on the flow or any of its steps.
-	Complete *bool `form:"complete,omitempty" json:"complete,omitempty" xml:"complete,omitempty"`
-	// Starting, intermediate, and outcome steps in declaration order.
-	Steps []*StoryStepItemResponseBody `form:"steps,omitempty" json:"steps,omitempty" xml:"steps,omitempty"`
-	// Unresolved flow-level decisions in declaration order.
-	Questions []*StoryQuestionItemResponseBody `form:"questions,omitempty" json:"questions,omitempty" xml:"questions,omitempty"`
-}
-
-// StoryStepItemResponseBody is used to define fields on response body types.
-type StoryStepItemResponseBody struct {
-	// Flow-scoped step key.
-	Key *string `form:"key,omitempty" json:"key,omitempty" xml:"key,omitempty"`
-	// Story-scoped key of the actor performing or observing the step.
-	ActorKey *string `form:"actor_key,omitempty" json:"actor_key,omitempty" xml:"actor_key,omitempty"`
-	// Timeline sticky-note sentence for the step.
-	Summary *string `form:"summary,omitempty" json:"summary,omitempty" xml:"summary,omitempty"`
-	// Optional longer explanation of the step.
-	Description *string `form:"description,omitempty" json:"description,omitempty" xml:"description,omitempty"`
-	// Step position in the flow: start, step, or outcome.
-	Kind *string `form:"kind,omitempty" json:"kind,omitempty" xml:"kind,omitempty"`
-	// Unresolved step-level decisions in declaration order.
-	Questions []*StoryQuestionItemResponseBody `form:"questions,omitempty" json:"questions,omitempty" xml:"questions,omitempty"`
-}
-
-// StoryQuestionItemResponseBody is used to define fields on response body
-// types.
-type StoryQuestionItemResponseBody struct {
-	// Flow-scoped question key.
-	Key *string `form:"key,omitempty" json:"key,omitempty" xml:"key,omitempty"`
-	// Human-facing question text.
-	Prompt *string `form:"prompt,omitempty" json:"prompt,omitempty" xml:"prompt,omitempty"`
-	// Optional longer context for the question.
-	Description *string `form:"description,omitempty" json:"description,omitempty" xml:"description,omitempty"`
-	// Suggested choices in declaration order.
-	Options []string `form:"options,omitempty" json:"options,omitempty" xml:"options,omitempty"`
 }
 
 // CP1AnalysisRequestBody is used to define fields on request body types.
@@ -2526,9 +2567,10 @@ func (u *StateResponseBody) UnmarshalJSON(data []byte) error {
 // the "propose_change" endpoint of the "surla" service.
 func NewProposeChangeRequestBody(p *surla.ProposeChangePayload) *ProposeChangeRequestBody {
 	body := &ProposeChangeRequestBody{
-		ChangeID:     p.ChangeID,
-		Prompt:       p.Prompt,
-		DesignSource: p.DesignSource,
+		ChangeID:         p.ChangeID,
+		Prompt:           p.Prompt,
+		DesignSource:     p.DesignSource,
+		StoryRefreshOpID: p.StoryRefreshOpID,
 	}
 	if p.Analysis != nil {
 		body.Analysis = marshalSurlaCP1AnalysisToCP1AnalysisRequestBody(p.Analysis)
@@ -2540,10 +2582,11 @@ func NewProposeChangeRequestBody(p *surla.ProposeChangePayload) *ProposeChangeRe
 // the "revise_change" endpoint of the "surla" service.
 func NewReviseChangeRequestBody(p *surla.ReviseChangePayload) *ReviseChangeRequestBody {
 	body := &ReviseChangeRequestBody{
-		ChangeID:        p.ChangeID,
-		RequestRevision: p.RequestRevision,
-		Prompt:          p.Prompt,
-		DesignSource:    p.DesignSource,
+		ChangeID:         p.ChangeID,
+		RequestRevision:  p.RequestRevision,
+		Prompt:           p.Prompt,
+		DesignSource:     p.DesignSource,
+		StoryRefreshOpID: p.StoryRefreshOpID,
 	}
 	if p.Analysis != nil {
 		body.Analysis = marshalSurlaCP1RevisionAnalysisToCP1RevisionAnalysisRequestBody(p.Analysis)
@@ -2752,6 +2795,16 @@ func NewProposeChangeChangeCardResultOK(body *ProposeChangeResponseBody) *surla.
 	for i, val := range body.PreservedBehaviors {
 		v.PreservedBehaviors[i] = val
 	}
+	if body.Stories != nil {
+		v.Stories = make([]*surla.StorySummaryItem, len(body.Stories))
+		for i, val := range body.Stories {
+			if val == nil {
+				v.Stories[i] = nil
+				continue
+			}
+			v.Stories[i] = unmarshalStorySummaryItemResponseBodyToSurlaStorySummaryItem(val)
+		}
+	}
 	if body.UIComposition != nil {
 		v.UIComposition = unmarshalUICompositionItemResponseBodyToSurlaUICompositionItem(body.UIComposition)
 	}
@@ -2835,6 +2888,16 @@ func NewReviseChangeChangeCardResultOK(body *ReviseChangeResponseBody) *surla.Ch
 	v.PreservedBehaviors = make([]string, len(body.PreservedBehaviors))
 	for i, val := range body.PreservedBehaviors {
 		v.PreservedBehaviors[i] = val
+	}
+	if body.Stories != nil {
+		v.Stories = make([]*surla.StorySummaryItem, len(body.Stories))
+		for i, val := range body.Stories {
+			if val == nil {
+				v.Stories[i] = nil
+				continue
+			}
+			v.Stories[i] = unmarshalStorySummaryItemResponseBodyToSurlaStorySummaryItem(val)
+		}
 	}
 	if body.UIComposition != nil {
 		v.UIComposition = unmarshalUICompositionItemResponseBodyToSurlaUICompositionItem(body.UIComposition)
@@ -2950,6 +3013,16 @@ func NewConfirmIntentChangeCardResultOK(body *ConfirmIntentResponseBody) *surla.
 	for i, val := range body.PreservedBehaviors {
 		v.PreservedBehaviors[i] = val
 	}
+	if body.Stories != nil {
+		v.Stories = make([]*surla.StorySummaryItem, len(body.Stories))
+		for i, val := range body.Stories {
+			if val == nil {
+				v.Stories[i] = nil
+				continue
+			}
+			v.Stories[i] = unmarshalStorySummaryItemResponseBodyToSurlaStorySummaryItem(val)
+		}
+	}
 	if body.UIComposition != nil {
 		v.UIComposition = unmarshalUICompositionItemResponseBodyToSurlaUICompositionItem(body.UIComposition)
 	}
@@ -3063,6 +3136,16 @@ func NewGetChangeChangeCardResultOK(body *GetChangeResponseBody) *surla.ChangeCa
 	v.PreservedBehaviors = make([]string, len(body.PreservedBehaviors))
 	for i, val := range body.PreservedBehaviors {
 		v.PreservedBehaviors[i] = val
+	}
+	if body.Stories != nil {
+		v.Stories = make([]*surla.StorySummaryItem, len(body.Stories))
+		for i, val := range body.Stories {
+			if val == nil {
+				v.Stories[i] = nil
+				continue
+			}
+			v.Stories[i] = unmarshalStorySummaryItemResponseBodyToSurlaStorySummaryItem(val)
+		}
 	}
 	if body.UIComposition != nil {
 		v.UIComposition = unmarshalUICompositionItemResponseBodyToSurlaUICompositionItem(body.UIComposition)
@@ -3666,6 +3749,16 @@ func NewApproveMergeChangeCardResultOK(body *ApproveMergeResponseBody) *surla.Ch
 	v.PreservedBehaviors = make([]string, len(body.PreservedBehaviors))
 	for i, val := range body.PreservedBehaviors {
 		v.PreservedBehaviors[i] = val
+	}
+	if body.Stories != nil {
+		v.Stories = make([]*surla.StorySummaryItem, len(body.Stories))
+		for i, val := range body.Stories {
+			if val == nil {
+				v.Stories[i] = nil
+				continue
+			}
+			v.Stories[i] = unmarshalStorySummaryItemResponseBodyToSurlaStorySummaryItem(val)
+		}
 	}
 	if body.UIComposition != nil {
 		v.UIComposition = unmarshalUICompositionItemResponseBodyToSurlaUICompositionItem(body.UIComposition)
@@ -4286,6 +4379,13 @@ func ValidateProposeChangeResponseBody(body *ProposeChangeResponseBody) (err err
 			}
 		}
 	}
+	for _, e := range body.Stories {
+		if e != nil {
+			if err2 := validateStorySummaryItemResponseBody(e, "body.stories[*]"); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
 	if body.UIComposition != nil {
 		if err2 := validateUICompositionItemResponseBody(body.UIComposition, "body.ui_composition"); err2 != nil {
 			err = goa.MergeErrors(err, err2)
@@ -4343,6 +4443,13 @@ func ValidateReviseChangeResponseBody(body *ReviseChangeResponseBody) (err error
 	for _, e := range body.Examples {
 		if e != nil {
 			if err2 := validateExampleItemResponseBody(e, "body.examples[*]"); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	for _, e := range body.Stories {
+		if e != nil {
+			if err2 := validateStorySummaryItemResponseBody(e, "body.stories[*]"); err2 != nil {
 				err = goa.MergeErrors(err, err2)
 			}
 		}
@@ -4408,6 +4515,13 @@ func ValidateConfirmIntentResponseBody(body *ConfirmIntentResponseBody) (err err
 			}
 		}
 	}
+	for _, e := range body.Stories {
+		if e != nil {
+			if err2 := validateStorySummaryItemResponseBody(e, "body.stories[*]"); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
 	if body.UIComposition != nil {
 		if err2 := validateUICompositionItemResponseBody(body.UIComposition, "body.ui_composition"); err2 != nil {
 			err = goa.MergeErrors(err, err2)
@@ -4465,6 +4579,13 @@ func ValidateGetChangeResponseBody(body *GetChangeResponseBody) (err error) {
 	for _, e := range body.Examples {
 		if e != nil {
 			if err2 := validateExampleItemResponseBody(e, "body.examples[*]"); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	for _, e := range body.Stories {
+		if e != nil {
+			if err2 := validateStorySummaryItemResponseBody(e, "body.stories[*]"); err2 != nil {
 				err = goa.MergeErrors(err, err2)
 			}
 		}
@@ -4778,6 +4899,13 @@ func ValidateApproveMergeResponseBody(body *ApproveMergeResponseBody) (err error
 	for _, e := range body.Examples {
 		if e != nil {
 			if err2 := validateExampleItemResponseBody(e, "body.examples[*]"); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	for _, e := range body.Stories {
+		if e != nil {
+			if err2 := validateStorySummaryItemResponseBody(e, "body.stories[*]"); err2 != nil {
 				err = goa.MergeErrors(err, err2)
 			}
 		}
@@ -6524,6 +6652,254 @@ func validateExampleItemResponseBody(body *ExampleItemResponseBody, path string)
 	return
 }
 
+// ValidateStorySummaryItemResponseBody runs the validations defined on
+// StorySummaryItem
+func ValidateStorySummaryItemResponseBody(body *StorySummaryItemResponseBody) (err error) {
+	if body.Name == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
+	}
+	if body.Actors == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("actors", "body"))
+	}
+	if body.Flows == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("flows", "body"))
+	}
+	for _, e := range body.Actors {
+		if e != nil {
+			if err2 := validateStoryActorItemResponseBody(e, "body.actors[*]"); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	for _, e := range body.Flows {
+		if e != nil {
+			if err2 := validateStoryFlowItemResponseBody(e, "body.flows[*]"); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	return
+}
+
+// validateStorySummaryItemResponseBody checks StorySummaryItem and reports
+// errors using the path supplied by its caller
+func validateStorySummaryItemResponseBody(body *StorySummaryItemResponseBody, path string) (err error) {
+	if body.Name == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("name", path))
+	}
+	if body.Actors == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("actors", path))
+	}
+	if body.Flows == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("flows", path))
+	}
+	for _, e := range body.Actors {
+		if e != nil {
+			if err2 := validateStoryActorItemResponseBody(e, path+".actors[*]"); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	for _, e := range body.Flows {
+		if e != nil {
+			if err2 := validateStoryFlowItemResponseBody(e, path+".flows[*]"); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	return
+}
+
+// ValidateStoryActorItemResponseBody runs the validations defined on
+// StoryActorItem
+func ValidateStoryActorItemResponseBody(body *StoryActorItemResponseBody) (err error) {
+	if body.Key == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("key", "body"))
+	}
+	if body.Title == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("title", "body"))
+	}
+	return
+}
+
+// validateStoryActorItemResponseBody checks StoryActorItem and reports errors
+// using the path supplied by its caller
+func validateStoryActorItemResponseBody(body *StoryActorItemResponseBody, path string) (err error) {
+	if body.Key == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("key", path))
+	}
+	if body.Title == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("title", path))
+	}
+	return
+}
+
+// ValidateStoryFlowItemResponseBody runs the validations defined on
+// StoryFlowItem
+func ValidateStoryFlowItemResponseBody(body *StoryFlowItemResponseBody) (err error) {
+	if body.Key == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("key", "body"))
+	}
+	if body.Title == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("title", "body"))
+	}
+	if body.Complete == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("complete", "body"))
+	}
+	if body.Steps == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("steps", "body"))
+	}
+	if body.Questions == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("questions", "body"))
+	}
+	for _, e := range body.Steps {
+		if e != nil {
+			if err2 := validateStoryStepItemResponseBody(e, "body.steps[*]"); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	for _, e := range body.Questions {
+		if e != nil {
+			if err2 := validateStoryQuestionItemResponseBody(e, "body.questions[*]"); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	return
+}
+
+// validateStoryFlowItemResponseBody checks StoryFlowItem and reports errors
+// using the path supplied by its caller
+func validateStoryFlowItemResponseBody(body *StoryFlowItemResponseBody, path string) (err error) {
+	if body.Key == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("key", path))
+	}
+	if body.Title == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("title", path))
+	}
+	if body.Complete == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("complete", path))
+	}
+	if body.Steps == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("steps", path))
+	}
+	if body.Questions == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("questions", path))
+	}
+	for _, e := range body.Steps {
+		if e != nil {
+			if err2 := validateStoryStepItemResponseBody(e, path+".steps[*]"); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	for _, e := range body.Questions {
+		if e != nil {
+			if err2 := validateStoryQuestionItemResponseBody(e, path+".questions[*]"); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	return
+}
+
+// ValidateStoryStepItemResponseBody runs the validations defined on
+// StoryStepItem
+func ValidateStoryStepItemResponseBody(body *StoryStepItemResponseBody) (err error) {
+	if body.Key == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("key", "body"))
+	}
+	if body.ActorKey == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("actor_key", "body"))
+	}
+	if body.Summary == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("summary", "body"))
+	}
+	if body.Kind == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("kind", "body"))
+	}
+	if body.Questions == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("questions", "body"))
+	}
+	if body.Kind != nil {
+		if !(*body.Kind == "start" || *body.Kind == "step" || *body.Kind == "outcome") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.kind", *body.Kind, []any{"start", "step", "outcome"}))
+		}
+	}
+	for _, e := range body.Questions {
+		if e != nil {
+			if err2 := validateStoryQuestionItemResponseBody(e, "body.questions[*]"); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	return
+}
+
+// validateStoryStepItemResponseBody checks StoryStepItem and reports errors
+// using the path supplied by its caller
+func validateStoryStepItemResponseBody(body *StoryStepItemResponseBody, path string) (err error) {
+	if body.Key == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("key", path))
+	}
+	if body.ActorKey == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("actor_key", path))
+	}
+	if body.Summary == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("summary", path))
+	}
+	if body.Kind == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("kind", path))
+	}
+	if body.Questions == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("questions", path))
+	}
+	if body.Kind != nil {
+		if !(*body.Kind == "start" || *body.Kind == "step" || *body.Kind == "outcome") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError(path+".kind", *body.Kind, []any{"start", "step", "outcome"}))
+		}
+	}
+	for _, e := range body.Questions {
+		if e != nil {
+			if err2 := validateStoryQuestionItemResponseBody(e, path+".questions[*]"); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	return
+}
+
+// ValidateStoryQuestionItemResponseBody runs the validations defined on
+// StoryQuestionItem
+func ValidateStoryQuestionItemResponseBody(body *StoryQuestionItemResponseBody) (err error) {
+	if body.Key == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("key", "body"))
+	}
+	if body.Prompt == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("prompt", "body"))
+	}
+	if body.Options == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("options", "body"))
+	}
+	return
+}
+
+// validateStoryQuestionItemResponseBody checks StoryQuestionItem and reports
+// errors using the path supplied by its caller
+func validateStoryQuestionItemResponseBody(body *StoryQuestionItemResponseBody, path string) (err error) {
+	if body.Key == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("key", path))
+	}
+	if body.Prompt == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("prompt", path))
+	}
+	if body.Options == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("options", path))
+	}
+	return
+}
+
 // ValidateUICompositionItemResponseBody runs the validations defined on
 // UICompositionItem
 func ValidateUICompositionItemResponseBody(body *UICompositionItemResponseBody) (err error) {
@@ -7552,254 +7928,6 @@ func validateTraceSpanResponseBody(body *TraceSpanResponseBody, path string) (er
 		if !(*body.Status == "unset" || *body.Status == "ok" || *body.Status == "error") {
 			err = goa.MergeErrors(err, goa.InvalidEnumValueError(path+".status", *body.Status, []any{"unset", "ok", "error"}))
 		}
-	}
-	return
-}
-
-// ValidateStorySummaryItemResponseBody runs the validations defined on
-// StorySummaryItem
-func ValidateStorySummaryItemResponseBody(body *StorySummaryItemResponseBody) (err error) {
-	if body.Name == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
-	}
-	if body.Actors == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("actors", "body"))
-	}
-	if body.Flows == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("flows", "body"))
-	}
-	for _, e := range body.Actors {
-		if e != nil {
-			if err2 := validateStoryActorItemResponseBody(e, "body.actors[*]"); err2 != nil {
-				err = goa.MergeErrors(err, err2)
-			}
-		}
-	}
-	for _, e := range body.Flows {
-		if e != nil {
-			if err2 := validateStoryFlowItemResponseBody(e, "body.flows[*]"); err2 != nil {
-				err = goa.MergeErrors(err, err2)
-			}
-		}
-	}
-	return
-}
-
-// validateStorySummaryItemResponseBody checks StorySummaryItem and reports
-// errors using the path supplied by its caller
-func validateStorySummaryItemResponseBody(body *StorySummaryItemResponseBody, path string) (err error) {
-	if body.Name == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("name", path))
-	}
-	if body.Actors == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("actors", path))
-	}
-	if body.Flows == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("flows", path))
-	}
-	for _, e := range body.Actors {
-		if e != nil {
-			if err2 := validateStoryActorItemResponseBody(e, path+".actors[*]"); err2 != nil {
-				err = goa.MergeErrors(err, err2)
-			}
-		}
-	}
-	for _, e := range body.Flows {
-		if e != nil {
-			if err2 := validateStoryFlowItemResponseBody(e, path+".flows[*]"); err2 != nil {
-				err = goa.MergeErrors(err, err2)
-			}
-		}
-	}
-	return
-}
-
-// ValidateStoryActorItemResponseBody runs the validations defined on
-// StoryActorItem
-func ValidateStoryActorItemResponseBody(body *StoryActorItemResponseBody) (err error) {
-	if body.Key == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("key", "body"))
-	}
-	if body.Title == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("title", "body"))
-	}
-	return
-}
-
-// validateStoryActorItemResponseBody checks StoryActorItem and reports errors
-// using the path supplied by its caller
-func validateStoryActorItemResponseBody(body *StoryActorItemResponseBody, path string) (err error) {
-	if body.Key == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("key", path))
-	}
-	if body.Title == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("title", path))
-	}
-	return
-}
-
-// ValidateStoryFlowItemResponseBody runs the validations defined on
-// StoryFlowItem
-func ValidateStoryFlowItemResponseBody(body *StoryFlowItemResponseBody) (err error) {
-	if body.Key == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("key", "body"))
-	}
-	if body.Title == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("title", "body"))
-	}
-	if body.Complete == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("complete", "body"))
-	}
-	if body.Steps == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("steps", "body"))
-	}
-	if body.Questions == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("questions", "body"))
-	}
-	for _, e := range body.Steps {
-		if e != nil {
-			if err2 := validateStoryStepItemResponseBody(e, "body.steps[*]"); err2 != nil {
-				err = goa.MergeErrors(err, err2)
-			}
-		}
-	}
-	for _, e := range body.Questions {
-		if e != nil {
-			if err2 := validateStoryQuestionItemResponseBody(e, "body.questions[*]"); err2 != nil {
-				err = goa.MergeErrors(err, err2)
-			}
-		}
-	}
-	return
-}
-
-// validateStoryFlowItemResponseBody checks StoryFlowItem and reports errors
-// using the path supplied by its caller
-func validateStoryFlowItemResponseBody(body *StoryFlowItemResponseBody, path string) (err error) {
-	if body.Key == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("key", path))
-	}
-	if body.Title == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("title", path))
-	}
-	if body.Complete == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("complete", path))
-	}
-	if body.Steps == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("steps", path))
-	}
-	if body.Questions == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("questions", path))
-	}
-	for _, e := range body.Steps {
-		if e != nil {
-			if err2 := validateStoryStepItemResponseBody(e, path+".steps[*]"); err2 != nil {
-				err = goa.MergeErrors(err, err2)
-			}
-		}
-	}
-	for _, e := range body.Questions {
-		if e != nil {
-			if err2 := validateStoryQuestionItemResponseBody(e, path+".questions[*]"); err2 != nil {
-				err = goa.MergeErrors(err, err2)
-			}
-		}
-	}
-	return
-}
-
-// ValidateStoryStepItemResponseBody runs the validations defined on
-// StoryStepItem
-func ValidateStoryStepItemResponseBody(body *StoryStepItemResponseBody) (err error) {
-	if body.Key == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("key", "body"))
-	}
-	if body.ActorKey == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("actor_key", "body"))
-	}
-	if body.Summary == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("summary", "body"))
-	}
-	if body.Kind == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("kind", "body"))
-	}
-	if body.Questions == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("questions", "body"))
-	}
-	if body.Kind != nil {
-		if !(*body.Kind == "start" || *body.Kind == "step" || *body.Kind == "outcome") {
-			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.kind", *body.Kind, []any{"start", "step", "outcome"}))
-		}
-	}
-	for _, e := range body.Questions {
-		if e != nil {
-			if err2 := validateStoryQuestionItemResponseBody(e, "body.questions[*]"); err2 != nil {
-				err = goa.MergeErrors(err, err2)
-			}
-		}
-	}
-	return
-}
-
-// validateStoryStepItemResponseBody checks StoryStepItem and reports errors
-// using the path supplied by its caller
-func validateStoryStepItemResponseBody(body *StoryStepItemResponseBody, path string) (err error) {
-	if body.Key == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("key", path))
-	}
-	if body.ActorKey == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("actor_key", path))
-	}
-	if body.Summary == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("summary", path))
-	}
-	if body.Kind == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("kind", path))
-	}
-	if body.Questions == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("questions", path))
-	}
-	if body.Kind != nil {
-		if !(*body.Kind == "start" || *body.Kind == "step" || *body.Kind == "outcome") {
-			err = goa.MergeErrors(err, goa.InvalidEnumValueError(path+".kind", *body.Kind, []any{"start", "step", "outcome"}))
-		}
-	}
-	for _, e := range body.Questions {
-		if e != nil {
-			if err2 := validateStoryQuestionItemResponseBody(e, path+".questions[*]"); err2 != nil {
-				err = goa.MergeErrors(err, err2)
-			}
-		}
-	}
-	return
-}
-
-// ValidateStoryQuestionItemResponseBody runs the validations defined on
-// StoryQuestionItem
-func ValidateStoryQuestionItemResponseBody(body *StoryQuestionItemResponseBody) (err error) {
-	if body.Key == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("key", "body"))
-	}
-	if body.Prompt == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("prompt", "body"))
-	}
-	if body.Options == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("options", "body"))
-	}
-	return
-}
-
-// validateStoryQuestionItemResponseBody checks StoryQuestionItem and reports
-// errors using the path supplied by its caller
-func validateStoryQuestionItemResponseBody(body *StoryQuestionItemResponseBody, path string) (err error) {
-	if body.Key == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("key", path))
-	}
-	if body.Prompt == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("prompt", path))
-	}
-	if body.Options == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("options", path))
 	}
 	return
 }

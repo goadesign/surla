@@ -64,11 +64,11 @@ var StorySummaryItem = Type("StorySummaryItem", func() {
 // StoryRefreshResult reports the caller's current Story refresh operation for the bound workspace.
 var StoryRefreshResult = Type("StoryRefreshResult", func() {
 	Description("Current Story refresh operation for the authenticated caller and bound workspace. state is none when no refresh has run yet in this server process for the bound workspace; running while sandboxed evaluation is in progress; succeeded with the evaluated stories (empty when the design does not load the Story module); or failed with a safe diagnostic.")
-	Attribute("op_id", String, "Identifier of the caller's current Story refresh operation for the bound workspace; present when state is running, succeeded, or failed.")
+	Attribute("op_id", String, "Identifier of the caller's current Story refresh operation for the bound workspace; present when state is running, succeeded, or failed. Pass it as story_refresh_op_id to propose_change or revise_change once state is succeeded to adopt the evaluated Story into a Change Card.")
 	Attribute("state", String, "Current operation state: none, running, succeeded, or failed.", func() {
 		Enum("none", "running", "succeeded", "failed")
 	})
-	Attribute("snapshot_digest", String, "Canonical SHA-256 digest (sha256:<hex>) of the workspace module snapshot read when this refresh started; present when state is running, succeeded, or failed.")
+	Attribute("snapshot_digest", String, "Canonical SHA-256 digest of the workspace module snapshot read when this refresh started; present when state is running, succeeded, or failed.")
 	Attribute("stories", ArrayOf(StorySummaryItem), "Evaluated domain Stories in declaration order when state is succeeded (empty when the design declares no Stories or when state is none, running, or failed).")
 	Attribute("diagnostic", String, "Safe failure or timeout diagnostic when state is failed; omitted otherwise.")
 	Attribute("message", String, "Summary of the current Story refresh state and next action.")

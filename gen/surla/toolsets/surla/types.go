@@ -44,6 +44,10 @@ type (
 		Examples []*ExampleItem
 		// Existing contract invariants preserved by this change.
 		PreservedBehaviors []string
+		// Evaluated domain Stories adopted from refresh_story for this Change Card
+		// revision in declaration order; omitted when the card has no Stories.
+		// Included in request_revision.
+		Stories []*StorySummaryItem
 		// Authenticated principal that confirmed the Change Card.
 		ConfirmedBy *string
 		// SHA-256 digest of the canonical versioned Change Card.
@@ -139,6 +143,10 @@ type (
 		Examples []*ExampleItem
 		// Existing contract invariants preserved by this change.
 		PreservedBehaviors []string
+		// Evaluated domain Stories adopted from refresh_story for this Change Card
+		// revision in declaration order; omitted when the card has no Stories.
+		// Included in request_revision.
+		Stories []*StorySummaryItem
 		// Authenticated principal that confirmed the Change Card.
 		ConfirmedBy *string
 		// SHA-256 digest of the canonical versioned Change Card.
@@ -248,6 +256,10 @@ type (
 		Examples []*ExampleItem
 		// Existing contract invariants preserved by this change.
 		PreservedBehaviors []string
+		// Evaluated domain Stories adopted from refresh_story for this Change Card
+		// revision in declaration order; omitted when the card has no Stories.
+		// Included in request_revision.
+		Stories []*StorySummaryItem
 		// Authenticated principal that confirmed the Change Card.
 		ConfirmedBy *string
 		// SHA-256 digest of the canonical versioned Change Card.
@@ -275,13 +287,14 @@ type (
 	// GetStoryRefreshResult defines the JSON result for the surla.get_story_refresh tool.
 	GetStoryRefreshResult = struct {
 		// Identifier of the caller's current Story refresh operation for the bound
-		// workspace; present when state is running, succeeded, or failed.
+		// workspace; present when state is running, succeeded, or failed. Pass it as
+		// story_refresh_op_id to propose_change or revise_change once state is
+		// succeeded to adopt the evaluated Story into a Change Card.
 		OpID *string
 		// Current operation state: none, running, succeeded, or failed.
 		State string
-		// Canonical SHA-256 digest (sha256:<hex>) of the workspace module snapshot
-		// read when this refresh started; present when state is running, succeeded, or
-		// failed.
+		// Canonical SHA-256 digest of the workspace module snapshot read when this
+		// refresh started; present when state is running, succeeded, or failed.
 		SnapshotDigest *string
 		// Evaluated domain Stories in declaration order when state is succeeded (empty
 		// when the design declares no Stories or when state is none, running, or
@@ -424,8 +437,16 @@ type (
 		// files). Surla saves it with the card and includes it in request_revision; it
 		// does not interpret it. When omitted on a server with a bound workspace,
 		// Surla records design/*.go from the bound workspace; when omitted without a
-		// bound workspace, the card records no design.
+		// bound workspace, the card records no design. Cannot be combined with
+		// story_refresh_op_id.
 		DesignSource *string
+		// Optional op_id of a succeeded refresh_story operation for the bound
+		// workspace whose evaluated Stories this card adopts. When set, design_source
+		// must be omitted; Surla reads one workspace snapshot, requires its
+		// snapshot_digest to match the operation's, and records both the evaluated
+		// Stories and that snapshot's design/*.go on the card. Omit when the card has
+		// no Story.
+		StoryRefreshOpID *string
 		// Your analysis of prompt against the target's current design.
 		Analysis *CP1Analysis
 	}
@@ -452,6 +473,10 @@ type (
 		Examples []*ExampleItem
 		// Existing contract invariants preserved by this change.
 		PreservedBehaviors []string
+		// Evaluated domain Stories adopted from refresh_story for this Change Card
+		// revision in declaration order; omitted when the card has no Stories.
+		// Included in request_revision.
+		Stories []*StorySummaryItem
 		// Authenticated principal that confirmed the Change Card.
 		ConfirmedBy *string
 		// SHA-256 digest of the canonical versioned Change Card.
@@ -498,13 +523,14 @@ type (
 	// RefreshStoryResult defines the JSON result for the surla.refresh_story tool.
 	RefreshStoryResult = struct {
 		// Identifier of the caller's current Story refresh operation for the bound
-		// workspace; present when state is running, succeeded, or failed.
+		// workspace; present when state is running, succeeded, or failed. Pass it as
+		// story_refresh_op_id to propose_change or revise_change once state is
+		// succeeded to adopt the evaluated Story into a Change Card.
 		OpID *string
 		// Current operation state: none, running, succeeded, or failed.
 		State string
-		// Canonical SHA-256 digest (sha256:<hex>) of the workspace module snapshot
-		// read when this refresh started; present when state is running, succeeded, or
-		// failed.
+		// Canonical SHA-256 digest of the workspace module snapshot read when this
+		// refresh started; present when state is running, succeeded, or failed.
 		SnapshotDigest *string
 		// Evaluated domain Stories in declaration order when state is succeeded (empty
 		// when the design declares no Stories or when state is none, running, or
@@ -526,9 +552,20 @@ type (
 		// Updated Goa design source the analysis was made against (the target's
 		// design/*.go files). Surla saves it with the card and includes it in
 		// request_revision; it does not interpret it. When omitted on a
-		// workspace-backed card with a bound workspace, Surla records design/*.go from
-		// the bound workspace again; otherwise the card's saved design source is kept.
+		// workspace-backed card without Stories and with a bound workspace, Surla
+		// records design/*.go from the bound workspace again; otherwise the card's
+		// saved design source is kept. Cannot be set when story_refresh_op_id is set
+		// or when the card already has adopted Stories.
 		DesignSource *string
+		// Optional op_id of a succeeded refresh_story operation for the bound
+		// workspace whose evaluated Stories this revision adopts. When set,
+		// design_source must be omitted and the card must not use a caller-supplied
+		// design_source; Surla reads one workspace snapshot, requires its
+		// snapshot_digest to match the operation's, and records both the evaluated
+		// Stories and that snapshot's design/*.go on the revised card. When omitted on
+		// a card that already has Stories, the card's saved Stories and saved
+		// design_source are kept together.
+		StoryRefreshOpID *string
 		// Your analysis of the revised prompt against the current card and the
 		// target's current design.
 		Analysis *CP1RevisionAnalysis
@@ -556,6 +593,10 @@ type (
 		Examples []*ExampleItem
 		// Existing contract invariants preserved by this change.
 		PreservedBehaviors []string
+		// Evaluated domain Stories adopted from refresh_story for this Change Card
+		// revision in declaration order; omitted when the card has no Stories.
+		// Included in request_revision.
+		Stories []*StorySummaryItem
 		// Authenticated principal that confirmed the Change Card.
 		ConfirmedBy *string
 		// SHA-256 digest of the canonical versioned Change Card.

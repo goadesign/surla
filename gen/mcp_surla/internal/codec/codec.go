@@ -185,6 +185,207 @@ func ValidateApproveMergeResultExampleItemTransport(value *ApproveMergeResultExa
 	return err
 }
 
+// ApproveMergeResultStoryActorItemTransport stores JSON fields until they have been validated.
+type ApproveMergeResultStoryActorItemTransport struct {
+	// Story-scoped actor key.
+	Key *string `json:"key"`
+	// Human-facing actor label.
+	Title *string `json:"title"`
+	// Optional longer explanation of the actor role.
+	Description *string `json:"description,omitempty"`
+}
+
+// ValidateApproveMergeResultStoryActorItemTransport checks decoded JSON before it becomes a service value.
+func ValidateApproveMergeResultStoryActorItemTransport(value *ApproveMergeResultStoryActorItemTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.Key == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("key", "body"))
+	}
+	if value.Title == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("title", "body"))
+	}
+	return err
+}
+
+// ApproveMergeResultStoryFlowItemTransport stores JSON fields until they have been validated.
+type ApproveMergeResultStoryFlowItemTransport struct {
+	// Story-scoped flow key.
+	Key *string `json:"key"`
+	// Human-facing flow title.
+	Title *string `json:"title"`
+	// Optional longer explanation of the flow.
+	Description *string `json:"description,omitempty"`
+	// True when the flow has a start, at least one outcome, and no open questions
+	// on the flow or any of its steps.
+	Complete *bool `json:"complete"`
+	// Starting, intermediate, and outcome steps in declaration order.
+	Steps []*ApproveMergeResultStoryStepItemTransport `json:"steps"`
+	// Unresolved flow-level decisions in declaration order.
+	Questions []*ApproveMergeResultStoryQuestionItemTransport `json:"questions"`
+}
+
+// ValidateApproveMergeResultStoryFlowItemTransport checks decoded JSON before it becomes a service value.
+func ValidateApproveMergeResultStoryFlowItemTransport(value *ApproveMergeResultStoryFlowItemTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.Key == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("key", "body"))
+	}
+	if value.Title == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("title", "body"))
+	}
+	if value.Complete == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("complete", "body"))
+	}
+	if value.Steps == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("steps", "body"))
+	}
+	if value.Questions == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("questions", "body"))
+	}
+	for _, e := range value.Steps {
+		if e != nil {
+			if err2 := ValidateApproveMergeResultStoryStepItemTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	for _, e := range value.Questions {
+		if e != nil {
+			if err2 := ValidateApproveMergeResultStoryQuestionItemTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	return err
+}
+
+// ApproveMergeResultStoryQuestionItemTransport stores JSON fields until they have been validated.
+type ApproveMergeResultStoryQuestionItemTransport struct {
+	// Flow-scoped question key.
+	Key *string `json:"key"`
+	// Human-facing question text.
+	Prompt *string `json:"prompt"`
+	// Optional longer context for the question.
+	Description *string `json:"description,omitempty"`
+	// Suggested choices in declaration order.
+	Options []string `json:"options"`
+}
+
+// ValidateApproveMergeResultStoryQuestionItemTransport checks decoded JSON before it becomes a service value.
+func ValidateApproveMergeResultStoryQuestionItemTransport(value *ApproveMergeResultStoryQuestionItemTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.Key == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("key", "body"))
+	}
+	if value.Prompt == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("prompt", "body"))
+	}
+	if value.Options == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("options", "body"))
+	}
+	return err
+}
+
+// ApproveMergeResultStoryStepItemTransport stores JSON fields until they have been validated.
+type ApproveMergeResultStoryStepItemTransport struct {
+	// Flow-scoped step key.
+	Key *string `json:"key"`
+	// Story-scoped key of the actor performing or observing the step.
+	ActorKey *string `json:"actor_key"`
+	// Timeline sticky-note sentence for the step.
+	Summary *string `json:"summary"`
+	// Optional longer explanation of the step.
+	Description *string `json:"description,omitempty"`
+	// Step position in the flow: start, step, or outcome.
+	Kind *string `json:"kind"`
+	// Unresolved step-level decisions in declaration order.
+	Questions []*ApproveMergeResultStoryQuestionItemTransport `json:"questions"`
+}
+
+// ValidateApproveMergeResultStoryStepItemTransport checks decoded JSON before it becomes a service value.
+func ValidateApproveMergeResultStoryStepItemTransport(value *ApproveMergeResultStoryStepItemTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.Key == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("key", "body"))
+	}
+	if value.ActorKey == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("actor_key", "body"))
+	}
+	if value.Summary == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("summary", "body"))
+	}
+	if value.Kind == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("kind", "body"))
+	}
+	if value.Questions == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("questions", "body"))
+	}
+	if value.Kind != nil {
+		if !(*value.Kind == "start" || *value.Kind == "step" || *value.Kind == "outcome") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.kind", *value.Kind, []any{"start", "step", "outcome"}))
+		}
+	}
+	for _, e := range value.Questions {
+		if e != nil {
+			if err2 := ValidateApproveMergeResultStoryQuestionItemTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	return err
+}
+
+// ApproveMergeResultStorySummaryItemTransport stores JSON fields until they have been validated.
+type ApproveMergeResultStorySummaryItemTransport struct {
+	// Human-facing Story title.
+	Name *string `json:"name"`
+	// Optional longer explanation of the Story.
+	Description *string `json:"description,omitempty"`
+	// Domain roles declared in the Story in declaration order.
+	Actors []*ApproveMergeResultStoryActorItemTransport `json:"actors"`
+	// Timeline paths declared in the Story in declaration order.
+	Flows []*ApproveMergeResultStoryFlowItemTransport `json:"flows"`
+}
+
+// ValidateApproveMergeResultStorySummaryItemTransport checks decoded JSON before it becomes a service value.
+func ValidateApproveMergeResultStorySummaryItemTransport(value *ApproveMergeResultStorySummaryItemTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.Name == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
+	}
+	if value.Actors == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("actors", "body"))
+	}
+	if value.Flows == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("flows", "body"))
+	}
+	for _, e := range value.Actors {
+		if e != nil {
+			if err2 := ValidateApproveMergeResultStoryActorItemTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	for _, e := range value.Flows {
+		if e != nil {
+			if err2 := ValidateApproveMergeResultStoryFlowItemTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	return err
+}
+
 // ApproveMergeResultTransport stores JSON fields until they have been validated.
 type ApproveMergeResultTransport struct {
 	// Change identifier.
@@ -208,6 +409,10 @@ type ApproveMergeResultTransport struct {
 	Examples []*ApproveMergeResultExampleItemTransport `json:"examples"`
 	// Existing contract invariants preserved by this change.
 	PreservedBehaviors []string `json:"preserved_behaviors"`
+	// Evaluated domain Stories adopted from refresh_story for this Change Card
+	// revision in declaration order; omitted when the card has no Stories.
+	// Included in request_revision.
+	Stories []*ApproveMergeResultStorySummaryItemTransport `json:"stories,omitempty"`
 	// Authenticated principal that confirmed the Change Card.
 	ConfirmedBy *string `json:"confirmed_by,omitempty"`
 	// SHA-256 digest of the canonical versioned Change Card.
@@ -271,6 +476,13 @@ func ValidateApproveMergeResultTransport(value *ApproveMergeResultTransport) (er
 	for _, e := range value.Examples {
 		if e != nil {
 			if err2 := ValidateApproveMergeResultExampleItemTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	for _, e := range value.Stories {
+		if e != nil {
+			if err2 := ValidateApproveMergeResultStorySummaryItemTransport(e); err2 != nil {
 				err = goa.MergeErrors(err, err2)
 			}
 		}
@@ -658,6 +870,207 @@ func ValidateConfirmIntentResultExampleItemTransport(value *ConfirmIntentResultE
 	return err
 }
 
+// ConfirmIntentResultStoryActorItemTransport stores JSON fields until they have been validated.
+type ConfirmIntentResultStoryActorItemTransport struct {
+	// Story-scoped actor key.
+	Key *string `json:"key"`
+	// Human-facing actor label.
+	Title *string `json:"title"`
+	// Optional longer explanation of the actor role.
+	Description *string `json:"description,omitempty"`
+}
+
+// ValidateConfirmIntentResultStoryActorItemTransport checks decoded JSON before it becomes a service value.
+func ValidateConfirmIntentResultStoryActorItemTransport(value *ConfirmIntentResultStoryActorItemTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.Key == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("key", "body"))
+	}
+	if value.Title == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("title", "body"))
+	}
+	return err
+}
+
+// ConfirmIntentResultStoryFlowItemTransport stores JSON fields until they have been validated.
+type ConfirmIntentResultStoryFlowItemTransport struct {
+	// Story-scoped flow key.
+	Key *string `json:"key"`
+	// Human-facing flow title.
+	Title *string `json:"title"`
+	// Optional longer explanation of the flow.
+	Description *string `json:"description,omitempty"`
+	// True when the flow has a start, at least one outcome, and no open questions
+	// on the flow or any of its steps.
+	Complete *bool `json:"complete"`
+	// Starting, intermediate, and outcome steps in declaration order.
+	Steps []*ConfirmIntentResultStoryStepItemTransport `json:"steps"`
+	// Unresolved flow-level decisions in declaration order.
+	Questions []*ConfirmIntentResultStoryQuestionItemTransport `json:"questions"`
+}
+
+// ValidateConfirmIntentResultStoryFlowItemTransport checks decoded JSON before it becomes a service value.
+func ValidateConfirmIntentResultStoryFlowItemTransport(value *ConfirmIntentResultStoryFlowItemTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.Key == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("key", "body"))
+	}
+	if value.Title == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("title", "body"))
+	}
+	if value.Complete == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("complete", "body"))
+	}
+	if value.Steps == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("steps", "body"))
+	}
+	if value.Questions == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("questions", "body"))
+	}
+	for _, e := range value.Steps {
+		if e != nil {
+			if err2 := ValidateConfirmIntentResultStoryStepItemTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	for _, e := range value.Questions {
+		if e != nil {
+			if err2 := ValidateConfirmIntentResultStoryQuestionItemTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	return err
+}
+
+// ConfirmIntentResultStoryQuestionItemTransport stores JSON fields until they have been validated.
+type ConfirmIntentResultStoryQuestionItemTransport struct {
+	// Flow-scoped question key.
+	Key *string `json:"key"`
+	// Human-facing question text.
+	Prompt *string `json:"prompt"`
+	// Optional longer context for the question.
+	Description *string `json:"description,omitempty"`
+	// Suggested choices in declaration order.
+	Options []string `json:"options"`
+}
+
+// ValidateConfirmIntentResultStoryQuestionItemTransport checks decoded JSON before it becomes a service value.
+func ValidateConfirmIntentResultStoryQuestionItemTransport(value *ConfirmIntentResultStoryQuestionItemTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.Key == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("key", "body"))
+	}
+	if value.Prompt == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("prompt", "body"))
+	}
+	if value.Options == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("options", "body"))
+	}
+	return err
+}
+
+// ConfirmIntentResultStoryStepItemTransport stores JSON fields until they have been validated.
+type ConfirmIntentResultStoryStepItemTransport struct {
+	// Flow-scoped step key.
+	Key *string `json:"key"`
+	// Story-scoped key of the actor performing or observing the step.
+	ActorKey *string `json:"actor_key"`
+	// Timeline sticky-note sentence for the step.
+	Summary *string `json:"summary"`
+	// Optional longer explanation of the step.
+	Description *string `json:"description,omitempty"`
+	// Step position in the flow: start, step, or outcome.
+	Kind *string `json:"kind"`
+	// Unresolved step-level decisions in declaration order.
+	Questions []*ConfirmIntentResultStoryQuestionItemTransport `json:"questions"`
+}
+
+// ValidateConfirmIntentResultStoryStepItemTransport checks decoded JSON before it becomes a service value.
+func ValidateConfirmIntentResultStoryStepItemTransport(value *ConfirmIntentResultStoryStepItemTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.Key == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("key", "body"))
+	}
+	if value.ActorKey == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("actor_key", "body"))
+	}
+	if value.Summary == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("summary", "body"))
+	}
+	if value.Kind == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("kind", "body"))
+	}
+	if value.Questions == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("questions", "body"))
+	}
+	if value.Kind != nil {
+		if !(*value.Kind == "start" || *value.Kind == "step" || *value.Kind == "outcome") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.kind", *value.Kind, []any{"start", "step", "outcome"}))
+		}
+	}
+	for _, e := range value.Questions {
+		if e != nil {
+			if err2 := ValidateConfirmIntentResultStoryQuestionItemTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	return err
+}
+
+// ConfirmIntentResultStorySummaryItemTransport stores JSON fields until they have been validated.
+type ConfirmIntentResultStorySummaryItemTransport struct {
+	// Human-facing Story title.
+	Name *string `json:"name"`
+	// Optional longer explanation of the Story.
+	Description *string `json:"description,omitempty"`
+	// Domain roles declared in the Story in declaration order.
+	Actors []*ConfirmIntentResultStoryActorItemTransport `json:"actors"`
+	// Timeline paths declared in the Story in declaration order.
+	Flows []*ConfirmIntentResultStoryFlowItemTransport `json:"flows"`
+}
+
+// ValidateConfirmIntentResultStorySummaryItemTransport checks decoded JSON before it becomes a service value.
+func ValidateConfirmIntentResultStorySummaryItemTransport(value *ConfirmIntentResultStorySummaryItemTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.Name == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
+	}
+	if value.Actors == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("actors", "body"))
+	}
+	if value.Flows == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("flows", "body"))
+	}
+	for _, e := range value.Actors {
+		if e != nil {
+			if err2 := ValidateConfirmIntentResultStoryActorItemTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	for _, e := range value.Flows {
+		if e != nil {
+			if err2 := ValidateConfirmIntentResultStoryFlowItemTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	return err
+}
+
 // ConfirmIntentResultTransport stores JSON fields until they have been validated.
 type ConfirmIntentResultTransport struct {
 	// Change identifier.
@@ -681,6 +1094,10 @@ type ConfirmIntentResultTransport struct {
 	Examples []*ConfirmIntentResultExampleItemTransport `json:"examples"`
 	// Existing contract invariants preserved by this change.
 	PreservedBehaviors []string `json:"preserved_behaviors"`
+	// Evaluated domain Stories adopted from refresh_story for this Change Card
+	// revision in declaration order; omitted when the card has no Stories.
+	// Included in request_revision.
+	Stories []*ConfirmIntentResultStorySummaryItemTransport `json:"stories,omitempty"`
 	// Authenticated principal that confirmed the Change Card.
 	ConfirmedBy *string `json:"confirmed_by,omitempty"`
 	// SHA-256 digest of the canonical versioned Change Card.
@@ -744,6 +1161,13 @@ func ValidateConfirmIntentResultTransport(value *ConfirmIntentResultTransport) (
 	for _, e := range value.Examples {
 		if e != nil {
 			if err2 := ValidateConfirmIntentResultExampleItemTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	for _, e := range value.Stories {
+		if e != nil {
+			if err2 := ValidateConfirmIntentResultStorySummaryItemTransport(e); err2 != nil {
 				err = goa.MergeErrors(err, err2)
 			}
 		}
@@ -1167,6 +1591,207 @@ func ValidateGetChangeResultExampleItemTransport(value *GetChangeResultExampleIt
 	return err
 }
 
+// GetChangeResultStoryActorItemTransport stores JSON fields until they have been validated.
+type GetChangeResultStoryActorItemTransport struct {
+	// Story-scoped actor key.
+	Key *string `json:"key"`
+	// Human-facing actor label.
+	Title *string `json:"title"`
+	// Optional longer explanation of the actor role.
+	Description *string `json:"description,omitempty"`
+}
+
+// ValidateGetChangeResultStoryActorItemTransport checks decoded JSON before it becomes a service value.
+func ValidateGetChangeResultStoryActorItemTransport(value *GetChangeResultStoryActorItemTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.Key == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("key", "body"))
+	}
+	if value.Title == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("title", "body"))
+	}
+	return err
+}
+
+// GetChangeResultStoryFlowItemTransport stores JSON fields until they have been validated.
+type GetChangeResultStoryFlowItemTransport struct {
+	// Story-scoped flow key.
+	Key *string `json:"key"`
+	// Human-facing flow title.
+	Title *string `json:"title"`
+	// Optional longer explanation of the flow.
+	Description *string `json:"description,omitempty"`
+	// True when the flow has a start, at least one outcome, and no open questions
+	// on the flow or any of its steps.
+	Complete *bool `json:"complete"`
+	// Starting, intermediate, and outcome steps in declaration order.
+	Steps []*GetChangeResultStoryStepItemTransport `json:"steps"`
+	// Unresolved flow-level decisions in declaration order.
+	Questions []*GetChangeResultStoryQuestionItemTransport `json:"questions"`
+}
+
+// ValidateGetChangeResultStoryFlowItemTransport checks decoded JSON before it becomes a service value.
+func ValidateGetChangeResultStoryFlowItemTransport(value *GetChangeResultStoryFlowItemTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.Key == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("key", "body"))
+	}
+	if value.Title == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("title", "body"))
+	}
+	if value.Complete == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("complete", "body"))
+	}
+	if value.Steps == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("steps", "body"))
+	}
+	if value.Questions == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("questions", "body"))
+	}
+	for _, e := range value.Steps {
+		if e != nil {
+			if err2 := ValidateGetChangeResultStoryStepItemTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	for _, e := range value.Questions {
+		if e != nil {
+			if err2 := ValidateGetChangeResultStoryQuestionItemTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	return err
+}
+
+// GetChangeResultStoryQuestionItemTransport stores JSON fields until they have been validated.
+type GetChangeResultStoryQuestionItemTransport struct {
+	// Flow-scoped question key.
+	Key *string `json:"key"`
+	// Human-facing question text.
+	Prompt *string `json:"prompt"`
+	// Optional longer context for the question.
+	Description *string `json:"description,omitempty"`
+	// Suggested choices in declaration order.
+	Options []string `json:"options"`
+}
+
+// ValidateGetChangeResultStoryQuestionItemTransport checks decoded JSON before it becomes a service value.
+func ValidateGetChangeResultStoryQuestionItemTransport(value *GetChangeResultStoryQuestionItemTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.Key == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("key", "body"))
+	}
+	if value.Prompt == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("prompt", "body"))
+	}
+	if value.Options == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("options", "body"))
+	}
+	return err
+}
+
+// GetChangeResultStoryStepItemTransport stores JSON fields until they have been validated.
+type GetChangeResultStoryStepItemTransport struct {
+	// Flow-scoped step key.
+	Key *string `json:"key"`
+	// Story-scoped key of the actor performing or observing the step.
+	ActorKey *string `json:"actor_key"`
+	// Timeline sticky-note sentence for the step.
+	Summary *string `json:"summary"`
+	// Optional longer explanation of the step.
+	Description *string `json:"description,omitempty"`
+	// Step position in the flow: start, step, or outcome.
+	Kind *string `json:"kind"`
+	// Unresolved step-level decisions in declaration order.
+	Questions []*GetChangeResultStoryQuestionItemTransport `json:"questions"`
+}
+
+// ValidateGetChangeResultStoryStepItemTransport checks decoded JSON before it becomes a service value.
+func ValidateGetChangeResultStoryStepItemTransport(value *GetChangeResultStoryStepItemTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.Key == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("key", "body"))
+	}
+	if value.ActorKey == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("actor_key", "body"))
+	}
+	if value.Summary == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("summary", "body"))
+	}
+	if value.Kind == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("kind", "body"))
+	}
+	if value.Questions == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("questions", "body"))
+	}
+	if value.Kind != nil {
+		if !(*value.Kind == "start" || *value.Kind == "step" || *value.Kind == "outcome") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.kind", *value.Kind, []any{"start", "step", "outcome"}))
+		}
+	}
+	for _, e := range value.Questions {
+		if e != nil {
+			if err2 := ValidateGetChangeResultStoryQuestionItemTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	return err
+}
+
+// GetChangeResultStorySummaryItemTransport stores JSON fields until they have been validated.
+type GetChangeResultStorySummaryItemTransport struct {
+	// Human-facing Story title.
+	Name *string `json:"name"`
+	// Optional longer explanation of the Story.
+	Description *string `json:"description,omitempty"`
+	// Domain roles declared in the Story in declaration order.
+	Actors []*GetChangeResultStoryActorItemTransport `json:"actors"`
+	// Timeline paths declared in the Story in declaration order.
+	Flows []*GetChangeResultStoryFlowItemTransport `json:"flows"`
+}
+
+// ValidateGetChangeResultStorySummaryItemTransport checks decoded JSON before it becomes a service value.
+func ValidateGetChangeResultStorySummaryItemTransport(value *GetChangeResultStorySummaryItemTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.Name == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
+	}
+	if value.Actors == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("actors", "body"))
+	}
+	if value.Flows == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("flows", "body"))
+	}
+	for _, e := range value.Actors {
+		if e != nil {
+			if err2 := ValidateGetChangeResultStoryActorItemTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	for _, e := range value.Flows {
+		if e != nil {
+			if err2 := ValidateGetChangeResultStoryFlowItemTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	return err
+}
+
 // GetChangeResultTransport stores JSON fields until they have been validated.
 type GetChangeResultTransport struct {
 	// Change identifier.
@@ -1190,6 +1815,10 @@ type GetChangeResultTransport struct {
 	Examples []*GetChangeResultExampleItemTransport `json:"examples"`
 	// Existing contract invariants preserved by this change.
 	PreservedBehaviors []string `json:"preserved_behaviors"`
+	// Evaluated domain Stories adopted from refresh_story for this Change Card
+	// revision in declaration order; omitted when the card has no Stories.
+	// Included in request_revision.
+	Stories []*GetChangeResultStorySummaryItemTransport `json:"stories,omitempty"`
 	// Authenticated principal that confirmed the Change Card.
 	ConfirmedBy *string `json:"confirmed_by,omitempty"`
 	// SHA-256 digest of the canonical versioned Change Card.
@@ -1253,6 +1882,13 @@ func ValidateGetChangeResultTransport(value *GetChangeResultTransport) (err erro
 	for _, e := range value.Examples {
 		if e != nil {
 			if err2 := ValidateGetChangeResultExampleItemTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	for _, e := range value.Stories {
+		if e != nil {
+			if err2 := ValidateGetChangeResultStorySummaryItemTransport(e); err2 != nil {
 				err = goa.MergeErrors(err, err2)
 			}
 		}
@@ -1532,13 +2168,14 @@ func ValidateGetStoryRefreshResultStorySummaryItemTransport(value *GetStoryRefre
 // GetStoryRefreshResultTransport stores JSON fields until they have been validated.
 type GetStoryRefreshResultTransport struct {
 	// Identifier of the caller's current Story refresh operation for the bound
-	// workspace; present when state is running, succeeded, or failed.
+	// workspace; present when state is running, succeeded, or failed. Pass it as
+	// story_refresh_op_id to propose_change or revise_change once state is
+	// succeeded to adopt the evaluated Story into a Change Card.
 	OpID *string `json:"op_id,omitempty"`
 	// Current operation state: none, running, succeeded, or failed.
 	State *string `json:"state"`
-	// Canonical SHA-256 digest (sha256:<hex>) of the workspace module snapshot
-	// read when this refresh started; present when state is running, succeeded, or
-	// failed.
+	// Canonical SHA-256 digest of the workspace module snapshot read when this
+	// refresh started; present when state is running, succeeded, or failed.
 	SnapshotDigest *string `json:"snapshot_digest,omitempty"`
 	// Evaluated domain Stories in declaration order when state is succeeded (empty
 	// when the design declares no Stories or when state is none, running, or
@@ -3233,8 +3870,16 @@ type ProposeChangePayloadTransport struct {
 	// files). Surla saves it with the card and includes it in request_revision; it
 	// does not interpret it. When omitted on a server with a bound workspace,
 	// Surla records design/*.go from the bound workspace; when omitted without a
-	// bound workspace, the card records no design.
+	// bound workspace, the card records no design. Cannot be combined with
+	// story_refresh_op_id.
 	DesignSource *string `json:"design_source,omitempty"`
+	// Optional op_id of a succeeded refresh_story operation for the bound
+	// workspace whose evaluated Stories this card adopts. When set, design_source
+	// must be omitted; Surla reads one workspace snapshot, requires its
+	// snapshot_digest to match the operation's, and records both the evaluated
+	// Stories and that snapshot's design/*.go on the card. Omit when the card has
+	// no Story.
+	StoryRefreshOpID *string `json:"story_refresh_op_id,omitempty"`
 	// Your analysis of prompt against the target's current design.
 	Analysis *ProposeChangePayloadCP1AnalysisTransport `json:"analysis"`
 }
@@ -3387,6 +4032,207 @@ func ValidateProposeChangeResultExampleItemTransport(value *ProposeChangeResultE
 	return err
 }
 
+// ProposeChangeResultStoryActorItemTransport stores JSON fields until they have been validated.
+type ProposeChangeResultStoryActorItemTransport struct {
+	// Story-scoped actor key.
+	Key *string `json:"key"`
+	// Human-facing actor label.
+	Title *string `json:"title"`
+	// Optional longer explanation of the actor role.
+	Description *string `json:"description,omitempty"`
+}
+
+// ValidateProposeChangeResultStoryActorItemTransport checks decoded JSON before it becomes a service value.
+func ValidateProposeChangeResultStoryActorItemTransport(value *ProposeChangeResultStoryActorItemTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.Key == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("key", "body"))
+	}
+	if value.Title == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("title", "body"))
+	}
+	return err
+}
+
+// ProposeChangeResultStoryFlowItemTransport stores JSON fields until they have been validated.
+type ProposeChangeResultStoryFlowItemTransport struct {
+	// Story-scoped flow key.
+	Key *string `json:"key"`
+	// Human-facing flow title.
+	Title *string `json:"title"`
+	// Optional longer explanation of the flow.
+	Description *string `json:"description,omitempty"`
+	// True when the flow has a start, at least one outcome, and no open questions
+	// on the flow or any of its steps.
+	Complete *bool `json:"complete"`
+	// Starting, intermediate, and outcome steps in declaration order.
+	Steps []*ProposeChangeResultStoryStepItemTransport `json:"steps"`
+	// Unresolved flow-level decisions in declaration order.
+	Questions []*ProposeChangeResultStoryQuestionItemTransport `json:"questions"`
+}
+
+// ValidateProposeChangeResultStoryFlowItemTransport checks decoded JSON before it becomes a service value.
+func ValidateProposeChangeResultStoryFlowItemTransport(value *ProposeChangeResultStoryFlowItemTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.Key == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("key", "body"))
+	}
+	if value.Title == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("title", "body"))
+	}
+	if value.Complete == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("complete", "body"))
+	}
+	if value.Steps == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("steps", "body"))
+	}
+	if value.Questions == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("questions", "body"))
+	}
+	for _, e := range value.Steps {
+		if e != nil {
+			if err2 := ValidateProposeChangeResultStoryStepItemTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	for _, e := range value.Questions {
+		if e != nil {
+			if err2 := ValidateProposeChangeResultStoryQuestionItemTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	return err
+}
+
+// ProposeChangeResultStoryQuestionItemTransport stores JSON fields until they have been validated.
+type ProposeChangeResultStoryQuestionItemTransport struct {
+	// Flow-scoped question key.
+	Key *string `json:"key"`
+	// Human-facing question text.
+	Prompt *string `json:"prompt"`
+	// Optional longer context for the question.
+	Description *string `json:"description,omitempty"`
+	// Suggested choices in declaration order.
+	Options []string `json:"options"`
+}
+
+// ValidateProposeChangeResultStoryQuestionItemTransport checks decoded JSON before it becomes a service value.
+func ValidateProposeChangeResultStoryQuestionItemTransport(value *ProposeChangeResultStoryQuestionItemTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.Key == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("key", "body"))
+	}
+	if value.Prompt == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("prompt", "body"))
+	}
+	if value.Options == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("options", "body"))
+	}
+	return err
+}
+
+// ProposeChangeResultStoryStepItemTransport stores JSON fields until they have been validated.
+type ProposeChangeResultStoryStepItemTransport struct {
+	// Flow-scoped step key.
+	Key *string `json:"key"`
+	// Story-scoped key of the actor performing or observing the step.
+	ActorKey *string `json:"actor_key"`
+	// Timeline sticky-note sentence for the step.
+	Summary *string `json:"summary"`
+	// Optional longer explanation of the step.
+	Description *string `json:"description,omitempty"`
+	// Step position in the flow: start, step, or outcome.
+	Kind *string `json:"kind"`
+	// Unresolved step-level decisions in declaration order.
+	Questions []*ProposeChangeResultStoryQuestionItemTransport `json:"questions"`
+}
+
+// ValidateProposeChangeResultStoryStepItemTransport checks decoded JSON before it becomes a service value.
+func ValidateProposeChangeResultStoryStepItemTransport(value *ProposeChangeResultStoryStepItemTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.Key == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("key", "body"))
+	}
+	if value.ActorKey == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("actor_key", "body"))
+	}
+	if value.Summary == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("summary", "body"))
+	}
+	if value.Kind == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("kind", "body"))
+	}
+	if value.Questions == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("questions", "body"))
+	}
+	if value.Kind != nil {
+		if !(*value.Kind == "start" || *value.Kind == "step" || *value.Kind == "outcome") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.kind", *value.Kind, []any{"start", "step", "outcome"}))
+		}
+	}
+	for _, e := range value.Questions {
+		if e != nil {
+			if err2 := ValidateProposeChangeResultStoryQuestionItemTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	return err
+}
+
+// ProposeChangeResultStorySummaryItemTransport stores JSON fields until they have been validated.
+type ProposeChangeResultStorySummaryItemTransport struct {
+	// Human-facing Story title.
+	Name *string `json:"name"`
+	// Optional longer explanation of the Story.
+	Description *string `json:"description,omitempty"`
+	// Domain roles declared in the Story in declaration order.
+	Actors []*ProposeChangeResultStoryActorItemTransport `json:"actors"`
+	// Timeline paths declared in the Story in declaration order.
+	Flows []*ProposeChangeResultStoryFlowItemTransport `json:"flows"`
+}
+
+// ValidateProposeChangeResultStorySummaryItemTransport checks decoded JSON before it becomes a service value.
+func ValidateProposeChangeResultStorySummaryItemTransport(value *ProposeChangeResultStorySummaryItemTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.Name == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
+	}
+	if value.Actors == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("actors", "body"))
+	}
+	if value.Flows == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("flows", "body"))
+	}
+	for _, e := range value.Actors {
+		if e != nil {
+			if err2 := ValidateProposeChangeResultStoryActorItemTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	for _, e := range value.Flows {
+		if e != nil {
+			if err2 := ValidateProposeChangeResultStoryFlowItemTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	return err
+}
+
 // ProposeChangeResultTransport stores JSON fields until they have been validated.
 type ProposeChangeResultTransport struct {
 	// Change identifier.
@@ -3410,6 +4256,10 @@ type ProposeChangeResultTransport struct {
 	Examples []*ProposeChangeResultExampleItemTransport `json:"examples"`
 	// Existing contract invariants preserved by this change.
 	PreservedBehaviors []string `json:"preserved_behaviors"`
+	// Evaluated domain Stories adopted from refresh_story for this Change Card
+	// revision in declaration order; omitted when the card has no Stories.
+	// Included in request_revision.
+	Stories []*ProposeChangeResultStorySummaryItemTransport `json:"stories,omitempty"`
 	// Authenticated principal that confirmed the Change Card.
 	ConfirmedBy *string `json:"confirmed_by,omitempty"`
 	// SHA-256 digest of the canonical versioned Change Card.
@@ -3473,6 +4323,13 @@ func ValidateProposeChangeResultTransport(value *ProposeChangeResultTransport) (
 	for _, e := range value.Examples {
 		if e != nil {
 			if err2 := ValidateProposeChangeResultExampleItemTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	for _, e := range value.Stories {
+		if e != nil {
+			if err2 := ValidateProposeChangeResultStorySummaryItemTransport(e); err2 != nil {
 				err = goa.MergeErrors(err, err2)
 			}
 		}
@@ -3801,13 +4658,14 @@ func ValidateRefreshStoryResultStorySummaryItemTransport(value *RefreshStoryResu
 // RefreshStoryResultTransport stores JSON fields until they have been validated.
 type RefreshStoryResultTransport struct {
 	// Identifier of the caller's current Story refresh operation for the bound
-	// workspace; present when state is running, succeeded, or failed.
+	// workspace; present when state is running, succeeded, or failed. Pass it as
+	// story_refresh_op_id to propose_change or revise_change once state is
+	// succeeded to adopt the evaluated Story into a Change Card.
 	OpID *string `json:"op_id,omitempty"`
 	// Current operation state: none, running, succeeded, or failed.
 	State *string `json:"state"`
-	// Canonical SHA-256 digest (sha256:<hex>) of the workspace module snapshot
-	// read when this refresh started; present when state is running, succeeded, or
-	// failed.
+	// Canonical SHA-256 digest of the workspace module snapshot read when this
+	// refresh started; present when state is running, succeeded, or failed.
 	SnapshotDigest *string `json:"snapshot_digest,omitempty"`
 	// Evaluated domain Stories in declaration order when state is succeeded (empty
 	// when the design declares no Stories or when state is none, running, or
@@ -4052,9 +4910,20 @@ type ReviseChangePayloadTransport struct {
 	// Updated Goa design source the analysis was made against (the target's
 	// design/*.go files). Surla saves it with the card and includes it in
 	// request_revision; it does not interpret it. When omitted on a
-	// workspace-backed card with a bound workspace, Surla records design/*.go from
-	// the bound workspace again; otherwise the card's saved design source is kept.
+	// workspace-backed card without Stories and with a bound workspace, Surla
+	// records design/*.go from the bound workspace again; otherwise the card's
+	// saved design source is kept. Cannot be set when story_refresh_op_id is set
+	// or when the card already has adopted Stories.
 	DesignSource *string `json:"design_source,omitempty"`
+	// Optional op_id of a succeeded refresh_story operation for the bound
+	// workspace whose evaluated Stories this revision adopts. When set,
+	// design_source must be omitted and the card must not use a caller-supplied
+	// design_source; Surla reads one workspace snapshot, requires its
+	// snapshot_digest to match the operation's, and records both the evaluated
+	// Stories and that snapshot's design/*.go on the revised card. When omitted on
+	// a card that already has Stories, the card's saved Stories and saved
+	// design_source are kept together.
+	StoryRefreshOpID *string `json:"story_refresh_op_id,omitempty"`
 	// Your analysis of the revised prompt against the current card and the
 	// target's current design.
 	Analysis *ReviseChangePayloadCP1RevisionAnalysisTransport `json:"analysis"`
@@ -4211,6 +5080,207 @@ func ValidateReviseChangeResultExampleItemTransport(value *ReviseChangeResultExa
 	return err
 }
 
+// ReviseChangeResultStoryActorItemTransport stores JSON fields until they have been validated.
+type ReviseChangeResultStoryActorItemTransport struct {
+	// Story-scoped actor key.
+	Key *string `json:"key"`
+	// Human-facing actor label.
+	Title *string `json:"title"`
+	// Optional longer explanation of the actor role.
+	Description *string `json:"description,omitempty"`
+}
+
+// ValidateReviseChangeResultStoryActorItemTransport checks decoded JSON before it becomes a service value.
+func ValidateReviseChangeResultStoryActorItemTransport(value *ReviseChangeResultStoryActorItemTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.Key == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("key", "body"))
+	}
+	if value.Title == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("title", "body"))
+	}
+	return err
+}
+
+// ReviseChangeResultStoryFlowItemTransport stores JSON fields until they have been validated.
+type ReviseChangeResultStoryFlowItemTransport struct {
+	// Story-scoped flow key.
+	Key *string `json:"key"`
+	// Human-facing flow title.
+	Title *string `json:"title"`
+	// Optional longer explanation of the flow.
+	Description *string `json:"description,omitempty"`
+	// True when the flow has a start, at least one outcome, and no open questions
+	// on the flow or any of its steps.
+	Complete *bool `json:"complete"`
+	// Starting, intermediate, and outcome steps in declaration order.
+	Steps []*ReviseChangeResultStoryStepItemTransport `json:"steps"`
+	// Unresolved flow-level decisions in declaration order.
+	Questions []*ReviseChangeResultStoryQuestionItemTransport `json:"questions"`
+}
+
+// ValidateReviseChangeResultStoryFlowItemTransport checks decoded JSON before it becomes a service value.
+func ValidateReviseChangeResultStoryFlowItemTransport(value *ReviseChangeResultStoryFlowItemTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.Key == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("key", "body"))
+	}
+	if value.Title == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("title", "body"))
+	}
+	if value.Complete == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("complete", "body"))
+	}
+	if value.Steps == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("steps", "body"))
+	}
+	if value.Questions == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("questions", "body"))
+	}
+	for _, e := range value.Steps {
+		if e != nil {
+			if err2 := ValidateReviseChangeResultStoryStepItemTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	for _, e := range value.Questions {
+		if e != nil {
+			if err2 := ValidateReviseChangeResultStoryQuestionItemTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	return err
+}
+
+// ReviseChangeResultStoryQuestionItemTransport stores JSON fields until they have been validated.
+type ReviseChangeResultStoryQuestionItemTransport struct {
+	// Flow-scoped question key.
+	Key *string `json:"key"`
+	// Human-facing question text.
+	Prompt *string `json:"prompt"`
+	// Optional longer context for the question.
+	Description *string `json:"description,omitempty"`
+	// Suggested choices in declaration order.
+	Options []string `json:"options"`
+}
+
+// ValidateReviseChangeResultStoryQuestionItemTransport checks decoded JSON before it becomes a service value.
+func ValidateReviseChangeResultStoryQuestionItemTransport(value *ReviseChangeResultStoryQuestionItemTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.Key == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("key", "body"))
+	}
+	if value.Prompt == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("prompt", "body"))
+	}
+	if value.Options == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("options", "body"))
+	}
+	return err
+}
+
+// ReviseChangeResultStoryStepItemTransport stores JSON fields until they have been validated.
+type ReviseChangeResultStoryStepItemTransport struct {
+	// Flow-scoped step key.
+	Key *string `json:"key"`
+	// Story-scoped key of the actor performing or observing the step.
+	ActorKey *string `json:"actor_key"`
+	// Timeline sticky-note sentence for the step.
+	Summary *string `json:"summary"`
+	// Optional longer explanation of the step.
+	Description *string `json:"description,omitempty"`
+	// Step position in the flow: start, step, or outcome.
+	Kind *string `json:"kind"`
+	// Unresolved step-level decisions in declaration order.
+	Questions []*ReviseChangeResultStoryQuestionItemTransport `json:"questions"`
+}
+
+// ValidateReviseChangeResultStoryStepItemTransport checks decoded JSON before it becomes a service value.
+func ValidateReviseChangeResultStoryStepItemTransport(value *ReviseChangeResultStoryStepItemTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.Key == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("key", "body"))
+	}
+	if value.ActorKey == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("actor_key", "body"))
+	}
+	if value.Summary == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("summary", "body"))
+	}
+	if value.Kind == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("kind", "body"))
+	}
+	if value.Questions == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("questions", "body"))
+	}
+	if value.Kind != nil {
+		if !(*value.Kind == "start" || *value.Kind == "step" || *value.Kind == "outcome") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.kind", *value.Kind, []any{"start", "step", "outcome"}))
+		}
+	}
+	for _, e := range value.Questions {
+		if e != nil {
+			if err2 := ValidateReviseChangeResultStoryQuestionItemTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	return err
+}
+
+// ReviseChangeResultStorySummaryItemTransport stores JSON fields until they have been validated.
+type ReviseChangeResultStorySummaryItemTransport struct {
+	// Human-facing Story title.
+	Name *string `json:"name"`
+	// Optional longer explanation of the Story.
+	Description *string `json:"description,omitempty"`
+	// Domain roles declared in the Story in declaration order.
+	Actors []*ReviseChangeResultStoryActorItemTransport `json:"actors"`
+	// Timeline paths declared in the Story in declaration order.
+	Flows []*ReviseChangeResultStoryFlowItemTransport `json:"flows"`
+}
+
+// ValidateReviseChangeResultStorySummaryItemTransport checks decoded JSON before it becomes a service value.
+func ValidateReviseChangeResultStorySummaryItemTransport(value *ReviseChangeResultStorySummaryItemTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.Name == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
+	}
+	if value.Actors == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("actors", "body"))
+	}
+	if value.Flows == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("flows", "body"))
+	}
+	for _, e := range value.Actors {
+		if e != nil {
+			if err2 := ValidateReviseChangeResultStoryActorItemTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	for _, e := range value.Flows {
+		if e != nil {
+			if err2 := ValidateReviseChangeResultStoryFlowItemTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	return err
+}
+
 // ReviseChangeResultTransport stores JSON fields until they have been validated.
 type ReviseChangeResultTransport struct {
 	// Change identifier.
@@ -4234,6 +5304,10 @@ type ReviseChangeResultTransport struct {
 	Examples []*ReviseChangeResultExampleItemTransport `json:"examples"`
 	// Existing contract invariants preserved by this change.
 	PreservedBehaviors []string `json:"preserved_behaviors"`
+	// Evaluated domain Stories adopted from refresh_story for this Change Card
+	// revision in declaration order; omitted when the card has no Stories.
+	// Included in request_revision.
+	Stories []*ReviseChangeResultStorySummaryItemTransport `json:"stories,omitempty"`
 	// Authenticated principal that confirmed the Change Card.
 	ConfirmedBy *string `json:"confirmed_by,omitempty"`
 	// SHA-256 digest of the canonical versioned Change Card.
@@ -4297,6 +5371,13 @@ func ValidateReviseChangeResultTransport(value *ReviseChangeResultTransport) (er
 	for _, e := range value.Examples {
 		if e != nil {
 			if err2 := ValidateReviseChangeResultExampleItemTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	for _, e := range value.Stories {
+		if e != nil {
+			if err2 := ValidateReviseChangeResultStorySummaryItemTransport(e); err2 != nil {
 				err = goa.MergeErrors(err, err2)
 			}
 		}
@@ -5272,6 +6353,16 @@ func EncodeApproveMergeResult(in *surla.ChangeCardResult) ([]byte, error) {
 		for i, val := range in.PreservedBehaviors {
 			body.PreservedBehaviors[i] = val
 		}
+		if in.Stories != nil {
+			body.Stories = make([]*ApproveMergeResultStorySummaryItemTransport, len(in.Stories))
+			for i, val := range in.Stories {
+				if val == nil {
+					body.Stories[i] = nil
+					continue
+				}
+				body.Stories[i] = encodeStorySummaryItemToApproveMergeResultStorySummaryItemTransport(val)
+			}
+		}
 		if in.UIComposition != nil {
 			body.UIComposition = encodeUICompositionItemToApproveMergeResultUICompositionItemTransport(in.UIComposition)
 		}
@@ -5440,6 +6531,16 @@ func EncodeConfirmIntentResult(in *surla.ChangeCardResult) ([]byte, error) {
 		body.PreservedBehaviors = make([]string, len(in.PreservedBehaviors))
 		for i, val := range in.PreservedBehaviors {
 			body.PreservedBehaviors[i] = val
+		}
+		if in.Stories != nil {
+			body.Stories = make([]*ConfirmIntentResultStorySummaryItemTransport, len(in.Stories))
+			for i, val := range in.Stories {
+				if val == nil {
+					body.Stories[i] = nil
+					continue
+				}
+				body.Stories[i] = encodeStorySummaryItemToConfirmIntentResultStorySummaryItemTransport(val)
+			}
 		}
 		if in.UIComposition != nil {
 			body.UIComposition = encodeUICompositionItemToConfirmIntentResultUICompositionItemTransport(in.UIComposition)
@@ -5686,6 +6787,16 @@ func EncodeGetChangeResult(in *surla.ChangeCardResult) ([]byte, error) {
 		body.PreservedBehaviors = make([]string, len(in.PreservedBehaviors))
 		for i, val := range in.PreservedBehaviors {
 			body.PreservedBehaviors[i] = val
+		}
+		if in.Stories != nil {
+			body.Stories = make([]*GetChangeResultStorySummaryItemTransport, len(in.Stories))
+			for i, val := range in.Stories {
+				if val == nil {
+					body.Stories[i] = nil
+					continue
+				}
+				body.Stories[i] = encodeStorySummaryItemToGetChangeResultStorySummaryItemTransport(val)
+			}
 		}
 		if in.UIComposition != nil {
 			body.UIComposition = encodeUICompositionItemToGetChangeResultUICompositionItemTransport(in.UIComposition)
@@ -6103,9 +7214,10 @@ func DecodeProposeChangePayload(data []byte) (out *surla.ProposeChangePayload, e
 	}
 	{
 		out = &surla.ProposeChangePayload{
-			ChangeID:     *body.ChangeID,
-			Prompt:       *body.Prompt,
-			DesignSource: body.DesignSource,
+			ChangeID:         *body.ChangeID,
+			Prompt:           *body.Prompt,
+			DesignSource:     body.DesignSource,
+			StoryRefreshOpID: body.StoryRefreshOpID,
 		}
 		out.Analysis = decodeProposeChangePayloadCP1AnalysisTransportToCP1Analysis(body.Analysis)
 	}
@@ -6153,6 +7265,16 @@ func EncodeProposeChangeResult(in *surla.ChangeCardResult) ([]byte, error) {
 		body.PreservedBehaviors = make([]string, len(in.PreservedBehaviors))
 		for i, val := range in.PreservedBehaviors {
 			body.PreservedBehaviors[i] = val
+		}
+		if in.Stories != nil {
+			body.Stories = make([]*ProposeChangeResultStorySummaryItemTransport, len(in.Stories))
+			for i, val := range in.Stories {
+				if val == nil {
+					body.Stories[i] = nil
+					continue
+				}
+				body.Stories[i] = encodeStorySummaryItemToProposeChangeResultStorySummaryItemTransport(val)
+			}
 		}
 		if in.UIComposition != nil {
 			body.UIComposition = encodeUICompositionItemToProposeChangeResultUICompositionItemTransport(in.UIComposition)
@@ -6270,10 +7392,11 @@ func DecodeReviseChangePayload(data []byte) (out *surla.ReviseChangePayload, err
 	}
 	{
 		out = &surla.ReviseChangePayload{
-			ChangeID:        *body.ChangeID,
-			RequestRevision: *body.RequestRevision,
-			Prompt:          *body.Prompt,
-			DesignSource:    body.DesignSource,
+			ChangeID:         *body.ChangeID,
+			RequestRevision:  *body.RequestRevision,
+			Prompt:           *body.Prompt,
+			DesignSource:     body.DesignSource,
+			StoryRefreshOpID: body.StoryRefreshOpID,
 		}
 		out.Analysis = decodeReviseChangePayloadCP1RevisionAnalysisTransportToCP1RevisionAnalysis(body.Analysis)
 	}
@@ -6321,6 +7444,16 @@ func EncodeReviseChangeResult(in *surla.ChangeCardResult) ([]byte, error) {
 		body.PreservedBehaviors = make([]string, len(in.PreservedBehaviors))
 		for i, val := range in.PreservedBehaviors {
 			body.PreservedBehaviors[i] = val
+		}
+		if in.Stories != nil {
+			body.Stories = make([]*ReviseChangeResultStorySummaryItemTransport, len(in.Stories))
+			for i, val := range in.Stories {
+				if val == nil {
+					body.Stories[i] = nil
+					continue
+				}
+				body.Stories[i] = encodeStorySummaryItemToReviseChangeResultStorySummaryItemTransport(val)
+			}
 		}
 		if in.UIComposition != nil {
 			body.UIComposition = encodeUICompositionItemToReviseChangeResultUICompositionItemTransport(in.UIComposition)
@@ -7098,8 +8231,48 @@ func encodeExampleItemToReviseChangeResultExampleItemTransport(v *surla.ExampleI
 	return res
 }
 
+func encodeStoryActorItemToApproveMergeResultStoryActorItemTransport(v *surla.StoryActorItem) *ApproveMergeResultStoryActorItemTransport {
+	res := &ApproveMergeResultStoryActorItemTransport{
+		Key:         &v.Key,
+		Title:       &v.Title,
+		Description: v.Description,
+	}
+
+	return res
+}
+
+func encodeStoryActorItemToConfirmIntentResultStoryActorItemTransport(v *surla.StoryActorItem) *ConfirmIntentResultStoryActorItemTransport {
+	res := &ConfirmIntentResultStoryActorItemTransport{
+		Key:         &v.Key,
+		Title:       &v.Title,
+		Description: v.Description,
+	}
+
+	return res
+}
+
+func encodeStoryActorItemToGetChangeResultStoryActorItemTransport(v *surla.StoryActorItem) *GetChangeResultStoryActorItemTransport {
+	res := &GetChangeResultStoryActorItemTransport{
+		Key:         &v.Key,
+		Title:       &v.Title,
+		Description: v.Description,
+	}
+
+	return res
+}
+
 func encodeStoryActorItemToGetStoryRefreshResultStoryActorItemTransport(v *surla.StoryActorItem) *GetStoryRefreshResultStoryActorItemTransport {
 	res := &GetStoryRefreshResultStoryActorItemTransport{
+		Key:         &v.Key,
+		Title:       &v.Title,
+		Description: v.Description,
+	}
+
+	return res
+}
+
+func encodeStoryActorItemToProposeChangeResultStoryActorItemTransport(v *surla.StoryActorItem) *ProposeChangeResultStoryActorItemTransport {
+	res := &ProposeChangeResultStoryActorItemTransport{
 		Key:         &v.Key,
 		Title:       &v.Title,
 		Description: v.Description,
@@ -7113,6 +8286,97 @@ func encodeStoryActorItemToRefreshStoryResultStoryActorItemTransport(v *surla.St
 		Key:         &v.Key,
 		Title:       &v.Title,
 		Description: v.Description,
+	}
+
+	return res
+}
+
+func encodeStoryActorItemToReviseChangeResultStoryActorItemTransport(v *surla.StoryActorItem) *ReviseChangeResultStoryActorItemTransport {
+	res := &ReviseChangeResultStoryActorItemTransport{
+		Key:         &v.Key,
+		Title:       &v.Title,
+		Description: v.Description,
+	}
+
+	return res
+}
+
+func encodeStoryFlowItemToApproveMergeResultStoryFlowItemTransport(v *surla.StoryFlowItem) *ApproveMergeResultStoryFlowItemTransport {
+	res := &ApproveMergeResultStoryFlowItemTransport{
+		Key:         &v.Key,
+		Title:       &v.Title,
+		Description: v.Description,
+		Complete:    &v.Complete,
+	}
+	res.Steps = make([]*ApproveMergeResultStoryStepItemTransport, len(v.Steps))
+	for i, val := range v.Steps {
+		if val == nil {
+			res.Steps[i] = nil
+			continue
+		}
+		res.Steps[i] = encodeStoryStepItemToApproveMergeResultStoryStepItemTransport(val)
+	}
+	res.Questions = make([]*ApproveMergeResultStoryQuestionItemTransport, len(v.Questions))
+	for i, val := range v.Questions {
+		if val == nil {
+			res.Questions[i] = nil
+			continue
+		}
+		res.Questions[i] = encodeStoryQuestionItemToApproveMergeResultStoryQuestionItemTransport2(val)
+	}
+
+	return res
+}
+
+func encodeStoryFlowItemToConfirmIntentResultStoryFlowItemTransport(v *surla.StoryFlowItem) *ConfirmIntentResultStoryFlowItemTransport {
+	res := &ConfirmIntentResultStoryFlowItemTransport{
+		Key:         &v.Key,
+		Title:       &v.Title,
+		Description: v.Description,
+		Complete:    &v.Complete,
+	}
+	res.Steps = make([]*ConfirmIntentResultStoryStepItemTransport, len(v.Steps))
+	for i, val := range v.Steps {
+		if val == nil {
+			res.Steps[i] = nil
+			continue
+		}
+		res.Steps[i] = encodeStoryStepItemToConfirmIntentResultStoryStepItemTransport(val)
+	}
+	res.Questions = make([]*ConfirmIntentResultStoryQuestionItemTransport, len(v.Questions))
+	for i, val := range v.Questions {
+		if val == nil {
+			res.Questions[i] = nil
+			continue
+		}
+		res.Questions[i] = encodeStoryQuestionItemToConfirmIntentResultStoryQuestionItemTransport2(val)
+	}
+
+	return res
+}
+
+func encodeStoryFlowItemToGetChangeResultStoryFlowItemTransport(v *surla.StoryFlowItem) *GetChangeResultStoryFlowItemTransport {
+	res := &GetChangeResultStoryFlowItemTransport{
+		Key:         &v.Key,
+		Title:       &v.Title,
+		Description: v.Description,
+		Complete:    &v.Complete,
+	}
+	res.Steps = make([]*GetChangeResultStoryStepItemTransport, len(v.Steps))
+	for i, val := range v.Steps {
+		if val == nil {
+			res.Steps[i] = nil
+			continue
+		}
+		res.Steps[i] = encodeStoryStepItemToGetChangeResultStoryStepItemTransport(val)
+	}
+	res.Questions = make([]*GetChangeResultStoryQuestionItemTransport, len(v.Questions))
+	for i, val := range v.Questions {
+		if val == nil {
+			res.Questions[i] = nil
+			continue
+		}
+		res.Questions[i] = encodeStoryQuestionItemToGetChangeResultStoryQuestionItemTransport2(val)
 	}
 
 	return res
@@ -7145,6 +8409,33 @@ func encodeStoryFlowItemToGetStoryRefreshResultStoryFlowItemTransport(v *surla.S
 	return res
 }
 
+func encodeStoryFlowItemToProposeChangeResultStoryFlowItemTransport(v *surla.StoryFlowItem) *ProposeChangeResultStoryFlowItemTransport {
+	res := &ProposeChangeResultStoryFlowItemTransport{
+		Key:         &v.Key,
+		Title:       &v.Title,
+		Description: v.Description,
+		Complete:    &v.Complete,
+	}
+	res.Steps = make([]*ProposeChangeResultStoryStepItemTransport, len(v.Steps))
+	for i, val := range v.Steps {
+		if val == nil {
+			res.Steps[i] = nil
+			continue
+		}
+		res.Steps[i] = encodeStoryStepItemToProposeChangeResultStoryStepItemTransport(val)
+	}
+	res.Questions = make([]*ProposeChangeResultStoryQuestionItemTransport, len(v.Questions))
+	for i, val := range v.Questions {
+		if val == nil {
+			res.Questions[i] = nil
+			continue
+		}
+		res.Questions[i] = encodeStoryQuestionItemToProposeChangeResultStoryQuestionItemTransport2(val)
+	}
+
+	return res
+}
+
 func encodeStoryFlowItemToRefreshStoryResultStoryFlowItemTransport(v *surla.StoryFlowItem) *RefreshStoryResultStoryFlowItemTransport {
 	res := &RefreshStoryResultStoryFlowItemTransport{
 		Key:         &v.Key,
@@ -7172,6 +8463,117 @@ func encodeStoryFlowItemToRefreshStoryResultStoryFlowItemTransport(v *surla.Stor
 	return res
 }
 
+func encodeStoryFlowItemToReviseChangeResultStoryFlowItemTransport(v *surla.StoryFlowItem) *ReviseChangeResultStoryFlowItemTransport {
+	res := &ReviseChangeResultStoryFlowItemTransport{
+		Key:         &v.Key,
+		Title:       &v.Title,
+		Description: v.Description,
+		Complete:    &v.Complete,
+	}
+	res.Steps = make([]*ReviseChangeResultStoryStepItemTransport, len(v.Steps))
+	for i, val := range v.Steps {
+		if val == nil {
+			res.Steps[i] = nil
+			continue
+		}
+		res.Steps[i] = encodeStoryStepItemToReviseChangeResultStoryStepItemTransport(val)
+	}
+	res.Questions = make([]*ReviseChangeResultStoryQuestionItemTransport, len(v.Questions))
+	for i, val := range v.Questions {
+		if val == nil {
+			res.Questions[i] = nil
+			continue
+		}
+		res.Questions[i] = encodeStoryQuestionItemToReviseChangeResultStoryQuestionItemTransport2(val)
+	}
+
+	return res
+}
+
+func encodeStoryQuestionItemToApproveMergeResultStoryQuestionItemTransport(v *surla.StoryQuestionItem) *ApproveMergeResultStoryQuestionItemTransport {
+	res := &ApproveMergeResultStoryQuestionItemTransport{
+		Key:         &v.Key,
+		Prompt:      &v.Prompt,
+		Description: v.Description,
+	}
+	res.Options = make([]string, len(v.Options))
+	for i, val := range v.Options {
+		res.Options[i] = val
+	}
+
+	return res
+}
+
+func encodeStoryQuestionItemToApproveMergeResultStoryQuestionItemTransport2(v *surla.StoryQuestionItem) *ApproveMergeResultStoryQuestionItemTransport {
+	res := &ApproveMergeResultStoryQuestionItemTransport{
+		Key:         &v.Key,
+		Prompt:      &v.Prompt,
+		Description: v.Description,
+	}
+	res.Options = make([]string, len(v.Options))
+	for i, val := range v.Options {
+		res.Options[i] = val
+	}
+
+	return res
+}
+
+func encodeStoryQuestionItemToConfirmIntentResultStoryQuestionItemTransport(v *surla.StoryQuestionItem) *ConfirmIntentResultStoryQuestionItemTransport {
+	res := &ConfirmIntentResultStoryQuestionItemTransport{
+		Key:         &v.Key,
+		Prompt:      &v.Prompt,
+		Description: v.Description,
+	}
+	res.Options = make([]string, len(v.Options))
+	for i, val := range v.Options {
+		res.Options[i] = val
+	}
+
+	return res
+}
+
+func encodeStoryQuestionItemToConfirmIntentResultStoryQuestionItemTransport2(v *surla.StoryQuestionItem) *ConfirmIntentResultStoryQuestionItemTransport {
+	res := &ConfirmIntentResultStoryQuestionItemTransport{
+		Key:         &v.Key,
+		Prompt:      &v.Prompt,
+		Description: v.Description,
+	}
+	res.Options = make([]string, len(v.Options))
+	for i, val := range v.Options {
+		res.Options[i] = val
+	}
+
+	return res
+}
+
+func encodeStoryQuestionItemToGetChangeResultStoryQuestionItemTransport(v *surla.StoryQuestionItem) *GetChangeResultStoryQuestionItemTransport {
+	res := &GetChangeResultStoryQuestionItemTransport{
+		Key:         &v.Key,
+		Prompt:      &v.Prompt,
+		Description: v.Description,
+	}
+	res.Options = make([]string, len(v.Options))
+	for i, val := range v.Options {
+		res.Options[i] = val
+	}
+
+	return res
+}
+
+func encodeStoryQuestionItemToGetChangeResultStoryQuestionItemTransport2(v *surla.StoryQuestionItem) *GetChangeResultStoryQuestionItemTransport {
+	res := &GetChangeResultStoryQuestionItemTransport{
+		Key:         &v.Key,
+		Prompt:      &v.Prompt,
+		Description: v.Description,
+	}
+	res.Options = make([]string, len(v.Options))
+	for i, val := range v.Options {
+		res.Options[i] = val
+	}
+
+	return res
+}
+
 func encodeStoryQuestionItemToGetStoryRefreshResultStoryQuestionItemTransport(v *surla.StoryQuestionItem) *GetStoryRefreshResultStoryQuestionItemTransport {
 	res := &GetStoryRefreshResultStoryQuestionItemTransport{
 		Key:         &v.Key,
@@ -7188,6 +8590,34 @@ func encodeStoryQuestionItemToGetStoryRefreshResultStoryQuestionItemTransport(v 
 
 func encodeStoryQuestionItemToGetStoryRefreshResultStoryQuestionItemTransport2(v *surla.StoryQuestionItem) *GetStoryRefreshResultStoryQuestionItemTransport {
 	res := &GetStoryRefreshResultStoryQuestionItemTransport{
+		Key:         &v.Key,
+		Prompt:      &v.Prompt,
+		Description: v.Description,
+	}
+	res.Options = make([]string, len(v.Options))
+	for i, val := range v.Options {
+		res.Options[i] = val
+	}
+
+	return res
+}
+
+func encodeStoryQuestionItemToProposeChangeResultStoryQuestionItemTransport(v *surla.StoryQuestionItem) *ProposeChangeResultStoryQuestionItemTransport {
+	res := &ProposeChangeResultStoryQuestionItemTransport{
+		Key:         &v.Key,
+		Prompt:      &v.Prompt,
+		Description: v.Description,
+	}
+	res.Options = make([]string, len(v.Options))
+	for i, val := range v.Options {
+		res.Options[i] = val
+	}
+
+	return res
+}
+
+func encodeStoryQuestionItemToProposeChangeResultStoryQuestionItemTransport2(v *surla.StoryQuestionItem) *ProposeChangeResultStoryQuestionItemTransport {
+	res := &ProposeChangeResultStoryQuestionItemTransport{
 		Key:         &v.Key,
 		Prompt:      &v.Prompt,
 		Description: v.Description,
@@ -7228,6 +8658,94 @@ func encodeStoryQuestionItemToRefreshStoryResultStoryQuestionItemTransport2(v *s
 	return res
 }
 
+func encodeStoryQuestionItemToReviseChangeResultStoryQuestionItemTransport(v *surla.StoryQuestionItem) *ReviseChangeResultStoryQuestionItemTransport {
+	res := &ReviseChangeResultStoryQuestionItemTransport{
+		Key:         &v.Key,
+		Prompt:      &v.Prompt,
+		Description: v.Description,
+	}
+	res.Options = make([]string, len(v.Options))
+	for i, val := range v.Options {
+		res.Options[i] = val
+	}
+
+	return res
+}
+
+func encodeStoryQuestionItemToReviseChangeResultStoryQuestionItemTransport2(v *surla.StoryQuestionItem) *ReviseChangeResultStoryQuestionItemTransport {
+	res := &ReviseChangeResultStoryQuestionItemTransport{
+		Key:         &v.Key,
+		Prompt:      &v.Prompt,
+		Description: v.Description,
+	}
+	res.Options = make([]string, len(v.Options))
+	for i, val := range v.Options {
+		res.Options[i] = val
+	}
+
+	return res
+}
+
+func encodeStoryStepItemToApproveMergeResultStoryStepItemTransport(v *surla.StoryStepItem) *ApproveMergeResultStoryStepItemTransport {
+	res := &ApproveMergeResultStoryStepItemTransport{
+		Key:         &v.Key,
+		ActorKey:    &v.ActorKey,
+		Summary:     &v.Summary,
+		Description: v.Description,
+		Kind:        &v.Kind,
+	}
+	res.Questions = make([]*ApproveMergeResultStoryQuestionItemTransport, len(v.Questions))
+	for i, val := range v.Questions {
+		if val == nil {
+			res.Questions[i] = nil
+			continue
+		}
+		res.Questions[i] = encodeStoryQuestionItemToApproveMergeResultStoryQuestionItemTransport(val)
+	}
+
+	return res
+}
+
+func encodeStoryStepItemToConfirmIntentResultStoryStepItemTransport(v *surla.StoryStepItem) *ConfirmIntentResultStoryStepItemTransport {
+	res := &ConfirmIntentResultStoryStepItemTransport{
+		Key:         &v.Key,
+		ActorKey:    &v.ActorKey,
+		Summary:     &v.Summary,
+		Description: v.Description,
+		Kind:        &v.Kind,
+	}
+	res.Questions = make([]*ConfirmIntentResultStoryQuestionItemTransport, len(v.Questions))
+	for i, val := range v.Questions {
+		if val == nil {
+			res.Questions[i] = nil
+			continue
+		}
+		res.Questions[i] = encodeStoryQuestionItemToConfirmIntentResultStoryQuestionItemTransport(val)
+	}
+
+	return res
+}
+
+func encodeStoryStepItemToGetChangeResultStoryStepItemTransport(v *surla.StoryStepItem) *GetChangeResultStoryStepItemTransport {
+	res := &GetChangeResultStoryStepItemTransport{
+		Key:         &v.Key,
+		ActorKey:    &v.ActorKey,
+		Summary:     &v.Summary,
+		Description: v.Description,
+		Kind:        &v.Kind,
+	}
+	res.Questions = make([]*GetChangeResultStoryQuestionItemTransport, len(v.Questions))
+	for i, val := range v.Questions {
+		if val == nil {
+			res.Questions[i] = nil
+			continue
+		}
+		res.Questions[i] = encodeStoryQuestionItemToGetChangeResultStoryQuestionItemTransport(val)
+	}
+
+	return res
+}
+
 func encodeStoryStepItemToGetStoryRefreshResultStoryStepItemTransport(v *surla.StoryStepItem) *GetStoryRefreshResultStoryStepItemTransport {
 	res := &GetStoryRefreshResultStoryStepItemTransport{
 		Key:         &v.Key,
@@ -7248,6 +8766,26 @@ func encodeStoryStepItemToGetStoryRefreshResultStoryStepItemTransport(v *surla.S
 	return res
 }
 
+func encodeStoryStepItemToProposeChangeResultStoryStepItemTransport(v *surla.StoryStepItem) *ProposeChangeResultStoryStepItemTransport {
+	res := &ProposeChangeResultStoryStepItemTransport{
+		Key:         &v.Key,
+		ActorKey:    &v.ActorKey,
+		Summary:     &v.Summary,
+		Description: v.Description,
+		Kind:        &v.Kind,
+	}
+	res.Questions = make([]*ProposeChangeResultStoryQuestionItemTransport, len(v.Questions))
+	for i, val := range v.Questions {
+		if val == nil {
+			res.Questions[i] = nil
+			continue
+		}
+		res.Questions[i] = encodeStoryQuestionItemToProposeChangeResultStoryQuestionItemTransport(val)
+	}
+
+	return res
+}
+
 func encodeStoryStepItemToRefreshStoryResultStoryStepItemTransport(v *surla.StoryStepItem) *RefreshStoryResultStoryStepItemTransport {
 	res := &RefreshStoryResultStoryStepItemTransport{
 		Key:         &v.Key,
@@ -7263,6 +8801,101 @@ func encodeStoryStepItemToRefreshStoryResultStoryStepItemTransport(v *surla.Stor
 			continue
 		}
 		res.Questions[i] = encodeStoryQuestionItemToRefreshStoryResultStoryQuestionItemTransport(val)
+	}
+
+	return res
+}
+
+func encodeStoryStepItemToReviseChangeResultStoryStepItemTransport(v *surla.StoryStepItem) *ReviseChangeResultStoryStepItemTransport {
+	res := &ReviseChangeResultStoryStepItemTransport{
+		Key:         &v.Key,
+		ActorKey:    &v.ActorKey,
+		Summary:     &v.Summary,
+		Description: v.Description,
+		Kind:        &v.Kind,
+	}
+	res.Questions = make([]*ReviseChangeResultStoryQuestionItemTransport, len(v.Questions))
+	for i, val := range v.Questions {
+		if val == nil {
+			res.Questions[i] = nil
+			continue
+		}
+		res.Questions[i] = encodeStoryQuestionItemToReviseChangeResultStoryQuestionItemTransport(val)
+	}
+
+	return res
+}
+
+func encodeStorySummaryItemToApproveMergeResultStorySummaryItemTransport(v *surla.StorySummaryItem) *ApproveMergeResultStorySummaryItemTransport {
+	res := &ApproveMergeResultStorySummaryItemTransport{
+		Name:        &v.Name,
+		Description: v.Description,
+	}
+	res.Actors = make([]*ApproveMergeResultStoryActorItemTransport, len(v.Actors))
+	for i, val := range v.Actors {
+		if val == nil {
+			res.Actors[i] = nil
+			continue
+		}
+		res.Actors[i] = encodeStoryActorItemToApproveMergeResultStoryActorItemTransport(val)
+	}
+	res.Flows = make([]*ApproveMergeResultStoryFlowItemTransport, len(v.Flows))
+	for i, val := range v.Flows {
+		if val == nil {
+			res.Flows[i] = nil
+			continue
+		}
+		res.Flows[i] = encodeStoryFlowItemToApproveMergeResultStoryFlowItemTransport(val)
+	}
+
+	return res
+}
+
+func encodeStorySummaryItemToConfirmIntentResultStorySummaryItemTransport(v *surla.StorySummaryItem) *ConfirmIntentResultStorySummaryItemTransport {
+	res := &ConfirmIntentResultStorySummaryItemTransport{
+		Name:        &v.Name,
+		Description: v.Description,
+	}
+	res.Actors = make([]*ConfirmIntentResultStoryActorItemTransport, len(v.Actors))
+	for i, val := range v.Actors {
+		if val == nil {
+			res.Actors[i] = nil
+			continue
+		}
+		res.Actors[i] = encodeStoryActorItemToConfirmIntentResultStoryActorItemTransport(val)
+	}
+	res.Flows = make([]*ConfirmIntentResultStoryFlowItemTransport, len(v.Flows))
+	for i, val := range v.Flows {
+		if val == nil {
+			res.Flows[i] = nil
+			continue
+		}
+		res.Flows[i] = encodeStoryFlowItemToConfirmIntentResultStoryFlowItemTransport(val)
+	}
+
+	return res
+}
+
+func encodeStorySummaryItemToGetChangeResultStorySummaryItemTransport(v *surla.StorySummaryItem) *GetChangeResultStorySummaryItemTransport {
+	res := &GetChangeResultStorySummaryItemTransport{
+		Name:        &v.Name,
+		Description: v.Description,
+	}
+	res.Actors = make([]*GetChangeResultStoryActorItemTransport, len(v.Actors))
+	for i, val := range v.Actors {
+		if val == nil {
+			res.Actors[i] = nil
+			continue
+		}
+		res.Actors[i] = encodeStoryActorItemToGetChangeResultStoryActorItemTransport(val)
+	}
+	res.Flows = make([]*GetChangeResultStoryFlowItemTransport, len(v.Flows))
+	for i, val := range v.Flows {
+		if val == nil {
+			res.Flows[i] = nil
+			continue
+		}
+		res.Flows[i] = encodeStoryFlowItemToGetChangeResultStoryFlowItemTransport(val)
 	}
 
 	return res
@@ -7293,6 +8926,31 @@ func encodeStorySummaryItemToGetStoryRefreshResultStorySummaryItemTransport(v *s
 	return res
 }
 
+func encodeStorySummaryItemToProposeChangeResultStorySummaryItemTransport(v *surla.StorySummaryItem) *ProposeChangeResultStorySummaryItemTransport {
+	res := &ProposeChangeResultStorySummaryItemTransport{
+		Name:        &v.Name,
+		Description: v.Description,
+	}
+	res.Actors = make([]*ProposeChangeResultStoryActorItemTransport, len(v.Actors))
+	for i, val := range v.Actors {
+		if val == nil {
+			res.Actors[i] = nil
+			continue
+		}
+		res.Actors[i] = encodeStoryActorItemToProposeChangeResultStoryActorItemTransport(val)
+	}
+	res.Flows = make([]*ProposeChangeResultStoryFlowItemTransport, len(v.Flows))
+	for i, val := range v.Flows {
+		if val == nil {
+			res.Flows[i] = nil
+			continue
+		}
+		res.Flows[i] = encodeStoryFlowItemToProposeChangeResultStoryFlowItemTransport(val)
+	}
+
+	return res
+}
+
 func encodeStorySummaryItemToRefreshStoryResultStorySummaryItemTransport(v *surla.StorySummaryItem) *RefreshStoryResultStorySummaryItemTransport {
 	res := &RefreshStoryResultStorySummaryItemTransport{
 		Name:        &v.Name,
@@ -7313,6 +8971,31 @@ func encodeStorySummaryItemToRefreshStoryResultStorySummaryItemTransport(v *surl
 			continue
 		}
 		res.Flows[i] = encodeStoryFlowItemToRefreshStoryResultStoryFlowItemTransport(val)
+	}
+
+	return res
+}
+
+func encodeStorySummaryItemToReviseChangeResultStorySummaryItemTransport(v *surla.StorySummaryItem) *ReviseChangeResultStorySummaryItemTransport {
+	res := &ReviseChangeResultStorySummaryItemTransport{
+		Name:        &v.Name,
+		Description: v.Description,
+	}
+	res.Actors = make([]*ReviseChangeResultStoryActorItemTransport, len(v.Actors))
+	for i, val := range v.Actors {
+		if val == nil {
+			res.Actors[i] = nil
+			continue
+		}
+		res.Actors[i] = encodeStoryActorItemToReviseChangeResultStoryActorItemTransport(val)
+	}
+	res.Flows = make([]*ReviseChangeResultStoryFlowItemTransport, len(v.Flows))
+	for i, val := range v.Flows {
+		if val == nil {
+			res.Flows[i] = nil
+			continue
+		}
+		res.Flows[i] = encodeStoryFlowItemToReviseChangeResultStoryFlowItemTransport(val)
 	}
 
 	return res

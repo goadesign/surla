@@ -20,6 +20,7 @@ import (
 
 	gensurla "github.com/goadesign/surla/gen/surla"
 	"github.com/goadesign/surla/internal/abspath"
+	"github.com/goadesign/surla/internal/designeval"
 )
 
 type (
@@ -82,6 +83,10 @@ type (
 		// SourceOrigin records whether DesignSource was read from the bound
 		// workspace ("workspace") or supplied by the caller (omitted on disk).
 		SourceOrigin string `json:"source_origin,omitempty"`
+		// Stories holds the evaluated domain Stories adopted for this card
+		// revision in declaration order, omitted on disk when empty so cards
+		// without Stories keep their prior schema and request_revision.
+		Stories []designeval.StorySummary `json:"stories,omitempty"`
 	}
 )
 
@@ -315,6 +320,13 @@ func decodeCardBytes(label, fileName string, requireExactID bool, data []byte) (
 	default:
 		return storedChangeCard{}, fmt.Errorf("change card %q has unknown source_origin %q", label, f.SourceOrigin)
 	}
+	if f.Stories != nil && len(f.Stories) == 0 {
+		return storedChangeCard{}, fmt.Errorf("change card %q has empty stories array; omit stories when empty", label)
+	}
+	stories := cloneStorySummaries(f.Stories)
+	if len(stories) > 0 && sourceOrigin != sourceOriginWorkspace {
+		return storedChangeCard{}, fmt.Errorf("change card %q has stories with non-workspace source_origin %q", label, sourceOrigin)
+	}
 	card := &gensurla.ChangeCardResult{
 		ChangeID:           f.Card.ChangeID,
 		Status:             f.Card.Status,
@@ -324,6 +336,7 @@ func decodeCardBytes(label, fileName string, requireExactID bool, data []byte) (
 		Answers:            f.Card.Answers,
 		Examples:           f.Card.Examples,
 		PreservedBehaviors: f.Card.PreservedBehaviors,
+		Stories:            storySummaryItemsOrNil(stories),
 		ConfirmedBy:        f.Card.ConfirmedBy,
 		RequestRevision:    f.Card.RequestRevision,
 		UIComposition:      f.Card.UIComposition,
@@ -346,6 +359,7 @@ func decodeCardBytes(label, fileName string, requireExactID bool, data []byte) (
 		owner:        f.Owner,
 		designSource: f.DesignSource,
 		sourceOrigin: sourceOrigin,
+		stories:      stories,
 	}, nil
 }
 
@@ -379,11 +393,16 @@ func (s *cardStore) save(record storedChangeCard) error {
 	if record.sourceOrigin == sourceOriginWorkspace {
 		persistedOrigin = sourceOriginWorkspace
 	}
+	persistedStories := cloneStorySummaries(record.stories)
+	if len(persistedStories) == 0 && len(record.card.Stories) > 0 {
+		persistedStories = canonicalStorySummariesFromItems(record.card.Stories)
+	}
 	data, err := json.Marshal(cardFile{
 		Card:         persisted,
 		Owner:        record.owner,
 		DesignSource: record.designSource,
 		SourceOrigin: persistedOrigin,
+		Stories:      persistedStories,
 	})
 	if err != nil {
 		return fmt.Errorf("encode change card %q: %w", record.card.ChangeID, err)

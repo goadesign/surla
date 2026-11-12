@@ -235,6 +235,87 @@ func (c *ControlPlane) closeStoryRefreshes() {
 	c.storyRefreshMu.Unlock()
 }
 
+// adoptStoryRefresh reads one module snapshot from the bound workspace,
+// verifies that rawOpID is the caller's current succeeded Story refresh
+// operation for that exact workspace identity and snapshot digest, and returns
+// the snapshot's encoded design/*.go source and a deep copy of its evaluated
+// Stories (nil when the design declared zero Stories). Every rejection is an
+// unprocessable error naming refresh_story.
+func (c *ControlPlane) adoptStoryRefresh(
+	principal Principal,
+	rawOpID string,
+) (string, []designeval.StorySummary, error) {
+	opID := strings.TrimSpace(rawOpID)
+	if opID == "" {
+		return "", nil, gensurla.MakeUnprocessable(errors.New(
+			"story_refresh_op_id must name a succeeded refresh_story operation; call refresh_story and pass its op_id",
+		))
+	}
+	wsDir, wsDev, wsIno := c.currentWorkspaceTarget()
+	if wsDir == "" {
+		return "", nil, gensurla.MakeUnprocessable(fmt.Errorf(
+			"cannot adopt story_refresh_op_id %q because no workspace directory is bound to this control plane; start Surla from a project directory or pass -project, then call refresh_story",
+			opID,
+		))
+	}
+	files, err := readWorkspaceSnapshotForStoryRefresh(wsDir, wsDev, wsIno)
+	if err != nil {
+		return "", nil, gensurla.MakeUnprocessable(fmt.Errorf("%w; call refresh_story again", err))
+	}
+	digest := designeval.SnapshotDigest(files)
+
+	c.workspaceMu.RLock()
+	sameWorkspace := c.activeWorkspaceDir == wsDir &&
+		c.boundWorkspaceDev == wsDev &&
+		c.boundWorkspaceIno == wsIno
+	key := storyRefreshKey{
+		principalID:  principal.ID,
+		workspaceDir: wsDir,
+		workspaceDev: wsDev,
+		workspaceIno: wsIno,
+	}
+	c.storyRefreshMu.Lock()
+	var opState, opDigest string
+	var stories []designeval.StorySummary
+	matched := false
+	if sameWorkspace {
+		if op := c.storyRefreshes[key]; op != nil && op.id == opID {
+			matched = true
+			opState = op.state
+			opDigest = op.snapshotDigest
+			if opState == storyRefreshStateSucceeded && opDigest == digest {
+				stories = cloneStorySummaries(op.stories)
+			}
+		}
+	}
+	c.storyRefreshMu.Unlock()
+	c.workspaceMu.RUnlock()
+
+	if !matched {
+		return "", nil, gensurla.MakeUnprocessable(fmt.Errorf(
+			"story_refresh_op_id %q is not the current Story refresh operation for this caller and workspace; call refresh_story and pass the latest succeeded op_id",
+			opID,
+		))
+	}
+	if opState != storyRefreshStateSucceeded {
+		return "", nil, gensurla.MakeUnprocessable(fmt.Errorf(
+			"story_refresh_op_id %q has state %q, not succeeded; wait for get_story_refresh to report succeeded or call refresh_story again",
+			opID, opState,
+		))
+	}
+	if opDigest != digest {
+		return "", nil, gensurla.MakeUnprocessable(fmt.Errorf(
+			"workspace snapshot (%s) no longer matches story_refresh_op_id %q (%s); call refresh_story again",
+			digest, opID, opDigest,
+		))
+	}
+	designSrc, err := designSourceFromModuleSnapshot(files)
+	if err != nil {
+		return "", nil, err
+	}
+	return designSrc, stories, nil
+}
+
 // storyRefreshDeadline returns the per-refresh evaluation timeout for c.
 func (c *ControlPlane) storyRefreshDeadline() time.Duration {
 	if c.storyRefreshTimeout > 0 {
@@ -334,17 +415,21 @@ func storyRefreshDiagnostic(err error, timeout time.Duration, timedOut bool) str
 	return diag
 }
 
-// cloneStorySummaries returns a deep copy of stories.
+// cloneStorySummaries returns a deep copy of stories, normalizing empty slices to nil.
 func cloneStorySummaries(stories []designeval.StorySummary) []designeval.StorySummary {
 	if len(stories) == 0 {
 		return nil
 	}
 	out := make([]designeval.StorySummary, len(stories))
 	for i, s := range stories {
+		var actors []designeval.StoryActor
+		if len(s.Actors) > 0 {
+			actors = slices.Clone(s.Actors)
+		}
 		out[i] = designeval.StorySummary{
 			Name:        s.Name,
 			Description: s.Description,
-			Actors:      slices.Clone(s.Actors),
+			Actors:      actors,
 		}
 		if len(s.Flows) > 0 {
 			flows := make([]designeval.StoryFlow, len(s.Flows))
@@ -377,21 +462,151 @@ func cloneStorySummaries(stories []designeval.StorySummary) []designeval.StorySu
 	return out
 }
 
-// cloneStoryQuestions returns a deep copy of questions.
+// cloneStoryQuestions returns a deep copy of questions, normalizing empty slices to nil.
 func cloneStoryQuestions(questions []designeval.StoryQuestion) []designeval.StoryQuestion {
 	if len(questions) == 0 {
 		return nil
 	}
 	out := make([]designeval.StoryQuestion, len(questions))
 	for i, q := range questions {
+		var options []string
+		if len(q.Options) > 0 {
+			options = slices.Clone(q.Options)
+		}
 		out[i] = designeval.StoryQuestion{
 			Key:         q.Key,
 			Prompt:      q.Prompt,
 			Description: q.Description,
-			Options:     slices.Clone(q.Options),
+			Options:     options,
 		}
 	}
 	return out
+}
+
+// storySummaryItemsOrNil returns storySummaryItems(stories) when stories is
+// non-empty, or nil so ChangeCardResult omits stories when none were adopted.
+func storySummaryItemsOrNil(stories []designeval.StorySummary) []*gensurla.StorySummaryItem {
+	if len(stories) == 0 {
+		return nil
+	}
+	return storySummaryItems(stories)
+}
+
+// canonicalStorySummariesFromItems converts generated transport Story items
+// into canonical designeval.StorySummary values, normalizing empty slices to nil.
+func canonicalStorySummariesFromItems(items []*gensurla.StorySummaryItem) []designeval.StorySummary {
+	if len(items) == 0 {
+		return nil
+	}
+	out := make([]designeval.StorySummary, 0, len(items))
+	for _, s := range items {
+		if s == nil {
+			continue
+		}
+		var actors []designeval.StoryActor
+		if len(s.Actors) > 0 {
+			actors = make([]designeval.StoryActor, 0, len(s.Actors))
+			for _, a := range s.Actors {
+				if a == nil {
+					continue
+				}
+				actors = append(actors, designeval.StoryActor{
+					Key:         a.Key,
+					Title:       a.Title,
+					Description: derefString(a.Description),
+				})
+			}
+			if len(actors) == 0 {
+				actors = nil
+			}
+		}
+		var flows []designeval.StoryFlow
+		if len(s.Flows) > 0 {
+			flows = make([]designeval.StoryFlow, 0, len(s.Flows))
+			for _, f := range s.Flows {
+				if f == nil {
+					continue
+				}
+				var steps []designeval.StoryStep
+				if len(f.Steps) > 0 {
+					steps = make([]designeval.StoryStep, 0, len(f.Steps))
+					for _, st := range f.Steps {
+						if st == nil {
+							continue
+						}
+						steps = append(steps, designeval.StoryStep{
+							Key:         st.Key,
+							ActorKey:    st.ActorKey,
+							Summary:     st.Summary,
+							Description: derefString(st.Description),
+							Kind:        st.Kind,
+							Questions:   canonicalStoryQuestionsFromItems(st.Questions),
+						})
+					}
+					if len(steps) == 0 {
+						steps = nil
+					}
+				}
+				flows = append(flows, designeval.StoryFlow{
+					Key:         f.Key,
+					Title:       f.Title,
+					Description: derefString(f.Description),
+					Complete:    f.Complete,
+					Steps:       steps,
+					Questions:   canonicalStoryQuestionsFromItems(f.Questions),
+				})
+			}
+			if len(flows) == 0 {
+				flows = nil
+			}
+		}
+		out = append(out, designeval.StorySummary{
+			Name:        s.Name,
+			Description: derefString(s.Description),
+			Actors:      actors,
+			Flows:       flows,
+		})
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+// canonicalStoryQuestionsFromItems converts generated transport Story question
+// items into canonical designeval.StoryQuestion values.
+func canonicalStoryQuestionsFromItems(items []*gensurla.StoryQuestionItem) []designeval.StoryQuestion {
+	if len(items) == 0 {
+		return nil
+	}
+	out := make([]designeval.StoryQuestion, 0, len(items))
+	for _, q := range items {
+		if q == nil {
+			continue
+		}
+		var options []string
+		if len(q.Options) > 0 {
+			options = slices.Clone(q.Options)
+		}
+		out = append(out, designeval.StoryQuestion{
+			Key:         q.Key,
+			Prompt:      q.Prompt,
+			Description: derefString(q.Description),
+			Options:     options,
+		})
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+// derefString returns *s when s is non-nil or "".
+func derefString(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
 }
 
 // storySummaryItems converts canonical Story summaries into generated transport items.

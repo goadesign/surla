@@ -622,11 +622,25 @@ var _ = Story("Order Refunds", func() {
 	assert.Equal(t, storyRefreshStateSucceeded, reused.State)
 	require.Len(t, reused.Stories, 1)
 
-	// preview_architecture still rejects a Story-only design.
-	card := mustPropose(t, cp, alice, "chg-story-only", "Refunds up to $50 are instant.", refundAnalysis("Refunds up to $50 are instant."))
-	_, err := cp.PreviewArchitecture(alice, &gensurla.PreviewArchitecturePayload{
-		ChangeID:        card.ChangeID,
-		RequestRevision: card.RequestRevision,
+	// Adopting the succeeded Story refresh into a Change Card saves the
+	// evaluated Stories and hashes them into request_revision; preview_architecture
+	// still rejects a Story-only design.
+	cardWithoutStory := mustPropose(t, cp, alice, "chg-story-only", "Refunds up to $50 are instant.", refundAnalysis("Refunds up to $50 are instant."))
+	assert.Empty(t, cardWithoutStory.Stories)
+	cardWithStory, err := cp.ProposeChange(alice, &gensurla.ProposeChangePayload{
+		ChangeID:         "chg-story-adopted",
+		Prompt:           "Refunds up to $50 are instant.",
+		StoryRefreshOpID: succeeded.OpID,
+		Analysis:         refundAnalysis("Refunds up to $50 are instant."),
+	})
+	require.NoError(t, err)
+	require.Len(t, cardWithStory.Stories, 1)
+	assert.Equal(t, "Order Refunds", cardWithStory.Stories[0].Name)
+	assert.NotEqual(t, cardWithoutStory.RequestRevision, cardWithStory.RequestRevision)
+
+	_, err = cp.PreviewArchitecture(alice, &gensurla.PreviewArchitecturePayload{
+		ChangeID:        cardWithStory.ChangeID,
+		RequestRevision: cardWithStory.RequestRevision,
 	})
 	assertServiceError(t, err, "unprocessable")
 	assert.ErrorContains(t, err, "design must declare at least one Goa API or Service container")
@@ -666,6 +680,18 @@ var _ = Service("orders", func() {
 
 	assert.Empty(t, nonStorySucceeded.Stories)
 	assert.Contains(t, nonStorySucceeded.Message, "the design declares no Stories")
+
+	// Adopting a succeeded refresh with zero Stories equals adopting none.
+	adoptedZero, err := cp.ProposeChange(alice, &gensurla.ProposeChangePayload{
+		ChangeID:         "chg-zero-stories",
+		Prompt:           "Refunds up to $50 are instant.",
+		StoryRefreshOpID: nonStorySucceeded.OpID,
+		Analysis:         refundAnalysis("Refunds up to $50 are instant."),
+	})
+	require.NoError(t, err)
+	assert.Nil(t, adoptedZero.Stories)
+	plainZero := mustPropose(t, newControlPlane(t, Options{WorkspaceDir: wsDir}), alice, "chg-zero-stories", "Refunds up to $50 are instant.", refundAnalysis("Refunds up to $50 are instant."))
+	assert.Equal(t, plainZero.RequestRevision, adoptedZero.RequestRevision)
 }
 
 // writeWorkspaceFiles writes files into dir, creating parent directories.

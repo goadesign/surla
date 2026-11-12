@@ -391,6 +391,7 @@ func (c *ControlPlane) confirm(principal Principal, p *gensurla.ConfirmIntentPay
 		Answers:            maps.Clone(p.Answers),
 		Examples:           examples,
 		PreservedBehaviors: slices.Clone(existing.PreservedBehaviors),
+		Stories:            storySummaryItemsOrNil(record.stories),
 		ConfirmedBy:        &confirmedBy,
 	}
 	rev, err := computeCanonicalRevision(confirmed, record.owner, record.designSource)
@@ -407,6 +408,7 @@ func (c *ControlPlane) confirm(principal Principal, p *gensurla.ConfirmIntentPay
 		owner:        record.owner,
 		designSource: record.designSource,
 		sourceOrigin: record.sourceOrigin,
+		stories:      cloneStorySummaries(record.stories),
 	}); err != nil {
 		return nil, false, err
 	}
