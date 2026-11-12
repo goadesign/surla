@@ -343,6 +343,16 @@ type (
 		// checkOps counts running check operations so Close can wait for
 		// their check helpers to finish.
 		checkOps sync.WaitGroup
+		// storyRefreshMu guards storyRefreshes and each storyRefreshOp's state.
+		storyRefreshMu sync.Mutex
+		// storyRefreshes holds the current in-memory Story refresh operation per
+		// authenticated principal and bound workspace identity.
+		storyRefreshes map[storyRefreshKey]*storyRefreshOp
+		// storyRefreshOps counts running Story refresh evaluations so Close can
+		// wait for them to finish before closing the evaluator.
+		storyRefreshOps sync.WaitGroup
+		// storyRefreshTimeout overrides defaultStoryRefreshTimeout in tests when positive.
+		storyRefreshTimeout time.Duration
 		// newGenerator constructs a fresh scaffold.Generator for each
 		// InitProject call when non-nil.
 		newGenerator func() scaffold.Generator
@@ -735,6 +745,7 @@ func (c *ControlPlane) Close() error {
 	// and return; then any container still unconfirmed gets one more try.
 	c.checkOps.Wait()
 	checkErr := c.recoverCheckOperations()
+	c.closeStoryRefreshes()
 	liveErr := c.closeLive()
 	evalErr := c.evaluator.Close()
 	if liveErr != nil {

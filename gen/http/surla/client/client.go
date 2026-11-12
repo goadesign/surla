@@ -104,6 +104,14 @@ type Client struct {
 	// endpoint.
 	ListTracesDoer goahttp.Doer
 
+	// RefreshStory Doer is the HTTP client used to make requests to the
+	// refresh_story endpoint.
+	RefreshStoryDoer goahttp.Doer
+
+	// GetStoryRefresh Doer is the HTTP client used to make requests to the
+	// get_story_refresh endpoint.
+	GetStoryRefreshDoer goahttp.Doer
+
 	// RestoreResponseBody controls whether the response bodies are reset after
 	// decoding so they can be read again.
 	RestoreResponseBody bool
@@ -146,6 +154,8 @@ func NewClient(
 		UpdateDependenciesDoer:  doer,
 		ReadCheckOutputDoer:     doer,
 		ListTracesDoer:          doer,
+		RefreshStoryDoer:        doer,
+		GetStoryRefreshDoer:     doer,
 		RestoreResponseBody:     restoreBody,
 		scheme:                  scheme,
 		host:                    host,
@@ -637,6 +647,44 @@ func (c *Client) ListTraces() goa.Endpoint {
 		resp, err := c.ListTracesDoer.Do(req)
 		if err != nil {
 			return nil, goahttp.ErrRequestError("surla", "list_traces", err)
+		}
+		return decodeResponse(resp)
+	}
+}
+
+// RefreshStory returns an endpoint that makes HTTP requests to the surla
+// service refresh_story server.
+func (c *Client) RefreshStory() goa.Endpoint {
+	var (
+		decodeResponse = DecodeRefreshStoryResponse(c.decoder, c.RestoreResponseBody)
+	)
+	return func(ctx context.Context, v any) (any, error) {
+		req, err := c.BuildRefreshStoryRequest(ctx, v)
+		if err != nil {
+			return nil, err
+		}
+		resp, err := c.RefreshStoryDoer.Do(req)
+		if err != nil {
+			return nil, goahttp.ErrRequestError("surla", "refresh_story", err)
+		}
+		return decodeResponse(resp)
+	}
+}
+
+// GetStoryRefresh returns an endpoint that makes HTTP requests to the surla
+// service get_story_refresh server.
+func (c *Client) GetStoryRefresh() goa.Endpoint {
+	var (
+		decodeResponse = DecodeGetStoryRefreshResponse(c.decoder, c.RestoreResponseBody)
+	)
+	return func(ctx context.Context, v any) (any, error) {
+		req, err := c.BuildGetStoryRefreshRequest(ctx, v)
+		if err != nil {
+			return nil, err
+		}
+		resp, err := c.GetStoryRefreshDoer.Do(req)
+		if err != nil {
+			return nil, goahttp.ErrRequestError("surla", "get_story_refresh", err)
 		}
 		return decodeResponse(resp)
 	}

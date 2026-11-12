@@ -37,6 +37,8 @@ type Endpoints struct {
 	UpdateDependencies  goa.Endpoint
 	ReadCheckOutput     goa.Endpoint
 	ListTraces          goa.Endpoint
+	RefreshStory        goa.Endpoint
+	GetStoryRefresh     goa.Endpoint
 }
 
 // NewEndpoints wraps the methods of the "surla" service with endpoints.
@@ -64,6 +66,8 @@ func NewEndpoints(s Service) *Endpoints {
 		UpdateDependencies:  NewUpdateDependenciesEndpoint(s),
 		ReadCheckOutput:     NewReadCheckOutputEndpoint(s),
 		ListTraces:          NewListTracesEndpoint(s),
+		RefreshStory:        NewRefreshStoryEndpoint(s),
+		GetStoryRefresh:     NewGetStoryRefreshEndpoint(s),
 	}
 }
 
@@ -91,6 +95,8 @@ func (e *Endpoints) Use(m func(goa.Endpoint) goa.Endpoint) {
 	e.UpdateDependencies = m(e.UpdateDependencies)
 	e.ReadCheckOutput = m(e.ReadCheckOutput)
 	e.ListTraces = m(e.ListTraces)
+	e.RefreshStory = m(e.RefreshStory)
+	e.GetStoryRefresh = m(e.GetStoryRefresh)
 }
 
 // NewCheckpointUIEndpoint returns an endpoint function that calls the method
@@ -283,5 +289,21 @@ func NewListTracesEndpoint(s Service) goa.Endpoint {
 	return func(ctx context.Context, req any) (any, error) {
 		p := req.(*ListTracesPayload)
 		return s.ListTraces(ctx, p)
+	}
+}
+
+// NewRefreshStoryEndpoint returns an endpoint function that calls the method
+// "refresh_story" of service "surla".
+func NewRefreshStoryEndpoint(s Service) goa.Endpoint {
+	return func(ctx context.Context, req any) (any, error) {
+		return s.RefreshStory(ctx)
+	}
+}
+
+// NewGetStoryRefreshEndpoint returns an endpoint function that calls the
+// method "get_story_refresh" of service "surla".
+func NewGetStoryRefreshEndpoint(s Service) goa.Endpoint {
+	return func(ctx context.Context, req any) (any, error) {
+		return s.GetStoryRefresh(ctx)
 	}
 }

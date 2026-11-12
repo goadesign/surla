@@ -41,6 +41,8 @@ type Server struct {
 	UpdateDependencies  http.Handler
 	ReadCheckOutput     http.Handler
 	ListTraces          http.Handler
+	RefreshStory        http.Handler
+	GetStoryRefresh     http.Handler
 }
 
 // MountPoint holds information about the mounted endpoints.
@@ -92,6 +94,8 @@ func New(
 			{"UpdateDependencies", "POST", "/workspace/dependencies"},
 			{"ReadCheckOutput", "POST", "/workspace/check/output"},
 			{"ListTraces", "GET", "/traces"},
+			{"RefreshStory", "POST", "/workspace/story/refresh"},
+			{"GetStoryRefresh", "GET", "/workspace/story/refresh"},
 		},
 		CheckpointUI:        NewCheckpointUIHandler(e.CheckpointUI, mux, decoder, encoder, errhandler, formatter),
 		GoldenPath:          NewGoldenPathHandler(e.GoldenPath, mux, decoder, encoder, errhandler, formatter),
@@ -115,6 +119,8 @@ func New(
 		UpdateDependencies:  NewUpdateDependenciesHandler(e.UpdateDependencies, mux, decoder, encoder, errhandler, formatter),
 		ReadCheckOutput:     NewReadCheckOutputHandler(e.ReadCheckOutput, mux, decoder, encoder, errhandler, formatter),
 		ListTraces:          NewListTracesHandler(e.ListTraces, mux, decoder, encoder, errhandler, formatter),
+		RefreshStory:        NewRefreshStoryHandler(e.RefreshStory, mux, decoder, encoder, errhandler, formatter),
+		GetStoryRefresh:     NewGetStoryRefreshHandler(e.GetStoryRefresh, mux, decoder, encoder, errhandler, formatter),
 	}
 }
 
@@ -145,6 +151,8 @@ func (s *Server) Use(m func(http.Handler) http.Handler) {
 	s.UpdateDependencies = m(s.UpdateDependencies)
 	s.ReadCheckOutput = m(s.ReadCheckOutput)
 	s.ListTraces = m(s.ListTraces)
+	s.RefreshStory = m(s.RefreshStory)
+	s.GetStoryRefresh = m(s.GetStoryRefresh)
 }
 
 // MethodNames returns the methods served.
@@ -174,6 +182,8 @@ func Mount(mux goahttp.Muxer, h *Server) {
 	MountUpdateDependenciesHandler(mux, h.UpdateDependencies)
 	MountReadCheckOutputHandler(mux, h.ReadCheckOutput)
 	MountListTracesHandler(mux, h.ListTraces)
+	MountRefreshStoryHandler(mux, h.RefreshStory)
+	MountGetStoryRefreshHandler(mux, h.GetStoryRefresh)
 }
 
 // Mount configures the mux to serve the surla endpoints.
@@ -1298,6 +1308,98 @@ func NewListTracesHandler(
 			return
 		}
 		res, err := endpoint(ctx, payload)
+		if err != nil {
+			if err := encodeError(ctx, w, err); err != nil && errhandler != nil {
+				errhandler(ctx, w, err)
+			}
+			return
+		}
+		if err := encodeResponse(ctx, w, res); err != nil {
+			if errhandler != nil {
+				errhandler(ctx, w, err)
+			}
+		}
+	})
+}
+
+// MountRefreshStoryHandler configures the mux to serve the "surla" service
+// "refresh_story" endpoint.
+func MountRefreshStoryHandler(mux goahttp.Muxer, h http.Handler) {
+	f, ok := h.(http.HandlerFunc)
+	if !ok {
+		f = func(w http.ResponseWriter, r *http.Request) {
+			h.ServeHTTP(w, r)
+		}
+	}
+	mux.Handle("POST", "/workspace/story/refresh", f)
+}
+
+// NewRefreshStoryHandler creates a HTTP handler which loads the HTTP request
+// and calls the "surla" service "refresh_story" endpoint.
+func NewRefreshStoryHandler(
+	endpoint goa.Endpoint,
+	mux goahttp.Muxer,
+	decoder func(*http.Request) goahttp.Decoder,
+	encoder func(context.Context, http.ResponseWriter) goahttp.Encoder,
+	errhandler func(context.Context, http.ResponseWriter, error),
+	formatter func(ctx context.Context, err error) goahttp.Statuser,
+) http.Handler {
+	var (
+		encodeResponse = EncodeRefreshStoryResponse(encoder)
+		encodeError    = EncodeRefreshStoryError(encoder, formatter)
+	)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := context.WithValue(r.Context(), goahttp.AcceptTypeKey, r.Header.Get("Accept"))
+		ctx = context.WithValue(ctx, goa.MethodKey, "refresh_story")
+		ctx = context.WithValue(ctx, goa.ServiceKey, "surla")
+		var err error
+		res, err := endpoint(ctx, nil)
+		if err != nil {
+			if err := encodeError(ctx, w, err); err != nil && errhandler != nil {
+				errhandler(ctx, w, err)
+			}
+			return
+		}
+		if err := encodeResponse(ctx, w, res); err != nil {
+			if errhandler != nil {
+				errhandler(ctx, w, err)
+			}
+		}
+	})
+}
+
+// MountGetStoryRefreshHandler configures the mux to serve the "surla" service
+// "get_story_refresh" endpoint.
+func MountGetStoryRefreshHandler(mux goahttp.Muxer, h http.Handler) {
+	f, ok := h.(http.HandlerFunc)
+	if !ok {
+		f = func(w http.ResponseWriter, r *http.Request) {
+			h.ServeHTTP(w, r)
+		}
+	}
+	mux.Handle("GET", "/workspace/story/refresh", f)
+}
+
+// NewGetStoryRefreshHandler creates a HTTP handler which loads the HTTP
+// request and calls the "surla" service "get_story_refresh" endpoint.
+func NewGetStoryRefreshHandler(
+	endpoint goa.Endpoint,
+	mux goahttp.Muxer,
+	decoder func(*http.Request) goahttp.Decoder,
+	encoder func(context.Context, http.ResponseWriter) goahttp.Encoder,
+	errhandler func(context.Context, http.ResponseWriter, error),
+	formatter func(ctx context.Context, err error) goahttp.Statuser,
+) http.Handler {
+	var (
+		encodeResponse = EncodeGetStoryRefreshResponse(encoder)
+		encodeError    = EncodeGetStoryRefreshError(encoder, formatter)
+	)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := context.WithValue(r.Context(), goahttp.AcceptTypeKey, r.Header.Get("Accept"))
+		ctx = context.WithValue(ctx, goa.MethodKey, "get_story_refresh")
+		ctx = context.WithValue(ctx, goa.ServiceKey, "surla")
+		var err error
+		res, err := endpoint(ctx, nil)
 		if err != nil {
 			if err := encodeError(ctx, w, err); err != nil && errhandler != nil {
 				errhandler(ctx, w, err)

@@ -1,9 +1,15 @@
 # Story flows and independently written tests
 
-Status: engineering draft. Story evaluation, generated flow scaffolds and
-the test-authoring lifecycle described here have not shipped. The
-[product direction](PRODUCT_DIRECTION.md) records the intended experience;
-this document defines the engineering work needed to deliver it.
+Status: engineering draft. The portable Story language
+(`github.com/goadesign/surla/story`), synchronous sandboxed typed Story
+observation in `internal/designeval` (`Evaluator.Evaluate`), and in-memory
+background Story refresh in `internal/controlplane` (`refresh_story` and
+`get_story_refresh`) have shipped. Saving the observed Story on the Change
+Card's request revision, generated flow scaffolds, the independent
+test-authoring lifecycle, and the timeline and proof UI and MCP surfaces
+described here have not shipped. The [product direction](PRODUCT_DIRECTION.md)
+records the intended experience; this document defines the engineering work
+needed to deliver it.
 
 ## Problem and intended result
 
@@ -50,7 +56,14 @@ dependency or an execution-time value can change an evaluated result.
 The design evaluator already compiles and runs workspace Go in
 `verify/candidate`, the package that applies Surla's operating-system sandbox.
 Architecture preview and structural comparison call that evaluator
-synchronously. Code generation reads the active application or its local
+synchronously; when the evaluated target imports
+`github.com/goadesign/surla/story`, `Evaluator.Evaluate` also returns the
+observed typed Story (`Result.Stories`) without adding `story` to targets that
+do not import it. `refresh_story` and `get_story_refresh` evaluate the bound
+workspace's Story in the background and keep one current operation in memory
+per principal and bound workspace. Change Cards do not yet record that
+observed Story in the saved request revision.
+Code generation reads the active application or its local
 `eval/` module and publishes generated files without changing its module
 requirements. `check_project` takes no input and tests every discovered Go
 module in a protected workspace copy inside Linux containers.
@@ -76,7 +89,7 @@ owner which supplies its expected test and artifact inputs.
 | Read workspace design source | [`workspace.go`](../internal/controlplane/workspace.go), `readWorkspaceDesignSource`; [`snapshot.go`](../internal/designeval/snapshot.go), `ReadDesignFilesFromRoot`. Reads eligible Go files recursively under `design/`. |
 | Save and identify intent | [`controlplane.go`](../internal/controlplane/controlplane.go), `ProposeChange` and `computeCanonicalRevision`; [`revise.go`](../internal/controlplane/revise.go), `ReviseChange`; [`cp1_validation.go`](../internal/controlplane/cp1_validation.go), `confirm`; [`cards.go`](../internal/controlplane/cards.go), `cardStore` and `decodeCardBytes`. |
 | Preserve target module versions | [`module.go`](../internal/designeval/module.go), `prepareHarnessModule` and `sameVersions`. The evaluator must retain the dependency versions selected by the target. |
-| Evaluate and generate | [`eval.go`](../internal/designeval/eval.go), `Evaluator.Evaluate` and `Evaluator.Generate`; [`generate_code.go`](../internal/controlplane/generate_code.go), `GenerateCode`. |
+| Evaluate and generate | [`eval.go`](../internal/designeval/eval.go), `Evaluator.Evaluate` and `Evaluator.Generate`; [`story_refresh.go`](../internal/controlplane/story_refresh.go), `RefreshStory` and `GetStoryRefresh`; [`generate_code.go`](../internal/controlplane/generate_code.go), `GenerateCode`. |
 | Check uncommitted work | [`check_project.go`](../internal/controlplane/check_project.go), `CheckProject`; [`design.go`](../design/design.go), `check_project`. The method takes no payload. |
 | Choose verification inputs | [`verification.go`](../internal/controlplane/verification.go), `VerificationConfig` and `VerifyChange`; [`workspace_serve.go`](../cmd/surla/workspace_serve.go), `configureServeWorkspace`. Builders do not choose their evaluator commit. |
 | Run and recover verification | [`verifyrun`](../internal/verifyrun), `Request`; [`verification.go`](../internal/controlplane/verification.go), `GetVerification` and `ListVerifications`. |
@@ -128,18 +141,28 @@ that an earlier result claims to have checked.
 ### Background evaluation
 
 Editing through chat or the timeline changes the same repository source.
-A proposed Story refresh operation reads the active workspace itself, starts
-sandboxed evaluation, and returns promptly with an operation identifier.
-Reading that operation returns the observed Story or a diagnostic. Clients
-provide neither source blobs nor a filesystem path the server already knows.
+`refresh_story` reads the bound workspace's module snapshot itself, starts
+sandboxed evaluation under a fixed control-plane deadline, and returns
+promptly with the operation's `op_id`, `state`, and `snapshot_digest`.
+`get_story_refresh` returns the caller's current operation (`none`, `running`,
+`succeeded`, or `failed`) with the observed `stories` or a safe `diagnostic`.
+Clients provide neither source blobs nor a filesystem path the server already
+knows.
 
-The control plane owns admission and completion. It captures a full module
-snapshot, uses the existing snapshot digest to recognize identical inputs,
-and cancels a superseded evaluation. Completion publishes only for its own
-input and workspace; a slow older result cannot replace a newer edit. Saved
-operation inputs and results allow status to be recovered after a client
-disconnect. Server shutdown must finish cleanup and must not present an
-interrupted evaluation as a successful current Story.
+The control plane owns admission and completion in memory, keeping one current
+operation per principal and bound workspace identity without writing anything
+to disk. It captures a full module snapshot, uses the existing snapshot digest
+to reuse a `running` or `succeeded` operation for an unchanged snapshot, and
+cancels and replaces a prior operation when the snapshot changes or after a
+`failed` run. Completion publishes only for its own operation and workspace; a
+replaced or late evaluation publishes nothing. Because the operation runs in
+the server process on a server-owned context, status and results remain
+readable after a client disconnect while the server stays up. Before any
+refresh or after a server restart, `get_story_refresh` returns `state: "none"`
+as an expected absence and instructs the caller to run `refresh_story`. Server
+shutdown cancels and awaits in-flight evaluations and clears interrupted
+running entries before closing the evaluator, so an interrupted evaluation is
+never presented as a current Story.
 
 Story-only input must be evaluable before the application has services or C4
 elements. Existing architecture preview and difference callers keep their
@@ -161,9 +184,10 @@ Goa executes their DSL declarations, prepares the roots, validates them, then
 finalizes them. The adapter inserts finished-flow scenarios during preparation,
 before validation; it must not append declarations after validation or after
 generated sources have been frozen. The existing Goa-AI evaluator generator
-then writes suite interfaces and runners. The Story plugin writes ordered
-flow/step metadata and excluded drafts, without another assertion or runner
-framework.
+then writes suite interfaces under `gen/evals/<suite>/suite.go`, while the
+starter owns the runner command at `cmd/<name>-evals/main.go`. The Story
+plugin writes ordered flow/step metadata and excluded drafts, without another
+assertion or runner framework.
 
 Scenario names use Goa's `SnakeCase` conversion of the flow key, and hook
 methods use its `Goify` conversion of that scenario name. For example,
@@ -397,11 +421,16 @@ need their own design before this execution target is implemented.
 
 ## Delivery and acceptance
 
-The first increment delivers the portable Story language and sandboxed typed
-observation, with legacy-target dependency preservation. A Go-only Story with
-a finished refund flow and an unfinished claim must evaluate; both remain
-visible, and only the refund is eligible for the build. Invalid actor
-references and duplicate domain keys must fail with actionable errors.
+The first increment (shipped) delivers the portable Story language
+(`github.com/goadesign/surla/story`), synchronous sandboxed typed
+observation in `internal/designeval` (`Evaluator.Evaluate`) with
+legacy-target dependency preservation, and in-memory background Story refresh
+in `internal/controlplane` (`refresh_story` and `get_story_refresh`). A
+Go-only Story with a finished refund flow and an unfinished claim evaluates;
+both remain visible, and only the refund is eligible for the build. Invalid
+actor references and duplicate domain keys fail with actionable errors. Saving
+the observed Story on the Change Card's request revision remains to be
+delivered next.
 
 The second increment connects finished flows to the existing evaluator
 generator. Generated hooks preserve authored keys, keep existing handwritten

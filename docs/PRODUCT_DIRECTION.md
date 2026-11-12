@@ -110,6 +110,13 @@ this step.
   left out of that build, and is clearly shown as untested. A draft does
   not stop the finished flows from being built, and the user never has to
   delete a draft idea to build.
+- **Later edits wait until adopted.** Once a change is agreed, a later
+  Story edit stays a draft until the user adopts it. The agreed change, its
+  answers, confirmation, and test results stay valid for the Story that was
+  agreed, and the test writer and verifier read that frozen Story rather
+  than mutable workspace files (see the
+  [Story test engineering design](STORY_TEST_DESIGN.md#proposed-story-and-build-contract)).
+  Adopting the edited Story creates a new revision that needs confirmation.
 - **It leads to the architecture.** Open questions on the timeline become
   the choices Surla raises, unless the playbook already settles them. How
   the notes group suggests where boundaries could go; the user and the
@@ -258,12 +265,6 @@ diagram.
 - **Story vocabulary and links.** The Story's Go DSL vocabulary, what
   marks the start and end of a flow, and how a step stays linked to the
   design elements and tests that implement it are not decided.
-- **Which Story version the test writer reads.** The Story lives in files
-  the coding agent can edit. Whether the test-writing agent must read the
-  version the user confirmed, and how Surla would ensure that, is not
-  decided. How much of each test the plugin generates, the test-writing
-  workflow, and how tests follow later Story edits also remain to be
-  designed.
 - **How editing instructions reach the guide.** The guide edits source
   for Story and architecture changes. Which diagram gestures Surla offers
   and how the UI or an MCP client delivers those instructions are not

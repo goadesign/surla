@@ -634,6 +634,50 @@ type ListTracesResponseBody struct {
 	NextCursor *string `form:"next_cursor,omitempty" json:"next_cursor,omitempty" xml:"next_cursor,omitempty"`
 }
 
+// RefreshStoryResponseBody is the type of the "surla" service "refresh_story"
+// endpoint HTTP response body.
+type RefreshStoryResponseBody struct {
+	// Identifier of the caller's current Story refresh operation for the bound
+	// workspace; present when state is running, succeeded, or failed.
+	OpID *string `form:"op_id,omitempty" json:"op_id,omitempty" xml:"op_id,omitempty"`
+	// Current operation state: none, running, succeeded, or failed.
+	State string `form:"state" json:"state" xml:"state"`
+	// Canonical SHA-256 digest (sha256:<hex>) of the workspace module snapshot
+	// read when this refresh started; present when state is running, succeeded, or
+	// failed.
+	SnapshotDigest *string `form:"snapshot_digest,omitempty" json:"snapshot_digest,omitempty" xml:"snapshot_digest,omitempty"`
+	// Evaluated domain Stories in declaration order when state is succeeded (empty
+	// when the design declares no Stories or when state is none, running, or
+	// failed).
+	Stories []*StorySummaryItemResponseBody `form:"stories" json:"stories" xml:"stories"`
+	// Safe failure or timeout diagnostic when state is failed; omitted otherwise.
+	Diagnostic *string `form:"diagnostic,omitempty" json:"diagnostic,omitempty" xml:"diagnostic,omitempty"`
+	// Summary of the current Story refresh state and next action.
+	Message string `form:"message" json:"message" xml:"message"`
+}
+
+// GetStoryRefreshResponseBody is the type of the "surla" service
+// "get_story_refresh" endpoint HTTP response body.
+type GetStoryRefreshResponseBody struct {
+	// Identifier of the caller's current Story refresh operation for the bound
+	// workspace; present when state is running, succeeded, or failed.
+	OpID *string `form:"op_id,omitempty" json:"op_id,omitempty" xml:"op_id,omitempty"`
+	// Current operation state: none, running, succeeded, or failed.
+	State string `form:"state" json:"state" xml:"state"`
+	// Canonical SHA-256 digest (sha256:<hex>) of the workspace module snapshot
+	// read when this refresh started; present when state is running, succeeded, or
+	// failed.
+	SnapshotDigest *string `form:"snapshot_digest,omitempty" json:"snapshot_digest,omitempty" xml:"snapshot_digest,omitempty"`
+	// Evaluated domain Stories in declaration order when state is succeeded (empty
+	// when the design declares no Stories or when state is none, running, or
+	// failed).
+	Stories []*StorySummaryItemResponseBody `form:"stories" json:"stories" xml:"stories"`
+	// Safe failure or timeout diagnostic when state is failed; omitted otherwise.
+	Diagnostic *string `form:"diagnostic,omitempty" json:"diagnostic,omitempty" xml:"diagnostic,omitempty"`
+	// Summary of the current Story refresh state and next action.
+	Message string `form:"message" json:"message" xml:"message"`
+}
+
 // ProposeChangeConflictResponseBody is the type of the "surla" service
 // "propose_change" endpoint HTTP response body for the "conflict" error.
 type ProposeChangeConflictResponseBody struct {
@@ -1657,6 +1701,79 @@ type ListTracesNotImplementedResponseBody struct {
 	Fault bool `form:"fault" json:"fault" xml:"fault"`
 }
 
+// RefreshStoryUnprocessableResponseBody is the type of the "surla" service
+// "refresh_story" endpoint HTTP response body for the "unprocessable" error.
+type RefreshStoryUnprocessableResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
+// RefreshStoryNotImplementedResponseBody is the type of the "surla" service
+// "refresh_story" endpoint HTTP response body for the "not_implemented" error.
+type RefreshStoryNotImplementedResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
+// RefreshStoryUnavailableResponseBody is the type of the "surla" service
+// "refresh_story" endpoint HTTP response body for the "unavailable" error.
+type RefreshStoryUnavailableResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
+// GetStoryRefreshNotImplementedResponseBody is the type of the "surla" service
+// "get_story_refresh" endpoint HTTP response body for the "not_implemented"
+// error.
+type GetStoryRefreshNotImplementedResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
 // AmbiguityQuestionResponseBody is used to define fields on response body
 // types.
 type AmbiguityQuestionResponseBody struct {
@@ -2001,6 +2118,74 @@ type TraceSpanResponseBody struct {
 	// True when text was shortened to fit this diagnostic record; use operator
 	// telemetry for the full values.
 	Shortened bool `form:"shortened" json:"shortened" xml:"shortened"`
+}
+
+// StorySummaryItemResponseBody is used to define fields on response body types.
+type StorySummaryItemResponseBody struct {
+	// Human-facing Story title.
+	Name string `form:"name" json:"name" xml:"name"`
+	// Optional longer explanation of the Story.
+	Description *string `form:"description,omitempty" json:"description,omitempty" xml:"description,omitempty"`
+	// Domain roles declared in the Story in declaration order.
+	Actors []*StoryActorItemResponseBody `form:"actors" json:"actors" xml:"actors"`
+	// Timeline paths declared in the Story in declaration order.
+	Flows []*StoryFlowItemResponseBody `form:"flows" json:"flows" xml:"flows"`
+}
+
+// StoryActorItemResponseBody is used to define fields on response body types.
+type StoryActorItemResponseBody struct {
+	// Story-scoped actor key.
+	Key string `form:"key" json:"key" xml:"key"`
+	// Human-facing actor label.
+	Title string `form:"title" json:"title" xml:"title"`
+	// Optional longer explanation of the actor role.
+	Description *string `form:"description,omitempty" json:"description,omitempty" xml:"description,omitempty"`
+}
+
+// StoryFlowItemResponseBody is used to define fields on response body types.
+type StoryFlowItemResponseBody struct {
+	// Story-scoped flow key.
+	Key string `form:"key" json:"key" xml:"key"`
+	// Human-facing flow title.
+	Title string `form:"title" json:"title" xml:"title"`
+	// Optional longer explanation of the flow.
+	Description *string `form:"description,omitempty" json:"description,omitempty" xml:"description,omitempty"`
+	// True when the flow has a start, at least one outcome, and no open questions
+	// on the flow or any of its steps.
+	Complete bool `form:"complete" json:"complete" xml:"complete"`
+	// Starting, intermediate, and outcome steps in declaration order.
+	Steps []*StoryStepItemResponseBody `form:"steps" json:"steps" xml:"steps"`
+	// Unresolved flow-level decisions in declaration order.
+	Questions []*StoryQuestionItemResponseBody `form:"questions" json:"questions" xml:"questions"`
+}
+
+// StoryStepItemResponseBody is used to define fields on response body types.
+type StoryStepItemResponseBody struct {
+	// Flow-scoped step key.
+	Key string `form:"key" json:"key" xml:"key"`
+	// Story-scoped key of the actor performing or observing the step.
+	ActorKey string `form:"actor_key" json:"actor_key" xml:"actor_key"`
+	// Timeline sticky-note sentence for the step.
+	Summary string `form:"summary" json:"summary" xml:"summary"`
+	// Optional longer explanation of the step.
+	Description *string `form:"description,omitempty" json:"description,omitempty" xml:"description,omitempty"`
+	// Step position in the flow: start, step, or outcome.
+	Kind string `form:"kind" json:"kind" xml:"kind"`
+	// Unresolved step-level decisions in declaration order.
+	Questions []*StoryQuestionItemResponseBody `form:"questions" json:"questions" xml:"questions"`
+}
+
+// StoryQuestionItemResponseBody is used to define fields on response body
+// types.
+type StoryQuestionItemResponseBody struct {
+	// Flow-scoped question key.
+	Key string `form:"key" json:"key" xml:"key"`
+	// Human-facing question text.
+	Prompt string `form:"prompt" json:"prompt" xml:"prompt"`
+	// Optional longer context for the question.
+	Description *string `form:"description,omitempty" json:"description,omitempty" xml:"description,omitempty"`
+	// Suggested choices in declaration order.
+	Options []string `form:"options" json:"options" xml:"options"`
 }
 
 // CP1AnalysisRequestBody is used to define fields on request body types.
@@ -3003,6 +3188,56 @@ func NewListTracesResponseBody(res *surla.TraceList) *ListTracesResponseBody {
 	return body
 }
 
+// NewRefreshStoryResponseBody builds the HTTP response body from the result of
+// the "refresh_story" endpoint of the "surla" service.
+func NewRefreshStoryResponseBody(res *surla.StoryRefreshResult) *RefreshStoryResponseBody {
+	body := &RefreshStoryResponseBody{
+		OpID:           res.OpID,
+		State:          res.State,
+		SnapshotDigest: res.SnapshotDigest,
+		Diagnostic:     res.Diagnostic,
+		Message:        res.Message,
+	}
+	if res.Stories != nil {
+		body.Stories = make([]*StorySummaryItemResponseBody, len(res.Stories))
+		for i, val := range res.Stories {
+			if val == nil {
+				body.Stories[i] = nil
+				continue
+			}
+			body.Stories[i] = marshalSurlaStorySummaryItemToStorySummaryItemResponseBody(val)
+		}
+	} else {
+		body.Stories = []*StorySummaryItemResponseBody{}
+	}
+	return body
+}
+
+// NewGetStoryRefreshResponseBody builds the HTTP response body from the result
+// of the "get_story_refresh" endpoint of the "surla" service.
+func NewGetStoryRefreshResponseBody(res *surla.StoryRefreshResult) *GetStoryRefreshResponseBody {
+	body := &GetStoryRefreshResponseBody{
+		OpID:           res.OpID,
+		State:          res.State,
+		SnapshotDigest: res.SnapshotDigest,
+		Diagnostic:     res.Diagnostic,
+		Message:        res.Message,
+	}
+	if res.Stories != nil {
+		body.Stories = make([]*StorySummaryItemResponseBody, len(res.Stories))
+		for i, val := range res.Stories {
+			if val == nil {
+				body.Stories[i] = nil
+				continue
+			}
+			body.Stories[i] = marshalSurlaStorySummaryItemToStorySummaryItemResponseBody(val)
+		}
+	} else {
+		body.Stories = []*StorySummaryItemResponseBody{}
+	}
+	return body
+}
+
 // NewProposeChangeConflictResponseBody builds the HTTP response body from the
 // result of the "propose_change" endpoint of the "surla" service.
 func NewProposeChangeConflictResponseBody(res *goa.ServiceError) *ProposeChangeConflictResponseBody {
@@ -3785,6 +4020,62 @@ func NewListTracesUnprocessableResponseBody(res *goa.ServiceError) *ListTracesUn
 // the result of the "list_traces" endpoint of the "surla" service.
 func NewListTracesNotImplementedResponseBody(res *goa.ServiceError) *ListTracesNotImplementedResponseBody {
 	body := &ListTracesNotImplementedResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
+// NewRefreshStoryUnprocessableResponseBody builds the HTTP response body from
+// the result of the "refresh_story" endpoint of the "surla" service.
+func NewRefreshStoryUnprocessableResponseBody(res *goa.ServiceError) *RefreshStoryUnprocessableResponseBody {
+	body := &RefreshStoryUnprocessableResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
+// NewRefreshStoryNotImplementedResponseBody builds the HTTP response body from
+// the result of the "refresh_story" endpoint of the "surla" service.
+func NewRefreshStoryNotImplementedResponseBody(res *goa.ServiceError) *RefreshStoryNotImplementedResponseBody {
+	body := &RefreshStoryNotImplementedResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
+// NewRefreshStoryUnavailableResponseBody builds the HTTP response body from
+// the result of the "refresh_story" endpoint of the "surla" service.
+func NewRefreshStoryUnavailableResponseBody(res *goa.ServiceError) *RefreshStoryUnavailableResponseBody {
+	body := &RefreshStoryUnavailableResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
+// NewGetStoryRefreshNotImplementedResponseBody builds the HTTP response body
+// from the result of the "get_story_refresh" endpoint of the "surla" service.
+func NewGetStoryRefreshNotImplementedResponseBody(res *goa.ServiceError) *GetStoryRefreshNotImplementedResponseBody {
+	body := &GetStoryRefreshNotImplementedResponseBody{
 		Name:      res.Name,
 		ID:        res.ID,
 		Message:   res.Message,

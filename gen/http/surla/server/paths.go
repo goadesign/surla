@@ -118,3 +118,13 @@ func ReadCheckOutputSurlaPath() string {
 func ListTracesSurlaPath() string {
 	return "/traces"
 }
+
+// RefreshStorySurlaPath returns the URL path to the surla service refresh_story HTTP endpoint.
+func RefreshStorySurlaPath() string {
+	return "/workspace/story/refresh"
+}
+
+// GetStoryRefreshSurlaPath returns the URL path to the surla service get_story_refresh HTTP endpoint.
+func GetStoryRefreshSurlaPath() string {
+	return "/workspace/story/refresh"
+}
