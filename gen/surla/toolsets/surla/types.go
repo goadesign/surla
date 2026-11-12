@@ -388,20 +388,6 @@ type (
 		ChangeID string
 		// Expected CP1 request_revision digest.
 		RequestRevision string
-		// Candidate module whose Goa and Goa-AI design is evaluated. When omitted on a
-		// server with a bound workspace, Surla reads the candidate module snapshot
-		// from the bound workspace.
-		Design *DesignSnapshot
-		// Optional explicit builder path scopes for proposing a Chorus build roster.
-		// When omitted, preview_architecture returns a solo preview with swarm.status
-		// unconfigured and no missing_roles.
-		Builders []*BuilderScopeItem
-		// Optional repository-relative path globs for an @architect role in the
-		// proposed Chorus roster (requires builders).
-		ArchitectPaths []string
-		// Optional repository or evaluator-workspace relative path globs for an
-		// @eval-author role in the proposed Chorus roster (requires builders).
-		EvalPaths []string
 	}
 	// PreviewArchitectureResult defines the JSON result for the surla.preview_architecture tool.
 	PreviewArchitectureResult = struct {
@@ -422,8 +408,6 @@ type (
 		AgentPolicies []*AgentPolicyItem
 		// Evaluated Goa-AI tool contracts.
 		Tools []*ToolContractItem
-		// Proposed Chorus multi-agent role assignments and model-family routing.
-		Swarm *SwarmPlanItem
 		// Plain-English summary of topology and guardrails.
 		Banner string
 	}
@@ -433,19 +417,11 @@ type (
 		ChangeID string
 		// Operator feature request.
 		Prompt string
-		// Goa design source the analysis was made against (the target's design/*.go
-		// files). Surla saves it with the card and includes it in request_revision; it
-		// does not interpret it. When omitted on a server with a bound workspace,
-		// Surla records design/*.go from the bound workspace; when omitted without a
-		// bound workspace, the card records no design. Cannot be combined with
-		// story_refresh_op_id.
-		DesignSource *string
 		// Optional op_id of a succeeded refresh_story operation for the bound
-		// workspace whose evaluated Stories this card adopts. When set, design_source
-		// must be omitted; Surla reads one workspace snapshot, requires its
-		// snapshot_digest to match the operation's, and records both the evaluated
-		// Stories and that snapshot's design/*.go on the card. Omit when the card has
-		// no Story.
+		// workspace whose evaluated Stories this card adopts. When set, Surla reads
+		// one workspace snapshot, requires its snapshot_digest to match the
+		// operation's, and records both the evaluated Stories and that snapshot's
+		// design/*.go on the card. Omit when the card has no Story.
 		StoryRefreshOpID *string
 		// Your analysis of prompt against the target's current design.
 		Analysis *CP1Analysis
@@ -549,22 +525,12 @@ type (
 		RequestRevision string
 		// Revised operator feature request.
 		Prompt string
-		// Updated Goa design source the analysis was made against (the target's
-		// design/*.go files). Surla saves it with the card and includes it in
-		// request_revision; it does not interpret it. When omitted on a
-		// workspace-backed card without Stories and with a bound workspace, Surla
-		// records design/*.go from the bound workspace again; otherwise the card's
-		// saved design source is kept. Cannot be set when story_refresh_op_id is set
-		// or when the card already has adopted Stories.
-		DesignSource *string
 		// Optional op_id of a succeeded refresh_story operation for the bound
-		// workspace whose evaluated Stories this revision adopts. When set,
-		// design_source must be omitted and the card must not use a caller-supplied
-		// design_source; Surla reads one workspace snapshot, requires its
-		// snapshot_digest to match the operation's, and records both the evaluated
-		// Stories and that snapshot's design/*.go on the revised card. When omitted on
-		// a card that already has Stories, the card's saved Stories and saved
-		// design_source are kept together.
+		// workspace whose evaluated Stories this revision adopts. When set, Surla
+		// reads one workspace snapshot, requires its snapshot_digest to match the
+		// operation's, and records both the evaluated Stories and that snapshot's
+		// design/*.go on the revised card. When omitted on a card that already has
+		// Stories, the card's saved Stories and their design source are kept together.
 		StoryRefreshOpID *string
 		// Your analysis of the revised prompt against the current card and the
 		// target's current design.
@@ -734,15 +700,6 @@ type (
 		Artifacts map[string]string
 		// Number of declared evaluator scenarios, every one of which passed.
 		ScenarioCount int
-	}
-	// BuilderScopeItem is a nested type used by the generated JSON contract.
-	BuilderScopeItem = struct {
-		// Human-readable builder scope name (for example, orders or api).
-		Name string
-		// Repository-relative path globs owned by this builder.
-		Paths []string
-		// Optional preference selecting a server-configured authenticated profile ID.
-		PreferredProfileID *string
 	}
 	// BuilderVerificationReport is a nested type used by the generated JSON contract.
 	BuilderVerificationReport = struct {
@@ -955,54 +912,6 @@ type (
 		Actors []*StoryActorItem
 		// Timeline paths declared in the Story in declaration order.
 		Flows []*StoryFlowItem
-	}
-	// SwarmPlanItem is a nested type used by the generated JSON contract.
-	SwarmPlanItem = struct {
-		// Roster configuration status.
-		Status string
-		// Deterministic role assignments when status is configured.
-		Assignments []*SwarmRoleItem
-		// True if and only if status is configured and the reviewer model family is
-		// disjoint from every assigned builder model family.
-		CrossFamilyReview bool
-		// True if and only if status is configured, an eval_author role is assigned,
-		// and the eval_author model family is disjoint from every assigned builder
-		// model family.
-		CrossFamilyEval bool
-		// True when status is configured and all assigned roles share one model family.
-		SingleFamily bool
-		// Requested roles lacking an authenticated capable profile when status is
-		// unconfigured (with builder scopes supplied) or missing_capability; omitted
-		// on solo previews with no builder scopes.
-		MissingRoles []string
-		// Plain-English summary of the proposed swarm roster and model-family posture.
-		Summary string
-		// Formatted Chorus collaboration manifest text when status is configured; does
-		// not claim publication until sent via Chorus.
-		Manifest *string
-	}
-	// SwarmRoleItem is a nested type used by the generated JSON contract.
-	SwarmRoleItem = struct {
-		// Deterministic Chorus agent handle (without leading '@', at most 32
-		// characters).
-		Handle string
-		// Assigned swarm role kind.
-		Role string
-		// Human-readable scope label for this assignment.
-		ScopeName string
-		// Assigned server-configured provider profile ID.
-		ProfileID string
-		// Assigned coding-agent provider name.
-		Provider string
-		// Assigned model identifier.
-		Model string
-		// Canonical model family identifier.
-		Family string
-		// Repository or workspace path globs owned by this role for Chorus
-		// coordination.
-		OwnedPaths []string
-		// Operator-declared workspace coordination boundary for this role.
-		AccessMode string
 	}
 	// ToolContractItem is a nested type used by the generated JSON contract.
 	ToolContractItem = struct {

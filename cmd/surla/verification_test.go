@@ -130,7 +130,6 @@ func TestLoadProjectVerificationConfigDerivesTheStarterPlanFromHEAD(t *testing.T
 			assert.Equal(t, "services/shop/eval", ws.verification.Plan.SuiteModule)
 			assertOutsideDirectory(t, ws.verification.RunsDir, project)
 			assertOutsideDirectory(t, ws.verification.Plan.ReportDir, project)
-			require.NoError(t, ws.closeProjectLock())
 		}
 	})
 
@@ -159,7 +158,6 @@ func TestLoadProjectVerificationConfigDerivesTheStarterPlanFromHEAD(t *testing.T
 			assert.Equal(t, map[string]string{"shop": "./cmd/shop"}, ws.verification.Plan.Binaries)
 			assertOutsideDirectory(t, ws.verification.RunsDir, repo)
 			assertOutsideDirectory(t, ws.verification.Plan.ReportDir, repo)
-			require.NoError(t, ws.closeProjectLock())
 		}
 	})
 
@@ -359,11 +357,6 @@ func TestLoadProjectVerificationConfigRejectsUnusableProjects(t *testing.T) {
 				require.ErrorContains(t, wsErr, tc.wantErr)
 				return
 			}
-			t.Cleanup(func() {
-				if ws.closeProjectLock != nil {
-					assert.NoError(t, ws.closeProjectLock())
-				}
-			})
 			assert.Nil(t, ws.verification)
 			require.NotNil(t, ws.resolveVerification)
 			_, resolveErr := ws.resolveVerification(t.Context(), ws.workspaceDir, "")
@@ -451,11 +444,9 @@ func TestConfigureServeWorkspaceSupportsIndependentProjectAndVerificationConfig(
 	require.NoError(t, err)
 	var saved struct {
 		DesignSource string `json:"design_source"`
-		SourceOrigin string `json:"source_origin"`
 	}
 	require.NoError(t, json.Unmarshal(raw, &saved))
 	assert.Contains(t, saved.DesignSource, "shop workspace design", "-project must bind shopDir for CP1 workspace design reads even when -verification-config is set")
-	assert.Equal(t, "workspace", saved.SourceOrigin)
 }
 
 // isolateGitConfig points HOME and XDG_CONFIG_HOME at empty directories for

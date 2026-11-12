@@ -119,29 +119,6 @@ export interface C4EdgeItem {
   to_id: string;
 }
 
-export interface SwarmPlanItem {
-  assignments: SwarmRoleItem[];
-  cross_family_eval: boolean;
-  cross_family_review: boolean;
-  manifest?: string;
-  missing_roles?: string[];
-  single_family: boolean;
-  status: "configured" | "unconfigured" | "missing_capability";
-  summary: string;
-}
-
-export interface SwarmRoleItem {
-  access_mode: "read_only_after_cp2" | "read_write_worktree" | "isolated_eval_workspace" | "read_only_review";
-  family: string;
-  handle: string;
-  model: string;
-  owned_paths: string[];
-  profile_id: string;
-  provider: string;
-  role: "architect" | "builder" | "eval_author" | "reviewer";
-  scope_name: string;
-}
-
 export interface ToolContractItem {
   args_schema: string;
   bounded_result: boolean;
@@ -173,7 +150,6 @@ export interface ArchitecturePreviewResult {
   design_digest: string;
   edges: C4EdgeItem[];
   request_revision: string;
-  swarm: SwarmPlanItem;
   system_name: string;
   tools: ToolContractItem[];
 }
@@ -668,7 +644,6 @@ const GENERATED_RESULT_SCHEMAS: Record<string, JSONSchemaNode> = {
       "edges",
       "agent_policies",
       "tools",
-      "swarm",
       "banner"
     ],
     "additionalProperties": false,
@@ -702,9 +677,6 @@ const GENERATED_RESULT_SCHEMAS: Record<string, JSONSchemaNode> = {
       },
       "request_revision": {
         "type": "string"
-      },
-      "swarm": {
-        "$ref": "#/$defs/SwarmPlanItem"
       },
       "system_name": {
         "type": "string"
@@ -806,114 +778,6 @@ const GENERATED_RESULT_SCHEMAS: Record<string, JSONSchemaNode> = {
             "type": "string"
           },
           "to_id": {
-            "type": "string"
-          }
-        }
-      },
-      "SwarmPlanItem": {
-        "type": "object",
-        "required": [
-          "status",
-          "assignments",
-          "cross_family_review",
-          "cross_family_eval",
-          "single_family",
-          "summary"
-        ],
-        "additionalProperties": false,
-        "properties": {
-          "assignments": {
-            "type": "array",
-            "items": {
-              "$ref": "#/$defs/SwarmRoleItem"
-            }
-          },
-          "cross_family_eval": {
-            "type": "boolean"
-          },
-          "cross_family_review": {
-            "type": "boolean"
-          },
-          "manifest": {
-            "type": "string"
-          },
-          "missing_roles": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "single_family": {
-            "type": "boolean"
-          },
-          "status": {
-            "type": "string",
-            "enum": [
-              "configured",
-              "unconfigured",
-              "missing_capability"
-            ]
-          },
-          "summary": {
-            "type": "string"
-          }
-        }
-      },
-      "SwarmRoleItem": {
-        "type": "object",
-        "required": [
-          "handle",
-          "role",
-          "scope_name",
-          "profile_id",
-          "provider",
-          "model",
-          "family",
-          "owned_paths",
-          "access_mode"
-        ],
-        "additionalProperties": false,
-        "properties": {
-          "access_mode": {
-            "type": "string",
-            "enum": [
-              "read_only_after_cp2",
-              "read_write_worktree",
-              "isolated_eval_workspace",
-              "read_only_review"
-            ]
-          },
-          "family": {
-            "type": "string"
-          },
-          "handle": {
-            "type": "string"
-          },
-          "model": {
-            "type": "string"
-          },
-          "owned_paths": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "profile_id": {
-            "type": "string"
-          },
-          "provider": {
-            "type": "string"
-          },
-          "role": {
-            "type": "string",
-            "enum": [
-              "architect",
-              "builder",
-              "eval_author",
-              "reviewer"
-            ]
-          },
-          "scope_name": {
             "type": "string"
           }
         }

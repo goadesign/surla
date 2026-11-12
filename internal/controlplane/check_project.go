@@ -72,8 +72,6 @@ type (
 		// goProxyEnv is the operator's module proxy settings for download
 		// containers.
 		goProxyEnv []string
-		// importedReports are the original report paths the copy leaves out.
-		importedReports []string
 		// engine is the operation's resolved local Docker engine.
 		engine *candidate.Engine
 		// out captures every container's output.
@@ -318,7 +316,7 @@ func (op *checkOperation) start(ctx context.Context) error {
 	if op.out, err = newCapWriter(op.path(outputFile)); err != nil {
 		return errors.Join(err, op.closeLive())
 	}
-	op.copy, err = copyGrant(ctx, op.grantFD, op.workspaceRel, op.workspaceID, op.path("src"), op.importedReports)
+	op.copy, err = copyGrant(ctx, op.grantFD, op.workspaceRel, op.workspaceID, op.path("src"))
 	if err != nil {
 		var changed *errSourceChanged
 		switch {

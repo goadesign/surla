@@ -469,20 +469,6 @@ type (
 		ChangeID *string `json:"change_id"`
 		// Expected CP1 request_revision digest.
 		RequestRevision *string `json:"request_revision"`
-		// Candidate module whose Goa and Goa-AI design is evaluated. When omitted on a
-		// server with a bound workspace, Surla reads the candidate module snapshot
-		// from the bound workspace.
-		Design *DesignSnapshotTransport `json:"design,omitempty"`
-		// Optional explicit builder path scopes for proposing a Chorus build roster.
-		// When omitted, preview_architecture returns a solo preview with swarm.status
-		// unconfigured and no missing_roles.
-		Builders []*BuilderScopeItemTransport `json:"builders,omitempty"`
-		// Optional repository-relative path globs for an @architect role in the
-		// proposed Chorus roster (requires builders).
-		ArchitectPaths []string `json:"architect_paths,omitempty"`
-		// Optional repository or evaluator-workspace relative path globs for an
-		// @eval-author role in the proposed Chorus roster (requires builders).
-		EvalPaths []string `json:"eval_paths,omitempty"`
 	}
 	// PreviewArchitectureResultTransport is the internal JSON transport type for PreviewArchitectureResult.
 	// It lives in the toolset-local http package and is used only for JSON
@@ -506,8 +492,6 @@ type (
 		AgentPolicies []*AgentPolicyItemTransport `json:"agent_policies"`
 		// Evaluated Goa-AI tool contracts.
 		Tools []*ToolContractItemTransport `json:"tools"`
-		// Proposed Chorus multi-agent role assignments and model-family routing.
-		Swarm *SwarmPlanItemTransport `json:"swarm"`
 		// Plain-English summary of topology and guardrails.
 		Banner *string `json:"banner"`
 	}
@@ -520,19 +504,11 @@ type (
 		ChangeID *string `json:"change_id"`
 		// Operator feature request.
 		Prompt *string `json:"prompt"`
-		// Goa design source the analysis was made against (the target's design/*.go
-		// files). Surla saves it with the card and includes it in request_revision; it
-		// does not interpret it. When omitted on a server with a bound workspace,
-		// Surla records design/*.go from the bound workspace; when omitted without a
-		// bound workspace, the card records no design. Cannot be combined with
-		// story_refresh_op_id.
-		DesignSource *string `json:"design_source,omitempty"`
 		// Optional op_id of a succeeded refresh_story operation for the bound
-		// workspace whose evaluated Stories this card adopts. When set, design_source
-		// must be omitted; Surla reads one workspace snapshot, requires its
-		// snapshot_digest to match the operation's, and records both the evaluated
-		// Stories and that snapshot's design/*.go on the card. Omit when the card has
-		// no Story.
+		// workspace whose evaluated Stories this card adopts. When set, Surla reads
+		// one workspace snapshot, requires its snapshot_digest to match the
+		// operation's, and records both the evaluated Stories and that snapshot's
+		// design/*.go on the card. Omit when the card has no Story.
 		StoryRefreshOpID *string `json:"story_refresh_op_id,omitempty"`
 		// Your analysis of prompt against the target's current design.
 		Analysis *CP1AnalysisTransport `json:"analysis"`
@@ -654,22 +630,12 @@ type (
 		RequestRevision *string `json:"request_revision"`
 		// Revised operator feature request.
 		Prompt *string `json:"prompt"`
-		// Updated Goa design source the analysis was made against (the target's
-		// design/*.go files). Surla saves it with the card and includes it in
-		// request_revision; it does not interpret it. When omitted on a
-		// workspace-backed card without Stories and with a bound workspace, Surla
-		// records design/*.go from the bound workspace again; otherwise the card's
-		// saved design source is kept. Cannot be set when story_refresh_op_id is set
-		// or when the card already has adopted Stories.
-		DesignSource *string `json:"design_source,omitempty"`
 		// Optional op_id of a succeeded refresh_story operation for the bound
-		// workspace whose evaluated Stories this revision adopts. When set,
-		// design_source must be omitted and the card must not use a caller-supplied
-		// design_source; Surla reads one workspace snapshot, requires its
-		// snapshot_digest to match the operation's, and records both the evaluated
-		// Stories and that snapshot's design/*.go on the revised card. When omitted on
-		// a card that already has Stories, the card's saved Stories and saved
-		// design_source are kept together.
+		// workspace whose evaluated Stories this revision adopts. When set, Surla
+		// reads one workspace snapshot, requires its snapshot_digest to match the
+		// operation's, and records both the evaluated Stories and that snapshot's
+		// design/*.go on the revised card. When omitted on a card that already has
+		// Stories, the card's saved Stories and their design source are kept together.
 		StoryRefreshOpID *string `json:"story_refresh_op_id,omitempty"`
 		// Your analysis of the revised prompt against the current card and the
 		// target's current design.
@@ -875,18 +841,6 @@ type (
 		Artifacts map[string]string `json:"artifacts"`
 		// Number of declared evaluator scenarios, every one of which passed.
 		ScenarioCount *int `json:"scenario_count"`
-	}
-	// BuilderScopeItemTransport is the internal JSON transport type for BuilderScopeItemTransport.
-	// It lives in the toolset-local http package and is used only for JSON
-	// decode + validation (missing-field detection) before transforming into
-	// the public tool type.
-	BuilderScopeItemTransport struct {
-		// Human-readable builder scope name (for example, orders or api).
-		Name *string `json:"name"`
-		// Repository-relative path globs owned by this builder.
-		Paths []string `json:"paths"`
-		// Optional preference selecting a server-configured authenticated profile ID.
-		PreferredProfileID *string `json:"preferred_profile_id,omitempty"`
 	}
 	// BuilderVerificationReportTransport is the internal JSON transport type for BuilderVerificationReportTransport.
 	// It lives in the toolset-local http package and is used only for JSON
@@ -1144,60 +1098,6 @@ type (
 		Actors []*StoryActorItemTransport `json:"actors"`
 		// Timeline paths declared in the Story in declaration order.
 		Flows []*StoryFlowItemTransport `json:"flows"`
-	}
-	// SwarmPlanItemTransport is the internal JSON transport type for SwarmPlanItemTransport.
-	// It lives in the toolset-local http package and is used only for JSON
-	// decode + validation (missing-field detection) before transforming into
-	// the public tool type.
-	SwarmPlanItemTransport struct {
-		// Roster configuration status.
-		Status *string `json:"status"`
-		// Deterministic role assignments when status is configured.
-		Assignments []*SwarmRoleItemTransport `json:"assignments"`
-		// True if and only if status is configured and the reviewer model family is
-		// disjoint from every assigned builder model family.
-		CrossFamilyReview *bool `json:"cross_family_review"`
-		// True if and only if status is configured, an eval_author role is assigned,
-		// and the eval_author model family is disjoint from every assigned builder
-		// model family.
-		CrossFamilyEval *bool `json:"cross_family_eval"`
-		// True when status is configured and all assigned roles share one model family.
-		SingleFamily *bool `json:"single_family"`
-		// Requested roles lacking an authenticated capable profile when status is
-		// unconfigured (with builder scopes supplied) or missing_capability; omitted
-		// on solo previews with no builder scopes.
-		MissingRoles []string `json:"missing_roles,omitempty"`
-		// Plain-English summary of the proposed swarm roster and model-family posture.
-		Summary *string `json:"summary"`
-		// Formatted Chorus collaboration manifest text when status is configured; does
-		// not claim publication until sent via Chorus.
-		Manifest *string `json:"manifest,omitempty"`
-	}
-	// SwarmRoleItemTransport is the internal JSON transport type for SwarmRoleItemTransport.
-	// It lives in the toolset-local http package and is used only for JSON
-	// decode + validation (missing-field detection) before transforming into
-	// the public tool type.
-	SwarmRoleItemTransport struct {
-		// Deterministic Chorus agent handle (without leading '@', at most 32
-		// characters).
-		Handle *string `json:"handle"`
-		// Assigned swarm role kind.
-		Role *string `json:"role"`
-		// Human-readable scope label for this assignment.
-		ScopeName *string `json:"scope_name"`
-		// Assigned server-configured provider profile ID.
-		ProfileID *string `json:"profile_id"`
-		// Assigned coding-agent provider name.
-		Provider *string `json:"provider"`
-		// Assigned model identifier.
-		Model *string `json:"model"`
-		// Canonical model family identifier.
-		Family *string `json:"family"`
-		// Repository or workspace path globs owned by this role for Chorus
-		// coordination.
-		OwnedPaths []string `json:"owned_paths"`
-		// Operator-declared workspace coordination boundary for this role.
-		AccessMode *string `json:"access_mode"`
 	}
 	// ToolContractItemTransport is the internal JSON transport type for ToolContractItemTransport.
 	// It lives in the toolset-local http package and is used only for JSON

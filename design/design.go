@@ -40,8 +40,7 @@ var ProposeChangePayload = Type("ProposeChangePayload", func() {
 	Description("Operator feature request and the caller's analysis of it, saved as a new Checkpoint 1 Change Card.")
 	Attribute("change_id", String, "Unique change identifier.")
 	Attribute("prompt", String, "Operator feature request.")
-	Attribute("design_source", String, "Goa design source the analysis was made against (the target's design/*.go files). Surla saves it with the card and includes it in request_revision; it does not interpret it. When omitted on a server with a bound workspace, Surla records design/*.go from the bound workspace; when omitted without a bound workspace, the card records no design. Cannot be combined with story_refresh_op_id.")
-	Attribute("story_refresh_op_id", String, "Optional op_id of a succeeded refresh_story operation for the bound workspace whose evaluated Stories this card adopts. When set, design_source must be omitted; Surla reads one workspace snapshot, requires its snapshot_digest to match the operation's, and records both the evaluated Stories and that snapshot's design/*.go on the card. Omit when the card has no Story.")
+	Attribute("story_refresh_op_id", String, "Optional op_id of a succeeded refresh_story operation for the bound workspace whose evaluated Stories this card adopts. When set, Surla reads one workspace snapshot, requires its snapshot_digest to match the operation's, and records both the evaluated Stories and that snapshot's design/*.go on the card. Omit when the card has no Story.")
 	Attribute("analysis", CP1Analysis, "Your analysis of prompt against the target's current design.")
 	Required("change_id", "prompt", "analysis")
 })
@@ -52,8 +51,7 @@ var ReviseChangePayload = Type("ReviseChangePayload", func() {
 	Attribute("change_id", String, "Change identifier.")
 	Attribute("request_revision", String, "Current CP1 request_revision digest being revised.")
 	Attribute("prompt", String, "Revised operator feature request.")
-	Attribute("design_source", String, "Updated Goa design source the analysis was made against (the target's design/*.go files). Surla saves it with the card and includes it in request_revision; it does not interpret it. When omitted on a workspace-backed card without Stories and with a bound workspace, Surla records design/*.go from the bound workspace again; otherwise the card's saved design source is kept. Cannot be set when story_refresh_op_id is set or when the card already has adopted Stories.")
-	Attribute("story_refresh_op_id", String, "Optional op_id of a succeeded refresh_story operation for the bound workspace whose evaluated Stories this revision adopts. When set, design_source must be omitted and the card must not use a caller-supplied design_source; Surla reads one workspace snapshot, requires its snapshot_digest to match the operation's, and records both the evaluated Stories and that snapshot's design/*.go on the revised card. When omitted on a card that already has Stories, the card's saved Stories and saved design_source are kept together.")
+	Attribute("story_refresh_op_id", String, "Optional op_id of a succeeded refresh_story operation for the bound workspace whose evaluated Stories this revision adopts. When set, Surla reads one workspace snapshot, requires its snapshot_digest to match the operation's, and records both the evaluated Stories and that snapshot's design/*.go on the revised card. When omitted on a card that already has Stories, the card's saved Stories and their design source are kept together.")
 	Attribute("analysis", CP1RevisionAnalysis, "Your analysis of the revised prompt against the current card and the target's current design.")
 	Required("change_id", "request_revision", "prompt", "analysis")
 })
@@ -327,67 +325,6 @@ var ToolContractItem = Type("ToolContractItem", func() {
 	)
 })
 
-// BuilderScopeItem defines an explicit file-ownership slice for one builder agent.
-var BuilderScopeItem = Type("BuilderScopeItem", func() {
-	Description("Explicit repository path ownership slice for a builder agent role.")
-	Attribute("name", String, "Human-readable builder scope name (for example, orders or api).")
-	Attribute("paths", ArrayOf(String), "Repository-relative path globs owned by this builder.")
-	Attribute("preferred_profile_id", String, "Optional preference selecting a server-configured authenticated profile ID.")
-	Required("name", "paths")
-})
-
-// SwarmRoleItem describes one proposed agent role assignment in a Surla build swarm.
-var SwarmRoleItem = Type("SwarmRoleItem", func() {
-	Description("Proposed Chorus agent role assignment derived from server-owned provider profiles and explicit workspace scopes. Owned paths and access modes are operator-declared coordination ownership boundaries for Chorus agents, not Surla-enforced OS isolation.")
-	Attribute("handle", String, "Deterministic Chorus agent handle (without leading '@', at most 32 characters).")
-	Attribute("role", String, "Assigned swarm role kind.", func() {
-		Enum("architect", "builder", "eval_author", "reviewer")
-	})
-	Attribute("scope_name", String, "Human-readable scope label for this assignment.")
-	Attribute("profile_id", String, "Assigned server-configured provider profile ID.")
-	Attribute("provider", String, "Assigned coding-agent provider name.")
-	Attribute("model", String, "Assigned model identifier.")
-	Attribute("family", String, "Canonical model family identifier.")
-	Attribute("owned_paths", ArrayOf(String), "Repository or workspace path globs owned by this role for Chorus coordination.")
-	Attribute("access_mode", String, "Operator-declared workspace coordination boundary for this role.", func() {
-		Enum("read_only_after_cp2", "read_write_worktree", "isolated_eval_workspace", "read_only_review")
-	})
-	Required(
-		"handle",
-		"role",
-		"scope_name",
-		"profile_id",
-		"provider",
-		"model",
-		"family",
-		"owned_paths",
-		"access_mode",
-	)
-})
-
-// SwarmPlanItem reports the proposed Chorus role roster and model-family routing at Checkpoint 2.
-var SwarmPlanItem = Type("SwarmPlanItem", func() {
-	Description("Proposed Chorus role assignments and model-family diversity facts surfaced at Checkpoint 2. Role, model, and workspace scope assignments are Chorus coordination proposals and do not prove agent launch or replace OS process and workspace isolation.")
-	Attribute("status", String, "Roster configuration status.", func() {
-		Enum("configured", "unconfigured", "missing_capability")
-	})
-	Attribute("assignments", ArrayOf(SwarmRoleItem), "Deterministic role assignments when status is configured.")
-	Attribute("cross_family_review", Boolean, "True if and only if status is configured and the reviewer model family is disjoint from every assigned builder model family.")
-	Attribute("cross_family_eval", Boolean, "True if and only if status is configured, an eval_author role is assigned, and the eval_author model family is disjoint from every assigned builder model family.")
-	Attribute("single_family", Boolean, "True when status is configured and all assigned roles share one model family.")
-	Attribute("missing_roles", ArrayOf(String), "Requested roles lacking an authenticated capable profile when status is unconfigured (with builder scopes supplied) or missing_capability; omitted on solo previews with no builder scopes.")
-	Attribute("summary", String, "Plain-English summary of the proposed swarm roster and model-family posture.")
-	Attribute("manifest", String, "Formatted Chorus collaboration manifest text when status is configured; does not claim publication until sent via Chorus.")
-	Required(
-		"status",
-		"assignments",
-		"cross_family_review",
-		"cross_family_eval",
-		"single_family",
-		"summary",
-	)
-})
-
 // DesignSnapshot is an immutable copy of a Go module holding a Goa design.
 var DesignSnapshot = Type("DesignSnapshot", func() {
 	Description("Exact files of one Go module containing a Goa/Goa-AI design package at design/. Paths are clean, relative to the module root, and name only .go, go.mod and go.sum files; go.mod, go.sum and at least one design/*.go file are required. The evaluator stages exactly these bytes, resolves dependencies only from go.mod and go.sum, and never reads host paths.")
@@ -397,19 +334,15 @@ var DesignSnapshot = Type("DesignSnapshot", func() {
 
 // PreviewArchitecturePayload is the input to the CP2 preview_architecture tool.
 var PreviewArchitecturePayload = Type("PreviewArchitecturePayload", func() {
-	Description("Request to derive the Checkpoint 2 C4 topology, guardrails, and proposed swarm roster from a candidate Goa design bound to a confirmed Change Card.")
+	Description("Request to derive Checkpoint 2 C4 topology and guardrails from the bound workspace's candidate Goa design for a confirmed Change Card.")
 	Attribute("change_id", String, "Confirmed Change Card identifier.")
 	Attribute("request_revision", String, "Expected CP1 request_revision digest.")
-	Attribute("design", DesignSnapshot, "Candidate module whose Goa and Goa-AI design is evaluated. When omitted on a server with a bound workspace, Surla reads the candidate module snapshot from the bound workspace.")
-	Attribute("builders", ArrayOf(BuilderScopeItem), "Optional explicit builder path scopes for proposing a Chorus build roster. When omitted, preview_architecture returns a solo preview with swarm.status unconfigured and no missing_roles.")
-	Attribute("architect_paths", ArrayOf(String), "Optional repository-relative path globs for an @architect role in the proposed Chorus roster (requires builders).")
-	Attribute("eval_paths", ArrayOf(String), "Optional repository or evaluator-workspace relative path globs for an @eval-author role in the proposed Chorus roster (requires builders).")
 	Required("change_id", "request_revision")
 })
 
 // ArchitecturePreviewResult is the output of the CP2 preview_architecture tool.
 var ArchitecturePreviewResult = Type("ArchitecturePreviewResult", func() {
-	Description("Checkpoint 2 C4 container topology, tool contracts, per-agent Goa-AI guardrails, and proposed Chorus swarm roster derived from the evaluated candidate design.")
+	Description("Checkpoint 2 C4 container topology, tool contracts, per-agent Goa-AI guardrails, derived from the evaluated candidate design.")
 	Attribute("change_id", String, "Bound Change Card identifier.")
 	Attribute("request_revision", String, "Bound CP1 request_revision digest.")
 	Attribute("design_digest", String, "SHA-256 digest of the evaluated design snapshot (sorted path and content pairs).")
@@ -418,7 +351,6 @@ var ArchitecturePreviewResult = Type("ArchitecturePreviewResult", func() {
 	Attribute("edges", ArrayOf(C4EdgeItem), "Validated directed edges between declared containers.")
 	Attribute("agent_policies", ArrayOf(AgentPolicyItem), "Evaluated Goa-AI runtime policies per declared agent.")
 	Attribute("tools", ArrayOf(ToolContractItem), "Evaluated Goa-AI tool contracts.")
-	Attribute("swarm", SwarmPlanItem, "Proposed Chorus multi-agent role assignments and model-family routing.")
 	Attribute("banner", String, "Plain-English summary of topology and guardrails.")
 	Required(
 		"change_id",
@@ -429,7 +361,6 @@ var ArchitecturePreviewResult = Type("ArchitecturePreviewResult", func() {
 		"edges",
 		"agent_policies",
 		"tools",
-		"swarm",
 		"banner",
 	)
 })
@@ -674,7 +605,7 @@ var _ = Service("surla", func() {
 		Result(ChangeCardResult)
 		Error("conflict", ErrorResult, "A Change Card with this change_id already exists; use revise_change or a new change_id.")
 		Error("unprocessable", ErrorResult, "The request could not be accepted: change_id or prompt is blank, an ambiguity repeats an option, story_refresh_op_id does not name a current succeeded refresh_story operation matching the bound workspace snapshot, or the bound workspace's design/*.go could not be read. The message says which; nothing was saved.")
-		Tool("propose_change", "Propose a feature change as a Checkpoint 1 Change Card. Read the target's design/*.go and the surla://golden-path playbook first, then send the request in prompt with your analysis of it: a summary, the open questions only the requester can answer (an empty list when none), concrete examples that become checks, and the existing behaviors the change must keep. When adopting a workspace Story, pass the succeeded refresh_story operation's op_id in story_refresh_op_id and omit design_source. Surla assigns the IDs and request_revision and saves the card; a card without open questions is confirmed at once. When design_source and story_refresh_op_id are omitted and a workspace is bound, Surla records design/*.go from the bound workspace.", func() {
+		Tool("propose_change", "Propose a feature change as a Checkpoint 1 Change Card. Read the target's design/*.go and the surla://golden-path playbook first, then send the request in prompt with your analysis of it: a summary, the open questions only the requester can answer (an empty list when none), concrete examples that become checks, and the existing behaviors the change must keep. When adopting a workspace Story, pass the succeeded refresh_story operation's op_id in story_refresh_op_id. Surla assigns the IDs and request_revision and saves the card; a card without open questions is confirmed at once. When story_refresh_op_id is omitted and a workspace is bound, Surla records design/*.go from the bound workspace.", func() {
 			ToolUI("ui://surla/checkpoint")
 		})
 		HTTP(func() {
@@ -686,14 +617,14 @@ var _ = Service("surla", func() {
 	})
 
 	Method("revise_change", func() {
-		Description("Save the next revision of an existing Checkpoint 1 Change Card from a revised feature request and the caller's analysis of it, bound to the card's current request_revision. The analysis accounts for every current example exactly once, keeping or editing it through prior_id or dropping it through removed_example_ids. Surla keeps the IDs of kept examples, gives new examples the lowest check_NN ID neither card uses, adopts the evaluated Stories and design/*.go from the single workspace snapshot verified against story_refresh_op_id when story_refresh_op_id is given (or keeps the saved Stories and saved design_source together when story_refresh_op_id is omitted on a card with Stories, or records design/*.go from the bound workspace again when omitted on a workspace-backed card without Stories), and saves the new revision in needs_confirmation status for operator review. The new revision's answers, confirmed_by and any approval are cleared: earlier decisions remain only where the analysis restates them in its summary, examples or preserved behaviors. Surla runs no model for this step and cannot judge whether the analysis is complete or correct.")
+		Description("Save the next revision of an existing Checkpoint 1 Change Card from a revised feature request and the caller's analysis of it, bound to the card's current request_revision. The analysis accounts for every current example exactly once, keeping or editing it through prior_id or dropping it through removed_example_ids. Surla keeps the IDs of kept examples, gives new examples the lowest check_NN ID neither card uses, adopts the evaluated Stories and design/*.go from the single workspace snapshot verified against story_refresh_op_id when story_refresh_op_id is given (or keeps the saved Stories and their design source together when story_refresh_op_id is omitted on a card with Stories, or records design/*.go from the bound workspace again when omitted on a card without Stories), and saves the new revision in needs_confirmation status for operator review. The new revision's answers, confirmed_by and any approval are cleared: earlier decisions remain only where the analysis restates them in its summary, examples or preserved behaviors. Surla runs no model for this step and cannot judge whether the analysis is complete or correct.")
 		Payload(ReviseChangePayload)
 		Result(ChangeCardResult)
 		Error("not_found", ErrorResult, "No Change Card exists with this change_id.")
 		Error("forbidden", ErrorResult, "The authenticated principal does not own this Change Card.")
 		Error("conflict", ErrorResult, "The card's request_revision changed; read the current revision with get_change.")
 		Error("unprocessable", ErrorResult, "The request could not be accepted: change_id, request_revision or prompt is blank, an ambiguity repeats an option, the analysis does not account for every current example exactly once, story_refresh_op_id does not name a current succeeded refresh_story operation matching the bound workspace snapshot, or the bound workspace's design/*.go could not be read. The message says which; the card did not change.")
-		Tool("revise_change", "Revise an existing Checkpoint 1 Change Card with updated requirements bound to its current request_revision. Send the revised request in prompt with a new analysis made against the current card (as get_change returns it) and the target's design: keep or edit each current example through prior_id, list the dropped ones in removed_example_ids, and restate the confirmed decisions that still hold in summary, examples or preserved_behaviors. Pass story_refresh_op_id from a succeeded refresh_story operation to adopt an updated workspace Story, or omit story_refresh_op_id on a card with Stories to keep its agreed Story and design_source. The new revision's answers, confirmed_by and any approval are cleared, so it needs confirmation again.", func() {
+		Tool("revise_change", "Revise an existing Checkpoint 1 Change Card with updated requirements bound to its current request_revision. Send the revised request in prompt with a new analysis made against the current card (as get_change returns it) and the target's design: keep or edit each current example through prior_id, list the dropped ones in removed_example_ids, and restate the confirmed decisions that still hold in summary, examples or preserved_behaviors. Pass story_refresh_op_id from a succeeded refresh_story operation to adopt an updated workspace Story, or omit story_refresh_op_id on a card with Stories to keep its agreed Story and its design source. The new revision's answers, confirmed_by and any approval are cleared, so it needs confirmation again.", func() {
 			ToolUI("ui://surla/checkpoint")
 		})
 		HTTP(func() {
@@ -745,14 +676,14 @@ var _ = Service("surla", func() {
 	})
 
 	Method("preview_architecture", func() {
-		Description("Extract and validate the Checkpoint 2 C4 container topology, tool contracts, Goa-AI guardrails, and proposed Chorus swarm roster from a candidate Goa design bound to a confirmed Change Card. When design is omitted and a workspace is bound, Surla reads the candidate module snapshot from the bound workspace. Apart from the swarm roster, the result reports what the design declares; it does not compare the design with the Change Card's requirements.")
+		Description("Extract and validate the Checkpoint 2 C4 container topology, tool contracts, and Goa-AI guardrails from a candidate Goa design bound to a confirmed Change Card. Surla reads the candidate module snapshot from the bound workspace. The result reports what the design declares; it does not compare the design with the Change Card's requirements.")
 		Payload(PreviewArchitecturePayload)
 		Result(ArchitecturePreviewResult)
 		Error("not_found", ErrorResult, "No Change Card exists with this change_id.")
 		Error("forbidden", ErrorResult, "The authenticated principal does not own this Change Card.")
 		Error("conflict", ErrorResult, "The Change Card is not confirmed or its request_revision does not match; confirm the card or read the current revision with get_change.")
 		Error("unprocessable", ErrorResult, "The request or evaluated design did not meet Checkpoint 2 requirements; the message states which check failed.")
-		Tool("preview_architecture", "Preview Checkpoint 2 C4 container topology, Goa-AI guardrails, and proposed Chorus swarm roster for a confirmed Change Card. Omit design to read the candidate module from the bound workspace. Apart from the swarm roster, it reports what the design declares; it does not compare the design with the Change Card's requirements.", func() {
+		Tool("preview_architecture", "Preview Checkpoint 2 C4 container topology and Goa-AI guardrails for a confirmed Change Card. Surla reads the candidate module from the bound workspace. It reports what the design declares; it does not compare the design with the Change Card's requirements.", func() {
 			ToolUI("ui://surla/checkpoint")
 		})
 		HTTP(func() {

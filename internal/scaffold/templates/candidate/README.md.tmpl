@@ -71,11 +71,9 @@ If you created this project over MCP with `init_project`, `surla serve` has
 already initialized the Git repository, created the initial commit (`commit` in
 `init_project`'s result), bound the server to this directory (`dir`), and
 pinned the evaluator suite to that initial commit. If you created it from the
-CLI, first make the initial commit with the commands below, then start
-`surla serve` and register it with your coding agent as described in "Connect
-a coding agent" below.
+CLI, first make the initial commit with the commands below.
 
-For each change, with `surla serve` running on this directory:
+For each change:
 
 1. Describe the change with `propose_change` and `confirm_intent`, and
    preview its architecture with `preview_architecture`.
@@ -122,117 +120,20 @@ report, `stderr` prints operator setup/execution failure diagnostics). Do not
 share `$WORK_DIR`, `$REPORT_DIR`, or setup/execution failure output with coding
 agents that build the service.
 
-`surla verify` checks a commit. The CLI has no command that builds and tests
-uncommitted files, so for later changes, start `surla serve` in this directory
-and connect your coding agent (see "Connect a coding agent" below), and run the
-`check_project` loop in "Next steps" above before you commit.
+`surla verify` checks a commit. Run the `check_project` loop in "Next steps"
+above before you commit.
 
-## Connect a coding agent and try a live target
+## Change checkpoints
 
-If `surla serve` is not already running (for example, after `surla init` and the
-first commit above), start `surla serve` from this directory with
-`-project .`, a bearer token of your choice, and a model. `-project` needs Git
-2.45 or newer. `-project .` reads
-this starter layout from the current `HEAD` commit, pins the evaluator suite
-to that commit for `start_live_target` and `verify_change`, and stores Change
-Cards, verification runs, full reports, and live targets in operator-private
-storage outside the repository (when started directly on a committed CLI
-project, restart `surla serve` to trust a later `HEAD` suite commit; when the
-project was created by `init_project`, restarting the original server restores
-the initial suite commit saved in `workspace.json` unless you start `surla serve`
-directly on the child project directory or pass `-verification-config`).
-`-model-provider anthropic` reads `ANTHROPIC_API_KEY`,
-`-model-provider openai` reads `OPENAI_API_KEY`, and `-model-gateway-addr`
-uses a goa-ai model gateway instead. Set `MODEL_NAME` to a model your provider
-offers:
-
-```sh
-export SURLA_AUTH_TOKEN="choose-a-secret"
-export ANTHROPIC_API_KEY="your-anthropic-key"
-MODEL_NAME="your-model-name"
-surla serve -principal you@example.com \
-  -model-provider anthropic -model-name "$MODEL_NAME" \
-  -project .
-
-# Or with OpenAI:
-export OPENAI_API_KEY="your-openai-key"
-MODEL_NAME="your-model-name"
-surla serve -principal you@example.com \
-  -model-provider openai -model-name "$MODEL_NAME" \
-  -project .
-```
-
-When `surla serve` is started from a standalone starter repository root
-(`-project .`), you can pin a specific suite commit without following `HEAD` on
-restart, or use a separate evaluator repository, by writing
-`../[[.Name]]-ops/verification.json` outside the bound workspace and its
-enclosing Git working tree and passing
-`-project . -verification-config ../[[.Name]]-ops/verification.json` (if this
-project is a subdirectory inside an enclosing monorepo or a child directory
-inside a parent workspace bound before `init_project`, place the `<ops>`
-directory outside the entire bound workspace and enclosing Git working tree
-root, set `candidate_repo` and `suite_repo` to the Git repository root, and set
-`candidate_module` and `suite_module` to the repository-relative module paths,
-such as `"services/[[.Name]]"` and `"services/[[.Name]]/eval"`):
-
-```sh
-mkdir -p ../[[.Name]]-ops
-cat > ../[[.Name]]-ops/verification.json <<EOF
-{
-  "runs_dir": "../[[.Name]]-ops/runs",
-  "report_dir": "../[[.Name]]-ops/reports",
-  "candidate_repo": ".",
-  "candidate_module": ".",
-  "binaries": {"[[.Name]]": "./cmd/[[.Name]]"},
-  "suite_repo": ".",
-  "suite_commit": "$(git rev-parse HEAD)",
-  "suite_module": "eval",
-  "suite_command": "./cmd/[[.Name]]-evals",
-  "timeout": "30m"
-}
-EOF
-```
-
-Register the server with your coding agent. Connected coding agents can also
-read Surla's Golden Path architecture and evaluator guide at the MCP resource
-`surla://golden-path` (or `GET http://127.0.0.1:8090/golden-path`). For Claude
-Code, save this as
-`.mcp.json` in this directory. Claude Code fills in `${SURLA_AUTH_TOKEN}`
-from its environment, so start it from a shell where that variable is
-exported. `.mcp.json` holds that reference, not the token itself, and
-`.gitignore` keeps it out of the repository:
-
-```json
-{
-  "mcpServers": {
-    "surla": {
-      "type": "http",
-      "url": "http://127.0.0.1:8090/mcp",
-      "headers": {"Authorization": "Bearer ${SURLA_AUTH_TOKEN}"}
-    }
-  }
-}
-```
-
-Other coding agents take the same URL and header in their own configuration
-files.
-
-Then follow "Next steps" for each change. When `surla serve` is bound to this
-workspace (`-project .`), `propose_change` reads `design/*.go` from the
-workspace automatically when `design_source` is omitted (or pass
-`design_source` explicitly when targeting a different design). The confirmed
-card's `request_revision` is the value to verify and approve the change with.
+Surla reads this workspace's `design/*.go` privately when `propose_change` saves
+a Change Card. The saved source contributes to `request_revision`; callers do
+not upload it. `refresh_story` evaluates the workspace's domain Story. Pass its
+succeeded `op_id` as `story_refresh_op_id` to adopt the Story and matching source.
+An adopted Story remains paired with its source when a later revision omits
+`story_refresh_op_id`.
 
 To try prompt wording on a running `[[.Name]]` before you verify it,
-call `start_live_target` with the full commit ID of the candidate you want to
-run (the initial `commit` returned by `init_project`, or `git rev-parse HEAD`
-after committing your changes), then `draft_override` with
-`prompt_id` `[[.Name]].helper.system`. A draft lasts only as long as that
-target: to keep it, write the text into `internal/helper/planner.go`, run
-`check_project`, commit, and pass that new commit ID to `verify_change` (or
-`surla verify`).
-
-`-request-revision` names the confirmed change request the report is for.
-`starter` is only a local label; when a change goes through the Surla server,
-use the `request_revision` its Change Card shows, so `surla approve` and
-`approve_merge` can match the report to that request.
+call `start_live_target` with the full candidate commit ID, then `draft_override`
+with `prompt_id` `[[.Name]].helper.system`. To keep a draft, write the text into
+`internal/helper/planner.go`, run `check_project`, commit, and call `verify_change`
+with the new commit ID and the confirmed Change Card's `request_revision`.

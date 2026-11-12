@@ -37,7 +37,6 @@ flowchart LR
 | [`internal/assistant/`](internal/assistant/) & [`internal/refundflow/`](internal/refundflow/) | Refund agent planner, runtime prompt override validation and store updates (`assistant.Prompts`), and Temporal refund workflow execution. |
 | [`internal/runstore/`](internal/runstore/) | SQLite-backed durable run, transcript, and pending-approval store owned by the Orders API. |
 | [`cmd/orders/`](cmd/orders/main.go) & [`cmd/orders-worker/`](cmd/orders-worker/main.go) | Public Orders API server and Refund worker binaries verified by `surla verify`. |
-| [`cmd/orders-surla/`](cmd/orders-surla/main.go) | Separate reference `CP3` MCP/HTTP host that binds `controlplane.Options.TargetUpdater` to a running `orders` API's `override_prompt` (`PUT /prompts/{prompt_id}`) endpoint using the pinned `github.com/goadesign/surla` module version in `go.mod`. |
 
 ---
 
@@ -58,36 +57,13 @@ go run ./cmd/surla diff --old-dir examples/orders --new-dir examples/orders
 
 ---
 
-## 2. Inspect CP1–CP3 via `surla serve` & the MCP Apps Checkpoint Viewer
+## 2. Inspect the change contract
 
-Start the Surla control plane with the included illustrative multi-family swarm profile file ([`swarm-profiles.example.json`](swarm-profiles.example.json)). Note that `swarm-profiles.example.json` is an operator-edited example where `"authenticated": true` is an operator assertion (not a live credential probe). No model key is needed for these checkpoints: your coding agent writes the Change Card analysis it sends with `propose_change`, and Surla saves it without running a model:
-
-```bash
-export SURLA_AUTH_TOKEN="dev-secret-token"
-
-go run ./cmd/surla serve \
-  -addr 127.0.0.1:8090 \
-  -principal operator@example.com \
-  -swarm-profiles ./examples/orders/swarm-profiles.example.json
-```
-
-When an MCP Apps-capable client calls `propose_change`, `confirm_intent`, `get_change`, `preview_architecture`, `diff`, or `draft_override`, Surla pairs the structured tool result with the stateless `ui://surla/checkpoint` (`text/html;profile=mcp-app`) viewer read over MCP `resources/read` (`POST /mcp`; the companion HTTP route `GET /ui/checkpoint` returns the HTML document as a JSON-encoded string). The viewer completes the MCP Apps `ui/initialize` → `ui/notifications/initialized` handshake with the host frame and renders an interactive CP1 Change Card form (`confirm_intent` and `get_change` via host `tools/call` with unsaved-draft preservation on stale `request_revision` conflicts), an inline scrollable C4 SVG directed graph above the inspectable containers/edges, tool guardrails (`Inject`, `BoundedResult`, `Confirmation`), and cross-family Chorus swarm manifest (`design_digest`), or an unbound structural `DiffResult` view (`diff`).
-
-Standalone `surla serve` leaves `controlplane.Options.TargetUpdater` unbound and rejects `prompt_template` overrides. To exercise live `CP3` prompt edits (`draft_override`) against a running `orders` API process (`cmd/orders`) without rebuilding, run the reference `CP3` host [`cmd/orders-surla`](cmd/orders-surla/main.go). Prefer the `SURLA_AUTH_TOKEN` (MCP caller bearer token) and `ORDERS_PROMPTS_TOKEN` (an HS256 JWT signed with the same `ORDERS_JWT_KEY` the `orders` API was started with, carrying `sub`, `tenant_id`, `exp`, and `scope: "prompts:manage"`) environment variables over `-auth-token` and `-orders-token` flags so credentials stay out of command-line arguments:
-
-```bash
-export SURLA_AUTH_TOKEN="dev-mcp-secret"
-export ORDERS_PROMPTS_TOKEN="<jwt-with-prompts:manage>"
-
-(cd examples/orders && go run ./cmd/orders-surla \
-  -listen 127.0.0.1:8091 \
-  -principal operator@example.com \
-  -orders-url http://127.0.0.1:8080)
-```
-
-`orders-surla` is a single-operator `CP3` reference host: it saves Change Cards in `-cards-dir` (default `.surla/orders-surla-cards`, locked exclusively by that `orders-surla` process and reported on startup as `orders-surla: saving Change Cards in <dir>`), and any authenticated MCP caller on that host can call `draft_override` (`target_kind: "prompt_template"`, `prompt_id: "orders.refund.system"`) to update the target `orders` process's in-memory prompt store and receive the accepted text's `sha256:...` version (`compiled_rule` edits are still rejected with `requires_rebuild: true` without calling `orders`). Its callers send their own analysis to `propose_change` and `revise_change`, so it needs no model connection. It leaves `CP4` verification and `CP5` `PromotionTarget` (`approve_merge`) unconfigured, and it consumes the pinned `github.com/goadesign/surla` version in [`examples/orders/go.mod`](go.mod), so later `internal/controlplane` changes reach `orders-surla` after bumping that pinned module version.
-
----
+The shared control plane records the request and analysis as a Change Card,
+then evaluates a candidate module for `preview_architecture`. The result shows
+its C4 topology, agent policies, and tool contracts. The Orders application
+exposes `override_prompt` for process-owned prompt updates; the application
+contract is described in its Goa design.
 
 ## 3. Run OS-Sandboxed End-to-End Verification (`surla verify`)
 

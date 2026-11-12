@@ -41,9 +41,7 @@ type (
 	}
 
 	// savedCard is the on-disk JSON representation of one Change Card. It
-	// holds only the 12 persisted card fields (omitting response-only
-	// UnverifiedApproval) without omitempty tags so saved card files remain
-	// byte-for-byte compatible across versions under DisallowUnknownFields.
+	// excludes the response-only UnverifiedApproval field.
 	savedCard struct {
 		// ChangeID is the Change Card identifier.
 		ChangeID string
@@ -80,13 +78,9 @@ type (
 		Owner string `json:"owner"`
 		// DesignSource is the Goa design source inspected at CP1.
 		DesignSource string `json:"design_source"`
-		// SourceOrigin records whether DesignSource was read from the bound
-		// workspace ("workspace") or supplied by the caller (omitted on disk).
-		SourceOrigin string `json:"source_origin,omitempty"`
 		// Stories holds the evaluated domain Stories adopted for this card
-		// revision in declaration order, omitted on disk when empty so cards
-		// without Stories keep their prior schema and request_revision.
-		Stories []designeval.StorySummary `json:"stories,omitempty"`
+		// revision in declaration order.
+		Stories []designeval.StorySummary `json:"stories"`
 	}
 )
 
@@ -95,12 +89,6 @@ const (
 	// writes before renaming it over the card's file. load opens only the hashed
 	// path of the card it is asked for, so this file is never read.
 	stagingFile = "pending"
-	// sourceOriginSupplied marks a card whose design_source came from the caller
-	// payload (or had no bound workspace at proposal time).
-	sourceOriginSupplied = "supplied"
-	// sourceOriginWorkspace marks a card whose design_source was read from the
-	// control plane's bound workspace directory.
-	sourceOriginWorkspace = "workspace"
 )
 
 var (
@@ -111,107 +99,6 @@ var (
 	// saved Change Card filename.
 	cardFileDigestPattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
 )
-
-// PrepareCardSnapshot copies saved <64-hex>.json Change Card files verbatim from
-// legacyCardsDir into stageCardsDir while holding a non-blocking shared lock on
-// <legacyCardsDir>/lock until releaseLock is called. It never imports
-// workspace.json or modifies legacy originals.
-func PrepareCardSnapshot(legacyCardsDir, stageCardsDir string) (releaseLock func() error, err error) {
-	if err := os.MkdirAll(stageCardsDir, 0o700); err != nil {
-		return nil, fmt.Errorf("create staged cards directory %s: %w", stageCardsDir, err)
-	}
-	if err := writeCardRegularFileNoFollow(filepath.Join(stageCardsDir, "lock"), nil, 0o600); err != nil {
-		return nil, fmt.Errorf("create staged cards lock: %w", err)
-	}
-	if legacyCardsDir == "" {
-		if err := syncDir(stageCardsDir); err != nil {
-			return nil, fmt.Errorf("sync staged cards directory %s: %w", stageCardsDir, err)
-		}
-		return func() error { return nil }, nil
-	}
-	info, err := os.Lstat(legacyCardsDir)
-	if errors.Is(err, fs.ErrNotExist) {
-		if err := syncDir(stageCardsDir); err != nil {
-			return nil, fmt.Errorf("sync staged cards directory %s: %w", stageCardsDir, err)
-		}
-		return func() error { return nil }, nil
-	}
-	if err != nil {
-		return nil, fmt.Errorf("stat legacy cards directory %s: %w", legacyCardsDir, err)
-	}
-	if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
-		return nil, fmt.Errorf("legacy cards directory %s is not a regular directory", legacyCardsDir)
-	}
-
-	var heldLock *os.File
-	closeHeld := func() error {
-		if heldLock == nil {
-			return nil
-		}
-		f := heldLock
-		heldLock = nil
-		// A forked child may still hold a copy before exec closes it. Release
-		// this owner's lock now rather than waiting for the last descriptor.
-		return errors.Join(syscall.Flock(int(f.Fd()), syscall.LOCK_UN), f.Close())
-	}
-	defer func() {
-		if err != nil {
-			err = errors.Join(err, closeHeld())
-		}
-	}()
-
-	lockPath := filepath.Join(legacyCardsDir, "lock")
-	if _, statErr := os.Lstat(lockPath); !errors.Is(statErr, fs.ErrNotExist) {
-		f, openErr := os.OpenFile(lockPath, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
-		if openErr != nil {
-			return nil, fmt.Errorf("open legacy cards lock %s: %w", lockPath, openErr)
-		}
-		st, statErr := f.Stat()
-		if statErr == nil && !st.Mode().IsRegular() {
-			statErr = fmt.Errorf("legacy cards lock %s is not a regular file", lockPath)
-		}
-		if statErr == nil {
-			statErr = syscall.Flock(int(f.Fd()), syscall.LOCK_SH|syscall.LOCK_NB)
-		}
-		if statErr != nil {
-			if errors.Is(statErr, syscall.EWOULDBLOCK) {
-				return nil, errors.Join(
-					fmt.Errorf(
-						"legacy cards directory %s has an active writer; stop all legacy surla processes before running -import-legacy-workspace",
-						legacyCardsDir,
-					),
-					f.Close(),
-				)
-			}
-			return nil, errors.Join(fmt.Errorf("lock legacy cards directory %s: %w", legacyCardsDir, statErr), f.Close())
-		}
-		heldLock = f
-	}
-
-	entries, err := os.ReadDir(legacyCardsDir)
-	if err != nil {
-		return nil, fmt.Errorf("read legacy cards directory %s: %w", legacyCardsDir, err)
-	}
-	for _, entry := range entries {
-		name := entry.Name()
-		if !isHexCardFilename(name) {
-			continue
-		}
-		srcPath := filepath.Join(legacyCardsDir, name)
-		raw, err := readCardRegularFileNoFollow(srcPath)
-		if err != nil {
-			return nil, fmt.Errorf("read legacy card %s: %w", srcPath, err)
-		}
-		dstPath := filepath.Join(stageCardsDir, name)
-		if err := writeCardRegularFileNoFollow(dstPath, raw, 0o600); err != nil {
-			return nil, fmt.Errorf("write staged card %s: %w", dstPath, err)
-		}
-	}
-	if err := syncDir(stageCardsDir); err != nil {
-		return nil, fmt.Errorf("sync staged cards directory %s: %w", stageCardsDir, err)
-	}
-	return closeHeld, nil
-}
 
 // openCardStore resolves dir to its physical path, creates dir (0700) when
 // missing, and takes its lock. It fails when another process already holds the
@@ -311,22 +198,7 @@ func decodeCardBytes(label, fileName string, requireExactID bool, data []byte) (
 	if hex.EncodeToString(sum[:])+".json" != fileName {
 		return storedChangeCard{}, fmt.Errorf("change card file for %q does not hold that card", label)
 	}
-	sourceOrigin := sourceOriginSupplied
-	switch f.SourceOrigin {
-	case "", sourceOriginSupplied:
-		sourceOrigin = sourceOriginSupplied
-	case sourceOriginWorkspace:
-		sourceOrigin = sourceOriginWorkspace
-	default:
-		return storedChangeCard{}, fmt.Errorf("change card %q has unknown source_origin %q", label, f.SourceOrigin)
-	}
-	if f.Stories != nil && len(f.Stories) == 0 {
-		return storedChangeCard{}, fmt.Errorf("change card %q has empty stories array; omit stories when empty", label)
-	}
 	stories := cloneStorySummaries(f.Stories)
-	if len(stories) > 0 && sourceOrigin != sourceOriginWorkspace {
-		return storedChangeCard{}, fmt.Errorf("change card %q has stories with non-workspace source_origin %q", label, sourceOrigin)
-	}
 	card := &gensurla.ChangeCardResult{
 		ChangeID:           f.Card.ChangeID,
 		Status:             f.Card.Status,
@@ -358,7 +230,6 @@ func decodeCardBytes(label, fileName string, requireExactID bool, data []byte) (
 		card:         card,
 		owner:        f.Owner,
 		designSource: f.DesignSource,
-		sourceOrigin: sourceOrigin,
 		stories:      stories,
 	}, nil
 }
@@ -389,10 +260,6 @@ func (s *cardStore) save(record storedChangeCard) error {
 		UIComposition:      record.card.UIComposition,
 		Approval:           record.card.Approval,
 	}
-	persistedOrigin := ""
-	if record.sourceOrigin == sourceOriginWorkspace {
-		persistedOrigin = sourceOriginWorkspace
-	}
 	persistedStories := cloneStorySummaries(record.stories)
 	if len(persistedStories) == 0 && len(record.card.Stories) > 0 {
 		persistedStories = canonicalStorySummariesFromItems(record.card.Stories)
@@ -401,7 +268,6 @@ func (s *cardStore) save(record storedChangeCard) error {
 		Card:         persisted,
 		Owner:        record.owner,
 		DesignSource: record.designSource,
-		SourceOrigin: persistedOrigin,
 		Stories:      persistedStories,
 	})
 	if err != nil {
@@ -438,8 +304,8 @@ func (s *cardStore) path(changeID string) string {
 }
 
 // hasWorkspaceCardsWithFiles reports whether any saved card in s captured
-// existing workspace design files (source_origin == "workspace" with non-empty
-// design_source). Cards proposed in an empty workspace before init_project have
+// existing workspace design files (non-empty design_source). Cards proposed
+// in an empty workspace before init_project have
 // an empty design_source and do not block initialization. Every saved card file
 // is validated with the same strict decoder as load.
 func (s *cardStore) hasWorkspaceCardsWithFiles() (bool, error) {
@@ -463,7 +329,7 @@ func (s *cardStore) hasWorkspaceCardsWithFiles() (bool, error) {
 		if err != nil {
 			return false, err
 		}
-		if rec.sourceOrigin == sourceOriginWorkspace && strings.TrimSpace(rec.designSource) != "" {
+		if strings.TrimSpace(rec.designSource) != "" {
 			return true, nil
 		}
 	}
@@ -491,22 +357,4 @@ func readCardRegularFileNoFollow(path string) ([]byte, error) {
 	}
 	raw, readErr := io.ReadAll(f)
 	return raw, errors.Join(readErr, f.Close())
-}
-
-// writeCardRegularFileNoFollow creates path exclusively without following
-// symlinks, writes raw, syncs the file, sets perm, and closes it.
-func writeCardRegularFileNoFollow(path string, raw []byte, perm os.FileMode) error {
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL|syscall.O_NOFOLLOW, 0o600)
-	if err != nil {
-		return err
-	}
-	if _, err := f.Write(raw); err != nil {
-		return errors.Join(err, f.Close())
-	}
-	if perm != 0o600 {
-		if err := f.Chmod(perm); err != nil {
-			return errors.Join(err, f.Close())
-		}
-	}
-	return errors.Join(f.Sync(), f.Close())
 }

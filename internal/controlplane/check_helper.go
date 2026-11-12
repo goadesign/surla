@@ -71,8 +71,6 @@ type (
 		// WorkspaceDev and WorkspaceIno identify the workspace, descriptor 5.
 		WorkspaceDev int32  `json:"workspace_dev"`
 		WorkspaceIno uint64 `json:"workspace_ino"`
-		// ImportedReports are the original report paths the copy leaves out.
-		ImportedReports []string `json:"imported_reports"`
 		// GoProxyEnv is the operator's module proxy settings.
 		GoProxyEnv []string `json:"go_proxy_env"`
 		// CheckTimeout is the operator's -check-timeout, named in messages.
@@ -260,17 +258,16 @@ func openCheckHelperOperation(spec checkHelperSpec, runner *candidate.ContainerR
 		return nil, nil, fmt.Errorf("descriptor %d is not the verified workspace", checkHelperWorkspaceFD)
 	}
 	op := &checkOperation{
-		id:              spec.OpID,
-		dir:             spec.Dir,
-		grantRoot:       spec.GrantRoot,
-		grantFD:         checkHelperGrantFD,
-		workspaceFD:     checkHelperWorkspaceFD,
-		workspaceID:     fileID{dev: spec.WorkspaceDev, ino: spec.WorkspaceIno},
-		workspaceRel:    spec.WorkspaceRel,
-		checker:         runner,
-		checkTimeout:    spec.CheckTimeout,
-		goProxyEnv:      spec.GoProxyEnv,
-		importedReports: spec.ImportedReports,
+		id:           spec.OpID,
+		dir:          spec.Dir,
+		grantRoot:    spec.GrantRoot,
+		grantFD:      checkHelperGrantFD,
+		workspaceFD:  checkHelperWorkspaceFD,
+		workspaceID:  fileID{dev: spec.WorkspaceDev, ino: spec.WorkspaceIno},
+		workspaceRel: spec.WorkspaceRel,
+		checker:      runner,
+		checkTimeout: spec.CheckTimeout,
+		goProxyEnv:   spec.GoProxyEnv,
 	}
 	return op, os.NewFile(checkHelperDirFD, spec.Dir), nil
 }
@@ -341,17 +338,16 @@ func (c *ControlPlane) runCheckHelper(ctx context.Context, tool string) (res che
 		return checkHelperResult{}, err
 	}
 	spec := checkHelperSpec{
-		Tool:            tool,
-		OpID:            op.id,
-		Dir:             op.dir,
-		GrantRoot:       op.grantRoot,
-		WorkspaceRel:    op.workspaceRel,
-		WorkspaceDev:    op.workspaceID.dev,
-		WorkspaceIno:    op.workspaceID.ino,
-		ImportedReports: c.importedReports,
-		GoProxyEnv:      c.goProxyEnv,
-		CheckTimeout:    c.checkTimeout,
-		TraceContext:    map[string]string{},
+		Tool:         tool,
+		OpID:         op.id,
+		Dir:          op.dir,
+		GrantRoot:    op.grantRoot,
+		WorkspaceRel: op.workspaceRel,
+		WorkspaceDev: op.workspaceID.dev,
+		WorkspaceIno: op.workspaceID.ino,
+		GoProxyEnv:   c.goProxyEnv,
+		CheckTimeout: c.checkTimeout,
+		TraceContext: map[string]string{},
 	}
 	propagation.TraceContext{}.Inject(ctx, propagation.MapCarrier(spec.TraceContext))
 	return c.startCheckHelper(ctx, spec, lock, op)

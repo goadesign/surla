@@ -27,44 +27,26 @@ Next:
   git add .gitignore README.md AGENTS_QUICKSTART.md go.mod go.sum design gen internal cmd eval
   git commit -m "Start %[2]s from surla init"
   surla preview -dir .
-  WORK_DIR="$(mktemp -d)/work"
+  VERIFY_DIR="$(mktemp -d)"
+  WORK_DIR="$VERIFY_DIR/work"
+  REPORT_DIR="$VERIFY_DIR/reports"
   surla verify -candidate-repo . -candidate-commit "$(git rev-parse HEAD)" -binary %[2]s=./cmd/%[2]s \
     -suite-repo . -suite-commit "$(git rev-parse HEAD)" -suite-module eval -suite-command ./cmd/%[2]s-evals \
-    -request-revision starter -work-dir "$WORK_DIR" -report-dir reports -builder-view
+    -request-revision starter -work-dir "$WORK_DIR" -report-dir "$REPORT_DIR" -builder-view
 
 surla verify keeps $WORK_DIR, including its build logs in $WORK_DIR/evidence/,
-writes the full report to reports/ (used by surla approve), and with
+writes the full report to $REPORT_DIR (used by surla approve), and with
 -builder-view hides holdout scenario names and checks in the completed report
 JSON and summary line (if a run fails before writing a report, stderr prints
 operator setup/execution failure diagnostics). Do not share $WORK_DIR,
-reports/, or setup/execution failure output with coding agents that build the
+$REPORT_DIR, or setup/execution failure output with coding agents that build the
 service.
 
-To connect a coding agent and run a live target, start surla serve from this
-directory after the first commit, with SURLA_AUTH_TOKEN exported as a token of
-your choice, ANTHROPIC_API_KEY or OPENAI_API_KEY exported, and MODEL_NAME set
-to a model that provider offers (-project . pins the evaluator suite to the
-current HEAD commit at startup and needs Git 2.45 or newer; restart surla serve
-to trust a later HEAD commit, or pass -verification-config for a separate suite
-repository):
-
-surla serve -principal you@example.com -model-provider anthropic -model-name "$MODEL_NAME" \
-  -project .
-
-# Or with OpenAI (OPENAI_API_KEY):
-surla serve -principal you@example.com -model-provider openai -model-name "$MODEL_NAME" \
-  -project .
-
-Leave surla serve running. Open another terminal in this directory, export
-the same SURLA_AUTH_TOKEN there, and register http://127.0.0.1:8090/mcp with
-your coding agent, sending "Authorization: Bearer $SURLA_AUTH_TOKEN". Connected
-agents can read the Surla Golden Path architecture and evaluator guide at the
-MCP resource surla://golden-path (or GET http://127.0.0.1:8090/golden-path).
-Setup for Claude Code, Cursor, Gemini CLI and Codex:
-https://github.com/goadesign/surla/blob/main/docs/REFERENCE.md#register-surla-in-your-mcp-client
-
-README.md in the project explains each surla verify part, -project .,
--verification-config, and the -request-revision value.
+README.md in the project explains the change checkpoints, building and testing
+with check_project before committing, and verifying a candidate commit against
+the confirmed Change Card's request_revision. Connected agents can read the
+architecture and evaluator guide at surla://golden-path. Tool inputs and results:
+https://github.com/goadesign/surla/blob/main/docs/REFERENCE.md#mcp-tools
 `
 
 // runInit creates a starter project with scaffold.Init and prints the

@@ -407,7 +407,6 @@ func (c *ControlPlane) confirm(principal Principal, p *gensurla.ConfirmIntentPay
 		card:         confirmed,
 		owner:        record.owner,
 		designSource: record.designSource,
-		sourceOrigin: record.sourceOrigin,
 		stories:      cloneStorySummaries(record.stories),
 	}); err != nil {
 		return nil, false, err

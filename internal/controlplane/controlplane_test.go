@@ -19,7 +19,6 @@ import (
 	genmcpadapter "github.com/goadesign/surla/gen/mcp_surla"
 	gensurla "github.com/goadesign/surla/gen/surla"
 	"github.com/goadesign/surla/internal/goldenpath"
-	"github.com/goadesign/surla/internal/swarm"
 	"github.com/goadesign/surla/internal/testmodule"
 	"goa.design/goa-ai/runtime/agent/prompt"
 )
@@ -81,23 +80,25 @@ func TestCP1AmbiguityResolutionStrictValidationOwnershipAndRevisionLock(t *testi
 	}
 
 	// No Live, LiveModelEnv or model configuration: proposing needs none.
-	cp := newControlPlane(t, Options{})
-
-	designSrc := `package design // orders service`
+	workspace := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(workspace, "design"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(workspace, "design", "design.go"), []byte("package design // orders service"), 0o644))
+	cp := newControlPlane(t, Options{WorkspaceDir: workspace})
+	designSrc := `{"design/design.go":"package design // orders service"}`
 	if _, err := cp.ProposeChange(context.Background(), &gensurla.ProposeChangePayload{
-		ChangeID:     "chg-refund-50",
-		Prompt:       "Refunds under $50 should be automatic, otherwise ask a manager.",
-		DesignSource: &designSrc,
-		Analysis:     ambiguousAnalysis,
+		ChangeID: "chg-refund-50",
+		Prompt:   "Refunds under $50 should be automatic, otherwise ask a manager.",
+
+		Analysis: ambiguousAnalysis,
 	}); err == nil {
 		t.Fatal("expected unauthenticated ProposeChange to fail")
 	}
 
 	proposed, err := cp.ProposeChange(aliceCtx, &gensurla.ProposeChangePayload{
-		ChangeID:     "chg-refund-50",
-		Prompt:       "Refunds under $50 should be automatic, otherwise ask a manager.",
-		DesignSource: &designSrc,
-		Analysis:     ambiguousAnalysis,
+		ChangeID: "chg-refund-50",
+		Prompt:   "Refunds under $50 should be automatic, otherwise ask a manager.",
+
+		Analysis: ambiguousAnalysis,
 	})
 	require.NoError(t, err)
 	assert.Equal(t, StatusNeedsConfirmation, proposed.Status)
@@ -118,7 +119,6 @@ func TestCP1AmbiguityResolutionStrictValidationOwnershipAndRevisionLock(t *testi
 	require.NoError(t, err)
 	require.True(t, ok)
 	assert.Equal(t, designSrc, stored.designSource)
-	assert.Equal(t, sourceOriginSupplied, stored.sourceOrigin)
 
 	// Attempting to overwrite an existing change_id must be rejected.
 	_, err = cp.ProposeChange(bobCtx, &gensurla.ProposeChangePayload{
@@ -182,19 +182,16 @@ func TestProposeChangeAutoConfirmsACardWithoutQuestions(t *testing.T) {
 	stored, ok, err := cp.cards.load("chg-instant")
 	require.NoError(t, err)
 	require.True(t, ok)
-	assert.Equal(t, sourceOriginWorkspace, stored.sourceOrigin)
 	assert.Equal(t, `{"design/design.go":"package design // refunds\n"}`, stored.designSource)
 }
 
 // TestProposeChangeRecordsTheDesignSourceItWasMadeAgainst verifies the design
-// source a card records and hashes into request_revision: none when the
-// caller sends none and no workspace is bound, design_source byte for byte
-// when sent (whitespace included), none for a bound workspace without
+// source a card records and hashes into request_revision: none when
+// no workspace is bound, none for a bound workspace without
 // design/*.go (so the card does not block init_project), and the bound
 // workspace's design/*.go as a JSON object with HTML characters unescaped.
 func TestProposeChangeRecordsTheDesignSourceItWasMadeAgainst(t *testing.T) {
 	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
-	whitespace := "  \n\t"
 	emptyWorkspace := t.TempDir()
 	designWorkspace := t.TempDir()
 	require.NoError(t, os.MkdirAll(filepath.Join(designWorkspace, "design"), 0o755))
@@ -202,19 +199,16 @@ func TestProposeChangeRecordsTheDesignSourceItWasMadeAgainst(t *testing.T) {
 	for _, tc := range []struct {
 		name       string
 		workspace  string
-		design     *string
 		wantSource string
-		wantOrigin string
 	}{
-		{"no design and no workspace", "", nil, "", sourceOriginSupplied},
-		{"whitespace design_source kept as sent", "", &whitespace, whitespace, sourceOriginSupplied},
-		{"workspace without design files", emptyWorkspace, nil, "", sourceOriginWorkspace},
-		{"workspace design files", designWorkspace, nil, `{"design/design.go":"package design // a < b && c > d\n"}`, sourceOriginWorkspace},
+		{"no design and no workspace", "", ""},
+		{"workspace without design files", emptyWorkspace, ""},
+		{"workspace design files", designWorkspace, `{"design/design.go":"package design // a < b && c > d\n"}`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			cp := newControlPlane(t, Options{CardsDir: t.TempDir(), WorkspaceDir: tc.workspace})
 			card, err := cp.ProposeChange(alice, &gensurla.ProposeChangePayload{
-				ChangeID: "chg", Prompt: "Refunds up to $50 are instant.", DesignSource: tc.design,
+				ChangeID: "chg", Prompt: "Refunds up to $50 are instant.",
 				Analysis: refundAnalysis("Refunds up to $50 are instant."),
 			})
 			require.NoError(t, err)
@@ -222,13 +216,23 @@ func TestProposeChangeRecordsTheDesignSourceItWasMadeAgainst(t *testing.T) {
 			require.NoError(t, err)
 			require.True(t, ok)
 			assert.Equal(t, tc.wantSource, stored.designSource)
-			assert.Equal(t, tc.wantOrigin, stored.sourceOrigin)
 			rev, err := computeCanonicalRevision(stored.card, "alice@example.com", tc.wantSource)
 			require.NoError(t, err)
 			assert.Equal(t, rev, card.RequestRevision, "request_revision covers the recorded design source")
 			blocked, err := cp.cards.hasWorkspaceCardsWithFiles()
 			require.NoError(t, err)
 			assert.Equal(t, tc.workspace == designWorkspace, blocked, "only a card that recorded workspace design files blocks init_project")
+			if tc.wantSource != "" {
+				// Changing only private source bytes must invalidate the saved revision.
+				raw, err := os.ReadFile(cp.cards.path(card.ChangeID))
+				require.NoError(t, err)
+				tampered := strings.Replace(string(raw), "package design", "package altered", 1)
+				require.NotEqual(t, string(raw), tampered)
+				require.NoError(t, os.WriteFile(cp.cards.path(card.ChangeID), []byte(tampered), 0o600))
+				_, err = cp.GetChange(alice, &gensurla.GetChangePayload{ChangeID: card.ChangeID})
+				assert.ErrorContains(t, err, "does not match its request_revision")
+			}
+
 		})
 	}
 }
@@ -425,8 +429,8 @@ func TestGoCallersGetTheDesignRules(t *testing.T) {
 }
 
 // TestCP2EvaluatedArchitecturePreviewCP3FastDraftAndTokenAuthenticator verifies
-// CP2 design evaluation, Golden Path MCP resource serving, proposed swarm
-// planning, CP3 Fast Draft Mode prompt overrides, and bearer-token authentication.
+// CP2 design evaluation, Golden Path MCP resource serving, CP3 prompt overrides,
+// and bearer-token authentication.
 func TestCP2EvaluatedArchitecturePreviewCP3FastDraftAndTokenAuthenticator(t *testing.T) {
 	if testing.Short() {
 		t.Skip("runs the sandboxed Go toolchain; the full suite (go test without -short) covers it")
@@ -447,7 +451,9 @@ func TestCP2EvaluatedArchitecturePreviewCP3FastDraftAndTokenAuthenticator(t *tes
 	}
 
 	targetStore := prompt.NewInMemoryStore()
+	workspace := t.TempDir()
 	cp := newControlPlane(t, Options{
+		WorkspaceDir:  workspace,
 		TargetUpdater: &boundTargetPromptUpdater{store: targetStore},
 	})
 
@@ -500,11 +506,12 @@ var _ = Service("orders", func() {
 	})
 })
 `
+	writeWorkspaceFiles(t, workspace, testmodule.Snapshot(t, "", candidateDesign))
 	card, err := cp.ProposeChange(ctx, &gensurla.ProposeChangePayload{
-		ChangeID:     "chg-clear",
-		Prompt:       "Auto-approve when item_subtotal_cents < 5000; require manager when item_subtotal_cents >= 5000.",
-		DesignSource: &candidateDesign,
-		Analysis:     clearAnalysis,
+		ChangeID: "chg-clear",
+		Prompt:   "Auto-approve when item_subtotal_cents < 5000; require manager when item_subtotal_cents >= 5000.",
+
+		Analysis: clearAnalysis,
 	})
 	if err != nil {
 		t.Fatalf("ProposeChange failed: %v", err)
@@ -516,7 +523,6 @@ var _ = Service("orders", func() {
 	preview, err := cp.PreviewArchitecture(ctx, &gensurla.PreviewArchitecturePayload{
 		ChangeID:        card.ChangeID,
 		RequestRevision: card.RequestRevision,
-		Design:          &gensurla.DesignSnapshot{Files: testmodule.Snapshot(t, "", candidateDesign)},
 	})
 	if err != nil {
 		t.Fatalf("PreviewArchitecture failed: %v", err)
@@ -533,9 +539,6 @@ var _ = Service("orders", func() {
 	}
 	if len(preview.Tools) != 1 || !preview.Tools[0].RequiresConfirmation || len(preview.Tools[0].InjectedFields) != 1 || preview.Tools[0].InjectedFields[0] != "tenant_id" {
 		t.Fatalf("unexpected evaluated ToolContractItem: %+v", preview.Tools)
-	}
-	if preview.Swarm == nil || preview.Swarm.Status != string(swarm.StatusUnconfigured) || len(preview.Swarm.MissingRoles) != 0 || preview.Swarm.Manifest != nil {
-		t.Fatalf("expected solo unconfigured swarm plan with empty MissingRoles when no builders are supplied, got %+v", preview.Swarm)
 	}
 
 	// CP3: Fast Draft Mode updates the bound TargetPromptUpdater and rejects compiled_rule hacks.
@@ -643,106 +646,6 @@ var _ = Service("orders", func() {
 		t.Fatalf("unexpected surla://golden-path content: %+v", goldenRes)
 	}
 
-	// CP2 with server-configured multi-family provider profiles proposes cross-family swarm roster.
-	cpWithSwarm := newControlPlane(t, Options{
-		SwarmProfiles: []swarm.ProviderProfile{
-			{
-				ID:            "claude-opus",
-				Provider:      "claude",
-				Model:         "claude-opus-4-6",
-				Family:        "anthropic",
-				Authenticated: true,
-				Capabilities: []swarm.RoleKind{
-					swarm.RoleArchitect,
-					swarm.RoleBuilder,
-					swarm.RoleEvalAuthor,
-					swarm.RoleReviewer,
-				},
-			},
-			{
-				ID:            "codex-gpt5",
-				Provider:      "codex",
-				Model:         "gpt-5.4",
-				Family:        "openai",
-				Authenticated: true,
-				Capabilities: []swarm.RoleKind{
-					swarm.RoleBuilder,
-					swarm.RoleEvalAuthor,
-					swarm.RoleReviewer,
-				},
-			},
-			{
-				ID:            "gemini-pro",
-				Provider:      "gemini",
-				Model:         "gemini-3.1-pro",
-				Family:        "google",
-				Authenticated: true,
-				Capabilities: []swarm.RoleKind{
-					swarm.RoleArchitect,
-					swarm.RoleEvalAuthor,
-					swarm.RoleReviewer,
-				},
-			},
-		},
-	})
-	cardSwarm, err := cpWithSwarm.ProposeChange(ctx, &gensurla.ProposeChangePayload{
-		ChangeID:     "chg-swarm",
-		Prompt:       "Auto-approve when item_subtotal_cents < 5000; require manager when item_subtotal_cents >= 5000.",
-		DesignSource: &candidateDesign,
-		Analysis:     clearAnalysis,
-	})
-	if err != nil {
-		t.Fatalf("ProposeChange(chg-swarm) failed: %v", err)
-	}
-	// 1. Builders only on full-capability profiles -> 2-role roster (@builder-* + @reviewer).
-	previewSwarm2Role, err := cpWithSwarm.PreviewArchitecture(ctx, &gensurla.PreviewArchitecturePayload{
-		ChangeID:        cardSwarm.ChangeID,
-		RequestRevision: cardSwarm.RequestRevision,
-		Design:          &gensurla.DesignSnapshot{Files: testmodule.Snapshot(t, "", candidateDesign)},
-		Builders: []*gensurla.BuilderScopeItem{
-			{Name: "orders", Paths: []string{"internal/orders/**"}},
-			{Name: "api", Paths: []string{"cmd/orders-api/**"}},
-		},
-	})
-	if err != nil {
-		t.Fatalf("PreviewArchitecture(chg-swarm 2-role) failed: %v", err)
-	}
-	if previewSwarm2Role.Swarm == nil ||
-		previewSwarm2Role.Swarm.Status != string(swarm.StatusConfigured) ||
-		!previewSwarm2Role.Swarm.CrossFamilyReview ||
-		previewSwarm2Role.Swarm.CrossFamilyEval ||
-		previewSwarm2Role.Swarm.SingleFamily ||
-		len(previewSwarm2Role.Swarm.Assignments) != 3 ||
-		previewSwarm2Role.Swarm.Manifest == nil ||
-		!strings.Contains(*previewSwarm2Role.Swarm.Manifest, "eval-author not assigned") {
-		t.Fatalf("unexpected 2-role previewSwarm2Role.Swarm: %+v", previewSwarm2Role.Swarm)
-	}
-
-	// 2. Builders + ArchitectPaths + EvalPaths on the same server -> full 4-role roster.
-	previewSwarm, err := cpWithSwarm.PreviewArchitecture(ctx, &gensurla.PreviewArchitecturePayload{
-		ChangeID:        cardSwarm.ChangeID,
-		RequestRevision: cardSwarm.RequestRevision,
-		Design:          &gensurla.DesignSnapshot{Files: testmodule.Snapshot(t, "", candidateDesign)},
-		Builders: []*gensurla.BuilderScopeItem{
-			{Name: "orders", Paths: []string{"internal/orders/**"}},
-			{Name: "api", Paths: []string{"cmd/orders-api/**"}},
-		},
-		ArchitectPaths: []string{"design/**"},
-		EvalPaths:      []string{"*-eval/**"},
-	})
-	if err != nil {
-		t.Fatalf("PreviewArchitecture(chg-swarm 4-role) failed: %v", err)
-	}
-	if previewSwarm.Swarm == nil ||
-		previewSwarm.Swarm.Status != string(swarm.StatusConfigured) ||
-		!previewSwarm.Swarm.CrossFamilyReview ||
-		!previewSwarm.Swarm.CrossFamilyEval ||
-		previewSwarm.Swarm.SingleFamily ||
-		len(previewSwarm.Swarm.Assignments) != 5 ||
-		previewSwarm.Swarm.Manifest == nil ||
-		!strings.Contains(*previewSwarm.Swarm.Manifest, previewSwarm.DesignDigest) {
-		t.Fatalf("unexpected configured previewSwarm.Swarm: %+v", previewSwarm.Swarm)
-	}
 }
 
 // ApplyPromptOverride writes newContent into the target prompt.Store and returns the resolved version.
@@ -828,7 +731,7 @@ func TestConfirmIntentRefinesNeedsConfirmationAndConfirmedCards(t *testing.T) {
 		}
 
 		_, err = cp.PreviewArchitecture(aliceCtx, &gensurla.PreviewArchitecturePayload{
-			ChangeID: "chg", RequestRevision: first.RequestRevision, Design: &gensurla.DesignSnapshot{},
+			ChangeID: "chg", RequestRevision: first.RequestRevision,
 		})
 		if err == nil || !strings.Contains(err.Error(), "request_revision mismatch") {
 			t.Fatalf("preview bound to the earlier revision err = %v, want request_revision mismatch", err)

@@ -2,7 +2,6 @@ package scaffold
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"go/format"
 	"maps"
@@ -438,15 +437,8 @@ func TestInitLeavesNoProjectWhenGenerationFails(t *testing.T) {
 	}
 }
 
-// TestInitReadmeFirstRunSnippetsMatchTheProject verifies the starter README's
-// copy-and-run material against the project it describes: every scenario the
-// evaluator design declares is named, the verification configuration written
-// after the first commit is a JSON object with exactly the fields surla serve's
-// -verification-config requires, the Claude Code .mcp.json example is valid
-// JSON that names the default MCP endpoint and takes the bearer token from
-// SURLA_AUTH_TOKEN, the change-request step names propose_change's
-// design_source field with the project's design files, and .gitignore keeps
-// .mcp.json and .surla/ out of git.
+// TestInitReadmeFirstRunSnippetsMatchTheProject verifies the starter's declared
+// scenarios, private verification reports, and build-before-commit tool journey.
 func TestInitReadmeFirstRunSnippetsMatchTheProject(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "bakery")
 	run := func(_ context.Context, moduleDir, _ string, args ...string) error {
@@ -468,53 +460,18 @@ func TestInitReadmeFirstRunSnippetsMatchTheProject(t *testing.T) {
 		assert.Contains(t, readme, "`"+m[1]+"`", "README names scenario %s", m[1])
 	}
 
-	rootGoMod, err := os.ReadFile(filepath.Join(dir, "go.mod"))
-	require.NoError(t, err)
-	evalGoMod, err := os.ReadFile(filepath.Join(dir, "eval", "go.mod"))
-	require.NoError(t, err)
-	layout, err := StarterLayout(rootGoMod, evalGoMod)
-	require.NoError(t, err)
-
-	config := between(t, readme, "cat > ../bakery-ops/verification.json <<EOF\n", "\nEOF\n")
-	assert.NotContains(t, config, "$PWD", "paths stay relative so any valid project path writes valid JSON")
-	config = strings.ReplaceAll(config, "$(git rev-parse HEAD)", strings.Repeat("a", 40))
-	var fields map[string]any
-	require.NoError(t, json.Unmarshal([]byte(config), &fields), config)
-	// These are the fields cmd/surla's verificationFile defines and
-	// loadVerificationConfig requires; keep them in step with that type.
-	assert.Equal(t, []string{
-		"binaries", "candidate_module", "candidate_repo", "report_dir", "runs_dir",
-		"suite_command", "suite_commit", "suite_module", "suite_repo", "timeout",
-	}, slices.Sorted(maps.Keys(fields)))
-	assert.Equal(t, map[string]any{layout.Service: layout.CandidatePackage}, fields["binaries"])
-	assert.Equal(t, layout.SuiteCommand, fields["suite_command"])
-	assert.Equal(t, SuiteDir, fields["suite_module"])
-	assert.Equal(t, "../bakery-ops/runs", fields["runs_dir"])
-	assert.Equal(t, "../bakery-ops/reports", fields["report_dir"])
-	assert.Equal(t, ".", fields["candidate_repo"])
-	assert.Equal(t, ".", fields["suite_repo"])
-	assert.Contains(t, readme, "-project .")
-	assert.Contains(t, readme, "-project . -verification-config ../bakery-ops/verification.json")
-	assert.Contains(t, readme, "operator-private\nstorage outside the repository")
-	assert.Contains(t, readme, "If you created this project over MCP with `init_project`")
-	assert.Contains(t, readme, "If you created this project from the CLI with `surla init`")
-	assert.Contains(t, readme, "restores\nthe initial suite commit saved in `workspace.json`")
-	assert.Contains(t, readme, "`\"services/bakery\"` and `\"services/bakery/eval\"`")
 	assert.Contains(t, readme, "REPORT_DIR=\"$VERIFY_DIR/reports\"")
 	assert.Contains(t, readme, "-report-dir \"$REPORT_DIR\" -builder-view")
 	assert.Contains(t, readme, "while `-builder-view` hides holdout scenario names and checks\nin the completed report JSON and summary line (if a run fails before writing a\nreport, `stderr` prints operator setup/execution failure diagnostics).")
-	assert.Contains(t, readme, "-model-provider openai -model-name \"$MODEL_NAME\"")
-	assert.Contains(t, readme, "surla://golden-path")
-	assert.Contains(t, readme, "http://127.0.0.1:8090/golden-path")
 	assert.Contains(t, readme, "planner.ToolFailureProvider")
 	// Each change is described, regenerated, built and tested uncommitted
 	// with check_project, committed, then verified, in that order; keeping a
 	// drafted prompt follows the same order.
-	steps := between(t, readme, "For each change, with `surla serve` running on this directory:", "## Connect")
+	steps := between(t, readme, "For each change:", "## Change checkpoints")
 	assertInOrder(t, steps, "`propose_change`", "`confirm_intent`", "`generate_code`", "`check_project`", "`update_dependencies`", "`read_check_output`", "Commit,", "`verify_change`")
-	draft := between(t, readme, "To try prompt wording on a running", "`-request-revision`")
+	draft := between(t, readme, "To try prompt wording on a running", "the confirmed Change Card")
 	assertInOrder(t, draft, "`check_project`", "commit,", "`verify_change`")
-	cli := between(t, readme, "`surla verify` checks a commit.", "## Connect")
+	cli := between(t, readme, "`surla verify` checks a commit.", "## Change checkpoints")
 	assertInOrder(t, cli, "`check_project`", "before you commit")
 
 	candDesign, err := os.ReadFile(filepath.Join(dir, "design", "design.go"))
@@ -526,26 +483,9 @@ func TestInitReadmeFirstRunSnippetsMatchTheProject(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, string(evalAcceptance), `"missing_key_rejected"`)
 
-	mcpSection := between(t, readme, "Register the server with your coding agent.", "Other coding agents")
-	mcp := between(t, mcpSection, "```json\n", "\n```")
-	var mcpConfig struct {
-		MCPServers map[string]struct {
-			Type    string            `json:"type"`
-			URL     string            `json:"url"`
-			Headers map[string]string `json:"headers"`
-		} `json:"mcpServers"`
-	}
-	require.NoError(t, json.Unmarshal([]byte(mcp), &mcpConfig), mcp)
-	server := mcpConfig.MCPServers["surla"]
-	assert.Equal(t, "http", server.Type)
-	assert.Equal(t, "http://127.0.0.1:8090/mcp", server.URL)
-	assert.Equal(t, "Bearer ${SURLA_AUTH_TOKEN}", server.Headers["Authorization"])
-	assert.Contains(t, readme, "export SURLA_AUTH_TOKEN=")
-
-	proposal := between(t, readme, "Then follow \"Next steps\" for each change.", "To try prompt wording")
-	assert.Contains(t, proposal, "`propose_change`")
-	assert.Contains(t, proposal, "automatically when `design_source` is omitted")
-	assert.Contains(t, proposal, "`request_revision`")
+	assert.Contains(t, readme, "Surla reads this workspace's `design/*.go` privately")
+	assert.Contains(t, readme, "`story_refresh_op_id`")
+	assert.Contains(t, readme, "`request_revision`")
 
 	ignore, err := os.ReadFile(filepath.Join(dir, ".gitignore"))
 	require.NoError(t, err)

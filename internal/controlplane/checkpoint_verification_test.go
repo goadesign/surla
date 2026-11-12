@@ -642,11 +642,7 @@ func verificationJourneyFixtures(t *testing.T, card *gensurlatools.GetChangeResu
 		Edges:         []*gensurlatools.C4EdgeItem{},
 		AgentPolicies: []*gensurlatools.AgentPolicyItem{},
 		Tools:         []*gensurlatools.ToolContractItem{},
-		Swarm: &gensurlatools.SwarmPlanItem{
-			Status: "unconfigured", Assignments: []*gensurlatools.SwarmRoleItem{},
-			MissingRoles: []string{"architect"}, Summary: "No swarm profiles configured.",
-		},
-		Banner: "1 service evaluated",
+		Banner:        "1 service evaluated",
 	})
 	require.NoError(t, err)
 	cp2Diff, err := gensurlatools.MarshalDiffResult(&gensurlatools.DiffResult{

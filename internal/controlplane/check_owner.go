@@ -1,7 +1,7 @@
 // This file owns an operation's recovery record, owner.json, and the one
-// decision that clears an entry from it: the record's version 2 form with
-// each container's state, its strict decoding (including version 1
-// records), its atomic writing, the listing-based removal decision shared
+// decision that clears an entry from it: the current record form with
+// each container's state, its strict decoding, atomic writing and the
+// listing-based removal decision shared
 // by the check helper and recovery, and whether the operation's scratch can
 // still be in use.
 package controlplane
@@ -21,13 +21,12 @@ import (
 
 type (
 	// checkOwner is an operation's recovery record, saved as owner.json
-	// version 2: the engine every command targeted and every container whose
+	// with the engine every command targeted and every container whose
 	// removal is not confirmed, each with what is known about it. The check
 	// helper writes it; recovery rewrites it only once that helper has
 	// exited.
 	checkOwner struct {
-		// Version is ownerVersion. A record without it is version 1, which
-		// decodeCheckOwner reads with every name in stateUnknown.
+		// Version is the current ownerVersion.
 		Version int `json:"version"`
 		// Docker is the docker executable the operation used.
 		Docker string `json:"docker"`
@@ -46,9 +45,7 @@ type (
 		State containerState `json:"state"`
 	}
 
-	// containerState is one of exactly three facts about a recorded
-	// container: stateCreationPending, stateCreationAnswered or
-	// stateUnknown.
+	// containerState records whether the engine answered container creation.
 	containerState string
 )
 
@@ -64,9 +61,6 @@ const (
 	// container; it is saved before start is sent, so the container may have
 	// started and may be using the operation's files.
 	stateCreationAnswered containerState = "creation_answered"
-	// stateUnknown is every name read from a version 1 record, which cannot
-	// say whether its create was answered or the container started.
-	stateUnknown containerState = "unknown"
 )
 
 var (
@@ -82,15 +76,9 @@ var (
 // decodeCheckOwner strictly decodes the recovery record of operation id:
 // one JSON object with exactly the docker path (absolute), the local engine
 // endpoint (unix://) and the containers array (present, possibly empty),
-// each name surla-check-<id>-<n> and listed once. Version 2 has "version": 2
-// and containers of {name, state} with state one of the three
-// containerState values. Version 1 has no version and containers of names
-// it recorded before sending each create, whether or not the create was
-// answered or the container ran; its names are returned in stateUnknown.
-// Recovery rewrites every record it reads as version 2, so the version 1
-// branch can be deleted once no supported upgrade starts from a release
-// that wrote version 1. Anything else is an error, so recovery never acts
-// on a record it does not fully understand.
+// each name surla-check-<id>-<n> and listed once. Version must equal
+// ownerVersion and each entry has a current containerState. Anything else is
+// an error, so recovery never acts on a record it does not fully understand.
 func decodeCheckOwner(raw []byte, id string) (checkOwner, error) {
 	var rec struct {
 		Version    int             `json:"version"`
@@ -102,22 +90,11 @@ func decodeCheckOwner(raw []byte, id string) (checkOwner, error) {
 		return checkOwner{}, err
 	}
 	owner := checkOwner{Version: ownerVersion, Docker: rec.Docker, Host: rec.Host}
-	switch rec.Version {
-	case 0:
-		var names []string
-		if err := decodeStrictArray(rec.Containers, &names); err != nil {
-			return checkOwner{}, err
-		}
-		owner.Containers = []ownedContainer{}
-		for _, name := range names {
-			owner.Containers = append(owner.Containers, ownedContainer{Name: name, State: stateUnknown})
-		}
-	case ownerVersion:
-		if err := decodeStrictArray(rec.Containers, &owner.Containers); err != nil {
-			return checkOwner{}, err
-		}
-	default:
+	if rec.Version != ownerVersion {
 		return checkOwner{}, fmt.Errorf("owner record version %d is not supported", rec.Version)
+	}
+	if err := decodeStrictArray(rec.Containers, &owner.Containers); err != nil {
+		return checkOwner{}, err
 	}
 	switch {
 	case !filepath.IsAbs(owner.Docker):
@@ -134,8 +111,8 @@ func decodeCheckOwner(raw []byte, id string) (checkOwner, error) {
 			return checkOwner{}, fmt.Errorf("container %q does not belong to operation %s", c.Name, id)
 		case seen[c.Name]:
 			return checkOwner{}, fmt.Errorf("container %q is listed twice", c.Name)
-		case c.State != stateCreationPending && c.State != stateCreationAnswered && c.State != stateUnknown:
-			return checkOwner{}, fmt.Errorf("container %q has state %q, not %s, %s or %s", c.Name, c.State, stateCreationPending, stateCreationAnswered, stateUnknown)
+		case c.State != stateCreationPending && c.State != stateCreationAnswered:
+			return checkOwner{}, fmt.Errorf("container %q has state %q, not %s or %s", c.Name, c.State, stateCreationPending, stateCreationAnswered)
 		}
 		seen[c.Name] = true
 	}
@@ -154,7 +131,7 @@ func decodeStrictArray(raw json.RawMessage, v any) error {
 }
 
 // writeOwnerRecord atomically replaces dir/owner.json with owner as a
-// version 2 record. Only the check helper of the operation, or recovery
+// current record. Only the check helper of the operation, or recovery
 // once that helper has exited, calls it.
 func writeOwnerRecord(dir string, owner checkOwner) error {
 	owner.Version = ownerVersion
@@ -178,9 +155,8 @@ func writeOwnerRecord(dir string, owner checkOwner) error {
 //
 // A container in stateCreationAnswered is removed, then listed: it may be
 // cleared once it is not listed. For stateCreationPending absence proves
-// nothing, because a create that was never answered may still complete, and
-// stateUnknown is treated the same way, because a version 1 name may come
-// from a create still in flight: such an entry may be cleared only when a
+// nothing, because a create that was never answered may still complete:
+// such an entry may be cleared only when a
 // listing first shows the container, it is then removed, and a later
 // listing no longer shows it; until a listing shows it, nothing is removed.
 // This relies on the listing including containers in every state. It

@@ -271,7 +271,7 @@ export function ArchitecturePreviewView({
           preview_architecture after editing design/*.go).
         </p>
         <p id="surla-cp2-scope-note">
-          Apart from the proposed swarm, this preview shows what the design declares. It does not
+          This preview shows what the design declares. It does not
           compare the design with the Change Card&apos;s requirements.
         </p>
         {differentRevision ? (
@@ -390,52 +390,7 @@ export function ArchitecturePreviewView({
           </div>
         </div>
       </Card>
-      <Card className="surla-card">
-        <h3>{"Proposed Chorus Swarm (" + preview.swarm.status + ")"}</h3>
-        <p>{preview.swarm.summary}</p>
-        {preview.swarm.status !== "configured" ? null : (
-          <p>
-            <Badge>{"cross_family_review=" + preview.swarm.cross_family_review}</Badge>
-            <Badge>
-              {!preview.swarm.assignments.some((r) => r.role === "eval_author")
-                ? "cross_family_eval=false (eval-author not assigned)"
-                : "cross_family_eval=" + preview.swarm.cross_family_eval}
-            </Badge>
-            <Badge>{"single_family=" + preview.swarm.single_family}</Badge>
-          </p>
-        )}
-        {preview.swarm.assignments.length > 0 ? (
-          <ul className="surla-compact-list">
-            {preview.swarm.assignments.map((r) => (
-              <li key={r.handle}>
-                <code>{"@" + r.handle}</code>
-                {" [" +
-                  r.role +
-                  " / " +
-                  r.scope_name +
-                  "] -> " +
-                  r.provider +
-                  ":" +
-                  r.model +
-                  " (" +
-                  r.family +
-                  "), access=" +
-                  r.access_mode +
-                  ", paths=" +
-                  r.owned_paths.join(", ")}
-              </li>
-            ))}
-          </ul>
-        ) : null}
-        {preview.swarm.manifest ? (
-          <details className="surla-details" id="surla-cp2-swarm-manifest">
-            <summary>Chorus collaboration manifest</summary>
-            <pre tabIndex={0}>
-              <code>{preview.swarm.manifest}</code>
-            </pre>
-          </details>
-        ) : null}
-      </Card>
+
     </>
   );
 }

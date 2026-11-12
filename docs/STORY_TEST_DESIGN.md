@@ -320,8 +320,7 @@ API, separate from the builder's tool credentials. A builder cannot register
 its own author host or change the managed author's model connection. The
 host-control transport authenticates the machine connection and binds the
 worker session in code; a supplied principal string is not authentication.
-Neither an `authenticated` boolean in a profile nor an
-ordinary subagent on the builder's shared MCP connection satisfies this
+An ordinary subagent on the builder's shared MCP connection does not satisfy this
 contract. The first connector must be implemented against a host that can
 enforce it; compatibility with arbitrary existing agent CLIs is not promised.
 
@@ -339,8 +338,7 @@ The current `configure_model` operation controls environments for future live
 targets only. It is not an existing factory-agent launcher. The managed agent
 runtime, model-gateway binding, attached-worker transport and machine
 authentication, scoped file tools, and capability connection operation are
-new implementation work. No currently shipped plugin configuration is
-claimed to supply them. The guide can continue Story and architecture work
+new implementation work. The guide can continue Story and architecture work
 before this capability is connected; it asks for the missing host/model
 connection only when execution needs it.
 

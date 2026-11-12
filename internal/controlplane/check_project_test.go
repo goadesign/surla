@@ -253,7 +253,7 @@ func TestOpenLiveUsesTheSourceRootsAcceptedAtStartup(t *testing.T) {
 			assert.Equal(t, repo, op.grantRoot)
 			assert.Equal(t, tc.wantRel, op.workspaceRel)
 			dst := realTempDir(t)
-			_, err = copyGrant(context.Background(), op.grantFD, op.workspaceRel, op.workspaceID, dst, nil)
+			_, err = copyGrant(context.Background(), op.grantFD, op.workspaceRel, op.workspaceID, dst)
 			require.NoError(t, err)
 			assert.NotContains(t, copiedFiles(t, dst), "operator-private/key.txt")
 			assert.Contains(t, copiedFiles(t, dst), "app/go.mod")
@@ -316,7 +316,7 @@ func TestCheckBindingAcceptsOtherSpellingsThroughTheStartupPipeline(t *testing.T
 			defer func() { require.NoError(t, op.closeLive()) }()
 			assert.Equal(t, "app", op.workspaceRel)
 			dst := realTempDir(t)
-			got, err := copyGrant(context.Background(), op.grantFD, op.workspaceRel, op.workspaceID, dst, nil)
+			got, err := copyGrant(context.Background(), op.grantFD, op.workspaceRel, op.workspaceID, dst)
 			require.NoError(t, err)
 			assert.Equal(t, []string{"."}, got.modules)
 			assert.Contains(t, copiedFiles(t, dst), "app/go.mod")
@@ -579,22 +579,18 @@ func TestRecoverCheckOperationsKeepsScratchItCannotAttribute(t *testing.T) {
 		wantError string
 	}{
 		{name: "null", owner: `null`, wantKept: true, wantError: "not a JSON object"},
-		{name: "unknown field", owner: `{"docker":"/usr/local/bin/docker","host":"unix:///var/run/docker.sock","containers":[],"extra":1}`, wantKept: true, wantError: "unknown field"},
-		{name: "trailing data", owner: `{"docker":"/usr/local/bin/docker","host":"unix:///var/run/docker.sock","containers":[]} {}`, wantKept: true, wantError: "trailing data"},
-		{name: "missing containers", owner: `{"docker":"/usr/local/bin/docker","host":"unix:///var/run/docker.sock"}`, wantKept: true, wantError: "containers is required"},
-		{name: "relative docker", owner: `{"docker":"docker","host":"unix:///var/run/docker.sock","containers":[]}`, wantKept: true, wantError: "not an absolute path"},
-		{name: "remote engine", owner: `{"docker":"/usr/local/bin/docker","host":"tcp://build.example:2376","containers":[]}`, wantKept: true, wantError: "not a local engine endpoint"},
-		{name: "foreign container", owner: `{"docker":"/usr/local/bin/docker","host":"unix:///var/run/docker.sock","containers":["production-db"]}`, wantKept: true, wantError: "does not belong to operation"},
-		{name: "completed operation with no containers left", owner: `{"docker":"/usr/local/bin/docker","host":"unix:///var/run/docker.sock","containers":[]}`},
-		{name: "completed version 2 operation", owner: `{"version":2,"docker":"/usr/local/bin/docker","host":"unix:///var/run/docker.sock","containers":[]}`},
-		{name: "version 2 without containers", owner: `{"version":2,"docker":"/usr/local/bin/docker","host":"unix:///var/run/docker.sock"}`, wantKept: true, wantError: "containers is required"},
-		{name: "version 2 with names only", owner: `{"version":2,"docker":"/usr/local/bin/docker","host":"unix:///var/run/docker.sock","containers":["surla-check-efefefefefefefefefefefefefefefef-0"]}`, wantKept: true, wantError: "cannot unmarshal"},
-		{name: "version 2 with an unknown state", owner: `{"version":2,"docker":"/usr/local/bin/docker","host":"unix:///var/run/docker.sock","containers":[{"name":"surla-check-efefefefefefefefefefefefefefefef-0","state":"running"}]}`, wantKept: true, wantError: `state "running"`},
-		{name: "version 2 with an unknown entry field", owner: `{"version":2,"docker":"/usr/local/bin/docker","host":"unix:///var/run/docker.sock","containers":[{"name":"surla-check-efefefefefefefefefefefefefefefef-0","state":"unknown","pid":7}]}`, wantKept: true, wantError: "unknown field"},
-		{name: "version 2 with a name listed twice", owner: `{"version":2,"docker":"/usr/local/bin/docker","host":"unix:///var/run/docker.sock","containers":[{"name":"surla-check-efefefefefefefefefefefefefefefef-0","state":"unknown"},{"name":"surla-check-efefefefefefefefefefefefefefefef-0","state":"creation_answered"}]}`, wantKept: true, wantError: "listed twice"},
-		{name: "version 1 with entries", owner: `{"docker":"/usr/local/bin/docker","host":"unix:///var/run/docker.sock","containers":[{"name":"surla-check-efefefefefefefefefefefefefefefef-0","state":"unknown"}]}`, wantKept: true, wantError: "cannot unmarshal"},
+		{name: "unknown field", owner: `{"version":2,"docker":"/usr/local/bin/docker","host":"unix:///var/run/docker.sock","containers":[],"extra":1}`, wantKept: true, wantError: "unknown field"},
+		{name: "trailing data", owner: `{"version":2,"docker":"/usr/local/bin/docker","host":"unix:///var/run/docker.sock","containers":[]} {}`, wantKept: true, wantError: "trailing data"},
+		{name: "missing containers", owner: `{"version":2,"docker":"/usr/local/bin/docker","host":"unix:///var/run/docker.sock"}`, wantKept: true, wantError: "containers is required"},
+		{name: "relative docker", owner: `{"version":2,"docker":"docker","host":"unix:///var/run/docker.sock","containers":[]}`, wantKept: true, wantError: "not an absolute path"},
+		{name: "remote engine", owner: `{"version":2,"docker":"/usr/local/bin/docker","host":"tcp://build.example:2376","containers":[]}`, wantKept: true, wantError: "not a local engine endpoint"},
+		{name: "foreign container", owner: `{"version":2,"docker":"/usr/local/bin/docker","host":"unix:///var/run/docker.sock","containers":[{"name":"production-db","state":"creation_answered"}]}`, wantKept: true, wantError: "does not belong to operation"},
+		{name: "completed operation", owner: `{"version":2,"docker":"/usr/local/bin/docker","host":"unix:///var/run/docker.sock","containers":[]}`},
+		{name: "names only", owner: `{"version":2,"docker":"/usr/local/bin/docker","host":"unix:///var/run/docker.sock","containers":["surla-check-efefefefefefefefefefefefefefefef-0"]}`, wantKept: true, wantError: "cannot unmarshal"},
+		{name: "an unknown state", owner: `{"version":2,"docker":"/usr/local/bin/docker","host":"unix:///var/run/docker.sock","containers":[{"name":"surla-check-efefefefefefefefefefefefefefefef-0","state":"running"}]}`, wantKept: true, wantError: `state "running"`},
+		{name: "an unknown entry field", owner: `{"version":2,"docker":"/usr/local/bin/docker","host":"unix:///var/run/docker.sock","containers":[{"name":"surla-check-efefefefefefefefefefefefefefefef-0","state":"creation_answered","pid":7}]}`, wantKept: true, wantError: "unknown field"},
+		{name: "a name listed twice", owner: `{"version":2,"docker":"/usr/local/bin/docker","host":"unix:///var/run/docker.sock","containers":[{"name":"surla-check-efefefefefefefefefefefefefefefef-0","state":"creation_answered"},{"name":"surla-check-efefefefefefefefefefefefefefefef-0","state":"creation_answered"}]}`, wantKept: true, wantError: "listed twice"},
 		{name: "unknown version", owner: `{"version":3,"docker":"/usr/local/bin/docker","host":"unix:///var/run/docker.sock","containers":[]}`, wantKept: true, wantError: "version 3 is not supported"},
-		{name: "foreign version 2 container", owner: `{"version":2,"docker":"/usr/local/bin/docker","host":"unix:///var/run/docker.sock","containers":[{"name":"production-db","state":"unknown"}]}`, wantKept: true, wantError: "does not belong to operation"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

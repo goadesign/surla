@@ -3030,7 +3030,7 @@ paths:
             tags:
                 - surla
             summary: preview_architecture surla
-            description: Extract and validate the Checkpoint 2 C4 container topology, tool contracts, Goa-AI guardrails, and proposed Chorus swarm roster from a candidate Goa design bound to a confirmed Change Card. When design is omitted and a workspace is bound, Surla reads the candidate module snapshot from the bound workspace. Apart from the swarm roster, the result reports what the design declares; it does not compare the design with the Change Card's requirements.
+            description: Extract and validate the Checkpoint 2 C4 container topology, tool contracts, and Goa-AI guardrails from a candidate Goa design bound to a confirmed Change Card. Surla reads the candidate module snapshot from the bound workspace. The result reports what the design declares; it does not compare the design with the Change Card's requirements.
             operationId: surla#preview_architecture
             requestBody:
                 description: Request body for preview_architecture.
@@ -3040,49 +3040,7 @@ paths:
                         schema:
                             $ref: '#/components/schemas/PreviewArchitecturePayload'
                         example:
-                            architect_paths:
-                                - Voluptas velit quia rerum.
-                                - Odit aut perspiciatis aut aut.
-                                - Quasi delectus incidunt ipsum.
-                                - Non sequi qui nisi pariatur a.
-                            builders:
-                                - name: Libero cupiditate occaecati natus sed.
-                                  paths:
-                                    - At recusandae.
-                                    - Ea ipsa sed ullam et quas.
-                                    - Quia perferendis rerum.
-                                    - Praesentium quia beatae dolorem vel.
-                                  preferred_profile_id: Unde ut in.
-                                - name: Libero cupiditate occaecati natus sed.
-                                  paths:
-                                    - At recusandae.
-                                    - Ea ipsa sed ullam et quas.
-                                    - Quia perferendis rerum.
-                                    - Praesentium quia beatae dolorem vel.
-                                  preferred_profile_id: Unde ut in.
-                                - name: Libero cupiditate occaecati natus sed.
-                                  paths:
-                                    - At recusandae.
-                                    - Ea ipsa sed ullam et quas.
-                                    - Quia perferendis rerum.
-                                    - Praesentium quia beatae dolorem vel.
-                                  preferred_profile_id: Unde ut in.
-                                - name: Libero cupiditate occaecati natus sed.
-                                  paths:
-                                    - At recusandae.
-                                    - Ea ipsa sed ullam et quas.
-                                    - Quia perferendis rerum.
-                                    - Praesentium quia beatae dolorem vel.
-                                  preferred_profile_id: Unde ut in.
                             change_id: Vel libero.
-                            design:
-                                files:
-                                    Doloribus repellat aut eveniet nesciunt natus labore.: Dolores magni.
-                                    Quaerat vitae quas rerum.: Vel in molestias et quaerat.
-                            eval_paths:
-                                - Minima veritatis sint eius qui.
-                                - Nemo quas.
-                                - Fuga doloribus illum.
                             request_revision: Quisquam mollitia.
             responses:
                 "200":
@@ -3129,57 +3087,6 @@ paths:
                                       protocol: Cumque laboriosam fugit commodi voluptates.
                                       to_id: Totam labore pariatur magnam voluptates eum.
                                 request_revision: Voluptatem assumenda.
-                                swarm:
-                                    assignments:
-                                        - access_mode: read_only_after_cp2
-                                          family: Et aut accusantium alias.
-                                          handle: Quos et quo autem odio ratione.
-                                          model: Velit impedit dolores quod saepe.
-                                          owned_paths:
-                                            - Et harum fugiat.
-                                            - Fuga sit ut.
-                                            - Voluptatem temporibus provident.
-                                            - Delectus minus.
-                                          profile_id: Vitae sed autem sit.
-                                          provider: Laboriosam veniam aut.
-                                          role: builder
-                                          scope_name: Sit expedita voluptatem rerum perferendis dolores.
-                                        - access_mode: read_only_after_cp2
-                                          family: Et aut accusantium alias.
-                                          handle: Quos et quo autem odio ratione.
-                                          model: Velit impedit dolores quod saepe.
-                                          owned_paths:
-                                            - Et harum fugiat.
-                                            - Fuga sit ut.
-                                            - Voluptatem temporibus provident.
-                                            - Delectus minus.
-                                          profile_id: Vitae sed autem sit.
-                                          provider: Laboriosam veniam aut.
-                                          role: builder
-                                          scope_name: Sit expedita voluptatem rerum perferendis dolores.
-                                        - access_mode: read_only_after_cp2
-                                          family: Et aut accusantium alias.
-                                          handle: Quos et quo autem odio ratione.
-                                          model: Velit impedit dolores quod saepe.
-                                          owned_paths:
-                                            - Et harum fugiat.
-                                            - Fuga sit ut.
-                                            - Voluptatem temporibus provident.
-                                            - Delectus minus.
-                                          profile_id: Vitae sed autem sit.
-                                          provider: Laboriosam veniam aut.
-                                          role: builder
-                                          scope_name: Sit expedita voluptatem rerum perferendis dolores.
-                                    cross_family_eval: true
-                                    cross_family_review: false
-                                    manifest: Voluptatum rerum.
-                                    missing_roles:
-                                        - Quas a quia non accusantium ipsam facere.
-                                        - Est rerum beatae quasi occaecati earum.
-                                        - Qui dolores nam quis non ex.
-                                    single_family: true
-                                    status: configured
-                                    summary: Repellat neque ut facilis.
                                 system_name: Itaque et rerum ut ea consequatur.
                                 tools:
                                     - args_schema: Repudiandae illo autem.
@@ -3352,7 +3259,6 @@ paths:
                                 summary: "\U000FB38A"
                                 ui_composition: In optio et.
                             change_id: Ipsum soluta officiis facilis dolorem quae.
-                            design_source: Quia placeat maiores voluptatem voluptatem.
                             prompt: Enim distinctio et sunt sunt et.
                             story_refresh_op_id: In eaque eveniet facere.
             responses:
@@ -4010,7 +3916,7 @@ paths:
             tags:
                 - surla
             summary: revise_change surla
-            description: 'Save the next revision of an existing Checkpoint 1 Change Card from a revised feature request and the caller''s analysis of it, bound to the card''s current request_revision. The analysis accounts for every current example exactly once, keeping or editing it through prior_id or dropping it through removed_example_ids. Surla keeps the IDs of kept examples, gives new examples the lowest check_NN ID neither card uses, adopts the evaluated Stories and design/*.go from the single workspace snapshot verified against story_refresh_op_id when story_refresh_op_id is given (or keeps the saved Stories and saved design_source together when story_refresh_op_id is omitted on a card with Stories, or records design/*.go from the bound workspace again when omitted on a workspace-backed card without Stories), and saves the new revision in needs_confirmation status for operator review. The new revision''s answers, confirmed_by and any approval are cleared: earlier decisions remain only where the analysis restates them in its summary, examples or preserved behaviors. Surla runs no model for this step and cannot judge whether the analysis is complete or correct.'
+            description: 'Save the next revision of an existing Checkpoint 1 Change Card from a revised feature request and the caller''s analysis of it, bound to the card''s current request_revision. The analysis accounts for every current example exactly once, keeping or editing it through prior_id or dropping it through removed_example_ids. Surla keeps the IDs of kept examples, gives new examples the lowest check_NN ID neither card uses, adopts the evaluated Stories and design/*.go from the single workspace snapshot verified against story_refresh_op_id when story_refresh_op_id is given (or keeps the saved Stories and their design source together when story_refresh_op_id is omitted on a card with Stories, or records design/*.go from the bound workspace again when omitted on a card without Stories), and saves the new revision in needs_confirmation status for operator review. The new revision''s answers, confirmed_by and any approval are cleared: earlier decisions remain only where the analysis restates them in its summary, examples or preserved behaviors. Surla runs no model for this step and cannot judge whether the analysis is complete or correct.'
             operationId: surla#revise_change
             requestBody:
                 description: Request body for revise_change.
@@ -4059,7 +3965,6 @@ paths:
                                 summary: "\U000AA915"
                                 ui_composition: Sed tempora quos nobis odio ab.
                             change_id: Optio ratione suscipit et neque officia.
-                            design_source: Qui itaque.
                             prompt: Omnis est.
                             request_revision: Neque dolore optio.
                             story_refresh_op_id: Assumenda tenetur minus et magnam consequatur.
@@ -7584,8 +7489,6 @@ components:
                     type: string
                     description: Bound CP1 request_revision digest.
                     example: Voluptatem assumenda.
-                swarm:
-                    $ref: '#/components/schemas/SwarmPlanItem'
                 system_name:
                     type: string
                     description: API or primary service name declared in the design.
@@ -7665,7 +7568,7 @@ components:
                           return_schema: Nulla sit velit dolorem veritatis saepe eum.
                           text_only_args_schema: Facere voluptas rerum consectetur.
                           toolset: Beatae repudiandae.
-            description: Checkpoint 2 C4 container topology, tool contracts, per-agent Goa-AI guardrails, and proposed Chorus swarm roster derived from the evaluated candidate design.
+            description: Checkpoint 2 C4 container topology, tool contracts, per-agent Goa-AI guardrails, derived from the evaluated candidate design.
             example:
                 agent_policies:
                     - agent_id: Hic dolores temporibus at tempora recusandae.
@@ -7704,57 +7607,6 @@ components:
                       protocol: Cumque laboriosam fugit commodi voluptates.
                       to_id: Totam labore pariatur magnam voluptates eum.
                 request_revision: Voluptatem assumenda.
-                swarm:
-                    assignments:
-                        - access_mode: read_only_after_cp2
-                          family: Et aut accusantium alias.
-                          handle: Quos et quo autem odio ratione.
-                          model: Velit impedit dolores quod saepe.
-                          owned_paths:
-                            - Et harum fugiat.
-                            - Fuga sit ut.
-                            - Voluptatem temporibus provident.
-                            - Delectus minus.
-                          profile_id: Vitae sed autem sit.
-                          provider: Laboriosam veniam aut.
-                          role: builder
-                          scope_name: Sit expedita voluptatem rerum perferendis dolores.
-                        - access_mode: read_only_after_cp2
-                          family: Et aut accusantium alias.
-                          handle: Quos et quo autem odio ratione.
-                          model: Velit impedit dolores quod saepe.
-                          owned_paths:
-                            - Et harum fugiat.
-                            - Fuga sit ut.
-                            - Voluptatem temporibus provident.
-                            - Delectus minus.
-                          profile_id: Vitae sed autem sit.
-                          provider: Laboriosam veniam aut.
-                          role: builder
-                          scope_name: Sit expedita voluptatem rerum perferendis dolores.
-                        - access_mode: read_only_after_cp2
-                          family: Et aut accusantium alias.
-                          handle: Quos et quo autem odio ratione.
-                          model: Velit impedit dolores quod saepe.
-                          owned_paths:
-                            - Et harum fugiat.
-                            - Fuga sit ut.
-                            - Voluptatem temporibus provident.
-                            - Delectus minus.
-                          profile_id: Vitae sed autem sit.
-                          provider: Laboriosam veniam aut.
-                          role: builder
-                          scope_name: Sit expedita voluptatem rerum perferendis dolores.
-                    cross_family_eval: true
-                    cross_family_review: false
-                    manifest: Voluptatum rerum.
-                    missing_roles:
-                        - Quas a quia non accusantium ipsam facere.
-                        - Est rerum beatae quasi occaecati earum.
-                        - Qui dolores nam quis non ex.
-                    single_family: true
-                    status: configured
-                    summary: Repellat neque ut facilis.
                 system_name: Itaque et rerum ut ea consequatur.
                 tools:
                     - args_schema: Repudiandae illo autem.
@@ -7835,42 +7687,7 @@ components:
                 - edges
                 - agent_policies
                 - tools
-                - swarm
                 - banner
-        BuilderScopeItem:
-            type: object
-            properties:
-                name:
-                    type: string
-                    description: Human-readable builder scope name (for example, orders or api).
-                    example: Libero cupiditate occaecati natus sed.
-                paths:
-                    type: array
-                    items:
-                        type: string
-                        example: At recusandae.
-                    description: Repository-relative path globs owned by this builder.
-                    example:
-                        - At recusandae.
-                        - Ea ipsa sed ullam et quas.
-                        - Quia perferendis rerum.
-                        - Praesentium quia beatae dolorem vel.
-                preferred_profile_id:
-                    type: string
-                    description: Optional preference selecting a server-configured authenticated profile ID.
-                    example: Unde ut in.
-            description: Explicit repository path ownership slice for a builder agent role.
-            example:
-                name: Libero cupiditate occaecati natus sed.
-                paths:
-                    - At recusandae.
-                    - Ea ipsa sed ullam et quas.
-                    - Quia perferendis rerum.
-                    - Praesentium quia beatae dolorem vel.
-                preferred_profile_id: Unde ut in.
-            required:
-                - name
-                - paths
         BuilderVerificationReport:
             type: object
             properties:
@@ -10223,116 +10040,17 @@ components:
         PreviewArchitecturePayload:
             type: object
             properties:
-                architect_paths:
-                    type: array
-                    items:
-                        type: string
-                        example: Voluptas velit quia rerum.
-                    description: Optional repository-relative path globs for an @architect role in the proposed Chorus roster (requires builders).
-                    example:
-                        - Voluptas velit quia rerum.
-                        - Odit aut perspiciatis aut aut.
-                        - Quasi delectus incidunt ipsum.
-                        - Non sequi qui nisi pariatur a.
-                builders:
-                    type: array
-                    items:
-                        $ref: '#/components/schemas/BuilderScopeItem'
-                    description: Optional explicit builder path scopes for proposing a Chorus build roster. When omitted, preview_architecture returns a solo preview with swarm.status unconfigured and no missing_roles.
-                    example:
-                        - name: Libero cupiditate occaecati natus sed.
-                          paths:
-                            - At recusandae.
-                            - Ea ipsa sed ullam et quas.
-                            - Quia perferendis rerum.
-                            - Praesentium quia beatae dolorem vel.
-                          preferred_profile_id: Unde ut in.
-                        - name: Libero cupiditate occaecati natus sed.
-                          paths:
-                            - At recusandae.
-                            - Ea ipsa sed ullam et quas.
-                            - Quia perferendis rerum.
-                            - Praesentium quia beatae dolorem vel.
-                          preferred_profile_id: Unde ut in.
-                        - name: Libero cupiditate occaecati natus sed.
-                          paths:
-                            - At recusandae.
-                            - Ea ipsa sed ullam et quas.
-                            - Quia perferendis rerum.
-                            - Praesentium quia beatae dolorem vel.
-                          preferred_profile_id: Unde ut in.
-                        - name: Libero cupiditate occaecati natus sed.
-                          paths:
-                            - At recusandae.
-                            - Ea ipsa sed ullam et quas.
-                            - Quia perferendis rerum.
-                            - Praesentium quia beatae dolorem vel.
-                          preferred_profile_id: Unde ut in.
                 change_id:
                     type: string
                     description: Confirmed Change Card identifier.
                     example: Vel libero.
-                design:
-                    $ref: '#/components/schemas/DesignSnapshot'
-                eval_paths:
-                    type: array
-                    items:
-                        type: string
-                        example: Minima veritatis sint eius qui.
-                    description: Optional repository or evaluator-workspace relative path globs for an @eval-author role in the proposed Chorus roster (requires builders).
-                    example:
-                        - Minima veritatis sint eius qui.
-                        - Nemo quas.
-                        - Fuga doloribus illum.
                 request_revision:
                     type: string
                     description: Expected CP1 request_revision digest.
                     example: Quisquam mollitia.
             description: Request body for preview_architecture.
             example:
-                architect_paths:
-                    - Voluptas velit quia rerum.
-                    - Odit aut perspiciatis aut aut.
-                    - Quasi delectus incidunt ipsum.
-                    - Non sequi qui nisi pariatur a.
-                builders:
-                    - name: Libero cupiditate occaecati natus sed.
-                      paths:
-                        - At recusandae.
-                        - Ea ipsa sed ullam et quas.
-                        - Quia perferendis rerum.
-                        - Praesentium quia beatae dolorem vel.
-                      preferred_profile_id: Unde ut in.
-                    - name: Libero cupiditate occaecati natus sed.
-                      paths:
-                        - At recusandae.
-                        - Ea ipsa sed ullam et quas.
-                        - Quia perferendis rerum.
-                        - Praesentium quia beatae dolorem vel.
-                      preferred_profile_id: Unde ut in.
-                    - name: Libero cupiditate occaecati natus sed.
-                      paths:
-                        - At recusandae.
-                        - Ea ipsa sed ullam et quas.
-                        - Quia perferendis rerum.
-                        - Praesentium quia beatae dolorem vel.
-                      preferred_profile_id: Unde ut in.
-                    - name: Libero cupiditate occaecati natus sed.
-                      paths:
-                        - At recusandae.
-                        - Ea ipsa sed ullam et quas.
-                        - Quia perferendis rerum.
-                        - Praesentium quia beatae dolorem vel.
-                      preferred_profile_id: Unde ut in.
                 change_id: Vel libero.
-                design:
-                    files:
-                        Doloribus repellat aut eveniet nesciunt natus labore.: Dolores magni.
-                        Quaerat vitae quas rerum.: Vel in molestias et quaerat.
-                eval_paths:
-                    - Minima veritatis sint eius qui.
-                    - Nemo quas.
-                    - Fuga doloribus illum.
                 request_revision: Quisquam mollitia.
             required:
                 - change_id
@@ -10346,17 +10064,13 @@ components:
                     type: string
                     description: Unique change identifier.
                     example: Ipsum soluta officiis facilis dolorem quae.
-                design_source:
-                    type: string
-                    description: Goa design source the analysis was made against (the target's design/*.go files). Surla saves it with the card and includes it in request_revision; it does not interpret it. When omitted on a server with a bound workspace, Surla records design/*.go from the bound workspace; when omitted without a bound workspace, the card records no design. Cannot be combined with story_refresh_op_id.
-                    example: Quia placeat maiores voluptatem voluptatem.
                 prompt:
                     type: string
                     description: Operator feature request.
                     example: Enim distinctio et sunt sunt et.
                 story_refresh_op_id:
                     type: string
-                    description: Optional op_id of a succeeded refresh_story operation for the bound workspace whose evaluated Stories this card adopts. When set, design_source must be omitted; Surla reads one workspace snapshot, requires its snapshot_digest to match the operation's, and records both the evaluated Stories and that snapshot's design/*.go on the card. Omit when the card has no Story.
+                    description: Optional op_id of a succeeded refresh_story operation for the bound workspace whose evaluated Stories this card adopts. When set, Surla reads one workspace snapshot, requires its snapshot_digest to match the operation's, and records both the evaluated Stories and that snapshot's design/*.go on the card. Omit when the card has no Story.
                     example: In eaque eveniet facere.
             description: Request body for propose_change.
             example:
@@ -10394,7 +10108,6 @@ components:
                     summary: "\U000FB38A"
                     ui_composition: In optio et.
                 change_id: Ipsum soluta officiis facilis dolorem quae.
-                design_source: Quia placeat maiores voluptatem voluptatem.
                 prompt: Enim distinctio et sunt sunt et.
                 story_refresh_op_id: In eaque eveniet facere.
             required:
@@ -10427,10 +10140,6 @@ components:
                     type: string
                     description: Change identifier.
                     example: Optio ratione suscipit et neque officia.
-                design_source:
-                    type: string
-                    description: Updated Goa design source the analysis was made against (the target's design/*.go files). Surla saves it with the card and includes it in request_revision; it does not interpret it. When omitted on a workspace-backed card without Stories and with a bound workspace, Surla records design/*.go from the bound workspace again; otherwise the card's saved design source is kept. Cannot be set when story_refresh_op_id is set or when the card already has adopted Stories.
-                    example: Qui itaque.
                 prompt:
                     type: string
                     description: Revised operator feature request.
@@ -10441,7 +10150,7 @@ components:
                     example: Neque dolore optio.
                 story_refresh_op_id:
                     type: string
-                    description: Optional op_id of a succeeded refresh_story operation for the bound workspace whose evaluated Stories this revision adopts. When set, design_source must be omitted and the card must not use a caller-supplied design_source; Surla reads one workspace snapshot, requires its snapshot_digest to match the operation's, and records both the evaluated Stories and that snapshot's design/*.go on the revised card. When omitted on a card that already has Stories, the card's saved Stories and saved design_source are kept together.
+                    description: Optional op_id of a succeeded refresh_story operation for the bound workspace whose evaluated Stories this revision adopts. When set, Surla reads one workspace snapshot, requires its snapshot_digest to match the operation's, and records both the evaluated Stories and that snapshot's design/*.go on the revised card. When omitted on a card that already has Stories, the card's saved Stories and their design source are kept together.
                     example: Assumenda tenetur minus et magnam consequatur.
             description: Request body for revise_change.
             example:
@@ -10484,7 +10193,6 @@ components:
                     summary: "\U000AA915"
                     ui_composition: Sed tempora quos nobis odio ab.
                 change_id: Optio ratione suscipit et neque officia.
-                design_source: Qui itaque.
                 prompt: Omnis est.
                 request_revision: Neque dolore optio.
                 story_refresh_op_id: Assumenda tenetur minus et magnam consequatur.
@@ -12666,232 +12374,6 @@ components:
                 - name
                 - actors
                 - flows
-        SwarmPlanItem:
-            type: object
-            properties:
-                assignments:
-                    type: array
-                    items:
-                        $ref: '#/components/schemas/SwarmRoleItem'
-                    description: Deterministic role assignments when status is configured.
-                    example:
-                        - access_mode: read_only_after_cp2
-                          family: Et aut accusantium alias.
-                          handle: Quos et quo autem odio ratione.
-                          model: Velit impedit dolores quod saepe.
-                          owned_paths:
-                            - Et harum fugiat.
-                            - Fuga sit ut.
-                            - Voluptatem temporibus provident.
-                            - Delectus minus.
-                          profile_id: Vitae sed autem sit.
-                          provider: Laboriosam veniam aut.
-                          role: builder
-                          scope_name: Sit expedita voluptatem rerum perferendis dolores.
-                        - access_mode: read_only_after_cp2
-                          family: Et aut accusantium alias.
-                          handle: Quos et quo autem odio ratione.
-                          model: Velit impedit dolores quod saepe.
-                          owned_paths:
-                            - Et harum fugiat.
-                            - Fuga sit ut.
-                            - Voluptatem temporibus provident.
-                            - Delectus minus.
-                          profile_id: Vitae sed autem sit.
-                          provider: Laboriosam veniam aut.
-                          role: builder
-                          scope_name: Sit expedita voluptatem rerum perferendis dolores.
-                        - access_mode: read_only_after_cp2
-                          family: Et aut accusantium alias.
-                          handle: Quos et quo autem odio ratione.
-                          model: Velit impedit dolores quod saepe.
-                          owned_paths:
-                            - Et harum fugiat.
-                            - Fuga sit ut.
-                            - Voluptatem temporibus provident.
-                            - Delectus minus.
-                          profile_id: Vitae sed autem sit.
-                          provider: Laboriosam veniam aut.
-                          role: builder
-                          scope_name: Sit expedita voluptatem rerum perferendis dolores.
-                cross_family_eval:
-                    type: boolean
-                    description: True if and only if status is configured, an eval_author role is assigned, and the eval_author model family is disjoint from every assigned builder model family.
-                    example: true
-                cross_family_review:
-                    type: boolean
-                    description: True if and only if status is configured and the reviewer model family is disjoint from every assigned builder model family.
-                    example: false
-                manifest:
-                    type: string
-                    description: Formatted Chorus collaboration manifest text when status is configured; does not claim publication until sent via Chorus.
-                    example: Voluptatum rerum.
-                missing_roles:
-                    type: array
-                    items:
-                        type: string
-                        example: Quas a quia non accusantium ipsam facere.
-                    description: Requested roles lacking an authenticated capable profile when status is unconfigured (with builder scopes supplied) or missing_capability; omitted on solo previews with no builder scopes.
-                    example:
-                        - Quas a quia non accusantium ipsam facere.
-                        - Est rerum beatae quasi occaecati earum.
-                        - Qui dolores nam quis non ex.
-                single_family:
-                    type: boolean
-                    description: True when status is configured and all assigned roles share one model family.
-                    example: true
-                status:
-                    type: string
-                    description: Roster configuration status.
-                    example: configured
-                    enum:
-                        - configured
-                        - unconfigured
-                        - missing_capability
-                summary:
-                    type: string
-                    description: Plain-English summary of the proposed swarm roster and model-family posture.
-                    example: Repellat neque ut facilis.
-            description: Proposed Chorus role assignments and model-family diversity facts surfaced at Checkpoint 2. Role, model, and workspace scope assignments are Chorus coordination proposals and do not prove agent launch or replace OS process and workspace isolation.
-            example:
-                assignments:
-                    - access_mode: read_only_after_cp2
-                      family: Et aut accusantium alias.
-                      handle: Quos et quo autem odio ratione.
-                      model: Velit impedit dolores quod saepe.
-                      owned_paths:
-                        - Et harum fugiat.
-                        - Fuga sit ut.
-                        - Voluptatem temporibus provident.
-                        - Delectus minus.
-                      profile_id: Vitae sed autem sit.
-                      provider: Laboriosam veniam aut.
-                      role: builder
-                      scope_name: Sit expedita voluptatem rerum perferendis dolores.
-                    - access_mode: read_only_after_cp2
-                      family: Et aut accusantium alias.
-                      handle: Quos et quo autem odio ratione.
-                      model: Velit impedit dolores quod saepe.
-                      owned_paths:
-                        - Et harum fugiat.
-                        - Fuga sit ut.
-                        - Voluptatem temporibus provident.
-                        - Delectus minus.
-                      profile_id: Vitae sed autem sit.
-                      provider: Laboriosam veniam aut.
-                      role: builder
-                      scope_name: Sit expedita voluptatem rerum perferendis dolores.
-                    - access_mode: read_only_after_cp2
-                      family: Et aut accusantium alias.
-                      handle: Quos et quo autem odio ratione.
-                      model: Velit impedit dolores quod saepe.
-                      owned_paths:
-                        - Et harum fugiat.
-                        - Fuga sit ut.
-                        - Voluptatem temporibus provident.
-                        - Delectus minus.
-                      profile_id: Vitae sed autem sit.
-                      provider: Laboriosam veniam aut.
-                      role: builder
-                      scope_name: Sit expedita voluptatem rerum perferendis dolores.
-                cross_family_eval: true
-                cross_family_review: false
-                manifest: Voluptatum rerum.
-                missing_roles:
-                    - Quas a quia non accusantium ipsam facere.
-                    - Est rerum beatae quasi occaecati earum.
-                    - Qui dolores nam quis non ex.
-                single_family: true
-                status: configured
-                summary: Repellat neque ut facilis.
-            required:
-                - status
-                - assignments
-                - cross_family_review
-                - cross_family_eval
-                - single_family
-                - summary
-        SwarmRoleItem:
-            type: object
-            properties:
-                access_mode:
-                    type: string
-                    description: Operator-declared workspace coordination boundary for this role.
-                    example: read_only_after_cp2
-                    enum:
-                        - read_only_after_cp2
-                        - read_write_worktree
-                        - isolated_eval_workspace
-                        - read_only_review
-                family:
-                    type: string
-                    description: Canonical model family identifier.
-                    example: Et aut accusantium alias.
-                handle:
-                    type: string
-                    description: Deterministic Chorus agent handle (without leading '@', at most 32 characters).
-                    example: Quos et quo autem odio ratione.
-                model:
-                    type: string
-                    description: Assigned model identifier.
-                    example: Velit impedit dolores quod saepe.
-                owned_paths:
-                    type: array
-                    items:
-                        type: string
-                        example: Et harum fugiat.
-                    description: Repository or workspace path globs owned by this role for Chorus coordination.
-                    example:
-                        - Et harum fugiat.
-                        - Fuga sit ut.
-                        - Voluptatem temporibus provident.
-                        - Delectus minus.
-                profile_id:
-                    type: string
-                    description: Assigned server-configured provider profile ID.
-                    example: Vitae sed autem sit.
-                provider:
-                    type: string
-                    description: Assigned coding-agent provider name.
-                    example: Laboriosam veniam aut.
-                role:
-                    type: string
-                    description: Assigned swarm role kind.
-                    example: builder
-                    enum:
-                        - architect
-                        - builder
-                        - eval_author
-                        - reviewer
-                scope_name:
-                    type: string
-                    description: Human-readable scope label for this assignment.
-                    example: Sit expedita voluptatem rerum perferendis dolores.
-            description: Proposed Chorus agent role assignment derived from server-owned provider profiles and explicit workspace scopes. Owned paths and access modes are operator-declared coordination ownership boundaries for Chorus agents, not Surla-enforced OS isolation.
-            example:
-                access_mode: read_only_after_cp2
-                family: Et aut accusantium alias.
-                handle: Quos et quo autem odio ratione.
-                model: Velit impedit dolores quod saepe.
-                owned_paths:
-                    - Et harum fugiat.
-                    - Fuga sit ut.
-                    - Voluptatem temporibus provident.
-                    - Delectus minus.
-                profile_id: Vitae sed autem sit.
-                provider: Laboriosam veniam aut.
-                role: builder
-                scope_name: Sit expedita voluptatem rerum perferendis dolores.
-            required:
-                - handle
-                - role
-                - scope_name
-                - profile_id
-                - provider
-                - model
-                - family
-                - owned_paths
-                - access_mode
         ToolContractItem:
             type: object
             properties:

@@ -1,6 +1,6 @@
 // Command surla runs the Surla MCP software factory control-plane server
-// and CLI utilities (`surla init`, `surla mcp`, `surla serve`, `surla preview`,
-// `surla preview-change`, `surla diff`, `surla gen`, `surla verify`,
+// and CLI utilities (`surla init`, `surla serve`, `surla preview`,
+// `surla diff`, `surla gen`, `surla verify`,
 // `surla approve` and `surla version`).
 // Run `surla help` for usage.
 package main
@@ -29,7 +29,6 @@ import (
 	"github.com/goadesign/surla/internal/designeval"
 	"github.com/goadesign/surla/internal/diff"
 	"github.com/goadesign/surla/internal/scaffold"
-	"github.com/goadesign/surla/internal/swarm"
 	"github.com/goadesign/surla/internal/verify"
 	"github.com/goadesign/surla/internal/verifyrun"
 	"github.com/goadesign/surla/verify/candidate"
@@ -37,7 +36,7 @@ import (
 )
 
 // serveConfig holds the optional `surla serve` flags that choose the model
-// live targets plan with and the swarm provider profiles. Zero values mean
+// live targets plan with. Zero values mean
 // "not configured".
 type serveConfig struct {
 	// gatewayAddr is the host:port of a Goa-AI model gateway reached over
@@ -51,8 +50,6 @@ type serveConfig struct {
 	// modelName is the provider model identifier used in direct mode, passed
 	// to live targets as SURLA_LIVE_MODEL_NAME.
 	modelName string
-	// swarmProfilesPath is the path of a JSON array of swarm.ProviderProfile.
-	swarmProfilesPath string
 	// projectDir is the bound workspace directory (default: the startup working
 	// directory); when verificationPath is empty and the workspace holds a
 	// committed starter project at startup (or after init_project), CP3/CP4
@@ -74,9 +71,6 @@ type serveConfig struct {
 	// cardsDirExplicit reports whether -cards-dir was explicitly passed on the
 	// CLI.
 	cardsDirExplicit bool
-	// importLegacyWorkspace reports whether -import-legacy-workspace was passed
-	// on the CLI to perform the one-time operator-vouched legacy import.
-	importLegacyWorkspace bool
 	// checkTimeout bounds one whole check_project or update_dependencies
 	// operation (copy, image pull and every container).
 	checkTimeout time.Duration
@@ -118,12 +112,9 @@ Usage:
 Commands:
 
   init            create a starter service with an agent and an evaluator suite
-  mcp             run Surla as an MCP server over standard input and output
   serve           run the Surla server that MCP clients (coding agents) connect to
   preview         print the architecture, agent policies and tool contracts a design
                   module declares; needs no server and no model key
-  preview-change  send a design module to a Surla server to preview its
-                  architecture and optional swarm roster for a Change Card
   diff            compare the designs in two module directories
   gen             regenerate a design module's gen/ inside Surla's sandbox and
                   replace it atomically
@@ -200,14 +191,10 @@ func dispatch(sub string, args []string, stdout io.Writer) error {
 	switch sub {
 	case "init":
 		return runInit(args, stdout)
-	case "mcp":
-		return runMCP(args, os.Stdin, os.Stdout, os.Stderr)
 	case "serve":
 		return runServe(args)
 	case "preview":
 		return runPreview(args, stdout, os.Stderr)
-	case "preview-change":
-		return runPreviewChange(args, stdout, os.Getenv)
 	case "diff":
 		return runDiff(args)
 	case "gen":
@@ -307,18 +294,16 @@ func runServe(args []string) (err error) {
 	}
 }
 
-// bindServeConfigFlags registers the workspace, model, swarm, verification,
-// promotion, and check flags shared by `surla serve` and `surla mcp` on fs.
+// bindServeConfigFlags registers the workspace, model, verification,
+// promotion, and check flags for `surla serve` on fs.
 func bindServeConfigFlags(fs *flag.FlagSet, cfg *serveConfig) {
 	fs.StringVar(&cfg.gatewayAddr, "model-gateway-addr", "", "model gateway host:port that live targets plan with (plaintext gRPC; excludes -model-provider and -model-name)")
 	fs.StringVar(&cfg.provider, "model-provider", "", "model provider that live targets plan with: anthropic or openai (key from ANTHROPIC_API_KEY or OPENAI_API_KEY)")
 	fs.StringVar(&cfg.modelName, "model-name", "", "model name for -model-provider")
-	fs.StringVar(&cfg.swarmProfilesPath, "swarm-profiles", "", "JSON file listing the coding-agent provider profiles used for CP2 swarm plans")
 	fs.StringVar(&cfg.cardsDir, "cards-dir", ".surla/cards", "directory where CP1 Change Cards are saved so they survive restarts; one surla serve at a time may use it")
 	fs.StringVar(&cfg.promotionPath, "promotion-config", "", "JSON file with the CP5 report directory, required suite and environment, and release directory of staged binaries that approve_merge checks; it approves staged binaries for a fresh launch, never a running service")
 	fs.StringVar(&cfg.projectDir, "project", "", "project workspace directory (default: working directory); derives CP3/CP4 verification from its committed starter HEAD at startup (or the commit created by init_project) when -verification-config is omitted")
 	fs.StringVar(&cfg.verificationPath, "verification-config", "", "JSON file with the CP4 candidate, evaluator suite, runs and reports configuration used by verify_change")
-	fs.BoolVar(&cfg.importLegacyWorkspace, "import-legacy-workspace", false, "import existing workspace .surla/cards, .surla/runs, and reports/ once into protected operator storage before starting")
 	fs.DurationVar(&cfg.checkTimeout, "check-timeout", defaultCheckTimeout, "how long one check_project or update_dependencies operation may take, including copying the workspace, pulling the Go image and running every module's containers")
 }
 
@@ -378,20 +363,11 @@ func writeServeStatus(w io.Writer, addr *net.TCPAddr, opts controlplane.Options,
 }
 
 // writeCheckpointStatus writes the Change Cards directory and the on/off
-// status of checkpoints CP1–CP5 to w for `surla serve` and `surla mcp`.
+// status of checkpoints CP1–CP5 to w for `surla serve`.
 func writeCheckpointStatus(w io.Writer, opts controlplane.Options, project string) {
 	fmt.Fprintf(w, "surla: saving Change Cards in %s\n", opts.CardsDir)
 	fmt.Fprintln(w, "surla: CP1 (propose_change, revise_change, confirm_intent, get_change): on")
-	if len(opts.SwarmProfiles) == 0 {
-		fmt.Fprintln(w, "surla: CP2 (preview_architecture): design preview is on; swarm roster is off (set -swarm-profiles)")
-	} else {
-		noun := "profiles"
-		if len(opts.SwarmProfiles) == 1 {
-			noun = "profile"
-		}
-		fmt.Fprintf(w, "surla: CP2 (preview_architecture): on (%d swarm %s loaded; pass builders in the request to propose a roster)\n",
-			len(opts.SwarmProfiles), noun)
-	}
+	fmt.Fprintln(w, "surla: CP2 (preview_architecture): on")
 	switch {
 	case opts.TargetUpdater == nil && (opts.Verification != nil || opts.ResolveVerification != nil) && opts.Live != nil:
 		root := controlplane.LiveRoot(opts.CardsDir)
@@ -749,10 +725,6 @@ func serveOptions(
 	getenv func(string) string,
 	environ []string,
 ) (controlplane.Options, error) {
-	profiles, err := loadSwarmProfiles(cfg.swarmProfilesPath)
-	if err != nil {
-		return controlplane.Options{}, err
-	}
 	resolvedCfg := resolveStartupModelConfig(cfg, getenv)
 	if err := validateModelConfig(resolvedCfg, getenv); err != nil {
 		return controlplane.Options{}, err
@@ -764,11 +736,7 @@ func serveOptions(
 	}
 	self, err := selfCommand()
 	if err != nil {
-		var lockErr error
-		if ws.closeProjectLock != nil {
-			lockErr = ws.closeProjectLock()
-		}
-		return controlplane.Options{}, errors.Join(err, lockErr)
+		return controlplane.Options{}, err
 	}
 	live := &controlplane.LiveConfig{
 		Env: liveTargetEnv(environ, resolvedCfg),
@@ -782,7 +750,7 @@ func serveOptions(
 	}
 	goProxyEnv, err := operatorGoProxyEnv(ws.evalWorkDir)
 	if err != nil {
-		return controlplane.Options{}, errors.Join(err, ws.closeProjectLock())
+		return controlplane.Options{}, err
 	}
 	return controlplane.Options{
 		CardsDir:               ws.cardsDir,
@@ -792,18 +760,15 @@ func serveOptions(
 		NewGenerator:           func() scaffold.Generator { return designeval.NewEvaluatorInDir(ws.evalWorkDir) },
 		SurlaVersion:           surlaBuildVersion(),
 		LiveModelEnv:           newLiveModelEnv(getenv, environ),
-		SwarmProfiles:          profiles,
 		Verification:           ws.verification,
 		RunsDir:                ws.runsDir,
 		ResolveVerification:    ws.resolveVerification,
 		PromotionTarget:        ws.promotionTarget,
 		ResolvePromotionTarget: ws.resolvePromotionTarget,
 		Live:                   live,
-		CloseProjectLock:       ws.closeProjectLock,
 		Checker:                candidate.NewContainerRunner(),
 		CheckHelper:            checkHelperCommand(self),
 		CheckTimeout:           cfg.checkTimeout,
-		ImportedReports:        ws.importedReports,
 		GoProxyEnv:             goProxyEnv,
 	}, nil
 }
@@ -956,37 +921,4 @@ func validateModelConfig(cfg serveConfig, getenv func(string) string) error {
 		return fmt.Errorf("-model-provider %s requires %s", cfg.provider, env)
 	}
 	return nil
-}
-
-// loadSwarmProfiles decodes the JSON array of swarm.ProviderProfile at path,
-// rejecting null, unknown fields and trailing data, then rejects malformed
-// entries (duplicate IDs, empty required fields, unknown capabilities) with
-// swarm.Plan's own profile checks. Plan is given no builders, so only its
-// configuration error matters here; whether the roster is ready is decided per
-// CP2 request. An empty path means no profiles are configured.
-func loadSwarmProfiles(path string) ([]swarm.ProviderProfile, error) {
-	if path == "" {
-		return nil, nil
-	}
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, fmt.Errorf("read -swarm-profiles: %w", err)
-	}
-	defer f.Close()
-	dec := json.NewDecoder(f)
-	dec.DisallowUnknownFields()
-	var profiles *[]swarm.ProviderProfile
-	if err := dec.Decode(&profiles); err != nil {
-		return nil, fmt.Errorf("decode -swarm-profiles %s: %w", path, err)
-	}
-	if profiles == nil {
-		return nil, fmt.Errorf("decode -swarm-profiles %s: expected a JSON array, got null", path)
-	}
-	if err := dec.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
-		return nil, fmt.Errorf("decode -swarm-profiles %s: trailing data after the profile array", path)
-	}
-	if _, err := swarm.Plan(swarm.Request{Profiles: *profiles}); err != nil {
-		return nil, fmt.Errorf("-swarm-profiles %s: %w", path, err)
-	}
-	return *profiles, nil
 }

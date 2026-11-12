@@ -8,6 +8,7 @@ import (
 	"io"
 	"maps"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -100,9 +101,9 @@ func TestGenOnAFreshStarterChangesNothingAndKeepsModulesApart(t *testing.T) {
 	})
 	srv := httptest.NewServer(controlplane.NewHTTPHandler(cp, auth))
 	t.Cleanup(srv.Close)
-	scheme, host, err := parseServerOrigin(srv.URL)
+	serverURL, err := url.Parse(srv.URL)
 	require.NoError(t, err)
-	transport := genmcpclient.NewClient(scheme, host,
+	transport := genmcpclient.NewClient(serverURL.Scheme, serverURL.Host,
 		&bearerDoer{client: srv.Client(), token: "test-token"},
 		goahttp.RequestEncoder, goahttp.ResponseDecoder, false)
 	client := &genmcpsurla.Client{ToolsCallEndpoint: transport.ToolsCall()}
