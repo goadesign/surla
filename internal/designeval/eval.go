@@ -25,6 +25,7 @@ import (
 	"github.com/goadesign/surla/internal/abspath"
 	"github.com/goadesign/surla/internal/procgroup"
 	"github.com/goadesign/surla/verify/candidate"
+	"goa.design/goa/v3/codegen"
 	"golang.org/x/mod/modfile"
 )
 
@@ -115,6 +116,42 @@ type (
 		Description string `json:"description,omitempty"`
 		// Options lists suggested choices in declaration order.
 		Options []string `json:"options,omitempty"`
+	}
+
+	// StoryGeneration holds the generated file set and flow-to-scenario
+	// mapping returned by Evaluator.GenerateWithStories.
+	StoryGeneration struct {
+		// Files contains every generated path and its bytes, matching
+		// Evaluator.Generate's output format.
+		Files map[string][]byte
+		// Included lists the complete Story flows attached to the evaluation
+		// suite, in declaration order.
+		Included []StoryScenario
+		// Excluded lists the incomplete Story flows omitted from the
+		// evaluation suite, in declaration order.
+		Excluded []StoryDraft
+	}
+
+	// StoryScenario describes one complete Story flow mapped to an evaluation
+	// scenario and hook method.
+	StoryScenario struct {
+		// Story is the human-facing Story name that owns the flow.
+		Story string `json:"story"`
+		// Key is the raw Story-scoped flow key.
+		Key string `json:"key"`
+		// Scenario is the lower_snake_case scenario name added to the suite.
+		Scenario string `json:"scenario"`
+		// Hook is the Go-exported hook method name generated on the suite's Hooks interface.
+		Hook string `json:"hook"`
+	}
+
+	// StoryDraft identifies one incomplete Story flow excluded from scenario
+	// generation.
+	StoryDraft struct {
+		// Story is the human-facing Story name that owns the flow.
+		Story string `json:"story"`
+		// Key is the raw Story-scoped flow key.
+		Key string `json:"key"`
 	}
 
 	// harnessProgram returns the main package files by name for the target's
@@ -280,6 +317,30 @@ func (e *Evaluator) Generate(ctx context.Context, files map[string]string) (map[
 	return out, err
 }
 
+// GenerateWithStories runs Generate with complete flows from stories attached
+// to the target module's single Goa-AI evaluation suite. Incomplete flows are
+// recorded in Excluded and not added to the suite. When stories has no
+// complete flow, no suite-count rule is applied and Files matches Generate's
+// output for files.
+//
+// Each complete flow's key is mapped on the host to a scenario name via Goa's
+// codegen.SnakeCase and a hook method via codegen.Goify(scenario, true), with
+// the flow's title (or its key when the title is blank) as the scenario
+// description. Collisions between two complete flows are rejected before
+// compiling the harness, naming both source flows. Like Generate, it shares
+// the evaluator's workspace and fails at once after Close.
+func (e *Evaluator) GenerateWithStories(
+	ctx context.Context, files map[string]string, stories []StorySummary,
+) (StoryGeneration, error) {
+	var out StoryGeneration
+	err := e.admitted(ctx, func(ctx context.Context, workDir string) error {
+		var err error
+		out, err = generateWithStories(ctx, files, stories, workDir)
+		return err
+	})
+	return out, err
+}
+
 // Close cancels the evaluations in progress, waits until each has released
 // its files, and removes the shared workspace. If any evaluation's build
 // processes could not be confirmed stopped, it keeps the workspace and its
@@ -324,9 +385,38 @@ func (e *stuckBuildError) Unwrap() error {
 // generate runs one generation in a temporary directory of its own, with
 // workDir as the build's shared TMPDIR and GOCACHE.
 func generate(ctx context.Context, files map[string]string, workDir string) (map[string][]byte, error) {
+	return runGenerate(ctx, files, workDir, nil)
+}
+
+// generateWithStories maps stories into included scenarios and excluded drafts,
+// then runs one sandboxed generation with the included scenarios rendered into
+// the harness program.
+func generateWithStories(
+	ctx context.Context, files map[string]string, stories []StorySummary, workDir string,
+) (StoryGeneration, error) {
+	included, excluded, specs, err := mapStoryFlows(stories)
+	if err != nil {
+		return StoryGeneration{}, err
+	}
+	generated, err := runGenerate(ctx, files, workDir, specs)
+	if err != nil {
+		return StoryGeneration{}, err
+	}
+	return StoryGeneration{
+		Files:    generated,
+		Included: included,
+		Excluded: excluded,
+	}, nil
+}
+
+// runGenerate compiles and runs the generation program with specs attached,
+// returning the generated files keyed by module-relative path.
+func runGenerate(
+	ctx context.Context, files map[string]string, workDir string, specs []storyScenarioSpec,
+) (map[string][]byte, error) {
 	var out map[string][]byte
 	goa, err := runSandboxed(ctx, files, workDir,
-		func(map[string]bool) map[string]string { return generateProgram() },
+		func(map[string]bool) map[string]string { return generateProgramWithStories(specs) },
 		func(stateDir string) []string {
 			// One literal argument, which Goa copies into generated headers.
 			return []string{"-sources", filepath.Join(stateDir, "sources.json"), "--cmd=$ surla gen"}
@@ -348,6 +438,69 @@ func generate(ctx context.Context, files map[string]string, workDir string) (map
 			err, describe(goa), completeSourcesGoa)
 	}
 	return out, err
+}
+
+// mapStoryFlows maps observed Story summaries into included scenarios,
+// excluded drafts, and harness scenario specs. It rejects any two complete
+// flows whose keys map to the same scenario name or hook method, naming both
+// source flows.
+func mapStoryFlows(stories []StorySummary) ([]StoryScenario, []StoryDraft, []storyScenarioSpec, error) {
+	var (
+		included []StoryScenario
+		excluded []StoryDraft
+		specs    []storyScenarioSpec
+	)
+	byScenario := make(map[string]StoryScenario)
+	byHook := make(map[string]StoryScenario)
+	for _, st := range stories {
+		for _, flow := range st.Flows {
+			if !flow.Complete {
+				excluded = append(excluded, StoryDraft{
+					Story: st.Name,
+					Key:   flow.Key,
+				})
+				continue
+			}
+			scenario := codegen.SnakeCase(flow.Key)
+			hook := codegen.Goify(scenario, true)
+			if scenario == "" || hook == "" {
+				return nil, nil, nil, fmt.Errorf(
+					"story flow %q in story %q has an empty scenario name",
+					flow.Key, st.Name,
+				)
+			}
+			if prev, dup := byScenario[scenario]; dup {
+				return nil, nil, nil, fmt.Errorf(
+					"story flow %q in story %q and flow %q in story %q both map to scenario %q",
+					prev.Key, prev.Story, flow.Key, st.Name, scenario,
+				)
+			}
+			if prev, dup := byHook[hook]; dup {
+				return nil, nil, nil, fmt.Errorf(
+					"story flow %q in story %q and flow %q in story %q both map to hook %q",
+					prev.Key, prev.Story, flow.Key, st.Name, hook,
+				)
+			}
+			desc := flow.Title
+			if desc == "" {
+				desc = flow.Key
+			}
+			item := StoryScenario{
+				Story:    st.Name,
+				Key:      flow.Key,
+				Scenario: scenario,
+				Hook:     hook,
+			}
+			byScenario[scenario] = item
+			byHook[hook] = item
+			included = append(included, item)
+			specs = append(specs, storyScenarioSpec{
+				name:        scenario,
+				description: desc,
+			})
+		}
+	}
+	return included, excluded, specs, nil
 }
 
 // readSources reads the generation program's sources.json from stateDir. The
