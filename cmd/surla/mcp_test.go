@@ -128,7 +128,8 @@ func TestRunMCPRejectsInvalidFlagsAndPrincipal(t *testing.T) {
 // the full local stdio lifecycle across restarts:
 //   - default `uid:<euid>` principal ownership on zero-flag `surla mcp`;
 //   - current (`server/discover`) and legacy (`initialize` `2025-11-25`) MCP
-//     handshakes, all 20 tools with `_meta.ui.resourceUri`, and `resources/list`
+//     handshakes, all 22 tools (including `refresh_story` and
+//     `get_story_refresh`), `_meta.ui.resourceUri`, and `resources/list`
 //   - `resources/read` for `surla://golden-path` and `ui://surla/checkpoint`;
 //   - reopen and refinement (`propose_change`, `get_change`, `revise_change`,
 //     `confirm_intent`, `list_traces`) across `surla mcp` restarts with
@@ -157,12 +158,14 @@ func TestRunMCPOwnershipRefinementResourcesAndLockReleaseAcrossRestarts(t *testi
 	toolsRes := s1.call("2", "tools/list", map[string]any{})
 	rawTools, ok := toolsRes["tools"].([]any)
 	require.True(t, ok)
-	assert.Len(t, rawTools, 20)
+	assert.Len(t, rawTools, 22)
+	toolNames := map[string]bool{}
 	uiTools := map[string]bool{}
 	for _, item := range rawTools {
 		toolMap, isMap := item.(map[string]any)
 		require.True(t, isMap)
 		name, _ := toolMap["name"].(string)
+		toolNames[name] = true
 		if toolMeta, hasMeta := toolMap["_meta"].(map[string]any); hasMeta {
 			if uiMeta, hasUI := toolMeta["ui"].(map[string]any); hasUI {
 				if uri, _ := uiMeta["resourceUri"].(string); uri == "ui://surla/checkpoint" {
@@ -170,6 +173,10 @@ func TestRunMCPOwnershipRefinementResourcesAndLockReleaseAcrossRestarts(t *testi
 				}
 			}
 		}
+	}
+	for _, wantTool := range []string{"refresh_story", "get_story_refresh"} {
+		assert.True(t, toolNames[wantTool], "tool %s must be listed in tools/list", wantTool)
+		assert.False(t, uiTools[wantTool], "tool %s must not advertise ui://surla/checkpoint", wantTool)
 	}
 	for _, wantUITool := range []string{
 		"propose_change", "revise_change", "confirm_intent", "get_change",
