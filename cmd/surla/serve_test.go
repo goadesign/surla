@@ -24,7 +24,6 @@ import (
 
 	gensurla "github.com/goadesign/surla/gen/surla"
 	"github.com/goadesign/surla/internal/controlplane"
-	"github.com/goadesign/surla/internal/swarm"
 	"github.com/goadesign/surla/internal/verify"
 )
 
@@ -126,68 +125,6 @@ func TestNewLiveModelEnvBuildsTheLiveTargetEnvironment(t *testing.T) {
 	assert.NotContains(t, err.Error(), "ant-k")
 }
 
-func TestLoadSwarmProfilesDecodesStrictly(t *testing.T) {
-	cases := []struct {
-		name    string
-		content string
-		want    []swarm.ProviderProfile
-		wantErr string
-	}{
-		{
-			name: "valid profiles",
-			content: `[{"id":"claude-a","provider":"anthropic","model":"model-a","family":"claude",` +
-				`"authenticated":true,"capabilities":["architect","builder"]}]`,
-			want: []swarm.ProviderProfile{{
-				ID:            "claude-a",
-				Provider:      "anthropic",
-				Model:         "model-a",
-				Family:        "claude",
-				Authenticated: true,
-				Capabilities:  []swarm.RoleKind{swarm.RoleArchitect, swarm.RoleBuilder},
-			}},
-		},
-		{name: "unknown field", content: `[{"id":"a","api_key":"x"}]`, wantErr: `unknown field "api_key"`},
-		{name: "trailing data", content: `[] []`, wantErr: "trailing data"},
-		{name: "empty array", content: `[]`, want: []swarm.ProviderProfile{}},
-		{name: "not an array", content: `{"id":"a"}`, wantErr: "decode -swarm-profiles"},
-		{name: "null", content: `null`, wantErr: "expected a JSON array, got null"},
-		{
-			name: "duplicate id",
-			content: `[{"id":"a","provider":"openai","model":"m","family":"gpt"},` +
-				`{"id":"a","provider":"anthropic","model":"n","family":"claude"}]`,
-			wantErr: `duplicate provider profile id "a"`,
-		},
-		{name: "empty required field", content: `[{"id":"a","provider":"openai","family":"gpt"}]`, wantErr: "requires non-empty"},
-		{
-			name:    "unknown capability",
-			content: `[{"id":"a","provider":"openai","model":"m","family":"gpt","capabilities":["deployer"]}]`,
-			wantErr: `unsupported capability "deployer"`,
-		},
-		{
-			name:    "valid profiles without builder capability",
-			content: `[{"id":"a","provider":"openai","model":"m","family":"gpt","capabilities":["reviewer"]}]`,
-			want: []swarm.ProviderProfile{{
-				ID: "a", Provider: "openai", Model: "m", Family: "gpt",
-				Capabilities: []swarm.RoleKind{swarm.RoleReviewer},
-			}},
-		},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			path := filepath.Join(t.TempDir(), "profiles.json")
-			require.NoError(t, os.WriteFile(path, []byte(tc.content), 0o600))
-			got, err := loadSwarmProfiles(path)
-			if tc.wantErr != "" {
-				require.Error(t, err)
-				assert.Contains(t, err.Error(), tc.wantErr)
-				return
-			}
-			require.NoError(t, err)
-			assert.Equal(t, tc.want, got)
-		})
-	}
-}
-
 func TestServeOptionsDerivesLiveTargetsFromVerification(t *testing.T) {
 	isolateServeWorkspace(t)
 	path := filepath.Join(t.TempDir(), "verification.json")
@@ -258,19 +195,15 @@ func TestLiveTargetEnvCarriesServesModelChoice(t *testing.T) {
 	}
 }
 
-func TestServeOptionsWiresLiveModelEnvAndProfiles(t *testing.T) {
+func TestServeOptionsWiresLiveModelEnv(t *testing.T) {
 	isolateServeWorkspace(t)
-	path := filepath.Join(t.TempDir(), "profiles.json")
-	require.NoError(t, os.WriteFile(path, []byte(`[{"id":"a","provider":"openai","model":"m","family":"gpt"}]`), 0o600))
-
 	opts, err := serveOptions(
-		serveConfig{checkTimeout: defaultCheckTimeout, provider: "openai", modelName: "gpt-test", swarmProfilesPath: path},
+		serveConfig{checkTimeout: defaultCheckTimeout, provider: "openai", modelName: "gpt-test"},
 		func(string) string { return "test-key" },
 		nil,
 	)
 	require.NoError(t, err)
 	assert.NotNil(t, opts.LiveModelEnv)
-	assert.Equal(t, []swarm.ProviderProfile{{ID: "a", Provider: "openai", Model: "m", Family: "gpt"}}, opts.SwarmProfiles)
 	assert.Nil(t, opts.TargetUpdater)
 	require.NotNil(t, opts.Live)
 	assert.Equal(t, []string{"SURLA_LIVE_MODEL_PROVIDER=openai", "SURLA_LIVE_MODEL_NAME=gpt-test"}, opts.Live.Env)
@@ -285,7 +218,6 @@ func TestServeOptionsWiresLiveModelEnvAndProfiles(t *testing.T) {
 	opts, err = serveOptions(serveConfig{checkTimeout: defaultCheckTimeout}, func(string) string { return "" }, nil)
 	require.NoError(t, err)
 	assert.NotNil(t, opts.LiveModelEnv)
-	assert.Nil(t, opts.SwarmProfiles)
 	assert.Nil(t, opts.Verification)
 	assert.NotNil(t, opts.ResolveVerification)
 	require.NotNil(t, opts.Live)
@@ -294,8 +226,6 @@ func TestServeOptionsWiresLiveModelEnvAndProfiles(t *testing.T) {
 	assert.Empty(t, opts.Live.Env, "no model flags and no keys pass no model choice to live targets")
 	closeServeOptions(t, opts)
 
-	_, err = serveOptions(serveConfig{checkTimeout: defaultCheckTimeout, swarmProfilesPath: filepath.Join(t.TempDir(), "missing.json")}, os.Getenv, nil)
-	require.ErrorContains(t, err, "read -swarm-profiles")
 }
 
 func TestResolveStartupModelConfigAndServeOptionsAutoDetection(t *testing.T) {
@@ -552,7 +482,7 @@ func TestWriteServeStatusNamesTheBoundAddressAndOffFeatures(t *testing.T) {
 surla: connect MCP clients to http://127.0.0.1:51234/mcp with the bearer token (architecture guide: surla://golden-path or http://127.0.0.1:51234/golden-path)
 surla: saving Change Cards in .surla/cards
 surla: CP1 (propose_change, revise_change, confirm_intent, get_change): on
-surla: CP2 (preview_architecture): design preview is on; swarm roster is off (set -swarm-profiles)
+surla: CP2 (preview_architecture): on
 surla: CP3 (draft_override, start_live_target): compiled_rule is on; prompt_template is off (set -project or -verification-config, then call start_live_target with a commit; or edit the prompt's source text, commit, and verify the commit)
 surla: CP4 (verify_change, get_verification, list_verifications): off (set -project or -verification-config, or run surla verify on the CLI)
 surla: CP5 (approve_merge): off (set -promotion-config, or run surla approve on the CLI)
@@ -566,24 +496,23 @@ surla: CP5 (approve_merge): off (set -promotion-config, or run surla approve on 
 surla: connect MCP clients to http://localhost:8090/mcp with the bearer token (architecture guide: surla://golden-path or http://localhost:8090/golden-path)
 surla: saving Change Cards in .surla/cards
 surla: CP1 (propose_change, revise_change, confirm_intent, get_change): on
-surla: CP2 (preview_architecture): design preview is on; swarm roster is off (set -swarm-profiles)
+surla: CP2 (preview_architecture): on
 surla: CP3 (draft_override, start_live_target): compiled_rule is on; prompt_template is off (set -project or -verification-config, then call start_live_target with a commit; or edit the prompt's source text, commit, and verify the commit)
 surla: CP4 (verify_change, get_verification, list_verifications): off (set -project or -verification-config, or run surla verify on the CLI)
 surla: CP5 (approve_merge): off (set -promotion-config, or run surla approve on the CLI)
 `,
 		},
 		{
-			name: "loopback with one swarm profile",
+			name: "loopback without target updater",
 			addr: &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 8090},
 			opts: controlplane.Options{
-				CardsDir:      ".surla/cards",
-				SwarmProfiles: []swarm.ProviderProfile{{ID: "claude-a"}},
+				CardsDir: ".surla/cards",
 			},
 			want: `surla: serving on http://127.0.0.1:8090
 surla: connect MCP clients to http://127.0.0.1:8090/mcp with the bearer token (architecture guide: surla://golden-path or http://127.0.0.1:8090/golden-path)
 surla: saving Change Cards in .surla/cards
 surla: CP1 (propose_change, revise_change, confirm_intent, get_change): on
-surla: CP2 (preview_architecture): on (1 swarm profile loaded; pass builders in the request to propose a roster)
+surla: CP2 (preview_architecture): on
 surla: CP3 (draft_override, start_live_target): compiled_rule is on; prompt_template is off (set -project or -verification-config, then call start_live_target with a commit; or edit the prompt's source text, commit, and verify the commit)
 surla: CP4 (verify_change, get_verification, list_verifications): off (set -project or -verification-config, or run surla verify on the CLI)
 surla: CP5 (approve_merge): off (set -promotion-config, or run surla approve on the CLI)
@@ -594,7 +523,6 @@ surla: CP5 (approve_merge): off (set -promotion-config, or run surla approve on 
 			addr: &net.TCPAddr{IP: net.IPv6unspecified, Port: 8090},
 			opts: controlplane.Options{
 				CardsDir:        "/var/lib/surla/cards",
-				SwarmProfiles:   []swarm.ProviderProfile{{ID: "claude-a"}, {ID: "gpt-b"}},
 				TargetUpdater:   noopTargetUpdater{},
 				Verification:    &controlplane.VerificationConfig{RunsDir: "/var/lib/surla/runs", Plan: fixedSuite},
 				PromotionTarget: &releaseTarget{},
@@ -603,7 +531,7 @@ surla: CP5 (approve_merge): off (set -promotion-config, or run surla approve on 
 surla: connect MCP clients to http://localhost:8090/mcp with the bearer token (architecture guide: surla://golden-path or http://localhost:8090/golden-path)
 surla: saving Change Cards in /var/lib/surla/cards
 surla: CP1 (propose_change, revise_change, confirm_intent, get_change): on
-surla: CP2 (preview_architecture): on (2 swarm profiles loaded; pass builders in the request to propose a roster)
+surla: CP2 (preview_architecture): on
 surla: CP3 (draft_override): on
 surla: CP4 (verify_change, get_verification, list_verifications): on (runs in /var/lib/surla/runs, reports in /var/lib/surla/reports, evaluator suite commit ` + fixedSuite.SuiteCommit + `)
 surla: CP5 (approve_merge): on
@@ -632,7 +560,7 @@ surla: CP5 (approve_merge): on
 surla: connect MCP clients to http://127.0.0.1:8090/mcp with the bearer token (architecture guide: surla://golden-path or http://127.0.0.1:8090/golden-path)
 surla: saving Change Cards in ` + cardsDir + `
 surla: CP1 (propose_change, revise_change, confirm_intent, get_change): on
-surla: CP2 (preview_architecture): design preview is on; swarm roster is off (set -swarm-profiles)
+surla: CP2 (preview_architecture): on
 surla: CP3 (draft_override, start_live_target): compiled_rule is on; prompt_template is on once start_live_target runs a candidate commit (live targets in ` + liveRoot + `)
 surla: CP3: an earlier surla serve using this cards directory left live target directory ` + leftover + `; its files were kept
 surla: CP4 (verify_change, get_verification, list_verifications): on (runs in /var/lib/surla/runs, reports in /var/lib/surla/reports, evaluator suite commit ` + fixedSuite.SuiteCommit + `)
@@ -662,7 +590,7 @@ surla: CP5 (approve_merge): off (set -promotion-config, or run surla approve on 
 surla: connect MCP clients to http://127.0.0.1:8090/mcp with the bearer token (architecture guide: surla://golden-path or http://127.0.0.1:8090/golden-path)
 surla: saving Change Cards in ` + cardsDir + `
 surla: CP1 (propose_change, revise_change, confirm_intent, get_change): on
-surla: CP2 (preview_architecture): design preview is on; swarm roster is off (set -swarm-profiles)
+surla: CP2 (preview_architecture): on
 surla: CP3 (draft_override, start_live_target): compiled_rule is on; prompt_template is on once start_live_target runs a candidate commit (live targets in ` + liveRoot + `)
 surla: CP3: an earlier surla serve using this cards directory left live target directory ` + leftover + `; its files were kept
 surla: CP4 (verify_change, get_verification, list_verifications): on (runs in /work/shop/.surla/runs, reports in /work/shop/reports, evaluator suite commit ` + suite + `)
@@ -690,7 +618,7 @@ surla: CP5 (approve_merge): off (set -promotion-config, or run surla approve on 
 surla: connect MCP clients to http://127.0.0.1:8090/mcp with the bearer token (architecture guide: surla://golden-path or http://127.0.0.1:8090/golden-path)
 surla: saving Change Cards in /srv/cards
 surla: CP1 (propose_change, revise_change, confirm_intent, get_change): on
-surla: CP2 (preview_architecture): design preview is on; swarm roster is off (set -swarm-profiles)
+surla: CP2 (preview_architecture): on
 surla: CP3 (draft_override, start_live_target): compiled_rule is on; prompt_template is off (set -project or -verification-config, then call start_live_target with a commit; or edit the prompt's source text, commit, and verify the commit)
 surla: CP4 (verify_change, get_verification, list_verifications): on (runs in /srv/runs, reports in /srv/reports, evaluator suite commit ` + suite + `)
 surla: CP5 (approve_merge): off (set -promotion-config, or run surla approve on the CLI)

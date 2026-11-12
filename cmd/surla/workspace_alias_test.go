@@ -51,7 +51,7 @@ func TestWorkspaceCaseAliasAdmission(t *testing.T) {
 		}
 		insideCards, err := withinAnyDir(filepath.Join(pair[1], ".surla", "cards"), []string{pair[0]})
 		require.NoError(t, err)
-		assert.True(t, insideCards, "implicit cards and import routing must recognize the actual builder directory")
+		assert.True(t, insideCards, "implicit card storage must recognize the actual builder directory")
 	}
 	priorConfigDir := userConfigDir
 	userConfigDir = func() (string, error) { return filepath.Join(alias, "config"), nil }

@@ -3274,78 +3274,6 @@ func marshalExampleItemRequestBodyToSurlaExampleItem(v *ExampleItemRequestBody) 
 	return res
 }
 
-// marshalSurlaDesignSnapshotToDesignSnapshotRequestBody builds a value of type
-// *DesignSnapshotRequestBody from a value of type *surla.DesignSnapshot.
-func marshalSurlaDesignSnapshotToDesignSnapshotRequestBody(v *surla.DesignSnapshot) *DesignSnapshotRequestBody {
-	res := &DesignSnapshotRequestBody{}
-	if v.Files != nil {
-		res.Files = make(map[string]string, len(v.Files))
-		for key, val := range v.Files {
-			tk := key
-			tv := val
-			res.Files[tk] = tv
-		}
-	}
-
-	return res
-}
-
-// marshalSurlaBuilderScopeItemToBuilderScopeItemRequestBody builds a value of
-// type *BuilderScopeItemRequestBody from a value of type
-// *surla.BuilderScopeItem.
-func marshalSurlaBuilderScopeItemToBuilderScopeItemRequestBody(v *surla.BuilderScopeItem) *BuilderScopeItemRequestBody {
-	res := &BuilderScopeItemRequestBody{
-		Name:               v.Name,
-		PreferredProfileID: v.PreferredProfileID,
-	}
-	if v.Paths != nil {
-		res.Paths = make([]string, len(v.Paths))
-		for i, val := range v.Paths {
-			res.Paths[i] = val
-		}
-	} else {
-		res.Paths = []string{}
-	}
-
-	return res
-}
-
-// marshalDesignSnapshotRequestBodyToSurlaDesignSnapshot builds a value of type
-// *surla.DesignSnapshot from a value of type *DesignSnapshotRequestBody.
-func marshalDesignSnapshotRequestBodyToSurlaDesignSnapshot(v *DesignSnapshotRequestBody) *surla.DesignSnapshot {
-	res := &surla.DesignSnapshot{}
-	if v.Files != nil {
-		res.Files = make(map[string]string, len(v.Files))
-		for key, val := range v.Files {
-			tk := key
-			tv := val
-			res.Files[tk] = tv
-		}
-	}
-
-	return res
-}
-
-// marshalBuilderScopeItemRequestBodyToSurlaBuilderScopeItem builds a value of
-// type *surla.BuilderScopeItem from a value of type
-// *BuilderScopeItemRequestBody.
-func marshalBuilderScopeItemRequestBodyToSurlaBuilderScopeItem(v *BuilderScopeItemRequestBody) *surla.BuilderScopeItem {
-	res := &surla.BuilderScopeItem{
-		Name:               v.Name,
-		PreferredProfileID: v.PreferredProfileID,
-	}
-	if v.Paths != nil {
-		res.Paths = make([]string, len(v.Paths))
-		for i, val := range v.Paths {
-			res.Paths[i] = val
-		}
-	} else {
-		res.Paths = []string{}
-	}
-
-	return res
-}
-
 // unmarshalC4ContainerItemResponseBodyToSurlaC4ContainerItem builds a value of
 // type *surla.C4ContainerItem from a value of type
 // *C4ContainerItemResponseBody.
@@ -3430,56 +3358,6 @@ func unmarshalToolInputBindingItemResponseBodyToSurlaToolInputBindingItem(v *Too
 	res.InjectedFields = make([]string, len(v.InjectedFields))
 	for i, val := range v.InjectedFields {
 		res.InjectedFields[i] = val
-	}
-
-	return res
-}
-
-// unmarshalSwarmPlanItemResponseBodyToSurlaSwarmPlanItem builds a value of
-// type *surla.SwarmPlanItem from a value of type *SwarmPlanItemResponseBody.
-func unmarshalSwarmPlanItemResponseBodyToSurlaSwarmPlanItem(v *SwarmPlanItemResponseBody) *surla.SwarmPlanItem {
-	res := &surla.SwarmPlanItem{
-		Status:            *v.Status,
-		CrossFamilyReview: *v.CrossFamilyReview,
-		CrossFamilyEval:   *v.CrossFamilyEval,
-		SingleFamily:      *v.SingleFamily,
-		Summary:           *v.Summary,
-		Manifest:          v.Manifest,
-	}
-	res.Assignments = make([]*surla.SwarmRoleItem, len(v.Assignments))
-	for i, val := range v.Assignments {
-		if val == nil {
-			res.Assignments[i] = nil
-			continue
-		}
-		res.Assignments[i] = unmarshalSwarmRoleItemResponseBodyToSurlaSwarmRoleItem(val)
-	}
-	if v.MissingRoles != nil {
-		res.MissingRoles = make([]string, len(v.MissingRoles))
-		for i, val := range v.MissingRoles {
-			res.MissingRoles[i] = val
-		}
-	}
-
-	return res
-}
-
-// unmarshalSwarmRoleItemResponseBodyToSurlaSwarmRoleItem builds a value of
-// type *surla.SwarmRoleItem from a value of type *SwarmRoleItemResponseBody.
-func unmarshalSwarmRoleItemResponseBodyToSurlaSwarmRoleItem(v *SwarmRoleItemResponseBody) *surla.SwarmRoleItem {
-	res := &surla.SwarmRoleItem{
-		Handle:     *v.Handle,
-		Role:       *v.Role,
-		ScopeName:  *v.ScopeName,
-		ProfileID:  *v.ProfileID,
-		Provider:   *v.Provider,
-		Model:      *v.Model,
-		Family:     *v.Family,
-		AccessMode: *v.AccessMode,
-	}
-	res.OwnedPaths = make([]string, len(v.OwnedPaths))
-	for i, val := range v.OwnedPaths {
-		res.OwnedPaths[i] = val
 	}
 
 	return res
@@ -3635,6 +3513,38 @@ func unmarshalVerificationStatusResultResponseBodyToSurlaVerificationStatusResul
 		u := res.State
 		u.SetNotCompleted((*surla.VerificationNotCompleted)(obj))
 		res.State = u
+	}
+
+	return res
+}
+
+// marshalSurlaDesignSnapshotToDesignSnapshotRequestBody builds a value of type
+// *DesignSnapshotRequestBody from a value of type *surla.DesignSnapshot.
+func marshalSurlaDesignSnapshotToDesignSnapshotRequestBody(v *surla.DesignSnapshot) *DesignSnapshotRequestBody {
+	res := &DesignSnapshotRequestBody{}
+	if v.Files != nil {
+		res.Files = make(map[string]string, len(v.Files))
+		for key, val := range v.Files {
+			tk := key
+			tv := val
+			res.Files[tk] = tv
+		}
+	}
+
+	return res
+}
+
+// marshalDesignSnapshotRequestBodyToSurlaDesignSnapshot builds a value of type
+// *surla.DesignSnapshot from a value of type *DesignSnapshotRequestBody.
+func marshalDesignSnapshotRequestBodyToSurlaDesignSnapshot(v *DesignSnapshotRequestBody) *surla.DesignSnapshot {
+	res := &surla.DesignSnapshot{}
+	if v.Files != nil {
+		res.Files = make(map[string]string, len(v.Files))
+		for key, val := range v.Files {
+			tk := key
+			tv := val
+			res.Files[tk] = tv
+		}
 	}
 
 	return res

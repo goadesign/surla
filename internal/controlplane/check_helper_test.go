@@ -2,7 +2,7 @@
 // operation on its own when the server that started it dies or cancels it:
 // containers are removed or kept recorded, the output is finished, the
 // directory lock is released and no manifest is published. It also covers
-// the owner.json versions, the helper's spec handling and its spans.
+// the current owner.json format, the helper's spec handling and its spans.
 package controlplane
 
 import (
@@ -294,69 +294,6 @@ func TestUnansweredCreateKeepsItsPendingRecord(t *testing.T) {
 	assert.Empty(t, readOwnerRecord(t, opDir).Containers)
 }
 
-// TestRecoveryOfVersion1Records recovers version 1 records, whose names
-// are read as unknown: an earlier server may have created and started the
-// container, and a create of its may still be in flight. A listed container
-// is removed and, once a listing no longer shows it, cleared with its
-// scratch. A container no listing shows, or whose removal is not confirmed,
-// keeps its name and its scratch, because it may be running with the
-// operation's files mounted. Records are rewritten as version 2 and the
-// output stays readable.
-func TestRecoveryOfVersion1Records(t *testing.T) {
-	dockerBin := installFakeDocker(t)
-	cases := []struct {
-		name        string
-		listed      bool
-		failRemove  bool
-		wantCleared bool
-	}{
-		{name: "running container is removed", listed: true, wantCleared: true},
-		{name: "running container whose removal fails keeps its scratch", listed: true, failRemove: true},
-		{name: "container no listing shows keeps its scratch"},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			daemon := newFakeDockerDaemon(t)
-			t.Setenv("DOCKER_HOST", daemon.hostURI)
-			cards := filepath.Join(realTempDir(t), "cards")
-			id := strings.Repeat("ef", 16)
-			name := "surla-check-" + id + "-0"
-			opDir := filepath.Join(cards, "check-work", id)
-			if tc.listed {
-				daemon.addRunning(name, "surla.check="+id)
-			}
-			daemon.setFailRemove(name, tc.failRemove)
-			const saved = "==> modules: .\n"
-			writeTree(t, opDir, map[string]string{
-				"src/go.mod":   "module example.com/shop\n",
-				outputFile:     saved,
-				outputMetaFile: fmt.Sprintf(`{"captured":%d,"dropped":0}`, len(saved)),
-				ownerFile:      fmt.Sprintf(`{"docker":%q,"host":%q,"containers":[%q]}`, dockerBin, daemon.hostURI, name),
-			})
-
-			cp := openCheckCP(t, cards, newShopModule(t, nil))
-			raw, err := os.ReadFile(filepath.Join(opDir, ownerFile))
-			require.NoError(t, err)
-			assert.Contains(t, string(raw), `"version":2`, "recovery rewrote the record as version 2")
-			if tc.wantCleared {
-				c, ok := daemon.container(name)
-				require.True(t, ok)
-				assert.True(t, c.Removed, "recovery stopped and removed the running container")
-				assert.Empty(t, readOwnerRecord(t, opDir).Containers)
-				assert.NoDirExists(t, filepath.Join(opDir, "src"))
-			} else {
-				assert.Equal(t, []ownedContainer{{Name: name, State: stateUnknown}}, readOwnerRecord(t, opDir).Containers)
-				assert.DirExists(t, filepath.Join(opDir, "src"), "a container that may be running keeps its mounted files")
-			}
-			page, err := cp.ReadCheckOutput(WithPrincipal(t.Context(), Principal{ID: "alice@example.com"}), &gensurla.ReadCheckOutputPayload{OpID: id})
-			require.NoError(t, err)
-			assert.Equal(t, saved, page.Text)
-			daemon.setFailRemove(name, false)
-			assert.NoError(t, cp.Close())
-		})
-	}
-}
-
 // TestRecoveryAfterACrashInEachWindow recovers the record and engine state
 // a helper leaves when it dies between its steps: recording a name, sending
 // create, recording the answer, and sending start. Each window is
@@ -507,8 +444,6 @@ func TestConfirmRemovedNeedsAListingThatShowsItGone(t *testing.T) {
 		{name: "pending, listed, removed and gone", state: stateCreationPending, exists: true, wantCleared: true, wantRemoves: 1},
 		{name: "pending, listed, removal fails", state: stateCreationPending, exists: true, failRemove: true, wantRemoves: 1, wantErr: "still shows it"},
 		{name: "pending, listing fails", state: stateCreationPending, exists: true, failList: true, wantErr: "list the containers of operation op1"},
-		{name: "unknown, never listed", state: stateUnknown, wantErr: errCreateUnconfirmed.Error()},
-		{name: "unknown, listed, removed and gone", state: stateUnknown, exists: true, wantCleared: true, wantRemoves: 1},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -531,22 +466,6 @@ func TestConfirmRemovedNeedsAListingThatShowsItGone(t *testing.T) {
 			assert.Equal(t, tc.wantRemoves, daemon.removeCount(name))
 		})
 	}
-}
-
-// TestVersion2RecordIsRefusedByTheVersion1Decoder decodes a version 2
-// record with the record type and strict decoder of the release before
-// version 2: it is refused, so an older server keeps the directory whole.
-func TestVersion2RecordIsRefusedByTheVersion1Decoder(t *testing.T) {
-	var v1 struct {
-		Docker     string   `json:"docker"`
-		Host       string   `json:"host"`
-		Containers []string `json:"containers"`
-	}
-	raw, err := json.Marshal(checkOwner{Version: ownerVersion, Docker: "/usr/local/bin/docker", Host: "unix:///var/run/docker.sock", Containers: []ownedContainer{}})
-	require.NoError(t, err)
-	err = decodeStrictObject(raw, &v1)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "unknown field")
 }
 
 // TestCheckHelperSpansJoinTheServerTrace runs a passing check and reads the

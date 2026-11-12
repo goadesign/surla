@@ -28,7 +28,7 @@ func BuildProposeChangePayload(surlaProposeChangeBody *string) (*surla.ProposeCh
 		}
 		err = json.Unmarshal([]byte(*surlaProposeChangeBody), &body)
 		if err != nil {
-			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"analysis\": {\n         \"ambiguities\": [\n            {\n               \"options\": [\n                  \"\U000556d5\",\n                  \"\U00103058\",\n                  \"\U0001e633\"\n               ],\n               \"question\": \"\U00064b88\"\n            },\n            {\n               \"options\": [\n                  \"\U000556d5\",\n                  \"\U00103058\",\n                  \"\U0001e633\"\n               ],\n               \"question\": \"\U00064b88\"\n            },\n            {\n               \"options\": [\n                  \"\U000556d5\",\n                  \"\U00103058\",\n                  \"\U0001e633\"\n               ],\n               \"question\": \"\U00064b88\"\n            }\n         ],\n         \"examples\": [\n            {\n               \"expected_outcome\": \"\U0001195a\",\n               \"input_summary\": \"\U00092b7a\",\n               \"scenario\": \"\U0001b54f\",\n               \"verification_kind\": \"deterministic\"\n            },\n            {\n               \"expected_outcome\": \"\U0001195a\",\n               \"input_summary\": \"\U00092b7a\",\n               \"scenario\": \"\U0001b54f\",\n               \"verification_kind\": \"deterministic\"\n            }\n         ],\n         \"preserved_behaviors\": [\n            \"\U0005ce6e\",\n            \"\U000a550e\",\n            \"\U000d207b\",\n            \"𪁯\"\n         ],\n         \"summary\": \"\U000fb38a\",\n         \"ui_composition\": \"In optio et.\"\n      },\n      \"change_id\": \"Ipsum soluta officiis facilis dolorem quae.\",\n      \"design_source\": \"Quia placeat maiores voluptatem voluptatem.\",\n      \"prompt\": \"Enim distinctio et sunt sunt et.\",\n      \"story_refresh_op_id\": \"In eaque eveniet facere.\"\n   }'")
+			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"analysis\": {\n         \"ambiguities\": [\n            {\n               \"options\": [\n                  \"\U000556d5\",\n                  \"\U00103058\",\n                  \"\U0001e633\"\n               ],\n               \"question\": \"\U00064b88\"\n            },\n            {\n               \"options\": [\n                  \"\U000556d5\",\n                  \"\U00103058\",\n                  \"\U0001e633\"\n               ],\n               \"question\": \"\U00064b88\"\n            },\n            {\n               \"options\": [\n                  \"\U000556d5\",\n                  \"\U00103058\",\n                  \"\U0001e633\"\n               ],\n               \"question\": \"\U00064b88\"\n            }\n         ],\n         \"examples\": [\n            {\n               \"expected_outcome\": \"\U0001195a\",\n               \"input_summary\": \"\U00092b7a\",\n               \"scenario\": \"\U0001b54f\",\n               \"verification_kind\": \"deterministic\"\n            },\n            {\n               \"expected_outcome\": \"\U0001195a\",\n               \"input_summary\": \"\U00092b7a\",\n               \"scenario\": \"\U0001b54f\",\n               \"verification_kind\": \"deterministic\"\n            }\n         ],\n         \"preserved_behaviors\": [\n            \"\U0005ce6e\",\n            \"\U000a550e\",\n            \"\U000d207b\",\n            \"𪁯\"\n         ],\n         \"summary\": \"\U000fb38a\",\n         \"ui_composition\": \"In optio et.\"\n      },\n      \"change_id\": \"Ipsum soluta officiis facilis dolorem quae.\",\n      \"prompt\": \"Enim distinctio et sunt sunt et.\",\n      \"story_refresh_op_id\": \"In eaque eveniet facere.\"\n   }'")
 		}
 		if body.Analysis == nil {
 			err = goa.MergeErrors(err, goa.MissingFieldError("analysis", "body"))
@@ -45,7 +45,6 @@ func BuildProposeChangePayload(surlaProposeChangeBody *string) (*surla.ProposeCh
 	v := &surla.ProposeChangePayload{
 		ChangeID:         body.ChangeID,
 		Prompt:           body.Prompt,
-		DesignSource:     body.DesignSource,
 		StoryRefreshOpID: body.StoryRefreshOpID,
 	}
 	if body.Analysis != nil {
@@ -66,7 +65,7 @@ func BuildReviseChangePayload(surlaReviseChangeBody *string) (*surla.ReviseChang
 		}
 		err = json.Unmarshal([]byte(*surlaReviseChangeBody), &body)
 		if err != nil {
-			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"analysis\": {\n         \"ambiguities\": [\n            {\n               \"options\": [\n                  \"\U000556d5\",\n                  \"\U00103058\",\n                  \"\U0001e633\"\n               ],\n               \"question\": \"\U00064b88\"\n            },\n            {\n               \"options\": [\n                  \"\U000556d5\",\n                  \"\U00103058\",\n                  \"\U0001e633\"\n               ],\n               \"question\": \"\U00064b88\"\n            },\n            {\n               \"options\": [\n                  \"\U000556d5\",\n                  \"\U00103058\",\n                  \"\U0001e633\"\n               ],\n               \"question\": \"\U00064b88\"\n            },\n            {\n               \"options\": [\n                  \"\U000556d5\",\n                  \"\U00103058\",\n                  \"\U0001e633\"\n               ],\n               \"question\": \"\U00064b88\"\n            }\n         ],\n         \"examples\": [\n            {\n               \"expected_outcome\": \"\U00092d5e\",\n               \"input_summary\": \"፤\",\n               \"prior_id\": \"te\",\n               \"scenario\": \"\U0008a024\",\n               \"verification_kind\": \"model_judged\"\n            }\n         ],\n         \"preserved_behaviors\": [\n            \"\U000fa9ca\",\n            \"\U000c31d4\",\n            \"𬓺\",\n            \"\U000e9eb6\"\n         ],\n         \"removed_example_ids\": [\n            \"swo\",\n            \"u\"\n         ],\n         \"summary\": \"\U000aa915\",\n         \"ui_composition\": \"Sed tempora quos nobis odio ab.\"\n      },\n      \"change_id\": \"Optio ratione suscipit et neque officia.\",\n      \"design_source\": \"Qui itaque.\",\n      \"prompt\": \"Omnis est.\",\n      \"request_revision\": \"Neque dolore optio.\",\n      \"story_refresh_op_id\": \"Assumenda tenetur minus et magnam consequatur.\"\n   }'")
+			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"analysis\": {\n         \"ambiguities\": [\n            {\n               \"options\": [\n                  \"\U000556d5\",\n                  \"\U00103058\",\n                  \"\U0001e633\"\n               ],\n               \"question\": \"\U00064b88\"\n            },\n            {\n               \"options\": [\n                  \"\U000556d5\",\n                  \"\U00103058\",\n                  \"\U0001e633\"\n               ],\n               \"question\": \"\U00064b88\"\n            },\n            {\n               \"options\": [\n                  \"\U000556d5\",\n                  \"\U00103058\",\n                  \"\U0001e633\"\n               ],\n               \"question\": \"\U00064b88\"\n            },\n            {\n               \"options\": [\n                  \"\U000556d5\",\n                  \"\U00103058\",\n                  \"\U0001e633\"\n               ],\n               \"question\": \"\U00064b88\"\n            }\n         ],\n         \"examples\": [\n            {\n               \"expected_outcome\": \"\U00092d5e\",\n               \"input_summary\": \"፤\",\n               \"prior_id\": \"te\",\n               \"scenario\": \"\U0008a024\",\n               \"verification_kind\": \"model_judged\"\n            }\n         ],\n         \"preserved_behaviors\": [\n            \"\U000fa9ca\",\n            \"\U000c31d4\",\n            \"𬓺\",\n            \"\U000e9eb6\"\n         ],\n         \"removed_example_ids\": [\n            \"swo\",\n            \"u\"\n         ],\n         \"summary\": \"\U000aa915\",\n         \"ui_composition\": \"Sed tempora quos nobis odio ab.\"\n      },\n      \"change_id\": \"Optio ratione suscipit et neque officia.\",\n      \"prompt\": \"Omnis est.\",\n      \"request_revision\": \"Neque dolore optio.\",\n      \"story_refresh_op_id\": \"Assumenda tenetur minus et magnam consequatur.\"\n   }'")
 		}
 		if body.Analysis == nil {
 			err = goa.MergeErrors(err, goa.MissingFieldError("analysis", "body"))
@@ -84,7 +83,6 @@ func BuildReviseChangePayload(surlaReviseChangeBody *string) (*surla.ReviseChang
 		ChangeID:         body.ChangeID,
 		RequestRevision:  body.RequestRevision,
 		Prompt:           body.Prompt,
-		DesignSource:     body.DesignSource,
 		StoryRefreshOpID: body.StoryRefreshOpID,
 	}
 	if body.Analysis != nil {
@@ -179,52 +177,12 @@ func BuildPreviewArchitecturePayload(surlaPreviewArchitectureBody *string) (*sur
 		}
 		err = json.Unmarshal([]byte(*surlaPreviewArchitectureBody), &body)
 		if err != nil {
-			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"architect_paths\": [\n         \"Voluptas velit quia rerum.\",\n         \"Odit aut perspiciatis aut aut.\",\n         \"Quasi delectus incidunt ipsum.\",\n         \"Non sequi qui nisi pariatur a.\"\n      ],\n      \"builders\": [\n         {\n            \"name\": \"Libero cupiditate occaecati natus sed.\",\n            \"paths\": [\n               \"At recusandae.\",\n               \"Ea ipsa sed ullam et quas.\",\n               \"Quia perferendis rerum.\",\n               \"Praesentium quia beatae dolorem vel.\"\n            ],\n            \"preferred_profile_id\": \"Unde ut in.\"\n         },\n         {\n            \"name\": \"Libero cupiditate occaecati natus sed.\",\n            \"paths\": [\n               \"At recusandae.\",\n               \"Ea ipsa sed ullam et quas.\",\n               \"Quia perferendis rerum.\",\n               \"Praesentium quia beatae dolorem vel.\"\n            ],\n            \"preferred_profile_id\": \"Unde ut in.\"\n         },\n         {\n            \"name\": \"Libero cupiditate occaecati natus sed.\",\n            \"paths\": [\n               \"At recusandae.\",\n               \"Ea ipsa sed ullam et quas.\",\n               \"Quia perferendis rerum.\",\n               \"Praesentium quia beatae dolorem vel.\"\n            ],\n            \"preferred_profile_id\": \"Unde ut in.\"\n         },\n         {\n            \"name\": \"Libero cupiditate occaecati natus sed.\",\n            \"paths\": [\n               \"At recusandae.\",\n               \"Ea ipsa sed ullam et quas.\",\n               \"Quia perferendis rerum.\",\n               \"Praesentium quia beatae dolorem vel.\"\n            ],\n            \"preferred_profile_id\": \"Unde ut in.\"\n         }\n      ],\n      \"change_id\": \"Vel libero.\",\n      \"design\": {\n         \"files\": {\n            \"Doloribus repellat aut eveniet nesciunt natus labore.\": \"Dolores magni.\",\n            \"Quaerat vitae quas rerum.\": \"Vel in molestias et quaerat.\"\n         }\n      },\n      \"eval_paths\": [\n         \"Minima veritatis sint eius qui.\",\n         \"Nemo quas.\",\n         \"Fuga doloribus illum.\"\n      ],\n      \"request_revision\": \"Quisquam mollitia.\"\n   }'")
-		}
-		if body.Design != nil {
-			if err2 := validateDesignSnapshotRequestBody(body.Design, "body.design"); err2 != nil {
-				err = goa.MergeErrors(err, err2)
-			}
-		}
-		for _, e := range body.Builders {
-			if e != nil {
-				if err2 := validateBuilderScopeItemRequestBody(e, "body.builders[*]"); err2 != nil {
-					err = goa.MergeErrors(err, err2)
-				}
-			}
-		}
-		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"change_id\": \"Vel libero.\",\n      \"request_revision\": \"Quisquam mollitia.\"\n   }'")
 		}
 	}
 	v := &surla.PreviewArchitecturePayload{
 		ChangeID:        body.ChangeID,
 		RequestRevision: body.RequestRevision,
-	}
-	if body.Design != nil {
-		v.Design = marshalDesignSnapshotRequestBodyToSurlaDesignSnapshot(body.Design)
-	}
-	if body.Builders != nil {
-		v.Builders = make([]*surla.BuilderScopeItem, len(body.Builders))
-		for i, val := range body.Builders {
-			if val == nil {
-				v.Builders[i] = nil
-				continue
-			}
-			v.Builders[i] = marshalBuilderScopeItemRequestBodyToSurlaBuilderScopeItem(val)
-		}
-	}
-	if body.ArchitectPaths != nil {
-		v.ArchitectPaths = make([]string, len(body.ArchitectPaths))
-		for i, val := range body.ArchitectPaths {
-			v.ArchitectPaths[i] = val
-		}
-	}
-	if body.EvalPaths != nil {
-		v.EvalPaths = make([]string, len(body.EvalPaths))
-		for i, val := range body.EvalPaths {
-			v.EvalPaths[i] = val
-		}
 	}
 
 	return v, nil

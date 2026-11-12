@@ -176,14 +176,12 @@ func TestCheckProjectLifecycle(t *testing.T) {
 		"eval/eval_test.go":           "package eval\n",
 		"testdata/fixture/go.mod":     "module example.com/ignored\n",
 		".surla/cards/c1.json":        "{}\n",
-		"reports/" + reportName:       "secret holdout report\n",
 		"reports/public-fixture.json": "public fixture\n",
 	})
 	runGitForTest(t, workspace, "init", "-q")
 	clients := newCheckTestServer(t, Options{
-		WorkspaceDir:    workspace,
-		ImportedReports: []string{filepath.Join(workspace, "reports", reportName)},
-		GoProxyEnv:      []string{"GOPROXY=https://proxy.example.test", "GOPRIVATE=example.com/*"},
+		WorkspaceDir: workspace,
+		GoProxyEnv:   []string{"GOPROXY=https://proxy.example.test", "GOPRIVATE=example.com/*"},
 	})
 
 	tools, err := clients.mcpClient.ToolsList(ctx, &genmcpsurla.ToolsListPayload{})
@@ -201,7 +199,6 @@ func TestCheckProjectLifecycle(t *testing.T) {
 		assert.False(t, findMount(t, c, containerWork).ReadOnly)
 		assert.NoFileExists(t, filepath.Join(srcMount.Source, ".git", "HEAD"))
 		assert.NoFileExists(t, filepath.Join(srcMount.Source, ".surla", "cards", "c1.json"))
-		assert.NoFileExists(t, filepath.Join(srcMount.Source, "reports", reportName))
 		assert.FileExists(t, filepath.Join(srcMount.Source, "reports", "public-fixture.json"))
 		assert.FileExists(t, filepath.Join(srcMount.Source, "shop_test.go"))
 

@@ -3155,68 +3155,12 @@ func ValidateListVerificationsResultVerificationStatusResultTransport(value *Lis
 	return err
 }
 
-// PreviewArchitecturePayloadBuilderScopeItemTransport stores JSON fields until they have been validated.
-type PreviewArchitecturePayloadBuilderScopeItemTransport struct {
-	// Human-readable builder scope name (for example, orders or api).
-	Name *string `json:"name"`
-	// Repository-relative path globs owned by this builder.
-	Paths []string `json:"paths"`
-	// Optional preference selecting a server-configured authenticated profile ID.
-	PreferredProfileID *string `json:"preferred_profile_id,omitempty"`
-}
-
-// ValidatePreviewArchitecturePayloadBuilderScopeItemTransport checks decoded JSON before it becomes a service value.
-func ValidatePreviewArchitecturePayloadBuilderScopeItemTransport(value *PreviewArchitecturePayloadBuilderScopeItemTransport) (err error) {
-	if value == nil {
-		return goa.MissingFieldError("body", "JSON value")
-	}
-	if value.Name == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
-	}
-	if value.Paths == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("paths", "body"))
-	}
-	return err
-}
-
-// PreviewArchitecturePayloadDesignSnapshotTransport stores JSON fields until they have been validated.
-type PreviewArchitecturePayloadDesignSnapshotTransport struct {
-	// File contents keyed by module-relative path, such as design/design.go or
-	// go.mod.
-	Files map[string]string `json:"files"`
-}
-
-// ValidatePreviewArchitecturePayloadDesignSnapshotTransport checks decoded JSON before it becomes a service value.
-func ValidatePreviewArchitecturePayloadDesignSnapshotTransport(value *PreviewArchitecturePayloadDesignSnapshotTransport) (err error) {
-	if value == nil {
-		return goa.MissingFieldError("body", "JSON value")
-	}
-	if value.Files == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("files", "body"))
-	}
-	return err
-}
-
 // PreviewArchitecturePayloadTransport stores JSON fields until they have been validated.
 type PreviewArchitecturePayloadTransport struct {
 	// Confirmed Change Card identifier.
 	ChangeID *string `json:"change_id"`
 	// Expected CP1 request_revision digest.
 	RequestRevision *string `json:"request_revision"`
-	// Candidate module whose Goa and Goa-AI design is evaluated. When omitted on a
-	// server with a bound workspace, Surla reads the candidate module snapshot
-	// from the bound workspace.
-	Design *PreviewArchitecturePayloadDesignSnapshotTransport `json:"design,omitempty"`
-	// Optional explicit builder path scopes for proposing a Chorus build roster.
-	// When omitted, preview_architecture returns a solo preview with swarm.status
-	// unconfigured and no missing_roles.
-	Builders []*PreviewArchitecturePayloadBuilderScopeItemTransport `json:"builders,omitempty"`
-	// Optional repository-relative path globs for an @architect role in the
-	// proposed Chorus roster (requires builders).
-	ArchitectPaths []string `json:"architect_paths,omitempty"`
-	// Optional repository or evaluator-workspace relative path globs for an
-	// @eval-author role in the proposed Chorus roster (requires builders).
-	EvalPaths []string `json:"eval_paths,omitempty"`
 }
 
 // ValidatePreviewArchitecturePayloadTransport checks decoded JSON before it becomes a service value.
@@ -3229,18 +3173,6 @@ func ValidatePreviewArchitecturePayloadTransport(value *PreviewArchitecturePaylo
 	}
 	if value.RequestRevision == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("request_revision", "body"))
-	}
-	if value.Design != nil {
-		if err2 := ValidatePreviewArchitecturePayloadDesignSnapshotTransport(value.Design); err2 != nil {
-			err = goa.MergeErrors(err, err2)
-		}
-	}
-	for _, e := range value.Builders {
-		if e != nil {
-			if err2 := ValidatePreviewArchitecturePayloadBuilderScopeItemTransport(e); err2 != nil {
-				err = goa.MergeErrors(err, err2)
-			}
-		}
 	}
 	return err
 }
@@ -3357,139 +3289,6 @@ func ValidatePreviewArchitectureResultC4EdgeItemTransport(value *PreviewArchitec
 	}
 	if value.Protocol == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("protocol", "body"))
-	}
-	return err
-}
-
-// PreviewArchitectureResultSwarmPlanItemTransport stores JSON fields until they have been validated.
-type PreviewArchitectureResultSwarmPlanItemTransport struct {
-	// Roster configuration status.
-	Status *string `json:"status"`
-	// Deterministic role assignments when status is configured.
-	Assignments []*PreviewArchitectureResultSwarmRoleItemTransport `json:"assignments"`
-	// True if and only if status is configured and the reviewer model family is
-	// disjoint from every assigned builder model family.
-	CrossFamilyReview *bool `json:"cross_family_review"`
-	// True if and only if status is configured, an eval_author role is assigned,
-	// and the eval_author model family is disjoint from every assigned builder
-	// model family.
-	CrossFamilyEval *bool `json:"cross_family_eval"`
-	// True when status is configured and all assigned roles share one model family.
-	SingleFamily *bool `json:"single_family"`
-	// Requested roles lacking an authenticated capable profile when status is
-	// unconfigured (with builder scopes supplied) or missing_capability; omitted
-	// on solo previews with no builder scopes.
-	MissingRoles []string `json:"missing_roles,omitempty"`
-	// Plain-English summary of the proposed swarm roster and model-family posture.
-	Summary *string `json:"summary"`
-	// Formatted Chorus collaboration manifest text when status is configured; does
-	// not claim publication until sent via Chorus.
-	Manifest *string `json:"manifest,omitempty"`
-}
-
-// ValidatePreviewArchitectureResultSwarmPlanItemTransport checks decoded JSON before it becomes a service value.
-func ValidatePreviewArchitectureResultSwarmPlanItemTransport(value *PreviewArchitectureResultSwarmPlanItemTransport) (err error) {
-	if value == nil {
-		return goa.MissingFieldError("body", "JSON value")
-	}
-	if value.Status == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("status", "body"))
-	}
-	if value.Assignments == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("assignments", "body"))
-	}
-	if value.CrossFamilyReview == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("cross_family_review", "body"))
-	}
-	if value.CrossFamilyEval == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("cross_family_eval", "body"))
-	}
-	if value.SingleFamily == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("single_family", "body"))
-	}
-	if value.Summary == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("summary", "body"))
-	}
-	if value.Status != nil {
-		if !(*value.Status == "configured" || *value.Status == "unconfigured" || *value.Status == "missing_capability") {
-			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.status", *value.Status, []any{"configured", "unconfigured", "missing_capability"}))
-		}
-	}
-	for _, e := range value.Assignments {
-		if e != nil {
-			if err2 := ValidatePreviewArchitectureResultSwarmRoleItemTransport(e); err2 != nil {
-				err = goa.MergeErrors(err, err2)
-			}
-		}
-	}
-	return err
-}
-
-// PreviewArchitectureResultSwarmRoleItemTransport stores JSON fields until they have been validated.
-type PreviewArchitectureResultSwarmRoleItemTransport struct {
-	// Deterministic Chorus agent handle (without leading '@', at most 32
-	// characters).
-	Handle *string `json:"handle"`
-	// Assigned swarm role kind.
-	Role *string `json:"role"`
-	// Human-readable scope label for this assignment.
-	ScopeName *string `json:"scope_name"`
-	// Assigned server-configured provider profile ID.
-	ProfileID *string `json:"profile_id"`
-	// Assigned coding-agent provider name.
-	Provider *string `json:"provider"`
-	// Assigned model identifier.
-	Model *string `json:"model"`
-	// Canonical model family identifier.
-	Family *string `json:"family"`
-	// Repository or workspace path globs owned by this role for Chorus
-	// coordination.
-	OwnedPaths []string `json:"owned_paths"`
-	// Operator-declared workspace coordination boundary for this role.
-	AccessMode *string `json:"access_mode"`
-}
-
-// ValidatePreviewArchitectureResultSwarmRoleItemTransport checks decoded JSON before it becomes a service value.
-func ValidatePreviewArchitectureResultSwarmRoleItemTransport(value *PreviewArchitectureResultSwarmRoleItemTransport) (err error) {
-	if value == nil {
-		return goa.MissingFieldError("body", "JSON value")
-	}
-	if value.Handle == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("handle", "body"))
-	}
-	if value.Role == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("role", "body"))
-	}
-	if value.ScopeName == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("scope_name", "body"))
-	}
-	if value.ProfileID == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("profile_id", "body"))
-	}
-	if value.Provider == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("provider", "body"))
-	}
-	if value.Model == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("model", "body"))
-	}
-	if value.Family == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("family", "body"))
-	}
-	if value.OwnedPaths == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("owned_paths", "body"))
-	}
-	if value.AccessMode == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("access_mode", "body"))
-	}
-	if value.Role != nil {
-		if !(*value.Role == "architect" || *value.Role == "builder" || *value.Role == "eval_author" || *value.Role == "reviewer") {
-			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.role", *value.Role, []any{"architect", "builder", "eval_author", "reviewer"}))
-		}
-	}
-	if value.AccessMode != nil {
-		if !(*value.AccessMode == "read_only_after_cp2" || *value.AccessMode == "read_write_worktree" || *value.AccessMode == "isolated_eval_workspace" || *value.AccessMode == "read_only_review") {
-			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.access_mode", *value.AccessMode, []any{"read_only_after_cp2", "read_write_worktree", "isolated_eval_workspace", "read_only_review"}))
-		}
 	}
 	return err
 }
@@ -3617,8 +3416,6 @@ type PreviewArchitectureResultTransport struct {
 	AgentPolicies []*PreviewArchitectureResultAgentPolicyItemTransport `json:"agent_policies"`
 	// Evaluated Goa-AI tool contracts.
 	Tools []*PreviewArchitectureResultToolContractItemTransport `json:"tools"`
-	// Proposed Chorus multi-agent role assignments and model-family routing.
-	Swarm *PreviewArchitectureResultSwarmPlanItemTransport `json:"swarm"`
 	// Plain-English summary of topology and guardrails.
 	Banner *string `json:"banner"`
 }
@@ -3652,9 +3449,6 @@ func ValidatePreviewArchitectureResultTransport(value *PreviewArchitectureResult
 	if value.Tools == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("tools", "body"))
 	}
-	if value.Swarm == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("swarm", "body"))
-	}
 	if value.Banner == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("banner", "body"))
 	}
@@ -3684,11 +3478,6 @@ func ValidatePreviewArchitectureResultTransport(value *PreviewArchitectureResult
 			if err2 := ValidatePreviewArchitectureResultToolContractItemTransport(e); err2 != nil {
 				err = goa.MergeErrors(err, err2)
 			}
-		}
-	}
-	if value.Swarm != nil {
-		if err2 := ValidatePreviewArchitectureResultSwarmPlanItemTransport(value.Swarm); err2 != nil {
-			err = goa.MergeErrors(err, err2)
 		}
 	}
 	return err
@@ -3866,19 +3655,11 @@ type ProposeChangePayloadTransport struct {
 	ChangeID *string `json:"change_id"`
 	// Operator feature request.
 	Prompt *string `json:"prompt"`
-	// Goa design source the analysis was made against (the target's design/*.go
-	// files). Surla saves it with the card and includes it in request_revision; it
-	// does not interpret it. When omitted on a server with a bound workspace,
-	// Surla records design/*.go from the bound workspace; when omitted without a
-	// bound workspace, the card records no design. Cannot be combined with
-	// story_refresh_op_id.
-	DesignSource *string `json:"design_source,omitempty"`
 	// Optional op_id of a succeeded refresh_story operation for the bound
-	// workspace whose evaluated Stories this card adopts. When set, design_source
-	// must be omitted; Surla reads one workspace snapshot, requires its
-	// snapshot_digest to match the operation's, and records both the evaluated
-	// Stories and that snapshot's design/*.go on the card. Omit when the card has
-	// no Story.
+	// workspace whose evaluated Stories this card adopts. When set, Surla reads
+	// one workspace snapshot, requires its snapshot_digest to match the
+	// operation's, and records both the evaluated Stories and that snapshot's
+	// design/*.go on the card. Omit when the card has no Story.
 	StoryRefreshOpID *string `json:"story_refresh_op_id,omitempty"`
 	// Your analysis of prompt against the target's current design.
 	Analysis *ProposeChangePayloadCP1AnalysisTransport `json:"analysis"`
@@ -4907,22 +4688,12 @@ type ReviseChangePayloadTransport struct {
 	RequestRevision *string `json:"request_revision"`
 	// Revised operator feature request.
 	Prompt *string `json:"prompt"`
-	// Updated Goa design source the analysis was made against (the target's
-	// design/*.go files). Surla saves it with the card and includes it in
-	// request_revision; it does not interpret it. When omitted on a
-	// workspace-backed card without Stories and with a bound workspace, Surla
-	// records design/*.go from the bound workspace again; otherwise the card's
-	// saved design source is kept. Cannot be set when story_refresh_op_id is set
-	// or when the card already has adopted Stories.
-	DesignSource *string `json:"design_source,omitempty"`
 	// Optional op_id of a succeeded refresh_story operation for the bound
-	// workspace whose evaluated Stories this revision adopts. When set,
-	// design_source must be omitted and the card must not use a caller-supplied
-	// design_source; Surla reads one workspace snapshot, requires its
-	// snapshot_digest to match the operation's, and records both the evaluated
-	// Stories and that snapshot's design/*.go on the revised card. When omitted on
-	// a card that already has Stories, the card's saved Stories and saved
-	// design_source are kept together.
+	// workspace whose evaluated Stories this revision adopts. When set, Surla
+	// reads one workspace snapshot, requires its snapshot_digest to match the
+	// operation's, and records both the evaluated Stories and that snapshot's
+	// design/*.go on the revised card. When omitted on a card that already has
+	// Stories, the card's saved Stories and their design source are kept together.
 	StoryRefreshOpID *string `json:"story_refresh_op_id,omitempty"`
 	// Your analysis of the revised prompt against the current card and the
 	// target's current design.
@@ -7111,31 +6882,6 @@ func DecodePreviewArchitecturePayload(data []byte) (out *surla.PreviewArchitectu
 			ChangeID:        *body.ChangeID,
 			RequestRevision: *body.RequestRevision,
 		}
-		if body.Design != nil {
-			out.Design = decodePreviewArchitecturePayloadDesignSnapshotTransportToDesignSnapshot(body.Design)
-		}
-		if body.Builders != nil {
-			out.Builders = make([]*surla.BuilderScopeItem, len(body.Builders))
-			for i, val := range body.Builders {
-				if val == nil {
-					out.Builders[i] = nil
-					continue
-				}
-				out.Builders[i] = decodePreviewArchitecturePayloadBuilderScopeItemTransportToBuilderScopeItem(val)
-			}
-		}
-		if body.ArchitectPaths != nil {
-			out.ArchitectPaths = make([]string, len(body.ArchitectPaths))
-			for i, val := range body.ArchitectPaths {
-				out.ArchitectPaths[i] = val
-			}
-		}
-		if body.EvalPaths != nil {
-			out.EvalPaths = make([]string, len(body.EvalPaths))
-			for i, val := range body.EvalPaths {
-				out.EvalPaths[i] = val
-			}
-		}
 	}
 	return out, nil
 }
@@ -7183,7 +6929,6 @@ func EncodePreviewArchitectureResult(in *surla.ArchitecturePreviewResult) ([]byt
 			}
 			body.Tools[i] = encodeToolContractItemToPreviewArchitectureResultToolContractItemTransport(val)
 		}
-		body.Swarm = encodeSwarmPlanItemToPreviewArchitectureResultSwarmPlanItemTransport(in.Swarm)
 	}
 	if err := ValidatePreviewArchitectureResultTransport(body); err != nil {
 		return nil, fmt.Errorf("validate PreviewArchitectureResult JSON: %w", err)
@@ -7216,7 +6961,6 @@ func DecodeProposeChangePayload(data []byte) (out *surla.ProposeChangePayload, e
 		out = &surla.ProposeChangePayload{
 			ChangeID:         *body.ChangeID,
 			Prompt:           *body.Prompt,
-			DesignSource:     body.DesignSource,
 			StoryRefreshOpID: body.StoryRefreshOpID,
 		}
 		out.Analysis = decodeProposeChangePayloadCP1AnalysisTransportToCP1Analysis(body.Analysis)
@@ -7395,7 +7139,6 @@ func DecodeReviseChangePayload(data []byte) (out *surla.ReviseChangePayload, err
 			ChangeID:         *body.ChangeID,
 			RequestRevision:  *body.RequestRevision,
 			Prompt:           *body.Prompt,
-			DesignSource:     body.DesignSource,
 			StoryRefreshOpID: body.StoryRefreshOpID,
 		}
 		out.Analysis = decodeReviseChangePayloadCP1RevisionAnalysisTransportToCP1RevisionAnalysis(body.Analysis)
@@ -7668,31 +7411,6 @@ func decodeDiffPayloadDesignSnapshotTransportToDesignSnapshot(v *DiffPayloadDesi
 }
 
 func decodeDiffPayloadDesignSnapshotTransportToDesignSnapshot2(v *DiffPayloadDesignSnapshotTransport) *surla.DesignSnapshot {
-	res := &surla.DesignSnapshot{}
-	res.Files = make(map[string]string, len(v.Files))
-	for key, val := range v.Files {
-		tk := key
-		tv := val
-		res.Files[tk] = tv
-	}
-
-	return res
-}
-
-func decodePreviewArchitecturePayloadBuilderScopeItemTransportToBuilderScopeItem(v *PreviewArchitecturePayloadBuilderScopeItemTransport) *surla.BuilderScopeItem {
-	res := &surla.BuilderScopeItem{
-		Name:               *v.Name,
-		PreferredProfileID: v.PreferredProfileID,
-	}
-	res.Paths = make([]string, len(v.Paths))
-	for i, val := range v.Paths {
-		res.Paths[i] = val
-	}
-
-	return res
-}
-
-func decodePreviewArchitecturePayloadDesignSnapshotTransportToDesignSnapshot(v *PreviewArchitecturePayloadDesignSnapshotTransport) *surla.DesignSnapshot {
 	res := &surla.DesignSnapshot{}
 	res.Files = make(map[string]string, len(v.Files))
 	for key, val := range v.Files {
@@ -8996,52 +8714,6 @@ func encodeStorySummaryItemToReviseChangeResultStorySummaryItemTransport(v *surl
 			continue
 		}
 		res.Flows[i] = encodeStoryFlowItemToReviseChangeResultStoryFlowItemTransport(val)
-	}
-
-	return res
-}
-
-func encodeSwarmPlanItemToPreviewArchitectureResultSwarmPlanItemTransport(v *surla.SwarmPlanItem) *PreviewArchitectureResultSwarmPlanItemTransport {
-	res := &PreviewArchitectureResultSwarmPlanItemTransport{
-		Status:            &v.Status,
-		CrossFamilyReview: &v.CrossFamilyReview,
-		CrossFamilyEval:   &v.CrossFamilyEval,
-		SingleFamily:      &v.SingleFamily,
-		Summary:           &v.Summary,
-		Manifest:          v.Manifest,
-	}
-	res.Assignments = make([]*PreviewArchitectureResultSwarmRoleItemTransport, len(v.Assignments))
-	for i, val := range v.Assignments {
-		if val == nil {
-			res.Assignments[i] = nil
-			continue
-		}
-		res.Assignments[i] = encodeSwarmRoleItemToPreviewArchitectureResultSwarmRoleItemTransport(val)
-	}
-	if v.MissingRoles != nil {
-		res.MissingRoles = make([]string, len(v.MissingRoles))
-		for i, val := range v.MissingRoles {
-			res.MissingRoles[i] = val
-		}
-	}
-
-	return res
-}
-
-func encodeSwarmRoleItemToPreviewArchitectureResultSwarmRoleItemTransport(v *surla.SwarmRoleItem) *PreviewArchitectureResultSwarmRoleItemTransport {
-	res := &PreviewArchitectureResultSwarmRoleItemTransport{
-		Handle:     &v.Handle,
-		Role:       &v.Role,
-		ScopeName:  &v.ScopeName,
-		ProfileID:  &v.ProfileID,
-		Provider:   &v.Provider,
-		Model:      &v.Model,
-		Family:     &v.Family,
-		AccessMode: &v.AccessMode,
-	}
-	res.OwnedPaths = make([]string, len(v.OwnedPaths))
-	for i, val := range v.OwnedPaths {
-		res.OwnedPaths[i] = val
 	}
 
 	return res

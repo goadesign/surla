@@ -49,14 +49,14 @@ type Service interface {
 	// examples the lowest check_NN ID neither card uses, adopts the evaluated
 	// Stories and design/*.go from the single workspace snapshot verified against
 	// story_refresh_op_id when story_refresh_op_id is given (or keeps the saved
-	// Stories and saved design_source together when story_refresh_op_id is omitted
+	// Stories and their design source together when story_refresh_op_id is omitted
 	// on a card with Stories, or records design/*.go from the bound workspace
-	// again when omitted on a workspace-backed card without Stories), and saves
-	// the new revision in needs_confirmation status for operator review. The new
-	// revision's answers, confirmed_by and any approval are cleared: earlier
-	// decisions remain only where the analysis restates them in its summary,
-	// examples or preserved behaviors. Surla runs no model for this step and
-	// cannot judge whether the analysis is complete or correct.
+	// again when omitted on a card without Stories), and saves the new revision in
+	// needs_confirmation status for operator review. The new revision's answers,
+	// confirmed_by and any approval are cleared: earlier decisions remain only
+	// where the analysis restates them in its summary, examples or preserved
+	// behaviors. Surla runs no model for this step and cannot judge whether the
+	// analysis is complete or correct.
 	ReviseChange(context.Context, *ReviseChangePayload) (res *ChangeCardResult, err error)
 	// Confirm or refine a Checkpoint 1 Change Card with the complete ambiguity
 	// answers and example table, bound to its current request_revision. Changed
@@ -76,11 +76,10 @@ type Service interface {
 	// cannot report its current inputs.
 	GetChange(context.Context, *GetChangePayload) (res *ChangeCardResult, err error)
 	// Extract and validate the Checkpoint 2 C4 container topology, tool contracts,
-	// Goa-AI guardrails, and proposed Chorus swarm roster from a candidate Goa
-	// design bound to a confirmed Change Card. When design is omitted and a
-	// workspace is bound, Surla reads the candidate module snapshot from the bound
-	// workspace. Apart from the swarm roster, the result reports what the design
-	// declares; it does not compare the design with the Change Card's requirements.
+	// and Goa-AI guardrails from a candidate Goa design bound to a confirmed
+	// Change Card. Surla reads the candidate module snapshot from the bound
+	// workspace. The result reports what the design declares; it does not compare
+	// the design with the Change Card's requirements.
 	PreviewArchitecture(context.Context, *PreviewArchitecturePayload) (res *ArchitecturePreviewResult, err error)
 	// Apply a Fast Draft Mode prompt override on the bound target or reject a
 	// compiled-rule prompt hack. A prompt_template override needs a bound target:
@@ -314,20 +313,8 @@ type ArchitecturePreviewResult struct {
 	AgentPolicies []*AgentPolicyItem
 	// Evaluated Goa-AI tool contracts.
 	Tools []*ToolContractItem
-	// Proposed Chorus multi-agent role assignments and model-family routing.
-	Swarm *SwarmPlanItem
 	// Plain-English summary of topology and guardrails.
 	Banner string
-}
-
-// Explicit repository path ownership slice for a builder agent role.
-type BuilderScopeItem struct {
-	// Human-readable builder scope name (for example, orders or api).
-	Name string
-	// Repository-relative path globs owned by this builder.
-	Paths []string
-	// Optional preference selecting a server-configured authenticated profile ID.
-	PreferredProfileID *string
 }
 
 // The builder view of a Checkpoint 4 verification report: counts, verdict and
@@ -784,20 +771,6 @@ type PreviewArchitecturePayload struct {
 	ChangeID string
 	// Expected CP1 request_revision digest.
 	RequestRevision string
-	// Candidate module whose Goa and Goa-AI design is evaluated. When omitted on a
-	// server with a bound workspace, Surla reads the candidate module snapshot
-	// from the bound workspace.
-	Design *DesignSnapshot
-	// Optional explicit builder path scopes for proposing a Chorus build roster.
-	// When omitted, preview_architecture returns a solo preview with swarm.status
-	// unconfigured and no missing_roles.
-	Builders []*BuilderScopeItem
-	// Optional repository-relative path globs for an @architect role in the
-	// proposed Chorus roster (requires builders).
-	ArchitectPaths []string
-	// Optional repository or evaluator-workspace relative path globs for an
-	// @eval-author role in the proposed Chorus roster (requires builders).
-	EvalPaths []string
 }
 
 // ProposeChangePayload is the payload type of the surla service propose_change
@@ -807,19 +780,11 @@ type ProposeChangePayload struct {
 	ChangeID string
 	// Operator feature request.
 	Prompt string
-	// Goa design source the analysis was made against (the target's design/*.go
-	// files). Surla saves it with the card and includes it in request_revision; it
-	// does not interpret it. When omitted on a server with a bound workspace,
-	// Surla records design/*.go from the bound workspace; when omitted without a
-	// bound workspace, the card records no design. Cannot be combined with
-	// story_refresh_op_id.
-	DesignSource *string
 	// Optional op_id of a succeeded refresh_story operation for the bound
-	// workspace whose evaluated Stories this card adopts. When set, design_source
-	// must be omitted; Surla reads one workspace snapshot, requires its
-	// snapshot_digest to match the operation's, and records both the evaluated
-	// Stories and that snapshot's design/*.go on the card. Omit when the card has
-	// no Story.
+	// workspace whose evaluated Stories this card adopts. When set, Surla reads
+	// one workspace snapshot, requires its snapshot_digest to match the
+	// operation's, and records both the evaluated Stories and that snapshot's
+	// design/*.go on the card. Omit when the card has no Story.
 	StoryRefreshOpID *string
 	// Your analysis of prompt against the target's current design.
 	Analysis *CP1Analysis
@@ -843,22 +808,12 @@ type ReviseChangePayload struct {
 	RequestRevision string
 	// Revised operator feature request.
 	Prompt string
-	// Updated Goa design source the analysis was made against (the target's
-	// design/*.go files). Surla saves it with the card and includes it in
-	// request_revision; it does not interpret it. When omitted on a
-	// workspace-backed card without Stories and with a bound workspace, Surla
-	// records design/*.go from the bound workspace again; otherwise the card's
-	// saved design source is kept. Cannot be set when story_refresh_op_id is set
-	// or when the card already has adopted Stories.
-	DesignSource *string
 	// Optional op_id of a succeeded refresh_story operation for the bound
-	// workspace whose evaluated Stories this revision adopts. When set,
-	// design_source must be omitted and the card must not use a caller-supplied
-	// design_source; Surla reads one workspace snapshot, requires its
-	// snapshot_digest to match the operation's, and records both the evaluated
-	// Stories and that snapshot's design/*.go on the revised card. When omitted on
-	// a card that already has Stories, the card's saved Stories and saved
-	// design_source are kept together.
+	// workspace whose evaluated Stories this revision adopts. When set, Surla
+	// reads one workspace snapshot, requires its snapshot_digest to match the
+	// operation's, and records both the evaluated Stories and that snapshot's
+	// design/*.go on the revised card. When omitted on a card that already has
+	// Stories, the card's saved Stories and their design source are kept together.
 	StoryRefreshOpID *string
 	// Your analysis of the revised prompt against the current card and the
 	// target's current design.
@@ -972,62 +927,6 @@ type StorySummaryItem struct {
 	Actors []*StoryActorItem
 	// Timeline paths declared in the Story in declaration order.
 	Flows []*StoryFlowItem
-}
-
-// Proposed Chorus role assignments and model-family diversity facts surfaced
-// at Checkpoint 2. Role, model, and workspace scope assignments are Chorus
-// coordination proposals and do not prove agent launch or replace OS process
-// and workspace isolation.
-type SwarmPlanItem struct {
-	// Roster configuration status.
-	Status string
-	// Deterministic role assignments when status is configured.
-	Assignments []*SwarmRoleItem
-	// True if and only if status is configured and the reviewer model family is
-	// disjoint from every assigned builder model family.
-	CrossFamilyReview bool
-	// True if and only if status is configured, an eval_author role is assigned,
-	// and the eval_author model family is disjoint from every assigned builder
-	// model family.
-	CrossFamilyEval bool
-	// True when status is configured and all assigned roles share one model family.
-	SingleFamily bool
-	// Requested roles lacking an authenticated capable profile when status is
-	// unconfigured (with builder scopes supplied) or missing_capability; omitted
-	// on solo previews with no builder scopes.
-	MissingRoles []string
-	// Plain-English summary of the proposed swarm roster and model-family posture.
-	Summary string
-	// Formatted Chorus collaboration manifest text when status is configured; does
-	// not claim publication until sent via Chorus.
-	Manifest *string
-}
-
-// Proposed Chorus agent role assignment derived from server-owned provider
-// profiles and explicit workspace scopes. Owned paths and access modes are
-// operator-declared coordination ownership boundaries for Chorus agents, not
-// Surla-enforced OS isolation.
-type SwarmRoleItem struct {
-	// Deterministic Chorus agent handle (without leading '@', at most 32
-	// characters).
-	Handle string
-	// Assigned swarm role kind.
-	Role string
-	// Human-readable scope label for this assignment.
-	ScopeName string
-	// Assigned server-configured provider profile ID.
-	ProfileID string
-	// Assigned coding-agent provider name.
-	Provider string
-	// Assigned model identifier.
-	Model string
-	// Canonical model family identifier.
-	Family string
-	// Repository or workspace path globs owned by this role for Chorus
-	// coordination.
-	OwnedPaths []string
-	// Operator-declared workspace coordination boundary for this role.
-	AccessMode string
 }
 
 // Evaluated Goa-AI tool contract summary surfaced at Checkpoint 2.
@@ -1609,8 +1508,6 @@ type jsonArchitecturePreviewResultTransport struct {
 	AgentPolicies []*jsonAgentPolicyItemTransport `json:"agent_policies"`
 	// Evaluated Goa-AI tool contracts.
 	Tools []*jsonToolContractItemTransport `json:"tools"`
-	// Proposed Chorus multi-agent role assignments and model-family routing.
-	Swarm *jsonSwarmPlanItemTransport `json:"swarm"`
 	// Plain-English summary of topology and guardrails.
 	Banner *string `json:"banner"`
 }
@@ -1644,9 +1541,6 @@ func validatejsonArchitecturePreviewResultTransport(value *jsonArchitecturePrevi
 	if value.Tools == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("tools", "body"))
 	}
-	if value.Swarm == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("swarm", "body"))
-	}
 	if value.Banner == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("banner", "body"))
 	}
@@ -1677,35 +1571,6 @@ func validatejsonArchitecturePreviewResultTransport(value *jsonArchitecturePrevi
 				err = goa.MergeErrors(err, err2)
 			}
 		}
-	}
-	if value.Swarm != nil {
-		if err2 := validatejsonSwarmPlanItemTransport(value.Swarm); err2 != nil {
-			err = goa.MergeErrors(err, err2)
-		}
-	}
-	return err
-}
-
-// jsonBuilderScopeItemTransport stores JSON fields until they have been validated.
-type jsonBuilderScopeItemTransport struct {
-	// Human-readable builder scope name (for example, orders or api).
-	Name *string `json:"name"`
-	// Repository-relative path globs owned by this builder.
-	Paths []string `json:"paths"`
-	// Optional preference selecting a server-configured authenticated profile ID.
-	PreferredProfileID *string `json:"preferred_profile_id,omitempty"`
-}
-
-// validatejsonBuilderScopeItemTransport checks decoded JSON before it becomes a service value.
-func validatejsonBuilderScopeItemTransport(value *jsonBuilderScopeItemTransport) (err error) {
-	if value == nil {
-		return goa.MissingFieldError("body", "JSON value")
-	}
-	if value.Name == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
-	}
-	if value.Paths == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("paths", "body"))
 	}
 	return err
 }
@@ -2873,20 +2738,6 @@ type jsonPreviewArchitecturePayloadTransport struct {
 	ChangeID *string `json:"change_id"`
 	// Expected CP1 request_revision digest.
 	RequestRevision *string `json:"request_revision"`
-	// Candidate module whose Goa and Goa-AI design is evaluated. When omitted on a
-	// server with a bound workspace, Surla reads the candidate module snapshot
-	// from the bound workspace.
-	Design *jsonDesignSnapshotTransport `json:"design,omitempty"`
-	// Optional explicit builder path scopes for proposing a Chorus build roster.
-	// When omitted, preview_architecture returns a solo preview with swarm.status
-	// unconfigured and no missing_roles.
-	Builders []*jsonBuilderScopeItemTransport `json:"builders,omitempty"`
-	// Optional repository-relative path globs for an @architect role in the
-	// proposed Chorus roster (requires builders).
-	ArchitectPaths []string `json:"architect_paths,omitempty"`
-	// Optional repository or evaluator-workspace relative path globs for an
-	// @eval-author role in the proposed Chorus roster (requires builders).
-	EvalPaths []string `json:"eval_paths,omitempty"`
 }
 
 // validatejsonPreviewArchitecturePayloadTransport checks decoded JSON before it becomes a service value.
@@ -2900,18 +2751,6 @@ func validatejsonPreviewArchitecturePayloadTransport(value *jsonPreviewArchitect
 	if value.RequestRevision == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("request_revision", "body"))
 	}
-	if value.Design != nil {
-		if err2 := validatejsonDesignSnapshotTransport(value.Design); err2 != nil {
-			err = goa.MergeErrors(err, err2)
-		}
-	}
-	for _, e := range value.Builders {
-		if e != nil {
-			if err2 := validatejsonBuilderScopeItemTransport(e); err2 != nil {
-				err = goa.MergeErrors(err, err2)
-			}
-		}
-	}
 	return err
 }
 
@@ -2921,19 +2760,11 @@ type jsonProposeChangePayloadTransport struct {
 	ChangeID *string `json:"change_id"`
 	// Operator feature request.
 	Prompt *string `json:"prompt"`
-	// Goa design source the analysis was made against (the target's design/*.go
-	// files). Surla saves it with the card and includes it in request_revision; it
-	// does not interpret it. When omitted on a server with a bound workspace,
-	// Surla records design/*.go from the bound workspace; when omitted without a
-	// bound workspace, the card records no design. Cannot be combined with
-	// story_refresh_op_id.
-	DesignSource *string `json:"design_source,omitempty"`
 	// Optional op_id of a succeeded refresh_story operation for the bound
-	// workspace whose evaluated Stories this card adopts. When set, design_source
-	// must be omitted; Surla reads one workspace snapshot, requires its
-	// snapshot_digest to match the operation's, and records both the evaluated
-	// Stories and that snapshot's design/*.go on the card. Omit when the card has
-	// no Story.
+	// workspace whose evaluated Stories this card adopts. When set, Surla reads
+	// one workspace snapshot, requires its snapshot_digest to match the
+	// operation's, and records both the evaluated Stories and that snapshot's
+	// design/*.go on the card. Omit when the card has no Story.
 	StoryRefreshOpID *string `json:"story_refresh_op_id,omitempty"`
 	// Your analysis of prompt against the target's current design.
 	Analysis *jsonCP1AnalysisTransport `json:"analysis"`
@@ -2988,22 +2819,12 @@ type jsonReviseChangePayloadTransport struct {
 	RequestRevision *string `json:"request_revision"`
 	// Revised operator feature request.
 	Prompt *string `json:"prompt"`
-	// Updated Goa design source the analysis was made against (the target's
-	// design/*.go files). Surla saves it with the card and includes it in
-	// request_revision; it does not interpret it. When omitted on a
-	// workspace-backed card without Stories and with a bound workspace, Surla
-	// records design/*.go from the bound workspace again; otherwise the card's
-	// saved design source is kept. Cannot be set when story_refresh_op_id is set
-	// or when the card already has adopted Stories.
-	DesignSource *string `json:"design_source,omitempty"`
 	// Optional op_id of a succeeded refresh_story operation for the bound
-	// workspace whose evaluated Stories this revision adopts. When set,
-	// design_source must be omitted and the card must not use a caller-supplied
-	// design_source; Surla reads one workspace snapshot, requires its
-	// snapshot_digest to match the operation's, and records both the evaluated
-	// Stories and that snapshot's design/*.go on the revised card. When omitted on
-	// a card that already has Stories, the card's saved Stories and saved
-	// design_source are kept together.
+	// workspace whose evaluated Stories this revision adopts. When set, Surla
+	// reads one workspace snapshot, requires its snapshot_digest to match the
+	// operation's, and records both the evaluated Stories and that snapshot's
+	// design/*.go on the revised card. When omitted on a card that already has
+	// Stories, the card's saved Stories and their design source are kept together.
 	StoryRefreshOpID *string `json:"story_refresh_op_id,omitempty"`
 	// Your analysis of the revised prompt against the current card and the
 	// target's current design.
@@ -3325,139 +3146,6 @@ func validatejsonStorySummaryItemTransport(value *jsonStorySummaryItemTransport)
 			if err2 := validatejsonStoryFlowItemTransport(e); err2 != nil {
 				err = goa.MergeErrors(err, err2)
 			}
-		}
-	}
-	return err
-}
-
-// jsonSwarmPlanItemTransport stores JSON fields until they have been validated.
-type jsonSwarmPlanItemTransport struct {
-	// Roster configuration status.
-	Status *string `json:"status"`
-	// Deterministic role assignments when status is configured.
-	Assignments []*jsonSwarmRoleItemTransport `json:"assignments"`
-	// True if and only if status is configured and the reviewer model family is
-	// disjoint from every assigned builder model family.
-	CrossFamilyReview *bool `json:"cross_family_review"`
-	// True if and only if status is configured, an eval_author role is assigned,
-	// and the eval_author model family is disjoint from every assigned builder
-	// model family.
-	CrossFamilyEval *bool `json:"cross_family_eval"`
-	// True when status is configured and all assigned roles share one model family.
-	SingleFamily *bool `json:"single_family"`
-	// Requested roles lacking an authenticated capable profile when status is
-	// unconfigured (with builder scopes supplied) or missing_capability; omitted
-	// on solo previews with no builder scopes.
-	MissingRoles []string `json:"missing_roles,omitempty"`
-	// Plain-English summary of the proposed swarm roster and model-family posture.
-	Summary *string `json:"summary"`
-	// Formatted Chorus collaboration manifest text when status is configured; does
-	// not claim publication until sent via Chorus.
-	Manifest *string `json:"manifest,omitempty"`
-}
-
-// validatejsonSwarmPlanItemTransport checks decoded JSON before it becomes a service value.
-func validatejsonSwarmPlanItemTransport(value *jsonSwarmPlanItemTransport) (err error) {
-	if value == nil {
-		return goa.MissingFieldError("body", "JSON value")
-	}
-	if value.Status == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("status", "body"))
-	}
-	if value.Assignments == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("assignments", "body"))
-	}
-	if value.CrossFamilyReview == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("cross_family_review", "body"))
-	}
-	if value.CrossFamilyEval == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("cross_family_eval", "body"))
-	}
-	if value.SingleFamily == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("single_family", "body"))
-	}
-	if value.Summary == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("summary", "body"))
-	}
-	if value.Status != nil {
-		if !(*value.Status == "configured" || *value.Status == "unconfigured" || *value.Status == "missing_capability") {
-			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.status", *value.Status, []any{"configured", "unconfigured", "missing_capability"}))
-		}
-	}
-	for _, e := range value.Assignments {
-		if e != nil {
-			if err2 := validatejsonSwarmRoleItemTransport(e); err2 != nil {
-				err = goa.MergeErrors(err, err2)
-			}
-		}
-	}
-	return err
-}
-
-// jsonSwarmRoleItemTransport stores JSON fields until they have been validated.
-type jsonSwarmRoleItemTransport struct {
-	// Deterministic Chorus agent handle (without leading '@', at most 32
-	// characters).
-	Handle *string `json:"handle"`
-	// Assigned swarm role kind.
-	Role *string `json:"role"`
-	// Human-readable scope label for this assignment.
-	ScopeName *string `json:"scope_name"`
-	// Assigned server-configured provider profile ID.
-	ProfileID *string `json:"profile_id"`
-	// Assigned coding-agent provider name.
-	Provider *string `json:"provider"`
-	// Assigned model identifier.
-	Model *string `json:"model"`
-	// Canonical model family identifier.
-	Family *string `json:"family"`
-	// Repository or workspace path globs owned by this role for Chorus
-	// coordination.
-	OwnedPaths []string `json:"owned_paths"`
-	// Operator-declared workspace coordination boundary for this role.
-	AccessMode *string `json:"access_mode"`
-}
-
-// validatejsonSwarmRoleItemTransport checks decoded JSON before it becomes a service value.
-func validatejsonSwarmRoleItemTransport(value *jsonSwarmRoleItemTransport) (err error) {
-	if value == nil {
-		return goa.MissingFieldError("body", "JSON value")
-	}
-	if value.Handle == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("handle", "body"))
-	}
-	if value.Role == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("role", "body"))
-	}
-	if value.ScopeName == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("scope_name", "body"))
-	}
-	if value.ProfileID == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("profile_id", "body"))
-	}
-	if value.Provider == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("provider", "body"))
-	}
-	if value.Model == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("model", "body"))
-	}
-	if value.Family == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("family", "body"))
-	}
-	if value.OwnedPaths == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("owned_paths", "body"))
-	}
-	if value.AccessMode == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("access_mode", "body"))
-	}
-	if value.Role != nil {
-		if !(*value.Role == "architect" || *value.Role == "builder" || *value.Role == "eval_author" || *value.Role == "reviewer") {
-			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.role", *value.Role, []any{"architect", "builder", "eval_author", "reviewer"}))
-		}
-	}
-	if value.AccessMode != nil {
-		if !(*value.AccessMode == "read_only_after_cp2" || *value.AccessMode == "read_write_worktree" || *value.AccessMode == "isolated_eval_workspace" || *value.AccessMode == "read_only_review") {
-			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.access_mode", *value.AccessMode, []any{"read_only_after_cp2", "read_write_worktree", "isolated_eval_workspace", "read_only_review"}))
 		}
 	}
 	return err
@@ -4168,9 +3856,6 @@ func validateArchitecturePreviewResultOriginal(value *ArchitecturePreviewResult)
 	if value.Tools == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("tools", "value"))
 	}
-	if value.Swarm == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("swarm", "value"))
-	}
 	for _, e := range value.Containers {
 		if e != nil {
 			if err2 := validateC4ContainerItemOriginal(e); err2 != nil {
@@ -4183,11 +3868,6 @@ func validateArchitecturePreviewResultOriginal(value *ArchitecturePreviewResult)
 			if err2 := validateToolContractItemOriginal(e); err2 != nil {
 				err = goa.MergeErrors(err, err2)
 			}
-		}
-	}
-	if value.Swarm != nil {
-		if err2 := validateSwarmPlanItemOriginal(value.Swarm); err2 != nil {
-			err = goa.MergeErrors(err, err2)
 		}
 	}
 	return err
@@ -4218,46 +3898,6 @@ func validateToolContractItemOriginal(value *ToolContractItem) (err error) {
 func validateToolInputBindingItemOriginal(value *ToolInputBindingItem) (err error) {
 	if value.InjectedFields == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("injected_fields", "value"))
-	}
-	return err
-}
-
-// validateSwarmPlanItemOriginal checks the original typed value before JSON conversion.
-func validateSwarmPlanItemOriginal(value *SwarmPlanItem) (err error) {
-	if value.Assignments == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("assignments", "value"))
-	}
-	if !(value.Status == "configured" || value.Status == "unconfigured" || value.Status == "missing_capability") {
-		err = goa.MergeErrors(err, goa.InvalidEnumValueError("value.status", value.Status, []any{"configured", "unconfigured", "missing_capability"}))
-	}
-	for _, e := range value.Assignments {
-		if e != nil {
-			if err2 := validateSwarmRoleItemOriginal(e); err2 != nil {
-				err = goa.MergeErrors(err, err2)
-			}
-		}
-	}
-	return err
-}
-
-// validateSwarmRoleItemOriginal checks the original typed value before JSON conversion.
-func validateSwarmRoleItemOriginal(value *SwarmRoleItem) (err error) {
-	if value.OwnedPaths == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("owned_paths", "value"))
-	}
-	if !(value.Role == "architect" || value.Role == "builder" || value.Role == "eval_author" || value.Role == "reviewer") {
-		err = goa.MergeErrors(err, goa.InvalidEnumValueError("value.role", value.Role, []any{"architect", "builder", "eval_author", "reviewer"}))
-	}
-	if !(value.AccessMode == "read_only_after_cp2" || value.AccessMode == "read_write_worktree" || value.AccessMode == "isolated_eval_workspace" || value.AccessMode == "read_only_review") {
-		err = goa.MergeErrors(err, goa.InvalidEnumValueError("value.access_mode", value.AccessMode, []any{"read_only_after_cp2", "read_write_worktree", "isolated_eval_workspace", "read_only_review"}))
-	}
-	return err
-}
-
-// validateBuilderScopeItemOriginal checks the original typed value before JSON conversion.
-func validateBuilderScopeItemOriginal(value *BuilderScopeItem) (err error) {
-	if value.Paths == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("paths", "value"))
 	}
 	return err
 }
@@ -4722,23 +4362,6 @@ func validateModelConfigResultOriginal(value *ModelConfigResult) (err error) {
 	if value.GatewayAddr != nil {
 		if utf8.RuneCountInString(*value.GatewayAddr) < 1 {
 			err = goa.MergeErrors(err, goa.InvalidLengthError("value.gateway_addr", *value.GatewayAddr, utf8.RuneCountInString(*value.GatewayAddr), 1, true))
-		}
-	}
-	return err
-}
-
-// validatePreviewArchitecturePayloadOriginal checks the original typed value before JSON conversion.
-func validatePreviewArchitecturePayloadOriginal(value *PreviewArchitecturePayload) (err error) {
-	if value.Design != nil {
-		if err2 := validateDesignSnapshotOriginal(value.Design); err2 != nil {
-			err = goa.MergeErrors(err, err2)
-		}
-	}
-	for _, e := range value.Builders {
-		if e != nil {
-			if err2 := validateBuilderScopeItemOriginal(e); err2 != nil {
-				err = goa.MergeErrors(err, err2)
-			}
 		}
 	}
 	return err
@@ -5573,7 +5196,6 @@ func EncodeArchitecturePreviewResult(in *ArchitecturePreviewResult) ([]byte, err
 			}
 			body.Tools[i] = encodeToolContractItemToToolContractItemTransport(val)
 		}
-		body.Swarm = encodeSwarmPlanItemToSwarmPlanItemTransport(in.Swarm)
 	}
 	if err := validatejsonArchitecturePreviewResultTransport(body); err != nil {
 		return nil, fmt.Errorf("validate ArchitecturePreviewResult JSON: %w", err)
@@ -5641,7 +5263,6 @@ func ValidateArchitecturePreviewResultValue(in *ArchitecturePreviewResult) error
 			}
 			body.Tools[i] = encodeToolContractItemToToolContractItemTransport(val)
 		}
-		body.Swarm = encodeSwarmPlanItemToSwarmPlanItemTransport(in.Swarm)
 	}
 	if err := validatejsonArchitecturePreviewResultTransport(body); err != nil {
 		return fmt.Errorf("validate ArchitecturePreviewResult value: %w", err)
@@ -5712,105 +5333,6 @@ func DecodeArchitecturePreviewResult(data []byte) (out *ArchitecturePreviewResul
 				continue
 			}
 			out.Tools[i] = decodeToolContractItemTransportToToolContractItem(val)
-		}
-		out.Swarm = decodeSwarmPlanItemTransportToSwarmPlanItem(body.Swarm)
-	}
-	return out, nil
-}
-
-// EncodeBuilderScopeItem turns a service value into JSON using the field names in the Goa design.
-func EncodeBuilderScopeItem(in *BuilderScopeItem) ([]byte, error) {
-	if err := checkBuilderScopeItemValue(in); err != nil {
-		return nil, fmt.Errorf("encode BuilderScopeItem JSON: %w", err)
-	}
-	if err := validateBuilderScopeItemOriginal(in); err != nil {
-		return nil, fmt.Errorf("validate BuilderScopeItem value: %w", err)
-	}
-	var body *jsonBuilderScopeItemTransport
-	{
-		body = &jsonBuilderScopeItemTransport{
-			Name:               &in.Name,
-			PreferredProfileID: in.PreferredProfileID,
-		}
-		body.Paths = make([]string, len(in.Paths))
-		for i, val := range in.Paths {
-			body.Paths[i] = val
-		}
-	}
-	if err := validatejsonBuilderScopeItemTransport(body); err != nil {
-		return nil, fmt.Errorf("validate BuilderScopeItem JSON: %w", err)
-	}
-	data, err := json.Marshal(body)
-	if err != nil {
-		return nil, fmt.Errorf("encode BuilderScopeItem JSON: %w", err)
-	}
-	return data, nil
-}
-
-// ValidateBuilderScopeItemValue checks the original Go fields against their declared constraints.
-// It returns validation errors without encoding the value as JSON.
-
-func ValidateBuilderScopeItemValue(in *BuilderScopeItem) error {
-	if err := checkBuilderScopeItemValue(in); err != nil {
-		return fmt.Errorf("validate BuilderScopeItem value: %w", err)
-	}
-	if err := validateBuilderScopeItemOriginal(in); err != nil {
-		return fmt.Errorf("validate BuilderScopeItem value: %w", err)
-	}
-
-	if in == nil {
-		return goa.MissingFieldError("result", "BuilderScopeItem")
-	}
-
-	var body *jsonBuilderScopeItemTransport
-	{
-		body = &jsonBuilderScopeItemTransport{
-			Name:               &in.Name,
-			PreferredProfileID: in.PreferredProfileID,
-		}
-		body.Paths = make([]string, len(in.Paths))
-		for i, val := range in.Paths {
-			body.Paths[i] = val
-		}
-	}
-	if err := validatejsonBuilderScopeItemTransport(body); err != nil {
-		return fmt.Errorf("validate BuilderScopeItem value: %w", err)
-	}
-	return nil
-}
-
-// DecodeBuilderScopeItem checks JSON field names from the Goa design and returns a service value.
-func DecodeBuilderScopeItem(data []byte) (out *BuilderScopeItem, err error) {
-	root, err := readStrictJSON(data)
-	if err != nil {
-		return out, fmt.Errorf("decode BuilderScopeItem JSON: %w", err)
-	}
-	if err := validateBuilderScopeItemJSONValue("", root, ""); err != nil {
-		return out, fmt.Errorf("decode BuilderScopeItem JSON: %w", err)
-	}
-	var body *jsonBuilderScopeItemTransport
-	decoder := json.NewDecoder(bytes.NewReader(data))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&body); err != nil {
-		return out, fmt.Errorf("decode BuilderScopeItem JSON: %w", err)
-	}
-	if err := decoder.Decode(&struct{}{}); err != io.EOF {
-		if err == nil {
-			return out, fmt.Errorf("decode BuilderScopeItem JSON: multiple JSON values")
-		}
-		return out, fmt.Errorf("decode BuilderScopeItem JSON after first value: %w", err)
-	}
-	if err := validatejsonBuilderScopeItemTransport(body); err != nil {
-		return out, fmt.Errorf("validate BuilderScopeItem JSON: %w", err)
-	}
-	{
-		out = &BuilderScopeItem{
-			Name:               *body.Name,
-			PreferredProfileID: body.PreferredProfileID,
-		}
-		out.Paths = make([]string, len(body.Paths))
-		for i, val := range body.Paths {
-			out.Paths[i] = val
 		}
 	}
 	return out, nil
@@ -5995,7 +5517,7 @@ func DecodeC4ContainerItem(data []byte) (out *C4ContainerItem, err error) {
 	if err != nil {
 		return out, fmt.Errorf("decode C4ContainerItem JSON: %w", err)
 	}
-	if err := validateArchitecturePreviewResultJSONValue10("", root, ""); err != nil {
+	if err := validateArchitecturePreviewResultJSONValue5("", root, ""); err != nil {
 		return out, fmt.Errorf("decode C4ContainerItem JSON: %w", err)
 	}
 	var body *jsonC4ContainerItemTransport
@@ -6079,7 +5601,7 @@ func DecodeC4EdgeItem(data []byte) (out *C4EdgeItem, err error) {
 	if err != nil {
 		return out, fmt.Errorf("decode C4EdgeItem JSON: %w", err)
 	}
-	if err := validateArchitecturePreviewResultJSONValue12("", root, ""); err != nil {
+	if err := validateArchitecturePreviewResultJSONValue7("", root, ""); err != nil {
 		return out, fmt.Errorf("decode C4EdgeItem JSON: %w", err)
 	}
 	var body *jsonC4EdgeItemTransport
@@ -8809,39 +8331,11 @@ func EncodePreviewArchitecturePayload(in *PreviewArchitecturePayload) ([]byte, e
 	if err := checkPreviewArchitecturePayloadValue(in); err != nil {
 		return nil, fmt.Errorf("encode PreviewArchitecturePayload JSON: %w", err)
 	}
-	if err := validatePreviewArchitecturePayloadOriginal(in); err != nil {
-		return nil, fmt.Errorf("validate PreviewArchitecturePayload value: %w", err)
-	}
 	var body *jsonPreviewArchitecturePayloadTransport
 	{
 		body = &jsonPreviewArchitecturePayloadTransport{
 			ChangeID:        &in.ChangeID,
 			RequestRevision: &in.RequestRevision,
-		}
-		if in.Design != nil {
-			body.Design = encodeDesignSnapshotToDesignSnapshotTransport3(in.Design)
-		}
-		if in.Builders != nil {
-			body.Builders = make([]*jsonBuilderScopeItemTransport, len(in.Builders))
-			for i, val := range in.Builders {
-				if val == nil {
-					body.Builders[i] = nil
-					continue
-				}
-				body.Builders[i] = encodeBuilderScopeItemToBuilderScopeItemTransport(val)
-			}
-		}
-		if in.ArchitectPaths != nil {
-			body.ArchitectPaths = make([]string, len(in.ArchitectPaths))
-			for i, val := range in.ArchitectPaths {
-				body.ArchitectPaths[i] = val
-			}
-		}
-		if in.EvalPaths != nil {
-			body.EvalPaths = make([]string, len(in.EvalPaths))
-			for i, val := range in.EvalPaths {
-				body.EvalPaths[i] = val
-			}
 		}
 	}
 	if err := validatejsonPreviewArchitecturePayloadTransport(body); err != nil {
@@ -8861,9 +8355,6 @@ func ValidatePreviewArchitecturePayloadValue(in *PreviewArchitecturePayload) err
 	if err := checkPreviewArchitecturePayloadValue(in); err != nil {
 		return fmt.Errorf("validate PreviewArchitecturePayload value: %w", err)
 	}
-	if err := validatePreviewArchitecturePayloadOriginal(in); err != nil {
-		return fmt.Errorf("validate PreviewArchitecturePayload value: %w", err)
-	}
 
 	if in == nil {
 		return goa.MissingFieldError("result", "PreviewArchitecturePayload")
@@ -8874,31 +8365,6 @@ func ValidatePreviewArchitecturePayloadValue(in *PreviewArchitecturePayload) err
 		body = &jsonPreviewArchitecturePayloadTransport{
 			ChangeID:        &in.ChangeID,
 			RequestRevision: &in.RequestRevision,
-		}
-		if in.Design != nil {
-			body.Design = encodeDesignSnapshotToDesignSnapshotTransport3(in.Design)
-		}
-		if in.Builders != nil {
-			body.Builders = make([]*jsonBuilderScopeItemTransport, len(in.Builders))
-			for i, val := range in.Builders {
-				if val == nil {
-					body.Builders[i] = nil
-					continue
-				}
-				body.Builders[i] = encodeBuilderScopeItemToBuilderScopeItemTransport(val)
-			}
-		}
-		if in.ArchitectPaths != nil {
-			body.ArchitectPaths = make([]string, len(in.ArchitectPaths))
-			for i, val := range in.ArchitectPaths {
-				body.ArchitectPaths[i] = val
-			}
-		}
-		if in.EvalPaths != nil {
-			body.EvalPaths = make([]string, len(in.EvalPaths))
-			for i, val := range in.EvalPaths {
-				body.EvalPaths[i] = val
-			}
 		}
 	}
 	if err := validatejsonPreviewArchitecturePayloadTransport(body); err != nil {
@@ -8936,31 +8402,6 @@ func DecodePreviewArchitecturePayload(data []byte) (out *PreviewArchitecturePayl
 			ChangeID:        *body.ChangeID,
 			RequestRevision: *body.RequestRevision,
 		}
-		if body.Design != nil {
-			out.Design = decodeDesignSnapshotTransportToDesignSnapshot(body.Design)
-		}
-		if body.Builders != nil {
-			out.Builders = make([]*BuilderScopeItem, len(body.Builders))
-			for i, val := range body.Builders {
-				if val == nil {
-					out.Builders[i] = nil
-					continue
-				}
-				out.Builders[i] = decodeBuilderScopeItemTransportToBuilderScopeItem(val)
-			}
-		}
-		if body.ArchitectPaths != nil {
-			out.ArchitectPaths = make([]string, len(body.ArchitectPaths))
-			for i, val := range body.ArchitectPaths {
-				out.ArchitectPaths[i] = val
-			}
-		}
-		if body.EvalPaths != nil {
-			out.EvalPaths = make([]string, len(body.EvalPaths))
-			for i, val := range body.EvalPaths {
-				out.EvalPaths[i] = val
-			}
-		}
 	}
 	return out, nil
 }
@@ -8978,7 +8419,6 @@ func EncodeProposeChangePayload(in *ProposeChangePayload) ([]byte, error) {
 		body = &jsonProposeChangePayloadTransport{
 			ChangeID:         &in.ChangeID,
 			Prompt:           &in.Prompt,
-			DesignSource:     in.DesignSource,
 			StoryRefreshOpID: in.StoryRefreshOpID,
 		}
 		body.Analysis = encodeCP1AnalysisToCP1AnalysisTransport(in.Analysis)
@@ -9013,7 +8453,6 @@ func ValidateProposeChangePayloadValue(in *ProposeChangePayload) error {
 		body = &jsonProposeChangePayloadTransport{
 			ChangeID:         &in.ChangeID,
 			Prompt:           &in.Prompt,
-			DesignSource:     in.DesignSource,
 			StoryRefreshOpID: in.StoryRefreshOpID,
 		}
 		body.Analysis = encodeCP1AnalysisToCP1AnalysisTransport(in.Analysis)
@@ -9052,7 +8491,6 @@ func DecodeProposeChangePayload(data []byte) (out *ProposeChangePayload, err err
 		out = &ProposeChangePayload{
 			ChangeID:         *body.ChangeID,
 			Prompt:           *body.Prompt,
-			DesignSource:     body.DesignSource,
 			StoryRefreshOpID: body.StoryRefreshOpID,
 		}
 		out.Analysis = decodeCP1AnalysisTransportToCP1Analysis(body.Analysis)
@@ -9154,7 +8592,6 @@ func EncodeReviseChangePayload(in *ReviseChangePayload) ([]byte, error) {
 			ChangeID:         &in.ChangeID,
 			RequestRevision:  &in.RequestRevision,
 			Prompt:           &in.Prompt,
-			DesignSource:     in.DesignSource,
 			StoryRefreshOpID: in.StoryRefreshOpID,
 		}
 		body.Analysis = encodeCP1RevisionAnalysisToCP1RevisionAnalysisTransport(in.Analysis)
@@ -9190,7 +8627,6 @@ func ValidateReviseChangePayloadValue(in *ReviseChangePayload) error {
 			ChangeID:         &in.ChangeID,
 			RequestRevision:  &in.RequestRevision,
 			Prompt:           &in.Prompt,
-			DesignSource:     in.DesignSource,
 			StoryRefreshOpID: in.StoryRefreshOpID,
 		}
 		body.Analysis = encodeCP1RevisionAnalysisToCP1RevisionAnalysisTransport(in.Analysis)
@@ -9230,7 +8666,6 @@ func DecodeReviseChangePayload(data []byte) (out *ReviseChangePayload, err error
 			ChangeID:         *body.ChangeID,
 			RequestRevision:  *body.RequestRevision,
 			Prompt:           *body.Prompt,
-			DesignSource:     body.DesignSource,
 			StoryRefreshOpID: body.StoryRefreshOpID,
 		}
 		out.Analysis = decodeCP1RevisionAnalysisTransportToCP1RevisionAnalysis(body.Analysis)
@@ -10097,262 +9532,6 @@ func DecodeStorySummaryItem(data []byte) (out *StorySummaryItem, err error) {
 	return out, nil
 }
 
-// EncodeSwarmPlanItem turns a service value into JSON using the field names in the Goa design.
-func EncodeSwarmPlanItem(in *SwarmPlanItem) ([]byte, error) {
-	if err := checkSwarmPlanItemValue(in); err != nil {
-		return nil, fmt.Errorf("encode SwarmPlanItem JSON: %w", err)
-	}
-	if err := validateSwarmPlanItemOriginal(in); err != nil {
-		return nil, fmt.Errorf("validate SwarmPlanItem value: %w", err)
-	}
-	var body *jsonSwarmPlanItemTransport
-	{
-		body = &jsonSwarmPlanItemTransport{
-			Status:            &in.Status,
-			CrossFamilyReview: &in.CrossFamilyReview,
-			CrossFamilyEval:   &in.CrossFamilyEval,
-			SingleFamily:      &in.SingleFamily,
-			Summary:           &in.Summary,
-			Manifest:          in.Manifest,
-		}
-		body.Assignments = make([]*jsonSwarmRoleItemTransport, len(in.Assignments))
-		for i, val := range in.Assignments {
-			if val == nil {
-				body.Assignments[i] = nil
-				continue
-			}
-			body.Assignments[i] = encodeSwarmRoleItemToSwarmRoleItemTransport(val)
-		}
-		if in.MissingRoles != nil {
-			body.MissingRoles = make([]string, len(in.MissingRoles))
-			for i, val := range in.MissingRoles {
-				body.MissingRoles[i] = val
-			}
-		}
-	}
-	if err := validatejsonSwarmPlanItemTransport(body); err != nil {
-		return nil, fmt.Errorf("validate SwarmPlanItem JSON: %w", err)
-	}
-	data, err := json.Marshal(body)
-	if err != nil {
-		return nil, fmt.Errorf("encode SwarmPlanItem JSON: %w", err)
-	}
-	return data, nil
-}
-
-// ValidateSwarmPlanItemValue checks the original Go fields against their declared constraints.
-// It returns validation errors without encoding the value as JSON.
-
-func ValidateSwarmPlanItemValue(in *SwarmPlanItem) error {
-	if err := checkSwarmPlanItemValue(in); err != nil {
-		return fmt.Errorf("validate SwarmPlanItem value: %w", err)
-	}
-	if err := validateSwarmPlanItemOriginal(in); err != nil {
-		return fmt.Errorf("validate SwarmPlanItem value: %w", err)
-	}
-
-	if in == nil {
-		return goa.MissingFieldError("result", "SwarmPlanItem")
-	}
-
-	var body *jsonSwarmPlanItemTransport
-	{
-		body = &jsonSwarmPlanItemTransport{
-			Status:            &in.Status,
-			CrossFamilyReview: &in.CrossFamilyReview,
-			CrossFamilyEval:   &in.CrossFamilyEval,
-			SingleFamily:      &in.SingleFamily,
-			Summary:           &in.Summary,
-			Manifest:          in.Manifest,
-		}
-		body.Assignments = make([]*jsonSwarmRoleItemTransport, len(in.Assignments))
-		for i, val := range in.Assignments {
-			if val == nil {
-				body.Assignments[i] = nil
-				continue
-			}
-			body.Assignments[i] = encodeSwarmRoleItemToSwarmRoleItemTransport(val)
-		}
-		if in.MissingRoles != nil {
-			body.MissingRoles = make([]string, len(in.MissingRoles))
-			for i, val := range in.MissingRoles {
-				body.MissingRoles[i] = val
-			}
-		}
-	}
-	if err := validatejsonSwarmPlanItemTransport(body); err != nil {
-		return fmt.Errorf("validate SwarmPlanItem value: %w", err)
-	}
-	return nil
-}
-
-// DecodeSwarmPlanItem checks JSON field names from the Goa design and returns a service value.
-func DecodeSwarmPlanItem(data []byte) (out *SwarmPlanItem, err error) {
-	root, err := readStrictJSON(data)
-	if err != nil {
-		return out, fmt.Errorf("decode SwarmPlanItem JSON: %w", err)
-	}
-	if err := validateArchitecturePreviewResultJSONValue13("", root, ""); err != nil {
-		return out, fmt.Errorf("decode SwarmPlanItem JSON: %w", err)
-	}
-	var body *jsonSwarmPlanItemTransport
-	decoder := json.NewDecoder(bytes.NewReader(data))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&body); err != nil {
-		return out, fmt.Errorf("decode SwarmPlanItem JSON: %w", err)
-	}
-	if err := decoder.Decode(&struct{}{}); err != io.EOF {
-		if err == nil {
-			return out, fmt.Errorf("decode SwarmPlanItem JSON: multiple JSON values")
-		}
-		return out, fmt.Errorf("decode SwarmPlanItem JSON after first value: %w", err)
-	}
-	if err := validatejsonSwarmPlanItemTransport(body); err != nil {
-		return out, fmt.Errorf("validate SwarmPlanItem JSON: %w", err)
-	}
-	{
-		out = &SwarmPlanItem{
-			Status:            *body.Status,
-			CrossFamilyReview: *body.CrossFamilyReview,
-			CrossFamilyEval:   *body.CrossFamilyEval,
-			SingleFamily:      *body.SingleFamily,
-			Summary:           *body.Summary,
-			Manifest:          body.Manifest,
-		}
-		out.Assignments = make([]*SwarmRoleItem, len(body.Assignments))
-		for i, val := range body.Assignments {
-			if val == nil {
-				out.Assignments[i] = nil
-				continue
-			}
-			out.Assignments[i] = decodeSwarmRoleItemTransportToSwarmRoleItem(val)
-		}
-		if body.MissingRoles != nil {
-			out.MissingRoles = make([]string, len(body.MissingRoles))
-			for i, val := range body.MissingRoles {
-				out.MissingRoles[i] = val
-			}
-		}
-	}
-	return out, nil
-}
-
-// EncodeSwarmRoleItem turns a service value into JSON using the field names in the Goa design.
-func EncodeSwarmRoleItem(in *SwarmRoleItem) ([]byte, error) {
-	if err := checkSwarmRoleItemValue(in); err != nil {
-		return nil, fmt.Errorf("encode SwarmRoleItem JSON: %w", err)
-	}
-	if err := validateSwarmRoleItemOriginal(in); err != nil {
-		return nil, fmt.Errorf("validate SwarmRoleItem value: %w", err)
-	}
-	var body *jsonSwarmRoleItemTransport
-	{
-		body = &jsonSwarmRoleItemTransport{
-			Handle:     &in.Handle,
-			Role:       &in.Role,
-			ScopeName:  &in.ScopeName,
-			ProfileID:  &in.ProfileID,
-			Provider:   &in.Provider,
-			Model:      &in.Model,
-			Family:     &in.Family,
-			AccessMode: &in.AccessMode,
-		}
-		body.OwnedPaths = make([]string, len(in.OwnedPaths))
-		for i, val := range in.OwnedPaths {
-			body.OwnedPaths[i] = val
-		}
-	}
-	if err := validatejsonSwarmRoleItemTransport(body); err != nil {
-		return nil, fmt.Errorf("validate SwarmRoleItem JSON: %w", err)
-	}
-	data, err := json.Marshal(body)
-	if err != nil {
-		return nil, fmt.Errorf("encode SwarmRoleItem JSON: %w", err)
-	}
-	return data, nil
-}
-
-// ValidateSwarmRoleItemValue checks the original Go fields against their declared constraints.
-// It returns validation errors without encoding the value as JSON.
-
-func ValidateSwarmRoleItemValue(in *SwarmRoleItem) error {
-	if err := checkSwarmRoleItemValue(in); err != nil {
-		return fmt.Errorf("validate SwarmRoleItem value: %w", err)
-	}
-	if err := validateSwarmRoleItemOriginal(in); err != nil {
-		return fmt.Errorf("validate SwarmRoleItem value: %w", err)
-	}
-
-	if in == nil {
-		return goa.MissingFieldError("result", "SwarmRoleItem")
-	}
-
-	var body *jsonSwarmRoleItemTransport
-	{
-		body = &jsonSwarmRoleItemTransport{
-			Handle:     &in.Handle,
-			Role:       &in.Role,
-			ScopeName:  &in.ScopeName,
-			ProfileID:  &in.ProfileID,
-			Provider:   &in.Provider,
-			Model:      &in.Model,
-			Family:     &in.Family,
-			AccessMode: &in.AccessMode,
-		}
-		body.OwnedPaths = make([]string, len(in.OwnedPaths))
-		for i, val := range in.OwnedPaths {
-			body.OwnedPaths[i] = val
-		}
-	}
-	if err := validatejsonSwarmRoleItemTransport(body); err != nil {
-		return fmt.Errorf("validate SwarmRoleItem value: %w", err)
-	}
-	return nil
-}
-
-// DecodeSwarmRoleItem checks JSON field names from the Goa design and returns a service value.
-func DecodeSwarmRoleItem(data []byte) (out *SwarmRoleItem, err error) {
-	root, err := readStrictJSON(data)
-	if err != nil {
-		return out, fmt.Errorf("decode SwarmRoleItem JSON: %w", err)
-	}
-	if err := validateArchitecturePreviewResultJSONValue15("", root, ""); err != nil {
-		return out, fmt.Errorf("decode SwarmRoleItem JSON: %w", err)
-	}
-	var body *jsonSwarmRoleItemTransport
-	decoder := json.NewDecoder(bytes.NewReader(data))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&body); err != nil {
-		return out, fmt.Errorf("decode SwarmRoleItem JSON: %w", err)
-	}
-	if err := decoder.Decode(&struct{}{}); err != io.EOF {
-		if err == nil {
-			return out, fmt.Errorf("decode SwarmRoleItem JSON: multiple JSON values")
-		}
-		return out, fmt.Errorf("decode SwarmRoleItem JSON after first value: %w", err)
-	}
-	if err := validatejsonSwarmRoleItemTransport(body); err != nil {
-		return out, fmt.Errorf("validate SwarmRoleItem JSON: %w", err)
-	}
-	{
-		out = &SwarmRoleItem{
-			Handle:     *body.Handle,
-			Role:       *body.Role,
-			ScopeName:  *body.ScopeName,
-			ProfileID:  *body.ProfileID,
-			Provider:   *body.Provider,
-			Model:      *body.Model,
-			Family:     *body.Family,
-			AccessMode: *body.AccessMode,
-		}
-		out.OwnedPaths = make([]string, len(body.OwnedPaths))
-		for i, val := range body.OwnedPaths {
-			out.OwnedPaths[i] = val
-		}
-	}
-	return out, nil
-}
-
 // EncodeToolContractItem turns a service value into JSON using the field names in the Goa design.
 func EncodeToolContractItem(in *ToolContractItem) ([]byte, error) {
 	if err := checkToolContractItemValue(in); err != nil {
@@ -10442,7 +9621,7 @@ func DecodeToolContractItem(data []byte) (out *ToolContractItem, err error) {
 	if err != nil {
 		return out, fmt.Errorf("decode ToolContractItem JSON: %w", err)
 	}
-	if err := validateArchitecturePreviewResultJSONValue5("", root, ""); err != nil {
+	if err := validateArchitecturePreviewResultJSONValue9("", root, ""); err != nil {
 		return out, fmt.Errorf("decode ToolContractItem JSON: %w", err)
 	}
 	var body *jsonToolContractItemTransport
@@ -10555,7 +9734,7 @@ func DecodeToolInputBindingItem(data []byte) (out *ToolInputBindingItem, err err
 	if err != nil {
 		return out, fmt.Errorf("decode ToolInputBindingItem JSON: %w", err)
 	}
-	if err := validateArchitecturePreviewResultJSONValue7("", root, ""); err != nil {
+	if err := validateArchitecturePreviewResultJSONValue11("", root, ""); err != nil {
 		return out, fmt.Errorf("decode ToolInputBindingItem JSON: %w", err)
 	}
 	var body *jsonToolInputBindingItemTransport
@@ -12085,19 +11264,6 @@ func decodeApprovalItemTransportToApprovalItem(v *jsonApprovalItemTransport) *Ap
 	return res
 }
 
-func decodeBuilderScopeItemTransportToBuilderScopeItem(v *jsonBuilderScopeItemTransport) *BuilderScopeItem {
-	res := &BuilderScopeItem{
-		Name:               *v.Name,
-		PreferredProfileID: v.PreferredProfileID,
-	}
-	res.Paths = make([]string, len(v.Paths))
-	for i, val := range v.Paths {
-		res.Paths[i] = val
-	}
-
-	return res
-}
-
 func decodeBuilderVerificationReportTransportToBuilderVerificationReport(v *jsonBuilderVerificationReportTransport) *BuilderVerificationReport {
 	res := &BuilderVerificationReport{
 		ReportDigest: *v.ReportDigest,
@@ -12350,52 +11516,6 @@ func decodeStorySummaryItemTransportToStorySummaryItem(v *jsonStorySummaryItemTr
 			continue
 		}
 		res.Flows[i] = decodeStoryFlowItemTransportToStoryFlowItem(val)
-	}
-
-	return res
-}
-
-func decodeSwarmPlanItemTransportToSwarmPlanItem(v *jsonSwarmPlanItemTransport) *SwarmPlanItem {
-	res := &SwarmPlanItem{
-		Status:            *v.Status,
-		CrossFamilyReview: *v.CrossFamilyReview,
-		CrossFamilyEval:   *v.CrossFamilyEval,
-		SingleFamily:      *v.SingleFamily,
-		Summary:           *v.Summary,
-		Manifest:          v.Manifest,
-	}
-	res.Assignments = make([]*SwarmRoleItem, len(v.Assignments))
-	for i, val := range v.Assignments {
-		if val == nil {
-			res.Assignments[i] = nil
-			continue
-		}
-		res.Assignments[i] = decodeSwarmRoleItemTransportToSwarmRoleItem(val)
-	}
-	if v.MissingRoles != nil {
-		res.MissingRoles = make([]string, len(v.MissingRoles))
-		for i, val := range v.MissingRoles {
-			res.MissingRoles[i] = val
-		}
-	}
-
-	return res
-}
-
-func decodeSwarmRoleItemTransportToSwarmRoleItem(v *jsonSwarmRoleItemTransport) *SwarmRoleItem {
-	res := &SwarmRoleItem{
-		Handle:     *v.Handle,
-		Role:       *v.Role,
-		ScopeName:  *v.ScopeName,
-		ProfileID:  *v.ProfileID,
-		Provider:   *v.Provider,
-		Model:      *v.Model,
-		Family:     *v.Family,
-		AccessMode: *v.AccessMode,
-	}
-	res.OwnedPaths = make([]string, len(v.OwnedPaths))
-	for i, val := range v.OwnedPaths {
-		res.OwnedPaths[i] = val
 	}
 
 	return res
@@ -12668,19 +11788,6 @@ func encodeApprovalItemToApprovalItemTransport2(v *ApprovalItem) *jsonApprovalIt
 	return res
 }
 
-func encodeBuilderScopeItemToBuilderScopeItemTransport(v *BuilderScopeItem) *jsonBuilderScopeItemTransport {
-	res := &jsonBuilderScopeItemTransport{
-		Name:               &v.Name,
-		PreferredProfileID: v.PreferredProfileID,
-	}
-	res.Paths = make([]string, len(v.Paths))
-	for i, val := range v.Paths {
-		res.Paths[i] = val
-	}
-
-	return res
-}
-
 func encodeBuilderVerificationReportToBuilderVerificationReportTransport(v *BuilderVerificationReport) *jsonBuilderVerificationReportTransport {
 	res := &jsonBuilderVerificationReportTransport{
 		ReportDigest: &v.ReportDigest,
@@ -12850,18 +11957,6 @@ func encodeDesignSnapshotToDesignSnapshotTransport2(v *DesignSnapshot) *jsonDesi
 	return res
 }
 
-func encodeDesignSnapshotToDesignSnapshotTransport3(v *DesignSnapshot) *jsonDesignSnapshotTransport {
-	res := &jsonDesignSnapshotTransport{}
-	res.Files = make(map[string]string, len(v.Files))
-	for key, val := range v.Files {
-		tk := key
-		tv := val
-		res.Files[tk] = tv
-	}
-
-	return res
-}
-
 func encodeExampleItemToExampleItemTransport(v *ExampleItem) *jsonExampleItemTransport {
 	res := &jsonExampleItemTransport{
 		ID:               &v.ID,
@@ -12965,52 +12060,6 @@ func encodeStorySummaryItemToStorySummaryItemTransport(v *StorySummaryItem) *jso
 			continue
 		}
 		res.Flows[i] = encodeStoryFlowItemToStoryFlowItemTransport(val)
-	}
-
-	return res
-}
-
-func encodeSwarmPlanItemToSwarmPlanItemTransport(v *SwarmPlanItem) *jsonSwarmPlanItemTransport {
-	res := &jsonSwarmPlanItemTransport{
-		Status:            &v.Status,
-		CrossFamilyReview: &v.CrossFamilyReview,
-		CrossFamilyEval:   &v.CrossFamilyEval,
-		SingleFamily:      &v.SingleFamily,
-		Summary:           &v.Summary,
-		Manifest:          v.Manifest,
-	}
-	res.Assignments = make([]*jsonSwarmRoleItemTransport, len(v.Assignments))
-	for i, val := range v.Assignments {
-		if val == nil {
-			res.Assignments[i] = nil
-			continue
-		}
-		res.Assignments[i] = encodeSwarmRoleItemToSwarmRoleItemTransport(val)
-	}
-	if v.MissingRoles != nil {
-		res.MissingRoles = make([]string, len(v.MissingRoles))
-		for i, val := range v.MissingRoles {
-			res.MissingRoles[i] = val
-		}
-	}
-
-	return res
-}
-
-func encodeSwarmRoleItemToSwarmRoleItemTransport(v *SwarmRoleItem) *jsonSwarmRoleItemTransport {
-	res := &jsonSwarmRoleItemTransport{
-		Handle:     &v.Handle,
-		Role:       &v.Role,
-		ScopeName:  &v.ScopeName,
-		ProfileID:  &v.ProfileID,
-		Provider:   &v.Provider,
-		Model:      &v.Model,
-		Family:     &v.Family,
-		AccessMode: &v.AccessMode,
-	}
-	res.OwnedPaths = make([]string, len(v.OwnedPaths))
-	for i, val := range v.OwnedPaths {
-		res.OwnedPaths[i] = val
 	}
 
 	return res
@@ -13654,7 +12703,7 @@ func validateArchitecturePreviewResultJSONValue(path string, value any, descript
 				return err
 			}
 		case "containers":
-			if err := validateArchitecturePreviewResultJSONValue9(
+			if err := validateArchitecturePreviewResultJSONValue4(
 				generatedJSONChildPath(path, key, false),
 				typed[key], "Derived C4 containers.",
 			); err != nil {
@@ -13668,7 +12717,7 @@ func validateArchitecturePreviewResultJSONValue(path string, value any, descript
 				return err
 			}
 		case "edges":
-			if err := validateArchitecturePreviewResultJSONValue11(
+			if err := validateArchitecturePreviewResultJSONValue6(
 				generatedJSONChildPath(path, key, false),
 				typed[key], "Validated directed edges between declared containers.",
 			); err != nil {
@@ -13681,13 +12730,6 @@ func validateArchitecturePreviewResultJSONValue(path string, value any, descript
 			); err != nil {
 				return err
 			}
-		case "swarm":
-			if err := validateArchitecturePreviewResultJSONValue13(
-				generatedJSONChildPath(path, key, false),
-				typed[key], "Proposed Chorus multi-agent role assignments and model-family routing.",
-			); err != nil {
-				return err
-			}
 		case "system_name":
 			if err := validateAgentPolicyItemJSONValue2(
 				generatedJSONChildPath(path, key, false),
@@ -13696,7 +12738,7 @@ func validateArchitecturePreviewResultJSONValue(path string, value any, descript
 				return err
 			}
 		case "tools":
-			if err := validateArchitecturePreviewResultJSONValue4(
+			if err := validateArchitecturePreviewResultJSONValue8(
 				generatedJSONChildPath(path, key, false),
 				typed[key], "Evaluated Goa-AI tool contracts.",
 			); err != nil {
@@ -13711,7 +12753,6 @@ func validateArchitecturePreviewResultJSONValue(path string, value any, descript
 				"design_digest",
 				"edges",
 				"request_revision",
-				"swarm",
 				"system_name",
 				"tools",
 			})
@@ -13747,8 +12788,8 @@ func validateArchitecturePreviewResultJSONValue2(path string, value any, descrip
 	return nil
 }
 
-// validateArchitecturePreviewResultJSONValue9 checks one value whose JSON shape is fixed by the generated Goa type.
-func validateArchitecturePreviewResultJSONValue9(path string, value any, description string) error {
+// validateArchitecturePreviewResultJSONValue4 checks one value whose JSON shape is fixed by the generated Goa type.
+func validateArchitecturePreviewResultJSONValue4(path string, value any, description string) error {
 	field := path
 	if field == "" {
 		field = "$payload"
@@ -13764,7 +12805,7 @@ func validateArchitecturePreviewResultJSONValue9(path string, value any, descrip
 		if item == nil {
 			continue
 		}
-		if err := validateArchitecturePreviewResultJSONValue10(
+		if err := validateArchitecturePreviewResultJSONValue5(
 			generatedJSONChildPath(path, strconv.Itoa(index), true),
 			item, description,
 		); err != nil {
@@ -13774,8 +12815,8 @@ func validateArchitecturePreviewResultJSONValue9(path string, value any, descrip
 	return nil
 }
 
-// validateArchitecturePreviewResultJSONValue10 checks one value whose JSON shape is fixed by the generated Goa type.
-func validateArchitecturePreviewResultJSONValue10(path string, value any, description string) error {
+// validateArchitecturePreviewResultJSONValue5 checks one value whose JSON shape is fixed by the generated Goa type.
+func validateArchitecturePreviewResultJSONValue5(path string, value any, description string) error {
 	field := path
 	if field == "" {
 		field = "$payload"
@@ -13834,8 +12875,8 @@ func validateArchitecturePreviewResultJSONValue10(path string, value any, descri
 	return nil
 }
 
-// validateArchitecturePreviewResultJSONValue11 checks one value whose JSON shape is fixed by the generated Goa type.
-func validateArchitecturePreviewResultJSONValue11(path string, value any, description string) error {
+// validateArchitecturePreviewResultJSONValue6 checks one value whose JSON shape is fixed by the generated Goa type.
+func validateArchitecturePreviewResultJSONValue6(path string, value any, description string) error {
 	field := path
 	if field == "" {
 		field = "$payload"
@@ -13851,7 +12892,7 @@ func validateArchitecturePreviewResultJSONValue11(path string, value any, descri
 		if item == nil {
 			continue
 		}
-		if err := validateArchitecturePreviewResultJSONValue12(
+		if err := validateArchitecturePreviewResultJSONValue7(
 			generatedJSONChildPath(path, strconv.Itoa(index), true),
 			item, description,
 		); err != nil {
@@ -13861,8 +12902,8 @@ func validateArchitecturePreviewResultJSONValue11(path string, value any, descri
 	return nil
 }
 
-// validateArchitecturePreviewResultJSONValue12 checks one value whose JSON shape is fixed by the generated Goa type.
-func validateArchitecturePreviewResultJSONValue12(path string, value any, description string) error {
+// validateArchitecturePreviewResultJSONValue7 checks one value whose JSON shape is fixed by the generated Goa type.
+func validateArchitecturePreviewResultJSONValue7(path string, value any, description string) error {
 	field := path
 	if field == "" {
 		field = "$payload"
@@ -13913,100 +12954,8 @@ func validateArchitecturePreviewResultJSONValue12(path string, value any, descri
 	return nil
 }
 
-// validateArchitecturePreviewResultJSONValue13 checks one value whose JSON shape is fixed by the generated Goa type.
-func validateArchitecturePreviewResultJSONValue13(path string, value any, description string) error {
-	field := path
-	if field == "" {
-		field = "$payload"
-	}
-	if value == nil {
-		return invalidGeneratedFieldTypeError(field, "object", "null", description)
-	}
-	typed, ok := value.(map[string]any)
-	if !ok {
-		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
-	}
-	keys := make([]string, 0, len(typed))
-	for key := range typed {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	for _, key := range keys {
-		switch key {
-		case "assignments":
-			if err := validateArchitecturePreviewResultJSONValue14(
-				generatedJSONChildPath(path, key, false),
-				typed[key], "Deterministic role assignments when status is configured.",
-			); err != nil {
-				return err
-			}
-		case "cross_family_eval":
-			if err := validateAgentPolicyItemJSONValue3(
-				generatedJSONChildPath(path, key, false),
-				typed[key], "True if and only if status is configured, an eval_author role is assigned, and the eval_author model family is disjoint from every assigned builder model family.",
-			); err != nil {
-				return err
-			}
-		case "cross_family_review":
-			if err := validateAgentPolicyItemJSONValue3(
-				generatedJSONChildPath(path, key, false),
-				typed[key], "True if and only if status is configured and the reviewer model family is disjoint from every assigned builder model family.",
-			); err != nil {
-				return err
-			}
-		case "manifest":
-			if err := validateAgentPolicyItemJSONValue2(
-				generatedJSONChildPath(path, key, false),
-				typed[key], "Formatted Chorus collaboration manifest text when status is configured; does not claim publication until sent via Chorus.",
-			); err != nil {
-				return err
-			}
-		case "missing_roles":
-			if err := validateArchitecturePreviewResultJSONValue3(
-				generatedJSONChildPath(path, key, false),
-				typed[key], "Requested roles lacking an authenticated capable profile when status is unconfigured (with builder scopes supplied) or missing_capability; omitted on solo previews with no builder scopes.",
-			); err != nil {
-				return err
-			}
-		case "single_family":
-			if err := validateAgentPolicyItemJSONValue3(
-				generatedJSONChildPath(path, key, false),
-				typed[key], "True when status is configured and all assigned roles share one model family.",
-			); err != nil {
-				return err
-			}
-		case "status":
-			if err := validateAgentPolicyItemJSONValue2(
-				generatedJSONChildPath(path, key, false),
-				typed[key], "Roster configuration status.",
-			); err != nil {
-				return err
-			}
-		case "summary":
-			if err := validateAgentPolicyItemJSONValue2(
-				generatedJSONChildPath(path, key, false),
-				typed[key], "Plain-English summary of the proposed swarm roster and model-family posture.",
-			); err != nil {
-				return err
-			}
-		default:
-			return unknownJSONFieldError(path, key, []string{
-				"assignments",
-				"cross_family_eval",
-				"cross_family_review",
-				"manifest",
-				"missing_roles",
-				"single_family",
-				"status",
-				"summary",
-			})
-		}
-	}
-	return nil
-}
-
-// validateArchitecturePreviewResultJSONValue14 checks one value whose JSON shape is fixed by the generated Goa type.
-func validateArchitecturePreviewResultJSONValue14(path string, value any, description string) error {
+// validateArchitecturePreviewResultJSONValue8 checks one value whose JSON shape is fixed by the generated Goa type.
+func validateArchitecturePreviewResultJSONValue8(path string, value any, description string) error {
 	field := path
 	if field == "" {
 		field = "$payload"
@@ -14022,7 +12971,7 @@ func validateArchitecturePreviewResultJSONValue14(path string, value any, descri
 		if item == nil {
 			continue
 		}
-		if err := validateArchitecturePreviewResultJSONValue15(
+		if err := validateArchitecturePreviewResultJSONValue9(
 			generatedJSONChildPath(path, strconv.Itoa(index), true),
 			item, description,
 		); err != nil {
@@ -14032,183 +12981,8 @@ func validateArchitecturePreviewResultJSONValue14(path string, value any, descri
 	return nil
 }
 
-// validateArchitecturePreviewResultJSONValue15 checks one value whose JSON shape is fixed by the generated Goa type.
-func validateArchitecturePreviewResultJSONValue15(path string, value any, description string) error {
-	field := path
-	if field == "" {
-		field = "$payload"
-	}
-	if value == nil {
-		return invalidGeneratedFieldTypeError(field, "object", "null", description)
-	}
-	typed, ok := value.(map[string]any)
-	if !ok {
-		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
-	}
-	keys := make([]string, 0, len(typed))
-	for key := range typed {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	for _, key := range keys {
-		switch key {
-		case "access_mode":
-			if err := validateAgentPolicyItemJSONValue2(
-				generatedJSONChildPath(path, key, false),
-				typed[key], "Operator-declared workspace coordination boundary for this role.",
-			); err != nil {
-				return err
-			}
-		case "family":
-			if err := validateAgentPolicyItemJSONValue2(
-				generatedJSONChildPath(path, key, false),
-				typed[key], "Canonical model family identifier.",
-			); err != nil {
-				return err
-			}
-		case "handle":
-			if err := validateAgentPolicyItemJSONValue2(
-				generatedJSONChildPath(path, key, false),
-				typed[key], "Deterministic Chorus agent handle (without leading '@', at most 32 characters).",
-			); err != nil {
-				return err
-			}
-		case "model":
-			if err := validateAgentPolicyItemJSONValue2(
-				generatedJSONChildPath(path, key, false),
-				typed[key], "Assigned model identifier.",
-			); err != nil {
-				return err
-			}
-		case "owned_paths":
-			if err := validateArchitecturePreviewResultJSONValue16(
-				generatedJSONChildPath(path, key, false),
-				typed[key], "Repository or workspace path globs owned by this role for Chorus coordination.",
-			); err != nil {
-				return err
-			}
-		case "profile_id":
-			if err := validateAgentPolicyItemJSONValue2(
-				generatedJSONChildPath(path, key, false),
-				typed[key], "Assigned server-configured provider profile ID.",
-			); err != nil {
-				return err
-			}
-		case "provider":
-			if err := validateAgentPolicyItemJSONValue2(
-				generatedJSONChildPath(path, key, false),
-				typed[key], "Assigned coding-agent provider name.",
-			); err != nil {
-				return err
-			}
-		case "role":
-			if err := validateAgentPolicyItemJSONValue2(
-				generatedJSONChildPath(path, key, false),
-				typed[key], "Assigned swarm role kind.",
-			); err != nil {
-				return err
-			}
-		case "scope_name":
-			if err := validateAgentPolicyItemJSONValue2(
-				generatedJSONChildPath(path, key, false),
-				typed[key], "Human-readable scope label for this assignment.",
-			); err != nil {
-				return err
-			}
-		default:
-			return unknownJSONFieldError(path, key, []string{
-				"access_mode",
-				"family",
-				"handle",
-				"model",
-				"owned_paths",
-				"profile_id",
-				"provider",
-				"role",
-				"scope_name",
-			})
-		}
-	}
-	return nil
-}
-
-// validateArchitecturePreviewResultJSONValue16 checks one value whose JSON shape is fixed by the generated Goa type.
-func validateArchitecturePreviewResultJSONValue16(path string, value any, description string) error {
-	field := path
-	if field == "" {
-		field = "$payload"
-	}
-	if value == nil {
-		return invalidGeneratedFieldTypeError(field, "array", "null", description)
-	}
-	typed, ok := value.([]any)
-	if !ok {
-		return invalidGeneratedFieldTypeError(field, "array", decodedJSONType(value), description)
-	}
-	for index, item := range typed {
-		if err := validateAgentPolicyItemJSONValue2(
-			generatedJSONChildPath(path, strconv.Itoa(index), true),
-			item, description,
-		); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// validateArchitecturePreviewResultJSONValue3 checks one value whose JSON shape is fixed by the generated Goa type.
-func validateArchitecturePreviewResultJSONValue3(path string, value any, description string) error {
-	field := path
-	if field == "" {
-		field = "$payload"
-	}
-	if value == nil {
-		return invalidGeneratedFieldTypeError(field, "array", "null", description)
-	}
-	typed, ok := value.([]any)
-	if !ok {
-		return invalidGeneratedFieldTypeError(field, "array", decodedJSONType(value), description)
-	}
-	for index, item := range typed {
-		if err := validateAgentPolicyItemJSONValue2(
-			generatedJSONChildPath(path, strconv.Itoa(index), true),
-			item, description,
-		); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// validateArchitecturePreviewResultJSONValue4 checks one value whose JSON shape is fixed by the generated Goa type.
-func validateArchitecturePreviewResultJSONValue4(path string, value any, description string) error {
-	field := path
-	if field == "" {
-		field = "$payload"
-	}
-	if value == nil {
-		return invalidGeneratedFieldTypeError(field, "array", "null", description)
-	}
-	typed, ok := value.([]any)
-	if !ok {
-		return invalidGeneratedFieldTypeError(field, "array", decodedJSONType(value), description)
-	}
-	for index, item := range typed {
-		if item == nil {
-			continue
-		}
-		if err := validateArchitecturePreviewResultJSONValue5(
-			generatedJSONChildPath(path, strconv.Itoa(index), true),
-			item, description,
-		); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// validateArchitecturePreviewResultJSONValue5 checks one value whose JSON shape is fixed by the generated Goa type.
-func validateArchitecturePreviewResultJSONValue5(path string, value any, description string) error {
+// validateArchitecturePreviewResultJSONValue9 checks one value whose JSON shape is fixed by the generated Goa type.
+func validateArchitecturePreviewResultJSONValue9(path string, value any, description string) error {
 	field := path
 	if field == "" {
 		field = "$payload"
@@ -14256,14 +13030,14 @@ func validateArchitecturePreviewResultJSONValue5(path string, value any, descrip
 				return err
 			}
 		case "injected_fields":
-			if err := validateArchitecturePreviewResultJSONValue6(
+			if err := validateArchitecturePreviewResultJSONValue10(
 				generatedJSONChildPath(path, key, false),
 				typed[key], "Compiler-listed runtime or provider fields omitted from the provider model input.",
 			); err != nil {
 				return err
 			}
 		case "input_binding":
-			if err := validateArchitecturePreviewResultJSONValue7(
+			if err := validateArchitecturePreviewResultJSONValue11(
 				generatedJSONChildPath(path, key, false),
 				typed[key], "Compiled consumer input choices, when binding is declared.",
 			); err != nil {
@@ -14331,8 +13105,8 @@ func validateArchitecturePreviewResultJSONValue5(path string, value any, descrip
 	return nil
 }
 
-// validateArchitecturePreviewResultJSONValue6 checks one value whose JSON shape is fixed by the generated Goa type.
-func validateArchitecturePreviewResultJSONValue6(path string, value any, description string) error {
+// validateArchitecturePreviewResultJSONValue10 checks one value whose JSON shape is fixed by the generated Goa type.
+func validateArchitecturePreviewResultJSONValue10(path string, value any, description string) error {
 	field := path
 	if field == "" {
 		field = "$payload"
@@ -14355,8 +13129,8 @@ func validateArchitecturePreviewResultJSONValue6(path string, value any, descrip
 	return nil
 }
 
-// validateArchitecturePreviewResultJSONValue7 checks one value whose JSON shape is fixed by the generated Goa type.
-func validateArchitecturePreviewResultJSONValue7(path string, value any, description string) error {
+// validateArchitecturePreviewResultJSONValue11 checks one value whose JSON shape is fixed by the generated Goa type.
+func validateArchitecturePreviewResultJSONValue11(path string, value any, description string) error {
 	field := path
 	if field == "" {
 		field = "$payload"
@@ -14383,7 +13157,7 @@ func validateArchitecturePreviewResultJSONValue7(path string, value any, descrip
 				return err
 			}
 		case "injected_fields":
-			if err := validateArchitecturePreviewResultJSONValue8(
+			if err := validateArchitecturePreviewResultJSONValue3(
 				generatedJSONChildPath(path, key, false),
 				typed[key], "Compiler-listed fields supplied outside the ordinary bound model input.",
 			); err != nil {
@@ -14423,84 +13197,8 @@ func validateArchitecturePreviewResultJSONValue7(path string, value any, descrip
 	return nil
 }
 
-// validateArchitecturePreviewResultJSONValue8 checks one value whose JSON shape is fixed by the generated Goa type.
-func validateArchitecturePreviewResultJSONValue8(path string, value any, description string) error {
-	field := path
-	if field == "" {
-		field = "$payload"
-	}
-	if value == nil {
-		return invalidGeneratedFieldTypeError(field, "array", "null", description)
-	}
-	typed, ok := value.([]any)
-	if !ok {
-		return invalidGeneratedFieldTypeError(field, "array", decodedJSONType(value), description)
-	}
-	for index, item := range typed {
-		if err := validateAgentPolicyItemJSONValue2(
-			generatedJSONChildPath(path, strconv.Itoa(index), true),
-			item, description,
-		); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// validateBuilderScopeItemJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
-func validateBuilderScopeItemJSONValue(path string, value any, description string) error {
-	field := path
-	if field == "" {
-		field = "$payload"
-	}
-	if value == nil {
-		return invalidGeneratedFieldTypeError(field, "object", "null", description)
-	}
-	typed, ok := value.(map[string]any)
-	if !ok {
-		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
-	}
-	keys := make([]string, 0, len(typed))
-	for key := range typed {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	for _, key := range keys {
-		switch key {
-		case "name":
-			if err := validateAgentPolicyItemJSONValue2(
-				generatedJSONChildPath(path, key, false),
-				typed[key], "Human-readable builder scope name (for example, orders or api).",
-			); err != nil {
-				return err
-			}
-		case "paths":
-			if err := validateBuilderScopeItemJSONValue2(
-				generatedJSONChildPath(path, key, false),
-				typed[key], "Repository-relative path globs owned by this builder.",
-			); err != nil {
-				return err
-			}
-		case "preferred_profile_id":
-			if err := validateAgentPolicyItemJSONValue2(
-				generatedJSONChildPath(path, key, false),
-				typed[key], "Optional preference selecting a server-configured authenticated profile ID.",
-			); err != nil {
-				return err
-			}
-		default:
-			return unknownJSONFieldError(path, key, []string{
-				"name",
-				"paths",
-				"preferred_profile_id",
-			})
-		}
-	}
-	return nil
-}
-
-// validateBuilderScopeItemJSONValue2 checks one value whose JSON shape is fixed by the generated Goa type.
-func validateBuilderScopeItemJSONValue2(path string, value any, description string) error {
+// validateArchitecturePreviewResultJSONValue3 checks one value whose JSON shape is fixed by the generated Goa type.
+func validateArchitecturePreviewResultJSONValue3(path string, value any, description string) error {
 	field := path
 	if field == "" {
 		field = "$payload"
@@ -17459,38 +16157,10 @@ func validatePreviewArchitecturePayloadJSONValue(path string, value any, descrip
 	sort.Strings(keys)
 	for _, key := range keys {
 		switch key {
-		case "architect_paths":
-			if err := validatePreviewArchitecturePayloadJSONValue2(
-				generatedJSONChildPath(path, key, false),
-				typed[key], "Optional repository-relative path globs for an @architect role in the proposed Chorus roster (requires builders).",
-			); err != nil {
-				return err
-			}
-		case "builders":
-			if err := validatePreviewArchitecturePayloadJSONValue3(
-				generatedJSONChildPath(path, key, false),
-				typed[key], "Optional explicit builder path scopes for proposing a Chorus build roster. When omitted, preview_architecture returns a solo preview with swarm.status unconfigured and no missing_roles.",
-			); err != nil {
-				return err
-			}
 		case "change_id":
 			if err := validateAgentPolicyItemJSONValue2(
 				generatedJSONChildPath(path, key, false),
 				typed[key], "Confirmed Change Card identifier.",
-			); err != nil {
-				return err
-			}
-		case "design":
-			if err := validateDesignSnapshotJSONValue(
-				generatedJSONChildPath(path, key, false),
-				typed[key], "Candidate module whose Goa and Goa-AI design is evaluated. When omitted on a server with a bound workspace, Surla reads the candidate module snapshot from the bound workspace.",
-			); err != nil {
-				return err
-			}
-		case "eval_paths":
-			if err := validatePreviewArchitecturePayloadJSONValue4(
-				generatedJSONChildPath(path, key, false),
-				typed[key], "Optional repository or evaluator-workspace relative path globs for an @eval-author role in the proposed Chorus roster (requires builders).",
 			); err != nil {
 				return err
 			}
@@ -17503,88 +16173,9 @@ func validatePreviewArchitecturePayloadJSONValue(path string, value any, descrip
 			}
 		default:
 			return unknownJSONFieldError(path, key, []string{
-				"architect_paths",
-				"builders",
 				"change_id",
-				"design",
-				"eval_paths",
 				"request_revision",
 			})
-		}
-	}
-	return nil
-}
-
-// validatePreviewArchitecturePayloadJSONValue2 checks one value whose JSON shape is fixed by the generated Goa type.
-func validatePreviewArchitecturePayloadJSONValue2(path string, value any, description string) error {
-	field := path
-	if field == "" {
-		field = "$payload"
-	}
-	if value == nil {
-		return invalidGeneratedFieldTypeError(field, "array", "null", description)
-	}
-	typed, ok := value.([]any)
-	if !ok {
-		return invalidGeneratedFieldTypeError(field, "array", decodedJSONType(value), description)
-	}
-	for index, item := range typed {
-		if err := validateAgentPolicyItemJSONValue2(
-			generatedJSONChildPath(path, strconv.Itoa(index), true),
-			item, description,
-		); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// validatePreviewArchitecturePayloadJSONValue3 checks one value whose JSON shape is fixed by the generated Goa type.
-func validatePreviewArchitecturePayloadJSONValue3(path string, value any, description string) error {
-	field := path
-	if field == "" {
-		field = "$payload"
-	}
-	if value == nil {
-		return invalidGeneratedFieldTypeError(field, "array", "null", description)
-	}
-	typed, ok := value.([]any)
-	if !ok {
-		return invalidGeneratedFieldTypeError(field, "array", decodedJSONType(value), description)
-	}
-	for index, item := range typed {
-		if item == nil {
-			continue
-		}
-		if err := validateBuilderScopeItemJSONValue(
-			generatedJSONChildPath(path, strconv.Itoa(index), true),
-			item, description,
-		); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// validatePreviewArchitecturePayloadJSONValue4 checks one value whose JSON shape is fixed by the generated Goa type.
-func validatePreviewArchitecturePayloadJSONValue4(path string, value any, description string) error {
-	field := path
-	if field == "" {
-		field = "$payload"
-	}
-	if value == nil {
-		return invalidGeneratedFieldTypeError(field, "array", "null", description)
-	}
-	typed, ok := value.([]any)
-	if !ok {
-		return invalidGeneratedFieldTypeError(field, "array", decodedJSONType(value), description)
-	}
-	for index, item := range typed {
-		if err := validateAgentPolicyItemJSONValue2(
-			generatedJSONChildPath(path, strconv.Itoa(index), true),
-			item, description,
-		); err != nil {
-			return err
 		}
 	}
 	return nil
@@ -17624,13 +16215,6 @@ func validateProposeChangePayloadJSONValue(path string, value any, description s
 			); err != nil {
 				return err
 			}
-		case "design_source":
-			if err := validateAgentPolicyItemJSONValue2(
-				generatedJSONChildPath(path, key, false),
-				typed[key], "Goa design source the analysis was made against (the target's design/*.go files). Surla saves it with the card and includes it in request_revision; it does not interpret it. When omitted on a server with a bound workspace, Surla records design/*.go from the bound workspace; when omitted without a bound workspace, the card records no design. Cannot be combined with story_refresh_op_id.",
-			); err != nil {
-				return err
-			}
 		case "prompt":
 			if err := validateAgentPolicyItemJSONValue2(
 				generatedJSONChildPath(path, key, false),
@@ -17641,7 +16225,7 @@ func validateProposeChangePayloadJSONValue(path string, value any, description s
 		case "story_refresh_op_id":
 			if err := validateAgentPolicyItemJSONValue2(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Optional op_id of a succeeded refresh_story operation for the bound workspace whose evaluated Stories this card adopts. When set, design_source must be omitted; Surla reads one workspace snapshot, requires its snapshot_digest to match the operation's, and records both the evaluated Stories and that snapshot's design/*.go on the card. Omit when the card has no Story.",
+				typed[key], "Optional op_id of a succeeded refresh_story operation for the bound workspace whose evaluated Stories this card adopts. When set, Surla reads one workspace snapshot, requires its snapshot_digest to match the operation's, and records both the evaluated Stories and that snapshot's design/*.go on the card. Omit when the card has no Story.",
 			); err != nil {
 				return err
 			}
@@ -17649,7 +16233,6 @@ func validateProposeChangePayloadJSONValue(path string, value any, description s
 			return unknownJSONFieldError(path, key, []string{
 				"analysis",
 				"change_id",
-				"design_source",
 				"prompt",
 				"story_refresh_op_id",
 			})
@@ -17736,13 +16319,6 @@ func validateReviseChangePayloadJSONValue(path string, value any, description st
 			); err != nil {
 				return err
 			}
-		case "design_source":
-			if err := validateAgentPolicyItemJSONValue2(
-				generatedJSONChildPath(path, key, false),
-				typed[key], "Updated Goa design source the analysis was made against (the target's design/*.go files). Surla saves it with the card and includes it in request_revision; it does not interpret it. When omitted on a workspace-backed card without Stories and with a bound workspace, Surla records design/*.go from the bound workspace again; otherwise the card's saved design source is kept. Cannot be set when story_refresh_op_id is set or when the card already has adopted Stories.",
-			); err != nil {
-				return err
-			}
 		case "prompt":
 			if err := validateAgentPolicyItemJSONValue2(
 				generatedJSONChildPath(path, key, false),
@@ -17760,7 +16336,7 @@ func validateReviseChangePayloadJSONValue(path string, value any, description st
 		case "story_refresh_op_id":
 			if err := validateAgentPolicyItemJSONValue2(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Optional op_id of a succeeded refresh_story operation for the bound workspace whose evaluated Stories this revision adopts. When set, design_source must be omitted and the card must not use a caller-supplied design_source; Surla reads one workspace snapshot, requires its snapshot_digest to match the operation's, and records both the evaluated Stories and that snapshot's design/*.go on the revised card. When omitted on a card that already has Stories, the card's saved Stories and saved design_source are kept together.",
+				typed[key], "Optional op_id of a succeeded refresh_story operation for the bound workspace whose evaluated Stories this revision adopts. When set, Surla reads one workspace snapshot, requires its snapshot_digest to match the operation's, and records both the evaluated Stories and that snapshot's design/*.go on the revised card. When omitted on a card that already has Stories, the card's saved Stories and their design source are kept together.",
 			); err != nil {
 				return err
 			}
@@ -17768,7 +16344,6 @@ func validateReviseChangePayloadJSONValue(path string, value any, description st
 			return unknownJSONFieldError(path, key, []string{
 				"analysis",
 				"change_id",
-				"design_source",
 				"prompt",
 				"request_revision",
 				"story_refresh_op_id",
@@ -19029,9 +17604,6 @@ func checkArchitecturePreviewResultArchitecturePreviewResultValue(in *Architectu
 				return err
 			}
 		}
-		if err := checkArchitecturePreviewResultSwarmPlanItemValue(in.Swarm, generatedJSONChildPath(field, "swarm", false), active); err != nil {
-			return err
-		}
 		if !utf8.ValidString(string(in.Banner)) {
 			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "banner", false))
 		}
@@ -19172,134 +17744,6 @@ func checkArchitecturePreviewResultToolInputBindingItemValue(in *ToolInputBindin
 			_ = item1
 			if !utf8.ValidString(string(item1)) {
 				return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(generatedJSONChildPath(field, "injected_fields", false), strconv.Itoa(index1), true))
-			}
-		}
-	}
-	return nil
-}
-
-// checkArchitecturePreviewResultSwarmPlanItemValue checks one generated value on the active path.
-func checkArchitecturePreviewResultSwarmPlanItemValue(in *SwarmPlanItem, field string, active map[any]bool) error {
-	if in == nil {
-		return nil
-	}
-	if active[in] {
-		return fmt.Errorf("%s: cyclic Go value", field)
-	}
-	active[in] = true
-	defer delete(active, in)
-	if in != nil {
-		if !utf8.ValidString(string(in.Status)) {
-			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "status", false))
-		}
-		for index1, item1 := range in.Assignments {
-			_ = index1
-			_ = item1
-			if err := checkArchitecturePreviewResultSwarmRoleItemValue(item1, generatedJSONChildPath(generatedJSONChildPath(field, "assignments", false), strconv.Itoa(index1), true), active); err != nil {
-				return err
-			}
-		}
-		for index1, item1 := range in.MissingRoles {
-			_ = index1
-			_ = item1
-			if !utf8.ValidString(string(item1)) {
-				return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(generatedJSONChildPath(field, "missing_roles", false), strconv.Itoa(index1), true))
-			}
-		}
-		if !utf8.ValidString(string(in.Summary)) {
-			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "summary", false))
-		}
-		if in.Manifest != nil {
-			if !utf8.ValidString(string(*in.Manifest)) {
-				return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "manifest", false))
-			}
-		}
-	}
-	return nil
-}
-
-// checkArchitecturePreviewResultSwarmRoleItemValue checks one generated value on the active path.
-func checkArchitecturePreviewResultSwarmRoleItemValue(in *SwarmRoleItem, field string, active map[any]bool) error {
-	if in == nil {
-		return nil
-	}
-	if active[in] {
-		return fmt.Errorf("%s: cyclic Go value", field)
-	}
-	active[in] = true
-	defer delete(active, in)
-	if in != nil {
-		if !utf8.ValidString(string(in.Handle)) {
-			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "handle", false))
-		}
-		if !utf8.ValidString(string(in.Role)) {
-			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "role", false))
-		}
-		if !utf8.ValidString(string(in.ScopeName)) {
-			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "scope_name", false))
-		}
-		if !utf8.ValidString(string(in.ProfileID)) {
-			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "profile_id", false))
-		}
-		if !utf8.ValidString(string(in.Provider)) {
-			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "provider", false))
-		}
-		if !utf8.ValidString(string(in.Model)) {
-			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "model", false))
-		}
-		if !utf8.ValidString(string(in.Family)) {
-			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "family", false))
-		}
-		for index1, item1 := range in.OwnedPaths {
-			_ = index1
-			_ = item1
-			if !utf8.ValidString(string(item1)) {
-				return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(generatedJSONChildPath(field, "owned_paths", false), strconv.Itoa(index1), true))
-			}
-		}
-		if !utf8.ValidString(string(in.AccessMode)) {
-			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "access_mode", false))
-		}
-	}
-	return nil
-}
-
-// checkBuilderScopeItemValue checks text and cycles before conversion.
-func checkBuilderScopeItemValue(in *BuilderScopeItem) error {
-	if in == nil {
-		return fmt.Errorf("missing root value")
-	}
-	active := make(map[any]bool)
-	if err := checkBuilderScopeItemBuilderScopeItemValue(in, "$", active); err != nil {
-		return err
-	}
-	return nil
-}
-
-// checkBuilderScopeItemBuilderScopeItemValue checks one generated value on the active path.
-func checkBuilderScopeItemBuilderScopeItemValue(in *BuilderScopeItem, field string, active map[any]bool) error {
-	if in == nil {
-		return nil
-	}
-	if active[in] {
-		return fmt.Errorf("%s: cyclic Go value", field)
-	}
-	active[in] = true
-	defer delete(active, in)
-	if in != nil {
-		if !utf8.ValidString(string(in.Name)) {
-			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "name", false))
-		}
-		for index1, item1 := range in.Paths {
-			_ = index1
-			_ = item1
-			if !utf8.ValidString(string(item1)) {
-				return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(generatedJSONChildPath(field, "paths", false), strconv.Itoa(index1), true))
-			}
-		}
-		if in.PreferredProfileID != nil {
-			if !utf8.ValidString(string(*in.PreferredProfileID)) {
-				return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "preferred_profile_id", false))
 			}
 		}
 	}
@@ -20773,30 +19217,6 @@ func checkPreviewArchitecturePayloadPreviewArchitecturePayloadValue(in *PreviewA
 		if !utf8.ValidString(string(in.RequestRevision)) {
 			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "request_revision", false))
 		}
-		if err := checkDesignSnapshotDesignSnapshotValue(in.Design, generatedJSONChildPath(field, "design", false), active); err != nil {
-			return err
-		}
-		for index1, item1 := range in.Builders {
-			_ = index1
-			_ = item1
-			if err := checkBuilderScopeItemBuilderScopeItemValue(item1, generatedJSONChildPath(generatedJSONChildPath(field, "builders", false), strconv.Itoa(index1), true), active); err != nil {
-				return err
-			}
-		}
-		for index1, item1 := range in.ArchitectPaths {
-			_ = index1
-			_ = item1
-			if !utf8.ValidString(string(item1)) {
-				return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(generatedJSONChildPath(field, "architect_paths", false), strconv.Itoa(index1), true))
-			}
-		}
-		for index1, item1 := range in.EvalPaths {
-			_ = index1
-			_ = item1
-			if !utf8.ValidString(string(item1)) {
-				return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(generatedJSONChildPath(field, "eval_paths", false), strconv.Itoa(index1), true))
-			}
-		}
 	}
 	return nil
 }
@@ -20829,11 +19249,6 @@ func checkProposeChangePayloadProposeChangePayloadValue(in *ProposeChangePayload
 		}
 		if !utf8.ValidString(string(in.Prompt)) {
 			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "prompt", false))
-		}
-		if in.DesignSource != nil {
-			if !utf8.ValidString(string(*in.DesignSource)) {
-				return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "design_source", false))
-			}
 		}
 		if in.StoryRefreshOpID != nil {
 			if !utf8.ValidString(string(*in.StoryRefreshOpID)) {
@@ -20913,11 +19328,6 @@ func checkReviseChangePayloadReviseChangePayloadValue(in *ReviseChangePayload, f
 		}
 		if !utf8.ValidString(string(in.Prompt)) {
 			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "prompt", false))
-		}
-		if in.DesignSource != nil {
-			if !utf8.ValidString(string(*in.DesignSource)) {
-				return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "design_source", false))
-			}
 		}
 		if in.StoryRefreshOpID != nil {
 			if !utf8.ValidString(string(*in.StoryRefreshOpID)) {
@@ -21101,30 +19511,6 @@ func checkStorySummaryItemValue(in *StorySummaryItem) error {
 	}
 	active := make(map[any]bool)
 	if err := checkChangeCardResultStorySummaryItemValue(in, "$", active); err != nil {
-		return err
-	}
-	return nil
-}
-
-// checkSwarmPlanItemValue checks text and cycles before conversion.
-func checkSwarmPlanItemValue(in *SwarmPlanItem) error {
-	if in == nil {
-		return fmt.Errorf("missing root value")
-	}
-	active := make(map[any]bool)
-	if err := checkArchitecturePreviewResultSwarmPlanItemValue(in, "$", active); err != nil {
-		return err
-	}
-	return nil
-}
-
-// checkSwarmRoleItemValue checks text and cycles before conversion.
-func checkSwarmRoleItemValue(in *SwarmRoleItem) error {
-	if in == nil {
-		return fmt.Errorf("missing root value")
-	}
-	active := make(map[any]bool)
-	if err := checkArchitecturePreviewResultSwarmRoleItemValue(in, "$", active); err != nil {
 		return err
 	}
 	return nil

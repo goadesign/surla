@@ -628,18 +628,6 @@ func ValidatePreviewArchitecturePayloadTransport(body *PreviewArchitecturePayloa
 	if body.RequestRevision == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("request_revision", "body"))
 	}
-	if body.Design != nil {
-		if err2 := ValidateDesignSnapshotTransport(body.Design); err2 != nil {
-			err = goa.MergeErrors(err, err2)
-		}
-	}
-	for _, e := range body.Builders {
-		if e != nil {
-			if err2 := ValidateBuilderScopeItemTransport(e); err2 != nil {
-				err = goa.MergeErrors(err, err2)
-			}
-		}
-	}
 	return
 }
 
@@ -668,9 +656,6 @@ func ValidatePreviewArchitectureResultTransport(body *PreviewArchitectureResultT
 	}
 	if body.Tools == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("tools", "body"))
-	}
-	if body.Swarm == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("swarm", "body"))
 	}
 	if body.Banner == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("banner", "body"))
@@ -701,11 +686,6 @@ func ValidatePreviewArchitectureResultTransport(body *PreviewArchitectureResultT
 			if err2 := ValidateToolContractItemTransport(e); err2 != nil {
 				err = goa.MergeErrors(err, err2)
 			}
-		}
-	}
-	if body.Swarm != nil {
-		if err2 := ValidateSwarmPlanItemTransport(body.Swarm); err2 != nil {
-			err = goa.MergeErrors(err, err2)
 		}
 	}
 	return
@@ -1133,17 +1113,6 @@ func ValidateApprovalItemTransport(body *ApprovalItemTransport) (err error) {
 	return
 }
 
-// ValidateBuilderScopeItemTransport runs the validations defined on BuilderScopeItemTransport.
-func ValidateBuilderScopeItemTransport(body *BuilderScopeItemTransport) (err error) {
-	if body.Name == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
-	}
-	if body.Paths == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("paths", "body"))
-	}
-	return
-}
-
 // ValidateBuilderVerificationReportTransport runs the validations defined on BuilderVerificationReportTransport.
 func ValidateBuilderVerificationReportTransport(body *BuilderVerificationReportTransport) (err error) {
 	if body.ReportDigest == nil {
@@ -1566,83 +1535,6 @@ func ValidateStorySummaryItemTransport(body *StorySummaryItemTransport) (err err
 			if err2 := ValidateStoryFlowItemTransport(e); err2 != nil {
 				err = goa.MergeErrors(err, err2)
 			}
-		}
-	}
-	return
-}
-
-// ValidateSwarmPlanItemTransport runs the validations defined on SwarmPlanItemTransport.
-func ValidateSwarmPlanItemTransport(body *SwarmPlanItemTransport) (err error) {
-	if body.Status == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("status", "body"))
-	}
-	if body.Assignments == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("assignments", "body"))
-	}
-	if body.CrossFamilyReview == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("cross_family_review", "body"))
-	}
-	if body.CrossFamilyEval == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("cross_family_eval", "body"))
-	}
-	if body.SingleFamily == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("single_family", "body"))
-	}
-	if body.Summary == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("summary", "body"))
-	}
-	if body.Status != nil {
-		if !(*body.Status == "configured" || *body.Status == "unconfigured" || *body.Status == "missing_capability") {
-			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.status", *body.Status, []any{"configured", "unconfigured", "missing_capability"}))
-		}
-	}
-	for _, e := range body.Assignments {
-		if e != nil {
-			if err2 := ValidateSwarmRoleItemTransport(e); err2 != nil {
-				err = goa.MergeErrors(err, err2)
-			}
-		}
-	}
-	return
-}
-
-// ValidateSwarmRoleItemTransport runs the validations defined on SwarmRoleItemTransport.
-func ValidateSwarmRoleItemTransport(body *SwarmRoleItemTransport) (err error) {
-	if body.Handle == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("handle", "body"))
-	}
-	if body.Role == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("role", "body"))
-	}
-	if body.ScopeName == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("scope_name", "body"))
-	}
-	if body.ProfileID == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("profile_id", "body"))
-	}
-	if body.Provider == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("provider", "body"))
-	}
-	if body.Model == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("model", "body"))
-	}
-	if body.Family == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("family", "body"))
-	}
-	if body.OwnedPaths == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("owned_paths", "body"))
-	}
-	if body.AccessMode == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("access_mode", "body"))
-	}
-	if body.Role != nil {
-		if !(*body.Role == "architect" || *body.Role == "builder" || *body.Role == "eval_author" || *body.Role == "reviewer") {
-			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.role", *body.Role, []any{"architect", "builder", "eval_author", "reviewer"}))
-		}
-	}
-	if body.AccessMode != nil {
-		if !(*body.AccessMode == "read_only_after_cp2" || *body.AccessMode == "read_write_worktree" || *body.AccessMode == "isolated_eval_workspace" || *body.AccessMode == "read_only_review") {
-			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.access_mode", *body.AccessMode, []any{"read_only_after_cp2", "read_write_worktree", "isolated_eval_workspace", "read_only_review"}))
 		}
 	}
 	return

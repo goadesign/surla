@@ -1,9 +1,7 @@
 package controlplane
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -302,31 +300,10 @@ func TestASavedApprovalNeedsAPromotionTarget(t *testing.T) {
 	assert.Equal(t, approved, got, "the rest of the card is served with unverified_approval")
 }
 
-// TestSavedCardCompatibilityWithPrior12FieldReader verifies that cardStore.save
-// writes only the 12 persisted Change Card fields (never UnverifiedApproval)
-// and that a strict 12-field reader with DisallowUnknownFields decodes cards
-// across nil/empty collections and optional Approval/UIComposition fields.
-func TestSavedCardCompatibilityWithPrior12FieldReader(t *testing.T) {
-	type prior12FieldCard struct {
-		ChangeID           string
-		Status             string
-		Prompt             string
-		Summary            string
-		Ambiguities        []*gensurla.AmbiguityQuestion
-		Answers            map[string]string
-		Examples           []*gensurla.ExampleItem
-		PreservedBehaviors []string
-		ConfirmedBy        *string
-		RequestRevision    string
-		UIComposition      *gensurla.UICompositionItem
-		Approval           *gensurla.ApprovalItem
-	}
-	type priorCardFile struct {
-		Card         *prior12FieldCard `json:"card"`
-		Owner        string            `json:"owner"`
-		DesignSource string            `json:"design_source"`
-	}
-
+// TestCurrentSavedCardRoundTripExcludesResponseOnlyApproval verifies that cardStore.save
+// saves current card data without response-only UnverifiedApproval, across
+// nil/empty collections and optional Approval/UIComposition fields.
+func TestCurrentSavedCardRoundTripExcludesResponseOnlyApproval(t *testing.T) {
 	confirmedBy := "alice@example.com"
 	cases := []struct {
 		name string
@@ -396,16 +373,6 @@ func TestSavedCardCompatibilityWithPrior12FieldReader(t *testing.T) {
 			require.NoError(t, err)
 			assert.NotContains(t, string(raw), "UnverifiedApproval")
 			assert.NotContains(t, string(raw), "unverified_approval")
-
-			var oldFormat priorCardFile
-			dec := json.NewDecoder(bytes.NewReader(raw))
-			dec.DisallowUnknownFields()
-			require.NoError(t, dec.Decode(&oldFormat))
-			require.NotNil(t, oldFormat.Card)
-			assert.Equal(t, tc.card.ChangeID, oldFormat.Card.ChangeID)
-			assert.Equal(t, tc.card.RequestRevision, oldFormat.Card.RequestRevision)
-			assert.Equal(t, tc.card.Approval, oldFormat.Card.Approval)
-			assert.Equal(t, tc.card.UIComposition, oldFormat.Card.UIComposition)
 
 			loaded, ok, err := cp.cards.load(tc.card.ChangeID)
 			require.NoError(t, err)

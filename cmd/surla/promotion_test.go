@@ -58,7 +58,7 @@ func TestLoadPromotionConfig(t *testing.T) {
 			require.NoError(t, os.MkdirAll(wsDir, 0o755))
 			path := filepath.Join(root, "promotion.json")
 			require.NoError(t, os.WriteFile(path, []byte(c.content), 0o600))
-			target, _, err := loadWorkspacePromotionTarget(path, root, wsDir, wsDir, "")
+			target, _, err := loadWorkspacePromotionTarget(path, root, wsDir, wsDir)
 			if c.wantErr != "" {
 				assert.ErrorContains(t, err, c.wantErr)
 				return
@@ -82,7 +82,7 @@ func TestLoadPromotionConfig(t *testing.T) {
 	path := filepath.Join(baseDir, "promotion.json")
 	relative := strings.Replace(strings.Replace(valid, `"/r"`, `"reports"`, 1), `"/rel"`, `"release"`, 1)
 	require.NoError(t, os.WriteFile(path, []byte(relative), 0o600))
-	target, gotReportDir, err := loadWorkspacePromotionTarget(path, baseDir, wsDir, wsDir, "")
+	target, gotReportDir, err := loadWorkspacePromotionTarget(path, baseDir, wsDir, wsDir)
 	require.NoError(t, err)
 	cfg := target.(*releaseTarget).cfg
 	assert.Equal(t, filepath.Join(baseDir, "reports"), gotReportDir)
@@ -249,7 +249,7 @@ func newReleaseTarget(t *testing.T, release, reports string) controlplane.Promot
 	content := `{"report_dir":"` + reports + `","release_dir":"` + release + `","suite_id":"orders","suite_commit":"` +
 		suiteCommit + `","environment":"sim","binaries":["orders","orders-worker"]}`
 	require.NoError(t, os.WriteFile(path, []byte(content), 0o600))
-	target, _, err := loadWorkspacePromotionTarget(path, dir, wsDir, wsDir, "")
+	target, _, err := loadWorkspacePromotionTarget(path, dir, wsDir, wsDir)
 	require.NoError(t, err)
 	return target
 }

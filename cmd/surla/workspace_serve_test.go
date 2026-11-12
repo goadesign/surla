@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,13 +13,11 @@ import (
 	gensurla "github.com/goadesign/surla/gen/surla"
 	"github.com/goadesign/surla/internal/abspath"
 	"github.com/goadesign/surla/internal/controlplane"
-	"github.com/goadesign/surla/internal/verify"
 )
 
-// TestConfigureServeWorkspaceSeparatesOperatorStateAndImportsLegacyWorkspace verifies that
-// configureServeWorkspace places operator state outside the workspace and imports legacy
-// in-workspace .surla/ and reports/ directories once when -import-legacy-workspace is set.
-func TestConfigureServeWorkspaceSeparatesOperatorStateAndImportsLegacyWorkspace(t *testing.T) {
+// TestConfigureServeWorkspaceSeparatesOperatorState verifies that
+// configureServeWorkspace places operator state outside the workspace.
+func TestConfigureServeWorkspaceSeparatesOperatorState(t *testing.T) {
 	root := t.TempDir()
 	cfgRoot := filepath.Join(root, "user-config")
 	wsDir := filepath.Join(root, "workspace")
@@ -43,273 +40,35 @@ func TestConfigureServeWorkspaceSeparatesOperatorStateAndImportsLegacyWorkspace(
 	// 2. Default zero-flag startup in an empty workspace selects protected operator storage outside wsDir.
 	wsCfg, err := configureServeWorkspace(serveConfig{})
 	require.NoError(t, err)
-	require.NotNil(t, wsCfg.closeProjectLock)
 	assertOutsideDirectory(t, wsCfg.cardsDir, wsCfg.workspaceDir)
 	assertOutsideDirectory(t, wsCfg.runsDir, wsCfg.workspaceDir)
 	assertOutsideDirectory(t, wsCfg.initStageDir, wsCfg.workspaceDir)
 	assertOutsideDirectory(t, wsCfg.evalWorkDir, wsCfg.workspaceDir)
-	require.NoError(t, wsCfg.closeProjectLock())
 
-	// 3. Seed legacy workspace .surla/cards, .surla/runs, and reports/ and verify -import-legacy-workspace.
-	legacyCardsDir := filepath.Join(wsDir, ".surla", "cards")
-	legacyRunsDir := filepath.Join(wsDir, ".surla", "runs")
-	legacyReportsDir := filepath.Join(wsDir, "reports")
-	require.NoError(t, os.MkdirAll(legacyCardsDir, 0o700))
-	require.NoError(t, os.MkdirAll(legacyRunsDir, 0o700))
-	require.NoError(t, os.MkdirAll(legacyReportsDir, 0o700))
-
-	cardDigest := strings.Repeat("a", 64) + ".json"
-	cardRaw := []byte(`{"card":{"ChangeID":"CHG-1"}}`)
-	require.NoError(t, os.WriteFile(filepath.Join(legacyCardsDir, cardDigest), cardRaw, 0o600))
-
-	reportDigest := strings.Repeat("b", 64) + ".json"
-	reportRaw := []byte(`{"passed":true}`)
-	require.NoError(t, os.WriteFile(filepath.Join(legacyReportsDir, reportDigest), reportRaw, 0o600))
-
-	// Before import, normal startup without -import-legacy-workspace fails closed requiring -import-legacy-workspace.
-	_, err = configureServeWorkspace(serveConfig{})
-	require.ErrorContains(t, err, "legacy workspace state found")
-	require.ErrorContains(t, err, "run surla serve -import-legacy-workspace")
-
-	// Run one-time -import-legacy-workspace cutover.
-	importedCfg, err := configureServeWorkspace(serveConfig{
-		importLegacyWorkspace: true,
-	})
-	require.NoError(t, err)
-	require.NotNil(t, importedCfg.closeProjectLock)
-	assert.Contains(t, filepath.ToSlash(importedCfg.cardsDir), "/imported/cards-")
-	assert.Contains(t, filepath.ToSlash(importedCfg.runsDir), "/imported/runs")
-	require.NoError(t, importedCfg.closeProjectLock())
-
-	// Copied card and report exist in the imported store, and legacy originals are untouched.
-	copiedCard, err := os.ReadFile(filepath.Join(importedCfg.cardsDir, cardDigest))
-	require.NoError(t, err)
-	assert.Equal(t, cardRaw, copiedCard)
-	origCard, err := os.ReadFile(filepath.Join(legacyCardsDir, cardDigest))
-	require.NoError(t, err)
-	assert.Equal(t, cardRaw, origCard)
-
-	// After import, normal startup without -import-legacy-workspace uses the imported stores.
-	subsequentCfg, err := configureServeWorkspace(serveConfig{})
-	require.NoError(t, err)
-	require.NotNil(t, subsequentCfg.closeProjectLock)
-	assert.Equal(t, importedCfg.cardsDir, subsequentCfg.cardsDir)
-	assert.Equal(t, importedCfg.runsDir, subsequentCfg.runsDir)
-	require.NoError(t, subsequentCfg.closeProjectLock())
-
-	// Running -import-legacy-workspace a second time fails cleanly.
-	_, err = configureServeWorkspace(serveConfig{
-		importLegacyWorkspace: true,
-	})
-	require.ErrorContains(t, err, "legacy workspace import has already been completed")
 }
 
-// TestImportLegacyWorkspaceSnapshotsConfiguredPromotionReportsAndIsolatesRoots verifies
-// that -import-legacy-workspace prevalidates -promotion-config before publication,
-// snapshots standalone CLI reports in a custom workspace report_dir with no CP4 runs,
-// preserves valid/corrupt/missing report outcomes and existing approvals, and never
-// falls back from a configured report_dir to the default reports directory.
-func TestImportLegacyWorkspaceSnapshotsConfiguredPromotionReportsAndIsolatesRoots(t *testing.T) {
-	root := t.TempDir()
-	cfgRoot := filepath.Join(root, "user-config")
-	wsDir := filepath.Join(root, "workspace")
-	releaseDir := filepath.Join(root, "release")
-	require.NoError(t, os.MkdirAll(cfgRoot, 0o700))
-	require.NoError(t, os.MkdirAll(wsDir, 0o755))
-	require.NoError(t, os.MkdirAll(releaseDir, 0o700))
-
-	priorConfigDir := userConfigDir
-	userConfigDir = func() (string, error) { return cfgRoot, nil }
-	t.Cleanup(func() { userConfigDir = priorConfigDir })
-	t.Chdir(wsDir)
-
-	commit := strings.Repeat("c", 40)
-	publish(t, releaseDir, commit, map[string]string{
-		"orders":        "api v1",
-		"orders-worker": "worker v1",
-	})
-	alice := controlplane.WithPrincipal(context.Background(), controlplane.Principal{ID: "alice@example.com"})
-
-	legacyCardsDir := filepath.Join(wsDir, ".surla", "cards")
-	defaultReportsDir := filepath.Join(wsDir, "reports")
-	customReportsDir := filepath.Join(wsDir, "custom-reports")
-	require.NoError(t, os.MkdirAll(legacyCardsDir, 0o700))
-	require.NoError(t, os.MkdirAll(defaultReportsDir, 0o700))
-	require.NoError(t, os.MkdirAll(customReportsDir, 0o700))
-
-	// Create two confirmed cards (chg-existing and chg-new) in a temporary store and copy them into legacyCardsDir.
-	seedCardsDir := filepath.Join(root, "seed-cards")
-	seedCP, err := controlplane.New(controlplane.Options{
-		CardsDir: seedCardsDir,
-	})
-	require.NoError(t, err)
-	cardExisting, err := seedCP.ProposeChange(alice, &gensurla.ProposeChangePayload{
-		ChangeID: "chg-existing",
-		Prompt:   "Refunds up to $50 are instant.",
-		Analysis: confirmedAnalysis(),
-	})
-	require.NoError(t, err)
-	cardNew, err := seedCP.ProposeChange(alice, &gensurla.ProposeChangePayload{
-		ChangeID: "chg-new",
-		Prompt:   "Refunds up to $50 are instant.",
-		Analysis: confirmedAnalysis(),
-	})
-	require.NoError(t, err)
-	require.NoError(t, seedCP.Close())
-
-	// Standalone CLI report in customReportsDir (with NO .surla/runs entry!) for chg-existing and chg-new.
-	repExisting := saveReport(t, verify.Binding{
-		CandidateCommit: commit,
-		RequestRevision: cardExisting.RequestRevision,
-		SuiteID:         "orders",
-		SuiteCommit:     suiteCommit,
-		Environment:     "sim",
-		Artifacts: map[string]string{
-			"orders":        digestOf("api v1"),
-			"orders-worker": digestOf("worker v1"),
-		},
-	}, true)
-	repExistingBytes, err := os.ReadFile(repExisting.path)
-	require.NoError(t, err)
-	require.NoError(t, os.WriteFile(filepath.Join(customReportsDir, repExisting.digest+".json"), repExistingBytes, 0o600))
-
-	// Record an approval on chg-existing before copying cards to legacyCardsDir.
-	seedCP, err = controlplane.New(controlplane.Options{
-		CardsDir:        seedCardsDir,
-		PromotionTarget: newReleaseTarget(t, releaseDir, customReportsDir),
-	})
-	require.NoError(t, err)
-	approvedExisting, err := seedCP.ApproveMerge(alice, &gensurla.ApproveMergePayload{
-		ChangeID:        "chg-existing",
-		RequestRevision: cardExisting.RequestRevision,
-		CandidateCommit: commit,
-		ReportDigest:    repExisting.digest,
-	})
-	require.NoError(t, err)
-	require.NotNil(t, approvedExisting.Approval)
-	require.NoError(t, seedCP.Close())
-
-	seedEntries, err := os.ReadDir(seedCardsDir)
-	require.NoError(t, err)
-	for _, entry := range seedEntries {
-		if strings.HasSuffix(entry.Name(), ".json") {
-			raw, readErr := os.ReadFile(filepath.Join(seedCardsDir, entry.Name()))
-			require.NoError(t, readErr)
-			require.NoError(t, os.WriteFile(filepath.Join(legacyCardsDir, entry.Name()), raw, 0o600))
-		}
+// TestConfigureServeWorkspaceRejectsWorkspacePromotionDirectories constructs the
+// server options and refuses promotion inputs or release binaries in the workspace.
+func TestConfigureServeWorkspaceRejectsWorkspacePromotionDirectories(t *testing.T) {
+	workspace := isolateServeWorkspace(t)
+	operatorDir := t.TempDir()
+	for _, field := range []string{"report_dir", "release_dir"} {
+		t.Run(field, func(t *testing.T) {
+			reports := filepath.Join(operatorDir, "reports")
+			release := filepath.Join(operatorDir, "releases")
+			if field == "report_dir" {
+				reports = filepath.Join(workspace, "reports")
+			} else {
+				release = filepath.Join(workspace, "releases")
+			}
+			config := filepath.Join(operatorDir, "promotion.json")
+			body := `{"report_dir":"` + reports + `","release_dir":"` + release + `","suite_id":"orders","suite_commit":"` + strings.Repeat("a", 40) + `","environment":"sim","binaries":["orders"]}`
+			require.NoError(t, os.WriteFile(config, []byte(body), 0o600))
+			_, err := configureServeWorkspace(serveConfig{promotionPath: config})
+			assert.ErrorContains(t, err, field)
+			assert.ErrorContains(t, err, "must be outside the workspace")
+		})
 	}
-
-	// Standalone CLI report for chg-new: valid in customReportsDir, corrupt under the SAME digest filename in defaultReportsDir.
-	repNew := saveReport(t, verify.Binding{
-		CandidateCommit: commit,
-		RequestRevision: cardNew.RequestRevision,
-		SuiteID:         "orders",
-		SuiteCommit:     suiteCommit,
-		Environment:     "sim",
-		Artifacts: map[string]string{
-			"orders":        digestOf("api v1"),
-			"orders-worker": digestOf("worker v1"),
-		},
-	}, true)
-	repNewBytes, err := os.ReadFile(repNew.path)
-	require.NoError(t, err)
-	require.NoError(t, os.WriteFile(filepath.Join(customReportsDir, repNew.digest+".json"), repNewBytes, 0o600))
-	require.NoError(t, os.WriteFile(filepath.Join(defaultReportsDir, repNew.digest+".json"), []byte(`{"corrupt":true}trailing`), 0o600))
-
-	// Report present ONLY in defaultReportsDir (must NOT be found when customReportsDir is configured).
-	defaultOnlyDigest := strings.Repeat("d", 64)
-	require.NoError(t, os.WriteFile(filepath.Join(defaultReportsDir, defaultOnlyDigest+".json"), repNewBytes, 0o600))
-
-	// Corrupt report in customReportsDir.
-	corruptDigest := strings.Repeat("e", 64)
-	require.NoError(t, os.WriteFile(filepath.Join(customReportsDir, corruptDigest+".json"), []byte(`{"bad":true}trailing`), 0o600))
-
-	// 1. Prevalidation failure before publication: a promotion config with release_dir inside wsDir fails without publishing imported/.
-	badPromoPath := filepath.Join(root, "bad-promotion.json")
-	badPromoContent := `{"report_dir":"` + customReportsDir + `","release_dir":"` + filepath.Join(wsDir, "rel") + `","suite_id":"orders","suite_commit":"` +
-		suiteCommit + `","environment":"sim","binaries":["orders","orders-worker"]}`
-	require.NoError(t, os.WriteFile(badPromoPath, []byte(badPromoContent), 0o600))
-	_, err = configureServeWorkspace(serveConfig{
-		importLegacyWorkspace: true,
-		promotionPath:         badPromoPath,
-	})
-	require.ErrorContains(t, err, "release_dir")
-	require.ErrorContains(t, err, "must be outside the workspace")
-
-	// 2. Valid promotion config referencing customReportsDir succeeds on retry because the failed attempt did not publish imported/.
-	goodPromoPath := filepath.Join(root, "promotion.json")
-	goodPromoContent := `{"report_dir":"` + customReportsDir + `","release_dir":"` + releaseDir + `","suite_id":"orders","suite_commit":"` +
-		suiteCommit + `","environment":"sim","binaries":["orders","orders-worker"]}`
-	require.NoError(t, os.WriteFile(goodPromoPath, []byte(goodPromoContent), 0o600))
-
-	importedCfg, err := configureServeWorkspace(serveConfig{
-		importLegacyWorkspace: true,
-		promotionPath:         goodPromoPath,
-	})
-	require.NoError(t, err)
-	require.NotNil(t, importedCfg.promotionTarget)
-	t.Cleanup(func() {
-		if importedCfg.closeProjectLock != nil {
-			assert.NoError(t, importedCfg.closeProjectLock())
-		}
-	})
-
-	// Remove the original workspace custom-reports directory to prove PromotionTarget reads from the imported snapshot.
-	require.NoError(t, os.RemoveAll(customReportsDir))
-	require.NoError(t, os.RemoveAll(defaultReportsDir))
-
-	// Valid report in customReportsDir is loaded (ignoring the corrupt same-digest file in defaultReportsDir).
-	loadedRep, err := importedCfg.promotionTarget.LoadReport(context.Background(), repNew.digest)
-	require.NoError(t, err)
-	assert.Equal(t, repNew.digest, loadedRep.Digest)
-
-	// Corrupt report in customReportsDir fails with decode error.
-	_, err = importedCfg.promotionTarget.LoadReport(context.Background(), corruptDigest)
-	require.Error(t, err)
-
-	// Missing report fails with os.ErrNotExist.
-	_, err = importedCfg.promotionTarget.LoadReport(context.Background(), strings.Repeat("f", 64))
-	require.ErrorIs(t, err, os.ErrNotExist)
-
-	// Report present only in defaultReportsDir is NOT loaded when customReportsDir is configured (no fallback read).
-	_, err = importedCfg.promotionTarget.LoadReport(context.Background(), defaultOnlyDigest)
-	require.ErrorIs(t, err, os.ErrNotExist)
-
-	// ControlPlane on the imported store preserves existing approval on GetChange/no-op ConfirmIntent and approves chg-new.
-	cp, err := controlplane.New(controlplane.Options{
-		CardsDir:               importedCfg.cardsDir,
-		WorkspaceDir:           importedCfg.workspaceDir,
-		PromotionTarget:        importedCfg.promotionTarget,
-		ResolvePromotionTarget: importedCfg.resolvePromotionTarget,
-		SurlaVersion:           "v0.0.0-20261110163737-d9beac313142",
-	})
-	require.NoError(t, err)
-	defer cp.Close()
-
-	gotExisting, err := cp.GetChange(alice, &gensurla.GetChangePayload{ChangeID: "chg-existing"})
-	require.NoError(t, err)
-	assert.Equal(t, approvedExisting.Approval, gotExisting.Approval)
-	assert.Nil(t, gotExisting.UnverifiedApproval)
-
-	noopConfirmed, err := cp.ConfirmIntent(alice, &gensurla.ConfirmIntentPayload{
-		ChangeID:        "chg-existing",
-		RequestRevision: gotExisting.RequestRevision,
-		Answers:         map[string]string{},
-		Examples:        gotExisting.Examples,
-	})
-	require.NoError(t, err)
-	assert.Equal(t, approvedExisting.Approval, noopConfirmed.Approval)
-	assert.Nil(t, noopConfirmed.UnverifiedApproval)
-
-	approvedNew, err := cp.ApproveMerge(alice, &gensurla.ApproveMergePayload{
-		ChangeID:        "chg-new",
-		RequestRevision: cardNew.RequestRevision,
-		CandidateCommit: commit,
-		ReportDigest:    repNew.digest,
-	})
-	require.NoError(t, err)
-	require.NotNil(t, approvedNew.Approval)
-	assert.Equal(t, repNew.digest, approvedNew.Approval.ReportDigest)
 }
 
 // TestDefaultOperatorRootDeterministicAndPermissionValidation verifies that
@@ -360,7 +119,6 @@ func TestDefaultOperatorRootDeterministicAndPermissionValidation(t *testing.T) {
 	})
 	require.NoError(t, err)
 	assertOutsideDirectory(t, parentCWDCfg.runsDir, wsDir)
-	require.NoError(t, parentCWDCfg.closeProjectLock())
 }
 
 // TestConfigureServeWorkspacePinsSuiteCommitAndRejectsSymlinkParentEscape verifies
@@ -403,11 +161,6 @@ func TestConfigureServeWorkspacePinsSuiteCommitAndRejectsSymlinkParentEscape(t *
 	// while accepting a pinned suiteCommit from init_project and keeping SuiteCommit pinned across later builder commits.
 	uninitCfg, err := configureServeWorkspace(serveConfig{})
 	require.NoError(t, err)
-	t.Cleanup(func() {
-		if uninitCfg.closeProjectLock != nil {
-			assert.NoError(t, uninitCfg.closeProjectLock())
-		}
-	})
 	assert.Nil(t, uninitCfg.verification)
 
 	childRepo, initialCommit := initCommittedStarterRepo(t, filepath.Join(wsDir, "shop"))
@@ -436,11 +189,6 @@ func TestConfigureServeWorkspacePinsSuiteCommitAndRejectsSymlinkParentEscape(t *
 		projectSet: true,
 	})
 	require.NoError(t, err)
-	t.Cleanup(func() {
-		if existingCfg.closeProjectLock != nil {
-			assert.NoError(t, existingCfg.closeProjectLock())
-		}
-	})
 	require.NotNil(t, existingCfg.verification)
 	assert.Equal(t, startupCommit, existingCfg.verification.Plan.SuiteCommit)
 
@@ -454,13 +202,12 @@ func TestConfigureServeWorkspacePinsSuiteCommitAndRejectsSymlinkParentEscape(t *
 	assert.Equal(t, startupCommit, resolvedExisting.Plan.SuiteCommit, "existing startup repo must stay pinned to startup HEAD")
 }
 
-// TestConfigureServeWorkspaceMonorepoSeparationAndLegacyImport verifies that
-// configureServeWorkspace and -import-legacy-workspace protect an enclosing
+// TestConfigureServeWorkspaceMonorepoSeparation verifies that
+// configureServeWorkspace protects an enclosing
 // monorepo working tree R while preserving external operator working-directory
 // card stores, separate verification source repositories B, and the starter
-// README's sibling ../bakery-ops/verification.json layout, and importing legacy
-// monorepo cards and promotion/run reports.
-func TestConfigureServeWorkspaceMonorepoSeparationAndLegacyImport(t *testing.T) {
+// sibling external verification configuration layout.
+func TestConfigureServeWorkspaceMonorepoSeparation(t *testing.T) {
 	isolateGitConfig(t)
 	root, err := filepath.EvalSymlinks(t.TempDir())
 	require.NoError(t, err)
@@ -490,50 +237,19 @@ func TestConfigureServeWorkspaceMonorepoSeparationAndLegacyImport(t *testing.T) 
 	require.NotNil(t, bakeryCfg.verification)
 	assert.Equal(t, filepath.Join(bakeryOpsDir, "runs"), bakeryCfg.verification.RunsDir)
 	assert.Equal(t, filepath.Join(bakeryOpsDir, "reports"), bakeryCfg.verification.Plan.ReportDir)
-	require.NoError(t, bakeryCfg.closeProjectLock())
 
-	// 2. Monorepo R with -project services/shop launched from R places default cardsDir outside R,
-	// blocks normal startup when R/.surla/cards or R/services/shop/.surla/cards has unimported cards,
-	// and imports both R/.surla/cards and R/services/shop/.surla/cards on -import-legacy-workspace.
+	// 2. An explicit project inside a monorepo keeps cards outside that monorepo.
+
 	monorepo := filepath.Join(root, "monorepo")
 	shopInMono := filepath.Join(monorepo, "services", "shop")
 	writeStarter(t, shopInMono, "example.com/shop")
 	runTestGit(t, monorepo, "init", "-q")
 	gitCommitAll(t, monorepo, "Initial monorepo")
 
-	monoLegacyCards := filepath.Join(monorepo, ".surla", "cards")
-	subLegacyCards := filepath.Join(shopInMono, ".surla", "cards")
-	require.NoError(t, os.MkdirAll(monoLegacyCards, 0o700))
-	require.NoError(t, os.MkdirAll(subLegacyCards, 0o700))
-	monoCardDigest := strings.Repeat("1", 64) + ".json"
-	subCardDigest := strings.Repeat("2", 64) + ".json"
-	require.NoError(t, os.WriteFile(filepath.Join(monoLegacyCards, monoCardDigest), []byte(`{"mono":true}`), 0o600))
-	require.NoError(t, os.WriteFile(filepath.Join(subLegacyCards, subCardDigest), []byte(`{"sub":true}`), 0o600))
-
 	t.Chdir(monorepo)
-	_, err = configureServeWorkspace(serveConfig{
-		projectDir: "services/shop",
-		projectSet: true,
-	})
-	require.ErrorContains(t, err, "legacy workspace state found")
-	require.ErrorContains(t, err, "run surla serve -import-legacy-workspace")
-
-	monoImportedCfg, err := configureServeWorkspace(serveConfig{
-		projectDir:            "services/shop",
-		projectSet:            true,
-		importLegacyWorkspace: true,
-	})
+	monoCfg, err := configureServeWorkspace(serveConfig{projectDir: "services/shop", projectSet: true})
 	require.NoError(t, err)
-	assertOutsideDirectory(t, monoImportedCfg.cardsDir, monorepo)
-	assert.FileExists(t, filepath.Join(monoImportedCfg.cardsDir, monoCardDigest))
-	require.NoError(t, monoImportedCfg.closeProjectLock())
-
-	t.Chdir(shopInMono)
-	subAfterImportCfg, err := configureServeWorkspace(serveConfig{})
-	require.NoError(t, err)
-	assert.FileExists(t, filepath.Join(subAfterImportCfg.cardsDir, subCardDigest))
-	require.NoError(t, subAfterImportCfg.closeProjectLock())
-
+	assertOutsideDirectory(t, monoCfg.cardsDir, monorepo)
 	// 3. External operator CWD outside R preserves <opsDir>/.surla/cards when -cards-dir is omitted.
 	opsDir := filepath.Join(root, "external-ops")
 	require.NoError(t, os.MkdirAll(opsDir, 0o700))
@@ -544,10 +260,9 @@ func TestConfigureServeWorkspaceMonorepoSeparationAndLegacyImport(t *testing.T) 
 	})
 	require.NoError(t, err)
 	assert.Equal(t, filepath.Join(opsDir, ".surla", "cards"), extCWDCfg.cardsDir)
-	require.NoError(t, extCWDCfg.closeProjectLock())
 
 	// 4. Separate verification source repository B (e.g. read-only bare mirror) is accepted when
-	// workspace is A, while paths inside an enclosing monorepo R2 are rejected until imported.
+	// workspace is A, while paths inside an enclosing monorepo R2 are rejected.
 	monorepo2 := filepath.Join(root, "monorepo-2")
 	wsA := filepath.Join(monorepo2, "services", "orders")
 	candB := filepath.Join(root, "candidate-b")
@@ -557,6 +272,7 @@ func TestConfigureServeWorkspaceMonorepoSeparationAndLegacyImport(t *testing.T) 
 	require.NoError(t, os.MkdirAll(releaseDir, 0o700))
 	runTestGit(t, monorepo2, "init", "-q")
 
+	suiteCommit := strings.Repeat("b", 40)
 	commitB := strings.Repeat("c", 40)
 	publish(t, releaseDir, commitB, map[string]string{
 		"orders":        "api v1",
@@ -583,7 +299,7 @@ func TestConfigureServeWorkspaceMonorepoSeparationAndLegacyImport(t *testing.T) 
 	_, err = configureServeWorkspace(serveConfig{verificationPath: verInOpsPath})
 	require.ErrorContains(t, err, "must be outside the workspace")
 
-	// Rejects explicit -cards-dir or unimported -promotion-config report_dir inside enclosing monorepo2.
+	// Rejects explicit -cards-dir or -promotion-config report_dir inside enclosing monorepo2.
 	writeVer(extRunsDir, extReportsDir)
 	_, err = configureServeWorkspace(serveConfig{
 		verificationPath: verInOpsPath,
@@ -606,94 +322,6 @@ func TestConfigureServeWorkspaceMonorepoSeparationAndLegacyImport(t *testing.T) 
 	require.ErrorContains(t, err, "report_dir")
 	require.ErrorContains(t, err, "must be outside the workspace")
 
-	// Seed a confirmed card in wsA/.surla/cards with an existing approval referencing a report in monorepo2/reports.
-	alice := controlplane.WithPrincipal(context.Background(), controlplane.Principal{ID: "alice@example.com"})
-	seedCardsDir := filepath.Join(root, "seed-cards-b")
-	seedCP, err := controlplane.New(controlplane.Options{
-		CardsDir: seedCardsDir,
-	})
-	require.NoError(t, err)
-	cardB, err := seedCP.ProposeChange(alice, &gensurla.ProposeChangePayload{
-		ChangeID: "chg-mono-2",
-		Prompt:   "Refunds up to $50 are instant.",
-		Analysis: confirmedAnalysis(),
-	})
-	require.NoError(t, err)
-	require.NoError(t, seedCP.Close())
-
-	repB := saveReport(t, verify.Binding{
-		CandidateCommit: commitB,
-		RequestRevision: cardB.RequestRevision,
-		SuiteID:         "orders",
-		SuiteCommit:     suiteCommit,
-		Environment:     "sim",
-		Artifacts: map[string]string{
-			"orders":        digestOf("api v1"),
-			"orders-worker": digestOf("worker v1"),
-		},
-	}, true)
-	repBBytes, err := os.ReadFile(repB.path)
-	require.NoError(t, err)
-	require.NoError(t, os.WriteFile(filepath.Join(mono2ReportsDir, repB.digest+".json"), repBBytes, 0o600))
-
-	seedCP, err = controlplane.New(controlplane.Options{
-		CardsDir:        seedCardsDir,
-		PromotionTarget: newReleaseTarget(t, releaseDir, mono2ReportsDir),
-	})
-	require.NoError(t, err)
-	approvedB, err := seedCP.ApproveMerge(alice, &gensurla.ApproveMergePayload{
-		ChangeID:        "chg-mono-2",
-		RequestRevision: cardB.RequestRevision,
-		CandidateCommit: commitB,
-		ReportDigest:    repB.digest,
-	})
-	require.NoError(t, err)
-	require.NotNil(t, approvedB.Approval)
-	require.NoError(t, seedCP.Close())
-
-	wsALegacyCards := filepath.Join(wsA, ".surla", "cards")
-	require.NoError(t, os.MkdirAll(wsALegacyCards, 0o700))
-	seedEntries, err := os.ReadDir(seedCardsDir)
-	require.NoError(t, err)
-	for _, entry := range seedEntries {
-		if strings.HasSuffix(entry.Name(), ".json") {
-			raw, readErr := os.ReadFile(filepath.Join(seedCardsDir, entry.Name()))
-			require.NoError(t, readErr)
-			require.NoError(t, os.WriteFile(filepath.Join(wsALegacyCards, entry.Name()), raw, 0o600))
-		}
-	}
-
-	// Run -import-legacy-workspace with -verification-config (CandidateRepo B) and -promotion-config (report_dir in monorepo2).
-	importedBCfg, err := configureServeWorkspace(serveConfig{
-		verificationPath:      verInOpsPath,
-		promotionPath:         promoBPath,
-		importLegacyWorkspace: true,
-	})
-	require.NoError(t, err)
-	require.NotNil(t, importedBCfg.promotionTarget)
-	t.Cleanup(func() {
-		if importedBCfg.closeProjectLock != nil {
-			assert.NoError(t, importedBCfg.closeProjectLock())
-		}
-	})
-
-	// Remove mono2ReportsDir to prove reports were snapshotted into <imported>/reports/dir-<sha256>.
-	require.NoError(t, os.RemoveAll(mono2ReportsDir))
-
-	cpB, err := controlplane.New(controlplane.Options{
-		CardsDir:               importedBCfg.cardsDir,
-		WorkspaceDir:           importedBCfg.workspaceDir,
-		PromotionTarget:        importedBCfg.promotionTarget,
-		ResolvePromotionTarget: importedBCfg.resolvePromotionTarget,
-		SurlaVersion:           "v0.0.0-20261110163737-d9beac313142",
-	})
-	require.NoError(t, err)
-	defer cpB.Close()
-
-	gotB, err := cpB.GetChange(alice, &gensurla.GetChangePayload{ChangeID: "chg-mono-2"})
-	require.NoError(t, err)
-	assert.Equal(t, approvedB.Approval, gotB.Approval)
-	assert.Nil(t, gotB.UnverifiedApproval)
 }
 
 // initCommittedStarterRepo creates a minimal starter repository layout at dir
@@ -725,16 +353,13 @@ func isolateServeWorkspace(t *testing.T) string {
 	return wsDir
 }
 
-// closeServeOptions releases the evaluator and project lock owned by opts
+// closeServeOptions closes the evaluator owned by opts
 // when a test constructs serveOptions without handing opts to
 // controlplane.New.
 func closeServeOptions(t *testing.T, opts controlplane.Options) {
 	t.Helper()
 	if opts.Evaluator != nil {
 		assert.NoError(t, opts.Evaluator.Close())
-	}
-	if opts.CloseProjectLock != nil {
-		assert.NoError(t, opts.CloseProjectLock())
 	}
 }
 
@@ -744,119 +369,6 @@ func assertOutsideDirectory(t *testing.T, child, root string) {
 	inside, err := abspath.Within(root, child)
 	require.NoError(t, err)
 	assert.False(t, inside, "%s must be outside %s", child, root)
-}
-
-// TestImportLegacyWorkspaceCardsOnlyPublishesEmptyReportRecord verifies that a
-// cards-only import (no legacy runs or reports) publishes
-// imported/runs/imported_paths.json as an explicit empty version 1 record and
-// that startup loads it, both for the starter layout and when
-// -verification-config names an external runs_dir, so a later missing record
-// means lost state, never "nothing to exclude".
-func TestImportLegacyWorkspaceCardsOnlyPublishesEmptyReportRecord(t *testing.T) {
-	for _, external := range []bool{false, true} {
-		t.Run(map[bool]string{false: "starter layout", true: "external verification config"}[external], func(t *testing.T) {
-			root, err := filepath.EvalSymlinks(t.TempDir())
-			require.NoError(t, err)
-			cfgRoot := filepath.Join(root, "user-config")
-			wsDir := filepath.Join(root, "workspace")
-			require.NoError(t, os.MkdirAll(cfgRoot, 0o700))
-			legacyCardsDir := filepath.Join(wsDir, ".surla", "cards")
-			require.NoError(t, os.MkdirAll(legacyCardsDir, 0o700))
-			require.NoError(t, os.WriteFile(filepath.Join(legacyCardsDir, strings.Repeat("c", 64)+".json"), []byte(`{"card":{"ChangeID":"CHG-2"}}`), 0o600))
-			cfg := serveConfig{importLegacyWorkspace: true}
-			if external {
-				opsDir := filepath.Join(root, "ops")
-				require.NoError(t, os.MkdirAll(opsDir, 0o700))
-				cfg.verificationPath = filepath.Join(opsDir, "verification.json")
-				require.NoError(t, os.WriteFile(cfg.verificationPath, []byte(`{"runs_dir":"`+filepath.Join(opsDir, "runs")+`","report_dir":"`+filepath.Join(opsDir, "reports")+`",`+
-					`"candidate_repo":"`+wsDir+`","candidate_module":".","binaries":{"shop":"./cmd/shop"},`+
-					`"suite_repo":"`+filepath.Join(opsDir, "eval-repo")+`","suite_commit":"`+strings.Repeat("d", 40)+`",`+
-					`"suite_module":".","suite_command":"./cmd/shop-evals","timeout":"15m"}`), 0o600))
-			}
-
-			priorConfigDir := userConfigDir
-			userConfigDir = func() (string, error) { return cfgRoot, nil }
-			t.Cleanup(func() { userConfigDir = priorConfigDir })
-			t.Chdir(wsDir)
-
-			importedCfg, err := configureServeWorkspace(cfg)
-			require.NoError(t, err)
-			require.NoError(t, importedCfg.closeProjectLock())
-			if external {
-				assert.Equal(t, filepath.Join(root, "ops", "runs"), importedCfg.runsDir, "the external runs_dir serves verification")
-			}
-
-			record := filepath.Join(filepath.Dir(importedCfg.cardsDir), "runs", "imported_paths.json")
-			raw, err := os.ReadFile(record)
-			require.NoError(t, err)
-			assert.JSONEq(t, `{"version":1}`, string(raw))
-			assert.Empty(t, importedCfg.importedReports)
-
-			cfg.importLegacyWorkspace = false
-			restarted, err := configureServeWorkspace(cfg)
-			require.NoError(t, err, "a later start loads the recorded empty list")
-			require.NoError(t, restarted.closeProjectLock())
-		})
-	}
-}
-
-// TestConfigureServeWorkspaceRejectsLostImportedReportRecord verifies that a
-// server started on an imported workspace refuses to start when the import's
-// report record is missing or unreadable, instead of copying the original
-// reports into check_project's containers.
-func TestConfigureServeWorkspaceRejectsLostImportedReportRecord(t *testing.T) {
-	cases := []struct {
-		name    string
-		damage  func(t *testing.T, record string)
-		wantErr string
-	}{
-		{
-			name:    "missing",
-			damage:  func(t *testing.T, record string) { require.NoError(t, os.Remove(record)) },
-			wantErr: "no such file",
-		},
-		{
-			name: "unsupported version",
-			damage: func(t *testing.T, record string) {
-				require.NoError(t, os.WriteFile(record, []byte(`{"version":2}`), 0o600))
-			},
-			wantErr: "unsupported version 2",
-		},
-		{
-			name: "symlink",
-			damage: func(t *testing.T, record string) {
-				target := filepath.Join(filepath.Dir(record), "elsewhere.json")
-				require.NoError(t, os.Rename(record, target))
-				require.NoError(t, os.Symlink(target, record))
-			},
-			wantErr: "imported_paths.json",
-		},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			root := t.TempDir()
-			cfgRoot := filepath.Join(root, "user-config")
-			wsDir := filepath.Join(root, "workspace")
-			require.NoError(t, os.MkdirAll(cfgRoot, 0o700))
-			legacyCardsDir := filepath.Join(wsDir, ".surla", "cards")
-			require.NoError(t, os.MkdirAll(legacyCardsDir, 0o700))
-			require.NoError(t, os.WriteFile(filepath.Join(legacyCardsDir, strings.Repeat("c", 64)+".json"), []byte(`{"card":{"ChangeID":"CHG-2"}}`), 0o600))
-			priorConfigDir := userConfigDir
-			userConfigDir = func() (string, error) { return cfgRoot, nil }
-			t.Cleanup(func() { userConfigDir = priorConfigDir })
-			t.Chdir(wsDir)
-
-			importedCfg, err := configureServeWorkspace(serveConfig{importLegacyWorkspace: true})
-			require.NoError(t, err)
-			require.NoError(t, importedCfg.closeProjectLock())
-			tc.damage(t, filepath.Join(filepath.Dir(importedCfg.cardsDir), "runs", "imported_paths.json"))
-
-			_, err = configureServeWorkspace(serveConfig{})
-			require.Error(t, err)
-			assert.Contains(t, err.Error(), "load the report paths recorded by the legacy workspace import")
-			assert.Contains(t, err.Error(), tc.wantErr)
-		})
-	}
 }
 
 // TestConfigureServeWorkspaceKeepsHistoryAcrossSpellingsOfTheWorkspace
@@ -915,7 +427,7 @@ func TestConfigureServeWorkspaceKeepsHistoryAcrossSpellingsOfTheWorkspace(t *tes
 					require.NoError(t, err, st)
 					assert.Equal(t, "chg-1", card.ChangeID)
 				}
-				require.NoError(t, errors.Join(cp.Close(), ws.closeProjectLock()))
+				require.NoError(t, cp.Close())
 			}
 			assert.Equal(t, filepath.Join(root, "workspace"), first.workspaceDir, "the stored spelling")
 		})

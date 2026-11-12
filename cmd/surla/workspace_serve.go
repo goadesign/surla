@@ -24,7 +24,6 @@ import (
 	"github.com/goadesign/surla/internal/abspath"
 	"github.com/goadesign/surla/internal/controlplane"
 	"github.com/goadesign/surla/internal/verify"
-	"github.com/goadesign/surla/internal/verifyrun"
 )
 
 type (
@@ -53,11 +52,6 @@ type (
 		// resolvePromotionTarget dynamically resolves PromotionTarget for the
 		// active workspace directory.
 		resolvePromotionTarget func(ctx context.Context, workspaceDir string) (controlplane.PromotionTarget, error)
-		// closeProjectLock releases the shared lock on <operatorProjectDir>/import.lock.
-		closeProjectLock func() error
-		// importedReports are the original report paths recorded by
-		// -import-legacy-workspace, empty when no import happened.
-		importedReports []string
 	}
 )
 
@@ -74,7 +68,7 @@ const (
 )
 
 // configureServeWorkspace resolves the bound workspace, operator-owned storage
-// directories, optional `-import-legacy-workspace` cutover, and dynamic
+// directories and dynamic
 // verification/promotion resolvers for `surla serve`.
 func configureServeWorkspace(cfg serveConfig) (ws workspaceServeConfig, err error) {
 	wd, err := os.Getwd()
@@ -150,68 +144,11 @@ func configureServeWorkspace(cfg serveConfig) (ws workspaceServeConfig, err erro
 		return workspaceServeConfig{}, fmt.Errorf("create operator project directory: %w", err)
 	}
 
-	closeLock, err := acquireProjectImportLock(operatorProjectDir, startupBaseDir, initialWorkspaceRoot, cfg)
-	if err != nil {
-		return workspaceServeConfig{}, err
-	}
-	defer func() {
-		if err != nil && closeLock != nil {
-			err = errors.Join(err, closeLock())
-		}
-	}()
-
-	importedRoot := filepath.Join(operatorProjectDir, "imported")
-	hasImported := false
-	if _, statErr := os.Lstat(importedRoot); statErr == nil {
-		if err := validateOperatorPrivateDir(importedRoot); err != nil {
-			return workspaceServeConfig{}, fmt.Errorf("validate imported workspace state %s: %w", importedRoot, err)
-		}
-		hasImported = true
-	} else if !errors.Is(statErr, fs.ErrNotExist) {
-		return workspaceServeConfig{}, fmt.Errorf("stat imported workspace state %s: %w", importedRoot, statErr)
-	}
-	if !hasImported {
-		if err := requireNoUnimportedImplicitLegacyStore(startupBaseDir, initialWorkspaceRoot, cfg, protectedDirs); err != nil {
-			return workspaceServeConfig{}, err
-		}
-	}
-
 	cardsHash := sha256HexString(startupBaseDir + "\x00" + initialWorkspaceRoot)
-	var (
-		operatorCardsDir    string
-		operatorRunsDir     string
-		operatorReportsRoot string
-		defaultReportDir    string
-		importedReports     []string
-	)
-	if hasImported {
-		operatorCardsDir = filepath.Join(importedRoot, "cards-"+cardsHash)
-		operatorRunsDir = filepath.Join(importedRoot, "runs")
-		// Every import records the original report paths it copied, even
-		// when it copied none, and check_project keeps those files out of
-		// its copies whatever -verification-config names as runs_dir. A
-		// missing or unreadable record means lost import state.
-		if err := validateOperatorPrivateDir(operatorRunsDir); err != nil {
-			return workspaceServeConfig{}, fmt.Errorf("validate imported runs directory %s: %w", operatorRunsDir, err)
-		}
-		importedReports, err = verifyrun.LoadImportedReportPaths(operatorRunsDir)
-		if err != nil {
-			return workspaceServeConfig{}, fmt.Errorf("load the report paths recorded by the legacy workspace import: %w", err)
-		}
-		operatorReportsRoot = filepath.Join(importedRoot, "reports")
-		if _, statErr := os.Lstat(operatorReportsRoot); statErr == nil {
-			if err := validateOperatorPrivateDir(operatorReportsRoot); err != nil {
-				return workspaceServeConfig{}, fmt.Errorf("validate imported reports root %s: %w", operatorReportsRoot, err)
-			}
-		} else if !errors.Is(statErr, fs.ErrNotExist) {
-			return workspaceServeConfig{}, fmt.Errorf("stat imported reports root %s: %w", operatorReportsRoot, statErr)
-		}
-		defaultReportDir = filepath.Join(operatorReportsRoot, "default")
-	} else {
-		operatorCardsDir = filepath.Join(operatorProjectDir, "cards-"+cardsHash)
-		operatorRunsDir = filepath.Join(operatorProjectDir, "runs")
-		defaultReportDir = filepath.Join(operatorProjectDir, "reports")
-	}
+
+	operatorCardsDir := filepath.Join(operatorProjectDir, "cards-"+cardsHash)
+	operatorRunsDir := filepath.Join(operatorProjectDir, "runs")
+	defaultReportDir := filepath.Join(operatorProjectDir, "reports")
 
 	startupCardsDir, err := abspath.EvalFrom(startupBaseDir, ".surla/cards")
 	if err != nil {
@@ -238,7 +175,6 @@ func configureServeWorkspace(cfg serveConfig) (ws workspaceServeConfig, err erro
 			startupBaseDir,
 			initialWorkspaceRoot,
 			initialWorkspaceRoot,
-			operatorReportsRoot,
 			protectedDirs...,
 		)
 		if err != nil {
@@ -259,7 +195,6 @@ func configureServeWorkspace(cfg serveConfig) (ws workspaceServeConfig, err erro
 			startupBaseDir,
 			initialWorkspaceRoot,
 			activeWorkspaceDir,
-			operatorReportsRoot,
 			protectedDirs...,
 		)
 		if err != nil {
@@ -317,7 +252,6 @@ func configureServeWorkspace(cfg serveConfig) (ws workspaceServeConfig, err erro
 					startupBaseDir,
 					initialWorkspaceRoot,
 					activeWorkspaceDir,
-					operatorReportsRoot,
 					protectedDirs...,
 				)
 				if loadErr != nil {
@@ -372,13 +306,11 @@ func configureServeWorkspace(cfg serveConfig) (ws workspaceServeConfig, err erro
 		cardsDir:               cardsDir,
 		initStageDir:           initStageDir,
 		evalWorkDir:            evalWorkDir,
-		importedReports:        importedReports,
 		runsDir:                runsDir,
 		verification:           startupVerification,
 		resolveVerification:    resolveVerification,
 		promotionTarget:        startupPromotion,
 		resolvePromotionTarget: resolvePromotionTarget,
-		closeProjectLock:       closeLock,
 	}, nil
 }
 
@@ -461,12 +393,11 @@ func validateVerificationConfigSeparation(
 }
 
 // loadWorkspacePromotionTarget reads `promoPath`, resolves relative paths
-// against baseDir, maps `report_dir` through `verifyrun.ResolveImportedReportDir`
-// when imported reports exist, and verifies that `promoPath`, the resolved
+// against baseDir and verifies that `promoPath`, the resolved
 // `report_dir`, and `release_dir` do not lie inside initialWorkspaceRoot,
 // activeWorkspaceDir, or any protectedDirs.
 func loadWorkspacePromotionTarget(
-	promoPath, baseDir, initialWorkspaceRoot, activeWorkspaceDir, operatorReportsRoot string,
+	promoPath, baseDir, initialWorkspaceRoot, activeWorkspaceDir string,
 	protectedDirs ...string,
 ) (controlplane.PromotionTarget, string, error) {
 	allProtected := append([]string{initialWorkspaceRoot, activeWorkspaceDir}, protectedDirs...)
@@ -477,16 +408,7 @@ func loadWorkspacePromotionTarget(
 	if err != nil {
 		return nil, "", err
 	}
-	resolvedReportDir, err := verifyrun.ResolveImportedReportDir(
-		operatorReportsRoot,
-		initialWorkspaceRoot,
-		f.ReportDir,
-		allProtected...,
-	)
-	if err != nil {
-		return nil, "", fmt.Errorf("-promotion-config %s: %w", promoPath, err)
-	}
-	physReport, err := abspath.EvalMissing(resolvedReportDir)
+	physReport, err := abspath.EvalMissing(f.ReportDir)
 	if err != nil {
 		return nil, "", fmt.Errorf("-promotion-config %s: %w", promoPath, err)
 	}

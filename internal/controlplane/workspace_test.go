@@ -667,8 +667,55 @@ func TestInitProjectErrorAndSpanClassificationAndEndToEndTransition(t *testing.T
 	})
 }
 
+// TestInitProjectUsesSavedSourceToProtectAnExistingProject exercises the real
+// admission boundary after design files disappear, and permits a pre-init card.
+func TestInitProjectUsesSavedSourceToProtectAnExistingProject(t *testing.T) {
+	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
+	for _, withSource := range []bool{false, true} {
+		name := "empty pre-init card"
+		if withSource {
+			name = "saved design source"
+		}
+		t.Run(name, func(t *testing.T) {
+			root := t.TempDir()
+			workspace := filepath.Join(root, "workspace")
+			require.NoError(t, os.MkdirAll(workspace, 0o755))
+			if withSource {
+				require.NoError(t, os.Mkdir(filepath.Join(workspace, "design"), 0o755))
+				require.NoError(t, os.WriteFile(filepath.Join(workspace, "design", "design.go"), []byte("package design\n"), 0o644))
+			}
+			cp := newControlPlane(t, Options{
+				CardsDir: filepath.Join(root, "cards"), WorkspaceDir: workspace,
+				InitStageDir: filepath.Join(root, "stage"), SurlaVersion: testSurlaVersion,
+				InitRunner:   fakeInitRunner,
+				NewGenerator: func() scaffold.Generator { return &fakeInitGenerator{pkg: "shop"} },
+			})
+			_, err := cp.ProposeChange(alice, &gensurla.ProposeChangePayload{
+				ChangeID: "chg", Prompt: "Create a shop.", Analysis: refundAnalysis("Create a shop."),
+			})
+			require.NoError(t, err)
+			if withSource {
+				// The saved card is now the only evidence of prior design files.
+				require.NoError(t, os.Remove(filepath.Join(workspace, "design", "design.go")))
+				require.NoError(t, os.Remove(filepath.Join(workspace, "design")))
+			}
+			result, err := cp.InitProject(alice, &gensurla.InitProjectPayload{ModulePath: "example.com/shop"})
+			if withSource {
+				assertServiceError(t, err, "conflict")
+				assert.ErrorContains(t, err, "Change Cards that captured existing design files")
+				assert.NoDirExists(t, filepath.Join(workspace, "shop"))
+			} else {
+				require.NoError(t, err)
+				physicalProject, err := filepath.EvalSymlinks(filepath.Join(workspace, "shop"))
+				require.NoError(t, err)
+				assert.Equal(t, physicalProject, result.Dir)
+			}
+		})
+	}
+}
+
 // TestCloseDrainsAndCancelsInFlightInitProjectBeforeReleasingLocks verifies that Close cancels
-// and waits for an in-flight InitProject before releasing the project lock.
+// and waits for an in-flight InitProject before releasing the card store's lock.
 func TestCloseDrainsAndCancelsInFlightInitProjectBeforeReleasingLocks(t *testing.T) {
 	t.Parallel()
 	aliceCtx := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
@@ -683,7 +730,6 @@ func TestCloseDrainsAndCancelsInFlightInitProjectBeforeReleasingLocks(t *testing
 
 		runnerStarted := make(chan struct{})
 		var runnerDone atomic.Bool
-		var lockReleasedBeforeRunnerDone atomic.Bool
 
 		cp, err := New(Options{
 			CardsDir:     cardsDir,
@@ -697,18 +743,16 @@ func TestCloseDrainsAndCancelsInFlightInitProjectBeforeReleasingLocks(t *testing
 					close(runnerStarted)
 				}
 				<-ctx.Done()
-				time.Sleep(20 * time.Millisecond)
+				unexpectedStore, lockErr := openCardStore(cardsDir)
+				if unexpectedStore != nil {
+					assert.NoError(t, unexpectedStore.close())
+				}
+				assert.ErrorContains(t, lockErr, "in use by another process")
 				runnerDone.Store(true)
 				return ctx.Err()
 			},
 			NewGenerator: func() scaffold.Generator {
 				return &fakeInitGenerator{pkg: "shop"}
-			},
-			CloseProjectLock: func() error {
-				if !runnerDone.Load() {
-					lockReleasedBeforeRunnerDone.Store(true)
-				}
-				return nil
 			},
 		})
 		require.NoError(t, err)
@@ -735,7 +779,6 @@ func TestCloseDrainsAndCancelsInFlightInitProjectBeforeReleasingLocks(t *testing
 		}
 		require.Error(t, initErr)
 		assert.True(t, runnerDone.Load(), "Close must wait for InitProject to finish before returning")
-		assert.False(t, lockReleasedBeforeRunnerDone.Load(), "Close must not release project lock while InitProject is still running")
 	})
 
 	t.Run("close_at_after_wal_waits_for_publication_and_wal_finalization", func(t *testing.T) {
@@ -756,9 +799,6 @@ func TestCloseDrainsAndCancelsInFlightInitProjectBeforeReleasingLocks(t *testing
 		}
 		t.Cleanup(releaseBarrier)
 
-		var lockSawFinalizedWAL atomic.Bool
-		var lockSawPublishedDir atomic.Bool
-
 		cp, err := New(Options{
 			CardsDir:     cardsDir,
 			WorkspaceDir: wsDir,
@@ -768,28 +808,20 @@ func TestCloseDrainsAndCancelsInFlightInitProjectBeforeReleasingLocks(t *testing
 			NewGenerator: func() scaffold.Generator {
 				return &fakeInitGenerator{pkg: "shop"}
 			},
-			CloseProjectLock: func() error {
-				rawWAL, readErr := os.ReadFile(filepath.Join(cardsDir, workspaceRecordFile))
-				if readErr == nil {
-					var wf workspaceFile
-					if json.Unmarshal(rawWAL, &wf) == nil &&
-						wf.Dir == "shop" &&
-						wf.SuiteCommit == fakeInitialSuiteCommit &&
-						wf.Staging == "" {
-						lockSawFinalizedWAL.Store(true)
-					}
-				}
-				if info, statErr := os.Stat(filepath.Join(wsDir, "shop")); statErr == nil && info.IsDir() {
-					lockSawPublishedDir.Store(true)
-				}
-				return nil
-			},
 		})
 		require.NoError(t, err)
 		cp.initStepHook = func(step string) {
-			if step == "after_wal" {
+			switch step {
+			case "after_wal":
 				close(atAfterWAL)
 				<-releaseHook
+			case "after_rename":
+				// Shutdown has begun, but publication's WAL is not finalized yet.
+				unexpected, lockErr := openCardStore(cardsDir)
+				if unexpected != nil {
+					assert.NoError(t, unexpected.close())
+				}
+				assert.ErrorContains(t, lockErr, "in use by another process")
 			}
 		}
 
@@ -811,8 +843,13 @@ func TestCloseDrainsAndCancelsInFlightInitProjectBeforeReleasingLocks(t *testing
 			closeDone <- cp.Close()
 		}()
 
+		select {
+		case <-cp.serverCtx.Done():
+		case <-time.After(5 * time.Second):
+			t.Fatal("Close did not begin cancellation")
+		}
 		// Release the after_wal barrier so InitProject finishes rename + WAL finalization
-		// while Close waits to acquire workspaceMu before calling CloseProjectLock.
+		// while Close waits to acquire workspaceMu before releasing the card lock.
 		releaseBarrier()
 		select {
 		case err := <-initDone:
@@ -827,16 +864,26 @@ func TestCloseDrainsAndCancelsInFlightInitProjectBeforeReleasingLocks(t *testing
 			t.Fatal("timed out waiting for Close to complete")
 		}
 
-		assert.True(t, lockSawPublishedDir.Load(), "CloseProjectLock must run only after InitProject publishes the project directory")
-		assert.True(t, lockSawFinalizedWAL.Load(), "CloseProjectLock must run only after InitProject finalizes workspace.json")
+		// The actual card lock is available only after publication and cleanup.
+		reopened, err := New(Options{CardsDir: cardsDir, WorkspaceDir: wsDir})
+		require.NoError(t, err)
+		defer reopened.Close()
+		physicalProject, err := filepath.EvalSymlinks(filepath.Join(wsDir, "shop"))
+		require.NoError(t, err)
+		assert.Equal(t, physicalProject, reopened.activeWorkspaceDir)
+		raw, err := os.ReadFile(filepath.Join(cardsDir, workspaceRecordFile))
+		require.NoError(t, err)
+		var saved workspaceFile
+		require.NoError(t, json.Unmarshal(raw, &saved))
+		assert.Empty(t, saved.Staging)
+		assert.Equal(t, fakeInitialSuiteCommit, saved.SuiteCommit)
 	})
 }
 
 // TestCP1WorkspaceDesignSourceProvenanceAcrossProposeReviseAndReopen verifies that
 // a workspace-derived Change Card records the bound workspace's design/*.go
 // and records the updated files again on ReviseChange after the control plane
-// is reopened, while a card proposed with design_source keeps that supplied
-// source across ReviseChange. The design source is saved and hashed into
+// is reopened. The design source is saved and hashed into
 // request_revision; nothing interprets it.
 func TestCP1WorkspaceDesignSourceProvenanceAcrossProposeReviseAndReopen(t *testing.T) {
 	t.Parallel()
@@ -849,7 +896,6 @@ func TestCP1WorkspaceDesignSourceProvenanceAcrossProposeReviseAndReopen(t *testi
 
 	const designV1 = "package design\n// v1 workspace design\n"
 	const designV2 = "package design\n// v2 workspace design\n"
-	const suppliedDesign = "package design\n// explicit caller-supplied design\n"
 	require.NoError(t, os.WriteFile(filepath.Join(designDir, "design.go"), []byte(designV1), 0o644))
 
 	proposal := func(summary string) *gensurla.CP1Analysis {
@@ -874,12 +920,12 @@ func TestCP1WorkspaceDesignSourceProvenanceAcrossProposeReviseAndReopen(t *testi
 			PreservedBehaviors: []string{"Existing orders continue to price as before."},
 		}
 	}
-	savedSource := func(cp *ControlPlane, changeID string) (string, string) {
+	savedSource := func(cp *ControlPlane, changeID string) string {
 		t.Helper()
 		rec, ok, err := cp.cards.load(changeID)
 		require.NoError(t, err)
 		require.True(t, ok)
-		return rec.designSource, rec.sourceOrigin
+		return rec.designSource
 	}
 
 	cp1, err := New(Options{
@@ -888,29 +934,15 @@ func TestCP1WorkspaceDesignSourceProvenanceAcrossProposeReviseAndReopen(t *testi
 	})
 	require.NoError(t, err)
 
-	// 1. ProposeChange with nil DesignSource records design/design.go (v1) from the bound workspace.
+	// 1. ProposeChange records design/design.go (v1) from the bound workspace.
 	wsCard, err := cp1.ProposeChange(aliceCtx, &gensurla.ProposeChangePayload{
 		ChangeID: "chg-workspace-origin",
 		Prompt:   "Add loyalty discount",
 		Analysis: proposal("Loyal customers get a discount."),
 	})
 	require.NoError(t, err)
-	src, origin := savedSource(cp1, wsCard.ChangeID)
+	src := savedSource(cp1, wsCard.ChangeID)
 	assert.Contains(t, src, "v1 workspace design")
-	assert.Equal(t, sourceOriginWorkspace, origin)
-
-	// 2. ProposeChange with explicit DesignSource records caller-supplied provenance.
-	suppliedCopy := suppliedDesign
-	supCard, err := cp1.ProposeChange(aliceCtx, &gensurla.ProposeChangePayload{
-		ChangeID:     "chg-supplied-origin",
-		Prompt:       "Add tax breakdown",
-		DesignSource: &suppliedCopy,
-		Analysis:     proposal("Receipts show tax separately."),
-	})
-	require.NoError(t, err)
-	src, origin = savedSource(cp1, supCard.ChangeID)
-	assert.Equal(t, suppliedDesign, src)
-	assert.Equal(t, sourceOriginSupplied, origin)
 
 	require.NoError(t, cp1.Close())
 
@@ -923,7 +955,7 @@ func TestCP1WorkspaceDesignSourceProvenanceAcrossProposeReviseAndReopen(t *testi
 	require.NoError(t, err)
 	defer cp2.Close()
 
-	// 3. ReviseChange with nil DesignSource on the workspace-origin card records v2 from disk.
+	// 3. ReviseChange records v2 from disk.
 	revisedWS, err := cp2.ReviseChange(aliceCtx, &gensurla.ReviseChangePayload{
 		ChangeID:        wsCard.ChangeID,
 		RequestRevision: wsCard.RequestRevision,
@@ -931,22 +963,10 @@ func TestCP1WorkspaceDesignSourceProvenanceAcrossProposeReviseAndReopen(t *testi
 		Analysis:        revision("Loyal customers get a discount capped at $20."),
 	})
 	require.NoError(t, err)
-	src, origin = savedSource(cp2, wsCard.ChangeID)
+	src = savedSource(cp2, wsCard.ChangeID)
 	assert.Contains(t, src, "v2 workspace design")
-	assert.Equal(t, sourceOriginWorkspace, origin)
 	assert.Equal(t, "check_01", revisedWS.Examples[0].ID)
 
-	// 4. ReviseChange with nil DesignSource on the supplied-origin card preserves the caller-supplied design.
-	_, err = cp2.ReviseChange(aliceCtx, &gensurla.ReviseChangePayload{
-		ChangeID:        supCard.ChangeID,
-		RequestRevision: supCard.RequestRevision,
-		Prompt:          "Add tax breakdown with rounding",
-		Analysis:        revision("Receipts show tax separately, rounded half up."),
-	})
-	require.NoError(t, err)
-	src, origin = savedSource(cp2, supCard.ChangeID)
-	assert.Equal(t, suppliedDesign, src)
-	assert.Equal(t, sourceOriginSupplied, origin)
 }
 
 // Generate returns a single stub generated Go source file for g.pkg.

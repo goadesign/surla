@@ -37,8 +37,8 @@ type (
 	}
 
 	// grantCopier walks one grant through descriptors it holds and writes the
-	// copy. It never follows a symlink and decides imported-report exclusion
-	// per entry with the kernel's own name resolution.
+	// copy. It never follows a symlink and excludes protected entries
+	// with the kernel's own name resolution.
 	grantCopier struct {
 		// ctx bounds the copy by the operation's deadline; the walk checks it
 		// before each entry and while reading each file.
@@ -49,9 +49,6 @@ type (
 		// workspaceID is the verified workspace's identity; a directory at
 		// workspaceRel with any other identity was replaced.
 		workspaceID fileID
-		// recorded maps each recorded original report's parent directory to
-		// the report basenames recorded in it.
-		recorded map[string][]string
 		// out is the result being built.
 		out grantCopy
 	}
@@ -94,25 +91,19 @@ const openEntryFlags = unix.O_RDONLY | unix.O_SYMLINK | unix.O_NONBLOCK | unix.O
 // copyGrant copies the grant held open as rootFD into dst, which must exist
 // and be empty. workspaceRel is the active workspace's slash path inside the
 // grant ("." when they are the same directory), workspaceID is the verified
-// workspace's identity, and importedReports are the validated absolute
-// original report paths the import recorded. It skips .git and .surla*
+// workspace's identity. It skips .git and .surla*
 // entries, any entry the kernel resolves as the directory's .git or .surla
-// (a case or Unicode alias on a case-insensitive volume), and every entry
-// the kernel resolves as a recorded original report, each decided when its
-// entry is opened; it copies every other regular file (keeping its mode),
+// (a case or Unicode alias on a case-insensitive volume), each decided when
+// its entry is opened; it copies every other regular file (keeping its mode),
 // directory and symlink (with its raw target). It refuses a workspace path
 // that no longer resolves to the verified workspace, and stops with ctx's
 // error when ctx ends.
-func copyGrant(ctx context.Context, rootFD int, workspaceRel string, workspaceID fileID, dst string, importedReports []string) (grantCopy, error) {
+func copyGrant(ctx context.Context, rootFD int, workspaceRel string, workspaceID fileID, dst string) (grantCopy, error) {
 	c := &grantCopier{
 		ctx:          ctx,
 		workspaceRel: workspaceRel,
 		workspaceID:  workspaceID,
-		recorded:     map[string][]string{},
 		out:          grantCopy{manifests: map[string][]byte{}},
-	}
-	for _, p := range importedReports {
-		c.recorded[filepath.Dir(p)] = append(c.recorded[filepath.Dir(p)], filepath.Base(p))
 	}
 	if c.workspaceRel == "." {
 		if err := c.requireWorkspace(rootFD, "."); err != nil {
@@ -146,15 +137,11 @@ func (c *grantCopier) copyDir(dirFD int, rel, dst string) error {
 	if err != nil {
 		return fmt.Errorf("read directory %s: %w", rel, err)
 	}
-	recordedNames, err := c.recordedNamesFor(dirFD)
-	if err != nil {
-		return fmt.Errorf("resolve recorded reports for %s: %w", rel, err)
-	}
 	for _, name := range names {
 		if name == ".git" || strings.HasPrefix(name, ".surla") {
 			continue
 		}
-		if err := c.copyEntry(dirFD, path.Join(rel, name), name, dst, recordedNames); err != nil {
+		if err := c.copyEntry(dirFD, path.Join(rel, name), name, dst); err != nil {
 			return err
 		}
 	}
@@ -166,8 +153,8 @@ func (c *grantCopier) copyDir(dirFD int, rel, dst string) error {
 var protectedNames = []string{".git", ".surla"}
 
 // copyEntry copies one entry of dirFD unless the kernel currently resolves
-// .git, .surla or one of recordedNames in dirFD to it.
-func (c *grantCopier) copyEntry(dirFD int, rel, name, dst string, recordedNames []string) error {
+// .git or .surla in dirFD to it.
+func (c *grantCopier) copyEntry(dirFD int, rel, name, dst string) error {
 	if err := c.ctx.Err(); err != nil {
 		return err
 	}
@@ -177,14 +164,7 @@ func (c *grantCopier) copyEntry(dirFD int, rel, name, dst string, recordedNames 
 	}
 	f := os.NewFile(uintptr(fd), rel)
 	defer f.Close()
-	excluded, err := isRecordedReport(dirFD, fd, protectedNames)
-	if err != nil {
-		return &errSourceChanged{rel: rel, err: err}
-	}
-	if excluded {
-		return nil
-	}
-	excluded, err = isRecordedReport(dirFD, fd, recordedNames)
+	excluded, err := isProtectedEntry(dirFD, fd)
 	if err != nil {
 		return &errSourceChanged{rel: rel, err: err}
 	}
@@ -274,52 +254,17 @@ func (r ctxReader) Read(p []byte) (int, error) {
 	return r.r.Read(p)
 }
 
-// recordedNamesFor returns the recorded report basenames whose recorded
-// parent is the directory dirFD, comparing the kernel's stored path of each
-// (F_GETPATH), so case and Unicode aliases of a directory resolve to one
-// spelling. A recorded parent that does not exist contributes nothing.
-func (c *grantCopier) recordedNamesFor(dirFD int) ([]string, error) {
-	if len(c.recorded) == 0 {
-		return nil, nil
-	}
-	held, err := fdPath(dirFD)
-	if err != nil {
-		return nil, err
-	}
-	var names []string
-	for parent, bases := range c.recorded {
-		pfd, err := unix.Open(parent, openDirFlags, 0)
-		if errors.Is(err, unix.ENOENT) || errors.Is(err, unix.ENOTDIR) {
-			continue
-		}
-		if err != nil {
-			return nil, fmt.Errorf("open recorded report directory %s: %w", parent, err)
-		}
-		stored, err := fdPath(pfd)
-		if err := errors.Join(err, unix.Close(pfd)); err != nil {
-			return nil, fmt.Errorf("resolve recorded report directory %s: %w", parent, err)
-		}
-		if stored == held {
-			names = append(names, bases...)
-		}
-	}
-	return names, nil
-}
-
-// isRecordedReport reports whether the kernel resolves one of recordedNames
+// isProtectedEntry reports whether the kernel resolves a protected name
 // in dirFD to the open entry entryFD: the same file, or the same stored
-// name. A missing recorded name excludes nothing. An entry whose stored name
+// name. A missing protected name excludes nothing. An entry whose stored name
 // cannot be read was unlinked while open, which is an error unless the same
 // file is already proven.
-func isRecordedReport(dirFD, entryFD int, recordedNames []string) (bool, error) {
-	if len(recordedNames) == 0 {
-		return false, nil
-	}
+func isProtectedEntry(dirFD, entryFD int) (bool, error) {
 	var entryStat unix.Stat_t
 	if err := unix.Fstat(entryFD, &entryStat); err != nil {
 		return false, err
 	}
-	for _, name := range recordedNames {
+	for _, name := range protectedNames {
 		rfd, err := unix.Openat(dirFD, name, openEntryFlags, 0)
 		if errors.Is(err, unix.ENOENT) {
 			continue

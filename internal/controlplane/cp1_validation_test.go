@@ -14,8 +14,6 @@ import (
 
 	genmcpadapter "github.com/goadesign/surla/gen/mcp_surla"
 	gensurla "github.com/goadesign/surla/gen/surla"
-	"github.com/goadesign/surla/internal/swarm"
-	"github.com/goadesign/surla/internal/testmodule"
 )
 
 // TestValidateAmbiguityAnswersReportsEveryProblemOnce verifies that
@@ -94,8 +92,7 @@ func TestValidateAmbiguityAnswersReportsEveryProblemOnce(t *testing.T) {
 // TestChangeCardHTTPErrorsAndMCPToolPreservation verifies that established
 // caller, state, and unconfigured-capability refusals across the Change Card
 // HTTP routes return their declared non-fault HTTP status codes (403, 404, 409,
-// 422, 501), that server-owned SwarmProfiles misconfiguration on an embedded
-// host remains an HTTP 500 fault, and that MCP tools/call continues to return
+// 422, 501), and that MCP tools/call continues to return
 // non-fault tool error results with the same domain error message.
 func TestChangeCardHTTPErrorsAndMCPToolPreservation(t *testing.T) {
 	if testing.Short() {
@@ -116,9 +113,7 @@ func TestChangeCardHTTPErrorsAndMCPToolPreservation(t *testing.T) {
 	})
 	// Both preview refusals use one server so its evaluator reuses its own
 	// compiler workspace while the handler preserves each distinct error.
-	cp := newControlPlane(t, Options{
-		SwarmProfiles: []swarm.ProviderProfile{{ID: "bad"}},
-	})
+	cp := newControlPlane(t, Options{})
 	pending, err := cp.ProposeChange(aliceCtx, &gensurla.ProposeChangePayload{ChangeID: "chg", Prompt: "Refunds.", Analysis: ambiguous})
 	require.NoError(t, err)
 	confirmed, err := cp.ConfirmIntent(aliceCtx, &gensurla.ConfirmIntentPayload{
@@ -131,11 +126,6 @@ func TestChangeCardHTTPErrorsAndMCPToolPreservation(t *testing.T) {
 		Examples: pending.Examples,
 	})
 	require.NoError(t, err)
-	designFiles := testmodule.Snapshot(t, "", `package design
-import . "goa.design/goa/v3/dsl"
-var _ = API("orders", func() {})
-var _ = Service("orders", func() {})
-`)
 	handler := NewHTTPHandler(cp, auth)
 	fixedHostHandler := NewHTTPHandler(newControlPlane(t, Options{}), auth)
 	// proposalAnalysis and revisionAnalysis are the wire forms of complete
@@ -193,9 +183,8 @@ var _ = Service("orders", func() {})
 				"verification_kind": pending.Examples[0].VerificationKind,
 			}},
 		}, http.StatusUnprocessableEntity, false, "is not one of its options"},
-		{"preview unconfirmed card", handler, http.MethodPost, "/changes/preview", "alice-token", map[string]any{"change_id": "chg", "request_revision": pending.RequestRevision, "design": map[string]any{"files": designFiles}}, http.StatusConflict, false, `change_id "chg" must be confirmed before architecture preview (status "needs_confirmation")`},
-		{"preview nil builder element", handler, http.MethodPost, "/changes/preview", "alice-token", map[string]any{"change_id": "chg-ok", "request_revision": confirmed.RequestRevision, "design": map[string]any{"files": designFiles}, "builders": []any{nil}}, http.StatusUnprocessableEntity, false, "builders[0] is nil"},
-		{"preview malformed server SwarmProfiles", handler, http.MethodPost, "/changes/preview", "alice-token", map[string]any{"change_id": "chg-ok", "request_revision": confirmed.RequestRevision, "design": map[string]any{"files": designFiles}}, http.StatusInternalServerError, true, "plan swarm roster"},
+		{"preview unconfirmed card", handler, http.MethodPost, "/changes/preview", "alice-token", map[string]any{"change_id": "chg", "request_revision": pending.RequestRevision}, http.StatusConflict, false, `change_id "chg" must be confirmed before architecture preview (status "needs_confirmation")`},
+		{"preview without a workspace", handler, http.MethodPost, "/changes/preview", "alice-token", map[string]any{"change_id": "chg-ok", "request_revision": confirmed.RequestRevision}, http.StatusUnprocessableEntity, false, "workspace directory is not bound"},
 		{"verify_change without config", handler, http.MethodPost, "/changes/chg-ok/verifications", "alice-token", map[string]any{"request_revision": confirmed.RequestRevision, "candidate_commit": strings.Repeat("a", 40)}, http.StatusNotImplemented, false, "verification is not configured"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -223,7 +212,7 @@ var _ = Service("orders", func() {})
 
 	adapter := genmcpadapter.NewMCPAdapter(gensurla.NewEndpoints(cp), nil)
 	argsJSON, err := json.Marshal(map[string]any{
-		"change_id": "chg", "request_revision": pending.RequestRevision, "design": map[string]any{"files": designFiles},
+		"change_id": "chg", "request_revision": pending.RequestRevision,
 	})
 	require.NoError(t, err)
 	mcpRes, err := adapter.ToolsCall(aliceCtx, &genmcpadapter.ToolsCallPayload{Name: "preview_architecture", Arguments: argsJSON})

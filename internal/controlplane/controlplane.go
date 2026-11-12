@@ -32,7 +32,6 @@ import (
 	"github.com/goadesign/surla/internal/diff"
 	"github.com/goadesign/surla/internal/goldenpath"
 	"github.com/goadesign/surla/internal/scaffold"
-	"github.com/goadesign/surla/internal/swarm"
 	"github.com/goadesign/surla/internal/traceview"
 	"github.com/goadesign/surla/internal/verify"
 	"github.com/goadesign/surla/verify/candidate"
@@ -139,10 +138,6 @@ type (
 		// is owned by the check helper that holds its lock, and this server's
 		// recovery acts on one only once that lock is free.
 		CheckTimeout time.Duration
-		// ImportedReports are the validated absolute original report paths
-		// recorded by -import-legacy-workspace; check copies never include
-		// the entries the kernel resolves them to.
-		ImportedReports []string
 		// GoProxyEnv holds the operator's GOPROXY, GOSUMDB, GOPRIVATE,
 		// GONOPROXY, GONOSUMDB and GOINSECURE settings as KEY=value, passed
 		// to dependency-download containers and nothing else.
@@ -173,9 +168,6 @@ type (
 		LiveModelEnv LiveModelEnv
 		// TargetUpdater applies CP3 Fast Draft Mode prompt overrides to the bound target platform.
 		TargetUpdater TargetPromptUpdater
-		// SwarmProfiles lists server-configured coding-agent provider profiles for
-		// proposing Chorus multi-agent role assignments at CP2.
-		SwarmProfiles []swarm.ProviderProfile
 		// PromotionTarget supplies CP5 verification reports and current
 		// promotion inputs. Without it or ResolvePromotionTarget, approve_merge
 		// fails.
@@ -201,15 +193,11 @@ type (
 		// Verification's plan, in <CardsDir>/live. Without it, or without
 		// Verification/ResolveVerification, start_live_target fails.
 		Live *LiveConfig
-		// CloseProjectLock releases the operator project directory's shared
-		// import lock when ControlPlane.Close releases CardsDir (or if New
-		// fails).
-		CloseProjectLock func() error
 	}
 
 	// storedChangeCard holds a versioned Change Card alongside its authenticated
-	// owner principal, original design source snapshot, design source origin,
-	// and optional adopted domain Stories.
+	// owner principal, server-observed design source snapshot, and optional
+	// adopted domain Stories.
 	storedChangeCard struct {
 		// card is the latest versioned ChangeCardResult.
 		card *gensurla.ChangeCardResult
@@ -217,9 +205,6 @@ type (
 		owner string
 		// designSource is the Goa design source snapshot inspected at CP1.
 		designSource string
-		// sourceOrigin records whether designSource was supplied by the caller
-		// ("supplied") or read from the bound workspace ("workspace").
-		sourceOrigin string
 		// stories holds the evaluated domain Stories adopted for this revision,
 		// or nil when none were adopted.
 		stories []designeval.StorySummary
@@ -247,9 +232,8 @@ type (
 		// DesignSource is the Goa design source inspected at CP1.
 		DesignSource string `json:"design_source"`
 		// Stories is the ordered slice of evaluated domain Stories adopted for
-		// this revision, omitted when empty so cards without Stories keep their
-		// exact revision digest.
-		Stories []designeval.StorySummary `json:"stories,omitempty"`
+		// this revision.
+		Stories []designeval.StorySummary `json:"stories"`
 		// Summary is the plain-English summary.
 		Summary string `json:"summary"`
 		// Ambiguities is the ordered slice of surfaced domain questions.
@@ -286,8 +270,6 @@ type (
 		liveModelEnvFor LiveModelEnv
 		// targetUpdater applies CP3 Fast Draft Mode prompt overrides to the target platform.
 		targetUpdater TargetPromptUpdater
-		// swarmProfiles stores server-configured coding-agent provider profiles.
-		swarmProfiles []swarm.ProviderProfile
 		// promotionTarget supplies CP5 reports and current promotion inputs;
 		// nil when the host bound none.
 		promotionTarget PromotionTarget
@@ -344,8 +326,6 @@ type (
 		checkWorkDir string
 		// checkTimeout is Options.CheckTimeout.
 		checkTimeout time.Duration
-		// importedReports is Options.ImportedReports.
-		importedReports []string
 		// goProxyEnv is Options.GoProxyEnv.
 		goProxyEnv []string
 		// checkOps counts running check operations so Close can wait for
@@ -369,9 +349,6 @@ type (
 		// surlaVersion pins the Surla module version in eval/go.mod during
 		// InitProject.
 		surlaVersion string
-		// closeProjectLock releases the operator project directory's shared
-		// import lock when Close releases cards.
-		closeProjectLock func() error
 		// initStepHook is an optional test hook invoked in InitProject at
 		// "after_wal" (after Step 1 writeWorkspaceRecord before RenameatxNp)
 		// and "after_rename" (after RenameatxNp and Fsync before verifyPublishedTarget).
@@ -454,14 +431,11 @@ func NewTokenAuthenticator(tokens map[string]Principal) RequestAuthenticator {
 // when CardsDir is empty or another process holds the lock.
 func New(opts Options) (*ControlPlane, error) {
 	cleanupFailedNew := func() error {
-		var evalErr, lockErr error
+		var evalErr error
 		if opts.Evaluator != nil {
 			evalErr = opts.Evaluator.Close()
 		}
-		if opts.CloseProjectLock != nil {
-			lockErr = opts.CloseProjectLock()
-		}
-		return errors.Join(evalErr, lockErr)
+		return evalErr
 	}
 	if opts.TargetUpdater != nil && opts.Live != nil {
 		err := errors.New("set either TargetUpdater or Live, not both: draft_override sends prompt text to exactly one target")
@@ -507,7 +481,6 @@ func New(opts Options) (*ControlPlane, error) {
 		liveModelEnv:           initialLiveEnv,
 		liveModelEnvFor:        opts.LiveModelEnv,
 		targetUpdater:          opts.TargetUpdater,
-		swarmProfiles:          opts.SwarmProfiles,
 		promotionTarget:        opts.PromotionTarget,
 		resolvePromotionTarget: opts.ResolvePromotionTarget,
 		verification:           verCfg,
@@ -525,12 +498,10 @@ func New(opts Options) (*ControlPlane, error) {
 		checker:                opts.Checker,
 		checkHelper:            opts.CheckHelper,
 		checkTimeout:           opts.CheckTimeout,
-		importedReports:        opts.ImportedReports,
 		goProxyEnv:             opts.GoProxyEnv,
 		newGenerator:           opts.NewGenerator,
 		initRunner:             opts.InitRunner,
 		surlaVersion:           surlaVersion,
-		closeProjectLock:       opts.CloseProjectLock,
 		liveState:              newLiveState(opts.Live, cards.dir),
 	}
 	if err := cp.restoreWorkspace(); err != nil {
@@ -624,7 +595,7 @@ func (c *ControlPlane) GoldenPath(_ context.Context) (string, error) {
 // <change_id>-ambiguity-NN and examples check_NN in list order, records the
 // design source and optional Stories (when story_refresh_op_id is given, the
 // design/*.go snapshot and evaluated Stories from that succeeded
-// refresh_story operation; else design_source when given; else design/*.go
+// refresh_story operation; otherwise design/*.go
 // from the bound workspace; else none), and binds the card to the
 // authenticated principal. A card without ambiguities is saved confirmed by
 // its owner; otherwise it waits in needs_confirmation. A change_id that
@@ -644,22 +615,13 @@ func (c *ControlPlane) ProposeChange(ctx context.Context, p *gensurla.ProposeCha
 	}
 	var designSrc string
 	var stories []designeval.StorySummary
-	sourceOrigin := sourceOriginSupplied
 	switch {
 	case p.StoryRefreshOpID != nil:
-		if p.DesignSource != nil {
-			return nil, gensurla.MakeUnprocessable(errors.New(
-				"cannot combine design_source with story_refresh_op_id; omit design_source so Surla reads the workspace snapshot verified by refresh_story",
-			))
-		}
 		var err error
 		designSrc, stories, err = c.adoptStoryRefresh(principal, *p.StoryRefreshOpID)
 		if err != nil {
 			return nil, err
 		}
-		sourceOrigin = sourceOriginWorkspace
-	case p.DesignSource != nil:
-		designSrc = *p.DesignSource
 	default:
 		if wsDir, wsDev, wsIno := c.currentWorkspaceTarget(); wsDir != "" {
 			src, err := readWorkspaceDesignSource(wsDir, wsDev, wsIno)
@@ -667,7 +629,6 @@ func (c *ControlPlane) ProposeChange(ctx context.Context, p *gensurla.ProposeCha
 				return nil, err
 			}
 			designSrc = src
-			sourceOrigin = sourceOriginWorkspace
 		}
 	}
 
@@ -734,7 +695,6 @@ func (c *ControlPlane) ProposeChange(ctx context.Context, p *gensurla.ProposeCha
 		card:         card,
 		owner:        principal.ID,
 		designSource: designSrc,
-		sourceOrigin: sourceOrigin,
 		stories:      stories,
 	}); err != nil {
 		span.SetAttributes(attribute.String("surla.public_summary", cp1SafeFaultSummary(false, cp1FaultStorageSave)))
@@ -749,19 +709,19 @@ func (c *ControlPlane) ProposeChange(ctx context.Context, p *gensurla.ProposeCha
 // Close shuts the control plane down. It first refuses new live targets,
 // then stops the live target, then cancels the design evaluations in
 // progress, waits for them, and removes their build workspace, and finally
-// releases the cards directory and operator project lock so another process can
-// use them. Local tracing stays active through owned work and cleanup; its
+// releases the card store's lock so another process can use the directory.
+// Local tracing stays active through owned work and cleanup; its
 // file then closes, and later spans are discarded. The host flushes its other
 // exporters afterward.
 // It always attempts the evaluator cleanup, and joins its error with
 // any other. If the live target cannot be confirmed stopped, the cards
-// directory and operator project lock stay locked on this and every later call,
-// because the target's processes may still use them. Card cleanup waits for a
+// directory stays locked on this and every later call,
+// because the target's processes may still use its files. Card cleanup waits for a
 // card read or save in progress; requests that reach the cards afterwards,
 // such as one still waiting on a promotion target, fail without
 // writing. A later call returns the same evaluator result and, if the live
-// target could not be stopped, the same failure; the cards directory and
-// project lock are released only once.
+// target could not be stopped, the same failure; the card store's lock
+// is released only once.
 func (c *ControlPlane) Close() error {
 	c.cancelServer()
 	// Wait out any check admission in progress: an operation admitted under
@@ -784,12 +744,7 @@ func (c *ControlPlane) Close() error {
 	defer c.workspaceMu.Unlock()
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	var lockErr error
-	if c.closeProjectLock != nil {
-		lockErr = c.closeProjectLock()
-		c.closeProjectLock = nil
-	}
-	return errors.Join(evalErr, checkErr, c.traces.Close(), c.cards.close(), lockErr)
+	return errors.Join(evalErr, checkErr, c.traces.Close(), c.cards.close())
 }
 
 // GetChange returns the current Change Card for change_id to its owner. It
@@ -850,21 +805,15 @@ func (c *ControlPlane) PreviewArchitecture(ctx context.Context, p *gensurla.Prev
 		return nil, gensurla.MakeConflict(fmt.Errorf("request_revision mismatch for %q: got %q, want %q", p.ChangeID, p.RequestRevision, record.card.RequestRevision))
 	}
 
-	var designFiles map[string]string
-	switch {
-	case p.Design != nil:
-		designFiles = p.Design.Files
-	default:
-		wsDir, wsDev, wsIno := c.currentWorkspaceTarget()
-		if wsDir == "" {
-			return nil, gensurla.MakeUnprocessable(errors.New(
-				"design is required when no workspace directory is bound to this control plane",
-			))
-		}
-		designFiles, err = readWorkspaceModuleSnapshot(wsDir, wsDev, wsIno)
-		if err != nil {
-			return nil, err
-		}
+	wsDir, wsDev, wsIno := c.currentWorkspaceTarget()
+	if wsDir == "" {
+		return nil, gensurla.MakeUnprocessable(errors.New(
+			"workspace directory is not bound to this control plane",
+		))
+	}
+	designFiles, err := readWorkspaceModuleSnapshot(wsDir, wsDev, wsIno)
+	if err != nil {
+		return nil, err
 	}
 
 	if err := reportProgress(ctx, 0, 2, "Evaluating the candidate design in the sandbox"); err != nil {
@@ -872,9 +821,6 @@ func (c *ControlPlane) PreviewArchitecture(ctx context.Context, p *gensurla.Prev
 	}
 	evaluated, err := c.evaluator.Evaluate(ctx, designFiles)
 	if err != nil {
-		return nil, err
-	}
-	if err := reportProgress(ctx, 1, 2, "Planning the proposed swarm roster"); err != nil {
 		return nil, err
 	}
 	if evaluated.SystemName == "" || len(evaluated.Containers) == 0 {
@@ -887,17 +833,6 @@ func (c *ControlPlane) PreviewArchitecture(ctx context.Context, p *gensurla.Prev
 	}
 
 	designDigest := designeval.SnapshotDigest(designFiles)
-	swarmItem, err := planSwarmRoster(
-		p.ChangeID,
-		designDigest,
-		c.swarmProfiles,
-		p.Builders,
-		p.ArchitectPaths,
-		p.EvalPaths,
-	)
-	if err != nil {
-		return nil, err
-	}
 	if err := reportProgress(ctx, 2, 2, "Architecture preview ready"); err != nil {
 		return nil, err
 	}
@@ -912,7 +847,6 @@ func (c *ControlPlane) PreviewArchitecture(ctx context.Context, p *gensurla.Prev
 		Edges:           evaluated.Edges,
 		AgentPolicies:   evaluated.AgentPolicies,
 		Tools:           evaluated.Tools,
-		Swarm:           swarmItem,
 		Banner:          banner,
 	}, nil
 }
@@ -1052,84 +986,4 @@ func reportProgress(ctx context.Context, value, total float64, message string) e
 		return fmt.Errorf("report progress: %w", err)
 	}
 	return nil
-}
-
-// planSwarmRoster invokes swarm.Plan over server-owned provider profiles and
-// explicit workspace path scopes and projects the result into a
-// gensurla.SwarmPlanItem.
-func planSwarmRoster(
-	changeID, designDigest string,
-	profiles []swarm.ProviderProfile,
-	in []*gensurla.BuilderScopeItem,
-	architectPaths, evalPaths []string,
-) (*gensurla.SwarmPlanItem, error) {
-	builders := make([]swarm.BuilderScope, 0, len(in))
-	for i, item := range in {
-		if item == nil {
-			return nil, gensurla.MakeUnprocessable(fmt.Errorf("builders[%d] is nil", i))
-		}
-		var preferred string
-		if item.PreferredProfileID != nil {
-			preferred = *item.PreferredProfileID
-		}
-		builders = append(builders, swarm.BuilderScope{
-			Name:               item.Name,
-			Paths:              item.Paths,
-			PreferredProfileID: preferred,
-		})
-	}
-	plan, err := swarm.Plan(swarm.Request{
-		ChangeID:       changeID,
-		DesignDigest:   designDigest,
-		Profiles:       profiles,
-		ArchitectPaths: architectPaths,
-		Builders:       builders,
-		EvalPaths:      evalPaths,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("plan swarm roster: %w", err)
-	}
-
-	assignments := make([]*gensurla.SwarmRoleItem, 0, len(plan.Assignments))
-	for _, a := range plan.Assignments {
-		assignments = append(assignments, &gensurla.SwarmRoleItem{
-			Handle:     a.Handle,
-			Role:       string(a.Role),
-			ScopeName:  a.ScopeName,
-			ProfileID:  a.ProfileID,
-			Provider:   a.Provider,
-			Model:      a.Model,
-			Family:     a.Family,
-			OwnedPaths: a.OwnedPaths,
-			AccessMode: a.AccessMode,
-		})
-	}
-
-	var missingRoles []string
-	if len(plan.MissingRoles) > 0 {
-		missingRoles = make([]string, 0, len(plan.MissingRoles))
-		for _, r := range plan.MissingRoles {
-			missingRoles = append(missingRoles, string(r))
-		}
-	}
-
-	var manifestPtr *string
-	if plan.Status == swarm.StatusConfigured {
-		manifest, err := swarm.FormatManifest(changeID, designDigest, plan)
-		if err != nil {
-			return nil, fmt.Errorf("format swarm manifest: %w", err)
-		}
-		manifestPtr = &manifest
-	}
-
-	return &gensurla.SwarmPlanItem{
-		Status:            string(plan.Status),
-		Assignments:       assignments,
-		CrossFamilyReview: plan.CrossFamilyReview,
-		CrossFamilyEval:   plan.CrossFamilyEval,
-		SingleFamily:      plan.SingleFamily,
-		MissingRoles:      missingRoles,
-		Summary:           plan.Summary,
-		Manifest:          manifestPtr,
-	}, nil
 }

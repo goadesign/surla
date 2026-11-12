@@ -344,7 +344,7 @@ func TestCP1ConcurrentChangesKeepTheWinningCard(t *testing.T) {
 				rev, err := computeCanonicalRevision(&foreign, "bob@example.com", "")
 				require.NoError(t, err)
 				foreign.RequestRevision = rev
-				require.NoError(t, s.cp.cards.save(storedChangeCard{card: &foreign, owner: "bob@example.com", sourceOrigin: sourceOriginSupplied}))
+				require.NoError(t, s.cp.cards.save(storedChangeCard{card: &foreign, owner: "bob@example.com"}))
 			},
 			wantErr:     "forbidden",
 			wantSummary: "Caller does not own this Change Card (this request did not modify the Change Card).",

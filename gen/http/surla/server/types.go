@@ -23,19 +23,11 @@ type ProposeChangeRequestBody struct {
 	ChangeID *string `form:"change_id,omitempty" json:"change_id,omitempty" xml:"change_id,omitempty"`
 	// Operator feature request.
 	Prompt *string `form:"prompt,omitempty" json:"prompt,omitempty" xml:"prompt,omitempty"`
-	// Goa design source the analysis was made against (the target's design/*.go
-	// files). Surla saves it with the card and includes it in request_revision; it
-	// does not interpret it. When omitted on a server with a bound workspace,
-	// Surla records design/*.go from the bound workspace; when omitted without a
-	// bound workspace, the card records no design. Cannot be combined with
-	// story_refresh_op_id.
-	DesignSource *string `form:"design_source,omitempty" json:"design_source,omitempty" xml:"design_source,omitempty"`
 	// Optional op_id of a succeeded refresh_story operation for the bound
-	// workspace whose evaluated Stories this card adopts. When set, design_source
-	// must be omitted; Surla reads one workspace snapshot, requires its
-	// snapshot_digest to match the operation's, and records both the evaluated
-	// Stories and that snapshot's design/*.go on the card. Omit when the card has
-	// no Story.
+	// workspace whose evaluated Stories this card adopts. When set, Surla reads
+	// one workspace snapshot, requires its snapshot_digest to match the
+	// operation's, and records both the evaluated Stories and that snapshot's
+	// design/*.go on the card. Omit when the card has no Story.
 	StoryRefreshOpID *string `form:"story_refresh_op_id,omitempty" json:"story_refresh_op_id,omitempty" xml:"story_refresh_op_id,omitempty"`
 	// Your analysis of prompt against the target's current design.
 	Analysis *CP1AnalysisRequestBody `form:"analysis,omitempty" json:"analysis,omitempty" xml:"analysis,omitempty"`
@@ -50,22 +42,12 @@ type ReviseChangeRequestBody struct {
 	RequestRevision *string `form:"request_revision,omitempty" json:"request_revision,omitempty" xml:"request_revision,omitempty"`
 	// Revised operator feature request.
 	Prompt *string `form:"prompt,omitempty" json:"prompt,omitempty" xml:"prompt,omitempty"`
-	// Updated Goa design source the analysis was made against (the target's
-	// design/*.go files). Surla saves it with the card and includes it in
-	// request_revision; it does not interpret it. When omitted on a
-	// workspace-backed card without Stories and with a bound workspace, Surla
-	// records design/*.go from the bound workspace again; otherwise the card's
-	// saved design source is kept. Cannot be set when story_refresh_op_id is set
-	// or when the card already has adopted Stories.
-	DesignSource *string `form:"design_source,omitempty" json:"design_source,omitempty" xml:"design_source,omitempty"`
 	// Optional op_id of a succeeded refresh_story operation for the bound
-	// workspace whose evaluated Stories this revision adopts. When set,
-	// design_source must be omitted and the card must not use a caller-supplied
-	// design_source; Surla reads one workspace snapshot, requires its
-	// snapshot_digest to match the operation's, and records both the evaluated
-	// Stories and that snapshot's design/*.go on the revised card. When omitted on
-	// a card that already has Stories, the card's saved Stories and saved
-	// design_source are kept together.
+	// workspace whose evaluated Stories this revision adopts. When set, Surla
+	// reads one workspace snapshot, requires its snapshot_digest to match the
+	// operation's, and records both the evaluated Stories and that snapshot's
+	// design/*.go on the revised card. When omitted on a card that already has
+	// Stories, the card's saved Stories and their design source are kept together.
 	StoryRefreshOpID *string `form:"story_refresh_op_id,omitempty" json:"story_refresh_op_id,omitempty" xml:"story_refresh_op_id,omitempty"`
 	// Your analysis of the revised prompt against the current card and the
 	// target's current design.
@@ -97,20 +79,6 @@ type PreviewArchitectureRequestBody struct {
 	ChangeID *string `form:"change_id,omitempty" json:"change_id,omitempty" xml:"change_id,omitempty"`
 	// Expected CP1 request_revision digest.
 	RequestRevision *string `form:"request_revision,omitempty" json:"request_revision,omitempty" xml:"request_revision,omitempty"`
-	// Candidate module whose Goa and Goa-AI design is evaluated. When omitted on a
-	// server with a bound workspace, Surla reads the candidate module snapshot
-	// from the bound workspace.
-	Design *DesignSnapshotRequestBody `form:"design,omitempty" json:"design,omitempty" xml:"design,omitempty"`
-	// Optional explicit builder path scopes for proposing a Chorus build roster.
-	// When omitted, preview_architecture returns a solo preview with swarm.status
-	// unconfigured and no missing_roles.
-	Builders []*BuilderScopeItemRequestBody `form:"builders,omitempty" json:"builders,omitempty" xml:"builders,omitempty"`
-	// Optional repository-relative path globs for an @architect role in the
-	// proposed Chorus roster (requires builders).
-	ArchitectPaths []string `form:"architect_paths,omitempty" json:"architect_paths,omitempty" xml:"architect_paths,omitempty"`
-	// Optional repository or evaluator-workspace relative path globs for an
-	// @eval-author role in the proposed Chorus roster (requires builders).
-	EvalPaths []string `form:"eval_paths,omitempty" json:"eval_paths,omitempty" xml:"eval_paths,omitempty"`
 }
 
 // DraftOverrideRequestBody is the type of the "surla" service "draft_override"
@@ -427,8 +395,6 @@ type PreviewArchitectureResponseBody struct {
 	AgentPolicies []*AgentPolicyItemResponseBody `form:"agent_policies" json:"agent_policies" xml:"agent_policies"`
 	// Evaluated Goa-AI tool contracts.
 	Tools []*ToolContractItemResponseBody `form:"tools" json:"tools" xml:"tools"`
-	// Proposed Chorus multi-agent role assignments and model-family routing.
-	Swarm *SwarmPlanItemResponseBody `form:"swarm" json:"swarm" xml:"swarm"`
 	// Plain-English summary of topology and guardrails.
 	Banner string `form:"banner" json:"banner" xml:"banner"`
 }
@@ -2045,56 +2011,6 @@ type ToolInputBindingItemResponseBody struct {
 	InjectedFields []string `form:"injected_fields" json:"injected_fields" xml:"injected_fields"`
 }
 
-// SwarmPlanItemResponseBody is used to define fields on response body types.
-type SwarmPlanItemResponseBody struct {
-	// Roster configuration status.
-	Status string `form:"status" json:"status" xml:"status"`
-	// Deterministic role assignments when status is configured.
-	Assignments []*SwarmRoleItemResponseBody `form:"assignments" json:"assignments" xml:"assignments"`
-	// True if and only if status is configured and the reviewer model family is
-	// disjoint from every assigned builder model family.
-	CrossFamilyReview bool `form:"cross_family_review" json:"cross_family_review" xml:"cross_family_review"`
-	// True if and only if status is configured, an eval_author role is assigned,
-	// and the eval_author model family is disjoint from every assigned builder
-	// model family.
-	CrossFamilyEval bool `form:"cross_family_eval" json:"cross_family_eval" xml:"cross_family_eval"`
-	// True when status is configured and all assigned roles share one model family.
-	SingleFamily bool `form:"single_family" json:"single_family" xml:"single_family"`
-	// Requested roles lacking an authenticated capable profile when status is
-	// unconfigured (with builder scopes supplied) or missing_capability; omitted
-	// on solo previews with no builder scopes.
-	MissingRoles []string `form:"missing_roles,omitempty" json:"missing_roles,omitempty" xml:"missing_roles,omitempty"`
-	// Plain-English summary of the proposed swarm roster and model-family posture.
-	Summary string `form:"summary" json:"summary" xml:"summary"`
-	// Formatted Chorus collaboration manifest text when status is configured; does
-	// not claim publication until sent via Chorus.
-	Manifest *string `form:"manifest,omitempty" json:"manifest,omitempty" xml:"manifest,omitempty"`
-}
-
-// SwarmRoleItemResponseBody is used to define fields on response body types.
-type SwarmRoleItemResponseBody struct {
-	// Deterministic Chorus agent handle (without leading '@', at most 32
-	// characters).
-	Handle string `form:"handle" json:"handle" xml:"handle"`
-	// Assigned swarm role kind.
-	Role string `form:"role" json:"role" xml:"role"`
-	// Human-readable scope label for this assignment.
-	ScopeName string `form:"scope_name" json:"scope_name" xml:"scope_name"`
-	// Assigned server-configured provider profile ID.
-	ProfileID string `form:"profile_id" json:"profile_id" xml:"profile_id"`
-	// Assigned coding-agent provider name.
-	Provider string `form:"provider" json:"provider" xml:"provider"`
-	// Assigned model identifier.
-	Model string `form:"model" json:"model" xml:"model"`
-	// Canonical model family identifier.
-	Family string `form:"family" json:"family" xml:"family"`
-	// Repository or workspace path globs owned by this role for Chorus
-	// coordination.
-	OwnedPaths []string `form:"owned_paths" json:"owned_paths" xml:"owned_paths"`
-	// Operator-declared workspace coordination boundary for this role.
-	AccessMode string `form:"access_mode" json:"access_mode" xml:"access_mode"`
-}
-
 // VerificationRunningResponseBody is used to define fields on response body
 // types.
 type VerificationRunningResponseBody struct {
@@ -2352,16 +2268,6 @@ type DesignSnapshotRequestBody struct {
 	// File contents keyed by module-relative path, such as design/design.go or
 	// go.mod.
 	Files map[string]string `form:"files,omitempty" json:"files,omitempty" xml:"files,omitempty"`
-}
-
-// BuilderScopeItemRequestBody is used to define fields on request body types.
-type BuilderScopeItemRequestBody struct {
-	// Human-readable builder scope name (for example, orders or api).
-	Name *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
-	// Repository-relative path globs owned by this builder.
-	Paths []string `form:"paths,omitempty" json:"paths,omitempty" xml:"paths,omitempty"`
-	// Optional preference selecting a server-configured authenticated profile ID.
-	PreferredProfileID *string `form:"preferred_profile_id,omitempty" json:"preferred_profile_id,omitempty" xml:"preferred_profile_id,omitempty"`
 }
 
 // StateResponseBody holds exactly one of its branch values.
@@ -2904,9 +2810,6 @@ func NewPreviewArchitectureResponseBody(res *surla.ArchitecturePreviewResult) *P
 		}
 	} else {
 		body.Tools = []*ToolContractItemResponseBody{}
-	}
-	if res.Swarm != nil {
-		body.Swarm = marshalSurlaSwarmPlanItemToSwarmPlanItemResponseBody(res.Swarm)
 	}
 	return body
 }
@@ -4183,7 +4086,6 @@ func NewProposeChangePayload(body *ProposeChangeRequestBody) *surla.ProposeChang
 	v := &surla.ProposeChangePayload{
 		ChangeID:         *body.ChangeID,
 		Prompt:           *body.Prompt,
-		DesignSource:     body.DesignSource,
 		StoryRefreshOpID: body.StoryRefreshOpID,
 	}
 	v.Analysis = unmarshalCP1AnalysisRequestBodyToSurlaCP1Analysis(body.Analysis)
@@ -4197,7 +4099,6 @@ func NewReviseChangePayload(body *ReviseChangeRequestBody) *surla.ReviseChangePa
 		ChangeID:         *body.ChangeID,
 		RequestRevision:  *body.RequestRevision,
 		Prompt:           *body.Prompt,
-		DesignSource:     body.DesignSource,
 		StoryRefreshOpID: body.StoryRefreshOpID,
 	}
 	v.Analysis = unmarshalCP1RevisionAnalysisRequestBodyToSurlaCP1RevisionAnalysis(body.Analysis)
@@ -4244,31 +4145,6 @@ func NewPreviewArchitecturePayload(body *PreviewArchitectureRequestBody) *surla.
 	v := &surla.PreviewArchitecturePayload{
 		ChangeID:        *body.ChangeID,
 		RequestRevision: *body.RequestRevision,
-	}
-	if body.Design != nil {
-		v.Design = unmarshalDesignSnapshotRequestBodyToSurlaDesignSnapshot(body.Design)
-	}
-	if body.Builders != nil {
-		v.Builders = make([]*surla.BuilderScopeItem, len(body.Builders))
-		for i, val := range body.Builders {
-			if val == nil {
-				v.Builders[i] = nil
-				continue
-			}
-			v.Builders[i] = unmarshalBuilderScopeItemRequestBodyToSurlaBuilderScopeItem(val)
-		}
-	}
-	if body.ArchitectPaths != nil {
-		v.ArchitectPaths = make([]string, len(body.ArchitectPaths))
-		for i, val := range body.ArchitectPaths {
-			v.ArchitectPaths[i] = val
-		}
-	}
-	if body.EvalPaths != nil {
-		v.EvalPaths = make([]string, len(body.EvalPaths))
-		for i, val := range body.EvalPaths {
-			v.EvalPaths[i] = val
-		}
 	}
 
 	return v
@@ -4474,18 +4350,6 @@ func ValidatePreviewArchitectureRequestBody(body *PreviewArchitectureRequestBody
 	}
 	if body.RequestRevision == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("request_revision", "body"))
-	}
-	if body.Design != nil {
-		if err2 := validateDesignSnapshotRequestBody(body.Design, "body.design"); err2 != nil {
-			err = goa.MergeErrors(err, err2)
-		}
-	}
-	for _, e := range body.Builders {
-		if e != nil {
-			if err2 := validateBuilderScopeItemRequestBody(e, "body.builders[*]"); err2 != nil {
-				err = goa.MergeErrors(err, err2)
-			}
-		}
 	}
 	return
 }
@@ -5123,30 +4987,6 @@ func ValidateDesignSnapshotRequestBody(body *DesignSnapshotRequestBody) (err err
 func validateDesignSnapshotRequestBody(body *DesignSnapshotRequestBody, path string) (err error) {
 	if body.Files == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("files", path))
-	}
-	return
-}
-
-// ValidateBuilderScopeItemRequestBody runs the validations defined on
-// BuilderScopeItem
-func ValidateBuilderScopeItemRequestBody(body *BuilderScopeItemRequestBody) (err error) {
-	if body.Name == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
-	}
-	if body.Paths == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("paths", "body"))
-	}
-	return
-}
-
-// validateBuilderScopeItemRequestBody checks BuilderScopeItem and reports
-// errors using the path supplied by its caller
-func validateBuilderScopeItemRequestBody(body *BuilderScopeItemRequestBody, path string) (err error) {
-	if body.Name == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("name", path))
-	}
-	if body.Paths == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("paths", path))
 	}
 	return
 }

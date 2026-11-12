@@ -6,7 +6,6 @@
 package controlplane
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"net/http"
@@ -25,64 +24,6 @@ import (
 	gensurlatools "github.com/goadesign/surla/gen/surla/toolsets/surla"
 	"github.com/goadesign/surla/internal/designeval"
 )
-
-// savedCardFromEarlierServer is a card file exactly as an earlier server
-// (commit f1c1214 of this repository, which ran its own model to analyze
-// requests) saved it: a workspace-backed card in needs_confirmation with one
-// open question, one example, a preserved behavior and a decision view. Its
-// request_revision was computed by that server.
-const savedCardFromEarlierServer = `{"card":{"ChangeID":"chg-saved","Status":"needs_confirmation","Prompt":"Refunds up to $50 are instant.","Summary":"Refunds up to $50 are instant; larger refunds wait for a manager.","Ambiguities":[{"ID":"chg-saved-ambiguity-01","Question":"Is the limit the item subtotal or the order total?","Options":["item_subtotal","order_total"]}],"Answers":null,"Examples":[{"ID":"check_01","Scenario":"Refund at the limit","InputSummary":"Order total $50.00","ExpectedOutcome":"Instant store credit","VerificationKind":"deterministic"}],"PreservedBehaviors":["Cross-tenant order lookups return 404 Not Found."],"ConfirmedBy":null,"RequestRevision":"d90c6f9dea412aa2c9fd60c626bef576e6dfc3a023d36a7f03715db366cef4af","UIComposition":{"Program":"root = DecisionWorkspace(\"Refund limit\", [choice])\nchoice = AmbiguityChoiceCard(1)","ComposedForRevision":"d90c6f9dea412aa2c9fd60c626bef576e6dfc3a023d36a7f03715db366cef4af"},"Approval":null},"owner":"alice@example.com","design_source":"{\"design/design.go\":\"package design // refunds\\n\"}","source_origin":"workspace"}`
-
-// TestASavedCardFromAnEarlierServerStillLoadsAndRevises verifies that a card
-// file the earlier server saved loads unchanged under its saved
-// request_revision, can be confirmed, and can be revised with a
-// caller-supplied analysis that keeps its example; with no workspace bound,
-// the workspace-backed card keeps its saved design source.
-func TestASavedCardFromAnEarlierServerStillLoadsAndRevises(t *testing.T) {
-	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
-	cp := newControlPlane(t, Options{})
-	require.NoError(t, os.WriteFile(cp.cards.path("chg-saved"), []byte(savedCardFromEarlierServer), 0o600))
-
-	loaded, err := cp.GetChange(alice, &gensurla.GetChangePayload{ChangeID: "chg-saved"})
-	require.NoError(t, err)
-	const savedRevision = "d90c6f9dea412aa2c9fd60c626bef576e6dfc3a023d36a7f03715db366cef4af"
-	assert.Equal(t, savedRevision, loaded.RequestRevision)
-	assert.Equal(t, StatusNeedsConfirmation, loaded.Status)
-	require.NotNil(t, loaded.UIComposition)
-	assert.Equal(t, savedRevision, loaded.UIComposition.ComposedForRevision)
-
-	confirmed, err := cp.ConfirmIntent(alice, &gensurla.ConfirmIntentPayload{
-		ChangeID: "chg-saved", RequestRevision: savedRevision,
-		Answers: map[string]string{"chg-saved-ambiguity-01": "item_subtotal"}, Examples: loaded.Examples,
-	})
-	require.NoError(t, err)
-	assert.Equal(t, StatusConfirmed, confirmed.Status)
-
-	check01 := "check_01"
-	revised, err := cp.ReviseChange(alice, &gensurla.ReviseChangePayload{
-		ChangeID: "chg-saved", RequestRevision: confirmed.RequestRevision, Prompt: "Refunds up to $60 are instant.",
-		Analysis: &gensurla.CP1RevisionAnalysis{
-			Summary:     "Refunds up to $60 of item subtotal are instant; larger refunds wait for a manager.",
-			Ambiguities: []*gensurla.CP1AnalysisAmbiguity{},
-			Examples: []*gensurla.CP1RevisionAnalysisExample{
-				{PriorID: &check01, Scenario: "Refund at the limit", InputSummary: "Item subtotal $60.00", ExpectedOutcome: "Instant store credit", VerificationKind: "deterministic"},
-				{Scenario: "Refund above the limit", InputSummary: "Item subtotal $60.01", ExpectedOutcome: "Waits for a manager", VerificationKind: "deterministic"},
-			},
-			RemovedExampleIds:  []string{},
-			PreservedBehaviors: []string{"Cross-tenant order lookups return 404 Not Found.", "The limit applies to the item subtotal."},
-		},
-	})
-	require.NoError(t, err)
-	assert.Equal(t, StatusNeedsConfirmation, revised.Status)
-	assert.Equal(t, []string{"check_01", "check_02"}, []string{revised.Examples[0].ID, revised.Examples[1].ID})
-	assert.Empty(t, revised.Answers)
-	assert.Nil(t, revised.ConfirmedBy)
-	stored, ok, err := cp.cards.load("chg-saved")
-	require.NoError(t, err)
-	require.True(t, ok)
-	assert.Equal(t, `{"design/design.go":"package design // refunds\n"}`, stored.designSource)
-	assert.Equal(t, sourceOriginWorkspace, stored.sourceOrigin)
-}
 
 // TestReviseChangeOverHTTPAndMCP verifies revise_change over the Go service,
 // HTTP (`POST /changes/revise`) and MCP: the tool links the checkpoint viewer;
@@ -354,15 +295,14 @@ func TestReviseChangeConcurrentRevisionsSaveOnlyOne(t *testing.T) {
 	assert.Equal(t, saved.RequestRevision, current.RequestRevision)
 }
 
-// TestASavedCardWithStoriesLoadsKeepsStoriesOnConfirmAndReviseAndBlocksOlderServer
+// TestSavedStoriesStayPairedWithTheirSourceAcrossConfirmAndRevise
 // verifies that a saved card file containing adopted Stories loads under its
 // pinned request_revision, returns Stories on GetChange, keeps Stories on
 // ConfirmIntent without re-evaluating, keeps Stories and saved design_source
 // together on ReviseChange when story_refresh_op_id is omitted even after
 // workspace design/*.go changes on disk, fails if a saved Story field is
-// modified on disk, and is rejected by a pre-Slice-B strict card reader
-// without the stories field.
-func TestASavedCardWithStoriesLoadsKeepsStoriesOnConfirmAndReviseAndBlocksOlderServer(t *testing.T) {
+// modified on disk.
+func TestSavedStoriesStayPairedWithTheirSourceAcrossConfirmAndRevise(t *testing.T) {
 	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
 	wsDir := t.TempDir()
 	writeWorkspaceFiles(t, wsDir, validWorkspaceStub("package design // refunds\n"))
@@ -394,25 +334,17 @@ func TestASavedCardWithStoriesLoadsKeepsStoriesOnConfirmAndReviseAndBlocksOlderS
 	savedBytes, err := os.ReadFile(seedCP.cards.path("chg-story-saved"))
 	require.NoError(t, err)
 
-	// Pin both the exact saved card file and its canonical request_revision.
-	const (
-		pinnedRevision = "9cd74d219f9a25454adf5187314554cd1373b187da52573bed63492184b5ae6c"
-		pinnedCardFile = `{"card":{"ChangeID":"chg-story-saved","Status":"needs_confirmation","Prompt":"Refunds up to $50 are instant.","Summary":"Refunds up to $50 are instant; larger refunds wait for a manager.","Ambiguities":[{"ID":"chg-story-saved-ambiguity-01","Question":"Is the limit the item subtotal or the order total?","Options":["item_subtotal","order_total"]}],"Answers":null,"Examples":[{"ID":"check_01","Scenario":"Refund at the limit","InputSummary":"Order total $50.00","ExpectedOutcome":"Instant store credit","VerificationKind":"deterministic"}],"PreservedBehaviors":["Cross-tenant order lookups return 404 Not Found."],"ConfirmedBy":null,"RequestRevision":"` + pinnedRevision + `","UIComposition":{"Program":"root = DecisionWorkspace(\"Refund limit\", [choice])\nchoice = AmbiguityChoiceCard(1)","ComposedForRevision":"` + pinnedRevision + `"},"Approval":null},"owner":"alice@example.com","design_source":"{\"design/design.go\":\"package design // refunds\\n\"}","source_origin":"workspace","stories":[{"name":"Order Refunds","description":"Domain timeline for customer refund requests.","actors":[{"key":"customer","title":"Customer","description":"Places orders and requests refunds."},{"key":"manager","title":"Support Manager"}],"flows":[{"key":"instant-refund","title":"Instant refund under the limit","description":"Refunds under $50 complete automatically.","complete":true,"steps":[{"key":"request-refund","actor_key":"customer","summary":"Customer requests a $25 refund","kind":"start"},{"key":"refund-paid","actor_key":"customer","summary":"Store credit is issued immediately","kind":"outcome"}]},{"key":"high-value-refund","title":"Refund over the limit","complete":false,"steps":[{"key":"request-high-refund","actor_key":"customer","summary":"Customer requests a $120 refund","kind":"start","questions":[{"key":"limit-boundary","prompt":"Is $50.00 itself instant or manager-reviewed?","description":"Boundary rule at $50.00.","options":["Instant at $50.00","Manager review at $50.00"]}]},{"key":"review-refund","actor_key":"manager","summary":"Manager reviews the refund request","kind":"step"}]}]}]}`
-	)
-	assert.Equal(t, pinnedRevision, proposed.RequestRevision)
-	assert.Equal(t, pinnedCardFile, string(savedBytes))
-
 	// Modify workspace design/design.go on disk after the card was saved so we
 	// prove confirm_intent and revise_change (without story_refresh_op_id)
 	// carry over the saved Stories and saved design_source together without
 	// re-reading or re-evaluating the workspace.
 	writeWorkspaceFiles(t, wsDir, validWorkspaceStub("package design // workspace moved on without refreshing\n"))
 	cp := newControlPlane(t, Options{WorkspaceDir: wsDir})
-	require.NoError(t, os.WriteFile(cp.cards.path("chg-story-saved"), []byte(pinnedCardFile), 0o600))
+	require.NoError(t, os.WriteFile(cp.cards.path("chg-story-saved"), savedBytes, 0o600))
 
 	loaded, err := cp.GetChange(alice, &gensurla.GetChangePayload{ChangeID: "chg-story-saved"})
 	require.NoError(t, err)
-	assert.Equal(t, pinnedRevision, loaded.RequestRevision)
+	assert.Equal(t, proposed.RequestRevision, loaded.RequestRevision)
 	require.Len(t, loaded.Stories, 1)
 	assert.Equal(t, "Order Refunds", loaded.Stories[0].Name)
 	require.Len(t, loaded.Stories[0].Flows, 2)
@@ -421,14 +353,14 @@ func TestASavedCardWithStoriesLoadsKeepsStoriesOnConfirmAndReviseAndBlocksOlderS
 
 	confirmed, err := cp.ConfirmIntent(alice, &gensurla.ConfirmIntentPayload{
 		ChangeID:        "chg-story-saved",
-		RequestRevision: pinnedRevision,
+		RequestRevision: proposed.RequestRevision,
 		Answers:         map[string]string{"chg-story-saved-ambiguity-01": "item_subtotal"},
 		Examples:        loaded.Examples,
 	})
 	require.NoError(t, err)
 	assert.Equal(t, StatusConfirmed, confirmed.Status)
 	assert.Equal(t, loaded.Stories, confirmed.Stories)
-	assert.NotEqual(t, pinnedRevision, confirmed.RequestRevision)
+	assert.NotEqual(t, proposed.RequestRevision, confirmed.RequestRevision)
 
 	check01 := "check_01"
 	revised, err := cp.ReviseChange(alice, &gensurla.ReviseChangePayload{
@@ -456,28 +388,68 @@ func TestASavedCardWithStoriesLoadsKeepsStoriesOnConfirmAndReviseAndBlocksOlderS
 	require.NoError(t, err)
 	require.True(t, ok)
 	assert.Equal(t, `{"design/design.go":"package design // refunds\n"}`, stored.designSource, "saved design_source carries over with the agreed Story")
-	assert.Equal(t, sourceOriginWorkspace, stored.sourceOrigin)
 	assert.Equal(t, sampleAdoptedStories(), stored.stories)
 
 	// Modifying any Story field on disk invalidates the saved request_revision.
-	tampered := strings.Replace(pinnedCardFile, "Store credit is issued immediately", "Cash refund is issued immediately", 1)
+	tampered := strings.Replace(string(savedBytes), "Store credit is issued immediately", "Cash refund is issued immediately", 1)
 	require.NoError(t, os.WriteFile(cp.cards.path("chg-story-saved"), []byte(tampered), 0o600))
 	_, err = cp.GetChange(alice, &gensurla.GetChangePayload{ChangeID: "chg-story-saved"})
 	assert.ErrorContains(t, err, "does not match its request_revision")
 
-	// A pre-Slice-B strict card reader (without the stories field) rejects a
-	// card file that has stories, which is the documented rollback constraint.
-	type preStoryCardFile struct {
-		Card         *gensurla.ChangeCardResult `json:"card"`
-		Owner        string                     `json:"owner"`
-		DesignSource string                     `json:"design_source"`
-		SourceOrigin string                     `json:"source_origin,omitempty"`
-	}
-	var oldReader preStoryCardFile
-	dec := json.NewDecoder(bytes.NewReader([]byte(pinnedCardFile)))
-	dec.DisallowUnknownFields()
-	err = dec.Decode(&oldReader)
-	assert.ErrorContains(t, err, `unknown field "stories"`)
+}
+
+// TestStoryWithActorsAndNoFlowsSurvivesReloadAndIdenticalRevision proves that
+// an unfinished Story stays paired with its source and has a stable revision.
+func TestStoryWithActorsAndNoFlowsSurvivesReloadAndIdenticalRevision(t *testing.T) {
+	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com"})
+	workspace := t.TempDir()
+	writeWorkspaceFiles(t, workspace, validWorkspaceStub("package design // actor draft\n"))
+	cardsDir := t.TempDir()
+	stories := sampleAdoptedStories()
+	stories[0].Flows = nil
+	analysis := refundAnalysis("Define the refund participants.", &gensurla.CP1AnalysisAmbiguity{
+		Question: "Who reviews a refund?", Options: []string{"manager", "support"},
+	})
+	first := newControlPlane(t, Options{CardsDir: cardsDir, WorkspaceDir: workspace})
+	opID := seedStoryRefreshForTest(t, first, "alice@example.com", storyRefreshStateSucceeded, stories, "")
+	card, err := first.ProposeChange(alice, &gensurla.ProposeChangePayload{
+		ChangeID: "chg-actor-draft", Prompt: "Define the refund participants.",
+		StoryRefreshOpID: &opID, Analysis: analysis,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, StatusNeedsConfirmation, card.Status)
+	require.Len(t, card.Stories, 1)
+	assert.Len(t, card.Stories[0].Actors, 2)
+	assert.Empty(t, card.Stories[0].Flows)
+	require.NoError(t, first.Close())
+
+	// A later workspace edit cannot change the adopted actor-only Story/source pair.
+	writeWorkspaceFiles(t, workspace, validWorkspaceStub("package design // later edit\n"))
+	reopened := newControlPlane(t, Options{CardsDir: cardsDir, WorkspaceDir: workspace})
+	loaded, err := reopened.GetChange(alice, &gensurla.GetChangePayload{ChangeID: card.ChangeID})
+	require.NoError(t, err)
+	assert.Equal(t, card, loaded)
+	priorID := loaded.Examples[0].ID
+	example := analysis.Examples[0]
+	revised, err := reopened.ReviseChange(alice, &gensurla.ReviseChangePayload{
+		ChangeID: card.ChangeID, RequestRevision: loaded.RequestRevision, Prompt: card.Prompt,
+		Analysis: &gensurla.CP1RevisionAnalysis{
+			Summary: analysis.Summary, Ambiguities: analysis.Ambiguities,
+			Examples: []*gensurla.CP1RevisionAnalysisExample{{
+				PriorID: &priorID, Scenario: example.Scenario, InputSummary: example.InputSummary,
+				ExpectedOutcome: example.ExpectedOutcome, VerificationKind: example.VerificationKind,
+			}},
+			RemovedExampleIds: []string{}, PreservedBehaviors: analysis.PreservedBehaviors,
+		},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, card.RequestRevision, revised.RequestRevision)
+	assert.Equal(t, loaded.Stories, revised.Stories)
+	record, found, err := reopened.cards.load(card.ChangeID)
+	require.NoError(t, err)
+	require.True(t, found)
+	assert.Equal(t, stories, record.stories)
+	assert.Contains(t, record.designSource, "actor draft")
 }
 
 // TestAdoptStoryRefreshOnProposeAndRevise verifies Story adoption across Go
@@ -532,7 +504,6 @@ func TestAdoptStoryRefreshOnProposeAndRevise(t *testing.T) {
 	wantDesignSrc, err := encodeDesignSource(map[string]string{"design/design.go": "package design // v1\n"})
 	require.NoError(t, err)
 	assert.Equal(t, wantDesignSrc, storedHTTP.designSource)
-	assert.Equal(t, sourceOriginWorkspace, storedHTTP.sourceOrigin)
 
 	// MCP propose_change adopts the same succeeded opV1 on a second control
 	// plane with the same change_id and produces the exact same request_revision.
@@ -632,7 +603,7 @@ func TestAdoptStoryRefreshOnProposeAndRevise(t *testing.T) {
 	assert.Equal(t, proposedPlain.RequestRevision, proposedZero.RequestRevision)
 	rawZeroBytes, err := os.ReadFile(cp.cards.path("chg-zero"))
 	require.NoError(t, err)
-	assert.NotContains(t, string(rawZeroBytes), `"stories"`)
+	assert.Contains(t, string(rawZeroBytes), `"stories":null`)
 
 	revisedToZero, err := cp.ReviseChange(aliceCtx, &gensurla.ReviseChangePayload{
 		ChangeID:         "chg-http",
@@ -656,7 +627,7 @@ func TestAdoptStoryRefreshOnProposeAndRevise(t *testing.T) {
 }
 
 // TestAdoptStoryRefreshRejectionsLeaveCardStorageUnchanged verifies every
-// invalid story_refresh_op_id or design_source combination across
+// invalid story_refresh_op_id across
 // propose_change and revise_change: each returns an actionable unprocessable
 // error naming refresh_story and leaves card storage unchanged.
 func TestAdoptStoryRefreshRejectionsLeaveCardStorageUnchanged(t *testing.T) {
@@ -813,26 +784,15 @@ func TestAdoptStoryRefreshRejectionsLeaveCardStorageUnchanged(t *testing.T) {
 			},
 			want: "no longer matches story_refresh_op_id",
 		},
-		{
-			name: "caller-supplied design_source combined with story_refresh_op_id",
-			setup: func(t *testing.T) (*ControlPlane, string, *string, *gensurla.ChangeCardResult) {
-				wsDir, cp, card := newWS(t)
-				opID := seedStoryRefreshForTest(t, cp, "alice@example.com", storyRefreshStateSucceeded, sampleAdoptedStories(), "")
-				require.NoError(t, os.RemoveAll(wsDir))
-				supplied := "package design // supplied\n"
-				return cp, opID, &supplied, card
-			},
-			want: "cannot combine design_source with story_refresh_op_id; omit design_source so Surla reads the workspace snapshot verified by refresh_story",
-		},
 	}
 
 	for _, tc := range cases {
 		t.Run("propose_change/"+tc.name, func(t *testing.T) {
-			cp, opID, designSrc, _ := tc.setup(t)
+			cp, opID, _, _ := tc.setup(t)
 			_, err := cp.ProposeChange(aliceCtx, &gensurla.ProposeChangePayload{
 				ChangeID: "chg-new", Prompt: "Refunds up to $50 are instant.",
-				DesignSource: designSrc, StoryRefreshOpID: &opID,
-				Analysis: refundAnalysis("Refunds up to $50 are instant."),
+				StoryRefreshOpID: &opID,
+				Analysis:         refundAnalysis("Refunds up to $50 are instant."),
 			})
 			assertServiceError(t, err, "unprocessable")
 			assert.ErrorContains(t, err, "refresh_story")
@@ -843,12 +803,12 @@ func TestAdoptStoryRefreshRejectionsLeaveCardStorageUnchanged(t *testing.T) {
 		})
 
 		t.Run("revise_change/"+tc.name, func(t *testing.T) {
-			cp, opID, designSrc, existing := tc.setup(t)
+			cp, opID, _, existing := tc.setup(t)
 			beforeBytes, err := os.ReadFile(cp.cards.path(existing.ChangeID))
 			require.NoError(t, err)
 			_, err = cp.ReviseChange(aliceCtx, &gensurla.ReviseChangePayload{
 				ChangeID: existing.ChangeID, RequestRevision: existing.RequestRevision,
-				Prompt: "Refunds up to $60 are instant.", DesignSource: designSrc,
+				Prompt:           "Refunds up to $60 are instant.",
 				StoryRefreshOpID: &opID, Analysis: revAnalysis,
 			})
 			assertServiceError(t, err, "unprocessable")
@@ -860,53 +820,6 @@ func TestAdoptStoryRefreshRejectionsLeaveCardStorageUnchanged(t *testing.T) {
 		})
 	}
 
-	t.Run("revise_change/card with caller-supplied source_origin cannot adopt story_refresh_op_id", func(t *testing.T) {
-		wsDir, cp, _ := newWS(t)
-		supplied := "package design // supplied\n"
-		card, err := cp.ProposeChange(aliceCtx, &gensurla.ProposeChangePayload{
-			ChangeID: "chg-supplied", Prompt: "Refunds up to $50 are instant.",
-			DesignSource: &supplied, Analysis: refundAnalysis("Refunds up to $50 are instant."),
-		})
-		require.NoError(t, err)
-		opID := seedStoryRefreshForTest(t, cp, "alice@example.com", storyRefreshStateSucceeded, sampleAdoptedStories(), "")
-		require.NoError(t, os.RemoveAll(wsDir))
-		beforeBytes, err := os.ReadFile(cp.cards.path("chg-supplied"))
-		require.NoError(t, err)
-
-		_, err = cp.ReviseChange(aliceCtx, &gensurla.ReviseChangePayload{
-			ChangeID: "chg-supplied", RequestRevision: card.RequestRevision,
-			Prompt: "Refunds up to $60 are instant.", StoryRefreshOpID: &opID, Analysis: revAnalysis,
-		})
-		assertServiceError(t, err, "unprocessable")
-		assert.ErrorContains(t, err, "uses a caller-supplied design_source and cannot adopt a workspace Story from refresh_story")
-		afterBytes, err := os.ReadFile(cp.cards.path("chg-supplied"))
-		require.NoError(t, err)
-		assert.Equal(t, string(beforeBytes), string(afterBytes))
-	})
-
-	t.Run("revise_change/card with Stories cannot replace design_source with caller-supplied value", func(t *testing.T) {
-		wsDir, cp, _ := newWS(t)
-		opID := seedStoryRefreshForTest(t, cp, "alice@example.com", storyRefreshStateSucceeded, sampleAdoptedStories(), "")
-		card, err := cp.ProposeChange(aliceCtx, &gensurla.ProposeChangePayload{
-			ChangeID: "chg-has-stories", Prompt: "Refunds up to $50 are instant.",
-			StoryRefreshOpID: &opID, Analysis: refundAnalysis("Refunds up to $50 are instant."),
-		})
-		require.NoError(t, err)
-		require.NoError(t, os.RemoveAll(wsDir))
-		beforeBytes, err := os.ReadFile(cp.cards.path("chg-has-stories"))
-		require.NoError(t, err)
-
-		supplied := "package design // supplied\n"
-		_, err = cp.ReviseChange(aliceCtx, &gensurla.ReviseChangePayload{
-			ChangeID: "chg-has-stories", RequestRevision: card.RequestRevision,
-			Prompt: "Refunds up to $60 are instant.", DesignSource: &supplied, Analysis: revAnalysis,
-		})
-		assertServiceError(t, err, "unprocessable")
-		assert.ErrorContains(t, err, "has adopted Stories from refresh_story and cannot replace design_source with a caller-supplied value")
-		afterBytes, err := os.ReadFile(cp.cards.path("chg-has-stories"))
-		require.NoError(t, err)
-		assert.Equal(t, string(beforeBytes), string(afterBytes))
-	})
 }
 
 // seedStoryRefreshForTest records a Story refresh operation for principalID

@@ -15,9 +15,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// reportName is a valid recorded report basename.
-const reportName = "a1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4.json"
-
 // realTempDir returns a symlink-free temporary directory.
 func realTempDir(t *testing.T) string {
 	t.Helper()
@@ -38,14 +35,14 @@ func writeTree(t *testing.T, root string, files map[string]string) {
 
 // copyGrantPath copies the grant at the path grant, holding it open as
 // startCheckOperation does, with the workspace at workspaceDir inside it.
-func copyGrantPath(t *testing.T, ctx context.Context, grant, workspaceDir, dst string, reports []string) (grantCopy, error) {
+func copyGrantPath(t *testing.T, ctx context.Context, grant, workspaceDir, dst string) (grantCopy, error) {
 	t.Helper()
 	rel, err := filepath.Rel(grant, workspaceDir)
 	require.NoError(t, err)
 	fd, err := syscall.Open(grant, openDirFlags, 0)
 	require.NoError(t, err)
 	defer func() { require.NoError(t, syscall.Close(fd)) }()
-	return copyGrant(ctx, fd, filepath.ToSlash(rel), identityOf(t, workspaceDir), dst, reports)
+	return copyGrant(ctx, fd, filepath.ToSlash(rel), identityOf(t, workspaceDir), dst)
 }
 
 // identityOf returns the device and inode of the directory at p.
@@ -103,7 +100,7 @@ func TestCopyGrantCopiesLiveTree(t *testing.T) {
 	require.NoError(t, os.Symlink("/etc/hosts", filepath.Join(grant, "hosts-link")))
 	dst := realTempDir(t)
 
-	got, err := copyGrantPath(t, context.Background(), grant, grant, dst, nil)
+	got, err := copyGrantPath(t, context.Background(), grant, grant, dst)
 	require.NoError(t, err)
 
 	assert.Equal(t, []string{".", "eval"}, got.modules)
@@ -127,131 +124,10 @@ func TestCopyGrantWorkspaceInsideMonorepo(t *testing.T) {
 		"services/shop/go.sum": "\n",
 	})
 	dst := realTempDir(t)
-	got, err := copyGrantPath(t, context.Background(), grant, filepath.Join(grant, "services", "shop"), dst, nil)
+	got, err := copyGrantPath(t, context.Background(), grant, filepath.Join(grant, "services", "shop"), dst)
 	require.NoError(t, err)
 	assert.Equal(t, []string{"."}, got.modules, "only modules under the workspace are tested")
 	assert.Contains(t, copiedFiles(t, dst), "lib/go.mod", "siblings in the grant are copied for replace directives")
-}
-
-func TestCopyGrantExcludesRecordedReports(t *testing.T) {
-	type setup func(t *testing.T, grant string) (recorded string)
-	cases := []struct {
-		name            string
-		needInsensitive bool
-		setup           setup
-		wantAbsent      []string
-		wantPresent     []string
-	}{
-		{
-			name: "same spelling",
-			setup: func(t *testing.T, grant string) string {
-				writeTree(t, grant, map[string]string{"reports/" + reportName: "full report\n"})
-				return filepath.Join(grant, "reports", reportName)
-			},
-			wantAbsent:  []string{"reports/" + reportName},
-			wantPresent: []string{"reports/public-fixture.json"},
-		},
-		{
-			name:            "directory case alias",
-			needInsensitive: true,
-			setup: func(t *testing.T, grant string) string {
-				writeTree(t, grant, map[string]string{"reports/" + reportName: "full report\n"})
-				return filepath.Join(grant, "Reports", reportName)
-			},
-			wantAbsent:  []string{"reports/" + reportName},
-			wantPresent: []string{"reports/public-fixture.json"},
-		},
-		{
-			name:            "directory NFD alias",
-			needInsensitive: true,
-			setup: func(t *testing.T, grant string) string {
-				writeTree(t, grant, map[string]string{"café/" + reportName: "full report\n"})
-				return filepath.Join(grant, "café", reportName)
-			},
-			wantAbsent: []string{"café/" + reportName},
-		},
-		{
-			name:            "file name upper-case alias",
-			needInsensitive: true,
-			setup: func(t *testing.T, grant string) string {
-				writeTree(t, grant, map[string]string{"reports/A1B2C3D4A1B2C3D4A1B2C3D4A1B2C3D4A1B2C3D4A1B2C3D4A1B2C3D4A1B2C3D4.JSON": "full report\n"})
-				return filepath.Join(grant, "reports", reportName)
-			},
-			wantAbsent:  []string{"reports/A1B2C3D4A1B2C3D4A1B2C3D4A1B2C3D4A1B2C3D4A1B2C3D4A1B2C3D4A1B2C3D4.JSON"},
-			wantPresent: []string{"reports/public-fixture.json"},
-		},
-		{
-			name:            "file name long-s alias",
-			needInsensitive: true,
-			setup: func(t *testing.T, grant string) string {
-				writeTree(t, grant, map[string]string{"reports/a1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4.jſon": "full report\n"})
-				return filepath.Join(grant, "reports", reportName)
-			},
-			wantAbsent: []string{"reports/a1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4.jſon"},
-		},
-		{
-			name: "same-directory hard link is the protected file",
-			setup: func(t *testing.T, grant string) string {
-				writeTree(t, grant, map[string]string{"reports/" + reportName: "full report\n"})
-				require.NoError(t, os.Remove(filepath.Join(grant, "reports", "public-fixture.json")))
-				require.NoError(t, os.Link(filepath.Join(grant, "reports", reportName), filepath.Join(grant, "reports", "public-fixture.json")))
-				return filepath.Join(grant, "reports", reportName)
-			},
-			wantAbsent: []string{"reports/" + reportName, "reports/public-fixture.json"},
-		},
-		{
-			name: "distinct adjacent file with equal bytes is copied",
-			setup: func(t *testing.T, grant string) string {
-				writeTree(t, grant, map[string]string{"reports/" + reportName: "full report\n", "reports/copy.json": "full report\n"})
-				return filepath.Join(grant, "reports", reportName)
-			},
-			wantAbsent:  []string{"reports/" + reportName},
-			wantPresent: []string{"reports/copy.json"},
-		},
-		{
-			name: "symlink at the recorded name is excluded without following it",
-			setup: func(t *testing.T, grant string) string {
-				require.NoError(t, os.Symlink("/nonexistent/target", filepath.Join(grant, "reports", reportName)))
-				return filepath.Join(grant, "reports", reportName)
-			},
-			wantAbsent:  []string{"reports/" + reportName},
-			wantPresent: []string{"reports/public-fixture.json"},
-		},
-		{
-			name: "deleted original excludes nothing",
-			setup: func(t *testing.T, grant string) string {
-				return filepath.Join(grant, "reports", reportName)
-			},
-			wantPresent: []string{"reports/public-fixture.json"},
-		},
-		{
-			name: "recorded parent missing excludes nothing",
-			setup: func(t *testing.T, grant string) string {
-				return filepath.Join(grant, "gone", reportName)
-			},
-			wantPresent: []string{"reports/public-fixture.json"},
-		},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			grant := realTempDir(t)
-			if tc.needInsensitive && !caseInsensitive(t, grant) {
-				t.Skip("needs a case-insensitive volume")
-			}
-			writeTree(t, grant, map[string]string{"go.mod": "module example.com/shop\n", "reports/public-fixture.json": "{}\n"})
-			recorded := tc.setup(t, grant)
-			dst := realTempDir(t)
-			_, err := copyGrantPath(t, context.Background(), grant, grant, dst, []string{recorded})
-			require.NoError(t, err)
-			got := copiedFiles(t, dst)
-			for _, p := range tc.wantAbsent {
-				assert.NotContains(t, got, p)
-			}
-			for _, p := range tc.wantPresent {
-				assert.Contains(t, got, p)
-			}
-		})
-	}
 }
 
 func TestCopyEntryReportsVanishedEntry(t *testing.T) {
@@ -259,8 +135,8 @@ func TestCopyEntryReportsVanishedEntry(t *testing.T) {
 	fd, err := syscall.Open(grant, openDirFlags, 0)
 	require.NoError(t, err)
 	defer syscall.Close(fd)
-	c := &grantCopier{ctx: context.Background(), workspaceRel: ".", recorded: map[string][]string{}, out: grantCopy{manifests: map[string][]byte{}}}
-	err = c.copyEntry(fd, "gone.txt", "gone.txt", realTempDir(t), nil)
+	c := &grantCopier{ctx: context.Background(), workspaceRel: ".", out: grantCopy{manifests: map[string][]byte{}}}
+	err = c.copyEntry(fd, "gone.txt", "gone.txt", realTempDir(t))
 	var changed *errSourceChanged
 	require.True(t, errors.As(err, &changed))
 	assert.Contains(t, err.Error(), "the workspace changed while check_project was copying gone.txt")
@@ -314,7 +190,7 @@ func TestCopyGrantExcludesProtectedDirectoryAliases(t *testing.T) {
 			writeTree(t, grant, map[string]string{"go.mod": "module example.com/shop\n"})
 			writeTree(t, grant, tc.files)
 			dst := realTempDir(t)
-			_, err := copyGrantPath(t, context.Background(), grant, grant, dst, nil)
+			_, err := copyGrantPath(t, context.Background(), grant, grant, dst)
 			require.NoError(t, err)
 			got := copiedFiles(t, dst)
 			for _, p := range tc.wantAbsent {
@@ -332,7 +208,7 @@ func TestCopyGrantStopsWhenTheOperationEnds(t *testing.T) {
 	writeTree(t, grant, map[string]string{"go.mod": "module example.com/shop\n", "big.bin": strings.Repeat("x", 1<<20)})
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	_, err := copyGrantPath(t, ctx, grant, grant, realTempDir(t), nil)
+	_, err := copyGrantPath(t, ctx, grant, grant, realTempDir(t))
 	require.ErrorIs(t, err, context.Canceled)
 
 	// A file that keeps growing stops at the deadline mid-read.
@@ -375,8 +251,8 @@ func TestCopyEntryDecidesProtectedAliasWhenItOpensTheEntry(t *testing.T) {
 	writeTree(t, grant, map[string]string{".SURLA/runs/work/suite/main.go": "package main\n"})
 
 	dst := realTempDir(t)
-	c := &grantCopier{ctx: context.Background(), workspaceRel: ".", recorded: map[string][]string{}, out: grantCopy{manifests: map[string][]byte{}}}
-	require.NoError(t, c.copyEntry(fd, ".SURLA", ".SURLA", dst, nil))
+	c := &grantCopier{ctx: context.Background(), workspaceRel: ".", out: grantCopy{manifests: map[string][]byte{}}}
+	require.NoError(t, c.copyEntry(fd, ".SURLA", ".SURLA", dst))
 	assert.Empty(t, copiedFiles(t, dst))
 }
 
@@ -392,7 +268,7 @@ func TestCopyGrantRefusesAReplacedNestedWorkspace(t *testing.T) {
 	fd, err := syscall.Open(grant, openDirFlags, 0)
 	require.NoError(t, err)
 	defer func() { require.NoError(t, syscall.Close(fd)) }()
-	_, err = copyGrant(context.Background(), fd, "app", verified, realTempDir(t), nil)
+	_, err = copyGrant(context.Background(), fd, "app", verified, realTempDir(t))
 	var changed *errSourceChanged
 	require.ErrorAs(t, err, &changed)
 	assert.Contains(t, err.Error(), "the workspace directory was replaced")
@@ -417,7 +293,7 @@ func TestCopyGrantTreatsSymlinkedGoModAsAModule(t *testing.T) {
 	require.NoError(t, os.Symlink("../missing.mod", filepath.Join(grant, "other", "go.mod")))
 	dst := realTempDir(t)
 
-	got, err := copyGrantPath(t, context.Background(), grant, grant, dst, nil)
+	got, err := copyGrantPath(t, context.Background(), grant, grant, dst)
 	require.NoError(t, err)
 	assert.Equal(t, []string{".", "eval", "other"}, got.modules, "every copied go.mod entry is scheduled; Go in the container resolves the link")
 	link, err := os.Readlink(filepath.Join(dst, "eval", "go.mod"))
