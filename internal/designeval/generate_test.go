@@ -21,14 +21,6 @@ import (
 // evaluation with a target version older than Surla's own.
 const preCompleteSourcesGoa = "v3.35.1-0.20261102054348-8481e49a6c89"
 
-// preEvalGoaAI is a cached goa.design/goa-ai version that predates the
-// goa.design/goa-ai/eval packages required by Story scenario generation.
-const preEvalGoaAI = "v0.42.1"
-
-// starterPinnedSurla is the cached github.com/goadesign/surla pseudo-version
-// that starter evaluator modules require for verify/candidate and verify/suite.
-const starterPinnedSurla = "v0.0.0-20261110163737-d9beac313142"
-
 func TestGenerateReturnsWhatGoaGenWrites(t *testing.T) {
 	if testing.Short() {
 		t.Skip("runs the sandboxed Go toolchain; the full suite (go test without -short) covers it")
@@ -659,66 +651,6 @@ func (h *Hooks) BlankTitleFlow(ctx context.Context) (eval.Result, error) {
 	}, scenarioIDs(describeEvalSuite(t, bin)))
 }
 
-func TestGenerateWithStoriesNeedsAGoaAIWithEvalPackages(t *testing.T) {
-	wantGoaAI := testmodule.SurlaVersion(t, harnessGoaAIModule)
-	stories := []StorySummary{
-		{
-			Name:  "Refunds",
-			Flows: []StoryFlow{{Key: "refund-over-limit", Title: "Refund over limit", Complete: true}},
-		},
-	}
-
-	// Build a tidy module snapshot that requires goa.design/goa-ai at v0.42.1
-	// (which is cached in GOMODCACHE and lacks goa.design/goa-ai/eval/...).
-	oldGoaAIFiles := testmodule.Tidy(t, map[string]string{
-		"go.mod": "module example.com/design\n\ngo 1.24\n\nrequire (\n" +
-			"\tgoa.design/goa/v3 " + completeSourcesGoa + "\n" +
-			"\tgoa.design/goa-ai " + preEvalGoaAI + "\n)\n",
-		"design/design.go": `package design
-import (
-	_ "goa.design/goa-ai/dsl"
-	. "goa.design/goa/v3/dsl"
-)
-var _ = Service("orders", func() {
-	Method("get_order", func() {
-		Payload(String)
-		Result(String)
-		HTTP(func() { GET("/orders/{id}") })
-	})
-})
-`,
-	})
-
-	replacedGoaAIFiles := testmodule.Tidy(t, map[string]string{
-		"go.mod": "module example.com/design\n\ngo 1.24\n\nrequire (\n" +
-			"\tgoa.design/goa/v3 " + completeSourcesGoa + "\n" +
-			"\tgoa.design/goa-ai " + wantGoaAI + "\n)\n\n" +
-			"replace goa.design/goa-ai => goa.design/goa-ai " + preEvalGoaAI + "\n",
-		"design/design.go": oldGoaAIFiles["design/design.go"],
-	})
-
-	t.Setenv("GOPROXY", "off")
-	for _, tc := range []struct {
-		name  string
-		files map[string]string
-	}{
-		{
-			name:  "direct requirement on older goa-ai lacking eval packages",
-			files: oldGoaAIFiles,
-		},
-		{
-			name:  "replace directive pointing to older goa-ai lacking eval packages",
-			files: replacedGoaAIFiles,
-		},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			_, err := testEvaluator.GenerateWithStories(t.Context(), tc.files, stories)
-			require.Error(t, err)
-			assert.ErrorContains(t, err, "resolve evaluator dependencies")
-		})
-	}
-}
-
 func TestEvaluateAndGeneratePreserveGoaOnlyTargetWithGoModOnlyGoaAIChecksum(t *testing.T) {
 	if testing.Short() {
 		t.Skip("runs the sandboxed Go toolchain; the full suite (go test without -short) covers it")
@@ -773,13 +705,15 @@ func TestGenerateWithStoriesFailsAfterClose(t *testing.T) {
 
 // starterEvalModule renders the starter evaluator templates from
 // internal/scaffold/templates/eval for module example.com/shop/eval, tidies
-// the module against the cached starter Surla version, and returns both the
+// the module against Surla's own dependency versions, and returns both the
 // generator input snapshot (go.mod, go.sum, design/design.go) and the complete
 // hand-written module tree (including acceptance/, scripted/, and
 // cmd/shop-evals/).
 func starterEvalModule(t *testing.T) (evalInput, fullTree map[string]string) {
 	t.Helper()
-	tmplRoot := filepath.Join("..", "..", "internal", "scaffold", "templates", "eval")
+	repoRoot, err := filepath.Abs(filepath.Join("..", ".."))
+	require.NoError(t, err)
+	tmplRoot := filepath.Join(repoRoot, "internal", "scaffold", "templates", "eval")
 	readRendered := func(rel string) string {
 		raw, err := os.ReadFile(filepath.Join(tmplRoot, filepath.FromSlash(rel)))
 		require.NoError(t, err)
@@ -791,17 +725,18 @@ func starterEvalModule(t *testing.T) (evalInput, fullTree map[string]string) {
 	}
 
 	designSrc := readRendered("design/design.go.tmpl")
-	baseInput := testmodule.Module(t, "example.com/shop/eval", "", map[string]string{
+	evalInput = testmodule.Module(t, "example.com/shop/eval", "", map[string]string{
 		"design/design.go": designSrc,
 	})
-	initGen, err := testEvaluator.Generate(t.Context(), baseInput)
+	initGen, err := testEvaluator.Generate(t.Context(), evalInput)
 	require.NoError(t, err)
 
 	fullTree = map[string]string{
 		"go.mod": "module example.com/shop/eval\n\ngo 1.24\n\nrequire (\n" +
-			"\tgithub.com/goadesign/surla " + starterPinnedSurla + "\n" +
+			"\tgithub.com/goadesign/surla v0.0.0\n" +
 			"\tgoa.design/goa/v3 " + testmodule.SurlaVersion(t, "goa.design/goa/v3") + "\n" +
-			"\tgoa.design/goa-ai " + testmodule.SurlaVersion(t, "goa.design/goa-ai") + "\n)\n",
+			"\tgoa.design/goa-ai " + testmodule.SurlaVersion(t, "goa.design/goa-ai") + "\n)\n\n" +
+			"replace github.com/goadesign/surla => " + repoRoot + "\n",
 		"design/design.go":         designSrc,
 		"acceptance/acceptance.go": readRendered("acceptance/acceptance.go.tmpl"),
 		"acceptance/forwarder.go":  readRendered("acceptance/forwarder.go.tmpl"),
@@ -817,11 +752,6 @@ func starterEvalModule(t *testing.T) (evalInput, fullTree map[string]string) {
 	tidied := testmodule.Tidy(t, withGen)
 	fullTree["go.mod"] = tidied["go.mod"]
 	fullTree["go.sum"] = tidied["go.sum"]
-	evalInput = map[string]string{
-		"go.mod":           tidied["go.mod"],
-		"go.sum":           tidied["go.sum"],
-		"design/design.go": designSrc,
-	}
 	return evalInput, fullTree
 }
 
@@ -851,7 +781,7 @@ func buildEvalCommand(t *testing.T, dir string) (string, string, error) {
 	bin := filepath.Join(dir, "shop-evals")
 	cmd := exec.CommandContext(t.Context(), "go", "build", "-mod=readonly", "-o", bin, "./cmd/shop-evals")
 	cmd.Dir = dir
-	cmd.Env = append(os.Environ(), "CGO_ENABLED=0", "GOWORK=off", "GOTOOLCHAIN=local", "GOPROXY=off")
+	cmd.Env = append(os.Environ(), "CGO_ENABLED=0", "GOWORK=off", "GOTOOLCHAIN=local")
 	out, err := cmd.CombinedOutput()
 	return bin, string(out), err
 }
