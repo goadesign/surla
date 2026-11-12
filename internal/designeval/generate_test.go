@@ -714,7 +714,7 @@ var _ = Service("orders", func() {
 		t.Run(tc.name, func(t *testing.T) {
 			_, err := testEvaluator.GenerateWithStories(t.Context(), tc.files, stories)
 			require.Error(t, err)
-			assert.ErrorContains(t, err, "Story scenario generation requires "+harnessGoaAIModule+" "+wantGoaAI+" or later")
+			assert.ErrorContains(t, err, "resolve evaluator dependencies")
 		})
 	}
 }
