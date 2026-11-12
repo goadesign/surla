@@ -668,7 +668,7 @@ paths:
                                         suite_id: Accusantium quae ducimus.
                                     reason: Sequi et ut doloribus tenetur corporis ad.
                 "403":
-                    description: 'forbidden: The authenticated principal does not own this Change Card.'
+                    description: 'forbidden: The authenticated caller may not perform this operation or does not own the resource.'
                     content:
                         application/vnd.goa.error:
                             schema:
@@ -932,7 +932,7 @@ paths:
                                             suite_id: Dolorum sed sunt sed.
                                       suite_commit: Nostrum perspiciatis quo.
                 "403":
-                    description: 'forbidden: The authenticated principal does not own this Change Card.'
+                    description: 'forbidden: The authenticated caller may not perform this operation or does not own the resource.'
                     content:
                         application/vnd.goa.error:
                             schema:
@@ -1015,7 +1015,7 @@ paths:
                                         started_at: "1984-04-01T02:58:45Z"
                                 suite_commit: Nesciunt dolor in ea.
                 "403":
-                    description: 'forbidden: The authenticated principal does not own this Change Card.'
+                    description: 'forbidden: The authenticated caller may not perform this operation or does not own the resource.'
                     content:
                         application/vnd.goa.error:
                             schema:
@@ -1984,7 +1984,7 @@ paths:
                                         suite_id: Accusantium quae ducimus.
                                     reason: Sequi et ut doloribus tenetur corporis ad.
                 "403":
-                    description: 'forbidden: The authenticated principal does not own this Change Card.'
+                    description: 'forbidden: The authenticated caller may not perform this operation or does not own the resource.'
                     content:
                         application/vnd.goa.error:
                             schema:
@@ -2974,7 +2974,7 @@ paths:
                                         suite_id: Accusantium quae ducimus.
                                     reason: Sequi et ut doloribus tenetur corporis ad.
                 "403":
-                    description: 'forbidden: The authenticated principal does not own this Change Card.'
+                    description: 'forbidden: The authenticated caller may not perform this operation or does not own the resource.'
                     content:
                         application/vnd.goa.error:
                             schema:
@@ -3159,7 +3159,7 @@ paths:
                                       text_only_args_schema: Facere voluptas rerum consectetur.
                                       toolset: Beatae repudiandae.
                 "403":
-                    description: 'forbidden: The authenticated principal does not own this Change Card.'
+                    description: 'forbidden: The authenticated caller may not perform this operation or does not own the resource.'
                     content:
                         application/vnd.goa.error:
                             schema:
@@ -3885,6 +3885,19 @@ paths:
                                         suite_commit: Voluptatem et placeat ullam quisquam.
                                         suite_id: Accusantium quae ducimus.
                                     reason: Sequi et ut doloribus tenetur corporis ad.
+                "403":
+                    description: 'forbidden: The authenticated caller may not perform this operation or does not own the resource.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: forbidden
+                                temporary: false
+                                timeout: false
                 "409":
                     description: 'conflict: A Change Card with this change_id already exists; use revise_change or a new change_id.'
                     content:
@@ -4604,7 +4617,7 @@ paths:
                                         suite_id: Accusantium quae ducimus.
                                     reason: Sequi et ut doloribus tenetur corporis ad.
                 "403":
-                    description: 'forbidden: The authenticated principal does not own this Change Card.'
+                    description: 'forbidden: The authenticated caller may not perform this operation or does not own the resource.'
                     content:
                         application/vnd.goa.error:
                             schema:
@@ -4684,6 +4697,19 @@ paths:
                                 gateway_addr: "0"
                                 model_name: l
                                 provider: openai
+                "403":
+                    description: 'forbidden: The authenticated caller may not perform this operation or does not own the resource.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: forbidden
+                                temporary: false
+                                timeout: false
                 "422":
                     description: 'unprocessable: The model provider, model name, gateway address, or required environment credential is invalid.'
                     content:
@@ -4760,6 +4786,19 @@ paths:
                                     - Explicabo cupiditate occaecati consequatur optio molestiae iure.
                                     - Quibusdam soluta quisquam impedit pariatur laboriosam.
                                     - Minus eum corrupti culpa.
+                "403":
+                    description: 'forbidden: The authenticated caller may not perform this operation or does not own the resource.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: forbidden
+                                temporary: false
+                                timeout: false
     /golden-path:
         get:
             tags:
@@ -4776,6 +4815,19 @@ paths:
                                 type: string
                                 example: Maxime nihil veritatis perferendis culpa et.
                             example: Maxime nihil veritatis perferendis culpa et.
+                "403":
+                    description: 'forbidden: The authenticated caller may not perform this operation or does not own the resource.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: forbidden
+                                temporary: false
+                                timeout: false
     /live-target:
         delete:
             tags:
@@ -4793,6 +4845,19 @@ paths:
                             example:
                                 message: Dolor unde.
                                 stopped: true
+                "403":
+                    description: 'forbidden: The authenticated caller may not perform this operation or does not own the resource.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: forbidden
+                                temporary: false
+                                timeout: false
                 "500":
                     description: 'live_target_stop_failed: The live target''s processes could not be confirmed stopped; restart surla serve.'
                     content:
@@ -4832,6 +4897,19 @@ paths:
                                 candidate_commit: Esse assumenda.
                                 message: Dolor voluptatem reiciendis non.
                                 url: Ut soluta eligendi labore ipsa dicta.
+                "403":
+                    description: 'forbidden: The authenticated caller may not perform this operation or does not own the resource.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: forbidden
+                                temporary: false
+                                timeout: false
                 "422":
                     description: 'live_target_failed: The live target could not be built or started; the message says which step failed.'
                     content:
@@ -4856,6 +4934,359 @@ paths:
                                 id: 123abc
                                 message: parameter 'p' must be an integer
                                 name: live_target_unavailable
+                                temporary: false
+                                timeout: false
+    /project/agents:
+        post:
+            tags:
+                - project
+            summary: add_agent project
+            description: The CLI creates one persistent agent credential and returns only its private file path. The credential and role survive server restart.
+            operationId: project#add_agent
+            requestBody:
+                description: Request body for add_agent.
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/AddAgentRequestBody'
+                        example:
+                            actor_id: s5
+                            role: builder
+            responses:
+                "201":
+                    description: Created response.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ProjectAgent'
+                            example:
+                                actor_id: Dignissimos aut.
+                                credential_file: Molestiae sint.
+                                role: builder
+                "403":
+                    description: 'forbidden: The trusted credential cannot perform this operation.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: forbidden
+                                temporary: false
+                                timeout: false
+                "409":
+                    description: 'conflict: An agent with this identifier already exists.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: conflict
+                                temporary: false
+                                timeout: false
+                "422":
+                    description: 'unprocessable: The requested credential exchange or agent does not exist or is invalid.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: unprocessable
+                                temporary: false
+                                timeout: false
+    /project/agents/{actor_id}:
+        delete:
+            tags:
+                - project
+            summary: remove_agent project
+            description: The CLI revokes an agent and removes its private credential file before returning.
+            operationId: project#remove_agent
+            parameters:
+                - name: actor_id
+                  in: path
+                  description: Agent identifier.
+                  required: true
+                  schema:
+                    type: string
+                    description: Agent identifier.
+                    example: I3
+                    pattern: ^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$
+                  example: I3
+            responses:
+                "204":
+                    description: No Content response.
+                "403":
+                    description: 'forbidden: The trusted credential cannot perform this operation.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: forbidden
+                                temporary: false
+                                timeout: false
+                "409":
+                    description: 'conflict: An agent with this identifier already exists.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: conflict
+                                temporary: false
+                                timeout: false
+                "422":
+                    description: 'unprocessable: The requested credential exchange or agent does not exist or is invalid.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: unprocessable
+                                temporary: false
+                                timeout: false
+    /project/browser-link:
+        post:
+            tags:
+                - project
+            summary: browser_link project
+            description: The CLI mints a short-lived single-use browser link. The URL is the only credential allowed in a browser-launch command line.
+            operationId: project#browser_link
+            responses:
+                "201":
+                    description: Created response.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/BrowserLinkResponseBody'
+                            example:
+                                expires_at: "1975-12-27T22:57:38Z"
+                                url: Magni minima iure doloribus sit.
+                "403":
+                    description: 'forbidden: The trusted credential cannot perform this operation.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: forbidden
+                                temporary: false
+                                timeout: false
+                "409":
+                    description: 'conflict: An agent with this identifier already exists.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: conflict
+                                temporary: false
+                                timeout: false
+                "422":
+                    description: 'unprocessable: The requested credential exchange or agent does not exist or is invalid.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: unprocessable
+                                temporary: false
+                                timeout: false
+    /project/browser-session:
+        post:
+            tags:
+                - project
+            summary: exchange_browser_link project
+            description: The browser exchanges the single-use link once for an in-memory user session. The session is never a cookie or stored on disk and is sent only to this server address.
+            operationId: project#exchange_browser_link
+            requestBody:
+                description: Request body for exchange_browser_link.
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/ExchangeBrowserLinkRequestBody'
+                        example:
+                            link: mn9
+            responses:
+                "201":
+                    description: Created response.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ExchangeBrowserLinkResponseBody'
+                            example:
+                                session: Consectetur est quis cum vel quasi.
+                "403":
+                    description: 'forbidden: The trusted credential cannot perform this operation.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: forbidden
+                                temporary: false
+                                timeout: false
+                "409":
+                    description: 'conflict: An agent with this identifier already exists.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: conflict
+                                temporary: false
+                                timeout: false
+                "422":
+                    description: 'unprocessable: The requested credential exchange or agent does not exist or is invalid.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: unprocessable
+                                temporary: false
+                                timeout: false
+    /project/identity:
+        get:
+            tags:
+                - project
+            summary: identity project
+            description: The CLI proves the answering server belongs to its project using the management credential.
+            operationId: project#identity
+            responses:
+                "200":
+                    description: OK response.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ProjectIdentity'
+                            example:
+                                directory: Nihil accusamus qui.
+                                owner: Officiis laborum cum quo suscipit ducimus.
+                                project_id: Sunt iure praesentium temporibus aspernatur minus.
+                "403":
+                    description: 'forbidden: The trusted credential cannot perform this operation.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: forbidden
+                                temporary: false
+                                timeout: false
+                "409":
+                    description: 'conflict: An agent with this identifier already exists.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: conflict
+                                temporary: false
+                                timeout: false
+                "422":
+                    description: 'unprocessable: The requested credential exchange or agent does not exist or is invalid.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: unprocessable
+                                temporary: false
+                                timeout: false
+    /project/stop:
+        post:
+            tags:
+                - project
+            summary: stop project
+            description: The CLI requests ordered server shutdown; the server removes its running record only after its owned work closes.
+            operationId: project#stop
+            responses:
+                "202":
+                    description: Accepted response.
+                "403":
+                    description: 'forbidden: The trusted credential cannot perform this operation.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: forbidden
+                                temporary: false
+                                timeout: false
+                "409":
+                    description: 'conflict: An agent with this identifier already exists.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: conflict
+                                temporary: false
+                                timeout: false
+                "422":
+                    description: 'unprocessable: The requested credential exchange or agent does not exist or is invalid.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: unprocessable
                                 temporary: false
                                 timeout: false
     /sandbox/draft:
@@ -4888,6 +5319,19 @@ paths:
                                 message: Mollitia voluptatem error voluptatem molestiae quia.
                                 prompt_version: Pariatur numquam quisquam sunt sequi recusandae adipisci.
                                 requires_rebuild: true
+                "403":
+                    description: 'forbidden: The authenticated caller may not perform this operation or does not own the resource.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: forbidden
+                                temporary: false
+                                timeout: false
                 "404":
                     description: 'prompt_not_found: The live target has no prompt with this ID; nothing changed.'
                     content:
@@ -5034,6 +5478,19 @@ paths:
                                       status: ok
                                       summary: Fuga molestiae suscipit.
                                       trace_id: Perferendis omnis ut iste aliquid.
+                "403":
+                    description: 'forbidden: The authenticated caller may not perform this operation or does not own the resource.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: forbidden
+                                temporary: false
+                                timeout: false
                 "422":
                     description: 'unprocessable: The cursor is invalid; omit it to refresh the history.'
                     content:
@@ -5076,6 +5533,19 @@ paths:
                                 type: string
                                 example: Commodi et adipisci ipsa sit.
                             example: Commodi et adipisci ipsa sit.
+                "403":
+                    description: 'forbidden: The authenticated caller may not perform this operation or does not own the resource.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: forbidden
+                                temporary: false
+                                timeout: false
     /verifications/{run_id}:
         get:
             tags:
@@ -5172,7 +5642,7 @@ paths:
                                         suite_id: Dolorum sed sunt sed.
                                 suite_commit: Laboriosam architecto minus itaque deleniti.
                 "403":
-                    description: 'forbidden: The authenticated principal does not own this verification run.'
+                    description: 'forbidden: The authenticated caller may not perform this operation or does not own the resource.'
                     content:
                         application/vnd.goa.error:
                             schema:
@@ -5228,6 +5698,19 @@ paths:
                                 message: Quo qui voluptatem qui nisi ullam.
                                 op_id: Voluptatem assumenda earum iste.
                                 passed: false
+                "403":
+                    description: 'forbidden: The authenticated caller may not perform this operation or does not own the resource.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: forbidden
+                                temporary: false
+                                timeout: false
                 "422":
                     description: 'unprocessable: The workspace contains no Go module.'
                     content:
@@ -5296,6 +5779,19 @@ paths:
                                 dropped_bytes: 8153869448844237652
                                 next_cursor: Aut occaecati possimus maiores architecto.
                                 text: Esse vel sed aut perspiciatis quibusdam.
+                "403":
+                    description: 'forbidden: The authenticated caller may not perform this operation or does not own the resource.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: forbidden
+                                temporary: false
+                                timeout: false
                 "404":
                     description: 'not_found: No output exists for this op_id.'
                     content:
@@ -5342,6 +5838,19 @@ paths:
                                     - Aut qui.
                                 message: Autem facilis est ullam blanditiis.
                                 op_id: Ipsam eveniet repellat quaerat ut.
+                "403":
+                    description: 'forbidden: The authenticated caller may not perform this operation or does not own the resource.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: forbidden
+                                temporary: false
+                                timeout: false
                 "422":
                     description: 'unprocessable: The workspace contains no Go module.'
                     content:
@@ -5415,6 +5924,19 @@ paths:
                                     - Ut recusandae.
                                     - Fugit officia numquam dolorem voluptas.
                                     - Cum enim quia ut consequatur consequatur quae.
+                "403":
+                    description: 'forbidden: The authenticated caller may not perform this operation or does not own the resource.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: forbidden
+                                temporary: false
+                                timeout: false
                 "422":
                     description: 'unprocessable: The selected local module is absent, replaced, or invalid; correct its local files and call again.'
                     content:
@@ -5470,6 +5992,19 @@ paths:
                                 dir: Exercitationem mollitia illo incidunt.
                                 module_path: Voluptates soluta.
                                 service_name: Quis aliquam repellendus sit modi.
+                "403":
+                    description: 'forbidden: The authenticated caller may not perform this operation or does not own the resource.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: forbidden
+                                temporary: false
+                                timeout: false
                 "409":
                     description: 'conflict: The workspace or target directory is already initialized.'
                     content:
@@ -6618,6 +7153,19 @@ paths:
                                               summary: Nihil sunt ea molestiae voluptate aut.
                                           title: Mollitia rerum nihil consectetur excepturi aspernatur.
                                       name: Et minima.
+                "403":
+                    description: 'forbidden: The authenticated caller may not perform this operation or does not own the resource.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: forbidden
+                                temporary: false
+                                timeout: false
                 "501":
                     description: 'not_implemented: No workspace directory is bound to this control plane; start Surla from a project directory or pass -project.'
                     content:
@@ -7195,6 +7743,19 @@ paths:
                                               summary: Nihil sunt ea molestiae voluptate aut.
                                           title: Mollitia rerum nihil consectetur excepturi aspernatur.
                                       name: Et minima.
+                "403":
+                    description: 'forbidden: The authenticated caller may not perform this operation or does not own the resource.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: forbidden
+                                temporary: false
+                                timeout: false
                 "422":
                     description: 'unprocessable: The bound workspace is absent, was replaced, contains no go.mod file, or has invalid module files; run init_project or fix the local module files and call refresh_story again.'
                     content:
@@ -7236,6 +7797,29 @@ paths:
                                 timeout: false
 components:
     schemas:
+        AddAgentRequestBody:
+            type: object
+            properties:
+                actor_id:
+                    type: string
+                    description: Agent identifier.
+                    example: s5
+                    pattern: ^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$
+                role:
+                    type: string
+                    description: Agent purpose.
+                    example: builder
+                    enum:
+                        - guide
+                        - builder
+                        - test_writer
+            description: Request body for add_agent.
+            example:
+                actor_id: s5
+                role: builder
+            required:
+                - actor_id
+                - role
         AgentPolicyItem:
             type: object
             properties:
@@ -7688,6 +8272,24 @@ components:
                 - agent_policies
                 - tools
                 - banner
+        BrowserLinkResponseBody:
+            type: object
+            properties:
+                expires_at:
+                    type: string
+                    description: Time after which exchange is refused.
+                    example: "1975-12-27T22:57:38Z"
+                    format: date-time
+                url:
+                    type: string
+                    description: Same-address views URL carrying the single-use link in its fragment.
+                    example: Magni minima iure doloribus sit.
+            example:
+                expires_at: "1975-12-27T22:57:38Z"
+                url: Magni minima iure doloribus sit.
+            required:
+                - url
+                - expires_at
         BuilderVerificationReport:
             type: object
             properties:
@@ -9804,7 +10406,7 @@ components:
                 fault:
                     type: boolean
                     description: Is the error a server-side fault?
-                    example: true
+                    example: false
                 id:
                     type: string
                     description: ID is a unique identifier for this particular occurrence of the problem.
@@ -9827,7 +10429,7 @@ components:
                     example: true
             description: Error response result type
             example:
-                fault: true
+                fault: false
                 id: 123abc
                 message: parameter 'p' must be an integer
                 name: bad_request
@@ -9879,6 +10481,31 @@ components:
                 - input_summary
                 - expected_outcome
                 - verification_kind
+        ExchangeBrowserLinkRequestBody:
+            type: object
+            properties:
+                link:
+                    type: string
+                    description: Unexpired single-use link value.
+                    example: mn9
+                    minLength: 1
+                    maxLength: 256
+            description: Request body for exchange_browser_link.
+            example:
+                link: mn9
+            required:
+                - link
+        ExchangeBrowserLinkResponseBody:
+            type: object
+            properties:
+                session:
+                    type: string
+                    description: User session kept only in the page's memory.
+                    example: Consectetur est quis cum vel quasi.
+            example:
+                session: Consectetur est quis cum vel quasi.
+            required:
+                - session
         GenerateCodePayload:
             type: object
             properties:
@@ -10055,6 +10682,56 @@ components:
             required:
                 - change_id
                 - request_revision
+        ProjectAgent:
+            type: object
+            properties:
+                actor_id:
+                    type: string
+                    description: Agent identity, separate from resource ownership.
+                    example: Dignissimos aut.
+                credential_file:
+                    type: string
+                    description: Private credential file for the launcher; never put its contents in arguments or labels.
+                    example: Molestiae sint.
+                role:
+                    type: string
+                    description: Trusted agent purpose.
+                    example: builder
+                    enum:
+                        - guide
+                        - builder
+                        - test_writer
+            example:
+                actor_id: Dignissimos aut.
+                credential_file: Molestiae sint.
+                role: builder
+            required:
+                - actor_id
+                - role
+                - credential_file
+        ProjectIdentity:
+            type: object
+            properties:
+                directory:
+                    type: string
+                    description: Physical project folder.
+                    example: Nihil accusamus qui.
+                owner:
+                    type: string
+                    description: Immutable operating-system account identity.
+                    example: Officiis laborum cum quo suscipit ducimus.
+                project_id:
+                    type: string
+                    description: Stable private project identifier.
+                    example: Sunt iure praesentium temporibus aspernatur minus.
+            example:
+                directory: Nihil accusamus qui.
+                owner: Officiis laborum cum quo suscipit ducimus.
+                project_id: Sunt iure praesentium temporibus aspernatur minus.
+            required:
+                - project_id
+                - directory
+                - owner
         ProposeChangePayload:
             type: object
             properties:
@@ -13568,5 +14245,7 @@ components:
                 - request_revision
                 - candidate_commit
 tags:
+    - name: project
+      description: Owns one local project's server identity, agent credentials, and one-use browser access. Management credentials never authorize application decisions. This service is not exposed as agent tools.
     - name: surla
       description: Surla MCP software factory control plane.

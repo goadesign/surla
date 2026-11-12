@@ -119,7 +119,7 @@ func (c *ControlPlane) ApproveMerge(
 	}
 	approved := *record.card
 	approved.Approval = &gensurla.ApprovalItem{
-		ApprovedBy:      principal.ID,
+		ApprovedBy:      principal.CallerID,
 		ReportDigest:    report.Digest,
 		CandidateCommit: p.CandidateCommit,
 		SuiteID:         inputs.SuiteID,

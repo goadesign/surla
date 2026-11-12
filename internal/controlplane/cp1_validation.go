@@ -381,7 +381,7 @@ func (c *ControlPlane) confirm(principal Principal, p *gensurla.ConfirmIntentPay
 	// revision it was composed for, and changed answers or examples produce a
 	// new revision. An unchanged submission returns existing, composition
 	// included, below.
-	confirmedBy := principal.ID
+	confirmedBy := principal.CallerID
 	confirmed := &gensurla.ChangeCardResult{
 		ChangeID:           existing.ChangeID,
 		Status:             StatusConfirmed,

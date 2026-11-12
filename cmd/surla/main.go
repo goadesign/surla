@@ -13,7 +13,6 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"net/http"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -22,7 +21,6 @@ import (
 	"strings"
 	"syscall"
 	"time"
-	"unicode/utf8"
 
 	gensurla "github.com/goadesign/surla/gen/surla"
 	"github.com/goadesign/surla/internal/controlplane"
@@ -32,7 +30,6 @@ import (
 	"github.com/goadesign/surla/internal/verify"
 	"github.com/goadesign/surla/internal/verifyrun"
 	"github.com/goadesign/surla/verify/candidate"
-	"go.opentelemetry.io/otel"
 )
 
 // serveConfig holds the optional `surla serve` flags that choose the model
@@ -107,12 +104,18 @@ promoted.
 
 Usage:
 
+  surla
   surla <command> [flags]
 
 Commands:
 
   init            create a starter service with an agent and an evaluator suite
-  serve           run the Surla server that MCP clients (coding agents) connect to
+  stop            stop this project's server in order
+
+Running surla starts or attaches to this folder's project and opens its views.
+The server runs in its own parentless Herdr terminal.
+
+Other commands:
   preview         print the architecture, agent policies and tool contracts a design
                   module declares; needs no server and no model key
   diff            compare the designs in two module directories
@@ -163,8 +166,7 @@ func main() {
 // command or a bad flag returns an error.
 func run(args []string, stdout io.Writer) error {
 	if len(args) == 0 {
-		_, err := fmt.Fprint(stdout, usage)
-		return err
+		return runProjectStart(nil, stdout)
 	}
 	sub, rest := args[0], args[1:]
 	if slices.Contains(helpWords, sub) {
@@ -193,6 +195,8 @@ func dispatch(sub string, args []string, stdout io.Writer) error {
 		return runInit(args, stdout)
 	case "serve":
 		return runServe(args)
+	case "stop":
+		return runProjectStop(args, stdout)
 	case "preview":
 		return runPreview(args, stdout, os.Stderr)
 	case "diff":
@@ -216,93 +220,15 @@ func dispatch(sub string, args []string, stdout io.Writer) error {
 
 // runServe starts the Surla HTTP and MCP JSON-RPC server protected by a
 // verified bearer-token authenticator.
-func runServe(args []string) (err error) {
-	fs := flag.NewFlagSet("serve", flag.ContinueOnError)
-	addr := fs.String("addr", "127.0.0.1:8090", "HTTP and MCP listen address")
-	principalID := fs.String("principal", "", "Authenticated operator principal ID")
-	authToken := fs.String("auth-token", "", "Bearer token required on HTTP and MCP requests (default: $SURLA_AUTH_TOKEN)")
-	var cfg serveConfig
-	bindServeConfigFlags(fs, &cfg)
-	if err := parseServeConfigFlags(fs, args, &cfg); err != nil {
-		return err
-	}
-	token := resolveAuthToken(*authToken, os.Getenv)
-	if strings.TrimSpace(*principalID) == "" || token == "" {
-		return errors.New("serve requires -principal and -auth-token (or SURLA_AUTH_TOKEN)")
-	}
-	if !utf8.ValidString(*principalID) {
-		return errors.New("-principal must be valid UTF-8")
-	}
-	tracerProvider, err := newTraceProvider(context.Background(), os.Stderr, os.Getenv)
-	if err != nil {
-		return err
-	}
-	previousProvider := otel.GetTracerProvider()
-	otel.SetTracerProvider(tracerProvider)
-	defer func() {
-		// The later control-plane defer finishes owned work and closes its file
-		// first. This also flushes startup evidence when construction fails.
-		flushCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		err = errors.Join(err, tracerProvider.Shutdown(flushCtx))
-		otel.SetTracerProvider(previousProvider)
-	}()
-	opts, err := serveOptions(cfg, os.Getenv, os.Environ())
-	if err != nil {
-		return err
-	}
-	opts.TracerProvider = tracerProvider
-	auth := controlplane.NewTokenAuthenticator(map[string]controlplane.Principal{
-		token: {ID: strings.TrimSpace(*principalID)},
-	})
-	cp, err := controlplane.New(opts)
-	if err != nil {
-		return err
-	}
-	defer func() { err = errors.Join(err, cp.Close()) }()
-	srv := &http.Server{
-		Handler:           controlplane.NewHTTPHandler(cp, auth),
-		ReadHeaderTimeout: 10 * time.Second,
-	}
-	ln, err := net.Listen("tcp", *addr)
-	if err != nil {
-		return err
-	}
-	starterProject := cfg.projectDir
-	if cfg.verificationPath != "" {
-		starterProject = ""
-	}
-	writeServeStatus(os.Stderr, ln.Addr().(*net.TCPAddr), opts, starterProject)
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
-
-	errCh := make(chan error, 1)
-	go func() {
-		if err := srv.Serve(ln); err != nil && err != http.ErrServerClosed {
-			errCh <- err
-		}
-		close(errCh)
-	}()
-
-	select {
-	case err := <-errCh:
-		return err
-	case <-ctx.Done():
-		shutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		return srv.Shutdown(shutCtx)
-	}
-}
-
 // bindServeConfigFlags registers the workspace, model, verification,
 // promotion, and check flags for `surla serve` on fs.
 func bindServeConfigFlags(fs *flag.FlagSet, cfg *serveConfig) {
 	fs.StringVar(&cfg.gatewayAddr, "model-gateway-addr", "", "model gateway host:port that live targets plan with (plaintext gRPC; excludes -model-provider and -model-name)")
 	fs.StringVar(&cfg.provider, "model-provider", "", "model provider that live targets plan with: anthropic or openai (key from ANTHROPIC_API_KEY or OPENAI_API_KEY)")
 	fs.StringVar(&cfg.modelName, "model-name", "", "model name for -model-provider")
-	fs.StringVar(&cfg.cardsDir, "cards-dir", ".surla/cards", "directory where CP1 Change Cards are saved so they survive restarts; one surla serve at a time may use it")
+
 	fs.StringVar(&cfg.promotionPath, "promotion-config", "", "JSON file with the CP5 report directory, required suite and environment, and release directory of staged binaries that approve_merge checks; it approves staged binaries for a fresh launch, never a running service")
-	fs.StringVar(&cfg.projectDir, "project", "", "project workspace directory (default: working directory); derives CP3/CP4 verification from its committed starter HEAD at startup (or the commit created by init_project) when -verification-config is omitted")
+
 	fs.StringVar(&cfg.verificationPath, "verification-config", "", "JSON file with the CP4 candidate, evaluator suite, runs and reports configuration used by verify_change")
 	fs.DurationVar(&cfg.checkTimeout, "check-timeout", defaultCheckTimeout, "how long one check_project or update_dependencies operation may take, including copying the workspace, pulling the Go image and running every module's containers")
 }

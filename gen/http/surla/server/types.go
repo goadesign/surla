@@ -685,6 +685,42 @@ type GetStoryRefreshResponseBody struct {
 	Message string `form:"message" json:"message" xml:"message"`
 }
 
+// CheckpointUIForbiddenResponseBody is the type of the "surla" service
+// "checkpoint_ui" endpoint HTTP response body for the "forbidden" error.
+type CheckpointUIForbiddenResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
+// GoldenPathForbiddenResponseBody is the type of the "surla" service
+// "golden_path" endpoint HTTP response body for the "forbidden" error.
+type GoldenPathForbiddenResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
 // ProposeChangeConflictResponseBody is the type of the "surla" service
 // "propose_change" endpoint HTTP response body for the "conflict" error.
 type ProposeChangeConflictResponseBody struct {
@@ -721,9 +757,9 @@ type ProposeChangeUnprocessableResponseBody struct {
 	Fault bool `form:"fault" json:"fault" xml:"fault"`
 }
 
-// ReviseChangeNotFoundResponseBody is the type of the "surla" service
-// "revise_change" endpoint HTTP response body for the "not_found" error.
-type ReviseChangeNotFoundResponseBody struct {
+// ProposeChangeForbiddenResponseBody is the type of the "surla" service
+// "propose_change" endpoint HTTP response body for the "forbidden" error.
+type ProposeChangeForbiddenResponseBody struct {
 	// Name is the name of this class of errors.
 	Name string `form:"name" json:"name" xml:"name"`
 	// ID is a unique identifier for this particular occurrence of the problem.
@@ -739,9 +775,9 @@ type ReviseChangeNotFoundResponseBody struct {
 	Fault bool `form:"fault" json:"fault" xml:"fault"`
 }
 
-// ReviseChangeForbiddenResponseBody is the type of the "surla" service
-// "revise_change" endpoint HTTP response body for the "forbidden" error.
-type ReviseChangeForbiddenResponseBody struct {
+// ReviseChangeNotFoundResponseBody is the type of the "surla" service
+// "revise_change" endpoint HTTP response body for the "not_found" error.
+type ReviseChangeNotFoundResponseBody struct {
 	// Name is the name of this class of errors.
 	Name string `form:"name" json:"name" xml:"name"`
 	// ID is a unique identifier for this particular occurrence of the problem.
@@ -793,9 +829,9 @@ type ReviseChangeUnprocessableResponseBody struct {
 	Fault bool `form:"fault" json:"fault" xml:"fault"`
 }
 
-// ConfirmIntentNotFoundResponseBody is the type of the "surla" service
-// "confirm_intent" endpoint HTTP response body for the "not_found" error.
-type ConfirmIntentNotFoundResponseBody struct {
+// ReviseChangeForbiddenResponseBody is the type of the "surla" service
+// "revise_change" endpoint HTTP response body for the "forbidden" error.
+type ReviseChangeForbiddenResponseBody struct {
 	// Name is the name of this class of errors.
 	Name string `form:"name" json:"name" xml:"name"`
 	// ID is a unique identifier for this particular occurrence of the problem.
@@ -811,9 +847,9 @@ type ConfirmIntentNotFoundResponseBody struct {
 	Fault bool `form:"fault" json:"fault" xml:"fault"`
 }
 
-// ConfirmIntentForbiddenResponseBody is the type of the "surla" service
-// "confirm_intent" endpoint HTTP response body for the "forbidden" error.
-type ConfirmIntentForbiddenResponseBody struct {
+// ConfirmIntentNotFoundResponseBody is the type of the "surla" service
+// "confirm_intent" endpoint HTTP response body for the "not_found" error.
+type ConfirmIntentNotFoundResponseBody struct {
 	// Name is the name of this class of errors.
 	Name string `form:"name" json:"name" xml:"name"`
 	// ID is a unique identifier for this particular occurrence of the problem.
@@ -850,6 +886,24 @@ type ConfirmIntentConflictResponseBody struct {
 // ConfirmIntentUnprocessableResponseBody is the type of the "surla" service
 // "confirm_intent" endpoint HTTP response body for the "unprocessable" error.
 type ConfirmIntentUnprocessableResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
+// ConfirmIntentForbiddenResponseBody is the type of the "surla" service
+// "confirm_intent" endpoint HTTP response body for the "forbidden" error.
+type ConfirmIntentForbiddenResponseBody struct {
 	// Name is the name of this class of errors.
 	Name string `form:"name" json:"name" xml:"name"`
 	// ID is a unique identifier for this particular occurrence of the problem.
@@ -919,24 +973,6 @@ type PreviewArchitectureNotFoundResponseBody struct {
 	Fault bool `form:"fault" json:"fault" xml:"fault"`
 }
 
-// PreviewArchitectureForbiddenResponseBody is the type of the "surla" service
-// "preview_architecture" endpoint HTTP response body for the "forbidden" error.
-type PreviewArchitectureForbiddenResponseBody struct {
-	// Name is the name of this class of errors.
-	Name string `form:"name" json:"name" xml:"name"`
-	// ID is a unique identifier for this particular occurrence of the problem.
-	ID string `form:"id" json:"id" xml:"id"`
-	// Message is a human-readable explanation specific to this occurrence of the
-	// problem.
-	Message string `form:"message" json:"message" xml:"message"`
-	// Is the error temporary?
-	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
-	// Is the error a timeout?
-	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
-	// Is the error a server-side fault?
-	Fault bool `form:"fault" json:"fault" xml:"fault"`
-}
-
 // PreviewArchitectureConflictResponseBody is the type of the "surla" service
 // "preview_architecture" endpoint HTTP response body for the "conflict" error.
 type PreviewArchitectureConflictResponseBody struct {
@@ -959,6 +995,24 @@ type PreviewArchitectureConflictResponseBody struct {
 // service "preview_architecture" endpoint HTTP response body for the
 // "unprocessable" error.
 type PreviewArchitectureUnprocessableResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
+// PreviewArchitectureForbiddenResponseBody is the type of the "surla" service
+// "preview_architecture" endpoint HTTP response body for the "forbidden" error.
+type PreviewArchitectureForbiddenResponseBody struct {
 	// Name is the name of this class of errors.
 	Name string `form:"name" json:"name" xml:"name"`
 	// ID is a unique identifier for this particular occurrence of the problem.
@@ -1068,6 +1122,24 @@ type DraftOverrideUpdateNotConfirmedResponseBody struct {
 	Fault bool `form:"fault" json:"fault" xml:"fault"`
 }
 
+// DraftOverrideForbiddenResponseBody is the type of the "surla" service
+// "draft_override" endpoint HTTP response body for the "forbidden" error.
+type DraftOverrideForbiddenResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
 // StartLiveTargetLiveTargetUnavailableResponseBody is the type of the "surla"
 // service "start_live_target" endpoint HTTP response body for the
 // "live_target_unavailable" error.
@@ -1106,6 +1178,24 @@ type StartLiveTargetLiveTargetFailedResponseBody struct {
 	Fault bool `form:"fault" json:"fault" xml:"fault"`
 }
 
+// StartLiveTargetForbiddenResponseBody is the type of the "surla" service
+// "start_live_target" endpoint HTTP response body for the "forbidden" error.
+type StartLiveTargetForbiddenResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
 // StopLiveTargetLiveTargetStopFailedResponseBody is the type of the "surla"
 // service "stop_live_target" endpoint HTTP response body for the
 // "live_target_stop_failed" error.
@@ -1125,9 +1215,9 @@ type StopLiveTargetLiveTargetStopFailedResponseBody struct {
 	Fault bool `form:"fault" json:"fault" xml:"fault"`
 }
 
-// VerifyChangeNotFoundResponseBody is the type of the "surla" service
-// "verify_change" endpoint HTTP response body for the "not_found" error.
-type VerifyChangeNotFoundResponseBody struct {
+// StopLiveTargetForbiddenResponseBody is the type of the "surla" service
+// "stop_live_target" endpoint HTTP response body for the "forbidden" error.
+type StopLiveTargetForbiddenResponseBody struct {
 	// Name is the name of this class of errors.
 	Name string `form:"name" json:"name" xml:"name"`
 	// ID is a unique identifier for this particular occurrence of the problem.
@@ -1143,9 +1233,9 @@ type VerifyChangeNotFoundResponseBody struct {
 	Fault bool `form:"fault" json:"fault" xml:"fault"`
 }
 
-// VerifyChangeForbiddenResponseBody is the type of the "surla" service
-// "verify_change" endpoint HTTP response body for the "forbidden" error.
-type VerifyChangeForbiddenResponseBody struct {
+// VerifyChangeNotFoundResponseBody is the type of the "surla" service
+// "verify_change" endpoint HTTP response body for the "not_found" error.
+type VerifyChangeNotFoundResponseBody struct {
 	// Name is the name of this class of errors.
 	Name string `form:"name" json:"name" xml:"name"`
 	// ID is a unique identifier for this particular occurrence of the problem.
@@ -1197,9 +1287,9 @@ type VerifyChangeNotImplementedResponseBody struct {
 	Fault bool `form:"fault" json:"fault" xml:"fault"`
 }
 
-// GetVerificationNotFoundResponseBody is the type of the "surla" service
-// "get_verification" endpoint HTTP response body for the "not_found" error.
-type GetVerificationNotFoundResponseBody struct {
+// VerifyChangeForbiddenResponseBody is the type of the "surla" service
+// "verify_change" endpoint HTTP response body for the "forbidden" error.
+type VerifyChangeForbiddenResponseBody struct {
 	// Name is the name of this class of errors.
 	Name string `form:"name" json:"name" xml:"name"`
 	// ID is a unique identifier for this particular occurrence of the problem.
@@ -1215,9 +1305,9 @@ type GetVerificationNotFoundResponseBody struct {
 	Fault bool `form:"fault" json:"fault" xml:"fault"`
 }
 
-// GetVerificationForbiddenResponseBody is the type of the "surla" service
-// "get_verification" endpoint HTTP response body for the "forbidden" error.
-type GetVerificationForbiddenResponseBody struct {
+// GetVerificationNotFoundResponseBody is the type of the "surla" service
+// "get_verification" endpoint HTTP response body for the "not_found" error.
+type GetVerificationNotFoundResponseBody struct {
 	// Name is the name of this class of errors.
 	Name string `form:"name" json:"name" xml:"name"`
 	// ID is a unique identifier for this particular occurrence of the problem.
@@ -1252,9 +1342,9 @@ type GetVerificationNotImplementedResponseBody struct {
 	Fault bool `form:"fault" json:"fault" xml:"fault"`
 }
 
-// ListVerificationsNotFoundResponseBody is the type of the "surla" service
-// "list_verifications" endpoint HTTP response body for the "not_found" error.
-type ListVerificationsNotFoundResponseBody struct {
+// GetVerificationForbiddenResponseBody is the type of the "surla" service
+// "get_verification" endpoint HTTP response body for the "forbidden" error.
+type GetVerificationForbiddenResponseBody struct {
 	// Name is the name of this class of errors.
 	Name string `form:"name" json:"name" xml:"name"`
 	// ID is a unique identifier for this particular occurrence of the problem.
@@ -1270,9 +1360,9 @@ type ListVerificationsNotFoundResponseBody struct {
 	Fault bool `form:"fault" json:"fault" xml:"fault"`
 }
 
-// ListVerificationsForbiddenResponseBody is the type of the "surla" service
-// "list_verifications" endpoint HTTP response body for the "forbidden" error.
-type ListVerificationsForbiddenResponseBody struct {
+// ListVerificationsNotFoundResponseBody is the type of the "surla" service
+// "list_verifications" endpoint HTTP response body for the "not_found" error.
+type ListVerificationsNotFoundResponseBody struct {
 	// Name is the name of this class of errors.
 	Name string `form:"name" json:"name" xml:"name"`
 	// ID is a unique identifier for this particular occurrence of the problem.
@@ -1307,9 +1397,9 @@ type ListVerificationsNotImplementedResponseBody struct {
 	Fault bool `form:"fault" json:"fault" xml:"fault"`
 }
 
-// ApproveMergeNotFoundResponseBody is the type of the "surla" service
-// "approve_merge" endpoint HTTP response body for the "not_found" error.
-type ApproveMergeNotFoundResponseBody struct {
+// ListVerificationsForbiddenResponseBody is the type of the "surla" service
+// "list_verifications" endpoint HTTP response body for the "forbidden" error.
+type ListVerificationsForbiddenResponseBody struct {
 	// Name is the name of this class of errors.
 	Name string `form:"name" json:"name" xml:"name"`
 	// ID is a unique identifier for this particular occurrence of the problem.
@@ -1325,9 +1415,9 @@ type ApproveMergeNotFoundResponseBody struct {
 	Fault bool `form:"fault" json:"fault" xml:"fault"`
 }
 
-// ApproveMergeForbiddenResponseBody is the type of the "surla" service
-// "approve_merge" endpoint HTTP response body for the "forbidden" error.
-type ApproveMergeForbiddenResponseBody struct {
+// ApproveMergeNotFoundResponseBody is the type of the "surla" service
+// "approve_merge" endpoint HTTP response body for the "not_found" error.
+type ApproveMergeNotFoundResponseBody struct {
 	// Name is the name of this class of errors.
 	Name string `form:"name" json:"name" xml:"name"`
 	// ID is a unique identifier for this particular occurrence of the problem.
@@ -1397,6 +1487,42 @@ type ApproveMergeNotImplementedResponseBody struct {
 	Fault bool `form:"fault" json:"fault" xml:"fault"`
 }
 
+// ApproveMergeForbiddenResponseBody is the type of the "surla" service
+// "approve_merge" endpoint HTTP response body for the "forbidden" error.
+type ApproveMergeForbiddenResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
+// DiffForbiddenResponseBody is the type of the "surla" service "diff" endpoint
+// HTTP response body for the "forbidden" error.
+type DiffForbiddenResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
 // ConfigureModelUnprocessableResponseBody is the type of the "surla" service
 // "configure_model" endpoint HTTP response body for the "unprocessable" error.
 type ConfigureModelUnprocessableResponseBody struct {
@@ -1419,6 +1545,24 @@ type ConfigureModelUnprocessableResponseBody struct {
 // "configure_model" endpoint HTTP response body for the "not_implemented"
 // error.
 type ConfigureModelNotImplementedResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
+// ConfigureModelForbiddenResponseBody is the type of the "surla" service
+// "configure_model" endpoint HTTP response body for the "forbidden" error.
+type ConfigureModelForbiddenResponseBody struct {
 	// Name is the name of this class of errors.
 	Name string `form:"name" json:"name" xml:"name"`
 	// ID is a unique identifier for this particular occurrence of the problem.
@@ -1488,6 +1632,24 @@ type InitProjectNotImplementedResponseBody struct {
 	Fault bool `form:"fault" json:"fault" xml:"fault"`
 }
 
+// InitProjectForbiddenResponseBody is the type of the "surla" service
+// "init_project" endpoint HTTP response body for the "forbidden" error.
+type InitProjectForbiddenResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
 // GenerateCodeUnprocessableResponseBody is the type of the "surla" service
 // "generate_code" endpoint HTTP response body for the "unprocessable" error.
 type GenerateCodeUnprocessableResponseBody struct {
@@ -1509,6 +1671,24 @@ type GenerateCodeUnprocessableResponseBody struct {
 // GenerateCodeNotImplementedResponseBody is the type of the "surla" service
 // "generate_code" endpoint HTTP response body for the "not_implemented" error.
 type GenerateCodeNotImplementedResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
+// GenerateCodeForbiddenResponseBody is the type of the "surla" service
+// "generate_code" endpoint HTTP response body for the "forbidden" error.
+type GenerateCodeForbiddenResponseBody struct {
 	// Name is the name of this class of errors.
 	Name string `form:"name" json:"name" xml:"name"`
 	// ID is a unique identifier for this particular occurrence of the problem.
@@ -1563,6 +1743,24 @@ type CheckProjectNotImplementedResponseBody struct {
 // CheckProjectUnavailableResponseBody is the type of the "surla" service
 // "check_project" endpoint HTTP response body for the "unavailable" error.
 type CheckProjectUnavailableResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
+// CheckProjectForbiddenResponseBody is the type of the "surla" service
+// "check_project" endpoint HTTP response body for the "forbidden" error.
+type CheckProjectForbiddenResponseBody struct {
 	// Name is the name of this class of errors.
 	Name string `form:"name" json:"name" xml:"name"`
 	// ID is a unique identifier for this particular occurrence of the problem.
@@ -1635,6 +1833,24 @@ type UpdateDependenciesUnavailableResponseBody struct {
 	Fault bool `form:"fault" json:"fault" xml:"fault"`
 }
 
+// UpdateDependenciesForbiddenResponseBody is the type of the "surla" service
+// "update_dependencies" endpoint HTTP response body for the "forbidden" error.
+type UpdateDependenciesForbiddenResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
 // ReadCheckOutputNotFoundResponseBody is the type of the "surla" service
 // "read_check_output" endpoint HTTP response body for the "not_found" error.
 type ReadCheckOutputNotFoundResponseBody struct {
@@ -1672,6 +1888,24 @@ type ReadCheckOutputUnprocessableResponseBody struct {
 	Fault bool `form:"fault" json:"fault" xml:"fault"`
 }
 
+// ReadCheckOutputForbiddenResponseBody is the type of the "surla" service
+// "read_check_output" endpoint HTTP response body for the "forbidden" error.
+type ReadCheckOutputForbiddenResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
 // ListTracesUnprocessableResponseBody is the type of the "surla" service
 // "list_traces" endpoint HTTP response body for the "unprocessable" error.
 type ListTracesUnprocessableResponseBody struct {
@@ -1693,6 +1927,24 @@ type ListTracesUnprocessableResponseBody struct {
 // ListTracesNotImplementedResponseBody is the type of the "surla" service
 // "list_traces" endpoint HTTP response body for the "not_implemented" error.
 type ListTracesNotImplementedResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
+// ListTracesForbiddenResponseBody is the type of the "surla" service
+// "list_traces" endpoint HTTP response body for the "forbidden" error.
+type ListTracesForbiddenResponseBody struct {
 	// Name is the name of this class of errors.
 	Name string `form:"name" json:"name" xml:"name"`
 	// ID is a unique identifier for this particular occurrence of the problem.
@@ -1762,10 +2014,46 @@ type RefreshStoryUnavailableResponseBody struct {
 	Fault bool `form:"fault" json:"fault" xml:"fault"`
 }
 
+// RefreshStoryForbiddenResponseBody is the type of the "surla" service
+// "refresh_story" endpoint HTTP response body for the "forbidden" error.
+type RefreshStoryForbiddenResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
 // GetStoryRefreshNotImplementedResponseBody is the type of the "surla" service
 // "get_story_refresh" endpoint HTTP response body for the "not_implemented"
 // error.
 type GetStoryRefreshNotImplementedResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
+// GetStoryRefreshForbiddenResponseBody is the type of the "surla" service
+// "get_story_refresh" endpoint HTTP response body for the "forbidden" error.
+type GetStoryRefreshForbiddenResponseBody struct {
 	// Name is the name of this class of errors.
 	Name string `form:"name" json:"name" xml:"name"`
 	// ID is a unique identifier for this particular occurrence of the problem.
@@ -3232,6 +3520,34 @@ func NewGetStoryRefreshResponseBody(res *surla.StoryRefreshResult) *GetStoryRefr
 	return body
 }
 
+// NewCheckpointUIForbiddenResponseBody builds the HTTP response body from the
+// result of the "checkpoint_ui" endpoint of the "surla" service.
+func NewCheckpointUIForbiddenResponseBody(res *goa.ServiceError) *CheckpointUIForbiddenResponseBody {
+	body := &CheckpointUIForbiddenResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
+// NewGoldenPathForbiddenResponseBody builds the HTTP response body from the
+// result of the "golden_path" endpoint of the "surla" service.
+func NewGoldenPathForbiddenResponseBody(res *goa.ServiceError) *GoldenPathForbiddenResponseBody {
+	body := &GoldenPathForbiddenResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
 // NewProposeChangeConflictResponseBody builds the HTTP response body from the
 // result of the "propose_change" endpoint of the "surla" service.
 func NewProposeChangeConflictResponseBody(res *goa.ServiceError) *ProposeChangeConflictResponseBody {
@@ -3260,10 +3576,10 @@ func NewProposeChangeUnprocessableResponseBody(res *goa.ServiceError) *ProposeCh
 	return body
 }
 
-// NewReviseChangeNotFoundResponseBody builds the HTTP response body from the
-// result of the "revise_change" endpoint of the "surla" service.
-func NewReviseChangeNotFoundResponseBody(res *goa.ServiceError) *ReviseChangeNotFoundResponseBody {
-	body := &ReviseChangeNotFoundResponseBody{
+// NewProposeChangeForbiddenResponseBody builds the HTTP response body from the
+// result of the "propose_change" endpoint of the "surla" service.
+func NewProposeChangeForbiddenResponseBody(res *goa.ServiceError) *ProposeChangeForbiddenResponseBody {
+	body := &ProposeChangeForbiddenResponseBody{
 		Name:      res.Name,
 		ID:        res.ID,
 		Message:   res.Message,
@@ -3274,10 +3590,10 @@ func NewReviseChangeNotFoundResponseBody(res *goa.ServiceError) *ReviseChangeNot
 	return body
 }
 
-// NewReviseChangeForbiddenResponseBody builds the HTTP response body from the
+// NewReviseChangeNotFoundResponseBody builds the HTTP response body from the
 // result of the "revise_change" endpoint of the "surla" service.
-func NewReviseChangeForbiddenResponseBody(res *goa.ServiceError) *ReviseChangeForbiddenResponseBody {
-	body := &ReviseChangeForbiddenResponseBody{
+func NewReviseChangeNotFoundResponseBody(res *goa.ServiceError) *ReviseChangeNotFoundResponseBody {
+	body := &ReviseChangeNotFoundResponseBody{
 		Name:      res.Name,
 		ID:        res.ID,
 		Message:   res.Message,
@@ -3316,10 +3632,10 @@ func NewReviseChangeUnprocessableResponseBody(res *goa.ServiceError) *ReviseChan
 	return body
 }
 
-// NewConfirmIntentNotFoundResponseBody builds the HTTP response body from the
-// result of the "confirm_intent" endpoint of the "surla" service.
-func NewConfirmIntentNotFoundResponseBody(res *goa.ServiceError) *ConfirmIntentNotFoundResponseBody {
-	body := &ConfirmIntentNotFoundResponseBody{
+// NewReviseChangeForbiddenResponseBody builds the HTTP response body from the
+// result of the "revise_change" endpoint of the "surla" service.
+func NewReviseChangeForbiddenResponseBody(res *goa.ServiceError) *ReviseChangeForbiddenResponseBody {
+	body := &ReviseChangeForbiddenResponseBody{
 		Name:      res.Name,
 		ID:        res.ID,
 		Message:   res.Message,
@@ -3330,10 +3646,10 @@ func NewConfirmIntentNotFoundResponseBody(res *goa.ServiceError) *ConfirmIntentN
 	return body
 }
 
-// NewConfirmIntentForbiddenResponseBody builds the HTTP response body from the
+// NewConfirmIntentNotFoundResponseBody builds the HTTP response body from the
 // result of the "confirm_intent" endpoint of the "surla" service.
-func NewConfirmIntentForbiddenResponseBody(res *goa.ServiceError) *ConfirmIntentForbiddenResponseBody {
-	body := &ConfirmIntentForbiddenResponseBody{
+func NewConfirmIntentNotFoundResponseBody(res *goa.ServiceError) *ConfirmIntentNotFoundResponseBody {
+	body := &ConfirmIntentNotFoundResponseBody{
 		Name:      res.Name,
 		ID:        res.ID,
 		Message:   res.Message,
@@ -3362,6 +3678,20 @@ func NewConfirmIntentConflictResponseBody(res *goa.ServiceError) *ConfirmIntentC
 // the result of the "confirm_intent" endpoint of the "surla" service.
 func NewConfirmIntentUnprocessableResponseBody(res *goa.ServiceError) *ConfirmIntentUnprocessableResponseBody {
 	body := &ConfirmIntentUnprocessableResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
+// NewConfirmIntentForbiddenResponseBody builds the HTTP response body from the
+// result of the "confirm_intent" endpoint of the "surla" service.
+func NewConfirmIntentForbiddenResponseBody(res *goa.ServiceError) *ConfirmIntentForbiddenResponseBody {
+	body := &ConfirmIntentForbiddenResponseBody{
 		Name:      res.Name,
 		ID:        res.ID,
 		Message:   res.Message,
@@ -3415,21 +3745,6 @@ func NewPreviewArchitectureNotFoundResponseBody(res *goa.ServiceError) *PreviewA
 	return body
 }
 
-// NewPreviewArchitectureForbiddenResponseBody builds the HTTP response body
-// from the result of the "preview_architecture" endpoint of the "surla"
-// service.
-func NewPreviewArchitectureForbiddenResponseBody(res *goa.ServiceError) *PreviewArchitectureForbiddenResponseBody {
-	body := &PreviewArchitectureForbiddenResponseBody{
-		Name:      res.Name,
-		ID:        res.ID,
-		Message:   res.Message,
-		Temporary: res.Temporary,
-		Timeout:   res.Timeout,
-		Fault:     res.Fault,
-	}
-	return body
-}
-
 // NewPreviewArchitectureConflictResponseBody builds the HTTP response body
 // from the result of the "preview_architecture" endpoint of the "surla"
 // service.
@@ -3450,6 +3765,21 @@ func NewPreviewArchitectureConflictResponseBody(res *goa.ServiceError) *PreviewA
 // service.
 func NewPreviewArchitectureUnprocessableResponseBody(res *goa.ServiceError) *PreviewArchitectureUnprocessableResponseBody {
 	body := &PreviewArchitectureUnprocessableResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
+// NewPreviewArchitectureForbiddenResponseBody builds the HTTP response body
+// from the result of the "preview_architecture" endpoint of the "surla"
+// service.
+func NewPreviewArchitectureForbiddenResponseBody(res *goa.ServiceError) *PreviewArchitectureForbiddenResponseBody {
+	body := &PreviewArchitectureForbiddenResponseBody{
 		Name:      res.Name,
 		ID:        res.ID,
 		Message:   res.Message,
@@ -3531,6 +3861,20 @@ func NewDraftOverrideUpdateNotConfirmedResponseBody(res *goa.ServiceError) *Draf
 	return body
 }
 
+// NewDraftOverrideForbiddenResponseBody builds the HTTP response body from the
+// result of the "draft_override" endpoint of the "surla" service.
+func NewDraftOverrideForbiddenResponseBody(res *goa.ServiceError) *DraftOverrideForbiddenResponseBody {
+	body := &DraftOverrideForbiddenResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
 // NewStartLiveTargetLiveTargetUnavailableResponseBody builds the HTTP response
 // body from the result of the "start_live_target" endpoint of the "surla"
 // service.
@@ -3560,6 +3904,20 @@ func NewStartLiveTargetLiveTargetFailedResponseBody(res *goa.ServiceError) *Star
 	return body
 }
 
+// NewStartLiveTargetForbiddenResponseBody builds the HTTP response body from
+// the result of the "start_live_target" endpoint of the "surla" service.
+func NewStartLiveTargetForbiddenResponseBody(res *goa.ServiceError) *StartLiveTargetForbiddenResponseBody {
+	body := &StartLiveTargetForbiddenResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
 // NewStopLiveTargetLiveTargetStopFailedResponseBody builds the HTTP response
 // body from the result of the "stop_live_target" endpoint of the "surla"
 // service.
@@ -3575,10 +3933,10 @@ func NewStopLiveTargetLiveTargetStopFailedResponseBody(res *goa.ServiceError) *S
 	return body
 }
 
-// NewVerifyChangeNotFoundResponseBody builds the HTTP response body from the
-// result of the "verify_change" endpoint of the "surla" service.
-func NewVerifyChangeNotFoundResponseBody(res *goa.ServiceError) *VerifyChangeNotFoundResponseBody {
-	body := &VerifyChangeNotFoundResponseBody{
+// NewStopLiveTargetForbiddenResponseBody builds the HTTP response body from
+// the result of the "stop_live_target" endpoint of the "surla" service.
+func NewStopLiveTargetForbiddenResponseBody(res *goa.ServiceError) *StopLiveTargetForbiddenResponseBody {
+	body := &StopLiveTargetForbiddenResponseBody{
 		Name:      res.Name,
 		ID:        res.ID,
 		Message:   res.Message,
@@ -3589,10 +3947,10 @@ func NewVerifyChangeNotFoundResponseBody(res *goa.ServiceError) *VerifyChangeNot
 	return body
 }
 
-// NewVerifyChangeForbiddenResponseBody builds the HTTP response body from the
+// NewVerifyChangeNotFoundResponseBody builds the HTTP response body from the
 // result of the "verify_change" endpoint of the "surla" service.
-func NewVerifyChangeForbiddenResponseBody(res *goa.ServiceError) *VerifyChangeForbiddenResponseBody {
-	body := &VerifyChangeForbiddenResponseBody{
+func NewVerifyChangeNotFoundResponseBody(res *goa.ServiceError) *VerifyChangeNotFoundResponseBody {
+	body := &VerifyChangeNotFoundResponseBody{
 		Name:      res.Name,
 		ID:        res.ID,
 		Message:   res.Message,
@@ -3631,10 +3989,10 @@ func NewVerifyChangeNotImplementedResponseBody(res *goa.ServiceError) *VerifyCha
 	return body
 }
 
-// NewGetVerificationNotFoundResponseBody builds the HTTP response body from
-// the result of the "get_verification" endpoint of the "surla" service.
-func NewGetVerificationNotFoundResponseBody(res *goa.ServiceError) *GetVerificationNotFoundResponseBody {
-	body := &GetVerificationNotFoundResponseBody{
+// NewVerifyChangeForbiddenResponseBody builds the HTTP response body from the
+// result of the "verify_change" endpoint of the "surla" service.
+func NewVerifyChangeForbiddenResponseBody(res *goa.ServiceError) *VerifyChangeForbiddenResponseBody {
+	body := &VerifyChangeForbiddenResponseBody{
 		Name:      res.Name,
 		ID:        res.ID,
 		Message:   res.Message,
@@ -3645,10 +4003,10 @@ func NewGetVerificationNotFoundResponseBody(res *goa.ServiceError) *GetVerificat
 	return body
 }
 
-// NewGetVerificationForbiddenResponseBody builds the HTTP response body from
+// NewGetVerificationNotFoundResponseBody builds the HTTP response body from
 // the result of the "get_verification" endpoint of the "surla" service.
-func NewGetVerificationForbiddenResponseBody(res *goa.ServiceError) *GetVerificationForbiddenResponseBody {
-	body := &GetVerificationForbiddenResponseBody{
+func NewGetVerificationNotFoundResponseBody(res *goa.ServiceError) *GetVerificationNotFoundResponseBody {
+	body := &GetVerificationNotFoundResponseBody{
 		Name:      res.Name,
 		ID:        res.ID,
 		Message:   res.Message,
@@ -3673,10 +4031,10 @@ func NewGetVerificationNotImplementedResponseBody(res *goa.ServiceError) *GetVer
 	return body
 }
 
-// NewListVerificationsNotFoundResponseBody builds the HTTP response body from
-// the result of the "list_verifications" endpoint of the "surla" service.
-func NewListVerificationsNotFoundResponseBody(res *goa.ServiceError) *ListVerificationsNotFoundResponseBody {
-	body := &ListVerificationsNotFoundResponseBody{
+// NewGetVerificationForbiddenResponseBody builds the HTTP response body from
+// the result of the "get_verification" endpoint of the "surla" service.
+func NewGetVerificationForbiddenResponseBody(res *goa.ServiceError) *GetVerificationForbiddenResponseBody {
+	body := &GetVerificationForbiddenResponseBody{
 		Name:      res.Name,
 		ID:        res.ID,
 		Message:   res.Message,
@@ -3687,10 +4045,10 @@ func NewListVerificationsNotFoundResponseBody(res *goa.ServiceError) *ListVerifi
 	return body
 }
 
-// NewListVerificationsForbiddenResponseBody builds the HTTP response body from
+// NewListVerificationsNotFoundResponseBody builds the HTTP response body from
 // the result of the "list_verifications" endpoint of the "surla" service.
-func NewListVerificationsForbiddenResponseBody(res *goa.ServiceError) *ListVerificationsForbiddenResponseBody {
-	body := &ListVerificationsForbiddenResponseBody{
+func NewListVerificationsNotFoundResponseBody(res *goa.ServiceError) *ListVerificationsNotFoundResponseBody {
+	body := &ListVerificationsNotFoundResponseBody{
 		Name:      res.Name,
 		ID:        res.ID,
 		Message:   res.Message,
@@ -3715,10 +4073,10 @@ func NewListVerificationsNotImplementedResponseBody(res *goa.ServiceError) *List
 	return body
 }
 
-// NewApproveMergeNotFoundResponseBody builds the HTTP response body from the
-// result of the "approve_merge" endpoint of the "surla" service.
-func NewApproveMergeNotFoundResponseBody(res *goa.ServiceError) *ApproveMergeNotFoundResponseBody {
-	body := &ApproveMergeNotFoundResponseBody{
+// NewListVerificationsForbiddenResponseBody builds the HTTP response body from
+// the result of the "list_verifications" endpoint of the "surla" service.
+func NewListVerificationsForbiddenResponseBody(res *goa.ServiceError) *ListVerificationsForbiddenResponseBody {
+	body := &ListVerificationsForbiddenResponseBody{
 		Name:      res.Name,
 		ID:        res.ID,
 		Message:   res.Message,
@@ -3729,10 +4087,10 @@ func NewApproveMergeNotFoundResponseBody(res *goa.ServiceError) *ApproveMergeNot
 	return body
 }
 
-// NewApproveMergeForbiddenResponseBody builds the HTTP response body from the
+// NewApproveMergeNotFoundResponseBody builds the HTTP response body from the
 // result of the "approve_merge" endpoint of the "surla" service.
-func NewApproveMergeForbiddenResponseBody(res *goa.ServiceError) *ApproveMergeForbiddenResponseBody {
-	body := &ApproveMergeForbiddenResponseBody{
+func NewApproveMergeNotFoundResponseBody(res *goa.ServiceError) *ApproveMergeNotFoundResponseBody {
+	body := &ApproveMergeNotFoundResponseBody{
 		Name:      res.Name,
 		ID:        res.ID,
 		Message:   res.Message,
@@ -3785,6 +4143,34 @@ func NewApproveMergeNotImplementedResponseBody(res *goa.ServiceError) *ApproveMe
 	return body
 }
 
+// NewApproveMergeForbiddenResponseBody builds the HTTP response body from the
+// result of the "approve_merge" endpoint of the "surla" service.
+func NewApproveMergeForbiddenResponseBody(res *goa.ServiceError) *ApproveMergeForbiddenResponseBody {
+	body := &ApproveMergeForbiddenResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
+// NewDiffForbiddenResponseBody builds the HTTP response body from the result
+// of the "diff" endpoint of the "surla" service.
+func NewDiffForbiddenResponseBody(res *goa.ServiceError) *DiffForbiddenResponseBody {
+	body := &DiffForbiddenResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
 // NewConfigureModelUnprocessableResponseBody builds the HTTP response body
 // from the result of the "configure_model" endpoint of the "surla" service.
 func NewConfigureModelUnprocessableResponseBody(res *goa.ServiceError) *ConfigureModelUnprocessableResponseBody {
@@ -3803,6 +4189,20 @@ func NewConfigureModelUnprocessableResponseBody(res *goa.ServiceError) *Configur
 // from the result of the "configure_model" endpoint of the "surla" service.
 func NewConfigureModelNotImplementedResponseBody(res *goa.ServiceError) *ConfigureModelNotImplementedResponseBody {
 	body := &ConfigureModelNotImplementedResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
+// NewConfigureModelForbiddenResponseBody builds the HTTP response body from
+// the result of the "configure_model" endpoint of the "surla" service.
+func NewConfigureModelForbiddenResponseBody(res *goa.ServiceError) *ConfigureModelForbiddenResponseBody {
+	body := &ConfigureModelForbiddenResponseBody{
 		Name:      res.Name,
 		ID:        res.ID,
 		Message:   res.Message,
@@ -3855,6 +4255,20 @@ func NewInitProjectNotImplementedResponseBody(res *goa.ServiceError) *InitProjec
 	return body
 }
 
+// NewInitProjectForbiddenResponseBody builds the HTTP response body from the
+// result of the "init_project" endpoint of the "surla" service.
+func NewInitProjectForbiddenResponseBody(res *goa.ServiceError) *InitProjectForbiddenResponseBody {
+	body := &InitProjectForbiddenResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
 // NewGenerateCodeUnprocessableResponseBody builds the HTTP response body from
 // the result of the "generate_code" endpoint of the "surla" service.
 func NewGenerateCodeUnprocessableResponseBody(res *goa.ServiceError) *GenerateCodeUnprocessableResponseBody {
@@ -3873,6 +4287,20 @@ func NewGenerateCodeUnprocessableResponseBody(res *goa.ServiceError) *GenerateCo
 // the result of the "generate_code" endpoint of the "surla" service.
 func NewGenerateCodeNotImplementedResponseBody(res *goa.ServiceError) *GenerateCodeNotImplementedResponseBody {
 	body := &GenerateCodeNotImplementedResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
+// NewGenerateCodeForbiddenResponseBody builds the HTTP response body from the
+// result of the "generate_code" endpoint of the "surla" service.
+func NewGenerateCodeForbiddenResponseBody(res *goa.ServiceError) *GenerateCodeForbiddenResponseBody {
+	body := &GenerateCodeForbiddenResponseBody{
 		Name:      res.Name,
 		ID:        res.ID,
 		Message:   res.Message,
@@ -3915,6 +4343,20 @@ func NewCheckProjectNotImplementedResponseBody(res *goa.ServiceError) *CheckProj
 // the result of the "check_project" endpoint of the "surla" service.
 func NewCheckProjectUnavailableResponseBody(res *goa.ServiceError) *CheckProjectUnavailableResponseBody {
 	body := &CheckProjectUnavailableResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
+// NewCheckProjectForbiddenResponseBody builds the HTTP response body from the
+// result of the "check_project" endpoint of the "surla" service.
+func NewCheckProjectForbiddenResponseBody(res *goa.ServiceError) *CheckProjectForbiddenResponseBody {
+	body := &CheckProjectForbiddenResponseBody{
 		Name:      res.Name,
 		ID:        res.ID,
 		Message:   res.Message,
@@ -3968,6 +4410,20 @@ func NewUpdateDependenciesUnavailableResponseBody(res *goa.ServiceError) *Update
 	return body
 }
 
+// NewUpdateDependenciesForbiddenResponseBody builds the HTTP response body
+// from the result of the "update_dependencies" endpoint of the "surla" service.
+func NewUpdateDependenciesForbiddenResponseBody(res *goa.ServiceError) *UpdateDependenciesForbiddenResponseBody {
+	body := &UpdateDependenciesForbiddenResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
 // NewReadCheckOutputNotFoundResponseBody builds the HTTP response body from
 // the result of the "read_check_output" endpoint of the "surla" service.
 func NewReadCheckOutputNotFoundResponseBody(res *goa.ServiceError) *ReadCheckOutputNotFoundResponseBody {
@@ -3996,6 +4452,20 @@ func NewReadCheckOutputUnprocessableResponseBody(res *goa.ServiceError) *ReadChe
 	return body
 }
 
+// NewReadCheckOutputForbiddenResponseBody builds the HTTP response body from
+// the result of the "read_check_output" endpoint of the "surla" service.
+func NewReadCheckOutputForbiddenResponseBody(res *goa.ServiceError) *ReadCheckOutputForbiddenResponseBody {
+	body := &ReadCheckOutputForbiddenResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
 // NewListTracesUnprocessableResponseBody builds the HTTP response body from
 // the result of the "list_traces" endpoint of the "surla" service.
 func NewListTracesUnprocessableResponseBody(res *goa.ServiceError) *ListTracesUnprocessableResponseBody {
@@ -4014,6 +4484,20 @@ func NewListTracesUnprocessableResponseBody(res *goa.ServiceError) *ListTracesUn
 // the result of the "list_traces" endpoint of the "surla" service.
 func NewListTracesNotImplementedResponseBody(res *goa.ServiceError) *ListTracesNotImplementedResponseBody {
 	body := &ListTracesNotImplementedResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
+// NewListTracesForbiddenResponseBody builds the HTTP response body from the
+// result of the "list_traces" endpoint of the "surla" service.
+func NewListTracesForbiddenResponseBody(res *goa.ServiceError) *ListTracesForbiddenResponseBody {
+	body := &ListTracesForbiddenResponseBody{
 		Name:      res.Name,
 		ID:        res.ID,
 		Message:   res.Message,
@@ -4066,10 +4550,38 @@ func NewRefreshStoryUnavailableResponseBody(res *goa.ServiceError) *RefreshStory
 	return body
 }
 
+// NewRefreshStoryForbiddenResponseBody builds the HTTP response body from the
+// result of the "refresh_story" endpoint of the "surla" service.
+func NewRefreshStoryForbiddenResponseBody(res *goa.ServiceError) *RefreshStoryForbiddenResponseBody {
+	body := &RefreshStoryForbiddenResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
 // NewGetStoryRefreshNotImplementedResponseBody builds the HTTP response body
 // from the result of the "get_story_refresh" endpoint of the "surla" service.
 func NewGetStoryRefreshNotImplementedResponseBody(res *goa.ServiceError) *GetStoryRefreshNotImplementedResponseBody {
 	body := &GetStoryRefreshNotImplementedResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
+// NewGetStoryRefreshForbiddenResponseBody builds the HTTP response body from
+// the result of the "get_story_refresh" endpoint of the "surla" service.
+func NewGetStoryRefreshForbiddenResponseBody(res *goa.ServiceError) *GetStoryRefreshForbiddenResponseBody {
+	body := &GetStoryRefreshForbiddenResponseBody{
 		Name:      res.Name,
 		ID:        res.ID,
 		Message:   res.Message,

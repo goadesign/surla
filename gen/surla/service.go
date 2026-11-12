@@ -1165,6 +1165,11 @@ type VerifyChangePayload struct {
 	CandidateCommit string
 }
 
+// MakeForbidden builds a goa.ServiceError from an error.
+func MakeForbidden(err error) *goa.ServiceError {
+	return goa.NewServiceError(err, "forbidden", false, false, false)
+}
+
 // MakeConflict builds a goa.ServiceError from an error.
 func MakeConflict(err error) *goa.ServiceError {
 	return goa.NewServiceError(err, "conflict", false, false, false)
@@ -1178,11 +1183,6 @@ func MakeUnprocessable(err error) *goa.ServiceError {
 // MakeNotFound builds a goa.ServiceError from an error.
 func MakeNotFound(err error) *goa.ServiceError {
 	return goa.NewServiceError(err, "not_found", false, false, false)
-}
-
-// MakeForbidden builds a goa.ServiceError from an error.
-func MakeForbidden(err error) *goa.ServiceError {
-	return goa.NewServiceError(err, "forbidden", false, false, false)
 }
 
 // MakePromptNotFound builds a goa.ServiceError from an error.

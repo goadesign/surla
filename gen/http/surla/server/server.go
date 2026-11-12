@@ -215,7 +215,7 @@ func NewCheckpointUIHandler(
 ) http.Handler {
 	var (
 		encodeResponse = EncodeCheckpointUIResponse(encoder)
-		encodeError    = goahttp.ErrorEncoder(encoder, formatter)
+		encodeError    = EncodeCheckpointUIError(encoder, formatter)
 	)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := context.WithValue(r.Context(), goahttp.AcceptTypeKey, r.Header.Get("Accept"))
@@ -261,7 +261,7 @@ func NewGoldenPathHandler(
 ) http.Handler {
 	var (
 		encodeResponse = EncodeGoldenPathResponse(encoder)
-		encodeError    = goahttp.ErrorEncoder(encoder, formatter)
+		encodeError    = EncodeGoldenPathError(encoder, formatter)
 	)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := context.WithValue(r.Context(), goahttp.AcceptTypeKey, r.Header.Get("Accept"))
@@ -937,7 +937,7 @@ func NewDiffHandler(
 	var (
 		decodeRequest  = DecodeDiffRequest(mux, decoder)
 		encodeResponse = EncodeDiffResponse(encoder)
-		encodeError    = goahttp.ErrorEncoder(encoder, formatter)
+		encodeError    = EncodeDiffError(encoder, formatter)
 	)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := context.WithValue(r.Context(), goahttp.AcceptTypeKey, r.Header.Get("Accept"))

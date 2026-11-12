@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"os"
 
+	projectc "github.com/goadesign/surla/gen/http/project/client"
 	surlac "github.com/goadesign/surla/gen/http/surla/client"
 	goahttp "goa.design/goa/v3/http"
 	goa "goa.design/goa/v3/pkg"
@@ -23,13 +24,15 @@ import (
 //	command (subcommand1|subcommand2|...)
 func UsageCommands() []string {
 	return []string{
+		"project (identity|stop|add-agent|remove-agent|browser-link|exchange-browser-link)",
 		"surla (checkpoint-ui|golden-path|propose-change|revise-change|confirm-intent|get-change|preview-architecture|draft-override|start-live-target|stop-live-target|verify-change|get-verification|list-verifications|approve-merge|diff|configure-model|init-project|generate-code|check-project|update-dependencies|read-check-output|list-traces|refresh-story|get-story-refresh)",
 	}
 }
 
 // UsageExamples produces an example of a valid invocation of the CLI tool.
 func UsageExamples() string {
-	return os.Args[0] + " " + "surla checkpoint-ui" + "\n" +
+	return os.Args[0] + " " + "project identity" + "\n" +
+		os.Args[0] + " " + "surla checkpoint-ui" + "\n" +
 		""
 }
 
@@ -62,6 +65,23 @@ func ParseEndpoint(
 	restore bool,
 ) (goa.Endpoint, any, error) {
 	var (
+		projectFlags = flag.NewFlagSet("project", flag.ContinueOnError)
+
+		projectIdentityFlags = flag.NewFlagSet("identity", flag.ExitOnError)
+
+		projectStopFlags = flag.NewFlagSet("stop", flag.ExitOnError)
+
+		projectAddAgentFlags    = flag.NewFlagSet("add-agent", flag.ExitOnError)
+		projectAddAgentBodyFlag = new(cliStringFlag)
+
+		projectRemoveAgentFlags       = flag.NewFlagSet("remove-agent", flag.ExitOnError)
+		projectRemoveAgentActorIDFlag = new(cliStringFlag)
+
+		projectBrowserLinkFlags = flag.NewFlagSet("browser-link", flag.ExitOnError)
+
+		projectExchangeBrowserLinkFlags    = flag.NewFlagSet("exchange-browser-link", flag.ExitOnError)
+		projectExchangeBrowserLinkBodyFlag = new(cliStringFlag)
+
 		surlaFlags = flag.NewFlagSet("surla", flag.ContinueOnError)
 
 		surlaCheckpointUIFlags = flag.NewFlagSet("checkpoint-ui", flag.ExitOnError)
@@ -132,6 +152,9 @@ func ParseEndpoint(
 
 		surlaGetStoryRefreshFlags = flag.NewFlagSet("get-story-refresh", flag.ExitOnError)
 	)
+	projectAddAgentFlags.Var(projectAddAgentBodyFlag, "body", "")
+	projectRemoveAgentFlags.Var(projectRemoveAgentActorIDFlag, "actor-id", "Agent identifier.")
+	projectExchangeBrowserLinkFlags.Var(projectExchangeBrowserLinkBodyFlag, "body", "")
 	surlaProposeChangeFlags.Var(surlaProposeChangeBodyFlag, "body", "")
 	surlaReviseChangeFlags.Var(surlaReviseChangeBodyFlag, "body", "")
 	surlaConfirmIntentFlags.Var(surlaConfirmIntentBodyFlag, "body", "")
@@ -150,6 +173,14 @@ func ParseEndpoint(
 	surlaGenerateCodeFlags.Var(surlaGenerateCodeBodyFlag, "body", "")
 	surlaReadCheckOutputFlags.Var(surlaReadCheckOutputBodyFlag, "body", "")
 	surlaListTracesFlags.Var(surlaListTracesCursorFlag, "cursor", "")
+
+	projectFlags.Usage = projectUsage
+	projectIdentityFlags.Usage = projectIdentityUsage
+	projectStopFlags.Usage = projectStopUsage
+	projectAddAgentFlags.Usage = projectAddAgentUsage
+	projectRemoveAgentFlags.Usage = projectRemoveAgentUsage
+	projectBrowserLinkFlags.Usage = projectBrowserLinkUsage
+	projectExchangeBrowserLinkFlags.Usage = projectExchangeBrowserLinkUsage
 
 	surlaFlags.Usage = surlaUsage
 	surlaCheckpointUIFlags.Usage = surlaCheckpointUIUsage
@@ -192,6 +223,8 @@ func ParseEndpoint(
 	{
 		svcn = flag.Arg(0)
 		switch svcn {
+		case "project":
+			svcf = projectFlags
 		case "surla":
 			svcf = surlaFlags
 		default:
@@ -209,6 +242,28 @@ func ParseEndpoint(
 	{
 		epn = svcf.Arg(0)
 		switch svcn {
+		case "project":
+			switch epn {
+			case "identity":
+				epf = projectIdentityFlags
+
+			case "stop":
+				epf = projectStopFlags
+
+			case "add-agent":
+				epf = projectAddAgentFlags
+
+			case "remove-agent":
+				epf = projectRemoveAgentFlags
+
+			case "browser-link":
+				epf = projectBrowserLinkFlags
+
+			case "exchange-browser-link":
+				epf = projectExchangeBrowserLinkFlags
+
+			}
+
 		case "surla":
 			switch epn {
 			case "checkpoint-ui":
@@ -305,6 +360,25 @@ func ParseEndpoint(
 	)
 	{
 		switch svcn {
+		case "project":
+			c := projectc.NewClient(scheme, host, doer, enc, dec, restore)
+			switch epn {
+			case "identity":
+				endpoint = c.Identity()
+			case "stop":
+				endpoint = c.Stop()
+			case "add-agent":
+				endpoint = c.AddAgent()
+				data, err = projectc.BuildAddAgentPayload(projectAddAgentBodyFlag.value)
+			case "remove-agent":
+				endpoint = c.RemoveAgent()
+				data, err = projectc.BuildRemoveAgentPayload(projectRemoveAgentActorIDFlag.value)
+			case "browser-link":
+				endpoint = c.BrowserLink()
+			case "exchange-browser-link":
+				endpoint = c.ExchangeBrowserLink()
+				data, err = projectc.BuildExchangeBrowserLinkPayload(projectExchangeBrowserLinkBodyFlag.value)
+			}
 		case "surla":
 			c := surlac.NewClient(scheme, host, doer, enc, dec, restore)
 			switch epn {
@@ -381,6 +455,123 @@ func ParseEndpoint(
 	}
 
 	return endpoint, data, nil
+}
+
+// projectUsage displays the usage of the project command and its subcommands.
+func projectUsage() {
+	fmt.Fprintln(os.Stderr, `Owns one local project's server identity, agent credentials, and one-use browser access. Management credentials never authorize application decisions. This service is not exposed as agent tools.`)
+	fmt.Fprintf(os.Stderr, "Usage:\n    %s [globalflags] project COMMAND [flags]\n\n", os.Args[0])
+	fmt.Fprintln(os.Stderr, "COMMAND:")
+	fmt.Fprintln(os.Stderr, `    identity: The CLI proves the answering server belongs to its project using the management credential.`)
+	fmt.Fprintln(os.Stderr, `    stop: The CLI requests ordered server shutdown; the server removes its running record only after its owned work closes.`)
+	fmt.Fprintln(os.Stderr, `    add-agent: The CLI creates one persistent agent credential and returns only its private file path. The credential and role survive server restart.`)
+	fmt.Fprintln(os.Stderr, `    remove-agent: The CLI revokes an agent and removes its private credential file before returning.`)
+	fmt.Fprintln(os.Stderr, `    browser-link: The CLI mints a short-lived single-use browser link. The URL is the only credential allowed in a browser-launch command line.`)
+	fmt.Fprintln(os.Stderr, `    exchange-browser-link: The browser exchanges the single-use link once for an in-memory user session. The session is never a cookie or stored on disk and is sent only to this server address.`)
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, "Additional help:")
+	fmt.Fprintf(os.Stderr, "    %s project COMMAND --help\n", os.Args[0])
+}
+func projectIdentityUsage() {
+	// Header with flags
+	fmt.Fprintf(os.Stderr, "%s [flags] project identity", os.Args[0])
+	fmt.Fprintln(os.Stderr)
+
+	// Description
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, `The CLI proves the answering server belongs to its project using the management credential.`)
+
+	// Flags list
+
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, "Example:")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "project identity")
+}
+
+func projectStopUsage() {
+	// Header with flags
+	fmt.Fprintf(os.Stderr, "%s [flags] project stop", os.Args[0])
+	fmt.Fprintln(os.Stderr)
+
+	// Description
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, `The CLI requests ordered server shutdown; the server removes its running record only after its owned work closes.`)
+
+	// Flags list
+
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, "Example:")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "project stop")
+}
+
+func projectAddAgentUsage() {
+	// Header with flags
+	fmt.Fprintf(os.Stderr, "%s [flags] project add-agent", os.Args[0])
+	fmt.Fprint(os.Stderr, " -body JSON")
+	fmt.Fprintln(os.Stderr)
+
+	// Description
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, `The CLI creates one persistent agent credential and returns only its private file path. The credential and role survive server restart.`)
+
+	// Flags list
+	fmt.Fprintln(os.Stderr, `    -body JSON: `)
+
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, "Example:")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "project add-agent --body '{\n      \"actor_id\": \"s5\",\n      \"role\": \"builder\"\n   }'")
+}
+
+func projectRemoveAgentUsage() {
+	// Header with flags
+	fmt.Fprintf(os.Stderr, "%s [flags] project remove-agent", os.Args[0])
+	fmt.Fprint(os.Stderr, " -actor-id STRING")
+	fmt.Fprintln(os.Stderr)
+
+	// Description
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, `The CLI revokes an agent and removes its private credential file before returning.`)
+
+	// Flags list
+	fmt.Fprintln(os.Stderr, `    -actor-id STRING: Agent identifier.`)
+
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, "Example:")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "project remove-agent --actor-id \"I3\"")
+}
+
+func projectBrowserLinkUsage() {
+	// Header with flags
+	fmt.Fprintf(os.Stderr, "%s [flags] project browser-link", os.Args[0])
+	fmt.Fprintln(os.Stderr)
+
+	// Description
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, `The CLI mints a short-lived single-use browser link. The URL is the only credential allowed in a browser-launch command line.`)
+
+	// Flags list
+
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, "Example:")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "project browser-link")
+}
+
+func projectExchangeBrowserLinkUsage() {
+	// Header with flags
+	fmt.Fprintf(os.Stderr, "%s [flags] project exchange-browser-link", os.Args[0])
+	fmt.Fprint(os.Stderr, " -body JSON")
+	fmt.Fprintln(os.Stderr)
+
+	// Description
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, `The browser exchanges the single-use link once for an in-memory user session. The session is never a cookie or stored on disk and is sent only to this server address.`)
+
+	// Flags list
+	fmt.Fprintln(os.Stderr, `    -body JSON: `)
+
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, "Example:")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "project exchange-browser-link --body '{\n      \"link\": \"mn9\"\n   }'")
 }
 
 // surlaUsage displays the usage of the surla command and its subcommands.

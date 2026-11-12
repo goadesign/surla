@@ -378,7 +378,7 @@ func decodeSpan(line []byte) (savedSpan, error) {
 // diagnosticAttribute owns the closed set used by both writing and file loads.
 func diagnosticAttribute(key string) bool {
 	switch key {
-	case "surla.change_id", "surla.run_id",
+	case "surla.change_id", "surla.run_id", "surla.caller_id", "surla.caller_kind",
 		"surla.check.op_id",
 		"surla.check.passed", "surla.generation.target":
 		return true

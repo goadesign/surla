@@ -72,6 +72,9 @@ func NewClient(checkpointUI, goldenPath, proposeChange, reviseChange, confirmInt
 }
 
 // CheckpointUI calls the "checkpoint_ui" endpoint of the "surla" service.
+// CheckpointUI may return the following errors:
+//   - "forbidden" (type *goa.ServiceError): The authenticated caller may not perform this operation or does not own the resource.
+//   - error: internal error
 func (c *Client) CheckpointUI(ctx context.Context) (res string, err error) {
 	var ires any
 	ires, err = c.CheckpointUIEndpoint(ctx, nil)
@@ -82,6 +85,9 @@ func (c *Client) CheckpointUI(ctx context.Context) (res string, err error) {
 }
 
 // GoldenPath calls the "golden_path" endpoint of the "surla" service.
+// GoldenPath may return the following errors:
+//   - "forbidden" (type *goa.ServiceError): The authenticated caller may not perform this operation or does not own the resource.
+//   - error: internal error
 func (c *Client) GoldenPath(ctx context.Context) (res string, err error) {
 	var ires any
 	ires, err = c.GoldenPathEndpoint(ctx, nil)
@@ -95,6 +101,7 @@ func (c *Client) GoldenPath(ctx context.Context) (res string, err error) {
 // ProposeChange may return the following errors:
 //   - "conflict" (type *goa.ServiceError): A Change Card with this change_id already exists; use revise_change or a new change_id.
 //   - "unprocessable" (type *goa.ServiceError): The request could not be accepted: change_id or prompt is blank, an ambiguity repeats an option, story_refresh_op_id does not name a current succeeded refresh_story operation matching the bound workspace snapshot, or the bound workspace's design/*.go could not be read. The message says which; nothing was saved.
+//   - "forbidden" (type *goa.ServiceError): The authenticated caller may not perform this operation or does not own the resource.
 //   - error: internal error
 func (c *Client) ProposeChange(ctx context.Context, p *ProposeChangePayload) (res *ChangeCardResult, err error) {
 	var ires any
@@ -108,9 +115,9 @@ func (c *Client) ProposeChange(ctx context.Context, p *ProposeChangePayload) (re
 // ReviseChange calls the "revise_change" endpoint of the "surla" service.
 // ReviseChange may return the following errors:
 //   - "not_found" (type *goa.ServiceError): No Change Card exists with this change_id.
-//   - "forbidden" (type *goa.ServiceError): The authenticated principal does not own this Change Card.
 //   - "conflict" (type *goa.ServiceError): The card's request_revision changed; read the current revision with get_change.
 //   - "unprocessable" (type *goa.ServiceError): The request could not be accepted: change_id, request_revision or prompt is blank, an ambiguity repeats an option, the analysis does not account for every current example exactly once, story_refresh_op_id does not name a current succeeded refresh_story operation matching the bound workspace snapshot, or the bound workspace's design/*.go could not be read. The message says which; the card did not change.
+//   - "forbidden" (type *goa.ServiceError): The authenticated caller may not perform this operation or does not own the resource.
 //   - error: internal error
 func (c *Client) ReviseChange(ctx context.Context, p *ReviseChangePayload) (res *ChangeCardResult, err error) {
 	var ires any
@@ -124,9 +131,9 @@ func (c *Client) ReviseChange(ctx context.Context, p *ReviseChangePayload) (res 
 // ConfirmIntent calls the "confirm_intent" endpoint of the "surla" service.
 // ConfirmIntent may return the following errors:
 //   - "not_found" (type *goa.ServiceError): No Change Card exists with this change_id.
-//   - "forbidden" (type *goa.ServiceError): The authenticated principal does not own this Change Card.
 //   - "conflict" (type *goa.ServiceError): The card's request_revision changed; read the current revision with get_change.
 //   - "unprocessable" (type *goa.ServiceError): The submitted answers or examples did not satisfy the Change Card's requirements; the message states which check failed.
+//   - "forbidden" (type *goa.ServiceError): The authenticated caller may not perform this operation or does not own the resource.
 //   - error: internal error
 func (c *Client) ConfirmIntent(ctx context.Context, p *ConfirmIntentPayload) (res *ChangeCardResult, err error) {
 	var ires any
@@ -140,7 +147,7 @@ func (c *Client) ConfirmIntent(ctx context.Context, p *ConfirmIntentPayload) (re
 // GetChange calls the "get_change" endpoint of the "surla" service.
 // GetChange may return the following errors:
 //   - "not_found" (type *goa.ServiceError): No Change Card exists with this change_id.
-//   - "forbidden" (type *goa.ServiceError): The authenticated principal does not own this Change Card.
+//   - "forbidden" (type *goa.ServiceError): The authenticated caller may not perform this operation or does not own the resource.
 //   - error: internal error
 func (c *Client) GetChange(ctx context.Context, p *GetChangePayload) (res *ChangeCardResult, err error) {
 	var ires any
@@ -155,9 +162,9 @@ func (c *Client) GetChange(ctx context.Context, p *GetChangePayload) (res *Chang
 // service.
 // PreviewArchitecture may return the following errors:
 //   - "not_found" (type *goa.ServiceError): No Change Card exists with this change_id.
-//   - "forbidden" (type *goa.ServiceError): The authenticated principal does not own this Change Card.
 //   - "conflict" (type *goa.ServiceError): The Change Card is not confirmed or its request_revision does not match; confirm the card or read the current revision with get_change.
 //   - "unprocessable" (type *goa.ServiceError): The request or evaluated design did not meet Checkpoint 2 requirements; the message states which check failed.
+//   - "forbidden" (type *goa.ServiceError): The authenticated caller may not perform this operation or does not own the resource.
 //   - error: internal error
 func (c *Client) PreviewArchitecture(ctx context.Context, p *PreviewArchitecturePayload) (res *ArchitecturePreviewResult, err error) {
 	var ires any
@@ -175,6 +182,7 @@ func (c *Client) PreviewArchitecture(ctx context.Context, p *PreviewArchitecture
 //   - "live_target_ended" (type *goa.ServiceError): The live target is no longer running; start it again with start_live_target.
 //   - "target_rejected_credential" (type *goa.ServiceError): The live target rejected this server's key; nothing changed. Start the target again with start_live_target.
 //   - "update_not_confirmed" (type *goa.ServiceError): The live target did not confirm the update, so it may or may not have applied it. Keep the draft and send it again.
+//   - "forbidden" (type *goa.ServiceError): The authenticated caller may not perform this operation or does not own the resource.
 //   - error: internal error
 func (c *Client) DraftOverride(ctx context.Context, p *DraftOverridePayload) (res *DraftOverrideResult, err error) {
 	var ires any
@@ -190,6 +198,7 @@ func (c *Client) DraftOverride(ctx context.Context, p *DraftOverridePayload) (re
 // StartLiveTarget may return the following errors:
 //   - "live_target_unavailable" (type *goa.ServiceError): This server has no verification configuration, so it cannot build or run a live target.
 //   - "live_target_failed" (type *goa.ServiceError): The live target could not be built or started; the message says which step failed.
+//   - "forbidden" (type *goa.ServiceError): The authenticated caller may not perform this operation or does not own the resource.
 //   - error: internal error
 func (c *Client) StartLiveTarget(ctx context.Context, p *StartLiveTargetPayload) (res *LiveTargetResult, err error) {
 	var ires any
@@ -203,6 +212,7 @@ func (c *Client) StartLiveTarget(ctx context.Context, p *StartLiveTargetPayload)
 // StopLiveTarget calls the "stop_live_target" endpoint of the "surla" service.
 // StopLiveTarget may return the following errors:
 //   - "live_target_stop_failed" (type *goa.ServiceError): The live target's processes could not be confirmed stopped; restart surla serve.
+//   - "forbidden" (type *goa.ServiceError): The authenticated caller may not perform this operation or does not own the resource.
 //   - error: internal error
 func (c *Client) StopLiveTarget(ctx context.Context) (res *StopLiveTargetResult, err error) {
 	var ires any
@@ -216,9 +226,9 @@ func (c *Client) StopLiveTarget(ctx context.Context) (res *StopLiveTargetResult,
 // VerifyChange calls the "verify_change" endpoint of the "surla" service.
 // VerifyChange may return the following errors:
 //   - "not_found" (type *goa.ServiceError): No Change Card exists with this change_id.
-//   - "forbidden" (type *goa.ServiceError): The authenticated principal does not own this Change Card.
 //   - "conflict" (type *goa.ServiceError): The Change Card is not confirmed or its request_revision does not match; confirm the card or read the current revision with get_change.
 //   - "not_implemented" (type *goa.ServiceError): This server has no verification configuration, so it cannot run Checkpoint 4 verifications.
+//   - "forbidden" (type *goa.ServiceError): The authenticated caller may not perform this operation or does not own the resource.
 //   - error: internal error
 func (c *Client) VerifyChange(ctx context.Context, p *VerifyChangePayload) (res *VerificationStatusResult, err error) {
 	var ires any
@@ -232,8 +242,8 @@ func (c *Client) VerifyChange(ctx context.Context, p *VerifyChangePayload) (res 
 // GetVerification calls the "get_verification" endpoint of the "surla" service.
 // GetVerification may return the following errors:
 //   - "not_found" (type *goa.ServiceError): No verification run exists with this run_id.
-//   - "forbidden" (type *goa.ServiceError): The authenticated principal does not own this verification run.
 //   - "not_implemented" (type *goa.ServiceError): This server has no verification configuration, so it cannot read verification runs.
+//   - "forbidden" (type *goa.ServiceError): The authenticated caller may not perform this operation or does not own the resource.
 //   - error: internal error
 func (c *Client) GetVerification(ctx context.Context, p *GetVerificationPayload) (res *VerificationStatusResult, err error) {
 	var ires any
@@ -248,8 +258,8 @@ func (c *Client) GetVerification(ctx context.Context, p *GetVerificationPayload)
 // service.
 // ListVerifications may return the following errors:
 //   - "not_found" (type *goa.ServiceError): No Change Card exists with this change_id.
-//   - "forbidden" (type *goa.ServiceError): The authenticated principal does not own this Change Card.
 //   - "not_implemented" (type *goa.ServiceError): This server has no verification configuration, so it cannot list verification runs.
+//   - "forbidden" (type *goa.ServiceError): The authenticated caller may not perform this operation or does not own the resource.
 //   - error: internal error
 func (c *Client) ListVerifications(ctx context.Context, p *ListVerificationsPayload) (res *VerificationListResult, err error) {
 	var ires any
@@ -263,10 +273,10 @@ func (c *Client) ListVerifications(ctx context.Context, p *ListVerificationsPayl
 // ApproveMerge calls the "approve_merge" endpoint of the "surla" service.
 // ApproveMerge may return the following errors:
 //   - "not_found" (type *goa.ServiceError): No Change Card exists with this change_id.
-//   - "forbidden" (type *goa.ServiceError): The authenticated principal does not own this Change Card.
 //   - "conflict" (type *goa.ServiceError): The Change Card is not confirmed or its request_revision does not match; confirm the card or read the current revision with get_change.
 //   - "unprocessable" (type *goa.ServiceError): The verification report did not pass or does not match the Change Card and promotion target inputs.
 //   - "not_implemented" (type *goa.ServiceError): This control plane has no promotion target bound to it.
+//   - "forbidden" (type *goa.ServiceError): The authenticated caller may not perform this operation or does not own the resource.
 //   - error: internal error
 func (c *Client) ApproveMerge(ctx context.Context, p *ApproveMergePayload) (res *ChangeCardResult, err error) {
 	var ires any
@@ -278,6 +288,9 @@ func (c *Client) ApproveMerge(ctx context.Context, p *ApproveMergePayload) (res 
 }
 
 // Diff calls the "diff" endpoint of the "surla" service.
+// Diff may return the following errors:
+//   - "forbidden" (type *goa.ServiceError): The authenticated caller may not perform this operation or does not own the resource.
+//   - error: internal error
 func (c *Client) Diff(ctx context.Context, p *DiffPayload) (res *DiffResult, err error) {
 	var ires any
 	ires, err = c.DiffEndpoint(ctx, p)
@@ -291,6 +304,7 @@ func (c *Client) Diff(ctx context.Context, p *DiffPayload) (res *DiffResult, err
 // ConfigureModel may return the following errors:
 //   - "unprocessable" (type *goa.ServiceError): The model provider, model name, gateway address, or required environment credential is invalid.
 //   - "not_implemented" (type *goa.ServiceError): Runtime model reconfiguration is not configured on this control plane.
+//   - "forbidden" (type *goa.ServiceError): The authenticated caller may not perform this operation or does not own the resource.
 //   - error: internal error
 func (c *Client) ConfigureModel(ctx context.Context, p *ConfigureModelPayload) (res *ModelConfigResult, err error) {
 	var ires any
@@ -306,6 +320,7 @@ func (c *Client) ConfigureModel(ctx context.Context, p *ConfigureModelPayload) (
 //   - "conflict" (type *goa.ServiceError): The workspace or target directory is already initialized.
 //   - "unprocessable" (type *goa.ServiceError): The module path or child directory name is invalid.
 //   - "not_implemented" (type *goa.ServiceError): This control plane has no bound workspace or starter generator configured.
+//   - "forbidden" (type *goa.ServiceError): The authenticated caller may not perform this operation or does not own the resource.
 //   - error: internal error
 func (c *Client) InitProject(ctx context.Context, p *InitProjectPayload) (res *InitProjectResult, err error) {
 	var ires any
@@ -320,6 +335,7 @@ func (c *Client) InitProject(ctx context.Context, p *InitProjectPayload) (res *I
 // GenerateCode may return the following errors:
 //   - "unprocessable" (type *goa.ServiceError): The selected local module is absent, replaced, or invalid; correct its local files and call again.
 //   - "not_implemented" (type *goa.ServiceError): No workspace directory is bound to this control plane.
+//   - "forbidden" (type *goa.ServiceError): The authenticated caller may not perform this operation or does not own the resource.
 //   - error: internal error
 func (c *Client) GenerateCode(ctx context.Context, p *GenerateCodePayload) (res *GenerateCodeResult, err error) {
 	var ires any
@@ -335,6 +351,7 @@ func (c *Client) GenerateCode(ctx context.Context, p *GenerateCodePayload) (res 
 //   - "unprocessable" (type *goa.ServiceError): The workspace contains no Go module.
 //   - "not_implemented" (type *goa.ServiceError): No workspace directory is bound to this control plane.
 //   - "unavailable" (type *goa.ServiceError): No local Docker engine is usable: docker is missing, the engine does not answer or is not local, or the Go image cannot be pulled.
+//   - "forbidden" (type *goa.ServiceError): The authenticated caller may not perform this operation or does not own the resource.
 //   - error: internal error
 func (c *Client) CheckProject(ctx context.Context) (res *CheckProjectResult, err error) {
 	var ires any
@@ -351,6 +368,7 @@ func (c *Client) CheckProject(ctx context.Context) (res *CheckProjectResult, err
 //   - "unprocessable" (type *goa.ServiceError): The workspace contains no Go module.
 //   - "not_implemented" (type *goa.ServiceError): No workspace directory is bound to this control plane.
 //   - "unavailable" (type *goa.ServiceError): No local Docker engine is usable: docker is missing, the engine does not answer or is not local, or the Go image cannot be pulled.
+//   - "forbidden" (type *goa.ServiceError): The authenticated caller may not perform this operation or does not own the resource.
 //   - error: internal error
 func (c *Client) UpdateDependencies(ctx context.Context) (res *UpdateDependenciesResult, err error) {
 	var ires any
@@ -366,6 +384,7 @@ func (c *Client) UpdateDependencies(ctx context.Context) (res *UpdateDependencie
 // ReadCheckOutput may return the following errors:
 //   - "not_found" (type *goa.ServiceError): No output exists for this op_id.
 //   - "unprocessable" (type *goa.ServiceError): The cursor is malformed or belongs to another operation.
+//   - "forbidden" (type *goa.ServiceError): The authenticated caller may not perform this operation or does not own the resource.
 //   - error: internal error
 func (c *Client) ReadCheckOutput(ctx context.Context, p *ReadCheckOutputPayload) (res *CheckOutputPage, err error) {
 	var ires any
@@ -380,6 +399,7 @@ func (c *Client) ReadCheckOutput(ctx context.Context, p *ReadCheckOutputPayload)
 // ListTraces may return the following errors:
 //   - "unprocessable" (type *goa.ServiceError): The cursor is invalid; omit it to refresh the history.
 //   - "not_implemented" (type *goa.ServiceError): Recording is not configured; the server operator must supply controlplane.Options.TracerProvider when constructing the embedded control plane, or use surla serve for automatic recording.
+//   - "forbidden" (type *goa.ServiceError): The authenticated caller may not perform this operation or does not own the resource.
 //   - error: internal error
 func (c *Client) ListTraces(ctx context.Context, p *ListTracesPayload) (res *TraceList, err error) {
 	var ires any
@@ -395,6 +415,7 @@ func (c *Client) ListTraces(ctx context.Context, p *ListTracesPayload) (res *Tra
 //   - "unprocessable" (type *goa.ServiceError): The bound workspace is absent, was replaced, contains no go.mod file, or has invalid module files; run init_project or fix the local module files and call refresh_story again.
 //   - "not_implemented" (type *goa.ServiceError): No workspace directory is bound to this control plane; start Surla from a project directory or pass -project.
 //   - "unavailable" (type *goa.ServiceError): The control plane is shutting down and is no longer starting Story refresh operations.
+//   - "forbidden" (type *goa.ServiceError): The authenticated caller may not perform this operation or does not own the resource.
 //   - error: internal error
 func (c *Client) RefreshStory(ctx context.Context) (res *StoryRefreshResult, err error) {
 	var ires any
@@ -409,6 +430,7 @@ func (c *Client) RefreshStory(ctx context.Context) (res *StoryRefreshResult, err
 // service.
 // GetStoryRefresh may return the following errors:
 //   - "not_implemented" (type *goa.ServiceError): No workspace directory is bound to this control plane; start Surla from a project directory or pass -project.
+//   - "forbidden" (type *goa.ServiceError): The authenticated caller may not perform this operation or does not own the resource.
 //   - error: internal error
 func (c *Client) GetStoryRefresh(ctx context.Context) (res *StoryRefreshResult, err error) {
 	var ires any

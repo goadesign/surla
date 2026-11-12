@@ -10,6 +10,7 @@ import (
 	gensurla "github.com/goadesign/surla/gen/surla"
 	"github.com/goadesign/surla/internal/traceview"
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
@@ -76,8 +77,11 @@ func (t diagnosticTracer) Start(
 	name string,
 	opts ...trace.SpanStartOption,
 ) (context.Context, trace.Span) {
-	next, span := t.Tracer.Start(ctx, name, opts...)
 	principal, ok := PrincipalFromContext(ctx)
+	if ok {
+		opts = append(opts, trace.WithAttributes(attribute.String("surla.caller_id", principal.CallerID), attribute.String("surla.caller_kind", string(principal.Kind))))
+	}
+	next, span := t.Tracer.Start(ctx, name, opts...)
 	if !span.IsRecording() || !ok {
 		return next, span
 	}
