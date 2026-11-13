@@ -29,7 +29,7 @@ func TestViewsPageSeparatesRecordedRunsFromCurrentInputs(t *testing.T) {
 		ChangeID: card.ChangeID, RequestRevision: card.RequestRevision,
 	})
 	require.NoError(t, err)
-	const runID = "11111111-1111-4111-8111-111111111111"
+	const runID = "11111111111111111111111111111111"
 	writeListedRun(t, runsDir, pageOwner, card, runID,
 		time.Date(2026, 11, 13, 9, 0, 0, 0, time.UTC), true)
 	setListedRunSource(t, runsDir, runID, verify.TestsWritten)
@@ -58,10 +58,10 @@ func TestViewsPageSeparatesRecordedRunsFromCurrentInputs(t *testing.T) {
 	})
 	runPageScript(t, ps, map[string]any{"run": runID, "revision": card.RequestRevision}, `
 const page = await openPage(origin, { link: input.link });
-await until(() => page.$("#surla-nav-changes"), "the page did not open");
+await until(() => page.$("#surla-cp1-editor")?.dataset.changeId === "chg-summary", "the page did not finish opening its single change");
 page.$("#surla-nav-changes").click();
 const row = () => page.$('#surla-change-list [data-change-id="chg-summary"]');
-const basis = () => page.$("#surla-run-inputs-chg-summary");
+const basis = () => row()?.querySelector("[data-inputs-current]");
 const badge = () => Array.from(row().querySelectorAll(".shadcn-badge")).find((node) => node.textContent.startsWith("Latest saved run:"));
 await until(() => basis()?.dataset.inputsCurrent === "true", "the matching owner inputs did not appear");
 expect(row().textContent.includes("Latest saved run: passed") && basis().textContent.includes("Matches the agreed revision and selected tests."), "the recorded run or its narrow input match is missing");

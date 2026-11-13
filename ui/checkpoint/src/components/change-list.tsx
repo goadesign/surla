@@ -114,6 +114,9 @@ function ChangeListRow({
   busy: boolean;
   onOpen: (changeId: string) => void;
 }) {
+  // IDs are application data and may contain whitespace; React owns this
+  // accessibility reference so it remains one valid, unique ID token.
+  const inputsDescriptionId = React.useId();
   return (
     <li data-change-id={item.change_id}>
       <Button
@@ -138,14 +141,14 @@ function ChangeListRow({
       {item.latest_verification ? (
         <>
           <Badge
-            aria-describedby={"surla-change-run-history surla-run-inputs-" + item.change_id}
+            aria-describedby={"surla-change-run-history " + inputsDescriptionId}
             variant={item.latest_verification.inputs_current && item.latest_verification.state === "passed"
               ? "success" : "default"}
           >
             {verificationLabels[item.latest_verification.state]}
           </Badge>
           <p
-            id={"surla-run-inputs-" + item.change_id}
+            id={inputsDescriptionId}
             className="surla-muted"
             data-inputs-current={String(item.latest_verification.inputs_current)}
           >
