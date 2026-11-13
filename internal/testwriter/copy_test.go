@@ -3,12 +3,15 @@ package testwriter
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/goadesign/surla/internal/shquote"
 )
 
 // TestOpenWorkingCopyCreatesOneCopy opens the working copy of a project at
@@ -124,7 +127,7 @@ func TestOpenWorkingCopyRefuses(t *testing.T) {
 			project: func(t *testing.T) (string, []string) {
 				repo, _ := newProject(t, map[string]string{"README.md": "shop\n"})
 				elsewhere := heldElsewhere(t, repo, false)
-				return repo, []string{fmt.Sprintf("remove that registration with git worktree remove %q in the project", elsewhere)}
+				return repo, []string{"remove that registration with " + removeStep(elsewhere) + " in the project"}
 			},
 			wantErr:  ErrBranchInUse,
 			notSteps: []string{"switch that folder", "git worktree prune", "unlock"},
@@ -134,8 +137,7 @@ func TestOpenWorkingCopyRefuses(t *testing.T) {
 			project: func(t *testing.T) (string, []string) {
 				repo, _ := newProject(t, map[string]string{"README.md": "shop\n"})
 				elsewhere := heldElsewhere(t, repo, true)
-				return repo, []string{fmt.Sprintf("git worktree unlock %q and then git worktree remove %q in the project",
-					elsewhere, elsewhere)}
+				return repo, []string{unlockStep(elsewhere) + " and then " + removeStep(elsewhere) + " in the project"}
 			},
 			wantErr:  ErrBranchInUse,
 			notSteps: []string{"switch that folder", "git worktree prune"},
@@ -162,7 +164,10 @@ func TestOpenWorkingCopyRefuses(t *testing.T) {
 // TestTheBranchRefusalsStepsWork follows the step each refusal for a deleted
 // working copy elsewhere names, unlocking first for a locked registration,
 // while an unrelated registration of a deleted folder sits beside it: the copy
-// then opens, and the unrelated registration is still there.
+// then opens, and the unrelated registration is still there. The steps are
+// run as the user runs them, as the refusal's own text given to a shell in
+// the project, and the deleted folder's name holds shell syntax that would
+// create a file if any of it were expanded: no such file appears.
 func TestTheBranchRefusalsStepsWork(t *testing.T) {
 	t.Parallel()
 	for _, locked := range []bool{false, true} {
@@ -176,10 +181,17 @@ func TestTheBranchRefusalsStepsWork(t *testing.T) {
 			_, err := OpenWorkingCopy(t.Context(), repo)
 			require.ErrorIs(t, err, ErrBranchInUse)
 
+			steps := []string{removeStep(elsewhere)}
 			if locked {
-				runGit(t, repo, "worktree", "unlock", elsewhere)
+				steps = []string{unlockStep(elsewhere), removeStep(elsewhere)}
 			}
-			runGit(t, repo, "worktree", "remove", elsewhere)
+			for _, step := range steps {
+				require.ErrorContains(t, err, step, "the step that is run is the one the refusal names")
+				runInShell(t, repo, step)
+			}
+			for _, planted := range []string{"INJECTED", "INJECTED2"} {
+				assert.NoFileExists(t, filepath.Join(repo, planted), "the folder's name was read as shell syntax")
+			}
 			wc, err := OpenWorkingCopy(t.Context(), repo)
 			require.NoError(t, err)
 			assert.Equal(t, "refs/heads/"+Branch, runGit(t, wc.Dir(), "symbolic-ref", "HEAD"))
@@ -189,14 +201,41 @@ func TestTheBranchRefusalsStepsWork(t *testing.T) {
 	}
 }
 
+// removeStep is the command a refusal names to remove the registration of the
+// deleted folder at path, as the user types it in the project.
+func removeStep(path string) string {
+	return "git worktree remove " + shquote.Quote(path)
+}
+
+// unlockStep is the command a refusal names before removeStep when the
+// registration of the deleted folder at path is locked.
+func unlockStep(path string) string {
+	return "git worktree unlock " + shquote.Quote(path)
+}
+
+// runInShell runs command in dir through sh, as a user who copies a step from
+// a refusal does, with hooks off as runGit has them.
+func runInShell(t *testing.T, dir, command string) {
+	t.Helper()
+	cmd := exec.CommandContext(t.Context(), "sh", "-c", command)
+	cmd.Dir = dir
+	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0",
+		"GIT_CONFIG_COUNT=1", "GIT_CONFIG_KEY_0=core.hooksPath", "GIT_CONFIG_VALUE_0=/dev/null")
+	out, err := cmd.CombinedOutput()
+	require.NoError(t, err, "%s: %s", command, out)
+}
+
 // heldElsewhere makes a linked working copy of repo outside the project hold
 // Branch, locks its registration when locked is set, deletes its folder with
-// the file system, and returns that folder's path as git records it.
+// the file system, and returns that folder's path as git records it. The
+// folder's name holds a space, a quote, a command substitution and a
+// backquoted command, each of which would create a file in the folder a
+// shell runs in if a step naming the path let the shell expand it.
 func heldElsewhere(t *testing.T, repo string, locked bool) string {
 	t.Helper()
 	parent, err := filepath.EvalSymlinks(t.TempDir())
 	require.NoError(t, err)
-	elsewhere := filepath.Join(parent, "tests")
+	elsewhere := filepath.Join(parent, "tests $(touch INJECTED) it's `touch INJECTED2`")
 	runGit(t, repo, "worktree", "add", "--quiet", "-b", Branch, elsewhere)
 	if locked {
 		runGit(t, repo, "worktree", "lock", "--reason", "on a removable disk", elsewhere)

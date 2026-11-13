@@ -30,6 +30,7 @@ import (
 	"strings"
 
 	"github.com/goadesign/surla/internal/abspath"
+	"github.com/goadesign/surla/internal/shquote"
 	"github.com/goadesign/surla/internal/verify"
 )
 
@@ -170,14 +171,17 @@ func OpenWorkingCopy(ctx context.Context, projectDir string) (WorkingCopy, error
 			return WorkingCopy{}, fmt.Errorf("%w: %s has it checked out; switch that folder to another branch, "+
 				"then try again", ErrBranchInUse, c.path)
 		}
+		// The path is someone else's choice and the user will run these
+		// commands in a shell, so it is written as one quoted shell word.
+		word := shquote.Quote(c.path)
 		if c.locked {
 			return WorkingCopy{}, fmt.Errorf("%w: git still registers %s, a folder that no longer exists, as holding it, "+
-				"and that registration is locked; unlock and remove it with git worktree unlock %q and then "+
-				"git worktree remove %q in the project, then try again", ErrBranchInUse, c.path, c.path, c.path)
+				"and that registration is locked; unlock and remove it with git worktree unlock %s and then "+
+				"git worktree remove %s in the project, then try again", ErrBranchInUse, c.path, word, word)
 		}
 		return WorkingCopy{}, fmt.Errorf("%w: git still registers %s, a folder that no longer exists, as holding it; "+
-			"remove that registration with git worktree remove %q in the project, then try again",
-			ErrBranchInUse, c.path, c.path)
+			"remove that registration with git worktree remove %s in the project, then try again",
+			ErrBranchInUse, c.path, word)
 	}
 	if err := excludeFolder(ctx, project); err != nil {
 		return WorkingCopy{}, err

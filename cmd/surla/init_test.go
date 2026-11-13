@@ -8,6 +8,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/goadesign/surla/internal/shquote"
 )
 
 // TestInitNextStepsGiveAWorkingFirstRunPath verifies the CLI handoff: the
@@ -15,7 +17,7 @@ import (
 // the operator tools are named only after that, and the text points to the
 // starter's documented change steps.
 func TestInitNextStepsGiveAWorkingFirstRunPath(t *testing.T) {
-	out := fmt.Sprintf(initNextSteps, shellQuote("/tmp/my shop"), "bakery")
+	out := fmt.Sprintf(initNextSteps, shquote.Quote("/tmp/my shop"), "bakery")
 	var commands []string
 	for line := range strings.Lines(out) {
 		if command, ok := strings.CutPrefix(line, "  "); ok {
