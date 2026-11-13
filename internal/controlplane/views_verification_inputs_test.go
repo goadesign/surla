@@ -34,6 +34,11 @@ func TestViewsPageSeparatesRecordedRunsFromCurrentInputs(t *testing.T) {
 		time.Date(2026, 11, 13, 9, 0, 0, 0, time.UTC), true)
 	setListedRunSource(t, runsDir, runID, verify.TestsWritten)
 	saveListedTestState(t, cp, card.ChangeID, testsAccepted, strings.Repeat("2", 40))
+	initial, err := cp.ListChanges(user)
+	require.NoError(t, err)
+	require.Len(t, initial.Changes, 1)
+	require.NotNil(t, initial.Changes[0].LatestVerification)
+	require.True(t, initial.Changes[0].LatestVerification.InputsCurrent, "the saved fixture must match before opening the page")
 	ps := startPageServer(t, cp)
 	ps.act("replace-tests", func() {
 		saveListedTestState(t, cp, card.ChangeID, testsAccepted, strings.Repeat("3", 40))

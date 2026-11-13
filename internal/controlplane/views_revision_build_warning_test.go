@@ -51,7 +51,8 @@ func TestViewsPageWarnsBeforeChangingABuiltRevision(t *testing.T) {
 					ChangeID: card.ChangeID, RequestRevision: card.RequestRevision,
 					Prompt: "Review the revised refund decision.",
 					Analysis: &gensurla.CP1RevisionAnalysis{
-						Summary: "The revised refund decision.",
+						Summary:     "The revised refund decision.",
+						Ambiguities: []*gensurla.CP1AnalysisAmbiguity{}, RemovedExampleIds: []string{},
 						Examples: []*gensurla.CP1RevisionAnalysisExample{{
 							PriorID: &example.ID, Scenario: example.Scenario, InputSummary: example.InputSummary,
 							ExpectedOutcome: "A manager reviews the revised decision", VerificationKind: "deterministic",
