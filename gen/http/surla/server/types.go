@@ -979,6 +979,19 @@ type GetTestWriterAssignmentResponseBody struct {
 	// One test per finished flow of stories, in declaration order; unfinished
 	// flows require none.
 	RequiredTests []*RequiredTestResponseBody `form:"required_tests" json:"required_tests" xml:"required_tests"`
+	// Each question of the change as agreed at request_revision with the answer
+	// the user confirmed, in question order, copied when this build started; empty
+	// when the agreed revision asked none. The tests must hold the service to
+	// every answer.
+	Answers []*ConfirmedAnswerResponseBody `form:"answers" json:"answers" xml:"answers"`
+	// The confirmation examples as agreed at request_revision, exactly as the user
+	// confirmed them, copied when this build started. The tests must hold the
+	// service to each expected outcome.
+	Examples []*ExampleItemResponseBody `form:"examples" json:"examples" xml:"examples"`
+	// The existing behaviors the change as agreed at request_revision keeps,
+	// copied when this build started; empty when it names none. The tests must
+	// hold the service to each.
+	PreservedBehaviors []string `form:"preserved_behaviors" json:"preserved_behaviors" xml:"preserved_behaviors"`
 }
 
 // ReportTestsFinishedResponseBody is the type of the "surla" service
@@ -3995,6 +4008,16 @@ type RequiredTestResponseBody struct {
 	Scenario string `form:"scenario" json:"scenario" xml:"scenario"`
 	// Hook method the test writer implements for the scenario.
 	Hook string `form:"hook" json:"hook" xml:"hook"`
+}
+
+// ConfirmedAnswerResponseBody is used to define fields on response body types.
+type ConfirmedAnswerResponseBody struct {
+	// Question identifier on the Change Card.
+	ID string `form:"id" json:"id" xml:"id"`
+	// The question as the user answered it.
+	Question string `form:"question" json:"question" xml:"question"`
+	// The option the user confirmed, exactly as confirmed.
+	Answer string `form:"answer" json:"answer" xml:"answer"`
 }
 
 // CP1AnalysisRequestBody is used to define fields on request body types.
@@ -7595,6 +7618,38 @@ func NewGetTestWriterAssignmentResponseBody(res *surla.TestWriterAssignment) *Ge
 		}
 	} else {
 		body.RequiredTests = []*RequiredTestResponseBody{}
+	}
+	if res.Answers != nil {
+		body.Answers = make([]*ConfirmedAnswerResponseBody, len(res.Answers))
+		for i, val := range res.Answers {
+			if val == nil {
+				body.Answers[i] = nil
+				continue
+			}
+			body.Answers[i] = marshalSurlaConfirmedAnswerToConfirmedAnswerResponseBody(val)
+		}
+	} else {
+		body.Answers = []*ConfirmedAnswerResponseBody{}
+	}
+	if res.Examples != nil {
+		body.Examples = make([]*ExampleItemResponseBody, len(res.Examples))
+		for i, val := range res.Examples {
+			if val == nil {
+				body.Examples[i] = nil
+				continue
+			}
+			body.Examples[i] = marshalSurlaExampleItemToExampleItemResponseBody(val)
+		}
+	} else {
+		body.Examples = []*ExampleItemResponseBody{}
+	}
+	if res.PreservedBehaviors != nil {
+		body.PreservedBehaviors = make([]string, len(res.PreservedBehaviors))
+		for i, val := range res.PreservedBehaviors {
+			body.PreservedBehaviors[i] = val
+		}
+	} else {
+		body.PreservedBehaviors = []string{}
 	}
 	return body
 }

@@ -6310,3 +6310,16 @@ func unmarshalRequiredTestResponseBodyToSurlaRequiredTest(v *RequiredTestRespons
 
 	return res
 }
+
+// unmarshalConfirmedAnswerResponseBodyToSurlaConfirmedAnswer builds a value of
+// type *surla.ConfirmedAnswer from a value of type
+// *ConfirmedAnswerResponseBody.
+func unmarshalConfirmedAnswerResponseBodyToSurlaConfirmedAnswer(v *ConfirmedAnswerResponseBody) *surla.ConfirmedAnswer {
+	res := &surla.ConfirmedAnswer{
+		ID:       *v.ID,
+		Question: *v.Question,
+		Answer:   *v.Answer,
+	}
+
+	return res
+}

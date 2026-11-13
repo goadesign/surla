@@ -46,39 +46,39 @@ func ToolSchema(name tools.Ident) (*genregistry.ToolSchema, bool) {
 	case "surla.get_test_writer_assignment":
 		return declarations.schema860(), true
 	case "surla.get_verification":
-		return declarations.schema937(), true
+		return declarations.schema951(), true
 	case "surla.init_project":
-		return declarations.schema989(), true
+		return declarations.schema1003(), true
 	case "surla.list_builder_assignments":
-		return declarations.schema1004(), true
+		return declarations.schema1018(), true
 	case "surla.list_changes":
-		return declarations.schema1025(), true
+		return declarations.schema1039(), true
 	case "surla.list_test_writer_assignments":
-		return declarations.schema1046(), true
+		return declarations.schema1060(), true
 	case "surla.list_traces":
-		return declarations.schema1077(), true
+		return declarations.schema1091(), true
 	case "surla.list_verifications":
-		return declarations.schema1106(), true
+		return declarations.schema1120(), true
 	case "surla.preview_architecture":
-		return declarations.schema1161(), true
+		return declarations.schema1175(), true
 	case "surla.propose_change":
-		return declarations.schema1219(), true
+		return declarations.schema1233(), true
 	case "surla.read_check_output":
-		return declarations.schema1408(), true
+		return declarations.schema1422(), true
 	case "surla.refresh_story":
-		return declarations.schema1423(), true
+		return declarations.schema1437(), true
 	case "surla.report_tests_finished":
-		return declarations.schema1471(), true
+		return declarations.schema1485(), true
 	case "surla.revise_change":
-		return declarations.schema1504(), true
+		return declarations.schema1518(), true
 	case "surla.start_live_target":
-		return declarations.schema1701(), true
+		return declarations.schema1715(), true
 	case "surla.stop_live_target":
-		return declarations.schema1713(), true
+		return declarations.schema1727(), true
 	case "surla.update_dependencies":
-		return declarations.schema1722(), true
+		return declarations.schema1736(), true
 	case "surla.verify_change":
-		return declarations.schema1733(), true
+		return declarations.schema1747(), true
 	default:
 		return nil, false
 	}

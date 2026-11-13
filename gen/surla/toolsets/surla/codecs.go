@@ -5534,7 +5534,7 @@ var getTestWriterAssignmentPayloadFields = []tools.FieldMetadata{
 var getTestWriterAssignmentResultFields = []tools.FieldMetadata{
 	{
 		JSONType:    "object",
-		Description: "The test writer's assignment for one build: write the required tests for the Story as agreed at the built revision, in the test module (eval/) of the working folder. Surla generates that module with the required tests when the build starts and again at each report, so the test writer never regenerates it (neither generate_code nor surla gen, which drops the required tests); go build ./... in eval/ checks the work before a report, and Surla's check of each report is the judge.",
+		Description: "The test writer's assignment for one build: write the required tests for the Story as agreed at the built revision, in the test module (eval/) of the working folder, and make them hold the service to the user's confirmed answers, confirmation examples and preserved behaviors of that revision, which the assignment carries exactly as confirmed. Surla generates that module with the required tests when the build starts and again at each report, so the test writer never regenerates it (neither generate_code nor surla gen, which drops the required tests); go build ./... in eval/ checks the work before a report, and Surla's check of each report is the judge.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("change_id")},
@@ -5966,6 +5966,76 @@ var getTestWriterAssignmentResultFields = []tools.FieldMetadata{
 		Path:        []tools.FieldPathSegment{tools.FixedField("required_tests"), tools.DynamicField{}, tools.FixedField("hook")},
 		JSONType:    "string",
 		Description: "Hook method the test writer implements for the scenario.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("answers")},
+		JSONType:    "array",
+		Description: "Each question of the change as agreed at request_revision with the answer the user confirmed, in question order, copied when this build started; empty when the agreed revision asked none. The tests must hold the service to every answer.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("answers"), tools.DynamicField{}},
+		JSONType:    "object",
+		Description: "Each question of the change as agreed at request_revision with the answer the user confirmed, in question order, copied when this build started; empty when the agreed revision asked none. The tests must hold the service to every answer.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("answers"), tools.DynamicField{}, tools.FixedField("id")},
+		JSONType:    "string",
+		Description: "Question identifier on the Change Card.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("answers"), tools.DynamicField{}, tools.FixedField("question")},
+		JSONType:    "string",
+		Description: "The question as the user answered it.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("answers"), tools.DynamicField{}, tools.FixedField("answer")},
+		JSONType:    "string",
+		Description: "The option the user confirmed, exactly as confirmed.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("examples")},
+		JSONType:    "array",
+		Description: "The confirmation examples as agreed at request_revision, exactly as the user confirmed them, copied when this build started. The tests must hold the service to each expected outcome.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("examples"), tools.DynamicField{}},
+		JSONType:    "object",
+		Description: "The confirmation examples as agreed at request_revision, exactly as the user confirmed them, copied when this build started. The tests must hold the service to each expected outcome.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("examples"), tools.DynamicField{}, tools.FixedField("id")},
+		JSONType:    "string",
+		Description: "Stable example identifier. Default code-assigned IDs use check_01, check_02, ... (valid goa-ai/eval Scenario names). confirm_intent preserves caller-chosen IDs.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("examples"), tools.DynamicField{}, tools.FixedField("scenario")},
+		JSONType:    "string",
+		Description: "Plain-English scenario description.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("examples"), tools.DynamicField{}, tools.FixedField("input_summary")},
+		JSONType:    "string",
+		Description: "Representative user request and domain fixture state.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("examples"), tools.DynamicField{}, tools.FixedField("expected_outcome")},
+		JSONType:    "string",
+		Description: "Expected side effect and response behavior.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("examples"), tools.DynamicField{}, tools.FixedField("verification_kind")},
+		JSONType:    "string",
+		Description: "Evaluator check classification (deterministic or model_judged).",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("preserved_behaviors")},
+		JSONType:    "array",
+		Description: "The existing behaviors the change as agreed at request_revision keeps, copied when this build started; empty when it names none. The tests must hold the service to each.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("preserved_behaviors"), tools.DynamicField{}},
+		JSONType:    "string",
+		Description: "The existing behaviors the change as agreed at request_revision keeps, copied when this build started; empty when it names none. The tests must hold the service to each.",
 	},
 }
 var getVerificationPayloadFields = []tools.FieldMetadata{
@@ -15092,6 +15162,26 @@ func MarshalGetTestWriterAssignmentResult(v *GetTestWriterAssignmentResult) ([]b
 		}
 		out.RequiredTests[i] = encodeRequiredTestToRequiredTestTransport(val)
 	}
+	out.Answers = make([]*toolhttp.ConfirmedAnswerTransport, len(in.Answers))
+	for i, val := range in.Answers {
+		if val == nil {
+			out.Answers[i] = nil
+			continue
+		}
+		out.Answers[i] = encodeConfirmedAnswerToConfirmedAnswerTransport(val)
+	}
+	out.Examples = make([]*toolhttp.ExampleItemTransport, len(in.Examples))
+	for i, val := range in.Examples {
+		if val == nil {
+			out.Examples[i] = nil
+			continue
+		}
+		out.Examples[i] = encodeExampleItemToExampleItemTransport(val)
+	}
+	out.PreservedBehaviors = make([]string, len(in.PreservedBehaviors))
+	for i, val := range in.PreservedBehaviors {
+		out.PreservedBehaviors[i] = val
+	}
 	return json.Marshal(out)
 }
 
@@ -15142,6 +15232,26 @@ func UnmarshalGetTestWriterAssignmentResult(data []byte) (*GetTestWriterAssignme
 			continue
 		}
 		out.RequiredTests[i] = decodeRequiredTestTransportToRequiredTest(val)
+	}
+	out.Answers = make([]*ConfirmedAnswer, len(in.Answers))
+	for i, val := range in.Answers {
+		if val == nil {
+			out.Answers[i] = nil
+			continue
+		}
+		out.Answers[i] = decodeConfirmedAnswerTransportToConfirmedAnswer(val)
+	}
+	out.Examples = make([]*ExampleItem, len(in.Examples))
+	for i, val := range in.Examples {
+		if val == nil {
+			out.Examples[i] = nil
+			continue
+		}
+		out.Examples[i] = decodeExampleItemTransportToExampleItem(val)
+	}
+	out.PreservedBehaviors = make([]string, len(in.PreservedBehaviors))
+	for i, val := range in.PreservedBehaviors {
+		out.PreservedBehaviors[i] = val
 	}
 	return out, nil
 }
@@ -23659,6 +23769,13 @@ func validateGetTestWriterAssignmentResultJSONValue(path string, value any, desc
 	sort.Strings(keys)
 	for _, key := range keys {
 		switch key {
+		case "answers":
+			if err := validateGetTestWriterAssignmentResultRootAnswersJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Each question of the change as agreed at request_revision with the answer the user confirmed, in question order, copied when this build started; empty when the agreed revision asked none. The tests must hold the service to every answer.",
+			); err != nil {
+				return err
+			}
 		case "change_id":
 			if err := validateStringJSONValue(
 				generatedJSONChildPath(path, key, false),
@@ -23673,6 +23790,13 @@ func validateGetTestWriterAssignmentResultJSONValue(path string, value any, desc
 			); err != nil {
 				return err
 			}
+		case "examples":
+			if err := validateProposeChangeResultRootExamplesJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "The confirmation examples as agreed at request_revision, exactly as the user confirmed them, copied when this build started. The tests must hold the service to each expected outcome.",
+			); err != nil {
+				return err
+			}
 		case "findings":
 			if err := validateProposeChangePayloadCP1AnalysisAmbiguityTransportOptionsJSONValue(
 				generatedJSONChildPath(path, key, false),
@@ -23684,6 +23808,13 @@ func validateGetTestWriterAssignmentResultJSONValue(path string, value any, desc
 			if err := validateBooleanJSONValue(
 				generatedJSONChildPath(path, key, false),
 				typed[key], "True when request_revision is the change's confirmed revision in force, as get_build reports it. It stays true while a revision the guide proposed waits beside the agreed one, and is false once the user has adopted a proposed revision or confirmed another revision: the assignment then stays for this earlier revision until the user builds again.",
+			); err != nil {
+				return err
+			}
+		case "preserved_behaviors":
+			if err := validateProposeChangePayloadCP1AnalysisAmbiguityTransportOptionsJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "The existing behaviors the change as agreed at request_revision keeps, copied when this build started; empty when it names none. The tests must hold the service to each.",
 			); err != nil {
 				return err
 			}
@@ -23724,15 +23855,94 @@ func validateGetTestWriterAssignmentResultJSONValue(path string, value any, desc
 			}
 		default:
 			return unknownJSONFieldError(path, key, []string{
+				"answers",
 				"change_id",
 				"design_source",
+				"examples",
 				"findings",
 				"in_force",
+				"preserved_behaviors",
 				"progress",
 				"request_revision",
 				"required_tests",
 				"stories",
 				"working_folder",
+			})
+		}
+	}
+	return nil
+}
+
+// validateGetTestWriterAssignmentResultRootAnswersJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateGetTestWriterAssignmentResultRootAnswersJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "array", "null", description)
+	}
+	typed, ok := value.([]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "array", decodedJSONType(value), description)
+	}
+	for index, item := range typed {
+		if err := validateGetTestWriterAssignmentResultConfirmedAnswerTransportJSONValue(
+			generatedJSONChildPath(path, strconv.Itoa(index), true),
+			item, description,
+		); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateGetTestWriterAssignmentResultConfirmedAnswerTransportJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateGetTestWriterAssignmentResultConfirmedAnswerTransportJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "answer":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "The option the user confirmed, exactly as confirmed.",
+			); err != nil {
+				return err
+			}
+		case "id":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Question identifier on the Change Card.",
+			); err != nil {
+				return err
+			}
+		case "question":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "The question as the user answered it.",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"answer",
+				"id",
+				"question",
 			})
 		}
 	}
@@ -24790,12 +25000,30 @@ func decodeRequiredTestTransportToRequiredTest(v *toolhttp.RequiredTestTransport
 
 	return res
 }
+func decodeConfirmedAnswerTransportToConfirmedAnswer(v *toolhttp.ConfirmedAnswerTransport) *ConfirmedAnswer {
+	res := &ConfirmedAnswer{
+		ID:       *v.ID,
+		Question: *v.Question,
+		Answer:   *v.Answer,
+	}
+
+	return res
+}
 func encodeRequiredTestToRequiredTestTransport(v *RequiredTest) *toolhttp.RequiredTestTransport {
 	res := &toolhttp.RequiredTestTransport{
 		Story:    &v.Story,
 		FlowKey:  &v.FlowKey,
 		Scenario: &v.Scenario,
 		Hook:     &v.Hook,
+	}
+
+	return res
+}
+func encodeConfirmedAnswerToConfirmedAnswerTransport(v *ConfirmedAnswer) *toolhttp.ConfirmedAnswerTransport {
+	res := &toolhttp.ConfirmedAnswerTransport{
+		ID:       &v.ID,
+		Question: &v.Question,
+		Answer:   &v.Answer,
 	}
 
 	return res

@@ -66,6 +66,18 @@ type (
 		// DesignSource is the canonical design as agreed at RequestRevision,
 		// copied from the card at the same second check as Stories.
 		DesignSource string `json:"design_source"`
+		// Answers pairs each question of the card as agreed at RequestRevision
+		// with the answer the user confirmed, in question order, copied at the
+		// same second check as Stories. The test writer's tests must hold the
+		// service to them, and the test writer may not read the card.
+		Answers []*gensurla.ConfirmedAnswer `json:"answers"`
+		// Examples are the confirmation examples as agreed at RequestRevision,
+		// copied at the same second check as Stories. confirm_intent confirms
+		// none without at least one, so every build has at least one.
+		Examples []*gensurla.ExampleItem `json:"examples"`
+		// PreservedBehaviors are the existing behaviors the card as agreed at
+		// RequestRevision keeps, copied at the same second check as Stories.
+		PreservedBehaviors []string `json:"preserved_behaviors"`
 		// Builder is the builder's assignment.
 		Builder builderAssignment `json:"builder"`
 		// TestWriter is the test writer's assignment.
@@ -264,12 +276,13 @@ func (c *ControlPlane) ListTestWriterAssignments(ctx context.Context) (*gensurla
 }
 
 // GetTestWriterAssignment returns the test writer's assignment for the
-// caller's change in full, with the Story as agreed at the built revision, one
-// required test per finished flow and the text of any findings, and records
-// that the test writer read it;
-// a later build of the change replaces it unread. It fails with not_found when
-// the change or its build does not exist and forbidden for another owner's
-// change.
+// caller's change in full, with the Story, answers, examples and preserved
+// behaviors as agreed at the built revision, one required test per finished
+// flow and the text of any findings, and records that the test writer read
+// it; a later build of the change replaces it unread. It fails with not_found
+// when the change or its build does not exist and forbidden for another
+// owner's change. A build that holds no example was saved without the agreed
+// terms: the read fails, naming the step to build again, and records nothing.
 func (c *ControlPlane) GetTestWriterAssignment(
 	ctx context.Context,
 	p *gensurla.GetTestWriterAssignmentPayload,
@@ -277,6 +290,12 @@ func (c *ControlPlane) GetTestWriterAssignment(
 	held, err := c.readAssignment(ctx, "surla.controlplane.get_test_writer_assignment", p.ChangeID, func(saved *buildFile) (bool, error) {
 		if saved.Roles != buildRolesBuilderAndTestWriter {
 			return false, gensurla.MakeNotFound(errors.New("this build has no test-writer assignment because it uses the stored evaluator"))
+		}
+		// Every confirmed revision has an example, so a build without one was
+		// saved without the agreed terms the tests are owed.
+		if len(saved.Examples) == 0 {
+			return false, fmt.Errorf("the build of change %q holds none of the agreed answers, examples and preserved behaviors; "+
+				"the user builds this change again on the views page", saved.ChangeID)
 		}
 		changed := !saved.TestWriter.Read
 		saved.TestWriter.Read = true
@@ -301,15 +320,18 @@ func (c *ControlPlane) GetTestWriterAssignment(
 		findings = slices.Clone(held.file.TestWriter.Findings)
 	}
 	return &gensurla.TestWriterAssignment{
-		ChangeID:        item.ChangeID,
-		RequestRevision: item.RequestRevision,
-		InForce:         item.InForce,
-		Progress:        item.Progress,
-		Findings:        findings,
-		WorkingFolder:   *held.file.TestWriter.WorkingFolder,
-		DesignSource:    held.file.DesignSource,
-		Stories:         storySummaryItems(held.file.Stories),
-		RequiredTests:   required,
+		ChangeID:           item.ChangeID,
+		RequestRevision:    item.RequestRevision,
+		InForce:            item.InForce,
+		Progress:           item.Progress,
+		Findings:           findings,
+		WorkingFolder:      *held.file.TestWriter.WorkingFolder,
+		DesignSource:       held.file.DesignSource,
+		Stories:            storySummaryItems(held.file.Stories),
+		RequiredTests:      required,
+		Answers:            held.file.Answers,
+		Examples:           held.file.Examples,
+		PreservedBehaviors: held.file.PreservedBehaviors,
 	}, nil
 }
 

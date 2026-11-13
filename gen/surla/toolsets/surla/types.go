@@ -462,6 +462,19 @@ type (
 		// One test per finished flow of stories, in declaration order; unfinished
 		// flows require none.
 		RequiredTests []*RequiredTest
+		// Each question of the change as agreed at request_revision with the answer
+		// the user confirmed, in question order, copied when this build started; empty
+		// when the agreed revision asked none. The tests must hold the service to
+		// every answer.
+		Answers []*ConfirmedAnswer
+		// The confirmation examples as agreed at request_revision, exactly as the user
+		// confirmed them, copied when this build started. The tests must hold the
+		// service to each expected outcome.
+		Examples []*ExampleItem
+		// The existing behaviors the change as agreed at request_revision keeps,
+		// copied when this build started; empty when it names none. The tests must
+		// hold the service to each.
+		PreservedBehaviors []string
 	}
 	// GetVerificationPayload defines the JSON payload for the surla.get_verification tool.
 	GetVerificationPayload = struct {
@@ -1117,6 +1130,15 @@ type (
 		ProposedRevision *string
 		// When the Change Card was last saved. It is not part of request_revision.
 		SavedAt string
+	}
+	// ConfirmedAnswer is a nested type used by the generated JSON contract.
+	ConfirmedAnswer = struct {
+		// Question identifier on the Change Card.
+		ID string
+		// The question as the user answered it.
+		Question string
+		// The option the user confirmed, exactly as confirmed.
+		Answer string
 	}
 	// DesignSnapshot is a nested type used by the generated JSON contract.
 	DesignSnapshot = struct {
