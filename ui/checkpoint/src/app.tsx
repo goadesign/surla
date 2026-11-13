@@ -35,8 +35,12 @@ import {
 } from "./types";
 
 // WAIT_RETRY_MS is how long the page waits before asking again after the
-// server did not answer its waiting read.
+// first failed round of its waiting read: the server did not answer, or
+// answered that the list changed but then refused to send it. Each further
+// failed round doubles the wait, up to WAIT_RETRY_MAX_MS.
 const WAIT_RETRY_MS = 5000;
+// WAIT_RETRY_MAX_MS bounds the wait between failed rounds.
+const WAIT_RETRY_MAX_MS = 30000;
 
 // Failure describes one request the server refused or never answered.
 interface Failure {
@@ -378,9 +382,11 @@ export function bootstrapViewsPage() {
 
   let changeList: ChangeList | null = null;
   let listError: string | null = null;
-  let listRequest: Promise<void> | null = null;
+  let listRequest: Promise<boolean> | null = null;
   let waitController: AbortController | null = null;
   let waitLoopRunning = false;
+  // waitTroubleShown is true while the status line reports that the waiting
+  // read is retrying after a failed round.
   let waitTroubleShown = false;
   // cardRefresh is the outstanding background read of the open card;
   // cardRefreshAgain asks for one more read after it because the list
@@ -634,8 +640,9 @@ export function bootstrapViewsPage() {
   }
 
   // loadChanges reads the change list once at a time, then applies what
-  // changed to the open change and its runs.
-  function loadChanges(): Promise<void> {
+  // changed to the open change and its runs. It resolves to whether the list
+  // was read; a failure is shown on the list and kept in listError.
+  function loadChanges(): Promise<boolean> {
     if (listRequest !== null) {
       return listRequest;
     }
@@ -654,7 +661,7 @@ export function bootstrapViewsPage() {
           statusEl.textContent = "Could not read this project's changes.";
         }
         syncAllRegions();
-        return;
+        return false;
       }
       const previous = changeList;
       changeList = outcome.result;
@@ -662,6 +669,7 @@ export function bootstrapViewsPage() {
       applyListChanges(previous, outcome.result);
       syncAllRegions();
       startWaiting();
+      return true;
     })();
     listRequest = pending;
     void pending.finally(() => {
@@ -726,38 +734,53 @@ export function bootstrapViewsPage() {
 
   // waitLoop asks the server to answer when the list differs from the last
   // one read, and reads the list again only then. Hiding the tab stops the
-  // open request; showing it again resumes from the same version.
+  // open request; showing it again resumes from the same version. A round
+  // fails when the waiting read gets no answer or the list read that follows
+  // it fails; the loop then reports the failure once and waits longer after
+  // each failed round before asking again, because a list that keeps
+  // failing would otherwise be asked for again at once.
   async function waitLoop() {
+    let failedRounds = 0;
     while (session !== null && changeList !== null && !document.hidden) {
       const controller = new AbortController();
       waitController = controller;
       const since = changeList.version;
       const outcome = await send("wait_for_changes", { since }, controller.signal);
       waitController = null;
+      let trouble: string;
       if (outcome.ok) {
-        if (waitTroubleShown) {
-          waitTroubleShown = false;
-          statusEl.textContent = "Connected to the Surla server again.";
+        const changed = changeList !== null && outcome.result.version !== changeList.version;
+        if (!changed || (await loadChanges())) {
+          failedRounds = 0;
+          if (waitTroubleShown) {
+            waitTroubleShown = false;
+            statusEl.textContent = "This page is up to date with the Surla server again.";
+          }
+          continue;
         }
-        if (changeList !== null && outcome.result.version !== changeList.version) {
-          await loadChanges();
+        if (session === null) {
+          return;
         }
+        trouble =
+          "Could not read this project's changes; trying again. Your edits stay on this page. " +
+          (listError ?? "");
+      } else if (outcome.kind === "aborted") {
         continue;
-      }
-      if (outcome.kind === "aborted") {
-        continue;
-      }
-      if (outcome.kind === "session") {
+      } else if (outcome.kind === "session") {
         endSession();
         return;
-      }
-      if (!waitTroubleShown) {
-        waitTroubleShown = true;
-        statusEl.textContent =
+      } else {
+        trouble =
           "Lost contact with the Surla server; trying again. Your edits stay on this page. " +
           outcome.message;
       }
-      await new Promise<void>((resume) => window.setTimeout(resume, WAIT_RETRY_MS));
+      if (!waitTroubleShown) {
+        waitTroubleShown = true;
+        statusEl.textContent = trouble;
+      }
+      failedRounds += 1;
+      const delay = Math.min(WAIT_RETRY_MS * 2 ** (failedRounds - 1), WAIT_RETRY_MAX_MS);
+      await new Promise<void>((resume) => window.setTimeout(resume, delay));
     }
   }
 

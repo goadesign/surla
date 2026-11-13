@@ -117,6 +117,31 @@ page.close();
 `)
 }
 
+// TestViewsPageWaitsBeforeReadingAFailedListAgain makes the server announce a
+// change and then refuse the list read that follows: the page shows the
+// failure, does not ask for the list again at once, and reads it after its
+// retry wait.
+func TestViewsPageWaitsBeforeReadingAFailedListAgain(t *testing.T) {
+	cp := pageControlPlane(t, Options{})
+	ps := startPageServer(t, cp)
+	runPageScript(t, ps, nil, viewsPageScriptHelpers+`
+const page = await openPage(origin, { link: input.link });
+await until(() => page.$("#surla-change-list-empty"), "empty project did not show its empty state");
+await control(origin, "reply", { key: "GET /changes", status: 500, body: { name: "fault", id: "x", message: "Saved change cards could not be read", temporary: false, timeout: false, fault: true } });
+await propose("chg-first", "Route refunds to a manager.", "Auto-approved");
+await until(() => page.$("#surla-change-list-error"), "a refused list read was not shown on the list");
+expect(page.text("#surla-change-list-error").includes("Saved change cards could not be read"), "the list error did not carry the server's message");
+await until(() => page.status().includes("Could not read this project's changes; trying again."), "the status line did not say the page is retrying: " + page.status());
+const reads = page.sent("GET", "/changes").length;
+await sleep(2500);
+expect(page.sent("GET", "/changes").length === reads, "the page asked for the list again at once: " + (page.sent("GET", "/changes").length - reads) + " more reads");
+await until(() => page.$$("#surla-change-list li").length === 1, "the list was not read again after the retry wait", 8000);
+expect(!page.$("#surla-change-list-error"), "the list error stayed after the list was read");
+await until(() => page.status() === "This page is up to date with the Surla server again.", "the status line did not say the page recovered: " + page.status());
+page.close();
+`)
+}
+
 // TestViewsPageOpensTheOnlyChangeDirectly opens a project with one change on
 // that change rather than on the list.
 func TestViewsPageOpensTheOnlyChangeDirectly(t *testing.T) {
