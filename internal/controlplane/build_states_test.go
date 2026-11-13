@@ -240,6 +240,31 @@ func TestReportAfterAVerdictClearsIt(t *testing.T) {
 	}
 }
 
+// TestStartBuildWithAStoredEvaluatorReturnsNotUsed starts builds in a project
+// with a stored evaluator and in one without: the started build itself says
+// that no test writer is used only in the first.
+func TestStartBuildWithAStoredEvaluatorReturnsNotUsed(t *testing.T) {
+	cases := []struct {
+		name  string
+		opts  func(t *testing.T) Options
+		tests gensurla.TestsKind
+	}{
+		{name: "stored evaluator", opts: func(t *testing.T) Options {
+			return Options{Verification: &VerificationConfig{RunsDir: t.TempDir()}}
+		}, tests: gensurla.TestsKindNotUsed},
+		{name: "no stored evaluator", opts: func(*testing.T) Options { return Options{} }, tests: gensurla.TestsKindAssigned},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cp := newControlPlane(t, tc.opts(t))
+			card := confirmedChange(t, cp, "chg")
+			started, err := cp.StartBuild(asCaller("alice@example.com", CallerUser), &gensurla.StartBuildPayload{ChangeID: "chg", RequestRevision: card.RequestRevision})
+			require.NoError(t, err)
+			assert.Equal(t, tc.tests, started.TestWriter.Tests.Kind())
+		})
+	}
+}
+
 // roleServer serves cp over HTTP and MCP to alice's user, guide, builder and
 // test writer ("user", "guide", "builder" and "tests").
 func roleServer(t *testing.T, cp *ControlPlane) *httptest.Server {

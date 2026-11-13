@@ -66,6 +66,31 @@ func TestReadRegularFileReadsOnlyARegularFileWithinItsLimit(t *testing.T) {
 	}
 }
 
+// TestReadRegularFileRefusesAFileSwappedAfterItsCheck opens a path whose file
+// is not the one that was checked, as when an agent replaces it between the
+// check and the open, and checks that nothing is read.
+func TestReadRegularFileRefusesAFileSwappedAfterItsCheck(t *testing.T) {
+	dir := t.TempDir()
+	writeStep("file", "checked")(t, dir)
+	root, err := os.OpenRoot(dir)
+	require.NoError(t, err)
+	t.Cleanup(func() { assert.NoError(t, root.Close()) })
+	checked, err := root.Lstat("file")
+	require.NoError(t, err)
+	require.NoError(t, os.Rename(filepath.Join(dir, "file"), filepath.Join(dir, "old")))
+	writeStep("file", "swapped")(t, dir)
+
+	got, err := readCheckedFile(root, "file", checked, 16)
+	assert.ErrorIs(t, err, ErrNotRegularFile)
+	assert.ErrorContains(t, err, "changed while it was opened")
+	assert.Nil(t, got, "nothing of the swapped file is returned")
+	same, err := root.Lstat("file")
+	require.NoError(t, err)
+	unchanged, err := readCheckedFile(root, "file", same, 16)
+	require.NoError(t, err)
+	assert.Equal(t, "swapped", string(unchanged), "the file that was checked is read")
+}
+
 // writeStep returns a step that writes content at slash-separated rel in dir.
 func writeStep(rel, content string) func(t *testing.T, dir string) {
 	return func(t *testing.T, dir string) {

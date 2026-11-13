@@ -192,25 +192,7 @@ func ReadRegularFile(root *os.Root, rel string, limit int64) ([]byte, error) {
 	if !checked.Mode().IsRegular() {
 		return nil, fmt.Errorf("read %s: %w", rel, ErrNotRegularFile)
 	}
-	f, err := openSnapshotFile(root, rel)
-	if err != nil {
-		return nil, fmt.Errorf("read %s: %w", rel, err)
-	}
-	opened, err := f.Stat()
-	if err == nil && !os.SameFile(checked, opened) {
-		err = fmt.Errorf("%s changed while it was opened: %w", rel, ErrNotRegularFile)
-	}
-	if err != nil {
-		return nil, errors.Join(fmt.Errorf("read %s: %w", rel, err), f.Close())
-	}
-	b, readErr := io.ReadAll(io.LimitReader(f, limit+1))
-	if err := errors.Join(readErr, f.Close()); err != nil {
-		return nil, fmt.Errorf("read %s: %w", rel, err)
-	}
-	if int64(len(b)) > limit {
-		return nil, fmt.Errorf("read %s: %w of %d bytes", rel, ErrFileTooLarge, limit)
-	}
-	return b, nil
+	return readCheckedFile(root, rel, checked, limit)
 }
 
 // ValidateUTF8Snapshot checks that every file path and content in files is
@@ -267,6 +249,32 @@ func readSnapshotFileBytes(cleanDir string, root *os.Root, rel string) ([]byte, 
 	b, readErr := io.ReadAll(f)
 	if err := errors.Join(readErr, f.Close()); err != nil {
 		return nil, fmt.Errorf("read %s: %w", filepath.Join(cleanDir, filepath.FromSlash(rel)), err)
+	}
+	return b, nil
+}
+
+// readCheckedFile opens rel inside root with the snapshot readers' opener and
+// reads at most limit bytes of it, refusing it with ErrNotRegularFile when the
+// opened file is not checked, the file ReadRegularFile examined: rel was
+// replaced between that check and the open.
+func readCheckedFile(root *os.Root, rel string, checked fs.FileInfo, limit int64) ([]byte, error) {
+	f, err := openSnapshotFile(root, rel)
+	if err != nil {
+		return nil, fmt.Errorf("read %s: %w", rel, err)
+	}
+	opened, err := f.Stat()
+	if err == nil && !os.SameFile(checked, opened) {
+		err = fmt.Errorf("%s changed while it was opened: %w", rel, ErrNotRegularFile)
+	}
+	if err != nil {
+		return nil, errors.Join(fmt.Errorf("read %s: %w", rel, err), f.Close())
+	}
+	b, readErr := io.ReadAll(io.LimitReader(f, limit+1))
+	if err := errors.Join(readErr, f.Close()); err != nil {
+		return nil, fmt.Errorf("read %s: %w", rel, err)
+	}
+	if int64(len(b)) > limit {
+		return nil, fmt.Errorf("read %s: %w of %d bytes", rel, ErrFileTooLarge, limit)
 	}
 	return b, nil
 }
