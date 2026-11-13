@@ -25,7 +25,7 @@ import (
 func UsageCommands() []string {
 	return []string{
 		"project (identity|ensure-team|stop|browser-link|exchange-browser-link)",
-		"surla (golden-path|propose-change|revise-change|confirm-intent|get-change|decline-revision|preview-architecture|draft-override|start-live-target|stop-live-target|verify-change|get-verification|list-verifications|approve-merge|diff|configure-model|init-project|generate-code|check-project|update-dependencies|read-check-output|list-traces|refresh-story|get-story-refresh|get-team|show-team-pane|start-team-agents|list-changes|wait-for-changes|start-build|get-build|list-builder-assignments|get-builder-assignment|list-test-writer-assignments|get-test-writer-assignment|report-tests-finished)",
+		"surla (golden-path|propose-change|revise-change|confirm-intent|get-change|decline-revision|preview-architecture|draft-override|start-live-target|stop-live-target|get-live-target|verify-change|get-verification|list-verifications|approve-merge|diff|configure-model|get-model-connection|init-project|generate-code|check-project|update-dependencies|read-check-output|list-traces|refresh-story|get-story-refresh|get-team|show-team-pane|start-team-agents|list-changes|wait-for-changes|start-build|get-build|list-builder-assignments|get-builder-assignment|list-test-writer-assignments|get-test-writer-assignment|report-tests-finished)",
 	}
 }
 
@@ -108,6 +108,8 @@ func ParseEndpoint(
 
 		surlaStopLiveTargetFlags = flag.NewFlagSet("stop-live-target", flag.ExitOnError)
 
+		surlaGetLiveTargetFlags = flag.NewFlagSet("get-live-target", flag.ExitOnError)
+
 		surlaVerifyChangeFlags        = flag.NewFlagSet("verify-change", flag.ExitOnError)
 		surlaVerifyChangeBodyFlag     = new(cliStringFlag)
 		surlaVerifyChangeChangeIDFlag = new(cliStringFlag)
@@ -126,6 +128,8 @@ func ParseEndpoint(
 
 		surlaConfigureModelFlags    = flag.NewFlagSet("configure-model", flag.ExitOnError)
 		surlaConfigureModelBodyFlag = new(cliStringFlag)
+
+		surlaGetModelConnectionFlags = flag.NewFlagSet("get-model-connection", flag.ExitOnError)
 
 		surlaInitProjectFlags    = flag.NewFlagSet("init-project", flag.ExitOnError)
 		surlaInitProjectBodyFlag = new(cliStringFlag)
@@ -230,12 +234,14 @@ func ParseEndpoint(
 	surlaDraftOverrideFlags.Usage = surlaDraftOverrideUsage
 	surlaStartLiveTargetFlags.Usage = surlaStartLiveTargetUsage
 	surlaStopLiveTargetFlags.Usage = surlaStopLiveTargetUsage
+	surlaGetLiveTargetFlags.Usage = surlaGetLiveTargetUsage
 	surlaVerifyChangeFlags.Usage = surlaVerifyChangeUsage
 	surlaGetVerificationFlags.Usage = surlaGetVerificationUsage
 	surlaListVerificationsFlags.Usage = surlaListVerificationsUsage
 	surlaApproveMergeFlags.Usage = surlaApproveMergeUsage
 	surlaDiffFlags.Usage = surlaDiffUsage
 	surlaConfigureModelFlags.Usage = surlaConfigureModelUsage
+	surlaGetModelConnectionFlags.Usage = surlaGetModelConnectionUsage
 	surlaInitProjectFlags.Usage = surlaInitProjectUsage
 	surlaGenerateCodeFlags.Usage = surlaGenerateCodeUsage
 	surlaCheckProjectFlags.Usage = surlaCheckProjectUsage
@@ -342,6 +348,9 @@ func ParseEndpoint(
 			case "stop-live-target":
 				epf = surlaStopLiveTargetFlags
 
+			case "get-live-target":
+				epf = surlaGetLiveTargetFlags
+
 			case "verify-change":
 				epf = surlaVerifyChangeFlags
 
@@ -359,6 +368,9 @@ func ParseEndpoint(
 
 			case "configure-model":
 				epf = surlaConfigureModelFlags
+
+			case "get-model-connection":
+				epf = surlaGetModelConnectionFlags
 
 			case "init-project":
 				epf = surlaInitProjectFlags
@@ -488,6 +500,8 @@ func ParseEndpoint(
 				data, err = surlac.BuildStartLiveTargetPayload(surlaStartLiveTargetBodyFlag.value)
 			case "stop-live-target":
 				endpoint = c.StopLiveTarget()
+			case "get-live-target":
+				endpoint = c.GetLiveTarget()
 			case "verify-change":
 				endpoint = c.VerifyChange()
 				data, err = surlac.BuildVerifyChangePayload(surlaVerifyChangeBodyFlag.value, surlaVerifyChangeChangeIDFlag.value)
@@ -506,6 +520,8 @@ func ParseEndpoint(
 			case "configure-model":
 				endpoint = c.ConfigureModel()
 				data, err = surlac.BuildConfigureModelPayload(surlaConfigureModelBodyFlag.value)
+			case "get-model-connection":
+				endpoint = c.GetModelConnection()
 			case "init-project":
 				endpoint = c.InitProject()
 				data, err = surlac.BuildInitProjectPayload(surlaInitProjectBodyFlag.value)
@@ -678,12 +694,14 @@ func surlaUsage() {
 	fmt.Fprintln(os.Stderr, `    draft-override: Apply a Fast Draft Mode prompt override on the live target start_live_target runs, or reject a compiled-rule prompt hack. Surla changes prompts only in a live target it built and started itself, so a prompt_template override with no live target running is refused with no_live_target. A rejected update leaves the target's text unchanged; update_not_confirmed means the target may or may not have applied it.`)
 	fmt.Fprintln(os.Stderr, `    start-live-target: Build a candidate commit exactly as Checkpoint 4 does and run it, with the operator's evaluator suite, as this server's one live CP3 target, then bind draft_override to it. A running target is stopped first, so there is never more than one. The target runs until stop_live_target, a later start_live_target, its own exit, or this server's shutdown; a server restart leaves none running. Requires a committed starter project in the bound workspace or verification settings installed with surla verification set.`)
 	fmt.Fprintln(os.Stderr, `    stop-live-target: Stop this server's live CP3 target, if one runs, and unbind draft_override from it. Stopping when none runs is not an error.`)
+	fmt.Fprintln(os.Stderr, `    get-live-target: Report this server's live target: none; starting, with the commit being built; running, with its commit, its address, when it became ready and, for each prompt whose draft it accepted, the prompt identifier, the version in force and when it was accepted; or not confirmed stopped, with what to do next. Prompt text is never returned. It changes nothing and saves nothing: the answer lasts as long as the live target and this server.`)
 	fmt.Fprintln(os.Stderr, `    verify-change: Start Checkpoint 4 verification of a candidate commit for the owner's confirmed Change Card revision and return its run_id at once. The server builds the commit in Surla's sandbox and runs the evaluator suite the operator configured, in a separate process that keeps running when the caller disconnects or the server restarts; get_verification reads its state. Only the builder view of the report is ever returned. Requires a committed starter project in the bound workspace or verification settings installed with surla verification set.`)
 	fmt.Fprintln(os.Stderr, `    get-verification: Return the current state of a verification run to the owner who started it: running, completed with the builder view of its report, or not completed with where it stopped. A run keeps the Change Card revision it was started for.`)
 	fmt.Fprintln(os.Stderr, `    list-verifications: Return all Checkpoint 4 verification runs started by the owner for a Change Card, ordered newest first by accepted_at (tie-broken by run_id), with each run's current state and the Change Card revision it was started for. Works whether the Change Card is currently confirmed or in needs_confirmation after a later revision.`)
 	fmt.Fprintln(os.Stderr, `    approve-merge: Record Checkpoint 5 approval for the owner's confirmed Change Card revision. The control plane loads the verification report by digest and the expected suite, environment and candidate binary digests from its promotion target, re-derives the report from its evidence with verify.Approve, and records the approval on the card. A report that did not pass or describes different inputs is rejected. Nothing is merged or deployed. The promotion target comes from surla promotion set or from the program that embeds the control plane; a control plane without one rejects every call.`)
 	fmt.Fprintln(os.Stderr, `    diff: Compare evaluated Goa designs and go.mod directives without emitting a blanket compatibility verdict.`)
 	fmt.Fprintln(os.Stderr, `    configure-model: Choose, on a running control plane without restarting, the model that CP3 live targets started afterwards receive: a direct provider and model name (using that provider's API key from the project server's environment) or a running gRPC model gateway. start_live_target passes the choice to the target's evaluator suite as SURLA_LIVE_MODEL_PROVIDER and SURLA_LIVE_MODEL_NAME, or as SURLA_LIVE_MODEL_GATEWAY.`)
+	fmt.Fprintln(os.Stderr, `    get-model-connection: Report the model choice live targets started afterwards receive: none, a direct provider and model name, or a model gateway address. It starts from the choice made when the server started and follows every accepted configure_model call. It never returns an API key or any other environment value, and it changes nothing. Verification runs do not use this choice.`)
 	fmt.Fprintln(os.Stderr, `    init-project: Initialize a new Surla starter project directory inside the server's bound workspace, generating the candidate Go module, Goa and Goa-AI code, and the eval/ verification harness, creating the initial Git commit, and switching the server's active workspace and trusted evaluator suite commit to that project. When the request includes a progressToken, the tool sends MCP progress updates as starter generation/tests, initial commit creation, and publication start.`)
 	fmt.Fprintln(os.Stderr, `    generate-code: Read the active workspace's application module, or its public local eval/ module when target is eval, compile that module's edited Goa design in Surla's sandbox, and atomically replace its gen/ directory. Preserve top-level user files and their permissions and leave go.mod and go.sum unchanged. Return the written paths and warnings; a warning after gen/ publication still means generation succeeded. The tool compiles the design only; it does not build the application or run tests. Fix a rejected design and call again on the same running server.`)
 	fmt.Fprintln(os.Stderr, `    check-project: Copy the active workspace's live files (uncommitted edits included) into a protected per-operation copy and run go test ./... for every Go module in it, each in a Linux container with no network. Nothing in the workspace changes. Returns passed and a bounded message; read the full output with read_check_output.`)
@@ -884,6 +902,22 @@ func surlaStopLiveTargetUsage() {
 	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "surla stop-live-target")
 }
 
+func surlaGetLiveTargetUsage() {
+	// Header with flags
+	fmt.Fprintf(os.Stderr, "%s [flags] surla get-live-target", os.Args[0])
+	fmt.Fprintln(os.Stderr)
+
+	// Description
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, `Report this server's live target: none; starting, with the commit being built; running, with its commit, its address, when it became ready and, for each prompt whose draft it accepted, the prompt identifier, the version in force and when it was accepted; or not confirmed stopped, with what to do next. Prompt text is never returned. It changes nothing and saves nothing: the answer lasts as long as the live target and this server.`)
+
+	// Flags list
+
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, "Example:")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "surla get-live-target")
+}
+
 func surlaVerifyChangeUsage() {
 	// Header with flags
 	fmt.Fprintf(os.Stderr, "%s [flags] surla verify-change", os.Args[0])
@@ -992,6 +1026,22 @@ func surlaConfigureModelUsage() {
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Example:")
 	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "surla configure-model --body '{\n      \"gateway_addr\": \"127.0.0.1:9090\",\n      \"model_name\": \"claude-sonnet-4-6\",\n      \"provider\": \"anthropic\"\n   }'")
+}
+
+func surlaGetModelConnectionUsage() {
+	// Header with flags
+	fmt.Fprintf(os.Stderr, "%s [flags] surla get-model-connection", os.Args[0])
+	fmt.Fprintln(os.Stderr)
+
+	// Description
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, `Report the model choice live targets started afterwards receive: none, a direct provider and model name, or a model gateway address. It starts from the choice made when the server started and follows every accepted configure_model call. It never returns an API key or any other environment value, and it changes nothing. Verification runs do not use this choice.`)
+
+	// Flags list
+
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, "Example:")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "surla get-model-connection")
 }
 
 func surlaInitProjectUsage() {

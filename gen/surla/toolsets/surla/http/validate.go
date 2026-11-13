@@ -623,6 +623,45 @@ func ValidateGetChangeResultTransport(body *GetChangeResultTransport) (err error
 	return
 }
 
+// ValidateGetLiveTargetResultTransport runs the validations defined on GetLiveTargetResultTransport.
+func ValidateGetLiveTargetResultTransport(body *GetLiveTargetResultTransport) (err error) {
+	if body.LiveTarget == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("live_target", "body"))
+	}
+	if body.LiveTarget != nil {
+
+		if err2 := body.LiveTarget.Validate(); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		} else {
+			switch string(body.LiveTarget.Kind()) {
+			case "starting":
+				actual, _ := body.LiveTarget.AsStarting()
+				if actual != nil {
+					if err2 := ValidateLiveTargetStartingTransport(actual); err2 != nil {
+						err = goa.MergeErrors(err, err2)
+					}
+				}
+			case "running":
+				actual, _ := body.LiveTarget.AsRunning()
+				if actual != nil {
+					if err2 := ValidateRunningLiveTargetTransport(actual); err2 != nil {
+						err = goa.MergeErrors(err, err2)
+					}
+				}
+			case "not_confirmed_stopped":
+				actual, _ := body.LiveTarget.AsNotConfirmedStopped()
+				if actual != nil {
+					if err2 := ValidateLiveTargetNotConfirmedStoppedTransport(actual); err2 != nil {
+						err = goa.MergeErrors(err, err2)
+					}
+				}
+			}
+		}
+
+	}
+	return
+}
+
 // ValidateGetStoryRefreshResultTransport runs the validations defined on GetStoryRefreshResultTransport.
 func ValidateGetStoryRefreshResultTransport(body *GetStoryRefreshResultTransport) (err error) {
 	if body.State == nil {
@@ -1877,6 +1916,48 @@ func ValidateLatestVerificationItemTransport(body *LatestVerificationItemTranspo
 	return
 }
 
+// ValidateLivePromptItemTransport runs the validations defined on LivePromptItemTransport.
+func ValidateLivePromptItemTransport(body *LivePromptItemTransport) (err error) {
+	if body.PromptID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("prompt_id", "body"))
+	}
+	if body.Version == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("version", "body"))
+	}
+	if body.AcceptedAt == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("accepted_at", "body"))
+	}
+	if body.AcceptedAt != nil {
+		err = goa.MergeErrors(err, goa.ValidateFormat("body.accepted_at", *body.AcceptedAt, goa.FormatDateTime))
+	}
+	return
+}
+
+// ValidateLiveTargetNotConfirmedStoppedTransport runs the validations defined on LiveTargetNotConfirmedStoppedTransport.
+func ValidateLiveTargetNotConfirmedStoppedTransport(body *LiveTargetNotConfirmedStoppedTransport) (err error) {
+	if body.CandidateCommit == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("candidate_commit", "body"))
+	}
+	if body.Message == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("message", "body"))
+	}
+	return
+}
+
+// ValidateLiveTargetStartingTransport runs the validations defined on LiveTargetStartingTransport.
+func ValidateLiveTargetStartingTransport(body *LiveTargetStartingTransport) (err error) {
+	if body.CandidateCommit == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("candidate_commit", "body"))
+	}
+	if body.Since == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("since", "body"))
+	}
+	if body.Since != nil {
+		err = goa.MergeErrors(err, goa.ValidateFormat("body.since", *body.Since, goa.FormatDateTime))
+	}
+	return
+}
+
 // ValidateProposedRevisionItemTransport runs the validations defined on ProposedRevisionItemTransport.
 func ValidateProposedRevisionItemTransport(body *ProposedRevisionItemTransport) (err error) {
 	if body.Prompt == nil {
@@ -1939,6 +2020,33 @@ func ValidateRequiredTestTransport(body *RequiredTestTransport) (err error) {
 	}
 	if body.Hook == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("hook", "body"))
+	}
+	return
+}
+
+// ValidateRunningLiveTargetTransport runs the validations defined on RunningLiveTargetTransport.
+func ValidateRunningLiveTargetTransport(body *RunningLiveTargetTransport) (err error) {
+	if body.CandidateCommit == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("candidate_commit", "body"))
+	}
+	if body.URL == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("url", "body"))
+	}
+	if body.StartedAt == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("started_at", "body"))
+	}
+	if body.Prompts == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("prompts", "body"))
+	}
+	if body.StartedAt != nil {
+		err = goa.MergeErrors(err, goa.ValidateFormat("body.started_at", *body.StartedAt, goa.FormatDateTime))
+	}
+	for _, e := range body.Prompts {
+		if e != nil {
+			if err2 := ValidateLivePromptItemTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
 	}
 	return
 }

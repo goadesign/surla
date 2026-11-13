@@ -197,6 +197,493 @@ func (u *Build) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// Connection holds exactly one of its branch values.
+type Connection struct {
+	kind    ConnectionKind
+	none    *ModelNone
+	direct  *ModelDirect
+	gateway *ModelGateway
+}
+
+// ConnectionKind records which Connection branch is selected.
+type ConnectionKind string
+
+const (
+	// ConnectionKindNone identifies the none branch.
+	ConnectionKindNone ConnectionKind = "none"
+	// ConnectionKindDirect identifies the direct branch.
+	ConnectionKindDirect ConnectionKind = "direct"
+	// ConnectionKindGateway identifies the gateway branch.
+	ConnectionKindGateway ConnectionKind = "gateway"
+)
+
+// Kind returns the selected branch.
+func (u Connection) Kind() ConnectionKind {
+	return u.kind
+}
+
+// NewConnectionNone constructs Connection with the none branch set.
+func NewConnectionNone(v *ModelNone) Connection {
+	return Connection{
+		kind: ConnectionKindNone,
+		none: v,
+	}
+}
+
+// AsNone returns the value when the none branch is selected.
+func (u Connection) AsNone() (_ *ModelNone, ok bool) {
+	if u.kind != ConnectionKindNone {
+		return
+	}
+	return u.none, true
+}
+
+// SetNone selects the none branch and stores v.
+func (u *Connection) SetNone(v *ModelNone) {
+	*u = Connection{
+		kind: ConnectionKindNone,
+		none: v,
+	}
+}
+
+// NewConnectionDirect constructs Connection with the direct branch set.
+func NewConnectionDirect(v *ModelDirect) Connection {
+	return Connection{
+		kind:   ConnectionKindDirect,
+		direct: v,
+	}
+}
+
+// AsDirect returns the value when the direct branch is selected.
+func (u Connection) AsDirect() (_ *ModelDirect, ok bool) {
+	if u.kind != ConnectionKindDirect {
+		return
+	}
+	return u.direct, true
+}
+
+// SetDirect selects the direct branch and stores v.
+func (u *Connection) SetDirect(v *ModelDirect) {
+	*u = Connection{
+		kind:   ConnectionKindDirect,
+		direct: v,
+	}
+}
+
+// NewConnectionGateway constructs Connection with the gateway branch set.
+func NewConnectionGateway(v *ModelGateway) Connection {
+	return Connection{
+		kind:    ConnectionKindGateway,
+		gateway: v,
+	}
+}
+
+// AsGateway returns the value when the gateway branch is selected.
+func (u Connection) AsGateway() (_ *ModelGateway, ok bool) {
+	if u.kind != ConnectionKindGateway {
+		return
+	}
+	return u.gateway, true
+}
+
+// SetGateway selects the gateway branch and stores v.
+func (u *Connection) SetGateway(v *ModelGateway) {
+	*u = Connection{
+		kind:    ConnectionKindGateway,
+		gateway: v,
+	}
+}
+
+// Validate ensures exactly one valid branch is selected.
+func (u Connection) Validate() error {
+	_, err := u.Value()
+	return err
+}
+
+// Value returns the selected branch value, or the same selection error as Validate.
+// Go templates can read this method directly; an invalid selection stops execution.
+func (u Connection) Value() (any, error) {
+	switch u.kind {
+	case "":
+		return nil, goa.InvalidEnumValueError("kind", "", []any{
+			string(ConnectionKindNone),
+			string(ConnectionKindDirect),
+			string(ConnectionKindGateway),
+		})
+	case ConnectionKindNone:
+		if u.none == nil {
+			return nil, goa.MissingFieldError("value", "Connection")
+		}
+		return u.none, nil
+	case ConnectionKindDirect:
+		if u.direct == nil {
+			return nil, goa.MissingFieldError("value", "Connection")
+		}
+		return u.direct, nil
+	case ConnectionKindGateway:
+		if u.gateway == nil {
+			return nil, goa.MissingFieldError("value", "Connection")
+		}
+		return u.gateway, nil
+	default:
+		return nil, goa.InvalidEnumValueError("kind", u.kind, []any{
+			string(ConnectionKindNone),
+			string(ConnectionKindDirect),
+			string(ConnectionKindGateway),
+		})
+	}
+}
+
+// MarshalJSON writes the selected object branch beside its discriminator.
+func (u Connection) MarshalJSON() ([]byte, error) {
+	value, err := u.Value()
+	if err != nil {
+		return nil, err
+	}
+	data, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return nil, err
+	}
+	if fields == nil {
+		return nil, goa.InvalidFieldTypeError("kind", nil, "non-null JSON object")
+	}
+	if _, exists := fields["kind"]; exists {
+		return nil, fmt.Errorf("Connection branch already contains discriminator %q", "kind")
+	}
+	tag, err := json.Marshal(string(u.kind))
+	if err != nil {
+		return nil, err
+	}
+	fields["kind"] = tag
+	return json.Marshal(fields)
+}
+
+// UnmarshalJSON reads the discriminator and decodes its declared object branch.
+func (u *Connection) UnmarshalJSON(data []byte) error {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return err
+	}
+	tag, exists := fields["kind"]
+	if !exists {
+		return goa.MissingFieldError("kind", "Connection")
+	}
+	if bytes.Equal(bytes.TrimSpace(tag), []byte("null")) {
+		return goa.InvalidFieldTypeError("kind", nil, "JSON string")
+	}
+	var raw struct {
+		Type  string
+		Value json.RawMessage
+	}
+	if err := json.Unmarshal(tag, &raw.Type); err != nil {
+		return err
+	}
+	delete(fields, "kind")
+	value, err := json.Marshal(fields)
+	if err != nil {
+		return err
+	}
+	raw.Value = value
+	switch raw.Type {
+	case string(ConnectionKindNone):
+		var v *ModelNone
+		if err := json.Unmarshal(raw.Value, &v); err != nil {
+			return err
+		}
+		u.SetNone(v)
+	case string(ConnectionKindDirect):
+		var v *ModelDirect
+		if err := json.Unmarshal(raw.Value, &v); err != nil {
+			return err
+		}
+		u.SetDirect(v)
+	case string(ConnectionKindGateway):
+		var v *ModelGateway
+		if err := json.Unmarshal(raw.Value, &v); err != nil {
+			return err
+		}
+		u.SetGateway(v)
+	default:
+		if raw.Type == "" {
+			return goa.MissingFieldError("kind", "Connection")
+		}
+		return goa.InvalidEnumValueError("kind", raw.Type, []any{
+			string(ConnectionKindNone),
+			string(ConnectionKindDirect),
+			string(ConnectionKindGateway),
+		})
+	}
+	return nil
+}
+
+// LiveTarget holds exactly one of its branch values.
+type LiveTarget struct {
+	kind                LiveTargetKind
+	none                *LiveTargetNone
+	starting            *LiveTargetStarting
+	running             *RunningLiveTarget
+	notConfirmedStopped *LiveTargetNotConfirmedStopped
+}
+
+// LiveTargetKind records which LiveTarget branch is selected.
+type LiveTargetKind string
+
+const (
+	// LiveTargetKindNone identifies the none branch.
+	LiveTargetKindNone LiveTargetKind = "none"
+	// LiveTargetKindStarting identifies the starting branch.
+	LiveTargetKindStarting LiveTargetKind = "starting"
+	// LiveTargetKindRunning identifies the running branch.
+	LiveTargetKindRunning LiveTargetKind = "running"
+	// LiveTargetKindNotConfirmedStopped identifies the not_confirmed_stopped branch.
+	LiveTargetKindNotConfirmedStopped LiveTargetKind = "not_confirmed_stopped"
+)
+
+// Kind returns the selected branch.
+func (u LiveTarget) Kind() LiveTargetKind {
+	return u.kind
+}
+
+// NewLiveTargetNone constructs LiveTarget with the none branch set.
+func NewLiveTargetNone(v *LiveTargetNone) LiveTarget {
+	return LiveTarget{
+		kind: LiveTargetKindNone,
+		none: v,
+	}
+}
+
+// AsNone returns the value when the none branch is selected.
+func (u LiveTarget) AsNone() (_ *LiveTargetNone, ok bool) {
+	if u.kind != LiveTargetKindNone {
+		return
+	}
+	return u.none, true
+}
+
+// SetNone selects the none branch and stores v.
+func (u *LiveTarget) SetNone(v *LiveTargetNone) {
+	*u = LiveTarget{
+		kind: LiveTargetKindNone,
+		none: v,
+	}
+}
+
+// NewLiveTargetStarting constructs LiveTarget with the starting branch set.
+func NewLiveTargetStarting(v *LiveTargetStarting) LiveTarget {
+	return LiveTarget{
+		kind:     LiveTargetKindStarting,
+		starting: v,
+	}
+}
+
+// AsStarting returns the value when the starting branch is selected.
+func (u LiveTarget) AsStarting() (_ *LiveTargetStarting, ok bool) {
+	if u.kind != LiveTargetKindStarting {
+		return
+	}
+	return u.starting, true
+}
+
+// SetStarting selects the starting branch and stores v.
+func (u *LiveTarget) SetStarting(v *LiveTargetStarting) {
+	*u = LiveTarget{
+		kind:     LiveTargetKindStarting,
+		starting: v,
+	}
+}
+
+// NewLiveTargetRunning constructs LiveTarget with the running branch set.
+func NewLiveTargetRunning(v *RunningLiveTarget) LiveTarget {
+	return LiveTarget{
+		kind:    LiveTargetKindRunning,
+		running: v,
+	}
+}
+
+// AsRunning returns the value when the running branch is selected.
+func (u LiveTarget) AsRunning() (_ *RunningLiveTarget, ok bool) {
+	if u.kind != LiveTargetKindRunning {
+		return
+	}
+	return u.running, true
+}
+
+// SetRunning selects the running branch and stores v.
+func (u *LiveTarget) SetRunning(v *RunningLiveTarget) {
+	*u = LiveTarget{
+		kind:    LiveTargetKindRunning,
+		running: v,
+	}
+}
+
+// NewLiveTargetNotConfirmedStopped constructs LiveTarget with the not_confirmed_stopped branch set.
+func NewLiveTargetNotConfirmedStopped(v *LiveTargetNotConfirmedStopped) LiveTarget {
+	return LiveTarget{
+		kind:                LiveTargetKindNotConfirmedStopped,
+		notConfirmedStopped: v,
+	}
+}
+
+// AsNotConfirmedStopped returns the value when the not_confirmed_stopped branch is selected.
+func (u LiveTarget) AsNotConfirmedStopped() (_ *LiveTargetNotConfirmedStopped, ok bool) {
+	if u.kind != LiveTargetKindNotConfirmedStopped {
+		return
+	}
+	return u.notConfirmedStopped, true
+}
+
+// SetNotConfirmedStopped selects the not_confirmed_stopped branch and stores v.
+func (u *LiveTarget) SetNotConfirmedStopped(v *LiveTargetNotConfirmedStopped) {
+	*u = LiveTarget{
+		kind:                LiveTargetKindNotConfirmedStopped,
+		notConfirmedStopped: v,
+	}
+}
+
+// Validate ensures exactly one valid branch is selected.
+func (u LiveTarget) Validate() error {
+	_, err := u.Value()
+	return err
+}
+
+// Value returns the selected branch value, or the same selection error as Validate.
+// Go templates can read this method directly; an invalid selection stops execution.
+func (u LiveTarget) Value() (any, error) {
+	switch u.kind {
+	case "":
+		return nil, goa.InvalidEnumValueError("state", "", []any{
+			string(LiveTargetKindNone),
+			string(LiveTargetKindStarting),
+			string(LiveTargetKindRunning),
+			string(LiveTargetKindNotConfirmedStopped),
+		})
+	case LiveTargetKindNone:
+		if u.none == nil {
+			return nil, goa.MissingFieldError("value", "LiveTarget")
+		}
+		return u.none, nil
+	case LiveTargetKindStarting:
+		if u.starting == nil {
+			return nil, goa.MissingFieldError("value", "LiveTarget")
+		}
+		return u.starting, nil
+	case LiveTargetKindRunning:
+		if u.running == nil {
+			return nil, goa.MissingFieldError("value", "LiveTarget")
+		}
+		return u.running, nil
+	case LiveTargetKindNotConfirmedStopped:
+		if u.notConfirmedStopped == nil {
+			return nil, goa.MissingFieldError("value", "LiveTarget")
+		}
+		return u.notConfirmedStopped, nil
+	default:
+		return nil, goa.InvalidEnumValueError("state", u.kind, []any{
+			string(LiveTargetKindNone),
+			string(LiveTargetKindStarting),
+			string(LiveTargetKindRunning),
+			string(LiveTargetKindNotConfirmedStopped),
+		})
+	}
+}
+
+// MarshalJSON writes the selected object branch beside its discriminator.
+func (u LiveTarget) MarshalJSON() ([]byte, error) {
+	value, err := u.Value()
+	if err != nil {
+		return nil, err
+	}
+	data, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return nil, err
+	}
+	if fields == nil {
+		return nil, goa.InvalidFieldTypeError("state", nil, "non-null JSON object")
+	}
+	if _, exists := fields["state"]; exists {
+		return nil, fmt.Errorf("LiveTarget branch already contains discriminator %q", "state")
+	}
+	tag, err := json.Marshal(string(u.kind))
+	if err != nil {
+		return nil, err
+	}
+	fields["state"] = tag
+	return json.Marshal(fields)
+}
+
+// UnmarshalJSON reads the discriminator and decodes its declared object branch.
+func (u *LiveTarget) UnmarshalJSON(data []byte) error {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return err
+	}
+	tag, exists := fields["state"]
+	if !exists {
+		return goa.MissingFieldError("state", "LiveTarget")
+	}
+	if bytes.Equal(bytes.TrimSpace(tag), []byte("null")) {
+		return goa.InvalidFieldTypeError("state", nil, "JSON string")
+	}
+	var raw struct {
+		Type  string
+		Value json.RawMessage
+	}
+	if err := json.Unmarshal(tag, &raw.Type); err != nil {
+		return err
+	}
+	delete(fields, "state")
+	value, err := json.Marshal(fields)
+	if err != nil {
+		return err
+	}
+	raw.Value = value
+	switch raw.Type {
+	case string(LiveTargetKindNone):
+		var v *LiveTargetNone
+		if err := json.Unmarshal(raw.Value, &v); err != nil {
+			return err
+		}
+		u.SetNone(v)
+	case string(LiveTargetKindStarting):
+		var v *LiveTargetStarting
+		if err := json.Unmarshal(raw.Value, &v); err != nil {
+			return err
+		}
+		u.SetStarting(v)
+	case string(LiveTargetKindRunning):
+		var v *RunningLiveTarget
+		if err := json.Unmarshal(raw.Value, &v); err != nil {
+			return err
+		}
+		u.SetRunning(v)
+	case string(LiveTargetKindNotConfirmedStopped):
+		var v *LiveTargetNotConfirmedStopped
+		if err := json.Unmarshal(raw.Value, &v); err != nil {
+			return err
+		}
+		u.SetNotConfirmedStopped(v)
+	default:
+		if raw.Type == "" {
+			return goa.MissingFieldError("state", "LiveTarget")
+		}
+		return goa.InvalidEnumValueError("state", raw.Type, []any{
+			string(LiveTargetKindNone),
+			string(LiveTargetKindStarting),
+			string(LiveTargetKindRunning),
+			string(LiveTargetKindNotConfirmedStopped),
+		})
+	}
+	return nil
+}
+
 // State holds exactly one of its branch values.
 type State struct {
 	kind         StateKind

@@ -956,6 +956,47 @@ func EncodeStopLiveTargetError(encoder func(context.Context, http.ResponseWriter
 	}
 }
 
+// EncodeGetLiveTargetResponse returns an encoder for responses returned by the
+// surla get_live_target endpoint.
+func EncodeGetLiveTargetResponse(encoder func(context.Context, http.ResponseWriter) goahttp.Encoder) func(context.Context, http.ResponseWriter, any) error {
+	return func(ctx context.Context, w http.ResponseWriter, v any) error {
+		res, _ := v.(*surla.LiveTargetStatus)
+		enc := encoder(ctx, w)
+		body := NewGetLiveTargetResponseBody(res)
+		w.WriteHeader(http.StatusOK)
+		return enc.Encode(body)
+	}
+}
+
+// EncodeGetLiveTargetError returns an encoder for errors returned by the
+// get_live_target surla endpoint.
+func EncodeGetLiveTargetError(encoder func(context.Context, http.ResponseWriter) goahttp.Encoder, formatter func(ctx context.Context, err error) goahttp.Statuser) func(context.Context, http.ResponseWriter, error) error {
+	encodeError := goahttp.ErrorEncoder(encoder, formatter)
+	return func(ctx context.Context, w http.ResponseWriter, v error) error {
+		var en goa.GoaErrorNamer
+		if !errors.As(v, &en) {
+			return encodeError(ctx, w, v)
+		}
+		switch en.GoaErrorName() {
+		case "forbidden":
+			var res *goa.ServiceError
+			errors.As(v, &res)
+			enc := encoder(ctx, w)
+			var body any
+			if formatter != nil {
+				body = formatter(ctx, res)
+			} else {
+				body = NewGetLiveTargetForbiddenResponseBody(res)
+			}
+			w.Header().Set("goa-error", res.GoaErrorName())
+			w.WriteHeader(http.StatusForbidden)
+			return enc.Encode(body)
+		default:
+			return encodeError(ctx, w, v)
+		}
+	}
+}
+
 // EncodeVerifyChangeResponse returns an encoder for responses returned by the
 // surla verify_change endpoint.
 func EncodeVerifyChangeResponse(encoder func(context.Context, http.ResponseWriter) goahttp.Encoder) func(context.Context, http.ResponseWriter, any) error {
@@ -1529,6 +1570,47 @@ func EncodeConfigureModelError(encoder func(context.Context, http.ResponseWriter
 				body = formatter(ctx, res)
 			} else {
 				body = NewConfigureModelForbiddenResponseBody(res)
+			}
+			w.Header().Set("goa-error", res.GoaErrorName())
+			w.WriteHeader(http.StatusForbidden)
+			return enc.Encode(body)
+		default:
+			return encodeError(ctx, w, v)
+		}
+	}
+}
+
+// EncodeGetModelConnectionResponse returns an encoder for responses returned
+// by the surla get_model_connection endpoint.
+func EncodeGetModelConnectionResponse(encoder func(context.Context, http.ResponseWriter) goahttp.Encoder) func(context.Context, http.ResponseWriter, any) error {
+	return func(ctx context.Context, w http.ResponseWriter, v any) error {
+		res, _ := v.(*surla.ModelConnection)
+		enc := encoder(ctx, w)
+		body := NewGetModelConnectionResponseBody(res)
+		w.WriteHeader(http.StatusOK)
+		return enc.Encode(body)
+	}
+}
+
+// EncodeGetModelConnectionError returns an encoder for errors returned by the
+// get_model_connection surla endpoint.
+func EncodeGetModelConnectionError(encoder func(context.Context, http.ResponseWriter) goahttp.Encoder, formatter func(ctx context.Context, err error) goahttp.Statuser) func(context.Context, http.ResponseWriter, error) error {
+	encodeError := goahttp.ErrorEncoder(encoder, formatter)
+	return func(ctx context.Context, w http.ResponseWriter, v error) error {
+		var en goa.GoaErrorNamer
+		if !errors.As(v, &en) {
+			return encodeError(ctx, w, v)
+		}
+		switch en.GoaErrorName() {
+		case "forbidden":
+			var res *goa.ServiceError
+			errors.As(v, &res)
+			enc := encoder(ctx, w)
+			var body any
+			if formatter != nil {
+				body = formatter(ctx, res)
+			} else {
+				body = NewGetModelConnectionForbiddenResponseBody(res)
 			}
 			w.Header().Set("goa-error", res.GoaErrorName())
 			w.WriteHeader(http.StatusForbidden)
@@ -3775,6 +3857,75 @@ func marshalSurlaToolInputBindingItemToToolInputBindingItemResponseBody(v *surla
 	return res
 }
 
+// marshalSurlaLiveTargetNoneToLiveTargetNoneResponseBody builds a value of
+// type *LiveTargetNoneResponseBody from a value of type *surla.LiveTargetNone.
+func marshalSurlaLiveTargetNoneToLiveTargetNoneResponseBody(v *surla.LiveTargetNone) *LiveTargetNoneResponseBody {
+	res := &LiveTargetNoneResponseBody{}
+
+	return res
+}
+
+// marshalSurlaLiveTargetStartingToLiveTargetStartingResponseBody builds a
+// value of type *LiveTargetStartingResponseBody from a value of type
+// *surla.LiveTargetStarting.
+func marshalSurlaLiveTargetStartingToLiveTargetStartingResponseBody(v *surla.LiveTargetStarting) *LiveTargetStartingResponseBody {
+	res := &LiveTargetStartingResponseBody{
+		CandidateCommit: v.CandidateCommit,
+		Since:           v.Since,
+	}
+
+	return res
+}
+
+// marshalSurlaRunningLiveTargetToRunningLiveTargetResponseBody builds a value
+// of type *RunningLiveTargetResponseBody from a value of type
+// *surla.RunningLiveTarget.
+func marshalSurlaRunningLiveTargetToRunningLiveTargetResponseBody(v *surla.RunningLiveTarget) *RunningLiveTargetResponseBody {
+	res := &RunningLiveTargetResponseBody{
+		CandidateCommit: v.CandidateCommit,
+		URL:             v.URL,
+		StartedAt:       v.StartedAt,
+	}
+	if v.Prompts != nil {
+		res.Prompts = make([]*LivePromptItemResponseBody, len(v.Prompts))
+		for i, val := range v.Prompts {
+			if val == nil {
+				res.Prompts[i] = nil
+				continue
+			}
+			res.Prompts[i] = marshalSurlaLivePromptItemToLivePromptItemResponseBody(val)
+		}
+	} else {
+		res.Prompts = []*LivePromptItemResponseBody{}
+	}
+
+	return res
+}
+
+// marshalSurlaLivePromptItemToLivePromptItemResponseBody builds a value of
+// type *LivePromptItemResponseBody from a value of type *surla.LivePromptItem.
+func marshalSurlaLivePromptItemToLivePromptItemResponseBody(v *surla.LivePromptItem) *LivePromptItemResponseBody {
+	res := &LivePromptItemResponseBody{
+		PromptID:   v.PromptID,
+		Version:    v.Version,
+		AcceptedAt: v.AcceptedAt,
+	}
+
+	return res
+}
+
+// marshalSurlaLiveTargetNotConfirmedStoppedToLiveTargetNotConfirmedStoppedResponseBody
+// builds a value of type *LiveTargetNotConfirmedStoppedResponseBody from a
+// value of type *surla.LiveTargetNotConfirmedStopped.
+func marshalSurlaLiveTargetNotConfirmedStoppedToLiveTargetNotConfirmedStoppedResponseBody(v *surla.LiveTargetNotConfirmedStopped) *LiveTargetNotConfirmedStoppedResponseBody {
+	res := &LiveTargetNotConfirmedStoppedResponseBody{
+		CandidateCommit: v.CandidateCommit,
+		Message:         v.Message,
+	}
+
+	return res
+}
+
 // marshalSurlaVerificationRunningToVerificationRunningResponseBody builds a
 // value of type *VerificationRunningResponseBody from a value of type
 // *surla.VerificationRunning.
@@ -3949,6 +4100,35 @@ func unmarshalDesignSnapshotRequestBodyToSurlaDesignSnapshot(v *DesignSnapshotRe
 		tk := key
 		tv := val
 		res.Files[tk] = tv
+	}
+
+	return res
+}
+
+// marshalSurlaModelNoneToModelNoneResponseBody builds a value of type
+// *ModelNoneResponseBody from a value of type *surla.ModelNone.
+func marshalSurlaModelNoneToModelNoneResponseBody(v *surla.ModelNone) *ModelNoneResponseBody {
+	res := &ModelNoneResponseBody{}
+
+	return res
+}
+
+// marshalSurlaModelDirectToModelDirectResponseBody builds a value of type
+// *ModelDirectResponseBody from a value of type *surla.ModelDirect.
+func marshalSurlaModelDirectToModelDirectResponseBody(v *surla.ModelDirect) *ModelDirectResponseBody {
+	res := &ModelDirectResponseBody{
+		Provider:  v.Provider,
+		ModelName: v.ModelName,
+	}
+
+	return res
+}
+
+// marshalSurlaModelGatewayToModelGatewayResponseBody builds a value of type
+// *ModelGatewayResponseBody from a value of type *surla.ModelGateway.
+func marshalSurlaModelGatewayToModelGatewayResponseBody(v *surla.ModelGateway) *ModelGatewayResponseBody {
+	res := &ModelGatewayResponseBody{
+		GatewayAddr: v.GatewayAddr,
 	}
 
 	return res

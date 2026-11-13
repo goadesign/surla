@@ -393,6 +393,17 @@ type (
 		// fields describe the revision in force.
 		ProposedRevision *ProposedRevisionItem
 	}
+	// GetLiveTargetPayload defines the JSON payload for the surla.get_live_target tool.
+	GetLiveTargetPayload = struct {
+	}
+	// GetLiveTargetResult defines the JSON result for the surla.get_live_target tool.
+	GetLiveTargetResult = struct {
+		// none when no live target runs; starting while one is built and started;
+		// running with its commit, address, start time and the prompts whose drafts
+		// are in force; not_confirmed_stopped when its processes could not be
+		// confirmed stopped.
+		LiveTarget LiveTarget
+	}
 	// GetStoryRefreshPayload defines the JSON payload for the surla.get_story_refresh tool.
 	GetStoryRefreshPayload = struct {
 	}
@@ -1118,6 +1129,32 @@ type (
 		// report.
 		State string
 	}
+	// LivePromptItem is a nested type used by the generated JSON contract.
+	LivePromptItem = struct {
+		// Registered prompt identifier.
+		PromptID string
+		// Version of the text in force, as the live target returned it.
+		Version string
+		// When the live target accepted that text.
+		AcceptedAt string
+	}
+	// LiveTargetNone is a nested type used by the generated JSON contract.
+	LiveTargetNone = struct {
+	}
+	// LiveTargetNotConfirmedStopped is a nested type used by the generated JSON contract.
+	LiveTargetNotConfirmedStopped = struct {
+		// The commit it was built from.
+		CandidateCommit string
+		// What happened and what to do next.
+		Message string
+	}
+	// LiveTargetStarting is a nested type used by the generated JSON contract.
+	LiveTargetStarting = struct {
+		// The commit being built.
+		CandidateCommit string
+		// When the start began.
+		Since string
+	}
 	// ProposedRevisionItem is a nested type used by the generated JSON contract.
 	ProposedRevisionItem = struct {
 		// Operator feature request for this revision.
@@ -1157,6 +1194,18 @@ type (
 		Scenario string
 		// Hook method the test writer implements for the scenario.
 		Hook string
+	}
+	// RunningLiveTarget is a nested type used by the generated JSON contract.
+	RunningLiveTarget = struct {
+		// The commit it was built from.
+		CandidateCommit string
+		// The origin it listens on, as its evaluator suite reported it.
+		URL string
+		// When it became ready.
+		StartedAt string
+		// One entry per prompt whose draft it accepted, sorted by prompt_id; empty
+		// when none.
+		Prompts []*LivePromptItem
 	}
 	// StartedBuild is a nested type used by the generated JSON contract.
 	StartedBuild = struct {

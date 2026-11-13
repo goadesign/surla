@@ -32,21 +32,6 @@ import (
 	"github.com/goadesign/surla/verify/candidate"
 )
 
-// serveConfig is the live-model choice derived at startup or from configure_model.
-type serveConfig struct {
-	// gatewayAddr is the host:port of a Goa-AI model gateway reached over
-	// plaintext gRPC, passed to live targets as SURLA_LIVE_MODEL_GATEWAY. It
-	// excludes provider and modelName.
-	gatewayAddr string
-	// provider is "anthropic" or "openai" for direct provider calls, passed
-	// to live targets as SURLA_LIVE_MODEL_PROVIDER; it requires modelName and
-	// the provider's API key environment variable.
-	provider string
-	// modelName is the provider model identifier used in direct mode, passed
-	// to live targets as SURLA_LIVE_MODEL_NAME.
-	modelName string
-}
-
 // defaultCheckTimeout bounds one project check, including copy and containers.
 const defaultCheckTimeout = 20 * time.Minute
 
@@ -564,7 +549,7 @@ func projectServeOptions(
 	getenv func(string) string,
 	environ []string,
 ) (controlplane.Options, error) {
-	resolvedCfg := resolveStartupModelConfig(getenv)
+	startupModel := resolveStartupModel(getenv)
 
 	ws, err := configureProjectWorkspace(state)
 	if err != nil {
@@ -575,7 +560,8 @@ func projectServeOptions(
 		return controlplane.Options{}, err
 	}
 	live := &controlplane.LiveConfig{
-		Env: liveTargetEnv(environ, resolvedCfg),
+		Env:   liveTargetEnv(environ, startupModel),
+		Model: startupModel,
 	}
 	if ws.verification != nil {
 		live.Command = ws.verification.Command
@@ -636,18 +622,18 @@ func operatorGoProxyEnv(dir string) ([]string, error) {
 	return env, nil
 }
 
-// resolveStartupModelConfig selects the default direct provider from an operator API key.
-func resolveStartupModelConfig(getenv func(string) string) serveConfig {
-	var cfg serveConfig
+// resolveStartupModel selects the model choice the server starts with: the
+// default model of the first direct provider whose API key the operator's
+// environment holds, or none.
+func resolveStartupModel(getenv func(string) string) gensurla.Connection {
 	switch {
 	case strings.TrimSpace(getenv("ANTHROPIC_API_KEY")) != "":
-		cfg.provider = "anthropic"
-		cfg.modelName = defaultAnthropicModel
+		return gensurla.NewConnectionDirect(&gensurla.ModelDirect{Provider: "anthropic", ModelName: defaultAnthropicModel})
 	case strings.TrimSpace(getenv("OPENAI_API_KEY")) != "":
-		cfg.provider = "openai"
-		cfg.modelName = defaultOpenAIModel
+		return gensurla.NewConnectionDirect(&gensurla.ModelDirect{Provider: "openai", ModelName: defaultOpenAIModel})
+	default:
+		return gensurla.NewConnectionNone(&gensurla.ModelNone{})
 	}
-	return cfg
 }
 
 // newLiveModelEnv returns the LiveModelEnv callback configure_model uses to
@@ -655,42 +641,32 @@ func resolveStartupModelConfig(getenv func(string) string) serveConfig {
 // direct provider whose API key is missing from getenv is refused as
 // unprocessable, because the live target would inherit no key.
 func newLiveModelEnv(getenv func(string) string, environ []string) controlplane.LiveModelEnv {
-	return func(p *gensurla.ConfigureModelPayload) ([]string, error) {
-		var nextCfg serveConfig
-		if p.GatewayAddr != nil {
-			nextCfg.gatewayAddr = *p.GatewayAddr
-		}
-		if p.Provider != nil {
-			nextCfg.provider = *p.Provider
-		}
-		if p.ModelName != nil {
-			nextCfg.modelName = *p.ModelName
-		}
-		if nextCfg.provider != "" {
-			if env, ok := apiKeyEnv[nextCfg.provider]; ok && strings.TrimSpace(getenv(env)) == "" {
+	return func(choice gensurla.Connection) ([]string, error) {
+		if direct, ok := choice.AsDirect(); ok {
+			if env, ok := apiKeyEnv[direct.Provider]; ok && strings.TrimSpace(getenv(env)) == "" {
 				return nil, gensurla.MakeUnprocessable(fmt.Errorf(
 					"provider %s requires %s in the project server's environment; set %s and stop and start Surla, or call configure_model with gateway_addr to attach a running model gateway",
-					nextCfg.provider,
+					direct.Provider,
 					env,
 					env,
 				))
 			}
 		}
-		return liveTargetEnv(environ, nextCfg), nil
+		return liveTargetEnv(environ, choice), nil
 	}
 }
 
 // liveTargetEnv replaces inherited live-model variables with the server's chosen
 // provider/model or gateway. API keys remain in the inherited operator environment;
 // project credentials are never stored there.
-func liveTargetEnv(environ []string, cfg serveConfig) []string {
+func liveTargetEnv(environ []string, choice gensurla.Connection) []string {
 	derived := map[string]string{}
-	switch {
-	case cfg.gatewayAddr != "":
-		derived[liveModelGatewayEnv] = cfg.gatewayAddr
-	case cfg.provider != "":
-		derived[liveModelProviderEnv] = cfg.provider
-		derived[liveModelNameEnv] = cfg.modelName
+	if gateway, ok := choice.AsGateway(); ok {
+		derived[liveModelGatewayEnv] = gateway.GatewayAddr
+	}
+	if direct, ok := choice.AsDirect(); ok {
+		derived[liveModelProviderEnv] = direct.Provider
+		derived[liveModelNameEnv] = direct.ModelName
 	}
 	out := make([]string, 0, len(environ)+len(derived))
 	for _, kv := range environ {

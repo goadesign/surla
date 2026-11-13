@@ -1,7 +1,8 @@
 // This file tests runtime model configuration (`configure_model` /
 // `POST /cp1/model`): payload validation, refusal and fault classification
 // across Go, HTTP and MCP with their exported OpenTelemetry spans, and the
-// live-target environment (`liveEnv`) that a later start_live_target receives.
+// live-target environment (`liveEnv`) that a later start_live_target receives,
+// and the choice `get_model_connection` reports.
 
 package controlplane
 
@@ -9,9 +10,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 
@@ -47,6 +50,7 @@ func TestConfigureModelValidationTelemetryAndLiveEnv(t *testing.T) {
 
 	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
 	initialEnv := []string{"SURLA_LIVE_MODEL_PROVIDER=anthropic", "SURLA_LIVE_MODEL_NAME=claude-sonnet-4-6"}
+	initialModel := directModel("anthropic", "claude-sonnet-4-6")
 
 	t.Run("unauthenticated ConfigureModel is rejected before starting a span", func(t *testing.T) {
 		sr.Reset()
@@ -59,7 +63,7 @@ func TestConfigureModelValidationTelemetryAndLiveEnv(t *testing.T) {
 
 	t.Run("reconfiguration unavailable records refusal event without error status and keeps the live environment", func(t *testing.T) {
 		sr.Reset()
-		cp := newControlPlane(t, Options{Live: &LiveConfig{Env: initialEnv}})
+		cp := newControlPlane(t, Options{Live: &LiveConfig{Env: initialEnv, Model: initialModel}})
 		gw := "127.0.0.1:9090"
 		_, err := cp.ConfigureModel(alice, &gensurla.ConfigureModelPayload{GatewayAddr: &gw})
 		assertServiceError(t, err, "not_implemented")
@@ -78,8 +82,8 @@ func TestConfigureModelValidationTelemetryAndLiveEnv(t *testing.T) {
 	t.Run("payload and LiveModelEnv refusal vs fault classification across Go HTTP MCP and exported spans", func(t *testing.T) {
 		var envErr error
 		cp := newControlPlane(t, Options{
-			Live: &LiveConfig{Env: initialEnv},
-			LiveModelEnv: func(*gensurla.ConfigureModelPayload) ([]string, error) {
+			Live: &LiveConfig{Env: initialEnv, Model: initialModel},
+			LiveModelEnv: func(gensurla.Connection) ([]string, error) {
 				if envErr != nil {
 					return nil, envErr
 				}
@@ -198,16 +202,16 @@ func TestConfigureModelValidationTelemetryAndLiveEnv(t *testing.T) {
 		})
 
 		assert.Equal(t, initialEnv, cp.liveEnv(), "no refusal or fault changes the live-target environment")
+		read, err := cp.GetModelConnection(alice)
+		require.NoError(t, err)
+		assert.Equal(t, initialModel, read.Connection, "no refusal or fault changes the reported choice")
 	})
 
 	t.Run("successful provider and gateway transitions record bounded telemetry and preserve long accepted names", func(t *testing.T) {
 		cp := newControlPlane(t, Options{
-			Live: &LiveConfig{Env: initialEnv},
-			LiveModelEnv: func(p *gensurla.ConfigureModelPayload) ([]string, error) {
-				if p.GatewayAddr != nil {
-					return []string{"SURLA_LIVE_MODEL_GATEWAY=" + *p.GatewayAddr}, nil
-				}
-				return []string{"SURLA_LIVE_MODEL_PROVIDER=" + *p.Provider, "SURLA_LIVE_MODEL_NAME=" + *p.ModelName}, nil
+			Live: &LiveConfig{Env: initialEnv, Model: initialModel},
+			LiveModelEnv: func(choice gensurla.Connection) ([]string, error) {
+				return modelEnv(nil, choice), nil
 			},
 		})
 
@@ -226,6 +230,9 @@ func TestConfigureModelValidationTelemetryAndLiveEnv(t *testing.T) {
 		assert.Equal(t, longModelName, *res.ModelName)
 		assert.Nil(t, res.GatewayAddr)
 		assert.Equal(t, []string{"SURLA_LIVE_MODEL_PROVIDER=openai", "SURLA_LIVE_MODEL_NAME=" + longModelName}, cp.liveEnv())
+		read, err := cp.GetModelConnection(alice)
+		require.NoError(t, err)
+		assert.Equal(t, directModel("openai", longModelName), read.Connection, "the read reports the accepted choice")
 
 		cfgSpans := endedSpansByName(sr, "surla.controlplane.configure_model")
 		require.Len(t, cfgSpans, 1)
@@ -252,6 +259,9 @@ func TestConfigureModelValidationTelemetryAndLiveEnv(t *testing.T) {
 		require.True(t, ok)
 		assert.False(t, complete.IsError != nil && *complete.IsError)
 		assert.Equal(t, []string{"SURLA_LIVE_MODEL_GATEWAY=" + longGatewayAddr}, cp.liveEnv())
+		read, err = cp.GetModelConnection(alice)
+		require.NoError(t, err)
+		assert.Equal(t, gensurla.NewConnectionGateway(&gensurla.ModelGateway{GatewayAddr: longGatewayAddr}), read.Connection)
 
 		cfgSpans = endedSpansByName(sr, "surla.controlplane.configure_model")
 		require.Len(t, cfgSpans, 1)
@@ -287,13 +297,10 @@ func TestConfigureModelValidationTelemetryAndLiveEnv(t *testing.T) {
 					"SURLA_LIVE_MODEL_PROVIDER=anthropic",
 					"SURLA_LIVE_MODEL_NAME=claude-sonnet-4-6",
 				),
+				Model: directModel("anthropic", "claude-sonnet-4-6"),
 			},
-			LiveModelEnv: func(p *gensurla.ConfigureModelPayload) ([]string, error) {
-				base := append(os.Environ(), liveTargetModeEnv+"=serve")
-				if p.GatewayAddr != nil {
-					return append(base, "SURLA_LIVE_MODEL_GATEWAY="+*p.GatewayAddr), nil
-				}
-				return append(base, "SURLA_LIVE_MODEL_PROVIDER="+*p.Provider, "SURLA_LIVE_MODEL_NAME="+*p.ModelName), nil
+			LiveModelEnv: func(choice gensurla.Connection) ([]string, error) {
+				return modelEnv(append(os.Environ(), liveTargetModeEnv+"=serve"), choice), nil
 			},
 		})
 		require.NoError(t, err)
@@ -387,4 +394,88 @@ func assertSpanNeverContainsValue(t *testing.T, s sdktrace.ReadOnlySpan, forbidd
 	for _, ev := range s.Events() {
 		checkAttrs(ev.Attributes)
 	}
+}
+
+// TestModelConnectionReportsTheChoiceNeverTheEnvironment verifies that
+// get_model_connection reports none on a control plane without live
+// settings and the start-up choice with them, that its HTTP answer is the
+// declared choice and holds nothing of the environment the choice became,
+// including the provider key that environment carries, that no span the read
+// records holds the key or any environment value, and that New refuses live
+// settings that name no choice.
+func TestModelConnectionReportsTheChoiceNeverTheEnvironment(t *testing.T) {
+	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
+	read, err := newControlPlane(t, Options{}).GetModelConnection(alice)
+	require.NoError(t, err)
+	assert.Equal(t, noModel(), read.Connection, "without live settings no model is chosen")
+
+	const secret = "sk-test-secret-value"
+	choice := directModel("anthropic", "claude-x")
+	exporter := tracetest.NewInMemoryExporter()
+	provider := sdktrace.NewTracerProvider(sdktrace.WithSyncer(exporter))
+	t.Cleanup(func() { assert.NoError(t, provider.Shutdown(context.Background())) })
+	env := modelEnv([]string{"ANTHROPIC_API_KEY=" + secret, "PATH=/private/operator/bin"}, choice)
+	cp := newControlPlane(t, Options{TracerProvider: provider, Live: &LiveConfig{Env: env, Model: choice}})
+	read, err = cp.GetModelConnection(alice)
+	require.NoError(t, err)
+	assert.Equal(t, choice, read.Connection, "the start-up choice is reported")
+
+	srv := httptest.NewServer(NewHTTPHandler(cp, workflowAuthenticator(map[string]Principal{"tok": {ID: "alice@example.com"}})))
+	defer srv.Close()
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, srv.URL+"/cp1/model", nil)
+	require.NoError(t, err)
+	req.Header.Set("Authorization", "Bearer tok")
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	require.NoError(t, resp.Body.Close())
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	assert.JSONEq(t, `{"connection":{"kind":"direct","provider":"anthropic","model_name":"claude-x"}}`, string(body))
+	assert.NotContains(t, string(body), secret)
+	spans := exporter.GetSpans().Snapshots()
+	require.NotEmpty(t, endedSpans(spans, "surla.request.get_model_connection"), "the read records its request span")
+	for _, span := range spans {
+		for _, kv := range env {
+			_, value, _ := strings.Cut(kv, "=")
+			assertSpanNeverContainsValue(t, span, value)
+		}
+	}
+
+	_, err = New(Options{CardsDir: t.TempDir(), Live: &LiveConfig{}})
+	assert.ErrorContains(t, err, "Options.Live.Model must name the model choice")
+}
+
+// noModel returns the declared choice of no model.
+func noModel() gensurla.Connection {
+	return gensurla.NewConnectionNone(&gensurla.ModelNone{})
+}
+
+// directModel returns the declared choice of a direct provider and model.
+func directModel(provider, name string) gensurla.Connection {
+	return gensurla.NewConnectionDirect(&gensurla.ModelDirect{Provider: provider, ModelName: name})
+}
+
+// modelEnv returns base followed by the live-model variables choice becomes,
+// as the composition root derives them.
+func modelEnv(base []string, choice gensurla.Connection) []string {
+	env := slices.Clone(base)
+	if gateway, ok := choice.AsGateway(); ok {
+		env = append(env, "SURLA_LIVE_MODEL_GATEWAY="+gateway.GatewayAddr)
+	}
+	if direct, ok := choice.AsDirect(); ok {
+		env = append(env, "SURLA_LIVE_MODEL_PROVIDER="+direct.Provider, "SURLA_LIVE_MODEL_NAME="+direct.ModelName)
+	}
+	return env
+}
+
+// endedSpans returns the spans named name.
+func endedSpans(spans []sdktrace.ReadOnlySpan, name string) []sdktrace.ReadOnlySpan {
+	var out []sdktrace.ReadOnlySpan
+	for _, span := range spans {
+		if span.Name() == name {
+			out = append(out, span)
+		}
+	}
+	return out
 }

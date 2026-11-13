@@ -459,6 +459,23 @@ type (
 		// fields describe the revision in force.
 		ProposedRevision *ProposedRevisionItemTransport `json:"proposed_revision,omitempty"`
 	}
+	// GetLiveTargetPayloadTransport is the internal JSON transport type for GetLiveTargetPayload.
+	// It lives in the toolset-local http package and is used only for JSON
+	// decode + validation (missing-field detection) before transforming into
+	// the public tool type.
+	GetLiveTargetPayloadTransport struct {
+	}
+	// GetLiveTargetResultTransport is the internal JSON transport type for GetLiveTargetResult.
+	// It lives in the toolset-local http package and is used only for JSON
+	// decode + validation (missing-field detection) before transforming into
+	// the public tool type.
+	GetLiveTargetResultTransport struct {
+		// none when no live target runs; starting while one is built and started;
+		// running with its commit, address, start time and the prompts whose drafts
+		// are in force; not_confirmed_stopped when its processes could not be
+		// confirmed stopped.
+		LiveTarget *LiveTarget `json:"live_target"`
+	}
 	// GetStoryRefreshPayloadTransport is the internal JSON transport type for GetStoryRefreshPayload.
 	// It lives in the toolset-local http package and is used only for JSON
 	// decode + validation (missing-field detection) before transforming into
@@ -1352,6 +1369,44 @@ type (
 		// report.
 		State *string `json:"state"`
 	}
+	// LivePromptItemTransport is the internal JSON transport type for LivePromptItemTransport.
+	// It lives in the toolset-local http package and is used only for JSON
+	// decode + validation (missing-field detection) before transforming into
+	// the public tool type.
+	LivePromptItemTransport struct {
+		// Registered prompt identifier.
+		PromptID *string `json:"prompt_id"`
+		// Version of the text in force, as the live target returned it.
+		Version *string `json:"version"`
+		// When the live target accepted that text.
+		AcceptedAt *string `json:"accepted_at"`
+	}
+	// LiveTargetNoneTransport is the internal JSON transport type for LiveTargetNoneTransport.
+	// It lives in the toolset-local http package and is used only for JSON
+	// decode + validation (missing-field detection) before transforming into
+	// the public tool type.
+	LiveTargetNoneTransport struct {
+	}
+	// LiveTargetNotConfirmedStoppedTransport is the internal JSON transport type for LiveTargetNotConfirmedStoppedTransport.
+	// It lives in the toolset-local http package and is used only for JSON
+	// decode + validation (missing-field detection) before transforming into
+	// the public tool type.
+	LiveTargetNotConfirmedStoppedTransport struct {
+		// The commit it was built from.
+		CandidateCommit *string `json:"candidate_commit"`
+		// What happened and what to do next.
+		Message *string `json:"message"`
+	}
+	// LiveTargetStartingTransport is the internal JSON transport type for LiveTargetStartingTransport.
+	// It lives in the toolset-local http package and is used only for JSON
+	// decode + validation (missing-field detection) before transforming into
+	// the public tool type.
+	LiveTargetStartingTransport struct {
+		// The commit being built.
+		CandidateCommit *string `json:"candidate_commit"`
+		// When the start began.
+		Since *string `json:"since"`
+	}
 	// ProposedRevisionItemTransport is the internal JSON transport type for ProposedRevisionItemTransport.
 	// It lives in the toolset-local http package and is used only for JSON
 	// decode + validation (missing-field detection) before transforming into
@@ -1397,6 +1452,21 @@ type (
 		Scenario *string `json:"scenario"`
 		// Hook method the test writer implements for the scenario.
 		Hook *string `json:"hook"`
+	}
+	// RunningLiveTargetTransport is the internal JSON transport type for RunningLiveTargetTransport.
+	// It lives in the toolset-local http package and is used only for JSON
+	// decode + validation (missing-field detection) before transforming into
+	// the public tool type.
+	RunningLiveTargetTransport struct {
+		// The commit it was built from.
+		CandidateCommit *string `json:"candidate_commit"`
+		// The origin it listens on, as its evaluator suite reported it.
+		URL *string `json:"url"`
+		// When it became ready.
+		StartedAt *string `json:"started_at"`
+		// One entry per prompt whose draft it accepted, sorted by prompt_id; empty
+		// when none.
+		Prompts []*LivePromptItemTransport `json:"prompts"`
 	}
 	// StartedBuildTransport is the internal JSON transport type for StartedBuildTransport.
 	// It lives in the toolset-local http package and is used only for JSON

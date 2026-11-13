@@ -309,9 +309,27 @@ func (a *MCPAdapter) invokeMCPMethod8(ctx context.Context) (*surla.StopLiveTarge
 	return result, nil
 }
 
-// invokeMCPMethod9 sends validated input to the configured VerifyChange endpoint
+// invokeMCPMethod9 sends validated input to the configured GetLiveTarget endpoint
 // and returns its declared result. An unexpected Go type is an internal error.
-func (a *MCPAdapter) invokeMCPMethod9(ctx context.Context, payload *surla.VerifyChangePayload) (*surla.VerificationStatusResult, error) {
+func (a *MCPAdapter) invokeMCPMethod9(ctx context.Context) (*surla.LiveTargetStatus, error) {
+	// The original endpoint middleware observes its authored service and method.
+	ctx = context.WithValue(ctx, goa.ServiceKey, "surla")
+	ctx = context.WithValue(ctx, goa.MethodKey, "get_live_target")
+	raw, err := a.endpoints.GetLiveTarget(ctx, nil)
+	var zero *surla.LiveTargetStatus
+	if err != nil {
+		return zero, err
+	}
+	result, ok := raw.(*surla.LiveTargetStatus)
+	if !ok {
+		return zero, &endpointResultError{method: "GetLiveTarget"}
+	}
+	return result, nil
+}
+
+// invokeMCPMethod10 sends validated input to the configured VerifyChange endpoint
+// and returns its declared result. An unexpected Go type is an internal error.
+func (a *MCPAdapter) invokeMCPMethod10(ctx context.Context, payload *surla.VerifyChangePayload) (*surla.VerificationStatusResult, error) {
 	// The original endpoint middleware observes its authored service and method.
 	ctx = context.WithValue(ctx, goa.ServiceKey, "surla")
 	ctx = context.WithValue(ctx, goa.MethodKey, "verify_change")
@@ -327,9 +345,9 @@ func (a *MCPAdapter) invokeMCPMethod9(ctx context.Context, payload *surla.Verify
 	return result, nil
 }
 
-// invokeMCPMethod10 sends validated input to the configured GetVerification endpoint
+// invokeMCPMethod11 sends validated input to the configured GetVerification endpoint
 // and returns its declared result. An unexpected Go type is an internal error.
-func (a *MCPAdapter) invokeMCPMethod10(ctx context.Context, payload *surla.GetVerificationPayload) (*surla.VerificationStatusResult, error) {
+func (a *MCPAdapter) invokeMCPMethod11(ctx context.Context, payload *surla.GetVerificationPayload) (*surla.VerificationStatusResult, error) {
 	// The original endpoint middleware observes its authored service and method.
 	ctx = context.WithValue(ctx, goa.ServiceKey, "surla")
 	ctx = context.WithValue(ctx, goa.MethodKey, "get_verification")
@@ -345,9 +363,9 @@ func (a *MCPAdapter) invokeMCPMethod10(ctx context.Context, payload *surla.GetVe
 	return result, nil
 }
 
-// invokeMCPMethod11 sends validated input to the configured ListVerifications endpoint
+// invokeMCPMethod12 sends validated input to the configured ListVerifications endpoint
 // and returns its declared result. An unexpected Go type is an internal error.
-func (a *MCPAdapter) invokeMCPMethod11(ctx context.Context, payload *surla.ListVerificationsPayload) (*surla.VerificationListResult, error) {
+func (a *MCPAdapter) invokeMCPMethod12(ctx context.Context, payload *surla.ListVerificationsPayload) (*surla.VerificationListResult, error) {
 	// The original endpoint middleware observes its authored service and method.
 	ctx = context.WithValue(ctx, goa.ServiceKey, "surla")
 	ctx = context.WithValue(ctx, goa.MethodKey, "list_verifications")
@@ -363,9 +381,9 @@ func (a *MCPAdapter) invokeMCPMethod11(ctx context.Context, payload *surla.ListV
 	return result, nil
 }
 
-// invokeMCPMethod12 sends validated input to the configured ApproveMerge endpoint
+// invokeMCPMethod13 sends validated input to the configured ApproveMerge endpoint
 // and returns its declared result. An unexpected Go type is an internal error.
-func (a *MCPAdapter) invokeMCPMethod12(ctx context.Context, payload *surla.ApproveMergePayload) (*surla.ChangeCardResult, error) {
+func (a *MCPAdapter) invokeMCPMethod13(ctx context.Context, payload *surla.ApproveMergePayload) (*surla.ChangeCardResult, error) {
 	// The original endpoint middleware observes its authored service and method.
 	ctx = context.WithValue(ctx, goa.ServiceKey, "surla")
 	ctx = context.WithValue(ctx, goa.MethodKey, "approve_merge")
@@ -381,9 +399,9 @@ func (a *MCPAdapter) invokeMCPMethod12(ctx context.Context, payload *surla.Appro
 	return result, nil
 }
 
-// invokeMCPMethod13 sends validated input to the configured Diff endpoint
+// invokeMCPMethod14 sends validated input to the configured Diff endpoint
 // and returns its declared result. An unexpected Go type is an internal error.
-func (a *MCPAdapter) invokeMCPMethod13(ctx context.Context, payload *surla.DiffPayload) (*surla.DiffResult, error) {
+func (a *MCPAdapter) invokeMCPMethod14(ctx context.Context, payload *surla.DiffPayload) (*surla.DiffResult, error) {
 	// The original endpoint middleware observes its authored service and method.
 	ctx = context.WithValue(ctx, goa.ServiceKey, "surla")
 	ctx = context.WithValue(ctx, goa.MethodKey, "diff")
@@ -399,9 +417,9 @@ func (a *MCPAdapter) invokeMCPMethod13(ctx context.Context, payload *surla.DiffP
 	return result, nil
 }
 
-// invokeMCPMethod14 sends validated input to the configured ConfigureModel endpoint
+// invokeMCPMethod15 sends validated input to the configured ConfigureModel endpoint
 // and returns its declared result. An unexpected Go type is an internal error.
-func (a *MCPAdapter) invokeMCPMethod14(ctx context.Context, payload *surla.ConfigureModelPayload) (*surla.ModelConfigResult, error) {
+func (a *MCPAdapter) invokeMCPMethod15(ctx context.Context, payload *surla.ConfigureModelPayload) (*surla.ModelConfigResult, error) {
 	// The original endpoint middleware observes its authored service and method.
 	ctx = context.WithValue(ctx, goa.ServiceKey, "surla")
 	ctx = context.WithValue(ctx, goa.MethodKey, "configure_model")
@@ -417,9 +435,9 @@ func (a *MCPAdapter) invokeMCPMethod14(ctx context.Context, payload *surla.Confi
 	return result, nil
 }
 
-// invokeMCPMethod15 sends validated input to the configured InitProject endpoint
+// invokeMCPMethod16 sends validated input to the configured InitProject endpoint
 // and returns its declared result. An unexpected Go type is an internal error.
-func (a *MCPAdapter) invokeMCPMethod15(ctx context.Context, payload *surla.InitProjectPayload) (*surla.InitProjectResult, error) {
+func (a *MCPAdapter) invokeMCPMethod16(ctx context.Context, payload *surla.InitProjectPayload) (*surla.InitProjectResult, error) {
 	// The original endpoint middleware observes its authored service and method.
 	ctx = context.WithValue(ctx, goa.ServiceKey, "surla")
 	ctx = context.WithValue(ctx, goa.MethodKey, "init_project")
@@ -435,9 +453,9 @@ func (a *MCPAdapter) invokeMCPMethod15(ctx context.Context, payload *surla.InitP
 	return result, nil
 }
 
-// invokeMCPMethod16 sends validated input to the configured GenerateCode endpoint
+// invokeMCPMethod17 sends validated input to the configured GenerateCode endpoint
 // and returns its declared result. An unexpected Go type is an internal error.
-func (a *MCPAdapter) invokeMCPMethod16(ctx context.Context, payload *surla.GenerateCodePayload) (*surla.GenerateCodeResult, error) {
+func (a *MCPAdapter) invokeMCPMethod17(ctx context.Context, payload *surla.GenerateCodePayload) (*surla.GenerateCodeResult, error) {
 	// The original endpoint middleware observes its authored service and method.
 	ctx = context.WithValue(ctx, goa.ServiceKey, "surla")
 	ctx = context.WithValue(ctx, goa.MethodKey, "generate_code")
@@ -453,9 +471,9 @@ func (a *MCPAdapter) invokeMCPMethod16(ctx context.Context, payload *surla.Gener
 	return result, nil
 }
 
-// invokeMCPMethod17 sends validated input to the configured CheckProject endpoint
+// invokeMCPMethod18 sends validated input to the configured CheckProject endpoint
 // and returns its declared result. An unexpected Go type is an internal error.
-func (a *MCPAdapter) invokeMCPMethod17(ctx context.Context) (*surla.CheckProjectResult, error) {
+func (a *MCPAdapter) invokeMCPMethod18(ctx context.Context) (*surla.CheckProjectResult, error) {
 	// The original endpoint middleware observes its authored service and method.
 	ctx = context.WithValue(ctx, goa.ServiceKey, "surla")
 	ctx = context.WithValue(ctx, goa.MethodKey, "check_project")
@@ -471,9 +489,9 @@ func (a *MCPAdapter) invokeMCPMethod17(ctx context.Context) (*surla.CheckProject
 	return result, nil
 }
 
-// invokeMCPMethod18 sends validated input to the configured UpdateDependencies endpoint
+// invokeMCPMethod19 sends validated input to the configured UpdateDependencies endpoint
 // and returns its declared result. An unexpected Go type is an internal error.
-func (a *MCPAdapter) invokeMCPMethod18(ctx context.Context) (*surla.UpdateDependenciesResult, error) {
+func (a *MCPAdapter) invokeMCPMethod19(ctx context.Context) (*surla.UpdateDependenciesResult, error) {
 	// The original endpoint middleware observes its authored service and method.
 	ctx = context.WithValue(ctx, goa.ServiceKey, "surla")
 	ctx = context.WithValue(ctx, goa.MethodKey, "update_dependencies")
@@ -489,9 +507,9 @@ func (a *MCPAdapter) invokeMCPMethod18(ctx context.Context) (*surla.UpdateDepend
 	return result, nil
 }
 
-// invokeMCPMethod19 sends validated input to the configured ReadCheckOutput endpoint
+// invokeMCPMethod20 sends validated input to the configured ReadCheckOutput endpoint
 // and returns its declared result. An unexpected Go type is an internal error.
-func (a *MCPAdapter) invokeMCPMethod19(ctx context.Context, payload *surla.ReadCheckOutputPayload) (*surla.CheckOutputPage, error) {
+func (a *MCPAdapter) invokeMCPMethod20(ctx context.Context, payload *surla.ReadCheckOutputPayload) (*surla.CheckOutputPage, error) {
 	// The original endpoint middleware observes its authored service and method.
 	ctx = context.WithValue(ctx, goa.ServiceKey, "surla")
 	ctx = context.WithValue(ctx, goa.MethodKey, "read_check_output")
@@ -507,9 +525,9 @@ func (a *MCPAdapter) invokeMCPMethod19(ctx context.Context, payload *surla.ReadC
 	return result, nil
 }
 
-// invokeMCPMethod20 sends validated input to the configured ListTraces endpoint
+// invokeMCPMethod21 sends validated input to the configured ListTraces endpoint
 // and returns its declared result. An unexpected Go type is an internal error.
-func (a *MCPAdapter) invokeMCPMethod20(ctx context.Context, payload *surla.ListTracesPayload) (*surla.TraceList, error) {
+func (a *MCPAdapter) invokeMCPMethod21(ctx context.Context, payload *surla.ListTracesPayload) (*surla.TraceList, error) {
 	// The original endpoint middleware observes its authored service and method.
 	ctx = context.WithValue(ctx, goa.ServiceKey, "surla")
 	ctx = context.WithValue(ctx, goa.MethodKey, "list_traces")
@@ -525,9 +543,9 @@ func (a *MCPAdapter) invokeMCPMethod20(ctx context.Context, payload *surla.ListT
 	return result, nil
 }
 
-// invokeMCPMethod21 sends validated input to the configured RefreshStory endpoint
+// invokeMCPMethod22 sends validated input to the configured RefreshStory endpoint
 // and returns its declared result. An unexpected Go type is an internal error.
-func (a *MCPAdapter) invokeMCPMethod21(ctx context.Context) (*surla.StoryRefreshResult, error) {
+func (a *MCPAdapter) invokeMCPMethod22(ctx context.Context) (*surla.StoryRefreshResult, error) {
 	// The original endpoint middleware observes its authored service and method.
 	ctx = context.WithValue(ctx, goa.ServiceKey, "surla")
 	ctx = context.WithValue(ctx, goa.MethodKey, "refresh_story")
@@ -543,9 +561,9 @@ func (a *MCPAdapter) invokeMCPMethod21(ctx context.Context) (*surla.StoryRefresh
 	return result, nil
 }
 
-// invokeMCPMethod22 sends validated input to the configured GetStoryRefresh endpoint
+// invokeMCPMethod23 sends validated input to the configured GetStoryRefresh endpoint
 // and returns its declared result. An unexpected Go type is an internal error.
-func (a *MCPAdapter) invokeMCPMethod22(ctx context.Context) (*surla.StoryRefreshResult, error) {
+func (a *MCPAdapter) invokeMCPMethod23(ctx context.Context) (*surla.StoryRefreshResult, error) {
 	// The original endpoint middleware observes its authored service and method.
 	ctx = context.WithValue(ctx, goa.ServiceKey, "surla")
 	ctx = context.WithValue(ctx, goa.MethodKey, "get_story_refresh")
@@ -561,9 +579,9 @@ func (a *MCPAdapter) invokeMCPMethod22(ctx context.Context) (*surla.StoryRefresh
 	return result, nil
 }
 
-// invokeMCPMethod23 sends validated input to the configured ListChanges endpoint
+// invokeMCPMethod24 sends validated input to the configured ListChanges endpoint
 // and returns its declared result. An unexpected Go type is an internal error.
-func (a *MCPAdapter) invokeMCPMethod23(ctx context.Context) (*surla.ChangeList, error) {
+func (a *MCPAdapter) invokeMCPMethod24(ctx context.Context) (*surla.ChangeList, error) {
 	// The original endpoint middleware observes its authored service and method.
 	ctx = context.WithValue(ctx, goa.ServiceKey, "surla")
 	ctx = context.WithValue(ctx, goa.MethodKey, "list_changes")
@@ -579,9 +597,9 @@ func (a *MCPAdapter) invokeMCPMethod23(ctx context.Context) (*surla.ChangeList, 
 	return result, nil
 }
 
-// invokeMCPMethod24 sends validated input to the configured GetBuild endpoint
+// invokeMCPMethod25 sends validated input to the configured GetBuild endpoint
 // and returns its declared result. An unexpected Go type is an internal error.
-func (a *MCPAdapter) invokeMCPMethod24(ctx context.Context, payload *surla.GetBuildPayload) (*surla.ChangeBuild, error) {
+func (a *MCPAdapter) invokeMCPMethod25(ctx context.Context, payload *surla.GetBuildPayload) (*surla.ChangeBuild, error) {
 	// The original endpoint middleware observes its authored service and method.
 	ctx = context.WithValue(ctx, goa.ServiceKey, "surla")
 	ctx = context.WithValue(ctx, goa.MethodKey, "get_build")
@@ -597,9 +615,9 @@ func (a *MCPAdapter) invokeMCPMethod24(ctx context.Context, payload *surla.GetBu
 	return result, nil
 }
 
-// invokeMCPMethod25 sends validated input to the configured ListBuilderAssignments endpoint
+// invokeMCPMethod26 sends validated input to the configured ListBuilderAssignments endpoint
 // and returns its declared result. An unexpected Go type is an internal error.
-func (a *MCPAdapter) invokeMCPMethod25(ctx context.Context) (*surla.BuilderAssignmentList, error) {
+func (a *MCPAdapter) invokeMCPMethod26(ctx context.Context) (*surla.BuilderAssignmentList, error) {
 	// The original endpoint middleware observes its authored service and method.
 	ctx = context.WithValue(ctx, goa.ServiceKey, "surla")
 	ctx = context.WithValue(ctx, goa.MethodKey, "list_builder_assignments")
@@ -615,9 +633,9 @@ func (a *MCPAdapter) invokeMCPMethod25(ctx context.Context) (*surla.BuilderAssig
 	return result, nil
 }
 
-// invokeMCPMethod26 sends validated input to the configured GetBuilderAssignment endpoint
+// invokeMCPMethod27 sends validated input to the configured GetBuilderAssignment endpoint
 // and returns its declared result. An unexpected Go type is an internal error.
-func (a *MCPAdapter) invokeMCPMethod26(ctx context.Context, payload *surla.GetBuilderAssignmentPayload) (*surla.BuilderAssignment, error) {
+func (a *MCPAdapter) invokeMCPMethod27(ctx context.Context, payload *surla.GetBuilderAssignmentPayload) (*surla.BuilderAssignment, error) {
 	// The original endpoint middleware observes its authored service and method.
 	ctx = context.WithValue(ctx, goa.ServiceKey, "surla")
 	ctx = context.WithValue(ctx, goa.MethodKey, "get_builder_assignment")
@@ -633,9 +651,9 @@ func (a *MCPAdapter) invokeMCPMethod26(ctx context.Context, payload *surla.GetBu
 	return result, nil
 }
 
-// invokeMCPMethod27 sends validated input to the configured ListTestWriterAssignments endpoint
+// invokeMCPMethod28 sends validated input to the configured ListTestWriterAssignments endpoint
 // and returns its declared result. An unexpected Go type is an internal error.
-func (a *MCPAdapter) invokeMCPMethod27(ctx context.Context) (*surla.TestWriterAssignmentList, error) {
+func (a *MCPAdapter) invokeMCPMethod28(ctx context.Context) (*surla.TestWriterAssignmentList, error) {
 	// The original endpoint middleware observes its authored service and method.
 	ctx = context.WithValue(ctx, goa.ServiceKey, "surla")
 	ctx = context.WithValue(ctx, goa.MethodKey, "list_test_writer_assignments")
@@ -651,9 +669,9 @@ func (a *MCPAdapter) invokeMCPMethod27(ctx context.Context) (*surla.TestWriterAs
 	return result, nil
 }
 
-// invokeMCPMethod28 sends validated input to the configured GetTestWriterAssignment endpoint
+// invokeMCPMethod29 sends validated input to the configured GetTestWriterAssignment endpoint
 // and returns its declared result. An unexpected Go type is an internal error.
-func (a *MCPAdapter) invokeMCPMethod28(ctx context.Context, payload *surla.GetTestWriterAssignmentPayload) (*surla.TestWriterAssignment, error) {
+func (a *MCPAdapter) invokeMCPMethod29(ctx context.Context, payload *surla.GetTestWriterAssignmentPayload) (*surla.TestWriterAssignment, error) {
 	// The original endpoint middleware observes its authored service and method.
 	ctx = context.WithValue(ctx, goa.ServiceKey, "surla")
 	ctx = context.WithValue(ctx, goa.MethodKey, "get_test_writer_assignment")
@@ -669,9 +687,9 @@ func (a *MCPAdapter) invokeMCPMethod28(ctx context.Context, payload *surla.GetTe
 	return result, nil
 }
 
-// invokeMCPMethod29 sends validated input to the configured ReportTestsFinished endpoint
+// invokeMCPMethod30 sends validated input to the configured ReportTestsFinished endpoint
 // and returns its declared result. An unexpected Go type is an internal error.
-func (a *MCPAdapter) invokeMCPMethod29(ctx context.Context, payload *surla.ReportTestsFinishedPayload) (*surla.TestWriterAssignmentItem, error) {
+func (a *MCPAdapter) invokeMCPMethod30(ctx context.Context, payload *surla.ReportTestsFinishedPayload) (*surla.TestWriterAssignmentItem, error) {
 	// The original endpoint middleware observes its authored service and method.
 	ctx = context.WithValue(ctx, goa.ServiceKey, "surla")
 	ctx = context.WithValue(ctx, goa.MethodKey, "report_tests_finished")
@@ -687,9 +705,9 @@ func (a *MCPAdapter) invokeMCPMethod29(ctx context.Context, payload *surla.Repor
 	return result, nil
 }
 
-// invokeMCPMethod30 sends validated input to the configured GoldenPath endpoint
+// invokeMCPMethod31 sends validated input to the configured GoldenPath endpoint
 // and returns its declared result. An unexpected Go type is an internal error.
-func (a *MCPAdapter) invokeMCPMethod30(ctx context.Context) (string, error) {
+func (a *MCPAdapter) invokeMCPMethod31(ctx context.Context) (string, error) {
 	// The original endpoint middleware observes its authored service and method.
 	ctx = context.WithValue(ctx, goa.ServiceKey, "surla")
 	ctx = context.WithValue(ctx, goa.MethodKey, "golden_path")
@@ -793,6 +811,12 @@ func (a *MCPAdapter) ToolsList(ctx context.Context, p *ToolsListPayload) (*Tools
 			Description:  stringPtr("Read the current Checkpoint 1 Change Card, its request_revision, and any proposed revision waiting beside it."),
 			InputSchema:  json.RawMessage("{\"$defs\":{\"GetChangePayload\":{\"description\":\"Identifies the Change Card the authenticated owner wants to read.\",\"properties\":{\"change_id\":{\"description\":\"Change identifier.\",\"type\":\"string\"}},\"required\":[\"change_id\"],\"title\":\"GetChangePayload\",\"type\":\"object\"}},\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Identifies the Change Card the authenticated owner wants to read.\",\"properties\":{\"change_id\":{\"description\":\"Change identifier.\",\"type\":\"string\"}},\"required\":[\"change_id\"],\"title\":\"GetChangePayload\",\"type\":\"object\"}"),
 			OutputSchema: json.RawMessage("{\"$defs\":{\"AmbiguityQuestion\":{\"additionalProperties\":false,\"description\":\"Domain ambiguity surfaced with concrete examples at Checkpoint 1.\",\"properties\":{\"id\":{\"description\":\"Stable question identifier.\",\"type\":\"string\"},\"options\":{\"description\":\"Concrete resolution choices.\",\"items\":{\"type\":\"string\"},\"type\":\"array\"},\"question\":{\"description\":\"Plain-English question for the operator.\",\"type\":\"string\"}},\"required\":[\"id\",\"question\",\"options\"],\"title\":\"AmbiguityQuestion\",\"type\":\"object\"},\"ApprovalItem\":{\"additionalProperties\":false,\"description\":\"Checkpoint 5 approval recorded by approve_merge after the evaluator-written verification report passed and matched the change being promoted: the exact candidate commit, suite, environment and binary digests it checked. It is saved with the card in the control plane's cards directory, merges and deploys nothing, is replaced by the next successful approve_merge for the same revision, and is dropped when the user refines the confirmed revision or adopts a proposed one with confirm_intent. A revise_change on a confirmed card leaves it on the confirmed revision, which stays in force until the user adopts the proposal. get_change and confirm_intent return it in approval only while the promotion target's current suite, environment and binary digests still equal the ones it records, or in unverified_approval when current promotion inputs cannot be verified on that read.\",\"properties\":{\"approved_by\":{\"description\":\"User who approved the result.\",\"type\":\"string\"},\"artifacts\":{\"additionalProperties\":{\"type\":\"string\"},\"description\":\"SHA-256 digest of each candidate binary the promotion target measured, keyed by binary name.\",\"type\":\"object\"},\"candidate_commit\":{\"description\":\"Candidate commit the report was checked against.\",\"type\":\"string\"},\"environment\":{\"description\":\"Dependency profile the promotion target requires, such as sim.\",\"type\":\"string\"},\"report_digest\":{\"description\":\"SHA-256 digest of the approved CP4 verification report.\",\"type\":\"string\"},\"scenario_count\":{\"description\":\"Number of declared evaluator scenarios, every one of which passed.\",\"format\":\"int64\",\"type\":\"integer\"},\"suite_commit\":{\"description\":\"Evaluator suite commit the promotion target requires.\",\"type\":\"string\"},\"suite_id\":{\"description\":\"Evaluator suite the promotion target requires.\",\"type\":\"string\"}},\"required\":[\"approved_by\",\"report_digest\",\"candidate_commit\",\"suite_id\",\"suite_commit\",\"environment\",\"artifacts\",\"scenario_count\"],\"title\":\"ApprovalItem\",\"type\":\"object\"},\"ChangeCardResult\":{\"description\":\"Checkpoint 1 Change Card containing examples, preserved behaviors, optional adopted domain Stories, and audit metadata.\",\"properties\":{\"ambiguities\":{\"description\":\"Domain questions surfaced at CP1, retained for audit after confirmation.\",\"items\":{\"$ref\":\"#/$defs/AmbiguityQuestion\"},\"type\":\"array\"},\"answers\":{\"additionalProperties\":{\"type\":\"string\"},\"description\":\"Owner-confirmed answers keyed by ambiguity question ID when status is confirmed and ambiguities is non-empty (empty when a confirmed card has no ambiguity questions). Each answer equals one of its question's declared options and takes precedence over open phrasing in summary.\",\"type\":\"object\"},\"approval\":{\"$ref\":\"#/$defs/ApprovalItem\",\"description\":\"Checkpoint 5 approval of this revision, present only while it is verified against the promotion target's current inputs on this read. It is absent before approve_merge succeeds, whenever the target's suite, environment or binary digests have changed since, and whenever current inputs cannot be verified (see unverified_approval). It is never hashed into request_revision.\"},\"change_id\":{\"description\":\"Change identifier.\",\"type\":\"string\"},\"confirmed_by\":{\"description\":\"User who confirmed the Change Card.\",\"type\":\"string\"},\"examples\":{\"description\":\"Concrete examples mapped to evaluator checks.\",\"items\":{\"$ref\":\"#/$defs/ExampleItem\"},\"type\":\"array\"},\"preserved_behaviors\":{\"description\":\"Existing contract invariants preserved by this change.\",\"items\":{\"type\":\"string\"},\"type\":\"array\"},\"prompt\":{\"description\":\"Operator feature request for this revision.\",\"type\":\"string\"},\"proposed_revision\":{\"$ref\":\"#/$defs/ProposedRevisionItem\",\"description\":\"The revision the guide proposed beside this confirmed revision, while it waits for the user to adopt or decline it; absent otherwise. This card's own fields describe the revision in force.\"},\"request_revision\":{\"description\":\"SHA-256 digest of the canonical versioned Change Card.\",\"type\":\"string\"},\"status\":{\"description\":\"Checkpoint status (needs_confirmation or confirmed).\",\"enum\":[\"needs_confirmation\",\"confirmed\"],\"type\":\"string\"},\"stories\":{\"description\":\"Evaluated domain Stories adopted from refresh_story for this Change Card revision in declaration order; omitted when the card has no Stories. Included in request_revision.\",\"items\":{\"$ref\":\"#/$defs/StorySummaryItem\"},\"type\":\"array\"},\"summary\":{\"description\":\"Plain-English summary of the proposed change from propose_change or revise_change. confirm_intent does not rewrite this text; when status is confirmed, answers records the owner's resolutions for ambiguities.\",\"type\":\"string\"},\"ui_composition\":{\"$ref\":\"#/$defs/UICompositionItem\",\"description\":\"Decision view the caller composed for this revision in its analysis, when it sent one. A confirm_intent that changes answers or examples returns the new revision without it.\"},\"unverified_approval\":{\"$ref\":\"#/$defs/UnverifiedApprovalItem\",\"description\":\"Saved Checkpoint 5 approval of this revision when current promotion inputs could not be verified on this read (because no promotion target is configured or the target could not report its current inputs). At most one of approval or unverified_approval is set. It is never saved to disk or hashed into request_revision.\"}},\"required\":[\"change_id\",\"status\",\"prompt\",\"summary\",\"examples\",\"preserved_behaviors\",\"request_revision\"],\"title\":\"ChangeCardResult\",\"type\":\"object\"},\"ExampleItem\":{\"additionalProperties\":false,\"description\":\"Concrete input and expected outcome confirmed at Checkpoint 1.\",\"properties\":{\"expected_outcome\":{\"description\":\"Expected side effect and response behavior.\",\"type\":\"string\"},\"id\":{\"description\":\"Stable example identifier. Default code-assigned IDs use check_01, check_02, ... (valid goa-ai/eval Scenario names). confirm_intent preserves caller-chosen IDs.\",\"type\":\"string\"},\"input_summary\":{\"description\":\"Representative user request and domain fixture state.\",\"type\":\"string\"},\"scenario\":{\"description\":\"Plain-English scenario description.\",\"type\":\"string\"},\"verification_kind\":{\"description\":\"Evaluator check classification (deterministic or model_judged).\",\"enum\":[\"deterministic\",\"model_judged\"],\"type\":\"string\"}},\"required\":[\"id\",\"scenario\",\"input_summary\",\"expected_outcome\",\"verification_kind\"],\"title\":\"ExampleItem\",\"type\":\"object\"},\"ProposedRevisionItem\":{\"additionalProperties\":false,\"description\":\"A revision the guide proposed with revise_change beside the confirmed revision in force. It waits until the user adopts it, by answering its questions and confirming its request_revision with confirm_intent, or declines it with decline_revision. Until then the confirmed revision stays in force with its answers, confirmation, approval, Stories and design source, and architecture preview, verification and approval keep working on it. A later revise_change naming this request_revision replaces it.\",\"properties\":{\"ambiguities\":{\"description\":\"Domain questions the user answers when adopting this revision.\",\"items\":{\"$ref\":\"#/$defs/AmbiguityQuestion\"},\"type\":\"array\"},\"changed_design_files\":{\"description\":\"Paths of the design/*.go files that differ between the design source the confirmed revision was made from and the one this revision was made from (added, removed or changed), in path order; empty when both were made from the same design files. Adopting the revision binds it to its own design source.\",\"items\":{\"type\":\"string\"},\"type\":\"array\"},\"examples\":{\"description\":\"Concrete examples mapped to evaluator checks.\",\"items\":{\"$ref\":\"#/$defs/ExampleItem\"},\"type\":\"array\"},\"preserved_behaviors\":{\"description\":\"Existing contract invariants preserved by this change.\",\"items\":{\"type\":\"string\"},\"type\":\"array\"},\"prompt\":{\"description\":\"Operator feature request for this revision.\",\"type\":\"string\"},\"request_revision\":{\"description\":\"SHA-256 digest of this proposed revision: confirm_intent adopts it, decline_revision declines it, and revise_change replaces it when given this value.\",\"type\":\"string\"},\"stories\":{\"description\":\"Evaluated domain Stories of this revision in declaration order; omitted when it has none. Included in its request_revision.\",\"items\":{\"$ref\":\"#/$defs/StorySummaryItem\"},\"type\":\"array\"},\"summary\":{\"description\":\"Plain-English summary of the proposed change.\",\"type\":\"string\"},\"ui_composition\":{\"$ref\":\"#/$defs/UICompositionItem\",\"description\":\"Decision view the guide composed for this revision in its analysis, when it sent one.\"}},\"required\":[\"prompt\",\"summary\",\"examples\",\"preserved_behaviors\",\"request_revision\",\"changed_design_files\"],\"title\":\"ProposedRevisionItem\",\"type\":\"object\"},\"StoryActorItem\":{\"additionalProperties\":false,\"description\":\"Domain role declared in a Story in declaration order.\",\"properties\":{\"description\":{\"description\":\"Optional longer explanation of the actor role.\",\"type\":\"string\"},\"key\":{\"description\":\"Story-scoped actor key.\",\"type\":\"string\"},\"title\":{\"description\":\"Human-facing actor label.\",\"type\":\"string\"}},\"required\":[\"key\",\"title\"],\"title\":\"StoryActorItem\",\"type\":\"object\"},\"StoryFlowItem\":{\"additionalProperties\":false,\"description\":\"Ordered timeline path through a domain Story in declaration order.\",\"properties\":{\"complete\":{\"description\":\"True when the flow has a start, at least one outcome, and no open questions on the flow or any of its steps.\",\"type\":\"boolean\"},\"description\":{\"description\":\"Optional longer explanation of the flow.\",\"type\":\"string\"},\"key\":{\"description\":\"Story-scoped flow key.\",\"type\":\"string\"},\"questions\":{\"description\":\"Unresolved flow-level decisions in declaration order.\",\"items\":{\"$ref\":\"#/$defs/StoryQuestionItem\"},\"type\":\"array\"},\"steps\":{\"description\":\"Starting, intermediate, and outcome steps in declaration order.\",\"items\":{\"$ref\":\"#/$defs/StoryStepItem\"},\"type\":\"array\"},\"title\":{\"description\":\"Human-facing flow title.\",\"type\":\"string\"}},\"required\":[\"key\",\"title\",\"complete\",\"steps\",\"questions\"],\"title\":\"StoryFlowItem\",\"type\":\"object\"},\"StoryQuestionItem\":{\"additionalProperties\":false,\"description\":\"Unresolved decision attached to a Story flow or step in declaration order.\",\"properties\":{\"description\":{\"description\":\"Optional longer context for the question.\",\"type\":\"string\"},\"key\":{\"description\":\"Flow-scoped question key.\",\"type\":\"string\"},\"options\":{\"description\":\"Suggested choices in declaration order.\",\"items\":{\"type\":\"string\"},\"type\":\"array\"},\"prompt\":{\"description\":\"Human-facing question text.\",\"type\":\"string\"}},\"required\":[\"key\",\"prompt\",\"options\"],\"title\":\"StoryQuestionItem\",\"type\":\"object\"},\"StoryStepItem\":{\"additionalProperties\":false,\"description\":\"Starting event, intermediate action, or outcome in a Story flow in declaration order.\",\"properties\":{\"actor_key\":{\"description\":\"Story-scoped key of the actor performing or observing the step.\",\"type\":\"string\"},\"description\":{\"description\":\"Optional longer explanation of the step.\",\"type\":\"string\"},\"key\":{\"description\":\"Flow-scoped step key.\",\"type\":\"string\"},\"kind\":{\"description\":\"Step position in the flow: start, step, or outcome.\",\"enum\":[\"start\",\"step\",\"outcome\"],\"type\":\"string\"},\"questions\":{\"description\":\"Unresolved step-level decisions in declaration order.\",\"items\":{\"$ref\":\"#/$defs/StoryQuestionItem\"},\"type\":\"array\"},\"summary\":{\"description\":\"Timeline sticky-note sentence for the step.\",\"type\":\"string\"}},\"required\":[\"key\",\"actor_key\",\"summary\",\"kind\",\"questions\"],\"title\":\"StoryStepItem\",\"type\":\"object\"},\"StorySummaryItem\":{\"additionalProperties\":false,\"description\":\"Evaluated domain Story extracted from the bound workspace design in declaration order.\",\"properties\":{\"actors\":{\"description\":\"Domain roles declared in the Story in declaration order.\",\"items\":{\"$ref\":\"#/$defs/StoryActorItem\"},\"type\":\"array\"},\"description\":{\"description\":\"Optional longer explanation of the Story.\",\"type\":\"string\"},\"flows\":{\"description\":\"Timeline paths declared in the Story in declaration order.\",\"items\":{\"$ref\":\"#/$defs/StoryFlowItem\"},\"type\":\"array\"},\"name\":{\"description\":\"Human-facing Story title.\",\"type\":\"string\"}},\"required\":[\"name\",\"actors\",\"flows\"],\"title\":\"StorySummaryItem\",\"type\":\"object\"},\"UICompositionItem\":{\"additionalProperties\":false,\"description\":\"Caller-authored OpenUI Lang decision view for exactly one Change Card revision. It is presentation only: it is never hashed into request_revision, confirm_intent never reads it, and it describes the card only while composed_for_revision equals the card's request_revision.\",\"properties\":{\"composed_for_revision\":{\"description\":\"request_revision of the Change Card this program was composed for.\",\"type\":\"string\"},\"program\":{\"description\":\"OpenUI Lang program from the analysis's ui_composition, exactly as the caller sent it. The server does not check it; the views page validates it and shows its error state, with the rest of the card still usable, when the program is not a valid composition.\",\"type\":\"string\"}},\"required\":[\"program\",\"composed_for_revision\"],\"title\":\"UICompositionItem\",\"type\":\"object\"},\"UnverifiedApprovalItem\":{\"additionalProperties\":false,\"description\":\"Saved Checkpoint 5 promotion approval recorded on the Change Card whose current promotion inputs could not be verified on this read.\",\"properties\":{\"approval\":{\"$ref\":\"#/$defs/ApprovalItem\",\"description\":\"Recorded promotion approval from the Change Card.\"},\"reason\":{\"description\":\"Explanation of why the recorded approval could not be verified against current promotion inputs and how to recover.\",\"type\":\"string\"}},\"required\":[\"approval\",\"reason\"],\"title\":\"UnverifiedApprovalItem\",\"type\":\"object\"}},\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"Checkpoint 1 Change Card containing examples, preserved behaviors, optional adopted domain Stories, and audit metadata.\",\"properties\":{\"ambiguities\":{\"description\":\"Domain questions surfaced at CP1, retained for audit after confirmation.\",\"items\":{\"$ref\":\"#/$defs/AmbiguityQuestion\"},\"type\":\"array\"},\"answers\":{\"additionalProperties\":{\"type\":\"string\"},\"description\":\"Owner-confirmed answers keyed by ambiguity question ID when status is confirmed and ambiguities is non-empty (empty when a confirmed card has no ambiguity questions). Each answer equals one of its question's declared options and takes precedence over open phrasing in summary.\",\"type\":\"object\"},\"approval\":{\"$ref\":\"#/$defs/ApprovalItem\",\"description\":\"Checkpoint 5 approval of this revision, present only while it is verified against the promotion target's current inputs on this read. It is absent before approve_merge succeeds, whenever the target's suite, environment or binary digests have changed since, and whenever current inputs cannot be verified (see unverified_approval). It is never hashed into request_revision.\"},\"change_id\":{\"description\":\"Change identifier.\",\"type\":\"string\"},\"confirmed_by\":{\"description\":\"User who confirmed the Change Card.\",\"type\":\"string\"},\"examples\":{\"description\":\"Concrete examples mapped to evaluator checks.\",\"items\":{\"$ref\":\"#/$defs/ExampleItem\"},\"type\":\"array\"},\"preserved_behaviors\":{\"description\":\"Existing contract invariants preserved by this change.\",\"items\":{\"type\":\"string\"},\"type\":\"array\"},\"prompt\":{\"description\":\"Operator feature request for this revision.\",\"type\":\"string\"},\"proposed_revision\":{\"$ref\":\"#/$defs/ProposedRevisionItem\",\"description\":\"The revision the guide proposed beside this confirmed revision, while it waits for the user to adopt or decline it; absent otherwise. This card's own fields describe the revision in force.\"},\"request_revision\":{\"description\":\"SHA-256 digest of the canonical versioned Change Card.\",\"type\":\"string\"},\"status\":{\"description\":\"Checkpoint status (needs_confirmation or confirmed).\",\"enum\":[\"needs_confirmation\",\"confirmed\"],\"type\":\"string\"},\"stories\":{\"description\":\"Evaluated domain Stories adopted from refresh_story for this Change Card revision in declaration order; omitted when the card has no Stories. Included in request_revision.\",\"items\":{\"$ref\":\"#/$defs/StorySummaryItem\"},\"type\":\"array\"},\"summary\":{\"description\":\"Plain-English summary of the proposed change from propose_change or revise_change. confirm_intent does not rewrite this text; when status is confirmed, answers records the owner's resolutions for ambiguities.\",\"type\":\"string\"},\"ui_composition\":{\"$ref\":\"#/$defs/UICompositionItem\",\"description\":\"Decision view the caller composed for this revision in its analysis, when it sent one. A confirm_intent that changes answers or examples returns the new revision without it.\"},\"unverified_approval\":{\"$ref\":\"#/$defs/UnverifiedApprovalItem\",\"description\":\"Saved Checkpoint 5 approval of this revision when current promotion inputs could not be verified on this read (because no promotion target is configured or the target could not report its current inputs). At most one of approval or unverified_approval is set. It is never saved to disk or hashed into request_revision.\"}},\"required\":[\"change_id\",\"status\",\"prompt\",\"summary\",\"examples\",\"preserved_behaviors\",\"request_revision\"],\"title\":\"ChangeCardResult\",\"type\":\"object\"}"),
+		},
+		{
+			Name:         "get_live_target",
+			Description:  stringPtr("Report this server's live target. It changes nothing. It answers none; starting, with the commit being built; running, with its commit, its address, when it became ready and, for each prompt whose draft it accepted, the prompt identifier, the version in force and when it was accepted (never the text); or not_confirmed_stopped, with what to do next."),
+			InputSchema:  json.RawMessage("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"type\":\"object\",\"properties\":{},\"additionalProperties\":false}"),
+			OutputSchema: json.RawMessage("{\"$defs\":{\"LivePromptItem\":{\"additionalProperties\":false,\"description\":\"A prompt whose text the live target replaced with an accepted draft, and the version now in force. There is one entry per prompt: a later draft of the same prompt replaces it. The text itself is never returned.\",\"properties\":{\"accepted_at\":{\"description\":\"When the live target accepted that text.\",\"format\":\"date-time\",\"type\":\"string\"},\"prompt_id\":{\"description\":\"Registered prompt identifier.\",\"type\":\"string\"},\"version\":{\"description\":\"Version of the text in force, as the live target returned it.\",\"type\":\"string\"}},\"required\":[\"prompt_id\",\"version\",\"accepted_at\"],\"title\":\"LivePromptItem\",\"type\":\"object\"},\"LiveTargetStatus\":{\"description\":\"This server's live target, as get_live_target reports it.\",\"properties\":{\"live_target\":{\"description\":\"none when no live target runs; starting while one is built and started; running with its commit, address, start time and the prompts whose drafts are in force; not_confirmed_stopped when its processes could not be confirmed stopped.\",\"oneOf\":[{\"additionalProperties\":false,\"description\":\"No live target is running.\",\"properties\":{\"state\":{\"enum\":[\"none\"],\"type\":\"string\"}},\"required\":[\"state\"],\"type\":\"object\"},{\"additionalProperties\":false,\"description\":\"A live target is being built from a commit and started. It cannot be stopped until the start finishes.\",\"properties\":{\"candidate_commit\":{\"description\":\"The commit being built.\",\"type\":\"string\"},\"since\":{\"description\":\"When the start began.\",\"format\":\"date-time\",\"type\":\"string\"},\"state\":{\"enum\":[\"starting\"],\"type\":\"string\"}},\"required\":[\"candidate_commit\",\"since\",\"state\"],\"type\":\"object\"},{\"additionalProperties\":false,\"description\":\"A running live target.\",\"properties\":{\"candidate_commit\":{\"description\":\"The commit it was built from.\",\"type\":\"string\"},\"prompts\":{\"description\":\"One entry per prompt whose draft it accepted, sorted by prompt_id; empty when none.\",\"items\":{\"$ref\":\"#/$defs/LivePromptItem\"},\"type\":\"array\"},\"started_at\":{\"description\":\"When it became ready.\",\"format\":\"date-time\",\"type\":\"string\"},\"state\":{\"enum\":[\"running\"],\"type\":\"string\"},\"url\":{\"description\":\"The origin it listens on, as its evaluator suite reported it.\",\"type\":\"string\"}},\"required\":[\"candidate_commit\",\"url\",\"started_at\",\"prompts\",\"state\"],\"type\":\"object\"},{\"additionalProperties\":false,\"description\":\"A live target whose processes could not be confirmed stopped. No other live target can start until they are.\",\"properties\":{\"candidate_commit\":{\"description\":\"The commit it was built from.\",\"type\":\"string\"},\"message\":{\"description\":\"What happened and what to do next.\",\"type\":\"string\"},\"state\":{\"enum\":[\"not_confirmed_stopped\"],\"type\":\"string\"}},\"required\":[\"candidate_commit\",\"message\",\"state\"],\"type\":\"object\"}],\"type\":\"object\"}},\"required\":[\"live_target\"],\"title\":\"LiveTargetStatus\",\"type\":\"object\"}},\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"description\":\"This server's live target, as get_live_target reports it.\",\"properties\":{\"live_target\":{\"description\":\"none when no live target runs; starting while one is built and started; running with its commit, address, start time and the prompts whose drafts are in force; not_confirmed_stopped when its processes could not be confirmed stopped.\",\"oneOf\":[{\"additionalProperties\":false,\"description\":\"No live target is running.\",\"properties\":{\"state\":{\"enum\":[\"none\"],\"type\":\"string\"}},\"required\":[\"state\"],\"type\":\"object\"},{\"additionalProperties\":false,\"description\":\"A live target is being built from a commit and started. It cannot be stopped until the start finishes.\",\"properties\":{\"candidate_commit\":{\"description\":\"The commit being built.\",\"type\":\"string\"},\"since\":{\"description\":\"When the start began.\",\"format\":\"date-time\",\"type\":\"string\"},\"state\":{\"enum\":[\"starting\"],\"type\":\"string\"}},\"required\":[\"candidate_commit\",\"since\",\"state\"],\"type\":\"object\"},{\"additionalProperties\":false,\"description\":\"A running live target.\",\"properties\":{\"candidate_commit\":{\"description\":\"The commit it was built from.\",\"type\":\"string\"},\"prompts\":{\"description\":\"One entry per prompt whose draft it accepted, sorted by prompt_id; empty when none.\",\"items\":{\"$ref\":\"#/$defs/LivePromptItem\"},\"type\":\"array\"},\"started_at\":{\"description\":\"When it became ready.\",\"format\":\"date-time\",\"type\":\"string\"},\"state\":{\"enum\":[\"running\"],\"type\":\"string\"},\"url\":{\"description\":\"The origin it listens on, as its evaluator suite reported it.\",\"type\":\"string\"}},\"required\":[\"candidate_commit\",\"url\",\"started_at\",\"prompts\",\"state\"],\"type\":\"object\"},{\"additionalProperties\":false,\"description\":\"A live target whose processes could not be confirmed stopped. No other live target can start until they are.\",\"properties\":{\"candidate_commit\":{\"description\":\"The commit it was built from.\",\"type\":\"string\"},\"message\":{\"description\":\"What happened and what to do next.\",\"type\":\"string\"},\"state\":{\"enum\":[\"not_confirmed_stopped\"],\"type\":\"string\"}},\"required\":[\"candidate_commit\",\"message\",\"state\"],\"type\":\"object\"}],\"type\":\"object\"}},\"required\":[\"live_target\"],\"title\":\"LiveTargetStatus\",\"type\":\"object\"}"),
 		},
 		{
 			Name:         "get_story_refresh",
@@ -941,7 +965,7 @@ func (a *MCPAdapter) ToolsCall(ctx context.Context, p *ToolsCallPayload) (*Tools
 		if err != nil {
 			return toolCallError("invalid arguments: " + err.Error()), nil
 		}
-		result, err := a.invokeMCPMethod12(ctx, payload)
+		result, err := a.invokeMCPMethod13(ctx, payload)
 		if err != nil {
 			failure := a.mapError(err, isEndpointFault(err))
 			span.RecordError(failure.err)
@@ -966,7 +990,7 @@ func (a *MCPAdapter) ToolsCall(ctx context.Context, p *ToolsCallPayload) (*Tools
 		if err := validateNoArguments(p.Arguments); err != nil {
 			return toolCallError("invalid arguments: " + err.Error()), nil
 		}
-		result, err := a.invokeMCPMethod17(ctx)
+		result, err := a.invokeMCPMethod18(ctx)
 		if err != nil {
 			failure := a.mapError(err, isEndpointFault(err))
 			span.RecordError(failure.err)
@@ -996,7 +1020,7 @@ func (a *MCPAdapter) ToolsCall(ctx context.Context, p *ToolsCallPayload) (*Tools
 		if err != nil {
 			return toolCallError("invalid arguments: " + err.Error()), nil
 		}
-		result, err := a.invokeMCPMethod14(ctx, payload)
+		result, err := a.invokeMCPMethod15(ctx, payload)
 		if err != nil {
 			failure := a.mapError(err, isEndpointFault(err))
 			span.RecordError(failure.err)
@@ -1086,7 +1110,7 @@ func (a *MCPAdapter) ToolsCall(ctx context.Context, p *ToolsCallPayload) (*Tools
 		if err != nil {
 			return toolCallError("invalid arguments: " + err.Error()), nil
 		}
-		result, err := a.invokeMCPMethod13(ctx, payload)
+		result, err := a.invokeMCPMethod14(ctx, payload)
 		if err != nil {
 			failure := a.mapError(err, isEndpointFault(err))
 			span.RecordError(failure.err)
@@ -1146,7 +1170,7 @@ func (a *MCPAdapter) ToolsCall(ctx context.Context, p *ToolsCallPayload) (*Tools
 		if err != nil {
 			return toolCallError("invalid arguments: " + err.Error()), nil
 		}
-		result, err := a.invokeMCPMethod16(ctx, payload)
+		result, err := a.invokeMCPMethod17(ctx, payload)
 		if err != nil {
 			failure := a.mapError(err, isEndpointFault(err))
 			span.RecordError(failure.err)
@@ -1176,7 +1200,7 @@ func (a *MCPAdapter) ToolsCall(ctx context.Context, p *ToolsCallPayload) (*Tools
 		if err != nil {
 			return toolCallError("invalid arguments: " + err.Error()), nil
 		}
-		result, err := a.invokeMCPMethod24(ctx, payload)
+		result, err := a.invokeMCPMethod25(ctx, payload)
 		if err != nil {
 			failure := a.mapError(err, isEndpointFault(err))
 			span.RecordError(failure.err)
@@ -1206,7 +1230,7 @@ func (a *MCPAdapter) ToolsCall(ctx context.Context, p *ToolsCallPayload) (*Tools
 		if err != nil {
 			return toolCallError("invalid arguments: " + err.Error()), nil
 		}
-		result, err := a.invokeMCPMethod26(ctx, payload)
+		result, err := a.invokeMCPMethod27(ctx, payload)
 		if err != nil {
 			failure := a.mapError(err, isEndpointFault(err))
 			span.RecordError(failure.err)
@@ -1257,11 +1281,36 @@ func (a *MCPAdapter) ToolsCall(ctx context.Context, p *ToolsCallPayload) (*Tools
 			Content:           []*ContentItem{},
 			StructuredContent: json.RawMessage(encoded),
 		})}, nil
+	case "get_live_target":
+		if err := validateNoArguments(p.Arguments); err != nil {
+			return toolCallError("invalid arguments: " + err.Error()), nil
+		}
+		result, err := a.invokeMCPMethod9(ctx)
+		if err != nil {
+			failure := a.mapError(err, isEndpointFault(err))
+			span.RecordError(failure.err)
+			span.SetStatus(codes.Error, failure.err.Error())
+			if failure.internal {
+				return nil, failure.err
+			}
+			return toolCallError(failure.err.Error()), nil
+		}
+		encoded, err := mcpcodec.EncodeGetLiveTargetResult(result)
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+			return nil, goa.PermanentError("internal_error", "%s", err.Error())
+		}
+		return &ToolsCallResult{Outcome: NewToolsCallOutcomeComplete(&ToolsCallCompleteResult{
+			Meta:              resultMeta(),
+			Content:           []*ContentItem{},
+			StructuredContent: json.RawMessage(encoded),
+		})}, nil
 	case "get_story_refresh":
 		if err := validateNoArguments(p.Arguments); err != nil {
 			return toolCallError("invalid arguments: " + err.Error()), nil
 		}
-		result, err := a.invokeMCPMethod22(ctx)
+		result, err := a.invokeMCPMethod23(ctx)
 		if err != nil {
 			failure := a.mapError(err, isEndpointFault(err))
 			span.RecordError(failure.err)
@@ -1291,7 +1340,7 @@ func (a *MCPAdapter) ToolsCall(ctx context.Context, p *ToolsCallPayload) (*Tools
 		if err != nil {
 			return toolCallError("invalid arguments: " + err.Error()), nil
 		}
-		result, err := a.invokeMCPMethod28(ctx, payload)
+		result, err := a.invokeMCPMethod29(ctx, payload)
 		if err != nil {
 			failure := a.mapError(err, isEndpointFault(err))
 			span.RecordError(failure.err)
@@ -1321,7 +1370,7 @@ func (a *MCPAdapter) ToolsCall(ctx context.Context, p *ToolsCallPayload) (*Tools
 		if err != nil {
 			return toolCallError("invalid arguments: " + err.Error()), nil
 		}
-		result, err := a.invokeMCPMethod10(ctx, payload)
+		result, err := a.invokeMCPMethod11(ctx, payload)
 		if err != nil {
 			failure := a.mapError(err, isEndpointFault(err))
 			span.RecordError(failure.err)
@@ -1351,7 +1400,7 @@ func (a *MCPAdapter) ToolsCall(ctx context.Context, p *ToolsCallPayload) (*Tools
 		if err != nil {
 			return toolCallError("invalid arguments: " + err.Error()), nil
 		}
-		result, err := a.invokeMCPMethod15(ctx, payload)
+		result, err := a.invokeMCPMethod16(ctx, payload)
 		if err != nil {
 			failure := a.mapError(err, isEndpointFault(err))
 			span.RecordError(failure.err)
@@ -1376,7 +1425,7 @@ func (a *MCPAdapter) ToolsCall(ctx context.Context, p *ToolsCallPayload) (*Tools
 		if err := validateNoArguments(p.Arguments); err != nil {
 			return toolCallError("invalid arguments: " + err.Error()), nil
 		}
-		result, err := a.invokeMCPMethod25(ctx)
+		result, err := a.invokeMCPMethod26(ctx)
 		if err != nil {
 			failure := a.mapError(err, isEndpointFault(err))
 			span.RecordError(failure.err)
@@ -1401,7 +1450,7 @@ func (a *MCPAdapter) ToolsCall(ctx context.Context, p *ToolsCallPayload) (*Tools
 		if err := validateNoArguments(p.Arguments); err != nil {
 			return toolCallError("invalid arguments: " + err.Error()), nil
 		}
-		result, err := a.invokeMCPMethod23(ctx)
+		result, err := a.invokeMCPMethod24(ctx)
 		if err != nil {
 			failure := a.mapError(err, isEndpointFault(err))
 			span.RecordError(failure.err)
@@ -1426,7 +1475,7 @@ func (a *MCPAdapter) ToolsCall(ctx context.Context, p *ToolsCallPayload) (*Tools
 		if err := validateNoArguments(p.Arguments); err != nil {
 			return toolCallError("invalid arguments: " + err.Error()), nil
 		}
-		result, err := a.invokeMCPMethod27(ctx)
+		result, err := a.invokeMCPMethod28(ctx)
 		if err != nil {
 			failure := a.mapError(err, isEndpointFault(err))
 			span.RecordError(failure.err)
@@ -1456,7 +1505,7 @@ func (a *MCPAdapter) ToolsCall(ctx context.Context, p *ToolsCallPayload) (*Tools
 		if err != nil {
 			return toolCallError("invalid arguments: " + err.Error()), nil
 		}
-		result, err := a.invokeMCPMethod20(ctx, payload)
+		result, err := a.invokeMCPMethod21(ctx, payload)
 		if err != nil {
 			failure := a.mapError(err, isEndpointFault(err))
 			span.RecordError(failure.err)
@@ -1486,7 +1535,7 @@ func (a *MCPAdapter) ToolsCall(ctx context.Context, p *ToolsCallPayload) (*Tools
 		if err != nil {
 			return toolCallError("invalid arguments: " + err.Error()), nil
 		}
-		result, err := a.invokeMCPMethod11(ctx, payload)
+		result, err := a.invokeMCPMethod12(ctx, payload)
 		if err != nil {
 			failure := a.mapError(err, isEndpointFault(err))
 			span.RecordError(failure.err)
@@ -1576,7 +1625,7 @@ func (a *MCPAdapter) ToolsCall(ctx context.Context, p *ToolsCallPayload) (*Tools
 		if err != nil {
 			return toolCallError("invalid arguments: " + err.Error()), nil
 		}
-		result, err := a.invokeMCPMethod19(ctx, payload)
+		result, err := a.invokeMCPMethod20(ctx, payload)
 		if err != nil {
 			failure := a.mapError(err, isEndpointFault(err))
 			span.RecordError(failure.err)
@@ -1601,7 +1650,7 @@ func (a *MCPAdapter) ToolsCall(ctx context.Context, p *ToolsCallPayload) (*Tools
 		if err := validateNoArguments(p.Arguments); err != nil {
 			return toolCallError("invalid arguments: " + err.Error()), nil
 		}
-		result, err := a.invokeMCPMethod21(ctx)
+		result, err := a.invokeMCPMethod22(ctx)
 		if err != nil {
 			failure := a.mapError(err, isEndpointFault(err))
 			span.RecordError(failure.err)
@@ -1631,7 +1680,7 @@ func (a *MCPAdapter) ToolsCall(ctx context.Context, p *ToolsCallPayload) (*Tools
 		if err != nil {
 			return toolCallError("invalid arguments: " + err.Error()), nil
 		}
-		result, err := a.invokeMCPMethod29(ctx, payload)
+		result, err := a.invokeMCPMethod30(ctx, payload)
 		if err != nil {
 			failure := a.mapError(err, isEndpointFault(err))
 			span.RecordError(failure.err)
@@ -1741,7 +1790,7 @@ func (a *MCPAdapter) ToolsCall(ctx context.Context, p *ToolsCallPayload) (*Tools
 		if err := validateNoArguments(p.Arguments); err != nil {
 			return toolCallError("invalid arguments: " + err.Error()), nil
 		}
-		result, err := a.invokeMCPMethod18(ctx)
+		result, err := a.invokeMCPMethod19(ctx)
 		if err != nil {
 			failure := a.mapError(err, isEndpointFault(err))
 			span.RecordError(failure.err)
@@ -1771,7 +1820,7 @@ func (a *MCPAdapter) ToolsCall(ctx context.Context, p *ToolsCallPayload) (*Tools
 		if err != nil {
 			return toolCallError("invalid arguments: " + err.Error()), nil
 		}
-		result, err := a.invokeMCPMethod9(ctx, payload)
+		result, err := a.invokeMCPMethod10(ctx, payload)
 		if err != nil {
 			failure := a.mapError(err, isEndpointFault(err))
 			span.RecordError(failure.err)
@@ -1823,7 +1872,7 @@ func (a *MCPAdapter) ResourcesRead(ctx context.Context, p *ResourcesReadPayload)
 
 	switch p.URI {
 	case "surla://golden-path":
-		result, err := a.invokeMCPMethod30(ctx)
+		result, err := a.invokeMCPMethod31(ctx)
 		if err != nil {
 			span.RecordError(err)
 			span.SetStatus(codes.Error, err.Error())

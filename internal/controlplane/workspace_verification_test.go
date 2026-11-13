@@ -66,6 +66,7 @@ func TestLiveAndVerificationUseTheWorkspacePinnedSuite(t *testing.T) {
 				Command:      []string{self},
 				Env:          append(os.Environ(), liveTargetModeEnv+"=serve"),
 				StartTimeout: time.Minute,
+				Model:        noModel(),
 			},
 		}
 	}
