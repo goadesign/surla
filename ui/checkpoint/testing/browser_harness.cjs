@@ -464,7 +464,7 @@ async function phoneView(tab, selector) {
   for (let count = 0; count < 150; count++) {
     await tab.dt.send("Input.dispatchKeyEvent", { type: "keyDown", key: "Tab", code: "Tab", windowsVirtualKeyCode: 9 }, tab.sessionId);
     await tab.dt.send("Input.dispatchKeyEvent", { type: "keyUp", key: "Tab", code: "Tab", windowsVirtualKeyCode: 9 }, tab.sessionId);
-    const active = await evaluate(tab, "document.activeElement?.id || document.activeElement?.tagName || ''");
+    const active = await evaluate(tab, "document.activeElement?.id || (document.activeElement?.tagName === 'SUMMARY' ? 'SUMMARY:' + document.activeElement.textContent.trim() : document.activeElement?.tagName) || ''");
     if (first === null) first = active;
     else if (active === first) break;
     keyboard.add(active);
@@ -486,11 +486,11 @@ async function phoneView(tab, selector) {
         const box = node.getBoundingClientRect();
         return box.left < -1 || box.right > document.documentElement.clientWidth + 1 || node.scrollWidth > node.clientWidth + 1;
       }).map((node) => node.id || node.tagName + "." + node.className),
-      wrapped_long_text: Array.from(region?.querySelectorAll("p") || []).some((node) => {
+      wrapped_long_text: Array.from(region?.querySelectorAll("p, li") || []).some((node) => {
         if (node.textContent.length < 50) return false;
         const range = document.createRange();
         range.selectNodeContents(node);
-        return range.getClientRects().length > 1;
+        return new Set(Array.from(range.getClientRects(), (box) => box.top)).size > 1;
       }),
       long_text: region?.innerText || "",
     };
@@ -524,8 +524,36 @@ async function phoneScenario(input, facts, views) {
   await evaluate(views, "document.getElementById('surla-nav-changes').click(), true");
   await until(views, "document.getElementById('surla-open-change-phone-findings') !== null");
   await evaluate(views, "document.getElementById('surla-open-change-phone-findings').click(), true");
-  const findings = await until(views, "document.querySelector('#surla-build-test-writer[data-state=needs_changes]') !== null");
-  facts.phone.findings_hidden = !findings.timed_out && await evaluate(views, "!document.getElementById('surla-build-section').textContent.includes('phone-private-finding-must-not-render') && document.getElementById('surla-build-findings').textContent.includes('1 finding')");
+  const findings = await until(views, "document.querySelectorAll('#surla-build-findings li').length === 4 && document.querySelector('#surla-build-findings summary') !== null");
+  if (findings.timed_out) throw new Error("the user findings did not render");
+  // Use native keyboard activation to expand the disclosure before measuring.
+  await evaluate(views, "document.querySelector('#surla-build-findings summary').focus(), true");
+  await views.dt.send("Input.dispatchKeyEvent", { type: "keyDown", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13, text: "\r", unmodifiedText: "\r" }, views.sessionId);
+  await views.dt.send("Input.dispatchKeyEvent", { type: "keyUp", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13 }, views.sessionId);
+  facts.phone.findings_disclosure_opened = await evaluate(views, "document.querySelector('#surla-build-findings details').open");
+  await evaluate(views, "document.getElementById('surla-build-details').open = true");
+  facts.phone.findings = await phoneView(views, "#surla-build-section");
+  facts.phone.rendered_findings = await evaluate(views, "Array.from(document.querySelectorAll('#surla-build-findings li'), (node) => node.textContent)");
+  facts.phone.findings_wrapped = await evaluate(views, "Array.from(document.querySelectorAll('#surla-build-findings li')).every((node) => { const range = document.createRange(); range.selectNodeContents(node); return new Set(Array.from(range.getClientRects(), (box) => box.top)).size > 1; })");
+  // Read only the controlled fixture responses through the existing DevTools
+  // connection. The findings request is the page's own authenticated user read.
+  const findingRequests = views.requests.filter(to(input.origin, "GET", "/changes/phone-findings/build/findings"));
+  const buildRequests = views.requests.filter(to(input.origin, "GET", "/changes/phone-findings/build"));
+  facts.phone.findings_request_count = findingRequests.length;
+  const findingsRequest = findingRequests.at(-1);
+  const buildRequest = buildRequests.at(-1);
+  if (!findingsRequest || !buildRequest) throw new Error("the findings or build HTTP response is missing");
+  facts.phone.findings_status = findingsRequest.status;
+  facts.phone.build_status = buildRequest.status;
+  const findingBody = await views.dt.send("Network.getResponseBody", { requestId: findingsRequest.id }, views.sessionId);
+  const buildBody = await views.dt.send("Network.getResponseBody", { requestId: buildRequest.id }, views.sessionId);
+  if (findingBody.base64Encoded || buildBody.base64Encoded) throw new Error("expected JSON response text");
+  const responseFindings = JSON.parse(findingBody.body).findings;
+  const buildTests = JSON.parse(buildBody.body).build.test_writer.tests;
+  facts.phone.response_findings = responseFindings;
+  facts.phone.build_finding_count = buildTests.finding_count;
+  facts.phone.build_has_findings_field = Object.hasOwn(buildTests, "findings");
+  facts.phone.build_has_finding_text = responseFindings.some((text) => buildBody.body.includes(text));
 }
 
 // main runs the scenario. Each section names the Go subtest that judges it.

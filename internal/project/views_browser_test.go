@@ -263,11 +263,22 @@ type (
 
 	// phoneFacts records real layout and keyboard observations, not worker execution.
 	phoneFacts struct {
-		Team                  phoneViewFacts `json:"team"`
-		Build                 phoneViewFacts `json:"build"`
-		FindingsHidden        bool           `json:"findings_hidden"`
-		ConfirmationOpened    bool           `json:"confirmation_opened"`
-		ConfirmationCancelled bool           `json:"confirmation_cancelled"`
+		Team  phoneViewFacts `json:"team"`
+		Build phoneViewFacts `json:"build"`
+		// Findings includes the expanded user-only findings disclosure.
+		Findings                 phoneViewFacts `json:"findings"`
+		FindingsRequestCount     int            `json:"findings_request_count"`
+		FindingsStatus           int            `json:"findings_status"`
+		BuildStatus              int            `json:"build_status"`
+		BuildFindingCount        int            `json:"build_finding_count"`
+		BuildHasFindingsField    bool           `json:"build_has_findings_field"`
+		BuildHasFindingText      bool           `json:"build_has_finding_text"`
+		ResponseFindings         []string       `json:"response_findings"`
+		RenderedFindings         []string       `json:"rendered_findings"`
+		FindingsWrapped          bool           `json:"findings_wrapped"`
+		FindingsDisclosureOpened bool           `json:"findings_disclosure_opened"`
+		ConfirmationOpened       bool           `json:"confirmation_opened"`
+		ConfirmationCancelled    bool           `json:"confirmation_cancelled"`
 	}
 
 	// phoneViewFacts is one view with disclosures open and long text present.
@@ -630,6 +641,13 @@ func TestTeamAndBuildAtPhoneWidth(t *testing.T) {
 		}}}, now)
 	}
 	o.publish(t.Context(), now, false)
+	// These are layout inputs, not claims that a worker ran or a checker judged tests.
+	findingTexts := make([]string, 4)
+	for i := range findingTexts {
+		findingTexts[i] = fmt.Sprintf("Recorded finding %d: %s. %s", i+1,
+			strings.Repeat("unbrokenfinding", 24),
+			strings.Repeat("Exercise the preserved behavior before reporting the tests again. ", 3))
+	}
 	longReason := strings.Repeat("compilerdiagnostic", 24) + ": the recorded compiler result needs the project owner's attention."
 	for _, id := range []string{"phone-build", "phone-findings"} {
 		card := proposeChange(t, vp.state.Origin(), guide, id, "")
@@ -646,7 +664,7 @@ func TestTeamAndBuildAtPhoneWidth(t *testing.T) {
 		if id == "phone-findings" {
 			writer = map[string]any{
 				"state": "needs_changes", "read": true, "working_folder": vp.state.Record.Directory,
-				"findings": []string{"phone-private-finding-must-not-render"}, "commit": "", "checked_at": now.UTC(),
+				"findings": findingTexts, "commit": "", "checked_at": now.UTC(),
 			}
 		}
 		// Seed the strict owner format only before the browser starts reading. The
@@ -668,7 +686,7 @@ func TestTeamAndBuildAtPhoneWidth(t *testing.T) {
 		ChangeIDs: []string{"phone-build", "phone-findings"}, Phone: true,
 	})
 	t.Logf("browser: %s; phone observations: %+v", facts.Browser.Product, facts.Phone)
-	for name, view := range map[string]phoneViewFacts{"Team": facts.Phone.Team, "Build": facts.Phone.Build} {
+	for name, view := range map[string]phoneViewFacts{"Team": facts.Phone.Team, "Build": facts.Phone.Build, "Findings": facts.Phone.Findings} {
 		t.Run(name, func(t *testing.T) {
 			assert.True(t, view.Found)
 			assert.Equal(t, 375, view.ViewportWidth)
@@ -696,7 +714,21 @@ func TestTeamAndBuildAtPhoneWidth(t *testing.T) {
 	}
 	assert.True(t, facts.Phone.ConfirmationOpened, "Enter did not open the repeat-build question")
 	assert.True(t, facts.Phone.ConfirmationCancelled, "Escape did not cancel the repeat-build question")
-	assert.True(t, facts.Phone.FindingsHidden, "the older projection's finding text became visible")
+	assert.GreaterOrEqual(t, facts.Phone.FindingsRequestCount, 1, "the page never read user findings")
+	assert.Equal(t, http.StatusOK, facts.Phone.FindingsStatus)
+	assert.Equal(t, http.StatusOK, facts.Phone.BuildStatus)
+	assert.Equal(t, len(findingTexts), facts.Phone.BuildFindingCount)
+	assert.False(t, facts.Phone.BuildHasFindingsField, "get_build exposed a findings array")
+	assert.False(t, facts.Phone.BuildHasFindingText, "get_build exposed finding text")
+	assert.Equal(t, findingTexts, facts.Phone.ResponseFindings, "user findings HTTP response")
+	assert.Equal(t, findingTexts, facts.Phone.RenderedFindings, "expanded findings list")
+	assert.True(t, facts.Phone.FindingsWrapped, "each long finding must wrap")
+	assert.True(t, facts.Phone.FindingsDisclosureOpened, "Enter did not open the findings disclosure")
+	assert.Contains(t, facts.Phone.Findings.KeyboardControls, "SUMMARY:Read 4 findings")
+	for _, id := range []string{"surla-build-view-team", "surla-build-again"} {
+		assert.Contains(t, facts.Phone.Findings.Controls, id)
+		assert.Contains(t, facts.Phone.Findings.KeyboardControls, id)
+	}
 	assert.Contains(t, facts.Browser.UserAgent, "HeadlessChrome")
 	browser.stopAndCheck(t)
 }
