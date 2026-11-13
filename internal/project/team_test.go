@@ -406,7 +406,7 @@ func registerTestAgent(server *Server, handle, role, folder string) (*testAgent,
 func TestTeamResultNextStep(t *testing.T) {
 	for _, tc := range []struct{ dialog, step string }{
 		{"opened", "Choose an agent for each role in the open Chorus dialog in Herdr."},
-		{"already_open", `If the open Chorus dialog is for this project, click "Reload team", then choose the agents. If it is for another project, close it and run surla again.`},
+		{"already_open", `If the open Chorus dialog is for this project, click "Reload team", then choose the agents. If it is for another project, close it, then start the agents again (Start agents on the views page, or run surla).`},
 		{"not_needed", "Every listed role is running."},
 	} {
 		t.Run(tc.dialog, func(t *testing.T) {

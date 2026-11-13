@@ -1,5 +1,5 @@
 // This file lists the owner's saved Change Cards and lets the views page wait
-// until that list or the owner's Story evaluation changes.
+// until that list or the owner's displayed build, Story, team or target changes.
 package controlplane
 
 import (
@@ -41,9 +41,10 @@ const (
 // recently saved first (tie-broken by change_id), with the state of each
 // card's most recently accepted verification run, whether this server can
 // record approvals, and a version that changes whenever any listed value
-// changes, the owner's Story evaluation starts, finishes or is replaced, or
-// the live target starts, becomes ready, accepts a draft, ends or is
-// stopped. The model choice is not part of it. A card or run record that
+// changes, a build's get_build rendering changes, the owner's Story
+// evaluation starts, finishes or is replaced, or the live target starts,
+// becomes ready, accepts a draft, ends or is stopped. The model choice is not
+// part of it. A card, build or run record that
 // cannot be read fails the call rather than being left out of the list.
 func (c *ControlPlane) ListChanges(ctx context.Context) (*gensurla.ChangeList, error) {
 	principal, ok := PrincipalFromContext(ctx)
@@ -102,29 +103,51 @@ func (c *ControlPlane) WaitForChanges(
 	}
 }
 
-// changeList reads owner's saved cards and, when verification is configured,
-// the newest run of each of owner's changes in one pass over the runs
-// directory, then orders the cards by saved time, resolves whether approvals
-// can be recorded, and derives the list's version from both, from the
-// owner's current Story evaluation and from the live target, so the version
-// also changes when that evaluation starts, finishes or is replaced and when
-// the live target's case, commit, start time or prompt versions change.
-// Card files are
-// read under the control plane's read lock; run records, which verification
-// processes write without that lock, are read after it is released. When a
-// record cannot be read, the cause is recorded on span and the returned error
-// names only which kind of record failed. A promotion target that cannot be
-// resolved does not fail the list: it is recorded on span and approvals are
-// reported unavailable, as approve_merge refuses them.
+// changeList reads owner's cards and canonical get_build renderings under one
+// read lock, keeping only build digests for the version. It reads each change's
+// newest verification run in one pass after releasing the lock, since separate
+// processes write those records. The version also covers approval availability,
+// the owner's team and Story evaluation, and the live target.
+// An unreadable record fails the list: span keeps the cause and the returned
+// error names only the kind of record. A promotion target that cannot be
+// resolved keeps the list working with approvals unavailable, as approve_merge
+// refuses them; span records the cause.
 func (c *ControlPlane) changeList(ctx context.Context, span trace.Span, owner string) (*gensurla.ChangeList, error) {
 	c.mu.RLock()
 	records, err := c.cards.all()
-	c.mu.RUnlock()
 	if err != nil {
+		c.mu.RUnlock()
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "read change cards")
 		return nil, errors.New("list changes: saved change cards could not be read")
 	}
+	records = slices.DeleteFunc(records, func(r storedChangeCard) bool { return r.owner != owner })
+	slices.SortFunc(records, func(a, b storedChangeCard) int {
+		if byTime := b.savedAt.Compare(a.savedAt); byTime != 0 {
+			return byTime
+		}
+		return strings.Compare(a.card.ChangeID, b.card.ChangeID)
+	})
+	buildVersions := make([]string, 0, len(records))
+	for _, record := range records {
+		build, err := c.changeBuild(record)
+		if err != nil {
+			c.mu.RUnlock()
+			span.RecordError(err)
+			span.SetStatus(codes.Error, "read builds")
+			return nil, errors.New("list changes: saved builds could not be read")
+		}
+		raw, err := gensurla.EncodeChangeBuild(build)
+		if err != nil {
+			c.mu.RUnlock()
+			span.RecordError(err)
+			span.SetStatus(codes.Error, "encode builds")
+			return nil, errors.New("list changes: saved builds could not be encoded")
+		}
+		sum := sha256.Sum256(raw)
+		buildVersions = append(buildVersions, hex.EncodeToString(sum[:]))
+	}
+	c.mu.RUnlock()
 	var latest map[string]verifyrun.Run
 	if runsDir := c.runsDir; runsDir != "" {
 		latest, err = verifyrun.LatestByChange(runsDir, owner)
@@ -134,13 +157,6 @@ func (c *ControlPlane) changeList(ctx context.Context, span trace.Span, owner st
 			return nil, errors.New("list changes: saved verification records could not be read")
 		}
 	}
-	records = slices.DeleteFunc(records, func(r storedChangeCard) bool { return r.owner != owner })
-	slices.SortFunc(records, func(a, b storedChangeCard) int {
-		if byTime := b.savedAt.Compare(a.savedAt); byTime != 0 {
-			return byTime
-		}
-		return strings.Compare(a.card.ChangeID, b.card.ChangeID)
-	})
 	items := make([]*gensurla.ChangeListItem, 0, len(records))
 	for _, record := range records {
 		item := &gensurla.ChangeListItem{
@@ -173,11 +189,12 @@ func (c *ControlPlane) changeList(ctx context.Context, span trace.Span, owner st
 	}
 	raw, err := json.Marshal(struct {
 		Changes           []*gensurla.ChangeListItem `json:"changes"`
+		Builds            []string                   `json:"builds"`
 		ApprovalAvailable bool                       `json:"approval_available"`
 		Team              *gensurla.TeamSnapshot     `json:"team"`
 		StoryEvaluation   storyEvaluationVersion     `json:"story_evaluation"`
 		LiveTarget        liveTargetVersion          `json:"live_target"`
-	}{items, approvalAvailable, team, c.storyEvaluation(owner), c.liveTargetVersion()})
+	}{items, buildVersions, approvalAvailable, team, c.storyEvaluation(owner), c.liveTargetVersion()})
 	if err != nil {
 		err = fmt.Errorf("encode change list version: %w", err)
 		span.RecordError(err)

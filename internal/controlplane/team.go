@@ -7,8 +7,10 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"time"
 
+	genproject "github.com/goadesign/surla/gen/project"
 	gensurla "github.com/goadesign/surla/gen/surla"
 	"go.opentelemetry.io/otel/codes"
 )
@@ -77,13 +79,21 @@ func (c *ControlPlane) ShowTeamPane(ctx context.Context, p *gensurla.ShowTeamPan
 	return team.ShowPane(ctx, p.Role)
 }
 
-// StartTeamAgents uses exactly the project owner's existing repeatable team preparation.
+// StartTeamAgents uses the project owner's existing repeatable team preparation
+// and maps its typed space conflict to the user transport's actionable error.
 func (c *ControlPlane) StartTeamAgents(ctx context.Context) (*gensurla.ProjectTeam, error) {
 	team, err := c.ownedTeam(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return team.StartAgents(ctx)
+	result, err := team.StartAgents(ctx)
+	var conflict *genproject.TeamSpaceConflict
+	if errors.As(err, &conflict) {
+		return nil, gensurla.MakeAmbiguousSpace(fmt.Errorf(
+			"%d Herdr spaces match this project. %s", conflict.Count, duplicateTeamSpacesStep(),
+		))
+	}
+	return result, err
 }
 
 // buildFolders seals the builder-only case to this package.
@@ -189,4 +199,10 @@ func assignmentGeneration(identity any) (string, error) {
 	}
 	sum := sha256.Sum256(raw)
 	return hex.EncodeToString(sum[:]), nil
+}
+
+// duplicateTeamSpacesStep owns the recovery shared by user starts and saved builds.
+// Surla cannot select among matching spaces, so the duplicates must be closed first.
+func duplicateTeamSpacesStep() string {
+	return "Close the duplicate Herdr spaces, then start the agents."
 }

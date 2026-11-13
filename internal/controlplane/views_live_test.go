@@ -103,7 +103,7 @@ expect(page.$("#surla-model-name") === typed && typed.value === "typed-but-not-a
 const reads = page.sent("GET", "/live-target").length;
 const lists = page.sent("GET", "/changes").length;
 expect(reads <= lists + 1, "the live target was read " + reads + " times for " + lists + " list reads: it is read only when the version moves");
-const others = page.requests.filter((r) => !["/changes", "/change-updates", "/live-target", "/cp1/model", "/project/browser-session"].includes(r.path));
+const others = page.requests.filter((r) => !["/changes", "/change-updates", "/live-target", "/cp1/model", "/project/browser-session", "/team"].includes(r.path));
 expect(others.length === 0, "the page sent other requests: " + JSON.stringify(others.map((r) => r.method + " " + r.path)));
 const history = await api(origin, "GET", "/traces?status=all&limit=100", undefined, input.guide);
 expect(history.status === 200, "diagnostics could not be read: " + JSON.stringify(history));

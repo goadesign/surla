@@ -188,11 +188,12 @@ func (s *Server) teamSelection() TeamSelection {
 	return selection
 }
 
-// userTeamError translates the management transport's declared failures at this boundary.
+// userTeamError preserves the owner's typed space conflict and sanitizes other
+// management failures before the control plane chooses its user-facing transport.
 func userTeamError(err error) error {
 	var conflict *genproject.TeamSpaceConflict
 	if errors.As(err, &conflict) {
-		return &gensurla.TeamSpaceConflict{Name: conflict.Name, Count: conflict.Count}
+		return err
 	}
 	var domain *goa.ServiceError
 	if errors.As(err, &domain) && domain.Name == "window_busy" {

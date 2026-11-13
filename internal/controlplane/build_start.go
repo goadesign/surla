@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"time"
 
+	genproject "github.com/goadesign/surla/gen/project"
 	gensurla "github.com/goadesign/surla/gen/surla"
 	"github.com/goadesign/surla/internal/designeval"
 	"github.com/goadesign/surla/internal/shquote"
@@ -314,11 +315,11 @@ func buildTeamOutcome(team *gensurla.ProjectTeam, err error) gensurla.Team {
 	if err == nil {
 		return gensurla.NewTeamReady(team)
 	}
-	var spaces *gensurla.TeamSpaceConflict
+	var spaces *genproject.TeamSpaceConflict
 	if errors.As(err, &spaces) {
 		return gensurla.NewTeamAmbiguousSpace(&gensurla.BuildTeamAmbiguousSpace{
 			Count: spaces.Count,
-			Step:  "Choose this project's Herdr space, then start the team agents.",
+			Step:  gensurla.BuildStartStep(duplicateTeamSpacesStep()),
 		})
 	}
 	var unavailable *goa.ServiceError

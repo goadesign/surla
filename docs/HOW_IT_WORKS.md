@@ -13,8 +13,19 @@ space. The [team API](REFERENCE.md#team-supervision) gives the user each role's
 terminal state, watcher fact and unread-assignment fact. Unknown observations
 remain unknown; reading this picture never marks an assignment read. A revised
 request does not automatically clear an older build's unread assignments. Only the user can ask to show a pane or reopen the launcher.
-The views page does not display team supervision yet, and automatic reminder
-delivery is unavailable in the executable binding.
+The views page's **Team** view shows these separate observations and offers
+**Start agents** and role-specific **Show pane** controls. A role that needs you
+appears above every view. Failed reads retain facts labeled as last read;
+unknown observations remain unknown. Automatic reminder delivery is unavailable
+in the executable binding.
+
+After confirming a change, choose **Build this change** beside its summary.
+The page shows the saved build's revision, assignment reads, required Story test
+count and test-writer progress. It follows changes without reloading or losing
+unsaved edits. Building uses the agreed saved revision, including while a guide's
+proposal waits. **Build again** asks before replacing a current build and clearing
+its assignment reads and test-writer verdict; building a newly agreed revision
+directly replaces an earlier build. See [builds and assignments](REFERENCE.md#builds-and-assignments).
 
 ## Overview: Strict Separation of Powers
 

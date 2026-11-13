@@ -53,6 +53,10 @@ export interface ArchitecturePreviewResult {
   tools: ToolContractItem[];
 }
 
+export interface BuilderProgress {
+  read: boolean;
+}
+
 export interface BuilderVerificationReport {
   counts: VerificationCounts;
   passed: boolean;
@@ -72,6 +76,11 @@ export interface C4EdgeItem {
   from_id: string;
   protocol: string;
   to_id: string;
+}
+
+export interface ChangeBuild {
+  build: ({ "state": "not_started" } | { "builder": BuilderProgress; "in_force": boolean; "request_revision": string; "required_test_count": number; "started_at": string; "state": "started"; "test_writer": TestWriterProgress });
+  change_id: string;
 }
 
 export interface ChangeCardResult {
@@ -176,6 +185,20 @@ export interface PreviewArchitecturePayload {
   request_revision: string;
 }
 
+export interface ProjectTeam {
+  dialog: "opened" | "already_open" | "not_needed";
+  roles: ProjectTeamRole[];
+  space: string;
+  step: string;
+  team: string;
+}
+
+export interface ProjectTeamRole {
+  handle: string;
+  role: "guide" | "builder" | "test_writer";
+  running: boolean;
+}
+
 export interface ProposedRevisionItem {
   ambiguities?: AmbiguityQuestion[];
   changed_design_files: string[];
@@ -195,6 +218,29 @@ export interface ServerError {
   name: string;
   temporary: boolean;
   timeout: boolean;
+}
+
+export interface ShowTeamPaneRequestBody {
+  role: "guide" | "builder" | "test_writer";
+}
+
+export interface StartBuildRequestBody {
+  request_revision: string;
+}
+
+export interface StartBuildResult {
+  build: StartedBuild;
+  team: ({ "dialog": "opened" | "already_open" | "not_needed"; "roles": ProjectTeamRole[]; "space": string; "state": "ready"; "step": string; "team": string } | { "state": "window_busy"; "step": string } | { "count": number; "state": "ambiguous_space"; "step": string } | { "state": "unavailable"; "step": string });
+  working_copy: ({ "state": "not_used" } | { "commit": string; "state": "at_project_commit" } | { "commit": string; "state": "not_contained"; "step": string } | { "commit": string; "state": "dirty" });
+}
+
+export interface StartedBuild {
+  builder: BuilderProgress;
+  in_force: boolean;
+  request_revision: string;
+  required_test_count: number;
+  started_at: string;
+  test_writer: TestWriterProgress;
 }
 
 export interface StopLiveTargetResult {
@@ -247,6 +293,35 @@ export interface StorySummaryItem {
   description?: string;
   flows: StoryFlowItem[];
   name: string;
+}
+
+export interface TeamRoleState {
+  assignment: "unread" | "nothing_owed" | "unknown";
+  attention: "none" | "permission" | "question" | "auth" | "silent" | "unknown";
+  handle: string;
+  role: "guide" | "builder" | "test_writer";
+  state: "not_started" | "ended" | "starting" | "needs_you" | "working" | "waiting" | "error" | "unknown";
+  watcher: "held" | "gone" | "unknown";
+}
+
+export interface TeamSnapshot {
+  roles: TeamRoleState[];
+  team: string;
+}
+
+export interface TestFindings {
+  change_id: string;
+  checked_at: string;
+  findings: string[];
+  report: number;
+  request_revision: string;
+  started_at: string;
+}
+
+export interface TestWriterProgress {
+  read: boolean;
+  report: number;
+  tests: ({ "state": "not_used" } | { "state": "assigned" } | { "state": "reported" } | { "checked_at": string; "finding_count": number; "state": "needs_changes" } | { "checked_at": string; "commit": string; "not_judged": "Surla checked that these tests build into the generated test program and declare every required scenario; it did not judge what they assert."; "state": "accepted" } | { "checked_at": string; "reason": string; "state": "could_not_run"; "step": string });
 }
 
 export interface ToolContractItem {
@@ -369,6 +444,22 @@ export interface GetChangeRequest {
 
 export type GetStoryRefreshRequest = Record<string, never>;
 
+export type StartBuildRequest = StartBuildRequestBody & { "change_id": string };
+
+export interface GetBuildRequest {
+  "change_id": string;
+}
+
+export interface GetTestFindingsRequest {
+  "change_id": string;
+}
+
+export type GetTeamRequest = Record<string, never>;
+
+export type ShowTeamPaneRequest = ShowTeamPaneRequestBody;
+
+export type StartTeamAgentsRequest = Record<string, never>;
+
 export type ConfirmIntentRequest = ConfirmIntentPayload;
 
 export type DeclineRevisionRequest = DeclineRevisionPayload;
@@ -406,6 +497,12 @@ export interface Operations {
   wait_for_changes: { request: WaitForChangesRequest; result: ChangeListVersion };
   get_change: { request: GetChangeRequest; result: ChangeCardResult };
   get_story_refresh: { request: GetStoryRefreshRequest; result: StoryRefreshResult };
+  start_build: { request: StartBuildRequest; result: StartBuildResult };
+  get_build: { request: GetBuildRequest; result: ChangeBuild };
+  get_test_findings: { request: GetTestFindingsRequest; result: TestFindings };
+  get_team: { request: GetTeamRequest; result: TeamSnapshot };
+  show_team_pane: { request: ShowTeamPaneRequest; result: undefined };
+  start_team_agents: { request: StartTeamAgentsRequest; result: ProjectTeam };
   confirm_intent: { request: ConfirmIntentRequest; result: ChangeCardResult };
   decline_revision: { request: DeclineRevisionRequest; result: ChangeCardResult };
   approve_merge: { request: ApproveMergeRequest; result: ChangeCardResult };
@@ -463,6 +560,31 @@ function encodeGetChange(request: GetChangeRequest): EncodedRequest {
 
 function encodeGetStoryRefresh(_request: GetStoryRefreshRequest): EncodedRequest {
   return { path: "/workspace/story/refresh", body: undefined };
+}
+
+function encodeStartBuild(request: StartBuildRequest): EncodedRequest {
+  const { change_id: _change_id, ...payload } = request;
+  return { path: "/changes/" + encodeURIComponent(String(request.change_id)) + "/build", body: JSON.stringify(payload) };
+}
+
+function encodeGetBuild(request: GetBuildRequest): EncodedRequest {
+  return { path: "/changes/" + encodeURIComponent(String(request.change_id)) + "/build", body: undefined };
+}
+
+function encodeGetTestFindings(request: GetTestFindingsRequest): EncodedRequest {
+  return { path: "/changes/" + encodeURIComponent(String(request.change_id)) + "/build/findings", body: undefined };
+}
+
+function encodeGetTeam(_request: GetTeamRequest): EncodedRequest {
+  return { path: "/team", body: undefined };
+}
+
+function encodeShowTeamPane(request: ShowTeamPaneRequest): EncodedRequest {
+  return { path: "/team/pane", body: JSON.stringify(request) };
+}
+
+function encodeStartTeamAgents(_request: StartTeamAgentsRequest): EncodedRequest {
+  return { path: "/team/agents", body: undefined };
 }
 
 function encodeConfirmIntent(request: ConfirmIntentRequest): EncodedRequest {
@@ -527,6 +649,12 @@ export const ROUTES: { [K in OperationName]: Route<K> } = {
   wait_for_changes: { method: "GET", success: 200, encode: encodeWaitForChanges, decode: isChangeListVersion },
   get_change: { method: "GET", success: 200, encode: encodeGetChange, decode: isChangeCardResult },
   get_story_refresh: { method: "GET", success: 200, encode: encodeGetStoryRefresh, decode: isStoryRefreshResult },
+  start_build: { method: "POST", success: 200, encode: encodeStartBuild, decode: isStartBuildResult },
+  get_build: { method: "GET", success: 200, encode: encodeGetBuild, decode: isChangeBuild },
+  get_test_findings: { method: "GET", success: 200, encode: encodeGetTestFindings, decode: isTestFindings },
+  get_team: { method: "GET", success: 200, encode: encodeGetTeam, decode: isTeamSnapshot },
+  show_team_pane: { method: "POST", success: 204, encode: encodeShowTeamPane, decode: isNoContent },
+  start_team_agents: { method: "POST", success: 200, encode: encodeStartTeamAgents, decode: isProjectTeam },
   confirm_intent: { method: "POST", success: 200, encode: encodeConfirmIntent, decode: isChangeCardResult },
   decline_revision: { method: "POST", success: 200, encode: encodeDeclineRevision, decode: isChangeCardResult },
   approve_merge: { method: "POST", success: 200, encode: encodeApproveMerge, decode: isChangeCardResult },
@@ -542,6 +670,8 @@ export const ROUTES: { [K in OperationName]: Route<K> } = {
 
 interface JSONSchemaNode {
   type?: string;
+  minimum?: number;
+  maximum?: number;
   $ref?: string;
   enum?: string[];
   format?: "date-time";
@@ -739,6 +869,18 @@ const SCHEMA_DEFS: Record<string, JSONSchemaNode> = {
     },
     "additionalProperties": false
   },
+  "BuilderProgress": {
+    "type": "object",
+    "required": [
+      "read"
+    ],
+    "properties": {
+      "read": {
+        "type": "boolean"
+      }
+    },
+    "additionalProperties": false
+  },
   "BuilderVerificationReport": {
     "type": "object",
     "required": [
@@ -818,6 +960,80 @@ const SCHEMA_DEFS: Record<string, JSONSchemaNode> = {
         "type": "string"
       },
       "to_id": {
+        "type": "string"
+      }
+    },
+    "additionalProperties": false
+  },
+  "ChangeBuild": {
+    "type": "object",
+    "required": [
+      "change_id",
+      "build"
+    ],
+    "properties": {
+      "build": {
+        "type": "object",
+        "anyOf": [
+          {
+            "type": "object",
+            "required": [
+              "state"
+            ],
+            "properties": {
+              "state": {
+                "type": "string",
+                "enum": [
+                  "not_started"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "request_revision",
+              "started_at",
+              "in_force",
+              "builder",
+              "test_writer",
+              "required_test_count",
+              "state"
+            ],
+            "properties": {
+              "builder": {
+                "$ref": "#/$defs/BuilderProgress"
+              },
+              "in_force": {
+                "type": "boolean"
+              },
+              "request_revision": {
+                "type": "string"
+              },
+              "required_test_count": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "started_at": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "state": {
+                "type": "string",
+                "enum": [
+                  "started"
+                ]
+              },
+              "test_writer": {
+                "$ref": "#/$defs/TestWriterProgress"
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
+      },
+      "change_id": {
         "type": "string"
       }
     },
@@ -1361,6 +1577,67 @@ const SCHEMA_DEFS: Record<string, JSONSchemaNode> = {
     },
     "additionalProperties": false
   },
+  "ProjectTeam": {
+    "type": "object",
+    "required": [
+      "team",
+      "space",
+      "roles",
+      "dialog",
+      "step"
+    ],
+    "properties": {
+      "dialog": {
+        "type": "string",
+        "enum": [
+          "opened",
+          "already_open",
+          "not_needed"
+        ]
+      },
+      "roles": {
+        "type": "array",
+        "items": {
+          "$ref": "#/$defs/ProjectTeamRole"
+        }
+      },
+      "space": {
+        "type": "string"
+      },
+      "step": {
+        "type": "string"
+      },
+      "team": {
+        "type": "string"
+      }
+    },
+    "additionalProperties": false
+  },
+  "ProjectTeamRole": {
+    "type": "object",
+    "required": [
+      "role",
+      "handle",
+      "running"
+    ],
+    "properties": {
+      "handle": {
+        "type": "string"
+      },
+      "role": {
+        "type": "string",
+        "enum": [
+          "guide",
+          "builder",
+          "test_writer"
+        ]
+      },
+      "running": {
+        "type": "boolean"
+      }
+    },
+    "additionalProperties": false
+  },
   "ProposedRevisionItem": {
     "type": "object",
     "required": [
@@ -1445,6 +1722,274 @@ const SCHEMA_DEFS: Record<string, JSONSchemaNode> = {
       },
       "timeout": {
         "type": "boolean"
+      }
+    },
+    "additionalProperties": false
+  },
+  "ShowTeamPaneRequestBody": {
+    "type": "object",
+    "required": [
+      "role"
+    ],
+    "properties": {
+      "role": {
+        "type": "string",
+        "enum": [
+          "guide",
+          "builder",
+          "test_writer"
+        ]
+      }
+    },
+    "additionalProperties": false
+  },
+  "StartBuildRequestBody": {
+    "type": "object",
+    "required": [
+      "request_revision"
+    ],
+    "properties": {
+      "request_revision": {
+        "type": "string"
+      }
+    },
+    "additionalProperties": false
+  },
+  "StartBuildResult": {
+    "type": "object",
+    "required": [
+      "build",
+      "team",
+      "working_copy"
+    ],
+    "properties": {
+      "build": {
+        "$ref": "#/$defs/StartedBuild"
+      },
+      "team": {
+        "type": "object",
+        "anyOf": [
+          {
+            "type": "object",
+            "required": [
+              "team",
+              "space",
+              "roles",
+              "dialog",
+              "step",
+              "state"
+            ],
+            "properties": {
+              "dialog": {
+                "type": "string",
+                "enum": [
+                  "opened",
+                  "already_open",
+                  "not_needed"
+                ]
+              },
+              "roles": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/ProjectTeamRole"
+                }
+              },
+              "space": {
+                "type": "string"
+              },
+              "state": {
+                "type": "string",
+                "enum": [
+                  "ready"
+                ]
+              },
+              "step": {
+                "type": "string"
+              },
+              "team": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "step",
+              "state"
+            ],
+            "properties": {
+              "state": {
+                "type": "string",
+                "enum": [
+                  "window_busy"
+                ]
+              },
+              "step": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "count",
+              "step",
+              "state"
+            ],
+            "properties": {
+              "count": {
+                "type": "integer",
+                "minimum": 2
+              },
+              "state": {
+                "type": "string",
+                "enum": [
+                  "ambiguous_space"
+                ]
+              },
+              "step": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "step",
+              "state"
+            ],
+            "properties": {
+              "state": {
+                "type": "string",
+                "enum": [
+                  "unavailable"
+                ]
+              },
+              "step": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
+      },
+      "working_copy": {
+        "type": "object",
+        "anyOf": [
+          {
+            "type": "object",
+            "required": [
+              "state"
+            ],
+            "properties": {
+              "state": {
+                "type": "string",
+                "enum": [
+                  "not_used"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "commit",
+              "state"
+            ],
+            "properties": {
+              "commit": {
+                "type": "string"
+              },
+              "state": {
+                "type": "string",
+                "enum": [
+                  "at_project_commit"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "commit",
+              "step",
+              "state"
+            ],
+            "properties": {
+              "commit": {
+                "type": "string"
+              },
+              "state": {
+                "type": "string",
+                "enum": [
+                  "not_contained"
+                ]
+              },
+              "step": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "commit",
+              "state"
+            ],
+            "properties": {
+              "commit": {
+                "type": "string"
+              },
+              "state": {
+                "type": "string",
+                "enum": [
+                  "dirty"
+                ]
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
+      }
+    },
+    "additionalProperties": false
+  },
+  "StartedBuild": {
+    "type": "object",
+    "required": [
+      "request_revision",
+      "started_at",
+      "in_force",
+      "builder",
+      "test_writer",
+      "required_test_count"
+    ],
+    "properties": {
+      "builder": {
+        "$ref": "#/$defs/BuilderProgress"
+      },
+      "in_force": {
+        "type": "boolean"
+      },
+      "request_revision": {
+        "type": "string"
+      },
+      "required_test_count": {
+        "type": "integer",
+        "minimum": 0
+      },
+      "started_at": {
+        "type": "string",
+        "format": "date-time"
+      },
+      "test_writer": {
+        "$ref": "#/$defs/TestWriterProgress"
       }
     },
     "additionalProperties": false
@@ -1649,6 +2194,280 @@ const SCHEMA_DEFS: Record<string, JSONSchemaNode> = {
       },
       "name": {
         "type": "string"
+      }
+    },
+    "additionalProperties": false
+  },
+  "TeamRoleState": {
+    "type": "object",
+    "required": [
+      "role",
+      "handle",
+      "state",
+      "attention",
+      "watcher",
+      "assignment"
+    ],
+    "properties": {
+      "assignment": {
+        "type": "string",
+        "enum": [
+          "unread",
+          "nothing_owed",
+          "unknown"
+        ]
+      },
+      "attention": {
+        "type": "string",
+        "enum": [
+          "none",
+          "permission",
+          "question",
+          "auth",
+          "silent",
+          "unknown"
+        ]
+      },
+      "handle": {
+        "type": "string"
+      },
+      "role": {
+        "type": "string",
+        "enum": [
+          "guide",
+          "builder",
+          "test_writer"
+        ]
+      },
+      "state": {
+        "type": "string",
+        "enum": [
+          "not_started",
+          "ended",
+          "starting",
+          "needs_you",
+          "working",
+          "waiting",
+          "error",
+          "unknown"
+        ]
+      },
+      "watcher": {
+        "type": "string",
+        "enum": [
+          "held",
+          "gone",
+          "unknown"
+        ]
+      }
+    },
+    "additionalProperties": false
+  },
+  "TeamSnapshot": {
+    "type": "object",
+    "required": [
+      "team",
+      "roles"
+    ],
+    "properties": {
+      "roles": {
+        "type": "array",
+        "items": {
+          "$ref": "#/$defs/TeamRoleState"
+        }
+      },
+      "team": {
+        "type": "string"
+      }
+    },
+    "additionalProperties": false
+  },
+  "TestFindings": {
+    "type": "object",
+    "required": [
+      "change_id",
+      "request_revision",
+      "started_at",
+      "report",
+      "checked_at",
+      "findings"
+    ],
+    "properties": {
+      "change_id": {
+        "type": "string"
+      },
+      "checked_at": {
+        "type": "string",
+        "format": "date-time"
+      },
+      "findings": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "report": {
+        "type": "integer",
+        "minimum": 0
+      },
+      "request_revision": {
+        "type": "string"
+      },
+      "started_at": {
+        "type": "string",
+        "format": "date-time"
+      }
+    },
+    "additionalProperties": false
+  },
+  "TestWriterProgress": {
+    "type": "object",
+    "required": [
+      "tests",
+      "read",
+      "report"
+    ],
+    "properties": {
+      "read": {
+        "type": "boolean"
+      },
+      "report": {
+        "type": "integer",
+        "minimum": 0
+      },
+      "tests": {
+        "type": "object",
+        "anyOf": [
+          {
+            "type": "object",
+            "required": [
+              "state"
+            ],
+            "properties": {
+              "state": {
+                "type": "string",
+                "enum": [
+                  "not_used"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "state"
+            ],
+            "properties": {
+              "state": {
+                "type": "string",
+                "enum": [
+                  "assigned"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "state"
+            ],
+            "properties": {
+              "state": {
+                "type": "string",
+                "enum": [
+                  "reported"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "finding_count",
+              "checked_at",
+              "state"
+            ],
+            "properties": {
+              "checked_at": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "finding_count": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "state": {
+                "type": "string",
+                "enum": [
+                  "needs_changes"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "commit",
+              "checked_at",
+              "not_judged",
+              "state"
+            ],
+            "properties": {
+              "checked_at": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "commit": {
+                "type": "string"
+              },
+              "not_judged": {
+                "type": "string",
+                "enum": [
+                  "Surla checked that these tests build into the generated test program and declare every required scenario; it did not judge what they assert."
+                ]
+              },
+              "state": {
+                "type": "string",
+                "enum": [
+                  "accepted"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "reason",
+              "step",
+              "checked_at",
+              "state"
+            ],
+            "properties": {
+              "checked_at": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "reason": {
+                "type": "string"
+              },
+              "state": {
+                "type": "string",
+                "enum": [
+                  "could_not_run"
+                ]
+              },
+              "step": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
       }
     },
     "additionalProperties": false
@@ -2199,7 +3018,9 @@ function matchesSchema(value: unknown, schema: JSONSchemaNode): boolean {
     return (
       typeof value === "number" &&
       Number.isFinite(value) &&
-      (schema.type !== "integer" || Number.isInteger(value))
+      (schema.type !== "integer" || Number.isInteger(value)) &&
+      (schema.minimum === undefined || value >= schema.minimum) &&
+      (schema.maximum === undefined || value <= schema.maximum)
     );
   }
   if (schema.type === "array") {
@@ -2234,9 +3055,19 @@ function matchesSchema(value: unknown, schema: JSONSchemaNode): boolean {
   return Boolean(schema.anyOf);
 }
 
+// isNoContent validates the absence of a body declared by a 204 response.
+export function isNoContent(value: unknown): value is undefined {
+  return value === undefined;
+}
+
 // isArchitecturePreviewResult validates a parsed answer against the generated ArchitecturePreviewResult schema.
 export function isArchitecturePreviewResult(value: unknown): value is ArchitecturePreviewResult {
   return matchesSchema(value, { $ref: "#/$defs/ArchitecturePreviewResult" });
+}
+
+// isChangeBuild validates a parsed answer against the generated ChangeBuild schema.
+export function isChangeBuild(value: unknown): value is ChangeBuild {
+  return matchesSchema(value, { $ref: "#/$defs/ChangeBuild" });
 }
 
 // isChangeCardResult validates a parsed answer against the generated ChangeCardResult schema.
@@ -2274,9 +3105,19 @@ export function isModelConnection(value: unknown): value is ModelConnection {
   return matchesSchema(value, { $ref: "#/$defs/ModelConnection" });
 }
 
+// isProjectTeam validates a parsed answer against the generated ProjectTeam schema.
+export function isProjectTeam(value: unknown): value is ProjectTeam {
+  return matchesSchema(value, { $ref: "#/$defs/ProjectTeam" });
+}
+
 // isServerError validates a parsed answer against the generated ServerError schema.
 export function isServerError(value: unknown): value is ServerError {
   return matchesSchema(value, { $ref: "#/$defs/ServerError" });
+}
+
+// isStartBuildResult validates a parsed answer against the generated StartBuildResult schema.
+export function isStartBuildResult(value: unknown): value is StartBuildResult {
+  return matchesSchema(value, { $ref: "#/$defs/StartBuildResult" });
 }
 
 // isStopLiveTargetResult validates a parsed answer against the generated StopLiveTargetResult schema.
@@ -2287,6 +3128,16 @@ export function isStopLiveTargetResult(value: unknown): value is StopLiveTargetR
 // isStoryRefreshResult validates a parsed answer against the generated StoryRefreshResult schema.
 export function isStoryRefreshResult(value: unknown): value is StoryRefreshResult {
   return matchesSchema(value, { $ref: "#/$defs/StoryRefreshResult" });
+}
+
+// isTeamSnapshot validates a parsed answer against the generated TeamSnapshot schema.
+export function isTeamSnapshot(value: unknown): value is TeamSnapshot {
+  return matchesSchema(value, { $ref: "#/$defs/TeamSnapshot" });
+}
+
+// isTestFindings validates a parsed answer against the generated TestFindings schema.
+export function isTestFindings(value: unknown): value is TestFindings {
+  return matchesSchema(value, { $ref: "#/$defs/TestFindings" });
 }
 
 // isTraceList validates a parsed answer against the generated TraceList schema.

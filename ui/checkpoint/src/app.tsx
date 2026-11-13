@@ -16,11 +16,13 @@ import { createRoot, Root } from "react-dom/client";
 import { ArchitecturePreviewView, IncomingChangeCardView } from "./components/c4-graph";
 import { ChangeListView } from "./components/change-list";
 import { CP1EditorView } from "./components/cp1-editor";
+import { BuildSectionView, BuildStartReceipt } from "./components/build";
 import { VerificationView } from "./components/cp4-verification";
 import { ProposedRevisionView } from "./components/proposal";
 import { ApproveResultControl } from "./components/cp5-approve";
 import { SessionEndedNotice, SignedOutReason, SignedOutView } from "./components/session";
 import { StoryStageView } from "./components/story";
+import { GlobalTeamAttention, TeamStageProps, TeamStageView, teamAttentionText } from "./components/team";
 import { LiveTargetStageView, ModelDraft, ServerAnswer, describeApplied } from "./components/live-target";
 import { Alert, Button, Card } from "./components/shadcn";
 import { TraceDrawer, TraceFilter } from "./components/trace-drawer";
@@ -28,6 +30,7 @@ import { isDraftDirty, PreservedDraft } from "./context/cp1-draft";
 import {
   ArchitecturePreviewResult,
   ChangeCardResult,
+  ChangeBuild,
   ChangeList,
   ConfigureModelRequest,
   ExampleItem,
@@ -39,6 +42,9 @@ import {
   ROUTES,
   StoryRefreshResult,
   TraceList,
+  TeamRoleState,
+  TeamSnapshot,
+  TestFindings,
   VerificationListResult,
   VerificationStatusResult,
   isPlainObject,
@@ -107,6 +113,7 @@ type ActiveResultState =
   | { kind: "changes" }
   | { kind: "story" }
   | { kind: "live" }
+  | { kind: "team" }
   | { kind: "cp2-architecture-preview" }
   | { kind: "cp4-verification" }
   | { kind: "cp1-incoming-card" };
@@ -364,7 +371,8 @@ function describeActiveResultSubject(
     !activeResult ||
     activeResult.kind === "cp1-incoming-card" ||
     activeResult.kind === "changes" ||
-    activeResult.kind === "live"
+    activeResult.kind === "live" ||
+    activeResult.kind === "team"
   ) {
     return null;
   }
@@ -536,6 +544,28 @@ export function bootstrapViewsPage() {
   // modelDraft is the model form's unsent input, kept here so it survives
   // refreshes and leaving the Live target view.
   let modelDraft: ModelDraft = { kind: null, provider: "anthropic", modelName: "", gatewayAddr: "" };
+  // teamSnapshot is shared by the Team stage and notices on every stage.
+  // Failed reads retain facts, visibly labeled as last read.
+  let teamSnapshot: TeamSnapshot | null = null;
+  let teamReadError: string | null = null;
+  let teamReadAgain = false;
+  let teamStartReceipt: TeamStageProps["startReceipt"] = null;
+  let teamActionError: string | null = null;
+  // buildChangeId identifies the single retained build read. The generation
+  // rejects replies begun before a start, its successful answer, or a change
+  // of selected card.
+  let buildChangeId: string | null = null;
+  let buildSnapshot: ChangeBuild["build"] | null = null;
+  let buildReadError: string | null = null;
+  let buildStartError: string | null = null;
+  let buildReadAgain = false;
+  let buildGeneration = 0;
+  let buildStartReceipt: BuildStartReceipt | null = null;
+  // Findings belong to one build/report/verdict, rather than only a change ID.
+  let buildFindings: TestFindings | null = null;
+  let findingsBasis: string | null = null;
+  let findingsError: string | null = null;
+  let findingsReadAgain = false;
   const runsById = new Map<string, VerificationStatusResult>();
   const lastLoadedListByChangeId = new Map<string, string[]>();
   let selectedVerificationChangeId: string | null = null;
@@ -604,7 +634,7 @@ export function bootstrapViewsPage() {
       parsed = undefined;
     }
     if (status === route.success) {
-      if (route.decode(parsed)) {
+      if ((text === "" || parsed !== undefined) && route.decode(parsed)) {
         return { ok: true, result: parsed };
       }
       return {
@@ -757,6 +787,10 @@ export function bootstrapViewsPage() {
     }
     session = null;
     sessionState = "ended";
+    buildStartReceipt = null;
+    buildStartError = null;
+    teamStartReceipt = null;
+    buildGeneration++;
     rootEl.dataset.session = "ended";
     if (waitController !== null) {
       waitController.abort();
@@ -793,6 +827,10 @@ export function bootstrapViewsPage() {
       changeList = outcome.result;
       listError = null;
       applyListChanges(previous, outcome.result);
+      if (previous === null || previous.version !== outcome.result.version) {
+        readTeam();
+        if (activeEditor !== null) readBuild(activeEditor.card.change_id);
+      }
       if (previous !== null && previous.version !== outcome.result.version) {
         // The version also covers the owner's Story evaluation. It is read
         // after the list, so it is never older than the version just read.
@@ -897,6 +935,8 @@ export function bootstrapViewsPage() {
           if (waitTroubleShown) {
             waitTroubleShown = false;
             statusEl.textContent = "This page is up to date with the Surla server again.";
+            syncNoticeRegion();
+            if (activeResult?.kind === "team") syncResultRegion();
           }
           continue;
         }
@@ -919,6 +959,8 @@ export function bootstrapViewsPage() {
       if (!waitTroubleShown) {
         waitTroubleShown = true;
         statusEl.textContent = trouble;
+        syncNoticeRegion();
+        if (activeResult?.kind === "team") syncResultRegion();
       }
       failedRounds += 1;
       const delay = Math.min(WAIT_RETRY_MS * 2 ** (failedRounds - 1), WAIT_RETRY_MAX_MS);
@@ -1176,6 +1218,320 @@ export function bootstrapViewsPage() {
     );
   }
 
+  // openTeam shows the shared team snapshot without dropping an edited card.
+  function openTeam() {
+    editorOpen = shouldRetainEditor();
+    activeResult = { kind: "team" };
+    rootEl.dataset.state = "team";
+    statusEl.textContent = "Showing the project team.";
+    if (teamSnapshot === null || teamReadError !== null || waitTroubleShown) readTeam();
+    syncAllRegions();
+    document.getElementById("surla-team-title")?.focus();
+  }
+
+  // readTeam follows the existing single version chain. One extra read is
+  // retained when another change arrives during an outstanding request.
+  function readTeam() {
+    if (sessionState !== "active") return;
+    if (hasPending("get_team", "")) {
+      teamReadAgain = true;
+      return;
+    }
+    teamReadAgain = false;
+    const done = () => {
+      if (teamReadAgain && sessionState === "active") readTeam();
+    };
+    callServer(
+      "get_team", {}, "",
+      (snapshot) => {
+        if (sessionState !== "active") return;
+        const before = teamSnapshot;
+        const wasFailed = teamReadError !== null;
+        teamSnapshot = snapshot;
+        teamReadError = null;
+        const newlyNeedingUser = snapshot.roles.filter((role) => {
+          if (role.state !== "needs_you") return false;
+          const previous = before?.roles.find((item) => item.role === role.role && item.handle === role.handle);
+          return wasFailed || previous?.state !== "needs_you" || previous.attention !== role.attention;
+        });
+        if (newlyNeedingUser.length > 0) {
+          statusEl.textContent = (waitTroubleShown ? "Last read: " : "") +
+            newlyNeedingUser.map(teamAttentionText).join(". ");
+        }
+        done();
+      },
+      (message) => {
+        if (sessionState !== "active") return;
+        const firstFailure = teamReadError === null;
+        teamReadError = message;
+        if (firstFailure) {
+          statusEl.textContent = "Could not refresh the project team. " + message + " Open Team to retry.";
+        }
+        done();
+      }
+    );
+  }
+
+  // teamFactsError distinguishes retained observations from currently followed
+  // facts when the read, the update chain or the session is unavailable.
+  function teamFactsError(): string | null {
+    if (teamReadError !== null) return teamReadError;
+    if (sessionState !== "active") return "The session ended; these are last-read facts.";
+    if (waitTroubleShown) return "Updates are unavailable; these are last-read facts.";
+    return null;
+  }
+
+  // showingTeamRoles derives pending controls from the registered snapshot,
+  // preserving the generated role type instead of casting arbitrary subjects.
+  function showingTeamRoles(): TeamRoleState["role"][] {
+    return (teamSnapshot?.roles ?? [])
+      .filter((role) => hasPending("show_team_pane", role.role))
+      .map((role) => role.role);
+  }
+
+  // focusCurrentViewHeading recovers focus only when a focused team control
+  // disappears. Each rendered region starts with its current view's heading.
+  function focusCurrentViewHeading() {
+    const region = activeResult !== null && activeResult.kind !== "cp1-incoming-card"
+      ? resultRegionEl : editorRegionEl;
+    const heading = region.querySelector<HTMLElement>("h2");
+    if (heading !== null) {
+      heading.tabIndex = -1;
+      heading.focus();
+    }
+  }
+
+  // startTeamAgents is an explicit window request. Its dated receipt describes
+  // what that request returned; current role health always comes from readTeam.
+  function startTeamAgents() {
+    if (sessionState !== "active" || hasPending("start_team_agents", "")) return;
+    const begun = new Date().toISOString();
+    teamActionError = null;
+    callServer(
+      "start_team_agents", {}, "",
+      (result) => {
+        if (sessionState !== "active") return;
+        teamStartReceipt = { at: begun, result };
+        if (buildStartReceipt !== null) {
+          buildStartReceipt = { ...buildStartReceipt, team: null };
+        }
+        statusEl.textContent = "This start (begun " + new Date(begun).toLocaleString() +
+          ") returned: " + result.step;
+        readTeam();
+      },
+      (message) => {
+        if (sessionState !== "active") return;
+        teamActionError = message;
+        statusEl.textContent = "Could not start agents. " + message;
+      }
+    );
+  }
+
+  // readBuild retains one selected change's user projection. The update chain
+  // coalesces a later read instead of creating an independent polling loop.
+  function readBuild(changeId: string) {
+    if (sessionState !== "active" || activeEditor?.card.change_id !== changeId) return;
+    if (buildChangeId !== changeId) {
+      buildChangeId = changeId;
+      buildSnapshot = null;
+      buildReadError = null;
+      buildStartReceipt = null;
+      buildStartError = null;
+      followBuildFindings();
+      buildGeneration++;
+    }
+    if (hasPending("get_build", changeId)) {
+      buildReadAgain = true;
+      return;
+    }
+    buildReadAgain = false;
+    const generation = buildGeneration;
+    const relevant = () => sessionState === "active" && buildChangeId === changeId &&
+      activeEditor?.card.change_id === changeId;
+    const done = () => {
+      if (relevant() && buildReadAgain) readBuild(changeId);
+    };
+    callServer(
+      "get_build", { change_id: changeId }, changeId,
+      (result) => {
+        if (relevant() && generation === buildGeneration) {
+          if (result.change_id !== changeId) {
+            buildReadError = "The server returned a build for a different change.";
+          } else {
+            const before = buildSnapshot;
+            buildSnapshot = result.build;
+            buildReadError = null;
+            const replaced = before?.state === "started"
+              ? result.build.state !== "started" || before.started_at !== result.build.started_at
+              : result.build.state === "started";
+            if (replaced) {
+              buildStartReceipt = null;
+              buildStartError = null;
+            }
+            followBuildFindings();
+          }
+        }
+        done();
+      },
+      (message) => {
+        if (relevant() && generation === buildGeneration) buildReadError = message;
+        done();
+      }
+    );
+  }
+
+  // currentFindingsBasis names the exact saved verdict whose text is useful.
+  // Assignment reads can change independently without invalidating that text.
+  function currentFindingsBasis(): string | null {
+    if (buildChangeId === null || buildSnapshot?.state !== "started" ||
+        buildSnapshot.test_writer.tests.state !== "needs_changes" ||
+        hasPending("start_build", buildChangeId)) return null;
+    return JSON.stringify([
+      buildChangeId, buildSnapshot.request_revision, buildSnapshot.started_at,
+      buildSnapshot.test_writer.report, buildSnapshot.test_writer.tests.checked_at,
+      buildSnapshot.test_writer.tests.finding_count,
+    ]);
+  }
+
+  // followBuildFindings starts one user read per new verdict. Read failures
+  // remain explicit; an unchanged snapshot never becomes a retry loop.
+  function followBuildFindings() {
+    const next = currentFindingsBasis();
+    if (next === findingsBasis) return;
+    findingsBasis = next;
+    buildFindings = null;
+    findingsError = null;
+    if (next !== null) readBuildFindings();
+  }
+
+  // readBuildFindings accepts text only when every owner-provided correlation
+  // field still matches. A late answer never selects a newer or earlier build.
+  function readBuildFindings() {
+    const expected = buildSnapshot;
+    const changeId = buildChangeId;
+    const basis = currentFindingsBasis();
+    if (sessionState !== "active" || changeId === null || basis === null ||
+        expected?.state !== "started" || expected.test_writer.tests.state !== "needs_changes" ||
+        activeEditor?.card.change_id !== changeId) return;
+    if (hasPending("get_test_findings", changeId)) {
+      findingsReadAgain = true;
+      return;
+    }
+    findingsReadAgain = false;
+    findingsError = null;
+    const generation = buildGeneration;
+    const verdict = expected.test_writer.tests;
+    const relevant = () => sessionState === "active" && buildGeneration === generation &&
+      activeEditor?.card.change_id === changeId && findingsBasis === basis &&
+      currentFindingsBasis() === basis;
+    const done = () => {
+      if (findingsReadAgain) {
+        findingsReadAgain = false;
+        readBuildFindings();
+      }
+    };
+    callServer(
+      "get_test_findings", { change_id: changeId }, changeId,
+      (result) => {
+        if (relevant()) {
+          if (result.change_id !== changeId || result.request_revision !== expected.request_revision ||
+              result.started_at !== expected.started_at || result.report !== expected.test_writer.report ||
+              result.checked_at !== verdict.checked_at || result.findings.length !== verdict.finding_count) {
+            findingsError = "The findings no longer match this build. Refresh the build to read its current verdict.";
+            readBuild(changeId);
+          } else {
+            buildFindings = result;
+          }
+        }
+        done();
+      },
+      (message, failure) => {
+        if (relevant()) {
+          findingsError = message;
+          if (failure.kind === "server" && (failure.status === 404 || failure.status === 409)) {
+            readBuild(changeId);
+          }
+        }
+        done();
+      }
+    );
+  }
+
+  // startBuild sends the revision displayed by the editor only after its
+  // Build control has obtained any required replacement confirmation.
+  function startBuild() {
+    const ed = activeEditor;
+    if (ed === null || sessionState !== "active" || editorBusy ||
+        ed.card.status !== "confirmed" || ed.incomingCard !== null ||
+        buildChangeId !== ed.card.change_id || buildSnapshot === null ||
+        buildReadError !== null || hasPending("start_build", ed.card.change_id)) return;
+    const changeId = ed.card.change_id;
+    const revision = ed.card.request_revision;
+    if (buildSnapshot.state === "started" && buildSnapshot.in_force &&
+        buildSnapshot.request_revision !== revision) return;
+    const listedRevision = changeList?.changes.find((item) => item.change_id === changeId)?.request_revision;
+    if (listedRevision !== undefined && listedRevision !== revision) return;
+    const begun = new Date().toISOString();
+    buildGeneration++;
+    buildStartReceipt = null;
+    buildStartError = null;
+    buildFindings = null;
+    findingsBasis = null;
+    findingsError = null;
+    findingsReadAgain = false;
+    callServer(
+      "start_build", { change_id: changeId, request_revision: revision }, changeId,
+      (result) => {
+        if (sessionState !== "active" || activeEditor?.card.change_id !== changeId ||
+            activeEditor.card.request_revision !== revision) return;
+        // A read begun during the start may still describe its predecessor.
+        // The successful answer supersedes it, including transient receipts.
+        buildGeneration++;
+        if (result.build.request_revision !== revision) {
+          buildStartError = "The server returned a build for a different revision. Refresh the saved build.";
+          statusEl.textContent = buildStartError;
+          readBuild(changeId);
+          return;
+        }
+        buildSnapshot = { ...result.build, state: "started" };
+        buildReadError = null;
+        buildStartReceipt = { at: begun, team: result.team, workingCopy: result.working_copy };
+        followBuildFindings();
+        statusEl.textContent = "The build started for the agreed revision.";
+        readBuild(changeId);
+        readTeam();
+      },
+      (message, failure) => {
+        if (sessionState === "active" && activeEditor?.card.change_id === changeId) {
+          buildStartError = (failure.kind === "server"
+            ? "Build did not start. " : "Could not confirm whether the build started. ") + message;
+          statusEl.textContent = buildStartError;
+          readBuild(changeId);
+        }
+      }
+    );
+  }
+
+  // showTeamPane sends only the registered role the user selected; the server
+  // rechecks ownership and open dialogs before it changes the window.
+  function showTeamPane(role: TeamRoleState["role"]) {
+    if (sessionState !== "active" || hasPending("show_team_pane", role)) return;
+    teamActionError = null;
+    callServer(
+      "show_team_pane", { role }, role,
+      () => {
+        if (sessionState !== "active") return;
+        statusEl.textContent = "The " + role.replaceAll("_", " ") + "'s pane is shown in Herdr.";
+        readTeam();
+      },
+      (message) => {
+        if (sessionState !== "active") return;
+        teamActionError = message;
+        statusEl.textContent = "Could not show the " + role.replaceAll("_", " ") + "'s pane. " + message;
+      }
+    );
+  }
+
   // openLive shows the Live target view: the live target, read when it was
   // never read or the change list's version moved since, and the model
   // connection, read each time the view opens because no version covers it.
@@ -1417,6 +1773,12 @@ export function bootstrapViewsPage() {
       onClick: showChanges,
     });
     tabs.push({
+      id: "surla-nav-team",
+      label: "Team",
+      active: activeResult?.kind === "team",
+      onClick: openTeam,
+    });
+    tabs.push({
       id: "surla-nav-story",
       label: "Story",
       active: activeResult?.kind === "story",
@@ -1502,6 +1864,14 @@ export function bootstrapViewsPage() {
     if (resultSubject !== null) {
       subjects.push(resultSubject);
     }
+    if (activeResult?.kind === "team") {
+      subjects.push({
+        role: "result",
+        label: bothRegionsShown ? "Displayed view" : "Showing",
+        stage: "Project team",
+        detail: teamSnapshot?.team,
+      });
+    }
 
     navEl.hidden = false;
     flushSync(() => {
@@ -1565,18 +1935,30 @@ export function bootstrapViewsPage() {
     });
   }
 
-  // syncNoticeRegion shows the session-ended notice with the unsaved edits
-  // the user can still copy.
+  // syncNoticeRegion keeps the session notice and role attention visible on
+  // every view. Announcements are emitted only by the event/read handlers.
   function syncNoticeRegion() {
     flushSync(() => {
       noticeRoot.render(
-        sessionState === "ended" ? (
+        <>
+        {sessionState === "ended" ? (
           <SessionEndedNotice
             unsavedLines={
               activeEditor ? snapshotUnsavedDraft(activeEditor)?.lines ?? [] : []
             }
           />
-        ) : null
+        ) : null}
+        {sessionState === "active" || sessionState === "ended" ? (
+          <GlobalTeamAttention
+            snapshot={teamSnapshot}
+            lastRead={teamFactsError() !== null}
+            disabled={sessionState !== "active"}
+            showing={showingTeamRoles()}
+            onShowPane={showTeamPane}
+            onFocusedControlRemoved={focusCurrentViewHeading}
+          />
+        ) : null}
+        </>
       );
     });
   }
@@ -1622,6 +2004,29 @@ export function bootstrapViewsPage() {
         ) : null}
         <CP1EditorView
           card={ed.card}
+          buildSection={
+            <BuildSectionView
+              key={activeResult?.kind ?? "decisions"}
+              card={ed.card}
+              currentRevision={changeList?.changes.find((item) => item.change_id === ed.card.change_id)?.request_revision ??
+                ed.incomingCard?.request_revision ?? ed.card.request_revision}
+              build={buildChangeId === ed.card.change_id ? buildSnapshot : null}
+              loading={hasPending("get_build", ed.card.change_id)}
+              error={buildReadError}
+              actionError={buildStartError}
+              starting={hasPending("start_build", ed.card.change_id)}
+              disabled={sessionState !== "active" || editorBusy}
+              dirty={isDraftDirty(ed.card, ed.draftAnswers, ed.draftExamples)}
+              startReceipt={buildStartReceipt}
+              findingTexts={buildFindings?.findings ?? null}
+              findingsLoading={hasPending("get_test_findings", ed.card.change_id)}
+              findingsError={findingsError}
+              onRefresh={() => readBuild(ed.card.change_id)}
+              onReadFindings={readBuildFindings}
+              onBuild={startBuild}
+              onOpenTeam={openTeam}
+            />
+          }
           proposalWaiting={proposal !== undefined}
           priorCard={ed.priorCard}
           draftAnswers={ed.draftAnswers}
@@ -1659,6 +2064,7 @@ export function bootstrapViewsPage() {
           onLoadVerifications={() => handleListVerifications(ed.card.change_id)}
           onOpenStory={openStory}
         />
+
         </>
       );
     });
@@ -1715,6 +2121,27 @@ export function bootstrapViewsPage() {
         resultRegionEl.dataset.changeId = activeEditor.card.change_id;
         resultRegionEl.dataset.requestRevision = activeEditor.card.request_revision;
       }
+      return;
+    }
+    if (res.kind === "team") {
+      flushSync(() => {
+        resultRoot.render(
+          <TeamStageView
+            snapshot={teamSnapshot}
+            loading={hasPending("get_team", "")}
+            error={teamFactsError()}
+            starting={hasPending("start_team_agents", "")}
+            disabled={sessionState !== "active"}
+            showing={showingTeamRoles()}
+            startReceipt={teamStartReceipt}
+            actionError={teamActionError}
+            onRefresh={readTeam}
+            onStartAgents={startTeamAgents}
+            onShowPane={showTeamPane}
+            onFocusedControlRemoved={focusCurrentViewHeading}
+          />
+        );
+      });
       return;
     }
     if (res.kind === "live") {
@@ -2519,6 +2946,7 @@ export function bootstrapViewsPage() {
           : "Showing confirmed Change Card. You can refine answers or examples below."
         : "Review the open questions and examples below, then confirm your intent.";
     rootEl.dataset.state = "cp1-change-card";
+    readBuild(card.change_id);
     syncAllRegions();
   }
 

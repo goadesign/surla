@@ -3,15 +3,19 @@ package project
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
 
+	genproject "github.com/goadesign/surla/gen/project"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
+	goa "goa.design/goa/v3/pkg"
 )
 
 // TestTeamReadCreatesNothing returns a stable expected name and registered roles only.
@@ -152,6 +156,56 @@ func TestTeamUserStartReusesPreparation(t *testing.T) {
 	}
 	_, err = os.Stat(filepath.Join(deps.RosterDirectory, first.Space+".json"))
 	require.NoError(t, err)
+}
+
+// TestTeamUserStartPreservesSpaceConflict exercises the real space owner through
+// userTeamError when the saved space is missing and two replacements match.
+func TestTeamUserStartPreservesSpaceConflict(t *testing.T) {
+	state := testState(t)
+	state.Record.Space = "missing-space"
+	deps := fixtureTeamDependencies(state)
+	host := deps.Host.(*teamFixture)
+	for _, id := range []string{"first", "second"} {
+		host.spaces = append(host.spaces, TeamSpace{
+			ID: id, Name: teamName(filepath.Base(state.Record.Directory), state.Record.ID),
+			Folder: state.Record.Directory,
+		})
+	}
+	server, err := NewServer(state, func() {}, deps)
+	require.NoError(t, err)
+	result, err := server.StartAgents(t.Context())
+	assert.Nil(t, result)
+	var conflict *genproject.TeamSpaceConflict
+	require.ErrorAs(t, err, &conflict)
+	assert.Equal(t, "ambiguous_space", conflict.Name)
+	assert.Equal(t, 2, conflict.Count)
+	assert.Empty(t, state.Record.Agents)
+	assert.Zero(t, host.creates)
+	assert.Equal(t, []string{"overlays", "spaces"}, host.calls)
+}
+
+// TestUserTeamErrorBoundary preserves the original typed error, including its
+// wrapping, while keeping peer-authored details out of other user failures.
+func TestUserTeamErrorBoundary(t *testing.T) {
+	conflict := &genproject.TeamSpaceConflict{Name: "ambiguous_space", Count: 2}
+	wrapped := fmt.Errorf("private peer output: %w", conflict)
+	assert.Same(t, conflict, userTeamError(conflict))
+	assert.Same(t, wrapped, userTeamError(wrapped))
+	for _, tc := range []struct {
+		name string
+		err  error
+	}{
+		{"window_busy", genproject.MakeWindowBusy(errors.New("private peer output"))},
+		{"team_unavailable", genproject.MakeTeamUnavailable(errors.New("private peer output"))},
+		{"team_unavailable", errors.New("private peer output")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var failure *goa.ServiceError
+			require.ErrorAs(t, userTeamError(tc.err), &failure)
+			assert.Equal(t, tc.name, failure.Name)
+			assert.NotContains(t, failure.Message, "private peer output")
+		})
+	}
 }
 
 // TestTeamUnavailableStepIsBounded records a fixed owner step and no private cause.

@@ -49,7 +49,7 @@ func (c *Client) Identity(ctx context.Context) (res *ProjectIdentity, err error)
 
 // EnsureTeam calls the "ensure_team" endpoint of the "project" service.
 // EnsureTeam may return the following errors:
-//   - "ambiguous_space" (type *TeamSpaceConflict): Several local spaces match the team name and folder; choose one before retrying.
+//   - "ambiguous_space" (type *TeamSpaceConflict): Several local spaces match the team name and folder; close the duplicates before starting agents again.
 //   - "window_busy" (type *goa.ServiceError): Another Herdr dialog is open; close it and run surla again.
 //   - "team_unavailable" (type *goa.ServiceError): A bounded Herdr operation or roster write failed; run surla again.
 //   - "forbidden" (type *goa.ServiceError): The trusted credential cannot perform this operation.

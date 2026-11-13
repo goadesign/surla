@@ -22,6 +22,8 @@ import { countsPhrase, storyCounts } from "./story";
 
 export interface CP1EditorProps {
   card: ChangeCardResult;
+  // buildSection follows the saved summary before the long editable fields.
+  buildSection: React.ReactNode;
   // proposalWaiting is true while a proposed revision waits beside the
   // agreed card; refining the agreed card is then refused, so it is offered
   // only after the user adopts or declines the proposal.
@@ -132,6 +134,7 @@ function FieldTextarea({
 // workspace (when present), and the canonical shadcn/ui CP1 inspector.
 export function CP1EditorView({
   card,
+  buildSection,
   proposalWaiting,
   priorCard,
   draftAnswers,
@@ -270,6 +273,8 @@ export function CP1EditorView({
           </p>
         </details>
       </Card>
+
+      {buildSection}
 
       {card.approval ? (
         <Card
@@ -695,7 +700,7 @@ export function CP1EditorView({
         <div className="surla-field-row">
           <Button
             id="surla-confirm-submit"
-            variant="primary"
+            variant={card.status === "needs_confirmation" || draftDirty ? "primary" : "default"}
             disabled={rpcInFlight || proposalWaiting}
             aria-describedby={proposalWaiting ? "surla-confirm-blocked" : undefined}
             onClick={onSubmitConfirm}
