@@ -52,6 +52,11 @@ var operationRoles = map[string][]CallerKind{
 	"wait_for_changes":     {CallerUser},
 	"get_team":             {CallerUser}, "show_team_pane": {CallerUser}, "start_team_agents": {CallerUser},
 	"start_build": {CallerUser}, "get_build": {CallerUser, CallerGuide, CallerBuilder, CallerTestWriter},
+	// get_builder_assignment and get_test_writer_assignment are GET routes that
+	// record that the assignment was read. The diagnostics history leaves out
+	// the user's GET requests that succeed (diagnosticTracer in traces.go), so
+	// allowing either to CallerUser requires changing that rule with it;
+	// TestUserGETRoutesOnlyRead fails until then.
 	"list_builder_assignments": {CallerBuilder}, "get_builder_assignment": {CallerBuilder},
 	"list_test_writer_assignments": {CallerTestWriter}, "get_test_writer_assignment": {CallerTestWriter},
 	"report_tests_finished": {CallerTestWriter},

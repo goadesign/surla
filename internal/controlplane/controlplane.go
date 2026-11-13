@@ -549,7 +549,9 @@ func New(opts Options) (*ControlPlane, error) {
 // HTTP endpoints decode JSON bodies with StrictJSONRequestDecoder; the MCP
 // server keeps Goa's decoder for its JSON-RPC envelope, because its generated
 // tool codecs already refuse undeclared argument fields.
-// auth is required and is supplied by the project credential owner.
+// auth is required and is supplied by the project credential owner. A request
+// sent with GET carries a private mark the diagnostics history uses to leave
+// out the user's reads that succeed or are refused.
 func NewHTTPHandler(svc gensurla.Service, auth RequestAuthenticator) http.Handler {
 	mux := goahttp.NewMuxer()
 	endpoints := gensurla.NewEndpoints(svc)
@@ -591,8 +593,11 @@ func NewHTTPHandler(svc gensurla.Service, auth RequestAuthenticator) http.Handle
 			}
 			return
 		}
-		r = r.WithContext(WithPrincipal(r.Context(), principal))
-		mux.ServeHTTP(w, r)
+		ctx := WithPrincipal(r.Context(), principal)
+		if r.Method == http.MethodGet {
+			ctx = context.WithValue(ctx, httpReadKey{}, true)
+		}
+		mux.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
 
