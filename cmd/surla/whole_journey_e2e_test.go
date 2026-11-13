@@ -17,7 +17,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -26,6 +25,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	goahttp "goa.design/goa/v3/http"
+	goa "goa.design/goa/v3/pkg"
 
 	genprojectclient "github.com/goadesign/surla/gen/http/project/client"
 	genhttpclient "github.com/goadesign/surla/gen/http/surla/client"
@@ -36,6 +36,7 @@ import (
 	"github.com/goadesign/surla/internal/controlplane"
 	"github.com/goadesign/surla/internal/project"
 	"github.com/goadesign/surla/internal/testwriter"
+	"github.com/goadesign/surla/internal/verify"
 	"github.com/goadesign/surla/verify/candidate"
 )
 
@@ -53,7 +54,8 @@ type (
 		workspace string
 		// dir is the project folder, as the server stores it: symlink-free.
 		dir string
-		// projectCommit is the commit holding the starter and its Story, C1.
+		// projectCommit is the starter's commit, C1, where the build's working
+		// copy for the test writer starts.
 		projectCommit string
 		// state is the project's private state, which the server owns.
 		state *project.State
@@ -66,9 +68,17 @@ type (
 		user *gensurla.Client
 		// guide, builder and testWriter are the scripted agents' connections.
 		guide, builder, testWriter *genmcpsurla.Client
+		// testsFolder is the test writer's working copy, as its roster row
+		// names it.
+		testsFolder string
 		// proposed and confirmed are the change's revisions before and after the
 		// user confirmed it, R0 and R1.
 		proposed, confirmed string
+		// testsCommit is the commit Surla recorded the test writer's first
+		// accepted tests at, T1.
+		testsCommit string
+		// runID is the verification run of the builder's commit against T1.
+		runID string
 	}
 
 	// journeyRoster is the part of the launcher roster that Chorus turns into
@@ -103,8 +113,9 @@ type (
 	}
 
 	// credentialDoer sends every request with exactly one caller's headers: a
-	// scripted agent's bearer credential, or the user's page session with the
-	// same-origin headers a browser adds to the page's own requests.
+	// scripted agent's bearer credential, the user's page session with the
+	// same-origin headers a browser adds to the page's own requests, or the
+	// management credential the CLI presents.
 	credentialDoer struct {
 		// client sends the requests; contexts bound each call.
 		client *http.Client
@@ -116,41 +127,71 @@ type (
 const (
 	// journeyChangeID is the change the guide proposes.
 	journeyChangeID = "add-scone-price"
-	// journeyStoryVersion is the published github.com/goadesign/surla/story
-	// version the project's Story requires, as the Story evaluation tests use.
-	journeyStoryVersion = "v0.0.0-20261111183703-4568fcf5bb85"
-	// journeyStory is the Story the user adds to the starter's design: one
-	// finished flow, so a build requires one test, prices_scone.
-	journeyStory = `package design
-
-import . "github.com/goadesign/surla/story/dsl"
-
-var _ = Story("Shop", func() {
-	Actor("customer", "Customer")
-	Flow("prices-scone", "Price a scone", func() {
+	// journeyCookieFlow ends the finished flow the starter's design/story.go
+	// ships, prices-cookie, after which the guide adds its own flow.
+	journeyCookieFlow = `		Outcome("cookie-priced", "customer", "The helper answers that a cookie costs $1.25")
+	})
+`
+	// journeySconeFlow is the finished flow the guide adds to the shipped
+	// Story, so a build requires two tests: prices_cookie and prices_scone.
+	journeySconeFlow = `	Flow("prices-scone", "Price a scone", func() {
 		StartsWith("ask-scone-price", "customer", "The customer asks how much a scone is")
 		Outcome("scone-priced", "customer", "The helper answers that a scone costs $2.75")
 	})
-})
+`
+	// journeyCookieHook ends the starter's PricesCookie hook in
+	// eval/acceptance/acceptance.go, after which the test writer adds its own.
+	journeyCookieHook = `	return h.ask(ctx, "How much is cookie?", "[scripted] Cookie costs $1.25.", true)
+}
+`
+	// journeySconeHook is the hook the test writer writes for prices_scone.
+	journeySconeHook = `
+// PricesScone is the test the Story's finished flow prices-scone requires.
+func (h *Hooks) PricesScone(ctx context.Context) (eval.Result, error) {
+	return h.ask(ctx, "How much is scone?", "[scripted] Scone costs $2.75.", true)
+}
+`
+	// journeyCookiePrice is the starter's catalog line after which the builder
+	// prices scones.
+	journeyCookiePrice = `	"cookie": 125,
 `
 	// journeyStepWait bounds one step's server-owned work: a Story evaluation
-	// or a build start (5 minutes each in the control plane) and the team's
-	// 45-second window phase.
+	// or a build start (5 minutes each in the control plane), the team's
+	// 45-second window phase, or one check of the test writer's report, whose
+	// sandboxed build and listing have their own 10-minute and 60-second
+	// limits but take seconds here.
 	journeyStepWait = 6 * time.Minute
 )
 
-// journeyChangeArgs are the tool arguments naming the journey's change, which
-// each worker's get_*_assignment takes.
-var journeyChangeArgs = []byte(`{"change_id":"` + journeyChangeID + `"}`)
+var (
+	// journeyChangeArgs are the tool arguments naming the journey's change,
+	// which get_build, list_verifications and each worker's get_*_assignment
+	// take.
+	journeyChangeArgs = []byte(`{"change_id":"` + journeyChangeID + `"}`)
+	// journeyScenarios are the scenarios a run of the accepted tests reports:
+	// the starter suite's own and one per finished flow of the agreed Story.
+	journeyScenarios = []string{
+		"prices_tea", "prompt_override_reaches_model", "unknown_item", "prices_cookie", "prices_scone",
+	}
+)
 
 // TestWholeJourneyThroughTheProjectServer walks one change through the team
-// in journey order: the starter project gets a Story and a commit; the real
-// project server starts with its team and gives the user a page session; the
-// guide proposes the change with the Story and the user confirms it; the user
-// starts the build, and the builder and the test writer, each with the
-// credential that start created, read their assignments; and a report for the
-// change's earlier revision is refused. Each step stops the journey when it
-// fails, because every later step builds on it.
+// in journey order: the starter project, which ships a Story, is committed;
+// the real project server starts with its team and gives the user a page
+// session; the guide adds a finished flow to the Story and proposes the
+// change with it, and the user confirms it; the user starts the build, and
+// the builder and the test writer, each with the credential that start
+// created, read their assignments. Then: a report for the change's earlier
+// revision is refused; the builder's verification before any tests are
+// accepted is refused with the test writer's step; a report that changed a
+// file outside the test module is sent back with findings only the test
+// writer and the user can read; the fixed report is accepted and recorded on
+// the tests branch, and the builder's assignment names that commit; the
+// builder's commit passes those tests in a sandboxed run that says where the
+// tests came from and that the test writer may read; and a later acceptance
+// of changed tests leaves that earlier run as the change's latest passing
+// verification. Each step stops the journey when it fails, because every
+// later step builds on it.
 func TestWholeJourneyThroughTheProjectServer(t *testing.T) {
 	if err := candidate.CheckSandbox(); err != nil {
 		t.Skipf("the journey builds the starter and its tests in the candidate sandbox: %v", err)
@@ -160,11 +201,17 @@ func TestWholeJourneyThroughTheProjectServer(t *testing.T) {
 		name string
 		run  func(*testing.T)
 	}{
-		{"the starter project with a Story is committed", j.commitStarterWithStory},
+		{"the starter project is committed", j.commitStarter},
 		{"the project server runs its team and opens the user's session", j.serveProject},
-		{"the guide proposes the change and the user confirms it", j.proposeAndConfirm},
+		{"the guide adds a flow, proposes the change and the user confirms it", j.proposeAndConfirm},
 		{"the user starts the build and each worker reads its assignment", j.startBuild},
 		{"a report for an earlier revision is refused", j.refuseEarlierReport},
+		{"verification before accepted tests is refused with the test writer's step",
+			j.refuseUnacceptedVerification},
+		{"a change outside the test module is sent back to the test writer", j.sendBackOutsideChange},
+		{"the fixed tests are accepted and recorded on the tests branch", j.acceptTests},
+		{"the builder's commit passes the accepted tests", j.verifyAcceptedTests},
+		{"a later acceptance leaves the earlier run as the latest verification", j.acceptLaterTests},
 	} {
 		if !t.Run(step.name, step.run) {
 			return
@@ -192,7 +239,8 @@ func newWholeJourney(t *testing.T) *wholeJourney {
 	t.Setenv("GIT_COMMITTER_NAME", "Surla Test")
 	t.Setenv("GIT_COMMITTER_EMAIL", "test@example.com")
 	for _, name := range []string{
-		"ANTHROPIC_API_KEY", "OPENAI_API_KEY", liveModelGatewayEnv, liveModelProviderEnv, liveModelNameEnv,
+		"ANTHROPIC_API_KEY", "OPENAI_API_KEY",
+		verify.LiveModelGatewayEnv, verify.LiveModelProviderEnv, verify.LiveModelNameEnv,
 		"OTEL_EXPORTER_OTLP_ENDPOINT", "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT",
 	} {
 		t.Setenv(name, "")
@@ -226,25 +274,66 @@ func journeyRefusal(t *testing.T, ctx context.Context, client *genmcpsurla.Clien
 	return toolErrorText(complete.Content)
 }
 
-// commitStarterWithStory creates the starter with surla init, adds the Story
-// and the Story module it imports, and makes the project's first commit, as
-// the commands surla init prints do.
-func (j *wholeJourney) commitStarterWithStory(t *testing.T) {
+// readBuild has client read the journey's change's build with get_build,
+// which every role may call, and returns the started build.
+func readBuild(
+	t *testing.T, ctx context.Context, client *genmcpsurla.Client,
+) *gensurla.StartedBuild {
+	t.Helper()
+	read, err := gensurla.DecodeChangeBuild(
+		trustedSuiteCall(t, ctx, client, "get_build", journeyChangeArgs))
+	require.NoError(t, err)
+	started, ok := read.Build.AsStarted()
+	require.True(t, ok, "the change has a build: %s", read.Build.Kind())
+	return started
+}
+
+// journeyVerifyArgs returns verify_change's arguments for candidateCommit at
+// revision of the journey's change.
+func journeyVerifyArgs(t *testing.T, revision, candidateCommit string) []byte {
+	t.Helper()
+	raw, err := gensurla.EncodeVerifyChangePayload(&gensurla.VerifyChangePayload{
+		ChangeID: journeyChangeID, RequestRevision: revision, CandidateCommit: candidateCommit,
+	})
+	require.NoError(t, err)
+	return raw
+}
+
+// listRuns has client list the verification runs of the journey's change.
+func listRuns(
+	t *testing.T, ctx context.Context, client *genmcpsurla.Client,
+) []*gensurla.VerificationStatusResult {
+	t.Helper()
+	listed, err := gensurla.DecodeVerificationListResult(
+		trustedSuiteCall(t, ctx, client, "list_verifications", journeyChangeArgs))
+	require.NoError(t, err)
+	return listed.Runs
+}
+
+// replaceOnce edits the file at path the way an agent edits a file in its
+// own folder: old must occur in it exactly once and becomes replacement.
+func replaceOnce(t *testing.T, path, old, replacement string) {
+	t.Helper()
+	info, err := os.Stat(path)
+	require.NoError(t, err)
+	raw, err := os.ReadFile(path)
+	require.NoError(t, err)
+	require.Equal(t, 1, strings.Count(string(raw), old),
+		"%s holds the text to replace once", filepath.Base(path))
+	edited := strings.Replace(string(raw), old, replacement, 1)
+	require.NoError(t, os.WriteFile(path, []byte(edited), info.Mode().Perm()))
+}
+
+// commitStarter creates the starter with surla init, which ships its Story,
+// and makes the project's first commit of every file, as the commands surla
+// init prints do.
+func (j *wholeJourney) commitStarter(t *testing.T) {
 	dir := filepath.Join(j.workspace, "shop")
 	require.NoError(t, runInit([]string{
 		"-dir", dir, "-module", "example.com/shop", "-surla-version", starterSurlaVersion,
 	}, io.Discard))
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "design", "story.go"), []byte(journeyStory), 0o644))
-	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Minute)
-	defer cancel()
-	get := exec.CommandContext(ctx, "go", "get",
-		"github.com/goadesign/surla/story/dsl@"+journeyStoryVersion)
-	get.Dir = dir
-	get.Env = append(os.Environ(), "GOWORK=off", "GOTOOLCHAIN=local")
-	out, err := get.CombinedOutput()
-	require.NoError(t, err, string(out))
 	runTestGit(t, dir, "init", "-q")
-	commit := gitCommitAll(t, dir, "Start shop with its Story")
+	commit := gitCommitAll(t, dir, "Start shop")
 	assert.Regexp(t, "^[0-9a-f]{40}$", commit)
 	assert.Empty(t, runTestGit(t, dir, "status", "--porcelain", "--untracked-files=all"),
 		"the commit holds every file")
@@ -300,9 +389,12 @@ func (j *wholeJourney) serveProject(t *testing.T) {
 		credentialDoer{client: &http.Client{}, header: header},
 		goahttp.RequestEncoder, goahttp.ResponseDecoder, false)
 	j.user = &gensurla.Client{
-		GetTeamEndpoint:       transport.GetTeam(),
-		ConfirmIntentEndpoint: transport.ConfirmIntent(),
-		StartBuildEndpoint:    transport.StartBuild(),
+		GetTeamEndpoint:         transport.GetTeam(),
+		ConfirmIntentEndpoint:   transport.ConfirmIntent(),
+		StartBuildEndpoint:      transport.StartBuild(),
+		GetBuildEndpoint:        transport.GetBuild(),
+		GetTestFindingsEndpoint: transport.GetTestFindings(),
+		ListChangesEndpoint:     transport.ListChanges(),
 	}
 	seen, err := j.user.GetTeam(ctx)
 	require.NoError(t, err, "the user's session reads the team")
@@ -314,12 +406,15 @@ func (j *wholeJourney) serveProject(t *testing.T) {
 	assert.Equal(t, j.dir, folder, "the guide works in the project")
 }
 
-// proposeAndConfirm has the guide evaluate the committed Story and propose
-// the change with it, then the user confirm the proposal on the page, which
-// makes the confirmed revision the change's agreed one.
+// proposeAndConfirm has the guide add the finished flow prices-scone to the
+// Story the starter shipped, evaluate it and propose the change with it, then
+// the user confirm the proposal on the page, which makes the confirmed
+// revision the change's agreed one.
 func (j *wholeJourney) proposeAndConfirm(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), journeyStepWait)
 	defer cancel()
+	replaceOnce(t, filepath.Join(j.dir, "design", "story.go"),
+		journeyCookieFlow, journeyCookieFlow+journeySconeFlow)
 	refresh, err := gensurla.DecodeStoryRefreshResult(
 		trustedSuiteCall(t, ctx, j.guide, "refresh_story", []byte(`{}`)))
 	require.NoError(t, err)
@@ -338,10 +433,12 @@ func (j *wholeJourney) proposeAndConfirm(t *testing.T) {
 	require.Equal(t, "succeeded", refresh.State, "%+v", refresh.Diagnostic)
 	require.NotNil(t, refresh.OpID)
 	require.Len(t, refresh.Stories, 1)
-	assert.Equal(t, "Shop", refresh.Stories[0].Name)
-	require.Len(t, refresh.Stories[0].Flows, 1)
-	assert.Equal(t, "prices-scone", refresh.Stories[0].Flows[0].Key)
-	assert.True(t, refresh.Stories[0].Flows[0].Complete, "a flow with a start and an outcome is finished")
+	assert.Equal(t, "Prices", refresh.Stories[0].Name, "the guide extends the Story the starter ships")
+	require.Len(t, refresh.Stories[0].Flows, 2)
+	for i, key := range []string{"prices-cookie", "prices-scone"} {
+		assert.Equal(t, key, refresh.Stories[0].Flows[i].Key)
+		assert.True(t, refresh.Stories[0].Flows[i].Complete, "a flow with a start and an outcome is finished")
+	}
 
 	args, err := gensurla.EncodeProposeChangePayload(&gensurla.ProposeChangePayload{
 		ChangeID:         journeyChangeID,
@@ -349,7 +446,7 @@ func (j *wholeJourney) proposeAndConfirm(t *testing.T) {
 		StoryRefreshOpID: refresh.OpID,
 		Analysis: &gensurla.CP1Analysis{
 			Summary: "The shop sells scones at $2.75, and the helper answers a scone's price " +
-				"as it answers tea's.",
+				"as it answers a cookie's.",
 			Ambiguities: []*gensurla.CP1AnalysisAmbiguity{},
 			Examples: []*gensurla.CP1AnalysisExample{{
 				Scenario: "Scone price", InputSummary: "Ask how much a scone is.",
@@ -394,7 +491,7 @@ func (j *wholeJourney) startBuild(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, j.confirmed, started.Build.RequestRevision)
 	assert.True(t, started.Build.InForce)
-	assert.Equal(t, 1, started.Build.RequiredTestCount)
+	assert.Equal(t, 2, started.Build.RequiredTestCount, "one test per finished flow")
 	assert.Equal(t, gensurla.TestsKindAssigned, started.Build.TestWriter.Tests.Kind())
 	copied, ok := started.WorkingCopy.AsAtProjectCommit()
 	require.True(t, ok, "the test writer's copy starts at the project's commit: %s",
@@ -430,8 +527,8 @@ func (j *wholeJourney) startBuild(t *testing.T) {
 	var folder string
 	j.builder, folder = j.scriptedAgent(t, "builder")
 	assert.Equal(t, j.dir, folder, "the builder works in the project")
-	j.testWriter, folder = j.scriptedAgent(t, "test_writer")
-	assert.Equal(t, copyDir, folder, "the test writer works in its own copy")
+	j.testWriter, j.testsFolder = j.scriptedAgent(t, "test_writer")
+	require.Equal(t, copyDir, j.testsFolder, "the test writer works in its own copy")
 
 	listed, err := gensurla.DecodeBuilderAssignmentList(
 		trustedSuiteCall(t, ctx, j.builder, "list_builder_assignments", []byte(`{}`)))
@@ -453,9 +550,10 @@ func (j *wholeJourney) startBuild(t *testing.T) {
 	assignment := j.readTestWriterAssignment(t, ctx)
 	assert.Equal(t, j.confirmed, assignment.RequestRevision)
 	assert.Equal(t, copyDir, assignment.WorkingFolder)
-	assert.Equal(t, []*gensurla.RequiredTest{{
-		Story: "Shop", FlowKey: "prices-scone", Scenario: "prices_scone", Hook: "PricesScone",
-	}}, assignment.RequiredTests, "the Story's finished flow requires one test")
+	assert.Equal(t, []*gensurla.RequiredTest{
+		{Story: "Prices", FlowKey: "prices-cookie", Scenario: "prices_cookie", Hook: "PricesCookie"},
+		{Story: "Prices", FlowKey: "prices-scone", Scenario: "prices_scone", Hook: "PricesScone"},
+	}, assignment.RequiredTests, "each finished flow requires one test, in declaration order")
 	assert.Equal(t, gensurla.TestsKindAssigned, assignment.Progress.Tests.Kind())
 	assert.True(t, assignment.Progress.Read)
 }
@@ -474,6 +572,229 @@ func (j *wholeJourney) refuseEarlierReport(t *testing.T) {
 		"a refused report changes nothing")
 }
 
+// refuseUnacceptedVerification has the builder verify the starter's commit
+// for the agreed revision before the test writer reported: the refusal names
+// the tests' state and the test writer's step, and starts no run.
+func (j *wholeJourney) refuseUnacceptedVerification(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
+	defer cancel()
+	refused := journeyRefusal(t, ctx, j.builder, "verify_change",
+		journeyVerifyArgs(t, j.confirmed, j.projectCommit))
+	assert.Contains(t, refused, "the tests of this build are not accepted; their state is assigned")
+	assert.Contains(t, refused, "the test writer writes the required tests and reports them finished")
+	assert.Empty(t, listRuns(t, ctx, j.builder), "a refused verification starts no run")
+}
+
+// sendBackOutsideChange has the test writer change the README at the top of
+// its working copy, outside the test module, and report. Surla's check sends
+// the report back: every role that reads the build sees how many findings it
+// has, only the test writer and the user read their text, and the tests
+// branch stays where the build started it.
+func (j *wholeJourney) sendBackOutsideChange(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), journeyStepWait)
+	defer cancel()
+	readme := filepath.Join(j.testsFolder, "README.md")
+	raw, err := os.ReadFile(readme)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(readme, append(raw, "\nThe test writer's notes.\n"...), 0o644))
+
+	build := j.reportTests(t, ctx, 1)
+	needs, ok := build.TestWriter.Tests.AsNeedsChanges()
+	require.True(t, ok, "the report is sent back: %s", build.TestWriter.Tests.Kind())
+	assert.Equal(t, 1, needs.FindingCount, "one file changed outside the test module")
+	for role, client := range map[string]*genmcpsurla.Client{
+		"guide": j.guide, "builder": j.builder, "test writer": j.testWriter,
+	} {
+		seen := readBuild(t, ctx, client)
+		assert.Equal(t, build.TestWriter.Tests, seen.TestWriter.Tests, "the %s sees the count", role)
+	}
+	page, err := j.user.GetBuild(ctx, &gensurla.GetBuildPayload{ChangeID: journeyChangeID})
+	require.NoError(t, err)
+	shown, ok := page.Build.AsStarted()
+	require.True(t, ok)
+	assert.Equal(t, build.TestWriter.Tests, shown.TestWriter.Tests, "the user's page sees the count")
+
+	findings, err := j.user.GetTestFindings(ctx, &gensurla.GetTestFindingsPayload{ChangeID: journeyChangeID})
+	require.NoError(t, err)
+	assert.Equal(t, j.confirmed, findings.RequestRevision)
+	assert.Equal(t, 1, findings.Report)
+	require.Len(t, findings.Findings, 1)
+	assert.Contains(t, findings.Findings[0], "README.md is changed outside the test module eval")
+	assignment := j.readTestWriterAssignment(t, ctx)
+	assert.Equal(t, findings.Findings, assignment.Findings, "the test writer reads the user's findings")
+	for role, client := range map[string]*genmcpsurla.Client{"guide": j.guide, "builder": j.builder} {
+		raw := trustedSuiteCall(t, ctx, client, "get_build", journeyChangeArgs)
+		assert.NotContains(t, string(raw), "README.md", "the %s's build holds no finding text", role)
+		refused := journeyRefusal(t, ctx, client, "get_test_writer_assignment", journeyChangeArgs)
+		assert.Contains(t, refused, "caller may not call get_test_writer_assignment", "the %s", role)
+		_, err := client.ToolsCall(ctx, &genmcpsurla.ToolsCallPayload{
+			Name: "get_test_findings", Arguments: journeyChangeArgs,
+		})
+		assert.ErrorContains(t, err, "unknown tool", "no tool gives the %s the findings", role)
+	}
+	assert.Equal(t, j.projectCommit, j.testsBranch(t), "a report sent back records nothing")
+}
+
+// acceptTests has the test writer restore the README, write the hook the
+// new flow requires and report again. Surla accepts the tests and records
+// them on the tests branch, and the builder's assignment, unread again, names
+// that commit.
+func (j *wholeJourney) acceptTests(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), journeyStepWait)
+	defer cancel()
+	runTestGit(t, j.testsFolder, "checkout", "--", "README.md")
+	replaceOnce(t, filepath.Join(j.testsFolder, "eval", "acceptance", "acceptance.go"),
+		journeyCookieHook, journeyCookieHook+journeySconeHook)
+
+	build := j.reportTests(t, ctx, 2)
+	accepted, ok := build.TestWriter.Tests.AsAccepted()
+	require.True(t, ok, "the tests are accepted: %s", build.TestWriter.Tests.Kind())
+	require.Regexp(t, "^[0-9a-f]{40}$", accepted.Commit)
+	assert.Equal(t, accepted.Commit, j.testsBranch(t), "the accepted commit is the tests branch's tip")
+	assignment := j.readTestWriterAssignment(t, ctx)
+	assert.Equal(t, build.TestWriter.Tests, assignment.Progress.Tests)
+	assert.Empty(t, assignment.Findings)
+
+	listed, err := gensurla.DecodeBuilderAssignmentList(
+		trustedSuiteCall(t, ctx, j.builder, "list_builder_assignments", []byte(`{}`)))
+	require.NoError(t, err)
+	require.Len(t, listed.Assignments, 1)
+	assert.False(t, listed.Assignments[0].Read, "an acceptance makes the builder's assignment unread")
+	built := j.readBuilderAssignment(t, ctx)
+	shown, ok := built.WrittenTests.AsAccepted()
+	require.True(t, ok, "the builder sees the accepted tests: %s", built.WrittenTests.Kind())
+	assert.Equal(t, accepted, shown)
+	j.testsCommit = accepted.Commit
+}
+
+// verifyAcceptedTests has the builder price scones, commit the change with
+// the guide's Story edit, which the project folder still holds uncommitted,
+// and verify that commit for the agreed revision, then follows the run until it
+// finishes. The run passes every scenario of the accepted tests and says
+// where they came from; the test writer reads it, and a caller the policy
+// does not allow is refused.
+func (j *wholeJourney) verifyAcceptedTests(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), journeyStepWait)
+	defer cancel()
+	replaceOnce(t, filepath.Join(j.dir, "internal", "service", "service.go"),
+		journeyCookiePrice, journeyCookiePrice+"\t\"scone\":  275,\n")
+	runTestGit(t, j.dir, "add", "design/story.go", "internal/service/service.go")
+	runTestGit(t, j.dir, "commit", "-q", "-m", "Price scones at $2.75")
+	commit := strings.TrimSpace(runTestGit(t, j.dir, "rev-parse", "HEAD"))
+
+	run, err := gensurla.DecodeVerificationStatusResult(trustedSuiteCall(t, ctx, j.builder, "verify_change",
+		journeyVerifyArgs(t, j.confirmed, commit)))
+	require.NoError(t, err)
+	require.NotEmpty(t, run.RunID)
+	// configureProjectWorkspace keeps the project's runs in its state folder.
+	runsDir := filepath.Join(j.state.Dir, "runs")
+	j.t.Cleanup(func() { drainTrustedSuiteRun(runsDir, run.RunID, j.state.Dir, j.dir) })
+	args, err := gensurla.EncodeGetVerificationPayload(&gensurla.GetVerificationPayload{RunID: run.RunID})
+	require.NoError(t, err)
+	ticker := time.NewTicker(200 * time.Millisecond)
+	defer ticker.Stop()
+	for run.State.Kind() == gensurla.StateKindRunning {
+		select {
+		case <-ctx.Done():
+			t.Fatalf("the verification run did not finish: %v", ctx.Err())
+		case <-ticker.C:
+		}
+		run, err = gensurla.DecodeVerificationStatusResult(
+			trustedSuiteCall(t, ctx, j.builder, "get_verification", args))
+		require.NoError(t, err)
+	}
+	completed, ok := run.State.AsCompleted()
+	require.True(t, ok, "the run ends with a report: %+v", run.State)
+	require.True(t, completed.Report.Passed,
+		"the builder's commit passes the accepted tests: %+v", completed.Report)
+	scenarios := make([]string, 0, len(completed.Report.Scenarios))
+	for _, s := range completed.Report.Scenarios {
+		scenarios = append(scenarios, s.ID)
+		assert.Equal(t, "passed", s.Outcome, "scenario %s", s.ID)
+	}
+	assert.ElementsMatch(t, journeyScenarios, scenarios, "the starter's scenarios and one per finished flow")
+	assert.Equal(t, commit, run.CandidateCommit)
+	assert.Equal(t, j.confirmed, run.RequestRevision)
+	assert.Equal(t, j.testsCommit, run.SuiteCommit, "the run uses the accepted tests")
+	written, ok := run.TestSource.AsWrittenTests()
+	require.True(t, ok, "the run's tests are the written ones: %s", run.TestSource.Kind())
+	assert.Equal(t, j.testsCommit, written.Commit)
+	assert.Equal(t, "These tests were written by a separate agent on this machine "+
+		"and are not isolated from the builder.", written.Notice)
+
+	read, err := gensurla.DecodeVerificationStatusResult(
+		trustedSuiteCall(t, ctx, j.testWriter, "get_verification", args))
+	require.NoError(t, err)
+	assert.Equal(t, run, read, "the test writer reads the run of its assignment's change")
+	runs := listRuns(t, ctx, j.testWriter)
+	require.Len(t, runs, 1)
+	assert.Equal(t, run.RunID, runs[0].RunID)
+	running, err := j.state.ReadRunning()
+	require.NoError(t, err)
+	management := genhttpclient.NewClient("http", j.state.Address(), credentialDoer{
+		client: &http.Client{},
+		header: http.Header{"Authorization": {"Bearer " + running.ManagementCredential}},
+	}, goahttp.RequestEncoder, goahttp.ResponseDecoder, false)
+	_, err = management.GetVerification()(ctx, &gensurla.GetVerificationPayload{RunID: run.RunID})
+	var refused *goa.ServiceError
+	require.ErrorAs(t, err, &refused, "the management credential may not read a run")
+	assert.Equal(t, "forbidden", refused.Name)
+	j.runID = run.RunID
+}
+
+// acceptLaterTests has the test writer change a comment in its test module
+// after the passing run and report again. Surla accepts and records the
+// changed tests at a new commit, and the builder's assignment names it; the
+// earlier run, which ran the earlier tests, stays the change's latest
+// verification, still passed, for the builder and on the user's page.
+func (j *wholeJourney) acceptLaterTests(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), journeyStepWait)
+	defer cancel()
+	replaceOnce(t, filepath.Join(j.testsFolder, "eval", "acceptance", "acceptance.go"),
+		"// PricesScone is the test the Story's finished flow prices-scone requires.\n",
+		"// PricesScone is the test the Story's finished flow prices-scone requires:\n"+
+			"// the helper answers a scone's price from the catalog.\n")
+
+	build := j.reportTests(t, ctx, 3)
+	accepted, ok := build.TestWriter.Tests.AsAccepted()
+	require.True(t, ok, "the changed tests are accepted: %s", build.TestWriter.Tests.Kind())
+	assert.NotEqual(t, j.testsCommit, accepted.Commit, "Surla records the changed tests anew")
+	assert.Equal(t, accepted.Commit, j.testsBranch(t))
+	assert.Equal(t, j.testsCommit, strings.TrimSpace(runTestGit(t, j.dir, "rev-parse", accepted.Commit+"^")),
+		"the new tests follow the earlier ones on the tests branch")
+
+	listed, err := gensurla.DecodeBuilderAssignmentList(
+		trustedSuiteCall(t, ctx, j.builder, "list_builder_assignments", []byte(`{}`)))
+	require.NoError(t, err)
+	require.Len(t, listed.Assignments, 1)
+	assert.False(t, listed.Assignments[0].Read, "the new acceptance makes the builder's assignment unread")
+	shown, ok := j.readBuilderAssignment(t, ctx).WrittenTests.AsAccepted()
+	require.True(t, ok)
+	assert.Equal(t, accepted.Commit, shown.Commit, "the builder sees the new tests")
+
+	args, err := gensurla.EncodeGetVerificationPayload(&gensurla.GetVerificationPayload{RunID: j.runID})
+	require.NoError(t, err)
+	earlier, err := gensurla.DecodeVerificationStatusResult(
+		trustedSuiteCall(t, ctx, j.builder, "get_verification", args))
+	require.NoError(t, err)
+	completed, ok := earlier.State.AsCompleted()
+	require.True(t, ok)
+	assert.True(t, completed.Report.Passed, "the earlier run still reads passed")
+	assert.Equal(t, j.testsCommit, earlier.SuiteCommit, "it ran the earlier tests")
+	changes, err := gensurla.DecodeChangeList(
+		trustedSuiteCall(t, ctx, j.builder, "list_changes", []byte(`{}`)))
+	require.NoError(t, err)
+	page, err := j.user.ListChanges(ctx)
+	require.NoError(t, err)
+	for who, list := range map[string]*gensurla.ChangeList{"builder": changes, "user": page} {
+		require.Len(t, list.Changes, 1)
+		if assert.NotNil(t, list.Changes[0].LatestVerification, "the %s sees a latest verification", who) {
+			assert.Equal(t, &gensurla.LatestVerificationItem{RunID: j.runID, State: "passed"},
+				list.Changes[0].LatestVerification, "the %s sees the earlier run as the latest, passed", who)
+		}
+	}
+}
+
 // startServer runs the real serve composition until the journey's test ends.
 // Cleanup stops it through the CLI's management client and waits until it
 // has drained its work; a server that does not stop keeps the folders it may
@@ -482,12 +803,12 @@ func (j *wholeJourney) startServer(t *testing.T, runtime projectRuntime) {
 	served := make(chan error, 1)
 	starting, cancelStart := context.WithTimeout(t.Context(), time.Minute)
 	defer cancelStart()
+	state := j.state
 	go func() {
-		err := runtime.serve()
+		err := runtime.serve(state.Dir)
 		cancelStart()
 		served <- err
 	}()
-	state := j.state
 	j.t.Cleanup(func() {
 		select {
 		case err := <-served:
@@ -541,6 +862,43 @@ func (j *wholeJourney) scriptedAgent(t *testing.T, role string) (*genmcpsurla.Cl
 	}
 	t.Fatalf("the roster has no %s", role)
 	return nil, ""
+}
+
+// reportTests has the test writer report its tests finished for the agreed
+// revision, checks that the report returns at once as reported with the
+// number report, and waits, reading get_build as the test writer, until
+// Surla's check replaces reported with its verdict on that report. It
+// returns the build with the verdict.
+func (j *wholeJourney) reportTests(
+	t *testing.T, ctx context.Context, report int,
+) *gensurla.StartedBuild {
+	t.Helper()
+	item, err := gensurla.DecodeTestWriterAssignmentItem(trustedSuiteCall(t, ctx, j.testWriter,
+		"report_tests_finished", journeyReportArgs(t, j.confirmed)))
+	require.NoError(t, err)
+	require.Equal(t, gensurla.TestsKindReported, item.Progress.Tests.Kind(), "a report returns at once")
+	require.Equal(t, report, item.Progress.Report)
+	ticker := time.NewTicker(200 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		build := readBuild(t, ctx, j.testWriter)
+		if build.TestWriter.Tests.Kind() != gensurla.TestsKindReported {
+			require.Equal(t, report, build.TestWriter.Report, "the verdict answers report %d", report)
+			return build
+		}
+		select {
+		case <-ctx.Done():
+			t.Fatalf("Surla's check of report %d reached no verdict: %v", report, ctx.Err())
+		case <-ticker.C:
+		}
+	}
+}
+
+// testsBranch returns the commit the tests branch points to in the project's
+// repository.
+func (j *wholeJourney) testsBranch(t *testing.T) string {
+	t.Helper()
+	return strings.TrimSpace(runTestGit(t, j.dir, "rev-parse", "refs/heads/"+testwriter.Branch))
 }
 
 // readBuilderAssignment has the builder read its assignment for the journey's
