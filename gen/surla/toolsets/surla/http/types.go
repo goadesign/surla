@@ -361,8 +361,8 @@ type (
 	GetBuildResultTransport struct {
 		// Change Card identifier.
 		ChangeID *string `json:"change_id"`
-		// not_started until the user starts a build of this change; started with the
-		// build afterwards.
+		// not_started when the change has no usable build for the current test source;
+		// start a new build on the views page. Otherwise started with the usable build.
 		Build *Build `json:"build"`
 	}
 	// GetBuilderAssignmentPayloadTransport is the internal JSON transport type for GetBuilderAssignmentPayload.
@@ -515,9 +515,11 @@ type (
 		// Where this assignment stands, including Surla's findings when it needs
 		// changes.
 		Progress *TestWriterProgressTransport `json:"progress"`
-		// Folder to write the tests in: your own working copy of the project. The
-		// project server does not prepare working copies yet, so it is empty.
+		// Folder to write the tests in: your own working copy of the project.
 		WorkingFolder *string `json:"working_folder"`
+		// The canonical design source as agreed at request_revision, copied when this
+		// build started; later revisions do not change it.
+		DesignSource *string `json:"design_source"`
 		// The Story as agreed at request_revision, in declaration order. It does not
 		// change when the change is revised later.
 		Stories []*StorySummaryItemTransport `json:"stories"`
@@ -1415,6 +1417,9 @@ type (
 		Builder *BuilderProgressTransport `json:"builder"`
 		// The test writer's assignment.
 		TestWriter *TestWriterProgressTransport `json:"test_writer"`
+		// Number of finished flows in the agreed Story. Zero means no test of this
+		// change's Story was required.
+		RequiredTestCount *int `json:"required_test_count"`
 	}
 	// StoryActorItemTransport is the internal JSON transport type for StoryActorItemTransport.
 	// It lives in the toolset-local http package and is used only for JSON

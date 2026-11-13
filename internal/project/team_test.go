@@ -71,7 +71,7 @@ func (f *teamFixture) OpenLauncher(context.Context) error {
 
 // fixtureTeamDependencies prevents all external effects in server authentication/lifecycle tests.
 func fixtureTeamDependencies(state *State) TeamDependencies {
-	return TeamDependencies{Lifetime: context.Background(), Host: &teamFixture{}, TestWriterFolder: func(context.Context) (string, error) { return "", nil }, RosterDirectory: filepath.Join(state.Dir, "test-rosters"), Shell: "/bin/zsh"}
+	return TeamDependencies{Lifetime: context.Background(), Host: &teamFixture{}, RosterDirectory: filepath.Join(state.Dir, "test-rosters"), Shell: "/bin/zsh"}
 }
 
 // teamContext grants management through the same trusted principal boundary used by HTTP.
@@ -197,7 +197,7 @@ func TestTeamNamesAndThreeRoleRoster(t *testing.T) {
 		handle := teamName(role, state.Record.ID)
 		assert.LessOrEqual(t, len(handle), 32)
 		assert.Regexp(t, `^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$`, handle)
-		_, err := s.AddAgent(teamContext(state), &genproject.AddAgentPayload{ActorID: handle, Role: role})
+		_, err := registerTestAgent(s, handle, role, s.state.Record.Directory)
 		require.NoError(t, err)
 		roles = append(roles, launcherRole{Role: role, Title: role, Handle: handle, Folder: state.Record.Directory, FirstMessage: "Use your Surla connection."})
 	}
@@ -301,7 +301,7 @@ func TestEnsureTeamGuideInvariant(t *testing.T) {
 			if scenario == "role" {
 				role = "builder"
 			}
-			_, err = s.AddAgent(teamContext(state), &genproject.AddAgentPayload{ActorID: handle, Role: role})
+			_, err = registerTestAgent(s, handle, role, s.state.Record.Directory)
 			require.NoError(t, err)
 			if scenario == "credential" {
 				require.NoError(t, os.Remove(state.AgentFile(handle)))
@@ -383,6 +383,58 @@ func TestMissingForegroundPreservesLiveGuide(t *testing.T) {
 			assert.Equal(t, "not_needed", result.Dialog)
 			assert.NotContains(t, host.calls, "focus")
 			assert.NotContains(t, host.calls, "open")
+		})
+	}
+}
+
+// testAgent exposes credential paths to package tests without a management API.
+type testAgent struct {
+	ActorID        string
+	CredentialFile string
+}
+
+// registerTestAgent exercises the owning private admission with explicit saved folders.
+func registerTestAgent(server *Server, handle, role, folder string) (*testAgent, error) {
+	actual, err := server.registerAgent(handle, agentRecord{Role: role, Folder: folder})
+	if err != nil {
+		return nil, err
+	}
+	return &testAgent{ActorID: actual, CredentialFile: server.state.AgentFile(actual)}, nil
+}
+
+// TestTeamResultNextStep covers each real owner outcome and the user-facing conversion.
+func TestTeamResultNextStep(t *testing.T) {
+	for _, tc := range []struct{ dialog, step string }{
+		{"opened", "Choose an agent for each role in the open Chorus dialog in Herdr."},
+		{"already_open", `If the open Chorus dialog is for this project, click "Reload team", then choose the agents. If it is for another project, close it and run surla again.`},
+		{"not_needed", "Every listed role is running."},
+	} {
+		t.Run(tc.dialog, func(t *testing.T) {
+			state := testState(t)
+			deps := fixtureTeamDependencies(state)
+			host := deps.Host.(*teamFixture)
+			server, err := NewServer(state, func() {}, deps)
+			require.NoError(t, err)
+			first, err := server.EnsureTeam(teamContext(state))
+			require.NoError(t, err)
+			switch tc.dialog {
+			case "already_open":
+				host.overlays = []string{"chorus-launcher"}
+			case "not_needed":
+				host.terminals = []TeamTerminal{{State: "live", Labels: map[string]string{
+					"chorus.project": state.Record.Directory,
+					"herdr.space":    first.Space,
+					"herdr.tab":      "tab",
+					"chorus.handle":  first.Roles[0].Handle,
+				}}}
+			}
+			team, err := server.EnsureTeam(teamContext(state))
+			require.NoError(t, err)
+			assert.Equal(t, tc.dialog, team.Dialog)
+			assert.Equal(t, tc.step, team.Step)
+			userTeam, err := server.StartAgents(t.Context())
+			require.NoError(t, err)
+			assert.Equal(t, team.Step, userTeam.Step, "the user operation must carry the owner's step unchanged")
 		})
 	}
 }

@@ -3837,7 +3837,7 @@ var getBuildResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("build")},
 		JSONType:    "object",
-		Description: "not_started until the user starts a build of this change; started with the build afterwards.",
+		Description: "not_started when the change has no usable build for the current test source; start a new build on the views page. Otherwise started with the usable build.",
 	},
 	{
 		Path:     []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("state")},
@@ -3850,7 +3850,7 @@ var getBuildResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("build")},
 		JSONType:    "object",
-		Description: "The user has not started a build of this change.",
+		Description: "This change has no usable build for the current test source: the user has not started one, or its builder-only build lost the stored verification settings that supplied its tests. Start a new build on the views page.",
 		Branches: []tools.UnionBranch{
 			tools.TaggedUnionBranch{
 				Discriminator: []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("state")},
@@ -3861,7 +3861,7 @@ var getBuildResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("build")},
 		JSONType:    "object",
-		Description: "The build the user started for a change, with both assignments.",
+		Description: "The usable build the user started for a change, with the builder's assignment and the test writer's progress when one is used. A build started with only the builder remains usable while stored verification settings supply its tests.",
 		Branches: []tools.UnionBranch{
 			tools.TaggedUnionBranch{
 				Discriminator: []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("state")},
@@ -4189,6 +4189,17 @@ var getBuildResultFields = []tools.FieldMetadata{
 		Path:        []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("test_writer"), tools.FixedField("report")},
 		JSONType:    "integer",
 		Description: "Number of the test writer's latest counted report of this build; 0 when none was counted. Reports are not counted yet, so it is 0.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("state")},
+				Value:         "started",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("required_test_count")},
+		JSONType:    "integer",
+		Description: "Number of finished flows in the agreed Story. Zero means no test of this change's Story was required.",
 		Branches: []tools.UnionBranch{
 			tools.TaggedUnionBranch{
 				Discriminator: []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("state")},
@@ -5474,7 +5485,12 @@ var getTestWriterAssignmentResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("working_folder")},
 		JSONType:    "string",
-		Description: "Folder to write the tests in: your own working copy of the project. The project server does not prepare working copies yet, so it is empty.",
+		Description: "Folder to write the tests in: your own working copy of the project.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("design_source")},
+		JSONType:    "string",
+		Description: "The canonical design source as agreed at request_revision, copied when this build started; later revisions do not change it.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("stories")},
@@ -14376,6 +14392,7 @@ func MarshalGetTestWriterAssignmentResult(v *GetTestWriterAssignmentResult) ([]b
 		RequestRevision: &in.RequestRevision,
 		InForce:         &in.InForce,
 		WorkingFolder:   &in.WorkingFolder,
+		DesignSource:    &in.DesignSource,
 	}
 	out.Progress = encodeTestWriterProgressToTestWriterProgressTransport(in.Progress)
 	out.Stories = make([]*toolhttp.StorySummaryItemTransport, len(in.Stories))
@@ -14422,6 +14439,7 @@ func UnmarshalGetTestWriterAssignmentResult(data []byte) (*GetTestWriterAssignme
 		RequestRevision: *in.RequestRevision,
 		InForce:         *in.InForce,
 		WorkingFolder:   *in.WorkingFolder,
+		DesignSource:    *in.DesignSource,
 	}
 	out.Progress = decodeTestWriterProgressTransportToTestWriterProgress(in.Progress)
 	out.Stories = make([]*StorySummaryItem, len(in.Stories))
@@ -21685,7 +21703,7 @@ func validateGetBuildResultJSONValue(path string, value any, description string)
 		case "build":
 			if err := validateGetBuildResultRootBuildJSONValue(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "not_started until the user starts a build of this change; started with the build afterwards.",
+				typed[key], "not_started when the change has no usable build for the current test source; start a new build on the views page. Otherwise started with the usable build.",
 			); err != nil {
 				return err
 			}
@@ -21781,6 +21799,13 @@ func validateGetBuildResultStartedBuildTransportJSONValue(path string, value any
 			); err != nil {
 				return err
 			}
+		case "required_test_count":
+			if err := validateIntJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Number of finished flows in the agreed Story. Zero means no test of this change's Story was required.",
+			); err != nil {
+				return err
+			}
 		case "started_at":
 			if err := validateStringJSONValue(
 				generatedJSONChildPath(path, key, false),
@@ -21800,6 +21825,7 @@ func validateGetBuildResultStartedBuildTransportJSONValue(path string, value any
 				"builder",
 				"in_force",
 				"request_revision",
+				"required_test_count",
 				"started_at",
 				"test_writer",
 			})
@@ -22461,6 +22487,13 @@ func validateGetTestWriterAssignmentResultJSONValue(path string, value any, desc
 			); err != nil {
 				return err
 			}
+		case "design_source":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "The canonical design source as agreed at request_revision, copied when this build started; later revisions do not change it.",
+			); err != nil {
+				return err
+			}
 		case "in_force":
 			if err := validateBooleanJSONValue(
 				generatedJSONChildPath(path, key, false),
@@ -22499,13 +22532,14 @@ func validateGetTestWriterAssignmentResultJSONValue(path string, value any, desc
 		case "working_folder":
 			if err := validateStringJSONValue(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Folder to write the tests in: your own working copy of the project. The project server does not prepare working copies yet, so it is empty.",
+				typed[key], "Folder to write the tests in: your own working copy of the project.",
 			); err != nil {
 				return err
 			}
 		default:
 			return unknownJSONFieldError(path, key, []string{
 				"change_id",
+				"design_source",
 				"in_force",
 				"progress",
 				"request_revision",
@@ -23202,9 +23236,10 @@ func decodeBuildNotStartedTransportToBuildNotStarted(v *toolhttp.BuildNotStarted
 }
 func decodeStartedBuildTransportToStartedBuild(v *toolhttp.StartedBuildTransport) *StartedBuild {
 	res := &StartedBuild{
-		RequestRevision: *v.RequestRevision,
-		StartedAt:       *v.StartedAt,
-		InForce:         *v.InForce,
+		RequestRevision:   *v.RequestRevision,
+		StartedAt:         *v.StartedAt,
+		InForce:           *v.InForce,
+		RequiredTestCount: *v.RequiredTestCount,
 	}
 	res.Builder = decodeBuilderProgressTransportToBuilderProgress(v.Builder)
 	res.TestWriter = decodeTestWriterProgressTransportToTestWriterProgress(v.TestWriter)
@@ -23332,9 +23367,10 @@ func encodeBuildNotStartedToBuildNotStartedTransport(v *BuildNotStarted) *toolht
 }
 func encodeStartedBuildToStartedBuildTransport(v *StartedBuild) *toolhttp.StartedBuildTransport {
 	res := &toolhttp.StartedBuildTransport{
-		RequestRevision: &v.RequestRevision,
-		StartedAt:       &v.StartedAt,
-		InForce:         &v.InForce,
+		RequestRevision:   &v.RequestRevision,
+		StartedAt:         &v.StartedAt,
+		InForce:           &v.InForce,
+		RequiredTestCount: &v.RequiredTestCount,
 	}
 	res.Builder = encodeBuilderProgressToBuilderProgressTransport(v.Builder)
 	res.TestWriter = encodeTestWriterProgressToTestWriterProgressTransport(v.TestWriter)

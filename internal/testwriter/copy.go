@@ -66,7 +66,24 @@ type WorkingCopy struct {
 	gitDir string
 }
 
+// RefreshResult reports the working copy's commit after a start tried to bring
+// it to the project's commit. Every state carries the actual retained HEAD.
+type RefreshResult struct {
+	State  RefreshState
+	Commit string
+}
+
+// RefreshState is the reason Refresh retained or advanced the working copy.
+type RefreshState string
+
 const (
+	// RefreshAtProjectCommit means HEAD equals the project's commit, whether
+	// the copy was already there or this start advanced it.
+	RefreshAtProjectCommit RefreshState = "at_project_commit"
+	// RefreshNotContained preserves tests not merged into the project's branch.
+	RefreshNotContained RefreshState = "not_contained"
+	// RefreshDirty preserves the test writer's uncommitted or untracked files.
+	RefreshDirty RefreshState = "dirty"
 	// Folder is the working copy's folder name inside the project. Its
 	// ".surla" prefix makes the project's own checks (check_project) skip it,
 	// and the local exclude entry keeps it out of the project's git status.
@@ -81,6 +98,9 @@ const (
 )
 
 var (
+	// ErrIdentityMissing reports that Git cannot resolve the author or committer
+	// identity Record uses, including the user's configuration and environment.
+	ErrIdentityMissing = errors.New("git cannot resolve the user's author and committer name and address: configure Git's name and address, then try again")
 	// ErrNotRepository refuses a project folder that is in no git working
 	// tree. Its message is the step to take.
 	ErrNotRepository = errors.New("the project is not in a git repository: run git init in the project folder and commit its files, then try again")
@@ -98,6 +118,26 @@ var (
 	ErrBranchInUse = errors.New("branch " + Branch + ", which Surla reserves for the test writer's working copy, " +
 		"is held by another working copy")
 )
+
+// CheckIdentity reads the author and committer identity exactly as Record's Git
+// commit-tree does, with the user's configuration and identity environment and
+// the same redirect filtering. It writes no file and creates no working copy.
+// ErrIdentityMissing names the user's recovery step; cancellation and failures
+// to start Git retain their original causes.
+func CheckIdentity(ctx context.Context, projectDir string) error {
+	for _, name := range []string{"GIT_AUTHOR_IDENT", "GIT_COMMITTER_IDENT"} {
+		if _, err := git(ctx, projectDir, nil, "var", name); err != nil {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			if exitCode(err) >= 0 {
+				return ErrIdentityMissing
+			}
+			return err
+		}
+	}
+	return nil
+}
 
 // OpenWorkingCopy returns the test writer's working copy of the project in
 // projectDir, creating it when missing: a linked git working copy (git
@@ -183,7 +223,8 @@ func OpenWorkingCopy(ctx context.Context, projectDir string) (WorkingCopy, error
 }
 
 // Dir returns the absolute root of the working copy, a checkout of the whole
-// repository. The test writer works here.
+// repository. Project returns the folder the test writer works in, which may
+// be below this root when the project is in a repository subfolder.
 func (w WorkingCopy) Dir() string {
 	return w.dir
 }
@@ -192,6 +233,64 @@ func (w WorkingCopy) Dir() string {
 // project's modules, such as its evaluator module, are found.
 func (w WorkingCopy) Project() string {
 	return w.project
+}
+
+// Refresh brings a clean copy forward only when its tests branch is already
+// contained in the project's current commit. Untracked files count as dirty.
+// Only a build start calls it, under the project's working-copy turn. Git's
+// fast-forward merge preserves/refuses later editor changes instead of resetting
+// them; hooks and automatic stashing are disabled. Every copy command uses the
+// trusted administrative directory, never the copy author's .git file.
+func (w WorkingCopy) Refresh(ctx context.Context) (RefreshResult, error) {
+	return w.refresh(ctx, nil)
+}
+
+// refresh's seam models an editor writing after the clean observation. Git,
+// rather than that earlier observation, owns safe checkout at the transition.
+func (w WorkingCopy) refresh(ctx context.Context, beforeAdvance func()) (RefreshResult, error) {
+	if err := w.opened(); err != nil {
+		return RefreshResult{}, err
+	}
+	head, err := w.git(ctx, w.dir, nil, "rev-parse", "--verify", "HEAD^{commit}")
+	if err != nil {
+		return RefreshResult{}, err
+	}
+	target, err := git(ctx, filepath.Dir(w.dir), nil, "rev-parse", "--verify", "HEAD^{commit}")
+	if err != nil {
+		return RefreshResult{}, err
+	}
+	if _, err := w.git(ctx, w.dir, nil, "merge-base", "--is-ancestor", head, target); err != nil {
+		if exitCode(err) == 1 {
+			return RefreshResult{State: RefreshNotContained, Commit: head}, nil
+		}
+		return RefreshResult{}, err
+	}
+	status, err := w.git(ctx, w.dir, nil, "status", "--porcelain", "-z", "--untracked-files=all")
+	if err != nil {
+		return RefreshResult{}, err
+	}
+	if status != "" {
+		return RefreshResult{State: RefreshDirty, Commit: head}, nil
+	}
+	if head == target {
+		return RefreshResult{State: RefreshAtProjectCommit, Commit: head}, nil
+	}
+	if beforeAdvance != nil {
+		beforeAdvance()
+	}
+	if _, err := w.git(ctx, w.dir, nil, "merge", "--ff-only", "--no-edit", "--no-autostash", target); err != nil {
+		// A late author edit may prevent the fast-forward. Confirm that
+		// condition before calling it dirty; other Git failures stay failures.
+		status, statusErr := w.git(ctx, w.dir, nil, "status", "--porcelain", "-z", "--untracked-files=all")
+		if statusErr == nil && status != "" {
+			head, headErr := w.git(ctx, w.dir, nil, "rev-parse", "--verify", "HEAD^{commit}")
+			if headErr == nil {
+				return RefreshResult{State: RefreshDirty, Commit: head}, nil
+			}
+		}
+		return RefreshResult{}, fmt.Errorf("advance the test writer's working copy: %w", err)
+	}
+	return RefreshResult{State: RefreshAtProjectCommit, Commit: target}, nil
 }
 
 // excludeFolder adds excludePattern to the repository's own info/exclude

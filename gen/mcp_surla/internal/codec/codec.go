@@ -2316,6 +2316,9 @@ type GetBuildResultStartedBuildTransport struct {
 	Builder *GetBuildResultBuilderProgressTransport `json:"builder"`
 	// The test writer's assignment.
 	TestWriter *GetBuildResultTestWriterProgressTransport `json:"test_writer"`
+	// Number of finished flows in the agreed Story. Zero means no test of this
+	// change's Story was required.
+	RequiredTestCount *int `json:"required_test_count"`
 }
 
 // ValidateGetBuildResultStartedBuildTransport checks decoded JSON before it becomes a service value.
@@ -2338,6 +2341,9 @@ func ValidateGetBuildResultStartedBuildTransport(value *GetBuildResultStartedBui
 	if value.TestWriter == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("test_writer", "body"))
 	}
+	if value.RequiredTestCount == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("required_test_count", "body"))
+	}
 	if value.StartedAt != nil {
 		err = goa.MergeErrors(err, goa.ValidateFormat("body.started_at", *value.StartedAt, goa.FormatDateTime))
 	}
@@ -2349,6 +2355,11 @@ func ValidateGetBuildResultStartedBuildTransport(value *GetBuildResultStartedBui
 	if value.TestWriter != nil {
 		if err2 := ValidateGetBuildResultTestWriterProgressTransport(value.TestWriter); err2 != nil {
 			err = goa.MergeErrors(err, err2)
+		}
+	}
+	if value.RequiredTestCount != nil {
+		if *value.RequiredTestCount < 0 {
+			err = goa.MergeErrors(err, goa.InvalidRangeError("body.required_test_count", *value.RequiredTestCount, 0, true))
 		}
 	}
 	return err
@@ -2569,8 +2580,8 @@ func ValidateGetBuildResultTestsReportedTransport(value *GetBuildResultTestsRepo
 type GetBuildResultTransport struct {
 	// Change Card identifier.
 	ChangeID *string `json:"change_id"`
-	// not_started until the user starts a build of this change; started with the
-	// build afterwards.
+	// not_started when the change has no usable build for the current test source;
+	// start a new build on the views page. Otherwise started with the usable build.
 	Build *GetBuildResultbuildTransport `json:"build"`
 }
 
@@ -4081,9 +4092,11 @@ type GetTestWriterAssignmentResultTransport struct {
 	// Where this assignment stands, including Surla's findings when it needs
 	// changes.
 	Progress *GetTestWriterAssignmentResultTestWriterProgressTransport `json:"progress"`
-	// Folder to write the tests in: your own working copy of the project. The
-	// project server does not prepare working copies yet, so it is empty.
+	// Folder to write the tests in: your own working copy of the project.
 	WorkingFolder *string `json:"working_folder"`
+	// The canonical design source as agreed at request_revision, copied when this
+	// build started; later revisions do not change it.
+	DesignSource *string `json:"design_source"`
 	// The Story as agreed at request_revision, in declaration order. It does not
 	// change when the change is revised later.
 	Stories []*GetTestWriterAssignmentResultStorySummaryItemTransport `json:"stories"`
@@ -4111,6 +4124,9 @@ func ValidateGetTestWriterAssignmentResultTransport(value *GetTestWriterAssignme
 	}
 	if value.WorkingFolder == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("working_folder", "body"))
+	}
+	if value.DesignSource == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("design_source", "body"))
 	}
 	if value.Stories == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("stories", "body"))
@@ -11138,6 +11154,7 @@ func EncodeGetTestWriterAssignmentResult(in *surla.TestWriterAssignment) ([]byte
 			RequestRevision: &in.RequestRevision,
 			InForce:         &in.InForce,
 			WorkingFolder:   &in.WorkingFolder,
+			DesignSource:    &in.DesignSource,
 		}
 		body.Progress = encodeTestWriterProgressToGetTestWriterAssignmentResultTestWriterProgressTransport(in.Progress)
 		body.Stories = make([]*GetTestWriterAssignmentResultStorySummaryItemTransport, len(in.Stories))
@@ -13228,9 +13245,10 @@ func encodeRequiredTestToGetTestWriterAssignmentResultRequiredTestTransport(v *s
 
 func encodeStartedBuildToGetBuildResultStartedBuildTransport(v *surla.StartedBuild) *GetBuildResultStartedBuildTransport {
 	res := &GetBuildResultStartedBuildTransport{
-		RequestRevision: &v.RequestRevision,
-		StartedAt:       &v.StartedAt,
-		InForce:         &v.InForce,
+		RequestRevision:   &v.RequestRevision,
+		StartedAt:         &v.StartedAt,
+		InForce:           &v.InForce,
+		RequiredTestCount: &v.RequiredTestCount,
 	}
 	res.Builder = encodeBuilderProgressToGetBuildResultBuilderProgressTransport(v.Builder)
 	res.TestWriter = encodeTestWriterProgressToGetBuildResultTestWriterProgressTransport(v.TestWriter)

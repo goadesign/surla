@@ -22,7 +22,25 @@ type (
 		ReadTeam(context.Context) (*gensurla.TeamSnapshot, error)
 		ShowPane(context.Context, string) error
 		StartAgents(context.Context) (*gensurla.ProjectTeam, error)
+		RegisterBuildRoles(context.Context, BuildFolders) error
 		Supervise(context.Context, AssignmentReader) error
+	}
+	// BuildFolders selects the roles a build adds to the project-owned team.
+	// Its two cases carry only working folders: admission cannot name the guide,
+	// duplicate a role, or supply credentials or first messages. Registration saves
+	// exactly these roles and folders, removing an old test writer and credential
+	// for BuilderOnly. It performs no window operation; StartAgents owns that phase.
+	BuildFolders interface {
+		buildFolders()
+	}
+	// BuilderOnly admits the builder when stored verification settings supply tests.
+	BuilderOnly struct {
+		BuilderFolder string
+	}
+	// BuilderAndTestWriter admits both roles with their independently owned folders.
+	BuilderAndTestWriter struct {
+		BuilderFolder    string
+		TestWriterFolder string
 	}
 	// TeamBinding associates the one team owner with its immutable resource owner.
 	// The composition root binds it once before New; it never creates user credentials.
@@ -67,6 +85,12 @@ func (c *ControlPlane) StartTeamAgents(ctx context.Context) (*gensurla.ProjectTe
 	}
 	return team.StartAgents(ctx)
 }
+
+// buildFolders seals the builder-only case to this package.
+func (BuilderOnly) buildFolders() {}
+
+// buildFolders seals the builder-and-test-writer case to this package.
+func (BuilderAndTestWriter) buildFolders() {}
 
 // ownedTeam checks resource ownership once at each operation's entry, independently
 // of the generated endpoint's caller-purpose policy. Internal observation reads

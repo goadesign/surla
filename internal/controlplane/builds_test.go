@@ -20,48 +20,20 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.opentelemetry.io/otel/codes"
-	sdktrace "go.opentelemetry.io/otel/sdk/trace"
-	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	goa "goa.design/goa/v3/pkg"
 
 	gensurla "github.com/goadesign/surla/gen/surla"
 	"github.com/goadesign/surla/internal/designeval"
+	"github.com/goadesign/surla/internal/scaffold"
+	"github.com/goadesign/surla/internal/testwriter"
 )
-
-// recordingTeam is a BuildTeam stand-in that records each build it prepares
-// and returns folder, or err when set.
-type recordingTeam struct {
-	// folder is the working folder Prepare returns.
-	folder string
-	// err, when set, is returned by Prepare instead of folder.
-	err error
-	// during, when set, runs inside Prepare, as another caller's change to
-	// the card could while the roles are being prepared.
-	during func()
-	// prepared lists the builds Prepare received, in call order.
-	prepared []Build
-}
-
-// Prepare records build, runs during, and returns the configured folder or
-// error.
-func (r *recordingTeam) Prepare(_ context.Context, build Build) (string, error) {
-	r.prepared = append(r.prepared, build)
-	if r.during != nil {
-		r.during()
-	}
-	if r.err != nil {
-		return "", r.err
-	}
-	return r.folder, nil
-}
 
 // TestStartBuildOnlyAtTheConfirmedRevisionInForce refuses an unknown change,
 // another owner's change, an unconfirmed change and a revision that is not in
 // force, each without saving a build, then saves the build at the confirmed
 // revision with unread assignments.
 func TestStartBuildOnlyAtTheConfirmedRevisionInForce(t *testing.T) {
-	cp := newControlPlane(t, Options{})
+	cp := newBuildControlPlane(t, Options{})
 	guide := asCaller("alice@example.com", CallerGuide)
 	user := asCaller("alice@example.com", CallerUser)
 	proposed := mustPropose(t, cp, guide, "chg", "Refunds up to $50 are instant.", refundAnalysis("Refunds up to $50 are instant."))
@@ -109,19 +81,19 @@ func TestStartBuildOnlyAtTheConfirmedRevisionInForce(t *testing.T) {
 
 	started, err := cp.StartBuild(user, &gensurla.StartBuildPayload{ChangeID: "chg", RequestRevision: confirmed.RequestRevision})
 	require.NoError(t, err)
-	assert.Equal(t, confirmed.RequestRevision, started.RequestRevision)
-	assert.True(t, started.InForce)
-	assert.Equal(t, &gensurla.BuilderProgress{Read: false}, started.Builder)
-	assert.Equal(t, gensurla.TestsKindAssigned, started.TestWriter.Tests.Kind())
-	assert.False(t, started.TestWriter.Read)
-	startedAt, err := time.Parse(time.RFC3339Nano, started.StartedAt)
+	assert.Equal(t, confirmed.RequestRevision, started.Build.RequestRevision)
+	assert.True(t, started.Build.InForce)
+	assert.Equal(t, &gensurla.BuilderProgress{Read: false}, started.Build.Builder)
+	assert.Equal(t, gensurla.TestsKindAssigned, started.Build.TestWriter.Tests.Kind())
+	assert.False(t, started.Build.TestWriter.Read)
+	startedAt, err := time.Parse(time.RFC3339Nano, started.Build.StartedAt)
 	require.NoError(t, err)
 	assert.WithinDuration(t, time.Now(), startedAt, time.Minute)
 	read, err := cp.GetBuild(user, &gensurla.GetBuildPayload{ChangeID: "chg"})
 	require.NoError(t, err)
 	saved, ok := read.Build.AsStarted()
 	require.True(t, ok, "the build read reports the saved build")
-	assert.Equal(t, started, saved)
+	assert.Equal(t, started.Build, saved)
 }
 
 // TestBuildingAgainReplacesTheBuildAndClearsReads reads both assignments and
@@ -131,7 +103,7 @@ func TestStartBuildOnlyAtTheConfirmedRevisionInForce(t *testing.T) {
 // replaces the build with unread, newly assigned work. Building again at the
 // same revision also starts over.
 func TestBuildingAgainReplacesTheBuildAndClearsReads(t *testing.T) {
-	cp := newControlPlane(t, Options{})
+	cp := newBuildControlPlane(t, Options{})
 	user := asCaller("alice@example.com", CallerUser)
 	builder := asCaller("alice@example.com", CallerBuilder)
 	tests := asCaller("alice@example.com", CallerTestWriter)
@@ -177,11 +149,11 @@ func TestBuildingAgainReplacesTheBuildAndClearsReads(t *testing.T) {
 
 	rebuilt, err := cp.StartBuild(user, &gensurla.StartBuildPayload{ChangeID: "chg", RequestRevision: second.RequestRevision})
 	require.NoError(t, err)
-	assert.Equal(t, second.RequestRevision, rebuilt.RequestRevision)
-	assert.True(t, rebuilt.InForce)
-	assert.False(t, rebuilt.Builder.Read, "a new build clears the builder's read")
-	assert.False(t, rebuilt.TestWriter.Read, "a new build clears the test writer's read")
-	assert.Equal(t, gensurla.TestsKindAssigned, rebuilt.TestWriter.Tests.Kind(), "a new build assigns the tests again")
+	assert.Equal(t, second.RequestRevision, rebuilt.Build.RequestRevision)
+	assert.True(t, rebuilt.Build.InForce)
+	assert.False(t, rebuilt.Build.Builder.Read, "a new build clears the builder's read")
+	assert.False(t, rebuilt.Build.TestWriter.Read, "a new build clears the test writer's read")
+	assert.Equal(t, gensurla.TestsKindAssigned, rebuilt.Build.TestWriter.Tests.Kind(), "a new build assigns the tests again")
 	listed, err = cp.ListBuilderAssignments(builder)
 	require.NoError(t, err)
 	require.Len(t, listed.Assignments, 1, "the build was replaced, not added")
@@ -191,7 +163,7 @@ func TestBuildingAgainReplacesTheBuildAndClearsReads(t *testing.T) {
 	require.NoError(t, err)
 	again, err := cp.StartBuild(user, &gensurla.StartBuildPayload{ChangeID: "chg", RequestRevision: second.RequestRevision})
 	require.NoError(t, err)
-	assert.False(t, again.Builder.Read, "building the same revision again also starts over")
+	assert.False(t, again.Build.Builder.Read, "building the same revision again also starts over")
 }
 
 // TestAssignmentsSayWhetherTheirBuildIsInForce reads each role's assignment,
@@ -199,7 +171,7 @@ func TestBuildingAgainReplacesTheBuildAndClearsReads(t *testing.T) {
 // for the revision in force and after the user confirms another revision, and
 // checks that each reports the same in_force as the build read.
 func TestAssignmentsSayWhetherTheirBuildIsInForce(t *testing.T) {
-	cp := newControlPlane(t, Options{})
+	cp := newBuildControlPlane(t, Options{})
 	user := asCaller("alice@example.com", CallerUser)
 	builder := asCaller("alice@example.com", CallerBuilder)
 	tests := asCaller("alice@example.com", CallerTestWriter)
@@ -281,13 +253,17 @@ func TestStartBuildChecksTheChangeAgainAfterPreparing(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			team := &recordingTeam{folder: filepath.Join(t.TempDir(), ".surla-tests")}
-			cp := newControlPlane(t, Options{BuildTeam: team})
+			copy := &buildCopyFixture{folder: t.TempDir()}
+			cp := newBuildControlPlane(t, Options{})
+			cp.buildCopyFactory = func(context.Context, string, scaffold.Layout) (buildCopy, error) { return copy, nil }
 			card := saveStoryCard(t, cp, "chg", StatusConfirmed, refundStory("Refund over the limit"))
-			team.during = func() { saveStoryCard(t, cp, "chg", tc.status, refundStory("Refund over the new limit")) }
+			copy.refresh = func(context.Context) (testwriter.RefreshResult, error) {
+				saveStoryCard(t, cp, "chg", tc.status, refundStory("Refund over the new limit"))
+				return testwriter.RefreshResult{State: testwriter.RefreshAtProjectCommit, Commit: strings.Repeat("c", 40)}, nil
+			}
 			_, err := cp.StartBuild(asCaller("alice@example.com", CallerUser), &gensurla.StartBuildPayload{ChangeID: "chg", RequestRevision: card.RequestRevision})
 			assertRefused(t, err, "conflict")
-			assert.Len(t, team.prepared, 1, "the change was buildable when the start began")
+			assert.Empty(t, cp.team.Service.(*teamServiceFixture).calls, "a second-check refusal registers no role or window work")
 			assertNoBuildSaved(t, cp, "chg")
 		})
 	}
@@ -299,7 +275,7 @@ func TestStartBuildChecksTheChangeAgainAfterPreparing(t *testing.T) {
 // carries the agreed Story and one required test per finished flow, named as
 // the generator names them.
 func TestTestAssignmentKeepsTheStoryAgreedAtTheBuiltRevision(t *testing.T) {
-	cp := newControlPlane(t, Options{})
+	cp := newBuildControlPlane(t, Options{})
 	user := asCaller("alice@example.com", CallerUser)
 	tests := asCaller("alice@example.com", CallerTestWriter)
 	agreed := refundStory("Refund over the limit")
@@ -318,7 +294,7 @@ func TestTestAssignmentKeepsTheStoryAgreedAtTheBuiltRevision(t *testing.T) {
 	assert.Equal(t, []*gensurla.RequiredTest{{
 		Story: "Refunds", FlowKey: "refund-over-limit", Scenario: "refund_over_limit", Hook: "RefundOverLimit",
 	}}, assignment.RequiredTests, "one test per finished flow, named by the generator's rule")
-	assert.Empty(t, assignment.WorkingFolder, "no working copy is prepared without a bound BuildTeam")
+	assert.NotEmpty(t, assignment.WorkingFolder, "the build has its own test-writer project folder")
 	assert.True(t, assignment.Progress.Read)
 	build := mustStartedBuild(t, cp, user, "chg")
 	assert.False(t, build.InForce, "a revision awaiting confirmation leaves the build for an earlier revision")
@@ -328,7 +304,7 @@ func TestTestAssignmentKeepsTheStoryAgreedAtTheBuiltRevision(t *testing.T) {
 // finished flows that the generator would give the same test name, and saves
 // nothing.
 func TestStartBuildRefusesAStoryWhoseTestsCannotBeNamed(t *testing.T) {
-	cp := newControlPlane(t, Options{})
+	cp := newBuildControlPlane(t, Options{})
 	stories := refundStory("Refund over the limit")
 	stories[0].Flows = append(stories[0].Flows, designeval.StoryFlow{Key: "refund_over_limit", Title: "Same name", Complete: true})
 	card := saveStoryCard(t, cp, "chg", StatusConfirmed, stories)
@@ -342,7 +318,7 @@ func TestStartBuildRefusesAStoryWhoseTestsCannotBeNamed(t *testing.T) {
 // revision and refuses one for another revision, or for a change that has no
 // build, leaving the saved build byte for byte as it was.
 func TestReportForAnotherRevisionIsRefused(t *testing.T) {
-	cp := newControlPlane(t, Options{})
+	cp := newBuildControlPlane(t, Options{})
 	user := asCaller("alice@example.com", CallerUser)
 	tests := asCaller("alice@example.com", CallerTestWriter)
 	card := confirmedChange(t, cp, "chg")
@@ -380,7 +356,7 @@ func TestReportForAnotherRevisionIsRefused(t *testing.T) {
 // TestAssignmentsListOnlyTheCallersOwnChanges lists builds most recently
 // started first, and gives another owner's agents none of them.
 func TestAssignmentsListOnlyTheCallersOwnChanges(t *testing.T) {
-	cp := newControlPlane(t, Options{})
+	cp := newBuildControlPlane(t, Options{})
 	user := asCaller("alice@example.com", CallerUser)
 	older := confirmedChange(t, cp, "older")
 	newer := confirmedChange(t, cp, "newer")
@@ -411,59 +387,6 @@ func TestAssignmentsListOnlyTheCallersOwnChanges(t *testing.T) {
 	assertRefused(t, err, "forbidden")
 	_, err = cp.GetTestWriterAssignment(otherTests, &gensurla.GetTestWriterAssignmentPayload{ChangeID: "older"})
 	assertRefused(t, err, "forbidden")
-}
-
-// TestBuildTeamPreparesBeforeTheBuildIsSaved checks the interface a later
-// step binds: Prepare receives the change, revision and agreed Story and its
-// working folder reaches the test writer; a failing or relative-path Prepare
-// refuses the build with nothing saved and is recorded on the span; a refused
-// start never calls Prepare.
-func TestBuildTeamPreparesBeforeTheBuildIsSaved(t *testing.T) {
-	folder := filepath.Join(t.TempDir(), ".surla-tests")
-	cases := []struct {
-		name   string
-		team   *recordingTeam
-		failed string
-	}{
-		{name: "prepared", team: &recordingTeam{folder: folder}},
-		{name: "prepare fails", team: &recordingTeam{err: errors.New("the project folder is not a git repository")}, failed: "not a git repository"},
-		{name: "relative folder", team: &recordingTeam{folder: ".surla-tests"}, failed: "not an absolute path"},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			exporter := tracetest.NewInMemoryExporter()
-			provider := sdktrace.NewTracerProvider(sdktrace.WithSyncer(exporter))
-			t.Cleanup(func() { assert.NoError(t, provider.Shutdown(context.Background())) })
-			cp := newControlPlane(t, Options{BuildTeam: tc.team, TracerProvider: provider})
-			user := asCaller("alice@example.com", CallerUser)
-			stories := refundStory("Refund over the limit")
-			card := saveStoryCard(t, cp, "chg", StatusConfirmed, stories)
-			_, err := cp.StartBuild(user, &gensurla.StartBuildPayload{ChangeID: "chg", RequestRevision: strings.Repeat("0", 64)})
-			assertRefused(t, err, "conflict")
-			assert.Empty(t, tc.team.prepared, "a refused start prepares nothing")
-
-			_, err = cp.StartBuild(user, &gensurla.StartBuildPayload{ChangeID: "chg", RequestRevision: card.RequestRevision})
-			require.Len(t, tc.team.prepared, 1)
-			assert.Equal(t, Build{ChangeID: "chg", RequestRevision: card.RequestRevision, Stories: stories}, tc.team.prepared[0])
-			var statuses []codes.Code
-			for _, span := range exporter.GetSpans() {
-				if span.Name == "surla.controlplane.start_build" {
-					statuses = append(statuses, span.Status.Code)
-				}
-			}
-			if tc.failed != "" {
-				assert.ErrorContains(t, err, tc.failed)
-				assertNoBuildSaved(t, cp, "chg")
-				assert.Equal(t, []codes.Code{codes.Unset, codes.Error}, statuses, "a refusal is not a failure; a failed Prepare is")
-				return
-			}
-			require.NoError(t, err)
-			assert.Equal(t, []codes.Code{codes.Unset, codes.Unset}, statuses)
-			assignment, err := cp.GetTestWriterAssignment(asCaller("alice@example.com", CallerTestWriter), &gensurla.GetTestWriterAssignmentPayload{ChangeID: "chg"})
-			require.NoError(t, err)
-			assert.Equal(t, folder, assignment.WorkingFolder)
-		})
-	}
 }
 
 // TestBuildFileIsDecodedStrictly damages a saved build in each way the
@@ -549,7 +472,7 @@ func TestBuildFileIsDecodedStrictly(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			cp := newControlPlane(t, Options{})
+			cp := newBuildControlPlane(t, Options{})
 			user := asCaller("alice@example.com", CallerUser)
 			card := confirmedChange(t, cp, "chg")
 			_, err := cp.StartBuild(user, &gensurla.StartBuildPayload{ChangeID: "chg", RequestRevision: card.RequestRevision})
@@ -587,7 +510,7 @@ func TestBuildFileIsDecodedStrictly(t *testing.T) {
 // only its own assignments, refused calls change nothing, and a tool is
 // listed exactly for the callers the table allows.
 func TestBuildOperationsFollowTheRoleTable(t *testing.T) {
-	cp := newControlPlane(t, Options{})
+	cp := newBuildControlPlane(t, Options{})
 	card := confirmedChange(t, cp, "chg")
 	tokens := map[string]CallerKind{"user": CallerUser, "guide": CallerGuide, "builder": CallerBuilder, "tests": CallerTestWriter}
 	credentials := map[string]Principal{}

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -62,7 +63,7 @@ func TestStartOpensOnlyProjectViewsLinks(t *testing.T) {
 					return
 				}
 				if r.URL.Path == "/project/team" {
-					_, err := io.WriteString(w, `{"team":"fixture-team","space":"fixture-space","roles":[{"role":"guide","handle":"guide-fixture","running":true}],"dialog":"not_needed"}`)
+					_, err := io.WriteString(w, `{"team":"fixture-team","space":"fixture-space","roles":[{"role":"guide","handle":"guide-fixture","running":true}],"dialog":"not_needed","step":"Fixture team instructions."}`)
 					assert.NoError(t, err)
 					return
 				}
@@ -137,7 +138,7 @@ func TestUnexpectedManagementResponseDoesNotEchoCredential(t *testing.T) {
 // TestManagementErrorsUseOnlyCLIText covers declared errors, malformed bodies and
 // malformed HTTP itself. The peer deliberately copies the sent credential into each reply.
 func TestManagementErrorsUseOnlyCLIText(t *testing.T) {
-	for _, scenario := range []string{"forbidden", "conflict", "unprocessable", "unknown name", "invalid JSON", "malformed status", "malformed header"} {
+	for _, scenario := range []string{"forbidden", "window_busy", "unprocessable", "unknown name", "invalid JSON", "malformed status", "malformed header"} {
 		t.Run(scenario, func(t *testing.T) {
 			isolateServeWorkspace(t)
 			state, err := fixtureProjectState("")
@@ -145,7 +146,7 @@ func TestManagementErrorsUseOnlyCLIText(t *testing.T) {
 			key := strings.Repeat("c", 64)
 			marker := "peer-must-never-print"
 			status := http.StatusForbidden
-			if scenario == "conflict" {
+			if scenario == "window_busy" {
 				status = http.StatusConflict
 			}
 			if scenario == "unprocessable" {
@@ -169,6 +170,7 @@ func TestManagementErrorsUseOnlyCLIText(t *testing.T) {
 					return
 				}
 				w.Header().Set("Content-Type", "application/json")
+				w.Header().Set("goa-error", scenario)
 				w.WriteHeader(status)
 				if scenario == "invalid JSON" {
 					_, err := fmt.Fprintf(w, "%s %s", r.Header.Get("Authorization"), marker)
@@ -186,7 +188,11 @@ func TestManagementErrorsUseOnlyCLIText(t *testing.T) {
 			require.NoError(t, state.SaveRunning(project.Running{ManagementCredential: key}))
 			ctx, cancel := context.WithTimeout(t.Context(), time.Second)
 			defer cancel()
-			_, err = projectClient(state).Identity(ctx)
+			if scenario == "window_busy" {
+				_, err = projectClient(state).EnsureTeam(ctx)
+			} else {
+				_, err = projectClient(state).Identity(ctx)
+			}
 			require.Error(t, err)
 			assert.False(t, strings.Contains(err.Error(), key), "the CLI must never echo the sent credential")
 			assert.False(t, strings.Contains(err.Error(), marker), "the CLI must never print peer-authored text")
@@ -322,4 +328,53 @@ func TestManagementLocalFailuresPreserveIdentity(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(state.Dir, "running.json"), []byte("not JSON"), 0o600))
 	_, err = projectClient(state).Identity(t.Context())
 	assert.ErrorContains(t, err, "decode project state")
+}
+
+// TestStartPrintsProjectTeamStep proves the CLI preserves the owner's sentence for every dialog state.
+func TestStartPrintsProjectTeamStep(t *testing.T) {
+	for _, dialog := range []string{"opened", "already_open", "not_needed"} {
+		t.Run(dialog, func(t *testing.T) {
+			isolateServeWorkspace(t)
+			state, err := fixtureProjectState("")
+			require.NoError(t, err)
+			cp, err := controlplane.New(controlplane.Options{CardsDir: state.CardsDir()})
+			require.NoError(t, err)
+			t.Cleanup(func() { assert.NoError(t, cp.Close()) })
+			step := "Owner's next step for " + dialog + `: choose "fixture-agent".`
+			api := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				switch r.URL.Path {
+				case "/project/identity":
+					assert.NoError(t, json.NewEncoder(w).Encode(map[string]string{
+						"project_id": state.Record.ID, "directory": state.Record.Directory, "owner": state.Record.Owner,
+					}))
+				case "/project/team":
+					assert.NoError(t, json.NewEncoder(w).Encode(map[string]any{
+						"team": "fixture-team", "space": "fixture-space", "roles": []any{}, "dialog": dialog, "step": step,
+					}))
+				case "/project/browser-link":
+					w.WriteHeader(http.StatusCreated)
+					assert.NoError(t, json.NewEncoder(w).Encode(map[string]string{
+						"url":        state.Origin() + "/views#link=" + strings.Repeat("a", 64),
+						"expires_at": time.Now().Add(time.Minute).Format(time.RFC3339Nano),
+					}))
+				default:
+					t.Errorf("unexpected request: %s", r.URL.Path)
+				}
+			}))
+			require.NoError(t, api.Listener.Close())
+			api.Listener, err = net.Listen("tcp", state.Address())
+			require.NoError(t, err)
+			api.Start()
+			t.Cleanup(api.Close)
+			require.NoError(t, state.SaveRunning(project.Running{ManagementCredential: strings.Repeat("b", 64)}))
+			runtime := testProjectRuntime()
+			bindFixtureTeamEffects(&runtime)
+			runtime.preflight = func() error { return nil }
+			runtime.openViews = func(context.Context, string) error { return nil }
+			var output bytes.Buffer
+			require.NoError(t, runtime.start(&output))
+			assert.Contains(t, output.String(), "Team fixture-team.\n"+step+"\n")
+		})
+	}
 }

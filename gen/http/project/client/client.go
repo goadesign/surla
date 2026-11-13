@@ -28,14 +28,6 @@ type Client struct {
 	// Stop Doer is the HTTP client used to make requests to the stop endpoint.
 	StopDoer goahttp.Doer
 
-	// AddAgent Doer is the HTTP client used to make requests to the add_agent
-	// endpoint.
-	AddAgentDoer goahttp.Doer
-
-	// RemoveAgent Doer is the HTTP client used to make requests to the
-	// remove_agent endpoint.
-	RemoveAgentDoer goahttp.Doer
-
 	// BrowserLink Doer is the HTTP client used to make requests to the
 	// browser_link endpoint.
 	BrowserLinkDoer goahttp.Doer
@@ -67,8 +59,6 @@ func NewClient(
 		IdentityDoer:            doer,
 		EnsureTeamDoer:          doer,
 		StopDoer:                doer,
-		AddAgentDoer:            doer,
-		RemoveAgentDoer:         doer,
 		BrowserLinkDoer:         doer,
 		ExchangeBrowserLinkDoer: doer,
 		RestoreResponseBody:     restoreBody,
@@ -131,49 +121,6 @@ func (c *Client) Stop() goa.Endpoint {
 		resp, err := c.StopDoer.Do(req)
 		if err != nil {
 			return nil, goahttp.ErrRequestError("project", "stop", err)
-		}
-		return decodeResponse(resp)
-	}
-}
-
-// AddAgent returns an endpoint that makes HTTP requests to the project service
-// add_agent server.
-func (c *Client) AddAgent() goa.Endpoint {
-	var (
-		encodeRequest  = EncodeAddAgentRequest(c.encoder)
-		decodeResponse = DecodeAddAgentResponse(c.decoder, c.RestoreResponseBody)
-	)
-	return func(ctx context.Context, v any) (any, error) {
-		req, err := c.BuildAddAgentRequest(ctx, v)
-		if err != nil {
-			return nil, err
-		}
-		err = encodeRequest(req, v)
-		if err != nil {
-			return nil, err
-		}
-		resp, err := c.AddAgentDoer.Do(req)
-		if err != nil {
-			return nil, goahttp.ErrRequestError("project", "add_agent", err)
-		}
-		return decodeResponse(resp)
-	}
-}
-
-// RemoveAgent returns an endpoint that makes HTTP requests to the project
-// service remove_agent server.
-func (c *Client) RemoveAgent() goa.Endpoint {
-	var (
-		decodeResponse = DecodeRemoveAgentResponse(c.decoder, c.RestoreResponseBody)
-	)
-	return func(ctx context.Context, v any) (any, error) {
-		req, err := c.BuildRemoveAgentRequest(ctx, v)
-		if err != nil {
-			return nil, err
-		}
-		resp, err := c.RemoveAgentDoer.Do(req)
-		if err != nil {
-			return nil, goahttp.ErrRequestError("project", "remove_agent", err)
 		}
 		return decodeResponse(resp)
 	}

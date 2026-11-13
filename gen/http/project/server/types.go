@@ -14,15 +14,6 @@ import (
 	goa "goa.design/goa/v3/pkg"
 )
 
-// AddAgentRequestBody is the type of the "project" service "add_agent"
-// endpoint HTTP request body.
-type AddAgentRequestBody struct {
-	// Agent identifier.
-	ActorID *string `form:"actor_id,omitempty" json:"actor_id,omitempty" xml:"actor_id,omitempty"`
-	// Agent purpose.
-	Role *string `form:"role,omitempty" json:"role,omitempty" xml:"role,omitempty"`
-}
-
 // ExchangeBrowserLinkRequestBody is the type of the "project" service
 // "exchange_browser_link" endpoint HTTP request body.
 type ExchangeBrowserLinkRequestBody struct {
@@ -51,18 +42,8 @@ type EnsureTeamResponseBody struct {
 	Roles []*ProjectTeamRoleResponseBody `form:"roles" json:"roles" xml:"roles"`
 	// Launcher state after ensuring the team.
 	Dialog string `form:"dialog" json:"dialog" xml:"dialog"`
-}
-
-// AddAgentResponseBody is the type of the "project" service "add_agent"
-// endpoint HTTP response body.
-type AddAgentResponseBody struct {
-	// Agent identity, separate from resource ownership.
-	ActorID string `form:"actor_id" json:"actor_id" xml:"actor_id"`
-	// Trusted agent purpose.
-	Role string `form:"role" json:"role" xml:"role"`
-	// Private credential file for the launcher; never put its contents in
-	// arguments or labels.
-	CredentialFile string `form:"credential_file" json:"credential_file" xml:"credential_file"`
+	// What the user does next for the prepared team.
+	Step string `form:"step" json:"step" xml:"step"`
 }
 
 // BrowserLinkResponseBody is the type of the "project" service "browser_link"
@@ -117,45 +98,9 @@ type IdentityUnprocessableResponseBody struct {
 	Fault bool `form:"fault" json:"fault" xml:"fault"`
 }
 
-// IdentityConflictResponseBody is the type of the "project" service "identity"
-// endpoint HTTP response body for the "conflict" error.
-type IdentityConflictResponseBody struct {
-	// Name is the name of this class of errors.
-	Name string `form:"name" json:"name" xml:"name"`
-	// ID is a unique identifier for this particular occurrence of the problem.
-	ID string `form:"id" json:"id" xml:"id"`
-	// Message is a human-readable explanation specific to this occurrence of the
-	// problem.
-	Message string `form:"message" json:"message" xml:"message"`
-	// Is the error temporary?
-	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
-	// Is the error a timeout?
-	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
-	// Is the error a server-side fault?
-	Fault bool `form:"fault" json:"fault" xml:"fault"`
-}
-
 // EnsureTeamWindowBusyResponseBody is the type of the "project" service
 // "ensure_team" endpoint HTTP response body for the "window_busy" error.
 type EnsureTeamWindowBusyResponseBody struct {
-	// Name is the name of this class of errors.
-	Name string `form:"name" json:"name" xml:"name"`
-	// ID is a unique identifier for this particular occurrence of the problem.
-	ID string `form:"id" json:"id" xml:"id"`
-	// Message is a human-readable explanation specific to this occurrence of the
-	// problem.
-	Message string `form:"message" json:"message" xml:"message"`
-	// Is the error temporary?
-	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
-	// Is the error a timeout?
-	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
-	// Is the error a server-side fault?
-	Fault bool `form:"fault" json:"fault" xml:"fault"`
-}
-
-// EnsureTeamConflictResponseBody is the type of the "project" service
-// "ensure_team" endpoint HTTP response body for the "conflict" error.
-type EnsureTeamConflictResponseBody struct {
 	// Name is the name of this class of errors.
 	Name string `form:"name" json:"name" xml:"name"`
 	// ID is a unique identifier for this particular occurrence of the problem.
@@ -270,132 +215,6 @@ type StopUnprocessableResponseBody struct {
 	Fault bool `form:"fault" json:"fault" xml:"fault"`
 }
 
-// StopConflictResponseBody is the type of the "project" service "stop"
-// endpoint HTTP response body for the "conflict" error.
-type StopConflictResponseBody struct {
-	// Name is the name of this class of errors.
-	Name string `form:"name" json:"name" xml:"name"`
-	// ID is a unique identifier for this particular occurrence of the problem.
-	ID string `form:"id" json:"id" xml:"id"`
-	// Message is a human-readable explanation specific to this occurrence of the
-	// problem.
-	Message string `form:"message" json:"message" xml:"message"`
-	// Is the error temporary?
-	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
-	// Is the error a timeout?
-	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
-	// Is the error a server-side fault?
-	Fault bool `form:"fault" json:"fault" xml:"fault"`
-}
-
-// AddAgentForbiddenResponseBody is the type of the "project" service
-// "add_agent" endpoint HTTP response body for the "forbidden" error.
-type AddAgentForbiddenResponseBody struct {
-	// Name is the name of this class of errors.
-	Name string `form:"name" json:"name" xml:"name"`
-	// ID is a unique identifier for this particular occurrence of the problem.
-	ID string `form:"id" json:"id" xml:"id"`
-	// Message is a human-readable explanation specific to this occurrence of the
-	// problem.
-	Message string `form:"message" json:"message" xml:"message"`
-	// Is the error temporary?
-	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
-	// Is the error a timeout?
-	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
-	// Is the error a server-side fault?
-	Fault bool `form:"fault" json:"fault" xml:"fault"`
-}
-
-// AddAgentUnprocessableResponseBody is the type of the "project" service
-// "add_agent" endpoint HTTP response body for the "unprocessable" error.
-type AddAgentUnprocessableResponseBody struct {
-	// Name is the name of this class of errors.
-	Name string `form:"name" json:"name" xml:"name"`
-	// ID is a unique identifier for this particular occurrence of the problem.
-	ID string `form:"id" json:"id" xml:"id"`
-	// Message is a human-readable explanation specific to this occurrence of the
-	// problem.
-	Message string `form:"message" json:"message" xml:"message"`
-	// Is the error temporary?
-	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
-	// Is the error a timeout?
-	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
-	// Is the error a server-side fault?
-	Fault bool `form:"fault" json:"fault" xml:"fault"`
-}
-
-// AddAgentConflictResponseBody is the type of the "project" service
-// "add_agent" endpoint HTTP response body for the "conflict" error.
-type AddAgentConflictResponseBody struct {
-	// Name is the name of this class of errors.
-	Name string `form:"name" json:"name" xml:"name"`
-	// ID is a unique identifier for this particular occurrence of the problem.
-	ID string `form:"id" json:"id" xml:"id"`
-	// Message is a human-readable explanation specific to this occurrence of the
-	// problem.
-	Message string `form:"message" json:"message" xml:"message"`
-	// Is the error temporary?
-	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
-	// Is the error a timeout?
-	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
-	// Is the error a server-side fault?
-	Fault bool `form:"fault" json:"fault" xml:"fault"`
-}
-
-// RemoveAgentForbiddenResponseBody is the type of the "project" service
-// "remove_agent" endpoint HTTP response body for the "forbidden" error.
-type RemoveAgentForbiddenResponseBody struct {
-	// Name is the name of this class of errors.
-	Name string `form:"name" json:"name" xml:"name"`
-	// ID is a unique identifier for this particular occurrence of the problem.
-	ID string `form:"id" json:"id" xml:"id"`
-	// Message is a human-readable explanation specific to this occurrence of the
-	// problem.
-	Message string `form:"message" json:"message" xml:"message"`
-	// Is the error temporary?
-	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
-	// Is the error a timeout?
-	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
-	// Is the error a server-side fault?
-	Fault bool `form:"fault" json:"fault" xml:"fault"`
-}
-
-// RemoveAgentUnprocessableResponseBody is the type of the "project" service
-// "remove_agent" endpoint HTTP response body for the "unprocessable" error.
-type RemoveAgentUnprocessableResponseBody struct {
-	// Name is the name of this class of errors.
-	Name string `form:"name" json:"name" xml:"name"`
-	// ID is a unique identifier for this particular occurrence of the problem.
-	ID string `form:"id" json:"id" xml:"id"`
-	// Message is a human-readable explanation specific to this occurrence of the
-	// problem.
-	Message string `form:"message" json:"message" xml:"message"`
-	// Is the error temporary?
-	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
-	// Is the error a timeout?
-	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
-	// Is the error a server-side fault?
-	Fault bool `form:"fault" json:"fault" xml:"fault"`
-}
-
-// RemoveAgentConflictResponseBody is the type of the "project" service
-// "remove_agent" endpoint HTTP response body for the "conflict" error.
-type RemoveAgentConflictResponseBody struct {
-	// Name is the name of this class of errors.
-	Name string `form:"name" json:"name" xml:"name"`
-	// ID is a unique identifier for this particular occurrence of the problem.
-	ID string `form:"id" json:"id" xml:"id"`
-	// Message is a human-readable explanation specific to this occurrence of the
-	// problem.
-	Message string `form:"message" json:"message" xml:"message"`
-	// Is the error temporary?
-	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
-	// Is the error a timeout?
-	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
-	// Is the error a server-side fault?
-	Fault bool `form:"fault" json:"fault" xml:"fault"`
-}
-
 // BrowserLinkForbiddenResponseBody is the type of the "project" service
 // "browser_link" endpoint HTTP response body for the "forbidden" error.
 type BrowserLinkForbiddenResponseBody struct {
@@ -417,24 +236,6 @@ type BrowserLinkForbiddenResponseBody struct {
 // BrowserLinkUnprocessableResponseBody is the type of the "project" service
 // "browser_link" endpoint HTTP response body for the "unprocessable" error.
 type BrowserLinkUnprocessableResponseBody struct {
-	// Name is the name of this class of errors.
-	Name string `form:"name" json:"name" xml:"name"`
-	// ID is a unique identifier for this particular occurrence of the problem.
-	ID string `form:"id" json:"id" xml:"id"`
-	// Message is a human-readable explanation specific to this occurrence of the
-	// problem.
-	Message string `form:"message" json:"message" xml:"message"`
-	// Is the error temporary?
-	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
-	// Is the error a timeout?
-	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
-	// Is the error a server-side fault?
-	Fault bool `form:"fault" json:"fault" xml:"fault"`
-}
-
-// BrowserLinkConflictResponseBody is the type of the "project" service
-// "browser_link" endpoint HTTP response body for the "conflict" error.
-type BrowserLinkConflictResponseBody struct {
 	// Name is the name of this class of errors.
 	Name string `form:"name" json:"name" xml:"name"`
 	// ID is a unique identifier for this particular occurrence of the problem.
@@ -488,24 +289,6 @@ type ExchangeBrowserLinkUnprocessableResponseBody struct {
 	Fault bool `form:"fault" json:"fault" xml:"fault"`
 }
 
-// ExchangeBrowserLinkConflictResponseBody is the type of the "project" service
-// "exchange_browser_link" endpoint HTTP response body for the "conflict" error.
-type ExchangeBrowserLinkConflictResponseBody struct {
-	// Name is the name of this class of errors.
-	Name string `form:"name" json:"name" xml:"name"`
-	// ID is a unique identifier for this particular occurrence of the problem.
-	ID string `form:"id" json:"id" xml:"id"`
-	// Message is a human-readable explanation specific to this occurrence of the
-	// problem.
-	Message string `form:"message" json:"message" xml:"message"`
-	// Is the error temporary?
-	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
-	// Is the error a timeout?
-	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
-	// Is the error a server-side fault?
-	Fault bool `form:"fault" json:"fault" xml:"fault"`
-}
-
 // ProjectTeamRoleResponseBody is used to define fields on response body types.
 type ProjectTeamRoleResponseBody struct {
 	// Trusted role.
@@ -535,6 +318,7 @@ func NewEnsureTeamResponseBody(res *project.ProjectTeam) *EnsureTeamResponseBody
 		Team:   res.Team,
 		Space:  res.Space,
 		Dialog: res.Dialog,
+		Step:   res.Step,
 	}
 	if res.Roles != nil {
 		body.Roles = make([]*ProjectTeamRoleResponseBody, len(res.Roles))
@@ -547,17 +331,6 @@ func NewEnsureTeamResponseBody(res *project.ProjectTeam) *EnsureTeamResponseBody
 		}
 	} else {
 		body.Roles = []*ProjectTeamRoleResponseBody{}
-	}
-	return body
-}
-
-// NewAddAgentResponseBody builds the HTTP response body from the result of the
-// "add_agent" endpoint of the "project" service.
-func NewAddAgentResponseBody(res *project.ProjectAgent) *AddAgentResponseBody {
-	body := &AddAgentResponseBody{
-		ActorID:        res.ActorID,
-		Role:           res.Role,
-		CredentialFile: res.CredentialFile,
 	}
 	return body
 }
@@ -609,38 +382,10 @@ func NewIdentityUnprocessableResponseBody(res *goa.ServiceError) *IdentityUnproc
 	return body
 }
 
-// NewIdentityConflictResponseBody builds the HTTP response body from the
-// result of the "identity" endpoint of the "project" service.
-func NewIdentityConflictResponseBody(res *goa.ServiceError) *IdentityConflictResponseBody {
-	body := &IdentityConflictResponseBody{
-		Name:      res.Name,
-		ID:        res.ID,
-		Message:   res.Message,
-		Temporary: res.Temporary,
-		Timeout:   res.Timeout,
-		Fault:     res.Fault,
-	}
-	return body
-}
-
 // NewEnsureTeamWindowBusyResponseBody builds the HTTP response body from the
 // result of the "ensure_team" endpoint of the "project" service.
 func NewEnsureTeamWindowBusyResponseBody(res *goa.ServiceError) *EnsureTeamWindowBusyResponseBody {
 	body := &EnsureTeamWindowBusyResponseBody{
-		Name:      res.Name,
-		ID:        res.ID,
-		Message:   res.Message,
-		Temporary: res.Temporary,
-		Timeout:   res.Timeout,
-		Fault:     res.Fault,
-	}
-	return body
-}
-
-// NewEnsureTeamConflictResponseBody builds the HTTP response body from the
-// result of the "ensure_team" endpoint of the "project" service.
-func NewEnsureTeamConflictResponseBody(res *goa.ServiceError) *EnsureTeamConflictResponseBody {
-	body := &EnsureTeamConflictResponseBody{
 		Name:      res.Name,
 		ID:        res.ID,
 		Message:   res.Message,
@@ -731,104 +476,6 @@ func NewStopUnprocessableResponseBody(res *goa.ServiceError) *StopUnprocessableR
 	return body
 }
 
-// NewStopConflictResponseBody builds the HTTP response body from the result of
-// the "stop" endpoint of the "project" service.
-func NewStopConflictResponseBody(res *goa.ServiceError) *StopConflictResponseBody {
-	body := &StopConflictResponseBody{
-		Name:      res.Name,
-		ID:        res.ID,
-		Message:   res.Message,
-		Temporary: res.Temporary,
-		Timeout:   res.Timeout,
-		Fault:     res.Fault,
-	}
-	return body
-}
-
-// NewAddAgentForbiddenResponseBody builds the HTTP response body from the
-// result of the "add_agent" endpoint of the "project" service.
-func NewAddAgentForbiddenResponseBody(res *goa.ServiceError) *AddAgentForbiddenResponseBody {
-	body := &AddAgentForbiddenResponseBody{
-		Name:      res.Name,
-		ID:        res.ID,
-		Message:   res.Message,
-		Temporary: res.Temporary,
-		Timeout:   res.Timeout,
-		Fault:     res.Fault,
-	}
-	return body
-}
-
-// NewAddAgentUnprocessableResponseBody builds the HTTP response body from the
-// result of the "add_agent" endpoint of the "project" service.
-func NewAddAgentUnprocessableResponseBody(res *goa.ServiceError) *AddAgentUnprocessableResponseBody {
-	body := &AddAgentUnprocessableResponseBody{
-		Name:      res.Name,
-		ID:        res.ID,
-		Message:   res.Message,
-		Temporary: res.Temporary,
-		Timeout:   res.Timeout,
-		Fault:     res.Fault,
-	}
-	return body
-}
-
-// NewAddAgentConflictResponseBody builds the HTTP response body from the
-// result of the "add_agent" endpoint of the "project" service.
-func NewAddAgentConflictResponseBody(res *goa.ServiceError) *AddAgentConflictResponseBody {
-	body := &AddAgentConflictResponseBody{
-		Name:      res.Name,
-		ID:        res.ID,
-		Message:   res.Message,
-		Temporary: res.Temporary,
-		Timeout:   res.Timeout,
-		Fault:     res.Fault,
-	}
-	return body
-}
-
-// NewRemoveAgentForbiddenResponseBody builds the HTTP response body from the
-// result of the "remove_agent" endpoint of the "project" service.
-func NewRemoveAgentForbiddenResponseBody(res *goa.ServiceError) *RemoveAgentForbiddenResponseBody {
-	body := &RemoveAgentForbiddenResponseBody{
-		Name:      res.Name,
-		ID:        res.ID,
-		Message:   res.Message,
-		Temporary: res.Temporary,
-		Timeout:   res.Timeout,
-		Fault:     res.Fault,
-	}
-	return body
-}
-
-// NewRemoveAgentUnprocessableResponseBody builds the HTTP response body from
-// the result of the "remove_agent" endpoint of the "project" service.
-func NewRemoveAgentUnprocessableResponseBody(res *goa.ServiceError) *RemoveAgentUnprocessableResponseBody {
-	body := &RemoveAgentUnprocessableResponseBody{
-		Name:      res.Name,
-		ID:        res.ID,
-		Message:   res.Message,
-		Temporary: res.Temporary,
-		Timeout:   res.Timeout,
-		Fault:     res.Fault,
-	}
-	return body
-}
-
-// NewRemoveAgentConflictResponseBody builds the HTTP response body from the
-// result of the "remove_agent" endpoint of the "project" service.
-func NewRemoveAgentConflictResponseBody(res *goa.ServiceError) *RemoveAgentConflictResponseBody {
-	body := &RemoveAgentConflictResponseBody{
-		Name:      res.Name,
-		ID:        res.ID,
-		Message:   res.Message,
-		Temporary: res.Temporary,
-		Timeout:   res.Timeout,
-		Fault:     res.Fault,
-	}
-	return body
-}
-
 // NewBrowserLinkForbiddenResponseBody builds the HTTP response body from the
 // result of the "browser_link" endpoint of the "project" service.
 func NewBrowserLinkForbiddenResponseBody(res *goa.ServiceError) *BrowserLinkForbiddenResponseBody {
@@ -847,20 +494,6 @@ func NewBrowserLinkForbiddenResponseBody(res *goa.ServiceError) *BrowserLinkForb
 // the result of the "browser_link" endpoint of the "project" service.
 func NewBrowserLinkUnprocessableResponseBody(res *goa.ServiceError) *BrowserLinkUnprocessableResponseBody {
 	body := &BrowserLinkUnprocessableResponseBody{
-		Name:      res.Name,
-		ID:        res.ID,
-		Message:   res.Message,
-		Temporary: res.Temporary,
-		Timeout:   res.Timeout,
-		Fault:     res.Fault,
-	}
-	return body
-}
-
-// NewBrowserLinkConflictResponseBody builds the HTTP response body from the
-// result of the "browser_link" endpoint of the "project" service.
-func NewBrowserLinkConflictResponseBody(res *goa.ServiceError) *BrowserLinkConflictResponseBody {
-	body := &BrowserLinkConflictResponseBody{
 		Name:      res.Name,
 		ID:        res.ID,
 		Message:   res.Message,
@@ -901,39 +534,6 @@ func NewExchangeBrowserLinkUnprocessableResponseBody(res *goa.ServiceError) *Exc
 	return body
 }
 
-// NewExchangeBrowserLinkConflictResponseBody builds the HTTP response body
-// from the result of the "exchange_browser_link" endpoint of the "project"
-// service.
-func NewExchangeBrowserLinkConflictResponseBody(res *goa.ServiceError) *ExchangeBrowserLinkConflictResponseBody {
-	body := &ExchangeBrowserLinkConflictResponseBody{
-		Name:      res.Name,
-		ID:        res.ID,
-		Message:   res.Message,
-		Temporary: res.Temporary,
-		Timeout:   res.Timeout,
-		Fault:     res.Fault,
-	}
-	return body
-}
-
-// NewAddAgentPayload builds a project service add_agent endpoint payload.
-func NewAddAgentPayload(body *AddAgentRequestBody) *project.AddAgentPayload {
-	v := &project.AddAgentPayload{
-		ActorID: *body.ActorID,
-		Role:    *body.Role,
-	}
-
-	return v
-}
-
-// NewRemoveAgentPayload builds a project service remove_agent endpoint payload.
-func NewRemoveAgentPayload(actorID string) *project.RemoveAgentPayload {
-	v := &project.RemoveAgentPayload{}
-	v.ActorID = actorID
-
-	return v
-}
-
 // NewExchangeBrowserLinkPayload builds a project service exchange_browser_link
 // endpoint payload.
 func NewExchangeBrowserLinkPayload(body *ExchangeBrowserLinkRequestBody) *project.ExchangeBrowserLinkPayload {
@@ -942,26 +542,6 @@ func NewExchangeBrowserLinkPayload(body *ExchangeBrowserLinkRequestBody) *projec
 	}
 
 	return v
-}
-
-// ValidateAddAgentRequestBody runs the validations defined on
-// AddAgentRequestBody
-func ValidateAddAgentRequestBody(body *AddAgentRequestBody) (err error) {
-	if body.ActorID == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("actor_id", "body"))
-	}
-	if body.Role == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("role", "body"))
-	}
-	if body.ActorID != nil {
-		err = goa.MergeErrors(err, goa.ValidatePattern("body.actor_id", *body.ActorID, "^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$"))
-	}
-	if body.Role != nil {
-		if !(*body.Role == "guide" || *body.Role == "builder" || *body.Role == "test_writer") {
-			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.role", *body.Role, []any{"guide", "builder", "test_writer"}))
-		}
-	}
-	return
 }
 
 // ValidateExchangeBrowserLinkRequestBody runs the validations defined on

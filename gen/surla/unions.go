@@ -396,6 +396,270 @@ func (u *State) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// Team holds exactly one of its branch values.
+type Team struct {
+	kind           TeamKind
+	ready          *ProjectTeam
+	windowBusy     *BuildTeamWindowBusy
+	ambiguousSpace *BuildTeamAmbiguousSpace
+	unavailable    *BuildTeamUnavailable
+}
+
+// TeamKind records which Team branch is selected.
+type TeamKind string
+
+const (
+	// TeamKindReady identifies the ready branch.
+	TeamKindReady TeamKind = "ready"
+	// TeamKindWindowBusy identifies the window_busy branch.
+	TeamKindWindowBusy TeamKind = "window_busy"
+	// TeamKindAmbiguousSpace identifies the ambiguous_space branch.
+	TeamKindAmbiguousSpace TeamKind = "ambiguous_space"
+	// TeamKindUnavailable identifies the unavailable branch.
+	TeamKindUnavailable TeamKind = "unavailable"
+)
+
+// Kind returns the selected branch.
+func (u Team) Kind() TeamKind {
+	return u.kind
+}
+
+// NewTeamReady constructs Team with the ready branch set.
+func NewTeamReady(v *ProjectTeam) Team {
+	return Team{
+		kind:  TeamKindReady,
+		ready: v,
+	}
+}
+
+// AsReady returns the value when the ready branch is selected.
+func (u Team) AsReady() (_ *ProjectTeam, ok bool) {
+	if u.kind != TeamKindReady {
+		return
+	}
+	return u.ready, true
+}
+
+// SetReady selects the ready branch and stores v.
+func (u *Team) SetReady(v *ProjectTeam) {
+	*u = Team{
+		kind:  TeamKindReady,
+		ready: v,
+	}
+}
+
+// NewTeamWindowBusy constructs Team with the window_busy branch set.
+func NewTeamWindowBusy(v *BuildTeamWindowBusy) Team {
+	return Team{
+		kind:       TeamKindWindowBusy,
+		windowBusy: v,
+	}
+}
+
+// AsWindowBusy returns the value when the window_busy branch is selected.
+func (u Team) AsWindowBusy() (_ *BuildTeamWindowBusy, ok bool) {
+	if u.kind != TeamKindWindowBusy {
+		return
+	}
+	return u.windowBusy, true
+}
+
+// SetWindowBusy selects the window_busy branch and stores v.
+func (u *Team) SetWindowBusy(v *BuildTeamWindowBusy) {
+	*u = Team{
+		kind:       TeamKindWindowBusy,
+		windowBusy: v,
+	}
+}
+
+// NewTeamAmbiguousSpace constructs Team with the ambiguous_space branch set.
+func NewTeamAmbiguousSpace(v *BuildTeamAmbiguousSpace) Team {
+	return Team{
+		kind:           TeamKindAmbiguousSpace,
+		ambiguousSpace: v,
+	}
+}
+
+// AsAmbiguousSpace returns the value when the ambiguous_space branch is selected.
+func (u Team) AsAmbiguousSpace() (_ *BuildTeamAmbiguousSpace, ok bool) {
+	if u.kind != TeamKindAmbiguousSpace {
+		return
+	}
+	return u.ambiguousSpace, true
+}
+
+// SetAmbiguousSpace selects the ambiguous_space branch and stores v.
+func (u *Team) SetAmbiguousSpace(v *BuildTeamAmbiguousSpace) {
+	*u = Team{
+		kind:           TeamKindAmbiguousSpace,
+		ambiguousSpace: v,
+	}
+}
+
+// NewTeamUnavailable constructs Team with the unavailable branch set.
+func NewTeamUnavailable(v *BuildTeamUnavailable) Team {
+	return Team{
+		kind:        TeamKindUnavailable,
+		unavailable: v,
+	}
+}
+
+// AsUnavailable returns the value when the unavailable branch is selected.
+func (u Team) AsUnavailable() (_ *BuildTeamUnavailable, ok bool) {
+	if u.kind != TeamKindUnavailable {
+		return
+	}
+	return u.unavailable, true
+}
+
+// SetUnavailable selects the unavailable branch and stores v.
+func (u *Team) SetUnavailable(v *BuildTeamUnavailable) {
+	*u = Team{
+		kind:        TeamKindUnavailable,
+		unavailable: v,
+	}
+}
+
+// Validate ensures exactly one valid branch is selected.
+func (u Team) Validate() error {
+	_, err := u.Value()
+	return err
+}
+
+// Value returns the selected branch value, or the same selection error as Validate.
+// Go templates can read this method directly; an invalid selection stops execution.
+func (u Team) Value() (any, error) {
+	switch u.kind {
+	case "":
+		return nil, goa.InvalidEnumValueError("state", "", []any{
+			string(TeamKindReady),
+			string(TeamKindWindowBusy),
+			string(TeamKindAmbiguousSpace),
+			string(TeamKindUnavailable),
+		})
+	case TeamKindReady:
+		if u.ready == nil {
+			return nil, goa.MissingFieldError("value", "Team")
+		}
+		return u.ready, nil
+	case TeamKindWindowBusy:
+		if u.windowBusy == nil {
+			return nil, goa.MissingFieldError("value", "Team")
+		}
+		return u.windowBusy, nil
+	case TeamKindAmbiguousSpace:
+		if u.ambiguousSpace == nil {
+			return nil, goa.MissingFieldError("value", "Team")
+		}
+		return u.ambiguousSpace, nil
+	case TeamKindUnavailable:
+		if u.unavailable == nil {
+			return nil, goa.MissingFieldError("value", "Team")
+		}
+		return u.unavailable, nil
+	default:
+		return nil, goa.InvalidEnumValueError("state", u.kind, []any{
+			string(TeamKindReady),
+			string(TeamKindWindowBusy),
+			string(TeamKindAmbiguousSpace),
+			string(TeamKindUnavailable),
+		})
+	}
+}
+
+// MarshalJSON writes the selected object branch beside its discriminator.
+func (u Team) MarshalJSON() ([]byte, error) {
+	value, err := u.Value()
+	if err != nil {
+		return nil, err
+	}
+	data, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return nil, err
+	}
+	if fields == nil {
+		return nil, goa.InvalidFieldTypeError("state", nil, "non-null JSON object")
+	}
+	if _, exists := fields["state"]; exists {
+		return nil, fmt.Errorf("Team branch already contains discriminator %q", "state")
+	}
+	tag, err := json.Marshal(string(u.kind))
+	if err != nil {
+		return nil, err
+	}
+	fields["state"] = tag
+	return json.Marshal(fields)
+}
+
+// UnmarshalJSON reads the discriminator and decodes its declared object branch.
+func (u *Team) UnmarshalJSON(data []byte) error {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return err
+	}
+	tag, exists := fields["state"]
+	if !exists {
+		return goa.MissingFieldError("state", "Team")
+	}
+	if bytes.Equal(bytes.TrimSpace(tag), []byte("null")) {
+		return goa.InvalidFieldTypeError("state", nil, "JSON string")
+	}
+	var raw struct {
+		Type  string
+		Value json.RawMessage
+	}
+	if err := json.Unmarshal(tag, &raw.Type); err != nil {
+		return err
+	}
+	delete(fields, "state")
+	value, err := json.Marshal(fields)
+	if err != nil {
+		return err
+	}
+	raw.Value = value
+	switch raw.Type {
+	case string(TeamKindReady):
+		var v *ProjectTeam
+		if err := json.Unmarshal(raw.Value, &v); err != nil {
+			return err
+		}
+		u.SetReady(v)
+	case string(TeamKindWindowBusy):
+		var v *BuildTeamWindowBusy
+		if err := json.Unmarshal(raw.Value, &v); err != nil {
+			return err
+		}
+		u.SetWindowBusy(v)
+	case string(TeamKindAmbiguousSpace):
+		var v *BuildTeamAmbiguousSpace
+		if err := json.Unmarshal(raw.Value, &v); err != nil {
+			return err
+		}
+		u.SetAmbiguousSpace(v)
+	case string(TeamKindUnavailable):
+		var v *BuildTeamUnavailable
+		if err := json.Unmarshal(raw.Value, &v); err != nil {
+			return err
+		}
+		u.SetUnavailable(v)
+	default:
+		if raw.Type == "" {
+			return goa.MissingFieldError("state", "Team")
+		}
+		return goa.InvalidEnumValueError("state", raw.Type, []any{
+			string(TeamKindReady),
+			string(TeamKindWindowBusy),
+			string(TeamKindAmbiguousSpace),
+			string(TeamKindUnavailable),
+		})
+	}
+	return nil
+}
+
 // Tests holds exactly one of its branch values.
 type Tests struct {
 	kind         TestsKind
@@ -737,6 +1001,270 @@ func (u *Tests) UnmarshalJSON(data []byte) error {
 			string(TestsKindNeedsChanges),
 			string(TestsKindAccepted),
 			string(TestsKindCouldNotRun),
+		})
+	}
+	return nil
+}
+
+// WorkingCopy holds exactly one of its branch values.
+type WorkingCopy struct {
+	kind            WorkingCopyKind
+	notUsed         *BuildCopyNotUsed
+	atProjectCommit *BuildCopyAtProjectCommit
+	notContained    *BuildCopyNotContained
+	dirty           *BuildCopyDirty
+}
+
+// WorkingCopyKind records which WorkingCopy branch is selected.
+type WorkingCopyKind string
+
+const (
+	// WorkingCopyKindNotUsed identifies the not_used branch.
+	WorkingCopyKindNotUsed WorkingCopyKind = "not_used"
+	// WorkingCopyKindAtProjectCommit identifies the at_project_commit branch.
+	WorkingCopyKindAtProjectCommit WorkingCopyKind = "at_project_commit"
+	// WorkingCopyKindNotContained identifies the not_contained branch.
+	WorkingCopyKindNotContained WorkingCopyKind = "not_contained"
+	// WorkingCopyKindDirty identifies the dirty branch.
+	WorkingCopyKindDirty WorkingCopyKind = "dirty"
+)
+
+// Kind returns the selected branch.
+func (u WorkingCopy) Kind() WorkingCopyKind {
+	return u.kind
+}
+
+// NewWorkingCopyNotUsed constructs WorkingCopy with the not_used branch set.
+func NewWorkingCopyNotUsed(v *BuildCopyNotUsed) WorkingCopy {
+	return WorkingCopy{
+		kind:    WorkingCopyKindNotUsed,
+		notUsed: v,
+	}
+}
+
+// AsNotUsed returns the value when the not_used branch is selected.
+func (u WorkingCopy) AsNotUsed() (_ *BuildCopyNotUsed, ok bool) {
+	if u.kind != WorkingCopyKindNotUsed {
+		return
+	}
+	return u.notUsed, true
+}
+
+// SetNotUsed selects the not_used branch and stores v.
+func (u *WorkingCopy) SetNotUsed(v *BuildCopyNotUsed) {
+	*u = WorkingCopy{
+		kind:    WorkingCopyKindNotUsed,
+		notUsed: v,
+	}
+}
+
+// NewWorkingCopyAtProjectCommit constructs WorkingCopy with the at_project_commit branch set.
+func NewWorkingCopyAtProjectCommit(v *BuildCopyAtProjectCommit) WorkingCopy {
+	return WorkingCopy{
+		kind:            WorkingCopyKindAtProjectCommit,
+		atProjectCommit: v,
+	}
+}
+
+// AsAtProjectCommit returns the value when the at_project_commit branch is selected.
+func (u WorkingCopy) AsAtProjectCommit() (_ *BuildCopyAtProjectCommit, ok bool) {
+	if u.kind != WorkingCopyKindAtProjectCommit {
+		return
+	}
+	return u.atProjectCommit, true
+}
+
+// SetAtProjectCommit selects the at_project_commit branch and stores v.
+func (u *WorkingCopy) SetAtProjectCommit(v *BuildCopyAtProjectCommit) {
+	*u = WorkingCopy{
+		kind:            WorkingCopyKindAtProjectCommit,
+		atProjectCommit: v,
+	}
+}
+
+// NewWorkingCopyNotContained constructs WorkingCopy with the not_contained branch set.
+func NewWorkingCopyNotContained(v *BuildCopyNotContained) WorkingCopy {
+	return WorkingCopy{
+		kind:         WorkingCopyKindNotContained,
+		notContained: v,
+	}
+}
+
+// AsNotContained returns the value when the not_contained branch is selected.
+func (u WorkingCopy) AsNotContained() (_ *BuildCopyNotContained, ok bool) {
+	if u.kind != WorkingCopyKindNotContained {
+		return
+	}
+	return u.notContained, true
+}
+
+// SetNotContained selects the not_contained branch and stores v.
+func (u *WorkingCopy) SetNotContained(v *BuildCopyNotContained) {
+	*u = WorkingCopy{
+		kind:         WorkingCopyKindNotContained,
+		notContained: v,
+	}
+}
+
+// NewWorkingCopyDirty constructs WorkingCopy with the dirty branch set.
+func NewWorkingCopyDirty(v *BuildCopyDirty) WorkingCopy {
+	return WorkingCopy{
+		kind:  WorkingCopyKindDirty,
+		dirty: v,
+	}
+}
+
+// AsDirty returns the value when the dirty branch is selected.
+func (u WorkingCopy) AsDirty() (_ *BuildCopyDirty, ok bool) {
+	if u.kind != WorkingCopyKindDirty {
+		return
+	}
+	return u.dirty, true
+}
+
+// SetDirty selects the dirty branch and stores v.
+func (u *WorkingCopy) SetDirty(v *BuildCopyDirty) {
+	*u = WorkingCopy{
+		kind:  WorkingCopyKindDirty,
+		dirty: v,
+	}
+}
+
+// Validate ensures exactly one valid branch is selected.
+func (u WorkingCopy) Validate() error {
+	_, err := u.Value()
+	return err
+}
+
+// Value returns the selected branch value, or the same selection error as Validate.
+// Go templates can read this method directly; an invalid selection stops execution.
+func (u WorkingCopy) Value() (any, error) {
+	switch u.kind {
+	case "":
+		return nil, goa.InvalidEnumValueError("state", "", []any{
+			string(WorkingCopyKindNotUsed),
+			string(WorkingCopyKindAtProjectCommit),
+			string(WorkingCopyKindNotContained),
+			string(WorkingCopyKindDirty),
+		})
+	case WorkingCopyKindNotUsed:
+		if u.notUsed == nil {
+			return nil, goa.MissingFieldError("value", "WorkingCopy")
+		}
+		return u.notUsed, nil
+	case WorkingCopyKindAtProjectCommit:
+		if u.atProjectCommit == nil {
+			return nil, goa.MissingFieldError("value", "WorkingCopy")
+		}
+		return u.atProjectCommit, nil
+	case WorkingCopyKindNotContained:
+		if u.notContained == nil {
+			return nil, goa.MissingFieldError("value", "WorkingCopy")
+		}
+		return u.notContained, nil
+	case WorkingCopyKindDirty:
+		if u.dirty == nil {
+			return nil, goa.MissingFieldError("value", "WorkingCopy")
+		}
+		return u.dirty, nil
+	default:
+		return nil, goa.InvalidEnumValueError("state", u.kind, []any{
+			string(WorkingCopyKindNotUsed),
+			string(WorkingCopyKindAtProjectCommit),
+			string(WorkingCopyKindNotContained),
+			string(WorkingCopyKindDirty),
+		})
+	}
+}
+
+// MarshalJSON writes the selected object branch beside its discriminator.
+func (u WorkingCopy) MarshalJSON() ([]byte, error) {
+	value, err := u.Value()
+	if err != nil {
+		return nil, err
+	}
+	data, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return nil, err
+	}
+	if fields == nil {
+		return nil, goa.InvalidFieldTypeError("state", nil, "non-null JSON object")
+	}
+	if _, exists := fields["state"]; exists {
+		return nil, fmt.Errorf("WorkingCopy branch already contains discriminator %q", "state")
+	}
+	tag, err := json.Marshal(string(u.kind))
+	if err != nil {
+		return nil, err
+	}
+	fields["state"] = tag
+	return json.Marshal(fields)
+}
+
+// UnmarshalJSON reads the discriminator and decodes its declared object branch.
+func (u *WorkingCopy) UnmarshalJSON(data []byte) error {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return err
+	}
+	tag, exists := fields["state"]
+	if !exists {
+		return goa.MissingFieldError("state", "WorkingCopy")
+	}
+	if bytes.Equal(bytes.TrimSpace(tag), []byte("null")) {
+		return goa.InvalidFieldTypeError("state", nil, "JSON string")
+	}
+	var raw struct {
+		Type  string
+		Value json.RawMessage
+	}
+	if err := json.Unmarshal(tag, &raw.Type); err != nil {
+		return err
+	}
+	delete(fields, "state")
+	value, err := json.Marshal(fields)
+	if err != nil {
+		return err
+	}
+	raw.Value = value
+	switch raw.Type {
+	case string(WorkingCopyKindNotUsed):
+		var v *BuildCopyNotUsed
+		if err := json.Unmarshal(raw.Value, &v); err != nil {
+			return err
+		}
+		u.SetNotUsed(v)
+	case string(WorkingCopyKindAtProjectCommit):
+		var v *BuildCopyAtProjectCommit
+		if err := json.Unmarshal(raw.Value, &v); err != nil {
+			return err
+		}
+		u.SetAtProjectCommit(v)
+	case string(WorkingCopyKindNotContained):
+		var v *BuildCopyNotContained
+		if err := json.Unmarshal(raw.Value, &v); err != nil {
+			return err
+		}
+		u.SetNotContained(v)
+	case string(WorkingCopyKindDirty):
+		var v *BuildCopyDirty
+		if err := json.Unmarshal(raw.Value, &v); err != nil {
+			return err
+		}
+		u.SetDirty(v)
+	default:
+		if raw.Type == "" {
+			return goa.MissingFieldError("state", "WorkingCopy")
+		}
+		return goa.InvalidEnumValueError("state", raw.Type, []any{
+			string(WorkingCopyKindNotUsed),
+			string(WorkingCopyKindAtProjectCommit),
+			string(WorkingCopyKindNotContained),
+			string(WorkingCopyKindDirty),
 		})
 	}
 	return nil

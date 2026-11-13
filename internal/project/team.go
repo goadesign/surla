@@ -35,9 +35,6 @@ type (
 		Host TeamHost
 		// RosterDirectory is Herdr's local launcher roster directory.
 		RosterDirectory string
-		// TestWriterFolder reads the test writer's existing project folder without creating it.
-		// An empty result means no working folder exists; errors stop team preparation.
-		TestWriterFolder func(context.Context) (string, error)
 		// Shell is the server login shell used by the shared running predicate.
 		Shell string
 		// Observer follows only the registered selection. Nil refuses all observations.
@@ -81,6 +78,8 @@ type (
 	teamOperation struct {
 		sync.Mutex
 		dependencies TeamDependencies
+		// withTimeout privately injects the accepted-operation deadline; nil uses context.WithTimeout.
+		withTimeout func(context.Context, time.Duration) (context.Context, context.CancelFunc)
 		// observationMu protects only the small public snapshot, never external replies.
 		observationMu sync.RWMutex
 		observed      map[string]roleObservation
@@ -114,21 +113,19 @@ type (
 	}
 )
 
+// teamStartTimeout bounds one accepted roster/window transition so an unresponsive
+// Herdr command cannot hold the serialized team operation indefinitely. This budget
+// is independent of a build's working-copy and generation phase.
+const teamStartTimeout = 45 * time.Second
+
 // EnsureTeam accepts management authority once, then completes bounded server-owned work.
 // A disconnected caller can repeat the operation; saved identity and space adoption avoid duplication.
 func (s *Server) EnsureTeam(ctx context.Context) (*genproject.ProjectTeam, error) {
 	if err := managementOnly(ctx, "ensure_team"); err != nil {
 		return nil, err
 	}
-	// Retain request values and tracing while the server, rather than the client,
-	// owns cancellation of accepted work.
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 45*time.Second)
+	ctx, cancel := s.acceptedTeamContext(ctx)
 	defer cancel()
-	stopLifetime := context.AfterFunc(s.team.dependencies.Lifetime, cancel)
-	defer stopLifetime()
-	if s.team.dependencies.Lifetime.Err() != nil {
-		cancel()
-	}
 	ctx, span := otel.Tracer("surla/project").Start(ctx, "surla.project.ensure_team")
 	defer span.End()
 	result, err := s.ensureTeam(ctx)
@@ -150,9 +147,14 @@ func (s *Server) EnsureTeam(ctx context.Context) (*genproject.ProjectTeam, error
 }
 
 // ensureTeam holds the operation lock across the complete space/roster/dialog transition.
-func (s *Server) ensureTeam(ctx context.Context) (*genproject.ProjectTeam, error) {
+func (s *Server) ensureTeam(ctx context.Context) (result *genproject.ProjectTeam, err error) {
 	s.team.Lock()
 	defer s.team.Unlock()
+	defer func() {
+		if result != nil {
+			result.Step = teamNextStep(result.Dialog)
+		}
+	}()
 	if err := ctx.Err(); err != nil {
 		return nil, teamUnavailable(ctx, "lifetime")
 	}
@@ -233,30 +235,17 @@ func (s *Server) ensureTeam(ctx context.Context) (*genproject.ProjectTeam, error
 	if err != nil {
 		return nil, teamUnavailable(ctx, "save_team")
 	}
+	if _, err := s.registerAgent(teamName("guide", record.ID), agentRecord{Role: "guide", Folder: record.Directory}); err != nil {
+		return nil, teamUnavailable(ctx, "register_guide")
+	}
+	// Snapshot after admission: every registered actor survives this operation.
 	s.state.mu.Lock()
-	hasGuide := false
-	for _, role := range s.state.Record.Agents {
-		if role == "guide" {
-			hasGuide = true
-		}
+	agents := make(map[string]agentRecord, len(s.state.Record.Agents))
+	for actor, agent := range s.state.Record.Agents {
+		agents[actor] = agent
 	}
 	s.state.mu.Unlock()
-	if !hasGuide {
-		if _, err := s.addAgent(&genproject.AddAgentPayload{ActorID: teamName("guide", record.ID), Role: "guide"}); err != nil {
-			return nil, teamUnavailable(ctx, "register_guide")
-		}
-	}
-	// Snapshot the registry after guide admission; every registered actor survives this operation.
-	s.state.mu.Lock()
-	agents := make(map[string]string, len(s.state.Record.Agents))
-	for actor, role := range s.state.Record.Agents {
-		agents[actor] = role
-	}
-	s.state.mu.Unlock()
-	roles, err := s.registeredTeamRoles(ctx, agents)
-	if err != nil {
-		return nil, teamUnavailable(ctx, "role_folders")
-	}
+	roles := registeredTeamRoles(agents)
 	roster, err := s.teamRoster(roles)
 	if err != nil {
 		return nil, teamUnavailable(ctx, "roster")
@@ -290,11 +279,11 @@ func (s *Server) ensureTeam(ctx context.Context) (*genproject.ProjectTeam, error
 	for _, role := range roster.Roles {
 		listed[role.Handle] = true
 	}
-	result := &genproject.ProjectTeam{Team: team, Space: space.ID, Dialog: "not_needed", Roles: make([]*genproject.ProjectTeamRole, 0, len(roles))}
+	result = &genproject.ProjectTeam{Team: team, Space: space.ID, Dialog: "not_needed", Roles: make([]*genproject.ProjectTeamRole, 0, len(roles))}
 	missing := false
 	for _, role := range roles {
 		running := runningHandles[role.Handle]
-		result.Roles = append(result.Roles, &genproject.ProjectTeamRole{Role: agents[role.Handle], Handle: role.Handle, Running: running})
+		result.Roles = append(result.Roles, &genproject.ProjectTeamRole{Role: agents[role.Handle].Role, Handle: role.Handle, Running: running})
 		if listed[role.Handle] && !running {
 			missing = true
 		}
@@ -316,12 +305,11 @@ func (s *Server) ensureTeam(ctx context.Context) (*genproject.ProjectTeam, error
 	return result, nil
 }
 
-// registeredTeamRoles reads existing role folders in the canonical guide/builder/test-writer order.
-// The role registry guarantees at most one actor per trusted role; actor IDs remain unchanged.
-func (s *Server) registeredTeamRoles(ctx context.Context, agents map[string]string) ([]launcherRole, error) {
+// registeredTeamRoles derives current launcher text from each saved role and folder.
+func registeredTeamRoles(agents map[string]agentRecord) []launcherRole {
 	byRole := make(map[string]string, len(agents))
-	for actor, role := range agents {
-		byRole[role] = actor
+	for actor, agent := range agents {
+		byRole[agent.Role] = actor
 	}
 	roles := make([]launcherRole, 0, len(agents))
 	for _, role := range []string{"guide", "builder", "test_writer"} {
@@ -329,24 +317,23 @@ func (s *Server) registeredTeamRoles(ctx context.Context, agents map[string]stri
 		if !exists {
 			continue
 		}
-		folder := s.state.Record.Directory
-		title, message := "Guide", "Work through the Story and the change with the user in this project's pane. Use your surla connection, starting with the surla://golden-path guidance resource and list_changes/get_change. Only the user confirms intent and approves results, on the views page."
-		switch role {
-		case "builder":
-			title = "Builder"
-			message = "Use your surla connection, starting with the surla://golden-path guidance resource. Build and verify the agreed change in this project. Only the user confirms intent and approves results on the views page."
-		case "test_writer":
-			title = "Test writer"
-			message = "Use your surla connection, starting with the surla://golden-path guidance resource. Work on this project's tests in this folder. Only the user confirms intent and approves results on the views page."
-			var err error
-			folder, err = s.team.dependencies.TestWriterFolder(ctx)
-			if err != nil {
-				return nil, err
-			}
-		}
-		roles = append(roles, launcherRole{Role: role, Title: title, Handle: handle, Folder: folder, FirstMessage: message})
+		title, message := roleFirstMessage(role)
+		roles = append(roles, launcherRole{Role: role, Title: title, Handle: handle, Folder: agents[handle].Folder, FirstMessage: message})
 	}
-	return roles, nil
+	return roles
+}
+
+// roleFirstMessage owns the fixed product instructions; messages never enter saved state.
+func roleFirstMessage(role string) (string, string) {
+	switch role {
+	case "guide":
+		return "Guide", "Work through the Story and the change with the user in this project's pane. Use your surla connection, starting with the surla://golden-path guidance resource and list_changes/get_change. Only the user confirms intent and approves results, on the views page."
+	case "builder":
+		return "Builder", "Use your surla connection, starting with the surla://golden-path guidance resource. Use list_builder_assignments to find the build, then read get_builder_assignment. Build the agreed revision in this working folder, use generate_code and check_project, and commit. Read the assignment before verification: when a test writer is used, verify_change is refused until its tests are accepted. Only the user confirms intent and approves results on the views page."
+	case "test_writer":
+		return "Test writer", "Use your surla connection, starting with the surla://golden-path guidance resource. Use list_test_writer_assignments to find the build, then read get_test_writer_assignment. Implement one test per required entry inside the test module of the working folder the assignment names. Change nothing outside that module. Use report_tests_finished, then read get_test_writer_assignment again for the verdict. Only the user confirms intent and approves results on the views page."
+	}
+	panic("unregistered team role")
 }
 
 // teamRoster validates folders and credentials before constructing the complete closed launcher schema.
@@ -469,4 +456,37 @@ func teamUnavailable(ctx context.Context, step string) error {
 	span.RecordError(failure)
 	span.SetStatus(codes.Error, "team start failed")
 	return genproject.MakeTeamUnavailable(errors.New("project team could not be prepared; check Herdr and run surla again"))
+}
+
+// teamNextStep owns the user's next action after preparing a team. The launcher
+// reads its rows when it opens; an already open dialog rereads a rewritten roster
+// only when the user clicks its existing Reload team action.
+func teamNextStep(dialog string) string {
+	switch dialog {
+	case "opened":
+		return "Choose an agent for each role in the open Chorus dialog in Herdr."
+	case "already_open":
+		return "If the open Chorus dialog is for this project, click \"Reload team\", then choose the agents. If it is for another project, close it and run surla again."
+	case "not_needed":
+		return "Every listed role is running."
+	}
+	panic("unrecognized team dialog state")
+}
+
+// acceptedTeamContext retains caller values and tracing while the server owns
+// cancellation and the one-operation deadline. Cleanup stops the lifetime callback.
+func (s *Server) acceptedTeamContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	withTimeout := s.team.withTimeout
+	if withTimeout == nil {
+		withTimeout = context.WithTimeout
+	}
+	ctx, cancel := withTimeout(context.WithoutCancel(ctx), teamStartTimeout)
+	stop := context.AfterFunc(s.team.dependencies.Lifetime, cancel)
+	if s.team.dependencies.Lifetime.Err() != nil {
+		cancel()
+	}
+	return ctx, func() {
+		stop()
+		cancel()
+	}
 }

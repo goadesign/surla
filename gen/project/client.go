@@ -18,20 +18,16 @@ type Client struct {
 	IdentityEndpoint            goa.Endpoint
 	EnsureTeamEndpoint          goa.Endpoint
 	StopEndpoint                goa.Endpoint
-	AddAgentEndpoint            goa.Endpoint
-	RemoveAgentEndpoint         goa.Endpoint
 	BrowserLinkEndpoint         goa.Endpoint
 	ExchangeBrowserLinkEndpoint goa.Endpoint
 }
 
 // NewClient initializes a "project" service client given the endpoints.
-func NewClient(identity, ensureTeam, stop, addAgent, removeAgent, browserLink, exchangeBrowserLink goa.Endpoint) *Client {
+func NewClient(identity, ensureTeam, stop, browserLink, exchangeBrowserLink goa.Endpoint) *Client {
 	return &Client{
 		IdentityEndpoint:            identity,
 		EnsureTeamEndpoint:          ensureTeam,
 		StopEndpoint:                stop,
-		AddAgentEndpoint:            addAgent,
-		RemoveAgentEndpoint:         removeAgent,
 		BrowserLinkEndpoint:         browserLink,
 		ExchangeBrowserLinkEndpoint: exchangeBrowserLink,
 	}
@@ -40,8 +36,7 @@ func NewClient(identity, ensureTeam, stop, addAgent, removeAgent, browserLink, e
 // Identity calls the "identity" endpoint of the "project" service.
 // Identity may return the following errors:
 //   - "forbidden" (type *goa.ServiceError): The trusted credential cannot perform this operation.
-//   - "unprocessable" (type *goa.ServiceError): The requested credential exchange or agent does not exist or is invalid.
-//   - "conflict" (type *goa.ServiceError): An agent with this identifier or trusted role already exists.
+//   - "unprocessable" (type *goa.ServiceError): The requested credential exchange does not exist or is invalid.
 //   - error: internal error
 func (c *Client) Identity(ctx context.Context) (res *ProjectIdentity, err error) {
 	var ires any
@@ -58,8 +53,7 @@ func (c *Client) Identity(ctx context.Context) (res *ProjectIdentity, err error)
 //   - "window_busy" (type *goa.ServiceError): Another Herdr dialog is open; close it and run surla again.
 //   - "team_unavailable" (type *goa.ServiceError): A bounded Herdr operation or roster write failed; run surla again.
 //   - "forbidden" (type *goa.ServiceError): The trusted credential cannot perform this operation.
-//   - "unprocessable" (type *goa.ServiceError): The requested credential exchange or agent does not exist or is invalid.
-//   - "conflict" (type *goa.ServiceError): An agent with this identifier or trusted role already exists.
+//   - "unprocessable" (type *goa.ServiceError): The requested credential exchange does not exist or is invalid.
 //   - error: internal error
 func (c *Client) EnsureTeam(ctx context.Context) (res *ProjectTeam, err error) {
 	var ires any
@@ -73,45 +67,17 @@ func (c *Client) EnsureTeam(ctx context.Context) (res *ProjectTeam, err error) {
 // Stop calls the "stop" endpoint of the "project" service.
 // Stop may return the following errors:
 //   - "forbidden" (type *goa.ServiceError): The trusted credential cannot perform this operation.
-//   - "unprocessable" (type *goa.ServiceError): The requested credential exchange or agent does not exist or is invalid.
-//   - "conflict" (type *goa.ServiceError): An agent with this identifier or trusted role already exists.
+//   - "unprocessable" (type *goa.ServiceError): The requested credential exchange does not exist or is invalid.
 //   - error: internal error
 func (c *Client) Stop(ctx context.Context) (err error) {
 	_, err = c.StopEndpoint(ctx, nil)
 	return
 }
 
-// AddAgent calls the "add_agent" endpoint of the "project" service.
-// AddAgent may return the following errors:
-//   - "forbidden" (type *goa.ServiceError): The trusted credential cannot perform this operation.
-//   - "unprocessable" (type *goa.ServiceError): The requested credential exchange or agent does not exist or is invalid.
-//   - "conflict" (type *goa.ServiceError): An agent with this identifier or trusted role already exists.
-//   - error: internal error
-func (c *Client) AddAgent(ctx context.Context, p *AddAgentPayload) (res *ProjectAgent, err error) {
-	var ires any
-	ires, err = c.AddAgentEndpoint(ctx, p)
-	if err != nil {
-		return
-	}
-	return ires.(*ProjectAgent), nil
-}
-
-// RemoveAgent calls the "remove_agent" endpoint of the "project" service.
-// RemoveAgent may return the following errors:
-//   - "forbidden" (type *goa.ServiceError): The trusted credential cannot perform this operation.
-//   - "unprocessable" (type *goa.ServiceError): The requested credential exchange or agent does not exist or is invalid.
-//   - "conflict" (type *goa.ServiceError): An agent with this identifier or trusted role already exists.
-//   - error: internal error
-func (c *Client) RemoveAgent(ctx context.Context, p *RemoveAgentPayload) (err error) {
-	_, err = c.RemoveAgentEndpoint(ctx, p)
-	return
-}
-
 // BrowserLink calls the "browser_link" endpoint of the "project" service.
 // BrowserLink may return the following errors:
 //   - "forbidden" (type *goa.ServiceError): The trusted credential cannot perform this operation.
-//   - "unprocessable" (type *goa.ServiceError): The requested credential exchange or agent does not exist or is invalid.
-//   - "conflict" (type *goa.ServiceError): An agent with this identifier or trusted role already exists.
+//   - "unprocessable" (type *goa.ServiceError): The requested credential exchange does not exist or is invalid.
 //   - error: internal error
 func (c *Client) BrowserLink(ctx context.Context) (res *BrowserLinkResult, err error) {
 	var ires any
@@ -126,8 +92,7 @@ func (c *Client) BrowserLink(ctx context.Context) (res *BrowserLinkResult, err e
 // "project" service.
 // ExchangeBrowserLink may return the following errors:
 //   - "forbidden" (type *goa.ServiceError): The trusted credential cannot perform this operation.
-//   - "unprocessable" (type *goa.ServiceError): The requested credential exchange or agent does not exist or is invalid.
-//   - "conflict" (type *goa.ServiceError): An agent with this identifier or trusted role already exists.
+//   - "unprocessable" (type *goa.ServiceError): The requested credential exchange does not exist or is invalid.
 //   - error: internal error
 func (c *Client) ExchangeBrowserLink(ctx context.Context, p *ExchangeBrowserLinkPayload) (res *ExchangeBrowserLinkResult, err error) {
 	var ires any

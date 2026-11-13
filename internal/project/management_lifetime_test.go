@@ -9,7 +9,6 @@ import (
 	"strings"
 	"testing"
 
-	genproject "github.com/goadesign/surla/gen/project"
 	"github.com/goadesign/surla/internal/controlplane"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -25,8 +24,7 @@ func TestManagementLifetime(t *testing.T) {
 	require.NoError(t, first.PublishRunning(os.Getpid(), "test"))
 	original, err := state.ReadRunning()
 	require.NoError(t, err)
-	principal := controlplane.WithPrincipal(t.Context(), controlplane.Principal{ID: state.Record.Owner, CallerID: "management", Kind: controlplane.CallerManagement})
-	agent, err := first.AddAgent(principal, &genproject.AddAgentPayload{ActorID: "guide", Role: "guide"})
+	agent, err := registerTestAgent(first, "guide", "guide", first.state.Record.Directory)
 	require.NoError(t, err)
 	agentCredential, err := os.ReadFile(agent.CredentialFile)
 	require.NoError(t, err)

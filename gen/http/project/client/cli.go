@@ -16,56 +16,6 @@ import (
 	goa "goa.design/goa/v3/pkg"
 )
 
-// BuildAddAgentPayload builds the payload for the project add_agent endpoint
-// from CLI flags.
-func BuildAddAgentPayload(projectAddAgentBody *string) (*project.AddAgentPayload, error) {
-	var err error
-	var body AddAgentRequestBody
-	{
-		if projectAddAgentBody == nil {
-			return nil, fmt.Errorf("missing required flag --body")
-		}
-		err = json.Unmarshal([]byte(*projectAddAgentBody), &body)
-		if err != nil {
-			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"actor_id\": \"s5\",\n      \"role\": \"builder\"\n   }'")
-		}
-		err = goa.MergeErrors(err, goa.ValidatePattern("body.actor_id", body.ActorID, "^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$"))
-		if !(body.Role == "guide" || body.Role == "builder" || body.Role == "test_writer") {
-			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.role", body.Role, []any{"guide", "builder", "test_writer"}))
-		}
-		if err != nil {
-			return nil, err
-		}
-	}
-	v := &project.AddAgentPayload{
-		ActorID: body.ActorID,
-		Role:    body.Role,
-	}
-
-	return v, nil
-}
-
-// BuildRemoveAgentPayload builds the payload for the project remove_agent
-// endpoint from CLI flags.
-func BuildRemoveAgentPayload(projectRemoveAgentActorID *string) (*project.RemoveAgentPayload, error) {
-	var err error
-	var actorID string
-	{
-		if projectRemoveAgentActorID == nil {
-			return nil, fmt.Errorf("missing required flag --actor-id")
-		}
-		actorID = *projectRemoveAgentActorID
-		err = goa.MergeErrors(err, goa.ValidatePattern("actor_id", actorID, "^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$"))
-		if err != nil {
-			return nil, err
-		}
-	}
-	v := &project.RemoveAgentPayload{}
-	v.ActorID = actorID
-
-	return v, nil
-}
-
 // BuildExchangeBrowserLinkPayload builds the payload for the project
 // exchange_browser_link endpoint from CLI flags.
 func BuildExchangeBrowserLinkPayload(projectExchangeBrowserLinkBody *string) (*project.ExchangeBrowserLinkPayload, error) {

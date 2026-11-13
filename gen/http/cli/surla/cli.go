@@ -24,7 +24,7 @@ import (
 //	command (subcommand1|subcommand2|...)
 func UsageCommands() []string {
 	return []string{
-		"project (identity|ensure-team|stop|add-agent|remove-agent|browser-link|exchange-browser-link)",
+		"project (identity|ensure-team|stop|browser-link|exchange-browser-link)",
 		"surla (golden-path|propose-change|revise-change|confirm-intent|get-change|decline-revision|preview-architecture|draft-override|start-live-target|stop-live-target|verify-change|get-verification|list-verifications|approve-merge|diff|configure-model|init-project|generate-code|check-project|update-dependencies|read-check-output|list-traces|refresh-story|get-story-refresh|get-team|show-team-pane|start-team-agents|list-changes|wait-for-changes|start-build|get-build|list-builder-assignments|get-builder-assignment|list-test-writer-assignments|get-test-writer-assignment|report-tests-finished)",
 	}
 }
@@ -72,12 +72,6 @@ func ParseEndpoint(
 		projectEnsureTeamFlags = flag.NewFlagSet("ensure-team", flag.ExitOnError)
 
 		projectStopFlags = flag.NewFlagSet("stop", flag.ExitOnError)
-
-		projectAddAgentFlags    = flag.NewFlagSet("add-agent", flag.ExitOnError)
-		projectAddAgentBodyFlag = new(cliStringFlag)
-
-		projectRemoveAgentFlags       = flag.NewFlagSet("remove-agent", flag.ExitOnError)
-		projectRemoveAgentActorIDFlag = new(cliStringFlag)
 
 		projectBrowserLinkFlags = flag.NewFlagSet("browser-link", flag.ExitOnError)
 
@@ -188,8 +182,6 @@ func ParseEndpoint(
 		surlaReportTestsFinishedBodyFlag     = new(cliStringFlag)
 		surlaReportTestsFinishedChangeIDFlag = new(cliStringFlag)
 	)
-	projectAddAgentFlags.Var(projectAddAgentBodyFlag, "body", "")
-	projectRemoveAgentFlags.Var(projectRemoveAgentActorIDFlag, "actor-id", "Agent identifier.")
 	projectExchangeBrowserLinkFlags.Var(projectExchangeBrowserLinkBodyFlag, "body", "")
 	surlaProposeChangeFlags.Var(surlaProposeChangeBodyFlag, "body", "")
 	surlaReviseChangeFlags.Var(surlaReviseChangeBodyFlag, "body", "")
@@ -224,8 +216,6 @@ func ParseEndpoint(
 	projectIdentityFlags.Usage = projectIdentityUsage
 	projectEnsureTeamFlags.Usage = projectEnsureTeamUsage
 	projectStopFlags.Usage = projectStopUsage
-	projectAddAgentFlags.Usage = projectAddAgentUsage
-	projectRemoveAgentFlags.Usage = projectRemoveAgentUsage
 	projectBrowserLinkFlags.Usage = projectBrowserLinkUsage
 	projectExchangeBrowserLinkFlags.Usage = projectExchangeBrowserLinkUsage
 
@@ -311,12 +301,6 @@ func ParseEndpoint(
 
 			case "stop":
 				epf = projectStopFlags
-
-			case "add-agent":
-				epf = projectAddAgentFlags
-
-			case "remove-agent":
-				epf = projectRemoveAgentFlags
 
 			case "browser-link":
 				epf = projectBrowserLinkFlags
@@ -467,12 +451,6 @@ func ParseEndpoint(
 				endpoint = c.EnsureTeam()
 			case "stop":
 				endpoint = c.Stop()
-			case "add-agent":
-				endpoint = c.AddAgent()
-				data, err = projectc.BuildAddAgentPayload(projectAddAgentBodyFlag.value)
-			case "remove-agent":
-				endpoint = c.RemoveAgent()
-				data, err = projectc.BuildRemoveAgentPayload(projectRemoveAgentActorIDFlag.value)
 			case "browser-link":
 				endpoint = c.BrowserLink()
 			case "exchange-browser-link":
@@ -597,8 +575,6 @@ func projectUsage() {
 	fmt.Fprintln(os.Stderr, `    identity: The CLI checks the answering server reports its expected project identity using the current server-lifetime management credential.`)
 	fmt.Fprintln(os.Stderr, `    ensure-team: The CLI asks the project server to ensure its team, guide credential, Herdr space and atomic launcher roster, then open the launcher only when an agent is missing. Accepted work has a bounded server-owned lifetime independent of client disconnection. Only the server management credential may call this operation; it is never an MCP tool.`)
 	fmt.Fprintln(os.Stderr, `    stop: The CLI requests ordered server shutdown. Before its listener closes, the server revokes management access and withdraws its running record; an authorized stop response can finish.`)
-	fmt.Fprintln(os.Stderr, `    add-agent: The CLI creates one persistent credential for a trusted role and returns only its private file path. A project admits at most one agent per role. The credential and role survive server restart.`)
-	fmt.Fprintln(os.Stderr, `    remove-agent: The CLI revokes an agent and removes its private credential file before returning.`)
 	fmt.Fprintln(os.Stderr, `    browser-link: The CLI mints a short-lived single-use browser link. The URL is the only credential allowed in a browser-launch command line.`)
 	fmt.Fprintln(os.Stderr, `    exchange-browser-link: The browser exchanges the single-use link once for an in-memory user session. The session is never a cookie or stored on disk and is sent only to this server address.`)
 	fmt.Fprintln(os.Stderr)
@@ -651,42 +627,6 @@ func projectStopUsage() {
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Example:")
 	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "project stop")
-}
-
-func projectAddAgentUsage() {
-	// Header with flags
-	fmt.Fprintf(os.Stderr, "%s [flags] project add-agent", os.Args[0])
-	fmt.Fprint(os.Stderr, " -body JSON")
-	fmt.Fprintln(os.Stderr)
-
-	// Description
-	fmt.Fprintln(os.Stderr)
-	fmt.Fprintln(os.Stderr, `The CLI creates one persistent credential for a trusted role and returns only its private file path. A project admits at most one agent per role. The credential and role survive server restart.`)
-
-	// Flags list
-	fmt.Fprintln(os.Stderr, `    -body JSON: `)
-
-	fmt.Fprintln(os.Stderr)
-	fmt.Fprintln(os.Stderr, "Example:")
-	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "project add-agent --body '{\n      \"actor_id\": \"s5\",\n      \"role\": \"builder\"\n   }'")
-}
-
-func projectRemoveAgentUsage() {
-	// Header with flags
-	fmt.Fprintf(os.Stderr, "%s [flags] project remove-agent", os.Args[0])
-	fmt.Fprint(os.Stderr, " -actor-id STRING")
-	fmt.Fprintln(os.Stderr)
-
-	// Description
-	fmt.Fprintln(os.Stderr)
-	fmt.Fprintln(os.Stderr, `The CLI revokes an agent and removes its private credential file before returning.`)
-
-	// Flags list
-	fmt.Fprintln(os.Stderr, `    -actor-id STRING: Agent identifier.`)
-
-	fmt.Fprintln(os.Stderr)
-	fmt.Fprintln(os.Stderr, "Example:")
-	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "project remove-agent --actor-id \"I3\"")
 }
 
 func projectBrowserLinkUsage() {
@@ -757,12 +697,12 @@ func surlaUsage() {
 	fmt.Fprintln(os.Stderr, `    start-team-agents: Ask the project's existing team-start owner to prepare the registered roles and open the Chorus launcher when a listed role is not running. Only the user may call it. It has the same bounded server-owned lifetime and dialog, space and availability refusals as the management team-start operation.`)
 	fmt.Fprintln(os.Stderr, `    list-changes: List the owner's saved Change Cards for this project, most recently saved first, with each card's summary, status, the request_revision in force, the request_revision of a revision the guide proposed beside a confirmed card while it waits for the user, the state of its most recently accepted verification run, and when it was last saved, and say whether this server can record approvals. The views page opens on this list; agents use it to find a change_id. Reading changes nothing.`)
 	fmt.Fprintln(os.Stderr, `    wait-for-changes: Return the current change list's version as soon as it differs from since, the version of the list the caller last read, or after a bounded wait of a few seconds when nothing changed. The version also changes when the owner's Story evaluation starts, finishes or is replaced, or a public fact in get_team changes. The views page keeps one such read open and, only when the version changed, calls list_changes again and, while it shows the Story, get_story_refresh. Each call is traced but never saved in the diagnostics history list_traces reads, so an open page does not push real operations out of view.`)
-	fmt.Fprintln(os.Stderr, `    start-build: The user starts building a confirmed change at its agreed revision, the one in force; a revision the guide proposed beside it is built only after the user adopts it. Surla saves the build with the Story as agreed at that revision and assigns the build to the builder and the test writer. Building again replaces the build and both assignments, which then count as unread. A change that is not confirmed, or a request_revision that is not the agreed revision (such as a waiting proposal's), is refused and nothing changes.`)
-	fmt.Fprintln(os.Stderr, `    get-build: Return a change's build: not_started until the user starts one; otherwise the revision built, when, whether the builder read its assignment, the test writer's state and whether it read its assignment, and whether the build is for the change's revision in force. Reading changes nothing.`)
+	fmt.Fprintln(os.Stderr, `    start-build: The user starts building a confirmed change at its agreed revision, the one in force, on the project owner's bound team; a revision the guide proposed beside it is built only after the user adopts it. Surla checks the change and prerequisites without effects, opens and refreshes the test-writer copy when used, checks the revision again, and saves the build with the agreed Story and design. Surla immediately registers the build's exact roles and folders before generating required tests. Stored verification settings use only the builder and remove a former test writer. Building again replaces the build and both unread assignments. A refused start saves no build and registers no role; a refusal at the second revision check may leave a reusable working copy. Generation trouble and team warnings after saving leave the saved build intact. Accepted work belongs to the server and survives client disconnection. Copy work and generation have a five-minute limit under the project's turn; after that turn is released, bringing the team up has its own 45-second limit. A server stop after saving leaves the saved assignment or verdict; build again to complete it. get_build reads the saved build without this start's transient team or copy outcome.`)
+	fmt.Fprintln(os.Stderr, `    get-build: Return a change's usable build for the current test source: not_started when none exists, including a builder-only build whose stored verification settings were removed; start a new build on the views page. Otherwise return the revision built, when, whether the builder read its assignment, the test writer's state and whether it read its assignment, and whether the build is for the change's revision in force. Reading changes nothing.`)
 	fmt.Fprintln(os.Stderr, `    list-builder-assignments: List the builder's assignments, one per change the user built, most recently started first, each with its change, revision and whether it was read. Reading the list records nothing.`)
 	fmt.Fprintln(os.Stderr, `    get-builder-assignment: Return the builder's assignment for a change in full and record that the builder read it at its revision. A new build of the change replaces the assignment, which then counts as unread.`)
 	fmt.Fprintln(os.Stderr, `    list-test-writer-assignments: List the test writer's assignments, one per change the user built, most recently started first, each with its change, revision, state and whether it was read. Reading the list records nothing.`)
-	fmt.Fprintln(os.Stderr, `    get-test-writer-assignment: Return the test writer's assignment for a change in full (the working folder, the Story as agreed at the built revision, the tests it requires, and the state with any findings) and record that the test writer read it at its revision. A new build of the change replaces the assignment, which then counts as unread.`)
+	fmt.Fprintln(os.Stderr, `    get-test-writer-assignment: Return the test writer's assignment for a change in full (the working folder, the design and Story as agreed at the built revision, the tests it requires, and the state with any findings) and record that the test writer read it at its revision. Later revisions do not change the saved design or Story. A new build of the change replaces the assignment, which then counts as unread.`)
 	fmt.Fprintln(os.Stderr, `    report-tests-finished: The test writer reports that its tests for a change at the build's revision are finished. Surla only records the report: the assignment's state becomes reported from any state, earlier findings or a recorded commit are cleared, and the tests are not checked. A report for another revision is refused and changes nothing.`)
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Additional help:")
@@ -1287,7 +1227,7 @@ func surlaStartBuildUsage() {
 
 	// Description
 	fmt.Fprintln(os.Stderr)
-	fmt.Fprintln(os.Stderr, `The user starts building a confirmed change at its agreed revision, the one in force; a revision the guide proposed beside it is built only after the user adopts it. Surla saves the build with the Story as agreed at that revision and assigns the build to the builder and the test writer. Building again replaces the build and both assignments, which then count as unread. A change that is not confirmed, or a request_revision that is not the agreed revision (such as a waiting proposal's), is refused and nothing changes.`)
+	fmt.Fprintln(os.Stderr, `The user starts building a confirmed change at its agreed revision, the one in force, on the project owner's bound team; a revision the guide proposed beside it is built only after the user adopts it. Surla checks the change and prerequisites without effects, opens and refreshes the test-writer copy when used, checks the revision again, and saves the build with the agreed Story and design. Surla immediately registers the build's exact roles and folders before generating required tests. Stored verification settings use only the builder and remove a former test writer. Building again replaces the build and both unread assignments. A refused start saves no build and registers no role; a refusal at the second revision check may leave a reusable working copy. Generation trouble and team warnings after saving leave the saved build intact. Accepted work belongs to the server and survives client disconnection. Copy work and generation have a five-minute limit under the project's turn; after that turn is released, bringing the team up has its own 45-second limit. A server stop after saving leaves the saved assignment or verdict; build again to complete it. get_build reads the saved build without this start's transient team or copy outcome.`)
 
 	// Flags list
 	fmt.Fprintln(os.Stderr, `    -body JSON: `)
@@ -1306,7 +1246,7 @@ func surlaGetBuildUsage() {
 
 	// Description
 	fmt.Fprintln(os.Stderr)
-	fmt.Fprintln(os.Stderr, `Return a change's build: not_started until the user starts one; otherwise the revision built, when, whether the builder read its assignment, the test writer's state and whether it read its assignment, and whether the build is for the change's revision in force. Reading changes nothing.`)
+	fmt.Fprintln(os.Stderr, `Return a change's usable build for the current test source: not_started when none exists, including a builder-only build whose stored verification settings were removed; start a new build on the views page. Otherwise return the revision built, when, whether the builder read its assignment, the test writer's state and whether it read its assignment, and whether the build is for the change's revision in force. Reading changes nothing.`)
 
 	// Flags list
 	fmt.Fprintln(os.Stderr, `    -change-id STRING: Change Card identifier.`)
@@ -1374,7 +1314,7 @@ func surlaGetTestWriterAssignmentUsage() {
 
 	// Description
 	fmt.Fprintln(os.Stderr)
-	fmt.Fprintln(os.Stderr, `Return the test writer's assignment for a change in full (the working folder, the Story as agreed at the built revision, the tests it requires, and the state with any findings) and record that the test writer read it at its revision. A new build of the change replaces the assignment, which then counts as unread.`)
+	fmt.Fprintln(os.Stderr, `Return the test writer's assignment for a change in full (the working folder, the design and Story as agreed at the built revision, the tests it requires, and the state with any findings) and record that the test writer read it at its revision. Later revisions do not change the saved design or Story. A new build of the change replaces the assignment, which then counts as unread.`)
 
 	// Flags list
 	fmt.Fprintln(os.Stderr, `    -change-id STRING: Change Card identifier from list_test_writer_assignments.`)

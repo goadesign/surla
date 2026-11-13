@@ -2,16 +2,13 @@
 package project
 
 import (
-	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
 
-	genproject "github.com/goadesign/surla/gen/project"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	goa "goa.design/goa/v3/pkg"
 )
 
 // TestEnsureTeamPreservesRegisteredRoles exercises real roster publication across repeated starts.
@@ -25,16 +22,18 @@ func TestEnsureTeamPreservesRegisteredRoles(t *testing.T) {
 			if !missingFolder {
 				require.NoError(t, os.Mkdir(testFolder, 0o700))
 			}
-			reads := 0
-			deps.TestWriterFolder = func(context.Context) (string, error) { reads++; return testFolder, nil }
 			server, err := NewServer(state, func() {}, deps)
 			require.NoError(t, err)
 			handles := []string{"existing-guide", "existing-builder", "existing-test-writer"}
 			for i, role := range []string{"guide", "builder", "test_writer"} {
-				_, err := server.AddAgent(teamContext(state), &genproject.AddAgentPayload{ActorID: handles[i], Role: role})
+				folder := state.Record.Directory
+				if role == "test_writer" {
+					folder = testFolder
+				}
+				_, err := registerTestAgent(server, handles[i], role, folder)
 				require.NoError(t, err)
 			}
-			original := map[string]string{}
+			original := map[string]agentRecord{}
 			for actor, role := range state.Record.Agents {
 				original[actor] = role
 			}
@@ -96,33 +95,27 @@ func TestEnsureTeamPreservesRegisteredRoles(t *testing.T) {
 					assert.JSONEq(t, string(first), string(raw), "repeating team start must never drop registered rows")
 				}
 			}
-			assert.Equal(t, 2, reads, "working-folder ownership is read once per operation without creating a checkout")
 		})
 	}
 }
 
-// TestAgentRolesAreUniqueAtAdmission refuses duplicate purpose before a credential or record changes.
-func TestAgentRolesAreUniqueAtAdmission(t *testing.T) {
+// TestAgentRoleAdmissionIsIdempotent preserves one stable handle and credential per role.
+func TestAgentRoleAdmissionIsIdempotent(t *testing.T) {
 	for _, role := range []string{"guide", "builder", "test_writer"} {
 		t.Run(role, func(t *testing.T) {
 			state := testState(t)
 			server, err := NewServer(state, func() {}, fixtureTeamDependencies(state))
 			require.NoError(t, err)
-			first := role + "-first"
-			second := role + "-second"
-			_, err = server.AddAgent(teamContext(state), &genproject.AddAgentPayload{ActorID: first, Role: role})
+			first, err := registerTestAgent(server, role+"-first", role, state.Record.Directory)
 			require.NoError(t, err)
-			before, err := os.ReadFile(filepath.Join(state.Dir, "project.json"))
+			before, err := os.ReadFile(first.CredentialFile)
 			require.NoError(t, err)
-			_, err = server.AddAgent(teamContext(state), &genproject.AddAgentPayload{ActorID: second, Role: role})
-			var conflict *goa.ServiceError
-			require.ErrorAs(t, err, &conflict)
-			assert.Equal(t, "conflict", conflict.Name)
-			after, err := os.ReadFile(filepath.Join(state.Dir, "project.json"))
+			second, err := registerTestAgent(server, role+"-second", role, state.Record.Directory)
+			require.NoError(t, err)
+			assert.Equal(t, first, second)
+			after, err := os.ReadFile(first.CredentialFile)
 			require.NoError(t, err)
 			assert.Equal(t, before, after)
-			_, err = os.Stat(state.AgentFile(second))
-			assert.ErrorIs(t, err, os.ErrNotExist)
 			require.Len(t, state.Record.Agents, 1)
 		})
 	}
@@ -131,7 +124,7 @@ func TestAgentRolesAreUniqueAtAdmission(t *testing.T) {
 // TestStoredDuplicateRoleIsRejected validates the same invariant when a project record is loaded.
 func TestStoredDuplicateRoleIsRejected(t *testing.T) {
 	state := testState(t)
-	state.Record.Agents = map[string]string{"first": "guide", "second": "guide"}
+	state.Record.Agents = map[string]agentRecord{"first": {Role: "guide", Folder: state.Record.Directory}, "second": {Role: "guide", Folder: state.Record.Directory}}
 	require.NoError(t, state.save())
 	_, err := Discover(filepath.Dir(state.Dir), state.Record.Directory)
 	require.ErrorContains(t, err, `invalid stored role "guide"`)
@@ -142,7 +135,7 @@ func TestExistingCustomGuideIsReused(t *testing.T) {
 	state := testState(t)
 	server, err := NewServer(state, func() {}, fixtureTeamDependencies(state))
 	require.NoError(t, err)
-	actor, err := server.AddAgent(teamContext(state), &genproject.AddAgentPayload{ActorID: "long-lived-guide", Role: "guide"})
+	actor, err := registerTestAgent(server, "long-lived-guide", "guide", server.state.Record.Directory)
 	require.NoError(t, err)
 	before, err := os.ReadFile(actor.CredentialFile)
 	require.NoError(t, err)
@@ -156,13 +149,4 @@ func TestExistingCustomGuideIsReused(t *testing.T) {
 	assert.Equal(t, before, after)
 	_, err = os.Stat(state.AgentFile(teamName("guide", state.Record.ID)))
 	assert.ErrorIs(t, err, os.ErrNotExist)
-}
-
-// TestServerRequiresNoncreatingFolderRead rejects a missing dependency rather than inventing a path.
-func TestServerRequiresNoncreatingFolderRead(t *testing.T) {
-	state := testState(t)
-	deps := fixtureTeamDependencies(state)
-	deps.TestWriterFolder = nil
-	_, err := NewServer(state, func() {}, deps)
-	require.ErrorContains(t, err, "test-writer folder reader")
 }

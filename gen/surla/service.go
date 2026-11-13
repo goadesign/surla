@@ -255,14 +255,26 @@ type Service interface {
 	// of view.
 	WaitForChanges(context.Context, *WaitForChangesPayload) (res *ChangeListVersion, err error)
 	// The user starts building a confirmed change at its agreed revision, the one
-	// in force; a revision the guide proposed beside it is built only after the
-	// user adopts it. Surla saves the build with the Story as agreed at that
-	// revision and assigns the build to the builder and the test writer. Building
-	// again replaces the build and both assignments, which then count as unread. A
-	// change that is not confirmed, or a request_revision that is not the agreed
-	// revision (such as a waiting proposal's), is refused and nothing changes.
-	StartBuild(context.Context, *StartBuildPayload) (res *StartedBuild, err error)
-	// Return a change's build: not_started until the user starts one; otherwise
+	// in force, on the project owner's bound team; a revision the guide proposed
+	// beside it is built only after the user adopts it. Surla checks the change
+	// and prerequisites without effects, opens and refreshes the test-writer copy
+	// when used, checks the revision again, and saves the build with the agreed
+	// Story and design. Surla immediately registers the build's exact roles and
+	// folders before generating required tests. Stored verification settings use
+	// only the builder and remove a former test writer. Building again replaces
+	// the build and both unread assignments. A refused start saves no build and
+	// registers no role; a refusal at the second revision check may leave a
+	// reusable working copy. Generation trouble and team warnings after saving
+	// leave the saved build intact. Accepted work belongs to the server and
+	// survives client disconnection. Copy work and generation have a five-minute
+	// limit under the project's turn; after that turn is released, bringing the
+	// team up has its own 45-second limit. A server stop after saving leaves the
+	// saved assignment or verdict; build again to complete it. get_build reads the
+	// saved build without this start's transient team or copy outcome.
+	StartBuild(context.Context, *StartBuildPayload) (res *StartBuildResult, err error)
+	// Return a change's usable build for the current test source: not_started when
+	// none exists, including a builder-only build whose stored verification
+	// settings were removed; start a new build on the views page. Otherwise return
 	// the revision built, when, whether the builder read its assignment, the test
 	// writer's state and whether it read its assignment, and whether the build is
 	// for the change's revision in force. Reading changes nothing.
@@ -280,10 +292,11 @@ type Service interface {
 	// was read. Reading the list records nothing.
 	ListTestWriterAssignments(context.Context) (res *TestWriterAssignmentList, err error)
 	// Return the test writer's assignment for a change in full (the working
-	// folder, the Story as agreed at the built revision, the tests it requires,
-	// and the state with any findings) and record that the test writer read it at
-	// its revision. A new build of the change replaces the assignment, which then
-	// counts as unread.
+	// folder, the design and Story as agreed at the built revision, the tests it
+	// requires, and the state with any findings) and record that the test writer
+	// read it at its revision. Later revisions do not change the saved design or
+	// Story. A new build of the change replaces the assignment, which then counts
+	// as unread.
 	GetTestWriterAssignment(context.Context, *GetTestWriterAssignmentPayload) (res *TestWriterAssignment, err error)
 	// The test writer reports that its tests for a change at the build's revision
 	// are finished. Surla only records the report: the assignment's state becomes
@@ -410,8 +423,57 @@ type ArchitecturePreviewResult struct {
 	Banner string
 }
 
-// The user has not started a build of this change.
+// The test-writer working copy is at the project's commit. It may be new,
+// already current, or advanced by this start.
+type BuildCopyAtProjectCommit struct {
+	// The working copy's current commit.
+	Commit string
+}
+
+// The working copy has uncommitted changes, so this start retained its commit
+// and files.
+type BuildCopyDirty struct {
+	// The retained working-copy commit.
+	Commit string
+}
+
+// The tests branch is not contained in the project's branch, so this start
+// retained the copy's commit.
+type BuildCopyNotContained struct {
+	// The retained working-copy commit.
+	Commit string
+	// Merge the tests branch into the project's branch, then build again.
+	Step BuildStartStep
+}
+
+// This project uses its stored evaluator, so this start uses no test-writer
+// working copy.
+type BuildCopyNotUsed struct {
+}
+
+// This change has no usable build for the current test source: the user has
+// not started one, or its builder-only build lost the stored verification
+// settings that supplied its tests. Start a new build on the views page.
 type BuildNotStarted struct {
+}
+
+type BuildStartStep string
+
+type BuildTeamAmbiguousSpace struct {
+	// Number of spaces matching this project.
+	Count int
+	// Choose the project's space, then start the team agents.
+	Step BuildStartStep
+}
+
+type BuildTeamUnavailable struct {
+	// What the user does to make the team ready for the saved build.
+	Step BuildStartStep
+}
+
+type BuildTeamWindowBusy struct {
+	// Close the open dialog, then start the team agents.
+	Step BuildStartStep
 }
 
 // BuilderAssignment is the result type of the surla service
@@ -615,8 +677,8 @@ type CP1RevisionAnalysisExample struct {
 type ChangeBuild struct {
 	// Change Card identifier.
 	ChangeID string
-	// not_started until the user starts a build of this change; started with the
-	// build afterwards.
+	// not_started when the change has no usable build for the current test source;
+	// start a new build on the views page. Otherwise started with the usable build.
 	Build Build
 }
 
@@ -1017,6 +1079,8 @@ type ProjectTeam struct {
 	Roles []*ProjectTeamRole
 	// Launcher state after ensuring the team.
 	Dialog string
+	// What the user does next for the prepared team.
+	Step string
 }
 
 type ProjectTeamRole struct {
@@ -1153,6 +1217,17 @@ type StartBuildPayload struct {
 	RequestRevision string
 }
 
+// StartBuildResult is the result type of the surla service start_build method.
+type StartBuildResult struct {
+	// The build saved before generation or team admission.
+	Build *StartedBuild
+	// The team's immediate outcome after the build was saved.
+	Team Team
+	// The test-writer working copy after this start's refresh; not_used with a
+	// stored evaluator.
+	WorkingCopy WorkingCopy
+}
+
 // StartLiveTargetPayload is the payload type of the surla service
 // start_live_target method.
 type StartLiveTargetPayload struct {
@@ -1160,7 +1235,10 @@ type StartLiveTargetPayload struct {
 	CandidateCommit string
 }
 
-// StartedBuild is the result type of the surla service start_build method.
+// The usable build the user started for a change, with the builder's
+// assignment and the test writer's progress when one is used. A build started
+// with only the builder remains usable while stored verification settings
+// supply its tests.
 type StartedBuild struct {
 	// Change Card revision the user built.
 	RequestRevision string
@@ -1176,6 +1254,9 @@ type StartedBuild struct {
 	Builder *BuilderProgress
 	// The test writer's assignment.
 	TestWriter *TestWriterProgress
+	// Number of finished flows in the agreed Story. Zero means no test of this
+	// change's Story was required.
+	RequiredTestCount int
 }
 
 // StopLiveTargetResult is the result type of the surla service
@@ -1330,9 +1411,11 @@ type TestWriterAssignment struct {
 	// Where this assignment stands, including Surla's findings when it needs
 	// changes.
 	Progress *TestWriterProgress
-	// Folder to write the tests in: your own working copy of the project. The
-	// project server does not prepare working copies yet, so it is empty.
+	// Folder to write the tests in: your own working copy of the project.
 	WorkingFolder string
+	// The canonical design source as agreed at request_revision, copied when this
+	// build started; later revisions do not change it.
+	DesignSource string
 	// The Story as agreed at request_revision, in declaration order. It does not
 	// change when the change is revised later.
 	Stories []*StorySummaryItem
@@ -1781,6 +1864,46 @@ func MakeTeamUnavailable(err error) *goa.ServiceError {
 	return goa.NewServiceError(err, "team_unavailable", false, false, false)
 }
 
+// MakeNotRepository builds a goa.ServiceError from an error.
+func MakeNotRepository(err error) *goa.ServiceError {
+	return goa.NewServiceError(err, "not_repository", false, false, false)
+}
+
+// MakeNoCommit builds a goa.ServiceError from an error.
+func MakeNoCommit(err error) *goa.ServiceError {
+	return goa.NewServiceError(err, "no_commit", false, false, false)
+}
+
+// MakeNoTestLayout builds a goa.ServiceError from an error.
+func MakeNoTestLayout(err error) *goa.ServiceError {
+	return goa.NewServiceError(err, "no_test_layout", false, false, false)
+}
+
+// MakeGitIdentityMissing builds a goa.ServiceError from an error.
+func MakeGitIdentityMissing(err error) *goa.ServiceError {
+	return goa.NewServiceError(err, "git_identity_missing", false, false, false)
+}
+
+// MakeCopyFolderInUse builds a goa.ServiceError from an error.
+func MakeCopyFolderInUse(err error) *goa.ServiceError {
+	return goa.NewServiceError(err, "copy_folder_in_use", false, false, false)
+}
+
+// MakeTestsBranchInUse builds a goa.ServiceError from an error.
+func MakeTestsBranchInUse(err error) *goa.ServiceError {
+	return goa.NewServiceError(err, "tests_branch_in_use", false, false, false)
+}
+
+// MakeWorkingCopyBusy builds a goa.ServiceError from an error.
+func MakeWorkingCopyBusy(err error) *goa.ServiceError {
+	return goa.NewServiceError(err, "working_copy_busy", false, false, false)
+}
+
+// MakeSandboxUnavailable builds a goa.ServiceError from an error.
+func MakeSandboxUnavailable(err error) *goa.ServiceError {
+	return goa.NewServiceError(err, "sandbox_unavailable", false, false, false)
+}
+
 // agentPolicyItemIntTransport stores JSON fields until they have been validated.
 type agentPolicyItemIntTransport int
 
@@ -1817,6 +1940,26 @@ func (value *approvalItemIntTransport) UnmarshalJSON(data []byte) error {
 
 // ValidateapprovalItemIntTransport checks decoded JSON before it becomes a service value.
 func ValidateapprovalItemIntTransport(value approvalItemIntTransport) (err error) {
+
+	return err
+}
+
+// buildTeamAmbiguousSpaceIntTransport stores JSON fields until they have been validated.
+type buildTeamAmbiguousSpaceIntTransport int
+
+// UnmarshalJSON reads an exact whole JSON number and stores it within this type's
+// declared range. Decimal and exponent spellings do not change its value.
+func (value *buildTeamAmbiguousSpaceIntTransport) UnmarshalJSON(data []byte) error {
+	number, err := rawjson.DecodeInteger[int](data)
+	if err != nil {
+		return fmt.Errorf("decode buildTeamAmbiguousSpaceIntTransport integer: %w", err)
+	}
+	*value = buildTeamAmbiguousSpaceIntTransport(number)
+	return nil
+}
+
+// ValidatebuildTeamAmbiguousSpaceIntTransport checks decoded JSON before it becomes a service value.
+func ValidatebuildTeamAmbiguousSpaceIntTransport(value buildTeamAmbiguousSpaceIntTransport) (err error) {
 
 	return err
 }
@@ -2139,6 +2282,92 @@ func validatejsonArchitecturePreviewResultTransport(value *jsonArchitecturePrevi
 	return err
 }
 
+// jsonBuildCopyAtProjectCommitTransport stores JSON fields until they have been validated.
+type jsonBuildCopyAtProjectCommitTransport struct {
+	// The working copy's current commit.
+	Commit *string `json:"commit"`
+}
+
+// validatejsonBuildCopyAtProjectCommitTransport checks decoded JSON before it becomes a service value.
+func validatejsonBuildCopyAtProjectCommitTransport(value *jsonBuildCopyAtProjectCommitTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.Commit == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("commit", "body"))
+	}
+	if value.Commit != nil {
+		err = goa.MergeErrors(err, goa.ValidatePattern("body.commit", *value.Commit, "^([0-9a-f]{40}|[0-9a-f]{64})$"))
+	}
+	return err
+}
+
+// jsonBuildCopyDirtyTransport stores JSON fields until they have been validated.
+type jsonBuildCopyDirtyTransport struct {
+	// The retained working-copy commit.
+	Commit *string `json:"commit"`
+}
+
+// validatejsonBuildCopyDirtyTransport checks decoded JSON before it becomes a service value.
+func validatejsonBuildCopyDirtyTransport(value *jsonBuildCopyDirtyTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.Commit == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("commit", "body"))
+	}
+	if value.Commit != nil {
+		err = goa.MergeErrors(err, goa.ValidatePattern("body.commit", *value.Commit, "^([0-9a-f]{40}|[0-9a-f]{64})$"))
+	}
+	return err
+}
+
+// jsonBuildCopyNotContainedTransport stores JSON fields until they have been validated.
+type jsonBuildCopyNotContainedTransport struct {
+	// The retained working-copy commit.
+	Commit *string `json:"commit"`
+	// Merge the tests branch into the project's branch, then build again.
+	Step *jsonBuildStartStepTransport `json:"step"`
+}
+
+// validatejsonBuildCopyNotContainedTransport checks decoded JSON before it becomes a service value.
+func validatejsonBuildCopyNotContainedTransport(value *jsonBuildCopyNotContainedTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.Commit == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("commit", "body"))
+	}
+	if value.Step == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("step", "body"))
+	}
+	if value.Commit != nil {
+		err = goa.MergeErrors(err, goa.ValidatePattern("body.commit", *value.Commit, "^([0-9a-f]{40}|[0-9a-f]{64})$"))
+	}
+	if value.Step != nil {
+		if utf8.RuneCountInString(string(*value.Step)) < 1 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.step", string(*value.Step), utf8.RuneCountInString(string(*value.Step)), 1, true))
+		}
+		if utf8.RuneCountInString(string(*value.Step)) > 512 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.step", string(*value.Step), utf8.RuneCountInString(string(*value.Step)), 512, false))
+		}
+	}
+	return err
+}
+
+// jsonBuildCopyNotUsedTransport stores JSON fields until they have been validated.
+type jsonBuildCopyNotUsedTransport struct {
+}
+
+// validatejsonBuildCopyNotUsedTransport checks decoded JSON before it becomes a service value.
+func validatejsonBuildCopyNotUsedTransport(value *jsonBuildCopyNotUsedTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+
+	return err
+}
+
 // jsonBuildNotStartedTransport stores JSON fields until they have been validated.
 type jsonBuildNotStartedTransport struct {
 }
@@ -2149,6 +2378,105 @@ func validatejsonBuildNotStartedTransport(value *jsonBuildNotStartedTransport) (
 		return goa.MissingFieldError("body", "JSON value")
 	}
 
+	return err
+}
+
+// jsonBuildStartStepTransport stores JSON fields until they have been validated.
+type jsonBuildStartStepTransport string
+
+// validatejsonBuildStartStepTransport checks decoded JSON before it becomes a service value.
+func validatejsonBuildStartStepTransport(value jsonBuildStartStepTransport) (err error) {
+	if utf8.RuneCountInString(string(value)) < 1 {
+		err = goa.MergeErrors(err, goa.InvalidLengthError("body", string(value), utf8.RuneCountInString(string(value)), 1, true))
+	}
+	if utf8.RuneCountInString(string(value)) > 512 {
+		err = goa.MergeErrors(err, goa.InvalidLengthError("body", string(value), utf8.RuneCountInString(string(value)), 512, false))
+	}
+	return err
+}
+
+// jsonBuildTeamAmbiguousSpaceTransport stores JSON fields until they have been validated.
+type jsonBuildTeamAmbiguousSpaceTransport struct {
+	// Number of spaces matching this project.
+	Count *buildTeamAmbiguousSpaceIntTransport `json:"count"`
+	// Choose the project's space, then start the team agents.
+	Step *jsonBuildStartStepTransport `json:"step"`
+}
+
+// validatejsonBuildTeamAmbiguousSpaceTransport checks decoded JSON before it becomes a service value.
+func validatejsonBuildTeamAmbiguousSpaceTransport(value *jsonBuildTeamAmbiguousSpaceTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.Count == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("count", "body"))
+	}
+	if value.Step == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("step", "body"))
+	}
+	if value.Count != nil {
+		if int(*value.Count) < 2 {
+			err = goa.MergeErrors(err, goa.InvalidRangeError("body.count", int(*value.Count), 2, true))
+		}
+	}
+	if value.Step != nil {
+		if utf8.RuneCountInString(string(*value.Step)) < 1 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.step", string(*value.Step), utf8.RuneCountInString(string(*value.Step)), 1, true))
+		}
+		if utf8.RuneCountInString(string(*value.Step)) > 512 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.step", string(*value.Step), utf8.RuneCountInString(string(*value.Step)), 512, false))
+		}
+	}
+	return err
+}
+
+// jsonBuildTeamUnavailableTransport stores JSON fields until they have been validated.
+type jsonBuildTeamUnavailableTransport struct {
+	// What the user does to make the team ready for the saved build.
+	Step *jsonBuildStartStepTransport `json:"step"`
+}
+
+// validatejsonBuildTeamUnavailableTransport checks decoded JSON before it becomes a service value.
+func validatejsonBuildTeamUnavailableTransport(value *jsonBuildTeamUnavailableTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.Step == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("step", "body"))
+	}
+	if value.Step != nil {
+		if utf8.RuneCountInString(string(*value.Step)) < 1 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.step", string(*value.Step), utf8.RuneCountInString(string(*value.Step)), 1, true))
+		}
+		if utf8.RuneCountInString(string(*value.Step)) > 512 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.step", string(*value.Step), utf8.RuneCountInString(string(*value.Step)), 512, false))
+		}
+	}
+	return err
+}
+
+// jsonBuildTeamWindowBusyTransport stores JSON fields until they have been validated.
+type jsonBuildTeamWindowBusyTransport struct {
+	// Close the open dialog, then start the team agents.
+	Step *jsonBuildStartStepTransport `json:"step"`
+}
+
+// validatejsonBuildTeamWindowBusyTransport checks decoded JSON before it becomes a service value.
+func validatejsonBuildTeamWindowBusyTransport(value *jsonBuildTeamWindowBusyTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.Step == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("step", "body"))
+	}
+	if value.Step != nil {
+		if utf8.RuneCountInString(string(*value.Step)) < 1 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.step", string(*value.Step), utf8.RuneCountInString(string(*value.Step)), 1, true))
+		}
+		if utf8.RuneCountInString(string(*value.Step)) > 512 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.step", string(*value.Step), utf8.RuneCountInString(string(*value.Step)), 512, false))
+		}
+	}
 	return err
 }
 
@@ -2696,8 +3024,8 @@ func validatejsonCP1RevisionAnalysisTransport(value *jsonCP1RevisionAnalysisTran
 type jsonChangeBuildTransport struct {
 	// Change Card identifier.
 	ChangeID *string `json:"change_id"`
-	// not_started until the user starts a build of this change; started with the
-	// build afterwards.
+	// not_started when the change has no usable build for the current test source;
+	// start a new build on the views page. Otherwise started with the usable build.
 	Build *jsonBuildTransport `json:"build"`
 }
 
@@ -3702,6 +4030,8 @@ type jsonProjectTeamTransport struct {
 	Roles []*jsonProjectTeamRoleTransport `json:"roles"`
 	// Launcher state after ensuring the team.
 	Dialog *string `json:"dialog"`
+	// What the user does next for the prepared team.
+	Step *string `json:"step"`
 }
 
 // validatejsonProjectTeamTransport checks decoded JSON before it becomes a service value.
@@ -3721,6 +4051,9 @@ func validatejsonProjectTeamTransport(value *jsonProjectTeamTransport) (err erro
 	if value.Dialog == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("dialog", "body"))
 	}
+	if value.Step == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("step", "body"))
+	}
 	if value.Team != nil {
 		err = goa.MergeErrors(err, goa.ValidatePattern("body.team", *value.Team, "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$"))
 	}
@@ -3734,6 +4067,14 @@ func validatejsonProjectTeamTransport(value *jsonProjectTeamTransport) (err erro
 	if value.Dialog != nil {
 		if !(*value.Dialog == "opened" || *value.Dialog == "already_open" || *value.Dialog == "not_needed") {
 			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.dialog", *value.Dialog, []any{"opened", "already_open", "not_needed"}))
+		}
+	}
+	if value.Step != nil {
+		if utf8.RuneCountInString(*value.Step) < 1 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.step", *value.Step, utf8.RuneCountInString(*value.Step), 1, true))
+		}
+		if utf8.RuneCountInString(*value.Step) > 512 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.step", *value.Step, utf8.RuneCountInString(*value.Step), 512, false))
 		}
 	}
 	return err
@@ -3957,6 +4298,108 @@ func validatejsonReviseChangePayloadTransport(value *jsonReviseChangePayloadTran
 	return err
 }
 
+// jsonStartBuildResultTransport stores JSON fields until they have been validated.
+type jsonStartBuildResultTransport struct {
+	// The build saved before generation or team admission.
+	Build *jsonStartedBuildTransport `json:"build"`
+	// The team's immediate outcome after the build was saved.
+	Team *jsonTeamTransport `json:"team"`
+	// The test-writer working copy after this start's refresh; not_used with a
+	// stored evaluator.
+	WorkingCopy *jsonWorkingCopyTransport `json:"working_copy"`
+}
+
+// validatejsonStartBuildResultTransport checks decoded JSON before it becomes a service value.
+func validatejsonStartBuildResultTransport(value *jsonStartBuildResultTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.Build == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("build", "body"))
+	}
+	if value.Team == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("team", "body"))
+	}
+	if value.WorkingCopy == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("working_copy", "body"))
+	}
+	if value.Build != nil {
+		if err2 := validatejsonStartedBuildTransport(value.Build); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		}
+	}
+	if value.Team != nil {
+
+		if err2 := value.Team.Validate(); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		} else {
+			switch string(value.Team.Kind()) {
+			case "ready":
+				actual, _ := value.Team.AsReady()
+				if actual != nil {
+					if err2 := validatejsonProjectTeamTransport(actual); err2 != nil {
+						err = goa.MergeErrors(err, err2)
+					}
+				}
+			case "window_busy":
+				actual, _ := value.Team.AsWindowBusy()
+				if actual != nil {
+					if err2 := validatejsonBuildTeamWindowBusyTransport(actual); err2 != nil {
+						err = goa.MergeErrors(err, err2)
+					}
+				}
+			case "ambiguous_space":
+				actual, _ := value.Team.AsAmbiguousSpace()
+				if actual != nil {
+					if err2 := validatejsonBuildTeamAmbiguousSpaceTransport(actual); err2 != nil {
+						err = goa.MergeErrors(err, err2)
+					}
+				}
+			case "unavailable":
+				actual, _ := value.Team.AsUnavailable()
+				if actual != nil {
+					if err2 := validatejsonBuildTeamUnavailableTransport(actual); err2 != nil {
+						err = goa.MergeErrors(err, err2)
+					}
+				}
+			}
+		}
+
+	}
+	if value.WorkingCopy != nil {
+
+		if err2 := value.WorkingCopy.Validate(); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		} else {
+			switch string(value.WorkingCopy.Kind()) {
+			case "at_project_commit":
+				actual, _ := value.WorkingCopy.AsAtProjectCommit()
+				if actual != nil {
+					if err2 := validatejsonBuildCopyAtProjectCommitTransport(actual); err2 != nil {
+						err = goa.MergeErrors(err, err2)
+					}
+				}
+			case "not_contained":
+				actual, _ := value.WorkingCopy.AsNotContained()
+				if actual != nil {
+					if err2 := validatejsonBuildCopyNotContainedTransport(actual); err2 != nil {
+						err = goa.MergeErrors(err, err2)
+					}
+				}
+			case "dirty":
+				actual, _ := value.WorkingCopy.AsDirty()
+				if actual != nil {
+					if err2 := validatejsonBuildCopyDirtyTransport(actual); err2 != nil {
+						err = goa.MergeErrors(err, err2)
+					}
+				}
+			}
+		}
+
+	}
+	return err
+}
+
 // jsonStartLiveTargetPayloadTransport stores JSON fields until they have been validated.
 type jsonStartLiveTargetPayloadTransport struct {
 	// Full commit ID to build, in the candidate repository's object format.
@@ -3993,6 +4436,9 @@ type jsonStartedBuildTransport struct {
 	Builder *jsonBuilderProgressTransport `json:"builder"`
 	// The test writer's assignment.
 	TestWriter *jsonTestWriterProgressTransport `json:"test_writer"`
+	// Number of finished flows in the agreed Story. Zero means no test of this
+	// change's Story was required.
+	RequiredTestCount *changeBuildIntTransport `json:"required_test_count"`
 }
 
 // validatejsonStartedBuildTransport checks decoded JSON before it becomes a service value.
@@ -4015,6 +4461,9 @@ func validatejsonStartedBuildTransport(value *jsonStartedBuildTransport) (err er
 	if value.TestWriter == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("test_writer", "body"))
 	}
+	if value.RequiredTestCount == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("required_test_count", "body"))
+	}
 	if value.StartedAt != nil {
 		err = goa.MergeErrors(err, goa.ValidateFormat("body.started_at", *value.StartedAt, goa.FormatDateTime))
 	}
@@ -4026,6 +4475,11 @@ func validatejsonStartedBuildTransport(value *jsonStartedBuildTransport) (err er
 	if value.TestWriter != nil {
 		if err2 := validatejsonTestWriterProgressTransport(value.TestWriter); err2 != nil {
 			err = goa.MergeErrors(err, err2)
+		}
+	}
+	if value.RequiredTestCount != nil {
+		if int(*value.RequiredTestCount) < 0 {
+			err = goa.MergeErrors(err, goa.InvalidRangeError("body.required_test_count", int(*value.RequiredTestCount), 0, true))
 		}
 	}
 	return err
@@ -4514,9 +4968,11 @@ type jsonTestWriterAssignmentTransport struct {
 	// Where this assignment stands, including Surla's findings when it needs
 	// changes.
 	Progress *jsonTestWriterProgressTransport `json:"progress"`
-	// Folder to write the tests in: your own working copy of the project. The
-	// project server does not prepare working copies yet, so it is empty.
+	// Folder to write the tests in: your own working copy of the project.
 	WorkingFolder *string `json:"working_folder"`
+	// The canonical design source as agreed at request_revision, copied when this
+	// build started; later revisions do not change it.
+	DesignSource *string `json:"design_source"`
 	// The Story as agreed at request_revision, in declaration order. It does not
 	// change when the change is revised later.
 	Stories []*jsonStorySummaryItemTransport `json:"stories"`
@@ -4544,6 +5000,9 @@ func validatejsonTestWriterAssignmentTransport(value *jsonTestWriterAssignmentTr
 	}
 	if value.WorkingFolder == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("working_folder", "body"))
+	}
+	if value.DesignSource == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("design_source", "body"))
 	}
 	if value.Stories == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("stories", "body"))
@@ -5568,6 +6027,77 @@ func validateToolInputBindingItemOriginal(value *ToolInputBindingItem) (err erro
 	return err
 }
 
+// validateBuildCopyAtProjectCommitOriginal checks the original typed value before JSON conversion.
+func validateBuildCopyAtProjectCommitOriginal(value *BuildCopyAtProjectCommit) (err error) {
+	err = goa.MergeErrors(err, goa.ValidatePattern("value.commit", value.Commit, "^([0-9a-f]{40}|[0-9a-f]{64})$"))
+	return err
+}
+
+// validateBuildCopyDirtyOriginal checks the original typed value before JSON conversion.
+func validateBuildCopyDirtyOriginal(value *BuildCopyDirty) (err error) {
+	err = goa.MergeErrors(err, goa.ValidatePattern("value.commit", value.Commit, "^([0-9a-f]{40}|[0-9a-f]{64})$"))
+	return err
+}
+
+// validateBuildCopyNotContainedOriginal checks the original typed value before JSON conversion.
+func validateBuildCopyNotContainedOriginal(value *BuildCopyNotContained) (err error) {
+	err = goa.MergeErrors(err, goa.ValidatePattern("value.commit", value.Commit, "^([0-9a-f]{40}|[0-9a-f]{64})$"))
+	if utf8.RuneCountInString(string(value.Step)) < 1 {
+		err = goa.MergeErrors(err, goa.InvalidLengthError("value.step", string(value.Step), utf8.RuneCountInString(string(value.Step)), 1, true))
+	}
+	if utf8.RuneCountInString(string(value.Step)) > 512 {
+		err = goa.MergeErrors(err, goa.InvalidLengthError("value.step", string(value.Step), utf8.RuneCountInString(string(value.Step)), 512, false))
+	}
+	return err
+}
+
+// validateBuildStartStepOriginal checks the original typed value before JSON conversion.
+func validateBuildStartStepOriginal(value BuildStartStep) (err error) {
+	if utf8.RuneCountInString(string(value)) < 1 {
+		err = goa.MergeErrors(err, goa.InvalidLengthError("value", string(value), utf8.RuneCountInString(string(value)), 1, true))
+	}
+	if utf8.RuneCountInString(string(value)) > 512 {
+		err = goa.MergeErrors(err, goa.InvalidLengthError("value", string(value), utf8.RuneCountInString(string(value)), 512, false))
+	}
+	return err
+}
+
+// validateBuildTeamAmbiguousSpaceOriginal checks the original typed value before JSON conversion.
+func validateBuildTeamAmbiguousSpaceOriginal(value *BuildTeamAmbiguousSpace) (err error) {
+	if value.Count < 2 {
+		err = goa.MergeErrors(err, goa.InvalidRangeError("value.count", value.Count, 2, true))
+	}
+	if utf8.RuneCountInString(string(value.Step)) < 1 {
+		err = goa.MergeErrors(err, goa.InvalidLengthError("value.step", string(value.Step), utf8.RuneCountInString(string(value.Step)), 1, true))
+	}
+	if utf8.RuneCountInString(string(value.Step)) > 512 {
+		err = goa.MergeErrors(err, goa.InvalidLengthError("value.step", string(value.Step), utf8.RuneCountInString(string(value.Step)), 512, false))
+	}
+	return err
+}
+
+// validateBuildTeamUnavailableOriginal checks the original typed value before JSON conversion.
+func validateBuildTeamUnavailableOriginal(value *BuildTeamUnavailable) (err error) {
+	if utf8.RuneCountInString(string(value.Step)) < 1 {
+		err = goa.MergeErrors(err, goa.InvalidLengthError("value.step", string(value.Step), utf8.RuneCountInString(string(value.Step)), 1, true))
+	}
+	if utf8.RuneCountInString(string(value.Step)) > 512 {
+		err = goa.MergeErrors(err, goa.InvalidLengthError("value.step", string(value.Step), utf8.RuneCountInString(string(value.Step)), 512, false))
+	}
+	return err
+}
+
+// validateBuildTeamWindowBusyOriginal checks the original typed value before JSON conversion.
+func validateBuildTeamWindowBusyOriginal(value *BuildTeamWindowBusy) (err error) {
+	if utf8.RuneCountInString(string(value.Step)) < 1 {
+		err = goa.MergeErrors(err, goa.InvalidLengthError("value.step", string(value.Step), utf8.RuneCountInString(string(value.Step)), 1, true))
+	}
+	if utf8.RuneCountInString(string(value.Step)) > 512 {
+		err = goa.MergeErrors(err, goa.InvalidLengthError("value.step", string(value.Step), utf8.RuneCountInString(string(value.Step)), 512, false))
+	}
+	return err
+}
+
 // validateBuilderAssignmentOriginal checks the original typed value before JSON conversion.
 func validateBuilderAssignmentOriginal(value *BuilderAssignment) (err error) {
 	if value.WrittenTests.Kind() == "" {
@@ -5807,6 +6337,9 @@ func validateStartedBuildOriginal(value *StartedBuild) (err error) {
 		if err2 := validateTestWriterProgressOriginal(value.TestWriter); err2 != nil {
 			err = goa.MergeErrors(err, err2)
 		}
+	}
+	if value.RequiredTestCount < 0 {
+		err = goa.MergeErrors(err, goa.InvalidRangeError("value.required_test_count", value.RequiredTestCount, 0, true))
 	}
 	return err
 }
@@ -6290,6 +6823,12 @@ func validateProjectTeamOriginal(value *ProjectTeam) (err error) {
 	if !(value.Dialog == "opened" || value.Dialog == "already_open" || value.Dialog == "not_needed") {
 		err = goa.MergeErrors(err, goa.InvalidEnumValueError("value.dialog", value.Dialog, []any{"opened", "already_open", "not_needed"}))
 	}
+	if utf8.RuneCountInString(value.Step) < 1 {
+		err = goa.MergeErrors(err, goa.InvalidLengthError("value.step", value.Step, utf8.RuneCountInString(value.Step), 1, true))
+	}
+	if utf8.RuneCountInString(value.Step) > 512 {
+		err = goa.MergeErrors(err, goa.InvalidLengthError("value.step", value.Step, utf8.RuneCountInString(value.Step), 512, false))
+	}
 	return err
 }
 
@@ -6324,6 +6863,89 @@ func validateReviseChangePayloadOriginal(value *ReviseChangePayload) (err error)
 			err = goa.MergeErrors(err, err2)
 		}
 	}
+	return err
+}
+
+// validateStartBuildResultOriginal checks the original typed value before JSON conversion.
+func validateStartBuildResultOriginal(value *StartBuildResult) (err error) {
+	if value.Build == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("build", "value"))
+	}
+	if value.Team.Kind() == "" {
+		err = goa.MergeErrors(err, goa.MissingFieldError("team", "value"))
+	}
+	if value.WorkingCopy.Kind() == "" {
+		err = goa.MergeErrors(err, goa.MissingFieldError("working_copy", "value"))
+	}
+	if value.Build != nil {
+		if err2 := validateStartedBuildOriginal(value.Build); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		}
+	}
+
+	if err2 := value.Team.Validate(); err2 != nil {
+		err = goa.MergeErrors(err, err2)
+	} else {
+		switch string(value.Team.Kind()) {
+		case "ready":
+			actual, _ := value.Team.AsReady()
+			if actual != nil {
+				if err2 := validateProjectTeamOriginal(actual); err2 != nil {
+					err = goa.MergeErrors(err, err2)
+				}
+			}
+		case "window_busy":
+			actual, _ := value.Team.AsWindowBusy()
+			if actual != nil {
+				if err2 := validateBuildTeamWindowBusyOriginal(actual); err2 != nil {
+					err = goa.MergeErrors(err, err2)
+				}
+			}
+		case "ambiguous_space":
+			actual, _ := value.Team.AsAmbiguousSpace()
+			if actual != nil {
+				if err2 := validateBuildTeamAmbiguousSpaceOriginal(actual); err2 != nil {
+					err = goa.MergeErrors(err, err2)
+				}
+			}
+		case "unavailable":
+			actual, _ := value.Team.AsUnavailable()
+			if actual != nil {
+				if err2 := validateBuildTeamUnavailableOriginal(actual); err2 != nil {
+					err = goa.MergeErrors(err, err2)
+				}
+			}
+		}
+	}
+
+	if err2 := value.WorkingCopy.Validate(); err2 != nil {
+		err = goa.MergeErrors(err, err2)
+	} else {
+		switch string(value.WorkingCopy.Kind()) {
+		case "at_project_commit":
+			actual, _ := value.WorkingCopy.AsAtProjectCommit()
+			if actual != nil {
+				if err2 := validateBuildCopyAtProjectCommitOriginal(actual); err2 != nil {
+					err = goa.MergeErrors(err, err2)
+				}
+			}
+		case "not_contained":
+			actual, _ := value.WorkingCopy.AsNotContained()
+			if actual != nil {
+				if err2 := validateBuildCopyNotContainedOriginal(actual); err2 != nil {
+					err = goa.MergeErrors(err, err2)
+				}
+			}
+		case "dirty":
+			actual, _ := value.WorkingCopy.AsDirty()
+			if actual != nil {
+				if err2 := validateBuildCopyDirtyOriginal(actual); err2 != nil {
+					err = goa.MergeErrors(err, err2)
+				}
+			}
+		}
+	}
+
 	return err
 }
 
@@ -6924,6 +7546,245 @@ func (u *jsonStateTransport) UnmarshalJSON(data []byte) error {
 	return u.Validate()
 }
 
+// jsonTeamTransport stores exactly one selected Goa OneOf branch.
+type jsonTeamTransport struct {
+	kind           jsonTeamTransportKind
+	Ready          *jsonProjectTeamTransport
+	WindowBusy     *jsonBuildTeamWindowBusyTransport
+	AmbiguousSpace *jsonBuildTeamAmbiguousSpaceTransport
+	Unavailable    *jsonBuildTeamUnavailableTransport
+}
+
+// jsonTeamTransportKind identifies the selected branch of jsonTeamTransport.
+type jsonTeamTransportKind string
+
+const (
+	jsonTeamTransportKindReady          jsonTeamTransportKind = "ready"
+	jsonTeamTransportKindWindowBusy     jsonTeamTransportKind = "window_busy"
+	jsonTeamTransportKindAmbiguousSpace jsonTeamTransportKind = "ambiguous_space"
+	jsonTeamTransportKindUnavailable    jsonTeamTransportKind = "unavailable"
+)
+
+// Kind returns the selected branch.
+func (u jsonTeamTransport) Kind() jsonTeamTransportKind {
+	return u.kind
+}
+
+// newjsonTeamTransportReady creates jsonTeamTransport with its ready branch selected.
+func newjsonTeamTransportReady(value *jsonProjectTeamTransport) jsonTeamTransport {
+	return jsonTeamTransport{kind: jsonTeamTransportKindReady, Ready: value}
+}
+
+// AsReady returns the ready branch when it is selected.
+func (u jsonTeamTransport) AsReady() (_ *jsonProjectTeamTransport, ok bool) {
+	if u.kind != jsonTeamTransportKindReady {
+		return
+	}
+	return u.Ready, true
+}
+
+// SetReady selects the ready branch.
+func (u *jsonTeamTransport) SetReady(value *jsonProjectTeamTransport) {
+	u.kind = jsonTeamTransportKindReady
+	u.Ready = value
+}
+
+// newjsonTeamTransportWindowBusy creates jsonTeamTransport with its window_busy branch selected.
+func newjsonTeamTransportWindowBusy(value *jsonBuildTeamWindowBusyTransport) jsonTeamTransport {
+	return jsonTeamTransport{kind: jsonTeamTransportKindWindowBusy, WindowBusy: value}
+}
+
+// AsWindowBusy returns the window_busy branch when it is selected.
+func (u jsonTeamTransport) AsWindowBusy() (_ *jsonBuildTeamWindowBusyTransport, ok bool) {
+	if u.kind != jsonTeamTransportKindWindowBusy {
+		return
+	}
+	return u.WindowBusy, true
+}
+
+// SetWindowBusy selects the window_busy branch.
+func (u *jsonTeamTransport) SetWindowBusy(value *jsonBuildTeamWindowBusyTransport) {
+	u.kind = jsonTeamTransportKindWindowBusy
+	u.WindowBusy = value
+}
+
+// newjsonTeamTransportAmbiguousSpace creates jsonTeamTransport with its ambiguous_space branch selected.
+func newjsonTeamTransportAmbiguousSpace(value *jsonBuildTeamAmbiguousSpaceTransport) jsonTeamTransport {
+	return jsonTeamTransport{kind: jsonTeamTransportKindAmbiguousSpace, AmbiguousSpace: value}
+}
+
+// AsAmbiguousSpace returns the ambiguous_space branch when it is selected.
+func (u jsonTeamTransport) AsAmbiguousSpace() (_ *jsonBuildTeamAmbiguousSpaceTransport, ok bool) {
+	if u.kind != jsonTeamTransportKindAmbiguousSpace {
+		return
+	}
+	return u.AmbiguousSpace, true
+}
+
+// SetAmbiguousSpace selects the ambiguous_space branch.
+func (u *jsonTeamTransport) SetAmbiguousSpace(value *jsonBuildTeamAmbiguousSpaceTransport) {
+	u.kind = jsonTeamTransportKindAmbiguousSpace
+	u.AmbiguousSpace = value
+}
+
+// newjsonTeamTransportUnavailable creates jsonTeamTransport with its unavailable branch selected.
+func newjsonTeamTransportUnavailable(value *jsonBuildTeamUnavailableTransport) jsonTeamTransport {
+	return jsonTeamTransport{kind: jsonTeamTransportKindUnavailable, Unavailable: value}
+}
+
+// AsUnavailable returns the unavailable branch when it is selected.
+func (u jsonTeamTransport) AsUnavailable() (_ *jsonBuildTeamUnavailableTransport, ok bool) {
+	if u.kind != jsonTeamTransportKindUnavailable {
+		return
+	}
+	return u.Unavailable, true
+}
+
+// SetUnavailable selects the unavailable branch.
+func (u *jsonTeamTransport) SetUnavailable(value *jsonBuildTeamUnavailableTransport) {
+	u.kind = jsonTeamTransportKindUnavailable
+	u.Unavailable = value
+}
+
+// Validate checks that one complete branch is selected.
+func (u jsonTeamTransport) Validate() error {
+	switch u.kind {
+	case jsonTeamTransportKindReady:
+		if u.Ready == nil {
+			return goa.MissingFieldError("value", "jsonTeamTransport")
+		}
+		return nil
+	case jsonTeamTransportKindWindowBusy:
+		if u.WindowBusy == nil {
+			return goa.MissingFieldError("value", "jsonTeamTransport")
+		}
+		return nil
+	case jsonTeamTransportKindAmbiguousSpace:
+		if u.AmbiguousSpace == nil {
+			return goa.MissingFieldError("value", "jsonTeamTransport")
+		}
+		return nil
+	case jsonTeamTransportKindUnavailable:
+		if u.Unavailable == nil {
+			return goa.MissingFieldError("value", "jsonTeamTransport")
+		}
+		return nil
+	case "":
+		return goa.MissingFieldError("state", "jsonTeamTransport")
+	default:
+		return goa.InvalidEnumValueError("state", u.kind, []any{string(jsonTeamTransportKindReady), string(jsonTeamTransportKindWindowBusy), string(jsonTeamTransportKindAmbiguousSpace), string(jsonTeamTransportKindUnavailable)})
+	}
+}
+
+// MarshalJSON writes the selected branch name and value.
+func (u jsonTeamTransport) MarshalJSON() ([]byte, error) {
+	if err := u.Validate(); err != nil {
+		return nil, err
+	}
+	var value any
+	switch u.kind {
+	case jsonTeamTransportKindReady:
+		value = u.Ready
+	case jsonTeamTransportKindWindowBusy:
+		value = u.WindowBusy
+	case jsonTeamTransportKindAmbiguousSpace:
+		value = u.AmbiguousSpace
+	case jsonTeamTransportKindUnavailable:
+		value = u.Unavailable
+	default:
+		return nil, fmt.Errorf("unexpected jsonTeamTransport branch %q", u.kind)
+	}
+	data, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return nil, err
+	}
+	if fields == nil {
+		return nil, goa.InvalidFieldTypeError("state", nil, "non-null JSON object")
+	}
+	if _, exists := fields["state"]; exists {
+		return nil, fmt.Errorf("jsonTeamTransport branch already contains discriminator %q", "state")
+	}
+	tag, err := json.Marshal(string(u.kind))
+	if err != nil {
+		return nil, err
+	}
+	fields["state"] = tag
+	return json.Marshal(fields)
+}
+
+// UnmarshalJSON reads one complete branch name and value.
+func (u *jsonTeamTransport) UnmarshalJSON(data []byte) error {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return err
+	}
+	tag, exists := fields["state"]
+	if !exists {
+		return goa.MissingFieldError("state", "jsonTeamTransport")
+	}
+	if bytes.Equal(bytes.TrimSpace(tag), []byte("null")) {
+		return goa.InvalidFieldTypeError("state", nil, "JSON string")
+	}
+	var raw struct {
+		Type  string
+		Value json.RawMessage
+	}
+	if err := json.Unmarshal(tag, &raw.Type); err != nil {
+		return err
+	}
+	delete(fields, "state")
+	value, err := json.Marshal(fields)
+	if err != nil {
+		return err
+	}
+	raw.Value = value
+	switch raw.Type {
+	case string(jsonTeamTransportKindReady):
+		var value *jsonProjectTeamTransport
+		decoder := json.NewDecoder(bytes.NewReader(raw.Value))
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&value); err != nil {
+			return err
+		}
+		u.kind = jsonTeamTransportKindReady
+		u.Ready = value
+	case string(jsonTeamTransportKindWindowBusy):
+		var value *jsonBuildTeamWindowBusyTransport
+		decoder := json.NewDecoder(bytes.NewReader(raw.Value))
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&value); err != nil {
+			return err
+		}
+		u.kind = jsonTeamTransportKindWindowBusy
+		u.WindowBusy = value
+	case string(jsonTeamTransportKindAmbiguousSpace):
+		var value *jsonBuildTeamAmbiguousSpaceTransport
+		decoder := json.NewDecoder(bytes.NewReader(raw.Value))
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&value); err != nil {
+			return err
+		}
+		u.kind = jsonTeamTransportKindAmbiguousSpace
+		u.AmbiguousSpace = value
+	case string(jsonTeamTransportKindUnavailable):
+		var value *jsonBuildTeamUnavailableTransport
+		decoder := json.NewDecoder(bytes.NewReader(raw.Value))
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&value); err != nil {
+			return err
+		}
+		u.kind = jsonTeamTransportKindUnavailable
+		u.Unavailable = value
+	default:
+		return goa.InvalidEnumValueError("state", raw.Type, []any{string(jsonTeamTransportKindReady), string(jsonTeamTransportKindWindowBusy), string(jsonTeamTransportKindAmbiguousSpace), string(jsonTeamTransportKindUnavailable)})
+	}
+	return u.Validate()
+}
+
 // jsonTestsTransport stores exactly one selected Goa OneOf branch.
 type jsonTestsTransport struct {
 	kind         jsonTestsTransportKind
@@ -7233,6 +8094,245 @@ func (u *jsonTestsTransport) UnmarshalJSON(data []byte) error {
 		u.CouldNotRun = value
 	default:
 		return goa.InvalidEnumValueError("state", raw.Type, []any{string(jsonTestsTransportKindNotUsed), string(jsonTestsTransportKindAssigned), string(jsonTestsTransportKindReported), string(jsonTestsTransportKindNeedsChanges), string(jsonTestsTransportKindAccepted), string(jsonTestsTransportKindCouldNotRun)})
+	}
+	return u.Validate()
+}
+
+// jsonWorkingCopyTransport stores exactly one selected Goa OneOf branch.
+type jsonWorkingCopyTransport struct {
+	kind            jsonWorkingCopyTransportKind
+	NotUsed         *jsonBuildCopyNotUsedTransport
+	AtProjectCommit *jsonBuildCopyAtProjectCommitTransport
+	NotContained    *jsonBuildCopyNotContainedTransport
+	Dirty           *jsonBuildCopyDirtyTransport
+}
+
+// jsonWorkingCopyTransportKind identifies the selected branch of jsonWorkingCopyTransport.
+type jsonWorkingCopyTransportKind string
+
+const (
+	jsonWorkingCopyTransportKindNotUsed         jsonWorkingCopyTransportKind = "not_used"
+	jsonWorkingCopyTransportKindAtProjectCommit jsonWorkingCopyTransportKind = "at_project_commit"
+	jsonWorkingCopyTransportKindNotContained    jsonWorkingCopyTransportKind = "not_contained"
+	jsonWorkingCopyTransportKindDirty           jsonWorkingCopyTransportKind = "dirty"
+)
+
+// Kind returns the selected branch.
+func (u jsonWorkingCopyTransport) Kind() jsonWorkingCopyTransportKind {
+	return u.kind
+}
+
+// newjsonWorkingCopyTransportNotUsed creates jsonWorkingCopyTransport with its not_used branch selected.
+func newjsonWorkingCopyTransportNotUsed(value *jsonBuildCopyNotUsedTransport) jsonWorkingCopyTransport {
+	return jsonWorkingCopyTransport{kind: jsonWorkingCopyTransportKindNotUsed, NotUsed: value}
+}
+
+// AsNotUsed returns the not_used branch when it is selected.
+func (u jsonWorkingCopyTransport) AsNotUsed() (_ *jsonBuildCopyNotUsedTransport, ok bool) {
+	if u.kind != jsonWorkingCopyTransportKindNotUsed {
+		return
+	}
+	return u.NotUsed, true
+}
+
+// SetNotUsed selects the not_used branch.
+func (u *jsonWorkingCopyTransport) SetNotUsed(value *jsonBuildCopyNotUsedTransport) {
+	u.kind = jsonWorkingCopyTransportKindNotUsed
+	u.NotUsed = value
+}
+
+// newjsonWorkingCopyTransportAtProjectCommit creates jsonWorkingCopyTransport with its at_project_commit branch selected.
+func newjsonWorkingCopyTransportAtProjectCommit(value *jsonBuildCopyAtProjectCommitTransport) jsonWorkingCopyTransport {
+	return jsonWorkingCopyTransport{kind: jsonWorkingCopyTransportKindAtProjectCommit, AtProjectCommit: value}
+}
+
+// AsAtProjectCommit returns the at_project_commit branch when it is selected.
+func (u jsonWorkingCopyTransport) AsAtProjectCommit() (_ *jsonBuildCopyAtProjectCommitTransport, ok bool) {
+	if u.kind != jsonWorkingCopyTransportKindAtProjectCommit {
+		return
+	}
+	return u.AtProjectCommit, true
+}
+
+// SetAtProjectCommit selects the at_project_commit branch.
+func (u *jsonWorkingCopyTransport) SetAtProjectCommit(value *jsonBuildCopyAtProjectCommitTransport) {
+	u.kind = jsonWorkingCopyTransportKindAtProjectCommit
+	u.AtProjectCommit = value
+}
+
+// newjsonWorkingCopyTransportNotContained creates jsonWorkingCopyTransport with its not_contained branch selected.
+func newjsonWorkingCopyTransportNotContained(value *jsonBuildCopyNotContainedTransport) jsonWorkingCopyTransport {
+	return jsonWorkingCopyTransport{kind: jsonWorkingCopyTransportKindNotContained, NotContained: value}
+}
+
+// AsNotContained returns the not_contained branch when it is selected.
+func (u jsonWorkingCopyTransport) AsNotContained() (_ *jsonBuildCopyNotContainedTransport, ok bool) {
+	if u.kind != jsonWorkingCopyTransportKindNotContained {
+		return
+	}
+	return u.NotContained, true
+}
+
+// SetNotContained selects the not_contained branch.
+func (u *jsonWorkingCopyTransport) SetNotContained(value *jsonBuildCopyNotContainedTransport) {
+	u.kind = jsonWorkingCopyTransportKindNotContained
+	u.NotContained = value
+}
+
+// newjsonWorkingCopyTransportDirty creates jsonWorkingCopyTransport with its dirty branch selected.
+func newjsonWorkingCopyTransportDirty(value *jsonBuildCopyDirtyTransport) jsonWorkingCopyTransport {
+	return jsonWorkingCopyTransport{kind: jsonWorkingCopyTransportKindDirty, Dirty: value}
+}
+
+// AsDirty returns the dirty branch when it is selected.
+func (u jsonWorkingCopyTransport) AsDirty() (_ *jsonBuildCopyDirtyTransport, ok bool) {
+	if u.kind != jsonWorkingCopyTransportKindDirty {
+		return
+	}
+	return u.Dirty, true
+}
+
+// SetDirty selects the dirty branch.
+func (u *jsonWorkingCopyTransport) SetDirty(value *jsonBuildCopyDirtyTransport) {
+	u.kind = jsonWorkingCopyTransportKindDirty
+	u.Dirty = value
+}
+
+// Validate checks that one complete branch is selected.
+func (u jsonWorkingCopyTransport) Validate() error {
+	switch u.kind {
+	case jsonWorkingCopyTransportKindNotUsed:
+		if u.NotUsed == nil {
+			return goa.MissingFieldError("value", "jsonWorkingCopyTransport")
+		}
+		return nil
+	case jsonWorkingCopyTransportKindAtProjectCommit:
+		if u.AtProjectCommit == nil {
+			return goa.MissingFieldError("value", "jsonWorkingCopyTransport")
+		}
+		return nil
+	case jsonWorkingCopyTransportKindNotContained:
+		if u.NotContained == nil {
+			return goa.MissingFieldError("value", "jsonWorkingCopyTransport")
+		}
+		return nil
+	case jsonWorkingCopyTransportKindDirty:
+		if u.Dirty == nil {
+			return goa.MissingFieldError("value", "jsonWorkingCopyTransport")
+		}
+		return nil
+	case "":
+		return goa.MissingFieldError("state", "jsonWorkingCopyTransport")
+	default:
+		return goa.InvalidEnumValueError("state", u.kind, []any{string(jsonWorkingCopyTransportKindNotUsed), string(jsonWorkingCopyTransportKindAtProjectCommit), string(jsonWorkingCopyTransportKindNotContained), string(jsonWorkingCopyTransportKindDirty)})
+	}
+}
+
+// MarshalJSON writes the selected branch name and value.
+func (u jsonWorkingCopyTransport) MarshalJSON() ([]byte, error) {
+	if err := u.Validate(); err != nil {
+		return nil, err
+	}
+	var value any
+	switch u.kind {
+	case jsonWorkingCopyTransportKindNotUsed:
+		value = u.NotUsed
+	case jsonWorkingCopyTransportKindAtProjectCommit:
+		value = u.AtProjectCommit
+	case jsonWorkingCopyTransportKindNotContained:
+		value = u.NotContained
+	case jsonWorkingCopyTransportKindDirty:
+		value = u.Dirty
+	default:
+		return nil, fmt.Errorf("unexpected jsonWorkingCopyTransport branch %q", u.kind)
+	}
+	data, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return nil, err
+	}
+	if fields == nil {
+		return nil, goa.InvalidFieldTypeError("state", nil, "non-null JSON object")
+	}
+	if _, exists := fields["state"]; exists {
+		return nil, fmt.Errorf("jsonWorkingCopyTransport branch already contains discriminator %q", "state")
+	}
+	tag, err := json.Marshal(string(u.kind))
+	if err != nil {
+		return nil, err
+	}
+	fields["state"] = tag
+	return json.Marshal(fields)
+}
+
+// UnmarshalJSON reads one complete branch name and value.
+func (u *jsonWorkingCopyTransport) UnmarshalJSON(data []byte) error {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return err
+	}
+	tag, exists := fields["state"]
+	if !exists {
+		return goa.MissingFieldError("state", "jsonWorkingCopyTransport")
+	}
+	if bytes.Equal(bytes.TrimSpace(tag), []byte("null")) {
+		return goa.InvalidFieldTypeError("state", nil, "JSON string")
+	}
+	var raw struct {
+		Type  string
+		Value json.RawMessage
+	}
+	if err := json.Unmarshal(tag, &raw.Type); err != nil {
+		return err
+	}
+	delete(fields, "state")
+	value, err := json.Marshal(fields)
+	if err != nil {
+		return err
+	}
+	raw.Value = value
+	switch raw.Type {
+	case string(jsonWorkingCopyTransportKindNotUsed):
+		var value *jsonBuildCopyNotUsedTransport
+		decoder := json.NewDecoder(bytes.NewReader(raw.Value))
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&value); err != nil {
+			return err
+		}
+		u.kind = jsonWorkingCopyTransportKindNotUsed
+		u.NotUsed = value
+	case string(jsonWorkingCopyTransportKindAtProjectCommit):
+		var value *jsonBuildCopyAtProjectCommitTransport
+		decoder := json.NewDecoder(bytes.NewReader(raw.Value))
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&value); err != nil {
+			return err
+		}
+		u.kind = jsonWorkingCopyTransportKindAtProjectCommit
+		u.AtProjectCommit = value
+	case string(jsonWorkingCopyTransportKindNotContained):
+		var value *jsonBuildCopyNotContainedTransport
+		decoder := json.NewDecoder(bytes.NewReader(raw.Value))
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&value); err != nil {
+			return err
+		}
+		u.kind = jsonWorkingCopyTransportKindNotContained
+		u.NotContained = value
+	case string(jsonWorkingCopyTransportKindDirty):
+		var value *jsonBuildCopyDirtyTransport
+		decoder := json.NewDecoder(bytes.NewReader(raw.Value))
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&value); err != nil {
+			return err
+		}
+		u.kind = jsonWorkingCopyTransportKindDirty
+		u.Dirty = value
+	default:
+		return goa.InvalidEnumValueError("state", raw.Type, []any{string(jsonWorkingCopyTransportKindNotUsed), string(jsonWorkingCopyTransportKindAtProjectCommit), string(jsonWorkingCopyTransportKindNotContained), string(jsonWorkingCopyTransportKindDirty)})
 	}
 	return u.Validate()
 }
@@ -8049,6 +9149,331 @@ func DecodeArchitecturePreviewResult(data []byte) (out *ArchitecturePreviewResul
 	return out, nil
 }
 
+// EncodeBuildCopyAtProjectCommit turns a service value into JSON using the field names in the Goa design.
+func EncodeBuildCopyAtProjectCommit(in *BuildCopyAtProjectCommit) ([]byte, error) {
+	if err := checkBuildCopyAtProjectCommitValue(in); err != nil {
+		return nil, fmt.Errorf("encode BuildCopyAtProjectCommit JSON: %w", err)
+	}
+	if err := validateBuildCopyAtProjectCommitOriginal(in); err != nil {
+		return nil, fmt.Errorf("validate BuildCopyAtProjectCommit value: %w", err)
+	}
+	var body *jsonBuildCopyAtProjectCommitTransport
+	{
+		body = &jsonBuildCopyAtProjectCommitTransport{
+			Commit: &in.Commit,
+		}
+	}
+	if err := validatejsonBuildCopyAtProjectCommitTransport(body); err != nil {
+		return nil, fmt.Errorf("validate BuildCopyAtProjectCommit JSON: %w", err)
+	}
+	data, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("encode BuildCopyAtProjectCommit JSON: %w", err)
+	}
+	return data, nil
+}
+
+// ValidateBuildCopyAtProjectCommitValue checks the original Go fields against their declared constraints.
+// It returns validation errors without encoding the value as JSON.
+
+func ValidateBuildCopyAtProjectCommitValue(in *BuildCopyAtProjectCommit) error {
+	if err := checkBuildCopyAtProjectCommitValue(in); err != nil {
+		return fmt.Errorf("validate BuildCopyAtProjectCommit value: %w", err)
+	}
+	if err := validateBuildCopyAtProjectCommitOriginal(in); err != nil {
+		return fmt.Errorf("validate BuildCopyAtProjectCommit value: %w", err)
+	}
+
+	if in == nil {
+		return goa.MissingFieldError("result", "BuildCopyAtProjectCommit")
+	}
+
+	var body *jsonBuildCopyAtProjectCommitTransport
+	{
+		body = &jsonBuildCopyAtProjectCommitTransport{
+			Commit: &in.Commit,
+		}
+	}
+	if err := validatejsonBuildCopyAtProjectCommitTransport(body); err != nil {
+		return fmt.Errorf("validate BuildCopyAtProjectCommit value: %w", err)
+	}
+	return nil
+}
+
+// DecodeBuildCopyAtProjectCommit checks JSON field names from the Goa design and returns a service value.
+func DecodeBuildCopyAtProjectCommit(data []byte) (out *BuildCopyAtProjectCommit, err error) {
+	root, err := readStrictJSON(data)
+	if err != nil {
+		return out, fmt.Errorf("decode BuildCopyAtProjectCommit JSON: %w", err)
+	}
+	if err := validateBuildCopyAtProjectCommitJSONValue("", root, ""); err != nil {
+		return out, fmt.Errorf("decode BuildCopyAtProjectCommit JSON: %w", err)
+	}
+	var body *jsonBuildCopyAtProjectCommitTransport
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&body); err != nil {
+		return out, fmt.Errorf("decode BuildCopyAtProjectCommit JSON: %w", err)
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		if err == nil {
+			return out, fmt.Errorf("decode BuildCopyAtProjectCommit JSON: multiple JSON values")
+		}
+		return out, fmt.Errorf("decode BuildCopyAtProjectCommit JSON after first value: %w", err)
+	}
+	if err := validatejsonBuildCopyAtProjectCommitTransport(body); err != nil {
+		return out, fmt.Errorf("validate BuildCopyAtProjectCommit JSON: %w", err)
+	}
+	{
+		out = &BuildCopyAtProjectCommit{
+			Commit: *body.Commit,
+		}
+	}
+	return out, nil
+}
+
+// EncodeBuildCopyDirty turns a service value into JSON using the field names in the Goa design.
+func EncodeBuildCopyDirty(in *BuildCopyDirty) ([]byte, error) {
+	if err := checkBuildCopyDirtyValue(in); err != nil {
+		return nil, fmt.Errorf("encode BuildCopyDirty JSON: %w", err)
+	}
+	if err := validateBuildCopyDirtyOriginal(in); err != nil {
+		return nil, fmt.Errorf("validate BuildCopyDirty value: %w", err)
+	}
+	var body *jsonBuildCopyDirtyTransport
+	{
+		body = &jsonBuildCopyDirtyTransport{
+			Commit: &in.Commit,
+		}
+	}
+	if err := validatejsonBuildCopyDirtyTransport(body); err != nil {
+		return nil, fmt.Errorf("validate BuildCopyDirty JSON: %w", err)
+	}
+	data, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("encode BuildCopyDirty JSON: %w", err)
+	}
+	return data, nil
+}
+
+// ValidateBuildCopyDirtyValue checks the original Go fields against their declared constraints.
+// It returns validation errors without encoding the value as JSON.
+
+func ValidateBuildCopyDirtyValue(in *BuildCopyDirty) error {
+	if err := checkBuildCopyDirtyValue(in); err != nil {
+		return fmt.Errorf("validate BuildCopyDirty value: %w", err)
+	}
+	if err := validateBuildCopyDirtyOriginal(in); err != nil {
+		return fmt.Errorf("validate BuildCopyDirty value: %w", err)
+	}
+
+	if in == nil {
+		return goa.MissingFieldError("result", "BuildCopyDirty")
+	}
+
+	var body *jsonBuildCopyDirtyTransport
+	{
+		body = &jsonBuildCopyDirtyTransport{
+			Commit: &in.Commit,
+		}
+	}
+	if err := validatejsonBuildCopyDirtyTransport(body); err != nil {
+		return fmt.Errorf("validate BuildCopyDirty value: %w", err)
+	}
+	return nil
+}
+
+// DecodeBuildCopyDirty checks JSON field names from the Goa design and returns a service value.
+func DecodeBuildCopyDirty(data []byte) (out *BuildCopyDirty, err error) {
+	root, err := readStrictJSON(data)
+	if err != nil {
+		return out, fmt.Errorf("decode BuildCopyDirty JSON: %w", err)
+	}
+	if err := validateBuildCopyDirtyJSONValue("", root, ""); err != nil {
+		return out, fmt.Errorf("decode BuildCopyDirty JSON: %w", err)
+	}
+	var body *jsonBuildCopyDirtyTransport
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&body); err != nil {
+		return out, fmt.Errorf("decode BuildCopyDirty JSON: %w", err)
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		if err == nil {
+			return out, fmt.Errorf("decode BuildCopyDirty JSON: multiple JSON values")
+		}
+		return out, fmt.Errorf("decode BuildCopyDirty JSON after first value: %w", err)
+	}
+	if err := validatejsonBuildCopyDirtyTransport(body); err != nil {
+		return out, fmt.Errorf("validate BuildCopyDirty JSON: %w", err)
+	}
+	{
+		out = &BuildCopyDirty{
+			Commit: *body.Commit,
+		}
+	}
+	return out, nil
+}
+
+// EncodeBuildCopyNotContained turns a service value into JSON using the field names in the Goa design.
+func EncodeBuildCopyNotContained(in *BuildCopyNotContained) ([]byte, error) {
+	if err := checkBuildCopyNotContainedValue(in); err != nil {
+		return nil, fmt.Errorf("encode BuildCopyNotContained JSON: %w", err)
+	}
+	if err := validateBuildCopyNotContainedOriginal(in); err != nil {
+		return nil, fmt.Errorf("validate BuildCopyNotContained value: %w", err)
+	}
+	var body *jsonBuildCopyNotContainedTransport
+	{
+		body = &jsonBuildCopyNotContainedTransport{
+			Commit: &in.Commit,
+		}
+		step := jsonBuildStartStepTransport(in.Step)
+		body.Step = &step
+	}
+	if err := validatejsonBuildCopyNotContainedTransport(body); err != nil {
+		return nil, fmt.Errorf("validate BuildCopyNotContained JSON: %w", err)
+	}
+	data, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("encode BuildCopyNotContained JSON: %w", err)
+	}
+	return data, nil
+}
+
+// ValidateBuildCopyNotContainedValue checks the original Go fields against their declared constraints.
+// It returns validation errors without encoding the value as JSON.
+
+func ValidateBuildCopyNotContainedValue(in *BuildCopyNotContained) error {
+	if err := checkBuildCopyNotContainedValue(in); err != nil {
+		return fmt.Errorf("validate BuildCopyNotContained value: %w", err)
+	}
+	if err := validateBuildCopyNotContainedOriginal(in); err != nil {
+		return fmt.Errorf("validate BuildCopyNotContained value: %w", err)
+	}
+
+	if in == nil {
+		return goa.MissingFieldError("result", "BuildCopyNotContained")
+	}
+
+	var body *jsonBuildCopyNotContainedTransport
+	{
+		body = &jsonBuildCopyNotContainedTransport{
+			Commit: &in.Commit,
+		}
+		step := jsonBuildStartStepTransport(in.Step)
+		body.Step = &step
+	}
+	if err := validatejsonBuildCopyNotContainedTransport(body); err != nil {
+		return fmt.Errorf("validate BuildCopyNotContained value: %w", err)
+	}
+	return nil
+}
+
+// DecodeBuildCopyNotContained checks JSON field names from the Goa design and returns a service value.
+func DecodeBuildCopyNotContained(data []byte) (out *BuildCopyNotContained, err error) {
+	root, err := readStrictJSON(data)
+	if err != nil {
+		return out, fmt.Errorf("decode BuildCopyNotContained JSON: %w", err)
+	}
+	if err := validateBuildCopyNotContainedJSONValue("", root, ""); err != nil {
+		return out, fmt.Errorf("decode BuildCopyNotContained JSON: %w", err)
+	}
+	var body *jsonBuildCopyNotContainedTransport
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&body); err != nil {
+		return out, fmt.Errorf("decode BuildCopyNotContained JSON: %w", err)
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		if err == nil {
+			return out, fmt.Errorf("decode BuildCopyNotContained JSON: multiple JSON values")
+		}
+		return out, fmt.Errorf("decode BuildCopyNotContained JSON after first value: %w", err)
+	}
+	if err := validatejsonBuildCopyNotContainedTransport(body); err != nil {
+		return out, fmt.Errorf("validate BuildCopyNotContained JSON: %w", err)
+	}
+	{
+		out = &BuildCopyNotContained{
+			Commit: *body.Commit,
+			Step:   BuildStartStep(*body.Step),
+		}
+	}
+	return out, nil
+}
+
+// EncodeBuildCopyNotUsed turns a service value into JSON using the field names in the Goa design.
+func EncodeBuildCopyNotUsed(in *BuildCopyNotUsed) ([]byte, error) {
+	if err := checkBuildCopyNotUsedValue(in); err != nil {
+		return nil, fmt.Errorf("encode BuildCopyNotUsed JSON: %w", err)
+	}
+	var body *jsonBuildCopyNotUsedTransport
+	{
+		body = &jsonBuildCopyNotUsedTransport{}
+	}
+	if err := validatejsonBuildCopyNotUsedTransport(body); err != nil {
+		return nil, fmt.Errorf("validate BuildCopyNotUsed JSON: %w", err)
+	}
+	data, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("encode BuildCopyNotUsed JSON: %w", err)
+	}
+	return data, nil
+}
+
+// ValidateBuildCopyNotUsedValue checks the original Go fields against their declared constraints.
+// It returns validation errors without encoding the value as JSON.
+
+func ValidateBuildCopyNotUsedValue(in *BuildCopyNotUsed) error {
+	if err := checkBuildCopyNotUsedValue(in); err != nil {
+		return fmt.Errorf("validate BuildCopyNotUsed value: %w", err)
+	}
+
+	if in == nil {
+		return goa.MissingFieldError("result", "BuildCopyNotUsed")
+	}
+
+	var body *jsonBuildCopyNotUsedTransport
+	{
+		body = &jsonBuildCopyNotUsedTransport{}
+	}
+	if err := validatejsonBuildCopyNotUsedTransport(body); err != nil {
+		return fmt.Errorf("validate BuildCopyNotUsed value: %w", err)
+	}
+	return nil
+}
+
+// DecodeBuildCopyNotUsed checks JSON field names from the Goa design and returns a service value.
+func DecodeBuildCopyNotUsed(data []byte) (out *BuildCopyNotUsed, err error) {
+	root, err := readStrictJSON(data)
+	if err != nil {
+		return out, fmt.Errorf("decode BuildCopyNotUsed JSON: %w", err)
+	}
+	if err := validateBuildCopyNotUsedJSONValue("", root, ""); err != nil {
+		return out, fmt.Errorf("decode BuildCopyNotUsed JSON: %w", err)
+	}
+	var body *jsonBuildCopyNotUsedTransport
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&body); err != nil {
+		return out, fmt.Errorf("decode BuildCopyNotUsed JSON: %w", err)
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		if err == nil {
+			return out, fmt.Errorf("decode BuildCopyNotUsed JSON: multiple JSON values")
+		}
+		return out, fmt.Errorf("decode BuildCopyNotUsed JSON after first value: %w", err)
+	}
+	if err := validatejsonBuildCopyNotUsedTransport(body); err != nil {
+		return out, fmt.Errorf("validate BuildCopyNotUsed JSON: %w", err)
+	}
+	{
+		out = &BuildCopyNotUsed{}
+	}
+	return out, nil
+}
+
 // EncodeBuildNotStarted turns a service value into JSON using the field names in the Goa design.
 func EncodeBuildNotStarted(in *BuildNotStarted) ([]byte, error) {
 	if err := checkBuildNotStartedValue(in); err != nil {
@@ -8116,6 +9541,333 @@ func DecodeBuildNotStarted(data []byte) (out *BuildNotStarted, err error) {
 	}
 	{
 		out = &BuildNotStarted{}
+	}
+	return out, nil
+}
+
+// EncodeBuildStartStep turns a service value into JSON using the field names in the Goa design.
+func EncodeBuildStartStep(in BuildStartStep) ([]byte, error) {
+	if err := checkBuildStartStepValue(in); err != nil {
+		return nil, fmt.Errorf("encode BuildStartStep JSON: %w", err)
+	}
+	if err := validateBuildStartStepOriginal(in); err != nil {
+		return nil, fmt.Errorf("validate BuildStartStep value: %w", err)
+	}
+	var body jsonBuildStartStepTransport
+	{
+		body = jsonBuildStartStepTransport(in)
+	}
+	if err := validatejsonBuildStartStepTransport(body); err != nil {
+		return nil, fmt.Errorf("validate BuildStartStep JSON: %w", err)
+	}
+	data, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("encode BuildStartStep JSON: %w", err)
+	}
+	return data, nil
+}
+
+// ValidateBuildStartStepValue checks the original Go fields against their declared constraints.
+// It returns validation errors without encoding the value as JSON.
+
+func ValidateBuildStartStepValue(in BuildStartStep) error {
+	if err := checkBuildStartStepValue(in); err != nil {
+		return fmt.Errorf("validate BuildStartStep value: %w", err)
+	}
+	if err := validateBuildStartStepOriginal(in); err != nil {
+		return fmt.Errorf("validate BuildStartStep value: %w", err)
+	}
+
+	var body jsonBuildStartStepTransport
+	{
+		body = jsonBuildStartStepTransport(in)
+	}
+	if err := validatejsonBuildStartStepTransport(body); err != nil {
+		return fmt.Errorf("validate BuildStartStep value: %w", err)
+	}
+	return nil
+}
+
+// DecodeBuildStartStep checks JSON field names from the Goa design and returns a service value.
+func DecodeBuildStartStep(data []byte) (out BuildStartStep, err error) {
+	root, err := readStrictJSON(data)
+	if err != nil {
+		return out, fmt.Errorf("decode BuildStartStep JSON: %w", err)
+	}
+	if err := validateAgentPolicyItemJSONValue2("", root, ""); err != nil {
+		return out, fmt.Errorf("decode BuildStartStep JSON: %w", err)
+	}
+	var body jsonBuildStartStepTransport
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&body); err != nil {
+		return out, fmt.Errorf("decode BuildStartStep JSON: %w", err)
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		if err == nil {
+			return out, fmt.Errorf("decode BuildStartStep JSON: multiple JSON values")
+		}
+		return out, fmt.Errorf("decode BuildStartStep JSON after first value: %w", err)
+	}
+	if err := validatejsonBuildStartStepTransport(body); err != nil {
+		return out, fmt.Errorf("validate BuildStartStep JSON: %w", err)
+	}
+	{
+		out = BuildStartStep(body)
+	}
+	return out, nil
+}
+
+// EncodeBuildTeamAmbiguousSpace turns a service value into JSON using the field names in the Goa design.
+func EncodeBuildTeamAmbiguousSpace(in *BuildTeamAmbiguousSpace) ([]byte, error) {
+	if err := checkBuildTeamAmbiguousSpaceValue(in); err != nil {
+		return nil, fmt.Errorf("encode BuildTeamAmbiguousSpace JSON: %w", err)
+	}
+	if err := validateBuildTeamAmbiguousSpaceOriginal(in); err != nil {
+		return nil, fmt.Errorf("validate BuildTeamAmbiguousSpace value: %w", err)
+	}
+	var body *jsonBuildTeamAmbiguousSpaceTransport
+	{
+		body = &jsonBuildTeamAmbiguousSpaceTransport{}
+		count := buildTeamAmbiguousSpaceIntTransport(in.Count)
+		body.Count = &count
+		step := jsonBuildStartStepTransport(in.Step)
+		body.Step = &step
+	}
+	if err := validatejsonBuildTeamAmbiguousSpaceTransport(body); err != nil {
+		return nil, fmt.Errorf("validate BuildTeamAmbiguousSpace JSON: %w", err)
+	}
+	data, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("encode BuildTeamAmbiguousSpace JSON: %w", err)
+	}
+	return data, nil
+}
+
+// ValidateBuildTeamAmbiguousSpaceValue checks the original Go fields against their declared constraints.
+// It returns validation errors without encoding the value as JSON.
+
+func ValidateBuildTeamAmbiguousSpaceValue(in *BuildTeamAmbiguousSpace) error {
+	if err := checkBuildTeamAmbiguousSpaceValue(in); err != nil {
+		return fmt.Errorf("validate BuildTeamAmbiguousSpace value: %w", err)
+	}
+	if err := validateBuildTeamAmbiguousSpaceOriginal(in); err != nil {
+		return fmt.Errorf("validate BuildTeamAmbiguousSpace value: %w", err)
+	}
+
+	if in == nil {
+		return goa.MissingFieldError("result", "BuildTeamAmbiguousSpace")
+	}
+
+	var body *jsonBuildTeamAmbiguousSpaceTransport
+	{
+		body = &jsonBuildTeamAmbiguousSpaceTransport{}
+		count := buildTeamAmbiguousSpaceIntTransport(in.Count)
+		body.Count = &count
+		step := jsonBuildStartStepTransport(in.Step)
+		body.Step = &step
+	}
+	if err := validatejsonBuildTeamAmbiguousSpaceTransport(body); err != nil {
+		return fmt.Errorf("validate BuildTeamAmbiguousSpace value: %w", err)
+	}
+	return nil
+}
+
+// DecodeBuildTeamAmbiguousSpace checks JSON field names from the Goa design and returns a service value.
+func DecodeBuildTeamAmbiguousSpace(data []byte) (out *BuildTeamAmbiguousSpace, err error) {
+	root, err := readStrictJSON(data)
+	if err != nil {
+		return out, fmt.Errorf("decode BuildTeamAmbiguousSpace JSON: %w", err)
+	}
+	if err := validateBuildTeamAmbiguousSpaceJSONValue("", root, ""); err != nil {
+		return out, fmt.Errorf("decode BuildTeamAmbiguousSpace JSON: %w", err)
+	}
+	var body *jsonBuildTeamAmbiguousSpaceTransport
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&body); err != nil {
+		return out, fmt.Errorf("decode BuildTeamAmbiguousSpace JSON: %w", err)
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		if err == nil {
+			return out, fmt.Errorf("decode BuildTeamAmbiguousSpace JSON: multiple JSON values")
+		}
+		return out, fmt.Errorf("decode BuildTeamAmbiguousSpace JSON after first value: %w", err)
+	}
+	if err := validatejsonBuildTeamAmbiguousSpaceTransport(body); err != nil {
+		return out, fmt.Errorf("validate BuildTeamAmbiguousSpace JSON: %w", err)
+	}
+	{
+		out = &BuildTeamAmbiguousSpace{
+			Count: int(*body.Count),
+			Step:  BuildStartStep(*body.Step),
+		}
+	}
+	return out, nil
+}
+
+// EncodeBuildTeamUnavailable turns a service value into JSON using the field names in the Goa design.
+func EncodeBuildTeamUnavailable(in *BuildTeamUnavailable) ([]byte, error) {
+	if err := checkBuildTeamUnavailableValue(in); err != nil {
+		return nil, fmt.Errorf("encode BuildTeamUnavailable JSON: %w", err)
+	}
+	if err := validateBuildTeamUnavailableOriginal(in); err != nil {
+		return nil, fmt.Errorf("validate BuildTeamUnavailable value: %w", err)
+	}
+	var body *jsonBuildTeamUnavailableTransport
+	{
+		body = &jsonBuildTeamUnavailableTransport{}
+		step := jsonBuildStartStepTransport(in.Step)
+		body.Step = &step
+	}
+	if err := validatejsonBuildTeamUnavailableTransport(body); err != nil {
+		return nil, fmt.Errorf("validate BuildTeamUnavailable JSON: %w", err)
+	}
+	data, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("encode BuildTeamUnavailable JSON: %w", err)
+	}
+	return data, nil
+}
+
+// ValidateBuildTeamUnavailableValue checks the original Go fields against their declared constraints.
+// It returns validation errors without encoding the value as JSON.
+
+func ValidateBuildTeamUnavailableValue(in *BuildTeamUnavailable) error {
+	if err := checkBuildTeamUnavailableValue(in); err != nil {
+		return fmt.Errorf("validate BuildTeamUnavailable value: %w", err)
+	}
+	if err := validateBuildTeamUnavailableOriginal(in); err != nil {
+		return fmt.Errorf("validate BuildTeamUnavailable value: %w", err)
+	}
+
+	if in == nil {
+		return goa.MissingFieldError("result", "BuildTeamUnavailable")
+	}
+
+	var body *jsonBuildTeamUnavailableTransport
+	{
+		body = &jsonBuildTeamUnavailableTransport{}
+		step := jsonBuildStartStepTransport(in.Step)
+		body.Step = &step
+	}
+	if err := validatejsonBuildTeamUnavailableTransport(body); err != nil {
+		return fmt.Errorf("validate BuildTeamUnavailable value: %w", err)
+	}
+	return nil
+}
+
+// DecodeBuildTeamUnavailable checks JSON field names from the Goa design and returns a service value.
+func DecodeBuildTeamUnavailable(data []byte) (out *BuildTeamUnavailable, err error) {
+	root, err := readStrictJSON(data)
+	if err != nil {
+		return out, fmt.Errorf("decode BuildTeamUnavailable JSON: %w", err)
+	}
+	if err := validateBuildTeamUnavailableJSONValue("", root, ""); err != nil {
+		return out, fmt.Errorf("decode BuildTeamUnavailable JSON: %w", err)
+	}
+	var body *jsonBuildTeamUnavailableTransport
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&body); err != nil {
+		return out, fmt.Errorf("decode BuildTeamUnavailable JSON: %w", err)
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		if err == nil {
+			return out, fmt.Errorf("decode BuildTeamUnavailable JSON: multiple JSON values")
+		}
+		return out, fmt.Errorf("decode BuildTeamUnavailable JSON after first value: %w", err)
+	}
+	if err := validatejsonBuildTeamUnavailableTransport(body); err != nil {
+		return out, fmt.Errorf("validate BuildTeamUnavailable JSON: %w", err)
+	}
+	{
+		out = &BuildTeamUnavailable{
+			Step: BuildStartStep(*body.Step),
+		}
+	}
+	return out, nil
+}
+
+// EncodeBuildTeamWindowBusy turns a service value into JSON using the field names in the Goa design.
+func EncodeBuildTeamWindowBusy(in *BuildTeamWindowBusy) ([]byte, error) {
+	if err := checkBuildTeamWindowBusyValue(in); err != nil {
+		return nil, fmt.Errorf("encode BuildTeamWindowBusy JSON: %w", err)
+	}
+	if err := validateBuildTeamWindowBusyOriginal(in); err != nil {
+		return nil, fmt.Errorf("validate BuildTeamWindowBusy value: %w", err)
+	}
+	var body *jsonBuildTeamWindowBusyTransport
+	{
+		body = &jsonBuildTeamWindowBusyTransport{}
+		step := jsonBuildStartStepTransport(in.Step)
+		body.Step = &step
+	}
+	if err := validatejsonBuildTeamWindowBusyTransport(body); err != nil {
+		return nil, fmt.Errorf("validate BuildTeamWindowBusy JSON: %w", err)
+	}
+	data, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("encode BuildTeamWindowBusy JSON: %w", err)
+	}
+	return data, nil
+}
+
+// ValidateBuildTeamWindowBusyValue checks the original Go fields against their declared constraints.
+// It returns validation errors without encoding the value as JSON.
+
+func ValidateBuildTeamWindowBusyValue(in *BuildTeamWindowBusy) error {
+	if err := checkBuildTeamWindowBusyValue(in); err != nil {
+		return fmt.Errorf("validate BuildTeamWindowBusy value: %w", err)
+	}
+	if err := validateBuildTeamWindowBusyOriginal(in); err != nil {
+		return fmt.Errorf("validate BuildTeamWindowBusy value: %w", err)
+	}
+
+	if in == nil {
+		return goa.MissingFieldError("result", "BuildTeamWindowBusy")
+	}
+
+	var body *jsonBuildTeamWindowBusyTransport
+	{
+		body = &jsonBuildTeamWindowBusyTransport{}
+		step := jsonBuildStartStepTransport(in.Step)
+		body.Step = &step
+	}
+	if err := validatejsonBuildTeamWindowBusyTransport(body); err != nil {
+		return fmt.Errorf("validate BuildTeamWindowBusy value: %w", err)
+	}
+	return nil
+}
+
+// DecodeBuildTeamWindowBusy checks JSON field names from the Goa design and returns a service value.
+func DecodeBuildTeamWindowBusy(data []byte) (out *BuildTeamWindowBusy, err error) {
+	root, err := readStrictJSON(data)
+	if err != nil {
+		return out, fmt.Errorf("decode BuildTeamWindowBusy JSON: %w", err)
+	}
+	if err := validateBuildTeamWindowBusyJSONValue("", root, ""); err != nil {
+		return out, fmt.Errorf("decode BuildTeamWindowBusy JSON: %w", err)
+	}
+	var body *jsonBuildTeamWindowBusyTransport
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&body); err != nil {
+		return out, fmt.Errorf("decode BuildTeamWindowBusy JSON: %w", err)
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		if err == nil {
+			return out, fmt.Errorf("decode BuildTeamWindowBusy JSON: multiple JSON values")
+		}
+		return out, fmt.Errorf("decode BuildTeamWindowBusy JSON after first value: %w", err)
+	}
+	if err := validatejsonBuildTeamWindowBusyTransport(body); err != nil {
+		return out, fmt.Errorf("validate BuildTeamWindowBusy JSON: %w", err)
+	}
+	{
+		out = &BuildTeamWindowBusy{
+			Step: BuildStartStep(*body.Step),
+		}
 	}
 	return out, nil
 }
@@ -12185,6 +13937,7 @@ func EncodeProjectTeam(in *ProjectTeam) ([]byte, error) {
 			Team:   &in.Team,
 			Space:  &in.Space,
 			Dialog: &in.Dialog,
+			Step:   &in.Step,
 		}
 		body.Roles = make([]*jsonProjectTeamRoleTransport, len(in.Roles))
 		for i, val := range in.Roles {
@@ -12226,6 +13979,7 @@ func ValidateProjectTeamValue(in *ProjectTeam) error {
 			Team:   &in.Team,
 			Space:  &in.Space,
 			Dialog: &in.Dialog,
+			Step:   &in.Step,
 		}
 		body.Roles = make([]*jsonProjectTeamRoleTransport, len(in.Roles))
 		for i, val := range in.Roles {
@@ -12271,6 +14025,7 @@ func DecodeProjectTeam(data []byte) (out *ProjectTeam, err error) {
 			Team:   *body.Team,
 			Space:  *body.Space,
 			Dialog: *body.Dialog,
+			Step:   *body.Step,
 		}
 		out.Roles = make([]*ProjectTeamRole, len(body.Roles))
 		for i, val := range body.Roles {
@@ -12932,6 +14687,322 @@ func DecodeReviseChangePayload(data []byte) (out *ReviseChangePayload, err error
 	return out, nil
 }
 
+// EncodeStartBuildResult turns a service value into JSON using the field names in the Goa design.
+func EncodeStartBuildResult(in *StartBuildResult) ([]byte, error) {
+	if err := checkStartBuildResultValue(in); err != nil {
+		return nil, fmt.Errorf("encode StartBuildResult JSON: %w", err)
+	}
+	if err := validateStartBuildResultOriginal(in); err != nil {
+		return nil, fmt.Errorf("validate StartBuildResult value: %w", err)
+	}
+	var body *jsonStartBuildResultTransport
+	{
+		body = &jsonStartBuildResultTransport{}
+		body.Build = encodeStartedBuildToStartedBuildTransport2(in.Build)
+		var teamValue jsonTeamTransport
+		switch string(in.Team.Kind()) {
+		case "ready":
+			actual, _ := in.Team.AsReady()
+			var obj *jsonProjectTeamTransport
+			if actual != nil {
+				obj = encodeProjectTeamToProjectTeamTransport(actual)
+			}
+			u := teamValue
+			u.SetReady((*jsonProjectTeamTransport)(obj))
+			teamValue = u
+		case "window_busy":
+			actual, _ := in.Team.AsWindowBusy()
+			var obj *jsonBuildTeamWindowBusyTransport
+			if actual != nil {
+				obj = encodeBuildTeamWindowBusyToBuildTeamWindowBusyTransport(actual)
+			}
+			u := teamValue
+			u.SetWindowBusy((*jsonBuildTeamWindowBusyTransport)(obj))
+			teamValue = u
+		case "ambiguous_space":
+			actual, _ := in.Team.AsAmbiguousSpace()
+			var obj *jsonBuildTeamAmbiguousSpaceTransport
+			if actual != nil {
+				obj = encodeBuildTeamAmbiguousSpaceToBuildTeamAmbiguousSpaceTransport(actual)
+			}
+			u := teamValue
+			u.SetAmbiguousSpace((*jsonBuildTeamAmbiguousSpaceTransport)(obj))
+			teamValue = u
+		case "unavailable":
+			actual, _ := in.Team.AsUnavailable()
+			var obj *jsonBuildTeamUnavailableTransport
+			if actual != nil {
+				obj = encodeBuildTeamUnavailableToBuildTeamUnavailableTransport(actual)
+			}
+			u := teamValue
+			u.SetUnavailable((*jsonBuildTeamUnavailableTransport)(obj))
+			teamValue = u
+		}
+		body.Team = &teamValue
+		var workingCopyValue jsonWorkingCopyTransport
+		switch string(in.WorkingCopy.Kind()) {
+		case "not_used":
+			actual, _ := in.WorkingCopy.AsNotUsed()
+			var obj *jsonBuildCopyNotUsedTransport
+			if actual != nil {
+				obj = encodeBuildCopyNotUsedToBuildCopyNotUsedTransport(actual)
+			}
+			u := workingCopyValue
+			u.SetNotUsed((*jsonBuildCopyNotUsedTransport)(obj))
+			workingCopyValue = u
+		case "at_project_commit":
+			actual, _ := in.WorkingCopy.AsAtProjectCommit()
+			var obj *jsonBuildCopyAtProjectCommitTransport
+			if actual != nil {
+				obj = encodeBuildCopyAtProjectCommitToBuildCopyAtProjectCommitTransport(actual)
+			}
+			u := workingCopyValue
+			u.SetAtProjectCommit((*jsonBuildCopyAtProjectCommitTransport)(obj))
+			workingCopyValue = u
+		case "not_contained":
+			actual, _ := in.WorkingCopy.AsNotContained()
+			var obj *jsonBuildCopyNotContainedTransport
+			if actual != nil {
+				obj = encodeBuildCopyNotContainedToBuildCopyNotContainedTransport(actual)
+			}
+			u := workingCopyValue
+			u.SetNotContained((*jsonBuildCopyNotContainedTransport)(obj))
+			workingCopyValue = u
+		case "dirty":
+			actual, _ := in.WorkingCopy.AsDirty()
+			var obj *jsonBuildCopyDirtyTransport
+			if actual != nil {
+				obj = encodeBuildCopyDirtyToBuildCopyDirtyTransport(actual)
+			}
+			u := workingCopyValue
+			u.SetDirty((*jsonBuildCopyDirtyTransport)(obj))
+			workingCopyValue = u
+		}
+		body.WorkingCopy = &workingCopyValue
+	}
+	if err := validatejsonStartBuildResultTransport(body); err != nil {
+		return nil, fmt.Errorf("validate StartBuildResult JSON: %w", err)
+	}
+	data, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("encode StartBuildResult JSON: %w", err)
+	}
+	return data, nil
+}
+
+// ValidateStartBuildResultValue checks the original Go fields against their declared constraints.
+// It returns validation errors without encoding the value as JSON.
+
+func ValidateStartBuildResultValue(in *StartBuildResult) error {
+	if err := checkStartBuildResultValue(in); err != nil {
+		return fmt.Errorf("validate StartBuildResult value: %w", err)
+	}
+	if err := validateStartBuildResultOriginal(in); err != nil {
+		return fmt.Errorf("validate StartBuildResult value: %w", err)
+	}
+
+	if in == nil {
+		return goa.MissingFieldError("result", "StartBuildResult")
+	}
+
+	var body *jsonStartBuildResultTransport
+	{
+		body = &jsonStartBuildResultTransport{}
+		body.Build = encodeStartedBuildToStartedBuildTransport2(in.Build)
+		var teamValue jsonTeamTransport
+		switch string(in.Team.Kind()) {
+		case "ready":
+			actual, _ := in.Team.AsReady()
+			var obj *jsonProjectTeamTransport
+			if actual != nil {
+				obj = encodeProjectTeamToProjectTeamTransport(actual)
+			}
+			u := teamValue
+			u.SetReady((*jsonProjectTeamTransport)(obj))
+			teamValue = u
+		case "window_busy":
+			actual, _ := in.Team.AsWindowBusy()
+			var obj *jsonBuildTeamWindowBusyTransport
+			if actual != nil {
+				obj = encodeBuildTeamWindowBusyToBuildTeamWindowBusyTransport(actual)
+			}
+			u := teamValue
+			u.SetWindowBusy((*jsonBuildTeamWindowBusyTransport)(obj))
+			teamValue = u
+		case "ambiguous_space":
+			actual, _ := in.Team.AsAmbiguousSpace()
+			var obj *jsonBuildTeamAmbiguousSpaceTransport
+			if actual != nil {
+				obj = encodeBuildTeamAmbiguousSpaceToBuildTeamAmbiguousSpaceTransport(actual)
+			}
+			u := teamValue
+			u.SetAmbiguousSpace((*jsonBuildTeamAmbiguousSpaceTransport)(obj))
+			teamValue = u
+		case "unavailable":
+			actual, _ := in.Team.AsUnavailable()
+			var obj *jsonBuildTeamUnavailableTransport
+			if actual != nil {
+				obj = encodeBuildTeamUnavailableToBuildTeamUnavailableTransport(actual)
+			}
+			u := teamValue
+			u.SetUnavailable((*jsonBuildTeamUnavailableTransport)(obj))
+			teamValue = u
+		}
+		body.Team = &teamValue
+		var workingCopyValue jsonWorkingCopyTransport
+		switch string(in.WorkingCopy.Kind()) {
+		case "not_used":
+			actual, _ := in.WorkingCopy.AsNotUsed()
+			var obj *jsonBuildCopyNotUsedTransport
+			if actual != nil {
+				obj = encodeBuildCopyNotUsedToBuildCopyNotUsedTransport(actual)
+			}
+			u := workingCopyValue
+			u.SetNotUsed((*jsonBuildCopyNotUsedTransport)(obj))
+			workingCopyValue = u
+		case "at_project_commit":
+			actual, _ := in.WorkingCopy.AsAtProjectCommit()
+			var obj *jsonBuildCopyAtProjectCommitTransport
+			if actual != nil {
+				obj = encodeBuildCopyAtProjectCommitToBuildCopyAtProjectCommitTransport(actual)
+			}
+			u := workingCopyValue
+			u.SetAtProjectCommit((*jsonBuildCopyAtProjectCommitTransport)(obj))
+			workingCopyValue = u
+		case "not_contained":
+			actual, _ := in.WorkingCopy.AsNotContained()
+			var obj *jsonBuildCopyNotContainedTransport
+			if actual != nil {
+				obj = encodeBuildCopyNotContainedToBuildCopyNotContainedTransport(actual)
+			}
+			u := workingCopyValue
+			u.SetNotContained((*jsonBuildCopyNotContainedTransport)(obj))
+			workingCopyValue = u
+		case "dirty":
+			actual, _ := in.WorkingCopy.AsDirty()
+			var obj *jsonBuildCopyDirtyTransport
+			if actual != nil {
+				obj = encodeBuildCopyDirtyToBuildCopyDirtyTransport(actual)
+			}
+			u := workingCopyValue
+			u.SetDirty((*jsonBuildCopyDirtyTransport)(obj))
+			workingCopyValue = u
+		}
+		body.WorkingCopy = &workingCopyValue
+	}
+	if err := validatejsonStartBuildResultTransport(body); err != nil {
+		return fmt.Errorf("validate StartBuildResult value: %w", err)
+	}
+	return nil
+}
+
+// DecodeStartBuildResult checks JSON field names from the Goa design and returns a service value.
+func DecodeStartBuildResult(data []byte) (out *StartBuildResult, err error) {
+	root, err := readStrictJSON(data)
+	if err != nil {
+		return out, fmt.Errorf("decode StartBuildResult JSON: %w", err)
+	}
+	if err := validateStartBuildResultJSONValue("", root, ""); err != nil {
+		return out, fmt.Errorf("decode StartBuildResult JSON: %w", err)
+	}
+	var body *jsonStartBuildResultTransport
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&body); err != nil {
+		return out, fmt.Errorf("decode StartBuildResult JSON: %w", err)
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		if err == nil {
+			return out, fmt.Errorf("decode StartBuildResult JSON: multiple JSON values")
+		}
+		return out, fmt.Errorf("decode StartBuildResult JSON after first value: %w", err)
+	}
+	if err := validatejsonStartBuildResultTransport(body); err != nil {
+		return out, fmt.Errorf("validate StartBuildResult JSON: %w", err)
+	}
+	{
+		out = &StartBuildResult{}
+		out.Build = decodeStartedBuildTransportToStartedBuild(body.Build)
+		switch string(body.Team.Kind()) {
+		case "ready":
+			actual, _ := body.Team.AsReady()
+			var obj *ProjectTeam
+			if actual != nil {
+				obj = decodeProjectTeamTransportToProjectTeam(actual)
+			}
+			u := out.Team
+			u.SetReady((*ProjectTeam)(obj))
+			out.Team = u
+		case "window_busy":
+			actual, _ := body.Team.AsWindowBusy()
+			var obj *BuildTeamWindowBusy
+			if actual != nil {
+				obj = decodeBuildTeamWindowBusyTransportToBuildTeamWindowBusy(actual)
+			}
+			u := out.Team
+			u.SetWindowBusy((*BuildTeamWindowBusy)(obj))
+			out.Team = u
+		case "ambiguous_space":
+			actual, _ := body.Team.AsAmbiguousSpace()
+			var obj *BuildTeamAmbiguousSpace
+			if actual != nil {
+				obj = decodeBuildTeamAmbiguousSpaceTransportToBuildTeamAmbiguousSpace(actual)
+			}
+			u := out.Team
+			u.SetAmbiguousSpace((*BuildTeamAmbiguousSpace)(obj))
+			out.Team = u
+		case "unavailable":
+			actual, _ := body.Team.AsUnavailable()
+			var obj *BuildTeamUnavailable
+			if actual != nil {
+				obj = decodeBuildTeamUnavailableTransportToBuildTeamUnavailable(actual)
+			}
+			u := out.Team
+			u.SetUnavailable((*BuildTeamUnavailable)(obj))
+			out.Team = u
+		}
+		switch string(body.WorkingCopy.Kind()) {
+		case "not_used":
+			actual, _ := body.WorkingCopy.AsNotUsed()
+			var obj *BuildCopyNotUsed
+			if actual != nil {
+				obj = decodeBuildCopyNotUsedTransportToBuildCopyNotUsed(actual)
+			}
+			u := out.WorkingCopy
+			u.SetNotUsed((*BuildCopyNotUsed)(obj))
+			out.WorkingCopy = u
+		case "at_project_commit":
+			actual, _ := body.WorkingCopy.AsAtProjectCommit()
+			var obj *BuildCopyAtProjectCommit
+			if actual != nil {
+				obj = decodeBuildCopyAtProjectCommitTransportToBuildCopyAtProjectCommit(actual)
+			}
+			u := out.WorkingCopy
+			u.SetAtProjectCommit((*BuildCopyAtProjectCommit)(obj))
+			out.WorkingCopy = u
+		case "not_contained":
+			actual, _ := body.WorkingCopy.AsNotContained()
+			var obj *BuildCopyNotContained
+			if actual != nil {
+				obj = decodeBuildCopyNotContainedTransportToBuildCopyNotContained(actual)
+			}
+			u := out.WorkingCopy
+			u.SetNotContained((*BuildCopyNotContained)(obj))
+			out.WorkingCopy = u
+		case "dirty":
+			actual, _ := body.WorkingCopy.AsDirty()
+			var obj *BuildCopyDirty
+			if actual != nil {
+				obj = decodeBuildCopyDirtyTransportToBuildCopyDirty(actual)
+			}
+			u := out.WorkingCopy
+			u.SetDirty((*BuildCopyDirty)(obj))
+			out.WorkingCopy = u
+		}
+	}
+	return out, nil
+}
+
 // EncodeStartLiveTargetPayload turns a service value into JSON using the field names in the Goa design.
 func EncodeStartLiveTargetPayload(in *StartLiveTargetPayload) ([]byte, error) {
 	if err := checkStartLiveTargetPayloadValue(in); err != nil {
@@ -13030,6 +15101,8 @@ func EncodeStartedBuild(in *StartedBuild) ([]byte, error) {
 			StartedAt:       &in.StartedAt,
 			InForce:         &in.InForce,
 		}
+		requiredTestCount := changeBuildIntTransport(in.RequiredTestCount)
+		body.RequiredTestCount = &requiredTestCount
 		body.Builder = encodeBuilderProgressToBuilderProgressTransport(in.Builder)
 		body.TestWriter = encodeTestWriterProgressToTestWriterProgressTransport(in.TestWriter)
 	}
@@ -13065,6 +15138,8 @@ func ValidateStartedBuildValue(in *StartedBuild) error {
 			StartedAt:       &in.StartedAt,
 			InForce:         &in.InForce,
 		}
+		requiredTestCount := changeBuildIntTransport(in.RequiredTestCount)
+		body.RequiredTestCount = &requiredTestCount
 		body.Builder = encodeBuilderProgressToBuilderProgressTransport(in.Builder)
 		body.TestWriter = encodeTestWriterProgressToTestWriterProgressTransport(in.TestWriter)
 	}
@@ -13100,9 +15175,10 @@ func DecodeStartedBuild(data []byte) (out *StartedBuild, err error) {
 	}
 	{
 		out = &StartedBuild{
-			RequestRevision: *body.RequestRevision,
-			StartedAt:       *body.StartedAt,
-			InForce:         *body.InForce,
+			RequestRevision:   *body.RequestRevision,
+			StartedAt:         *body.StartedAt,
+			InForce:           *body.InForce,
+			RequiredTestCount: int(*body.RequiredTestCount),
 		}
 		out.Builder = decodeBuilderProgressTransportToBuilderProgress(body.Builder)
 		out.TestWriter = decodeTestWriterProgressTransportToTestWriterProgress(body.TestWriter)
@@ -14194,6 +16270,7 @@ func EncodeTestWriterAssignment(in *TestWriterAssignment) ([]byte, error) {
 			RequestRevision: &in.RequestRevision,
 			InForce:         &in.InForce,
 			WorkingFolder:   &in.WorkingFolder,
+			DesignSource:    &in.DesignSource,
 		}
 		body.Progress = encodeTestWriterProgressToTestWriterProgressTransport2(in.Progress)
 		body.Stories = make([]*jsonStorySummaryItemTransport, len(in.Stories))
@@ -14245,6 +16322,7 @@ func ValidateTestWriterAssignmentValue(in *TestWriterAssignment) error {
 			RequestRevision: &in.RequestRevision,
 			InForce:         &in.InForce,
 			WorkingFolder:   &in.WorkingFolder,
+			DesignSource:    &in.DesignSource,
 		}
 		body.Progress = encodeTestWriterProgressToTestWriterProgressTransport2(in.Progress)
 		body.Stories = make([]*jsonStorySummaryItemTransport, len(in.Stories))
@@ -14300,6 +16378,7 @@ func DecodeTestWriterAssignment(data []byte) (out *TestWriterAssignment, err err
 			RequestRevision: *body.RequestRevision,
 			InForce:         *body.InForce,
 			WorkingFolder:   *body.WorkingFolder,
+			DesignSource:    *body.DesignSource,
 		}
 		out.Progress = decodeTestWriterProgressTransportToTestWriterProgress(body.Progress)
 		out.Stories = make([]*StorySummaryItem, len(body.Stories))
@@ -17061,8 +19140,64 @@ func decodeApprovalItemTransportToApprovalItem(v *jsonApprovalItemTransport) *Ap
 	return res
 }
 
+func decodeBuildCopyAtProjectCommitTransportToBuildCopyAtProjectCommit(v *jsonBuildCopyAtProjectCommitTransport) *BuildCopyAtProjectCommit {
+	res := &BuildCopyAtProjectCommit{
+		Commit: *v.Commit,
+	}
+
+	return res
+}
+
+func decodeBuildCopyDirtyTransportToBuildCopyDirty(v *jsonBuildCopyDirtyTransport) *BuildCopyDirty {
+	res := &BuildCopyDirty{
+		Commit: *v.Commit,
+	}
+
+	return res
+}
+
+func decodeBuildCopyNotContainedTransportToBuildCopyNotContained(v *jsonBuildCopyNotContainedTransport) *BuildCopyNotContained {
+	res := &BuildCopyNotContained{
+		Commit: *v.Commit,
+		Step:   BuildStartStep(*v.Step),
+	}
+
+	return res
+}
+
+func decodeBuildCopyNotUsedTransportToBuildCopyNotUsed(v *jsonBuildCopyNotUsedTransport) *BuildCopyNotUsed {
+	res := &BuildCopyNotUsed{}
+
+	return res
+}
+
 func decodeBuildNotStartedTransportToBuildNotStarted(v *jsonBuildNotStartedTransport) *BuildNotStarted {
 	res := &BuildNotStarted{}
+
+	return res
+}
+
+func decodeBuildTeamAmbiguousSpaceTransportToBuildTeamAmbiguousSpace(v *jsonBuildTeamAmbiguousSpaceTransport) *BuildTeamAmbiguousSpace {
+	res := &BuildTeamAmbiguousSpace{
+		Count: int(*v.Count),
+		Step:  BuildStartStep(*v.Step),
+	}
+
+	return res
+}
+
+func decodeBuildTeamUnavailableTransportToBuildTeamUnavailable(v *jsonBuildTeamUnavailableTransport) *BuildTeamUnavailable {
+	res := &BuildTeamUnavailable{
+		Step: BuildStartStep(*v.Step),
+	}
+
+	return res
+}
+
+func decodeBuildTeamWindowBusyTransportToBuildTeamWindowBusy(v *jsonBuildTeamWindowBusyTransport) *BuildTeamWindowBusy {
+	res := &BuildTeamWindowBusy{
+		Step: BuildStartStep(*v.Step),
+	}
 
 	return res
 }
@@ -17311,6 +19446,25 @@ func decodeProjectTeamRoleTransportToProjectTeamRole(v *jsonProjectTeamRoleTrans
 	return res
 }
 
+func decodeProjectTeamTransportToProjectTeam(v *jsonProjectTeamTransport) *ProjectTeam {
+	res := &ProjectTeam{
+		Team:   *v.Team,
+		Space:  *v.Space,
+		Dialog: *v.Dialog,
+		Step:   *v.Step,
+	}
+	res.Roles = make([]*ProjectTeamRole, len(v.Roles))
+	for i, val := range v.Roles {
+		if val == nil {
+			res.Roles[i] = nil
+			continue
+		}
+		res.Roles[i] = decodeProjectTeamRoleTransportToProjectTeamRole(val)
+	}
+
+	return res
+}
+
 func decodeProposedRevisionItemTransportToProposedRevisionItem(v *jsonProposedRevisionItemTransport) *ProposedRevisionItem {
 	res := &ProposedRevisionItem{
 		Prompt:          *v.Prompt,
@@ -17373,9 +19527,10 @@ func decodeRequiredTestTransportToRequiredTest(v *jsonRequiredTestTransport) *Re
 
 func decodeStartedBuildTransportToStartedBuild(v *jsonStartedBuildTransport) *StartedBuild {
 	res := &StartedBuild{
-		RequestRevision: *v.RequestRevision,
-		StartedAt:       *v.StartedAt,
-		InForce:         *v.InForce,
+		RequestRevision:   *v.RequestRevision,
+		StartedAt:         *v.StartedAt,
+		InForce:           *v.InForce,
+		RequiredTestCount: int(*v.RequiredTestCount),
 	}
 	res.Builder = decodeBuilderProgressTransportToBuilderProgress(v.Builder)
 	res.TestWriter = decodeTestWriterProgressTransportToTestWriterProgress(v.TestWriter)
@@ -17890,8 +20045,66 @@ func encodeApprovalItemToApprovalItemTransport2(v *ApprovalItem) *jsonApprovalIt
 	return res
 }
 
+func encodeBuildCopyAtProjectCommitToBuildCopyAtProjectCommitTransport(v *BuildCopyAtProjectCommit) *jsonBuildCopyAtProjectCommitTransport {
+	res := &jsonBuildCopyAtProjectCommitTransport{
+		Commit: &v.Commit,
+	}
+
+	return res
+}
+
+func encodeBuildCopyDirtyToBuildCopyDirtyTransport(v *BuildCopyDirty) *jsonBuildCopyDirtyTransport {
+	res := &jsonBuildCopyDirtyTransport{
+		Commit: &v.Commit,
+	}
+
+	return res
+}
+
+func encodeBuildCopyNotContainedToBuildCopyNotContainedTransport(v *BuildCopyNotContained) *jsonBuildCopyNotContainedTransport {
+	res := &jsonBuildCopyNotContainedTransport{
+		Commit: &v.Commit,
+	}
+	step := jsonBuildStartStepTransport(v.Step)
+	res.Step = &step
+
+	return res
+}
+
+func encodeBuildCopyNotUsedToBuildCopyNotUsedTransport(v *BuildCopyNotUsed) *jsonBuildCopyNotUsedTransport {
+	res := &jsonBuildCopyNotUsedTransport{}
+
+	return res
+}
+
 func encodeBuildNotStartedToBuildNotStartedTransport(v *BuildNotStarted) *jsonBuildNotStartedTransport {
 	res := &jsonBuildNotStartedTransport{}
+
+	return res
+}
+
+func encodeBuildTeamAmbiguousSpaceToBuildTeamAmbiguousSpaceTransport(v *BuildTeamAmbiguousSpace) *jsonBuildTeamAmbiguousSpaceTransport {
+	res := &jsonBuildTeamAmbiguousSpaceTransport{}
+	count := buildTeamAmbiguousSpaceIntTransport(v.Count)
+	res.Count = &count
+	step := jsonBuildStartStepTransport(v.Step)
+	res.Step = &step
+
+	return res
+}
+
+func encodeBuildTeamUnavailableToBuildTeamUnavailableTransport(v *BuildTeamUnavailable) *jsonBuildTeamUnavailableTransport {
+	res := &jsonBuildTeamUnavailableTransport{}
+	step := jsonBuildStartStepTransport(v.Step)
+	res.Step = &step
+
+	return res
+}
+
+func encodeBuildTeamWindowBusyToBuildTeamWindowBusyTransport(v *BuildTeamWindowBusy) *jsonBuildTeamWindowBusyTransport {
+	res := &jsonBuildTeamWindowBusyTransport{}
+	step := jsonBuildStartStepTransport(v.Step)
+	res.Step = &step
 
 	return res
 }
@@ -18162,6 +20375,25 @@ func encodeProjectTeamRoleToProjectTeamRoleTransport(v *ProjectTeamRole) *jsonPr
 	return res
 }
 
+func encodeProjectTeamToProjectTeamTransport(v *ProjectTeam) *jsonProjectTeamTransport {
+	res := &jsonProjectTeamTransport{
+		Team:   &v.Team,
+		Space:  &v.Space,
+		Dialog: &v.Dialog,
+		Step:   &v.Step,
+	}
+	res.Roles = make([]*jsonProjectTeamRoleTransport, len(v.Roles))
+	for i, val := range v.Roles {
+		if val == nil {
+			res.Roles[i] = nil
+			continue
+		}
+		res.Roles[i] = encodeProjectTeamRoleToProjectTeamRoleTransport(val)
+	}
+
+	return res
+}
+
 func encodeProposedRevisionItemToProposedRevisionItemTransport(v *ProposedRevisionItem) *jsonProposedRevisionItemTransport {
 	res := &jsonProposedRevisionItemTransport{
 		Prompt:          &v.Prompt,
@@ -18228,6 +20460,22 @@ func encodeStartedBuildToStartedBuildTransport(v *StartedBuild) *jsonStartedBuil
 		StartedAt:       &v.StartedAt,
 		InForce:         &v.InForce,
 	}
+	requiredTestCount := changeBuildIntTransport(v.RequiredTestCount)
+	res.RequiredTestCount = &requiredTestCount
+	res.Builder = encodeBuilderProgressToBuilderProgressTransport(v.Builder)
+	res.TestWriter = encodeTestWriterProgressToTestWriterProgressTransport(v.TestWriter)
+
+	return res
+}
+
+func encodeStartedBuildToStartedBuildTransport2(v *StartedBuild) *jsonStartedBuildTransport {
+	res := &jsonStartedBuildTransport{
+		RequestRevision: &v.RequestRevision,
+		StartedAt:       &v.StartedAt,
+		InForce:         &v.InForce,
+	}
+	requiredTestCount := changeBuildIntTransport(v.RequiredTestCount)
+	res.RequiredTestCount = &requiredTestCount
 	res.Builder = encodeBuilderProgressToBuilderProgressTransport(v.Builder)
 	res.TestWriter = encodeTestWriterProgressToTestWriterProgressTransport(v.TestWriter)
 
@@ -19778,6 +22026,149 @@ func validateArchitecturePreviewResultJSONValue3(path string, value any, descrip
 	return nil
 }
 
+// validateBuildCopyAtProjectCommitJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateBuildCopyAtProjectCommitJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "commit":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "The working copy's current commit.",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"commit",
+			})
+		}
+	}
+	return nil
+}
+
+// validateBuildCopyDirtyJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateBuildCopyDirtyJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "commit":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "The retained working-copy commit.",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"commit",
+			})
+		}
+	}
+	return nil
+}
+
+// validateBuildCopyNotContainedJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateBuildCopyNotContainedJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "commit":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "The retained working-copy commit.",
+			); err != nil {
+				return err
+			}
+		case "step":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Merge the tests branch into the project's branch, then build again.",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"commit",
+				"step",
+			})
+		}
+	}
+	return nil
+}
+
+// validateBuildCopyNotUsedJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateBuildCopyNotUsedJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		default:
+			return unknownJSONFieldError(path, key, []string{})
+		}
+	}
+	return nil
+}
+
 // validateBuildNotStartedJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
 func validateBuildNotStartedJSONValue(path string, value any, description string) error {
 	field := path
@@ -19800,6 +22191,122 @@ func validateBuildNotStartedJSONValue(path string, value any, description string
 		switch key {
 		default:
 			return unknownJSONFieldError(path, key, []string{})
+		}
+	}
+	return nil
+}
+
+// validateBuildTeamAmbiguousSpaceJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateBuildTeamAmbiguousSpaceJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "count":
+			if err := validateAgentPolicyItemJSONValue4(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Number of spaces matching this project.",
+			); err != nil {
+				return err
+			}
+		case "step":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Choose the project's space, then start the team agents.",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"count",
+				"step",
+			})
+		}
+	}
+	return nil
+}
+
+// validateBuildTeamUnavailableJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateBuildTeamUnavailableJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "step":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "What the user does to make the team ready for the saved build.",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"step",
+			})
+		}
+	}
+	return nil
+}
+
+// validateBuildTeamWindowBusyJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateBuildTeamWindowBusyJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "step":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Close the open dialog, then start the team agents.",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"step",
+			})
 		}
 	}
 	return nil
@@ -20938,7 +23445,7 @@ func validateChangeBuildJSONValue(path string, value any, description string) er
 		case "build":
 			if err := validateChangeBuildJSONValue2(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "not_started until the user starts a build of this change; started with the build afterwards.",
+				typed[key], "not_started when the change has no usable build for the current test source; start a new build on the views page. Otherwise started with the usable build.",
 			); err != nil {
 				return err
 			}
@@ -21033,6 +23540,13 @@ func validateChangeBuildJSONValue3(path string, value any, description string) e
 			); err != nil {
 				return err
 			}
+		case "required_test_count":
+			if err := validateAgentPolicyItemJSONValue4(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Number of finished flows in the agreed Story. Zero means no test of this change's Story was required.",
+			); err != nil {
+				return err
+			}
 		case "started_at":
 			if err := validateAgentPolicyItemJSONValue2(
 				generatedJSONChildPath(path, key, false),
@@ -21052,6 +23566,7 @@ func validateChangeBuildJSONValue3(path string, value any, description string) e
 				"builder",
 				"in_force",
 				"request_revision",
+				"required_test_count",
 				"started_at",
 				"test_writer",
 			})
@@ -24042,6 +26557,13 @@ func validateProjectTeamJSONValue(path string, value any, description string) er
 			); err != nil {
 				return err
 			}
+		case "step":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "What the user does next for the prepared team.",
+			); err != nil {
+				return err
+			}
 		case "team":
 			if err := validateAgentPolicyItemJSONValue2(
 				generatedJSONChildPath(path, key, false),
@@ -24054,6 +26576,7 @@ func validateProjectTeamJSONValue(path string, value any, description string) er
 				"dialog",
 				"roles",
 				"space",
+				"step",
 				"team",
 			})
 		}
@@ -24370,6 +26893,132 @@ func validateReviseChangePayloadJSONValue(path string, value any, description st
 		}
 	}
 	return nil
+}
+
+// validateStartBuildResultJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateStartBuildResultJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "build":
+			if err := validateChangeBuildJSONValue3(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "The build saved before generation or team admission.",
+			); err != nil {
+				return err
+			}
+		case "team":
+			if err := validateStartBuildResultJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "The team's immediate outcome after the build was saved.",
+			); err != nil {
+				return err
+			}
+		case "working_copy":
+			if err := validateStartBuildResultJSONValue3(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "The test-writer working copy after this start's refresh; not_used with a stored evaluator.",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"build",
+				"team",
+				"working_copy",
+			})
+		}
+	}
+	return nil
+}
+
+// validateStartBuildResultJSONValue2 checks one value whose JSON shape is fixed by the generated Goa type.
+func validateStartBuildResultJSONValue2(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	discriminator, ok := typed["state"].(string)
+	if !ok {
+		return fmt.Errorf("%s: missing or invalid union discriminator", field)
+	}
+	branch := make(map[string]any, len(typed)-1)
+	for key, item := range typed {
+		if key != "state" {
+			branch[key] = item
+		}
+	}
+	switch discriminator {
+	case "ready":
+		return validateProjectTeamJSONValue(path, branch, "")
+	case "window_busy":
+		return validateBuildTeamWindowBusyJSONValue(path, branch, "")
+	case "ambiguous_space":
+		return validateBuildTeamAmbiguousSpaceJSONValue(path, branch, "")
+	case "unavailable":
+		return validateBuildTeamUnavailableJSONValue(path, branch, "")
+	default:
+		return fmt.Errorf("%s: unknown union discriminator %q", field, discriminator)
+	}
+}
+
+// validateStartBuildResultJSONValue3 checks one value whose JSON shape is fixed by the generated Goa type.
+func validateStartBuildResultJSONValue3(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	discriminator, ok := typed["state"].(string)
+	if !ok {
+		return fmt.Errorf("%s: missing or invalid union discriminator", field)
+	}
+	branch := make(map[string]any, len(typed)-1)
+	for key, item := range typed {
+		if key != "state" {
+			branch[key] = item
+		}
+	}
+	switch discriminator {
+	case "not_used":
+		return validateBuildCopyNotUsedJSONValue(path, branch, "")
+	case "at_project_commit":
+		return validateBuildCopyAtProjectCommitJSONValue(path, branch, "")
+	case "not_contained":
+		return validateBuildCopyNotContainedJSONValue(path, branch, "")
+	case "dirty":
+		return validateBuildCopyDirtyJSONValue(path, branch, "")
+	default:
+		return fmt.Errorf("%s: unknown union discriminator %q", field, discriminator)
+	}
 }
 
 // validateStartLiveTargetPayloadJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
@@ -24773,6 +27422,13 @@ func validateTestWriterAssignmentJSONValue(path string, value any, description s
 			); err != nil {
 				return err
 			}
+		case "design_source":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "The canonical design source as agreed at request_revision, copied when this build started; later revisions do not change it.",
+			); err != nil {
+				return err
+			}
 		case "in_force":
 			if err := validateAgentPolicyItemJSONValue3(
 				generatedJSONChildPath(path, key, false),
@@ -24811,13 +27467,14 @@ func validateTestWriterAssignmentJSONValue(path string, value any, description s
 		case "working_folder":
 			if err := validateAgentPolicyItemJSONValue2(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Folder to write the tests in: your own working copy of the project. The project server does not prepare working copies yet, so it is empty.",
+				typed[key], "Folder to write the tests in: your own working copy of the project.",
 			); err != nil {
 				return err
 			}
 		default:
 			return unknownJSONFieldError(path, key, []string{
 				"change_id",
+				"design_source",
 				"in_force",
 				"progress",
 				"request_revision",
@@ -26221,6 +28878,134 @@ func checkArchitecturePreviewResultToolInputBindingItemValue(in *ToolInputBindin
 	return nil
 }
 
+// checkBuildCopyAtProjectCommitValue checks text and cycles before conversion.
+func checkBuildCopyAtProjectCommitValue(in *BuildCopyAtProjectCommit) error {
+	if in == nil {
+		return fmt.Errorf("missing root value")
+	}
+	active := make(map[any]bool)
+	if err := checkBuildCopyAtProjectCommitBuildCopyAtProjectCommitValue(in, "$", active); err != nil {
+		return err
+	}
+	return nil
+}
+
+// checkBuildCopyAtProjectCommitBuildCopyAtProjectCommitValue checks one generated value on the active path.
+func checkBuildCopyAtProjectCommitBuildCopyAtProjectCommitValue(in *BuildCopyAtProjectCommit, field string, active map[any]bool) error {
+	if in == nil {
+		return nil
+	}
+	if active[in] {
+		return fmt.Errorf("%s: cyclic Go value", field)
+	}
+	active[in] = true
+	defer delete(active, in)
+	if in != nil {
+		if !utf8.ValidString(string(in.Commit)) {
+			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "commit", false))
+		}
+	}
+	return nil
+}
+
+// checkBuildCopyDirtyValue checks text and cycles before conversion.
+func checkBuildCopyDirtyValue(in *BuildCopyDirty) error {
+	if in == nil {
+		return fmt.Errorf("missing root value")
+	}
+	active := make(map[any]bool)
+	if err := checkBuildCopyDirtyBuildCopyDirtyValue(in, "$", active); err != nil {
+		return err
+	}
+	return nil
+}
+
+// checkBuildCopyDirtyBuildCopyDirtyValue checks one generated value on the active path.
+func checkBuildCopyDirtyBuildCopyDirtyValue(in *BuildCopyDirty, field string, active map[any]bool) error {
+	if in == nil {
+		return nil
+	}
+	if active[in] {
+		return fmt.Errorf("%s: cyclic Go value", field)
+	}
+	active[in] = true
+	defer delete(active, in)
+	if in != nil {
+		if !utf8.ValidString(string(in.Commit)) {
+			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "commit", false))
+		}
+	}
+	return nil
+}
+
+// checkBuildCopyNotContainedValue checks text and cycles before conversion.
+func checkBuildCopyNotContainedValue(in *BuildCopyNotContained) error {
+	if in == nil {
+		return fmt.Errorf("missing root value")
+	}
+	active := make(map[any]bool)
+	if err := checkBuildCopyNotContainedBuildCopyNotContainedValue(in, "$", active); err != nil {
+		return err
+	}
+	return nil
+}
+
+// checkBuildCopyNotContainedBuildCopyNotContainedValue checks one generated value on the active path.
+func checkBuildCopyNotContainedBuildCopyNotContainedValue(in *BuildCopyNotContained, field string, active map[any]bool) error {
+	if in == nil {
+		return nil
+	}
+	if active[in] {
+		return fmt.Errorf("%s: cyclic Go value", field)
+	}
+	active[in] = true
+	defer delete(active, in)
+	if in != nil {
+		if !utf8.ValidString(string(in.Commit)) {
+			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "commit", false))
+		}
+		if err := checkBuildCopyNotContainedBuildStartStepValue(in.Step, generatedJSONChildPath(field, "step", false), active); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// checkBuildCopyNotContainedBuildStartStepValue checks one generated value on the active path.
+func checkBuildCopyNotContainedBuildStartStepValue(in BuildStartStep, field string, active map[any]bool) error {
+	if !utf8.ValidString(string(in)) {
+		return fmt.Errorf("%s: invalid UTF-8", field)
+	}
+	return nil
+}
+
+// checkBuildCopyNotUsedValue checks text and cycles before conversion.
+func checkBuildCopyNotUsedValue(in *BuildCopyNotUsed) error {
+	if in == nil {
+		return fmt.Errorf("missing root value")
+	}
+	active := make(map[any]bool)
+	if err := checkBuildCopyNotUsedBuildCopyNotUsedValue(in, "$", active); err != nil {
+		return err
+	}
+	return nil
+}
+
+// checkBuildCopyNotUsedBuildCopyNotUsedValue checks one generated value on the active path.
+func checkBuildCopyNotUsedBuildCopyNotUsedValue(in *BuildCopyNotUsed, field string, active map[any]bool) error {
+	if in == nil {
+		return nil
+	}
+	if active[in] {
+		return fmt.Errorf("%s: cyclic Go value", field)
+	}
+	active[in] = true
+	defer delete(active, in)
+	if in != nil {
+	}
+	return nil
+}
+
 // checkBuildNotStartedValue checks text and cycles before conversion.
 func checkBuildNotStartedValue(in *BuildNotStarted) error {
 	if in == nil {
@@ -26244,6 +29029,105 @@ func checkBuildNotStartedBuildNotStartedValue(in *BuildNotStarted, field string,
 	active[in] = true
 	defer delete(active, in)
 	if in != nil {
+	}
+	return nil
+}
+
+// checkBuildStartStepValue checks text and cycles before conversion.
+func checkBuildStartStepValue(in BuildStartStep) error {
+	active := make(map[any]bool)
+	if err := checkBuildCopyNotContainedBuildStartStepValue(in, "$", active); err != nil {
+		return err
+	}
+	return nil
+}
+
+// checkBuildTeamAmbiguousSpaceValue checks text and cycles before conversion.
+func checkBuildTeamAmbiguousSpaceValue(in *BuildTeamAmbiguousSpace) error {
+	if in == nil {
+		return fmt.Errorf("missing root value")
+	}
+	active := make(map[any]bool)
+	if err := checkBuildTeamAmbiguousSpaceBuildTeamAmbiguousSpaceValue(in, "$", active); err != nil {
+		return err
+	}
+	return nil
+}
+
+// checkBuildTeamAmbiguousSpaceBuildTeamAmbiguousSpaceValue checks one generated value on the active path.
+func checkBuildTeamAmbiguousSpaceBuildTeamAmbiguousSpaceValue(in *BuildTeamAmbiguousSpace, field string, active map[any]bool) error {
+	if in == nil {
+		return nil
+	}
+	if active[in] {
+		return fmt.Errorf("%s: cyclic Go value", field)
+	}
+	active[in] = true
+	defer delete(active, in)
+	if in != nil {
+		if err := checkBuildCopyNotContainedBuildStartStepValue(in.Step, generatedJSONChildPath(field, "step", false), active); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// checkBuildTeamUnavailableValue checks text and cycles before conversion.
+func checkBuildTeamUnavailableValue(in *BuildTeamUnavailable) error {
+	if in == nil {
+		return fmt.Errorf("missing root value")
+	}
+	active := make(map[any]bool)
+	if err := checkBuildTeamUnavailableBuildTeamUnavailableValue(in, "$", active); err != nil {
+		return err
+	}
+	return nil
+}
+
+// checkBuildTeamUnavailableBuildTeamUnavailableValue checks one generated value on the active path.
+func checkBuildTeamUnavailableBuildTeamUnavailableValue(in *BuildTeamUnavailable, field string, active map[any]bool) error {
+	if in == nil {
+		return nil
+	}
+	if active[in] {
+		return fmt.Errorf("%s: cyclic Go value", field)
+	}
+	active[in] = true
+	defer delete(active, in)
+	if in != nil {
+		if err := checkBuildCopyNotContainedBuildStartStepValue(in.Step, generatedJSONChildPath(field, "step", false), active); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// checkBuildTeamWindowBusyValue checks text and cycles before conversion.
+func checkBuildTeamWindowBusyValue(in *BuildTeamWindowBusy) error {
+	if in == nil {
+		return fmt.Errorf("missing root value")
+	}
+	active := make(map[any]bool)
+	if err := checkBuildTeamWindowBusyBuildTeamWindowBusyValue(in, "$", active); err != nil {
+		return err
+	}
+	return nil
+}
+
+// checkBuildTeamWindowBusyBuildTeamWindowBusyValue checks one generated value on the active path.
+func checkBuildTeamWindowBusyBuildTeamWindowBusyValue(in *BuildTeamWindowBusy, field string, active map[any]bool) error {
+	if in == nil {
+		return nil
+	}
+	if active[in] {
+		return fmt.Errorf("%s: cyclic Go value", field)
+	}
+	active[in] = true
+	defer delete(active, in)
+	if in != nil {
+		if err := checkBuildCopyNotContainedBuildStartStepValue(in.Step, generatedJSONChildPath(field, "step", false), active); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -28390,6 +31274,9 @@ func checkProjectTeamProjectTeamValue(in *ProjectTeam, field string, active map[
 		if !utf8.ValidString(string(in.Dialog)) {
 			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "dialog", false))
 		}
+		if !utf8.ValidString(string(in.Step)) {
+			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "step", false))
+		}
 	}
 	return nil
 }
@@ -28593,6 +31480,100 @@ func checkReviseChangePayloadReviseChangePayloadValue(in *ReviseChangePayload, f
 		}
 		if err := checkCP1RevisionAnalysisCP1RevisionAnalysisValue(in.Analysis, generatedJSONChildPath(field, "analysis", false), active); err != nil {
 			return err
+		}
+	}
+	return nil
+}
+
+// checkStartBuildResultValue checks text and cycles before conversion.
+func checkStartBuildResultValue(in *StartBuildResult) error {
+	if in == nil {
+		return fmt.Errorf("missing root value")
+	}
+	active := make(map[any]bool)
+	if err := checkStartBuildResultStartBuildResultValue(in, "$", active); err != nil {
+		return err
+	}
+	return nil
+}
+
+// checkStartBuildResultStartBuildResultValue checks one generated value on the active path.
+func checkStartBuildResultStartBuildResultValue(in *StartBuildResult, field string, active map[any]bool) error {
+	if in == nil {
+		return nil
+	}
+	if active[in] {
+		return fmt.Errorf("%s: cyclic Go value", field)
+	}
+	active[in] = true
+	defer delete(active, in)
+	if in != nil {
+		if err := checkChangeBuildStartedBuildValue(in.Build, generatedJSONChildPath(field, "build", false), active); err != nil {
+			return err
+		}
+		if branch1, ok := in.Team.AsReady(); ok {
+			_ = branch1
+			if branch1 != nil {
+			}
+			if err := checkProjectTeamProjectTeamValue(branch1, generatedJSONChildPath(field, "team", false), active); err != nil {
+				return err
+			}
+		}
+		if branch1, ok := in.Team.AsWindowBusy(); ok {
+			_ = branch1
+			if branch1 != nil {
+			}
+			if err := checkBuildTeamWindowBusyBuildTeamWindowBusyValue(branch1, generatedJSONChildPath(field, "team", false), active); err != nil {
+				return err
+			}
+		}
+		if branch1, ok := in.Team.AsAmbiguousSpace(); ok {
+			_ = branch1
+			if branch1 != nil {
+			}
+			if err := checkBuildTeamAmbiguousSpaceBuildTeamAmbiguousSpaceValue(branch1, generatedJSONChildPath(field, "team", false), active); err != nil {
+				return err
+			}
+		}
+		if branch1, ok := in.Team.AsUnavailable(); ok {
+			_ = branch1
+			if branch1 != nil {
+			}
+			if err := checkBuildTeamUnavailableBuildTeamUnavailableValue(branch1, generatedJSONChildPath(field, "team", false), active); err != nil {
+				return err
+			}
+		}
+		if branch1, ok := in.WorkingCopy.AsNotUsed(); ok {
+			_ = branch1
+			if branch1 != nil {
+			}
+			if err := checkBuildCopyNotUsedBuildCopyNotUsedValue(branch1, generatedJSONChildPath(field, "working_copy", false), active); err != nil {
+				return err
+			}
+		}
+		if branch1, ok := in.WorkingCopy.AsAtProjectCommit(); ok {
+			_ = branch1
+			if branch1 != nil {
+			}
+			if err := checkBuildCopyAtProjectCommitBuildCopyAtProjectCommitValue(branch1, generatedJSONChildPath(field, "working_copy", false), active); err != nil {
+				return err
+			}
+		}
+		if branch1, ok := in.WorkingCopy.AsNotContained(); ok {
+			_ = branch1
+			if branch1 != nil {
+			}
+			if err := checkBuildCopyNotContainedBuildCopyNotContainedValue(branch1, generatedJSONChildPath(field, "working_copy", false), active); err != nil {
+				return err
+			}
+		}
+		if branch1, ok := in.WorkingCopy.AsDirty(); ok {
+			_ = branch1
+			if branch1 != nil {
+			}
+			if err := checkBuildCopyDirtyBuildCopyDirtyValue(branch1, generatedJSONChildPath(field, "working_copy", false), active); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
@@ -28931,6 +31912,9 @@ func checkTestWriterAssignmentTestWriterAssignmentValue(in *TestWriterAssignment
 		}
 		if !utf8.ValidString(string(in.WorkingFolder)) {
 			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "working_folder", false))
+		}
+		if !utf8.ValidString(string(in.DesignSource)) {
+			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "design_source", false))
 		}
 		for index1, item1 := range in.Stories {
 			_ = index1

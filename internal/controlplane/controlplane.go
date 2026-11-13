@@ -184,10 +184,6 @@ type (
 		// Verification's plan, in <CardsDir>/live. Without it, or without
 		// Verification/ResolveVerification, start_live_target fails.
 		Live *LiveConfig
-		// BuildTeam readies the builder and the test writer when the user
-		// starts a build. Without it, start_build saves the build and the
-		// test writer's assignment names no working folder.
-		BuildTeam BuildTeam
 		// Team is the project owner composed before this control plane; nil leaves team operations unavailable.
 		Team *TeamBinding
 	}
@@ -372,8 +368,11 @@ type (
 		initStepHook func(step string)
 		// liveState holds the live CP3 target state.
 		liveState
-		// buildTeam is Options.BuildTeam, or nil when none is bound.
-		buildTeam BuildTeam
+		// buildCopyFactory replaces the copy owner only in deterministic start tests.
+		buildCopyFactory func(context.Context, string, scaffold.Layout) (buildCopy, error)
+		// buildIdentityCheck and buildSandboxCheck replace read-only host facts in tests.
+		buildIdentityCheck func(context.Context, string) error
+		buildSandboxCheck  func() error
 		// workingCopyTurn is the one lock on the project's test working copy,
 		// a channel with room for one value: a sender takes the turn, a
 		// receive releases it, and a waiter can give up when its context
@@ -381,8 +380,14 @@ type (
 		// writing the required tests into it, checking it or recording its
 		// accepted tests, for the whole of that step. Take it before mu and
 		// never while holding mu: those steps run for minutes, and mu guards
-		// every card and build read. Nothing takes it yet.
+		// every card and build read. Starts take it without waiting; report checks
+		// use the same turn.
 		workingCopyTurn chan struct{}
+		// buildStartOps counts accepted starts, admitted through workspaceMu's
+		// existing shutdown barrier and drained before stores and evaluators close.
+		buildStartOps sync.WaitGroup
+		// buildStartWithTimeout injects the phase deadline in deterministic tests.
+		buildStartWithTimeout func(context.Context, time.Duration) (context.Context, context.CancelFunc)
 		// team is the single injected owner; teamWorker drains before stores close.
 		team       *TeamBinding
 		teamWorker sync.WaitGroup
@@ -494,7 +499,6 @@ func New(opts Options) (*ControlPlane, error) {
 		initRunner:             opts.InitRunner,
 		surlaVersion:           surlaVersion,
 		liveState:              newLiveState(opts.Live, cards.dir),
-		buildTeam:              opts.BuildTeam,
 		workingCopyTurn:        make(chan struct{}, 1),
 		team:                   opts.Team,
 	}
@@ -725,6 +729,7 @@ func (c *ControlPlane) Close() error {
 	// admitCheckOperation).
 	c.workspaceMu.Lock()
 	c.workspaceMu.Unlock()
+	c.buildStartOps.Wait()
 	// Running checks see the server context end, remove their containers
 	// and return; then any container still unconfirmed gets one more try.
 	c.checkOps.Wait()

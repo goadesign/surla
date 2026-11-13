@@ -11,14 +11,6 @@ var ProjectIdentity = Type("ProjectIdentity", func() {
 	Required("project_id", "directory", "owner")
 })
 
-// ProjectAgent names one independently revocable agent credential file.
-var ProjectAgent = Type("ProjectAgent", func() {
-	Attribute("actor_id", String, "Agent identity, separate from resource ownership.")
-	Attribute("role", String, "Trusted agent purpose.", func() { Enum("guide", "builder", "test_writer") })
-	Attribute("credential_file", String, "Private credential file for the launcher; never put its contents in arguments or labels.")
-	Required("actor_id", "role", "credential_file")
-})
-
 // ProjectTeamRole is the observed state of one server-owned role.
 var ProjectTeamRole = Type("ProjectTeamRole", func() {
 	Attribute("role", String, "Trusted role.", func() { Enum("guide", "builder", "test_writer") })
@@ -33,7 +25,8 @@ var ProjectTeam = Type("ProjectTeam", func() {
 	Attribute("space", String, "Local Herdr space identifier.")
 	Attribute("roles", ArrayOf(ProjectTeamRole))
 	Attribute("dialog", String, "Launcher state after ensuring the team.", func() { Enum("opened", "already_open", "not_needed") })
-	Required("team", "space", "roles", "dialog")
+	Attribute("step", String, "What the user does next for the prepared team.", func() { MinLength(1); MaxLength(512) })
+	Required("team", "space", "roles", "dialog", "step")
 })
 
 // TeamSpaceConflict carries a safe count independently of peer-authored error messages.
@@ -46,13 +39,11 @@ var TeamSpaceConflict = Type("TeamSpaceConflict", func() {
 var _ = Service("project", func() {
 	Description("Owns one local project's server identity, agent credentials, and one-use browser access. Management credentials last for one listening server and never authorize application decisions. This service is not exposed as agent tools.")
 	Error("forbidden", ErrorResult, "The trusted credential cannot perform this operation.")
-	Error("unprocessable", ErrorResult, "The requested credential exchange or agent does not exist or is invalid.")
-	Error("conflict", ErrorResult, "An agent with this identifier or trusted role already exists.")
+	Error("unprocessable", ErrorResult, "The requested credential exchange does not exist or is invalid.")
 	HTTP(func() {
 		Path("/project")
 		Response("forbidden", StatusForbidden)
 		Response("unprocessable", StatusUnprocessableEntity)
-		Response("conflict", StatusConflict)
 	})
 	Method("identity", func() {
 		Description("The CLI checks the answering server reports its expected project identity using the current server-lifetime management credential.")
@@ -76,24 +67,6 @@ var _ = Service("project", func() {
 	Method("stop", func() {
 		Description("The CLI requests ordered server shutdown. Before its listener closes, the server revokes management access and withdraws its running record; an authorized stop response can finish.")
 		HTTP(func() { POST("/stop"); Response(StatusAccepted) })
-	})
-	Method("add_agent", func() {
-		Description("The CLI creates one persistent credential for a trusted role and returns only its private file path. A project admits at most one agent per role. The credential and role survive server restart.")
-		Payload(func() {
-			Attribute("actor_id", String, "Agent identifier.", func() { Pattern("^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$") })
-			Attribute("role", String, "Agent purpose.", func() { Enum("guide", "builder", "test_writer") })
-			Required("actor_id", "role")
-		})
-		Result(ProjectAgent)
-		HTTP(func() { POST("/agents"); Response(StatusCreated) })
-	})
-	Method("remove_agent", func() {
-		Description("The CLI revokes an agent and removes its private credential file before returning.")
-		Payload(func() {
-			Attribute("actor_id", String, "Agent identifier.", func() { Pattern("^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$") })
-			Required("actor_id")
-		})
-		HTTP(func() { DELETE("/agents/{actor_id}"); Response(StatusNoContent) })
 	})
 	Method("browser_link", func() {
 		Description("The CLI mints a short-lived single-use browser link. The URL is the only credential allowed in a browser-launch command line.")

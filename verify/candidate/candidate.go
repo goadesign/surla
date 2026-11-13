@@ -107,6 +107,19 @@ var ErrDigestMismatch = errors.New("candidate binary does not match its pinned d
 // limit its Output caller set; the output read so far is discarded.
 var ErrOutputTooLarge = errors.New("candidate standard output exceeds its limit")
 
+// CheckSandbox reports whether this host has the sandbox launcher used by both
+// Build and Exec. It reads only host facts and starts no process. A failure wraps
+// ErrIsolationUnavailable; callers must not run candidate code without isolation.
+func CheckSandbox() error {
+	if runtime.GOOS != "darwin" {
+		return ErrIsolationUnavailable
+	}
+	if _, err := os.Stat(sandboxExec); err != nil {
+		return fmt.Errorf("%w: %v", ErrIsolationUnavailable, err)
+	}
+	return nil
+}
+
 // Pin copies the binary at src into store, the verifier's own artifact
 // directory, as <store>/<sha256>/<name> with read-only permissions, and returns
 // the pinned Artifact. The digest is computed over the bytes written to the
@@ -257,11 +270,8 @@ func ExcerptFile(path string, maxBytes int64) (string, bool, error) {
 // stdout receives standard output when non-nil; otherwise standard output joins
 // standard error in spec.LogFile.
 func start(ctx context.Context, a Artifact, spec Spec, stdout io.Writer) (*Process, error) {
-	if runtime.GOOS != "darwin" {
-		return nil, ErrIsolationUnavailable
-	}
-	if _, err := os.Stat(sandboxExec); err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrIsolationUnavailable, err)
+	if err := CheckSandbox(); err != nil {
+		return nil, err
 	}
 	if a.path == "" {
 		return nil, errors.New("artifact was not pinned")
@@ -568,11 +578,8 @@ func fileDigest(path string) (string, error) {
 // output directory. The sandbox profile is written in those resolved paths, so
 // the toolchain sees the same paths the profile allows.
 func resolveBuild(spec BuildSpec) (resolvedBuild, error) {
-	if runtime.GOOS != "darwin" {
-		return resolvedBuild{}, ErrIsolationUnavailable
-	}
-	if _, err := os.Stat(sandboxExec); err != nil {
-		return resolvedBuild{}, fmt.Errorf("%w: %v", ErrIsolationUnavailable, err)
+	if err := CheckSandbox(); err != nil {
+		return resolvedBuild{}, err
 	}
 	paths := map[string]*string{
 		"source": &spec.SourceDir, "module": &spec.ModuleDir, "goroot": &spec.GOROOT,

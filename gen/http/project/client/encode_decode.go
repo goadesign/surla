@@ -11,7 +11,6 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -41,7 +40,6 @@ func (c *Client) BuildIdentityRequest(ctx context.Context, v any) (*http.Request
 // DecodeIdentityResponse may return the following errors:
 //   - "forbidden" (type *goa.ServiceError): http.StatusForbidden
 //   - "unprocessable" (type *goa.ServiceError): http.StatusUnprocessableEntity
-//   - "conflict" (type *goa.ServiceError): http.StatusConflict
 //   - error: internal error
 func DecodeIdentityResponse(decoder func(*http.Response) goahttp.Decoder, restoreBody bool) func(*http.Response) (any, error) {
 	return func(resp *http.Response) (result any, decodeErr error) {
@@ -107,20 +105,6 @@ func DecodeIdentityResponse(decoder func(*http.Response) goahttp.Decoder, restor
 				return nil, goahttp.ErrValidationError("project", "identity", err)
 			}
 			return nil, NewIdentityUnprocessable(&body)
-		case http.StatusConflict:
-			var (
-				body IdentityConflictResponseBody
-				err  error
-			)
-			err = decoder(resp).Decode(&body)
-			if err != nil {
-				return nil, goahttp.ErrDecodingError("project", "identity", err)
-			}
-			err = ValidateIdentityConflictResponseBody(&body)
-			if err != nil {
-				return nil, goahttp.ErrValidationError("project", "identity", err)
-			}
-			return nil, NewIdentityConflict(&body)
 		default:
 			body, err := io.ReadAll(resp.Body)
 			if err != nil {
@@ -151,7 +135,6 @@ func (c *Client) BuildEnsureTeamRequest(ctx context.Context, v any) (*http.Reque
 // should be restored after having been read.
 // DecodeEnsureTeamResponse may return the following errors:
 //   - "window_busy" (type *goa.ServiceError): http.StatusConflict
-//   - "conflict" (type *goa.ServiceError): http.StatusConflict
 //   - "ambiguous_space" (type *project.TeamSpaceConflict): http.StatusConflict
 //   - "team_unavailable" (type *goa.ServiceError): http.StatusServiceUnavailable
 //   - "forbidden" (type *goa.ServiceError): http.StatusForbidden
@@ -210,20 +193,6 @@ func DecodeEnsureTeamResponse(decoder func(*http.Response) goahttp.Decoder, rest
 					return nil, goahttp.ErrValidationError("project", "ensure_team", err)
 				}
 				return nil, NewEnsureTeamWindowBusy(&body)
-			case "conflict":
-				var (
-					body EnsureTeamConflictResponseBody
-					err  error
-				)
-				err = decoder(resp).Decode(&body)
-				if err != nil {
-					return nil, goahttp.ErrDecodingError("project", "ensure_team", err)
-				}
-				err = ValidateEnsureTeamConflictResponseBody(&body)
-				if err != nil {
-					return nil, goahttp.ErrValidationError("project", "ensure_team", err)
-				}
-				return nil, NewEnsureTeamConflict(&body)
 			case "ambiguous_space":
 				var (
 					body EnsureTeamAmbiguousSpaceResponseBody
@@ -318,7 +287,6 @@ func (c *Client) BuildStopRequest(ctx context.Context, v any) (*http.Request, er
 // DecodeStopResponse may return the following errors:
 //   - "forbidden" (type *goa.ServiceError): http.StatusForbidden
 //   - "unprocessable" (type *goa.ServiceError): http.StatusUnprocessableEntity
-//   - "conflict" (type *goa.ServiceError): http.StatusConflict
 //   - error: internal error
 func DecodeStopResponse(decoder func(*http.Response) goahttp.Decoder, restoreBody bool) func(*http.Response) (any, error) {
 	return func(resp *http.Response) (result any, decodeErr error) {
@@ -371,263 +339,12 @@ func DecodeStopResponse(decoder func(*http.Response) goahttp.Decoder, restoreBod
 				return nil, goahttp.ErrValidationError("project", "stop", err)
 			}
 			return nil, NewStopUnprocessable(&body)
-		case http.StatusConflict:
-			var (
-				body StopConflictResponseBody
-				err  error
-			)
-			err = decoder(resp).Decode(&body)
-			if err != nil {
-				return nil, goahttp.ErrDecodingError("project", "stop", err)
-			}
-			err = ValidateStopConflictResponseBody(&body)
-			if err != nil {
-				return nil, goahttp.ErrValidationError("project", "stop", err)
-			}
-			return nil, NewStopConflict(&body)
 		default:
 			body, err := io.ReadAll(resp.Body)
 			if err != nil {
 				return nil, goahttp.ErrDecodingError("project", "stop", err)
 			}
 			return nil, goahttp.ErrInvalidResponse("project", "stop", resp.StatusCode, string(body))
-		}
-	}
-}
-
-// BuildAddAgentRequest instantiates a HTTP request object with method and path
-// set to call the "project" service "add_agent" endpoint
-func (c *Client) BuildAddAgentRequest(ctx context.Context, v any) (*http.Request, error) {
-	u := &url.URL{Scheme: c.scheme, Host: c.host, Path: AddAgentProjectPath()}
-	req, err := http.NewRequest("POST", u.String(), nil)
-	if err != nil {
-		return nil, goahttp.ErrInvalidURL("project", "add_agent", u.String(), err)
-	}
-	if ctx != nil {
-		req = req.WithContext(ctx)
-	}
-
-	return req, nil
-}
-
-// EncodeAddAgentRequest returns an encoder for requests sent to the project
-// add_agent server.
-func EncodeAddAgentRequest(encoder func(*http.Request) goahttp.Encoder) func(*http.Request, any) error {
-	return func(req *http.Request, v any) error {
-		p, ok := v.(*project.AddAgentPayload)
-		if !ok {
-			return goahttp.ErrInvalidType("project", "add_agent", "*project.AddAgentPayload", v)
-		}
-		body := NewAddAgentRequestBody(p)
-		if err := encoder(req).Encode(&body); err != nil {
-			return goahttp.ErrEncodingError("project", "add_agent", err)
-		}
-		return nil
-	}
-}
-
-// DecodeAddAgentResponse returns a decoder for responses returned by the
-// project add_agent endpoint. restoreBody controls whether the response body
-// should be restored after having been read.
-// DecodeAddAgentResponse may return the following errors:
-//   - "forbidden" (type *goa.ServiceError): http.StatusForbidden
-//   - "unprocessable" (type *goa.ServiceError): http.StatusUnprocessableEntity
-//   - "conflict" (type *goa.ServiceError): http.StatusConflict
-//   - error: internal error
-func DecodeAddAgentResponse(decoder func(*http.Response) goahttp.Decoder, restoreBody bool) func(*http.Response) (any, error) {
-	return func(resp *http.Response) (result any, decodeErr error) {
-		responseBody := resp.Body
-		if restoreBody {
-			b, readErr := io.ReadAll(responseBody)
-			closeErr := responseBody.Close()
-			if err := errors.Join(readErr, closeErr); err != nil {
-				return nil, goahttp.ErrDecodingError("project", "add_agent", err)
-			}
-			resp.Body = io.NopCloser(bytes.NewBuffer(b))
-			defer func() {
-				resp.Body = io.NopCloser(bytes.NewBuffer(b))
-			}()
-		} else {
-			defer func() {
-				if err := responseBody.Close(); err != nil {
-					decodeErr = errors.Join(decodeErr, goahttp.ErrDecodingError("project", "add_agent", err))
-				}
-			}()
-		}
-		switch resp.StatusCode {
-		case http.StatusCreated:
-			var (
-				body AddAgentResponseBody
-				err  error
-			)
-			err = decoder(resp).Decode(&body)
-			if err != nil {
-				return nil, goahttp.ErrDecodingError("project", "add_agent", err)
-			}
-			err = ValidateAddAgentResponseBody(&body)
-			if err != nil {
-				return nil, goahttp.ErrValidationError("project", "add_agent", err)
-			}
-			res := NewAddAgentProjectAgentCreated(&body)
-			return res, nil
-		case http.StatusForbidden:
-			var (
-				body AddAgentForbiddenResponseBody
-				err  error
-			)
-			err = decoder(resp).Decode(&body)
-			if err != nil {
-				return nil, goahttp.ErrDecodingError("project", "add_agent", err)
-			}
-			err = ValidateAddAgentForbiddenResponseBody(&body)
-			if err != nil {
-				return nil, goahttp.ErrValidationError("project", "add_agent", err)
-			}
-			return nil, NewAddAgentForbidden(&body)
-		case http.StatusUnprocessableEntity:
-			var (
-				body AddAgentUnprocessableResponseBody
-				err  error
-			)
-			err = decoder(resp).Decode(&body)
-			if err != nil {
-				return nil, goahttp.ErrDecodingError("project", "add_agent", err)
-			}
-			err = ValidateAddAgentUnprocessableResponseBody(&body)
-			if err != nil {
-				return nil, goahttp.ErrValidationError("project", "add_agent", err)
-			}
-			return nil, NewAddAgentUnprocessable(&body)
-		case http.StatusConflict:
-			var (
-				body AddAgentConflictResponseBody
-				err  error
-			)
-			err = decoder(resp).Decode(&body)
-			if err != nil {
-				return nil, goahttp.ErrDecodingError("project", "add_agent", err)
-			}
-			err = ValidateAddAgentConflictResponseBody(&body)
-			if err != nil {
-				return nil, goahttp.ErrValidationError("project", "add_agent", err)
-			}
-			return nil, NewAddAgentConflict(&body)
-		default:
-			body, err := io.ReadAll(resp.Body)
-			if err != nil {
-				return nil, goahttp.ErrDecodingError("project", "add_agent", err)
-			}
-			return nil, goahttp.ErrInvalidResponse("project", "add_agent", resp.StatusCode, string(body))
-		}
-	}
-}
-
-// BuildRemoveAgentRequest instantiates a HTTP request object with method and
-// path set to call the "project" service "remove_agent" endpoint
-func (c *Client) BuildRemoveAgentRequest(ctx context.Context, v any) (*http.Request, error) {
-	var (
-		actorID string
-	)
-	{
-		p, ok := v.(*project.RemoveAgentPayload)
-		if !ok {
-			return nil, goahttp.ErrInvalidType("project", "remove_agent", "*project.RemoveAgentPayload", v)
-		}
-		actorID = p.ActorID
-	}
-
-	rawPath := fmt.Sprintf("/project/agents/%v", url.PathEscape(fmt.Sprint(actorID)))
-	u := &url.URL{Scheme: c.scheme, Host: c.host, Path: RemoveAgentProjectPath(actorID), RawPath: rawPath}
-	req, err := http.NewRequest("DELETE", u.String(), nil)
-	if err != nil {
-		return nil, goahttp.ErrInvalidURL("project", "remove_agent", u.String(), err)
-	}
-	if ctx != nil {
-		req = req.WithContext(ctx)
-	}
-
-	return req, nil
-}
-
-// DecodeRemoveAgentResponse returns a decoder for responses returned by the
-// project remove_agent endpoint. restoreBody controls whether the response
-// body should be restored after having been read.
-// DecodeRemoveAgentResponse may return the following errors:
-//   - "forbidden" (type *goa.ServiceError): http.StatusForbidden
-//   - "unprocessable" (type *goa.ServiceError): http.StatusUnprocessableEntity
-//   - "conflict" (type *goa.ServiceError): http.StatusConflict
-//   - error: internal error
-func DecodeRemoveAgentResponse(decoder func(*http.Response) goahttp.Decoder, restoreBody bool) func(*http.Response) (any, error) {
-	return func(resp *http.Response) (result any, decodeErr error) {
-		responseBody := resp.Body
-		if restoreBody {
-			b, readErr := io.ReadAll(responseBody)
-			closeErr := responseBody.Close()
-			if err := errors.Join(readErr, closeErr); err != nil {
-				return nil, goahttp.ErrDecodingError("project", "remove_agent", err)
-			}
-			resp.Body = io.NopCloser(bytes.NewBuffer(b))
-			defer func() {
-				resp.Body = io.NopCloser(bytes.NewBuffer(b))
-			}()
-		} else {
-			defer func() {
-				if err := responseBody.Close(); err != nil {
-					decodeErr = errors.Join(decodeErr, goahttp.ErrDecodingError("project", "remove_agent", err))
-				}
-			}()
-		}
-		switch resp.StatusCode {
-		case http.StatusNoContent:
-			return nil, nil
-		case http.StatusForbidden:
-			var (
-				body RemoveAgentForbiddenResponseBody
-				err  error
-			)
-			err = decoder(resp).Decode(&body)
-			if err != nil {
-				return nil, goahttp.ErrDecodingError("project", "remove_agent", err)
-			}
-			err = ValidateRemoveAgentForbiddenResponseBody(&body)
-			if err != nil {
-				return nil, goahttp.ErrValidationError("project", "remove_agent", err)
-			}
-			return nil, NewRemoveAgentForbidden(&body)
-		case http.StatusUnprocessableEntity:
-			var (
-				body RemoveAgentUnprocessableResponseBody
-				err  error
-			)
-			err = decoder(resp).Decode(&body)
-			if err != nil {
-				return nil, goahttp.ErrDecodingError("project", "remove_agent", err)
-			}
-			err = ValidateRemoveAgentUnprocessableResponseBody(&body)
-			if err != nil {
-				return nil, goahttp.ErrValidationError("project", "remove_agent", err)
-			}
-			return nil, NewRemoveAgentUnprocessable(&body)
-		case http.StatusConflict:
-			var (
-				body RemoveAgentConflictResponseBody
-				err  error
-			)
-			err = decoder(resp).Decode(&body)
-			if err != nil {
-				return nil, goahttp.ErrDecodingError("project", "remove_agent", err)
-			}
-			err = ValidateRemoveAgentConflictResponseBody(&body)
-			if err != nil {
-				return nil, goahttp.ErrValidationError("project", "remove_agent", err)
-			}
-			return nil, NewRemoveAgentConflict(&body)
-		default:
-			body, err := io.ReadAll(resp.Body)
-			if err != nil {
-				return nil, goahttp.ErrDecodingError("project", "remove_agent", err)
-			}
-			return nil, goahttp.ErrInvalidResponse("project", "remove_agent", resp.StatusCode, string(body))
 		}
 	}
 }
@@ -653,7 +370,6 @@ func (c *Client) BuildBrowserLinkRequest(ctx context.Context, v any) (*http.Requ
 // DecodeBrowserLinkResponse may return the following errors:
 //   - "forbidden" (type *goa.ServiceError): http.StatusForbidden
 //   - "unprocessable" (type *goa.ServiceError): http.StatusUnprocessableEntity
-//   - "conflict" (type *goa.ServiceError): http.StatusConflict
 //   - error: internal error
 func DecodeBrowserLinkResponse(decoder func(*http.Response) goahttp.Decoder, restoreBody bool) func(*http.Response) (any, error) {
 	return func(resp *http.Response) (result any, decodeErr error) {
@@ -719,20 +435,6 @@ func DecodeBrowserLinkResponse(decoder func(*http.Response) goahttp.Decoder, res
 				return nil, goahttp.ErrValidationError("project", "browser_link", err)
 			}
 			return nil, NewBrowserLinkUnprocessable(&body)
-		case http.StatusConflict:
-			var (
-				body BrowserLinkConflictResponseBody
-				err  error
-			)
-			err = decoder(resp).Decode(&body)
-			if err != nil {
-				return nil, goahttp.ErrDecodingError("project", "browser_link", err)
-			}
-			err = ValidateBrowserLinkConflictResponseBody(&body)
-			if err != nil {
-				return nil, goahttp.ErrValidationError("project", "browser_link", err)
-			}
-			return nil, NewBrowserLinkConflict(&body)
 		default:
 			body, err := io.ReadAll(resp.Body)
 			if err != nil {
@@ -781,7 +483,6 @@ func EncodeExchangeBrowserLinkRequest(encoder func(*http.Request) goahttp.Encode
 // DecodeExchangeBrowserLinkResponse may return the following errors:
 //   - "forbidden" (type *goa.ServiceError): http.StatusForbidden
 //   - "unprocessable" (type *goa.ServiceError): http.StatusUnprocessableEntity
-//   - "conflict" (type *goa.ServiceError): http.StatusConflict
 //   - error: internal error
 func DecodeExchangeBrowserLinkResponse(decoder func(*http.Response) goahttp.Decoder, restoreBody bool) func(*http.Response) (any, error) {
 	return func(resp *http.Response) (result any, decodeErr error) {
@@ -847,20 +548,6 @@ func DecodeExchangeBrowserLinkResponse(decoder func(*http.Response) goahttp.Deco
 				return nil, goahttp.ErrValidationError("project", "exchange_browser_link", err)
 			}
 			return nil, NewExchangeBrowserLinkUnprocessable(&body)
-		case http.StatusConflict:
-			var (
-				body ExchangeBrowserLinkConflictResponseBody
-				err  error
-			)
-			err = decoder(resp).Decode(&body)
-			if err != nil {
-				return nil, goahttp.ErrDecodingError("project", "exchange_browser_link", err)
-			}
-			err = ValidateExchangeBrowserLinkConflictResponseBody(&body)
-			if err != nil {
-				return nil, goahttp.ErrValidationError("project", "exchange_browser_link", err)
-			}
-			return nil, NewExchangeBrowserLinkConflict(&body)
 		default:
 			body, err := io.ReadAll(resp.Body)
 			if err != nil {

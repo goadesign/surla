@@ -538,18 +538,28 @@ func (c *Client) WaitForChanges(ctx context.Context, p *WaitForChangesPayload) (
 
 // StartBuild calls the "start_build" endpoint of the "surla" service.
 // StartBuild may return the following errors:
+//   - "not_repository" (type *goa.ServiceError): The project folder is not in a Git repository; nothing was saved. The message ends with the step to create or select a repository.
+//   - "no_commit" (type *goa.ServiceError): The project repository has no commit; nothing was saved. The message ends with the step to make its first commit.
+//   - "no_test_layout" (type *goa.ServiceError): This project has neither stored verification settings nor Surla's test layout; nothing was saved. Store verification settings, then build again.
+//   - "git_identity_missing" (type *goa.ServiceError): Git has no configured name and address; nothing was saved. Configure Git's name and address, then build again.
+//   - "copy_folder_in_use" (type *goa.ServiceError): The test-writer copy's named folder is occupied; nothing was saved. The message ends with the step to free that folder and build again.
+//   - "tests_branch_in_use" (type *goa.ServiceError): The named tests branch is held by another working copy; nothing was saved. The message ends with the library's step to free that branch and build again.
+//   - "working_copy_busy" (type *goa.ServiceError): Another build is starting or a test check holds the project's working-copy turn; nothing was saved. Start the build again when that has ended.
+//   - "sandbox_unavailable" (type *goa.ServiceError): This system has no candidate sandbox; nothing was saved. Start this project on a system with Surla's candidate sandbox, then build again.
+//   - "not_implemented" (type *goa.ServiceError): Start this project with surla to bind the team; nothing was saved.
+//   - "unavailable" (type *goa.ServiceError): The server is stopping or the start's time limit ended before saving; call again on a running server. Nothing was saved.
 //   - "not_found" (type *goa.ServiceError): No Change Card exists with this change_id.
 //   - "conflict" (type *goa.ServiceError): The Change Card is not confirmed or request_revision is not its agreed revision (a waiting proposal's revision cannot be built); nothing changed.
 //   - "unprocessable" (type *goa.ServiceError): The agreed Story has a finished flow whose key gives its required test an empty name, or two finished flows whose required tests would have the same name; revise the Story. Nothing changed.
 //   - "forbidden" (type *goa.ServiceError): The authenticated caller may not perform this operation or does not own the resource.
 //   - error: internal error
-func (c *Client) StartBuild(ctx context.Context, p *StartBuildPayload) (res *StartedBuild, err error) {
+func (c *Client) StartBuild(ctx context.Context, p *StartBuildPayload) (res *StartBuildResult, err error) {
 	var ires any
 	ires, err = c.StartBuildEndpoint(ctx, p)
 	if err != nil {
 		return
 	}
-	return ires.(*StartedBuild), nil
+	return ires.(*StartBuildResult), nil
 }
 
 // GetBuild calls the "get_build" endpoint of the "surla" service.

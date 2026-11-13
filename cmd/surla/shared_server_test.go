@@ -18,7 +18,6 @@ import (
 	"testing"
 	"time"
 
-	genproject "github.com/goadesign/surla/gen/project"
 	gensurla "github.com/goadesign/surla/gen/surla"
 	"github.com/goadesign/surla/internal/controlplane"
 	"github.com/goadesign/surla/internal/project"
@@ -501,13 +500,12 @@ func startSharedServerProcess(t *testing.T, workspace, config string) *sharedSer
 	_, err = state.Initialize(fmt.Sprintf("uid:%d", os.Geteuid()))
 	require.NoError(t, err)
 	require.NoError(t, lock.Close())
-	if _, exists := state.Record.Agents["guide"]; !exists {
-		server, err := project.NewServer(state, func() {}, fixtureTeamDependencies(state))
-		require.NoError(t, err)
-		_, err = server.AddAgent(controlplane.WithPrincipal(t.Context(), controlplane.Principal{ID: state.Record.Owner, CallerID: "management", Kind: controlplane.CallerManagement}), &genproject.AddAgentPayload{ActorID: "guide", Role: "guide"})
-		require.NoError(t, err)
-	}
-	raw, err := os.ReadFile(state.AgentFile("guide"))
+	server, err := project.NewServer(state, func() {}, fixtureTeamDependencies(state))
+	require.NoError(t, err)
+	team, err := server.StartAgents(t.Context())
+	require.NoError(t, err)
+	require.NotEmpty(t, team.Roles)
+	raw, err := os.ReadFile(state.AgentFile(team.Roles[0].Handle))
 	require.NoError(t, err)
 	cmd := exec.Command(exe, "serve")
 	cmd.Dir = workspace

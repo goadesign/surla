@@ -679,6 +679,9 @@ func ValidateGetTestWriterAssignmentResultTransport(body *GetTestWriterAssignmen
 	if body.WorkingFolder == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("working_folder", "body"))
 	}
+	if body.DesignSource == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("design_source", "body"))
+	}
 	if body.Stories == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("stories", "body"))
 	}
@@ -1957,6 +1960,9 @@ func ValidateStartedBuildTransport(body *StartedBuildTransport) (err error) {
 	if body.TestWriter == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("test_writer", "body"))
 	}
+	if body.RequiredTestCount == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("required_test_count", "body"))
+	}
 	if body.StartedAt != nil {
 		err = goa.MergeErrors(err, goa.ValidateFormat("body.started_at", *body.StartedAt, goa.FormatDateTime))
 	}
@@ -1968,6 +1974,11 @@ func ValidateStartedBuildTransport(body *StartedBuildTransport) (err error) {
 	if body.TestWriter != nil {
 		if err2 := ValidateTestWriterProgressTransport(body.TestWriter); err2 != nil {
 			err = goa.MergeErrors(err, err2)
+		}
+	}
+	if body.RequiredTestCount != nil {
+		if *body.RequiredTestCount < 0 {
+			err = goa.MergeErrors(err, goa.InvalidRangeError("body.required_test_count", *body.RequiredTestCount, 0, true))
 		}
 	}
 	return

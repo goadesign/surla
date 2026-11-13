@@ -4,11 +4,15 @@ package project
 import (
 	"context"
 	"errors"
+	"os"
 	"path/filepath"
-	"time"
 
 	genproject "github.com/goadesign/surla/gen/project"
 	gensurla "github.com/goadesign/surla/gen/surla"
+	"github.com/goadesign/surla/internal/controlplane"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 	goa "goa.design/goa/v3/pkg"
 )
 
@@ -38,13 +42,8 @@ func (s *Server) ReadTeam(ctx context.Context) (*gensurla.TeamSnapshot, error) {
 // StartAgents shares the existing private ensureTeam workflow and its accepted-work lifetime.
 // The control plane authorizes the user once; this method does not repeat entry policy.
 func (s *Server) StartAgents(ctx context.Context) (*gensurla.ProjectTeam, error) {
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 45*time.Second)
+	ctx, cancel := s.acceptedTeamContext(ctx)
 	defer cancel()
-	stop := context.AfterFunc(s.team.dependencies.Lifetime, cancel)
-	defer stop()
-	if s.team.dependencies.Lifetime.Err() != nil {
-		cancel()
-	}
 	result, err := s.ensureTeam(ctx)
 	if err != nil {
 		return nil, userTeamError(err)
@@ -53,7 +52,50 @@ func (s *Server) StartAgents(ctx context.Context) (*gensurla.ProjectTeam, error)
 	for _, role := range result.Roles {
 		roles = append(roles, &gensurla.ProjectTeamRole{Role: role.Role, Handle: role.Handle, Running: role.Running})
 	}
-	return &gensurla.ProjectTeam{Team: result.Team, Space: result.Space, Dialog: result.Dialog, Roles: roles}, nil
+	return &gensurla.ProjectTeam{Team: result.Team, Space: result.Space, Dialog: result.Dialog, Step: result.Step, Roles: roles}, nil
+}
+
+// RegisterBuildRoles durably records the accepted build's exact worker roles and folders.
+// Registration completes even when the post-save phase context has ended: the next
+// StartAgents must recover the saved build without starting it again. The context
+// carries tracing only; this method performs no window work or external commands.
+func (s *Server) RegisterBuildRoles(ctx context.Context, folders controlplane.BuildFolders) error {
+	ctx, span := otel.Tracer("surla/project").Start(ctx, "surla.project.register_build_roles")
+	defer span.End()
+	var roles []agentRecord
+	switch value := folders.(type) {
+	case controlplane.BuilderOnly:
+		roles = []agentRecord{{Role: "builder", Folder: value.BuilderFolder}}
+	case controlplane.BuilderAndTestWriter:
+		roles = []agentRecord{{Role: "builder", Folder: value.BuilderFolder}, {Role: "test_writer", Folder: value.TestWriterFolder}}
+	default:
+		err := errors.New("build registration requires builder working folders")
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "invalid build role folders")
+		return err
+	}
+	span.SetAttributes(attribute.Int("team.worker_roles", len(roles)))
+	// Validate the complete constructed input before changing the registry.
+	for _, agent := range roles {
+		if err := validateAgent(teamName(agent.Role, s.state.Record.ID), agent); err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, "invalid build role folders")
+			return err
+		}
+	}
+	s.team.Lock()
+	defer s.team.Unlock()
+	for _, agent := range roles {
+		if _, err := s.registerAgent(teamName(agent.Role, s.state.Record.ID), agent); err != nil {
+			return teamUnavailable(ctx, "register_role")
+		}
+	}
+	if len(roles) == 1 {
+		if err := s.removeTestWriter(); err != nil {
+			return teamUnavailable(ctx, "remove_test_writer")
+		}
+	}
+	return nil
 }
 
 // ShowPane first checks overlays, then re-reads the registered role's owned terminals
@@ -138,7 +180,7 @@ func (s *Server) teamSelection() TeamSelection {
 	}
 	for _, role := range []string{"guide", "builder", "test_writer"} {
 		for handle, registered := range record.Agents {
-			if registered == role {
+			if registered.Role == role {
 				selection.Roles = append(selection.Roles, TeamRole{Role: role, Handle: handle})
 			}
 		}
@@ -157,4 +199,22 @@ func userTeamError(err error) error {
 		return gensurla.MakeWindowBusy(errors.New("close the open Herdr dialog before starting agents"))
 	}
 	return gensurla.MakeTeamUnavailable(errors.New("project team could not be prepared; check Herdr and try again"))
+}
+
+// removeTestWriter revokes an unused test writer before withdrawing its saved role.
+// The operation lock serializes this exact-role update with roster publication.
+func (s *Server) removeTestWriter() error {
+	s.state.mu.Lock()
+	defer s.state.mu.Unlock()
+	for handle, agent := range s.state.Record.Agents {
+		if agent.Role != "test_writer" {
+			continue
+		}
+		if err := os.Remove(s.state.AgentFile(handle)); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+		delete(s.state.Record.Agents, handle)
+		return s.state.save()
+	}
+	return nil
 }

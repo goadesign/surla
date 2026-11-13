@@ -11,7 +11,6 @@ import (
 	"strings"
 	"testing"
 
-	genproject "github.com/goadesign/surla/gen/project"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel"
@@ -50,7 +49,7 @@ func TestThreeRoleWrittenRoster(t *testing.T) {
 	var expectedRoles []map[string]any
 	for i, role := range []string{"guide", "builder", "test_writer"} {
 		handle := role + "-" + state.Record.ID[:12]
-		_, err := server.AddAgent(teamContext(state), &genproject.AddAgentPayload{ActorID: handle, Role: role})
+		_, err := registerTestAgent(server, handle, role, server.state.Record.Directory)
 		require.NoError(t, err)
 		roles = append(roles, launcherRole{Role: role, Title: role, Handle: handle, Folder: state.Record.Directory, FirstMessage: "Use the Surla connection."})
 		var place any
@@ -152,7 +151,7 @@ func TestRosterOmitsMissingWorkingFolders(t *testing.T) {
 	var roles []launcherRole
 	for _, role := range []string{"guide", "builder", "test_writer"} {
 		handle := role + "-" + state.Record.ID[:12]
-		_, err := server.AddAgent(teamContext(state), &genproject.AddAgentPayload{ActorID: handle, Role: role})
+		_, err := registerTestAgent(server, handle, role, server.state.Record.Directory)
 		require.NoError(t, err)
 		folder := state.Record.Directory
 		if role == "test_writer" {
@@ -190,7 +189,7 @@ func TestTeamErrorsKeepPrivatePathsInsideServer(t *testing.T) {
 	server, err := NewServer(state, func() {}, deps)
 	require.NoError(t, err)
 	handle := "guide-" + state.Record.ID[:12]
-	state.Record.Agents[handle] = "guide"
+	state.Record.Agents[handle] = agentRecord{Role: "guide", Folder: state.Record.Directory}
 	_, err = server.EnsureTeam(teamContext(state))
 	require.Error(t, err)
 	assert.NotContains(t, err.Error(), state.Dir)

@@ -186,7 +186,7 @@ func projectTeamDependencies(ctx context.Context) (project.TeamDependencies, err
 		}
 		home = filepath.Join(userHome, ".config", "herdr-app")
 	}
-	return project.TeamDependencies{Lifetime: ctx, Host: commands, TestWriterFolder: noTestWriterWorkingFolder, RosterDirectory: filepath.Join(home, "data", "chorus-launcher", "rosters"), Shell: os.Getenv("SHELL"), Observer: teamObservations{commands: commands, stream: runTeamStream, client: &http.Client{Timeout: 65 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}, chorusURL: "http://127.0.0.1:9440"}, Sender: unboundTeamSender{}}, nil
+	return project.TeamDependencies{Lifetime: ctx, Host: commands, RosterDirectory: filepath.Join(home, "data", "chorus-launcher", "rosters"), Shell: os.Getenv("SHELL"), Observer: teamObservations{commands: commands, stream: runTeamStream, client: &http.Client{Timeout: 65 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}, chorusURL: "http://127.0.0.1:9440"}, Sender: unboundTeamSender{}}, nil
 }
 
 // json decodes command replies and checks JSON-level errors as well as process status.
@@ -341,8 +341,3 @@ func runServerTeamCommand(ctx context.Context, program string, args ...string) (
 	}
 	return runTeamCommand(ctx, resolved, args...)
 }
-
-// noTestWriterWorkingFolder reports the absence of a bound working-copy owner.
-// Replace this binding when the build workflow owns test-writer working copies,
-// using that owner's non-creating read of the existing project folder.
-func noTestWriterWorkingFolder(context.Context) (string, error) { return "", nil }

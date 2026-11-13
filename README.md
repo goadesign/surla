@@ -119,10 +119,11 @@ opens when every role listed in the roster is running. Surla opens the launcher
 when any listed role has no running pane, including one that holds only an
 [idle shell](docs/REFERENCE.md#idle-shell). For example, a running guide with a
 builder listed in this project's roster whose pane is not running still needs
-the launcher. Roles without a working folder are omitted from the roster and
+the launcher. Roles whose saved working folder is missing are omitted from the roster and
 do not by themselves open the launcher. An already open launcher stays open
-with its original project: use it only if it is for this project, otherwise
-close it and run `surla` again. Close any other dialog before retrying. Surla bounds readiness
+with its original project. If it is this project's dialog, click **Reload team**
+to read the current roles before choosing agents; otherwise close it and run
+`surla` again. Close any other dialog before retrying. Surla bounds readiness
 checks without terminating your Herdr window or Chorus service.
 The server also follows its registered roles in memory. Its user-only team API
 reports terminal state, watcher availability and unread assignments; the views
@@ -151,6 +152,15 @@ and the agreed revision stays in force for previews, verification and approval
 until then. `preview_architecture` returns the compiled C4 topology,
 agent policies, and tool contracts. It reports the design's declarations; it
 does not check that they satisfy the requested behavior.
+
+Starting a build saves the agreed Story and design, prepares the roles and
+returns the team's next step. A project with stored verification settings adds
+only the builder. A starter project also gets a separate test writer, whose Git
+working copy receives one required test entry per finished Story flow. Draft
+flows stay editable and require no test. A busy or unavailable window leaves
+the saved build and its registered roles ready for a later start-agents action.
+See [Builds and assignments](docs/REFERENCE.md#builds-and-assignments) for
+prerequisites, working-copy outcomes and recovery.
 
 The builder builds and tests working changes with `generate_code` and
 `check_project` before committing, then verifies the commit against the agreed
