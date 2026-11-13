@@ -56,6 +56,12 @@ jobs:
           node-version: 26.0.0
           cache: npm
           cache-dependency-path: ui/checkpoint/package-lock.json
+      - name: Install the views page's test packages
+        # The views page tests in internal/controlplane and internal/project
+        # run the built page in jsdom; install it once before both binaries.
+        if: matrix.module == '.'
+        run: |
+          npm ci --prefix ui/checkpoint --no-audit --no-fund </dev/null
       - name: Vet and short race tests
         # Full vet checks share the race build with tests instead of compiling
         # a separate plain build. JSON retains individual test durations.
