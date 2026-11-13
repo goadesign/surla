@@ -3,6 +3,7 @@ package project
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -59,6 +60,25 @@ func TestOpenServesOnlyTheNamedProjectState(t *testing.T) {
 	relative, err := filepath.Rel(root, state.Dir)
 	require.NoError(t, err)
 
+	// A record must name its project folder by the path the volume stores for it. Each
+	// copy below sits under the folder name derived from the spelling its record uses,
+	// so only the comparison with the independently resolved path can refuse it.
+	withDirectory := func(directory string) string {
+		var fields map[string]any
+		require.NoError(t, json.Unmarshal(record, &fields))
+		fields["directory"] = directory
+		raw, err := json.Marshal(fields)
+		require.NoError(t, err)
+		copyDir := projectDirectory(root, directory)
+		writeStateCopy(t, copyDir, raw)
+		return copyDir
+	}
+	projectAlias := filepath.Join(physicalTempDir(t), "project-alias")
+	require.NoError(t, os.Symlink(state.Record.Directory, projectAlias))
+	throughLink := withDirectory(projectAlias)
+	relativeProject := withDirectory("relative/project")
+	goneProject := withDirectory(filepath.Join(physicalTempDir(t), "gone"))
+
 	for _, tc := range []struct {
 		name, dir, want string
 	}{
@@ -72,6 +92,9 @@ func TestOpenServesOnlyTheNamedProjectState(t *testing.T) {
 		{name: "invalid record", dir: corrupt, want: "invalid project record"},
 		{name: "not the exact folder path", dir: state.Dir + string(filepath.Separator), want: "is not its physical path " + state.Dir},
 		{name: "folder inside the project folder", dir: inside, want: "must lie outside the project folder " + state.Record.Directory},
+		{name: "record names its project folder through a link", dir: throughLink, want: "which is not that folder's stored path " + state.Record.Directory},
+		{name: "record names a relative project folder", dir: relativeProject, want: "invalid project record"},
+		{name: "record names a project folder that is gone", dir: goneProject, want: "no such file or directory"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			_, err := Open(tc.dir)
