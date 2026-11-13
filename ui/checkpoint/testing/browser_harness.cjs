@@ -382,16 +382,18 @@ async function until(tab, expression) {
   }
 }
 
-// settle waits until every request of tab matching select failed, or was
-// put on the wire with its network headers and, unless it is still open on
-// purpose, answered. A request the browser refused to send only fails. It
-// resolves to whether that happened before the deadline.
-async function settle(tab, select, stillOpen = () => false) {
+// settle waits until tab has at least min requests matching select and
+// each of them failed, or was put on the wire with its network headers and,
+// unless it is still open on purpose, answered. A request the browser refused
+// to send only fails. Waiting for the count matters because the browser may
+// report a request, such as a CORS preflight, after the page's fetch already
+// settled. It resolves to whether that happened before the deadline.
+async function settle(tab, select, min, stillOpen = () => false) {
   const deadline = Date.now() + STEP_TIMEOUT_MS;
   const settled = (r) => r.failure !== "" || (r.sent_headers !== null && (r.status !== 0 || stillOpen(r)));
   for (;;) {
-    const waiting = tab.requests.filter((r) => select(r) && !settled(r));
-    if (waiting.length === 0) {
+    const matching = tab.requests.filter(select);
+    if (matching.length >= min && matching.every(settled)) {
       return true;
     }
     if (Date.now() > deadline) {
@@ -437,6 +439,11 @@ function flattenFrames(node, out = []) {
   return out;
 }
 
+// to returns a selector of requests with method to path on origin.
+function to(origin, method, path) {
+  return (r) => r.method === method && r.url.startsWith(origin + "/") && new URL(r.url).pathname === path;
+}
+
 // fetchOutcome is a page expression that fetches url with init and resolves
 // to what the page could see: the answer's type and status, or the error.
 function fetchOutcome(url, init) {
@@ -479,7 +486,10 @@ async function main(input, facts) {
     };
 
     // (b) Every request the page sent so far, with the headers the browser put on the wire.
-    facts.views.requests_settled = await settle(views, server, longPoll);
+    facts.views.requests_settled =
+      (await settle(views, to(input.origin, "POST", "/project/browser-session"), 1)) &&
+      (await settle(views, to(input.origin, "GET", "/changes"), 1)) &&
+      (await settle(views, to(input.origin, "GET", "/change-updates"), 1, longPoll));
     facts.views.requests = views.requests.filter(server).map((r) => ({ ...r }));
 
     // (c) What the browser kept for the page.
@@ -504,13 +514,13 @@ async function main(input, facts) {
     facts.views.foreign_fetch = await evaluate(views, fetchOutcome(probe, "{ mode: 'no-cors' }"));
     const blocked = await violationsSince(views, count);
     facts.views.foreign_fetch_violations = blocked.value || [];
-    await settle(views, (r) => r.url === probe);
+    await settle(views, (r) => r.url === probe, 0);
     facts.views.foreign_fetch_requests = views.requests.filter((r) => r.url === probe).map((r) => ({ ...r }));
 
     // (e) A page on another origin frames the views page.
     const framing = await openTab(dt);
     await navigate(framing, input.same_site_origin + "/frame");
-    await settle(framing, server);
+    await settle(framing, to(input.origin, "GET", "/views"), 1);
     // A frame in another process belongs to its own DevTools session, so
     // every session's frame tree is read, each frame once.
     const frames = [];
@@ -531,10 +541,11 @@ async function main(input, facts) {
       console: framing.console,
     };
 
-    // (f) Pages on other origins send requests to the server's data routes,
-    // one without credentials as an image or form could, one with the page's
-    // own session.
+    // (f) Pages on other origins read the change list and confirm a change,
+    // each once without credentials, as an image or a form could, and once
+    // with the views page's own session, which needs a CORS preflight.
     const session = views.session || "Bearer missing";
+    const confirmBody = JSON.stringify(input.confirm_body);
     facts.other_pages = [];
     for (const origin of [input.same_site_origin, input.cross_site_origin]) {
       const other = await openTab(dt);
@@ -544,11 +555,30 @@ async function main(input, facts) {
         other,
         fetchOutcome(input.origin + "/changes", "{ headers: { Authorization: " + JSON.stringify(session) + " } }")
       );
-      await settle(other, server);
+      const confirmPlain = await evaluate(
+        other,
+        fetchOutcome(input.origin + "/changes/confirm", "{ method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain' }, body: " + confirmBody + " }")
+      );
+      const confirmWithSession = await evaluate(
+        other,
+        fetchOutcome(
+          input.origin + "/changes/confirm",
+          "{ method: 'POST', headers: { Authorization: " + JSON.stringify(session) + ", 'Content-Type': 'application/json' }, body: " + confirmBody + " }"
+        )
+      );
+      // Two reads and two confirms, and a preflight for each one that carries the session.
+      const settled =
+        (await settle(other, to(input.origin, "GET", "/changes"), 2)) &&
+        (await settle(other, to(input.origin, "OPTIONS", "/changes"), 1)) &&
+        (await settle(other, to(input.origin, "POST", "/changes/confirm"), 2)) &&
+        (await settle(other, to(input.origin, "OPTIONS", "/changes/confirm"), 1));
       facts.other_pages.push({
         origin,
         without_credentials: plain,
         with_session: withSession,
+        confirm_without_credentials: confirmPlain,
+        confirm_with_session: confirmWithSession,
+        requests_settled: settled,
         requests: other.requests.filter(server),
         console: other.console,
       });
@@ -591,7 +621,7 @@ async function main(input, facts) {
     const shownAfterReload = views.requests.slice(beforeReload).map((r) => r.id);
     const probeURL = input.origin + "/change-updates?since=after-reload";
     const status = await evaluate(views, "fetch(" + JSON.stringify(probeURL) + ").then((r) => r.status, (e) => 'refused: ' + e.message)");
-    await settle(views, (r) => r.url === probeURL);
+    await settle(views, (r) => r.url === probeURL, 1);
     facts.reload = {
       signed_out_text: signedOut.value || "",
       signed_out_timed_out: signedOut.timed_out,

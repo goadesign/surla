@@ -10,7 +10,9 @@
 // The test starts a headless browser with a throwaway profile inside its own
 // temporary directory, never the user's browser, profile, windows or tabs
 // (real_browser_test.go). Set SURLA_TEST_BROWSER to the browser's executable
-// when it is not installed in a well-known location.
+// when it is not installed in a well-known location. It drives the browser
+// with browser_harness.cjs, which needs Node 22 or newer for its built-in
+// WebSocket client; with an older Node the test skips.
 package project
 
 import (
@@ -36,6 +38,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	gensurla "github.com/goadesign/surla/gen/surla"
 	"github.com/goadesign/surla/internal/controlplane"
 	"github.com/goadesign/surla/internal/testmodule"
 )
@@ -60,6 +63,9 @@ type (
 		// the key of its flow whose row of steps is wider than the page.
 		StoryChangeID string `json:"story_change_id"`
 		StoryFlow     string `json:"story_flow"`
+		// ConfirmBody is a confirm_intent body that the user's session would
+		// have the server accept; pages on other origins send it.
+		ConfirmBody string `json:"confirm_body"`
 	}
 
 	// browserFacts is everything browser_harness.cjs observed in the browser.
@@ -184,9 +190,16 @@ type (
 		WithoutCredentials string `json:"without_credentials"`
 		// WithSession is what the page saw of a read carrying the views
 		// page's session.
-		WithSession string            `json:"with_session"`
-		Requests    []observedRequest `json:"requests"`
-		Console     []string          `json:"console"`
+		WithSession string `json:"with_session"`
+		// ConfirmWithoutCredentials and ConfirmWithSession are what the
+		// page saw of the same two attempts to confirm a change.
+		ConfirmWithoutCredentials string `json:"confirm_without_credentials"`
+		ConfirmWithSession        string `json:"confirm_with_session"`
+		// RequestsSettled says every expected request, preflights included,
+		// was reported and answered or failed.
+		RequestsSettled bool              `json:"requests_settled"`
+		Requests        []observedRequest `json:"requests"`
+		Console         []string          `json:"console"`
 	}
 
 	// storyFacts is how the browser laid out a row of Story steps wider than
@@ -274,13 +287,18 @@ func TestViewsPageInARealBrowser(t *testing.T) {
 	if err != nil {
 		missingPageTool(t, "node is required to drive the browser through its DevTools protocol")
 	}
+	skipWithoutNodeWebSocket(t, node)
 	harness, err := filepath.Abs("../../ui/checkpoint/testing/browser_harness.cjs")
 	require.NoError(t, err)
 
 	vp := startViewsProject(t, controlplane.Options{WorkspaceDir: longStoryWorkspace(t)})
 	origin := vp.state.Origin()
 	guide := vp.agent(t, "guide")
-	proposeChange(t, origin, guide, "chg-refunds", "")
+	target := proposeChange(t, origin, guide, "chg-refunds", "")
+	confirmBody, err := gensurla.EncodeConfirmIntentPayload(&gensurla.ConfirmIntentPayload{
+		ChangeID: target.ChangeID, RequestRevision: target.RequestRevision, Answers: map[string]string{}, Examples: target.Examples,
+	})
+	require.NoError(t, err)
 	proposeChange(t, origin, guide, "chg-invoices", "")
 	proposeChange(t, origin, guide, "chg-story", evaluateStory(t, origin, guide))
 	changeIDs := []string{"chg-refunds", "chg-invoices", "chg-story"}
@@ -300,7 +318,9 @@ func TestViewsPageInARealBrowser(t *testing.T) {
 		ChangeIDs:       changeIDs,
 		StoryChangeID:   "chg-story",
 		StoryFlow:       longStoryFlow,
+		ConfirmBody:     string(confirmBody),
 	})
+	targetAfter := readChange(t, origin, guide, target.ChangeID)
 	t.Logf("browser: %s (DevTools protocol %s); listening after %s, scenario took %s",
 		facts.Browser.Product, facts.Browser.Protocol, listening.Sub(started).Round(time.Millisecond), time.Since(listening).Round(time.Millisecond))
 
@@ -413,9 +433,13 @@ func TestViewsPageInARealBrowser(t *testing.T) {
 		assert.True(t, facts.Views.SessionSeen, "the views page's session was not captured for the other origins to try")
 		require.Len(t, facts.OtherPages, len(marks))
 		for _, page := range facts.OtherPages {
+			assert.True(t, page.RequestsSettled, "the requests from %s did not settle: %+v", page.Origin, page.Requests)
 			assert.Equal(t, "answered: opaque 0", page.WithoutCredentials, "what %s could see of its read", page.Origin)
 			assert.True(t, strings.HasPrefix(page.WithSession, "refused: TypeError"), "what %s could see of its read with the session: %s", page.Origin, page.WithSession)
-			reached, refusedOnMark := 0, 0
+			assert.Equal(t, "answered: opaque 0", page.ConfirmWithoutCredentials, "what %s could see of its confirm", page.Origin)
+			assert.True(t, strings.HasPrefix(page.ConfirmWithSession, "refused: TypeError"), "what %s could see of its confirm with the session: %s", page.Origin, page.ConfirmWithSession)
+			assert.Len(t, requestsTo(page.Requests, http.MethodPost, "/changes/confirm"), 2, "the confirms %s sent", page.Origin)
+			reached, refusedOnMark, confirmRefused := 0, 0, 0
 			for _, r := range page.Requests {
 				if r.SentHeaders == nil {
 					assert.NotEmpty(t, r.Failure, "%s %s from %s was neither sent nor failed", r.Method, r.URL, page.Origin)
@@ -426,13 +450,22 @@ func TestViewsPageInARealBrowser(t *testing.T) {
 				if _, ok := r.SentHeaders["origin"]; !ok && r.Status == http.StatusForbidden {
 					refusedOnMark++
 				}
+				if r.Method == http.MethodPost && pathOf(r.URL) == "/changes/confirm" && r.Status == http.StatusForbidden {
+					confirmRefused++
+				}
 				assert.Equal(t, marks[page.Origin], r.SentHeaders["sec-fetch-site"], "Sec-Fetch-Site from %s: %s %s", page.Origin, r.Method, r.URL)
 				assert.Equal(t, http.StatusForbidden, r.Status, "the server's answer to %s %s from %s", r.Method, r.URL, page.Origin)
 				t.Logf("from %s: %s %s (%s) -> %d sec-fetch-site=%q origin=%q failure=%q", page.Origin, r.Method, pathOf(r.URL), r.Type, r.Status, r.SentHeaders["sec-fetch-site"], r.SentHeaders["origin"], r.Failure)
 			}
 			assert.Positive(t, reached, "no request from %s reached the server", page.Origin)
 			assert.Positive(t, refusedOnMark, "no request from %s without an Origin header was refused on its mark alone", page.Origin)
+			assert.Positive(t, confirmRefused, "no confirm from %s reached the server and was refused", page.Origin)
 		}
+		assert.Equal(t, controlplane.StatusNeedsConfirmation, target.Status, "the targeted change's status before")
+		assert.Equal(t, controlplane.StatusNeedsConfirmation, targetAfter.Status, "the targeted change's saved status after the other origins tried to confirm it")
+		assert.Equal(t, target.RequestRevision, targetAfter.RequestRevision, "the targeted change's saved request_revision")
+		assert.Nil(t, targetAfter.ConfirmedBy, "the targeted change records a confirmation")
+		t.Logf("targeted change %s: status %s, request_revision %s before and after", target.ChangeID, targetAfter.Status, targetAfter.RequestRevision)
 	})
 
 	t.Run("g a reload ends the session", func(t *testing.T) {
@@ -472,10 +505,26 @@ func TestViewsPageInARealBrowser(t *testing.T) {
 	})
 }
 
+// skipWithoutNodeWebSocket skips the test when node is older than 22, the
+// first release whose built-in WebSocket client browser_harness.cjs uses.
+func skipWithoutNodeWebSocket(t *testing.T, node string) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, node, "--version").Output()
+	require.NoError(t, err)
+	version := strings.TrimSpace(string(out))
+	major, err := strconv.Atoi(strings.SplitN(strings.TrimPrefix(version, "v"), ".", 2)[0])
+	require.NoError(t, err, "node --version printed %q", version)
+	if major < 22 {
+		t.Skipf("the browser harness needs Node 22 or newer for its built-in WebSocket; %s is %s", node, version)
+	}
+}
+
 // proposeChange saves change id through the guide's credential, as the
-// guide agent does. A non-empty storyOp adopts that succeeded Story
-// evaluation into the change.
-func proposeChange(t *testing.T, origin, credential, id, storyOp string) {
+// guide agent does, and returns the saved card. A non-empty storyOp adopts
+// that succeeded Story evaluation into the change.
+func proposeChange(t *testing.T, origin, credential, id, storyOp string) *gensurla.ChangeCardResult {
 	t.Helper()
 	payload := map[string]any{
 		"change_id": id,
@@ -505,6 +554,27 @@ func proposeChange(t *testing.T, origin, credential, id, storyOp string) {
 	require.NoError(t, err)
 	require.NoError(t, resp.Body.Close())
 	require.Equal(t, http.StatusOK, resp.StatusCode, "proposing %s: %s", id, answer)
+	card, err := gensurla.DecodeChangeCardResult(answer)
+	require.NoError(t, err)
+	return card
+}
+
+// readChange reads change id's saved card with the guide's credential.
+func readChange(t *testing.T, origin, credential, id string) *gensurla.ChangeCardResult {
+	t.Helper()
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, origin+"/changes/"+url.PathEscape(id), nil)
+	require.NoError(t, err)
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Authorization", "Bearer "+credential)
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	answer, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	require.NoError(t, resp.Body.Close())
+	require.Equal(t, http.StatusOK, resp.StatusCode, "reading %s: %s", id, answer)
+	card, err := gensurla.DecodeChangeCardResult(answer)
+	require.NoError(t, err)
+	return card
 }
 
 // longStoryWorkspace writes a Goa design workspace whose Story has one flow
