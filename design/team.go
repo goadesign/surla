@@ -52,7 +52,7 @@ func teamMethods() {
 	Method("start_team_agents", func() {
 		Description("Ask the project's existing team-start owner to prepare the registered roles and open the Chorus launcher when a listed role is not running. Only the user may call it. It has the same bounded server-owned lifetime and dialog, space and availability refusals as the management team-start operation.")
 		Result(ProjectTeam)
-		Error("ambiguous_space", TeamSpaceConflict, "Several spaces match the project; choose one before retrying.")
+		Error("ambiguous_space", ErrorResult, "Several spaces match the project; close the duplicates before starting agents again.")
 		Error("window_busy", ErrorResult, "Close the open Herdr dialog before starting agents.")
 		Error("team_unavailable", ErrorResult, "The project team could not be prepared.")
 		HTTP(func() {

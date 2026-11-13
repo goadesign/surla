@@ -5,10 +5,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
 
+	genproject "github.com/goadesign/surla/gen/project"
 	gensurla "github.com/goadesign/surla/gen/surla"
 	"github.com/goadesign/surla/internal/designeval"
 	"github.com/stretchr/testify/assert"
@@ -70,7 +72,7 @@ func TestBuildTeamOutcomeUsesTypedConditions(t *testing.T) {
 	}{
 		{name: "ready", kind: gensurla.TeamKindReady},
 		{name: "window busy", err: gensurla.MakeWindowBusy(errors.New(private)), kind: gensurla.TeamKindWindowBusy},
-		{name: "ambiguous", err: &gensurla.TeamSpaceConflict{Name: "ambiguous_space", Count: 3}, kind: gensurla.TeamKindAmbiguousSpace},
+		{name: "ambiguous", err: fmt.Errorf("%s: %w", private, &genproject.TeamSpaceConflict{Name: "ambiguous_space", Count: 3}), kind: gensurla.TeamKindAmbiguousSpace},
 		{name: "unavailable", err: gensurla.MakeTeamUnavailable(errors.New(private)), kind: gensurla.TeamKindUnavailable},
 		{name: "unexpected failure", err: errors.New(private), kind: gensurla.TeamKindUnavailable},
 	}
@@ -88,6 +90,7 @@ func TestBuildTeamOutcomeUsesTypedConditions(t *testing.T) {
 			}
 			if ambiguous, ok := outcome.AsAmbiguousSpace(); ok {
 				assert.Equal(t, 3, ambiguous.Count)
+				assert.Equal(t, "Close the duplicate Herdr spaces, then start the agents.", string(ambiguous.Step))
 				step = ambiguous.Step
 			}
 			if unavailable, ok := outcome.AsUnavailable(); ok {

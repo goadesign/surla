@@ -53,7 +53,7 @@ var _ = Service("project", func() {
 	Method("ensure_team", func() {
 		Description("The CLI asks the project server to ensure its team, guide credential, Herdr space and atomic launcher roster, then open the launcher only when an agent is missing. Accepted work has a bounded server-owned lifetime independent of client disconnection. Only the server management credential may call this operation; it is never an MCP tool.")
 		Result(ProjectTeam)
-		Error("ambiguous_space", TeamSpaceConflict, "Several local spaces match the team name and folder; choose one before retrying.")
+		Error("ambiguous_space", TeamSpaceConflict, "Several local spaces match the team name and folder; close the duplicates before starting agents again.")
 		Error("window_busy", ErrorResult, "Another Herdr dialog is open; close it and run surla again.")
 		Error("team_unavailable", ErrorResult, "A bounded Herdr operation or roster write failed; run surla again.")
 		HTTP(func() {

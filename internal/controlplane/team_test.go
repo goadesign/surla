@@ -4,6 +4,7 @@ package controlplane
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -13,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	genproject "github.com/goadesign/surla/gen/project"
 	gensurla "github.com/goadesign/surla/gen/surla"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -118,6 +120,32 @@ func TestTeamUserTransport(t *testing.T) {
 			assert.Equal(t, 400, response.Code)
 		})
 	}
+}
+
+// TestTeamUserStartConflictTransport maps the owner's numeric conflict into the
+// ordinary user error with one actionable suffix, never peer-authored text.
+func TestTeamUserStartConflictTransport(t *testing.T) {
+	f := &teamServiceFixture{start: func(context.Context) (*gensurla.ProjectTeam, error) {
+		return nil, fmt.Errorf("private peer output: %w", &genproject.TeamSpaceConflict{
+			Name: "ambiguous_space", Count: 2,
+		})
+	}}
+	cp := newControlPlane(t, Options{Team: &TeamBinding{Owner: "owner", Service: f}})
+	handler := NewHTTPHandler(cp, func(*http.Request) (Principal, error) {
+		return Principal{ID: "owner", Kind: CallerUser}, nil
+	})
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/team/agents", nil))
+	assert.Equal(t, http.StatusConflict, response.Code, response.Body.String())
+	var body struct {
+		Name    string `json:"name"`
+		Message string `json:"message"`
+	}
+	require.NoError(t, json.Unmarshal(response.Body.Bytes(), &body))
+	assert.Equal(t, "ambiguous_space", body.Name)
+	assert.Equal(t, "2 Herdr spaces match this project. Close the duplicate Herdr spaces, then start the agents.", body.Message)
+	assert.True(t, strings.HasSuffix(body.Message, duplicateTeamSpacesStep()))
+	assert.NotContains(t, response.Body.String(), "private peer output")
 }
 
 // TestTeamAgentChangeListDescription exposes only readable facts to an agent;

@@ -2619,6 +2619,25 @@ type ShowTeamPaneForbiddenResponseBody struct {
 	Fault *bool `form:"fault,omitempty" json:"fault,omitempty" xml:"fault,omitempty"`
 }
 
+// StartTeamAgentsAmbiguousSpaceResponseBody is the type of the "surla" service
+// "start_team_agents" endpoint HTTP response body for the "ambiguous_space"
+// error.
+type StartTeamAgentsAmbiguousSpaceResponseBody struct {
+	// Name is the name of this class of errors.
+	Name *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID *string `form:"id,omitempty" json:"id,omitempty" xml:"id,omitempty"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message *string `form:"message,omitempty" json:"message,omitempty" xml:"message,omitempty"`
+	// Is the error temporary?
+	Temporary *bool `form:"temporary,omitempty" json:"temporary,omitempty" xml:"temporary,omitempty"`
+	// Is the error a timeout?
+	Timeout *bool `form:"timeout,omitempty" json:"timeout,omitempty" xml:"timeout,omitempty"`
+	// Is the error a server-side fault?
+	Fault *bool `form:"fault,omitempty" json:"fault,omitempty" xml:"fault,omitempty"`
+}
+
 // StartTeamAgentsWindowBusyResponseBody is the type of the "surla" service
 // "start_team_agents" endpoint HTTP response body for the "window_busy" error.
 type StartTeamAgentsWindowBusyResponseBody struct {
@@ -2635,16 +2654,6 @@ type StartTeamAgentsWindowBusyResponseBody struct {
 	Timeout *bool `form:"timeout,omitempty" json:"timeout,omitempty" xml:"timeout,omitempty"`
 	// Is the error a server-side fault?
 	Fault *bool `form:"fault,omitempty" json:"fault,omitempty" xml:"fault,omitempty"`
-}
-
-// StartTeamAgentsAmbiguousSpaceResponseBody is the type of the "surla" service
-// "start_team_agents" endpoint HTTP response body for the "ambiguous_space"
-// error.
-type StartTeamAgentsAmbiguousSpaceResponseBody struct {
-	// Error name.
-	Name *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
-	// Number of local spaces matching the team's name and physical folder.
-	Count *int `form:"count,omitempty" json:"count,omitempty" xml:"count,omitempty"`
 }
 
 // StartTeamAgentsTeamUnavailableResponseBody is the type of the "surla"
@@ -8714,9 +8723,9 @@ func NewStartTeamAgentsProjectTeamOK(body *StartTeamAgentsResponseBody) *surla.P
 	return v
 }
 
-// NewStartTeamAgentsWindowBusy builds a surla service start_team_agents
-// endpoint window_busy error.
-func NewStartTeamAgentsWindowBusy(body *StartTeamAgentsWindowBusyResponseBody) *goa.ServiceError {
+// NewStartTeamAgentsAmbiguousSpace builds a surla service start_team_agents
+// endpoint ambiguous_space error.
+func NewStartTeamAgentsAmbiguousSpace(body *StartTeamAgentsAmbiguousSpaceResponseBody) *goa.ServiceError {
 	v := &goa.ServiceError{
 		Name:      *body.Name,
 		ID:        *body.ID,
@@ -8729,12 +8738,16 @@ func NewStartTeamAgentsWindowBusy(body *StartTeamAgentsWindowBusyResponseBody) *
 	return v
 }
 
-// NewStartTeamAgentsAmbiguousSpace builds a surla service start_team_agents
-// endpoint ambiguous_space error.
-func NewStartTeamAgentsAmbiguousSpace(body *StartTeamAgentsAmbiguousSpaceResponseBody) *surla.TeamSpaceConflict {
-	v := &surla.TeamSpaceConflict{
-		Name:  *body.Name,
-		Count: *body.Count,
+// NewStartTeamAgentsWindowBusy builds a surla service start_team_agents
+// endpoint window_busy error.
+func NewStartTeamAgentsWindowBusy(body *StartTeamAgentsWindowBusyResponseBody) *goa.ServiceError {
+	v := &goa.ServiceError{
+		Name:      *body.Name,
+		ID:        *body.ID,
+		Message:   *body.Message,
+		Temporary: *body.Temporary,
+		Timeout:   *body.Timeout,
+		Fault:     *body.Fault,
 	}
 
 	return v
@@ -13034,9 +13047,9 @@ func ValidateShowTeamPaneForbiddenResponseBody(body *ShowTeamPaneForbiddenRespon
 	return
 }
 
-// ValidateStartTeamAgentsWindowBusyResponseBody runs the validations defined
-// on StartTeamAgentsWindowBusyResponseBody
-func ValidateStartTeamAgentsWindowBusyResponseBody(body *StartTeamAgentsWindowBusyResponseBody) (err error) {
+// ValidateStartTeamAgentsAmbiguousSpaceResponseBody runs the validations
+// defined on StartTeamAgentsAmbiguousSpaceResponseBody
+func ValidateStartTeamAgentsAmbiguousSpaceResponseBody(body *StartTeamAgentsAmbiguousSpaceResponseBody) (err error) {
 	if body.Name == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
 	}
@@ -13058,19 +13071,26 @@ func ValidateStartTeamAgentsWindowBusyResponseBody(body *StartTeamAgentsWindowBu
 	return
 }
 
-// ValidateStartTeamAgentsAmbiguousSpaceResponseBody runs the validations
-// defined on StartTeamAgentsAmbiguousSpaceResponseBody
-func ValidateStartTeamAgentsAmbiguousSpaceResponseBody(body *StartTeamAgentsAmbiguousSpaceResponseBody) (err error) {
+// ValidateStartTeamAgentsWindowBusyResponseBody runs the validations defined
+// on StartTeamAgentsWindowBusyResponseBody
+func ValidateStartTeamAgentsWindowBusyResponseBody(body *StartTeamAgentsWindowBusyResponseBody) (err error) {
 	if body.Name == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
 	}
-	if body.Count == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("count", "body"))
+	if body.ID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("id", "body"))
 	}
-	if body.Count != nil {
-		if *body.Count < 2 {
-			err = goa.MergeErrors(err, goa.InvalidRangeError("body.count", *body.Count, 2, true))
-		}
+	if body.Message == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("message", "body"))
+	}
+	if body.Temporary == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("temporary", "body"))
+	}
+	if body.Timeout == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("timeout", "body"))
+	}
+	if body.Fault == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("fault", "body"))
 	}
 	return
 }

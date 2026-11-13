@@ -2619,6 +2619,25 @@ type ShowTeamPaneForbiddenResponseBody struct {
 	Fault bool `form:"fault" json:"fault" xml:"fault"`
 }
 
+// StartTeamAgentsAmbiguousSpaceResponseBody is the type of the "surla" service
+// "start_team_agents" endpoint HTTP response body for the "ambiguous_space"
+// error.
+type StartTeamAgentsAmbiguousSpaceResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
 // StartTeamAgentsWindowBusyResponseBody is the type of the "surla" service
 // "start_team_agents" endpoint HTTP response body for the "window_busy" error.
 type StartTeamAgentsWindowBusyResponseBody struct {
@@ -2635,16 +2654,6 @@ type StartTeamAgentsWindowBusyResponseBody struct {
 	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
 	// Is the error a server-side fault?
 	Fault bool `form:"fault" json:"fault" xml:"fault"`
-}
-
-// StartTeamAgentsAmbiguousSpaceResponseBody is the type of the "surla" service
-// "start_team_agents" endpoint HTTP response body for the "ambiguous_space"
-// error.
-type StartTeamAgentsAmbiguousSpaceResponseBody struct {
-	// Error name.
-	Name string `form:"name" json:"name" xml:"name"`
-	// Number of local spaces matching the team's name and physical folder.
-	Count int `form:"count" json:"count" xml:"count"`
 }
 
 // StartTeamAgentsTeamUnavailableResponseBody is the type of the "surla"
@@ -8854,10 +8863,10 @@ func NewShowTeamPaneForbiddenResponseBody(res *goa.ServiceError) *ShowTeamPaneFo
 	return body
 }
 
-// NewStartTeamAgentsWindowBusyResponseBody builds the HTTP response body from
-// the result of the "start_team_agents" endpoint of the "surla" service.
-func NewStartTeamAgentsWindowBusyResponseBody(res *goa.ServiceError) *StartTeamAgentsWindowBusyResponseBody {
-	body := &StartTeamAgentsWindowBusyResponseBody{
+// NewStartTeamAgentsAmbiguousSpaceResponseBody builds the HTTP response body
+// from the result of the "start_team_agents" endpoint of the "surla" service.
+func NewStartTeamAgentsAmbiguousSpaceResponseBody(res *goa.ServiceError) *StartTeamAgentsAmbiguousSpaceResponseBody {
+	body := &StartTeamAgentsAmbiguousSpaceResponseBody{
 		Name:      res.Name,
 		ID:        res.ID,
 		Message:   res.Message,
@@ -8868,12 +8877,16 @@ func NewStartTeamAgentsWindowBusyResponseBody(res *goa.ServiceError) *StartTeamA
 	return body
 }
 
-// NewStartTeamAgentsAmbiguousSpaceResponseBody builds the HTTP response body
-// from the result of the "start_team_agents" endpoint of the "surla" service.
-func NewStartTeamAgentsAmbiguousSpaceResponseBody(res *surla.TeamSpaceConflict) *StartTeamAgentsAmbiguousSpaceResponseBody {
-	body := &StartTeamAgentsAmbiguousSpaceResponseBody{
-		Name:  res.Name,
-		Count: res.Count,
+// NewStartTeamAgentsWindowBusyResponseBody builds the HTTP response body from
+// the result of the "start_team_agents" endpoint of the "surla" service.
+func NewStartTeamAgentsWindowBusyResponseBody(res *goa.ServiceError) *StartTeamAgentsWindowBusyResponseBody {
+	body := &StartTeamAgentsWindowBusyResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
 	}
 	return body
 }

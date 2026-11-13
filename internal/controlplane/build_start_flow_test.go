@@ -15,6 +15,7 @@ import (
 	"testing/synctest"
 	"time"
 
+	genproject "github.com/goadesign/surla/gen/project"
 	gensurla "github.com/goadesign/surla/gen/surla"
 	"github.com/goadesign/surla/internal/designeval"
 	"github.com/goadesign/surla/internal/scaffold"
@@ -276,7 +277,7 @@ func TestStartBuildTeamWarningsKeepTheSavedBuild(t *testing.T) {
 		kind gensurla.TeamKind
 	}{
 		{"busy", gensurla.MakeWindowBusy(errors.New("fixture busy")), gensurla.TeamKindWindowBusy},
-		{"ambiguous", &gensurla.TeamSpaceConflict{Name: "ambiguous_space", Count: 2}, gensurla.TeamKindAmbiguousSpace},
+		{"ambiguous", fmt.Errorf("fixture: %w", &genproject.TeamSpaceConflict{Name: "ambiguous_space", Count: 2}), gensurla.TeamKindAmbiguousSpace},
 		{"unavailable", gensurla.MakeTeamUnavailable(errors.New("fixture unavailable")), gensurla.TeamKindUnavailable},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -286,6 +287,10 @@ func TestStartBuildTeamWarningsKeepTheSavedBuild(t *testing.T) {
 			result, err := cp.StartBuild(asCaller("alice@example.com", CallerUser), &gensurla.StartBuildPayload{ChangeID: "chg", RequestRevision: card.RequestRevision})
 			require.NoError(t, err)
 			assert.Equal(t, tc.kind, result.Team.Kind())
+			if ambiguous, ok := result.Team.AsAmbiguousSpace(); ok {
+				assert.Equal(t, 2, ambiguous.Count)
+				assert.Equal(t, "Close the duplicate Herdr spaces, then start the agents.", string(ambiguous.Step))
+			}
 			assert.Equal(t, []string{"register", "start"}, f.calls)
 			assert.Equal(t, result.Build, mustStartedBuild(t, cp, asCaller("alice@example.com", CallerUser), "chg"))
 			assert.NotContains(t, string(readBuildFile(t, cp, "chg")), "dialog")

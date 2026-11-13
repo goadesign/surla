@@ -532,7 +532,7 @@ func (c *Client) ShowTeamPane(ctx context.Context, p *ShowTeamPanePayload) (err 
 // StartTeamAgents calls the "start_team_agents" endpoint of the "surla"
 // service.
 // StartTeamAgents may return the following errors:
-//   - "ambiguous_space" (type *TeamSpaceConflict): Several spaces match the project; choose one before retrying.
+//   - "ambiguous_space" (type *goa.ServiceError): Several spaces match the project; close the duplicates before starting agents again.
 //   - "window_busy" (type *goa.ServiceError): Close the open Herdr dialog before starting agents.
 //   - "team_unavailable" (type *goa.ServiceError): The project team could not be prepared.
 //   - "forbidden" (type *goa.ServiceError): The authenticated caller may not perform this operation or does not own the resource.
