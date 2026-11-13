@@ -41,14 +41,21 @@ func (c *ControlPlane) HandOverModelSettings(
 	_, span := c.tracer("surla/controlplane").Start(ctx, "surla.controlplane.hand_over_model_settings")
 	defer span.End()
 
+	// Providers are checked in table order, so a request refused for both
+	// always names the same one.
+	handed := handedOver(p)
 	arrived := map[string]modelsettings.Settings{}
-	for name, values := range handedOver(p) {
-		settings, err := modelsettings.New(name, values)
+	for _, provider := range modelsettings.Providers() {
+		values, present := handed[provider.Name]
+		if !present {
+			continue
+		}
+		settings, err := modelsettings.New(provider.Name, values)
 		if err != nil {
-			span.AddEvent("model_settings_refused", trace.WithAttributes(attribute.String("surla.model.provider", name)))
+			span.AddEvent("model_settings_refused", trace.WithAttributes(attribute.String("surla.model.provider", provider.Name)))
 			return nil, gensurla.MakeUnprocessable(err)
 		}
-		arrived[name] = settings
+		arrived[provider.Name] = settings
 	}
 
 	c.modelMu.Lock()
