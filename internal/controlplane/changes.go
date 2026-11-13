@@ -16,6 +16,7 @@ import (
 
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 
 	gensurla "github.com/goadesign/surla/gen/surla"
 	"github.com/goadesign/surla/internal/verifyrun"
@@ -48,10 +49,8 @@ func (c *ControlPlane) ListChanges(ctx context.Context) (*gensurla.ChangeList, e
 	}
 	_, span := c.tracer("surla/controlplane").Start(ctx, "surla.controlplane.list_changes")
 	defer span.End()
-	list, err := c.changeList(principal.ID)
+	list, err := c.changeList(span, principal.ID)
 	if err != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "list change cards")
 		return nil, err
 	}
 	span.SetAttributes(attribute.Int("surla.change_count", len(list.Changes)))
@@ -80,10 +79,8 @@ func (c *ControlPlane) WaitForChanges(
 	ticker := time.NewTicker(poll)
 	defer ticker.Stop()
 	for {
-		list, err := c.changeList(principal.ID)
+		list, err := c.changeList(span, principal.ID)
 		if err != nil {
-			span.RecordError(err)
-			span.SetStatus(codes.Error, "list change cards")
 			return nil, err
 		}
 		if list.Version != p.Since {
@@ -103,15 +100,30 @@ func (c *ControlPlane) WaitForChanges(
 }
 
 // changeList reads owner's saved cards and, when verification is configured,
-// each card's newest run, then orders them by saved time and derives the
-// list's version from its encoded items.
-func (c *ControlPlane) changeList(owner string) (*gensurla.ChangeList, error) {
-	runsDir := c.effectiveRunsDir()
+// the newest run of each of owner's changes in one pass over the runs
+// directory, then orders the cards by saved time and derives the list's
+// version from its encoded items. Card files are read under the control
+// plane's read lock; run records, which verification processes write
+// without that lock, are read after it is released. When a record cannot be
+// read, the cause is recorded on span and the returned error names only
+// which kind of record failed.
+func (c *ControlPlane) changeList(span trace.Span, owner string) (*gensurla.ChangeList, error) {
 	c.mu.RLock()
-	defer c.mu.RUnlock()
 	records, err := c.cards.all()
+	c.mu.RUnlock()
 	if err != nil {
-		return nil, err
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "read change cards")
+		return nil, errors.New("list changes: saved change cards could not be read")
+	}
+	var latest map[string]verifyrun.Run
+	if runsDir := c.effectiveRunsDir(); runsDir != "" {
+		latest, err = verifyrun.LatestByChange(runsDir, owner)
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, "read verification runs")
+			return nil, errors.New("list changes: saved verification records could not be read")
+		}
 	}
 	records = slices.DeleteFunc(records, func(r storedChangeCard) bool { return r.owner != owner })
 	slices.SortFunc(records, func(a, b storedChangeCard) int {
@@ -129,29 +141,26 @@ func (c *ControlPlane) changeList(owner string) (*gensurla.ChangeList, error) {
 			RequestRevision: record.card.RequestRevision,
 			SavedAt:         record.savedAt.UTC().Format(time.RFC3339Nano),
 		}
-		if runsDir != "" {
-			runs, err := verifyrun.List(runsDir, owner, record.card.ChangeID)
-			if err != nil {
-				return nil, fmt.Errorf("list changes: saved verification records of %q could not be read", record.card.ChangeID)
-			}
-			if len(runs) > 0 {
-				item.LatestVerification = latestVerification(runs[0])
-			}
+		if run, ok := latest[record.card.ChangeID]; ok {
+			item.LatestVerification = latestVerification(run)
 		}
 		items = append(items, item)
 	}
 	raw, err := json.Marshal(items)
 	if err != nil {
-		return nil, fmt.Errorf("encode change list version: %w", err)
+		err = fmt.Errorf("encode change list version: %w", err)
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "encode change list")
+		return nil, err
 	}
 	sum := sha256.Sum256(raw)
 	return &gensurla.ChangeList{Changes: items, Version: hex.EncodeToString(sum[:])}, nil
 }
 
 // latestVerification reduces a run to the state the change list shows; a
-// completed run reports its report's verdict. verifyrun reports exactly the
-// three kinds below; any other leaves state empty, which the generated
-// result encoder refuses.
+// completed run reports its report's verdict. It relies on verifyrun
+// reporting only the three kinds below: no encoder between here and the
+// caller checks the state against the design's values.
 func latestVerification(run verifyrun.Run) *gensurla.LatestVerificationItem {
 	var state string
 	switch run.State.Kind {

@@ -15,6 +15,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/codes"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 
@@ -71,6 +72,42 @@ func TestListChangesOrdersOwnersCardsBySavedTime(t *testing.T) {
 	again, err := cp.ListChanges(alice)
 	require.NoError(t, err)
 	assert.Equal(t, relisted.Version, again.Version, "an unchanged list keeps its version")
+}
+
+// TestListChangesRecordsWhyARunCouldNotBeRead damages one saved run and
+// checks that the list fails with a message naming only the kind of record
+// that could not be read, while the span keeps the cause.
+func TestListChangesRecordsWhyARunCouldNotBeRead(t *testing.T) {
+	exporter := tracetest.NewInMemoryExporter()
+	provider := sdktrace.NewTracerProvider(sdktrace.WithSyncer(exporter))
+	t.Cleanup(func() { assert.NoError(t, provider.Shutdown(context.Background())) })
+	runsDir := t.TempDir()
+	cp := newControlPlane(t, Options{TracerProvider: provider, RunsDir: runsDir})
+	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "guide", Kind: CallerGuide})
+	mustPropose(t, cp, alice, "chg-a", "Refunds up to $50 are instant.", refundAnalysis("Refunds up to $50 are instant."))
+	damaged := filepath.Join(runsDir, "33333333333333333333333333333333")
+	require.NoError(t, os.MkdirAll(damaged, 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(damaged, "request.json"), []byte(`{"secret_host_path":"/var/lib/secret`), 0o600))
+
+	_, err := cp.ListChanges(alice)
+	require.Error(t, err)
+	assert.Equal(t, "list changes: saved verification records could not be read", err.Error())
+	var listed []sdktrace.ReadOnlySpan
+	for _, span := range exporter.GetSpans().Snapshots() {
+		if span.Name() == "surla.controlplane.list_changes" {
+			listed = append(listed, span)
+		}
+	}
+	require.Len(t, listed, 1)
+	assert.Equal(t, codes.Error, listed[0].Status().Code)
+	require.Len(t, listed[0].Events(), 1)
+	var cause string
+	for _, attr := range listed[0].Events()[0].Attributes {
+		if attr.Key == "exception.message" {
+			cause = attr.Value.AsString()
+		}
+	}
+	assert.Contains(t, cause, "decode run request", "the span keeps why the record could not be read")
 }
 
 // TestSavedTimeIsOutsideTheRevision saves identical content twice and checks

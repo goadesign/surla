@@ -414,45 +414,53 @@ func List(root, owner, changeID string) ([]Run, error) {
 	if strings.TrimSpace(changeID) == "" {
 		return nil, errors.New("change_id is required")
 	}
-	entries, err := os.ReadDir(root)
-	if errors.Is(err, fs.ErrNotExist) {
-		return nil, nil
-	}
+	reqs, err := publishedRequests(root, func(req Request) bool {
+		return req.Owner == owner && req.ChangeID == changeID
+	})
 	if err != nil {
-		return nil, fmt.Errorf("read runs directory: %w", err)
+		return nil, err
 	}
-	var runs []Run
-	for _, entry := range entries {
-		if !entry.IsDir() || !runIDPattern.MatchString(entry.Name()) {
-			continue
-		}
-		dir := filepath.Join(root, entry.Name())
-		req, err := readRequest(dir)
-		if errors.Is(err, fs.ErrNotExist) {
-			continue
-		}
-		if err != nil {
-			return nil, err
-		}
-		if req.Owner != owner || req.ChangeID != changeID {
-			continue
-		}
-		state, err := readState(dir, req)
+	slices.SortFunc(reqs, newestFirst)
+	runs := make([]Run, 0, len(reqs))
+	for _, req := range reqs {
+		state, err := readState(filepath.Join(root, req.RunID), req)
 		if err != nil {
 			return nil, err
 		}
 		runs = append(runs, Run{Request: req, State: state})
 	}
-	slices.SortFunc(runs, func(a, b Run) int {
-		if !a.Request.AcceptedAt.Equal(b.Request.AcceptedAt) {
-			if a.Request.AcceptedAt.After(b.Request.AcceptedAt) {
-				return -1
-			}
-			return 1
-		}
-		return strings.Compare(a.Request.RunID, b.Request.RunID)
-	})
 	return runs, nil
+}
+
+// LatestByChange returns, keyed by change ID, the newest saved run of each of
+// owner's changes under root: the run List would return first for that
+// change. It reads root once, however many changes owner has, so a caller
+// listing every change does not scan root per change. Missing root, runs
+// without request.json, and damaged requests behave as in List. Only the
+// returned runs have their lock, result.json, or report inspected.
+func LatestByChange(root, owner string) (map[string]Run, error) {
+	if strings.TrimSpace(owner) == "" {
+		return nil, errors.New("run owner is required")
+	}
+	reqs, err := publishedRequests(root, func(req Request) bool { return req.Owner == owner })
+	if err != nil {
+		return nil, err
+	}
+	newest := make(map[string]Request)
+	for _, req := range reqs {
+		if current, ok := newest[req.ChangeID]; !ok || newestFirst(req, current) < 0 {
+			newest[req.ChangeID] = req
+		}
+	}
+	latest := make(map[string]Run, len(newest))
+	for changeID, req := range newest {
+		state, err := readState(filepath.Join(root, req.RunID), req)
+		if err != nil {
+			return nil, err
+		}
+		latest[changeID] = Run{Request: req, State: state}
+	}
+	return latest, nil
 }
 
 // LoadReport reads the report saved under reportDir with digest, such as a
@@ -699,4 +707,44 @@ func stopOnRequest(pgid int, timeout time.Duration, signals <-chan os.Signal, ex
 	case <-grace.C:
 		stopGroup(pgid)
 	}
+}
+
+// publishedRequests reads every published request.json under root, in one
+// pass, and returns those keep accepts. A missing root returns nil, nil; a
+// run directory without request.json is skipped as not yet published; any
+// other unreadable or invalid request.json fails the read.
+func publishedRequests(root string, keep func(Request) bool) ([]Request, error) {
+	entries, err := os.ReadDir(root)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("read runs directory: %w", err)
+	}
+	var reqs []Request
+	for _, entry := range entries {
+		if !entry.IsDir() || !runIDPattern.MatchString(entry.Name()) {
+			continue
+		}
+		req, err := readRequest(filepath.Join(root, entry.Name()))
+		if errors.Is(err, fs.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		if keep(req) {
+			reqs = append(reqs, req)
+		}
+	}
+	return reqs, nil
+}
+
+// newestFirst orders requests by AcceptedAt descending, tie-broken by RunID
+// ascending.
+func newestFirst(a, b Request) int {
+	if byTime := b.AcceptedAt.Compare(a.AcceptedAt); byTime != 0 {
+		return byTime
+	}
+	return strings.Compare(a.RunID, b.RunID)
 }

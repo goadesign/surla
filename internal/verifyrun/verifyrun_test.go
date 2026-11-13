@@ -465,20 +465,7 @@ func TestListFiltersByOwnerAndChangeBeforeReadingStateAndSortsDeterministically(
 	root := t.TempDir()
 	writeRun := func(t *testing.T, runID, owner, changeID string, acceptedAt time.Time, resultBody string) {
 		t.Helper()
-		dir := filepath.Join(root, runID)
-		require.NoError(t, os.MkdirAll(dir, 0o700))
-		rawReq, err := json.Marshal(Request{
-			RunID:      runID,
-			Owner:      owner,
-			ChangeID:   changeID,
-			AcceptedAt: acceptedAt,
-		})
-		require.NoError(t, err)
-		require.NoError(t, os.WriteFile(filepath.Join(dir, requestFile), rawReq, 0o600))
-		require.NoError(t, os.WriteFile(filepath.Join(dir, lockFile), nil, 0o600))
-		if resultBody != "" {
-			require.NoError(t, os.WriteFile(filepath.Join(dir, resultFile), []byte(resultBody), 0o600))
-		}
+		writeListedRun(t, root, runID, owner, changeID, acceptedAt, resultBody)
 	}
 
 	// Unaccepted directory without request.json (e.g. Start publication window) is skipped cleanly.
@@ -525,4 +512,59 @@ func TestListFiltersByOwnerAndChangeBeforeReadingStateAndSortsDeterministically(
 	require.NoError(t, os.WriteFile(filepath.Join(corruptDir, requestFile), []byte(`{}`), 0o600))
 	_, err = List(root, "alice", "chg-1")
 	require.ErrorContains(t, err, "does not match directory")
+}
+
+func TestLatestByChangeReadsEachChangesNewestRunOnly(t *testing.T) {
+	latest, err := LatestByChange(filepath.Join(t.TempDir(), "not-created-yet"), "alice")
+	require.NoError(t, err)
+	assert.Empty(t, latest, "missing root has no runs before any run is started")
+	_, err = LatestByChange(t.TempDir(), "")
+	assert.ErrorContains(t, err, "run owner is required")
+
+	root := t.TempDir()
+	okResult := `{"kind":"no_report","failure":"execution_failed","stage":"build","summary":"Stopped at build."}`
+	sameTime := time.Date(2026, 10, 31, 12, 0, 0, 100_000_000, time.UTC)
+	// chg-1's newest runs tie on time; the lower RunID wins, as in List.
+	writeListedRun(t, root, "22222222222222222222222222222222", "alice", "chg-1", sameTime, okResult)
+	writeListedRun(t, root, "11111111111111111111111111111111", "alice", "chg-1", sameTime, okResult)
+	// An older run's damaged result is never read: only newest runs are.
+	writeListedRun(t, root, "33333333333333333333333333333333", "alice", "chg-1", sameTime.Add(-time.Minute), `{corrupt-older-result`)
+	writeListedRun(t, root, "44444444444444444444444444444444", "alice", "chg-2", sameTime.Add(-time.Hour), "")
+	// Another owner's runs are left out before their state is read.
+	writeListedRun(t, root, "55555555555555555555555555555555", "bob", "chg-1", sameTime.Add(time.Hour), `{corrupt-foreign-result`)
+	require.NoError(t, os.MkdirAll(filepath.Join(root, NewRunID()), 0o700))
+
+	latest, err = LatestByChange(root, "alice")
+	require.NoError(t, err)
+	require.Len(t, latest, 2)
+	assert.Equal(t, "11111111111111111111111111111111", latest["chg-1"].Request.RunID)
+	assert.Equal(t, StateNotCompleted, latest["chg-1"].State.Kind, "the newest run's own result was read")
+	assert.Equal(t, "44444444444444444444444444444444", latest["chg-2"].Request.RunID)
+
+	corruptDir := filepath.Join(root, NewRunID())
+	require.NoError(t, os.MkdirAll(corruptDir, 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(corruptDir, requestFile), []byte(`{}`), 0o600))
+	_, err = LatestByChange(root, "alice")
+	require.ErrorContains(t, err, "does not match directory", "a damaged request fails the read rather than being left out")
+}
+
+// writeListedRun saves a run under root as Start publishes it: request.json
+// naming owner, changeID, and acceptedAt, the run's lock file, and, when
+// resultBody is not empty, result.json.
+func writeListedRun(t *testing.T, root, runID, owner, changeID string, acceptedAt time.Time, resultBody string) {
+	t.Helper()
+	dir := filepath.Join(root, runID)
+	require.NoError(t, os.MkdirAll(dir, 0o700))
+	rawReq, err := json.Marshal(Request{
+		RunID:      runID,
+		Owner:      owner,
+		ChangeID:   changeID,
+		AcceptedAt: acceptedAt,
+	})
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, requestFile), rawReq, 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, lockFile), nil, 0o600))
+	if resultBody != "" {
+		require.NoError(t, os.WriteFile(filepath.Join(dir, resultFile), []byte(resultBody), 0o600))
+	}
 }
