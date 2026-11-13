@@ -78,10 +78,17 @@ func fakePrepare(ctx context.Context, _ verify.Plan) (verify.Prepared, error) {
 	return verify.Prepared{SuiteBin: self, ArtifactFlags: []string{"--artifact", "app=/nonexistent"}}, nil
 }
 
-// fakeSuiteLive acts as `<suite> --live`: it checks that the key arrived
-// through the environment, starts a child in its group as a candidate would
-// be, and behaves according to liveFakeEnv.
+// fakeSuiteLive acts as `<suite> --live`: it writes the environment it was
+// started with to TMPDIR/suite-env, checks that the key arrived through the
+// environment, starts a child in its group as a candidate would be, and
+// behaves according to liveFakeEnv, which a test program agents wrote does
+// not receive, so it then serves.
 func fakeSuiteLive() int {
+	env := strings.Join(os.Environ(), "\n") + "\n"
+	if err := os.WriteFile(filepath.Join(os.TempDir(), "suite-env"), []byte(env), 0o600); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 2
+	}
 	if os.Getenv(suite.LiveKeyEnv) != "secret-key" {
 		fmt.Fprintln(os.Stderr, "missing live key")
 		return 2
@@ -212,6 +219,91 @@ func onlyLiveDir(t *testing.T, root string) string {
 		return err == nil && len(dirs) == 1
 	}, 30*time.Second, 20*time.Millisecond)
 	return dirs[0]
+}
+
+// TestLiveGivesTheTestProgramOnlyItsSourcesEnvironment starts a live copy
+// from an executor environment holding a variable of the server's own, both
+// providers' keys and the chosen direct provider, and reads the environment
+// the test program started with. A program agents wrote sees only PATH, its
+// TMPDIR, the live key, the model choice and the chosen provider's key; the
+// operator's evaluator also sees the server's variable and the other key.
+func TestLiveGivesTheTestProgramOnlyItsSourcesEnvironment(t *testing.T) {
+	cases := []struct {
+		name       string
+		tests      verify.TestsSource
+		sees       []string
+		doesNotSee []string
+	}{
+		{
+			name: "operator's evaluator", tests: verify.TestsEvaluator,
+			sees: []string{"SURLA_TEST_SERVER_VAR=present", "OPENAI_API_KEY=oai-k", "ANTHROPIC_API_KEY=ant-k", suite.LiveKeyEnv + "=secret-key"},
+		},
+		{
+			name: "test module agents wrote", tests: verify.TestsWritten,
+			sees: []string{
+				"PATH=" + os.Getenv("PATH"), suite.LiveKeyEnv + "=secret-key", "ANTHROPIC_API_KEY=ant-k",
+				verify.LiveModelProviderEnv + "=anthropic", verify.LiveModelNameEnv + "=claude",
+			},
+			doesNotSee: []string{"SURLA_TEST_SERVER_VAR", "OPENAI_API_KEY", liveFakeEnv, "HOME"},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv(liveFakeEnv, "ready")
+			root := t.TempDir()
+			self, err := os.Executable()
+			require.NoError(t, err)
+			env := append(os.Environ(),
+				"SURLA_TEST_SERVER_VAR=present", "ANTHROPIC_API_KEY=ant-k", "OPENAI_API_KEY=oai-k",
+				verify.LiveModelProviderEnv+"=anthropic", verify.LiveModelNameEnv+"=claude",
+			)
+
+			p, err := startLive(t.Context(), root, verify.Plan{Tests: tc.tests}, "secret-key", []string{self}, env)
+			require.NoError(t, err)
+			raw, readErr := os.ReadFile(filepath.Join(p.Dir(), liveTmpDir, "suite-env"))
+			tmp := filepath.Join(p.Dir(), liveTmpDir)
+			require.NoError(t, p.Stop())
+			require.NoError(t, readErr)
+			seen := strings.Split(strings.TrimSpace(string(raw)), "\n")
+			for _, want := range append(tc.sees, "TMPDIR="+tmp) {
+				assert.Contains(t, seen, want)
+			}
+			for _, name := range tc.doesNotSee {
+				for _, kv := range seen {
+					assert.False(t, strings.HasPrefix(kv, name+"="), "the test program sees %s", kv)
+				}
+			}
+		})
+	}
+}
+
+// TestDecodeLiveRequestRefusesAPlanWithoutADeclaredTestSource checks that a
+// live.json whose plan names no test source, or one that is not declared, is
+// refused, and that each declared source is read.
+func TestDecodeLiveRequestRefusesAPlanWithoutADeclaredTestSource(t *testing.T) {
+	cases := []struct {
+		name    string
+		body    string
+		wantErr string
+	}{
+		{name: "operator's evaluator", body: `{"plan":{"Tests":"evaluator"}}`},
+		{name: "written tests", body: `{"plan":{"Tests":"written_tests"}}`},
+		{name: "no test source", body: `{"plan":{}}`, wantErr: `decode live request: unknown test source ""`},
+		{name: "unknown test source", body: `{"plan":{"Tests":"agents"}}`, wantErr: `decode live request: unknown test source "agents"`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			require.NoError(t, os.WriteFile(filepath.Join(dir, liveRequestFile), []byte(tc.body), 0o600))
+			var req LiveRequest
+			err := decodeLiveRequest(dir, &req)
+			if tc.wantErr == "" {
+				assert.NoError(t, err)
+				return
+			}
+			assert.EqualError(t, err, tc.wantErr)
+		})
+	}
 }
 
 func TestStartLiveServesUntilStopAndThenRemovesEverything(t *testing.T) {

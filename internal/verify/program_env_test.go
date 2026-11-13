@@ -88,50 +88,73 @@ func TestProgramEnvGivesWrittenTestsOnlyTheirRunsNames(t *testing.T) {
 	}
 }
 
-// TestTestProgramSeesOnlyItsSourcesEnvironment runs a program through
-// runSuite with the environment Run gives it, and checks what the program
-// itself sees: the operator's evaluator sees a variable of the server's own
-// and a provider key, and written tests see neither, but do see their run's
-// temporary folder.
-func TestTestProgramSeesOnlyItsSourcesEnvironment(t *testing.T) {
-	t.Setenv("SURLA_TEST_SERVER_VAR", "present")
-	t.Setenv("ANTHROPIC_API_KEY", "ant-k")
+// TestRunGivesEachStepOnlyItsSourcesEnvironment runs the describe step and
+// the suite step of Run, after Prepare, with a stand-in program that writes
+// its environment to a file at each step. From a server environment holding
+// a variable of its own and both providers' keys, written tests see neither,
+// but see PATH and their run's temporary folder, at both steps; the
+// operator's evaluator sees the server's variable and keys at both steps.
+func TestRunGivesEachStepOnlyItsSourcesEnvironment(t *testing.T) {
+	server := []string{
+		"PATH=" + os.Getenv("PATH"),
+		"HOME=/Users/operator",
+		"SURLA_TEST_SERVER_VAR=present",
+		"ANTHROPIC_API_KEY=ant-k",
+		"OPENAI_API_KEY=oai-k",
+	}
 	cases := []struct {
 		name       string
 		tests      TestsSource
 		sees       []string
 		doesNotSee []string
 	}{
-		{name: "operator's evaluator", tests: TestsEvaluator, sees: []string{"SURLA_TEST_SERVER_VAR=present", "ANTHROPIC_API_KEY=ant-k"}},
-		{name: "written tests", tests: TestsWritten, doesNotSee: []string{"SURLA_TEST_SERVER_VAR", "ANTHROPIC_API_KEY"}},
+		{
+			name: "operator's evaluator", tests: TestsEvaluator,
+			sees: []string{"SURLA_TEST_SERVER_VAR=present", "ANTHROPIC_API_KEY=ant-k", "OPENAI_API_KEY=oai-k", "HOME=/Users/operator"},
+		},
+		{
+			name: "written tests", tests: TestsWritten,
+			doesNotSee: []string{"SURLA_TEST_SERVER_VAR", "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "HOME"},
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
 			tmp := filepath.Join(dir, "tmp")
-			envFile := filepath.Join(dir, "env.txt")
+			require.NoError(t, os.Mkdir(tmp, 0o700))
+			describeEnv := filepath.Join(dir, "describe-env.txt")
+			suiteEnv := filepath.Join(dir, "suite-env.txt")
 			program := filepath.Join(dir, "program")
-			// The program writes its environment to the file it is given and
-			// reports no scenarios.
-			require.NoError(t, os.WriteFile(program, []byte("#!/bin/sh\nenv > \"$1\"\necho '{}'\n"), 0o700))
-			r := &runner{evidenceDir: dir}
+			// The program writes its environment to a file named for its step
+			// and reports a suite without scenarios, which the report step
+			// then refuses; this test judges only the two steps' environment.
+			script := "#!/bin/sh\n" +
+				"if [ \"$1\" = \"--describe\" ]; then env > '" + describeEnv + "'; echo '{\"id\":\"s\",\"environment\":\"sim\",\"scenarios\":[]}'; exit 0; fi\n" +
+				"env > '" + suiteEnv + "'\necho '{}'\n"
+			require.NoError(t, os.WriteFile(program, []byte(script), 0o700))
+			prep := Prepared{runner: &runner{evidenceDir: dir}, SuiteBin: program, TmpDir: tmp}
 
-			_, _, err := r.runSuite(t.Context(), ProgramEnv(Plan{Tests: tc.tests}, os.Environ(), tmp), program, []string{envFile})
-			require.NoError(t, err)
-			raw, err := os.ReadFile(envFile)
-			require.NoError(t, err)
-			seen := strings.Split(strings.TrimSpace(string(raw)), "\n")
-			for _, want := range tc.sees {
-				assert.Contains(t, seen, want)
+			_, err := runPrepared(t.Context(), Plan{Tests: tc.tests, ReportDir: filepath.Join(dir, "reports")}, prep, server)
+			var stage *StageError
+			if assert.ErrorAs(t, err, &stage) {
+				assert.Equal(t, StageReport, stage.Stage, "both steps ran")
 			}
-			for _, name := range tc.doesNotSee {
-				for _, kv := range seen {
-					assert.False(t, strings.HasPrefix(kv, name+"="), "the program sees %s", kv)
+			for step, path := range map[string]string{"describe": describeEnv, "suite": suiteEnv} {
+				raw, err := os.ReadFile(path)
+				require.NoError(t, err, "the %s step ran", step)
+				seen := strings.Split(strings.TrimSpace(string(raw)), "\n")
+				for _, want := range tc.sees {
+					assert.Contains(t, seen, want, "the %s step", step)
 				}
-			}
-			if tc.tests == TestsWritten {
-				assert.Contains(t, seen, "TMPDIR="+tmp)
-				assert.Contains(t, seen, "PATH="+os.Getenv("PATH"))
+				for _, name := range tc.doesNotSee {
+					for _, kv := range seen {
+						assert.False(t, strings.HasPrefix(kv, name+"="), "the %s step sees %s", step, kv)
+					}
+				}
+				if tc.tests == TestsWritten {
+					assert.Contains(t, seen, "TMPDIR="+tmp, "the %s step", step)
+					assert.Contains(t, seen, "PATH="+os.Getenv("PATH"), "the %s step", step)
+				}
 			}
 		})
 	}

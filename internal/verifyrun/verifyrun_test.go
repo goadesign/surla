@@ -439,6 +439,22 @@ func TestReadRequestValidationPreservesCLIAndRejectsCorruptRecords(t *testing.T)
 			wantOwner: "bob",
 		},
 		{
+			name: "no test source preserves decoded owner",
+			buildBody: func(runID string) string {
+				return `{"run_id":"` + runID + `","owner":"bob","change_id":"chg","accepted_at":"2026-10-31T12:00:00Z"}`
+			},
+			wantErr:   `decode run request: unknown test source ""`,
+			wantOwner: "bob",
+		},
+		{
+			name: "unknown test source preserves decoded owner",
+			buildBody: func(runID string) string {
+				return `{"run_id":"` + runID + `","owner":"bob","change_id":"chg","accepted_at":"2026-10-31T12:00:00Z","plan":{"Tests":"agents"}}`
+			},
+			wantErr:   `decode run request: unknown test source "agents"`,
+			wantOwner: "bob",
+		},
+		{
 			name: "trailing JSON data preserves decoded owner",
 			buildBody: func(runID string) string {
 				return `{"run_id":"` + runID + `","owner":"bob","change_id":"chg","accepted_at":"2026-10-31T12:00:00Z"}{}`

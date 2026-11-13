@@ -220,25 +220,7 @@ func Run(ctx context.Context, p Plan) (Report, error) {
 	if err != nil {
 		return Report{}, err
 	}
-	r, binding, suiteBin, artifactFlags := prep.runner, prep.Binding, prep.SuiteBin, prep.ArtifactFlags
-	env := ProgramEnv(p, os.Environ(), prep.TmpDir)
-	declared, err := r.describe(ctx, env, suiteBin)
-	if err != nil {
-		return Report{}, stageError(StageDescribe, "The evaluator suite did not describe its scenarios.", err)
-	}
-	binding.SuiteID, binding.Environment = declared.ID, declared.Environment
-	evidence, exit, err := r.runSuite(ctx, env, suiteBin, artifactFlags)
-	if err != nil {
-		return Report{}, stageError(StageSuite, "The evaluator suite ended without a report.", err)
-	}
-	report, err := Assemble(binding, declared, evidence, exit)
-	if err != nil {
-		return Report{}, stageError(StageReport, "The evaluator suite's report does not match its declaration or the binaries it was given.", err)
-	}
-	if err := writeReport(p.ReportDir, report); err != nil {
-		return Report{}, stageError(StageReport, "Saving the verification report failed.", err)
-	}
-	return report, nil
+	return runPrepared(ctx, p, prep, os.Environ())
 }
 
 // Prepare runs the trusted preparation Run starts with: it checks the plan,
@@ -387,6 +369,31 @@ func (e *StageError) Error() string {
 // Unwrap returns the full error.
 func (e *StageError) Unwrap() error {
 	return e.Err
+}
+
+// runPrepared is Run after Prepare: it describes and runs the suite prep
+// built for p, both with the environment ProgramEnv gives p's test program
+// from environ, then assembles the report and saves it in p.ReportDir.
+func runPrepared(ctx context.Context, p Plan, prep Prepared, environ []string) (Report, error) {
+	r, binding, suiteBin, artifactFlags := prep.runner, prep.Binding, prep.SuiteBin, prep.ArtifactFlags
+	env := ProgramEnv(p, environ, prep.TmpDir)
+	declared, err := r.describe(ctx, env, suiteBin)
+	if err != nil {
+		return Report{}, stageError(StageDescribe, "The evaluator suite did not describe its scenarios.", err)
+	}
+	binding.SuiteID, binding.Environment = declared.ID, declared.Environment
+	evidence, exit, err := r.runSuite(ctx, env, suiteBin, artifactFlags)
+	if err != nil {
+		return Report{}, stageError(StageSuite, "The evaluator suite ended without a report.", err)
+	}
+	report, err := Assemble(binding, declared, evidence, exit)
+	if err != nil {
+		return Report{}, stageError(StageReport, "The evaluator suite's report does not match its declaration or the binaries it was given.", err)
+	}
+	if err := writeReport(p.ReportDir, report); err != nil {
+		return Report{}, stageError(StageReport, "Saving the verification report failed.", err)
+	}
+	return report, nil
 }
 
 // resolveInside resolves rel, a path relative to the directory root, following
