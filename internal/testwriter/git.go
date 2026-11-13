@@ -37,12 +37,16 @@ const (
 // gitFlags turn off what git would otherwise run on the repository's or the
 // working copy's say: hooks (a repository's core.hooksPath may name a folder
 // of the working copy, which its author writes) and the file system monitor.
-var gitFlags = []string{"-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false"}
+// They also make git ignore replace refs, which the copy's author can add to
+// the repository the copy shares with the project: with them, a commit could
+// stand for another one, and a base compared with the copy could show the
+// author's own changes as already there.
+var gitFlags = []string{"--no-replace-objects", "-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false"}
 
 // gitRedirects are environment variables that would make git act on another
 // repository, work tree, index or object store than the one named on its
-// command line. gitEnv drops them; the user's identity, signing and
-// configuration-file settings stay.
+// command line. gitEnv drops them; the user's identity and configuration-file
+// settings stay, though commitTree never signs.
 var gitRedirects = []string{
 	"GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_OBJECT_DIRECTORY",
 	"GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_COMMON_DIR", "GIT_NAMESPACE",
@@ -163,9 +167,11 @@ func writeTree(ctx context.Context, wc WorkingCopy, index, src string) (string, 
 // commitTree makes tree the content of the working copy's branch. When the
 // branch's commit already holds tree it returns that commit. Otherwise it
 // commits tree with message on top of the branch with the user's own git
-// identity, points the copy's index at the commit when the copy has the
-// branch checked out, so the copy's status shows only edits made after the
-// check, and then moves the branch, failing if it moved meanwhile.
+// identity, never signed whatever the user's git settings say (signing could
+// wait on a prompt no one sees), points the copy's index at the commit when
+// the copy has the branch checked out, so the copy's status shows only edits
+// made after the check, and then moves the branch, failing if it moved
+// meanwhile.
 func commitTree(ctx context.Context, wc WorkingCopy, tree, message string) (string, error) {
 	ref := "refs/heads/" + Branch
 	head, err := wc.git(ctx, wc.dir, nil, "rev-parse", "--verify", ref+"^{commit}")
@@ -179,7 +185,7 @@ func commitTree(ctx context.Context, wc WorkingCopy, tree, message string) (stri
 	if headTree == tree {
 		return head, nil
 	}
-	commit, err := wc.git(ctx, wc.dir, nil, "commit-tree", tree, "-p", head, "-m", message)
+	commit, err := wc.git(ctx, wc.dir, nil, "commit-tree", "--no-gpg-sign", tree, "-p", head, "-m", message)
 	if err != nil {
 		return "", fmt.Errorf("commit the accepted tests: %w", err)
 	}

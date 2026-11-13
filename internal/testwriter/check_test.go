@@ -18,6 +18,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/goadesign/surla/internal/designeval"
+	"github.com/goadesign/surla/internal/shquote"
 	"github.com/goadesign/surla/internal/testmodule"
 	"github.com/goadesign/surla/verify/candidate"
 	"github.com/goadesign/surla/verify/suite"
@@ -140,8 +141,9 @@ func TestPrepareGivesTheAuthorItsGenerationFailure(t *testing.T) {
 // A complete copy whose package prints noise, including a JSON object, on
 // standard error and tries to write outside its sandbox while starting is
 // accepted, and the write never happens. Recording makes one commit holding
-// the files as checked, with the generated folder written from the Story, and
-// recording the unchanged copy again returns that commit.
+// the files as checked, with the generated folder written from the Story,
+// unsigned though the repository asks for signed commits, and recording the
+// unchanged copy again returns that commit.
 func TestCheckJudgesTheWorkingCopy(t *testing.T) {
 	skipWithoutSandbox(t)
 	repo, markers := newProject(t, fixtureProject(t))
@@ -258,8 +260,16 @@ func TestCheckJudgesTheWorkingCopy(t *testing.T) {
 	}
 	assert.NoFileExists(t, outside, "--describe runs only in the sandbox")
 
+	// The repository asks for signed commits with a signing program that
+	// leaves a marker and fails: a recorded commit is never signed.
+	signer, signed := filepath.Join(t.TempDir(), "signer"), filepath.Join(t.TempDir(), "signed")
+	require.NoError(t, os.WriteFile(signer, []byte("#!/bin/sh\n: > "+shquote.Quote(signed)+"\nexit 1\n"), 0o700))
+	runGit(t, repo, "config", "commit.gpgsign", "true")
+	runGit(t, repo, "config", "gpg.program", signer)
 	commit, err := Record(t.Context(), accepted, "Add the accepted tests")
 	require.NoError(t, err)
+	assert.NoFileExists(t, signed, "the signing program never ran")
+	assert.NotContains(t, runGit(t, repo, "cat-file", "commit", commit), "gpgsig")
 	assert.Equal(t, start, runGit(t, repo, "rev-parse", commit+"^"), "one commit on top of the branch")
 	assert.Equal(t, strings.TrimSpace(string(prepared)), runGit(t, repo, "show", commit+":eval/"+generatedSuite),
 		"the commit holds the generated suite written from the Story, not the author's edit")

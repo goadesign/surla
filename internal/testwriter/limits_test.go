@@ -115,6 +115,25 @@ func TestCheckNamesFilesChangedOutsideTheTestModule(t *testing.T) {
 		assert.NotContains(t, fmt.Sprint(named), "eval/hooks.go")
 		assertNoAbsolutePath(t, v.Findings)
 	})
+	t.Run("a replace ref", func(t *testing.T) {
+		t.Parallel()
+		repo, _ := newProject(t, map[string]string{"README.md": "shop\n", "eval/go.mod": "module example.com/shop/eval\n"})
+		base := runGit(t, repo, "rev-parse", "HEAD")
+		wc, err := OpenWorkingCopy(t.Context(), repo)
+		require.NoError(t, err)
+		writeFiles(t, wc.Dir(), map[string]string{"README.md": "committed by the author\n"})
+		runGit(t, wc.Dir(), "commit", "--quiet", "-am", "The author's own commit")
+		// The author makes the base commit stand for one that already holds
+		// its change, so a git that honours replace refs sees no change.
+		fake := runGit(t, wc.Dir(), "commit-tree", "--no-gpg-sign", "HEAD^{tree}", "-m", "Start the project")
+		runGit(t, wc.Dir(), "replace", base, fake)
+
+		v, err := testChecker.Check(t.Context(), wc, suite, nil)
+		require.NoError(t, err)
+		require.Len(t, v.Findings, 1, "%+v", v.Findings)
+		assert.Equal(t, FindingOutsideModule, v.Findings[0].Kind)
+		assert.Contains(t, v.Findings[0].Message, "README.md is changed outside the test module eval")
+	})
 	t.Run("more than the bound", func(t *testing.T) {
 		t.Parallel()
 		repo, _ := newProject(t, map[string]string{"README.md": "shop\n", "eval/go.mod": "module example.com/shop/eval\n"})

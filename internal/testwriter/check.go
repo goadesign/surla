@@ -219,7 +219,7 @@ func NewChecker(evaluator *designeval.Evaluator, workDir string) *Checker {
 
 // Record commits an accepted verdict's tree, exactly the files Check built
 // and described, on the working copy's branch with message and the user's own
-// git identity, with hooks disabled, and returns the commit. The message is
+// git identity, never signed and with hooks disabled, and returns the commit. The message is
 // the commit message; it carries no attribution. When the branch already
 // holds that tree, as when the copy did not change since the last record, it
 // returns the branch's commit and makes none. Edits made in the copy after
