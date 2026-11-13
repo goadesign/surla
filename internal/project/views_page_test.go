@@ -1,6 +1,6 @@
 // This file drives the views page against the real project server: the page
-// shell and its policy, the one-use link, the in-memory session, and what
-// happens when the server restarts.
+// shell and its policy, the one-use link, the in-memory session, the browser
+// marks the page's reads need, and what happens when the server restarts.
 package project
 
 import (
@@ -168,6 +168,66 @@ main().then(() => { process.stdout.write("PAGE-PASSED"); process.exit(0); }, (er
 	out, err := cmd.CombinedOutput()
 	require.NoError(t, err, "views page session script failed:\n%s", out)
 	require.True(t, strings.HasSuffix(string(out), "PAGE-PASSED"), "views page session script output:\n%s", out)
+}
+
+// TestViewsPageReadsNeedTheSameOriginMark sends the page's two reads with a
+// browser session straight to the project server, without a browser: a
+// browser's same-origin mark is enough without an Origin header (browsers
+// omit Origin on same-origin GET requests), and a missing mark, another
+// site's mark, or another page's Origin is refused.
+func TestViewsPageReadsNeedTheSameOriginMark(t *testing.T) {
+	vp := startViewsProject(t)
+	management := controlplane.WithPrincipal(context.Background(), controlplane.Principal{ID: vp.state.Record.Owner, CallerID: "management", Kind: controlplane.CallerManagement})
+	minted, err := vp.server.Load().BrowserLink(management)
+	require.NoError(t, err)
+	u, err := url.Parse(minted.URL)
+	require.NoError(t, err)
+	body, err := json.Marshal(&genproject.ExchangeBrowserLinkPayload{Link: strings.TrimPrefix(u.Fragment, "link=")})
+	require.NoError(t, err)
+	exchange, err := http.NewRequest(http.MethodPost, vp.state.Origin()+"/project/browser-session", strings.NewReader(string(body)))
+	require.NoError(t, err)
+	exchange.Header.Set("Content-Type", "application/json")
+	exchange.Header.Set("Sec-Fetch-Site", "same-origin")
+	exchange.Header.Set("Origin", vp.state.Origin())
+	exchanged, err := http.DefaultClient.Do(exchange)
+	require.NoError(t, err)
+	var session genproject.ExchangeBrowserLinkResult
+	require.NoError(t, json.NewDecoder(exchanged.Body).Decode(&session))
+	require.NoError(t, exchanged.Body.Close())
+	require.Equal(t, http.StatusCreated, exchanged.StatusCode)
+
+	cases := []struct {
+		name   string
+		site   string
+		origin string
+		want   int
+	}{
+		{name: "same-origin mark without Origin", site: "same-origin", want: http.StatusOK},
+		{name: "same-origin mark with the project's Origin", site: "same-origin", origin: vp.state.Origin(), want: http.StatusOK},
+		{name: "no mark and no Origin", want: http.StatusUnauthorized},
+		{name: "cross-site mark", site: "cross-site", want: http.StatusForbidden},
+		{name: "same-site mark", site: "same-site", want: http.StatusForbidden},
+		{name: "same-origin mark with another page's Origin", site: "same-origin", origin: "http://127.0.0.1:1", want: http.StatusForbidden},
+	}
+	for _, path := range []string{"/changes", "/change-updates?since=other"} {
+		for _, tc := range cases {
+			t.Run(path+"/"+tc.name, func(t *testing.T) {
+				req, err := http.NewRequest(http.MethodGet, vp.state.Origin()+path, nil)
+				require.NoError(t, err)
+				req.Header.Set("Authorization", "Bearer "+session.Session)
+				if tc.site != "" {
+					req.Header.Set("Sec-Fetch-Site", tc.site)
+				}
+				if tc.origin != "" {
+					req.Header.Set("Origin", tc.origin)
+				}
+				resp, err := http.DefaultClient.Do(req)
+				require.NoError(t, err)
+				require.NoError(t, resp.Body.Close())
+				assert.Equal(t, tc.want, resp.StatusCode)
+			})
+		}
+	}
 }
 
 // startViewsProject starts a project's server on its saved address.
