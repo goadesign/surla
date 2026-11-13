@@ -44,6 +44,7 @@ import {
   TraceList,
   TeamRoleState,
   TeamSnapshot,
+  TestFindings,
   VerificationListResult,
   VerificationStatusResult,
   isPlainObject,
@@ -559,6 +560,11 @@ export function bootstrapViewsPage() {
   let buildReadAgain = false;
   let buildGeneration = 0;
   let buildStartReceipt: BuildStartReceipt | null = null;
+  // Findings belong to one build/report/verdict, rather than only a change ID.
+  let buildFindings: TestFindings | null = null;
+  let findingsBasis: string | null = null;
+  let findingsError: string | null = null;
+  let findingsReadAgain = false;
   const runsById = new Map<string, VerificationStatusResult>();
   const lastLoadedListByChangeId = new Map<string, string[]>();
   let selectedVerificationChangeId: string | null = null;
@@ -1330,6 +1336,7 @@ export function bootstrapViewsPage() {
       buildReadError = null;
       buildStartReceipt = null;
       buildStartError = null;
+      followBuildFindings();
       buildGeneration++;
     }
     if (hasPending("get_build", changeId)) {
@@ -1360,12 +1367,90 @@ export function bootstrapViewsPage() {
               buildStartReceipt = null;
               buildStartError = null;
             }
+            followBuildFindings();
           }
         }
         done();
       },
       (message) => {
         if (relevant() && generation === buildGeneration) buildReadError = message;
+        done();
+      }
+    );
+  }
+
+  // currentFindingsBasis names the exact saved verdict whose text is useful.
+  // Assignment reads can change independently without invalidating that text.
+  function currentFindingsBasis(): string | null {
+    if (buildChangeId === null || buildSnapshot?.state !== "started" ||
+        buildSnapshot.test_writer.tests.state !== "needs_changes" ||
+        hasPending("start_build", buildChangeId)) return null;
+    return JSON.stringify([
+      buildChangeId, buildSnapshot.request_revision, buildSnapshot.started_at,
+      buildSnapshot.test_writer.report, buildSnapshot.test_writer.tests.checked_at,
+      buildSnapshot.test_writer.tests.finding_count,
+    ]);
+  }
+
+  // followBuildFindings starts one user read per new verdict. Read failures
+  // remain explicit; an unchanged snapshot never becomes a retry loop.
+  function followBuildFindings() {
+    const next = currentFindingsBasis();
+    if (next === findingsBasis) return;
+    findingsBasis = next;
+    buildFindings = null;
+    findingsError = null;
+    if (next !== null) readBuildFindings();
+  }
+
+  // readBuildFindings accepts text only when every owner-provided correlation
+  // field still matches. A late answer never selects a newer or earlier build.
+  function readBuildFindings() {
+    const expected = buildSnapshot;
+    const changeId = buildChangeId;
+    const basis = currentFindingsBasis();
+    if (sessionState !== "active" || changeId === null || basis === null ||
+        expected?.state !== "started" || expected.test_writer.tests.state !== "needs_changes" ||
+        activeEditor?.card.change_id !== changeId) return;
+    if (hasPending("get_test_findings", changeId)) {
+      findingsReadAgain = true;
+      return;
+    }
+    findingsReadAgain = false;
+    findingsError = null;
+    const generation = buildGeneration;
+    const verdict = expected.test_writer.tests;
+    const relevant = () => sessionState === "active" && buildGeneration === generation &&
+      activeEditor?.card.change_id === changeId && findingsBasis === basis &&
+      currentFindingsBasis() === basis;
+    const done = () => {
+      if (findingsReadAgain) {
+        findingsReadAgain = false;
+        readBuildFindings();
+      }
+    };
+    callServer(
+      "get_test_findings", { change_id: changeId }, changeId,
+      (result) => {
+        if (relevant()) {
+          if (result.change_id !== changeId || result.request_revision !== expected.request_revision ||
+              result.started_at !== expected.started_at || result.report !== expected.test_writer.report ||
+              result.checked_at !== verdict.checked_at || result.findings.length !== verdict.finding_count) {
+            findingsError = "The findings no longer match this build. Refresh the build to read its current verdict.";
+            readBuild(changeId);
+          } else {
+            buildFindings = result;
+          }
+        }
+        done();
+      },
+      (message, failure) => {
+        if (relevant()) {
+          findingsError = message;
+          if (failure.kind === "server" && (failure.status === 404 || failure.status === 409)) {
+            readBuild(changeId);
+          }
+        }
         done();
       }
     );
@@ -1381,12 +1466,18 @@ export function bootstrapViewsPage() {
         buildReadError !== null || hasPending("start_build", ed.card.change_id)) return;
     const changeId = ed.card.change_id;
     const revision = ed.card.request_revision;
+    if (buildSnapshot.state === "started" && buildSnapshot.in_force &&
+        buildSnapshot.request_revision !== revision) return;
     const listedRevision = changeList?.changes.find((item) => item.change_id === changeId)?.request_revision;
     if (listedRevision !== undefined && listedRevision !== revision) return;
     const begun = new Date().toISOString();
     buildGeneration++;
     buildStartReceipt = null;
     buildStartError = null;
+    buildFindings = null;
+    findingsBasis = null;
+    findingsError = null;
+    findingsReadAgain = false;
     callServer(
       "start_build", { change_id: changeId, request_revision: revision }, changeId,
       (result) => {
@@ -1401,6 +1492,7 @@ export function bootstrapViewsPage() {
         buildSnapshot = { ...result.build, state: "started" };
         buildReadError = null;
         buildStartReceipt = { at: begun, team: result.team, workingCopy: result.working_copy };
+        followBuildFindings();
         statusEl.textContent = "The build started for the agreed revision.";
         readBuild(changeId);
         readTeam();
@@ -1922,11 +2014,11 @@ export function bootstrapViewsPage() {
               disabled={sessionState !== "active" || editorBusy}
               dirty={isDraftDirty(ed.card, ed.draftAnswers, ed.draftExamples)}
               startReceipt={buildStartReceipt}
-              findingTexts={null}
-              findingsLoading={false}
-              findingsError={null}
+              findingTexts={buildFindings?.findings ?? null}
+              findingsLoading={hasPending("get_test_findings", ed.card.change_id)}
+              findingsError={findingsError}
               onRefresh={() => readBuild(ed.card.change_id)}
-              onReadFindings={() => {}}
+              onReadFindings={readBuildFindings}
               onBuild={startBuild}
               onOpenTeam={openTeam}
             />

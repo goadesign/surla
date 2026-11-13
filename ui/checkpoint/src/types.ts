@@ -309,6 +309,15 @@ export interface TeamSnapshot {
   team: string;
 }
 
+export interface TestFindings {
+  change_id: string;
+  checked_at: string;
+  findings: string[];
+  report: number;
+  request_revision: string;
+  started_at: string;
+}
+
 export interface TestWriterProgress {
   read: boolean;
   report: number;
@@ -441,6 +450,10 @@ export interface GetBuildRequest {
   "change_id": string;
 }
 
+export interface GetTestFindingsRequest {
+  "change_id": string;
+}
+
 export type GetTeamRequest = Record<string, never>;
 
 export type ShowTeamPaneRequest = ShowTeamPaneRequestBody;
@@ -486,6 +499,7 @@ export interface Operations {
   get_story_refresh: { request: GetStoryRefreshRequest; result: StoryRefreshResult };
   start_build: { request: StartBuildRequest; result: StartBuildResult };
   get_build: { request: GetBuildRequest; result: ChangeBuild };
+  get_test_findings: { request: GetTestFindingsRequest; result: TestFindings };
   get_team: { request: GetTeamRequest; result: TeamSnapshot };
   show_team_pane: { request: ShowTeamPaneRequest; result: undefined };
   start_team_agents: { request: StartTeamAgentsRequest; result: ProjectTeam };
@@ -555,6 +569,10 @@ function encodeStartBuild(request: StartBuildRequest): EncodedRequest {
 
 function encodeGetBuild(request: GetBuildRequest): EncodedRequest {
   return { path: "/changes/" + encodeURIComponent(String(request.change_id)) + "/build", body: undefined };
+}
+
+function encodeGetTestFindings(request: GetTestFindingsRequest): EncodedRequest {
+  return { path: "/changes/" + encodeURIComponent(String(request.change_id)) + "/build/findings", body: undefined };
 }
 
 function encodeGetTeam(_request: GetTeamRequest): EncodedRequest {
@@ -633,6 +651,7 @@ export const ROUTES: { [K in OperationName]: Route<K> } = {
   get_story_refresh: { method: "GET", success: 200, encode: encodeGetStoryRefresh, decode: isStoryRefreshResult },
   start_build: { method: "POST", success: 200, encode: encodeStartBuild, decode: isStartBuildResult },
   get_build: { method: "GET", success: 200, encode: encodeGetBuild, decode: isChangeBuild },
+  get_test_findings: { method: "GET", success: 200, encode: encodeGetTestFindings, decode: isTestFindings },
   get_team: { method: "GET", success: 200, encode: encodeGetTeam, decode: isTeamSnapshot },
   show_team_pane: { method: "POST", success: 204, encode: encodeShowTeamPane, decode: isNoContent },
   start_team_agents: { method: "POST", success: 200, encode: encodeStartTeamAgents, decode: isProjectTeam },
@@ -2263,6 +2282,44 @@ const SCHEMA_DEFS: Record<string, JSONSchemaNode> = {
     },
     "additionalProperties": false
   },
+  "TestFindings": {
+    "type": "object",
+    "required": [
+      "change_id",
+      "request_revision",
+      "started_at",
+      "report",
+      "checked_at",
+      "findings"
+    ],
+    "properties": {
+      "change_id": {
+        "type": "string"
+      },
+      "checked_at": {
+        "type": "string",
+        "format": "date-time"
+      },
+      "findings": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "report": {
+        "type": "integer",
+        "minimum": 0
+      },
+      "request_revision": {
+        "type": "string"
+      },
+      "started_at": {
+        "type": "string",
+        "format": "date-time"
+      }
+    },
+    "additionalProperties": false
+  },
   "TestWriterProgress": {
     "type": "object",
     "required": [
@@ -3076,6 +3133,11 @@ export function isStoryRefreshResult(value: unknown): value is StoryRefreshResul
 // isTeamSnapshot validates a parsed answer against the generated TeamSnapshot schema.
 export function isTeamSnapshot(value: unknown): value is TeamSnapshot {
   return matchesSchema(value, { $ref: "#/$defs/TeamSnapshot" });
+}
+
+// isTestFindings validates a parsed answer against the generated TestFindings schema.
+export function isTestFindings(value: unknown): value is TestFindings {
+  return matchesSchema(value, { $ref: "#/$defs/TestFindings" });
 }
 
 // isTraceList validates a parsed answer against the generated TraceList schema.

@@ -37,6 +37,7 @@ const PAGE_OPERATIONS = [
   "surla#get_story_refresh",
   "surla#start_build",
   "surla#get_build",
+  "surla#get_test_findings",
   "surla#get_team",
   "surla#show_team_pane",
   "surla#start_team_agents",

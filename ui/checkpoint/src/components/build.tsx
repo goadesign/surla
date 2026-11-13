@@ -61,8 +61,9 @@ export function BuildSectionView({
   onOpenTeam,
 }: BuildSectionProps) {
   const saved = build !== null && build.state === "started" ? build : null;
-  const current = saved !== null && saved.in_force && saved.request_revision === card.request_revision;
-  const displayedCurrent = currentRevision === card.request_revision;
+  const current = saved !== null && saved.in_force;
+  const displayedCurrent = currentRevision === card.request_revision &&
+    (!current || saved.request_revision === card.request_revision);
   const confirmed = card.status === "confirmed";
   const eligible = confirmed && displayedCurrent && build !== null && error === null;
   const blocked = disabled || starting || loading || !eligible;
@@ -297,8 +298,7 @@ function TestWriterFacts({ build, findingTexts, loading, error, disabled, onRead
     case "accepted": label = "Accepted"; break;
     case "could_not_run": label = "Could not run"; break;
   }
-  // Only the count is consumed from this older generated build projection.
-  const findingCount = tests.state === "needs_changes" ? tests.findings.length : 0;
+  const findingCount = tests.state === "needs_changes" ? tests.finding_count : 0;
   const items = findingTexts === null ? null : (
     <ul className="surla-live-prompts">
       {findingTexts.map((text, index) => <li key={index}>{text}</li>)}
@@ -313,6 +313,7 @@ function TestWriterFacts({ build, findingTexts, loading, error, disabled, onRead
         ) : null}
       </p>
       {tests.state === "could_not_run" ? <p>{tests.reason} {tests.step}</p> : null}
+      {tests.state === "accepted" ? <p id="surla-build-not-judged">{tests.not_judged}</p> : null}
       {tests.state === "needs_changes" ? (
         <div id="surla-build-findings" aria-busy={loading}>
           <p>{findingCount} {findingCount === 1 ? "finding" : "findings"}</p>
