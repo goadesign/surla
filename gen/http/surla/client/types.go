@@ -66,8 +66,9 @@ type ConfirmIntentRequestBody struct {
 	RequestRevision string `form:"request_revision" json:"request_revision" xml:"request_revision"`
 	// Selected resolution per ambiguity question ID. Answer every current
 	// question, and give each value exactly as one string from that question's
-	// options, character for character. To record a decision that no option
-	// expresses, call revise_change with that decision in prompt.
+	// options, character for character. A decision that no option expresses goes
+	// to the guide, which records it with revise_change; the user then confirms
+	// the resulting revision.
 	Answers map[string]string `form:"answers" json:"answers" xml:"answers"`
 	// The complete confirmed example table, including examples you edited or
 	// added. Keep an existing example's id when you edit it, and give an example

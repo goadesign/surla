@@ -387,8 +387,9 @@ func TestACardFileWithAProposalIsCheckedOnLoad(t *testing.T) {
 
 // TestRevisionDescriptionsSayTheAgreedChangeStaysInForce checks the
 // model-visible descriptions of revise_change and confirm_intent: revising
-// does not replace or clear an agreed change, and the agreed revision stays
-// in force until the user adopts or declines.
+// does not replace or clear an agreed change, the agreed revision stays in
+// force until the user adopts or declines, and each operation names its one
+// caller (the guide revises, the user confirms).
 func TestRevisionDescriptionsSayTheAgreedChangeStaysInForce(t *testing.T) {
 	cp := newControlPlane(t, Options{})
 	tools, err := genmcpadapter.NewMCPAdapter(gensurla.NewEndpoints(cp), nil).ToolsList(t.Context(), &genmcpadapter.ToolsListPayload{})
@@ -401,8 +402,12 @@ func TestRevisionDescriptionsSayTheAgreedChangeStaysInForce(t *testing.T) {
 	assert.Contains(t, descriptions["revise_change"], "stays in force")
 	assert.Contains(t, descriptions["decline_revision"], "stays in force")
 	assert.Contains(t, descriptions["confirm_intent"], "adopt")
+	assert.NotContains(t, descriptions["confirm_intent"], "call revise_change", "the user's tool tells its caller to revise, which only the guide does")
+	assert.Contains(t, descriptions["confirm_intent"], "goes to the guide")
 	openAPI, err := os.ReadFile("../../gen/http/openapi3.json")
 	require.NoError(t, err)
+	assert.Contains(t, string(openAPI), "Only the guide revises a change; only the user confirms or adopts a revision")
+	assert.Contains(t, string(openAPI), "Only the user's browser session calls it, from the views page; the guide revises with revise_change and never confirms.")
 	for _, stale := range []string{"answers, confirmed_by and any approval are cleared", "dropped when confirm_intent or revise_change mints"} {
 		assert.NotContains(t, string(openAPI), stale, "the contract still says a revision clears an agreed change")
 		for name, text := range descriptions {

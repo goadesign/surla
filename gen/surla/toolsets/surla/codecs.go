@@ -2112,12 +2112,12 @@ var confirmIntentPayloadFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("answers")},
 		JSONType:    "object",
-		Description: "Selected resolution per ambiguity question ID. Answer every current question, and give each value exactly as one string from that question's options, character for character. To record a decision that no option expresses, call revise_change with that decision in prompt.",
+		Description: "Selected resolution per ambiguity question ID. Answer every current question, and give each value exactly as one string from that question's options, character for character. A decision that no option expresses goes to the guide, which records it with revise_change; the user then confirms the resulting revision.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("answers"), tools.DynamicField{}},
 		JSONType:    "string",
-		Description: "Selected resolution per ambiguity question ID. Answer every current question, and give each value exactly as one string from that question's options, character for character. To record a decision that no option expresses, call revise_change with that decision in prompt.",
+		Description: "Selected resolution per ambiguity question ID. Answer every current question, and give each value exactly as one string from that question's options, character for character. A decision that no option expresses goes to the guide, which records it with revise_change; the user then confirms the resulting revision.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("examples")},
@@ -18556,7 +18556,7 @@ func validateConfirmIntentPayloadJSONValue(path string, value any, description s
 		case "answers":
 			if err := validateProposeChangeResultRootAnswersJSONValue(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Selected resolution per ambiguity question ID. Answer every current question, and give each value exactly as one string from that question's options, character for character. To record a decision that no option expresses, call revise_change with that decision in prompt.",
+				typed[key], "Selected resolution per ambiguity question ID. Answer every current question, and give each value exactly as one string from that question's options, character for character. A decision that no option expresses goes to the guide, which records it with revise_change; the user then confirms the resulting revision.",
 			); err != nil {
 				return err
 			}
