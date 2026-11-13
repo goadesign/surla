@@ -48,6 +48,7 @@ expect(typed, "editable example is missing");
 page.type(typed, "unsaved page text");
 page.$("#surla-build-again").click();
 await until(() => page.$("#surla-build-confirm"), "Build again did not ask first");
+expect(page.text("#surla-build-question").includes("accepted again before verification"), "the rebuild question does not explain the verification consequence");
 expect(page.sent("POST", path).length === 1, "opening rebuild confirmation sent a start");
 page.$("#surla-build-confirm").dispatchEvent(new page.win.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
 await until(() => !page.$("#surla-build-confirm") && page.doc.activeElement === page.$("#surla-build-again"), "Escape did not cancel and restore focus");

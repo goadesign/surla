@@ -262,7 +262,7 @@ export function BuildSectionView({
             <p>
               {saved?.test_writer.tests.state === "not_used"
                 ? "Building again replaces this build and makes the builder’s assignment unread again."
-                : "Building again replaces this build, makes both assignments unread, sets the test writer’s work to Assigned, clears its report and verdict, and requires its tests to be reported, judged and accepted again."}
+                : "Building again replaces this build, makes both assignments unread, sets the test writer’s work to Assigned, clears its report and verdict, and requires its tests to be reported, judged and accepted again before verification."}
             </p>
             <p id="surla-build-confirm-explanation">{startExplanation}</p>
             <div className="surla-field-row">
