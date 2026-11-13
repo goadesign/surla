@@ -92,6 +92,7 @@ func TestStarterLiveTargetAppliesADraftToTheNextModelRequest(t *testing.T) {
 			Command:      []string{surlaBin},
 			Env:          append(os.Environ(), "SURLA_LIVE_MODEL_GATEWAY="+gatewayAddr),
 			StartTimeout: 10 * time.Minute,
+			Model:        gensurla.NewConnectionGateway(&gensurla.ModelGateway{GatewayAddr: gatewayAddr}),
 		},
 	})
 	require.NoError(t, err)

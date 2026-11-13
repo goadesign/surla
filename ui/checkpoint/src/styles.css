@@ -512,6 +512,8 @@ li { margin-bottom: 0.35rem; }
 }
 
 .surla-field-row { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: flex-start; margin: 0.4rem 0; }
+/* The display rule above would otherwise override the hidden attribute. */
+.surla-field-row[hidden] { display: none; }
 .surla-field-label { display: flex; flex-direction: column; gap: 0.22rem; flex: 1 1 12rem; font-size: 0.82rem; font-weight: 500; }
 .surla-input {
   width: 100%;
@@ -711,3 +713,16 @@ summary { cursor: pointer; font-weight: 500; user-select: none; }
     scroll-behavior: auto !important;
   }
 }
+
+/* Live target view: prompt identifiers, versions, addresses and server
+   messages can be long, so they wrap inside the card instead of widening
+   the page at phone width. */
+.surla-live-wrap,
+.surla-live-wrap code,
+.surla-live-wrap a {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  min-width: 0;
+}
+.surla-live-prompts { margin: 0.4rem 0; padding-inline-start: 1.2rem; }
+.surla-live-prompts > li { margin-block: 0.25rem; }

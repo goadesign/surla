@@ -59,6 +59,11 @@ func StopLiveTargetSurlaPath() string {
 	return "/live-target"
 }
 
+// GetLiveTargetSurlaPath returns the URL path to the surla service get_live_target HTTP endpoint.
+func GetLiveTargetSurlaPath() string {
+	return "/live-target"
+}
+
 // VerifyChangeSurlaPath returns the URL path to the surla service verify_change HTTP endpoint.
 func VerifyChangeSurlaPath(changeID string) string {
 	return fmt.Sprintf("/changes/%v/verifications", changeID)
@@ -86,6 +91,11 @@ func DiffSurlaPath() string {
 
 // ConfigureModelSurlaPath returns the URL path to the surla service configure_model HTTP endpoint.
 func ConfigureModelSurlaPath() string {
+	return "/cp1/model"
+}
+
+// GetModelConnectionSurlaPath returns the URL path to the surla service get_model_connection HTTP endpoint.
+func GetModelConnectionSurlaPath() string {
 	return "/cp1/model"
 }
 

@@ -45,6 +45,8 @@ func NewMCPExecutor(caller mcpruntime.Caller) runtime.ToolCallExecutor {
 			return runtime.ExecuteMCPTool(ctx, caller, call, "get_builder_assignment", gensurla.SpecGetBuilderAssignment())
 		case gensurla.GetChange:
 			return runtime.ExecuteMCPTool(ctx, caller, call, "get_change", gensurla.SpecGetChange())
+		case gensurla.GetLiveTarget:
+			return runtime.ExecuteMCPTool(ctx, caller, call, "get_live_target", gensurla.SpecGetLiveTarget())
 		case gensurla.GetStoryRefresh:
 			return runtime.ExecuteMCPTool(ctx, caller, call, "get_story_refresh", gensurla.SpecGetStoryRefresh())
 		case gensurla.GetTestWriterAssignment:

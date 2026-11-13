@@ -38,6 +38,7 @@ var operationRoles = map[string][]CallerKind{
 	"get_story_refresh": {CallerUser, CallerGuide, CallerBuilder}, "init_project": {CallerGuide},
 	"generate_code": {CallerBuilder}, "check_project": {CallerBuilder}, "update_dependencies": {CallerBuilder},
 	"start_live_target": {CallerBuilder}, "stop_live_target": {CallerUser, CallerBuilder}, "draft_override": {CallerBuilder},
+	"get_live_target": {CallerUser, CallerBuilder}, "get_model_connection": {CallerUser},
 	"verify_change":        {CallerBuilder},
 	"get_change":           {CallerUser, CallerGuide, CallerBuilder},
 	"preview_architecture": {CallerUser, CallerGuide, CallerBuilder},
@@ -102,12 +103,14 @@ func applyOperationPolicy(e *gensurla.Endpoints, recorder trace.Tracer) {
 	e.DraftOverride = wrap("draft_override", e.DraftOverride)
 	e.StartLiveTarget = wrap("start_live_target", e.StartLiveTarget)
 	e.StopLiveTarget = wrap("stop_live_target", e.StopLiveTarget)
+	e.GetLiveTarget = wrap("get_live_target", e.GetLiveTarget)
 	e.VerifyChange = wrap("verify_change", e.VerifyChange)
 	e.GetVerification = wrap("get_verification", e.GetVerification)
 	e.ListVerifications = wrap("list_verifications", e.ListVerifications)
 	e.ApproveMerge = wrap("approve_merge", e.ApproveMerge)
 	e.Diff = wrap("diff", e.Diff)
 	e.ConfigureModel = wrap("configure_model", e.ConfigureModel)
+	e.GetModelConnection = wrap("get_model_connection", e.GetModelConnection)
 	e.InitProject = wrap("init_project", e.InitProject)
 	e.GenerateCode = wrap("generate_code", e.GenerateCode)
 	e.CheckProject = wrap("check_project", e.CheckProject)

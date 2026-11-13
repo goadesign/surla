@@ -614,6 +614,28 @@ async function main(input, facts) {
     facts.story.tab_stop_timed_out = tabStop.timed_out;
     facts.story.violations = await evaluate(views, "window.__surlaViolations.slice(" + beforeStory + ")");
 
+    // (i) Open the Live target view at a phone's width and measure which
+    // model form fields are displayed and whether anything widens the page.
+    await withDeadline(
+      views.dt.send("Emulation.setDeviceMetricsOverride", { width: 375, height: 800, deviceScaleFactor: 1, mobile: true }, views.sessionId),
+      "narrow the viewport"
+    );
+    await evaluate(views, "document.getElementById('surla-nav-live').click(), true");
+    const liveShown = await until(
+      views,
+      "document.getElementById('surla-model-form') !== null && (document.getElementById('surla-live-target') || { dataset: {} }).dataset.state !== 'unread'"
+    );
+    facts.live = liveShown.timed_out
+      ? { found: false }
+      : await evaluate(
+          views,
+          "(() => ({ found: true, live_state: document.getElementById('surla-live-target').dataset.state," +
+            " direct_display: getComputedStyle(document.getElementById('surla-model-direct-fields')).display," +
+            " gateway_display: getComputedStyle(document.getElementById('surla-model-gateway-fields')).display," +
+            " document_scroll_width: document.documentElement.scrollWidth, viewport_width: document.documentElement.clientWidth }))()"
+        );
+    await withDeadline(views.dt.send("Emulation.clearDeviceMetricsOverride", {}, views.sessionId), "restore the viewport");
+
     // (g) Reload the views page.
     const beforeReload = views.requests.length;
     await reload(views);

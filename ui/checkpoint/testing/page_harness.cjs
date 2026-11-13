@@ -44,7 +44,8 @@ async function until(predicate, message, timeoutMs = 10000) {
 }
 
 // browserFetch sends one page request to origin the way a browser sends a
-// same-origin fetch, and records it. A request to any other address fails as
+// same-origin fetch, and records it, with the status and body of its answer
+// once the page reads them. A request to any other address fails as
 // the page's connect-src 'self' policy would make it fail. Once the page is
 // closed, like a closed tab, its requests are stopped and never answer it.
 function browserFetch(win, origin, requests, tab, input, init) {
@@ -67,7 +68,8 @@ function browserFetch(win, origin, requests, tab, input, init) {
   if (typeof init.body === "string") {
     body = JSON.parse(init.body);
   }
-  requests.push({ method, path: url.pathname, search: url.search, body, headers });
+  const record = { method, path: url.pathname, search: url.search, body, headers };
+  requests.push(record);
   const controller = new AbortController();
   if (init.signal) {
     if (init.signal.aborted) {
@@ -92,9 +94,15 @@ function browserFetch(win, origin, requests, tab, input, init) {
   return settle(answered).then((response) => ({
     status: response.status,
     text: () =>
-      settle(response.text()).finally(() => {
-        tab.inFlight.delete(controller);
-      }),
+      settle(response.text())
+        .then((text) => {
+          record.status = response.status;
+          record.answer = text;
+          return text;
+        })
+        .finally(() => {
+          tab.inFlight.delete(controller);
+        }),
   }));
 }
 

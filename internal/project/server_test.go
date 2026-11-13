@@ -198,8 +198,8 @@ func TestProjectIdentitySessionsAndRoles(t *testing.T) {
 			for _, tool := range body.Result.Tools {
 				listed[tool.Name] = true
 			}
-			// wait_for_changes and start_build are the views page's HTTP-only operations, so they are not listed as tools.
-			httpOrResourceOnly := map[string]bool{"golden_path": true, "wait_for_changes": true, "start_build": true, "get_team": true, "show_team_pane": true, "start_team_agents": true}
+			// The views page's HTTP-only operations are not listed as tools.
+			httpOrResourceOnly := map[string]bool{"golden_path": true, "wait_for_changes": true, "start_build": true, "get_model_connection": true, "get_team": true, "show_team_pane": true, "start_team_agents": true}
 			for _, name := range gensurla.MethodNames {
 				if !httpOrResourceOnly[name] {
 					assert.Equal(t, controlplane.OperationAllowed(tc.role, name), listed[name], name)
@@ -442,6 +442,8 @@ func policyHTTPRequests(card *gensurla.ChangeCardResult, propose, confirm string
 		{"draft_override", "POST", "/sandbox/draft", `{"target_kind":"compiled_rule","new_content":"bounded"}`},
 		{"start_live_target", "POST", "/live-target", `{"candidate_commit":"` + commit + `"}`},
 		{"stop_live_target", "DELETE", "/live-target", ""},
+		{"get_live_target", "GET", "/live-target", ""},
+		{"get_model_connection", "GET", "/cp1/model", ""},
 		{"verify_change", "POST", "/changes/change/verifications", fmt.Sprintf(`{"request_revision":%q,"candidate_commit":%q}`, revision, commit)},
 		{"get_verification", "GET", "/verifications/run", ""},
 		{"list_verifications", "GET", "/changes/change/verifications", ""},

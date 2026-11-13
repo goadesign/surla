@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -21,6 +22,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	goahttp "goa.design/goa/v3/http"
 	goa "goa.design/goa/v3/pkg"
 	"goa.design/goa/v3/security"
@@ -200,6 +203,7 @@ func newLiveControlPlane(t *testing.T, mode string) (*ControlPlane, string) {
 		Live: &LiveConfig{
 			Command: []string{self},
 			Env:     append(os.Environ(), liveTargetModeEnv+"="+mode), StartTimeout: time.Minute,
+			Model: noModel(),
 		},
 	})
 	require.NoError(t, err)
@@ -413,7 +417,7 @@ func TestCloseStopsTheLiveTarget(t *testing.T) {
 	cp, err := New(Options{
 		CardsDir:     cardsDir,
 		Verification: &VerificationConfig{RunsDir: t.TempDir()},
-		Live:         &LiveConfig{Command: []string{self}, Env: append(os.Environ(), liveTargetModeEnv+"=serve")},
+		Live:         &LiveConfig{Model: noModel(), Command: []string{self}, Env: append(os.Environ(), liveTargetModeEnv+"=serve")},
 	})
 	require.NoError(t, err)
 	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
@@ -438,7 +442,7 @@ func TestCloseEndsAStartInProgressAndRefusesLaterStarts(t *testing.T) {
 	cp, err := New(Options{
 		CardsDir:     cardsDir,
 		Verification: &VerificationConfig{RunsDir: t.TempDir()},
-		Live: &LiveConfig{Command: []string{self}, Env: append(os.Environ(), liveTargetModeEnv+"=prepare-hangs"),
+		Live: &LiveConfig{Model: noModel(), Command: []string{self}, Env: append(os.Environ(), liveTargetModeEnv+"=prepare-hangs"),
 			StartTimeout: time.Hour},
 	})
 	require.NoError(t, err)
@@ -479,7 +483,7 @@ func TestAFailedStopKeepsTheOwnerAndStartsNoOtherTarget(t *testing.T) {
 	cp, err := New(Options{
 		CardsDir:     cardsDir,
 		Verification: &VerificationConfig{RunsDir: t.TempDir()},
-		Live:         &LiveConfig{Command: []string{self}, Env: append(os.Environ(), liveTargetModeEnv+"=serve")},
+		Live:         &LiveConfig{Model: noModel(), Command: []string{self}, Env: append(os.Environ(), liveTargetModeEnv+"=serve")},
 	})
 	require.NoError(t, err)
 	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
@@ -640,6 +644,10 @@ func TestDraftWithNoLiveTargetNamesTheStepThatEnablesIt(t *testing.T) {
 	}
 }
 
+// TestLiveTargetVersionsMustNotBeBlank verifies that the generated client
+// refuses a version the target answers that is blank or longer than 256
+// characters, counted in characters, as an unconfirmed draft that leaves no
+// entry, and passes any other opaque version through unchanged.
 func TestLiveTargetVersionsMustNotBeBlank(t *testing.T) {
 	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
 	cases := []struct {
@@ -654,6 +662,10 @@ func TestLiveTargetVersionsMustNotBeBlank(t *testing.T) {
 		{name: "ideographic space", version: "\u3000"},
 		{name: "opaque ASCII", version: "v1", valid: true},
 		{name: "opaque Unicode", version: "版本-α\u00a01", valid: true},
+		{name: "a 71-character digest", version: "sha256:" + strings.Repeat("0", 64), valid: true},
+		{name: "256 characters", version: strings.Repeat("v", 256), valid: true},
+		{name: "256 characters of three bytes each", version: strings.Repeat("版", 256), valid: true},
+		{name: "257 characters", version: strings.Repeat("v", 257)},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -663,11 +675,13 @@ func TestLiveTargetVersionsMustNotBeBlank(t *testing.T) {
 			require.NoError(t, err)
 			out, err := draft(alice, cp, fakePromptID, "x")
 			if !tc.valid {
-				assert.Equal(t, "update_not_confirmed", goaErrorName(err), "the generated client rejects a blank version")
+				assert.Equal(t, "update_not_confirmed", goaErrorName(err), "the generated client rejects the version")
+				assert.Empty(t, readRunning(t, cp).Prompts, "a refused version leaves no entry")
 				return
 			}
 			require.NoError(t, err)
 			assert.Equal(t, tc.version, *out.PromptVersion, "an opaque version is passed through unchanged")
+			assert.Equal(t, tc.version, readRunning(t, cp).Prompts[0].Version)
 		})
 	}
 }
@@ -708,7 +722,7 @@ func TestAStartThatFailsBeforeReadyAndCannotBeCleanedUpKeepsItsOwner(t *testing.
 	cp, err := New(Options{
 		CardsDir:     cardsDir,
 		Verification: &VerificationConfig{RunsDir: t.TempDir()},
-		Live:         &LiveConfig{Command: []string{self}, Env: append(os.Environ(), liveTargetModeEnv+"=fail-pinned")},
+		Live:         &LiveConfig{Model: noModel(), Command: []string{self}, Env: append(os.Environ(), liveTargetModeEnv+"=fail-pinned")},
 	})
 	require.NoError(t, err)
 	t.Cleanup(func() {
@@ -746,7 +760,7 @@ func TestAStartThatTimesOutSaysSo(t *testing.T) {
 	cp, err := New(Options{
 		CardsDir:     cardsDir,
 		Verification: &VerificationConfig{RunsDir: t.TempDir()},
-		Live: &LiveConfig{Command: []string{self}, Env: append(os.Environ(), liveTargetModeEnv+"=prepare-hangs"),
+		Live: &LiveConfig{Model: noModel(), Command: []string{self}, Env: append(os.Environ(), liveTargetModeEnv+"=prepare-hangs"),
 			StartTimeout: 300 * time.Millisecond},
 	})
 	require.NoError(t, err)
@@ -772,4 +786,320 @@ func TestLiveTargetAnsweringForAnotherPromptIsNotConfirmed(t *testing.T) {
 	for _, secret := range []string{"/private/secret/path", "abc123"} {
 		assert.NotContains(t, err.Error(), secret, "the untrusted response ID is not echoed")
 	}
+}
+
+// TestGetLiveTargetFollowsEachTransition verifies the live target read
+// through a real fake target's life: none before a start; running with its
+// commit, address and start time and no prompts; one entry per prompt whose
+// draft was accepted, a second draft replacing it and refused drafts adding
+// nothing; none once the target ends by itself; a later target with a later
+// start time and no entries; and none after a stop. Over HTTP the read
+// carries the version in force but never the drafted text, and no span the
+// server recorded holds that text.
+func TestGetLiveTargetFollowsEachTransition(t *testing.T) {
+	exporter := tracetest.NewInMemoryExporter()
+	provider := sdktrace.NewTracerProvider(sdktrace.WithSyncer(exporter))
+	t.Cleanup(func() { assert.NoError(t, provider.Shutdown(context.Background())) })
+	self, err := os.Executable()
+	require.NoError(t, err)
+	cp := newControlPlane(t, Options{
+		TracerProvider: provider,
+		Verification:   &VerificationConfig{RunsDir: t.TempDir()},
+		Live: &LiveConfig{
+			Command: []string{self}, Env: append(os.Environ(), liveTargetModeEnv+"=serve"),
+			StartTimeout: time.Minute, Model: noModel(),
+		},
+	})
+	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
+	assert.Equal(t, gensurla.LiveTargetKindNone, cp.liveTargetState().Kind(), "no live target before a start")
+
+	commit := strings.Repeat("a", 40)
+	res, err := cp.StartLiveTarget(alice, &gensurla.StartLiveTargetPayload{CandidateCommit: commit})
+	require.NoError(t, err)
+	running := readRunning(t, cp)
+	assert.Equal(t, commit, running.CandidateCommit)
+	assert.Equal(t, res.URL, running.URL)
+	firstStart := parseLiveTime(t, running.StartedAt)
+	assert.Empty(t, running.Prompts, "no draft was accepted yet")
+
+	const first, second = "Answer in French.", "Answer in Spanish."
+	_, err = draft(alice, cp, fakePromptID, first)
+	require.NoError(t, err)
+	running = readRunning(t, cp)
+	require.Len(t, running.Prompts, 1)
+	assert.Equal(t, fakePromptID, running.Prompts[0].PromptID)
+	assert.Equal(t, textVersion(first), running.Prompts[0].Version)
+	firstAccepted := parseLiveTime(t, running.Prompts[0].AcceptedAt)
+	_, err = draft(alice, cp, fakePromptID, first)
+	require.NoError(t, err)
+	running = readRunning(t, cp)
+	require.Len(t, running.Prompts, 1)
+	assert.Equal(t, textVersion(first), running.Prompts[0].Version)
+	assert.Equal(t, firstAccepted, parseLiveTime(t, running.Prompts[0].AcceptedAt),
+		"the same text sent again keeps its first acceptance time")
+	_, err = draft(alice, cp, fakePromptID, second)
+	require.NoError(t, err)
+	_, err = draft(alice, cp, "homes.helper.unknown", "Hello.")
+	assert.Equal(t, "prompt_not_found", goaErrorName(err))
+	_, err = draft(alice, cp, fakePromptID, "Hello {{ .Name")
+	assert.Equal(t, "invalid_prompt", goaErrorName(err))
+	running = readRunning(t, cp)
+	require.Len(t, running.Prompts, 1, "a second draft of a prompt replaces its entry, and refused drafts add none")
+	assert.Equal(t, textVersion(second), running.Prompts[0].Version)
+	assert.False(t, parseLiveTime(t, running.Prompts[0].AcceptedAt).Before(firstAccepted))
+
+	srv := httptest.NewServer(NewHTTPHandler(cp, workflowAuthenticator(map[string]Principal{"tok": {ID: "alice@example.com"}})))
+	defer srv.Close()
+	status, body := getWithToken(t, srv.URL+"/live-target", "tok-builder")
+	require.Equal(t, http.StatusOK, status, body)
+	var read struct {
+		LiveTarget struct {
+			State   string `json:"state"`
+			Prompts []struct {
+				Version string `json:"version"`
+			} `json:"prompts"`
+		} `json:"live_target"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(body), &read))
+	assert.Equal(t, "running", read.LiveTarget.State)
+	require.Len(t, read.LiveTarget.Prompts, 1)
+	assert.Equal(t, textVersion(second), read.LiveTarget.Prompts[0].Version)
+	for _, text := range []string{first, second} {
+		assert.NotContains(t, body, text, "the read never returns prompt text")
+		for _, span := range exporter.GetSpans().Snapshots() {
+			assertSpanNeverContainsValue(t, span, text)
+		}
+	}
+
+	lt := cp.boundLive()
+	require.NotNil(t, lt)
+	if resp, err := http.Post(res.URL+"/exit", "text/plain", nil); err == nil {
+		require.NoError(t, resp.Body.Close())
+	}
+	require.Eventually(t, func() bool { return cp.liveTargetState().Kind() == gensurla.LiveTargetKindNone },
+		30*time.Second, 20*time.Millisecond, "a target that ended by itself is shown as none")
+	<-lt.proc.Done()
+
+	_, err = cp.StartLiveTarget(alice, &gensurla.StartLiveTargetPayload{CandidateCommit: strings.Repeat("b", 40)})
+	require.NoError(t, err)
+	running = readRunning(t, cp)
+	assert.Empty(t, running.Prompts, "drafts end with the target that accepted them")
+	assert.True(t, parseLiveTime(t, running.StartedAt).After(firstStart), "a later target has a later start time")
+	stopped, err := cp.StopLiveTarget(alice)
+	require.NoError(t, err)
+	assert.True(t, stopped.Stopped)
+	assert.Equal(t, gensurla.LiveTargetKindNone, cp.liveTargetState().Kind(), "a stopped target is shown as none")
+}
+
+// TestGetLiveTargetShowsAStartInProgressWithoutWaiting verifies that a
+// start still building is read at once as starting, with its commit and when
+// it began, although the start holds the live lock, and that it is shown as
+// none once Close ends it.
+func TestGetLiveTargetShowsAStartInProgressWithoutWaiting(t *testing.T) {
+	self, err := os.Executable()
+	require.NoError(t, err)
+	cp, err := New(Options{
+		CardsDir:     t.TempDir(),
+		Verification: &VerificationConfig{RunsDir: t.TempDir()},
+		Live: &LiveConfig{Model: noModel(), Command: []string{self}, Env: append(os.Environ(), liveTargetModeEnv+"=prepare-hangs"),
+			StartTimeout: time.Hour},
+	})
+	require.NoError(t, err)
+	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
+	commit := strings.Repeat("a", 40)
+	started := make(chan error, 1)
+	before := time.Now()
+	go func() {
+		_, err := cp.StartLiveTarget(alice, &gensurla.StartLiveTargetPayload{CandidateCommit: commit})
+		started <- err
+	}()
+	require.Eventually(t, func() bool { return cp.liveTargetState().Kind() == gensurla.LiveTargetKindStarting },
+		30*time.Second, 20*time.Millisecond, "a start in progress is shown as starting")
+	readAt := time.Now()
+	res, err := cp.GetLiveTarget(alice)
+	require.NoError(t, err)
+	assert.Less(t, time.Since(readAt), time.Second, "the read does not wait for the start to finish")
+	starting, ok := res.LiveTarget.AsStarting()
+	require.True(t, ok)
+	assert.Equal(t, commit, starting.CandidateCommit)
+	assert.False(t, parseLiveTime(t, starting.Since).Before(before.Truncate(time.Second)))
+
+	require.NoError(t, cp.Close())
+	assert.Equal(t, "live_target_failed", goaErrorName(<-started))
+	assert.Equal(t, gensurla.LiveTargetKindNone, cp.liveTargetState().Kind(), "the ended start is shown as none")
+}
+
+// TestGetLiveTargetShowsATargetNotConfirmedStopped verifies that a stop
+// that cannot be confirmed shows the target as not confirmed stopped, with
+// its commit and the step the server names, and that it stays so: a target's
+// stop runs once, so a later stop and Close report the same failure and the
+// read never claims none. Making the stop fail needs macOS's chflags, as
+// TestAFailedStopKeepsTheOwnerAndStartsNoOtherTarget does.
+func TestGetLiveTargetShowsATargetNotConfirmedStopped(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("making a stop fail needs macOS's chflags")
+	}
+	t.Setenv("TMPDIR", t.TempDir())
+	self, err := os.Executable()
+	require.NoError(t, err)
+	cardsDir := t.TempDir()
+	cp, err := New(Options{
+		CardsDir:     cardsDir,
+		Verification: &VerificationConfig{RunsDir: t.TempDir()},
+		Live:         &LiveConfig{Model: noModel(), Command: []string{self}, Env: append(os.Environ(), liveTargetModeEnv+"=serve")},
+	})
+	require.NoError(t, err)
+	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
+	commit := strings.Repeat("a", 40)
+	_, err = cp.StartLiveTarget(alice, &gensurla.StartLiveTargetPayload{CandidateCommit: commit})
+	require.NoError(t, err)
+	lt := cp.boundLive()
+	require.NotNil(t, lt)
+	// An immutable file makes removing the live directory fail, so Stop
+	// cannot confirm the cleanup.
+	pinned := filepath.Join(lt.proc.Dir(), "tmp", "immutable")
+	require.NoError(t, os.WriteFile(pinned, []byte("x"), 0o600))
+	require.NoError(t, exec.Command("chflags", "uchg", pinned).Run())
+	t.Cleanup(func() {
+		require.NoError(t, exec.Command("chflags", "nouchg", pinned).Run())
+		require.NoError(t, os.RemoveAll(cardsDir))
+	})
+
+	for _, attempt := range []string{"the first stop", "a later stop"} {
+		_, err = cp.StopLiveTarget(alice)
+		assert.Equal(t, "live_target_stop_failed", goaErrorName(err), attempt)
+		res, err := cp.GetLiveTarget(alice)
+		require.NoError(t, err)
+		stuck, ok := res.LiveTarget.AsNotConfirmedStopped()
+		require.True(t, ok, "after %s the target is shown as not confirmed stopped", attempt)
+		assert.Equal(t, commit, stuck.CandidateCommit)
+		assert.Equal(t, msgStopFailed, stuck.Message)
+		assert.Contains(t, stuck.Message, "stop and start Surla", "the read names the step the server already names")
+	}
+	require.Error(t, cp.Close(), "Close reports the target it could not confirm stopped")
+	assert.Equal(t, gensurla.LiveTargetKindNotConfirmedStopped, cp.liveTargetState().Kind(), "Close does not claim the target stopped")
+}
+
+// readRunning reads the live target and requires it to be running.
+func readRunning(t *testing.T, cp *ControlPlane) *gensurla.RunningLiveTarget {
+	t.Helper()
+	res, err := cp.GetLiveTarget(WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "builder", Kind: CallerBuilder}))
+	require.NoError(t, err)
+	running, ok := res.LiveTarget.AsRunning()
+	require.True(t, ok, "the live target is %s, want running", res.LiveTarget.Kind())
+	return running
+}
+
+// parseLiveTime parses a time the live target read reports.
+func parseLiveTime(t *testing.T, value string) time.Time {
+	t.Helper()
+	parsed, err := time.Parse(time.RFC3339Nano, value)
+	require.NoError(t, err)
+	return parsed
+}
+
+// textVersion is the version the fake target returns for text.
+func textVersion(text string) string {
+	sum := sha256.Sum256([]byte(text))
+	return "sha256:" + hex.EncodeToString(sum[:])
+}
+
+// getWithToken sends GET url with a bearer token and returns the status and
+// body.
+func getWithToken(t *testing.T, url, token string) (int, string) {
+	t.Helper()
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, url, nil)
+	require.NoError(t, err)
+	req.Header.Set("Authorization", "Bearer "+token)
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	require.NoError(t, resp.Body.Close())
+	return resp.StatusCode, string(body)
+}
+
+// TestChangeListVersionFollowsTheLiveTarget verifies that the version the
+// views page's waiting read compares changes when a live target starts,
+// accepts a draft of new text and ends by itself, stays the same when nothing
+// about the target changes, and that a waiting read answers soon after a
+// draft without the live target's part recording any span of its own.
+func TestChangeListVersionFollowsTheLiveTarget(t *testing.T) {
+	exporter := tracetest.NewInMemoryExporter()
+	provider := sdktrace.NewTracerProvider(sdktrace.WithSyncer(exporter))
+	t.Cleanup(func() { assert.NoError(t, provider.Shutdown(context.Background())) })
+	self, err := os.Executable()
+	require.NoError(t, err)
+	cp := newControlPlane(t, Options{
+		TracerProvider: provider,
+		Verification:   &VerificationConfig{RunsDir: t.TempDir()},
+		Live: &LiveConfig{
+			Command: []string{self}, Env: append(os.Environ(), liveTargetModeEnv+"=serve"),
+			StartTimeout: time.Minute, Model: noModel(),
+		},
+	})
+	cp.changesWait = 20 * time.Second
+	cp.changesPoll = 20 * time.Millisecond
+	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
+	version := func() string {
+		list, err := cp.ListChanges(alice)
+		require.NoError(t, err)
+		return list.Version
+	}
+	idle := version()
+	assert.Equal(t, idle, version(), "nothing changed, so the version stays")
+
+	res, err := cp.StartLiveTarget(alice, &gensurla.StartLiveTargetPayload{CandidateCommit: strings.Repeat("a", 40)})
+	require.NoError(t, err)
+	started := version()
+	assert.NotEqual(t, idle, started, "a started target changes the version")
+	_, err = draft(alice, cp, fakePromptID, "Answer in French.")
+	require.NoError(t, err)
+	drafted := version()
+	assert.NotEqual(t, started, drafted, "an accepted draft changes the version")
+	_, err = draft(alice, cp, fakePromptID, "Hello {{ .Name")
+	assert.Equal(t, "invalid_prompt", goaErrorName(err))
+	assert.Equal(t, drafted, version(), "a refused draft leaves the version")
+
+	exporter.Reset()
+	waited := make(chan *gensurla.ChangeListVersion, 1)
+	go func() {
+		out, err := cp.WaitForChanges(alice, &gensurla.WaitForChangesPayload{Since: drafted})
+		assert.NoError(t, err)
+		waited <- out
+	}()
+	time.Sleep(100 * time.Millisecond)
+	_, err = draft(alice, cp, fakePromptID, "Answer in Spanish.")
+	require.NoError(t, err)
+	select {
+	case out := <-waited:
+		assert.NotEqual(t, drafted, out.Version, "the waiting read answers with the new version")
+	case <-time.After(5 * time.Second):
+		t.Fatal("the waiting read did not answer a draft within 5 seconds")
+	}
+	for _, span := range exporter.GetSpans().Snapshots() {
+		assert.Contains(t, []string{waitForChangesSpan, "controlplane.draft_live"}, span.Name(),
+			"the live target's part of the version records no span")
+	}
+
+	redrafted := version()
+	if resp, err := http.Post(res.URL+"/exit", "text/plain", nil); err == nil {
+		require.NoError(t, resp.Body.Close())
+	}
+	require.Eventually(t, func() bool { return cp.liveTargetState().Kind() == gensurla.LiveTargetKindNone },
+		30*time.Second, 20*time.Millisecond)
+	assert.NotEqual(t, redrafted, version(), "a target that ended changes the version")
+
+	// A stop and a new start of the same commit, between two reads of the
+	// version, still change it: only the start time tells the targets apart.
+	_, err = cp.StartLiveTarget(alice, &gensurla.StartLiveTargetPayload{CandidateCommit: strings.Repeat("a", 40)})
+	require.NoError(t, err)
+	before := version()
+	_, err = cp.StopLiveTarget(alice)
+	require.NoError(t, err)
+	_, err = cp.StartLiveTarget(alice, &gensurla.StartLiveTargetPayload{CandidateCommit: strings.Repeat("a", 40)})
+	require.NoError(t, err)
+	assert.NotEqual(t, before, version(), "a new target of the same commit changes the version")
+	_, err = cp.StopLiveTarget(alice)
+	require.NoError(t, err)
 }

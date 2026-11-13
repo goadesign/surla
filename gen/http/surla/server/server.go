@@ -29,12 +29,14 @@ type Server struct {
 	DraftOverride             http.Handler
 	StartLiveTarget           http.Handler
 	StopLiveTarget            http.Handler
+	GetLiveTarget             http.Handler
 	VerifyChange              http.Handler
 	GetVerification           http.Handler
 	ListVerifications         http.Handler
 	ApproveMerge              http.Handler
 	Diff                      http.Handler
 	ConfigureModel            http.Handler
+	GetModelConnection        http.Handler
 	InitProject               http.Handler
 	GenerateCode              http.Handler
 	CheckProject              http.Handler
@@ -94,12 +96,14 @@ func New(
 			{"DraftOverride", "POST", "/sandbox/draft"},
 			{"StartLiveTarget", "POST", "/live-target"},
 			{"StopLiveTarget", "DELETE", "/live-target"},
+			{"GetLiveTarget", "GET", "/live-target"},
 			{"VerifyChange", "POST", "/changes/{change_id}/verifications"},
 			{"GetVerification", "GET", "/verifications/{run_id}"},
 			{"ListVerifications", "GET", "/changes/{change_id}/verifications"},
 			{"ApproveMerge", "POST", "/changes/approve"},
 			{"Diff", "POST", "/diff"},
 			{"ConfigureModel", "POST", "/cp1/model"},
+			{"GetModelConnection", "GET", "/cp1/model"},
 			{"InitProject", "POST", "/workspace/init"},
 			{"GenerateCode", "POST", "/workspace/generate"},
 			{"CheckProject", "POST", "/workspace/check"},
@@ -131,12 +135,14 @@ func New(
 		DraftOverride:             NewDraftOverrideHandler(e.DraftOverride, mux, decoder, encoder, errhandler, formatter),
 		StartLiveTarget:           NewStartLiveTargetHandler(e.StartLiveTarget, mux, decoder, encoder, errhandler, formatter),
 		StopLiveTarget:            NewStopLiveTargetHandler(e.StopLiveTarget, mux, decoder, encoder, errhandler, formatter),
+		GetLiveTarget:             NewGetLiveTargetHandler(e.GetLiveTarget, mux, decoder, encoder, errhandler, formatter),
 		VerifyChange:              NewVerifyChangeHandler(e.VerifyChange, mux, decoder, encoder, errhandler, formatter),
 		GetVerification:           NewGetVerificationHandler(e.GetVerification, mux, decoder, encoder, errhandler, formatter),
 		ListVerifications:         NewListVerificationsHandler(e.ListVerifications, mux, decoder, encoder, errhandler, formatter),
 		ApproveMerge:              NewApproveMergeHandler(e.ApproveMerge, mux, decoder, encoder, errhandler, formatter),
 		Diff:                      NewDiffHandler(e.Diff, mux, decoder, encoder, errhandler, formatter),
 		ConfigureModel:            NewConfigureModelHandler(e.ConfigureModel, mux, decoder, encoder, errhandler, formatter),
+		GetModelConnection:        NewGetModelConnectionHandler(e.GetModelConnection, mux, decoder, encoder, errhandler, formatter),
 		InitProject:               NewInitProjectHandler(e.InitProject, mux, decoder, encoder, errhandler, formatter),
 		GenerateCode:              NewGenerateCodeHandler(e.GenerateCode, mux, decoder, encoder, errhandler, formatter),
 		CheckProject:              NewCheckProjectHandler(e.CheckProject, mux, decoder, encoder, errhandler, formatter),
@@ -175,12 +181,14 @@ func (s *Server) Use(m func(http.Handler) http.Handler) {
 	s.DraftOverride = m(s.DraftOverride)
 	s.StartLiveTarget = m(s.StartLiveTarget)
 	s.StopLiveTarget = m(s.StopLiveTarget)
+	s.GetLiveTarget = m(s.GetLiveTarget)
 	s.VerifyChange = m(s.VerifyChange)
 	s.GetVerification = m(s.GetVerification)
 	s.ListVerifications = m(s.ListVerifications)
 	s.ApproveMerge = m(s.ApproveMerge)
 	s.Diff = m(s.Diff)
 	s.ConfigureModel = m(s.ConfigureModel)
+	s.GetModelConnection = m(s.GetModelConnection)
 	s.InitProject = m(s.InitProject)
 	s.GenerateCode = m(s.GenerateCode)
 	s.CheckProject = m(s.CheckProject)
@@ -218,12 +226,14 @@ func Mount(mux goahttp.Muxer, h *Server) {
 	MountDraftOverrideHandler(mux, h.DraftOverride)
 	MountStartLiveTargetHandler(mux, h.StartLiveTarget)
 	MountStopLiveTargetHandler(mux, h.StopLiveTarget)
+	MountGetLiveTargetHandler(mux, h.GetLiveTarget)
 	MountVerifyChangeHandler(mux, h.VerifyChange)
 	MountGetVerificationHandler(mux, h.GetVerification)
 	MountListVerificationsHandler(mux, h.ListVerifications)
 	MountApproveMergeHandler(mux, h.ApproveMerge)
 	MountDiffHandler(mux, h.Diff)
 	MountConfigureModelHandler(mux, h.ConfigureModel)
+	MountGetModelConnectionHandler(mux, h.GetModelConnection)
 	MountInitProjectHandler(mux, h.InitProject)
 	MountGenerateCodeHandler(mux, h.GenerateCode)
 	MountCheckProjectHandler(mux, h.CheckProject)
@@ -767,6 +777,52 @@ func NewStopLiveTargetHandler(
 	})
 }
 
+// MountGetLiveTargetHandler configures the mux to serve the "surla" service
+// "get_live_target" endpoint.
+func MountGetLiveTargetHandler(mux goahttp.Muxer, h http.Handler) {
+	f, ok := h.(http.HandlerFunc)
+	if !ok {
+		f = func(w http.ResponseWriter, r *http.Request) {
+			h.ServeHTTP(w, r)
+		}
+	}
+	mux.Handle("GET", "/live-target", f)
+}
+
+// NewGetLiveTargetHandler creates a HTTP handler which loads the HTTP request
+// and calls the "surla" service "get_live_target" endpoint.
+func NewGetLiveTargetHandler(
+	endpoint goa.Endpoint,
+	mux goahttp.Muxer,
+	decoder func(*http.Request) goahttp.Decoder,
+	encoder func(context.Context, http.ResponseWriter) goahttp.Encoder,
+	errhandler func(context.Context, http.ResponseWriter, error),
+	formatter func(ctx context.Context, err error) goahttp.Statuser,
+) http.Handler {
+	var (
+		encodeResponse = EncodeGetLiveTargetResponse(encoder)
+		encodeError    = EncodeGetLiveTargetError(encoder, formatter)
+	)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := context.WithValue(r.Context(), goahttp.AcceptTypeKey, r.Header.Get("Accept"))
+		ctx = context.WithValue(ctx, goa.MethodKey, "get_live_target")
+		ctx = context.WithValue(ctx, goa.ServiceKey, "surla")
+		var err error
+		res, err := endpoint(ctx, nil)
+		if err != nil {
+			if err := encodeError(ctx, w, err); err != nil && errhandler != nil {
+				errhandler(ctx, w, err)
+			}
+			return
+		}
+		if err := encodeResponse(ctx, w, res); err != nil {
+			if errhandler != nil {
+				errhandler(ctx, w, err)
+			}
+		}
+	})
+}
+
 // MountVerifyChangeHandler configures the mux to serve the "surla" service
 // "verify_change" endpoint.
 func MountVerifyChangeHandler(mux goahttp.Muxer, h http.Handler) {
@@ -1071,6 +1127,52 @@ func NewConfigureModelHandler(
 			return
 		}
 		res, err := endpoint(ctx, payload)
+		if err != nil {
+			if err := encodeError(ctx, w, err); err != nil && errhandler != nil {
+				errhandler(ctx, w, err)
+			}
+			return
+		}
+		if err := encodeResponse(ctx, w, res); err != nil {
+			if errhandler != nil {
+				errhandler(ctx, w, err)
+			}
+		}
+	})
+}
+
+// MountGetModelConnectionHandler configures the mux to serve the "surla"
+// service "get_model_connection" endpoint.
+func MountGetModelConnectionHandler(mux goahttp.Muxer, h http.Handler) {
+	f, ok := h.(http.HandlerFunc)
+	if !ok {
+		f = func(w http.ResponseWriter, r *http.Request) {
+			h.ServeHTTP(w, r)
+		}
+	}
+	mux.Handle("GET", "/cp1/model", f)
+}
+
+// NewGetModelConnectionHandler creates a HTTP handler which loads the HTTP
+// request and calls the "surla" service "get_model_connection" endpoint.
+func NewGetModelConnectionHandler(
+	endpoint goa.Endpoint,
+	mux goahttp.Muxer,
+	decoder func(*http.Request) goahttp.Decoder,
+	encoder func(context.Context, http.ResponseWriter) goahttp.Encoder,
+	errhandler func(context.Context, http.ResponseWriter, error),
+	formatter func(ctx context.Context, err error) goahttp.Statuser,
+) http.Handler {
+	var (
+		encodeResponse = EncodeGetModelConnectionResponse(encoder)
+		encodeError    = EncodeGetModelConnectionError(encoder, formatter)
+	)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := context.WithValue(r.Context(), goahttp.AcceptTypeKey, r.Header.Get("Accept"))
+		ctx = context.WithValue(ctx, goa.MethodKey, "get_model_connection")
+		ctx = context.WithValue(ctx, goa.ServiceKey, "surla")
+		var err error
+		res, err := endpoint(ctx, nil)
 		if err != nil {
 			if err := encodeError(ctx, w, err); err != nil && errhandler != nil {
 				errhandler(ctx, w, err)

@@ -41,9 +41,10 @@ const (
 // recently saved first (tie-broken by change_id), with the state of each
 // card's most recently accepted verification run, whether this server can
 // record approvals, and a version that changes whenever any listed value
-// changes or the owner's Story evaluation starts, finishes or is replaced. A
-// card or run record that cannot be read fails the call rather
-// than being left out of the list.
+// changes, the owner's Story evaluation starts, finishes or is replaced, or
+// the live target starts, becomes ready, accepts a draft, ends or is
+// stopped. The model choice is not part of it. A card or run record that
+// cannot be read fails the call rather than being left out of the list.
 func (c *ControlPlane) ListChanges(ctx context.Context) (*gensurla.ChangeList, error) {
 	principal, ok := PrincipalFromContext(ctx)
 	if !ok {
@@ -104,9 +105,11 @@ func (c *ControlPlane) WaitForChanges(
 // changeList reads owner's saved cards and, when verification is configured,
 // the newest run of each of owner's changes in one pass over the runs
 // directory, then orders the cards by saved time, resolves whether approvals
-// can be recorded, and derives the list's version from both and from the
-// owner's current Story evaluation, so the version also changes when that
-// evaluation starts, finishes or is replaced. Card files are
+// can be recorded, and derives the list's version from both, from the
+// owner's current Story evaluation and from the live target, so the version
+// also changes when that evaluation starts, finishes or is replaced and when
+// the live target's case, commit, start time or prompt versions change.
+// Card files are
 // read under the control plane's read lock; run records, which verification
 // processes write without that lock, are read after it is released. When a
 // record cannot be read, the cause is recorded on span and the returned error
@@ -173,7 +176,8 @@ func (c *ControlPlane) changeList(ctx context.Context, span trace.Span, owner st
 		ApprovalAvailable bool                       `json:"approval_available"`
 		Team              *gensurla.TeamSnapshot     `json:"team"`
 		StoryEvaluation   storyEvaluationVersion     `json:"story_evaluation"`
-	}{items, approvalAvailable, team, c.storyEvaluation(owner)})
+		LiveTarget        liveTargetVersion          `json:"live_target"`
+	}{items, approvalAvailable, team, c.storyEvaluation(owner), c.liveTargetVersion()})
 	if err != nil {
 		err = fmt.Errorf("encode change list version: %w", err)
 		span.RecordError(err)

@@ -42,6 +42,10 @@ const PAGE_OPERATIONS = [
   "surla#list_verifications",
   "surla#get_verification",
   "surla#list_traces",
+  "surla#get_live_target",
+  "surla#stop_live_target",
+  "surla#get_model_connection",
+  "surla#configure_model",
 ];
 
 // ERROR_SCHEMA is Goa's error response body, which every failed operation
