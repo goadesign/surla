@@ -99,6 +99,11 @@ func GetModelConnectionSurlaPath() string {
 	return "/cp1/model"
 }
 
+// HandOverModelSettingsSurlaPath returns the URL path to the surla service hand_over_model_settings HTTP endpoint.
+func HandOverModelSettingsSurlaPath() string {
+	return "/cp1/model/settings"
+}
+
 // InitProjectSurlaPath returns the URL path to the surla service init_project HTTP endpoint.
 func InitProjectSurlaPath() string {
 	return "/workspace/init"

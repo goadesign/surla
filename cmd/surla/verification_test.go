@@ -146,10 +146,7 @@ func TestStoredVerificationSupportsIndependentEvaluatorRepositories(t *testing.T
 
 	t.Chdir(shopDir)
 	require.NoError(t, runProjectSettings("verification", []string{"set", verPath}, io.Discard))
-	opts, err := serveOptions(
-		func(string) string { return "" },
-		nil,
-	)
+	opts, err := serveOptions(nil)
 	require.NoError(t, err)
 	require.NotNil(t, opts.Verification)
 	assert.Nil(t, opts.WrittenTestRuns, "stored verification settings leave no runs of written tests")

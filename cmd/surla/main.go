@@ -94,15 +94,6 @@ Other commands:
 // `surla -h`, `surla -help` and `surla --help`, also after `help`.
 var helpWords = []string{"help", "-h", "-help", "--help"}
 
-// defaultAnthropicModel and defaultOpenAIModel are the models the server
-// starts live copies with when the operator's environment holds that
-// provider's key. The variables that pass the choice and the keys to a live
-// copy are named in internal/verify (see liveTargetEnv).
-const (
-	defaultAnthropicModel = "claude-sonnet-4-6"
-	defaultOpenAIModel    = "gpt-5.4-mini"
-)
-
 func main() {
 	if err := runWithRuntime(os.Args[1:], os.Stdout, productionProjectRuntime()); err != nil {
 		fmt.Fprintf(os.Stderr, "surla: %v\n", err)
@@ -531,16 +522,12 @@ func isSHA256Hex(s string) bool {
 	return true
 }
 
-// projectServeOptions derives private stores, process helpers and the initial model
-// from the initialized project and operator environment. configure_model selects
-// later model choices; no caller supplies project identity or storage paths.
-func projectServeOptions(
-	state *project.State,
-	getenv func(string) string,
-	environ []string,
-) (controlplane.Options, error) {
-	startupModel := resolveStartupModel(getenv)
-
+// projectServeOptions derives private stores and process helpers from the
+// initialized project and environ, the server's environment after serve
+// removed every provider family from it. Live targets start from environ; the
+// model choice and provider settings come later, from hand_over_model_settings
+// and configure_model. No caller supplies project identity or storage paths.
+func projectServeOptions(state *project.State, environ []string) (controlplane.Options, error) {
 	ws, err := configureProjectWorkspace(state)
 	if err != nil {
 		return controlplane.Options{}, err
@@ -550,8 +537,7 @@ func projectServeOptions(
 		return controlplane.Options{}, err
 	}
 	live := &controlplane.LiveConfig{
-		Env:          liveTargetEnv(environ, startupModel),
-		Model:        startupModel,
+		Env:          environ,
 		Command:      self,
 		StartTimeout: defaultProjectVerifyTimeout,
 	}
@@ -570,7 +556,6 @@ func projectServeOptions(
 		Evaluator:              designeval.NewEvaluatorInDir(ws.evalWorkDir),
 		NewGenerator:           func() scaffold.Generator { return designeval.NewEvaluatorInDir(ws.evalWorkDir) },
 		SurlaVersion:           surlaBuildVersion(),
-		LiveModelEnv:           newLiveModelEnv(getenv, environ),
 		Verification:           ws.verification,
 		RunsDir:                ws.runsDir,
 		WrittenTestRuns:        ws.writtenTestRuns,
@@ -609,71 +594,6 @@ func operatorGoProxyEnv(dir string) ([]string, error) {
 		}
 	}
 	return env, nil
-}
-
-// resolveStartupModel selects the model choice the server starts with: the
-// default model of the first direct provider whose API key the operator's
-// environment holds, or none.
-func resolveStartupModel(getenv func(string) string) gensurla.Connection {
-	anthropicKey, _ := verify.LiveModelKeyEnv("anthropic")
-	openAIKey, _ := verify.LiveModelKeyEnv("openai")
-	switch {
-	case strings.TrimSpace(getenv(anthropicKey)) != "":
-		return gensurla.NewConnectionDirect(&gensurla.ModelDirect{Provider: "anthropic", ModelName: defaultAnthropicModel})
-	case strings.TrimSpace(getenv(openAIKey)) != "":
-		return gensurla.NewConnectionDirect(&gensurla.ModelDirect{Provider: "openai", ModelName: defaultOpenAIModel})
-	default:
-		return gensurla.NewConnectionNone(&gensurla.ModelNone{})
-	}
-}
-
-// newLiveModelEnv returns the LiveModelEnv callback configure_model uses to
-// build the environment live targets start with for a new model choice. A
-// direct provider whose API key is missing from getenv is refused as
-// unprocessable, because the live target would inherit no key.
-func newLiveModelEnv(getenv func(string) string, environ []string) controlplane.LiveModelEnv {
-	return func(choice gensurla.Connection) ([]string, error) {
-		if direct, ok := choice.AsDirect(); ok {
-			if env, ok := verify.LiveModelKeyEnv(direct.Provider); ok && strings.TrimSpace(getenv(env)) == "" {
-				return nil, gensurla.MakeUnprocessable(fmt.Errorf(
-					"provider %s requires %s in the project server's environment; set %s and stop and start Surla, or call configure_model with gateway_addr to attach a running model gateway",
-					direct.Provider,
-					env,
-					env,
-				))
-			}
-		}
-		return liveTargetEnv(environ, choice), nil
-	}
-}
-
-// liveTargetEnv replaces inherited live-model variables with the server's chosen
-// provider/model or gateway. API keys remain in the inherited operator environment;
-// project credentials are never stored there.
-func liveTargetEnv(environ []string, choice gensurla.Connection) []string {
-	derived := map[string]string{}
-	if gateway, ok := choice.AsGateway(); ok {
-		derived[verify.LiveModelGatewayEnv] = gateway.GatewayAddr
-	}
-	if direct, ok := choice.AsDirect(); ok {
-		derived[verify.LiveModelProviderEnv] = direct.Provider
-		derived[verify.LiveModelNameEnv] = direct.ModelName
-	}
-	out := make([]string, 0, len(environ)+len(derived))
-	for _, kv := range environ {
-		name, _, _ := strings.Cut(kv, "=")
-		switch name {
-		case verify.LiveModelGatewayEnv, verify.LiveModelProviderEnv, verify.LiveModelNameEnv:
-			continue
-		}
-		out = append(out, kv)
-	}
-	for _, name := range []string{verify.LiveModelProviderEnv, verify.LiveModelNameEnv, verify.LiveModelGatewayEnv} {
-		if v, ok := derived[name]; ok {
-			out = append(out, name+"="+v)
-		}
-	}
-	return out
 }
 
 // writeLeftoverLiveDirs names the live target directories an earlier serve

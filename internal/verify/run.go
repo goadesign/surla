@@ -209,18 +209,24 @@ func IsCommitID(commit string) bool {
 // caller must run it inside an owning group that it stops afterwards, as
 // `surla verify-run execute` does under its supervisor.
 //
+// Preparation runs with the process environment. environ is the
+// environment the test program's own is derived from (ProgramEnv): the
+// process environment plus the provider request settings the run was
+// given, which the caller removed from its own process so preparation
+// never sees them.
+//
 // Every error is a *StageError naming the step that failed and a summary
 // safe to show builders; its Err may quote command output and stays with the
 // evaluator. A suite that produces no decodable eval.Report is an error.
 // Otherwise the report keeps the suite's evidence and exit status: a suite
 // that ran and failed, or that exited abnormally after writing partial
 // results, yields a report that does not pass.
-func Run(ctx context.Context, p Plan) (Report, error) {
+func Run(ctx context.Context, p Plan, environ []string) (Report, error) {
 	prep, err := Prepare(ctx, p)
 	if err != nil {
 		return Report{}, err
 	}
-	return runPrepared(ctx, p, prep, os.Environ())
+	return runPrepared(ctx, p, prep, environ)
 }
 
 // Prepare runs the trusted preparation Run starts with: it checks the plan,

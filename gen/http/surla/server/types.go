@@ -162,6 +162,19 @@ type ConfigureModelRequestBody struct {
 	GatewayAddr *string `form:"gateway_addr,omitempty" json:"gateway_addr,omitempty" xml:"gateway_addr,omitempty"`
 }
 
+// HandOverModelSettingsRequestBody is the type of the "surla" service
+// "hand_over_model_settings" endpoint HTTP request body.
+type HandOverModelSettingsRequestBody struct {
+	// Request settings for anthropic, keyed by variable name, replacing everything
+	// held for anthropic. They must include ANTHROPIC_API_KEY. Omit the attribute
+	// to keep what is held.
+	Anthropic map[string]string `form:"anthropic,omitempty" json:"anthropic,omitempty" xml:"anthropic,omitempty"`
+	// Request settings for openai, keyed by variable name, replacing everything
+	// held for openai. They must include OPENAI_API_KEY. Omit the attribute to
+	// keep what is held.
+	Openai map[string]string `form:"openai,omitempty" json:"openai,omitempty" xml:"openai,omitempty"`
+}
+
 // InitProjectRequestBody is the type of the "surla" service "init_project"
 // endpoint HTTP request body.
 type InitProjectRequestBody struct {
@@ -692,6 +705,17 @@ type ConfigureModelResponseBody struct {
 // GetModelConnectionResponseBody is the type of the "surla" service
 // "get_model_connection" endpoint HTTP response body.
 type GetModelConnectionResponseBody struct {
+	// none when no model is chosen; direct with a provider and model name; gateway
+	// with a model gateway address.
+	Connection ConnectionResponseBody `form:"connection" json:"connection" xml:"connection"`
+}
+
+// HandOverModelSettingsResponseBody is the type of the "surla" service
+// "hand_over_model_settings" endpoint HTTP response body.
+type HandOverModelSettingsResponseBody struct {
+	// Names of the request settings held for each provider, sorted; a provider
+	// holds nothing until its settings are handed over.
+	Held map[string][]string `form:"held" json:"held" xml:"held"`
 	// none when no model is chosen; direct with a provider and model name; gateway
 	// with a model gateway address.
 	Connection ConnectionResponseBody `form:"connection" json:"connection" xml:"connection"`
@@ -1981,25 +2005,6 @@ type ConfigureModelUnprocessableResponseBody struct {
 	Fault bool `form:"fault" json:"fault" xml:"fault"`
 }
 
-// ConfigureModelNotImplementedResponseBody is the type of the "surla" service
-// "configure_model" endpoint HTTP response body for the "not_implemented"
-// error.
-type ConfigureModelNotImplementedResponseBody struct {
-	// Name is the name of this class of errors.
-	Name string `form:"name" json:"name" xml:"name"`
-	// ID is a unique identifier for this particular occurrence of the problem.
-	ID string `form:"id" json:"id" xml:"id"`
-	// Message is a human-readable explanation specific to this occurrence of the
-	// problem.
-	Message string `form:"message" json:"message" xml:"message"`
-	// Is the error temporary?
-	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
-	// Is the error a timeout?
-	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
-	// Is the error a server-side fault?
-	Fault bool `form:"fault" json:"fault" xml:"fault"`
-}
-
 // ConfigureModelForbiddenResponseBody is the type of the "surla" service
 // "configure_model" endpoint HTTP response body for the "forbidden" error.
 type ConfigureModelForbiddenResponseBody struct {
@@ -2021,6 +2026,44 @@ type ConfigureModelForbiddenResponseBody struct {
 // GetModelConnectionForbiddenResponseBody is the type of the "surla" service
 // "get_model_connection" endpoint HTTP response body for the "forbidden" error.
 type GetModelConnectionForbiddenResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
+// HandOverModelSettingsUnprocessableResponseBody is the type of the "surla"
+// service "hand_over_model_settings" endpoint HTTP response body for the
+// "unprocessable" error.
+type HandOverModelSettingsUnprocessableResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
+// HandOverModelSettingsForbiddenResponseBody is the type of the "surla"
+// service "hand_over_model_settings" endpoint HTTP response body for the
+// "forbidden" error.
+type HandOverModelSettingsForbiddenResponseBody struct {
 	// Name is the name of this class of errors.
 	Name string `form:"name" json:"name" xml:"name"`
 	// ID is a unique identifier for this particular occurrence of the problem.
@@ -7095,6 +7138,59 @@ func NewGetModelConnectionResponseBody(res *surla.ModelConnection) *GetModelConn
 	return body
 }
 
+// NewHandOverModelSettingsResponseBody builds the HTTP response body from the
+// result of the "hand_over_model_settings" endpoint of the "surla" service.
+func NewHandOverModelSettingsResponseBody(res *surla.ModelSettingsResult) *HandOverModelSettingsResponseBody {
+	body := &HandOverModelSettingsResponseBody{}
+	if res.Held != nil {
+		body.Held = make(map[string][]string, len(res.Held))
+		for key, val := range res.Held {
+			tk := key
+			if val == nil {
+				body.Held[tk] = nil
+				continue
+			}
+			tv := make([]string, len(val))
+			for i, val := range val {
+				tv[i] = val
+			}
+			body.Held[tk] = tv
+		}
+	}
+	if res.Connection.Kind() != "" {
+		switch string(res.Connection.Kind()) {
+		case "none":
+			actual, _ := res.Connection.AsNone()
+			var obj *ModelNoneResponseBody
+			if actual != nil {
+				obj = marshalSurlaModelNoneToModelNoneResponseBody(actual)
+			}
+			u := body.Connection
+			u.SetNone((*ModelNoneResponseBody)(obj))
+			body.Connection = u
+		case "direct":
+			actual, _ := res.Connection.AsDirect()
+			var obj *ModelDirectResponseBody
+			if actual != nil {
+				obj = marshalSurlaModelDirectToModelDirectResponseBody(actual)
+			}
+			u := body.Connection
+			u.SetDirect((*ModelDirectResponseBody)(obj))
+			body.Connection = u
+		case "gateway":
+			actual, _ := res.Connection.AsGateway()
+			var obj *ModelGatewayResponseBody
+			if actual != nil {
+				obj = marshalSurlaModelGatewayToModelGatewayResponseBody(actual)
+			}
+			u := body.Connection
+			u.SetGateway((*ModelGatewayResponseBody)(obj))
+			body.Connection = u
+		}
+	}
+	return body
+}
+
 // NewInitProjectResponseBody builds the HTTP response body from the result of
 // the "init_project" endpoint of the "surla" service.
 func NewInitProjectResponseBody(res *surla.InitProjectResult) *InitProjectResponseBody {
@@ -8371,20 +8467,6 @@ func NewConfigureModelUnprocessableResponseBody(res *goa.ServiceError) *Configur
 	return body
 }
 
-// NewConfigureModelNotImplementedResponseBody builds the HTTP response body
-// from the result of the "configure_model" endpoint of the "surla" service.
-func NewConfigureModelNotImplementedResponseBody(res *goa.ServiceError) *ConfigureModelNotImplementedResponseBody {
-	body := &ConfigureModelNotImplementedResponseBody{
-		Name:      res.Name,
-		ID:        res.ID,
-		Message:   res.Message,
-		Temporary: res.Temporary,
-		Timeout:   res.Timeout,
-		Fault:     res.Fault,
-	}
-	return body
-}
-
 // NewConfigureModelForbiddenResponseBody builds the HTTP response body from
 // the result of the "configure_model" endpoint of the "surla" service.
 func NewConfigureModelForbiddenResponseBody(res *goa.ServiceError) *ConfigureModelForbiddenResponseBody {
@@ -8404,6 +8486,36 @@ func NewConfigureModelForbiddenResponseBody(res *goa.ServiceError) *ConfigureMod
 // service.
 func NewGetModelConnectionForbiddenResponseBody(res *goa.ServiceError) *GetModelConnectionForbiddenResponseBody {
 	body := &GetModelConnectionForbiddenResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
+// NewHandOverModelSettingsUnprocessableResponseBody builds the HTTP response
+// body from the result of the "hand_over_model_settings" endpoint of the
+// "surla" service.
+func NewHandOverModelSettingsUnprocessableResponseBody(res *goa.ServiceError) *HandOverModelSettingsUnprocessableResponseBody {
+	body := &HandOverModelSettingsUnprocessableResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
+// NewHandOverModelSettingsForbiddenResponseBody builds the HTTP response body
+// from the result of the "hand_over_model_settings" endpoint of the "surla"
+// service.
+func NewHandOverModelSettingsForbiddenResponseBody(res *goa.ServiceError) *HandOverModelSettingsForbiddenResponseBody {
+	body := &HandOverModelSettingsForbiddenResponseBody{
 		Name:      res.Name,
 		ID:        res.ID,
 		Message:   res.Message,
@@ -9513,6 +9625,30 @@ func NewConfigureModelPayload(body *ConfigureModelRequestBody) *surla.ConfigureM
 	return v
 }
 
+// NewHandOverModelSettingsPayload builds a surla service
+// hand_over_model_settings endpoint payload.
+func NewHandOverModelSettingsPayload(body *HandOverModelSettingsRequestBody) *surla.HandOverModelSettingsPayload {
+	v := &surla.HandOverModelSettingsPayload{}
+	if body.Anthropic != nil {
+		v.Anthropic = make(map[string]string, len(body.Anthropic))
+		for key, val := range body.Anthropic {
+			tk := key
+			tv := val
+			v.Anthropic[tk] = tv
+		}
+	}
+	if body.Openai != nil {
+		v.Openai = make(map[string]string, len(body.Openai))
+		for key, val := range body.Openai {
+			tk := key
+			tv := val
+			v.Openai[tk] = tv
+		}
+	}
+
+	return v
+}
+
 // NewInitProjectPayload builds a surla service init_project endpoint payload.
 func NewInitProjectPayload(body *InitProjectRequestBody) *surla.InitProjectPayload {
 	v := &surla.InitProjectPayload{
@@ -9833,6 +9969,34 @@ func ValidateConfigureModelRequestBody(body *ConfigureModelRequestBody) (err err
 	if body.GatewayAddr != nil {
 		if utf8.RuneCountInString(*body.GatewayAddr) < 1 {
 			err = goa.MergeErrors(err, goa.InvalidLengthError("body.gateway_addr", *body.GatewayAddr, utf8.RuneCountInString(*body.GatewayAddr), 1, true))
+		}
+	}
+	return
+}
+
+// ValidateHandOverModelSettingsRequestBody runs the validations defined on
+// HandOverModelSettingsRequestBody
+func ValidateHandOverModelSettingsRequestBody(body *HandOverModelSettingsRequestBody) (err error) {
+	for k, v := range body.Anthropic {
+		if !(k == "ANTHROPIC_API_KEY" || k == "ANTHROPIC_AUTH_TOKEN" || k == "ANTHROPIC_BASE_URL" || k == "ANTHROPIC_CUSTOM_HEADERS") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.anthropic.key", k, []any{"ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL", "ANTHROPIC_CUSTOM_HEADERS"}))
+		}
+		if utf8.RuneCountInString(v) < 1 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.anthropic[key]", v, utf8.RuneCountInString(v), 1, true))
+		}
+		if utf8.RuneCountInString(v) > 4096 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.anthropic[key]", v, utf8.RuneCountInString(v), 4096, false))
+		}
+	}
+	for k, v := range body.Openai {
+		if !(k == "OPENAI_API_KEY" || k == "OPENAI_BASE_URL" || k == "OPENAI_ORG_ID" || k == "OPENAI_PROJECT_ID" || k == "OPENAI_CUSTOM_HEADERS") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.openai.key", k, []any{"OPENAI_API_KEY", "OPENAI_BASE_URL", "OPENAI_ORG_ID", "OPENAI_PROJECT_ID", "OPENAI_CUSTOM_HEADERS"}))
+		}
+		if utf8.RuneCountInString(v) < 1 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.openai[key]", v, utf8.RuneCountInString(v), 1, true))
+		}
+		if utf8.RuneCountInString(v) > 4096 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.openai[key]", v, utf8.RuneCountInString(v), 4096, false))
 		}
 	}
 	return

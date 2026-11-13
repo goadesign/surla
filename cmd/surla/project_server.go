@@ -457,7 +457,7 @@ func (runtime projectRuntime) serve(stateDir string) (err error) {
 		err = errors.Join(err, provider.Shutdown(ctx))
 		otel.SetTracerProvider(previous)
 	}()
-	opts, err := projectServeOptions(state, os.Getenv, os.Environ())
+	opts, err := projectServeOptions(state, os.Environ())
 	if err != nil {
 		return err
 	}

@@ -340,7 +340,7 @@ func TestChangeAnalysisIsRejectedAtTheBoundary(t *testing.T) {
 // covers every HTTP route that reads a JSON body, not only the analysis
 // routes: a configure_model body with a field the design does not declare is
 // refused with 400 decode_payload before the service runs, while the same
-// body without it reaches the service, which on this host answers 501.
+// body without it reaches the service, which accepts it.
 func TestHTTPRoutesRefuseUndeclaredJSONFields(t *testing.T) {
 	cp := newControlPlane(t, Options{})
 	srv := httptest.NewServer(NewHTTPHandler(cp, workflowAuthenticator(map[string]Principal{"alice-token": {ID: "alice@example.com"}})))
@@ -357,7 +357,7 @@ func TestHTTPRoutesRefuseUndeclaredJSONFields(t *testing.T) {
 	assert.Equal(t, `json: unknown field "timeout"`, refusal.Message)
 
 	status, body = postJSON(t, srv.URL+"/cp1/model", "alice-token", `{"gateway_addr":"127.0.0.1:9090"}`)
-	assert.Equal(t, http.StatusNotImplemented, status, body)
+	assert.Equal(t, http.StatusOK, status, body)
 }
 
 // TestGoCallersGetTheDesignRules verifies that a Go caller of ProposeChange

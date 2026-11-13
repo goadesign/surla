@@ -25,7 +25,7 @@ import (
 func UsageCommands() []string {
 	return []string{
 		"project (identity|ensure-team|stop|browser-link|exchange-browser-link)",
-		"surla (golden-path|propose-change|revise-change|confirm-intent|get-change|decline-revision|preview-architecture|draft-override|start-live-target|stop-live-target|get-live-target|verify-change|get-verification|list-verifications|approve-merge|diff|configure-model|get-model-connection|init-project|generate-code|check-project|update-dependencies|read-check-output|list-traces|refresh-story|get-story-refresh|get-team|show-team-pane|start-team-agents|list-changes|wait-for-changes|start-build|get-build|get-test-findings|list-builder-assignments|get-builder-assignment|list-test-writer-assignments|get-test-writer-assignment|report-tests-finished)",
+		"surla (golden-path|propose-change|revise-change|confirm-intent|get-change|decline-revision|preview-architecture|draft-override|start-live-target|stop-live-target|get-live-target|verify-change|get-verification|list-verifications|approve-merge|diff|configure-model|get-model-connection|hand-over-model-settings|init-project|generate-code|check-project|update-dependencies|read-check-output|list-traces|refresh-story|get-story-refresh|get-team|show-team-pane|start-team-agents|list-changes|wait-for-changes|start-build|get-build|get-test-findings|list-builder-assignments|get-builder-assignment|list-test-writer-assignments|get-test-writer-assignment|report-tests-finished)",
 	}
 }
 
@@ -131,6 +131,9 @@ func ParseEndpoint(
 
 		surlaGetModelConnectionFlags = flag.NewFlagSet("get-model-connection", flag.ExitOnError)
 
+		surlaHandOverModelSettingsFlags    = flag.NewFlagSet("hand-over-model-settings", flag.ExitOnError)
+		surlaHandOverModelSettingsBodyFlag = new(cliStringFlag)
+
 		surlaInitProjectFlags    = flag.NewFlagSet("init-project", flag.ExitOnError)
 		surlaInitProjectBodyFlag = new(cliStringFlag)
 
@@ -205,6 +208,7 @@ func ParseEndpoint(
 	surlaApproveMergeFlags.Var(surlaApproveMergeBodyFlag, "body", "")
 	surlaDiffFlags.Var(surlaDiffBodyFlag, "body", "")
 	surlaConfigureModelFlags.Var(surlaConfigureModelBodyFlag, "body", "")
+	surlaHandOverModelSettingsFlags.Var(surlaHandOverModelSettingsBodyFlag, "body", "")
 	surlaInitProjectFlags.Var(surlaInitProjectBodyFlag, "body", "")
 	surlaGenerateCodeFlags.Var(surlaGenerateCodeBodyFlag, "body", "")
 	surlaReadCheckOutputFlags.Var(surlaReadCheckOutputBodyFlag, "body", "")
@@ -246,6 +250,7 @@ func ParseEndpoint(
 	surlaDiffFlags.Usage = surlaDiffUsage
 	surlaConfigureModelFlags.Usage = surlaConfigureModelUsage
 	surlaGetModelConnectionFlags.Usage = surlaGetModelConnectionUsage
+	surlaHandOverModelSettingsFlags.Usage = surlaHandOverModelSettingsUsage
 	surlaInitProjectFlags.Usage = surlaInitProjectUsage
 	surlaGenerateCodeFlags.Usage = surlaGenerateCodeUsage
 	surlaCheckProjectFlags.Usage = surlaCheckProjectUsage
@@ -376,6 +381,9 @@ func ParseEndpoint(
 
 			case "get-model-connection":
 				epf = surlaGetModelConnectionFlags
+
+			case "hand-over-model-settings":
+				epf = surlaHandOverModelSettingsFlags
 
 			case "init-project":
 				epf = surlaInitProjectFlags
@@ -530,6 +538,9 @@ func ParseEndpoint(
 				data, err = surlac.BuildConfigureModelPayload(surlaConfigureModelBodyFlag.value)
 			case "get-model-connection":
 				endpoint = c.GetModelConnection()
+			case "hand-over-model-settings":
+				endpoint = c.HandOverModelSettings()
+				data, err = surlac.BuildHandOverModelSettingsPayload(surlaHandOverModelSettingsBodyFlag.value)
 			case "init-project":
 				endpoint = c.InitProject()
 				data, err = surlac.BuildInitProjectPayload(surlaInitProjectBodyFlag.value)
@@ -596,7 +607,7 @@ func ParseEndpoint(
 
 // projectUsage displays the usage of the project command and its subcommands.
 func projectUsage() {
-	fmt.Fprintln(os.Stderr, `Owns one local project's server identity, agent credentials, and one-use browser access. Management credentials last for one listening server and never authorize application decisions. This service is not exposed as agent tools.`)
+	fmt.Fprintln(os.Stderr, `Owns one local project's server identity, agent credentials, and one-use browser access. Management credentials last for one listening server and never authorize application decisions; besides this service, they may only hand over the model provider request settings of the shell running surla (the surla service's hand_over_model_settings). This service is not exposed as agent tools.`)
 	fmt.Fprintf(os.Stderr, "Usage:\n    %s [globalflags] project COMMAND [flags]\n\n", os.Args[0])
 	fmt.Fprintln(os.Stderr, "COMMAND:")
 	fmt.Fprintln(os.Stderr, `    identity: The CLI checks the answering server reports its expected project identity using the current server-lifetime management credential.`)
@@ -711,8 +722,9 @@ func surlaUsage() {
 	fmt.Fprintln(os.Stderr, `    list-verifications: Return all Checkpoint 4 verification runs started by the owner for a Change Card, ordered newest first by accepted_at (tie-broken by run_id), with each run's current state, the Change Card revision it was started for and where its tests came from. Works whether the Change Card is currently confirmed or in needs_confirmation after a later revision. The test writer lists only the runs of a change it has an assignment for.`)
 	fmt.Fprintln(os.Stderr, `    approve-merge: Record Checkpoint 5 approval for the owner's confirmed Change Card revision. The control plane loads the verification report by digest and the expected suite, environment and candidate binary digests from its promotion target, re-derives the report from its evidence with verify.Approve, and records the approval on the card. A report that did not pass or describes different inputs is rejected. Nothing is merged or deployed. The promotion target comes from surla promotion set or from the program that embeds the control plane; a control plane without one rejects every call.`)
 	fmt.Fprintln(os.Stderr, `    diff: Compare evaluated Goa designs and go.mod directives without emitting a blanket compatibility verdict.`)
-	fmt.Fprintln(os.Stderr, `    configure-model: Choose, on a running control plane without restarting, the model that CP3 live targets started afterwards receive: a direct provider and model name (using that provider's API key from the project server's environment) or a running gRPC model gateway. start_live_target passes the choice to the target's evaluator suite as SURLA_LIVE_MODEL_PROVIDER and SURLA_LIVE_MODEL_NAME, or as SURLA_LIVE_MODEL_GATEWAY.`)
-	fmt.Fprintln(os.Stderr, `    get-model-connection: Report the model choice live targets started afterwards receive: none, a direct provider and model name, or a model gateway address. It starts from the choice made when the server started and follows every accepted configure_model call. It never returns an API key or any other environment value, and it changes nothing. Verification runs do not use this choice.`)
+	fmt.Fprintln(os.Stderr, `    configure-model: Choose, on a running control plane without restarting, the model that CP3 live targets started afterwards receive: a direct provider and model name, whose request settings the surla command handed to the project server with hand_over_model_settings, or a running gRPC model gateway. start_live_target passes the choice to the target's evaluator suite as SURLA_LIVE_MODEL_PROVIDER and SURLA_LIVE_MODEL_NAME, or as SURLA_LIVE_MODEL_GATEWAY, and gives it the chosen provider's held request settings.`)
+	fmt.Fprintln(os.Stderr, `    get-model-connection: Report the model choice live targets started afterwards receive: none, a direct provider and model name, or a model gateway address. It starts as none; the first hand_over_model_settings that holds a provider's settings selects that provider's default model, and every accepted configure_model call replaces the choice. It never returns an API key or any other setting value, and it changes nothing. Verification runs do not use this choice.`)
+	fmt.Fprintln(os.Stderr, `    hand-over-model-settings: The surla command, after it confirms the project server's identity, hands over the request settings of each model provider whose key is set in the shell it runs in: the key and the listed settings that route and authenticate the provider's requests. The project server holds them in memory only and forgets them when it stops. A live target's evaluator suite receives the chosen provider's held settings, the operator's stored evaluator receives every held provider's settings, and tests agents wrote and the check helper receive none. An absent provider attribute keeps what is held for that provider. A present one replaces everything held for it and must include the provider's key variable; an empty one is refused, because it is neither a way to keep nor a way to forget. A request with neither attribute changes nothing and reports what is held. When no model is chosen and a provider is now held, live targets use that provider's default model, anthropic before openai; any other choice stays. The result names the held variables and the model choice, never a value. Only the surla command's management credential may call this operation; it is never an MCP tool.`)
 	fmt.Fprintln(os.Stderr, `    init-project: Initialize a new Surla starter project directory inside the server's bound workspace, generating the candidate Go module, Goa and Goa-AI code, and the eval/ verification harness, creating the initial Git commit, and switching the server's active workspace and trusted evaluator suite commit to that project. When the request includes a progressToken, the tool sends MCP progress updates as starter generation/tests, initial commit creation, and publication start.`)
 	fmt.Fprintln(os.Stderr, `    generate-code: Read the active workspace's application module, or its public local eval/ module when target is eval, compile that module's edited Goa design in Surla's sandbox, and atomically replace its gen/ directory. Preserve top-level user files and their permissions and leave go.mod and go.sum unchanged. Return the written paths and warnings; a warning after gen/ publication still means generation succeeded. The tool compiles the design only; it does not build the application or run tests. Fix a rejected design and call again on the same running server.`)
 	fmt.Fprintln(os.Stderr, `    check-project: Copy the active workspace's live files (uncommitted edits included) into a protected per-operation copy and run go test ./... for every Go module in it, each in a Linux container with no network. Nothing in the workspace changes. Returns passed and a bounded message; read the full output with read_check_output.`)
@@ -1030,7 +1042,7 @@ func surlaConfigureModelUsage() {
 
 	// Description
 	fmt.Fprintln(os.Stderr)
-	fmt.Fprintln(os.Stderr, `Choose, on a running control plane without restarting, the model that CP3 live targets started afterwards receive: a direct provider and model name (using that provider's API key from the project server's environment) or a running gRPC model gateway. start_live_target passes the choice to the target's evaluator suite as SURLA_LIVE_MODEL_PROVIDER and SURLA_LIVE_MODEL_NAME, or as SURLA_LIVE_MODEL_GATEWAY.`)
+	fmt.Fprintln(os.Stderr, `Choose, on a running control plane without restarting, the model that CP3 live targets started afterwards receive: a direct provider and model name, whose request settings the surla command handed to the project server with hand_over_model_settings, or a running gRPC model gateway. start_live_target passes the choice to the target's evaluator suite as SURLA_LIVE_MODEL_PROVIDER and SURLA_LIVE_MODEL_NAME, or as SURLA_LIVE_MODEL_GATEWAY, and gives it the chosen provider's held request settings.`)
 
 	// Flags list
 	fmt.Fprintln(os.Stderr, `    -body JSON: `)
@@ -1047,13 +1059,31 @@ func surlaGetModelConnectionUsage() {
 
 	// Description
 	fmt.Fprintln(os.Stderr)
-	fmt.Fprintln(os.Stderr, `Report the model choice live targets started afterwards receive: none, a direct provider and model name, or a model gateway address. It starts from the choice made when the server started and follows every accepted configure_model call. It never returns an API key or any other environment value, and it changes nothing. Verification runs do not use this choice.`)
+	fmt.Fprintln(os.Stderr, `Report the model choice live targets started afterwards receive: none, a direct provider and model name, or a model gateway address. It starts as none; the first hand_over_model_settings that holds a provider's settings selects that provider's default model, and every accepted configure_model call replaces the choice. It never returns an API key or any other setting value, and it changes nothing. Verification runs do not use this choice.`)
 
 	// Flags list
 
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Example:")
 	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "surla get-model-connection")
+}
+
+func surlaHandOverModelSettingsUsage() {
+	// Header with flags
+	fmt.Fprintf(os.Stderr, "%s [flags] surla hand-over-model-settings", os.Args[0])
+	fmt.Fprint(os.Stderr, " -body JSON")
+	fmt.Fprintln(os.Stderr)
+
+	// Description
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, `The surla command, after it confirms the project server's identity, hands over the request settings of each model provider whose key is set in the shell it runs in: the key and the listed settings that route and authenticate the provider's requests. The project server holds them in memory only and forgets them when it stops. A live target's evaluator suite receives the chosen provider's held settings, the operator's stored evaluator receives every held provider's settings, and tests agents wrote and the check helper receive none. An absent provider attribute keeps what is held for that provider. A present one replaces everything held for it and must include the provider's key variable; an empty one is refused, because it is neither a way to keep nor a way to forget. A request with neither attribute changes nothing and reports what is held. When no model is chosen and a provider is now held, live targets use that provider's default model, anthropic before openai; any other choice stays. The result names the held variables and the model choice, never a value. Only the surla command's management credential may call this operation; it is never an MCP tool.`)
+
+	// Flags list
+	fmt.Fprintln(os.Stderr, `    -body JSON: `)
+
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, "Example:")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "surla hand-over-model-settings --body '{\n      \"anthropic\": {\n         \"ANTHROPIC_API_KEY\": \"bb4\",\n         \"ANTHROPIC_AUTH_TOKEN\": \"j\"\n      },\n      \"openai\": {\n         \"OPENAI_BASE_URL\": \"qsj\",\n         \"OPENAI_CUSTOM_HEADERS\": \"p1\",\n         \"OPENAI_ORG_ID\": \"6\"\n      }\n   }'")
 }
 
 func surlaInitProjectUsage() {

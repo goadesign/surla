@@ -1,7 +1,7 @@
 // This file tests runtime model configuration (`configure_model` /
-// `POST /cp1/model`): payload validation, refusal and fault classification
-// across Go, HTTP and MCP with their exported OpenTelemetry spans, and the
-// live-target environment (`liveEnv`) that a later start_live_target receives,
+// `POST /cp1/model`): payload validation, the refusal of a provider whose
+// request settings are not held, across Go, HTTP and MCP with their exported
+// OpenTelemetry spans, the environment a later start_live_target receives,
 // and the choice `get_model_connection` reports.
 
 package controlplane
@@ -9,12 +9,10 @@ package controlplane
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"slices"
 	"strings"
 	"testing"
 
@@ -30,14 +28,21 @@ import (
 	gensurla "github.com/goadesign/surla/gen/surla"
 )
 
+// refusalAnthropic and refusalOpenAI are configure_model's refusals of a
+// provider whose request settings the server does not hold.
+const (
+	refusalAnthropic = "provider anthropic needs ANTHROPIC_API_KEY: export it, with any ANTHROPIC_ request settings it needs, in a shell and run surla there; the project server keeps running. Or choose a model gateway."
+	refusalOpenAI    = "provider openai needs OPENAI_API_KEY: export it, with any OPENAI_ request settings it needs, in a shell and run surla there; the project server keeps running. Or choose a model gateway."
+)
+
 // TestConfigureModelValidationTelemetryAndLiveEnv verifies ConfigureModel's
 // authentication, payload normalization and cross-field validation, the
-// refusal events ("model_configuration_refused") for an invalid payload, a
-// host without Options.LiveModelEnv and a missing provider key, the server
-// fault a LiveModelEnv failure is, bounded "model_configured" event
-// attributes (keeping arbitrarily long accepted model_name and gateway_addr
-// values out of telemetry), and that every refusal or fault leaves the
-// current live-target environment in place.
+// refusal events ("model_configuration_refused") for an invalid payload and
+// for a provider whose settings are not held, which carries the exact
+// refusal across Go, HTTP and MCP without an error status, bounded
+// "model_configured" event attributes (keeping arbitrarily long accepted
+// model_name and gateway_addr values out of telemetry), and that a refusal
+// leaves the current choice in place.
 func TestConfigureModelValidationTelemetryAndLiveEnv(t *testing.T) {
 	prevProvider := otel.GetTracerProvider()
 	sr := tracetest.NewSpanRecorder()
@@ -49,8 +54,6 @@ func TestConfigureModelValidationTelemetryAndLiveEnv(t *testing.T) {
 	})
 
 	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
-	initialEnv := []string{"SURLA_LIVE_MODEL_PROVIDER=anthropic", "SURLA_LIVE_MODEL_NAME=claude-sonnet-4-6"}
-	initialModel := directModel("anthropic", "claude-sonnet-4-6")
 
 	t.Run("unauthenticated ConfigureModel is rejected before starting a span", func(t *testing.T) {
 		sr.Reset()
@@ -61,35 +64,9 @@ func TestConfigureModelValidationTelemetryAndLiveEnv(t *testing.T) {
 		assert.Empty(t, endedSpansByName(sr, "surla.controlplane.configure_model"))
 	})
 
-	t.Run("reconfiguration unavailable records refusal event without error status and keeps the live environment", func(t *testing.T) {
-		sr.Reset()
-		cp := newControlPlane(t, Options{Live: &LiveConfig{Env: initialEnv, Model: initialModel}})
-		gw := "127.0.0.1:9090"
-		_, err := cp.ConfigureModel(alice, &gensurla.ConfigureModelPayload{GatewayAddr: &gw})
-		assertServiceError(t, err, "not_implemented")
-		assert.ErrorContains(t, err, msgModelReconfigUnavailable)
-
-		spans := endedSpansByName(sr, "surla.controlplane.configure_model")
-		require.Len(t, spans, 1)
-		assert.Equal(t, codes.Unset, spans[0].Status().Code)
-		assert.Empty(t, exceptionMessages(spans[0]))
-		assert.Equal(t, map[string]map[string]string{
-			"model_configuration_refused": {"surla.model.refusal_reason": "reconfiguration_unavailable"},
-		}, nonExceptionEvents(spans[0]))
-		assert.Equal(t, initialEnv, cp.liveEnv())
-	})
-
-	t.Run("payload and LiveModelEnv refusal vs fault classification across Go HTTP MCP and exported spans", func(t *testing.T) {
-		var envErr error
-		cp := newControlPlane(t, Options{
-			Live: &LiveConfig{Env: initialEnv, Model: initialModel},
-			LiveModelEnv: func(gensurla.Connection) ([]string, error) {
-				if envErr != nil {
-					return nil, envErr
-				}
-				return []string{"SURLA_LIVE_MODEL_GATEWAY=unused"}, nil
-			},
-		})
+	t.Run("payload and missing settings refusals across Go HTTP MCP and exported spans", func(t *testing.T) {
+		cp := newControlPlane(t, Options{})
+		handOverSettings(t, cp, &gensurla.HandOverModelSettingsPayload{Anthropic: map[string]string{"ANTHROPIC_API_KEY": sentinelKey}})
 		handler := NewHTTPHandler(cp, workflowAuthenticator(map[string]Principal{
 			"alice-token": {ID: "alice@example.com"},
 		}))
@@ -126,94 +103,59 @@ func TestConfigureModelValidationTelemetryAndLiveEnv(t *testing.T) {
 			})
 		}
 
-		reqBodyJSON, err := json.Marshal(map[string]any{"provider": "openai", "model_name": "gpt-5.4-mini"})
-		require.NoError(t, err)
-		assertSpanOutcome := func(t *testing.T, wantCode codes.Code, wantExceptions []string, wantEvents map[string]map[string]string) {
-			t.Helper()
-			spans := endedSpansByName(sr, "surla.controlplane.configure_model")
-			require.Len(t, spans, 1)
-			assert.Equal(t, wantCode, spans[0].Status().Code)
-			assert.Equal(t, wantExceptions, exceptionMessages(spans[0]))
-			assert.Equal(t, wantEvents, nonExceptionEvents(spans[0]))
-		}
-		assertHTTPAndMCP := func(t *testing.T, wantHTTPCode int, wantHTTPName string, wantFault bool, wantSpanCode codes.Code, wantExceptions []string, wantEvents map[string]map[string]string) {
-			t.Helper()
-			sr.Reset()
-			req := httptest.NewRequest(http.MethodPost, "/cp1/model", strings.NewReader(string(reqBodyJSON)))
-			req.Header.Set("Authorization", "Bearer alice-token")
-			req.Header.Set("Content-Type", "application/json")
-			rec := httptest.NewRecorder()
-			handler.ServeHTTP(rec, req)
-			assert.Equal(t, wantHTTPCode, rec.Code)
-			var httpErr struct {
-				Name  string `json:"name"`
-				Fault bool   `json:"fault"`
-			}
-			require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &httpErr))
-			assert.Equal(t, wantHTTPName, httpErr.Name)
-			assert.Equal(t, wantFault, httpErr.Fault)
-			assertSpanOutcome(t, wantSpanCode, wantExceptions, wantEvents)
-
-			sr.Reset()
-			mcpRes, mErr := mcpAdapter.ToolsCall(alice, &genmcpadapter.ToolsCallPayload{Name: "configure_model", Arguments: reqBodyJSON})
-			require.NoError(t, mErr)
-			complete, ok := mcpRes.Outcome.AsComplete()
-			require.True(t, ok)
-			require.NotNil(t, complete.IsError)
-			assert.True(t, *complete.IsError)
-			assertSpanOutcome(t, wantSpanCode, wantExceptions, wantEvents)
-		}
-
-		// A missing provider key is an expected 422 refusal across Go, HTTP,
-		// MCP and exported spans, whether returned directly or wrapped.
-		missingKeyCause := errors.New("provider openai requires OPENAI_API_KEY in surla serve's environment")
-		refusal := gensurla.MakeUnprocessable(missingKeyCause)
+		// openai's settings are not held: an expected 422 refusal, the same
+		// text over Go, HTTP and MCP, with a refusal event and no error status.
 		missingKeyEvents := map[string]map[string]string{
 			"model_configuration_refused": {"surla.model.refusal_reason": "missing_api_key"},
 		}
-		for _, tc := range []struct {
-			name string
-			err  error
-		}{
-			{name: "direct unprocessable refusal", err: refusal},
-			{name: "wrapped unprocessable refusal", err: errors.Join(refusal)},
-		} {
-			t.Run(tc.name, func(t *testing.T) {
-				envErr = tc.err
-				sr.Reset()
-				_, goErr := cp.ConfigureModel(alice, &gensurla.ConfigureModelPayload{Provider: strPtr("openai"), ModelName: strPtr("gpt-5.4-mini")})
-				assert.ErrorIs(t, goErr, refusal)
-				assert.ErrorIs(t, goErr, missingKeyCause)
-				assertSpanOutcome(t, codes.Unset, nil, missingKeyEvents)
-				assertHTTPAndMCP(t, http.StatusUnprocessableEntity, "unprocessable", false, codes.Unset, nil, missingKeyEvents)
-			})
+		reqBodyJSON, err := json.Marshal(map[string]any{"provider": "openai", "model_name": "gpt-5.4-mini"})
+		require.NoError(t, err)
+		sr.Reset()
+		_, goErr := cp.ConfigureModel(alice, &gensurla.ConfigureModelPayload{Provider: strPtr("openai"), ModelName: strPtr("gpt-5.4-mini")})
+		assertServiceError(t, goErr, "unprocessable")
+		assert.EqualError(t, goErr, refusalOpenAI)
+		assertConfigureSpan(t, sr, codes.Unset, nil, missingKeyEvents)
+
+		sr.Reset()
+		req := httptest.NewRequest(http.MethodPost, "/cp1/model", strings.NewReader(string(reqBodyJSON)))
+		req.Header.Set("Authorization", "Bearer alice-token")
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		assert.Equal(t, http.StatusUnprocessableEntity, rec.Code)
+		var httpErr struct {
+			Name    string `json:"name"`
+			Message string `json:"message"`
+			Fault   bool   `json:"fault"`
 		}
+		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &httpErr))
+		assert.Equal(t, "unprocessable", httpErr.Name)
+		assert.Equal(t, refusalOpenAI, httpErr.Message)
+		assert.False(t, httpErr.Fault)
+		assert.NotContains(t, rec.Body.String(), sentinelKey)
+		assertConfigureSpan(t, sr, codes.Unset, nil, missingKeyEvents)
 
-		// Any other LiveModelEnv failure is a server fault: HTTP 500 with
-		// fault true, span RecordError with error status, and no refusal event.
-		t.Run("unexpected LiveModelEnv failure", func(t *testing.T) {
-			fault := errors.New("read operator environment failed")
-			envErr = fault
-			sr.Reset()
-			_, goErr := cp.ConfigureModel(alice, &gensurla.ConfigureModelPayload{Provider: strPtr("openai"), ModelName: strPtr("gpt-5.4-mini")})
-			assert.ErrorIs(t, goErr, fault)
-			assertSpanOutcome(t, codes.Error, []string{fault.Error()}, nil)
-			assertHTTPAndMCP(t, http.StatusInternalServerError, "fault", true, codes.Error, []string{fault.Error()}, nil)
-		})
+		sr.Reset()
+		mcpRes, mErr := mcpAdapter.ToolsCall(alice, &genmcpadapter.ToolsCallPayload{Name: "configure_model", Arguments: reqBodyJSON})
+		require.NoError(t, mErr)
+		complete, ok := mcpRes.Outcome.AsComplete()
+		require.True(t, ok)
+		require.NotNil(t, complete.IsError)
+		assert.True(t, *complete.IsError)
+		raw, err := json.Marshal(complete)
+		require.NoError(t, err)
+		assert.Contains(t, string(raw), "provider openai needs OPENAI_API_KEY")
+		assert.NotContains(t, string(raw), sentinelKey)
+		assertConfigureSpan(t, sr, codes.Unset, nil, missingKeyEvents)
 
-		assert.Equal(t, initialEnv, cp.liveEnv(), "no refusal or fault changes the live-target environment")
 		read, err := cp.GetModelConnection(alice)
 		require.NoError(t, err)
-		assert.Equal(t, initialModel, read.Connection, "no refusal or fault changes the reported choice")
+		assert.Equal(t, directModel("anthropic", "claude-sonnet-4-6"), read.Connection, "no refusal changes the reported choice")
 	})
 
 	t.Run("successful provider and gateway transitions record bounded telemetry and preserve long accepted names", func(t *testing.T) {
-		cp := newControlPlane(t, Options{
-			Live: &LiveConfig{Env: initialEnv, Model: initialModel},
-			LiveModelEnv: func(choice gensurla.Connection) ([]string, error) {
-				return modelEnv(nil, choice), nil
-			},
-		})
+		cp := newControlPlane(t, Options{})
+		handOverSettings(t, cp, &gensurla.HandOverModelSettingsPayload{Openai: map[string]string{"OPENAI_API_KEY": sentinelKey}})
 
 		// 1. Switch to a long openai model_name; surrounding whitespace is trimmed.
 		sr.Reset()
@@ -229,7 +171,10 @@ func TestConfigureModelValidationTelemetryAndLiveEnv(t *testing.T) {
 		assert.Equal(t, "openai", *res.Provider)
 		assert.Equal(t, longModelName, *res.ModelName)
 		assert.Nil(t, res.GatewayAddr)
-		assert.Equal(t, []string{"SURLA_LIVE_MODEL_PROVIDER=openai", "SURLA_LIVE_MODEL_NAME=" + longModelName}, cp.liveEnv())
+		env, settings := cp.liveLaunch()
+		assert.Equal(t, []string{"SURLA_LIVE_MODEL_PROVIDER=openai", "SURLA_LIVE_MODEL_NAME=" + longModelName}, env)
+		require.Len(t, settings, 1)
+		assert.Equal(t, []string{"OPENAI_API_KEY=" + sentinelKey}, settings[0].Environ())
 		read, err := cp.GetModelConnection(alice)
 		require.NoError(t, err)
 		assert.Equal(t, directModel("openai", longModelName), read.Connection, "the read reports the accepted choice")
@@ -246,6 +191,7 @@ func TestConfigureModelValidationTelemetryAndLiveEnv(t *testing.T) {
 			},
 		}, nonExceptionEvents(cfgSpans[0]))
 		assertSpanNeverContainsValue(t, cfgSpans[0], longModelName)
+		assertSpanNeverContainsValue(t, cfgSpans[0], sentinelKey)
 
 		// 2. Switch via MCP tools/call to a long gateway_addr.
 		sr.Reset()
@@ -258,7 +204,9 @@ func TestConfigureModelValidationTelemetryAndLiveEnv(t *testing.T) {
 		complete, ok := mcpRes.Outcome.AsComplete()
 		require.True(t, ok)
 		assert.False(t, complete.IsError != nil && *complete.IsError)
-		assert.Equal(t, []string{"SURLA_LIVE_MODEL_GATEWAY=" + longGatewayAddr}, cp.liveEnv())
+		env, settings = cp.liveLaunch()
+		assert.Equal(t, []string{"SURLA_LIVE_MODEL_GATEWAY=" + longGatewayAddr}, env)
+		assert.Empty(t, settings, "a gateway gets no provider settings")
 		read, err = cp.GetModelConnection(alice)
 		require.NoError(t, err)
 		assert.Equal(t, gensurla.NewConnectionGateway(&gensurla.ModelGateway{GatewayAddr: longGatewayAddr}), read.Connection)
@@ -275,11 +223,15 @@ func TestConfigureModelValidationTelemetryAndLiveEnv(t *testing.T) {
 		assertSpanNeverContainsValue(t, cfgSpans[0], longGatewayAddr)
 	})
 
-	t.Run("StartLiveTarget launches child process with updated model liveEnv across ConfigureModel transitions", func(t *testing.T) {
+	t.Run("StartLiveTarget launches child process with updated model and held settings across ConfigureModel transitions", func(t *testing.T) {
 		self, err := os.Executable()
 		require.NoError(t, err)
 		envFile := t.TempDir() + "/live-env.txt"
 		cardsDir := t.TempDir()
+		// Inherited family values stand in for Herdr's: none may reach a
+		// live target, which gets only the handed-over snapshot.
+		t.Setenv("ANTHROPIC_API_KEY", "inherited-key-sentinel")
+		t.Setenv("ANTHROPIC_ADMIN_KEY", "inherited-admin-sentinel")
 		cp, err := New(Options{
 			CardsDir:     cardsDir,
 			Verification: &VerificationConfig{RunsDir: t.TempDir()},
@@ -287,50 +239,123 @@ func TestConfigureModelValidationTelemetryAndLiveEnv(t *testing.T) {
 				Command: []string{
 					"/bin/sh",
 					"-c",
-					`printf 'PROVIDER=%s\nNAME=%s\nGATEWAY=%s\nTOKEN=%s\n' "$SURLA_LIVE_MODEL_PROVIDER" "$SURLA_LIVE_MODEL_NAME" "$SURLA_LIVE_MODEL_GATEWAY" "$SURLA_AUTH_TOKEN" > "$1" && exec "$0" "$2" "$3" "$4"`,
+					`printf 'PROVIDER=%s\nNAME=%s\nGATEWAY=%s\nANTHROPIC_KEY=%s\nANTHROPIC_HANDED=%s\nANTHROPIC_BASE=%s\nANTHROPIC_ADMIN=%s\nOPENAI_KEY=%s\n' ` +
+						`"$SURLA_LIVE_MODEL_PROVIDER" "$SURLA_LIVE_MODEL_NAME" "$SURLA_LIVE_MODEL_GATEWAY" "${ANTHROPIC_API_KEY:+set}" ` +
+						`"$([ "$ANTHROPIC_API_KEY" = handed-key-sentinel ] && echo yes)" "${ANTHROPIC_BASE_URL:+set}" "${ANTHROPIC_ADMIN_KEY:+set}" "${OPENAI_API_KEY:+set}" > "$1" && exec "$0" "$2" "$3" "$4"`,
 					self,
 					envFile,
 				},
 				Env: append(
 					os.Environ(),
 					liveTargetModeEnv+"=serve",
-					"SURLA_LIVE_MODEL_PROVIDER=anthropic",
-					"SURLA_LIVE_MODEL_NAME=claude-sonnet-4-6",
+					"SURLA_LIVE_MODEL_PROVIDER=stale",
+					"SURLA_LIVE_MODEL_NAME=stale",
 				),
-				Model: directModel("anthropic", "claude-sonnet-4-6"),
-			},
-			LiveModelEnv: func(choice gensurla.Connection) ([]string, error) {
-				return modelEnv(append(os.Environ(), liveTargetModeEnv+"=serve"), choice), nil
 			},
 		})
 		require.NoError(t, err)
 		t.Cleanup(func() { assert.NoError(t, cp.Close()) })
 
 		commit := strings.Repeat("a", 40)
-		_, err = cp.StartLiveTarget(alice, &gensurla.StartLiveTargetPayload{CandidateCommit: commit})
-		require.NoError(t, err)
-		gotEnv, err := os.ReadFile(envFile)
-		require.NoError(t, err)
-		assert.Equal(t, "PROVIDER=anthropic\nNAME=claude-sonnet-4-6\nGATEWAY=\nTOKEN=\n", string(gotEnv))
+		start := func() string {
+			t.Helper()
+			_, err := cp.StartLiveTarget(alice, &gensurla.StartLiveTargetPayload{CandidateCommit: commit})
+			require.NoError(t, err)
+			got, err := os.ReadFile(envFile)
+			require.NoError(t, err)
+			return string(got)
+		}
+		assert.Equal(t, "PROVIDER=\nNAME=\nGATEWAY=\nANTHROPIC_KEY=\nANTHROPIC_HANDED=\nANTHROPIC_BASE=\nANTHROPIC_ADMIN=\nOPENAI_KEY=\n", start(),
+			"before a hand-over no model is chosen and no inherited setting reaches the target")
+
+		handOverSettings(t, cp, &gensurla.HandOverModelSettingsPayload{
+			Anthropic: map[string]string{"ANTHROPIC_API_KEY": "handed-key-sentinel", "ANTHROPIC_BASE_URL": "https://gateway.invalid"},
+			Openai:    map[string]string{"OPENAI_API_KEY": sentinelKey},
+		})
+		assert.Equal(t, "PROVIDER=anthropic\nNAME=claude-sonnet-4-6\nGATEWAY=\nANTHROPIC_KEY=set\nANTHROPIC_HANDED=yes\nANTHROPIC_BASE=set\nANTHROPIC_ADMIN=\nOPENAI_KEY=\n", start(),
+			"the default chosen on arrival gets only its provider's handed-over settings")
 
 		prov, modelName := "openai", "gpt-5.4-mini"
 		_, err = cp.ConfigureModel(alice, &gensurla.ConfigureModelPayload{Provider: &prov, ModelName: &modelName})
 		require.NoError(t, err)
-		_, err = cp.StartLiveTarget(alice, &gensurla.StartLiveTargetPayload{CandidateCommit: commit})
-		require.NoError(t, err)
-		gotEnv, err = os.ReadFile(envFile)
-		require.NoError(t, err)
-		assert.Equal(t, "PROVIDER=openai\nNAME=gpt-5.4-mini\nGATEWAY=\nTOKEN=\n", string(gotEnv))
+		assert.Equal(t, "PROVIDER=openai\nNAME=gpt-5.4-mini\nGATEWAY=\nANTHROPIC_KEY=\nANTHROPIC_HANDED=\nANTHROPIC_BASE=\nANTHROPIC_ADMIN=\nOPENAI_KEY=set\n", start())
 
 		gw := "127.0.0.1:9090"
 		_, err = cp.ConfigureModel(alice, &gensurla.ConfigureModelPayload{GatewayAddr: &gw})
 		require.NoError(t, err)
-		_, err = cp.StartLiveTarget(alice, &gensurla.StartLiveTargetPayload{CandidateCommit: commit})
-		require.NoError(t, err)
-		gotEnv, err = os.ReadFile(envFile)
-		require.NoError(t, err)
-		assert.Equal(t, "PROVIDER=\nNAME=\nGATEWAY=127.0.0.1:9090\nTOKEN=\n", string(gotEnv))
+		assert.Equal(t, "PROVIDER=\nNAME=\nGATEWAY=127.0.0.1:9090\nANTHROPIC_KEY=\nANTHROPIC_HANDED=\nANTHROPIC_BASE=\nANTHROPIC_ADMIN=\nOPENAI_KEY=\n", start())
 	})
+}
+
+// TestLiveTargetEnvKeepsOnlyTheChoice builds a live target's environment
+// from a base that inherited provider families and stale model variables:
+// both are dropped, and only the choice's variables are added.
+func TestLiveTargetEnvKeepsOnlyTheChoice(t *testing.T) {
+	base := []string{"PATH=/bin", "ANTHROPIC_API_KEY=k", "OPENAI_BASE_URL=u", "ANTHROPIC_ADMIN_KEY=a", "SURLA_LIVE_MODEL_GATEWAY=stale:1", "SURLA_LIVE_MODEL_NAME=stale"}
+	for _, tc := range []struct {
+		name   string
+		choice gensurla.Connection
+		want   []string
+	}{
+		{name: "direct", choice: directModel("anthropic", "claude-x"), want: []string{"PATH=/bin", "SURLA_LIVE_MODEL_PROVIDER=anthropic", "SURLA_LIVE_MODEL_NAME=claude-x"}},
+		{name: "gateway", choice: gensurla.NewConnectionGateway(&gensurla.ModelGateway{GatewayAddr: "127.0.0.1:9090"}), want: []string{"PATH=/bin", "SURLA_LIVE_MODEL_GATEWAY=127.0.0.1:9090"}},
+		{name: "none", choice: noModel(), want: []string{"PATH=/bin"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.want, liveTargetEnv(base, tc.choice))
+		})
+	}
+}
+
+// TestModelConnectionReportsTheChoiceNeverTheSettings verifies that
+// get_model_connection reports none before any hand-over and the default a
+// hand-over chose afterwards, that its HTTP answer is the declared choice
+// and holds no handed-over value, and that no span the read records holds
+// one.
+func TestModelConnectionReportsTheChoiceNeverTheSettings(t *testing.T) {
+	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
+	exporter := tracetest.NewInMemoryExporter()
+	provider := sdktrace.NewTracerProvider(sdktrace.WithSyncer(exporter))
+	t.Cleanup(func() { assert.NoError(t, provider.Shutdown(context.Background())) })
+	cp := newControlPlane(t, Options{TracerProvider: provider, Live: &LiveConfig{Env: []string{"ANTHROPIC_API_KEY=inherited-key-sentinel", "PATH=/private/operator/bin"}}})
+	read, err := cp.GetModelConnection(alice)
+	require.NoError(t, err)
+	assert.Equal(t, noModel(), read.Connection, "an inherited key chooses no model")
+
+	handOverSettings(t, cp, &gensurla.HandOverModelSettingsPayload{Anthropic: map[string]string{"ANTHROPIC_API_KEY": sentinelKey, "ANTHROPIC_BASE_URL": sentinelURL}})
+	read, err = cp.GetModelConnection(alice)
+	require.NoError(t, err)
+	assert.Equal(t, directModel("anthropic", "claude-sonnet-4-6"), read.Connection, "the hand-over's default is reported")
+
+	srv := httptest.NewServer(NewHTTPHandler(cp, workflowAuthenticator(map[string]Principal{"tok": {ID: "alice@example.com"}})))
+	defer srv.Close()
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, srv.URL+"/cp1/model", nil)
+	require.NoError(t, err)
+	req.Header.Set("Authorization", "Bearer tok")
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	require.NoError(t, resp.Body.Close())
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	assert.JSONEq(t, `{"connection":{"kind":"direct","provider":"anthropic","model_name":"claude-sonnet-4-6"}}`, string(body))
+	assertHoldsNoSentinel(t, string(body))
+	spans := exporter.GetSpans().Snapshots()
+	require.NotEmpty(t, endedSpans(spans, "surla.request.get_model_connection"), "the read records its request span")
+	for _, span := range spans {
+		assertSpanHoldsNoSentinel(t, span)
+	}
+}
+
+// assertConfigureSpan checks the one configure_model span sr recorded.
+func assertConfigureSpan(t *testing.T, sr *tracetest.SpanRecorder, wantCode codes.Code, wantExceptions []string, wantEvents map[string]map[string]string) {
+	t.Helper()
+	spans := endedSpansByName(sr, "surla.controlplane.configure_model")
+	require.Len(t, spans, 1)
+	assert.Equal(t, wantCode, spans[0].Status().Code)
+	assert.Equal(t, wantExceptions, exceptionMessages(spans[0]))
+	assert.Equal(t, wantEvents, nonExceptionEvents(spans[0]))
+	assertSpanHoldsNoSentinel(t, spans[0])
 }
 
 // endedSpansByName returns all ended spans from sr matching the given name.
@@ -357,7 +382,7 @@ func nonExceptionEvents(s sdktrace.ReadOnlySpan) map[string]map[string]string {
 		}
 		attrs := make(map[string]string, len(ev.Attributes))
 		for _, kv := range ev.Attributes {
-			attrs[string(kv.Key)] = kv.Value.AsString()
+			attrs[string(kv.Key)] = kv.Value.Emit()
 		}
 		out[ev.Name] = attrs
 	}
@@ -381,69 +406,22 @@ func exceptionMessages(s sdktrace.ReadOnlySpan) []string {
 	return msgs
 }
 
-// assertSpanNeverContainsValue asserts that neither the span's attributes nor
-// any of its event attributes contain forbidden.
+// assertSpanNeverContainsValue asserts that neither the span's name, status,
+// attributes nor any of its event names or attributes contain forbidden.
 func assertSpanNeverContainsValue(t *testing.T, s sdktrace.ReadOnlySpan, forbidden string) {
 	t.Helper()
 	checkAttrs := func(kvs []attribute.KeyValue) {
 		for _, kv := range kvs {
-			assert.NotContains(t, kv.Value.AsString(), forbidden)
+			assert.NotContains(t, kv.Value.Emit(), forbidden)
 		}
 	}
+	assert.NotContains(t, s.Name(), forbidden)
+	assert.NotContains(t, s.Status().Description, forbidden)
 	checkAttrs(s.Attributes())
 	for _, ev := range s.Events() {
+		assert.NotContains(t, ev.Name, forbidden)
 		checkAttrs(ev.Attributes)
 	}
-}
-
-// TestModelConnectionReportsTheChoiceNeverTheEnvironment verifies that
-// get_model_connection reports none on a control plane without live
-// settings and the start-up choice with them, that its HTTP answer is the
-// declared choice and holds nothing of the environment the choice became,
-// including the provider key that environment carries, that no span the read
-// records holds the key or any environment value, and that New refuses live
-// settings that name no choice.
-func TestModelConnectionReportsTheChoiceNeverTheEnvironment(t *testing.T) {
-	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
-	read, err := newControlPlane(t, Options{}).GetModelConnection(alice)
-	require.NoError(t, err)
-	assert.Equal(t, noModel(), read.Connection, "without live settings no model is chosen")
-
-	const secret = "sk-test-secret-value"
-	choice := directModel("anthropic", "claude-x")
-	exporter := tracetest.NewInMemoryExporter()
-	provider := sdktrace.NewTracerProvider(sdktrace.WithSyncer(exporter))
-	t.Cleanup(func() { assert.NoError(t, provider.Shutdown(context.Background())) })
-	env := modelEnv([]string{"ANTHROPIC_API_KEY=" + secret, "PATH=/private/operator/bin"}, choice)
-	cp := newControlPlane(t, Options{TracerProvider: provider, Live: &LiveConfig{Env: env, Model: choice}})
-	read, err = cp.GetModelConnection(alice)
-	require.NoError(t, err)
-	assert.Equal(t, choice, read.Connection, "the start-up choice is reported")
-
-	srv := httptest.NewServer(NewHTTPHandler(cp, workflowAuthenticator(map[string]Principal{"tok": {ID: "alice@example.com"}})))
-	defer srv.Close()
-	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, srv.URL+"/cp1/model", nil)
-	require.NoError(t, err)
-	req.Header.Set("Authorization", "Bearer tok")
-	resp, err := http.DefaultClient.Do(req)
-	require.NoError(t, err)
-	body, err := io.ReadAll(resp.Body)
-	require.NoError(t, err)
-	require.NoError(t, resp.Body.Close())
-	assert.Equal(t, http.StatusOK, resp.StatusCode)
-	assert.JSONEq(t, `{"connection":{"kind":"direct","provider":"anthropic","model_name":"claude-x"}}`, string(body))
-	assert.NotContains(t, string(body), secret)
-	spans := exporter.GetSpans().Snapshots()
-	require.NotEmpty(t, endedSpans(spans, "surla.request.get_model_connection"), "the read records its request span")
-	for _, span := range spans {
-		for _, kv := range env {
-			_, value, _ := strings.Cut(kv, "=")
-			assertSpanNeverContainsValue(t, span, value)
-		}
-	}
-
-	_, err = New(Options{CardsDir: t.TempDir(), Live: &LiveConfig{}})
-	assert.ErrorContains(t, err, "Options.Live.Model must name the model choice")
 }
 
 // noModel returns the declared choice of no model.
@@ -454,19 +432,6 @@ func noModel() gensurla.Connection {
 // directModel returns the declared choice of a direct provider and model.
 func directModel(provider, name string) gensurla.Connection {
 	return gensurla.NewConnectionDirect(&gensurla.ModelDirect{Provider: provider, ModelName: name})
-}
-
-// modelEnv returns base followed by the live-model variables choice becomes,
-// as the composition root derives them.
-func modelEnv(base []string, choice gensurla.Connection) []string {
-	env := slices.Clone(base)
-	if gateway, ok := choice.AsGateway(); ok {
-		env = append(env, "SURLA_LIVE_MODEL_GATEWAY="+gateway.GatewayAddr)
-	}
-	if direct, ok := choice.AsDirect(); ok {
-		env = append(env, "SURLA_LIVE_MODEL_PROVIDER="+direct.Provider, "SURLA_LIVE_MODEL_NAME="+direct.ModelName)
-	}
-	return env
 }
 
 // endedSpans returns the spans named name.

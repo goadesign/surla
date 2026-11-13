@@ -88,6 +88,10 @@ type Client struct {
 	// get_model_connection endpoint.
 	GetModelConnectionDoer goahttp.Doer
 
+	// HandOverModelSettings Doer is the HTTP client used to make requests to the
+	// hand_over_model_settings endpoint.
+	HandOverModelSettingsDoer goahttp.Doer
+
 	// InitProject Doer is the HTTP client used to make requests to the
 	// init_project endpoint.
 	InitProjectDoer goahttp.Doer
@@ -210,6 +214,7 @@ func NewClient(
 		DiffDoer:                      doer,
 		ConfigureModelDoer:            doer,
 		GetModelConnectionDoer:        doer,
+		HandOverModelSettingsDoer:     doer,
 		InitProjectDoer:               doer,
 		GenerateCodeDoer:              doer,
 		CheckProjectDoer:              doer,
@@ -631,6 +636,30 @@ func (c *Client) GetModelConnection() goa.Endpoint {
 		resp, err := c.GetModelConnectionDoer.Do(req)
 		if err != nil {
 			return nil, goahttp.ErrRequestError("surla", "get_model_connection", err)
+		}
+		return decodeResponse(resp)
+	}
+}
+
+// HandOverModelSettings returns an endpoint that makes HTTP requests to the
+// surla service hand_over_model_settings server.
+func (c *Client) HandOverModelSettings() goa.Endpoint {
+	var (
+		encodeRequest  = EncodeHandOverModelSettingsRequest(c.encoder)
+		decodeResponse = DecodeHandOverModelSettingsResponse(c.decoder, c.RestoreResponseBody)
+	)
+	return func(ctx context.Context, v any) (any, error) {
+		req, err := c.BuildHandOverModelSettingsRequest(ctx, v)
+		if err != nil {
+			return nil, err
+		}
+		err = encodeRequest(req, v)
+		if err != nil {
+			return nil, err
+		}
+		resp, err := c.HandOverModelSettingsDoer.Do(req)
+		if err != nil {
+			return nil, goahttp.ErrRequestError("surla", "hand_over_model_settings", err)
 		}
 		return decodeResponse(resp)
 	}

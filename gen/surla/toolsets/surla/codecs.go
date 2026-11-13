@@ -2107,7 +2107,7 @@ var checkProjectResultFields = []tools.FieldMetadata{
 var configureModelPayloadFields = []tools.FieldMetadata{
 	{
 		JSONType:    "object",
-		Description: "Selects either a direct model provider and model name (using the API key already present in the project server's process environment) or a running goa-ai model gateway address.",
+		Description: "Selects either a direct model provider and model name (whose request settings the surla command handed to the project server) or a running goa-ai model gateway address.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("provider")},

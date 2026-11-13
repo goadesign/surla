@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/goadesign/surla/internal/abspath"
+	"github.com/goadesign/surla/internal/modelsettings"
 	"github.com/goadesign/surla/internal/procgroup"
 	"github.com/goadesign/surla/internal/verify"
 	"github.com/goadesign/surla/verify/candidate"
@@ -82,6 +83,9 @@ type (
 		// readerDone is closed once the reader of the executor's output has
 		// closed the pipe.
 		readerDone chan struct{}
+		// settings are the provider request settings the target was given;
+		// startError protects the log excerpt it returns against them.
+		settings []modelsettings.Settings
 		// stopOnce makes Stop idempotent; stopErr is its result.
 		stopOnce sync.Once
 		stopErr  error
@@ -112,7 +116,7 @@ const (
 	// summaryLiveSuite describes a suite that did not report a ready target
 	// and what the operator can check.
 	summaryLiveSuite = "The evaluator suite did not start a live target. Check that its suite.Command sets Live " +
-		"and that the project server's environment has the model provider settings the suite reads."
+		"and that a model is configured in Surla."
 	// maxLiveDetail bounds the executor log excerpt kept in a
 	// LiveStartError after its directory is removed.
 	maxLiveDetail = 8 << 10
@@ -164,12 +168,22 @@ func LeftoverLiveDirs(root string) ([]string, error) {
 // and must eventually call Stop. key is the target's credential: it
 // reaches the executor and the suite only through the environment
 // (suite.LiveKeyEnv), and the suite passes it to the candidate. env is the
-// executor's environment without TMPDIR or the key, which LaunchLive sets.
-// command is the argument list that runs this program. When LaunchLive fails,
-// no process was started and the directory it created is removed.
-// The allocated directory and child TMPDIR are absolute and symlink-free, so
-// preparation and suite processes can change directories without changing them.
-func LaunchLive(root string, plan verify.Plan, key string, command, env []string) (*LiveProcess, error) {
+// executor's environment; LaunchLive replaces its TMPDIR and key and drops
+// every provider family from it, then adds settings, the provider request
+// settings the target may use, which are thus their one source. Settings
+// reach the executor only through its environment, never an argument or
+// live.json. command is the argument list that runs this program. When
+// LaunchLive fails, no process was started and the directory it created is
+// removed. The allocated directory and child TMPDIR are absolute and
+// symlink-free, so preparation and suite processes can change directories
+// without changing them.
+func LaunchLive(
+	root string,
+	plan verify.Plan,
+	key string,
+	command, env []string,
+	settings []modelsettings.Settings,
+) (*LiveProcess, error) {
 	if key == "" {
 		return nil, errors.New("live target key is required")
 	}
@@ -213,6 +227,9 @@ func LaunchLive(root string, plan verify.Plan, key string, command, env []string
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	cmd.ExtraFiles = []*os.File{control}
 	cmd.Env = append(liveEnv(env), "TMPDIR="+tmp, suite.LiveKeyEnv+"="+key)
+	for _, s := range settings {
+		cmd.Env = append(cmd.Env, s.Environ()...)
+	}
 	cmd.Stdout = stdoutW
 	cmd.Stderr = logFile
 	if err := cmd.Start(); err != nil {
@@ -224,6 +241,7 @@ func LaunchLive(root string, plan verify.Plan, key string, command, env []string
 	p := &LiveProcess{
 		dir: dir, pgid: cmd.Process.Pid, control: keep, exited: make(chan struct{}),
 		ended: make(chan struct{}), lines: make(chan liveLine, 1), readerDone: make(chan struct{}),
+		settings: settings,
 	}
 	go p.readOutput(stdout)
 	go func() {
@@ -236,16 +254,23 @@ func LaunchLive(root string, plan verify.Plan, key string, command, env []string
 // Live runs as `surla verify-run live <dir>`, the leader of the target's
 // process group. Its first action watches the control pipe on descriptor 3,
 // so the whole group dies with the process that started it at any stage. It
-// then prepares the plan saved in live.json with prepare, starts the suite in
-// --live mode in the same group, relays the suite's ready line to out and
-// waits for the suite to exit. A failure prints a builder-safe summary as the
-// line and the full error to errLog. Live returns an error whenever the
-// target is not running, so its exit status is never 0 after a start.
+// then takes every provider family out of its own process
+// (takeProviderFamilies), so preparation never sees one, prepares the plan
+// saved in live.json with prepare, starts the suite in --live mode in the
+// same group with what it took added back to the suite's environment only,
+// relays the suite's ready line to out and waits for the suite to exit. A
+// failure prints a builder-safe summary as the line and the full error to
+// errLog. Live returns an error whenever the target is not running, so its
+// exit status is never 0 after a start.
 func Live(dir string, prepare func(context.Context, verify.Plan) (verify.Prepared, error), out, errLog io.Writer) error {
 	syscall.CloseOnExec(passedFD)
 	control := os.NewFile(passedFD, "control")
 	go watchSupervisor(control)
 
+	providers, err := takeProviderFamilies()
+	if err != nil {
+		return reportLive(out, errLog, summaryLiveSuite, err)
+	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM)
 	defer stop()
 	var req LiveRequest
@@ -266,7 +291,7 @@ func Live(dir string, prepare func(context.Context, verify.Plan) (verify.Prepare
 		return reportLive(out, errLog, summaryLiveSuite, err)
 	}
 	cmd := exec.CommandContext(ctx, prep.SuiteBin, append([]string{"--live"}, prep.ArtifactFlags...)...)
-	cmd.Env = verify.LiveProgramEnv(req.Plan, os.Environ())
+	cmd.Env = verify.LiveProgramEnv(req.Plan, append(os.Environ(), providers...))
 	cmd.Stdout = suiteOutW
 	cmd.Stderr = errLog
 	// The suite and everything it starts stay in this process group, which
@@ -325,9 +350,13 @@ func (p *LiveProcess) AwaitReady(ctx context.Context) error {
 	}
 }
 
-// startError returns a *LiveStartError with the executor log's current tail.
+// startError returns a *LiveStartError with the executor log's current tail,
+// in which every exact occurrence of a setting the target was given is
+// protected (modelsettings.Protect), whoever wrote the line. The log itself
+// is the suite's own output and stays as written.
 func (p *LiveProcess) startError(summary string, cause error) *LiveStartError {
-	return &LiveStartError{Summary: summary, Detail: logTail(filepath.Join(p.dir, "executor.log"), maxLiveDetail), Err: cause}
+	detail := logTail(filepath.Join(p.dir, "executor.log"), maxLiveDetail)
+	return &LiveStartError{Summary: summary, Detail: modelsettings.Protect(detail, p.settings...), Err: cause}
 }
 
 // Dir returns the live directory, which Stop removes.
@@ -480,10 +509,12 @@ func decodeLiveRequest(dir string, req *LiveRequest) error {
 	return nil
 }
 
-// liveEnv returns env without TMPDIR or the live key, which LaunchLive sets.
+// liveEnv returns env without TMPDIR, the live key or any provider family,
+// which LaunchLive sets from its own arguments.
 func liveEnv(env []string) []string {
-	out := make([]string, 0, len(env))
-	for _, kv := range env {
+	_, rest := modelsettings.Split(env)
+	out := make([]string, 0, len(rest))
+	for _, kv := range rest {
 		name, _, _ := strings.Cut(kv, "=")
 		if name == "TMPDIR" || name == suite.LiveKeyEnv {
 			continue

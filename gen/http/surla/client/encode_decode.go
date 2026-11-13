@@ -2142,7 +2142,6 @@ func EncodeConfigureModelRequest(encoder func(*http.Request) goahttp.Encoder) fu
 // body should be restored after having been read.
 // DecodeConfigureModelResponse may return the following errors:
 //   - "unprocessable" (type *goa.ServiceError): http.StatusUnprocessableEntity
-//   - "not_implemented" (type *goa.ServiceError): http.StatusNotImplemented
 //   - "forbidden" (type *goa.ServiceError): http.StatusForbidden
 //   - error: internal error
 func DecodeConfigureModelResponse(decoder func(*http.Response) goahttp.Decoder, restoreBody bool) func(*http.Response) (any, error) {
@@ -2195,20 +2194,6 @@ func DecodeConfigureModelResponse(decoder func(*http.Response) goahttp.Decoder, 
 				return nil, goahttp.ErrValidationError("surla", "configure_model", err)
 			}
 			return nil, NewConfigureModelUnprocessable(&body)
-		case http.StatusNotImplemented:
-			var (
-				body ConfigureModelNotImplementedResponseBody
-				err  error
-			)
-			err = decoder(resp).Decode(&body)
-			if err != nil {
-				return nil, goahttp.ErrDecodingError("surla", "configure_model", err)
-			}
-			err = ValidateConfigureModelNotImplementedResponseBody(&body)
-			if err != nil {
-				return nil, goahttp.ErrValidationError("surla", "configure_model", err)
-			}
-			return nil, NewConfigureModelNotImplemented(&body)
 		case http.StatusForbidden:
 			var (
 				body ConfigureModelForbiddenResponseBody
@@ -2311,6 +2296,119 @@ func DecodeGetModelConnectionResponse(decoder func(*http.Response) goahttp.Decod
 				return nil, goahttp.ErrDecodingError("surla", "get_model_connection", err)
 			}
 			return nil, goahttp.ErrInvalidResponse("surla", "get_model_connection", resp.StatusCode, string(body))
+		}
+	}
+}
+
+// BuildHandOverModelSettingsRequest instantiates a HTTP request object with
+// method and path set to call the "surla" service "hand_over_model_settings"
+// endpoint
+func (c *Client) BuildHandOverModelSettingsRequest(ctx context.Context, v any) (*http.Request, error) {
+	u := &url.URL{Scheme: c.scheme, Host: c.host, Path: HandOverModelSettingsSurlaPath()}
+	req, err := http.NewRequest("POST", u.String(), nil)
+	if err != nil {
+		return nil, goahttp.ErrInvalidURL("surla", "hand_over_model_settings", u.String(), err)
+	}
+	if ctx != nil {
+		req = req.WithContext(ctx)
+	}
+
+	return req, nil
+}
+
+// EncodeHandOverModelSettingsRequest returns an encoder for requests sent to
+// the surla hand_over_model_settings server.
+func EncodeHandOverModelSettingsRequest(encoder func(*http.Request) goahttp.Encoder) func(*http.Request, any) error {
+	return func(req *http.Request, v any) error {
+		p, ok := v.(*surla.HandOverModelSettingsPayload)
+		if !ok {
+			return goahttp.ErrInvalidType("surla", "hand_over_model_settings", "*surla.HandOverModelSettingsPayload", v)
+		}
+		body := NewHandOverModelSettingsRequestBody(p)
+		if err := encoder(req).Encode(&body); err != nil {
+			return goahttp.ErrEncodingError("surla", "hand_over_model_settings", err)
+		}
+		return nil
+	}
+}
+
+// DecodeHandOverModelSettingsResponse returns a decoder for responses returned
+// by the surla hand_over_model_settings endpoint. restoreBody controls whether
+// the response body should be restored after having been read.
+// DecodeHandOverModelSettingsResponse may return the following errors:
+//   - "unprocessable" (type *goa.ServiceError): http.StatusUnprocessableEntity
+//   - "forbidden" (type *goa.ServiceError): http.StatusForbidden
+//   - error: internal error
+func DecodeHandOverModelSettingsResponse(decoder func(*http.Response) goahttp.Decoder, restoreBody bool) func(*http.Response) (any, error) {
+	return func(resp *http.Response) (result any, decodeErr error) {
+		responseBody := resp.Body
+		if restoreBody {
+			b, readErr := io.ReadAll(responseBody)
+			closeErr := responseBody.Close()
+			if err := errors.Join(readErr, closeErr); err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "hand_over_model_settings", err)
+			}
+			resp.Body = io.NopCloser(bytes.NewBuffer(b))
+			defer func() {
+				resp.Body = io.NopCloser(bytes.NewBuffer(b))
+			}()
+		} else {
+			defer func() {
+				if err := responseBody.Close(); err != nil {
+					decodeErr = errors.Join(decodeErr, goahttp.ErrDecodingError("surla", "hand_over_model_settings", err))
+				}
+			}()
+		}
+		switch resp.StatusCode {
+		case http.StatusOK:
+			var (
+				body HandOverModelSettingsResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "hand_over_model_settings", err)
+			}
+			err = ValidateHandOverModelSettingsResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("surla", "hand_over_model_settings", err)
+			}
+			res := NewHandOverModelSettingsResultOK(&body)
+			return res, nil
+		case http.StatusUnprocessableEntity:
+			var (
+				body HandOverModelSettingsUnprocessableResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "hand_over_model_settings", err)
+			}
+			err = ValidateHandOverModelSettingsUnprocessableResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("surla", "hand_over_model_settings", err)
+			}
+			return nil, NewHandOverModelSettingsUnprocessable(&body)
+		case http.StatusForbidden:
+			var (
+				body HandOverModelSettingsForbiddenResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "hand_over_model_settings", err)
+			}
+			err = ValidateHandOverModelSettingsForbiddenResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("surla", "hand_over_model_settings", err)
+			}
+			return nil, NewHandOverModelSettingsForbidden(&body)
+		default:
+			body, err := io.ReadAll(resp.Body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "hand_over_model_settings", err)
+			}
+			return nil, goahttp.ErrInvalidResponse("surla", "hand_over_model_settings", resp.StatusCode, string(body))
 		}
 	}
 }

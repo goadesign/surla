@@ -43,7 +43,7 @@ func startSharedServerSession(t *testing.T, principal string) *sharedServerSessi
 	if principal == "" {
 		principal = "operator@example.com"
 	}
-	opts, err := serveOptions(func(string) string { return "" }, nil)
+	opts, err := serveOptions(nil)
 	require.NoError(t, err)
 	provider, err := newTraceProvider(context.Background(), io.Discard, func(string) string { return "" })
 	require.NoError(t, err)
@@ -450,7 +450,7 @@ func TestSharedServerSignalExitAndDetachedVerificationSurvival(t *testing.T) {
 			ReportDir:       reportsDir,
 			Tests:           verify.TestsEvaluator,
 		},
-	}, []string{supervisorScript})
+	}, []string{supervisorScript}, nil)
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		assert.NoError(t, os.WriteFile(releaseFile, []byte("done"), 0o600))

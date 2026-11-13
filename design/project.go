@@ -37,7 +37,7 @@ var TeamSpaceConflict = Type("TeamSpaceConflict", func() {
 })
 
 var _ = Service("project", func() {
-	Description("Owns one local project's server identity, agent credentials, and one-use browser access. Management credentials last for one listening server and never authorize application decisions. This service is not exposed as agent tools.")
+	Description("Owns one local project's server identity, agent credentials, and one-use browser access. Management credentials last for one listening server and never authorize application decisions; besides this service, they may only hand over the model provider request settings of the shell running surla (the surla service's hand_over_model_settings). This service is not exposed as agent tools.")
 	Error("forbidden", ErrorResult, "The trusted credential cannot perform this operation.")
 	Error("unprocessable", ErrorResult, "The requested credential exchange does not exist or is invalid.")
 	HTTP(func() {

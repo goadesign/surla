@@ -12894,7 +12894,7 @@ paths:
             tags:
                 - surla
             summary: get_model_connection surla
-            description: 'Report the model choice live targets started afterwards receive: none, a direct provider and model name, or a model gateway address. It starts from the choice made when the server started and follows every accepted configure_model call. It never returns an API key or any other environment value, and it changes nothing. Verification runs do not use this choice.'
+            description: 'Report the model choice live targets started afterwards receive: none, a direct provider and model name, or a model gateway address. It starts as none; the first hand_over_model_settings that holds a provider''s settings selects that provider''s default model, and every accepted configure_model call replaces the choice. It never returns an API key or any other setting value, and it changes nothing. Verification runs do not use this choice.'
             operationId: surla#get_model_connection
             responses:
                 "200":
@@ -12924,7 +12924,7 @@ paths:
             tags:
                 - surla
             summary: configure_model surla
-            description: 'Choose, on a running control plane without restarting, the model that CP3 live targets started afterwards receive: a direct provider and model name (using that provider''s API key from the project server''s environment) or a running gRPC model gateway. start_live_target passes the choice to the target''s evaluator suite as SURLA_LIVE_MODEL_PROVIDER and SURLA_LIVE_MODEL_NAME, or as SURLA_LIVE_MODEL_GATEWAY.'
+            description: 'Choose, on a running control plane without restarting, the model that CP3 live targets started afterwards receive: a direct provider and model name, whose request settings the surla command handed to the project server with hand_over_model_settings, or a running gRPC model gateway. start_live_target passes the choice to the target''s evaluator suite as SURLA_LIVE_MODEL_PROVIDER and SURLA_LIVE_MODEL_NAME, or as SURLA_LIVE_MODEL_GATEWAY, and gives it the chosen provider''s held request settings.'
             operationId: surla#configure_model
             requestBody:
                 description: Request body for configure_model.
@@ -12962,7 +12962,7 @@ paths:
                                 temporary: false
                                 timeout: false
                 "422":
-                    description: 'unprocessable: The model provider, model name, gateway address, or required environment credential is invalid.'
+                    description: 'unprocessable: The field combination is invalid, or the project server holds no request settings for the chosen provider; the message names the provider''s key variable and how to hand it over.'
                     content:
                         application/vnd.goa.error:
                             schema:
@@ -12974,8 +12974,45 @@ paths:
                                 name: unprocessable
                                 temporary: false
                                 timeout: false
-                "501":
-                    description: 'not_implemented: Runtime model reconfiguration is not configured on this control plane.'
+    /cp1/model/settings:
+        post:
+            tags:
+                - surla
+            summary: hand_over_model_settings surla
+            description: 'The surla command, after it confirms the project server''s identity, hands over the request settings of each model provider whose key is set in the shell it runs in: the key and the listed settings that route and authenticate the provider''s requests. The project server holds them in memory only and forgets them when it stops. A live target''s evaluator suite receives the chosen provider''s held settings, the operator''s stored evaluator receives every held provider''s settings, and tests agents wrote and the check helper receive none. An absent provider attribute keeps what is held for that provider. A present one replaces everything held for it and must include the provider''s key variable; an empty one is refused, because it is neither a way to keep nor a way to forget. A request with neither attribute changes nothing and reports what is held. When no model is chosen and a provider is now held, live targets use that provider''s default model, anthropic before openai; any other choice stays. The result names the held variables and the model choice, never a value. Only the surla command''s management credential may call this operation; it is never an MCP tool.'
+            operationId: surla#hand_over_model_settings
+            requestBody:
+                description: Request body for hand_over_model_settings.
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/HandOverModelSettingsPayload'
+                        example:
+                            anthropic:
+                                ANTHROPIC_API_KEY: bb4
+                                ANTHROPIC_AUTH_TOKEN: j
+                            openai:
+                                OPENAI_BASE_URL: qsj
+                                OPENAI_CUSTOM_HEADERS: p1
+                                OPENAI_ORG_ID: "6"
+            responses:
+                "200":
+                    description: OK response.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ModelSettingsResult'
+                            example:
+                                connection:
+                                    kind: none
+                                held:
+                                    anthropic:
+                                        - Corrupti cum esse cupiditate harum natus.
+                                        - Consequatur provident et.
+                                        - Neque sequi aspernatur assumenda atque odio.
+                "403":
+                    description: 'forbidden: The authenticated caller may not perform this operation or does not own the resource.'
                     content:
                         application/vnd.goa.error:
                             schema:
@@ -12984,7 +13021,20 @@ paths:
                                 fault: false
                                 id: 123abc
                                 message: parameter 'p' must be an integer
-                                name: not_implemented
+                                name: forbidden
+                                temporary: false
+                                timeout: false
+                "422":
+                    description: 'unprocessable: A provider''s settings do not include its key variable, or a value contains a NUL character. The message names the provider and the variable, never a value; nothing held changed.'
+                    content:
+                        application/vnd.goa.error:
+                            schema:
+                                $ref: '#/components/schemas/Error'
+                            example:
+                                fault: false
+                                id: 123abc
+                                message: parameter 'p' must be an integer
+                                name: unprocessable
                                 temporary: false
                                 timeout: false
     /diff:
@@ -20148,6 +20198,41 @@ components:
                 - target
                 - files_written
                 - warnings
+        HandOverModelSettingsPayload:
+            type: object
+            properties:
+                anthropic:
+                    type: object
+                    description: Request settings for anthropic, keyed by variable name, replacing everything held for anthropic. They must include ANTHROPIC_API_KEY. Omit the attribute to keep what is held.
+                    example:
+                        ANTHROPIC_API_KEY: bb4
+                        ANTHROPIC_AUTH_TOKEN: j
+                    additionalProperties:
+                        type: string
+                        example: j
+                        minLength: 1
+                        maxLength: 4096
+                openai:
+                    type: object
+                    description: Request settings for openai, keyed by variable name, replacing everything held for openai. They must include OPENAI_API_KEY. Omit the attribute to keep what is held.
+                    example:
+                        OPENAI_BASE_URL: qsj
+                        OPENAI_CUSTOM_HEADERS: p1
+                        OPENAI_ORG_ID: "6"
+                    additionalProperties:
+                        type: string
+                        example: qsj
+                        minLength: 1
+                        maxLength: 4096
+            description: Request body for hand_over_model_settings.
+            example:
+                anthropic:
+                    ANTHROPIC_API_KEY: bb4
+                    ANTHROPIC_AUTH_TOKEN: j
+                openai:
+                    OPENAI_BASE_URL: qsj
+                    OPENAI_CUSTOM_HEADERS: p1
+                    OPENAI_ORG_ID: "6"
         InitProjectPayload:
             type: object
             properties:
@@ -20495,6 +20580,94 @@ components:
                     gateway_addr: mk
                     kind: gateway
             required:
+                - connection
+        ModelSettingsResult:
+            type: object
+            properties:
+                connection:
+                    type: object
+                    description: none when no model is chosen; direct with a provider and model name; gateway with a model gateway address.
+                    example:
+                        kind: none
+                    anyOf:
+                        - type: object
+                          properties:
+                            kind:
+                                type: string
+                                enum:
+                                    - none
+                          example: {}
+                          required:
+                            - kind
+                        - type: object
+                          properties:
+                            kind:
+                                type: string
+                                enum:
+                                    - direct
+                            model_name:
+                                type: string
+                                description: Provider model identifier.
+                                example: va
+                                minLength: 1
+                            provider:
+                                type: string
+                                description: Direct model provider.
+                                example: openai
+                                enum:
+                                    - anthropic
+                                    - openai
+                          example:
+                            model_name: va
+                            provider: openai
+                          required:
+                            - provider
+                            - model_name
+                            - kind
+                        - type: object
+                          properties:
+                            gateway_addr:
+                                type: string
+                                description: Plaintext gRPC host:port of the gateway.
+                                example: rey
+                                minLength: 1
+                            kind:
+                                type: string
+                                enum:
+                                    - gateway
+                          example:
+                            gateway_addr: rey
+                          required:
+                            - gateway_addr
+                            - kind
+                held:
+                    type: object
+                    description: Names of the request settings held for each provider, sorted; a provider holds nothing until its settings are handed over.
+                    example:
+                        anthropic:
+                            - Corrupti cum esse cupiditate harum natus.
+                            - Consequatur provident et.
+                            - Neque sequi aspernatur assumenda atque odio.
+                    additionalProperties:
+                        type: array
+                        items:
+                            type: string
+                            example: Corrupti cum esse cupiditate harum natus.
+                        example:
+                            - Corrupti cum esse cupiditate harum natus.
+                            - Consequatur provident et.
+                            - Neque sequi aspernatur assumenda atque odio.
+            description: The provider request settings the project server holds, by variable name only, and the model live targets started afterwards use, as get_model_connection reports it. It never carries a value.
+            example:
+                connection:
+                    kind: none
+                held:
+                    anthropic:
+                        - Corrupti cum esse cupiditate harum natus.
+                        - Consequatur provident et.
+                        - Neque sequi aspernatur assumenda atque odio.
+            required:
+                - held
                 - connection
         PreviewArchitecturePayload:
             type: object
@@ -29019,6 +29192,6 @@ components:
                 - candidate_commit
 tags:
     - name: project
-      description: Owns one local project's server identity, agent credentials, and one-use browser access. Management credentials last for one listening server and never authorize application decisions. This service is not exposed as agent tools.
+      description: Owns one local project's server identity, agent credentials, and one-use browser access. Management credentials last for one listening server and never authorize application decisions; besides this service, they may only hand over the model provider request settings of the shell running surla (the surla service's hand_over_model_settings). This service is not exposed as agent tools.
     - name: surla
       description: Surla MCP software factory control plane.

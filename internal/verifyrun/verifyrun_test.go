@@ -73,7 +73,7 @@ func helper(role, dir string) int {
 var evaluatorPlan = verify.Plan{Tests: verify.TestsEvaluator}
 
 // fakeRun stands in for verify.Run according to fakeModeEnv.
-func fakeRun(ctx context.Context, plan verify.Plan) (verify.Report, error) {
+func fakeRun(ctx context.Context, plan verify.Plan, _ []string) (verify.Report, error) {
 	switch os.Getenv(fakeModeEnv) {
 	case "pass":
 		if err := os.MkdirAll(filepath.Join(plan.WorkDir, "candidate-bin"), 0o700); err != nil {
@@ -170,7 +170,7 @@ func start(t *testing.T, mode string) (string, string, int) {
 			SuiteCommit: strings.Repeat("b", 40), ReportDir: reports,
 			WorkDir: filepath.Join(root, runID, "work"), Tests: verify.TestsEvaluator,
 		},
-	}, []string{os.Args[0]})
+	}, []string{os.Args[0]}, nil)
 	require.NoError(t, err)
 	return root, runID, pid
 }
@@ -357,15 +357,15 @@ func TestReadAndStartRejectInvalidRuns(t *testing.T) {
 		AcceptedAt: time.Now().UTC(),
 		Timeout:    time.Minute,
 		Plan:       verify.Plan{WorkDir: "w", Tests: verify.TestsEvaluator},
-	}, []string{os.Args[0]})
+	}, []string{os.Args[0]}, nil)
 	assert.ErrorContains(t, err, "create run directory", "a run directory is never reused")
-	_, err = Start(root, Request{RunID: NewRunID(), Timeout: -time.Second}, []string{os.Args[0]})
+	_, err = Start(root, Request{RunID: NewRunID(), Timeout: -time.Second}, []string{os.Args[0]}, nil)
 	assert.ErrorContains(t, err, "must not be negative")
-	_, err = Start(root, Request{RunID: NewRunID(), Timeout: time.Minute}, []string{os.Args[0]})
+	_, err = Start(root, Request{RunID: NewRunID(), Timeout: time.Minute}, []string{os.Args[0]}, nil)
 	assert.ErrorContains(t, err, "work directory is required")
-	_, err = Start(root, Request{RunID: NewRunID(), Timeout: time.Minute, Plan: verify.Plan{WorkDir: "w"}}, []string{os.Args[0]})
+	_, err = Start(root, Request{RunID: NewRunID(), Timeout: time.Minute, Plan: verify.Plan{WorkDir: "w"}}, []string{os.Args[0]}, nil)
 	assert.ErrorContains(t, err, "run owner is required")
-	_, err = Start(root, Request{RunID: NewRunID(), Owner: "alice", Timeout: time.Minute, Plan: verify.Plan{WorkDir: "w"}}, []string{os.Args[0]})
+	_, err = Start(root, Request{RunID: NewRunID(), Owner: "alice", Timeout: time.Minute, Plan: verify.Plan{WorkDir: "w"}}, []string{os.Args[0]}, nil)
 	assert.ErrorContains(t, err, "run accepted_at time is required")
 }
 

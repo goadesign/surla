@@ -18,6 +18,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/goadesign/surla/internal/modelsettings"
 	"github.com/goadesign/surla/internal/verify"
 	"github.com/goadesign/surla/verify/suite"
 )
@@ -152,10 +153,23 @@ func liveHost(root string) int {
 	return 0
 }
 
-// startLive launches a live target and waits until it is ready, stopping it
-// when it does not become ready, as an owner of LaunchLive's process must.
+// startLive launches a live target without provider settings and waits until
+// it is ready, stopping it when it does not become ready, as an owner of
+// LaunchLive's process must.
 func startLive(ctx context.Context, root string, plan verify.Plan, key string, command, env []string) (*LiveProcess, error) {
-	p, err := LaunchLive(root, plan, key, command, env)
+	return startLiveWith(ctx, root, plan, key, command, env)
+}
+
+// startLiveWith is startLive giving the target settings.
+func startLiveWith(
+	ctx context.Context,
+	root string,
+	plan verify.Plan,
+	key string,
+	command, env []string,
+	settings ...modelsettings.Settings,
+) (*LiveProcess, error) {
+	p, err := LaunchLive(root, plan, key, command, env, settings)
 	if err != nil {
 		return nil, err
 	}
@@ -222,11 +236,13 @@ func onlyLiveDir(t *testing.T, root string) string {
 }
 
 // TestLiveGivesTheTestProgramOnlyItsSourcesEnvironment starts a live copy
-// from an executor environment holding a variable of the server's own, both
-// providers' keys and the chosen direct provider, and reads the environment
-// the test program started with. A program agents wrote sees only PATH, its
-// TMPDIR, the live key, the model choice and the chosen provider's key; the
-// operator's evaluator also sees the server's variable and the other key.
+// from a server environment holding a variable of its own, inherited
+// provider family values and the chosen direct provider, with the chosen
+// provider's handed-over settings, and reads the environment the test
+// program started with. No inherited family value reaches it. A program
+// agents wrote sees only PATH, its TMPDIR, the live key, the model choice
+// and the handed-over settings; the operator's evaluator also sees the
+// server's variable.
 func TestLiveGivesTheTestProgramOnlyItsSourcesEnvironment(t *testing.T) {
 	cases := []struct {
 		name       string
@@ -236,15 +252,20 @@ func TestLiveGivesTheTestProgramOnlyItsSourcesEnvironment(t *testing.T) {
 	}{
 		{
 			name: "operator's evaluator", tests: verify.TestsEvaluator,
-			sees: []string{"SURLA_TEST_SERVER_VAR=present", "OPENAI_API_KEY=oai-k", "ANTHROPIC_API_KEY=ant-k", suite.LiveKeyEnv + "=secret-key"},
+			sees: []string{
+				"SURLA_TEST_SERVER_VAR=present", "ANTHROPIC_API_KEY=ant-k", "ANTHROPIC_BASE_URL=https://gateway.invalid",
+				suite.LiveKeyEnv + "=secret-key",
+			},
+			doesNotSee: []string{"OPENAI_API_KEY", "ANTHROPIC_ADMIN_KEY"},
 		},
 		{
 			name: "test module agents wrote", tests: verify.TestsWritten,
 			sees: []string{
 				"PATH=" + os.Getenv("PATH"), suite.LiveKeyEnv + "=secret-key", "ANTHROPIC_API_KEY=ant-k",
+				"ANTHROPIC_BASE_URL=https://gateway.invalid",
 				verify.LiveModelProviderEnv + "=anthropic", verify.LiveModelNameEnv + "=claude",
 			},
-			doesNotSee: []string{"SURLA_TEST_SERVER_VAR", "OPENAI_API_KEY", liveFakeEnv, "HOME"},
+			doesNotSee: []string{"SURLA_TEST_SERVER_VAR", "OPENAI_API_KEY", "ANTHROPIC_ADMIN_KEY", liveFakeEnv, "HOME"},
 		},
 	}
 	for _, tc := range cases {
@@ -254,11 +275,13 @@ func TestLiveGivesTheTestProgramOnlyItsSourcesEnvironment(t *testing.T) {
 			self, err := os.Executable()
 			require.NoError(t, err)
 			env := append(os.Environ(),
-				"SURLA_TEST_SERVER_VAR=present", "ANTHROPIC_API_KEY=ant-k", "OPENAI_API_KEY=oai-k",
+				"SURLA_TEST_SERVER_VAR=present", "ANTHROPIC_API_KEY=inherited-k", "ANTHROPIC_ADMIN_KEY=inherited-admin", "OPENAI_API_KEY=oai-k",
 				verify.LiveModelProviderEnv+"=anthropic", verify.LiveModelNameEnv+"=claude",
 			)
+			anthropic, err := modelsettings.New("anthropic", map[string]string{"ANTHROPIC_API_KEY": "ant-k", "ANTHROPIC_BASE_URL": "https://gateway.invalid"})
+			require.NoError(t, err)
 
-			p, err := startLive(t.Context(), root, verify.Plan{Tests: tc.tests}, "secret-key", []string{self}, env)
+			p, err := startLiveWith(t.Context(), root, verify.Plan{Tests: tc.tests}, "secret-key", []string{self}, env, anthropic)
 			require.NoError(t, err)
 			raw, readErr := os.ReadFile(filepath.Join(p.Dir(), liveTmpDir, "suite-env"))
 			tmp := filepath.Join(p.Dir(), liveTmpDir)
@@ -682,7 +705,7 @@ func TestAwaitReadyCapturesDetailOnTimeoutAndLeavesTheTargetToItsOwner(t *testin
 	t.Setenv(liveFakeEnv, "prepare-hangs")
 	self, err := os.Executable()
 	require.NoError(t, err)
-	p, err := LaunchLive(t.TempDir(), evaluatorPlan, "secret-key", []string{self}, os.Environ())
+	p, err := LaunchLive(t.TempDir(), evaluatorPlan, "secret-key", []string{self}, os.Environ(), nil)
 	require.NoError(t, err)
 	pgid, _ := recordedPIDs(t, p.Dir(), 2)
 	ctx, cancel := context.WithTimeout(t.Context(), 300*time.Millisecond)

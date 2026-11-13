@@ -33,6 +33,7 @@ type Client struct {
 	DiffEndpoint                      goa.Endpoint
 	ConfigureModelEndpoint            goa.Endpoint
 	GetModelConnectionEndpoint        goa.Endpoint
+	HandOverModelSettingsEndpoint     goa.Endpoint
 	InitProjectEndpoint               goa.Endpoint
 	GenerateCodeEndpoint              goa.Endpoint
 	CheckProjectEndpoint              goa.Endpoint
@@ -57,7 +58,7 @@ type Client struct {
 }
 
 // NewClient initializes a "surla" service client given the endpoints.
-func NewClient(goldenPath, proposeChange, reviseChange, confirmIntent, getChange, declineRevision, previewArchitecture, draftOverride, startLiveTarget, stopLiveTarget, getLiveTarget, verifyChange, getVerification, listVerifications, approveMerge, diff, configureModel, getModelConnection, initProject, generateCode, checkProject, updateDependencies, readCheckOutput, listTraces, refreshStory, getStoryRefresh, getTeam, showTeamPane, startTeamAgents, listChanges, waitForChanges, startBuild, getBuild, getTestFindings, listBuilderAssignments, getBuilderAssignment, listTestWriterAssignments, getTestWriterAssignment, reportTestsFinished goa.Endpoint) *Client {
+func NewClient(goldenPath, proposeChange, reviseChange, confirmIntent, getChange, declineRevision, previewArchitecture, draftOverride, startLiveTarget, stopLiveTarget, getLiveTarget, verifyChange, getVerification, listVerifications, approveMerge, diff, configureModel, getModelConnection, handOverModelSettings, initProject, generateCode, checkProject, updateDependencies, readCheckOutput, listTraces, refreshStory, getStoryRefresh, getTeam, showTeamPane, startTeamAgents, listChanges, waitForChanges, startBuild, getBuild, getTestFindings, listBuilderAssignments, getBuilderAssignment, listTestWriterAssignments, getTestWriterAssignment, reportTestsFinished goa.Endpoint) *Client {
 	return &Client{
 		GoldenPathEndpoint:                goldenPath,
 		ProposeChangeEndpoint:             proposeChange,
@@ -77,6 +78,7 @@ func NewClient(goldenPath, proposeChange, reviseChange, confirmIntent, getChange
 		DiffEndpoint:                      diff,
 		ConfigureModelEndpoint:            configureModel,
 		GetModelConnectionEndpoint:        getModelConnection,
+		HandOverModelSettingsEndpoint:     handOverModelSettings,
 		InitProjectEndpoint:               initProject,
 		GenerateCodeEndpoint:              generateCode,
 		CheckProjectEndpoint:              checkProject,
@@ -351,8 +353,7 @@ func (c *Client) Diff(ctx context.Context, p *DiffPayload) (res *DiffResult, err
 
 // ConfigureModel calls the "configure_model" endpoint of the "surla" service.
 // ConfigureModel may return the following errors:
-//   - "unprocessable" (type *goa.ServiceError): The model provider, model name, gateway address, or required environment credential is invalid.
-//   - "not_implemented" (type *goa.ServiceError): Runtime model reconfiguration is not configured on this control plane.
+//   - "unprocessable" (type *goa.ServiceError): The field combination is invalid, or the project server holds no request settings for the chosen provider; the message names the provider's key variable and how to hand it over.
 //   - "forbidden" (type *goa.ServiceError): The authenticated caller may not perform this operation or does not own the resource.
 //   - error: internal error
 func (c *Client) ConfigureModel(ctx context.Context, p *ConfigureModelPayload) (res *ModelConfigResult, err error) {
@@ -376,6 +377,21 @@ func (c *Client) GetModelConnection(ctx context.Context) (res *ModelConnection, 
 		return
 	}
 	return ires.(*ModelConnection), nil
+}
+
+// HandOverModelSettings calls the "hand_over_model_settings" endpoint of the
+// "surla" service.
+// HandOverModelSettings may return the following errors:
+//   - "unprocessable" (type *goa.ServiceError): A provider's settings do not include its key variable, or a value contains a NUL character. The message names the provider and the variable, never a value; nothing held changed.
+//   - "forbidden" (type *goa.ServiceError): The authenticated caller may not perform this operation or does not own the resource.
+//   - error: internal error
+func (c *Client) HandOverModelSettings(ctx context.Context, p *HandOverModelSettingsPayload) (res *ModelSettingsResult, err error) {
+	var ires any
+	ires, err = c.HandOverModelSettingsEndpoint(ctx, p)
+	if err != nil {
+		return
+	}
+	return ires.(*ModelSettingsResult), nil
 }
 
 // InitProject calls the "init_project" endpoint of the "surla" service.
