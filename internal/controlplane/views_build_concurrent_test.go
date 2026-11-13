@@ -61,8 +61,9 @@ expect(page.text("#surla-build-details").includes(oldStarted), "the first saved 
 
 // Hold before the owner handles replacement; its old build remains readable.
 await control(origin, "hold", { key: "POST " + path });
+await until(() => page.$("#surla-build-again") && !page.$("#surla-build-again").disabled, "the first build's background read did not settle before replacement");
 page.$("#surla-build-again").click();
-await until(() => page.$("#surla-build-confirm"), "the replacement confirmation did not open");
+await until(() => page.$("#surla-build-confirm") && !page.$("#surla-build-confirm").disabled, "the replacement confirmation did not become ready");
 page.$("#surla-build-confirm").click();
 await until(() => page.sent("POST", path).length === 2 && page.$("#surla-build-starting"), "the replacement POST was not held pending");
 const replacement = page.sent("POST", path)[1];
