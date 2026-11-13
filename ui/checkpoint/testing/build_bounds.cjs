@@ -65,6 +65,11 @@ for (const op of ["get_build", "start_build"]) {
     assert.equal(types.ROUTES[op].decode(answer({ ...saved, required_test_count: value })), value >= 0, op + " count=" + value);
     assert.equal(types.ROUTES[op].decode(answer({ ...saved, test_writer: { ...saved.test_writer, report: value } })), value >= 0, op + " report=" + value);
   }
+  for (const finding_count of [0, 1, 2]) {
+    assert.equal(types.ROUTES[op].decode(answer({ ...saved, test_writer: { ...saved.test_writer,
+      tests: { state: "needs_changes", finding_count, checked_at: "2026-11-13T00:00:00Z" } } })),
+    finding_count >= 1, op + " finding_count=" + finding_count);
+  }
 }
 for (const count of [1, 2, 3]) {
   assert.equal(types.ROUTES.start_build.decode({ build: saved,

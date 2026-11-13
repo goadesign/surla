@@ -28,7 +28,7 @@ func TestCheckpointGeneratedNumericBounds(t *testing.T) {
 // count or report. Neither may enable a start as though no build existed;
 // the normal declared-result error and explicit retry recover the page.
 func TestViewsPageRejectsOutOfBoundsBuild(t *testing.T) {
-	for _, field := range []string{"required_test_count", "report"} {
+	for _, field := range []string{"required_test_count", "report", "finding_count"} {
 		t.Run(field, func(t *testing.T) {
 			team := &teamServiceFixture{snapshot: pageTeamSnapshot("working")}
 			cp := newBuildControlPlane(t, Options{Team: &TeamBinding{Owner: pageOwner, Service: team}})
@@ -38,7 +38,8 @@ func TestViewsPageRejectsOutOfBoundsBuild(t *testing.T) {
 const path = "/changes/chg/build";
 const build = { state: "started", request_revision: input.revision, started_at: "2026-11-13T00:00:00Z", in_force: true,
   required_test_count: 0, builder: { read: false }, test_writer: { read: false, report: 0, tests: { state: "assigned" } } };
-if (input.field === "report") build.test_writer.report = -1;
+if (input.field === "finding_count") build.test_writer.tests = { state: "needs_changes", finding_count: 0, checked_at: "2026-11-13T00:00:00Z" };
+else if (input.field === "report") build.test_writer.report = -1;
 else build.required_test_count = -1;
 await control(origin, "reply", { key: "GET " + path, status: 200, body: { change_id: "chg", build } });
 const page = await openPage(origin, { link: input.link });
