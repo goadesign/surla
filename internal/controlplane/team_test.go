@@ -232,6 +232,59 @@ func TestTeamAssignmentGenerations(t *testing.T) {
 	require.NoError(t, os.WriteFile(name, original, 0600))
 }
 
+// TestTeamAssignmentGenerationsMatchBuildWork uses the saved build's actual
+// projection: a stored evaluator has no test-writer work, but still owes the
+// builder's read. Ordinary projects continue to owe both unread assignments.
+func TestTeamAssignmentGenerationsMatchBuildWork(t *testing.T) {
+	for _, stored := range []bool{false, true} {
+		t.Run(map[bool]string{false: "ordinary project", true: "stored evaluator"}[stored], func(t *testing.T) {
+			opts := Options{Team: &TeamBinding{Owner: "alice@example.com", Service: &teamServiceFixture{}}}
+			if stored {
+				opts.Verification = &VerificationConfig{RunsDir: t.TempDir()}
+			}
+			cp := newControlPlane(t, opts)
+			card := confirmedChange(t, cp, "chg")
+			user := asCaller("alice@example.com", CallerUser)
+			started, err := cp.StartBuild(user, &gensurla.StartBuildPayload{ChangeID: "chg", RequestRevision: card.RequestRevision})
+			require.NoError(t, err)
+			read, err := cp.GetBuild(user, &gensurla.GetBuildPayload{ChangeID: "chg"})
+			require.NoError(t, err)
+			build, ok := read.Build.AsStarted()
+			require.True(t, ok)
+			assert.Equal(t, started, build)
+			wantTests := gensurla.TestsKindAssigned
+			wantRoles := []string{"builder", "test_writer"}
+			if stored {
+				wantTests = gensurla.TestsKindNotUsed
+				wantRoles = []string{"builder"}
+			}
+			assert.Equal(t, wantTests, build.TestWriter.Tests.Kind())
+			owed, err := cp.assignmentGenerations(t.Context())
+			require.NoError(t, err)
+			roles := make([]string, 0, len(owed))
+			for _, item := range owed {
+				roles = append(roles, item.Role)
+			}
+			assert.Equal(t, wantRoles, roles)
+			saved, err := cp.ownedBuilds("alice@example.com")
+			require.NoError(t, err)
+			require.Len(t, saved, 1)
+			assert.False(t, saved[0].file.Builder.Read)
+			assert.False(t, saved[0].file.TestWriter.Read, "unused is derived, never a fabricated read")
+			_, err = cp.GetBuilderAssignment(asCaller("alice@example.com", CallerBuilder), &gensurla.GetBuilderAssignmentPayload{ChangeID: "chg"})
+			require.NoError(t, err)
+			remaining, err := cp.assignmentGenerations(t.Context())
+			require.NoError(t, err)
+			if stored {
+				assert.Empty(t, remaining)
+			} else {
+				require.Len(t, remaining, 1)
+				assert.Equal(t, "test_writer", remaining[0].Role)
+			}
+		})
+	}
+}
+
 // TestTeamSupervisorOwnedShutdown proves startup admission, cancel and drain
 // happen even without Live configured, and failures have a bounded retry delay.
 func TestTeamSupervisorOwnedShutdown(t *testing.T) {

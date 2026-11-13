@@ -117,6 +117,43 @@ func TestTeamReadPublishedFacts(t *testing.T) {
 	assert.Empty(t, f.reads, "the published read has no external effects")
 }
 
+// TestTeamAssignmentSetProjection consumes the owner reader's permitted sets.
+// A registered unused test writer owes nothing even when terminal facts are
+// independently unknown; ordinary projects still expose its unread assignment.
+func TestTeamAssignmentSetProjection(t *testing.T) {
+	for _, unused := range []bool{false, true} {
+		t.Run(map[bool]string{false: "ordinary project", true: "stored evaluator"}[unused], func(t *testing.T) {
+			o, f, now := newSupervisionFixture(t)
+			o.server.state.Record.Agents["tests-example"] = "test_writer"
+			o.syncSelection(o.server.teamSelection())
+			o.assignments(t.Context(), func(context.Context) ([]controlplane.AssignmentGeneration, error) {
+				owed := []controlplane.AssignmentGeneration{{Role: "builder", Generation: "one"}}
+				if !unused {
+					owed = append(owed, controlplane.AssignmentGeneration{Role: "test_writer", Generation: "one"})
+				}
+				return owed, nil
+			})
+			o.publish(t.Context(), now, false)
+			snapshot, err := o.server.ReadTeam(t.Context())
+			require.NoError(t, err)
+			require.Len(t, snapshot.Roles, 2)
+			assert.Equal(t, "builder", snapshot.Roles[0].Role)
+			assert.Equal(t, "unread", snapshot.Roles[0].Assignment)
+			writer := snapshot.Roles[1]
+			assert.Equal(t, "test_writer", writer.Role)
+			assert.Equal(t, "tests-example", writer.Handle)
+			assert.Equal(t, "unknown", writer.State)
+			if unused {
+				assert.Equal(t, "nothing_owed", writer.Assignment)
+			} else {
+				assert.Equal(t, "unread", writer.Assignment)
+			}
+			assert.Empty(t, f.reads)
+			assert.Empty(t, f.sends)
+		})
+	}
+}
+
 // TestTeamReminderFailureTelemetry separates actual failures from normal refusals
 // and the explicitly unbound sender, without retaining the private cause or result.
 func TestTeamReminderFailureTelemetry(t *testing.T) {

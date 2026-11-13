@@ -137,7 +137,7 @@ func (c *ControlPlane) assignmentGenerations(ctx context.Context) ([]AssignmentG
 		if !build.file.Builder.Read {
 			owed = append(owed, AssignmentGeneration{Role: "builder", Generation: generation})
 		}
-		if !build.file.TestWriter.Read {
+		if !build.storedEvaluator && !build.file.TestWriter.Read {
 			owed = append(owed, AssignmentGeneration{Role: "test_writer", Generation: generation})
 		}
 	}
