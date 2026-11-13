@@ -569,8 +569,8 @@ var _ = Suite("second_suite", func() {
 				},
 			},
 			wantErr: []string{
-				"Story scenario generation requires one evaluation suite, but the design declares none",
-				"declare a single Suite(...) in design/",
+				"Story scenario generation needs exactly one evaluation suite, but the design declares 0",
+				"keep exactly one Suite(...) in design/",
 			},
 		},
 		{
@@ -583,8 +583,8 @@ var _ = Suite("second_suite", func() {
 				},
 			},
 			wantErr: []string{
-				"Story scenario generation requires a single evaluation suite, but the design declares 2 suites",
-				"keep only one Suite(...) in design/",
+				"Story scenario generation needs exactly one evaluation suite, but the design declares 2",
+				"keep exactly one Suite(...) in design/",
 			},
 		},
 	}

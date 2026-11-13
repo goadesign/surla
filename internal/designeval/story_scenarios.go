@@ -68,24 +68,21 @@ func (r *storyScenarioRoot) Prepare() {
 }
 
 // Validate requires the evaluator design to declare exactly one evaluation
-// suite when complete Story flows are present.
+// suite when complete Story flows are present, in the words the test
+// writer's check uses for the same rule.
 func (r *storyScenarioRoot) Validate() error {
-	verr := new(eval.ValidationErrors)
-	switch {
-	case evalexpr.Root == nil || len(evalexpr.Root.Suites) == 0:
-		verr.Add(
-			r,
-			"Story scenario generation requires one evaluation suite, but the design declares none; declare a single Suite(...) in design/",
-		)
-		return verr
-	case len(evalexpr.Root.Suites) > 1:
-		verr.Add(
-			r,
-			"Story scenario generation requires a single evaluation suite, but the design declares %d suites; keep only one Suite(...) in design/",
-			len(evalexpr.Root.Suites),
-		)
-		return verr
-	default:
+	var suites int
+	if evalexpr.Root != nil {
+		suites = len(evalexpr.Root.Suites)
+	}
+	if suites == 1 {
 		return nil
 	}
+	verr := new(eval.ValidationErrors)
+	verr.Add(
+		r,
+		"Story scenario generation needs exactly one evaluation suite, but the design declares %d; keep exactly one Suite(...) in design/",
+		suites,
+	)
+	return verr
 }

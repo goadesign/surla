@@ -324,37 +324,62 @@ func TestCheckIgnoresTheCopysOwnRepository(t *testing.T) {
 	assert.Empty(t, ranHooks(t, markers))
 }
 
-// TestCheckWantsExactlyOneEvaluationSuite gives the copy's design two suites:
-// with a Story that requires tests and with one that requires none, Check
-// says the module must declare exactly one evaluation suite, never a build
-// error about a missing package.
+// TestCheckWantsExactlyOneEvaluationSuite gives the copy's design two
+// suites, then none, each with a Story that requires tests and with one that
+// requires none: Check says the module must declare exactly one evaluation
+// suite and how many it declares, never a build error about a missing
+// package. A module whose path is outside Surla's test layout gets no
+// generated program, and Check says so.
 func TestCheckWantsExactlyOneEvaluationSuite(t *testing.T) {
 	skipWithoutSandbox(t)
 	repo, _ := newProject(t, fixtureProject(t))
 	wc, err := OpenWorkingCopy(t.Context(), repo)
 	require.NoError(t, err)
-	design := fixtureProject(t)["eval/design/design.go"] + `
+	module := filepath.Join(wc.Project(), "eval")
+	design := fixtureProject(t)["eval/design/design.go"]
+	cases := []struct {
+		name, design, count string
+	}{
+		{name: "two suites", design: design + `
 var _ = Suite("second", func() {
 	Description("A second suite.")
 	Timeout("30s")
 	Scenario("other", func() { Description("Other.") })
 })
-`
-	writeFiles(t, filepath.Join(wc.Project(), "eval"), map[string]string{"design/design.go": design})
-	for name, stories := range map[string][]designeval.StorySummary{
-		"a Story that requires tests": refundStories,
-		"a Story that requires none":  nil,
-	} {
-		t.Run(name, func(t *testing.T) {
-			v, err := testChecker.Check(t.Context(), wc, fixtureSuite, stories)
-			require.NoError(t, err)
-			require.Len(t, v.Findings, 1, "%+v", v.Findings)
-			assert.Equal(t, FindingGeneration, v.Findings[0].Kind)
-			assert.Contains(t, v.Findings[0].Message, "evaluation suite")
-			assert.Contains(t, v.Findings[0].Message, "2")
-			assertNoAbsolutePath(t, v.Findings)
-		})
+`, count: "declares 2"},
+		{name: "no suite", design: design[:strings.Index(design, "var _ = Suite(")] + "\n// The evaluation DSL stays imported.\nvar _ = Suite\n",
+			count: "declares 0"},
 	}
+	for _, tc := range cases {
+		for storyName, stories := range map[string][]designeval.StorySummary{
+			"a Story that requires tests": refundStories,
+			"a Story that requires none":  nil,
+		} {
+			t.Run(tc.name+", "+storyName, func(t *testing.T) {
+				writeFiles(t, module, map[string]string{"design/design.go": tc.design})
+				v, err := testChecker.Check(t.Context(), wc, fixtureSuite, stories)
+				require.NoError(t, err)
+				require.Len(t, v.Findings, 1, "%+v", v.Findings)
+				assert.Equal(t, FindingGeneration, v.Findings[0].Kind)
+				assert.Contains(t, v.Findings[0].Message, "exactly one evaluation suite")
+				assert.Contains(t, v.Findings[0].Message, tc.count)
+				assertNoAbsolutePath(t, v.Findings)
+			})
+		}
+	}
+	t.Run("a module outside the test layout", func(t *testing.T) {
+		goMod := fixtureProject(t)["eval/go.mod"]
+		writeFiles(t, module, map[string]string{
+			"design/design.go": design,
+			"go.mod":           strings.Replace(goMod, "module example.com/shop/eval\n", "module example.com/shop/evaluation\n", 1),
+		})
+		v, err := testChecker.Check(t.Context(), wc, fixtureSuite, refundStories)
+		require.NoError(t, err)
+		require.Len(t, v.Findings, 1, "%+v", v.Findings)
+		assert.Equal(t, FindingGeneration, v.Findings[0].Kind)
+		assert.Contains(t, v.Findings[0].Message, "Surla generated no test program at ./gen/cmd/shop-evals")
+		assertNoAbsolutePath(t, v.Findings)
+	})
 }
 
 // TestCheckLimitsTheBuildAndTheListing runs a complete copy with stand-ins
