@@ -1899,25 +1899,26 @@ export function bootstrapViewsPage() {
         <CP1EditorView
           card={ed.card}
           buildSection={
-        <BuildSectionView
-          card={ed.card}
-          currentRevision={changeList?.changes.find((item) => item.change_id === ed.card.change_id)?.request_revision ??
-            ed.incomingCard?.request_revision ?? ed.card.request_revision}
-          build={buildChangeId === ed.card.change_id ? buildSnapshot : null}
-          loading={hasPending("get_build", ed.card.change_id)}
-          error={buildReadError}
-          starting={hasPending("start_build", ed.card.change_id)}
-          disabled={sessionState !== "active" || editorBusy}
-          dirty={isDraftDirty(ed.card, ed.draftAnswers, ed.draftExamples)}
-          startReceipt={buildStartReceipt}
-          findingTexts={null}
-          findingsLoading={false}
-          findingsError={null}
-          onRefresh={() => readBuild(ed.card.change_id)}
-          onReadFindings={() => {}}
-          onBuild={startBuild}
-          onOpenTeam={openTeam}
-        />
+            <BuildSectionView
+              key={activeResult?.kind ?? "decisions"}
+              card={ed.card}
+              currentRevision={changeList?.changes.find((item) => item.change_id === ed.card.change_id)?.request_revision ??
+                ed.incomingCard?.request_revision ?? ed.card.request_revision}
+              build={buildChangeId === ed.card.change_id ? buildSnapshot : null}
+              loading={hasPending("get_build", ed.card.change_id)}
+              error={buildReadError}
+              starting={hasPending("start_build", ed.card.change_id)}
+              disabled={sessionState !== "active" || editorBusy}
+              dirty={isDraftDirty(ed.card, ed.draftAnswers, ed.draftExamples)}
+              startReceipt={buildStartReceipt}
+              findingTexts={null}
+              findingsLoading={false}
+              findingsError={null}
+              onRefresh={() => readBuild(ed.card.change_id)}
+              onReadFindings={() => {}}
+              onBuild={startBuild}
+              onOpenTeam={openTeam}
+            />
           }
           proposalWaiting={proposal !== undefined}
           priorCard={ed.priorCard}
