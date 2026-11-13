@@ -155,7 +155,7 @@ func (runtime projectRuntime) start(stdout io.Writer) (err error) {
 		return err
 	}
 	if team.Dialog == "already_open" {
-		_, err = fmt.Fprintf(stdout, "Team %s.\nthe Chorus launcher is already open in Herdr; choose your agents there if it is for this project, otherwise close it and run surla again\n", team.Team)
+		_, err = fmt.Fprintf(stdout, "Team %s.\nThe Chorus launcher is already open in Herdr; choose your agents there if it is for this project, otherwise close it and run surla again\n", team.Team)
 	} else if team.Dialog == "not_needed" {
 		_, err = fmt.Fprintf(stdout, "Team %s is running.\n", team.Team)
 	} else {
@@ -435,13 +435,25 @@ func projectClient(state *project.State) *genproject.Client {
 	client := projectHTTPClient()
 	return genproject.NewClient(
 		managementEndpoint(state, client, (*genprojectclient.Client).Identity),
-		managementEndpoint(state, teamHTTPClient(), (*genprojectclient.Client).EnsureTeam),
+		teamManagementEndpoint(state),
 		managementEndpoint(state, client, (*genprojectclient.Client).Stop),
 		managementEndpoint(state, client, (*genprojectclient.Client).AddAgent),
 		managementEndpoint(state, client, (*genprojectclient.Client).RemoveAgent),
 		managementEndpoint(state, client, (*genprojectclient.Client).BrowserLink),
 		managementEndpoint(state, client, (*genprojectclient.Client).ExchangeBrowserLink),
 	)
+}
+
+// teamManagementEndpoint gives only the team request's deadline its own concrete recovery step.
+func teamManagementEndpoint(state *project.State) goa.Endpoint {
+	next := managementEndpoint(state, teamHTTPClient(), (*genprojectclient.Client).EnsureTeam)
+	return func(ctx context.Context, payload any) (any, error) {
+		result, err := next(ctx, payload)
+		if errors.Is(err, context.DeadlineExceeded) {
+			return nil, fmt.Errorf("project team request did not finish; check Herdr, then run surla again: %w", context.DeadlineExceeded)
+		}
+		return result, err
+	}
 }
 
 // managementEndpoint preserves generated transport behavior without printing peer-authored

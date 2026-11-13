@@ -52,7 +52,7 @@ func (f *fixtureTeamHost) OpenLauncher(context.Context) error { return nil }
 
 // fixtureTeamDependencies binds only the caller's temporary state directory and recorded effects.
 func fixtureTeamDependencies(state *project.State) project.TeamDependencies {
-	return project.TeamDependencies{Lifetime: context.Background(), Host: &fixtureTeamHost{}, RosterDirectory: filepath.Join(state.Dir, "fixture-rosters"), Shell: "/bin/zsh"}
+	return project.TeamDependencies{Lifetime: context.Background(), Host: &fixtureTeamHost{}, TestWriterFolder: func(context.Context) (string, error) { return "", nil }, RosterDirectory: filepath.Join(state.Dir, "fixture-rosters"), Shell: "/bin/zsh"}
 }
 
 // bindFixtureTeamEffects explicitly opts a journey into test-owned team effects.
@@ -63,7 +63,7 @@ func bindFixtureTeamEffects(runtime *projectRuntime) {
 		if err != nil {
 			return project.TeamDependencies{}, err
 		}
-		return project.TeamDependencies{Lifetime: ctx, Host: &fixtureTeamHost{}, RosterDirectory: filepath.Join(root, "fixture-rosters"), Shell: "/bin/zsh"}, nil
+		return project.TeamDependencies{Lifetime: ctx, Host: &fixtureTeamHost{}, TestWriterFolder: func(context.Context) (string, error) { return "", nil }, RosterDirectory: filepath.Join(root, "fixture-rosters"), Shell: "/bin/zsh"}, nil
 	}
 }
 

@@ -165,7 +165,7 @@ func startDetachedTeamProgram(program string, args ...string) (<-chan error, err
 }
 
 // reapTeamProgram reports an exit without blocking startup or inheriting output pipes.
-func reapTeamProgram(command *exec.Cmd, exited chan<- error) { exited <- command.Wait() }
+func reapTeamProgram(command *exec.Cmd, exited chan<- error) { exited <- command.Wait(); close(exited) }
 
 // projectTeamDependencies binds the server login environment, never paths supplied by the CLI caller.
 // Its HERDR_APP_HOME (default ~/.config/herdr-app) may differ from the running window’s environment.
@@ -181,7 +181,7 @@ func projectTeamDependencies(ctx context.Context) (project.TeamDependencies, err
 		}
 		home = filepath.Join(userHome, ".config", "herdr-app")
 	}
-	return project.TeamDependencies{Lifetime: ctx, Host: commands, RosterDirectory: filepath.Join(home, "data", "chorus-launcher", "rosters"), Shell: os.Getenv("SHELL")}, nil
+	return project.TeamDependencies{Lifetime: ctx, Host: commands, TestWriterFolder: noTestWriterWorkingFolder, RosterDirectory: filepath.Join(home, "data", "chorus-launcher", "rosters"), Shell: os.Getenv("SHELL")}, nil
 }
 
 // json decodes command replies and checks JSON-level errors as well as process status.
@@ -332,3 +332,8 @@ func runServerTeamCommand(ctx context.Context, program string, args ...string) (
 	}
 	return runTeamCommand(ctx, resolved, args...)
 }
+
+// noTestWriterWorkingFolder reports the absence of a bound working-copy owner.
+// Replace this binding when the build workflow owns test-writer working copies,
+// using that owner's non-creating read of the existing project folder.
+func noTestWriterWorkingFolder(context.Context) (string, error) { return "", nil }

@@ -559,7 +559,7 @@ func projectUsage() {
 	fmt.Fprintln(os.Stderr, `    identity: The CLI checks the answering server reports its expected project identity using the current server-lifetime management credential.`)
 	fmt.Fprintln(os.Stderr, `    ensure-team: The CLI asks the project server to ensure its team, guide credential, Herdr space and atomic launcher roster, then open the launcher only when an agent is missing. Accepted work has a bounded server-owned lifetime independent of client disconnection. Only the server management credential may call this operation; it is never an MCP tool.`)
 	fmt.Fprintln(os.Stderr, `    stop: The CLI requests ordered server shutdown. Before its listener closes, the server revokes management access and withdraws its running record; an authorized stop response can finish.`)
-	fmt.Fprintln(os.Stderr, `    add-agent: The CLI creates one persistent agent credential and returns only its private file path. The credential and role survive server restart.`)
+	fmt.Fprintln(os.Stderr, `    add-agent: The CLI creates one persistent credential for a trusted role and returns only its private file path. A project admits at most one agent per role. The credential and role survive server restart.`)
 	fmt.Fprintln(os.Stderr, `    remove-agent: The CLI revokes an agent and removes its private credential file before returning.`)
 	fmt.Fprintln(os.Stderr, `    browser-link: The CLI mints a short-lived single-use browser link. The URL is the only credential allowed in a browser-launch command line.`)
 	fmt.Fprintln(os.Stderr, `    exchange-browser-link: The browser exchanges the single-use link once for an in-memory user session. The session is never a cookie or stored on disk and is sent only to this server address.`)
@@ -623,7 +623,7 @@ func projectAddAgentUsage() {
 
 	// Description
 	fmt.Fprintln(os.Stderr)
-	fmt.Fprintln(os.Stderr, `The CLI creates one persistent agent credential and returns only its private file path. The credential and role survive server restart.`)
+	fmt.Fprintln(os.Stderr, `The CLI creates one persistent credential for a trusted role and returns only its private file path. A project admits at most one agent per role. The credential and role survive server restart.`)
 
 	// Flags list
 	fmt.Fprintln(os.Stderr, `    -body JSON: `)

@@ -6579,7 +6579,7 @@ paths:
             tags:
                 - project
             summary: add_agent project
-            description: The CLI creates one persistent agent credential and returns only its private file path. The credential and role survive server restart.
+            description: The CLI creates one persistent credential for a trusted role and returns only its private file path. A project admits at most one agent per role. The credential and role survive server restart.
             operationId: project#add_agent
             requestBody:
                 description: Request body for add_agent.
@@ -6616,7 +6616,7 @@ paths:
                                 temporary: false
                                 timeout: false
                 "409":
-                    description: 'conflict: An agent with this identifier already exists.'
+                    description: 'conflict: An agent with this identifier or trusted role already exists.'
                     content:
                         application/vnd.goa.error:
                             schema:
@@ -6676,7 +6676,7 @@ paths:
                                 temporary: false
                                 timeout: false
                 "409":
-                    description: 'conflict: An agent with this identifier already exists.'
+                    description: 'conflict: An agent with this identifier or trusted role already exists.'
                     content:
                         application/vnd.goa.error:
                             schema:
@@ -6732,7 +6732,7 @@ paths:
                                 temporary: false
                                 timeout: false
                 "409":
-                    description: 'conflict: An agent with this identifier already exists.'
+                    description: 'conflict: An agent with this identifier or trusted role already exists.'
                     content:
                         application/vnd.goa.error:
                             schema:
@@ -6796,7 +6796,7 @@ paths:
                                 temporary: false
                                 timeout: false
                 "409":
-                    description: 'conflict: An agent with this identifier already exists.'
+                    description: 'conflict: An agent with this identifier or trusted role already exists.'
                     content:
                         application/vnd.goa.error:
                             schema:
@@ -6853,7 +6853,7 @@ paths:
                                 temporary: false
                                 timeout: false
                 "409":
-                    description: 'conflict: An agent with this identifier already exists.'
+                    description: 'conflict: An agent with this identifier or trusted role already exists.'
                     content:
                         application/vnd.goa.error:
                             schema:
@@ -6902,7 +6902,7 @@ paths:
                                 temporary: false
                                 timeout: false
                 "409":
-                    description: 'conflict: An agent with this identifier already exists.'
+                    description: 'conflict: An agent with this identifier or trusted role already exists.'
                     content:
                         application/vnd.goa.error:
                             schema:
@@ -6969,7 +6969,7 @@ paths:
                                 temporary: false
                                 timeout: false
                 "409":
-                    description: 'conflict: An agent with this identifier already exists.'
+                    description: 'conflict: An agent with this identifier or trusted role already exists.'
                     content:
                         application/vnd.goa.error:
                             schema:

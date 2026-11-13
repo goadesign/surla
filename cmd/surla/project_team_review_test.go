@@ -62,10 +62,16 @@ func TestDetachedTeamStartersSurvivePollingDeadline(t *testing.T) {
 			pidFile := filepath.Join(directory, "pid")
 			signalFile := filepath.Join(directory, "signalled")
 			program := filepath.Join(directory, dependency)
-			script := "#!/bin/sh\nprintf '%s\\n' \"$$\" > \"$SURLA_TEST_STARTER_PID\"\ntrap 'printf signalled > \"$SURLA_TEST_STARTER_SIGNAL\"; exit 0' TERM HUP INT\nwhile :; do /bin/sleep 1; done\n"
+			childFile := filepath.Join(directory, "child-pid")
+			stdoutPipe := filepath.Join(directory, "stdout-pipe")
+			stderrPipe := filepath.Join(directory, "stderr-pipe")
+			script := "#!/bin/sh\ntrap 'printf signalled > \"$SURLA_TEST_STARTER_SIGNAL\"; exit 0' TERM HUP INT\nif [ -p /dev/fd/1 ]; then printf pipe > \"$SURLA_TEST_STARTER_STDOUT_PIPE\"; fi\nif [ -p /dev/fd/2 ]; then printf pipe > \"$SURLA_TEST_STARTER_STDERR_PIPE\"; fi\n/bin/sleep 300 &\nchild=$!\nprintf '%s\\n' \"$child\" > \"$SURLA_TEST_STARTER_CHILD\"\nprintf '%s\\n' \"$$\" > \"$SURLA_TEST_STARTER_PID\"\nwait \"$child\"\n"
 			require.NoError(t, os.WriteFile(program, []byte(script), 0o700))
 			t.Setenv("SURLA_TEST_STARTER_PID", pidFile)
 			t.Setenv("SURLA_TEST_STARTER_SIGNAL", signalFile)
+			t.Setenv("SURLA_TEST_STARTER_CHILD", childFile)
+			t.Setenv("SURLA_TEST_STARTER_STDOUT_PIPE", stdoutPipe)
+			t.Setenv("SURLA_TEST_STARTER_STDERR_PIPE", stderrPipe)
 			exits := make(chan (<-chan error), 1)
 			commands := teamCommands{chorus: "chorus", app: "herdr-app", run: func(context.Context, string, ...string) ([]byte, error) { return nil, assert.AnError }, start: func(name string, args ...string) (<-chan error, error) {
 				assert.Equal(t, dependency, name)
@@ -105,13 +111,30 @@ func TestDetachedTeamStartersSurvivePollingDeadline(t *testing.T) {
 						return
 					}
 				}
-				group, err := syscall.Getpgid(pid)
-				if !errors.Is(err, syscall.ESRCH) {
-					if !assert.NoError(t, err) || !assert.Equal(t, pid, group) {
-						return
+				// A failed session/group assertion must never disable fixture cleanup.
+				group, groupErr := syscall.Getpgid(pid)
+				if groupErr == nil && group == pid {
+					err := syscall.Kill(-pid, syscall.SIGKILL)
+					if !errors.Is(err, syscall.ESRCH) {
+						assert.NoError(t, err)
 					}
-					assert.NoError(t, syscall.Kill(-pid, syscall.SIGKILL))
 				}
+				owned := []int{pid}
+				childRaw, childErr := os.ReadFile(childFile)
+				if assert.NoError(t, childErr) {
+					child, parseErr := strconv.Atoi(strings.TrimSpace(string(childRaw)))
+					if assert.NoError(t, parseErr) && assert.Positive(t, child) {
+						owned = append(owned, child)
+					}
+				}
+				t.Logf("owned detached fixture PIDs: %v", owned)
+				for _, ownedPID := range owned {
+					err := syscall.Kill(ownedPID, syscall.SIGKILL)
+					if !errors.Is(err, syscall.ESRCH) {
+						assert.NoError(t, err)
+					}
+				}
+
 				select {
 				case exited := <-exits:
 					select {
@@ -122,6 +145,15 @@ func TestDetachedTeamStartersSurvivePollingDeadline(t *testing.T) {
 				case <-time.After(5 * time.Second):
 					t.Error("detached starter did not return its exit observation")
 				}
+				assert.Eventually(t, func() bool {
+					for _, ownedPID := range owned {
+						if !errors.Is(syscall.Kill(ownedPID, 0), syscall.ESRCH) {
+							return false
+						}
+					}
+					return true
+				}, 5*time.Second, 10*time.Millisecond, "every recorded fixture process must end and be reaped")
+
 				if !phaseEnded {
 					select {
 					case <-finished:
@@ -159,6 +191,10 @@ func TestDetachedTeamStartersSurvivePollingDeadline(t *testing.T) {
 			require.NoError(t, err)
 			assert.Equal(t, pid, session, "starter must have its own session")
 			assert.NoError(t, syscall.Kill(pid, 0), "poll timeout must leave the starter alive")
+			_, err = os.Stat(stdoutPipe)
+			assert.ErrorIs(t, err, os.ErrNotExist, "starter stdout must not be a pipe")
+			_, err = os.Stat(stderrPipe)
+			assert.ErrorIs(t, err, os.ErrNotExist, "starter stderr must not be a pipe")
 			_, err = os.Stat(signalFile)
 			assert.ErrorIs(t, err, os.ErrNotExist, "Surla must never signal the starter")
 			if dependency == "herdr-app" {
@@ -304,7 +340,7 @@ func TestCLIAlreadyOpenAndCredentialNonleak(t *testing.T) {
 	runtime.openViews = func(context.Context, string) error { return nil }
 	var output bytes.Buffer
 	require.NoError(t, runtime.start(&output))
-	assert.Contains(t, output.String(), "the Chorus launcher is already open in Herdr; choose your agents there if it is for this project, otherwise close it and run surla again")
+	assert.Contains(t, output.String(), "The Chorus launcher is already open in Herdr; choose your agents there if it is for this project, otherwise close it and run surla again")
 	for actor := range state.Record.Agents {
 		secret, err := os.ReadFile(state.AgentFile(actor))
 		require.NoError(t, err)
@@ -346,4 +382,32 @@ func TestStarterExitFailurePrecedesReady(t *testing.T) {
 	}}
 	err := startTeamPrograms(t.Context(), commands)
 	require.ErrorContains(t, err, "chorus up failed to start; run chorus up, then run surla again")
+}
+
+// TestTeamTimeoutHasRecoveryStep preserves deadline identity and leaves other management wording alone.
+func TestTeamTimeoutHasRecoveryStep(t *testing.T) {
+	for _, operation := range []string{"team", "identity"} {
+		t.Run(operation, func(t *testing.T) {
+			isolateServeWorkspace(t)
+			state, err := fixtureProjectState(t.TempDir())
+			require.NoError(t, err)
+			release := make(chan struct{})
+			api := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { <-release }))
+			defer api.Close()
+			defer close(release)
+			state.Record.Port = api.Listener.Addr().(*net.TCPAddr).Port
+			require.NoError(t, state.SaveRunning(project.Running{ManagementCredential: strings.Repeat("a", 64)}))
+			ctx, cancel := context.WithTimeout(t.Context(), 10*time.Millisecond)
+			defer cancel()
+			if operation == "team" {
+				_, err = projectClient(state).EnsureTeam(ctx)
+				require.ErrorContains(t, err, "check Herdr, then run surla again")
+			} else {
+				_, err = projectClient(state).Identity(ctx)
+				require.ErrorContains(t, err, "project server request did not finish")
+				assert.NotContains(t, err.Error(), "check Herdr")
+			}
+			assert.ErrorIs(t, err, context.DeadlineExceeded)
+		})
+	}
 }

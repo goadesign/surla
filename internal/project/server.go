@@ -44,8 +44,8 @@ type (
 // NewServer creates fresh management authority for one server lifetime.
 // The caller publishes it only after binding the listener and revokes it before closing that listener.
 func NewServer(state *State, stop func(), team TeamDependencies) (*Server, error) {
-	if team.Lifetime == nil || team.Host == nil || !filepath.IsAbs(team.RosterDirectory) {
-		return nil, errors.New("project server requires team lifetime, host and absolute roster directory")
+	if team.Lifetime == nil || team.Host == nil || team.TestWriterFolder == nil || !filepath.IsAbs(team.RosterDirectory) {
+		return nil, errors.New("project server requires team lifetime, host, test-writer folder reader and absolute roster directory")
 	}
 	credential, err := randomCredential()
 	if err != nil {
@@ -183,7 +183,7 @@ func (s *Server) Stop(ctx context.Context) error {
 	return nil
 }
 
-// AddAgent publishes a credential file and its immutable role as one admitted management operation.
+// AddAgent publishes one credential per trusted role as one admitted management operation.
 func (s *Server) AddAgent(ctx context.Context, p *genproject.AddAgentPayload) (*genproject.ProjectAgent, error) {
 	if err := managementOnly(ctx, "add_agent"); err != nil {
 		return nil, err
@@ -197,6 +197,11 @@ func (s *Server) addAgent(p *genproject.AddAgentPayload) (*genproject.ProjectAge
 	defer s.state.mu.Unlock()
 	if _, exists := s.state.Record.Agents[p.ActorID]; exists {
 		return nil, genproject.MakeConflict(errors.New("agent already exists"))
+	}
+	for _, role := range s.state.Record.Agents {
+		if role == p.Role {
+			return nil, genproject.MakeConflict(errors.New("an agent already owns this role"))
+		}
 	}
 	token, err := randomCredential()
 	if err != nil {

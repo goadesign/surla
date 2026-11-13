@@ -314,7 +314,10 @@ The server uses its login environment to resolve Herdr when preparing the team;
 Chorus and Herdr need not be on that environment's PATH for the server to start
 or for other management operations. The roster home also comes from the
 server's login environment. It contains only roles whose working folders exist;
-existing role entries require valid credential files.
+existing role entries require valid credential files. Each trusted role has at most
+one agent; registering another actor for an occupied role returns `conflict`.
+Missing working folders are omitted from the launcher and reported as not
+running; they do not by themselves open the launcher.
 Starting again reuses the guide and saved space. If a space was closed, the
 server adopts exactly one local space matching its team name and physical
 folder, creates one if none matches, and refuses duplicates with their count.

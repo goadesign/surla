@@ -39,8 +39,9 @@ type Service interface {
 	// server revokes management access and withdraws its running record; an
 	// authorized stop response can finish.
 	Stop(context.Context) (err error)
-	// The CLI creates one persistent agent credential and returns only its private
-	// file path. The credential and role survive server restart.
+	// The CLI creates one persistent credential for a trusted role and returns
+	// only its private file path. A project admits at most one agent per role. The
+	// credential and role survive server restart.
 	AddAgent(context.Context, *AddAgentPayload) (res *ProjectAgent, err error)
 	// The CLI revokes an agent and removes its private credential file before
 	// returning.

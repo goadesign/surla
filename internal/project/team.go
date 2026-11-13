@@ -35,6 +35,9 @@ type (
 		Host TeamHost
 		// RosterDirectory is Herdr's local launcher roster directory.
 		RosterDirectory string
+		// TestWriterFolder reads the test writer's existing project folder without creating it.
+		// An empty result means no working folder exists; errors stop team preparation.
+		TestWriterFolder func(context.Context) (string, error)
 		// Shell is the server login shell used by the shared running predicate.
 		Shell string
 	}
@@ -138,13 +141,13 @@ func (s *Server) ensureTeam(ctx context.Context) (*genproject.ProjectTeam, error
 	s.team.Lock()
 	defer s.team.Unlock()
 	if err := ctx.Err(); err != nil {
-		return nil, teamUnavailable(ctx, err)
+		return nil, teamUnavailable(ctx)
 	}
 	host := s.team.dependencies.Host
 	// Observe dialogs before any space creation or focus change: opening the launcher is a toggle.
 	overlays, err := host.Overlays(ctx)
 	if err != nil {
-		return nil, teamUnavailable(ctx, err)
+		return nil, teamUnavailable(ctx)
 	}
 	launcherOpen := false
 	for _, overlay := range overlays {
@@ -163,7 +166,7 @@ func (s *Server) ensureTeam(ctx context.Context) (*genproject.ProjectTeam, error
 	}
 	spaces, err := host.Spaces(ctx)
 	if err != nil {
-		return nil, teamUnavailable(ctx, err)
+		return nil, teamUnavailable(ctx)
 	}
 	var space TeamSpace
 	for _, candidate := range spaces {
@@ -191,18 +194,18 @@ func (s *Server) ensureTeam(ctx context.Context) (*genproject.ProjectTeam, error
 			}
 			space, err = host.CreateSpace(ctx, team, record.Directory)
 			if err != nil {
-				return nil, teamUnavailable(ctx, err)
+				return nil, teamUnavailable(ctx)
 			}
 		}
 	}
 	if !safeSpaceID(space.ID) {
-		return nil, teamUnavailable(ctx, errors.New("invalid local space identifier"))
+		return nil, teamUnavailable(ctx)
 	}
 	// Keep the old identity until its roster is removed; deterministic adoption recovers a lost reply.
 	if record.Space != "" && record.Space != space.ID {
 		err = os.Remove(filepath.Join(s.team.dependencies.RosterDirectory, record.Space+".json"))
 		if err != nil && !errors.Is(err, os.ErrNotExist) {
-			return nil, teamUnavailable(ctx, err)
+			return nil, teamUnavailable(ctx)
 		}
 	}
 	s.state.mu.Lock()
@@ -215,68 +218,127 @@ func (s *Server) ensureTeam(ctx context.Context) (*genproject.ProjectTeam, error
 	}
 	s.state.mu.Unlock()
 	if err != nil {
-		return nil, teamUnavailable(ctx, err)
+		return nil, teamUnavailable(ctx)
 	}
-	handle := teamName("guide", record.ID)
 	s.state.mu.Lock()
-	role, exists := s.state.Record.Agents[handle]
-	s.state.mu.Unlock()
-	if exists && role != "guide" {
-		return nil, teamUnavailable(ctx, errors.New("saved guide handle has a different role"))
-	}
-	if !exists {
-		_, err := s.addAgent(&genproject.AddAgentPayload{ActorID: handle, Role: "guide"})
-		if err != nil {
-			return nil, teamUnavailable(ctx, err)
+	hasGuide := false
+	for _, role := range s.state.Record.Agents {
+		if role == "guide" {
+			hasGuide = true
 		}
 	}
-	roster, err := s.teamRoster([]launcherRole{{Role: "guide", Title: "Guide", Handle: handle, Folder: record.Directory, FirstMessage: "Work through the Story and the change with the user in this project's pane. Use your surla connection, starting with the surla://golden-path guidance resource and list_changes/get_change. Only the user confirms intent and approves results, on the views page."}})
+	s.state.mu.Unlock()
+	if !hasGuide {
+		if _, err := s.addAgent(&genproject.AddAgentPayload{ActorID: teamName("guide", record.ID), Role: "guide"}); err != nil {
+			return nil, teamUnavailable(ctx)
+		}
+	}
+	// Snapshot the registry after guide admission; every registered actor survives this operation.
+	s.state.mu.Lock()
+	agents := make(map[string]string, len(s.state.Record.Agents))
+	for actor, role := range s.state.Record.Agents {
+		agents[actor] = role
+	}
+	s.state.mu.Unlock()
+	roles, err := s.registeredTeamRoles(ctx, agents)
 	if err != nil {
-		return nil, teamUnavailable(ctx, err)
+		return nil, teamUnavailable(ctx)
+	}
+	roster, err := s.teamRoster(roles)
+	if err != nil {
+		return nil, teamUnavailable(ctx)
 	}
 	if err := os.MkdirAll(s.team.dependencies.RosterDirectory, 0o700); err != nil {
-		return nil, teamUnavailable(ctx, err)
+		return nil, teamUnavailable(ctx)
 	}
 	if err := writeJSON(filepath.Join(s.team.dependencies.RosterDirectory, space.ID+".json"), roster); err != nil {
-		return nil, teamUnavailable(ctx, err)
+		return nil, teamUnavailable(ctx)
 	}
 	terminals, err := host.Terminals(ctx, record.Directory, space.ID)
 	if err != nil {
-		return nil, teamUnavailable(ctx, err)
+		return nil, teamUnavailable(ctx)
 	}
-	running := false
+	runningHandles := map[string]bool{}
 	for _, terminal := range terminals {
-		if terminal.Labels["chorus.handle"] != handle || terminal.Labels["chorus.project"] != record.Directory || terminal.Labels["herdr.space"] != space.ID {
+		if terminal.Labels["chorus.project"] != record.Directory || terminal.Labels["herdr.space"] != space.ID || !roleRunning(terminal, s.team.dependencies.Shell) {
 			continue
 		}
 		for _, tab := range space.Tabs {
-			if terminal.Labels["herdr.tab"] == tab.ID && roleRunning(terminal, s.team.dependencies.Shell) {
-				running = true
+			if terminal.Labels["herdr.tab"] == tab.ID {
+				runningHandles[terminal.Labels["chorus.handle"]] = true
 			}
 		}
 	}
-	result := &genproject.ProjectTeam{Team: team, Space: space.ID, Dialog: "not_needed", Roles: []*genproject.ProjectTeamRole{{Role: "guide", Handle: handle, Running: running}}}
+	listed := map[string]bool{}
+	for _, role := range roster.Roles {
+		listed[role.Handle] = true
+	}
+	result := &genproject.ProjectTeam{Team: team, Space: space.ID, Dialog: "not_needed", Roles: make([]*genproject.ProjectTeamRole, 0, len(roles))}
+	missing := false
+	for _, role := range roles {
+		running := listed[role.Handle] && runningHandles[role.Handle]
+		result.Roles = append(result.Roles, &genproject.ProjectTeamRole{Role: agents[role.Handle], Handle: role.Handle, Running: running})
+		if listed[role.Handle] && !running {
+			missing = true
+		}
+	}
 	if launcherOpen {
 		result.Dialog = "already_open"
 		return result, nil
 	}
-	if running {
+	if !missing {
 		return result, nil
 	}
 	if err := host.Focus(ctx, space); err != nil {
-		return nil, teamUnavailable(ctx, err)
+		return nil, teamUnavailable(ctx)
 	}
 	if err := host.OpenLauncher(ctx); err != nil {
-		return nil, teamUnavailable(ctx, err)
+		return nil, teamUnavailable(ctx)
 	}
 	result.Dialog = "opened"
 	return result, nil
+}
+
+// registeredTeamRoles reads existing role folders in the canonical guide/builder/test-writer order.
+// The role registry guarantees at most one actor per trusted role; actor IDs remain unchanged.
+func (s *Server) registeredTeamRoles(ctx context.Context, agents map[string]string) ([]launcherRole, error) {
+	byRole := make(map[string]string, len(agents))
+	for actor, role := range agents {
+		byRole[role] = actor
+	}
+	roles := make([]launcherRole, 0, len(agents))
+	for _, role := range []string{"guide", "builder", "test_writer"} {
+		handle, exists := byRole[role]
+		if !exists {
+			continue
+		}
+		folder := s.state.Record.Directory
+		title, message := "Guide", "Work through the Story and the change with the user in this project's pane. Use your surla connection, starting with the surla://golden-path guidance resource and list_changes/get_change. Only the user confirms intent and approves results, on the views page."
+		switch role {
+		case "builder":
+			title = "Builder"
+			message = "Use your surla connection, starting with the surla://golden-path guidance resource. Build and verify the agreed change in this project. Only the user confirms intent and approves results on the views page."
+		case "test_writer":
+			title = "Test writer"
+			message = "Use your surla connection, starting with the surla://golden-path guidance resource. Work on this project's tests in this folder. Only the user confirms intent and approves results on the views page."
+			var err error
+			folder, err = s.team.dependencies.TestWriterFolder(ctx)
+			if err != nil {
+				return nil, err
+			}
+		}
+		roles = append(roles, launcherRole{Role: role, Title: title, Handle: handle, Folder: folder, FirstMessage: message})
+	}
+	return roles, nil
 }
 
 // teamRoster validates folders and credentials before constructing the complete closed launcher schema.
 func (s *Server) teamRoster(roles []launcherRole) (launcherRoster, error) {
 	roster := launcherRoster{Root: s.state.Record.Directory, Swarm: s.state.Record.Team, Roles: make([]launcherRole, 0, len(roles))}
 	for _, role := range roles {
+		if !validTeamName(role.Role) || !validTeamName(role.Handle) {
+			return launcherRoster{}, errors.New("agent identifier cannot be represented by the Chorus launcher")
+		}
 		info, err := os.Stat(role.Folder)
 		if errors.Is(err, os.ErrNotExist) {
 			continue
@@ -382,10 +444,11 @@ func validTeamName(value string) bool {
 	return true
 }
 
-// teamUnavailable records the private cause on the owning span and returns only fixed public wording.
-func teamUnavailable(ctx context.Context, cause error) error {
+// teamUnavailable records a fixed bounded failure without exporting private paths or command arguments.
+func teamUnavailable(ctx context.Context) error {
+	failure := errors.New("project team could not be prepared")
 	span := trace.SpanFromContext(ctx)
-	span.RecordError(cause)
+	span.RecordError(failure)
 	span.SetStatus(codes.Error, "team start failed")
 	return genproject.MakeTeamUnavailable(errors.New("project team could not be prepared; check Herdr and run surla again"))
 }

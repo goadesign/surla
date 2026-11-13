@@ -47,7 +47,7 @@ var _ = Service("project", func() {
 	Description("Owns one local project's server identity, agent credentials, and one-use browser access. Management credentials last for one listening server and never authorize application decisions. This service is not exposed as agent tools.")
 	Error("forbidden", ErrorResult, "The trusted credential cannot perform this operation.")
 	Error("unprocessable", ErrorResult, "The requested credential exchange or agent does not exist or is invalid.")
-	Error("conflict", ErrorResult, "An agent with this identifier already exists.")
+	Error("conflict", ErrorResult, "An agent with this identifier or trusted role already exists.")
 	HTTP(func() {
 		Path("/project")
 		Response("forbidden", StatusForbidden)
@@ -78,7 +78,7 @@ var _ = Service("project", func() {
 		HTTP(func() { POST("/stop"); Response(StatusAccepted) })
 	})
 	Method("add_agent", func() {
-		Description("The CLI creates one persistent agent credential and returns only its private file path. The credential and role survive server restart.")
+		Description("The CLI creates one persistent credential for a trusted role and returns only its private file path. A project admits at most one agent per role. The credential and role survive server restart.")
 		Payload(func() {
 			Attribute("actor_id", String, "Agent identifier.", func() { Pattern("^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$") })
 			Attribute("role", String, "Agent purpose.", func() { Enum("guide", "builder", "test_writer") })

@@ -250,10 +250,15 @@ func validateRecord(r Record, directory string) error {
 	if r.Space != "" && !safeSpaceID(r.Space) {
 		return errors.New("invalid project space")
 	}
+	seenRoles := map[string]bool{}
 	for actor, role := range r.Agents {
 		if err := genprojectserver.ValidateAddAgentRequestBody(&genprojectserver.AddAgentRequestBody{ActorID: &actor, Role: &role}); err != nil {
 			return fmt.Errorf("invalid stored agent: %w", err)
 		}
+		if seenRoles[role] {
+			return fmt.Errorf("invalid stored role %q: more than one agent is registered", role)
+		}
+		seenRoles[role] = true
 	}
 	return nil
 }

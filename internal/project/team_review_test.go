@@ -4,6 +4,7 @@ package project
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -232,6 +233,15 @@ func TestTeamSpansReportBoundedOutcomes(t *testing.T) {
 	assert.Empty(t, spans[3].Events())
 	assert.Equal(t, codes.Error, spans[4].Status().Code)
 	assert.NotEmpty(t, spans[4].Events())
+	for _, span := range spans {
+		for _, event := range span.Events() {
+			for _, field := range event.Attributes {
+				assert.NotContains(t, field.Value.AsString(), state.Dir)
+				assert.NotContains(t, field.Value.AsString(), state.Record.Directory)
+			}
+		}
+	}
+
 	for i, dialog := range []string{"opened", "already_open", "not_needed"} {
 		attrs := map[string]attribute.Value{}
 		for _, value := range spans[i].Attributes() {
@@ -246,4 +256,45 @@ func TestTeamSpansReportBoundedOutcomes(t *testing.T) {
 		assert.Equal(t, running, attrs["team.roles_running"].AsInt64())
 		assert.Equal(t, codes.Unset, spans[i].Status().Code)
 	}
+}
+
+// failedOverlayHost supplies a hostile external error without making any window changes.
+type failedOverlayHost struct{ TeamHost }
+
+// Overlays refuses with a fabricated private cause that must never reach span events or public errors.
+func (failedOverlayHost) Overlays(context.Context) ([]string, error) {
+	return nil, errors.New("/private/hostile-project/credential --selected-argument secret-placeholder")
+}
+
+// TestTeamFailureEventsAreBounded inspects exception messages as well as ordinary span attributes.
+func TestTeamFailureEventsAreBounded(t *testing.T) {
+	recorder := tracetest.NewSpanRecorder()
+	provider := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(recorder))
+	previous := otel.GetTracerProvider()
+	otel.SetTracerProvider(provider)
+	defer otel.SetTracerProvider(previous)
+	defer func() { assert.NoError(t, provider.Shutdown(context.Background())) }()
+	state := testState(t)
+	deps := fixtureTeamDependencies(state)
+	deps.Host = failedOverlayHost{TeamHost: deps.Host}
+	server, err := NewServer(state, func() {}, deps)
+	require.NoError(t, err)
+	_, err = server.EnsureTeam(teamContext(state))
+	require.Error(t, err)
+	spans := recorder.Ended()
+	require.Len(t, spans, 1)
+	assert.Equal(t, codes.Error, spans[0].Status().Code)
+	require.NotEmpty(t, spans[0].Events())
+	for _, event := range spans[0].Events() {
+		for _, field := range event.Attributes {
+			value := field.Value.AsString()
+			for _, private := range []string{"hostile-project", "--selected-argument", "secret-placeholder", state.Dir} {
+				assert.NotContains(t, value, private)
+			}
+			if field.Key == "exception.message" {
+				assert.Equal(t, "project team could not be prepared", value)
+			}
+		}
+	}
+	assert.NotContains(t, err.Error(), "hostile-project")
 }
