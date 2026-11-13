@@ -361,8 +361,8 @@ type (
 	GetBuildResultTransport struct {
 		// Change Card identifier.
 		ChangeID *string `json:"change_id"`
-		// not_started until the user starts a build of this change; started with the
-		// build afterwards.
+		// not_started when the change has no usable build for the current test source;
+		// start a new build on the views page. Otherwise started with the usable build.
 		Build *Build `json:"build"`
 	}
 	// GetBuilderAssignmentPayloadTransport is the internal JSON transport type for GetBuilderAssignmentPayload.

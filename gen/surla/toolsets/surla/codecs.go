@@ -3837,7 +3837,7 @@ var getBuildResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("build")},
 		JSONType:    "object",
-		Description: "not_started until the user starts a build of this change; started with the build afterwards.",
+		Description: "not_started when the change has no usable build for the current test source; start a new build on the views page. Otherwise started with the usable build.",
 	},
 	{
 		Path:     []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("state")},
@@ -3850,7 +3850,7 @@ var getBuildResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("build")},
 		JSONType:    "object",
-		Description: "The user has not started a build of this change.",
+		Description: "This change has no usable build for the current test source: the user has not started one, or its builder-only build lost the stored verification settings that supplied its tests. Start a new build on the views page.",
 		Branches: []tools.UnionBranch{
 			tools.TaggedUnionBranch{
 				Discriminator: []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("state")},
@@ -3861,7 +3861,7 @@ var getBuildResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("build")},
 		JSONType:    "object",
-		Description: "The build the user started for a change, with both assignments.",
+		Description: "The usable build the user started for a change, with the builder's assignment and the test writer's progress when one is used. A build started with only the builder remains usable while stored verification settings supply its tests.",
 		Branches: []tools.UnionBranch{
 			tools.TaggedUnionBranch{
 				Discriminator: []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("state")},
@@ -21703,7 +21703,7 @@ func validateGetBuildResultJSONValue(path string, value any, description string)
 		case "build":
 			if err := validateGetBuildResultRootBuildJSONValue(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "not_started until the user starts a build of this change; started with the build afterwards.",
+				typed[key], "not_started when the change has no usable build for the current test source; start a new build on the views page. Otherwise started with the usable build.",
 			); err != nil {
 				return err
 			}

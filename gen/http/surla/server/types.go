@@ -861,8 +861,8 @@ type StartBuildResponseBody struct {
 type GetBuildResponseBody struct {
 	// Change Card identifier.
 	ChangeID string `form:"change_id" json:"change_id" xml:"change_id"`
-	// not_started until the user starts a build of this change; started with the
-	// build afterwards.
+	// not_started when the change has no usable build for the current test source;
+	// start a new build on the views page. Otherwise started with the usable build.
 	Build BuildResponseBody `form:"build" json:"build" xml:"build"`
 }
 

@@ -366,7 +366,7 @@ paths:
             tags:
                 - surla
             summary: get_build surla
-            description: 'Return a change''s build: not_started until the user starts one; otherwise the revision built, when, whether the builder read its assignment, the test writer''s state and whether it read its assignment, and whether the build is for the change''s revision in force. Reading changes nothing.'
+            description: 'Return a change''s usable build for the current test source: not_started when none exists, including a builder-only build whose stored verification settings were removed; start a new build on the views page. Otherwise return the revision built, when, whether the builder read its assignment, the test writer''s state and whether it read its assignment, and whether the build is for the change''s revision in force. Reading changes nothing.'
             operationId: surla#get_build
             parameters:
                 - name: change_id
@@ -3514,7 +3514,7 @@ definitions:
         properties:
             build:
                 type: object
-                description: not_started until the user starts a build of this change; started with the build afterwards.
+                description: not_started when the change has no usable build for the current test source; start a new build on the views page. Otherwise started with the usable build.
                 example:
                     builder:
                         read: false
@@ -9330,7 +9330,7 @@ definitions:
                 format: date-time
             test_writer:
                 $ref: '#/definitions/TestWriterProgress'
-        description: The build the user started for a change, with both assignments.
+        description: The usable build the user started for a change, with the builder's assignment and the test writer's progress when one is used. A build started with only the builder remains usable while stored verification settings supply its tests.
         example:
             builder:
                 read: false

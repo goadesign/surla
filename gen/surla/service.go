@@ -272,7 +272,9 @@ type Service interface {
 	// saved assignment or verdict; build again to complete it. get_build reads the
 	// saved build without this start's transient team or copy outcome.
 	StartBuild(context.Context, *StartBuildPayload) (res *StartBuildResult, err error)
-	// Return a change's build: not_started until the user starts one; otherwise
+	// Return a change's usable build for the current test source: not_started when
+	// none exists, including a builder-only build whose stored verification
+	// settings were removed; start a new build on the views page. Otherwise return
 	// the revision built, when, whether the builder read its assignment, the test
 	// writer's state and whether it read its assignment, and whether the build is
 	// for the change's revision in force. Reading changes nothing.
@@ -449,7 +451,9 @@ type BuildCopyNotContained struct {
 type BuildCopyNotUsed struct {
 }
 
-// The user has not started a build of this change.
+// This change has no usable build for the current test source: the user has
+// not started one, or its builder-only build lost the stored verification
+// settings that supplied its tests. Start a new build on the views page.
 type BuildNotStarted struct {
 }
 
@@ -673,8 +677,8 @@ type CP1RevisionAnalysisExample struct {
 type ChangeBuild struct {
 	// Change Card identifier.
 	ChangeID string
-	// not_started until the user starts a build of this change; started with the
-	// build afterwards.
+	// not_started when the change has no usable build for the current test source;
+	// start a new build on the views page. Otherwise started with the usable build.
 	Build Build
 }
 
@@ -1231,7 +1235,10 @@ type StartLiveTargetPayload struct {
 	CandidateCommit string
 }
 
-// The build the user started for a change, with both assignments.
+// The usable build the user started for a change, with the builder's
+// assignment and the test writer's progress when one is used. A build started
+// with only the builder remains usable while stored verification settings
+// supply its tests.
 type StartedBuild struct {
 	// Change Card revision the user built.
 	RequestRevision string
@@ -3017,8 +3024,8 @@ func validatejsonCP1RevisionAnalysisTransport(value *jsonCP1RevisionAnalysisTran
 type jsonChangeBuildTransport struct {
 	// Change Card identifier.
 	ChangeID *string `json:"change_id"`
-	// not_started until the user starts a build of this change; started with the
-	// build afterwards.
+	// not_started when the change has no usable build for the current test source;
+	// start a new build on the views page. Otherwise started with the usable build.
 	Build *jsonBuildTransport `json:"build"`
 }
 
@@ -23438,7 +23445,7 @@ func validateChangeBuildJSONValue(path string, value any, description string) er
 		case "build":
 			if err := validateChangeBuildJSONValue2(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "not_started until the user starts a build of this change; started with the build afterwards.",
+				typed[key], "not_started when the change has no usable build for the current test source; start a new build on the views page. Otherwise started with the usable build.",
 			); err != nil {
 				return err
 			}

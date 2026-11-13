@@ -92,7 +92,7 @@ var BuilderProgress = Type("BuilderProgress", func() {
 
 // StartedBuild is a change's build as the user started it.
 var StartedBuild = Type("StartedBuild", func() {
-	Description("The build the user started for a change, with both assignments.")
+	Description("The usable build the user started for a change, with the builder's assignment and the test writer's progress when one is used. A build started with only the builder remains usable while stored verification settings supply its tests.")
 	Attribute("request_revision", String, "Change Card revision the user built.")
 	Attribute("started_at", String, "When the user started this build.", func() { Format(FormatDateTime) })
 	Attribute("in_force", Boolean, "True when request_revision is the change's agreed revision, the one in force. It stays true while a revision the guide proposed waits beside the agreed one, and turns false once the user adopts a proposed revision or confirms another revision: the assignments then stay as they are, for this earlier revision, until the user builds again.")
@@ -102,16 +102,16 @@ var StartedBuild = Type("StartedBuild", func() {
 	Required("request_revision", "started_at", "in_force", "builder", "test_writer", "required_test_count")
 })
 
-// BuildNotStarted is the build state of a change the user never built.
+// BuildNotStarted says the change has no usable build for its current test source.
 var BuildNotStarted = Type("BuildNotStarted", func() {
-	Description("The user has not started a build of this change.")
+	Description("This change has no usable build for the current test source: the user has not started one, or its builder-only build lost the stored verification settings that supplied its tests. Start a new build on the views page.")
 })
 
 // ChangeBuild is a change's build, or the fact that it has none.
 var ChangeBuild = Type("ChangeBuild", func() {
 	Description("A change's build as get_build reports it.")
 	Attribute("change_id", String, "Change Card identifier.")
-	OneOf("build", "not_started until the user starts a build of this change; started with the build afterwards.", func() {
+	OneOf("build", "not_started when the change has no usable build for the current test source; start a new build on the views page. Otherwise started with the usable build.", func() {
 		Meta("oneof:json:flatten")
 		Meta("oneof:type:field", "state")
 		Attribute("not_started", BuildNotStarted)
@@ -215,14 +215,14 @@ func buildMethods() {
 	})
 
 	Method("get_build", func() {
-		Description("Return a change's build: not_started until the user starts one; otherwise the revision built, when, whether the builder read its assignment, the test writer's state and whether it read its assignment, and whether the build is for the change's revision in force. Reading changes nothing.")
+		Description("Return a change's usable build for the current test source: not_started when none exists, including a builder-only build whose stored verification settings were removed; start a new build on the views page. Otherwise return the revision built, when, whether the builder read its assignment, the test writer's state and whether it read its assignment, and whether the build is for the change's revision in force. Reading changes nothing.")
 		Payload(func() {
 			Attribute("change_id", String, "Change Card identifier.", func() { MinLength(1) })
 			Required("change_id")
 		})
 		Result(ChangeBuild)
 		Error("not_found", ErrorResult, "No Change Card exists with this change_id.")
-		Tool("get_build", "Read a change's build: whether the user started one, the revision built, whether each role read its assignment, the test writer's state, and whether the build is for the change's revision in force.")
+		Tool("get_build", "Read a change's usable build for its current test source: the revision built, whether each role read its assignment, the test writer's state, and whether the build is for the change's revision in force. not_started means there is no usable build; the user starts a new build on the views page.")
 		HTTP(func() {
 			GET("/changes/{change_id}/build")
 			Response(StatusOK)

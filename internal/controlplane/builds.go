@@ -252,8 +252,8 @@ func (c *ControlPlane) StartBuild(ctx context.Context, p *gensurla.StartBuildPay
 	return startedBuild(heldBuild{file: saved, inForce: true, storedEvaluator: c.storedEvaluator()}), nil
 }
 
-// GetBuild returns the owner's change's build, or not_started when the user
-// never built it, and whether the build is for the change's revision in force.
+// GetBuild returns the owner's change's usable build, or not_started when no
+// build serves the current test source, and whether it is for the revision in force.
 // It fails for an unknown change (not_found) or another owner's change
 // (forbidden) and changes nothing.
 func (c *ControlPlane) GetBuild(ctx context.Context, p *gensurla.GetBuildPayload) (*gensurla.ChangeBuild, error) {

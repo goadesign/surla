@@ -307,8 +307,8 @@ type (
 	GetBuildResult = struct {
 		// Change Card identifier.
 		ChangeID string
-		// not_started until the user starts a build of this change; started with the
-		// build afterwards.
+		// not_started when the change has no usable build for the current test source;
+		// start a new build on the views page. Otherwise started with the usable build.
 		Build Build
 	}
 	// GetBuilderAssignmentPayload defines the JSON payload for the surla.get_builder_assignment tool.
