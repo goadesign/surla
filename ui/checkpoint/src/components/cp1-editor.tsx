@@ -18,6 +18,7 @@ import {
 } from "../openui/library";
 import { ChangeCardResult, ExampleItem } from "../types";
 import { Alert, Badge, Button, Card } from "./shadcn";
+import { countsPhrase, storyCounts } from "./story";
 
 export interface CP1EditorProps {
   card: ChangeCardResult;
@@ -39,6 +40,8 @@ export interface CP1EditorProps {
   onDiscardDraft: () => void;
   onLoadLatestCard: () => void;
   onLoadVerifications: () => void;
+  // onOpenStory shows the Story stage for this change.
+  onOpenStory: () => void;
 }
 
 interface FieldTextareaProps {
@@ -139,8 +142,10 @@ export function CP1EditorView({
   onDiscardDraft,
   onLoadLatestCard,
   onLoadVerifications,
+  onOpenStory,
 }: CP1EditorProps) {
   const ambiguities = Array.isArray(card.ambiguities) ? card.ambiguities : [];
+  const stories = card.stories ?? [];
   const localExamplesEdited = areExamplesModified(card.examples, draftExamples);
   const draftDirty = isDraftDirty(card, draftAnswers, draftExamples);
   const artifactNames = card.approval
@@ -658,6 +663,23 @@ export function CP1EditorView({
         ) : (
           <p>None declared.</p>
         )}
+
+        <div
+          id="surla-confirm-story"
+          className="surla-panel-section"
+          role="region"
+          aria-label="Story of this change"
+        >
+          <p>
+            {stories.length === 0
+              ? "This change has no Story."
+              : "This change's Story has " + countsPhrase(storyCounts(stories)) + "."}{" "}
+            Only complete flows are tested end to end; drafts do not block confirming.
+          </p>
+          <Button id="surla-confirm-open-story" onClick={onOpenStory}>
+            Show the Story
+          </Button>
+        </div>
 
         <div className="surla-field-row">
           <Button

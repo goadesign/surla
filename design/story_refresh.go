@@ -61,10 +61,10 @@ var StorySummaryItem = Type("StorySummaryItem", func() {
 	Required("name", "actors", "flows")
 })
 
-// StoryRefreshResult reports the caller's current Story refresh operation for the bound workspace.
+// StoryRefreshResult reports the project owner's current Story refresh operation for the bound workspace.
 var StoryRefreshResult = Type("StoryRefreshResult", func() {
-	Description("Current Story refresh operation for the authenticated caller and bound workspace. state is none when no refresh has run yet in this server process for the bound workspace; running while sandboxed evaluation is in progress; succeeded with the evaluated stories (empty when the design does not load the Story module); or failed with a safe diagnostic.")
-	Attribute("op_id", String, "Identifier of the caller's current Story refresh operation for the bound workspace; present when state is running, succeeded, or failed. Pass it as story_refresh_op_id to propose_change or revise_change once state is succeeded to adopt the evaluated Story into a Change Card.")
+	Description("Current Story refresh operation of the project's owner for the bound workspace: the user, the guide and the builder all act for the owner, so they read the same one. state is none when no refresh has run yet in this server process for the bound workspace; running while sandboxed evaluation is in progress; succeeded with the evaluated stories (empty when the design does not load the Story module); or failed with a safe diagnostic.")
+	Attribute("op_id", String, "Identifier of the owner's current Story refresh operation for the bound workspace; present when state is running, succeeded, or failed. Pass it as story_refresh_op_id to propose_change or revise_change once state is succeeded to adopt the evaluated Story into a Change Card.")
 	Attribute("state", String, "Current operation state: none, running, succeeded, or failed.", func() {
 		Enum("none", "running", "succeeded", "failed")
 	})
@@ -78,7 +78,7 @@ var StoryRefreshResult = Type("StoryRefreshResult", func() {
 // storyRefreshMethods exposes bound-workspace Story evaluation over HTTP and MCP.
 func storyRefreshMethods() {
 	Method("refresh_story", func() {
-		Description("Read the bound workspace's Go module snapshot, compute its canonical snapshot_digest, and start or reuse the authenticated caller's in-memory Story refresh operation for that workspace. Return promptly with the operation's op_id, state, and snapshot_digest while sandboxed evaluation continues on a server-owned context that survives client disconnects. Refreshing an unchanged snapshot whose current operation is running or succeeded returns that operation without starting another evaluation; refreshing a changed snapshot or a failed operation cancels and replaces the prior operation.")
+		Description("Read the bound workspace's Go module snapshot, compute its canonical snapshot_digest, and start or reuse the project owner's in-memory Story refresh operation for that workspace, which every caller acting for the owner reads. Return promptly with the operation's op_id, state, and snapshot_digest while sandboxed evaluation continues on a server-owned context that survives client disconnects. Refreshing an unchanged snapshot whose current operation is running or succeeded returns that operation without starting another evaluation; refreshing a changed snapshot or a failed operation cancels and replaces the prior operation.")
 		Result(StoryRefreshResult)
 		Error("unprocessable", ErrorResult, "The bound workspace is absent, was replaced, contains no go.mod file, or has invalid module files; run init_project or fix the local module files and call refresh_story again.")
 		Error("not_implemented", ErrorResult, "No workspace directory is bound to this control plane; start Surla from a project directory.")
@@ -94,7 +94,7 @@ func storyRefreshMethods() {
 	})
 
 	Method("get_story_refresh", func() {
-		Description("Return the authenticated caller's current in-memory Story refresh operation for the bound workspace: op_id, state (none, running, succeeded, or failed), snapshot_digest, and the evaluated stories (empty when the design does not load the Story module) or a failure diagnostic. When no refresh has been run yet in this server process for the bound workspace, state is none with a message instructing the caller to run refresh_story.")
+		Description("Return the project owner's current in-memory Story refresh operation for the bound workspace, the same one for every caller acting for the owner: op_id, state (none, running, succeeded, or failed), snapshot_digest, and the evaluated stories (empty when the design does not load the Story module) or a failure diagnostic. When no refresh has been run yet in this server process for the bound workspace, state is none with a message instructing the caller to run refresh_story.")
 		Result(StoryRefreshResult)
 		Error("not_implemented", ErrorResult, "No workspace directory is bound to this control plane; start Surla from a project directory.")
 		Tool("get_story_refresh", "Read the current Story refresh operation for the bound workspace: op_id, state (none, running, succeeded, or failed), snapshot_digest, stories, or diagnostic. Takes no input. When state is none, call refresh_story first.")

@@ -2623,12 +2623,12 @@ var getStoryRefreshPayloadFields = []tools.FieldMetadata{
 var getStoryRefreshResultFields = []tools.FieldMetadata{
 	{
 		JSONType:    "object",
-		Description: "Current Story refresh operation for the authenticated caller and bound workspace. state is none when no refresh has run yet in this server process for the bound workspace; running while sandboxed evaluation is in progress; succeeded with the evaluated stories (empty when the design does not load the Story module); or failed with a safe diagnostic.",
+		Description: "Current Story refresh operation of the project's owner for the bound workspace: the user, the guide and the builder all act for the owner, so they read the same one. state is none when no refresh has run yet in this server process for the bound workspace; running while sandboxed evaluation is in progress; succeeded with the evaluated stories (empty when the design does not load the Story module); or failed with a safe diagnostic.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("op_id")},
 		JSONType:    "string",
-		Description: "Identifier of the caller's current Story refresh operation for the bound workspace; present when state is running, succeeded, or failed. Pass it as story_refresh_op_id to propose_change or revise_change once state is succeeded to adopt the evaluated Story into a Change Card.",
+		Description: "Identifier of the owner's current Story refresh operation for the bound workspace; present when state is running, succeeded, or failed. Pass it as story_refresh_op_id to propose_change or revise_change once state is succeeded to adopt the evaluated Story into a Change Card.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("state")},
@@ -3316,7 +3316,7 @@ var listChangesResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("version")},
 		JSONType:    "string",
-		Description: "Opaque value identifying this exact list; it changes whenever any listed value changes.",
+		Description: "Opaque value identifying this exact list and the owner's current Story evaluation; it changes whenever any listed value changes, and when a Story evaluation (get_story_refresh) starts, finishes or is replaced.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("approval_available")},
@@ -4660,12 +4660,12 @@ var refreshStoryPayloadFields = []tools.FieldMetadata{
 var refreshStoryResultFields = []tools.FieldMetadata{
 	{
 		JSONType:    "object",
-		Description: "Current Story refresh operation for the authenticated caller and bound workspace. state is none when no refresh has run yet in this server process for the bound workspace; running while sandboxed evaluation is in progress; succeeded with the evaluated stories (empty when the design does not load the Story module); or failed with a safe diagnostic.",
+		Description: "Current Story refresh operation of the project's owner for the bound workspace: the user, the guide and the builder all act for the owner, so they read the same one. state is none when no refresh has run yet in this server process for the bound workspace; running while sandboxed evaluation is in progress; succeeded with the evaluated stories (empty when the design does not load the Story module); or failed with a safe diagnostic.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("op_id")},
 		JSONType:    "string",
-		Description: "Identifier of the caller's current Story refresh operation for the bound workspace; present when state is running, succeeded, or failed. Pass it as story_refresh_op_id to propose_change or revise_change once state is succeeded to adopt the evaluated Story into a Change Card.",
+		Description: "Identifier of the owner's current Story refresh operation for the bound workspace; present when state is running, succeeded, or failed. Pass it as story_refresh_op_id to propose_change or revise_change once state is succeeded to adopt the evaluated Story into a Change Card.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("state")},
@@ -15644,7 +15644,7 @@ func validateRefreshStoryResultJSONValue(path string, value any, description str
 		case "op_id":
 			if err := validateStringJSONValue(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Identifier of the caller's current Story refresh operation for the bound workspace; present when state is running, succeeded, or failed. Pass it as story_refresh_op_id to propose_change or revise_change once state is succeeded to adopt the evaluated Story into a Change Card.",
+				typed[key], "Identifier of the owner's current Story refresh operation for the bound workspace; present when state is running, succeeded, or failed. Pass it as story_refresh_op_id to propose_change or revise_change once state is succeeded to adopt the evaluated Story into a Change Card.",
 			); err != nil {
 				return err
 			}
@@ -15720,7 +15720,7 @@ func validateListChangesResultJSONValue(path string, value any, description stri
 		case "version":
 			if err := validateStringJSONValue(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Opaque value identifying this exact list; it changes whenever any listed value changes.",
+				typed[key], "Opaque value identifying this exact list and the owner's current Story evaluation; it changes whenever any listed value changes, and when a Story evaluation (get_story_refresh) starts, finishes or is replaced.",
 			); err != nil {
 				return err
 			}

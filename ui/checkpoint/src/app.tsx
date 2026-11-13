@@ -16,6 +16,7 @@ import { CP1EditorView } from "./components/cp1-editor";
 import { VerificationView } from "./components/cp4-verification";
 import { ApproveResultControl } from "./components/cp5-approve";
 import { SessionEndedNotice, SignedOutReason, SignedOutView } from "./components/session";
+import { StoryStageView } from "./components/story";
 import { Alert, Button, Card } from "./components/shadcn";
 import { TraceDrawer, TraceFilter } from "./components/trace-drawer";
 import { isDraftDirty, PreservedDraft } from "./context/cp1-draft";
@@ -27,6 +28,7 @@ import {
   OperationName,
   Operations,
   ROUTES,
+  StoryRefreshResult,
   TraceList,
   VerificationListResult,
   VerificationStatusResult,
@@ -89,6 +91,7 @@ interface ActiveEditorState {
 // ActiveResultState selects the view displayed in #surla-result-view.
 type ActiveResultState =
   | { kind: "changes" }
+  | { kind: "story" }
   | { kind: "cp2-architecture-preview" }
   | { kind: "cp4-verification" }
   | { kind: "cp1-incoming-card" };
@@ -287,18 +290,39 @@ interface WorkspaceSubjectDescriptor {
 
 // describeActiveResultSubject derives the subject of #surla-result-view strictly
 // from the displayed payload and selected verification run, never falling
-// back to the editor's card.
+// back to the editor's card. The Story stage shows the Story saved with
+// storyCard, the change open in the editor, and the owner's current
+// evaluation.
 function describeActiveResultSubject(
   activeResult: ActiveResultState | null,
   previewState: ArchitecturePreviewResult | null,
   displayedRun: VerificationStatusResult | null,
   selectedVerificationChangeId: string | null,
-  bothRegionsShown: boolean
+  bothRegionsShown: boolean,
+  storyCard: ChangeCardResult | null,
+  storyEvaluation: StoryRefreshResult | null
 ): WorkspaceSubjectDescriptor | null {
   if (!activeResult || activeResult.kind === "cp1-incoming-card" || activeResult.kind === "changes") {
     return null;
   }
   const label = bothRegionsShown ? "Displayed view" : "Showing";
+  if (activeResult.kind === "story") {
+    let draft = "current draft not read yet";
+    if (storyEvaluation !== null) {
+      draft = "current draft " + storyEvaluation.state;
+      if (storyEvaluation.snapshot_digest) {
+        draft += " · snapshot " + storyEvaluation.snapshot_digest.slice(0, 15);
+      }
+    }
+    return {
+      role: "result",
+      label,
+      stage: "Story",
+      changeId: storyCard?.change_id,
+      requestRevision: storyCard?.request_revision,
+      detail: draft,
+    };
+  }
   if (activeResult.kind === "cp2-architecture-preview") {
     if (!previewState) {
       return null;
@@ -412,6 +436,17 @@ export function bootstrapViewsPage() {
   let editorOpen = false;
   let previewState: ArchitecturePreviewResult | null = null;
   const previewErrors = new Map<string, string>();
+  // storyEvaluation is the owner's current Story evaluation as last read, or
+  // null before the first read; storyEvaluationError is its last failed read.
+  let storyEvaluation: StoryRefreshResult | null = null;
+  let storyEvaluationError: string | null = null;
+  // storyEvaluationStale is true when the change list's version moved since
+  // the evaluation was last read while the Story stage was not shown, so
+  // opening the stage reads it again.
+  let storyEvaluationStale = true;
+  // storyReadAgain asks for one more read after the outstanding one, because
+  // the version moved while it was in flight.
+  let storyReadAgain = false;
   const runsById = new Map<string, VerificationStatusResult>();
   const lastLoadedListByChangeId = new Map<string, string[]>();
   let selectedVerificationChangeId: string | null = null;
@@ -669,6 +704,15 @@ export function bootstrapViewsPage() {
       changeList = outcome.result;
       listError = null;
       applyListChanges(previous, outcome.result);
+      if (previous !== null && previous.version !== outcome.result.version) {
+        // The version also covers the owner's Story evaluation. It is read
+        // after the list, so it is never older than the version just read.
+        if (activeResult?.kind === "story") {
+          readStoryEvaluation();
+        } else {
+          storyEvaluationStale = true;
+        }
+      }
       syncAllRegions();
       startWaiting();
       return true;
@@ -970,6 +1014,58 @@ export function bootstrapViewsPage() {
     syncAllRegions();
   }
 
+  // openStory shows the Story stage: the open change's saved Story, if a
+  // change is open, and the owner's current Story evaluation, which it reads
+  // when it was never read or the change list's version moved since.
+  function openStory() {
+    editorOpen = shouldRetainEditor();
+    activeResult = { kind: "story" };
+    rootEl.dataset.state = "story";
+    statusEl.textContent =
+      activeEditor !== null
+        ? "Showing the Story of Change Card " + activeEditor.card.change_id + "."
+        : "Showing the current Story draft.";
+    if (storyEvaluation === null || storyEvaluationStale) {
+      readStoryEvaluation();
+    }
+    syncAllRegions();
+  }
+
+  // readStoryEvaluation reads the owner's current Story evaluation. A read
+  // asked for while one is in flight runs once more after it, so the page
+  // never keeps an answer older than the last version it saw.
+  function readStoryEvaluation() {
+    if (hasPending("get_story_refresh", "")) {
+      storyReadAgain = true;
+      return;
+    }
+    storyReadAgain = false;
+    storyEvaluationStale = false;
+    const done = () => {
+      if (storyReadAgain) {
+        readStoryEvaluation();
+      }
+    };
+    callServer(
+      "get_story_refresh",
+      {},
+      "",
+      (evaluation) => {
+        storyEvaluation = evaluation;
+        storyEvaluationError = null;
+        done();
+      },
+      (message) => {
+        storyEvaluationError = message;
+        storyEvaluationStale = true;
+        if (activeResult?.kind === "story") {
+          statusEl.textContent = "Could not read the current Story draft.";
+        }
+        done();
+      }
+    );
+  }
+
   // openArchitecture shows the open change's architecture stage and asks the
   // server for the architecture of the shown revision when none is loaded.
   function openArchitecture() {
@@ -1069,6 +1165,12 @@ export function bootstrapViewsPage() {
       active: activeResult?.kind === "changes",
       onClick: showChanges,
     });
+    tabs.push({
+      id: "surla-nav-story",
+      label: "Story",
+      active: activeResult?.kind === "story",
+      onClick: openStory,
+    });
     const cp1Active =
       editorOpen && (!activeResult || activeResult.kind === "cp1-incoming-card");
     if (activeEditor !== null) {
@@ -1136,7 +1238,9 @@ export function bootstrapViewsPage() {
       shownPreview,
       resolveDisplayedVerificationRun(),
       selectedVerificationChangeId,
-      bothRegionsShown
+      bothRegionsShown,
+      activeEditor !== null ? activeEditor.card : null,
+      storyEvaluation
     );
     if (resultSubject !== null) {
       subjects.push(resultSubject);
@@ -1272,6 +1376,7 @@ export function bootstrapViewsPage() {
           onDiscardDraft={handleDiscardDraft}
           onLoadLatestCard={handleLoadLatestCard}
           onLoadVerifications={() => handleListVerifications(ed.card.change_id)}
+          onOpenStory={openStory}
         />
       );
     });
@@ -1310,6 +1415,24 @@ export function bootstrapViewsPage() {
           />
         );
       });
+      return;
+    }
+    if (res.kind === "story") {
+      flushSync(() => {
+        resultRoot.render(
+          <StoryStageView
+            card={activeEditor !== null ? activeEditor.card : null}
+            evaluation={storyEvaluation}
+            loading={hasPending("get_story_refresh", "")}
+            error={storyEvaluationError}
+            onRetry={readStoryEvaluation}
+          />
+        );
+      });
+      if (activeEditor !== null) {
+        resultRegionEl.dataset.changeId = activeEditor.card.change_id;
+        resultRegionEl.dataset.requestRevision = activeEditor.card.request_revision;
+      }
       return;
     }
     if (res.kind === "cp2-architecture-preview") {

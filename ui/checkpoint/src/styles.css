@@ -643,6 +643,54 @@ li { margin-bottom: 0.35rem; }
 }
 summary { cursor: pointer; font-weight: 500; user-select: none; }
 
+/* Story stage: flows are rows; a flow's steps are cards in a row that
+   scrolls inside the stage, so long flows never widen the page. */
+h5 { font-size: 0.84rem; font-weight: 600; margin: 0; overflow-wrap: anywhere; }
+.surla-story-stage { min-width: 0; }
+.surla-story-stage section + section { margin-top: 1rem; }
+.surla-story-section { min-width: 0; }
+.surla-story-muted { color: var(--muted-foreground); font-size: 0.82rem; }
+.surla-story-flows { list-style: none; padding-left: 0; margin: 0.4rem 0; display: grid; gap: 0.7rem; }
+.surla-story-flow {
+  min-width: 0;
+  padding: 0.6rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: calc(var(--radius) - 3px);
+  background: var(--surface);
+  overflow-wrap: anywhere;
+}
+.surla-story-flow[data-complete="false"] { border-style: dashed; border-color: var(--warning); }
+.surla-story-flow-header { display: flex; flex-wrap: wrap; align-items: center; gap: 0.35rem 0.6rem; }
+.surla-story-reasons { margin: 0.3rem 0; font-size: 0.82rem; }
+.surla-story-steps {
+  display: flex;
+  gap: 0.5rem;
+  list-style: none;
+  padding: 0.2rem 0 0.4rem 0;
+  margin: 0.45rem 0 0.2rem 0;
+  overflow-x: auto;
+  max-inline-size: 100%;
+}
+.surla-story-steps:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.surla-story-step {
+  flex: 0 0 13.5rem;
+  min-width: 0;
+  margin: 0;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: calc(var(--radius) - 4px);
+  background: var(--card);
+  overflow-wrap: anywhere;
+}
+.surla-story-step[data-kind="start"] { border-top: 3px solid var(--accent); }
+.surla-story-step[data-kind="outcome"] { border-bottom: 3px solid var(--success); }
+.surla-story-actor { display: block; font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; color: var(--muted-foreground); }
+.surla-story-summary { margin: 0.2rem 0; }
+.surla-story-kind { display: inline-block; font-size: 0.72rem; color: var(--muted-foreground); }
+.surla-story-questions { margin: 0.35rem 0 0 0; font-size: 0.82rem; }
+.surla-story-options { margin: 0.15rem 0; }
+#surla-story-draft-diagnostic { max-block-size: 18rem; overflow: auto; }
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;

@@ -174,6 +174,15 @@ export interface StoryQuestionItem {
   prompt: string;
 }
 
+export interface StoryRefreshResult {
+  diagnostic?: string;
+  message: string;
+  op_id?: string;
+  snapshot_digest?: string;
+  state: "none" | "running" | "succeeded" | "failed";
+  stories: StorySummaryItem[];
+}
+
 export interface StoryStepItem {
   actor_key: string;
   description?: string;
@@ -307,6 +316,8 @@ export interface GetChangeRequest {
   "change_id": string;
 }
 
+export type GetStoryRefreshRequest = Record<string, never>;
+
 export type ConfirmIntentRequest = ConfirmIntentPayload;
 
 export type ApproveMergeRequest = ApproveMergePayload;
@@ -333,6 +344,7 @@ export interface Operations {
   list_changes: { request: ListChangesRequest; result: ChangeList };
   wait_for_changes: { request: WaitForChangesRequest; result: ChangeListVersion };
   get_change: { request: GetChangeRequest; result: ChangeCardResult };
+  get_story_refresh: { request: GetStoryRefreshRequest; result: StoryRefreshResult };
   confirm_intent: { request: ConfirmIntentRequest; result: ChangeCardResult };
   approve_merge: { request: ApproveMergeRequest; result: ChangeCardResult };
   preview_architecture: { request: PreviewArchitectureRequest; result: ArchitecturePreviewResult };
@@ -383,6 +395,10 @@ function encodeGetChange(request: GetChangeRequest): EncodedRequest {
   return { path: "/changes/" + encodeURIComponent(String(request.change_id)), body: undefined };
 }
 
+function encodeGetStoryRefresh(_request: GetStoryRefreshRequest): EncodedRequest {
+  return { path: "/workspace/story/refresh", body: undefined };
+}
+
 function encodeConfirmIntent(request: ConfirmIntentRequest): EncodedRequest {
   return { path: "/changes/confirm", body: JSON.stringify(request) };
 }
@@ -424,6 +440,7 @@ export const ROUTES: { [K in OperationName]: Route<K> } = {
   list_changes: { method: "GET", success: 200, encode: encodeListChanges, decode: isChangeList },
   wait_for_changes: { method: "GET", success: 200, encode: encodeWaitForChanges, decode: isChangeListVersion },
   get_change: { method: "GET", success: 200, encode: encodeGetChange, decode: isChangeCardResult },
+  get_story_refresh: { method: "GET", success: 200, encode: encodeGetStoryRefresh, decode: isStoryRefreshResult },
   confirm_intent: { method: "POST", success: 200, encode: encodeConfirmIntent, decode: isChangeCardResult },
   approve_merge: { method: "POST", success: 200, encode: encodeApproveMerge, decode: isChangeCardResult },
   preview_architecture: { method: "POST", success: 200, encode: encodePreviewArchitecture, decode: isArchitecturePreviewResult },
@@ -1100,6 +1117,44 @@ const SCHEMA_DEFS: Record<string, JSONSchemaNode> = {
     },
     "additionalProperties": false
   },
+  "StoryRefreshResult": {
+    "type": "object",
+    "required": [
+      "state",
+      "stories",
+      "message"
+    ],
+    "properties": {
+      "diagnostic": {
+        "type": "string"
+      },
+      "message": {
+        "type": "string"
+      },
+      "op_id": {
+        "type": "string"
+      },
+      "snapshot_digest": {
+        "type": "string"
+      },
+      "state": {
+        "type": "string",
+        "enum": [
+          "none",
+          "running",
+          "succeeded",
+          "failed"
+        ]
+      },
+      "stories": {
+        "type": "array",
+        "items": {
+          "$ref": "#/$defs/StorySummaryItem"
+        }
+      }
+    },
+    "additionalProperties": false
+  },
   "StoryStepItem": {
     "type": "object",
     "required": [
@@ -1733,6 +1788,11 @@ export function isExchangeBrowserLinkResponseBody(value: unknown): value is Exch
 // isServerError validates a parsed answer against the generated ServerError schema.
 export function isServerError(value: unknown): value is ServerError {
   return matchesSchema(value, { $ref: "#/$defs/ServerError" });
+}
+
+// isStoryRefreshResult validates a parsed answer against the generated StoryRefreshResult schema.
+export function isStoryRefreshResult(value: unknown): value is StoryRefreshResult {
+  return matchesSchema(value, { $ref: "#/$defs/StoryRefreshResult" });
 }
 
 // isTraceList validates a parsed answer against the generated TraceList schema.

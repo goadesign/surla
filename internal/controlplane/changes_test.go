@@ -161,6 +161,80 @@ func TestListChangesSaysWhetherApprovalIsAvailable(t *testing.T) {
 	assert.NotEqual(t, versions[true], versions[false], "availability is part of the list's version")
 }
 
+// TestWaitForChangesReturnsWhenTheStoryEvaluationChanges checks that the
+// change list's version covers the owner's Story evaluation: it moves when
+// an evaluation starts, finishes, or is replaced on the same snapshot with
+// the same state, stays put while nothing changes, ignores another owner's
+// evaluation, and ends a waiting read.
+func TestWaitForChangesReturnsWhenTheStoryEvaluationChanges(t *testing.T) {
+	ws := t.TempDir()
+	writeWorkspaceFiles(t, ws, validWorkspaceStub("package design\n"))
+	cp := newControlPlane(t, Options{WorkspaceDir: ws})
+	cp.changesWait = 50 * time.Millisecond
+	cp.changesPoll = 10 * time.Millisecond
+	user := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "user-1", Kind: CallerUser})
+	version := func() string {
+		list, err := cp.ListChanges(user)
+		require.NoError(t, err)
+		return list.Version
+	}
+	none := version()
+	assert.Equal(t, none, version(), "an unchanged project keeps its version")
+	seedStoryRefreshForTest(t, cp, "bob@example.com", storyRefreshStateRunning, nil, "")
+	assert.Equal(t, none, version(), "another owner's evaluation does not move this owner's version")
+
+	seedStoryRefreshForTest(t, cp, "alice@example.com", storyRefreshStateRunning, nil, "")
+	running := version()
+	assert.NotEqual(t, none, running, "an evaluation that starts moves the version")
+	waited, err := cp.WaitForChanges(user, &gensurla.WaitForChangesPayload{Since: none})
+	require.NoError(t, err)
+	assert.Equal(t, running, waited.Version, "a waiting read ends on the evaluation's start")
+
+	cp.storyRefreshMu.Lock()
+	for key, op := range cp.storyRefreshes {
+		if key.owner == "alice@example.com" {
+			op.state = storyRefreshStateSucceeded
+		}
+	}
+	cp.storyRefreshMu.Unlock()
+	finished := version()
+	assert.NotEqual(t, running, finished, "an evaluation that finishes moves the version")
+
+	seedStoryRefreshForTest(t, cp, "alice@example.com", storyRefreshStateFailed, nil, "failed")
+	failed := version()
+	seedStoryRefreshForTest(t, cp, "alice@example.com", storyRefreshStateFailed, nil, "failed")
+	assert.NotEqual(t, failed, version(), "a replacement with the same snapshot and state moves the version")
+	unchanged, err := cp.WaitForChanges(user, &gensurla.WaitForChangesPayload{Since: version()})
+	require.NoError(t, err)
+	assert.Equal(t, version(), unchanged.Version, "a waiting read with nothing changed returns the same version")
+}
+
+// TestStoryEvaluationIsDescribedAsTheOwners checks the model-visible tool
+// descriptions and result schemas of the Story evaluation: they describe it
+// as the project owner's, never as the calling agent's own.
+func TestStoryEvaluationIsDescribedAsTheOwners(t *testing.T) {
+	cp := newControlPlane(t, Options{})
+	tools, err := genmcpadapter.NewMCPAdapter(gensurla.NewEndpoints(cp), nil).ToolsList(t.Context(), &genmcpadapter.ToolsListPayload{})
+	require.NoError(t, err)
+	seen := 0
+	for _, tool := range tools.Tools {
+		if tool.Name != "refresh_story" && tool.Name != "get_story_refresh" {
+			continue
+		}
+		seen++
+		require.NotNil(t, tool.Description)
+		text := *tool.Description + string(tool.OutputSchema)
+		assert.NotContains(t, text, "caller's", "%s describes the evaluation as the caller's", tool.Name)
+		assert.Contains(t, text, "owner", "%s does not say whose evaluation it is", tool.Name)
+	}
+	assert.Equal(t, 2, seen)
+	openAPI, err := os.ReadFile("../../gen/http/openapi3.json")
+	require.NoError(t, err)
+	for _, stale := range []string{"authenticated caller and bound workspace", "caller's current Story", "caller's in-memory Story", "caller's current in-memory Story", "caller's succeeded refresh_story"} {
+		assert.NotContains(t, string(openAPI), stale, "the HTTP contract still calls the evaluation the caller's")
+	}
+}
+
 // TestSavedTimeIsOutsideTheRevision saves identical content twice and checks
 // that the revision stays while the saved time moves, and that a card file
 // without a saved time is refused.
