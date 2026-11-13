@@ -2,7 +2,8 @@
 // runs, with a stand-in for the test writer's working copy: a verdict follows
 // each report without another call, a newer report or a stop saves nothing
 // for the check in progress, a restarted server judges what is reported, a
-// report waits for the last step of a check, each limit and cause of a check
+// report waits for the last step of a check, a build that could not be read
+// is read again within the retry bound, each limit and cause of a check
 // that cannot run, who reads the findings' text, and what supervision sees
 // of verdicts.
 package controlplane
@@ -323,6 +324,102 @@ func TestRetriesAfterAFailedSaveAreBounded(t *testing.T) {
 	second := reportTests(t, cp, revision)
 	build := waitForTests(t, cp, gensurla.TestsKindAccepted)
 	assert.Equal(t, second.Progress.Report, build.TestWriter.Report)
+}
+
+// TestAReportedBuildThatCouldNotBeReadIsJudgedOnceItCanBe makes the checker
+// fail to read a reported build, as a passing storage failure does, in each
+// place it reads one: the scan a server start or a wake begins with, and the
+// read a judgment begins with. Nothing reports again. The checker reads again
+// by itself, and once the build can be read it is judged and its verdict
+// saved.
+func TestAReportedBuildThatCouldNotBeReadIsJudgedOnceItCanBe(t *testing.T) {
+	for _, place := range []string{"the scan", "the judgment's read"} {
+		t.Run(place, func(t *testing.T) {
+			exporter := tracetest.NewInMemoryExporter()
+			provider := sdktrace.NewTracerProvider(sdktrace.WithSyncer(exporter))
+			t.Cleanup(func() { assert.NoError(t, provider.Shutdown(context.Background())) })
+			tests := &standInCopy{check: accepting}
+			cp, revision := newReportFixture(t, Options{TracerProvider: provider}, tests)
+			// The build is made readable again well within the retries: three
+			// of them, half a second apart.
+			cp.reports.retry = 500 * time.Millisecond
+			file := filepath.Join(cp.cards.dir, buildFileName("chg"))
+			var reported []byte
+			if place == "the scan" {
+				// The build is saved as reported with no wake, as a server
+				// that stopped during its check left it; the wake stands for
+				// the next server's start, which scans the same way.
+				editBuildFile(t, cp, "chg", savedTestWriter(map[string]any{"state": testsReported}))
+				reported = readBuildFile(t, cp, "chg")
+				require.NoError(t, os.WriteFile(file, []byte("{"), 0o600))
+				cp.reportWake <- struct{}{}
+			} else {
+				// The judgment waits for the working-copy turn after its scan
+				// read the build; the build is unreadable when it gets the turn.
+				cp.workingCopyTurn <- struct{}{}
+				reportTests(t, cp, revision)
+				reported = readBuildFile(t, cp, "chg")
+				require.NoError(t, os.WriteFile(file, []byte("{"), 0o600))
+				<-cp.workingCopyTurn
+			}
+			failed := waitForSpan(t, exporter, "surla.controlplane.read_reported_tests")
+			assert.Equal(t, codes.Error, failed.Status.Code, "the failed read is an error on its span")
+			assert.Zero(t, tests.checked(), "an unreadable build is not judged")
+
+			require.NoError(t, os.WriteFile(file, reported, 0o600))
+			build := waitForTests(t, cp, gensurla.TestsKindAccepted)
+			assert.Equal(t, 1, build.TestWriter.Report, "no other report was needed")
+		})
+	}
+}
+
+// TestRetriesAfterAFailedReadAreBounded leaves a reported build unreadable.
+// The checker reads again by itself only maxRetriesAfterFailure times in a
+// row, then stays idle however long the test waits. Once the build can be
+// read, the next wake judges it, and that round starts the count again: a
+// build left unreadable afterwards gets the same number of retries.
+func TestRetriesAfterAFailedReadAreBounded(t *testing.T) {
+	exporter := tracetest.NewInMemoryExporter()
+	provider := sdktrace.NewTracerProvider(sdktrace.WithSyncer(exporter))
+	t.Cleanup(func() { assert.NoError(t, provider.Shutdown(context.Background())) })
+	tests := &standInCopy{check: func(context.Context, int) (testwriter.Verdict, error) {
+		return needsChanges("RefundOverLimit is not implemented"), nil
+	}}
+	cp, _ := newReportFixture(t, Options{TracerProvider: provider}, tests)
+	cp.reports.retry = 50 * time.Millisecond
+	file := filepath.Join(cp.cards.dir, buildFileName("chg"))
+	editBuildFile(t, cp, "chg", savedTestWriter(map[string]any{"state": testsReported}))
+	reported := readBuildFile(t, cp, "chg")
+	failedReads := func() int {
+		var n int
+		for _, span := range exporter.GetSpans() {
+			if span.Name == "surla.controlplane.read_reported_tests" {
+				n++
+			}
+		}
+		return n
+	}
+
+	require.NoError(t, os.WriteFile(file, []byte("{"), 0o600))
+	cp.reportWake <- struct{}{}
+	reads := 1 + maxRetriesAfterFailure
+	require.Eventually(t, func() bool { return failedReads() == reads }, 10*time.Second, 10*time.Millisecond)
+	time.Sleep(10 * cp.reports.retry)
+	assert.Equal(t, reads, failedReads(), "no read after the last retry")
+	assert.Zero(t, tests.checked())
+
+	require.NoError(t, os.WriteFile(file, reported, 0o600))
+	cp.reportWake <- struct{}{}
+	waitForTests(t, cp, gensurla.TestsKindNeedsChanges)
+	assert.Equal(t, 1, tests.checked())
+
+	// A round that read everything started the count again.
+	require.NoError(t, os.WriteFile(file, []byte("{"), 0o600))
+	cp.reportWake <- struct{}{}
+	require.Eventually(t, func() bool { return failedReads() == 2*reads }, 10*time.Second, 10*time.Millisecond)
+	time.Sleep(10 * cp.reports.retry)
+	assert.Equal(t, 2*reads, failedReads(), "the same bound applies again")
+	require.NoError(t, os.WriteFile(file, reported, 0o600))
 }
 
 // TestABuildStartIsRefusedDuringACheck holds a check open: starting the

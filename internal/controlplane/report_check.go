@@ -40,13 +40,20 @@ type (
 		cp *ControlPlane
 		// limit bounds one report's judgment; checkLimit outside tests.
 		limit time.Duration
-		// retry is how long after a failed last step the checker wakes to
-		// judge again; retryAfterFailure outside tests.
+		// retry is how long after a failed last step or a failed read the
+		// checker wakes to judge or read again; retryAfterFailure outside
+		// tests.
 		retry time.Duration
 		// failures counts, per report, the last steps that failed in a row,
 		// which bounds the checker's own retries (maxRetriesAfterFailure).
 		// Only the checker's goroutine reads and writes it.
 		failures map[reportIdentity]int
+		// readFailed records that a card or a build could not be read in the
+		// round in progress (run), and readFailures counts the rounds in a
+		// row in which one could not, which bounds the retries of reads the
+		// same way. Only the checker's goroutine reads and writes them.
+		readFailed   bool
+		readFailures int
 		// now gives each verdict its time.
 		now func() time.Time
 	}
@@ -82,18 +89,19 @@ const (
 	checkLimit = 15 * time.Minute
 
 	// retryAfterFailure is how long the checker waits before judging again
-	// when its last step failed: the build could not be read to confirm it,
-	// or the verdict could not be saved. The build then stays reported, and
-	// without a later report nothing else would wake the checker. A minute
-	// lets a passing cause, such as a full disk freed by the user, clear
-	// without judging in a tight loop.
+	// when its last step failed (the build could not be read to confirm it,
+	// or the verdict could not be saved), and before reading again when a
+	// card or a build could not be read at all. A build left reported then
+	// has no check running, and without a later report nothing else would
+	// wake the checker. A minute lets a passing cause, such as a full disk
+	// freed by the user, clear without judging in a tight loop.
 	retryAfterFailure = time.Minute
-	// maxRetriesAfterFailure bounds those retries for one report: after the
-	// third failure in a row the checker stops waking itself for it, and the
-	// build waits, still reported, for the next report or the next server
-	// start, both of which judge every reported build. A judgment takes
-	// minutes, so three cover a passing cause without repeating a lasting
-	// one forever.
+	// maxRetriesAfterFailure bounds those retries, for one report's last
+	// step and for reads: after the third failure in a row the checker stops
+	// waking itself, and the build waits, still reported, for the next
+	// report or the next server start, both of which judge every reported
+	// build. A judgment takes minutes, so three cover a passing cause
+	// without repeating a lasting one forever.
 	maxRetriesAfterFailure = 3
 
 	// stepOpenCopy, stepSandbox, stepNoCommonBase, stepLimit and stepFailure
@@ -142,26 +150,32 @@ func (c *ControlPlane) startReportChecker() {
 }
 
 // newReportChecker returns the report checker of cp, judging within
-// checkLimit and judging again retryAfterFailure after a failed last step.
+// checkLimit and trying again retryAfterFailure after a failed last step or
+// read.
 func newReportChecker(cp *ControlPlane) *reportChecker {
 	return &reportChecker{
 		cp: cp, limit: checkLimit, retry: retryAfterFailure, failures: map[reportIdentity]int{}, now: time.Now,
 	}
 }
 
-// run judges reported builds until ctx ends: first every build found reported
-// when it starts, as after a restart, then every reported build again each
-// time report_tests_finished wakes it. A report made during a judgment leaves
-// its wake waiting, so it is judged after the judgment in progress. Once ctx
-// ends no judgment starts, even when a wake is waiting too.
+// run judges reported builds until ctx ends, one round after another: first
+// every build found reported when it starts, as after a restart, then every
+// reported build again each time report_tests_finished or one of the
+// checker's own retries wakes it. A report made during a judgment leaves its
+// wake waiting, so it is judged after the judgment in progress. A round in
+// which a card or a build could not be read may have missed a reported build,
+// so the checker wakes itself to read again (retryReads). Once ctx ends no
+// judgment starts, even when a wake is waiting too.
 func (r *reportChecker) run(ctx context.Context) {
 	for ctx.Err() == nil {
+		r.readFailed = false
 		for _, changeID := range r.reported(ctx) {
 			if ctx.Err() != nil {
 				return
 			}
 			r.judge(ctx, changeID)
 		}
+		r.retryReads(ctx)
 		select {
 		case <-ctx.Done():
 		case <-r.cp.reportWake:
@@ -172,8 +186,8 @@ func (r *reportChecker) run(ctx context.Context) {
 // reported returns the changes whose usable builds (usableBuild) are
 // reported, in the order the builds started. A project that verifies with its
 // stored evaluator uses no test writer, so it has none. A card or build that cannot be read is left
-// out and recorded on a span: it fails every read of it, and the next wake
-// reads it again.
+// out and recorded on a span (recordReadFailure), which makes the round read
+// again later.
 func (r *reportChecker) reported(ctx context.Context) []string {
 	if r.cp.storedEvaluator() {
 		return nil
@@ -182,14 +196,14 @@ func (r *reportChecker) reported(ctx context.Context) []string {
 	defer r.cp.mu.RUnlock()
 	records, err := r.cp.cards.all()
 	if err != nil {
-		r.recordScanFailure(ctx, err)
+		r.recordReadFailure(ctx, err)
 		return nil
 	}
 	var builds []buildFile
 	for _, record := range records {
 		saved, found, err := r.cp.cards.loadBuild(record.card.ChangeID)
 		if err != nil {
-			r.recordScanFailure(ctx, err)
+			r.recordReadFailure(ctx, err)
 			continue
 		}
 		if found && r.cp.usableBuild(saved) && saved.TestWriter.State == testsReported {
@@ -208,7 +222,8 @@ func (r *reportChecker) reported(ctx context.Context) []string {
 //
 // Phase 1 takes the turn, waiting for it, or returns when ctx ends. Phase 2
 // reads the build and keeps the identity of its report; a build that is no
-// longer reported is left alone. Phase 3 writes the required tests into the
+// longer reported is left alone, and one that cannot be read is read again
+// later (retryReads). Phase 3 writes the required tests into the
 // copy from the build's Story and checks the copy, within limit. Phase 4,
 // under reportMu, confirms the build still answers to the identity, records
 // accepted tests and saves the verdict, marking the test writer's assignment
@@ -234,7 +249,7 @@ func (r *reportChecker) judge(ctx context.Context, changeID string) {
 	saved, found, err := r.cp.cards.loadBuild(changeID)
 	r.cp.mu.RUnlock()
 	if err != nil {
-		r.recordScanFailure(ctx, err)
+		r.recordReadFailure(ctx, err)
 		return
 	}
 	if !found || !r.cp.usableBuild(saved) || saved.TestWriter.State != testsReported {
@@ -377,14 +392,39 @@ func (r *reportChecker) saveVerdict(id reportIdentity, verdict testWriterAssignm
 // whose judgment of id was lost is judged again, unless id's last step has
 // already failed more than maxRetriesAfterFailure times in a row: then it
 // records on span that the build waits for the next report or server start.
-// A wake already waiting stands for it, and one sent after the checker
-// stopped is never read.
 func (r *reportChecker) retryLater(span trace.Span, id reportIdentity) {
 	r.failures[id]++
 	if r.failures[id] > maxRetriesAfterFailure {
 		span.AddEvent("the last step failed too often in a row; the build waits for the next report or server start")
 		return
 	}
+	r.wakeLater()
+}
+
+// retryReads ends a round of run. When a card or a build could not be read in
+// it, a reported build may have been left without its check, so the checker
+// wakes itself after r.retry to read again, as after a failed last step, at
+// most maxRetriesAfterFailure rounds in a row: after that the builds wait for
+// the next report or server start, which is recorded on a span. A round that
+// read everything starts the count again.
+func (r *reportChecker) retryReads(ctx context.Context) {
+	if !r.readFailed {
+		r.readFailures = 0
+		return
+	}
+	r.readFailures++
+	if r.readFailures > maxRetriesAfterFailure {
+		_, span := r.cp.tracer("surla/controlplane").Start(ctx, "surla.controlplane.retry_reported_tests")
+		defer span.End()
+		span.AddEvent("reading failed too often in a row; reported builds wait for the next report or server start")
+		return
+	}
+	r.wakeLater()
+}
+
+// wakeLater wakes the checker after r.retry, as a report would. A wake already
+// waiting stands for it, and one sent after the checker stopped is never read.
+func (r *reportChecker) wakeLater() {
 	time.AfterFunc(r.retry, func() {
 		select {
 		case r.cp.reportWake <- struct{}{}:
@@ -393,9 +433,11 @@ func (r *reportChecker) retryLater(span trace.Span, id reportIdentity) {
 	})
 }
 
-// recordScanFailure records on its own span that the report checker could not
-// read a card or a build.
-func (r *reportChecker) recordScanFailure(ctx context.Context, err error) {
+// recordReadFailure records on its own span that the report checker could not
+// read a card or a build, and marks the round in progress as having failed a
+// read (retryReads).
+func (r *reportChecker) recordReadFailure(ctx context.Context, err error) {
+	r.readFailed = true
 	_, span := r.cp.tracer("surla/controlplane").Start(ctx, "surla.controlplane.read_reported_tests")
 	defer span.End()
 	recordJudgeFailure(span, err, "read builds")
