@@ -1375,6 +1375,8 @@ export function bootstrapViewsPage() {
         buildReadError !== null || hasPending("start_build", ed.card.change_id)) return;
     const changeId = ed.card.change_id;
     const revision = ed.card.request_revision;
+    const listedRevision = changeList?.changes.find((item) => item.change_id === changeId)?.request_revision;
+    if (listedRevision !== undefined && listedRevision !== revision) return;
     const begun = new Date().toISOString();
     buildGeneration++;
     buildStartReceipt = null;
@@ -1899,7 +1901,8 @@ export function bootstrapViewsPage() {
           buildSection={
         <BuildSectionView
           card={ed.card}
-          currentRevision={ed.incomingCard?.request_revision ?? ed.card.request_revision}
+          currentRevision={changeList?.changes.find((item) => item.change_id === ed.card.change_id)?.request_revision ??
+            ed.incomingCard?.request_revision ?? ed.card.request_revision}
           build={buildChangeId === ed.card.change_id ? buildSnapshot : null}
           loading={hasPending("get_build", ed.card.change_id)}
           error={buildReadError}
