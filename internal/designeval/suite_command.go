@@ -101,30 +101,43 @@ type suiteCommandData struct {
 	Environment string
 }
 
-// surlaSuiteCommand is the "surla-suite-command" Goa plugin that runs after
-// Goa-AI's generators. For a Surla test module (TestModuleService accepts the
-// module path, which genpkg, the module's gen import path, ends) whose design
-// declares exactly one evaluation suite, it adds the module's program at
-// gen/cmd/<service>-evals/main.go (SuiteCommandPackage) and the quickstart's
-// test-program section, which names what the author's acceptance package must
-// provide: to AGENTS_QUICKSTART.md when Goa-AI wrote it, or as that file's
-// only section otherwise. Any other module is left as it is. Goa-AI must have
-// planned the suite's package at gen/evals/<suite>/suite.go; if it did not,
-// generation fails naming that file rather than writing a program that cannot
-// build.
-func surlaSuiteCommand(genpkg string, roots []eval.Root, files []*codegen.File) ([]*codegen.File, error) {
-	service, ok := TestModuleService(strings.TrimSuffix(genpkg, "/"+codegen.Gendir))
-	suites := declaredSuites(roots)
-	if !ok || len(suites) != 1 {
-		return files, nil
+// surlaSuiteCommand returns the "surla-suite-command" Goa plugin that runs
+// after Goa-AI's generators. acceptance is HasAcceptancePackage for the
+// module being generated, which the plugin cannot see itself. For a Surla
+// test module (TestModuleService accepts the module path, which genpkg, the
+// module's gen import path, ends) whose design declares exactly one
+// evaluation suite and which has an acceptance package, it adds the module's
+// program at gen/cmd/<service>-evals/main.go (SuiteCommandPackage) and the
+// quickstart's test-program section, which names what the author's
+// acceptance package must provide: to AGENTS_QUICKSTART.md when Goa-AI wrote
+// it, or as that file's only section otherwise. Any other module is left as
+// it is, so a module that only shares the path keeps building. Goa-AI must
+// have planned the suite's package at gen/evals/<suite>/suite.go; if it did
+// not, generation fails naming that file rather than writing a program that
+// cannot build.
+func surlaSuiteCommand(acceptance bool) func(string, []eval.Root, []*codegen.File) ([]*codegen.File, error) {
+	return func(genpkg string, roots []eval.Root, files []*codegen.File) ([]*codegen.File, error) {
+		service, ok := TestModuleService(strings.TrimSuffix(genpkg, "/"+codegen.Gendir))
+		suites := declaredSuites(roots)
+		if !ok || len(suites) != 1 || !acceptance {
+			return files, nil
+		}
+		return suiteCommandFiles(genpkg, service, suites[0], files)
 	}
-	suiteFile := path.Join(codegen.Gendir, "evals", suites[0].Name, "suite.go")
+}
+
+// suiteCommandFiles adds the program and the quickstart section of service's
+// test module, whose one evaluation suite is suite, to files.
+func suiteCommandFiles(
+	genpkg, service string, suite *evalexpr.SuiteExpr, files []*codegen.File,
+) ([]*codegen.File, error) {
+	suiteFile := path.Join(codegen.Gendir, "evals", suite.Name, "suite.go")
 	if !slices.ContainsFunc(files, func(f *codegen.File) bool { return filepath.ToSlash(f.Path) == suiteFile }) {
-		return nil, fmt.Errorf("the evaluation suite %q has no generated package at %s, from which Surla builds the test program", suites[0].Name, suiteFile)
+		return nil, fmt.Errorf("the evaluation suite %q has no generated package at %s, from which Surla builds the test program", suite.Name, suiteFile)
 	}
 	data := suiteCommandData{
 		Service:     service,
-		Suite:       suites[0].Name,
+		Suite:       suite.Name,
 		Command:     SuiteCommandPackage(service),
 		Environment: suiteCommandEnvironment,
 	}
@@ -139,8 +152,8 @@ func surlaSuiteCommand(genpkg string, roots []eval.Root, files []*codegen.File) 
 		codegen.SimpleImport("goa.design/goa-ai/runtime/agent/model"),
 		codegen.SimpleImport("github.com/goadesign/surla/verify/candidate"),
 		codegen.SimpleImport("github.com/goadesign/surla/verify/suite"),
-		codegen.SimpleImport(path.Join(path.Dir(genpkg), "acceptance")),
-		codegen.NewImport("genevals", path.Join(genpkg, "evals", suites[0].Name)),
+		codegen.SimpleImport(path.Join(path.Dir(genpkg), AcceptancePackage)),
+		codegen.NewImport("genevals", path.Join(genpkg, "evals", suite.Name)),
 	}
 	files = append(files, &codegen.File{
 		Path: path.Join(strings.TrimPrefix(data.Command, "./"), "main.go"),

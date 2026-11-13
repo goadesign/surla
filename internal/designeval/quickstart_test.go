@@ -104,10 +104,11 @@ func TestQuickstartSectionsKeepGoaAIsLayout(t *testing.T) {
 // their package clauses changed to main, registered in that order, and the
 // section texts as Go literals equal to this package's embedded files.
 func TestGenerateProgramCompilesThePluginAsMain(t *testing.T) {
-	program := generateProgram()
+	program := generateProgram(true)
 	require.Len(t, program, 5)
 	quickstart := `codegen.RegisterPluginLast("surla-quickstart", "gen", nil, surlaQuickstart)`
-	suiteCommand := `codegen.RegisterPluginLast("surla-suite-command", "gen", nil, surlaSuiteCommand)`
+	suiteCommand := `codegen.RegisterPluginLast("surla-suite-command", "gen", nil, surlaSuiteCommand(true))`
+	assert.Contains(t, generateProgram(false)["main.go"], "surlaSuiteCommand(false)", "the program is told the module has no acceptance package")
 	assert.Contains(t, program["main.go"], quickstart)
 	assert.Contains(t, program["main.go"], suiteCommand)
 	assert.Less(t, strings.Index(program["main.go"], quickstart), strings.Index(program["main.go"], suiteCommand),
@@ -140,13 +141,13 @@ func namedGuide(names []string) *codegen.File {
 }
 
 func TestGenerateProgramWithStoriesParsesAsMain(t *testing.T) {
-	assert.Equal(t, generateProgram(), generateProgramWithStories(nil))
+	assert.Equal(t, generateProgram(true), generateProgramWithStories(nil, true))
 
 	specs := []storyScenarioSpec{
 		{name: "refund_over_limit", description: "Line 1: \"quoted\" `backtick` \\backslash\\\nLine 2"},
 		{name: "blank_title_flow", description: "blank-title-flow"},
 	}
-	program := generateProgramWithStories(specs)
+	program := generateProgramWithStories(specs, true)
 	require.Len(t, program, 7)
 
 	fset := token.NewFileSet()

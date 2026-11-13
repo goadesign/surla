@@ -701,8 +701,10 @@ func (c *Checker) generate(
 	}
 	program := path.Join(strings.TrimPrefix(s.Command, "./"), "main.go")
 	if _, ok := gen.Files[program]; !ok {
-		return nil, author(nil, fmt.Sprintf("Surla generated no test program at %s: the test module's go.mod must "+
-			"declare the module path <service module>/%s, as surla init writes it.", s.Command, designeval.TestModuleDir))
+		return nil, author(nil, fmt.Sprintf("Surla generated no test program at %s, because the test module is not "+
+			"a Surla test module: its go.mod must declare the module path <service module>/%s, as surla init writes it, "+
+			"and it must keep its %s package, which provides Name, Hooks, New, Live and LiveThroughGateway.",
+			s.Command, designeval.TestModuleDir, designeval.AcceptancePackage))
 	}
 	if err := publish(ctx, root, gen.Files); err != nil {
 		return nil, err

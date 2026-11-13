@@ -20,9 +20,10 @@ import (
 // --cmd=<text> argument, which Goa's codegen.CommandLine copies into each
 // generated file's header; the flag is registered only so parsing accepts it.
 // {{DESIGN_IMPORT}} and {{GEN_IMPORT}} are replaced with the target module's
-// design package and generated package import paths. Before generating, it
-// registers surlaQuickstart and then surlaSuiteCommand, which generateProgram
-// compiles alongside it.
+// design package and generated package import paths, and
+// {{ACCEPTANCE_PACKAGE}} with whether the module has an acceptance package
+// (HasAcceptancePackage). Before generating, it registers surlaQuickstart and
+// then surlaSuiteCommand, which generateProgram compiles alongside it.
 const generateMainTemplate = `package main
 
 import (
@@ -52,7 +53,7 @@ func main() {
 	flag.Parse()
 
 	codegen.RegisterPluginLast("surla-quickstart", "gen", nil, surlaQuickstart)
-	codegen.RegisterPluginLast("surla-suite-command", "gen", nil, surlaSuiteCommand)
+	codegen.RegisterPluginLast("surla-suite-command", "gen", nil, surlaSuiteCommand({{ACCEPTANCE_PACKAGE}}))
 	if err := eval.RunDSL(); err != nil {
 		fail(err)
 	}
@@ -100,15 +101,16 @@ func fail(err error) {
 // quickstart_sections.go, which declares quickstartSections as Go string
 // literals, with testProgramSection, because the program cannot read this
 // package's embedded files.
-func generateProgram() map[string]string {
-	return generateProgramWithStories(nil)
+func generateProgram(acceptance bool) map[string]string {
+	return generateProgramWithStories(nil, acceptance)
 }
 
-// generateProgramWithStories returns the generation program's files, adding
-// the Story scenario evaluation root and its quoted scenario table when at
-// least one complete Story flow is present. When scenarios is empty, the
-// returned program is identical to generateProgram.
-func generateProgramWithStories(scenarios []storyScenarioSpec) map[string]string {
+// generateProgramWithStories returns the generation program's files for a
+// module that has an acceptance package or not, adding the Story scenario
+// evaluation root and its quoted scenario table when at least one complete
+// Story flow is present. When scenarios is empty, the returned program is
+// identical to generateProgram.
+func generateProgramWithStories(scenarios []storyScenarioSpec, acceptance bool) map[string]string {
 	asMain := func(name, source string) string {
 		_, body, ok := strings.Cut(source, "\npackage designeval\n")
 		if !ok {
@@ -124,7 +126,7 @@ func generateProgramWithStories(scenarios []storyScenarioSpec) map[string]string
 	sections.WriteString("}\n\n")
 	fmt.Fprintf(&sections, "var testProgramSection = %s\n", strconv.Quote(testProgramSection))
 	files := map[string]string{
-		"main.go":                generateMainTemplate,
+		"main.go":                strings.Replace(generateMainTemplate, "{{ACCEPTANCE_PACKAGE}}", strconv.FormatBool(acceptance), 1),
 		"quickstart.go":          asMain("quickstart.go", quickstartSource),
 		"suite_command.go":       asMain("suite_command.go", suiteCommandSourceFile),
 		"test_layout.go":         asMain("test_layout.go", testLayoutSource),

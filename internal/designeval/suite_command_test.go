@@ -1,12 +1,15 @@
 package designeval
 
 import (
+	"maps"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/goadesign/surla/internal/testmodule"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	evalexpr "goa.design/goa-ai/eval/expr"
@@ -46,10 +49,12 @@ func TestTestModuleServiceRecognizesSurlasLayout(t *testing.T) {
 }
 
 // TestSurlaSuiteCommandWritesTheProgramOfASurlaTestModule calls the plugin as
-// Goa does. A Surla test module with exactly one suite gets the program at
-// its package and the quickstart section, added to Goa-AI's guide or as the
-// guide's only section; any other module is left as it is; a suite whose
-// package Goa-AI did not plan is an error naming the file.
+// Goa does. A Surla test module, with exactly one suite and an acceptance
+// package, gets the program at its package and the quickstart section, added
+// to Goa-AI's guide or as the guide's only section; any other module is left
+// as it is, including one at the layout's path without an acceptance
+// package; a suite whose package Goa-AI did not plan is an error naming the
+// file.
 func TestSurlaSuiteCommandWritesTheProgramOfASurlaTestModule(t *testing.T) {
 	t.Parallel()
 	suiteFile := func(name string) *codegen.File { return &codegen.File{Path: "gen/evals/" + name + "/suite.go"} }
@@ -62,7 +67,7 @@ func TestSurlaSuiteCommandWritesTheProgramOfASurlaTestModule(t *testing.T) {
 	}
 	t.Run("a Surla test module with one suite", func(t *testing.T) {
 		guide := namedGuide([]string{"header", "faq"})
-		files, err := surlaSuiteCommand("example.com/shop/eval/gen", roots("shop_acceptance"), []*codegen.File{suiteFile("shop_acceptance"), guide})
+		files, err := surlaSuiteCommand(true)("example.com/shop/eval/gen", roots("shop_acceptance"), []*codegen.File{suiteFile("shop_acceptance"), guide})
 		require.NoError(t, err)
 		require.Len(t, files, 3)
 		program := files[2]
@@ -87,7 +92,7 @@ func TestSurlaSuiteCommandWritesTheProgramOfASurlaTestModule(t *testing.T) {
 		assert.Equal(t, testProgramSection, last.Source)
 	})
 	t.Run("a Surla test module without Goa-AI's guide", func(t *testing.T) {
-		files, err := surlaSuiteCommand("example.com/shop/eval/gen", roots("shop_acceptance"), []*codegen.File{suiteFile("shop_acceptance")})
+		files, err := surlaSuiteCommand(true)("example.com/shop/eval/gen", roots("shop_acceptance"), []*codegen.File{suiteFile("shop_acceptance")})
 		require.NoError(t, err)
 		require.Len(t, files, 3)
 		assert.Equal(t, quickstartPath, files[2].Path)
@@ -97,24 +102,47 @@ func TestSurlaSuiteCommandWritesTheProgramOfASurlaTestModule(t *testing.T) {
 	for _, tc := range []struct {
 		name, genpkg string
 		roots        []eval.Root
+		acceptance   bool
 	}{
-		{name: "no suite", genpkg: "example.com/shop/eval/gen", roots: roots()},
-		{name: "two suites", genpkg: "example.com/shop/eval/gen", roots: roots("a", "b")},
-		{name: "no eval root", genpkg: "example.com/shop/eval/gen"},
-		{name: "a module outside Surla's layout", genpkg: "example.com/shop/gen", roots: roots("shop_acceptance")},
+		{name: "no suite", genpkg: "example.com/shop/eval/gen", roots: roots(), acceptance: true},
+		{name: "two suites", genpkg: "example.com/shop/eval/gen", roots: roots("a", "b"), acceptance: true},
+		{name: "no eval root", genpkg: "example.com/shop/eval/gen", acceptance: true},
+		{name: "a module outside Surla's layout", genpkg: "example.com/shop/gen", roots: roots("shop_acceptance"), acceptance: true},
+		{name: "a module at the layout's path without an acceptance package", genpkg: "example.com/shop/eval/gen", roots: roots("shop_acceptance")},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			in := []*codegen.File{suiteFile("a"), suiteFile("shop_acceptance")}
-			files, err := surlaSuiteCommand(tc.genpkg, tc.roots, in)
+			files, err := surlaSuiteCommand(tc.acceptance)(tc.genpkg, tc.roots, in)
 			require.NoError(t, err)
 			assert.Equal(t, in, files, "nothing is written")
 		})
 	}
 	t.Run("a suite Goa-AI planned elsewhere", func(t *testing.T) {
-		_, err := surlaSuiteCommand("example.com/shop/eval/gen", roots("shop_acceptance"), nil)
+		_, err := surlaSuiteCommand(true)("example.com/shop/eval/gen", roots("shop_acceptance"), nil)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "gen/evals/shop_acceptance/suite.go")
 	})
+}
+
+// TestHasAcceptancePackage recognizes the acceptance package by a non-test
+// Go file directly in its folder, and nothing else.
+func TestHasAcceptancePackage(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name  string
+		files map[string]string
+		want  bool
+	}{
+		{name: "a Go file", files: map[string]string{"go.mod": "", "acceptance/acceptance.go": ""}, want: true},
+		{name: "only a test file", files: map[string]string{"acceptance/acceptance_test.go": ""}},
+		{name: "a file below it", files: map[string]string{"acceptance/sub/x.go": ""}},
+		{name: "another folder", files: map[string]string{"design/design.go": "", "scripted/acceptance.go": ""}},
+		{name: "not Go", files: map[string]string{"acceptance/README.md": ""}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.want, HasAcceptancePackage(tc.files))
+		})
+	}
 }
 
 // TestTestProgramSectionNamesTheFiveNames checks that the quickstart section
@@ -190,4 +218,39 @@ func (h *Hooks) RefundOverLimit(ctx context.Context) (eval.Result, error) {
 			assert.Contains(t, string(out), tc.wantErr)
 		})
 	}
+}
+
+// TestAModuleOnlyAtTheLayoutsPathGetsNoProgram generates the starter's test
+// module without its acceptance package: a module at <service module>/eval
+// whose design declares one suite, but not a Surla test module. It gets no
+// program and no test-program section, and the module with what was
+// generated still builds. With the package, as surla init generates it, the
+// same module gets its program (TestGeneratedProgramRunsTheStarterSuite).
+func TestAModuleOnlyAtTheLayoutsPathGetsNoProgram(t *testing.T) {
+	if testing.Short() {
+		t.Skip("runs the sandboxed Go toolchain; the full suite (go test without -short) covers it")
+	}
+	evalInput, _ := starterEvalModule(t)
+	without := maps.Clone(evalInput)
+	for p := range without {
+		if path.Dir(p) == AcceptancePackage {
+			delete(without, p)
+		}
+	}
+	require.False(t, HasAcceptancePackage(without))
+	gen, err := testEvaluator.Generate(t.Context(), without)
+	require.NoError(t, err)
+	assert.NotContains(t, gen, "gen/cmd/shop-evals/main.go", "no program is written")
+	assert.NotContains(t, string(gen[quickstartPath]), "The test program Surla builds", "no test-program section is written")
+
+	module := maps.Clone(without)
+	for p, b := range gen {
+		module[p] = string(b)
+	}
+	dir := stageStarterEvalTree(t, testmodule.Tidy(t, module), nil)
+	build := exec.CommandContext(t.Context(), "go", "build", "-mod=readonly", "./...")
+	build.Dir = dir
+	build.Env = append(os.Environ(), "CGO_ENABLED=0", "GOWORK=off", "GOTOOLCHAIN=local")
+	out, err := build.CombinedOutput()
+	require.NoError(t, err, "the module builds:\n%s", out)
 }

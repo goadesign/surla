@@ -328,8 +328,9 @@ func TestCheckIgnoresTheCopysOwnRepository(t *testing.T) {
 // suites, then none, each with a Story that requires tests and with one that
 // requires none: Check says the module must declare exactly one evaluation
 // suite and how many it declares, never a build error about a missing
-// package. A module whose path is outside Surla's test layout gets no
-// generated program, and Check says so.
+// package. A module whose acceptance package was deleted, and one whose path
+// is outside Surla's test layout, get no generated program, and Check says
+// what makes a module a Surla test module.
 func TestCheckWantsExactlyOneEvaluationSuite(t *testing.T) {
 	skipWithoutSandbox(t)
 	repo, _ := newProject(t, fixtureProject(t))
@@ -367,11 +368,23 @@ var _ = Suite("second", func() {
 			})
 		}
 	}
+	t.Run("a module without its acceptance package", func(t *testing.T) {
+		require.NoError(t, os.RemoveAll(filepath.Join(module, "acceptance")))
+		writeFiles(t, module, map[string]string{"design/design.go": design})
+		v, err := testChecker.Check(t.Context(), wc, fixtureSuite, refundStories)
+		require.NoError(t, err)
+		require.Len(t, v.Findings, 1, "%+v", v.Findings)
+		assert.Equal(t, FindingGeneration, v.Findings[0].Kind)
+		assert.Contains(t, v.Findings[0].Message, "Surla generated no test program at ./gen/cmd/shop-evals")
+		assert.Contains(t, v.Findings[0].Message, "keep its acceptance package")
+		assertNoAbsolutePath(t, v.Findings)
+	})
 	t.Run("a module outside the test layout", func(t *testing.T) {
 		goMod := fixtureProject(t)["eval/go.mod"]
 		writeFiles(t, module, map[string]string{
-			"design/design.go": design,
-			"go.mod":           strings.Replace(goMod, "module example.com/shop/eval\n", "module example.com/shop/evaluation\n", 1),
+			"design/design.go":         design,
+			"acceptance/acceptance.go": fixtureProject(t)["eval/acceptance/acceptance.go"],
+			"go.mod":                   strings.Replace(goMod, "module example.com/shop/eval\n", "module example.com/shop/evaluation\n", 1),
 		})
 		v, err := testChecker.Check(t.Context(), wc, fixtureSuite, refundStories)
 		require.NoError(t, err)
@@ -488,6 +501,9 @@ func fixtureProject(t *testing.T) map[string]string {
 	defer fixture.mu.Unlock()
 	if fixture.files == nil {
 		design := testmodule.Module(t, "example.com/shop/eval", "", map[string]string{"design/design.go": fixtureDesign})
+		// The acceptance package imports generated code, so it joins after
+		// tidying; the generator needs it to write the program.
+		design["acceptance/acceptance.go"] = fixtureAcceptance(quietInit(filepath.Join(os.TempDir(), "unused")))
 		generated, err := testEvaluator.Generate(t.Context(), design)
 		require.NoError(t, err)
 		require.Contains(t, generated, "gen/cmd/shop-evals/main.go", "the generator writes the program")
@@ -495,7 +511,6 @@ func fixtureProject(t *testing.T) map[string]string {
 		for p, b := range generated {
 			module[p] = string(b)
 		}
-		module["acceptance/acceptance.go"] = fixtureAcceptance(quietInit(filepath.Join(os.TempDir(), "unused")))
 		module["go.mod"] = strings.Replace(module["go.mod"], "require (",
 			"require (\n\tgithub.com/goadesign/surla "+publishedSurla, 1)
 		files := map[string]string{"README.md": "shop\n"}

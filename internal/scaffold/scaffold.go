@@ -461,14 +461,20 @@ func newData(o Options) (data, error) {
 }
 
 // build creates both modules under root. For each module it writes go.mod and
-// design/, resolves the design's dependencies, generates code with gen,
-// writes the remaining files, tidies again, vets, and runs `go test ./...`
+// design/, resolves the design's dependencies, writes the test module's
+// acceptance package, generates code with gen, writes the remaining files,
+// tidies again, vets, and runs `go test ./...`
 // (which compiles and checks every package in the candidate module and runs
 // the non-e2e package tests in the evaluator module without starting a live
 // model-backed CP4 verification run). The evaluator module pins the exact
 // Surla version with go get before generation: the final tidy then keeps that
 // version instead of picking another, and the code is generated with whatever
-// Goa versions it requires.
+// Goa versions it requires. The acceptance package is one of the facts that
+// make the test module a Surla test module, so the generator, which writes the
+// test program only for such a module, sees it: it is written with the
+// service package the service module's generation named, the package the
+// test module's design declares too, and the test module's own generation
+// must name the same one.
 func build(ctx context.Context, root, logs string, d data, run Runner, gen Generator) error {
 	for _, m := range []moduleStep{
 		{dir: ".", templates: "templates/candidate", path: d.Module},
@@ -489,15 +495,28 @@ func build(ctx context.Context, root, logs string, d data, run Runner, gen Gener
 		if err := runAll(ctx, dir, m.dir, logs, steps, run); err != nil {
 			return err
 		}
-		if err := generate(ctx, dir, m.dir, designFiles, gen); err != nil {
+		inputs := designFiles
+		if m.requireSurla {
+			acceptance, err := render(dir, m.templates, d, isAcceptanceFile)
+			if err != nil {
+				return err
+			}
+			inputs = append(slices.Clone(designFiles), acceptance...)
+		}
+		if err := generate(ctx, dir, m.dir, inputs, gen); err != nil {
 			return err
 		}
 		pkg, err := generatedServicePackage(dir)
 		if err != nil {
 			return err
 		}
+		if m.requireSurla && pkg != d.Pkg {
+			return fmt.Errorf("the test module's generated service package %q is not the service module's %q, "+
+				"which its acceptance package was written with", pkg, d.Pkg)
+		}
 		d.Pkg = pkg
-		if _, err := render(dir, m.templates, d, func(p string) bool { return !isDesignFile(p) }); err != nil {
+		written := func(p string) bool { return !isDesignFile(p) && !(m.requireSurla && isAcceptanceFile(p)) }
+		if _, err := render(dir, m.templates, d, written); err != nil {
 			return err
 		}
 		steps = [][]string{{"go", "mod", "tidy"}, {"go", "vet", "./..."}, {"go", "test", "./..."}}
@@ -633,14 +652,15 @@ func runAll(ctx context.Context, dir, moduleDir, logs string, steps [][]string, 
 }
 
 // generate runs gen on the module in dir, whose files are exactly
-// designFiles (go.mod and design/, as rendered and then resolved) plus the
-// go.sum the resolution wrote, and writes the generated files into dir.
+// inputs (go.mod and design/, as rendered and then resolved, and the test
+// module's acceptance package) plus the go.sum the resolution wrote, and
+// writes the generated files into dir.
 // Every generated path is checked before anything is written: it must be
 // AGENTS_QUICKSTART.md or a clean relative path under gen/. dir is a new,
 // unpublished module, so there is nothing in it to keep or replace.
-func generate(ctx context.Context, dir, moduleDir string, designFiles []string, gen Generator) error {
+func generate(ctx context.Context, dir, moduleDir string, inputs []string, gen Generator) error {
 	files := map[string]string{}
-	for _, name := range append(slices.Clone(designFiles), "go.sum") {
+	for _, name := range append(slices.Clone(inputs), "go.sum") {
 		b, err := os.ReadFile(filepath.Join(dir, filepath.FromSlash(name)))
 		if err != nil {
 			return fmt.Errorf("generate code for module %s: %w", moduleDir, err)
@@ -734,6 +754,13 @@ func generatedServicePackage(dir string) (string, error) {
 // go.mod and the design package.
 func isDesignFile(p string) bool {
 	return p == "go.mod.tmpl" || strings.HasPrefix(p, "design/")
+}
+
+// isAcceptanceFile reports whether a template path belongs to the test
+// module's acceptance package, which is written before the test module's
+// generation.
+func isAcceptanceFile(p string) bool {
+	return strings.HasPrefix(p, designeval.AcceptancePackage+"/")
 }
 
 // render writes every template under root in templatesFS for which keep

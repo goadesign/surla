@@ -706,7 +706,8 @@ func TestGenerateWithStoriesFailsAfterClose(t *testing.T) {
 // starterEvalModule renders the starter evaluator templates from
 // internal/scaffold/templates/eval for module example.com/shop/eval, tidies
 // the module against Surla's own dependency versions, and returns both the
-// generator input snapshot (go.mod, go.sum, design/design.go) and the complete
+// generator input snapshot (go.mod, go.sum, design/design.go and the
+// acceptance package, as surla init generates with it) and the complete
 // hand-written module tree (acceptance/ and scripted/); the module's program,
 // gen/cmd/shop-evals, comes from the generator.
 func starterEvalModule(t *testing.T) (evalInput, fullTree map[string]string) {
@@ -728,6 +729,10 @@ func starterEvalModule(t *testing.T) (evalInput, fullTree map[string]string) {
 	evalInput = testmodule.Module(t, "example.com/shop/eval", "", map[string]string{
 		"design/design.go": designSrc,
 	})
+	// The acceptance package imports code generation writes, so it joins the
+	// input after tidying; generation loads only the design packages.
+	evalInput["acceptance/acceptance.go"] = readRendered("acceptance/acceptance.go.tmpl")
+	evalInput["acceptance/forwarder.go"] = readRendered("acceptance/forwarder.go.tmpl")
 	initGen, err := testEvaluator.Generate(t.Context(), evalInput)
 	require.NoError(t, err)
 

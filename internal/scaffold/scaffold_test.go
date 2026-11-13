@@ -291,7 +291,9 @@ func TestInitWritesTheProjectWithTheServiceName(t *testing.T) {
 	require.Len(t, gen.inputs, 2, "one generation per module")
 	assert.Equal(t, []string{"design/design.go", "design/model.go", "go.mod", "go.sum"}, slices.Sorted(maps.Keys(gen.inputs[0])))
 	assert.Contains(t, gen.inputs[0]["go.mod"], "module example.com/bakery\n")
-	assert.Equal(t, []string{"design/design.go", "go.mod", "go.sum"}, slices.Sorted(maps.Keys(gen.inputs[1])))
+	assert.Equal(t, []string{
+		"acceptance/acceptance.go", "acceptance/forwarder.go", "acceptance/forwarder_test.go", "design/design.go", "go.mod", "go.sum",
+	}, slices.Sorted(maps.Keys(gen.inputs[1])), "the test module is generated with its acceptance package")
 	assert.Contains(t, gen.inputs[1]["go.mod"], "module example.com/bakery/eval\n")
 	assert.Equal(t, 1, gen.closes)
 	rootGoMod, err := os.ReadFile(filepath.Join(dir, "go.mod"))
