@@ -255,6 +255,78 @@ func TestHandOverRepliesNeverPrintAValue(t *testing.T) {
 	}
 }
 
+// TestRefusedHandOverStopsStartBeforeTheTeam runs the real start against a
+// project server that answers for the project but refuses the hand-over:
+// start fails with the refusal's fixed text, prints nothing, and never
+// starts the team programs, asks for the team, mints a browser link or opens
+// the views.
+func TestRefusedHandOverStopsStartBeforeTheTeam(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		status int
+		want   string
+	}{
+		{name: "older server", status: http.StatusNotFound, want: "this project’s server was started by another version; run surla stop, then surla"},
+		{name: "value too long", status: http.StatusBadRequest, want: "the project server refused the model settings from this shell (HTTP 400)"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			isolateServeWorkspace(t)
+			isolateProviderFamilies(t)
+			t.Setenv("ANTHROPIC_API_KEY", shellFamily["ANTHROPIC_API_KEY"])
+			state, err := fixtureProjectState("")
+			require.NoError(t, err)
+			// The held card store makes start attach to the answering server.
+			cp, err := controlplane.New(controlplane.Options{CardsDir: state.CardsDir()})
+			require.NoError(t, err)
+			t.Cleanup(func() { assert.NoError(t, cp.Close()) })
+			var mu sync.Mutex
+			var requested []string
+			api := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				mu.Lock()
+				requested = append(requested, r.URL.Path)
+				mu.Unlock()
+				w.Header().Set("Content-Type", "application/json")
+				switch r.URL.Path {
+				case "/project/identity":
+					assert.NoError(t, json.NewEncoder(w).Encode(map[string]string{
+						"project_id": state.Record.ID, "directory": state.Record.Directory, "owner": state.Record.Owner,
+					}))
+				case "/cp1/model/settings":
+					w.WriteHeader(tc.status)
+					_, err := io.WriteString(w, `{"name":"peer","message":"`+shellFamily["ANTHROPIC_API_KEY"]+`"}`)
+					assert.NoError(t, err)
+				default:
+					w.WriteHeader(http.StatusInternalServerError)
+				}
+			}))
+			require.NoError(t, api.Listener.Close())
+			api.Listener, err = net.Listen("tcp", state.Address())
+			require.NoError(t, err)
+			api.Start()
+			t.Cleanup(api.Close)
+			require.NoError(t, state.SaveRunning(project.Running{ManagementCredential: strings.Repeat("b", 64)}))
+			runtime := testProjectRuntime()
+			bindFixtureTeamEffects(&runtime)
+			runtime.preflight = func() error { return nil }
+			teamStarted, opened := false, false
+			runtime.startTeamPrograms = func(context.Context) error { teamStarted = true; return nil }
+			runtime.openViews = func(context.Context, string) error { opened = true; return nil }
+
+			var out bytes.Buffer
+			err = runtime.start(&out)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tc.want)
+			assertNoShellValue(t, err.Error())
+			assert.Empty(t, out.String(), "nothing is printed after a refused hand-over")
+			assert.False(t, teamStarted, "no team program starts")
+			assert.False(t, opened, "the views are not opened")
+			mu.Lock()
+			defer mu.Unlock()
+			assert.Equal(t, []string{"/project/identity", "/cp1/model/settings"}, requested, "neither ensure_team nor browser_link is asked for")
+		})
+	}
+}
+
 // TestCLIChildrenReceiveTheShellsProviderVariablesOnlyWhereAllowed runs the
 // command's real program launches against presence stand-ins: Herdr's
 // programs (hc and herdr-app) get the shell's environment unchanged, while
