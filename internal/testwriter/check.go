@@ -537,7 +537,9 @@ func outsideModule(changed []string, modulePath string) []Finding {
 		}
 		findings = append(findings, Finding{Kind: FindingOutsideModule, Message: WithoutAbsolutePaths(fmt.Sprintf(
 			"%s is changed outside the test module %s. Only files inside the test module may change: "+
-				"restore it as it is in the working copy's base, then report again.", p, modulePath))})
+				"restore it as it is in the working copy's base, then report again. If you never changed it, "+
+				"the project's history was rewritten since your working copy was made: ask the user to delete "+
+				"the project's .surla-tests folder and its surla/tests branch, then build again.", p, modulePath))})
 	}
 	return findings
 }

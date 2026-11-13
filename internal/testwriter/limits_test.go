@@ -113,6 +113,8 @@ func TestCheckNamesFilesChangedOutsideTheTestModule(t *testing.T) {
 			assert.Contains(t, fmt.Sprint(named), p+" is changed outside the test module eval")
 		}
 		assert.NotContains(t, fmt.Sprint(named), "eval/hooks.go")
+		assert.Contains(t, named[0], "If you never changed it, the project's history was rewritten",
+			"a finding also explains a file the test writer never touched")
 		assertNoAbsolutePath(t, v.Findings)
 	})
 	t.Run("a replace ref", func(t *testing.T) {
