@@ -145,7 +145,10 @@ func TestBuildingAgainReplacesTheBuildAndClearsReads(t *testing.T) {
 	assert.False(t, listed.Assignments[0].Read, "listing records no read")
 	full, err := cp.GetBuilderAssignment(builder, &gensurla.GetBuilderAssignmentPayload{ChangeID: "chg"})
 	require.NoError(t, err)
-	assert.Equal(t, &gensurla.BuilderAssignment{ChangeID: "chg", RequestRevision: first.RequestRevision, InForce: true, Read: true}, full)
+	assert.Equal(t, &gensurla.BuilderAssignment{
+		ChangeID: "chg", RequestRevision: first.RequestRevision, InForce: true, Read: true,
+		WrittenTests: gensurla.NewWrittenTestsNotYetAccepted(&gensurla.TestsNotYetAccepted{}),
+	}, full)
 	build := mustStartedBuild(t, cp, user, "chg")
 	assert.True(t, build.Builder.Read, "reading in full records the builder's read")
 	assert.False(t, build.TestWriter.Read, "the builder's read is not the test writer's")
@@ -468,6 +471,7 @@ func TestBuildTeamPreparesBeforeTheBuildIsSaved(t *testing.T) {
 // their findings or commit, are read back as saved.
 func TestBuildFileIsDecodedStrictly(t *testing.T) {
 	commit := strings.Repeat("c", 40)
+	at := "2026-11-13T09:30:00Z"
 	cases := []struct {
 		name    string
 		edit    func(map[string]any) map[string]any
@@ -493,8 +497,37 @@ func TestBuildFileIsDecodedStrictly(t *testing.T) {
 		{name: "needs changes without findings", edit: testWriterState("needs_changes", nil, ""), refusal: "does not allow"},
 		{name: "assigned with a commit", edit: testWriterState("assigned", nil, commit), refusal: "does not allow"},
 		{name: "accepted without a commit", edit: testWriterState("accepted", nil, ""), refusal: "does not allow"},
-		{name: "needs changes", edit: testWriterState("needs_changes", []string{"RefundOverLimit is not implemented"}, ""), tests: gensurla.TestsKindNeedsChanges},
-		{name: "accepted", edit: testWriterState("accepted", nil, commit), tests: gensurla.TestsKindAccepted},
+		{name: "needs changes", edit: savedTestWriter(map[string]any{
+			"state": "needs_changes", "findings": []string{"RefundOverLimit is not implemented"}, "checked_at": at,
+		}), tests: gensurla.TestsKindNeedsChanges},
+		{name: "accepted", edit: savedTestWriter(map[string]any{"state": "accepted", "commit": commit, "checked_at": at}), tests: gensurla.TestsKindAccepted},
+		{name: "not used", edit: savedTestWriter(map[string]any{"state": "not_used"}), tests: gensurla.TestsKindNotUsed},
+		{name: "could not run", edit: savedTestWriter(map[string]any{
+			"state": "could_not_run", "reason": "git could not write the tests branch", "step": "Free disk space, then report again.", "checked_at": at,
+		}), tests: gensurla.TestsKindCouldNotRun},
+		{name: "could not run, reason at its limit", edit: savedTestWriter(map[string]any{
+			"state": "could_not_run", "reason": strings.Repeat("é", maxCheckReason), "step": strings.Repeat("s", maxCheckStep), "checked_at": at,
+		}), tests: gensurla.TestsKindCouldNotRun},
+		{name: "could not run, reason over its limit", edit: savedTestWriter(map[string]any{
+			"state": "could_not_run", "reason": strings.Repeat("é", maxCheckReason+1), "step": "Report again.", "checked_at": at,
+		}), refusal: "does not allow"},
+		{name: "could not run, step over its limit", edit: savedTestWriter(map[string]any{
+			"state": "could_not_run", "reason": "git failed", "step": strings.Repeat("s", maxCheckStep+1), "checked_at": at,
+		}), refusal: "does not allow"},
+		{name: "could not run without a step", edit: savedTestWriter(map[string]any{
+			"state": "could_not_run", "reason": "git failed", "checked_at": at,
+		}), refusal: "does not allow"},
+		{name: "needs changes without its time", edit: savedTestWriter(map[string]any{
+			"state": "needs_changes", "findings": []string{"RefundOverLimit is not implemented"},
+		}), refusal: "verdict time"},
+		{name: "accepted without its time", edit: savedTestWriter(map[string]any{"state": "accepted", "commit": commit}), refusal: "verdict time"},
+		{name: "could not run without its time", edit: savedTestWriter(map[string]any{
+			"state": "could_not_run", "reason": "git failed", "step": "Report again.",
+		}), refusal: "verdict time"},
+		{name: "assigned with a verdict time", edit: savedTestWriter(map[string]any{"state": "assigned", "checked_at": at}), refusal: "verdict time"},
+		{name: "reported with a reason", edit: savedTestWriter(map[string]any{"state": "reported", "reason": "git failed"}), refusal: "does not allow"},
+		{name: "counted reports", edit: func(f map[string]any) map[string]any { f["report_number"] = 3; return f }, tests: gensurla.TestsKindAssigned},
+		{name: "negative report number", edit: func(f map[string]any) map[string]any { f["report_number"] = -1; return f }, refusal: "negative report number"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -679,6 +712,18 @@ func testWriterState(state string, findings []string, commit string) func(map[st
 		tw["state"] = state
 		tw["findings"] = findings
 		tw["commit"] = commit
+		return f
+	}
+}
+
+// savedTestWriter returns an edit that sets each of fields on the saved test
+// writer, leaving its other fields as saved.
+func savedTestWriter(fields map[string]any) func(map[string]any) map[string]any {
+	return func(f map[string]any) map[string]any {
+		tw := f["test_writer"].(map[string]any)
+		for key, value := range fields {
+			tw[key] = value
+		}
 		return f
 	}
 }

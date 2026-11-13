@@ -399,16 +399,20 @@ func (u *State) UnmarshalJSON(data []byte) error {
 // Tests holds exactly one of its branch values.
 type Tests struct {
 	kind         TestsKind
+	notUsed      *TestsNotUsedTransport
 	assigned     *TestsAssignedTransport
 	reported     *TestsReportedTransport
 	needsChanges *TestsNeedChangesTransport
 	accepted     *TestsAcceptedTransport
+	couldNotRun  *TestsCouldNotRunTransport
 }
 
 // TestsKind records which Tests branch is selected.
 type TestsKind string
 
 const (
+	// TestsKindNotUsed identifies the not_used branch.
+	TestsKindNotUsed TestsKind = "not_used"
 	// TestsKindAssigned identifies the assigned branch.
 	TestsKindAssigned TestsKind = "assigned"
 	// TestsKindReported identifies the reported branch.
@@ -417,11 +421,37 @@ const (
 	TestsKindNeedsChanges TestsKind = "needs_changes"
 	// TestsKindAccepted identifies the accepted branch.
 	TestsKindAccepted TestsKind = "accepted"
+	// TestsKindCouldNotRun identifies the could_not_run branch.
+	TestsKindCouldNotRun TestsKind = "could_not_run"
 )
 
 // Kind returns the selected branch.
 func (u Tests) Kind() TestsKind {
 	return u.kind
+}
+
+// NewTestsNotUsed constructs Tests with the not_used branch set.
+func NewTestsNotUsed(v *TestsNotUsedTransport) Tests {
+	return Tests{
+		kind:    TestsKindNotUsed,
+		notUsed: v,
+	}
+}
+
+// AsNotUsed returns the value when the not_used branch is selected.
+func (u Tests) AsNotUsed() (_ *TestsNotUsedTransport, ok bool) {
+	if u.kind != TestsKindNotUsed {
+		return
+	}
+	return u.notUsed, true
+}
+
+// SetNotUsed selects the not_used branch and stores v.
+func (u *Tests) SetNotUsed(v *TestsNotUsedTransport) {
+	*u = Tests{
+		kind:    TestsKindNotUsed,
+		notUsed: v,
+	}
 }
 
 // NewTestsAssigned constructs Tests with the assigned branch set.
@@ -520,6 +550,30 @@ func (u *Tests) SetAccepted(v *TestsAcceptedTransport) {
 	}
 }
 
+// NewTestsCouldNotRun constructs Tests with the could_not_run branch set.
+func NewTestsCouldNotRun(v *TestsCouldNotRunTransport) Tests {
+	return Tests{
+		kind:        TestsKindCouldNotRun,
+		couldNotRun: v,
+	}
+}
+
+// AsCouldNotRun returns the value when the could_not_run branch is selected.
+func (u Tests) AsCouldNotRun() (_ *TestsCouldNotRunTransport, ok bool) {
+	if u.kind != TestsKindCouldNotRun {
+		return
+	}
+	return u.couldNotRun, true
+}
+
+// SetCouldNotRun selects the could_not_run branch and stores v.
+func (u *Tests) SetCouldNotRun(v *TestsCouldNotRunTransport) {
+	*u = Tests{
+		kind:        TestsKindCouldNotRun,
+		couldNotRun: v,
+	}
+}
+
 // Validate ensures exactly one valid branch is selected.
 func (u Tests) Validate() error {
 	_, err := u.Value()
@@ -532,11 +586,18 @@ func (u Tests) Value() (any, error) {
 	switch u.kind {
 	case "":
 		return nil, goa.InvalidEnumValueError("state", "", []any{
+			string(TestsKindNotUsed),
 			string(TestsKindAssigned),
 			string(TestsKindReported),
 			string(TestsKindNeedsChanges),
 			string(TestsKindAccepted),
+			string(TestsKindCouldNotRun),
 		})
+	case TestsKindNotUsed:
+		if u.notUsed == nil {
+			return nil, goa.MissingFieldError("value", "Tests")
+		}
+		return u.notUsed, nil
 	case TestsKindAssigned:
 		if u.assigned == nil {
 			return nil, goa.MissingFieldError("value", "Tests")
@@ -557,12 +618,19 @@ func (u Tests) Value() (any, error) {
 			return nil, goa.MissingFieldError("value", "Tests")
 		}
 		return u.accepted, nil
+	case TestsKindCouldNotRun:
+		if u.couldNotRun == nil {
+			return nil, goa.MissingFieldError("value", "Tests")
+		}
+		return u.couldNotRun, nil
 	default:
 		return nil, goa.InvalidEnumValueError("state", u.kind, []any{
+			string(TestsKindNotUsed),
 			string(TestsKindAssigned),
 			string(TestsKindReported),
 			string(TestsKindNeedsChanges),
 			string(TestsKindAccepted),
+			string(TestsKindCouldNotRun),
 		})
 	}
 }
@@ -622,6 +690,12 @@ func (u *Tests) UnmarshalJSON(data []byte) error {
 	}
 	raw.Value = value
 	switch raw.Type {
+	case string(TestsKindNotUsed):
+		var v *TestsNotUsedTransport
+		if err := json.Unmarshal(raw.Value, &v); err != nil {
+			return err
+		}
+		u.SetNotUsed(v)
 	case string(TestsKindAssigned):
 		var v *TestsAssignedTransport
 		if err := json.Unmarshal(raw.Value, &v); err != nil {
@@ -646,15 +720,246 @@ func (u *Tests) UnmarshalJSON(data []byte) error {
 			return err
 		}
 		u.SetAccepted(v)
+	case string(TestsKindCouldNotRun):
+		var v *TestsCouldNotRunTransport
+		if err := json.Unmarshal(raw.Value, &v); err != nil {
+			return err
+		}
+		u.SetCouldNotRun(v)
 	default:
 		if raw.Type == "" {
 			return goa.MissingFieldError("state", "Tests")
 		}
 		return goa.InvalidEnumValueError("state", raw.Type, []any{
+			string(TestsKindNotUsed),
 			string(TestsKindAssigned),
 			string(TestsKindReported),
 			string(TestsKindNeedsChanges),
 			string(TestsKindAccepted),
+			string(TestsKindCouldNotRun),
+		})
+	}
+	return nil
+}
+
+// WrittenTests holds exactly one of its branch values.
+type WrittenTests struct {
+	kind           WrittenTestsKind
+	notUsed        *TestsNotUsedTransport
+	notYetAccepted *TestsNotYetAcceptedTransport
+	accepted       *TestsAcceptedTransport
+}
+
+// WrittenTestsKind records which WrittenTests branch is selected.
+type WrittenTestsKind string
+
+const (
+	// WrittenTestsKindNotUsed identifies the not_used branch.
+	WrittenTestsKindNotUsed WrittenTestsKind = "not_used"
+	// WrittenTestsKindNotYetAccepted identifies the not_yet_accepted branch.
+	WrittenTestsKindNotYetAccepted WrittenTestsKind = "not_yet_accepted"
+	// WrittenTestsKindAccepted identifies the accepted branch.
+	WrittenTestsKindAccepted WrittenTestsKind = "accepted"
+)
+
+// Kind returns the selected branch.
+func (u WrittenTests) Kind() WrittenTestsKind {
+	return u.kind
+}
+
+// NewWrittenTestsNotUsed constructs WrittenTests with the not_used branch set.
+func NewWrittenTestsNotUsed(v *TestsNotUsedTransport) WrittenTests {
+	return WrittenTests{
+		kind:    WrittenTestsKindNotUsed,
+		notUsed: v,
+	}
+}
+
+// AsNotUsed returns the value when the not_used branch is selected.
+func (u WrittenTests) AsNotUsed() (_ *TestsNotUsedTransport, ok bool) {
+	if u.kind != WrittenTestsKindNotUsed {
+		return
+	}
+	return u.notUsed, true
+}
+
+// SetNotUsed selects the not_used branch and stores v.
+func (u *WrittenTests) SetNotUsed(v *TestsNotUsedTransport) {
+	*u = WrittenTests{
+		kind:    WrittenTestsKindNotUsed,
+		notUsed: v,
+	}
+}
+
+// NewWrittenTestsNotYetAccepted constructs WrittenTests with the not_yet_accepted branch set.
+func NewWrittenTestsNotYetAccepted(v *TestsNotYetAcceptedTransport) WrittenTests {
+	return WrittenTests{
+		kind:           WrittenTestsKindNotYetAccepted,
+		notYetAccepted: v,
+	}
+}
+
+// AsNotYetAccepted returns the value when the not_yet_accepted branch is selected.
+func (u WrittenTests) AsNotYetAccepted() (_ *TestsNotYetAcceptedTransport, ok bool) {
+	if u.kind != WrittenTestsKindNotYetAccepted {
+		return
+	}
+	return u.notYetAccepted, true
+}
+
+// SetNotYetAccepted selects the not_yet_accepted branch and stores v.
+func (u *WrittenTests) SetNotYetAccepted(v *TestsNotYetAcceptedTransport) {
+	*u = WrittenTests{
+		kind:           WrittenTestsKindNotYetAccepted,
+		notYetAccepted: v,
+	}
+}
+
+// NewWrittenTestsAccepted constructs WrittenTests with the accepted branch set.
+func NewWrittenTestsAccepted(v *TestsAcceptedTransport) WrittenTests {
+	return WrittenTests{
+		kind:     WrittenTestsKindAccepted,
+		accepted: v,
+	}
+}
+
+// AsAccepted returns the value when the accepted branch is selected.
+func (u WrittenTests) AsAccepted() (_ *TestsAcceptedTransport, ok bool) {
+	if u.kind != WrittenTestsKindAccepted {
+		return
+	}
+	return u.accepted, true
+}
+
+// SetAccepted selects the accepted branch and stores v.
+func (u *WrittenTests) SetAccepted(v *TestsAcceptedTransport) {
+	*u = WrittenTests{
+		kind:     WrittenTestsKindAccepted,
+		accepted: v,
+	}
+}
+
+// Validate ensures exactly one valid branch is selected.
+func (u WrittenTests) Validate() error {
+	_, err := u.Value()
+	return err
+}
+
+// Value returns the selected branch value, or the same selection error as Validate.
+// Go templates can read this method directly; an invalid selection stops execution.
+func (u WrittenTests) Value() (any, error) {
+	switch u.kind {
+	case "":
+		return nil, goa.InvalidEnumValueError("state", "", []any{
+			string(WrittenTestsKindNotUsed),
+			string(WrittenTestsKindNotYetAccepted),
+			string(WrittenTestsKindAccepted),
+		})
+	case WrittenTestsKindNotUsed:
+		if u.notUsed == nil {
+			return nil, goa.MissingFieldError("value", "WrittenTests")
+		}
+		return u.notUsed, nil
+	case WrittenTestsKindNotYetAccepted:
+		if u.notYetAccepted == nil {
+			return nil, goa.MissingFieldError("value", "WrittenTests")
+		}
+		return u.notYetAccepted, nil
+	case WrittenTestsKindAccepted:
+		if u.accepted == nil {
+			return nil, goa.MissingFieldError("value", "WrittenTests")
+		}
+		return u.accepted, nil
+	default:
+		return nil, goa.InvalidEnumValueError("state", u.kind, []any{
+			string(WrittenTestsKindNotUsed),
+			string(WrittenTestsKindNotYetAccepted),
+			string(WrittenTestsKindAccepted),
+		})
+	}
+}
+
+// MarshalJSON writes the selected object branch beside its discriminator.
+func (u WrittenTests) MarshalJSON() ([]byte, error) {
+	value, err := u.Value()
+	if err != nil {
+		return nil, err
+	}
+	data, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return nil, err
+	}
+	if fields == nil {
+		return nil, goa.InvalidFieldTypeError("state", nil, "non-null JSON object")
+	}
+	if _, exists := fields["state"]; exists {
+		return nil, fmt.Errorf("WrittenTests branch already contains discriminator %q", "state")
+	}
+	tag, err := json.Marshal(string(u.kind))
+	if err != nil {
+		return nil, err
+	}
+	fields["state"] = tag
+	return json.Marshal(fields)
+}
+
+// UnmarshalJSON reads the discriminator and decodes its declared object branch.
+func (u *WrittenTests) UnmarshalJSON(data []byte) error {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return err
+	}
+	tag, exists := fields["state"]
+	if !exists {
+		return goa.MissingFieldError("state", "WrittenTests")
+	}
+	if bytes.Equal(bytes.TrimSpace(tag), []byte("null")) {
+		return goa.InvalidFieldTypeError("state", nil, "JSON string")
+	}
+	var raw struct {
+		Type  string
+		Value json.RawMessage
+	}
+	if err := json.Unmarshal(tag, &raw.Type); err != nil {
+		return err
+	}
+	delete(fields, "state")
+	value, err := json.Marshal(fields)
+	if err != nil {
+		return err
+	}
+	raw.Value = value
+	switch raw.Type {
+	case string(WrittenTestsKindNotUsed):
+		var v *TestsNotUsedTransport
+		if err := json.Unmarshal(raw.Value, &v); err != nil {
+			return err
+		}
+		u.SetNotUsed(v)
+	case string(WrittenTestsKindNotYetAccepted):
+		var v *TestsNotYetAcceptedTransport
+		if err := json.Unmarshal(raw.Value, &v); err != nil {
+			return err
+		}
+		u.SetNotYetAccepted(v)
+	case string(WrittenTestsKindAccepted):
+		var v *TestsAcceptedTransport
+		if err := json.Unmarshal(raw.Value, &v); err != nil {
+			return err
+		}
+		u.SetAccepted(v)
+	default:
+		if raw.Type == "" {
+			return goa.MissingFieldError("state", "WrittenTests")
+		}
+		return goa.InvalidEnumValueError("state", raw.Type, []any{
+			string(WrittenTestsKindNotUsed),
+			string(WrittenTestsKindNotYetAccepted),
+			string(WrittenTestsKindAccepted),
 		})
 	}
 	return nil

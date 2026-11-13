@@ -2554,7 +2554,7 @@ var getBuildResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("test_writer"), tools.FixedField("tests")},
 		JSONType:    "object",
-		Description: "The tests' state: assigned, reported, needs_changes with Surla's findings, or accepted with the commit Surla recorded.",
+		Description: "The tests' state: not_used when the project verifies with its stored evaluator; otherwise assigned, reported, needs_changes with Surla's findings, accepted with the commit Surla recorded, or could_not_run with the reason and the user's step. Each verdict carries the time Surla reached it.",
 		Branches: []tools.UnionBranch{
 			tools.TaggedUnionBranch{
 				Discriminator: []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("state")},
@@ -2572,10 +2572,27 @@ var getBuildResultFields = []tools.FieldMetadata{
 			},
 		},
 		DiscriminatorValues: []string{
+			"not_used",
 			"assigned",
 			"reported",
 			"needs_changes",
 			"accepted",
+			"could_not_run",
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("test_writer"), tools.FixedField("tests")},
+		JSONType:    "object",
+		Description: "No test writer is used for this build: the project verifies with the evaluator stored with surla verification set.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("state")},
+				Value:         "started",
+			},
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("test_writer"), tools.FixedField("tests"), tools.FixedField("state")},
+				Value:         "not_used",
+			},
 		},
 	},
 	{
@@ -2654,6 +2671,21 @@ var getBuildResultFields = []tools.FieldMetadata{
 		},
 	},
 	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("test_writer"), tools.FixedField("tests"), tools.FixedField("checked_at")},
+		JSONType:    "string",
+		Description: "When Surla's check reached this verdict.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("state")},
+				Value:         "started",
+			},
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("test_writer"), tools.FixedField("tests"), tools.FixedField("state")},
+				Value:         "needs_changes",
+			},
+		},
+	},
+	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("test_writer"), tools.FixedField("tests")},
 		JSONType:    "object",
 		Description: "Surla checked the reported tests and recorded them as a commit.",
@@ -2680,6 +2712,81 @@ var getBuildResultFields = []tools.FieldMetadata{
 			tools.TaggedUnionBranch{
 				Discriminator: []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("test_writer"), tools.FixedField("tests"), tools.FixedField("state")},
 				Value:         "accepted",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("test_writer"), tools.FixedField("tests"), tools.FixedField("checked_at")},
+		JSONType:    "string",
+		Description: "When Surla's check reached this verdict.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("state")},
+				Value:         "started",
+			},
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("test_writer"), tools.FixedField("tests"), tools.FixedField("state")},
+				Value:         "accepted",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("test_writer"), tools.FixedField("tests")},
+		JSONType:    "object",
+		Description: "Surla's check of the reported tests could not run, for a cause the test writer cannot fix; the user's step makes it possible.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("state")},
+				Value:         "started",
+			},
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("test_writer"), tools.FixedField("tests"), tools.FixedField("state")},
+				Value:         "could_not_run",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("test_writer"), tools.FixedField("tests"), tools.FixedField("reason")},
+		JSONType:    "string",
+		Description: "Why the check could not run.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("state")},
+				Value:         "started",
+			},
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("test_writer"), tools.FixedField("tests"), tools.FixedField("state")},
+				Value:         "could_not_run",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("test_writer"), tools.FixedField("tests"), tools.FixedField("step")},
+		JSONType:    "string",
+		Description: "What the user does so the check can run.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("state")},
+				Value:         "started",
+			},
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("test_writer"), tools.FixedField("tests"), tools.FixedField("state")},
+				Value:         "could_not_run",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("test_writer"), tools.FixedField("tests"), tools.FixedField("checked_at")},
+		JSONType:    "string",
+		Description: "When Surla's check stopped.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("state")},
+				Value:         "started",
+			},
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("test_writer"), tools.FixedField("tests"), tools.FixedField("state")},
+				Value:         "could_not_run",
 			},
 		},
 	},
@@ -2729,6 +2836,75 @@ var getBuilderAssignmentResultFields = []tools.FieldMetadata{
 		Path:        []tools.FieldPathSegment{tools.FixedField("read")},
 		JSONType:    "boolean",
 		Description: "True once you read this assignment in full with get_builder_assignment.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("written_tests")},
+		JSONType:    "object",
+		Description: "Where the test writer's tests for this build stand: not_used when no test writer is used because the project verifies with its stored evaluator; not_yet_accepted until Surla accepts the test writer's tests; accepted with the commit Surla recorded them at.",
+	},
+	{
+		Path:     []tools.FieldPathSegment{tools.FixedField("written_tests"), tools.FixedField("state")},
+		JSONType: "string",
+		DiscriminatorValues: []string{
+			"not_used",
+			"not_yet_accepted",
+			"accepted",
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("written_tests")},
+		JSONType:    "object",
+		Description: "No test writer is used for this build: the project verifies with the evaluator stored with surla verification set.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("written_tests"), tools.FixedField("state")},
+				Value:         "not_used",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("written_tests")},
+		JSONType:    "object",
+		Description: "Surla has not accepted the test writer's tests for this build.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("written_tests"), tools.FixedField("state")},
+				Value:         "not_yet_accepted",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("written_tests")},
+		JSONType:    "object",
+		Description: "Surla checked the reported tests and recorded them as a commit.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("written_tests"), tools.FixedField("state")},
+				Value:         "accepted",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("written_tests"), tools.FixedField("commit")},
+		JSONType:    "string",
+		Description: "Full commit ID Surla recorded the accepted tests at (40 or 64 lowercase hex characters).",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("written_tests"), tools.FixedField("state")},
+				Value:         "accepted",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("written_tests"), tools.FixedField("checked_at")},
+		JSONType:    "string",
+		Description: "When Surla's check reached this verdict.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("written_tests"), tools.FixedField("state")},
+				Value:         "accepted",
+			},
+		},
 	},
 }
 var getChangePayloadFields = []tools.FieldMetadata{
@@ -3422,16 +3598,29 @@ var getTestWriterAssignmentResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests")},
 		JSONType:    "object",
-		Description: "The tests' state: assigned, reported, needs_changes with Surla's findings, or accepted with the commit Surla recorded.",
+		Description: "The tests' state: not_used when the project verifies with its stored evaluator; otherwise assigned, reported, needs_changes with Surla's findings, accepted with the commit Surla recorded, or could_not_run with the reason and the user's step. Each verdict carries the time Surla reached it.",
 	},
 	{
 		Path:     []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("state")},
 		JSONType: "string",
 		DiscriminatorValues: []string{
+			"not_used",
 			"assigned",
 			"reported",
 			"needs_changes",
 			"accepted",
+			"could_not_run",
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests")},
+		JSONType:    "object",
+		Description: "No test writer is used for this build: the project verifies with the evaluator stored with surla verification set.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("state")},
+				Value:         "not_used",
+			},
 		},
 	},
 	{
@@ -3490,6 +3679,17 @@ var getTestWriterAssignmentResultFields = []tools.FieldMetadata{
 		},
 	},
 	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("checked_at")},
+		JSONType:    "string",
+		Description: "When Surla's check reached this verdict.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("state")},
+				Value:         "needs_changes",
+			},
+		},
+	},
+	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests")},
 		JSONType:    "object",
 		Description: "Surla checked the reported tests and recorded them as a commit.",
@@ -3508,6 +3708,61 @@ var getTestWriterAssignmentResultFields = []tools.FieldMetadata{
 			tools.TaggedUnionBranch{
 				Discriminator: []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("state")},
 				Value:         "accepted",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("checked_at")},
+		JSONType:    "string",
+		Description: "When Surla's check reached this verdict.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("state")},
+				Value:         "accepted",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests")},
+		JSONType:    "object",
+		Description: "Surla's check of the reported tests could not run, for a cause the test writer cannot fix; the user's step makes it possible.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("state")},
+				Value:         "could_not_run",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("reason")},
+		JSONType:    "string",
+		Description: "Why the check could not run.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("state")},
+				Value:         "could_not_run",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("step")},
+		JSONType:    "string",
+		Description: "What the user does so the check can run.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("state")},
+				Value:         "could_not_run",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("checked_at")},
+		JSONType:    "string",
+		Description: "When Surla's check stopped.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("state")},
+				Value:         "could_not_run",
 			},
 		},
 	},
@@ -4194,6 +4449,75 @@ var listBuilderAssignmentsResultFields = []tools.FieldMetadata{
 		JSONType:    "boolean",
 		Description: "True once you read this assignment in full with get_builder_assignment.",
 	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("assignments"), tools.DynamicField{}, tools.FixedField("written_tests")},
+		JSONType:    "object",
+		Description: "Where the test writer's tests for this build stand: not_used when no test writer is used because the project verifies with its stored evaluator; not_yet_accepted until Surla accepts the test writer's tests; accepted with the commit Surla recorded them at.",
+	},
+	{
+		Path:     []tools.FieldPathSegment{tools.FixedField("assignments"), tools.DynamicField{}, tools.FixedField("written_tests"), tools.FixedField("state")},
+		JSONType: "string",
+		DiscriminatorValues: []string{
+			"not_used",
+			"not_yet_accepted",
+			"accepted",
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("assignments"), tools.DynamicField{}, tools.FixedField("written_tests")},
+		JSONType:    "object",
+		Description: "No test writer is used for this build: the project verifies with the evaluator stored with surla verification set.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("assignments"), tools.DynamicField{}, tools.FixedField("written_tests"), tools.FixedField("state")},
+				Value:         "not_used",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("assignments"), tools.DynamicField{}, tools.FixedField("written_tests")},
+		JSONType:    "object",
+		Description: "Surla has not accepted the test writer's tests for this build.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("assignments"), tools.DynamicField{}, tools.FixedField("written_tests"), tools.FixedField("state")},
+				Value:         "not_yet_accepted",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("assignments"), tools.DynamicField{}, tools.FixedField("written_tests")},
+		JSONType:    "object",
+		Description: "Surla checked the reported tests and recorded them as a commit.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("assignments"), tools.DynamicField{}, tools.FixedField("written_tests"), tools.FixedField("state")},
+				Value:         "accepted",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("assignments"), tools.DynamicField{}, tools.FixedField("written_tests"), tools.FixedField("commit")},
+		JSONType:    "string",
+		Description: "Full commit ID Surla recorded the accepted tests at (40 or 64 lowercase hex characters).",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("assignments"), tools.DynamicField{}, tools.FixedField("written_tests"), tools.FixedField("state")},
+				Value:         "accepted",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("assignments"), tools.DynamicField{}, tools.FixedField("written_tests"), tools.FixedField("checked_at")},
+		JSONType:    "string",
+		Description: "When Surla's check reached this verdict.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("assignments"), tools.DynamicField{}, tools.FixedField("written_tests"), tools.FixedField("state")},
+				Value:         "accepted",
+			},
+		},
+	},
 }
 var listChangesPayloadFields = []tools.FieldMetadata{
 	{
@@ -4309,16 +4633,29 @@ var listTestWriterAssignmentsResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("assignments"), tools.DynamicField{}, tools.FixedField("progress"), tools.FixedField("tests")},
 		JSONType:    "object",
-		Description: "The tests' state: assigned, reported, needs_changes with Surla's findings, or accepted with the commit Surla recorded.",
+		Description: "The tests' state: not_used when the project verifies with its stored evaluator; otherwise assigned, reported, needs_changes with Surla's findings, accepted with the commit Surla recorded, or could_not_run with the reason and the user's step. Each verdict carries the time Surla reached it.",
 	},
 	{
 		Path:     []tools.FieldPathSegment{tools.FixedField("assignments"), tools.DynamicField{}, tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("state")},
 		JSONType: "string",
 		DiscriminatorValues: []string{
+			"not_used",
 			"assigned",
 			"reported",
 			"needs_changes",
 			"accepted",
+			"could_not_run",
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("assignments"), tools.DynamicField{}, tools.FixedField("progress"), tools.FixedField("tests")},
+		JSONType:    "object",
+		Description: "No test writer is used for this build: the project verifies with the evaluator stored with surla verification set.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("assignments"), tools.DynamicField{}, tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("state")},
+				Value:         "not_used",
+			},
 		},
 	},
 	{
@@ -4377,6 +4714,17 @@ var listTestWriterAssignmentsResultFields = []tools.FieldMetadata{
 		},
 	},
 	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("assignments"), tools.DynamicField{}, tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("checked_at")},
+		JSONType:    "string",
+		Description: "When Surla's check reached this verdict.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("assignments"), tools.DynamicField{}, tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("state")},
+				Value:         "needs_changes",
+			},
+		},
+	},
+	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("assignments"), tools.DynamicField{}, tools.FixedField("progress"), tools.FixedField("tests")},
 		JSONType:    "object",
 		Description: "Surla checked the reported tests and recorded them as a commit.",
@@ -4395,6 +4743,61 @@ var listTestWriterAssignmentsResultFields = []tools.FieldMetadata{
 			tools.TaggedUnionBranch{
 				Discriminator: []tools.FieldPathSegment{tools.FixedField("assignments"), tools.DynamicField{}, tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("state")},
 				Value:         "accepted",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("assignments"), tools.DynamicField{}, tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("checked_at")},
+		JSONType:    "string",
+		Description: "When Surla's check reached this verdict.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("assignments"), tools.DynamicField{}, tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("state")},
+				Value:         "accepted",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("assignments"), tools.DynamicField{}, tools.FixedField("progress"), tools.FixedField("tests")},
+		JSONType:    "object",
+		Description: "Surla's check of the reported tests could not run, for a cause the test writer cannot fix; the user's step makes it possible.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("assignments"), tools.DynamicField{}, tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("state")},
+				Value:         "could_not_run",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("assignments"), tools.DynamicField{}, tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("reason")},
+		JSONType:    "string",
+		Description: "Why the check could not run.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("assignments"), tools.DynamicField{}, tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("state")},
+				Value:         "could_not_run",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("assignments"), tools.DynamicField{}, tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("step")},
+		JSONType:    "string",
+		Description: "What the user does so the check can run.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("assignments"), tools.DynamicField{}, tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("state")},
+				Value:         "could_not_run",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("assignments"), tools.DynamicField{}, tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("checked_at")},
+		JSONType:    "string",
+		Description: "When Surla's check stopped.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("assignments"), tools.DynamicField{}, tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("state")},
+				Value:         "could_not_run",
 			},
 		},
 	},
@@ -5991,16 +6394,29 @@ var reportTestsFinishedResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests")},
 		JSONType:    "object",
-		Description: "The tests' state: assigned, reported, needs_changes with Surla's findings, or accepted with the commit Surla recorded.",
+		Description: "The tests' state: not_used when the project verifies with its stored evaluator; otherwise assigned, reported, needs_changes with Surla's findings, accepted with the commit Surla recorded, or could_not_run with the reason and the user's step. Each verdict carries the time Surla reached it.",
 	},
 	{
 		Path:     []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("state")},
 		JSONType: "string",
 		DiscriminatorValues: []string{
+			"not_used",
 			"assigned",
 			"reported",
 			"needs_changes",
 			"accepted",
+			"could_not_run",
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests")},
+		JSONType:    "object",
+		Description: "No test writer is used for this build: the project verifies with the evaluator stored with surla verification set.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("state")},
+				Value:         "not_used",
+			},
 		},
 	},
 	{
@@ -6059,6 +6475,17 @@ var reportTestsFinishedResultFields = []tools.FieldMetadata{
 		},
 	},
 	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("checked_at")},
+		JSONType:    "string",
+		Description: "When Surla's check reached this verdict.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("state")},
+				Value:         "needs_changes",
+			},
+		},
+	},
+	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests")},
 		JSONType:    "object",
 		Description: "Surla checked the reported tests and recorded them as a commit.",
@@ -6077,6 +6504,61 @@ var reportTestsFinishedResultFields = []tools.FieldMetadata{
 			tools.TaggedUnionBranch{
 				Discriminator: []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("state")},
 				Value:         "accepted",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("checked_at")},
+		JSONType:    "string",
+		Description: "When Surla's check reached this verdict.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("state")},
+				Value:         "accepted",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests")},
+		JSONType:    "object",
+		Description: "Surla's check of the reported tests could not run, for a cause the test writer cannot fix; the user's step makes it possible.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("state")},
+				Value:         "could_not_run",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("reason")},
+		JSONType:    "string",
+		Description: "Why the check could not run.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("state")},
+				Value:         "could_not_run",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("step")},
+		JSONType:    "string",
+		Description: "What the user does so the check can run.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("state")},
+				Value:         "could_not_run",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("checked_at")},
+		JSONType:    "string",
+		Description: "When Surla's check stopped.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("state")},
+				Value:         "could_not_run",
 			},
 		},
 	},
@@ -10840,6 +11322,37 @@ func MarshalGetBuilderAssignmentResult(v *GetBuilderAssignmentResult) ([]byte, e
 		InForce:         &in.InForce,
 		Read:            &in.Read,
 	}
+	var writtenTestsValue toolhttp.WrittenTests
+	switch string(in.WrittenTests.Kind()) {
+	case "not_used":
+		actual, _ := in.WrittenTests.AsNotUsed()
+		var obj *toolhttp.TestsNotUsedTransport
+		if actual != nil {
+			obj = encodeTestsNotUsedToTestsNotUsedTransport(actual)
+		}
+		u := writtenTestsValue
+		u.SetNotUsed((*toolhttp.TestsNotUsedTransport)(obj))
+		writtenTestsValue = u
+	case "not_yet_accepted":
+		actual, _ := in.WrittenTests.AsNotYetAccepted()
+		var obj *toolhttp.TestsNotYetAcceptedTransport
+		if actual != nil {
+			obj = encodeTestsNotYetAcceptedToTestsNotYetAcceptedTransport(actual)
+		}
+		u := writtenTestsValue
+		u.SetNotYetAccepted((*toolhttp.TestsNotYetAcceptedTransport)(obj))
+		writtenTestsValue = u
+	case "accepted":
+		actual, _ := in.WrittenTests.AsAccepted()
+		var obj *toolhttp.TestsAcceptedTransport
+		if actual != nil {
+			obj = encodeTestsAcceptedToTestsAcceptedTransport(actual)
+		}
+		u := writtenTestsValue
+		u.SetAccepted((*toolhttp.TestsAcceptedTransport)(obj))
+		writtenTestsValue = u
+	}
+	out.WrittenTests = &writtenTestsValue
 	return json.Marshal(out)
 }
 
@@ -10868,6 +11381,35 @@ func UnmarshalGetBuilderAssignmentResult(data []byte) (*GetBuilderAssignmentResu
 		RequestRevision: *in.RequestRevision,
 		InForce:         *in.InForce,
 		Read:            *in.Read,
+	}
+	switch string(in.WrittenTests.Kind()) {
+	case "not_used":
+		actual, _ := in.WrittenTests.AsNotUsed()
+		var obj *TestsNotUsed
+		if actual != nil {
+			obj = decodeTestsNotUsedTransportToTestsNotUsed(actual)
+		}
+		u := out.WrittenTests
+		u.SetNotUsed((*TestsNotUsed)(obj))
+		out.WrittenTests = u
+	case "not_yet_accepted":
+		actual, _ := in.WrittenTests.AsNotYetAccepted()
+		var obj *TestsNotYetAccepted
+		if actual != nil {
+			obj = decodeTestsNotYetAcceptedTransportToTestsNotYetAccepted(actual)
+		}
+		u := out.WrittenTests
+		u.SetNotYetAccepted((*TestsNotYetAccepted)(obj))
+		out.WrittenTests = u
+	case "accepted":
+		actual, _ := in.WrittenTests.AsAccepted()
+		var obj *TestsAccepted
+		if actual != nil {
+			obj = decodeTestsAcceptedTransportToTestsAccepted(actual)
+		}
+		u := out.WrittenTests
+		u.SetAccepted((*TestsAccepted)(obj))
+		out.WrittenTests = u
 	}
 	return out, nil
 }
@@ -18525,7 +19067,7 @@ func validateGetBuildResultTestWriterProgressTransportJSONValue(path string, val
 		case "tests":
 			if err := validateGetBuildResultTestWriterProgressTransportTestsJSONValue(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "The tests' state: assigned, reported, needs_changes with Surla's findings, or accepted with the commit Surla recorded.",
+				typed[key], "The tests' state: not_used when the project verifies with its stored evaluator; otherwise assigned, reported, needs_changes with Surla's findings, accepted with the commit Surla recorded, or could_not_run with the reason and the user's step. Each verdict carries the time Surla reached it.",
 			); err != nil {
 				return err
 			}
@@ -18555,7 +19097,7 @@ func validateGetBuildResultTestWriterProgressTransportTestsJSONValue(path string
 	rawDiscriminator, discriminatorPresent := typed["state"]
 	discriminator, ok := rawDiscriminator.(string)
 	if !ok {
-		return invalidJSONUnionDiscriminator(generatedJSONChildPath(path, "state", false), rawDiscriminator, discriminatorPresent, []string{"assigned", "reported", "needs_changes", "accepted"})
+		return invalidJSONUnionDiscriminator(generatedJSONChildPath(path, "state", false), rawDiscriminator, discriminatorPresent, []string{"not_used", "assigned", "reported", "needs_changes", "accepted", "could_not_run"})
 	}
 	branch := make(map[string]any, len(typed)-1)
 	for key, item := range typed {
@@ -18564,6 +19106,8 @@ func validateGetBuildResultTestWriterProgressTransportTestsJSONValue(path string
 		}
 	}
 	switch discriminator {
+	case "not_used":
+		return validateStopLiveTargetPayloadJSONValue(path, branch, "")
 	case "assigned":
 		return validateStopLiveTargetPayloadJSONValue(path, branch, "")
 	case "reported":
@@ -18572,8 +19116,10 @@ func validateGetBuildResultTestWriterProgressTransportTestsJSONValue(path string
 		return validateGetBuildResultTestsNeedChangesTransportJSONValue(path, branch, "")
 	case "accepted":
 		return validateGetBuildResultTestsAcceptedTransportJSONValue(path, branch, "")
+	case "could_not_run":
+		return validateGetBuildResultTestsCouldNotRunTransportJSONValue(path, branch, "")
 	default:
-		return invalidJSONUnionDiscriminator(generatedJSONChildPath(path, "state", false), discriminator, true, []string{"assigned", "reported", "needs_changes", "accepted"})
+		return invalidJSONUnionDiscriminator(generatedJSONChildPath(path, "state", false), discriminator, true, []string{"not_used", "assigned", "reported", "needs_changes", "accepted", "could_not_run"})
 	}
 }
 
@@ -18597,6 +19143,13 @@ func validateGetBuildResultTestsNeedChangesTransportJSONValue(path string, value
 	sort.Strings(keys)
 	for _, key := range keys {
 		switch key {
+		case "checked_at":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "When Surla's check reached this verdict.",
+			); err != nil {
+				return err
+			}
 		case "findings":
 			if err := validateProposeChangePayloadCP1AnalysisAmbiguityTransportOptionsJSONValue(
 				generatedJSONChildPath(path, key, false),
@@ -18606,6 +19159,7 @@ func validateGetBuildResultTestsNeedChangesTransportJSONValue(path string, value
 			}
 		default:
 			return unknownJSONFieldError(path, key, []string{
+				"checked_at",
 				"findings",
 			})
 		}
@@ -18633,6 +19187,13 @@ func validateGetBuildResultTestsAcceptedTransportJSONValue(path string, value an
 	sort.Strings(keys)
 	for _, key := range keys {
 		switch key {
+		case "checked_at":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "When Surla's check reached this verdict.",
+			); err != nil {
+				return err
+			}
 		case "commit":
 			if err := validateStringJSONValue(
 				generatedJSONChildPath(path, key, false),
@@ -18642,7 +19203,60 @@ func validateGetBuildResultTestsAcceptedTransportJSONValue(path string, value an
 			}
 		default:
 			return unknownJSONFieldError(path, key, []string{
+				"checked_at",
 				"commit",
+			})
+		}
+	}
+	return nil
+}
+
+// validateGetBuildResultTestsCouldNotRunTransportJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateGetBuildResultTestsCouldNotRunTransportJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "checked_at":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "When Surla's check stopped.",
+			); err != nil {
+				return err
+			}
+		case "reason":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Why the check could not run.",
+			); err != nil {
+				return err
+			}
+		case "step":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "What the user does so the check can run.",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"checked_at",
+				"reason",
+				"step",
 			})
 		}
 	}
@@ -18757,16 +19371,60 @@ func validateListBuilderAssignmentsResultBuilderAssignmentTransportJSONValue(pat
 			); err != nil {
 				return err
 			}
+		case "written_tests":
+			if err := validateListBuilderAssignmentsResultBuilderAssignmentTransportWrittenTestsJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Where the test writer's tests for this build stand: not_used when no test writer is used because the project verifies with its stored evaluator; not_yet_accepted until Surla accepts the test writer's tests; accepted with the commit Surla recorded them at.",
+			); err != nil {
+				return err
+			}
 		default:
 			return unknownJSONFieldError(path, key, []string{
 				"change_id",
 				"in_force",
 				"read",
 				"request_revision",
+				"written_tests",
 			})
 		}
 	}
 	return nil
+}
+
+// validateListBuilderAssignmentsResultBuilderAssignmentTransportWrittenTestsJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateListBuilderAssignmentsResultBuilderAssignmentTransportWrittenTestsJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	rawDiscriminator, discriminatorPresent := typed["state"]
+	discriminator, ok := rawDiscriminator.(string)
+	if !ok {
+		return invalidJSONUnionDiscriminator(generatedJSONChildPath(path, "state", false), rawDiscriminator, discriminatorPresent, []string{"not_used", "not_yet_accepted", "accepted"})
+	}
+	branch := make(map[string]any, len(typed)-1)
+	for key, item := range typed {
+		if key != "state" {
+			branch[key] = item
+		}
+	}
+	switch discriminator {
+	case "not_used":
+		return validateStopLiveTargetPayloadJSONValue(path, branch, "")
+	case "not_yet_accepted":
+		return validateStopLiveTargetPayloadJSONValue(path, branch, "")
+	case "accepted":
+		return validateGetBuildResultTestsAcceptedTransportJSONValue(path, branch, "")
+	default:
+		return invalidJSONUnionDiscriminator(generatedJSONChildPath(path, "state", false), discriminator, true, []string{"not_used", "not_yet_accepted", "accepted"})
+	}
 }
 
 // validateGetBuilderAssignmentPayloadJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
@@ -19654,6 +20312,15 @@ func decodeTestWriterProgressTransportToTestWriterProgress(v *toolhttp.TestWrite
 		Read: *v.Read,
 	}
 	switch string(v.Tests.Kind()) {
+	case "not_used":
+		actual, _ := v.Tests.AsNotUsed()
+		var obj *TestsNotUsed
+		if actual != nil {
+			obj = decodeTestsNotUsedTransportToTestsNotUsed(actual)
+		}
+		u := res.Tests
+		u.SetNotUsed((*TestsNotUsed)(obj))
+		res.Tests = u
 	case "assigned":
 		actual, _ := v.Tests.AsAssigned()
 		var obj *TestsAssigned
@@ -19690,7 +20357,21 @@ func decodeTestWriterProgressTransportToTestWriterProgress(v *toolhttp.TestWrite
 		u := res.Tests
 		u.SetAccepted((*TestsAccepted)(obj))
 		res.Tests = u
+	case "could_not_run":
+		actual, _ := v.Tests.AsCouldNotRun()
+		var obj *TestsCouldNotRun
+		if actual != nil {
+			obj = decodeTestsCouldNotRunTransportToTestsCouldNotRun(actual)
+		}
+		u := res.Tests
+		u.SetCouldNotRun((*TestsCouldNotRun)(obj))
+		res.Tests = u
 	}
+
+	return res
+}
+func decodeTestsNotUsedTransportToTestsNotUsed(v *toolhttp.TestsNotUsedTransport) *TestsNotUsed {
+	res := &TestsNotUsed{}
 
 	return res
 }
@@ -19705,7 +20386,9 @@ func decodeTestsReportedTransportToTestsReported(v *toolhttp.TestsReportedTransp
 	return res
 }
 func decodeTestsNeedChangesTransportToTestsNeedChanges(v *toolhttp.TestsNeedChangesTransport) *TestsNeedChanges {
-	res := &TestsNeedChanges{}
+	res := &TestsNeedChanges{
+		CheckedAt: *v.CheckedAt,
+	}
 	res.Findings = make([]string, len(v.Findings))
 	for i, val := range v.Findings {
 		res.Findings[i] = val
@@ -19715,7 +20398,17 @@ func decodeTestsNeedChangesTransportToTestsNeedChanges(v *toolhttp.TestsNeedChan
 }
 func decodeTestsAcceptedTransportToTestsAccepted(v *toolhttp.TestsAcceptedTransport) *TestsAccepted {
 	res := &TestsAccepted{
-		Commit: *v.Commit,
+		Commit:    *v.Commit,
+		CheckedAt: *v.CheckedAt,
+	}
+
+	return res
+}
+func decodeTestsCouldNotRunTransportToTestsCouldNotRun(v *toolhttp.TestsCouldNotRunTransport) *TestsCouldNotRun {
+	res := &TestsCouldNotRun{
+		Reason:    *v.Reason,
+		Step:      *v.Step,
+		CheckedAt: *v.CheckedAt,
 	}
 
 	return res
@@ -19749,6 +20442,15 @@ func encodeTestWriterProgressToTestWriterProgressTransport(v *TestWriterProgress
 	}
 	var testsValue toolhttp.Tests
 	switch string(v.Tests.Kind()) {
+	case "not_used":
+		actual, _ := v.Tests.AsNotUsed()
+		var obj *toolhttp.TestsNotUsedTransport
+		if actual != nil {
+			obj = encodeTestsNotUsedToTestsNotUsedTransport(actual)
+		}
+		u := testsValue
+		u.SetNotUsed((*toolhttp.TestsNotUsedTransport)(obj))
+		testsValue = u
 	case "assigned":
 		actual, _ := v.Tests.AsAssigned()
 		var obj *toolhttp.TestsAssignedTransport
@@ -19785,8 +20487,22 @@ func encodeTestWriterProgressToTestWriterProgressTransport(v *TestWriterProgress
 		u := testsValue
 		u.SetAccepted((*toolhttp.TestsAcceptedTransport)(obj))
 		testsValue = u
+	case "could_not_run":
+		actual, _ := v.Tests.AsCouldNotRun()
+		var obj *toolhttp.TestsCouldNotRunTransport
+		if actual != nil {
+			obj = encodeTestsCouldNotRunToTestsCouldNotRunTransport(actual)
+		}
+		u := testsValue
+		u.SetCouldNotRun((*toolhttp.TestsCouldNotRunTransport)(obj))
+		testsValue = u
 	}
 	res.Tests = &testsValue
+
+	return res
+}
+func encodeTestsNotUsedToTestsNotUsedTransport(v *TestsNotUsed) *toolhttp.TestsNotUsedTransport {
+	res := &toolhttp.TestsNotUsedTransport{}
 
 	return res
 }
@@ -19801,7 +20517,9 @@ func encodeTestsReportedToTestsReportedTransport(v *TestsReported) *toolhttp.Tes
 	return res
 }
 func encodeTestsNeedChangesToTestsNeedChangesTransport(v *TestsNeedChanges) *toolhttp.TestsNeedChangesTransport {
-	res := &toolhttp.TestsNeedChangesTransport{}
+	res := &toolhttp.TestsNeedChangesTransport{
+		CheckedAt: &v.CheckedAt,
+	}
 	res.Findings = make([]string, len(v.Findings))
 	for i, val := range v.Findings {
 		res.Findings[i] = val
@@ -19811,8 +20529,28 @@ func encodeTestsNeedChangesToTestsNeedChangesTransport(v *TestsNeedChanges) *too
 }
 func encodeTestsAcceptedToTestsAcceptedTransport(v *TestsAccepted) *toolhttp.TestsAcceptedTransport {
 	res := &toolhttp.TestsAcceptedTransport{
-		Commit: &v.Commit,
+		Commit:    &v.Commit,
+		CheckedAt: &v.CheckedAt,
 	}
+
+	return res
+}
+func encodeTestsCouldNotRunToTestsCouldNotRunTransport(v *TestsCouldNotRun) *toolhttp.TestsCouldNotRunTransport {
+	res := &toolhttp.TestsCouldNotRunTransport{
+		Reason:    &v.Reason,
+		Step:      &v.Step,
+		CheckedAt: &v.CheckedAt,
+	}
+
+	return res
+}
+func decodeTestsNotYetAcceptedTransportToTestsNotYetAccepted(v *toolhttp.TestsNotYetAcceptedTransport) *TestsNotYetAccepted {
+	res := &TestsNotYetAccepted{}
+
+	return res
+}
+func encodeTestsNotYetAcceptedToTestsNotYetAcceptedTransport(v *TestsNotYetAccepted) *toolhttp.TestsNotYetAcceptedTransport {
+	res := &toolhttp.TestsNotYetAcceptedTransport{}
 
 	return res
 }
@@ -20007,6 +20745,35 @@ func decodeBuilderAssignmentTransportToBuilderAssignment(v *toolhttp.BuilderAssi
 		InForce:         *v.InForce,
 		Read:            *v.Read,
 	}
+	switch string(v.WrittenTests.Kind()) {
+	case "not_used":
+		actual, _ := v.WrittenTests.AsNotUsed()
+		var obj *TestsNotUsed
+		if actual != nil {
+			obj = decodeTestsNotUsedTransportToTestsNotUsed(actual)
+		}
+		u := res.WrittenTests
+		u.SetNotUsed((*TestsNotUsed)(obj))
+		res.WrittenTests = u
+	case "not_yet_accepted":
+		actual, _ := v.WrittenTests.AsNotYetAccepted()
+		var obj *TestsNotYetAccepted
+		if actual != nil {
+			obj = decodeTestsNotYetAcceptedTransportToTestsNotYetAccepted(actual)
+		}
+		u := res.WrittenTests
+		u.SetNotYetAccepted((*TestsNotYetAccepted)(obj))
+		res.WrittenTests = u
+	case "accepted":
+		actual, _ := v.WrittenTests.AsAccepted()
+		var obj *TestsAccepted
+		if actual != nil {
+			obj = decodeTestsAcceptedTransportToTestsAccepted(actual)
+		}
+		u := res.WrittenTests
+		u.SetAccepted((*TestsAccepted)(obj))
+		res.WrittenTests = u
+	}
 
 	return res
 }
@@ -20017,6 +20784,37 @@ func encodeBuilderAssignmentToBuilderAssignmentTransport(v *BuilderAssignment) *
 		InForce:         &v.InForce,
 		Read:            &v.Read,
 	}
+	var writtenTestsValue toolhttp.WrittenTests
+	switch string(v.WrittenTests.Kind()) {
+	case "not_used":
+		actual, _ := v.WrittenTests.AsNotUsed()
+		var obj *toolhttp.TestsNotUsedTransport
+		if actual != nil {
+			obj = encodeTestsNotUsedToTestsNotUsedTransport(actual)
+		}
+		u := writtenTestsValue
+		u.SetNotUsed((*toolhttp.TestsNotUsedTransport)(obj))
+		writtenTestsValue = u
+	case "not_yet_accepted":
+		actual, _ := v.WrittenTests.AsNotYetAccepted()
+		var obj *toolhttp.TestsNotYetAcceptedTransport
+		if actual != nil {
+			obj = encodeTestsNotYetAcceptedToTestsNotYetAcceptedTransport(actual)
+		}
+		u := writtenTestsValue
+		u.SetNotYetAccepted((*toolhttp.TestsNotYetAcceptedTransport)(obj))
+		writtenTestsValue = u
+	case "accepted":
+		actual, _ := v.WrittenTests.AsAccepted()
+		var obj *toolhttp.TestsAcceptedTransport
+		if actual != nil {
+			obj = encodeTestsAcceptedToTestsAcceptedTransport(actual)
+		}
+		u := writtenTestsValue
+		u.SetAccepted((*toolhttp.TestsAcceptedTransport)(obj))
+		writtenTestsValue = u
+	}
+	res.WrittenTests = &writtenTestsValue
 
 	return res
 }

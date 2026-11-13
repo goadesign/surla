@@ -383,6 +383,11 @@ type BuilderAssignment struct {
 	InForce bool
 	// True once you read this assignment in full with get_builder_assignment.
 	Read bool
+	// Where the test writer's tests for this build stand: not_used when no test
+	// writer is used because the project verifies with its stored evaluator;
+	// not_yet_accepted until Surla accepts the test writer's tests; accepted with
+	// the commit Surla recorded them at.
+	WrittenTests WrittenTests
 }
 
 // BuilderAssignmentList is the result type of the surla service
@@ -1194,8 +1199,10 @@ type TestWriterAssignmentList struct {
 
 // Where the test writer's assignment for one build stands.
 type TestWriterProgress struct {
-	// The tests' state: assigned, reported, needs_changes with Surla's findings,
-	// or accepted with the commit Surla recorded.
+	// The tests' state: not_used when the project verifies with its stored
+	// evaluator; otherwise assigned, reported, needs_changes with Surla's
+	// findings, accepted with the commit Surla recorded, or could_not_run with the
+	// reason and the user's step. Each verdict carries the time Surla reached it.
 	Tests Tests
 	// True once the test writer read this assignment in full with
 	// get_test_writer_assignment.
@@ -1207,11 +1214,24 @@ type TestsAccepted struct {
 	// Full commit ID Surla recorded the accepted tests at (40 or 64 lowercase hex
 	// characters).
 	Commit string
+	// When Surla's check reached this verdict.
+	CheckedAt string
 }
 
 // Surla assigned the tests for this build; the test writer has not reported
 // them finished.
 type TestsAssigned struct {
+}
+
+// Surla's check of the reported tests could not run, for a cause the test
+// writer cannot fix; the user's step makes it possible.
+type TestsCouldNotRun struct {
+	// Why the check could not run.
+	Reason string
+	// What the user does so the check can run.
+	Step string
+	// When Surla's check stopped.
+	CheckedAt string
 }
 
 // Surla checked the reported tests and found problems the test writer must fix
@@ -1220,6 +1240,17 @@ type TestsNeedChanges struct {
 	// What Surla found, one problem per item: a test that does not build or a
 	// required test that is not declared.
 	Findings []string
+	// When Surla's check reached this verdict.
+	CheckedAt string
+}
+
+// No test writer is used for this build: the project verifies with the
+// evaluator stored with surla verification set.
+type TestsNotUsed struct {
+}
+
+// Surla has not accepted the test writer's tests for this build.
+type TestsNotYetAccepted struct {
 }
 
 // The test writer reported its tests finished at this build's revision; Surla
@@ -1934,6 +1965,11 @@ type jsonBuilderAssignmentTransport struct {
 	InForce *bool `json:"in_force"`
 	// True once you read this assignment in full with get_builder_assignment.
 	Read *bool `json:"read"`
+	// Where the test writer's tests for this build stand: not_used when no test
+	// writer is used because the project verifies with its stored evaluator;
+	// not_yet_accepted until Surla accepts the test writer's tests; accepted with
+	// the commit Surla recorded them at.
+	WrittenTests *jsonWrittenTestsTransport `json:"written_tests"`
 }
 
 // validatejsonBuilderAssignmentTransport checks decoded JSON before it becomes a service value.
@@ -1952,6 +1988,26 @@ func validatejsonBuilderAssignmentTransport(value *jsonBuilderAssignmentTranspor
 	}
 	if value.Read == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("read", "body"))
+	}
+	if value.WrittenTests == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("written_tests", "body"))
+	}
+	if value.WrittenTests != nil {
+
+		if err2 := value.WrittenTests.Validate(); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		} else {
+			switch string(value.WrittenTests.Kind()) {
+			case "accepted":
+				actual, _ := value.WrittenTests.AsAccepted()
+				if actual != nil {
+					if err2 := validatejsonTestsAcceptedTransport(actual); err2 != nil {
+						err = goa.MergeErrors(err, err2)
+					}
+				}
+			}
+		}
+
 	}
 	return err
 }
@@ -3955,8 +4011,10 @@ func validatejsonTestWriterAssignmentTransport(value *jsonTestWriterAssignmentTr
 
 // jsonTestWriterProgressTransport stores JSON fields until they have been validated.
 type jsonTestWriterProgressTransport struct {
-	// The tests' state: assigned, reported, needs_changes with Surla's findings,
-	// or accepted with the commit Surla recorded.
+	// The tests' state: not_used when the project verifies with its stored
+	// evaluator; otherwise assigned, reported, needs_changes with Surla's
+	// findings, accepted with the commit Surla recorded, or could_not_run with the
+	// reason and the user's step. Each verdict carries the time Surla reached it.
 	Tests *jsonTestsTransport `json:"tests"`
 	// True once the test writer read this assignment in full with
 	// get_test_writer_assignment.
@@ -3994,6 +4052,13 @@ func validatejsonTestWriterProgressTransport(value *jsonTestWriterProgressTransp
 						err = goa.MergeErrors(err, err2)
 					}
 				}
+			case "could_not_run":
+				actual, _ := value.Tests.AsCouldNotRun()
+				if actual != nil {
+					if err2 := validatejsonTestsCouldNotRunTransport(actual); err2 != nil {
+						err = goa.MergeErrors(err, err2)
+					}
+				}
 			}
 		}
 
@@ -4006,6 +4071,8 @@ type jsonTestsAcceptedTransport struct {
 	// Full commit ID Surla recorded the accepted tests at (40 or 64 lowercase hex
 	// characters).
 	Commit *string `json:"commit"`
+	// When Surla's check reached this verdict.
+	CheckedAt *string `json:"checked_at"`
 }
 
 // validatejsonTestsAcceptedTransport checks decoded JSON before it becomes a service value.
@@ -4016,8 +4083,14 @@ func validatejsonTestsAcceptedTransport(value *jsonTestsAcceptedTransport) (err 
 	if value.Commit == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("commit", "body"))
 	}
+	if value.CheckedAt == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("checked_at", "body"))
+	}
 	if value.Commit != nil {
 		err = goa.MergeErrors(err, goa.ValidatePattern("body.commit", *value.Commit, "^([0-9a-f]{40}|[0-9a-f]{64})$"))
+	}
+	if value.CheckedAt != nil {
+		err = goa.MergeErrors(err, goa.ValidateFormat("body.checked_at", *value.CheckedAt, goa.FormatDateTime))
 	}
 	return err
 }
@@ -4035,11 +4108,59 @@ func validatejsonTestsAssignedTransport(value *jsonTestsAssignedTransport) (err 
 	return err
 }
 
+// jsonTestsCouldNotRunTransport stores JSON fields until they have been validated.
+type jsonTestsCouldNotRunTransport struct {
+	// Why the check could not run.
+	Reason *string `json:"reason"`
+	// What the user does so the check can run.
+	Step *string `json:"step"`
+	// When Surla's check stopped.
+	CheckedAt *string `json:"checked_at"`
+}
+
+// validatejsonTestsCouldNotRunTransport checks decoded JSON before it becomes a service value.
+func validatejsonTestsCouldNotRunTransport(value *jsonTestsCouldNotRunTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.Reason == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("reason", "body"))
+	}
+	if value.Step == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("step", "body"))
+	}
+	if value.CheckedAt == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("checked_at", "body"))
+	}
+	if value.Reason != nil {
+		if utf8.RuneCountInString(*value.Reason) < 1 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.reason", *value.Reason, utf8.RuneCountInString(*value.Reason), 1, true))
+		}
+		if utf8.RuneCountInString(*value.Reason) > 1024 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.reason", *value.Reason, utf8.RuneCountInString(*value.Reason), 1024, false))
+		}
+	}
+	if value.Step != nil {
+		if utf8.RuneCountInString(*value.Step) < 1 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.step", *value.Step, utf8.RuneCountInString(*value.Step), 1, true))
+		}
+		if utf8.RuneCountInString(*value.Step) > 512 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.step", *value.Step, utf8.RuneCountInString(*value.Step), 512, false))
+		}
+	}
+	if value.CheckedAt != nil {
+		err = goa.MergeErrors(err, goa.ValidateFormat("body.checked_at", *value.CheckedAt, goa.FormatDateTime))
+	}
+	return err
+}
+
 // jsonTestsNeedChangesTransport stores JSON fields until they have been validated.
 type jsonTestsNeedChangesTransport struct {
 	// What Surla found, one problem per item: a test that does not build or a
 	// required test that is not declared.
 	Findings []string `json:"findings"`
+	// When Surla's check reached this verdict.
+	CheckedAt *string `json:"checked_at"`
 }
 
 // validatejsonTestsNeedChangesTransport checks decoded JSON before it becomes a service value.
@@ -4050,9 +4171,41 @@ func validatejsonTestsNeedChangesTransport(value *jsonTestsNeedChangesTransport)
 	if value.Findings == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("findings", "body"))
 	}
+	if value.CheckedAt == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("checked_at", "body"))
+	}
 	if len(value.Findings) < 1 {
 		err = goa.MergeErrors(err, goa.InvalidLengthError("body.findings", value.Findings, len(value.Findings), 1, true))
 	}
+	if value.CheckedAt != nil {
+		err = goa.MergeErrors(err, goa.ValidateFormat("body.checked_at", *value.CheckedAt, goa.FormatDateTime))
+	}
+	return err
+}
+
+// jsonTestsNotUsedTransport stores JSON fields until they have been validated.
+type jsonTestsNotUsedTransport struct {
+}
+
+// validatejsonTestsNotUsedTransport checks decoded JSON before it becomes a service value.
+func validatejsonTestsNotUsedTransport(value *jsonTestsNotUsedTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+
+	return err
+}
+
+// jsonTestsNotYetAcceptedTransport stores JSON fields until they have been validated.
+type jsonTestsNotYetAcceptedTransport struct {
+}
+
+// validatejsonTestsNotYetAcceptedTransport checks decoded JSON before it becomes a service value.
+func validatejsonTestsNotYetAcceptedTransport(value *jsonTestsNotYetAcceptedTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+
 	return err
 }
 
@@ -4820,10 +4973,47 @@ func validateToolInputBindingItemOriginal(value *ToolInputBindingItem) (err erro
 	return err
 }
 
+// validateBuilderAssignmentOriginal checks the original typed value before JSON conversion.
+func validateBuilderAssignmentOriginal(value *BuilderAssignment) (err error) {
+	if value.WrittenTests.Kind() == "" {
+		err = goa.MergeErrors(err, goa.MissingFieldError("written_tests", "value"))
+	}
+
+	if err2 := value.WrittenTests.Validate(); err2 != nil {
+		err = goa.MergeErrors(err, err2)
+	} else {
+		switch string(value.WrittenTests.Kind()) {
+		case "accepted":
+			actual, _ := value.WrittenTests.AsAccepted()
+			if actual != nil {
+				if err2 := validateTestsAcceptedOriginal(actual); err2 != nil {
+					err = goa.MergeErrors(err, err2)
+				}
+			}
+		}
+	}
+
+	return err
+}
+
+// validateTestsAcceptedOriginal checks the original typed value before JSON conversion.
+func validateTestsAcceptedOriginal(value *TestsAccepted) (err error) {
+	err = goa.MergeErrors(err, goa.ValidatePattern("value.commit", value.Commit, "^([0-9a-f]{40}|[0-9a-f]{64})$"))
+	err = goa.MergeErrors(err, goa.ValidateFormat("value.checked_at", value.CheckedAt, goa.FormatDateTime))
+	return err
+}
+
 // validateBuilderAssignmentListOriginal checks the original typed value before JSON conversion.
 func validateBuilderAssignmentListOriginal(value *BuilderAssignmentList) (err error) {
 	if value.Assignments == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("assignments", "value"))
+	}
+	for _, e := range value.Assignments {
+		if e != nil {
+			if err2 := validateBuilderAssignmentOriginal(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
 	}
 	return err
 }
@@ -5050,6 +5240,13 @@ func validateTestWriterProgressOriginal(value *TestWriterProgress) (err error) {
 					err = goa.MergeErrors(err, err2)
 				}
 			}
+		case "could_not_run":
+			actual, _ := value.Tests.AsCouldNotRun()
+			if actual != nil {
+				if err2 := validateTestsCouldNotRunOriginal(actual); err2 != nil {
+					err = goa.MergeErrors(err, err2)
+				}
+			}
 		}
 	}
 
@@ -5064,12 +5261,25 @@ func validateTestsNeedChangesOriginal(value *TestsNeedChanges) (err error) {
 	if len(value.Findings) < 1 {
 		err = goa.MergeErrors(err, goa.InvalidLengthError("value.findings", value.Findings, len(value.Findings), 1, true))
 	}
+	err = goa.MergeErrors(err, goa.ValidateFormat("value.checked_at", value.CheckedAt, goa.FormatDateTime))
 	return err
 }
 
-// validateTestsAcceptedOriginal checks the original typed value before JSON conversion.
-func validateTestsAcceptedOriginal(value *TestsAccepted) (err error) {
-	err = goa.MergeErrors(err, goa.ValidatePattern("value.commit", value.Commit, "^([0-9a-f]{40}|[0-9a-f]{64})$"))
+// validateTestsCouldNotRunOriginal checks the original typed value before JSON conversion.
+func validateTestsCouldNotRunOriginal(value *TestsCouldNotRun) (err error) {
+	if utf8.RuneCountInString(value.Reason) < 1 {
+		err = goa.MergeErrors(err, goa.InvalidLengthError("value.reason", value.Reason, utf8.RuneCountInString(value.Reason), 1, true))
+	}
+	if utf8.RuneCountInString(value.Reason) > 1024 {
+		err = goa.MergeErrors(err, goa.InvalidLengthError("value.reason", value.Reason, utf8.RuneCountInString(value.Reason), 1024, false))
+	}
+	if utf8.RuneCountInString(value.Step) < 1 {
+		err = goa.MergeErrors(err, goa.InvalidLengthError("value.step", value.Step, utf8.RuneCountInString(value.Step), 1, true))
+	}
+	if utf8.RuneCountInString(value.Step) > 512 {
+		err = goa.MergeErrors(err, goa.InvalidLengthError("value.step", value.Step, utf8.RuneCountInString(value.Step), 512, false))
+	}
+	err = goa.MergeErrors(err, goa.ValidateFormat("value.checked_at", value.CheckedAt, goa.FormatDateTime))
 	return err
 }
 
@@ -6000,25 +6210,48 @@ func (u *jsonStateTransport) UnmarshalJSON(data []byte) error {
 // jsonTestsTransport stores exactly one selected Goa OneOf branch.
 type jsonTestsTransport struct {
 	kind         jsonTestsTransportKind
+	NotUsed      *jsonTestsNotUsedTransport
 	Assigned     *jsonTestsAssignedTransport
 	Reported     *jsonTestsReportedTransport
 	NeedsChanges *jsonTestsNeedChangesTransport
 	Accepted     *jsonTestsAcceptedTransport
+	CouldNotRun  *jsonTestsCouldNotRunTransport
 }
 
 // jsonTestsTransportKind identifies the selected branch of jsonTestsTransport.
 type jsonTestsTransportKind string
 
 const (
+	jsonTestsTransportKindNotUsed      jsonTestsTransportKind = "not_used"
 	jsonTestsTransportKindAssigned     jsonTestsTransportKind = "assigned"
 	jsonTestsTransportKindReported     jsonTestsTransportKind = "reported"
 	jsonTestsTransportKindNeedsChanges jsonTestsTransportKind = "needs_changes"
 	jsonTestsTransportKindAccepted     jsonTestsTransportKind = "accepted"
+	jsonTestsTransportKindCouldNotRun  jsonTestsTransportKind = "could_not_run"
 )
 
 // Kind returns the selected branch.
 func (u jsonTestsTransport) Kind() jsonTestsTransportKind {
 	return u.kind
+}
+
+// newjsonTestsTransportNotUsed creates jsonTestsTransport with its not_used branch selected.
+func newjsonTestsTransportNotUsed(value *jsonTestsNotUsedTransport) jsonTestsTransport {
+	return jsonTestsTransport{kind: jsonTestsTransportKindNotUsed, NotUsed: value}
+}
+
+// AsNotUsed returns the not_used branch when it is selected.
+func (u jsonTestsTransport) AsNotUsed() (_ *jsonTestsNotUsedTransport, ok bool) {
+	if u.kind != jsonTestsTransportKindNotUsed {
+		return
+	}
+	return u.NotUsed, true
+}
+
+// SetNotUsed selects the not_used branch.
+func (u *jsonTestsTransport) SetNotUsed(value *jsonTestsNotUsedTransport) {
+	u.kind = jsonTestsTransportKindNotUsed
+	u.NotUsed = value
 }
 
 // newjsonTestsTransportAssigned creates jsonTestsTransport with its assigned branch selected.
@@ -6097,9 +6330,33 @@ func (u *jsonTestsTransport) SetAccepted(value *jsonTestsAcceptedTransport) {
 	u.Accepted = value
 }
 
+// newjsonTestsTransportCouldNotRun creates jsonTestsTransport with its could_not_run branch selected.
+func newjsonTestsTransportCouldNotRun(value *jsonTestsCouldNotRunTransport) jsonTestsTransport {
+	return jsonTestsTransport{kind: jsonTestsTransportKindCouldNotRun, CouldNotRun: value}
+}
+
+// AsCouldNotRun returns the could_not_run branch when it is selected.
+func (u jsonTestsTransport) AsCouldNotRun() (_ *jsonTestsCouldNotRunTransport, ok bool) {
+	if u.kind != jsonTestsTransportKindCouldNotRun {
+		return
+	}
+	return u.CouldNotRun, true
+}
+
+// SetCouldNotRun selects the could_not_run branch.
+func (u *jsonTestsTransport) SetCouldNotRun(value *jsonTestsCouldNotRunTransport) {
+	u.kind = jsonTestsTransportKindCouldNotRun
+	u.CouldNotRun = value
+}
+
 // Validate checks that one complete branch is selected.
 func (u jsonTestsTransport) Validate() error {
 	switch u.kind {
+	case jsonTestsTransportKindNotUsed:
+		if u.NotUsed == nil {
+			return goa.MissingFieldError("value", "jsonTestsTransport")
+		}
+		return nil
 	case jsonTestsTransportKindAssigned:
 		if u.Assigned == nil {
 			return goa.MissingFieldError("value", "jsonTestsTransport")
@@ -6120,10 +6377,15 @@ func (u jsonTestsTransport) Validate() error {
 			return goa.MissingFieldError("value", "jsonTestsTransport")
 		}
 		return nil
+	case jsonTestsTransportKindCouldNotRun:
+		if u.CouldNotRun == nil {
+			return goa.MissingFieldError("value", "jsonTestsTransport")
+		}
+		return nil
 	case "":
 		return goa.MissingFieldError("state", "jsonTestsTransport")
 	default:
-		return goa.InvalidEnumValueError("state", u.kind, []any{string(jsonTestsTransportKindAssigned), string(jsonTestsTransportKindReported), string(jsonTestsTransportKindNeedsChanges), string(jsonTestsTransportKindAccepted)})
+		return goa.InvalidEnumValueError("state", u.kind, []any{string(jsonTestsTransportKindNotUsed), string(jsonTestsTransportKindAssigned), string(jsonTestsTransportKindReported), string(jsonTestsTransportKindNeedsChanges), string(jsonTestsTransportKindAccepted), string(jsonTestsTransportKindCouldNotRun)})
 	}
 }
 
@@ -6134,6 +6396,8 @@ func (u jsonTestsTransport) MarshalJSON() ([]byte, error) {
 	}
 	var value any
 	switch u.kind {
+	case jsonTestsTransportKindNotUsed:
+		value = u.NotUsed
 	case jsonTestsTransportKindAssigned:
 		value = u.Assigned
 	case jsonTestsTransportKindReported:
@@ -6142,6 +6406,8 @@ func (u jsonTestsTransport) MarshalJSON() ([]byte, error) {
 		value = u.NeedsChanges
 	case jsonTestsTransportKindAccepted:
 		value = u.Accepted
+	case jsonTestsTransportKindCouldNotRun:
+		value = u.CouldNotRun
 	default:
 		return nil, fmt.Errorf("unexpected jsonTestsTransport branch %q", u.kind)
 	}
@@ -6194,6 +6460,15 @@ func (u *jsonTestsTransport) UnmarshalJSON(data []byte) error {
 	}
 	raw.Value = value
 	switch raw.Type {
+	case string(jsonTestsTransportKindNotUsed):
+		var value *jsonTestsNotUsedTransport
+		decoder := json.NewDecoder(bytes.NewReader(raw.Value))
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&value); err != nil {
+			return err
+		}
+		u.kind = jsonTestsTransportKindNotUsed
+		u.NotUsed = value
 	case string(jsonTestsTransportKindAssigned):
 		var value *jsonTestsAssignedTransport
 		decoder := json.NewDecoder(bytes.NewReader(raw.Value))
@@ -6230,8 +6505,219 @@ func (u *jsonTestsTransport) UnmarshalJSON(data []byte) error {
 		}
 		u.kind = jsonTestsTransportKindAccepted
 		u.Accepted = value
+	case string(jsonTestsTransportKindCouldNotRun):
+		var value *jsonTestsCouldNotRunTransport
+		decoder := json.NewDecoder(bytes.NewReader(raw.Value))
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&value); err != nil {
+			return err
+		}
+		u.kind = jsonTestsTransportKindCouldNotRun
+		u.CouldNotRun = value
 	default:
-		return goa.InvalidEnumValueError("state", raw.Type, []any{string(jsonTestsTransportKindAssigned), string(jsonTestsTransportKindReported), string(jsonTestsTransportKindNeedsChanges), string(jsonTestsTransportKindAccepted)})
+		return goa.InvalidEnumValueError("state", raw.Type, []any{string(jsonTestsTransportKindNotUsed), string(jsonTestsTransportKindAssigned), string(jsonTestsTransportKindReported), string(jsonTestsTransportKindNeedsChanges), string(jsonTestsTransportKindAccepted), string(jsonTestsTransportKindCouldNotRun)})
+	}
+	return u.Validate()
+}
+
+// jsonWrittenTestsTransport stores exactly one selected Goa OneOf branch.
+type jsonWrittenTestsTransport struct {
+	kind           jsonWrittenTestsTransportKind
+	NotUsed        *jsonTestsNotUsedTransport
+	NotYetAccepted *jsonTestsNotYetAcceptedTransport
+	Accepted       *jsonTestsAcceptedTransport
+}
+
+// jsonWrittenTestsTransportKind identifies the selected branch of jsonWrittenTestsTransport.
+type jsonWrittenTestsTransportKind string
+
+const (
+	jsonWrittenTestsTransportKindNotUsed        jsonWrittenTestsTransportKind = "not_used"
+	jsonWrittenTestsTransportKindNotYetAccepted jsonWrittenTestsTransportKind = "not_yet_accepted"
+	jsonWrittenTestsTransportKindAccepted       jsonWrittenTestsTransportKind = "accepted"
+)
+
+// Kind returns the selected branch.
+func (u jsonWrittenTestsTransport) Kind() jsonWrittenTestsTransportKind {
+	return u.kind
+}
+
+// newjsonWrittenTestsTransportNotUsed creates jsonWrittenTestsTransport with its not_used branch selected.
+func newjsonWrittenTestsTransportNotUsed(value *jsonTestsNotUsedTransport) jsonWrittenTestsTransport {
+	return jsonWrittenTestsTransport{kind: jsonWrittenTestsTransportKindNotUsed, NotUsed: value}
+}
+
+// AsNotUsed returns the not_used branch when it is selected.
+func (u jsonWrittenTestsTransport) AsNotUsed() (_ *jsonTestsNotUsedTransport, ok bool) {
+	if u.kind != jsonWrittenTestsTransportKindNotUsed {
+		return
+	}
+	return u.NotUsed, true
+}
+
+// SetNotUsed selects the not_used branch.
+func (u *jsonWrittenTestsTransport) SetNotUsed(value *jsonTestsNotUsedTransport) {
+	u.kind = jsonWrittenTestsTransportKindNotUsed
+	u.NotUsed = value
+}
+
+// newjsonWrittenTestsTransportNotYetAccepted creates jsonWrittenTestsTransport with its not_yet_accepted branch selected.
+func newjsonWrittenTestsTransportNotYetAccepted(value *jsonTestsNotYetAcceptedTransport) jsonWrittenTestsTransport {
+	return jsonWrittenTestsTransport{kind: jsonWrittenTestsTransportKindNotYetAccepted, NotYetAccepted: value}
+}
+
+// AsNotYetAccepted returns the not_yet_accepted branch when it is selected.
+func (u jsonWrittenTestsTransport) AsNotYetAccepted() (_ *jsonTestsNotYetAcceptedTransport, ok bool) {
+	if u.kind != jsonWrittenTestsTransportKindNotYetAccepted {
+		return
+	}
+	return u.NotYetAccepted, true
+}
+
+// SetNotYetAccepted selects the not_yet_accepted branch.
+func (u *jsonWrittenTestsTransport) SetNotYetAccepted(value *jsonTestsNotYetAcceptedTransport) {
+	u.kind = jsonWrittenTestsTransportKindNotYetAccepted
+	u.NotYetAccepted = value
+}
+
+// newjsonWrittenTestsTransportAccepted creates jsonWrittenTestsTransport with its accepted branch selected.
+func newjsonWrittenTestsTransportAccepted(value *jsonTestsAcceptedTransport) jsonWrittenTestsTransport {
+	return jsonWrittenTestsTransport{kind: jsonWrittenTestsTransportKindAccepted, Accepted: value}
+}
+
+// AsAccepted returns the accepted branch when it is selected.
+func (u jsonWrittenTestsTransport) AsAccepted() (_ *jsonTestsAcceptedTransport, ok bool) {
+	if u.kind != jsonWrittenTestsTransportKindAccepted {
+		return
+	}
+	return u.Accepted, true
+}
+
+// SetAccepted selects the accepted branch.
+func (u *jsonWrittenTestsTransport) SetAccepted(value *jsonTestsAcceptedTransport) {
+	u.kind = jsonWrittenTestsTransportKindAccepted
+	u.Accepted = value
+}
+
+// Validate checks that one complete branch is selected.
+func (u jsonWrittenTestsTransport) Validate() error {
+	switch u.kind {
+	case jsonWrittenTestsTransportKindNotUsed:
+		if u.NotUsed == nil {
+			return goa.MissingFieldError("value", "jsonWrittenTestsTransport")
+		}
+		return nil
+	case jsonWrittenTestsTransportKindNotYetAccepted:
+		if u.NotYetAccepted == nil {
+			return goa.MissingFieldError("value", "jsonWrittenTestsTransport")
+		}
+		return nil
+	case jsonWrittenTestsTransportKindAccepted:
+		if u.Accepted == nil {
+			return goa.MissingFieldError("value", "jsonWrittenTestsTransport")
+		}
+		return nil
+	case "":
+		return goa.MissingFieldError("state", "jsonWrittenTestsTransport")
+	default:
+		return goa.InvalidEnumValueError("state", u.kind, []any{string(jsonWrittenTestsTransportKindNotUsed), string(jsonWrittenTestsTransportKindNotYetAccepted), string(jsonWrittenTestsTransportKindAccepted)})
+	}
+}
+
+// MarshalJSON writes the selected branch name and value.
+func (u jsonWrittenTestsTransport) MarshalJSON() ([]byte, error) {
+	if err := u.Validate(); err != nil {
+		return nil, err
+	}
+	var value any
+	switch u.kind {
+	case jsonWrittenTestsTransportKindNotUsed:
+		value = u.NotUsed
+	case jsonWrittenTestsTransportKindNotYetAccepted:
+		value = u.NotYetAccepted
+	case jsonWrittenTestsTransportKindAccepted:
+		value = u.Accepted
+	default:
+		return nil, fmt.Errorf("unexpected jsonWrittenTestsTransport branch %q", u.kind)
+	}
+	data, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return nil, err
+	}
+	if fields == nil {
+		return nil, goa.InvalidFieldTypeError("state", nil, "non-null JSON object")
+	}
+	if _, exists := fields["state"]; exists {
+		return nil, fmt.Errorf("jsonWrittenTestsTransport branch already contains discriminator %q", "state")
+	}
+	tag, err := json.Marshal(string(u.kind))
+	if err != nil {
+		return nil, err
+	}
+	fields["state"] = tag
+	return json.Marshal(fields)
+}
+
+// UnmarshalJSON reads one complete branch name and value.
+func (u *jsonWrittenTestsTransport) UnmarshalJSON(data []byte) error {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return err
+	}
+	tag, exists := fields["state"]
+	if !exists {
+		return goa.MissingFieldError("state", "jsonWrittenTestsTransport")
+	}
+	if bytes.Equal(bytes.TrimSpace(tag), []byte("null")) {
+		return goa.InvalidFieldTypeError("state", nil, "JSON string")
+	}
+	var raw struct {
+		Type  string
+		Value json.RawMessage
+	}
+	if err := json.Unmarshal(tag, &raw.Type); err != nil {
+		return err
+	}
+	delete(fields, "state")
+	value, err := json.Marshal(fields)
+	if err != nil {
+		return err
+	}
+	raw.Value = value
+	switch raw.Type {
+	case string(jsonWrittenTestsTransportKindNotUsed):
+		var value *jsonTestsNotUsedTransport
+		decoder := json.NewDecoder(bytes.NewReader(raw.Value))
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&value); err != nil {
+			return err
+		}
+		u.kind = jsonWrittenTestsTransportKindNotUsed
+		u.NotUsed = value
+	case string(jsonWrittenTestsTransportKindNotYetAccepted):
+		var value *jsonTestsNotYetAcceptedTransport
+		decoder := json.NewDecoder(bytes.NewReader(raw.Value))
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&value); err != nil {
+			return err
+		}
+		u.kind = jsonWrittenTestsTransportKindNotYetAccepted
+		u.NotYetAccepted = value
+	case string(jsonWrittenTestsTransportKindAccepted):
+		var value *jsonTestsAcceptedTransport
+		decoder := json.NewDecoder(bytes.NewReader(raw.Value))
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&value); err != nil {
+			return err
+		}
+		u.kind = jsonWrittenTestsTransportKindAccepted
+		u.Accepted = value
+	default:
+		return goa.InvalidEnumValueError("state", raw.Type, []any{string(jsonWrittenTestsTransportKindNotUsed), string(jsonWrittenTestsTransportKindNotYetAccepted), string(jsonWrittenTestsTransportKindAccepted)})
 	}
 	return u.Validate()
 }
@@ -6922,6 +7408,9 @@ func EncodeBuilderAssignment(in *BuilderAssignment) ([]byte, error) {
 	if err := checkBuilderAssignmentValue(in); err != nil {
 		return nil, fmt.Errorf("encode BuilderAssignment JSON: %w", err)
 	}
+	if err := validateBuilderAssignmentOriginal(in); err != nil {
+		return nil, fmt.Errorf("validate BuilderAssignment value: %w", err)
+	}
 	var body *jsonBuilderAssignmentTransport
 	{
 		body = &jsonBuilderAssignmentTransport{
@@ -6930,6 +7419,37 @@ func EncodeBuilderAssignment(in *BuilderAssignment) ([]byte, error) {
 			InForce:         &in.InForce,
 			Read:            &in.Read,
 		}
+		var writtenTestsValue jsonWrittenTestsTransport
+		switch string(in.WrittenTests.Kind()) {
+		case "not_used":
+			actual, _ := in.WrittenTests.AsNotUsed()
+			var obj *jsonTestsNotUsedTransport
+			if actual != nil {
+				obj = encodeTestsNotUsedToTestsNotUsedTransport(actual)
+			}
+			u := writtenTestsValue
+			u.SetNotUsed((*jsonTestsNotUsedTransport)(obj))
+			writtenTestsValue = u
+		case "not_yet_accepted":
+			actual, _ := in.WrittenTests.AsNotYetAccepted()
+			var obj *jsonTestsNotYetAcceptedTransport
+			if actual != nil {
+				obj = encodeTestsNotYetAcceptedToTestsNotYetAcceptedTransport(actual)
+			}
+			u := writtenTestsValue
+			u.SetNotYetAccepted((*jsonTestsNotYetAcceptedTransport)(obj))
+			writtenTestsValue = u
+		case "accepted":
+			actual, _ := in.WrittenTests.AsAccepted()
+			var obj *jsonTestsAcceptedTransport
+			if actual != nil {
+				obj = encodeTestsAcceptedToTestsAcceptedTransport(actual)
+			}
+			u := writtenTestsValue
+			u.SetAccepted((*jsonTestsAcceptedTransport)(obj))
+			writtenTestsValue = u
+		}
+		body.WrittenTests = &writtenTestsValue
 	}
 	if err := validatejsonBuilderAssignmentTransport(body); err != nil {
 		return nil, fmt.Errorf("validate BuilderAssignment JSON: %w", err)
@@ -6948,6 +7468,9 @@ func ValidateBuilderAssignmentValue(in *BuilderAssignment) error {
 	if err := checkBuilderAssignmentValue(in); err != nil {
 		return fmt.Errorf("validate BuilderAssignment value: %w", err)
 	}
+	if err := validateBuilderAssignmentOriginal(in); err != nil {
+		return fmt.Errorf("validate BuilderAssignment value: %w", err)
+	}
 
 	if in == nil {
 		return goa.MissingFieldError("result", "BuilderAssignment")
@@ -6961,6 +7484,37 @@ func ValidateBuilderAssignmentValue(in *BuilderAssignment) error {
 			InForce:         &in.InForce,
 			Read:            &in.Read,
 		}
+		var writtenTestsValue jsonWrittenTestsTransport
+		switch string(in.WrittenTests.Kind()) {
+		case "not_used":
+			actual, _ := in.WrittenTests.AsNotUsed()
+			var obj *jsonTestsNotUsedTransport
+			if actual != nil {
+				obj = encodeTestsNotUsedToTestsNotUsedTransport(actual)
+			}
+			u := writtenTestsValue
+			u.SetNotUsed((*jsonTestsNotUsedTransport)(obj))
+			writtenTestsValue = u
+		case "not_yet_accepted":
+			actual, _ := in.WrittenTests.AsNotYetAccepted()
+			var obj *jsonTestsNotYetAcceptedTransport
+			if actual != nil {
+				obj = encodeTestsNotYetAcceptedToTestsNotYetAcceptedTransport(actual)
+			}
+			u := writtenTestsValue
+			u.SetNotYetAccepted((*jsonTestsNotYetAcceptedTransport)(obj))
+			writtenTestsValue = u
+		case "accepted":
+			actual, _ := in.WrittenTests.AsAccepted()
+			var obj *jsonTestsAcceptedTransport
+			if actual != nil {
+				obj = encodeTestsAcceptedToTestsAcceptedTransport(actual)
+			}
+			u := writtenTestsValue
+			u.SetAccepted((*jsonTestsAcceptedTransport)(obj))
+			writtenTestsValue = u
+		}
+		body.WrittenTests = &writtenTestsValue
 	}
 	if err := validatejsonBuilderAssignmentTransport(body); err != nil {
 		return fmt.Errorf("validate BuilderAssignment value: %w", err)
@@ -6998,6 +7552,35 @@ func DecodeBuilderAssignment(data []byte) (out *BuilderAssignment, err error) {
 			RequestRevision: *body.RequestRevision,
 			InForce:         *body.InForce,
 			Read:            *body.Read,
+		}
+		switch string(body.WrittenTests.Kind()) {
+		case "not_used":
+			actual, _ := body.WrittenTests.AsNotUsed()
+			var obj *TestsNotUsed
+			if actual != nil {
+				obj = decodeTestsNotUsedTransportToTestsNotUsed(actual)
+			}
+			u := out.WrittenTests
+			u.SetNotUsed((*TestsNotUsed)(obj))
+			out.WrittenTests = u
+		case "not_yet_accepted":
+			actual, _ := body.WrittenTests.AsNotYetAccepted()
+			var obj *TestsNotYetAccepted
+			if actual != nil {
+				obj = decodeTestsNotYetAcceptedTransportToTestsNotYetAccepted(actual)
+			}
+			u := out.WrittenTests
+			u.SetNotYetAccepted((*TestsNotYetAccepted)(obj))
+			out.WrittenTests = u
+		case "accepted":
+			actual, _ := body.WrittenTests.AsAccepted()
+			var obj *TestsAccepted
+			if actual != nil {
+				obj = decodeTestsAcceptedTransportToTestsAccepted(actual)
+			}
+			u := out.WrittenTests
+			u.SetAccepted((*TestsAccepted)(obj))
+			out.WrittenTests = u
 		}
 	}
 	return out, nil
@@ -12431,6 +13014,15 @@ func EncodeTestWriterProgress(in *TestWriterProgress) ([]byte, error) {
 		}
 		var testsValue jsonTestsTransport
 		switch string(in.Tests.Kind()) {
+		case "not_used":
+			actual, _ := in.Tests.AsNotUsed()
+			var obj *jsonTestsNotUsedTransport
+			if actual != nil {
+				obj = encodeTestsNotUsedToTestsNotUsedTransport(actual)
+			}
+			u := testsValue
+			u.SetNotUsed((*jsonTestsNotUsedTransport)(obj))
+			testsValue = u
 		case "assigned":
 			actual, _ := in.Tests.AsAssigned()
 			var obj *jsonTestsAssignedTransport
@@ -12466,6 +13058,15 @@ func EncodeTestWriterProgress(in *TestWriterProgress) ([]byte, error) {
 			}
 			u := testsValue
 			u.SetAccepted((*jsonTestsAcceptedTransport)(obj))
+			testsValue = u
+		case "could_not_run":
+			actual, _ := in.Tests.AsCouldNotRun()
+			var obj *jsonTestsCouldNotRunTransport
+			if actual != nil {
+				obj = encodeTestsCouldNotRunToTestsCouldNotRunTransport(actual)
+			}
+			u := testsValue
+			u.SetCouldNotRun((*jsonTestsCouldNotRunTransport)(obj))
 			testsValue = u
 		}
 		body.Tests = &testsValue
@@ -12502,6 +13103,15 @@ func ValidateTestWriterProgressValue(in *TestWriterProgress) error {
 		}
 		var testsValue jsonTestsTransport
 		switch string(in.Tests.Kind()) {
+		case "not_used":
+			actual, _ := in.Tests.AsNotUsed()
+			var obj *jsonTestsNotUsedTransport
+			if actual != nil {
+				obj = encodeTestsNotUsedToTestsNotUsedTransport(actual)
+			}
+			u := testsValue
+			u.SetNotUsed((*jsonTestsNotUsedTransport)(obj))
+			testsValue = u
 		case "assigned":
 			actual, _ := in.Tests.AsAssigned()
 			var obj *jsonTestsAssignedTransport
@@ -12537,6 +13147,15 @@ func ValidateTestWriterProgressValue(in *TestWriterProgress) error {
 			}
 			u := testsValue
 			u.SetAccepted((*jsonTestsAcceptedTransport)(obj))
+			testsValue = u
+		case "could_not_run":
+			actual, _ := in.Tests.AsCouldNotRun()
+			var obj *jsonTestsCouldNotRunTransport
+			if actual != nil {
+				obj = encodeTestsCouldNotRunToTestsCouldNotRunTransport(actual)
+			}
+			u := testsValue
+			u.SetCouldNotRun((*jsonTestsCouldNotRunTransport)(obj))
 			testsValue = u
 		}
 		body.Tests = &testsValue
@@ -12576,6 +13195,15 @@ func DecodeTestWriterProgress(data []byte) (out *TestWriterProgress, err error) 
 			Read: *body.Read,
 		}
 		switch string(body.Tests.Kind()) {
+		case "not_used":
+			actual, _ := body.Tests.AsNotUsed()
+			var obj *TestsNotUsed
+			if actual != nil {
+				obj = decodeTestsNotUsedTransportToTestsNotUsed(actual)
+			}
+			u := out.Tests
+			u.SetNotUsed((*TestsNotUsed)(obj))
+			out.Tests = u
 		case "assigned":
 			actual, _ := body.Tests.AsAssigned()
 			var obj *TestsAssigned
@@ -12612,6 +13240,15 @@ func DecodeTestWriterProgress(data []byte) (out *TestWriterProgress, err error) 
 			u := out.Tests
 			u.SetAccepted((*TestsAccepted)(obj))
 			out.Tests = u
+		case "could_not_run":
+			actual, _ := body.Tests.AsCouldNotRun()
+			var obj *TestsCouldNotRun
+			if actual != nil {
+				obj = decodeTestsCouldNotRunTransportToTestsCouldNotRun(actual)
+			}
+			u := out.Tests
+			u.SetCouldNotRun((*TestsCouldNotRun)(obj))
+			out.Tests = u
 		}
 	}
 	return out, nil
@@ -12628,7 +13265,8 @@ func EncodeTestsAccepted(in *TestsAccepted) ([]byte, error) {
 	var body *jsonTestsAcceptedTransport
 	{
 		body = &jsonTestsAcceptedTransport{
-			Commit: &in.Commit,
+			Commit:    &in.Commit,
+			CheckedAt: &in.CheckedAt,
 		}
 	}
 	if err := validatejsonTestsAcceptedTransport(body); err != nil {
@@ -12659,7 +13297,8 @@ func ValidateTestsAcceptedValue(in *TestsAccepted) error {
 	var body *jsonTestsAcceptedTransport
 	{
 		body = &jsonTestsAcceptedTransport{
-			Commit: &in.Commit,
+			Commit:    &in.Commit,
+			CheckedAt: &in.CheckedAt,
 		}
 	}
 	if err := validatejsonTestsAcceptedTransport(body); err != nil {
@@ -12674,7 +13313,7 @@ func DecodeTestsAccepted(data []byte) (out *TestsAccepted, err error) {
 	if err != nil {
 		return out, fmt.Errorf("decode TestsAccepted JSON: %w", err)
 	}
-	if err := validateChangeBuildJSONValue10("", root, ""); err != nil {
+	if err := validateBuilderAssignmentJSONValue5("", root, ""); err != nil {
 		return out, fmt.Errorf("decode TestsAccepted JSON: %w", err)
 	}
 	var body *jsonTestsAcceptedTransport
@@ -12694,7 +13333,8 @@ func DecodeTestsAccepted(data []byte) (out *TestsAccepted, err error) {
 	}
 	{
 		out = &TestsAccepted{
-			Commit: *body.Commit,
+			Commit:    *body.Commit,
+			CheckedAt: *body.CheckedAt,
 		}
 	}
 	return out, nil
@@ -12771,6 +13411,95 @@ func DecodeTestsAssigned(data []byte) (out *TestsAssigned, err error) {
 	return out, nil
 }
 
+// EncodeTestsCouldNotRun turns a service value into JSON using the field names in the Goa design.
+func EncodeTestsCouldNotRun(in *TestsCouldNotRun) ([]byte, error) {
+	if err := checkTestsCouldNotRunValue(in); err != nil {
+		return nil, fmt.Errorf("encode TestsCouldNotRun JSON: %w", err)
+	}
+	if err := validateTestsCouldNotRunOriginal(in); err != nil {
+		return nil, fmt.Errorf("validate TestsCouldNotRun value: %w", err)
+	}
+	var body *jsonTestsCouldNotRunTransport
+	{
+		body = &jsonTestsCouldNotRunTransport{
+			Reason:    &in.Reason,
+			Step:      &in.Step,
+			CheckedAt: &in.CheckedAt,
+		}
+	}
+	if err := validatejsonTestsCouldNotRunTransport(body); err != nil {
+		return nil, fmt.Errorf("validate TestsCouldNotRun JSON: %w", err)
+	}
+	data, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("encode TestsCouldNotRun JSON: %w", err)
+	}
+	return data, nil
+}
+
+// ValidateTestsCouldNotRunValue checks the original Go fields against their declared constraints.
+// It returns validation errors without encoding the value as JSON.
+
+func ValidateTestsCouldNotRunValue(in *TestsCouldNotRun) error {
+	if err := checkTestsCouldNotRunValue(in); err != nil {
+		return fmt.Errorf("validate TestsCouldNotRun value: %w", err)
+	}
+	if err := validateTestsCouldNotRunOriginal(in); err != nil {
+		return fmt.Errorf("validate TestsCouldNotRun value: %w", err)
+	}
+
+	if in == nil {
+		return goa.MissingFieldError("result", "TestsCouldNotRun")
+	}
+
+	var body *jsonTestsCouldNotRunTransport
+	{
+		body = &jsonTestsCouldNotRunTransport{
+			Reason:    &in.Reason,
+			Step:      &in.Step,
+			CheckedAt: &in.CheckedAt,
+		}
+	}
+	if err := validatejsonTestsCouldNotRunTransport(body); err != nil {
+		return fmt.Errorf("validate TestsCouldNotRun value: %w", err)
+	}
+	return nil
+}
+
+// DecodeTestsCouldNotRun checks JSON field names from the Goa design and returns a service value.
+func DecodeTestsCouldNotRun(data []byte) (out *TestsCouldNotRun, err error) {
+	root, err := readStrictJSON(data)
+	if err != nil {
+		return out, fmt.Errorf("decode TestsCouldNotRun JSON: %w", err)
+	}
+	if err := validateChangeBuildJSONValue10("", root, ""); err != nil {
+		return out, fmt.Errorf("decode TestsCouldNotRun JSON: %w", err)
+	}
+	var body *jsonTestsCouldNotRunTransport
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&body); err != nil {
+		return out, fmt.Errorf("decode TestsCouldNotRun JSON: %w", err)
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		if err == nil {
+			return out, fmt.Errorf("decode TestsCouldNotRun JSON: multiple JSON values")
+		}
+		return out, fmt.Errorf("decode TestsCouldNotRun JSON after first value: %w", err)
+	}
+	if err := validatejsonTestsCouldNotRunTransport(body); err != nil {
+		return out, fmt.Errorf("validate TestsCouldNotRun JSON: %w", err)
+	}
+	{
+		out = &TestsCouldNotRun{
+			Reason:    *body.Reason,
+			Step:      *body.Step,
+			CheckedAt: *body.CheckedAt,
+		}
+	}
+	return out, nil
+}
+
 // EncodeTestsNeedChanges turns a service value into JSON using the field names in the Goa design.
 func EncodeTestsNeedChanges(in *TestsNeedChanges) ([]byte, error) {
 	if err := checkTestsNeedChangesValue(in); err != nil {
@@ -12781,7 +13510,9 @@ func EncodeTestsNeedChanges(in *TestsNeedChanges) ([]byte, error) {
 	}
 	var body *jsonTestsNeedChangesTransport
 	{
-		body = &jsonTestsNeedChangesTransport{}
+		body = &jsonTestsNeedChangesTransport{
+			CheckedAt: &in.CheckedAt,
+		}
 		body.Findings = make([]string, len(in.Findings))
 		for i, val := range in.Findings {
 			body.Findings[i] = val
@@ -12814,7 +13545,9 @@ func ValidateTestsNeedChangesValue(in *TestsNeedChanges) error {
 
 	var body *jsonTestsNeedChangesTransport
 	{
-		body = &jsonTestsNeedChangesTransport{}
+		body = &jsonTestsNeedChangesTransport{
+			CheckedAt: &in.CheckedAt,
+		}
 		body.Findings = make([]string, len(in.Findings))
 		for i, val := range in.Findings {
 			body.Findings[i] = val
@@ -12851,11 +13584,155 @@ func DecodeTestsNeedChanges(data []byte) (out *TestsNeedChanges, err error) {
 		return out, fmt.Errorf("validate TestsNeedChanges JSON: %w", err)
 	}
 	{
-		out = &TestsNeedChanges{}
+		out = &TestsNeedChanges{
+			CheckedAt: *body.CheckedAt,
+		}
 		out.Findings = make([]string, len(body.Findings))
 		for i, val := range body.Findings {
 			out.Findings[i] = val
 		}
+	}
+	return out, nil
+}
+
+// EncodeTestsNotUsed turns a service value into JSON using the field names in the Goa design.
+func EncodeTestsNotUsed(in *TestsNotUsed) ([]byte, error) {
+	if err := checkTestsNotUsedValue(in); err != nil {
+		return nil, fmt.Errorf("encode TestsNotUsed JSON: %w", err)
+	}
+	var body *jsonTestsNotUsedTransport
+	{
+		body = &jsonTestsNotUsedTransport{}
+	}
+	if err := validatejsonTestsNotUsedTransport(body); err != nil {
+		return nil, fmt.Errorf("validate TestsNotUsed JSON: %w", err)
+	}
+	data, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("encode TestsNotUsed JSON: %w", err)
+	}
+	return data, nil
+}
+
+// ValidateTestsNotUsedValue checks the original Go fields against their declared constraints.
+// It returns validation errors without encoding the value as JSON.
+
+func ValidateTestsNotUsedValue(in *TestsNotUsed) error {
+	if err := checkTestsNotUsedValue(in); err != nil {
+		return fmt.Errorf("validate TestsNotUsed value: %w", err)
+	}
+
+	if in == nil {
+		return goa.MissingFieldError("result", "TestsNotUsed")
+	}
+
+	var body *jsonTestsNotUsedTransport
+	{
+		body = &jsonTestsNotUsedTransport{}
+	}
+	if err := validatejsonTestsNotUsedTransport(body); err != nil {
+		return fmt.Errorf("validate TestsNotUsed value: %w", err)
+	}
+	return nil
+}
+
+// DecodeTestsNotUsed checks JSON field names from the Goa design and returns a service value.
+func DecodeTestsNotUsed(data []byte) (out *TestsNotUsed, err error) {
+	root, err := readStrictJSON(data)
+	if err != nil {
+		return out, fmt.Errorf("decode TestsNotUsed JSON: %w", err)
+	}
+	if err := validateBuilderAssignmentJSONValue3("", root, ""); err != nil {
+		return out, fmt.Errorf("decode TestsNotUsed JSON: %w", err)
+	}
+	var body *jsonTestsNotUsedTransport
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&body); err != nil {
+		return out, fmt.Errorf("decode TestsNotUsed JSON: %w", err)
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		if err == nil {
+			return out, fmt.Errorf("decode TestsNotUsed JSON: multiple JSON values")
+		}
+		return out, fmt.Errorf("decode TestsNotUsed JSON after first value: %w", err)
+	}
+	if err := validatejsonTestsNotUsedTransport(body); err != nil {
+		return out, fmt.Errorf("validate TestsNotUsed JSON: %w", err)
+	}
+	{
+		out = &TestsNotUsed{}
+	}
+	return out, nil
+}
+
+// EncodeTestsNotYetAccepted turns a service value into JSON using the field names in the Goa design.
+func EncodeTestsNotYetAccepted(in *TestsNotYetAccepted) ([]byte, error) {
+	if err := checkTestsNotYetAcceptedValue(in); err != nil {
+		return nil, fmt.Errorf("encode TestsNotYetAccepted JSON: %w", err)
+	}
+	var body *jsonTestsNotYetAcceptedTransport
+	{
+		body = &jsonTestsNotYetAcceptedTransport{}
+	}
+	if err := validatejsonTestsNotYetAcceptedTransport(body); err != nil {
+		return nil, fmt.Errorf("validate TestsNotYetAccepted JSON: %w", err)
+	}
+	data, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("encode TestsNotYetAccepted JSON: %w", err)
+	}
+	return data, nil
+}
+
+// ValidateTestsNotYetAcceptedValue checks the original Go fields against their declared constraints.
+// It returns validation errors without encoding the value as JSON.
+
+func ValidateTestsNotYetAcceptedValue(in *TestsNotYetAccepted) error {
+	if err := checkTestsNotYetAcceptedValue(in); err != nil {
+		return fmt.Errorf("validate TestsNotYetAccepted value: %w", err)
+	}
+
+	if in == nil {
+		return goa.MissingFieldError("result", "TestsNotYetAccepted")
+	}
+
+	var body *jsonTestsNotYetAcceptedTransport
+	{
+		body = &jsonTestsNotYetAcceptedTransport{}
+	}
+	if err := validatejsonTestsNotYetAcceptedTransport(body); err != nil {
+		return fmt.Errorf("validate TestsNotYetAccepted value: %w", err)
+	}
+	return nil
+}
+
+// DecodeTestsNotYetAccepted checks JSON field names from the Goa design and returns a service value.
+func DecodeTestsNotYetAccepted(data []byte) (out *TestsNotYetAccepted, err error) {
+	root, err := readStrictJSON(data)
+	if err != nil {
+		return out, fmt.Errorf("decode TestsNotYetAccepted JSON: %w", err)
+	}
+	if err := validateBuilderAssignmentJSONValue4("", root, ""); err != nil {
+		return out, fmt.Errorf("decode TestsNotYetAccepted JSON: %w", err)
+	}
+	var body *jsonTestsNotYetAcceptedTransport
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&body); err != nil {
+		return out, fmt.Errorf("decode TestsNotYetAccepted JSON: %w", err)
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		if err == nil {
+			return out, fmt.Errorf("decode TestsNotYetAccepted JSON: multiple JSON values")
+		}
+		return out, fmt.Errorf("decode TestsNotYetAccepted JSON after first value: %w", err)
+	}
+	if err := validatejsonTestsNotYetAcceptedTransport(body); err != nil {
+		return out, fmt.Errorf("validate TestsNotYetAccepted JSON: %w", err)
+	}
+	{
+		out = &TestsNotYetAccepted{}
 	}
 	return out, nil
 }
@@ -14676,6 +15553,35 @@ func decodeBuilderAssignmentTransportToBuilderAssignment(v *jsonBuilderAssignmen
 		InForce:         *v.InForce,
 		Read:            *v.Read,
 	}
+	switch string(v.WrittenTests.Kind()) {
+	case "not_used":
+		actual, _ := v.WrittenTests.AsNotUsed()
+		var obj *TestsNotUsed
+		if actual != nil {
+			obj = decodeTestsNotUsedTransportToTestsNotUsed(actual)
+		}
+		u := res.WrittenTests
+		u.SetNotUsed((*TestsNotUsed)(obj))
+		res.WrittenTests = u
+	case "not_yet_accepted":
+		actual, _ := v.WrittenTests.AsNotYetAccepted()
+		var obj *TestsNotYetAccepted
+		if actual != nil {
+			obj = decodeTestsNotYetAcceptedTransportToTestsNotYetAccepted(actual)
+		}
+		u := res.WrittenTests
+		u.SetNotYetAccepted((*TestsNotYetAccepted)(obj))
+		res.WrittenTests = u
+	case "accepted":
+		actual, _ := v.WrittenTests.AsAccepted()
+		var obj *TestsAccepted
+		if actual != nil {
+			obj = decodeTestsAcceptedTransportToTestsAccepted(actual)
+		}
+		u := res.WrittenTests
+		u.SetAccepted((*TestsAccepted)(obj))
+		res.WrittenTests = u
+	}
 
 	return res
 }
@@ -15008,6 +15914,15 @@ func decodeTestWriterProgressTransportToTestWriterProgress(v *jsonTestWriterProg
 		Read: *v.Read,
 	}
 	switch string(v.Tests.Kind()) {
+	case "not_used":
+		actual, _ := v.Tests.AsNotUsed()
+		var obj *TestsNotUsed
+		if actual != nil {
+			obj = decodeTestsNotUsedTransportToTestsNotUsed(actual)
+		}
+		u := res.Tests
+		u.SetNotUsed((*TestsNotUsed)(obj))
+		res.Tests = u
 	case "assigned":
 		actual, _ := v.Tests.AsAssigned()
 		var obj *TestsAssigned
@@ -15044,6 +15959,15 @@ func decodeTestWriterProgressTransportToTestWriterProgress(v *jsonTestWriterProg
 		u := res.Tests
 		u.SetAccepted((*TestsAccepted)(obj))
 		res.Tests = u
+	case "could_not_run":
+		actual, _ := v.Tests.AsCouldNotRun()
+		var obj *TestsCouldNotRun
+		if actual != nil {
+			obj = decodeTestsCouldNotRunTransportToTestsCouldNotRun(actual)
+		}
+		u := res.Tests
+		u.SetCouldNotRun((*TestsCouldNotRun)(obj))
+		res.Tests = u
 	}
 
 	return res
@@ -15051,7 +15975,8 @@ func decodeTestWriterProgressTransportToTestWriterProgress(v *jsonTestWriterProg
 
 func decodeTestsAcceptedTransportToTestsAccepted(v *jsonTestsAcceptedTransport) *TestsAccepted {
 	res := &TestsAccepted{
-		Commit: *v.Commit,
+		Commit:    *v.Commit,
+		CheckedAt: *v.CheckedAt,
 	}
 
 	return res
@@ -15063,12 +15988,36 @@ func decodeTestsAssignedTransportToTestsAssigned(v *jsonTestsAssignedTransport) 
 	return res
 }
 
+func decodeTestsCouldNotRunTransportToTestsCouldNotRun(v *jsonTestsCouldNotRunTransport) *TestsCouldNotRun {
+	res := &TestsCouldNotRun{
+		Reason:    *v.Reason,
+		Step:      *v.Step,
+		CheckedAt: *v.CheckedAt,
+	}
+
+	return res
+}
+
 func decodeTestsNeedChangesTransportToTestsNeedChanges(v *jsonTestsNeedChangesTransport) *TestsNeedChanges {
-	res := &TestsNeedChanges{}
+	res := &TestsNeedChanges{
+		CheckedAt: *v.CheckedAt,
+	}
 	res.Findings = make([]string, len(v.Findings))
 	for i, val := range v.Findings {
 		res.Findings[i] = val
 	}
+
+	return res
+}
+
+func decodeTestsNotUsedTransportToTestsNotUsed(v *jsonTestsNotUsedTransport) *TestsNotUsed {
+	res := &TestsNotUsed{}
+
+	return res
+}
+
+func decodeTestsNotYetAcceptedTransportToTestsNotYetAccepted(v *jsonTestsNotYetAcceptedTransport) *TestsNotYetAccepted {
+	res := &TestsNotYetAccepted{}
 
 	return res
 }
@@ -15359,6 +16308,37 @@ func encodeBuilderAssignmentToBuilderAssignmentTransport(v *BuilderAssignment) *
 		InForce:         &v.InForce,
 		Read:            &v.Read,
 	}
+	var writtenTestsValue jsonWrittenTestsTransport
+	switch string(v.WrittenTests.Kind()) {
+	case "not_used":
+		actual, _ := v.WrittenTests.AsNotUsed()
+		var obj *jsonTestsNotUsedTransport
+		if actual != nil {
+			obj = encodeTestsNotUsedToTestsNotUsedTransport(actual)
+		}
+		u := writtenTestsValue
+		u.SetNotUsed((*jsonTestsNotUsedTransport)(obj))
+		writtenTestsValue = u
+	case "not_yet_accepted":
+		actual, _ := v.WrittenTests.AsNotYetAccepted()
+		var obj *jsonTestsNotYetAcceptedTransport
+		if actual != nil {
+			obj = encodeTestsNotYetAcceptedToTestsNotYetAcceptedTransport(actual)
+		}
+		u := writtenTestsValue
+		u.SetNotYetAccepted((*jsonTestsNotYetAcceptedTransport)(obj))
+		writtenTestsValue = u
+	case "accepted":
+		actual, _ := v.WrittenTests.AsAccepted()
+		var obj *jsonTestsAcceptedTransport
+		if actual != nil {
+			obj = encodeTestsAcceptedToTestsAcceptedTransport(actual)
+		}
+		u := writtenTestsValue
+		u.SetAccepted((*jsonTestsAcceptedTransport)(obj))
+		writtenTestsValue = u
+	}
+	res.WrittenTests = &writtenTestsValue
 
 	return res
 }
@@ -15712,6 +16692,15 @@ func encodeTestWriterProgressToTestWriterProgressTransport(v *TestWriterProgress
 	}
 	var testsValue jsonTestsTransport
 	switch string(v.Tests.Kind()) {
+	case "not_used":
+		actual, _ := v.Tests.AsNotUsed()
+		var obj *jsonTestsNotUsedTransport
+		if actual != nil {
+			obj = encodeTestsNotUsedToTestsNotUsedTransport(actual)
+		}
+		u := testsValue
+		u.SetNotUsed((*jsonTestsNotUsedTransport)(obj))
+		testsValue = u
 	case "assigned":
 		actual, _ := v.Tests.AsAssigned()
 		var obj *jsonTestsAssignedTransport
@@ -15747,6 +16736,15 @@ func encodeTestWriterProgressToTestWriterProgressTransport(v *TestWriterProgress
 		}
 		u := testsValue
 		u.SetAccepted((*jsonTestsAcceptedTransport)(obj))
+		testsValue = u
+	case "could_not_run":
+		actual, _ := v.Tests.AsCouldNotRun()
+		var obj *jsonTestsCouldNotRunTransport
+		if actual != nil {
+			obj = encodeTestsCouldNotRunToTestsCouldNotRunTransport(actual)
+		}
+		u := testsValue
+		u.SetCouldNotRun((*jsonTestsCouldNotRunTransport)(obj))
 		testsValue = u
 	}
 	res.Tests = &testsValue
@@ -15760,6 +16758,15 @@ func encodeTestWriterProgressToTestWriterProgressTransport2(v *TestWriterProgres
 	}
 	var testsValue jsonTestsTransport
 	switch string(v.Tests.Kind()) {
+	case "not_used":
+		actual, _ := v.Tests.AsNotUsed()
+		var obj *jsonTestsNotUsedTransport
+		if actual != nil {
+			obj = encodeTestsNotUsedToTestsNotUsedTransport(actual)
+		}
+		u := testsValue
+		u.SetNotUsed((*jsonTestsNotUsedTransport)(obj))
+		testsValue = u
 	case "assigned":
 		actual, _ := v.Tests.AsAssigned()
 		var obj *jsonTestsAssignedTransport
@@ -15795,6 +16802,15 @@ func encodeTestWriterProgressToTestWriterProgressTransport2(v *TestWriterProgres
 		}
 		u := testsValue
 		u.SetAccepted((*jsonTestsAcceptedTransport)(obj))
+		testsValue = u
+	case "could_not_run":
+		actual, _ := v.Tests.AsCouldNotRun()
+		var obj *jsonTestsCouldNotRunTransport
+		if actual != nil {
+			obj = encodeTestsCouldNotRunToTestsCouldNotRunTransport(actual)
+		}
+		u := testsValue
+		u.SetCouldNotRun((*jsonTestsCouldNotRunTransport)(obj))
 		testsValue = u
 	}
 	res.Tests = &testsValue
@@ -15808,6 +16824,15 @@ func encodeTestWriterProgressToTestWriterProgressTransport3(v *TestWriterProgres
 	}
 	var testsValue jsonTestsTransport
 	switch string(v.Tests.Kind()) {
+	case "not_used":
+		actual, _ := v.Tests.AsNotUsed()
+		var obj *jsonTestsNotUsedTransport
+		if actual != nil {
+			obj = encodeTestsNotUsedToTestsNotUsedTransport(actual)
+		}
+		u := testsValue
+		u.SetNotUsed((*jsonTestsNotUsedTransport)(obj))
+		testsValue = u
 	case "assigned":
 		actual, _ := v.Tests.AsAssigned()
 		var obj *jsonTestsAssignedTransport
@@ -15844,6 +16869,15 @@ func encodeTestWriterProgressToTestWriterProgressTransport3(v *TestWriterProgres
 		u := testsValue
 		u.SetAccepted((*jsonTestsAcceptedTransport)(obj))
 		testsValue = u
+	case "could_not_run":
+		actual, _ := v.Tests.AsCouldNotRun()
+		var obj *jsonTestsCouldNotRunTransport
+		if actual != nil {
+			obj = encodeTestsCouldNotRunToTestsCouldNotRunTransport(actual)
+		}
+		u := testsValue
+		u.SetCouldNotRun((*jsonTestsCouldNotRunTransport)(obj))
+		testsValue = u
 	}
 	res.Tests = &testsValue
 
@@ -15852,7 +16886,8 @@ func encodeTestWriterProgressToTestWriterProgressTransport3(v *TestWriterProgres
 
 func encodeTestsAcceptedToTestsAcceptedTransport(v *TestsAccepted) *jsonTestsAcceptedTransport {
 	res := &jsonTestsAcceptedTransport{
-		Commit: &v.Commit,
+		Commit:    &v.Commit,
+		CheckedAt: &v.CheckedAt,
 	}
 
 	return res
@@ -15864,12 +16899,36 @@ func encodeTestsAssignedToTestsAssignedTransport(v *TestsAssigned) *jsonTestsAss
 	return res
 }
 
+func encodeTestsCouldNotRunToTestsCouldNotRunTransport(v *TestsCouldNotRun) *jsonTestsCouldNotRunTransport {
+	res := &jsonTestsCouldNotRunTransport{
+		Reason:    &v.Reason,
+		Step:      &v.Step,
+		CheckedAt: &v.CheckedAt,
+	}
+
+	return res
+}
+
 func encodeTestsNeedChangesToTestsNeedChangesTransport(v *TestsNeedChanges) *jsonTestsNeedChangesTransport {
-	res := &jsonTestsNeedChangesTransport{}
+	res := &jsonTestsNeedChangesTransport{
+		CheckedAt: &v.CheckedAt,
+	}
 	res.Findings = make([]string, len(v.Findings))
 	for i, val := range v.Findings {
 		res.Findings[i] = val
 	}
+
+	return res
+}
+
+func encodeTestsNotUsedToTestsNotUsedTransport(v *TestsNotUsed) *jsonTestsNotUsedTransport {
+	res := &jsonTestsNotUsedTransport{}
+
+	return res
+}
+
+func encodeTestsNotYetAcceptedToTestsNotYetAcceptedTransport(v *TestsNotYetAccepted) *jsonTestsNotYetAcceptedTransport {
+	res := &jsonTestsNotYetAcceptedTransport{}
 
 	return res
 }
@@ -17111,12 +18170,153 @@ func validateBuilderAssignmentJSONValue(path string, value any, description stri
 			); err != nil {
 				return err
 			}
+		case "written_tests":
+			if err := validateBuilderAssignmentJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Where the test writer's tests for this build stand: not_used when no test writer is used because the project verifies with its stored evaluator; not_yet_accepted until Surla accepts the test writer's tests; accepted with the commit Surla recorded them at.",
+			); err != nil {
+				return err
+			}
 		default:
 			return unknownJSONFieldError(path, key, []string{
 				"change_id",
 				"in_force",
 				"read",
 				"request_revision",
+				"written_tests",
+			})
+		}
+	}
+	return nil
+}
+
+// validateBuilderAssignmentJSONValue2 checks one value whose JSON shape is fixed by the generated Goa type.
+func validateBuilderAssignmentJSONValue2(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	discriminator, ok := typed["state"].(string)
+	if !ok {
+		return fmt.Errorf("%s: missing or invalid union discriminator", field)
+	}
+	branch := make(map[string]any, len(typed)-1)
+	for key, item := range typed {
+		if key != "state" {
+			branch[key] = item
+		}
+	}
+	switch discriminator {
+	case "not_used":
+		return validateBuilderAssignmentJSONValue3(path, branch, "")
+	case "not_yet_accepted":
+		return validateBuilderAssignmentJSONValue4(path, branch, "")
+	case "accepted":
+		return validateBuilderAssignmentJSONValue5(path, branch, "")
+	default:
+		return fmt.Errorf("%s: unknown union discriminator %q", field, discriminator)
+	}
+}
+
+// validateBuilderAssignmentJSONValue3 checks one value whose JSON shape is fixed by the generated Goa type.
+func validateBuilderAssignmentJSONValue3(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		default:
+			return unknownJSONFieldError(path, key, []string{})
+		}
+	}
+	return nil
+}
+
+// validateBuilderAssignmentJSONValue4 checks one value whose JSON shape is fixed by the generated Goa type.
+func validateBuilderAssignmentJSONValue4(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		default:
+			return unknownJSONFieldError(path, key, []string{})
+		}
+	}
+	return nil
+}
+
+// validateBuilderAssignmentJSONValue5 checks one value whose JSON shape is fixed by the generated Goa type.
+func validateBuilderAssignmentJSONValue5(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "checked_at":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "When Surla's check reached this verdict.",
+			); err != nil {
+				return err
+			}
+		case "commit":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Full commit ID Surla recorded the accepted tests at (40 or 64 lowercase hex characters).",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"checked_at",
+				"commit",
 			})
 		}
 	}
@@ -18207,7 +19407,7 @@ func validateChangeBuildJSONValue4(path string, value any, description string) e
 		case "tests":
 			if err := validateChangeBuildJSONValue5(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "The tests' state: assigned, reported, needs_changes with Surla's findings, or accepted with the commit Surla recorded.",
+				typed[key], "The tests' state: not_used when the project verifies with its stored evaluator; otherwise assigned, reported, needs_changes with Surla's findings, accepted with the commit Surla recorded, or could_not_run with the reason and the user's step. Each verdict carries the time Surla reached it.",
 			); err != nil {
 				return err
 			}
@@ -18245,6 +19445,8 @@ func validateChangeBuildJSONValue5(path string, value any, description string) e
 		}
 	}
 	switch discriminator {
+	case "not_used":
+		return validateBuilderAssignmentJSONValue3(path, branch, "")
 	case "assigned":
 		return validateChangeBuildJSONValue6(path, branch, "")
 	case "reported":
@@ -18252,6 +19454,8 @@ func validateChangeBuildJSONValue5(path string, value any, description string) e
 	case "needs_changes":
 		return validateChangeBuildJSONValue8(path, branch, "")
 	case "accepted":
+		return validateBuilderAssignmentJSONValue5(path, branch, "")
+	case "could_not_run":
 		return validateChangeBuildJSONValue10(path, branch, "")
 	default:
 		return fmt.Errorf("%s: unknown union discriminator %q", field, discriminator)
@@ -18332,6 +19536,13 @@ func validateChangeBuildJSONValue8(path string, value any, description string) e
 	sort.Strings(keys)
 	for _, key := range keys {
 		switch key {
+		case "checked_at":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "When Surla's check reached this verdict.",
+			); err != nil {
+				return err
+			}
 		case "findings":
 			if err := validateChangeBuildJSONValue9(
 				generatedJSONChildPath(path, key, false),
@@ -18341,6 +19552,7 @@ func validateChangeBuildJSONValue8(path string, value any, description string) e
 			}
 		default:
 			return unknownJSONFieldError(path, key, []string{
+				"checked_at",
 				"findings",
 			})
 		}
@@ -18392,16 +19604,32 @@ func validateChangeBuildJSONValue10(path string, value any, description string) 
 	sort.Strings(keys)
 	for _, key := range keys {
 		switch key {
-		case "commit":
+		case "checked_at":
 			if err := validateAgentPolicyItemJSONValue2(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Full commit ID Surla recorded the accepted tests at (40 or 64 lowercase hex characters).",
+				typed[key], "When Surla's check stopped.",
+			); err != nil {
+				return err
+			}
+		case "reason":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Why the check could not run.",
+			); err != nil {
+				return err
+			}
+		case "step":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "What the user does so the check can run.",
 			); err != nil {
 				return err
 			}
 		default:
 			return unknownJSONFieldError(path, key, []string{
-				"commit",
+				"checked_at",
+				"reason",
+				"step",
 			})
 		}
 	}
@@ -22739,6 +23967,81 @@ func checkBuilderAssignmentBuilderAssignmentValue(in *BuilderAssignment, field s
 		if !utf8.ValidString(string(in.RequestRevision)) {
 			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "request_revision", false))
 		}
+		if branch1, ok := in.WrittenTests.AsNotUsed(); ok {
+			_ = branch1
+			if branch1 != nil {
+			}
+			if err := checkBuilderAssignmentTestsNotUsedValue(branch1, generatedJSONChildPath(field, "written_tests", false), active); err != nil {
+				return err
+			}
+		}
+		if branch1, ok := in.WrittenTests.AsNotYetAccepted(); ok {
+			_ = branch1
+			if branch1 != nil {
+			}
+			if err := checkBuilderAssignmentTestsNotYetAcceptedValue(branch1, generatedJSONChildPath(field, "written_tests", false), active); err != nil {
+				return err
+			}
+		}
+		if branch1, ok := in.WrittenTests.AsAccepted(); ok {
+			_ = branch1
+			if branch1 != nil {
+			}
+			if err := checkBuilderAssignmentTestsAcceptedValue(branch1, generatedJSONChildPath(field, "written_tests", false), active); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// checkBuilderAssignmentTestsNotUsedValue checks one generated value on the active path.
+func checkBuilderAssignmentTestsNotUsedValue(in *TestsNotUsed, field string, active map[any]bool) error {
+	if in == nil {
+		return nil
+	}
+	if active[in] {
+		return fmt.Errorf("%s: cyclic Go value", field)
+	}
+	active[in] = true
+	defer delete(active, in)
+	if in != nil {
+	}
+	return nil
+}
+
+// checkBuilderAssignmentTestsNotYetAcceptedValue checks one generated value on the active path.
+func checkBuilderAssignmentTestsNotYetAcceptedValue(in *TestsNotYetAccepted, field string, active map[any]bool) error {
+	if in == nil {
+		return nil
+	}
+	if active[in] {
+		return fmt.Errorf("%s: cyclic Go value", field)
+	}
+	active[in] = true
+	defer delete(active, in)
+	if in != nil {
+	}
+	return nil
+}
+
+// checkBuilderAssignmentTestsAcceptedValue checks one generated value on the active path.
+func checkBuilderAssignmentTestsAcceptedValue(in *TestsAccepted, field string, active map[any]bool) error {
+	if in == nil {
+		return nil
+	}
+	if active[in] {
+		return fmt.Errorf("%s: cyclic Go value", field)
+	}
+	active[in] = true
+	defer delete(active, in)
+	if in != nil {
+		if !utf8.ValidString(string(in.Commit)) {
+			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "commit", false))
+		}
+		if !utf8.ValidString(string(in.CheckedAt)) {
+			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "checked_at", false))
+		}
 	}
 	return nil
 }
@@ -23262,6 +24565,14 @@ func checkChangeBuildTestWriterProgressValue(in *TestWriterProgress, field strin
 	active[in] = true
 	defer delete(active, in)
 	if in != nil {
+		if branch1, ok := in.Tests.AsNotUsed(); ok {
+			_ = branch1
+			if branch1 != nil {
+			}
+			if err := checkBuilderAssignmentTestsNotUsedValue(branch1, generatedJSONChildPath(field, "tests", false), active); err != nil {
+				return err
+			}
+		}
 		if branch1, ok := in.Tests.AsAssigned(); ok {
 			_ = branch1
 			if branch1 != nil {
@@ -23290,7 +24601,15 @@ func checkChangeBuildTestWriterProgressValue(in *TestWriterProgress, field strin
 			_ = branch1
 			if branch1 != nil {
 			}
-			if err := checkChangeBuildTestsAcceptedValue(branch1, generatedJSONChildPath(field, "tests", false), active); err != nil {
+			if err := checkBuilderAssignmentTestsAcceptedValue(branch1, generatedJSONChildPath(field, "tests", false), active); err != nil {
+				return err
+			}
+		}
+		if branch1, ok := in.Tests.AsCouldNotRun(); ok {
+			_ = branch1
+			if branch1 != nil {
+			}
+			if err := checkChangeBuildTestsCouldNotRunValue(branch1, generatedJSONChildPath(field, "tests", false), active); err != nil {
 				return err
 			}
 		}
@@ -23346,12 +24665,15 @@ func checkChangeBuildTestsNeedChangesValue(in *TestsNeedChanges, field string, a
 				return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(generatedJSONChildPath(field, "findings", false), strconv.Itoa(index1), true))
 			}
 		}
+		if !utf8.ValidString(string(in.CheckedAt)) {
+			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "checked_at", false))
+		}
 	}
 	return nil
 }
 
-// checkChangeBuildTestsAcceptedValue checks one generated value on the active path.
-func checkChangeBuildTestsAcceptedValue(in *TestsAccepted, field string, active map[any]bool) error {
+// checkChangeBuildTestsCouldNotRunValue checks one generated value on the active path.
+func checkChangeBuildTestsCouldNotRunValue(in *TestsCouldNotRun, field string, active map[any]bool) error {
 	if in == nil {
 		return nil
 	}
@@ -23361,8 +24683,14 @@ func checkChangeBuildTestsAcceptedValue(in *TestsAccepted, field string, active 
 	active[in] = true
 	defer delete(active, in)
 	if in != nil {
-		if !utf8.ValidString(string(in.Commit)) {
-			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "commit", false))
+		if !utf8.ValidString(string(in.Reason)) {
+			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "reason", false))
+		}
+		if !utf8.ValidString(string(in.Step)) {
+			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "step", false))
+		}
+		if !utf8.ValidString(string(in.CheckedAt)) {
+			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "checked_at", false))
 		}
 	}
 	return nil
@@ -25097,7 +26425,7 @@ func checkTestsAcceptedValue(in *TestsAccepted) error {
 		return fmt.Errorf("missing root value")
 	}
 	active := make(map[any]bool)
-	if err := checkChangeBuildTestsAcceptedValue(in, "$", active); err != nil {
+	if err := checkBuilderAssignmentTestsAcceptedValue(in, "$", active); err != nil {
 		return err
 	}
 	return nil
@@ -25115,6 +26443,18 @@ func checkTestsAssignedValue(in *TestsAssigned) error {
 	return nil
 }
 
+// checkTestsCouldNotRunValue checks text and cycles before conversion.
+func checkTestsCouldNotRunValue(in *TestsCouldNotRun) error {
+	if in == nil {
+		return fmt.Errorf("missing root value")
+	}
+	active := make(map[any]bool)
+	if err := checkChangeBuildTestsCouldNotRunValue(in, "$", active); err != nil {
+		return err
+	}
+	return nil
+}
+
 // checkTestsNeedChangesValue checks text and cycles before conversion.
 func checkTestsNeedChangesValue(in *TestsNeedChanges) error {
 	if in == nil {
@@ -25122,6 +26462,30 @@ func checkTestsNeedChangesValue(in *TestsNeedChanges) error {
 	}
 	active := make(map[any]bool)
 	if err := checkChangeBuildTestsNeedChangesValue(in, "$", active); err != nil {
+		return err
+	}
+	return nil
+}
+
+// checkTestsNotUsedValue checks text and cycles before conversion.
+func checkTestsNotUsedValue(in *TestsNotUsed) error {
+	if in == nil {
+		return fmt.Errorf("missing root value")
+	}
+	active := make(map[any]bool)
+	if err := checkBuilderAssignmentTestsNotUsedValue(in, "$", active); err != nil {
+		return err
+	}
+	return nil
+}
+
+// checkTestsNotYetAcceptedValue checks text and cycles before conversion.
+func checkTestsNotYetAcceptedValue(in *TestsNotYetAccepted) error {
+	if in == nil {
+		return fmt.Errorf("missing root value")
+	}
+	active := make(map[any]bool)
+	if err := checkBuilderAssignmentTestsNotYetAcceptedValue(in, "$", active); err != nil {
 		return err
 	}
 	return nil

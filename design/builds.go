@@ -8,6 +8,11 @@ import (
 	. "goa.design/goa/v3/dsl"
 )
 
+// TestsNotUsed is the test writer's state when no test writer is used.
+var TestsNotUsed = Type("TestsNotUsed", func() {
+	Description("No test writer is used for this build: the project verifies with the evaluator stored with surla verification set.")
+})
+
 // TestsAssigned is the test writer's state before it reports its tests finished.
 var TestsAssigned = Type("TestsAssigned", func() {
 	Description("Surla assigned the tests for this build; the test writer has not reported them finished.")
@@ -24,7 +29,8 @@ var TestsNeedChanges = Type("TestsNeedChanges", func() {
 	Attribute("findings", ArrayOf(String), "What Surla found, one problem per item: a test that does not build or a required test that is not declared.", func() {
 		MinLength(1)
 	})
-	Required("findings")
+	Attribute("checked_at", String, "When Surla's check reached this verdict.", func() { Format(FormatDateTime) })
+	Required("findings", "checked_at")
 })
 
 // TestsAccepted is the test writer's state after Surla accepted its tests.
@@ -33,19 +39,42 @@ var TestsAccepted = Type("TestsAccepted", func() {
 	Attribute("commit", String, "Full commit ID Surla recorded the accepted tests at (40 or 64 lowercase hex characters).", func() {
 		Pattern("^([0-9a-f]{40}|[0-9a-f]{64})$")
 	})
-	Required("commit")
+	Attribute("checked_at", String, "When Surla's check reached this verdict.", func() { Format(FormatDateTime) })
+	Required("commit", "checked_at")
+})
+
+// TestsCouldNotRun is the test writer's state when Surla's check could not run.
+var TestsCouldNotRun = Type("TestsCouldNotRun", func() {
+	Description("Surla's check of the reported tests could not run, for a cause the test writer cannot fix; the user's step makes it possible.")
+	Attribute("reason", String, "Why the check could not run.", func() {
+		MinLength(1)
+		MaxLength(1024)
+	})
+	Attribute("step", String, "What the user does so the check can run.", func() {
+		MinLength(1)
+		MaxLength(512)
+	})
+	Attribute("checked_at", String, "When Surla's check stopped.", func() { Format(FormatDateTime) })
+	Required("reason", "step", "checked_at")
+})
+
+// TestsNotYetAccepted is the builder's view of tests Surla has not accepted.
+var TestsNotYetAccepted = Type("TestsNotYetAccepted", func() {
+	Description("Surla has not accepted the test writer's tests for this build.")
 })
 
 // TestWriterProgress is the test writer's state and whether it read its assignment.
 var TestWriterProgress = Type("TestWriterProgress", func() {
 	Description("Where the test writer's assignment for one build stands.")
-	OneOf("tests", "The tests' state: assigned, reported, needs_changes with Surla's findings, or accepted with the commit Surla recorded.", func() {
+	OneOf("tests", "The tests' state: not_used when the project verifies with its stored evaluator; otherwise assigned, reported, needs_changes with Surla's findings, accepted with the commit Surla recorded, or could_not_run with the reason and the user's step. Each verdict carries the time Surla reached it.", func() {
 		Meta("oneof:json:flatten")
 		Meta("oneof:type:field", "state")
+		Attribute("not_used", TestsNotUsed)
 		Attribute("assigned", TestsAssigned)
 		Attribute("reported", TestsReported)
 		Attribute("needs_changes", TestsNeedChanges)
 		Attribute("accepted", TestsAccepted)
+		Attribute("could_not_run", TestsCouldNotRun)
 	})
 	Attribute("read", Boolean, "True once the test writer read this assignment in full with get_test_writer_assignment.")
 	Required("tests", "read")
@@ -94,7 +123,14 @@ var BuilderAssignment = Type("BuilderAssignment", func() {
 	Attribute("request_revision", String, "Change Card revision to build; verify_change takes it.")
 	Attribute("in_force", Boolean, "True when request_revision is the change's confirmed revision in force, as get_build reports it. False when the user has since confirmed another revision or the change awaits confirmation of one: verify_change refuses this revision, and the assignment stays as it is until the user builds again.")
 	Attribute("read", Boolean, "True once you read this assignment in full with get_builder_assignment.")
-	Required("change_id", "request_revision", "in_force", "read")
+	OneOf("written_tests", "Where the test writer's tests for this build stand: not_used when no test writer is used because the project verifies with its stored evaluator; not_yet_accepted until Surla accepts the test writer's tests; accepted with the commit Surla recorded them at.", func() {
+		Meta("oneof:json:flatten")
+		Meta("oneof:type:field", "state")
+		Attribute("not_used", TestsNotUsed)
+		Attribute("not_yet_accepted", TestsNotYetAccepted)
+		Attribute("accepted", TestsAccepted)
+	})
+	Required("change_id", "request_revision", "in_force", "read", "written_tests")
 })
 
 // BuilderAssignmentList lists the builder's assignments.

@@ -19,6 +19,7 @@ import (
 	"strings"
 	"syscall"
 	"time"
+	"unicode/utf8"
 
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -70,6 +71,10 @@ type (
 		file buildFile
 		// inForce is buildInForce for file and its change's card.
 		inForce bool
+		// storedEvaluator is true when projectTestSource answers that the
+		// project verifies with its stored evaluator (storedEvaluator): then
+		// no test writer is used, whatever file records.
+		storedEvaluator bool
 	}
 
 	// buildFile is the saved form of one change's build, in its own file beside
@@ -92,6 +97,10 @@ type (
 		Builder builderAssignment `json:"builder"`
 		// TestWriter is the test writer's assignment.
 		TestWriter testWriterAssignment `json:"test_writer"`
+		// ReportNumber is the number of the test writer's latest counted
+		// report of this build: never negative, and 0 when none was counted.
+		// Nothing counts reports yet, so every build saves 0.
+		ReportNumber int `json:"report_number"`
 	}
 
 	// builderAssignment is the builder's saved assignment for one build. It
@@ -104,11 +113,12 @@ type (
 	}
 
 	// testWriterAssignment is the test writer's saved assignment for one
-	// build. Findings are set exactly in testsNeedChanges and Commit exactly
-	// in testsAccepted.
+	// build. Findings are set exactly in testsNeedChanges, Commit exactly in
+	// testsAccepted, Reason and Step exactly in testsCouldNotRun, and
+	// CheckedAt exactly in those three verdicts.
 	testWriterAssignment struct {
-		// State is one of testsAssigned, testsReported, testsNeedChanges or
-		// testsAccepted.
+		// State is one of testsNotUsed, testsAssigned, testsReported,
+		// testsNeedChanges, testsAccepted or testsCouldNotRun.
 		State string `json:"state"`
 		// Read records that the test writer read the assignment in full.
 		Read bool `json:"read"`
@@ -120,10 +130,22 @@ type (
 		// Commit is the commit the accepted tests were recorded at, in
 		// testsAccepted.
 		Commit string `json:"commit"`
+		// Reason says why the check could not run, in testsCouldNotRun; at
+		// most maxCheckReason characters.
+		Reason string `json:"reason,omitzero"`
+		// Step is what the user does so the check can run, in
+		// testsCouldNotRun; at most maxCheckStep characters.
+		Step string `json:"step,omitzero"`
+		// CheckedAt is when the check reached its verdict, in
+		// testsNeedChanges, testsAccepted and testsCouldNotRun.
+		CheckedAt time.Time `json:"checked_at,omitzero"`
 	}
 )
 
 const (
+	// testsNotUsed is the test writer's state when no test writer is used
+	// because the project verifies with its stored evaluator.
+	testsNotUsed = "not_used"
 	// testsAssigned is the test writer's state until it reports.
 	testsAssigned = "assigned"
 	// testsReported is the test writer's state after it reported its tests
@@ -133,6 +155,14 @@ const (
 	testsNeedChanges = "needs_changes"
 	// testsAccepted is the test writer's state after a check accepted the tests.
 	testsAccepted = "accepted"
+	// testsCouldNotRun is the test writer's state after a check could not run
+	// for a cause the test writer cannot fix.
+	testsCouldNotRun = "could_not_run"
+	// maxCheckReason and maxCheckStep bound, in characters, the reason and
+	// the user's step of testsCouldNotRun, as the design's TestsCouldNotRun
+	// declares.
+	maxCheckReason = 1024
+	maxCheckStep   = 512
 	// buildFileSuffix ends every build file name. Card listing reads only
 	// <hex>.json names, so it never reads a build file.
 	buildFileSuffix = ".build.json"
@@ -205,7 +235,7 @@ func (c *ControlPlane) StartBuild(ctx context.Context, p *gensurla.StartBuildPay
 	if err := c.cards.saveBuild(saved); err != nil {
 		return nil, recordBuildError(span, err, "save build")
 	}
-	return startedBuild(saved, true), nil
+	return startedBuild(heldBuild{file: saved, inForce: true, storedEvaluator: c.storedEvaluator()}), nil
 }
 
 // GetBuild returns the owner's change's build, or not_started when the user
@@ -230,8 +260,8 @@ func (c *ControlPlane) GetBuild(ctx context.Context, p *gensurla.GetBuildPayload
 	if !found {
 		return &gensurla.ChangeBuild{ChangeID: p.ChangeID, Build: gensurla.NewBuildNotStarted(&gensurla.BuildNotStarted{})}, nil
 	}
-	inForce := buildInForce(saved, record.card)
-	return &gensurla.ChangeBuild{ChangeID: p.ChangeID, Build: gensurla.NewBuildStarted(startedBuild(saved, inForce))}, nil
+	held := heldBuild{file: saved, inForce: buildInForce(saved, record.card), storedEvaluator: c.storedEvaluator()}
+	return &gensurla.ChangeBuild{ChangeID: p.ChangeID, Build: gensurla.NewBuildStarted(startedBuild(held))}, nil
 }
 
 // ListBuilderAssignments returns the builder's assignment of every build of
@@ -366,6 +396,9 @@ func (c *ControlPlane) ReportTestsFinished(
 		saved.TestWriter.State = testsReported
 		saved.TestWriter.Findings = nil
 		saved.TestWriter.Commit = ""
+		saved.TestWriter.Reason = ""
+		saved.TestWriter.Step = ""
+		saved.TestWriter.CheckedAt = time.Time{}
 		if err := c.cards.saveBuild(*saved); err != nil {
 			return nil, recordBuildError(span, err, "save build")
 		}
@@ -393,15 +426,14 @@ func buildInForce(saved buildFile, card *gensurla.ChangeCardResult) bool {
 	return saved.RequestRevision == revisionInForce(card)
 }
 
-// startedBuild converts a saved build into its transport form; inForce says
-// whether its revision is the change's revision in force.
-func startedBuild(saved buildFile, inForce bool) *gensurla.StartedBuild {
+// startedBuild converts a held build into its transport form.
+func startedBuild(held heldBuild) *gensurla.StartedBuild {
 	return &gensurla.StartedBuild{
-		RequestRevision: saved.RequestRevision,
-		StartedAt:       saved.StartedAt.UTC().Format(time.RFC3339Nano),
-		InForce:         inForce,
-		Builder:         builderProgress(saved.Builder),
-		TestWriter:      testWriterProgress(saved.TestWriter),
+		RequestRevision: held.file.RequestRevision,
+		StartedAt:       held.file.StartedAt.UTC().Format(time.RFC3339Nano),
+		InForce:         held.inForce,
+		Builder:         builderProgress(held.file.Builder),
+		TestWriter:      testWriterProgress(held),
 	}
 }
 
@@ -413,6 +445,7 @@ func builderAssignmentResult(held heldBuild) *gensurla.BuilderAssignment {
 		RequestRevision: held.file.RequestRevision,
 		InForce:         held.inForce,
 		Read:            held.file.Builder.Read,
+		WrittenTests:    writtenTests(held),
 	}
 }
 
@@ -423,7 +456,7 @@ func testWriterAssignmentItem(held heldBuild) *gensurla.TestWriterAssignmentItem
 		ChangeID:        held.file.ChangeID,
 		RequestRevision: held.file.RequestRevision,
 		InForce:         held.inForce,
-		Progress:        testWriterProgress(held.file.TestWriter),
+		Progress:        testWriterProgress(held),
 	}
 }
 
@@ -432,21 +465,55 @@ func builderProgress(saved builderAssignment) *gensurla.BuilderProgress {
 	return &gensurla.BuilderProgress{Read: saved.Read}
 }
 
-// testWriterProgress converts the test writer's saved assignment. decodeBuild
-// accepted only the four states below, each with exactly its fields.
-func testWriterProgress(saved testWriterAssignment) *gensurla.TestWriterProgress {
+// testWriterProgress converts the test writer's saved assignment. A project
+// that verifies with its stored evaluator uses no test writer, so its build
+// reads not_used whatever was saved. decodeBuild accepted only the six states
+// below, each with exactly its fields.
+func testWriterProgress(held heldBuild) *gensurla.TestWriterProgress {
+	saved := held.file.TestWriter
 	var tests gensurla.Tests
-	switch saved.State {
-	case testsAssigned:
+	switch {
+	case held.storedEvaluator || saved.State == testsNotUsed:
+		tests = gensurla.NewTestsNotUsed(&gensurla.TestsNotUsed{})
+	case saved.State == testsAssigned:
 		tests = gensurla.NewTestsAssigned(&gensurla.TestsAssigned{})
-	case testsReported:
+	case saved.State == testsReported:
 		tests = gensurla.NewTestsReported(&gensurla.TestsReported{})
-	case testsNeedChanges:
-		tests = gensurla.NewTestsNeedsChanges(&gensurla.TestsNeedChanges{Findings: slices.Clone(saved.Findings)})
-	case testsAccepted:
-		tests = gensurla.NewTestsAccepted(&gensurla.TestsAccepted{Commit: saved.Commit})
+	case saved.State == testsNeedChanges:
+		tests = gensurla.NewTestsNeedsChanges(&gensurla.TestsNeedChanges{
+			Findings:  slices.Clone(saved.Findings),
+			CheckedAt: verdictTime(saved.CheckedAt),
+		})
+	case saved.State == testsAccepted:
+		tests = gensurla.NewTestsAccepted(&gensurla.TestsAccepted{Commit: saved.Commit, CheckedAt: verdictTime(saved.CheckedAt)})
+	case saved.State == testsCouldNotRun:
+		tests = gensurla.NewTestsCouldNotRun(&gensurla.TestsCouldNotRun{
+			Reason:    saved.Reason,
+			Step:      saved.Step,
+			CheckedAt: verdictTime(saved.CheckedAt),
+		})
 	}
 	return &gensurla.TestWriterProgress{Tests: tests, Read: saved.Read}
+}
+
+// writtenTests renders, for the builder, where the test writer's tests for
+// held stand: not used, not yet accepted, or accepted at a commit. It reads
+// the same saved state and stored-evaluator answer as testWriterProgress.
+func writtenTests(held heldBuild) gensurla.WrittenTests {
+	saved := held.file.TestWriter
+	switch {
+	case held.storedEvaluator || saved.State == testsNotUsed:
+		return gensurla.NewWrittenTestsNotUsed(&gensurla.TestsNotUsed{})
+	case saved.State == testsAccepted:
+		return gensurla.NewWrittenTestsAccepted(&gensurla.TestsAccepted{Commit: saved.Commit, CheckedAt: verdictTime(saved.CheckedAt)})
+	default:
+		return gensurla.NewWrittenTestsNotYetAccepted(&gensurla.TestsNotYetAccepted{})
+	}
+}
+
+// verdictTime formats a saved verdict time as its transport form.
+func verdictTime(at time.Time) string {
+	return at.UTC().Format(time.RFC3339Nano)
 }
 
 // recordBuildError records err on span as a failure unless it is a refusal
@@ -485,22 +552,39 @@ func decodeBuild(fileName string, data []byte) (buildFile, error) {
 	if saved.RequestRevision == "" || saved.StartedAt.IsZero() {
 		return buildFile{}, fmt.Errorf("build of change %q has no revision or start time", saved.ChangeID)
 	}
+	if saved.ReportNumber < 0 {
+		return buildFile{}, fmt.Errorf("build of change %q has a negative report number", saved.ChangeID)
+	}
 	tw := saved.TestWriter
-	var valid bool
+	noVerdictFields := tw.Reason == "" && tw.Step == ""
+	var valid, verdict bool
 	switch tw.State {
-	case testsAssigned, testsReported:
-		valid = len(tw.Findings) == 0 && tw.Commit == ""
+	case testsNotUsed, testsAssigned, testsReported:
+		valid = len(tw.Findings) == 0 && tw.Commit == "" && noVerdictFields
 	case testsNeedChanges:
-		valid = len(tw.Findings) > 0 && tw.Commit == ""
+		valid, verdict = len(tw.Findings) > 0 && tw.Commit == "" && noVerdictFields, true
 	case testsAccepted:
-		valid = len(tw.Findings) == 0 && commitIDPattern.MatchString(tw.Commit)
+		valid, verdict = len(tw.Findings) == 0 && commitIDPattern.MatchString(tw.Commit) && noVerdictFields, true
+	case testsCouldNotRun:
+		valid = len(tw.Findings) == 0 && tw.Commit == "" &&
+			boundedText(tw.Reason, maxCheckReason) && boundedText(tw.Step, maxCheckStep)
+		verdict = true
 	default:
 		return buildFile{}, fmt.Errorf("build of change %q has unknown test writer state %q", saved.ChangeID, tw.State)
 	}
 	if !valid {
-		return buildFile{}, fmt.Errorf("build of change %q has findings or a commit its test writer state %q does not allow", saved.ChangeID, tw.State)
+		return buildFile{}, fmt.Errorf("build of change %q has findings, a commit, a reason or a step its test writer state %q does not allow", saved.ChangeID, tw.State)
+	}
+	if verdict == tw.CheckedAt.IsZero() {
+		return buildFile{}, fmt.Errorf("build of change %q must have a verdict time exactly when its test writer state is a verdict (state %q)", saved.ChangeID, tw.State)
 	}
 	return saved, nil
+}
+
+// boundedText reports whether s is not empty and has at most limit
+// characters, as the design's MinLength(1) and MaxLength(limit) require.
+func boundedText(s string, limit int) bool {
+	return s != "" && utf8.RuneCountInString(s) <= limit
 }
 
 // buildableCard loads the caller's card for changeID and checks that it is
@@ -550,7 +634,7 @@ func (c *ControlPlane) ownedBuild(principal Principal, changeID string) (heldBui
 	if !found {
 		return heldBuild{}, gensurla.MakeNotFound(fmt.Errorf("change_id %q has no build; the user starts one on the views page", changeID))
 	}
-	return heldBuild{file: saved, inForce: buildInForce(saved, record.card)}, nil
+	return heldBuild{file: saved, inForce: buildInForce(saved, record.card), storedEvaluator: c.storedEvaluator()}, nil
 }
 
 // ownedBuilds returns the build of every change principal owns, most recently
@@ -573,7 +657,11 @@ func (c *ControlPlane) ownedBuilds(principal Principal) ([]heldBuild, error) {
 			return nil, err
 		}
 		if found {
-			builds = append(builds, heldBuild{file: saved, inForce: buildInForce(saved, record.card)})
+			builds = append(builds, heldBuild{
+				file:            saved,
+				inForce:         buildInForce(saved, record.card),
+				storedEvaluator: c.storedEvaluator(),
+			})
 		}
 	}
 	slices.SortFunc(builds, func(a, b heldBuild) int {

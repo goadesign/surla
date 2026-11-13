@@ -27,10 +27,14 @@ paths:
                                       in_force: true
                                       read: false
                                       request_revision: Incidunt enim in.
+                                      written_tests:
+                                        state: not_used
                                     - change_id: Et quos quod.
                                       in_force: true
                                       read: false
                                       request_revision: Incidunt enim in.
+                                      written_tests:
+                                        state: not_used
                 "403":
                     description: 'forbidden: The authenticated caller may not perform this operation or does not own the resource.'
                     content:
@@ -74,6 +78,10 @@ paths:
                                 in_force: true
                                 read: false
                                 request_revision: Excepturi corporis laborum quod unde adipisci.
+                                written_tests:
+                                    checked_at: "1991-07-08T15:55:19Z"
+                                    commit: c4e7e8317b51c71f0f9e4ed6ec6f50cba39197a8
+                                    state: accepted
                 "403":
                     description: 'forbidden: The authenticated caller may not perform this operation or does not own the resource.'
                     content:
@@ -121,21 +129,33 @@ paths:
                                       progress:
                                         read: true
                                         tests:
-                                            state: reported
+                                            checked_at: "1972-09-26T18:55:16Z"
+                                            findings:
+                                                - Rerum quia dolorem omnis.
+                                                - Quia id rem cupiditate ea.
+                                            state: needs_changes
                                       request_revision: Quidem nulla minima at voluptatum delectus.
                                     - change_id: Veniam ex reiciendis.
                                       in_force: true
                                       progress:
                                         read: true
                                         tests:
-                                            state: reported
+                                            checked_at: "1972-09-26T18:55:16Z"
+                                            findings:
+                                                - Rerum quia dolorem omnis.
+                                                - Quia id rem cupiditate ea.
+                                            state: needs_changes
                                       request_revision: Quidem nulla minima at voluptatum delectus.
                                     - change_id: Veniam ex reiciendis.
                                       in_force: true
                                       progress:
                                         read: true
                                         tests:
-                                            state: reported
+                                            checked_at: "1972-09-26T18:55:16Z"
+                                            findings:
+                                                - Rerum quia dolorem omnis.
+                                                - Quia id rem cupiditate ea.
+                                            state: needs_changes
                                       request_revision: Quidem nulla minima at voluptatum delectus.
                 "403":
                     description: 'forbidden: The authenticated caller may not perform this operation or does not own the resource.'
@@ -181,7 +201,11 @@ paths:
                                 progress:
                                     read: true
                                     tests:
-                                        state: reported
+                                        checked_at: "1972-09-26T18:55:16Z"
+                                        findings:
+                                            - Rerum quia dolorem omnis.
+                                            - Quia id rem cupiditate ea.
+                                        state: needs_changes
                                 request_revision: Ut sit qui.
                                 required_tests:
                                     - flow_key: Officia eligendi error accusamus.
@@ -1356,7 +1380,11 @@ paths:
                                 progress:
                                     read: true
                                     tests:
-                                        state: reported
+                                        checked_at: "1972-09-26T18:55:16Z"
+                                        findings:
+                                            - Rerum quia dolorem omnis.
+                                            - Quia id rem cupiditate ea.
+                                        state: needs_changes
                                 request_revision: Pariatur ullam quaerat minus neque vel.
                 "403":
                     description: 'forbidden: The authenticated caller may not perform this operation or does not own the resource.'
@@ -2207,7 +2235,11 @@ paths:
                                     test_writer:
                                         read: true
                                         tests:
-                                            state: reported
+                                            checked_at: "1972-09-26T18:55:16Z"
+                                            findings:
+                                                - Rerum quia dolorem omnis.
+                                                - Quia id rem cupiditate ea.
+                                            state: needs_changes
                                 change_id: Assumenda quas molestiae incidunt debitis.
                 "403":
                     description: 'forbidden: The authenticated caller may not perform this operation or does not own the resource.'
@@ -2277,7 +2309,11 @@ paths:
                                 test_writer:
                                     read: true
                                     tests:
-                                        state: reported
+                                        checked_at: "1972-09-26T18:55:16Z"
+                                        findings:
+                                            - Rerum quia dolorem omnis.
+                                            - Quia id rem cupiditate ea.
+                                        state: needs_changes
                 "403":
                     description: 'forbidden: The authenticated caller may not perform this operation or does not own the resource.'
                     content:
@@ -9997,17 +10033,67 @@ components:
                     type: string
                     description: Change Card revision to build; verify_change takes it.
                     example: Incidunt enim in.
+                written_tests:
+                    type: object
+                    description: 'Where the test writer''s tests for this build stand: not_used when no test writer is used because the project verifies with its stored evaluator; not_yet_accepted until Surla accepts the test writer''s tests; accepted with the commit Surla recorded them at.'
+                    example:
+                        state: not_used
+                    anyOf:
+                        - type: object
+                          properties:
+                            state:
+                                type: string
+                                enum:
+                                    - not_used
+                          example: {}
+                          required:
+                            - state
+                        - type: object
+                          properties:
+                            state:
+                                type: string
+                                enum:
+                                    - not_yet_accepted
+                          example: {}
+                          required:
+                            - state
+                        - type: object
+                          properties:
+                            checked_at:
+                                type: string
+                                description: When Surla's check reached this verdict.
+                                example: "1992-08-05T19:22:41Z"
+                                format: date-time
+                            commit:
+                                type: string
+                                description: Full commit ID Surla recorded the accepted tests at (40 or 64 lowercase hex characters).
+                                example: b418df2f2d1ea53902b297fcd7bb7a00cfd0dc2c
+                                pattern: ^([0-9a-f]{40}|[0-9a-f]{64})$
+                            state:
+                                type: string
+                                enum:
+                                    - accepted
+                          example:
+                            checked_at: "1992-08-05T19:22:41Z"
+                            commit: b418df2f2d1ea53902b297fcd7bb7a00cfd0dc2c
+                          required:
+                            - commit
+                            - checked_at
+                            - state
             description: 'The builder''s assignment: build this change at this revision in the project folder, where generate_code, check_project and verify_change act.'
             example:
                 change_id: Et quos quod.
                 in_force: true
                 read: false
                 request_revision: Incidunt enim in.
+                written_tests:
+                    state: not_used
             required:
                 - change_id
                 - request_revision
                 - in_force
                 - read
+                - written_tests
         BuilderAssignmentList:
             type: object
             properties:
@@ -10021,10 +10107,14 @@ components:
                           in_force: true
                           read: false
                           request_revision: Incidunt enim in.
+                          written_tests:
+                            state: not_used
                         - change_id: Et quos quod.
                           in_force: true
                           read: false
                           request_revision: Incidunt enim in.
+                          written_tests:
+                            state: not_used
             description: The builder's assignments, one per change the user built, most recently started first.
             example:
                 assignments:
@@ -10032,10 +10122,14 @@ components:
                       in_force: true
                       read: false
                       request_revision: Incidunt enim in.
+                      written_tests:
+                        state: not_used
                     - change_id: Et quos quod.
                       in_force: true
                       read: false
                       request_revision: Incidunt enim in.
+                      written_tests:
+                        state: not_used
             required:
                 - assignments
         BuilderProgress:
@@ -10589,7 +10683,11 @@ components:
                         test_writer:
                             read: true
                             tests:
-                                state: reported
+                                checked_at: "1972-09-26T18:55:16Z"
+                                findings:
+                                    - Rerum quia dolorem omnis.
+                                    - Quia id rem cupiditate ea.
+                                state: needs_changes
                     anyOf:
                         - type: object
                           properties:
@@ -10632,7 +10730,11 @@ components:
                             test_writer:
                                 read: true
                                 tests:
-                                    state: reported
+                                    checked_at: "1972-09-26T18:55:16Z"
+                                    findings:
+                                        - Rerum quia dolorem omnis.
+                                        - Quia id rem cupiditate ea.
+                                    state: needs_changes
                           required:
                             - request_revision
                             - started_at
@@ -10656,7 +10758,11 @@ components:
                     test_writer:
                         read: true
                         tests:
-                            state: reported
+                            checked_at: "1972-09-26T18:55:16Z"
+                            findings:
+                                - Rerum quia dolorem omnis.
+                                - Quia id rem cupiditate ea.
+                            state: needs_changes
                 change_id: Assumenda quas molestiae incidunt debitis.
             required:
                 - change_id
@@ -13030,7 +13136,11 @@ components:
                 test_writer:
                     read: true
                     tests:
-                        state: reported
+                        checked_at: "1972-09-26T18:55:16Z"
+                        findings:
+                            - Rerum quia dolorem omnis.
+                            - Quia id rem cupiditate ea.
+                        state: needs_changes
             required:
                 - request_revision
                 - started_at
@@ -16360,7 +16470,11 @@ components:
                 progress:
                     read: true
                     tests:
-                        state: reported
+                        checked_at: "1972-09-26T18:55:16Z"
+                        findings:
+                            - Rerum quia dolorem omnis.
+                            - Quia id rem cupiditate ea.
+                        state: needs_changes
                 request_revision: Ut sit qui.
                 required_tests:
                     - flow_key: Officia eligendi error accusamus.
@@ -17501,7 +17615,11 @@ components:
                 progress:
                     read: true
                     tests:
-                        state: reported
+                        checked_at: "1972-09-26T18:55:16Z"
+                        findings:
+                            - Rerum quia dolorem omnis.
+                            - Quia id rem cupiditate ea.
+                        state: needs_changes
                 request_revision: Quidem nulla minima at voluptatum delectus.
             required:
                 - change_id
@@ -17522,21 +17640,33 @@ components:
                           progress:
                             read: true
                             tests:
-                                state: reported
+                                checked_at: "1972-09-26T18:55:16Z"
+                                findings:
+                                    - Rerum quia dolorem omnis.
+                                    - Quia id rem cupiditate ea.
+                                state: needs_changes
                           request_revision: Quidem nulla minima at voluptatum delectus.
                         - change_id: Veniam ex reiciendis.
                           in_force: true
                           progress:
                             read: true
                             tests:
-                                state: reported
+                                checked_at: "1972-09-26T18:55:16Z"
+                                findings:
+                                    - Rerum quia dolorem omnis.
+                                    - Quia id rem cupiditate ea.
+                                state: needs_changes
                           request_revision: Quidem nulla minima at voluptatum delectus.
                         - change_id: Veniam ex reiciendis.
                           in_force: true
                           progress:
                             read: true
                             tests:
-                                state: reported
+                                checked_at: "1972-09-26T18:55:16Z"
+                                findings:
+                                    - Rerum quia dolorem omnis.
+                                    - Quia id rem cupiditate ea.
+                                state: needs_changes
                           request_revision: Quidem nulla minima at voluptatum delectus.
             description: The test writer's assignments, one per change the user built, most recently started first.
             example:
@@ -17546,21 +17676,33 @@ components:
                       progress:
                         read: true
                         tests:
-                            state: reported
+                            checked_at: "1972-09-26T18:55:16Z"
+                            findings:
+                                - Rerum quia dolorem omnis.
+                                - Quia id rem cupiditate ea.
+                            state: needs_changes
                       request_revision: Quidem nulla minima at voluptatum delectus.
                     - change_id: Veniam ex reiciendis.
                       in_force: true
                       progress:
                         read: true
                         tests:
-                            state: reported
+                            checked_at: "1972-09-26T18:55:16Z"
+                            findings:
+                                - Rerum quia dolorem omnis.
+                                - Quia id rem cupiditate ea.
+                            state: needs_changes
                       request_revision: Quidem nulla minima at voluptatum delectus.
                     - change_id: Veniam ex reiciendis.
                       in_force: true
                       progress:
                         read: true
                         tests:
-                            state: reported
+                            checked_at: "1972-09-26T18:55:16Z"
+                            findings:
+                                - Rerum quia dolorem omnis.
+                                - Quia id rem cupiditate ea.
+                            state: needs_changes
                       request_revision: Quidem nulla minima at voluptatum delectus.
             required:
                 - assignments
@@ -17573,10 +17715,23 @@ components:
                     example: true
                 tests:
                     type: object
-                    description: 'The tests'' state: assigned, reported, needs_changes with Surla''s findings, or accepted with the commit Surla recorded.'
+                    description: 'The tests'' state: not_used when the project verifies with its stored evaluator; otherwise assigned, reported, needs_changes with Surla''s findings, accepted with the commit Surla recorded, or could_not_run with the reason and the user''s step. Each verdict carries the time Surla reached it.'
                     example:
-                        state: reported
+                        checked_at: "1972-09-26T18:55:16Z"
+                        findings:
+                            - Rerum quia dolorem omnis.
+                            - Quia id rem cupiditate ea.
+                        state: needs_changes
                     anyOf:
+                        - type: object
+                          properties:
+                            state:
+                                type: string
+                                enum:
+                                    - not_used
+                          example: {}
+                          required:
+                            - state
                         - type: object
                           properties:
                             state:
@@ -17597,6 +17752,11 @@ components:
                             - state
                         - type: object
                           properties:
+                            checked_at:
+                                type: string
+                                description: When Surla's check reached this verdict.
+                                example: "1999-02-14T22:07:37Z"
+                                format: date-time
                             findings:
                                 type: array
                                 items:
@@ -17612,14 +17772,21 @@ components:
                                 enum:
                                     - needs_changes
                           example:
+                            checked_at: "1999-02-14T22:07:37Z"
                             findings:
                                 - Eos et qui et.
                                 - Et fugiat praesentium vel excepturi earum.
                           required:
                             - findings
+                            - checked_at
                             - state
                         - type: object
                           properties:
+                            checked_at:
+                                type: string
+                                description: When Surla's check reached this verdict.
+                                example: "1999-05-28T22:24:28Z"
+                                format: date-time
                             commit:
                                 type: string
                                 description: Full commit ID Surla recorded the accepted tests at (40 or 64 lowercase hex characters).
@@ -17630,15 +17797,53 @@ components:
                                 enum:
                                     - accepted
                           example:
+                            checked_at: "1999-05-28T22:24:28Z"
                             commit: 5d5aad7fc0696c095f793336c17599bafd73c403
                           required:
                             - commit
+                            - checked_at
+                            - state
+                        - type: object
+                          properties:
+                            checked_at:
+                                type: string
+                                description: When Surla's check stopped.
+                                example: "1972-09-23T07:17:14Z"
+                                format: date-time
+                            reason:
+                                type: string
+                                description: Why the check could not run.
+                                example: hp
+                                minLength: 1
+                                maxLength: 1024
+                            state:
+                                type: string
+                                enum:
+                                    - could_not_run
+                            step:
+                                type: string
+                                description: What the user does so the check can run.
+                                example: q6
+                                minLength: 1
+                                maxLength: 512
+                          example:
+                            checked_at: "1972-09-23T07:17:14Z"
+                            reason: hp
+                            step: q6
+                          required:
+                            - reason
+                            - step
+                            - checked_at
                             - state
             description: Where the test writer's assignment for one build stands.
             example:
                 read: true
                 tests:
-                    state: reported
+                    checked_at: "1972-09-26T18:55:16Z"
+                    findings:
+                        - Rerum quia dolorem omnis.
+                        - Quia id rem cupiditate ea.
+                    state: needs_changes
             required:
                 - tests
                 - read
