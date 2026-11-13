@@ -3782,6 +3782,11 @@ type LatestVerificationItemResponseBody struct {
 	// when its report's verdict is known; not_completed when it stopped without a
 	// report.
 	State *string `form:"state,omitempty" json:"state,omitempty" xml:"state,omitempty"`
+	// Whether this run names the agreed request_revision and the tests selected
+	// now: the accepted test commit of the usable build in force, or the
+	// configured stored evaluator suite. It does not say whether the candidate
+	// working tree, deployment or approval is current.
+	InputsCurrent *bool `form:"inputs_current,omitempty" json:"inputs_current,omitempty" xml:"inputs_current,omitempty"`
 }
 
 // StartedBuildResponseBody is used to define fields on response body types.
@@ -15662,6 +15667,9 @@ func ValidateLatestVerificationItemResponseBody(body *LatestVerificationItemResp
 	if body.State == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("state", "body"))
 	}
+	if body.InputsCurrent == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("inputs_current", "body"))
+	}
 	if body.State != nil {
 		if !(*body.State == "running" || *body.State == "passed" || *body.State == "failed" || *body.State == "not_completed") {
 			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.state", *body.State, []any{"running", "passed", "failed", "not_completed"}))
@@ -15678,6 +15686,9 @@ func validateLatestVerificationItemResponseBody(body *LatestVerificationItemResp
 	}
 	if body.State == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("state", path))
+	}
+	if body.InputsCurrent == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("inputs_current", path))
 	}
 	if body.State != nil {
 		if !(*body.State == "running" || *body.State == "passed" || *body.State == "failed" || *body.State == "not_completed") {

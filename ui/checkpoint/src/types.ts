@@ -156,6 +156,7 @@ export interface ExchangeBrowserLinkResponseBody {
 }
 
 export interface LatestVerificationItem {
+  inputs_current: boolean;
   run_id: string;
   state: "running" | "passed" | "failed" | "not_completed";
 }
@@ -1317,9 +1318,13 @@ const SCHEMA_DEFS: Record<string, JSONSchemaNode> = {
     "type": "object",
     "required": [
       "run_id",
-      "state"
+      "state",
+      "inputs_current"
     ],
     "properties": {
+      "inputs_current": {
+        "type": "boolean"
+      },
       "run_id": {
         "type": "string"
       },

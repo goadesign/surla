@@ -58,8 +58,8 @@ export function ChangeListView({
       <h2 id="surla-change-list-title">Changes</h2>
       {list?.changes.some((item) => item.latest_verification !== undefined) ? (
         <p id="surla-change-run-history" className="surla-muted">
-          Saved run results describe their recorded inputs. The agreed revision or tests may
-          have changed since. Open a change, then Proof, to inspect what its runs checked.
+          Run results describe their recorded candidate. The server compares each latest run
+          with the agreed revision and selected tests. Open a change, then Proof, to inspect it.
         </p>
       ) : null}
       {error !== null ? (
@@ -136,9 +136,24 @@ function ChangeListRow({
         </>
       ) : null}
       {item.latest_verification ? (
-        <Badge aria-describedby="surla-change-run-history">
-          {verificationLabels[item.latest_verification.state]}
-        </Badge>
+        <>
+          <Badge
+            aria-describedby={"surla-change-run-history surla-run-inputs-" + item.change_id}
+            variant={item.latest_verification.inputs_current && item.latest_verification.state === "passed"
+              ? "success" : "default"}
+          >
+            {verificationLabels[item.latest_verification.state]}
+          </Badge>
+          <p
+            id={"surla-run-inputs-" + item.change_id}
+            className="surla-muted"
+            data-inputs-current={String(item.latest_verification.inputs_current)}
+          >
+            {item.latest_verification.inputs_current
+              ? "Matches the agreed revision and selected tests."
+              : "Earlier inputs or no current test selection. Ask the builder for a check of the agreed revision and selected tests."}
+          </p>
+        </>
       ) : (
         <Badge>No saved runs</Badge>
       )}{" "}

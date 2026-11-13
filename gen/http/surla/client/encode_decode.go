@@ -5963,8 +5963,9 @@ func unmarshalChangeListItemResponseBodyToSurlaChangeListItem(v *ChangeListItemR
 // *LatestVerificationItemResponseBody.
 func unmarshalLatestVerificationItemResponseBodyToSurlaLatestVerificationItem(v *LatestVerificationItemResponseBody) *surla.LatestVerificationItem {
 	res := &surla.LatestVerificationItem{
-		RunID: *v.RunID,
-		State: *v.State,
+		RunID:         *v.RunID,
+		State:         *v.State,
+		InputsCurrent: *v.InputsCurrent,
 	}
 
 	return res

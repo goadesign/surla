@@ -264,9 +264,10 @@ type Service interface {
 	// first, with each card's summary, status, the request_revision in force, the
 	// request_revision of a revision the guide proposed beside a confirmed card
 	// while it waits for the user, the state of its most recently accepted
-	// verification run, and when it was last saved, and say whether this server
-	// can record approvals. The views page opens on this list; agents use it to
-	// find a change_id. Reading changes nothing.
+	// verification run and whether its revision and selected tests are current,
+	// and when it was last saved, and say whether this server can record
+	// approvals. The views page opens on this list; agents use it to find a
+	// change_id. Reading changes nothing.
 	ListChanges(context.Context) (res *ChangeList, err error)
 	// Return the current change list's version as soon as it differs from since,
 	// the version of the list the caller last read, or after a bounded wait of a
@@ -1066,6 +1067,11 @@ type LatestVerificationItem struct {
 	// when its report's verdict is known; not_completed when it stopped without a
 	// report.
 	State string
+	// Whether this run names the agreed request_revision and the tests selected
+	// now: the accepted test commit of the usable build in force, or the
+	// configured stored evaluator suite. It does not say whether the candidate
+	// working tree, deployment or approval is current.
+	InputsCurrent bool
 }
 
 // ListTracesPayload is the payload type of the surla service list_traces
@@ -4013,6 +4019,11 @@ type jsonLatestVerificationItemTransport struct {
 	// when its report's verdict is known; not_completed when it stopped without a
 	// report.
 	State *string `json:"state"`
+	// Whether this run names the agreed request_revision and the tests selected
+	// now: the accepted test commit of the usable build in force, or the
+	// configured stored evaluator suite. It does not say whether the candidate
+	// working tree, deployment or approval is current.
+	InputsCurrent *bool `json:"inputs_current"`
 }
 
 // validatejsonLatestVerificationItemTransport checks decoded JSON before it becomes a service value.
@@ -4025,6 +4036,9 @@ func validatejsonLatestVerificationItemTransport(value *jsonLatestVerificationIt
 	}
 	if value.State == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("state", "body"))
+	}
+	if value.InputsCurrent == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("inputs_current", "body"))
 	}
 	if value.State != nil {
 		if !(*value.State == "running" || *value.State == "passed" || *value.State == "failed" || *value.State == "not_completed") {
@@ -14789,8 +14803,9 @@ func EncodeLatestVerificationItem(in *LatestVerificationItem) ([]byte, error) {
 	var body *jsonLatestVerificationItemTransport
 	{
 		body = &jsonLatestVerificationItemTransport{
-			RunID: &in.RunID,
-			State: &in.State,
+			RunID:         &in.RunID,
+			State:         &in.State,
+			InputsCurrent: &in.InputsCurrent,
 		}
 	}
 	if err := validatejsonLatestVerificationItemTransport(body); err != nil {
@@ -14821,8 +14836,9 @@ func ValidateLatestVerificationItemValue(in *LatestVerificationItem) error {
 	var body *jsonLatestVerificationItemTransport
 	{
 		body = &jsonLatestVerificationItemTransport{
-			RunID: &in.RunID,
-			State: &in.State,
+			RunID:         &in.RunID,
+			State:         &in.State,
+			InputsCurrent: &in.InputsCurrent,
 		}
 	}
 	if err := validatejsonLatestVerificationItemTransport(body); err != nil {
@@ -14857,8 +14873,9 @@ func DecodeLatestVerificationItem(data []byte) (out *LatestVerificationItem, err
 	}
 	{
 		out = &LatestVerificationItem{
-			RunID: *body.RunID,
-			State: *body.State,
+			RunID:         *body.RunID,
+			State:         *body.State,
+			InputsCurrent: *body.InputsCurrent,
 		}
 	}
 	return out, nil
@@ -22021,8 +22038,9 @@ func decodeExampleItemTransportToExampleItem(v *jsonExampleItemTransport) *Examp
 
 func decodeLatestVerificationItemTransportToLatestVerificationItem(v *jsonLatestVerificationItemTransport) *LatestVerificationItem {
 	res := &LatestVerificationItem{
-		RunID: *v.RunID,
-		State: *v.State,
+		RunID:         *v.RunID,
+		State:         *v.State,
+		InputsCurrent: *v.InputsCurrent,
 	}
 
 	return res
@@ -23058,8 +23076,9 @@ func encodeExampleItemToExampleItemTransport(v *ExampleItem) *jsonExampleItemTra
 
 func encodeLatestVerificationItemToLatestVerificationItemTransport(v *LatestVerificationItem) *jsonLatestVerificationItemTransport {
 	res := &jsonLatestVerificationItemTransport{
-		RunID: &v.RunID,
-		State: &v.State,
+		RunID:         &v.RunID,
+		State:         &v.State,
+		InputsCurrent: &v.InputsCurrent,
 	}
 
 	return res
@@ -27937,6 +27956,13 @@ func validateChangeListJSONValue4(path string, value any, description string) er
 	sort.Strings(keys)
 	for _, key := range keys {
 		switch key {
+		case "inputs_current":
+			if err := validateAgentPolicyItemJSONValue3(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Whether this run names the agreed request_revision and the tests selected now: the accepted test commit of the usable build in force, or the configured stored evaluator suite. It does not say whether the candidate working tree, deployment or approval is current.",
+			); err != nil {
+				return err
+			}
 		case "run_id":
 			if err := validateAgentPolicyItemJSONValue2(
 				generatedJSONChildPath(path, key, false),
@@ -27953,6 +27979,7 @@ func validateChangeListJSONValue4(path string, value any, description string) er
 			}
 		default:
 			return unknownJSONFieldError(path, key, []string{
+				"inputs_current",
 				"run_id",
 				"state",
 			})

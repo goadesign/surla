@@ -6624,6 +6624,11 @@ var listChangesResultFields = []tools.FieldMetadata{
 		Description: "running while the run builds or evaluates the candidate; passed or failed when its report's verdict is known; not_completed when it stopped without a report.",
 	},
 	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("changes"), tools.DynamicField{}, tools.FixedField("latest_verification"), tools.FixedField("inputs_current")},
+		JSONType:    "boolean",
+		Description: "Whether this run names the agreed request_revision and the tests selected now: the accepted test commit of the usable build in force, or the configured stored evaluator suite. It does not say whether the candidate working tree, deployment or approval is current.",
+	},
+	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("changes"), tools.DynamicField{}, tools.FixedField("proposed_revision")},
 		JSONType:    "string",
 		Description: "request_revision of the revision the guide proposed beside this confirmed change, while it waits for the user to adopt or decline it; absent otherwise. status and request_revision describe the revision in force.",
@@ -22814,6 +22819,13 @@ func validateListChangesResultLatestVerificationItemTransportJSONValue(path stri
 	sort.Strings(keys)
 	for _, key := range keys {
 		switch key {
+		case "inputs_current":
+			if err := validateBooleanJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Whether this run names the agreed request_revision and the tests selected now: the accepted test commit of the usable build in force, or the configured stored evaluator suite. It does not say whether the candidate working tree, deployment or approval is current.",
+			); err != nil {
+				return err
+			}
 		case "run_id":
 			if err := validateStringJSONValue(
 				generatedJSONChildPath(path, key, false),
@@ -22830,6 +22842,7 @@ func validateListChangesResultLatestVerificationItemTransportJSONValue(path stri
 			}
 		default:
 			return unknownJSONFieldError(path, key, []string{
+				"inputs_current",
 				"run_id",
 				"state",
 			})
@@ -25074,8 +25087,9 @@ func decodeChangeListItemTransportToChangeListItem(v *toolhttp.ChangeListItemTra
 }
 func decodeLatestVerificationItemTransportToLatestVerificationItem(v *toolhttp.LatestVerificationItemTransport) *LatestVerificationItem {
 	res := &LatestVerificationItem{
-		RunID: *v.RunID,
-		State: *v.State,
+		RunID:         *v.RunID,
+		State:         *v.State,
+		InputsCurrent: *v.InputsCurrent,
 	}
 
 	return res
@@ -25097,8 +25111,9 @@ func encodeChangeListItemToChangeListItemTransport(v *ChangeListItem) *toolhttp.
 }
 func encodeLatestVerificationItemToLatestVerificationItemTransport(v *LatestVerificationItem) *toolhttp.LatestVerificationItemTransport {
 	res := &toolhttp.LatestVerificationItemTransport{
-		RunID: &v.RunID,
-		State: &v.State,
+		RunID:         &v.RunID,
+		State:         &v.State,
+		InputsCurrent: &v.InputsCurrent,
 	}
 
 	return res

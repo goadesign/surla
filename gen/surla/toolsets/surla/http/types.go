@@ -1390,6 +1390,11 @@ type (
 		// when its report's verdict is known; not_completed when it stopped without a
 		// report.
 		State *string `json:"state"`
+		// Whether this run names the agreed request_revision and the tests selected
+		// now: the accepted test commit of the usable build in force, or the
+		// configured stored evaluator suite. It does not say whether the candidate
+		// working tree, deployment or approval is current.
+		InputsCurrent *bool `json:"inputs_current"`
 	}
 	// LivePromptItemTransport is the internal JSON transport type for LivePromptItemTransport.
 	// It lives in the toolset-local http package and is used only for JSON
