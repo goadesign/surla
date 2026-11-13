@@ -3,6 +3,7 @@ module github.com/goadesign/surla
 go 1.27.3
 
 require (
+	github.com/goadesign/surla/story v0.0.0-20261111183703-4568fcf5bb85
 	github.com/google/uuid v1.6.0
 	github.com/stretchr/testify v1.12.1
 	github.com/yosida95/uritemplate/v3 v3.0.2
