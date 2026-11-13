@@ -125,7 +125,7 @@ paths:
             tags:
                 - surla
             summary: get_test_writer_assignment surla
-            description: Return the test writer's assignment for a change in full (the working folder, the design and Story as agreed at the built revision, the tests it requires, and the state with any findings) and record that the test writer read it at its revision. Later revisions do not change the saved design or Story. A new build of the change replaces the assignment, which then counts as unread.
+            description: Return the test writer's assignment for a change in full (the working folder, the design and Story as agreed at the built revision, the tests it requires, and the state with the text of any findings) and record that the test writer read it at its revision. Later revisions do not change the saved design or Story. A new build of the change replaces the assignment, which then counts as unread, and so does each verdict of Surla's check.
             operationId: surla#get_test_writer_assignment
             parameters:
                 - name: change_id
@@ -144,6 +144,7 @@ paths:
                             - request_revision
                             - in_force
                             - progress
+                            - findings
                             - working_folder
                             - design_source
                             - stories
@@ -179,7 +180,7 @@ paths:
             tags:
                 - surla
             summary: report_tests_finished surla
-            description: 'The test writer reports that its tests for a change at the build''s revision are finished. Surla only records the report: the assignment''s state becomes reported from any state, earlier findings or a recorded commit are cleared, and the tests are not checked. A report for another revision is refused and changes nothing.'
+            description: The test writer reports that its tests for a change at the build's revision are finished. Every report raises the build's report number by one and makes the state reported, from any state, clearing an earlier verdict, and returns at once. Surla then checks the tests in the working folder against the build's Story; its verdict, needs_changes, accepted or could_not_run, replaces reported in the test writer's assignment, which then counts as unread. A report for another revision, or in a project that verifies with its stored evaluator, where no test writer is used, is refused and changes nothing.
             operationId: surla#report_tests_finished
             parameters:
                 - name: change_id
@@ -230,7 +231,7 @@ paths:
                             temporary: false
                             timeout: false
                 "409":
-                    description: 'conflict: request_revision is not the revision of your test assignment; read it again with get_test_writer_assignment. Nothing changed.'
+                    description: 'conflict: request_revision is not the revision of your test assignment (read it again with get_test_writer_assignment), or no test writer is used because the project verifies with its stored evaluator. Nothing changed.'
                     schema:
                         $ref: '#/definitions/SurlaReportTestsFinishedConflictResponseBody'
                     examples:
@@ -366,7 +367,7 @@ paths:
             tags:
                 - surla
             summary: get_build surla
-            description: 'Return a change''s usable build for the current test source: not_started when none exists, including a builder-only build whose stored verification settings were removed; start a new build on the views page. Otherwise return the revision built, when, whether the builder read its assignment, the test writer''s state and whether it read its assignment, and whether the build is for the change''s revision in force. Reading changes nothing.'
+            description: 'Return a change''s usable build for the current test source: not_started when none exists, including a builder-only build whose stored verification settings were removed; start a new build on the views page. Otherwise return the revision built, when, whether the builder read its assignment, the test writer''s state (with the number of Surla''s findings, never their text) and whether it read its assignment, and whether the build is for the change''s revision in force. Reading changes nothing.'
             operationId: surla#get_build
             parameters:
                 - name: change_id
@@ -508,6 +509,70 @@ paths:
                             id: 123abc
                             message: parameter 'p' must be an integer
                             name: unavailable
+                            temporary: false
+                            timeout: false
+            schemes:
+                - http
+    /changes/{change_id}/build/findings:
+        get:
+            tags:
+                - surla
+            summary: get_test_findings surla
+            description: Return the text of Surla's findings on the tests of a change's build, which get_build only counts, with the build's revision and start time, the number of the report Surla checked and when it reached the verdict. A build whose tests do not need changes is refused. Reading changes nothing.
+            operationId: surla#get_test_findings
+            parameters:
+                - name: change_id
+                  in: path
+                  description: Change Card identifier.
+                  required: true
+                  type: string
+                  minLength: 1
+            responses:
+                "200":
+                    description: OK response.
+                    schema:
+                        $ref: '#/definitions/TestFindings'
+                        required:
+                            - change_id
+                            - request_revision
+                            - started_at
+                            - report
+                            - checked_at
+                            - findings
+                "403":
+                    description: 'forbidden: The authenticated caller may not perform this operation or does not own the resource.'
+                    schema:
+                        $ref: '#/definitions/SurlaGetTestFindingsForbiddenResponseBody'
+                    examples:
+                        application/vnd.goa.error:
+                            fault: false
+                            id: 123abc
+                            message: parameter 'p' must be an integer
+                            name: forbidden
+                            temporary: false
+                            timeout: false
+                "404":
+                    description: 'not_found: No Change Card exists with this change_id, or the change has no build.'
+                    schema:
+                        $ref: '#/definitions/SurlaGetTestFindingsNotFoundResponseBody'
+                    examples:
+                        application/vnd.goa.error:
+                            fault: false
+                            id: 123abc
+                            message: parameter 'p' must be an integer
+                            name: not_found
+                            temporary: false
+                            timeout: false
+                "409":
+                    description: 'conflict: The build''s tests do not need changes; get_build says what state they are in.'
+                    schema:
+                        $ref: '#/definitions/SurlaGetTestFindingsConflictResponseBody'
+                    examples:
+                        application/vnd.goa.error:
+                            fault: false
+                            id: 123abc
+                            message: parameter 'p' must be an integer
+                            name: conflict
                             temporary: false
                             timeout: false
             schemes:
@@ -2957,6 +3022,12 @@ definitions:
                             description: Full commit ID Surla recorded the accepted tests at (40 or 64 lowercase hex characters).
                             example: b418df2f2d1ea53902b297fcd7bb7a00cfd0dc2c
                             pattern: ^([0-9a-f]{40}|[0-9a-f]{64})$
+                        not_judged:
+                            type: string
+                            description: What Surla's check did not judge, always the same sentence.
+                            example: Surla checked that these tests build into the generated test program and declare every required scenario; it did not judge what they assert.
+                            enum:
+                                - Surla checked that these tests build into the generated test program and declare every required scenario; it did not judge what they assert.
                         state:
                             type: string
                             enum:
@@ -2964,6 +3035,7 @@ definitions:
                       required:
                         - commit
                         - checked_at
+                        - not_judged
                         - state
         description: 'The builder''s assignment: build this change at this revision in the project folder, where generate_code, check_project and verify_change act.'
         example:
@@ -3582,9 +3654,7 @@ definitions:
                         report: 7108203204833819401
                         tests:
                             checked_at: "1972-09-26T18:55:16Z"
-                            findings:
-                                - Rerum quia dolorem omnis.
-                                - Quia id rem cupiditate ea.
+                            finding_count: 5254885262627643994
                             state: needs_changes
                 anyOf:
                     - type: object
@@ -3651,9 +3721,7 @@ definitions:
                     report: 7108203204833819401
                     tests:
                         checked_at: "1972-09-26T18:55:16Z"
-                        findings:
-                            - Rerum quia dolorem omnis.
-                            - Quia id rem cupiditate ea.
+                        finding_count: 5254885262627643994
                         state: needs_changes
             change_id: Assumenda quas molestiae incidunt debitis.
         required:
@@ -9535,9 +9603,7 @@ definitions:
                     report: 7108203204833819401
                     tests:
                         checked_at: "1972-09-26T18:55:16Z"
-                        findings:
-                            - Rerum quia dolorem omnis.
-                            - Quia id rem cupiditate ea.
+                        finding_count: 5254885262627643994
                         state: needs_changes
             team:
                 count: 6792670643739432319
@@ -9603,9 +9669,7 @@ definitions:
                 report: 7108203204833819401
                 tests:
                     checked_at: "1972-09-26T18:55:16Z"
-                    findings:
-                        - Rerum quia dolorem omnis.
-                        - Quia id rem cupiditate ea.
+                    finding_count: 5254885262627643994
                     state: needs_changes
         required:
             - request_revision
@@ -13544,6 +13608,135 @@ definitions:
             - temporary
             - timeout
             - fault
+    SurlaGetTestFindingsConflictResponseBody:
+        title: 'Mediatype identifier: application/vnd.goa.error; view=default'
+        type: object
+        properties:
+            fault:
+                type: boolean
+                description: Is the error a server-side fault?
+                example: false
+            id:
+                type: string
+                description: ID is a unique identifier for this particular occurrence of the problem.
+                example: 123abc
+            message:
+                type: string
+                description: Message is a human-readable explanation specific to this occurrence of the problem.
+                example: parameter 'p' must be an integer
+            name:
+                type: string
+                description: Name is the name of this class of errors.
+                example: bad_request
+            temporary:
+                type: boolean
+                description: Is the error temporary?
+                example: false
+            timeout:
+                type: boolean
+                description: Is the error a timeout?
+                example: false
+        description: Error response result type (default view)
+        example:
+            fault: false
+            id: 123abc
+            message: parameter 'p' must be an integer
+            name: bad_request
+            temporary: false
+            timeout: false
+        required:
+            - name
+            - id
+            - message
+            - temporary
+            - timeout
+            - fault
+    SurlaGetTestFindingsForbiddenResponseBody:
+        title: 'Mediatype identifier: application/vnd.goa.error; view=default'
+        type: object
+        properties:
+            fault:
+                type: boolean
+                description: Is the error a server-side fault?
+                example: false
+            id:
+                type: string
+                description: ID is a unique identifier for this particular occurrence of the problem.
+                example: 123abc
+            message:
+                type: string
+                description: Message is a human-readable explanation specific to this occurrence of the problem.
+                example: parameter 'p' must be an integer
+            name:
+                type: string
+                description: Name is the name of this class of errors.
+                example: bad_request
+            temporary:
+                type: boolean
+                description: Is the error temporary?
+                example: false
+            timeout:
+                type: boolean
+                description: Is the error a timeout?
+                example: false
+        description: Error response result type (default view)
+        example:
+            fault: false
+            id: 123abc
+            message: parameter 'p' must be an integer
+            name: bad_request
+            temporary: false
+            timeout: false
+        required:
+            - name
+            - id
+            - message
+            - temporary
+            - timeout
+            - fault
+    SurlaGetTestFindingsNotFoundResponseBody:
+        title: 'Mediatype identifier: application/vnd.goa.error; view=default'
+        type: object
+        properties:
+            fault:
+                type: boolean
+                description: Is the error a server-side fault?
+                example: true
+            id:
+                type: string
+                description: ID is a unique identifier for this particular occurrence of the problem.
+                example: 123abc
+            message:
+                type: string
+                description: Message is a human-readable explanation specific to this occurrence of the problem.
+                example: parameter 'p' must be an integer
+            name:
+                type: string
+                description: Name is the name of this class of errors.
+                example: bad_request
+            temporary:
+                type: boolean
+                description: Is the error temporary?
+                example: false
+            timeout:
+                type: boolean
+                description: Is the error a timeout?
+                example: true
+        description: Error response result type (default view)
+        example:
+            fault: true
+            id: 123abc
+            message: parameter 'p' must be an integer
+            name: bad_request
+            temporary: false
+            timeout: true
+        required:
+            - name
+            - id
+            - message
+            - temporary
+            - timeout
+            - fault
     SurlaGetTestWriterAssignmentForbiddenResponseBody:
         title: 'Mediatype identifier: application/vnd.goa.error; view=default'
         type: object
@@ -16957,6 +17150,59 @@ definitions:
         required:
             - name
             - count
+    TestFindings:
+        title: TestFindings
+        type: object
+        properties:
+            change_id:
+                type: string
+                description: Change Card identifier.
+                example: Amet id.
+            checked_at:
+                type: string
+                description: When Surla's check reached this verdict.
+                example: "1998-09-04T03:35:14Z"
+                format: date-time
+            findings:
+                type: array
+                items:
+                    type: string
+                    example: Voluptatum nihil aliquam assumenda voluptatem voluptatum ad.
+                description: What Surla found, one problem per item, with no absolute path.
+                example:
+                    - Voluptatum nihil aliquam assumenda voluptatem voluptatum ad.
+                minItems: 1
+            report:
+                type: integer
+                description: Number of the test writer's report that Surla checked, as get_build reports it; 0 when Surla found the problems while writing the required tests as the build started, before any report.
+                example: 4882675287293811903
+                format: int64
+                minimum: 0
+            request_revision:
+                type: string
+                description: Change Card revision the build is for.
+                example: At itaque minus recusandae quaerat non.
+            started_at:
+                type: string
+                description: When the user started the build, as get_build reports it.
+                example: "1992-05-30T18:08:54Z"
+                format: date-time
+        description: The text of Surla's findings on a build's tests, with the build and the report they belong to, for the user's page.
+        example:
+            change_id: Amet id.
+            checked_at: "1998-09-04T03:35:14Z"
+            findings:
+                - Voluptatum nihil aliquam assumenda voluptatem voluptatum ad.
+            report: 4882675287293811903
+            request_revision: At itaque minus recusandae quaerat non.
+            started_at: "1992-05-30T18:08:54Z"
+        required:
+            - change_id
+            - request_revision
+            - started_at
+            - report
+            - checked_at
+            - findings
     TestWriterAssignment:
         title: TestWriterAssignment
         type: object
@@ -16969,6 +17215,15 @@ definitions:
                 type: string
                 description: The canonical design source as agreed at request_revision, copied when this build started; later revisions do not change it.
                 example: Repellendus excepturi dignissimos vitae.
+            findings:
+                type: array
+                items:
+                    type: string
+                    example: Et voluptatibus accusamus.
+                description: 'Surla''s findings, one problem per item, with no absolute path: as many as progress gives in finding_count when its state is needs_changes, and none in any other state. Fix them in working_folder, then report again.'
+                example:
+                    - Et voluptatibus accusamus.
+                    - Sed ipsum assumenda assumenda vero porro.
             in_force:
                 type: boolean
                 description: 'True when request_revision is the change''s confirmed revision in force, as get_build reports it. It stays true while a revision the guide proposed waits beside the agreed one, and is false once the user has adopted a proposed revision or confirmed another revision: the assignment then stays for this earlier revision until the user builds again.'
@@ -18103,15 +18358,16 @@ definitions:
         example:
             change_id: Odio qui dolore.
             design_source: Repellendus excepturi dignissimos vitae.
+            findings:
+                - Et voluptatibus accusamus.
+                - Sed ipsum assumenda assumenda vero porro.
             in_force: false
             progress:
                 read: true
                 report: 7108203204833819401
                 tests:
                     checked_at: "1972-09-26T18:55:16Z"
-                    findings:
-                        - Rerum quia dolorem omnis.
-                        - Quia id rem cupiditate ea.
+                    finding_count: 5254885262627643994
                     state: needs_changes
             request_revision: Ut sit qui.
             required_tests:
@@ -19226,6 +19482,7 @@ definitions:
             - request_revision
             - in_force
             - progress
+            - findings
             - working_folder
             - design_source
             - stories
@@ -19257,9 +19514,7 @@ definitions:
                 report: 7108203204833819401
                 tests:
                     checked_at: "1972-09-26T18:55:16Z"
-                    findings:
-                        - Rerum quia dolorem omnis.
-                        - Quia id rem cupiditate ea.
+                    finding_count: 5254885262627643994
                     state: needs_changes
             request_revision: Quidem nulla minima at voluptatum delectus.
         required:
@@ -19284,9 +19539,7 @@ definitions:
                         report: 7108203204833819401
                         tests:
                             checked_at: "1972-09-26T18:55:16Z"
-                            findings:
-                                - Rerum quia dolorem omnis.
-                                - Quia id rem cupiditate ea.
+                            finding_count: 5254885262627643994
                             state: needs_changes
                       request_revision: Quidem nulla minima at voluptatum delectus.
                     - change_id: Veniam ex reiciendis.
@@ -19296,9 +19549,7 @@ definitions:
                         report: 7108203204833819401
                         tests:
                             checked_at: "1972-09-26T18:55:16Z"
-                            findings:
-                                - Rerum quia dolorem omnis.
-                                - Quia id rem cupiditate ea.
+                            finding_count: 5254885262627643994
                             state: needs_changes
                       request_revision: Quidem nulla minima at voluptatum delectus.
                     - change_id: Veniam ex reiciendis.
@@ -19308,9 +19559,7 @@ definitions:
                         report: 7108203204833819401
                         tests:
                             checked_at: "1972-09-26T18:55:16Z"
-                            findings:
-                                - Rerum quia dolorem omnis.
-                                - Quia id rem cupiditate ea.
+                            finding_count: 5254885262627643994
                             state: needs_changes
                       request_revision: Quidem nulla minima at voluptatum delectus.
         description: The test writer's assignments, one per change the user built, most recently started first.
@@ -19323,9 +19572,7 @@ definitions:
                     report: 7108203204833819401
                     tests:
                         checked_at: "1972-09-26T18:55:16Z"
-                        findings:
-                            - Rerum quia dolorem omnis.
-                            - Quia id rem cupiditate ea.
+                        finding_count: 5254885262627643994
                         state: needs_changes
                   request_revision: Quidem nulla minima at voluptatum delectus.
                 - change_id: Veniam ex reiciendis.
@@ -19335,9 +19582,7 @@ definitions:
                     report: 7108203204833819401
                     tests:
                         checked_at: "1972-09-26T18:55:16Z"
-                        findings:
-                            - Rerum quia dolorem omnis.
-                            - Quia id rem cupiditate ea.
+                        finding_count: 5254885262627643994
                         state: needs_changes
                   request_revision: Quidem nulla minima at voluptatum delectus.
                 - change_id: Veniam ex reiciendis.
@@ -19347,9 +19592,7 @@ definitions:
                     report: 7108203204833819401
                     tests:
                         checked_at: "1972-09-26T18:55:16Z"
-                        findings:
-                            - Rerum quia dolorem omnis.
-                            - Quia id rem cupiditate ea.
+                        finding_count: 5254885262627643994
                         state: needs_changes
                   request_revision: Quidem nulla minima at voluptatum delectus.
         required:
@@ -19364,18 +19607,16 @@ definitions:
                 example: true
             report:
                 type: integer
-                description: Number of the test writer's latest counted report of this build; 0 when none was counted. Reports are not counted yet, so it is 0.
+                description: 'Number of the test writer''s latest report of this build: 0 until its first report, and one more with each report_tests_finished.'
                 example: 7108203204833819401
                 format: int64
                 minimum: 0
             tests:
                 type: object
-                description: 'The tests'' state: not_used when the project verifies with its stored evaluator; otherwise assigned, reported, needs_changes with Surla''s findings, accepted with the commit Surla recorded, or could_not_run with the reason and the user''s step. Each verdict carries the time Surla reached it.'
+                description: 'The tests'' state: not_used when the project verifies with its stored evaluator; otherwise assigned, reported, needs_changes with the number of Surla''s findings, accepted with the commit Surla recorded, or could_not_run with the reason and the user''s step. Each verdict carries the time Surla reached it.'
                 example:
                     checked_at: "1972-09-26T18:55:16Z"
-                    findings:
-                        - Rerum quia dolorem omnis.
-                        - Quia id rem cupiditate ea.
+                    finding_count: 5254885262627643994
                     state: needs_changes
                 anyOf:
                     - type: object
@@ -19409,22 +19650,18 @@ definitions:
                             description: When Surla's check reached this verdict.
                             example: "1999-02-14T22:07:37Z"
                             format: date-time
-                        findings:
-                            type: array
-                            items:
-                                type: string
-                                example: Eos et qui et.
-                            description: 'What Surla found, one problem per item: a test that does not build or a required test that is not declared.'
-                            example:
-                                - Eos et qui et.
-                                - Et fugiat praesentium vel excepturi earum.
-                            minItems: 1
+                        finding_count:
+                            type: integer
+                            description: Number of problems Surla found.
+                            example: 249256386143558940
+                            format: int64
+                            minimum: 1
                         state:
                             type: string
                             enum:
                                 - needs_changes
                       required:
-                        - findings
+                        - finding_count
                         - checked_at
                         - state
                     - type: object
@@ -19439,6 +19676,12 @@ definitions:
                             description: Full commit ID Surla recorded the accepted tests at (40 or 64 lowercase hex characters).
                             example: 5d5aad7fc0696c095f793336c17599bafd73c403
                             pattern: ^([0-9a-f]{40}|[0-9a-f]{64})$
+                        not_judged:
+                            type: string
+                            description: What Surla's check did not judge, always the same sentence.
+                            example: Surla checked that these tests build into the generated test program and declare every required scenario; it did not judge what they assert.
+                            enum:
+                                - Surla checked that these tests build into the generated test program and declare every required scenario; it did not judge what they assert.
                         state:
                             type: string
                             enum:
@@ -19446,6 +19689,7 @@ definitions:
                       required:
                         - commit
                         - checked_at
+                        - not_judged
                         - state
                     - type: object
                       properties:
@@ -19481,9 +19725,7 @@ definitions:
             report: 7108203204833819401
             tests:
                 checked_at: "1972-09-26T18:55:16Z"
-                findings:
-                    - Rerum quia dolorem omnis.
-                    - Quia id rem cupiditate ea.
+                finding_count: 5254885262627643994
                 state: needs_changes
         required:
             - tests

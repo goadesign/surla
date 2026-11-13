@@ -36,7 +36,7 @@ func TestOperationPolicyCoversEveryTool(t *testing.T) {
 		"get_change": common, "preview_architecture": common, "diff": common, "get_verification": common, "list_verifications": common, "list_traces": common, "read_check_output": common, "get_story_refresh": common,
 		"list_changes": common, "wait_for_changes": {CallerUser}, "decline_revision": {CallerUser},
 		"get_team": {CallerUser}, "show_team_pane": {CallerUser}, "start_team_agents": {CallerUser},
-		"start_build": {CallerUser}, "get_build": {CallerUser, CallerGuide, CallerBuilder, CallerTestWriter},
+		"start_build": {CallerUser}, "get_build": {CallerUser, CallerGuide, CallerBuilder, CallerTestWriter}, "get_test_findings": {CallerUser},
 		"list_builder_assignments": {CallerBuilder}, "get_builder_assignment": {CallerBuilder},
 		"list_test_writer_assignments": {CallerTestWriter}, "get_test_writer_assignment": {CallerTestWriter},
 		"report_tests_finished": {CallerTestWriter},

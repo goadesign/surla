@@ -384,11 +384,23 @@ type (
 		// receive releases it, and a waiter can give up when its context
 		// ends. Whoever holds the turn is the only one opening the copy,
 		// writing the required tests into it, checking it or recording its
-		// accepted tests, for the whole of that step. Take it before mu and
-		// never while holding mu: those steps run for minutes, and mu guards
-		// every card and build read. Starts take it without waiting; report checks
-		// use the same turn.
+		// accepted tests, for the whole of that step: a build start takes it
+		// without waiting, and the report checker holds it for each report it
+		// judges. Locks are taken in the order workingCopyTurn, reportMu, mu,
+		// never the other way: the turn's steps run for minutes, and mu guards
+		// every card and build read.
 		workingCopyTurn chan struct{}
+		// reportMu serializes report_tests_finished with the report
+		// checker's last step, which confirms that a build is still the one
+		// it checked, records accepted tests and saves the verdict. A report
+		// thus never falls between that confirmation and the commit; it
+		// waits for one Record, which takes milliseconds. Taken after
+		// workingCopyTurn and before mu.
+		reportMu sync.Mutex
+		// reportWake tells the report checker that a report was recorded.
+		// It has room for one value; report_tests_finished sends without
+		// waiting, and a full channel already says the same.
+		reportWake chan struct{}
 		// buildStartOps counts accepted starts, admitted through workspaceMu's
 		// existing shutdown barrier and drained before stores and evaluators close.
 		buildStartOps sync.WaitGroup
@@ -512,6 +524,7 @@ func New(opts Options) (*ControlPlane, error) {
 		surlaVersion:           surlaVersion,
 		liveState:              newLiveState(opts.Live, cards.dir),
 		workingCopyTurn:        make(chan struct{}, 1),
+		reportWake:             make(chan struct{}, 1),
 		team:                   opts.Team,
 	}
 	if err := cp.restoreWorkspace(); err != nil {

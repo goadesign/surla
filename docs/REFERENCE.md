@@ -36,7 +36,8 @@ The builder generates/checks code, updates dependencies, starts live targets,
 drafts prompts, and requests verification. The user and builder can stop a live
 target. User, guide, and builder share change, architecture, diff, verification,
 trace, check-output, and Story-refresh reads. Only the user session starts a
-build; all four read a change's build. The builder reads its own build
+build; all four read a change's build, and only the user session reads the
+text of Surla's findings on its tests. The builder reads its own build
 assignments, and the test writer reads its own test assignments and reports
 them finished (see [Builds and assignments](#builds-and-assignments)).
 Management operations are not MCP tools. A refused
@@ -219,21 +220,57 @@ to finish preparation.
 | `working_copy_busy` | 409 | Start the build again after the current build or test check ends. |
 | `sandbox_unavailable` | 501 | Use a system with Surla's candidate sandbox. |
 
+**Judging reports.** Surla, not the test writer, decides whether the tests
+count. Each `report_tests_finished` raises the build's report number and wakes
+the server's *report checker*, which judges the test writer's working copy
+against the Story saved with the build, without running any of the copy's code
+outside the sandbox:
+
+1. It writes the required tests into the copy again from the build's Story.
+2. It checks that only files inside the test module changed since the copy's
+   base, regenerates the generated folder in a private snapshot, builds the
+   generated test program `./gen/cmd/<name>-evals` in the build sandbox
+   (within 10 minutes), and lists its scenarios in the candidate sandbox
+   (within 60 seconds). The whole judgment has 15 minutes.
+3. Its verdict replaces `reported` and marks the test writer's assignment
+   unread:
+   - `needs_changes`: the copy has findings, such as a missing hook method,
+     a file changed outside the test module, a scenario tagged `holdout`, a
+     module that does not declare exactly one evaluation suite, or a build or
+     listing that reached its limit;
+   - `accepted`: the tests are committed on the copy's `surla/tests` branch,
+     and the builder's assignment is marked unread too;
+   - `could_not_run`: a cause the test writer cannot fix, with the user's
+     step.
+
+The check runs in the project's working-copy turn, one judgment at a time, so
+a build start during a judgment is refused as busy. A newer report during a
+judgment makes the server discard that judgment's verdict and judge the newer
+report next. A report waits while the checker commits accepted tests, so it
+keeps its number. Builds found reported when the checker starts are judged
+then. Findings and reasons contain no absolute path. A saved build has report
+number 0 while its tests are assigned and at least 1 while they are reported.
+The project server does not start the report checker yet, so a report stays
+`reported`.
+
 - **`get_build`** (`GET /changes/{change_id}/build`; user, guide, builder, test writer)
   - **Input:** `change_id` → **Output:** `ChangeBuild` (`change_id`, `build`).
   - `build.state` is `not_started` when no usable build exists, otherwise `started` with the saved build fields above. A build started with only a builder is usable while the server uses its stored evaluator. If those settings are removed, it has no test-writer copy: the read returns `not_started`, no assignment from that build is listed or returned, and the user builds again. This does not delete the saved record.
   - `in_force` stays true while a proposal waits beside the agreed revision, and becomes false when the user adopts or confirms another revision. An older usable build keeps its assignments until the user builds again; it is not rebuilt automatically.
-  - `builder` reports whether its assignment was read. `test_writer` reports `tests`, `read` and `report`. Test states are `not_used`, `assigned`, `reported`, `needs_changes` (findings), `accepted` (commit), or `could_not_run` (reason and step). Each verdict carries `checked_at`. `not_used` is derived from current stored verification settings, never saved as a verdict. `report` is the counted report number, zero until reports are counted.
+  - `builder` reports whether its assignment was read. `test_writer` reports `tests`, `read` and `report`. Test states are `not_used`, `assigned`, `reported`, `needs_changes` (the `finding_count` of Surla's findings, never their text), `accepted` (the `commit`, and `not_judged`, always the sentence "Surla checked that these tests build into the generated test program and declare every required scenario; it did not judge what they assert."), or `could_not_run` (reason and step). Each verdict carries `checked_at`. `not_used` is derived from current stored verification settings, never saved as a verdict. `report` is the number of the test writer's latest report of the build: 0 until its first, and one more with each `report_tests_finished`.
+- **`get_test_findings`** (`GET /changes/{change_id}/build/findings`; HTTP only, user session only)
+  - **Input:** `change_id` → **Output:** `TestFindings` (`change_id`, `request_revision`, `started_at`, `report`, `checked_at`, `findings`)
+  - Returns the text of Surla's findings when the build's tests are `needs_changes`, with the build they belong to (`request_revision` and `started_at`, as `get_build` reports them), the number of the `report` checked (0 when the problems were found as the build started, before any report) and when the verdict was reached, for the views page. `get_build` carries only their number. Returns `conflict` (HTTP `409`) in any other state, naming it, and `not_found` when no usable build exists. Reading changes nothing.
 - **`list_builder_assignments`** (`GET /assignments/builder`) and **`get_builder_assignment`** (`GET /assignments/builder/{change_id}`; builder only)
   - **Output:** `BuilderAssignmentList` (`assignments`, most recently started first) or one `BuilderAssignment` (`change_id`, `request_revision`, `in_force`, `read`, `written_tests`). `written_tests.state` is `not_used`, `not_yet_accepted`, or `accepted` with its commit and verdict time.
   - The builder works in the control plane's active workspace, which may be the child project made by `init_project`. Reading an assignment marks it read; listing changes nothing. `not_found` means there is no usable build, and names the build-again step.
 - **`list_test_writer_assignments`** (`GET /assignments/test-writer`) and **`get_test_writer_assignment`** (`GET /assignments/test-writer/{change_id}`; test writer only)
-  - **Output:** the assignment list, or a full assignment with `in_force`, `progress`, `working_folder`, `design_source`, `stories` and `required_tests`.
+  - **Output:** the assignment list, or a full assignment with `in_force`, `progress`, `findings`, `working_folder`, `design_source`, `stories` and `required_tests`. `findings` holds the text of Surla's findings when `progress` is `needs_changes`, as many as its `finding_count`, and is empty otherwise; the list carries only their number.
   - Only builds started with a test writer have its assignment. `working_folder` is the project's folder inside the linked working copy, not necessarily the repository checkout's root. The saved design and Story stay paired with the built revision after later changes.
   - `required_tests` holds one entry per finished flow (`story`, `flow_key`, `scenario`, `hook`): flow `refund-over-limit` requires scenario `refund_over_limit` and method `RefundOverLimit`. Unfinished flows require none; the test program must still build when the list is empty. Reading an assignment marks it read; listing changes nothing. No successful full assignment returns an empty working folder.
 - **`report_tests_finished`** (`POST /assignments/test-writer/{change_id}/finished`; test writer only)
   - **Input:** `change_id`, `request_revision` → **Output:** `TestWriterAssignmentItem`.
-  - Records `reported` for that assignment's revision and clears earlier findings or a recorded commit. Returns `conflict` (409) for another revision and `not_found` when no usable test-writer assignment exists; a refused report changes nothing. The server currently records the report without running its acceptance check.
+  - Records `reported` for that assignment's revision from any state, raises `report` by one even when the tests are already `reported`, and clears an earlier verdict. It returns at once and wakes the report checker, whose verdict replaces `reported` (see **Judging reports** above; the project server does not start the checker yet). Returns `conflict` (409) for another revision and in a project that now verifies with its stored evaluator, where no test writer is used, and `not_found` when no usable test-writer assignment exists; a refused report changes nothing.
 
 ### Live target prompt contract
 

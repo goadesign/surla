@@ -529,9 +529,12 @@ type (
 		// proposed revision or confirmed another revision: the assignment then stays
 		// for this earlier revision until the user builds again.
 		InForce *bool `json:"in_force"`
-		// Where this assignment stands, including Surla's findings when it needs
-		// changes.
+		// Where this assignment stands.
 		Progress *TestWriterProgressTransport `json:"progress"`
+		// Surla's findings, one problem per item, with no absolute path: as many as
+		// progress gives in finding_count when its state is needs_changes, and none in
+		// any other state. Fix them in working_folder, then report again.
+		Findings []string `json:"findings"`
 		// Folder to write the tests in: your own working copy of the project.
 		WorkingFolder *string `json:"working_folder"`
 		// The canonical design source as agreed at request_revision, copied when this
@@ -1594,15 +1597,16 @@ type (
 	// the public tool type.
 	TestWriterProgressTransport struct {
 		// The tests' state: not_used when the project verifies with its stored
-		// evaluator; otherwise assigned, reported, needs_changes with Surla's
-		// findings, accepted with the commit Surla recorded, or could_not_run with the
-		// reason and the user's step. Each verdict carries the time Surla reached it.
+		// evaluator; otherwise assigned, reported, needs_changes with the number of
+		// Surla's findings, accepted with the commit Surla recorded, or could_not_run
+		// with the reason and the user's step. Each verdict carries the time Surla
+		// reached it.
 		Tests *Tests `json:"tests"`
 		// True once the test writer read this assignment in full with
 		// get_test_writer_assignment.
 		Read *bool `json:"read"`
-		// Number of the test writer's latest counted report of this build; 0 when none
-		// was counted. Reports are not counted yet, so it is 0.
+		// Number of the test writer's latest report of this build: 0 until its first
+		// report, and one more with each report_tests_finished.
 		Report *int `json:"report"`
 	}
 	// TestsAcceptedTransport is the internal JSON transport type for TestsAcceptedTransport.
@@ -1615,6 +1619,8 @@ type (
 		Commit *string `json:"commit"`
 		// When Surla's check reached this verdict.
 		CheckedAt *string `json:"checked_at"`
+		// What Surla's check did not judge, always the same sentence.
+		NotJudged *string `json:"not_judged"`
 	}
 	// TestsAssignedTransport is the internal JSON transport type for TestsAssignedTransport.
 	// It lives in the toolset-local http package and is used only for JSON
@@ -1639,9 +1645,8 @@ type (
 	// decode + validation (missing-field detection) before transforming into
 	// the public tool type.
 	TestsNeedChangesTransport struct {
-		// What Surla found, one problem per item: a test that does not build or a
-		// required test that is not declared.
-		Findings []string `json:"findings"`
+		// Number of problems Surla found.
+		FindingCount *int `json:"finding_count"`
 		// When Surla's check reached this verdict.
 		CheckedAt *string `json:"checked_at"`
 	}

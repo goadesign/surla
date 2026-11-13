@@ -715,6 +715,9 @@ func ValidateGetTestWriterAssignmentResultTransport(body *GetTestWriterAssignmen
 	if body.Progress == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("progress", "body"))
 	}
+	if body.Findings == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("findings", "body"))
+	}
 	if body.WorkingFolder == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("working_folder", "body"))
 	}
@@ -2291,11 +2294,19 @@ func ValidateTestsAcceptedTransport(body *TestsAcceptedTransport) (err error) {
 	if body.CheckedAt == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("checked_at", "body"))
 	}
+	if body.NotJudged == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("not_judged", "body"))
+	}
 	if body.Commit != nil {
 		err = goa.MergeErrors(err, goa.ValidatePattern("body.commit", *body.Commit, "^([0-9a-f]{40}|[0-9a-f]{64})$"))
 	}
 	if body.CheckedAt != nil {
 		err = goa.MergeErrors(err, goa.ValidateFormat("body.checked_at", *body.CheckedAt, goa.FormatDateTime))
+	}
+	if body.NotJudged != nil {
+		if !(*body.NotJudged == "Surla checked that these tests build into the generated test program and declare every required scenario; it did not judge what they assert.") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.not_judged", *body.NotJudged, []any{"Surla checked that these tests build into the generated test program and declare every required scenario; it did not judge what they assert."}))
+		}
 	}
 	return
 }
@@ -2335,14 +2346,16 @@ func ValidateTestsCouldNotRunTransport(body *TestsCouldNotRunTransport) (err err
 
 // ValidateTestsNeedChangesTransport runs the validations defined on TestsNeedChangesTransport.
 func ValidateTestsNeedChangesTransport(body *TestsNeedChangesTransport) (err error) {
-	if body.Findings == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("findings", "body"))
+	if body.FindingCount == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("finding_count", "body"))
 	}
 	if body.CheckedAt == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("checked_at", "body"))
 	}
-	if len(body.Findings) < 1 {
-		err = goa.MergeErrors(err, goa.InvalidLengthError("body.findings", body.Findings, len(body.Findings), 1, true))
+	if body.FindingCount != nil {
+		if *body.FindingCount < 1 {
+			err = goa.MergeErrors(err, goa.InvalidRangeError("body.finding_count", *body.FindingCount, 1, true))
+		}
 	}
 	if body.CheckedAt != nil {
 		err = goa.MergeErrors(err, goa.ValidateFormat("body.checked_at", *body.CheckedAt, goa.FormatDateTime))

@@ -8,6 +8,12 @@ import (
 	. "goa.design/goa/v3/dsl"
 )
 
+// testsNotJudged is the sentence every accepted result of the test writer's
+// tests carries: what Surla's check established and what it left to the
+// user. The control plane writes it from its own constant of the same name,
+// and a test there compares the two through the generated contract.
+const testsNotJudged = "Surla checked that these tests build into the generated test program and declare every required scenario; it did not judge what they assert."
+
 // TestsNotUsed is how a build reads when no test writer is used.
 var TestsNotUsed = Type("TestsNotUsed", func() {
 	Description("No test writer is used: the project verifies with the evaluator stored with surla verification set. Every read of a build in such a project shows this, whatever the build recorded.")
@@ -20,17 +26,15 @@ var TestsAssigned = Type("TestsAssigned", func() {
 
 // TestsReported is the test writer's state after it reported its tests finished.
 var TestsReported = Type("TestsReported", func() {
-	Description("The test writer reported its tests finished at this build's revision; Surla has not checked them.")
+	Description("The test writer reported its tests finished at this build's revision. Surla checks them right after each report; its verdict replaces this state.")
 })
 
 // TestsNeedChanges is the test writer's state after Surla found problems.
 var TestsNeedChanges = Type("TestsNeedChanges", func() {
-	Description("Surla checked the reported tests and found problems the test writer must fix before reporting again.")
-	Attribute("findings", ArrayOf(String), "What Surla found, one problem per item: a test that does not build or a required test that is not declared.", func() {
-		MinLength(1)
-	})
+	Description("Surla checked the reported tests and found problems the test writer must fix before reporting again. Their text is in the test writer's assignment (get_test_writer_assignment) and, for the user, in get_test_findings.")
+	Attribute("finding_count", Int, "Number of problems Surla found.", func() { Minimum(1) })
 	Attribute("checked_at", String, "When Surla's check reached this verdict.", func() { Format(FormatDateTime) })
-	Required("findings", "checked_at")
+	Required("finding_count", "checked_at")
 })
 
 // TestsAccepted is the test writer's state after Surla accepted its tests.
@@ -40,7 +44,8 @@ var TestsAccepted = Type("TestsAccepted", func() {
 		Pattern("^([0-9a-f]{40}|[0-9a-f]{64})$")
 	})
 	Attribute("checked_at", String, "When Surla's check reached this verdict.", func() { Format(FormatDateTime) })
-	Required("commit", "checked_at")
+	Attribute("not_judged", String, "What Surla's check did not judge, always the same sentence.", func() { Enum(testsNotJudged) })
+	Required("commit", "checked_at", "not_judged")
 })
 
 // TestsCouldNotRun is the test writer's state when Surla's check could not run.
@@ -66,7 +71,7 @@ var TestsNotYetAccepted = Type("TestsNotYetAccepted", func() {
 // TestWriterProgress is the test writer's state and whether it read its assignment.
 var TestWriterProgress = Type("TestWriterProgress", func() {
 	Description("Where the test writer's assignment for one build stands.")
-	OneOf("tests", "The tests' state: not_used when the project verifies with its stored evaluator; otherwise assigned, reported, needs_changes with Surla's findings, accepted with the commit Surla recorded, or could_not_run with the reason and the user's step. Each verdict carries the time Surla reached it.", func() {
+	OneOf("tests", "The tests' state: not_used when the project verifies with its stored evaluator; otherwise assigned, reported, needs_changes with the number of Surla's findings, accepted with the commit Surla recorded, or could_not_run with the reason and the user's step. Each verdict carries the time Surla reached it.", func() {
 		Meta("oneof:json:flatten")
 		Meta("oneof:type:field", "state")
 		Attribute("not_used", TestsNotUsed)
@@ -77,7 +82,7 @@ var TestWriterProgress = Type("TestWriterProgress", func() {
 		Attribute("could_not_run", TestsCouldNotRun)
 	})
 	Attribute("read", Boolean, "True once the test writer read this assignment in full with get_test_writer_assignment.")
-	Attribute("report", Int, "Number of the test writer's latest counted report of this build; 0 when none was counted. Reports are not counted yet, so it is 0.", func() {
+	Attribute("report", Int, "Number of the test writer's latest report of this build: 0 until its first report, and one more with each report_tests_finished.", func() {
 		Minimum(0)
 	})
 	Required("tests", "read", "report")
@@ -177,12 +182,25 @@ var TestWriterAssignment = Type("TestWriterAssignment", func() {
 	Attribute("change_id", String, "Change Card the tests are for.")
 	Attribute("request_revision", String, "Change Card revision the tests are for; report_tests_finished takes it.")
 	Attribute("in_force", Boolean, "True when request_revision is the change's confirmed revision in force, as get_build reports it. It stays true while a revision the guide proposed waits beside the agreed one, and is false once the user has adopted a proposed revision or confirmed another revision: the assignment then stays for this earlier revision until the user builds again.")
-	Attribute("progress", TestWriterProgress, "Where this assignment stands, including Surla's findings when it needs changes.")
+	Attribute("progress", TestWriterProgress, "Where this assignment stands.")
+	Attribute("findings", ArrayOf(String), "Surla's findings, one problem per item, with no absolute path: as many as progress gives in finding_count when its state is needs_changes, and none in any other state. Fix them in working_folder, then report again.")
 	Attribute("working_folder", String, "Folder to write the tests in: your own working copy of the project.")
 	Attribute("design_source", String, "The canonical design source as agreed at request_revision, copied when this build started; later revisions do not change it.")
 	Attribute("stories", ArrayOf(StorySummaryItem), "The Story as agreed at request_revision, in declaration order. It does not change when the change is revised later.")
 	Attribute("required_tests", ArrayOf(RequiredTest), "One test per finished flow of stories, in declaration order; unfinished flows require none.")
-	Required("change_id", "request_revision", "in_force", "progress", "working_folder", "design_source", "stories", "required_tests")
+	Required("change_id", "request_revision", "in_force", "progress", "findings", "working_folder", "design_source", "stories", "required_tests")
+})
+
+// TestFindings is the text of Surla's findings on one build's tests.
+var TestFindings = Type("TestFindings", func() {
+	Description("The text of Surla's findings on a build's tests, with the build and the report they belong to, for the user's page.")
+	Attribute("change_id", String, "Change Card identifier.")
+	Attribute("request_revision", String, "Change Card revision the build is for.")
+	Attribute("started_at", String, "When the user started the build, as get_build reports it.", func() { Format(FormatDateTime) })
+	Attribute("report", Int, "Number of the test writer's report that Surla checked, as get_build reports it; 0 when Surla found the problems while writing the required tests as the build started, before any report.", func() { Minimum(0) })
+	Attribute("checked_at", String, "When Surla's check reached this verdict.", func() { Format(FormatDateTime) })
+	Attribute("findings", ArrayOf(String), "What Surla found, one problem per item, with no absolute path.", func() { MinLength(1) })
+	Required("change_id", "request_revision", "started_at", "report", "checked_at", "findings")
 })
 
 // buildMethods exposes starting and reading builds and the role-limited
@@ -215,18 +233,35 @@ func buildMethods() {
 	})
 
 	Method("get_build", func() {
-		Description("Return a change's usable build for the current test source: not_started when none exists, including a builder-only build whose stored verification settings were removed; start a new build on the views page. Otherwise return the revision built, when, whether the builder read its assignment, the test writer's state and whether it read its assignment, and whether the build is for the change's revision in force. Reading changes nothing.")
+		Description("Return a change's usable build for the current test source: not_started when none exists, including a builder-only build whose stored verification settings were removed; start a new build on the views page. Otherwise return the revision built, when, whether the builder read its assignment, the test writer's state (with the number of Surla's findings, never their text) and whether it read its assignment, and whether the build is for the change's revision in force. Reading changes nothing.")
 		Payload(func() {
 			Attribute("change_id", String, "Change Card identifier.", func() { MinLength(1) })
 			Required("change_id")
 		})
 		Result(ChangeBuild)
 		Error("not_found", ErrorResult, "No Change Card exists with this change_id.")
-		Tool("get_build", "Read a change's usable build for its current test source: the revision built, whether each role read its assignment, the test writer's state, and whether the build is for the change's revision in force. not_started means there is no usable build; the user starts a new build on the views page.")
+		Tool("get_build", "Read a change's usable build for its current test source: the revision built, whether each role read its assignment, the test writer's state with the number of Surla's findings, and whether the build is for the change's revision in force. not_started means there is no usable build; the user starts a new build on the views page.")
 		HTTP(func() {
 			GET("/changes/{change_id}/build")
 			Response(StatusOK)
 			Response("not_found", StatusNotFound)
+		})
+	})
+
+	Method("get_test_findings", func() {
+		Description("Return the text of Surla's findings on the tests of a change's build, which get_build only counts, with the build's revision and start time, the number of the report Surla checked and when it reached the verdict. A build whose tests do not need changes is refused. Reading changes nothing.")
+		Payload(func() {
+			Attribute("change_id", String, "Change Card identifier.", func() { MinLength(1) })
+			Required("change_id")
+		})
+		Result(TestFindings)
+		Error("not_found", ErrorResult, "No Change Card exists with this change_id, or the change has no build.")
+		Error("conflict", ErrorResult, "The build's tests do not need changes; get_build says what state they are in.")
+		HTTP(func() {
+			GET("/changes/{change_id}/build/findings")
+			Response(StatusOK)
+			Response("not_found", StatusNotFound)
+			Response("conflict", StatusConflict)
 		})
 	})
 
@@ -267,7 +302,7 @@ func buildMethods() {
 	})
 
 	Method("get_test_writer_assignment", func() {
-		Description("Return the test writer's assignment for a change in full (the working folder, the design and Story as agreed at the built revision, the tests it requires, and the state with any findings) and record that the test writer read it at its revision. Later revisions do not change the saved design or Story. A new build of the change replaces the assignment, which then counts as unread.")
+		Description("Return the test writer's assignment for a change in full (the working folder, the design and Story as agreed at the built revision, the tests it requires, and the state with the text of any findings) and record that the test writer read it at its revision. Later revisions do not change the saved design or Story. A new build of the change replaces the assignment, which then counts as unread, and so does each verdict of Surla's check.")
 		Payload(func() {
 			Attribute("change_id", String, "Change Card identifier from list_test_writer_assignments.", func() { MinLength(1) })
 			Required("change_id")
@@ -283,7 +318,7 @@ func buildMethods() {
 	})
 
 	Method("report_tests_finished", func() {
-		Description("The test writer reports that its tests for a change at the build's revision are finished. Surla only records the report: the assignment's state becomes reported from any state, earlier findings or a recorded commit are cleared, and the tests are not checked. A report for another revision is refused and changes nothing.")
+		Description("The test writer reports that its tests for a change at the build's revision are finished. Every report raises the build's report number by one and makes the state reported, from any state, clearing an earlier verdict, and returns at once. Surla then checks the tests in the working folder against the build's Story; its verdict, needs_changes, accepted or could_not_run, replaces reported in the test writer's assignment, which then counts as unread. A report for another revision, or in a project that verifies with its stored evaluator, where no test writer is used, is refused and changes nothing.")
 		Payload(func() {
 			Attribute("change_id", String, "Change Card identifier from your test assignment.", func() { MinLength(1) })
 			Attribute("request_revision", String, "request_revision of your test assignment.", func() { MinLength(1) })
@@ -291,8 +326,8 @@ func buildMethods() {
 		})
 		Result(TestWriterAssignmentItem)
 		Error("not_found", ErrorResult, "You have no test assignment for this change_id.")
-		Error("conflict", ErrorResult, "request_revision is not the revision of your test assignment; read it again with get_test_writer_assignment. Nothing changed.")
-		Tool("report_tests_finished", "Report that your tests for the assignment's change_id and request_revision are finished. Surla records the report as reported, without checking the tests, and returns the assignment's new state.")
+		Error("conflict", ErrorResult, "request_revision is not the revision of your test assignment (read it again with get_test_writer_assignment), or no test writer is used because the project verifies with its stored evaluator. Nothing changed.")
+		Tool("report_tests_finished", "Report that your tests for the assignment's change_id and request_revision are finished. It returns at once with state reported and the new report number. Surla then checks your tests; read its verdict, with any findings to fix, in get_test_writer_assignment.")
 		HTTP(func() {
 			POST("/assignments/test-writer/{change_id}/finished")
 			Response(StatusOK)

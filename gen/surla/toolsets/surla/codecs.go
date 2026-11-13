@@ -3980,7 +3980,7 @@ var getBuildResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("test_writer"), tools.FixedField("tests")},
 		JSONType:    "object",
-		Description: "The tests' state: not_used when the project verifies with its stored evaluator; otherwise assigned, reported, needs_changes with Surla's findings, accepted with the commit Surla recorded, or could_not_run with the reason and the user's step. Each verdict carries the time Surla reached it.",
+		Description: "The tests' state: not_used when the project verifies with its stored evaluator; otherwise assigned, reported, needs_changes with the number of Surla's findings, accepted with the commit Surla recorded, or could_not_run with the reason and the user's step. Each verdict carries the time Surla reached it.",
 		Branches: []tools.UnionBranch{
 			tools.TaggedUnionBranch{
 				Discriminator: []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("state")},
@@ -4039,7 +4039,7 @@ var getBuildResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("test_writer"), tools.FixedField("tests")},
 		JSONType:    "object",
-		Description: "The test writer reported its tests finished at this build's revision; Surla has not checked them.",
+		Description: "The test writer reported its tests finished at this build's revision. Surla checks them right after each report; its verdict replaces this state.",
 		Branches: []tools.UnionBranch{
 			tools.TaggedUnionBranch{
 				Discriminator: []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("state")},
@@ -4054,7 +4054,7 @@ var getBuildResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("test_writer"), tools.FixedField("tests")},
 		JSONType:    "object",
-		Description: "Surla checked the reported tests and found problems the test writer must fix before reporting again.",
+		Description: "Surla checked the reported tests and found problems the test writer must fix before reporting again. Their text is in the test writer's assignment (get_test_writer_assignment) and, for the user, in get_test_findings.",
 		Branches: []tools.UnionBranch{
 			tools.TaggedUnionBranch{
 				Discriminator: []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("state")},
@@ -4067,24 +4067,9 @@ var getBuildResultFields = []tools.FieldMetadata{
 		},
 	},
 	{
-		Path:        []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("test_writer"), tools.FixedField("tests"), tools.FixedField("findings")},
-		JSONType:    "array",
-		Description: "What Surla found, one problem per item: a test that does not build or a required test that is not declared.",
-		Branches: []tools.UnionBranch{
-			tools.TaggedUnionBranch{
-				Discriminator: []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("state")},
-				Value:         "started",
-			},
-			tools.TaggedUnionBranch{
-				Discriminator: []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("test_writer"), tools.FixedField("tests"), tools.FixedField("state")},
-				Value:         "needs_changes",
-			},
-		},
-	},
-	{
-		Path:        []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("test_writer"), tools.FixedField("tests"), tools.FixedField("findings"), tools.DynamicField{}},
-		JSONType:    "string",
-		Description: "What Surla found, one problem per item: a test that does not build or a required test that is not declared.",
+		Path:        []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("test_writer"), tools.FixedField("tests"), tools.FixedField("finding_count")},
+		JSONType:    "integer",
+		Description: "Number of problems Surla found.",
 		Branches: []tools.UnionBranch{
 			tools.TaggedUnionBranch{
 				Discriminator: []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("state")},
@@ -4145,6 +4130,21 @@ var getBuildResultFields = []tools.FieldMetadata{
 		Path:        []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("test_writer"), tools.FixedField("tests"), tools.FixedField("checked_at")},
 		JSONType:    "string",
 		Description: "When Surla's check reached this verdict.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("state")},
+				Value:         "started",
+			},
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("test_writer"), tools.FixedField("tests"), tools.FixedField("state")},
+				Value:         "accepted",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("test_writer"), tools.FixedField("tests"), tools.FixedField("not_judged")},
+		JSONType:    "string",
+		Description: "What Surla's check did not judge, always the same sentence.",
 		Branches: []tools.UnionBranch{
 			tools.TaggedUnionBranch{
 				Discriminator: []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("state")},
@@ -4230,7 +4230,7 @@ var getBuildResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("test_writer"), tools.FixedField("report")},
 		JSONType:    "integer",
-		Description: "Number of the test writer's latest counted report of this build; 0 when none was counted. Reports are not counted yet, so it is 0.",
+		Description: "Number of the test writer's latest report of this build: 0 until its first report, and one more with each report_tests_finished.",
 		Branches: []tools.UnionBranch{
 			tools.TaggedUnionBranch{
 				Discriminator: []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("state")},
@@ -4347,6 +4347,17 @@ var getBuilderAssignmentResultFields = []tools.FieldMetadata{
 		Path:        []tools.FieldPathSegment{tools.FixedField("written_tests"), tools.FixedField("checked_at")},
 		JSONType:    "string",
 		Description: "When Surla's check reached this verdict.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("written_tests"), tools.FixedField("state")},
+				Value:         "accepted",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("written_tests"), tools.FixedField("not_judged")},
+		JSONType:    "string",
+		Description: "What Surla's check did not judge, always the same sentence.",
 		Branches: []tools.UnionBranch{
 			tools.TaggedUnionBranch{
 				Discriminator: []tools.FieldPathSegment{tools.FixedField("written_tests"), tools.FixedField("state")},
@@ -5543,12 +5554,12 @@ var getTestWriterAssignmentResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("progress")},
 		JSONType:    "object",
-		Description: "Where this assignment stands, including Surla's findings when it needs changes.",
+		Description: "Where this assignment stands.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests")},
 		JSONType:    "object",
-		Description: "The tests' state: not_used when the project verifies with its stored evaluator; otherwise assigned, reported, needs_changes with Surla's findings, accepted with the commit Surla recorded, or could_not_run with the reason and the user's step. Each verdict carries the time Surla reached it.",
+		Description: "The tests' state: not_used when the project verifies with its stored evaluator; otherwise assigned, reported, needs_changes with the number of Surla's findings, accepted with the commit Surla recorded, or could_not_run with the reason and the user's step. Each verdict carries the time Surla reached it.",
 	},
 	{
 		Path:     []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("state")},
@@ -5587,7 +5598,7 @@ var getTestWriterAssignmentResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests")},
 		JSONType:    "object",
-		Description: "The test writer reported its tests finished at this build's revision; Surla has not checked them.",
+		Description: "The test writer reported its tests finished at this build's revision. Surla checks them right after each report; its verdict replaces this state.",
 		Branches: []tools.UnionBranch{
 			tools.TaggedUnionBranch{
 				Discriminator: []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("state")},
@@ -5598,7 +5609,7 @@ var getTestWriterAssignmentResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests")},
 		JSONType:    "object",
-		Description: "Surla checked the reported tests and found problems the test writer must fix before reporting again.",
+		Description: "Surla checked the reported tests and found problems the test writer must fix before reporting again. Their text is in the test writer's assignment (get_test_writer_assignment) and, for the user, in get_test_findings.",
 		Branches: []tools.UnionBranch{
 			tools.TaggedUnionBranch{
 				Discriminator: []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("state")},
@@ -5607,20 +5618,9 @@ var getTestWriterAssignmentResultFields = []tools.FieldMetadata{
 		},
 	},
 	{
-		Path:        []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("findings")},
-		JSONType:    "array",
-		Description: "What Surla found, one problem per item: a test that does not build or a required test that is not declared.",
-		Branches: []tools.UnionBranch{
-			tools.TaggedUnionBranch{
-				Discriminator: []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("state")},
-				Value:         "needs_changes",
-			},
-		},
-	},
-	{
-		Path:        []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("findings"), tools.DynamicField{}},
-		JSONType:    "string",
-		Description: "What Surla found, one problem per item: a test that does not build or a required test that is not declared.",
+		Path:        []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("finding_count")},
+		JSONType:    "integer",
+		Description: "Number of problems Surla found.",
 		Branches: []tools.UnionBranch{
 			tools.TaggedUnionBranch{
 				Discriminator: []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("state")},
@@ -5665,6 +5665,17 @@ var getTestWriterAssignmentResultFields = []tools.FieldMetadata{
 		Path:        []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("checked_at")},
 		JSONType:    "string",
 		Description: "When Surla's check reached this verdict.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("state")},
+				Value:         "accepted",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("not_judged")},
+		JSONType:    "string",
+		Description: "What Surla's check did not judge, always the same sentence.",
 		Branches: []tools.UnionBranch{
 			tools.TaggedUnionBranch{
 				Discriminator: []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("state")},
@@ -5724,7 +5735,17 @@ var getTestWriterAssignmentResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("report")},
 		JSONType:    "integer",
-		Description: "Number of the test writer's latest counted report of this build; 0 when none was counted. Reports are not counted yet, so it is 0.",
+		Description: "Number of the test writer's latest report of this build: 0 until its first report, and one more with each report_tests_finished.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("findings")},
+		JSONType:    "array",
+		Description: "Surla's findings, one problem per item, with no absolute path: as many as progress gives in finding_count when its state is needs_changes, and none in any other state. Fix them in working_folder, then report again.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("findings"), tools.DynamicField{}},
+		JSONType:    "string",
+		Description: "Surla's findings, one problem per item, with no absolute path: as many as progress gives in finding_count when its state is needs_changes, and none in any other state. Fix them in working_folder, then report again.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("working_folder")},
@@ -6478,6 +6499,17 @@ var listBuilderAssignmentsResultFields = []tools.FieldMetadata{
 			},
 		},
 	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("assignments"), tools.DynamicField{}, tools.FixedField("written_tests"), tools.FixedField("not_judged")},
+		JSONType:    "string",
+		Description: "What Surla's check did not judge, always the same sentence.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("assignments"), tools.DynamicField{}, tools.FixedField("written_tests"), tools.FixedField("state")},
+				Value:         "accepted",
+			},
+		},
+	},
 }
 var listChangesPayloadFields = []tools.FieldMetadata{
 	{
@@ -6598,7 +6630,7 @@ var listTestWriterAssignmentsResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("assignments"), tools.DynamicField{}, tools.FixedField("progress"), tools.FixedField("tests")},
 		JSONType:    "object",
-		Description: "The tests' state: not_used when the project verifies with its stored evaluator; otherwise assigned, reported, needs_changes with Surla's findings, accepted with the commit Surla recorded, or could_not_run with the reason and the user's step. Each verdict carries the time Surla reached it.",
+		Description: "The tests' state: not_used when the project verifies with its stored evaluator; otherwise assigned, reported, needs_changes with the number of Surla's findings, accepted with the commit Surla recorded, or could_not_run with the reason and the user's step. Each verdict carries the time Surla reached it.",
 	},
 	{
 		Path:     []tools.FieldPathSegment{tools.FixedField("assignments"), tools.DynamicField{}, tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("state")},
@@ -6637,7 +6669,7 @@ var listTestWriterAssignmentsResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("assignments"), tools.DynamicField{}, tools.FixedField("progress"), tools.FixedField("tests")},
 		JSONType:    "object",
-		Description: "The test writer reported its tests finished at this build's revision; Surla has not checked them.",
+		Description: "The test writer reported its tests finished at this build's revision. Surla checks them right after each report; its verdict replaces this state.",
 		Branches: []tools.UnionBranch{
 			tools.TaggedUnionBranch{
 				Discriminator: []tools.FieldPathSegment{tools.FixedField("assignments"), tools.DynamicField{}, tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("state")},
@@ -6648,7 +6680,7 @@ var listTestWriterAssignmentsResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("assignments"), tools.DynamicField{}, tools.FixedField("progress"), tools.FixedField("tests")},
 		JSONType:    "object",
-		Description: "Surla checked the reported tests and found problems the test writer must fix before reporting again.",
+		Description: "Surla checked the reported tests and found problems the test writer must fix before reporting again. Their text is in the test writer's assignment (get_test_writer_assignment) and, for the user, in get_test_findings.",
 		Branches: []tools.UnionBranch{
 			tools.TaggedUnionBranch{
 				Discriminator: []tools.FieldPathSegment{tools.FixedField("assignments"), tools.DynamicField{}, tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("state")},
@@ -6657,20 +6689,9 @@ var listTestWriterAssignmentsResultFields = []tools.FieldMetadata{
 		},
 	},
 	{
-		Path:        []tools.FieldPathSegment{tools.FixedField("assignments"), tools.DynamicField{}, tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("findings")},
-		JSONType:    "array",
-		Description: "What Surla found, one problem per item: a test that does not build or a required test that is not declared.",
-		Branches: []tools.UnionBranch{
-			tools.TaggedUnionBranch{
-				Discriminator: []tools.FieldPathSegment{tools.FixedField("assignments"), tools.DynamicField{}, tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("state")},
-				Value:         "needs_changes",
-			},
-		},
-	},
-	{
-		Path:        []tools.FieldPathSegment{tools.FixedField("assignments"), tools.DynamicField{}, tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("findings"), tools.DynamicField{}},
-		JSONType:    "string",
-		Description: "What Surla found, one problem per item: a test that does not build or a required test that is not declared.",
+		Path:        []tools.FieldPathSegment{tools.FixedField("assignments"), tools.DynamicField{}, tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("finding_count")},
+		JSONType:    "integer",
+		Description: "Number of problems Surla found.",
 		Branches: []tools.UnionBranch{
 			tools.TaggedUnionBranch{
 				Discriminator: []tools.FieldPathSegment{tools.FixedField("assignments"), tools.DynamicField{}, tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("state")},
@@ -6715,6 +6736,17 @@ var listTestWriterAssignmentsResultFields = []tools.FieldMetadata{
 		Path:        []tools.FieldPathSegment{tools.FixedField("assignments"), tools.DynamicField{}, tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("checked_at")},
 		JSONType:    "string",
 		Description: "When Surla's check reached this verdict.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("assignments"), tools.DynamicField{}, tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("state")},
+				Value:         "accepted",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("assignments"), tools.DynamicField{}, tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("not_judged")},
+		JSONType:    "string",
+		Description: "What Surla's check did not judge, always the same sentence.",
 		Branches: []tools.UnionBranch{
 			tools.TaggedUnionBranch{
 				Discriminator: []tools.FieldPathSegment{tools.FixedField("assignments"), tools.DynamicField{}, tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("state")},
@@ -6774,7 +6806,7 @@ var listTestWriterAssignmentsResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("assignments"), tools.DynamicField{}, tools.FixedField("progress"), tools.FixedField("report")},
 		JSONType:    "integer",
-		Description: "Number of the test writer's latest counted report of this build; 0 when none was counted. Reports are not counted yet, so it is 0.",
+		Description: "Number of the test writer's latest report of this build: 0 until its first report, and one more with each report_tests_finished.",
 	},
 }
 var listTracesPayloadFields = []tools.FieldMetadata{
@@ -8664,7 +8696,7 @@ var reportTestsFinishedResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests")},
 		JSONType:    "object",
-		Description: "The tests' state: not_used when the project verifies with its stored evaluator; otherwise assigned, reported, needs_changes with Surla's findings, accepted with the commit Surla recorded, or could_not_run with the reason and the user's step. Each verdict carries the time Surla reached it.",
+		Description: "The tests' state: not_used when the project verifies with its stored evaluator; otherwise assigned, reported, needs_changes with the number of Surla's findings, accepted with the commit Surla recorded, or could_not_run with the reason and the user's step. Each verdict carries the time Surla reached it.",
 	},
 	{
 		Path:     []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("state")},
@@ -8703,7 +8735,7 @@ var reportTestsFinishedResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests")},
 		JSONType:    "object",
-		Description: "The test writer reported its tests finished at this build's revision; Surla has not checked them.",
+		Description: "The test writer reported its tests finished at this build's revision. Surla checks them right after each report; its verdict replaces this state.",
 		Branches: []tools.UnionBranch{
 			tools.TaggedUnionBranch{
 				Discriminator: []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("state")},
@@ -8714,7 +8746,7 @@ var reportTestsFinishedResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests")},
 		JSONType:    "object",
-		Description: "Surla checked the reported tests and found problems the test writer must fix before reporting again.",
+		Description: "Surla checked the reported tests and found problems the test writer must fix before reporting again. Their text is in the test writer's assignment (get_test_writer_assignment) and, for the user, in get_test_findings.",
 		Branches: []tools.UnionBranch{
 			tools.TaggedUnionBranch{
 				Discriminator: []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("state")},
@@ -8723,20 +8755,9 @@ var reportTestsFinishedResultFields = []tools.FieldMetadata{
 		},
 	},
 	{
-		Path:        []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("findings")},
-		JSONType:    "array",
-		Description: "What Surla found, one problem per item: a test that does not build or a required test that is not declared.",
-		Branches: []tools.UnionBranch{
-			tools.TaggedUnionBranch{
-				Discriminator: []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("state")},
-				Value:         "needs_changes",
-			},
-		},
-	},
-	{
-		Path:        []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("findings"), tools.DynamicField{}},
-		JSONType:    "string",
-		Description: "What Surla found, one problem per item: a test that does not build or a required test that is not declared.",
+		Path:        []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("finding_count")},
+		JSONType:    "integer",
+		Description: "Number of problems Surla found.",
 		Branches: []tools.UnionBranch{
 			tools.TaggedUnionBranch{
 				Discriminator: []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("state")},
@@ -8781,6 +8802,17 @@ var reportTestsFinishedResultFields = []tools.FieldMetadata{
 		Path:        []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("checked_at")},
 		JSONType:    "string",
 		Description: "When Surla's check reached this verdict.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("state")},
+				Value:         "accepted",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("not_judged")},
+		JSONType:    "string",
+		Description: "What Surla's check did not judge, always the same sentence.",
 		Branches: []tools.UnionBranch{
 			tools.TaggedUnionBranch{
 				Discriminator: []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("state")},
@@ -8840,7 +8872,7 @@ var reportTestsFinishedResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("report")},
 		JSONType:    "integer",
-		Description: "Number of the test writer's latest counted report of this build; 0 when none was counted. Reports are not counted yet, so it is 0.",
+		Description: "Number of the test writer's latest report of this build: 0 until its first report, and one more with each report_tests_finished.",
 	},
 }
 var reviseChangePayloadFields = []tools.FieldMetadata{
@@ -14864,6 +14896,10 @@ func MarshalGetTestWriterAssignmentResult(v *GetTestWriterAssignmentResult) ([]b
 		DesignSource:    &in.DesignSource,
 	}
 	out.Progress = encodeTestWriterProgressToTestWriterProgressTransport(in.Progress)
+	out.Findings = make([]string, len(in.Findings))
+	for i, val := range in.Findings {
+		out.Findings[i] = val
+	}
 	out.Stories = make([]*toolhttp.StorySummaryItemTransport, len(in.Stories))
 	for i, val := range in.Stories {
 		if val == nil {
@@ -14911,6 +14947,10 @@ func UnmarshalGetTestWriterAssignmentResult(data []byte) (*GetTestWriterAssignme
 		DesignSource:    *in.DesignSource,
 	}
 	out.Progress = decodeTestWriterProgressTransportToTestWriterProgress(in.Progress)
+	out.Findings = make([]string, len(in.Findings))
+	for i, val := range in.Findings {
+		out.Findings[i] = val
+	}
 	out.Stories = make([]*StorySummaryItem, len(in.Stories))
 	for i, val := range in.Stories {
 		if val == nil {
@@ -22677,14 +22717,14 @@ func validateGetBuildResultTestWriterProgressTransportJSONValue(path string, val
 		case "report":
 			if err := validateIntJSONValue(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Number of the test writer's latest counted report of this build; 0 when none was counted. Reports are not counted yet, so it is 0.",
+				typed[key], "Number of the test writer's latest report of this build: 0 until its first report, and one more with each report_tests_finished.",
 			); err != nil {
 				return err
 			}
 		case "tests":
 			if err := validateGetBuildResultTestWriterProgressTransportTestsJSONValue(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "The tests' state: not_used when the project verifies with its stored evaluator; otherwise assigned, reported, needs_changes with Surla's findings, accepted with the commit Surla recorded, or could_not_run with the reason and the user's step. Each verdict carries the time Surla reached it.",
+				typed[key], "The tests' state: not_used when the project verifies with its stored evaluator; otherwise assigned, reported, needs_changes with the number of Surla's findings, accepted with the commit Surla recorded, or could_not_run with the reason and the user's step. Each verdict carries the time Surla reached it.",
 			); err != nil {
 				return err
 			}
@@ -22768,17 +22808,17 @@ func validateGetBuildResultTestsNeedChangesTransportJSONValue(path string, value
 			); err != nil {
 				return err
 			}
-		case "findings":
-			if err := validateProposeChangePayloadCP1AnalysisAmbiguityTransportOptionsJSONValue(
+		case "finding_count":
+			if err := validateIntJSONValue(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "What Surla found, one problem per item: a test that does not build or a required test that is not declared.",
+				typed[key], "Number of problems Surla found.",
 			); err != nil {
 				return err
 			}
 		default:
 			return unknownJSONFieldError(path, key, []string{
 				"checked_at",
-				"findings",
+				"finding_count",
 			})
 		}
 	}
@@ -22819,10 +22859,18 @@ func validateGetBuildResultTestsAcceptedTransportJSONValue(path string, value an
 			); err != nil {
 				return err
 			}
+		case "not_judged":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "What Surla's check did not judge, always the same sentence.",
+			); err != nil {
+				return err
+			}
 		default:
 			return unknownJSONFieldError(path, key, []string{
 				"checked_at",
 				"commit",
+				"not_judged",
 			})
 		}
 	}
@@ -23271,6 +23319,13 @@ func validateGetTestWriterAssignmentResultJSONValue(path string, value any, desc
 			); err != nil {
 				return err
 			}
+		case "findings":
+			if err := validateProposeChangePayloadCP1AnalysisAmbiguityTransportOptionsJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Surla's findings, one problem per item, with no absolute path: as many as progress gives in finding_count when its state is needs_changes, and none in any other state. Fix them in working_folder, then report again.",
+			); err != nil {
+				return err
+			}
 		case "in_force":
 			if err := validateBooleanJSONValue(
 				generatedJSONChildPath(path, key, false),
@@ -23281,7 +23336,7 @@ func validateGetTestWriterAssignmentResultJSONValue(path string, value any, desc
 		case "progress":
 			if err := validateGetBuildResultTestWriterProgressTransportJSONValue(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Where this assignment stands, including Surla's findings when it needs changes.",
+				typed[key], "Where this assignment stands.",
 			); err != nil {
 				return err
 			}
@@ -23317,6 +23372,7 @@ func validateGetTestWriterAssignmentResultJSONValue(path string, value any, desc
 			return unknownJSONFieldError(path, key, []string{
 				"change_id",
 				"design_source",
+				"findings",
 				"in_force",
 				"progress",
 				"request_revision",
@@ -24111,11 +24167,8 @@ func decodeTestsReportedTransportToTestsReported(v *toolhttp.TestsReportedTransp
 }
 func decodeTestsNeedChangesTransportToTestsNeedChanges(v *toolhttp.TestsNeedChangesTransport) *TestsNeedChanges {
 	res := &TestsNeedChanges{
-		CheckedAt: *v.CheckedAt,
-	}
-	res.Findings = make([]string, len(v.Findings))
-	for i, val := range v.Findings {
-		res.Findings[i] = val
+		FindingCount: *v.FindingCount,
+		CheckedAt:    *v.CheckedAt,
 	}
 
 	return res
@@ -24124,6 +24177,7 @@ func decodeTestsAcceptedTransportToTestsAccepted(v *toolhttp.TestsAcceptedTransp
 	res := &TestsAccepted{
 		Commit:    *v.Commit,
 		CheckedAt: *v.CheckedAt,
+		NotJudged: *v.NotJudged,
 	}
 
 	return res
@@ -24244,11 +24298,8 @@ func encodeTestsReportedToTestsReportedTransport(v *TestsReported) *toolhttp.Tes
 }
 func encodeTestsNeedChangesToTestsNeedChangesTransport(v *TestsNeedChanges) *toolhttp.TestsNeedChangesTransport {
 	res := &toolhttp.TestsNeedChangesTransport{
-		CheckedAt: &v.CheckedAt,
-	}
-	res.Findings = make([]string, len(v.Findings))
-	for i, val := range v.Findings {
-		res.Findings[i] = val
+		FindingCount: &v.FindingCount,
+		CheckedAt:    &v.CheckedAt,
 	}
 
 	return res
@@ -24257,6 +24308,7 @@ func encodeTestsAcceptedToTestsAcceptedTransport(v *TestsAccepted) *toolhttp.Tes
 	res := &toolhttp.TestsAcceptedTransport{
 		Commit:    &v.Commit,
 		CheckedAt: &v.CheckedAt,
+		NotJudged: &v.NotJudged,
 	}
 
 	return res

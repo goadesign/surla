@@ -52,6 +52,7 @@ type Server struct {
 	WaitForChanges            http.Handler
 	StartBuild                http.Handler
 	GetBuild                  http.Handler
+	GetTestFindings           http.Handler
 	ListBuilderAssignments    http.Handler
 	GetBuilderAssignment      http.Handler
 	ListTestWriterAssignments http.Handler
@@ -119,6 +120,7 @@ func New(
 			{"WaitForChanges", "GET", "/change-updates"},
 			{"StartBuild", "POST", "/changes/{change_id}/build"},
 			{"GetBuild", "GET", "/changes/{change_id}/build"},
+			{"GetTestFindings", "GET", "/changes/{change_id}/build/findings"},
 			{"ListBuilderAssignments", "GET", "/assignments/builder"},
 			{"GetBuilderAssignment", "GET", "/assignments/builder/{change_id}"},
 			{"ListTestWriterAssignments", "GET", "/assignments/test-writer"},
@@ -158,6 +160,7 @@ func New(
 		WaitForChanges:            NewWaitForChangesHandler(e.WaitForChanges, mux, decoder, encoder, errhandler, formatter),
 		StartBuild:                NewStartBuildHandler(e.StartBuild, mux, decoder, encoder, errhandler, formatter),
 		GetBuild:                  NewGetBuildHandler(e.GetBuild, mux, decoder, encoder, errhandler, formatter),
+		GetTestFindings:           NewGetTestFindingsHandler(e.GetTestFindings, mux, decoder, encoder, errhandler, formatter),
 		ListBuilderAssignments:    NewListBuilderAssignmentsHandler(e.ListBuilderAssignments, mux, decoder, encoder, errhandler, formatter),
 		GetBuilderAssignment:      NewGetBuilderAssignmentHandler(e.GetBuilderAssignment, mux, decoder, encoder, errhandler, formatter),
 		ListTestWriterAssignments: NewListTestWriterAssignmentsHandler(e.ListTestWriterAssignments, mux, decoder, encoder, errhandler, formatter),
@@ -204,6 +207,7 @@ func (s *Server) Use(m func(http.Handler) http.Handler) {
 	s.WaitForChanges = m(s.WaitForChanges)
 	s.StartBuild = m(s.StartBuild)
 	s.GetBuild = m(s.GetBuild)
+	s.GetTestFindings = m(s.GetTestFindings)
 	s.ListBuilderAssignments = m(s.ListBuilderAssignments)
 	s.GetBuilderAssignment = m(s.GetBuilderAssignment)
 	s.ListTestWriterAssignments = m(s.ListTestWriterAssignments)
@@ -249,6 +253,7 @@ func Mount(mux goahttp.Muxer, h *Server) {
 	MountWaitForChangesHandler(mux, h.WaitForChanges)
 	MountStartBuildHandler(mux, h.StartBuild)
 	MountGetBuildHandler(mux, h.GetBuild)
+	MountGetTestFindingsHandler(mux, h.GetTestFindings)
 	MountListBuilderAssignmentsHandler(mux, h.ListBuilderAssignments)
 	MountGetBuilderAssignmentHandler(mux, h.GetBuilderAssignment)
 	MountListTestWriterAssignmentsHandler(mux, h.ListTestWriterAssignments)
@@ -1910,6 +1915,59 @@ func NewGetBuildHandler(
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := context.WithValue(r.Context(), goahttp.AcceptTypeKey, r.Header.Get("Accept"))
 		ctx = context.WithValue(ctx, goa.MethodKey, "get_build")
+		ctx = context.WithValue(ctx, goa.ServiceKey, "surla")
+		payload, err := decodeRequest(r)
+		if err != nil {
+			if err := encodeError(ctx, w, err); err != nil && errhandler != nil {
+				errhandler(ctx, w, err)
+			}
+			return
+		}
+		res, err := endpoint(ctx, payload)
+		if err != nil {
+			if err := encodeError(ctx, w, err); err != nil && errhandler != nil {
+				errhandler(ctx, w, err)
+			}
+			return
+		}
+		if err := encodeResponse(ctx, w, res); err != nil {
+			if errhandler != nil {
+				errhandler(ctx, w, err)
+			}
+		}
+	})
+}
+
+// MountGetTestFindingsHandler configures the mux to serve the "surla" service
+// "get_test_findings" endpoint.
+func MountGetTestFindingsHandler(mux goahttp.Muxer, h http.Handler) {
+	f, ok := h.(http.HandlerFunc)
+	if !ok {
+		f = func(w http.ResponseWriter, r *http.Request) {
+			h.ServeHTTP(w, r)
+		}
+	}
+	mux.Handle("GET", "/changes/{change_id}/build/findings", f)
+}
+
+// NewGetTestFindingsHandler creates a HTTP handler which loads the HTTP
+// request and calls the "surla" service "get_test_findings" endpoint.
+func NewGetTestFindingsHandler(
+	endpoint goa.Endpoint,
+	mux goahttp.Muxer,
+	decoder func(*http.Request) goahttp.Decoder,
+	encoder func(context.Context, http.ResponseWriter) goahttp.Encoder,
+	errhandler func(context.Context, http.ResponseWriter, error),
+	formatter func(ctx context.Context, err error) goahttp.Statuser,
+) http.Handler {
+	var (
+		decodeRequest  = DecodeGetTestFindingsRequest(mux, decoder)
+		encodeResponse = EncodeGetTestFindingsResponse(encoder)
+		encodeError    = EncodeGetTestFindingsError(encoder, formatter)
+	)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := context.WithValue(r.Context(), goahttp.AcceptTypeKey, r.Header.Get("Accept"))
+		ctx = context.WithValue(ctx, goa.MethodKey, "get_test_findings")
 		ctx = context.WithValue(ctx, goa.ServiceKey, "surla")
 		payload, err := decodeRequest(r)
 		if err != nil {

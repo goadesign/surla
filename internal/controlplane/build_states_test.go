@@ -20,9 +20,9 @@ import (
 
 // TestBuildStatesReadTheSameOnBothInterfaces saves each test writer state, or
 // binds a stored evaluator, and reads the build over HTTP and over MCP: the
-// build read shows the test writer's progress with its report number, and the
-// builder's assignment shows where the tests stand, both with each verdict's
-// time.
+// build read shows the test writer's progress with its report number and only
+// the number of any findings, and the builder's assignment shows where the
+// tests stand, both with each verdict's time.
 func TestBuildStatesReadTheSameOnBothInterfaces(t *testing.T) {
 	commit := strings.Repeat("c", 40)
 	at := "2026-11-13T09:30:00Z"
@@ -55,14 +55,14 @@ func TestBuildStatesReadTheSameOnBothInterfaces(t *testing.T) {
 		{
 			name:         "needs changes",
 			saved:        map[string]any{"state": "needs_changes", "findings": []string{"RefundOverLimit is not implemented"}, "checked_at": at},
-			tests:        `{"state":"needs_changes","findings":["RefundOverLimit is not implemented"],"checked_at":"` + at + `"}`,
+			tests:        `{"state":"needs_changes","finding_count":1,"checked_at":"` + at + `"}`,
 			writtenTests: `{"state":"not_yet_accepted"}`,
 		},
 		{
 			name:         "accepted",
 			saved:        map[string]any{"state": "accepted", "commit": commit, "checked_at": at},
-			tests:        `{"state":"accepted","commit":"` + commit + `","checked_at":"` + at + `"}`,
-			writtenTests: `{"state":"accepted","commit":"` + commit + `","checked_at":"` + at + `"}`,
+			tests:        `{"state":"accepted","commit":"` + commit + `","checked_at":"` + at + `","not_judged":"` + testsNotJudged + `"}`,
+			writtenTests: `{"state":"accepted","commit":"` + commit + `","checked_at":"` + at + `","not_judged":"` + testsNotJudged + `"}`,
 		},
 		{
 			name:         "could not run",
@@ -86,12 +86,16 @@ func TestBuildStatesReadTheSameOnBothInterfaces(t *testing.T) {
 
 			status, body := httpCall(t, srv.URL, "user", http.MethodGet, "/changes/chg/build", "")
 			require.Equal(t, http.StatusOK, status, body)
+			report := "1"
+			if tc.saved["state"] == testsAssigned {
+				report = "0"
+			}
 			assert.JSONEq(t, tc.tests, jsonAt(t, []byte(body), "build", "test_writer", "tests"), "get_build over HTTP")
-			assert.JSONEq(t, "0", jsonAt(t, []byte(body), "build", "test_writer", "report"), "no report is counted")
+			assert.JSONEq(t, report, jsonAt(t, []byte(body), "build", "test_writer", "report"))
 			failure, result := mcpToolCall(t, srv.URL, "guide", "get_build", `{"change_id":"chg"}`)
 			require.Empty(t, failure)
 			assert.JSONEq(t, tc.tests, jsonAt(t, result, "build", "test_writer", "tests"), "get_build over MCP")
-			assert.JSONEq(t, "0", jsonAt(t, result, "build", "test_writer", "report"), "no report is counted")
+			assert.JSONEq(t, report, jsonAt(t, result, "build", "test_writer", "report"))
 
 			status, body = httpCall(t, srv.URL, "builder", http.MethodGet, "/assignments/builder/chg", "")
 			require.Equal(t, http.StatusOK, status, body)
@@ -112,7 +116,11 @@ func TestBuildReadsShowTheSavedReportNumber(t *testing.T) {
 	card := confirmedChange(t, cp, "chg")
 	_, err := cp.StartBuild(asCaller("alice@example.com", CallerUser), &gensurla.StartBuildPayload{ChangeID: "chg", RequestRevision: card.RequestRevision})
 	require.NoError(t, err)
-	editBuildFile(t, cp, "chg", func(f map[string]any) map[string]any { f["report_number"] = 3; return f })
+	editBuildFile(t, cp, "chg", func(f map[string]any) map[string]any {
+		f["test_writer"].(map[string]any)["state"] = testsReported
+		f["report_number"] = 3
+		return f
+	})
 	reads := []struct {
 		name, token, method, path string
 		keys                      []string
@@ -205,8 +213,9 @@ func TestStoredEvaluatorBuildsReadNotUsed(t *testing.T) {
 }
 
 // TestReportAfterAVerdictClearsIt reports finished tests after each verdict:
-// the state becomes reported, as from any state, and the verdict's time,
-// findings, commit, reason and step are gone, so the build still reads.
+// the state becomes reported, as from any state, the report number rises,
+// and the verdict's time, findings, commit, reason and step are gone, so the
+// build still reads.
 func TestReportAfterAVerdictClearsIt(t *testing.T) {
 	at := "2026-11-13T09:30:00Z"
 	verdicts := []map[string]any{
@@ -226,6 +235,7 @@ func TestReportAfterAVerdictClearsIt(t *testing.T) {
 			})
 			require.NoError(t, err)
 			assert.Equal(t, gensurla.TestsKindReported, reported.Progress.Tests.Kind())
+			assert.Equal(t, 2, reported.Progress.Report, "the report after the verdict's is counted")
 			assert.Equal(t, gensurla.TestsKindReported, mustStartedBuild(t, cp, asCaller("alice@example.com", CallerUser), "chg").TestWriter.Tests.Kind())
 			var file map[string]any
 			require.NoError(t, json.Unmarshal(readBuildFile(t, cp, "chg"), &file))

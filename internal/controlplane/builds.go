@@ -70,9 +70,13 @@ type (
 		Builder builderAssignment `json:"builder"`
 		// TestWriter is the test writer's assignment.
 		TestWriter testWriterAssignment `json:"test_writer"`
-		// ReportNumber is the number of the test writer's latest counted
-		// report of this build: never negative, and 0 when none was counted.
-		// Nothing counts reports yet, so every build saves 0.
+		// ReportNumber is the number of the test writer's latest report of
+		// this build. Every report_tests_finished raises it by one, so it is 0
+		// while the test writer's state is testsAssigned and at least 1 while
+		// it is testsReported. A verdict keeps the number of the report it
+		// answers, which is 0 for a verdict given as the build started. With
+		// ChangeID, RequestRevision and StartedAt it identifies the report a
+		// verdict answers (reportIdentity).
 		ReportNumber int `json:"report_number"`
 	}
 
@@ -145,6 +149,10 @@ const (
 	// each build save writes before renaming it over the build's file. Saves
 	// hold ControlPlane.mu, so one staging file suffices.
 	buildStagingFile = "pending-build"
+	// testsNotJudged is the sentence every accepted result of the test
+	// writer's tests carries, the one value the design's TestsAccepted
+	// not_judged allows.
+	testsNotJudged = "Surla checked that these tests build into the generated test program and declare every required scenario; it did not judge what they assert."
 )
 
 // GetBuild returns the owner's change's usable build, or not_started when no
@@ -171,6 +179,38 @@ func (c *ControlPlane) GetBuild(ctx context.Context, p *gensurla.GetBuildPayload
 	}
 	held := heldBuild{file: saved, inForce: buildInForce(saved, record), storedEvaluator: c.storedEvaluator()}
 	return &gensurla.ChangeBuild{ChangeID: p.ChangeID, Build: gensurla.NewBuildStarted(startedBuild(held))}, nil
+}
+
+// GetTestFindings returns, for the owner's page, the text of the findings of
+// the owner's change's build, with the build's revision and start time, the
+// report checked and the verdict's time; get_build carries only their number.
+// It fails for an unknown change or a change with no build (not_found),
+// another owner's change (forbidden), and a build whose tests do not need
+// changes (conflict), and changes nothing.
+func (c *ControlPlane) GetTestFindings(ctx context.Context, p *gensurla.GetTestFindingsPayload) (*gensurla.TestFindings, error) {
+	principal, ok := PrincipalFromContext(ctx)
+	if !ok {
+		return nil, errors.New("authenticated principal is required")
+	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	held, err := c.ownedBuild(principal, p.ChangeID)
+	if err != nil {
+		return nil, err
+	}
+	saved := held.file
+	if state := testWriterProgress(held).Tests.Kind(); state != gensurla.TestsKindNeedsChanges {
+		return nil, gensurla.MakeConflict(fmt.Errorf(
+			"the tests of change %q do not need changes: their state is %s, which get_build shows", p.ChangeID, state))
+	}
+	return &gensurla.TestFindings{
+		ChangeID:        saved.ChangeID,
+		RequestRevision: saved.RequestRevision,
+		StartedAt:       saved.StartedAt.UTC().Format(time.RFC3339Nano),
+		Report:          saved.ReportNumber,
+		CheckedAt:       verdictTime(saved.TestWriter.CheckedAt),
+		Findings:        slices.Clone(saved.TestWriter.Findings),
+	}, nil
 }
 
 // ListBuilderAssignments returns the builder's assignment of every build of
@@ -232,8 +272,9 @@ func (c *ControlPlane) ListTestWriterAssignments(ctx context.Context) (*gensurla
 }
 
 // GetTestWriterAssignment returns the test writer's assignment for the
-// caller's change in full, with the Story as agreed at the built revision and one
-// required test per finished flow, and records that the test writer read it;
+// caller's change in full, with the Story as agreed at the built revision, one
+// required test per finished flow and the text of any findings, and records
+// that the test writer read it;
 // a later build of the change replaces it unread. It fails with not_found when
 // the change or its build does not exist and forbidden for another owner's
 // change.
@@ -263,11 +304,16 @@ func (c *ControlPlane) GetTestWriterAssignment(
 		required[i] = &gensurla.RequiredTest{Story: s.Story, FlowKey: s.Key, Scenario: s.Scenario, Hook: s.Hook}
 	}
 	item := testWriterAssignmentItem(held)
+	findings := []string{}
+	if item.Progress.Tests.Kind() == gensurla.TestsKindNeedsChanges {
+		findings = slices.Clone(held.file.TestWriter.Findings)
+	}
 	return &gensurla.TestWriterAssignment{
 		ChangeID:        item.ChangeID,
 		RequestRevision: item.RequestRevision,
 		InForce:         item.InForce,
 		Progress:        item.Progress,
+		Findings:        findings,
 		WorkingFolder:   *held.file.TestWriter.WorkingFolder,
 		DesignSource:    held.file.DesignSource,
 		Stories:         storySummaryItems(held.file.Stories),
@@ -276,11 +322,14 @@ func (c *ControlPlane) GetTestWriterAssignment(
 }
 
 // ReportTestsFinished records that the test writer finished its tests for the
-// caller's change at the build's revision: the test writer's state becomes
-// reported and any earlier findings or accepted commit are cleared. It fails
-// with not_found when the change or its build does not exist, forbidden for
-// another owner's change, and conflict for any other revision; a refused
-// report changes nothing.
+// caller's change at the build's revision: the build's report number rises by
+// one, the test writer's state becomes reported and any earlier verdict is
+// cleared. It then wakes the report checker without waiting for it, so the
+// verdict follows without another call. It fails with not_found when the
+// change or its build does not exist, forbidden for another owner's change,
+// and conflict for any other revision or in a project that verifies with its
+// stored evaluator, where no test writer is used; a refused report changes
+// nothing.
 func (c *ControlPlane) ReportTestsFinished(
 	ctx context.Context,
 	p *gensurla.ReportTestsFinishedPayload,
@@ -294,6 +343,10 @@ func (c *ControlPlane) ReportTestsFinished(
 		attribute.String("surla.request_revision", p.RequestRevision),
 	))
 	defer span.End()
+	// reportMu first: a report waits while the report checker confirms,
+	// records and saves a verdict, so it never falls between them.
+	c.reportMu.Lock()
+	defer c.reportMu.Unlock()
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	held, err := c.ownedBuild(principal, p.ChangeID)
@@ -304,24 +357,29 @@ func (c *ControlPlane) ReportTestsFinished(
 	if saved.Roles != buildRolesBuilderAndTestWriter {
 		return nil, gensurla.MakeNotFound(errors.New("this build has no test-writer assignment because it uses the stored evaluator"))
 	}
+	if held.storedEvaluator {
+		return nil, gensurla.MakeConflict(errors.New("no test writer is used: this project verifies with its stored evaluator"))
+	}
 	if saved.RequestRevision != p.RequestRevision {
 		return nil, gensurla.MakeConflict(fmt.Errorf(
 			"the test assignment for %q is for request_revision %q, not %q",
 			p.ChangeID, saved.RequestRevision, p.RequestRevision,
 		))
 	}
-	if saved.TestWriter.State != testsReported {
-		saved.TestWriter.State = testsReported
-		saved.TestWriter.Findings = nil
-		saved.TestWriter.Commit = ""
-		saved.TestWriter.Reason = ""
-		saved.TestWriter.Step = ""
-		saved.TestWriter.CheckedAt = time.Time{}
-		if err := c.cards.saveBuild(*saved); err != nil {
-			return nil, recordBuildError(span, err, "save build")
-		}
+	saved.ReportNumber++
+	saved.TestWriter = testWriterAssignment{
+		State:         testsReported,
+		Read:          saved.TestWriter.Read,
+		WorkingFolder: saved.TestWriter.WorkingFolder,
 	}
-	span.SetAttributes(attribute.String("surla.tests_state", saved.TestWriter.State))
+	if err := c.cards.saveBuild(*saved); err != nil {
+		return nil, recordBuildError(span, err, "save build")
+	}
+	select {
+	case c.reportWake <- struct{}{}:
+	default: // A wake is already waiting; the checker reads every reported build.
+	}
+	span.SetAttributes(attribute.String("surla.tests_state", saved.TestWriter.State), attribute.Int("surla.report_number", saved.ReportNumber))
 	return testWriterAssignmentItem(held), nil
 }
 
@@ -397,11 +455,11 @@ func testWriterProgress(held heldBuild) *gensurla.TestWriterProgress {
 		tests = gensurla.NewTestsReported(&gensurla.TestsReported{})
 	case saved.State == testsNeedChanges:
 		tests = gensurla.NewTestsNeedsChanges(&gensurla.TestsNeedChanges{
-			Findings:  slices.Clone(saved.Findings),
-			CheckedAt: verdictTime(saved.CheckedAt),
+			FindingCount: len(saved.Findings),
+			CheckedAt:    verdictTime(saved.CheckedAt),
 		})
 	case saved.State == testsAccepted:
-		tests = gensurla.NewTestsAccepted(&gensurla.TestsAccepted{Commit: saved.Commit, CheckedAt: verdictTime(saved.CheckedAt)})
+		tests = gensurla.NewTestsAccepted(acceptedTests(saved))
 	case saved.State == testsCouldNotRun:
 		tests = gensurla.NewTestsCouldNotRun(&gensurla.TestsCouldNotRun{
 			Reason:    saved.Reason,
@@ -421,10 +479,17 @@ func writtenTests(held heldBuild) gensurla.WrittenTests {
 	case held.storedEvaluator:
 		return gensurla.NewWrittenTestsNotUsed(&gensurla.TestsNotUsed{})
 	case saved.State == testsAccepted:
-		return gensurla.NewWrittenTestsAccepted(&gensurla.TestsAccepted{Commit: saved.Commit, CheckedAt: verdictTime(saved.CheckedAt)})
+		return gensurla.NewWrittenTestsAccepted(acceptedTests(saved))
 	default:
 		return gensurla.NewWrittenTestsNotYetAccepted(&gensurla.TestsNotYetAccepted{})
 	}
+}
+
+// acceptedTests renders the test writer's saved acceptance, which every
+// reader sees the same way, with the sentence saying what Surla did not
+// judge.
+func acceptedTests(saved testWriterAssignment) *gensurla.TestsAccepted {
+	return &gensurla.TestsAccepted{Commit: saved.Commit, CheckedAt: verdictTime(saved.CheckedAt), NotJudged: testsNotJudged}
 }
 
 // verdictTime formats a saved verdict time as its transport form.
@@ -451,7 +516,10 @@ func buildFileName(changeID string) string {
 
 // decodeBuild strictly decodes the build file named fileName: unknown fields
 // and trailing data are refused, the file must hold the build of the change
-// whose hash names it, and the test writer's state must match its fields.
+// whose hash names it, the test writer's state must match its fields, and
+// the report number must be 0 while that state is testsAssigned and at least
+// 1 while it is testsReported: an assignment no one reported on has no
+// report, and every report counts.
 func decodeBuild(fileName string, data []byte) (buildFile, error) {
 	var saved buildFile
 	dec := json.NewDecoder(bytes.NewReader(data))
@@ -505,6 +573,10 @@ func decodeBuild(fileName string, data []byte) (buildFile, error) {
 	}
 	if verdict == tw.CheckedAt.IsZero() {
 		return buildFile{}, fmt.Errorf("build of change %q must have a verdict time exactly when its test writer state is a verdict (state %q)", saved.ChangeID, tw.State)
+	}
+	if (tw.State == testsAssigned && saved.ReportNumber != 0) || (tw.State == testsReported && saved.ReportNumber == 0) {
+		return buildFile{}, fmt.Errorf("build of change %q must have report number 0 while its test writer state is %q "+
+			"and at least 1 while it is %q (state %q, report %d)", saved.ChangeID, testsAssigned, testsReported, tw.State, saved.ReportNumber)
 	}
 	return saved, nil
 }

@@ -174,6 +174,11 @@ func GetBuildSurlaPath(changeID string) string {
 	return fmt.Sprintf("/changes/%v/build", changeID)
 }
 
+// GetTestFindingsSurlaPath returns the URL path to the surla service get_test_findings HTTP endpoint.
+func GetTestFindingsSurlaPath(changeID string) string {
+	return fmt.Sprintf("/changes/%v/build/findings", changeID)
+}
+
 // ListBuilderAssignmentsSurlaPath returns the URL path to the surla service list_builder_assignments HTTP endpoint.
 func ListBuilderAssignmentsSurlaPath() string {
 	return "/assignments/builder"
