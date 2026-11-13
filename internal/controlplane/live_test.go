@@ -1001,3 +1001,75 @@ func getWithToken(t *testing.T, url, token string) (int, string) {
 	require.NoError(t, resp.Body.Close())
 	return resp.StatusCode, string(body)
 }
+
+// TestChangeListVersionFollowsTheLiveTarget verifies that the version the
+// views page's waiting read compares changes when a live target starts,
+// accepts a draft of new text and ends by itself, stays the same when nothing
+// about the target changes, and that a waiting read answers soon after a
+// draft without the live target's part recording any span of its own.
+func TestChangeListVersionFollowsTheLiveTarget(t *testing.T) {
+	exporter := tracetest.NewInMemoryExporter()
+	provider := sdktrace.NewTracerProvider(sdktrace.WithSyncer(exporter))
+	t.Cleanup(func() { assert.NoError(t, provider.Shutdown(context.Background())) })
+	self, err := os.Executable()
+	require.NoError(t, err)
+	cp := newControlPlane(t, Options{
+		TracerProvider: provider,
+		Verification:   &VerificationConfig{RunsDir: t.TempDir()},
+		Live: &LiveConfig{
+			Command: []string{self}, Env: append(os.Environ(), liveTargetModeEnv+"=serve"),
+			StartTimeout: time.Minute, Model: noModel(),
+		},
+	})
+	cp.changesWait = 20 * time.Second
+	cp.changesPoll = 20 * time.Millisecond
+	alice := WithPrincipal(context.Background(), Principal{ID: "alice@example.com", CallerID: "alice@example.com", Kind: CallerUser})
+	version := func() string {
+		list, err := cp.ListChanges(alice)
+		require.NoError(t, err)
+		return list.Version
+	}
+	idle := version()
+	assert.Equal(t, idle, version(), "nothing changed, so the version stays")
+
+	res, err := cp.StartLiveTarget(alice, &gensurla.StartLiveTargetPayload{CandidateCommit: strings.Repeat("a", 40)})
+	require.NoError(t, err)
+	started := version()
+	assert.NotEqual(t, idle, started, "a started target changes the version")
+	_, err = draft(alice, cp, fakePromptID, "Answer in French.")
+	require.NoError(t, err)
+	drafted := version()
+	assert.NotEqual(t, started, drafted, "an accepted draft changes the version")
+	_, err = draft(alice, cp, fakePromptID, "Hello {{ .Name")
+	assert.Equal(t, "invalid_prompt", goaErrorName(err))
+	assert.Equal(t, drafted, version(), "a refused draft leaves the version")
+
+	exporter.Reset()
+	waited := make(chan *gensurla.ChangeListVersion, 1)
+	go func() {
+		out, err := cp.WaitForChanges(alice, &gensurla.WaitForChangesPayload{Since: drafted})
+		assert.NoError(t, err)
+		waited <- out
+	}()
+	time.Sleep(100 * time.Millisecond)
+	_, err = draft(alice, cp, fakePromptID, "Answer in Spanish.")
+	require.NoError(t, err)
+	select {
+	case out := <-waited:
+		assert.NotEqual(t, drafted, out.Version, "the waiting read answers with the new version")
+	case <-time.After(5 * time.Second):
+		t.Fatal("the waiting read did not answer a draft within 5 seconds")
+	}
+	for _, span := range exporter.GetSpans().Snapshots() {
+		assert.Contains(t, []string{waitForChangesSpan, "controlplane.draft_live"}, span.Name(),
+			"the live target's part of the version records no span")
+	}
+
+	redrafted := version()
+	if resp, err := http.Post(res.URL+"/exit", "text/plain", nil); err == nil {
+		require.NoError(t, resp.Body.Close())
+	}
+	require.Eventually(t, func() bool { return cp.liveTargetState().Kind() == gensurla.LiveTargetKindNone },
+		30*time.Second, 20*time.Millisecond)
+	assert.NotEqual(t, redrafted, version(), "a target that ended changes the version")
+}

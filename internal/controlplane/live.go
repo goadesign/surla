@@ -101,6 +101,22 @@ type (
 	// livePhase is the state get_live_target reports for the shown target.
 	livePhase int
 
+	// liveTargetVersion is what the change list's version covers of the live
+	// target, so the views page's waiting read answers when a target starts,
+	// becomes ready, accepts a draft, ends or is stopped.
+	liveTargetVersion struct {
+		// State is the read's case.
+		State string `json:"state"`
+		// Commit is the shown target's candidate commit; empty for none.
+		Commit string `json:"commit"`
+		// Since is when its start began while it starts and when it became
+		// ready while it runs, so a new target of the same commit differs.
+		Since string `json:"since"`
+		// Prompts pairs each prompt identifier with its version in force, in
+		// the read's order.
+		Prompts [][2]string `json:"prompts"`
+	}
+
 	// liveState is the control plane's live-target state, embedded in
 	// ControlPlane.
 	liveState struct {
@@ -448,6 +464,27 @@ func (c *ControlPlane) liveTargetState() gensurla.LiveTarget {
 	default:
 		return gensurla.NewLiveTargetNone(&gensurla.LiveTargetNone{})
 	}
+}
+
+// liveTargetVersion returns the live target's part of the change list's
+// version, derived from the same published state as get_live_target. It
+// reads under bindMu alone and records no span.
+func (c *ControlPlane) liveTargetVersion() liveTargetVersion {
+	state := c.liveTargetState()
+	v := liveTargetVersion{State: string(state.Kind())}
+	if starting, ok := state.AsStarting(); ok {
+		v.Commit, v.Since = starting.CandidateCommit, starting.Since
+	}
+	if running, ok := state.AsRunning(); ok {
+		v.Commit, v.Since = running.CandidateCommit, running.StartedAt
+		for _, prompt := range running.Prompts {
+			v.Prompts = append(v.Prompts, [2]string{prompt.PromptID, prompt.Version})
+		}
+	}
+	if stuck, ok := state.AsNotConfirmedStopped(); ok {
+		v.Commit = stuck.CandidateCommit
+	}
+	return v
 }
 
 // liveTime formats a live target time for its read: UTC, RFC 3339 with

@@ -711,3 +711,16 @@ summary { cursor: pointer; font-weight: 500; user-select: none; }
     scroll-behavior: auto !important;
   }
 }
+
+/* Live target view: prompt identifiers, versions, addresses and server
+   messages can be long, so they wrap inside the card instead of widening
+   the page at phone width. */
+.surla-live-wrap,
+.surla-live-wrap code,
+.surla-live-wrap a {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  min-width: 0;
+}
+.surla-live-prompts { margin: 0.4rem 0; padding-inline-start: 1.2rem; }
+.surla-live-prompts > li { margin-block: 0.25rem; }
