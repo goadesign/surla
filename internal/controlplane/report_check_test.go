@@ -31,6 +31,7 @@ import (
 	gensurla "github.com/goadesign/surla/gen/surla"
 	"github.com/goadesign/surla/internal/designeval"
 	"github.com/goadesign/surla/internal/scaffold"
+	"github.com/goadesign/surla/internal/testmodule"
 	"github.com/goadesign/surla/internal/testwriter"
 	"github.com/goadesign/surla/verify/candidate"
 )
@@ -329,6 +330,42 @@ func TestAStoppedServerSavesNothingAndARestartedOneJudges(t *testing.T) {
 	failed, _ := build.TestWriter.Tests.AsCouldNotRun()
 	assert.Contains(t, failed.Reason, "could not open the test writer's working copy")
 	assert.Equal(t, stepOpenCopy, failed.Step)
+}
+
+// TestAReportIsJudgedThroughTheProductionCopy starts a build of a real project
+// whose test module lacks its go.sum, through the production working copy,
+// then reports. The report checker opens the same copy through the production
+// owner, writes the required tests again and saves its own verdict for the
+// report, with the module's finding for the test writer to fix.
+func TestAReportIsJudgedThroughTheProductionCopy(t *testing.T) {
+	if err := candidate.CheckSandbox(); err != nil {
+		t.Skipf("judging through the production copy requires the candidate sandbox: %v", err)
+	}
+	eval := map[string]string{
+		"go.mod":           fmt.Sprintf("module example.com/shop/eval\n\ngo 1.27.3\n\nrequire goa.design/goa/v3 %s\n", testmodule.SurlaVersion(t, "goa.design/goa/v3")),
+		"design/design.go": buildProbeDesign,
+	}
+	_, project := productionBuildProject(t, ".", eval)
+	cp := newControlPlane(t, Options{
+		WorkspaceDir: project, Team: &TeamBinding{Owner: "alice@example.com", Service: &teamServiceFixture{}},
+	})
+	card := confirmedChange(t, cp, "chg")
+	started, err := cp.StartBuild(asCaller("alice@example.com", CallerUser), &gensurla.StartBuildPayload{
+		ChangeID: "chg", RequestRevision: card.RequestRevision,
+	})
+	require.NoError(t, err)
+	require.Equal(t, gensurla.TestsKindNeedsChanges, started.Build.TestWriter.Tests.Kind(), "the start found the module's problem")
+	assert.Equal(t, 0, started.Build.TestWriter.Report)
+
+	reported := reportTests(t, cp, card.RequestRevision)
+	assert.Equal(t, 1, reported.Progress.Report)
+	build := waitForTests(t, cp, gensurla.TestsKindNeedsChanges)
+	assert.Equal(t, 1, build.TestWriter.Report, "the verdict answers the report")
+	assignment, err := cp.GetTestWriterAssignment(asCaller("alice@example.com", CallerTestWriter), &gensurla.GetTestWriterAssignmentPayload{ChangeID: "chg"})
+	require.NoError(t, err)
+	require.Len(t, assignment.Findings, 1)
+	assert.Contains(t, assignment.Findings[0], "go.sum")
+	assert.NotContains(t, assignment.Findings[0], "report_tests_finished", "the checker's own finding, not the start's")
 }
 
 // TestTheWholeCheckLimit judges with a shortened limit and stand-in checks
