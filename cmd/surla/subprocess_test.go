@@ -46,6 +46,9 @@ func testProjectRuntimeAt(directory string) projectRuntime {
 		waitTerminal: func(context.Context, string) (bool, error) {
 			return false, errors.New("default tests cannot observe real project terminals")
 		},
+		readTerminal: func(context.Context, string) (string, error) {
+			return "", errors.New("default tests cannot read real project terminals")
+		},
 		removeTerminal: func(context.Context, string) error {
 			return errors.New("default tests cannot remove real project terminals")
 		},
