@@ -63,10 +63,6 @@ func (runtime projectRuntime) settings(kind string, args []string, stdout io.Wri
 			return err
 		}
 	}
-	// Only local CLI management reads this proof; no agent tool receives it.
-	if _, err := state.ManagementCredential(); err != nil {
-		return err
-	}
 	switch args[0] {
 	case "show":
 		raw, err := state.ReadSettings(kind)

@@ -43,13 +43,18 @@ func TestProjectStartSerializesAndRecovers(t *testing.T) {
 		if err != nil {
 			return "", err
 		}
-		management := project.NewServer(state, func() {})
+		management, err := project.NewServer(state, func() {})
+		if err != nil {
+			return "", err
+		}
 		ln, err := net.Listen("tcp", state.Address())
 		if err != nil {
 			return "", err
 		}
 		active = state
-		if err := state.SaveRunning(project.Running{PID: 123, Terminal: "test"}); err != nil {
+		_, recordErr := state.ReadRunning()
+		assert.ErrorIs(t, recordErr, os.ErrNotExist, "stale record must be removed before launch")
+		if err := management.PublishRunning(123, "test"); err != nil {
 			return "", err
 		}
 		server = &http.Server{Handler: management.Handler(controlplane.NewHTTPHandler(cp, management.Authenticate)), ReadHeaderTimeout: time.Second}
@@ -255,14 +260,13 @@ func TestProjectStartPreflightPrecedesState(t *testing.T) {
 }
 
 // TestProjectStartPortTakeoverRemovesOnlyFailedTerminal proves the actual bind owns
-// availability and a post-check takeover never changes the saved port or credential.
+// availability and a post-check takeover never changes the saved project or port.
 func TestProjectStartPortTakeoverRemovesOnlyFailedTerminal(t *testing.T) {
 	isolateServeWorkspace(t)
 	state, err := fixtureProjectState("")
 	require.NoError(t, err)
 	port := state.Record.Port
-	credential, err := state.ManagementCredential()
-	require.NoError(t, err)
+	identity := state.Record.ID
 	runtime := testProjectRuntime()
 	runtime.preflight = func() error { return nil }
 	runtime.startTerminal = func(ctx context.Context, state *project.State) (string, error) {
@@ -283,9 +287,9 @@ func TestProjectStartPortTakeoverRemovesOnlyFailedTerminal(t *testing.T) {
 	after, err := discoverProject()
 	require.NoError(t, err)
 	assert.Equal(t, port, after.Record.Port)
-	afterCredential, err := after.ManagementCredential()
-	require.NoError(t, err)
-	assert.Equal(t, credential, afterCredential)
+	assert.Equal(t, identity, after.Record.ID)
+	_, err = after.ReadRunning()
+	assert.ErrorIs(t, err, os.ErrNotExist)
 }
 
 // TestInternalServerAcceptsNoCallerOptions keeps all configuration in its owning workflow.
@@ -343,20 +347,19 @@ func TestReadinessStopsOnAnyReceivedHTTPResponse(t *testing.T) {
 			}))
 			t.Cleanup(server.Close)
 			state.Record.Port = server.Listener.Addr().(*net.TCPAddr).Port
-			client, err := projectClient(state)
-			require.NoError(t, err)
+			require.NoError(t, state.SaveRunning(project.Running{ManagementCredential: strings.Repeat("a", 64)}))
+			client := projectClient(state)
 			ctx, cancel := context.WithTimeout(t.Context(), time.Second)
 			defer cancel()
-			require.Error(t, waitForProject(ctx, state, client))
+			require.Error(t, confirmProject(ctx, state, client))
 			assert.EqualValues(t, 1, probes.Load(), "no redirect or retry may resend the credential")
 			assert.NoError(t, ctx.Err(), "a reply ends polling before the deadline")
 		})
 	}
 }
 
-// TestReadinessRetriesConnectionFailures proves a transport failure can recover
-// while response and identity failures remain terminal in the consumer above.
-func TestReadinessRetriesConnectionFailures(t *testing.T) {
+// TestReadinessDoesNotResendAfterConnectionFailure bounds credential transmission.
+func TestReadinessDoesNotResendAfterConnectionFailure(t *testing.T) {
 	isolateServeWorkspace(t)
 	state, err := fixtureProjectState("")
 	require.NoError(t, err)
@@ -370,8 +373,8 @@ func TestReadinessRetriesConnectionFailures(t *testing.T) {
 	}}
 	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
 	defer cancel()
-	require.NoError(t, waitForProject(ctx, state, client))
-	assert.Equal(t, 2, probes)
+	require.Error(t, confirmProject(ctx, state, client))
+	assert.Equal(t, 1, probes)
 }
 
 // TestRuntimeRootsAreIndependent verifies local work and project management

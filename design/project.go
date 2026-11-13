@@ -3,7 +3,7 @@ package design
 
 import . "goa.design/goa/v3/dsl"
 
-// ProjectIdentity is the authenticated proof that a server owns this project.
+// ProjectIdentity identifies the project reported by the answering server.
 var ProjectIdentity = Type("ProjectIdentity", func() {
 	Attribute("project_id", String, "Stable private project identifier.")
 	Attribute("directory", String, "Physical project folder.")
@@ -20,7 +20,7 @@ var ProjectAgent = Type("ProjectAgent", func() {
 })
 
 var _ = Service("project", func() {
-	Description("Owns one local project's server identity, agent credentials, and one-use browser access. Management credentials never authorize application decisions. This service is not exposed as agent tools.")
+	Description("Owns one local project's server identity, agent credentials, and one-use browser access. Management credentials last for one listening server and never authorize application decisions. This service is not exposed as agent tools.")
 	Error("forbidden", ErrorResult, "The trusted credential cannot perform this operation.")
 	Error("unprocessable", ErrorResult, "The requested credential exchange or agent does not exist or is invalid.")
 	Error("conflict", ErrorResult, "An agent with this identifier already exists.")
@@ -31,12 +31,12 @@ var _ = Service("project", func() {
 		Response("conflict", StatusConflict)
 	})
 	Method("identity", func() {
-		Description("The CLI proves the answering server belongs to its project using the management credential.")
+		Description("The CLI checks the answering server reports its expected project identity using the current server-lifetime management credential.")
 		Result(ProjectIdentity)
 		HTTP(func() { GET("/identity"); Response(StatusOK) })
 	})
 	Method("stop", func() {
-		Description("The CLI requests ordered server shutdown; the server removes its running record only after its owned work closes.")
+		Description("The CLI requests ordered server shutdown. Before its listener closes, the server revokes management access and withdraws its running record; an authorized stop response can finish.")
 		HTTP(func() { POST("/stop"); Response(StatusAccepted) })
 	})
 	Method("add_agent", func() {

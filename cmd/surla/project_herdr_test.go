@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -87,16 +88,14 @@ func TestHC(t *testing.T) {
 			return
 		}
 		if current != nil {
-			client, err := projectClient(current)
-			if err == nil {
-				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-				stopErr := client.Stop(ctx)
-				cancel()
-				if stopErr != nil {
-					held, probeErr := controlplane.CardStoreInUse(current.CardsDir())
-					if probeErr == nil && held {
-						t.Log("server stop needed terminal cleanup")
-					}
+			client := projectClient(current)
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			stopErr := client.Stop(ctx)
+			cancel()
+			if stopErr != nil {
+				held, probeErr := controlplane.CardStoreInUse(current.CardsDir())
+				if probeErr == nil && held {
+					t.Log("server stop needed terminal cleanup")
 				}
 			}
 		}
@@ -113,16 +112,23 @@ func TestHC(t *testing.T) {
 			if killErr != nil {
 				raw, getErr := isolatedHerdr(hc, "get", "--json", id)
 				assert.NoError(t, getErr)
-				assert.Contains(t, string(raw), `"finished"`)
+				assert.True(t, strings.Contains(string(raw), `"finished"`), "owned terminal must have ended")
 			}
 			_, removeErr := isolatedHerdr(hc, "rm", "--json", id)
 			assert.NoError(t, removeErr)
 		}
 		raw, listErr := isolatedHerdr(hc, "ls", "--json", "--all")
 		assert.NoError(t, listErr)
-		assert.NotContains(t, string(raw), `"live"`)
+		assert.False(t, strings.Contains(string(raw), `"live"`), "isolated session must have no live terminal")
+		for _, id := range terminals {
+			assert.False(t, strings.Contains(string(raw), id), "removed owned terminal must be absent")
+		}
 		_, stopErr := isolatedHerdr(hc, "server", "stop", "--json")
 		assert.NoError(t, stopErr)
+		assert.Eventually(t, func() bool {
+			_, socketErr := os.Stat(os.Getenv("HC_SOCKET"))
+			return errors.Is(socketErr, os.ErrNotExist)
+		}, 5*time.Second, 25*time.Millisecond, "isolated core socket must be removed")
 	})
 	raw, err := isolatedHerdr(hc, "server", "start", "--json")
 	require.NoError(t, err, string(raw))
@@ -158,10 +164,9 @@ func TestHC(t *testing.T) {
 	callerTerminal = ""
 	state, err := discoverProject()
 	require.NoError(t, err)
-	client, err := projectClient(state)
-	require.NoError(t, err)
+	client := projectClient(state)
 	launch := func(ctx context.Context, state *project.State) (string, error) {
-		return startProjectTerminal(ctx, state)
+		return startProjectTerminal(ctx, state, func() (string, error) { return hc, nil })
 	}
 
 	current = state
@@ -179,8 +184,7 @@ func TestHC(t *testing.T) {
 	}
 	require.NoError(t, json.Unmarshal(metadata, &terminal))
 	assert.Nil(t, terminal.Parent)
-	management, err := state.ManagementCredential()
-	require.NoError(t, err)
+	management := running.ManagementCredential
 	assert.False(t, strings.Contains(string(metadata), management), "management credential must not appear in terminal metadata")
 	actor, err := client.AddAgent(ctx, &genproject.AddAgentPayload{ActorID: "guide", Role: "guide"})
 	require.NoError(t, err)
@@ -201,6 +205,9 @@ func TestHC(t *testing.T) {
 	// The launching CLI call has returned and no parent owns the server terminal.
 	require.NoError(t, client.Stop(ctx))
 	waitForStoreRelease(t, state)
+	_, err = state.ReadRunning()
+	assert.ErrorIs(t, err, os.ErrNotExist)
+	assertManagementRefused(t, state, management, false)
 	second, err := discoverProject()
 	require.NoError(t, err)
 	client, _, err = attachOrStartProject(ctx, second, launch)
@@ -209,18 +216,24 @@ func TestHC(t *testing.T) {
 	restarted, err := second.ReadRunning()
 	require.NoError(t, err)
 	terminals = append(terminals, restarted.Terminal)
+	assert.True(t, restarted.ManagementCredential != management, "restart must rotate management access")
+	assertManagementRefused(t, second, management, true)
 	assert.Equal(t, originalPort, second.Record.Port)
 	assertAgentGuidance(t, second, string(credential))
+	previousManagement := restarted.ManagementCredential
 	// Handled HUP attempts the same ordered close as authenticated stop.
 	require.NoError(t, syscall.Kill(restarted.PID, syscall.SIGHUP))
 	waitForStoreRelease(t, second)
 	_, err = second.ReadRunning()
 	assert.ErrorIs(t, err, os.ErrNotExist)
+	assertManagementRefused(t, second, previousManagement, false)
 	client, _, err = attachOrStartProject(ctx, second, launch)
 	require.NoError(t, err)
 	restarted, err = second.ReadRunning()
 	require.NoError(t, err)
 	terminals = append(terminals, restarted.Terminal)
+	assert.True(t, restarted.ManagementCredential != previousManagement, "signal restart must rotate management access")
+	assertManagementRefused(t, second, previousManagement, true)
 	assertAgentGuidance(t, second, string(credential))
 	// An outright kill is recovery through a free store lock and stale record, never called graceful.
 	require.NotEqual(t, os.Getpid(), restarted.PID)
@@ -234,6 +247,8 @@ func TestHC(t *testing.T) {
 	recovered, err := third.ReadRunning()
 	require.NoError(t, err)
 	terminals = append(terminals, recovered.Terminal)
+	assert.True(t, recovered.ManagementCredential != restarted.ManagementCredential, "kill recovery must rotate management access")
+	assertManagementRefused(t, third, restarted.ManagementCredential, true)
 	assert.Equal(t, originalPort, third.Record.Port)
 	assertAgentGuidance(t, third, string(credential))
 	require.NoError(t, client.Stop(ctx))
@@ -277,4 +292,26 @@ func assertAgentGuidance(t *testing.T, state *project.State, token string) {
 	assert.Equal(t, "nosniff", response.Header.Get("X-Content-Type-Options"))
 	require.NoError(t, response.Body.Close())
 	assert.True(t, strings.HasPrefix(state.Origin(), "http://127.0.0.1:"))
+}
+
+// assertManagementRefused checks a dead credential without displaying it on failure.
+// A stopped listener refuses the connection; a replacement must answer Unauthorized.
+func assertManagementRefused(t *testing.T, state *project.State, token string, listening bool) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+	defer cancel()
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, state.Origin()+"/project/identity", nil)
+	require.NoError(t, err)
+	request.Header.Set("Authorization", "Bearer "+token)
+	response, err := projectHTTPClient().Do(request)
+	if err != nil {
+		assert.False(t, listening, "a replacement must answer the old credential with Unauthorized")
+		if !listening {
+			assert.True(t, errors.Is(err, syscall.ECONNREFUSED), "a stopped listener must refuse the connection")
+		}
+		assert.False(t, strings.Contains(err.Error(), token))
+		return
+	}
+	assert.Equal(t, http.StatusUnauthorized, response.StatusCode)
+	require.NoError(t, response.Body.Close())
 }

@@ -355,7 +355,9 @@ func projectDispatchRuntime(t *testing.T) projectRuntime {
 		if err != nil {
 			return "", err
 		}
-		management := project.NewServer(state, func() {})
+		management, err := project.NewServer(state, func() {})
+		require.NoError(t, err)
+		require.NoError(t, management.PublishRunning(os.Getpid(), "stand-in"))
 		server := &http.Server{Handler: management.Handler(controlplane.NewHTTPHandler(cp, management.Authenticate)), ReadHeaderTimeout: time.Second}
 		t.Cleanup(func() { assert.NoError(t, server.Close()) })
 		go func() {

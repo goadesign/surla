@@ -280,21 +280,40 @@ A start lock serializes simultaneous commands. The existing card-store writer
 lock determines whether a server owns the project: a held lock attaches only
 after an authenticated project-identity response; a held lock with no answering
 server reports the failure and starts nothing. A free lock makes an old running
-record stale. A taken saved port reports an error and starts nothing.
+record stale; a start removes it before launching. A held lock with no record
+waits within the command's deadline and sends nothing. A taken saved port reports
+an error and starts nothing.
 
-`surla stop` requests authenticated ordered shutdown. The server closes its owned
-work, removes its running record while still holding the store lock, and then
-releases the lock. Handled interrupt, termination, and hangup signals attempt the
-same shutdown. An outright kill, lost holder, or host loss is recovered on the
+`surla stop` requests authenticated ordered shutdown. Before its listener closes,
+the server permanently revokes its management credential and withdraws its
+running record. An authorized stop response finishes; owned work closes before
+the store lock is released. Handled interrupt, termination, and hangup signals
+attempt the same shutdown. An outright kill, lost holder, or host loss is recovered on the
 next start from the free lock and stale record; it is not graceful shutdown.
 Herdr's keep option replaces a lost program with a shell and is not a restart
 mechanism.
 
-The CLI alone uses a private management credential to prove server identity,
-stop the server, manage agent credentials, and mint a browser link. It cannot
-confirm changes or approve results. Agent credentials survive restart and are
-removed with their agent. Agent connection settings and rosters name only their
+Each server creates a fresh management credential in memory and publishes it
+in its private running record only after binding its saved port. The CLI reads
+that record for each management request to check the reported project identity,
+stop the server, manage agent credentials, and mint a browser link. This limits
+the credential's lifetime; it does not prove which program answered or encrypt
+traffic. The CLI uses the literal local address without a proxy and refuses
+redirects. Each management request, including a changed-credential retry, opens
+a fresh connection after reading the credential; connections are never reused. A refused credential is retried once only if the record now contains
+a different credential; otherwise the command says to run `surla` again. A
+missing record is awaited within the command's deadline without network traffic.
+Management cannot confirm changes or approve results. A live management
+credential is never printed and is revoked before every listener close even if
+record removal fails. The management value can reach another program only after
+losing its authority; an echoed dead value is not treated as a secret.
+Agent credentials survive restart and are removed with their agent. Agent connection settings and rosters name only their
 own credential files, never the management credential.
+
+The CLI opens only its exact saved views address with a 64-hex-digit link
+fragment. It refuses any other destination without printing the supplied URL.
+Management failures use CLI-owned wording and the received status, never text
+from the TCP peer; malformed connections use a fixed connection-failure message.
 
 The browser link expires after two minutes and can be exchanged once through
 `POST /project/browser-session` for a random user session. The fixed `/views`
@@ -317,8 +336,9 @@ never placed in arguments, labels, or logs.
 ### `surla verification` and `surla promotion`
 
 Each command accepts `set <file>`, `show`, or `remove`, and works while the server
-is stopped. `set` validates an operator-named JSON file outside the workspace
-and enclosing working tree before atomically storing a private copy. Unknown
+is stopped; it uses local private-state ownership without needing a running
+server or management credential. `set` validates an operator-named JSON file
+outside the workspace and enclosing working tree before atomically storing a private copy. Unknown
 fields and trailing data are refused, leaving prior settings intact. Relative
 local repository and release paths are resolved against that file's directory.
 `show` prints the stored settings; `remove` removes them. Changes apply at the

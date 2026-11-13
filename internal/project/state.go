@@ -33,9 +33,9 @@ type (
 		// mu serializes the running server's credential and record changes.
 		mu sync.Mutex
 	}
-	// Record is the current-format project persistence contract; credentials live in separate private files.
+	// Record is the durable project identity; agent credentials live in separate private files.
 	Record struct {
-		// ID is the stable project identity proved to the CLI at the saved address.
+		// ID is the stable project identity checked by the CLI at the saved address.
 		ID string `json:"id"`
 		// Directory is the physical folder, independent of any Git root.
 		Directory string `json:"directory"`
@@ -51,12 +51,14 @@ type (
 		// file holds the exclusive project start lock until Close.
 		file *os.File
 	}
-	// Running is evidence of the last server process, never the authority for liveness.
+	// Running publishes one server's management access, never the authority for liveness.
 	Running struct {
 		// PID identifies the owned process for diagnostics, never for liveness decisions.
 		PID int `json:"pid"`
 		// Terminal identifies the Herdr terminal that owns this server program.
 		Terminal string `json:"terminal"`
+		// ManagementCredential is accepted only by the server that published this record.
+		ManagementCredential string `json:"management_credential"`
 	}
 )
 
@@ -120,7 +122,7 @@ func (l *Lock) Close() error {
 	return errors.Join(syscall.Flock(int(l.file.Fd()), syscall.LOCK_UN), l.file.Close())
 }
 
-// Initialize creates the owner, fixed port, and management credential once under StartLock.
+// Initialize creates the owner and fixed port once under StartLock.
 func (s *State) Initialize(owner string) (bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -148,13 +150,6 @@ func (s *State) Initialize(owner string) (bool, error) {
 	if err := ln.Close(); err != nil {
 		return false, err
 	}
-	credential, err := randomCredential()
-	if err != nil {
-		return false, err
-	}
-	if err := writePrivate(s.ManagementFile(), []byte(credential)); err != nil {
-		return false, err
-	}
 	s.Record = Record{ID: id, Directory: s.Record.Directory, Owner: owner, Port: port, Agents: map[string]string{}}
 	if err := s.save(); err != nil {
 		return false, err
@@ -171,23 +166,15 @@ func (s *State) Origin() string { return "http://" + s.Address() }
 // CardsDir is the existing writer-lock owner's directory inside this project's state.
 func (s *State) CardsDir() string { return filepath.Join(s.Dir, "cards") }
 
-// ManagementFile is only for CLI server management, never a roster or agent connection.
-func (s *State) ManagementFile() string { return filepath.Join(s.Dir, "management") }
-
 // AgentFile names a private credential whose contents never belong in an argument or label.
 func (s *State) AgentFile(id string) string { return filepath.Join(s.Dir, "agents", id) }
-
-// ManagementCredential reads only the CLI's private management credential.
-func (s *State) ManagementCredential() (string, error) {
-	return readCredential(s.ManagementFile())
-}
 
 // SaveRunning records a server that already holds the existing writer lock and listener.
 func (s *State) SaveRunning(record Running) error {
 	return writeJSON(filepath.Join(s.Dir, "running.json"), record)
 }
 
-// RemoveRunning removes only the running record after orderly server cleanup.
+// RemoveRunning withdraws management access before the listener closes, or removes stale startup state.
 func (s *State) RemoveRunning() error {
 	err := os.Remove(filepath.Join(s.Dir, "running.json"))
 	if errors.Is(err, os.ErrNotExist) {
@@ -199,8 +186,16 @@ func (s *State) RemoveRunning() error {
 // ReadRunning reads the last server record; only the writer lock establishes liveness.
 func (s *State) ReadRunning() (Running, error) {
 	var r Running
-	err := readJSON(filepath.Join(s.Dir, "running.json"), &r)
-	return r, err
+	if err := readJSON(filepath.Join(s.Dir, "running.json"), &r); err != nil {
+		return Running{}, err
+	}
+	if len(r.ManagementCredential) != 64 {
+		return Running{}, errors.New("invalid running management credential")
+	}
+	if _, err := hex.DecodeString(r.ManagementCredential); err != nil {
+		return Running{}, errors.New("invalid running management credential")
+	}
+	return r, nil
 }
 
 // ReadSettings returns one owner-private startup configuration. The CLI validates it before SaveSettings.

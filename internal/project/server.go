@@ -26,8 +26,10 @@ type (
 		state *State
 		// stop requests the composition root's ordered shutdown.
 		stop func()
-		// mu serializes memory-only link consumption and session issuance.
+		// mu serializes management revocation, link consumption, and session issuance.
 		mu sync.Mutex
+		// management is created once and cleared irreversibly before the listener closes.
+		management string
 		// links maps single-use credentials to their expiration, only for this server lifetime.
 		links map[string]time.Time
 		// sessions maps random session credentials to separately generated attribution caller IDs.
@@ -37,9 +39,41 @@ type (
 	}
 )
 
-// NewServer binds the project owner and the composition root's ordered shutdown request.
-func NewServer(state *State, stop func()) *Server {
-	return &Server{state: state, stop: stop, links: map[string]time.Time{}, sessions: map[string]string{}, now: time.Now}
+// NewServer creates fresh management authority for one server lifetime.
+// The caller publishes it only after binding the listener and revokes it before closing that listener.
+func NewServer(state *State, stop func()) (*Server, error) {
+	credential, err := randomCredential()
+	if err != nil {
+		return nil, err
+	}
+	return &Server{
+		state:      state,
+		stop:       stop,
+		management: credential,
+		links:      map[string]time.Time{},
+		sessions:   map[string]string{},
+		now:        time.Now,
+	}, nil
+}
+
+// PublishRunning atomically publishes this server's private management credential after Listen.
+// Publication cannot restore authority after RevokeManagement has permanently withdrawn it.
+func (s *Server) PublishRunning(pid int, terminal string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.management == "" {
+		return errors.New("project management access has ended")
+	}
+	return s.state.SaveRunning(Running{PID: pid, Terminal: terminal, ManagementCredential: s.management})
+}
+
+// RevokeManagement permanently ends this server's management authority before listener closure.
+// A failure to withdraw its private record never restores the memory credential.
+func (s *Server) RevokeManagement() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.management = ""
+	return s.state.RemoveRunning()
 }
 
 // Authenticate derives ownership and caller purpose solely from a trusted credential.
@@ -56,6 +90,7 @@ func (s *Server) Authenticate(r *http.Request) (controlplane.Principal, error) {
 			caller = id
 		}
 	}
+	management := s.management != "" && credentialEqual(token, s.management)
 	s.mu.Unlock()
 	if caller != "" {
 		if r.Header.Get("Sec-Fetch-Site") != "same-origin" {
@@ -63,11 +98,7 @@ func (s *Server) Authenticate(r *http.Request) (controlplane.Principal, error) {
 		}
 		return controlplane.Principal{ID: owner, CallerID: caller, Kind: controlplane.CallerUser}, nil
 	}
-	management, err := s.state.ManagementCredential()
-	if err != nil {
-		return controlplane.Principal{}, err
-	}
-	if credentialEqual(token, management) {
+	if management {
 		return controlplane.Principal{ID: owner, CallerID: "management", Kind: controlplane.CallerManagement}, nil
 	}
 	s.state.mu.Lock()

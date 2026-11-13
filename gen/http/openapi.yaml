@@ -1140,7 +1140,7 @@ paths:
             tags:
                 - project
             summary: identity project
-            description: The CLI proves the answering server belongs to its project using the management credential.
+            description: The CLI checks the answering server reports its expected project identity using the current server-lifetime management credential.
             operationId: project#identity
             responses:
                 "200":
@@ -1194,7 +1194,7 @@ paths:
             tags:
                 - project
             summary: stop project
-            description: The CLI requests ordered server shutdown; the server removes its running record only after its owned work closes.
+            description: The CLI requests ordered server shutdown. Before its listener closes, the server revokes management access and withdraws its running record; an authorized stop response can finish.
             operationId: project#stop
             responses:
                 "202":

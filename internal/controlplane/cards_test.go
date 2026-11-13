@@ -534,24 +534,3 @@ func TestCloseRemovesTheEvaluatorWorkspace(t *testing.T) {
 	require.ErrorContains(t, err, "design evaluator is closed")
 	require.NoError(t, cp.Close(), "closing again repeats the same results")
 }
-
-// TestCloseFinalizesHostRecordBeforeReleasingStore proves the next server cannot lose its running record to an old Close.
-func TestCloseFinalizesHostRecordBeforeReleasingStore(t *testing.T) {
-	dir := t.TempDir()
-	calls := 0
-	cp, err := New(Options{CardsDir: dir, BeforeStoreRelease: func() error {
-		calls++
-		held, err := CardStoreInUse(dir)
-		assert.NoError(t, err)
-		assert.True(t, held, "running record must be removed before writer lock release")
-		return nil
-	}})
-	require.NoError(t, err)
-	require.NoError(t, cp.Close())
-	assert.Equal(t, 1, calls)
-	next, err := New(Options{CardsDir: dir})
-	require.NoError(t, err)
-	require.NoError(t, cp.Close())
-	assert.Equal(t, 1, calls, "a closed owner must never finalize the next server's record")
-	require.NoError(t, next.Close())
-}

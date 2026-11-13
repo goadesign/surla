@@ -238,10 +238,10 @@ func startViewsProject(t *testing.T) *viewsProject {
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, cp.Close()) })
 	vp := &viewsProject{state: state, cp: cp}
-	vp.restart()
+	vp.restart(t)
 	api := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost && r.URL.Path == "/__test/restart" {
-			vp.restart()
+			vp.restart(t)
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
@@ -257,8 +257,10 @@ func startViewsProject(t *testing.T) *viewsProject {
 
 // restart replaces the project server, as a restarted `surla serve` does:
 // agent credentials survive in the state folder and every session ends.
-func (vp *viewsProject) restart() {
-	server := NewServer(vp.state, func() {})
+func (vp *viewsProject) restart(t *testing.T) {
+	t.Helper()
+	server, err := NewServer(vp.state, func() {})
+	require.NoError(t, err)
 	application := http.NewServeMux()
 	application.Handle("GET /views", controlplane.ViewsPage())
 	application.Handle("/", controlplane.NewHTTPHandler(vp.cp, server.Authenticate))
