@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"os"
-	"path"
 	"path/filepath"
 	"testing"
 
@@ -33,8 +32,9 @@ func TestPrepareAndCheckRefuseALinkedFolder(t *testing.T) {
 		name string
 		// check runs Check instead of Prepare.
 		check bool
-		// link is the linked folder's path below the project, which the error
-		// names relative to the project (Prepare) or to the copy (Check).
+		// link is the linked folder's path below the project. The error names
+		// it relative to the copy, as its author sees it, from Prepare as from
+		// Check; the copy's own folder is named as the project has it.
 		link string
 		// target is the repository folder the link points at.
 		target string
@@ -69,6 +69,12 @@ func TestPrepareAndCheckRefuseALinkedFolder(t *testing.T) {
 				require.NoError(t, os.Symlink(target, link))
 				before := projectFiles(t, repo)
 
+				named := Folder
+				if tc.link != Folder {
+					rel, err := filepath.Rel(filepath.Join(project, Folder), link)
+					require.NoError(t, err)
+					named = filepath.ToSlash(rel)
+				}
 				if tc.check {
 					v, err := testChecker.Check(t.Context(), wc, suite, refundStories)
 					assert.Equal(t, before, projectFiles(t, repo), "the project is byte-identical")
@@ -76,19 +82,22 @@ func TestPrepareAndCheckRefuseALinkedFolder(t *testing.T) {
 					require.Len(t, v.Findings, 1)
 					assert.Equal(t, FindingGeneration, v.Findings[0].Kind)
 					assert.Contains(t, v.Findings[0].Message, ErrLinkedFolder.Error())
-					rel, err := filepath.Rel(filepath.Join(project, Folder), link)
-					require.NoError(t, err)
-					assert.Contains(t, v.Findings[0].Message, filepath.ToSlash(rel)+" is a symbolic link")
+					assert.Contains(t, v.Findings[0].Message, ": "+named+" is a symbolic link")
 					return
 				}
 				_, err = testChecker.Prepare(t.Context(), wc, suite, nil)
 				assert.Equal(t, before, projectFiles(t, repo), "the project is byte-identical")
 				require.ErrorIs(t, err, ErrLinkedFolder)
-				assert.ErrorContains(t, err, path.Clean(tc.link)+" is a symbolic link")
 				var author *AuthorError
 				require.ErrorAs(t, err, &author, "a link the author placed is the author's to fix")
 				assert.Equal(t, FindingGeneration, author.Finding.Kind)
-				assert.Contains(t, author.Finding.Message, path.Clean(tc.link)+" is a symbolic link")
+				assert.Contains(t, author.Finding.Message, ": "+named+" is a symbolic link",
+					"the link is named relative to the copy, as Check names it")
+				assert.Contains(t, author.Finding.Message, "The suite module services/shop/eval could not be opened",
+					"the module is named relative to the copy")
+				if tc.link != Folder {
+					assert.NotContains(t, author.Finding.Message, Folder, "no path is given from the project folder")
+				}
 			})
 		}
 	}

@@ -193,12 +193,11 @@ func (c *Checker) Prepare(
 	if err := errors.Join(wc.opened(), s.validate()); err != nil {
 		return nil, err
 	}
-	projectDir := filepath.Dir(wc.dir)
-	rel, err := filepath.Rel(projectDir, wc.project)
+	rel, err := filepath.Rel(wc.dir, wc.project)
 	if err != nil {
 		return nil, err
 	}
-	return c.generate(ctx, projectDir, path.Join(filepath.ToSlash(rel), s.Module), wc.dir, stories)
+	return c.generate(ctx, filepath.Dir(wc.dir), filepath.Base(wc.dir), path.Join(filepath.ToSlash(rel), s.Module), stories)
 }
 
 // Check judges the working copy against stories without trusting its author.
@@ -257,7 +256,7 @@ func (c *Checker) Check(
 	}
 	modulePath := path.Join(filepath.ToSlash(rel), s.Module)
 	moduleDir := filepath.Join(src, filepath.FromSlash(modulePath))
-	required, err := c.generate(ctx, src, modulePath, src, stories)
+	required, err := c.generate(ctx, src, ".", modulePath, stories)
 	if author := (*AuthorError)(nil); errors.As(err, &author) {
 		return Verdict{Findings: []Finding{author.Finding}, copy: wc}, nil
 	}
@@ -429,31 +428,36 @@ func resolveToolchain(ctx context.Context, dir string) (toolchain, error) {
 	return toolchain{goroot: goroot, modCache: lines[1]}, nil
 }
 
-// openModule opens the folder at the slash path rel below the real folder top,
-// one folder at a time, each through the folder above it. Each step is checked
-// with Lstat and then opened, and the opened folder must be the one checked,
-// so a symbolic link anywhere on rel, even one swapped in meanwhile, is
-// refused with ErrLinkedFolder naming it, and nothing outside top is opened.
-// The caller closes the result.
-func openModule(top, rel string) (_ *os.Root, err error) {
+// openModule opens the folder at the slash path rel below the copy's root,
+// which is the slash path copyDir below the real folder top, one folder at a
+// time, each through the folder above it. Each step is checked with Lstat and
+// then opened, and the opened folder must be the one checked, so a symbolic
+// link anywhere on the way, even one swapped in meanwhile, is refused with
+// ErrLinkedFolder naming it, and nothing outside top is opened. A message
+// names a folder on rel relative to the copy's root, which is how the copy's
+// author sees it, and a folder on copyDir, the copy's own folder, relative to
+// top. The caller closes the result.
+func openModule(top, copyDir, rel string) (_ *os.Root, err error) {
 	cur, err := os.OpenRoot(top)
 	if err != nil {
 		return nil, err
 	}
-	walked := ""
-	for _, name := range strings.Split(path.Clean(rel), "/") {
-		if name == "." {
-			continue
-		}
-		walked = path.Join(walked, name)
-		next, err := openFolder(cur, name, walked)
-		if err := errors.Join(err, cur.Close()); err != nil {
-			if next != nil {
-				err = errors.Join(err, next.Close())
+	for _, part := range []string{copyDir, rel} {
+		walked := ""
+		for _, name := range strings.Split(path.Clean(part), "/") {
+			if name == "." {
+				continue
 			}
-			return nil, err
+			walked = path.Join(walked, name)
+			next, err := openFolder(cur, name, walked)
+			if err := errors.Join(err, cur.Close()); err != nil {
+				if next != nil {
+					err = errors.Join(err, next.Close())
+				}
+				return nil, err
+			}
+			cur = next
 		}
-		cur = next
 	}
 	return cur, nil
 }
@@ -482,27 +486,29 @@ func openFolder(dir *os.Root, name, walked string) (*os.Root, error) {
 	return next, nil
 }
 
-// generate writes the generated folder of the suite module at the slash path
-// modulePath below the real folder top again from stories, and returns the
-// required scenarios. Prepare runs it on the working copy (top is the project
-// folder) and Check on its snapshot (top is the snapshot). A cause the
-// module's author can fix is an *AuthorError whose finding gives paths
-// relative to copyRoot, the copy's root or the snapshot standing for it: the
-// module cannot be opened, including through a symbolic link, or read, or
-// its generation failed while working on the module's own files. Any other
-// failure is returned as it is.
+// generate writes the generated folder of the suite module again from
+// stories and returns the required scenarios. The module is at the slash path
+// modulePath below the copy's root, and the copy's root is the slash path
+// copyDir below the real folder top. Prepare runs it on the working copy (top
+// is the project folder and copyDir the copy's folder in it) and Check on its
+// snapshot (top is the snapshot and copyDir is "."). A cause the module's
+// author can fix is an *AuthorError whose finding gives paths relative to the
+// copy's root, in Prepare as in Check: the module cannot be opened, including
+// through a symbolic link, or read, or its generation failed while working on
+// the module's own files. Any other failure is returned as it is.
 func (c *Checker) generate(
-	ctx context.Context, top, modulePath, copyRoot string, stories []designeval.StorySummary,
+	ctx context.Context, top, copyDir, modulePath string, stories []designeval.StorySummary,
 ) (_ []designeval.StoryScenario, err error) {
+	copyRoot := filepath.Join(top, filepath.FromSlash(copyDir))
 	author := func(cause error, message string) error {
 		return &AuthorError{Finding: Finding{Kind: FindingGeneration, Message: forAuthor(message, copyRoot)}, cause: cause}
 	}
-	root, err := openModule(top, modulePath)
+	root, err := openModule(top, copyDir, modulePath)
 	if err != nil {
 		return nil, author(err, fmt.Sprintf("The suite module %s could not be opened: %v", modulePath, err))
 	}
 	defer func() { err = errors.Join(err, root.Close()) }()
-	files, err := designeval.ReadModuleSnapshotFromRoot(filepath.Join(top, filepath.FromSlash(modulePath)), root)
+	files, err := designeval.ReadModuleSnapshotFromRoot(filepath.Join(copyRoot, filepath.FromSlash(modulePath)), root)
 	if _, ok := files["go.mod"]; err == nil && !ok {
 		err = errors.New("it has no go.mod")
 	}
