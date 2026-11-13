@@ -1963,6 +1963,29 @@ export function bootstrapViewsPage() {
     });
   }
 
+  // revisionBuildNotice shares the build consequence beside both revision
+  // actions. An unread or failed read cannot establish that no build exists.
+  function revisionBuildNotice(card: ChangeCardResult): string | null {
+    if (card.status !== "confirmed") return null;
+    const known = buildChangeId === card.change_id && buildSnapshot !== null &&
+      buildReadError === null && !waitTroubleShown;
+    if (!known || buildSnapshot === null) {
+      return "Changing the agreed revision leaves any existing build on the earlier revision. " +
+        "Starting a new build replaces its assignments; when it uses a test writer, its report " +
+        "and verdict reset and its tests need acceptance again before verification.";
+    }
+    if (buildSnapshot.state !== "started" || !buildSnapshot.in_force ||
+        buildSnapshot.request_revision !== card.request_revision) return null;
+    if (buildSnapshot.test_writer.tests.state === "not_used") {
+      return "Changing the agreed revision leaves this build on the earlier revision. " +
+        "Start a new build to update the builder’s assignment. " +
+        "Verification keeps using the stored verification settings.";
+    }
+    return "Changing the agreed revision leaves this build on the earlier revision. " +
+      "A new build replaces both assignments and clears the test writer’s report and verdict. " +
+      "Its tests must be reported, checked and accepted again before verification.";
+  }
+
   // syncEditorRegion renders saved values and drafts together when editorOpen
   // is true, with editing disabled while a Change Card request is outstanding.
   function syncEditorRegion() {
@@ -1978,6 +2001,7 @@ export function bootstrapViewsPage() {
     editorRegionEl.dataset.changeId = ed.card.change_id;
     editorRegionEl.dataset.requestRevision = ed.card.request_revision;
     const proposal = ed.card.proposed_revision;
+    const buildRevisionNotice = revisionBuildNotice(ed.card);
     flushSync(() => {
       editorRoot.render(
         <>
@@ -1988,6 +2012,7 @@ export function bootstrapViewsPage() {
             answers={ed.proposalAnswers}
             busy={editorBusy}
             error={ed.proposalError}
+            buildRevisionNotice={buildRevisionNotice}
             onAnswer={(questionId, option) => {
               if (!activeEditor || editorBusy) {
                 return;
@@ -2004,6 +2029,7 @@ export function bootstrapViewsPage() {
         ) : null}
         <CP1EditorView
           card={ed.card}
+          buildRevisionNotice={buildRevisionNotice}
           buildSection={
             <BuildSectionView
               key={activeResult?.kind ?? "decisions"}

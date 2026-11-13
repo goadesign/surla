@@ -27,12 +27,12 @@ export interface ChangeListViewProps {
   onRetry: () => void;
 }
 
-// verificationLabels names each latest verification state for people.
+// verificationLabels describes saved history without claiming current proof.
 const verificationLabels: Record<LatestVerificationItem["state"], string> = {
-  running: "Verification in progress",
-  passed: "Verification passed",
-  failed: "Verification did not pass",
-  not_completed: "Verification did not finish",
+  running: "Latest saved run: in progress",
+  passed: "Latest saved run: passed",
+  failed: "Latest saved run: did not pass",
+  not_completed: "Latest saved run: did not finish",
 };
 
 // ChangeListView renders every listed change as one keyboard-operable
@@ -56,6 +56,12 @@ export function ChangeListView({
       aria-busy={loading ? "true" : undefined}
     >
       <h2 id="surla-change-list-title">Changes</h2>
+      {list?.changes.some((item) => item.latest_verification !== undefined) ? (
+        <p id="surla-change-run-history" className="surla-muted">
+          Saved run results describe their recorded inputs. The agreed revision or tests may
+          have changed since. Open a change, then Proof, to inspect what its runs checked.
+        </p>
+      ) : null}
       {error !== null ? (
         <Alert id="surla-change-list-error" variant="destructive" role="alert">
           <strong>Could not read this project's changes. </strong>
@@ -130,19 +136,11 @@ function ChangeListRow({
         </>
       ) : null}
       {item.latest_verification ? (
-        <Badge
-          variant={
-            item.latest_verification.state === "passed"
-              ? "success"
-              : item.latest_verification.state === "running"
-              ? "accent"
-              : "destructive"
-          }
-        >
+        <Badge aria-describedby="surla-change-run-history">
           {verificationLabels[item.latest_verification.state]}
         </Badge>
       ) : (
-        <Badge>Not verified yet</Badge>
+        <Badge>No saved runs</Badge>
       )}{" "}
       <span className="surla-muted">
         Saved <time dateTime={item.saved_at}>{new Date(item.saved_at).toLocaleString()}</time>

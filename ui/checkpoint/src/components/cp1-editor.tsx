@@ -24,6 +24,8 @@ export interface CP1EditorProps {
   card: ChangeCardResult;
   // buildSection follows the saved summary before the long editable fields.
   buildSection: React.ReactNode;
+  // buildRevisionNotice explains the effect of changing the agreed revision.
+  buildRevisionNotice: string | null;
   // proposalWaiting is true while a proposed revision waits beside the
   // agreed card; refining the agreed card is then refused, so it is offered
   // only after the user adopts or declines the proposal.
@@ -135,6 +137,7 @@ function FieldTextarea({
 export function CP1EditorView({
   card,
   buildSection,
+  buildRevisionNotice,
   proposalWaiting,
   priorCard,
   draftAnswers,
@@ -697,12 +700,17 @@ export function CP1EditorView({
             revision.
           </p>
         ) : null}
+        {card.status === "confirmed" && draftDirty && !proposalWaiting && buildRevisionNotice !== null ? (
+          <p id="surla-confirm-build-consequence">{buildRevisionNotice}</p>
+        ) : null}
         <div className="surla-field-row">
           <Button
             id="surla-confirm-submit"
             variant={card.status === "needs_confirmation" || draftDirty ? "primary" : "default"}
             disabled={rpcInFlight || proposalWaiting}
-            aria-describedby={proposalWaiting ? "surla-confirm-blocked" : undefined}
+            aria-describedby={proposalWaiting ? "surla-confirm-blocked" :
+              card.status === "confirmed" && draftDirty && buildRevisionNotice !== null
+                ? "surla-confirm-build-consequence" : undefined}
             onClick={onSubmitConfirm}
           >
             {card.status === "needs_confirmation"
