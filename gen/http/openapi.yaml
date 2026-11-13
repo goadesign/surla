@@ -65,6 +65,7 @@ paths:
                             - request_revision
                             - in_force
                             - read
+                            - written_tests
                 "403":
                     description: 'forbidden: The authenticated caller may not perform this operation or does not own the resource.'
                     schema:
@@ -2802,17 +2803,62 @@ definitions:
                 type: string
                 description: Change Card revision to build; verify_change takes it.
                 example: Incidunt enim in.
+            written_tests:
+                type: object
+                description: 'Where the test writer''s tests for this build stand: not_used when no test writer is used because the project verifies with its stored evaluator; otherwise accepted, with the commit and time, when the build records accepted tests, and not_yet_accepted when it records none.'
+                example:
+                    state: not_used
+                anyOf:
+                    - type: object
+                      properties:
+                        state:
+                            type: string
+                            enum:
+                                - not_used
+                      required:
+                        - state
+                    - type: object
+                      properties:
+                        state:
+                            type: string
+                            enum:
+                                - not_yet_accepted
+                      required:
+                        - state
+                    - type: object
+                      properties:
+                        checked_at:
+                            type: string
+                            description: When Surla's check reached this verdict.
+                            example: "1992-08-05T19:22:41Z"
+                            format: date-time
+                        commit:
+                            type: string
+                            description: Full commit ID Surla recorded the accepted tests at (40 or 64 lowercase hex characters).
+                            example: b418df2f2d1ea53902b297fcd7bb7a00cfd0dc2c
+                            pattern: ^([0-9a-f]{40}|[0-9a-f]{64})$
+                        state:
+                            type: string
+                            enum:
+                                - accepted
+                      required:
+                        - commit
+                        - checked_at
+                        - state
         description: 'The builder''s assignment: build this change at this revision in the project folder, where generate_code, check_project and verify_change act.'
         example:
             change_id: Et quos quod.
             in_force: true
             read: false
             request_revision: Incidunt enim in.
+            written_tests:
+                state: not_used
         required:
             - change_id
             - request_revision
             - in_force
             - read
+            - written_tests
     BuilderAssignmentList:
         title: BuilderAssignmentList
         type: object
@@ -2827,10 +2873,14 @@ definitions:
                       in_force: true
                       read: false
                       request_revision: Incidunt enim in.
+                      written_tests:
+                        state: not_used
                     - change_id: Et quos quod.
                       in_force: true
                       read: false
                       request_revision: Incidunt enim in.
+                      written_tests:
+                        state: not_used
         description: The builder's assignments, one per change the user built, most recently started first.
         example:
             assignments:
@@ -2838,10 +2888,14 @@ definitions:
                   in_force: true
                   read: false
                   request_revision: Incidunt enim in.
+                  written_tests:
+                    state: not_used
                 - change_id: Et quos quod.
                   in_force: true
                   read: false
                   request_revision: Incidunt enim in.
+                  written_tests:
+                    state: not_used
         required:
             - assignments
     BuilderProgress:
@@ -3404,8 +3458,13 @@ definitions:
                     state: started
                     test_writer:
                         read: true
+                        report: 7108203204833819401
                         tests:
-                            state: reported
+                            checked_at: "1972-09-26T18:55:16Z"
+                            findings:
+                                - Rerum quia dolorem omnis.
+                                - Quia id rem cupiditate ea.
+                            state: needs_changes
                 anyOf:
                     - type: object
                       properties:
@@ -3460,8 +3519,13 @@ definitions:
                 state: started
                 test_writer:
                     read: true
+                    report: 7108203204833819401
                     tests:
-                        state: reported
+                        checked_at: "1972-09-26T18:55:16Z"
+                        findings:
+                            - Rerum quia dolorem omnis.
+                            - Quia id rem cupiditate ea.
+                        state: needs_changes
             change_id: Assumenda quas molestiae incidunt debitis.
         required:
             - change_id
@@ -6832,8 +6896,13 @@ definitions:
             started_at: "2013-07-24T20:02:02Z"
             test_writer:
                 read: true
+                report: 7108203204833819401
                 tests:
-                    state: reported
+                    checked_at: "1972-09-26T18:55:16Z"
+                    findings:
+                        - Rerum quia dolorem omnis.
+                        - Quia id rem cupiditate ea.
+                    state: needs_changes
         required:
             - request_revision
             - started_at
@@ -14196,8 +14265,13 @@ definitions:
             in_force: false
             progress:
                 read: true
+                report: 7108203204833819401
                 tests:
-                    state: reported
+                    checked_at: "1972-09-26T18:55:16Z"
+                    findings:
+                        - Rerum quia dolorem omnis.
+                        - Quia id rem cupiditate ea.
+                    state: needs_changes
             request_revision: Ut sit qui.
             required_tests:
                 - flow_key: Officia eligendi error accusamus.
@@ -15338,8 +15412,13 @@ definitions:
             in_force: true
             progress:
                 read: true
+                report: 7108203204833819401
                 tests:
-                    state: reported
+                    checked_at: "1972-09-26T18:55:16Z"
+                    findings:
+                        - Rerum quia dolorem omnis.
+                        - Quia id rem cupiditate ea.
+                    state: needs_changes
             request_revision: Quidem nulla minima at voluptatum delectus.
         required:
             - change_id
@@ -15360,22 +15439,37 @@ definitions:
                       in_force: true
                       progress:
                         read: true
+                        report: 7108203204833819401
                         tests:
-                            state: reported
+                            checked_at: "1972-09-26T18:55:16Z"
+                            findings:
+                                - Rerum quia dolorem omnis.
+                                - Quia id rem cupiditate ea.
+                            state: needs_changes
                       request_revision: Quidem nulla minima at voluptatum delectus.
                     - change_id: Veniam ex reiciendis.
                       in_force: true
                       progress:
                         read: true
+                        report: 7108203204833819401
                         tests:
-                            state: reported
+                            checked_at: "1972-09-26T18:55:16Z"
+                            findings:
+                                - Rerum quia dolorem omnis.
+                                - Quia id rem cupiditate ea.
+                            state: needs_changes
                       request_revision: Quidem nulla minima at voluptatum delectus.
                     - change_id: Veniam ex reiciendis.
                       in_force: true
                       progress:
                         read: true
+                        report: 7108203204833819401
                         tests:
-                            state: reported
+                            checked_at: "1972-09-26T18:55:16Z"
+                            findings:
+                                - Rerum quia dolorem omnis.
+                                - Quia id rem cupiditate ea.
+                            state: needs_changes
                       request_revision: Quidem nulla minima at voluptatum delectus.
         description: The test writer's assignments, one per change the user built, most recently started first.
         example:
@@ -15384,22 +15478,37 @@ definitions:
                   in_force: true
                   progress:
                     read: true
+                    report: 7108203204833819401
                     tests:
-                        state: reported
+                        checked_at: "1972-09-26T18:55:16Z"
+                        findings:
+                            - Rerum quia dolorem omnis.
+                            - Quia id rem cupiditate ea.
+                        state: needs_changes
                   request_revision: Quidem nulla minima at voluptatum delectus.
                 - change_id: Veniam ex reiciendis.
                   in_force: true
                   progress:
                     read: true
+                    report: 7108203204833819401
                     tests:
-                        state: reported
+                        checked_at: "1972-09-26T18:55:16Z"
+                        findings:
+                            - Rerum quia dolorem omnis.
+                            - Quia id rem cupiditate ea.
+                        state: needs_changes
                   request_revision: Quidem nulla minima at voluptatum delectus.
                 - change_id: Veniam ex reiciendis.
                   in_force: true
                   progress:
                     read: true
+                    report: 7108203204833819401
                     tests:
-                        state: reported
+                        checked_at: "1972-09-26T18:55:16Z"
+                        findings:
+                            - Rerum quia dolorem omnis.
+                            - Quia id rem cupiditate ea.
+                        state: needs_changes
                   request_revision: Quidem nulla minima at voluptatum delectus.
         required:
             - assignments
@@ -15411,12 +15520,30 @@ definitions:
                 type: boolean
                 description: True once the test writer read this assignment in full with get_test_writer_assignment.
                 example: true
+            report:
+                type: integer
+                description: Number of the test writer's latest counted report of this build; 0 when none was counted. Reports are not counted yet, so it is 0.
+                example: 7108203204833819401
+                format: int64
+                minimum: 0
             tests:
                 type: object
-                description: 'The tests'' state: assigned, reported, needs_changes with Surla''s findings, or accepted with the commit Surla recorded.'
+                description: 'The tests'' state: not_used when the project verifies with its stored evaluator; otherwise assigned, reported, needs_changes with Surla''s findings, accepted with the commit Surla recorded, or could_not_run with the reason and the user''s step. Each verdict carries the time Surla reached it.'
                 example:
-                    state: reported
+                    checked_at: "1972-09-26T18:55:16Z"
+                    findings:
+                        - Rerum quia dolorem omnis.
+                        - Quia id rem cupiditate ea.
+                    state: needs_changes
                 anyOf:
+                    - type: object
+                      properties:
+                        state:
+                            type: string
+                            enum:
+                                - not_used
+                      required:
+                        - state
                     - type: object
                       properties:
                         state:
@@ -15435,6 +15562,11 @@ definitions:
                         - state
                     - type: object
                       properties:
+                        checked_at:
+                            type: string
+                            description: When Surla's check reached this verdict.
+                            example: "1999-02-14T22:07:37Z"
+                            format: date-time
                         findings:
                             type: array
                             items:
@@ -15451,9 +15583,15 @@ definitions:
                                 - needs_changes
                       required:
                         - findings
+                        - checked_at
                         - state
                     - type: object
                       properties:
+                        checked_at:
+                            type: string
+                            description: When Surla's check reached this verdict.
+                            example: "1999-05-28T22:24:28Z"
+                            format: date-time
                         commit:
                             type: string
                             description: Full commit ID Surla recorded the accepted tests at (40 or 64 lowercase hex characters).
@@ -15465,15 +15603,50 @@ definitions:
                                 - accepted
                       required:
                         - commit
+                        - checked_at
+                        - state
+                    - type: object
+                      properties:
+                        checked_at:
+                            type: string
+                            description: When Surla's check stopped.
+                            example: "1972-09-23T07:17:14Z"
+                            format: date-time
+                        reason:
+                            type: string
+                            description: Why the check could not run.
+                            example: hp
+                            minLength: 1
+                            maxLength: 1024
+                        state:
+                            type: string
+                            enum:
+                                - could_not_run
+                        step:
+                            type: string
+                            description: What the user does so the check can run.
+                            example: q6
+                            minLength: 1
+                            maxLength: 512
+                      required:
+                        - reason
+                        - step
+                        - checked_at
                         - state
         description: Where the test writer's assignment for one build stands.
         example:
             read: true
+            report: 7108203204833819401
             tests:
-                state: reported
+                checked_at: "1972-09-26T18:55:16Z"
+                findings:
+                    - Rerum quia dolorem omnis.
+                    - Quia id rem cupiditate ea.
+                state: needs_changes
         required:
             - tests
             - read
+            - report
     ToolContractItem:
         title: ToolContractItem
         type: object

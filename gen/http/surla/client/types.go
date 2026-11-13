@@ -775,6 +775,11 @@ type GetBuilderAssignmentResponseBody struct {
 	InForce *bool `form:"in_force,omitempty" json:"in_force,omitempty" xml:"in_force,omitempty"`
 	// True once you read this assignment in full with get_builder_assignment.
 	Read *bool `form:"read,omitempty" json:"read,omitempty" xml:"read,omitempty"`
+	// Where the test writer's tests for this build stand: not_used when no test
+	// writer is used because the project verifies with its stored evaluator;
+	// otherwise accepted, with the commit and time, when the build records
+	// accepted tests, and not_yet_accepted when it records none.
+	WrittenTests *WrittenTestsResponseBody `form:"written_tests,omitempty" json:"written_tests,omitempty" xml:"written_tests,omitempty"`
 }
 
 // ListTestWriterAssignmentsResponseBody is the type of the "surla" service
@@ -2925,12 +2930,21 @@ type BuilderProgressResponseBody struct {
 // TestWriterProgressResponseBody is used to define fields on response body
 // types.
 type TestWriterProgressResponseBody struct {
-	// The tests' state: assigned, reported, needs_changes with Surla's findings,
-	// or accepted with the commit Surla recorded.
+	// The tests' state: not_used when the project verifies with its stored
+	// evaluator; otherwise assigned, reported, needs_changes with Surla's
+	// findings, accepted with the commit Surla recorded, or could_not_run with the
+	// reason and the user's step. Each verdict carries the time Surla reached it.
 	Tests *TestsResponseBody `form:"tests,omitempty" json:"tests,omitempty" xml:"tests,omitempty"`
 	// True once the test writer read this assignment in full with
 	// get_test_writer_assignment.
 	Read *bool `form:"read,omitempty" json:"read,omitempty" xml:"read,omitempty"`
+	// Number of the test writer's latest counted report of this build; 0 when none
+	// was counted. Reports are not counted yet, so it is 0.
+	Report *int `form:"report,omitempty" json:"report,omitempty" xml:"report,omitempty"`
+}
+
+// TestsNotUsedResponseBody is used to define fields on response body types.
+type TestsNotUsedResponseBody struct {
 }
 
 // TestsAssignedResponseBody is used to define fields on response body types.
@@ -2946,6 +2960,8 @@ type TestsNeedChangesResponseBody struct {
 	// What Surla found, one problem per item: a test that does not build or a
 	// required test that is not declared.
 	Findings []string `form:"findings,omitempty" json:"findings,omitempty" xml:"findings,omitempty"`
+	// When Surla's check reached this verdict.
+	CheckedAt *string `form:"checked_at,omitempty" json:"checked_at,omitempty" xml:"checked_at,omitempty"`
 }
 
 // TestsAcceptedResponseBody is used to define fields on response body types.
@@ -2953,6 +2969,18 @@ type TestsAcceptedResponseBody struct {
 	// Full commit ID Surla recorded the accepted tests at (40 or 64 lowercase hex
 	// characters).
 	Commit *string `form:"commit,omitempty" json:"commit,omitempty" xml:"commit,omitempty"`
+	// When Surla's check reached this verdict.
+	CheckedAt *string `form:"checked_at,omitempty" json:"checked_at,omitempty" xml:"checked_at,omitempty"`
+}
+
+// TestsCouldNotRunResponseBody is used to define fields on response body types.
+type TestsCouldNotRunResponseBody struct {
+	// Why the check could not run.
+	Reason *string `form:"reason,omitempty" json:"reason,omitempty" xml:"reason,omitempty"`
+	// What the user does so the check can run.
+	Step *string `form:"step,omitempty" json:"step,omitempty" xml:"step,omitempty"`
+	// When Surla's check stopped.
+	CheckedAt *string `form:"checked_at,omitempty" json:"checked_at,omitempty" xml:"checked_at,omitempty"`
 }
 
 // BuildNotStartedResponseBody is used to define fields on response body types.
@@ -2989,6 +3017,16 @@ type BuilderAssignmentResponseBody struct {
 	InForce *bool `form:"in_force,omitempty" json:"in_force,omitempty" xml:"in_force,omitempty"`
 	// True once you read this assignment in full with get_builder_assignment.
 	Read *bool `form:"read,omitempty" json:"read,omitempty" xml:"read,omitempty"`
+	// Where the test writer's tests for this build stand: not_used when no test
+	// writer is used because the project verifies with its stored evaluator;
+	// otherwise accepted, with the commit and time, when the build records
+	// accepted tests, and not_yet_accepted when it records none.
+	WrittenTests *WrittenTestsResponseBody `form:"written_tests,omitempty" json:"written_tests,omitempty" xml:"written_tests,omitempty"`
+}
+
+// TestsNotYetAcceptedResponseBody is used to define fields on response body
+// types.
+type TestsNotYetAcceptedResponseBody struct {
 }
 
 // TestWriterAssignmentItemResponseBody is used to define fields on response
@@ -3528,16 +3566,20 @@ func (u *StateResponseBody) UnmarshalJSON(data []byte) error {
 // TestsResponseBody holds exactly one of its branch values.
 type TestsResponseBody struct {
 	kind         TestsResponseBodyKind
+	notUsed      *TestsNotUsedResponseBody
 	assigned     *TestsAssignedResponseBody
 	reported     *TestsReportedResponseBody
 	needsChanges *TestsNeedChangesResponseBody
 	accepted     *TestsAcceptedResponseBody
+	couldNotRun  *TestsCouldNotRunResponseBody
 }
 
 // TestsResponseBodyKind records which TestsResponseBody branch is selected.
 type TestsResponseBodyKind string
 
 const (
+	// TestsResponseBodyKindNotUsed identifies the not_used branch.
+	TestsResponseBodyKindNotUsed TestsResponseBodyKind = "not_used"
 	// TestsResponseBodyKindAssigned identifies the assigned branch.
 	TestsResponseBodyKindAssigned TestsResponseBodyKind = "assigned"
 	// TestsResponseBodyKindReported identifies the reported branch.
@@ -3546,11 +3588,37 @@ const (
 	TestsResponseBodyKindNeedsChanges TestsResponseBodyKind = "needs_changes"
 	// TestsResponseBodyKindAccepted identifies the accepted branch.
 	TestsResponseBodyKindAccepted TestsResponseBodyKind = "accepted"
+	// TestsResponseBodyKindCouldNotRun identifies the could_not_run branch.
+	TestsResponseBodyKindCouldNotRun TestsResponseBodyKind = "could_not_run"
 )
 
 // Kind returns the selected branch.
 func (u TestsResponseBody) Kind() TestsResponseBodyKind {
 	return u.kind
+}
+
+// NewTestsResponseBodyNotUsed constructs TestsResponseBody with the not_used branch set.
+func NewTestsResponseBodyNotUsed(v *TestsNotUsedResponseBody) TestsResponseBody {
+	return TestsResponseBody{
+		kind:    TestsResponseBodyKindNotUsed,
+		notUsed: v,
+	}
+}
+
+// AsNotUsed returns the value when the not_used branch is selected.
+func (u TestsResponseBody) AsNotUsed() (_ *TestsNotUsedResponseBody, ok bool) {
+	if u.kind != TestsResponseBodyKindNotUsed {
+		return
+	}
+	return u.notUsed, true
+}
+
+// SetNotUsed selects the not_used branch and stores v.
+func (u *TestsResponseBody) SetNotUsed(v *TestsNotUsedResponseBody) {
+	*u = TestsResponseBody{
+		kind:    TestsResponseBodyKindNotUsed,
+		notUsed: v,
+	}
 }
 
 // NewTestsResponseBodyAssigned constructs TestsResponseBody with the assigned branch set.
@@ -3649,6 +3717,30 @@ func (u *TestsResponseBody) SetAccepted(v *TestsAcceptedResponseBody) {
 	}
 }
 
+// NewTestsResponseBodyCouldNotRun constructs TestsResponseBody with the could_not_run branch set.
+func NewTestsResponseBodyCouldNotRun(v *TestsCouldNotRunResponseBody) TestsResponseBody {
+	return TestsResponseBody{
+		kind:        TestsResponseBodyKindCouldNotRun,
+		couldNotRun: v,
+	}
+}
+
+// AsCouldNotRun returns the value when the could_not_run branch is selected.
+func (u TestsResponseBody) AsCouldNotRun() (_ *TestsCouldNotRunResponseBody, ok bool) {
+	if u.kind != TestsResponseBodyKindCouldNotRun {
+		return
+	}
+	return u.couldNotRun, true
+}
+
+// SetCouldNotRun selects the could_not_run branch and stores v.
+func (u *TestsResponseBody) SetCouldNotRun(v *TestsCouldNotRunResponseBody) {
+	*u = TestsResponseBody{
+		kind:        TestsResponseBodyKindCouldNotRun,
+		couldNotRun: v,
+	}
+}
+
 // Validate ensures exactly one valid branch is selected.
 func (u TestsResponseBody) Validate() error {
 	_, err := u.Value()
@@ -3661,11 +3753,18 @@ func (u TestsResponseBody) Value() (any, error) {
 	switch u.kind {
 	case "":
 		return nil, goa.InvalidEnumValueError("state", "", []any{
+			string(TestsResponseBodyKindNotUsed),
 			string(TestsResponseBodyKindAssigned),
 			string(TestsResponseBodyKindReported),
 			string(TestsResponseBodyKindNeedsChanges),
 			string(TestsResponseBodyKindAccepted),
+			string(TestsResponseBodyKindCouldNotRun),
 		})
+	case TestsResponseBodyKindNotUsed:
+		if u.notUsed == nil {
+			return nil, goa.MissingFieldError("value", "TestsResponseBody")
+		}
+		return u.notUsed, nil
 	case TestsResponseBodyKindAssigned:
 		if u.assigned == nil {
 			return nil, goa.MissingFieldError("value", "TestsResponseBody")
@@ -3686,12 +3785,19 @@ func (u TestsResponseBody) Value() (any, error) {
 			return nil, goa.MissingFieldError("value", "TestsResponseBody")
 		}
 		return u.accepted, nil
+	case TestsResponseBodyKindCouldNotRun:
+		if u.couldNotRun == nil {
+			return nil, goa.MissingFieldError("value", "TestsResponseBody")
+		}
+		return u.couldNotRun, nil
 	default:
 		return nil, goa.InvalidEnumValueError("state", u.kind, []any{
+			string(TestsResponseBodyKindNotUsed),
 			string(TestsResponseBodyKindAssigned),
 			string(TestsResponseBodyKindReported),
 			string(TestsResponseBodyKindNeedsChanges),
 			string(TestsResponseBodyKindAccepted),
+			string(TestsResponseBodyKindCouldNotRun),
 		})
 	}
 }
@@ -3751,6 +3857,12 @@ func (u *TestsResponseBody) UnmarshalJSON(data []byte) error {
 	}
 	raw.Value = value
 	switch raw.Type {
+	case string(TestsResponseBodyKindNotUsed):
+		var v *TestsNotUsedResponseBody
+		if err := json.Unmarshal(raw.Value, &v); err != nil {
+			return err
+		}
+		u.SetNotUsed(v)
 	case string(TestsResponseBodyKindAssigned):
 		var v *TestsAssignedResponseBody
 		if err := json.Unmarshal(raw.Value, &v); err != nil {
@@ -3775,15 +3887,246 @@ func (u *TestsResponseBody) UnmarshalJSON(data []byte) error {
 			return err
 		}
 		u.SetAccepted(v)
+	case string(TestsResponseBodyKindCouldNotRun):
+		var v *TestsCouldNotRunResponseBody
+		if err := json.Unmarshal(raw.Value, &v); err != nil {
+			return err
+		}
+		u.SetCouldNotRun(v)
 	default:
 		if raw.Type == "" {
 			return goa.MissingFieldError("state", "TestsResponseBody")
 		}
 		return goa.InvalidEnumValueError("state", raw.Type, []any{
+			string(TestsResponseBodyKindNotUsed),
 			string(TestsResponseBodyKindAssigned),
 			string(TestsResponseBodyKindReported),
 			string(TestsResponseBodyKindNeedsChanges),
 			string(TestsResponseBodyKindAccepted),
+			string(TestsResponseBodyKindCouldNotRun),
+		})
+	}
+	return nil
+}
+
+// WrittenTestsResponseBody holds exactly one of its branch values.
+type WrittenTestsResponseBody struct {
+	kind           WrittenTestsResponseBodyKind
+	notUsed        *TestsNotUsedResponseBody
+	notYetAccepted *TestsNotYetAcceptedResponseBody
+	accepted       *TestsAcceptedResponseBody
+}
+
+// WrittenTestsResponseBodyKind records which WrittenTestsResponseBody branch is selected.
+type WrittenTestsResponseBodyKind string
+
+const (
+	// WrittenTestsResponseBodyKindNotUsed identifies the not_used branch.
+	WrittenTestsResponseBodyKindNotUsed WrittenTestsResponseBodyKind = "not_used"
+	// WrittenTestsResponseBodyKindNotYetAccepted identifies the not_yet_accepted branch.
+	WrittenTestsResponseBodyKindNotYetAccepted WrittenTestsResponseBodyKind = "not_yet_accepted"
+	// WrittenTestsResponseBodyKindAccepted identifies the accepted branch.
+	WrittenTestsResponseBodyKindAccepted WrittenTestsResponseBodyKind = "accepted"
+)
+
+// Kind returns the selected branch.
+func (u WrittenTestsResponseBody) Kind() WrittenTestsResponseBodyKind {
+	return u.kind
+}
+
+// NewWrittenTestsResponseBodyNotUsed constructs WrittenTestsResponseBody with the not_used branch set.
+func NewWrittenTestsResponseBodyNotUsed(v *TestsNotUsedResponseBody) WrittenTestsResponseBody {
+	return WrittenTestsResponseBody{
+		kind:    WrittenTestsResponseBodyKindNotUsed,
+		notUsed: v,
+	}
+}
+
+// AsNotUsed returns the value when the not_used branch is selected.
+func (u WrittenTestsResponseBody) AsNotUsed() (_ *TestsNotUsedResponseBody, ok bool) {
+	if u.kind != WrittenTestsResponseBodyKindNotUsed {
+		return
+	}
+	return u.notUsed, true
+}
+
+// SetNotUsed selects the not_used branch and stores v.
+func (u *WrittenTestsResponseBody) SetNotUsed(v *TestsNotUsedResponseBody) {
+	*u = WrittenTestsResponseBody{
+		kind:    WrittenTestsResponseBodyKindNotUsed,
+		notUsed: v,
+	}
+}
+
+// NewWrittenTestsResponseBodyNotYetAccepted constructs WrittenTestsResponseBody with the not_yet_accepted branch set.
+func NewWrittenTestsResponseBodyNotYetAccepted(v *TestsNotYetAcceptedResponseBody) WrittenTestsResponseBody {
+	return WrittenTestsResponseBody{
+		kind:           WrittenTestsResponseBodyKindNotYetAccepted,
+		notYetAccepted: v,
+	}
+}
+
+// AsNotYetAccepted returns the value when the not_yet_accepted branch is selected.
+func (u WrittenTestsResponseBody) AsNotYetAccepted() (_ *TestsNotYetAcceptedResponseBody, ok bool) {
+	if u.kind != WrittenTestsResponseBodyKindNotYetAccepted {
+		return
+	}
+	return u.notYetAccepted, true
+}
+
+// SetNotYetAccepted selects the not_yet_accepted branch and stores v.
+func (u *WrittenTestsResponseBody) SetNotYetAccepted(v *TestsNotYetAcceptedResponseBody) {
+	*u = WrittenTestsResponseBody{
+		kind:           WrittenTestsResponseBodyKindNotYetAccepted,
+		notYetAccepted: v,
+	}
+}
+
+// NewWrittenTestsResponseBodyAccepted constructs WrittenTestsResponseBody with the accepted branch set.
+func NewWrittenTestsResponseBodyAccepted(v *TestsAcceptedResponseBody) WrittenTestsResponseBody {
+	return WrittenTestsResponseBody{
+		kind:     WrittenTestsResponseBodyKindAccepted,
+		accepted: v,
+	}
+}
+
+// AsAccepted returns the value when the accepted branch is selected.
+func (u WrittenTestsResponseBody) AsAccepted() (_ *TestsAcceptedResponseBody, ok bool) {
+	if u.kind != WrittenTestsResponseBodyKindAccepted {
+		return
+	}
+	return u.accepted, true
+}
+
+// SetAccepted selects the accepted branch and stores v.
+func (u *WrittenTestsResponseBody) SetAccepted(v *TestsAcceptedResponseBody) {
+	*u = WrittenTestsResponseBody{
+		kind:     WrittenTestsResponseBodyKindAccepted,
+		accepted: v,
+	}
+}
+
+// Validate ensures exactly one valid branch is selected.
+func (u WrittenTestsResponseBody) Validate() error {
+	_, err := u.Value()
+	return err
+}
+
+// Value returns the selected branch value, or the same selection error as Validate.
+// Go templates can read this method directly; an invalid selection stops execution.
+func (u WrittenTestsResponseBody) Value() (any, error) {
+	switch u.kind {
+	case "":
+		return nil, goa.InvalidEnumValueError("state", "", []any{
+			string(WrittenTestsResponseBodyKindNotUsed),
+			string(WrittenTestsResponseBodyKindNotYetAccepted),
+			string(WrittenTestsResponseBodyKindAccepted),
+		})
+	case WrittenTestsResponseBodyKindNotUsed:
+		if u.notUsed == nil {
+			return nil, goa.MissingFieldError("value", "WrittenTestsResponseBody")
+		}
+		return u.notUsed, nil
+	case WrittenTestsResponseBodyKindNotYetAccepted:
+		if u.notYetAccepted == nil {
+			return nil, goa.MissingFieldError("value", "WrittenTestsResponseBody")
+		}
+		return u.notYetAccepted, nil
+	case WrittenTestsResponseBodyKindAccepted:
+		if u.accepted == nil {
+			return nil, goa.MissingFieldError("value", "WrittenTestsResponseBody")
+		}
+		return u.accepted, nil
+	default:
+		return nil, goa.InvalidEnumValueError("state", u.kind, []any{
+			string(WrittenTestsResponseBodyKindNotUsed),
+			string(WrittenTestsResponseBodyKindNotYetAccepted),
+			string(WrittenTestsResponseBodyKindAccepted),
+		})
+	}
+}
+
+// MarshalJSON writes the selected object branch beside its discriminator.
+func (u WrittenTestsResponseBody) MarshalJSON() ([]byte, error) {
+	value, err := u.Value()
+	if err != nil {
+		return nil, err
+	}
+	data, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return nil, err
+	}
+	if fields == nil {
+		return nil, goa.InvalidFieldTypeError("state", nil, "non-null JSON object")
+	}
+	if _, exists := fields["state"]; exists {
+		return nil, fmt.Errorf("WrittenTestsResponseBody branch already contains discriminator %q", "state")
+	}
+	tag, err := json.Marshal(string(u.kind))
+	if err != nil {
+		return nil, err
+	}
+	fields["state"] = tag
+	return json.Marshal(fields)
+}
+
+// UnmarshalJSON reads the discriminator and decodes its declared object branch.
+func (u *WrittenTestsResponseBody) UnmarshalJSON(data []byte) error {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return err
+	}
+	tag, exists := fields["state"]
+	if !exists {
+		return goa.MissingFieldError("state", "WrittenTestsResponseBody")
+	}
+	if bytes.Equal(bytes.TrimSpace(tag), []byte("null")) {
+		return goa.InvalidFieldTypeError("state", nil, "JSON string")
+	}
+	var raw struct {
+		Type  string
+		Value json.RawMessage
+	}
+	if err := json.Unmarshal(tag, &raw.Type); err != nil {
+		return err
+	}
+	delete(fields, "state")
+	value, err := json.Marshal(fields)
+	if err != nil {
+		return err
+	}
+	raw.Value = value
+	switch raw.Type {
+	case string(WrittenTestsResponseBodyKindNotUsed):
+		var v *TestsNotUsedResponseBody
+		if err := json.Unmarshal(raw.Value, &v); err != nil {
+			return err
+		}
+		u.SetNotUsed(v)
+	case string(WrittenTestsResponseBodyKindNotYetAccepted):
+		var v *TestsNotYetAcceptedResponseBody
+		if err := json.Unmarshal(raw.Value, &v); err != nil {
+			return err
+		}
+		u.SetNotYetAccepted(v)
+	case string(WrittenTestsResponseBodyKindAccepted):
+		var v *TestsAcceptedResponseBody
+		if err := json.Unmarshal(raw.Value, &v); err != nil {
+			return err
+		}
+		u.SetAccepted(v)
+	default:
+		if raw.Type == "" {
+			return goa.MissingFieldError("state", "WrittenTestsResponseBody")
+		}
+		return goa.InvalidEnumValueError("state", raw.Type, []any{
+			string(WrittenTestsResponseBodyKindNotUsed),
+			string(WrittenTestsResponseBodyKindNotYetAccepted),
+			string(WrittenTestsResponseBodyKindAccepted),
 		})
 	}
 	return nil
@@ -6024,6 +6367,35 @@ func NewGetBuilderAssignmentBuilderAssignmentOK(body *GetBuilderAssignmentRespon
 		InForce:         *body.InForce,
 		Read:            *body.Read,
 	}
+	switch string(body.WrittenTests.Kind()) {
+	case "not_used":
+		actual, _ := body.WrittenTests.AsNotUsed()
+		var obj *surla.TestsNotUsed
+		if actual != nil {
+			obj = unmarshalTestsNotUsedResponseBodyToSurlaTestsNotUsed(actual)
+		}
+		u := v.WrittenTests
+		u.SetNotUsed((*surla.TestsNotUsed)(obj))
+		v.WrittenTests = u
+	case "not_yet_accepted":
+		actual, _ := body.WrittenTests.AsNotYetAccepted()
+		var obj *surla.TestsNotYetAccepted
+		if actual != nil {
+			obj = unmarshalTestsNotYetAcceptedResponseBodyToSurlaTestsNotYetAccepted(actual)
+		}
+		u := v.WrittenTests
+		u.SetNotYetAccepted((*surla.TestsNotYetAccepted)(obj))
+		v.WrittenTests = u
+	case "accepted":
+		actual, _ := body.WrittenTests.AsAccepted()
+		var obj *surla.TestsAccepted
+		if actual != nil {
+			obj = unmarshalTestsAcceptedResponseBodyToSurlaTestsAccepted(actual)
+		}
+		u := v.WrittenTests
+		u.SetAccepted((*surla.TestsAccepted)(obj))
+		v.WrittenTests = u
+	}
 
 	return v
 }
@@ -7119,6 +7491,26 @@ func ValidateGetBuilderAssignmentResponseBody(body *GetBuilderAssignmentResponse
 	}
 	if body.Read == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("read", "body"))
+	}
+	if body.WrittenTests == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("written_tests", "body"))
+	}
+	if body.WrittenTests != nil {
+
+		if err2 := body.WrittenTests.Validate(); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		} else {
+			switch string(body.WrittenTests.Kind()) {
+			case "accepted":
+				actual, _ := body.WrittenTests.AsAccepted()
+				if actual != nil {
+					if err2 := validateTestsAcceptedResponseBody(actual, "body.written_tests.value"); err2 != nil {
+						err = goa.MergeErrors(err, err2)
+					}
+				}
+			}
+		}
+
 	}
 	return
 }
@@ -10772,6 +11164,9 @@ func ValidateTestWriterProgressResponseBody(body *TestWriterProgressResponseBody
 	if body.Read == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("read", "body"))
 	}
+	if body.Report == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("report", "body"))
+	}
 	if body.Tests != nil {
 
 		if err2 := body.Tests.Validate(); err2 != nil {
@@ -10792,9 +11187,21 @@ func ValidateTestWriterProgressResponseBody(body *TestWriterProgressResponseBody
 						err = goa.MergeErrors(err, err2)
 					}
 				}
+			case "could_not_run":
+				actual, _ := body.Tests.AsCouldNotRun()
+				if actual != nil {
+					if err2 := validateTestsCouldNotRunResponseBody(actual, "body.tests.value"); err2 != nil {
+						err = goa.MergeErrors(err, err2)
+					}
+				}
 			}
 		}
 
+	}
+	if body.Report != nil {
+		if *body.Report < 0 {
+			err = goa.MergeErrors(err, goa.InvalidRangeError("body.report", *body.Report, 0, true))
+		}
 	}
 	return
 }
@@ -10807,6 +11214,9 @@ func validateTestWriterProgressResponseBody(body *TestWriterProgressResponseBody
 	}
 	if body.Read == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("read", path))
+	}
+	if body.Report == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("report", path))
 	}
 	if body.Tests != nil {
 
@@ -10828,9 +11238,21 @@ func validateTestWriterProgressResponseBody(body *TestWriterProgressResponseBody
 						err = goa.MergeErrors(err, err2)
 					}
 				}
+			case "could_not_run":
+				actual, _ := body.Tests.AsCouldNotRun()
+				if actual != nil {
+					if err2 := validateTestsCouldNotRunResponseBody(actual, path+".tests.value"); err2 != nil {
+						err = goa.MergeErrors(err, err2)
+					}
+				}
 			}
 		}
 
+	}
+	if body.Report != nil {
+		if *body.Report < 0 {
+			err = goa.MergeErrors(err, goa.InvalidRangeError(path+".report", *body.Report, 0, true))
+		}
 	}
 	return
 }
@@ -10841,8 +11263,14 @@ func ValidateTestsNeedChangesResponseBody(body *TestsNeedChangesResponseBody) (e
 	if body.Findings == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("findings", "body"))
 	}
+	if body.CheckedAt == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("checked_at", "body"))
+	}
 	if len(body.Findings) < 1 {
 		err = goa.MergeErrors(err, goa.InvalidLengthError("body.findings", body.Findings, len(body.Findings), 1, true))
+	}
+	if body.CheckedAt != nil {
+		err = goa.MergeErrors(err, goa.ValidateFormat("body.checked_at", *body.CheckedAt, goa.FormatDateTime))
 	}
 	return
 }
@@ -10853,8 +11281,14 @@ func validateTestsNeedChangesResponseBody(body *TestsNeedChangesResponseBody, pa
 	if body.Findings == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("findings", path))
 	}
+	if body.CheckedAt == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("checked_at", path))
+	}
 	if len(body.Findings) < 1 {
 		err = goa.MergeErrors(err, goa.InvalidLengthError(path+".findings", body.Findings, len(body.Findings), 1, true))
+	}
+	if body.CheckedAt != nil {
+		err = goa.MergeErrors(err, goa.ValidateFormat(path+".checked_at", *body.CheckedAt, goa.FormatDateTime))
 	}
 	return
 }
@@ -10865,8 +11299,14 @@ func ValidateTestsAcceptedResponseBody(body *TestsAcceptedResponseBody) (err err
 	if body.Commit == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("commit", "body"))
 	}
+	if body.CheckedAt == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("checked_at", "body"))
+	}
 	if body.Commit != nil {
 		err = goa.MergeErrors(err, goa.ValidatePattern("body.commit", *body.Commit, "^([0-9a-f]{40}|[0-9a-f]{64})$"))
+	}
+	if body.CheckedAt != nil {
+		err = goa.MergeErrors(err, goa.ValidateFormat("body.checked_at", *body.CheckedAt, goa.FormatDateTime))
 	}
 	return
 }
@@ -10877,8 +11317,82 @@ func validateTestsAcceptedResponseBody(body *TestsAcceptedResponseBody, path str
 	if body.Commit == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("commit", path))
 	}
+	if body.CheckedAt == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("checked_at", path))
+	}
 	if body.Commit != nil {
 		err = goa.MergeErrors(err, goa.ValidatePattern(path+".commit", *body.Commit, "^([0-9a-f]{40}|[0-9a-f]{64})$"))
+	}
+	if body.CheckedAt != nil {
+		err = goa.MergeErrors(err, goa.ValidateFormat(path+".checked_at", *body.CheckedAt, goa.FormatDateTime))
+	}
+	return
+}
+
+// ValidateTestsCouldNotRunResponseBody runs the validations defined on
+// TestsCouldNotRun
+func ValidateTestsCouldNotRunResponseBody(body *TestsCouldNotRunResponseBody) (err error) {
+	if body.Reason == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("reason", "body"))
+	}
+	if body.Step == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("step", "body"))
+	}
+	if body.CheckedAt == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("checked_at", "body"))
+	}
+	if body.Reason != nil {
+		if utf8.RuneCountInString(*body.Reason) < 1 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.reason", *body.Reason, utf8.RuneCountInString(*body.Reason), 1, true))
+		}
+		if utf8.RuneCountInString(*body.Reason) > 1024 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.reason", *body.Reason, utf8.RuneCountInString(*body.Reason), 1024, false))
+		}
+	}
+	if body.Step != nil {
+		if utf8.RuneCountInString(*body.Step) < 1 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.step", *body.Step, utf8.RuneCountInString(*body.Step), 1, true))
+		}
+		if utf8.RuneCountInString(*body.Step) > 512 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.step", *body.Step, utf8.RuneCountInString(*body.Step), 512, false))
+		}
+	}
+	if body.CheckedAt != nil {
+		err = goa.MergeErrors(err, goa.ValidateFormat("body.checked_at", *body.CheckedAt, goa.FormatDateTime))
+	}
+	return
+}
+
+// validateTestsCouldNotRunResponseBody checks TestsCouldNotRun and reports
+// errors using the path supplied by its caller
+func validateTestsCouldNotRunResponseBody(body *TestsCouldNotRunResponseBody, path string) (err error) {
+	if body.Reason == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("reason", path))
+	}
+	if body.Step == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("step", path))
+	}
+	if body.CheckedAt == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("checked_at", path))
+	}
+	if body.Reason != nil {
+		if utf8.RuneCountInString(*body.Reason) < 1 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError(path+".reason", *body.Reason, utf8.RuneCountInString(*body.Reason), 1, true))
+		}
+		if utf8.RuneCountInString(*body.Reason) > 1024 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError(path+".reason", *body.Reason, utf8.RuneCountInString(*body.Reason), 1024, false))
+		}
+	}
+	if body.Step != nil {
+		if utf8.RuneCountInString(*body.Step) < 1 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError(path+".step", *body.Step, utf8.RuneCountInString(*body.Step), 1, true))
+		}
+		if utf8.RuneCountInString(*body.Step) > 512 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError(path+".step", *body.Step, utf8.RuneCountInString(*body.Step), 512, false))
+		}
+	}
+	if body.CheckedAt != nil {
+		err = goa.MergeErrors(err, goa.ValidateFormat(path+".checked_at", *body.CheckedAt, goa.FormatDateTime))
 	}
 	return
 }
@@ -10965,6 +11479,26 @@ func ValidateBuilderAssignmentResponseBody(body *BuilderAssignmentResponseBody) 
 	if body.Read == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("read", "body"))
 	}
+	if body.WrittenTests == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("written_tests", "body"))
+	}
+	if body.WrittenTests != nil {
+
+		if err2 := body.WrittenTests.Validate(); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		} else {
+			switch string(body.WrittenTests.Kind()) {
+			case "accepted":
+				actual, _ := body.WrittenTests.AsAccepted()
+				if actual != nil {
+					if err2 := validateTestsAcceptedResponseBody(actual, "body.written_tests.value"); err2 != nil {
+						err = goa.MergeErrors(err, err2)
+					}
+				}
+			}
+		}
+
+	}
 	return
 }
 
@@ -10982,6 +11516,26 @@ func validateBuilderAssignmentResponseBody(body *BuilderAssignmentResponseBody, 
 	}
 	if body.Read == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("read", path))
+	}
+	if body.WrittenTests == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("written_tests", path))
+	}
+	if body.WrittenTests != nil {
+
+		if err2 := body.WrittenTests.Validate(); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		} else {
+			switch string(body.WrittenTests.Kind()) {
+			case "accepted":
+				actual, _ := body.WrittenTests.AsAccepted()
+				if actual != nil {
+					if err2 := validateTestsAcceptedResponseBody(actual, path+".written_tests.value"); err2 != nil {
+						err = goa.MergeErrors(err, err2)
+					}
+				}
+			}
+		}
+
 	}
 	return
 }

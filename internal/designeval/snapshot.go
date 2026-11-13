@@ -23,6 +23,16 @@ import (
 // use it.
 const reservedDir = "surla_designeval"
 
+var (
+	// ErrNotRegularFile marks a read refused because the path is not a
+	// regular file inside the root: a symbolic link at the path or at a
+	// directory on the way, a directory, a FIFO, a device or a socket.
+	ErrNotRegularFile = errors.New("not a regular file")
+	// ErrFileTooLarge marks a read refused because the regular file holds
+	// more bytes than the caller's limit.
+	ErrFileTooLarge = errors.New("larger than the read limit")
+)
+
 // OpenModuleRoot opens dir as an os.Root after checking that dir is not a
 // symbolic link and that the opened directory is the one checked.
 func OpenModuleRoot(dir string) (string, *os.Root, error) {
@@ -151,6 +161,40 @@ func ReadDesignFilesFromRoot(cleanDir string, root *os.Root) (map[string]string,
 	return files, nil
 }
 
+// ReadRegularFile reads the regular file at slash-separated path rel inside
+// root without following a symbolic link or blocking on a FIFO or device,
+// and reads at most limit bytes. Callers read files an agent can write with
+// it, so the file can be anything. It checks rel and every directory on the
+// way to it with Lstat, as the snapshot walkers check each entry before
+// opening it, because a root follows a link inside it even when asked not
+// to; it then opens rel with the snapshot readers' opener and refuses a file
+// that is not the one it checked. A missing file or directory wraps
+// fs.ErrNotExist, a path that is not a regular file there (a link at it or
+// on the way, a directory, a FIFO, a device) wraps ErrNotRegularFile, and a
+// file of more than limit bytes wraps ErrFileTooLarge; any other error is a
+// failure to read.
+func ReadRegularFile(root *os.Root, rel string, limit int64) ([]byte, error) {
+	for dir := path.Dir(rel); dir != "."; dir = path.Dir(dir) {
+		info, err := root.Lstat(filepath.FromSlash(dir))
+		if err != nil {
+			return nil, fmt.Errorf("read %s: %w", rel, err)
+		}
+		if !info.IsDir() {
+			return nil, fmt.Errorf("read %s: %s is %w", rel, dir, ErrNotRegularFile)
+		}
+	}
+	checked, err := root.Lstat(filepath.FromSlash(rel))
+	if err != nil {
+		return nil, fmt.Errorf("read %s: %w", rel, err)
+	}
+	// A link is refused here, before the root would fail to open one that
+	// leaves it or would open the file one inside it names.
+	if !checked.Mode().IsRegular() {
+		return nil, fmt.Errorf("read %s: %w", rel, ErrNotRegularFile)
+	}
+	return readCheckedFile(root, rel, checked, limit)
+}
+
 // ValidateUTF8Snapshot checks that every file path and content in files is
 // valid UTF-8 before encoding the snapshot as JSON or sending it to a model,
 // because encoding/json silently replaces invalid UTF-8 bytes with U+FFFD.
@@ -194,8 +238,9 @@ func shouldSkipSnapshotDir(root *os.Root, walkRoot, rel, name string) bool {
 }
 
 // readSnapshotFileBytes opens and reads the regular file at slash-separated
-// path rel inside root without following symbolic links or blocking on special
-// files.
+// path rel inside root without blocking on special files. Like
+// openSnapshotFile, it relies on its caller having checked that rel is not a
+// symbolic link: the snapshot walkers check each entry's type first.
 func readSnapshotFileBytes(cleanDir string, root *os.Root, rel string) ([]byte, error) {
 	f, err := openSnapshotFile(root, rel)
 	if err != nil {
@@ -208,9 +253,36 @@ func readSnapshotFileBytes(cleanDir string, root *os.Root, rel string) ([]byte, 
 	return b, nil
 }
 
-// openSnapshotFile opens the regular file at slash-separated path rel inside
-// root without following symbolic links or blocking on special files, and
-// checks that the opened descriptor is a regular file.
+// readCheckedFile opens rel inside root with the snapshot readers' opener and
+// reads at most limit bytes of it, refusing it with ErrNotRegularFile when the
+// opened file is not checked, the file ReadRegularFile examined: rel was
+// replaced between that check and the open.
+func readCheckedFile(root *os.Root, rel string, checked fs.FileInfo, limit int64) ([]byte, error) {
+	f, err := openSnapshotFile(root, rel)
+	if err != nil {
+		return nil, fmt.Errorf("read %s: %w", rel, err)
+	}
+	opened, err := f.Stat()
+	if err == nil && !os.SameFile(checked, opened) {
+		err = fmt.Errorf("%s changed while it was opened: %w", rel, ErrNotRegularFile)
+	}
+	if err != nil {
+		return nil, errors.Join(fmt.Errorf("read %s: %w", rel, err), f.Close())
+	}
+	b, readErr := io.ReadAll(io.LimitReader(f, limit+1))
+	if err := errors.Join(readErr, f.Close()); err != nil {
+		return nil, fmt.Errorf("read %s: %w", rel, err)
+	}
+	if int64(len(b)) > limit {
+		return nil, fmt.Errorf("read %s: %w of %d bytes", rel, ErrFileTooLarge, limit)
+	}
+	return b, nil
+}
+
+// openSnapshotFile opens the file at slash-separated path rel inside root
+// without blocking on special files, and checks that the opened descriptor is
+// a regular file. A root opens the file a symbolic link inside it names even
+// with O_NOFOLLOW, so callers check that rel is not a link before calling it.
 func openSnapshotFile(root *os.Root, rel string) (*os.File, error) {
 	f, err := root.OpenFile(filepath.FromSlash(rel), os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
 	if err != nil {
@@ -218,7 +290,7 @@ func openSnapshotFile(root *os.Root, rel string) (*os.File, error) {
 	}
 	info, err := f.Stat()
 	if err == nil && !info.Mode().IsRegular() {
-		err = fmt.Errorf("%s is not a regular file", rel)
+		err = fmt.Errorf("%s is %w", rel, ErrNotRegularFile)
 	}
 	if err != nil {
 		return nil, errors.Join(err, f.Close())

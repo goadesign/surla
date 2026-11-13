@@ -729,6 +729,32 @@ func TestStarterLayoutValidatesModulesAndDerivesPaths(t *testing.T) {
 	}
 }
 
+// TestGeneratedSuiteCommandNamesTheGeneratedEntryPoint checks the path of the
+// test module's generated entry point, from both layout readers, beside the
+// hand-written command the starter writes today.
+func TestGeneratedSuiteCommandNamesTheGeneratedEntryPoint(t *testing.T) {
+	cases := []struct {
+		module, want string
+	}{
+		{module: "example.com/shop", want: "./gen/cmd/shop-evals"},
+		{module: "github.com/acme/orders2", want: "./gen/cmd/orders2-evals"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.module, func(t *testing.T) {
+			fromModule, err := LayoutForModule(tc.module)
+			require.NoError(t, err)
+			fromFiles, err := StarterLayout(
+				[]byte("module "+tc.module+"\n\ngo 1.26\n"),
+				[]byte("module "+tc.module+"/"+SuiteDir+"\n\ngo 1.26\n"),
+			)
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, fromModule.GeneratedSuiteCommand())
+			assert.Equal(t, tc.want, fromFiles.GeneratedSuiteCommand())
+			assert.NotEqual(t, fromFiles.SuiteCommand, fromFiles.GeneratedSuiteCommand(), "the hand-written command is unchanged")
+		})
+	}
+}
+
 // fakeGo stands in for the go command: `go mod tidy` writes the module's
 // go.sum, and every other command does nothing.
 func fakeGo(dir string, args []string) error {

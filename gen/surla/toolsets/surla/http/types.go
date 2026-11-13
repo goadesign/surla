@@ -314,6 +314,11 @@ type (
 		InForce *bool `json:"in_force"`
 		// True once you read this assignment in full with get_builder_assignment.
 		Read *bool `json:"read"`
+		// Where the test writer's tests for this build stand: not_used when no test
+		// writer is used because the project verifies with its stored evaluator;
+		// otherwise accepted, with the commit and time, when the build records
+		// accepted tests, and not_yet_accepted when it records none.
+		WrittenTests *WrittenTests `json:"written_tests"`
 	}
 	// GetChangePayloadTransport is the internal JSON transport type for GetChangePayload.
 	// It lives in the toolset-local http package and is used only for JSON
@@ -1023,6 +1028,11 @@ type (
 		InForce *bool `json:"in_force"`
 		// True once you read this assignment in full with get_builder_assignment.
 		Read *bool `json:"read"`
+		// Where the test writer's tests for this build stand: not_used when no test
+		// writer is used because the project verifies with its stored evaluator;
+		// otherwise accepted, with the commit and time, when the build records
+		// accepted tests, and not_yet_accepted when it records none.
+		WrittenTests *WrittenTests `json:"written_tests"`
 	}
 	// BuilderProgressTransport is the internal JSON transport type for BuilderProgressTransport.
 	// It lives in the toolset-local http package and is used only for JSON
@@ -1375,12 +1385,17 @@ type (
 	// decode + validation (missing-field detection) before transforming into
 	// the public tool type.
 	TestWriterProgressTransport struct {
-		// The tests' state: assigned, reported, needs_changes with Surla's findings,
-		// or accepted with the commit Surla recorded.
+		// The tests' state: not_used when the project verifies with its stored
+		// evaluator; otherwise assigned, reported, needs_changes with Surla's
+		// findings, accepted with the commit Surla recorded, or could_not_run with the
+		// reason and the user's step. Each verdict carries the time Surla reached it.
 		Tests *Tests `json:"tests"`
 		// True once the test writer read this assignment in full with
 		// get_test_writer_assignment.
 		Read *bool `json:"read"`
+		// Number of the test writer's latest counted report of this build; 0 when none
+		// was counted. Reports are not counted yet, so it is 0.
+		Report *int `json:"report"`
 	}
 	// TestsAcceptedTransport is the internal JSON transport type for TestsAcceptedTransport.
 	// It lives in the toolset-local http package and is used only for JSON
@@ -1390,12 +1405,26 @@ type (
 		// Full commit ID Surla recorded the accepted tests at (40 or 64 lowercase hex
 		// characters).
 		Commit *string `json:"commit"`
+		// When Surla's check reached this verdict.
+		CheckedAt *string `json:"checked_at"`
 	}
 	// TestsAssignedTransport is the internal JSON transport type for TestsAssignedTransport.
 	// It lives in the toolset-local http package and is used only for JSON
 	// decode + validation (missing-field detection) before transforming into
 	// the public tool type.
 	TestsAssignedTransport struct {
+	}
+	// TestsCouldNotRunTransport is the internal JSON transport type for TestsCouldNotRunTransport.
+	// It lives in the toolset-local http package and is used only for JSON
+	// decode + validation (missing-field detection) before transforming into
+	// the public tool type.
+	TestsCouldNotRunTransport struct {
+		// Why the check could not run.
+		Reason *string `json:"reason"`
+		// What the user does so the check can run.
+		Step *string `json:"step"`
+		// When Surla's check stopped.
+		CheckedAt *string `json:"checked_at"`
 	}
 	// TestsNeedChangesTransport is the internal JSON transport type for TestsNeedChangesTransport.
 	// It lives in the toolset-local http package and is used only for JSON
@@ -1405,6 +1434,20 @@ type (
 		// What Surla found, one problem per item: a test that does not build or a
 		// required test that is not declared.
 		Findings []string `json:"findings"`
+		// When Surla's check reached this verdict.
+		CheckedAt *string `json:"checked_at"`
+	}
+	// TestsNotUsedTransport is the internal JSON transport type for TestsNotUsedTransport.
+	// It lives in the toolset-local http package and is used only for JSON
+	// decode + validation (missing-field detection) before transforming into
+	// the public tool type.
+	TestsNotUsedTransport struct {
+	}
+	// TestsNotYetAcceptedTransport is the internal JSON transport type for TestsNotYetAcceptedTransport.
+	// It lives in the toolset-local http package and is used only for JSON
+	// decode + validation (missing-field detection) before transforming into
+	// the public tool type.
+	TestsNotYetAcceptedTransport struct {
 	}
 	// TestsReportedTransport is the internal JSON transport type for TestsReportedTransport.
 	// It lives in the toolset-local http package and is used only for JSON

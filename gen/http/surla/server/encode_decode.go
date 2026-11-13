@@ -3507,10 +3507,20 @@ func marshalSurlaBuilderProgressToBuilderProgressResponseBody(v *surla.BuilderPr
 // *surla.TestWriterProgress.
 func marshalSurlaTestWriterProgressToTestWriterProgressResponseBody(v *surla.TestWriterProgress) *TestWriterProgressResponseBody {
 	res := &TestWriterProgressResponseBody{
-		Read: v.Read,
+		Read:   v.Read,
+		Report: v.Report,
 	}
 	if v.Tests.Kind() != "" {
 		switch string(v.Tests.Kind()) {
+		case "not_used":
+			actual, _ := v.Tests.AsNotUsed()
+			var obj *TestsNotUsedResponseBody
+			if actual != nil {
+				obj = marshalSurlaTestsNotUsedToTestsNotUsedResponseBody(actual)
+			}
+			u := res.Tests
+			u.SetNotUsed((*TestsNotUsedResponseBody)(obj))
+			res.Tests = u
 		case "assigned":
 			actual, _ := v.Tests.AsAssigned()
 			var obj *TestsAssignedResponseBody
@@ -3547,8 +3557,25 @@ func marshalSurlaTestWriterProgressToTestWriterProgressResponseBody(v *surla.Tes
 			u := res.Tests
 			u.SetAccepted((*TestsAcceptedResponseBody)(obj))
 			res.Tests = u
+		case "could_not_run":
+			actual, _ := v.Tests.AsCouldNotRun()
+			var obj *TestsCouldNotRunResponseBody
+			if actual != nil {
+				obj = marshalSurlaTestsCouldNotRunToTestsCouldNotRunResponseBody(actual)
+			}
+			u := res.Tests
+			u.SetCouldNotRun((*TestsCouldNotRunResponseBody)(obj))
+			res.Tests = u
 		}
 	}
+
+	return res
+}
+
+// marshalSurlaTestsNotUsedToTestsNotUsedResponseBody builds a value of type
+// *TestsNotUsedResponseBody from a value of type *surla.TestsNotUsed.
+func marshalSurlaTestsNotUsedToTestsNotUsedResponseBody(v *surla.TestsNotUsed) *TestsNotUsedResponseBody {
+	res := &TestsNotUsedResponseBody{}
 
 	return res
 }
@@ -3573,7 +3600,9 @@ func marshalSurlaTestsReportedToTestsReportedResponseBody(v *surla.TestsReported
 // type *TestsNeedChangesResponseBody from a value of type
 // *surla.TestsNeedChanges.
 func marshalSurlaTestsNeedChangesToTestsNeedChangesResponseBody(v *surla.TestsNeedChanges) *TestsNeedChangesResponseBody {
-	res := &TestsNeedChangesResponseBody{}
+	res := &TestsNeedChangesResponseBody{
+		CheckedAt: v.CheckedAt,
+	}
 	if v.Findings != nil {
 		res.Findings = make([]string, len(v.Findings))
 		for i, val := range v.Findings {
@@ -3590,7 +3619,21 @@ func marshalSurlaTestsNeedChangesToTestsNeedChangesResponseBody(v *surla.TestsNe
 // *TestsAcceptedResponseBody from a value of type *surla.TestsAccepted.
 func marshalSurlaTestsAcceptedToTestsAcceptedResponseBody(v *surla.TestsAccepted) *TestsAcceptedResponseBody {
 	res := &TestsAcceptedResponseBody{
-		Commit: v.Commit,
+		Commit:    v.Commit,
+		CheckedAt: v.CheckedAt,
+	}
+
+	return res
+}
+
+// marshalSurlaTestsCouldNotRunToTestsCouldNotRunResponseBody builds a value of
+// type *TestsCouldNotRunResponseBody from a value of type
+// *surla.TestsCouldNotRun.
+func marshalSurlaTestsCouldNotRunToTestsCouldNotRunResponseBody(v *surla.TestsCouldNotRun) *TestsCouldNotRunResponseBody {
+	res := &TestsCouldNotRunResponseBody{
+		Reason:    v.Reason,
+		Step:      v.Step,
+		CheckedAt: v.CheckedAt,
 	}
 
 	return res
@@ -3633,6 +3676,46 @@ func marshalSurlaBuilderAssignmentToBuilderAssignmentResponseBody(v *surla.Build
 		InForce:         v.InForce,
 		Read:            v.Read,
 	}
+	if v.WrittenTests.Kind() != "" {
+		switch string(v.WrittenTests.Kind()) {
+		case "not_used":
+			actual, _ := v.WrittenTests.AsNotUsed()
+			var obj *TestsNotUsedResponseBody
+			if actual != nil {
+				obj = marshalSurlaTestsNotUsedToTestsNotUsedResponseBody(actual)
+			}
+			u := res.WrittenTests
+			u.SetNotUsed((*TestsNotUsedResponseBody)(obj))
+			res.WrittenTests = u
+		case "not_yet_accepted":
+			actual, _ := v.WrittenTests.AsNotYetAccepted()
+			var obj *TestsNotYetAcceptedResponseBody
+			if actual != nil {
+				obj = marshalSurlaTestsNotYetAcceptedToTestsNotYetAcceptedResponseBody(actual)
+			}
+			u := res.WrittenTests
+			u.SetNotYetAccepted((*TestsNotYetAcceptedResponseBody)(obj))
+			res.WrittenTests = u
+		case "accepted":
+			actual, _ := v.WrittenTests.AsAccepted()
+			var obj *TestsAcceptedResponseBody
+			if actual != nil {
+				obj = marshalSurlaTestsAcceptedToTestsAcceptedResponseBody(actual)
+			}
+			u := res.WrittenTests
+			u.SetAccepted((*TestsAcceptedResponseBody)(obj))
+			res.WrittenTests = u
+		}
+	}
+
+	return res
+}
+
+// marshalSurlaTestsNotYetAcceptedToTestsNotYetAcceptedResponseBody builds a
+// value of type *TestsNotYetAcceptedResponseBody from a value of type
+// *surla.TestsNotYetAccepted.
+func marshalSurlaTestsNotYetAcceptedToTestsNotYetAcceptedResponseBody(v *surla.TestsNotYetAccepted) *TestsNotYetAcceptedResponseBody {
+	res := &TestsNotYetAcceptedResponseBody{}
 
 	return res
 }

@@ -330,6 +330,16 @@ func StarterLayout(rootGoMod, evalGoMod []byte) (Layout, error) {
 	return layout, nil
 }
 
+// GeneratedSuiteCommand returns the package, relative to SuiteDir, that is
+// reserved for the generated entry point of the starter's test module:
+// ./gen/cmd/<service>-evals, beside the hand-written SuiteCommand. It uses
+// only l.Service, so a Layout from LayoutForModule or StarterLayout gives
+// the same path. For example, the layout of example.com/shop gives
+// ./gen/cmd/shop-evals. Nothing generates that package yet.
+func (l Layout) GeneratedSuiteCommand() string {
+	return "./gen/cmd/" + l.Service + "-evals"
+}
+
 // Error describes the failed command and the end of its output.
 func (e *StepError) Error() string {
 	return fmt.Sprintf("%s (in module %s) failed: %v; full output in %s\n%s", strings.Join(e.Args, " "), e.Module, e.Err, e.Log, e.Tail)

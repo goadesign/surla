@@ -260,6 +260,11 @@ type (
 		InForce bool
 		// True once you read this assignment in full with get_builder_assignment.
 		Read bool
+		// Where the test writer's tests for this build stand: not_used when no test
+		// writer is used because the project verifies with its stored evaluator;
+		// otherwise accepted, with the commit and time, when the build records
+		// accepted tests, and not_yet_accepted when it records none.
+		WrittenTests WrittenTests
 	}
 	// GetChangePayload defines the JSON payload for the surla.get_change tool.
 	GetChangePayload = struct {
@@ -834,6 +839,11 @@ type (
 		InForce bool
 		// True once you read this assignment in full with get_builder_assignment.
 		Read bool
+		// Where the test writer's tests for this build stand: not_used when no test
+		// writer is used because the project verifies with its stored evaluator;
+		// otherwise accepted, with the commit and time, when the build records
+		// accepted tests, and not_yet_accepted when it records none.
+		WrittenTests WrittenTests
 	}
 	// BuilderProgress is a nested type used by the generated JSON contract.
 	BuilderProgress = struct {
@@ -1120,27 +1130,51 @@ type (
 	}
 	// TestWriterProgress is a nested type used by the generated JSON contract.
 	TestWriterProgress = struct {
-		// The tests' state: assigned, reported, needs_changes with Surla's findings,
-		// or accepted with the commit Surla recorded.
+		// The tests' state: not_used when the project verifies with its stored
+		// evaluator; otherwise assigned, reported, needs_changes with Surla's
+		// findings, accepted with the commit Surla recorded, or could_not_run with the
+		// reason and the user's step. Each verdict carries the time Surla reached it.
 		Tests Tests
 		// True once the test writer read this assignment in full with
 		// get_test_writer_assignment.
 		Read bool
+		// Number of the test writer's latest counted report of this build; 0 when none
+		// was counted. Reports are not counted yet, so it is 0.
+		Report int
 	}
 	// TestsAccepted is a nested type used by the generated JSON contract.
 	TestsAccepted = struct {
 		// Full commit ID Surla recorded the accepted tests at (40 or 64 lowercase hex
 		// characters).
 		Commit string
+		// When Surla's check reached this verdict.
+		CheckedAt string
 	}
 	// TestsAssigned is a nested type used by the generated JSON contract.
 	TestsAssigned = struct {
+	}
+	// TestsCouldNotRun is a nested type used by the generated JSON contract.
+	TestsCouldNotRun = struct {
+		// Why the check could not run.
+		Reason string
+		// What the user does so the check can run.
+		Step string
+		// When Surla's check stopped.
+		CheckedAt string
 	}
 	// TestsNeedChanges is a nested type used by the generated JSON contract.
 	TestsNeedChanges = struct {
 		// What Surla found, one problem per item: a test that does not build or a
 		// required test that is not declared.
 		Findings []string
+		// When Surla's check reached this verdict.
+		CheckedAt string
+	}
+	// TestsNotUsed is a nested type used by the generated JSON contract.
+	TestsNotUsed = struct {
+	}
+	// TestsNotYetAccepted is a nested type used by the generated JSON contract.
+	TestsNotYetAccepted = struct {
 	}
 	// TestsReported is a nested type used by the generated JSON contract.
 	TestsReported = struct {
