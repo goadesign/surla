@@ -1,7 +1,7 @@
 // team.tsx presents the server's registered team facts and explicit user
 // actions. The page owns reads, action results, announcements and window effects.
 
-import React from "react";
+import React, { useCallback, useLayoutEffect, useRef } from "react";
 import type { ProjectTeam, TeamRoleState, TeamSnapshot } from "../types";
 import { Alert, Badge, Button, Card } from "./shadcn";
 
@@ -32,19 +32,27 @@ export interface TeamStageProps {
   onStartAgents: () => void;
   // onShowPane asks the owner to show the selected registered role's pane.
   onShowPane: (role: Role) => void;
+  // onFocusedControlRemoved lets the page restore focus to the current view
+  // when a focused pane action disappears.
+  onFocusedControlRemoved: () => void;
 }
 
-// GlobalTeamAttentionProps uses the same current snapshot and pane actions
-// as the Team stage; the page withholds stale snapshots from this notice.
+// GlobalTeamAttentionProps uses the same retained snapshot and pane actions
+// as the Team stage; the page identifies whether these are last-read facts.
 export interface GlobalTeamAttentionProps {
-  // snapshot is the current team read, or null when current facts are unknown.
+  // snapshot is the last successful team read, or null before one succeeds.
   snapshot: TeamSnapshot | null;
+  // lastRead labels retained facts when the page cannot establish current status.
+  lastRead: boolean;
   // disabled prevents actions after the browser session has ended.
   disabled: boolean;
   // showing identifies the roles with an outstanding Show pane request.
   showing: readonly Role[];
   // onShowPane runs only after the user clicks that role's Show pane button.
   onShowPane: (role: Role) => void;
+  // onFocusedControlRemoved lets the page restore focus to the current view
+  // when a focused attention action disappears.
+  onFocusedControlRemoved: () => void;
 }
 
 // roleLabels keep registered handles in Details and human role names visible.
@@ -104,11 +112,12 @@ export function TeamStageView({
   onRefresh,
   onStartAgents,
   onShowPane,
+  onFocusedControlRemoved,
 }: TeamStageProps) {
   const needsStart = error === null && snapshot !== null && (
     snapshot.roles.length === 0 ||
     snapshot.roles.some((role) => role.state === "not_started" || role.state === "ended")
-  );
+  ) && !snapshot.roles.some((role) => role.state === "needs_you");
 
   return (
     <Card id="surla-team-stage" className="surla-card" role="region" aria-labelledby="surla-team-title">
@@ -177,6 +186,7 @@ export function TeamStageView({
                       showing={showing}
                       disabled={disabled}
                       onShowPane={onShowPane}
+                      onFocusedControlRemoved={onFocusedControlRemoved}
                       global={false}
                     />
                   </div>
@@ -192,7 +202,7 @@ export function TeamStageView({
       )}
       {startReceipt !== null ? (
         <p id="surla-team-start-receipt">
-          At <time dateTime={startReceipt.at}>{startReceipt.at}</time>, Start agents returned:{" "}
+          This start (begun <time dateTime={startReceipt.at}>{startReceipt.at}</time>) returned:{" "}
           «{startReceipt.result.step}»
         </p>
       ) : null}
@@ -207,9 +217,11 @@ export function TeamStageView({
 // repeated snapshots, moving focus or deriving attention from a start receipt.
 export function GlobalTeamAttention({
   snapshot,
+  lastRead,
   showing,
   disabled,
   onShowPane,
+  onFocusedControlRemoved,
 }: GlobalTeamAttentionProps) {
   const roles = snapshot?.roles.filter((role) => role.state === "needs_you") ?? [];
   if (roles.length === 0) {
@@ -220,6 +232,7 @@ export function GlobalTeamAttention({
       {roles.map((role) => (
         <div key={role.role} className="surla-field-row" id={"surla-team-attention-" + role.role}>
           <span className="surla-live-wrap">
+            {lastRead ? "Last read: " : ""}
             {teamAttentionText(role)}
           </span>
           <PaneButton
@@ -227,6 +240,7 @@ export function GlobalTeamAttention({
             showing={showing}
             disabled={disabled}
             onShowPane={onShowPane}
+            onFocusedControlRemoved={onFocusedControlRemoved}
             global={true}
           />
         </div>
@@ -249,25 +263,49 @@ function PaneButton({
   showing,
   disabled,
   onShowPane,
+  onFocusedControlRemoved,
   global,
 }: {
   role: TeamRoleState;
   showing: readonly Role[];
   disabled: boolean;
   onShowPane: (role: Role) => void;
+  onFocusedControlRemoved: () => void;
   global: boolean;
 }) {
   const pending = showing.includes(role.role);
   const label = roleLabels[role.role].toLowerCase();
+  // notifyRemoval keeps the current page callback without changing the DOM
+  // ref's identity when the page renders again.
+  const notifyRemoval = useRef(onFocusedControlRemoved);
+  useLayoutEffect(() => {
+    notifyRemoval.current = onFocusedControlRemoved;
+  }, [onFocusedControlRemoved]);
+
+  // attachControl checks focus before React removes this pane action. Ordinary
+  // snapshot or pending-state updates retain the same ref and do not notify.
+  const attachControl = useCallback((node: HTMLSpanElement | null) => {
+    if (node === null) {
+      return;
+    }
+    return () => {
+      if (node.contains(document.activeElement)) {
+        notifyRemoval.current();
+      }
+    };
+  }, []);
+
   return (
-    <Button
-      id={(global ? "surla-team-attention-show-pane-" : "surla-team-show-") + role.role}
-      variant={role.state === "needs_you" ? "primary" : "default"}
-      disabled={disabled || pending}
-      aria-busy={pending}
-      onClick={() => onShowPane(role.role)}
-    >
-      {pending ? "Showing " + label + " pane…" : "Show " + label + " pane"}
-    </Button>
+    <span ref={attachControl}>
+      <Button
+        id={(global ? "surla-team-attention-show-pane-" : "surla-team-show-") + role.role}
+        variant={role.state === "needs_you" ? "primary" : "default"}
+        disabled={disabled || pending}
+        aria-busy={pending}
+        onClick={() => onShowPane(role.role)}
+      >
+        {pending ? "Showing " + label + " pane…" : "Show " + label + " pane"}
+      </Button>
+    </span>
   );
 }
