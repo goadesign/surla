@@ -7,17 +7,20 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	genhttpclient "github.com/goadesign/surla/gen/http/surla/client"
+	gensurlahttp "github.com/goadesign/surla/gen/http/surla/server"
 	genmcpclient "github.com/goadesign/surla/gen/jsonrpc/mcp_surla/client"
 	genmcpsurla "github.com/goadesign/surla/gen/mcp_surla"
 	gensurla "github.com/goadesign/surla/gen/surla"
@@ -32,6 +35,7 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"go.opentelemetry.io/otel/trace"
+	"goa.design/goa/v3/codegen"
 	goahttp "goa.design/goa/v3/http"
 )
 
@@ -738,6 +742,53 @@ func TestHistoryLeavesOutOnlyTheUsersSuccessfulReads(t *testing.T) {
 	}
 }
 
+// TestUserGETRoutesOnlyRead checks the fact the history's rule for the user's
+// reads rests on, instead of trusting it: every GET route of the generated
+// HTTP server that the operation table allows to the user's session leaves the
+// project's saved files unchanged. The fixture holds a confirmed change whose
+// build has unread assignments, the state a read that records it was read
+// would save. Every request carries since, the only required query parameter
+// of a GET route the user may call; a route that cannot be decoded fails as
+// not run.
+func TestUserGETRoutesOnlyRead(t *testing.T) {
+	workspace := t.TempDir()
+	cp := newBuildControlPlane(t, Options{WorkspaceDir: workspace})
+	card := confirmedChange(t, cp, "chg")
+	srv := httptest.NewServer(NewHTTPHandler(cp, fixtureCredentials(map[string]Principal{
+		"user": {ID: "alice@example.com", CallerID: "user", Kind: CallerUser},
+	})))
+	t.Cleanup(srv.Close)
+	status, body := httpCall(t, srv.URL, "user", http.MethodPost, "/changes/chg/build", `{"request_revision":"`+card.RequestRevision+`"}`)
+	require.Equal(t, http.StatusOK, status, body)
+	build := mustStartedBuild(t, cp, asCaller("alice@example.com", CallerUser), "chg")
+	require.False(t, build.Builder.Read || build.TestWriter.Read, "the fixture's assignments start unread")
+
+	// Mount points name the Go method; the operation table uses the design's name.
+	operations := map[string]string{}
+	for _, name := range gensurla.MethodNames {
+		operations[codegen.Goify(name, true)] = name
+	}
+	routes := gensurlahttp.New(gensurla.NewEndpoints(cp), goahttp.NewMuxer(), StrictJSONRequestDecoder,
+		goahttp.ResponseEncoder, nil, nil).Mounts
+	param := regexp.MustCompile(`\{[^}]+\}`)
+	var called []string
+	for _, route := range routes {
+		operation, ok := operations[route.Method]
+		require.True(t, ok, "mount point %s names no design method", route.Method)
+		if route.Verb != http.MethodGet || !OperationAllowed(CallerUser, operation) {
+			continue
+		}
+		called = append(called, operation)
+		before := savedProjectFiles(t, cp.cards.dir, workspace)
+		status, body := httpCall(t, srv.URL, "user", http.MethodGet, param.ReplaceAllString(route.Pattern, "chg")+"?since=unread", "")
+		assert.NotEqual(t, http.StatusBadRequest, status, "%s did not run: %s", operation, body)
+		assert.NotEqual(t, http.StatusForbidden, status, "%s refused the user: %s", operation, body)
+		assert.Equal(t, before, savedProjectFiles(t, cp.cards.dir, workspace), "the user's %s changed a saved file", operation)
+	}
+	assert.NotEmpty(t, called)
+	t.Logf("GET routes the user's session may call: %v", called)
+}
+
 // sendHistoryRequest sends one request with token to srv and returns its
 // status, or 0 when no answer arrived: ctx ended first, or the server dropped
 // the connection after a panic.
@@ -760,4 +811,23 @@ func sendHistoryRequest(
 	}
 	assert.NoError(t, response.Body.Close())
 	return response.StatusCode
+}
+
+// savedProjectFiles returns the content of every regular file under dirs by
+// path, except the diagnostics history, whose records the history tests own.
+func savedProjectFiles(t *testing.T, dirs ...string) map[string]string {
+	t.Helper()
+	files := map[string]string{}
+	for _, dir := range dirs {
+		err := filepath.WalkDir(dir, func(path string, entry fs.DirEntry, err error) error {
+			if err != nil || !entry.Type().IsRegular() || entry.Name() == "traces.jsonl" {
+				return err
+			}
+			raw, err := os.ReadFile(path)
+			files[path] = string(raw)
+			return err
+		})
+		require.NoError(t, err)
+	}
+	return files
 }

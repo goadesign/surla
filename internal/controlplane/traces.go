@@ -53,9 +53,13 @@ type (
 	}
 
 	// httpReadKey marks the context of an HTTP request sent with GET. Every
-	// GET route of the design only reads, so the method identifies a read
-	// without a list of operation names. NewHTTPHandler sets it; MCP calls,
-	// always sent with POST, never carry it.
+	// GET route the user's session may call only reads, so for its requests
+	// the method identifies a read without a list of operation names. The
+	// builder's and the test writer's assignment reads are GET routes that
+	// record that they were read; the operation table refuses them to the
+	// user's session, and TestUserGETRoutesOnlyRead checks every route it
+	// allows. NewHTTPHandler sets the mark; MCP calls, always sent with POST,
+	// never carry it.
 	httpReadKey struct{}
 )
 

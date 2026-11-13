@@ -321,18 +321,20 @@ changing exported SDK spans.
 The history keeps what the agents and the server did, not what the views page
 looked at. Reads by the user's page that succeed or are refused are exported
 but not saved in this history. These are the reads the user's browser session
-sends with `GET` (every `GET` route only reads), such as the `list_changes`,
+sends with `GET` (every `GET` route the user's session may call only reads; the
+builder's and the test writer's assignment reads, which record that they were
+read, are refused to it), such as the `list_changes`,
 `get_change` and `get_live_target` reads the page repeats each time its
 waiting read reports a change, or `list_traces` under **Traces**. A refusal,
 such as `not_found` for a change that is gone or `forbidden`, is an expected
 answer, not a failure, so a page that keeps asking does not fill the history
 either. Such a read is saved only when it fails: when its span ends with an
 error status or with a panic, which the span records as an exception event
-without changing its status. The waiting read is never saved, even when it
-ends with an error, as it does when the page closes. Every call by the guide,
-the builder or the test writer, over HTTP or MCP, every operation that changes
-something, and the user's reads sent with `POST` (`preview_architecture`,
-`diff`, `read_check_output`) are saved.
+without changing its status. The waiting read is never saved, whoever sends
+it and even when it ends with an error, as it does when the page closes. Every
+other call by the guide, the builder or the test writer, over HTTP or MCP,
+every operation that changes something, and the user's reads sent with `POST`
+(`preview_architecture`, `diff`, `read_check_output`) are saved.
 
 Authentication and decoding failures, host or third-party spans,
 unsampled spans, and separate verification, evaluator and check-helper processes
