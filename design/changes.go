@@ -14,7 +14,8 @@ var LatestVerificationItem = Type("LatestVerificationItem", func() {
 	Attribute("state", String, "running while the run builds or evaluates the candidate; passed or failed when its report's verdict is known; not_completed when it stopped without a report.", func() {
 		Enum("running", "passed", "failed", "not_completed")
 	})
-	Required("run_id", "state")
+	Attribute("inputs_current", Boolean, "Whether this run names the agreed request_revision and the tests selected now: the accepted test commit of the usable build in force, or the configured stored evaluator suite. It does not say whether the candidate working tree, deployment or approval is current.")
+	Required("run_id", "state", "inputs_current")
 })
 
 // ChangeListItem summarizes one saved Change Card for finding work.
@@ -54,9 +55,9 @@ var ChangeListVersion = Type("ChangeListVersion", func() {
 // waiting read. The waiting read is HTTP-only: only the views page uses it.
 func changeListMethods() {
 	Method("list_changes", func() {
-		Description("List the owner's saved Change Cards for this project, most recently saved first, with each card's summary, status, the request_revision in force, the request_revision of a revision the guide proposed beside a confirmed card while it waits for the user, the state of its most recently accepted verification run, and when it was last saved, and say whether this server can record approvals. The views page opens on this list; agents use it to find a change_id. Reading changes nothing.")
+		Description("List the owner's saved Change Cards for this project, most recently saved first, with each card's summary, status, the request_revision in force, the request_revision of a revision the guide proposed beside a confirmed card while it waits for the user, the state of its most recently accepted verification run and whether its revision and selected tests are current, and when it was last saved, and say whether this server can record approvals. The views page opens on this list; agents use it to find a change_id. Reading changes nothing.")
 		Result(ChangeList)
-		Tool("list_changes", "List this project's Change Cards, most recently saved first, with each card's summary, status and request_revision in force, its proposed_revision (the request_revision of a revision proposed beside a confirmed card, while it waits for the user to adopt or decline it), latest verification run state and last save time. Read one card, with any proposed revision, with get_change(change_id).")
+		Tool("list_changes", "List this project's Change Cards, most recently saved first, with each card's summary, status and request_revision in force, its proposed_revision (the request_revision of a revision proposed beside a confirmed card, while it waits for the user to adopt or decline it), latest verification run state and whether its revision and selected tests are current, and last save time. Read one card, with any proposed revision, with get_change(change_id).")
 		HTTP(func() {
 			GET("/changes")
 			Response(StatusOK)
