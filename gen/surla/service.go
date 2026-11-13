@@ -213,9 +213,12 @@ type Service interface {
 	// server; an embedded host must provide Options.TracerProvider when
 	// constructing its control plane. Authenticated HTTP/MCP domain calls have a
 	// surla.request.<operation> boundary span, with child domain operations
-	// recorded separately. Waiting reads are exported without being added to this
-	// private history. Requests rejected before authentication or decoding and
-	// separate verification processes are absent.
+	// recorded separately. The user's own reads sent with GET, which the views
+	// page repeats whenever the project changes, are exported but added to this
+	// private history only when they end with an error status, and waiting reads
+	// never are; agent calls and operations that change something are added.
+	// Requests rejected before authentication or decoding and separate
+	// verification processes are absent.
 	ListTraces(context.Context, *ListTracesPayload) (res *TraceList, err error)
 	// Read the bound workspace's Go module snapshot, compute its canonical
 	// snapshot_digest, and start or reuse the project owner's in-memory Story
