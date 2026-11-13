@@ -82,11 +82,11 @@ func replaceCopysGit(t *testing.T, dir, marker string) {
 }
 
 // pointCopysGitInside points the .git file of the copy at dir at a
-// repository the author keeps inside the copy, with one commit, that defines
-// the author's filter.
+// repository the author keeps inside the copy's test module, eval, with one
+// commit, that defines the author's filter.
 func pointCopysGitInside(t *testing.T, dir, marker string) {
 	t.Helper()
-	authors := filepath.Join(dir, "authors.git")
+	authors := filepath.Join(dir, "eval", "authors.git")
 	runGit(t, dir, "init", "--quiet", "--bare", authors)
 	runGit(t, dir, "--git-dir="+authors, "config", "core.bare", "false")
 	empty := runGit(t, dir, "--git-dir="+authors, "hash-object", "-t", "tree", "-w", "/dev/null")

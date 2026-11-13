@@ -21,6 +21,7 @@ import { ProposedRevisionView } from "./components/proposal";
 import { ApproveResultControl } from "./components/cp5-approve";
 import { SessionEndedNotice, SignedOutReason, SignedOutView } from "./components/session";
 import { StoryStageView } from "./components/story";
+import { LiveTargetStageView, ModelDraft, ServerAnswer, describeApplied } from "./components/live-target";
 import { Alert, Button, Card } from "./components/shadcn";
 import { TraceDrawer, TraceFilter } from "./components/trace-drawer";
 import { isDraftDirty, PreservedDraft } from "./context/cp1-draft";
@@ -28,7 +29,10 @@ import {
   ArchitecturePreviewResult,
   ChangeCardResult,
   ChangeList,
+  ConfigureModelRequest,
   ExampleItem,
+  LiveTargetStatus,
+  ModelConnection,
   OperationName,
   ProposedRevisionItem,
   Operations,
@@ -102,6 +106,7 @@ interface ActiveEditorState {
 type ActiveResultState =
   | { kind: "changes" }
   | { kind: "story" }
+  | { kind: "live" }
   | { kind: "cp2-architecture-preview" }
   | { kind: "cp4-verification" }
   | { kind: "cp1-incoming-card" };
@@ -325,6 +330,22 @@ interface WorkspaceSubjectDescriptor {
   detail?: string;
 }
 
+// liveTargetKey names a live target read's case, commit and start, so the
+// page can tell when the state a message described has changed.
+function liveTargetKey(target: LiveTargetStatus): string {
+  const live = target.live_target;
+  switch (live.state) {
+    case "none":
+      return "none";
+    case "starting":
+      return "starting " + live.candidate_commit + " " + live.since;
+    case "running":
+      return "running " + live.candidate_commit + " " + live.started_at;
+    case "not_confirmed_stopped":
+      return "not_confirmed_stopped " + live.candidate_commit;
+  }
+}
+
 // describeActiveResultSubject derives the subject of #surla-result-view strictly
 // from the displayed payload and selected verification run, never falling
 // back to the editor's card. The Story stage shows the Story saved with
@@ -339,7 +360,12 @@ function describeActiveResultSubject(
   storyCard: ChangeCardResult | null,
   storyEvaluation: StoryRefreshResult | null
 ): WorkspaceSubjectDescriptor | null {
-  if (!activeResult || activeResult.kind === "cp1-incoming-card" || activeResult.kind === "changes") {
+  if (
+    !activeResult ||
+    activeResult.kind === "cp1-incoming-card" ||
+    activeResult.kind === "changes" ||
+    activeResult.kind === "live"
+  ) {
     return null;
   }
   const label = bothRegionsShown ? "Displayed view" : "Showing";
@@ -484,6 +510,32 @@ export function bootstrapViewsPage() {
   // storyReadAgain asks for one more read after the outstanding one, because
   // the version moved while it was in flight.
   let storyReadAgain = false;
+  // liveTarget is the live target as last read, or null before the first
+  // read; liveTargetError is its last failed read. liveTargetStale and
+  // liveReadAgain follow the change list's version as the Story's do.
+  let liveTarget: LiveTargetStatus | null = null;
+  let liveTargetError: string | null = null;
+  let liveTargetStale = true;
+  let liveReadAgain = false;
+  // liveStopOutcome is the server's answer to the last stop request. It is
+  // shown until the live target's state next changes: liveStopBasis is the
+  // state the first read issued after the answer found, and only reads
+  // numbered above liveStopAfterRead, liveReadCount when the answer came,
+  // count, so a read already in flight cannot clear it.
+  let liveStopOutcome: ServerAnswer | null = null;
+  let liveStopBasis: string | null = null;
+  let liveStopAfterRead = 0;
+  let liveReadCount = 0;
+  // modelConnection is the model connection as last read, or null before
+  // the first read; it is not part of the change list's version, so the
+  // page reads it when the Live target view opens and after it changes it.
+  let modelConnection: ModelConnection | null = null;
+  let modelConnectionError: string | null = null;
+  // modelApplyOutcome is the server's answer to the last change of model.
+  let modelApplyOutcome: ServerAnswer | null = null;
+  // modelDraft is the model form's unsent input, kept here so it survives
+  // refreshes and leaving the Live target view.
+  let modelDraft: ModelDraft = { kind: null, provider: "anthropic", modelName: "", gatewayAddr: "" };
   const runsById = new Map<string, VerificationStatusResult>();
   const lastLoadedListByChangeId = new Map<string, string[]>();
   let selectedVerificationChangeId: string | null = null;
@@ -748,6 +800,13 @@ export function bootstrapViewsPage() {
           readStoryEvaluation();
         } else {
           storyEvaluationStale = true;
+        }
+        // It also covers the live target: its case, commit, start time and
+        // the versions in force.
+        if (activeResult?.kind === "live") {
+          readLiveTarget();
+        } else {
+          liveTargetStale = true;
         }
       }
       syncAllRegions();
@@ -1117,6 +1176,147 @@ export function bootstrapViewsPage() {
     );
   }
 
+  // openLive shows the Live target view: the live target, read when it was
+  // never read or the change list's version moved since, and the model
+  // connection, read each time the view opens because no version covers it.
+  function openLive() {
+    editorOpen = shouldRetainEditor();
+    activeResult = { kind: "live" };
+    rootEl.dataset.state = "live";
+    statusEl.textContent = "Showing the live target and the model connection.";
+    if (liveTarget === null || liveTargetStale) {
+      readLiveTarget();
+    }
+    readModelConnection();
+    syncAllRegions();
+  }
+
+  // readLiveTarget reads the live target. A read asked for while one is in
+  // flight runs once more after it, so the page never keeps an answer older
+  // than the last version it saw.
+  function readLiveTarget() {
+    if (hasPending("get_live_target", "")) {
+      liveReadAgain = true;
+      return;
+    }
+    liveReadAgain = false;
+    liveTargetStale = false;
+    liveReadCount += 1;
+    const read = liveReadCount;
+    const done = () => {
+      if (liveReadAgain) {
+        readLiveTarget();
+      }
+    };
+    callServer(
+      "get_live_target",
+      {},
+      "",
+      (target) => {
+        liveTarget = target;
+        liveTargetError = null;
+        // A stop's message describes the state its answer left; it goes once
+        // that state changes.
+        if (liveStopOutcome !== null && read > liveStopAfterRead) {
+          const key = liveTargetKey(target);
+          if (liveStopBasis === null) {
+            liveStopBasis = key;
+          } else if (liveStopBasis !== key) {
+            liveStopOutcome = null;
+            liveStopBasis = null;
+          }
+        }
+        done();
+      },
+      (message) => {
+        liveTargetError = message;
+        liveTargetStale = true;
+        if (activeResult?.kind === "live") {
+          statusEl.textContent = "Could not read the live target.";
+        }
+        done();
+      }
+    );
+  }
+
+  // readModelConnection reads the model live targets started afterwards use.
+  function readModelConnection() {
+    if (hasPending("get_model_connection", "")) {
+      return;
+    }
+    callServer(
+      "get_model_connection",
+      {},
+      "",
+      (connection) => {
+        modelConnection = connection;
+        modelConnectionError = null;
+      },
+      (message) => {
+        modelConnectionError = message;
+      }
+    );
+  }
+
+  // stopLiveTarget sends the one stop request the user confirmed, shows the
+  // server's message, and reads the live target again.
+  function stopLiveTarget() {
+    if (hasPending("stop_live_target", "")) {
+      return;
+    }
+    liveStopOutcome = null;
+    callServer(
+      "stop_live_target",
+      {},
+      "",
+      (result) => {
+        showStopAnswer({ message: result.message, refused: false });
+      },
+      (message) => {
+        showStopAnswer({ message, refused: true });
+      }
+    );
+  }
+
+  // showStopAnswer shows a stop's answer and reads the live target again;
+  // the first read issued from now on records the state the answer left.
+  function showStopAnswer(answer: ServerAnswer) {
+    liveStopOutcome = answer;
+    liveStopBasis = null;
+    liveStopAfterRead = liveReadCount;
+    readLiveTarget();
+  }
+
+  // updateModelDraft records one change to the model form's input. Only a
+  // change of kind redraws the view; the text fields hold their own text.
+  function updateModelDraft(change: Partial<ModelDraft>) {
+    modelDraft = { ...modelDraft, ...change };
+    if (change.kind !== undefined) {
+      syncResultRegion();
+    }
+  }
+
+  // applyModel asks the server to use choice for live targets started
+  // afterwards, shows its answer or refusal, and reads the connection again.
+  function applyModel(choice: ConfigureModelRequest) {
+    if (hasPending("configure_model", "")) {
+      return;
+    }
+    modelApplyOutcome = null;
+    callServer(
+      "configure_model",
+      choice,
+      "",
+      (result) => {
+        modelApplyOutcome = { message: describeApplied(result), refused: false };
+        readModelConnection();
+      },
+      (message) => {
+        modelApplyOutcome = { message, refused: true };
+      }
+    );
+  }
+
   // openArchitecture shows the open change's architecture stage and asks the
   // server for the architecture of the shown revision when none is loaded.
   function openArchitecture() {
@@ -1221,6 +1421,12 @@ export function bootstrapViewsPage() {
       label: "Story",
       active: activeResult?.kind === "story",
       onClick: openStory,
+    });
+    tabs.push({
+      id: "surla-nav-live",
+      label: "Live target",
+      active: activeResult?.kind === "live",
+      onClick: openLive,
     });
     const cp1Active =
       editorOpen && (!activeResult || activeResult.kind === "cp1-incoming-card");
@@ -1509,6 +1715,31 @@ export function bootstrapViewsPage() {
         resultRegionEl.dataset.changeId = activeEditor.card.change_id;
         resultRegionEl.dataset.requestRevision = activeEditor.card.request_revision;
       }
+      return;
+    }
+    if (res.kind === "live") {
+      flushSync(() => {
+        resultRoot.render(
+          <LiveTargetStageView
+            target={liveTarget}
+            targetLoading={hasPending("get_live_target", "")}
+            targetError={liveTargetError}
+            onRetryTarget={readLiveTarget}
+            stopping={hasPending("stop_live_target", "")}
+            stopOutcome={liveStopOutcome}
+            onStop={stopLiveTarget}
+            model={modelConnection}
+            modelLoading={hasPending("get_model_connection", "")}
+            modelError={modelConnectionError}
+            onRetryModel={readModelConnection}
+            applying={hasPending("configure_model", "")}
+            applyOutcome={modelApplyOutcome}
+            onApply={applyModel}
+            draft={modelDraft}
+            onDraft={updateModelDraft}
+          />
+        );
+      });
       return;
     }
     if (res.kind === "cp2-architecture-preview") {

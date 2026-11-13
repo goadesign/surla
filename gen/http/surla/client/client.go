@@ -57,6 +57,10 @@ type Client struct {
 	// stop_live_target endpoint.
 	StopLiveTargetDoer goahttp.Doer
 
+	// GetLiveTarget Doer is the HTTP client used to make requests to the
+	// get_live_target endpoint.
+	GetLiveTargetDoer goahttp.Doer
+
 	// VerifyChange Doer is the HTTP client used to make requests to the
 	// verify_change endpoint.
 	VerifyChangeDoer goahttp.Doer
@@ -79,6 +83,10 @@ type Client struct {
 	// ConfigureModel Doer is the HTTP client used to make requests to the
 	// configure_model endpoint.
 	ConfigureModelDoer goahttp.Doer
+
+	// GetModelConnection Doer is the HTTP client used to make requests to the
+	// get_model_connection endpoint.
+	GetModelConnectionDoer goahttp.Doer
 
 	// InitProject Doer is the HTTP client used to make requests to the
 	// init_project endpoint.
@@ -140,6 +148,10 @@ type Client struct {
 	// endpoint.
 	GetBuildDoer goahttp.Doer
 
+	// GetTestFindings Doer is the HTTP client used to make requests to the
+	// get_test_findings endpoint.
+	GetTestFindingsDoer goahttp.Doer
+
 	// ListBuilderAssignments Doer is the HTTP client used to make requests to the
 	// list_builder_assignments endpoint.
 	ListBuilderAssignmentsDoer goahttp.Doer
@@ -190,12 +202,14 @@ func NewClient(
 		DraftOverrideDoer:             doer,
 		StartLiveTargetDoer:           doer,
 		StopLiveTargetDoer:            doer,
+		GetLiveTargetDoer:             doer,
 		VerifyChangeDoer:              doer,
 		GetVerificationDoer:           doer,
 		ListVerificationsDoer:         doer,
 		ApproveMergeDoer:              doer,
 		DiffDoer:                      doer,
 		ConfigureModelDoer:            doer,
+		GetModelConnectionDoer:        doer,
 		InitProjectDoer:               doer,
 		GenerateCodeDoer:              doer,
 		CheckProjectDoer:              doer,
@@ -211,6 +225,7 @@ func NewClient(
 		WaitForChangesDoer:            doer,
 		StartBuildDoer:                doer,
 		GetBuildDoer:                  doer,
+		GetTestFindingsDoer:           doer,
 		ListBuilderAssignmentsDoer:    doer,
 		GetBuilderAssignmentDoer:      doer,
 		ListTestWriterAssignmentsDoer: doer,
@@ -449,6 +464,25 @@ func (c *Client) StopLiveTarget() goa.Endpoint {
 	}
 }
 
+// GetLiveTarget returns an endpoint that makes HTTP requests to the surla
+// service get_live_target server.
+func (c *Client) GetLiveTarget() goa.Endpoint {
+	var (
+		decodeResponse = DecodeGetLiveTargetResponse(c.decoder, c.RestoreResponseBody)
+	)
+	return func(ctx context.Context, v any) (any, error) {
+		req, err := c.BuildGetLiveTargetRequest(ctx, v)
+		if err != nil {
+			return nil, err
+		}
+		resp, err := c.GetLiveTargetDoer.Do(req)
+		if err != nil {
+			return nil, goahttp.ErrRequestError("surla", "get_live_target", err)
+		}
+		return decodeResponse(resp)
+	}
+}
+
 // VerifyChange returns an endpoint that makes HTTP requests to the surla
 // service verify_change server.
 func (c *Client) VerifyChange() goa.Endpoint {
@@ -578,6 +612,25 @@ func (c *Client) ConfigureModel() goa.Endpoint {
 		resp, err := c.ConfigureModelDoer.Do(req)
 		if err != nil {
 			return nil, goahttp.ErrRequestError("surla", "configure_model", err)
+		}
+		return decodeResponse(resp)
+	}
+}
+
+// GetModelConnection returns an endpoint that makes HTTP requests to the surla
+// service get_model_connection server.
+func (c *Client) GetModelConnection() goa.Endpoint {
+	var (
+		decodeResponse = DecodeGetModelConnectionResponse(c.decoder, c.RestoreResponseBody)
+	)
+	return func(ctx context.Context, v any) (any, error) {
+		req, err := c.BuildGetModelConnectionRequest(ctx, v)
+		if err != nil {
+			return nil, err
+		}
+		resp, err := c.GetModelConnectionDoer.Do(req)
+		if err != nil {
+			return nil, goahttp.ErrRequestError("surla", "get_model_connection", err)
 		}
 		return decodeResponse(resp)
 	}
@@ -898,6 +951,25 @@ func (c *Client) GetBuild() goa.Endpoint {
 		resp, err := c.GetBuildDoer.Do(req)
 		if err != nil {
 			return nil, goahttp.ErrRequestError("surla", "get_build", err)
+		}
+		return decodeResponse(resp)
+	}
+}
+
+// GetTestFindings returns an endpoint that makes HTTP requests to the surla
+// service get_test_findings server.
+func (c *Client) GetTestFindings() goa.Endpoint {
+	var (
+		decodeResponse = DecodeGetTestFindingsResponse(c.decoder, c.RestoreResponseBody)
+	)
+	return func(ctx context.Context, v any) (any, error) {
+		req, err := c.BuildGetTestFindingsRequest(ctx, v)
+		if err != nil {
+			return nil, err
+		}
+		resp, err := c.GetTestFindingsDoer.Do(req)
+		if err != nil {
+			return nil, goahttp.ErrRequestError("surla", "get_test_findings", err)
 		}
 		return decodeResponse(resp)
 	}

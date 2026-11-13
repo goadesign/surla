@@ -9,11 +9,12 @@ Surla embeds a single-source-of-truth **Golden Path Playbook** ([`internal/golde
 ---
 
 Surla's project server owns one private state tree and stable operating-system
-account identity per physical folder. A start lock serializes launches; the
-existing card-store lock controls server liveness and is released after ordered
-cleanup. Before every listener close, its wrapper irreversibly revokes the
-server's in-memory management credential and withdraws the private running
-record, even on an accept-loop failure. Each server publishes a fresh credential
+account identity per physical folder. The CLI finds that tree and passes it to
+the server it launches; the server never derives it. A start lock serializes
+launches; the existing card-store lock controls server liveness and is released
+after ordered cleanup. Before every listener close, its wrapper irreversibly
+revokes the server's in-memory management credential and withdraws the private
+running record, even on an accept-loop failure. Each server publishes a fresh credential
 after binding; the CLI reads it per request, then opens a fresh proxy-free local
 connection without reusing any earlier connection.
 The record never establishes liveness. Trusted credentials add a caller and role
@@ -109,6 +110,20 @@ verdict fields inconsistent with their state. The saved role selection is
 folder. The project owner's separate record maps stable handles to role and
 folder, with credentials in private files. Neither store owns the other's data.
 
+The control plane also owns the report checker, the one worker per project
+that judges the test writer's reports through `internal/testwriter`. The
+control plane starts it on the server's context when a team is bound and
+drains it on Close before the stores close. It opens the working copy as a
+build start does, and holds
+the project's working-copy turn for each judgment, so a build start, which
+takes the turn without waiting, is refused while one runs. Its last step
+(confirm that the build still answers to the report checked, commit accepted
+tests, save the verdict) holds a lock that `report_tests_finished` also takes.
+Locks are taken in the order turn, report lock, card lock. Git and the sandbox
+never run under the card lock. A verdict changes the generations the
+supervision callback returns: the test writer's carries the report number and
+verdict time, the builder's the accepted commit.
+
 Herdr streams and reads are filtered by registered handle, project root and saved
 space. Typed adapters retain only terminal state, block kind, foreground arguments
 and watcher facts; screen text, status messages, titles and Chorus messages have no
@@ -135,7 +150,16 @@ holding the Change Card directory lock; `controlplane.Options.TracerProvider`
 binds the project server's SDK provider to that instance's operations at construction.
 Without a provider, `list_traces` returns `not_implemented` with setup instructions.
 Each recorded operation saves its
-bounded safe view through `internal/traceview` when its own span ends. Identity
+bounded safe view through `internal/traceview` when its own span ends.
+Reads by the user's page that succeed or are refused are not saved, so the
+views page's repeated reads do not fill the history: `NewHTTPHandler` marks the
+context of each request sent with `GET`, and every `GET` route the user's
+session may call only reads (the builder's and the test writer's assignment
+reads, which record that they were read, are refused to it by the operation
+table). A span of the user's browser session under that mark is saved only
+when it ends with an error status or while a panic is in flight, which the span
+wrapper's `End` sees. A refusal such as `not_found` is an expected answer
+without error status. Identity
 stays with that local write; it is not attached to the exported span or chosen
 by a provider-wide processor.
 `ControlPlane.ListTraces` reads the project owner's pages from that file, and

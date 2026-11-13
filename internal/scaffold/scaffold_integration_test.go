@@ -54,7 +54,7 @@ func TestInitCreatesAProjectWhoseSuitePasses(t *testing.T) {
 			testOut, err := test.CombinedOutput()
 			require.NoError(t, err, "the generated evaluator's own tests pass:\n%s", testOut)
 			build(dir, name, "./cmd/"+name)
-			build(filepath.Join(dir, "eval"), name+"-evals", "./cmd/"+name+"-evals")
+			build(filepath.Join(dir, "eval"), name+"-evals", "./gen/cmd/"+name+"-evals")
 
 			out, err := exec.CommandContext(t.Context(), filepath.Join(bin, name+"-evals"),
 				"--artifact", name+"="+filepath.Join(bin, name)).Output()

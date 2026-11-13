@@ -1,24 +1,32 @@
 package testwriter
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
 	"maps"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/goadesign/surla/internal/designeval"
+	"github.com/goadesign/surla/internal/shquote"
 	"github.com/goadesign/surla/internal/testmodule"
+	"github.com/goadesign/surla/verify/candidate"
+	"github.com/goadesign/surla/verify/suite"
 )
 
-// fixtureSuite locates the fixture's suite module and command in a project.
-var fixtureSuite = Suite{Module: "eval", Command: "./cmd/shop-evals"}
+// fixtureSuite locates the fixture's suite module and the program the
+// generator writes in it.
+var fixtureSuite = Suite{Module: "eval", Command: "./gen/cmd/shop-evals"}
 
 // refundStories has two finished flows and one draft.
 var refundStories = []designeval.StorySummary{{
@@ -30,22 +38,27 @@ var refundStories = []designeval.StorySummary{{
 	},
 }}
 
-// fixture caches the fixture suite module, which takes a sandboxed generation
-// to build. Tests clone it.
+// fixture caches the fixture project, which takes a sandboxed generation and
+// a go mod tidy to build. Tests clone it.
 var fixture struct {
 	mu sync.Mutex
-	// files is the module's tree keyed by slash path, nil until built.
+	// files is the project's tree keyed by slash path, nil until built.
 	files map[string]string
 }
 
 // fixtureDesign is the fixture's evaluation design: one service and one
-// suite with one scenario written by hand.
+// suite with one scenario written by hand. It imports Goa-AI's DSL, as the
+// starter's does, so a step can tag a scenario.
 const fixtureDesign = `package design
 
 import (
+	. "goa.design/goa-ai/dsl"
 	. "goa.design/goa-ai/eval/dsl"
 	. "goa.design/goa/v3/dsl"
 )
+
+// tag is Goa-AI's Tags, which a scenario may use.
+var tag = Tags
 
 var _ = Service("orders", func() {
 	Method("get_order", func() {
@@ -113,17 +126,24 @@ func TestPrepareGivesTheAuthorItsGenerationFailure(t *testing.T) {
 }
 
 // TestCheckJudgesTheWorkingCopy plays the test writer through a prepared copy:
-// each step changes the copy's files and checks it. A missing hook method, an
-// edit of the generated folder that drops a requirement, a renamed or removed
-// scenario, a build that reads a file outside the snapshot (which only the
-// build sandbox refuses) and a failing listing each return one finding naming
-// what is wrong, and a listing that writes 256 MiB to its error stream is
-// quoted from a bounded excerpt of its end, allocating far less than that; a
-// complete copy that prints noise, including a JSON object, on standard error
-// and tries to write outside its sandbox is accepted, and the
-// write never happens. Recording makes one commit holding the files as
-// checked, with the generated folder written from the Story, and recording
-// the unchanged copy again returns that commit.
+// each step changes the copy's files and checks it, and Check builds only the
+// program it generates. Each of these returns one finding naming what is
+// wrong:
+//   - a missing hook method;
+//   - an edit of the generated folder that drops a requirement;
+//   - a hand-written program that only prints the required names;
+//   - a build that reads a file outside the snapshot, which only the build
+//     sandbox refuses;
+//   - a listing that writes 256 MiB to its error stream, quoted from a
+//     bounded excerpt of its end while allocating far less than that;
+//   - a scenario tagged holdout.
+//
+// A complete copy whose package prints noise, including a JSON object, on
+// standard error and tries to write outside its sandbox while starting is
+// accepted, and the write never happens. Recording makes one commit holding
+// the files as checked, with the generated folder written from the Story,
+// unsigned though the repository asks for signed commits, and recording the
+// unchanged copy again returns that commit.
 func TestCheckJudgesTheWorkingCopy(t *testing.T) {
 	skipWithoutSandbox(t)
 	repo, markers := newProject(t, fixtureProject(t))
@@ -135,10 +155,12 @@ func TestCheckJudgesTheWorkingCopy(t *testing.T) {
 	prepared, err := os.ReadFile(filepath.Join(wc.Project(), "eval", generatedSuite))
 	require.NoError(t, err)
 	outside := filepath.Join(t.TempDir(), "written-outside-the-sandbox")
+	quiet := quietInit(outside)
 	// header is readable by any build but the sandboxed one, which may read
 	// only the snapshot, the toolchain and the module cache.
 	header := filepath.Join(t.TempDir(), "outside.h")
 	require.NoError(t, os.WriteFile(header, []byte("#define OUTSIDE 1\n"), 0o600))
+	design := fixtureProject(t)["eval/design/design.go"]
 
 	steps := []struct {
 		name string
@@ -154,11 +176,8 @@ func TestCheckJudgesTheWorkingCopy(t *testing.T) {
 		maxAlloc uint64
 	}{
 		{
-			name: "an unwritten hook method",
-			files: map[string]string{
-				"acceptance/acceptance.go": fixtureHooks("StoreCreditWithinLimit"),
-				"cmd/shop-evals/main.go":   fixtureMain(outside, ""),
-			},
+			name:        "an unwritten hook method",
+			files:       map[string]string{"acceptance/acceptance.go": fixtureAcceptance(quiet, "StoreCreditWithinLimit")},
 			wantKind:    FindingBuild,
 			wantMessage: []string{"does not compile", "RefundOverLimit"},
 		},
@@ -169,36 +188,24 @@ func TestCheckJudgesTheWorkingCopy(t *testing.T) {
 			wantMessage: []string{"RefundOverLimit"},
 		},
 		{
-			name: "a renamed scenario",
-			files: map[string]string{
-				"acceptance/acceptance.go": fixtureHooks("RefundOverLimit", "StoreCreditWithinLimit"),
-				"cmd/shop-evals/main.go": fixtureMain(outside,
-					`if id == "refund_over_limit" { id = "refund_over_the_limit" }`),
-			},
-			wantKind:    FindingMissingScenario,
-			wantMessage: []string{`scenario "refund_over_limit"`, `flow "refund-over-limit"`, "RefundOverLimit"},
-		},
-		{
-			name: "a removed scenario",
-			files: map[string]string{
-				"cmd/shop-evals/main.go": fixtureMain(outside, `if id == "store_credit_within_limit" { continue }`),
-			},
-			wantKind:    FindingMissingScenario,
-			wantMessage: []string{`scenario "store_credit_within_limit"`},
+			name:        "a hand-written program that only prints the required names",
+			files:       map[string]string{"cmd/shop-evals/main.go": hollowMain},
+			wantKind:    FindingBuild,
+			wantMessage: []string{"RefundOverLimit"},
 		},
 		{
 			name: "a build that reads outside the snapshot",
 			files: map[string]string{
-				"cmd/shop-evals/main.go":   fixtureMain(outside, ""),
-				"cmd/shop-evals/outside.s": "#include \"" + header + "\"\n",
+				"acceptance/acceptance.go": fixtureAcceptance(quiet, "RefundOverLimit", "StoreCreditWithinLimit"),
+				"acceptance/outside.s":     "#include \"" + header + "\"\n",
 			},
 			wantKind:    FindingBuild,
-			wantMessage: []string{"does not compile", "#include", "outside.h"},
+			wantMessage: []string{"does not compile", "#include: open <absolute path>"},
 		},
 		{
 			name:        "a listing that fails after flooding its error stream",
-			files:       map[string]string{"cmd/shop-evals/main.go": floodingMain},
-			remove:      []string{"cmd/shop-evals/outside.s"},
+			files:       map[string]string{"acceptance/acceptance.go": fixtureAcceptance(floodInit, "RefundOverLimit", "StoreCreditWithinLimit")},
+			remove:      []string{"acceptance/outside.s"},
 			wantKind:    FindingListing,
 			wantMessage: []string{"exited with status 3", "earlier output left out", "end of the error stream"},
 			// The error stream is read only as a bounded excerpt. The whole
@@ -208,8 +215,18 @@ func TestCheckJudgesTheWorkingCopy(t *testing.T) {
 			maxAlloc: 32 << 20,
 		},
 		{
+			name: "a scenario tagged holdout",
+			files: map[string]string{
+				"acceptance/acceptance.go": fixtureAcceptance(quiet, "RefundOverLimit", "StoreCreditWithinLimit"),
+				"design/design.go": strings.Replace(design,
+					`Description("Tea costs 350 cents.")`, `Description("Tea costs 350 cents.")`+"\n\t\tTags(\"holdout\")", 1),
+			},
+			wantKind:    FindingHiddenTag,
+			wantMessage: []string{`Scenario "prices_tea" is tagged holdout`},
+		},
+		{
 			name:  "a complete copy that prints noise on standard error",
-			files: map[string]string{"cmd/shop-evals/main.go": fixtureMain(outside, "")},
+			files: map[string]string{"design/design.go": design},
 		},
 	}
 	var accepted Verdict
@@ -228,6 +245,7 @@ func TestCheckJudgesTheWorkingCopy(t *testing.T) {
 			assert.Less(t, after.TotalAlloc-before.TotalAlloc, step.maxAlloc, "%s: bytes allocated", step.name)
 		}
 		t.Logf("%s: %+v", step.name, v.Findings)
+		assertNoAbsolutePath(t, v.Findings)
 		if step.wantKind == "" {
 			require.True(t, v.Accepted(), "%s: %+v", step.name, v.Findings)
 			accepted = v
@@ -242,13 +260,25 @@ func TestCheckJudgesTheWorkingCopy(t *testing.T) {
 	}
 	assert.NoFileExists(t, outside, "--describe runs only in the sandbox")
 
+	// The repository asks for signed commits with a signing program that
+	// leaves a marker and fails: a recorded commit is never signed.
+	signer, signed := filepath.Join(t.TempDir(), "signer"), filepath.Join(t.TempDir(), "signed")
+	require.NoError(t, os.WriteFile(signer, []byte("#!/bin/sh\n: > "+shquote.Quote(signed)+"\nexit 1\n"), 0o700))
+	runGit(t, repo, "config", "commit.gpgsign", "true")
+	runGit(t, repo, "config", "gpg.program", signer)
 	commit, err := Record(t.Context(), accepted, "Add the accepted tests")
 	require.NoError(t, err)
+	assert.NoFileExists(t, signed, "the signing program never ran")
+	assert.NotContains(t, runGit(t, repo, "cat-file", "commit", commit), "gpgsig")
 	assert.Equal(t, start, runGit(t, repo, "rev-parse", commit+"^"), "one commit on top of the branch")
 	assert.Equal(t, strings.TrimSpace(string(prepared)), runGit(t, repo, "show", commit+":eval/"+generatedSuite),
 		"the commit holds the generated suite written from the Story, not the author's edit")
 	assert.Equal(t, "M eval/"+generatedSuite, runGit(t, wc.Dir(), "status", "--porcelain"),
 		"the author's edit of the generated folder stays an uncommitted change")
+	changed := runGit(t, repo, "diff", "--name-only", start, commit)
+	for _, p := range strings.Split(changed, "\n") {
+		assert.True(t, strings.HasPrefix(p, "eval/"), "the commit changes only the test module, not %s", p)
+	}
 	assert.Empty(t, runGit(t, repo, "status", "--porcelain", "--untracked-files=all"))
 
 	again, err := testChecker.Check(t.Context(), wc, fixtureSuite, refundStories)
@@ -276,16 +306,15 @@ func TestCheckIgnoresTheCopysOwnRepository(t *testing.T) {
 	require.NoError(t, err)
 	outside := filepath.Join(t.TempDir(), "written-outside-the-sandbox")
 	writeFiles(t, wc.Dir(), map[string]string{
-		".gitattributes":                authorsAttributes,
-		"eval/acceptance/acceptance.go": fixtureHooks("RefundOverLimit", "StoreCreditWithinLimit"),
-		"eval/cmd/shop-evals/main.go":   fixtureMain(outside, ""),
+		"eval/.gitattributes":           authorsAttributes,
+		"eval/acceptance/acceptance.go": fixtureAcceptance(quietInit(outside), "RefundOverLimit", "StoreCreditWithinLimit"),
 	})
 	marker := filepath.Join(t.TempDir(), "filter-ran")
 	for _, rewrite := range []func(t *testing.T, dir, marker string){replaceCopysGit, pointCopysGitInside} {
 		rewrite(t, wc.Dir(), marker)
 		v, err := testChecker.Check(t.Context(), wc, fixtureSuite, refundStories)
 		require.NoError(t, err)
-		assert.True(t, v.Accepted(), "%+v", v.Findings)
+		require.True(t, v.Accepted(), "%+v", v.Findings)
 		assert.NoFileExists(t, marker, "no program named inside the copy runs")
 		commit, err := Record(t.Context(), v, "Add the accepted tests")
 		require.NoError(t, err)
@@ -295,29 +324,148 @@ func TestCheckIgnoresTheCopysOwnRepository(t *testing.T) {
 	assert.Empty(t, ranHooks(t, markers))
 }
 
-// floodingMain is a suite command whose --describe writes 256 MiB to its
-// standard error, then a last line, and exits with status 3.
-const floodingMain = `// Command shop-evals floods its error stream.
-package main
-
-import (
-	"bytes"
-	"fmt"
-	"os"
-)
-
-func main() {
-	fmt.Fprintln(os.Stderr, "no declaration today")
-	line := bytes.Repeat([]byte("x"), 1<<20)
-	for range 256 {
-		if _, err := os.Stderr.Write(line); err != nil {
-			os.Exit(4)
+// TestCheckWantsExactlyOneEvaluationSuite gives the copy's design two
+// suites, then none, each with a Story that requires tests and with one that
+// requires none: Check says the module must declare exactly one evaluation
+// suite and how many it declares, never a build error about a missing
+// package. A module whose acceptance package was deleted, and one whose path
+// is outside Surla's test layout, get no generated program, and Check says
+// what makes a module a Surla test module.
+func TestCheckWantsExactlyOneEvaluationSuite(t *testing.T) {
+	skipWithoutSandbox(t)
+	repo, _ := newProject(t, fixtureProject(t))
+	wc, err := OpenWorkingCopy(t.Context(), repo)
+	require.NoError(t, err)
+	module := filepath.Join(wc.Project(), "eval")
+	design := fixtureProject(t)["eval/design/design.go"]
+	cases := []struct {
+		name, design, count string
+	}{
+		{name: "two suites", design: design + `
+var _ = Suite("second", func() {
+	Description("A second suite.")
+	Timeout("30s")
+	Scenario("other", func() { Description("Other.") })
+})
+`, count: "declares 2"},
+		{name: "no suite", design: design[:strings.Index(design, "var _ = Suite(")] + "\n// The evaluation DSL stays imported.\nvar _ = Suite\n",
+			count: "declares 0"},
+	}
+	for _, tc := range cases {
+		for storyName, stories := range map[string][]designeval.StorySummary{
+			"a Story that requires tests": refundStories,
+			"a Story that requires none":  nil,
+		} {
+			t.Run(tc.name+", "+storyName, func(t *testing.T) {
+				writeFiles(t, module, map[string]string{"design/design.go": tc.design})
+				v, err := testChecker.Check(t.Context(), wc, fixtureSuite, stories)
+				require.NoError(t, err)
+				require.Len(t, v.Findings, 1, "%+v", v.Findings)
+				assert.Equal(t, FindingGeneration, v.Findings[0].Kind)
+				assert.Contains(t, v.Findings[0].Message, "exactly one evaluation suite")
+				assert.Contains(t, v.Findings[0].Message, tc.count)
+				assertNoAbsolutePath(t, v.Findings)
+			})
 		}
 	}
-	fmt.Fprintln(os.Stderr, "\nend of the error stream")
-	os.Exit(3)
+	t.Run("a module without its acceptance package", func(t *testing.T) {
+		require.NoError(t, os.RemoveAll(filepath.Join(module, "acceptance")))
+		writeFiles(t, module, map[string]string{"design/design.go": design})
+		v, err := testChecker.Check(t.Context(), wc, fixtureSuite, refundStories)
+		require.NoError(t, err)
+		require.Len(t, v.Findings, 1, "%+v", v.Findings)
+		assert.Equal(t, FindingGeneration, v.Findings[0].Kind)
+		assert.Contains(t, v.Findings[0].Message, "Surla generated no test program at ./gen/cmd/shop-evals")
+		assert.Contains(t, v.Findings[0].Message, "keep its acceptance package")
+		assertNoAbsolutePath(t, v.Findings)
+	})
+	t.Run("a module outside the test layout", func(t *testing.T) {
+		goMod := fixtureProject(t)["eval/go.mod"]
+		writeFiles(t, module, map[string]string{
+			"design/design.go":         design,
+			"acceptance/acceptance.go": fixtureProject(t)["eval/acceptance/acceptance.go"],
+			"go.mod":                   strings.Replace(goMod, "module example.com/shop/eval\n", "module example.com/shop/evaluation\n", 1),
+		})
+		v, err := testChecker.Check(t.Context(), wc, fixtureSuite, refundStories)
+		require.NoError(t, err)
+		require.Len(t, v.Findings, 1, "%+v", v.Findings)
+		assert.Equal(t, FindingGeneration, v.Findings[0].Kind)
+		assert.Contains(t, v.Findings[0].Message, "Surla generated no test program at ./gen/cmd/shop-evals")
+		assertNoAbsolutePath(t, v.Findings)
+	})
 }
-`
+
+// TestCheckLimitsTheBuildAndTheListing runs a complete copy with stand-ins
+// for the sandboxed build and listing that sleep just below, at and just above
+// a shortened limit, and give a program and a declaration otherwise. Below the
+// limit the copy is accepted; at and above it the step's limit is the finding.
+// A stand-in listing that leaves out a required scenario gives that scenario's
+// finding.
+func TestCheckLimitsTheBuildAndTheListing(t *testing.T) {
+	skipWithoutSandbox(t)
+	repo, _ := newProject(t, fixtureProject(t))
+	wc, err := OpenWorkingCopy(t.Context(), repo)
+	require.NoError(t, err)
+	writeFiles(t, filepath.Join(wc.Project(), "eval"), map[string]string{
+		"acceptance/acceptance.go": fixtureAcceptance(quietInit(filepath.Join(t.TempDir(), "unused")), "RefundOverLimit", "StoreCreditWithinLimit"),
+	})
+	const limit = 500 * time.Millisecond
+	declare := func(ids ...string) []byte {
+		d := suite.Declaration{ID: "shop_acceptance", Environment: "scripted-model"}
+		for _, id := range ids {
+			d.Scenarios = append(d.Scenarios, suite.DeclaredScenario{ID: id, Tags: []string{}})
+		}
+		b, err := json.Marshal(d)
+		require.NoError(t, err)
+		return b
+	}
+	complete := declare("prices_tea", "refund_over_limit", "store_credit_within_limit")
+	sleepThenBuild := func(d time.Duration) func(context.Context, candidate.BuildSpec, func(*exec.Cmd) error) error {
+		return func(_ context.Context, spec candidate.BuildSpec, _ func(*exec.Cmd) error) error {
+			time.Sleep(d)
+			return os.WriteFile(spec.Out, []byte("stand-in program"), 0o700)
+		}
+	}
+	sleepThenList := func(d time.Duration, out []byte) func(context.Context, candidate.Artifact, candidate.Spec, int) ([]byte, error) {
+		return func(context.Context, candidate.Artifact, candidate.Spec, int) ([]byte, error) {
+			time.Sleep(d)
+			return out, nil
+		}
+	}
+	cases := []struct {
+		name      string
+		build     time.Duration
+		list      time.Duration
+		listed    []byte
+		wantKind  FindingKind
+		wantWords string
+	}{
+		{name: "build just below", build: limit - 200*time.Millisecond, listed: complete},
+		{name: "build at", build: limit, listed: complete, wantKind: FindingBuild, wantWords: "did not finish building within 500ms"},
+		{name: "build just above", build: limit + 200*time.Millisecond, listed: complete, wantKind: FindingBuild, wantWords: "did not finish building within 500ms"},
+		{name: "listing just below", list: limit - 200*time.Millisecond, listed: complete},
+		{name: "listing at", list: limit, listed: complete, wantKind: FindingListing, wantWords: "did not finish within 500ms"},
+		{name: "listing just above", list: limit + 200*time.Millisecond, listed: complete, wantKind: FindingListing, wantWords: "did not finish within 500ms"},
+		{name: "a listing without a required scenario", listed: declare("prices_tea", "store_credit_within_limit"),
+			wantKind: FindingMissingScenario, wantWords: `scenario "refund_over_limit"`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			c := *testChecker
+			c.buildLimit, c.listLimit = limit, limit
+			c.build, c.list = sleepThenBuild(tc.build), sleepThenList(tc.list, tc.listed)
+			v, err := c.Check(t.Context(), wc, fixtureSuite, refundStories)
+			require.NoError(t, err)
+			if tc.wantKind == "" {
+				assert.True(t, v.Accepted(), "%+v", v.Findings)
+				return
+			}
+			require.Len(t, v.Findings, 1, "%+v", v.Findings)
+			assert.Equal(t, tc.wantKind, v.Findings[0].Kind)
+			assert.Contains(t, v.Findings[0].Message, tc.wantWords)
+		})
+	}
+}
 
 // generatedSuite is the fixture's generated suite file, relative to its
 // module.
@@ -335,102 +483,142 @@ func skipWithoutSandbox(t *testing.T) {
 	}
 }
 
-// fixtureProject returns a project's files holding the fixture suite module
+// publishedSurla is a Surla version on the module proxy whose suite contract
+// has everything the generated program calls; the starter's tests use the
+// same one. The fixture requires it as a starter does, because the snapshot
+// a check builds may read no Surla source outside it, and generation refuses
+// a replacement by a local folder.
+const publishedSurla = "v0.0.0-20261110163737-d9beac313142"
+
+// fixtureProject returns a project's files holding the fixture's test module
 // under eval/, as a test writer would start from: generated without a Story,
-// with the hand-written scenario's hook and a suite command whose
-// --describe prints its declaration.
+// so with the generated program, and with an acceptance package providing the
+// five names the program calls. The module requires publishedSurla for the
+// suite contract the program uses.
 func fixtureProject(t *testing.T) map[string]string {
 	t.Helper()
 	fixture.mu.Lock()
 	defer fixture.mu.Unlock()
 	if fixture.files == nil {
 		design := testmodule.Module(t, "example.com/shop/eval", "", map[string]string{"design/design.go": fixtureDesign})
+		// The acceptance package imports generated code, so it joins after
+		// tidying; the generator needs it to write the program.
+		design["acceptance/acceptance.go"] = fixtureAcceptance(quietInit(filepath.Join(os.TempDir(), "unused")))
 		generated, err := testEvaluator.Generate(t.Context(), design)
 		require.NoError(t, err)
-		tree := maps.Clone(design)
+		require.Contains(t, generated, "gen/cmd/shop-evals/main.go", "the generator writes the program")
+		module := maps.Clone(design)
 		for p, b := range generated {
-			tree[p] = string(b)
+			module[p] = string(b)
 		}
-		tree["acceptance/acceptance.go"] = fixtureHooks()
-		tree["cmd/shop-evals/main.go"] = fixtureMain(filepath.Join(os.TempDir(), "unused"), "")
-		fixture.files = testmodule.Tidy(t, tree)
+		module["go.mod"] = strings.Replace(module["go.mod"], "require (",
+			"require (\n\tgithub.com/goadesign/surla "+publishedSurla, 1)
+		files := map[string]string{"README.md": "shop\n"}
+		for p, content := range testmodule.Tidy(t, module) {
+			files["eval/"+p] = content
+		}
+		fixture.files = files
 	}
-	project := map[string]string{"README.md": "shop\n"}
-	for p, content := range fixture.files {
-		project["eval/"+p] = content
-	}
-	return project
+	return maps.Clone(fixture.files)
 }
 
-// fixtureHooks returns the fixture's hand-written hooks: the hand-written
-// scenario's and the named flow methods.
-func fixtureHooks(methods ...string) string {
+// fixtureAcceptance returns the fixture's acceptance package: the five names
+// the generated program calls, the hand-written scenario's hook, the named
+// flow methods, and an init function with initBody, which runs whenever the
+// program starts, also to list its tests.
+func fixtureAcceptance(initBody string, methods ...string) string {
 	var b strings.Builder
-	b.WriteString("// Package acceptance holds the fixture's scenario hooks.\npackage acceptance\n\n" +
-		"import (\n\t\"context\"\n\n\t\"goa.design/goa-ai/eval\"\n)\n\n" +
-		"// Hooks implements the generated shop_acceptance hooks.\ntype Hooks struct{}\n")
+	b.WriteString(`// Package acceptance holds the fixture's scenario hooks.
+package acceptance
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"os"
+
+	"goa.design/goa-ai/eval"
+	"goa.design/goa-ai/runtime/agent/model"
+
+	"github.com/goadesign/surla/verify/candidate"
+	"github.com/goadesign/surla/verify/suite"
+)
+
+// Name is the name the program under test is bound as.
+const Name = "shop"
+
+// Hooks implements the generated shop_acceptance hooks.
+type Hooks struct{}
+
+// New returns the hooks for the pinned program under test.
+func New(candidate.Artifact) *Hooks { return &Hooks{} }
+
+// Live starts no live target: the fixture has none.
+func Live(context.Context, candidate.Artifact, string, model.Provider) (suite.LiveTarget, error) {
+	return suite.LiveTarget{}, errors.New("the fixture has no live target")
+}
+
+// LiveThroughGateway starts no live target: the fixture has none.
+func LiveThroughGateway(context.Context, candidate.Artifact, string, string) (suite.LiveTarget, error) {
+	return suite.LiveTarget{}, errors.New("the fixture has no live target")
+}
+
+// init runs whenever the program starts.
+func init() {
+`)
+	b.WriteString(initBody)
+	b.WriteString("}\n")
 	for _, m := range append([]string{"PricesTea"}, methods...) {
 		fmt.Fprintf(&b, "\n// %s passes.\nfunc (h *Hooks) %s(context.Context) (eval.Result, error) {\n\treturn eval.Result{}, nil\n}\n", m, m)
 	}
 	return b.String()
 }
 
-// fixtureMain returns a suite command that follows the --describe contract:
-// it prints its generated suite's declaration on standard output, applying
-// change to each scenario ID (id) in the loop, with noise around it on
-// standard error, including a declaration-shaped JSON object. It also tries
-// to write marker, which the sandbox denies.
-func fixtureMain(marker, change string) string {
-	return fmt.Sprintf(`// Command shop-evals is the fixture's suite command.
-package main
-
-import (
-	"encoding/json"
-	"fmt"
-	"os"
-
-	"example.com/shop/eval/acceptance"
-	genevals "example.com/shop/eval/gen/evals/shop_acceptance"
-)
-
-type (
-	declaration struct {
-		ID          string     `+"`json:\"id\"`"+`
-		Environment string     `+"`json:\"environment\"`"+`
-		Scenarios   []scenario `+"`json:\"scenarios\"`"+`
-	}
-	scenario struct {
-		ID   string   `+"`json:\"id\"`"+`
-		Tags []string `+"`json:\"tags\"`"+`
-	}
-)
-
-func main() {
-	if len(os.Args) != 2 || os.Args[1] != "--describe" {
-		fmt.Fprintln(os.Stderr, "usage: shop-evals --describe")
-		os.Exit(2)
-	}
-	fmt.Fprintln(os.Stderr, `+"`"+`{"id":"noise","environment":"stderr","scenarios":[]}`+"`"+`)
+// quietInit is an init body that prints noise on standard error, including a
+// declaration-shaped JSON object, and tries to write marker, which the
+// sandbox denies.
+func quietInit(marker string) string {
+	return fmt.Sprintf(`	fmt.Fprintln(os.Stderr, %q)
 	if err := os.WriteFile(%q, []byte("outside"), 0o600); err != nil {
 		fmt.Fprintln(os.Stderr, "write outside the sandbox:", err)
 	}
-	s, err := genevals.New(&acceptance.Hooks{}, genevals.Inputs{})
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(2)
-	}
-	d := declaration{ID: s.ID, Environment: "fixture", Scenarios: []scenario{}}
-	for _, sc := range s.Scenarios {
-		id := sc.ID
-		%s
-		d.Scenarios = append(d.Scenarios, scenario{ID: id, Tags: sc.Tags})
-	}
-	if err := json.NewEncoder(os.Stdout).Encode(d); err != nil {
-		os.Exit(2)
-	}
-	fmt.Fprintln(os.Stderr, "noise after the declaration")
+`, `{"id":"noise","environment":"stderr","scenarios":[]}`, marker)
 }
-`, marker, change)
+
+// floodInit is an init body that writes 256 MiB to standard error, then a last
+// line, and exits with status 3.
+const floodInit = `	fmt.Fprintln(os.Stderr, "no declaration today")
+	line := make([]byte, 1<<20)
+	for i := range line {
+		line[i] = 'x'
+	}
+	for range 256 {
+		if _, err := os.Stderr.Write(line); err != nil {
+			os.Exit(4)
+		}
+	}
+	fmt.Fprintln(os.Stderr, "\nend of the error stream")
+	os.Exit(3)
+`
+
+// hollowMain is a hand-written program that prints the required scenario
+// names as a declaration without building the generated tests.
+const hollowMain = `// Command shop-evals only prints the required names.
+package main
+
+import "fmt"
+
+func main() {
+	fmt.Println(` + "`" + `{"id":"shop_acceptance","environment":"scripted-model","scenarios":[{"id":"prices_tea","tags":[]},{"id":"refund_over_limit","tags":[]},{"id":"store_credit_within_limit","tags":[]}]}` + "`" + `)
+}
+`
+
+// assertNoAbsolutePath fails the test when a finding quotes an absolute path.
+func assertNoAbsolutePath(t *testing.T, findings []Finding) {
+	t.Helper()
+	for _, f := range findings {
+		assert.NotRegexp(t, absolutePath, f.Message, "a finding quotes an absolute path")
+	}
 }
 
 // projectFiles returns every file of the project folder except git's and the

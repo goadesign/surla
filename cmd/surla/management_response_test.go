@@ -275,7 +275,7 @@ func TestServeWithdrawsRunningBeforeStoreRelease(t *testing.T) {
 		}}, nil
 	}
 	done := make(chan error, 1)
-	go func() { done <- runtime.serve() }()
+	go func() { done <- runtime.serve(state.Dir) }()
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
 	_, err = waitForRunning(ctx, state)

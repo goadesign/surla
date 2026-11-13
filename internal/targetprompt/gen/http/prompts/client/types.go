@@ -9,6 +9,8 @@
 package client
 
 import (
+	"unicode/utf8"
+
 	prompts "github.com/goadesign/surla/internal/targetprompt/gen/prompts"
 	goa "goa.design/goa/v3/pkg"
 )
@@ -25,7 +27,8 @@ type OverridePromptRequestBody struct {
 type OverridePromptResponseBody struct {
 	// The prompt whose text was replaced.
 	PromptID *string `form:"prompt_id,omitempty" json:"prompt_id,omitempty" xml:"prompt_id,omitempty"`
-	// Version of the accepted text: an opaque identifier that is not blank.
+	// Version of the accepted text: an opaque identifier that is not blank and has
+	// at most 256 characters.
 	Version *string `form:"version,omitempty" json:"version,omitempty" xml:"version,omitempty"`
 }
 
@@ -134,6 +137,9 @@ func ValidateOverridePromptResponseBody(body *OverridePromptResponseBody) (err e
 	}
 	if body.Version != nil {
 		err = goa.MergeErrors(err, goa.ValidatePattern("body.version", *body.Version, "[^ \t\n\v\f\r\u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]"))
+		if utf8.RuneCountInString(*body.Version) > 256 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.version", *body.Version, utf8.RuneCountInString(*body.Version), 256, false))
+		}
 	}
 	return
 }

@@ -410,13 +410,16 @@ func generateWithStories(
 }
 
 // runGenerate compiles and runs the generation program with specs attached,
-// returning the generated files keyed by module-relative path.
+// returning the generated files keyed by module-relative path. The program
+// learns from files whether the module has an acceptance package.
 func runGenerate(
 	ctx context.Context, files map[string]string, workDir string, specs []storyScenarioSpec,
 ) (map[string][]byte, error) {
 	var out map[string][]byte
 	goa, err := runSandboxed(ctx, files, workDir,
-		func(map[string]bool) map[string]string { return generateProgramWithStories(specs) },
+		func(map[string]bool) map[string]string {
+			return generateProgramWithStories(specs, HasAcceptancePackage(files))
+		},
 		func(stateDir string) []string {
 			// One literal argument, which Goa copies into generated headers.
 			return []string{"-sources", filepath.Join(stateDir, "sources.json"), "--cmd=$ surla gen"}

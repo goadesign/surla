@@ -541,6 +541,16 @@ type StopLiveTargetResponseBody struct {
 	Message string `form:"message" json:"message" xml:"message"`
 }
 
+// GetLiveTargetResponseBody is the type of the "surla" service
+// "get_live_target" endpoint HTTP response body.
+type GetLiveTargetResponseBody struct {
+	// none when no live target runs; starting while one is built and started;
+	// running with its commit, address, start time and the prompts whose drafts
+	// are in force; not_confirmed_stopped when its processes could not be
+	// confirmed stopped.
+	LiveTarget LiveTargetResponseBody `form:"live_target" json:"live_target" xml:"live_target"`
+}
+
 // VerifyChangeResponseBody is the type of the "surla" service "verify_change"
 // endpoint HTTP response body.
 type VerifyChangeResponseBody struct {
@@ -677,6 +687,14 @@ type ConfigureModelResponseBody struct {
 	ModelName *string `form:"model_name,omitempty" json:"model_name,omitempty" xml:"model_name,omitempty"`
 	// Active gRPC model gateway host:port when a model gateway is configured.
 	GatewayAddr *string `form:"gateway_addr,omitempty" json:"gateway_addr,omitempty" xml:"gateway_addr,omitempty"`
+}
+
+// GetModelConnectionResponseBody is the type of the "surla" service
+// "get_model_connection" endpoint HTTP response body.
+type GetModelConnectionResponseBody struct {
+	// none when no model is chosen; direct with a provider and model name; gateway
+	// with a model gateway address.
+	Connection ConnectionResponseBody `form:"connection" json:"connection" xml:"connection"`
 }
 
 // InitProjectResponseBody is the type of the "surla" service "init_project"
@@ -874,6 +892,25 @@ type GetBuildResponseBody struct {
 	Build BuildResponseBody `form:"build" json:"build" xml:"build"`
 }
 
+// GetTestFindingsResponseBody is the type of the "surla" service
+// "get_test_findings" endpoint HTTP response body.
+type GetTestFindingsResponseBody struct {
+	// Change Card identifier.
+	ChangeID string `form:"change_id" json:"change_id" xml:"change_id"`
+	// Change Card revision the build is for.
+	RequestRevision string `form:"request_revision" json:"request_revision" xml:"request_revision"`
+	// When the user started the build, as get_build reports it.
+	StartedAt string `form:"started_at" json:"started_at" xml:"started_at"`
+	// Number of the test writer's report that Surla checked, as get_build reports
+	// it; 0 when Surla found the problems while writing the required tests as the
+	// build started, before any report.
+	Report int `form:"report" json:"report" xml:"report"`
+	// When Surla's check reached this verdict.
+	CheckedAt string `form:"checked_at" json:"checked_at" xml:"checked_at"`
+	// What Surla found, one problem per item, with no absolute path.
+	Findings []string `form:"findings" json:"findings" xml:"findings"`
+}
+
 // ListBuilderAssignmentsResponseBody is the type of the "surla" service
 // "list_builder_assignments" endpoint HTTP response body.
 type ListBuilderAssignmentsResponseBody struct {
@@ -925,9 +962,12 @@ type GetTestWriterAssignmentResponseBody struct {
 	// proposed revision or confirmed another revision: the assignment then stays
 	// for this earlier revision until the user builds again.
 	InForce bool `form:"in_force" json:"in_force" xml:"in_force"`
-	// Where this assignment stands, including Surla's findings when it needs
-	// changes.
+	// Where this assignment stands.
 	Progress *TestWriterProgressResponseBody `form:"progress" json:"progress" xml:"progress"`
+	// Surla's findings, one problem per item, with no absolute path: as many as
+	// progress gives in finding_count when its state is needs_changes, and none in
+	// any other state. Fix them in working_folder, then report again.
+	Findings []string `form:"findings" json:"findings" xml:"findings"`
 	// Folder to write the tests in: your own working copy of the project.
 	WorkingFolder string `form:"working_folder" json:"working_folder" xml:"working_folder"`
 	// The canonical design source as agreed at request_revision, copied when this
@@ -1560,6 +1600,24 @@ type StopLiveTargetForbiddenResponseBody struct {
 	Fault bool `form:"fault" json:"fault" xml:"fault"`
 }
 
+// GetLiveTargetForbiddenResponseBody is the type of the "surla" service
+// "get_live_target" endpoint HTTP response body for the "forbidden" error.
+type GetLiveTargetForbiddenResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
 // VerifyChangeNotFoundResponseBody is the type of the "surla" service
 // "verify_change" endpoint HTTP response body for the "not_found" error.
 type VerifyChangeNotFoundResponseBody struct {
@@ -1945,6 +2003,24 @@ type ConfigureModelNotImplementedResponseBody struct {
 // ConfigureModelForbiddenResponseBody is the type of the "surla" service
 // "configure_model" endpoint HTTP response body for the "forbidden" error.
 type ConfigureModelForbiddenResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
+// GetModelConnectionForbiddenResponseBody is the type of the "surla" service
+// "get_model_connection" endpoint HTTP response body for the "forbidden" error.
+type GetModelConnectionForbiddenResponseBody struct {
 	// Name is the name of this class of errors.
 	Name string `form:"name" json:"name" xml:"name"`
 	// ID is a unique identifier for this particular occurrence of the problem.
@@ -2935,6 +3011,60 @@ type GetBuildForbiddenResponseBody struct {
 	Fault bool `form:"fault" json:"fault" xml:"fault"`
 }
 
+// GetTestFindingsNotFoundResponseBody is the type of the "surla" service
+// "get_test_findings" endpoint HTTP response body for the "not_found" error.
+type GetTestFindingsNotFoundResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
+// GetTestFindingsConflictResponseBody is the type of the "surla" service
+// "get_test_findings" endpoint HTTP response body for the "conflict" error.
+type GetTestFindingsConflictResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
+// GetTestFindingsForbiddenResponseBody is the type of the "surla" service
+// "get_test_findings" endpoint HTTP response body for the "forbidden" error.
+type GetTestFindingsForbiddenResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
 // ListBuilderAssignmentsForbiddenResponseBody is the type of the "surla"
 // service "list_builder_assignments" endpoint HTTP response body for the
 // "forbidden" error.
@@ -3364,6 +3494,54 @@ type ToolInputBindingItemResponseBody struct {
 	InjectedFields []string `form:"injected_fields" json:"injected_fields" xml:"injected_fields"`
 }
 
+// LiveTargetNoneResponseBody is used to define fields on response body types.
+type LiveTargetNoneResponseBody struct {
+}
+
+// LiveTargetStartingResponseBody is used to define fields on response body
+// types.
+type LiveTargetStartingResponseBody struct {
+	// The commit being built.
+	CandidateCommit string `form:"candidate_commit" json:"candidate_commit" xml:"candidate_commit"`
+	// When the start began.
+	Since string `form:"since" json:"since" xml:"since"`
+}
+
+// RunningLiveTargetResponseBody is used to define fields on response body
+// types.
+type RunningLiveTargetResponseBody struct {
+	// The commit it was built from.
+	CandidateCommit string `form:"candidate_commit" json:"candidate_commit" xml:"candidate_commit"`
+	// The origin it listens on, as its evaluator suite reported it.
+	URL string `form:"url" json:"url" xml:"url"`
+	// When it became ready.
+	StartedAt string `form:"started_at" json:"started_at" xml:"started_at"`
+	// One entry per prompt whose draft it accepted, sorted by prompt_id; empty
+	// when none.
+	Prompts []*LivePromptItemResponseBody `form:"prompts" json:"prompts" xml:"prompts"`
+}
+
+// LivePromptItemResponseBody is used to define fields on response body types.
+type LivePromptItemResponseBody struct {
+	// Registered prompt identifier.
+	PromptID string `form:"prompt_id" json:"prompt_id" xml:"prompt_id"`
+	// Version of the text in force, as the live target returned it.
+	Version string `form:"version" json:"version" xml:"version"`
+	// When the live target first accepted the version in force. A later draft that
+	// the target answers with the same version, such as the same text sent again,
+	// keeps this time.
+	AcceptedAt string `form:"accepted_at" json:"accepted_at" xml:"accepted_at"`
+}
+
+// LiveTargetNotConfirmedStoppedResponseBody is used to define fields on
+// response body types.
+type LiveTargetNotConfirmedStoppedResponseBody struct {
+	// The commit it was built from.
+	CandidateCommit string `form:"candidate_commit" json:"candidate_commit" xml:"candidate_commit"`
+	// What happened and what to do next.
+	Message string `form:"message" json:"message" xml:"message"`
+}
+
 // OperatorEvaluatorTestsResponseBody is used to define fields on response body
 // types.
 type OperatorEvaluatorTestsResponseBody struct {
@@ -3486,6 +3664,24 @@ type VerificationStatusResultResponseBody struct {
 	TestSource TestSourceResponseBody `form:"test_source" json:"test_source" xml:"test_source"`
 	// Exactly one of running, completed or not_completed.
 	State StateResponseBody `form:"state" json:"state" xml:"state"`
+}
+
+// ModelNoneResponseBody is used to define fields on response body types.
+type ModelNoneResponseBody struct {
+}
+
+// ModelDirectResponseBody is used to define fields on response body types.
+type ModelDirectResponseBody struct {
+	// Direct model provider.
+	Provider string `form:"provider" json:"provider" xml:"provider"`
+	// Provider model identifier.
+	ModelName string `form:"model_name" json:"model_name" xml:"model_name"`
+}
+
+// ModelGatewayResponseBody is used to define fields on response body types.
+type ModelGatewayResponseBody struct {
+	// Plaintext gRPC host:port of the gateway.
+	GatewayAddr string `form:"gateway_addr" json:"gateway_addr" xml:"gateway_addr"`
 }
 
 // TraceSpanResponseBody is used to define fields on response body types.
@@ -3611,15 +3807,16 @@ type BuilderProgressResponseBody struct {
 // types.
 type TestWriterProgressResponseBody struct {
 	// The tests' state: not_used when the project verifies with its stored
-	// evaluator; otherwise assigned, reported, needs_changes with Surla's
-	// findings, accepted with the commit Surla recorded, or could_not_run with the
-	// reason and the user's step. Each verdict carries the time Surla reached it.
+	// evaluator; otherwise assigned, reported, needs_changes with the number of
+	// Surla's findings, accepted with the commit Surla recorded, or could_not_run
+	// with the reason and the user's step. Each verdict carries the time Surla
+	// reached it.
 	Tests TestsResponseBody `form:"tests" json:"tests" xml:"tests"`
 	// True once the test writer read this assignment in full with
 	// get_test_writer_assignment.
 	Read bool `form:"read" json:"read" xml:"read"`
-	// Number of the test writer's latest counted report of this build; 0 when none
-	// was counted. Reports are not counted yet, so it is 0.
+	// Number of the test writer's latest report of this build: 0 until its first
+	// report, and one more with each report_tests_finished.
 	Report int `form:"report" json:"report" xml:"report"`
 }
 
@@ -3637,9 +3834,8 @@ type TestsReportedResponseBody struct {
 
 // TestsNeedChangesResponseBody is used to define fields on response body types.
 type TestsNeedChangesResponseBody struct {
-	// What Surla found, one problem per item: a test that does not build or a
-	// required test that is not declared.
-	Findings []string `form:"findings" json:"findings" xml:"findings"`
+	// Number of problems Surla found.
+	FindingCount int `form:"finding_count" json:"finding_count" xml:"finding_count"`
 	// When Surla's check reached this verdict.
 	CheckedAt string `form:"checked_at" json:"checked_at" xml:"checked_at"`
 }
@@ -3651,6 +3847,8 @@ type TestsAcceptedResponseBody struct {
 	Commit string `form:"commit" json:"commit" xml:"commit"`
 	// When Surla's check reached this verdict.
 	CheckedAt string `form:"checked_at" json:"checked_at" xml:"checked_at"`
+	// What Surla's check did not judge, always the same sentence.
+	NotJudged string `form:"not_judged" json:"not_judged" xml:"not_judged"`
 }
 
 // TestsCouldNotRunResponseBody is used to define fields on response body types.
@@ -4087,6 +4285,493 @@ func (u *BuildResponseBody) UnmarshalJSON(data []byte) error {
 		return goa.InvalidEnumValueError("state", raw.Type, []any{
 			string(BuildResponseBodyKindNotStarted),
 			string(BuildResponseBodyKindStarted),
+		})
+	}
+	return nil
+}
+
+// ConnectionResponseBody holds exactly one of its branch values.
+type ConnectionResponseBody struct {
+	kind    ConnectionResponseBodyKind
+	none    *ModelNoneResponseBody
+	direct  *ModelDirectResponseBody
+	gateway *ModelGatewayResponseBody
+}
+
+// ConnectionResponseBodyKind records which ConnectionResponseBody branch is selected.
+type ConnectionResponseBodyKind string
+
+const (
+	// ConnectionResponseBodyKindNone identifies the none branch.
+	ConnectionResponseBodyKindNone ConnectionResponseBodyKind = "none"
+	// ConnectionResponseBodyKindDirect identifies the direct branch.
+	ConnectionResponseBodyKindDirect ConnectionResponseBodyKind = "direct"
+	// ConnectionResponseBodyKindGateway identifies the gateway branch.
+	ConnectionResponseBodyKindGateway ConnectionResponseBodyKind = "gateway"
+)
+
+// Kind returns the selected branch.
+func (u ConnectionResponseBody) Kind() ConnectionResponseBodyKind {
+	return u.kind
+}
+
+// NewConnectionResponseBodyNone constructs ConnectionResponseBody with the none branch set.
+func NewConnectionResponseBodyNone(v *ModelNoneResponseBody) ConnectionResponseBody {
+	return ConnectionResponseBody{
+		kind: ConnectionResponseBodyKindNone,
+		none: v,
+	}
+}
+
+// AsNone returns the value when the none branch is selected.
+func (u ConnectionResponseBody) AsNone() (_ *ModelNoneResponseBody, ok bool) {
+	if u.kind != ConnectionResponseBodyKindNone {
+		return
+	}
+	return u.none, true
+}
+
+// SetNone selects the none branch and stores v.
+func (u *ConnectionResponseBody) SetNone(v *ModelNoneResponseBody) {
+	*u = ConnectionResponseBody{
+		kind: ConnectionResponseBodyKindNone,
+		none: v,
+	}
+}
+
+// NewConnectionResponseBodyDirect constructs ConnectionResponseBody with the direct branch set.
+func NewConnectionResponseBodyDirect(v *ModelDirectResponseBody) ConnectionResponseBody {
+	return ConnectionResponseBody{
+		kind:   ConnectionResponseBodyKindDirect,
+		direct: v,
+	}
+}
+
+// AsDirect returns the value when the direct branch is selected.
+func (u ConnectionResponseBody) AsDirect() (_ *ModelDirectResponseBody, ok bool) {
+	if u.kind != ConnectionResponseBodyKindDirect {
+		return
+	}
+	return u.direct, true
+}
+
+// SetDirect selects the direct branch and stores v.
+func (u *ConnectionResponseBody) SetDirect(v *ModelDirectResponseBody) {
+	*u = ConnectionResponseBody{
+		kind:   ConnectionResponseBodyKindDirect,
+		direct: v,
+	}
+}
+
+// NewConnectionResponseBodyGateway constructs ConnectionResponseBody with the gateway branch set.
+func NewConnectionResponseBodyGateway(v *ModelGatewayResponseBody) ConnectionResponseBody {
+	return ConnectionResponseBody{
+		kind:    ConnectionResponseBodyKindGateway,
+		gateway: v,
+	}
+}
+
+// AsGateway returns the value when the gateway branch is selected.
+func (u ConnectionResponseBody) AsGateway() (_ *ModelGatewayResponseBody, ok bool) {
+	if u.kind != ConnectionResponseBodyKindGateway {
+		return
+	}
+	return u.gateway, true
+}
+
+// SetGateway selects the gateway branch and stores v.
+func (u *ConnectionResponseBody) SetGateway(v *ModelGatewayResponseBody) {
+	*u = ConnectionResponseBody{
+		kind:    ConnectionResponseBodyKindGateway,
+		gateway: v,
+	}
+}
+
+// Validate ensures exactly one valid branch is selected.
+func (u ConnectionResponseBody) Validate() error {
+	_, err := u.Value()
+	return err
+}
+
+// Value returns the selected branch value, or the same selection error as Validate.
+// Go templates can read this method directly; an invalid selection stops execution.
+func (u ConnectionResponseBody) Value() (any, error) {
+	switch u.kind {
+	case "":
+		return nil, goa.InvalidEnumValueError("kind", "", []any{
+			string(ConnectionResponseBodyKindNone),
+			string(ConnectionResponseBodyKindDirect),
+			string(ConnectionResponseBodyKindGateway),
+		})
+	case ConnectionResponseBodyKindNone:
+		if u.none == nil {
+			return nil, goa.MissingFieldError("value", "ConnectionResponseBody")
+		}
+		return u.none, nil
+	case ConnectionResponseBodyKindDirect:
+		if u.direct == nil {
+			return nil, goa.MissingFieldError("value", "ConnectionResponseBody")
+		}
+		return u.direct, nil
+	case ConnectionResponseBodyKindGateway:
+		if u.gateway == nil {
+			return nil, goa.MissingFieldError("value", "ConnectionResponseBody")
+		}
+		return u.gateway, nil
+	default:
+		return nil, goa.InvalidEnumValueError("kind", u.kind, []any{
+			string(ConnectionResponseBodyKindNone),
+			string(ConnectionResponseBodyKindDirect),
+			string(ConnectionResponseBodyKindGateway),
+		})
+	}
+}
+
+// MarshalJSON writes the selected object branch beside its discriminator.
+func (u ConnectionResponseBody) MarshalJSON() ([]byte, error) {
+	value, err := u.Value()
+	if err != nil {
+		return nil, err
+	}
+	data, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return nil, err
+	}
+	if fields == nil {
+		return nil, goa.InvalidFieldTypeError("kind", nil, "non-null JSON object")
+	}
+	if _, exists := fields["kind"]; exists {
+		return nil, fmt.Errorf("ConnectionResponseBody branch already contains discriminator %q", "kind")
+	}
+	tag, err := json.Marshal(string(u.kind))
+	if err != nil {
+		return nil, err
+	}
+	fields["kind"] = tag
+	return json.Marshal(fields)
+}
+
+// UnmarshalJSON reads the discriminator and decodes its declared object branch.
+func (u *ConnectionResponseBody) UnmarshalJSON(data []byte) error {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return err
+	}
+	tag, exists := fields["kind"]
+	if !exists {
+		return goa.MissingFieldError("kind", "ConnectionResponseBody")
+	}
+	if bytes.Equal(bytes.TrimSpace(tag), []byte("null")) {
+		return goa.InvalidFieldTypeError("kind", nil, "JSON string")
+	}
+	var raw struct {
+		Type  string
+		Value json.RawMessage
+	}
+	if err := json.Unmarshal(tag, &raw.Type); err != nil {
+		return err
+	}
+	delete(fields, "kind")
+	value, err := json.Marshal(fields)
+	if err != nil {
+		return err
+	}
+	raw.Value = value
+	switch raw.Type {
+	case string(ConnectionResponseBodyKindNone):
+		var v *ModelNoneResponseBody
+		if err := json.Unmarshal(raw.Value, &v); err != nil {
+			return err
+		}
+		u.SetNone(v)
+	case string(ConnectionResponseBodyKindDirect):
+		var v *ModelDirectResponseBody
+		if err := json.Unmarshal(raw.Value, &v); err != nil {
+			return err
+		}
+		u.SetDirect(v)
+	case string(ConnectionResponseBodyKindGateway):
+		var v *ModelGatewayResponseBody
+		if err := json.Unmarshal(raw.Value, &v); err != nil {
+			return err
+		}
+		u.SetGateway(v)
+	default:
+		if raw.Type == "" {
+			return goa.MissingFieldError("kind", "ConnectionResponseBody")
+		}
+		return goa.InvalidEnumValueError("kind", raw.Type, []any{
+			string(ConnectionResponseBodyKindNone),
+			string(ConnectionResponseBodyKindDirect),
+			string(ConnectionResponseBodyKindGateway),
+		})
+	}
+	return nil
+}
+
+// LiveTargetResponseBody holds exactly one of its branch values.
+type LiveTargetResponseBody struct {
+	kind                LiveTargetResponseBodyKind
+	none                *LiveTargetNoneResponseBody
+	starting            *LiveTargetStartingResponseBody
+	running             *RunningLiveTargetResponseBody
+	notConfirmedStopped *LiveTargetNotConfirmedStoppedResponseBody
+}
+
+// LiveTargetResponseBodyKind records which LiveTargetResponseBody branch is selected.
+type LiveTargetResponseBodyKind string
+
+const (
+	// LiveTargetResponseBodyKindNone identifies the none branch.
+	LiveTargetResponseBodyKindNone LiveTargetResponseBodyKind = "none"
+	// LiveTargetResponseBodyKindStarting identifies the starting branch.
+	LiveTargetResponseBodyKindStarting LiveTargetResponseBodyKind = "starting"
+	// LiveTargetResponseBodyKindRunning identifies the running branch.
+	LiveTargetResponseBodyKindRunning LiveTargetResponseBodyKind = "running"
+	// LiveTargetResponseBodyKindNotConfirmedStopped identifies the not_confirmed_stopped branch.
+	LiveTargetResponseBodyKindNotConfirmedStopped LiveTargetResponseBodyKind = "not_confirmed_stopped"
+)
+
+// Kind returns the selected branch.
+func (u LiveTargetResponseBody) Kind() LiveTargetResponseBodyKind {
+	return u.kind
+}
+
+// NewLiveTargetResponseBodyNone constructs LiveTargetResponseBody with the none branch set.
+func NewLiveTargetResponseBodyNone(v *LiveTargetNoneResponseBody) LiveTargetResponseBody {
+	return LiveTargetResponseBody{
+		kind: LiveTargetResponseBodyKindNone,
+		none: v,
+	}
+}
+
+// AsNone returns the value when the none branch is selected.
+func (u LiveTargetResponseBody) AsNone() (_ *LiveTargetNoneResponseBody, ok bool) {
+	if u.kind != LiveTargetResponseBodyKindNone {
+		return
+	}
+	return u.none, true
+}
+
+// SetNone selects the none branch and stores v.
+func (u *LiveTargetResponseBody) SetNone(v *LiveTargetNoneResponseBody) {
+	*u = LiveTargetResponseBody{
+		kind: LiveTargetResponseBodyKindNone,
+		none: v,
+	}
+}
+
+// NewLiveTargetResponseBodyStarting constructs LiveTargetResponseBody with the starting branch set.
+func NewLiveTargetResponseBodyStarting(v *LiveTargetStartingResponseBody) LiveTargetResponseBody {
+	return LiveTargetResponseBody{
+		kind:     LiveTargetResponseBodyKindStarting,
+		starting: v,
+	}
+}
+
+// AsStarting returns the value when the starting branch is selected.
+func (u LiveTargetResponseBody) AsStarting() (_ *LiveTargetStartingResponseBody, ok bool) {
+	if u.kind != LiveTargetResponseBodyKindStarting {
+		return
+	}
+	return u.starting, true
+}
+
+// SetStarting selects the starting branch and stores v.
+func (u *LiveTargetResponseBody) SetStarting(v *LiveTargetStartingResponseBody) {
+	*u = LiveTargetResponseBody{
+		kind:     LiveTargetResponseBodyKindStarting,
+		starting: v,
+	}
+}
+
+// NewLiveTargetResponseBodyRunning constructs LiveTargetResponseBody with the running branch set.
+func NewLiveTargetResponseBodyRunning(v *RunningLiveTargetResponseBody) LiveTargetResponseBody {
+	return LiveTargetResponseBody{
+		kind:    LiveTargetResponseBodyKindRunning,
+		running: v,
+	}
+}
+
+// AsRunning returns the value when the running branch is selected.
+func (u LiveTargetResponseBody) AsRunning() (_ *RunningLiveTargetResponseBody, ok bool) {
+	if u.kind != LiveTargetResponseBodyKindRunning {
+		return
+	}
+	return u.running, true
+}
+
+// SetRunning selects the running branch and stores v.
+func (u *LiveTargetResponseBody) SetRunning(v *RunningLiveTargetResponseBody) {
+	*u = LiveTargetResponseBody{
+		kind:    LiveTargetResponseBodyKindRunning,
+		running: v,
+	}
+}
+
+// NewLiveTargetResponseBodyNotConfirmedStopped constructs LiveTargetResponseBody with the not_confirmed_stopped branch set.
+func NewLiveTargetResponseBodyNotConfirmedStopped(v *LiveTargetNotConfirmedStoppedResponseBody) LiveTargetResponseBody {
+	return LiveTargetResponseBody{
+		kind:                LiveTargetResponseBodyKindNotConfirmedStopped,
+		notConfirmedStopped: v,
+	}
+}
+
+// AsNotConfirmedStopped returns the value when the not_confirmed_stopped branch is selected.
+func (u LiveTargetResponseBody) AsNotConfirmedStopped() (_ *LiveTargetNotConfirmedStoppedResponseBody, ok bool) {
+	if u.kind != LiveTargetResponseBodyKindNotConfirmedStopped {
+		return
+	}
+	return u.notConfirmedStopped, true
+}
+
+// SetNotConfirmedStopped selects the not_confirmed_stopped branch and stores v.
+func (u *LiveTargetResponseBody) SetNotConfirmedStopped(v *LiveTargetNotConfirmedStoppedResponseBody) {
+	*u = LiveTargetResponseBody{
+		kind:                LiveTargetResponseBodyKindNotConfirmedStopped,
+		notConfirmedStopped: v,
+	}
+}
+
+// Validate ensures exactly one valid branch is selected.
+func (u LiveTargetResponseBody) Validate() error {
+	_, err := u.Value()
+	return err
+}
+
+// Value returns the selected branch value, or the same selection error as Validate.
+// Go templates can read this method directly; an invalid selection stops execution.
+func (u LiveTargetResponseBody) Value() (any, error) {
+	switch u.kind {
+	case "":
+		return nil, goa.InvalidEnumValueError("state", "", []any{
+			string(LiveTargetResponseBodyKindNone),
+			string(LiveTargetResponseBodyKindStarting),
+			string(LiveTargetResponseBodyKindRunning),
+			string(LiveTargetResponseBodyKindNotConfirmedStopped),
+		})
+	case LiveTargetResponseBodyKindNone:
+		if u.none == nil {
+			return nil, goa.MissingFieldError("value", "LiveTargetResponseBody")
+		}
+		return u.none, nil
+	case LiveTargetResponseBodyKindStarting:
+		if u.starting == nil {
+			return nil, goa.MissingFieldError("value", "LiveTargetResponseBody")
+		}
+		return u.starting, nil
+	case LiveTargetResponseBodyKindRunning:
+		if u.running == nil {
+			return nil, goa.MissingFieldError("value", "LiveTargetResponseBody")
+		}
+		return u.running, nil
+	case LiveTargetResponseBodyKindNotConfirmedStopped:
+		if u.notConfirmedStopped == nil {
+			return nil, goa.MissingFieldError("value", "LiveTargetResponseBody")
+		}
+		return u.notConfirmedStopped, nil
+	default:
+		return nil, goa.InvalidEnumValueError("state", u.kind, []any{
+			string(LiveTargetResponseBodyKindNone),
+			string(LiveTargetResponseBodyKindStarting),
+			string(LiveTargetResponseBodyKindRunning),
+			string(LiveTargetResponseBodyKindNotConfirmedStopped),
+		})
+	}
+}
+
+// MarshalJSON writes the selected object branch beside its discriminator.
+func (u LiveTargetResponseBody) MarshalJSON() ([]byte, error) {
+	value, err := u.Value()
+	if err != nil {
+		return nil, err
+	}
+	data, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return nil, err
+	}
+	if fields == nil {
+		return nil, goa.InvalidFieldTypeError("state", nil, "non-null JSON object")
+	}
+	if _, exists := fields["state"]; exists {
+		return nil, fmt.Errorf("LiveTargetResponseBody branch already contains discriminator %q", "state")
+	}
+	tag, err := json.Marshal(string(u.kind))
+	if err != nil {
+		return nil, err
+	}
+	fields["state"] = tag
+	return json.Marshal(fields)
+}
+
+// UnmarshalJSON reads the discriminator and decodes its declared object branch.
+func (u *LiveTargetResponseBody) UnmarshalJSON(data []byte) error {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return err
+	}
+	tag, exists := fields["state"]
+	if !exists {
+		return goa.MissingFieldError("state", "LiveTargetResponseBody")
+	}
+	if bytes.Equal(bytes.TrimSpace(tag), []byte("null")) {
+		return goa.InvalidFieldTypeError("state", nil, "JSON string")
+	}
+	var raw struct {
+		Type  string
+		Value json.RawMessage
+	}
+	if err := json.Unmarshal(tag, &raw.Type); err != nil {
+		return err
+	}
+	delete(fields, "state")
+	value, err := json.Marshal(fields)
+	if err != nil {
+		return err
+	}
+	raw.Value = value
+	switch raw.Type {
+	case string(LiveTargetResponseBodyKindNone):
+		var v *LiveTargetNoneResponseBody
+		if err := json.Unmarshal(raw.Value, &v); err != nil {
+			return err
+		}
+		u.SetNone(v)
+	case string(LiveTargetResponseBodyKindStarting):
+		var v *LiveTargetStartingResponseBody
+		if err := json.Unmarshal(raw.Value, &v); err != nil {
+			return err
+		}
+		u.SetStarting(v)
+	case string(LiveTargetResponseBodyKindRunning):
+		var v *RunningLiveTargetResponseBody
+		if err := json.Unmarshal(raw.Value, &v); err != nil {
+			return err
+		}
+		u.SetRunning(v)
+	case string(LiveTargetResponseBodyKindNotConfirmedStopped):
+		var v *LiveTargetNotConfirmedStoppedResponseBody
+		if err := json.Unmarshal(raw.Value, &v); err != nil {
+			return err
+		}
+		u.SetNotConfirmedStopped(v)
+	default:
+		if raw.Type == "" {
+			return goa.MissingFieldError("state", "LiveTargetResponseBody")
+		}
+		return goa.InvalidEnumValueError("state", raw.Type, []any{
+			string(LiveTargetResponseBodyKindNone),
+			string(LiveTargetResponseBodyKindStarting),
+			string(LiveTargetResponseBodyKindRunning),
+			string(LiveTargetResponseBodyKindNotConfirmedStopped),
 		})
 	}
 	return nil
@@ -6034,6 +6719,53 @@ func NewStopLiveTargetResponseBody(res *surla.StopLiveTargetResult) *StopLiveTar
 	return body
 }
 
+// NewGetLiveTargetResponseBody builds the HTTP response body from the result
+// of the "get_live_target" endpoint of the "surla" service.
+func NewGetLiveTargetResponseBody(res *surla.LiveTargetStatus) *GetLiveTargetResponseBody {
+	body := &GetLiveTargetResponseBody{}
+	if res.LiveTarget.Kind() != "" {
+		switch string(res.LiveTarget.Kind()) {
+		case "none":
+			actual, _ := res.LiveTarget.AsNone()
+			var obj *LiveTargetNoneResponseBody
+			if actual != nil {
+				obj = marshalSurlaLiveTargetNoneToLiveTargetNoneResponseBody(actual)
+			}
+			u := body.LiveTarget
+			u.SetNone((*LiveTargetNoneResponseBody)(obj))
+			body.LiveTarget = u
+		case "starting":
+			actual, _ := res.LiveTarget.AsStarting()
+			var obj *LiveTargetStartingResponseBody
+			if actual != nil {
+				obj = marshalSurlaLiveTargetStartingToLiveTargetStartingResponseBody(actual)
+			}
+			u := body.LiveTarget
+			u.SetStarting((*LiveTargetStartingResponseBody)(obj))
+			body.LiveTarget = u
+		case "running":
+			actual, _ := res.LiveTarget.AsRunning()
+			var obj *RunningLiveTargetResponseBody
+			if actual != nil {
+				obj = marshalSurlaRunningLiveTargetToRunningLiveTargetResponseBody(actual)
+			}
+			u := body.LiveTarget
+			u.SetRunning((*RunningLiveTargetResponseBody)(obj))
+			body.LiveTarget = u
+		case "not_confirmed_stopped":
+			actual, _ := res.LiveTarget.AsNotConfirmedStopped()
+			var obj *LiveTargetNotConfirmedStoppedResponseBody
+			if actual != nil {
+				obj = marshalSurlaLiveTargetNotConfirmedStoppedToLiveTargetNotConfirmedStoppedResponseBody(actual)
+			}
+			u := body.LiveTarget
+			u.SetNotConfirmedStopped((*LiveTargetNotConfirmedStoppedResponseBody)(obj))
+			body.LiveTarget = u
+		}
+	}
+	return body
+}
+
 // NewVerifyChangeResponseBody builds the HTTP response body from the result of
 // the "verify_change" endpoint of the "surla" service.
 func NewVerifyChangeResponseBody(res *surla.VerificationStatusResult) *VerifyChangeResponseBody {
@@ -6312,6 +7044,44 @@ func NewConfigureModelResponseBody(res *surla.ModelConfigResult) *ConfigureModel
 		Provider:    res.Provider,
 		ModelName:   res.ModelName,
 		GatewayAddr: res.GatewayAddr,
+	}
+	return body
+}
+
+// NewGetModelConnectionResponseBody builds the HTTP response body from the
+// result of the "get_model_connection" endpoint of the "surla" service.
+func NewGetModelConnectionResponseBody(res *surla.ModelConnection) *GetModelConnectionResponseBody {
+	body := &GetModelConnectionResponseBody{}
+	if res.Connection.Kind() != "" {
+		switch string(res.Connection.Kind()) {
+		case "none":
+			actual, _ := res.Connection.AsNone()
+			var obj *ModelNoneResponseBody
+			if actual != nil {
+				obj = marshalSurlaModelNoneToModelNoneResponseBody(actual)
+			}
+			u := body.Connection
+			u.SetNone((*ModelNoneResponseBody)(obj))
+			body.Connection = u
+		case "direct":
+			actual, _ := res.Connection.AsDirect()
+			var obj *ModelDirectResponseBody
+			if actual != nil {
+				obj = marshalSurlaModelDirectToModelDirectResponseBody(actual)
+			}
+			u := body.Connection
+			u.SetDirect((*ModelDirectResponseBody)(obj))
+			body.Connection = u
+		case "gateway":
+			actual, _ := res.Connection.AsGateway()
+			var obj *ModelGatewayResponseBody
+			if actual != nil {
+				obj = marshalSurlaModelGatewayToModelGatewayResponseBody(actual)
+			}
+			u := body.Connection
+			u.SetGateway((*ModelGatewayResponseBody)(obj))
+			body.Connection = u
+		}
 	}
 	return body
 }
@@ -6663,6 +7433,27 @@ func NewGetBuildResponseBody(res *surla.ChangeBuild) *GetBuildResponseBody {
 	return body
 }
 
+// NewGetTestFindingsResponseBody builds the HTTP response body from the result
+// of the "get_test_findings" endpoint of the "surla" service.
+func NewGetTestFindingsResponseBody(res *surla.TestFindings) *GetTestFindingsResponseBody {
+	body := &GetTestFindingsResponseBody{
+		ChangeID:        res.ChangeID,
+		RequestRevision: res.RequestRevision,
+		StartedAt:       res.StartedAt,
+		Report:          res.Report,
+		CheckedAt:       res.CheckedAt,
+	}
+	if res.Findings != nil {
+		body.Findings = make([]string, len(res.Findings))
+		for i, val := range res.Findings {
+			body.Findings[i] = val
+		}
+	} else {
+		body.Findings = []string{}
+	}
+	return body
+}
+
 // NewListBuilderAssignmentsResponseBody builds the HTTP response body from the
 // result of the "list_builder_assignments" endpoint of the "surla" service.
 func NewListBuilderAssignmentsResponseBody(res *surla.BuilderAssignmentList) *ListBuilderAssignmentsResponseBody {
@@ -6758,6 +7549,14 @@ func NewGetTestWriterAssignmentResponseBody(res *surla.TestWriterAssignment) *Ge
 	}
 	if res.Progress != nil {
 		body.Progress = marshalSurlaTestWriterProgressToTestWriterProgressResponseBody(res.Progress)
+	}
+	if res.Findings != nil {
+		body.Findings = make([]string, len(res.Findings))
+		for i, val := range res.Findings {
+			body.Findings[i] = val
+		}
+	} else {
+		body.Findings = []string{}
 	}
 	if res.Stories != nil {
 		body.Stories = make([]*StorySummaryItemResponseBody, len(res.Stories))
@@ -7269,6 +8068,20 @@ func NewStopLiveTargetForbiddenResponseBody(res *goa.ServiceError) *StopLiveTarg
 	return body
 }
 
+// NewGetLiveTargetForbiddenResponseBody builds the HTTP response body from the
+// result of the "get_live_target" endpoint of the "surla" service.
+func NewGetLiveTargetForbiddenResponseBody(res *goa.ServiceError) *GetLiveTargetForbiddenResponseBody {
+	body := &GetLiveTargetForbiddenResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
 // NewVerifyChangeNotFoundResponseBody builds the HTTP response body from the
 // result of the "verify_change" endpoint of the "surla" service.
 func NewVerifyChangeNotFoundResponseBody(res *goa.ServiceError) *VerifyChangeNotFoundResponseBody {
@@ -7567,6 +8380,21 @@ func NewConfigureModelNotImplementedResponseBody(res *goa.ServiceError) *Configu
 // the result of the "configure_model" endpoint of the "surla" service.
 func NewConfigureModelForbiddenResponseBody(res *goa.ServiceError) *ConfigureModelForbiddenResponseBody {
 	body := &ConfigureModelForbiddenResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
+// NewGetModelConnectionForbiddenResponseBody builds the HTTP response body
+// from the result of the "get_model_connection" endpoint of the "surla"
+// service.
+func NewGetModelConnectionForbiddenResponseBody(res *goa.ServiceError) *GetModelConnectionForbiddenResponseBody {
+	body := &GetModelConnectionForbiddenResponseBody{
 		Name:      res.Name,
 		ID:        res.ID,
 		Message:   res.Message,
@@ -8330,6 +9158,48 @@ func NewGetBuildForbiddenResponseBody(res *goa.ServiceError) *GetBuildForbiddenR
 	return body
 }
 
+// NewGetTestFindingsNotFoundResponseBody builds the HTTP response body from
+// the result of the "get_test_findings" endpoint of the "surla" service.
+func NewGetTestFindingsNotFoundResponseBody(res *goa.ServiceError) *GetTestFindingsNotFoundResponseBody {
+	body := &GetTestFindingsNotFoundResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
+// NewGetTestFindingsConflictResponseBody builds the HTTP response body from
+// the result of the "get_test_findings" endpoint of the "surla" service.
+func NewGetTestFindingsConflictResponseBody(res *goa.ServiceError) *GetTestFindingsConflictResponseBody {
+	body := &GetTestFindingsConflictResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
+// NewGetTestFindingsForbiddenResponseBody builds the HTTP response body from
+// the result of the "get_test_findings" endpoint of the "surla" service.
+func NewGetTestFindingsForbiddenResponseBody(res *goa.ServiceError) *GetTestFindingsForbiddenResponseBody {
+	body := &GetTestFindingsForbiddenResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
 // NewListBuilderAssignmentsForbiddenResponseBody builds the HTTP response body
 // from the result of the "list_builder_assignments" endpoint of the "surla"
 // service.
@@ -8702,6 +9572,15 @@ func NewStartBuildPayload(body *StartBuildRequestBody, changeID string) *surla.S
 // NewGetBuildPayload builds a surla service get_build endpoint payload.
 func NewGetBuildPayload(changeID string) *surla.GetBuildPayload {
 	v := &surla.GetBuildPayload{}
+	v.ChangeID = changeID
+
+	return v
+}
+
+// NewGetTestFindingsPayload builds a surla service get_test_findings endpoint
+// payload.
+func NewGetTestFindingsPayload(changeID string) *surla.GetTestFindingsPayload {
+	v := &surla.GetTestFindingsPayload{}
 	v.ChangeID = changeID
 
 	return v

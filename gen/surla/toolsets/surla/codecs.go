@@ -198,6 +198,22 @@ func GetChangeResultCodec() tools.JSONCodec[*GetChangeResult] {
 	}
 }
 
+// GetLiveTargetPayloadCodec returns a fresh codec for *GetLiveTargetPayload.
+func GetLiveTargetPayloadCodec() tools.JSONCodec[*GetLiveTargetPayload] {
+	return tools.JSONCodec[*GetLiveTargetPayload]{
+		ToJSON:   MarshalGetLiveTargetPayload,
+		FromJSON: UnmarshalGetLiveTargetPayload,
+	}
+}
+
+// GetLiveTargetResultCodec returns a fresh codec for *GetLiveTargetResult.
+func GetLiveTargetResultCodec() tools.JSONCodec[*GetLiveTargetResult] {
+	return tools.JSONCodec[*GetLiveTargetResult]{
+		ToJSON:   MarshalGetLiveTargetResult,
+		FromJSON: UnmarshalGetLiveTargetResult,
+	}
+}
+
 // GetStoryRefreshPayloadCodec returns a fresh codec for *GetStoryRefreshPayload.
 func GetStoryRefreshPayloadCodec() tools.JSONCodec[*GetStoryRefreshPayload] {
 	return tools.JSONCodec[*GetStoryRefreshPayload]{
@@ -787,6 +803,32 @@ var (
 		},
 		FromJSON: func(data []byte) (any, error) {
 			return UnmarshalGetChangeResult(data)
+		},
+	}
+	// getLiveTargetPayloadCodec provides an untyped codec for *GetLiveTargetPayload.
+	getLiveTargetPayloadCodec = tools.JSONCodec[any]{
+		ToJSON: func(v any) ([]byte, error) {
+			// Prefer typed marshal when the value matches the expected type.
+			if typed, ok := v.(*GetLiveTargetPayload); ok {
+				return MarshalGetLiveTargetPayload(typed)
+			}
+			return nil, fmt.Errorf("invalid value type for *GetLiveTargetPayload: %T", v)
+		},
+		FromJSON: func(data []byte) (any, error) {
+			return UnmarshalGetLiveTargetPayload(data)
+		},
+	}
+	// getLiveTargetResultCodec provides an untyped codec for *GetLiveTargetResult.
+	getLiveTargetResultCodec = tools.JSONCodec[any]{
+		ToJSON: func(v any) ([]byte, error) {
+			// Prefer typed marshal when the value matches the expected type.
+			if typed, ok := v.(*GetLiveTargetResult); ok {
+				return MarshalGetLiveTargetResult(typed)
+			}
+			return nil, fmt.Errorf("invalid value type for *GetLiveTargetResult: %T", v)
+		},
+		FromJSON: func(data []byte) (any, error) {
+			return UnmarshalGetLiveTargetResult(data)
 		},
 	}
 	// getStoryRefreshPayloadCodec provides an untyped codec for *GetStoryRefreshPayload.
@@ -3938,7 +3980,7 @@ var getBuildResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("test_writer"), tools.FixedField("tests")},
 		JSONType:    "object",
-		Description: "The tests' state: not_used when the project verifies with its stored evaluator; otherwise assigned, reported, needs_changes with Surla's findings, accepted with the commit Surla recorded, or could_not_run with the reason and the user's step. Each verdict carries the time Surla reached it.",
+		Description: "The tests' state: not_used when the project verifies with its stored evaluator; otherwise assigned, reported, needs_changes with the number of Surla's findings, accepted with the commit Surla recorded, or could_not_run with the reason and the user's step. Each verdict carries the time Surla reached it.",
 		Branches: []tools.UnionBranch{
 			tools.TaggedUnionBranch{
 				Discriminator: []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("state")},
@@ -3997,7 +4039,7 @@ var getBuildResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("test_writer"), tools.FixedField("tests")},
 		JSONType:    "object",
-		Description: "The test writer reported its tests finished at this build's revision; Surla has not checked them.",
+		Description: "The test writer reported its tests finished at this build's revision. Surla checks them right after each report; its verdict replaces this state.",
 		Branches: []tools.UnionBranch{
 			tools.TaggedUnionBranch{
 				Discriminator: []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("state")},
@@ -4012,7 +4054,7 @@ var getBuildResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("test_writer"), tools.FixedField("tests")},
 		JSONType:    "object",
-		Description: "Surla checked the reported tests and found problems the test writer must fix before reporting again.",
+		Description: "Surla checked the reported tests and found problems the test writer must fix before reporting again. Their text is in the test writer's assignment (get_test_writer_assignment) and, for the user, in get_test_findings.",
 		Branches: []tools.UnionBranch{
 			tools.TaggedUnionBranch{
 				Discriminator: []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("state")},
@@ -4025,24 +4067,9 @@ var getBuildResultFields = []tools.FieldMetadata{
 		},
 	},
 	{
-		Path:        []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("test_writer"), tools.FixedField("tests"), tools.FixedField("findings")},
-		JSONType:    "array",
-		Description: "What Surla found, one problem per item: a test that does not build or a required test that is not declared.",
-		Branches: []tools.UnionBranch{
-			tools.TaggedUnionBranch{
-				Discriminator: []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("state")},
-				Value:         "started",
-			},
-			tools.TaggedUnionBranch{
-				Discriminator: []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("test_writer"), tools.FixedField("tests"), tools.FixedField("state")},
-				Value:         "needs_changes",
-			},
-		},
-	},
-	{
-		Path:        []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("test_writer"), tools.FixedField("tests"), tools.FixedField("findings"), tools.DynamicField{}},
-		JSONType:    "string",
-		Description: "What Surla found, one problem per item: a test that does not build or a required test that is not declared.",
+		Path:        []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("test_writer"), tools.FixedField("tests"), tools.FixedField("finding_count")},
+		JSONType:    "integer",
+		Description: "Number of problems Surla found.",
 		Branches: []tools.UnionBranch{
 			tools.TaggedUnionBranch{
 				Discriminator: []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("state")},
@@ -4103,6 +4130,21 @@ var getBuildResultFields = []tools.FieldMetadata{
 		Path:        []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("test_writer"), tools.FixedField("tests"), tools.FixedField("checked_at")},
 		JSONType:    "string",
 		Description: "When Surla's check reached this verdict.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("state")},
+				Value:         "started",
+			},
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("test_writer"), tools.FixedField("tests"), tools.FixedField("state")},
+				Value:         "accepted",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("test_writer"), tools.FixedField("tests"), tools.FixedField("not_judged")},
+		JSONType:    "string",
+		Description: "What Surla's check did not judge, always the same sentence.",
 		Branches: []tools.UnionBranch{
 			tools.TaggedUnionBranch{
 				Discriminator: []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("state")},
@@ -4188,7 +4230,7 @@ var getBuildResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("test_writer"), tools.FixedField("report")},
 		JSONType:    "integer",
-		Description: "Number of the test writer's latest counted report of this build; 0 when none was counted. Reports are not counted yet, so it is 0.",
+		Description: "Number of the test writer's latest report of this build: 0 until its first report, and one more with each report_tests_finished.",
 		Branches: []tools.UnionBranch{
 			tools.TaggedUnionBranch{
 				Discriminator: []tools.FieldPathSegment{tools.FixedField("build"), tools.FixedField("state")},
@@ -4305,6 +4347,17 @@ var getBuilderAssignmentResultFields = []tools.FieldMetadata{
 		Path:        []tools.FieldPathSegment{tools.FixedField("written_tests"), tools.FixedField("checked_at")},
 		JSONType:    "string",
 		Description: "When Surla's check reached this verdict.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("written_tests"), tools.FixedField("state")},
+				Value:         "accepted",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("written_tests"), tools.FixedField("not_judged")},
+		JSONType:    "string",
+		Description: "What Surla's check did not judge, always the same sentence.",
 		Branches: []tools.UnionBranch{
 			tools.TaggedUnionBranch{
 				Discriminator: []tools.FieldPathSegment{tools.FixedField("written_tests"), tools.FixedField("state")},
@@ -5050,6 +5103,208 @@ var getChangeResultFields = []tools.FieldMetadata{
 		Description: "Paths of the design/*.go files that differ between the design source the confirmed revision was made from and the one this revision was made from (added, removed or changed), in path order; empty when both were made from the same design files. Adopting the revision binds it to its own design source.",
 	},
 }
+var getLiveTargetPayloadFields = []tools.FieldMetadata{
+	{
+		JSONType: "object",
+	},
+}
+var getLiveTargetResultFields = []tools.FieldMetadata{
+	{
+		JSONType:    "object",
+		Description: "This server's live target, as get_live_target reports it.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("live_target")},
+		JSONType:    "object",
+		Description: "none when no live target runs; starting while one is built and started; running with its commit, address, start time and the prompts whose drafts are in force; not_confirmed_stopped when its processes could not be confirmed stopped.",
+	},
+	{
+		Path:     []tools.FieldPathSegment{tools.FixedField("live_target"), tools.FixedField("state")},
+		JSONType: "string",
+		DiscriminatorValues: []string{
+			"none",
+			"starting",
+			"running",
+			"not_confirmed_stopped",
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("live_target")},
+		JSONType:    "object",
+		Description: "No live target is running.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("live_target"), tools.FixedField("state")},
+				Value:         "none",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("live_target")},
+		JSONType:    "object",
+		Description: "A live target is being built from a commit and started. It cannot be stopped until the start finishes.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("live_target"), tools.FixedField("state")},
+				Value:         "starting",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("live_target"), tools.FixedField("candidate_commit")},
+		JSONType:    "string",
+		Description: "The commit being built.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("live_target"), tools.FixedField("state")},
+				Value:         "starting",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("live_target"), tools.FixedField("since")},
+		JSONType:    "string",
+		Description: "When the start began.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("live_target"), tools.FixedField("state")},
+				Value:         "starting",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("live_target")},
+		JSONType:    "object",
+		Description: "A running live target.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("live_target"), tools.FixedField("state")},
+				Value:         "running",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("live_target"), tools.FixedField("candidate_commit")},
+		JSONType:    "string",
+		Description: "The commit it was built from.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("live_target"), tools.FixedField("state")},
+				Value:         "running",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("live_target"), tools.FixedField("url")},
+		JSONType:    "string",
+		Description: "The origin it listens on, as its evaluator suite reported it.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("live_target"), tools.FixedField("state")},
+				Value:         "running",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("live_target"), tools.FixedField("started_at")},
+		JSONType:    "string",
+		Description: "When it became ready.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("live_target"), tools.FixedField("state")},
+				Value:         "running",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("live_target"), tools.FixedField("prompts")},
+		JSONType:    "array",
+		Description: "One entry per prompt whose draft it accepted, sorted by prompt_id; empty when none.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("live_target"), tools.FixedField("state")},
+				Value:         "running",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("live_target"), tools.FixedField("prompts"), tools.DynamicField{}},
+		JSONType:    "object",
+		Description: "One entry per prompt whose draft it accepted, sorted by prompt_id; empty when none.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("live_target"), tools.FixedField("state")},
+				Value:         "running",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("live_target"), tools.FixedField("prompts"), tools.DynamicField{}, tools.FixedField("prompt_id")},
+		JSONType:    "string",
+		Description: "Registered prompt identifier.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("live_target"), tools.FixedField("state")},
+				Value:         "running",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("live_target"), tools.FixedField("prompts"), tools.DynamicField{}, tools.FixedField("version")},
+		JSONType:    "string",
+		Description: "Version of the text in force, as the live target returned it.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("live_target"), tools.FixedField("state")},
+				Value:         "running",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("live_target"), tools.FixedField("prompts"), tools.DynamicField{}, tools.FixedField("accepted_at")},
+		JSONType:    "string",
+		Description: "When the live target first accepted the version in force. A later draft that the target answers with the same version, such as the same text sent again, keeps this time.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("live_target"), tools.FixedField("state")},
+				Value:         "running",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("live_target")},
+		JSONType:    "object",
+		Description: "A live target whose processes could not be confirmed stopped. No other live target can start until they are.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("live_target"), tools.FixedField("state")},
+				Value:         "not_confirmed_stopped",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("live_target"), tools.FixedField("candidate_commit")},
+		JSONType:    "string",
+		Description: "The commit it was built from.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("live_target"), tools.FixedField("state")},
+				Value:         "not_confirmed_stopped",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("live_target"), tools.FixedField("message")},
+		JSONType:    "string",
+		Description: "What happened and what to do next.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("live_target"), tools.FixedField("state")},
+				Value:         "not_confirmed_stopped",
+			},
+		},
+	},
+}
 var getStoryRefreshPayloadFields = []tools.FieldMetadata{
 	{
 		JSONType: "object",
@@ -5279,7 +5534,7 @@ var getTestWriterAssignmentPayloadFields = []tools.FieldMetadata{
 var getTestWriterAssignmentResultFields = []tools.FieldMetadata{
 	{
 		JSONType:    "object",
-		Description: "The test writer's assignment for one build: write the required tests for the Story as agreed at the built revision, in the working folder.",
+		Description: "The test writer's assignment for one build: write the required tests for the Story as agreed at the built revision, in the test module (eval/) of the working folder. Surla generates that module with the required tests when the build starts and again at each report, so the test writer never regenerates it (neither generate_code nor surla gen, which drops the required tests); go build ./... in eval/ checks the work before a report, and Surla's check of each report is the judge.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("change_id")},
@@ -5299,12 +5554,12 @@ var getTestWriterAssignmentResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("progress")},
 		JSONType:    "object",
-		Description: "Where this assignment stands, including Surla's findings when it needs changes.",
+		Description: "Where this assignment stands.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests")},
 		JSONType:    "object",
-		Description: "The tests' state: not_used when the project verifies with its stored evaluator; otherwise assigned, reported, needs_changes with Surla's findings, accepted with the commit Surla recorded, or could_not_run with the reason and the user's step. Each verdict carries the time Surla reached it.",
+		Description: "The tests' state: not_used when the project verifies with its stored evaluator; otherwise assigned, reported, needs_changes with the number of Surla's findings, accepted with the commit Surla recorded, or could_not_run with the reason and the user's step. Each verdict carries the time Surla reached it.",
 	},
 	{
 		Path:     []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("state")},
@@ -5343,7 +5598,7 @@ var getTestWriterAssignmentResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests")},
 		JSONType:    "object",
-		Description: "The test writer reported its tests finished at this build's revision; Surla has not checked them.",
+		Description: "The test writer reported its tests finished at this build's revision. Surla checks them right after each report; its verdict replaces this state.",
 		Branches: []tools.UnionBranch{
 			tools.TaggedUnionBranch{
 				Discriminator: []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("state")},
@@ -5354,7 +5609,7 @@ var getTestWriterAssignmentResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests")},
 		JSONType:    "object",
-		Description: "Surla checked the reported tests and found problems the test writer must fix before reporting again.",
+		Description: "Surla checked the reported tests and found problems the test writer must fix before reporting again. Their text is in the test writer's assignment (get_test_writer_assignment) and, for the user, in get_test_findings.",
 		Branches: []tools.UnionBranch{
 			tools.TaggedUnionBranch{
 				Discriminator: []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("state")},
@@ -5363,20 +5618,9 @@ var getTestWriterAssignmentResultFields = []tools.FieldMetadata{
 		},
 	},
 	{
-		Path:        []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("findings")},
-		JSONType:    "array",
-		Description: "What Surla found, one problem per item: a test that does not build or a required test that is not declared.",
-		Branches: []tools.UnionBranch{
-			tools.TaggedUnionBranch{
-				Discriminator: []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("state")},
-				Value:         "needs_changes",
-			},
-		},
-	},
-	{
-		Path:        []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("findings"), tools.DynamicField{}},
-		JSONType:    "string",
-		Description: "What Surla found, one problem per item: a test that does not build or a required test that is not declared.",
+		Path:        []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("finding_count")},
+		JSONType:    "integer",
+		Description: "Number of problems Surla found.",
 		Branches: []tools.UnionBranch{
 			tools.TaggedUnionBranch{
 				Discriminator: []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("state")},
@@ -5421,6 +5665,17 @@ var getTestWriterAssignmentResultFields = []tools.FieldMetadata{
 		Path:        []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("checked_at")},
 		JSONType:    "string",
 		Description: "When Surla's check reached this verdict.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("state")},
+				Value:         "accepted",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("not_judged")},
+		JSONType:    "string",
+		Description: "What Surla's check did not judge, always the same sentence.",
 		Branches: []tools.UnionBranch{
 			tools.TaggedUnionBranch{
 				Discriminator: []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("state")},
@@ -5480,7 +5735,17 @@ var getTestWriterAssignmentResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("report")},
 		JSONType:    "integer",
-		Description: "Number of the test writer's latest counted report of this build; 0 when none was counted. Reports are not counted yet, so it is 0.",
+		Description: "Number of the test writer's latest report of this build: 0 until its first report, and one more with each report_tests_finished.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("findings")},
+		JSONType:    "array",
+		Description: "Surla's findings, one problem per item, with no absolute path: as many as progress gives in finding_count when its state is needs_changes, and none in any other state. Fix them in working_folder, then report again.",
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("findings"), tools.DynamicField{}},
+		JSONType:    "string",
+		Description: "Surla's findings, one problem per item, with no absolute path: as many as progress gives in finding_count when its state is needs_changes, and none in any other state. Fix them in working_folder, then report again.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("working_folder")},
@@ -6291,6 +6556,17 @@ var listBuilderAssignmentsResultFields = []tools.FieldMetadata{
 			},
 		},
 	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("assignments"), tools.DynamicField{}, tools.FixedField("written_tests"), tools.FixedField("not_judged")},
+		JSONType:    "string",
+		Description: "What Surla's check did not judge, always the same sentence.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("assignments"), tools.DynamicField{}, tools.FixedField("written_tests"), tools.FixedField("state")},
+				Value:         "accepted",
+			},
+		},
+	},
 }
 var listChangesPayloadFields = []tools.FieldMetadata{
 	{
@@ -6411,7 +6687,7 @@ var listTestWriterAssignmentsResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("assignments"), tools.DynamicField{}, tools.FixedField("progress"), tools.FixedField("tests")},
 		JSONType:    "object",
-		Description: "The tests' state: not_used when the project verifies with its stored evaluator; otherwise assigned, reported, needs_changes with Surla's findings, accepted with the commit Surla recorded, or could_not_run with the reason and the user's step. Each verdict carries the time Surla reached it.",
+		Description: "The tests' state: not_used when the project verifies with its stored evaluator; otherwise assigned, reported, needs_changes with the number of Surla's findings, accepted with the commit Surla recorded, or could_not_run with the reason and the user's step. Each verdict carries the time Surla reached it.",
 	},
 	{
 		Path:     []tools.FieldPathSegment{tools.FixedField("assignments"), tools.DynamicField{}, tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("state")},
@@ -6450,7 +6726,7 @@ var listTestWriterAssignmentsResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("assignments"), tools.DynamicField{}, tools.FixedField("progress"), tools.FixedField("tests")},
 		JSONType:    "object",
-		Description: "The test writer reported its tests finished at this build's revision; Surla has not checked them.",
+		Description: "The test writer reported its tests finished at this build's revision. Surla checks them right after each report; its verdict replaces this state.",
 		Branches: []tools.UnionBranch{
 			tools.TaggedUnionBranch{
 				Discriminator: []tools.FieldPathSegment{tools.FixedField("assignments"), tools.DynamicField{}, tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("state")},
@@ -6461,7 +6737,7 @@ var listTestWriterAssignmentsResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("assignments"), tools.DynamicField{}, tools.FixedField("progress"), tools.FixedField("tests")},
 		JSONType:    "object",
-		Description: "Surla checked the reported tests and found problems the test writer must fix before reporting again.",
+		Description: "Surla checked the reported tests and found problems the test writer must fix before reporting again. Their text is in the test writer's assignment (get_test_writer_assignment) and, for the user, in get_test_findings.",
 		Branches: []tools.UnionBranch{
 			tools.TaggedUnionBranch{
 				Discriminator: []tools.FieldPathSegment{tools.FixedField("assignments"), tools.DynamicField{}, tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("state")},
@@ -6470,20 +6746,9 @@ var listTestWriterAssignmentsResultFields = []tools.FieldMetadata{
 		},
 	},
 	{
-		Path:        []tools.FieldPathSegment{tools.FixedField("assignments"), tools.DynamicField{}, tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("findings")},
-		JSONType:    "array",
-		Description: "What Surla found, one problem per item: a test that does not build or a required test that is not declared.",
-		Branches: []tools.UnionBranch{
-			tools.TaggedUnionBranch{
-				Discriminator: []tools.FieldPathSegment{tools.FixedField("assignments"), tools.DynamicField{}, tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("state")},
-				Value:         "needs_changes",
-			},
-		},
-	},
-	{
-		Path:        []tools.FieldPathSegment{tools.FixedField("assignments"), tools.DynamicField{}, tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("findings"), tools.DynamicField{}},
-		JSONType:    "string",
-		Description: "What Surla found, one problem per item: a test that does not build or a required test that is not declared.",
+		Path:        []tools.FieldPathSegment{tools.FixedField("assignments"), tools.DynamicField{}, tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("finding_count")},
+		JSONType:    "integer",
+		Description: "Number of problems Surla found.",
 		Branches: []tools.UnionBranch{
 			tools.TaggedUnionBranch{
 				Discriminator: []tools.FieldPathSegment{tools.FixedField("assignments"), tools.DynamicField{}, tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("state")},
@@ -6528,6 +6793,17 @@ var listTestWriterAssignmentsResultFields = []tools.FieldMetadata{
 		Path:        []tools.FieldPathSegment{tools.FixedField("assignments"), tools.DynamicField{}, tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("checked_at")},
 		JSONType:    "string",
 		Description: "When Surla's check reached this verdict.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("assignments"), tools.DynamicField{}, tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("state")},
+				Value:         "accepted",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("assignments"), tools.DynamicField{}, tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("not_judged")},
+		JSONType:    "string",
+		Description: "What Surla's check did not judge, always the same sentence.",
 		Branches: []tools.UnionBranch{
 			tools.TaggedUnionBranch{
 				Discriminator: []tools.FieldPathSegment{tools.FixedField("assignments"), tools.DynamicField{}, tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("state")},
@@ -6587,7 +6863,7 @@ var listTestWriterAssignmentsResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("assignments"), tools.DynamicField{}, tools.FixedField("progress"), tools.FixedField("report")},
 		JSONType:    "integer",
-		Description: "Number of the test writer's latest counted report of this build; 0 when none was counted. Reports are not counted yet, so it is 0.",
+		Description: "Number of the test writer's latest report of this build: 0 until its first report, and one more with each report_tests_finished.",
 	},
 }
 var listTracesPayloadFields = []tools.FieldMetadata{
@@ -8534,7 +8810,7 @@ var reportTestsFinishedResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests")},
 		JSONType:    "object",
-		Description: "The tests' state: not_used when the project verifies with its stored evaluator; otherwise assigned, reported, needs_changes with Surla's findings, accepted with the commit Surla recorded, or could_not_run with the reason and the user's step. Each verdict carries the time Surla reached it.",
+		Description: "The tests' state: not_used when the project verifies with its stored evaluator; otherwise assigned, reported, needs_changes with the number of Surla's findings, accepted with the commit Surla recorded, or could_not_run with the reason and the user's step. Each verdict carries the time Surla reached it.",
 	},
 	{
 		Path:     []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("state")},
@@ -8573,7 +8849,7 @@ var reportTestsFinishedResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests")},
 		JSONType:    "object",
-		Description: "The test writer reported its tests finished at this build's revision; Surla has not checked them.",
+		Description: "The test writer reported its tests finished at this build's revision. Surla checks them right after each report; its verdict replaces this state.",
 		Branches: []tools.UnionBranch{
 			tools.TaggedUnionBranch{
 				Discriminator: []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("state")},
@@ -8584,7 +8860,7 @@ var reportTestsFinishedResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests")},
 		JSONType:    "object",
-		Description: "Surla checked the reported tests and found problems the test writer must fix before reporting again.",
+		Description: "Surla checked the reported tests and found problems the test writer must fix before reporting again. Their text is in the test writer's assignment (get_test_writer_assignment) and, for the user, in get_test_findings.",
 		Branches: []tools.UnionBranch{
 			tools.TaggedUnionBranch{
 				Discriminator: []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("state")},
@@ -8593,20 +8869,9 @@ var reportTestsFinishedResultFields = []tools.FieldMetadata{
 		},
 	},
 	{
-		Path:        []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("findings")},
-		JSONType:    "array",
-		Description: "What Surla found, one problem per item: a test that does not build or a required test that is not declared.",
-		Branches: []tools.UnionBranch{
-			tools.TaggedUnionBranch{
-				Discriminator: []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("state")},
-				Value:         "needs_changes",
-			},
-		},
-	},
-	{
-		Path:        []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("findings"), tools.DynamicField{}},
-		JSONType:    "string",
-		Description: "What Surla found, one problem per item: a test that does not build or a required test that is not declared.",
+		Path:        []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("finding_count")},
+		JSONType:    "integer",
+		Description: "Number of problems Surla found.",
 		Branches: []tools.UnionBranch{
 			tools.TaggedUnionBranch{
 				Discriminator: []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("state")},
@@ -8651,6 +8916,17 @@ var reportTestsFinishedResultFields = []tools.FieldMetadata{
 		Path:        []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("checked_at")},
 		JSONType:    "string",
 		Description: "When Surla's check reached this verdict.",
+		Branches: []tools.UnionBranch{
+			tools.TaggedUnionBranch{
+				Discriminator: []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("state")},
+				Value:         "accepted",
+			},
+		},
+	},
+	{
+		Path:        []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("not_judged")},
+		JSONType:    "string",
+		Description: "What Surla's check did not judge, always the same sentence.",
 		Branches: []tools.UnionBranch{
 			tools.TaggedUnionBranch{
 				Discriminator: []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("tests"), tools.FixedField("state")},
@@ -8710,7 +8986,7 @@ var reportTestsFinishedResultFields = []tools.FieldMetadata{
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("progress"), tools.FixedField("report")},
 		JSONType:    "integer",
-		Description: "Number of the test writer's latest counted report of this build; 0 when none was counted. Reports are not counted yet, so it is 0.",
+		Description: "Number of the test writer's latest report of this build: 0 until its first report, and one more with each report_tests_finished.",
 	},
 }
 var reviseChangePayloadFields = []tools.FieldMetadata{
@@ -10480,6 +10756,23 @@ func enrichGetChangeResultValidationError(err error) error {
 	}
 	return tools.NewValidationError(ve.Error(), issues, m)
 }
+func enrichGetLiveTargetResultValidationError(err error) error {
+	var ve *tools.ValidationError
+	if !errors.As(err, &ve) {
+		return err
+	}
+	issues := ve.Issues()
+	if len(issues) == 0 {
+		return err
+	}
+	m := make(map[string]string)
+	for _, is := range issues {
+		if field, ok := tools.LookupFieldMetadata(getLiveTargetResultFields, is.Field); ok && field.Description != "" {
+			m[is.Field] = field.Description
+		}
+	}
+	return tools.NewValidationError(ve.Error(), issues, m)
+}
 func enrichGetStoryRefreshResultValidationError(err error) error {
 	var ve *tools.ValidationError
 	if !errors.As(err, &ve) {
@@ -11669,6 +11962,68 @@ func invalidGetChangeResultFieldTypeError(err error) error {
 		field = "$payload"
 	}
 	metadata, ok := tools.LookupFieldMetadata(getChangeResultFields, field)
+	if !ok || metadata.JSONType == "" {
+		return err
+	}
+	actual := generatedUnmarshalJSONType(typeErr.Value)
+	if actual == "" {
+		return err
+	}
+	return tools.NewValidationError(
+		err.Error(),
+		[]*tools.FieldIssue{
+			{
+				Field:            field,
+				Constraint:       "invalid_field_type",
+				ExpectedJSONType: metadata.JSONType,
+				ActualJSONType:   actual,
+			},
+		},
+		nil,
+	)
+}
+func invalidGetLiveTargetPayloadFieldTypeError(err error) error {
+	var typeErr *json.UnmarshalTypeError
+	if !errors.As(err, &typeErr) {
+		return err
+	}
+	field := typeErr.Field
+	field = strings.TrimPrefix(field, "GetLiveTargetPayloadTransport.")
+	if field == "" {
+		field = "$payload"
+	}
+	metadata, ok := tools.LookupFieldMetadata(getLiveTargetPayloadFields, field)
+	if !ok || metadata.JSONType == "" {
+		return err
+	}
+	actual := generatedUnmarshalJSONType(typeErr.Value)
+	if actual == "" {
+		return err
+	}
+	return tools.NewValidationError(
+		err.Error(),
+		[]*tools.FieldIssue{
+			{
+				Field:            field,
+				Constraint:       "invalid_field_type",
+				ExpectedJSONType: metadata.JSONType,
+				ActualJSONType:   actual,
+			},
+		},
+		nil,
+	)
+}
+func invalidGetLiveTargetResultFieldTypeError(err error) error {
+	var typeErr *json.UnmarshalTypeError
+	if !errors.As(err, &typeErr) {
+		return err
+	}
+	field := typeErr.Field
+	field = strings.TrimPrefix(field, "GetLiveTargetResultTransport.")
+	if field == "" {
+		field = "$payload"
+	}
+	metadata, ok := tools.LookupFieldMetadata(getLiveTargetResultFields, field)
 	if !ok || metadata.JSONType == "" {
 		return err
 	}
@@ -14414,6 +14769,152 @@ func UnmarshalGetChangeResult(data []byte) (*GetChangeResult, error) {
 	return out, nil
 }
 
+// MarshalGetLiveTargetPayload serializes *GetLiveTargetPayload into JSON.
+func MarshalGetLiveTargetPayload(v *GetLiveTargetPayload) ([]byte, error) {
+	if v == nil {
+		return nil, fmt.Errorf("getLiveTargetPayload is nil")
+	}
+	in := v
+	_ = in
+	var out *toolhttp.GetLiveTargetPayloadTransport
+	out = &toolhttp.GetLiveTargetPayloadTransport{}
+	return json.Marshal(out)
+}
+
+// UnmarshalGetLiveTargetPayload deserializes JSON into *GetLiveTargetPayload.
+func UnmarshalGetLiveTargetPayload(data []byte) (*GetLiveTargetPayload, error) {
+	if len(data) == 0 {
+		var v *GetLiveTargetPayload
+		return v, nil
+	}
+	var tv toolhttp.GetLiveTargetPayloadTransport
+	if err := validateStopLiveTargetPayloadJSON(data); err != nil {
+		return nil, invalidGetLiveTargetPayloadFieldTypeError(err)
+	}
+	if err := json.Unmarshal(data, &tv); err != nil {
+		return nil, invalidGetLiveTargetPayloadFieldTypeError(err)
+	}
+	in := &tv
+	_ = in
+	var out *GetLiveTargetPayload
+	out = &GetLiveTargetPayload{}
+	return out, nil
+}
+
+// MarshalGetLiveTargetResult serializes *GetLiveTargetResult into JSON.
+func MarshalGetLiveTargetResult(v *GetLiveTargetResult) ([]byte, error) {
+	if v == nil {
+		return nil, fmt.Errorf("getLiveTargetResult is nil")
+	}
+	in := v
+	_ = in
+	var out *toolhttp.GetLiveTargetResultTransport
+	out = &toolhttp.GetLiveTargetResultTransport{}
+	var liveTargetValue toolhttp.LiveTarget
+	switch string(in.LiveTarget.Kind()) {
+	case "none":
+		actual, _ := in.LiveTarget.AsNone()
+		var obj *toolhttp.LiveTargetNoneTransport
+		if actual != nil {
+			obj = encodeLiveTargetNoneToLiveTargetNoneTransport(actual)
+		}
+		u := liveTargetValue
+		u.SetNone((*toolhttp.LiveTargetNoneTransport)(obj))
+		liveTargetValue = u
+	case "starting":
+		actual, _ := in.LiveTarget.AsStarting()
+		var obj *toolhttp.LiveTargetStartingTransport
+		if actual != nil {
+			obj = encodeLiveTargetStartingToLiveTargetStartingTransport(actual)
+		}
+		u := liveTargetValue
+		u.SetStarting((*toolhttp.LiveTargetStartingTransport)(obj))
+		liveTargetValue = u
+	case "running":
+		actual, _ := in.LiveTarget.AsRunning()
+		var obj *toolhttp.RunningLiveTargetTransport
+		if actual != nil {
+			obj = encodeRunningLiveTargetToRunningLiveTargetTransport(actual)
+		}
+		u := liveTargetValue
+		u.SetRunning((*toolhttp.RunningLiveTargetTransport)(obj))
+		liveTargetValue = u
+	case "not_confirmed_stopped":
+		actual, _ := in.LiveTarget.AsNotConfirmedStopped()
+		var obj *toolhttp.LiveTargetNotConfirmedStoppedTransport
+		if actual != nil {
+			obj = encodeLiveTargetNotConfirmedStoppedToLiveTargetNotConfirmedStoppedTransport(actual)
+		}
+		u := liveTargetValue
+		u.SetNotConfirmedStopped((*toolhttp.LiveTargetNotConfirmedStoppedTransport)(obj))
+		liveTargetValue = u
+	}
+	out.LiveTarget = &liveTargetValue
+	return json.Marshal(out)
+}
+
+// UnmarshalGetLiveTargetResult deserializes JSON into *GetLiveTargetResult.
+func UnmarshalGetLiveTargetResult(data []byte) (*GetLiveTargetResult, error) {
+	if len(data) == 0 {
+		return nil, fmt.Errorf("getLiveTargetResult JSON is empty")
+	}
+	var tv toolhttp.GetLiveTargetResultTransport
+	if err := validateGetLiveTargetResultJSON(data); err != nil {
+		return nil, invalidGetLiveTargetResultFieldTypeError(err)
+	}
+	if err := json.Unmarshal(data, &tv); err != nil {
+		return nil, invalidGetLiveTargetResultFieldTypeError(err)
+	}
+	if err := toolhttp.ValidateGetLiveTargetResultTransport(&tv); err != nil {
+		err = newValidationError(err)
+		err = enrichGetLiveTargetResultValidationError(err)
+		return nil, err
+	}
+	in := &tv
+	_ = in
+	var out *GetLiveTargetResult
+	out = &GetLiveTargetResult{}
+	switch string(in.LiveTarget.Kind()) {
+	case "none":
+		actual, _ := in.LiveTarget.AsNone()
+		var obj *LiveTargetNone
+		if actual != nil {
+			obj = decodeLiveTargetNoneTransportToLiveTargetNone(actual)
+		}
+		u := out.LiveTarget
+		u.SetNone((*LiveTargetNone)(obj))
+		out.LiveTarget = u
+	case "starting":
+		actual, _ := in.LiveTarget.AsStarting()
+		var obj *LiveTargetStarting
+		if actual != nil {
+			obj = decodeLiveTargetStartingTransportToLiveTargetStarting(actual)
+		}
+		u := out.LiveTarget
+		u.SetStarting((*LiveTargetStarting)(obj))
+		out.LiveTarget = u
+	case "running":
+		actual, _ := in.LiveTarget.AsRunning()
+		var obj *RunningLiveTarget
+		if actual != nil {
+			obj = decodeRunningLiveTargetTransportToRunningLiveTarget(actual)
+		}
+		u := out.LiveTarget
+		u.SetRunning((*RunningLiveTarget)(obj))
+		out.LiveTarget = u
+	case "not_confirmed_stopped":
+		actual, _ := in.LiveTarget.AsNotConfirmedStopped()
+		var obj *LiveTargetNotConfirmedStopped
+		if actual != nil {
+			obj = decodeLiveTargetNotConfirmedStoppedTransportToLiveTargetNotConfirmedStopped(actual)
+		}
+		u := out.LiveTarget
+		u.SetNotConfirmedStopped((*LiveTargetNotConfirmedStopped)(obj))
+		out.LiveTarget = u
+	}
+	return out, nil
+}
+
 // MarshalGetStoryRefreshPayload serializes *GetStoryRefreshPayload into JSON.
 func MarshalGetStoryRefreshPayload(v *GetStoryRefreshPayload) ([]byte, error) {
 	if v == nil {
@@ -14566,6 +15067,10 @@ func MarshalGetTestWriterAssignmentResult(v *GetTestWriterAssignmentResult) ([]b
 		DesignSource:    &in.DesignSource,
 	}
 	out.Progress = encodeTestWriterProgressToTestWriterProgressTransport(in.Progress)
+	out.Findings = make([]string, len(in.Findings))
+	for i, val := range in.Findings {
+		out.Findings[i] = val
+	}
 	out.Stories = make([]*toolhttp.StorySummaryItemTransport, len(in.Stories))
 	for i, val := range in.Stories {
 		if val == nil {
@@ -14613,6 +15118,10 @@ func UnmarshalGetTestWriterAssignmentResult(data []byte) (*GetTestWriterAssignme
 		DesignSource:    *in.DesignSource,
 	}
 	out.Progress = decodeTestWriterProgressTransportToTestWriterProgress(in.Progress)
+	out.Findings = make([]string, len(in.Findings))
+	for i, val := range in.Findings {
+		out.Findings[i] = val
+	}
 	out.Stories = make([]*StorySummaryItem, len(in.Stories))
 	for i, val := range in.Stories {
 		if val == nil {
@@ -16780,6 +17289,16 @@ func validateStopLiveTargetResultJSON(data []byte) error {
 		return err
 	}
 	return validateStopLiveTargetResultJSONValue("", root, "")
+}
+
+// validateGetLiveTargetResultJSON parses one JSON document and checks the exact value
+// shapes known from this generated Goa type.
+func validateGetLiveTargetResultJSON(data []byte) error {
+	root, err := readStrictToolJSON(data)
+	if err != nil {
+		return err
+	}
+	return validateGetLiveTargetResultJSONValue("", root, "")
 }
 
 // validateVerifyChangePayloadJSON parses one JSON document and checks the exact value
@@ -19921,6 +20440,304 @@ func validateStopLiveTargetResultJSONValue(path string, value any, description s
 	return nil
 }
 
+// validateGetLiveTargetResultJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateGetLiveTargetResultJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "live_target":
+			if err := validateGetLiveTargetResultRootLiveTargetJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "none when no live target runs; starting while one is built and started; running with its commit, address, start time and the prompts whose drafts are in force; not_confirmed_stopped when its processes could not be confirmed stopped.",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"live_target",
+			})
+		}
+	}
+	return nil
+}
+
+// validateGetLiveTargetResultRootLiveTargetJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateGetLiveTargetResultRootLiveTargetJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	rawDiscriminator, discriminatorPresent := typed["state"]
+	discriminator, ok := rawDiscriminator.(string)
+	if !ok {
+		return invalidJSONUnionDiscriminator(generatedJSONChildPath(path, "state", false), rawDiscriminator, discriminatorPresent, []string{"none", "starting", "running", "not_confirmed_stopped"})
+	}
+	branch := make(map[string]any, len(typed)-1)
+	for key, item := range typed {
+		if key != "state" {
+			branch[key] = item
+		}
+	}
+	switch discriminator {
+	case "none":
+		return validateStopLiveTargetPayloadJSONValue(path, branch, "")
+	case "starting":
+		return validateGetLiveTargetResultLiveTargetStartingTransportJSONValue(path, branch, "")
+	case "running":
+		return validateGetLiveTargetResultRunningLiveTargetTransportJSONValue(path, branch, "")
+	case "not_confirmed_stopped":
+		return validateGetLiveTargetResultLiveTargetNotConfirmedStoppedTransportJSONValue(path, branch, "")
+	default:
+		return invalidJSONUnionDiscriminator(generatedJSONChildPath(path, "state", false), discriminator, true, []string{"none", "starting", "running", "not_confirmed_stopped"})
+	}
+}
+
+// validateGetLiveTargetResultLiveTargetStartingTransportJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateGetLiveTargetResultLiveTargetStartingTransportJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "candidate_commit":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "The commit being built.",
+			); err != nil {
+				return err
+			}
+		case "since":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "When the start began.",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"candidate_commit",
+				"since",
+			})
+		}
+	}
+	return nil
+}
+
+// validateGetLiveTargetResultRunningLiveTargetTransportJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateGetLiveTargetResultRunningLiveTargetTransportJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "candidate_commit":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "The commit it was built from.",
+			); err != nil {
+				return err
+			}
+		case "prompts":
+			if err := validateGetLiveTargetResultRunningLiveTargetTransportPromptsJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "One entry per prompt whose draft it accepted, sorted by prompt_id; empty when none.",
+			); err != nil {
+				return err
+			}
+		case "started_at":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "When it became ready.",
+			); err != nil {
+				return err
+			}
+		case "url":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "The origin it listens on, as its evaluator suite reported it.",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"candidate_commit",
+				"prompts",
+				"started_at",
+				"url",
+			})
+		}
+	}
+	return nil
+}
+
+// validateGetLiveTargetResultRunningLiveTargetTransportPromptsJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateGetLiveTargetResultRunningLiveTargetTransportPromptsJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "array", "null", description)
+	}
+	typed, ok := value.([]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "array", decodedJSONType(value), description)
+	}
+	for index, item := range typed {
+		if err := validateGetLiveTargetResultLivePromptItemTransportJSONValue(
+			generatedJSONChildPath(path, strconv.Itoa(index), true),
+			item, description,
+		); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateGetLiveTargetResultLivePromptItemTransportJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateGetLiveTargetResultLivePromptItemTransportJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "accepted_at":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "When the live target first accepted the version in force. A later draft that the target answers with the same version, such as the same text sent again, keeps this time.",
+			); err != nil {
+				return err
+			}
+		case "prompt_id":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Registered prompt identifier.",
+			); err != nil {
+				return err
+			}
+		case "version":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Version of the text in force, as the live target returned it.",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"accepted_at",
+				"prompt_id",
+				"version",
+			})
+		}
+	}
+	return nil
+}
+
+// validateGetLiveTargetResultLiveTargetNotConfirmedStoppedTransportJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateGetLiveTargetResultLiveTargetNotConfirmedStoppedTransportJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "candidate_commit":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "The commit it was built from.",
+			); err != nil {
+				return err
+			}
+		case "message":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "What happened and what to do next.",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"candidate_commit",
+				"message",
+			})
+		}
+	}
+	return nil
+}
+
 // validateVerifyChangePayloadJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
 func validateVerifyChangePayloadJSONValue(path string, value any, description string) error {
 	field := path
@@ -22241,14 +23058,14 @@ func validateGetBuildResultTestWriterProgressTransportJSONValue(path string, val
 		case "report":
 			if err := validateIntJSONValue(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Number of the test writer's latest counted report of this build; 0 when none was counted. Reports are not counted yet, so it is 0.",
+				typed[key], "Number of the test writer's latest report of this build: 0 until its first report, and one more with each report_tests_finished.",
 			); err != nil {
 				return err
 			}
 		case "tests":
 			if err := validateGetBuildResultTestWriterProgressTransportTestsJSONValue(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "The tests' state: not_used when the project verifies with its stored evaluator; otherwise assigned, reported, needs_changes with Surla's findings, accepted with the commit Surla recorded, or could_not_run with the reason and the user's step. Each verdict carries the time Surla reached it.",
+				typed[key], "The tests' state: not_used when the project verifies with its stored evaluator; otherwise assigned, reported, needs_changes with the number of Surla's findings, accepted with the commit Surla recorded, or could_not_run with the reason and the user's step. Each verdict carries the time Surla reached it.",
 			); err != nil {
 				return err
 			}
@@ -22332,17 +23149,17 @@ func validateGetBuildResultTestsNeedChangesTransportJSONValue(path string, value
 			); err != nil {
 				return err
 			}
-		case "findings":
-			if err := validateProposeChangePayloadCP1AnalysisAmbiguityTransportOptionsJSONValue(
+		case "finding_count":
+			if err := validateIntJSONValue(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "What Surla found, one problem per item: a test that does not build or a required test that is not declared.",
+				typed[key], "Number of problems Surla found.",
 			); err != nil {
 				return err
 			}
 		default:
 			return unknownJSONFieldError(path, key, []string{
 				"checked_at",
-				"findings",
+				"finding_count",
 			})
 		}
 	}
@@ -22383,10 +23200,18 @@ func validateGetBuildResultTestsAcceptedTransportJSONValue(path string, value an
 			); err != nil {
 				return err
 			}
+		case "not_judged":
+			if err := validateStringJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "What Surla's check did not judge, always the same sentence.",
+			); err != nil {
+				return err
+			}
 		default:
 			return unknownJSONFieldError(path, key, []string{
 				"checked_at",
 				"commit",
+				"not_judged",
 			})
 		}
 	}
@@ -22835,6 +23660,13 @@ func validateGetTestWriterAssignmentResultJSONValue(path string, value any, desc
 			); err != nil {
 				return err
 			}
+		case "findings":
+			if err := validateProposeChangePayloadCP1AnalysisAmbiguityTransportOptionsJSONValue(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Surla's findings, one problem per item, with no absolute path: as many as progress gives in finding_count when its state is needs_changes, and none in any other state. Fix them in working_folder, then report again.",
+			); err != nil {
+				return err
+			}
 		case "in_force":
 			if err := validateBooleanJSONValue(
 				generatedJSONChildPath(path, key, false),
@@ -22845,7 +23677,7 @@ func validateGetTestWriterAssignmentResultJSONValue(path string, value any, desc
 		case "progress":
 			if err := validateGetBuildResultTestWriterProgressTransportJSONValue(
 				generatedJSONChildPath(path, key, false),
-				typed[key], "Where this assignment stands, including Surla's findings when it needs changes.",
+				typed[key], "Where this assignment stands.",
 			); err != nil {
 				return err
 			}
@@ -22881,6 +23713,7 @@ func validateGetTestWriterAssignmentResultJSONValue(path string, value any, desc
 			return unknownJSONFieldError(path, key, []string{
 				"change_id",
 				"design_source",
+				"findings",
 				"in_force",
 				"progress",
 				"request_revision",
@@ -23675,11 +24508,8 @@ func decodeTestsReportedTransportToTestsReported(v *toolhttp.TestsReportedTransp
 }
 func decodeTestsNeedChangesTransportToTestsNeedChanges(v *toolhttp.TestsNeedChangesTransport) *TestsNeedChanges {
 	res := &TestsNeedChanges{
-		CheckedAt: *v.CheckedAt,
-	}
-	res.Findings = make([]string, len(v.Findings))
-	for i, val := range v.Findings {
-		res.Findings[i] = val
+		FindingCount: *v.FindingCount,
+		CheckedAt:    *v.CheckedAt,
 	}
 
 	return res
@@ -23688,6 +24518,7 @@ func decodeTestsAcceptedTransportToTestsAccepted(v *toolhttp.TestsAcceptedTransp
 	res := &TestsAccepted{
 		Commit:    *v.Commit,
 		CheckedAt: *v.CheckedAt,
+		NotJudged: *v.NotJudged,
 	}
 
 	return res
@@ -23808,11 +24639,8 @@ func encodeTestsReportedToTestsReportedTransport(v *TestsReported) *toolhttp.Tes
 }
 func encodeTestsNeedChangesToTestsNeedChangesTransport(v *TestsNeedChanges) *toolhttp.TestsNeedChangesTransport {
 	res := &toolhttp.TestsNeedChangesTransport{
-		CheckedAt: &v.CheckedAt,
-	}
-	res.Findings = make([]string, len(v.Findings))
-	for i, val := range v.Findings {
-		res.Findings[i] = val
+		FindingCount: &v.FindingCount,
+		CheckedAt:    &v.CheckedAt,
 	}
 
 	return res
@@ -23821,6 +24649,7 @@ func encodeTestsAcceptedToTestsAcceptedTransport(v *TestsAccepted) *toolhttp.Tes
 	res := &toolhttp.TestsAcceptedTransport{
 		Commit:    &v.Commit,
 		CheckedAt: &v.CheckedAt,
+		NotJudged: &v.NotJudged,
 	}
 
 	return res
@@ -23841,6 +24670,100 @@ func decodeTestsNotYetAcceptedTransportToTestsNotYetAccepted(v *toolhttp.TestsNo
 }
 func encodeTestsNotYetAcceptedToTestsNotYetAcceptedTransport(v *TestsNotYetAccepted) *toolhttp.TestsNotYetAcceptedTransport {
 	res := &toolhttp.TestsNotYetAcceptedTransport{}
+
+	return res
+}
+func decodeLiveTargetNoneTransportToLiveTargetNone(v *toolhttp.LiveTargetNoneTransport) *LiveTargetNone {
+	res := &LiveTargetNone{}
+
+	return res
+}
+func decodeLiveTargetStartingTransportToLiveTargetStarting(v *toolhttp.LiveTargetStartingTransport) *LiveTargetStarting {
+	res := &LiveTargetStarting{
+		CandidateCommit: *v.CandidateCommit,
+		Since:           *v.Since,
+	}
+
+	return res
+}
+func decodeRunningLiveTargetTransportToRunningLiveTarget(v *toolhttp.RunningLiveTargetTransport) *RunningLiveTarget {
+	res := &RunningLiveTarget{
+		CandidateCommit: *v.CandidateCommit,
+		URL:             *v.URL,
+		StartedAt:       *v.StartedAt,
+	}
+	res.Prompts = make([]*LivePromptItem, len(v.Prompts))
+	for i, val := range v.Prompts {
+		if val == nil {
+			res.Prompts[i] = nil
+			continue
+		}
+		res.Prompts[i] = decodeLivePromptItemTransportToLivePromptItem(val)
+	}
+
+	return res
+}
+func decodeLivePromptItemTransportToLivePromptItem(v *toolhttp.LivePromptItemTransport) *LivePromptItem {
+	res := &LivePromptItem{
+		PromptID:   *v.PromptID,
+		Version:    *v.Version,
+		AcceptedAt: *v.AcceptedAt,
+	}
+
+	return res
+}
+func decodeLiveTargetNotConfirmedStoppedTransportToLiveTargetNotConfirmedStopped(v *toolhttp.LiveTargetNotConfirmedStoppedTransport) *LiveTargetNotConfirmedStopped {
+	res := &LiveTargetNotConfirmedStopped{
+		CandidateCommit: *v.CandidateCommit,
+		Message:         *v.Message,
+	}
+
+	return res
+}
+func encodeLiveTargetNoneToLiveTargetNoneTransport(v *LiveTargetNone) *toolhttp.LiveTargetNoneTransport {
+	res := &toolhttp.LiveTargetNoneTransport{}
+
+	return res
+}
+func encodeLiveTargetStartingToLiveTargetStartingTransport(v *LiveTargetStarting) *toolhttp.LiveTargetStartingTransport {
+	res := &toolhttp.LiveTargetStartingTransport{
+		CandidateCommit: &v.CandidateCommit,
+		Since:           &v.Since,
+	}
+
+	return res
+}
+func encodeRunningLiveTargetToRunningLiveTargetTransport(v *RunningLiveTarget) *toolhttp.RunningLiveTargetTransport {
+	res := &toolhttp.RunningLiveTargetTransport{
+		CandidateCommit: &v.CandidateCommit,
+		URL:             &v.URL,
+		StartedAt:       &v.StartedAt,
+	}
+	res.Prompts = make([]*toolhttp.LivePromptItemTransport, len(v.Prompts))
+	for i, val := range v.Prompts {
+		if val == nil {
+			res.Prompts[i] = nil
+			continue
+		}
+		res.Prompts[i] = encodeLivePromptItemToLivePromptItemTransport(val)
+	}
+
+	return res
+}
+func encodeLivePromptItemToLivePromptItemTransport(v *LivePromptItem) *toolhttp.LivePromptItemTransport {
+	res := &toolhttp.LivePromptItemTransport{
+		PromptID:   &v.PromptID,
+		Version:    &v.Version,
+		AcceptedAt: &v.AcceptedAt,
+	}
+
+	return res
+}
+func encodeLiveTargetNotConfirmedStoppedToLiveTargetNotConfirmedStoppedTransport(v *LiveTargetNotConfirmedStopped) *toolhttp.LiveTargetNotConfirmedStoppedTransport {
+	res := &toolhttp.LiveTargetNotConfirmedStoppedTransport{
+		CandidateCommit: &v.CandidateCommit,
+		Message:         &v.Message,
+	}
 
 	return res
 }

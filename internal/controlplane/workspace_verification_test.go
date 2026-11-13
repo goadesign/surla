@@ -83,6 +83,7 @@ func TestVerificationUsesTheAcceptedTestsAndLiveCopiesTheCandidatesOwn(t *testin
 				Command:      []string{self},
 				Env:          append(os.Environ(), liveTargetModeEnv+"=serve"),
 				StartTimeout: time.Minute,
+				Model:        noModel(),
 			},
 		}
 	}
@@ -253,7 +254,7 @@ func TestVerifyChangeRefusesWhatItCannotRunWithItsStep(t *testing.T) {
 				RunsDir:         runsDir,
 				SurlaVersion:    testSurlaVersion,
 				WrittenTestRuns: &WrittenTestRuns{ReportDir: realTempDir(t), Command: []string{"/bin/sh", "-c", "exit 0", "sh"}, Timeout: time.Hour},
-				Live:            &LiveConfig{Command: []string{self}, Env: append(os.Environ(), liveTargetModeEnv+"=serve"), StartTimeout: time.Minute},
+				Live:            &LiveConfig{Model: noModel(), Command: []string{self}, Env: append(os.Environ(), liveTargetModeEnv+"=serve"), StartTimeout: time.Minute},
 			}
 			var cp *ControlPlane
 			var card *gensurla.ChangeCardResult
@@ -579,6 +580,10 @@ func saveTestWriter(t *testing.T, cp *ControlPlane, changeID string, tw testWrit
 	require.True(t, found, "change %q has a build", changeID)
 	tw.WorkingFolder = build.TestWriter.WorkingFolder
 	build.TestWriter = tw
+	// A reported build has had at least one report; a verdict keeps its report's number.
+	if tw.State != testsAssigned {
+		build.ReportNumber = max(build.ReportNumber, 1)
+	}
 	require.NoError(t, cp.cards.saveBuild(build))
 }
 

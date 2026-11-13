@@ -243,6 +243,65 @@ page.close();
 	assert.GreaterOrEqual(t, exported[waitForChangesSpan], 3, "each waiting read keeps its exported domain span")
 }
 
+// TestViewsPageRefreshesAddNothingToDiagnostics changes the value the
+// page's waiting read compares five times: three revisions of the open change
+// and, with the Live target view shown, two new changes. Each change makes
+// the page read the list again and then the open change or the live target.
+// None of these successful reads by the user's session enters the
+// diagnostics history, while the guide's changes do and every read keeps its
+// exported spans.
+func TestViewsPageRefreshesAddNothingToDiagnostics(t *testing.T) {
+	exporter := tracetest.NewInMemoryExporter()
+	provider := sdktrace.NewTracerProvider(sdktrace.WithSyncer(exporter))
+	t.Cleanup(func() { assert.NoError(t, provider.Shutdown(context.Background())) })
+	cp := pageControlPlane(t, Options{TracerProvider: provider})
+	ps := startPageServer(t, cp)
+	runPageScript(t, ps, nil, viewsPageScriptHelpers+`
+const history = async () => {
+  const out = await api(origin, "GET", "/traces?status=all&limit=100", undefined, input.guide);
+  expect(out.status === 200, "diagnostics could not be read: " + JSON.stringify(out));
+  return out.body.spans;
+};
+const answered = (page, path) => page.sent("GET", path).filter((r) => r.status === 200).length;
+let card = await propose("chg-refresh", "Route refunds to a manager.", "Auto-approved");
+const page = await openPage(origin, { link: input.link });
+await until(() => page.$("#surla-cp1-editor").dataset.changeId === "chg-refresh", "the change did not open");
+await until(() => page.sent("GET", "/change-updates").length >= 1, "the page did not keep a waiting read open");
+const before = new Set((await history()).map((span) => span.span_id));
+const lists = answered(page, "/changes");
+const cards = answered(page, "/changes/chg-refresh");
+for (const outcome of ["Manager approval", "Manager approval within a day", "Manager approval within an hour"]) {
+  const reads = answered(page, "/changes/chg-refresh");
+  card = await revise(card, "Route refunds over $50 to a manager.", outcome);
+  await until(() => answered(page, "/changes/chg-refresh") > reads && page.$("#surla-cp1-editor").dataset.requestRevision === card.request_revision, "the page did not read the revised change again");
+}
+page.$("#surla-nav-live").click();
+await until(() => page.$("#surla-live-target") && page.$("#surla-live-target").dataset.state !== "unread", "the live target was never read");
+const targets = answered(page, "/live-target");
+for (const id of ["chg-other-1", "chg-other-2"]) {
+  const reads = answered(page, "/live-target");
+  await propose(id, "Show carriers on receipts.", "Carrier shown");
+  await until(() => answered(page, "/live-target") > reads, "the page did not read the live target again after " + id);
+}
+expect(answered(page, "/changes") >= lists + 5, "the page did not read the list again after each change");
+expect(answered(page, "/changes/chg-refresh") >= cards + 3 && answered(page, "/live-target") >= targets + 2, "the page did not read what it shows again");
+const added = (await history()).filter((span) => !before.has(span.span_id));
+const byUser = added.filter((span) => span.attributes["surla.caller_kind"] === "user").map((span) => span.name).sort();
+expect(byUser.length === 0, "the page's " + byUser.length + " reads were saved in the diagnostics history: " + JSON.stringify(byUser));
+const byGuide = added.filter((span) => span.attributes["surla.caller_kind"] === "guide").map((span) => span.name);
+expect(byGuide.filter((name) => name === "surla.request.revise_change").length === 3 && byGuide.filter((name) => name === "surla.request.propose_change").length === 2, "the guide's changes are missing from the history: " + JSON.stringify(byGuide));
+page.close();
+`)
+	exported := map[string]int{}
+	for _, span := range exporter.GetSpans() {
+		exported[span.Name]++
+	}
+	assert.GreaterOrEqual(t, exported["surla.request.list_changes"], 6, "each list read keeps its exported request span")
+	assert.GreaterOrEqual(t, exported["surla.controlplane.list_changes"], 6, "each list read keeps its exported domain span")
+	assert.GreaterOrEqual(t, exported["surla.request.get_change"], 4, "each read of the open change keeps its exported request span")
+	assert.GreaterOrEqual(t, exported["surla.request.get_live_target"], 3, "each live target read keeps its exported request span")
+}
+
 // TestViewsPageApprovesAPassedResult confirms a change, opens its passed
 // verification run, and approves it with a keyboard-operable control that
 // shows a busy state and moves focus to the recorded approval. It also

@@ -1316,6 +1316,87 @@ func DecodeStopLiveTargetResponse(decoder func(*http.Response) goahttp.Decoder, 
 	}
 }
 
+// BuildGetLiveTargetRequest instantiates a HTTP request object with method and
+// path set to call the "surla" service "get_live_target" endpoint
+func (c *Client) BuildGetLiveTargetRequest(ctx context.Context, v any) (*http.Request, error) {
+	u := &url.URL{Scheme: c.scheme, Host: c.host, Path: GetLiveTargetSurlaPath()}
+	req, err := http.NewRequest("GET", u.String(), nil)
+	if err != nil {
+		return nil, goahttp.ErrInvalidURL("surla", "get_live_target", u.String(), err)
+	}
+	if ctx != nil {
+		req = req.WithContext(ctx)
+	}
+
+	return req, nil
+}
+
+// DecodeGetLiveTargetResponse returns a decoder for responses returned by the
+// surla get_live_target endpoint. restoreBody controls whether the response
+// body should be restored after having been read.
+// DecodeGetLiveTargetResponse may return the following errors:
+//   - "forbidden" (type *goa.ServiceError): http.StatusForbidden
+//   - error: internal error
+func DecodeGetLiveTargetResponse(decoder func(*http.Response) goahttp.Decoder, restoreBody bool) func(*http.Response) (any, error) {
+	return func(resp *http.Response) (result any, decodeErr error) {
+		responseBody := resp.Body
+		if restoreBody {
+			b, readErr := io.ReadAll(responseBody)
+			closeErr := responseBody.Close()
+			if err := errors.Join(readErr, closeErr); err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "get_live_target", err)
+			}
+			resp.Body = io.NopCloser(bytes.NewBuffer(b))
+			defer func() {
+				resp.Body = io.NopCloser(bytes.NewBuffer(b))
+			}()
+		} else {
+			defer func() {
+				if err := responseBody.Close(); err != nil {
+					decodeErr = errors.Join(decodeErr, goahttp.ErrDecodingError("surla", "get_live_target", err))
+				}
+			}()
+		}
+		switch resp.StatusCode {
+		case http.StatusOK:
+			var (
+				body GetLiveTargetResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "get_live_target", err)
+			}
+			err = ValidateGetLiveTargetResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("surla", "get_live_target", err)
+			}
+			res := NewGetLiveTargetLiveTargetStatusOK(&body)
+			return res, nil
+		case http.StatusForbidden:
+			var (
+				body GetLiveTargetForbiddenResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "get_live_target", err)
+			}
+			err = ValidateGetLiveTargetForbiddenResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("surla", "get_live_target", err)
+			}
+			return nil, NewGetLiveTargetForbidden(&body)
+		default:
+			body, err := io.ReadAll(resp.Body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "get_live_target", err)
+			}
+			return nil, goahttp.ErrInvalidResponse("surla", "get_live_target", resp.StatusCode, string(body))
+		}
+	}
+}
+
 // BuildVerifyChangeRequest instantiates a HTTP request object with method and
 // path set to call the "surla" service "verify_change" endpoint
 func (c *Client) BuildVerifyChangeRequest(ctx context.Context, v any) (*http.Request, error) {
@@ -2148,6 +2229,88 @@ func DecodeConfigureModelResponse(decoder func(*http.Response) goahttp.Decoder, 
 				return nil, goahttp.ErrDecodingError("surla", "configure_model", err)
 			}
 			return nil, goahttp.ErrInvalidResponse("surla", "configure_model", resp.StatusCode, string(body))
+		}
+	}
+}
+
+// BuildGetModelConnectionRequest instantiates a HTTP request object with
+// method and path set to call the "surla" service "get_model_connection"
+// endpoint
+func (c *Client) BuildGetModelConnectionRequest(ctx context.Context, v any) (*http.Request, error) {
+	u := &url.URL{Scheme: c.scheme, Host: c.host, Path: GetModelConnectionSurlaPath()}
+	req, err := http.NewRequest("GET", u.String(), nil)
+	if err != nil {
+		return nil, goahttp.ErrInvalidURL("surla", "get_model_connection", u.String(), err)
+	}
+	if ctx != nil {
+		req = req.WithContext(ctx)
+	}
+
+	return req, nil
+}
+
+// DecodeGetModelConnectionResponse returns a decoder for responses returned by
+// the surla get_model_connection endpoint. restoreBody controls whether the
+// response body should be restored after having been read.
+// DecodeGetModelConnectionResponse may return the following errors:
+//   - "forbidden" (type *goa.ServiceError): http.StatusForbidden
+//   - error: internal error
+func DecodeGetModelConnectionResponse(decoder func(*http.Response) goahttp.Decoder, restoreBody bool) func(*http.Response) (any, error) {
+	return func(resp *http.Response) (result any, decodeErr error) {
+		responseBody := resp.Body
+		if restoreBody {
+			b, readErr := io.ReadAll(responseBody)
+			closeErr := responseBody.Close()
+			if err := errors.Join(readErr, closeErr); err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "get_model_connection", err)
+			}
+			resp.Body = io.NopCloser(bytes.NewBuffer(b))
+			defer func() {
+				resp.Body = io.NopCloser(bytes.NewBuffer(b))
+			}()
+		} else {
+			defer func() {
+				if err := responseBody.Close(); err != nil {
+					decodeErr = errors.Join(decodeErr, goahttp.ErrDecodingError("surla", "get_model_connection", err))
+				}
+			}()
+		}
+		switch resp.StatusCode {
+		case http.StatusOK:
+			var (
+				body GetModelConnectionResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "get_model_connection", err)
+			}
+			err = ValidateGetModelConnectionResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("surla", "get_model_connection", err)
+			}
+			res := NewGetModelConnectionModelConnectionOK(&body)
+			return res, nil
+		case http.StatusForbidden:
+			var (
+				body GetModelConnectionForbiddenResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "get_model_connection", err)
+			}
+			err = ValidateGetModelConnectionForbiddenResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("surla", "get_model_connection", err)
+			}
+			return nil, NewGetModelConnectionForbidden(&body)
+		default:
+			body, err := io.ReadAll(resp.Body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "get_model_connection", err)
+			}
+			return nil, goahttp.ErrInvalidResponse("surla", "get_model_connection", resp.StatusCode, string(body))
 		}
 	}
 }
@@ -4118,6 +4281,129 @@ func DecodeGetBuildResponse(decoder func(*http.Response) goahttp.Decoder, restor
 	}
 }
 
+// BuildGetTestFindingsRequest instantiates a HTTP request object with method
+// and path set to call the "surla" service "get_test_findings" endpoint
+func (c *Client) BuildGetTestFindingsRequest(ctx context.Context, v any) (*http.Request, error) {
+	var (
+		changeID string
+	)
+	{
+		p, ok := v.(*surla.GetTestFindingsPayload)
+		if !ok {
+			return nil, goahttp.ErrInvalidType("surla", "get_test_findings", "*surla.GetTestFindingsPayload", v)
+		}
+		changeID = p.ChangeID
+	}
+
+	rawPath := fmt.Sprintf("/changes/%v/build/findings", url.PathEscape(fmt.Sprint(changeID)))
+	u := &url.URL{Scheme: c.scheme, Host: c.host, Path: GetTestFindingsSurlaPath(changeID), RawPath: rawPath}
+	req, err := http.NewRequest("GET", u.String(), nil)
+	if err != nil {
+		return nil, goahttp.ErrInvalidURL("surla", "get_test_findings", u.String(), err)
+	}
+	if ctx != nil {
+		req = req.WithContext(ctx)
+	}
+
+	return req, nil
+}
+
+// DecodeGetTestFindingsResponse returns a decoder for responses returned by
+// the surla get_test_findings endpoint. restoreBody controls whether the
+// response body should be restored after having been read.
+// DecodeGetTestFindingsResponse may return the following errors:
+//   - "not_found" (type *goa.ServiceError): http.StatusNotFound
+//   - "conflict" (type *goa.ServiceError): http.StatusConflict
+//   - "forbidden" (type *goa.ServiceError): http.StatusForbidden
+//   - error: internal error
+func DecodeGetTestFindingsResponse(decoder func(*http.Response) goahttp.Decoder, restoreBody bool) func(*http.Response) (any, error) {
+	return func(resp *http.Response) (result any, decodeErr error) {
+		responseBody := resp.Body
+		if restoreBody {
+			b, readErr := io.ReadAll(responseBody)
+			closeErr := responseBody.Close()
+			if err := errors.Join(readErr, closeErr); err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "get_test_findings", err)
+			}
+			resp.Body = io.NopCloser(bytes.NewBuffer(b))
+			defer func() {
+				resp.Body = io.NopCloser(bytes.NewBuffer(b))
+			}()
+		} else {
+			defer func() {
+				if err := responseBody.Close(); err != nil {
+					decodeErr = errors.Join(decodeErr, goahttp.ErrDecodingError("surla", "get_test_findings", err))
+				}
+			}()
+		}
+		switch resp.StatusCode {
+		case http.StatusOK:
+			var (
+				body GetTestFindingsResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "get_test_findings", err)
+			}
+			err = ValidateGetTestFindingsResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("surla", "get_test_findings", err)
+			}
+			res := NewGetTestFindingsTestFindingsOK(&body)
+			return res, nil
+		case http.StatusNotFound:
+			var (
+				body GetTestFindingsNotFoundResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "get_test_findings", err)
+			}
+			err = ValidateGetTestFindingsNotFoundResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("surla", "get_test_findings", err)
+			}
+			return nil, NewGetTestFindingsNotFound(&body)
+		case http.StatusConflict:
+			var (
+				body GetTestFindingsConflictResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "get_test_findings", err)
+			}
+			err = ValidateGetTestFindingsConflictResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("surla", "get_test_findings", err)
+			}
+			return nil, NewGetTestFindingsConflict(&body)
+		case http.StatusForbidden:
+			var (
+				body GetTestFindingsForbiddenResponseBody
+				err  error
+			)
+			err = decoder(resp).Decode(&body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "get_test_findings", err)
+			}
+			err = ValidateGetTestFindingsForbiddenResponseBody(&body)
+			if err != nil {
+				return nil, goahttp.ErrValidationError("surla", "get_test_findings", err)
+			}
+			return nil, NewGetTestFindingsForbidden(&body)
+		default:
+			body, err := io.ReadAll(resp.Body)
+			if err != nil {
+				return nil, goahttp.ErrDecodingError("surla", "get_test_findings", err)
+			}
+			return nil, goahttp.ErrInvalidResponse("surla", "get_test_findings", resp.StatusCode, string(body))
+		}
+	}
+}
+
 // BuildListBuilderAssignmentsRequest instantiates a HTTP request object with
 // method and path set to call the "surla" service "list_builder_assignments"
 // endpoint
@@ -5279,6 +5565,71 @@ func unmarshalToolInputBindingItemResponseBodyToSurlaToolInputBindingItem(v *Too
 	return res
 }
 
+// unmarshalLiveTargetNoneResponseBodyToSurlaLiveTargetNone builds a value of
+// type *surla.LiveTargetNone from a value of type *LiveTargetNoneResponseBody.
+func unmarshalLiveTargetNoneResponseBodyToSurlaLiveTargetNone(v *LiveTargetNoneResponseBody) *surla.LiveTargetNone {
+	res := &surla.LiveTargetNone{}
+
+	return res
+}
+
+// unmarshalLiveTargetStartingResponseBodyToSurlaLiveTargetStarting builds a
+// value of type *surla.LiveTargetStarting from a value of type
+// *LiveTargetStartingResponseBody.
+func unmarshalLiveTargetStartingResponseBodyToSurlaLiveTargetStarting(v *LiveTargetStartingResponseBody) *surla.LiveTargetStarting {
+	res := &surla.LiveTargetStarting{
+		CandidateCommit: *v.CandidateCommit,
+		Since:           *v.Since,
+	}
+
+	return res
+}
+
+// unmarshalRunningLiveTargetResponseBodyToSurlaRunningLiveTarget builds a
+// value of type *surla.RunningLiveTarget from a value of type
+// *RunningLiveTargetResponseBody.
+func unmarshalRunningLiveTargetResponseBodyToSurlaRunningLiveTarget(v *RunningLiveTargetResponseBody) *surla.RunningLiveTarget {
+	res := &surla.RunningLiveTarget{
+		CandidateCommit: *v.CandidateCommit,
+		URL:             *v.URL,
+		StartedAt:       *v.StartedAt,
+	}
+	res.Prompts = make([]*surla.LivePromptItem, len(v.Prompts))
+	for i, val := range v.Prompts {
+		if val == nil {
+			res.Prompts[i] = nil
+			continue
+		}
+		res.Prompts[i] = unmarshalLivePromptItemResponseBodyToSurlaLivePromptItem(val)
+	}
+
+	return res
+}
+
+// unmarshalLivePromptItemResponseBodyToSurlaLivePromptItem builds a value of
+// type *surla.LivePromptItem from a value of type *LivePromptItemResponseBody.
+func unmarshalLivePromptItemResponseBodyToSurlaLivePromptItem(v *LivePromptItemResponseBody) *surla.LivePromptItem {
+	res := &surla.LivePromptItem{
+		PromptID:   *v.PromptID,
+		Version:    *v.Version,
+		AcceptedAt: *v.AcceptedAt,
+	}
+
+	return res
+}
+
+// unmarshalLiveTargetNotConfirmedStoppedResponseBodyToSurlaLiveTargetNotConfirmedStopped
+// builds a value of type *surla.LiveTargetNotConfirmedStopped from a value of
+// type *LiveTargetNotConfirmedStoppedResponseBody.
+func unmarshalLiveTargetNotConfirmedStoppedResponseBodyToSurlaLiveTargetNotConfirmedStopped(v *LiveTargetNotConfirmedStoppedResponseBody) *surla.LiveTargetNotConfirmedStopped {
+	res := &surla.LiveTargetNotConfirmedStopped{
+		CandidateCommit: *v.CandidateCommit,
+		Message:         *v.Message,
+	}
+
+	return res
+}
+
 // unmarshalOperatorEvaluatorTestsResponseBodyToSurlaOperatorEvaluatorTests
 // builds a value of type *surla.OperatorEvaluatorTests from a value of type
 // *OperatorEvaluatorTestsResponseBody.
@@ -5507,6 +5858,35 @@ func marshalDesignSnapshotRequestBodyToSurlaDesignSnapshot(v *DesignSnapshotRequ
 	return res
 }
 
+// unmarshalModelNoneResponseBodyToSurlaModelNone builds a value of type
+// *surla.ModelNone from a value of type *ModelNoneResponseBody.
+func unmarshalModelNoneResponseBodyToSurlaModelNone(v *ModelNoneResponseBody) *surla.ModelNone {
+	res := &surla.ModelNone{}
+
+	return res
+}
+
+// unmarshalModelDirectResponseBodyToSurlaModelDirect builds a value of type
+// *surla.ModelDirect from a value of type *ModelDirectResponseBody.
+func unmarshalModelDirectResponseBodyToSurlaModelDirect(v *ModelDirectResponseBody) *surla.ModelDirect {
+	res := &surla.ModelDirect{
+		Provider:  *v.Provider,
+		ModelName: *v.ModelName,
+	}
+
+	return res
+}
+
+// unmarshalModelGatewayResponseBodyToSurlaModelGateway builds a value of type
+// *surla.ModelGateway from a value of type *ModelGatewayResponseBody.
+func unmarshalModelGatewayResponseBodyToSurlaModelGateway(v *ModelGatewayResponseBody) *surla.ModelGateway {
+	res := &surla.ModelGateway{
+		GatewayAddr: *v.GatewayAddr,
+	}
+
+	return res
+}
+
 // unmarshalTraceSpanResponseBodyToSurlaTraceSpan builds a value of type
 // *surla.TraceSpan from a value of type *TraceSpanResponseBody.
 func unmarshalTraceSpanResponseBodyToSurlaTraceSpan(v *TraceSpanResponseBody) *surla.TraceSpan {
@@ -5713,11 +6093,8 @@ func unmarshalTestsReportedResponseBodyToSurlaTestsReported(v *TestsReportedResp
 // *TestsNeedChangesResponseBody.
 func unmarshalTestsNeedChangesResponseBodyToSurlaTestsNeedChanges(v *TestsNeedChangesResponseBody) *surla.TestsNeedChanges {
 	res := &surla.TestsNeedChanges{
-		CheckedAt: *v.CheckedAt,
-	}
-	res.Findings = make([]string, len(v.Findings))
-	for i, val := range v.Findings {
-		res.Findings[i] = val
+		FindingCount: *v.FindingCount,
+		CheckedAt:    *v.CheckedAt,
 	}
 
 	return res
@@ -5729,6 +6106,7 @@ func unmarshalTestsAcceptedResponseBodyToSurlaTestsAccepted(v *TestsAcceptedResp
 	res := &surla.TestsAccepted{
 		Commit:    *v.Commit,
 		CheckedAt: *v.CheckedAt,
+		NotJudged: *v.NotJudged,
 	}
 
 	return res

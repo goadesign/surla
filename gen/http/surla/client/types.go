@@ -541,6 +541,16 @@ type StopLiveTargetResponseBody struct {
 	Message *string `form:"message,omitempty" json:"message,omitempty" xml:"message,omitempty"`
 }
 
+// GetLiveTargetResponseBody is the type of the "surla" service
+// "get_live_target" endpoint HTTP response body.
+type GetLiveTargetResponseBody struct {
+	// none when no live target runs; starting while one is built and started;
+	// running with its commit, address, start time and the prompts whose drafts
+	// are in force; not_confirmed_stopped when its processes could not be
+	// confirmed stopped.
+	LiveTarget *LiveTargetResponseBody `form:"live_target,omitempty" json:"live_target,omitempty" xml:"live_target,omitempty"`
+}
+
 // VerifyChangeResponseBody is the type of the "surla" service "verify_change"
 // endpoint HTTP response body.
 type VerifyChangeResponseBody struct {
@@ -677,6 +687,14 @@ type ConfigureModelResponseBody struct {
 	ModelName *string `form:"model_name,omitempty" json:"model_name,omitempty" xml:"model_name,omitempty"`
 	// Active gRPC model gateway host:port when a model gateway is configured.
 	GatewayAddr *string `form:"gateway_addr,omitempty" json:"gateway_addr,omitempty" xml:"gateway_addr,omitempty"`
+}
+
+// GetModelConnectionResponseBody is the type of the "surla" service
+// "get_model_connection" endpoint HTTP response body.
+type GetModelConnectionResponseBody struct {
+	// none when no model is chosen; direct with a provider and model name; gateway
+	// with a model gateway address.
+	Connection *ConnectionResponseBody `form:"connection,omitempty" json:"connection,omitempty" xml:"connection,omitempty"`
 }
 
 // InitProjectResponseBody is the type of the "surla" service "init_project"
@@ -874,6 +892,25 @@ type GetBuildResponseBody struct {
 	Build *BuildResponseBody `form:"build,omitempty" json:"build,omitempty" xml:"build,omitempty"`
 }
 
+// GetTestFindingsResponseBody is the type of the "surla" service
+// "get_test_findings" endpoint HTTP response body.
+type GetTestFindingsResponseBody struct {
+	// Change Card identifier.
+	ChangeID *string `form:"change_id,omitempty" json:"change_id,omitempty" xml:"change_id,omitempty"`
+	// Change Card revision the build is for.
+	RequestRevision *string `form:"request_revision,omitempty" json:"request_revision,omitempty" xml:"request_revision,omitempty"`
+	// When the user started the build, as get_build reports it.
+	StartedAt *string `form:"started_at,omitempty" json:"started_at,omitempty" xml:"started_at,omitempty"`
+	// Number of the test writer's report that Surla checked, as get_build reports
+	// it; 0 when Surla found the problems while writing the required tests as the
+	// build started, before any report.
+	Report *int `form:"report,omitempty" json:"report,omitempty" xml:"report,omitempty"`
+	// When Surla's check reached this verdict.
+	CheckedAt *string `form:"checked_at,omitempty" json:"checked_at,omitempty" xml:"checked_at,omitempty"`
+	// What Surla found, one problem per item, with no absolute path.
+	Findings []string `form:"findings,omitempty" json:"findings,omitempty" xml:"findings,omitempty"`
+}
+
 // ListBuilderAssignmentsResponseBody is the type of the "surla" service
 // "list_builder_assignments" endpoint HTTP response body.
 type ListBuilderAssignmentsResponseBody struct {
@@ -925,9 +962,12 @@ type GetTestWriterAssignmentResponseBody struct {
 	// proposed revision or confirmed another revision: the assignment then stays
 	// for this earlier revision until the user builds again.
 	InForce *bool `form:"in_force,omitempty" json:"in_force,omitempty" xml:"in_force,omitempty"`
-	// Where this assignment stands, including Surla's findings when it needs
-	// changes.
+	// Where this assignment stands.
 	Progress *TestWriterProgressResponseBody `form:"progress,omitempty" json:"progress,omitempty" xml:"progress,omitempty"`
+	// Surla's findings, one problem per item, with no absolute path: as many as
+	// progress gives in finding_count when its state is needs_changes, and none in
+	// any other state. Fix them in working_folder, then report again.
+	Findings []string `form:"findings,omitempty" json:"findings,omitempty" xml:"findings,omitempty"`
 	// Folder to write the tests in: your own working copy of the project.
 	WorkingFolder *string `form:"working_folder,omitempty" json:"working_folder,omitempty" xml:"working_folder,omitempty"`
 	// The canonical design source as agreed at request_revision, copied when this
@@ -1560,6 +1600,24 @@ type StopLiveTargetForbiddenResponseBody struct {
 	Fault *bool `form:"fault,omitempty" json:"fault,omitempty" xml:"fault,omitempty"`
 }
 
+// GetLiveTargetForbiddenResponseBody is the type of the "surla" service
+// "get_live_target" endpoint HTTP response body for the "forbidden" error.
+type GetLiveTargetForbiddenResponseBody struct {
+	// Name is the name of this class of errors.
+	Name *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID *string `form:"id,omitempty" json:"id,omitempty" xml:"id,omitempty"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message *string `form:"message,omitempty" json:"message,omitempty" xml:"message,omitempty"`
+	// Is the error temporary?
+	Temporary *bool `form:"temporary,omitempty" json:"temporary,omitempty" xml:"temporary,omitempty"`
+	// Is the error a timeout?
+	Timeout *bool `form:"timeout,omitempty" json:"timeout,omitempty" xml:"timeout,omitempty"`
+	// Is the error a server-side fault?
+	Fault *bool `form:"fault,omitempty" json:"fault,omitempty" xml:"fault,omitempty"`
+}
+
 // VerifyChangeNotFoundResponseBody is the type of the "surla" service
 // "verify_change" endpoint HTTP response body for the "not_found" error.
 type VerifyChangeNotFoundResponseBody struct {
@@ -1945,6 +2003,24 @@ type ConfigureModelNotImplementedResponseBody struct {
 // ConfigureModelForbiddenResponseBody is the type of the "surla" service
 // "configure_model" endpoint HTTP response body for the "forbidden" error.
 type ConfigureModelForbiddenResponseBody struct {
+	// Name is the name of this class of errors.
+	Name *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID *string `form:"id,omitempty" json:"id,omitempty" xml:"id,omitempty"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message *string `form:"message,omitempty" json:"message,omitempty" xml:"message,omitempty"`
+	// Is the error temporary?
+	Temporary *bool `form:"temporary,omitempty" json:"temporary,omitempty" xml:"temporary,omitempty"`
+	// Is the error a timeout?
+	Timeout *bool `form:"timeout,omitempty" json:"timeout,omitempty" xml:"timeout,omitempty"`
+	// Is the error a server-side fault?
+	Fault *bool `form:"fault,omitempty" json:"fault,omitempty" xml:"fault,omitempty"`
+}
+
+// GetModelConnectionForbiddenResponseBody is the type of the "surla" service
+// "get_model_connection" endpoint HTTP response body for the "forbidden" error.
+type GetModelConnectionForbiddenResponseBody struct {
 	// Name is the name of this class of errors.
 	Name *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
 	// ID is a unique identifier for this particular occurrence of the problem.
@@ -2935,6 +3011,60 @@ type GetBuildForbiddenResponseBody struct {
 	Fault *bool `form:"fault,omitempty" json:"fault,omitempty" xml:"fault,omitempty"`
 }
 
+// GetTestFindingsNotFoundResponseBody is the type of the "surla" service
+// "get_test_findings" endpoint HTTP response body for the "not_found" error.
+type GetTestFindingsNotFoundResponseBody struct {
+	// Name is the name of this class of errors.
+	Name *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID *string `form:"id,omitempty" json:"id,omitempty" xml:"id,omitempty"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message *string `form:"message,omitempty" json:"message,omitempty" xml:"message,omitempty"`
+	// Is the error temporary?
+	Temporary *bool `form:"temporary,omitempty" json:"temporary,omitempty" xml:"temporary,omitempty"`
+	// Is the error a timeout?
+	Timeout *bool `form:"timeout,omitempty" json:"timeout,omitempty" xml:"timeout,omitempty"`
+	// Is the error a server-side fault?
+	Fault *bool `form:"fault,omitempty" json:"fault,omitempty" xml:"fault,omitempty"`
+}
+
+// GetTestFindingsConflictResponseBody is the type of the "surla" service
+// "get_test_findings" endpoint HTTP response body for the "conflict" error.
+type GetTestFindingsConflictResponseBody struct {
+	// Name is the name of this class of errors.
+	Name *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID *string `form:"id,omitempty" json:"id,omitempty" xml:"id,omitempty"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message *string `form:"message,omitempty" json:"message,omitempty" xml:"message,omitempty"`
+	// Is the error temporary?
+	Temporary *bool `form:"temporary,omitempty" json:"temporary,omitempty" xml:"temporary,omitempty"`
+	// Is the error a timeout?
+	Timeout *bool `form:"timeout,omitempty" json:"timeout,omitempty" xml:"timeout,omitempty"`
+	// Is the error a server-side fault?
+	Fault *bool `form:"fault,omitempty" json:"fault,omitempty" xml:"fault,omitempty"`
+}
+
+// GetTestFindingsForbiddenResponseBody is the type of the "surla" service
+// "get_test_findings" endpoint HTTP response body for the "forbidden" error.
+type GetTestFindingsForbiddenResponseBody struct {
+	// Name is the name of this class of errors.
+	Name *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID *string `form:"id,omitempty" json:"id,omitempty" xml:"id,omitempty"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message *string `form:"message,omitempty" json:"message,omitempty" xml:"message,omitempty"`
+	// Is the error temporary?
+	Temporary *bool `form:"temporary,omitempty" json:"temporary,omitempty" xml:"temporary,omitempty"`
+	// Is the error a timeout?
+	Timeout *bool `form:"timeout,omitempty" json:"timeout,omitempty" xml:"timeout,omitempty"`
+	// Is the error a server-side fault?
+	Fault *bool `form:"fault,omitempty" json:"fault,omitempty" xml:"fault,omitempty"`
+}
+
 // ListBuilderAssignmentsForbiddenResponseBody is the type of the "surla"
 // service "list_builder_assignments" endpoint HTTP response body for the
 // "forbidden" error.
@@ -3364,6 +3494,54 @@ type ToolInputBindingItemResponseBody struct {
 	InjectedFields []string `form:"injected_fields,omitempty" json:"injected_fields,omitempty" xml:"injected_fields,omitempty"`
 }
 
+// LiveTargetNoneResponseBody is used to define fields on response body types.
+type LiveTargetNoneResponseBody struct {
+}
+
+// LiveTargetStartingResponseBody is used to define fields on response body
+// types.
+type LiveTargetStartingResponseBody struct {
+	// The commit being built.
+	CandidateCommit *string `form:"candidate_commit,omitempty" json:"candidate_commit,omitempty" xml:"candidate_commit,omitempty"`
+	// When the start began.
+	Since *string `form:"since,omitempty" json:"since,omitempty" xml:"since,omitempty"`
+}
+
+// RunningLiveTargetResponseBody is used to define fields on response body
+// types.
+type RunningLiveTargetResponseBody struct {
+	// The commit it was built from.
+	CandidateCommit *string `form:"candidate_commit,omitempty" json:"candidate_commit,omitempty" xml:"candidate_commit,omitempty"`
+	// The origin it listens on, as its evaluator suite reported it.
+	URL *string `form:"url,omitempty" json:"url,omitempty" xml:"url,omitempty"`
+	// When it became ready.
+	StartedAt *string `form:"started_at,omitempty" json:"started_at,omitempty" xml:"started_at,omitempty"`
+	// One entry per prompt whose draft it accepted, sorted by prompt_id; empty
+	// when none.
+	Prompts []*LivePromptItemResponseBody `form:"prompts,omitempty" json:"prompts,omitempty" xml:"prompts,omitempty"`
+}
+
+// LivePromptItemResponseBody is used to define fields on response body types.
+type LivePromptItemResponseBody struct {
+	// Registered prompt identifier.
+	PromptID *string `form:"prompt_id,omitempty" json:"prompt_id,omitempty" xml:"prompt_id,omitempty"`
+	// Version of the text in force, as the live target returned it.
+	Version *string `form:"version,omitempty" json:"version,omitempty" xml:"version,omitempty"`
+	// When the live target first accepted the version in force. A later draft that
+	// the target answers with the same version, such as the same text sent again,
+	// keeps this time.
+	AcceptedAt *string `form:"accepted_at,omitempty" json:"accepted_at,omitempty" xml:"accepted_at,omitempty"`
+}
+
+// LiveTargetNotConfirmedStoppedResponseBody is used to define fields on
+// response body types.
+type LiveTargetNotConfirmedStoppedResponseBody struct {
+	// The commit it was built from.
+	CandidateCommit *string `form:"candidate_commit,omitempty" json:"candidate_commit,omitempty" xml:"candidate_commit,omitempty"`
+	// What happened and what to do next.
+	Message *string `form:"message,omitempty" json:"message,omitempty" xml:"message,omitempty"`
+}
+
 // OperatorEvaluatorTestsResponseBody is used to define fields on response body
 // types.
 type OperatorEvaluatorTestsResponseBody struct {
@@ -3486,6 +3664,24 @@ type VerificationStatusResultResponseBody struct {
 	TestSource *TestSourceResponseBody `form:"test_source,omitempty" json:"test_source,omitempty" xml:"test_source,omitempty"`
 	// Exactly one of running, completed or not_completed.
 	State *StateResponseBody `form:"state,omitempty" json:"state,omitempty" xml:"state,omitempty"`
+}
+
+// ModelNoneResponseBody is used to define fields on response body types.
+type ModelNoneResponseBody struct {
+}
+
+// ModelDirectResponseBody is used to define fields on response body types.
+type ModelDirectResponseBody struct {
+	// Direct model provider.
+	Provider *string `form:"provider,omitempty" json:"provider,omitempty" xml:"provider,omitempty"`
+	// Provider model identifier.
+	ModelName *string `form:"model_name,omitempty" json:"model_name,omitempty" xml:"model_name,omitempty"`
+}
+
+// ModelGatewayResponseBody is used to define fields on response body types.
+type ModelGatewayResponseBody struct {
+	// Plaintext gRPC host:port of the gateway.
+	GatewayAddr *string `form:"gateway_addr,omitempty" json:"gateway_addr,omitempty" xml:"gateway_addr,omitempty"`
 }
 
 // TraceSpanResponseBody is used to define fields on response body types.
@@ -3611,15 +3807,16 @@ type BuilderProgressResponseBody struct {
 // types.
 type TestWriterProgressResponseBody struct {
 	// The tests' state: not_used when the project verifies with its stored
-	// evaluator; otherwise assigned, reported, needs_changes with Surla's
-	// findings, accepted with the commit Surla recorded, or could_not_run with the
-	// reason and the user's step. Each verdict carries the time Surla reached it.
+	// evaluator; otherwise assigned, reported, needs_changes with the number of
+	// Surla's findings, accepted with the commit Surla recorded, or could_not_run
+	// with the reason and the user's step. Each verdict carries the time Surla
+	// reached it.
 	Tests *TestsResponseBody `form:"tests,omitempty" json:"tests,omitempty" xml:"tests,omitempty"`
 	// True once the test writer read this assignment in full with
 	// get_test_writer_assignment.
 	Read *bool `form:"read,omitempty" json:"read,omitempty" xml:"read,omitempty"`
-	// Number of the test writer's latest counted report of this build; 0 when none
-	// was counted. Reports are not counted yet, so it is 0.
+	// Number of the test writer's latest report of this build: 0 until its first
+	// report, and one more with each report_tests_finished.
 	Report *int `form:"report,omitempty" json:"report,omitempty" xml:"report,omitempty"`
 }
 
@@ -3637,9 +3834,8 @@ type TestsReportedResponseBody struct {
 
 // TestsNeedChangesResponseBody is used to define fields on response body types.
 type TestsNeedChangesResponseBody struct {
-	// What Surla found, one problem per item: a test that does not build or a
-	// required test that is not declared.
-	Findings []string `form:"findings,omitempty" json:"findings,omitempty" xml:"findings,omitempty"`
+	// Number of problems Surla found.
+	FindingCount *int `form:"finding_count,omitempty" json:"finding_count,omitempty" xml:"finding_count,omitempty"`
 	// When Surla's check reached this verdict.
 	CheckedAt *string `form:"checked_at,omitempty" json:"checked_at,omitempty" xml:"checked_at,omitempty"`
 }
@@ -3651,6 +3847,8 @@ type TestsAcceptedResponseBody struct {
 	Commit *string `form:"commit,omitempty" json:"commit,omitempty" xml:"commit,omitempty"`
 	// When Surla's check reached this verdict.
 	CheckedAt *string `form:"checked_at,omitempty" json:"checked_at,omitempty" xml:"checked_at,omitempty"`
+	// What Surla's check did not judge, always the same sentence.
+	NotJudged *string `form:"not_judged,omitempty" json:"not_judged,omitempty" xml:"not_judged,omitempty"`
 }
 
 // TestsCouldNotRunResponseBody is used to define fields on response body types.
@@ -4087,6 +4285,493 @@ func (u *BuildResponseBody) UnmarshalJSON(data []byte) error {
 		return goa.InvalidEnumValueError("state", raw.Type, []any{
 			string(BuildResponseBodyKindNotStarted),
 			string(BuildResponseBodyKindStarted),
+		})
+	}
+	return nil
+}
+
+// ConnectionResponseBody holds exactly one of its branch values.
+type ConnectionResponseBody struct {
+	kind    ConnectionResponseBodyKind
+	none    *ModelNoneResponseBody
+	direct  *ModelDirectResponseBody
+	gateway *ModelGatewayResponseBody
+}
+
+// ConnectionResponseBodyKind records which ConnectionResponseBody branch is selected.
+type ConnectionResponseBodyKind string
+
+const (
+	// ConnectionResponseBodyKindNone identifies the none branch.
+	ConnectionResponseBodyKindNone ConnectionResponseBodyKind = "none"
+	// ConnectionResponseBodyKindDirect identifies the direct branch.
+	ConnectionResponseBodyKindDirect ConnectionResponseBodyKind = "direct"
+	// ConnectionResponseBodyKindGateway identifies the gateway branch.
+	ConnectionResponseBodyKindGateway ConnectionResponseBodyKind = "gateway"
+)
+
+// Kind returns the selected branch.
+func (u ConnectionResponseBody) Kind() ConnectionResponseBodyKind {
+	return u.kind
+}
+
+// NewConnectionResponseBodyNone constructs ConnectionResponseBody with the none branch set.
+func NewConnectionResponseBodyNone(v *ModelNoneResponseBody) ConnectionResponseBody {
+	return ConnectionResponseBody{
+		kind: ConnectionResponseBodyKindNone,
+		none: v,
+	}
+}
+
+// AsNone returns the value when the none branch is selected.
+func (u ConnectionResponseBody) AsNone() (_ *ModelNoneResponseBody, ok bool) {
+	if u.kind != ConnectionResponseBodyKindNone {
+		return
+	}
+	return u.none, true
+}
+
+// SetNone selects the none branch and stores v.
+func (u *ConnectionResponseBody) SetNone(v *ModelNoneResponseBody) {
+	*u = ConnectionResponseBody{
+		kind: ConnectionResponseBodyKindNone,
+		none: v,
+	}
+}
+
+// NewConnectionResponseBodyDirect constructs ConnectionResponseBody with the direct branch set.
+func NewConnectionResponseBodyDirect(v *ModelDirectResponseBody) ConnectionResponseBody {
+	return ConnectionResponseBody{
+		kind:   ConnectionResponseBodyKindDirect,
+		direct: v,
+	}
+}
+
+// AsDirect returns the value when the direct branch is selected.
+func (u ConnectionResponseBody) AsDirect() (_ *ModelDirectResponseBody, ok bool) {
+	if u.kind != ConnectionResponseBodyKindDirect {
+		return
+	}
+	return u.direct, true
+}
+
+// SetDirect selects the direct branch and stores v.
+func (u *ConnectionResponseBody) SetDirect(v *ModelDirectResponseBody) {
+	*u = ConnectionResponseBody{
+		kind:   ConnectionResponseBodyKindDirect,
+		direct: v,
+	}
+}
+
+// NewConnectionResponseBodyGateway constructs ConnectionResponseBody with the gateway branch set.
+func NewConnectionResponseBodyGateway(v *ModelGatewayResponseBody) ConnectionResponseBody {
+	return ConnectionResponseBody{
+		kind:    ConnectionResponseBodyKindGateway,
+		gateway: v,
+	}
+}
+
+// AsGateway returns the value when the gateway branch is selected.
+func (u ConnectionResponseBody) AsGateway() (_ *ModelGatewayResponseBody, ok bool) {
+	if u.kind != ConnectionResponseBodyKindGateway {
+		return
+	}
+	return u.gateway, true
+}
+
+// SetGateway selects the gateway branch and stores v.
+func (u *ConnectionResponseBody) SetGateway(v *ModelGatewayResponseBody) {
+	*u = ConnectionResponseBody{
+		kind:    ConnectionResponseBodyKindGateway,
+		gateway: v,
+	}
+}
+
+// Validate ensures exactly one valid branch is selected.
+func (u ConnectionResponseBody) Validate() error {
+	_, err := u.Value()
+	return err
+}
+
+// Value returns the selected branch value, or the same selection error as Validate.
+// Go templates can read this method directly; an invalid selection stops execution.
+func (u ConnectionResponseBody) Value() (any, error) {
+	switch u.kind {
+	case "":
+		return nil, goa.InvalidEnumValueError("kind", "", []any{
+			string(ConnectionResponseBodyKindNone),
+			string(ConnectionResponseBodyKindDirect),
+			string(ConnectionResponseBodyKindGateway),
+		})
+	case ConnectionResponseBodyKindNone:
+		if u.none == nil {
+			return nil, goa.MissingFieldError("value", "ConnectionResponseBody")
+		}
+		return u.none, nil
+	case ConnectionResponseBodyKindDirect:
+		if u.direct == nil {
+			return nil, goa.MissingFieldError("value", "ConnectionResponseBody")
+		}
+		return u.direct, nil
+	case ConnectionResponseBodyKindGateway:
+		if u.gateway == nil {
+			return nil, goa.MissingFieldError("value", "ConnectionResponseBody")
+		}
+		return u.gateway, nil
+	default:
+		return nil, goa.InvalidEnumValueError("kind", u.kind, []any{
+			string(ConnectionResponseBodyKindNone),
+			string(ConnectionResponseBodyKindDirect),
+			string(ConnectionResponseBodyKindGateway),
+		})
+	}
+}
+
+// MarshalJSON writes the selected object branch beside its discriminator.
+func (u ConnectionResponseBody) MarshalJSON() ([]byte, error) {
+	value, err := u.Value()
+	if err != nil {
+		return nil, err
+	}
+	data, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return nil, err
+	}
+	if fields == nil {
+		return nil, goa.InvalidFieldTypeError("kind", nil, "non-null JSON object")
+	}
+	if _, exists := fields["kind"]; exists {
+		return nil, fmt.Errorf("ConnectionResponseBody branch already contains discriminator %q", "kind")
+	}
+	tag, err := json.Marshal(string(u.kind))
+	if err != nil {
+		return nil, err
+	}
+	fields["kind"] = tag
+	return json.Marshal(fields)
+}
+
+// UnmarshalJSON reads the discriminator and decodes its declared object branch.
+func (u *ConnectionResponseBody) UnmarshalJSON(data []byte) error {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return err
+	}
+	tag, exists := fields["kind"]
+	if !exists {
+		return goa.MissingFieldError("kind", "ConnectionResponseBody")
+	}
+	if bytes.Equal(bytes.TrimSpace(tag), []byte("null")) {
+		return goa.InvalidFieldTypeError("kind", nil, "JSON string")
+	}
+	var raw struct {
+		Type  string
+		Value json.RawMessage
+	}
+	if err := json.Unmarshal(tag, &raw.Type); err != nil {
+		return err
+	}
+	delete(fields, "kind")
+	value, err := json.Marshal(fields)
+	if err != nil {
+		return err
+	}
+	raw.Value = value
+	switch raw.Type {
+	case string(ConnectionResponseBodyKindNone):
+		var v *ModelNoneResponseBody
+		if err := json.Unmarshal(raw.Value, &v); err != nil {
+			return err
+		}
+		u.SetNone(v)
+	case string(ConnectionResponseBodyKindDirect):
+		var v *ModelDirectResponseBody
+		if err := json.Unmarshal(raw.Value, &v); err != nil {
+			return err
+		}
+		u.SetDirect(v)
+	case string(ConnectionResponseBodyKindGateway):
+		var v *ModelGatewayResponseBody
+		if err := json.Unmarshal(raw.Value, &v); err != nil {
+			return err
+		}
+		u.SetGateway(v)
+	default:
+		if raw.Type == "" {
+			return goa.MissingFieldError("kind", "ConnectionResponseBody")
+		}
+		return goa.InvalidEnumValueError("kind", raw.Type, []any{
+			string(ConnectionResponseBodyKindNone),
+			string(ConnectionResponseBodyKindDirect),
+			string(ConnectionResponseBodyKindGateway),
+		})
+	}
+	return nil
+}
+
+// LiveTargetResponseBody holds exactly one of its branch values.
+type LiveTargetResponseBody struct {
+	kind                LiveTargetResponseBodyKind
+	none                *LiveTargetNoneResponseBody
+	starting            *LiveTargetStartingResponseBody
+	running             *RunningLiveTargetResponseBody
+	notConfirmedStopped *LiveTargetNotConfirmedStoppedResponseBody
+}
+
+// LiveTargetResponseBodyKind records which LiveTargetResponseBody branch is selected.
+type LiveTargetResponseBodyKind string
+
+const (
+	// LiveTargetResponseBodyKindNone identifies the none branch.
+	LiveTargetResponseBodyKindNone LiveTargetResponseBodyKind = "none"
+	// LiveTargetResponseBodyKindStarting identifies the starting branch.
+	LiveTargetResponseBodyKindStarting LiveTargetResponseBodyKind = "starting"
+	// LiveTargetResponseBodyKindRunning identifies the running branch.
+	LiveTargetResponseBodyKindRunning LiveTargetResponseBodyKind = "running"
+	// LiveTargetResponseBodyKindNotConfirmedStopped identifies the not_confirmed_stopped branch.
+	LiveTargetResponseBodyKindNotConfirmedStopped LiveTargetResponseBodyKind = "not_confirmed_stopped"
+)
+
+// Kind returns the selected branch.
+func (u LiveTargetResponseBody) Kind() LiveTargetResponseBodyKind {
+	return u.kind
+}
+
+// NewLiveTargetResponseBodyNone constructs LiveTargetResponseBody with the none branch set.
+func NewLiveTargetResponseBodyNone(v *LiveTargetNoneResponseBody) LiveTargetResponseBody {
+	return LiveTargetResponseBody{
+		kind: LiveTargetResponseBodyKindNone,
+		none: v,
+	}
+}
+
+// AsNone returns the value when the none branch is selected.
+func (u LiveTargetResponseBody) AsNone() (_ *LiveTargetNoneResponseBody, ok bool) {
+	if u.kind != LiveTargetResponseBodyKindNone {
+		return
+	}
+	return u.none, true
+}
+
+// SetNone selects the none branch and stores v.
+func (u *LiveTargetResponseBody) SetNone(v *LiveTargetNoneResponseBody) {
+	*u = LiveTargetResponseBody{
+		kind: LiveTargetResponseBodyKindNone,
+		none: v,
+	}
+}
+
+// NewLiveTargetResponseBodyStarting constructs LiveTargetResponseBody with the starting branch set.
+func NewLiveTargetResponseBodyStarting(v *LiveTargetStartingResponseBody) LiveTargetResponseBody {
+	return LiveTargetResponseBody{
+		kind:     LiveTargetResponseBodyKindStarting,
+		starting: v,
+	}
+}
+
+// AsStarting returns the value when the starting branch is selected.
+func (u LiveTargetResponseBody) AsStarting() (_ *LiveTargetStartingResponseBody, ok bool) {
+	if u.kind != LiveTargetResponseBodyKindStarting {
+		return
+	}
+	return u.starting, true
+}
+
+// SetStarting selects the starting branch and stores v.
+func (u *LiveTargetResponseBody) SetStarting(v *LiveTargetStartingResponseBody) {
+	*u = LiveTargetResponseBody{
+		kind:     LiveTargetResponseBodyKindStarting,
+		starting: v,
+	}
+}
+
+// NewLiveTargetResponseBodyRunning constructs LiveTargetResponseBody with the running branch set.
+func NewLiveTargetResponseBodyRunning(v *RunningLiveTargetResponseBody) LiveTargetResponseBody {
+	return LiveTargetResponseBody{
+		kind:    LiveTargetResponseBodyKindRunning,
+		running: v,
+	}
+}
+
+// AsRunning returns the value when the running branch is selected.
+func (u LiveTargetResponseBody) AsRunning() (_ *RunningLiveTargetResponseBody, ok bool) {
+	if u.kind != LiveTargetResponseBodyKindRunning {
+		return
+	}
+	return u.running, true
+}
+
+// SetRunning selects the running branch and stores v.
+func (u *LiveTargetResponseBody) SetRunning(v *RunningLiveTargetResponseBody) {
+	*u = LiveTargetResponseBody{
+		kind:    LiveTargetResponseBodyKindRunning,
+		running: v,
+	}
+}
+
+// NewLiveTargetResponseBodyNotConfirmedStopped constructs LiveTargetResponseBody with the not_confirmed_stopped branch set.
+func NewLiveTargetResponseBodyNotConfirmedStopped(v *LiveTargetNotConfirmedStoppedResponseBody) LiveTargetResponseBody {
+	return LiveTargetResponseBody{
+		kind:                LiveTargetResponseBodyKindNotConfirmedStopped,
+		notConfirmedStopped: v,
+	}
+}
+
+// AsNotConfirmedStopped returns the value when the not_confirmed_stopped branch is selected.
+func (u LiveTargetResponseBody) AsNotConfirmedStopped() (_ *LiveTargetNotConfirmedStoppedResponseBody, ok bool) {
+	if u.kind != LiveTargetResponseBodyKindNotConfirmedStopped {
+		return
+	}
+	return u.notConfirmedStopped, true
+}
+
+// SetNotConfirmedStopped selects the not_confirmed_stopped branch and stores v.
+func (u *LiveTargetResponseBody) SetNotConfirmedStopped(v *LiveTargetNotConfirmedStoppedResponseBody) {
+	*u = LiveTargetResponseBody{
+		kind:                LiveTargetResponseBodyKindNotConfirmedStopped,
+		notConfirmedStopped: v,
+	}
+}
+
+// Validate ensures exactly one valid branch is selected.
+func (u LiveTargetResponseBody) Validate() error {
+	_, err := u.Value()
+	return err
+}
+
+// Value returns the selected branch value, or the same selection error as Validate.
+// Go templates can read this method directly; an invalid selection stops execution.
+func (u LiveTargetResponseBody) Value() (any, error) {
+	switch u.kind {
+	case "":
+		return nil, goa.InvalidEnumValueError("state", "", []any{
+			string(LiveTargetResponseBodyKindNone),
+			string(LiveTargetResponseBodyKindStarting),
+			string(LiveTargetResponseBodyKindRunning),
+			string(LiveTargetResponseBodyKindNotConfirmedStopped),
+		})
+	case LiveTargetResponseBodyKindNone:
+		if u.none == nil {
+			return nil, goa.MissingFieldError("value", "LiveTargetResponseBody")
+		}
+		return u.none, nil
+	case LiveTargetResponseBodyKindStarting:
+		if u.starting == nil {
+			return nil, goa.MissingFieldError("value", "LiveTargetResponseBody")
+		}
+		return u.starting, nil
+	case LiveTargetResponseBodyKindRunning:
+		if u.running == nil {
+			return nil, goa.MissingFieldError("value", "LiveTargetResponseBody")
+		}
+		return u.running, nil
+	case LiveTargetResponseBodyKindNotConfirmedStopped:
+		if u.notConfirmedStopped == nil {
+			return nil, goa.MissingFieldError("value", "LiveTargetResponseBody")
+		}
+		return u.notConfirmedStopped, nil
+	default:
+		return nil, goa.InvalidEnumValueError("state", u.kind, []any{
+			string(LiveTargetResponseBodyKindNone),
+			string(LiveTargetResponseBodyKindStarting),
+			string(LiveTargetResponseBodyKindRunning),
+			string(LiveTargetResponseBodyKindNotConfirmedStopped),
+		})
+	}
+}
+
+// MarshalJSON writes the selected object branch beside its discriminator.
+func (u LiveTargetResponseBody) MarshalJSON() ([]byte, error) {
+	value, err := u.Value()
+	if err != nil {
+		return nil, err
+	}
+	data, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return nil, err
+	}
+	if fields == nil {
+		return nil, goa.InvalidFieldTypeError("state", nil, "non-null JSON object")
+	}
+	if _, exists := fields["state"]; exists {
+		return nil, fmt.Errorf("LiveTargetResponseBody branch already contains discriminator %q", "state")
+	}
+	tag, err := json.Marshal(string(u.kind))
+	if err != nil {
+		return nil, err
+	}
+	fields["state"] = tag
+	return json.Marshal(fields)
+}
+
+// UnmarshalJSON reads the discriminator and decodes its declared object branch.
+func (u *LiveTargetResponseBody) UnmarshalJSON(data []byte) error {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return err
+	}
+	tag, exists := fields["state"]
+	if !exists {
+		return goa.MissingFieldError("state", "LiveTargetResponseBody")
+	}
+	if bytes.Equal(bytes.TrimSpace(tag), []byte("null")) {
+		return goa.InvalidFieldTypeError("state", nil, "JSON string")
+	}
+	var raw struct {
+		Type  string
+		Value json.RawMessage
+	}
+	if err := json.Unmarshal(tag, &raw.Type); err != nil {
+		return err
+	}
+	delete(fields, "state")
+	value, err := json.Marshal(fields)
+	if err != nil {
+		return err
+	}
+	raw.Value = value
+	switch raw.Type {
+	case string(LiveTargetResponseBodyKindNone):
+		var v *LiveTargetNoneResponseBody
+		if err := json.Unmarshal(raw.Value, &v); err != nil {
+			return err
+		}
+		u.SetNone(v)
+	case string(LiveTargetResponseBodyKindStarting):
+		var v *LiveTargetStartingResponseBody
+		if err := json.Unmarshal(raw.Value, &v); err != nil {
+			return err
+		}
+		u.SetStarting(v)
+	case string(LiveTargetResponseBodyKindRunning):
+		var v *RunningLiveTargetResponseBody
+		if err := json.Unmarshal(raw.Value, &v); err != nil {
+			return err
+		}
+		u.SetRunning(v)
+	case string(LiveTargetResponseBodyKindNotConfirmedStopped):
+		var v *LiveTargetNotConfirmedStoppedResponseBody
+		if err := json.Unmarshal(raw.Value, &v); err != nil {
+			return err
+		}
+		u.SetNotConfirmedStopped(v)
+	default:
+		if raw.Type == "" {
+			return goa.MissingFieldError("state", "LiveTargetResponseBody")
+		}
+		return goa.InvalidEnumValueError("state", raw.Type, []any{
+			string(LiveTargetResponseBodyKindNone),
+			string(LiveTargetResponseBodyKindStarting),
+			string(LiveTargetResponseBodyKindRunning),
+			string(LiveTargetResponseBodyKindNotConfirmedStopped),
 		})
 	}
 	return nil
@@ -6683,6 +7368,67 @@ func NewStopLiveTargetForbidden(body *StopLiveTargetForbiddenResponseBody) *goa.
 	return v
 }
 
+// NewGetLiveTargetLiveTargetStatusOK builds a "surla" service
+// "get_live_target" endpoint result from a HTTP "OK" response.
+func NewGetLiveTargetLiveTargetStatusOK(body *GetLiveTargetResponseBody) *surla.LiveTargetStatus {
+	v := &surla.LiveTargetStatus{}
+	switch string(body.LiveTarget.Kind()) {
+	case "none":
+		actual, _ := body.LiveTarget.AsNone()
+		var obj *surla.LiveTargetNone
+		if actual != nil {
+			obj = unmarshalLiveTargetNoneResponseBodyToSurlaLiveTargetNone(actual)
+		}
+		u := v.LiveTarget
+		u.SetNone((*surla.LiveTargetNone)(obj))
+		v.LiveTarget = u
+	case "starting":
+		actual, _ := body.LiveTarget.AsStarting()
+		var obj *surla.LiveTargetStarting
+		if actual != nil {
+			obj = unmarshalLiveTargetStartingResponseBodyToSurlaLiveTargetStarting(actual)
+		}
+		u := v.LiveTarget
+		u.SetStarting((*surla.LiveTargetStarting)(obj))
+		v.LiveTarget = u
+	case "running":
+		actual, _ := body.LiveTarget.AsRunning()
+		var obj *surla.RunningLiveTarget
+		if actual != nil {
+			obj = unmarshalRunningLiveTargetResponseBodyToSurlaRunningLiveTarget(actual)
+		}
+		u := v.LiveTarget
+		u.SetRunning((*surla.RunningLiveTarget)(obj))
+		v.LiveTarget = u
+	case "not_confirmed_stopped":
+		actual, _ := body.LiveTarget.AsNotConfirmedStopped()
+		var obj *surla.LiveTargetNotConfirmedStopped
+		if actual != nil {
+			obj = unmarshalLiveTargetNotConfirmedStoppedResponseBodyToSurlaLiveTargetNotConfirmedStopped(actual)
+		}
+		u := v.LiveTarget
+		u.SetNotConfirmedStopped((*surla.LiveTargetNotConfirmedStopped)(obj))
+		v.LiveTarget = u
+	}
+
+	return v
+}
+
+// NewGetLiveTargetForbidden builds a surla service get_live_target endpoint
+// forbidden error.
+func NewGetLiveTargetForbidden(body *GetLiveTargetForbiddenResponseBody) *goa.ServiceError {
+	v := &goa.ServiceError{
+		Name:      *body.Name,
+		ID:        *body.ID,
+		Message:   *body.Message,
+		Temporary: *body.Temporary,
+		Timeout:   *body.Timeout,
+		Fault:     *body.Fault,
+	}
+
+	return v
+}
+
 // NewVerifyChangeVerificationStatusResultOK builds a "surla" service
 // "verify_change" endpoint result from a HTTP "OK" response.
 func NewVerifyChangeVerificationStatusResultOK(body *VerifyChangeResponseBody) *surla.VerificationStatusResult {
@@ -7252,6 +7998,58 @@ func NewConfigureModelNotImplemented(body *ConfigureModelNotImplementedResponseB
 // NewConfigureModelForbidden builds a surla service configure_model endpoint
 // forbidden error.
 func NewConfigureModelForbidden(body *ConfigureModelForbiddenResponseBody) *goa.ServiceError {
+	v := &goa.ServiceError{
+		Name:      *body.Name,
+		ID:        *body.ID,
+		Message:   *body.Message,
+		Temporary: *body.Temporary,
+		Timeout:   *body.Timeout,
+		Fault:     *body.Fault,
+	}
+
+	return v
+}
+
+// NewGetModelConnectionModelConnectionOK builds a "surla" service
+// "get_model_connection" endpoint result from a HTTP "OK" response.
+func NewGetModelConnectionModelConnectionOK(body *GetModelConnectionResponseBody) *surla.ModelConnection {
+	v := &surla.ModelConnection{}
+	switch string(body.Connection.Kind()) {
+	case "none":
+		actual, _ := body.Connection.AsNone()
+		var obj *surla.ModelNone
+		if actual != nil {
+			obj = unmarshalModelNoneResponseBodyToSurlaModelNone(actual)
+		}
+		u := v.Connection
+		u.SetNone((*surla.ModelNone)(obj))
+		v.Connection = u
+	case "direct":
+		actual, _ := body.Connection.AsDirect()
+		var obj *surla.ModelDirect
+		if actual != nil {
+			obj = unmarshalModelDirectResponseBodyToSurlaModelDirect(actual)
+		}
+		u := v.Connection
+		u.SetDirect((*surla.ModelDirect)(obj))
+		v.Connection = u
+	case "gateway":
+		actual, _ := body.Connection.AsGateway()
+		var obj *surla.ModelGateway
+		if actual != nil {
+			obj = unmarshalModelGatewayResponseBodyToSurlaModelGateway(actual)
+		}
+		u := v.Connection
+		u.SetGateway((*surla.ModelGateway)(obj))
+		v.Connection = u
+	}
+
+	return v
+}
+
+// NewGetModelConnectionForbidden builds a surla service get_model_connection
+// endpoint forbidden error.
+func NewGetModelConnectionForbidden(body *GetModelConnectionForbiddenResponseBody) *goa.ServiceError {
 	v := &goa.ServiceError{
 		Name:      *body.Name,
 		ID:        *body.ID,
@@ -8386,6 +9184,69 @@ func NewGetBuildForbidden(body *GetBuildForbiddenResponseBody) *goa.ServiceError
 	return v
 }
 
+// NewGetTestFindingsTestFindingsOK builds a "surla" service
+// "get_test_findings" endpoint result from a HTTP "OK" response.
+func NewGetTestFindingsTestFindingsOK(body *GetTestFindingsResponseBody) *surla.TestFindings {
+	v := &surla.TestFindings{
+		ChangeID:        *body.ChangeID,
+		RequestRevision: *body.RequestRevision,
+		StartedAt:       *body.StartedAt,
+		Report:          *body.Report,
+		CheckedAt:       *body.CheckedAt,
+	}
+	v.Findings = make([]string, len(body.Findings))
+	for i, val := range body.Findings {
+		v.Findings[i] = val
+	}
+
+	return v
+}
+
+// NewGetTestFindingsNotFound builds a surla service get_test_findings endpoint
+// not_found error.
+func NewGetTestFindingsNotFound(body *GetTestFindingsNotFoundResponseBody) *goa.ServiceError {
+	v := &goa.ServiceError{
+		Name:      *body.Name,
+		ID:        *body.ID,
+		Message:   *body.Message,
+		Temporary: *body.Temporary,
+		Timeout:   *body.Timeout,
+		Fault:     *body.Fault,
+	}
+
+	return v
+}
+
+// NewGetTestFindingsConflict builds a surla service get_test_findings endpoint
+// conflict error.
+func NewGetTestFindingsConflict(body *GetTestFindingsConflictResponseBody) *goa.ServiceError {
+	v := &goa.ServiceError{
+		Name:      *body.Name,
+		ID:        *body.ID,
+		Message:   *body.Message,
+		Temporary: *body.Temporary,
+		Timeout:   *body.Timeout,
+		Fault:     *body.Fault,
+	}
+
+	return v
+}
+
+// NewGetTestFindingsForbidden builds a surla service get_test_findings
+// endpoint forbidden error.
+func NewGetTestFindingsForbidden(body *GetTestFindingsForbiddenResponseBody) *goa.ServiceError {
+	v := &goa.ServiceError{
+		Name:      *body.Name,
+		ID:        *body.ID,
+		Message:   *body.Message,
+		Temporary: *body.Temporary,
+		Timeout:   *body.Timeout,
+		Fault:     *body.Fault,
+	}
+
+	return v
+}
+
 // NewListBuilderAssignmentsBuilderAssignmentListOK builds a "surla" service
 // "list_builder_assignments" endpoint result from a HTTP "OK" response.
 func NewListBuilderAssignmentsBuilderAssignmentListOK(body *ListBuilderAssignmentsResponseBody) *surla.BuilderAssignmentList {
@@ -8532,6 +9393,10 @@ func NewGetTestWriterAssignmentTestWriterAssignmentOK(body *GetTestWriterAssignm
 		DesignSource:    *body.DesignSource,
 	}
 	v.Progress = unmarshalTestWriterProgressResponseBodyToSurlaTestWriterProgress(body.Progress)
+	v.Findings = make([]string, len(body.Findings))
+	for i, val := range body.Findings {
+		v.Findings[i] = val
+	}
 	v.Stories = make([]*surla.StorySummaryItem, len(body.Stories))
 	for i, val := range body.Stories {
 		if val == nil {
@@ -9108,6 +9973,46 @@ func ValidateStopLiveTargetResponseBody(body *StopLiveTargetResponseBody) (err e
 	return
 }
 
+// ValidateGetLiveTargetResponseBody runs the validations defined on
+// GetLiveTargetResponseBody
+func ValidateGetLiveTargetResponseBody(body *GetLiveTargetResponseBody) (err error) {
+	if body.LiveTarget == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("live_target", "body"))
+	}
+	if body.LiveTarget != nil {
+
+		if err2 := body.LiveTarget.Validate(); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		} else {
+			switch string(body.LiveTarget.Kind()) {
+			case "starting":
+				actual, _ := body.LiveTarget.AsStarting()
+				if actual != nil {
+					if err2 := validateLiveTargetStartingResponseBody(actual, "body.live_target.value"); err2 != nil {
+						err = goa.MergeErrors(err, err2)
+					}
+				}
+			case "running":
+				actual, _ := body.LiveTarget.AsRunning()
+				if actual != nil {
+					if err2 := validateRunningLiveTargetResponseBody(actual, "body.live_target.value"); err2 != nil {
+						err = goa.MergeErrors(err, err2)
+					}
+				}
+			case "not_confirmed_stopped":
+				actual, _ := body.LiveTarget.AsNotConfirmedStopped()
+				if actual != nil {
+					if err2 := validateLiveTargetNotConfirmedStoppedResponseBody(actual, "body.live_target.value"); err2 != nil {
+						err = goa.MergeErrors(err, err2)
+					}
+				}
+			}
+		}
+
+	}
+	return
+}
+
 // ValidateVerifyChangeResponseBody runs the validations defined on
 // VerifyChangeResponseBody
 func ValidateVerifyChangeResponseBody(body *VerifyChangeResponseBody) (err error) {
@@ -9402,6 +10307,39 @@ func ValidateConfigureModelResponseBody(body *ConfigureModelResponseBody) (err e
 		if utf8.RuneCountInString(*body.GatewayAddr) < 1 {
 			err = goa.MergeErrors(err, goa.InvalidLengthError("body.gateway_addr", *body.GatewayAddr, utf8.RuneCountInString(*body.GatewayAddr), 1, true))
 		}
+	}
+	return
+}
+
+// ValidateGetModelConnectionResponseBody runs the validations defined on
+// GetModelConnectionResponseBody
+func ValidateGetModelConnectionResponseBody(body *GetModelConnectionResponseBody) (err error) {
+	if body.Connection == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("connection", "body"))
+	}
+	if body.Connection != nil {
+
+		if err2 := body.Connection.Validate(); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		} else {
+			switch string(body.Connection.Kind()) {
+			case "direct":
+				actual, _ := body.Connection.AsDirect()
+				if actual != nil {
+					if err2 := validateModelDirectResponseBody(actual, "body.connection.value"); err2 != nil {
+						err = goa.MergeErrors(err, err2)
+					}
+				}
+			case "gateway":
+				actual, _ := body.Connection.AsGateway()
+				if actual != nil {
+					if err2 := validateModelGatewayResponseBody(actual, "body.connection.value"); err2 != nil {
+						err = goa.MergeErrors(err, err2)
+					}
+				}
+			}
+		}
+
 	}
 	return
 }
@@ -9777,6 +10715,44 @@ func ValidateGetBuildResponseBody(body *GetBuildResponseBody) (err error) {
 	return
 }
 
+// ValidateGetTestFindingsResponseBody runs the validations defined on
+// GetTestFindingsResponseBody
+func ValidateGetTestFindingsResponseBody(body *GetTestFindingsResponseBody) (err error) {
+	if body.ChangeID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("change_id", "body"))
+	}
+	if body.RequestRevision == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("request_revision", "body"))
+	}
+	if body.StartedAt == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("started_at", "body"))
+	}
+	if body.Report == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("report", "body"))
+	}
+	if body.CheckedAt == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("checked_at", "body"))
+	}
+	if body.Findings == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("findings", "body"))
+	}
+	if body.StartedAt != nil {
+		err = goa.MergeErrors(err, goa.ValidateFormat("body.started_at", *body.StartedAt, goa.FormatDateTime))
+	}
+	if body.Report != nil {
+		if *body.Report < 0 {
+			err = goa.MergeErrors(err, goa.InvalidRangeError("body.report", *body.Report, 0, true))
+		}
+	}
+	if body.CheckedAt != nil {
+		err = goa.MergeErrors(err, goa.ValidateFormat("body.checked_at", *body.CheckedAt, goa.FormatDateTime))
+	}
+	if len(body.Findings) < 1 {
+		err = goa.MergeErrors(err, goa.InvalidLengthError("body.findings", body.Findings, len(body.Findings), 1, true))
+	}
+	return
+}
+
 // ValidateListBuilderAssignmentsResponseBody runs the validations defined on
 // ListBuilderAssignmentsResponseBody
 func ValidateListBuilderAssignmentsResponseBody(body *ListBuilderAssignmentsResponseBody) (err error) {
@@ -9861,6 +10837,9 @@ func ValidateGetTestWriterAssignmentResponseBody(body *GetTestWriterAssignmentRe
 	}
 	if body.Progress == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("progress", "body"))
+	}
+	if body.Findings == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("findings", "body"))
 	}
 	if body.WorkingFolder == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("working_folder", "body"))
@@ -10711,6 +11690,30 @@ func ValidateStopLiveTargetForbiddenResponseBody(body *StopLiveTargetForbiddenRe
 	return
 }
 
+// ValidateGetLiveTargetForbiddenResponseBody runs the validations defined on
+// GetLiveTargetForbiddenResponseBody
+func ValidateGetLiveTargetForbiddenResponseBody(body *GetLiveTargetForbiddenResponseBody) (err error) {
+	if body.Name == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
+	}
+	if body.ID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("id", "body"))
+	}
+	if body.Message == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("message", "body"))
+	}
+	if body.Temporary == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("temporary", "body"))
+	}
+	if body.Timeout == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("timeout", "body"))
+	}
+	if body.Fault == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("fault", "body"))
+	}
+	return
+}
+
 // ValidateVerifyChangeNotFoundResponseBody runs the validations defined on
 // VerifyChangeNotFoundResponseBody
 func ValidateVerifyChangeNotFoundResponseBody(body *VerifyChangeNotFoundResponseBody) (err error) {
@@ -11218,6 +12221,30 @@ func ValidateConfigureModelNotImplementedResponseBody(body *ConfigureModelNotImp
 // ValidateConfigureModelForbiddenResponseBody runs the validations defined on
 // ConfigureModelForbiddenResponseBody
 func ValidateConfigureModelForbiddenResponseBody(body *ConfigureModelForbiddenResponseBody) (err error) {
+	if body.Name == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
+	}
+	if body.ID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("id", "body"))
+	}
+	if body.Message == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("message", "body"))
+	}
+	if body.Temporary == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("temporary", "body"))
+	}
+	if body.Timeout == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("timeout", "body"))
+	}
+	if body.Fault == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("fault", "body"))
+	}
+	return
+}
+
+// ValidateGetModelConnectionForbiddenResponseBody runs the validations defined
+// on GetModelConnectionForbiddenResponseBody
+func ValidateGetModelConnectionForbiddenResponseBody(body *GetModelConnectionForbiddenResponseBody) (err error) {
 	if body.Name == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
 	}
@@ -12528,6 +13555,78 @@ func ValidateGetBuildForbiddenResponseBody(body *GetBuildForbiddenResponseBody) 
 	return
 }
 
+// ValidateGetTestFindingsNotFoundResponseBody runs the validations defined on
+// GetTestFindingsNotFoundResponseBody
+func ValidateGetTestFindingsNotFoundResponseBody(body *GetTestFindingsNotFoundResponseBody) (err error) {
+	if body.Name == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
+	}
+	if body.ID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("id", "body"))
+	}
+	if body.Message == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("message", "body"))
+	}
+	if body.Temporary == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("temporary", "body"))
+	}
+	if body.Timeout == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("timeout", "body"))
+	}
+	if body.Fault == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("fault", "body"))
+	}
+	return
+}
+
+// ValidateGetTestFindingsConflictResponseBody runs the validations defined on
+// GetTestFindingsConflictResponseBody
+func ValidateGetTestFindingsConflictResponseBody(body *GetTestFindingsConflictResponseBody) (err error) {
+	if body.Name == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
+	}
+	if body.ID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("id", "body"))
+	}
+	if body.Message == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("message", "body"))
+	}
+	if body.Temporary == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("temporary", "body"))
+	}
+	if body.Timeout == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("timeout", "body"))
+	}
+	if body.Fault == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("fault", "body"))
+	}
+	return
+}
+
+// ValidateGetTestFindingsForbiddenResponseBody runs the validations defined on
+// GetTestFindingsForbiddenResponseBody
+func ValidateGetTestFindingsForbiddenResponseBody(body *GetTestFindingsForbiddenResponseBody) (err error) {
+	if body.Name == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
+	}
+	if body.ID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("id", "body"))
+	}
+	if body.Message == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("message", "body"))
+	}
+	if body.Temporary == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("temporary", "body"))
+	}
+	if body.Timeout == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("timeout", "body"))
+	}
+	if body.Fault == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("fault", "body"))
+	}
+	return
+}
+
 // ValidateListBuilderAssignmentsForbiddenResponseBody runs the validations
 // defined on ListBuilderAssignmentsForbiddenResponseBody
 func ValidateListBuilderAssignmentsForbiddenResponseBody(body *ListBuilderAssignmentsForbiddenResponseBody) (err error) {
@@ -13531,6 +14630,153 @@ func validateToolInputBindingItemResponseBody(body *ToolInputBindingItemResponse
 	return
 }
 
+// ValidateLiveTargetStartingResponseBody runs the validations defined on
+// LiveTargetStarting
+func ValidateLiveTargetStartingResponseBody(body *LiveTargetStartingResponseBody) (err error) {
+	if body.CandidateCommit == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("candidate_commit", "body"))
+	}
+	if body.Since == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("since", "body"))
+	}
+	if body.Since != nil {
+		err = goa.MergeErrors(err, goa.ValidateFormat("body.since", *body.Since, goa.FormatDateTime))
+	}
+	return
+}
+
+// validateLiveTargetStartingResponseBody checks LiveTargetStarting and reports
+// errors using the path supplied by its caller
+func validateLiveTargetStartingResponseBody(body *LiveTargetStartingResponseBody, path string) (err error) {
+	if body.CandidateCommit == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("candidate_commit", path))
+	}
+	if body.Since == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("since", path))
+	}
+	if body.Since != nil {
+		err = goa.MergeErrors(err, goa.ValidateFormat(path+".since", *body.Since, goa.FormatDateTime))
+	}
+	return
+}
+
+// ValidateRunningLiveTargetResponseBody runs the validations defined on
+// RunningLiveTarget
+func ValidateRunningLiveTargetResponseBody(body *RunningLiveTargetResponseBody) (err error) {
+	if body.CandidateCommit == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("candidate_commit", "body"))
+	}
+	if body.URL == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("url", "body"))
+	}
+	if body.StartedAt == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("started_at", "body"))
+	}
+	if body.Prompts == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("prompts", "body"))
+	}
+	if body.StartedAt != nil {
+		err = goa.MergeErrors(err, goa.ValidateFormat("body.started_at", *body.StartedAt, goa.FormatDateTime))
+	}
+	for _, e := range body.Prompts {
+		if e != nil {
+			if err2 := validateLivePromptItemResponseBody(e, "body.prompts[*]"); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	return
+}
+
+// validateRunningLiveTargetResponseBody checks RunningLiveTarget and reports
+// errors using the path supplied by its caller
+func validateRunningLiveTargetResponseBody(body *RunningLiveTargetResponseBody, path string) (err error) {
+	if body.CandidateCommit == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("candidate_commit", path))
+	}
+	if body.URL == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("url", path))
+	}
+	if body.StartedAt == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("started_at", path))
+	}
+	if body.Prompts == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("prompts", path))
+	}
+	if body.StartedAt != nil {
+		err = goa.MergeErrors(err, goa.ValidateFormat(path+".started_at", *body.StartedAt, goa.FormatDateTime))
+	}
+	for _, e := range body.Prompts {
+		if e != nil {
+			if err2 := validateLivePromptItemResponseBody(e, path+".prompts[*]"); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	return
+}
+
+// ValidateLivePromptItemResponseBody runs the validations defined on
+// LivePromptItem
+func ValidateLivePromptItemResponseBody(body *LivePromptItemResponseBody) (err error) {
+	if body.PromptID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("prompt_id", "body"))
+	}
+	if body.Version == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("version", "body"))
+	}
+	if body.AcceptedAt == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("accepted_at", "body"))
+	}
+	if body.AcceptedAt != nil {
+		err = goa.MergeErrors(err, goa.ValidateFormat("body.accepted_at", *body.AcceptedAt, goa.FormatDateTime))
+	}
+	return
+}
+
+// validateLivePromptItemResponseBody checks LivePromptItem and reports errors
+// using the path supplied by its caller
+func validateLivePromptItemResponseBody(body *LivePromptItemResponseBody, path string) (err error) {
+	if body.PromptID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("prompt_id", path))
+	}
+	if body.Version == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("version", path))
+	}
+	if body.AcceptedAt == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("accepted_at", path))
+	}
+	if body.AcceptedAt != nil {
+		err = goa.MergeErrors(err, goa.ValidateFormat(path+".accepted_at", *body.AcceptedAt, goa.FormatDateTime))
+	}
+	return
+}
+
+// ValidateLiveTargetNotConfirmedStoppedResponseBody runs the validations
+// defined on LiveTargetNotConfirmedStopped
+func ValidateLiveTargetNotConfirmedStoppedResponseBody(body *LiveTargetNotConfirmedStoppedResponseBody) (err error) {
+	if body.CandidateCommit == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("candidate_commit", "body"))
+	}
+	if body.Message == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("message", "body"))
+	}
+	return
+}
+
+// validateLiveTargetNotConfirmedStoppedResponseBody checks
+// LiveTargetNotConfirmedStopped and reports errors using the path supplied by
+// its caller
+func validateLiveTargetNotConfirmedStoppedResponseBody(body *LiveTargetNotConfirmedStoppedResponseBody, path string) (err error) {
+	if body.CandidateCommit == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("candidate_commit", path))
+	}
+	if body.Message == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("message", path))
+	}
+	return
+}
+
 // ValidateAgentWrittenTestsResponseBody runs the validations defined on
 // AgentWrittenTests
 func ValidateAgentWrittenTestsResponseBody(body *AgentWrittenTestsResponseBody) (err error) {
@@ -14008,6 +15254,76 @@ func validateVerificationStatusResultResponseBody(body *VerificationStatusResult
 			}
 		}
 
+	}
+	return
+}
+
+// ValidateModelDirectResponseBody runs the validations defined on ModelDirect
+func ValidateModelDirectResponseBody(body *ModelDirectResponseBody) (err error) {
+	if body.Provider == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("provider", "body"))
+	}
+	if body.ModelName == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("model_name", "body"))
+	}
+	if body.Provider != nil {
+		if !(*body.Provider == "anthropic" || *body.Provider == "openai") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.provider", *body.Provider, []any{"anthropic", "openai"}))
+		}
+	}
+	if body.ModelName != nil {
+		if utf8.RuneCountInString(*body.ModelName) < 1 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.model_name", *body.ModelName, utf8.RuneCountInString(*body.ModelName), 1, true))
+		}
+	}
+	return
+}
+
+// validateModelDirectResponseBody checks ModelDirect and reports errors using
+// the path supplied by its caller
+func validateModelDirectResponseBody(body *ModelDirectResponseBody, path string) (err error) {
+	if body.Provider == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("provider", path))
+	}
+	if body.ModelName == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("model_name", path))
+	}
+	if body.Provider != nil {
+		if !(*body.Provider == "anthropic" || *body.Provider == "openai") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError(path+".provider", *body.Provider, []any{"anthropic", "openai"}))
+		}
+	}
+	if body.ModelName != nil {
+		if utf8.RuneCountInString(*body.ModelName) < 1 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError(path+".model_name", *body.ModelName, utf8.RuneCountInString(*body.ModelName), 1, true))
+		}
+	}
+	return
+}
+
+// ValidateModelGatewayResponseBody runs the validations defined on ModelGateway
+func ValidateModelGatewayResponseBody(body *ModelGatewayResponseBody) (err error) {
+	if body.GatewayAddr == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("gateway_addr", "body"))
+	}
+	if body.GatewayAddr != nil {
+		if utf8.RuneCountInString(*body.GatewayAddr) < 1 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.gateway_addr", *body.GatewayAddr, utf8.RuneCountInString(*body.GatewayAddr), 1, true))
+		}
+	}
+	return
+}
+
+// validateModelGatewayResponseBody checks ModelGateway and reports errors
+// using the path supplied by its caller
+func validateModelGatewayResponseBody(body *ModelGatewayResponseBody, path string) (err error) {
+	if body.GatewayAddr == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("gateway_addr", path))
+	}
+	if body.GatewayAddr != nil {
+		if utf8.RuneCountInString(*body.GatewayAddr) < 1 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError(path+".gateway_addr", *body.GatewayAddr, utf8.RuneCountInString(*body.GatewayAddr), 1, true))
+		}
 	}
 	return
 }
@@ -14557,14 +15873,16 @@ func validateTestWriterProgressResponseBody(body *TestWriterProgressResponseBody
 // ValidateTestsNeedChangesResponseBody runs the validations defined on
 // TestsNeedChanges
 func ValidateTestsNeedChangesResponseBody(body *TestsNeedChangesResponseBody) (err error) {
-	if body.Findings == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("findings", "body"))
+	if body.FindingCount == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("finding_count", "body"))
 	}
 	if body.CheckedAt == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("checked_at", "body"))
 	}
-	if len(body.Findings) < 1 {
-		err = goa.MergeErrors(err, goa.InvalidLengthError("body.findings", body.Findings, len(body.Findings), 1, true))
+	if body.FindingCount != nil {
+		if *body.FindingCount < 1 {
+			err = goa.MergeErrors(err, goa.InvalidRangeError("body.finding_count", *body.FindingCount, 1, true))
+		}
 	}
 	if body.CheckedAt != nil {
 		err = goa.MergeErrors(err, goa.ValidateFormat("body.checked_at", *body.CheckedAt, goa.FormatDateTime))
@@ -14575,14 +15893,16 @@ func ValidateTestsNeedChangesResponseBody(body *TestsNeedChangesResponseBody) (e
 // validateTestsNeedChangesResponseBody checks TestsNeedChanges and reports
 // errors using the path supplied by its caller
 func validateTestsNeedChangesResponseBody(body *TestsNeedChangesResponseBody, path string) (err error) {
-	if body.Findings == nil {
-		err = goa.MergeErrors(err, goa.MissingFieldError("findings", path))
+	if body.FindingCount == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("finding_count", path))
 	}
 	if body.CheckedAt == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("checked_at", path))
 	}
-	if len(body.Findings) < 1 {
-		err = goa.MergeErrors(err, goa.InvalidLengthError(path+".findings", body.Findings, len(body.Findings), 1, true))
+	if body.FindingCount != nil {
+		if *body.FindingCount < 1 {
+			err = goa.MergeErrors(err, goa.InvalidRangeError(path+".finding_count", *body.FindingCount, 1, true))
+		}
 	}
 	if body.CheckedAt != nil {
 		err = goa.MergeErrors(err, goa.ValidateFormat(path+".checked_at", *body.CheckedAt, goa.FormatDateTime))
@@ -14599,11 +15919,19 @@ func ValidateTestsAcceptedResponseBody(body *TestsAcceptedResponseBody) (err err
 	if body.CheckedAt == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("checked_at", "body"))
 	}
+	if body.NotJudged == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("not_judged", "body"))
+	}
 	if body.Commit != nil {
 		err = goa.MergeErrors(err, goa.ValidatePattern("body.commit", *body.Commit, "^([0-9a-f]{40}|[0-9a-f]{64})$"))
 	}
 	if body.CheckedAt != nil {
 		err = goa.MergeErrors(err, goa.ValidateFormat("body.checked_at", *body.CheckedAt, goa.FormatDateTime))
+	}
+	if body.NotJudged != nil {
+		if !(*body.NotJudged == "Surla checked that these tests build into the generated test program and declare every required scenario; it did not judge what they assert.") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.not_judged", *body.NotJudged, []any{"Surla checked that these tests build into the generated test program and declare every required scenario; it did not judge what they assert."}))
+		}
 	}
 	return
 }
@@ -14617,11 +15945,19 @@ func validateTestsAcceptedResponseBody(body *TestsAcceptedResponseBody, path str
 	if body.CheckedAt == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("checked_at", path))
 	}
+	if body.NotJudged == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("not_judged", path))
+	}
 	if body.Commit != nil {
 		err = goa.MergeErrors(err, goa.ValidatePattern(path+".commit", *body.Commit, "^([0-9a-f]{40}|[0-9a-f]{64})$"))
 	}
 	if body.CheckedAt != nil {
 		err = goa.MergeErrors(err, goa.ValidateFormat(path+".checked_at", *body.CheckedAt, goa.FormatDateTime))
+	}
+	if body.NotJudged != nil {
+		if !(*body.NotJudged == "Surla checked that these tests build into the generated test program and declare every required scenario; it did not judge what they assert.") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError(path+".not_judged", *body.NotJudged, []any{"Surla checked that these tests build into the generated test program and declare every required scenario; it did not judge what they assert."}))
+		}
 	}
 	return
 }

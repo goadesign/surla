@@ -274,10 +274,16 @@ type (
 		mu sync.RWMutex
 		// cards saves pending and confirmed CP1 Change Cards by change_id.
 		cards *cardStore
-		// modelMu guards liveModelEnv.
+		// modelMu guards liveModel and liveModelEnv, which change together.
 		modelMu sync.Mutex
-		// liveModelEnv is the environment the next CP3 live target starts
-		// with: Options.Live.Env until configure_model replaces it.
+		// liveModel is the model choice the next CP3 live target receives:
+		// Options.Live.Model, or none without Options.Live, until
+		// configure_model replaces it. get_model_connection reports it.
+		liveModel gensurla.Connection
+		// liveModelEnv is the environment liveModel became, which the next
+		// CP3 live target starts with: Options.Live.Env until configure_model
+		// replaces it. It holds inherited provider keys and is never
+		// returned.
 		liveModelEnv []string
 		// liveModelEnvFor is Options.LiveModelEnv, or nil when runtime model
 		// reconfiguration is not configured.
@@ -347,8 +353,8 @@ type (
 		// storyRefreshOps counts running Story refresh evaluations so Close can
 		// wait for them to finish before closing the evaluator.
 		storyRefreshOps sync.WaitGroup
-		// storyRefreshTimeout overrides defaultStoryRefreshTimeout in tests when positive.
-		storyRefreshTimeout time.Duration
+		// storyRefreshWithTimeout injects the refresh deadline in deterministic tests.
+		storyRefreshWithTimeout func(context.Context, time.Duration) (context.Context, context.CancelFunc)
 		// changesWait and changesPoll override defaultChangesWait and
 		// defaultChangesPoll in tests when positive.
 		changesWait, changesPoll time.Duration
@@ -376,11 +382,27 @@ type (
 		// receive releases it, and a waiter can give up when its context
 		// ends. Whoever holds the turn is the only one opening the copy,
 		// writing the required tests into it, checking it or recording its
-		// accepted tests, for the whole of that step. Take it before mu and
-		// never while holding mu: those steps run for minutes, and mu guards
-		// every card and build read. Starts take it without waiting; report checks
-		// use the same turn.
+		// accepted tests, for the whole of that step: a build start takes it
+		// without waiting, and the report checker holds it for each report it
+		// judges. Locks are taken in the order workingCopyTurn, reportMu, mu,
+		// never the other way: the turn's steps run for minutes, and mu guards
+		// every card and build read.
 		workingCopyTurn chan struct{}
+		// reportMu serializes report_tests_finished with the report
+		// checker's last step, which confirms that a build is still the one
+		// it checked, records accepted tests and saves the verdict. A report
+		// thus never falls between that confirmation and the commit; it
+		// waits for one Record, which takes milliseconds. Taken after
+		// workingCopyTurn and before mu.
+		reportMu sync.Mutex
+		// reportWake tells the report checker that a report was recorded.
+		// It has room for one value; report_tests_finished sends without
+		// waiting, and a full channel already says the same.
+		reportWake chan struct{}
+		// reports is the project's report checker, nil without a bound team;
+		// reportWorker runs it and drains before stores close.
+		reports      *reportChecker
+		reportWorker sync.WaitGroup
 		// buildStartOps counts accepted starts, admitted through workspaceMu's
 		// existing shutdown barrier and drained before stores and evaluators close.
 		buildStartOps sync.WaitGroup
@@ -436,6 +458,10 @@ func New(opts Options) (*ControlPlane, error) {
 		}
 		return evalErr
 	}
+	if opts.Live != nil && opts.Live.Model.Kind() == "" {
+		err := errors.New("Options.Live.Model must name the model choice Options.Live.Env was derived from: none, direct or gateway")
+		return nil, errors.Join(err, cleanupFailedNew())
+	}
 	surlaVersion := strings.TrimSpace(opts.SurlaVersion)
 	if surlaVersion != "" && !scaffold.ValidVersion(surlaVersion) {
 		err := fmt.Errorf("surla version %q must be a canonical semantic version such as v0.1.0", opts.SurlaVersion)
@@ -477,14 +503,16 @@ func New(opts Options) (*ControlPlane, error) {
 			eval = designeval.NewEvaluator()
 		}
 	}
+	initialModel := gensurla.NewConnectionNone(&gensurla.ModelNone{})
 	var initialLiveEnv []string
 	if opts.Live != nil {
-		initialLiveEnv = opts.Live.Env
+		initialModel, initialLiveEnv = opts.Live.Model, opts.Live.Env
 	}
 	cp := &ControlPlane{
 		cards:                  cards,
 		traces:                 traces,
 		traceProvider:          opts.TracerProvider,
+		liveModel:              initialModel,
 		liveModelEnv:           initialLiveEnv,
 		liveModelEnvFor:        opts.LiveModelEnv,
 		promotionTarget:        opts.PromotionTarget,
@@ -509,6 +537,7 @@ func New(opts Options) (*ControlPlane, error) {
 		surlaVersion:           surlaVersion,
 		liveState:              newLiveState(opts.Live, cards.dir),
 		workingCopyTurn:        make(chan struct{}, 1),
+		reportWake:             make(chan struct{}, 1),
 		team:                   opts.Team,
 	}
 	if err := cp.restoreWorkspace(); err != nil {
@@ -538,6 +567,7 @@ func New(opts Options) (*ControlPlane, error) {
 		return nil, errors.Join(errors.New("team binding requires its owner and service"), cp.Close())
 	}
 	cp.startTeamSupervisor()
+	cp.startReportChecker()
 	return cp, nil
 }
 
@@ -546,7 +576,9 @@ func New(opts Options) (*ControlPlane, error) {
 // HTTP endpoints decode JSON bodies with StrictJSONRequestDecoder; the MCP
 // server keeps Goa's decoder for its JSON-RPC envelope, because its generated
 // tool codecs already refuse undeclared argument fields.
-// auth is required and is supplied by the project credential owner.
+// auth is required and is supplied by the project credential owner. A request
+// sent with GET carries a private mark the diagnostics history uses to leave
+// out the user's reads that succeed or are refused.
 func NewHTTPHandler(svc gensurla.Service, auth RequestAuthenticator) http.Handler {
 	mux := goahttp.NewMuxer()
 	endpoints := gensurla.NewEndpoints(svc)
@@ -588,8 +620,11 @@ func NewHTTPHandler(svc gensurla.Service, auth RequestAuthenticator) http.Handle
 			}
 			return
 		}
-		r = r.WithContext(WithPrincipal(r.Context(), principal))
-		mux.ServeHTTP(w, r)
+		ctx := WithPrincipal(r.Context(), principal)
+		if r.Method == http.MethodGet {
+			ctx = context.WithValue(ctx, httpReadKey{}, true)
+		}
+		mux.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
 
@@ -732,6 +767,7 @@ func (c *ControlPlane) ProposeChange(ctx context.Context, p *gensurla.ProposeCha
 func (c *ControlPlane) Close() error {
 	c.cancelServer()
 	c.teamWorker.Wait()
+	c.reportWorker.Wait()
 	// Wait out any check admission in progress: an operation admitted under
 	// workspaceMu before this point is already registered, and every later
 	// one sees the server context ended and is refused (see

@@ -42,17 +42,15 @@ func TestNewLiveModelEnvBuildsTheLiveTargetEnvironment(t *testing.T) {
 	environ := []string{"PATH=/bin", "ANTHROPIC_API_KEY=ant-k"}
 	env := map[string]string{"ANTHROPIC_API_KEY": "ant-k"}
 	build := newLiveModelEnv(func(k string) string { return env[k] }, environ)
-	gw, provider, model, other := "127.0.0.1:9090", "anthropic", "claude-sonnet-4-6", "openai"
-
-	got, err := build(&gensurla.ConfigureModelPayload{GatewayAddr: &gw})
+	got, err := build(gatewayChoice("127.0.0.1:9090"))
 	require.NoError(t, err)
 	assert.Equal(t, []string{"PATH=/bin", "ANTHROPIC_API_KEY=ant-k", "SURLA_LIVE_MODEL_GATEWAY=127.0.0.1:9090"}, got)
 
-	got, err = build(&gensurla.ConfigureModelPayload{Provider: &provider, ModelName: &model})
+	got, err = build(directChoice("anthropic", "claude-sonnet-4-6"))
 	require.NoError(t, err)
 	assert.Equal(t, []string{"PATH=/bin", "ANTHROPIC_API_KEY=ant-k", "SURLA_LIVE_MODEL_PROVIDER=anthropic", "SURLA_LIVE_MODEL_NAME=claude-sonnet-4-6"}, got)
 
-	_, err = build(&gensurla.ConfigureModelPayload{Provider: &other, ModelName: &model})
+	_, err = build(directChoice("openai", "claude-sonnet-4-6"))
 	var se *goa.ServiceError
 	require.ErrorAs(t, err, &se)
 	assert.Equal(t, "unprocessable", se.GoaErrorName())
@@ -116,14 +114,14 @@ func TestLiveTargetEnvCarriesServesModelChoice(t *testing.T) {
 	environ := []string{"PATH=/bin", "ANTHROPIC_API_KEY=k", "SURLA_LIVE_MODEL_GATEWAY=stale:1"}
 	cases := []struct {
 		name string
-		cfg  serveConfig
+		cfg  gensurla.Connection
 		want []string
 	}{
-		{name: "direct provider", cfg: serveConfig{provider: "anthropic", modelName: "claude-x"},
+		{name: "direct provider", cfg: directChoice("anthropic", "claude-x"),
 			want: []string{"PATH=/bin", "ANTHROPIC_API_KEY=k", "SURLA_LIVE_MODEL_PROVIDER=anthropic", "SURLA_LIVE_MODEL_NAME=claude-x"}},
-		{name: "gateway", cfg: serveConfig{gatewayAddr: "127.0.0.1:9090"},
+		{name: "gateway", cfg: gatewayChoice("127.0.0.1:9090"),
 			want: []string{"PATH=/bin", "ANTHROPIC_API_KEY=k", "SURLA_LIVE_MODEL_GATEWAY=127.0.0.1:9090"}},
-		{name: "no model",
+		{name: "no model", cfg: noChoice(),
 			want: []string{"PATH=/bin", "ANTHROPIC_API_KEY=k"}},
 	}
 	for _, tc := range cases {
@@ -148,13 +146,13 @@ func TestServeOptionsWiresLiveModelEnv(t *testing.T) {
 	assert.NotNil(t, opts.LiveModelEnv)
 	require.NotNil(t, opts.Live)
 	assert.Equal(t, []string{"SURLA_LIVE_MODEL_PROVIDER=openai", "SURLA_LIVE_MODEL_NAME=" + defaultOpenAIModel}, opts.Live.Env)
+	assert.Equal(t, directChoice("openai", defaultOpenAIModel), opts.Live.Model, "the start-up choice reaches the control plane as the choice the environment came from")
 	closeServeOptions(t, opts)
 
 	opts, err = serveOptions(func(string) string { return "" }, nil)
 	require.NoError(t, err)
 	require.NotNil(t, opts.Live)
-	gateway := "127.0.0.1:9090"
-	configured, err := opts.LiveModelEnv(&gensurla.ConfigureModelPayload{GatewayAddr: &gateway})
+	configured, err := opts.LiveModelEnv(gatewayChoice("127.0.0.1:9090"))
 	require.NoError(t, err)
 	assert.Equal(t, []string{"SURLA_LIVE_MODEL_GATEWAY=127.0.0.1:9090"}, configured)
 	closeServeOptions(t, opts)
@@ -168,25 +166,23 @@ func TestServeOptionsWiresLiveModelEnv(t *testing.T) {
 	assert.Len(t, opts.Live.Command, 1)
 	assert.Equal(t, defaultProjectVerifyTimeout, opts.Live.StartTimeout)
 	assert.Empty(t, opts.Live.Env, "no provider keys leave live targets without a model choice")
+	assert.Equal(t, noChoice(), opts.Live.Model)
 	closeServeOptions(t, opts)
 
 }
 
-func TestResolveStartupModelConfigAndServeOptionsAutoDetection(t *testing.T) {
+func TestResolveStartupModelAndServeOptionsAutoDetection(t *testing.T) {
 	baseEnviron := []string{"PATH=/bin", "ANTHROPIC_API_KEY=ant-k", "OPENAI_API_KEY=oai-k"}
 	cases := []struct {
 		name        string
 		env         map[string]string
-		wantCfg     serveConfig
+		wantCfg     gensurla.Connection
 		wantLiveEnv []string
 	}{
 		{
-			name: "anthropic key auto-detects claude-sonnet-4-6 without verification config",
-			env:  map[string]string{"ANTHROPIC_API_KEY": "ant-k"},
-			wantCfg: serveConfig{
-				provider:  "anthropic",
-				modelName: defaultAnthropicModel,
-			},
+			name:    "anthropic key auto-detects claude-sonnet-4-6 without verification config",
+			env:     map[string]string{"ANTHROPIC_API_KEY": "ant-k"},
+			wantCfg: directChoice("anthropic", defaultAnthropicModel),
 			wantLiveEnv: []string{
 				"PATH=/bin",
 				"ANTHROPIC_API_KEY=ant-k",
@@ -196,12 +192,9 @@ func TestResolveStartupModelConfigAndServeOptionsAutoDetection(t *testing.T) {
 			},
 		},
 		{
-			name: "openai key auto-detects gpt-5.4-mini when anthropic key is absent",
-			env:  map[string]string{"OPENAI_API_KEY": "oai-k"},
-			wantCfg: serveConfig{
-				provider:  "openai",
-				modelName: defaultOpenAIModel,
-			},
+			name:    "openai key auto-detects gpt-5.4-mini when anthropic key is absent",
+			env:     map[string]string{"OPENAI_API_KEY": "oai-k"},
+			wantCfg: directChoice("openai", defaultOpenAIModel),
 			wantLiveEnv: []string{
 				"PATH=/bin",
 				"ANTHROPIC_API_KEY=ant-k",
@@ -216,10 +209,7 @@ func TestResolveStartupModelConfigAndServeOptionsAutoDetection(t *testing.T) {
 				"ANTHROPIC_API_KEY": "ant-k",
 				"OPENAI_API_KEY":    "oai-k",
 			},
-			wantCfg: serveConfig{
-				provider:  "anthropic",
-				modelName: defaultAnthropicModel,
-			},
+			wantCfg: directChoice("anthropic", defaultAnthropicModel),
 			wantLiveEnv: []string{
 				"PATH=/bin",
 				"ANTHROPIC_API_KEY=ant-k",
@@ -234,7 +224,7 @@ func TestResolveStartupModelConfigAndServeOptionsAutoDetection(t *testing.T) {
 				"ANTHROPIC_API_KEY": "   ",
 				"OPENAI_API_KEY":    "\t\n",
 			},
-			wantCfg: serveConfig{},
+			wantCfg: noChoice(),
 			wantLiveEnv: []string{
 				"PATH=/bin",
 				"ANTHROPIC_API_KEY=ant-k",
@@ -246,7 +236,7 @@ func TestResolveStartupModelConfigAndServeOptionsAutoDetection(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			isolateServeWorkspace(t)
 			getenv := func(k string) string { return tc.env[k] }
-			assert.Equal(t, tc.wantCfg, resolveStartupModelConfig(getenv))
+			assert.Equal(t, tc.wantCfg, resolveStartupModel(getenv))
 			opts, err := serveOptions(getenv, baseEnviron)
 			require.NoError(t, err)
 			assert.Nil(t, opts.Verification, "no verification settings are stored")
@@ -255,6 +245,7 @@ func TestResolveStartupModelConfigAndServeOptionsAutoDetection(t *testing.T) {
 			assert.Len(t, opts.Live.Command, 1)
 			assert.Equal(t, defaultProjectVerifyTimeout, opts.Live.StartTimeout)
 			assert.Equal(t, tc.wantLiveEnv, opts.Live.Env)
+			assert.Equal(t, tc.wantCfg, opts.Live.Model)
 			var statusBuf bytes.Buffer
 			writeServeStatus(&statusBuf, &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 8090}, opts)
 			assert.Contains(t, statusBuf.String(), "surla: CP3 (draft_override, start_live_target): compiled_rule is on; prompt_template is on once start_live_target runs a candidate commit")
@@ -530,4 +521,19 @@ func startModelGateway(t *testing.T, provider model.Provider) string {
 	go func() { assert.NoError(t, grpcSrv.Serve(lis)) }()
 	t.Cleanup(grpcSrv.Stop)
 	return lis.Addr().String()
+}
+
+// noChoice returns the declared choice of no model.
+func noChoice() gensurla.Connection {
+	return gensurla.NewConnectionNone(&gensurla.ModelNone{})
+}
+
+// directChoice returns the declared choice of a direct provider and model.
+func directChoice(provider, name string) gensurla.Connection {
+	return gensurla.NewConnectionDirect(&gensurla.ModelDirect{Provider: provider, ModelName: name})
+}
+
+// gatewayChoice returns the declared choice of a model gateway.
+func gatewayChoice(addr string) gensurla.Connection {
+	return gensurla.NewConnectionGateway(&gensurla.ModelGateway{GatewayAddr: addr})
 }

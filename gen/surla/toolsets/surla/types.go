@@ -393,6 +393,17 @@ type (
 		// fields describe the revision in force.
 		ProposedRevision *ProposedRevisionItem
 	}
+	// GetLiveTargetPayload defines the JSON payload for the surla.get_live_target tool.
+	GetLiveTargetPayload = struct {
+	}
+	// GetLiveTargetResult defines the JSON result for the surla.get_live_target tool.
+	GetLiveTargetResult = struct {
+		// none when no live target runs; starting while one is built and started;
+		// running with its commit, address, start time and the prompts whose drafts
+		// are in force; not_confirmed_stopped when its processes could not be
+		// confirmed stopped.
+		LiveTarget LiveTarget
+	}
 	// GetStoryRefreshPayload defines the JSON payload for the surla.get_story_refresh tool.
 	GetStoryRefreshPayload = struct {
 	}
@@ -434,9 +445,12 @@ type (
 		// proposed revision or confirmed another revision: the assignment then stays
 		// for this earlier revision until the user builds again.
 		InForce bool
-		// Where this assignment stands, including Surla's findings when it needs
-		// changes.
+		// Where this assignment stands.
 		Progress *TestWriterProgress
+		// Surla's findings, one problem per item, with no absolute path: as many as
+		// progress gives in finding_count when its state is needs_changes, and none in
+		// any other state. Fix them in working_folder, then report again.
+		Findings []string
 		// Folder to write the tests in: your own working copy of the project.
 		WorkingFolder string
 		// The canonical design source as agreed at request_revision, copied when this
@@ -1134,6 +1148,34 @@ type (
 		// report.
 		State string
 	}
+	// LivePromptItem is a nested type used by the generated JSON contract.
+	LivePromptItem = struct {
+		// Registered prompt identifier.
+		PromptID string
+		// Version of the text in force, as the live target returned it.
+		Version string
+		// When the live target first accepted the version in force. A later draft that
+		// the target answers with the same version, such as the same text sent again,
+		// keeps this time.
+		AcceptedAt string
+	}
+	// LiveTargetNone is a nested type used by the generated JSON contract.
+	LiveTargetNone = struct {
+	}
+	// LiveTargetNotConfirmedStopped is a nested type used by the generated JSON contract.
+	LiveTargetNotConfirmedStopped = struct {
+		// The commit it was built from.
+		CandidateCommit string
+		// What happened and what to do next.
+		Message string
+	}
+	// LiveTargetStarting is a nested type used by the generated JSON contract.
+	LiveTargetStarting = struct {
+		// The commit being built.
+		CandidateCommit string
+		// When the start began.
+		Since string
+	}
 	// OperatorEvaluatorTests is a nested type used by the generated JSON contract.
 	OperatorEvaluatorTests = struct {
 	}
@@ -1176,6 +1218,18 @@ type (
 		Scenario string
 		// Hook method the test writer implements for the scenario.
 		Hook string
+	}
+	// RunningLiveTarget is a nested type used by the generated JSON contract.
+	RunningLiveTarget = struct {
+		// The commit it was built from.
+		CandidateCommit string
+		// The origin it listens on, as its evaluator suite reported it.
+		URL string
+		// When it became ready.
+		StartedAt string
+		// One entry per prompt whose draft it accepted, sorted by prompt_id; empty
+		// when none.
+		Prompts []*LivePromptItem
 	}
 	// StartedBuild is a nested type used by the generated JSON contract.
 	StartedBuild = struct {
@@ -1277,15 +1331,16 @@ type (
 	// TestWriterProgress is a nested type used by the generated JSON contract.
 	TestWriterProgress = struct {
 		// The tests' state: not_used when the project verifies with its stored
-		// evaluator; otherwise assigned, reported, needs_changes with Surla's
-		// findings, accepted with the commit Surla recorded, or could_not_run with the
-		// reason and the user's step. Each verdict carries the time Surla reached it.
+		// evaluator; otherwise assigned, reported, needs_changes with the number of
+		// Surla's findings, accepted with the commit Surla recorded, or could_not_run
+		// with the reason and the user's step. Each verdict carries the time Surla
+		// reached it.
 		Tests Tests
 		// True once the test writer read this assignment in full with
 		// get_test_writer_assignment.
 		Read bool
-		// Number of the test writer's latest counted report of this build; 0 when none
-		// was counted. Reports are not counted yet, so it is 0.
+		// Number of the test writer's latest report of this build: 0 until its first
+		// report, and one more with each report_tests_finished.
 		Report int
 	}
 	// TestsAccepted is a nested type used by the generated JSON contract.
@@ -1295,6 +1350,8 @@ type (
 		Commit string
 		// When Surla's check reached this verdict.
 		CheckedAt string
+		// What Surla's check did not judge, always the same sentence.
+		NotJudged string
 	}
 	// TestsAssigned is a nested type used by the generated JSON contract.
 	TestsAssigned = struct {
@@ -1310,9 +1367,8 @@ type (
 	}
 	// TestsNeedChanges is a nested type used by the generated JSON contract.
 	TestsNeedChanges = struct {
-		// What Surla found, one problem per item: a test that does not build or a
-		// required test that is not declared.
-		Findings []string
+		// Number of problems Surla found.
+		FindingCount int
 		// When Surla's check reached this verdict.
 		CheckedAt string
 	}

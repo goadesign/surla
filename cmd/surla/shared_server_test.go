@@ -168,8 +168,10 @@ func TestSharedServerOwnershipRefinementResourcesAndLockReleaseAcrossRestarts(t 
 	rawResources, ok := resourcesRes["resources"].([]any)
 	require.True(t, ok)
 	assert.Len(t, rawResources, 1)
-	// Waiting, starting builds, and the three team operations are HTTP-only.
-	assert.Len(t, toolNames, len(gensurla.MethodNames)-len(rawResources)-5)
+	// Waiting, starting builds, reading the model choice, reading a build's
+	// findings, and the three team
+	// operations are HTTP-only.
+	assert.Len(t, toolNames, len(gensurla.MethodNames)-len(rawResources)-7)
 
 	gpRead := s1.call("4", "resources/read", map[string]any{"uri": "surla://golden-path"})
 	gpContents := requireResourceContents(t, gpRead)
@@ -493,7 +495,8 @@ func startSharedServerProcess(t *testing.T, workspace, config string) *sharedSer
 	t.Helper()
 	exe, err := os.Executable()
 	require.NoError(t, err)
-	root := filepath.Join(config, "surla", "operator")
+	root, err := testProjectRuntimeAt(config).operatorRoot(workspace)
+	require.NoError(t, err)
 	state, err := project.Discover(root, workspace)
 	require.NoError(t, err)
 	lock, err := state.StartLock(t.Context())
@@ -508,7 +511,7 @@ func startSharedServerProcess(t *testing.T, workspace, config string) *sharedSer
 	require.NotEmpty(t, team.Roles)
 	raw, err := os.ReadFile(state.AgentFile(team.Roles[0].Handle))
 	require.NoError(t, err)
-	cmd := exec.Command(exe, "serve")
+	cmd := exec.Command(exe, "serve", "-state", state.Dir)
 	cmd.Dir = workspace
 	cmd.Env = append(os.Environ(), "SURLA_TEST_USER_CONFIG_DIR="+config)
 	stderr, err := cmd.StderrPipe()

@@ -292,13 +292,229 @@ func TestProjectStartPortTakeoverRemovesOnlyFailedTerminal(t *testing.T) {
 	assert.ErrorIs(t, err, os.ErrNotExist)
 }
 
-// TestInternalServerAcceptsNoCallerOptions keeps all configuration in its owning workflow.
-func TestInternalServerAcceptsNoCallerOptions(t *testing.T) {
-	require.NoError(t, parseProjectArgs("serve", nil))
-	for _, option := range []string{"-model-provider", "-model-name", "-model-gateway-addr", "-check-timeout", "-principal", "-token", "-addr", "-cards-dir", "-project", "-verification-config", "-promotion-config"} {
-		assert.ErrorContains(t, parseProjectArgs("serve", []string{option, "value"}), "flag provided but not defined", option)
+// TestProjectStartShowsEndedServerOutput proves a server whose terminal ends while starting
+// reports its own last lines, bounded and printable, read before its terminal is removed.
+func TestProjectStartShowsEndedServerOutput(t *testing.T) {
+	// numbered returns lines "line <n>", filled with dots to width bytes when width is set.
+	numbered := func(first, last, width int) []string {
+		var lines []string
+		for index := first; index <= last; index++ {
+			line := fmt.Sprintf("line %d", index)
+			lines = append(lines, line+strings.Repeat(".", max(0, width-len(line))))
+		}
+		return lines
 	}
-	assert.ErrorContains(t, parseProjectArgs("serve", []string{"directory"}), "unexpected arguments")
+	indent := func(lines []string) string { return "  " + strings.Join(lines, "\n  ") }
+	const stopped = "the project server stopped while starting, and its last lines were:\n"
+	const fallback = "the project server in Herdr terminal t7 did not start answering: "
+	remedy := " run surla verification set <file>."
+	for _, tc := range []struct {
+		name    string
+		output  string
+		readErr error
+		// want is the exact error; wantParts are required parts when the cause varies.
+		want      string
+		wantParts []string
+	}{
+		{
+			name:   "final error",
+			output: "surla: serving on http://127.0.0.1:1\nsurla: decode verification settings: unexpected end of JSON input;" + remedy + "\n\n   \n",
+			want:   stopped + "  surla: serving on http://127.0.0.1:1\n  surla: decode verification settings: unexpected end of JSON input;" + remedy,
+		},
+		{
+			name:   "escape sequences and control characters",
+			output: "\x1b[1;31msurla:\x1b[0m bad\tsettings\r\n\x1b]0;title\x07\a\x00\x7f\u009b\u202eok\xff\x1b(B\n",
+			want:   stopped + "  surla: bad settings\n  ok",
+		},
+		{
+			name:   "many lines keep the end",
+			output: strings.Join(numbered(1, 30, 0), "\n") + "\n",
+			want:   stopped + indent(numbered(11, 30, 0)),
+		},
+		{
+			name:   "many long lines keep whole lines at the end",
+			output: strings.Join(numbered(1, 25, 250), "\n"),
+			want:   stopped + indent(numbered(10, 25, 250)),
+		},
+		{
+			name:   "one long line keeps its end",
+			output: strings.Repeat("é", 3000) + remedy,
+			want:   stopped + "  …" + strings.Repeat("é", 2030) + remedy,
+		},
+		{
+			name:      "unreadable output",
+			readErr:   errors.New("read Herdr terminal t7: exit status 1"),
+			wantParts: []string{fallback, "\nthe project server's terminal output could not be read: read Herdr terminal t7: exit status 1"},
+		},
+		{
+			name:      "no printable output",
+			output:    "\x1b[0m\n \n\t\n",
+			wantParts: []string{fallback, "\nthe project server's terminal output could not be read: it showed no printable text"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			isolateServeWorkspace(t)
+			runtime := testProjectRuntime()
+			runtime.preflight = func() error { return nil }
+			runtime.startTerminal = func(context.Context, *project.State) (string, error) { return "t7", nil }
+			runtime.waitTerminal = func(context.Context, string) (bool, error) { return true, nil }
+			var effects []string
+			var readCtx context.Context
+			runtime.readTerminal = func(ctx context.Context, id string) (string, error) {
+				assert.NoError(t, ctx.Err(), "the read has its own cleanup deadline")
+				readCtx = ctx
+				effects = append(effects, "read "+id)
+				return tc.output, tc.readErr
+			}
+			runtime.removeTerminal = func(ctx context.Context, id string) error {
+				// A read that used up its deadline must not leave the removal without one:
+				// the read's context has ended by now and the removal's has not.
+				require.NotNil(t, readCtx, "the read comes first")
+				assert.Error(t, readCtx.Err(), "the read's deadline ends with the read")
+				assert.NoError(t, ctx.Err(), "the removal has its own deadline")
+				effects = append(effects, "remove "+id)
+				return nil
+			}
+			err := runWithRuntime(nil, io.Discard, runtime)
+			require.Error(t, err)
+			if tc.want != "" {
+				assert.Equal(t, tc.want, err.Error())
+				assert.Less(t, len(err.Error()), len(stopped)+startOutputBytes+startOutputLines*3, "shown lines stay within the bound")
+			}
+			for _, part := range tc.wantParts {
+				assert.Contains(t, err.Error(), part)
+			}
+			assert.Equal(t, []string{"read t7", "remove t7"}, effects, "read before removal, exactly once")
+		})
+	}
+}
+
+// TestProjectStartLeavesLiveTerminalUnread proves a server that never answered but whose
+// terminal is still running is neither read nor removed, and the error names its terminal.
+func TestProjectStartLeavesLiveTerminalUnread(t *testing.T) {
+	isolateServeWorkspace(t)
+	runtime := testProjectRuntime()
+	runtime.preflight = func() error { return nil }
+	runtime.startTerminal = func(_ context.Context, state *project.State) (string, error) {
+		// Published access with no listener makes the readiness probe fail at once.
+		return "t7", state.SaveRunning(project.Running{ManagementCredential: strings.Repeat("a", 64)})
+	}
+	runtime.waitTerminal = func(ctx context.Context, _ string) (bool, error) { <-ctx.Done(); return false, nil }
+	runtime.readTerminal = func(context.Context, string) (string, error) {
+		t.Error("a live terminal must not be read")
+		return "", nil
+	}
+	runtime.removeTerminal = func(context.Context, string) error {
+		t.Error("a live terminal must stay for the user to look at")
+		return nil
+	}
+	err := runWithRuntime(nil, io.Discard, runtime)
+	require.ErrorContains(t, err, "the project server in Herdr terminal t7 did not start answering: ")
+	assert.NotContains(t, err.Error(), "stopped while starting")
+}
+
+// TestProjectStartThatAnswersReadsNothing proves a normal start never reads its terminal.
+func TestProjectStartThatAnswersReadsNothing(t *testing.T) {
+	t.Chdir(t.TempDir())
+	runtime := projectDispatchRuntime(t)
+	runtime.readTerminal = func(context.Context, string) (string, error) {
+		t.Error("an answering server's terminal must not be read")
+		return "", nil
+	}
+	runtime.removeTerminal = func(context.Context, string) error {
+		t.Error("an answering server's terminal must not be removed")
+		return nil
+	}
+	var output bytes.Buffer
+	require.NoError(t, runWithRuntime(nil, &output, runtime))
+	assert.Contains(t, output.String(), "Surla is running for")
+}
+
+// TestReadProjectTerminalArguments runs an owned hc stand-in, never the real one, to pin
+// the exact read arguments and how its reply and failures reach the start error.
+func TestReadProjectTerminalArguments(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		reply   string
+		exit    int
+		want    string
+		wantErr string
+	}{
+		{name: "text", reply: `{"complete":true,"how":"history","text":"surla: first\nsurla: second"}`, want: "surla: first\nsurla: second"},
+		{name: "failure", reply: "", exit: 3, wantErr: "read Herdr terminal t7: exit status 3"},
+		{name: "not JSON", reply: "not JSON", wantErr: "decode Herdr terminal t7 output"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			bin := t.TempDir()
+			arguments := filepath.Join(bin, "arguments")
+			script := fmt.Sprintf("#!/bin/sh\nprintf '%%s\\n' \"$@\" > %q\nprintf '%%s' '%s'\nexit %d\n", arguments, tc.reply, tc.exit)
+			hc := filepath.Join(bin, "hc")
+			require.NoError(t, os.WriteFile(hc, []byte(script), 0o700))
+			text, err := readProjectTerminal(t.Context(), "t7", func() (string, error) { return hc, nil })
+			if tc.wantErr != "" {
+				assert.ErrorContains(t, err, tc.wantErr)
+			} else {
+				require.NoError(t, err)
+				assert.Equal(t, tc.want, text)
+			}
+			argv, err := os.ReadFile(arguments)
+			require.NoError(t, err)
+			assert.Equal(t, "read\n--json\n--lines\n20\nt7\n", string(argv))
+		})
+	}
+}
+
+// TestInternalServerTakesOnlyItsStateFolder keeps all configuration in its owning workflow:
+// serve's one input is the state folder its launcher found, and every other option is refused.
+func TestInternalServerTakesOnlyItsStateFolder(t *testing.T) {
+	stateDir, err := parseServeArgs([]string{"-state", "/owned/project-state"})
+	require.NoError(t, err)
+	assert.Equal(t, "/owned/project-state", stateDir)
+	for _, args := range [][]string{nil, {"-state", ""}} {
+		_, err := parseServeArgs(args)
+		assert.ErrorContains(t, err, "serve requires -state; start the project with surla", args)
+	}
+	for _, option := range []string{"-model-provider", "-model-name", "-model-gateway-addr", "-check-timeout", "-principal", "-token", "-addr", "-cards-dir", "-project", "-verification-config", "-promotion-config"} {
+		_, err := parseServeArgs([]string{"-state", "/owned/project-state", option, "value"})
+		assert.ErrorContains(t, err, "flag provided but not defined", option)
+	}
+	_, err = parseServeArgs([]string{"-state", "/owned/project-state", "directory"})
+	assert.ErrorContains(t, err, "unexpected arguments")
+}
+
+// TestServeReadsOnlyItsStateFolder starts the real serve entry from a working directory that
+// belongs to no project, with a runtime whose configuration folder must never be asked for:
+// the server publishes its management record in exactly the folder named by -state.
+func TestServeReadsOnlyItsStateFolder(t *testing.T) {
+	isolateServeWorkspace(t)
+	state, err := fixtureProjectState("")
+	require.NoError(t, err)
+	t.Chdir(t.TempDir())
+	runtime := testProjectRuntime()
+	// The shared team fixture keeps its rosters under the configuration folder, so this
+	// test binds its own rosters folder and leaves the configuration folder unreachable.
+	rosters := t.TempDir()
+	runtime.teamDependencies = func(ctx context.Context) (project.TeamDependencies, error) {
+		return project.TeamDependencies{Lifetime: ctx, Host: &fixtureTeamHost{}, RosterDirectory: rosters, Shell: "/bin/zsh"}, nil
+	}
+	runtime.configRoot = func() (string, error) {
+		t.Error("serve must not resolve a configuration folder")
+		return "", errors.New("configuration folder is not available to serve")
+	}
+	done := make(chan error, 1)
+	go func() { done <- runWithRuntime([]string{"serve", "-state", state.Dir}, io.Discard, runtime) }()
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	running, err := waitForRunning(ctx, state)
+	require.NoError(t, err)
+	assert.Len(t, running.ManagementCredential, 64)
+	require.NoError(t, projectClient(state).Stop(ctx))
+	select {
+	case err := <-done:
+		require.NoError(t, err)
+	case <-ctx.Done():
+		t.Fatal("serve did not stop")
+	}
 }
 
 // TestMissingBrowserOpenerFailsBeforeProjectCreation checks the production preflight

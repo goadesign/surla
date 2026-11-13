@@ -25,12 +25,14 @@ type Client struct {
 	DraftOverrideEndpoint             goa.Endpoint
 	StartLiveTargetEndpoint           goa.Endpoint
 	StopLiveTargetEndpoint            goa.Endpoint
+	GetLiveTargetEndpoint             goa.Endpoint
 	VerifyChangeEndpoint              goa.Endpoint
 	GetVerificationEndpoint           goa.Endpoint
 	ListVerificationsEndpoint         goa.Endpoint
 	ApproveMergeEndpoint              goa.Endpoint
 	DiffEndpoint                      goa.Endpoint
 	ConfigureModelEndpoint            goa.Endpoint
+	GetModelConnectionEndpoint        goa.Endpoint
 	InitProjectEndpoint               goa.Endpoint
 	GenerateCodeEndpoint              goa.Endpoint
 	CheckProjectEndpoint              goa.Endpoint
@@ -46,6 +48,7 @@ type Client struct {
 	WaitForChangesEndpoint            goa.Endpoint
 	StartBuildEndpoint                goa.Endpoint
 	GetBuildEndpoint                  goa.Endpoint
+	GetTestFindingsEndpoint           goa.Endpoint
 	ListBuilderAssignmentsEndpoint    goa.Endpoint
 	GetBuilderAssignmentEndpoint      goa.Endpoint
 	ListTestWriterAssignmentsEndpoint goa.Endpoint
@@ -54,7 +57,7 @@ type Client struct {
 }
 
 // NewClient initializes a "surla" service client given the endpoints.
-func NewClient(goldenPath, proposeChange, reviseChange, confirmIntent, getChange, declineRevision, previewArchitecture, draftOverride, startLiveTarget, stopLiveTarget, verifyChange, getVerification, listVerifications, approveMerge, diff, configureModel, initProject, generateCode, checkProject, updateDependencies, readCheckOutput, listTraces, refreshStory, getStoryRefresh, getTeam, showTeamPane, startTeamAgents, listChanges, waitForChanges, startBuild, getBuild, listBuilderAssignments, getBuilderAssignment, listTestWriterAssignments, getTestWriterAssignment, reportTestsFinished goa.Endpoint) *Client {
+func NewClient(goldenPath, proposeChange, reviseChange, confirmIntent, getChange, declineRevision, previewArchitecture, draftOverride, startLiveTarget, stopLiveTarget, getLiveTarget, verifyChange, getVerification, listVerifications, approveMerge, diff, configureModel, getModelConnection, initProject, generateCode, checkProject, updateDependencies, readCheckOutput, listTraces, refreshStory, getStoryRefresh, getTeam, showTeamPane, startTeamAgents, listChanges, waitForChanges, startBuild, getBuild, getTestFindings, listBuilderAssignments, getBuilderAssignment, listTestWriterAssignments, getTestWriterAssignment, reportTestsFinished goa.Endpoint) *Client {
 	return &Client{
 		GoldenPathEndpoint:                goldenPath,
 		ProposeChangeEndpoint:             proposeChange,
@@ -66,12 +69,14 @@ func NewClient(goldenPath, proposeChange, reviseChange, confirmIntent, getChange
 		DraftOverrideEndpoint:             draftOverride,
 		StartLiveTargetEndpoint:           startLiveTarget,
 		StopLiveTargetEndpoint:            stopLiveTarget,
+		GetLiveTargetEndpoint:             getLiveTarget,
 		VerifyChangeEndpoint:              verifyChange,
 		GetVerificationEndpoint:           getVerification,
 		ListVerificationsEndpoint:         listVerifications,
 		ApproveMergeEndpoint:              approveMerge,
 		DiffEndpoint:                      diff,
 		ConfigureModelEndpoint:            configureModel,
+		GetModelConnectionEndpoint:        getModelConnection,
 		InitProjectEndpoint:               initProject,
 		GenerateCodeEndpoint:              generateCode,
 		CheckProjectEndpoint:              checkProject,
@@ -87,6 +92,7 @@ func NewClient(goldenPath, proposeChange, reviseChange, confirmIntent, getChange
 		WaitForChangesEndpoint:            waitForChanges,
 		StartBuildEndpoint:                startBuild,
 		GetBuildEndpoint:                  getBuild,
+		GetTestFindingsEndpoint:           getTestFindings,
 		ListBuilderAssignmentsEndpoint:    listBuilderAssignments,
 		GetBuilderAssignmentEndpoint:      getBuilderAssignment,
 		ListTestWriterAssignmentsEndpoint: listTestWriterAssignments,
@@ -250,6 +256,19 @@ func (c *Client) StopLiveTarget(ctx context.Context) (res *StopLiveTargetResult,
 	return ires.(*StopLiveTargetResult), nil
 }
 
+// GetLiveTarget calls the "get_live_target" endpoint of the "surla" service.
+// GetLiveTarget may return the following errors:
+//   - "forbidden" (type *goa.ServiceError): The authenticated caller may not perform this operation or does not own the resource.
+//   - error: internal error
+func (c *Client) GetLiveTarget(ctx context.Context) (res *LiveTargetStatus, err error) {
+	var ires any
+	ires, err = c.GetLiveTargetEndpoint(ctx, nil)
+	if err != nil {
+		return
+	}
+	return ires.(*LiveTargetStatus), nil
+}
+
 // VerifyChange calls the "verify_change" endpoint of the "surla" service.
 // VerifyChange may return the following errors:
 //   - "not_found" (type *goa.ServiceError): No Change Card exists with this change_id.
@@ -343,6 +362,20 @@ func (c *Client) ConfigureModel(ctx context.Context, p *ConfigureModelPayload) (
 		return
 	}
 	return ires.(*ModelConfigResult), nil
+}
+
+// GetModelConnection calls the "get_model_connection" endpoint of the "surla"
+// service.
+// GetModelConnection may return the following errors:
+//   - "forbidden" (type *goa.ServiceError): The authenticated caller may not perform this operation or does not own the resource.
+//   - error: internal error
+func (c *Client) GetModelConnection(ctx context.Context) (res *ModelConnection, err error) {
+	var ires any
+	ires, err = c.GetModelConnectionEndpoint(ctx, nil)
+	if err != nil {
+		return
+	}
+	return ires.(*ModelConnection), nil
 }
 
 // InitProject calls the "init_project" endpoint of the "surla" service.
@@ -579,6 +612,22 @@ func (c *Client) GetBuild(ctx context.Context, p *GetBuildPayload) (res *ChangeB
 	return ires.(*ChangeBuild), nil
 }
 
+// GetTestFindings calls the "get_test_findings" endpoint of the "surla"
+// service.
+// GetTestFindings may return the following errors:
+//   - "not_found" (type *goa.ServiceError): No Change Card exists with this change_id, or the change has no build.
+//   - "conflict" (type *goa.ServiceError): The build's tests do not need changes; get_build says what state they are in.
+//   - "forbidden" (type *goa.ServiceError): The authenticated caller may not perform this operation or does not own the resource.
+//   - error: internal error
+func (c *Client) GetTestFindings(ctx context.Context, p *GetTestFindingsPayload) (res *TestFindings, err error) {
+	var ires any
+	ires, err = c.GetTestFindingsEndpoint(ctx, p)
+	if err != nil {
+		return
+	}
+	return ires.(*TestFindings), nil
+}
+
 // ListBuilderAssignments calls the "list_builder_assignments" endpoint of the
 // "surla" service.
 // ListBuilderAssignments may return the following errors:
@@ -641,7 +690,7 @@ func (c *Client) GetTestWriterAssignment(ctx context.Context, p *GetTestWriterAs
 // "surla" service.
 // ReportTestsFinished may return the following errors:
 //   - "not_found" (type *goa.ServiceError): You have no test assignment for this change_id.
-//   - "conflict" (type *goa.ServiceError): request_revision is not the revision of your test assignment; read it again with get_test_writer_assignment. Nothing changed.
+//   - "conflict" (type *goa.ServiceError): request_revision is not the revision of your test assignment (read it again with get_test_writer_assignment), or no test writer is used because the project verifies with its stored evaluator. Nothing changed.
 //   - "forbidden" (type *goa.ServiceError): The authenticated caller may not perform this operation or does not own the resource.
 //   - error: internal error
 func (c *Client) ReportTestsFinished(ctx context.Context, p *ReportTestsFinishedPayload) (res *TestWriterAssignmentItem, err error) {

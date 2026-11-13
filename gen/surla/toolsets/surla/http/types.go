@@ -459,6 +459,23 @@ type (
 		// fields describe the revision in force.
 		ProposedRevision *ProposedRevisionItemTransport `json:"proposed_revision,omitempty"`
 	}
+	// GetLiveTargetPayloadTransport is the internal JSON transport type for GetLiveTargetPayload.
+	// It lives in the toolset-local http package and is used only for JSON
+	// decode + validation (missing-field detection) before transforming into
+	// the public tool type.
+	GetLiveTargetPayloadTransport struct {
+	}
+	// GetLiveTargetResultTransport is the internal JSON transport type for GetLiveTargetResult.
+	// It lives in the toolset-local http package and is used only for JSON
+	// decode + validation (missing-field detection) before transforming into
+	// the public tool type.
+	GetLiveTargetResultTransport struct {
+		// none when no live target runs; starting while one is built and started;
+		// running with its commit, address, start time and the prompts whose drafts
+		// are in force; not_confirmed_stopped when its processes could not be
+		// confirmed stopped.
+		LiveTarget *LiveTarget `json:"live_target"`
+	}
 	// GetStoryRefreshPayloadTransport is the internal JSON transport type for GetStoryRefreshPayload.
 	// It lives in the toolset-local http package and is used only for JSON
 	// decode + validation (missing-field detection) before transforming into
@@ -512,9 +529,12 @@ type (
 		// proposed revision or confirmed another revision: the assignment then stays
 		// for this earlier revision until the user builds again.
 		InForce *bool `json:"in_force"`
-		// Where this assignment stands, including Surla's findings when it needs
-		// changes.
+		// Where this assignment stands.
 		Progress *TestWriterProgressTransport `json:"progress"`
+		// Surla's findings, one problem per item, with no absolute path: as many as
+		// progress gives in finding_count when its state is needs_changes, and none in
+		// any other state. Fix them in working_folder, then report again.
+		Findings []string `json:"findings"`
 		// Folder to write the tests in: your own working copy of the project.
 		WorkingFolder *string `json:"working_folder"`
 		// The canonical design source as agreed at request_revision, copied when this
@@ -1371,6 +1391,46 @@ type (
 		// report.
 		State *string `json:"state"`
 	}
+	// LivePromptItemTransport is the internal JSON transport type for LivePromptItemTransport.
+	// It lives in the toolset-local http package and is used only for JSON
+	// decode + validation (missing-field detection) before transforming into
+	// the public tool type.
+	LivePromptItemTransport struct {
+		// Registered prompt identifier.
+		PromptID *string `json:"prompt_id"`
+		// Version of the text in force, as the live target returned it.
+		Version *string `json:"version"`
+		// When the live target first accepted the version in force. A later draft that
+		// the target answers with the same version, such as the same text sent again,
+		// keeps this time.
+		AcceptedAt *string `json:"accepted_at"`
+	}
+	// LiveTargetNoneTransport is the internal JSON transport type for LiveTargetNoneTransport.
+	// It lives in the toolset-local http package and is used only for JSON
+	// decode + validation (missing-field detection) before transforming into
+	// the public tool type.
+	LiveTargetNoneTransport struct {
+	}
+	// LiveTargetNotConfirmedStoppedTransport is the internal JSON transport type for LiveTargetNotConfirmedStoppedTransport.
+	// It lives in the toolset-local http package and is used only for JSON
+	// decode + validation (missing-field detection) before transforming into
+	// the public tool type.
+	LiveTargetNotConfirmedStoppedTransport struct {
+		// The commit it was built from.
+		CandidateCommit *string `json:"candidate_commit"`
+		// What happened and what to do next.
+		Message *string `json:"message"`
+	}
+	// LiveTargetStartingTransport is the internal JSON transport type for LiveTargetStartingTransport.
+	// It lives in the toolset-local http package and is used only for JSON
+	// decode + validation (missing-field detection) before transforming into
+	// the public tool type.
+	LiveTargetStartingTransport struct {
+		// The commit being built.
+		CandidateCommit *string `json:"candidate_commit"`
+		// When the start began.
+		Since *string `json:"since"`
+	}
 	// OperatorEvaluatorTestsTransport is the internal JSON transport type for OperatorEvaluatorTestsTransport.
 	// It lives in the toolset-local http package and is used only for JSON
 	// decode + validation (missing-field detection) before transforming into
@@ -1422,6 +1482,21 @@ type (
 		Scenario *string `json:"scenario"`
 		// Hook method the test writer implements for the scenario.
 		Hook *string `json:"hook"`
+	}
+	// RunningLiveTargetTransport is the internal JSON transport type for RunningLiveTargetTransport.
+	// It lives in the toolset-local http package and is used only for JSON
+	// decode + validation (missing-field detection) before transforming into
+	// the public tool type.
+	RunningLiveTargetTransport struct {
+		// The commit it was built from.
+		CandidateCommit *string `json:"candidate_commit"`
+		// The origin it listens on, as its evaluator suite reported it.
+		URL *string `json:"url"`
+		// When it became ready.
+		StartedAt *string `json:"started_at"`
+		// One entry per prompt whose draft it accepted, sorted by prompt_id; empty
+		// when none.
+		Prompts []*LivePromptItemTransport `json:"prompts"`
 	}
 	// StartedBuildTransport is the internal JSON transport type for StartedBuildTransport.
 	// It lives in the toolset-local http package and is used only for JSON
@@ -1547,15 +1622,16 @@ type (
 	// the public tool type.
 	TestWriterProgressTransport struct {
 		// The tests' state: not_used when the project verifies with its stored
-		// evaluator; otherwise assigned, reported, needs_changes with Surla's
-		// findings, accepted with the commit Surla recorded, or could_not_run with the
-		// reason and the user's step. Each verdict carries the time Surla reached it.
+		// evaluator; otherwise assigned, reported, needs_changes with the number of
+		// Surla's findings, accepted with the commit Surla recorded, or could_not_run
+		// with the reason and the user's step. Each verdict carries the time Surla
+		// reached it.
 		Tests *Tests `json:"tests"`
 		// True once the test writer read this assignment in full with
 		// get_test_writer_assignment.
 		Read *bool `json:"read"`
-		// Number of the test writer's latest counted report of this build; 0 when none
-		// was counted. Reports are not counted yet, so it is 0.
+		// Number of the test writer's latest report of this build: 0 until its first
+		// report, and one more with each report_tests_finished.
 		Report *int `json:"report"`
 	}
 	// TestsAcceptedTransport is the internal JSON transport type for TestsAcceptedTransport.
@@ -1568,6 +1644,8 @@ type (
 		Commit *string `json:"commit"`
 		// When Surla's check reached this verdict.
 		CheckedAt *string `json:"checked_at"`
+		// What Surla's check did not judge, always the same sentence.
+		NotJudged *string `json:"not_judged"`
 	}
 	// TestsAssignedTransport is the internal JSON transport type for TestsAssignedTransport.
 	// It lives in the toolset-local http package and is used only for JSON
@@ -1592,9 +1670,8 @@ type (
 	// decode + validation (missing-field detection) before transforming into
 	// the public tool type.
 	TestsNeedChangesTransport struct {
-		// What Surla found, one problem per item: a test that does not build or a
-		// required test that is not declared.
-		Findings []string `json:"findings"`
+		// Number of problems Surla found.
+		FindingCount *int `json:"finding_count"`
 		// When Surla's check reached this verdict.
 		CheckedAt *string `json:"checked_at"`
 	}

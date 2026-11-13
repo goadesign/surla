@@ -674,6 +674,29 @@ func BuildGetBuildPayload(surlaGetBuildChangeID *string) (*surla.GetBuildPayload
 	return v, nil
 }
 
+// BuildGetTestFindingsPayload builds the payload for the surla
+// get_test_findings endpoint from CLI flags.
+func BuildGetTestFindingsPayload(surlaGetTestFindingsChangeID *string) (*surla.GetTestFindingsPayload, error) {
+	var err error
+	var changeID string
+	{
+		if surlaGetTestFindingsChangeID == nil {
+			return nil, fmt.Errorf("missing required flag --change-id")
+		}
+		changeID = *surlaGetTestFindingsChangeID
+		if utf8.RuneCountInString(changeID) < 1 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("change_id", changeID, utf8.RuneCountInString(changeID), 1, true))
+		}
+		if err != nil {
+			return nil, err
+		}
+	}
+	v := &surla.GetTestFindingsPayload{}
+	v.ChangeID = changeID
+
+	return v, nil
+}
+
 // BuildGetBuilderAssignmentPayload builds the payload for the surla
 // get_builder_assignment endpoint from CLI flags.
 func BuildGetBuilderAssignmentPayload(surlaGetBuilderAssignmentChangeID *string) (*surla.GetBuilderAssignmentPayload, error) {

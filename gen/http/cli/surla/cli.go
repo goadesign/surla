@@ -25,7 +25,7 @@ import (
 func UsageCommands() []string {
 	return []string{
 		"project (identity|ensure-team|stop|browser-link|exchange-browser-link)",
-		"surla (golden-path|propose-change|revise-change|confirm-intent|get-change|decline-revision|preview-architecture|draft-override|start-live-target|stop-live-target|verify-change|get-verification|list-verifications|approve-merge|diff|configure-model|init-project|generate-code|check-project|update-dependencies|read-check-output|list-traces|refresh-story|get-story-refresh|get-team|show-team-pane|start-team-agents|list-changes|wait-for-changes|start-build|get-build|list-builder-assignments|get-builder-assignment|list-test-writer-assignments|get-test-writer-assignment|report-tests-finished)",
+		"surla (golden-path|propose-change|revise-change|confirm-intent|get-change|decline-revision|preview-architecture|draft-override|start-live-target|stop-live-target|get-live-target|verify-change|get-verification|list-verifications|approve-merge|diff|configure-model|get-model-connection|init-project|generate-code|check-project|update-dependencies|read-check-output|list-traces|refresh-story|get-story-refresh|get-team|show-team-pane|start-team-agents|list-changes|wait-for-changes|start-build|get-build|get-test-findings|list-builder-assignments|get-builder-assignment|list-test-writer-assignments|get-test-writer-assignment|report-tests-finished)",
 	}
 }
 
@@ -108,6 +108,8 @@ func ParseEndpoint(
 
 		surlaStopLiveTargetFlags = flag.NewFlagSet("stop-live-target", flag.ExitOnError)
 
+		surlaGetLiveTargetFlags = flag.NewFlagSet("get-live-target", flag.ExitOnError)
+
 		surlaVerifyChangeFlags        = flag.NewFlagSet("verify-change", flag.ExitOnError)
 		surlaVerifyChangeBodyFlag     = new(cliStringFlag)
 		surlaVerifyChangeChangeIDFlag = new(cliStringFlag)
@@ -126,6 +128,8 @@ func ParseEndpoint(
 
 		surlaConfigureModelFlags    = flag.NewFlagSet("configure-model", flag.ExitOnError)
 		surlaConfigureModelBodyFlag = new(cliStringFlag)
+
+		surlaGetModelConnectionFlags = flag.NewFlagSet("get-model-connection", flag.ExitOnError)
 
 		surlaInitProjectFlags    = flag.NewFlagSet("init-project", flag.ExitOnError)
 		surlaInitProjectBodyFlag = new(cliStringFlag)
@@ -168,6 +172,9 @@ func ParseEndpoint(
 		surlaGetBuildFlags        = flag.NewFlagSet("get-build", flag.ExitOnError)
 		surlaGetBuildChangeIDFlag = new(cliStringFlag)
 
+		surlaGetTestFindingsFlags        = flag.NewFlagSet("get-test-findings", flag.ExitOnError)
+		surlaGetTestFindingsChangeIDFlag = new(cliStringFlag)
+
 		surlaListBuilderAssignmentsFlags = flag.NewFlagSet("list-builder-assignments", flag.ExitOnError)
 
 		surlaGetBuilderAssignmentFlags        = flag.NewFlagSet("get-builder-assignment", flag.ExitOnError)
@@ -207,6 +214,7 @@ func ParseEndpoint(
 	surlaStartBuildFlags.Var(surlaStartBuildBodyFlag, "body", "")
 	surlaStartBuildFlags.Var(surlaStartBuildChangeIDFlag, "change-id", "Confirmed Change Card identifier.")
 	surlaGetBuildFlags.Var(surlaGetBuildChangeIDFlag, "change-id", "Change Card identifier.")
+	surlaGetTestFindingsFlags.Var(surlaGetTestFindingsChangeIDFlag, "change-id", "Change Card identifier.")
 	surlaGetBuilderAssignmentFlags.Var(surlaGetBuilderAssignmentChangeIDFlag, "change-id", "Change Card identifier from list_builder_assignments.")
 	surlaGetTestWriterAssignmentFlags.Var(surlaGetTestWriterAssignmentChangeIDFlag, "change-id", "Change Card identifier from list_test_writer_assignments.")
 	surlaReportTestsFinishedFlags.Var(surlaReportTestsFinishedBodyFlag, "body", "")
@@ -230,12 +238,14 @@ func ParseEndpoint(
 	surlaDraftOverrideFlags.Usage = surlaDraftOverrideUsage
 	surlaStartLiveTargetFlags.Usage = surlaStartLiveTargetUsage
 	surlaStopLiveTargetFlags.Usage = surlaStopLiveTargetUsage
+	surlaGetLiveTargetFlags.Usage = surlaGetLiveTargetUsage
 	surlaVerifyChangeFlags.Usage = surlaVerifyChangeUsage
 	surlaGetVerificationFlags.Usage = surlaGetVerificationUsage
 	surlaListVerificationsFlags.Usage = surlaListVerificationsUsage
 	surlaApproveMergeFlags.Usage = surlaApproveMergeUsage
 	surlaDiffFlags.Usage = surlaDiffUsage
 	surlaConfigureModelFlags.Usage = surlaConfigureModelUsage
+	surlaGetModelConnectionFlags.Usage = surlaGetModelConnectionUsage
 	surlaInitProjectFlags.Usage = surlaInitProjectUsage
 	surlaGenerateCodeFlags.Usage = surlaGenerateCodeUsage
 	surlaCheckProjectFlags.Usage = surlaCheckProjectUsage
@@ -251,6 +261,7 @@ func ParseEndpoint(
 	surlaWaitForChangesFlags.Usage = surlaWaitForChangesUsage
 	surlaStartBuildFlags.Usage = surlaStartBuildUsage
 	surlaGetBuildFlags.Usage = surlaGetBuildUsage
+	surlaGetTestFindingsFlags.Usage = surlaGetTestFindingsUsage
 	surlaListBuilderAssignmentsFlags.Usage = surlaListBuilderAssignmentsUsage
 	surlaGetBuilderAssignmentFlags.Usage = surlaGetBuilderAssignmentUsage
 	surlaListTestWriterAssignmentsFlags.Usage = surlaListTestWriterAssignmentsUsage
@@ -342,6 +353,9 @@ func ParseEndpoint(
 			case "stop-live-target":
 				epf = surlaStopLiveTargetFlags
 
+			case "get-live-target":
+				epf = surlaGetLiveTargetFlags
+
 			case "verify-change":
 				epf = surlaVerifyChangeFlags
 
@@ -359,6 +373,9 @@ func ParseEndpoint(
 
 			case "configure-model":
 				epf = surlaConfigureModelFlags
+
+			case "get-model-connection":
+				epf = surlaGetModelConnectionFlags
 
 			case "init-project":
 				epf = surlaInitProjectFlags
@@ -404,6 +421,9 @@ func ParseEndpoint(
 
 			case "get-build":
 				epf = surlaGetBuildFlags
+
+			case "get-test-findings":
+				epf = surlaGetTestFindingsFlags
 
 			case "list-builder-assignments":
 				epf = surlaListBuilderAssignmentsFlags
@@ -488,6 +508,8 @@ func ParseEndpoint(
 				data, err = surlac.BuildStartLiveTargetPayload(surlaStartLiveTargetBodyFlag.value)
 			case "stop-live-target":
 				endpoint = c.StopLiveTarget()
+			case "get-live-target":
+				endpoint = c.GetLiveTarget()
 			case "verify-change":
 				endpoint = c.VerifyChange()
 				data, err = surlac.BuildVerifyChangePayload(surlaVerifyChangeBodyFlag.value, surlaVerifyChangeChangeIDFlag.value)
@@ -506,6 +528,8 @@ func ParseEndpoint(
 			case "configure-model":
 				endpoint = c.ConfigureModel()
 				data, err = surlac.BuildConfigureModelPayload(surlaConfigureModelBodyFlag.value)
+			case "get-model-connection":
+				endpoint = c.GetModelConnection()
 			case "init-project":
 				endpoint = c.InitProject()
 				data, err = surlac.BuildInitProjectPayload(surlaInitProjectBodyFlag.value)
@@ -544,6 +568,9 @@ func ParseEndpoint(
 			case "get-build":
 				endpoint = c.GetBuild()
 				data, err = surlac.BuildGetBuildPayload(surlaGetBuildChangeIDFlag.value)
+			case "get-test-findings":
+				endpoint = c.GetTestFindings()
+				data, err = surlac.BuildGetTestFindingsPayload(surlaGetTestFindingsChangeIDFlag.value)
 			case "list-builder-assignments":
 				endpoint = c.ListBuilderAssignments()
 			case "get-builder-assignment":
@@ -678,18 +705,20 @@ func surlaUsage() {
 	fmt.Fprintln(os.Stderr, `    draft-override: Apply a Fast Draft Mode prompt override on the live target start_live_target runs, or reject a compiled-rule prompt hack. Surla changes prompts only in a live target it built and started itself, so a prompt_template override with no live target running is refused with no_live_target. A rejected update leaves the target's text unchanged; update_not_confirmed means the target may or may not have applied it.`)
 	fmt.Fprintln(os.Stderr, `    start-live-target: Build a candidate commit exactly as Checkpoint 4 does and run it as this server's one live CP3 target, then bind draft_override to it. The target's program is the operator's evaluator when verification settings are stored with surla verification set; otherwise it is the generated entry point of the test module in that same candidate commit, which needs no build and no accepted tests. A running target is stopped first, so there is never more than one. The target runs until stop_live_target, a later start_live_target, its own exit, or this server's shutdown; a server restart leaves none running.`)
 	fmt.Fprintln(os.Stderr, `    stop-live-target: Stop this server's live CP3 target, if one runs, and unbind draft_override from it. Stopping when none runs is not an error.`)
+	fmt.Fprintln(os.Stderr, `    get-live-target: Report this server's live target: none; starting, with the commit being built; running, with its commit, its address, when it became ready and, for each prompt whose draft it accepted, the prompt identifier, the version in force and when it was accepted; or not confirmed stopped, with what to do next. Prompt text is never returned. It changes nothing and saves nothing: the answer lasts as long as the live target and this server.`)
 	fmt.Fprintln(os.Stderr, `    verify-change: Start Checkpoint 4 verification of a candidate commit for the owner's confirmed Change Card revision and return its run_id at once. With verification settings stored with surla verification set, the run uses the operator's evaluator and needs no build. Otherwise the user's build of that revision must exist and Surla must have accepted its tests: the run builds the candidate's programs from the candidate commit and runs the generated entry point of the tests at the accepted commit. The server builds the commit in Surla's sandbox and runs the tests in a separate process that keeps running when the caller disconnects or the server restarts; get_verification reads its state. Only the builder view of the report is ever returned, with where its tests came from.`)
 	fmt.Fprintln(os.Stderr, `    get-verification: Return the current state of a verification run to the owner who started it: running, completed with the builder view of its report, or not completed with where it stopped, and where its tests came from. A run keeps the Change Card revision it was started for. The test writer reads only the runs of a change it has an assignment for.`)
 	fmt.Fprintln(os.Stderr, `    list-verifications: Return all Checkpoint 4 verification runs started by the owner for a Change Card, ordered newest first by accepted_at (tie-broken by run_id), with each run's current state, the Change Card revision it was started for and where its tests came from. Works whether the Change Card is currently confirmed or in needs_confirmation after a later revision. The test writer lists only the runs of a change it has an assignment for.`)
 	fmt.Fprintln(os.Stderr, `    approve-merge: Record Checkpoint 5 approval for the owner's confirmed Change Card revision. The control plane loads the verification report by digest and the expected suite, environment and candidate binary digests from its promotion target, re-derives the report from its evidence with verify.Approve, and records the approval on the card. A report that did not pass or describes different inputs is rejected. Nothing is merged or deployed. The promotion target comes from surla promotion set or from the program that embeds the control plane; a control plane without one rejects every call.`)
 	fmt.Fprintln(os.Stderr, `    diff: Compare evaluated Goa designs and go.mod directives without emitting a blanket compatibility verdict.`)
 	fmt.Fprintln(os.Stderr, `    configure-model: Choose, on a running control plane without restarting, the model that CP3 live targets started afterwards receive: a direct provider and model name (using that provider's API key from the project server's environment) or a running gRPC model gateway. start_live_target passes the choice to the target's evaluator suite as SURLA_LIVE_MODEL_PROVIDER and SURLA_LIVE_MODEL_NAME, or as SURLA_LIVE_MODEL_GATEWAY.`)
+	fmt.Fprintln(os.Stderr, `    get-model-connection: Report the model choice live targets started afterwards receive: none, a direct provider and model name, or a model gateway address. It starts from the choice made when the server started and follows every accepted configure_model call. It never returns an API key or any other environment value, and it changes nothing. Verification runs do not use this choice.`)
 	fmt.Fprintln(os.Stderr, `    init-project: Initialize a new Surla starter project directory inside the server's bound workspace, generating the candidate Go module, Goa and Goa-AI code, and the eval/ verification harness, creating the initial Git commit, and switching the server's active workspace and trusted evaluator suite commit to that project. When the request includes a progressToken, the tool sends MCP progress updates as starter generation/tests, initial commit creation, and publication start.`)
 	fmt.Fprintln(os.Stderr, `    generate-code: Read the active workspace's application module, or its public local eval/ module when target is eval, compile that module's edited Goa design in Surla's sandbox, and atomically replace its gen/ directory. Preserve top-level user files and their permissions and leave go.mod and go.sum unchanged. Return the written paths and warnings; a warning after gen/ publication still means generation succeeded. The tool compiles the design only; it does not build the application or run tests. Fix a rejected design and call again on the same running server.`)
 	fmt.Fprintln(os.Stderr, `    check-project: Copy the active workspace's live files (uncommitted edits included) into a protected per-operation copy and run go test ./... for every Go module in it, each in a Linux container with no network. Nothing in the workspace changes. Returns passed and a bounded message; read the full output with read_check_output.`)
 	fmt.Fprintln(os.Stderr, `    update-dependencies: Run go mod tidy for every Go module of the active workspace in a protected copy inside Linux containers, then write only the changed go.mod, go.sum and go.work.sum files back to the workspace through verified handles. A symlinked manifest or one edited during the call is refused for that module.`)
 	fmt.Fprintln(os.Stderr, `    read-check-output: Return one page of at most 16 KiB of the full output a check_project or update_dependencies operation captured, with a cursor for the next page and the count of bytes not captured.`)
-	fmt.Fprintln(os.Stderr, `    list-traces: Read the project owner's saved operation diagnostics from the control plane's private storage; the user, the guide and the builder act for the owner and read the same history. Return bounded safe summaries newest first, without reading the entire file. Older pages and later refreshes work on the same running server and after restart. Recording is automatic in the project server; an embedded host must provide Options.TracerProvider when constructing its control plane. Authenticated HTTP/MCP domain calls have a surla.request.<operation> boundary span, with child domain operations recorded separately. Waiting reads are exported without being added to this private history. Requests rejected before authentication or decoding and separate verification processes are absent.`)
+	fmt.Fprintln(os.Stderr, `    list-traces: Read the project owner's saved operation diagnostics from the control plane's private storage; the user, the guide and the builder act for the owner and read the same history. Return bounded safe summaries newest first, without reading the entire file. Older pages and later refreshes work on the same running server and after restart. Recording is automatic in the project server; an embedded host must provide Options.TracerProvider when constructing its control plane. Authenticated HTTP/MCP domain calls have a surla.request.<operation> boundary span, with child domain operations recorded separately. Reads by the user's views page that succeed or are refused (sent with GET, such as the reads the page repeats whenever the project changes) are exported but not added to this private history; such a read that ends with an error status or a panic is added. Waiting reads are never added, whoever sends them; every other agent call and every operation that changes something is added. Requests rejected before authentication or decoding and separate verification processes are absent.`)
 	fmt.Fprintln(os.Stderr, `    refresh-story: Read the bound workspace's Go module snapshot, compute its canonical snapshot_digest, and start or reuse the project owner's in-memory Story refresh operation for that workspace, which every caller acting for the owner reads. Return promptly with the operation's op_id, state, and snapshot_digest while sandboxed evaluation continues on a server-owned context that survives client disconnects. Refreshing an unchanged snapshot whose current operation is running or succeeded returns that operation without starting another evaluation; refreshing a changed snapshot or a failed operation cancels and replaces the prior operation.`)
 	fmt.Fprintln(os.Stderr, `    get-story-refresh: Return the project owner's current in-memory Story refresh operation for the bound workspace, the same one for every caller acting for the owner: op_id, state (none, running, succeeded, or failed), snapshot_digest, and the evaluated stories (empty when the design does not load the Story module) or a failure diagnostic. When no refresh has been run yet in this server process for the bound workspace, state is none with a message instructing the caller to run refresh_story.`)
 	fmt.Fprintln(os.Stderr, `    get-team: Read the project team's registered roles and current terminal, watcher and unread-assignment facts. Reading creates nothing and marks no assignment read. Only the user's browser session may call it. wait_for_changes covers this snapshot as well as the change list.`)
@@ -698,12 +727,13 @@ func surlaUsage() {
 	fmt.Fprintln(os.Stderr, `    list-changes: List the owner's saved Change Cards for this project, most recently saved first, with each card's summary, status, the request_revision in force, the request_revision of a revision the guide proposed beside a confirmed card while it waits for the user, the state of its most recently accepted verification run, and when it was last saved, and say whether this server can record approvals. The views page opens on this list; agents use it to find a change_id. Reading changes nothing.`)
 	fmt.Fprintln(os.Stderr, `    wait-for-changes: Return the current change list's version as soon as it differs from since, the version of the list the caller last read, or after a bounded wait of a few seconds when nothing changed. The version also changes when the owner's Story evaluation starts, finishes or is replaced, or a public fact in get_team changes. The views page keeps one such read open and, only when the version changed, calls list_changes again and, while it shows the Story, get_story_refresh. Each call is traced but never saved in the diagnostics history list_traces reads, so an open page does not push real operations out of view.`)
 	fmt.Fprintln(os.Stderr, `    start-build: The user starts building a confirmed change at its agreed revision, the one in force, on the project owner's bound team; a revision the guide proposed beside it is built only after the user adopts it. Surla checks the change and prerequisites without effects, opens and refreshes the test-writer copy when used, checks the revision again, and saves the build with the agreed Story and design. Surla immediately registers the build's exact roles and folders before generating required tests. Stored verification settings use only the builder and remove a former test writer. Building again replaces the build and both unread assignments. A refused start saves no build and registers no role; a refusal at the second revision check may leave a reusable working copy. Generation trouble and team warnings after saving leave the saved build intact. Accepted work belongs to the server and survives client disconnection. Copy work and generation have a five-minute limit under the project's turn; after that turn is released, bringing the team up has its own 45-second limit. A server stop after saving leaves the saved assignment or verdict; build again to complete it. get_build reads the saved build without this start's transient team or copy outcome.`)
-	fmt.Fprintln(os.Stderr, `    get-build: Return a change's usable build for the current test source: not_started when none exists, including a builder-only build whose stored verification settings were removed; start a new build on the views page. Otherwise return the revision built, when, whether the builder read its assignment, the test writer's state and whether it read its assignment, and whether the build is for the change's revision in force. Reading changes nothing.`)
+	fmt.Fprintln(os.Stderr, `    get-build: Return a change's usable build for the current test source: not_started when none exists, including a builder-only build whose stored verification settings were removed; start a new build on the views page. Otherwise return the revision built, when, whether the builder read its assignment, the test writer's state (with the number of Surla's findings, never their text) and whether it read its assignment, and whether the build is for the change's revision in force. Reading changes nothing.`)
+	fmt.Fprintln(os.Stderr, `    get-test-findings: Return the text of Surla's findings on the tests of a change's build, which get_build only counts, with the build's revision and start time, the number of the report Surla checked and when it reached the verdict. A build whose tests do not need changes is refused. Reading changes nothing.`)
 	fmt.Fprintln(os.Stderr, `    list-builder-assignments: List the builder's assignments, one per change the user built, most recently started first, each with its change, revision and whether it was read. Reading the list records nothing.`)
 	fmt.Fprintln(os.Stderr, `    get-builder-assignment: Return the builder's assignment for a change in full and record that the builder read it at its revision. A new build of the change replaces the assignment, which then counts as unread.`)
 	fmt.Fprintln(os.Stderr, `    list-test-writer-assignments: List the test writer's assignments, one per change the user built, most recently started first, each with its change, revision, state and whether it was read. Reading the list records nothing.`)
-	fmt.Fprintln(os.Stderr, `    get-test-writer-assignment: Return the test writer's assignment for a change in full (the working folder, the design and Story as agreed at the built revision, the tests it requires, and the state with any findings) and record that the test writer read it at its revision. Later revisions do not change the saved design or Story. A new build of the change replaces the assignment, which then counts as unread.`)
-	fmt.Fprintln(os.Stderr, `    report-tests-finished: The test writer reports that its tests for a change at the build's revision are finished. Surla only records the report: the assignment's state becomes reported from any state, earlier findings or a recorded commit are cleared, and the tests are not checked. A report for another revision is refused and changes nothing.`)
+	fmt.Fprintln(os.Stderr, `    get-test-writer-assignment: Return the test writer's assignment for a change in full (the working folder, the design and Story as agreed at the built revision, the tests it requires, and the state with the text of any findings) and record that the test writer read it at its revision. Later revisions do not change the saved design or Story. A new build of the change replaces the assignment, which then counts as unread, and so does each verdict of Surla's check.`)
+	fmt.Fprintln(os.Stderr, `    report-tests-finished: The test writer reports that its tests for a change at the build's revision are finished. Every report raises the build's report number by one and makes the state reported, from any state, clearing an earlier verdict, and returns at once. Surla then checks the tests in the working folder against the build's Story; its verdict, needs_changes, accepted or could_not_run, replaces reported in the test writer's assignment, which then counts as unread. A report for another revision, or in a project that verifies with its stored evaluator, where no test writer is used, is refused and changes nothing.`)
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Additional help:")
 	fmt.Fprintf(os.Stderr, "    %s surla COMMAND --help\n", os.Args[0])
@@ -884,6 +914,22 @@ func surlaStopLiveTargetUsage() {
 	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "surla stop-live-target")
 }
 
+func surlaGetLiveTargetUsage() {
+	// Header with flags
+	fmt.Fprintf(os.Stderr, "%s [flags] surla get-live-target", os.Args[0])
+	fmt.Fprintln(os.Stderr)
+
+	// Description
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, `Report this server's live target: none; starting, with the commit being built; running, with its commit, its address, when it became ready and, for each prompt whose draft it accepted, the prompt identifier, the version in force and when it was accepted; or not confirmed stopped, with what to do next. Prompt text is never returned. It changes nothing and saves nothing: the answer lasts as long as the live target and this server.`)
+
+	// Flags list
+
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, "Example:")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "surla get-live-target")
+}
+
 func surlaVerifyChangeUsage() {
 	// Header with flags
 	fmt.Fprintf(os.Stderr, "%s [flags] surla verify-change", os.Args[0])
@@ -994,6 +1040,22 @@ func surlaConfigureModelUsage() {
 	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "surla configure-model --body '{\n      \"gateway_addr\": \"127.0.0.1:9090\",\n      \"model_name\": \"claude-sonnet-4-6\",\n      \"provider\": \"anthropic\"\n   }'")
 }
 
+func surlaGetModelConnectionUsage() {
+	// Header with flags
+	fmt.Fprintf(os.Stderr, "%s [flags] surla get-model-connection", os.Args[0])
+	fmt.Fprintln(os.Stderr)
+
+	// Description
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, `Report the model choice live targets started afterwards receive: none, a direct provider and model name, or a model gateway address. It starts from the choice made when the server started and follows every accepted configure_model call. It never returns an API key or any other environment value, and it changes nothing. Verification runs do not use this choice.`)
+
+	// Flags list
+
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, "Example:")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "surla get-model-connection")
+}
+
 func surlaInitProjectUsage() {
 	// Header with flags
 	fmt.Fprintf(os.Stderr, "%s [flags] surla init-project", os.Args[0])
@@ -1090,7 +1152,7 @@ func surlaListTracesUsage() {
 
 	// Description
 	fmt.Fprintln(os.Stderr)
-	fmt.Fprintln(os.Stderr, `Read the project owner's saved operation diagnostics from the control plane's private storage; the user, the guide and the builder act for the owner and read the same history. Return bounded safe summaries newest first, without reading the entire file. Older pages and later refreshes work on the same running server and after restart. Recording is automatic in the project server; an embedded host must provide Options.TracerProvider when constructing its control plane. Authenticated HTTP/MCP domain calls have a surla.request.<operation> boundary span, with child domain operations recorded separately. Waiting reads are exported without being added to this private history. Requests rejected before authentication or decoding and separate verification processes are absent.`)
+	fmt.Fprintln(os.Stderr, `Read the project owner's saved operation diagnostics from the control plane's private storage; the user, the guide and the builder act for the owner and read the same history. Return bounded safe summaries newest first, without reading the entire file. Older pages and later refreshes work on the same running server and after restart. Recording is automatic in the project server; an embedded host must provide Options.TracerProvider when constructing its control plane. Authenticated HTTP/MCP domain calls have a surla.request.<operation> boundary span, with child domain operations recorded separately. Reads by the user's views page that succeed or are refused (sent with GET, such as the reads the page repeats whenever the project changes) are exported but not added to this private history; such a read that ends with an error status or a panic is added. Waiting reads are never added, whoever sends them; every other agent call and every operation that changes something is added. Requests rejected before authentication or decoding and separate verification processes are absent.`)
 
 	// Flags list
 	fmt.Fprintln(os.Stderr, `    -status STRING: `)
@@ -1246,7 +1308,7 @@ func surlaGetBuildUsage() {
 
 	// Description
 	fmt.Fprintln(os.Stderr)
-	fmt.Fprintln(os.Stderr, `Return a change's usable build for the current test source: not_started when none exists, including a builder-only build whose stored verification settings were removed; start a new build on the views page. Otherwise return the revision built, when, whether the builder read its assignment, the test writer's state and whether it read its assignment, and whether the build is for the change's revision in force. Reading changes nothing.`)
+	fmt.Fprintln(os.Stderr, `Return a change's usable build for the current test source: not_started when none exists, including a builder-only build whose stored verification settings were removed; start a new build on the views page. Otherwise return the revision built, when, whether the builder read its assignment, the test writer's state (with the number of Surla's findings, never their text) and whether it read its assignment, and whether the build is for the change's revision in force. Reading changes nothing.`)
 
 	// Flags list
 	fmt.Fprintln(os.Stderr, `    -change-id STRING: Change Card identifier.`)
@@ -1254,6 +1316,24 @@ func surlaGetBuildUsage() {
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Example:")
 	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "surla get-build --change-id \"svp\"")
+}
+
+func surlaGetTestFindingsUsage() {
+	// Header with flags
+	fmt.Fprintf(os.Stderr, "%s [flags] surla get-test-findings", os.Args[0])
+	fmt.Fprint(os.Stderr, " -change-id STRING")
+	fmt.Fprintln(os.Stderr)
+
+	// Description
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, `Return the text of Surla's findings on the tests of a change's build, which get_build only counts, with the build's revision and start time, the number of the report Surla checked and when it reached the verdict. A build whose tests do not need changes is refused. Reading changes nothing.`)
+
+	// Flags list
+	fmt.Fprintln(os.Stderr, `    -change-id STRING: Change Card identifier.`)
+
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, "Example:")
+	fmt.Fprintf(os.Stderr, "    %s %s\n", os.Args[0], "surla get-test-findings --change-id \"oi\"")
 }
 
 func surlaListBuilderAssignmentsUsage() {
@@ -1314,7 +1394,7 @@ func surlaGetTestWriterAssignmentUsage() {
 
 	// Description
 	fmt.Fprintln(os.Stderr)
-	fmt.Fprintln(os.Stderr, `Return the test writer's assignment for a change in full (the working folder, the design and Story as agreed at the built revision, the tests it requires, and the state with any findings) and record that the test writer read it at its revision. Later revisions do not change the saved design or Story. A new build of the change replaces the assignment, which then counts as unread.`)
+	fmt.Fprintln(os.Stderr, `Return the test writer's assignment for a change in full (the working folder, the design and Story as agreed at the built revision, the tests it requires, and the state with the text of any findings) and record that the test writer read it at its revision. Later revisions do not change the saved design or Story. A new build of the change replaces the assignment, which then counts as unread, and so does each verdict of Surla's check.`)
 
 	// Flags list
 	fmt.Fprintln(os.Stderr, `    -change-id STRING: Change Card identifier from list_test_writer_assignments.`)
@@ -1333,7 +1413,7 @@ func surlaReportTestsFinishedUsage() {
 
 	// Description
 	fmt.Fprintln(os.Stderr)
-	fmt.Fprintln(os.Stderr, `The test writer reports that its tests for a change at the build's revision are finished. Surla only records the report: the assignment's state becomes reported from any state, earlier findings or a recorded commit are cleared, and the tests are not checked. A report for another revision is refused and changes nothing.`)
+	fmt.Fprintln(os.Stderr, `The test writer reports that its tests for a change at the build's revision are finished. Every report raises the build's report number by one and makes the state reported, from any state, clearing an earlier verdict, and returns at once. Surla then checks the tests in the working folder against the build's Story; its verdict, needs_changes, accepted or could_not_run, replaces reported in the test writer's assignment, which then counts as unread. A report for another revision, or in a project that verifies with its stored evaluator, where no test writer is used, is refused and changes nothing.`)
 
 	// Flags list
 	fmt.Fprintln(os.Stderr, `    -body JSON: `)

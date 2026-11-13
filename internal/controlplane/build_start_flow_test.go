@@ -110,14 +110,6 @@ func TestStartBuildKeepsPostSaveOutcomes(t *testing.T) {
 				if scenario == "reported during generation" {
 					_, err := cp.ReportTestsFinished(asCaller("alice@example.com", CallerTestWriter), &gensurla.ReportTestsFinishedPayload{ChangeID: "chg", RequestRevision: card.RequestRevision})
 					require.NoError(t, err)
-					// A stand-in for 6b-2's report counter, which this step does not own.
-					cp.mu.Lock()
-					saved, _, err := cp.cards.loadBuild("chg")
-					require.NoError(t, err)
-					saved.ReportNumber++
-					err = cp.cards.saveBuild(saved)
-					cp.mu.Unlock()
-					require.NoError(t, err)
 				}
 				return &testwriter.AuthorError{Finding: testwriter.Finding{Kind: testwriter.FindingGeneration, Message: "The test design does not compile."}}
 			}
@@ -129,8 +121,12 @@ func TestStartBuildKeepsPostSaveOutcomes(t *testing.T) {
 			case "author":
 				finding, ok := saved.TestWriter.Tests.AsNeedsChanges()
 				require.True(t, ok)
-				assert.True(t, strings.HasSuffix(finding.Findings[0], "Correct the problem in the test module, then report_tests_finished."))
+				assert.Equal(t, 1, finding.FindingCount)
 				assert.NotEmpty(t, finding.CheckedAt)
+				assignment, err := cp.GetTestWriterAssignment(asCaller("alice@example.com", CallerTestWriter), &gensurla.GetTestWriterAssignmentPayload{ChangeID: "chg"})
+				require.NoError(t, err)
+				require.Len(t, assignment.Findings, 1, "the test writer reads the finding's text")
+				assert.True(t, strings.HasSuffix(assignment.Findings[0], "Correct the problem in the test module, then report_tests_finished."))
 			case "operational":
 				failure, ok := saved.TestWriter.Tests.AsCouldNotRun()
 				require.True(t, ok)

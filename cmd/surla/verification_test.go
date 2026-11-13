@@ -208,17 +208,18 @@ func newGitRepo(t *testing.T) string {
 	return dir
 }
 
-// writeStarter writes the files of a starter created by surla init with
-// module modulePath that a project server's tests need: both go.mod files and
-// one file in each command directory.
+// writeStarter writes the files the project server reads from a starter
+// created by surla init with module modulePath: both go.mod files, one file in
+// the candidate's command directory and one in the evaluator suite's
+// generated program.
 func writeStarter(t *testing.T, dir, modulePath string) {
 	t.Helper()
 	name := path.Base(modulePath)
 	files := map[string]string{
-		"go.mod":                              "module " + modulePath + "\n\ngo 1.26\n",
-		"cmd/" + name + "/main.go":            "package main\n",
-		"eval/go.mod":                         "module " + modulePath + "/eval\n\ngo 1.26\n",
-		"eval/cmd/" + name + "-evals/main.go": "package main\n",
+		"go.mod":                   "module " + modulePath + "\n\ngo 1.26\n",
+		"cmd/" + name + "/main.go": "package main\n",
+		"eval/go.mod":              "module " + modulePath + "/eval\n\ngo 1.26\n",
+		"eval/gen/cmd/" + name + "-evals/main.go": "package main\n",
 	}
 	for rel, content := range files {
 		p := filepath.Join(dir, filepath.FromSlash(rel))

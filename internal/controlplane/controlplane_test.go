@@ -588,7 +588,7 @@ var _ = Service("orders", func() {
 	}
 	assert.ElementsMatch(t, []string{
 		"propose_change", "revise_change", "confirm_intent", "get_change", "configure_model", "init_project", "generate_code", "preview_architecture", "draft_override", "approve_merge", "diff",
-		"start_live_target", "stop_live_target",
+		"start_live_target", "stop_live_target", "get_live_target",
 		"verify_change", "get_verification", "list_verifications",
 		"check_project", "update_dependencies", "read_check_output",
 		"list_traces", "refresh_story", "get_story_refresh", "list_changes", "decline_revision",

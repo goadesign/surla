@@ -16,10 +16,13 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	genprojectclient "github.com/goadesign/surla/gen/http/project/client"
 	genproject "github.com/goadesign/surla/gen/project"
@@ -39,6 +42,7 @@ type projectRuntime struct {
 	startTerminal  func(context.Context, *project.State) (string, error)
 	openViews      func(context.Context, string) error
 	waitTerminal   func(context.Context, string) (bool, error)
+	readTerminal   func(context.Context, string) (string, error) // an ended terminal's text, before removal
 	removeTerminal func(context.Context, string) error
 	// listen binds only the saved project address; tests observe the actual close boundary.
 	listen func(string, string) (net.Listener, error)
@@ -58,6 +62,15 @@ type ownedProjectListener struct {
 	// err preserves the first revocation and underlying-close result for every caller.
 	err error
 }
+
+const (
+	// startOutputLines bounds how many of an ended server's last lines a start error shows:
+	// its final error, including a few joined lines, and what led to it, in one screen.
+	startOutputLines = 20
+	// startOutputBytes bounds the same lines in bytes so one runaway line cannot flood the
+	// user's terminal, while a long final error still fits whole.
+	startOutputBytes = 4096
+)
 
 // productionProjectRuntime is selected only by the executable's composition root.
 func productionProjectRuntime() projectRuntime {
@@ -84,6 +97,9 @@ func productionProjectRuntime() projectRuntime {
 		},
 		startTerminal: func(ctx context.Context, state *project.State) (string, error) {
 			return startProjectTerminal(ctx, state, projectHerdrProgram)
+		},
+		readTerminal: func(ctx context.Context, terminal string) (string, error) {
+			return readProjectTerminal(ctx, terminal, projectHerdrProgram)
 		},
 		openViews:      openProjectViews,
 		waitTerminal:   waitProjectTerminal,
@@ -132,9 +148,16 @@ func (runtime projectRuntime) start(stdout io.Writer) (err error) {
 		if err != nil {
 			err = errors.Join(err, outcome.err)
 			if outcome.ended {
-				cleanupCtx, stop := context.WithTimeout(context.Background(), 5*time.Second)
-				err = errors.Join(err, runtime.removeTerminal(cleanupCtx, terminal))
-				stop()
+				// The ended terminal holds the server's own error until it is removed.
+				// The read and the removal each get their own deadline: a read that
+				// hangs must not leave the removal with one that has already passed.
+				readCtx, stopRead := context.WithTimeout(context.Background(), 5*time.Second)
+				output, readErr := runtime.readTerminal(readCtx, terminal)
+				stopRead()
+				err = endedStartError(err, output, readErr)
+				removeCtx, stopRemove := context.WithTimeout(context.Background(), 5*time.Second)
+				err = errors.Join(err, runtime.removeTerminal(removeCtx, terminal))
+				stopRemove()
 			}
 		}
 	}
@@ -239,6 +262,116 @@ func attachOrStartProject(
 	return client, created, nil
 }
 
+// endedStartError explains a start whose owned terminal ended before the server answered.
+// The server's own last lines replace the attach failure, which then only reports the end's
+// consequence; without readable lines, the attach failure stays and says why none are shown.
+func endedStartError(attachErr error, output string, readErr error) error {
+	if readErr != nil {
+		return errors.Join(attachErr, fmt.Errorf("the project server's terminal output could not be read: %w", readErr))
+	}
+	lines := lastServerLines(output)
+	if lines == "" {
+		return errors.Join(attachErr, errors.New("the project server's terminal output could not be read: it showed no printable text"))
+	}
+	return fmt.Errorf("the project server stopped while starting, and its last lines were:\n%s", lines)
+}
+
+// lastServerLines keeps the end of a server terminal's text within startOutputLines and
+// startOutputBytes, as printable text indented under the CLI's sentence. Blank rows around
+// the text are dropped; a cut long line starts with an ellipsis. Empty means nothing to show.
+func lastServerLines(output string) string {
+	lines := strings.Split(printableTerminalText(output), "\n")
+	for i, line := range lines {
+		lines[i] = strings.TrimRight(line, " ")
+	}
+	for len(lines) > 0 && lines[len(lines)-1] == "" {
+		lines = lines[:len(lines)-1]
+	}
+	lines = lines[len(lines)-min(len(lines), startOutputLines):]
+	text := strings.TrimLeft(strings.Join(lines, "\n"), "\n")
+	if len(text) > startOutputBytes {
+		text = text[len(text)-startOutputBytes:]
+		if newline := strings.IndexByte(text, '\n'); newline >= 0 {
+			text = strings.TrimLeft(text[newline+1:], "\n")
+		} else {
+			for len(text) > 0 && !utf8.RuneStart(text[0]) {
+				text = text[1:]
+			}
+			text = "…" + text
+		}
+	}
+	if text == "" {
+		return ""
+	}
+	lines = strings.Split(text, "\n")
+	for i, line := range lines {
+		if line != "" {
+			lines[i] = "  " + line
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
+// printableTerminalText keeps what a terminal shows as text: escape sequences, control
+// characters and invalid bytes are dropped, newlines are kept and tabs become spaces.
+func printableTerminalText(text string) string {
+	var out strings.Builder
+	for i := 0; i < len(text); {
+		r, size := utf8.DecodeRuneInString(text[i:])
+		i += size
+		switch {
+		case r == '\x1b':
+			i = skipEscapeSequence(text, i)
+		case r == '\n':
+			out.WriteByte('\n')
+		case r == '\t':
+			out.WriteByte(' ')
+		case r == utf8.RuneError && size == 1:
+			// An invalid byte is not text and is dropped.
+		case unicode.IsPrint(r):
+			out.WriteRune(r)
+		}
+	}
+	return out.String()
+}
+
+// skipEscapeSequence returns the index just past the escape sequence whose ESC precedes
+// index i: a control sequence (ESC [), a control string ended by BEL or ESC \ (ESC ] P X ^ _),
+// or ESC with intermediates and a final byte. A newline always ends a sequence and is kept.
+func skipEscapeSequence(text string, i int) int {
+	if i >= len(text) {
+		return i
+	}
+	switch text[i] {
+	case '[':
+		for i++; i < len(text) && text[i] >= 0x20 && text[i] <= 0x3f; i++ {
+		}
+		if i < len(text) && text[i] >= 0x40 && text[i] <= 0x7e {
+			i++
+		}
+		return i
+	case ']', 'P', 'X', '^', '_':
+		for i++; i < len(text); i++ {
+			switch {
+			case text[i] == '\a':
+				return i + 1
+			case text[i] == '\x1b' && i+1 < len(text) && text[i+1] == '\\':
+				return i + 2
+			case text[i] == '\x1b', text[i] == '\n':
+				return i
+			}
+		}
+		return i
+	}
+	for i < len(text) && text[i] >= 0x20 && text[i] <= 0x2f {
+		i++
+	}
+	if i < len(text) && text[i] >= 0x30 && text[i] <= 0x7e {
+		i++
+	}
+	return i
+}
+
 // stop authenticates the current project and waits until ordered cleanup releases the store.
 func (runtime projectRuntime) stop(args []string, stdout io.Writer) (err error) {
 	fs := flag.NewFlagSet("stop", flag.ContinueOnError)
@@ -303,14 +436,14 @@ func projectHolder(state *project.State) string {
 	return "a server holds this project and may still be starting or stopping"
 }
 
-// serve is the Herdr program entry, with project identity and address derived from private state.
-func (runtime projectRuntime) serve() (err error) {
-	state, err := runtime.discover()
+// serve is the Herdr program entry. stateDir is the private state folder the
+// launching `surla` found and passed with -state; project identity and address
+// come from the record there, and serve never derives a folder from its own
+// environment or working directory.
+func (runtime projectRuntime) serve(stateDir string) (err error) {
+	state, err := project.Open(stateDir)
 	if err != nil {
 		return err
-	}
-	if state.Record.ID == "" {
-		return errors.New("start the project with surla")
 	}
 	provider, err := newTraceProvider(context.Background(), os.Stderr, os.Getenv)
 	if err != nil {
@@ -395,16 +528,22 @@ func serveProjectHTTP(
 	return errors.Join(serveErr, server.Shutdown(shutdownCtx))
 }
 
-// parseProjectArgs accepts no caller-selected server options; serve is an internal entrypoint.
-func parseProjectArgs(name string, args []string) error {
-	fs := flag.NewFlagSet(name, flag.ContinueOnError)
+// parseServeArgs returns the state folder named by serve's one required flag,
+// -state, which only startProjectTerminal supplies; serve is an internal
+// entrypoint and accepts no other option or argument.
+func parseServeArgs(args []string) (string, error) {
+	fs := flag.NewFlagSet("serve", flag.ContinueOnError)
+	stateDir := fs.String("state", "", "private project state folder, passed by surla when it starts the server")
 	if err := fs.Parse(args); err != nil {
-		return err
+		return "", err
 	}
 	if fs.NArg() != 0 {
-		return fmt.Errorf("unexpected arguments %q", fs.Args())
+		return "", fmt.Errorf("unexpected arguments %q", fs.Args())
 	}
-	return nil
+	if *stateDir == "" {
+		return "", errors.New("serve requires -state; start the project with surla")
+	}
+	return *stateDir, nil
 }
 
 // discover uses physical folders and nearest records, independent of the working tree root.
@@ -635,6 +774,8 @@ func confirmProject(ctx context.Context, state *project.State, client *genprojec
 }
 
 // startProjectTerminal delegates process lifetime to a parentless Herdr terminal; Surla never detaches a process itself.
+// The server gets the state folder this command found as -state, because a Herdr terminal runs with the
+// environment of Herdr's core, not this shell's, and could otherwise resolve another configuration folder.
 func startProjectTerminal(
 	ctx context.Context,
 	state *project.State,
@@ -648,7 +789,7 @@ func startProjectTerminal(
 	if err != nil {
 		return "", err
 	}
-	argv := []string{"run", "--json", "--no-parent", "--bg", "--label", "surla_project=" + state.Record.ID, "--cwd", state.Record.Directory, "--", self, "serve"}
+	argv := []string{"run", "--json", "--no-parent", "--bg", "--label", "surla_project=" + state.Record.ID, "--cwd", state.Record.Directory, "--", self, "serve", "-state", state.Dir}
 	command := exec.CommandContext(ctx, hc, argv...)
 	command.Stdin = nil
 	var stderr strings.Builder
@@ -744,6 +885,35 @@ func waitProjectTerminal(ctx context.Context, terminal string) (bool, error) {
 		return false, fmt.Errorf("decode Herdr terminal %s status: %w", terminal, err)
 	}
 	return result.Ended, nil
+}
+
+// readProjectTerminal returns the text an ended startup terminal printed, standard output and
+// error in order, asking Herdr for the screen plus the history lines a start error can show.
+// The terminal must still exist, so start reads it before removing it.
+func readProjectTerminal(
+	ctx context.Context,
+	terminal string,
+	findHerdr func() (string, error),
+) (string, error) {
+	hc, err := findHerdr()
+	if err != nil {
+		return "", err
+	}
+	command := exec.CommandContext(ctx, hc, "read", "--json", "--lines", strconv.Itoa(startOutputLines), terminal)
+	command.Stdin = nil
+	var stderr strings.Builder
+	command.Stderr = &stderr
+	raw, err := command.Output()
+	if err != nil {
+		return "", fmt.Errorf("read Herdr terminal %s: %w: %s", terminal, err, strings.TrimSpace(stderr.String()))
+	}
+	var reply struct {
+		Text string `json:"text"`
+	}
+	if err := json.Unmarshal(raw, &reply); err != nil {
+		return "", fmt.Errorf("decode Herdr terminal %s output: %w", terminal, err)
+	}
+	return reply.Text, nil
 }
 
 // removeProjectTerminal removes only a startup terminal whose end the observer confirmed.

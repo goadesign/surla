@@ -82,6 +82,11 @@ const (
 	pageUserID = "user-page-test"
 	// pageGuide is the guide's credential for changes made by another caller.
 	pageGuide = "page-test-guide"
+	// pageBuilder is the builder's credential, for live targets and drafts
+	// the builder agent starts while a page watches.
+	pageBuilder = "page-test-builder"
+	// pageTestWriter is the test writer's credential, for refusals.
+	pageTestWriter = "page-test-test-writer"
 )
 
 // requirePageTools returns the node binary the views page tests run. They
@@ -175,6 +180,9 @@ func runPageScript(t *testing.T, ps *pageServer, input map[string]any, body stri
 	input["origin"] = ps.server.URL
 	input["link"] = pageLink
 	input["guide"] = pageGuide
+	input["builder"] = pageBuilder
+	input["testWriter"] = pageTestWriter
+	input["session"] = pageSession
 	input["owner"] = pageOwner
 	raw, err := json.Marshal(input)
 	require.NoError(t, err)
@@ -203,7 +211,8 @@ main().then(() => { process.stdout.write("PAGE-PASSED"); process.exit(0); }, (er
 }
 
 // authenticate accepts the page session only with the same-origin mark a
-// browser adds, and the guide's credential from any program.
+// browser adds, and the guide's, builder's and test writer's credentials from
+// any program.
 func (ps *pageServer) authenticate(r *http.Request) (Principal, error) {
 	switch r.Header.Get("Authorization") {
 	case "Bearer " + pageSession:
@@ -213,6 +222,10 @@ func (ps *pageServer) authenticate(r *http.Request) (Principal, error) {
 		return Principal{ID: pageOwner, CallerID: pageUserID, Kind: CallerUser}, nil
 	case "Bearer " + pageGuide:
 		return Principal{ID: pageOwner, CallerID: "guide-page-test", Kind: CallerGuide}, nil
+	case "Bearer " + pageBuilder:
+		return Principal{ID: pageOwner, CallerID: "builder-page-test", Kind: CallerBuilder}, nil
+	case "Bearer " + pageTestWriter:
+		return Principal{ID: pageOwner, CallerID: "test-writer-page-test", Kind: CallerTestWriter}, nil
 	}
 	return Principal{}, errors.New("session or credential is no longer valid")
 }

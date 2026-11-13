@@ -82,7 +82,7 @@ func TestStarterLiveTargetAppliesADraftToTheNextModelRequest(t *testing.T) {
 			RunsDir: runsDir,
 			Plan: verify.Plan{
 				CandidateRepo: dir, CandidateModule: ".", Binaries: map[string]string{name: "./cmd/" + name},
-				SuiteRepo: dir, SuiteCommit: commit, SuiteModule: "eval", SuiteCommand: "./cmd/" + name + "-evals",
+				SuiteRepo: dir, SuiteCommit: commit, SuiteModule: "eval", SuiteCommand: "./gen/cmd/" + name + "-evals",
 				ReportDir: t.TempDir(),
 			},
 			Command: []string{surlaBin},
@@ -92,6 +92,7 @@ func TestStarterLiveTargetAppliesADraftToTheNextModelRequest(t *testing.T) {
 			Command:      []string{surlaBin},
 			Env:          append(os.Environ(), "SURLA_LIVE_MODEL_GATEWAY="+gatewayAddr),
 			StartTimeout: 10 * time.Minute,
+			Model:        gensurla.NewConnectionGateway(&gensurla.ModelGateway{GatewayAddr: gatewayAddr}),
 		},
 	})
 	require.NoError(t, err)

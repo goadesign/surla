@@ -51,11 +51,17 @@ var _ = Service("prompts", func() {
 		})
 		Result(func() {
 			Attribute("prompt_id", String, "The prompt whose text was replaced.")
-			Attribute("version", String, "Version of the accepted text: an opaque identifier that is not blank.", func() {
+			Attribute("version", String, "Version of the accepted text: an opaque identifier that is not blank and has at most 256 characters.", func() {
 				// At least one character that strings.TrimSpace would keep. The
 				// class lists that whitespace set as literal characters, so Go,
 				// JavaScript and other regular expression engines agree on it.
 				Pattern(nonBlankPattern)
+				// The version comes from the target's own code. Surla keeps it
+				// for as long as the target runs, shows it, and hashes it into
+				// the views page's waiting value, so it is bounded here, where
+				// the answer is decoded. A content digest such as
+				// "sha256:<64 hex digits>" fits with room to spare.
+				MaxLength(256)
 			})
 			Required("prompt_id", "version")
 		})

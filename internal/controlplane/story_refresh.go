@@ -145,8 +145,7 @@ func (c *ControlPlane) RefreshStory(ctx context.Context) (*gensurla.StoryRefresh
 		c.workspaceMu.RUnlock()
 		return nil, err
 	}
-	timeout := c.storyRefreshDeadline()
-	evalCtx, cancel := context.WithTimeout(c.serverCtx, timeout)
+	evalCtx, cancel := c.storyRefreshDeadline(c.serverCtx)
 	op := &storyRefreshOp{
 		id:             opID,
 		state:          storyRefreshStateRunning,
@@ -169,7 +168,7 @@ func (c *ControlPlane) RefreshStory(ctx context.Context) (*gensurla.StoryRefresh
 	if prevCancel != nil {
 		prevCancel()
 	}
-	go c.runStoryRefresh(evalCtx, cancel, timeout, key, op, files)
+	go c.runStoryRefresh(evalCtx, cancel, defaultStoryRefreshTimeout, key, op, files)
 	return res, nil
 }
 
@@ -232,7 +231,7 @@ func (c *ControlPlane) runStoryRefresh(
 	defer cancel()
 
 	res, err := c.evaluator.Evaluate(evalCtx, files)
-	timedOut := errors.Is(evalCtx.Err(), context.DeadlineExceeded) ||
+	timedOut := errors.Is(context.Cause(evalCtx), context.DeadlineExceeded) ||
 		errors.Is(err, context.DeadlineExceeded)
 
 	c.storyRefreshMu.Lock()
@@ -241,7 +240,7 @@ func (c *ControlPlane) runStoryRefresh(
 		return
 	}
 	if err == nil && evalCtx.Err() != nil {
-		err = evalCtx.Err()
+		err = context.Cause(evalCtx)
 		timedOut = timedOut || errors.Is(err, context.DeadlineExceeded)
 	}
 	op.cancel = nil
@@ -351,12 +350,13 @@ func (c *ControlPlane) adoptStoryRefresh(
 	return designSrc, stories, nil
 }
 
-// storyRefreshDeadline returns the per-refresh evaluation timeout for c.
-func (c *ControlPlane) storyRefreshDeadline() time.Duration {
-	if c.storyRefreshTimeout > 0 {
-		return c.storyRefreshTimeout
+// storyRefreshDeadline bounds one Story refresh evaluation.
+func (c *ControlPlane) storyRefreshDeadline(ctx context.Context) (context.Context, context.CancelFunc) {
+	withTimeout := c.storyRefreshWithTimeout
+	if withTimeout == nil {
+		withTimeout = context.WithTimeout
 	}
-	return defaultStoryRefreshTimeout
+	return withTimeout(ctx, defaultStoryRefreshTimeout)
 }
 
 // readWorkspaceSnapshotForStoryRefresh reads the bound workspace's Go module

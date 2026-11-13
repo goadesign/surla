@@ -443,6 +443,100 @@ var StopLiveTargetResult = Type("StopLiveTargetResult", func() {
 	Required("stopped", "message")
 })
 
+// LiveTargetNone is the live target state when none runs.
+var LiveTargetNone = Type("LiveTargetNone", func() {
+	Description("No live target is running.")
+})
+
+// LiveTargetStarting is a live target that is being built and started.
+var LiveTargetStarting = Type("LiveTargetStarting", func() {
+	Description("A live target is being built from a commit and started. It cannot be stopped until the start finishes.")
+	Attribute("candidate_commit", String, "The commit being built.")
+	Attribute("since", String, "When the start began.", func() { Format(FormatDateTime) })
+	Required("candidate_commit", "since")
+})
+
+// LivePromptItem is one prompt whose draft a running live target accepted.
+var LivePromptItem = Type("LivePromptItem", func() {
+	Description("A prompt whose text the live target replaced with an accepted draft, and the version now in force. There is one entry per prompt: a later draft of the same prompt replaces it. The text itself is never returned.")
+	Attribute("prompt_id", String, "Registered prompt identifier.")
+	Attribute("version", String, "Version of the text in force, as the live target returned it.")
+	Attribute("accepted_at", String, "When the live target first accepted the version in force. A later draft that the target answers with the same version, such as the same text sent again, keeps this time.", func() { Format(FormatDateTime) })
+	Required("prompt_id", "version", "accepted_at")
+})
+
+// RunningLiveTarget is a live target that is running.
+var RunningLiveTarget = Type("RunningLiveTarget", func() {
+	Description("A running live target.")
+	Attribute("candidate_commit", String, "The commit it was built from.")
+	Attribute("url", String, "The origin it listens on, as its evaluator suite reported it.")
+	Attribute("started_at", String, "When it became ready.", func() { Format(FormatDateTime) })
+	Attribute("prompts", ArrayOf(LivePromptItem), "One entry per prompt whose draft it accepted, sorted by prompt_id; empty when none.")
+	Required("candidate_commit", "url", "started_at", "prompts")
+})
+
+// LiveTargetNotConfirmedStopped is a live target whose processes could not
+// be confirmed stopped.
+var LiveTargetNotConfirmedStopped = Type("LiveTargetNotConfirmedStopped", func() {
+	Description("A live target whose processes could not be confirmed stopped. No other live target can start until they are.")
+	Attribute("candidate_commit", String, "The commit it was built from.")
+	Attribute("message", String, "What happened and what to do next.")
+	Required("candidate_commit", "message")
+})
+
+// LiveTargetStatus is this server's live target in exactly one state.
+var LiveTargetStatus = Type("LiveTargetStatus", func() {
+	Description("This server's live target, as get_live_target reports it.")
+	OneOf("live_target", "none when no live target runs; starting while one is built and started; running with its commit, address, start time and the prompts whose drafts are in force; not_confirmed_stopped when its processes could not be confirmed stopped.", func() {
+		Meta("oneof:json:flatten")
+		Meta("oneof:type:field", "state")
+		Attribute("none", LiveTargetNone)
+		Attribute("starting", LiveTargetStarting)
+		Attribute("running", RunningLiveTarget)
+		Attribute("not_confirmed_stopped", LiveTargetNotConfirmedStopped)
+	})
+	Required("live_target")
+})
+
+// ModelNone is the model connection when no model is chosen.
+var ModelNone = Type("ModelNone", func() {
+	Description("No model is chosen: live targets start without a model setting.")
+})
+
+// ModelDirect is a direct model provider and model name.
+var ModelDirect = Type("ModelDirect", func() {
+	Description("A direct model provider and model name. The provider's API key stays in the project server's environment and is never returned.")
+	Attribute("provider", String, "Direct model provider.", func() {
+		Enum("anthropic", "openai")
+	})
+	Attribute("model_name", String, "Provider model identifier.", func() {
+		MinLength(1)
+	})
+	Required("provider", "model_name")
+})
+
+// ModelGateway is a running goa-ai model gateway.
+var ModelGateway = Type("ModelGateway", func() {
+	Description("A running goa-ai model gateway, which chooses the model.")
+	Attribute("gateway_addr", String, "Plaintext gRPC host:port of the gateway.", func() {
+		MinLength(1)
+	})
+	Required("gateway_addr")
+})
+
+// ModelConnection is the model choice live targets started afterwards use.
+var ModelConnection = Type("ModelConnection", func() {
+	Description("The model live targets started afterwards use, as get_model_connection reports it.")
+	OneOf("connection", "none when no model is chosen; direct with a provider and model name; gateway with a model gateway address.", func() {
+		Meta("oneof:json:flatten")
+		Meta("oneof:type:field", "kind")
+		Attribute("none", ModelNone)
+		Attribute("direct", ModelDirect)
+		Attribute("gateway", ModelGateway)
+	})
+	Required("connection")
+})
+
 // ApproveMergePayload is the input to the CP5 approve_merge tool.
 var ApproveMergePayload = Type("ApproveMergePayload", func() {
 	Description("Identifies the confirmed Change Card revision, the candidate commit being promoted, and the evaluator-written verification report to check. The report itself and the expected suite, environment and binary digests come from the control plane's promotion target, never from the caller.")
@@ -784,6 +878,16 @@ var _ = Service("surla", func() {
 		})
 	})
 
+	Method("get_live_target", func() {
+		Description("Report this server's live target: none; starting, with the commit being built; running, with its commit, its address, when it became ready and, for each prompt whose draft it accepted, the prompt identifier, the version in force and when it was accepted; or not confirmed stopped, with what to do next. Prompt text is never returned. It changes nothing and saves nothing: the answer lasts as long as the live target and this server.")
+		Result(LiveTargetStatus)
+		Tool("get_live_target", "Report this server's live target. It changes nothing. It answers none; starting, with the commit being built; running, with its commit, its address, when it became ready and, for each prompt whose draft it accepted, the prompt identifier, the version in force and when it was accepted (never the text); or not_confirmed_stopped, with what to do next.")
+		HTTP(func() {
+			GET("/live-target")
+			Response(StatusOK)
+		})
+	})
+
 	Method("verify_change", func() {
 		Description("Start Checkpoint 4 verification of a candidate commit for the owner's confirmed Change Card revision and return its run_id at once. With verification settings stored with surla verification set, the run uses the operator's evaluator and needs no build. Otherwise the user's build of that revision must exist and Surla must have accepted its tests: the run builds the candidate's programs from the candidate commit and runs the generated entry point of the tests at the accepted commit. The server builds the commit in Surla's sandbox and runs the tests in a separate process that keeps running when the caller disconnects or the server restarts; get_verification reads its state. Only the builder view of the report is ever returned, with where its tests came from.")
 		Payload(VerifyChangePayload)
@@ -879,6 +983,15 @@ var _ = Service("surla", func() {
 			Response(StatusOK)
 			Response("unprocessable", StatusUnprocessableEntity)
 			Response("not_implemented", StatusNotImplemented)
+		})
+	})
+
+	Method("get_model_connection", func() {
+		Description("Report the model choice live targets started afterwards receive: none, a direct provider and model name, or a model gateway address. It starts from the choice made when the server started and follows every accepted configure_model call. It never returns an API key or any other environment value, and it changes nothing. Verification runs do not use this choice.")
+		Result(ModelConnection)
+		HTTP(func() {
+			GET("/cp1/model")
+			Response(StatusOK)
 		})
 	})
 

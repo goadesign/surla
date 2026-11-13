@@ -112,6 +112,12 @@ export interface ChangeListVersion {
   version: string;
 }
 
+export interface ConfigureModelPayload {
+  gateway_addr?: string;
+  model_name?: string;
+  provider?: "anthropic" | "openai";
+}
+
 export interface ConfirmIntentPayload {
   answers: Record<string, string>;
   change_id: string;
@@ -145,6 +151,26 @@ export interface LatestVerificationItem {
   state: "running" | "passed" | "failed" | "not_completed";
 }
 
+export interface LivePromptItem {
+  accepted_at: string;
+  prompt_id: string;
+  version: string;
+}
+
+export interface LiveTargetStatus {
+  live_target: ({ "state": "none" } | { "candidate_commit": string; "since": string; "state": "starting" } | { "candidate_commit": string; "prompts": LivePromptItem[]; "started_at": string; "state": "running"; "url": string } | { "candidate_commit": string; "message": string; "state": "not_confirmed_stopped" });
+}
+
+export interface ModelConfigResult {
+  gateway_addr?: string;
+  model_name?: string;
+  provider?: "anthropic" | "openai";
+}
+
+export interface ModelConnection {
+  connection: ({ "kind": "none" } | { "kind": "direct"; "model_name": string; "provider": "anthropic" | "openai" } | { "gateway_addr": string; "kind": "gateway" });
+}
+
 export interface PreviewArchitecturePayload {
   change_id: string;
   request_revision: string;
@@ -169,6 +195,11 @@ export interface ServerError {
   name: string;
   temporary: boolean;
   timeout: boolean;
+}
+
+export interface StopLiveTargetResult {
+  message: string;
+  stopped: boolean;
 }
 
 export interface StoryActorItem {
@@ -360,6 +391,14 @@ export interface ListTracesRequest {
   "cursor"?: string;
 }
 
+export type GetLiveTargetRequest = Record<string, never>;
+
+export type StopLiveTargetRequest = Record<string, never>;
+
+export type GetModelConnectionRequest = Record<string, never>;
+
+export type ConfigureModelRequest = ConfigureModelPayload;
+
 // Operations maps each operation the page sends to its request and result.
 export interface Operations {
   exchange_browser_link: { request: ExchangeBrowserLinkRequest; result: ExchangeBrowserLinkResponseBody };
@@ -374,6 +413,10 @@ export interface Operations {
   list_verifications: { request: ListVerificationsRequest; result: VerificationListResult };
   get_verification: { request: GetVerificationRequest; result: VerificationStatusResult };
   list_traces: { request: ListTracesRequest; result: TraceList };
+  get_live_target: { request: GetLiveTargetRequest; result: LiveTargetStatus };
+  stop_live_target: { request: StopLiveTargetRequest; result: StopLiveTargetResult };
+  get_model_connection: { request: GetModelConnectionRequest; result: ModelConnection };
+  configure_model: { request: ConfigureModelRequest; result: ModelConfigResult };
 }
 
 // OperationName names one operation the page sends.
@@ -461,6 +504,22 @@ function encodeListTraces(request: ListTracesRequest): EncodedRequest {
   return { path: "/traces" + (search === "" ? "" : "?" + search), body: undefined };
 }
 
+function encodeGetLiveTarget(_request: GetLiveTargetRequest): EncodedRequest {
+  return { path: "/live-target", body: undefined };
+}
+
+function encodeStopLiveTarget(_request: StopLiveTargetRequest): EncodedRequest {
+  return { path: "/live-target", body: undefined };
+}
+
+function encodeGetModelConnection(_request: GetModelConnectionRequest): EncodedRequest {
+  return { path: "/cp1/model", body: undefined };
+}
+
+function encodeConfigureModel(request: ConfigureModelRequest): EncodedRequest {
+  return { path: "/cp1/model", body: JSON.stringify(request) };
+}
+
 // ROUTES addresses every operation the page sends.
 export const ROUTES: { [K in OperationName]: Route<K> } = {
   exchange_browser_link: { method: "POST", success: 201, encode: encodeExchangeBrowserLink, decode: isExchangeBrowserLinkResponseBody },
@@ -475,6 +534,10 @@ export const ROUTES: { [K in OperationName]: Route<K> } = {
   list_verifications: { method: "GET", success: 200, encode: encodeListVerifications, decode: isVerificationListResult },
   get_verification: { method: "GET", success: 200, encode: encodeGetVerification, decode: isVerificationStatusResult },
   list_traces: { method: "GET", success: 200, encode: encodeListTraces, decode: isTraceList },
+  get_live_target: { method: "GET", success: 200, encode: encodeGetLiveTarget, decode: isLiveTargetStatus },
+  stop_live_target: { method: "DELETE", success: 200, encode: encodeStopLiveTarget, decode: isStopLiveTargetResult },
+  get_model_connection: { method: "GET", success: 200, encode: encodeGetModelConnection, decode: isModelConnection },
+  configure_model: { method: "POST", success: 200, encode: encodeConfigureModel, decode: isModelConfigResult },
 };
 
 interface JSONSchemaNode {
@@ -913,6 +976,25 @@ const SCHEMA_DEFS: Record<string, JSONSchemaNode> = {
     },
     "additionalProperties": false
   },
+  "ConfigureModelPayload": {
+    "type": "object",
+    "properties": {
+      "gateway_addr": {
+        "type": "string"
+      },
+      "model_name": {
+        "type": "string"
+      },
+      "provider": {
+        "type": "string",
+        "enum": [
+          "anthropic",
+          "openai"
+        ]
+      }
+    },
+    "additionalProperties": false
+  },
   "ConfirmIntentPayload": {
     "type": "object",
     "required": [
@@ -1037,6 +1119,232 @@ const SCHEMA_DEFS: Record<string, JSONSchemaNode> = {
     },
     "additionalProperties": false
   },
+  "LivePromptItem": {
+    "type": "object",
+    "required": [
+      "prompt_id",
+      "version",
+      "accepted_at"
+    ],
+    "properties": {
+      "accepted_at": {
+        "type": "string",
+        "format": "date-time"
+      },
+      "prompt_id": {
+        "type": "string"
+      },
+      "version": {
+        "type": "string"
+      }
+    },
+    "additionalProperties": false
+  },
+  "LiveTargetStatus": {
+    "type": "object",
+    "required": [
+      "live_target"
+    ],
+    "properties": {
+      "live_target": {
+        "type": "object",
+        "anyOf": [
+          {
+            "type": "object",
+            "required": [
+              "state"
+            ],
+            "properties": {
+              "state": {
+                "type": "string",
+                "enum": [
+                  "none"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "candidate_commit",
+              "since",
+              "state"
+            ],
+            "properties": {
+              "candidate_commit": {
+                "type": "string"
+              },
+              "since": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "state": {
+                "type": "string",
+                "enum": [
+                  "starting"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "candidate_commit",
+              "url",
+              "started_at",
+              "prompts",
+              "state"
+            ],
+            "properties": {
+              "candidate_commit": {
+                "type": "string"
+              },
+              "prompts": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/LivePromptItem"
+                }
+              },
+              "started_at": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "state": {
+                "type": "string",
+                "enum": [
+                  "running"
+                ]
+              },
+              "url": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "candidate_commit",
+              "message",
+              "state"
+            ],
+            "properties": {
+              "candidate_commit": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "state": {
+                "type": "string",
+                "enum": [
+                  "not_confirmed_stopped"
+                ]
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
+      }
+    },
+    "additionalProperties": false
+  },
+  "ModelConfigResult": {
+    "type": "object",
+    "properties": {
+      "gateway_addr": {
+        "type": "string"
+      },
+      "model_name": {
+        "type": "string"
+      },
+      "provider": {
+        "type": "string",
+        "enum": [
+          "anthropic",
+          "openai"
+        ]
+      }
+    },
+    "additionalProperties": false
+  },
+  "ModelConnection": {
+    "type": "object",
+    "required": [
+      "connection"
+    ],
+    "properties": {
+      "connection": {
+        "type": "object",
+        "anyOf": [
+          {
+            "type": "object",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "none"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "provider",
+              "model_name",
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "direct"
+                ]
+              },
+              "model_name": {
+                "type": "string"
+              },
+              "provider": {
+                "type": "string",
+                "enum": [
+                  "anthropic",
+                  "openai"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "gateway_addr",
+              "kind"
+            ],
+            "properties": {
+              "gateway_addr": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "gateway"
+                ]
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
+      }
+    },
+    "additionalProperties": false
+  },
   "PreviewArchitecturePayload": {
     "type": "object",
     "required": [
@@ -1136,6 +1444,22 @@ const SCHEMA_DEFS: Record<string, JSONSchemaNode> = {
         "type": "boolean"
       },
       "timeout": {
+        "type": "boolean"
+      }
+    },
+    "additionalProperties": false
+  },
+  "StopLiveTargetResult": {
+    "type": "object",
+    "required": [
+      "stopped",
+      "message"
+    ],
+    "properties": {
+      "message": {
+        "type": "string"
+      },
+      "stopped": {
         "type": "boolean"
       }
     },
@@ -1935,9 +2259,29 @@ export function isExchangeBrowserLinkResponseBody(value: unknown): value is Exch
   return matchesSchema(value, { $ref: "#/$defs/ExchangeBrowserLinkResponseBody" });
 }
 
+// isLiveTargetStatus validates a parsed answer against the generated LiveTargetStatus schema.
+export function isLiveTargetStatus(value: unknown): value is LiveTargetStatus {
+  return matchesSchema(value, { $ref: "#/$defs/LiveTargetStatus" });
+}
+
+// isModelConfigResult validates a parsed answer against the generated ModelConfigResult schema.
+export function isModelConfigResult(value: unknown): value is ModelConfigResult {
+  return matchesSchema(value, { $ref: "#/$defs/ModelConfigResult" });
+}
+
+// isModelConnection validates a parsed answer against the generated ModelConnection schema.
+export function isModelConnection(value: unknown): value is ModelConnection {
+  return matchesSchema(value, { $ref: "#/$defs/ModelConnection" });
+}
+
 // isServerError validates a parsed answer against the generated ServerError schema.
 export function isServerError(value: unknown): value is ServerError {
   return matchesSchema(value, { $ref: "#/$defs/ServerError" });
+}
+
+// isStopLiveTargetResult validates a parsed answer against the generated StopLiveTargetResult schema.
+export function isStopLiveTargetResult(value: unknown): value is StopLiveTargetResult {
+  return matchesSchema(value, { $ref: "#/$defs/StopLiveTargetResult" });
 }
 
 // isStoryRefreshResult validates a parsed answer against the generated StoryRefreshResult schema.

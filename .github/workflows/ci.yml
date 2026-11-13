@@ -75,8 +75,33 @@ jobs:
         run: |
           go vet -tags browser ./internal/project </dev/null
 
+  # Every job of a push or pull request is meant to finish within five
+  # minutes. The Linux checks are therefore separate jobs that run side by
+  # side: one build-and-vet job per build tag, and one job for the tests.
+  linux-build:
+    name: Go (Linux, build ${{ matrix.tag || 'without tags' }})
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        tag: ['', e2e, scaffold, herdr, browser, docker]
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+      - name: Build and vet
+        env:
+          BUILD_TAG: ${{ matrix.tag }}
+        run: |
+          go build -tags "$BUILD_TAG" ./... </dev/null
+          go vet -tags "$BUILD_TAG" ./... </dev/null
+
   linux:
-    name: Go (Linux)
+    name: Go (Linux, tests)
     if: github.event_name == 'push' || github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -86,14 +111,6 @@ jobs:
         with:
           go-version-file: go.mod
           cache-dependency-path: go.sum
-      - name: Build and vet with each tag
-        run: |
-          go build ./... </dev/null
-          go vet ./... </dev/null
-          for tag in e2e scaffold herdr browser docker; do
-            go build -tags "$tag" ./... </dev/null
-            go vet -tags "$tag" ./... </dev/null
-          done
       - name: Vet and short race tests (packages that need no sandbox)
         run: |
           go test -race -vet=all -short -timeout 3m -json \

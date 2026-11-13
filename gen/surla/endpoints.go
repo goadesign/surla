@@ -25,12 +25,14 @@ type Endpoints struct {
 	DraftOverride             goa.Endpoint
 	StartLiveTarget           goa.Endpoint
 	StopLiveTarget            goa.Endpoint
+	GetLiveTarget             goa.Endpoint
 	VerifyChange              goa.Endpoint
 	GetVerification           goa.Endpoint
 	ListVerifications         goa.Endpoint
 	ApproveMerge              goa.Endpoint
 	Diff                      goa.Endpoint
 	ConfigureModel            goa.Endpoint
+	GetModelConnection        goa.Endpoint
 	InitProject               goa.Endpoint
 	GenerateCode              goa.Endpoint
 	CheckProject              goa.Endpoint
@@ -46,6 +48,7 @@ type Endpoints struct {
 	WaitForChanges            goa.Endpoint
 	StartBuild                goa.Endpoint
 	GetBuild                  goa.Endpoint
+	GetTestFindings           goa.Endpoint
 	ListBuilderAssignments    goa.Endpoint
 	GetBuilderAssignment      goa.Endpoint
 	ListTestWriterAssignments goa.Endpoint
@@ -66,12 +69,14 @@ func NewEndpoints(s Service) *Endpoints {
 		DraftOverride:             NewDraftOverrideEndpoint(s),
 		StartLiveTarget:           NewStartLiveTargetEndpoint(s),
 		StopLiveTarget:            NewStopLiveTargetEndpoint(s),
+		GetLiveTarget:             NewGetLiveTargetEndpoint(s),
 		VerifyChange:              NewVerifyChangeEndpoint(s),
 		GetVerification:           NewGetVerificationEndpoint(s),
 		ListVerifications:         NewListVerificationsEndpoint(s),
 		ApproveMerge:              NewApproveMergeEndpoint(s),
 		Diff:                      NewDiffEndpoint(s),
 		ConfigureModel:            NewConfigureModelEndpoint(s),
+		GetModelConnection:        NewGetModelConnectionEndpoint(s),
 		InitProject:               NewInitProjectEndpoint(s),
 		GenerateCode:              NewGenerateCodeEndpoint(s),
 		CheckProject:              NewCheckProjectEndpoint(s),
@@ -87,6 +92,7 @@ func NewEndpoints(s Service) *Endpoints {
 		WaitForChanges:            NewWaitForChangesEndpoint(s),
 		StartBuild:                NewStartBuildEndpoint(s),
 		GetBuild:                  NewGetBuildEndpoint(s),
+		GetTestFindings:           NewGetTestFindingsEndpoint(s),
 		ListBuilderAssignments:    NewListBuilderAssignmentsEndpoint(s),
 		GetBuilderAssignment:      NewGetBuilderAssignmentEndpoint(s),
 		ListTestWriterAssignments: NewListTestWriterAssignmentsEndpoint(s),
@@ -107,12 +113,14 @@ func (e *Endpoints) Use(m func(goa.Endpoint) goa.Endpoint) {
 	e.DraftOverride = m(e.DraftOverride)
 	e.StartLiveTarget = m(e.StartLiveTarget)
 	e.StopLiveTarget = m(e.StopLiveTarget)
+	e.GetLiveTarget = m(e.GetLiveTarget)
 	e.VerifyChange = m(e.VerifyChange)
 	e.GetVerification = m(e.GetVerification)
 	e.ListVerifications = m(e.ListVerifications)
 	e.ApproveMerge = m(e.ApproveMerge)
 	e.Diff = m(e.Diff)
 	e.ConfigureModel = m(e.ConfigureModel)
+	e.GetModelConnection = m(e.GetModelConnection)
 	e.InitProject = m(e.InitProject)
 	e.GenerateCode = m(e.GenerateCode)
 	e.CheckProject = m(e.CheckProject)
@@ -128,6 +136,7 @@ func (e *Endpoints) Use(m func(goa.Endpoint) goa.Endpoint) {
 	e.WaitForChanges = m(e.WaitForChanges)
 	e.StartBuild = m(e.StartBuild)
 	e.GetBuild = m(e.GetBuild)
+	e.GetTestFindings = m(e.GetTestFindings)
 	e.ListBuilderAssignments = m(e.ListBuilderAssignments)
 	e.GetBuilderAssignment = m(e.GetBuilderAssignment)
 	e.ListTestWriterAssignments = m(e.ListTestWriterAssignments)
@@ -223,6 +232,14 @@ func NewStopLiveTargetEndpoint(s Service) goa.Endpoint {
 	}
 }
 
+// NewGetLiveTargetEndpoint returns an endpoint function that calls the method
+// "get_live_target" of service "surla".
+func NewGetLiveTargetEndpoint(s Service) goa.Endpoint {
+	return func(ctx context.Context, req any) (any, error) {
+		return s.GetLiveTarget(ctx)
+	}
+}
+
 // NewVerifyChangeEndpoint returns an endpoint function that calls the method
 // "verify_change" of service "surla".
 func NewVerifyChangeEndpoint(s Service) goa.Endpoint {
@@ -274,6 +291,14 @@ func NewConfigureModelEndpoint(s Service) goa.Endpoint {
 	return func(ctx context.Context, req any) (any, error) {
 		p := req.(*ConfigureModelPayload)
 		return s.ConfigureModel(ctx, p)
+	}
+}
+
+// NewGetModelConnectionEndpoint returns an endpoint function that calls the
+// method "get_model_connection" of service "surla".
+func NewGetModelConnectionEndpoint(s Service) goa.Endpoint {
+	return func(ctx context.Context, req any) (any, error) {
+		return s.GetModelConnection(ctx)
 	}
 }
 
@@ -402,6 +427,15 @@ func NewGetBuildEndpoint(s Service) goa.Endpoint {
 	return func(ctx context.Context, req any) (any, error) {
 		p := req.(*GetBuildPayload)
 		return s.GetBuild(ctx, p)
+	}
+}
+
+// NewGetTestFindingsEndpoint returns an endpoint function that calls the
+// method "get_test_findings" of service "surla".
+func NewGetTestFindingsEndpoint(s Service) goa.Endpoint {
+	return func(ctx context.Context, req any) (any, error) {
+		p := req.(*GetTestFindingsPayload)
+		return s.GetTestFindings(ctx, p)
 	}
 }
 
