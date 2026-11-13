@@ -28,6 +28,8 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/goadesign/surla/internal/abspath"
 	"github.com/goadesign/surla/internal/shquote"
@@ -91,10 +93,8 @@ var (
 	// ErrBranchInUse refuses to create the working copy while another working
 	// copy of the repository holds branch surla/tests: git checks a branch out
 	// in one folder at a time. The error wrapping it names that folder and the
-	// step to take, which touches only that registration: switch the folder
-	// to another branch when it exists, such as the project folder itself;
-	// otherwise remove git's registration of the folder that is gone with git
-	// worktree remove, after git worktree unlock when it is locked.
+	// step to take, which touches only that registration; branchInUse states
+	// the step for each case.
 	ErrBranchInUse = errors.New("branch " + Branch + ", which Surla reserves for the test writer's working copy, " +
 		"is held by another working copy")
 )
@@ -115,9 +115,10 @@ var (
 // ErrNoCommit, one whose .surla-tests entry is something else with
 // ErrFolderInUse, and one where another working copy holds branch
 // surla/tests with ErrBranchInUse, whose message names the step: switch that
-// folder to another branch, or, when its folder is gone, remove that one
-// registration with git worktree remove (unlocking it first when it is
-// locked); nothing is created in these cases. Other errors are git or file system failures.
+// folder to another branch, or, when its folder is gone or is no longer a
+// working copy, remove that one registration with git worktree remove
+// (unlocking it first when it is locked); nothing is created in these cases.
+// Other errors are git or file system failures.
 func OpenWorkingCopy(ctx context.Context, projectDir string) (WorkingCopy, error) {
 	project, err := abspath.Eval(projectDir)
 	if err != nil {
@@ -167,21 +168,7 @@ func OpenWorkingCopy(ctx context.Context, projectDir string) (WorkingCopy, error
 			// addCopy drops.
 			continue
 		}
-		if _, err := os.Lstat(c.path); !errors.Is(err, fs.ErrNotExist) {
-			return WorkingCopy{}, fmt.Errorf("%w: %s has it checked out; switch that folder to another branch, "+
-				"then try again", ErrBranchInUse, c.path)
-		}
-		// The path is someone else's choice and the user will run these
-		// commands in a shell, so it is written as one quoted shell word.
-		word := shquote.Quote(c.path)
-		if c.locked {
-			return WorkingCopy{}, fmt.Errorf("%w: git still registers %s, a folder that no longer exists, as holding it, "+
-				"and that registration is locked; unlock and remove it with git worktree unlock %s and then "+
-				"git worktree remove %s in the project, then try again", ErrBranchInUse, c.path, word, word)
-		}
-		return WorkingCopy{}, fmt.Errorf("%w: git still registers %s, a folder that no longer exists, as holding it; "+
-			"remove that registration with git worktree remove %s in the project, then try again",
-			ErrBranchInUse, c.path, word)
+		return WorkingCopy{}, branchInUse(c)
 	}
 	if err := excludeFolder(ctx, project); err != nil {
 		return WorkingCopy{}, err
@@ -287,6 +274,52 @@ func registeredCopy(ctx context.Context, project, dir string) (string, error) {
 		return "", fmt.Errorf("%w (%s does not have branch %s checked out)", ErrFolderInUse, dir, Branch)
 	}
 	return found[0], nil
+}
+
+// branchInUse returns the refusal for c, another working copy that holds
+// Branch, with the step that frees the branch for what is true of c:
+//
+//   - its folder is a working copy: switch that folder to another branch;
+//   - its folder is gone: remove that one registration with git worktree
+//     remove;
+//   - its folder exists but is no longer a working copy (its .git entry is
+//     gone), so it cannot be switched and git refuses to remove the
+//     registration while the folder is there: move or delete the folder, then
+//     remove the registration.
+//
+// A locked registration is unlocked first. The path is someone else's choice
+// and the user runs these commands in a shell, so it is always written as
+// one quoted shell word, and a path that holds a line break or any other
+// character that is not printed is not shown at all: it could make the
+// refusal read as other instructions.
+func branchInUse(c listedCopy) error {
+	if !printableName(c.path) {
+		return fmt.Errorf("%w, at a path that is not shown because it holds a line break or another character "+
+			"that is not printed; find it with git worktree list in the project and free the branch there, "+
+			"then try again", ErrBranchInUse)
+	}
+	word := shquote.Quote(c.path)
+	remove := "remove that registration with git worktree remove " + word
+	if c.locked {
+		remove = "unlock and remove that registration, which is locked, with git worktree unlock " + word +
+			" and then git worktree remove " + word
+	}
+	if _, err := os.Lstat(c.path); errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("%w: git still registers %s, a folder that no longer exists, as holding it; "+
+			"%s in the project, then try again", ErrBranchInUse, word, remove)
+	}
+	if _, err := os.Lstat(filepath.Join(c.path, ".git")); errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("%w: git still registers %s as holding it, but that folder is no longer a working copy; "+
+			"move or delete the folder, then %s in the project, then try again", ErrBranchInUse, word, remove)
+	}
+	return fmt.Errorf("%w: %s has it checked out; switch that folder to another branch, then try again",
+		ErrBranchInUse, word)
+}
+
+// printableName reports whether path can be shown in a message: it is valid
+// text, and every character in it is printed or is a plain space.
+func printableName(path string) bool {
+	return utf8.ValidString(path) && !strings.ContainsFunc(path, func(r rune) bool { return !unicode.IsPrint(r) })
 }
 
 // listCopies returns the project repository's list of working copies, read

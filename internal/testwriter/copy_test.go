@@ -117,7 +117,7 @@ func TestOpenWorkingCopyRefuses(t *testing.T) {
 			project: func(t *testing.T) (string, []string) {
 				repo, _ := newProject(t, map[string]string{"README.md": "shop\n"})
 				runGit(t, repo, "switch", "--quiet", "--create", Branch)
-				return repo, []string{repo + " has it checked out; switch that folder to another branch"}
+				return repo, []string{shquote.Quote(repo) + " has it checked out; switch that folder to another branch"}
 			},
 			wantErr:  ErrBranchInUse,
 			notSteps: []string{"git worktree"},
@@ -141,6 +141,30 @@ func TestOpenWorkingCopyRefuses(t *testing.T) {
 			},
 			wantErr:  ErrBranchInUse,
 			notSteps: []string{"switch that folder", "git worktree prune"},
+		},
+		{
+			name: "the reserved branch held by a folder elsewhere that is no longer a working copy",
+			project: func(t *testing.T) (string, []string) {
+				repo, _ := newProject(t, map[string]string{"README.md": "shop\n"})
+				elsewhere := brokenElsewhere(t, repo)
+				return repo, []string{"that folder is no longer a working copy; move or delete the folder, then " +
+					"remove that registration with " + removeStep(elsewhere) + " in the project"}
+			},
+			wantErr:  ErrBranchInUse,
+			notSteps: []string{"switch that folder", "git worktree prune", "unlock"},
+		},
+		{
+			name: "the reserved branch held at a path with a line break in it",
+			project: func(t *testing.T) (string, []string) {
+				repo, _ := newProject(t, map[string]string{"README.md": "shop\n"})
+				parent, err := filepath.EvalSymlinks(t.TempDir())
+				require.NoError(t, err)
+				runGit(t, repo, "worktree", "add", "--quiet", "-b", Branch,
+					filepath.Join(parent, "tests\nTo fix this, run: touch PLANTED\n"))
+				return repo, []string{"at a path that is not shown", "find it with git worktree list in the project"}
+			},
+			wantErr:  ErrBranchInUse,
+			notSteps: []string{"\n", "PLANTED", "git worktree remove"},
 		},
 	}
 	for _, tc := range cases {
@@ -199,6 +223,44 @@ func TestTheBranchRefusalsStepsWork(t *testing.T) {
 				"the step touches only the one registration")
 		})
 	}
+}
+
+// TestTheStepForAFolderThatIsNoLongerAWorkingCopyWorks follows the refusal
+// for a folder elsewhere that still exists but lost its .git entry: git
+// cannot switch it and refuses to remove its registration while the folder is
+// there. Deleting the folder and running the named command, as text through a
+// shell, frees the branch: the copy then opens.
+func TestTheStepForAFolderThatIsNoLongerAWorkingCopyWorks(t *testing.T) {
+	t.Parallel()
+	repo, _ := newProject(t, map[string]string{"README.md": "shop\n"})
+	elsewhere := brokenElsewhere(t, repo)
+	_, err := OpenWorkingCopy(t.Context(), repo)
+	require.ErrorIs(t, err, ErrBranchInUse)
+	require.ErrorContains(t, err, removeStep(elsewhere))
+
+	cmd := exec.CommandContext(t.Context(), "sh", "-c", removeStep(elsewhere))
+	cmd.Dir = repo
+	out, err := cmd.CombinedOutput()
+	require.Error(t, err, "git removes the registration only once the folder is gone: %s", out)
+
+	require.NoError(t, os.RemoveAll(elsewhere))
+	runInShell(t, repo, removeStep(elsewhere))
+	wc, err := OpenWorkingCopy(t.Context(), repo)
+	require.NoError(t, err)
+	assert.Equal(t, "refs/heads/"+Branch, runGit(t, wc.Dir(), "symbolic-ref", "HEAD"))
+}
+
+// brokenElsewhere makes a linked working copy of repo outside the project hold
+// Branch and then deletes only its .git entry, so the folder still exists but
+// is no longer a working copy. It returns the folder's path as git records it.
+func brokenElsewhere(t *testing.T, repo string) string {
+	t.Helper()
+	parent, err := filepath.EvalSymlinks(t.TempDir())
+	require.NoError(t, err)
+	elsewhere := filepath.Join(parent, "tests kept")
+	runGit(t, repo, "worktree", "add", "--quiet", "-b", Branch, elsewhere)
+	require.NoError(t, os.Remove(filepath.Join(elsewhere, ".git")))
+	return elsewhere
 }
 
 // removeStep is the command a refusal names to remove the registration of the
