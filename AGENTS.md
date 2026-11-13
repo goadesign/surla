@@ -235,8 +235,8 @@ Stop if that context is unavailable or contradicts the code.
   files, tables, or keys. One package owns each on-disk format and the only
   code that reads or writes it: `internal/controlplane` owns Change Card
   files, and `internal/verifyrun` owns verification run directories, which
-  `surla serve` and the `surla verify-run` processes it starts share through
-  that package.
+  the project server that `surla` starts and the `surla verify-run`
+  processes it starts share through that package.
   Shared packages may contain value types, codecs, and pure algorithms, not
   persistence that lets distinct services access each other's data. Before
   adding a registry or handle store, identify its owner, consumers, existing
@@ -244,9 +244,9 @@ Stop if that context is unavailable or contradicts the code.
   facts from authorized IDs, then calling the owner's generated API, then
   private storage behind that API, or an owned event for asynchronous use.
 - **Ask the owner.** Get a running service's facts through its API, not by
-  copying them into configuration. A host that embeds the control plane binds
-  `TargetUpdater` or `PromotionTarget`; Surla never fabricates the facts those
-  interfaces report.
+  copying them into configuration. The project server binds `PromotionTarget`
+  from the promotion settings stored with `surla promotion set`; Surla never
+  fabricates the promotion inputs it reports.
 - **Complete work server-side.** A multi-step operation, such as a
   verification run, completes in a process the server owns and survives
   client disconnects. Once accepted, multi-service or multi-transaction work
@@ -448,6 +448,9 @@ appropriate for CPU, memory, and restarts.
     `examples/orders` or `examples/orders-eval` changed
   - `go test -race -count=1 -timeout 60m -tags scaffold ./internal/scaffold`
     for starter generation
+  - `go test -race -count=1 -tags herdr -run TestHC ./cmd/surla` (opt-in;
+    needs Herdr `hc`, and skips without it) for the project server's real
+    parentless Herdr start, stop, restart and kill recovery
   - `npm --prefix ui/checkpoint run typecheck` for views page TypeScript changes
 - Set `CI=true` and close stdin on these invocations. Do not regenerate or
   run runtime/browser suites for text-only instructions or documentation;

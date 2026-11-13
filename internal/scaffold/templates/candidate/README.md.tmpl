@@ -67,40 +67,49 @@ read.
 
 ## Next steps
 
-If you created this project over MCP with `init_project`, the Surla project server has
-already initialized the Git repository, created the initial commit (`commit` in
-`init_project`'s result), bound the server to this directory (`dir`), and
-pinned the evaluator suite to that initial commit. If you created it from the
-CLI, first make the initial commit with the commands below.
+If you created this project with `surla init`, make the first commit and start
+Surla in this directory:
+
+```sh
+git init
+git add .gitignore README.md AGENTS_QUICKSTART.md go.mod go.sum design gen internal cmd eval
+git commit -m "Start [[.Name]] from surla init"
+surla
+```
+
+`surla` starts this project's server, or attaches to it when it is already
+running, and opens the project's views page in your browser. If the guide
+created this project with `init_project`, the Surla project server has already
+initialized the Git repository, created the initial commit (`commit` in
+`init_project`'s result), bound itself to this directory (`dir`), and pinned
+the evaluator suite to that initial commit.
 
 For each change:
 
-1. Describe the change with `propose_change` and `confirm_intent`, and
-   preview its architecture with `preview_architecture`.
-2. Edit the code. When you edit `design/`, first call `generate_code` (with
-   `target: "eval"` when you edit `eval/design/`), then update the hand-written
-   code to match.
-3. Call `check_project` to build and test your uncommitted files, this module
-   and `eval/`, in Linux containers (Docker required). When it cannot download
-   dependencies and its output shows a missing `go.sum` or `go.work.sum` entry
-   or a `go.mod` update, call `update_dependencies` and check again.
-   `read_check_output` returns the captured output, page by page, for the
-   `op_id` in either result.
-4. Commit, then pass the new commit ID as `candidate_commit` to
+1. The guide describes the change with `propose_change`, and with
+   `revise_change` when it changes. You confirm it on the views page, which
+   also shows its architecture preview (`preview_architecture`).
+2. The builder edits the code. When it edits `design/`, it first calls
+   `generate_code` (with `target: "eval"` when it edits `eval/design/`), then
+   updates the hand-written code to match.
+3. The builder calls `check_project` to build and test its uncommitted files,
+   this module and `eval/`, in Linux containers (Docker required). When it
+   cannot download dependencies and its output shows a missing `go.sum` or
+   `go.work.sum` entry or a `go.mod` update, it calls `update_dependencies` and
+   checks again. `read_check_output` returns the captured output, page by
+   page, for the `op_id` in either result.
+4. The builder commits, then passes the new commit ID as `candidate_commit` to
    `start_live_target` and `verify_change`.
 
 See the
 [MCP tools reference](https://github.com/goadesign/surla/blob/main/docs/REFERENCE.md#mcp-tools)
 for each tool's inputs and results.
 
-If you created this project from the CLI with `surla init`, initialize the Git
-repository, make the first commit, and run `surla preview` and `surla verify`:
+`surla verify` and `surla approve` are operator tools that check a commit
+outside the server. To verify the current commit against the starter
+evaluator suite yourself:
 
 ```sh
-git init
-git add .gitignore README.md AGENTS_QUICKSTART.md go.mod go.sum design gen internal cmd eval
-git commit -m "Start [[.Name]] from surla init"
-surla preview -dir .
 VERIFY_DIR="$(mktemp -d)"
 WORK_DIR="$VERIFY_DIR/work"
 REPORT_DIR="$VERIFY_DIR/reports"
@@ -120,15 +129,16 @@ report, `stderr` prints operator setup/execution failure diagnostics). Do not
 share `$WORK_DIR`, `$REPORT_DIR`, or setup/execution failure output with coding
 agents that build the service.
 
-`surla verify` checks a commit. Run the `check_project` loop in "Next steps"
-above before you commit.
+`surla verify` checks a commit. The builder runs the `check_project` loop in
+"Next steps" above before it commits.
 
 ## Change checkpoints
 
 Surla reads this workspace's `design/*.go` privately when `propose_change` saves
 a Change Card. The saved source contributes to `request_revision`; callers do
-not upload it. `refresh_story` evaluates the workspace's domain Story. Pass its
-succeeded `op_id` as `story_refresh_op_id` to adopt the Story and matching source.
+not upload it. The guide calls `refresh_story` to evaluate the workspace's
+domain Story and passes its succeeded `op_id` as `story_refresh_op_id` to adopt
+the Story and matching source.
 An adopted Story remains paired with its source when a later revision omits
 `story_refresh_op_id`.
 

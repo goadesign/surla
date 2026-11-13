@@ -28,6 +28,20 @@ func TestResourceMarkdownServesThePlaybookThenTheDecisionCatalog(t *testing.T) {
 	assert.Contains(t, md, "DecisionWorkspace(", "the component signatures must be served")
 }
 
+// TestPlaybookLeavesConfirmationToTheUser verifies that the playbook every
+// role reads says the user confirms a Change Card on the views page and that
+// an unlisted choice goes back to the guide's revise_change, so no agent is
+// told to confirm a card itself.
+func TestPlaybookLeavesConfirmationToTheUser(t *testing.T) {
+	t.Parallel()
+
+	md := ResourceMarkdown()
+	assert.Contains(t, md, "The user answers each ambiguity question on the views page")
+	assert.Contains(t, md, "no agent confirms a card")
+	assert.Contains(t, md, "the guide calls `revise_change`")
+	assert.NotContains(t, md, "and confirm the revised card")
+}
+
 // TestPlaybookRegeneratesWithSurlaGenAndKeepsTheGRPCRoute verifies that the
 // playbook's executable regeneration step, which the surla://golden-path
 // resource carries, names the sandboxed surla gen, and that the module-pinned

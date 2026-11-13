@@ -91,7 +91,9 @@ func TestQuickstartSectionsKeepGoaAIsLayout(t *testing.T) {
 		for _, cmd := range []string{"goa gen ", "go run ", "go test", "go build"} {
 			assert.NotContains(t, text, cmd, "%s does not tell the reader to run %q", name, cmd)
 		}
+		assert.NotContains(t, text, "`confirm_intent`", "%s does not tell a coding agent to confirm a Change Card; the user confirms it on the views page", name)
 	}
+	assert.Contains(t, quickstartSections["liftoff"], "the user confirms it on the views page")
 	assert.Contains(t, quickstartSections["liftoff"], "`check_project`")
 	assert.Contains(t, quickstartSections["header"], "section 2 names them", "the header points at liftoff, part 2")
 	assert.Contains(t, quickstartSections["golden-rules"], "`generate_code`")

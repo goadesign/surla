@@ -3,23 +3,36 @@ package main
 import (
 	"bytes"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-// TestInitNextStepsGiveAWorkingFirstRunPath verifies the CLI handoff matches
-// the starter's private verification paths and documented change checkpoints.
+// TestInitNextStepsGiveAWorkingFirstRunPath verifies the CLI handoff: the
+// printed commands commit the new project and end by starting surla in it,
+// the operator tools are named only after that, and the text points to the
+// starter's documented change steps.
 func TestInitNextStepsGiveAWorkingFirstRunPath(t *testing.T) {
 	out := fmt.Sprintf(initNextSteps, shellQuote("/tmp/my shop"), "bakery")
-	assert.Contains(t, out, `cd '/tmp/my shop'`)
-	assert.Contains(t, out, `VERIFY_DIR="$(mktemp -d)"`)
-	assert.Contains(t, out, `WORK_DIR="$VERIFY_DIR/work"`)
-	assert.Contains(t, out, `REPORT_DIR="$VERIFY_DIR/reports"`)
-	assert.Contains(t, out, `-work-dir "$WORK_DIR" -report-dir "$REPORT_DIR" -builder-view`)
-	assert.Contains(t, out, "$WORK_DIR/evidence/")
-	assert.Contains(t, out, "-builder-view hides holdout scenario names and checks in the completed report\nJSON and summary line (if a run fails before writing a report, stderr prints\noperator setup/execution failure diagnostics).")
+	var commands []string
+	for line := range strings.Lines(out) {
+		if command, ok := strings.CutPrefix(line, "  "); ok {
+			commands = append(commands, strings.TrimSuffix(command, "\n"))
+		}
+	}
+	assert.Equal(t, []string{
+		`cd '/tmp/my shop'`,
+		"git init",
+		"git add .gitignore README.md AGENTS_QUICKSTART.md go.mod go.sum design gen internal cmd eval",
+		`git commit -m "Start bakery from surla init"`,
+		"surla",
+	}, commands)
+	_, after, ok := strings.Cut(out, "\n  surla\n")
+	require.True(t, ok)
+	assert.Contains(t, after, "views page")
+	assert.Contains(t, after, "Operator tools: surla verify and surla approve")
 	assert.Contains(t, out, "check_project before committing")
 	assert.Contains(t, out, "confirmed Change Card's request_revision")
 	assert.Contains(t, out, "surla://golden-path")
