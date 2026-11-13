@@ -1472,7 +1472,7 @@ paths:
             tags:
                 - surla
             summary: list_changes surla
-            description: List the owner's saved Change Cards for this project, most recently saved first, with each card's summary, status, the request_revision in force, the request_revision of a revision the guide proposed beside a confirmed card while it waits for the user, the state of its most recently accepted verification run, and when it was last saved, and say whether this server can record approvals. The views page opens on this list; agents use it to find a change_id. Reading changes nothing.
+            description: List the owner's saved Change Cards for this project, most recently saved first, with each card's summary, status, the request_revision in force, the request_revision of a revision the guide proposed beside a confirmed card while it waits for the user, the state of its most recently accepted verification run and whether its revision and selected tests are current, and when it was last saved, and say whether this server can record approvals. The views page opens on this list; agents use it to find a change_id. Reading changes nothing.
             operationId: surla#list_changes
             responses:
                 "200":
@@ -1486,6 +1486,7 @@ paths:
                                 changes:
                                     - change_id: Consequatur nemo.
                                       latest_verification:
+                                        inputs_current: true
                                         run_id: Voluptas veritatis excepturi fuga enim et.
                                         state: not_completed
                                       proposed_revision: Dignissimos accusantium inventore pariatur aliquam et maxime.
@@ -1495,6 +1496,7 @@ paths:
                                       summary: Ut saepe incidunt odit.
                                     - change_id: Consequatur nemo.
                                       latest_verification:
+                                        inputs_current: true
                                         run_id: Voluptas veritatis excepturi fuga enim et.
                                         state: not_completed
                                       proposed_revision: Dignissimos accusantium inventore pariatur aliquam et maxime.
@@ -19534,6 +19536,7 @@ components:
                     example:
                         - change_id: Consequatur nemo.
                           latest_verification:
+                            inputs_current: true
                             run_id: Voluptas veritatis excepturi fuga enim et.
                             state: not_completed
                           proposed_revision: Dignissimos accusantium inventore pariatur aliquam et maxime.
@@ -19543,6 +19546,7 @@ components:
                           summary: Ut saepe incidunt odit.
                         - change_id: Consequatur nemo.
                           latest_verification:
+                            inputs_current: true
                             run_id: Voluptas veritatis excepturi fuga enim et.
                             state: not_completed
                           proposed_revision: Dignissimos accusantium inventore pariatur aliquam et maxime.
@@ -19560,6 +19564,7 @@ components:
                 changes:
                     - change_id: Consequatur nemo.
                       latest_verification:
+                        inputs_current: true
                         run_id: Voluptas veritatis excepturi fuga enim et.
                         state: not_completed
                       proposed_revision: Dignissimos accusantium inventore pariatur aliquam et maxime.
@@ -19569,6 +19574,7 @@ components:
                       summary: Ut saepe incidunt odit.
                     - change_id: Consequatur nemo.
                       latest_verification:
+                        inputs_current: true
                         run_id: Voluptas veritatis excepturi fuga enim et.
                         state: not_completed
                       proposed_revision: Dignissimos accusantium inventore pariatur aliquam et maxime.
@@ -19618,6 +19624,7 @@ components:
             example:
                 change_id: Consequatur nemo.
                 latest_verification:
+                    inputs_current: true
                     run_id: Voluptas veritatis excepturi fuga enim et.
                     state: not_completed
                 proposed_revision: Dignissimos accusantium inventore pariatur aliquam et maxime.
@@ -20194,6 +20201,10 @@ components:
         LatestVerificationItem:
             type: object
             properties:
+                inputs_current:
+                    type: boolean
+                    description: 'Whether this run names the agreed request_revision and the tests selected now: the accepted test commit of the usable build in force, or the configured stored evaluator suite. It does not say whether the candidate working tree, deployment or approval is current.'
+                    example: true
                 run_id:
                     type: string
                     description: Verification run identifier; get_verification takes it.
@@ -20209,11 +20220,13 @@ components:
                         - not_completed
             description: The most recently accepted Checkpoint 4 verification run of a Change Card.
             example:
+                inputs_current: true
                 run_id: Voluptas veritatis excepturi fuga enim et.
                 state: not_completed
             required:
                 - run_id
                 - state
+                - inputs_current
         LivePromptItem:
             type: object
             properties:

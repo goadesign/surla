@@ -1147,6 +1147,11 @@ type (
 		// when its report's verdict is known; not_completed when it stopped without a
 		// report.
 		State string
+		// Whether this run names the agreed request_revision and the tests selected
+		// now: the accepted test commit of the usable build in force, or the
+		// configured stored evaluator suite. It does not say whether the candidate
+		// working tree, deployment or approval is current.
+		InputsCurrent bool
 	}
 	// LivePromptItem is a nested type used by the generated JSON contract.
 	LivePromptItem = struct {

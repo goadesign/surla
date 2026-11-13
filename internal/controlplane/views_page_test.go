@@ -97,7 +97,7 @@ await propose("chg-second", "Hold refunds for review.", "Held");
 await until(() => page.$$("#surla-change-list li").length === 2, "a second change did not appear");
 const ids = page.$$("#surla-change-list li").map((li) => li.dataset.changeId);
 expect(JSON.stringify(ids) === JSON.stringify(["chg-second", "chg-first"]), "list is not most recently saved first: " + ids);
-expect(page.text("#surla-change-list").includes("Needs confirmation") && page.text("#surla-change-list").includes("Not verified yet"), "list omitted state or verification state");
+expect(page.text("#surla-change-list").includes("Needs confirmation") && page.text("#surla-change-list").includes("No saved runs"), "list omitted state or saved-run history");
 
 checkControl(page, page.$("#surla-open-change-chg-first"), "list control");
 expect(page.$("#surla-open-change-chg-first").textContent.includes("Route refunds to a manager."), "the list control is not named by its change");

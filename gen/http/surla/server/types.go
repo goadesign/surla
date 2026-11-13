@@ -3782,6 +3782,11 @@ type LatestVerificationItemResponseBody struct {
 	// when its report's verdict is known; not_completed when it stopped without a
 	// report.
 	State string `form:"state" json:"state" xml:"state"`
+	// Whether this run names the agreed request_revision and the tests selected
+	// now: the accepted test commit of the usable build in force, or the
+	// configured stored evaluator suite. It does not say whether the candidate
+	// working tree, deployment or approval is current.
+	InputsCurrent bool `form:"inputs_current" json:"inputs_current" xml:"inputs_current"`
 }
 
 // StartedBuildResponseBody is used to define fields on response body types.

@@ -23,6 +23,8 @@ export interface ProposedRevisionViewProps {
   busy: boolean;
   // error describes the last refused adopt or decline, or null.
   error: string | null;
+  // buildRevisionNotice describes adoption's effect on the agreed build.
+  buildRevisionNotice: string | null;
   // onAnswer records the user's choice for one proposal question.
   onAnswer: (questionId: string, option: string) => void;
   // onAdopt confirms the proposal with the chosen answers.
@@ -39,6 +41,7 @@ export function ProposedRevisionView({
   answers,
   busy,
   error,
+  buildRevisionNotice,
   onAnswer,
   onAdopt,
   onDecline,
@@ -206,12 +209,18 @@ export function ProposedRevisionView({
           {error}
         </Alert>
       ) : null}
+      {buildRevisionNotice !== null ? (
+        <p id="surla-proposal-build-consequence">{buildRevisionNotice}</p>
+      ) : null}
       <div className="surla-field-row">
         <Button
           id="surla-proposal-adopt"
           variant="primary"
           disabled={busy || unanswered.length > 0}
-          aria-describedby={unanswered.length > 0 ? "surla-proposal-adopt-hint" : undefined}
+          aria-describedby={[
+            unanswered.length > 0 ? "surla-proposal-adopt-hint" : "",
+            buildRevisionNotice !== null ? "surla-proposal-build-consequence" : "",
+          ].filter(Boolean).join(" ") || undefined}
           onClick={onAdopt}
         >
           Adopt this revision

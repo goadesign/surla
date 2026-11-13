@@ -25,7 +25,12 @@ count and test-writer progress. It follows changes without reloading or losing
 unsaved edits. Building uses the agreed saved revision, including while a guide's
 proposal waits. **Build again** asks before replacing a current build and clearing
 its assignment reads and test-writer verdict; building a newly agreed revision
-directly replaces an earlier build. See [builds and assignments](REFERENCE.md#builds-and-assignments).
+directly replaces an earlier build. Before refining or adopting a different
+agreed revision, the page explains that its build becomes earlier and that a
+replacement build's written tests need acceptance again. Saved run labels say
+whether the recorded revision and selected tests still match; **Proof** names
+the test source and shows the written-test isolation notice.
+See [builds and assignments](REFERENCE.md#builds-and-assignments).
 
 ## Overview: Strict Separation of Powers
 

@@ -5059,6 +5059,11 @@ type ListChangesResultLatestVerificationItemTransport struct {
 	// when its report's verdict is known; not_completed when it stopped without a
 	// report.
 	State *string `json:"state"`
+	// Whether this run names the agreed request_revision and the tests selected
+	// now: the accepted test commit of the usable build in force, or the
+	// configured stored evaluator suite. It does not say whether the candidate
+	// working tree, deployment or approval is current.
+	InputsCurrent *bool `json:"inputs_current"`
 }
 
 // ValidateListChangesResultLatestVerificationItemTransport checks decoded JSON before it becomes a service value.
@@ -5071,6 +5076,9 @@ func ValidateListChangesResultLatestVerificationItemTransport(value *ListChanges
 	}
 	if value.State == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("state", "body"))
+	}
+	if value.InputsCurrent == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("inputs_current", "body"))
 	}
 	if value.State != nil {
 		if !(*value.State == "running" || *value.State == "passed" || *value.State == "failed" || *value.State == "not_completed") {
@@ -14014,8 +14022,9 @@ func encodeExampleItemToReviseChangeResultExampleItemTransport2(v *surla.Example
 
 func encodeLatestVerificationItemToListChangesResultLatestVerificationItemTransport(v *surla.LatestVerificationItem) *ListChangesResultLatestVerificationItemTransport {
 	res := &ListChangesResultLatestVerificationItemTransport{
-		RunID: &v.RunID,
-		State: &v.State,
+		RunID:         &v.RunID,
+		State:         &v.State,
+		InputsCurrent: &v.InputsCurrent,
 	}
 
 	return res

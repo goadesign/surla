@@ -1962,6 +1962,9 @@ func ValidateLatestVerificationItemTransport(body *LatestVerificationItemTranspo
 	if body.State == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("state", "body"))
 	}
+	if body.InputsCurrent == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("inputs_current", "body"))
+	}
 	if body.State != nil {
 		if !(*body.State == "running" || *body.State == "passed" || *body.State == "failed" || *body.State == "not_completed") {
 			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.state", *body.State, []any{"running", "passed", "failed", "not_completed"}))
