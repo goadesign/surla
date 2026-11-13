@@ -36,8 +36,16 @@ func Stored(path string) (string, error) {
 // FDPath returns the kernel's stored path for the open file descriptor fd.
 // It verifies via Lstat that the returned path exists and has the same device
 // and inode as fd; if the path no longer exists or resolves to a different
-// file (for example after the opened hard link was unlinked or replaced),
-// FDPath returns ErrUnlinked rather than a stale or kernel-annotated path.
+// file (for example after the opened name was unlinked or replaced), FDPath
+// returns ErrUnlinked rather than a stale or kernel-annotated path.
+//
+// The returned path names fd's file when FDPath checks it, but it is not
+// necessarily the name fd was opened through. A file with several hard links
+// may be reported under any of them: after the opened link is unlinked, Darwin
+// answers either with an error or with a surviving link's path, and the answer
+// can change between calls. Callers that need a particular name compare the
+// result with it and treat a mismatch, like ErrUnlinked, as a changed path;
+// callers that need a particular file compare device and inode.
 func FDPath(fd int) (string, error) {
 	var fdSt unix.Stat_t
 	if err := unix.Fstat(fd, &fdSt); err != nil {
