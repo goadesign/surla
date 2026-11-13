@@ -26,6 +26,9 @@ type teamServiceFixture struct {
 	snapshot  gensurla.TeamSnapshot
 	calls     []string
 	supervise func(context.Context, AssignmentReader) error
+	// Registration and start hooks observe the real start boundary without a window.
+	register func(context.Context, BuildFolders) error
+	start    func(context.Context) (*gensurla.ProjectTeam, error)
 }
 
 // ReadTeam returns a copied snapshot and records a read, never an assignment mutation.
@@ -46,18 +49,26 @@ func (f *teamServiceFixture) ShowPane(_ context.Context, role string) error {
 }
 
 // StartAgents records the authorized action without starting any process.
-func (f *teamServiceFixture) StartAgents(context.Context) (*gensurla.ProjectTeam, error) {
+func (f *teamServiceFixture) StartAgents(ctx context.Context) (*gensurla.ProjectTeam, error) {
 	f.mu.Lock()
-	defer f.mu.Unlock()
 	f.calls = append(f.calls, "start")
+	start := f.start
+	f.mu.Unlock()
+	if start != nil {
+		return start(ctx)
+	}
 	return &gensurla.ProjectTeam{Team: "team", Space: "space", Dialog: "opened", Step: "Choose the fixture's builder in its open team dialog.", Roles: []*gensurla.ProjectTeamRole{}}, nil
 }
 
 // RegisterBuildRoles records registration without changing a window or starting any process.
-func (f *teamServiceFixture) RegisterBuildRoles(context.Context, BuildFolders) error {
+func (f *teamServiceFixture) RegisterBuildRoles(ctx context.Context, folders BuildFolders) error {
 	f.mu.Lock()
-	defer f.mu.Unlock()
 	f.calls = append(f.calls, "register")
+	register := f.register
+	f.mu.Unlock()
+	if register != nil {
+		return register(ctx, folders)
+	}
 	return nil
 }
 
@@ -189,8 +200,10 @@ func TestTeamVersionBelongsToResourceOwner(t *testing.T) {
 // revision debt, and proves neither inspection nor a failed read marks it read.
 func TestTeamAssignmentGenerations(t *testing.T) {
 	f := &teamServiceFixture{}
-	cp := newControlPlane(t, Options{Team: &TeamBinding{Owner: "alice@example.com", Service: f}})
+	cardsDir := t.TempDir()
+	var cp *ControlPlane
 	for _, owner := range []string{"alice@example.com", "bob@example.com"} {
+		cp = newBuildControlPlane(t, Options{CardsDir: cardsDir, Team: &TeamBinding{Owner: owner, Service: f}})
 		guide := asCaller(owner, CallerGuide)
 		user := asCaller(owner, CallerUser)
 		card := mustPropose(t, cp, guide, owner, "Refunds up to $50 are instant.", refundAnalysis("Refunds up to $50 are instant."))
@@ -198,7 +211,9 @@ func TestTeamAssignmentGenerations(t *testing.T) {
 		require.NoError(t, err)
 		_, err = cp.StartBuild(user, &gensurla.StartBuildPayload{ChangeID: owner, RequestRevision: confirmed.RequestRevision})
 		require.NoError(t, err)
+		require.NoError(t, cp.Close())
 	}
+	cp = newBuildControlPlane(t, Options{CardsDir: cardsDir, Team: &TeamBinding{Owner: "alice@example.com", Service: f}})
 	first, err := cp.assignmentGenerations(t.Context())
 	require.NoError(t, err)
 	require.Len(t, first, 2)
@@ -250,7 +265,7 @@ func TestTeamAssignmentGenerationsMatchBuildWork(t *testing.T) {
 			if stored {
 				opts.Verification = &VerificationConfig{RunsDir: t.TempDir()}
 			}
-			cp := newControlPlane(t, opts)
+			cp := newBuildControlPlane(t, opts)
 			card := confirmedChange(t, cp, "chg")
 			user := asCaller("alice@example.com", CallerUser)
 			started, err := cp.StartBuild(user, &gensurla.StartBuildPayload{ChangeID: "chg", RequestRevision: card.RequestRevision})
@@ -259,7 +274,7 @@ func TestTeamAssignmentGenerationsMatchBuildWork(t *testing.T) {
 			require.NoError(t, err)
 			build, ok := read.Build.AsStarted()
 			require.True(t, ok)
-			assert.Equal(t, started, build)
+			assert.Equal(t, started.Build, build)
 			wantTests := gensurla.TestsKindAssigned
 			wantRoles := []string{"builder", "test_writer"}
 			if stored {

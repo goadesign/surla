@@ -77,7 +77,7 @@ func TestBuildStatesReadTheSameOnBothInterfaces(t *testing.T) {
 			if tc.stored {
 				opts.Verification = &VerificationConfig{RunsDir: t.TempDir()}
 			}
-			cp := newControlPlane(t, opts)
+			cp := newBuildControlPlane(t, opts)
 			srv := roleServer(t, cp)
 			card := confirmedChange(t, cp, "chg")
 			_, err := cp.StartBuild(asCaller("alice@example.com", CallerUser), &gensurla.StartBuildPayload{ChangeID: "chg", RequestRevision: card.RequestRevision})
@@ -107,7 +107,7 @@ func TestBuildStatesReadTheSameOnBothInterfaces(t *testing.T) {
 // from every result that carries the test writer's progress, over HTTP and
 // over MCP.
 func TestBuildReadsShowTheSavedReportNumber(t *testing.T) {
-	cp := newControlPlane(t, Options{})
+	cp := newBuildControlPlane(t, Options{})
 	srv := roleServer(t, cp)
 	card := confirmedChange(t, cp, "chg")
 	_, err := cp.StartBuild(asCaller("alice@example.com", CallerUser), &gensurla.StartBuildPayload{ChangeID: "chg", RequestRevision: card.RequestRevision})
@@ -139,7 +139,7 @@ func TestBuildReadsShowTheSavedReportNumber(t *testing.T) {
 // offset, as a file could hold it, and checks that reads return it in UTC
 // and that the next save writes it in UTC.
 func TestVerdictTimesAreSavedAndReturnedInUTC(t *testing.T) {
-	cp := newControlPlane(t, Options{})
+	cp := newBuildControlPlane(t, Options{})
 	card := confirmedChange(t, cp, "chg")
 	_, err := cp.StartBuild(asCaller("alice@example.com", CallerUser), &gensurla.StartBuildPayload{ChangeID: "chg", RequestRevision: card.RequestRevision})
 	require.NoError(t, err)
@@ -172,9 +172,9 @@ func TestStoredEvaluatorBuildsReadNotUsed(t *testing.T) {
 	}
 	for _, fields := range saved {
 		t.Run(fields["state"].(string), func(t *testing.T) {
-			stored := newControlPlane(t, Options{Verification: &VerificationConfig{RunsDir: t.TempDir()}})
+			stored := newBuildControlPlane(t, Options{Verification: &VerificationConfig{RunsDir: t.TempDir()}})
 			require.True(t, stored.storedEvaluator())
-			without := newControlPlane(t, Options{})
+			without := newBuildControlPlane(t, Options{})
 			for _, cp := range []*ControlPlane{stored, without} {
 				card := confirmedChange(t, cp, "chg")
 				_, err := cp.StartBuild(asCaller("alice@example.com", CallerUser), &gensurla.StartBuildPayload{ChangeID: "chg", RequestRevision: card.RequestRevision})
@@ -192,12 +192,11 @@ func TestStoredEvaluatorBuildsReadNotUsed(t *testing.T) {
 			require.Len(t, listed.Assignments, 1)
 			assert.Equal(t, gensurla.WrittenTestsKindNotUsed, listed.Assignments[0].WrittenTests.Kind(), "list_builder_assignments")
 			full, err := stored.GetTestWriterAssignment(asCaller("alice@example.com", CallerTestWriter), &gensurla.GetTestWriterAssignmentPayload{ChangeID: "chg"})
-			require.NoError(t, err)
-			assert.Equal(t, gensurla.TestsKindNotUsed, full.Progress.Tests.Kind(), "get_test_writer_assignment")
+			assert.Nil(t, full)
+			assertRefused(t, err, "not_found")
 			items, err := stored.ListTestWriterAssignments(asCaller("alice@example.com", CallerTestWriter))
 			require.NoError(t, err)
-			require.Len(t, items.Assignments, 1)
-			assert.Equal(t, gensurla.TestsKindNotUsed, items.Assignments[0].Progress.Tests.Kind(), "list_test_writer_assignments")
+			assert.Empty(t, items.Assignments, "a builder-only build assigns no test writer")
 
 			kept := mustStartedBuild(t, without, asCaller("alice@example.com", CallerUser), "chg")
 			assert.Equal(t, fields["state"], string(kept.TestWriter.Tests.Kind()), "the saved state reads as saved without a stored evaluator")
@@ -217,7 +216,7 @@ func TestReportAfterAVerdictClearsIt(t *testing.T) {
 	}
 	for _, fields := range verdicts {
 		t.Run(fields["state"].(string), func(t *testing.T) {
-			cp := newControlPlane(t, Options{})
+			cp := newBuildControlPlane(t, Options{})
 			card := confirmedChange(t, cp, "chg")
 			_, err := cp.StartBuild(asCaller("alice@example.com", CallerUser), &gensurla.StartBuildPayload{ChangeID: "chg", RequestRevision: card.RequestRevision})
 			require.NoError(t, err)
@@ -256,11 +255,11 @@ func TestStartBuildWithAStoredEvaluatorReturnsNotUsed(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			cp := newControlPlane(t, tc.opts(t))
+			cp := newBuildControlPlane(t, tc.opts(t))
 			card := confirmedChange(t, cp, "chg")
 			started, err := cp.StartBuild(asCaller("alice@example.com", CallerUser), &gensurla.StartBuildPayload{ChangeID: "chg", RequestRevision: card.RequestRevision})
 			require.NoError(t, err)
-			assert.Equal(t, tc.tests, started.TestWriter.Tests.Kind())
+			assert.Equal(t, tc.tests, started.Build.TestWriter.Tests.Kind())
 		})
 	}
 }

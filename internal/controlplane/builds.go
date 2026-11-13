@@ -31,39 +31,6 @@ import (
 )
 
 type (
-	// BuildTeam makes the builder and the test writer ready for a build the
-	// user started. The composition root binds it with Options.BuildTeam;
-	// start_build calls it once per start, before the build is saved. With
-	// none bound, a build is saved and the test writer's assignment names no
-	// working folder. BuildTeam does not check reported tests:
-	// report_tests_finished only records a report as reported, and the check
-	// that accepts the tests or returns findings is added to this interface
-	// when reports are judged.
-	BuildTeam interface {
-		// Prepare readies the roles for build and returns the absolute path of
-		// the test writer's working copy. An error refuses the build:
-		// start_build saves nothing and returns the error to the user. Prepare
-		// runs without the card lock, and start_build checks the change again
-		// before saving; when the change was revised or confirmed again
-		// meanwhile, the start is refused, no build is saved, and what Prepare
-		// made stays. Together with the user building the same change again,
-		// at the same or a later revision, this is why Prepare must be safe to
-		// repeat.
-		Prepare(ctx context.Context, build Build) (workingFolder string, err error)
-	}
-
-	// Build is a build the user started, as BuildTeam.Prepare sees it.
-	Build struct {
-		// ChangeID names the confirmed Change Card being built.
-		ChangeID string
-		// RequestRevision is the Change Card's revision in force that the user
-		// built.
-		RequestRevision string
-		// Stories is the Story as agreed at RequestRevision, in declaration
-		// order; nil when the change has none.
-		Stories []designeval.StorySummary
-	}
-
 	// heldBuild is a saved build together with whether it is for its change's
 	// revision in force, as every read of a build or an assignment reports.
 	heldBuild struct {
@@ -179,78 +146,6 @@ const (
 	// hold ControlPlane.mu, so one staging file suffices.
 	buildStagingFile = "pending-build"
 )
-
-// StartBuild saves the user's build of a confirmed change at its revision in
-// force, with the Story as agreed at that revision and unread assignments for
-// the builder and the test writer, replacing any earlier build of the change.
-// When a BuildTeam is bound it prepares the roles first, without holding the
-// card lock, and the change is checked again before the build is saved. It
-// refuses an unknown change (not_found), another owner's change (forbidden),
-// a change that is not confirmed or a revision that is not the one in force
-// (conflict), and a Story whose finished flows the generator cannot name
-// (unprocessable); a refused start saves nothing.
-func (c *ControlPlane) StartBuild(ctx context.Context, p *gensurla.StartBuildPayload) (*gensurla.StartedBuild, error) {
-	principal, ok := PrincipalFromContext(ctx)
-	if !ok {
-		return nil, errors.New("authenticated principal is required")
-	}
-	ctx, span := c.tracer("surla/controlplane").Start(ctx, "surla.controlplane.start_build", trace.WithAttributes(
-		attribute.String("surla.change_id", p.ChangeID),
-		attribute.String("surla.request_revision", p.RequestRevision),
-	))
-	defer span.End()
-
-	// Phase 1: check the change under the read lock before preparing anything.
-	c.mu.RLock()
-	record, err := c.buildableCard(principal, p.ChangeID, p.RequestRevision)
-	c.mu.RUnlock()
-	if err != nil {
-		return nil, recordBuildError(span, err, "check change for build")
-	}
-	if _, _, err := designeval.StoryScenarios(record.stories); err != nil {
-		return nil, gensurla.MakeUnprocessable(fmt.Errorf("the agreed Story cannot name its required tests: %w", err))
-	}
-	build := Build{ChangeID: p.ChangeID, RequestRevision: p.RequestRevision, Stories: cloneStorySummaries(record.stories)}
-
-	// Phase 2: prepare the roles without the lock; preparing may be slow.
-	var folder string
-	if c.buildTeam != nil {
-		folder, err = c.buildTeam.Prepare(ctx, build)
-		if err == nil && !filepath.IsAbs(folder) {
-			err = fmt.Errorf("working folder %q is not an absolute path", folder)
-		}
-		if err != nil {
-			return nil, recordBuildError(span, fmt.Errorf("prepare build: %w", err), "prepare build")
-		}
-	}
-
-	// Phase 3: check the change again and save the build. The revision covers
-	// the Story, so the Story saved is the one Prepare saw.
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	record, err = c.buildableCard(principal, p.ChangeID, p.RequestRevision)
-	if err != nil {
-		return nil, recordBuildError(span, err, "check change for build")
-	}
-	saved := buildFile{
-		ChangeID:        p.ChangeID,
-		RequestRevision: p.RequestRevision,
-		StartedAt:       time.Now().UTC(),
-		Roles:           buildRolesBuilderAndTestWriter,
-		Stories:         cloneStorySummaries(record.stories),
-		DesignSource:    record.designSource,
-		Builder:         builderAssignment{},
-		TestWriter:      testWriterAssignment{State: testsAssigned, WorkingFolder: &folder},
-	}
-	if c.storedEvaluator() {
-		saved.Roles = buildRolesBuilderOnly
-		saved.TestWriter.WorkingFolder = nil
-	}
-	if err := c.cards.saveBuild(saved); err != nil {
-		return nil, recordBuildError(span, err, "save build")
-	}
-	return startedBuild(heldBuild{file: saved, inForce: true, storedEvaluator: c.storedEvaluator()}), nil
-}
 
 // GetBuild returns the owner's change's usable build, or not_started when no
 // build serves the current test source, and whether it is for the revision in force.

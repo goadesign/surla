@@ -56,17 +56,24 @@ const (
 // special file. It changes nothing. An error means ctx ended, a file could not
 // be read for another reason, or the bound workspace was replaced
 // (unprocessable).
-func (c *ControlPlane) projectTestSource(ctx context.Context) (_ testSource, err error) {
+func (c *ControlPlane) projectTestSource(ctx context.Context) (testSource, error) {
+	source, _, err := c.projectTestLayout(ctx)
+	return source, err
+}
+
+// projectTestLayout returns the same source decision with its parsed starter
+// layout, so a start passes the exact checked suite to the working-copy owner.
+func (c *ControlPlane) projectTestLayout(ctx context.Context) (_ testSource, _ scaffold.Layout, err error) {
 	if c.storedEvaluator() {
-		return testSourceStoredEvaluator, nil
+		return testSourceStoredEvaluator, scaffold.Layout{}, nil
 	}
 	wsDir, wsDev, wsIno := c.currentWorkspaceTarget()
 	if wsDir == "" {
-		return testSourceNone, nil
+		return testSourceNone, scaffold.Layout{}, nil
 	}
 	_, root, err := openModuleRootWithIdentity(wsDir, wsDev, wsIno)
 	if err != nil {
-		return "", err
+		return "", scaffold.Layout{}, err
 	}
 	defer func() {
 		if closeErr := root.Close(); closeErr != nil {
@@ -76,20 +83,21 @@ func (c *ControlPlane) projectTestSource(ctx context.Context) (_ testSource, err
 	var goMods [2][]byte
 	for i, rel := range []string{"go.mod", path.Join(scaffold.SuiteDir, "go.mod")} {
 		if err := ctx.Err(); err != nil {
-			return "", err
+			return "", scaffold.Layout{}, err
 		}
 		goMods[i], err = designeval.ReadRegularFile(root, rel, maxLayoutFileBytes)
 		switch {
 		case errors.Is(err, fs.ErrNotExist), errors.Is(err, designeval.ErrNotRegularFile), errors.Is(err, designeval.ErrFileTooLarge):
-			return testSourceNone, nil
+			return testSourceNone, scaffold.Layout{}, nil
 		case err != nil:
-			return "", fmt.Errorf("read the test layout of workspace %s: %w", wsDir, err)
+			return "", scaffold.Layout{}, fmt.Errorf("read the test layout of workspace %s: %w", wsDir, err)
 		}
 	}
-	if _, err := scaffold.StarterLayout(goMods[0], goMods[1]); err != nil {
-		return testSourceNone, nil
+	layout, err := scaffold.StarterLayout(goMods[0], goMods[1])
+	if err != nil {
+		return testSourceNone, scaffold.Layout{}, nil
 	}
-	return testSourceStarterLayout, nil
+	return testSourceStarterLayout, layout, nil
 }
 
 // storedEvaluator reports projectTestSource's first answer without reading

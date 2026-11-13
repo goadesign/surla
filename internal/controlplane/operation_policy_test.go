@@ -20,7 +20,10 @@ import (
 
 // TestOperationPolicyCoversEveryTool proves every invocation permission, including denial before mutation.
 func TestOperationPolicyCoversEveryTool(t *testing.T) {
-	published := append(slices.Clone(gensurla.MethodNames), genproject.MethodNames...)
+	published := append(slices.Clone(gensurla.MethodNames[:]), genproject.MethodNames[:]...)
+	// The browser exchange authenticates its one-use token at its own public
+	// boundary; it has no credential purpose and never enters this role policy.
+	published = slices.DeleteFunc(published, func(name string) bool { return name == "exchange_browser_link" })
 	assert.ElementsMatch(t, published, slices.Collect(maps.Keys(operationRoles)), "only published operations have a policy")
 	roles := []CallerKind{CallerUser, CallerGuide, CallerBuilder, CallerTestWriter, CallerManagement, ""}
 	common := []CallerKind{CallerUser, CallerGuide, CallerBuilder}
