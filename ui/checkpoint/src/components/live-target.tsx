@@ -4,7 +4,7 @@
 // targets started afterwards use, with a form that changes it. It shows what
 // the server reports and never prompt text, which the server does not return.
 
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { ConfigureModelPayload, LiveTargetStatus, ModelConfigResult, ModelConnection } from "../types";
 import { Alert, Badge, Button, Card } from "./shadcn";
 
@@ -119,23 +119,52 @@ function LiveTargetSection({
   // returnFocus is set when the confirmation closes without stopping, so
   // focus goes back to the Stop control once it is drawn again.
   const returnFocus = useRef(false);
+  // focusLeftWithStop is set when the Stop row leaves the page while focus
+  // is inside it, so focus goes to the view's heading instead of the body.
+  const focusLeftWithStop = useRef(false);
   const stoppable: RunningCase | null = current !== null && current.state === "running" ? current : null;
 
-  // A confirmation opened for a target that has since ended closes, so it
-  // never reappears for a later target the user did not ask about, and focus
-  // goes to the view's heading rather than to the page body.
+  // attachStopRow keeps stopRowRef and, as React removes the row, records
+  // whether focus was inside it; React removes the row's element only after
+  // this cleanup runs, so focus has not moved yet.
+  const attachStopRow = useCallback((node: HTMLDivElement | null) => {
+    stopRowRef.current = node;
+    if (node === null) {
+      return;
+    }
+    return () => {
+      focusLeftWithStop.current = node.contains(document.activeElement);
+      stopRowRef.current = null;
+    };
+  }, []);
+
+  // When the target ends, an open confirmation closes, so it never reappears
+  // for a later target the user did not ask about, and focus that was on the
+  // confirmation or on Stop goes to the view's heading rather than to the
+  // page body.
   const nothingToStop = stoppable === null;
   useEffect(() => {
-    if (nothingToStop && confirming) {
+    if (!nothingToStop) {
+      return;
+    }
+    if (confirming) {
       setConfirming(false);
       headingRef.current?.focus();
+      return;
     }
-    // Only a change of nothingToStop closes the confirmation, so confirming
-    // is read here but deliberately not a dependency.
+    if (focusLeftWithStop.current) {
+      focusLeftWithStop.current = false;
+      headingRef.current?.focus();
+    }
+    // Only a change of nothingToStop acts here, so confirming is read but
+    // deliberately not a dependency.
   }, [nothingToStop]);
 
   useEffect(() => {
     if (confirming) {
+      // Opening the confirmation removed the Stop row with focus in it;
+      // focus goes to the confirmation, not the heading.
+      focusLeftWithStop.current = false;
       confirmRef.current?.focus();
     } else if (returnFocus.current) {
       returnFocus.current = false;
@@ -181,7 +210,7 @@ function LiveTargetSection({
         <LiveTargetBody target={current} />
       )}
       {stoppable !== null && !confirming ? (
-        <div className="surla-field-row" ref={stopRowRef}>
+        <div className="surla-field-row" ref={attachStopRow}>
           <Button
             id="surla-live-stop"
             disabled={stopping}

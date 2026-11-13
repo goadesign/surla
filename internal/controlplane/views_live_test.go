@@ -179,9 +179,10 @@ page.close();
 `)
 }
 
-// TestViewsPageLiveTargetEndingClosesTheConfirmation opens the stop
-// confirmation and lets the target end by itself: the confirmation closes,
-// nothing is sent, and focus goes to the view's heading, not the page body.
+// TestViewsPageLiveTargetEndingClosesTheConfirmation lets a target end by
+// itself twice: once with the stop confirmation open, which closes, and once
+// with focus on the Stop control and no confirmation. Each time nothing is
+// sent and focus goes to the view's heading, not the page body.
 func TestViewsPageLiveTargetEndingClosesTheConfirmation(t *testing.T) {
 	cp := pageLiveControlPlane(t, "serve", Options{}, noModel())
 	ps := startPageServer(t, cp)
@@ -196,6 +197,14 @@ await fetch(started.url + "/exit", { method: "POST" }).catch(() => {});
 await until(() => liveState(page) === "none", "a target that ended by itself is still shown", 30000);
 await until(() => !page.$("#surla-live-stop-confirm"), "the confirmation stayed open for a target that ended");
 await until(() => page.doc.activeElement === page.$("#surla-live-target-title"), "focus did not go to the view's heading: " + page.doc.activeElement.outerHTML.slice(0, 80));
+
+const again = await startTarget(commitA);
+await until(() => liveState(page) === "running" && page.$("#surla-live-stop"), "the second target did not appear");
+page.$("#surla-live-stop").focus();
+expect(page.doc.activeElement === page.$("#surla-live-stop"), "the Stop control did not take focus");
+await fetch(again.url + "/exit", { method: "POST" }).catch(() => {});
+await until(() => liveState(page) === "none", "the second target that ended is still shown", 30000);
+await until(() => page.doc.activeElement === page.$("#surla-live-target-title"), "focus left on Stop did not go to the view's heading: " + page.doc.activeElement.outerHTML.slice(0, 80));
 expect(page.sent("DELETE", "/live-target").length === 0, "a stop was sent although the user never confirmed");
 page.close();
 `)
