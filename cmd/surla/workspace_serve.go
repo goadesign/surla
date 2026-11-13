@@ -200,7 +200,7 @@ func (runtime projectRuntime) operatorRoot(initialWorkspaceRoot string, extraDir
 		return "", fmt.Errorf("determine user configuration directory for operator storage: %w", err)
 	}
 	if cfgRoot == "" {
-		return "", errors.New("user configuration directory is empty; set HOME or XDG_CONFIG_HOME for operator storage")
+		return "", errors.New("user configuration directory is empty; set HOME, or XDG_CONFIG_HOME on Linux, in the shell that runs surla")
 	}
 	cand := filepath.Join(cfgRoot, "surla", "operator")
 	excluded := append([]string{initialWorkspaceRoot}, extraDirs...)
