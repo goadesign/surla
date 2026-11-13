@@ -355,8 +355,8 @@ type (
 		// storyRefreshOps counts running Story refresh evaluations so Close can
 		// wait for them to finish before closing the evaluator.
 		storyRefreshOps sync.WaitGroup
-		// storyRefreshTimeout overrides defaultStoryRefreshTimeout in tests when positive.
-		storyRefreshTimeout time.Duration
+		// storyRefreshWithTimeout injects the refresh deadline in deterministic tests.
+		storyRefreshWithTimeout func(context.Context, time.Duration) (context.Context, context.CancelFunc)
 		// changesWait and changesPoll override defaultChangesWait and
 		// defaultChangesPoll in tests when positive.
 		changesWait, changesPoll time.Duration

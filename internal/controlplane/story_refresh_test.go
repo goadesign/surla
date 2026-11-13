@@ -434,12 +434,32 @@ func TestStoryRefreshReplacementFailureRetryAndExpiry(t *testing.T) {
 		run2 := filepath.Join(countDir, "run2")
 		installFakeGo(t, "#!/bin/sh\nif [ ! -f "+run1+" ]; then\n  : > "+run1+"\n  exec sleep 600\nfi\n: > "+run2+"\nexec sleep 600\n")
 
+		var (
+			deadlineCalls int
+			expireFirst   context.CancelCauseFunc
+		)
 		cp := newControlPlane(t, Options{WorkspaceDir: wsDir})
-		cp.storyRefreshTimeout = 200 * time.Millisecond
+		cp.storyRefreshWithTimeout = func(ctx context.Context, limit time.Duration) (context.Context, context.CancelFunc) {
+			assert.Equal(t, defaultStoryRefreshTimeout, limit)
+			deadlineCalls++
+			if deadlineCalls == 1 {
+				evalCtx, cancelCause := context.WithCancelCause(ctx)
+				expireFirst = cancelCause
+				return evalCtx, func() { cancelCause(nil) }
+			}
+			return context.WithTimeout(ctx, limit)
+		}
 
 		first, err := cp.RefreshStory(alice)
 		require.NoError(t, err)
 		require.NotNil(t, first.OpID)
+
+		require.Eventually(t, func() bool {
+			_, statErr := os.Stat(run1)
+			return statErr == nil
+		}, 5*time.Second, 10*time.Millisecond)
+		require.NotNil(t, expireFirst)
+		expireFirst(context.DeadlineExceeded)
 
 		var expired *gensurla.StoryRefreshResult
 		require.Eventually(t, func() bool {
@@ -451,7 +471,7 @@ func TestStoryRefreshReplacementFailureRetryAndExpiry(t *testing.T) {
 			return cur.State == storyRefreshStateFailed
 		}, 5*time.Second, 10*time.Millisecond)
 		require.NotNil(t, expired.Diagnostic)
-		assert.Contains(t, *expired.Diagnostic, "Story refresh timed out after 200ms")
+		assert.Contains(t, *expired.Diagnostic, "Story refresh timed out after 5m0s")
 
 		// Refreshing the same snapshot after expiry starts a fresh evaluation.
 		second, err := cp.RefreshStory(alice)
@@ -463,6 +483,34 @@ func TestStoryRefreshReplacementFailureRetryAndExpiry(t *testing.T) {
 			_, statErr := os.Stat(run2)
 			return statErr == nil
 		}, 5*time.Second, 10*time.Millisecond)
+	})
+
+	t.Run("real context.WithTimeout expiry reports timed out diagnostic", func(t *testing.T) {
+		wsDir := t.TempDir()
+		writeWorkspaceFiles(t, wsDir, validWorkspaceStub("package design\n"))
+		installFakeGo(t, "#!/bin/sh\nexec sleep 600\n")
+
+		cp := newControlPlane(t, Options{WorkspaceDir: wsDir})
+		cp.storyRefreshWithTimeout = func(ctx context.Context, limit time.Duration) (context.Context, context.CancelFunc) {
+			assert.Equal(t, defaultStoryRefreshTimeout, limit)
+			return context.WithTimeout(ctx, 20*time.Millisecond)
+		}
+
+		started, err := cp.RefreshStory(alice)
+		require.NoError(t, err)
+		require.NotNil(t, started.OpID)
+
+		var expired *gensurla.StoryRefreshResult
+		require.Eventually(t, func() bool {
+			cur, getErr := cp.GetStoryRefresh(alice)
+			if getErr != nil {
+				return false
+			}
+			expired = cur
+			return cur.State == storyRefreshStateFailed
+		}, 5*time.Second, 10*time.Millisecond)
+		require.NotNil(t, expired.Diagnostic)
+		assert.Contains(t, *expired.Diagnostic, "Story refresh timed out after 5m0s")
 	})
 }
 
