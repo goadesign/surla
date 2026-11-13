@@ -419,13 +419,12 @@ recorded inputs, with their excluded drafts still visible.
 
 ## Verification, history, and preserved callers
 
-Suite selection preserves `resolveActiveVerification` precedence. When
-`Options.ResolveVerification` is bound, workspace-derived Story verification
-requires its accepted authoring attempt, even if `Options.Verification` also
-holds a startup configuration. Automatic starters populate both fields.
-Only the existing fallback with no resolver uses the statically bound
-`Options.Verification` suite. Requests without a Story keep their existing
-resolver behavior. No builder-facing source flag or suite argument is added.
+Suite selection belongs to the control plane's verification plan, chosen
+for each request. With stored verification settings (`Options.Verification`),
+every change verifies with the operator's evaluator. Without them
+(`Options.WrittenTestRuns`), a change verifies with the tests Surla accepted
+for its build, at the commit it recorded, and is refused until they are
+accepted. No builder-facing source flag or suite argument is added.
 
 Every Story-bearing verification request preserves its observed Story and
 included/excluded flow set with its candidate, request revision, and suite
