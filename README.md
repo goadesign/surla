@@ -128,8 +128,10 @@ to read the current roles before choosing agents; otherwise close it and run
 `surla` again. Close any other dialog before retrying. Surla bounds readiness
 checks without terminating your Herdr window or Chorus service.
 The server also follows its registered roles in memory. Its user-only team API
-reports terminal state, watcher availability and unread assignments; the views
-page does not draw these team facts yet. Automatic reminder delivery is currently
+reports terminal state, watcher availability and unread assignments. The views
+page's **Team** view shows those facts and offers **Start agents** and each
+role's **Show pane** action. Roles that need you also appear above every view.
+Failed refreshes retain the facts and label them as last read. Automatic reminder delivery is currently
 unavailable. See [Team supervision](docs/REFERENCE.md#team-supervision).
 `surla stop` shuts that project down in order. Subfolders and physical path
 aliases find the same project; moving the folder starts a new, empty project.
@@ -155,12 +157,16 @@ until then. `preview_architecture` returns the compiled C4 topology,
 agent policies, and tool contracts. It reports the design's declarations; it
 does not check that they satisfy the requested behavior.
 
-Starting a build saves the agreed Story and design, prepares the roles and
+Choose **Build this change** beside a confirmed change's summary. Starting a
+build saves the agreed Story and design, prepares the roles and
 returns the team's next step. A project with stored verification settings adds
 only the builder. A starter project also gets a separate test writer, whose Git
 working copy receives one required test entry per finished Story flow. Draft
 flows stay editable and require no test. A busy or unavailable window leaves
 the saved build and its registered roles ready for a later start-agents action.
+The page follows assignment reads and test progress without reloading. **Build
+again** asks before replacing a current build and resetting its assignments;
+unsaved changes to the card remain editable and are not included in that build.
 See [Builds and assignments](docs/REFERENCE.md#builds-and-assignments) for
 prerequisites, working-copy outcomes and recovery.
 

@@ -306,6 +306,31 @@ Changing this contract is a breaking change for every target that implements it.
 
 ### Views page
 
+The **Build** section follows a change's saved summary. Confirm the change
+before building. Its first build uses **Build this change**; an earlier build
+offers **Build current agreed revision**. A current build emphasizes **View
+team**, with a separate **Build again** question before replacement. Rebuilding
+clears assignment reads and, when a test writer is used, its report and verdict.
+A waiting proposal and unsaved edits keep their own decision controls primary;
+building still uses the agreed saved revision. A known newer revision prevents
+starting from an older editor. Starts can take a few minutes and continue after
+the page closes.
+
+The section shows saved assignment reads, test-writer progress and the required
+Story test count, including zero. An accepted test-writer result does not mean
+verification passed. Team and working-copy results from a start are dated
+receipts of that action, not current health checks. A later successful **Start
+agents** clears the earlier build's team receipt.
+
+The **Team** view shows each registered role's terminal state, Chorus watcher
+fact and assignment-read fact independently. **Start agents** prepares the team;
+**Show pane** shows the selected role's existing pane in Herdr. Neither runs on
+a refresh. Every view also shows roles that need you with their Show pane action.
+The page follows build and Team changes through its existing waiting read.
+Failed reads or an interrupted update chain retain the observations with a
+last-read label. An ended session disables actions while preserving the view
+and unsaved edits.
+
 The Surla server serves the views page at `GET /views` on its numeric loopback address. Running `surla` opens it with a one-time link in the address fragment (`/views#link=<link>`), which a browser never sends to a server. The page is a fixed shell with no project data in it, built from [`ui/checkpoint/`](../ui/checkpoint/) into `internal/controlplane/checkpoint.html`. The server sends its policy as a `Content-Security-Policy` header, which a browser enforces before it runs the page:
 
 | Directive | What the browser allows |

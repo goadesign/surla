@@ -76,6 +76,15 @@ change-list version incorporates the public team snapshot for its bound owner on
 drains supervision and accepted build starts before closing the evaluator,
 diagnostics or Change Card storage.
 
+The same change-list version includes each owned build's canonical `get_build`
+rendering, loaded under the card-store read lock with its card. Listing never
+marks an assignment read. It releases the lock before team, Story, target and
+verification reads. The views page follows this one version chain for its
+selected build and shared Team snapshot; it does not add a second polling loop.
+The page sends build and window effects only from explicit user actions. Pane
+success has no response body, which the generated page client recognizes only
+for the operation's declared 204 result.
+
 The control plane owns the test writer's working copy and its required-test
 generation. A start first authorizes the bound project owner, then takes the
 project's working-copy turn without waiting; a busy turn refuses the start.
