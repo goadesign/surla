@@ -133,3 +133,38 @@ func ListChangesSurlaPath() string {
 func WaitForChangesSurlaPath() string {
 	return "/change-updates"
 }
+
+// StartBuildSurlaPath returns the URL path to the surla service start_build HTTP endpoint.
+func StartBuildSurlaPath(changeID string) string {
+	return fmt.Sprintf("/changes/%v/build", changeID)
+}
+
+// GetBuildSurlaPath returns the URL path to the surla service get_build HTTP endpoint.
+func GetBuildSurlaPath(changeID string) string {
+	return fmt.Sprintf("/changes/%v/build", changeID)
+}
+
+// ListBuildAssignmentsSurlaPath returns the URL path to the surla service list_build_assignments HTTP endpoint.
+func ListBuildAssignmentsSurlaPath() string {
+	return "/assignments/build"
+}
+
+// GetBuildAssignmentSurlaPath returns the URL path to the surla service get_build_assignment HTTP endpoint.
+func GetBuildAssignmentSurlaPath(changeID string) string {
+	return fmt.Sprintf("/assignments/build/%v", changeID)
+}
+
+// ListTestAssignmentsSurlaPath returns the URL path to the surla service list_test_assignments HTTP endpoint.
+func ListTestAssignmentsSurlaPath() string {
+	return "/assignments/tests"
+}
+
+// GetTestAssignmentSurlaPath returns the URL path to the surla service get_test_assignment HTTP endpoint.
+func GetTestAssignmentSurlaPath(changeID string) string {
+	return fmt.Sprintf("/assignments/tests/%v", changeID)
+}
+
+// ReportTestsSurlaPath returns the URL path to the surla service report_tests HTTP endpoint.
+func ReportTestsSurlaPath(changeID string) string {
+	return fmt.Sprintf("/assignments/tests/%v/report", changeID)
+}

@@ -193,8 +193,8 @@ func TestProjectIdentitySessionsAndRoles(t *testing.T) {
 			for _, tool := range body.Result.Tools {
 				listed[tool.Name] = true
 			}
-			// wait_for_changes is the views page's HTTP-only waiting read, so it is not listed as a tool.
-			httpOrResourceOnly := map[string]bool{"golden_path": true, "wait_for_changes": true}
+			// wait_for_changes and start_build are the views page's HTTP-only operations, so they are not listed as tools.
+			httpOrResourceOnly := map[string]bool{"golden_path": true, "wait_for_changes": true, "start_build": true}
 			for _, name := range gensurla.MethodNames {
 				if !httpOrResourceOnly[name] {
 					assert.Equal(t, controlplane.OperationAllowed(tc.role, name), listed[name], name)
@@ -239,7 +239,13 @@ func TestProjectIdentitySessionsAndRoles(t *testing.T) {
 				}
 				assert.Len(t, state.Record.Agents, 3, "management refusals preserve roster")
 			}
-			for _, request := range policyHTTPRequests(card, string(raw), string(confirmRaw)) {
+			requests := policyHTTPRequests(card, string(raw), string(confirmRaw))
+			covered := make([]string, len(requests))
+			for i, request := range requests {
+				covered[i] = request.operation
+			}
+			assert.ElementsMatch(t, gensurla.MethodNames, covered, "every operation has a refusal request")
+			for _, request := range requests {
 				if controlplane.OperationAllowed(tc.role, request.operation) {
 					continue
 				}
@@ -445,5 +451,12 @@ func policyHTTPRequests(card *gensurla.ChangeCardResult, propose, confirm string
 		{"get_story_refresh", "GET", "/workspace/story/refresh?op_id=op", ""},
 		{"list_changes", "GET", "/changes", ""},
 		{"wait_for_changes", "GET", "/change-updates?since=version", ""},
+		{"start_build", "POST", "/changes/change/build", fmt.Sprintf(`{"request_revision":%q}`, revision)},
+		{"get_build", "GET", "/changes/change/build", ""},
+		{"list_build_assignments", "GET", "/assignments/build", ""},
+		{"get_build_assignment", "GET", "/assignments/build/change", ""},
+		{"list_test_assignments", "GET", "/assignments/tests", ""},
+		{"get_test_assignment", "GET", "/assignments/tests/change", ""},
+		{"report_tests", "POST", "/assignments/tests/change/report", fmt.Sprintf(`{"request_revision":%q}`, revision)},
 	}
 }

@@ -15,61 +15,75 @@ import (
 
 // Client is the "surla" service client.
 type Client struct {
-	GoldenPathEndpoint          goa.Endpoint
-	ProposeChangeEndpoint       goa.Endpoint
-	ReviseChangeEndpoint        goa.Endpoint
-	ConfirmIntentEndpoint       goa.Endpoint
-	GetChangeEndpoint           goa.Endpoint
-	PreviewArchitectureEndpoint goa.Endpoint
-	DraftOverrideEndpoint       goa.Endpoint
-	StartLiveTargetEndpoint     goa.Endpoint
-	StopLiveTargetEndpoint      goa.Endpoint
-	VerifyChangeEndpoint        goa.Endpoint
-	GetVerificationEndpoint     goa.Endpoint
-	ListVerificationsEndpoint   goa.Endpoint
-	ApproveMergeEndpoint        goa.Endpoint
-	DiffEndpoint                goa.Endpoint
-	ConfigureModelEndpoint      goa.Endpoint
-	InitProjectEndpoint         goa.Endpoint
-	GenerateCodeEndpoint        goa.Endpoint
-	CheckProjectEndpoint        goa.Endpoint
-	UpdateDependenciesEndpoint  goa.Endpoint
-	ReadCheckOutputEndpoint     goa.Endpoint
-	ListTracesEndpoint          goa.Endpoint
-	RefreshStoryEndpoint        goa.Endpoint
-	GetStoryRefreshEndpoint     goa.Endpoint
-	ListChangesEndpoint         goa.Endpoint
-	WaitForChangesEndpoint      goa.Endpoint
+	GoldenPathEndpoint           goa.Endpoint
+	ProposeChangeEndpoint        goa.Endpoint
+	ReviseChangeEndpoint         goa.Endpoint
+	ConfirmIntentEndpoint        goa.Endpoint
+	GetChangeEndpoint            goa.Endpoint
+	PreviewArchitectureEndpoint  goa.Endpoint
+	DraftOverrideEndpoint        goa.Endpoint
+	StartLiveTargetEndpoint      goa.Endpoint
+	StopLiveTargetEndpoint       goa.Endpoint
+	VerifyChangeEndpoint         goa.Endpoint
+	GetVerificationEndpoint      goa.Endpoint
+	ListVerificationsEndpoint    goa.Endpoint
+	ApproveMergeEndpoint         goa.Endpoint
+	DiffEndpoint                 goa.Endpoint
+	ConfigureModelEndpoint       goa.Endpoint
+	InitProjectEndpoint          goa.Endpoint
+	GenerateCodeEndpoint         goa.Endpoint
+	CheckProjectEndpoint         goa.Endpoint
+	UpdateDependenciesEndpoint   goa.Endpoint
+	ReadCheckOutputEndpoint      goa.Endpoint
+	ListTracesEndpoint           goa.Endpoint
+	RefreshStoryEndpoint         goa.Endpoint
+	GetStoryRefreshEndpoint      goa.Endpoint
+	ListChangesEndpoint          goa.Endpoint
+	WaitForChangesEndpoint       goa.Endpoint
+	StartBuildEndpoint           goa.Endpoint
+	GetBuildEndpoint             goa.Endpoint
+	ListBuildAssignmentsEndpoint goa.Endpoint
+	GetBuildAssignmentEndpoint   goa.Endpoint
+	ListTestAssignmentsEndpoint  goa.Endpoint
+	GetTestAssignmentEndpoint    goa.Endpoint
+	ReportTestsEndpoint          goa.Endpoint
 }
 
 // NewClient initializes a "surla" service client given the endpoints.
-func NewClient(goldenPath, proposeChange, reviseChange, confirmIntent, getChange, previewArchitecture, draftOverride, startLiveTarget, stopLiveTarget, verifyChange, getVerification, listVerifications, approveMerge, diff, configureModel, initProject, generateCode, checkProject, updateDependencies, readCheckOutput, listTraces, refreshStory, getStoryRefresh, listChanges, waitForChanges goa.Endpoint) *Client {
+func NewClient(goldenPath, proposeChange, reviseChange, confirmIntent, getChange, previewArchitecture, draftOverride, startLiveTarget, stopLiveTarget, verifyChange, getVerification, listVerifications, approveMerge, diff, configureModel, initProject, generateCode, checkProject, updateDependencies, readCheckOutput, listTraces, refreshStory, getStoryRefresh, listChanges, waitForChanges, startBuild, getBuild, listBuildAssignments, getBuildAssignment, listTestAssignments, getTestAssignment, reportTests goa.Endpoint) *Client {
 	return &Client{
-		GoldenPathEndpoint:          goldenPath,
-		ProposeChangeEndpoint:       proposeChange,
-		ReviseChangeEndpoint:        reviseChange,
-		ConfirmIntentEndpoint:       confirmIntent,
-		GetChangeEndpoint:           getChange,
-		PreviewArchitectureEndpoint: previewArchitecture,
-		DraftOverrideEndpoint:       draftOverride,
-		StartLiveTargetEndpoint:     startLiveTarget,
-		StopLiveTargetEndpoint:      stopLiveTarget,
-		VerifyChangeEndpoint:        verifyChange,
-		GetVerificationEndpoint:     getVerification,
-		ListVerificationsEndpoint:   listVerifications,
-		ApproveMergeEndpoint:        approveMerge,
-		DiffEndpoint:                diff,
-		ConfigureModelEndpoint:      configureModel,
-		InitProjectEndpoint:         initProject,
-		GenerateCodeEndpoint:        generateCode,
-		CheckProjectEndpoint:        checkProject,
-		UpdateDependenciesEndpoint:  updateDependencies,
-		ReadCheckOutputEndpoint:     readCheckOutput,
-		ListTracesEndpoint:          listTraces,
-		RefreshStoryEndpoint:        refreshStory,
-		GetStoryRefreshEndpoint:     getStoryRefresh,
-		ListChangesEndpoint:         listChanges,
-		WaitForChangesEndpoint:      waitForChanges,
+		GoldenPathEndpoint:           goldenPath,
+		ProposeChangeEndpoint:        proposeChange,
+		ReviseChangeEndpoint:         reviseChange,
+		ConfirmIntentEndpoint:        confirmIntent,
+		GetChangeEndpoint:            getChange,
+		PreviewArchitectureEndpoint:  previewArchitecture,
+		DraftOverrideEndpoint:        draftOverride,
+		StartLiveTargetEndpoint:      startLiveTarget,
+		StopLiveTargetEndpoint:       stopLiveTarget,
+		VerifyChangeEndpoint:         verifyChange,
+		GetVerificationEndpoint:      getVerification,
+		ListVerificationsEndpoint:    listVerifications,
+		ApproveMergeEndpoint:         approveMerge,
+		DiffEndpoint:                 diff,
+		ConfigureModelEndpoint:       configureModel,
+		InitProjectEndpoint:          initProject,
+		GenerateCodeEndpoint:         generateCode,
+		CheckProjectEndpoint:         checkProject,
+		UpdateDependenciesEndpoint:   updateDependencies,
+		ReadCheckOutputEndpoint:      readCheckOutput,
+		ListTracesEndpoint:           listTraces,
+		RefreshStoryEndpoint:         refreshStory,
+		GetStoryRefreshEndpoint:      getStoryRefresh,
+		ListChangesEndpoint:          listChanges,
+		WaitForChangesEndpoint:       waitForChanges,
+		StartBuildEndpoint:           startBuild,
+		GetBuildEndpoint:             getBuild,
+		ListBuildAssignmentsEndpoint: listBuildAssignments,
+		GetBuildAssignmentEndpoint:   getBuildAssignment,
+		ListTestAssignmentsEndpoint:  listTestAssignments,
+		GetTestAssignmentEndpoint:    getTestAssignment,
+		ReportTestsEndpoint:          reportTests,
 	}
 }
 
@@ -455,4 +469,107 @@ func (c *Client) WaitForChanges(ctx context.Context, p *WaitForChangesPayload) (
 		return
 	}
 	return ires.(*ChangeListVersion), nil
+}
+
+// StartBuild calls the "start_build" endpoint of the "surla" service.
+// StartBuild may return the following errors:
+//   - "not_found" (type *goa.ServiceError): No Change Card exists with this change_id.
+//   - "conflict" (type *goa.ServiceError): The Change Card is not confirmed or request_revision is not its revision in force; nothing changed.
+//   - "unprocessable" (type *goa.ServiceError): The agreed Story has two finished flows whose required tests would have the same name; revise the Story. Nothing changed.
+//   - "forbidden" (type *goa.ServiceError): The authenticated caller may not perform this operation or does not own the resource.
+//   - error: internal error
+func (c *Client) StartBuild(ctx context.Context, p *StartBuildPayload) (res *StartedBuild, err error) {
+	var ires any
+	ires, err = c.StartBuildEndpoint(ctx, p)
+	if err != nil {
+		return
+	}
+	return ires.(*StartedBuild), nil
+}
+
+// GetBuild calls the "get_build" endpoint of the "surla" service.
+// GetBuild may return the following errors:
+//   - "not_found" (type *goa.ServiceError): No Change Card exists with this change_id.
+//   - "forbidden" (type *goa.ServiceError): The authenticated caller may not perform this operation or does not own the resource.
+//   - error: internal error
+func (c *Client) GetBuild(ctx context.Context, p *GetBuildPayload) (res *ChangeBuild, err error) {
+	var ires any
+	ires, err = c.GetBuildEndpoint(ctx, p)
+	if err != nil {
+		return
+	}
+	return ires.(*ChangeBuild), nil
+}
+
+// ListBuildAssignments calls the "list_build_assignments" endpoint of the
+// "surla" service.
+// ListBuildAssignments may return the following errors:
+//   - "forbidden" (type *goa.ServiceError): The authenticated caller may not perform this operation or does not own the resource.
+//   - error: internal error
+func (c *Client) ListBuildAssignments(ctx context.Context) (res *BuildAssignmentList, err error) {
+	var ires any
+	ires, err = c.ListBuildAssignmentsEndpoint(ctx, nil)
+	if err != nil {
+		return
+	}
+	return ires.(*BuildAssignmentList), nil
+}
+
+// GetBuildAssignment calls the "get_build_assignment" endpoint of the "surla"
+// service.
+// GetBuildAssignment may return the following errors:
+//   - "not_found" (type *goa.ServiceError): You have no build assignment for this change_id.
+//   - "forbidden" (type *goa.ServiceError): The authenticated caller may not perform this operation or does not own the resource.
+//   - error: internal error
+func (c *Client) GetBuildAssignment(ctx context.Context, p *GetBuildAssignmentPayload) (res *BuildAssignment, err error) {
+	var ires any
+	ires, err = c.GetBuildAssignmentEndpoint(ctx, p)
+	if err != nil {
+		return
+	}
+	return ires.(*BuildAssignment), nil
+}
+
+// ListTestAssignments calls the "list_test_assignments" endpoint of the
+// "surla" service.
+// ListTestAssignments may return the following errors:
+//   - "forbidden" (type *goa.ServiceError): The authenticated caller may not perform this operation or does not own the resource.
+//   - error: internal error
+func (c *Client) ListTestAssignments(ctx context.Context) (res *TestAssignmentList, err error) {
+	var ires any
+	ires, err = c.ListTestAssignmentsEndpoint(ctx, nil)
+	if err != nil {
+		return
+	}
+	return ires.(*TestAssignmentList), nil
+}
+
+// GetTestAssignment calls the "get_test_assignment" endpoint of the "surla"
+// service.
+// GetTestAssignment may return the following errors:
+//   - "not_found" (type *goa.ServiceError): You have no test assignment for this change_id.
+//   - "forbidden" (type *goa.ServiceError): The authenticated caller may not perform this operation or does not own the resource.
+//   - error: internal error
+func (c *Client) GetTestAssignment(ctx context.Context, p *GetTestAssignmentPayload) (res *TestAssignment, err error) {
+	var ires any
+	ires, err = c.GetTestAssignmentEndpoint(ctx, p)
+	if err != nil {
+		return
+	}
+	return ires.(*TestAssignment), nil
+}
+
+// ReportTests calls the "report_tests" endpoint of the "surla" service.
+// ReportTests may return the following errors:
+//   - "not_found" (type *goa.ServiceError): You have no test assignment for this change_id.
+//   - "conflict" (type *goa.ServiceError): request_revision is not the revision of your test assignment; read it again with get_test_assignment. Nothing changed.
+//   - "forbidden" (type *goa.ServiceError): The authenticated caller may not perform this operation or does not own the resource.
+//   - error: internal error
+func (c *Client) ReportTests(ctx context.Context, p *ReportTestsPayload) (res *TestAssignmentItem, err error) {
+	var ires any
+	ires, err = c.ReportTestsEndpoint(ctx, p)
+	if err != nil {
+		return
+	}
+	return ires.(*TestAssignmentItem), nil
 }

@@ -184,6 +184,10 @@ type (
 		// Verification's plan, in <CardsDir>/live. Without it, or without
 		// Verification/ResolveVerification, start_live_target fails.
 		Live *LiveConfig
+		// BuildTeam readies the builder and the test writer when the user
+		// starts a build. Without it, start_build saves the build and the
+		// test writer's assignment names no working folder.
+		BuildTeam BuildTeam
 	}
 
 	// storedChangeCard holds a versioned Change Card alongside its authenticated
@@ -350,6 +354,8 @@ type (
 		initStepHook func(step string)
 		// liveState holds the live CP3 target state.
 		liveState
+		// buildTeam is Options.BuildTeam, or nil when none is bound.
+		buildTeam BuildTeam
 	}
 )
 
@@ -458,6 +464,7 @@ func New(opts Options) (*ControlPlane, error) {
 		initRunner:             opts.InitRunner,
 		surlaVersion:           surlaVersion,
 		liveState:              newLiveState(opts.Live, cards.dir),
+		buildTeam:              opts.BuildTeam,
 	}
 	if err := cp.restoreWorkspace(); err != nil {
 		return nil, errors.Join(err, cp.Close())

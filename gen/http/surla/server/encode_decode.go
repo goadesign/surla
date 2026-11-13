@@ -2269,6 +2269,555 @@ func EncodeWaitForChangesError(encoder func(context.Context, http.ResponseWriter
 	}
 }
 
+// EncodeStartBuildResponse returns an encoder for responses returned by the
+// surla start_build endpoint.
+func EncodeStartBuildResponse(encoder func(context.Context, http.ResponseWriter) goahttp.Encoder) func(context.Context, http.ResponseWriter, any) error {
+	return func(ctx context.Context, w http.ResponseWriter, v any) error {
+		res, _ := v.(*surla.StartedBuild)
+		enc := encoder(ctx, w)
+		body := NewStartBuildResponseBody(res)
+		w.WriteHeader(http.StatusOK)
+		return enc.Encode(body)
+	}
+}
+
+// DecodeStartBuildRequest returns a decoder for requests sent to the surla
+// start_build endpoint.
+func DecodeStartBuildRequest(mux goahttp.Muxer, decoder func(*http.Request) goahttp.Decoder) func(*http.Request) (*surla.StartBuildPayload, error) {
+	return func(r *http.Request) (*surla.StartBuildPayload, error) {
+		var payload *surla.StartBuildPayload
+		var (
+			body StartBuildRequestBody
+			err  error
+		)
+		err = decoder(r).Decode(&body)
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				return payload, goa.MissingPayloadError()
+			}
+			var gerr *goa.ServiceError
+			if errors.As(err, &gerr) {
+				return payload, gerr
+			}
+			return payload, goa.DecodePayloadError(err.Error())
+		}
+		err = ValidateStartBuildRequestBody(&body)
+		if err != nil {
+			return payload, err
+		}
+
+		var (
+			changeID string
+
+			params = mux.Vars(r)
+		)
+		changeID = params["change_id"]
+		if utf8.RuneCountInString(changeID) < 1 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("change_id", changeID, utf8.RuneCountInString(changeID), 1, true))
+		}
+		if err != nil {
+			return payload, err
+		}
+		payload = NewStartBuildPayload(&body, changeID)
+
+		return payload, nil
+	}
+}
+
+// EncodeStartBuildError returns an encoder for errors returned by the
+// start_build surla endpoint.
+func EncodeStartBuildError(encoder func(context.Context, http.ResponseWriter) goahttp.Encoder, formatter func(ctx context.Context, err error) goahttp.Statuser) func(context.Context, http.ResponseWriter, error) error {
+	encodeError := goahttp.ErrorEncoder(encoder, formatter)
+	return func(ctx context.Context, w http.ResponseWriter, v error) error {
+		var en goa.GoaErrorNamer
+		if !errors.As(v, &en) {
+			return encodeError(ctx, w, v)
+		}
+		switch en.GoaErrorName() {
+		case "not_found":
+			var res *goa.ServiceError
+			errors.As(v, &res)
+			enc := encoder(ctx, w)
+			var body any
+			if formatter != nil {
+				body = formatter(ctx, res)
+			} else {
+				body = NewStartBuildNotFoundResponseBody(res)
+			}
+			w.Header().Set("goa-error", res.GoaErrorName())
+			w.WriteHeader(http.StatusNotFound)
+			return enc.Encode(body)
+		case "conflict":
+			var res *goa.ServiceError
+			errors.As(v, &res)
+			enc := encoder(ctx, w)
+			var body any
+			if formatter != nil {
+				body = formatter(ctx, res)
+			} else {
+				body = NewStartBuildConflictResponseBody(res)
+			}
+			w.Header().Set("goa-error", res.GoaErrorName())
+			w.WriteHeader(http.StatusConflict)
+			return enc.Encode(body)
+		case "unprocessable":
+			var res *goa.ServiceError
+			errors.As(v, &res)
+			enc := encoder(ctx, w)
+			var body any
+			if formatter != nil {
+				body = formatter(ctx, res)
+			} else {
+				body = NewStartBuildUnprocessableResponseBody(res)
+			}
+			w.Header().Set("goa-error", res.GoaErrorName())
+			w.WriteHeader(http.StatusUnprocessableEntity)
+			return enc.Encode(body)
+		case "forbidden":
+			var res *goa.ServiceError
+			errors.As(v, &res)
+			enc := encoder(ctx, w)
+			var body any
+			if formatter != nil {
+				body = formatter(ctx, res)
+			} else {
+				body = NewStartBuildForbiddenResponseBody(res)
+			}
+			w.Header().Set("goa-error", res.GoaErrorName())
+			w.WriteHeader(http.StatusForbidden)
+			return enc.Encode(body)
+		default:
+			return encodeError(ctx, w, v)
+		}
+	}
+}
+
+// EncodeGetBuildResponse returns an encoder for responses returned by the
+// surla get_build endpoint.
+func EncodeGetBuildResponse(encoder func(context.Context, http.ResponseWriter) goahttp.Encoder) func(context.Context, http.ResponseWriter, any) error {
+	return func(ctx context.Context, w http.ResponseWriter, v any) error {
+		res, _ := v.(*surla.ChangeBuild)
+		enc := encoder(ctx, w)
+		body := NewGetBuildResponseBody(res)
+		w.WriteHeader(http.StatusOK)
+		return enc.Encode(body)
+	}
+}
+
+// DecodeGetBuildRequest returns a decoder for requests sent to the surla
+// get_build endpoint.
+func DecodeGetBuildRequest(mux goahttp.Muxer, decoder func(*http.Request) goahttp.Decoder) func(*http.Request) (*surla.GetBuildPayload, error) {
+	return func(r *http.Request) (*surla.GetBuildPayload, error) {
+		var payload *surla.GetBuildPayload
+		var (
+			changeID string
+			err      error
+
+			params = mux.Vars(r)
+		)
+		changeID = params["change_id"]
+		if utf8.RuneCountInString(changeID) < 1 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("change_id", changeID, utf8.RuneCountInString(changeID), 1, true))
+		}
+		if err != nil {
+			return payload, err
+		}
+		payload = NewGetBuildPayload(changeID)
+
+		return payload, nil
+	}
+}
+
+// EncodeGetBuildError returns an encoder for errors returned by the get_build
+// surla endpoint.
+func EncodeGetBuildError(encoder func(context.Context, http.ResponseWriter) goahttp.Encoder, formatter func(ctx context.Context, err error) goahttp.Statuser) func(context.Context, http.ResponseWriter, error) error {
+	encodeError := goahttp.ErrorEncoder(encoder, formatter)
+	return func(ctx context.Context, w http.ResponseWriter, v error) error {
+		var en goa.GoaErrorNamer
+		if !errors.As(v, &en) {
+			return encodeError(ctx, w, v)
+		}
+		switch en.GoaErrorName() {
+		case "not_found":
+			var res *goa.ServiceError
+			errors.As(v, &res)
+			enc := encoder(ctx, w)
+			var body any
+			if formatter != nil {
+				body = formatter(ctx, res)
+			} else {
+				body = NewGetBuildNotFoundResponseBody(res)
+			}
+			w.Header().Set("goa-error", res.GoaErrorName())
+			w.WriteHeader(http.StatusNotFound)
+			return enc.Encode(body)
+		case "forbidden":
+			var res *goa.ServiceError
+			errors.As(v, &res)
+			enc := encoder(ctx, w)
+			var body any
+			if formatter != nil {
+				body = formatter(ctx, res)
+			} else {
+				body = NewGetBuildForbiddenResponseBody(res)
+			}
+			w.Header().Set("goa-error", res.GoaErrorName())
+			w.WriteHeader(http.StatusForbidden)
+			return enc.Encode(body)
+		default:
+			return encodeError(ctx, w, v)
+		}
+	}
+}
+
+// EncodeListBuildAssignmentsResponse returns an encoder for responses returned
+// by the surla list_build_assignments endpoint.
+func EncodeListBuildAssignmentsResponse(encoder func(context.Context, http.ResponseWriter) goahttp.Encoder) func(context.Context, http.ResponseWriter, any) error {
+	return func(ctx context.Context, w http.ResponseWriter, v any) error {
+		res, _ := v.(*surla.BuildAssignmentList)
+		enc := encoder(ctx, w)
+		body := NewListBuildAssignmentsResponseBody(res)
+		w.WriteHeader(http.StatusOK)
+		return enc.Encode(body)
+	}
+}
+
+// EncodeListBuildAssignmentsError returns an encoder for errors returned by
+// the list_build_assignments surla endpoint.
+func EncodeListBuildAssignmentsError(encoder func(context.Context, http.ResponseWriter) goahttp.Encoder, formatter func(ctx context.Context, err error) goahttp.Statuser) func(context.Context, http.ResponseWriter, error) error {
+	encodeError := goahttp.ErrorEncoder(encoder, formatter)
+	return func(ctx context.Context, w http.ResponseWriter, v error) error {
+		var en goa.GoaErrorNamer
+		if !errors.As(v, &en) {
+			return encodeError(ctx, w, v)
+		}
+		switch en.GoaErrorName() {
+		case "forbidden":
+			var res *goa.ServiceError
+			errors.As(v, &res)
+			enc := encoder(ctx, w)
+			var body any
+			if formatter != nil {
+				body = formatter(ctx, res)
+			} else {
+				body = NewListBuildAssignmentsForbiddenResponseBody(res)
+			}
+			w.Header().Set("goa-error", res.GoaErrorName())
+			w.WriteHeader(http.StatusForbidden)
+			return enc.Encode(body)
+		default:
+			return encodeError(ctx, w, v)
+		}
+	}
+}
+
+// EncodeGetBuildAssignmentResponse returns an encoder for responses returned
+// by the surla get_build_assignment endpoint.
+func EncodeGetBuildAssignmentResponse(encoder func(context.Context, http.ResponseWriter) goahttp.Encoder) func(context.Context, http.ResponseWriter, any) error {
+	return func(ctx context.Context, w http.ResponseWriter, v any) error {
+		res, _ := v.(*surla.BuildAssignment)
+		enc := encoder(ctx, w)
+		body := NewGetBuildAssignmentResponseBody(res)
+		w.WriteHeader(http.StatusOK)
+		return enc.Encode(body)
+	}
+}
+
+// DecodeGetBuildAssignmentRequest returns a decoder for requests sent to the
+// surla get_build_assignment endpoint.
+func DecodeGetBuildAssignmentRequest(mux goahttp.Muxer, decoder func(*http.Request) goahttp.Decoder) func(*http.Request) (*surla.GetBuildAssignmentPayload, error) {
+	return func(r *http.Request) (*surla.GetBuildAssignmentPayload, error) {
+		var payload *surla.GetBuildAssignmentPayload
+		var (
+			changeID string
+			err      error
+
+			params = mux.Vars(r)
+		)
+		changeID = params["change_id"]
+		if utf8.RuneCountInString(changeID) < 1 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("change_id", changeID, utf8.RuneCountInString(changeID), 1, true))
+		}
+		if err != nil {
+			return payload, err
+		}
+		payload = NewGetBuildAssignmentPayload(changeID)
+
+		return payload, nil
+	}
+}
+
+// EncodeGetBuildAssignmentError returns an encoder for errors returned by the
+// get_build_assignment surla endpoint.
+func EncodeGetBuildAssignmentError(encoder func(context.Context, http.ResponseWriter) goahttp.Encoder, formatter func(ctx context.Context, err error) goahttp.Statuser) func(context.Context, http.ResponseWriter, error) error {
+	encodeError := goahttp.ErrorEncoder(encoder, formatter)
+	return func(ctx context.Context, w http.ResponseWriter, v error) error {
+		var en goa.GoaErrorNamer
+		if !errors.As(v, &en) {
+			return encodeError(ctx, w, v)
+		}
+		switch en.GoaErrorName() {
+		case "not_found":
+			var res *goa.ServiceError
+			errors.As(v, &res)
+			enc := encoder(ctx, w)
+			var body any
+			if formatter != nil {
+				body = formatter(ctx, res)
+			} else {
+				body = NewGetBuildAssignmentNotFoundResponseBody(res)
+			}
+			w.Header().Set("goa-error", res.GoaErrorName())
+			w.WriteHeader(http.StatusNotFound)
+			return enc.Encode(body)
+		case "forbidden":
+			var res *goa.ServiceError
+			errors.As(v, &res)
+			enc := encoder(ctx, w)
+			var body any
+			if formatter != nil {
+				body = formatter(ctx, res)
+			} else {
+				body = NewGetBuildAssignmentForbiddenResponseBody(res)
+			}
+			w.Header().Set("goa-error", res.GoaErrorName())
+			w.WriteHeader(http.StatusForbidden)
+			return enc.Encode(body)
+		default:
+			return encodeError(ctx, w, v)
+		}
+	}
+}
+
+// EncodeListTestAssignmentsResponse returns an encoder for responses returned
+// by the surla list_test_assignments endpoint.
+func EncodeListTestAssignmentsResponse(encoder func(context.Context, http.ResponseWriter) goahttp.Encoder) func(context.Context, http.ResponseWriter, any) error {
+	return func(ctx context.Context, w http.ResponseWriter, v any) error {
+		res, _ := v.(*surla.TestAssignmentList)
+		enc := encoder(ctx, w)
+		body := NewListTestAssignmentsResponseBody(res)
+		w.WriteHeader(http.StatusOK)
+		return enc.Encode(body)
+	}
+}
+
+// EncodeListTestAssignmentsError returns an encoder for errors returned by the
+// list_test_assignments surla endpoint.
+func EncodeListTestAssignmentsError(encoder func(context.Context, http.ResponseWriter) goahttp.Encoder, formatter func(ctx context.Context, err error) goahttp.Statuser) func(context.Context, http.ResponseWriter, error) error {
+	encodeError := goahttp.ErrorEncoder(encoder, formatter)
+	return func(ctx context.Context, w http.ResponseWriter, v error) error {
+		var en goa.GoaErrorNamer
+		if !errors.As(v, &en) {
+			return encodeError(ctx, w, v)
+		}
+		switch en.GoaErrorName() {
+		case "forbidden":
+			var res *goa.ServiceError
+			errors.As(v, &res)
+			enc := encoder(ctx, w)
+			var body any
+			if formatter != nil {
+				body = formatter(ctx, res)
+			} else {
+				body = NewListTestAssignmentsForbiddenResponseBody(res)
+			}
+			w.Header().Set("goa-error", res.GoaErrorName())
+			w.WriteHeader(http.StatusForbidden)
+			return enc.Encode(body)
+		default:
+			return encodeError(ctx, w, v)
+		}
+	}
+}
+
+// EncodeGetTestAssignmentResponse returns an encoder for responses returned by
+// the surla get_test_assignment endpoint.
+func EncodeGetTestAssignmentResponse(encoder func(context.Context, http.ResponseWriter) goahttp.Encoder) func(context.Context, http.ResponseWriter, any) error {
+	return func(ctx context.Context, w http.ResponseWriter, v any) error {
+		res, _ := v.(*surla.TestAssignment)
+		enc := encoder(ctx, w)
+		body := NewGetTestAssignmentResponseBody(res)
+		w.WriteHeader(http.StatusOK)
+		return enc.Encode(body)
+	}
+}
+
+// DecodeGetTestAssignmentRequest returns a decoder for requests sent to the
+// surla get_test_assignment endpoint.
+func DecodeGetTestAssignmentRequest(mux goahttp.Muxer, decoder func(*http.Request) goahttp.Decoder) func(*http.Request) (*surla.GetTestAssignmentPayload, error) {
+	return func(r *http.Request) (*surla.GetTestAssignmentPayload, error) {
+		var payload *surla.GetTestAssignmentPayload
+		var (
+			changeID string
+			err      error
+
+			params = mux.Vars(r)
+		)
+		changeID = params["change_id"]
+		if utf8.RuneCountInString(changeID) < 1 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("change_id", changeID, utf8.RuneCountInString(changeID), 1, true))
+		}
+		if err != nil {
+			return payload, err
+		}
+		payload = NewGetTestAssignmentPayload(changeID)
+
+		return payload, nil
+	}
+}
+
+// EncodeGetTestAssignmentError returns an encoder for errors returned by the
+// get_test_assignment surla endpoint.
+func EncodeGetTestAssignmentError(encoder func(context.Context, http.ResponseWriter) goahttp.Encoder, formatter func(ctx context.Context, err error) goahttp.Statuser) func(context.Context, http.ResponseWriter, error) error {
+	encodeError := goahttp.ErrorEncoder(encoder, formatter)
+	return func(ctx context.Context, w http.ResponseWriter, v error) error {
+		var en goa.GoaErrorNamer
+		if !errors.As(v, &en) {
+			return encodeError(ctx, w, v)
+		}
+		switch en.GoaErrorName() {
+		case "not_found":
+			var res *goa.ServiceError
+			errors.As(v, &res)
+			enc := encoder(ctx, w)
+			var body any
+			if formatter != nil {
+				body = formatter(ctx, res)
+			} else {
+				body = NewGetTestAssignmentNotFoundResponseBody(res)
+			}
+			w.Header().Set("goa-error", res.GoaErrorName())
+			w.WriteHeader(http.StatusNotFound)
+			return enc.Encode(body)
+		case "forbidden":
+			var res *goa.ServiceError
+			errors.As(v, &res)
+			enc := encoder(ctx, w)
+			var body any
+			if formatter != nil {
+				body = formatter(ctx, res)
+			} else {
+				body = NewGetTestAssignmentForbiddenResponseBody(res)
+			}
+			w.Header().Set("goa-error", res.GoaErrorName())
+			w.WriteHeader(http.StatusForbidden)
+			return enc.Encode(body)
+		default:
+			return encodeError(ctx, w, v)
+		}
+	}
+}
+
+// EncodeReportTestsResponse returns an encoder for responses returned by the
+// surla report_tests endpoint.
+func EncodeReportTestsResponse(encoder func(context.Context, http.ResponseWriter) goahttp.Encoder) func(context.Context, http.ResponseWriter, any) error {
+	return func(ctx context.Context, w http.ResponseWriter, v any) error {
+		res, _ := v.(*surla.TestAssignmentItem)
+		enc := encoder(ctx, w)
+		body := NewReportTestsResponseBody(res)
+		w.WriteHeader(http.StatusOK)
+		return enc.Encode(body)
+	}
+}
+
+// DecodeReportTestsRequest returns a decoder for requests sent to the surla
+// report_tests endpoint.
+func DecodeReportTestsRequest(mux goahttp.Muxer, decoder func(*http.Request) goahttp.Decoder) func(*http.Request) (*surla.ReportTestsPayload, error) {
+	return func(r *http.Request) (*surla.ReportTestsPayload, error) {
+		var payload *surla.ReportTestsPayload
+		var (
+			body ReportTestsRequestBody
+			err  error
+		)
+		err = decoder(r).Decode(&body)
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				return payload, goa.MissingPayloadError()
+			}
+			var gerr *goa.ServiceError
+			if errors.As(err, &gerr) {
+				return payload, gerr
+			}
+			return payload, goa.DecodePayloadError(err.Error())
+		}
+		err = ValidateReportTestsRequestBody(&body)
+		if err != nil {
+			return payload, err
+		}
+
+		var (
+			changeID string
+
+			params = mux.Vars(r)
+		)
+		changeID = params["change_id"]
+		if utf8.RuneCountInString(changeID) < 1 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("change_id", changeID, utf8.RuneCountInString(changeID), 1, true))
+		}
+		if err != nil {
+			return payload, err
+		}
+		payload = NewReportTestsPayload(&body, changeID)
+
+		return payload, nil
+	}
+}
+
+// EncodeReportTestsError returns an encoder for errors returned by the
+// report_tests surla endpoint.
+func EncodeReportTestsError(encoder func(context.Context, http.ResponseWriter) goahttp.Encoder, formatter func(ctx context.Context, err error) goahttp.Statuser) func(context.Context, http.ResponseWriter, error) error {
+	encodeError := goahttp.ErrorEncoder(encoder, formatter)
+	return func(ctx context.Context, w http.ResponseWriter, v error) error {
+		var en goa.GoaErrorNamer
+		if !errors.As(v, &en) {
+			return encodeError(ctx, w, v)
+		}
+		switch en.GoaErrorName() {
+		case "not_found":
+			var res *goa.ServiceError
+			errors.As(v, &res)
+			enc := encoder(ctx, w)
+			var body any
+			if formatter != nil {
+				body = formatter(ctx, res)
+			} else {
+				body = NewReportTestsNotFoundResponseBody(res)
+			}
+			w.Header().Set("goa-error", res.GoaErrorName())
+			w.WriteHeader(http.StatusNotFound)
+			return enc.Encode(body)
+		case "conflict":
+			var res *goa.ServiceError
+			errors.As(v, &res)
+			enc := encoder(ctx, w)
+			var body any
+			if formatter != nil {
+				body = formatter(ctx, res)
+			} else {
+				body = NewReportTestsConflictResponseBody(res)
+			}
+			w.Header().Set("goa-error", res.GoaErrorName())
+			w.WriteHeader(http.StatusConflict)
+			return enc.Encode(body)
+		case "forbidden":
+			var res *goa.ServiceError
+			errors.As(v, &res)
+			enc := encoder(ctx, w)
+			var body any
+			if formatter != nil {
+				body = formatter(ctx, res)
+			} else {
+				body = NewReportTestsForbiddenResponseBody(res)
+			}
+			w.Header().Set("goa-error", res.GoaErrorName())
+			w.WriteHeader(http.StatusForbidden)
+			return enc.Encode(body)
+		default:
+			return encodeError(ctx, w, v)
+		}
+	}
+}
+
 // unmarshalCP1AnalysisRequestBodyToSurlaCP1Analysis builds a value of type
 // *surla.CP1Analysis from a value of type *CP1AnalysisRequestBody.
 func unmarshalCP1AnalysisRequestBodyToSurlaCP1Analysis(v *CP1AnalysisRequestBody) *surla.CP1Analysis {
@@ -2937,6 +3486,182 @@ func marshalSurlaLatestVerificationItemToLatestVerificationItemResponseBody(v *s
 	res := &LatestVerificationItemResponseBody{
 		RunID: v.RunID,
 		State: v.State,
+	}
+
+	return res
+}
+
+// marshalSurlaBuilderProgressToBuilderProgressResponseBody builds a value of
+// type *BuilderProgressResponseBody from a value of type
+// *surla.BuilderProgress.
+func marshalSurlaBuilderProgressToBuilderProgressResponseBody(v *surla.BuilderProgress) *BuilderProgressResponseBody {
+	res := &BuilderProgressResponseBody{
+		State: v.State,
+		Read:  v.Read,
+	}
+
+	return res
+}
+
+// marshalSurlaTestWriterProgressToTestWriterProgressResponseBody builds a
+// value of type *TestWriterProgressResponseBody from a value of type
+// *surla.TestWriterProgress.
+func marshalSurlaTestWriterProgressToTestWriterProgressResponseBody(v *surla.TestWriterProgress) *TestWriterProgressResponseBody {
+	res := &TestWriterProgressResponseBody{
+		Read: v.Read,
+	}
+	if v.Tests.Kind() != "" {
+		switch string(v.Tests.Kind()) {
+		case "assigned":
+			actual, _ := v.Tests.AsAssigned()
+			var obj *TestsAssignedResponseBody
+			if actual != nil {
+				obj = marshalSurlaTestsAssignedToTestsAssignedResponseBody(actual)
+			}
+			u := res.Tests
+			u.SetAssigned((*TestsAssignedResponseBody)(obj))
+			res.Tests = u
+		case "reported":
+			actual, _ := v.Tests.AsReported()
+			var obj *TestsReportedResponseBody
+			if actual != nil {
+				obj = marshalSurlaTestsReportedToTestsReportedResponseBody(actual)
+			}
+			u := res.Tests
+			u.SetReported((*TestsReportedResponseBody)(obj))
+			res.Tests = u
+		case "needs_changes":
+			actual, _ := v.Tests.AsNeedsChanges()
+			var obj *TestsNeedChangesResponseBody
+			if actual != nil {
+				obj = marshalSurlaTestsNeedChangesToTestsNeedChangesResponseBody(actual)
+			}
+			u := res.Tests
+			u.SetNeedsChanges((*TestsNeedChangesResponseBody)(obj))
+			res.Tests = u
+		case "accepted":
+			actual, _ := v.Tests.AsAccepted()
+			var obj *TestsAcceptedResponseBody
+			if actual != nil {
+				obj = marshalSurlaTestsAcceptedToTestsAcceptedResponseBody(actual)
+			}
+			u := res.Tests
+			u.SetAccepted((*TestsAcceptedResponseBody)(obj))
+			res.Tests = u
+		}
+	}
+
+	return res
+}
+
+// marshalSurlaTestsAssignedToTestsAssignedResponseBody builds a value of type
+// *TestsAssignedResponseBody from a value of type *surla.TestsAssigned.
+func marshalSurlaTestsAssignedToTestsAssignedResponseBody(v *surla.TestsAssigned) *TestsAssignedResponseBody {
+	res := &TestsAssignedResponseBody{}
+
+	return res
+}
+
+// marshalSurlaTestsReportedToTestsReportedResponseBody builds a value of type
+// *TestsReportedResponseBody from a value of type *surla.TestsReported.
+func marshalSurlaTestsReportedToTestsReportedResponseBody(v *surla.TestsReported) *TestsReportedResponseBody {
+	res := &TestsReportedResponseBody{}
+
+	return res
+}
+
+// marshalSurlaTestsNeedChangesToTestsNeedChangesResponseBody builds a value of
+// type *TestsNeedChangesResponseBody from a value of type
+// *surla.TestsNeedChanges.
+func marshalSurlaTestsNeedChangesToTestsNeedChangesResponseBody(v *surla.TestsNeedChanges) *TestsNeedChangesResponseBody {
+	res := &TestsNeedChangesResponseBody{}
+	if v.Findings != nil {
+		res.Findings = make([]string, len(v.Findings))
+		for i, val := range v.Findings {
+			res.Findings[i] = val
+		}
+	} else {
+		res.Findings = []string{}
+	}
+
+	return res
+}
+
+// marshalSurlaTestsAcceptedToTestsAcceptedResponseBody builds a value of type
+// *TestsAcceptedResponseBody from a value of type *surla.TestsAccepted.
+func marshalSurlaTestsAcceptedToTestsAcceptedResponseBody(v *surla.TestsAccepted) *TestsAcceptedResponseBody {
+	res := &TestsAcceptedResponseBody{
+		Commit: v.Commit,
+	}
+
+	return res
+}
+
+// marshalSurlaBuildNotStartedToBuildNotStartedResponseBody builds a value of
+// type *BuildNotStartedResponseBody from a value of type
+// *surla.BuildNotStarted.
+func marshalSurlaBuildNotStartedToBuildNotStartedResponseBody(v *surla.BuildNotStarted) *BuildNotStartedResponseBody {
+	res := &BuildNotStartedResponseBody{}
+
+	return res
+}
+
+// marshalSurlaStartedBuildToStartedBuildResponseBody builds a value of type
+// *StartedBuildResponseBody from a value of type *surla.StartedBuild.
+func marshalSurlaStartedBuildToStartedBuildResponseBody(v *surla.StartedBuild) *StartedBuildResponseBody {
+	res := &StartedBuildResponseBody{
+		RequestRevision: v.RequestRevision,
+		StartedAt:       v.StartedAt,
+		InForce:         v.InForce,
+	}
+	if v.Builder != nil {
+		res.Builder = marshalSurlaBuilderProgressToBuilderProgressResponseBody(v.Builder)
+	}
+	if v.TestWriter != nil {
+		res.TestWriter = marshalSurlaTestWriterProgressToTestWriterProgressResponseBody(v.TestWriter)
+	}
+
+	return res
+}
+
+// marshalSurlaBuildAssignmentToBuildAssignmentResponseBody builds a value of
+// type *BuildAssignmentResponseBody from a value of type
+// *surla.BuildAssignment.
+func marshalSurlaBuildAssignmentToBuildAssignmentResponseBody(v *surla.BuildAssignment) *BuildAssignmentResponseBody {
+	res := &BuildAssignmentResponseBody{
+		ChangeID:        v.ChangeID,
+		RequestRevision: v.RequestRevision,
+	}
+	if v.Progress != nil {
+		res.Progress = marshalSurlaBuilderProgressToBuilderProgressResponseBody(v.Progress)
+	}
+
+	return res
+}
+
+// marshalSurlaTestAssignmentItemToTestAssignmentItemResponseBody builds a
+// value of type *TestAssignmentItemResponseBody from a value of type
+// *surla.TestAssignmentItem.
+func marshalSurlaTestAssignmentItemToTestAssignmentItemResponseBody(v *surla.TestAssignmentItem) *TestAssignmentItemResponseBody {
+	res := &TestAssignmentItemResponseBody{
+		ChangeID:        v.ChangeID,
+		RequestRevision: v.RequestRevision,
+	}
+	if v.Progress != nil {
+		res.Progress = marshalSurlaTestWriterProgressToTestWriterProgressResponseBody(v.Progress)
+	}
+
+	return res
+}
+
+// marshalSurlaRequiredTestToRequiredTestResponseBody builds a value of type
+// *RequiredTestResponseBody from a value of type *surla.RequiredTest.
+func marshalSurlaRequiredTestToRequiredTestResponseBody(v *surla.RequiredTest) *RequiredTestResponseBody {
+	res := &RequiredTestResponseBody{
+		Story:    v.Story,
+		FlowKey:  v.FlowKey,
+		Scenario: v.Scenario,
+		Hook:     v.Hook,
 	}
 
 	return res

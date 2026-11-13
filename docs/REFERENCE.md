@@ -35,8 +35,11 @@ guide proposes/revises changes, refreshes Story, and initializes the project.
 The builder generates/checks code, updates dependencies, starts live targets,
 drafts prompts, and requests verification. The user and builder can stop a live
 target. User, guide, and builder share change, architecture, diff, verification,
-trace, check-output, and Story-refresh reads. The test writer currently reads
-only the guidance resource. Management operations are not MCP tools. A refused
+trace, check-output, and Story-refresh reads. Only the user session starts a
+build; all four read a change's build. The builder reads its own build
+assignments, and the test writer reads its own test assignments and reports
+them finished (see [Builds and assignments](#builds-and-assignments)).
+Management operations are not MCP tools. A refused
 call changes no domain state. Every proposal waits for user confirmation even
 when it has no questions. Resources belong to the immutable project owner;
 caller attribution stays in private operation diagnostics, while exported spans
@@ -136,6 +139,33 @@ Surla cannot judge whether an analysis is complete or correct; the requester doe
 - **`diff`** (`POST /diff`)
   - **Input:** `old` (`DesignSnapshot`), `new` (`DesignSnapshot`) → **Output:** `DiffResult`
   - Compares two `DesignSnapshot` modules by evaluating their generated Goa/Goa-AI artifacts, tool schemas, and `go.mod` directives.
+
+### Builds and assignments
+
+When the user decides to build a confirmed change, the project server saves a
+*build*: the change, the exact `request_revision` the user built, when, the
+Story as agreed at that revision, and one *assignment* each for the builder and
+the test writer. The server saves it as `<cards_dir>/<sha256(change_id)>.build.json`
+beside the change's card, writes it atomically under the card store's lock,
+and refuses to read a file with unknown fields, trailing data, or a state that
+contradicts its findings or commit. A change has at most one build; building
+again replaces it, and both assignments start over unread.
+
+- **`start_build`** (`POST /changes/{change_id}/build`; HTTP only, user session only)
+  - **Input:** `change_id`, `request_revision` → **Output:** `StartedBuild` (`request_revision`, `started_at`, `in_force`, `builder`, `test_writer`)
+  - Saves the build when the change is `confirmed` and `request_revision` is its revision in force. Returns `not_found` for an unknown change, `conflict` (HTTP `409`) when the change is not confirmed or the revision is not the one in force, and `unprocessable` (HTTP `422`) when two finished flows of the agreed Story would require tests with the same name; a refused start saves nothing. An embedding host may bind `controlplane.Options.BuildTeam`, which prepares the roles and returns the test writer's working folder before the build is saved; when it fails, the start is refused and nothing is saved. The project server binds none, so the test writer's `working_folder` is empty.
+- **`get_build`** (`GET /changes/{change_id}/build`; user, guide, builder, test writer)
+  - **Input:** `change_id` → **Output:** `ChangeBuild` (`change_id`, `build`)
+  - `build.state` is `not_started` until the user starts a build, then `started` with the `StartedBuild` fields. `in_force` turns `false` when the change is revised or confirmed again: nothing changes the assignments automatically, and the user builds again for the new revision. `builder` is `{"state":"assigned","read":…}`. `test_writer` is `{"tests":…,"read":…}`, where `tests.state` is `assigned`, `reported`, `needs_changes` (with `findings`) or `accepted` (with the `commit` the tests were recorded at). `read` says whether that role read its assignment in full.
+- **`list_build_assignments`** (`GET /assignments/build`) and **`get_build_assignment`** (`GET /assignments/build/{change_id}`; builder only)
+  - **Output:** `BuildAssignmentList` (`assignments`, most recently started first) or one `BuildAssignment` (`change_id`, `request_revision`, `progress`).
+  - The builder builds that revision in the project folder and passes `change_id` and `request_revision` to `verify_change`; verification, not the assignment, judges its work. Reading one assignment records that the builder read it; listing records nothing. `not_found` means the change has no build.
+- **`list_test_assignments`** (`GET /assignments/tests`) and **`get_test_assignment`** (`GET /assignments/tests/{change_id}`; test writer only)
+  - **Output:** `TestAssignmentList` (`assignments` with `change_id`, `request_revision`, `progress`, most recently started first) or one `TestAssignment`: `working_folder`, the `stories` as agreed at the built revision (a later revision of the change does not alter them), `required_tests`, and `progress` with any `findings`.
+  - `required_tests` holds one test per finished flow (`story`, `flow_key`, `scenario`, `hook`), named exactly as Surla's Story test generator names them: flow `refund-over-limit` requires scenario `refund_over_limit` and hook method `RefundOverLimit`. Unfinished flows require none. Reading one assignment records that the test writer read it; listing records nothing.
+- **`report_tests`** (`POST /assignments/tests/{change_id}/report`; test writer only)
+  - **Input:** `change_id`, `request_revision` → **Output:** `TestAssignmentItem`
+  - Records that the test writer finished its tests for the build's revision: `tests.state` becomes `reported` and earlier findings are cleared. The server records the report and does not check the tests. Returns `conflict` (HTTP `409`) for any other revision and `not_found` when the change has no build; a refused report changes nothing.
 
 ### Live target prompt contract
 

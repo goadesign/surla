@@ -212,6 +212,41 @@ type Service interface {
 	// never saved in the diagnostics history list_traces reads, so an open page
 	// does not push real operations out of view.
 	WaitForChanges(context.Context, *WaitForChangesPayload) (res *ChangeListVersion, err error)
+	// The user starts building a confirmed change at its revision in force. Surla
+	// saves the build with the Story as agreed at that revision and assigns the
+	// build to the builder and the test writer. Building again replaces the build
+	// and both assignments, which then count as unread. A change that is not
+	// confirmed, or a request_revision that is not the one in force, is refused
+	// and nothing changes.
+	StartBuild(context.Context, *StartBuildPayload) (res *StartedBuild, err error)
+	// Return a change's build: not_started until the user starts one; otherwise
+	// the revision built, when, both assignments' states and whether each was
+	// read, and whether the build is for the change's revision in force. Reading
+	// changes nothing.
+	GetBuild(context.Context, *GetBuildPayload) (res *ChangeBuild, err error)
+	// List the builder's assignments, one per change the user built, most recently
+	// started first, each with its change, revision, state and whether it was
+	// read. Reading the list records nothing.
+	ListBuildAssignments(context.Context) (res *BuildAssignmentList, err error)
+	// Return the builder's assignment for a change in full and record that the
+	// builder read it at its revision. A new build of the change replaces the
+	// assignment, which then counts as unread.
+	GetBuildAssignment(context.Context, *GetBuildAssignmentPayload) (res *BuildAssignment, err error)
+	// List the test writer's assignments, one per change the user built, most
+	// recently started first, each with its change, revision, state and whether it
+	// was read. Reading the list records nothing.
+	ListTestAssignments(context.Context) (res *TestAssignmentList, err error)
+	// Return the test writer's assignment for a change in full (the working
+	// folder, the Story as agreed at the built revision, the tests it requires,
+	// and the state with any findings) and record that the test writer read it at
+	// its revision. A new build of the change replaces the assignment, which then
+	// counts as unread.
+	GetTestAssignment(context.Context, *GetTestAssignmentPayload) (res *TestAssignment, err error)
+	// The test writer reports that its tests for a change at the build's revision
+	// are finished, which asks Surla to look at them. Surla records the report;
+	// the assignment's state becomes reported. A report for another revision is
+	// refused and changes nothing.
+	ReportTests(context.Context, *ReportTestsPayload) (res *TestAssignmentItem, err error)
 }
 
 // APIName is the name of the API as defined in the design.
@@ -228,7 +263,7 @@ const ServiceName = "surla"
 // MethodNames lists the service method names as defined in the design. These
 // are the same values that are set in the endpoint request contexts under the
 // MethodKey key.
-var MethodNames = [25]string{"golden_path", "propose_change", "revise_change", "confirm_intent", "get_change", "preview_architecture", "draft_override", "start_live_target", "stop_live_target", "verify_change", "get_verification", "list_verifications", "approve_merge", "diff", "configure_model", "init_project", "generate_code", "check_project", "update_dependencies", "read_check_output", "list_traces", "refresh_story", "get_story_refresh", "list_changes", "wait_for_changes"}
+var MethodNames = [32]string{"golden_path", "propose_change", "revise_change", "confirm_intent", "get_change", "preview_architecture", "draft_override", "start_live_target", "stop_live_target", "verify_change", "get_verification", "list_verifications", "approve_merge", "diff", "configure_model", "init_project", "generate_code", "check_project", "update_dependencies", "read_check_output", "list_traces", "refresh_story", "get_story_refresh", "list_changes", "wait_for_changes", "start_build", "get_build", "list_build_assignments", "get_build_assignment", "list_test_assignments", "get_test_assignment", "report_tests"}
 
 // Evaluated Goa-AI cost, safety, history, and cache policy for a single agent.
 type AgentPolicyItem struct {
@@ -327,6 +362,38 @@ type ArchitecturePreviewResult struct {
 	Tools []*ToolContractItem
 	// Plain-English summary of topology and guardrails.
 	Banner string
+}
+
+// BuildAssignment is the result type of the surla service get_build_assignment
+// method.
+type BuildAssignment struct {
+	// Change Card to build; get_change takes it.
+	ChangeID string
+	// Change Card revision to build; verify_change takes it.
+	RequestRevision string
+	// Where this assignment stands.
+	Progress *BuilderProgress
+}
+
+// BuildAssignmentList is the result type of the surla service
+// list_build_assignments method.
+type BuildAssignmentList struct {
+	// Assignments, most recently started first; empty when the user has built no
+	// change.
+	Assignments []*BuildAssignment
+}
+
+// The user has not started a build of this change.
+type BuildNotStarted struct {
+}
+
+// Where the builder's assignment for one build stands. Verification of the
+// build's revision, not the assignment, judges the builder's work.
+type BuilderProgress struct {
+	// The builder's state: assigned from the moment the user starts the build.
+	State string
+	// True once the builder read this assignment in full with get_build_assignment.
+	Read bool
 }
 
 // The builder view of a Checkpoint 4 verification report: counts, verdict and
@@ -485,6 +552,15 @@ type CP1RevisionAnalysisExample struct {
 	// deterministic when code can check the outcome directly; model_judged when
 	// checking it needs judgment.
 	VerificationKind string
+}
+
+// ChangeBuild is the result type of the surla service get_build method.
+type ChangeBuild struct {
+	// Change Card identifier.
+	ChangeID string
+	// not_started until the user starts a build of this change; started with the
+	// build afterwards.
+	Build Build
 }
 
 // ChangeCardResult is the result type of the surla service propose_change
@@ -735,9 +811,29 @@ type GenerateCodeResult struct {
 	Warnings []string
 }
 
+// GetBuildAssignmentPayload is the payload type of the surla service
+// get_build_assignment method.
+type GetBuildAssignmentPayload struct {
+	// Change Card identifier from list_build_assignments.
+	ChangeID string
+}
+
+// GetBuildPayload is the payload type of the surla service get_build method.
+type GetBuildPayload struct {
+	// Change Card identifier.
+	ChangeID string
+}
+
 // GetChangePayload is the payload type of the surla service get_change method.
 type GetChangePayload struct {
 	// Change identifier.
+	ChangeID string
+}
+
+// GetTestAssignmentPayload is the payload type of the surla service
+// get_test_assignment method.
+type GetTestAssignmentPayload struct {
+	// Change Card identifier from list_test_assignments.
 	ChangeID string
 }
 
@@ -863,6 +959,28 @@ type ReadCheckOutputPayload struct {
 	Cursor *string
 }
 
+// ReportTestsPayload is the payload type of the surla service report_tests
+// method.
+type ReportTestsPayload struct {
+	// Change Card identifier from your test assignment.
+	ChangeID string
+	// request_revision of your test assignment.
+	RequestRevision string
+}
+
+// One test the agreed Story requires: the evaluation scenario Surla generates
+// for one finished flow and the hook method the test writer implements for it.
+type RequiredTest struct {
+	// Name of the Story the flow belongs to.
+	Story string
+	// Key of the finished flow.
+	FlowKey string
+	// Scenario name the evaluation suite declares for the flow.
+	Scenario string
+	// Hook method the test writer implements for the scenario.
+	Hook string
+}
+
 // ReviseChangePayload is the payload type of the surla service revise_change
 // method.
 type ReviseChangePayload struct {
@@ -884,11 +1002,36 @@ type ReviseChangePayload struct {
 	Analysis *CP1RevisionAnalysis
 }
 
+// StartBuildPayload is the payload type of the surla service start_build
+// method.
+type StartBuildPayload struct {
+	// Confirmed Change Card identifier.
+	ChangeID string
+	// The Change Card's confirmed revision in force.
+	RequestRevision string
+}
+
 // StartLiveTargetPayload is the payload type of the surla service
 // start_live_target method.
 type StartLiveTargetPayload struct {
 	// Full commit ID to build, in the candidate repository's object format.
 	CandidateCommit string
+}
+
+// StartedBuild is the result type of the surla service start_build method.
+type StartedBuild struct {
+	// Change Card revision the user built.
+	RequestRevision string
+	// When the user started this build.
+	StartedAt string
+	// True when request_revision is the change's confirmed revision in force.
+	// False when the change was revised or confirmed again since: the assignments
+	// stay as they are, for this earlier revision, until the user builds again.
+	InForce bool
+	// The builder's assignment.
+	Builder *BuilderProgress
+	// The test writer's assignment.
+	TestWriter *TestWriterProgress
 }
 
 // StopLiveTargetResult is the result type of the surla service
@@ -991,6 +1134,82 @@ type StorySummaryItem struct {
 	Actors []*StoryActorItem
 	// Timeline paths declared in the Story in declaration order.
 	Flows []*StoryFlowItem
+}
+
+// TestAssignment is the result type of the surla service get_test_assignment
+// method.
+type TestAssignment struct {
+	// Change Card the tests are for.
+	ChangeID string
+	// Change Card revision the tests are for; report_tests takes it.
+	RequestRevision string
+	// Where this assignment stands, including Surla's findings when it needs
+	// changes.
+	Progress *TestWriterProgress
+	// Folder to write the tests in: the test writer's own working copy of the
+	// project, which Surla prepares when the user starts the build. Empty when
+	// this server prepares no working copy.
+	WorkingFolder string
+	// The Story as agreed at request_revision, in declaration order. It does not
+	// change when the change is revised later.
+	Stories []*StorySummaryItem
+	// One test per finished flow of stories, in declaration order; unfinished
+	// flows require none.
+	RequiredTests []*RequiredTest
+}
+
+// TestAssignmentItem is the result type of the surla service report_tests
+// method.
+type TestAssignmentItem struct {
+	// Change Card the tests are for; get_test_assignment takes it.
+	ChangeID string
+	// Change Card revision the tests are for.
+	RequestRevision string
+	// Where this assignment stands.
+	Progress *TestWriterProgress
+}
+
+// TestAssignmentList is the result type of the surla service
+// list_test_assignments method.
+type TestAssignmentList struct {
+	// Assignments, most recently started first; empty when the user has built no
+	// change.
+	Assignments []*TestAssignmentItem
+}
+
+// Where the test writer's assignment for one build stands.
+type TestWriterProgress struct {
+	// The tests' state: assigned, reported, needs_changes with Surla's findings,
+	// or accepted with the commit Surla recorded.
+	Tests Tests
+	// True once the test writer read this assignment in full with
+	// get_test_assignment.
+	Read bool
+}
+
+// Surla checked the reported tests and recorded them as a commit.
+type TestsAccepted struct {
+	// Full commit ID Surla recorded the accepted tests at (40 or 64 lowercase hex
+	// characters).
+	Commit string
+}
+
+// Surla assigned the tests for this build; the test writer has not reported
+// them finished.
+type TestsAssigned struct {
+}
+
+// Surla checked the reported tests and found problems the test writer must fix
+// before reporting again.
+type TestsNeedChanges struct {
+	// What Surla found, one problem per item: a test that does not build or a
+	// required test that is not declared.
+	Findings []string
+}
+
+// The test writer reported its tests finished at this build's revision; Surla
+// has not judged them yet.
+type TestsReported struct {
 }
 
 // Evaluated Goa-AI tool contract summary surfaced at Checkpoint 2.
@@ -1649,6 +1868,103 @@ func validatejsonArchitecturePreviewResultTransport(value *jsonArchitecturePrevi
 	return err
 }
 
+// jsonBuildAssignmentListTransport stores JSON fields until they have been validated.
+type jsonBuildAssignmentListTransport struct {
+	// Assignments, most recently started first; empty when the user has built no
+	// change.
+	Assignments []*jsonBuildAssignmentTransport `json:"assignments"`
+}
+
+// validatejsonBuildAssignmentListTransport checks decoded JSON before it becomes a service value.
+func validatejsonBuildAssignmentListTransport(value *jsonBuildAssignmentListTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.Assignments == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("assignments", "body"))
+	}
+	for _, e := range value.Assignments {
+		if e != nil {
+			if err2 := validatejsonBuildAssignmentTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	return err
+}
+
+// jsonBuildAssignmentTransport stores JSON fields until they have been validated.
+type jsonBuildAssignmentTransport struct {
+	// Change Card to build; get_change takes it.
+	ChangeID *string `json:"change_id"`
+	// Change Card revision to build; verify_change takes it.
+	RequestRevision *string `json:"request_revision"`
+	// Where this assignment stands.
+	Progress *jsonBuilderProgressTransport `json:"progress"`
+}
+
+// validatejsonBuildAssignmentTransport checks decoded JSON before it becomes a service value.
+func validatejsonBuildAssignmentTransport(value *jsonBuildAssignmentTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.ChangeID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("change_id", "body"))
+	}
+	if value.RequestRevision == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("request_revision", "body"))
+	}
+	if value.Progress == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("progress", "body"))
+	}
+	if value.Progress != nil {
+		if err2 := validatejsonBuilderProgressTransport(value.Progress); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		}
+	}
+	return err
+}
+
+// jsonBuildNotStartedTransport stores JSON fields until they have been validated.
+type jsonBuildNotStartedTransport struct {
+}
+
+// validatejsonBuildNotStartedTransport checks decoded JSON before it becomes a service value.
+func validatejsonBuildNotStartedTransport(value *jsonBuildNotStartedTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+
+	return err
+}
+
+// jsonBuilderProgressTransport stores JSON fields until they have been validated.
+type jsonBuilderProgressTransport struct {
+	// The builder's state: assigned from the moment the user starts the build.
+	State *string `json:"state"`
+	// True once the builder read this assignment in full with get_build_assignment.
+	Read *bool `json:"read"`
+}
+
+// validatejsonBuilderProgressTransport checks decoded JSON before it becomes a service value.
+func validatejsonBuilderProgressTransport(value *jsonBuilderProgressTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.State == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("state", "body"))
+	}
+	if value.Read == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("read", "body"))
+	}
+	if value.State != nil {
+		if !(*value.State == "assigned") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.state", *value.State, []any{"assigned"}))
+		}
+	}
+	return err
+}
+
 // jsonBuilderVerificationReportTransport stores JSON fields until they have been validated.
 type jsonBuilderVerificationReportTransport struct {
 	// SHA-256 digest of the full report the evaluator saved; approve_merge and
@@ -2081,6 +2397,46 @@ func validatejsonCP1RevisionAnalysisTransport(value *jsonCP1RevisionAnalysisTran
 		if e != nil {
 			err = goa.MergeErrors(err, goa.ValidatePattern("body.preserved_behaviors[*]", *e, "[^\\t\\n\\v\\f\\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]"))
 		}
+	}
+	return err
+}
+
+// jsonChangeBuildTransport stores JSON fields until they have been validated.
+type jsonChangeBuildTransport struct {
+	// Change Card identifier.
+	ChangeID *string `json:"change_id"`
+	// not_started until the user starts a build of this change; started with the
+	// build afterwards.
+	Build *jsonBuildTransport `json:"build"`
+}
+
+// validatejsonChangeBuildTransport checks decoded JSON before it becomes a service value.
+func validatejsonChangeBuildTransport(value *jsonChangeBuildTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.ChangeID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("change_id", "body"))
+	}
+	if value.Build == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("build", "body"))
+	}
+	if value.Build != nil {
+
+		if err2 := value.Build.Validate(); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		} else {
+			switch string(value.Build.Kind()) {
+			case "started":
+				actual, _ := value.Build.AsStarted()
+				if actual != nil {
+					if err2 := validatejsonStartedBuildTransport(actual); err2 != nil {
+						err = goa.MergeErrors(err, err2)
+					}
+				}
+			}
+		}
+
 	}
 	return err
 }
@@ -3026,6 +3382,38 @@ func validatejsonReadCheckOutputPayloadTransport(value *jsonReadCheckOutputPaylo
 	return err
 }
 
+// jsonRequiredTestTransport stores JSON fields until they have been validated.
+type jsonRequiredTestTransport struct {
+	// Name of the Story the flow belongs to.
+	Story *string `json:"story"`
+	// Key of the finished flow.
+	FlowKey *string `json:"flow_key"`
+	// Scenario name the evaluation suite declares for the flow.
+	Scenario *string `json:"scenario"`
+	// Hook method the test writer implements for the scenario.
+	Hook *string `json:"hook"`
+}
+
+// validatejsonRequiredTestTransport checks decoded JSON before it becomes a service value.
+func validatejsonRequiredTestTransport(value *jsonRequiredTestTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.Story == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("story", "body"))
+	}
+	if value.FlowKey == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("flow_key", "body"))
+	}
+	if value.Scenario == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("scenario", "body"))
+	}
+	if value.Hook == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("hook", "body"))
+	}
+	return err
+}
+
 // jsonReviseChangePayloadTransport stores JSON fields until they have been validated.
 type jsonReviseChangePayloadTransport struct {
 	// Change identifier.
@@ -3087,6 +3475,58 @@ func validatejsonStartLiveTargetPayloadTransport(value *jsonStartLiveTargetPaylo
 	}
 	if value.CandidateCommit != nil {
 		err = goa.MergeErrors(err, goa.ValidatePattern("body.candidate_commit", *value.CandidateCommit, "^([0-9a-f]{40}|[0-9a-f]{64})$"))
+	}
+	return err
+}
+
+// jsonStartedBuildTransport stores JSON fields until they have been validated.
+type jsonStartedBuildTransport struct {
+	// Change Card revision the user built.
+	RequestRevision *string `json:"request_revision"`
+	// When the user started this build.
+	StartedAt *string `json:"started_at"`
+	// True when request_revision is the change's confirmed revision in force.
+	// False when the change was revised or confirmed again since: the assignments
+	// stay as they are, for this earlier revision, until the user builds again.
+	InForce *bool `json:"in_force"`
+	// The builder's assignment.
+	Builder *jsonBuilderProgressTransport `json:"builder"`
+	// The test writer's assignment.
+	TestWriter *jsonTestWriterProgressTransport `json:"test_writer"`
+}
+
+// validatejsonStartedBuildTransport checks decoded JSON before it becomes a service value.
+func validatejsonStartedBuildTransport(value *jsonStartedBuildTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.RequestRevision == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("request_revision", "body"))
+	}
+	if value.StartedAt == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("started_at", "body"))
+	}
+	if value.InForce == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("in_force", "body"))
+	}
+	if value.Builder == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("builder", "body"))
+	}
+	if value.TestWriter == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("test_writer", "body"))
+	}
+	if value.StartedAt != nil {
+		err = goa.MergeErrors(err, goa.ValidateFormat("body.started_at", *value.StartedAt, goa.FormatDateTime))
+	}
+	if value.Builder != nil {
+		if err2 := validatejsonBuilderProgressTransport(value.Builder); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		}
+	}
+	if value.TestWriter != nil {
+		if err2 := validatejsonTestWriterProgressTransport(value.TestWriter); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		}
 	}
 	return err
 }
@@ -3363,6 +3803,245 @@ func validatejsonStorySummaryItemTransport(value *jsonStorySummaryItemTransport)
 			}
 		}
 	}
+	return err
+}
+
+// jsonTestAssignmentItemTransport stores JSON fields until they have been validated.
+type jsonTestAssignmentItemTransport struct {
+	// Change Card the tests are for; get_test_assignment takes it.
+	ChangeID *string `json:"change_id"`
+	// Change Card revision the tests are for.
+	RequestRevision *string `json:"request_revision"`
+	// Where this assignment stands.
+	Progress *jsonTestWriterProgressTransport `json:"progress"`
+}
+
+// validatejsonTestAssignmentItemTransport checks decoded JSON before it becomes a service value.
+func validatejsonTestAssignmentItemTransport(value *jsonTestAssignmentItemTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.ChangeID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("change_id", "body"))
+	}
+	if value.RequestRevision == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("request_revision", "body"))
+	}
+	if value.Progress == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("progress", "body"))
+	}
+	if value.Progress != nil {
+		if err2 := validatejsonTestWriterProgressTransport(value.Progress); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		}
+	}
+	return err
+}
+
+// jsonTestAssignmentListTransport stores JSON fields until they have been validated.
+type jsonTestAssignmentListTransport struct {
+	// Assignments, most recently started first; empty when the user has built no
+	// change.
+	Assignments []*jsonTestAssignmentItemTransport `json:"assignments"`
+}
+
+// validatejsonTestAssignmentListTransport checks decoded JSON before it becomes a service value.
+func validatejsonTestAssignmentListTransport(value *jsonTestAssignmentListTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.Assignments == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("assignments", "body"))
+	}
+	for _, e := range value.Assignments {
+		if e != nil {
+			if err2 := validatejsonTestAssignmentItemTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	return err
+}
+
+// jsonTestAssignmentTransport stores JSON fields until they have been validated.
+type jsonTestAssignmentTransport struct {
+	// Change Card the tests are for.
+	ChangeID *string `json:"change_id"`
+	// Change Card revision the tests are for; report_tests takes it.
+	RequestRevision *string `json:"request_revision"`
+	// Where this assignment stands, including Surla's findings when it needs
+	// changes.
+	Progress *jsonTestWriterProgressTransport `json:"progress"`
+	// Folder to write the tests in: the test writer's own working copy of the
+	// project, which Surla prepares when the user starts the build. Empty when
+	// this server prepares no working copy.
+	WorkingFolder *string `json:"working_folder"`
+	// The Story as agreed at request_revision, in declaration order. It does not
+	// change when the change is revised later.
+	Stories []*jsonStorySummaryItemTransport `json:"stories"`
+	// One test per finished flow of stories, in declaration order; unfinished
+	// flows require none.
+	RequiredTests []*jsonRequiredTestTransport `json:"required_tests"`
+}
+
+// validatejsonTestAssignmentTransport checks decoded JSON before it becomes a service value.
+func validatejsonTestAssignmentTransport(value *jsonTestAssignmentTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.ChangeID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("change_id", "body"))
+	}
+	if value.RequestRevision == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("request_revision", "body"))
+	}
+	if value.Progress == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("progress", "body"))
+	}
+	if value.WorkingFolder == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("working_folder", "body"))
+	}
+	if value.Stories == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("stories", "body"))
+	}
+	if value.RequiredTests == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("required_tests", "body"))
+	}
+	if value.Progress != nil {
+		if err2 := validatejsonTestWriterProgressTransport(value.Progress); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		}
+	}
+	for _, e := range value.Stories {
+		if e != nil {
+			if err2 := validatejsonStorySummaryItemTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	for _, e := range value.RequiredTests {
+		if e != nil {
+			if err2 := validatejsonRequiredTestTransport(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	return err
+}
+
+// jsonTestWriterProgressTransport stores JSON fields until they have been validated.
+type jsonTestWriterProgressTransport struct {
+	// The tests' state: assigned, reported, needs_changes with Surla's findings,
+	// or accepted with the commit Surla recorded.
+	Tests *jsonTestsTransport `json:"tests"`
+	// True once the test writer read this assignment in full with
+	// get_test_assignment.
+	Read *bool `json:"read"`
+}
+
+// validatejsonTestWriterProgressTransport checks decoded JSON before it becomes a service value.
+func validatejsonTestWriterProgressTransport(value *jsonTestWriterProgressTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.Tests == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("tests", "body"))
+	}
+	if value.Read == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("read", "body"))
+	}
+	if value.Tests != nil {
+
+		if err2 := value.Tests.Validate(); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		} else {
+			switch string(value.Tests.Kind()) {
+			case "needs_changes":
+				actual, _ := value.Tests.AsNeedsChanges()
+				if actual != nil {
+					if err2 := validatejsonTestsNeedChangesTransport(actual); err2 != nil {
+						err = goa.MergeErrors(err, err2)
+					}
+				}
+			case "accepted":
+				actual, _ := value.Tests.AsAccepted()
+				if actual != nil {
+					if err2 := validatejsonTestsAcceptedTransport(actual); err2 != nil {
+						err = goa.MergeErrors(err, err2)
+					}
+				}
+			}
+		}
+
+	}
+	return err
+}
+
+// jsonTestsAcceptedTransport stores JSON fields until they have been validated.
+type jsonTestsAcceptedTransport struct {
+	// Full commit ID Surla recorded the accepted tests at (40 or 64 lowercase hex
+	// characters).
+	Commit *string `json:"commit"`
+}
+
+// validatejsonTestsAcceptedTransport checks decoded JSON before it becomes a service value.
+func validatejsonTestsAcceptedTransport(value *jsonTestsAcceptedTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.Commit == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("commit", "body"))
+	}
+	if value.Commit != nil {
+		err = goa.MergeErrors(err, goa.ValidatePattern("body.commit", *value.Commit, "^([0-9a-f]{40}|[0-9a-f]{64})$"))
+	}
+	return err
+}
+
+// jsonTestsAssignedTransport stores JSON fields until they have been validated.
+type jsonTestsAssignedTransport struct {
+}
+
+// validatejsonTestsAssignedTransport checks decoded JSON before it becomes a service value.
+func validatejsonTestsAssignedTransport(value *jsonTestsAssignedTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+
+	return err
+}
+
+// jsonTestsNeedChangesTransport stores JSON fields until they have been validated.
+type jsonTestsNeedChangesTransport struct {
+	// What Surla found, one problem per item: a test that does not build or a
+	// required test that is not declared.
+	Findings []string `json:"findings"`
+}
+
+// validatejsonTestsNeedChangesTransport checks decoded JSON before it becomes a service value.
+func validatejsonTestsNeedChangesTransport(value *jsonTestsNeedChangesTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.Findings == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("findings", "body"))
+	}
+	if len(value.Findings) < 1 {
+		err = goa.MergeErrors(err, goa.InvalidLengthError("body.findings", value.Findings, len(value.Findings), 1, true))
+	}
+	return err
+}
+
+// jsonTestsReportedTransport stores JSON fields until they have been validated.
+type jsonTestsReportedTransport struct {
+}
+
+// validatejsonTestsReportedTransport checks decoded JSON before it becomes a service value.
+func validatejsonTestsReportedTransport(value *jsonTestsReportedTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+
 	return err
 }
 
@@ -4117,6 +4796,42 @@ func validateToolInputBindingItemOriginal(value *ToolInputBindingItem) (err erro
 	return err
 }
 
+// validateBuildAssignmentOriginal checks the original typed value before JSON conversion.
+func validateBuildAssignmentOriginal(value *BuildAssignment) (err error) {
+	if value.Progress == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("progress", "value"))
+	}
+	if value.Progress != nil {
+		if err2 := validateBuilderProgressOriginal(value.Progress); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		}
+	}
+	return err
+}
+
+// validateBuilderProgressOriginal checks the original typed value before JSON conversion.
+func validateBuilderProgressOriginal(value *BuilderProgress) (err error) {
+	if !(value.State == "assigned") {
+		err = goa.MergeErrors(err, goa.InvalidEnumValueError("value.state", value.State, []any{"assigned"}))
+	}
+	return err
+}
+
+// validateBuildAssignmentListOriginal checks the original typed value before JSON conversion.
+func validateBuildAssignmentListOriginal(value *BuildAssignmentList) (err error) {
+	if value.Assignments == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("assignments", "value"))
+	}
+	for _, e := range value.Assignments {
+		if e != nil {
+			if err2 := validateBuildAssignmentOriginal(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	return err
+}
+
 // validateBuilderVerificationReportOriginal checks the original typed value before JSON conversion.
 func validateBuilderVerificationReportOriginal(value *BuilderVerificationReport) (err error) {
 	if value.Counts == nil {
@@ -4272,6 +4987,98 @@ func validateCP1RevisionAnalysisExampleOriginal(value *CP1RevisionAnalysisExampl
 	if !(value.VerificationKind == "deterministic" || value.VerificationKind == "model_judged") {
 		err = goa.MergeErrors(err, goa.InvalidEnumValueError("value.verification_kind", value.VerificationKind, []any{"deterministic", "model_judged"}))
 	}
+	return err
+}
+
+// validateChangeBuildOriginal checks the original typed value before JSON conversion.
+func validateChangeBuildOriginal(value *ChangeBuild) (err error) {
+	if value.Build.Kind() == "" {
+		err = goa.MergeErrors(err, goa.MissingFieldError("build", "value"))
+	}
+
+	if err2 := value.Build.Validate(); err2 != nil {
+		err = goa.MergeErrors(err, err2)
+	} else {
+		switch string(value.Build.Kind()) {
+		case "started":
+			actual, _ := value.Build.AsStarted()
+			if actual != nil {
+				if err2 := validateStartedBuildOriginal(actual); err2 != nil {
+					err = goa.MergeErrors(err, err2)
+				}
+			}
+		}
+	}
+
+	return err
+}
+
+// validateStartedBuildOriginal checks the original typed value before JSON conversion.
+func validateStartedBuildOriginal(value *StartedBuild) (err error) {
+	if value.Builder == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("builder", "value"))
+	}
+	if value.TestWriter == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("test_writer", "value"))
+	}
+	err = goa.MergeErrors(err, goa.ValidateFormat("value.started_at", value.StartedAt, goa.FormatDateTime))
+	if value.Builder != nil {
+		if err2 := validateBuilderProgressOriginal(value.Builder); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		}
+	}
+	if value.TestWriter != nil {
+		if err2 := validateTestWriterProgressOriginal(value.TestWriter); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		}
+	}
+	return err
+}
+
+// validateTestWriterProgressOriginal checks the original typed value before JSON conversion.
+func validateTestWriterProgressOriginal(value *TestWriterProgress) (err error) {
+	if value.Tests.Kind() == "" {
+		err = goa.MergeErrors(err, goa.MissingFieldError("tests", "value"))
+	}
+
+	if err2 := value.Tests.Validate(); err2 != nil {
+		err = goa.MergeErrors(err, err2)
+	} else {
+		switch string(value.Tests.Kind()) {
+		case "needs_changes":
+			actual, _ := value.Tests.AsNeedsChanges()
+			if actual != nil {
+				if err2 := validateTestsNeedChangesOriginal(actual); err2 != nil {
+					err = goa.MergeErrors(err, err2)
+				}
+			}
+		case "accepted":
+			actual, _ := value.Tests.AsAccepted()
+			if actual != nil {
+				if err2 := validateTestsAcceptedOriginal(actual); err2 != nil {
+					err = goa.MergeErrors(err, err2)
+				}
+			}
+		}
+	}
+
+	return err
+}
+
+// validateTestsNeedChangesOriginal checks the original typed value before JSON conversion.
+func validateTestsNeedChangesOriginal(value *TestsNeedChanges) (err error) {
+	if value.Findings == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("findings", "value"))
+	}
+	if len(value.Findings) < 1 {
+		err = goa.MergeErrors(err, goa.InvalidLengthError("value.findings", value.Findings, len(value.Findings), 1, true))
+	}
+	return err
+}
+
+// validateTestsAcceptedOriginal checks the original typed value before JSON conversion.
+func validateTestsAcceptedOriginal(value *TestsAccepted) (err error) {
+	err = goa.MergeErrors(err, goa.ValidatePattern("value.commit", value.Commit, "^([0-9a-f]{40}|[0-9a-f]{64})$"))
 	return err
 }
 
@@ -4669,6 +5476,60 @@ func validateStoryRefreshResultOriginal(value *StoryRefreshResult) (err error) {
 	return err
 }
 
+// validateTestAssignmentOriginal checks the original typed value before JSON conversion.
+func validateTestAssignmentOriginal(value *TestAssignment) (err error) {
+	if value.Progress == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("progress", "value"))
+	}
+	if value.Stories == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("stories", "value"))
+	}
+	if value.RequiredTests == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("required_tests", "value"))
+	}
+	if value.Progress != nil {
+		if err2 := validateTestWriterProgressOriginal(value.Progress); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		}
+	}
+	for _, e := range value.Stories {
+		if e != nil {
+			if err2 := validateStorySummaryItemOriginal(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	return err
+}
+
+// validateTestAssignmentItemOriginal checks the original typed value before JSON conversion.
+func validateTestAssignmentItemOriginal(value *TestAssignmentItem) (err error) {
+	if value.Progress == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("progress", "value"))
+	}
+	if value.Progress != nil {
+		if err2 := validateTestWriterProgressOriginal(value.Progress); err2 != nil {
+			err = goa.MergeErrors(err, err2)
+		}
+	}
+	return err
+}
+
+// validateTestAssignmentListOriginal checks the original typed value before JSON conversion.
+func validateTestAssignmentListOriginal(value *TestAssignmentList) (err error) {
+	if value.Assignments == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("assignments", "value"))
+	}
+	for _, e := range value.Assignments {
+		if e != nil {
+			if err2 := validateTestAssignmentItemOriginal(e); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	return err
+}
+
 // validateTraceListOriginal checks the original typed value before JSON conversion.
 func validateTraceListOriginal(value *TraceList) (err error) {
 	if value.Spans == nil {
@@ -4792,6 +5653,171 @@ func validateVerificationNotCompletedOriginal(value *VerificationNotCompleted) (
 func validateVerifyChangePayloadOriginal(value *VerifyChangePayload) (err error) {
 	err = goa.MergeErrors(err, goa.ValidatePattern("value.candidate_commit", value.CandidateCommit, "^([0-9a-f]{40}|[0-9a-f]{64})$"))
 	return err
+}
+
+// jsonBuildTransport stores exactly one selected Goa OneOf branch.
+type jsonBuildTransport struct {
+	kind       jsonBuildTransportKind
+	NotStarted *jsonBuildNotStartedTransport
+	Started    *jsonStartedBuildTransport
+}
+
+// jsonBuildTransportKind identifies the selected branch of jsonBuildTransport.
+type jsonBuildTransportKind string
+
+const (
+	jsonBuildTransportKindNotStarted jsonBuildTransportKind = "not_started"
+	jsonBuildTransportKindStarted    jsonBuildTransportKind = "started"
+)
+
+// Kind returns the selected branch.
+func (u jsonBuildTransport) Kind() jsonBuildTransportKind {
+	return u.kind
+}
+
+// newjsonBuildTransportNotStarted creates jsonBuildTransport with its not_started branch selected.
+func newjsonBuildTransportNotStarted(value *jsonBuildNotStartedTransport) jsonBuildTransport {
+	return jsonBuildTransport{kind: jsonBuildTransportKindNotStarted, NotStarted: value}
+}
+
+// AsNotStarted returns the not_started branch when it is selected.
+func (u jsonBuildTransport) AsNotStarted() (_ *jsonBuildNotStartedTransport, ok bool) {
+	if u.kind != jsonBuildTransportKindNotStarted {
+		return
+	}
+	return u.NotStarted, true
+}
+
+// SetNotStarted selects the not_started branch.
+func (u *jsonBuildTransport) SetNotStarted(value *jsonBuildNotStartedTransport) {
+	u.kind = jsonBuildTransportKindNotStarted
+	u.NotStarted = value
+}
+
+// newjsonBuildTransportStarted creates jsonBuildTransport with its started branch selected.
+func newjsonBuildTransportStarted(value *jsonStartedBuildTransport) jsonBuildTransport {
+	return jsonBuildTransport{kind: jsonBuildTransportKindStarted, Started: value}
+}
+
+// AsStarted returns the started branch when it is selected.
+func (u jsonBuildTransport) AsStarted() (_ *jsonStartedBuildTransport, ok bool) {
+	if u.kind != jsonBuildTransportKindStarted {
+		return
+	}
+	return u.Started, true
+}
+
+// SetStarted selects the started branch.
+func (u *jsonBuildTransport) SetStarted(value *jsonStartedBuildTransport) {
+	u.kind = jsonBuildTransportKindStarted
+	u.Started = value
+}
+
+// Validate checks that one complete branch is selected.
+func (u jsonBuildTransport) Validate() error {
+	switch u.kind {
+	case jsonBuildTransportKindNotStarted:
+		if u.NotStarted == nil {
+			return goa.MissingFieldError("value", "jsonBuildTransport")
+		}
+		return nil
+	case jsonBuildTransportKindStarted:
+		if u.Started == nil {
+			return goa.MissingFieldError("value", "jsonBuildTransport")
+		}
+		return nil
+	case "":
+		return goa.MissingFieldError("state", "jsonBuildTransport")
+	default:
+		return goa.InvalidEnumValueError("state", u.kind, []any{string(jsonBuildTransportKindNotStarted), string(jsonBuildTransportKindStarted)})
+	}
+}
+
+// MarshalJSON writes the selected branch name and value.
+func (u jsonBuildTransport) MarshalJSON() ([]byte, error) {
+	if err := u.Validate(); err != nil {
+		return nil, err
+	}
+	var value any
+	switch u.kind {
+	case jsonBuildTransportKindNotStarted:
+		value = u.NotStarted
+	case jsonBuildTransportKindStarted:
+		value = u.Started
+	default:
+		return nil, fmt.Errorf("unexpected jsonBuildTransport branch %q", u.kind)
+	}
+	data, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return nil, err
+	}
+	if fields == nil {
+		return nil, goa.InvalidFieldTypeError("state", nil, "non-null JSON object")
+	}
+	if _, exists := fields["state"]; exists {
+		return nil, fmt.Errorf("jsonBuildTransport branch already contains discriminator %q", "state")
+	}
+	tag, err := json.Marshal(string(u.kind))
+	if err != nil {
+		return nil, err
+	}
+	fields["state"] = tag
+	return json.Marshal(fields)
+}
+
+// UnmarshalJSON reads one complete branch name and value.
+func (u *jsonBuildTransport) UnmarshalJSON(data []byte) error {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return err
+	}
+	tag, exists := fields["state"]
+	if !exists {
+		return goa.MissingFieldError("state", "jsonBuildTransport")
+	}
+	if bytes.Equal(bytes.TrimSpace(tag), []byte("null")) {
+		return goa.InvalidFieldTypeError("state", nil, "JSON string")
+	}
+	var raw struct {
+		Type  string
+		Value json.RawMessage
+	}
+	if err := json.Unmarshal(tag, &raw.Type); err != nil {
+		return err
+	}
+	delete(fields, "state")
+	value, err := json.Marshal(fields)
+	if err != nil {
+		return err
+	}
+	raw.Value = value
+	switch raw.Type {
+	case string(jsonBuildTransportKindNotStarted):
+		var value *jsonBuildNotStartedTransport
+		decoder := json.NewDecoder(bytes.NewReader(raw.Value))
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&value); err != nil {
+			return err
+		}
+		u.kind = jsonBuildTransportKindNotStarted
+		u.NotStarted = value
+	case string(jsonBuildTransportKindStarted):
+		var value *jsonStartedBuildTransport
+		decoder := json.NewDecoder(bytes.NewReader(raw.Value))
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&value); err != nil {
+			return err
+		}
+		u.kind = jsonBuildTransportKindStarted
+		u.Started = value
+	default:
+		return goa.InvalidEnumValueError("state", raw.Type, []any{string(jsonBuildTransportKindNotStarted), string(jsonBuildTransportKindStarted)})
+	}
+	return u.Validate()
 }
 
 // jsonStateTransport stores exactly one selected Goa OneOf branch.
@@ -4976,6 +6002,245 @@ func (u *jsonStateTransport) UnmarshalJSON(data []byte) error {
 		u.NotCompleted = value
 	default:
 		return goa.InvalidEnumValueError("type", raw.Type, []any{string(jsonStateTransportKindRunning), string(jsonStateTransportKindCompleted), string(jsonStateTransportKindNotCompleted)})
+	}
+	return u.Validate()
+}
+
+// jsonTestsTransport stores exactly one selected Goa OneOf branch.
+type jsonTestsTransport struct {
+	kind         jsonTestsTransportKind
+	Assigned     *jsonTestsAssignedTransport
+	Reported     *jsonTestsReportedTransport
+	NeedsChanges *jsonTestsNeedChangesTransport
+	Accepted     *jsonTestsAcceptedTransport
+}
+
+// jsonTestsTransportKind identifies the selected branch of jsonTestsTransport.
+type jsonTestsTransportKind string
+
+const (
+	jsonTestsTransportKindAssigned     jsonTestsTransportKind = "assigned"
+	jsonTestsTransportKindReported     jsonTestsTransportKind = "reported"
+	jsonTestsTransportKindNeedsChanges jsonTestsTransportKind = "needs_changes"
+	jsonTestsTransportKindAccepted     jsonTestsTransportKind = "accepted"
+)
+
+// Kind returns the selected branch.
+func (u jsonTestsTransport) Kind() jsonTestsTransportKind {
+	return u.kind
+}
+
+// newjsonTestsTransportAssigned creates jsonTestsTransport with its assigned branch selected.
+func newjsonTestsTransportAssigned(value *jsonTestsAssignedTransport) jsonTestsTransport {
+	return jsonTestsTransport{kind: jsonTestsTransportKindAssigned, Assigned: value}
+}
+
+// AsAssigned returns the assigned branch when it is selected.
+func (u jsonTestsTransport) AsAssigned() (_ *jsonTestsAssignedTransport, ok bool) {
+	if u.kind != jsonTestsTransportKindAssigned {
+		return
+	}
+	return u.Assigned, true
+}
+
+// SetAssigned selects the assigned branch.
+func (u *jsonTestsTransport) SetAssigned(value *jsonTestsAssignedTransport) {
+	u.kind = jsonTestsTransportKindAssigned
+	u.Assigned = value
+}
+
+// newjsonTestsTransportReported creates jsonTestsTransport with its reported branch selected.
+func newjsonTestsTransportReported(value *jsonTestsReportedTransport) jsonTestsTransport {
+	return jsonTestsTransport{kind: jsonTestsTransportKindReported, Reported: value}
+}
+
+// AsReported returns the reported branch when it is selected.
+func (u jsonTestsTransport) AsReported() (_ *jsonTestsReportedTransport, ok bool) {
+	if u.kind != jsonTestsTransportKindReported {
+		return
+	}
+	return u.Reported, true
+}
+
+// SetReported selects the reported branch.
+func (u *jsonTestsTransport) SetReported(value *jsonTestsReportedTransport) {
+	u.kind = jsonTestsTransportKindReported
+	u.Reported = value
+}
+
+// newjsonTestsTransportNeedsChanges creates jsonTestsTransport with its needs_changes branch selected.
+func newjsonTestsTransportNeedsChanges(value *jsonTestsNeedChangesTransport) jsonTestsTransport {
+	return jsonTestsTransport{kind: jsonTestsTransportKindNeedsChanges, NeedsChanges: value}
+}
+
+// AsNeedsChanges returns the needs_changes branch when it is selected.
+func (u jsonTestsTransport) AsNeedsChanges() (_ *jsonTestsNeedChangesTransport, ok bool) {
+	if u.kind != jsonTestsTransportKindNeedsChanges {
+		return
+	}
+	return u.NeedsChanges, true
+}
+
+// SetNeedsChanges selects the needs_changes branch.
+func (u *jsonTestsTransport) SetNeedsChanges(value *jsonTestsNeedChangesTransport) {
+	u.kind = jsonTestsTransportKindNeedsChanges
+	u.NeedsChanges = value
+}
+
+// newjsonTestsTransportAccepted creates jsonTestsTransport with its accepted branch selected.
+func newjsonTestsTransportAccepted(value *jsonTestsAcceptedTransport) jsonTestsTransport {
+	return jsonTestsTransport{kind: jsonTestsTransportKindAccepted, Accepted: value}
+}
+
+// AsAccepted returns the accepted branch when it is selected.
+func (u jsonTestsTransport) AsAccepted() (_ *jsonTestsAcceptedTransport, ok bool) {
+	if u.kind != jsonTestsTransportKindAccepted {
+		return
+	}
+	return u.Accepted, true
+}
+
+// SetAccepted selects the accepted branch.
+func (u *jsonTestsTransport) SetAccepted(value *jsonTestsAcceptedTransport) {
+	u.kind = jsonTestsTransportKindAccepted
+	u.Accepted = value
+}
+
+// Validate checks that one complete branch is selected.
+func (u jsonTestsTransport) Validate() error {
+	switch u.kind {
+	case jsonTestsTransportKindAssigned:
+		if u.Assigned == nil {
+			return goa.MissingFieldError("value", "jsonTestsTransport")
+		}
+		return nil
+	case jsonTestsTransportKindReported:
+		if u.Reported == nil {
+			return goa.MissingFieldError("value", "jsonTestsTransport")
+		}
+		return nil
+	case jsonTestsTransportKindNeedsChanges:
+		if u.NeedsChanges == nil {
+			return goa.MissingFieldError("value", "jsonTestsTransport")
+		}
+		return nil
+	case jsonTestsTransportKindAccepted:
+		if u.Accepted == nil {
+			return goa.MissingFieldError("value", "jsonTestsTransport")
+		}
+		return nil
+	case "":
+		return goa.MissingFieldError("state", "jsonTestsTransport")
+	default:
+		return goa.InvalidEnumValueError("state", u.kind, []any{string(jsonTestsTransportKindAssigned), string(jsonTestsTransportKindReported), string(jsonTestsTransportKindNeedsChanges), string(jsonTestsTransportKindAccepted)})
+	}
+}
+
+// MarshalJSON writes the selected branch name and value.
+func (u jsonTestsTransport) MarshalJSON() ([]byte, error) {
+	if err := u.Validate(); err != nil {
+		return nil, err
+	}
+	var value any
+	switch u.kind {
+	case jsonTestsTransportKindAssigned:
+		value = u.Assigned
+	case jsonTestsTransportKindReported:
+		value = u.Reported
+	case jsonTestsTransportKindNeedsChanges:
+		value = u.NeedsChanges
+	case jsonTestsTransportKindAccepted:
+		value = u.Accepted
+	default:
+		return nil, fmt.Errorf("unexpected jsonTestsTransport branch %q", u.kind)
+	}
+	data, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return nil, err
+	}
+	if fields == nil {
+		return nil, goa.InvalidFieldTypeError("state", nil, "non-null JSON object")
+	}
+	if _, exists := fields["state"]; exists {
+		return nil, fmt.Errorf("jsonTestsTransport branch already contains discriminator %q", "state")
+	}
+	tag, err := json.Marshal(string(u.kind))
+	if err != nil {
+		return nil, err
+	}
+	fields["state"] = tag
+	return json.Marshal(fields)
+}
+
+// UnmarshalJSON reads one complete branch name and value.
+func (u *jsonTestsTransport) UnmarshalJSON(data []byte) error {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return err
+	}
+	tag, exists := fields["state"]
+	if !exists {
+		return goa.MissingFieldError("state", "jsonTestsTransport")
+	}
+	if bytes.Equal(bytes.TrimSpace(tag), []byte("null")) {
+		return goa.InvalidFieldTypeError("state", nil, "JSON string")
+	}
+	var raw struct {
+		Type  string
+		Value json.RawMessage
+	}
+	if err := json.Unmarshal(tag, &raw.Type); err != nil {
+		return err
+	}
+	delete(fields, "state")
+	value, err := json.Marshal(fields)
+	if err != nil {
+		return err
+	}
+	raw.Value = value
+	switch raw.Type {
+	case string(jsonTestsTransportKindAssigned):
+		var value *jsonTestsAssignedTransport
+		decoder := json.NewDecoder(bytes.NewReader(raw.Value))
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&value); err != nil {
+			return err
+		}
+		u.kind = jsonTestsTransportKindAssigned
+		u.Assigned = value
+	case string(jsonTestsTransportKindReported):
+		var value *jsonTestsReportedTransport
+		decoder := json.NewDecoder(bytes.NewReader(raw.Value))
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&value); err != nil {
+			return err
+		}
+		u.kind = jsonTestsTransportKindReported
+		u.Reported = value
+	case string(jsonTestsTransportKindNeedsChanges):
+		var value *jsonTestsNeedChangesTransport
+		decoder := json.NewDecoder(bytes.NewReader(raw.Value))
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&value); err != nil {
+			return err
+		}
+		u.kind = jsonTestsTransportKindNeedsChanges
+		u.NeedsChanges = value
+	case string(jsonTestsTransportKindAccepted):
+		var value *jsonTestsAcceptedTransport
+		decoder := json.NewDecoder(bytes.NewReader(raw.Value))
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&value); err != nil {
+			return err
+		}
+		u.kind = jsonTestsTransportKindAccepted
+		u.Accepted = value
+	default:
+		return goa.InvalidEnumValueError("state", raw.Type, []any{string(jsonTestsTransportKindAssigned), string(jsonTestsTransportKindReported), string(jsonTestsTransportKindNeedsChanges), string(jsonTestsTransportKindAccepted)})
 	}
 	return u.Validate()
 }
@@ -5585,6 +6850,353 @@ func DecodeArchitecturePreviewResult(data []byte) (out *ArchitecturePreviewResul
 				continue
 			}
 			out.Tools[i] = decodeToolContractItemTransportToToolContractItem(val)
+		}
+	}
+	return out, nil
+}
+
+// EncodeBuildAssignment turns a service value into JSON using the field names in the Goa design.
+func EncodeBuildAssignment(in *BuildAssignment) ([]byte, error) {
+	if err := checkBuildAssignmentValue(in); err != nil {
+		return nil, fmt.Errorf("encode BuildAssignment JSON: %w", err)
+	}
+	if err := validateBuildAssignmentOriginal(in); err != nil {
+		return nil, fmt.Errorf("validate BuildAssignment value: %w", err)
+	}
+	var body *jsonBuildAssignmentTransport
+	{
+		body = &jsonBuildAssignmentTransport{
+			ChangeID:        &in.ChangeID,
+			RequestRevision: &in.RequestRevision,
+		}
+		body.Progress = encodeBuilderProgressToBuilderProgressTransport(in.Progress)
+	}
+	if err := validatejsonBuildAssignmentTransport(body); err != nil {
+		return nil, fmt.Errorf("validate BuildAssignment JSON: %w", err)
+	}
+	data, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("encode BuildAssignment JSON: %w", err)
+	}
+	return data, nil
+}
+
+// ValidateBuildAssignmentValue checks the original Go fields against their declared constraints.
+// It returns validation errors without encoding the value as JSON.
+
+func ValidateBuildAssignmentValue(in *BuildAssignment) error {
+	if err := checkBuildAssignmentValue(in); err != nil {
+		return fmt.Errorf("validate BuildAssignment value: %w", err)
+	}
+	if err := validateBuildAssignmentOriginal(in); err != nil {
+		return fmt.Errorf("validate BuildAssignment value: %w", err)
+	}
+
+	if in == nil {
+		return goa.MissingFieldError("result", "BuildAssignment")
+	}
+
+	var body *jsonBuildAssignmentTransport
+	{
+		body = &jsonBuildAssignmentTransport{
+			ChangeID:        &in.ChangeID,
+			RequestRevision: &in.RequestRevision,
+		}
+		body.Progress = encodeBuilderProgressToBuilderProgressTransport(in.Progress)
+	}
+	if err := validatejsonBuildAssignmentTransport(body); err != nil {
+		return fmt.Errorf("validate BuildAssignment value: %w", err)
+	}
+	return nil
+}
+
+// DecodeBuildAssignment checks JSON field names from the Goa design and returns a service value.
+func DecodeBuildAssignment(data []byte) (out *BuildAssignment, err error) {
+	root, err := readStrictJSON(data)
+	if err != nil {
+		return out, fmt.Errorf("decode BuildAssignment JSON: %w", err)
+	}
+	if err := validateBuildAssignmentJSONValue("", root, ""); err != nil {
+		return out, fmt.Errorf("decode BuildAssignment JSON: %w", err)
+	}
+	var body *jsonBuildAssignmentTransport
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&body); err != nil {
+		return out, fmt.Errorf("decode BuildAssignment JSON: %w", err)
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		if err == nil {
+			return out, fmt.Errorf("decode BuildAssignment JSON: multiple JSON values")
+		}
+		return out, fmt.Errorf("decode BuildAssignment JSON after first value: %w", err)
+	}
+	if err := validatejsonBuildAssignmentTransport(body); err != nil {
+		return out, fmt.Errorf("validate BuildAssignment JSON: %w", err)
+	}
+	{
+		out = &BuildAssignment{
+			ChangeID:        *body.ChangeID,
+			RequestRevision: *body.RequestRevision,
+		}
+		out.Progress = decodeBuilderProgressTransportToBuilderProgress(body.Progress)
+	}
+	return out, nil
+}
+
+// EncodeBuildAssignmentList turns a service value into JSON using the field names in the Goa design.
+func EncodeBuildAssignmentList(in *BuildAssignmentList) ([]byte, error) {
+	if err := checkBuildAssignmentListValue(in); err != nil {
+		return nil, fmt.Errorf("encode BuildAssignmentList JSON: %w", err)
+	}
+	if err := validateBuildAssignmentListOriginal(in); err != nil {
+		return nil, fmt.Errorf("validate BuildAssignmentList value: %w", err)
+	}
+	var body *jsonBuildAssignmentListTransport
+	{
+		body = &jsonBuildAssignmentListTransport{}
+		body.Assignments = make([]*jsonBuildAssignmentTransport, len(in.Assignments))
+		for i, val := range in.Assignments {
+			if val == nil {
+				body.Assignments[i] = nil
+				continue
+			}
+			body.Assignments[i] = encodeBuildAssignmentToBuildAssignmentTransport(val)
+		}
+	}
+	if err := validatejsonBuildAssignmentListTransport(body); err != nil {
+		return nil, fmt.Errorf("validate BuildAssignmentList JSON: %w", err)
+	}
+	data, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("encode BuildAssignmentList JSON: %w", err)
+	}
+	return data, nil
+}
+
+// ValidateBuildAssignmentListValue checks the original Go fields against their declared constraints.
+// It returns validation errors without encoding the value as JSON.
+
+func ValidateBuildAssignmentListValue(in *BuildAssignmentList) error {
+	if err := checkBuildAssignmentListValue(in); err != nil {
+		return fmt.Errorf("validate BuildAssignmentList value: %w", err)
+	}
+	if err := validateBuildAssignmentListOriginal(in); err != nil {
+		return fmt.Errorf("validate BuildAssignmentList value: %w", err)
+	}
+
+	if in == nil {
+		return goa.MissingFieldError("result", "BuildAssignmentList")
+	}
+
+	var body *jsonBuildAssignmentListTransport
+	{
+		body = &jsonBuildAssignmentListTransport{}
+		body.Assignments = make([]*jsonBuildAssignmentTransport, len(in.Assignments))
+		for i, val := range in.Assignments {
+			if val == nil {
+				body.Assignments[i] = nil
+				continue
+			}
+			body.Assignments[i] = encodeBuildAssignmentToBuildAssignmentTransport(val)
+		}
+	}
+	if err := validatejsonBuildAssignmentListTransport(body); err != nil {
+		return fmt.Errorf("validate BuildAssignmentList value: %w", err)
+	}
+	return nil
+}
+
+// DecodeBuildAssignmentList checks JSON field names from the Goa design and returns a service value.
+func DecodeBuildAssignmentList(data []byte) (out *BuildAssignmentList, err error) {
+	root, err := readStrictJSON(data)
+	if err != nil {
+		return out, fmt.Errorf("decode BuildAssignmentList JSON: %w", err)
+	}
+	if err := validateBuildAssignmentListJSONValue("", root, ""); err != nil {
+		return out, fmt.Errorf("decode BuildAssignmentList JSON: %w", err)
+	}
+	var body *jsonBuildAssignmentListTransport
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&body); err != nil {
+		return out, fmt.Errorf("decode BuildAssignmentList JSON: %w", err)
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		if err == nil {
+			return out, fmt.Errorf("decode BuildAssignmentList JSON: multiple JSON values")
+		}
+		return out, fmt.Errorf("decode BuildAssignmentList JSON after first value: %w", err)
+	}
+	if err := validatejsonBuildAssignmentListTransport(body); err != nil {
+		return out, fmt.Errorf("validate BuildAssignmentList JSON: %w", err)
+	}
+	{
+		out = &BuildAssignmentList{}
+		out.Assignments = make([]*BuildAssignment, len(body.Assignments))
+		for i, val := range body.Assignments {
+			if val == nil {
+				out.Assignments[i] = nil
+				continue
+			}
+			out.Assignments[i] = decodeBuildAssignmentTransportToBuildAssignment(val)
+		}
+	}
+	return out, nil
+}
+
+// EncodeBuildNotStarted turns a service value into JSON using the field names in the Goa design.
+func EncodeBuildNotStarted(in *BuildNotStarted) ([]byte, error) {
+	if err := checkBuildNotStartedValue(in); err != nil {
+		return nil, fmt.Errorf("encode BuildNotStarted JSON: %w", err)
+	}
+	var body *jsonBuildNotStartedTransport
+	{
+		body = &jsonBuildNotStartedTransport{}
+	}
+	if err := validatejsonBuildNotStartedTransport(body); err != nil {
+		return nil, fmt.Errorf("validate BuildNotStarted JSON: %w", err)
+	}
+	data, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("encode BuildNotStarted JSON: %w", err)
+	}
+	return data, nil
+}
+
+// ValidateBuildNotStartedValue checks the original Go fields against their declared constraints.
+// It returns validation errors without encoding the value as JSON.
+
+func ValidateBuildNotStartedValue(in *BuildNotStarted) error {
+	if err := checkBuildNotStartedValue(in); err != nil {
+		return fmt.Errorf("validate BuildNotStarted value: %w", err)
+	}
+
+	if in == nil {
+		return goa.MissingFieldError("result", "BuildNotStarted")
+	}
+
+	var body *jsonBuildNotStartedTransport
+	{
+		body = &jsonBuildNotStartedTransport{}
+	}
+	if err := validatejsonBuildNotStartedTransport(body); err != nil {
+		return fmt.Errorf("validate BuildNotStarted value: %w", err)
+	}
+	return nil
+}
+
+// DecodeBuildNotStarted checks JSON field names from the Goa design and returns a service value.
+func DecodeBuildNotStarted(data []byte) (out *BuildNotStarted, err error) {
+	root, err := readStrictJSON(data)
+	if err != nil {
+		return out, fmt.Errorf("decode BuildNotStarted JSON: %w", err)
+	}
+	if err := validateBuildNotStartedJSONValue("", root, ""); err != nil {
+		return out, fmt.Errorf("decode BuildNotStarted JSON: %w", err)
+	}
+	var body *jsonBuildNotStartedTransport
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&body); err != nil {
+		return out, fmt.Errorf("decode BuildNotStarted JSON: %w", err)
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		if err == nil {
+			return out, fmt.Errorf("decode BuildNotStarted JSON: multiple JSON values")
+		}
+		return out, fmt.Errorf("decode BuildNotStarted JSON after first value: %w", err)
+	}
+	if err := validatejsonBuildNotStartedTransport(body); err != nil {
+		return out, fmt.Errorf("validate BuildNotStarted JSON: %w", err)
+	}
+	{
+		out = &BuildNotStarted{}
+	}
+	return out, nil
+}
+
+// EncodeBuilderProgress turns a service value into JSON using the field names in the Goa design.
+func EncodeBuilderProgress(in *BuilderProgress) ([]byte, error) {
+	if err := checkBuilderProgressValue(in); err != nil {
+		return nil, fmt.Errorf("encode BuilderProgress JSON: %w", err)
+	}
+	if err := validateBuilderProgressOriginal(in); err != nil {
+		return nil, fmt.Errorf("validate BuilderProgress value: %w", err)
+	}
+	var body *jsonBuilderProgressTransport
+	{
+		body = &jsonBuilderProgressTransport{
+			State: &in.State,
+			Read:  &in.Read,
+		}
+	}
+	if err := validatejsonBuilderProgressTransport(body); err != nil {
+		return nil, fmt.Errorf("validate BuilderProgress JSON: %w", err)
+	}
+	data, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("encode BuilderProgress JSON: %w", err)
+	}
+	return data, nil
+}
+
+// ValidateBuilderProgressValue checks the original Go fields against their declared constraints.
+// It returns validation errors without encoding the value as JSON.
+
+func ValidateBuilderProgressValue(in *BuilderProgress) error {
+	if err := checkBuilderProgressValue(in); err != nil {
+		return fmt.Errorf("validate BuilderProgress value: %w", err)
+	}
+	if err := validateBuilderProgressOriginal(in); err != nil {
+		return fmt.Errorf("validate BuilderProgress value: %w", err)
+	}
+
+	if in == nil {
+		return goa.MissingFieldError("result", "BuilderProgress")
+	}
+
+	var body *jsonBuilderProgressTransport
+	{
+		body = &jsonBuilderProgressTransport{
+			State: &in.State,
+			Read:  &in.Read,
+		}
+	}
+	if err := validatejsonBuilderProgressTransport(body); err != nil {
+		return fmt.Errorf("validate BuilderProgress value: %w", err)
+	}
+	return nil
+}
+
+// DecodeBuilderProgress checks JSON field names from the Goa design and returns a service value.
+func DecodeBuilderProgress(data []byte) (out *BuilderProgress, err error) {
+	root, err := readStrictJSON(data)
+	if err != nil {
+		return out, fmt.Errorf("decode BuilderProgress JSON: %w", err)
+	}
+	if err := validateBuildAssignmentJSONValue2("", root, ""); err != nil {
+		return out, fmt.Errorf("decode BuilderProgress JSON: %w", err)
+	}
+	var body *jsonBuilderProgressTransport
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&body); err != nil {
+		return out, fmt.Errorf("decode BuilderProgress JSON: %w", err)
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		if err == nil {
+			return out, fmt.Errorf("decode BuilderProgress JSON: multiple JSON values")
+		}
+		return out, fmt.Errorf("decode BuilderProgress JSON after first value: %w", err)
+	}
+	if err := validatejsonBuilderProgressTransport(body); err != nil {
+		return out, fmt.Errorf("validate BuilderProgress JSON: %w", err)
+	}
+	{
+		out = &BuilderProgress{
+			State: *body.State,
+			Read:  *body.Read,
 		}
 	}
 	return out, nil
@@ -6478,6 +8090,153 @@ func DecodeCP1RevisionAnalysisExample(data []byte) (out *CP1RevisionAnalysisExam
 			InputSummary:     *body.InputSummary,
 			ExpectedOutcome:  *body.ExpectedOutcome,
 			VerificationKind: *body.VerificationKind,
+		}
+	}
+	return out, nil
+}
+
+// EncodeChangeBuild turns a service value into JSON using the field names in the Goa design.
+func EncodeChangeBuild(in *ChangeBuild) ([]byte, error) {
+	if err := checkChangeBuildValue(in); err != nil {
+		return nil, fmt.Errorf("encode ChangeBuild JSON: %w", err)
+	}
+	if err := validateChangeBuildOriginal(in); err != nil {
+		return nil, fmt.Errorf("validate ChangeBuild value: %w", err)
+	}
+	var body *jsonChangeBuildTransport
+	{
+		body = &jsonChangeBuildTransport{
+			ChangeID: &in.ChangeID,
+		}
+		var buildValue jsonBuildTransport
+		switch string(in.Build.Kind()) {
+		case "not_started":
+			actual, _ := in.Build.AsNotStarted()
+			var obj *jsonBuildNotStartedTransport
+			if actual != nil {
+				obj = encodeBuildNotStartedToBuildNotStartedTransport(actual)
+			}
+			u := buildValue
+			u.SetNotStarted((*jsonBuildNotStartedTransport)(obj))
+			buildValue = u
+		case "started":
+			actual, _ := in.Build.AsStarted()
+			var obj *jsonStartedBuildTransport
+			if actual != nil {
+				obj = encodeStartedBuildToStartedBuildTransport(actual)
+			}
+			u := buildValue
+			u.SetStarted((*jsonStartedBuildTransport)(obj))
+			buildValue = u
+		}
+		body.Build = &buildValue
+	}
+	if err := validatejsonChangeBuildTransport(body); err != nil {
+		return nil, fmt.Errorf("validate ChangeBuild JSON: %w", err)
+	}
+	data, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("encode ChangeBuild JSON: %w", err)
+	}
+	return data, nil
+}
+
+// ValidateChangeBuildValue checks the original Go fields against their declared constraints.
+// It returns validation errors without encoding the value as JSON.
+
+func ValidateChangeBuildValue(in *ChangeBuild) error {
+	if err := checkChangeBuildValue(in); err != nil {
+		return fmt.Errorf("validate ChangeBuild value: %w", err)
+	}
+	if err := validateChangeBuildOriginal(in); err != nil {
+		return fmt.Errorf("validate ChangeBuild value: %w", err)
+	}
+
+	if in == nil {
+		return goa.MissingFieldError("result", "ChangeBuild")
+	}
+
+	var body *jsonChangeBuildTransport
+	{
+		body = &jsonChangeBuildTransport{
+			ChangeID: &in.ChangeID,
+		}
+		var buildValue jsonBuildTransport
+		switch string(in.Build.Kind()) {
+		case "not_started":
+			actual, _ := in.Build.AsNotStarted()
+			var obj *jsonBuildNotStartedTransport
+			if actual != nil {
+				obj = encodeBuildNotStartedToBuildNotStartedTransport(actual)
+			}
+			u := buildValue
+			u.SetNotStarted((*jsonBuildNotStartedTransport)(obj))
+			buildValue = u
+		case "started":
+			actual, _ := in.Build.AsStarted()
+			var obj *jsonStartedBuildTransport
+			if actual != nil {
+				obj = encodeStartedBuildToStartedBuildTransport(actual)
+			}
+			u := buildValue
+			u.SetStarted((*jsonStartedBuildTransport)(obj))
+			buildValue = u
+		}
+		body.Build = &buildValue
+	}
+	if err := validatejsonChangeBuildTransport(body); err != nil {
+		return fmt.Errorf("validate ChangeBuild value: %w", err)
+	}
+	return nil
+}
+
+// DecodeChangeBuild checks JSON field names from the Goa design and returns a service value.
+func DecodeChangeBuild(data []byte) (out *ChangeBuild, err error) {
+	root, err := readStrictJSON(data)
+	if err != nil {
+		return out, fmt.Errorf("decode ChangeBuild JSON: %w", err)
+	}
+	if err := validateChangeBuildJSONValue("", root, ""); err != nil {
+		return out, fmt.Errorf("decode ChangeBuild JSON: %w", err)
+	}
+	var body *jsonChangeBuildTransport
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&body); err != nil {
+		return out, fmt.Errorf("decode ChangeBuild JSON: %w", err)
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		if err == nil {
+			return out, fmt.Errorf("decode ChangeBuild JSON: multiple JSON values")
+		}
+		return out, fmt.Errorf("decode ChangeBuild JSON after first value: %w", err)
+	}
+	if err := validatejsonChangeBuildTransport(body); err != nil {
+		return out, fmt.Errorf("validate ChangeBuild JSON: %w", err)
+	}
+	{
+		out = &ChangeBuild{
+			ChangeID: *body.ChangeID,
+		}
+		switch string(body.Build.Kind()) {
+		case "not_started":
+			actual, _ := body.Build.AsNotStarted()
+			var obj *BuildNotStarted
+			if actual != nil {
+				obj = decodeBuildNotStartedTransportToBuildNotStarted(actual)
+			}
+			u := out.Build
+			u.SetNotStarted((*BuildNotStarted)(obj))
+			out.Build = u
+		case "started":
+			actual, _ := body.Build.AsStarted()
+			var obj *StartedBuild
+			if actual != nil {
+				obj = decodeStartedBuildTransportToStartedBuild(actual)
+			}
+			u := out.Build
+			u.SetStarted((*StartedBuild)(obj))
+			out.Build = u
 		}
 	}
 	return out, nil
@@ -9207,6 +10966,92 @@ func DecodeReadCheckOutputPayload(data []byte) (out *ReadCheckOutputPayload, err
 	return out, nil
 }
 
+// EncodeRequiredTest turns a service value into JSON using the field names in the Goa design.
+func EncodeRequiredTest(in *RequiredTest) ([]byte, error) {
+	if err := checkRequiredTestValue(in); err != nil {
+		return nil, fmt.Errorf("encode RequiredTest JSON: %w", err)
+	}
+	var body *jsonRequiredTestTransport
+	{
+		body = &jsonRequiredTestTransport{
+			Story:    &in.Story,
+			FlowKey:  &in.FlowKey,
+			Scenario: &in.Scenario,
+			Hook:     &in.Hook,
+		}
+	}
+	if err := validatejsonRequiredTestTransport(body); err != nil {
+		return nil, fmt.Errorf("validate RequiredTest JSON: %w", err)
+	}
+	data, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("encode RequiredTest JSON: %w", err)
+	}
+	return data, nil
+}
+
+// ValidateRequiredTestValue checks the original Go fields against their declared constraints.
+// It returns validation errors without encoding the value as JSON.
+
+func ValidateRequiredTestValue(in *RequiredTest) error {
+	if err := checkRequiredTestValue(in); err != nil {
+		return fmt.Errorf("validate RequiredTest value: %w", err)
+	}
+
+	if in == nil {
+		return goa.MissingFieldError("result", "RequiredTest")
+	}
+
+	var body *jsonRequiredTestTransport
+	{
+		body = &jsonRequiredTestTransport{
+			Story:    &in.Story,
+			FlowKey:  &in.FlowKey,
+			Scenario: &in.Scenario,
+			Hook:     &in.Hook,
+		}
+	}
+	if err := validatejsonRequiredTestTransport(body); err != nil {
+		return fmt.Errorf("validate RequiredTest value: %w", err)
+	}
+	return nil
+}
+
+// DecodeRequiredTest checks JSON field names from the Goa design and returns a service value.
+func DecodeRequiredTest(data []byte) (out *RequiredTest, err error) {
+	root, err := readStrictJSON(data)
+	if err != nil {
+		return out, fmt.Errorf("decode RequiredTest JSON: %w", err)
+	}
+	if err := validateRequiredTestJSONValue("", root, ""); err != nil {
+		return out, fmt.Errorf("decode RequiredTest JSON: %w", err)
+	}
+	var body *jsonRequiredTestTransport
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&body); err != nil {
+		return out, fmt.Errorf("decode RequiredTest JSON: %w", err)
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		if err == nil {
+			return out, fmt.Errorf("decode RequiredTest JSON: multiple JSON values")
+		}
+		return out, fmt.Errorf("decode RequiredTest JSON after first value: %w", err)
+	}
+	if err := validatejsonRequiredTestTransport(body); err != nil {
+		return out, fmt.Errorf("validate RequiredTest JSON: %w", err)
+	}
+	{
+		out = &RequiredTest{
+			Story:    *body.Story,
+			FlowKey:  *body.FlowKey,
+			Scenario: *body.Scenario,
+			Hook:     *body.Hook,
+		}
+	}
+	return out, nil
+}
+
 // EncodeReviseChangePayload turns a service value into JSON using the field names in the Goa design.
 func EncodeReviseChangePayload(in *ReviseChangePayload) ([]byte, error) {
 	if err := checkReviseChangePayloadValue(in); err != nil {
@@ -9381,6 +11226,101 @@ func DecodeStartLiveTargetPayload(data []byte) (out *StartLiveTargetPayload, err
 		out = &StartLiveTargetPayload{
 			CandidateCommit: *body.CandidateCommit,
 		}
+	}
+	return out, nil
+}
+
+// EncodeStartedBuild turns a service value into JSON using the field names in the Goa design.
+func EncodeStartedBuild(in *StartedBuild) ([]byte, error) {
+	if err := checkStartedBuildValue(in); err != nil {
+		return nil, fmt.Errorf("encode StartedBuild JSON: %w", err)
+	}
+	if err := validateStartedBuildOriginal(in); err != nil {
+		return nil, fmt.Errorf("validate StartedBuild value: %w", err)
+	}
+	var body *jsonStartedBuildTransport
+	{
+		body = &jsonStartedBuildTransport{
+			RequestRevision: &in.RequestRevision,
+			StartedAt:       &in.StartedAt,
+			InForce:         &in.InForce,
+		}
+		body.Builder = encodeBuilderProgressToBuilderProgressTransport2(in.Builder)
+		body.TestWriter = encodeTestWriterProgressToTestWriterProgressTransport(in.TestWriter)
+	}
+	if err := validatejsonStartedBuildTransport(body); err != nil {
+		return nil, fmt.Errorf("validate StartedBuild JSON: %w", err)
+	}
+	data, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("encode StartedBuild JSON: %w", err)
+	}
+	return data, nil
+}
+
+// ValidateStartedBuildValue checks the original Go fields against their declared constraints.
+// It returns validation errors without encoding the value as JSON.
+
+func ValidateStartedBuildValue(in *StartedBuild) error {
+	if err := checkStartedBuildValue(in); err != nil {
+		return fmt.Errorf("validate StartedBuild value: %w", err)
+	}
+	if err := validateStartedBuildOriginal(in); err != nil {
+		return fmt.Errorf("validate StartedBuild value: %w", err)
+	}
+
+	if in == nil {
+		return goa.MissingFieldError("result", "StartedBuild")
+	}
+
+	var body *jsonStartedBuildTransport
+	{
+		body = &jsonStartedBuildTransport{
+			RequestRevision: &in.RequestRevision,
+			StartedAt:       &in.StartedAt,
+			InForce:         &in.InForce,
+		}
+		body.Builder = encodeBuilderProgressToBuilderProgressTransport2(in.Builder)
+		body.TestWriter = encodeTestWriterProgressToTestWriterProgressTransport(in.TestWriter)
+	}
+	if err := validatejsonStartedBuildTransport(body); err != nil {
+		return fmt.Errorf("validate StartedBuild value: %w", err)
+	}
+	return nil
+}
+
+// DecodeStartedBuild checks JSON field names from the Goa design and returns a service value.
+func DecodeStartedBuild(data []byte) (out *StartedBuild, err error) {
+	root, err := readStrictJSON(data)
+	if err != nil {
+		return out, fmt.Errorf("decode StartedBuild JSON: %w", err)
+	}
+	if err := validateChangeBuildJSONValue3("", root, ""); err != nil {
+		return out, fmt.Errorf("decode StartedBuild JSON: %w", err)
+	}
+	var body *jsonStartedBuildTransport
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&body); err != nil {
+		return out, fmt.Errorf("decode StartedBuild JSON: %w", err)
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		if err == nil {
+			return out, fmt.Errorf("decode StartedBuild JSON: multiple JSON values")
+		}
+		return out, fmt.Errorf("decode StartedBuild JSON after first value: %w", err)
+	}
+	if err := validatejsonStartedBuildTransport(body); err != nil {
+		return out, fmt.Errorf("validate StartedBuild JSON: %w", err)
+	}
+	{
+		out = &StartedBuild{
+			RequestRevision: *body.RequestRevision,
+			StartedAt:       *body.StartedAt,
+			InForce:         *body.InForce,
+		}
+		out.Builder = decodeBuilderProgressTransportToBuilderProgress(body.Builder)
+		out.TestWriter = decodeTestWriterProgressTransportToTestWriterProgress(body.TestWriter)
 	}
 	return out, nil
 }
@@ -10157,6 +12097,851 @@ func DecodeStorySummaryItem(data []byte) (out *StorySummaryItem, err error) {
 			}
 			out.Flows[i] = decodeStoryFlowItemTransportToStoryFlowItem(val)
 		}
+	}
+	return out, nil
+}
+
+// EncodeTestAssignment turns a service value into JSON using the field names in the Goa design.
+func EncodeTestAssignment(in *TestAssignment) ([]byte, error) {
+	if err := checkTestAssignmentValue(in); err != nil {
+		return nil, fmt.Errorf("encode TestAssignment JSON: %w", err)
+	}
+	if err := validateTestAssignmentOriginal(in); err != nil {
+		return nil, fmt.Errorf("validate TestAssignment value: %w", err)
+	}
+	var body *jsonTestAssignmentTransport
+	{
+		body = &jsonTestAssignmentTransport{
+			ChangeID:        &in.ChangeID,
+			RequestRevision: &in.RequestRevision,
+			WorkingFolder:   &in.WorkingFolder,
+		}
+		body.Progress = encodeTestWriterProgressToTestWriterProgressTransport2(in.Progress)
+		body.Stories = make([]*jsonStorySummaryItemTransport, len(in.Stories))
+		for i, val := range in.Stories {
+			if val == nil {
+				body.Stories[i] = nil
+				continue
+			}
+			body.Stories[i] = encodeStorySummaryItemToStorySummaryItemTransport(val)
+		}
+		body.RequiredTests = make([]*jsonRequiredTestTransport, len(in.RequiredTests))
+		for i, val := range in.RequiredTests {
+			if val == nil {
+				body.RequiredTests[i] = nil
+				continue
+			}
+			body.RequiredTests[i] = encodeRequiredTestToRequiredTestTransport(val)
+		}
+	}
+	if err := validatejsonTestAssignmentTransport(body); err != nil {
+		return nil, fmt.Errorf("validate TestAssignment JSON: %w", err)
+	}
+	data, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("encode TestAssignment JSON: %w", err)
+	}
+	return data, nil
+}
+
+// ValidateTestAssignmentValue checks the original Go fields against their declared constraints.
+// It returns validation errors without encoding the value as JSON.
+
+func ValidateTestAssignmentValue(in *TestAssignment) error {
+	if err := checkTestAssignmentValue(in); err != nil {
+		return fmt.Errorf("validate TestAssignment value: %w", err)
+	}
+	if err := validateTestAssignmentOriginal(in); err != nil {
+		return fmt.Errorf("validate TestAssignment value: %w", err)
+	}
+
+	if in == nil {
+		return goa.MissingFieldError("result", "TestAssignment")
+	}
+
+	var body *jsonTestAssignmentTransport
+	{
+		body = &jsonTestAssignmentTransport{
+			ChangeID:        &in.ChangeID,
+			RequestRevision: &in.RequestRevision,
+			WorkingFolder:   &in.WorkingFolder,
+		}
+		body.Progress = encodeTestWriterProgressToTestWriterProgressTransport2(in.Progress)
+		body.Stories = make([]*jsonStorySummaryItemTransport, len(in.Stories))
+		for i, val := range in.Stories {
+			if val == nil {
+				body.Stories[i] = nil
+				continue
+			}
+			body.Stories[i] = encodeStorySummaryItemToStorySummaryItemTransport(val)
+		}
+		body.RequiredTests = make([]*jsonRequiredTestTransport, len(in.RequiredTests))
+		for i, val := range in.RequiredTests {
+			if val == nil {
+				body.RequiredTests[i] = nil
+				continue
+			}
+			body.RequiredTests[i] = encodeRequiredTestToRequiredTestTransport(val)
+		}
+	}
+	if err := validatejsonTestAssignmentTransport(body); err != nil {
+		return fmt.Errorf("validate TestAssignment value: %w", err)
+	}
+	return nil
+}
+
+// DecodeTestAssignment checks JSON field names from the Goa design and returns a service value.
+func DecodeTestAssignment(data []byte) (out *TestAssignment, err error) {
+	root, err := readStrictJSON(data)
+	if err != nil {
+		return out, fmt.Errorf("decode TestAssignment JSON: %w", err)
+	}
+	if err := validateTestAssignmentJSONValue("", root, ""); err != nil {
+		return out, fmt.Errorf("decode TestAssignment JSON: %w", err)
+	}
+	var body *jsonTestAssignmentTransport
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&body); err != nil {
+		return out, fmt.Errorf("decode TestAssignment JSON: %w", err)
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		if err == nil {
+			return out, fmt.Errorf("decode TestAssignment JSON: multiple JSON values")
+		}
+		return out, fmt.Errorf("decode TestAssignment JSON after first value: %w", err)
+	}
+	if err := validatejsonTestAssignmentTransport(body); err != nil {
+		return out, fmt.Errorf("validate TestAssignment JSON: %w", err)
+	}
+	{
+		out = &TestAssignment{
+			ChangeID:        *body.ChangeID,
+			RequestRevision: *body.RequestRevision,
+			WorkingFolder:   *body.WorkingFolder,
+		}
+		out.Progress = decodeTestWriterProgressTransportToTestWriterProgress(body.Progress)
+		out.Stories = make([]*StorySummaryItem, len(body.Stories))
+		for i, val := range body.Stories {
+			if val == nil {
+				out.Stories[i] = nil
+				continue
+			}
+			out.Stories[i] = decodeStorySummaryItemTransportToStorySummaryItem(val)
+		}
+		out.RequiredTests = make([]*RequiredTest, len(body.RequiredTests))
+		for i, val := range body.RequiredTests {
+			if val == nil {
+				out.RequiredTests[i] = nil
+				continue
+			}
+			out.RequiredTests[i] = decodeRequiredTestTransportToRequiredTest(val)
+		}
+	}
+	return out, nil
+}
+
+// EncodeTestAssignmentItem turns a service value into JSON using the field names in the Goa design.
+func EncodeTestAssignmentItem(in *TestAssignmentItem) ([]byte, error) {
+	if err := checkTestAssignmentItemValue(in); err != nil {
+		return nil, fmt.Errorf("encode TestAssignmentItem JSON: %w", err)
+	}
+	if err := validateTestAssignmentItemOriginal(in); err != nil {
+		return nil, fmt.Errorf("validate TestAssignmentItem value: %w", err)
+	}
+	var body *jsonTestAssignmentItemTransport
+	{
+		body = &jsonTestAssignmentItemTransport{
+			ChangeID:        &in.ChangeID,
+			RequestRevision: &in.RequestRevision,
+		}
+		body.Progress = encodeTestWriterProgressToTestWriterProgressTransport3(in.Progress)
+	}
+	if err := validatejsonTestAssignmentItemTransport(body); err != nil {
+		return nil, fmt.Errorf("validate TestAssignmentItem JSON: %w", err)
+	}
+	data, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("encode TestAssignmentItem JSON: %w", err)
+	}
+	return data, nil
+}
+
+// ValidateTestAssignmentItemValue checks the original Go fields against their declared constraints.
+// It returns validation errors without encoding the value as JSON.
+
+func ValidateTestAssignmentItemValue(in *TestAssignmentItem) error {
+	if err := checkTestAssignmentItemValue(in); err != nil {
+		return fmt.Errorf("validate TestAssignmentItem value: %w", err)
+	}
+	if err := validateTestAssignmentItemOriginal(in); err != nil {
+		return fmt.Errorf("validate TestAssignmentItem value: %w", err)
+	}
+
+	if in == nil {
+		return goa.MissingFieldError("result", "TestAssignmentItem")
+	}
+
+	var body *jsonTestAssignmentItemTransport
+	{
+		body = &jsonTestAssignmentItemTransport{
+			ChangeID:        &in.ChangeID,
+			RequestRevision: &in.RequestRevision,
+		}
+		body.Progress = encodeTestWriterProgressToTestWriterProgressTransport3(in.Progress)
+	}
+	if err := validatejsonTestAssignmentItemTransport(body); err != nil {
+		return fmt.Errorf("validate TestAssignmentItem value: %w", err)
+	}
+	return nil
+}
+
+// DecodeTestAssignmentItem checks JSON field names from the Goa design and returns a service value.
+func DecodeTestAssignmentItem(data []byte) (out *TestAssignmentItem, err error) {
+	root, err := readStrictJSON(data)
+	if err != nil {
+		return out, fmt.Errorf("decode TestAssignmentItem JSON: %w", err)
+	}
+	if err := validateTestAssignmentItemJSONValue("", root, ""); err != nil {
+		return out, fmt.Errorf("decode TestAssignmentItem JSON: %w", err)
+	}
+	var body *jsonTestAssignmentItemTransport
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&body); err != nil {
+		return out, fmt.Errorf("decode TestAssignmentItem JSON: %w", err)
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		if err == nil {
+			return out, fmt.Errorf("decode TestAssignmentItem JSON: multiple JSON values")
+		}
+		return out, fmt.Errorf("decode TestAssignmentItem JSON after first value: %w", err)
+	}
+	if err := validatejsonTestAssignmentItemTransport(body); err != nil {
+		return out, fmt.Errorf("validate TestAssignmentItem JSON: %w", err)
+	}
+	{
+		out = &TestAssignmentItem{
+			ChangeID:        *body.ChangeID,
+			RequestRevision: *body.RequestRevision,
+		}
+		out.Progress = decodeTestWriterProgressTransportToTestWriterProgress(body.Progress)
+	}
+	return out, nil
+}
+
+// EncodeTestAssignmentList turns a service value into JSON using the field names in the Goa design.
+func EncodeTestAssignmentList(in *TestAssignmentList) ([]byte, error) {
+	if err := checkTestAssignmentListValue(in); err != nil {
+		return nil, fmt.Errorf("encode TestAssignmentList JSON: %w", err)
+	}
+	if err := validateTestAssignmentListOriginal(in); err != nil {
+		return nil, fmt.Errorf("validate TestAssignmentList value: %w", err)
+	}
+	var body *jsonTestAssignmentListTransport
+	{
+		body = &jsonTestAssignmentListTransport{}
+		body.Assignments = make([]*jsonTestAssignmentItemTransport, len(in.Assignments))
+		for i, val := range in.Assignments {
+			if val == nil {
+				body.Assignments[i] = nil
+				continue
+			}
+			body.Assignments[i] = encodeTestAssignmentItemToTestAssignmentItemTransport(val)
+		}
+	}
+	if err := validatejsonTestAssignmentListTransport(body); err != nil {
+		return nil, fmt.Errorf("validate TestAssignmentList JSON: %w", err)
+	}
+	data, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("encode TestAssignmentList JSON: %w", err)
+	}
+	return data, nil
+}
+
+// ValidateTestAssignmentListValue checks the original Go fields against their declared constraints.
+// It returns validation errors without encoding the value as JSON.
+
+func ValidateTestAssignmentListValue(in *TestAssignmentList) error {
+	if err := checkTestAssignmentListValue(in); err != nil {
+		return fmt.Errorf("validate TestAssignmentList value: %w", err)
+	}
+	if err := validateTestAssignmentListOriginal(in); err != nil {
+		return fmt.Errorf("validate TestAssignmentList value: %w", err)
+	}
+
+	if in == nil {
+		return goa.MissingFieldError("result", "TestAssignmentList")
+	}
+
+	var body *jsonTestAssignmentListTransport
+	{
+		body = &jsonTestAssignmentListTransport{}
+		body.Assignments = make([]*jsonTestAssignmentItemTransport, len(in.Assignments))
+		for i, val := range in.Assignments {
+			if val == nil {
+				body.Assignments[i] = nil
+				continue
+			}
+			body.Assignments[i] = encodeTestAssignmentItemToTestAssignmentItemTransport(val)
+		}
+	}
+	if err := validatejsonTestAssignmentListTransport(body); err != nil {
+		return fmt.Errorf("validate TestAssignmentList value: %w", err)
+	}
+	return nil
+}
+
+// DecodeTestAssignmentList checks JSON field names from the Goa design and returns a service value.
+func DecodeTestAssignmentList(data []byte) (out *TestAssignmentList, err error) {
+	root, err := readStrictJSON(data)
+	if err != nil {
+		return out, fmt.Errorf("decode TestAssignmentList JSON: %w", err)
+	}
+	if err := validateTestAssignmentListJSONValue("", root, ""); err != nil {
+		return out, fmt.Errorf("decode TestAssignmentList JSON: %w", err)
+	}
+	var body *jsonTestAssignmentListTransport
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&body); err != nil {
+		return out, fmt.Errorf("decode TestAssignmentList JSON: %w", err)
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		if err == nil {
+			return out, fmt.Errorf("decode TestAssignmentList JSON: multiple JSON values")
+		}
+		return out, fmt.Errorf("decode TestAssignmentList JSON after first value: %w", err)
+	}
+	if err := validatejsonTestAssignmentListTransport(body); err != nil {
+		return out, fmt.Errorf("validate TestAssignmentList JSON: %w", err)
+	}
+	{
+		out = &TestAssignmentList{}
+		out.Assignments = make([]*TestAssignmentItem, len(body.Assignments))
+		for i, val := range body.Assignments {
+			if val == nil {
+				out.Assignments[i] = nil
+				continue
+			}
+			out.Assignments[i] = decodeTestAssignmentItemTransportToTestAssignmentItem(val)
+		}
+	}
+	return out, nil
+}
+
+// EncodeTestWriterProgress turns a service value into JSON using the field names in the Goa design.
+func EncodeTestWriterProgress(in *TestWriterProgress) ([]byte, error) {
+	if err := checkTestWriterProgressValue(in); err != nil {
+		return nil, fmt.Errorf("encode TestWriterProgress JSON: %w", err)
+	}
+	if err := validateTestWriterProgressOriginal(in); err != nil {
+		return nil, fmt.Errorf("validate TestWriterProgress value: %w", err)
+	}
+	var body *jsonTestWriterProgressTransport
+	{
+		body = &jsonTestWriterProgressTransport{
+			Read: &in.Read,
+		}
+		var testsValue jsonTestsTransport
+		switch string(in.Tests.Kind()) {
+		case "assigned":
+			actual, _ := in.Tests.AsAssigned()
+			var obj *jsonTestsAssignedTransport
+			if actual != nil {
+				obj = encodeTestsAssignedToTestsAssignedTransport(actual)
+			}
+			u := testsValue
+			u.SetAssigned((*jsonTestsAssignedTransport)(obj))
+			testsValue = u
+		case "reported":
+			actual, _ := in.Tests.AsReported()
+			var obj *jsonTestsReportedTransport
+			if actual != nil {
+				obj = encodeTestsReportedToTestsReportedTransport(actual)
+			}
+			u := testsValue
+			u.SetReported((*jsonTestsReportedTransport)(obj))
+			testsValue = u
+		case "needs_changes":
+			actual, _ := in.Tests.AsNeedsChanges()
+			var obj *jsonTestsNeedChangesTransport
+			if actual != nil {
+				obj = encodeTestsNeedChangesToTestsNeedChangesTransport(actual)
+			}
+			u := testsValue
+			u.SetNeedsChanges((*jsonTestsNeedChangesTransport)(obj))
+			testsValue = u
+		case "accepted":
+			actual, _ := in.Tests.AsAccepted()
+			var obj *jsonTestsAcceptedTransport
+			if actual != nil {
+				obj = encodeTestsAcceptedToTestsAcceptedTransport(actual)
+			}
+			u := testsValue
+			u.SetAccepted((*jsonTestsAcceptedTransport)(obj))
+			testsValue = u
+		}
+		body.Tests = &testsValue
+	}
+	if err := validatejsonTestWriterProgressTransport(body); err != nil {
+		return nil, fmt.Errorf("validate TestWriterProgress JSON: %w", err)
+	}
+	data, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("encode TestWriterProgress JSON: %w", err)
+	}
+	return data, nil
+}
+
+// ValidateTestWriterProgressValue checks the original Go fields against their declared constraints.
+// It returns validation errors without encoding the value as JSON.
+
+func ValidateTestWriterProgressValue(in *TestWriterProgress) error {
+	if err := checkTestWriterProgressValue(in); err != nil {
+		return fmt.Errorf("validate TestWriterProgress value: %w", err)
+	}
+	if err := validateTestWriterProgressOriginal(in); err != nil {
+		return fmt.Errorf("validate TestWriterProgress value: %w", err)
+	}
+
+	if in == nil {
+		return goa.MissingFieldError("result", "TestWriterProgress")
+	}
+
+	var body *jsonTestWriterProgressTransport
+	{
+		body = &jsonTestWriterProgressTransport{
+			Read: &in.Read,
+		}
+		var testsValue jsonTestsTransport
+		switch string(in.Tests.Kind()) {
+		case "assigned":
+			actual, _ := in.Tests.AsAssigned()
+			var obj *jsonTestsAssignedTransport
+			if actual != nil {
+				obj = encodeTestsAssignedToTestsAssignedTransport(actual)
+			}
+			u := testsValue
+			u.SetAssigned((*jsonTestsAssignedTransport)(obj))
+			testsValue = u
+		case "reported":
+			actual, _ := in.Tests.AsReported()
+			var obj *jsonTestsReportedTransport
+			if actual != nil {
+				obj = encodeTestsReportedToTestsReportedTransport(actual)
+			}
+			u := testsValue
+			u.SetReported((*jsonTestsReportedTransport)(obj))
+			testsValue = u
+		case "needs_changes":
+			actual, _ := in.Tests.AsNeedsChanges()
+			var obj *jsonTestsNeedChangesTransport
+			if actual != nil {
+				obj = encodeTestsNeedChangesToTestsNeedChangesTransport(actual)
+			}
+			u := testsValue
+			u.SetNeedsChanges((*jsonTestsNeedChangesTransport)(obj))
+			testsValue = u
+		case "accepted":
+			actual, _ := in.Tests.AsAccepted()
+			var obj *jsonTestsAcceptedTransport
+			if actual != nil {
+				obj = encodeTestsAcceptedToTestsAcceptedTransport(actual)
+			}
+			u := testsValue
+			u.SetAccepted((*jsonTestsAcceptedTransport)(obj))
+			testsValue = u
+		}
+		body.Tests = &testsValue
+	}
+	if err := validatejsonTestWriterProgressTransport(body); err != nil {
+		return fmt.Errorf("validate TestWriterProgress value: %w", err)
+	}
+	return nil
+}
+
+// DecodeTestWriterProgress checks JSON field names from the Goa design and returns a service value.
+func DecodeTestWriterProgress(data []byte) (out *TestWriterProgress, err error) {
+	root, err := readStrictJSON(data)
+	if err != nil {
+		return out, fmt.Errorf("decode TestWriterProgress JSON: %w", err)
+	}
+	if err := validateChangeBuildJSONValue4("", root, ""); err != nil {
+		return out, fmt.Errorf("decode TestWriterProgress JSON: %w", err)
+	}
+	var body *jsonTestWriterProgressTransport
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&body); err != nil {
+		return out, fmt.Errorf("decode TestWriterProgress JSON: %w", err)
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		if err == nil {
+			return out, fmt.Errorf("decode TestWriterProgress JSON: multiple JSON values")
+		}
+		return out, fmt.Errorf("decode TestWriterProgress JSON after first value: %w", err)
+	}
+	if err := validatejsonTestWriterProgressTransport(body); err != nil {
+		return out, fmt.Errorf("validate TestWriterProgress JSON: %w", err)
+	}
+	{
+		out = &TestWriterProgress{
+			Read: *body.Read,
+		}
+		switch string(body.Tests.Kind()) {
+		case "assigned":
+			actual, _ := body.Tests.AsAssigned()
+			var obj *TestsAssigned
+			if actual != nil {
+				obj = decodeTestsAssignedTransportToTestsAssigned(actual)
+			}
+			u := out.Tests
+			u.SetAssigned((*TestsAssigned)(obj))
+			out.Tests = u
+		case "reported":
+			actual, _ := body.Tests.AsReported()
+			var obj *TestsReported
+			if actual != nil {
+				obj = decodeTestsReportedTransportToTestsReported(actual)
+			}
+			u := out.Tests
+			u.SetReported((*TestsReported)(obj))
+			out.Tests = u
+		case "needs_changes":
+			actual, _ := body.Tests.AsNeedsChanges()
+			var obj *TestsNeedChanges
+			if actual != nil {
+				obj = decodeTestsNeedChangesTransportToTestsNeedChanges(actual)
+			}
+			u := out.Tests
+			u.SetNeedsChanges((*TestsNeedChanges)(obj))
+			out.Tests = u
+		case "accepted":
+			actual, _ := body.Tests.AsAccepted()
+			var obj *TestsAccepted
+			if actual != nil {
+				obj = decodeTestsAcceptedTransportToTestsAccepted(actual)
+			}
+			u := out.Tests
+			u.SetAccepted((*TestsAccepted)(obj))
+			out.Tests = u
+		}
+	}
+	return out, nil
+}
+
+// EncodeTestsAccepted turns a service value into JSON using the field names in the Goa design.
+func EncodeTestsAccepted(in *TestsAccepted) ([]byte, error) {
+	if err := checkTestsAcceptedValue(in); err != nil {
+		return nil, fmt.Errorf("encode TestsAccepted JSON: %w", err)
+	}
+	if err := validateTestsAcceptedOriginal(in); err != nil {
+		return nil, fmt.Errorf("validate TestsAccepted value: %w", err)
+	}
+	var body *jsonTestsAcceptedTransport
+	{
+		body = &jsonTestsAcceptedTransport{
+			Commit: &in.Commit,
+		}
+	}
+	if err := validatejsonTestsAcceptedTransport(body); err != nil {
+		return nil, fmt.Errorf("validate TestsAccepted JSON: %w", err)
+	}
+	data, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("encode TestsAccepted JSON: %w", err)
+	}
+	return data, nil
+}
+
+// ValidateTestsAcceptedValue checks the original Go fields against their declared constraints.
+// It returns validation errors without encoding the value as JSON.
+
+func ValidateTestsAcceptedValue(in *TestsAccepted) error {
+	if err := checkTestsAcceptedValue(in); err != nil {
+		return fmt.Errorf("validate TestsAccepted value: %w", err)
+	}
+	if err := validateTestsAcceptedOriginal(in); err != nil {
+		return fmt.Errorf("validate TestsAccepted value: %w", err)
+	}
+
+	if in == nil {
+		return goa.MissingFieldError("result", "TestsAccepted")
+	}
+
+	var body *jsonTestsAcceptedTransport
+	{
+		body = &jsonTestsAcceptedTransport{
+			Commit: &in.Commit,
+		}
+	}
+	if err := validatejsonTestsAcceptedTransport(body); err != nil {
+		return fmt.Errorf("validate TestsAccepted value: %w", err)
+	}
+	return nil
+}
+
+// DecodeTestsAccepted checks JSON field names from the Goa design and returns a service value.
+func DecodeTestsAccepted(data []byte) (out *TestsAccepted, err error) {
+	root, err := readStrictJSON(data)
+	if err != nil {
+		return out, fmt.Errorf("decode TestsAccepted JSON: %w", err)
+	}
+	if err := validateChangeBuildJSONValue10("", root, ""); err != nil {
+		return out, fmt.Errorf("decode TestsAccepted JSON: %w", err)
+	}
+	var body *jsonTestsAcceptedTransport
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&body); err != nil {
+		return out, fmt.Errorf("decode TestsAccepted JSON: %w", err)
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		if err == nil {
+			return out, fmt.Errorf("decode TestsAccepted JSON: multiple JSON values")
+		}
+		return out, fmt.Errorf("decode TestsAccepted JSON after first value: %w", err)
+	}
+	if err := validatejsonTestsAcceptedTransport(body); err != nil {
+		return out, fmt.Errorf("validate TestsAccepted JSON: %w", err)
+	}
+	{
+		out = &TestsAccepted{
+			Commit: *body.Commit,
+		}
+	}
+	return out, nil
+}
+
+// EncodeTestsAssigned turns a service value into JSON using the field names in the Goa design.
+func EncodeTestsAssigned(in *TestsAssigned) ([]byte, error) {
+	if err := checkTestsAssignedValue(in); err != nil {
+		return nil, fmt.Errorf("encode TestsAssigned JSON: %w", err)
+	}
+	var body *jsonTestsAssignedTransport
+	{
+		body = &jsonTestsAssignedTransport{}
+	}
+	if err := validatejsonTestsAssignedTransport(body); err != nil {
+		return nil, fmt.Errorf("validate TestsAssigned JSON: %w", err)
+	}
+	data, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("encode TestsAssigned JSON: %w", err)
+	}
+	return data, nil
+}
+
+// ValidateTestsAssignedValue checks the original Go fields against their declared constraints.
+// It returns validation errors without encoding the value as JSON.
+
+func ValidateTestsAssignedValue(in *TestsAssigned) error {
+	if err := checkTestsAssignedValue(in); err != nil {
+		return fmt.Errorf("validate TestsAssigned value: %w", err)
+	}
+
+	if in == nil {
+		return goa.MissingFieldError("result", "TestsAssigned")
+	}
+
+	var body *jsonTestsAssignedTransport
+	{
+		body = &jsonTestsAssignedTransport{}
+	}
+	if err := validatejsonTestsAssignedTransport(body); err != nil {
+		return fmt.Errorf("validate TestsAssigned value: %w", err)
+	}
+	return nil
+}
+
+// DecodeTestsAssigned checks JSON field names from the Goa design and returns a service value.
+func DecodeTestsAssigned(data []byte) (out *TestsAssigned, err error) {
+	root, err := readStrictJSON(data)
+	if err != nil {
+		return out, fmt.Errorf("decode TestsAssigned JSON: %w", err)
+	}
+	if err := validateChangeBuildJSONValue6("", root, ""); err != nil {
+		return out, fmt.Errorf("decode TestsAssigned JSON: %w", err)
+	}
+	var body *jsonTestsAssignedTransport
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&body); err != nil {
+		return out, fmt.Errorf("decode TestsAssigned JSON: %w", err)
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		if err == nil {
+			return out, fmt.Errorf("decode TestsAssigned JSON: multiple JSON values")
+		}
+		return out, fmt.Errorf("decode TestsAssigned JSON after first value: %w", err)
+	}
+	if err := validatejsonTestsAssignedTransport(body); err != nil {
+		return out, fmt.Errorf("validate TestsAssigned JSON: %w", err)
+	}
+	{
+		out = &TestsAssigned{}
+	}
+	return out, nil
+}
+
+// EncodeTestsNeedChanges turns a service value into JSON using the field names in the Goa design.
+func EncodeTestsNeedChanges(in *TestsNeedChanges) ([]byte, error) {
+	if err := checkTestsNeedChangesValue(in); err != nil {
+		return nil, fmt.Errorf("encode TestsNeedChanges JSON: %w", err)
+	}
+	if err := validateTestsNeedChangesOriginal(in); err != nil {
+		return nil, fmt.Errorf("validate TestsNeedChanges value: %w", err)
+	}
+	var body *jsonTestsNeedChangesTransport
+	{
+		body = &jsonTestsNeedChangesTransport{}
+		body.Findings = make([]string, len(in.Findings))
+		for i, val := range in.Findings {
+			body.Findings[i] = val
+		}
+	}
+	if err := validatejsonTestsNeedChangesTransport(body); err != nil {
+		return nil, fmt.Errorf("validate TestsNeedChanges JSON: %w", err)
+	}
+	data, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("encode TestsNeedChanges JSON: %w", err)
+	}
+	return data, nil
+}
+
+// ValidateTestsNeedChangesValue checks the original Go fields against their declared constraints.
+// It returns validation errors without encoding the value as JSON.
+
+func ValidateTestsNeedChangesValue(in *TestsNeedChanges) error {
+	if err := checkTestsNeedChangesValue(in); err != nil {
+		return fmt.Errorf("validate TestsNeedChanges value: %w", err)
+	}
+	if err := validateTestsNeedChangesOriginal(in); err != nil {
+		return fmt.Errorf("validate TestsNeedChanges value: %w", err)
+	}
+
+	if in == nil {
+		return goa.MissingFieldError("result", "TestsNeedChanges")
+	}
+
+	var body *jsonTestsNeedChangesTransport
+	{
+		body = &jsonTestsNeedChangesTransport{}
+		body.Findings = make([]string, len(in.Findings))
+		for i, val := range in.Findings {
+			body.Findings[i] = val
+		}
+	}
+	if err := validatejsonTestsNeedChangesTransport(body); err != nil {
+		return fmt.Errorf("validate TestsNeedChanges value: %w", err)
+	}
+	return nil
+}
+
+// DecodeTestsNeedChanges checks JSON field names from the Goa design and returns a service value.
+func DecodeTestsNeedChanges(data []byte) (out *TestsNeedChanges, err error) {
+	root, err := readStrictJSON(data)
+	if err != nil {
+		return out, fmt.Errorf("decode TestsNeedChanges JSON: %w", err)
+	}
+	if err := validateChangeBuildJSONValue8("", root, ""); err != nil {
+		return out, fmt.Errorf("decode TestsNeedChanges JSON: %w", err)
+	}
+	var body *jsonTestsNeedChangesTransport
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&body); err != nil {
+		return out, fmt.Errorf("decode TestsNeedChanges JSON: %w", err)
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		if err == nil {
+			return out, fmt.Errorf("decode TestsNeedChanges JSON: multiple JSON values")
+		}
+		return out, fmt.Errorf("decode TestsNeedChanges JSON after first value: %w", err)
+	}
+	if err := validatejsonTestsNeedChangesTransport(body); err != nil {
+		return out, fmt.Errorf("validate TestsNeedChanges JSON: %w", err)
+	}
+	{
+		out = &TestsNeedChanges{}
+		out.Findings = make([]string, len(body.Findings))
+		for i, val := range body.Findings {
+			out.Findings[i] = val
+		}
+	}
+	return out, nil
+}
+
+// EncodeTestsReported turns a service value into JSON using the field names in the Goa design.
+func EncodeTestsReported(in *TestsReported) ([]byte, error) {
+	if err := checkTestsReportedValue(in); err != nil {
+		return nil, fmt.Errorf("encode TestsReported JSON: %w", err)
+	}
+	var body *jsonTestsReportedTransport
+	{
+		body = &jsonTestsReportedTransport{}
+	}
+	if err := validatejsonTestsReportedTransport(body); err != nil {
+		return nil, fmt.Errorf("validate TestsReported JSON: %w", err)
+	}
+	data, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("encode TestsReported JSON: %w", err)
+	}
+	return data, nil
+}
+
+// ValidateTestsReportedValue checks the original Go fields against their declared constraints.
+// It returns validation errors without encoding the value as JSON.
+
+func ValidateTestsReportedValue(in *TestsReported) error {
+	if err := checkTestsReportedValue(in); err != nil {
+		return fmt.Errorf("validate TestsReported value: %w", err)
+	}
+
+	if in == nil {
+		return goa.MissingFieldError("result", "TestsReported")
+	}
+
+	var body *jsonTestsReportedTransport
+	{
+		body = &jsonTestsReportedTransport{}
+	}
+	if err := validatejsonTestsReportedTransport(body); err != nil {
+		return fmt.Errorf("validate TestsReported value: %w", err)
+	}
+	return nil
+}
+
+// DecodeTestsReported checks JSON field names from the Goa design and returns a service value.
+func DecodeTestsReported(data []byte) (out *TestsReported, err error) {
+	root, err := readStrictJSON(data)
+	if err != nil {
+		return out, fmt.Errorf("decode TestsReported JSON: %w", err)
+	}
+	if err := validateChangeBuildJSONValue7("", root, ""); err != nil {
+		return out, fmt.Errorf("decode TestsReported JSON: %w", err)
+	}
+	var body *jsonTestsReportedTransport
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&body); err != nil {
+		return out, fmt.Errorf("decode TestsReported JSON: %w", err)
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		if err == nil {
+			return out, fmt.Errorf("decode TestsReported JSON: multiple JSON values")
+		}
+		return out, fmt.Errorf("decode TestsReported JSON after first value: %w", err)
+	}
+	if err := validatejsonTestsReportedTransport(body); err != nil {
+		return out, fmt.Errorf("validate TestsReported JSON: %w", err)
+	}
+	{
+		out = &TestsReported{}
 	}
 	return out, nil
 }
@@ -11893,6 +14678,31 @@ func decodeApprovalItemTransportToApprovalItem(v *jsonApprovalItemTransport) *Ap
 	return res
 }
 
+func decodeBuildAssignmentTransportToBuildAssignment(v *jsonBuildAssignmentTransport) *BuildAssignment {
+	res := &BuildAssignment{
+		ChangeID:        *v.ChangeID,
+		RequestRevision: *v.RequestRevision,
+	}
+	res.Progress = decodeBuilderProgressTransportToBuilderProgress(v.Progress)
+
+	return res
+}
+
+func decodeBuildNotStartedTransportToBuildNotStarted(v *jsonBuildNotStartedTransport) *BuildNotStarted {
+	res := &BuildNotStarted{}
+
+	return res
+}
+
+func decodeBuilderProgressTransportToBuilderProgress(v *jsonBuilderProgressTransport) *BuilderProgress {
+	res := &BuilderProgress{
+		State: *v.State,
+		Read:  *v.Read,
+	}
+
+	return res
+}
+
 func decodeBuilderVerificationReportTransportToBuilderVerificationReport(v *jsonBuilderVerificationReportTransport) *BuilderVerificationReport {
 	res := &BuilderVerificationReport{
 		ReportDigest: *v.ReportDigest,
@@ -12078,6 +14888,29 @@ func decodeLatestVerificationItemTransportToLatestVerificationItem(v *jsonLatest
 	return res
 }
 
+func decodeRequiredTestTransportToRequiredTest(v *jsonRequiredTestTransport) *RequiredTest {
+	res := &RequiredTest{
+		Story:    *v.Story,
+		FlowKey:  *v.FlowKey,
+		Scenario: *v.Scenario,
+		Hook:     *v.Hook,
+	}
+
+	return res
+}
+
+func decodeStartedBuildTransportToStartedBuild(v *jsonStartedBuildTransport) *StartedBuild {
+	res := &StartedBuild{
+		RequestRevision: *v.RequestRevision,
+		StartedAt:       *v.StartedAt,
+		InForce:         *v.InForce,
+	}
+	res.Builder = decodeBuilderProgressTransportToBuilderProgress(v.Builder)
+	res.TestWriter = decodeTestWriterProgressTransportToTestWriterProgress(v.TestWriter)
+
+	return res
+}
+
 func decodeStoryActorItemTransportToStoryActorItem(v *jsonStoryActorItemTransport) *StoryActorItem {
 	res := &StoryActorItem{
 		Key:         *v.Key,
@@ -12170,6 +15003,92 @@ func decodeStorySummaryItemTransportToStorySummaryItem(v *jsonStorySummaryItemTr
 		}
 		res.Flows[i] = decodeStoryFlowItemTransportToStoryFlowItem(val)
 	}
+
+	return res
+}
+
+func decodeTestAssignmentItemTransportToTestAssignmentItem(v *jsonTestAssignmentItemTransport) *TestAssignmentItem {
+	res := &TestAssignmentItem{
+		ChangeID:        *v.ChangeID,
+		RequestRevision: *v.RequestRevision,
+	}
+	res.Progress = decodeTestWriterProgressTransportToTestWriterProgress(v.Progress)
+
+	return res
+}
+
+func decodeTestWriterProgressTransportToTestWriterProgress(v *jsonTestWriterProgressTransport) *TestWriterProgress {
+	res := &TestWriterProgress{
+		Read: *v.Read,
+	}
+	switch string(v.Tests.Kind()) {
+	case "assigned":
+		actual, _ := v.Tests.AsAssigned()
+		var obj *TestsAssigned
+		if actual != nil {
+			obj = decodeTestsAssignedTransportToTestsAssigned(actual)
+		}
+		u := res.Tests
+		u.SetAssigned((*TestsAssigned)(obj))
+		res.Tests = u
+	case "reported":
+		actual, _ := v.Tests.AsReported()
+		var obj *TestsReported
+		if actual != nil {
+			obj = decodeTestsReportedTransportToTestsReported(actual)
+		}
+		u := res.Tests
+		u.SetReported((*TestsReported)(obj))
+		res.Tests = u
+	case "needs_changes":
+		actual, _ := v.Tests.AsNeedsChanges()
+		var obj *TestsNeedChanges
+		if actual != nil {
+			obj = decodeTestsNeedChangesTransportToTestsNeedChanges(actual)
+		}
+		u := res.Tests
+		u.SetNeedsChanges((*TestsNeedChanges)(obj))
+		res.Tests = u
+	case "accepted":
+		actual, _ := v.Tests.AsAccepted()
+		var obj *TestsAccepted
+		if actual != nil {
+			obj = decodeTestsAcceptedTransportToTestsAccepted(actual)
+		}
+		u := res.Tests
+		u.SetAccepted((*TestsAccepted)(obj))
+		res.Tests = u
+	}
+
+	return res
+}
+
+func decodeTestsAcceptedTransportToTestsAccepted(v *jsonTestsAcceptedTransport) *TestsAccepted {
+	res := &TestsAccepted{
+		Commit: *v.Commit,
+	}
+
+	return res
+}
+
+func decodeTestsAssignedTransportToTestsAssigned(v *jsonTestsAssignedTransport) *TestsAssigned {
+	res := &TestsAssigned{}
+
+	return res
+}
+
+func decodeTestsNeedChangesTransportToTestsNeedChanges(v *jsonTestsNeedChangesTransport) *TestsNeedChanges {
+	res := &TestsNeedChanges{}
+	res.Findings = make([]string, len(v.Findings))
+	for i, val := range v.Findings {
+		res.Findings[i] = val
+	}
+
+	return res
+}
+
+func decodeTestsReportedTransportToTestsReported(v *jsonTestsReportedTransport) *TestsReported {
+	res := &TestsReported{}
 
 	return res
 }
@@ -12441,6 +15360,40 @@ func encodeApprovalItemToApprovalItemTransport2(v *ApprovalItem) *jsonApprovalIt
 	return res
 }
 
+func encodeBuildAssignmentToBuildAssignmentTransport(v *BuildAssignment) *jsonBuildAssignmentTransport {
+	res := &jsonBuildAssignmentTransport{
+		ChangeID:        &v.ChangeID,
+		RequestRevision: &v.RequestRevision,
+	}
+	res.Progress = encodeBuilderProgressToBuilderProgressTransport(v.Progress)
+
+	return res
+}
+
+func encodeBuildNotStartedToBuildNotStartedTransport(v *BuildNotStarted) *jsonBuildNotStartedTransport {
+	res := &jsonBuildNotStartedTransport{}
+
+	return res
+}
+
+func encodeBuilderProgressToBuilderProgressTransport(v *BuilderProgress) *jsonBuilderProgressTransport {
+	res := &jsonBuilderProgressTransport{
+		State: &v.State,
+		Read:  &v.Read,
+	}
+
+	return res
+}
+
+func encodeBuilderProgressToBuilderProgressTransport2(v *BuilderProgress) *jsonBuilderProgressTransport {
+	res := &jsonBuilderProgressTransport{
+		State: &v.State,
+		Read:  &v.Read,
+	}
+
+	return res
+}
+
 func encodeBuilderVerificationReportToBuilderVerificationReportTransport(v *BuilderVerificationReport) *jsonBuilderVerificationReportTransport {
 	res := &jsonBuilderVerificationReportTransport{
 		ReportDigest: &v.ReportDigest,
@@ -12646,6 +15599,29 @@ func encodeLatestVerificationItemToLatestVerificationItemTransport(v *LatestVeri
 	return res
 }
 
+func encodeRequiredTestToRequiredTestTransport(v *RequiredTest) *jsonRequiredTestTransport {
+	res := &jsonRequiredTestTransport{
+		Story:    &v.Story,
+		FlowKey:  &v.FlowKey,
+		Scenario: &v.Scenario,
+		Hook:     &v.Hook,
+	}
+
+	return res
+}
+
+func encodeStartedBuildToStartedBuildTransport(v *StartedBuild) *jsonStartedBuildTransport {
+	res := &jsonStartedBuildTransport{
+		RequestRevision: &v.RequestRevision,
+		StartedAt:       &v.StartedAt,
+		InForce:         &v.InForce,
+	}
+	res.Builder = encodeBuilderProgressToBuilderProgressTransport2(v.Builder)
+	res.TestWriter = encodeTestWriterProgressToTestWriterProgressTransport(v.TestWriter)
+
+	return res
+}
+
 func encodeStoryActorItemToStoryActorItemTransport(v *StoryActorItem) *jsonStoryActorItemTransport {
 	res := &jsonStoryActorItemTransport{
 		Key:         &v.Key,
@@ -12738,6 +15714,190 @@ func encodeStorySummaryItemToStorySummaryItemTransport(v *StorySummaryItem) *jso
 		}
 		res.Flows[i] = encodeStoryFlowItemToStoryFlowItemTransport(val)
 	}
+
+	return res
+}
+
+func encodeTestAssignmentItemToTestAssignmentItemTransport(v *TestAssignmentItem) *jsonTestAssignmentItemTransport {
+	res := &jsonTestAssignmentItemTransport{
+		ChangeID:        &v.ChangeID,
+		RequestRevision: &v.RequestRevision,
+	}
+	res.Progress = encodeTestWriterProgressToTestWriterProgressTransport3(v.Progress)
+
+	return res
+}
+
+func encodeTestWriterProgressToTestWriterProgressTransport(v *TestWriterProgress) *jsonTestWriterProgressTransport {
+	res := &jsonTestWriterProgressTransport{
+		Read: &v.Read,
+	}
+	var testsValue jsonTestsTransport
+	switch string(v.Tests.Kind()) {
+	case "assigned":
+		actual, _ := v.Tests.AsAssigned()
+		var obj *jsonTestsAssignedTransport
+		if actual != nil {
+			obj = encodeTestsAssignedToTestsAssignedTransport(actual)
+		}
+		u := testsValue
+		u.SetAssigned((*jsonTestsAssignedTransport)(obj))
+		testsValue = u
+	case "reported":
+		actual, _ := v.Tests.AsReported()
+		var obj *jsonTestsReportedTransport
+		if actual != nil {
+			obj = encodeTestsReportedToTestsReportedTransport(actual)
+		}
+		u := testsValue
+		u.SetReported((*jsonTestsReportedTransport)(obj))
+		testsValue = u
+	case "needs_changes":
+		actual, _ := v.Tests.AsNeedsChanges()
+		var obj *jsonTestsNeedChangesTransport
+		if actual != nil {
+			obj = encodeTestsNeedChangesToTestsNeedChangesTransport(actual)
+		}
+		u := testsValue
+		u.SetNeedsChanges((*jsonTestsNeedChangesTransport)(obj))
+		testsValue = u
+	case "accepted":
+		actual, _ := v.Tests.AsAccepted()
+		var obj *jsonTestsAcceptedTransport
+		if actual != nil {
+			obj = encodeTestsAcceptedToTestsAcceptedTransport(actual)
+		}
+		u := testsValue
+		u.SetAccepted((*jsonTestsAcceptedTransport)(obj))
+		testsValue = u
+	}
+	res.Tests = &testsValue
+
+	return res
+}
+
+func encodeTestWriterProgressToTestWriterProgressTransport2(v *TestWriterProgress) *jsonTestWriterProgressTransport {
+	res := &jsonTestWriterProgressTransport{
+		Read: &v.Read,
+	}
+	var testsValue jsonTestsTransport
+	switch string(v.Tests.Kind()) {
+	case "assigned":
+		actual, _ := v.Tests.AsAssigned()
+		var obj *jsonTestsAssignedTransport
+		if actual != nil {
+			obj = encodeTestsAssignedToTestsAssignedTransport(actual)
+		}
+		u := testsValue
+		u.SetAssigned((*jsonTestsAssignedTransport)(obj))
+		testsValue = u
+	case "reported":
+		actual, _ := v.Tests.AsReported()
+		var obj *jsonTestsReportedTransport
+		if actual != nil {
+			obj = encodeTestsReportedToTestsReportedTransport(actual)
+		}
+		u := testsValue
+		u.SetReported((*jsonTestsReportedTransport)(obj))
+		testsValue = u
+	case "needs_changes":
+		actual, _ := v.Tests.AsNeedsChanges()
+		var obj *jsonTestsNeedChangesTransport
+		if actual != nil {
+			obj = encodeTestsNeedChangesToTestsNeedChangesTransport(actual)
+		}
+		u := testsValue
+		u.SetNeedsChanges((*jsonTestsNeedChangesTransport)(obj))
+		testsValue = u
+	case "accepted":
+		actual, _ := v.Tests.AsAccepted()
+		var obj *jsonTestsAcceptedTransport
+		if actual != nil {
+			obj = encodeTestsAcceptedToTestsAcceptedTransport(actual)
+		}
+		u := testsValue
+		u.SetAccepted((*jsonTestsAcceptedTransport)(obj))
+		testsValue = u
+	}
+	res.Tests = &testsValue
+
+	return res
+}
+
+func encodeTestWriterProgressToTestWriterProgressTransport3(v *TestWriterProgress) *jsonTestWriterProgressTransport {
+	res := &jsonTestWriterProgressTransport{
+		Read: &v.Read,
+	}
+	var testsValue jsonTestsTransport
+	switch string(v.Tests.Kind()) {
+	case "assigned":
+		actual, _ := v.Tests.AsAssigned()
+		var obj *jsonTestsAssignedTransport
+		if actual != nil {
+			obj = encodeTestsAssignedToTestsAssignedTransport(actual)
+		}
+		u := testsValue
+		u.SetAssigned((*jsonTestsAssignedTransport)(obj))
+		testsValue = u
+	case "reported":
+		actual, _ := v.Tests.AsReported()
+		var obj *jsonTestsReportedTransport
+		if actual != nil {
+			obj = encodeTestsReportedToTestsReportedTransport(actual)
+		}
+		u := testsValue
+		u.SetReported((*jsonTestsReportedTransport)(obj))
+		testsValue = u
+	case "needs_changes":
+		actual, _ := v.Tests.AsNeedsChanges()
+		var obj *jsonTestsNeedChangesTransport
+		if actual != nil {
+			obj = encodeTestsNeedChangesToTestsNeedChangesTransport(actual)
+		}
+		u := testsValue
+		u.SetNeedsChanges((*jsonTestsNeedChangesTransport)(obj))
+		testsValue = u
+	case "accepted":
+		actual, _ := v.Tests.AsAccepted()
+		var obj *jsonTestsAcceptedTransport
+		if actual != nil {
+			obj = encodeTestsAcceptedToTestsAcceptedTransport(actual)
+		}
+		u := testsValue
+		u.SetAccepted((*jsonTestsAcceptedTransport)(obj))
+		testsValue = u
+	}
+	res.Tests = &testsValue
+
+	return res
+}
+
+func encodeTestsAcceptedToTestsAcceptedTransport(v *TestsAccepted) *jsonTestsAcceptedTransport {
+	res := &jsonTestsAcceptedTransport{
+		Commit: &v.Commit,
+	}
+
+	return res
+}
+
+func encodeTestsAssignedToTestsAssignedTransport(v *TestsAssigned) *jsonTestsAssignedTransport {
+	res := &jsonTestsAssignedTransport{}
+
+	return res
+}
+
+func encodeTestsNeedChangesToTestsNeedChangesTransport(v *TestsNeedChanges) *jsonTestsNeedChangesTransport {
+	res := &jsonTestsNeedChangesTransport{}
+	res.Findings = make([]string, len(v.Findings))
+	for i, val := range v.Findings {
+		res.Findings[i] = val
+	}
+
+	return res
+}
+
+func encodeTestsReportedToTestsReportedTransport(v *TestsReported) *jsonTestsReportedTransport {
+	res := &jsonTestsReportedTransport{}
 
 	return res
 }
@@ -13898,6 +17058,192 @@ func validateArchitecturePreviewResultJSONValue3(path string, value any, descrip
 	return nil
 }
 
+// validateBuildAssignmentJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateBuildAssignmentJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "change_id":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Change Card to build; get_change takes it.",
+			); err != nil {
+				return err
+			}
+		case "progress":
+			if err := validateBuildAssignmentJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Where this assignment stands.",
+			); err != nil {
+				return err
+			}
+		case "request_revision":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Change Card revision to build; verify_change takes it.",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"change_id",
+				"progress",
+				"request_revision",
+			})
+		}
+	}
+	return nil
+}
+
+// validateBuildAssignmentJSONValue2 checks one value whose JSON shape is fixed by the generated Goa type.
+func validateBuildAssignmentJSONValue2(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "read":
+			if err := validateAgentPolicyItemJSONValue3(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "True once the builder read this assignment in full with get_build_assignment.",
+			); err != nil {
+				return err
+			}
+		case "state":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "The builder's state: assigned from the moment the user starts the build.",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"read",
+				"state",
+			})
+		}
+	}
+	return nil
+}
+
+// validateBuildAssignmentListJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateBuildAssignmentListJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "assignments":
+			if err := validateBuildAssignmentListJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Assignments, most recently started first; empty when the user has built no change.",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"assignments",
+			})
+		}
+	}
+	return nil
+}
+
+// validateBuildAssignmentListJSONValue2 checks one value whose JSON shape is fixed by the generated Goa type.
+func validateBuildAssignmentListJSONValue2(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "array", "null", description)
+	}
+	typed, ok := value.([]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "array", decodedJSONType(value), description)
+	}
+	for index, item := range typed {
+		if item == nil {
+			continue
+		}
+		if err := validateBuildAssignmentJSONValue(
+			generatedJSONChildPath(path, strconv.Itoa(index), true),
+			item, description,
+		); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateBuildNotStartedJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateBuildNotStartedJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		default:
+			return unknownJSONFieldError(path, key, []string{})
+		}
+	}
+	return nil
+}
+
 // validateBuilderVerificationReportJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
 func validateBuilderVerificationReportJSONValue(path string, value any, description string) error {
 	field := path
@@ -14703,6 +18049,382 @@ func validateCP1RevisionAnalysisJSONValue6(path string, value any, description s
 			item, description,
 		); err != nil {
 			return err
+		}
+	}
+	return nil
+}
+
+// validateChangeBuildJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateChangeBuildJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "build":
+			if err := validateChangeBuildJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "not_started until the user starts a build of this change; started with the build afterwards.",
+			); err != nil {
+				return err
+			}
+		case "change_id":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Change Card identifier.",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"build",
+				"change_id",
+			})
+		}
+	}
+	return nil
+}
+
+// validateChangeBuildJSONValue2 checks one value whose JSON shape is fixed by the generated Goa type.
+func validateChangeBuildJSONValue2(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	discriminator, ok := typed["state"].(string)
+	if !ok {
+		return fmt.Errorf("%s: missing or invalid union discriminator", field)
+	}
+	branch := make(map[string]any, len(typed)-1)
+	for key, item := range typed {
+		if key != "state" {
+			branch[key] = item
+		}
+	}
+	switch discriminator {
+	case "not_started":
+		return validateBuildNotStartedJSONValue(path, branch, "")
+	case "started":
+		return validateChangeBuildJSONValue3(path, branch, "")
+	default:
+		return fmt.Errorf("%s: unknown union discriminator %q", field, discriminator)
+	}
+}
+
+// validateChangeBuildJSONValue3 checks one value whose JSON shape is fixed by the generated Goa type.
+func validateChangeBuildJSONValue3(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "builder":
+			if err := validateBuildAssignmentJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "The builder's assignment.",
+			); err != nil {
+				return err
+			}
+		case "in_force":
+			if err := validateAgentPolicyItemJSONValue3(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "True when request_revision is the change's confirmed revision in force. False when the change was revised or confirmed again since: the assignments stay as they are, for this earlier revision, until the user builds again.",
+			); err != nil {
+				return err
+			}
+		case "request_revision":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Change Card revision the user built.",
+			); err != nil {
+				return err
+			}
+		case "started_at":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "When the user started this build.",
+			); err != nil {
+				return err
+			}
+		case "test_writer":
+			if err := validateChangeBuildJSONValue4(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "The test writer's assignment.",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"builder",
+				"in_force",
+				"request_revision",
+				"started_at",
+				"test_writer",
+			})
+		}
+	}
+	return nil
+}
+
+// validateChangeBuildJSONValue4 checks one value whose JSON shape is fixed by the generated Goa type.
+func validateChangeBuildJSONValue4(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "read":
+			if err := validateAgentPolicyItemJSONValue3(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "True once the test writer read this assignment in full with get_test_assignment.",
+			); err != nil {
+				return err
+			}
+		case "tests":
+			if err := validateChangeBuildJSONValue5(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "The tests' state: assigned, reported, needs_changes with Surla's findings, or accepted with the commit Surla recorded.",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"read",
+				"tests",
+			})
+		}
+	}
+	return nil
+}
+
+// validateChangeBuildJSONValue5 checks one value whose JSON shape is fixed by the generated Goa type.
+func validateChangeBuildJSONValue5(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	discriminator, ok := typed["state"].(string)
+	if !ok {
+		return fmt.Errorf("%s: missing or invalid union discriminator", field)
+	}
+	branch := make(map[string]any, len(typed)-1)
+	for key, item := range typed {
+		if key != "state" {
+			branch[key] = item
+		}
+	}
+	switch discriminator {
+	case "assigned":
+		return validateChangeBuildJSONValue6(path, branch, "")
+	case "reported":
+		return validateChangeBuildJSONValue7(path, branch, "")
+	case "needs_changes":
+		return validateChangeBuildJSONValue8(path, branch, "")
+	case "accepted":
+		return validateChangeBuildJSONValue10(path, branch, "")
+	default:
+		return fmt.Errorf("%s: unknown union discriminator %q", field, discriminator)
+	}
+}
+
+// validateChangeBuildJSONValue6 checks one value whose JSON shape is fixed by the generated Goa type.
+func validateChangeBuildJSONValue6(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		default:
+			return unknownJSONFieldError(path, key, []string{})
+		}
+	}
+	return nil
+}
+
+// validateChangeBuildJSONValue7 checks one value whose JSON shape is fixed by the generated Goa type.
+func validateChangeBuildJSONValue7(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		default:
+			return unknownJSONFieldError(path, key, []string{})
+		}
+	}
+	return nil
+}
+
+// validateChangeBuildJSONValue8 checks one value whose JSON shape is fixed by the generated Goa type.
+func validateChangeBuildJSONValue8(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "findings":
+			if err := validateChangeBuildJSONValue9(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "What Surla found, one problem per item: a test that does not build or a required test that is not declared.",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"findings",
+			})
+		}
+	}
+	return nil
+}
+
+// validateChangeBuildJSONValue9 checks one value whose JSON shape is fixed by the generated Goa type.
+func validateChangeBuildJSONValue9(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "array", "null", description)
+	}
+	typed, ok := value.([]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "array", decodedJSONType(value), description)
+	}
+	for index, item := range typed {
+		if err := validateAgentPolicyItemJSONValue2(
+			generatedJSONChildPath(path, strconv.Itoa(index), true),
+			item, description,
+		); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateChangeBuildJSONValue10 checks one value whose JSON shape is fixed by the generated Goa type.
+func validateChangeBuildJSONValue10(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "commit":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Full commit ID Surla recorded the accepted tests at (40 or 64 lowercase hex characters).",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"commit",
+			})
 		}
 	}
 	return nil
@@ -17197,6 +20919,66 @@ func validateReadCheckOutputPayloadJSONValue(path string, value any, description
 	return nil
 }
 
+// validateRequiredTestJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateRequiredTestJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "flow_key":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Key of the finished flow.",
+			); err != nil {
+				return err
+			}
+		case "hook":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Hook method the test writer implements for the scenario.",
+			); err != nil {
+				return err
+			}
+		case "scenario":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Scenario name the evaluation suite declares for the flow.",
+			); err != nil {
+				return err
+			}
+		case "story":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Name of the Story the flow belongs to.",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"flow_key",
+				"hook",
+				"scenario",
+				"story",
+			})
+		}
+	}
+	return nil
+}
+
 // validateReviseChangePayloadJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
 func validateReviseChangePayloadJSONValue(path string, value any, description string) error {
 	field := path
@@ -17439,6 +21221,251 @@ func validateStoryRefreshResultJSONValue2(path string, value any, description st
 			continue
 		}
 		if err := validateChangeCardResultJSONValue18(
+			generatedJSONChildPath(path, strconv.Itoa(index), true),
+			item, description,
+		); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateTestAssignmentJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateTestAssignmentJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "change_id":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Change Card the tests are for.",
+			); err != nil {
+				return err
+			}
+		case "progress":
+			if err := validateChangeBuildJSONValue4(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Where this assignment stands, including Surla's findings when it needs changes.",
+			); err != nil {
+				return err
+			}
+		case "request_revision":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Change Card revision the tests are for; report_tests takes it.",
+			); err != nil {
+				return err
+			}
+		case "required_tests":
+			if err := validateTestAssignmentJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "One test per finished flow of stories, in declaration order; unfinished flows require none.",
+			); err != nil {
+				return err
+			}
+		case "stories":
+			if err := validateTestAssignmentJSONValue3(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "The Story as agreed at request_revision, in declaration order. It does not change when the change is revised later.",
+			); err != nil {
+				return err
+			}
+		case "working_folder":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Folder to write the tests in: the test writer's own working copy of the project, which Surla prepares when the user starts the build. Empty when this server prepares no working copy.",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"change_id",
+				"progress",
+				"request_revision",
+				"required_tests",
+				"stories",
+				"working_folder",
+			})
+		}
+	}
+	return nil
+}
+
+// validateTestAssignmentJSONValue2 checks one value whose JSON shape is fixed by the generated Goa type.
+func validateTestAssignmentJSONValue2(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "array", "null", description)
+	}
+	typed, ok := value.([]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "array", decodedJSONType(value), description)
+	}
+	for index, item := range typed {
+		if item == nil {
+			continue
+		}
+		if err := validateRequiredTestJSONValue(
+			generatedJSONChildPath(path, strconv.Itoa(index), true),
+			item, description,
+		); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateTestAssignmentJSONValue3 checks one value whose JSON shape is fixed by the generated Goa type.
+func validateTestAssignmentJSONValue3(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "array", "null", description)
+	}
+	typed, ok := value.([]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "array", decodedJSONType(value), description)
+	}
+	for index, item := range typed {
+		if item == nil {
+			continue
+		}
+		if err := validateChangeCardResultJSONValue18(
+			generatedJSONChildPath(path, strconv.Itoa(index), true),
+			item, description,
+		); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateTestAssignmentItemJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateTestAssignmentItemJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "change_id":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Change Card the tests are for; get_test_assignment takes it.",
+			); err != nil {
+				return err
+			}
+		case "progress":
+			if err := validateChangeBuildJSONValue4(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Where this assignment stands.",
+			); err != nil {
+				return err
+			}
+		case "request_revision":
+			if err := validateAgentPolicyItemJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Change Card revision the tests are for.",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"change_id",
+				"progress",
+				"request_revision",
+			})
+		}
+	}
+	return nil
+}
+
+// validateTestAssignmentListJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateTestAssignmentListJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "assignments":
+			if err := validateTestAssignmentListJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Assignments, most recently started first; empty when the user has built no change.",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"assignments",
+			})
+		}
+	}
+	return nil
+}
+
+// validateTestAssignmentListJSONValue2 checks one value whose JSON shape is fixed by the generated Goa type.
+func validateTestAssignmentListJSONValue2(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "array", "null", description)
+	}
+	typed, ok := value.([]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "array", decodedJSONType(value), description)
+	}
+	for index, item := range typed {
+		if item == nil {
+			continue
+		}
+		if err := validateTestAssignmentItemJSONValue(
 			generatedJSONChildPath(path, strconv.Itoa(index), true),
 			item, description,
 		); err != nil {
@@ -18662,6 +22689,133 @@ func checkArchitecturePreviewResultToolInputBindingItemValue(in *ToolInputBindin
 	return nil
 }
 
+// checkBuildAssignmentValue checks text and cycles before conversion.
+func checkBuildAssignmentValue(in *BuildAssignment) error {
+	if in == nil {
+		return fmt.Errorf("missing root value")
+	}
+	active := make(map[any]bool)
+	if err := checkBuildAssignmentBuildAssignmentValue(in, "$", active); err != nil {
+		return err
+	}
+	return nil
+}
+
+// checkBuildAssignmentBuildAssignmentValue checks one generated value on the active path.
+func checkBuildAssignmentBuildAssignmentValue(in *BuildAssignment, field string, active map[any]bool) error {
+	if in == nil {
+		return nil
+	}
+	if active[in] {
+		return fmt.Errorf("%s: cyclic Go value", field)
+	}
+	active[in] = true
+	defer delete(active, in)
+	if in != nil {
+		if !utf8.ValidString(string(in.ChangeID)) {
+			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "change_id", false))
+		}
+		if !utf8.ValidString(string(in.RequestRevision)) {
+			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "request_revision", false))
+		}
+		if err := checkBuildAssignmentBuilderProgressValue(in.Progress, generatedJSONChildPath(field, "progress", false), active); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// checkBuildAssignmentBuilderProgressValue checks one generated value on the active path.
+func checkBuildAssignmentBuilderProgressValue(in *BuilderProgress, field string, active map[any]bool) error {
+	if in == nil {
+		return nil
+	}
+	if active[in] {
+		return fmt.Errorf("%s: cyclic Go value", field)
+	}
+	active[in] = true
+	defer delete(active, in)
+	if in != nil {
+		if !utf8.ValidString(string(in.State)) {
+			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "state", false))
+		}
+	}
+	return nil
+}
+
+// checkBuildAssignmentListValue checks text and cycles before conversion.
+func checkBuildAssignmentListValue(in *BuildAssignmentList) error {
+	if in == nil {
+		return fmt.Errorf("missing root value")
+	}
+	active := make(map[any]bool)
+	if err := checkBuildAssignmentListBuildAssignmentListValue(in, "$", active); err != nil {
+		return err
+	}
+	return nil
+}
+
+// checkBuildAssignmentListBuildAssignmentListValue checks one generated value on the active path.
+func checkBuildAssignmentListBuildAssignmentListValue(in *BuildAssignmentList, field string, active map[any]bool) error {
+	if in == nil {
+		return nil
+	}
+	if active[in] {
+		return fmt.Errorf("%s: cyclic Go value", field)
+	}
+	active[in] = true
+	defer delete(active, in)
+	if in != nil {
+		for index1, item1 := range in.Assignments {
+			_ = index1
+			_ = item1
+			if err := checkBuildAssignmentBuildAssignmentValue(item1, generatedJSONChildPath(generatedJSONChildPath(field, "assignments", false), strconv.Itoa(index1), true), active); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// checkBuildNotStartedValue checks text and cycles before conversion.
+func checkBuildNotStartedValue(in *BuildNotStarted) error {
+	if in == nil {
+		return fmt.Errorf("missing root value")
+	}
+	active := make(map[any]bool)
+	if err := checkBuildNotStartedBuildNotStartedValue(in, "$", active); err != nil {
+		return err
+	}
+	return nil
+}
+
+// checkBuildNotStartedBuildNotStartedValue checks one generated value on the active path.
+func checkBuildNotStartedBuildNotStartedValue(in *BuildNotStarted, field string, active map[any]bool) error {
+	if in == nil {
+		return nil
+	}
+	if active[in] {
+		return fmt.Errorf("%s: cyclic Go value", field)
+	}
+	active[in] = true
+	defer delete(active, in)
+	if in != nil {
+	}
+	return nil
+}
+
+// checkBuilderProgressValue checks text and cycles before conversion.
+func checkBuilderProgressValue(in *BuilderProgress) error {
+	if in == nil {
+		return fmt.Errorf("missing root value")
+	}
+	active := make(map[any]bool)
+	if err := checkBuildAssignmentBuilderProgressValue(in, "$", active); err != nil {
+		return err
+	}
+	return nil
+}
+
 // checkBuilderVerificationReportValue checks text and cycles before conversion.
 func checkBuilderVerificationReportValue(in *BuilderVerificationReport) error {
 	if in == nil {
@@ -19032,6 +23186,196 @@ func checkCP1RevisionAnalysisExampleValue(in *CP1RevisionAnalysisExample) error 
 	active := make(map[any]bool)
 	if err := checkCP1RevisionAnalysisCP1RevisionAnalysisExampleValue(in, "$", active); err != nil {
 		return err
+	}
+	return nil
+}
+
+// checkChangeBuildValue checks text and cycles before conversion.
+func checkChangeBuildValue(in *ChangeBuild) error {
+	if in == nil {
+		return fmt.Errorf("missing root value")
+	}
+	active := make(map[any]bool)
+	if err := checkChangeBuildChangeBuildValue(in, "$", active); err != nil {
+		return err
+	}
+	return nil
+}
+
+// checkChangeBuildChangeBuildValue checks one generated value on the active path.
+func checkChangeBuildChangeBuildValue(in *ChangeBuild, field string, active map[any]bool) error {
+	if in == nil {
+		return nil
+	}
+	if active[in] {
+		return fmt.Errorf("%s: cyclic Go value", field)
+	}
+	active[in] = true
+	defer delete(active, in)
+	if in != nil {
+		if !utf8.ValidString(string(in.ChangeID)) {
+			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "change_id", false))
+		}
+		if branch1, ok := in.Build.AsNotStarted(); ok {
+			_ = branch1
+			if branch1 != nil {
+			}
+			if err := checkBuildNotStartedBuildNotStartedValue(branch1, generatedJSONChildPath(field, "build", false), active); err != nil {
+				return err
+			}
+		}
+		if branch1, ok := in.Build.AsStarted(); ok {
+			_ = branch1
+			if branch1 != nil {
+			}
+			if err := checkChangeBuildStartedBuildValue(branch1, generatedJSONChildPath(field, "build", false), active); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// checkChangeBuildStartedBuildValue checks one generated value on the active path.
+func checkChangeBuildStartedBuildValue(in *StartedBuild, field string, active map[any]bool) error {
+	if in == nil {
+		return nil
+	}
+	if active[in] {
+		return fmt.Errorf("%s: cyclic Go value", field)
+	}
+	active[in] = true
+	defer delete(active, in)
+	if in != nil {
+		if !utf8.ValidString(string(in.RequestRevision)) {
+			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "request_revision", false))
+		}
+		if !utf8.ValidString(string(in.StartedAt)) {
+			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "started_at", false))
+		}
+		if err := checkBuildAssignmentBuilderProgressValue(in.Builder, generatedJSONChildPath(field, "builder", false), active); err != nil {
+			return err
+		}
+		if err := checkChangeBuildTestWriterProgressValue(in.TestWriter, generatedJSONChildPath(field, "test_writer", false), active); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// checkChangeBuildTestWriterProgressValue checks one generated value on the active path.
+func checkChangeBuildTestWriterProgressValue(in *TestWriterProgress, field string, active map[any]bool) error {
+	if in == nil {
+		return nil
+	}
+	if active[in] {
+		return fmt.Errorf("%s: cyclic Go value", field)
+	}
+	active[in] = true
+	defer delete(active, in)
+	if in != nil {
+		if branch1, ok := in.Tests.AsAssigned(); ok {
+			_ = branch1
+			if branch1 != nil {
+			}
+			if err := checkChangeBuildTestsAssignedValue(branch1, generatedJSONChildPath(field, "tests", false), active); err != nil {
+				return err
+			}
+		}
+		if branch1, ok := in.Tests.AsReported(); ok {
+			_ = branch1
+			if branch1 != nil {
+			}
+			if err := checkChangeBuildTestsReportedValue(branch1, generatedJSONChildPath(field, "tests", false), active); err != nil {
+				return err
+			}
+		}
+		if branch1, ok := in.Tests.AsNeedsChanges(); ok {
+			_ = branch1
+			if branch1 != nil {
+			}
+			if err := checkChangeBuildTestsNeedChangesValue(branch1, generatedJSONChildPath(field, "tests", false), active); err != nil {
+				return err
+			}
+		}
+		if branch1, ok := in.Tests.AsAccepted(); ok {
+			_ = branch1
+			if branch1 != nil {
+			}
+			if err := checkChangeBuildTestsAcceptedValue(branch1, generatedJSONChildPath(field, "tests", false), active); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// checkChangeBuildTestsAssignedValue checks one generated value on the active path.
+func checkChangeBuildTestsAssignedValue(in *TestsAssigned, field string, active map[any]bool) error {
+	if in == nil {
+		return nil
+	}
+	if active[in] {
+		return fmt.Errorf("%s: cyclic Go value", field)
+	}
+	active[in] = true
+	defer delete(active, in)
+	if in != nil {
+	}
+	return nil
+}
+
+// checkChangeBuildTestsReportedValue checks one generated value on the active path.
+func checkChangeBuildTestsReportedValue(in *TestsReported, field string, active map[any]bool) error {
+	if in == nil {
+		return nil
+	}
+	if active[in] {
+		return fmt.Errorf("%s: cyclic Go value", field)
+	}
+	active[in] = true
+	defer delete(active, in)
+	if in != nil {
+	}
+	return nil
+}
+
+// checkChangeBuildTestsNeedChangesValue checks one generated value on the active path.
+func checkChangeBuildTestsNeedChangesValue(in *TestsNeedChanges, field string, active map[any]bool) error {
+	if in == nil {
+		return nil
+	}
+	if active[in] {
+		return fmt.Errorf("%s: cyclic Go value", field)
+	}
+	active[in] = true
+	defer delete(active, in)
+	if in != nil {
+		for index1, item1 := range in.Findings {
+			_ = index1
+			_ = item1
+			if !utf8.ValidString(string(item1)) {
+				return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(generatedJSONChildPath(field, "findings", false), strconv.Itoa(index1), true))
+			}
+		}
+	}
+	return nil
+}
+
+// checkChangeBuildTestsAcceptedValue checks one generated value on the active path.
+func checkChangeBuildTestsAcceptedValue(in *TestsAccepted, field string, active map[any]bool) error {
+	if in == nil {
+		return nil
+	}
+	if active[in] {
+		return fmt.Errorf("%s: cyclic Go value", field)
+	}
+	active[in] = true
+	defer delete(active, in)
+	if in != nil {
+		if !utf8.ValidString(string(in.Commit)) {
+			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "commit", false))
+		}
 	}
 	return nil
 }
@@ -20354,6 +24698,45 @@ func checkReadCheckOutputPayloadReadCheckOutputPayloadValue(in *ReadCheckOutputP
 	return nil
 }
 
+// checkRequiredTestValue checks text and cycles before conversion.
+func checkRequiredTestValue(in *RequiredTest) error {
+	if in == nil {
+		return fmt.Errorf("missing root value")
+	}
+	active := make(map[any]bool)
+	if err := checkRequiredTestRequiredTestValue(in, "$", active); err != nil {
+		return err
+	}
+	return nil
+}
+
+// checkRequiredTestRequiredTestValue checks one generated value on the active path.
+func checkRequiredTestRequiredTestValue(in *RequiredTest, field string, active map[any]bool) error {
+	if in == nil {
+		return nil
+	}
+	if active[in] {
+		return fmt.Errorf("%s: cyclic Go value", field)
+	}
+	active[in] = true
+	defer delete(active, in)
+	if in != nil {
+		if !utf8.ValidString(string(in.Story)) {
+			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "story", false))
+		}
+		if !utf8.ValidString(string(in.FlowKey)) {
+			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "flow_key", false))
+		}
+		if !utf8.ValidString(string(in.Scenario)) {
+			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "scenario", false))
+		}
+		if !utf8.ValidString(string(in.Hook)) {
+			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "hook", false))
+		}
+	}
+	return nil
+}
+
 // checkReviseChangePayloadValue checks text and cycles before conversion.
 func checkReviseChangePayloadValue(in *ReviseChangePayload) error {
 	if in == nil {
@@ -20424,6 +24807,18 @@ func checkStartLiveTargetPayloadStartLiveTargetPayloadValue(in *StartLiveTargetP
 		if !utf8.ValidString(string(in.CandidateCommit)) {
 			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "candidate_commit", false))
 		}
+	}
+	return nil
+}
+
+// checkStartedBuildValue checks text and cycles before conversion.
+func checkStartedBuildValue(in *StartedBuild) error {
+	if in == nil {
+		return fmt.Errorf("missing root value")
+	}
+	active := make(map[any]bool)
+	if err := checkChangeBuildStartedBuildValue(in, "$", active); err != nil {
+		return err
 	}
 	return nil
 }
@@ -20568,6 +24963,189 @@ func checkStorySummaryItemValue(in *StorySummaryItem) error {
 	}
 	active := make(map[any]bool)
 	if err := checkChangeCardResultStorySummaryItemValue(in, "$", active); err != nil {
+		return err
+	}
+	return nil
+}
+
+// checkTestAssignmentValue checks text and cycles before conversion.
+func checkTestAssignmentValue(in *TestAssignment) error {
+	if in == nil {
+		return fmt.Errorf("missing root value")
+	}
+	active := make(map[any]bool)
+	if err := checkTestAssignmentTestAssignmentValue(in, "$", active); err != nil {
+		return err
+	}
+	return nil
+}
+
+// checkTestAssignmentTestAssignmentValue checks one generated value on the active path.
+func checkTestAssignmentTestAssignmentValue(in *TestAssignment, field string, active map[any]bool) error {
+	if in == nil {
+		return nil
+	}
+	if active[in] {
+		return fmt.Errorf("%s: cyclic Go value", field)
+	}
+	active[in] = true
+	defer delete(active, in)
+	if in != nil {
+		if !utf8.ValidString(string(in.ChangeID)) {
+			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "change_id", false))
+		}
+		if !utf8.ValidString(string(in.RequestRevision)) {
+			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "request_revision", false))
+		}
+		if err := checkChangeBuildTestWriterProgressValue(in.Progress, generatedJSONChildPath(field, "progress", false), active); err != nil {
+			return err
+		}
+		if !utf8.ValidString(string(in.WorkingFolder)) {
+			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "working_folder", false))
+		}
+		for index1, item1 := range in.Stories {
+			_ = index1
+			_ = item1
+			if err := checkChangeCardResultStorySummaryItemValue(item1, generatedJSONChildPath(generatedJSONChildPath(field, "stories", false), strconv.Itoa(index1), true), active); err != nil {
+				return err
+			}
+		}
+		for index1, item1 := range in.RequiredTests {
+			_ = index1
+			_ = item1
+			if err := checkRequiredTestRequiredTestValue(item1, generatedJSONChildPath(generatedJSONChildPath(field, "required_tests", false), strconv.Itoa(index1), true), active); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// checkTestAssignmentItemValue checks text and cycles before conversion.
+func checkTestAssignmentItemValue(in *TestAssignmentItem) error {
+	if in == nil {
+		return fmt.Errorf("missing root value")
+	}
+	active := make(map[any]bool)
+	if err := checkTestAssignmentItemTestAssignmentItemValue(in, "$", active); err != nil {
+		return err
+	}
+	return nil
+}
+
+// checkTestAssignmentItemTestAssignmentItemValue checks one generated value on the active path.
+func checkTestAssignmentItemTestAssignmentItemValue(in *TestAssignmentItem, field string, active map[any]bool) error {
+	if in == nil {
+		return nil
+	}
+	if active[in] {
+		return fmt.Errorf("%s: cyclic Go value", field)
+	}
+	active[in] = true
+	defer delete(active, in)
+	if in != nil {
+		if !utf8.ValidString(string(in.ChangeID)) {
+			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "change_id", false))
+		}
+		if !utf8.ValidString(string(in.RequestRevision)) {
+			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "request_revision", false))
+		}
+		if err := checkChangeBuildTestWriterProgressValue(in.Progress, generatedJSONChildPath(field, "progress", false), active); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// checkTestAssignmentListValue checks text and cycles before conversion.
+func checkTestAssignmentListValue(in *TestAssignmentList) error {
+	if in == nil {
+		return fmt.Errorf("missing root value")
+	}
+	active := make(map[any]bool)
+	if err := checkTestAssignmentListTestAssignmentListValue(in, "$", active); err != nil {
+		return err
+	}
+	return nil
+}
+
+// checkTestAssignmentListTestAssignmentListValue checks one generated value on the active path.
+func checkTestAssignmentListTestAssignmentListValue(in *TestAssignmentList, field string, active map[any]bool) error {
+	if in == nil {
+		return nil
+	}
+	if active[in] {
+		return fmt.Errorf("%s: cyclic Go value", field)
+	}
+	active[in] = true
+	defer delete(active, in)
+	if in != nil {
+		for index1, item1 := range in.Assignments {
+			_ = index1
+			_ = item1
+			if err := checkTestAssignmentItemTestAssignmentItemValue(item1, generatedJSONChildPath(generatedJSONChildPath(field, "assignments", false), strconv.Itoa(index1), true), active); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// checkTestWriterProgressValue checks text and cycles before conversion.
+func checkTestWriterProgressValue(in *TestWriterProgress) error {
+	if in == nil {
+		return fmt.Errorf("missing root value")
+	}
+	active := make(map[any]bool)
+	if err := checkChangeBuildTestWriterProgressValue(in, "$", active); err != nil {
+		return err
+	}
+	return nil
+}
+
+// checkTestsAcceptedValue checks text and cycles before conversion.
+func checkTestsAcceptedValue(in *TestsAccepted) error {
+	if in == nil {
+		return fmt.Errorf("missing root value")
+	}
+	active := make(map[any]bool)
+	if err := checkChangeBuildTestsAcceptedValue(in, "$", active); err != nil {
+		return err
+	}
+	return nil
+}
+
+// checkTestsAssignedValue checks text and cycles before conversion.
+func checkTestsAssignedValue(in *TestsAssigned) error {
+	if in == nil {
+		return fmt.Errorf("missing root value")
+	}
+	active := make(map[any]bool)
+	if err := checkChangeBuildTestsAssignedValue(in, "$", active); err != nil {
+		return err
+	}
+	return nil
+}
+
+// checkTestsNeedChangesValue checks text and cycles before conversion.
+func checkTestsNeedChangesValue(in *TestsNeedChanges) error {
+	if in == nil {
+		return fmt.Errorf("missing root value")
+	}
+	active := make(map[any]bool)
+	if err := checkChangeBuildTestsNeedChangesValue(in, "$", active); err != nil {
+		return err
+	}
+	return nil
+}
+
+// checkTestsReportedValue checks text and cycles before conversion.
+func checkTestsReportedValue(in *TestsReported) error {
+	if in == nil {
+		return fmt.Errorf("missing root value")
+	}
+	active := make(map[any]bool)
+	if err := checkChangeBuildTestsReportedValue(in, "$", active); err != nil {
 		return err
 	}
 	return nil

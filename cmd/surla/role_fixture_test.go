@@ -23,7 +23,7 @@ import (
 
 // workflowAuthenticator provisions independent test credentials rather than giving one token several roles.
 func workflowAuthenticator(owners map[string]controlplane.Principal) controlplane.RequestAuthenticator {
-	credentials := make(map[string]controlplane.Principal, len(owners)*3)
+	credentials := make(map[string]controlplane.Principal, len(owners)*4)
 	for token, p := range owners {
 		p.CallerID = "user"
 		p.Kind = controlplane.CallerUser
@@ -34,6 +34,9 @@ func workflowAuthenticator(owners map[string]controlplane.Principal) controlplan
 		p.CallerID = "builder"
 		p.Kind = controlplane.CallerBuilder
 		credentials[token+"-builder"] = p
+		p.CallerID = "test-writer"
+		p.Kind = controlplane.CallerTestWriter
+		credentials[token+"-test-writer"] = p
 	}
 	return fixtureCredentials(credentials)
 }

@@ -553,3 +553,154 @@ func BuildWaitForChangesPayload(surlaWaitForChangesSince *string) (*surla.WaitFo
 
 	return v, nil
 }
+
+// BuildStartBuildPayload builds the payload for the surla start_build endpoint
+// from CLI flags.
+func BuildStartBuildPayload(surlaStartBuildBody *string, surlaStartBuildChangeID *string) (*surla.StartBuildPayload, error) {
+	var err error
+	var body StartBuildRequestBody
+	{
+		if surlaStartBuildBody == nil {
+			return nil, fmt.Errorf("missing required flag --body")
+		}
+		err = json.Unmarshal([]byte(*surlaStartBuildBody), &body)
+		if err != nil {
+			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"request_revision\": \"q9g\"\n   }'")
+		}
+		if utf8.RuneCountInString(body.RequestRevision) < 1 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.request_revision", body.RequestRevision, utf8.RuneCountInString(body.RequestRevision), 1, true))
+		}
+		if err != nil {
+			return nil, err
+		}
+	}
+	var changeID string
+	{
+		if surlaStartBuildChangeID == nil {
+			return nil, fmt.Errorf("missing required flag --change-id")
+		}
+		changeID = *surlaStartBuildChangeID
+		if utf8.RuneCountInString(changeID) < 1 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("change_id", changeID, utf8.RuneCountInString(changeID), 1, true))
+		}
+		if err != nil {
+			return nil, err
+		}
+	}
+	v := &surla.StartBuildPayload{
+		RequestRevision: body.RequestRevision,
+	}
+	v.ChangeID = changeID
+
+	return v, nil
+}
+
+// BuildGetBuildPayload builds the payload for the surla get_build endpoint
+// from CLI flags.
+func BuildGetBuildPayload(surlaGetBuildChangeID *string) (*surla.GetBuildPayload, error) {
+	var err error
+	var changeID string
+	{
+		if surlaGetBuildChangeID == nil {
+			return nil, fmt.Errorf("missing required flag --change-id")
+		}
+		changeID = *surlaGetBuildChangeID
+		if utf8.RuneCountInString(changeID) < 1 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("change_id", changeID, utf8.RuneCountInString(changeID), 1, true))
+		}
+		if err != nil {
+			return nil, err
+		}
+	}
+	v := &surla.GetBuildPayload{}
+	v.ChangeID = changeID
+
+	return v, nil
+}
+
+// BuildGetBuildAssignmentPayload builds the payload for the surla
+// get_build_assignment endpoint from CLI flags.
+func BuildGetBuildAssignmentPayload(surlaGetBuildAssignmentChangeID *string) (*surla.GetBuildAssignmentPayload, error) {
+	var err error
+	var changeID string
+	{
+		if surlaGetBuildAssignmentChangeID == nil {
+			return nil, fmt.Errorf("missing required flag --change-id")
+		}
+		changeID = *surlaGetBuildAssignmentChangeID
+		if utf8.RuneCountInString(changeID) < 1 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("change_id", changeID, utf8.RuneCountInString(changeID), 1, true))
+		}
+		if err != nil {
+			return nil, err
+		}
+	}
+	v := &surla.GetBuildAssignmentPayload{}
+	v.ChangeID = changeID
+
+	return v, nil
+}
+
+// BuildGetTestAssignmentPayload builds the payload for the surla
+// get_test_assignment endpoint from CLI flags.
+func BuildGetTestAssignmentPayload(surlaGetTestAssignmentChangeID *string) (*surla.GetTestAssignmentPayload, error) {
+	var err error
+	var changeID string
+	{
+		if surlaGetTestAssignmentChangeID == nil {
+			return nil, fmt.Errorf("missing required flag --change-id")
+		}
+		changeID = *surlaGetTestAssignmentChangeID
+		if utf8.RuneCountInString(changeID) < 1 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("change_id", changeID, utf8.RuneCountInString(changeID), 1, true))
+		}
+		if err != nil {
+			return nil, err
+		}
+	}
+	v := &surla.GetTestAssignmentPayload{}
+	v.ChangeID = changeID
+
+	return v, nil
+}
+
+// BuildReportTestsPayload builds the payload for the surla report_tests
+// endpoint from CLI flags.
+func BuildReportTestsPayload(surlaReportTestsBody *string, surlaReportTestsChangeID *string) (*surla.ReportTestsPayload, error) {
+	var err error
+	var body ReportTestsRequestBody
+	{
+		if surlaReportTestsBody == nil {
+			return nil, fmt.Errorf("missing required flag --body")
+		}
+		err = json.Unmarshal([]byte(*surlaReportTestsBody), &body)
+		if err != nil {
+			return nil, fmt.Errorf("invalid JSON for body, \nerror: %s, \nexample of valid JSON:\n%s", err, "'{\n      \"request_revision\": \"5\"\n   }'")
+		}
+		if utf8.RuneCountInString(body.RequestRevision) < 1 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("body.request_revision", body.RequestRevision, utf8.RuneCountInString(body.RequestRevision), 1, true))
+		}
+		if err != nil {
+			return nil, err
+		}
+	}
+	var changeID string
+	{
+		if surlaReportTestsChangeID == nil {
+			return nil, fmt.Errorf("missing required flag --change-id")
+		}
+		changeID = *surlaReportTestsChangeID
+		if utf8.RuneCountInString(changeID) < 1 {
+			err = goa.MergeErrors(err, goa.InvalidLengthError("change_id", changeID, utf8.RuneCountInString(changeID), 1, true))
+		}
+		if err != nil {
+			return nil, err
+		}
+	}
+	v := &surla.ReportTestsPayload{
+		RequestRevision: body.RequestRevision,
+	}
+	v.ChangeID = changeID
+
+	return v, nil
+}
