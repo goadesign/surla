@@ -127,6 +127,17 @@ type TeamSpaceConflict struct {
 	Count int
 }
 
+type TeamUnavailable struct {
+	// Error name.
+	Name string
+	// What could not be used: stopping (the server is shutting down), herdr (a
+	// Herdr command failed), roster_folder (Herdr's launcher roster folder could
+	// not be written), project_state (the project's private record or an agent
+	// credential could not be read or written), or role_folder (a role's working
+	// folder could not be read).
+	Cause string
+}
+
 // Error returns an error description.
 func (e *TeamSpaceConflict) Error() string {
 	return ""
@@ -144,6 +155,23 @@ func (e *TeamSpaceConflict) GoaErrorName() string {
 	return e.Name
 }
 
+// Error returns an error description.
+func (e *TeamUnavailable) Error() string {
+	return ""
+}
+
+// ErrorName returns the error name.
+//
+// Deprecated: Use GoaErrorName - https://github.com/goadesign/goa/issues/3105
+func (e *TeamUnavailable) ErrorName() string {
+	return e.GoaErrorName()
+}
+
+// GoaErrorName returns the error name.
+func (e *TeamUnavailable) GoaErrorName() string {
+	return e.Name
+}
+
 // MakeForbidden builds a goa.ServiceError from an error.
 func MakeForbidden(err error) *goa.ServiceError {
 	return goa.NewServiceError(err, "forbidden", false, false, false)
@@ -157,11 +185,6 @@ func MakeUnprocessable(err error) *goa.ServiceError {
 // MakeWindowBusy builds a goa.ServiceError from an error.
 func MakeWindowBusy(err error) *goa.ServiceError {
 	return goa.NewServiceError(err, "window_busy", false, false, false)
-}
-
-// MakeTeamUnavailable builds a goa.ServiceError from an error.
-func MakeTeamUnavailable(err error) *goa.ServiceError {
-	return goa.NewServiceError(err, "team_unavailable", false, false, false)
 }
 
 // jsonProjectIdentityTransport stores JSON fields until they have been validated.
@@ -310,6 +333,37 @@ func validatejsonTeamSpaceConflictTransport(value *jsonTeamSpaceConflictTranspor
 	return err
 }
 
+// jsonTeamUnavailableTransport stores JSON fields until they have been validated.
+type jsonTeamUnavailableTransport struct {
+	// Error name.
+	Name *string `json:"name"`
+	// What could not be used: stopping (the server is shutting down), herdr (a
+	// Herdr command failed), roster_folder (Herdr's launcher roster folder could
+	// not be written), project_state (the project's private record or an agent
+	// credential could not be read or written), or role_folder (a role's working
+	// folder could not be read).
+	Cause *string `json:"cause"`
+}
+
+// validatejsonTeamUnavailableTransport checks decoded JSON before it becomes a service value.
+func validatejsonTeamUnavailableTransport(value *jsonTeamUnavailableTransport) (err error) {
+	if value == nil {
+		return goa.MissingFieldError("body", "JSON value")
+	}
+	if value.Name == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
+	}
+	if value.Cause == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("cause", "body"))
+	}
+	if value.Cause != nil {
+		if !(*value.Cause == "stopping" || *value.Cause == "herdr" || *value.Cause == "roster_folder" || *value.Cause == "project_state" || *value.Cause == "role_folder") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.cause", *value.Cause, []any{"stopping", "herdr", "roster_folder", "project_state", "role_folder"}))
+		}
+	}
+	return err
+}
+
 // teamSpaceConflictIntTransport stores JSON fields until they have been validated.
 type teamSpaceConflictIntTransport int
 
@@ -367,6 +421,14 @@ func validateProjectTeamRoleOriginal(value *ProjectTeamRole) (err error) {
 func validateTeamSpaceConflictOriginal(value *TeamSpaceConflict) (err error) {
 	if value.Count < 2 {
 		err = goa.MergeErrors(err, goa.InvalidRangeError("value.count", value.Count, 2, true))
+	}
+	return err
+}
+
+// validateTeamUnavailableOriginal checks the original typed value before JSON conversion.
+func validateTeamUnavailableOriginal(value *TeamUnavailable) (err error) {
+	if !(value.Cause == "stopping" || value.Cause == "herdr" || value.Cause == "roster_folder" || value.Cause == "project_state" || value.Cause == "role_folder") {
+		err = goa.MergeErrors(err, goa.InvalidEnumValueError("value.cause", value.Cause, []any{"stopping", "herdr", "roster_folder", "project_state", "role_folder"}))
 	}
 	return err
 }
@@ -747,6 +809,92 @@ func DecodeTeamSpaceConflict(data []byte) (out *TeamSpaceConflict, err error) {
 	return out, nil
 }
 
+// EncodeTeamUnavailable turns a service value into JSON using the field names in the Goa design.
+func EncodeTeamUnavailable(in *TeamUnavailable) ([]byte, error) {
+	if err := checkTeamUnavailableValue(in); err != nil {
+		return nil, fmt.Errorf("encode TeamUnavailable JSON: %w", err)
+	}
+	if err := validateTeamUnavailableOriginal(in); err != nil {
+		return nil, fmt.Errorf("validate TeamUnavailable value: %w", err)
+	}
+	var body *jsonTeamUnavailableTransport
+	{
+		body = &jsonTeamUnavailableTransport{
+			Name:  &in.Name,
+			Cause: &in.Cause,
+		}
+	}
+	if err := validatejsonTeamUnavailableTransport(body); err != nil {
+		return nil, fmt.Errorf("validate TeamUnavailable JSON: %w", err)
+	}
+	data, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("encode TeamUnavailable JSON: %w", err)
+	}
+	return data, nil
+}
+
+// ValidateTeamUnavailableValue checks the original Go fields against their declared constraints.
+// It returns validation errors without encoding the value as JSON.
+
+func ValidateTeamUnavailableValue(in *TeamUnavailable) error {
+	if err := checkTeamUnavailableValue(in); err != nil {
+		return fmt.Errorf("validate TeamUnavailable value: %w", err)
+	}
+	if err := validateTeamUnavailableOriginal(in); err != nil {
+		return fmt.Errorf("validate TeamUnavailable value: %w", err)
+	}
+
+	if in == nil {
+		return goa.MissingFieldError("result", "TeamUnavailable")
+	}
+
+	var body *jsonTeamUnavailableTransport
+	{
+		body = &jsonTeamUnavailableTransport{
+			Name:  &in.Name,
+			Cause: &in.Cause,
+		}
+	}
+	if err := validatejsonTeamUnavailableTransport(body); err != nil {
+		return fmt.Errorf("validate TeamUnavailable value: %w", err)
+	}
+	return nil
+}
+
+// DecodeTeamUnavailable checks JSON field names from the Goa design and returns a service value.
+func DecodeTeamUnavailable(data []byte) (out *TeamUnavailable, err error) {
+	root, err := readStrictJSON(data)
+	if err != nil {
+		return out, fmt.Errorf("decode TeamUnavailable JSON: %w", err)
+	}
+	if err := validateTeamUnavailableJSONValue("", root, ""); err != nil {
+		return out, fmt.Errorf("decode TeamUnavailable JSON: %w", err)
+	}
+	var body *jsonTeamUnavailableTransport
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&body); err != nil {
+		return out, fmt.Errorf("decode TeamUnavailable JSON: %w", err)
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		if err == nil {
+			return out, fmt.Errorf("decode TeamUnavailable JSON: multiple JSON values")
+		}
+		return out, fmt.Errorf("decode TeamUnavailable JSON after first value: %w", err)
+	}
+	if err := validatejsonTeamUnavailableTransport(body); err != nil {
+		return out, fmt.Errorf("validate TeamUnavailable JSON: %w", err)
+	}
+	{
+		out = &TeamUnavailable{
+			Name:  *body.Name,
+			Cause: *body.Cause,
+		}
+	}
+	return out, nil
+}
+
 func decodeProjectTeamRoleTransportToProjectTeamRole(v *jsonProjectTeamRoleTransport) *ProjectTeamRole {
 	res := &ProjectTeamRole{
 		Role:    *v.Role,
@@ -1058,6 +1206,50 @@ func validateTeamSpaceConflictJSONValue2(path string, value any, description str
 	return nil
 }
 
+// validateTeamUnavailableJSONValue checks one value whose JSON shape is fixed by the generated Goa type.
+func validateTeamUnavailableJSONValue(path string, value any, description string) error {
+	field := path
+	if field == "" {
+		field = "$payload"
+	}
+	if value == nil {
+		return invalidGeneratedFieldTypeError(field, "object", "null", description)
+	}
+	typed, ok := value.(map[string]any)
+	if !ok {
+		return invalidGeneratedFieldTypeError(field, "object", decodedJSONType(value), description)
+	}
+	keys := make([]string, 0, len(typed))
+	for key := range typed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "cause":
+			if err := validateProjectIdentityJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "What could not be used: stopping (the server is shutting down), herdr (a Herdr command failed), roster_folder (Herdr's launcher roster folder could not be written), project_state (the project's private record or an agent credential could not be read or written), or role_folder (a role's working folder could not be read).",
+			); err != nil {
+				return err
+			}
+		case "name":
+			if err := validateProjectIdentityJSONValue2(
+				generatedJSONChildPath(path, key, false),
+				typed[key], "Error name.",
+			); err != nil {
+				return err
+			}
+		default:
+			return unknownJSONFieldError(path, key, []string{
+				"cause",
+				"name",
+			})
+		}
+	}
+	return nil
+}
+
 // readStrictJSON checks the complete JSON document for malformed text and
 // duplicate members, then returns values with their original number text.
 func readStrictJSON(data []byte) (any, error) {
@@ -1355,6 +1547,39 @@ func checkTeamSpaceConflictTeamSpaceConflictValue(in *TeamSpaceConflict, field s
 	if in != nil {
 		if !utf8.ValidString(string(in.Name)) {
 			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "name", false))
+		}
+	}
+	return nil
+}
+
+// checkTeamUnavailableValue checks text and cycles before conversion.
+func checkTeamUnavailableValue(in *TeamUnavailable) error {
+	if in == nil {
+		return fmt.Errorf("missing root value")
+	}
+	active := make(map[any]bool)
+	if err := checkTeamUnavailableTeamUnavailableValue(in, "$", active); err != nil {
+		return err
+	}
+	return nil
+}
+
+// checkTeamUnavailableTeamUnavailableValue checks one generated value on the active path.
+func checkTeamUnavailableTeamUnavailableValue(in *TeamUnavailable, field string, active map[any]bool) error {
+	if in == nil {
+		return nil
+	}
+	if active[in] {
+		return fmt.Errorf("%s: cyclic Go value", field)
+	}
+	active[in] = true
+	defer delete(active, in)
+	if in != nil {
+		if !utf8.ValidString(string(in.Name)) {
+			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "name", false))
+		}
+		if !utf8.ValidString(string(in.Cause)) {
+			return fmt.Errorf("%s: invalid UTF-8", generatedJSONChildPath(field, "cause", false))
 		}
 	}
 	return nil

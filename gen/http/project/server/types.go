@@ -125,24 +125,6 @@ type EnsureTeamAmbiguousSpaceResponseBody struct {
 	Count int `form:"count" json:"count" xml:"count"`
 }
 
-// EnsureTeamTeamUnavailableResponseBody is the type of the "project" service
-// "ensure_team" endpoint HTTP response body for the "team_unavailable" error.
-type EnsureTeamTeamUnavailableResponseBody struct {
-	// Name is the name of this class of errors.
-	Name string `form:"name" json:"name" xml:"name"`
-	// ID is a unique identifier for this particular occurrence of the problem.
-	ID string `form:"id" json:"id" xml:"id"`
-	// Message is a human-readable explanation specific to this occurrence of the
-	// problem.
-	Message string `form:"message" json:"message" xml:"message"`
-	// Is the error temporary?
-	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
-	// Is the error a timeout?
-	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
-	// Is the error a server-side fault?
-	Fault bool `form:"fault" json:"fault" xml:"fault"`
-}
-
 // EnsureTeamForbiddenResponseBody is the type of the "project" service
 // "ensure_team" endpoint HTTP response body for the "forbidden" error.
 type EnsureTeamForbiddenResponseBody struct {
@@ -177,6 +159,19 @@ type EnsureTeamUnprocessableResponseBody struct {
 	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
 	// Is the error a server-side fault?
 	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
+// EnsureTeamTeamUnavailableResponseBody is the type of the "project" service
+// "ensure_team" endpoint HTTP response body for the "team_unavailable" error.
+type EnsureTeamTeamUnavailableResponseBody struct {
+	// Error name.
+	Name string `form:"name" json:"name" xml:"name"`
+	// What could not be used: stopping (the server is shutting down), herdr (a
+	// Herdr command failed), roster_folder (Herdr's launcher roster folder could
+	// not be written), project_state (the project's private record or an agent
+	// credential could not be read or written), or role_folder (a role's working
+	// folder could not be read).
+	Cause string `form:"cause" json:"cause" xml:"cause"`
 }
 
 // StopForbiddenResponseBody is the type of the "project" service "stop"
@@ -406,20 +401,6 @@ func NewEnsureTeamAmbiguousSpaceResponseBody(res *project.TeamSpaceConflict) *En
 	return body
 }
 
-// NewEnsureTeamTeamUnavailableResponseBody builds the HTTP response body from
-// the result of the "ensure_team" endpoint of the "project" service.
-func NewEnsureTeamTeamUnavailableResponseBody(res *goa.ServiceError) *EnsureTeamTeamUnavailableResponseBody {
-	body := &EnsureTeamTeamUnavailableResponseBody{
-		Name:      res.Name,
-		ID:        res.ID,
-		Message:   res.Message,
-		Temporary: res.Temporary,
-		Timeout:   res.Timeout,
-		Fault:     res.Fault,
-	}
-	return body
-}
-
 // NewEnsureTeamForbiddenResponseBody builds the HTTP response body from the
 // result of the "ensure_team" endpoint of the "project" service.
 func NewEnsureTeamForbiddenResponseBody(res *goa.ServiceError) *EnsureTeamForbiddenResponseBody {
@@ -444,6 +425,16 @@ func NewEnsureTeamUnprocessableResponseBody(res *goa.ServiceError) *EnsureTeamUn
 		Temporary: res.Temporary,
 		Timeout:   res.Timeout,
 		Fault:     res.Fault,
+	}
+	return body
+}
+
+// NewEnsureTeamTeamUnavailableResponseBody builds the HTTP response body from
+// the result of the "ensure_team" endpoint of the "project" service.
+func NewEnsureTeamTeamUnavailableResponseBody(res *project.TeamUnavailable) *EnsureTeamTeamUnavailableResponseBody {
+	body := &EnsureTeamTeamUnavailableResponseBody{
+		Name:  res.Name,
+		Cause: res.Cause,
 	}
 	return body
 }

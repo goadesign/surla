@@ -13468,18 +13468,14 @@ paths:
                                 temporary: false
                                 timeout: false
                 "503":
-                    description: 'team_unavailable: A bounded Herdr operation or roster write failed; run surla again.'
+                    description: 'team_unavailable: A bounded Herdr operation, roster write or project state access failed; its cause selects the recovery step.'
                     content:
-                        application/vnd.goa.error:
+                        application/json:
                             schema:
-                                $ref: '#/components/schemas/Error'
+                                $ref: '#/components/schemas/TeamUnavailable'
                             example:
-                                fault: false
-                                id: 123abc
-                                message: parameter 'p' must be an integer
-                                name: team_unavailable
-                                temporary: false
-                                timeout: false
+                                cause: herdr
+                                name: Aut velit ea sunt placeat possimus.
     /sandbox/draft:
         post:
             tags:
@@ -25193,6 +25189,29 @@ components:
             required:
                 - name
                 - count
+        TeamUnavailable:
+            type: object
+            properties:
+                cause:
+                    type: string
+                    description: 'What could not be used: stopping (the server is shutting down), herdr (a Herdr command failed), roster_folder (Herdr''s launcher roster folder could not be written), project_state (the project''s private record or an agent credential could not be read or written), or role_folder (a role''s working folder could not be read).'
+                    example: herdr
+                    enum:
+                        - stopping
+                        - herdr
+                        - roster_folder
+                        - project_state
+                        - role_folder
+                name:
+                    type: string
+                    description: Error name.
+                    example: Aut velit ea sunt placeat possimus.
+            example:
+                cause: herdr
+                name: Aut velit ea sunt placeat possimus.
+            required:
+                - name
+                - cause
         TestFindings:
             type: object
             properties:

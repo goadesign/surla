@@ -401,7 +401,7 @@ func TestTeamTimeoutHasRecoveryStep(t *testing.T) {
 			defer cancel()
 			if operation == "team" {
 				_, err = projectClient(state).EnsureTeam(ctx)
-				require.ErrorContains(t, err, "check Herdr, then run surla again")
+				require.ErrorContains(t, err, "open the Herdr app, then click Start agents on the views page")
 			} else {
 				_, err = projectClient(state).Identity(ctx)
 				require.ErrorContains(t, err, "project server request did not finish")

@@ -4,6 +4,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -14,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/goadesign/surla/internal/controlplane"
 	"github.com/goadesign/surla/internal/project"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -233,7 +235,7 @@ func TestEnsureTeamDeclaredErrorsAreFixed(t *testing.T) {
 	for _, tc := range []struct {
 		name, body, want string
 		status           int
-	}{{"ambiguous", `{"name":"ambiguous_space","count":3}`, "3 Herdr spaces match", 409}, {"busy", `{"name":"window_busy","id":"fixture","message":"private peer output","temporary":false,"timeout":false,"fault":false}`, "a dialog is open in Herdr", 409}, {"unavailable", `{"name":"team_unavailable","id":"fixture","message":"private peer output","temporary":false,"timeout":false,"fault":true}`, "project team could not be prepared", 503}} {
+	}{{"ambiguous", `{"name":"ambiguous_space","count":3}`, "3 Herdr spaces match", 409}, {"busy", `{"name":"window_busy","id":"fixture","message":"private peer output","temporary":false,"timeout":false,"fault":false}`, "a dialog is open in Herdr", 409}, {"unavailable", `{"name":"team_unavailable","cause":"herdr"}`, "Herdr did not complete a team command", 503}} {
 		t.Run(tc.name, func(t *testing.T) {
 			isolateServeWorkspace(t)
 			state, err := fixtureProjectState(t.TempDir())
@@ -252,6 +254,101 @@ func TestEnsureTeamDeclaredErrorsAreFixed(t *testing.T) {
 			require.ErrorContains(t, err, tc.want)
 			assert.NotContains(t, err.Error(), "private peer output")
 			assert.Contains(t, err.Error(), fmt.Sprintf("HTTP %d", tc.status))
+		})
+	}
+}
+
+// TestStartOpensViewsWhenTeamFails keeps the views page reachable whenever the server
+// answers: confirming and approving need no agent. The team failure follows the open
+// page with its own step, and the command still fails.
+func TestStartOpensViewsWhenTeamFails(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		programs error
+		status   int
+		body     string
+		want     string
+	}{
+		{
+			name:     "team programs",
+			programs: errors.New("chorus up could not start; run chorus up, then run surla again"),
+			want:     "run chorus up, then run surla again",
+		},
+		{
+			name:   "herdr command",
+			status: http.StatusServiceUnavailable,
+			body:   `{"name":"team_unavailable","cause":"herdr"}`,
+			want:   "open the Herdr app, then click Start agents on the views page",
+		},
+		{
+			name:   "roster folder",
+			status: http.StatusServiceUnavailable,
+			body:   `{"name":"team_unavailable","cause":"roster_folder"}`,
+			want:   "data/chorus-launcher/rosters",
+		},
+		{
+			name:   "project state",
+			status: http.StatusServiceUnavailable,
+			body:   `{"name":"team_unavailable","cause":"project_state"}`,
+			want:   "chmod 700",
+		},
+		{
+			name:   "duplicate spaces",
+			status: http.StatusConflict,
+			body:   `{"name":"ambiguous_space","count":2}`,
+			want:   "close duplicate spaces",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			isolateServeWorkspace(t)
+			state, err := fixtureProjectState("")
+			require.NoError(t, err)
+			cp, err := controlplane.New(controlplane.Options{CardsDir: state.CardsDir()})
+			require.NoError(t, err)
+			t.Cleanup(func() { assert.NoError(t, cp.Close()) })
+			url := state.Origin() + "/views#link=" + strings.Repeat("a", 64)
+			api := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				switch r.URL.Path {
+				case "/project/identity":
+					assert.NoError(t, json.NewEncoder(w).Encode(map[string]string{
+						"project_id": state.Record.ID, "directory": state.Record.Directory, "owner": state.Record.Owner,
+					}))
+				case "/project/team":
+					assert.Nil(t, tc.programs, "a team whose programs did not start is not requested")
+					w.Header().Set("goa-error", strings.Split(tc.body, `"`)[3])
+					w.WriteHeader(tc.status)
+					_, err := io.WriteString(w, tc.body)
+					assert.NoError(t, err)
+				case "/project/browser-link":
+					w.WriteHeader(http.StatusCreated)
+					assert.NoError(t, json.NewEncoder(w).Encode(map[string]string{
+						"url": url, "expires_at": time.Now().Add(time.Minute).Format(time.RFC3339Nano),
+					}))
+				default:
+					t.Errorf("unexpected request: %s", r.URL.Path)
+				}
+			}))
+			require.NoError(t, api.Listener.Close())
+			api.Listener, err = net.Listen("tcp", state.Address())
+			require.NoError(t, err)
+			api.Start()
+			t.Cleanup(api.Close)
+			require.NoError(t, state.SaveRunning(project.Running{ManagementCredential: strings.Repeat("b", 64)}))
+			runtime := testProjectRuntime()
+			bindFixtureTeamEffects(&runtime)
+			runtime.preflight = func() error { return nil }
+			runtime.startTeamPrograms = func(context.Context) error { return tc.programs }
+			opened := ""
+			runtime.openViews = func(_ context.Context, address string) error { opened = address; return nil }
+			var output strings.Builder
+			err = runtime.start(&output)
+			assert.Equal(t, url, opened, "the views page opens although the team failed")
+			assert.Contains(t, output.String(), "Surla is running for "+state.Record.Directory)
+			require.Error(t, err, "the exit status still reports the team failure")
+			assert.Contains(t, err.Error(), "the project team is not ready")
+			assert.Contains(t, err.Error(), tc.want)
+			assert.NotContains(t, err.Error(), "check Herdr")
 		})
 	}
 }

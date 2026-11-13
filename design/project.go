@@ -36,6 +36,16 @@ var TeamSpaceConflict = Type("TeamSpaceConflict", func() {
 	Required("name", "count")
 })
 
+// TeamUnavailable names which part of team preparation failed, so the CLI can give
+// that part's own recovery step without printing peer-authored error text.
+var TeamUnavailable = Type("TeamUnavailable", func() {
+	Attribute("name", String, "Error name.", func() { Meta("struct:error:name") })
+	Attribute("cause", String, "What could not be used: stopping (the server is shutting down), herdr (a Herdr command failed), roster_folder (Herdr's launcher roster folder could not be written), project_state (the project's private record or an agent credential could not be read or written), or role_folder (a role's working folder could not be read).", func() {
+		Enum("stopping", "herdr", "roster_folder", "project_state", "role_folder")
+	})
+	Required("name", "cause")
+})
+
 var _ = Service("project", func() {
 	Description("Owns one local project's server identity, agent credentials, and one-use browser access. Management credentials last for one listening server and never authorize application decisions. This service is not exposed as agent tools.")
 	Error("forbidden", ErrorResult, "The trusted credential cannot perform this operation.")
@@ -55,7 +65,7 @@ var _ = Service("project", func() {
 		Result(ProjectTeam)
 		Error("ambiguous_space", TeamSpaceConflict, "Several local spaces match the team name and folder; close the duplicates before starting agents again.")
 		Error("window_busy", ErrorResult, "Another Herdr dialog is open; close it and run surla again.")
-		Error("team_unavailable", ErrorResult, "A bounded Herdr operation or roster write failed; run surla again.")
+		Error("team_unavailable", TeamUnavailable, "A bounded Herdr operation, roster write or project state access failed; its cause selects the recovery step.")
 		HTTP(func() {
 			POST("/team")
 			Response(StatusOK)

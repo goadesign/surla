@@ -168,34 +168,37 @@ func (runtime projectRuntime) start(stdout io.Writer) (err error) {
 		return err
 	}
 
-	if err := runtime.startTeamPrograms(context.Background()); err != nil {
-		return err
+	// Confirming and approving on the views page need no agent, so a team that cannot
+	// be prepared is reported after the page opens, and still fails the command.
+	teamErr := runtime.startTeamPrograms(context.Background())
+	if teamErr == nil {
+		teamCtx, stopTeam := context.WithTimeout(context.Background(), 50*time.Second)
+		defer stopTeam()
+		team, err := client.EnsureTeam(teamCtx)
+		if err != nil {
+			teamErr = err
+		} else if _, err := fmt.Fprintf(stdout, "Team %s.\n%s\n", team.Team, team.Step); err != nil {
+			return err
+		}
 	}
-	teamCtx, stopTeam := context.WithTimeout(context.Background(), 50*time.Second)
-	defer stopTeam()
-	team, err := client.EnsureTeam(teamCtx)
-	if err != nil {
-		return err
-	}
-	_, err = fmt.Fprintf(stdout, "Team %s.\n%s\n", team.Team, team.Step)
-	if err != nil {
-		return err
+	if teamErr != nil {
+		teamErr = fmt.Errorf("the project team is not ready: %w", teamErr)
 	}
 
 	linkCtx, stopLink := context.WithTimeout(context.Background(), 5*time.Second)
 	defer stopLink()
 	link, err := client.BrowserLink(linkCtx)
 	if err != nil {
-		return err
+		return errors.Join(err, teamErr)
 	}
 	if err := validateProjectViewsLink(state, link.URL); err != nil {
-		return err
+		return errors.Join(err, teamErr)
 	}
 	if err := runtime.openViews(linkCtx, link.URL); err != nil {
-		return fmt.Errorf("open project views: %w", err)
+		return errors.Join(fmt.Errorf("open project views: %w", err), teamErr)
 	}
 	_, err = fmt.Fprintf(stdout, "Surla is running for %s at %s\n", state.Record.Directory, state.Origin())
-	return err
+	return errors.Join(err, teamErr)
 }
 
 // validateProjectViewsLink confines the browser opener to the project's exact views
@@ -578,7 +581,7 @@ func teamManagementEndpoint(state *project.State) goa.Endpoint {
 	return func(ctx context.Context, payload any) (any, error) {
 		result, err := next(ctx, payload)
 		if errors.Is(err, context.DeadlineExceeded) {
-			return nil, fmt.Errorf("project team request did not finish; check Herdr, then run surla again: %w", context.DeadlineExceeded)
+			return nil, fmt.Errorf("project team request did not finish because Herdr did not answer in time; open the Herdr app, then click Start agents on the views page: %w", context.DeadlineExceeded)
 		}
 		return result, err
 	}
@@ -619,13 +622,15 @@ func managementEndpoint(
 		if errors.As(err, &spaceConflict) {
 			return nil, fmt.Errorf("%d Herdr spaces match this project; close duplicate spaces and run surla again (HTTP %d)", spaceConflict.Count, doer.lastStatus)
 		}
+		var unavailable *genproject.TeamUnavailable
+		if errors.As(err, &unavailable) {
+			return nil, fmt.Errorf("%s (HTTP %d)", teamUnavailableStep(state, unavailable.Cause), doer.lastStatus)
+		}
 		var serviceErr *goa.ServiceError
 		if errors.As(err, &serviceErr) {
 			switch serviceErr.Name {
 			case "window_busy":
 				return nil, fmt.Errorf("a dialog is open in Herdr; close it, then run surla again (HTTP %d)", doer.lastStatus)
-			case "team_unavailable":
-				return nil, fmt.Errorf("project team could not be prepared; check Herdr and run surla again (HTTP %d)", doer.lastStatus)
 			case "forbidden":
 				return nil, fmt.Errorf("project management operation is not permitted (HTTP %d); run surla again", doer.lastStatus)
 			case "unprocessable":
@@ -634,6 +639,26 @@ func managementEndpoint(
 		}
 		return nil, fmt.Errorf("project server response could not be used (HTTP %d); run surla again", doer.lastStatus)
 	}
+}
+
+// teamUnavailableStep is the CLI's fixed text for one declared team failure cause. It names
+// what could not be used and the step that repairs it; the retry is the views page's
+// Start agents, which reaches the same team operation, because the page opens regardless.
+func teamUnavailableStep(state *project.State, cause string) string {
+	const retry = "then click Start agents on the views page"
+	switch cause {
+	case "stopping":
+		return "the project server is stopping; run surla again"
+	case "herdr":
+		return "Herdr did not complete a team command; open the Herdr app, " + retry
+	case "roster_folder":
+		return "Herdr's launcher roster folder could not be written; make data/chorus-launcher/rosters in Herdr's app folder (~/.config/herdr-app unless HERDR_APP_HOME is set) writable by this account, " + retry
+	case "project_state":
+		return fmt.Sprintf("this project's private state in %s could not be read or written; make that folder and the folders in it private to this account (chmod 700) and its files too (chmod 600), %s", state.Dir, retry)
+	case "role_folder":
+		return fmt.Sprintf("a team role's working folder could not be read; make sure this account can open the project folder %s and its build working folders, %s", state.Record.Directory, retry)
+	}
+	return "project team could not be prepared; run surla again"
 }
 
 // projectHTTPClient keeps management requests off proxies and refuses redirects,
