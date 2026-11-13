@@ -18,19 +18,17 @@ type Client struct {
 	ChatEndpoint             goa.Endpoint
 	RunStatusEndpoint        goa.Endpoint
 	ApproveRefundEndpoint    goa.Endpoint
-	OverridePromptEndpoint   goa.Endpoint
 	ListOrdersEndpoint       goa.Endpoint
 	IssueStoreCreditEndpoint goa.Endpoint
 	RequestRefundEndpoint    goa.Endpoint
 }
 
 // NewClient initializes a "orders" service client given the endpoints.
-func NewClient(chat, runStatus, approveRefund, overridePrompt, listOrders, issueStoreCredit, requestRefund goa.Endpoint) *Client {
+func NewClient(chat, runStatus, approveRefund, listOrders, issueStoreCredit, requestRefund goa.Endpoint) *Client {
 	return &Client{
 		ChatEndpoint:             chat,
 		RunStatusEndpoint:        runStatus,
 		ApproveRefundEndpoint:    approveRefund,
-		OverridePromptEndpoint:   overridePrompt,
 		ListOrdersEndpoint:       listOrders,
 		IssueStoreCreditEndpoint: issueStoreCredit,
 		RequestRefundEndpoint:    requestRefund,
@@ -83,24 +81,6 @@ func (c *Client) ApproveRefund(ctx context.Context, p *ApproveRefundPayload) (re
 		return
 	}
 	return ires.(*RunView), nil
-}
-
-// OverridePrompt calls the "override_prompt" endpoint of the "orders" service.
-// OverridePrompt may return the following errors:
-//   - "unknown_prompt" (type *goa.ServiceError): No prompt with this ID is registered.
-//   - "invalid_prompt" (type *goa.ServiceError): The prompt template does not render.
-//   - "unauthorized" (type *goa.ServiceError): The bearer token is missing or invalid.
-//   - "forbidden" (type *goa.ServiceError): The caller may not perform this action.
-//   - "not_found" (type *goa.ServiceError): The run or approval does not exist.
-//   - "invalid_refund" (type *goa.ServiceError): The refund breaks a business rule.
-//   - error: internal error
-func (c *Client) OverridePrompt(ctx context.Context, p *OverridePromptPayload) (res *PromptVersion, err error) {
-	var ires any
-	ires, err = c.OverridePromptEndpoint(ctx, p)
-	if err != nil {
-		return
-	}
-	return ires.(*PromptVersion), nil
 }
 
 // ListOrders calls the "list_orders" endpoint of the "orders" service.

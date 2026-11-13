@@ -57,6 +57,8 @@ type (
 
 	// Platform is one running instance of the candidate.
 	Platform struct {
+		// addr is the orders API's loopback host:port.
+		addr string
 		// logDir holds the candidate processes' output files; it is owned by
 		// the evaluator and lies outside every candidate state directory.
 		logDir string
@@ -104,6 +106,10 @@ const Environment = "sim"
 // maxExcerptBytes bounds how much of one process's output a diagnostic shows.
 const maxExcerptBytes = 16 << 10
 
+// liveKeyEnv names the variable a live copy's orders API reads its live key
+// from; only the prompts service's override_prompt accepts it.
+const liveKeyEnv = "SURLA_LIVE_TARGET_KEY"
+
 // NewEnv returns an environment for the pinned candidate binaries with a fresh
 // test identity issuer key.
 func NewEnv(orders, worker candidate.Artifact) (*Env, error) {
@@ -137,15 +143,52 @@ func (e *Env) Token(tenant, subject, scope string) (string, error) {
 // API accepts connections. The caller must Close the platform on every path;
 // Start closes whatever it already started when it fails.
 func (e *Env) Start(ctx context.Context, depsURL string) (*Platform, error) {
+	return e.start(ctx, depsURL, "")
+}
+
+// StartLive starts the platform the way Start does for a live copy that
+// Surla's start_live_target runs: liveKey is added to the orders API's
+// environment, and nothing else, so Surla's draft_override can change its
+// prompts. The model is still the evaluator's scripted model.
+func (e *Env) StartLive(ctx context.Context, depsURL, liveKey string) (*Platform, error) {
+	if liveKey == "" {
+		return nil, errors.New("a live copy needs the key Surla minted for it")
+	}
+	return e.start(ctx, depsURL, liveKey)
+}
+
+// URL returns the orders API's loopback HTTP origin.
+func (p *Platform) URL() string {
+	return "http://" + p.addr
+}
+
+// Exited is closed once the orders API or the refund worker it started with
+// exits, for whatever reason.
+func (p *Platform) Exited() <-chan struct{} {
+	exited := make(chan struct{})
+	api, worker := p.api.Done(), p.worker.Done()
+	go func() {
+		select {
+		case <-api:
+		case <-worker:
+		}
+		close(exited)
+	}()
+	return exited
+}
+
+// start creates a platform and brings it up, closing whatever it started
+// when that fails. liveKey, when set, is the orders API's live key.
+func (e *Env) start(ctx context.Context, depsURL, liveKey string) (*Platform, error) {
 	p := &Platform{env: e}
-	if err := p.start(ctx, depsURL); err != nil {
+	if err := p.start(ctx, depsURL, liveKey); err != nil {
 		return nil, errors.Join(err, p.Close())
 	}
 	return p, nil
 }
 
 // start brings up the platform's processes, recording each one for Close.
-func (p *Platform) start(ctx context.Context, depsURL string) error {
+func (p *Platform) start(ctx context.Context, depsURL, liveKey string) error {
 	e := p.env
 	depsPort, err := urlPort(depsURL)
 	if err != nil {
@@ -183,11 +226,16 @@ func (p *Platform) start(ctx context.Context, depsURL string) error {
 		return err
 	}
 	addr := "127.0.0.1:" + strconv.Itoa(apiPort)
+	p.addr = addr
+	apiEnv := []string{"ORDERS_JWT_KEY=" + e.signingKey}
+	if liveKey != "" {
+		apiEnv = append(apiEnv, liveKeyEnv+"="+liveKey)
+	}
 	p.apiSpec = candidate.Spec{
 		Args: []string{"--env", Environment, "--commerce-url", depsURL, "--temporal", temporalAddr,
 			"--listen", addr, "--model-provider", "gateway", "--model-gateway", p.gateway.addr,
 			"--state-dir", apiState},
-		Env:          []string{"ORDERS_JWT_KEY=" + e.signingKey},
+		Env:          apiEnv,
 		StateDir:     apiState,
 		ConnectPorts: []int{temporalPort, depsPort, p.gateway.port},
 		ListenPort:   apiPort,

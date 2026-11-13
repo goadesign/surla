@@ -11,14 +11,14 @@ import (
 	"testing"
 	"time"
 
-	genordersclient "github.com/goadesign/surla/examples/orders/gen/http/orders/client"
-	genordersserver "github.com/goadesign/surla/examples/orders/gen/http/orders/server"
+	genpromptsclient "github.com/goadesign/surla/examples/orders/gen/http/prompts/client"
+	genpromptsserver "github.com/goadesign/surla/examples/orders/gen/http/prompts/server"
 	genorders "github.com/goadesign/surla/examples/orders/gen/orders"
 	genrefund "github.com/goadesign/surla/examples/orders/gen/orders/agents/refund"
 	genrefundorders "github.com/goadesign/surla/examples/orders/gen/orders/agents/refund/orders"
+	genprompts "github.com/goadesign/surla/examples/orders/gen/prompts"
 	"github.com/goadesign/surla/examples/orders/internal/orders"
 	"github.com/goadesign/surla/examples/orders/internal/runstore"
-	"github.com/golang-jwt/jwt/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"goa.design/goa-ai/runtime/agent/model"
@@ -60,9 +60,10 @@ type (
 	}
 )
 
-// TestOverridePromptChangesTheNextModelRequest calls override_prompt through
-// the generated HTTP server and client with an operator token, wired to the
-// agent's real prompt store, and reads the model request of the next turn.
+// TestOverridePromptChangesTheNextModelRequest calls the prompts service's
+// override_prompt through the generated HTTP server and client with the live
+// key, as Surla's draft_override does on a live copy, wired to the agent's
+// real prompt store, and reads the model request of the next turn.
 func TestOverridePromptChangesTheNextModelRequest(t *testing.T) {
 	spec := genrefund.PromptSpecSystem()
 	svc := startService(t)
@@ -73,7 +74,7 @@ func TestOverridePromptChangesTheNextModelRequest(t *testing.T) {
 	const draft = "You help customers with refunds. Answer in one sentence."
 	res, err := svc.overridePrompt(t, string(genrefund.SystemPromptID), draft)
 	require.NoError(t, err)
-	assert.Equal(t, &genorders.PromptVersion{PromptID: string(genrefund.SystemPromptID), Version: prompt.VersionFromTemplate(draft)}, res)
+	assert.Equal(t, &genprompts.OverridePromptResult{PromptID: string(genrefund.SystemPromptID), Version: prompt.VersionFromTemplate(draft)}, res)
 
 	second := svc.turn(t)
 	assert.Equal(t, []prompt.PromptRef{{ID: genrefund.SystemPromptID, Version: res.Version}}, second.PromptRefs,
@@ -195,29 +196,25 @@ func systemText(t *testing.T, req *model.Request) string {
 	return req.Messages[0].Text()
 }
 
-// overridePrompt calls override_prompt on an orders service that uses s's
-// prompts, through the generated HTTP server and client, with an operator
-// token holding the "prompts:manage" scope.
-func (s *service) overridePrompt(t *testing.T, promptID, template string) (*genorders.PromptVersion, error) {
+// overridePrompt calls the prompts service's override_prompt on a process
+// that uses s's prompts, through the generated HTTP server and client, with
+// the live key that process started with.
+func (s *service) overridePrompt(t *testing.T, promptID, template string) (*genprompts.OverridePromptResult, error) {
 	t.Helper()
-	signingKey := []byte("test-signing-key")
-	api := orders.New(nil, nil, nil, s.prompts, signingKey)
+	const liveKey = "live-key-for-tests"
 	mux := goahttp.NewMuxer()
-	genordersserver.Mount(mux, genordersserver.New(genorders.NewEndpoints(api), mux, goahttp.RequestDecoder, goahttp.ResponseEncoder, nil, nil))
+	endpoints := genprompts.NewEndpoints(orders.NewPromptService(s.prompts, liveKey))
+	genpromptsserver.Mount(mux, genpromptsserver.New(endpoints, mux, goahttp.RequestDecoder, goahttp.ResponseEncoder, nil, nil))
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
 	u, err := url.Parse(srv.URL)
 	require.NoError(t, err)
-	client := genordersclient.NewClient(u.Scheme, u.Host, srv.Client(), goahttp.RequestEncoder, goahttp.ResponseDecoder, false)
-	token, err := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
-		"sub": "op1", "tenant_id": "t1", "scope": "prompts:manage", "exp": time.Now().Add(time.Hour).Unix(),
-	}).SignedString(signingKey)
-	require.NoError(t, err)
-	res, err := client.OverridePrompt()(t.Context(), &genorders.OverridePromptPayload{Token: token, PromptID: promptID, Template: template})
+	client := genpromptsclient.NewClient(u.Scheme, u.Host, srv.Client(), goahttp.RequestEncoder, goahttp.ResponseDecoder, false)
+	res, err := client.OverridePrompt()(t.Context(), &genprompts.OverridePromptPayload{Key: new(liveKey), PromptID: promptID, Template: template})
 	if err != nil {
 		return nil, err
 	}
-	return res.(*genorders.PromptVersion), nil
+	return res.(*genprompts.OverridePromptResult), nil
 }
 
 // turn runs one customer message through the agent and returns the model

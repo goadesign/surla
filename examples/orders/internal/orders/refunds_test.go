@@ -66,7 +66,7 @@ func TestRefundTools(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			refunds := &fakeRefunds{}
-			svc := New(newFakeOrders(), refunds, nil, nil, nil)
+			svc := New(newFakeOrders(), refunds, nil, nil)
 			out, err := c.tool(svc, context.Background(), &genorders.RefundCommand{
 				TenantID: "t1", CustomerID: c.customerID, OrderID: c.orderID,
 			})

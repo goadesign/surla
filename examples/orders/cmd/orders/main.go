@@ -7,6 +7,12 @@
 // records survive restarts. The --env flag
 // only records which environment the commerce and payments endpoints belong
 // to; the endpoints themselves come from --commerce-url and --payments-url.
+//
+// When SURLA_LIVE_TARGET_KEY is set, the prompts service's override_prompt
+// accepts that key: Surla sets it when it starts this process as a live copy
+// for start_live_target, and its draft_override then changes the refund
+// agent's prompt text in this process only. Without it, override_prompt
+// rejects every call.
 package main
 
 import (
@@ -26,9 +32,11 @@ import (
 	gencommerce "github.com/goadesign/surla/examples/orders/gen/commerce"
 	gencommerceclient "github.com/goadesign/surla/examples/orders/gen/http/commerce/client"
 	genordersserver "github.com/goadesign/surla/examples/orders/gen/http/orders/server"
+	genpromptsserver "github.com/goadesign/surla/examples/orders/gen/http/prompts/server"
 	genorders "github.com/goadesign/surla/examples/orders/gen/orders"
 	genrefund "github.com/goadesign/surla/examples/orders/gen/orders/agents/refund"
 	genrefundorders "github.com/goadesign/surla/examples/orders/gen/orders/agents/refund/orders"
+	genprompts "github.com/goadesign/surla/examples/orders/gen/prompts"
 	"github.com/goadesign/surla/examples/orders/internal/assistant"
 	"github.com/goadesign/surla/examples/orders/internal/orders"
 	"github.com/goadesign/surla/examples/orders/internal/refundflow"
@@ -73,6 +81,9 @@ type config struct {
 	anthropicKey string
 	// signingKey verifies bearer tokens.
 	signingKey []byte
+	// liveKey is the key the prompts service's override_prompt requires,
+	// read from SURLA_LIVE_TARGET_KEY; empty rejects every override.
+	liveKey string
 }
 
 const (
@@ -80,6 +91,9 @@ const (
 	modelID = "default"
 	// runtimeDatabase is the runtime store's file name inside --state-dir.
 	runtimeDatabase = "orders-runtime.db"
+	// liveKeyEnv names the environment variable holding the live key Surla
+	// passes to a live copy it starts.
+	liveKeyEnv = "SURLA_LIVE_TARGET_KEY"
 )
 
 func main() {
@@ -126,8 +140,9 @@ func run(ctx context.Context, cfg config) (err error) {
 	}
 	defer func() { _ = eng.Close() }()
 
-	// prompts holds prompt overrides set through override_prompt. It lives in
-	// memory only, so restarting the service restores the built-in prompts.
+	// prompts holds prompt overrides set through the prompts service's
+	// override_prompt. It lives in memory only, so restarting the service
+	// restores the built-in prompts.
 	prompts := prompt.NewInMemoryStore()
 	rt := runtime.New(store, runtime.WithEngine(eng), runtime.WithPromptStore(prompts))
 	mc, err := newModelClient(cfg)
@@ -139,15 +154,15 @@ func run(ctx context.Context, cfg config) (err error) {
 	}
 
 	conversations := assistant.NewConversations(rt, genrefund.NewClient(rt), store)
-	svc := orders.New(commerce, refundflow.NewRunner(temporal, cfg.refundQueue), conversations,
-		assistant.NewPrompts(rt.PromptRegistry), cfg.signingKey)
+	svc := orders.New(commerce, refundflow.NewRunner(temporal, cfg.refundQueue), conversations, cfg.signingKey)
 	endpoints := genorders.NewEndpoints(svc)
+	promptEndpoints := genprompts.NewEndpoints(orders.NewPromptService(assistant.NewPrompts(rt.PromptRegistry), cfg.liveKey))
 
 	if err := genrefund.RegisterRefundAgent(ctx, rt, genrefund.RefundAgentConfig{Planner: assistant.NewPlanner(modelID)}); err != nil {
 		return fmt.Errorf("register refund agent: %w", err)
 	}
 	toolClient := genorders.NewClient(endpoints.Chat, endpoints.RunStatus, endpoints.ApproveRefund,
-		endpoints.OverridePrompt, endpoints.ListOrders, endpoints.IssueStoreCredit, endpoints.RequestRefund)
+		endpoints.ListOrders, endpoints.IssueStoreCredit, endpoints.RequestRefund)
 	if err := genrefund.RegisterUsedToolsets(ctx, rt,
 		genrefund.WithOrdersExecutor(genrefundorders.NewRefundOrdersExec(genrefundorders.WithClient(toolClient))),
 	); err != nil {
@@ -159,6 +174,7 @@ func run(ctx context.Context, cfg config) (err error) {
 
 	mux := goahttp.NewMuxer()
 	genordersserver.Mount(mux, genordersserver.New(endpoints, mux, goahttp.RequestDecoder, goahttp.ResponseEncoder, errorHandler, nil))
+	genpromptsserver.Mount(mux, genpromptsserver.New(promptEndpoints, mux, goahttp.RequestDecoder, goahttp.ResponseEncoder, errorHandler, nil))
 	srv := &http.Server{Addr: cfg.listen, Handler: mux, ReadHeaderTimeout: 10 * time.Second}
 	errc := make(chan error, 1)
 	go func() { errc <- srv.ListenAndServe() }()
@@ -211,6 +227,7 @@ func parseConfig() (config, error) {
 	if len(cfg.signingKey) == 0 {
 		return config{}, errors.New("ORDERS_JWT_KEY is required")
 	}
+	cfg.liveKey = os.Getenv(liveKeyEnv)
 	return cfg, nil
 }
 

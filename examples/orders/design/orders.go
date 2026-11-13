@@ -8,13 +8,18 @@ import (
 )
 
 // JWTAuth secures the public orders API. Customers hold the "orders:chat"
-// scope; managers additionally hold "refunds:approve". Operators who may change
-// the refund agent's prompts for every tenant hold "prompts:manage".
+// scope; managers additionally hold "refunds:approve".
 var JWTAuth = JWTSecurity("jwt", func() {
 	Description("Bearer token issued by the merchant's identity provider.")
 	Scope("orders:chat", "Talk to the refund assistant about your own orders.")
 	Scope("refunds:approve", "Approve or deny refunds that need a manager.")
-	Scope("prompts:manage", "Change the refund agent's prompts for every tenant.")
+})
+
+// LiveKey is the key Surla mints for a live copy of this platform and passes
+// to the orders process through its environment. Only the prompts service's
+// override_prompt requires it.
+var LiveKey = APIKeySecurity("live_key", func() {
+	Description("Key Surla minted for this process and passed to it at start.")
 })
 
 var _ = API("orders", func() {
@@ -117,13 +122,6 @@ var RunView = Type("RunView", func() {
 	Required("run_id", "status")
 })
 
-// PromptVersion identifies the prompt text override_prompt accepted.
-var PromptVersion = Type("PromptVersion", func() {
-	Attribute("prompt_id", String, "Prompt that was replaced.")
-	Attribute("version", String, "Version of the accepted text: \"sha256:\" followed by the hex SHA-256 of the template. Model requests that use this text carry this version.")
-	Required("prompt_id", "version")
-})
-
 var _ = Service("orders", func() {
 	Description("Refund assistant for a merchant's customers.")
 	Security(JWTAuth, func() { Scope("orders:chat") })
@@ -184,29 +182,6 @@ var _ = Service("orders", func() {
 		})
 	})
 
-	Method("override_prompt", func() {
-		Description("Replace the text of a registered prompt for every tenant served by this orders process. The agent's next model request planned by this process uses the new text. The change lasts until the process restarts, which restores the built-in text; other running orders processes keep their own prompts.")
-		Security(JWTAuth, func() { Scope("prompts:manage") })
-		Error("unknown_prompt", ErrorResult, "No prompt with this ID is registered.")
-		Error("invalid_prompt", ErrorResult, "The prompt template does not render.")
-		Payload(func() {
-			Token("token", String, "Operator bearer token.")
-			Attribute("prompt_id", String, "Registered prompt to replace.", func() {
-				MinLength(1)
-				Example("orders.refund.system")
-			})
-			Attribute("template", String, "New prompt text, as a Go text/template. It must render with no template data.", func() { MinLength(1) })
-			Required("token", "prompt_id", "template")
-		})
-		Result(PromptVersion)
-		HTTP(func() {
-			PUT("/prompts/{prompt_id}")
-			Response(StatusOK)
-			Response("unknown_prompt", StatusNotFound)
-			Response("invalid_prompt", StatusUnprocessableEntity)
-		})
-	})
-
 	// The following methods back the agent's tools. They have no HTTP
 	// transport: only the agent runtime calls them.
 	Method("list_orders", func() {
@@ -256,6 +231,52 @@ Never promise a refund before a tool result confirms it. If a tool refuses, expl
 		RunPolicy(func() {
 			DefaultCaps(MaxToolCalls(8), MaxRecoveryTurns(2))
 			TimeBudget("2m")
+		})
+	})
+})
+
+// The prompts service is the operation Surla's draft_override calls on a live
+// copy of this platform that Surla built and started itself. It follows
+// Surla's live target prompt contract: the key travels in the
+// X-Live-Target-Key header, the new text in the body, and a missing or wrong
+// key answers 401 with a plain-text unauthorized error. It is a service of its
+// own because the orders service's errors and bearer-token security are not
+// that contract's.
+var _ = Service("prompts", func() {
+	Description("Prompt text a live copy of the orders platform lets Surla replace. Each call replaces the text of one registered prompt for every tenant served by this orders process, until it exits.")
+	Error("unauthorized", String, "The key is missing or is not this process's live key.")
+	Error("unknown_prompt", ErrorResult, "No prompt with this ID is registered.")
+	Error("invalid_prompt", ErrorResult, "The template does not render with the prompt's registered spec.")
+
+	Method("override_prompt", func() {
+		Description("Replace the text of a registered prompt. The agent's next model request planned by this process uses the new text, and a restarted process starts again with the built-in text. The template must render with the prompt's registered spec, so text that does not render is rejected and the text in use stays the same. Returns the version of the accepted text.")
+		Security(LiveKey)
+		Payload(func() {
+			APIKey("live_key", "key", String, "This process's live key.")
+			Attribute("prompt_id", String, "Registered prompt to replace.", func() {
+				MinLength(1)
+				Example("orders.refund.system")
+			})
+			Attribute("template", String, "New prompt text, as a Go text/template. It must render with no template data.", func() { MinLength(1) })
+			// The key stays optional so a request without the header reaches
+			// APIKeyAuth and answers 401 rather than a validation error.
+			Required("prompt_id", "template")
+		})
+		Result(func() {
+			Attribute("prompt_id", String, "The prompt whose text was replaced.")
+			Attribute("version", String, "Version of the accepted text: \"sha256:\" followed by the hex SHA-256 of the template. Model requests that use this text carry this version.")
+			Required("prompt_id", "version")
+		})
+		HTTP(func() {
+			PUT("/prompts/{prompt_id}")
+			Header("key:X-Live-Target-Key")
+			Body(func() {
+				Attribute("template")
+			})
+			Response(StatusOK)
+			Response("unauthorized", StatusUnauthorized)
+			Response("unknown_prompt", StatusNotFound)
+			Response("invalid_prompt", StatusUnprocessableEntity)
 		})
 	})
 })

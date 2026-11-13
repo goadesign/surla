@@ -188,7 +188,8 @@ jobs:
         run: |
           npm ci --prefix ui/checkpoint --no-audit --no-fund </dev/null
       - name: Install the Temporal CLI
-        if: matrix.suite == 'verifier' || matrix.suite == 'orders-acceptance'
+        # The generation suite's Orders live-copy journey starts Temporal too.
+        if: matrix.suite == 'verifier' || matrix.suite == 'generation' || matrix.suite == 'orders-acceptance'
         run: |
           archive="temporal_cli_${TEMPORAL_CLI_VERSION}_darwin_arm64.tar.gz"
           curl -fsSL -o "$RUNNER_TEMP/$archive" \

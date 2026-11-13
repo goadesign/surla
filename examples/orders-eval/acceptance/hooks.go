@@ -2,7 +2,8 @@
 // one hook per scenario declared in design/suite.go. Each hook starts its own
 // simulator and candidate platform, drives the candidate's public API, and
 // returns exact checks. Hook errors mean the environment broke; a wrong product
-// outcome is a failed check.
+// outcome is a failed check. Live starts the same platform as the live copy
+// Surla's start_live_target runs.
 package acceptance
 
 import (

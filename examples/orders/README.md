@@ -29,11 +29,11 @@ flowchart LR
 
 | Path | Ownership & Purpose |
 | :--- | :--- |
-| [`design/orders.go`](design/orders.go) | Public `orders` HTTP service (`POST /chat`, `GET /runs/{run_id}`, `POST /runs/{run_id}/approval`, `PUT /prompts/{prompt_id}`), `orders.refund` agent, `orders.orders` toolset (`Inject`, `BoundedResult`, `Confirmation`, `RunPolicy`). |
+| [`design/orders.go`](design/orders.go) | Public `orders` HTTP service (`POST /chat`, `GET /runs/{run_id}`, `POST /runs/{run_id}/approval`), the `prompts` service a live copy serves to Surla (`PUT /prompts/{prompt_id}`), `orders.refund` agent, `orders.orders` toolset (`Inject`, `BoundedResult`, `Confirmation`, `RunPolicy`). |
 | [`design/deps.go`](design/deps.go) | External `commerce` and `payments` HTTP/JSON service contracts (`GET /tenants/{tenant_id}/customers/{customer_id}/orders`, `POST /tenants/{tenant_id}/refunds`). |
 | [`design/model.go`](design/model.go) | `goa.design/model` C4 architecture containers and relationships rendered to `gen/structurizr/model.json`. |
 | [`AGENTS_QUICKSTART.md`](AGENTS_QUICKSTART.md) | Auto-generated contextual map read by coding agents before touching implementation files. |
-| [`internal/orders/`](internal/orders/service.go) | Authenticated HTTP service, server-side `tenant_id`/`customer_id` tool methods, `ordersPageSize = 10` pagination, manager approval gate (`POST /runs/{run_id}/approval`), and operator prompt override handler (`PUT /prompts/{prompt_id}` requiring `prompts:manage`). |
+| [`internal/orders/`](internal/orders/service.go) | Authenticated HTTP service, server-side `tenant_id`/`customer_id` tool methods, `ordersPageSize = 10` pagination, manager approval gate (`POST /runs/{run_id}/approval`), and the live copy's prompt operation (`PromptService`, `PUT /prompts/{prompt_id}` requiring the live key Surla passes in `SURLA_LIVE_TARGET_KEY`). |
 | [`internal/assistant/`](internal/assistant/) & [`internal/refundflow/`](internal/refundflow/) | Refund agent planner, runtime prompt override validation and store updates (`assistant.Prompts`), and Temporal refund workflow execution. |
 | [`internal/runstore/`](internal/runstore/) | SQLite-backed durable run, transcript, and pending-approval store owned by the Orders API. |
 | [`cmd/orders/`](cmd/orders/main.go) & [`cmd/orders-worker/`](cmd/orders-worker/main.go) | Public Orders API server and Refund worker binaries verified by `surla verify`. |
@@ -57,13 +57,32 @@ go run ./cmd/surla diff --old-dir examples/orders --new-dir examples/orders
 
 ---
 
-## 2. Inspect the change contract
+## 2. Try Prompt Drafts on a Live Copy (`start_live_target` & `draft_override`)
 
-The shared control plane records the request and analysis as a Change Card,
-then evaluates a candidate module for `preview_architecture`. The result shows
-its C4 topology, agent policies, and tool contracts. The Orders application
-exposes `override_prompt` for process-owned prompt updates; the application
-contract is described in its Goa design.
+Surla changes the refund agent's prompts only in a live copy it builds and
+runs itself, never in an Orders process you started. With the verification
+settings from section 3 stored, the builder calls `start_live_target` with a
+commit: the project server builds `orders` and `orders-worker` from that commit
+as verification does, and the evaluator suite's `--live` mode starts them with
+simulated commerce and payments, a Temporal dev server, and the evaluator's
+scripted model. `draft_override` then sends new text for
+`orders.refund.system` to that copy's `prompts` service with the key Surla
+minted for it, and returns the accepted text's `sha256:` version. A draft with
+no live copy running is refused with `no_live_target`.
+
+Drafts are not verified and end with the copy. To keep a wording, edit the
+agent's `SystemPrompt` in `design/orders.go`, regenerate, commit, and verify
+that commit. The scripted model needs no provider key and answers from a fixed
+script, so a draft changes the prompt text and version the copy's model
+requests carry, not its replies. The copy's chat API needs bearer tokens
+signed with a key only the evaluator suite holds.
+
+Run the whole journey against the committed `HEAD` from the repository root
+(it needs the `temporal` CLI and macOS):
+
+```bash
+go test -race -count=1 -tags e2e -run TestOrdersLiveCopyAppliesADraftThroughTheProjectServer ./cmd/surla
+```
 
 ## 3. Run OS-Sandboxed End-to-End Verification (`surla verify`)
 
@@ -168,15 +187,21 @@ cat > "$WORK_DIR/promotion.json" <<EOF
 }
 EOF
 
-cd examples/orders
-surla verification set "$WORK_DIR/verification.json"
-surla promotion set "$WORK_DIR/promotion.json"
-surla
+(
+  cd examples/orders
+  surla verification set "$WORK_DIR/verification.json"
+  surla promotion set "$WORK_DIR/promotion.json"
+  surla
+)
 ```
 
-Settings apply at the next project-server start. The user confirms changes and
-approves results in the views page; agent tools cannot make those decisions.
-See the [project server reference](../../docs/REFERENCE.md#surla-serve).
+These commands use a `surla` built from this checkout
+(`go install ./cmd/surla` from the repository root), and the subshell leaves
+your shell in the repository root for the next section. Settings apply at the
+next project-server start. The user confirms changes and approves results in
+the views page; agent tools cannot make those decisions. See the
+[project server reference](../../docs/REFERENCE.md#surla-serve), which also
+names the Herdr prerequisite for starting `surla`.
 
 ---
 
