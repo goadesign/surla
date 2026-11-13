@@ -892,6 +892,7 @@ var _ = Service("surla", func() {
 	})
 	traceMethods()
 	storyRefreshMethods()
+	teamMethods()
 	changeListMethods()
 	buildMethods()
 })

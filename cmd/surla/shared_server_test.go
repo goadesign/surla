@@ -169,8 +169,8 @@ func TestSharedServerOwnershipRefinementResourcesAndLockReleaseAcrossRestarts(t 
 	rawResources, ok := resourcesRes["resources"].([]any)
 	require.True(t, ok)
 	assert.Len(t, rawResources, 1)
-	// wait_for_changes and start_build are the views page's HTTP-only operations, not tools.
-	assert.Len(t, toolNames, len(gensurla.MethodNames)-len(rawResources)-2)
+	// Waiting, starting builds, and the three team operations are HTTP-only.
+	assert.Len(t, toolNames, len(gensurla.MethodNames)-len(rawResources)-5)
 
 	gpRead := s1.call("4", "resources/read", map[string]any{"uri": "surla://golden-path"})
 	gpContents := requireResourceContents(t, gpRead)

@@ -26,6 +26,7 @@ type teamFixture struct {
 	overlays  []string
 	calls     []string
 	creates   int
+	focused   TeamSpace
 }
 
 // Spaces returns the fixture listing without reading Herdr.
@@ -44,13 +45,14 @@ func (f *teamFixture) CreateSpace(_ context.Context, name, folder string) (TeamS
 }
 
 // Terminals returns only fixture foreground and label observations.
-func (f *teamFixture) Terminals(context.Context, string, string) ([]TeamTerminal, error) {
+func (f *teamFixture) Terminals(context.Context, string, string, []string) ([]TeamTerminal, error) {
 	f.calls = append(f.calls, "terminals")
 	return f.terminals, nil
 }
 
 // Focus records the requested fixture focus without touching a window.
-func (f *teamFixture) Focus(context.Context, TeamSpace) error {
+func (f *teamFixture) Focus(_ context.Context, space TeamSpace) error {
+	f.focused = space
 	f.calls = append(f.calls, "focus")
 	return nil
 }

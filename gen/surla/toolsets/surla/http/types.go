@@ -528,9 +528,8 @@ type (
 	ListChangesResultTransport struct {
 		// Saved Change Cards, most recently saved first.
 		Changes []*ChangeListItemTransport `json:"changes"`
-		// Opaque value identifying this exact list and the owner's current Story
-		// evaluation; it changes whenever any listed value changes, and when a Story
-		// evaluation (get_story_refresh) starts, finishes or is replaced.
+		// Opaque value for change detection. Compare it only for equality; the
+		// returned fields contain the facts this operation makes readable.
 		Version *string `json:"version"`
 		// Whether approve_merge can record approvals on this server. It is false when
 		// no promotion target is configured, or when the server could not resolve its

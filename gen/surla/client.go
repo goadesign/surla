@@ -38,6 +38,9 @@ type Client struct {
 	ListTracesEndpoint                goa.Endpoint
 	RefreshStoryEndpoint              goa.Endpoint
 	GetStoryRefreshEndpoint           goa.Endpoint
+	GetTeamEndpoint                   goa.Endpoint
+	ShowTeamPaneEndpoint              goa.Endpoint
+	StartTeamAgentsEndpoint           goa.Endpoint
 	ListChangesEndpoint               goa.Endpoint
 	WaitForChangesEndpoint            goa.Endpoint
 	StartBuildEndpoint                goa.Endpoint
@@ -50,7 +53,7 @@ type Client struct {
 }
 
 // NewClient initializes a "surla" service client given the endpoints.
-func NewClient(goldenPath, proposeChange, reviseChange, confirmIntent, getChange, previewArchitecture, draftOverride, startLiveTarget, stopLiveTarget, verifyChange, getVerification, listVerifications, approveMerge, diff, configureModel, initProject, generateCode, checkProject, updateDependencies, readCheckOutput, listTraces, refreshStory, getStoryRefresh, listChanges, waitForChanges, startBuild, getBuild, listBuilderAssignments, getBuilderAssignment, listTestWriterAssignments, getTestWriterAssignment, reportTestsFinished goa.Endpoint) *Client {
+func NewClient(goldenPath, proposeChange, reviseChange, confirmIntent, getChange, previewArchitecture, draftOverride, startLiveTarget, stopLiveTarget, verifyChange, getVerification, listVerifications, approveMerge, diff, configureModel, initProject, generateCode, checkProject, updateDependencies, readCheckOutput, listTraces, refreshStory, getStoryRefresh, getTeam, showTeamPane, startTeamAgents, listChanges, waitForChanges, startBuild, getBuild, listBuilderAssignments, getBuilderAssignment, listTestWriterAssignments, getTestWriterAssignment, reportTestsFinished goa.Endpoint) *Client {
 	return &Client{
 		GoldenPathEndpoint:                goldenPath,
 		ProposeChangeEndpoint:             proposeChange,
@@ -75,6 +78,9 @@ func NewClient(goldenPath, proposeChange, reviseChange, confirmIntent, getChange
 		ListTracesEndpoint:                listTraces,
 		RefreshStoryEndpoint:              refreshStory,
 		GetStoryRefreshEndpoint:           getStoryRefresh,
+		GetTeamEndpoint:                   getTeam,
+		ShowTeamPaneEndpoint:              showTeamPane,
+		StartTeamAgentsEndpoint:           startTeamAgents,
 		ListChangesEndpoint:               listChanges,
 		WaitForChangesEndpoint:            waitForChanges,
 		StartBuildEndpoint:                startBuild,
@@ -443,6 +449,48 @@ func (c *Client) GetStoryRefresh(ctx context.Context) (res *StoryRefreshResult, 
 		return
 	}
 	return ires.(*StoryRefreshResult), nil
+}
+
+// GetTeam calls the "get_team" endpoint of the "surla" service.
+// GetTeam may return the following errors:
+//   - "forbidden" (type *goa.ServiceError): The authenticated caller may not perform this operation or does not own the resource.
+//   - error: internal error
+func (c *Client) GetTeam(ctx context.Context) (res *TeamSnapshot, err error) {
+	var ires any
+	ires, err = c.GetTeamEndpoint(ctx, nil)
+	if err != nil {
+		return
+	}
+	return ires.(*TeamSnapshot), nil
+}
+
+// ShowTeamPane calls the "show_team_pane" endpoint of the "surla" service.
+// ShowTeamPane may return the following errors:
+//   - "window_busy" (type *goa.ServiceError): Close the open Herdr dialog before showing a pane.
+//   - "pane_unavailable" (type *goa.ServiceError): The requested registered role has no owned pane to show.
+//   - "team_unavailable" (type *goa.ServiceError): Herdr could not establish the owned pane.
+//   - "forbidden" (type *goa.ServiceError): The authenticated caller may not perform this operation or does not own the resource.
+//   - error: internal error
+func (c *Client) ShowTeamPane(ctx context.Context, p *ShowTeamPanePayload) (err error) {
+	_, err = c.ShowTeamPaneEndpoint(ctx, p)
+	return
+}
+
+// StartTeamAgents calls the "start_team_agents" endpoint of the "surla"
+// service.
+// StartTeamAgents may return the following errors:
+//   - "ambiguous_space" (type *TeamSpaceConflict): Several spaces match the project; choose one before retrying.
+//   - "window_busy" (type *goa.ServiceError): Close the open Herdr dialog before starting agents.
+//   - "team_unavailable" (type *goa.ServiceError): The project team could not be prepared.
+//   - "forbidden" (type *goa.ServiceError): The authenticated caller may not perform this operation or does not own the resource.
+//   - error: internal error
+func (c *Client) StartTeamAgents(ctx context.Context) (res *ProjectTeam, err error) {
+	var ires any
+	ires, err = c.StartTeamAgentsEndpoint(ctx, nil)
+	if err != nil {
+		return
+	}
+	return ires.(*ProjectTeam), nil
 }
 
 // ListChanges calls the "list_changes" endpoint of the "surla" service.

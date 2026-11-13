@@ -176,6 +176,13 @@ type ReadCheckOutputRequestBody struct {
 	Cursor *string `form:"cursor,omitempty" json:"cursor,omitempty" xml:"cursor,omitempty"`
 }
 
+// ShowTeamPaneRequestBody is the type of the "surla" service "show_team_pane"
+// endpoint HTTP request body.
+type ShowTeamPaneRequestBody struct {
+	// Registered role whose pane the user requests.
+	Role *string `form:"role,omitempty" json:"role,omitempty" xml:"role,omitempty"`
+}
+
 // StartBuildRequestBody is the type of the "surla" service "start_build"
 // endpoint HTTP request body.
 type StartBuildRequestBody struct {
@@ -701,14 +708,35 @@ type GetStoryRefreshResponseBody struct {
 	Message string `form:"message" json:"message" xml:"message"`
 }
 
+// GetTeamResponseBody is the type of the "surla" service "get_team" endpoint
+// HTTP response body.
+type GetTeamResponseBody struct {
+	// Stable team name, also returned before a team is prepared.
+	Team string `form:"team" json:"team" xml:"team"`
+	// Registered roles in guide, builder, test_writer order; empty before
+	// registration.
+	Roles []*TeamRoleStateResponseBody `form:"roles" json:"roles" xml:"roles"`
+}
+
+// StartTeamAgentsResponseBody is the type of the "surla" service
+// "start_team_agents" endpoint HTTP response body.
+type StartTeamAgentsResponseBody struct {
+	// Stable Chorus team name.
+	Team string `form:"team" json:"team" xml:"team"`
+	// Local Herdr space identifier.
+	Space string                         `form:"space" json:"space" xml:"space"`
+	Roles []*ProjectTeamRoleResponseBody `form:"roles" json:"roles" xml:"roles"`
+	// Launcher state after ensuring the team.
+	Dialog string `form:"dialog" json:"dialog" xml:"dialog"`
+}
+
 // ListChangesResponseBody is the type of the "surla" service "list_changes"
 // endpoint HTTP response body.
 type ListChangesResponseBody struct {
 	// Saved Change Cards, most recently saved first.
 	Changes []*ChangeListItemResponseBody `form:"changes" json:"changes" xml:"changes"`
-	// Opaque value identifying this exact list and the owner's current Story
-	// evaluation; it changes whenever any listed value changes, and when a Story
-	// evaluation (get_story_refresh) starts, finishes or is replaced.
+	// Opaque value for change detection. Compare it only for equality; the
+	// returned fields contain the facts this operation makes readable.
 	Version string `form:"version" json:"version" xml:"version"`
 	// Whether approve_merge can record approvals on this server. It is false when
 	// no promotion target is configured, or when the server could not resolve its
@@ -2216,6 +2244,163 @@ type GetStoryRefreshForbiddenResponseBody struct {
 	Fault bool `form:"fault" json:"fault" xml:"fault"`
 }
 
+// GetTeamForbiddenResponseBody is the type of the "surla" service "get_team"
+// endpoint HTTP response body for the "forbidden" error.
+type GetTeamForbiddenResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
+// ShowTeamPaneWindowBusyResponseBody is the type of the "surla" service
+// "show_team_pane" endpoint HTTP response body for the "window_busy" error.
+type ShowTeamPaneWindowBusyResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
+// ShowTeamPanePaneUnavailableResponseBody is the type of the "surla" service
+// "show_team_pane" endpoint HTTP response body for the "pane_unavailable"
+// error.
+type ShowTeamPanePaneUnavailableResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
+// ShowTeamPaneTeamUnavailableResponseBody is the type of the "surla" service
+// "show_team_pane" endpoint HTTP response body for the "team_unavailable"
+// error.
+type ShowTeamPaneTeamUnavailableResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
+// ShowTeamPaneForbiddenResponseBody is the type of the "surla" service
+// "show_team_pane" endpoint HTTP response body for the "forbidden" error.
+type ShowTeamPaneForbiddenResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
+// StartTeamAgentsWindowBusyResponseBody is the type of the "surla" service
+// "start_team_agents" endpoint HTTP response body for the "window_busy" error.
+type StartTeamAgentsWindowBusyResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
+// StartTeamAgentsAmbiguousSpaceResponseBody is the type of the "surla" service
+// "start_team_agents" endpoint HTTP response body for the "ambiguous_space"
+// error.
+type StartTeamAgentsAmbiguousSpaceResponseBody struct {
+	// Error name.
+	Name string `form:"name" json:"name" xml:"name"`
+	// Number of local spaces matching the team's name and physical folder.
+	Count int `form:"count" json:"count" xml:"count"`
+}
+
+// StartTeamAgentsTeamUnavailableResponseBody is the type of the "surla"
+// service "start_team_agents" endpoint HTTP response body for the
+// "team_unavailable" error.
+type StartTeamAgentsTeamUnavailableResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
+// StartTeamAgentsForbiddenResponseBody is the type of the "surla" service
+// "start_team_agents" endpoint HTTP response body for the "forbidden" error.
+type StartTeamAgentsForbiddenResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
 // ListChangesForbiddenResponseBody is the type of the "surla" service
 // "list_changes" endpoint HTTP response body for the "forbidden" error.
 type ListChangesForbiddenResponseBody struct {
@@ -2890,6 +3075,36 @@ type TraceSpanResponseBody struct {
 	// True when text was shortened to fit this diagnostic record; use operator
 	// telemetry for the full values.
 	Shortened bool `form:"shortened" json:"shortened" xml:"shortened"`
+}
+
+// TeamRoleStateResponseBody is used to define fields on response body types.
+type TeamRoleStateResponseBody struct {
+	// Registered role.
+	Role string `form:"role" json:"role" xml:"role"`
+	// Registered Chorus handle.
+	Handle string `form:"handle" json:"handle" xml:"handle"`
+	// Current terminal state; unknown means Herdr cannot establish it.
+	State string `form:"state" json:"state" xml:"state"`
+	// Reported block kind or the reason a silent running agent needs the user.
+	Attention string `form:"attention" json:"attention" xml:"attention"`
+	// held when Chorus reports a watcher, gone after its absence grace, unknown
+	// otherwise.
+	Watcher string `form:"watcher" json:"watcher" xml:"watcher"`
+	// unread when this role owes an assignment read, nothing_owed when the owner
+	// established none, unknown when the owner could not read assignments. The
+	// guide has no assignments.
+	Assignment string `form:"assignment" json:"assignment" xml:"assignment"`
+}
+
+// ProjectTeamRoleResponseBody is used to define fields on response body types.
+type ProjectTeamRoleResponseBody struct {
+	// Trusted role.
+	Role string `form:"role" json:"role" xml:"role"`
+	// Stable Chorus handle and Surla actor identity.
+	Handle string `form:"handle" json:"handle" xml:"handle"`
+	// The matching live terminal is not reported as an idle shell; missing
+	// foreground information counts as running.
+	Running bool `form:"running" json:"running" xml:"running"`
 }
 
 // ChangeListItemResponseBody is used to define fields on response body types.
@@ -4895,6 +5110,50 @@ func NewGetStoryRefreshResponseBody(res *surla.StoryRefreshResult) *GetStoryRefr
 	return body
 }
 
+// NewGetTeamResponseBody builds the HTTP response body from the result of the
+// "get_team" endpoint of the "surla" service.
+func NewGetTeamResponseBody(res *surla.TeamSnapshot) *GetTeamResponseBody {
+	body := &GetTeamResponseBody{
+		Team: res.Team,
+	}
+	if res.Roles != nil {
+		body.Roles = make([]*TeamRoleStateResponseBody, len(res.Roles))
+		for i, val := range res.Roles {
+			if val == nil {
+				body.Roles[i] = nil
+				continue
+			}
+			body.Roles[i] = marshalSurlaTeamRoleStateToTeamRoleStateResponseBody(val)
+		}
+	} else {
+		body.Roles = []*TeamRoleStateResponseBody{}
+	}
+	return body
+}
+
+// NewStartTeamAgentsResponseBody builds the HTTP response body from the result
+// of the "start_team_agents" endpoint of the "surla" service.
+func NewStartTeamAgentsResponseBody(res *surla.ProjectTeam) *StartTeamAgentsResponseBody {
+	body := &StartTeamAgentsResponseBody{
+		Team:   res.Team,
+		Space:  res.Space,
+		Dialog: res.Dialog,
+	}
+	if res.Roles != nil {
+		body.Roles = make([]*ProjectTeamRoleResponseBody, len(res.Roles))
+		for i, val := range res.Roles {
+			if val == nil {
+				body.Roles[i] = nil
+				continue
+			}
+			body.Roles[i] = marshalSurlaProjectTeamRoleToProjectTeamRoleResponseBody(val)
+		}
+	} else {
+		body.Roles = []*ProjectTeamRoleResponseBody{}
+	}
+	return body
+}
+
 // NewListChangesResponseBody builds the HTTP response body from the result of
 // the "list_changes" endpoint of the "surla" service.
 func NewListChangesResponseBody(res *surla.ChangeList) *ListChangesResponseBody {
@@ -6182,6 +6441,128 @@ func NewGetStoryRefreshForbiddenResponseBody(res *goa.ServiceError) *GetStoryRef
 	return body
 }
 
+// NewGetTeamForbiddenResponseBody builds the HTTP response body from the
+// result of the "get_team" endpoint of the "surla" service.
+func NewGetTeamForbiddenResponseBody(res *goa.ServiceError) *GetTeamForbiddenResponseBody {
+	body := &GetTeamForbiddenResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
+// NewShowTeamPaneWindowBusyResponseBody builds the HTTP response body from the
+// result of the "show_team_pane" endpoint of the "surla" service.
+func NewShowTeamPaneWindowBusyResponseBody(res *goa.ServiceError) *ShowTeamPaneWindowBusyResponseBody {
+	body := &ShowTeamPaneWindowBusyResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
+// NewShowTeamPanePaneUnavailableResponseBody builds the HTTP response body
+// from the result of the "show_team_pane" endpoint of the "surla" service.
+func NewShowTeamPanePaneUnavailableResponseBody(res *goa.ServiceError) *ShowTeamPanePaneUnavailableResponseBody {
+	body := &ShowTeamPanePaneUnavailableResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
+// NewShowTeamPaneTeamUnavailableResponseBody builds the HTTP response body
+// from the result of the "show_team_pane" endpoint of the "surla" service.
+func NewShowTeamPaneTeamUnavailableResponseBody(res *goa.ServiceError) *ShowTeamPaneTeamUnavailableResponseBody {
+	body := &ShowTeamPaneTeamUnavailableResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
+// NewShowTeamPaneForbiddenResponseBody builds the HTTP response body from the
+// result of the "show_team_pane" endpoint of the "surla" service.
+func NewShowTeamPaneForbiddenResponseBody(res *goa.ServiceError) *ShowTeamPaneForbiddenResponseBody {
+	body := &ShowTeamPaneForbiddenResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
+// NewStartTeamAgentsWindowBusyResponseBody builds the HTTP response body from
+// the result of the "start_team_agents" endpoint of the "surla" service.
+func NewStartTeamAgentsWindowBusyResponseBody(res *goa.ServiceError) *StartTeamAgentsWindowBusyResponseBody {
+	body := &StartTeamAgentsWindowBusyResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
+// NewStartTeamAgentsAmbiguousSpaceResponseBody builds the HTTP response body
+// from the result of the "start_team_agents" endpoint of the "surla" service.
+func NewStartTeamAgentsAmbiguousSpaceResponseBody(res *surla.TeamSpaceConflict) *StartTeamAgentsAmbiguousSpaceResponseBody {
+	body := &StartTeamAgentsAmbiguousSpaceResponseBody{
+		Name:  res.Name,
+		Count: res.Count,
+	}
+	return body
+}
+
+// NewStartTeamAgentsTeamUnavailableResponseBody builds the HTTP response body
+// from the result of the "start_team_agents" endpoint of the "surla" service.
+func NewStartTeamAgentsTeamUnavailableResponseBody(res *goa.ServiceError) *StartTeamAgentsTeamUnavailableResponseBody {
+	body := &StartTeamAgentsTeamUnavailableResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
+// NewStartTeamAgentsForbiddenResponseBody builds the HTTP response body from
+// the result of the "start_team_agents" endpoint of the "surla" service.
+func NewStartTeamAgentsForbiddenResponseBody(res *goa.ServiceError) *StartTeamAgentsForbiddenResponseBody {
+	body := &StartTeamAgentsForbiddenResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
 // NewListChangesForbiddenResponseBody builds the HTTP response body from the
 // result of the "list_changes" endpoint of the "surla" service.
 func NewListChangesForbiddenResponseBody(res *goa.ServiceError) *ListChangesForbiddenResponseBody {
@@ -6623,6 +7004,16 @@ func NewListTracesPayload(status string, limit int, cursor *string) *surla.ListT
 	return v
 }
 
+// NewShowTeamPanePayload builds a surla service show_team_pane endpoint
+// payload.
+func NewShowTeamPanePayload(body *ShowTeamPaneRequestBody) *surla.ShowTeamPanePayload {
+	v := &surla.ShowTeamPanePayload{
+		Role: *body.Role,
+	}
+
+	return v
+}
+
 // NewWaitForChangesPayload builds a surla service wait_for_changes endpoint
 // payload.
 func NewWaitForChangesPayload(since string) *surla.WaitForChangesPayload {
@@ -6899,6 +7290,20 @@ func ValidateGenerateCodeRequestBody(body *GenerateCodeRequestBody) (err error) 
 func ValidateReadCheckOutputRequestBody(body *ReadCheckOutputRequestBody) (err error) {
 	if body.OpID == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("op_id", "body"))
+	}
+	return
+}
+
+// ValidateShowTeamPaneRequestBody runs the validations defined on
+// ShowTeamPaneRequestBody
+func ValidateShowTeamPaneRequestBody(body *ShowTeamPaneRequestBody) (err error) {
+	if body.Role == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("role", "body"))
+	}
+	if body.Role != nil {
+		if !(*body.Role == "guide" || *body.Role == "builder" || *body.Role == "test_writer") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.role", *body.Role, []any{"guide", "builder", "test_writer"}))
+		}
 	}
 	return
 }

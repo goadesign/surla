@@ -247,7 +247,7 @@ paths:
             tags:
                 - surla
             summary: wait_for_changes surla
-            description: Return the current change list's version as soon as it differs from since, the version of the list the caller last read, or after a bounded wait of a few seconds when nothing changed. The version also changes when the owner's Story evaluation starts, finishes or is replaced. The views page keeps one such read open and, only when the version changed, calls list_changes again and, while it shows the Story, get_story_refresh. Each call is traced but never saved in the diagnostics history list_traces reads, so an open page does not push real operations out of view.
+            description: Return the current change list's version as soon as it differs from since, the version of the list the caller last read, or after a bounded wait of a few seconds when nothing changed. The version also changes when the owner's Story evaluation starts, finishes or is replaced, or a public fact in get_team changes. The views page keeps one such read open and, only when the version changed, calls list_changes again and, while it shows the Story, get_story_refresh. Each call is traced but never saved in the diagnostics history list_traces reads, so an open page does not push real operations out of view.
             operationId: surla#wait_for_changes
             parameters:
                 - name: since
@@ -1745,6 +1745,146 @@ paths:
                             id: 123abc
                             message: parameter 'p' must be an integer
                             name: update_not_confirmed
+                            temporary: false
+                            timeout: false
+            schemes:
+                - http
+    /team:
+        get:
+            tags:
+                - surla
+            summary: get_team surla
+            description: Read the project team's registered roles and current terminal, watcher and unread-assignment facts. Reading creates nothing and marks no assignment read. Only the user's browser session may call it. wait_for_changes covers this snapshot as well as the change list.
+            operationId: surla#get_team
+            responses:
+                "200":
+                    description: OK response.
+                    schema:
+                        $ref: '#/definitions/TeamSnapshot'
+                        required:
+                            - team
+                            - roles
+                "403":
+                    description: 'forbidden: The authenticated caller may not perform this operation or does not own the resource.'
+                    schema:
+                        $ref: '#/definitions/SurlaGetTeamForbiddenResponseBody'
+                    examples:
+                        application/vnd.goa.error:
+                            fault: false
+                            id: 123abc
+                            message: parameter 'p' must be an integer
+                            name: forbidden
+                            temporary: false
+                            timeout: false
+            schemes:
+                - http
+    /team/agents:
+        post:
+            tags:
+                - surla
+            summary: start_team_agents surla
+            description: Ask the project's existing team-start owner to prepare the registered roles and open the Chorus launcher when a listed role is not running. Only the user may call it. It has the same bounded server-owned lifetime and dialog, space and availability refusals as the management team-start operation.
+            operationId: surla#start_team_agents
+            responses:
+                "200":
+                    description: OK response.
+                    schema:
+                        $ref: '#/definitions/ProjectTeam'
+                        required:
+                            - team
+                            - space
+                            - roles
+                            - dialog
+                "403":
+                    description: 'forbidden: The authenticated caller may not perform this operation or does not own the resource.'
+                    schema:
+                        $ref: '#/definitions/SurlaStartTeamAgentsForbiddenResponseBody'
+                    examples:
+                        application/vnd.goa.error:
+                            fault: false
+                            id: 123abc
+                            message: parameter 'p' must be an integer
+                            name: forbidden
+                            temporary: false
+                            timeout: false
+                "409":
+                    description: 'window_busy: Close the open Herdr dialog before starting agents.'
+                    schema:
+                        $ref: '#/definitions/SurlaStartTeamAgentsWindowBusyResponseBody'
+                    examples:
+                        application/vnd.goa.error:
+                            fault: false
+                            id: 123abc
+                            message: parameter 'p' must be an integer
+                            name: window_busy
+                            temporary: false
+                            timeout: false
+                "503":
+                    description: 'team_unavailable: The project team could not be prepared.'
+                    schema:
+                        $ref: '#/definitions/SurlaStartTeamAgentsTeamUnavailableResponseBody'
+                    examples:
+                        application/vnd.goa.error:
+                            fault: false
+                            id: 123abc
+                            message: parameter 'p' must be an integer
+                            name: team_unavailable
+                            temporary: false
+                            timeout: false
+            schemes:
+                - http
+    /team/pane:
+        post:
+            tags:
+                - surla
+            summary: show_team_pane surla
+            description: Show this project's space and focus the requested registered role's pane, only at the user's request. Any open Herdr dialog prevents all window changes. Fresh project, handle and space labels must still identify the pane.
+            operationId: surla#show_team_pane
+            parameters:
+                - name: show_team_pane_request_body
+                  in: body
+                  required: true
+                  schema:
+                    $ref: '#/definitions/SurlaShowTeamPaneRequestBody'
+                    required:
+                        - role
+            responses:
+                "204":
+                    description: No Content response.
+                "403":
+                    description: 'forbidden: The authenticated caller may not perform this operation or does not own the resource.'
+                    schema:
+                        $ref: '#/definitions/SurlaShowTeamPaneForbiddenResponseBody'
+                    examples:
+                        application/vnd.goa.error:
+                            fault: false
+                            id: 123abc
+                            message: parameter 'p' must be an integer
+                            name: forbidden
+                            temporary: false
+                            timeout: false
+                "409":
+                    description: 'pane_unavailable: The requested registered role has no owned pane to show.'
+                    schema:
+                        $ref: '#/definitions/SurlaShowTeamPanePaneUnavailableResponseBody'
+                    examples:
+                        application/vnd.goa.error:
+                            fault: false
+                            id: 123abc
+                            message: parameter 'p' must be an integer
+                            name: pane_unavailable
+                            temporary: false
+                            timeout: false
+                "503":
+                    description: 'team_unavailable: Herdr could not establish the owned pane.'
+                    schema:
+                        $ref: '#/definitions/SurlaShowTeamPaneTeamUnavailableResponseBody'
+                    examples:
+                        application/vnd.goa.error:
+                            fault: false
+                            id: 123abc
+                            message: parameter 'p' must be an integer
+                            name: team_unavailable
                             temporary: false
                             timeout: false
             schemes:
@@ -4837,7 +4977,7 @@ definitions:
                       summary: Ut saepe incidunt odit.
             version:
                 type: string
-                description: Opaque value identifying this exact list and the owner's current Story evaluation; it changes whenever any listed value changes, and when a Story evaluation (get_story_refresh) starts, finishes or is replaced.
+                description: Opaque value for change detection. Compare it only for equality; the returned fields contain the facts this operation makes readable.
                 example: Voluptas voluptates.
         description: The project's saved Change Cards, most recently saved first (tie-broken by change_id).
         example:
@@ -10581,6 +10721,49 @@ definitions:
             - temporary
             - timeout
             - fault
+    SurlaGetTeamForbiddenResponseBody:
+        title: 'Mediatype identifier: application/vnd.goa.error; view=default'
+        type: object
+        properties:
+            fault:
+                type: boolean
+                description: Is the error a server-side fault?
+                example: false
+            id:
+                type: string
+                description: ID is a unique identifier for this particular occurrence of the problem.
+                example: 123abc
+            message:
+                type: string
+                description: Message is a human-readable explanation specific to this occurrence of the problem.
+                example: parameter 'p' must be an integer
+            name:
+                type: string
+                description: Name is the name of this class of errors.
+                example: bad_request
+            temporary:
+                type: boolean
+                description: Is the error temporary?
+                example: true
+            timeout:
+                type: boolean
+                description: Is the error a timeout?
+                example: false
+        description: Error response result type (default view)
+        example:
+            fault: false
+            id: 123abc
+            message: parameter 'p' must be an integer
+            name: bad_request
+            temporary: true
+            timeout: false
+        required:
+            - name
+            - id
+            - message
+            - temporary
+            - timeout
+            - fault
     SurlaGetTestWriterAssignmentForbiddenResponseBody:
         title: 'Mediatype identifier: application/vnd.goa.error; view=default'
         type: object
@@ -12314,6 +12497,194 @@ definitions:
             - temporary
             - timeout
             - fault
+    SurlaShowTeamPaneForbiddenResponseBody:
+        title: 'Mediatype identifier: application/vnd.goa.error; view=default'
+        type: object
+        properties:
+            fault:
+                type: boolean
+                description: Is the error a server-side fault?
+                example: true
+            id:
+                type: string
+                description: ID is a unique identifier for this particular occurrence of the problem.
+                example: 123abc
+            message:
+                type: string
+                description: Message is a human-readable explanation specific to this occurrence of the problem.
+                example: parameter 'p' must be an integer
+            name:
+                type: string
+                description: Name is the name of this class of errors.
+                example: bad_request
+            temporary:
+                type: boolean
+                description: Is the error temporary?
+                example: false
+            timeout:
+                type: boolean
+                description: Is the error a timeout?
+                example: true
+        description: Error response result type (default view)
+        example:
+            fault: true
+            id: 123abc
+            message: parameter 'p' must be an integer
+            name: bad_request
+            temporary: false
+            timeout: true
+        required:
+            - name
+            - id
+            - message
+            - temporary
+            - timeout
+            - fault
+    SurlaShowTeamPanePaneUnavailableResponseBody:
+        title: 'Mediatype identifier: application/vnd.goa.error; view=default'
+        type: object
+        properties:
+            fault:
+                type: boolean
+                description: Is the error a server-side fault?
+                example: false
+            id:
+                type: string
+                description: ID is a unique identifier for this particular occurrence of the problem.
+                example: 123abc
+            message:
+                type: string
+                description: Message is a human-readable explanation specific to this occurrence of the problem.
+                example: parameter 'p' must be an integer
+            name:
+                type: string
+                description: Name is the name of this class of errors.
+                example: bad_request
+            temporary:
+                type: boolean
+                description: Is the error temporary?
+                example: true
+            timeout:
+                type: boolean
+                description: Is the error a timeout?
+                example: false
+        description: Error response result type (default view)
+        example:
+            fault: false
+            id: 123abc
+            message: parameter 'p' must be an integer
+            name: bad_request
+            temporary: true
+            timeout: false
+        required:
+            - name
+            - id
+            - message
+            - temporary
+            - timeout
+            - fault
+    SurlaShowTeamPaneRequestBody:
+        title: SurlaShowTeamPaneRequestBody
+        type: object
+        properties:
+            role:
+                type: string
+                description: Registered role whose pane the user requests.
+                example: test_writer
+                enum:
+                    - guide
+                    - builder
+                    - test_writer
+        example:
+            role: test_writer
+        required:
+            - role
+    SurlaShowTeamPaneTeamUnavailableResponseBody:
+        title: 'Mediatype identifier: application/vnd.goa.error; view=default'
+        type: object
+        properties:
+            fault:
+                type: boolean
+                description: Is the error a server-side fault?
+                example: false
+            id:
+                type: string
+                description: ID is a unique identifier for this particular occurrence of the problem.
+                example: 123abc
+            message:
+                type: string
+                description: Message is a human-readable explanation specific to this occurrence of the problem.
+                example: parameter 'p' must be an integer
+            name:
+                type: string
+                description: Name is the name of this class of errors.
+                example: bad_request
+            temporary:
+                type: boolean
+                description: Is the error temporary?
+                example: false
+            timeout:
+                type: boolean
+                description: Is the error a timeout?
+                example: false
+        description: Error response result type (default view)
+        example:
+            fault: false
+            id: 123abc
+            message: parameter 'p' must be an integer
+            name: bad_request
+            temporary: false
+            timeout: false
+        required:
+            - name
+            - id
+            - message
+            - temporary
+            - timeout
+            - fault
+    SurlaShowTeamPaneWindowBusyResponseBody:
+        title: 'Mediatype identifier: application/vnd.goa.error; view=default'
+        type: object
+        properties:
+            fault:
+                type: boolean
+                description: Is the error a server-side fault?
+                example: false
+            id:
+                type: string
+                description: ID is a unique identifier for this particular occurrence of the problem.
+                example: 123abc
+            message:
+                type: string
+                description: Message is a human-readable explanation specific to this occurrence of the problem.
+                example: parameter 'p' must be an integer
+            name:
+                type: string
+                description: Name is the name of this class of errors.
+                example: bad_request
+            temporary:
+                type: boolean
+                description: Is the error temporary?
+                example: true
+            timeout:
+                type: boolean
+                description: Is the error a timeout?
+                example: false
+        description: Error response result type (default view)
+        example:
+            fault: false
+            id: 123abc
+            message: parameter 'p' must be an integer
+            name: bad_request
+            temporary: true
+            timeout: false
+        required:
+            - name
+            - id
+            - message
+            - temporary
+            - timeout
+            - fault
     SurlaStartBuildConflictResponseBody:
         title: 'Mediatype identifier: application/vnd.goa.error; view=default'
         type: object
@@ -12621,6 +12992,135 @@ definitions:
             name: bad_request
             temporary: false
             timeout: true
+        required:
+            - name
+            - id
+            - message
+            - temporary
+            - timeout
+            - fault
+    SurlaStartTeamAgentsForbiddenResponseBody:
+        title: 'Mediatype identifier: application/vnd.goa.error; view=default'
+        type: object
+        properties:
+            fault:
+                type: boolean
+                description: Is the error a server-side fault?
+                example: false
+            id:
+                type: string
+                description: ID is a unique identifier for this particular occurrence of the problem.
+                example: 123abc
+            message:
+                type: string
+                description: Message is a human-readable explanation specific to this occurrence of the problem.
+                example: parameter 'p' must be an integer
+            name:
+                type: string
+                description: Name is the name of this class of errors.
+                example: bad_request
+            temporary:
+                type: boolean
+                description: Is the error temporary?
+                example: true
+            timeout:
+                type: boolean
+                description: Is the error a timeout?
+                example: true
+        description: Error response result type (default view)
+        example:
+            fault: false
+            id: 123abc
+            message: parameter 'p' must be an integer
+            name: bad_request
+            temporary: true
+            timeout: true
+        required:
+            - name
+            - id
+            - message
+            - temporary
+            - timeout
+            - fault
+    SurlaStartTeamAgentsTeamUnavailableResponseBody:
+        title: 'Mediatype identifier: application/vnd.goa.error; view=default'
+        type: object
+        properties:
+            fault:
+                type: boolean
+                description: Is the error a server-side fault?
+                example: true
+            id:
+                type: string
+                description: ID is a unique identifier for this particular occurrence of the problem.
+                example: 123abc
+            message:
+                type: string
+                description: Message is a human-readable explanation specific to this occurrence of the problem.
+                example: parameter 'p' must be an integer
+            name:
+                type: string
+                description: Name is the name of this class of errors.
+                example: bad_request
+            temporary:
+                type: boolean
+                description: Is the error temporary?
+                example: true
+            timeout:
+                type: boolean
+                description: Is the error a timeout?
+                example: false
+        description: Error response result type (default view)
+        example:
+            fault: true
+            id: 123abc
+            message: parameter 'p' must be an integer
+            name: bad_request
+            temporary: true
+            timeout: false
+        required:
+            - name
+            - id
+            - message
+            - temporary
+            - timeout
+            - fault
+    SurlaStartTeamAgentsWindowBusyResponseBody:
+        title: 'Mediatype identifier: application/vnd.goa.error; view=default'
+        type: object
+        properties:
+            fault:
+                type: boolean
+                description: Is the error a server-side fault?
+                example: true
+            id:
+                type: string
+                description: ID is a unique identifier for this particular occurrence of the problem.
+                example: 123abc
+            message:
+                type: string
+                description: Message is a human-readable explanation specific to this occurrence of the problem.
+                example: parameter 'p' must be an integer
+            name:
+                type: string
+                description: Name is the name of this class of errors.
+                example: bad_request
+            temporary:
+                type: boolean
+                description: Is the error temporary?
+                example: false
+            timeout:
+                type: boolean
+                description: Is the error a timeout?
+                example: false
+        description: Error response result type (default view)
+        example:
+            fault: true
+            id: 123abc
+            message: parameter 'p' must be an integer
+            name: bad_request
+            temporary: false
+            timeout: false
         required:
             - name
             - id
@@ -13101,6 +13601,132 @@ definitions:
             - temporary
             - timeout
             - fault
+    TeamRoleState:
+        title: TeamRoleState
+        type: object
+        properties:
+            assignment:
+                type: string
+                description: unread when this role owes an assignment read, nothing_owed when the owner established none, unknown when the owner could not read assignments. The guide has no assignments.
+                example: unknown
+                enum:
+                    - unread
+                    - nothing_owed
+                    - unknown
+            attention:
+                type: string
+                description: Reported block kind or the reason a silent running agent needs the user.
+                example: auth
+                enum:
+                    - none
+                    - permission
+                    - question
+                    - auth
+                    - silent
+                    - unknown
+            handle:
+                type: string
+                description: Registered Chorus handle.
+                example: Quae ea aut iusto ea blanditiis.
+            role:
+                type: string
+                description: Registered role.
+                example: test_writer
+                enum:
+                    - guide
+                    - builder
+                    - test_writer
+            state:
+                type: string
+                description: Current terminal state; unknown means Herdr cannot establish it.
+                example: waiting
+                enum:
+                    - not_started
+                    - ended
+                    - starting
+                    - needs_you
+                    - working
+                    - waiting
+                    - error
+                    - unknown
+            watcher:
+                type: string
+                description: held when Chorus reports a watcher, gone after its absence grace, unknown otherwise.
+                example: unknown
+                enum:
+                    - held
+                    - gone
+                    - unknown
+        example:
+            assignment: unknown
+            attention: auth
+            handle: Quae ea aut iusto ea blanditiis.
+            role: test_writer
+            state: waiting
+            watcher: unknown
+        required:
+            - role
+            - handle
+            - state
+            - attention
+            - watcher
+            - assignment
+    TeamSnapshot:
+        title: TeamSnapshot
+        type: object
+        properties:
+            roles:
+                type: array
+                items:
+                    $ref: '#/definitions/TeamRoleState'
+                description: Registered roles in guide, builder, test_writer order; empty before registration.
+                example:
+                    - assignment: unknown
+                      attention: auth
+                      handle: Quae ea aut iusto ea blanditiis.
+                      role: test_writer
+                      state: waiting
+                      watcher: unknown
+                    - assignment: unknown
+                      attention: auth
+                      handle: Quae ea aut iusto ea blanditiis.
+                      role: test_writer
+                      state: waiting
+                      watcher: unknown
+                    - assignment: unknown
+                      attention: auth
+                      handle: Quae ea aut iusto ea blanditiis.
+                      role: test_writer
+                      state: waiting
+                      watcher: unknown
+            team:
+                type: string
+                description: Stable team name, also returned before a team is prepared.
+                example: Autem explicabo omnis ipsam aut provident architecto.
+        example:
+            roles:
+                - assignment: unknown
+                  attention: auth
+                  handle: Quae ea aut iusto ea blanditiis.
+                  role: test_writer
+                  state: waiting
+                  watcher: unknown
+                - assignment: unknown
+                  attention: auth
+                  handle: Quae ea aut iusto ea blanditiis.
+                  role: test_writer
+                  state: waiting
+                  watcher: unknown
+                - assignment: unknown
+                  attention: auth
+                  handle: Quae ea aut iusto ea blanditiis.
+                  role: test_writer
+                  state: waiting
+                  watcher: unknown
+            team: Autem explicabo omnis ipsam aut provident architecto.
+        required:
+            - team
+            - roles
     TeamSpaceConflict:
         title: TeamSpaceConflict
         type: object

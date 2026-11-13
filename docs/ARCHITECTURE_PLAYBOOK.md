@@ -61,6 +61,36 @@ When a platform needs custom generated files or wants to tailor artifacts produc
 
 ## How the Goa Design Suite Fits Together
 
+The project server (`internal/project.Server`) is the single in-memory owner of
+team observations and reminder latches as well as the saved team registry. The
+composition root constructs it before the control plane and supplies one
+`controlplane.Options.Team` binding containing the project owner and the narrow
+team service. The control plane owns authorization, the one supervision worker,
+and a private read-only callback for that owner's unread assignment generations.
+The callback never calls an assignment getter or marks work read. The existing
+change-list version incorporates the public team snapshot for its bound owner only. Shutdown cancels and
+drains supervision before closing diagnostics or Change Card storage.
+
+Herdr streams and reads are filtered by registered handle, project root and saved
+space. Typed adapters retain only terminal state, block kind, foreground arguments
+and watcher facts; screen text, status messages, titles and Chorus messages have no
+representation in supervision state. Every external effect is injected at the
+executable boundary. A stalled role invalidates all roles after three missing
+15-second heartbeats; the owner cancels and drains readers, waits, then requests
+fresh snapshots. Assignment reads scan owner cards/builds on initial selection,
+snapshots, heartbeats and status changes, never on the display tick.
+
+The Chorus adapter parses only the generated response's ordered `swarm`, `agents`
+prefix, bounded to 256 KiB, then closes before channels or inboxes. A one-byte
+reader prevents JSON decoder read-ahead into conversation data. An oversized,
+incomplete or reordered prefix yields an unknown watcher; a large conversation
+after a valid prefix remains usable. Conditional reads use the response's ETag
+header. The executable binds readers and leaves the sender explicitly
+unavailable pending receiver verification. Project observation spans bypass the
+control plane's principal-scoped history, keeping periodic team observations out of
+bounded user diagnostics. See [Team supervision](REFERENCE.md#team-supervision) for
+the user contract and current delivery limitation.
+
 Surla's control plane records its own operation diagnostics through
 OpenTelemetry. `controlplane.New` opens existing safe trace history while
 holding the Change Card directory lock; `controlplane.Options.TracerProvider`

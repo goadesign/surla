@@ -37,7 +37,7 @@ func (f *fixtureTeamHost) CreateSpace(_ context.Context, name, folder string) (p
 }
 
 // Terminals returns only fixture foreground and label observations.
-func (f *fixtureTeamHost) Terminals(context.Context, string, string) ([]project.TeamTerminal, error) {
+func (f *fixtureTeamHost) Terminals(context.Context, string, string, []string) ([]project.TeamTerminal, error) {
 	return nil, nil
 }
 
@@ -205,7 +205,7 @@ func TestTeamCommandProtocol(t *testing.T) {
 	assert.Equal(t, "s1", created.ID)
 	require.NoError(t, c.Focus(t.Context(), created))
 	require.NoError(t, c.OpenLauncher(t.Context()))
-	terminals, err := c.Terminals(t.Context(), "/project", "s1")
+	terminals, err := c.Terminals(t.Context(), "/project", "s1", []string{"guide"})
 	require.NoError(t, err)
 	require.Len(t, terminals, 1)
 	overlays, err := c.Overlays(t.Context())

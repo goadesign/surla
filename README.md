@@ -124,6 +124,10 @@ do not by themselves open the launcher. An already open launcher stays open
 with its original project: use it only if it is for this project, otherwise
 close it and run `surla` again. Close any other dialog before retrying. Surla bounds readiness
 checks without terminating your Herdr window or Chorus service.
+The server also follows its registered roles in memory. Its user-only team API
+reports terminal state, watcher availability and unread assignments; the views
+page does not draw these team facts yet. Automatic reminder delivery is currently
+unavailable. See [Team supervision](docs/REFERENCE.md#team-supervision).
 `surla stop` shuts that project down in order. Subfolders and physical path
 aliases find the same project; moving the folder starts a new, empty project.
 The guide drafts the Story and Change Card; only your browser session confirms

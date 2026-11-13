@@ -8,6 +8,14 @@ Run `surla` in the project folder to start or attach to its server and open your
 
 ---
 
+The project server follows only its registered team handles in its own Herdr
+space. The [team API](REFERENCE.md#team-supervision) gives the user each role's
+terminal state, watcher fact and unread-assignment fact. Unknown observations
+remain unknown; reading this picture never marks an assignment read. A revised
+request does not automatically clear an older build's unread assignments. Only the user can ask to show a pane or reopen the launcher.
+The views page does not display team supervision yet, and automatic reminder
+delivery is unavailable in the executable binding.
+
 ## Overview: Strict Separation of Powers
 
 Every change passes through three stages with different owners, so the agent that writes the code never defines the contract alone or grades its own output. The guide drafts the contract and you confirm it, the builder implements it, and an evaluator the builder does not control checks it before you approve the result:

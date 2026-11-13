@@ -194,7 +194,7 @@ func TestProjectIdentitySessionsAndRoles(t *testing.T) {
 				listed[tool.Name] = true
 			}
 			// wait_for_changes and start_build are the views page's HTTP-only operations, so they are not listed as tools.
-			httpOrResourceOnly := map[string]bool{"golden_path": true, "wait_for_changes": true, "start_build": true}
+			httpOrResourceOnly := map[string]bool{"golden_path": true, "wait_for_changes": true, "start_build": true, "get_team": true, "show_team_pane": true, "start_team_agents": true}
 			for _, name := range gensurla.MethodNames {
 				if !httpOrResourceOnly[name] {
 					assert.Equal(t, controlplane.OperationAllowed(tc.role, name), listed[name], name)
@@ -427,6 +427,9 @@ func policyHTTPRequests(card *gensurla.ChangeCardResult, propose, confirm string
 	revision := card.RequestRevision
 	revise := fmt.Sprintf(`{"change_id":"change","request_revision":%q,"prompt":"Keep refunds bounded","analysis":{"summary":"Bound refunds","ambiguities":[],"examples":[{"prior_id":"check_01","scenario":"refund","input_summary":"refund 10","expected_outcome":"refund 10","verification_kind":"deterministic"}],"removed_example_ids":[],"preserved_behaviors":[]}}`, revision)
 	return []policyHTTPRequest{
+		{"get_team", http.MethodGet, "/team", ""},
+		{"show_team_pane", http.MethodPost, "/team/pane", `{"role":"guide"}`},
+		{"start_team_agents", http.MethodPost, "/team/agents", ""},
 		{"golden_path", "GET", "/golden-path", ""},
 		{"propose_change", "POST", "/changes/propose", propose},
 		{"revise_change", "POST", "/changes/revise", revise},

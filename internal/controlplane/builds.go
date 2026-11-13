@@ -269,7 +269,7 @@ func (c *ControlPlane) ListBuilderAssignments(ctx context.Context) (*gensurla.Bu
 	if !ok {
 		return nil, errors.New("authenticated principal is required")
 	}
-	builds, err := c.ownedBuilds(principal)
+	builds, err := c.ownedBuilds(principal.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -307,7 +307,7 @@ func (c *ControlPlane) ListTestWriterAssignments(ctx context.Context) (*gensurla
 	if !ok {
 		return nil, errors.New("authenticated principal is required")
 	}
-	builds, err := c.ownedBuilds(principal)
+	builds, err := c.ownedBuilds(principal.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -639,7 +639,7 @@ func (c *ControlPlane) ownedBuild(principal Principal, changeID string) (heldBui
 // ownedBuilds returns the build of every change principal owns, most recently
 // started first (tie-broken by change_id). One unreadable card or build fails
 // the call rather than being left out.
-func (c *ControlPlane) ownedBuilds(principal Principal) ([]heldBuild, error) {
+func (c *ControlPlane) ownedBuilds(owner string) ([]heldBuild, error) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	records, err := c.cards.all()
@@ -648,7 +648,7 @@ func (c *ControlPlane) ownedBuilds(principal Principal) ([]heldBuild, error) {
 	}
 	var builds []heldBuild
 	for _, record := range records {
-		if record.owner != principal.ID {
+		if record.owner != owner {
 			continue
 		}
 		saved, found, err := c.cards.loadBuild(record.card.ChangeID)

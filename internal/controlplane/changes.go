@@ -158,11 +158,19 @@ func (c *ControlPlane) changeList(ctx context.Context, span trace.Span, owner st
 		span.SetStatus(codes.Error, "resolve promotion target")
 	}
 	approvalAvailable := err == nil && target != nil
+	var team *gensurla.TeamSnapshot
+	if c.team != nil && c.team.Owner == owner {
+		team, err = c.team.Service.ReadTeam(ctx)
+		if err != nil {
+			return nil, err
+		}
+	}
 	raw, err := json.Marshal(struct {
 		Changes           []*gensurla.ChangeListItem `json:"changes"`
 		ApprovalAvailable bool                       `json:"approval_available"`
+		Team              *gensurla.TeamSnapshot     `json:"team"`
 		StoryEvaluation   storyEvaluationVersion     `json:"story_evaluation"`
-	}{items, approvalAvailable, c.storyEvaluation(owner)})
+	}{items, approvalAvailable, team, c.storyEvaluation(owner)})
 	if err != nil {
 		err = fmt.Errorf("encode change list version: %w", err)
 		span.RecordError(err)

@@ -42,6 +42,9 @@ type Server struct {
 	ListTraces                http.Handler
 	RefreshStory              http.Handler
 	GetStoryRefresh           http.Handler
+	GetTeam                   http.Handler
+	ShowTeamPane              http.Handler
+	StartTeamAgents           http.Handler
 	ListChanges               http.Handler
 	WaitForChanges            http.Handler
 	StartBuild                http.Handler
@@ -103,6 +106,9 @@ func New(
 			{"ListTraces", "GET", "/traces"},
 			{"RefreshStory", "POST", "/workspace/story/refresh"},
 			{"GetStoryRefresh", "GET", "/workspace/story/refresh"},
+			{"GetTeam", "GET", "/team"},
+			{"ShowTeamPane", "POST", "/team/pane"},
+			{"StartTeamAgents", "POST", "/team/agents"},
 			{"ListChanges", "GET", "/changes"},
 			{"WaitForChanges", "GET", "/change-updates"},
 			{"StartBuild", "POST", "/changes/{change_id}/build"},
@@ -136,6 +142,9 @@ func New(
 		ListTraces:                NewListTracesHandler(e.ListTraces, mux, decoder, encoder, errhandler, formatter),
 		RefreshStory:              NewRefreshStoryHandler(e.RefreshStory, mux, decoder, encoder, errhandler, formatter),
 		GetStoryRefresh:           NewGetStoryRefreshHandler(e.GetStoryRefresh, mux, decoder, encoder, errhandler, formatter),
+		GetTeam:                   NewGetTeamHandler(e.GetTeam, mux, decoder, encoder, errhandler, formatter),
+		ShowTeamPane:              NewShowTeamPaneHandler(e.ShowTeamPane, mux, decoder, encoder, errhandler, formatter),
+		StartTeamAgents:           NewStartTeamAgentsHandler(e.StartTeamAgents, mux, decoder, encoder, errhandler, formatter),
 		ListChanges:               NewListChangesHandler(e.ListChanges, mux, decoder, encoder, errhandler, formatter),
 		WaitForChanges:            NewWaitForChangesHandler(e.WaitForChanges, mux, decoder, encoder, errhandler, formatter),
 		StartBuild:                NewStartBuildHandler(e.StartBuild, mux, decoder, encoder, errhandler, formatter),
@@ -176,6 +185,9 @@ func (s *Server) Use(m func(http.Handler) http.Handler) {
 	s.ListTraces = m(s.ListTraces)
 	s.RefreshStory = m(s.RefreshStory)
 	s.GetStoryRefresh = m(s.GetStoryRefresh)
+	s.GetTeam = m(s.GetTeam)
+	s.ShowTeamPane = m(s.ShowTeamPane)
+	s.StartTeamAgents = m(s.StartTeamAgents)
 	s.ListChanges = m(s.ListChanges)
 	s.WaitForChanges = m(s.WaitForChanges)
 	s.StartBuild = m(s.StartBuild)
@@ -215,6 +227,9 @@ func Mount(mux goahttp.Muxer, h *Server) {
 	MountListTracesHandler(mux, h.ListTraces)
 	MountRefreshStoryHandler(mux, h.RefreshStory)
 	MountGetStoryRefreshHandler(mux, h.GetStoryRefresh)
+	MountGetTeamHandler(mux, h.GetTeam)
+	MountShowTeamPaneHandler(mux, h.ShowTeamPane)
+	MountStartTeamAgentsHandler(mux, h.StartTeamAgents)
 	MountListChangesHandler(mux, h.ListChanges)
 	MountWaitForChangesHandler(mux, h.WaitForChanges)
 	MountStartBuildHandler(mux, h.StartBuild)
@@ -1391,6 +1406,151 @@ func NewGetStoryRefreshHandler(
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := context.WithValue(r.Context(), goahttp.AcceptTypeKey, r.Header.Get("Accept"))
 		ctx = context.WithValue(ctx, goa.MethodKey, "get_story_refresh")
+		ctx = context.WithValue(ctx, goa.ServiceKey, "surla")
+		var err error
+		res, err := endpoint(ctx, nil)
+		if err != nil {
+			if err := encodeError(ctx, w, err); err != nil && errhandler != nil {
+				errhandler(ctx, w, err)
+			}
+			return
+		}
+		if err := encodeResponse(ctx, w, res); err != nil {
+			if errhandler != nil {
+				errhandler(ctx, w, err)
+			}
+		}
+	})
+}
+
+// MountGetTeamHandler configures the mux to serve the "surla" service
+// "get_team" endpoint.
+func MountGetTeamHandler(mux goahttp.Muxer, h http.Handler) {
+	f, ok := h.(http.HandlerFunc)
+	if !ok {
+		f = func(w http.ResponseWriter, r *http.Request) {
+			h.ServeHTTP(w, r)
+		}
+	}
+	mux.Handle("GET", "/team", f)
+}
+
+// NewGetTeamHandler creates a HTTP handler which loads the HTTP request and
+// calls the "surla" service "get_team" endpoint.
+func NewGetTeamHandler(
+	endpoint goa.Endpoint,
+	mux goahttp.Muxer,
+	decoder func(*http.Request) goahttp.Decoder,
+	encoder func(context.Context, http.ResponseWriter) goahttp.Encoder,
+	errhandler func(context.Context, http.ResponseWriter, error),
+	formatter func(ctx context.Context, err error) goahttp.Statuser,
+) http.Handler {
+	var (
+		encodeResponse = EncodeGetTeamResponse(encoder)
+		encodeError    = EncodeGetTeamError(encoder, formatter)
+	)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := context.WithValue(r.Context(), goahttp.AcceptTypeKey, r.Header.Get("Accept"))
+		ctx = context.WithValue(ctx, goa.MethodKey, "get_team")
+		ctx = context.WithValue(ctx, goa.ServiceKey, "surla")
+		var err error
+		res, err := endpoint(ctx, nil)
+		if err != nil {
+			if err := encodeError(ctx, w, err); err != nil && errhandler != nil {
+				errhandler(ctx, w, err)
+			}
+			return
+		}
+		if err := encodeResponse(ctx, w, res); err != nil {
+			if errhandler != nil {
+				errhandler(ctx, w, err)
+			}
+		}
+	})
+}
+
+// MountShowTeamPaneHandler configures the mux to serve the "surla" service
+// "show_team_pane" endpoint.
+func MountShowTeamPaneHandler(mux goahttp.Muxer, h http.Handler) {
+	f, ok := h.(http.HandlerFunc)
+	if !ok {
+		f = func(w http.ResponseWriter, r *http.Request) {
+			h.ServeHTTP(w, r)
+		}
+	}
+	mux.Handle("POST", "/team/pane", f)
+}
+
+// NewShowTeamPaneHandler creates a HTTP handler which loads the HTTP request
+// and calls the "surla" service "show_team_pane" endpoint.
+func NewShowTeamPaneHandler(
+	endpoint goa.Endpoint,
+	mux goahttp.Muxer,
+	decoder func(*http.Request) goahttp.Decoder,
+	encoder func(context.Context, http.ResponseWriter) goahttp.Encoder,
+	errhandler func(context.Context, http.ResponseWriter, error),
+	formatter func(ctx context.Context, err error) goahttp.Statuser,
+) http.Handler {
+	var (
+		decodeRequest  = DecodeShowTeamPaneRequest(mux, decoder)
+		encodeResponse = EncodeShowTeamPaneResponse(encoder)
+		encodeError    = EncodeShowTeamPaneError(encoder, formatter)
+	)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := context.WithValue(r.Context(), goahttp.AcceptTypeKey, r.Header.Get("Accept"))
+		ctx = context.WithValue(ctx, goa.MethodKey, "show_team_pane")
+		ctx = context.WithValue(ctx, goa.ServiceKey, "surla")
+		payload, err := decodeRequest(r)
+		if err != nil {
+			if err := encodeError(ctx, w, err); err != nil && errhandler != nil {
+				errhandler(ctx, w, err)
+			}
+			return
+		}
+		res, err := endpoint(ctx, payload)
+		if err != nil {
+			if err := encodeError(ctx, w, err); err != nil && errhandler != nil {
+				errhandler(ctx, w, err)
+			}
+			return
+		}
+		if err := encodeResponse(ctx, w, res); err != nil {
+			if errhandler != nil {
+				errhandler(ctx, w, err)
+			}
+		}
+	})
+}
+
+// MountStartTeamAgentsHandler configures the mux to serve the "surla" service
+// "start_team_agents" endpoint.
+func MountStartTeamAgentsHandler(mux goahttp.Muxer, h http.Handler) {
+	f, ok := h.(http.HandlerFunc)
+	if !ok {
+		f = func(w http.ResponseWriter, r *http.Request) {
+			h.ServeHTTP(w, r)
+		}
+	}
+	mux.Handle("POST", "/team/agents", f)
+}
+
+// NewStartTeamAgentsHandler creates a HTTP handler which loads the HTTP
+// request and calls the "surla" service "start_team_agents" endpoint.
+func NewStartTeamAgentsHandler(
+	endpoint goa.Endpoint,
+	mux goahttp.Muxer,
+	decoder func(*http.Request) goahttp.Decoder,
+	encoder func(context.Context, http.ResponseWriter) goahttp.Encoder,
+	errhandler func(context.Context, http.ResponseWriter, error),
+	formatter func(ctx context.Context, err error) goahttp.Statuser,
+) http.Handler {
+	var (
+		encodeResponse = EncodeStartTeamAgentsResponse(encoder)
+		encodeError    = EncodeStartTeamAgentsError(encoder, formatter)
+	)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := context.WithValue(r.Context(), goahttp.AcceptTypeKey, r.Header.Get("Accept"))
+		ctx = context.WithValue(ctx, goa.MethodKey, "start_team_agents")
 		ctx = context.WithValue(ctx, goa.ServiceKey, "surla")
 		var err error
 		res, err := endpoint(ctx, nil)

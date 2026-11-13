@@ -2159,6 +2159,234 @@ func EncodeGetStoryRefreshError(encoder func(context.Context, http.ResponseWrite
 	}
 }
 
+// EncodeGetTeamResponse returns an encoder for responses returned by the surla
+// get_team endpoint.
+func EncodeGetTeamResponse(encoder func(context.Context, http.ResponseWriter) goahttp.Encoder) func(context.Context, http.ResponseWriter, any) error {
+	return func(ctx context.Context, w http.ResponseWriter, v any) error {
+		res, _ := v.(*surla.TeamSnapshot)
+		enc := encoder(ctx, w)
+		body := NewGetTeamResponseBody(res)
+		w.WriteHeader(http.StatusOK)
+		return enc.Encode(body)
+	}
+}
+
+// EncodeGetTeamError returns an encoder for errors returned by the get_team
+// surla endpoint.
+func EncodeGetTeamError(encoder func(context.Context, http.ResponseWriter) goahttp.Encoder, formatter func(ctx context.Context, err error) goahttp.Statuser) func(context.Context, http.ResponseWriter, error) error {
+	encodeError := goahttp.ErrorEncoder(encoder, formatter)
+	return func(ctx context.Context, w http.ResponseWriter, v error) error {
+		var en goa.GoaErrorNamer
+		if !errors.As(v, &en) {
+			return encodeError(ctx, w, v)
+		}
+		switch en.GoaErrorName() {
+		case "forbidden":
+			var res *goa.ServiceError
+			errors.As(v, &res)
+			enc := encoder(ctx, w)
+			var body any
+			if formatter != nil {
+				body = formatter(ctx, res)
+			} else {
+				body = NewGetTeamForbiddenResponseBody(res)
+			}
+			w.Header().Set("goa-error", res.GoaErrorName())
+			w.WriteHeader(http.StatusForbidden)
+			return enc.Encode(body)
+		default:
+			return encodeError(ctx, w, v)
+		}
+	}
+}
+
+// EncodeShowTeamPaneResponse returns an encoder for responses returned by the
+// surla show_team_pane endpoint.
+func EncodeShowTeamPaneResponse(encoder func(context.Context, http.ResponseWriter) goahttp.Encoder) func(context.Context, http.ResponseWriter, any) error {
+	return func(ctx context.Context, w http.ResponseWriter, v any) error {
+		w.WriteHeader(http.StatusNoContent)
+		return nil
+	}
+}
+
+// DecodeShowTeamPaneRequest returns a decoder for requests sent to the surla
+// show_team_pane endpoint.
+func DecodeShowTeamPaneRequest(mux goahttp.Muxer, decoder func(*http.Request) goahttp.Decoder) func(*http.Request) (*surla.ShowTeamPanePayload, error) {
+	return func(r *http.Request) (*surla.ShowTeamPanePayload, error) {
+		var payload *surla.ShowTeamPanePayload
+		var (
+			body ShowTeamPaneRequestBody
+			err  error
+		)
+		err = decoder(r).Decode(&body)
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				return payload, goa.MissingPayloadError()
+			}
+			var gerr *goa.ServiceError
+			if errors.As(err, &gerr) {
+				return payload, gerr
+			}
+			return payload, goa.DecodePayloadError(err.Error())
+		}
+		err = ValidateShowTeamPaneRequestBody(&body)
+		if err != nil {
+			return payload, err
+		}
+		payload = NewShowTeamPanePayload(&body)
+
+		return payload, nil
+	}
+}
+
+// EncodeShowTeamPaneError returns an encoder for errors returned by the
+// show_team_pane surla endpoint.
+func EncodeShowTeamPaneError(encoder func(context.Context, http.ResponseWriter) goahttp.Encoder, formatter func(ctx context.Context, err error) goahttp.Statuser) func(context.Context, http.ResponseWriter, error) error {
+	encodeError := goahttp.ErrorEncoder(encoder, formatter)
+	return func(ctx context.Context, w http.ResponseWriter, v error) error {
+		var en goa.GoaErrorNamer
+		if !errors.As(v, &en) {
+			return encodeError(ctx, w, v)
+		}
+		switch en.GoaErrorName() {
+		case "window_busy":
+			var res *goa.ServiceError
+			errors.As(v, &res)
+			enc := encoder(ctx, w)
+			var body any
+			if formatter != nil {
+				body = formatter(ctx, res)
+			} else {
+				body = NewShowTeamPaneWindowBusyResponseBody(res)
+			}
+			w.Header().Set("goa-error", res.GoaErrorName())
+			w.WriteHeader(http.StatusConflict)
+			return enc.Encode(body)
+		case "pane_unavailable":
+			var res *goa.ServiceError
+			errors.As(v, &res)
+			enc := encoder(ctx, w)
+			var body any
+			if formatter != nil {
+				body = formatter(ctx, res)
+			} else {
+				body = NewShowTeamPanePaneUnavailableResponseBody(res)
+			}
+			w.Header().Set("goa-error", res.GoaErrorName())
+			w.WriteHeader(http.StatusConflict)
+			return enc.Encode(body)
+		case "team_unavailable":
+			var res *goa.ServiceError
+			errors.As(v, &res)
+			enc := encoder(ctx, w)
+			var body any
+			if formatter != nil {
+				body = formatter(ctx, res)
+			} else {
+				body = NewShowTeamPaneTeamUnavailableResponseBody(res)
+			}
+			w.Header().Set("goa-error", res.GoaErrorName())
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return enc.Encode(body)
+		case "forbidden":
+			var res *goa.ServiceError
+			errors.As(v, &res)
+			enc := encoder(ctx, w)
+			var body any
+			if formatter != nil {
+				body = formatter(ctx, res)
+			} else {
+				body = NewShowTeamPaneForbiddenResponseBody(res)
+			}
+			w.Header().Set("goa-error", res.GoaErrorName())
+			w.WriteHeader(http.StatusForbidden)
+			return enc.Encode(body)
+		default:
+			return encodeError(ctx, w, v)
+		}
+	}
+}
+
+// EncodeStartTeamAgentsResponse returns an encoder for responses returned by
+// the surla start_team_agents endpoint.
+func EncodeStartTeamAgentsResponse(encoder func(context.Context, http.ResponseWriter) goahttp.Encoder) func(context.Context, http.ResponseWriter, any) error {
+	return func(ctx context.Context, w http.ResponseWriter, v any) error {
+		res, _ := v.(*surla.ProjectTeam)
+		enc := encoder(ctx, w)
+		body := NewStartTeamAgentsResponseBody(res)
+		w.WriteHeader(http.StatusOK)
+		return enc.Encode(body)
+	}
+}
+
+// EncodeStartTeamAgentsError returns an encoder for errors returned by the
+// start_team_agents surla endpoint.
+func EncodeStartTeamAgentsError(encoder func(context.Context, http.ResponseWriter) goahttp.Encoder, formatter func(ctx context.Context, err error) goahttp.Statuser) func(context.Context, http.ResponseWriter, error) error {
+	encodeError := goahttp.ErrorEncoder(encoder, formatter)
+	return func(ctx context.Context, w http.ResponseWriter, v error) error {
+		var en goa.GoaErrorNamer
+		if !errors.As(v, &en) {
+			return encodeError(ctx, w, v)
+		}
+		switch en.GoaErrorName() {
+		case "window_busy":
+			var res *goa.ServiceError
+			errors.As(v, &res)
+			enc := encoder(ctx, w)
+			var body any
+			if formatter != nil {
+				body = formatter(ctx, res)
+			} else {
+				body = NewStartTeamAgentsWindowBusyResponseBody(res)
+			}
+			w.Header().Set("goa-error", res.GoaErrorName())
+			w.WriteHeader(http.StatusConflict)
+			return enc.Encode(body)
+		case "ambiguous_space":
+			var res *surla.TeamSpaceConflict
+			errors.As(v, &res)
+			enc := encoder(ctx, w)
+			var body any
+			if formatter != nil {
+				body = formatter(ctx, res)
+			} else {
+				body = NewStartTeamAgentsAmbiguousSpaceResponseBody(res)
+			}
+			w.Header().Set("goa-error", res.GoaErrorName())
+			w.WriteHeader(http.StatusConflict)
+			return enc.Encode(body)
+		case "team_unavailable":
+			var res *goa.ServiceError
+			errors.As(v, &res)
+			enc := encoder(ctx, w)
+			var body any
+			if formatter != nil {
+				body = formatter(ctx, res)
+			} else {
+				body = NewStartTeamAgentsTeamUnavailableResponseBody(res)
+			}
+			w.Header().Set("goa-error", res.GoaErrorName())
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return enc.Encode(body)
+		case "forbidden":
+			var res *goa.ServiceError
+			errors.As(v, &res)
+			enc := encoder(ctx, w)
+			var body any
+			if formatter != nil {
+				body = formatter(ctx, res)
+			} else {
+				body = NewStartTeamAgentsForbiddenResponseBody(res)
+			}
+			w.Header().Set("goa-error", res.GoaErrorName())
+			w.WriteHeader(http.StatusForbidden)
+			return enc.Encode(body)
+		default:
+			return encodeError(ctx, w, v)
+		}
+	}
+}
+
 // EncodeListChangesResponse returns an encoder for responses returned by the
 // surla list_changes endpoint.
 func EncodeListChangesResponse(encoder func(context.Context, http.ResponseWriter) goahttp.Encoder) func(context.Context, http.ResponseWriter, any) error {
@@ -3457,6 +3685,34 @@ func marshalSurlaTraceSpanToTraceSpanResponseBody(v *surla.TraceSpan) *TraceSpan
 			tv := val
 			res.Attributes[tk] = tv
 		}
+	}
+
+	return res
+}
+
+// marshalSurlaTeamRoleStateToTeamRoleStateResponseBody builds a value of type
+// *TeamRoleStateResponseBody from a value of type *surla.TeamRoleState.
+func marshalSurlaTeamRoleStateToTeamRoleStateResponseBody(v *surla.TeamRoleState) *TeamRoleStateResponseBody {
+	res := &TeamRoleStateResponseBody{
+		Role:       v.Role,
+		Handle:     v.Handle,
+		State:      v.State,
+		Attention:  v.Attention,
+		Watcher:    v.Watcher,
+		Assignment: v.Assignment,
+	}
+
+	return res
+}
+
+// marshalSurlaProjectTeamRoleToProjectTeamRoleResponseBody builds a value of
+// type *ProjectTeamRoleResponseBody from a value of type
+// *surla.ProjectTeamRole.
+func marshalSurlaProjectTeamRoleToProjectTeamRoleResponseBody(v *surla.ProjectTeamRole) *ProjectTeamRoleResponseBody {
+	res := &ProjectTeamRoleResponseBody{
+		Role:    v.Role,
+		Handle:  v.Handle,
+		Running: v.Running,
 	}
 
 	return res
