@@ -48,7 +48,14 @@ func openEntry(dirFD int, name string) (int, error) {
 	if kind == unix.S_IFDIR {
 		flags |= unix.O_DIRECTORY
 	}
-	fd, err := unix.Open(fmt.Sprintf("/proc/self/fd/%d", pathFD), flags, 0)
+	procPath := fmt.Sprintf("/proc/self/fd/%d", pathFD)
+	fd, err := unix.Open(procPath, flags, 0)
+	if err != nil && (errors.Is(err, unix.ENOENT) || errors.Is(err, unix.ENOTDIR)) {
+		var procSt unix.Stat_t
+		if lerr := unix.Lstat(procPath, &procSt); lerr != nil {
+			err = fmt.Errorf("open %s (/proc not mounted): %w", procPath, unix.ENOSYS)
+		}
+	}
 	closePathErr := unix.Close(pathFD)
 	if err != nil {
 		return -1, errors.Join(err, closePathErr)

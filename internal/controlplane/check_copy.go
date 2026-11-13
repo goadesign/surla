@@ -158,12 +158,18 @@ func (c *grantCopier) copyEntry(dirFD int, rel, name, dst string) error {
 	}
 	fd, err := openEntry(dirFD, name)
 	if err != nil {
+		if errors.Is(err, unix.ENOSYS) {
+			return err
+		}
 		return &errSourceChanged{rel: rel, err: err}
 	}
 	f := os.NewFile(uintptr(fd), rel)
 	defer f.Close()
 	excluded, err := isProtectedEntry(dirFD, fd)
 	if err != nil {
+		if errors.Is(err, unix.ENOSYS) {
+			return err
+		}
 		return &errSourceChanged{rel: rel, err: err}
 	}
 	if excluded {

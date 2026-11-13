@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"syscall"
@@ -373,4 +374,35 @@ func TestOpenEntryHandlesRegularFileDirectorySymlinkAndFIFO(t *testing.T) {
 	got, err := copyGrantPath(t, context.Background(), dir, dir, dst)
 	require.NoError(t, err)
 	assert.Equal(t, []string{"pipe.fifo"}, got.skipped)
+}
+
+// TestCopyGrantWithoutProc verifies that when /proc is not mounted on Linux,
+// openEntry does not report ENOENT (which isProtectedEntry would treat as a
+// missing .git/.surla directory) and copyGrant does not report errSourceChanged.
+func TestCopyGrantWithoutProc(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("Linux-only /proc check")
+	}
+	if _, err := os.Stat("/proc/self"); err == nil {
+		t.Skip("needs a root without /proc")
+	}
+	dir := realTempDir(t)
+	writeTree(t, dir, map[string]string{"go.mod": "module example.com/shop\n", ".git/HEAD": "ref\n"})
+	dirFD, err := unix.Open(dir, openDirFlags, 0)
+	require.NoError(t, err)
+	t.Cleanup(func() { assert.NoError(t, unix.Close(dirFD)) })
+
+	_, err = openEntry(dirFD, "go.mod")
+	require.Error(t, err)
+	assert.False(t, errors.Is(err, unix.ENOENT))
+
+	_, err = openEntry(dirFD, ".git")
+	require.Error(t, err)
+	assert.False(t, errors.Is(err, unix.ENOENT), "isProtectedEntry must not treat a missing /proc as an absent .git")
+
+	dst := realTempDir(t)
+	_, err = copyGrantPath(t, context.Background(), dir, dir, dst)
+	require.Error(t, err)
+	var changed *errSourceChanged
+	assert.False(t, errors.As(err, &changed), "a missing /proc must not be reported as a changed workspace")
 }

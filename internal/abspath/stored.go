@@ -34,22 +34,36 @@ func Stored(path string) (string, error) {
 }
 
 // FDPath returns the kernel's stored path for the open file descriptor fd.
-// If the file's directory entries have been unlinked (link count zero), FDPath
-// returns ErrUnlinked rather than a stale or kernel-annotated path string.
+// It verifies via Lstat that the returned path exists and has the same device
+// and inode as fd; if the path no longer exists or resolves to a different
+// file (for example after the opened hard link was unlinked or replaced),
+// FDPath returns ErrUnlinked rather than a stale or kernel-annotated path.
 func FDPath(fd int) (string, error) {
+	var fdSt unix.Stat_t
+	if err := unix.Fstat(fd, &fdSt); err != nil {
+		return "", err
+	}
 	p, err := fdPath(fd)
 	if err != nil {
-		if errors.Is(err, unix.ENOENT) {
+		return "", err
+	}
+	var pathSt unix.Stat_t
+	if err := unix.Lstat(p, &pathSt); err != nil {
+		if errors.Is(err, unix.ENOENT) || errors.Is(err, unix.ENOTDIR) {
 			return "", fmt.Errorf("%w: %w", ErrUnlinked, err)
 		}
 		return "", err
 	}
-	var st unix.Stat_t
-	if err := unix.Fstat(fd, &st); err != nil {
-		return "", err
-	}
-	if st.Nlink == 0 {
-		return "", ErrUnlinked
+	if pathSt.Dev != fdSt.Dev || pathSt.Ino != fdSt.Ino {
+		return "", fmt.Errorf(
+			"%w: path %s resolves to (%d:%d), want (%d:%d)",
+			ErrUnlinked,
+			p,
+			uint64(pathSt.Dev),
+			pathSt.Ino,
+			uint64(fdSt.Dev),
+			fdSt.Ino,
+		)
 	}
 	return p, nil
 }
