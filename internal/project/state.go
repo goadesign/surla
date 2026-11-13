@@ -103,8 +103,9 @@ func Discover(root, directory string) (*State, error) {
 // launched, so the server serves exactly that state and never derives a
 // folder from its own environment. dir must be the absolute, physical
 // (symlink-free) path of a folder private to this account, hold a valid
-// project record, carry the name Discover derives from that record's folder,
-// and lie outside that project folder; otherwise Open refuses, naming dir and
+// project record whose project folder exists and is named by its stored
+// physical path, carry the name Discover derives from that folder, and lie
+// outside it; otherwise Open refuses, naming dir and
 // never a credential. A folder without a record was never initialized by `surla`.
 func Open(dir string) (*State, error) {
 	if !filepath.IsAbs(dir) {
@@ -128,7 +129,21 @@ func Open(dir string) (*State, error) {
 	if err != nil {
 		return nil, fmt.Errorf("project state folder %s: %w", dir, err)
 	}
-	if err := validateRecord(record, record.Directory); err != nil {
+	// The record's project folder is compared with the path the volume stores
+	// for it, resolved here as Discover resolves it and never taken from the
+	// record itself: a record that names its folder by a relative path, through
+	// a link or in another spelling is not one `surla` wrote.
+	if !filepath.IsAbs(record.Directory) {
+		return nil, fmt.Errorf("project state folder %s: invalid project record", dir)
+	}
+	project, err := abspath.Stored(record.Directory)
+	if err != nil {
+		return nil, fmt.Errorf("project state folder %s: project folder %s: %w", dir, record.Directory, err)
+	}
+	if project != record.Directory {
+		return nil, fmt.Errorf("project state folder %s names its project folder %s, which is not that folder's stored path %s", dir, record.Directory, project)
+	}
+	if err := validateRecord(record, project); err != nil {
 		return nil, fmt.Errorf("project state folder %s: %w", dir, err)
 	}
 	if projectDirectory(filepath.Dir(dir), record.Directory) != dir {
