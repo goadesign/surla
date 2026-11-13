@@ -188,10 +188,10 @@ var (
 // writer and the user can read; the fixed report is accepted and recorded on
 // the tests branch, and the builder's assignment names that commit; the
 // builder's commit passes those tests in a sandboxed run that says where the
-// tests came from and that the test writer may read; and a later acceptance
-// of changed tests leaves that earlier run as the change's latest passing
-// verification. Each step stops the journey when it fails, because every
-// later step builds on it.
+// tests came from and that the test writer may read, and the change list
+// shows it as current; and a later acceptance of changed tests leaves that
+// run the change's latest, passed, but no longer current. Each step stops the
+// journey when it fails, because every later step builds on it.
 func TestWholeJourneyThroughTheProjectServer(t *testing.T) {
 	if err := candidate.CheckSandbox(); err != nil {
 		t.Skipf("the journey builds the starter and its tests in the candidate sandbox: %v", err)
@@ -211,7 +211,7 @@ func TestWholeJourneyThroughTheProjectServer(t *testing.T) {
 		{"a change outside the test module is sent back to the test writer", j.sendBackOutsideChange},
 		{"the fixed tests are accepted and recorded on the tests branch", j.acceptTests},
 		{"the builder's commit passes the accepted tests", j.verifyAcceptedTests},
-		{"a later acceptance leaves the earlier run as the latest verification", j.acceptLaterTests},
+		{"a later acceptance leaves the earlier run passed but no longer current", j.acceptLaterTests},
 	} {
 		if !t.Run(step.name, step.run) {
 			return
@@ -671,8 +671,9 @@ func (j *wholeJourney) acceptTests(t *testing.T) {
 // the guide's Story edit, which the project folder still holds uncommitted,
 // and verify that commit for the agreed revision, then follows the run until it
 // finishes. The run passes every scenario of the accepted tests and says
-// where they came from; the test writer reads it, and a caller the policy
-// does not allow is refused.
+// where they came from; the test writer reads it, a caller the policy does
+// not allow is refused, and the builder and the user's page see it as the
+// change's latest verification, passed, with current inputs.
 func (j *wholeJourney) verifyAcceptedTests(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), journeyStepWait)
 	defer cancel()
@@ -739,6 +740,10 @@ func (j *wholeJourney) verifyAcceptedTests(t *testing.T) {
 	var refused *goa.ServiceError
 	require.ErrorAs(t, err, &refused, "the management credential may not read a run")
 	assert.Equal(t, "forbidden", refused.Name)
+	for who, latest := range j.latestVerifications(t, ctx) {
+		assert.Equal(t, &gensurla.LatestVerificationItem{RunID: run.RunID, State: "passed", InputsCurrent: true},
+			latest, "the %s sees the run passed, for the revision and tests selected now", who)
+	}
 	j.runID = run.RunID
 }
 
@@ -746,7 +751,8 @@ func (j *wholeJourney) verifyAcceptedTests(t *testing.T) {
 // after the passing run and report again. Surla accepts and records the
 // changed tests at a new commit, and the builder's assignment names it; the
 // earlier run, which ran the earlier tests, stays the change's latest
-// verification, still passed, for the builder and on the user's page.
+// verification, still passed, and the builder and the user's page see that
+// its inputs are no longer current.
 func (j *wholeJourney) acceptLaterTests(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), journeyStepWait)
 	defer cancel()
@@ -781,17 +787,9 @@ func (j *wholeJourney) acceptLaterTests(t *testing.T) {
 	require.True(t, ok)
 	assert.True(t, completed.Report.Passed, "the earlier run still reads passed")
 	assert.Equal(t, j.testsCommit, earlier.SuiteCommit, "it ran the earlier tests")
-	changes, err := gensurla.DecodeChangeList(
-		trustedSuiteCall(t, ctx, j.builder, "list_changes", []byte(`{}`)))
-	require.NoError(t, err)
-	page, err := j.user.ListChanges(ctx)
-	require.NoError(t, err)
-	for who, list := range map[string]*gensurla.ChangeList{"builder": changes, "user": page} {
-		require.Len(t, list.Changes, 1)
-		if assert.NotNil(t, list.Changes[0].LatestVerification, "the %s sees a latest verification", who) {
-			assert.Equal(t, &gensurla.LatestVerificationItem{RunID: j.runID, State: "passed"},
-				list.Changes[0].LatestVerification, "the %s sees the earlier run as the latest, passed", who)
-		}
+	for who, latest := range j.latestVerifications(t, ctx) {
+		assert.Equal(t, &gensurla.LatestVerificationItem{RunID: j.runID, State: "passed", InputsCurrent: false},
+			latest, "the %s sees the earlier run passed, for tests no longer selected", who)
 	}
 }
 
@@ -892,6 +890,27 @@ func (j *wholeJourney) reportTests(
 		case <-ticker.C:
 		}
 	}
+}
+
+// latestVerifications reads the change list as the builder, through
+// list_changes, and as the user's page does, and returns the latest
+// verification each sees for the journey's change, the only change listed.
+func (j *wholeJourney) latestVerifications(
+	t *testing.T, ctx context.Context,
+) map[string]*gensurla.LatestVerificationItem {
+	t.Helper()
+	builder, err := gensurla.DecodeChangeList(
+		trustedSuiteCall(t, ctx, j.builder, "list_changes", []byte(`{}`)))
+	require.NoError(t, err)
+	page, err := j.user.ListChanges(ctx)
+	require.NoError(t, err)
+	latest := map[string]*gensurla.LatestVerificationItem{}
+	for who, list := range map[string]*gensurla.ChangeList{"builder": builder, "user": page} {
+		require.Len(t, list.Changes, 1)
+		require.NotNil(t, list.Changes[0].LatestVerification, "the %s sees a latest verification", who)
+		latest[who] = list.Changes[0].LatestVerification
+	}
+	return latest
 }
 
 // testsBranch returns the commit the tests branch points to in the project's
