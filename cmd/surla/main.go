@@ -136,20 +136,20 @@ var apiKeyEnv = map[string]string{
 }
 
 func main() {
-	if err := run(os.Args[1:], os.Stdout); err != nil {
+	if err := runWithRuntime(os.Args[1:], os.Stdout, productionProjectRuntime()); err != nil {
 		fmt.Fprintf(os.Stderr, "surla: %v\n", err)
 		os.Exit(1)
 	}
 }
 
-// run dispatches the surla subcommands. No arguments, `help`, `-h`, `-help`
-// and `--help` print usage to stdout; `help <command>` and
-// `<command> -h` print that command's flags to stderr (the flag package's
+// runWithRuntime dispatches CLI commands using the composition root's project effects.
+// No arguments starts the project; `help`, `-h`, `-help` and `--help` print usage.
+// `help <command>` and `<command> -h` print that command's flags to stderr (the flag package's
 // output). A help request returns nil so the exit status is 0; an unknown
 // command or a bad flag returns an error.
-func run(args []string, stdout io.Writer) error {
+func runWithRuntime(args []string, stdout io.Writer, runtime projectRuntime) error {
 	if len(args) == 0 {
-		return runProjectStart(nil, stdout)
+		return runtime.start(nil, stdout)
 	}
 	sub, rest := args[0], args[1:]
 	if slices.Contains(helpWords, sub) {
@@ -158,12 +158,12 @@ func run(args []string, stdout io.Writer) error {
 			_, err := fmt.Fprint(stdout, usage)
 			return err
 		case sub == "help" && len(rest) == 1:
-			return run([]string{rest[0], "-h"}, stdout)
+			return runWithRuntime([]string{rest[0], "-h"}, stdout, runtime)
 		default:
 			return fmt.Errorf("unexpected arguments %q after %s", rest, sub)
 		}
 	}
-	err := dispatch(sub, rest, stdout)
+	err := dispatch(sub, rest, stdout, runtime)
 	if errors.Is(err, flag.ErrHelp) {
 		return nil
 	}
@@ -172,16 +172,16 @@ func run(args []string, stdout io.Writer) error {
 
 // dispatch runs the subcommand sub with its arguments. A `-h` flag makes the
 // subcommand's flag parsing print its flags and return flag.ErrHelp.
-func dispatch(sub string, args []string, stdout io.Writer) error {
+func dispatch(sub string, args []string, stdout io.Writer, runtime projectRuntime) error {
 	switch sub {
 	case "init":
 		return runInit(args, stdout)
 	case "serve":
-		return runServe(args)
+		return runtime.serve(args)
 	case "stop":
-		return runProjectStop(args, stdout)
+		return runtime.stop(args, stdout)
 	case "verification", "promotion":
-		return runProjectSettings(sub, args, stdout)
+		return runtime.settings(sub, args, stdout)
 	case "preview":
 		return runPreview(args, stdout, os.Stderr)
 	case "diff":
@@ -606,7 +606,7 @@ func isSHA256Hex(s string) bool {
 // ANTHROPIC_API_KEY or openai/gpt-5.4-mini from OPENAI_API_KEY. The chosen
 // model only reaches live targets' environment; with neither flags nor API
 // keys set, live targets get no model choice until configure_model sets one.
-func serveOptions(
+func (runtime projectRuntime) serveOptions(
 	cfg serveConfig,
 	getenv func(string) string,
 	environ []string,
@@ -616,7 +616,7 @@ func serveOptions(
 		return controlplane.Options{}, err
 	}
 
-	ws, err := configureServeWorkspace(cfg)
+	ws, err := runtime.configureWorkspace(cfg)
 	if err != nil {
 		return controlplane.Options{}, err
 	}

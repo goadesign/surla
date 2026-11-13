@@ -26,19 +26,36 @@ import (
 	goahttp "goa.design/goa/v3/http"
 )
 
-// runProjectStart serializes discovery and starts at most one server, then opens a one-use views link.
-func runProjectStart(args []string, stdout io.Writer) (err error) {
+// projectRuntime binds project state and process effects at the CLI composition root.
+// Tests provide an owned state root and stand-ins without starting terminals or browsers.
+type projectRuntime struct {
+	stateRoot     func(string, ...string) (string, error)
+	startTerminal func(context.Context, *project.State, []string) error
+	openViews     func(context.Context, string) error
+}
+
+// productionProjectRuntime is selected only by the executable's composition root.
+func productionProjectRuntime() projectRuntime {
+	return projectRuntime{
+		stateRoot:     defaultOperatorRoot,
+		startTerminal: startProjectTerminal,
+		openViews:     openProjectViews,
+	}
+}
+
+// start serializes discovery and starts at most one server, then opens a one-use views link.
+func (runtime projectRuntime) start(args []string, stdout io.Writer) (err error) {
 	_, err = parseProjectFlags("surla", args)
 	if err != nil {
 		return err
 	}
-	state, err := discoverProject()
+	state, err := runtime.discover()
 	if err != nil {
 		return err
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	client, created, err := attachOrStartProject(ctx, state, func(ctx context.Context, state *project.State) error { return startProjectTerminal(ctx, state, args) })
+	client, created, err := attachOrStartProject(ctx, state, func(ctx context.Context, state *project.State) error { return runtime.startTerminal(ctx, state, args) })
 	if err != nil {
 		return err
 	}
@@ -52,7 +69,7 @@ func runProjectStart(args []string, stdout io.Writer) (err error) {
 	if err != nil {
 		return err
 	}
-	if err := openProjectViews(ctx, link.URL); err != nil {
+	if err := runtime.openViews(ctx, link.URL); err != nil {
 		return fmt.Errorf("open project views: %w", err)
 	}
 	_, err = fmt.Fprintf(stdout, "Surla is running for %s at %s\n", state.Record.Directory, state.Origin())
@@ -109,8 +126,8 @@ func attachOrStartProject(
 	return client, created, nil
 }
 
-// runProjectStop authenticates the current project and waits until ordered cleanup releases the store.
-func runProjectStop(args []string, stdout io.Writer) (err error) {
+// stop authenticates the current project and waits until ordered cleanup releases the store.
+func (runtime projectRuntime) stop(args []string, stdout io.Writer) (err error) {
 	fs := flag.NewFlagSet("stop", flag.ContinueOnError)
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -118,7 +135,7 @@ func runProjectStop(args []string, stdout io.Writer) (err error) {
 	if fs.NArg() != 0 {
 		return errors.New("stop takes no arguments")
 	}
-	state, err := discoverProject()
+	state, err := runtime.discover()
 	if err != nil {
 		return err
 	}
@@ -167,13 +184,13 @@ func runProjectStop(args []string, stdout io.Writer) (err error) {
 	}
 }
 
-// runServe is the Herdr program entry, with project identity and address derived from private state.
-func runServe(args []string) (err error) {
+// serve is the Herdr program entry, with project identity and address derived from private state.
+func (runtime projectRuntime) serve(args []string) (err error) {
 	cfg, err := parseProjectFlags("serve", args)
 	if err != nil {
 		return err
 	}
-	state, err := discoverProject()
+	state, err := runtime.discover()
 	if err != nil {
 		return err
 	}
@@ -193,7 +210,7 @@ func runServe(args []string) (err error) {
 		err = errors.Join(err, provider.Shutdown(ctx))
 		otel.SetTracerProvider(previous)
 	}()
-	opts, err := serveOptions(cfg, os.Getenv, os.Environ())
+	opts, err := runtime.serveOptions(cfg, os.Getenv, os.Environ())
 	if err != nil {
 		return err
 	}
@@ -261,13 +278,13 @@ func parseProjectFlags(name string, args []string) (serveConfig, error) {
 	return cfg, nil
 }
 
-// discoverProject uses physical folders and nearest records, independent of the working tree root.
-func discoverProject() (*project.State, error) {
+// discover uses physical folders and nearest records, independent of the working tree root.
+func (runtime projectRuntime) discover() (*project.State, error) {
 	cwd, err := os.Getwd()
 	if err != nil {
 		return nil, err
 	}
-	root, err := defaultOperatorRoot(cwd)
+	root, err := runtime.stateRoot(cwd)
 	if err != nil {
 		return nil, err
 	}

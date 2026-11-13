@@ -24,6 +24,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// init enables production launch effects only in the explicitly tagged test binary.
+// TestMain still requires the isolated configuration root before starting its helper.
+func init() {
+	herdrTestRuntime = productionProjectRuntime
+}
+
 // TestHC isolates the Herdr core, starts only the real server, and cleans up exact terminals.
 func TestHC(t *testing.T) {
 	if testing.Short() {

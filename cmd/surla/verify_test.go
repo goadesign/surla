@@ -2,11 +2,19 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"io"
+	"net"
+	"net/http"
 	"os"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/goadesign/surla/internal/controlplane"
+	"github.com/goadesign/surla/internal/project"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -235,6 +243,7 @@ func TestRunPrintsHelpAndDispatchesCommands(t *testing.T) {
 		wantUsage bool
 		wantErr   string
 	}{
+		{name: "no arguments", args: nil},
 		{name: "help", args: []string{"help"}, wantUsage: true},
 		{name: "-h", args: []string{"-h"}, wantUsage: true},
 		{name: "--help", args: []string{"--help"}, wantUsage: true},
@@ -259,14 +268,21 @@ func TestRunPrintsHelpAndDispatchesCommands(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			var out bytes.Buffer
-			err := run(tc.args, &out)
+			var err error
+			if tc.args == nil {
+				err = runWithRuntime(tc.args, &out, projectDispatchRuntime(t))
+			} else {
+				err = run(tc.args, &out)
+			}
 			if tc.wantErr != "" {
 				require.Error(t, err)
 				assert.Contains(t, err.Error(), tc.wantErr)
 				return
 			}
 			require.NoError(t, err)
-			if tc.wantUsage {
+			if tc.args == nil {
+				assert.Contains(t, out.String(), "Surla is running for")
+			} else if tc.wantUsage {
 				assert.Equal(t, usage, out.String())
 			} else {
 				assert.Empty(t, out.String())
@@ -318,4 +334,54 @@ func without(args []string, name string) []string {
 		out = append(out, args[i])
 	}
 	return out
+}
+
+// projectDispatchRuntime proves no-argument dispatch through actual management HTTP
+// while replacing terminal and browser effects and every state-root resolution.
+func projectDispatchRuntime(t *testing.T) projectRuntime {
+	t.Helper()
+	root := t.TempDir()
+	runtime := testProjectRuntime()
+	runtime.stateRoot = func(string, ...string) (string, error) { return root, nil }
+	starts, opens := 0, 0
+	runtime.startTerminal = func(ctx context.Context, state *project.State, args []string) error {
+		starts++
+		assert.Empty(t, args)
+		cp, err := controlplane.New(controlplane.Options{CardsDir: state.CardsDir()})
+		if err != nil {
+			return err
+		}
+		t.Cleanup(func() { assert.NoError(t, cp.Close()) })
+		listener, err := net.Listen("tcp", state.Address())
+		if err != nil {
+			return err
+		}
+		management := project.NewServer(state, func() {})
+		server := &http.Server{Handler: management.Handler(controlplane.NewHTTPHandler(cp, management.Authenticate)), ReadHeaderTimeout: time.Second}
+		t.Cleanup(func() { assert.NoError(t, server.Close()) })
+		go func() {
+			if err := server.Serve(listener); !errors.Is(err, http.ErrServerClosed) {
+				assert.NoError(t, err)
+			}
+		}()
+		return nil
+	}
+	runtime.openViews = func(ctx context.Context, link string) error {
+		opens++
+		assert.Contains(t, link, "/views#link=")
+		return nil
+	}
+	t.Cleanup(func() { assert.Equal(t, 1, starts); assert.Equal(t, 1, opens) })
+	return runtime
+}
+
+// TestDefaultProjectEffectsAreBlocked prevents dispatch regressions from reaching
+// user config, real terminals, or the browser when a test omits its stand-ins.
+func TestDefaultProjectEffectsAreBlocked(t *testing.T) {
+	runtime := testProjectRuntime()
+	_, err := runtime.stateRoot(t.TempDir())
+	require.ErrorContains(t, err, "test-owned configuration directory")
+	require.ErrorContains(t, runtime.startTerminal(t.Context(), nil, nil), "cannot start real")
+	require.ErrorContains(t, runtime.openViews(t.Context(), "unused"), "cannot open real")
+	require.ErrorContains(t, run(nil, io.Discard), "test-owned configuration directory")
 }

@@ -17,9 +17,9 @@ import (
 	"github.com/goadesign/surla/internal/project"
 )
 
-// runProjectSettings validates a named operator file before atomically storing its normalized copy.
+// settings validates a named operator file before atomically storing its normalized copy.
 // Relative local repository and release paths are resolved against the named file's directory.
-func runProjectSettings(kind string, args []string, stdout io.Writer) (err error) {
+func (runtime projectRuntime) settings(kind string, args []string, stdout io.Writer) (err error) {
 	if len(args) == 1 && slices.Contains(helpWords, args[0]) {
 		_, err := fmt.Fprintf(os.Stderr, "Usage: surla %s set <file> | show | remove\n", kind)
 		return err
@@ -28,7 +28,7 @@ func runProjectSettings(kind string, args []string, stdout io.Writer) (err error
 	if !valid {
 		return fmt.Errorf("usage: surla %s set <file> | show | remove", kind)
 	}
-	state, err := discoverProject()
+	state, err := runtime.discover()
 	if err != nil {
 		return err
 	}

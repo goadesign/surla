@@ -63,17 +63,17 @@ const (
 	operatorPrivateDirValue = "dir-v1"
 )
 
-// configureServeWorkspace resolves the bound workspace, operator-owned storage
+// configureWorkspace resolves the bound workspace, operator-owned storage
 // directories and dynamic
 // verification/promotion resolvers for `surla serve`.
-func configureServeWorkspace(cfg serveConfig) (workspaceServeConfig, error) {
+func (runtime projectRuntime) configureWorkspace(cfg serveConfig) (workspaceServeConfig, error) {
 	var state *project.State
 	var err error
 	if cfg.projectDir == "" {
-		state, err = discoverProject()
+		state, err = runtime.discover()
 	} else {
 		var root string
-		root, err = defaultOperatorRoot(cfg.projectDir)
+		root, err = runtime.stateRoot(cfg.projectDir)
 		if err == nil {
 			state, err = project.Discover(root, cfg.projectDir)
 		}

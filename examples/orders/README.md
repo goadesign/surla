@@ -168,6 +168,7 @@ cat > "$WORK_DIR/promotion.json" <<EOF
 }
 EOF
 
+cd examples/orders
 surla verification set "$WORK_DIR/verification.json"
 surla promotion set "$WORK_DIR/promotion.json"
 surla
