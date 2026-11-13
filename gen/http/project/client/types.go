@@ -39,6 +39,18 @@ type IdentityResponseBody struct {
 	Owner *string `form:"owner,omitempty" json:"owner,omitempty" xml:"owner,omitempty"`
 }
 
+// EnsureTeamResponseBody is the type of the "project" service "ensure_team"
+// endpoint HTTP response body.
+type EnsureTeamResponseBody struct {
+	// Stable Chorus team name.
+	Team *string `form:"team,omitempty" json:"team,omitempty" xml:"team,omitempty"`
+	// Local Herdr space identifier.
+	Space *string                        `form:"space,omitempty" json:"space,omitempty" xml:"space,omitempty"`
+	Roles []*ProjectTeamRoleResponseBody `form:"roles,omitempty" json:"roles,omitempty" xml:"roles,omitempty"`
+	// Launcher state after ensuring the team.
+	Dialog *string `form:"dialog,omitempty" json:"dialog,omitempty" xml:"dialog,omitempty"`
+}
+
 // AddAgentResponseBody is the type of the "project" service "add_agent"
 // endpoint HTTP response body.
 type AddAgentResponseBody struct {
@@ -106,6 +118,105 @@ type IdentityUnprocessableResponseBody struct {
 // IdentityConflictResponseBody is the type of the "project" service "identity"
 // endpoint HTTP response body for the "conflict" error.
 type IdentityConflictResponseBody struct {
+	// Name is the name of this class of errors.
+	Name *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID *string `form:"id,omitempty" json:"id,omitempty" xml:"id,omitempty"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message *string `form:"message,omitempty" json:"message,omitempty" xml:"message,omitempty"`
+	// Is the error temporary?
+	Temporary *bool `form:"temporary,omitempty" json:"temporary,omitempty" xml:"temporary,omitempty"`
+	// Is the error a timeout?
+	Timeout *bool `form:"timeout,omitempty" json:"timeout,omitempty" xml:"timeout,omitempty"`
+	// Is the error a server-side fault?
+	Fault *bool `form:"fault,omitempty" json:"fault,omitempty" xml:"fault,omitempty"`
+}
+
+// EnsureTeamWindowBusyResponseBody is the type of the "project" service
+// "ensure_team" endpoint HTTP response body for the "window_busy" error.
+type EnsureTeamWindowBusyResponseBody struct {
+	// Name is the name of this class of errors.
+	Name *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID *string `form:"id,omitempty" json:"id,omitempty" xml:"id,omitempty"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message *string `form:"message,omitempty" json:"message,omitempty" xml:"message,omitempty"`
+	// Is the error temporary?
+	Temporary *bool `form:"temporary,omitempty" json:"temporary,omitempty" xml:"temporary,omitempty"`
+	// Is the error a timeout?
+	Timeout *bool `form:"timeout,omitempty" json:"timeout,omitempty" xml:"timeout,omitempty"`
+	// Is the error a server-side fault?
+	Fault *bool `form:"fault,omitempty" json:"fault,omitempty" xml:"fault,omitempty"`
+}
+
+// EnsureTeamConflictResponseBody is the type of the "project" service
+// "ensure_team" endpoint HTTP response body for the "conflict" error.
+type EnsureTeamConflictResponseBody struct {
+	// Name is the name of this class of errors.
+	Name *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID *string `form:"id,omitempty" json:"id,omitempty" xml:"id,omitempty"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message *string `form:"message,omitempty" json:"message,omitempty" xml:"message,omitempty"`
+	// Is the error temporary?
+	Temporary *bool `form:"temporary,omitempty" json:"temporary,omitempty" xml:"temporary,omitempty"`
+	// Is the error a timeout?
+	Timeout *bool `form:"timeout,omitempty" json:"timeout,omitempty" xml:"timeout,omitempty"`
+	// Is the error a server-side fault?
+	Fault *bool `form:"fault,omitempty" json:"fault,omitempty" xml:"fault,omitempty"`
+}
+
+// EnsureTeamAmbiguousSpaceResponseBody is the type of the "project" service
+// "ensure_team" endpoint HTTP response body for the "ambiguous_space" error.
+type EnsureTeamAmbiguousSpaceResponseBody struct {
+	// Error name.
+	Name *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
+	// Number of local spaces matching the team's name and physical folder.
+	Count *int `form:"count,omitempty" json:"count,omitempty" xml:"count,omitempty"`
+}
+
+// EnsureTeamTeamUnavailableResponseBody is the type of the "project" service
+// "ensure_team" endpoint HTTP response body for the "team_unavailable" error.
+type EnsureTeamTeamUnavailableResponseBody struct {
+	// Name is the name of this class of errors.
+	Name *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID *string `form:"id,omitempty" json:"id,omitempty" xml:"id,omitempty"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message *string `form:"message,omitempty" json:"message,omitempty" xml:"message,omitempty"`
+	// Is the error temporary?
+	Temporary *bool `form:"temporary,omitempty" json:"temporary,omitempty" xml:"temporary,omitempty"`
+	// Is the error a timeout?
+	Timeout *bool `form:"timeout,omitempty" json:"timeout,omitempty" xml:"timeout,omitempty"`
+	// Is the error a server-side fault?
+	Fault *bool `form:"fault,omitempty" json:"fault,omitempty" xml:"fault,omitempty"`
+}
+
+// EnsureTeamForbiddenResponseBody is the type of the "project" service
+// "ensure_team" endpoint HTTP response body for the "forbidden" error.
+type EnsureTeamForbiddenResponseBody struct {
+	// Name is the name of this class of errors.
+	Name *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID *string `form:"id,omitempty" json:"id,omitempty" xml:"id,omitempty"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message *string `form:"message,omitempty" json:"message,omitempty" xml:"message,omitempty"`
+	// Is the error temporary?
+	Temporary *bool `form:"temporary,omitempty" json:"temporary,omitempty" xml:"temporary,omitempty"`
+	// Is the error a timeout?
+	Timeout *bool `form:"timeout,omitempty" json:"timeout,omitempty" xml:"timeout,omitempty"`
+	// Is the error a server-side fault?
+	Fault *bool `form:"fault,omitempty" json:"fault,omitempty" xml:"fault,omitempty"`
+}
+
+// EnsureTeamUnprocessableResponseBody is the type of the "project" service
+// "ensure_team" endpoint HTTP response body for the "unprocessable" error.
+type EnsureTeamUnprocessableResponseBody struct {
 	// Name is the name of this class of errors.
 	Name *string `form:"name,omitempty" json:"name,omitempty" xml:"name,omitempty"`
 	// ID is a unique identifier for this particular occurrence of the problem.
@@ -393,6 +504,16 @@ type ExchangeBrowserLinkConflictResponseBody struct {
 	Fault *bool `form:"fault,omitempty" json:"fault,omitempty" xml:"fault,omitempty"`
 }
 
+// ProjectTeamRoleResponseBody is used to define fields on response body types.
+type ProjectTeamRoleResponseBody struct {
+	// Trusted role.
+	Role *string `form:"role,omitempty" json:"role,omitempty" xml:"role,omitempty"`
+	// Stable Chorus handle and Surla actor identity.
+	Handle *string `form:"handle,omitempty" json:"handle,omitempty" xml:"handle,omitempty"`
+	// The matching terminal has an agent in the foreground.
+	Running *bool `form:"running,omitempty" json:"running,omitempty" xml:"running,omitempty"`
+}
+
 // NewAddAgentRequestBody builds the HTTP request body from the payload of the
 // "add_agent" endpoint of the "project" service.
 func NewAddAgentRequestBody(p *project.AddAgentPayload) *AddAgentRequestBody {
@@ -457,6 +578,112 @@ func NewIdentityUnprocessable(body *IdentityUnprocessableResponseBody) *goa.Serv
 // NewIdentityConflict builds a project service identity endpoint conflict
 // error.
 func NewIdentityConflict(body *IdentityConflictResponseBody) *goa.ServiceError {
+	v := &goa.ServiceError{
+		Name:      *body.Name,
+		ID:        *body.ID,
+		Message:   *body.Message,
+		Temporary: *body.Temporary,
+		Timeout:   *body.Timeout,
+		Fault:     *body.Fault,
+	}
+
+	return v
+}
+
+// NewEnsureTeamProjectTeamOK builds a "project" service "ensure_team" endpoint
+// result from a HTTP "OK" response.
+func NewEnsureTeamProjectTeamOK(body *EnsureTeamResponseBody) *project.ProjectTeam {
+	v := &project.ProjectTeam{
+		Team:   *body.Team,
+		Space:  *body.Space,
+		Dialog: *body.Dialog,
+	}
+	v.Roles = make([]*project.ProjectTeamRole, len(body.Roles))
+	for i, val := range body.Roles {
+		if val == nil {
+			v.Roles[i] = nil
+			continue
+		}
+		v.Roles[i] = unmarshalProjectTeamRoleResponseBodyToProjectProjectTeamRole(val)
+	}
+
+	return v
+}
+
+// NewEnsureTeamWindowBusy builds a project service ensure_team endpoint
+// window_busy error.
+func NewEnsureTeamWindowBusy(body *EnsureTeamWindowBusyResponseBody) *goa.ServiceError {
+	v := &goa.ServiceError{
+		Name:      *body.Name,
+		ID:        *body.ID,
+		Message:   *body.Message,
+		Temporary: *body.Temporary,
+		Timeout:   *body.Timeout,
+		Fault:     *body.Fault,
+	}
+
+	return v
+}
+
+// NewEnsureTeamConflict builds a project service ensure_team endpoint conflict
+// error.
+func NewEnsureTeamConflict(body *EnsureTeamConflictResponseBody) *goa.ServiceError {
+	v := &goa.ServiceError{
+		Name:      *body.Name,
+		ID:        *body.ID,
+		Message:   *body.Message,
+		Temporary: *body.Temporary,
+		Timeout:   *body.Timeout,
+		Fault:     *body.Fault,
+	}
+
+	return v
+}
+
+// NewEnsureTeamAmbiguousSpace builds a project service ensure_team endpoint
+// ambiguous_space error.
+func NewEnsureTeamAmbiguousSpace(body *EnsureTeamAmbiguousSpaceResponseBody) *project.TeamSpaceConflict {
+	v := &project.TeamSpaceConflict{
+		Name:  *body.Name,
+		Count: *body.Count,
+	}
+
+	return v
+}
+
+// NewEnsureTeamTeamUnavailable builds a project service ensure_team endpoint
+// team_unavailable error.
+func NewEnsureTeamTeamUnavailable(body *EnsureTeamTeamUnavailableResponseBody) *goa.ServiceError {
+	v := &goa.ServiceError{
+		Name:      *body.Name,
+		ID:        *body.ID,
+		Message:   *body.Message,
+		Temporary: *body.Temporary,
+		Timeout:   *body.Timeout,
+		Fault:     *body.Fault,
+	}
+
+	return v
+}
+
+// NewEnsureTeamForbidden builds a project service ensure_team endpoint
+// forbidden error.
+func NewEnsureTeamForbidden(body *EnsureTeamForbiddenResponseBody) *goa.ServiceError {
+	v := &goa.ServiceError{
+		Name:      *body.Name,
+		ID:        *body.ID,
+		Message:   *body.Message,
+		Temporary: *body.Temporary,
+		Timeout:   *body.Timeout,
+		Fault:     *body.Fault,
+	}
+
+	return v
+}
+
+// NewEnsureTeamUnprocessable builds a project service ensure_team endpoint
+// unprocessable error.
+func NewEnsureTeamUnprocessable(body *EnsureTeamUnprocessableResponseBody) *goa.ServiceError {
 	v := &goa.ServiceError{
 		Name:      *body.Name,
 		ID:        *body.ID,
@@ -740,6 +967,39 @@ func ValidateIdentityResponseBody(body *IdentityResponseBody) (err error) {
 	return
 }
 
+// ValidateEnsureTeamResponseBody runs the validations defined on
+// EnsureTeamResponseBody
+func ValidateEnsureTeamResponseBody(body *EnsureTeamResponseBody) (err error) {
+	if body.Team == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("team", "body"))
+	}
+	if body.Space == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("space", "body"))
+	}
+	if body.Roles == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("roles", "body"))
+	}
+	if body.Dialog == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("dialog", "body"))
+	}
+	if body.Team != nil {
+		err = goa.MergeErrors(err, goa.ValidatePattern("body.team", *body.Team, "^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$"))
+	}
+	for _, e := range body.Roles {
+		if e != nil {
+			if err2 := validateProjectTeamRoleResponseBody(e, "body.roles[*]"); err2 != nil {
+				err = goa.MergeErrors(err, err2)
+			}
+		}
+	}
+	if body.Dialog != nil {
+		if !(*body.Dialog == "opened" || *body.Dialog == "already_open" || *body.Dialog == "not_needed") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.dialog", *body.Dialog, []any{"opened", "already_open", "not_needed"}))
+		}
+	}
+	return
+}
+
 // ValidateAddAgentResponseBody runs the validations defined on
 // AddAgentResponseBody
 func ValidateAddAgentResponseBody(body *AddAgentResponseBody) (err error) {
@@ -835,6 +1095,143 @@ func ValidateIdentityUnprocessableResponseBody(body *IdentityUnprocessableRespon
 // ValidateIdentityConflictResponseBody runs the validations defined on
 // IdentityConflictResponseBody
 func ValidateIdentityConflictResponseBody(body *IdentityConflictResponseBody) (err error) {
+	if body.Name == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
+	}
+	if body.ID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("id", "body"))
+	}
+	if body.Message == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("message", "body"))
+	}
+	if body.Temporary == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("temporary", "body"))
+	}
+	if body.Timeout == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("timeout", "body"))
+	}
+	if body.Fault == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("fault", "body"))
+	}
+	return
+}
+
+// ValidateEnsureTeamWindowBusyResponseBody runs the validations defined on
+// EnsureTeamWindowBusyResponseBody
+func ValidateEnsureTeamWindowBusyResponseBody(body *EnsureTeamWindowBusyResponseBody) (err error) {
+	if body.Name == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
+	}
+	if body.ID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("id", "body"))
+	}
+	if body.Message == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("message", "body"))
+	}
+	if body.Temporary == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("temporary", "body"))
+	}
+	if body.Timeout == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("timeout", "body"))
+	}
+	if body.Fault == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("fault", "body"))
+	}
+	return
+}
+
+// ValidateEnsureTeamConflictResponseBody runs the validations defined on
+// EnsureTeamConflictResponseBody
+func ValidateEnsureTeamConflictResponseBody(body *EnsureTeamConflictResponseBody) (err error) {
+	if body.Name == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
+	}
+	if body.ID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("id", "body"))
+	}
+	if body.Message == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("message", "body"))
+	}
+	if body.Temporary == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("temporary", "body"))
+	}
+	if body.Timeout == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("timeout", "body"))
+	}
+	if body.Fault == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("fault", "body"))
+	}
+	return
+}
+
+// ValidateEnsureTeamAmbiguousSpaceResponseBody runs the validations defined on
+// EnsureTeamAmbiguousSpaceResponseBody
+func ValidateEnsureTeamAmbiguousSpaceResponseBody(body *EnsureTeamAmbiguousSpaceResponseBody) (err error) {
+	if body.Name == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
+	}
+	if body.Count == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("count", "body"))
+	}
+	if body.Count != nil {
+		if *body.Count < 2 {
+			err = goa.MergeErrors(err, goa.InvalidRangeError("body.count", *body.Count, 2, true))
+		}
+	}
+	return
+}
+
+// ValidateEnsureTeamTeamUnavailableResponseBody runs the validations defined
+// on EnsureTeamTeamUnavailableResponseBody
+func ValidateEnsureTeamTeamUnavailableResponseBody(body *EnsureTeamTeamUnavailableResponseBody) (err error) {
+	if body.Name == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
+	}
+	if body.ID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("id", "body"))
+	}
+	if body.Message == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("message", "body"))
+	}
+	if body.Temporary == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("temporary", "body"))
+	}
+	if body.Timeout == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("timeout", "body"))
+	}
+	if body.Fault == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("fault", "body"))
+	}
+	return
+}
+
+// ValidateEnsureTeamForbiddenResponseBody runs the validations defined on
+// EnsureTeamForbiddenResponseBody
+func ValidateEnsureTeamForbiddenResponseBody(body *EnsureTeamForbiddenResponseBody) (err error) {
+	if body.Name == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
+	}
+	if body.ID == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("id", "body"))
+	}
+	if body.Message == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("message", "body"))
+	}
+	if body.Temporary == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("temporary", "body"))
+	}
+	if body.Timeout == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("timeout", "body"))
+	}
+	if body.Fault == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("fault", "body"))
+	}
+	return
+}
+
+// ValidateEnsureTeamUnprocessableResponseBody runs the validations defined on
+// EnsureTeamUnprocessableResponseBody
+func ValidateEnsureTeamUnprocessableResponseBody(body *EnsureTeamUnprocessableResponseBody) (err error) {
 	if body.Name == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("name", "body"))
 	}
@@ -1212,6 +1609,46 @@ func ValidateExchangeBrowserLinkConflictResponseBody(body *ExchangeBrowserLinkCo
 	}
 	if body.Fault == nil {
 		err = goa.MergeErrors(err, goa.MissingFieldError("fault", "body"))
+	}
+	return
+}
+
+// ValidateProjectTeamRoleResponseBody runs the validations defined on
+// ProjectTeamRole
+func ValidateProjectTeamRoleResponseBody(body *ProjectTeamRoleResponseBody) (err error) {
+	if body.Role == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("role", "body"))
+	}
+	if body.Handle == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("handle", "body"))
+	}
+	if body.Running == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("running", "body"))
+	}
+	if body.Role != nil {
+		if !(*body.Role == "guide" || *body.Role == "builder" || *body.Role == "test_writer") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError("body.role", *body.Role, []any{"guide", "builder", "test_writer"}))
+		}
+	}
+	return
+}
+
+// validateProjectTeamRoleResponseBody checks ProjectTeamRole and reports
+// errors using the path supplied by its caller
+func validateProjectTeamRoleResponseBody(body *ProjectTeamRoleResponseBody, path string) (err error) {
+	if body.Role == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("role", path))
+	}
+	if body.Handle == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("handle", path))
+	}
+	if body.Running == nil {
+		err = goa.MergeErrors(err, goa.MissingFieldError("running", path))
+	}
+	if body.Role != nil {
+		if !(*body.Role == "guide" || *body.Role == "builder" || *body.Role == "test_writer") {
+			err = goa.MergeErrors(err, goa.InvalidEnumValueError(path+".role", *body.Role, []any{"guide", "builder", "test_writer"}))
+		}
 	}
 	return
 }

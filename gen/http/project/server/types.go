@@ -41,6 +41,18 @@ type IdentityResponseBody struct {
 	Owner string `form:"owner" json:"owner" xml:"owner"`
 }
 
+// EnsureTeamResponseBody is the type of the "project" service "ensure_team"
+// endpoint HTTP response body.
+type EnsureTeamResponseBody struct {
+	// Stable Chorus team name.
+	Team string `form:"team" json:"team" xml:"team"`
+	// Local Herdr space identifier.
+	Space string                         `form:"space" json:"space" xml:"space"`
+	Roles []*ProjectTeamRoleResponseBody `form:"roles" json:"roles" xml:"roles"`
+	// Launcher state after ensuring the team.
+	Dialog string `form:"dialog" json:"dialog" xml:"dialog"`
+}
+
 // AddAgentResponseBody is the type of the "project" service "add_agent"
 // endpoint HTTP response body.
 type AddAgentResponseBody struct {
@@ -108,6 +120,105 @@ type IdentityUnprocessableResponseBody struct {
 // IdentityConflictResponseBody is the type of the "project" service "identity"
 // endpoint HTTP response body for the "conflict" error.
 type IdentityConflictResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
+// EnsureTeamWindowBusyResponseBody is the type of the "project" service
+// "ensure_team" endpoint HTTP response body for the "window_busy" error.
+type EnsureTeamWindowBusyResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
+// EnsureTeamConflictResponseBody is the type of the "project" service
+// "ensure_team" endpoint HTTP response body for the "conflict" error.
+type EnsureTeamConflictResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
+// EnsureTeamAmbiguousSpaceResponseBody is the type of the "project" service
+// "ensure_team" endpoint HTTP response body for the "ambiguous_space" error.
+type EnsureTeamAmbiguousSpaceResponseBody struct {
+	// Error name.
+	Name string `form:"name" json:"name" xml:"name"`
+	// Number of local spaces matching the team's name and physical folder.
+	Count int `form:"count" json:"count" xml:"count"`
+}
+
+// EnsureTeamTeamUnavailableResponseBody is the type of the "project" service
+// "ensure_team" endpoint HTTP response body for the "team_unavailable" error.
+type EnsureTeamTeamUnavailableResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
+// EnsureTeamForbiddenResponseBody is the type of the "project" service
+// "ensure_team" endpoint HTTP response body for the "forbidden" error.
+type EnsureTeamForbiddenResponseBody struct {
+	// Name is the name of this class of errors.
+	Name string `form:"name" json:"name" xml:"name"`
+	// ID is a unique identifier for this particular occurrence of the problem.
+	ID string `form:"id" json:"id" xml:"id"`
+	// Message is a human-readable explanation specific to this occurrence of the
+	// problem.
+	Message string `form:"message" json:"message" xml:"message"`
+	// Is the error temporary?
+	Temporary bool `form:"temporary" json:"temporary" xml:"temporary"`
+	// Is the error a timeout?
+	Timeout bool `form:"timeout" json:"timeout" xml:"timeout"`
+	// Is the error a server-side fault?
+	Fault bool `form:"fault" json:"fault" xml:"fault"`
+}
+
+// EnsureTeamUnprocessableResponseBody is the type of the "project" service
+// "ensure_team" endpoint HTTP response body for the "unprocessable" error.
+type EnsureTeamUnprocessableResponseBody struct {
 	// Name is the name of this class of errors.
 	Name string `form:"name" json:"name" xml:"name"`
 	// ID is a unique identifier for this particular occurrence of the problem.
@@ -395,6 +506,16 @@ type ExchangeBrowserLinkConflictResponseBody struct {
 	Fault bool `form:"fault" json:"fault" xml:"fault"`
 }
 
+// ProjectTeamRoleResponseBody is used to define fields on response body types.
+type ProjectTeamRoleResponseBody struct {
+	// Trusted role.
+	Role string `form:"role" json:"role" xml:"role"`
+	// Stable Chorus handle and Surla actor identity.
+	Handle string `form:"handle" json:"handle" xml:"handle"`
+	// The matching terminal has an agent in the foreground.
+	Running bool `form:"running" json:"running" xml:"running"`
+}
+
 // NewIdentityResponseBody builds the HTTP response body from the result of the
 // "identity" endpoint of the "project" service.
 func NewIdentityResponseBody(res *project.ProjectIdentity) *IdentityResponseBody {
@@ -402,6 +523,29 @@ func NewIdentityResponseBody(res *project.ProjectIdentity) *IdentityResponseBody
 		ProjectID: res.ProjectID,
 		Directory: res.Directory,
 		Owner:     res.Owner,
+	}
+	return body
+}
+
+// NewEnsureTeamResponseBody builds the HTTP response body from the result of
+// the "ensure_team" endpoint of the "project" service.
+func NewEnsureTeamResponseBody(res *project.ProjectTeam) *EnsureTeamResponseBody {
+	body := &EnsureTeamResponseBody{
+		Team:   res.Team,
+		Space:  res.Space,
+		Dialog: res.Dialog,
+	}
+	if res.Roles != nil {
+		body.Roles = make([]*ProjectTeamRoleResponseBody, len(res.Roles))
+		for i, val := range res.Roles {
+			if val == nil {
+				body.Roles[i] = nil
+				continue
+			}
+			body.Roles[i] = marshalProjectProjectTeamRoleToProjectTeamRoleResponseBody(val)
+		}
+	} else {
+		body.Roles = []*ProjectTeamRoleResponseBody{}
 	}
 	return body
 }
@@ -468,6 +612,86 @@ func NewIdentityUnprocessableResponseBody(res *goa.ServiceError) *IdentityUnproc
 // result of the "identity" endpoint of the "project" service.
 func NewIdentityConflictResponseBody(res *goa.ServiceError) *IdentityConflictResponseBody {
 	body := &IdentityConflictResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
+// NewEnsureTeamWindowBusyResponseBody builds the HTTP response body from the
+// result of the "ensure_team" endpoint of the "project" service.
+func NewEnsureTeamWindowBusyResponseBody(res *goa.ServiceError) *EnsureTeamWindowBusyResponseBody {
+	body := &EnsureTeamWindowBusyResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
+// NewEnsureTeamConflictResponseBody builds the HTTP response body from the
+// result of the "ensure_team" endpoint of the "project" service.
+func NewEnsureTeamConflictResponseBody(res *goa.ServiceError) *EnsureTeamConflictResponseBody {
+	body := &EnsureTeamConflictResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
+// NewEnsureTeamAmbiguousSpaceResponseBody builds the HTTP response body from
+// the result of the "ensure_team" endpoint of the "project" service.
+func NewEnsureTeamAmbiguousSpaceResponseBody(res *project.TeamSpaceConflict) *EnsureTeamAmbiguousSpaceResponseBody {
+	body := &EnsureTeamAmbiguousSpaceResponseBody{
+		Name:  res.Name,
+		Count: res.Count,
+	}
+	return body
+}
+
+// NewEnsureTeamTeamUnavailableResponseBody builds the HTTP response body from
+// the result of the "ensure_team" endpoint of the "project" service.
+func NewEnsureTeamTeamUnavailableResponseBody(res *goa.ServiceError) *EnsureTeamTeamUnavailableResponseBody {
+	body := &EnsureTeamTeamUnavailableResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
+// NewEnsureTeamForbiddenResponseBody builds the HTTP response body from the
+// result of the "ensure_team" endpoint of the "project" service.
+func NewEnsureTeamForbiddenResponseBody(res *goa.ServiceError) *EnsureTeamForbiddenResponseBody {
+	body := &EnsureTeamForbiddenResponseBody{
+		Name:      res.Name,
+		ID:        res.ID,
+		Message:   res.Message,
+		Temporary: res.Temporary,
+		Timeout:   res.Timeout,
+		Fault:     res.Fault,
+	}
+	return body
+}
+
+// NewEnsureTeamUnprocessableResponseBody builds the HTTP response body from
+// the result of the "ensure_team" endpoint of the "project" service.
+func NewEnsureTeamUnprocessableResponseBody(res *goa.ServiceError) *EnsureTeamUnprocessableResponseBody {
+	body := &EnsureTeamUnprocessableResponseBody{
 		Name:      res.Name,
 		ID:        res.ID,
 		Message:   res.Message,

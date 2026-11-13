@@ -32,6 +32,9 @@ func init() {
 	herdrTestRuntime = func() projectRuntime {
 		runtime := productionProjectRuntime()
 		runtime.configRoot = testProjectRuntime().configRoot
+		runtime.preflight = func() error { return preflightProjectStart(projectHerdrProgram) }
+		runtime.startTeamPrograms = testProjectRuntime().startTeamPrograms
+		runtime.teamDependencies = testProjectRuntime().teamDependencies
 		return runtime
 	}
 }

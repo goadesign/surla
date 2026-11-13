@@ -26,7 +26,17 @@ func testProjectRuntime() projectRuntime {
 // testProjectRuntimeAt binds a fixture root value without mutable package state.
 func testProjectRuntimeAt(directory string) projectRuntime {
 	return projectRuntime{
-		listen: net.Listen,
+		listen:            net.Listen,
+		startTeamPrograms: func(context.Context) error { return nil },
+		teamDependencies: func(ctx context.Context) (project.TeamDependencies, error) {
+			directory, err := project.Discover(directory, directory)
+			if err != nil {
+				return project.TeamDependencies{}, err
+			}
+			deps := fixtureTeamDependencies(directory)
+			deps.Lifetime = ctx
+			return deps, nil
+		},
 		configRoot: func() (string, error) {
 			if directory == "" {
 				return "", errors.New("default tests must bind a test-owned configuration directory")

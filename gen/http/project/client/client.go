@@ -21,6 +21,10 @@ type Client struct {
 	// endpoint.
 	IdentityDoer goahttp.Doer
 
+	// EnsureTeam Doer is the HTTP client used to make requests to the ensure_team
+	// endpoint.
+	EnsureTeamDoer goahttp.Doer
+
 	// Stop Doer is the HTTP client used to make requests to the stop endpoint.
 	StopDoer goahttp.Doer
 
@@ -61,6 +65,7 @@ func NewClient(
 ) *Client {
 	return &Client{
 		IdentityDoer:            doer,
+		EnsureTeamDoer:          doer,
 		StopDoer:                doer,
 		AddAgentDoer:            doer,
 		RemoveAgentDoer:         doer,
@@ -88,6 +93,25 @@ func (c *Client) Identity() goa.Endpoint {
 		resp, err := c.IdentityDoer.Do(req)
 		if err != nil {
 			return nil, goahttp.ErrRequestError("project", "identity", err)
+		}
+		return decodeResponse(resp)
+	}
+}
+
+// EnsureTeam returns an endpoint that makes HTTP requests to the project
+// service ensure_team server.
+func (c *Client) EnsureTeam() goa.Endpoint {
+	var (
+		decodeResponse = DecodeEnsureTeamResponse(c.decoder, c.RestoreResponseBody)
+	)
+	return func(ctx context.Context, v any) (any, error) {
+		req, err := c.BuildEnsureTeamRequest(ctx, v)
+		if err != nil {
+			return nil, err
+		}
+		resp, err := c.EnsureTeamDoer.Do(req)
+		if err != nil {
+			return nil, goahttp.ErrRequestError("project", "ensure_team", err)
 		}
 		return decodeResponse(resp)
 	}

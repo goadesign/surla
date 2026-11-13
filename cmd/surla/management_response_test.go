@@ -61,6 +61,11 @@ func TestStartOpensOnlyProjectViewsLinks(t *testing.T) {
 					assert.NoError(t, err)
 					return
 				}
+				if r.URL.Path == "/project/team" {
+					_, err := io.WriteString(w, `{"team":"fixture-team","space":"fixture-space","roles":[{"role":"guide","handle":"guide-fixture","running":true}],"dialog":"not_needed"}`)
+					assert.NoError(t, err)
+					return
+				}
 				assert.Equal(t, "/project/browser-link", r.URL.Path)
 				w.WriteHeader(http.StatusCreated)
 				assert.NoError(t, json.NewEncoder(w).Encode(map[string]string{"url": url, "expires_at": time.Now().Add(time.Minute).Format(time.RFC3339Nano)}))

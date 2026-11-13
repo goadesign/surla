@@ -261,7 +261,7 @@ func (vp *viewsProject) restart() {
 		vp.t.Errorf("start the control plane: %v", err)
 		return
 	}
-	server, err := NewServer(vp.state, func() {})
+	server, err := NewServer(vp.state, func() {}, fixtureTeamDependencies(vp.state))
 	if err != nil {
 		vp.t.Errorf("start the project server: %v", err)
 		if closeErr := cp.Close(); closeErr != nil {

@@ -14,6 +14,11 @@ func IdentityProjectPath() string {
 	return "/project/identity"
 }
 
+// EnsureTeamProjectPath returns the URL path to the project service ensure_team HTTP endpoint.
+func EnsureTeamProjectPath() string {
+	return "/project/team"
+}
+
 // StopProjectPath returns the URL path to the project service stop HTTP endpoint.
 func StopProjectPath() string {
 	return "/project/stop"
