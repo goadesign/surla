@@ -457,6 +457,70 @@ func TestAProposalKeepsItsOwnStoryAndDesignSource(t *testing.T) {
 	assert.Equal(t, pageStories(), stored.stories)
 }
 
+// TestChangedDesignFilesNamesAddedRemovedAndChangedFiles compares the agreed
+// revision's saved design source with a proposal's: a file only the proposal
+// has, a file only the agreed revision has, and a file whose content differs
+// are each named once, in path order; identical sources name none, and a
+// source that does not decode is an error.
+func TestChangedDesignFilesNamesAddedRemovedAndChangedFiles(t *testing.T) {
+	cases := []struct {
+		name             string
+		agreed, proposed string
+		want             []string
+		wantErr          string
+	}{
+		{name: "no design files", want: []string{}},
+		{
+			name:     "same files",
+			agreed:   `{"design/design.go":"package design\n"}`,
+			proposed: `{"design/design.go":"package design\n"}`,
+			want:     []string{},
+		},
+		{
+			name:     "changed file",
+			agreed:   `{"design/design.go":"package design\n"}`,
+			proposed: `{"design/design.go":"package design // exchanges\n"}`,
+			want:     []string{"design/design.go"},
+		},
+		{
+			name:     "added file",
+			agreed:   `{"design/design.go":"package design\n"}`,
+			proposed: `{"design/design.go":"package design\n","design/exchanges.go":"package design\n"}`,
+			want:     []string{"design/exchanges.go"},
+		},
+		{
+			name:     "removed file",
+			agreed:   `{"design/design.go":"package design\n","design/refunds.go":"package design\n"}`,
+			proposed: `{"design/design.go":"package design\n"}`,
+			want:     []string{"design/refunds.go"},
+		},
+		{
+			name:   "every file removed",
+			agreed: `{"design/design.go":"package design\n"}`,
+			want:   []string{"design/design.go"},
+		},
+		{
+			name:     "removed, added and changed files",
+			agreed:   `{"design/a.go":"package design\n","design/c.go":"package design\n"}`,
+			proposed: `{"design/b.go":"package design\n","design/c.go":"package design // exchanges\n"}`,
+			want:     []string{"design/a.go", "design/b.go", "design/c.go"},
+		},
+		{name: "agreed source that does not decode", agreed: "{", wantErr: "decode saved design source"},
+		{name: "proposed source that does not decode", proposed: "[]", wantErr: "decode saved design source"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := changedDesignFiles(tc.agreed, tc.proposed)
+			if tc.wantErr != "" {
+				assert.ErrorContains(t, err, tc.wantErr)
+				return
+			}
+			assert.NoError(t, err)
+			assert.Equal(t, tc.want, got)
+		})
+	}
+}
+
 // TestDecliningNamesTheProposalTheUserSaw declines a proposal that the
 // guide has since replaced: the request is refused and changes nothing, and
 // declining the waiting proposal works.
@@ -476,7 +540,8 @@ func TestDecliningNamesTheProposalTheUserSaw(t *testing.T) {
 
 // TestAProposalThatIsNotAwaitingConfirmationIsRefusedOnLoad saves a change
 // whose proposal matches its own request_revision but carries answers, a
-// confirmation, or the confirmed status, and checks each is refused on load.
+// confirmation, the confirmed status alone, or all three, and checks each is
+// refused on load.
 func TestAProposalThatIsNotAwaitingConfirmationIsRefusedOnLoad(t *testing.T) {
 	confirmedBy := agreedOwner
 	cases := []struct {
@@ -487,7 +552,8 @@ func TestAProposalThatIsNotAwaitingConfirmationIsRefusedOnLoad(t *testing.T) {
 			card.Answers = map[string]string{"chg-ambiguity-01": "with_tax"}
 		}},
 		{name: "confirmed by someone", alter: func(card *gensurla.ChangeCardResult) { card.ConfirmedBy = &confirmedBy }},
-		{name: "confirmed status", alter: func(card *gensurla.ChangeCardResult) {
+		{name: "confirmed status alone", alter: func(card *gensurla.ChangeCardResult) { card.Status = StatusConfirmed }},
+		{name: "confirmed with answers and a confirmation", alter: func(card *gensurla.ChangeCardResult) {
 			card.Status = StatusConfirmed
 			card.Answers = map[string]string{"chg-ambiguity-01": "with_tax"}
 			card.ConfirmedBy = &confirmedBy
@@ -599,8 +665,9 @@ func TestBuildsFollowTheAgreedRevision(t *testing.T) {
 // TestRevisionDescriptionsSayTheAgreedChangeStaysInForce checks the
 // model-visible descriptions of revise_change and confirm_intent: revising
 // does not replace or clear an agreed change, the agreed revision stays in
-// force until the user adopts or declines, and each operation names its one
-// caller (the guide revises, the user confirms).
+// force until the user adopts or declines, each operation names its one
+// caller (the guide revises, the user confirms), and list_changes names a
+// waiting proposal's revision.
 func TestRevisionDescriptionsSayTheAgreedChangeStaysInForce(t *testing.T) {
 	cp := newControlPlane(t, Options{})
 	tools, err := genmcpadapter.NewMCPAdapter(gensurla.NewEndpoints(cp), nil).ToolsList(t.Context(), &genmcpadapter.ToolsListPayload{})
@@ -615,6 +682,7 @@ func TestRevisionDescriptionsSayTheAgreedChangeStaysInForce(t *testing.T) {
 	assert.Contains(t, descriptions["confirm_intent"], "adopt")
 	assert.NotContains(t, descriptions["confirm_intent"], "call revise_change", "the user's tool tells its caller to revise, which only the guide does")
 	assert.Contains(t, descriptions["confirm_intent"], "goes to the guide")
+	assert.Contains(t, descriptions["list_changes"], "proposed_revision (the request_revision of a revision proposed beside a confirmed card", "the change list's tool does not name a waiting proposal")
 	openAPI, err := os.ReadFile("../../gen/http/openapi3.json")
 	require.NoError(t, err)
 	assert.Contains(t, string(openAPI), "Only the guide revises a change; only the user confirms or adopts a revision")

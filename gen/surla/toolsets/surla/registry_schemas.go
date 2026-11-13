@@ -16887,7 +16887,7 @@ func (registryDeclarations) field987() *genregistry.ToolFieldMetadata {
 
 // schema988 constructs one generated schema declaration.
 func (declarations registryDeclarations) schema988() *genregistry.ToolSchema {
-	registryText1 := "List this project's Change Cards, most recently saved first, with each card's summary, status, current request_revision, latest verification run state and last save time. Read one card with get_change(change_id)."
+	registryText1 := "List this project's Change Cards, most recently saved first, with each card's summary, status and request_revision in force, its proposed_revision (the request_revision of a revision proposed beside a confirmed card, while it waits for the user to adopt or decline it), latest verification run state and last save time. Read one card, with any proposed revision, with get_change(change_id)."
 	return &genregistry.ToolSchema{
 		Name:                   "surla.list_changes",
 		Description:            &registryText1,
@@ -16898,16 +16898,16 @@ func (declarations registryDeclarations) schema988() *genregistry.ToolSchema {
 			Kind:  "service",
 			Title: "List Changes",
 			Search: &genregistry.ToolSearchDocument{
-				Length: 40,
-				Terms:  map[string]int{"and": 1, "card": 2, "cards": 1, "change": 3, "changes": 2, "current": 1, "each": 1, "first": 1, "get": 1, "id": 1, "last": 1, "latest": 1, "list": 3, "most": 1, "one": 1, "project": 1, "read": 1, "recently": 1, "request": 1, "revision": 1, "run": 1, "s": 2, "save": 1, "saved": 1, "state": 1, "status": 1, "summary": 1, "surla": 1, "this": 1, "time": 1, "verification": 1, "with": 2},
+				Length: 71,
+				Terms:  map[string]int{"a": 2, "adopt": 1, "and": 2, "any": 1, "beside": 1, "card": 3, "cards": 1, "change": 3, "changes": 2, "confirmed": 1, "decline": 1, "each": 1, "first": 1, "for": 1, "force": 1, "get": 1, "id": 1, "in": 1, "it": 2, "its": 1, "last": 1, "latest": 1, "list": 3, "most": 1, "of": 1, "one": 1, "or": 1, "project": 1, "proposed": 3, "read": 1, "recently": 1, "request": 2, "revision": 5, "run": 1, "s": 2, "save": 1, "saved": 1, "state": 1, "status": 1, "summary": 1, "surla": 1, "the": 2, "this": 1, "time": 1, "to": 1, "user": 1, "verification": 1, "waits": 1, "while": 1, "with": 3},
 			},
 			RequiresUI: false,
 			TextOnly: &genregistry.TextOnlyToolContract{
 				ExecutionSchema: []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"properties\":{},\"type\":\"object\"}"),
-				Description:     "List this project's Change Cards, most recently saved first, with each card's summary, status, current request_revision, latest verification run state and last save time. Read one card with get_change(change_id).",
+				Description:     "List this project's Change Cards, most recently saved first, with each card's summary, status and request_revision in force, its proposed_revision (the request_revision of a revision proposed beside a confirmed card, while it waits for the user to adopt or decline it), latest verification run state and last save time. Read one card, with any proposed revision, with get_change(change_id).",
 				Search: &genregistry.ToolSearchDocument{
-					Length: 40,
-					Terms:  map[string]int{"and": 1, "card": 2, "cards": 1, "change": 3, "changes": 2, "current": 1, "each": 1, "first": 1, "get": 1, "id": 1, "last": 1, "latest": 1, "list": 3, "most": 1, "one": 1, "project": 1, "read": 1, "recently": 1, "request": 1, "revision": 1, "run": 1, "s": 2, "save": 1, "saved": 1, "state": 1, "status": 1, "summary": 1, "surla": 1, "this": 1, "time": 1, "verification": 1, "with": 2},
+					Length: 71,
+					Terms:  map[string]int{"a": 2, "adopt": 1, "and": 2, "any": 1, "beside": 1, "card": 3, "cards": 1, "change": 3, "changes": 2, "confirmed": 1, "decline": 1, "each": 1, "first": 1, "for": 1, "force": 1, "get": 1, "id": 1, "in": 1, "it": 2, "its": 1, "last": 1, "latest": 1, "list": 3, "most": 1, "of": 1, "one": 1, "or": 1, "project": 1, "proposed": 3, "read": 1, "recently": 1, "request": 2, "revision": 5, "run": 1, "s": 2, "save": 1, "saved": 1, "state": 1, "status": 1, "summary": 1, "surla": 1, "the": 2, "this": 1, "time": 1, "to": 1, "user": 1, "verification": 1, "waits": 1, "while": 1, "with": 3},
 				},
 				PayloadSchema: []byte("{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"additionalProperties\":false,\"properties\":{},\"type\":\"object\"}"),
 				Payload:       declarations.metadata1006(),
