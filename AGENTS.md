@@ -452,6 +452,10 @@ appropriate for CPU, memory, and restarts.
     needs Herdr `hc`, and skips without it) for the project server's real
     parentless Herdr start, stop, restart and kill recovery
   - `npm --prefix ui/checkpoint run typecheck` for views page TypeScript changes
+  - `go test -race -count=1 -tags browser ./internal/project`, opt-in and not
+    in CI, for views page policy or session changes: it drives a headless
+    Chrome or Chromium with a throwaway profile; set `SURLA_TEST_BROWSER` to
+    the browser's executable when it is not in a standard location
 - Set `CI=true` and close stdin on these invocations. Do not regenerate or
   run runtime/browser suites for text-only instructions or documentation;
   verify accuracy, references, links, and applicable doc checks instead.
