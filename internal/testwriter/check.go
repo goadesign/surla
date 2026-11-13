@@ -41,6 +41,7 @@ import (
 	"github.com/goadesign/surla/internal/designeval"
 	"github.com/goadesign/surla/internal/genpublish"
 	"github.com/goadesign/surla/internal/procgroup"
+	"github.com/goadesign/surla/internal/shquote"
 	"github.com/goadesign/surla/verify/candidate"
 	"github.com/goadesign/surla/verify/suite"
 )
@@ -151,7 +152,8 @@ const (
 	// and its hook method.
 	FindingMissingScenario FindingKind = "missing_scenario"
 	// FindingOutsideModule means a file outside the test module differs
-	// from the copy's base. The message names the file.
+	// from the copy's base. The message names the file, the base commit and
+	// the step that undoes the change.
 	FindingOutsideModule FindingKind = "outside_module"
 	// FindingHiddenTag means a declared scenario is tagged holdout. Tests in
 	// files the builder can read are not hidden.
@@ -369,7 +371,7 @@ func (c *Checker) Check(
 	if err != nil {
 		return Verdict{}, err
 	}
-	if findings := outsideModule(changed, modulePath); len(findings) > 0 {
+	if findings := outsideModule(changed, modulePath, base); len(findings) > 0 {
 		return Verdict{Findings: findings, copy: wc}, nil
 	}
 	required, err := c.generate(ctx, src, ".", modulePath, s, stories)
@@ -560,30 +562,44 @@ func limitText(d time.Duration) string {
 	}
 }
 
-// outsideModule returns one finding per changed path, relative to the copy's
-// root, that lies outside the test module at modulePath, naming at most
-// maxOutsideFindings and counting the rest in one more finding. The module's
-// own folder counts as inside: a link put in its place is refused when the
-// module is opened, with its own finding.
-func outsideModule(changed []string, modulePath string) []Finding {
-	var outside []string
-	for _, p := range changed {
-		if p != modulePath && !strings.HasPrefix(p, modulePath+"/") {
-			outside = append(outside, p)
+// outsideModule returns one finding per changed path that lies outside the
+// test module at modulePath, naming at most maxOutsideFindings and counting
+// the rest in one more finding. The module's own folder counts as inside: a
+// link put in its place is refused when the module is opened, with its own
+// finding. Each finding names base, the commit the copy's changes are measured
+// from, and the step that undoes the change whether or not the author
+// committed it in the copy: the git command that restores a file base has,
+// which names the file from the copy's root and literally, so it works from
+// any folder of the copy and for any file name, or deleting a file base does
+// not have. Restoring from the copy's own HEAD would bring a committed change
+// back, so the finding never leaves the commit unnamed.
+func outsideModule(changed []changedPath, modulePath, base string) []Finding {
+	var outside []changedPath
+	for _, c := range changed {
+		if c.path != modulePath && !strings.HasPrefix(c.path, modulePath+"/") {
+			outside = append(outside, c)
 		}
 	}
 	var findings []Finding
-	for i, p := range outside {
+	for i, c := range outside {
 		if i == maxOutsideFindings {
 			findings = append(findings, Finding{Kind: FindingOutsideModule, Message: fmt.Sprintf(
-				"%d more files outside the test module %s differ from the working copy's base.", len(outside)-i, modulePath)})
+				"%d more files outside the test module %s differ from the working copy's base, commit %s.",
+				len(outside)-i, modulePath, base)})
 			break
 		}
+		undo := fmt.Sprintf("restore it to commit %s, the base your working copy is measured from, by running "+
+			"git restore --source=%s --staged --worktree -- %s in your working copy, then report again.",
+			base, base, shquote.Quote(":(top,literal)"+c.path))
+		if c.added {
+			undo = fmt.Sprintf("commit %s, the base your working copy is measured from, does not have this file: "+
+				"delete it, then report again.", base)
+		}
 		findings = append(findings, Finding{Kind: FindingOutsideModule, Message: WithoutAbsolutePaths(fmt.Sprintf(
-			"%s is changed outside the test module %s. Only files inside the test module may change: "+
-				"restore it as it is in the working copy's base, then report again. If you never changed it, "+
-				"the project's history was rewritten since your working copy was made: ask the user to delete "+
-				"the project's .surla-tests folder and its surla/tests branch, then build again.", p, modulePath))})
+			"%s is changed outside the test module %s. Only files inside the test module may change: %s "+
+				"If you never changed it, the project's history was rewritten since your working copy was made: "+
+				"ask the user to delete the project's .surla-tests folder and its surla/tests branch, then build again.",
+			c.path, modulePath, undo))})
 	}
 	return findings
 }
