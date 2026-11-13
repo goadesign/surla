@@ -131,32 +131,49 @@ func TestAReportIsJudgedWithoutAnotherCall(t *testing.T) {
 }
 
 // TestASecondReportDuringACheckIsJudgedAfterIt reports again while the first
-// report's check runs: nothing is saved for the first, the second is checked
-// after it, and the saved verdict is the second's.
+// report's check runs, once with checks that find problems and once with
+// checks that accept. Nothing is saved for the first report, and an
+// accepting first check records nothing on the tests branch; the second
+// report is checked after it, and the saved verdict is the second's.
 func TestASecondReportDuringACheckIsJudgedAfterIt(t *testing.T) {
-	checking, release := make(chan int, 2), make(chan struct{}, 2)
-	tests := &standInTests{check: func(_ context.Context, call int) (testwriter.Verdict, error) {
-		checking <- call
-		<-release
-		return needsChanges(fmt.Sprintf("finding of check %d", call)), nil
-	}}
-	cp, r, revision := newReportFixture(t, Options{}, tests)
-	runChecker(t, r)
+	for _, accept := range []bool{false, true} {
+		t.Run(map[bool]string{false: "findings", true: "accepted"}[accept], func(t *testing.T) {
+			checking, release := make(chan int, 2), make(chan struct{}, 2)
+			tests := &standInTests{check: func(_ context.Context, call int) (testwriter.Verdict, error) {
+				checking <- call
+				<-release
+				if accept {
+					return testwriter.Verdict{}, nil
+				}
+				return needsChanges(fmt.Sprintf("finding of check %d", call)), nil
+			}}
+			cp, r, revision := newReportFixture(t, Options{}, tests)
+			runChecker(t, r)
 
-	reportTests(t, cp, revision)
-	require.Equal(t, 1, receive(t, checking))
-	reportTests(t, cp, revision)
-	release <- struct{}{}
-	require.Equal(t, 2, receive(t, checking), "the second report is checked after the first")
-	build := mustStartedBuild(t, cp, asCaller("alice@example.com", CallerUser), "chg")
-	assert.Equal(t, gensurla.TestsKindReported, build.TestWriter.Tests.Kind(), "nothing was saved for the first report")
-	assert.Equal(t, 2, build.TestWriter.Report)
-	release <- struct{}{}
-	waitForTests(t, cp, gensurla.TestsKindNeedsChanges)
-	findings, err := cp.GetTestFindings(asCaller("alice@example.com", CallerUser), &gensurla.GetTestFindingsPayload{ChangeID: "chg"})
-	require.NoError(t, err)
-	assert.Equal(t, 2, findings.Report)
-	assert.Equal(t, []string{"finding of check 2"}, findings.Findings)
+			reportTests(t, cp, revision)
+			require.Equal(t, 1, receive(t, checking))
+			reportTests(t, cp, revision)
+			release <- struct{}{}
+			require.Equal(t, 2, receive(t, checking), "the second report is checked after the first")
+			build := mustStartedBuild(t, cp, asCaller("alice@example.com", CallerUser), "chg")
+			assert.Equal(t, gensurla.TestsKindReported, build.TestWriter.Tests.Kind(), "nothing was saved for the first report")
+			assert.Equal(t, 2, build.TestWriter.Report)
+			assert.Empty(t, tests.messages, "nothing was recorded for the first report")
+			release <- struct{}{}
+			if accept {
+				build = waitForTests(t, cp, gensurla.TestsKindAccepted)
+				assert.Equal(t, 2, build.TestWriter.Report)
+				assert.Equal(t, []string{"Add the tests Surla accepted for change chg, report 2"}, tests.messages,
+					"only the second report's tests are recorded")
+				return
+			}
+			waitForTests(t, cp, gensurla.TestsKindNeedsChanges)
+			findings, err := cp.GetTestFindings(asCaller("alice@example.com", CallerUser), &gensurla.GetTestFindingsPayload{ChangeID: "chg"})
+			require.NoError(t, err)
+			assert.Equal(t, 2, findings.Report)
+			assert.Equal(t, []string{"finding of check 2"}, findings.Findings)
+		})
+	}
 }
 
 // TestAReportDuringRecordWaitsAndKeepsItsNumber reports while an accepted
