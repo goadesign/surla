@@ -8,13 +8,11 @@ package controlplane
 import (
 	"context"
 	"crypto/sha256"
-	"crypto/subtle"
 	_ "embed"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"maps"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -411,34 +409,6 @@ func PrincipalFromContext(ctx context.Context) (Principal, bool) {
 	return p, true
 }
 
-// NewTokenAuthenticator returns a RequestAuthenticator that validates
-// `Authorization: Bearer <token>` headers in constant time against the
-// configured token-to-principal map.
-func NewTokenAuthenticator(tokens map[string]Principal) RequestAuthenticator {
-	cloned := maps.Clone(tokens)
-	return func(r *http.Request) (Principal, error) {
-		if r == nil {
-			return Principal{}, errors.New("missing http request")
-		}
-		raw := strings.TrimSpace(r.Header.Get("Authorization"))
-		token, ok := strings.CutPrefix(raw, "Bearer ")
-		if !ok || strings.TrimSpace(token) == "" {
-			return Principal{}, errors.New("missing bearer token")
-		}
-		token = strings.TrimSpace(token)
-		for expected, principal := range cloned {
-			if subtle.ConstantTimeCompare([]byte(token), []byte(expected)) == 1 {
-				if strings.TrimSpace(principal.ID) == "" {
-					return Principal{}, errors.New("empty principal configured for token")
-				}
-				principal.ID = strings.TrimSpace(principal.ID)
-				return principal, nil
-			}
-		}
-		return Principal{}, errors.New("invalid bearer token")
-	}
-}
-
 // New constructs a ControlPlane that saves its Change Cards under
 // opts.CardsDir, so cards written by an earlier process are served again. It
 // creates the directory when missing and holds its lock until Close; it fails
@@ -550,6 +520,7 @@ func New(opts Options) (*ControlPlane, error) {
 // HTTP endpoints decode JSON bodies with StrictJSONRequestDecoder; the MCP
 // server keeps Goa's decoder for its JSON-RPC envelope, because its generated
 // tool codecs already refuse undeclared argument fields.
+// auth is required and is supplied by the project credential owner.
 func NewHTTPHandler(svc gensurla.Service, auth RequestAuthenticator) http.Handler {
 	mux := goahttp.NewMuxer()
 	endpoints := gensurla.NewEndpoints(svc)
@@ -581,19 +552,17 @@ func NewHTTPHandler(svc gensurla.Service, auth RequestAuthenticator) http.Handle
 	genmcpsurla.Mount(mux, mcpServer)
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if auth != nil {
-			principal, err := auth(r)
-			if err != nil {
-				w.Header().Set("X-Content-Type-Options", "nosniff")
-				w.Header().Set("Content-Type", "application/json")
-				w.WriteHeader(http.StatusUnauthorized)
-				if encodeErr := goahttp.ResponseEncoder(r.Context(), w).Encode(goahttp.NewErrorResponse(r.Context(), gensurla.MakeForbidden(errors.New("open the project views with surla; session or credential is no longer valid")))); encodeErr != nil {
-					otel.Handle(encodeErr)
-				}
-				return
+		principal, err := auth(r)
+		if err != nil {
+			w.Header().Set("X-Content-Type-Options", "nosniff")
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnauthorized)
+			if encodeErr := goahttp.ResponseEncoder(r.Context(), w).Encode(goahttp.NewErrorResponse(r.Context(), gensurla.MakeForbidden(errors.New("open the project views with surla; session or credential is no longer valid")))); encodeErr != nil {
+				otel.Handle(encodeErr)
 			}
-			r = r.WithContext(WithPrincipal(r.Context(), principal))
+			return
 		}
+		r = r.WithContext(WithPrincipal(r.Context(), principal))
 		mux.ServeHTTP(w, r)
 	})
 }

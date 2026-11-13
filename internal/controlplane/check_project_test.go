@@ -740,7 +740,7 @@ func TestPublishManifestsStopsBeforeEachFileOnceCanceled(t *testing.T) {
 			assert.True(t, canceled)
 			assert.Equal(t, tc.wantWritten, written)
 			require.NotEmpty(t, notes)
-			assert.Contains(t, notes[len(notes)-1], "go.sum was not written: the operation was canceled or exceeded -check-timeout before writing it")
+			assert.Contains(t, notes[len(notes)-1], "go.sum was not written: the operation was canceled or exceeded check timeout before writing it")
 			for name, want := range tc.wantLive {
 				assertFileContent(t, filepath.Join(grant, name), want)
 			}

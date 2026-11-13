@@ -552,11 +552,18 @@ var _ = Story("Order Refunds", func() {
 	wantStoryDigest := designeval.SnapshotDigest(storySnapshot)
 
 	cp := newControlPlane(t, Options{WorkspaceDir: wsDir})
-	adapter := genmcpadapter.NewMCPAdapter(gensurla.NewEndpoints(cp), nil)
+	endpoints := gensurla.NewEndpoints(cp)
+	applyOperationPolicy(endpoints, cp.tracer("test/requests"))
+	adapter := genmcpadapter.NewMCPAdapter(endpoints, nil)
+	guide := WithPrincipal(t.Context(), Principal{ID: "alice@example.com", CallerID: "guide", Kind: CallerGuide})
 
 	callMCP := func(toolName string) *gensurlatools.RefreshStoryResult {
 		t.Helper()
-		res, callErr := adapter.ToolsCall(alice, &genmcpadapter.ToolsCallPayload{
+		caller := alice
+		if toolName == "refresh_story" {
+			caller = guide
+		}
+		res, callErr := adapter.ToolsCall(caller, &genmcpadapter.ToolsCallPayload{
 			Name:      toolName,
 			Arguments: json.RawMessage(`{}`),
 		})
@@ -638,6 +645,8 @@ var _ = Story("Order Refunds", func() {
 	assert.Equal(t, "Order Refunds", cardWithStory.Stories[0].Name)
 	assert.NotEqual(t, cardWithoutStory.RequestRevision, cardWithStory.RequestRevision)
 
+	cardWithStory, err = cp.ConfirmIntent(alice, &gensurla.ConfirmIntentPayload{ChangeID: cardWithStory.ChangeID, RequestRevision: cardWithStory.RequestRevision, Answers: map[string]string{}, Examples: cardWithStory.Examples})
+	require.NoError(t, err)
 	_, err = cp.PreviewArchitecture(alice, &gensurla.PreviewArchitecturePayload{
 		ChangeID:        cardWithStory.ChangeID,
 		RequestRevision: cardWithStory.RequestRevision,

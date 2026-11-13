@@ -83,10 +83,10 @@ type Service interface {
 	PreviewArchitecture(context.Context, *PreviewArchitecturePayload) (res *ArchitecturePreviewResult, err error)
 	// Apply a Fast Draft Mode prompt override on the bound target or reject a
 	// compiled-rule prompt hack. A prompt_template override needs a bound target:
-	// on surla serve, that is the live target start_live_target runs. On a live
-	// target started with start_live_target, a rejected update leaves the target's
-	// text unchanged; update_not_confirmed means the target may or may not have
-	// applied it.
+	// on the project server, that is the live target start_live_target runs. On a
+	// live target started with start_live_target, a rejected update leaves the
+	// target's text unchanged; update_not_confirmed means the target may or may
+	// not have applied it.
 	DraftOverride(context.Context, *DraftOverridePayload) (res *DraftOverrideResult, err error)
 	// Build a candidate commit exactly as Checkpoint 4 does and run it, with the
 	// operator's evaluator suite, as this server's one live CP3 target, then bind
@@ -94,7 +94,7 @@ type Service interface {
 	// more than one. The target runs until stop_live_target, a later
 	// start_live_target, its own exit, or this server's shutdown; a server restart
 	// leaves none running. Requires a committed starter project in the bound
-	// workspace or -verification-config.
+	// workspace or verification settings installed with surla verification set.
 	StartLiveTarget(context.Context, *StartLiveTargetPayload) (res *LiveTargetResult, err error)
 	// Stop this server's live CP3 target, if one runs, and unbind draft_override
 	// from it. Stopping when none runs is not an error.
@@ -105,7 +105,8 @@ type Service interface {
 	// operator configured, in a separate process that keeps running when the
 	// caller disconnects or the server restarts; get_verification reads its state.
 	// Only the builder view of the report is ever returned. Requires a committed
-	// starter project in the bound workspace or -verification-config.
+	// starter project in the bound workspace or verification settings installed
+	// with surla verification set.
 	VerifyChange(context.Context, *VerifyChangePayload) (res *VerificationStatusResult, err error)
 	// Return the current state of a verification run to the owner who started it:
 	// running, completed with the builder view of its report, or not completed
@@ -132,10 +133,10 @@ type Service interface {
 	Diff(context.Context, *DiffPayload) (res *DiffResult, err error)
 	// Choose, on a running control plane without restarting, the model that CP3
 	// live targets started afterwards receive: a direct provider and model name
-	// (using that provider's API key from surla serve's environment) or a running
-	// gRPC model gateway. start_live_target passes the choice to the target's
-	// evaluator suite as SURLA_LIVE_MODEL_PROVIDER and SURLA_LIVE_MODEL_NAME, or
-	// as SURLA_LIVE_MODEL_GATEWAY.
+	// (using that provider's API key from the project server's environment) or a
+	// running gRPC model gateway. start_live_target passes the choice to the
+	// target's evaluator suite as SURLA_LIVE_MODEL_PROVIDER and
+	// SURLA_LIVE_MODEL_NAME, or as SURLA_LIVE_MODEL_GATEWAY.
 	ConfigureModel(context.Context, *ConfigureModelPayload) (res *ModelConfigResult, err error)
 	// Initialize a new Surla starter project directory inside the server's bound
 	// workspace, generating the candidate Go module, Goa and Goa-AI code, and the
@@ -172,9 +173,9 @@ type Service interface {
 	// Read the authenticated caller's saved operation diagnostics from the control
 	// plane's private storage. Return bounded safe summaries newest first, without
 	// reading the entire file. Older pages and later refreshes work on the same
-	// running server and after restart. Recording is automatic in surla serve; an
-	// embedded host must provide Options.TracerProvider when constructing its
-	// control plane. Authenticated HTTP/MCP domain calls have a
+	// running server and after restart. Recording is automatic in the project
+	// server; an embedded host must provide Options.TracerProvider when
+	// constructing its control plane. Authenticated HTTP/MCP domain calls have a
 	// surla.request.<operation> boundary span, with child domain operations
 	// recorded separately. Waiting reads are exported without being added to this
 	// private history. Requests rejected before authentication or decoding and

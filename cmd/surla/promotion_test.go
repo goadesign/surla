@@ -1,5 +1,5 @@
 // This file tests the staged-release promotion target behind
-// `surla serve -promotion-config`.
+// the project's stored promotion settings.
 
 package main
 
@@ -7,6 +7,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -58,7 +59,7 @@ func TestLoadPromotionConfig(t *testing.T) {
 			require.NoError(t, os.MkdirAll(wsDir, 0o755))
 			path := filepath.Join(root, "promotion.json")
 			require.NoError(t, os.WriteFile(path, []byte(c.content), 0o600))
-			target, _, err := loadWorkspacePromotionTarget(path, root, wsDir, wsDir)
+			target, err := storedPromotionTarget(t, path)
 			if c.wantErr != "" {
 				assert.ErrorContains(t, err, c.wantErr)
 				return
@@ -82,11 +83,11 @@ func TestLoadPromotionConfig(t *testing.T) {
 	path := filepath.Join(baseDir, "promotion.json")
 	relative := strings.Replace(strings.Replace(valid, `"/r"`, `"reports"`, 1), `"/rel"`, `"release"`, 1)
 	require.NoError(t, os.WriteFile(path, []byte(relative), 0o600))
-	target, gotReportDir, err := loadWorkspacePromotionTarget(path, baseDir, wsDir, wsDir)
+	target, err := storedPromotionTarget(t, path)
 	require.NoError(t, err)
 	cfg := target.(*releaseTarget).cfg
-	assert.Equal(t, filepath.Join(baseDir, "reports"), gotReportDir)
-	assert.Equal(t, filepath.Join(baseDir, "reports"), cfg.ReportDir)
+	assertOutsideDirectory(t, cfg.ReportDir, wsDir)
+	assert.NotEqual(t, filepath.Join(baseDir, "reports"), cfg.ReportDir, "project owns reports")
 	assert.Equal(t, filepath.Join(baseDir, "release"), cfg.ReleaseDir)
 }
 
@@ -246,12 +247,11 @@ func confirmedAnalysis() *gensurla.CP1Analysis {
 func newReleaseTarget(t *testing.T, release, reports string) controlplane.PromotionTarget {
 	t.Helper()
 	dir := t.TempDir()
-	wsDir := t.TempDir()
 	path := filepath.Join(dir, "promotion.json")
 	content := `{"release_dir":"` + release + `","suite_id":"orders","suite_commit":"` +
 		suiteCommit + `","environment":"sim","binaries":["orders","orders-worker"]}`
 	require.NoError(t, os.WriteFile(path, []byte(content), 0o600))
-	target, _, err := loadWorkspacePromotionTarget(path, dir, wsDir, wsDir)
+	target, err := storedPromotionTarget(t, path)
 	require.NoError(t, err)
 	target.(*releaseTarget).cfg.ReportDir = reports
 	return target
@@ -281,4 +281,15 @@ func publish(t *testing.T, release, commit string, files map[string]string) {
 func digestOf(content string) string {
 	sum := sha256.Sum256([]byte(content))
 	return hex.EncodeToString(sum[:])
+}
+
+// storedPromotionTarget exercises named-file management and derives report storage at startup.
+func storedPromotionTarget(t *testing.T, path string) (controlplane.PromotionTarget, error) {
+	t.Helper()
+	isolateServeWorkspace(t)
+	if err := runProjectSettings("promotion", []string{"set", path}, io.Discard); err != nil {
+		return nil, err
+	}
+	ws, err := configureServeWorkspace()
+	return ws.promotionTarget, err
 }

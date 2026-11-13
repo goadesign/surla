@@ -145,7 +145,7 @@ var UpdateDependenciesResult = Type("UpdateDependenciesResult", func() {
 
 // ConfigureModelPayload is the input to the configure_model tool.
 var ConfigureModelPayload = Type("ConfigureModelPayload", func() {
-	Description("Selects either a direct model provider and model name (using the API key already present in surla serve's process environment) or a running goa-ai model gateway address.")
+	Description("Selects either a direct model provider and model name (using the API key already present in the project server's process environment) or a running goa-ai model gateway address.")
 	Attribute("provider", String, "Direct model provider name when configuring a direct provider; must be paired with model_name and omitted when gateway_addr is set.", func() {
 		Enum("anthropic", "openai")
 		Example("anthropic")
@@ -449,7 +449,7 @@ var DiffResult = Type("DiffResult", func() {
 
 // VerifyChangePayload starts Checkpoint 4 verification of one candidate commit.
 var VerifyChangePayload = Type("VerifyChangePayload", func() {
-	Description("Names the confirmed Change Card revision and the candidate commit to verify. What is built and which evaluator suite runs come from the operator's configuration of surla serve, never from the caller.")
+	Description("Names the confirmed Change Card revision and the candidate commit to verify. What is built and which evaluator suite runs come from the operator's project settings, never from the caller.")
 	Attribute("change_id", String, "Confirmed Change Card identifier.")
 	Attribute("request_revision", String, "Current request_revision of the confirmed Change Card.")
 	Attribute("candidate_commit", String, "Full commit ID of the candidate to build and verify (40 or 64 lowercase hex characters).", func() {
@@ -691,7 +691,7 @@ var _ = Service("surla", func() {
 	})
 
 	Method("draft_override", func() {
-		Description("Apply a Fast Draft Mode prompt override on the bound target or reject a compiled-rule prompt hack. A prompt_template override needs a bound target: on surla serve, that is the live target start_live_target runs. On a live target started with start_live_target, a rejected update leaves the target's text unchanged; update_not_confirmed means the target may or may not have applied it.")
+		Description("Apply a Fast Draft Mode prompt override on the bound target or reject a compiled-rule prompt hack. A prompt_template override needs a bound target: on the project server, that is the live target start_live_target runs. On a live target started with start_live_target, a rejected update leaves the target's text unchanged; update_not_confirmed means the target may or may not have applied it.")
 		Payload(DraftOverridePayload)
 		Result(DraftOverrideResult)
 		Error("prompt_not_found", ErrorResult, "The live target has no prompt with this ID; nothing changed.")
@@ -699,7 +699,7 @@ var _ = Service("surla", func() {
 		Error("live_target_ended", ErrorResult, "The live target is no longer running; start it again with start_live_target.")
 		Error("target_rejected_credential", ErrorResult, "The live target rejected this server's key; nothing changed. Start the target again with start_live_target.")
 		Error("update_not_confirmed", ErrorResult, "The live target did not confirm the update, so it may or may not have applied it. Keep the draft and send it again.")
-		Tool("draft_override", "Hot-reload a prompt template in 0s or flag a compiled business rule change. A prompt template needs a bound target; on surla serve, call start_live_target with a candidate commit first.", func() {
+		Tool("draft_override", "Hot-reload a prompt template in 0s or flag a compiled business rule change. A prompt template needs a bound target; on the project server, call start_live_target with a candidate commit first.", func() {
 			ToolUI("ui://surla/checkpoint")
 		})
 		HTTP(func() {
@@ -714,12 +714,12 @@ var _ = Service("surla", func() {
 	})
 
 	Method("start_live_target", func() {
-		Description("Build a candidate commit exactly as Checkpoint 4 does and run it, with the operator's evaluator suite, as this server's one live CP3 target, then bind draft_override to it. A running target is stopped first, so there is never more than one. The target runs until stop_live_target, a later start_live_target, its own exit, or this server's shutdown; a server restart leaves none running. Requires a committed starter project in the bound workspace or -verification-config.")
+		Description("Build a candidate commit exactly as Checkpoint 4 does and run it, with the operator's evaluator suite, as this server's one live CP3 target, then bind draft_override to it. A running target is stopped first, so there is never more than one. The target runs until stop_live_target, a later start_live_target, its own exit, or this server's shutdown; a server restart leaves none running. Requires a committed starter project in the bound workspace or verification settings installed with surla verification set.")
 		Payload(StartLiveTargetPayload)
 		Result(LiveTargetResult)
 		Error("live_target_unavailable", ErrorResult, "This server has no verification configuration, so it cannot build or run a live target.")
 		Error("live_target_failed", ErrorResult, "The live target could not be built or started; the message says which step failed.")
-		Tool("start_live_target", "Build a candidate commit and run it as this server's live CP3 target so draft_override can try prompt text on it. This first stops the target already running, which discards every prompt draft applied to it, even if the new build then fails. Prompt text survives only when it is committed. Requires a committed starter project in the bound workspace or -verification-config.", func() {
+		Tool("start_live_target", "Build a candidate commit and run it as this server's live CP3 target so draft_override can try prompt text on it. This first stops the target already running, which discards every prompt draft applied to it, even if the new build then fails. Prompt text survives only when it is committed. Requires a committed starter project in the bound workspace or verification settings installed with surla verification set.", func() {
 			ToolUI("ui://surla/checkpoint")
 		})
 		HTTP(func() {
@@ -733,7 +733,7 @@ var _ = Service("surla", func() {
 	Method("stop_live_target", func() {
 		Description("Stop this server's live CP3 target, if one runs, and unbind draft_override from it. Stopping when none runs is not an error.")
 		Result(StopLiveTargetResult)
-		Error("live_target_stop_failed", ErrorResult, "The live target's processes could not be confirmed stopped; restart surla serve.")
+		Error("live_target_stop_failed", ErrorResult, "The live target's processes could not be confirmed stopped; stop and start Surla.")
 		Tool("stop_live_target", "Stop this server's live CP3 target, if one runs. This discards every prompt draft applied to it; prompt text survives only when it is committed.", func() {
 			ToolUI("ui://surla/checkpoint")
 		})
@@ -745,13 +745,13 @@ var _ = Service("surla", func() {
 	})
 
 	Method("verify_change", func() {
-		Description("Start Checkpoint 4 verification of a candidate commit for the owner's confirmed Change Card revision and return its run_id at once. The server builds the commit in Surla's sandbox and runs the evaluator suite the operator configured, in a separate process that keeps running when the caller disconnects or the server restarts; get_verification reads its state. Only the builder view of the report is ever returned. Requires a committed starter project in the bound workspace or -verification-config.")
+		Description("Start Checkpoint 4 verification of a candidate commit for the owner's confirmed Change Card revision and return its run_id at once. The server builds the commit in Surla's sandbox and runs the evaluator suite the operator configured, in a separate process that keeps running when the caller disconnects or the server restarts; get_verification reads its state. Only the builder view of the report is ever returned. Requires a committed starter project in the bound workspace or verification settings installed with surla verification set.")
 		Payload(VerifyChangePayload)
 		Result(VerificationStatusResult)
 		Error("not_found", ErrorResult, "No Change Card exists with this change_id.")
 		Error("conflict", ErrorResult, "The Change Card is not confirmed or its request_revision does not match; confirm the card or read the current revision with get_change.")
 		Error("not_implemented", ErrorResult, "This server has no verification configuration, so it cannot run Checkpoint 4 verifications.")
-		Tool("verify_change", "Start CP4 verification of a candidate commit for the confirmed Change Card revision; returns a run_id to read with get_verification. Requires a committed starter project in the bound workspace or -verification-config.", func() {
+		Tool("verify_change", "Start CP4 verification of a candidate commit for the confirmed Change Card revision; returns a run_id to read with get_verification. Requires a committed starter project in the bound workspace or verification settings installed with surla verification set.", func() {
 			ToolUI("ui://surla/checkpoint")
 		})
 		HTTP(func() {
@@ -832,12 +832,12 @@ var _ = Service("surla", func() {
 	})
 
 	Method("configure_model", func() {
-		Description("Choose, on a running control plane without restarting, the model that CP3 live targets started afterwards receive: a direct provider and model name (using that provider's API key from surla serve's environment) or a running gRPC model gateway. start_live_target passes the choice to the target's evaluator suite as SURLA_LIVE_MODEL_PROVIDER and SURLA_LIVE_MODEL_NAME, or as SURLA_LIVE_MODEL_GATEWAY.")
+		Description("Choose, on a running control plane without restarting, the model that CP3 live targets started afterwards receive: a direct provider and model name (using that provider's API key from the project server's environment) or a running gRPC model gateway. start_live_target passes the choice to the target's evaluator suite as SURLA_LIVE_MODEL_PROVIDER and SURLA_LIVE_MODEL_NAME, or as SURLA_LIVE_MODEL_GATEWAY.")
 		Payload(ConfigureModelPayload)
 		Result(ModelConfigResult)
 		Error("unprocessable", ErrorResult, "The model provider, model name, gateway address, or required environment credential is invalid.")
 		Error("not_implemented", ErrorResult, "Runtime model reconfiguration is not configured on this control plane.")
-		Tool("configure_model", "Switch the model provider and model name (such as anthropic/claude-sonnet-4-6 or openai/gpt-5.4-mini, using the API key in surla serve's environment) or attach a running model gateway address, without restarting surla serve. Live targets that start_live_target starts afterwards plan with this model.")
+		Tool("configure_model", "Switch the model provider and model name (such as anthropic/claude-sonnet-4-6 or openai/gpt-5.4-mini, using the API key in the project server's environment) or attach a running model gateway address, without restarting the project server. Live targets that start_live_target starts afterwards plan with this model.")
 		HTTP(func() {
 			POST("/cp1/model")
 			Response(StatusOK)

@@ -143,6 +143,27 @@ func TestProjectIdentitySessionsAndRoles(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusForbidden, wrong.StatusCode)
 	require.NoError(t, wrong.Body.Close())
+	// A wrong Origin and an unmarked link exchange fail before consuming the one-use value.
+	wrongOrigin, err := http.NewRequest(http.MethodGet, state.Origin()+"/changes/change", nil)
+	require.NoError(t, err)
+	wrongOrigin.Header.Set("Authorization", "Bearer "+session.Session)
+	wrongOrigin.Header.Set("Sec-Fetch-Site", "same-origin")
+	wrongOrigin.Header.Set("Origin", "http://127.0.0.1:1")
+	refused, err := api.Client().Do(wrongOrigin)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusForbidden, refused.StatusCode)
+	require.NoError(t, refused.Body.Close())
+	unmarkedLink, err := client.BrowserLink(t.Context())
+	require.NoError(t, err)
+	unmarkedURL, err := url.Parse(unmarkedLink.URL)
+	require.NoError(t, err)
+	exchangeBody, err := json.Marshal(&genproject.ExchangeBrowserLinkPayload{Link: strings.TrimPrefix(unmarkedURL.Fragment, "link=")})
+	require.NoError(t, err)
+	refused = testRequest(t, api.Client(), http.MethodPost, state.Origin()+"/project/browser-session", string(exchangeBody), "", false)
+	assert.Equal(t, http.StatusForbidden, refused.StatusCode)
+	require.NoError(t, refused.Body.Close())
+	_, err = exchange.ExchangeBrowserLink(t.Context(), &genproject.ExchangeBrowserLinkPayload{Link: strings.TrimPrefix(unmarkedURL.Fragment, "link=")})
+	require.NoError(t, err)
 	// Catalogs and direct MCP policy use the same table, including management denial.
 	for _, tc := range []struct {
 		role  controlplane.CallerKind
@@ -169,10 +190,61 @@ func TestProjectIdentitySessionsAndRoles(t *testing.T) {
 			for _, tool := range body.Result.Tools {
 				listed[tool.Name] = true
 			}
+			httpOrResourceOnly := map[string]bool{"golden_path": true, "checkpoint_ui": true}
 			for _, name := range gensurla.MethodNames {
-				if name != "golden_path" && name != "checkpoint_ui" {
+				if !httpOrResourceOnly[name] {
 					assert.Equal(t, controlplane.OperationAllowed(tc.role, name), listed[name], name)
 				}
+			}
+			resources := testRequest(t, api.Client(), http.MethodPost, state.Origin()+"/mcp", `{"jsonrpc":"2.0","id":4,"method":"resources/list","params":{}}`, tc.token, tc.role == controlplane.CallerUser)
+			require.Equal(t, http.StatusOK, resources.StatusCode)
+			var catalog struct {
+				Error  any `json:"error"`
+				Result *struct {
+					Resources []struct {
+						Name string `json:"name"`
+					} `json:"resources"`
+				} `json:"result"`
+			}
+			require.NoError(t, json.NewDecoder(resources.Body).Decode(&catalog))
+			require.NoError(t, resources.Body.Close())
+			require.Nil(t, catalog.Error)
+			require.NotNil(t, catalog.Result)
+			names := []string{}
+			for _, resource := range catalog.Result.Resources {
+				names = append(names, resource.Name)
+			}
+			expected := []string{}
+			for _, name := range []string{"golden_path", "checkpoint_ui"} {
+				if controlplane.OperationAllowed(tc.role, name) {
+					expected = append(expected, name)
+				}
+			}
+			assert.ElementsMatch(t, expected, names)
+			if tc.role != controlplane.CallerManagement {
+				for _, managementCall := range []struct{ method, path, body string }{
+					{http.MethodGet, "/project/identity", ""},
+					{http.MethodPost, "/project/stop", ""},
+					{http.MethodPost, "/project/agents", `{"actor_id":"injected","role":"guide"}`},
+					{http.MethodDelete, "/project/agents/guide", ""},
+					{http.MethodPost, "/project/browser-link", ""},
+				} {
+					denied := testRequest(t, api.Client(), managementCall.method, state.Origin()+managementCall.path, managementCall.body, tc.token, tc.role == controlplane.CallerUser)
+					assert.Equal(t, http.StatusForbidden, denied.StatusCode, managementCall.path)
+					require.NoError(t, denied.Body.Close())
+				}
+				assert.Len(t, state.Record.Agents, 3, "management refusals preserve roster")
+			}
+			for _, request := range policyHTTPRequests(card, string(raw), string(confirmRaw)) {
+				if controlplane.OperationAllowed(tc.role, request.operation) {
+					continue
+				}
+				denied := testRequest(t, api.Client(), request.method, state.Origin()+request.path, request.body, tc.token, tc.role == controlplane.CallerUser)
+				failure, err := io.ReadAll(denied.Body)
+				require.NoError(t, err)
+				require.NoError(t, denied.Body.Close())
+				assert.Equal(t, http.StatusForbidden, denied.StatusCode, request.operation+": "+string(failure))
+				assert.Contains(t, string(failure), "may not call "+request.operation)
 			}
 			guidance := testRequest(t, api.Client(), http.MethodGet, state.Origin()+"/golden-path", "", tc.token, tc.role == controlplane.CallerUser)
 			if tc.role == controlplane.CallerManagement {
@@ -331,4 +403,40 @@ func testRequest(t *testing.T, client *http.Client, method, target, body, token 
 	response, err := (headerDoer{client: client, token: token, browser: browser}).Do(r)
 	require.NoError(t, err)
 	return response
+}
+
+// policyHTTPRequest supplies a schema-valid request so refusal proves the policy boundary ran.
+type policyHTTPRequest struct{ operation, method, path, body string }
+
+// policyHTTPRequests covers every generated control-plane route without executing forbidden work.
+func policyHTTPRequests(card *gensurla.ChangeCardResult, propose, confirm string) []policyHTTPRequest {
+	commit := strings.Repeat("a", 40)
+	revision := card.RequestRevision
+	revise := fmt.Sprintf(`{"change_id":"change","request_revision":%q,"prompt":"Keep refunds bounded","analysis":{"summary":"Bound refunds","ambiguities":[],"examples":[{"prior_id":"check_01","scenario":"refund","input_summary":"refund 10","expected_outcome":"refund 10","verification_kind":"deterministic"}],"removed_example_ids":[],"preserved_behaviors":[]}}`, revision)
+	return []policyHTTPRequest{
+		{"checkpoint_ui", "GET", "/ui/checkpoint", ""},
+		{"golden_path", "GET", "/golden-path", ""},
+		{"propose_change", "POST", "/changes/propose", propose},
+		{"revise_change", "POST", "/changes/revise", revise},
+		{"confirm_intent", "POST", "/changes/confirm", confirm},
+		{"get_change", "GET", "/changes/change", ""},
+		{"preview_architecture", "POST", "/changes/preview", fmt.Sprintf(`{"change_id":"change","request_revision":%q}`, revision)},
+		{"draft_override", "POST", "/sandbox/draft", `{"target_kind":"compiled_rule","new_content":"bounded"}`},
+		{"start_live_target", "POST", "/live-target", `{"candidate_commit":"` + commit + `"}`},
+		{"stop_live_target", "DELETE", "/live-target", ""},
+		{"verify_change", "POST", "/changes/change/verifications", fmt.Sprintf(`{"request_revision":%q,"candidate_commit":%q}`, revision, commit)},
+		{"get_verification", "GET", "/verifications/run", ""},
+		{"list_verifications", "GET", "/changes/change/verifications", ""},
+		{"approve_merge", "POST", "/changes/approve", fmt.Sprintf(`{"change_id":"change","request_revision":%q,"candidate_commit":%q,"report_digest":%q}`, revision, commit, strings.Repeat("b", 64))},
+		{"diff", "POST", "/diff", `{"old":{"files":{"go.mod":"module example.com/shop","go.sum":"","design/design.go":"package design"}},"new":{"files":{"go.mod":"module example.com/shop","go.sum":"","design/design.go":"package design"}}}`},
+		{"configure_model", "POST", "/cp1/model", `{"gateway_addr":"127.0.0.1:1234"}`},
+		{"init_project", "POST", "/workspace/init", `{"module_path":"example.com/shop"}`},
+		{"generate_code", "POST", "/workspace/generate", `{}`},
+		{"check_project", "POST", "/workspace/check", ""},
+		{"update_dependencies", "POST", "/workspace/dependencies", ""},
+		{"read_check_output", "POST", "/workspace/check/output", `{"op_id":"op"}`},
+		{"list_traces", "GET", "/traces", ""},
+		{"refresh_story", "POST", "/workspace/story/refresh", ""},
+		{"get_story_refresh", "GET", "/workspace/story/refresh?op_id=op", ""},
+	}
 }

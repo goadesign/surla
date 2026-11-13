@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -25,7 +24,7 @@ import (
 )
 
 // verificationFile is the JSON form of the operator's CP4 configuration that
-// `surla serve verification settings` reads. Every field is required.
+// `surla verification set` validates. Every field is required.
 type verificationFile struct {
 	// CandidateRepo is the git repository builders push candidates to.
 	CandidateRepo string `json:"candidate_repo"`
@@ -57,10 +56,10 @@ type cappedBuffer struct {
 }
 
 // defaultProjectVerifyTimeout is the CP4 verification timeout derived for
-// `the project server <dir>`, matching the starter README.
+// the project server, matching the starter README.
 const defaultProjectVerifyTimeout = 30 * time.Minute
 
-// gitReadTimeout bounds all the read-only git queries `the project server`
+// gitReadTimeout bounds all the read-only git queries the project server
 // makes at startup together, so an unresponsive repository stops startup with
 // an error.
 const gitReadTimeout = 30 * time.Second
@@ -377,7 +376,7 @@ func readGitBlob(ctx context.Context, repoRoot, commit, treePath, project string
 	}
 	content, err := runGitRead(ctx, repoRoot, "cat-file", "blob", commit+":"+treePath)
 	if err != nil {
-		return nil, fmt.Errorf("project %s: read committed %s at HEAD (%s): %w (surla serve never downloads"+
+		return nil, fmt.Errorf("project %s: read committed %s at HEAD (%s): %w (the project server never downloads"+
 			" objects; if this is a partial clone, check out HEAD there first so git fetches them)",
 			project, treePath, commit, err)
 	}
@@ -460,30 +459,6 @@ func cleanGitEnv() []string {
 		}
 	}
 	return append(env, "GIT_TERMINAL_PROMPT=0", "GIT_CONFIG_NOSYSTEM=1", "LC_ALL=C")
-}
-
-// loadVerificationConfig strictly decodes the operator's verification
-// configuration at path into a controlplane.VerificationConfig whose runs
-// re-execute this surla executable. An empty path means verification is not
-// configured.
-func loadVerificationConfig(path string) (*controlplane.VerificationConfig, error) {
-	if path == "" {
-		return nil, nil
-	}
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("read verification settings: %w", err)
-	}
-	dec := json.NewDecoder(bytes.NewReader(raw))
-	dec.DisallowUnknownFields()
-	var f verificationFile
-	if err := dec.Decode(&f); err != nil {
-		return nil, fmt.Errorf("decode verification settings %s: %w", path, err)
-	}
-	if err := dec.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
-		return nil, fmt.Errorf("decode verification settings %s: data after the configuration", path)
-	}
-	return verificationConfig(f, "", "")
 }
 
 // verificationConfig validates one settings snapshot and derives all storage paths from its project owner.

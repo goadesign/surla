@@ -14,8 +14,7 @@ import (
 	"github.com/goadesign/surla/internal/controlplane"
 )
 
-// TestConfigureServeWorkspaceSeparatesOperatorState verifies that
-// configureServeWorkspace places operator state outside the workspace.
+// TestDefaultOperatorRootDeterministicAndPermissionValidation rejects unavailable or unsafe storage roots.
 func TestDefaultOperatorRootDeterministicAndPermissionValidation(t *testing.T) {
 	root := t.TempDir()
 	wsDir := filepath.Join(root, "workspace")
@@ -29,14 +28,14 @@ func TestDefaultOperatorRootDeterministicAndPermissionValidation(t *testing.T) {
 	userConfigDir = func() (string, error) {
 		return "", os.ErrNotExist
 	}
-	_, err := configureServeWorkspace(serveConfig{})
+	_, err := configureServeWorkspace()
 	require.ErrorIs(t, err, os.ErrNotExist)
 
 	// 2. When userConfigDir points inside the bound workspace, configureServeWorkspace fails without falling back.
 	userConfigDir = func() (string, error) {
 		return filepath.Join(wsDir, ".config"), nil
 	}
-	_, err = configureServeWorkspace(serveConfig{})
+	_, err = configureServeWorkspace()
 	require.ErrorContains(t, err, "must be outside the workspace")
 
 	// 3. When <userConfigDir>/surla/operator already exists with permissive 0755 mode, configureServeWorkspace fails.
@@ -47,17 +46,14 @@ func TestDefaultOperatorRootDeterministicAndPermissionValidation(t *testing.T) {
 	userConfigDir = func() (string, error) {
 		return cfgRoot, nil
 	}
-	_, err = configureServeWorkspace(serveConfig{})
+	_, err = configureServeWorkspace()
 	require.ErrorContains(t, err, "has permissions 0755, want 0o700")
 
 }
 
-// TestConfigureServeWorkspacePinsSuiteCommitAndRejectsSymlinkParentEscape verifies
-// that configureServeWorkspace resolves symlinks before ".." on -cards-dir,
-// -verification-config, and -promotion-config, pins SuiteCommit to the startup
-// commit or init_project commit across later builder commits, and refuses
-// unpinned post-startup repo creation.
-func TestConfigureServeWorkspacePinsSuiteCommitAndRejectsSymlinkParentEscape(t *testing.T) {
+// TestConfigureServeWorkspacePinsSuiteCommits preserves startup and init_project
+// suite commits across later builder commits.
+func TestConfigureServeWorkspacePinsSuiteCommits(t *testing.T) {
 	root := t.TempDir()
 	cfgRoot := filepath.Join(root, "user-config")
 	wsDir := filepath.Join(root, "workspace")
@@ -75,7 +71,7 @@ func TestConfigureServeWorkspacePinsSuiteCommitAndRejectsSymlinkParentEscape(t *
 
 	// 2. Uninitialized workspace at startup refuses post-startup manual repo creation without init_project,
 	// while accepting a pinned suiteCommit from init_project and keeping SuiteCommit pinned across later builder commits.
-	uninitCfg, err := configureServeWorkspace(serveConfig{})
+	uninitCfg, err := configureServeWorkspace()
 	require.NoError(t, err)
 	assert.Nil(t, uninitCfg.verification)
 
@@ -98,11 +94,9 @@ func TestConfigureServeWorkspacePinsSuiteCommitAndRejectsSymlinkParentEscape(t *
 	assert.Equal(t, initialCommit, resolvedFromInit.Plan.SuiteCommit)
 
 	// 3. Existing starter repo committed at server startup keeps startup SuiteCommit across later builder commits
-	// while still picking up late promotion.json report_dir updates.
+	// with its startup settings snapshot.
 	existingWS, startupCommit := initCommittedStarterRepo(t, filepath.Join(root, "existing-shop"))
-	existingCfg, err := configureServeWorkspace(serveConfig{
-		projectDir: existingWS,
-	})
+	existingCfg, err := configureServeWorkspace(existingWS)
 	require.NoError(t, err)
 	require.NotNil(t, existingCfg.verification)
 	assert.Equal(t, startupCommit, existingCfg.verification.Plan.SuiteCommit)
@@ -117,11 +111,7 @@ func TestConfigureServeWorkspacePinsSuiteCommitAndRejectsSymlinkParentEscape(t *
 	assert.Equal(t, startupCommit, resolvedExisting.Plan.SuiteCommit, "existing startup repo must stay pinned to startup HEAD")
 }
 
-// TestConfigureServeWorkspaceMonorepoSeparation verifies that
-// configureServeWorkspace protects an enclosing
-// monorepo working tree R while preserving external operator working-directory
-// card stores, separate verification source repositories B, and the starter
-// sibling external verification configuration layout.
+// initCommittedStarterRepo creates the committed layout consumed by startup verification.
 func initCommittedStarterRepo(t *testing.T, dir string) (string, string) {
 	t.Helper()
 	writeStarter(t, dir, "example.com/shop")
@@ -168,11 +158,9 @@ func assertOutsideDirectory(t *testing.T, child, root string) {
 }
 
 // TestConfigureServeWorkspaceKeepsHistoryAcrossSpellingsOfTheWorkspace
-// verifies that restarting surla serve with another spelling of the same
-// directories, on a case-insensitive volume, selects the same operator
-// project, card store and runs, so saved cards are still returned. Each case
-// keeps the same way of starting (from the parent with -project, or inside
-// the workspace), which by design selects its own card store.
+// verifies that restarting the project server with another spelling of the same
+// directories, on a case-insensitive volume, selects the same project, cards
+// and runs, so saved cards are still returned.
 func TestConfigureServeWorkspaceKeepsHistoryAcrossSpellingsOfTheWorkspace(t *testing.T) {
 	type start struct {
 		chdir   string
@@ -182,7 +170,7 @@ func TestConfigureServeWorkspaceKeepsHistoryAcrossSpellingsOfTheWorkspace(t *tes
 		name   string
 		starts []start
 	}{
-		{name: "-project from the parent", starts: []start{{chdir: ".", project: "WORKSPACE"}, {chdir: ".", project: "workspace"}}},
+		{name: "alternate path from the parent", starts: []start{{chdir: ".", project: "WORKSPACE"}, {chdir: ".", project: "workspace"}}},
 		{name: "started inside the workspace", starts: []start{{chdir: "Workspace"}, {chdir: "workspace"}, {chdir: "WORKSPACE"}}},
 	}
 	for _, tc := range cases {
@@ -203,11 +191,10 @@ func TestConfigureServeWorkspaceKeepsHistoryAcrossSpellingsOfTheWorkspace(t *tes
 			var first workspaceServeConfig
 			for i, st := range tc.starts {
 				t.Chdir(filepath.Join(root, st.chdir))
-				cfg := serveConfig{}
 				if st.project != "" {
-					cfg.projectDir = st.project
+					t.Chdir(filepath.Join(root, st.project))
 				}
-				ws, err := configureServeWorkspace(cfg)
+				ws, err := configureServeWorkspace()
 				require.NoError(t, err, st)
 				cp, err := controlplane.New(controlplane.Options{CardsDir: ws.cardsDir, WorkspaceDir: ws.workspaceDir, RunsDir: ws.runsDir})
 				require.NoError(t, err, st)

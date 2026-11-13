@@ -15,6 +15,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"syscall"
 	"time"
 
@@ -29,47 +30,90 @@ import (
 // projectRuntime binds project state and process effects at the CLI composition root.
 // Tests provide an owned state root and stand-ins without starting terminals or browsers.
 type projectRuntime struct {
-	stateRoot     func(string, ...string) (string, error)
-	startTerminal func(context.Context, *project.State, []string) error
-	openViews     func(context.Context, string) error
+	stateRoot      func(string, ...string) (string, error)
+	preflight      func() error
+	startTerminal  func(context.Context, *project.State, []string) (string, error)
+	openViews      func(context.Context, string) error
+	waitTerminal   func(context.Context, string) (bool, error)
+	removeTerminal func(context.Context, string) error
 }
 
 // productionProjectRuntime is selected only by the executable's composition root.
 func productionProjectRuntime() projectRuntime {
 	return projectRuntime{
-		stateRoot:     defaultOperatorRoot,
-		startTerminal: startProjectTerminal,
-		openViews:     openProjectViews,
+		stateRoot:      defaultOperatorRoot,
+		preflight:      preflightProjectStart,
+		startTerminal:  startProjectTerminal,
+		openViews:      openProjectViews,
+		waitTerminal:   waitProjectTerminal,
+		removeTerminal: removeProjectTerminal,
 	}
 }
 
 // start serializes discovery and starts at most one server, then opens a one-use views link.
 func (runtime projectRuntime) start(args []string, stdout io.Writer) (err error) {
-	_, err = parseProjectFlags("surla", args)
+	err = parseProjectArgs("surla", args)
 	if err != nil {
+		return err
+	}
+	if err := runtime.preflight(); err != nil {
 		return err
 	}
 	state, err := runtime.discover()
 	if err != nil {
 		return err
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 	defer cancel()
-	client, created, err := attachOrStartProject(ctx, state, func(ctx context.Context, state *project.State) error { return runtime.startTerminal(ctx, state, args) })
-	if err != nil {
-		return err
+	// Observe only the terminal this CLI creates; an existing server has no launch to watch.
+	type terminalResult struct {
+		ended bool
+		err   error
 	}
-	if created {
-		if err := writeProjectCreatedNotice(stdout); err != nil {
-			return err
+	terminal := ""
+	finished := make(chan terminalResult, 1)
+	client, created, err := attachOrStartProject(ctx, state, func(ctx context.Context, state *project.State) (string, error) {
+		id, err := runtime.startTerminal(ctx, state, args)
+		if err != nil {
+			return "", err
+		}
+		terminal = id
+		go func() {
+			ended, err := runtime.waitTerminal(ctx, id)
+			finished <- terminalResult{ended: ended, err: err}
+			if ended || err != nil {
+				cancel()
+			}
+		}()
+		return id, nil
+	})
+	if terminal != "" {
+		// Reap the observer on readiness, failure, or deadline before returning.
+		cancel()
+		outcome := <-finished
+		if err != nil {
+			err = errors.Join(err, outcome.err)
+			if outcome.ended {
+				cleanupCtx, stop := context.WithTimeout(context.Background(), 5*time.Second)
+				err = errors.Join(err, runtime.removeTerminal(cleanupCtx, terminal))
+				stop()
+			}
 		}
 	}
-
-	link, err := client.BrowserLink(ctx)
+	if created {
+		err = errors.Join(err, writeProjectCreatedNotice(stdout))
+	}
 	if err != nil {
 		return err
 	}
-	if err := runtime.openViews(ctx, link.URL); err != nil {
+
+	linkCtx, stopLink := context.WithTimeout(context.Background(), 5*time.Second)
+	defer stopLink()
+	link, err := client.BrowserLink(linkCtx)
+	if err != nil {
+		return err
+	}
+	if err := runtime.openViews(linkCtx, link.URL); err != nil {
 		return fmt.Errorf("open project views: %w", err)
 	}
 	_, err = fmt.Fprintf(stdout, "Surla is running for %s at %s\n", state.Record.Directory, state.Origin())
@@ -86,7 +130,7 @@ func writeProjectCreatedNotice(stdout io.Writer) error {
 func attachOrStartProject(
 	ctx context.Context,
 	state *project.State,
-	launch func(context.Context, *project.State) error,
+	launch func(context.Context, *project.State) (string, error),
 ) (client *genproject.Client, created bool, err error) {
 	lock, err := state.StartLock(ctx)
 	if err != nil {
@@ -95,33 +139,34 @@ func attachOrStartProject(
 	defer func() { err = errors.Join(err, lock.Close()) }()
 	created, err = state.Initialize(fmt.Sprintf("uid:%d", os.Geteuid()))
 	if err != nil {
-		return nil, false, err
+		return nil, created, err
 	}
 	inUse, err := controlplane.CardStoreInUse(state.CardsDir())
 	if err != nil {
-		return nil, false, err
+		return nil, created, err
 	}
+	terminal := ""
 	if !inUse {
 		listener, err := net.Listen("tcp", state.Address())
 		if err != nil {
-			return nil, false, fmt.Errorf("project port %d is occupied; no server was started: %w", state.Record.Port, err)
+			return nil, created, fmt.Errorf("project port %d is occupied; no server was started: %w", state.Record.Port, err)
 		}
 		if err := listener.Close(); err != nil {
-			return nil, false, err
+			return nil, created, err
 		}
-		if err := launch(ctx, state); err != nil {
-			return nil, false, err
+		if terminal, err = launch(ctx, state); err != nil {
+			return nil, created, err
 		}
 	}
 	client, err = projectClient(state)
 	if err != nil {
-		return nil, false, err
+		return nil, created, err
 	}
 	if err := waitForProject(ctx, state, client); err != nil {
 		if inUse {
-			return nil, false, fmt.Errorf("the project server is running but not answering; no second server was started: %w", err)
+			return nil, created, fmt.Errorf("the project server is running but not answering; no second server was started: %w", err)
 		}
-		return nil, false, fmt.Errorf("the project server did not start answering: %w", err)
+		return nil, created, fmt.Errorf("the project server in Herdr terminal %s did not start answering: %w", terminal, err)
 	}
 	return client, created, nil
 }
@@ -186,8 +231,7 @@ func (runtime projectRuntime) stop(args []string, stdout io.Writer) (err error) 
 
 // serve is the Herdr program entry, with project identity and address derived from private state.
 func (runtime projectRuntime) serve(args []string) (err error) {
-	cfg, err := parseProjectFlags("serve", args)
-	if err != nil {
+	if err := parseProjectArgs("serve", args); err != nil {
 		return err
 	}
 	state, err := runtime.discover()
@@ -197,7 +241,6 @@ func (runtime projectRuntime) serve(args []string) (err error) {
 	if state.Record.ID == "" {
 		return errors.New("start the project with surla")
 	}
-	cfg.projectDir = state.Record.Directory
 	provider, err := newTraceProvider(context.Background(), os.Stderr, os.Getenv)
 	if err != nil {
 		return err
@@ -210,7 +253,7 @@ func (runtime projectRuntime) serve(args []string) (err error) {
 		err = errors.Join(err, provider.Shutdown(ctx))
 		otel.SetTracerProvider(previous)
 	}()
-	opts, err := runtime.serveOptions(cfg, os.Getenv, os.Environ())
+	opts, err := projectServeOptions(state, serveConfig{}, os.Getenv, os.Environ())
 	if err != nil {
 		return err
 	}
@@ -237,7 +280,7 @@ func (runtime projectRuntime) serve(args []string) (err error) {
 	if err := state.SaveRunning(project.Running{PID: os.Getpid(), Terminal: os.Getenv("HC_TERMINAL_ID")}); err != nil {
 		return errors.Join(err, listener.Close())
 	}
-	starterProject := cfg.projectDir
+	starterProject := state.Record.Directory
 	if opts.ResolveVerification == nil {
 		starterProject = ""
 	}
@@ -267,15 +310,16 @@ func viewsPageHandler() http.Handler {
 	})
 }
 
-// parseProjectFlags preserves supported execution configuration while deleting caller-selected identity and stores.
-func parseProjectFlags(name string, args []string) (serveConfig, error) {
+// parseProjectArgs accepts no caller-selected server options; serve is an internal entrypoint.
+func parseProjectArgs(name string, args []string) error {
 	fs := flag.NewFlagSet(name, flag.ContinueOnError)
-	var cfg serveConfig
-	bindServeConfigFlags(fs, &cfg)
-	if err := parseServeConfigFlags(fs, args); err != nil {
-		return serveConfig{}, err
+	if err := fs.Parse(args); err != nil {
+		return err
 	}
-	return cfg, nil
+	if fs.NArg() != 0 {
+		return fmt.Errorf("unexpected arguments %q", fs.Args())
+	}
+	return nil
 }
 
 // discover uses physical folders and nearest records, independent of the working tree root.
@@ -313,6 +357,9 @@ func (d *managementDoer) Do(r *http.Request) (*http.Response, error) {
 	return d.client.Do(r)
 }
 
+// errWrongProject stops readiness polling before a mismatched service receives another credential.
+var errWrongProject = errors.New("the saved port answered for another project")
+
 // confirmProject verifies the typed identity before trusting a saved port's answering process.
 func confirmProject(ctx context.Context, state *project.State, client *genproject.Client) error {
 	identity, err := client.Identity(ctx)
@@ -320,7 +367,7 @@ func confirmProject(ctx context.Context, state *project.State, client *genprojec
 		return err
 	}
 	if identity.ProjectID != state.Record.ID || identity.Directory != state.Record.Directory || identity.Owner != state.Record.Owner {
-		return errors.New("the saved port answered for another project")
+		return errWrongProject
 	}
 	return nil
 }
@@ -330,6 +377,8 @@ func waitForProject(ctx context.Context, state *project.State, client *genprojec
 	for {
 		if err := confirmProject(ctx, state, client); err == nil {
 			return nil
+		} else if errors.Is(err, errWrongProject) {
+			return err
 		}
 		select {
 		case <-ctx.Done():
@@ -340,44 +389,125 @@ func waitForProject(ctx context.Context, state *project.State, client *genprojec
 }
 
 // startProjectTerminal delegates process lifetime to a parentless Herdr terminal; Surla never detaches a process itself.
-func startProjectTerminal(ctx context.Context, state *project.State, args []string) error {
+func startProjectTerminal(ctx context.Context, state *project.State, args []string) (string, error) {
 	self, err := os.Executable()
 	if err != nil {
-		return err
+		return "", err
 	}
-	hc, err := exec.LookPath("hc")
+	hc, err := projectHerdrProgram()
 	if err != nil {
-		home, homeErr := os.UserHomeDir()
-		if homeErr != nil {
-			return homeErr
-		}
-		hc = filepath.Join(home, ".local", "bin", "hc")
-		if _, statErr := os.Stat(hc); statErr != nil {
-			return errors.New("Herdr is required to start Surla; install Herdr and make hc available")
-		}
+		return "", err
 	}
 	argv := []string{"run", "--json", "--no-parent", "--bg", "--label", "surla_project=" + state.Record.ID, "--cwd", state.Record.Directory, "--", self, "serve"}
 	argv = append(argv, args...)
 	command := exec.CommandContext(ctx, hc, argv...)
 	command.Stdin = nil
-	// hc returns terminal metadata only; no credential is present in its arguments or response.
+	var stderr strings.Builder
+	command.Stderr = &stderr
 	raw, err := command.Output()
 	if err != nil {
-		return fmt.Errorf("start Herdr server terminal: %w", err)
+		return "", fmt.Errorf("start Herdr server terminal: %w: %s; ensure Herdr is installed and hc is available", err, strings.TrimSpace(stderr.String()))
 	}
-	var reply json.RawMessage
+	var reply struct {
+		Address string `json:"address"`
+	}
 	if err := json.Unmarshal(raw, &reply); err != nil {
-		return fmt.Errorf("decode Herdr server terminal response: %w", err)
+		return "", fmt.Errorf("decode Herdr server terminal response: %w", err)
+	}
+	if reply.Address == "" {
+		return "", errors.New("Herdr returned no server terminal address")
+	}
+	return reply.Address, nil
+}
+
+// projectHerdrProgram resolves the required external terminal executable without starting it.
+func projectHerdrProgram() (string, error) {
+	hc, err := exec.LookPath("hc")
+	if err != nil {
+		home, homeErr := os.UserHomeDir()
+		if homeErr != nil {
+			return "", homeErr
+		}
+		hc = filepath.Join(home, ".local", "bin", "hc")
+		if _, executableErr := exec.LookPath(hc); executableErr != nil {
+			return "", errors.New("Herdr is required to start Surla; install Herdr and make hc available")
+		}
+	}
+	return hc, nil
+}
+
+// preflightProjectStart refuses unavailable launch effects before creating project state.
+func preflightProjectStart() error {
+	if _, err := projectHerdrProgram(); err != nil {
+		return err
+	}
+	if _, err := projectBrowserProgram(); err != nil {
+		return err
 	}
 	return nil
 }
 
+// projectBrowserProgram resolves the required platform opener without exposing a link.
+func projectBrowserProgram() (string, error) {
+	name := "xdg-open"
+	if runtime.GOOS == "darwin" {
+		name = "open"
+	}
+	program, err := exec.LookPath(name)
+	if err != nil {
+		return "", fmt.Errorf("%s is required to open Surla views; install it and make it available: %w", name, err)
+	}
+	return program, nil
+}
+
 // openProjectViews is the only launch whose argument is allowed to contain a one-use browser credential.
 func openProjectViews(ctx context.Context, url string) error {
-	program := "xdg-open"
-	if runtime.GOOS == "darwin" {
-		program = "open"
+	program, err := projectBrowserProgram()
+	if err != nil {
+		return err
 	}
 	command := exec.CommandContext(ctx, program, url)
 	return command.Run()
+}
+
+// waitProjectTerminal observes the owned launch while startup waits for authenticated readiness.
+// Canceling its context reaps the hc observer without terminating the server.
+func waitProjectTerminal(ctx context.Context, terminal string) (bool, error) {
+	hc, err := projectHerdrProgram()
+	if err != nil {
+		return false, err
+	}
+	command := exec.CommandContext(ctx, hc, "wait", "--json", "--timeout", "40", terminal)
+	command.Stdin = nil
+	var stderr strings.Builder
+	command.Stderr = &stderr
+	raw, err := command.Output()
+	if ctx.Err() != nil {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("observe Herdr terminal %s: %w: %s", terminal, err, strings.TrimSpace(stderr.String()))
+	}
+	var result struct {
+		Ended bool `json:"ended"`
+	}
+	if err := json.Unmarshal(raw, &result); err != nil {
+		return false, fmt.Errorf("decode Herdr terminal %s status: %w", terminal, err)
+	}
+	return result.Ended, nil
+}
+
+// removeProjectTerminal removes only a startup terminal whose end the observer confirmed.
+func removeProjectTerminal(ctx context.Context, terminal string) error {
+	hc, err := projectHerdrProgram()
+	if err != nil {
+		return err
+	}
+	command := exec.CommandContext(ctx, hc, "rm", "--json", terminal)
+	command.Stdin = nil
+	output, err := command.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("remove failed Herdr terminal %s: %w: %s", terminal, err, strings.TrimSpace(string(output)))
+	}
+	return nil
 }

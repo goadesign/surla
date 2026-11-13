@@ -4,6 +4,7 @@ package controlplane
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"strings"
@@ -23,7 +24,7 @@ func workflowAuthenticator(owners map[string]Principal) RequestAuthenticator {
 		p.Kind = CallerBuilder
 		credentials[token+"-builder"] = p
 	}
-	return NewTokenAuthenticator(credentials)
+	return fixtureCredentials(credentials)
 }
 
 // workflowAuthorization chooses the fixture's role credential for its explicitly selected operation.
@@ -53,6 +54,8 @@ func workflowAuthorization(request *http.Request, token string) {
 			operation = "start_live_target"
 		}
 	case "/mcp":
+		// Goa-AI's HTTP transport sets the binding header and clears GetBody after encoding.
+		operation = request.Header.Get("Mcp-Name")
 		if request.GetBody != nil {
 			body, err := request.GetBody()
 			if err != nil {
@@ -87,4 +90,15 @@ func workflowAuthorization(request *http.Request, token string) {
 		token += "-builder"
 	}
 	request.Header.Set("Authorization", "Bearer "+token)
+}
+
+// fixtureCredentials resolves explicit test-only bearer identities. Production uses the project owner.
+func fixtureCredentials(credentials map[string]Principal) RequestAuthenticator {
+	return func(r *http.Request) (Principal, error) {
+		token, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
+		if principal, exists := credentials[token]; ok && exists {
+			return principal, nil
+		}
+		return Principal{}, errors.New("invalid fixture credential")
+	}
 }

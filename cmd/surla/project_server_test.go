@@ -5,8 +5,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -28,21 +30,21 @@ func TestProjectStartSerializesAndRecovers(t *testing.T) {
 	var server *http.Server
 	var cp *controlplane.ControlPlane
 	var active *project.State
-	launch := func(ctx context.Context, state *project.State) error {
+	launch := func(ctx context.Context, state *project.State) (string, error) {
 		starts.Add(1)
 		var err error
 		cp, err = controlplane.New(controlplane.Options{CardsDir: state.CardsDir()})
 		if err != nil {
-			return err
+			return "", err
 		}
 		management := project.NewServer(state, func() {})
 		ln, err := net.Listen("tcp", state.Address())
 		if err != nil {
-			return err
+			return "", err
 		}
 		active = state
 		if err := state.SaveRunning(project.Running{PID: 123, Terminal: "test"}); err != nil {
-			return err
+			return "", err
 		}
 		server = &http.Server{Handler: management.Handler(controlplane.NewHTTPHandler(cp, management.Authenticate)), ReadHeaderTimeout: time.Second}
 		go func() {
@@ -50,7 +52,7 @@ func TestProjectStartSerializesAndRecovers(t *testing.T) {
 				assert.NoError(t, err)
 			}
 		}()
-		return nil
+		return "stand-in", nil
 	}
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
@@ -102,7 +104,7 @@ func TestProjectStartRefusesTakenPortAndHeldUnansweringStore(t *testing.T) {
 			called := false
 			ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
 			defer cancel()
-			_, _, err = attachOrStartProject(ctx, state, func(context.Context, *project.State) error { called = true; return nil })
+			_, _, err = attachOrStartProject(ctx, state, func(context.Context, *project.State) (string, error) { called = true; return "stand-in", nil })
 			assert.Error(t, err)
 			assert.False(t, called)
 		})
@@ -126,19 +128,19 @@ func TestProjectSettingsPersistAndRejectStorageFields(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, unknown.Record.ID, "invalid settings cannot create project state")
 	require.NoError(t, runProjectSettings("verification", []string{"set", file}, &discardOutput{}))
-	before, err := configureServeWorkspace(serveConfig{})
+	before, err := configureServeWorkspace()
 	require.NoError(t, err)
 	require.NotNil(t, before.verification)
 	assert.Equal(t, "/candidate.git", before.verification.Plan.CandidateRepo)
 	assertOutsideDirectory(t, before.verification.RunsDir, dir)
 	require.NoError(t, os.WriteFile(file, []byte(`{"runs_dir":"/unowned"}`), 0o600))
 	assert.Error(t, runProjectSettings("verification", []string{"set", file}, &discardOutput{}))
-	after, err := configureServeWorkspace(serveConfig{})
+	after, err := configureServeWorkspace()
 	require.NoError(t, err)
 	require.NotNil(t, after.verification)
 	assert.Equal(t, before.verification.Plan, after.verification.Plan)
 	require.NoError(t, runProjectSettings("verification", []string{"remove"}, &discardOutput{}))
-	current, err := configureServeWorkspace(serveConfig{})
+	current, err := configureServeWorkspace()
 	require.NoError(t, err)
 	assert.Nil(t, current.verification)
 	require.NoError(t, runProjectSettings("verification", []string{"show"}, &discardOutput{}))
@@ -161,7 +163,7 @@ func TestPromotionSettingsSurviveRestart(t *testing.T) {
 	require.NoError(t, runProjectSettings("promotion", []string{"set", file}, &output))
 	assert.Contains(t, output.String(), "next time")
 	load := func() controlplane.PromotionInputs {
-		config, err := configureServeWorkspace(serveConfig{})
+		config, err := configureServeWorkspace()
 		require.NoError(t, err)
 		require.NotNil(t, config.promotionTarget)
 		cp, err := controlplane.New(controlplane.Options{CardsDir: config.cardsDir, PromotionTarget: config.promotionTarget})
@@ -182,7 +184,145 @@ func TestPromotionSettingsSurviveRestart(t *testing.T) {
 	assert.Contains(t, output.String(), `"suite_id":"suite"`)
 	assert.NotContains(t, output.String(), "report_dir")
 	require.NoError(t, runProjectSettings("promotion", []string{"remove"}, &output))
-	current, err := configureServeWorkspace(serveConfig{})
+	current, err := configureServeWorkspace()
 	require.NoError(t, err)
 	assert.Nil(t, current.promotionTarget)
+}
+
+// TestProjectSettingsRejectsWorkspaceAndRepositoryPaths proves management cannot
+// publish builder-editable settings or release inputs, including physical aliases.
+func TestProjectSettingsRejectsWorkspaceAndRepositoryPaths(t *testing.T) {
+	for _, kind := range []string{"verification", "promotion"} {
+		for _, location := range []string{"workspace file", "repository file", "symlink file", "workspace release", "repository release", "symlink release"} {
+			if kind == "verification" && strings.HasSuffix(location, "release") {
+				continue
+			}
+			t.Run(kind+"/"+location, func(t *testing.T) {
+				isolateServeWorkspace(t)
+				repo := newGitRepo(t)
+				workspace := filepath.Join(repo, "services", "app")
+				require.NoError(t, os.MkdirAll(workspace, 0o700))
+				t.Chdir(workspace)
+				outside := t.TempDir()
+				path := filepath.Join(outside, "settings.json")
+				release := filepath.Join(outside, "release")
+				switch location {
+				case "workspace file":
+					path = filepath.Join(workspace, "settings.json")
+				case "repository file":
+					path = filepath.Join(repo, "settings.json")
+				case "symlink file":
+					actual := filepath.Join(workspace, "settings.json")
+					require.NoError(t, os.Symlink(actual, path))
+				case "workspace release":
+					release = filepath.Join(workspace, "release")
+				case "repository release":
+					release = filepath.Join(repo, "release")
+				case "symlink release":
+					alias := filepath.Join(outside, "alias")
+					require.NoError(t, os.Symlink(workspace, alias))
+					release = filepath.Join(alias, "release")
+				}
+				content := `{"candidate_repo":"/c.git","candidate_module":".","binaries":{"app":"./cmd/app"},"suite_repo":"/s.git","suite_commit":"` + strings.Repeat("b", 40) + `","suite_module":".","suite_command":"./cmd/evals","timeout":"30m"}`
+				if kind == "promotion" {
+					content = `{"release_dir":"` + release + `","suite_id":"suite","suite_commit":"` + strings.Repeat("b", 40) + `","environment":"sim","binaries":["app"]}`
+				}
+				require.NoError(t, os.WriteFile(path, []byte(content), 0o600))
+				err := runProjectSettings(kind, []string{"set", path}, io.Discard)
+				require.ErrorContains(t, err, "must be outside the workspace")
+				state, err := discoverProject()
+				require.NoError(t, err)
+				assert.Empty(t, state.Record.ID, "rejected setup creates no project record")
+				_, err = state.ReadSettings(kind)
+				assert.ErrorIs(t, err, os.ErrNotExist)
+			})
+		}
+	}
+}
+
+// TestProjectStartPreflightPrecedesState proves unavailable platform effects do not create a project.
+func TestProjectStartPreflightPrecedesState(t *testing.T) {
+	runtime := testProjectRuntime()
+	runtime.preflight = func() error { return errors.New("install required platform program") }
+	runtime.stateRoot = func(string, ...string) (string, error) { t.Fatal("state reached before preflight"); return "", nil }
+	assert.ErrorContains(t, runWithRuntime(nil, io.Discard, runtime), "install required platform program")
+}
+
+// TestProjectStartPortTakeoverRemovesOnlyFailedTerminal proves the actual bind owns
+// availability and a post-check takeover never changes the saved port or credential.
+func TestProjectStartPortTakeoverRemovesOnlyFailedTerminal(t *testing.T) {
+	isolateServeWorkspace(t)
+	state, err := fixtureProjectState("")
+	require.NoError(t, err)
+	port := state.Record.Port
+	credential, err := state.ManagementCredential()
+	require.NoError(t, err)
+	runtime := testProjectRuntime()
+	runtime.preflight = func() error { return nil }
+	runtime.startTerminal = func(ctx context.Context, state *project.State, args []string) (string, error) {
+		// attachOrStartProject's precheck already closed its socket. Another owner now takes it.
+		listener, err := net.Listen("tcp", state.Address())
+		require.NoError(t, err)
+		t.Cleanup(func() { assert.NoError(t, listener.Close()) })
+		_, err = net.Listen("tcp", state.Address())
+		require.Error(t, err, "the server's actual bind fails")
+		return "owned-failed-terminal", nil
+	}
+	runtime.waitTerminal = func(context.Context, string) (bool, error) { return true, nil }
+	removed := ""
+	runtime.removeTerminal = func(ctx context.Context, id string) error { removed = id; return nil }
+	err = runWithRuntime(nil, io.Discard, runtime)
+	require.ErrorContains(t, err, "owned-failed-terminal")
+	assert.Equal(t, "owned-failed-terminal", removed)
+	after, err := discoverProject()
+	require.NoError(t, err)
+	assert.Equal(t, port, after.Record.Port)
+	afterCredential, err := after.ManagementCredential()
+	require.NoError(t, err)
+	assert.Equal(t, credential, afterCredential)
+}
+
+// TestInternalServerAcceptsNoCallerOptions keeps all configuration in its owning workflow.
+func TestInternalServerAcceptsNoCallerOptions(t *testing.T) {
+	require.NoError(t, parseProjectArgs("serve", nil))
+	for _, option := range []string{"-model-provider", "-model-name", "-model-gateway-addr", "-check-timeout", "-principal", "-token", "-addr", "-cards-dir", "-project", "-verification-config", "-promotion-config"} {
+		assert.ErrorContains(t, parseProjectArgs("serve", []string{option, "value"}), "flag provided but not defined", option)
+	}
+	assert.ErrorContains(t, parseProjectArgs("serve", []string{"directory"}), "unexpected arguments")
+}
+
+// TestMissingBrowserOpenerFailsBeforeProjectCreation checks the production preflight
+// with an empty owned executable search path, without invoking any program.
+func TestMissingBrowserOpenerFailsBeforeProjectCreation(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+	runtime := productionProjectRuntime()
+	runtime.stateRoot = func(string, ...string) (string, error) { t.Fatal("state must remain untouched"); return "", nil }
+	var output bytes.Buffer
+	err := runWithRuntime(nil, &output, runtime)
+	require.ErrorContains(t, err, "required")
+	assert.Empty(t, output.String(), "never print a browser link on setup failure")
+}
+
+// TestReadinessRejectsAnotherProjectWithoutRetry proves a mismatched identity
+// receives only the initial authenticated probe, never repeated credentials.
+func TestReadinessRejectsAnotherProjectWithoutRetry(t *testing.T) {
+	isolateServeWorkspace(t)
+	state, err := fixtureProjectState("")
+	require.NoError(t, err)
+	var probes atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		probes.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		_, err := io.WriteString(w, `{"project_id":"another-project","directory":"/another","owner":"another"}`)
+		assert.NoError(t, err)
+	}))
+	t.Cleanup(server.Close)
+	state.Record.Port = server.Listener.Addr().(*net.TCPAddr).Port
+	client, err := projectClient(state)
+	require.NoError(t, err)
+	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+	defer cancel()
+	require.ErrorIs(t, waitForProject(ctx, state, client), errWrongProject)
+	assert.EqualValues(t, 1, probes.Load())
+	assert.NoError(t, ctx.Err())
 }

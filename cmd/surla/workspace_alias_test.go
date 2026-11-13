@@ -30,7 +30,7 @@ func TestWorkspaceCaseAliasAdmission(t *testing.T) {
 		inside := filepath.Join(pair[1], "missing", "operator")
 		err := validateWorkspaceDirSeparation("cards directory", inside, pair[0])
 		require.ErrorContains(t, err, "must be outside the workspace")
-		err = validatePromotionPathSeparation(inside, pair[0])
+		err = validateWorkspaceDirSeparation("settings file", inside, pair[0])
 		require.ErrorContains(t, err, "must be outside the workspace")
 
 		insideCards, err := withinAnyDir(filepath.Join(pair[1], ".surla", "cards"), []string{pair[0]})

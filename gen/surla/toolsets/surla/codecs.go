@@ -1429,7 +1429,7 @@ var checkProjectResultFields = []tools.FieldMetadata{
 var configureModelPayloadFields = []tools.FieldMetadata{
 	{
 		JSONType:    "object",
-		Description: "Selects either a direct model provider and model name (using the API key already present in surla serve's process environment) or a running goa-ai model gateway address.",
+		Description: "Selects either a direct model provider and model name (using the API key already present in the project server's process environment) or a running goa-ai model gateway address.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("provider")},
@@ -5389,7 +5389,7 @@ var updateDependenciesResultFields = []tools.FieldMetadata{
 var verifyChangePayloadFields = []tools.FieldMetadata{
 	{
 		JSONType:    "object",
-		Description: "Names the confirmed Change Card revision and the candidate commit to verify. What is built and which evaluator suite runs come from the operator's configuration of surla serve, never from the caller.",
+		Description: "Names the confirmed Change Card revision and the candidate commit to verify. What is built and which evaluator suite runs come from the operator's project settings, never from the caller.",
 	},
 	{
 		Path:        []tools.FieldPathSegment{tools.FixedField("change_id")},

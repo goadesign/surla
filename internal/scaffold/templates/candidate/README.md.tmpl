@@ -21,7 +21,7 @@ can run against it.
   generated decoder runs when you want missing headers to answer `401`.
   `design/model.go` declares the C4 architecture model.
 - `gen/` is generated from `design/`. After changing `design/`, call the
-  `generate_code` MCP tool when connected to `surla serve` (or run `surla gen`
+  `generate_code` MCP tool when connected to the Surla project server (or run `surla gen`
   in this directory): it runs Goa's generator for this module inside Surla's
   sandbox. Never edit `gen/`. Generation compiles the design only, so update the
   hand-written code in `internal/` and `cmd/` to match it, then build and test
@@ -54,8 +54,8 @@ can run against it.
   - `prompt_override_reaches_model`: checks that `override_prompt` rejects a
     missing or wrong key and that the next question's model request carries the
     new prompt text. Its `--live` mode starts the
-  `[[.Name]]` for `surla serve`'s `start_live_target`, planning with the model
-  `surla serve` was started with. After changing
+  `[[.Name]]` for the Surla project server's `start_live_target`, planning with the model
+  the Surla project server was started with. After changing
   `eval/design/`, regenerate its code with
   `surla gen -dir eval` (or call `generate_code` with `target: "eval"`).
 
@@ -67,7 +67,7 @@ read.
 
 ## Next steps
 
-If you created this project over MCP with `init_project`, `surla serve` has
+If you created this project over MCP with `init_project`, the Surla project server has
 already initialized the Git repository, created the initial commit (`commit` in
 `init_project`'s result), bound the server to this directory (`dir`), and
 pinned the evaluator suite to that initial commit. If you created it from the

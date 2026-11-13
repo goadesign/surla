@@ -30,7 +30,7 @@ type (
 		mu sync.Mutex
 		// links maps single-use credentials to their expiration, only for this server lifetime.
 		links map[string]time.Time
-		// sessions maps random session credentials to separately generated public caller IDs.
+		// sessions maps random session credentials to separately generated attribution caller IDs.
 		sessions map[string]string
 		// now supplies the link-expiration clock; tests replace it deterministically.
 		now func() time.Time
@@ -50,9 +50,14 @@ func (s *Server) Authenticate(r *http.Request) (controlplane.Principal, error) {
 	}
 	owner := s.state.Record.Owner
 	s.mu.Lock()
-	caller, ok := s.sessions[token]
+	caller := ""
+	for credential, id := range s.sessions {
+		if credentialEqual(token, credential) {
+			caller = id
+		}
+	}
 	s.mu.Unlock()
-	if ok {
+	if caller != "" {
 		if r.Header.Get("Sec-Fetch-Site") != "same-origin" {
 			return controlplane.Principal{}, errors.New("browser session requires a same-origin page request")
 		}
@@ -215,9 +220,16 @@ func (s *Server) BrowserLink(ctx context.Context) (*genproject.BrowserLinkResult
 func (s *Server) ExchangeBrowserLink(_ context.Context, p *genproject.ExchangeBrowserLinkPayload) (*genproject.ExchangeBrowserLinkResult, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	expires, exists := s.links[p.Link]
+	var expires time.Time
+	link := ""
+	for credential, expiry := range s.links {
+		if credentialEqual(p.Link, credential) {
+			link, expires = credential, expiry
+		}
+	}
+	exists := link != ""
 	if !exists || !s.now().Before(expires) {
-		delete(s.links, p.Link)
+		delete(s.links, link)
 		return nil, genproject.MakeUnprocessable(errors.New("browser link is used or expired; open the project's views with surla"))
 	}
 	token, err := randomCredential()
@@ -228,7 +240,7 @@ func (s *Server) ExchangeBrowserLink(_ context.Context, p *genproject.ExchangeBr
 	if err != nil {
 		return nil, err
 	}
-	delete(s.links, p.Link)
+	delete(s.links, link)
 	s.sessions[token] = "user-" + id
 	return &genproject.ExchangeBrowserLinkResult{Session: token}, nil
 }

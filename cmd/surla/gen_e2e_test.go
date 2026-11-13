@@ -5,6 +5,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"io"
 	"maps"
 	"net/http/httptest"
@@ -26,6 +27,7 @@ import (
 	genmcpsurla "github.com/goadesign/surla/gen/mcp_surla"
 	gensurla "github.com/goadesign/surla/gen/surla"
 	"github.com/goadesign/surla/internal/controlplane"
+	"github.com/goadesign/surla/internal/project"
 	"github.com/goadesign/surla/internal/testmodule"
 )
 
@@ -80,12 +82,10 @@ func TestGenOnAFreshStarterChangesNothingAndKeepsModulesApart(t *testing.T) {
 	gatewayAddr := startModelGateway(t, provider)
 	workspace := t.TempDir()
 	cfg := serveConfig{
-		checkTimeout: defaultCheckTimeout,
-		projectDir:   workspace,
 
 		gatewayAddr: gatewayAddr,
 	}
-	opts, err := serveOptions(cfg, func(string) string { return "" }, os.Environ())
+	opts, err := serveOptions(cfg, func(string) string { return "" }, os.Environ(), workspace)
 	require.NoError(t, err)
 	// A test executable has no released module version in its build info.
 	opts.SurlaVersion = starterSurlaVersion
@@ -116,7 +116,9 @@ func TestGenOnAFreshStarterChangesNothingAndKeepsModulesApart(t *testing.T) {
 	require.NoError(t, err)
 	complete, ok := result.Outcome.AsComplete()
 	require.True(t, ok, "initialization completes in the same MCP call")
-	require.False(t, complete.IsError != nil && *complete.IsError, "%+v", complete.Content)
+	contentJSON, err := json.Marshal(complete.Content)
+	require.NoError(t, err)
+	require.False(t, complete.IsError != nil && *complete.IsError, "%s", contentJSON)
 	initialized, err := gensurla.DecodeInitProjectResult(complete.StructuredContent)
 	require.NoError(t, err)
 	physicalWorkspace, err := filepath.EvalSymlinks(workspace)
@@ -163,7 +165,7 @@ func TestGenOnAFreshStarterChangesNothingAndKeepsModulesApart(t *testing.T) {
 	// pinned. Which commit a restarted or directly started server pins is a
 	// server decision made before any build, covered by the fast resolver and
 	// consumer tests (TestLiveAndVerificationUseTheWorkspacePinnedSuite and
-	// TestConfigureServeWorkspacePinsSuiteCommitAndRejectsSymlinkParentEscape).
+	// TestConfigureServeWorkspacePinsSuiteCommits).
 	commentPath := filepath.Join(evalDir, "design", "design.go")
 	source, err := os.ReadFile(commentPath)
 	require.NoError(t, err)
@@ -171,9 +173,41 @@ func TestGenOnAFreshStarterChangesNothingAndKeepsModulesApart(t *testing.T) {
 	candidateCommit := trustedSuiteCommit(t, dir)
 	require.NotEqual(t, initialized.Commit, candidateCommit)
 
-	// The operator adds promotion once the project and its pinned evaluator
-	// suite commit exist; the running server picks it up without a restart.
+	// The operator stores promotion after initialization; a server restart adopts it.
 	promotion := writeStarterPromotion(t, workspace, initialized.ServiceName, initialized.Commit)
+	state, err := fixtureProjectState(workspace)
+	require.NoError(t, err)
+	// init_project's real published child and its descendants find this same project record.
+	for _, folder := range []string{dir, filepath.Join(dir, "internal")} {
+		found, err := project.Discover(filepath.Dir(state.Dir), folder)
+		require.NoError(t, err)
+		assert.Equal(t, state.Record.ID, found.Record.ID)
+		assert.Equal(t, state.Dir, found.Dir)
+	}
+	srv.Close()
+	require.NoError(t, cp.Close())
+	opts, err = serveOptions(cfg, func(string) string { return "" }, os.Environ(), dir)
+	require.NoError(t, err)
+	assert.Equal(t, state.CardsDir(), opts.CardsDir)
+	opts.SurlaVersion = starterSurlaVersion
+	cp, err = controlplane.New(opts)
+	require.NoError(t, err)
+	srv = httptest.NewServer(controlplane.NewHTTPHandler(cp, auth))
+	t.Cleanup(srv.Close)
+	serverURL, err = url.Parse(srv.URL)
+	require.NoError(t, err)
+	transport = genmcpclient.NewClient(serverURL.Scheme, serverURL.Host, &bearerDoer{client: srv.Client(), token: "test-token"}, goahttp.RequestEncoder, goahttp.ResponseDecoder, false)
+	client = &genmcpsurla.Client{ToolsCallEndpoint: transport.ToolsCall()}
+	// The control-plane owner reloads the actual initialized child from workspace.json.
+	result, err = client.ToolsCall(ctx, call)
+	require.NoError(t, err)
+	complete, ok = result.Outcome.AsComplete()
+	require.True(t, ok)
+	require.NotNil(t, complete.IsError)
+	require.True(t, *complete.IsError)
+	require.NotEmpty(t, complete.Content)
+	require.NotNil(t, complete.Content[0].Text)
+	assert.Contains(t, *complete.Content[0].Text, "already initialized at "+dir)
 	assertTrustedSuiteJourney(t, client, opts.CardsDir, opts.RunsDir, candidateCommit, initialized.Commit, "initialized", promotion)
 
 	edits := []struct {

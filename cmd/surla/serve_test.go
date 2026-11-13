@@ -39,10 +39,9 @@ type (
 	noopTargetUpdater struct{}
 )
 
-// TestValidateModelConfigChecksModelFlags verifies the -model-* flag rules
-// serve applies at startup: no flags, a gateway alone, or a provider with a
-// model name and that provider's API key; key values never appear in errors.
-func TestValidateModelConfigChecksModelFlags(t *testing.T) {
+// TestValidateConstructedModelChoice checks internal model choices and required
+// provider keys; key values never appear in errors.
+func TestValidateConstructedModelChoice(t *testing.T) {
 	env := map[string]string{
 		"ANTHROPIC_API_KEY": "test-anthropic-key",
 		"OPENAI_API_KEY":    "test-openai-key",
@@ -53,35 +52,35 @@ func TestValidateModelConfigChecksModelFlags(t *testing.T) {
 		env     map[string]string
 		wantErr string
 	}{
-		{name: "no model flags", cfg: serveConfig{checkTimeout: defaultCheckTimeout}, env: env},
-		{name: "gateway", cfg: serveConfig{checkTimeout: defaultCheckTimeout, gatewayAddr: "127.0.0.1:9090"}, env: env},
-		{name: "anthropic", cfg: serveConfig{checkTimeout: defaultCheckTimeout, provider: "anthropic", modelName: "claude-test"}, env: env},
-		{name: "openai", cfg: serveConfig{checkTimeout: defaultCheckTimeout, provider: "openai", modelName: "gpt-test"}, env: env},
+		{name: "no model choice", cfg: serveConfig{}, env: env},
+		{name: "gateway", cfg: serveConfig{gatewayAddr: "127.0.0.1:9090"}, env: env},
+		{name: "anthropic", cfg: serveConfig{provider: "anthropic", modelName: "claude-test"}, env: env},
+		{name: "openai", cfg: serveConfig{provider: "openai", modelName: "gpt-test"}, env: env},
 		{
 			name:    "gateway with model name",
-			cfg:     serveConfig{checkTimeout: defaultCheckTimeout, gatewayAddr: "127.0.0.1:9090", modelName: "claude-test"},
+			cfg:     serveConfig{gatewayAddr: "127.0.0.1:9090", modelName: "claude-test"},
 			env:     env,
-			wantErr: "-model-gateway-addr cannot be combined",
+			wantErr: "gateway_addr cannot be combined",
 		},
 		{
 			name:    "gateway with provider",
-			cfg:     serveConfig{checkTimeout: defaultCheckTimeout, gatewayAddr: "127.0.0.1:9090", provider: "anthropic"},
+			cfg:     serveConfig{gatewayAddr: "127.0.0.1:9090", provider: "anthropic"},
 			env:     env,
-			wantErr: "-model-gateway-addr cannot be combined",
+			wantErr: "gateway_addr cannot be combined",
 		},
-		{name: "provider without model", cfg: serveConfig{checkTimeout: defaultCheckTimeout, provider: "anthropic"}, env: env, wantErr: "must be set together"},
-		{name: "model without provider", cfg: serveConfig{checkTimeout: defaultCheckTimeout, modelName: "claude-test"}, env: env, wantErr: "must be set together"},
+		{name: "provider without model", cfg: serveConfig{provider: "anthropic"}, env: env, wantErr: "must be set together"},
+		{name: "model without provider", cfg: serveConfig{modelName: "claude-test"}, env: env, wantErr: "must be set together"},
 		{
 			name:    "unknown provider",
-			cfg:     serveConfig{checkTimeout: defaultCheckTimeout, provider: "Anthropic", modelName: "claude-test"},
+			cfg:     serveConfig{provider: "Anthropic", modelName: "claude-test"},
 			env:     env,
-			wantErr: `unsupported -model-provider "Anthropic"`,
+			wantErr: `unsupported provider "Anthropic"`,
 		},
 		{
 			name:    "missing api key",
-			cfg:     serveConfig{checkTimeout: defaultCheckTimeout, provider: "openai", modelName: "gpt-test"},
+			cfg:     serveConfig{provider: "openai", modelName: "gpt-test"},
 			env:     map[string]string{"ANTHROPIC_API_KEY": "test-anthropic-key"},
-			wantErr: "-model-provider openai requires OPENAI_API_KEY",
+			wantErr: "provider openai requires OPENAI_API_KEY",
 		},
 	}
 	for _, tc := range cases {
@@ -100,7 +99,7 @@ func TestValidateModelConfigChecksModelFlags(t *testing.T) {
 }
 
 // TestNewLiveModelEnvBuildsTheLiveTargetEnvironment verifies the callback
-// configure_model uses on surla serve: a gateway or a provider whose key is
+// configure_model uses on the project server: a gateway or a provider whose key is
 // in serve's environment yields serve's environment, without its bearer
 // token, plus the SURLA_LIVE_MODEL_* choice; a provider whose key is missing
 // is refused as unprocessable and names the key, never its value.
@@ -122,7 +121,7 @@ func TestNewLiveModelEnvBuildsTheLiveTargetEnvironment(t *testing.T) {
 	var se *goa.ServiceError
 	require.ErrorAs(t, err, &se)
 	assert.Equal(t, "unprocessable", se.GoaErrorName())
-	assert.Contains(t, err.Error(), "provider openai requires OPENAI_API_KEY in surla serve's environment")
+	assert.Contains(t, err.Error(), "provider openai requires OPENAI_API_KEY in the project server's environment")
 	assert.NotContains(t, err.Error(), "ant-k")
 }
 
@@ -132,11 +131,11 @@ func TestServeOptionsDerivesLiveTargetsFromVerification(t *testing.T) {
 	require.NoError(t, os.WriteFile(path, []byte(`{"candidate_repo":"/c","candidate_module":".","suite_module":".","binaries":{"app":"./cmd/app"},`+
 		`"suite_repo":"/s","suite_commit":"`+strings.Repeat("a", 40)+`","suite_command":"./cmd/evals","timeout":"20m"}`), 0o600))
 	require.NoError(t, runProjectSettings("verification", []string{"set", path}, io.Discard))
-	opts, err := serveOptions(serveConfig{checkTimeout: defaultCheckTimeout}, func(string) string { return "" },
+	opts, err := serveOptions(serveConfig{}, func(string) string { return "" },
 		[]string{"PATH=/bin", "ANTHROPIC_API_KEY=k"})
 	require.NoError(t, err)
 	defer closeServeOptions(t, opts)
-	assert.Nil(t, opts.ResolveVerification, "explicit -verification-config must not set starter ResolveVerification")
+	assert.Nil(t, opts.ResolveVerification, "stored verification settings must not set starter ResolveVerification")
 	require.NotNil(t, opts.Live)
 	assert.Equal(t, opts.Verification.Command, opts.Live.Command)
 	assert.Equal(t, 20*time.Minute, opts.Live.StartTimeout)
@@ -144,10 +143,10 @@ func TestServeOptionsDerivesLiveTargetsFromVerification(t *testing.T) {
 }
 
 // TestServeOptionsBindsTheCheckHelperOnEveryServePath checks that both ways
-// surla serve finds its verification, an explicit -verification-config and
+// the project server finds its verification, stored verification settings and
 // the workspace's starter, bind the check runner together with the launcher
 // of its check helper, `<this executable> check-run`, which each start of
-// surla serve already resolves before this change.
+// the project server already resolves before this change.
 func TestServeOptionsBindsTheCheckHelperOnEveryServePath(t *testing.T) {
 	self, err := selfCommand()
 	require.NoError(t, err)
@@ -158,8 +157,8 @@ func TestServeOptionsBindsTheCheckHelperOnEveryServePath(t *testing.T) {
 		name string
 		cfg  serveConfig
 	}{
-		{name: "verification config", cfg: serveConfig{checkTimeout: defaultCheckTimeout}},
-		{name: "workspace starter", cfg: serveConfig{checkTimeout: defaultCheckTimeout}},
+		{name: "verification config", cfg: serveConfig{}},
+		{name: "workspace starter", cfg: serveConfig{}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -186,11 +185,11 @@ func TestLiveTargetEnvCarriesServesModelChoice(t *testing.T) {
 		cfg  serveConfig
 		want []string
 	}{
-		{name: "direct provider", cfg: serveConfig{checkTimeout: defaultCheckTimeout, provider: "anthropic", modelName: "claude-x"},
+		{name: "direct provider", cfg: serveConfig{provider: "anthropic", modelName: "claude-x"},
 			want: []string{"PATH=/bin", "ANTHROPIC_API_KEY=k", "SURLA_LIVE_MODEL_PROVIDER=anthropic", "SURLA_LIVE_MODEL_NAME=claude-x"}},
-		{name: "gateway", cfg: serveConfig{checkTimeout: defaultCheckTimeout, gatewayAddr: "127.0.0.1:9090"},
+		{name: "gateway", cfg: serveConfig{gatewayAddr: "127.0.0.1:9090"},
 			want: []string{"PATH=/bin", "ANTHROPIC_API_KEY=k", "SURLA_LIVE_MODEL_GATEWAY=127.0.0.1:9090"}},
-		{name: "no model", cfg: serveConfig{checkTimeout: defaultCheckTimeout},
+		{name: "no model", cfg: serveConfig{},
 			want: []string{"PATH=/bin", "ANTHROPIC_API_KEY=k"}},
 	}
 	for _, tc := range cases {
@@ -203,7 +202,7 @@ func TestLiveTargetEnvCarriesServesModelChoice(t *testing.T) {
 func TestServeOptionsWiresLiveModelEnv(t *testing.T) {
 	isolateServeWorkspace(t)
 	opts, err := serveOptions(
-		serveConfig{checkTimeout: defaultCheckTimeout, provider: "openai", modelName: "gpt-test"},
+		serveConfig{provider: "openai", modelName: "gpt-test"},
 		func(string) string { return "test-key" },
 		nil,
 	)
@@ -214,13 +213,13 @@ func TestServeOptionsWiresLiveModelEnv(t *testing.T) {
 	assert.Equal(t, []string{"SURLA_LIVE_MODEL_PROVIDER=openai", "SURLA_LIVE_MODEL_NAME=gpt-test"}, opts.Live.Env)
 	closeServeOptions(t, opts)
 
-	opts, err = serveOptions(serveConfig{checkTimeout: defaultCheckTimeout, gatewayAddr: "127.0.0.1:9090"}, func(string) string { return "" }, nil)
+	opts, err = serveOptions(serveConfig{gatewayAddr: "127.0.0.1:9090"}, func(string) string { return "" }, nil)
 	require.NoError(t, err)
 	require.NotNil(t, opts.Live)
 	assert.Equal(t, []string{"SURLA_LIVE_MODEL_GATEWAY=127.0.0.1:9090"}, opts.Live.Env)
 	closeServeOptions(t, opts)
 
-	opts, err = serveOptions(serveConfig{checkTimeout: defaultCheckTimeout}, func(string) string { return "" }, nil)
+	opts, err = serveOptions(serveConfig{}, func(string) string { return "" }, nil)
 	require.NoError(t, err)
 	assert.NotNil(t, opts.LiveModelEnv)
 	assert.Nil(t, opts.Verification)
@@ -244,12 +243,12 @@ func TestResolveStartupModelConfigAndServeOptionsAutoDetection(t *testing.T) {
 	}{
 		{
 			name: "anthropic key auto-detects claude-sonnet-4-6 without verification config",
-			cfg:  serveConfig{checkTimeout: defaultCheckTimeout},
+			cfg:  serveConfig{},
 			env:  map[string]string{"ANTHROPIC_API_KEY": "ant-k"},
 			wantCfg: serveConfig{
-				checkTimeout: defaultCheckTimeout,
-				provider:     "anthropic",
-				modelName:    defaultAnthropicModel,
+
+				provider:  "anthropic",
+				modelName: defaultAnthropicModel,
 			},
 			wantLiveEnv: []string{
 				"PATH=/bin",
@@ -261,12 +260,12 @@ func TestResolveStartupModelConfigAndServeOptionsAutoDetection(t *testing.T) {
 		},
 		{
 			name: "openai key auto-detects gpt-5.4-mini when anthropic key is absent",
-			cfg:  serveConfig{checkTimeout: defaultCheckTimeout},
+			cfg:  serveConfig{},
 			env:  map[string]string{"OPENAI_API_KEY": "oai-k"},
 			wantCfg: serveConfig{
-				checkTimeout: defaultCheckTimeout,
-				provider:     "openai",
-				modelName:    defaultOpenAIModel,
+
+				provider:  "openai",
+				modelName: defaultOpenAIModel,
 			},
 			wantLiveEnv: []string{
 				"PATH=/bin",
@@ -278,15 +277,15 @@ func TestResolveStartupModelConfigAndServeOptionsAutoDetection(t *testing.T) {
 		},
 		{
 			name: "both keys prefer anthropic claude-sonnet-4-6 when model flags are omitted",
-			cfg:  serveConfig{checkTimeout: defaultCheckTimeout},
+			cfg:  serveConfig{},
 			env: map[string]string{
 				"ANTHROPIC_API_KEY": "ant-k",
 				"OPENAI_API_KEY":    "oai-k",
 			},
 			wantCfg: serveConfig{
-				checkTimeout: defaultCheckTimeout,
-				provider:     "anthropic",
-				modelName:    defaultAnthropicModel,
+
+				provider:  "anthropic",
+				modelName: defaultAnthropicModel,
 			},
 			wantLiveEnv: []string{
 				"PATH=/bin",
@@ -299,18 +298,18 @@ func TestResolveStartupModelConfigAndServeOptionsAutoDetection(t *testing.T) {
 		{
 			name: "explicit model flags override auto-detection when both keys are present",
 			cfg: serveConfig{
-				checkTimeout: defaultCheckTimeout,
-				provider:     "openai",
-				modelName:    "gpt-5.4",
+
+				provider:  "openai",
+				modelName: "gpt-5.4",
 			},
 			env: map[string]string{
 				"ANTHROPIC_API_KEY": "ant-k",
 				"OPENAI_API_KEY":    "oai-k",
 			},
 			wantCfg: serveConfig{
-				checkTimeout: defaultCheckTimeout,
-				provider:     "openai",
-				modelName:    "gpt-5.4",
+
+				provider:  "openai",
+				modelName: "gpt-5.4",
 			},
 			wantLiveEnv: []string{
 				"PATH=/bin",
@@ -322,12 +321,12 @@ func TestResolveStartupModelConfigAndServeOptionsAutoDetection(t *testing.T) {
 		},
 		{
 			name: "whitespace-only keys leave live targets without a model choice",
-			cfg:  serveConfig{checkTimeout: defaultCheckTimeout},
+			cfg:  serveConfig{},
 			env: map[string]string{
 				"ANTHROPIC_API_KEY": "   ",
 				"OPENAI_API_KEY":    "\t\n",
 			},
-			wantCfg: serveConfig{checkTimeout: defaultCheckTimeout},
+			wantCfg: serveConfig{},
 			wantLiveEnv: []string{
 				"PATH=/bin",
 				"ANTHROPIC_API_KEY=ant-k",
@@ -377,7 +376,7 @@ func TestServeProposesWithoutAModelAndConfigureModelSwitchesTheLiveTargetModel(t
 	isolateServeWorkspace(t)
 	env := map[string]string{}
 	opts, err := serveOptions(
-		serveConfig{checkTimeout: defaultCheckTimeout},
+		serveConfig{},
 		func(k string) string { return env[k] },
 		[]string{"PATH=/bin"},
 	)
@@ -436,7 +435,7 @@ func TestServeProposesWithoutAModelAndConfigureModelSwitchesTheLiveTargetModel(t
 	require.NoError(t, json.Unmarshal(body, &missingKeyBody))
 	assert.Equal(t, http.StatusUnprocessableEntity, status)
 	assert.False(t, missingKeyBody.Fault)
-	assert.Contains(t, missingKeyBody.Message, "provider openai requires OPENAI_API_KEY in surla serve's environment")
+	assert.Contains(t, missingKeyBody.Message, "provider openai requires OPENAI_API_KEY in the project server's environment")
 
 	// 3. A gateway address is accepted.
 	status, body = post("/cp1/model", `{"gateway_addr":"127.0.0.1:9090"}`)
@@ -483,21 +482,6 @@ func TestWriteServeStatusNamesTheBoundAddressAndOffFeatures(t *testing.T) {
 			addr: &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 51234},
 			opts: controlplane.Options{CardsDir: ".surla/cards"},
 			want: `surla: serving on http://127.0.0.1:51234
-surla: connect MCP clients to http://127.0.0.1:51234/mcp with the bearer token (architecture guide: surla://golden-path or http://127.0.0.1:51234/golden-path)
-surla: saving Change Cards in .surla/cards
-surla: CP1 (propose_change, revise_change, confirm_intent, get_change): on
-surla: CP2 (preview_architecture): on
-surla: CP3 (draft_override, start_live_target): compiled_rule is on; prompt_template is off (initialize a committed starter or use surla verification set, then call start_live_target with a commit; or edit the prompt's source text, commit, and verify the commit)
-surla: CP4 (verify_change, get_verification, list_verifications): off (initialize a committed starter or use surla verification set, or run surla verify on the CLI)
-surla: CP5 (approve_merge): off (use surla promotion set, or run surla approve on the CLI)
-`,
-		},
-		{
-			name: "all IPv4 interfaces",
-			addr: &net.TCPAddr{IP: net.IPv4zero, Port: 8090},
-			opts: controlplane.Options{CardsDir: ".surla/cards"},
-			want: `surla: serving on http://localhost:8090
-surla: connect MCP clients to http://localhost:8090/mcp with the bearer token (architecture guide: surla://golden-path or http://localhost:8090/golden-path)
 surla: saving Change Cards in .surla/cards
 surla: CP1 (propose_change, revise_change, confirm_intent, get_change): on
 surla: CP2 (preview_architecture): on
@@ -513,7 +497,6 @@ surla: CP5 (approve_merge): off (use surla promotion set, or run surla approve o
 				CardsDir: ".surla/cards",
 			},
 			want: `surla: serving on http://127.0.0.1:8090
-surla: connect MCP clients to http://127.0.0.1:8090/mcp with the bearer token (architecture guide: surla://golden-path or http://127.0.0.1:8090/golden-path)
 surla: saving Change Cards in .surla/cards
 surla: CP1 (propose_change, revise_change, confirm_intent, get_change): on
 surla: CP2 (preview_architecture): on
@@ -523,16 +506,15 @@ surla: CP5 (approve_merge): off (use surla promotion set, or run surla approve o
 `,
 		},
 		{
-			name: "all interfaces with all checkpoints configured",
-			addr: &net.TCPAddr{IP: net.IPv6unspecified, Port: 8090},
+			name: "loopback with all checkpoints configured",
+			addr: &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 8090},
 			opts: controlplane.Options{
 				CardsDir:        "/var/lib/surla/cards",
 				TargetUpdater:   noopTargetUpdater{},
 				Verification:    &controlplane.VerificationConfig{RunsDir: "/var/lib/surla/runs", Plan: fixedSuite},
 				PromotionTarget: &releaseTarget{},
 			},
-			want: `surla: serving on http://localhost:8090
-surla: connect MCP clients to http://localhost:8090/mcp with the bearer token (architecture guide: surla://golden-path or http://localhost:8090/golden-path)
+			want: `surla: serving on http://127.0.0.1:8090
 surla: saving Change Cards in /var/lib/surla/cards
 surla: CP1 (propose_change, revise_change, confirm_intent, get_change): on
 surla: CP2 (preview_architecture): on
@@ -561,12 +543,11 @@ surla: CP5 (approve_merge): on
 			Live:         &controlplane.LiveConfig{},
 		},
 		want: `surla: serving on http://127.0.0.1:8090
-surla: connect MCP clients to http://127.0.0.1:8090/mcp with the bearer token (architecture guide: surla://golden-path or http://127.0.0.1:8090/golden-path)
 surla: saving Change Cards in ` + cardsDir + `
 surla: CP1 (propose_change, revise_change, confirm_intent, get_change): on
 surla: CP2 (preview_architecture): on
 surla: CP3 (draft_override, start_live_target): compiled_rule is on; prompt_template is on once start_live_target runs a candidate commit (live targets in ` + liveRoot + `)
-surla: CP3: an earlier surla serve using this cards directory left live target directory ` + leftover + `; its files were kept
+surla: CP3: an earlier project server using this cards directory left live target directory ` + leftover + `; its files were kept
 surla: CP4 (verify_change, get_verification, list_verifications): on (runs in /var/lib/surla/runs, reports in /var/lib/surla/reports, evaluator suite commit ` + fixedSuite.SuiteCommit + `)
 surla: CP5 (approve_merge): off (use surla promotion set, or run surla approve on the CLI)
 `,
@@ -591,12 +572,11 @@ surla: CP5 (approve_merge): off (use surla promotion set, or run surla approve o
 		},
 		projectDir: ".",
 		want: `surla: serving on http://127.0.0.1:8090
-surla: connect MCP clients to http://127.0.0.1:8090/mcp with the bearer token (architecture guide: surla://golden-path or http://127.0.0.1:8090/golden-path)
 surla: saving Change Cards in ` + cardsDir + `
 surla: CP1 (propose_change, revise_change, confirm_intent, get_change): on
 surla: CP2 (preview_architecture): on
 surla: CP3 (draft_override, start_live_target): compiled_rule is on; prompt_template is on once start_live_target runs a candidate commit (live targets in ` + liveRoot + `)
-surla: CP3: an earlier surla serve using this cards directory left live target directory ` + leftover + `; its files were kept
+surla: CP3: an earlier project server using this cards directory left live target directory ` + leftover + `; its files were kept
 surla: CP4 (verify_change, get_verification, list_verifications): on (runs in /work/shop/.surla/runs, reports in /work/shop/reports, evaluator suite commit ` + suite + `)
 surla: project .: the evaluator suite commit is the project's HEAD at startup; commit and restart Surla to use a later suite
 surla: CP5 (approve_merge): off (use surla promotion set, or run surla approve on the CLI)
@@ -619,7 +599,6 @@ surla: CP5 (approve_merge): off (use surla promotion set, or run surla approve o
 			},
 		},
 		want: `surla: serving on http://127.0.0.1:8090
-surla: connect MCP clients to http://127.0.0.1:8090/mcp with the bearer token (architecture guide: surla://golden-path or http://127.0.0.1:8090/golden-path)
 surla: saving Change Cards in /srv/cards
 surla: CP1 (propose_change, revise_change, confirm_intent, get_change): on
 surla: CP2 (preview_architecture): on

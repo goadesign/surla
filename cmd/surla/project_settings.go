@@ -130,11 +130,18 @@ func validatedSettings(kind, path string, state *project.State) ([]byte, error) 
 		}
 		return json.Marshal(file)
 	case "promotion":
-		target, _, err := loadWorkspacePromotionTarget(path, filepath.Dir(path), state.Record.Directory, state.Record.Directory, protected...)
+		file, err := decodePromotionFileAtBase(path, filepath.Dir(path))
 		if err != nil {
 			return nil, err
 		}
-		return json.Marshal(target.(*releaseTarget).cfg)
+		file.ReleaseDir, err = abspath.EvalMissing(file.ReleaseDir)
+		if err != nil {
+			return nil, err
+		}
+		if err := validateWorkspaceDirSeparation("release_dir", file.ReleaseDir, protected...); err != nil {
+			return nil, err
+		}
+		return json.Marshal(file)
 	default:
 		return nil, errors.New("unknown settings")
 	}

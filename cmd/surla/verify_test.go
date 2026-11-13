@@ -342,19 +342,21 @@ func projectDispatchRuntime(t *testing.T) projectRuntime {
 	t.Helper()
 	root := t.TempDir()
 	runtime := testProjectRuntime()
+	runtime.preflight = func() error { return nil }
+	runtime.waitTerminal = func(ctx context.Context, id string) (bool, error) { <-ctx.Done(); return false, nil }
 	runtime.stateRoot = func(string, ...string) (string, error) { return root, nil }
 	starts, opens := 0, 0
-	runtime.startTerminal = func(ctx context.Context, state *project.State, args []string) error {
+	runtime.startTerminal = func(ctx context.Context, state *project.State, args []string) (string, error) {
 		starts++
 		assert.Empty(t, args)
 		cp, err := controlplane.New(controlplane.Options{CardsDir: state.CardsDir()})
 		if err != nil {
-			return err
+			return "", err
 		}
 		t.Cleanup(func() { assert.NoError(t, cp.Close()) })
 		listener, err := net.Listen("tcp", state.Address())
 		if err != nil {
-			return err
+			return "", err
 		}
 		management := project.NewServer(state, func() {})
 		server := &http.Server{Handler: management.Handler(controlplane.NewHTTPHandler(cp, management.Authenticate)), ReadHeaderTimeout: time.Second}
@@ -364,7 +366,7 @@ func projectDispatchRuntime(t *testing.T) projectRuntime {
 				assert.NoError(t, err)
 			}
 		}()
-		return nil
+		return "stand-in", nil
 	}
 	runtime.openViews = func(ctx context.Context, link string) error {
 		opens++
@@ -381,7 +383,8 @@ func TestDefaultProjectEffectsAreBlocked(t *testing.T) {
 	runtime := testProjectRuntime()
 	_, err := runtime.stateRoot(t.TempDir())
 	require.ErrorContains(t, err, "test-owned configuration directory")
-	require.ErrorContains(t, runtime.startTerminal(t.Context(), nil, nil), "cannot start real")
+	_, err = runtime.startTerminal(t.Context(), nil, nil)
+	require.ErrorContains(t, err, "cannot start real")
 	require.ErrorContains(t, runtime.openViews(t.Context(), "unused"), "cannot open real")
-	require.ErrorContains(t, run(nil, io.Discard), "test-owned configuration directory")
+	require.ErrorContains(t, run(nil, io.Discard), "cannot start real")
 }

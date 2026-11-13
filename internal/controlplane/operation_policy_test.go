@@ -3,8 +3,13 @@ package controlplane
 import (
 	"context"
 	"errors"
-	"go.opentelemetry.io/otel/trace/noop"
+	"reflect"
+	"strings"
 	"testing"
+
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
+	goa "goa.design/goa/v3/pkg"
 
 	gensurla "github.com/goadesign/surla/gen/surla"
 	"github.com/stretchr/testify/assert"
@@ -30,12 +35,32 @@ func TestOperationPolicyCoversEveryTool(t *testing.T) {
 				for _, allowed := range expected[name] {
 					permitted = permitted || role == allowed
 				}
-				recorder := noop.NewTracerProvider().Tracer("test")
+				exporter := tracetest.NewInMemoryExporter()
+				provider := sdktrace.NewTracerProvider(sdktrace.WithSyncer(exporter))
+				t.Cleanup(func() { assert.NoError(t, provider.Shutdown(context.Background())) })
+				recorder := provider.Tracer("test")
 				mutated := false
 				marker := errors.New("called domain operation")
-				endpoint := authorizeOperation(name, func(context.Context, any) (any, error) { mutated = true; return nil, marker }, recorder)
+				// Fill every generated field with a unique sentinel, then apply the real wrapper set.
+				endpoints := &gensurla.Endpoints{}
+				value := reflect.ValueOf(endpoints).Elem()
+				for index := 0; index < value.NumField(); index++ {
+					if value.Field(index).Type() == reflect.TypeOf(goa.Endpoint(nil)) {
+						field := value.Type().Field(index).Name
+						value.Field(index).Set(reflect.ValueOf(goa.Endpoint(func(context.Context, any) (any, error) {
+							mutated = field == endpointField(name)
+							return nil, marker
+						})))
+					}
+				}
+				applyOperationPolicy(endpoints, recorder)
+				endpoint := value.FieldByName(endpointField(name)).Interface().(goa.Endpoint)
 				_, err := endpoint(WithPrincipal(t.Context(), Principal{ID: "owner", CallerID: "caller", Kind: role}), nil)
 				assert.Equal(t, permitted, mutated)
+				spans := exporter.GetSpans()
+				if assert.Len(t, spans, 1) {
+					assert.Equal(t, "surla.request."+name, spans[0].Name)
+				}
 				if permitted {
 					assert.ErrorIs(t, err, marker)
 				} else {
@@ -45,4 +70,17 @@ func TestOperationPolicyCoversEveryTool(t *testing.T) {
 			})
 		}
 	}
+}
+
+// endpointField maps the published operation spelling to its generated Go endpoint field.
+func endpointField(operation string) string {
+	words := strings.Split(operation, "_")
+	for index, word := range words {
+		words[index] = strings.ToUpper(word[:1]) + word[1:]
+	}
+	field := strings.Join(words, "")
+	if operation == "checkpoint_ui" {
+		field = "CheckpointUI"
+	}
+	return field
 }

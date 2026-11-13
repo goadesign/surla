@@ -430,10 +430,10 @@ func TestGoCallersGetTheDesignRules(t *testing.T) {
 	assert.Equal(t, saved.RequestRevision, current.RequestRevision, "a refused revision leaves the card unchanged")
 }
 
-// TestCP2EvaluatedArchitecturePreviewCP3FastDraftAndTokenAuthenticator verifies
+// TestEvaluatedArchitecturePreviewFastDraftAndAuthenticatedHTTP verifies
 // CP2 design evaluation, Golden Path MCP resource serving, CP3 prompt overrides,
 // and bearer-token authentication.
-func TestCP2EvaluatedArchitecturePreviewCP3FastDraftAndTokenAuthenticator(t *testing.T) {
+func TestEvaluatedArchitecturePreviewFastDraftAndAuthenticatedHTTP(t *testing.T) {
 	if testing.Short() {
 		t.Skip("runs the sandboxed Go toolchain; the full suite (go test without -short) covers it")
 	}
@@ -518,9 +518,10 @@ var _ = Service("orders", func() {
 	if err != nil {
 		t.Fatalf("ProposeChange failed: %v", err)
 	}
-	if card.Status != StatusConfirmed {
-		t.Fatalf("expected clear request to be immediately %q, got %q", StatusConfirmed, card.Status)
-	}
+	require.Equal(t, StatusNeedsConfirmation, card.Status)
+	card, err = cp.ConfirmIntent(ctx, &gensurla.ConfirmIntentPayload{ChangeID: card.ChangeID, RequestRevision: card.RequestRevision, Answers: map[string]string{}, Examples: card.Examples})
+	require.NoError(t, err)
+	require.Equal(t, StatusConfirmed, card.Status)
 
 	preview, err := cp.PreviewArchitecture(ctx, &gensurla.PreviewArchitecturePayload{
 		ChangeID:        card.ChangeID,
@@ -932,7 +933,7 @@ func TestUnchangedConfirmationFromAnotherSessionKeepsRevision(t *testing.T) {
 	inputs := PromotionInputs{SuiteID: "suite", SuiteCommit: strings.Repeat("b", 40), Environment: "sim", Artifacts: map[string]string{"app": "artifact"}}
 	target := &promotionTargetStub{inputs: inputs}
 	cp := newControlPlane(t, Options{PromotionTarget: target, TracerProvider: provider})
-	auth := NewTokenAuthenticator(map[string]Principal{
+	auth := fixtureCredentials(map[string]Principal{
 		"guide":  {ID: "owner", CallerID: "guide", Kind: CallerGuide},
 		"first":  {ID: "owner", CallerID: "session-one", Kind: CallerUser},
 		"second": {ID: "owner", CallerID: "session-two", Kind: CallerUser},

@@ -119,8 +119,7 @@ func Live(ctx context.Context, binary candidate.Artifact, key string, provider m
 }
 
 // LiveThroughGateway starts the pinned [[.Name]] for Surla's live CP3 target
-// planning through the model gateway at gatewayAddr, the address surla serve's
-// -model-gateway-addr names. The candidate sandbox lets the [[.Name]] connect
+// planning through the model gateway at gatewayAddr, the gateway selected for the live target. The candidate sandbox lets the [[.Name]] connect
 // only to loopback ports and resolves no names: a literal loopback address,
 // such as 127.0.0.1 or [::1], is used directly, and any other address,
 // including a hostname such as localhost, is reached through a forwarder this

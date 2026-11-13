@@ -195,7 +195,7 @@ func TestChangeCardHTTPErrorsAndMCPToolPreservation(t *testing.T) {
 				require.NoError(t, err)
 			}
 			req := httptest.NewRequest(tc.method, tc.path, strings.NewReader(string(raw)))
-			req.Header.Set("Authorization", "Bearer "+tc.token)
+			workflowAuthorization(req, tc.token)
 			req.Header.Set("Content-Type", "application/json")
 			rec := httptest.NewRecorder()
 			tc.h.ServeHTTP(rec, req)

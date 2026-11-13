@@ -21,8 +21,15 @@ var herdrTestRuntime func() projectRuntime
 func testProjectRuntime() projectRuntime {
 	return projectRuntime{
 		stateRoot: defaultOperatorRoot,
-		startTerminal: func(context.Context, *project.State, []string) error {
-			return errors.New("default tests cannot start real project terminals")
+		preflight: func() error { return errors.New("default tests cannot start real project terminals") },
+		startTerminal: func(context.Context, *project.State, []string) (string, error) {
+			return "", errors.New("default tests cannot start real project terminals")
+		},
+		waitTerminal: func(context.Context, string) (bool, error) {
+			return false, errors.New("default tests cannot observe real project terminals")
+		},
+		removeTerminal: func(context.Context, string) error {
+			return errors.New("default tests cannot remove real project terminals")
 		},
 		openViews: func(context.Context, string) error {
 			return errors.New("default tests cannot open real project views")
@@ -43,14 +50,55 @@ func runProjectSettings(kind string, args []string, stdout io.Writer) error {
 	return testProjectRuntime().settings(kind, args, stdout)
 }
 
-// configureServeWorkspace exercises startup setup under the test's owned config root.
-func configureServeWorkspace(cfg serveConfig) (workspaceServeConfig, error) {
-	return testProjectRuntime().configureWorkspace(cfg)
+// fixtureProjectState creates a project through its state owner before testing startup setup.
+func fixtureProjectState(directory string) (*project.State, error) {
+	if directory == "" {
+		var err error
+		directory, err = os.Getwd()
+		if err != nil {
+			return nil, err
+		}
+	}
+	root, err := testProjectRuntime().stateRoot(directory)
+	if err != nil {
+		return nil, err
+	}
+	state, err := project.Discover(root, directory)
+	if err != nil {
+		return nil, err
+	}
+	lock, err := state.StartLock(context.Background())
+	if err != nil {
+		return nil, err
+	}
+	_, err = state.Initialize(fmt.Sprintf("uid:%d", os.Geteuid()))
+	return state, errors.Join(err, lock.Close())
 }
 
-// serveOptions exercises server option composition under the test's owned config root.
-func serveOptions(cfg serveConfig, getenv func(string) string, environ []string) (controlplane.Options, error) {
-	return testProjectRuntime().serveOptions(cfg, getenv, environ)
+// configureServeWorkspace exercises startup setup for an initialized test project.
+func configureServeWorkspace(directory ...string) (workspaceServeConfig, error) {
+	dir := ""
+	if len(directory) != 0 {
+		dir = directory[0]
+	}
+	state, err := fixtureProjectState(dir)
+	if err != nil {
+		return workspaceServeConfig{}, err
+	}
+	return configureProjectWorkspace(state)
+}
+
+// serveOptions exercises server option composition for an initialized test project.
+func serveOptions(cfg serveConfig, getenv func(string) string, environ []string, directory ...string) (controlplane.Options, error) {
+	dir := ""
+	if len(directory) != 0 {
+		dir = directory[0]
+	}
+	state, err := fixtureProjectState(dir)
+	if err != nil {
+		return controlplane.Options{}, err
+	}
+	return projectServeOptions(state, cfg, getenv, environ)
 }
 
 // TestMain lets the test executable serve a project and run the real supervised helpers without a second binary.
@@ -70,6 +118,9 @@ func TestMain(m *testing.M) {
 			}
 			runHelper = func(args []string) error { return runWithRuntime(args, io.Discard, herdrTestRuntime()) }
 		case "serve":
+			if os.Getenv("SURLA_TEST_USER_CONFIG_DIR") == "" {
+				os.Exit(1)
+			}
 			runHelper = testProjectRuntime().serve
 		case "verify-run":
 			runHelper = runVerifyRun

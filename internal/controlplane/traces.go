@@ -55,7 +55,7 @@ func (c *ControlPlane) ListTraces(
 		return nil, errors.New("authenticated principal is required")
 	}
 	if c.traceProvider == nil {
-		return nil, gensurla.MakeNotImplemented(errors.New("operation recording is not configured; the server operator must set controlplane.Options.TracerProvider when constructing controlplane.New, or use surla serve for automatic recording"))
+		return nil, gensurla.MakeNotImplemented(errors.New("operation recording is not configured; the server operator must set controlplane.Options.TracerProvider when constructing controlplane.New, or start the project with surla for automatic recording"))
 	}
 	_, span := c.tracer("surla/controlplane").Start(ctx, "surla.controlplane.list_traces")
 	defer span.End()

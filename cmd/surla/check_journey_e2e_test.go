@@ -119,11 +119,9 @@ func TestCheckProjectRepairsDependenciesOnOneServer(t *testing.T) {
 	gatewayAddr := startModelGateway(t, &scriptedModelProvider{})
 	workspace := t.TempDir()
 	opts, err := serveOptions(serveConfig{
-		checkTimeout: defaultCheckTimeout,
-		projectDir:   workspace,
 
 		gatewayAddr: gatewayAddr,
-	}, func(string) string { return "" }, os.Environ())
+	}, func(string) string { return "" }, os.Environ(), workspace)
 	require.NoError(t, err)
 	// A test executable has no released module version in its build info.
 	opts.SurlaVersion = starterSurlaVersion

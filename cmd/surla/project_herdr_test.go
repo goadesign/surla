@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"syscall"
 	"testing"
@@ -45,7 +46,7 @@ func TestHC(t *testing.T) {
 		}
 	}
 	scratch := t.TempDir()
-	session := fmt.Sprintf("surla-2b-%d-%d", os.Getpid(), time.Now().UnixNano())
+	session := fmt.Sprintf("surla-lifecycle-%d-%d", os.Getpid(), time.Now().UnixNano())
 	t.Setenv("HC_SESSION", session)
 	t.Setenv("HC_SOCKET", filepath.Join(scratch, "s"))
 	for _, key := range []string{"XDG_CONFIG_HOME", "XDG_STATE_HOME", "XDG_DATA_HOME", "XDG_CACHE_HOME", "XDG_RUNTIME_DIR"} {
@@ -56,8 +57,14 @@ func TestHC(t *testing.T) {
 	t.Setenv("HC_TERMINAL_ID", "")
 	bin := filepath.Join(scratch, "bin")
 	require.NoError(t, os.Mkdir(bin, 0o700))
-	fakeOpen := filepath.Join(bin, "open")
-	require.NoError(t, os.WriteFile(fakeOpen, []byte("#!/bin/sh\nexit 0\n"), 0o700))
+	for _, name := range []string{"open", "xdg-open"} {
+		require.NoError(t, os.WriteFile(filepath.Join(bin, name), []byte("#!/bin/sh\nexit 0\n"), 0o700))
+	}
+	opener := "xdg-open"
+	if runtime.GOOS == "darwin" {
+		opener = "open"
+	}
+	fakeOpen := filepath.Join(bin, opener)
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	config := filepath.Join(scratch, "surla-config")
 	require.NoError(t, os.Mkdir(config, 0o700))
@@ -121,7 +128,7 @@ func TestHC(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel()
 	// Verify the isolated core resolves the harmless browser stand-in before invoking the full CLI.
-	resolved, err := isolatedHerdr(hc, "exec", "--", "/usr/bin/which", "open")
+	resolved, err := isolatedHerdr(hc, "exec", "--", "/usr/bin/which", opener)
 	require.NoError(t, err)
 	require.Equal(t, fakeOpen, strings.TrimSpace(string(resolved)))
 	self, err := os.Executable()
@@ -151,7 +158,9 @@ func TestHC(t *testing.T) {
 	require.NoError(t, err)
 	client, err := projectClient(state)
 	require.NoError(t, err)
-	launch := func(ctx context.Context, state *project.State) error { return startProjectTerminal(ctx, state, nil) }
+	launch := func(ctx context.Context, state *project.State) (string, error) {
+		return startProjectTerminal(ctx, state, nil)
+	}
 
 	current = state
 	running, err := state.ReadRunning()
@@ -170,12 +179,21 @@ func TestHC(t *testing.T) {
 	assert.Nil(t, terminal.Parent)
 	management, err := state.ManagementCredential()
 	require.NoError(t, err)
-	assert.NotContains(t, string(metadata), management)
+	assert.False(t, strings.Contains(string(metadata), management), "management credential must not appear in terminal metadata")
 	actor, err := client.AddAgent(ctx, &genproject.AddAgentPayload{ActorID: "guide", Role: "guide"})
 	require.NoError(t, err)
 	credential, err := os.ReadFile(actor.CredentialFile)
 	require.NoError(t, err)
-	assert.NotContains(t, string(metadata), string(credential))
+	assert.False(t, strings.Contains(string(metadata), string(credential)), "agent credential must not appear in terminal metadata")
+	// Inspect current metadata and server output after agent issuance, never printing credentials.
+	issuedMetadata, err := isolatedHerdr(hc, "get", "--json", running.Terminal)
+	require.NoError(t, err)
+	serverOutput, err := isolatedHerdr(hc, "read", "--json", "--lines", "100", running.Terminal)
+	require.NoError(t, err)
+	for _, data := range [][]byte{issuedMetadata, serverOutput} {
+		assert.False(t, strings.Contains(string(data), management), "management credential must not appear in terminal metadata or output")
+		assert.False(t, strings.Contains(string(data), string(credential)), "agent credential must not appear in terminal metadata or output")
+	}
 	assertAgentGuidance(t, state, string(credential))
 	originalPort := state.Record.Port
 	// The launching CLI call has returned and no parent owns the server terminal.
@@ -190,6 +208,17 @@ func TestHC(t *testing.T) {
 	require.NoError(t, err)
 	terminals = append(terminals, restarted.Terminal)
 	assert.Equal(t, originalPort, second.Record.Port)
+	assertAgentGuidance(t, second, string(credential))
+	// Handled HUP attempts the same ordered close as authenticated stop.
+	require.NoError(t, syscall.Kill(restarted.PID, syscall.SIGHUP))
+	waitForStoreRelease(t, second)
+	_, err = second.ReadRunning()
+	assert.ErrorIs(t, err, os.ErrNotExist)
+	client, _, err = attachOrStartProject(ctx, second, launch)
+	require.NoError(t, err)
+	restarted, err = second.ReadRunning()
+	require.NoError(t, err)
+	terminals = append(terminals, restarted.Terminal)
 	assertAgentGuidance(t, second, string(credential))
 	// An outright kill is recovery through a free store lock and stale record, never called graceful.
 	require.NotEqual(t, os.Getpid(), restarted.PID)

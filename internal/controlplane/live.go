@@ -109,7 +109,7 @@ const (
 	liveDirName = "live"
 	// msgStopFailed is the public explanation of a target whose processes
 	// could not be confirmed stopped.
-	msgStopFailed = "The live target's processes could not be confirmed stopped, so no other live target can start; restart surla serve."
+	msgStopFailed = "The live target's processes could not be confirmed stopped, so no other live target can start; stop and start Surla."
 )
 
 // StartLiveTarget builds the candidate commit with the operator's

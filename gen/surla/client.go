@@ -211,7 +211,7 @@ func (c *Client) StartLiveTarget(ctx context.Context, p *StartLiveTargetPayload)
 
 // StopLiveTarget calls the "stop_live_target" endpoint of the "surla" service.
 // StopLiveTarget may return the following errors:
-//   - "live_target_stop_failed" (type *goa.ServiceError): The live target's processes could not be confirmed stopped; restart surla serve.
+//   - "live_target_stop_failed" (type *goa.ServiceError): The live target's processes could not be confirmed stopped; stop and start Surla.
 //   - "forbidden" (type *goa.ServiceError): The authenticated caller may not perform this operation or does not own the resource.
 //   - error: internal error
 func (c *Client) StopLiveTarget(ctx context.Context) (res *StopLiveTargetResult, err error) {
@@ -398,7 +398,7 @@ func (c *Client) ReadCheckOutput(ctx context.Context, p *ReadCheckOutputPayload)
 // ListTraces calls the "list_traces" endpoint of the "surla" service.
 // ListTraces may return the following errors:
 //   - "unprocessable" (type *goa.ServiceError): The cursor is invalid; omit it to refresh the history.
-//   - "not_implemented" (type *goa.ServiceError): Recording is not configured; the server operator must supply controlplane.Options.TracerProvider when constructing the embedded control plane, or use surla serve for automatic recording.
+//   - "not_implemented" (type *goa.ServiceError): Recording is not configured; the server operator must supply controlplane.Options.TracerProvider when constructing the embedded control plane, or use the project server for automatic recording.
 //   - "forbidden" (type *goa.ServiceError): The authenticated caller may not perform this operation or does not own the resource.
 //   - error: internal error
 func (c *Client) ListTraces(ctx context.Context, p *ListTracesPayload) (res *TraceList, err error) {

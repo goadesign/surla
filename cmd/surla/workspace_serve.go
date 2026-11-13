@@ -1,12 +1,10 @@
-// This file wires `surla serve` to operator-owned storage outside the bound
+// This file wires the project server to operator-owned storage outside the bound
 // workspace and configures dynamic starter verification and promotion
 // resolution.
 package main
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
@@ -24,7 +22,7 @@ import (
 
 type (
 	// workspaceServeConfig holds the resolved control-plane options for a
-	// workspace-bound `surla serve` instance.
+	// workspace-bound the project server instance.
 	workspaceServeConfig struct {
 		// workspaceDir is the physical initial workspace directory.
 		workspaceDir string
@@ -63,34 +61,9 @@ const (
 	operatorPrivateDirValue = "dir-v1"
 )
 
-// configureWorkspace resolves the bound workspace, operator-owned storage
-// directories and dynamic
-// verification/promotion resolvers for `surla serve`.
-func (runtime projectRuntime) configureWorkspace(cfg serveConfig) (workspaceServeConfig, error) {
-	var state *project.State
-	var err error
-	if cfg.projectDir == "" {
-		state, err = runtime.discover()
-	} else {
-		var root string
-		root, err = runtime.stateRoot(cfg.projectDir)
-		if err == nil {
-			state, err = project.Discover(root, cfg.projectDir)
-		}
-	}
-	if err != nil {
-		return workspaceServeConfig{}, err
-	}
-	if state.Record.ID == "" {
-		lock, err := state.StartLock(context.Background())
-		if err != nil {
-			return workspaceServeConfig{}, err
-		}
-		_, initializeErr := state.Initialize(fmt.Sprintf("uid:%d", os.Geteuid()))
-		if err := errors.Join(initializeErr, lock.Close()); err != nil {
-			return workspaceServeConfig{}, err
-		}
-	}
+// configureProjectWorkspace resolves the bound workspace, operator-owned storage
+// directories and startup verification/promotion inputs for the project server.
+func configureProjectWorkspace(state *project.State) (workspaceServeConfig, error) {
 	initial := state.Record.Directory
 	protected, err := workspaceProtectedDirs(initial)
 	if err != nil {
@@ -161,85 +134,6 @@ func (runtime projectRuntime) configureWorkspace(cfg serveConfig) (workspaceServ
 		return nil, fmt.Errorf("workspace %s has no pinned starter evaluator suite commit", active)
 	}
 	return ws, nil
-}
-
-// loadWorkspacePromotionTarget reads `promoPath`, resolves relative paths
-// against baseDir and verifies that `promoPath`, the resolved
-// `report_dir`, and `release_dir` do not lie inside initialWorkspaceRoot,
-// activeWorkspaceDir, or any protectedDirs.
-func loadWorkspacePromotionTarget(
-	promoPath, baseDir, initialWorkspaceRoot, activeWorkspaceDir string,
-	protectedDirs ...string,
-) (controlplane.PromotionTarget, string, error) {
-	allProtected := append([]string{initialWorkspaceRoot, activeWorkspaceDir}, protectedDirs...)
-	if err := validatePromotionPathSeparation(promoPath, allProtected...); err != nil {
-		return nil, "", err
-	}
-	f, err := decodePromotionFileAtBase(promoPath, baseDir)
-	if err != nil {
-		return nil, "", err
-	}
-	physReport, err := abspath.EvalMissing(filepath.Join(filepath.Dir(promoPath), "reports"))
-	if err != nil {
-		return nil, "", fmt.Errorf("promotion settings %s: %w", promoPath, err)
-	}
-	physRelease, err := abspath.EvalMissing(f.ReleaseDir)
-	if err != nil {
-		return nil, "", fmt.Errorf("promotion settings %s: %w", promoPath, err)
-	}
-	for _, ws := range allProtected {
-		if ws == "" {
-			continue
-		}
-		for _, item := range []struct{ field, target string }{
-			{"report_dir", physReport},
-			{"release_dir", physRelease},
-		} {
-			inside, err := abspath.Within(ws, item.target)
-			if err != nil {
-				return nil, "", err
-			}
-			if inside {
-				return nil, "", fmt.Errorf(
-					"promotion config %s: %s (%s) must be outside the workspace (%s) so builder agents cannot modify promotion inputs, reports, or release binaries",
-					promoPath,
-					item.field,
-					item.target,
-					ws,
-				)
-			}
-		}
-	}
-	f.ReportDir = physReport
-	f.ReleaseDir = physRelease
-	return &releaseTarget{cfg: f}, physReport, nil
-}
-
-// validatePromotionPathSeparation checks that promoPath itself does not lie
-// inside any protected workspace or enclosing Git working tree root.
-func validatePromotionPathSeparation(promoPath string, protectedDirs ...string) error {
-	physPromo, err := abspath.EvalMissing(promoPath)
-	if err != nil {
-		return err
-	}
-	for _, ws := range protectedDirs {
-		if ws == "" {
-			continue
-		}
-		inside, err := abspath.Within(ws, physPromo)
-		if err != nil {
-			return err
-		}
-		if inside {
-			return fmt.Errorf(
-				"promotion config %s: config file (%s) must be outside the workspace (%s) so builder agents cannot modify promotion inputs, reports, or release binaries",
-				promoPath,
-				physPromo,
-				ws,
-			)
-		}
-	}
-	return nil
 }
 
 // decodePromotionFileAtBase decodes a promotion configuration file and resolves
@@ -459,10 +353,4 @@ func validateWorkspaceDirSeparation(label, targetDir string, protectedDirs ...st
 		}
 	}
 	return nil
-}
-
-// sha256HexString returns the 64-character lowercase hex SHA-256 digest of s.
-func sha256HexString(s string) string {
-	sum := sha256.Sum256([]byte(s))
-	return hex.EncodeToString(sum[:])
 }

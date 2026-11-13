@@ -44,7 +44,7 @@ func startSharedServerSession(t *testing.T, principal string) *sharedServerSessi
 	if principal == "" {
 		principal = "operator@example.com"
 	}
-	opts, err := serveOptions(serveConfig{checkTimeout: defaultCheckTimeout}, func(string) string { return "" }, nil)
+	opts, err := serveOptions(serveConfig{}, func(string) string { return "" }, nil)
 	require.NoError(t, err)
 	provider, err := newTraceProvider(context.Background(), io.Discard, func(string) string { return "" })
 	require.NoError(t, err)
@@ -430,7 +430,7 @@ func TestSharedServerSignalExitAndDetachedVerificationSurvival(t *testing.T) {
 		`"suite_module":"eval","suite_command":"./cmd/shop-evals","timeout":"5m"}`
 	require.NoError(t, os.WriteFile(verPath, []byte(verJSON), 0o600))
 	require.NoError(t, runProjectSettings("verification", []string{"set", verPath}, io.Discard))
-	workspace, err := configureServeWorkspace(serveConfig{})
+	workspace, err := configureServeWorkspace()
 	require.NoError(t, err)
 	runsDir = workspace.runsDir
 	reportsDir = workspace.verification.Plan.ReportDir
@@ -506,24 +506,6 @@ type sharedServerProcess struct {
 	token   string
 }
 
-// TestSharedServerSubprocessHelper runs the CLI without the test runner's output.
-func TestSharedServerSubprocessHelper(t *testing.T) {
-	if os.Getenv("SURLA_TEST_SERVER_SUBPROCESS") != "1" {
-		return
-	}
-	userConfigDir = func() (string, error) { return os.Getenv("SURLA_TEST_USER_CONFIG_DIR"), nil }
-	for i, arg := range os.Args {
-		if arg == "--" {
-			if err := run(os.Args[i+1:], os.Stdout); err != nil {
-				fmt.Fprintln(os.Stderr, err)
-				os.Exit(1)
-			}
-			os.Exit(0)
-		}
-	}
-	os.Exit(1)
-}
-
 // startSharedServerProcess waits for the shared server's bound address or a bounded setup failure.
 func startSharedServerProcess(t *testing.T, workspace, config string) *sharedServerProcess {
 	t.Helper()
@@ -546,7 +528,7 @@ func startSharedServerProcess(t *testing.T, workspace, config string) *sharedSer
 	require.NoError(t, err)
 	cmd := exec.Command(exe, "serve")
 	cmd.Dir = workspace
-	cmd.Env = append(os.Environ(), "SURLA_TEST_SERVER_SUBPROCESS=1", "SURLA_TEST_USER_CONFIG_DIR="+config)
+	cmd.Env = append(os.Environ(), "SURLA_TEST_USER_CONFIG_DIR="+config)
 	stderr, err := cmd.StderrPipe()
 	require.NoError(t, err)
 	require.NoError(t, cmd.Start())

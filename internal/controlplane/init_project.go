@@ -416,7 +416,7 @@ func (c *ControlPlane) InitProject(
 			span,
 			"sync published project directory failed",
 			fmt.Errorf(
-				"project %s was published and bound in this server, and workspace.json retains its recovery record, but directory sync failed so restart surla serve to verify crash durability: %w",
+				"project %s was published and bound in this server, and workspace.json retains its recovery record, but directory sync failed so stop and start Surla to verify crash durability: %w",
 				targetPath,
 				syncErr,
 			),
