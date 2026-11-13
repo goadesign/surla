@@ -14,9 +14,19 @@ type LiveTargetCase = LiveTargetStatus["live_target"];
 // RunningCase is the live target read's running case.
 type RunningCase = Extract<LiveTargetCase, { state: "running" }>;
 
-// StoppableCase is a case the page offers to stop: running, or not
-// confirmed stopped.
-type StoppableCase = Extract<LiveTargetCase, { state: "running" | "not_confirmed_stopped" }>;
+// ModelDraft is what the user has typed and chosen in the model form. The
+// page keeps it, so it survives refreshes and leaving the view.
+export interface ModelDraft {
+  // kind is the kind of connection the user chose, or null until they
+  // choose one; the form then opens on the kind of the current choice.
+  kind: "direct" | "gateway" | null;
+  // provider is the provider the user selected.
+  provider: "anthropic" | "openai";
+  // modelName is the model name the user typed.
+  modelName: string;
+  // gatewayAddr is the gateway address the user typed.
+  gatewayAddr: string;
+}
 
 // ServerAnswer is what a finished request answered: the server's message,
 // and whether it refused.
@@ -59,6 +69,11 @@ export interface LiveTargetStageProps {
   // onApply asks the server to use choice for live targets started
   // afterwards.
   onApply: (choice: ConfigureModelPayload) => void;
+  // draft is the model form's unsent input.
+  draft: ModelDraft;
+  // onDraft records one change to the model form's input; the page merges
+  // it into the draft it keeps.
+  onDraft: (change: Partial<ModelDraft>) => void;
 }
 
 // LiveTargetStageView shows the live target and the model connection.
@@ -81,7 +96,9 @@ export function LiveTargetStageView(props: LiveTargetStageProps) {
 }
 
 // LiveTargetSection shows what runs on the live target and offers to stop
-// it while it runs or could not be confirmed stopped.
+// it while it runs. A target that could not be confirmed stopped is not
+// offered: its stop already ran once and cannot be retried, so the server's
+// sentence says what to do instead.
 function LiveTargetSection({
   target,
   targetLoading,
@@ -102,16 +119,19 @@ function LiveTargetSection({
   // returnFocus is set when the confirmation closes without stopping, so
   // focus goes back to the Stop control once it is drawn again.
   const returnFocus = useRef(false);
-  const stoppable: StoppableCase | null =
-    current !== null && (current.state === "running" || current.state === "not_confirmed_stopped") ? current : null;
+  const stoppable: RunningCase | null = current !== null && current.state === "running" ? current : null;
 
   // A confirmation opened for a target that has since ended closes, so it
-  // never reappears for a later target the user did not ask about.
+  // never reappears for a later target the user did not ask about, and focus
+  // goes to the view's heading rather than to the page body.
   const nothingToStop = stoppable === null;
   useEffect(() => {
-    if (nothingToStop) {
+    if (nothingToStop && confirming) {
       setConfirming(false);
+      headingRef.current?.focus();
     }
+    // Only a change of nothingToStop closes the confirmation, so confirming
+    // is read here but deliberately not a dependency.
   }, [nothingToStop]);
 
   useEffect(() => {
@@ -301,9 +321,11 @@ function RunningBody({ target }: { target: RunningCase }) {
 }
 
 // ModelSection shows the model live targets started afterwards use and a
-// form that changes it. The form's fields are uncontrolled and both groups
-// stay mounted, so what the user typed survives every refresh and a switch
-// of kind; only the chosen kind is state.
+// form that changes it. The page keeps the form's input, so what the user
+// typed survives every refresh and leaving the view: the text fields are
+// uncontrolled, start from the kept input when the view opens, and record
+// each change. The form opens on the kind of the current choice until the
+// user picks one, and both kinds' fields stay mounted.
 function ModelSection({
   model,
   modelLoading,
@@ -312,10 +334,14 @@ function ModelSection({
   applying,
   applyOutcome,
   onApply,
+  draft,
+  onDraft,
 }: LiveTargetStageProps) {
-  const [kind, setKind] = useState<"direct" | "gateway">("direct");
+  const currentKind = model !== null && model.connection.kind === "gateway" ? "gateway" : "direct";
+  const kind = draft.kind ?? currentKind;
 
-  // submit sends the choice the form's fields of the chosen kind describe.
+  // submit sends the choice the chosen kind's fields describe, as the user
+  // sees them.
   function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const fields = new FormData(event.currentTarget);
@@ -365,7 +391,7 @@ function ModelSection({
                 name="surla-model-kind"
                 value="direct"
                 checked={kind === "direct"}
-                onChange={() => setKind("direct")}
+                onChange={() => onDraft({ kind: "direct" })}
               />{" "}
               A provider and model
             </label>
@@ -375,23 +401,51 @@ function ModelSection({
                 name="surla-model-kind"
                 value="gateway"
                 checked={kind === "gateway"}
-                onChange={() => setKind("gateway")}
+                onChange={() => onDraft({ kind: "gateway" })}
               />{" "}
               A model gateway
             </label>
           </div>
-          <div className="surla-field-row" hidden={kind !== "direct"}>
-            <label htmlFor="surla-model-provider">Provider</label>
-            <select id="surla-model-provider" name="provider" defaultValue="anthropic">
-              <option value="anthropic">anthropic</option>
-              <option value="openai">openai</option>
-            </select>
-            <label htmlFor="surla-model-name">Model name</label>
-            <input id="surla-model-name" name="model_name" type="text" required={kind === "direct"} />
+          <div id="surla-model-direct-fields" className="surla-field-row" hidden={kind !== "direct"}>
+            <label className="surla-field-label">
+              <span>Provider</span>
+              <select
+                id="surla-model-provider"
+                name="provider"
+                className="surla-input"
+                defaultValue={draft.provider}
+                onChange={(event) => onDraft({ provider: event.currentTarget.value === "openai" ? "openai" : "anthropic" })}
+              >
+                <option value="anthropic">anthropic</option>
+                <option value="openai">openai</option>
+              </select>
+            </label>
+            <label className="surla-field-label">
+              <span>Model name</span>
+              <input
+                id="surla-model-name"
+                name="model_name"
+                type="text"
+                className="surla-input"
+                defaultValue={draft.modelName}
+                required={kind === "direct"}
+                onInput={(event) => onDraft({ modelName: event.currentTarget.value })}
+              />
+            </label>
           </div>
-          <div className="surla-field-row" hidden={kind !== "gateway"}>
-            <label htmlFor="surla-model-gateway">Gateway address (host:port)</label>
-            <input id="surla-model-gateway" name="gateway_addr" type="text" required={kind === "gateway"} />
+          <div id="surla-model-gateway-fields" className="surla-field-row" hidden={kind !== "gateway"}>
+            <label className="surla-field-label">
+              <span>Gateway address (host:port)</span>
+              <input
+                id="surla-model-gateway"
+                name="gateway_addr"
+                type="text"
+                className="surla-input"
+                defaultValue={draft.gatewayAddr}
+                required={kind === "gateway"}
+                onInput={(event) => onDraft({ gatewayAddr: event.currentTarget.value })}
+              />
+            </label>
           </div>
           <div className="surla-field-row">
             <Button id="surla-model-apply" type="submit" variant="primary">

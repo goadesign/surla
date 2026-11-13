@@ -83,6 +83,7 @@ expect(page.$("#surla-live-running time").getAttribute("datetime").length > 0, "
 expect(page.$("#surla-live-no-prompts"), "a target with no drafts does not say so");
 expect(page.text("#surla-live-drafts-note").includes("discarded when this live target stops") && page.text("#surla-live-drafts-note").includes("committed"), "the drafts note is missing");
 await until(() => page.text("#surla-live-announcement").includes("is running"), "the start was not announced: " + page.text("#surla-live-announcement"));
+expect(page.$("#surla-live-announcement").getAttribute("role") === "status", "the announcements are not in a polite live region");
 
 const first = await draftPrompt("Answer in French.");
 await until(() => page.text("#surla-live-prompts").includes(first.prompt_version), "an accepted draft did not appear without a reload");
@@ -171,15 +172,67 @@ await until(() => page.$("#surla-live-stop-outcome"), "the stop's answer was not
 expect(page.text("#surla-live-stop-outcome") === "The live target is stopped; its prompt drafts are discarded and draft_override is no longer bound to it.", "the operation's message is not shown as it is: " + page.text("#surla-live-stop-outcome"));
 await until(() => liveState(page) === "none", "the stopped target is still shown");
 expect(page.sent("DELETE", "/live-target").length === 1, "the stop was sent " + page.sent("DELETE", "/live-target").length + " times");
+expect(page.$("#surla-live-stop-outcome"), "the stop's message went before the state changed");
+await startTarget(commitA);
+await until(() => liveState(page) === "running" && !page.$("#surla-live-stop-outcome"), "the stop's message stayed beside a target started afterwards");
+page.close();
+`)
+}
+
+// TestViewsPageLiveTargetEndingClosesTheConfirmation opens the stop
+// confirmation and lets the target end by itself: the confirmation closes,
+// nothing is sent, and focus goes to the view's heading, not the page body.
+func TestViewsPageLiveTargetEndingClosesTheConfirmation(t *testing.T) {
+	cp := pageLiveControlPlane(t, "serve", Options{}, noModel())
+	ps := startPageServer(t, cp)
+	runPageScript(t, ps, nil, liveScriptHelpers+`
+const page = await openPage(origin, { link: input.link });
+await openLive(page);
+const started = await startTarget(commitA);
+await until(() => liveState(page) === "running", "the started target did not appear");
+page.$("#surla-live-stop").click();
+await until(() => page.doc.activeElement === page.$("#surla-live-stop-confirm"), "the confirmation did not take focus");
+await fetch(started.url + "/exit", { method: "POST" }).catch(() => {});
+await until(() => liveState(page) === "none", "a target that ended by itself is still shown", 30000);
+await until(() => !page.$("#surla-live-stop-confirm"), "the confirmation stayed open for a target that ended");
+await until(() => page.doc.activeElement === page.$("#surla-live-target-title"), "focus did not go to the view's heading: " + page.doc.activeElement.outerHTML.slice(0, 80));
+expect(page.sent("DELETE", "/live-target").length === 0, "a stop was sent although the user never confirmed");
+page.close();
+`)
+}
+
+// TestViewsPageClearsARefusedStopWhenTheStateChanges has the server refuse
+// a stop, shows the refusal, keeps it while the target's state is the one
+// the refusal left, and clears it once the target ends.
+func TestViewsPageClearsARefusedStopWhenTheStateChanges(t *testing.T) {
+	cp := pageLiveControlPlane(t, "serve", Options{}, noModel())
+	ps := startPageServer(t, cp)
+	runPageScript(t, ps, nil, liveScriptHelpers+`
+const page = await openPage(origin, { link: input.link });
+await openLive(page);
+const started = await startTarget(commitA);
+await until(() => liveState(page) === "running", "the started target did not appear");
+await control(origin, "reply", { key: "DELETE /live-target", status: 500, body: { name: "live_target_stop_failed", id: "x", message: "The stop could not be completed for this test.", temporary: false, timeout: false, fault: false } });
+page.$("#surla-live-stop").click();
+await until(() => page.$("#surla-live-stop-yes"), "Stop did not ask first");
+page.$("#surla-live-stop-yes").click();
+await until(() => page.text("#surla-live-stop-outcome") === "The stop could not be completed for this test.", "the refusal was not shown");
+await until(() => page.sent("GET", "/live-target").length >= 2, "the page did not read the live target after the refusal");
+await sleep(600);
+expect(page.$("#surla-live-stop-outcome"), "the refusal went while the state stayed the same");
+await fetch(started.url + "/exit", { method: "POST" }).catch(() => {});
+await until(() => liveState(page) === "none", "a target that ended by itself is still shown", 30000);
+await until(() => !page.$("#surla-live-stop-outcome"), "the refusal stayed after the state changed");
 page.close();
 `)
 }
 
 // TestViewsPageLiveTargetNotConfirmedStopped makes a stop fail and checks
 // that the page shows the server's message, draws the target as not
-// confirmed stopped with the server's step, and still offers Stop. Making
-// the stop fail needs macOS's chflags, as
-// TestAFailedStopKeepsTheOwnerAndStartsNoOtherTarget does.
+// confirmed stopped with the server's step, and offers no Stop: a target's
+// stop runs once, so a retry could never succeed. Making the stop fail needs
+// macOS's chflags, as TestAFailedStopKeepsTheOwnerAndStartsNoOtherTarget
+// does.
 func TestViewsPageLiveTargetNotConfirmedStopped(t *testing.T) {
 	if runtime.GOOS != "darwin" {
 		t.Skip("making a stop fail needs macOS's chflags")
@@ -231,7 +284,7 @@ expect(page.$("#surla-live-stop-outcome").getAttribute("role") === "alert", "the
 await until(() => liveState(page) === "not_confirmed_stopped", "the target is not drawn as not confirmed stopped: " + liveState(page));
 expect(page.text("#surla-live-message") === input.step, "the read's step is not shown: " + page.text("#surla-live-message"));
 expect(page.text("#surla-live-target").includes(commitA), "the stuck target's commit is not shown");
-expect(page.$("#surla-live-stop"), "Stop is not offered for a target not confirmed stopped");
+expect(!page.$("#surla-live-stop") && !page.$("#surla-live-stop-confirm"), "Stop is offered for a target whose stop already ran");
 await until(() => page.text("#surla-live-announcement") === "The live target could not be confirmed stopped.", "the failed stop was not announced");
 page.close();
 `)
@@ -293,11 +346,14 @@ for (const page of pages) {
 `)
 }
 
-// TestViewsPageModelConnectionForm shows the start-up choice, has a
-// provider whose key is missing refused with the variable named and the
-// choice unchanged, applies a gateway and shows the new choice, and checks
-// that no answer the page receives, nothing it shows and nothing in the
-// diagnostics history holds the provider key.
+// TestViewsPageModelConnectionForm shows the start-up choice with the form
+// open on its kind, only that kind's fields displayed and the shared field
+// styles, keeps typed text when the user leaves the view and comes back, has
+// a provider whose key is missing refused with the variable named and the
+// choice unchanged, applies a gateway and shows the new choice, opens a new
+// page on the gateway kind, and checks that no answer the page received,
+// nothing it shows and nothing in the diagnostics history holds the
+// provider key.
 func TestViewsPageModelConnectionForm(t *testing.T) {
 	const secret = "sk-page-test-secret-value"
 	exporter := tracetest.NewInMemoryExporter()
@@ -320,38 +376,50 @@ await openLive(page);
 await until(() => page.text("#surla-model-current").includes("anthropic / claude-sonnet-4-6"), "the start-up choice is not shown: " + page.text("#surla-model-current"));
 expect(page.text("#surla-model-current").startsWith("Live targets started from now on use"), "the choice does not say what it applies to");
 expect(page.text("#surla-model-note").includes("live targets started afterwards") && page.text("#surla-model-note").includes("verification is not affected"), "the note does not say what the choice changes: " + page.text("#surla-model-note"));
+const shown = (p, id) => p.win.getComputedStyle(p.$(id)).display !== "none";
+expect(page.$("input[name='surla-model-kind'][value='direct']").checked, "the form does not open on the current choice's kind");
+expect(shown(page, "#surla-model-direct-fields") && !shown(page, "#surla-model-gateway-fields"), "the unused kind's fields are displayed");
+for (const id of ["#surla-model-provider", "#surla-model-name", "#surla-model-gateway"]) {
+  expect(page.$(id).classList.contains("surla-input") && page.$(id).closest("label").classList.contains("surla-field-label"), id + " does not use the shared field styles");
+}
 const apply = page.$("#surla-model-apply");
 expect(apply.tagName === "BUTTON" && apply.type === "submit" && apply.classList.contains("shadcn-btn-primary"), "Apply is not the view's primary submit button");
 const select = page.$("#surla-model-provider");
 select.value = "openai";
 select.dispatchEvent(new page.win.Event("change", { bubbles: true }));
 page.type(page.$("#surla-model-name"), "gpt-5.4-mini");
-apply.click();
+page.$("#surla-nav-story").click();
+await until(() => page.state() === "story" && !page.$("#surla-model-form"), "the Story view did not open");
+page.$("#surla-nav-live").click();
+await until(() => page.$("#surla-model-name"), "the Live target view did not open again");
+expect(page.$("#surla-model-name").value === "gpt-5.4-mini" && page.$("#surla-model-provider").value === "openai", "leaving the view lost the typed text: " + page.$("#surla-model-name").value + " / " + page.$("#surla-model-provider").value);
+page.$("#surla-model-apply").click();
 await until(() => page.$("#surla-model-outcome"), "the refusal was not shown");
 expect(page.text("#surla-model-outcome").includes("OPENAI_API_KEY"), "the refusal does not name the missing variable: " + page.text("#surla-model-outcome"));
 expect(page.$("#surla-model-outcome").getAttribute("role") === "alert", "the refusal is not an alert");
 expect(page.text("#surla-model-current").includes("anthropic / claude-sonnet-4-6"), "a refused change replaced the shown choice");
 
 page.$("input[name='surla-model-kind'][value='gateway']").click();
-await until(() => !page.$("#surla-model-gateway").parentElement.hidden, "the gateway field did not appear");
+await until(() => shown(page, "#surla-model-gateway-fields"), "the gateway fields were not displayed");
+expect(!shown(page, "#surla-model-direct-fields"), "the provider fields are still displayed beside the gateway's");
 page.type(page.$("#surla-model-gateway"), "127.0.0.1:9090");
 page.$("#surla-model-apply").click();
 await until(() => page.text("#surla-model-outcome") === "Live targets started from now on use the model gateway at 127.0.0.1:9090.", "the accepted change was not shown: " + page.text("#surla-model-outcome"));
 await until(() => page.text("#surla-model-current").includes("the model gateway at 127.0.0.1:9090"), "the new choice was not read again");
 expect(page.sent("POST", "/cp1/model").length === 2, "each Apply should send one request");
 
-const read = async (method, body) => {
-  const response = await page.win.fetch("/cp1/model", {
-    method,
-    headers: { Authorization: "Bearer " + input.session, "Content-Type": "application/json" },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
-  return response.text();
-};
-for (const text of [await read("GET"), await read("POST", { provider: "openai", model_name: "gpt-5.4-mini" }), await read("POST", { provider: "anthropic", model_name: "claude-x" })]) {
-  expect(!text.includes(input.secret), "an answer holds the provider key: " + text);
+const second = await openPage(origin, { link: input.link + "-2" });
+await openLive(second);
+await until(() => second.text("#surla-model-current").includes("127.0.0.1:9090"), "a new page did not read the gateway choice");
+expect(second.$("input[name='surla-model-kind'][value='gateway']").checked && shown(second, "#surla-model-gateway-fields") && !shown(second, "#surla-model-direct-fields"), "a new page does not open on the current choice's kind");
+
+const answered = [...page.requests, ...second.requests].filter((r) => r.answer !== undefined);
+expect(answered.some((r) => r.path === "/cp1/model" && r.method === "GET") && answered.some((r) => r.path === "/cp1/model" && r.method === "POST" && r.status === 422), "the scan did not see the model reads and the refusal");
+for (const r of answered) {
+  expect(!r.answer.includes(input.secret), "the answer to " + r.method + " " + r.path + " holds the provider key");
 }
-expect(!page.doc.body.textContent.includes(input.secret), "the page shows the provider key");
+expect(!page.doc.body.textContent.includes(input.secret) && !second.doc.body.textContent.includes(input.secret), "a page shows the provider key");
+second.close();
 const history = await api(origin, "GET", "/traces?status=all&limit=100", undefined, input.guide);
 expect(history.status === 200 && !JSON.stringify(history.body).includes(input.secret), "the diagnostics history holds the provider key");
 page.close();

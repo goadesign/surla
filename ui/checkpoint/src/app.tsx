@@ -21,7 +21,7 @@ import { ProposedRevisionView } from "./components/proposal";
 import { ApproveResultControl } from "./components/cp5-approve";
 import { SessionEndedNotice, SignedOutReason, SignedOutView } from "./components/session";
 import { StoryStageView } from "./components/story";
-import { LiveTargetStageView, ServerAnswer, describeApplied } from "./components/live-target";
+import { LiveTargetStageView, ModelDraft, ServerAnswer, describeApplied } from "./components/live-target";
 import { Alert, Button, Card } from "./components/shadcn";
 import { TraceDrawer, TraceFilter } from "./components/trace-drawer";
 import { isDraftDirty, PreservedDraft } from "./context/cp1-draft";
@@ -330,6 +330,22 @@ interface WorkspaceSubjectDescriptor {
   detail?: string;
 }
 
+// liveTargetKey names a live target read's case, commit and start, so the
+// page can tell when the state a message described has changed.
+function liveTargetKey(target: LiveTargetStatus): string {
+  const live = target.live_target;
+  switch (live.state) {
+    case "none":
+      return "none";
+    case "starting":
+      return "starting " + live.candidate_commit + " " + live.since;
+    case "running":
+      return "running " + live.candidate_commit + " " + live.started_at;
+    case "not_confirmed_stopped":
+      return "not_confirmed_stopped " + live.candidate_commit;
+  }
+}
+
 // describeActiveResultSubject derives the subject of #surla-result-view strictly
 // from the displayed payload and selected verification run, never falling
 // back to the editor's card. The Story stage shows the Story saved with
@@ -501,8 +517,15 @@ export function bootstrapViewsPage() {
   let liveTargetError: string | null = null;
   let liveTargetStale = true;
   let liveReadAgain = false;
-  // liveStopOutcome is the server's answer to the last stop request.
+  // liveStopOutcome is the server's answer to the last stop request. It is
+  // shown until the live target's state next changes: liveStopBasis is the
+  // state the first read issued after the answer found, and only reads
+  // numbered above liveStopAfterRead, liveReadCount when the answer came,
+  // count, so a read already in flight cannot clear it.
   let liveStopOutcome: ServerAnswer | null = null;
+  let liveStopBasis: string | null = null;
+  let liveStopAfterRead = 0;
+  let liveReadCount = 0;
   // modelConnection is the model connection as last read, or null before
   // the first read; it is not part of the change list's version, so the
   // page reads it when the Live target view opens and after it changes it.
@@ -510,6 +533,9 @@ export function bootstrapViewsPage() {
   let modelConnectionError: string | null = null;
   // modelApplyOutcome is the server's answer to the last change of model.
   let modelApplyOutcome: ServerAnswer | null = null;
+  // modelDraft is the model form's unsent input, kept here so it survives
+  // refreshes and leaving the Live target view.
+  let modelDraft: ModelDraft = { kind: null, provider: "anthropic", modelName: "", gatewayAddr: "" };
   const runsById = new Map<string, VerificationStatusResult>();
   const lastLoadedListByChangeId = new Map<string, string[]>();
   let selectedVerificationChangeId: string | null = null;
@@ -1175,6 +1201,8 @@ export function bootstrapViewsPage() {
     }
     liveReadAgain = false;
     liveTargetStale = false;
+    liveReadCount += 1;
+    const read = liveReadCount;
     const done = () => {
       if (liveReadAgain) {
         readLiveTarget();
@@ -1187,11 +1215,16 @@ export function bootstrapViewsPage() {
       (target) => {
         liveTarget = target;
         liveTargetError = null;
-        // A confirmed stop's message describes the target it stopped, not
-        // one started afterwards.
-        const state = target.live_target.state;
-        if (liveStopOutcome !== null && !liveStopOutcome.refused && (state === "starting" || state === "running")) {
-          liveStopOutcome = null;
+        // A stop's message describes the state its answer left; it goes once
+        // that state changes.
+        if (liveStopOutcome !== null && read > liveStopAfterRead) {
+          const key = liveTargetKey(target);
+          if (liveStopBasis === null) {
+            liveStopBasis = key;
+          } else if (liveStopBasis !== key) {
+            liveStopOutcome = null;
+            liveStopBasis = null;
+          }
         }
         done();
       },
@@ -1237,14 +1270,30 @@ export function bootstrapViewsPage() {
       {},
       "",
       (result) => {
-        liveStopOutcome = { message: result.message, refused: false };
-        readLiveTarget();
+        showStopAnswer({ message: result.message, refused: false });
       },
       (message) => {
-        liveStopOutcome = { message, refused: true };
-        readLiveTarget();
+        showStopAnswer({ message, refused: true });
       }
     );
+  }
+
+  // showStopAnswer shows a stop's answer and reads the live target again;
+  // the first read issued from now on records the state the answer left.
+  function showStopAnswer(answer: ServerAnswer) {
+    liveStopOutcome = answer;
+    liveStopBasis = null;
+    liveStopAfterRead = liveReadCount;
+    readLiveTarget();
+  }
+
+  // updateModelDraft records one change to the model form's input. Only a
+  // change of kind redraws the view; the text fields hold their own text.
+  function updateModelDraft(change: Partial<ModelDraft>) {
+    modelDraft = { ...modelDraft, ...change };
+    if (change.kind !== undefined) {
+      syncResultRegion();
+    }
   }
 
   // applyModel asks the server to use choice for live targets started
@@ -1686,6 +1735,8 @@ export function bootstrapViewsPage() {
             applying={hasPending("configure_model", "")}
             applyOutcome={modelApplyOutcome}
             onApply={applyModel}
+            draft={modelDraft}
+            onDraft={updateModelDraft}
           />
         );
       });
