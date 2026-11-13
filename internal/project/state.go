@@ -103,7 +103,7 @@ func Discover(root, directory string) (*State, error) {
 			return &State{Dir: dir, Record: record}, nil
 		}
 		if !errors.Is(err, os.ErrNotExist) {
-			return nil, stateFileError(dir, candidate, err)
+			return nil, recordReadError(dir, candidate, err)
 		}
 		if filepath.Dir(candidate) == candidate {
 			break
@@ -225,7 +225,7 @@ func (s *State) initialize(owner string, freePort func() (int, error)) (bool, er
 		return false, nil
 	}
 	if !errors.Is(err, os.ErrNotExist) {
-		return false, stateFileError(s.Dir, s.Record.Directory, err)
+		return false, recordReadError(s.Dir, s.Record.Directory, err)
 	}
 	id, err := randomCredential()
 	if err != nil {
@@ -383,6 +383,29 @@ func freeLoopbackPort() (int, error) {
 		return 0, err
 	}
 	return port, nil
+}
+
+// recordReadError explains why the record of the project folder project, kept in its
+// private state folder dir, could not be read. A permission error can come from a folder
+// above the record rather than from the record: when dir, or the operator folder that
+// holds every project's state folder, is closed to this account or belongs to another
+// account, the record's repair cannot be applied (chmod on a file inside a folder this
+// account cannot search fails too), so that folder is named with its own repair. The
+// folder's message does not claim a project exists, since a closed folder hides whether
+// it holds a record.
+func recordReadError(dir, project string, err error) error {
+	if !errors.Is(err, os.ErrPermission) {
+		return stateFileError(dir, project, err)
+	}
+	folderErr := privateDirectory(dir)
+	switch {
+	case folderErr == nil:
+		return stateFileError(dir, project, err)
+	case errors.Is(folderErr, os.ErrPermission):
+		return stateFolderError(filepath.Dir(dir), folderErr)
+	default:
+		return stateFolderError(dir, folderErr)
+	}
 }
 
 // stateFileError names the record of the project folder project, kept in its private

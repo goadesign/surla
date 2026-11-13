@@ -164,31 +164,36 @@ func TestNewProjectAvoidsPortsOtherProjectsSaved(t *testing.T) {
 
 // TestBrokenStateNamesPathAndStep reports a state folder or record that discovery or the
 // start lock cannot use with its path and a step the user can take. Discovery walks up
-// through parent folders, so the path also says which project's state is broken.
+// through parent folders, so the path also says which project's state is broken. A
+// folder this account cannot search hides the record inside it, so the folder, not the
+// record, is named with its repair.
 func TestBrokenStateNamesPathAndStep(t *testing.T) {
 	record := func(state *State) string { return filepath.Join(state.Dir, "project.json") }
 	for _, tc := range []struct {
 		name   string
-		damage func(*State)
+		damage func(*testing.T, *State)
 		want   func(*State) []string
+		absent []string
 	}{
 		{
 			name:   "record others can read",
-			damage: func(state *State) { require.NoError(t, os.Chmod(record(state), 0o644)) },
+			damage: func(t *testing.T, state *State) { require.NoError(t, os.Chmod(record(state), 0o644)) },
 			want: func(state *State) []string {
 				return []string{"Surla project in " + state.Record.Directory, "chmod 600 " + record(state)}
 			},
 		},
 		{
-			name:   "record that is not JSON",
-			damage: func(state *State) { require.NoError(t, os.WriteFile(record(state), []byte("{"), 0o600)) },
+			name: "record that is not JSON",
+			damage: func(t *testing.T, state *State) {
+				require.NoError(t, os.WriteFile(record(state), []byte("{"), 0o600))
+			},
 			want: func(state *State) []string {
 				return []string{"Surla project in " + state.Record.Directory, record(state), "restore it from a backup", "move the folder " + state.Dir}
 			},
 		},
 		{
 			name: "record with trailing data",
-			damage: func(state *State) {
+			damage: func(t *testing.T, state *State) {
 				raw, err := os.ReadFile(record(state))
 				require.NoError(t, err)
 				require.NoError(t, os.WriteFile(record(state), append(raw, []byte("{}")...), 0o600))
@@ -199,7 +204,7 @@ func TestBrokenStateNamesPathAndStep(t *testing.T) {
 		},
 		{
 			name: "invalid record",
-			damage: func(state *State) {
+			damage: func(t *testing.T, state *State) {
 				require.NoError(t, os.WriteFile(record(state), []byte(`{"id":"short","directory":"/","owner":"","port":0,"agents":{}}`), 0o600))
 			},
 			want: func(state *State) []string {
@@ -208,15 +213,35 @@ func TestBrokenStateNamesPathAndStep(t *testing.T) {
 		},
 		{
 			name:   "folder others can open",
-			damage: func(state *State) { require.NoError(t, os.Chmod(state.Dir, 0o755)) },
+			damage: func(t *testing.T, state *State) { require.NoError(t, os.Chmod(state.Dir, 0o755)) },
 			want:   func(state *State) []string { return []string{"chmod 700 " + state.Dir} },
+		},
+		{
+			name:   "folder this account cannot open",
+			damage: func(t *testing.T, state *State) { closeFolder(t, state.Dir, 0o000) },
+			want:   func(state *State) []string { return []string{state.Dir, "chmod 700 " + state.Dir} },
+			absent: []string{"chmod 600", "record of the Surla project"},
+		},
+		{
+			name:   "folder this account cannot search",
+			damage: func(t *testing.T, state *State) { closeFolder(t, state.Dir, 0o600) },
+			want:   func(state *State) []string { return []string{state.Dir, "chmod 700 " + state.Dir} },
+			absent: []string{"chmod 600", "record of the Surla project"},
+		},
+		{
+			name:   "operator folder this account cannot open",
+			damage: func(t *testing.T, state *State) { closeFolder(t, filepath.Dir(state.Dir), 0o000) },
+			want: func(state *State) []string {
+				return []string{"chmod 700 " + filepath.Dir(state.Dir)}
+			},
+			absent: []string{"chmod 600", "Surla project in"},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			root := physicalTempDir(t)
 			project := physicalTempDir(t)
 			state := initializedState(t, root, project)
-			tc.damage(state)
+			tc.damage(t, state)
 			// Discovery from a folder inside the project reads the same record.
 			inside := filepath.Join(project, "inside")
 			require.NoError(t, os.Mkdir(inside, 0o755))
@@ -228,6 +253,46 @@ func TestBrokenStateNamesPathAndStep(t *testing.T) {
 			for _, want := range tc.want(state) {
 				assert.Contains(t, err.Error(), want)
 			}
+			for _, absent := range tc.absent {
+				assert.NotContains(t, err.Error(), absent)
+			}
 		})
 	}
+}
+
+// TestInitializeNamesClosedStateFolder reports a state folder that this account cannot
+// search when a new project is created in it, with the folder's repair: the folder
+// holds no record yet, so a step about the record would name a file that does not exist.
+func TestInitializeNamesClosedStateFolder(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		mode os.FileMode
+	}{
+		{name: "folder this account cannot open", mode: 0o000},
+		{name: "folder this account cannot search", mode: 0o600},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			state, err := Discover(physicalTempDir(t), physicalTempDir(t))
+			require.NoError(t, err)
+			require.NoError(t, os.Mkdir(state.Dir, 0o700))
+			closeFolder(t, state.Dir, tc.mode)
+			_, err = state.Initialize("uid:test")
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "chmod 700 "+state.Dir)
+			assert.NotContains(t, err.Error(), "chmod 600")
+			assert.NotContains(t, err.Error(), "record of the Surla project")
+		})
+	}
+}
+
+// closeFolder gives dir mode for the rest of the test and restores 0700 when the test
+// ends, so the test's temporary folders can still be removed. The superuser can open
+// any folder, so the test is skipped when it runs as that account.
+func closeFolder(t *testing.T, dir string, mode os.FileMode) {
+	t.Helper()
+	if os.Geteuid() == 0 {
+		t.Skip("the superuser can open folders of any mode")
+	}
+	require.NoError(t, os.Chmod(dir, mode))
+	t.Cleanup(func() { assert.NoError(t, os.Chmod(dir, 0o700)) })
 }
