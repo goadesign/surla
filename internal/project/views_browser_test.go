@@ -2,8 +2,10 @@
 
 // This file proves in a real Chromium-family browser what the jsdom tests in
 // views_page_test.go cannot: the browser enforces the views page's
-// Content-Security-Policy and framing rule, and itself sends the
-// Sec-Fetch-Site mark every session request depends on. It is opt-in:
+// Content-Security-Policy and framing rule, itself sends the Sec-Fetch-Site
+// mark every session request depends on, and lays the page out as its
+// stylesheet says, such as the Live target view at a phone's width. It is
+// opt-in:
 //
 //	CI=true go test -race -count=1 -tags browser ./internal/project </dev/null
 //
@@ -86,6 +88,8 @@ type (
 		OtherPages []otherPageFacts `json:"other_pages"`
 		// Story is the Story stage of the change saved with a Story.
 		Story storyFacts `json:"story"`
+		// Live is the Live target view at a phone's width.
+		Live liveFacts `json:"live"`
 		// Reload is the views page after a reload.
 		Reload reloadFacts `json:"reload"`
 	}
@@ -228,6 +232,24 @@ type (
 		// Violations are policy reports raised while the change and its
 		// Story stage opened.
 		Violations []violation `json:"violations"`
+	}
+
+	// liveFacts is how the browser laid out the Live target view at a
+	// viewport 375 CSS pixels wide.
+	liveFacts struct {
+		// Found says the view and its model form rendered after the live
+		// target was read.
+		Found bool `json:"found"`
+		// LiveState is the live target's case the view drew.
+		LiveState string `json:"live_state"`
+		// DirectDisplay and GatewayDisplay are the computed display of the
+		// model form's two groups of fields.
+		DirectDisplay  string `json:"direct_display"`
+		GatewayDisplay string `json:"gateway_display"`
+		// DocumentScrollWidth is the page's scroll width and ViewportWidth
+		// the width of the browser's viewport.
+		DocumentScrollWidth int `json:"document_scroll_width"`
+		ViewportWidth       int `json:"viewport_width"`
 	}
 
 	// reloadFacts is the views page after a reload.
@@ -466,6 +488,17 @@ func TestViewsPageInARealBrowser(t *testing.T) {
 		assert.Equal(t, target.RequestRevision, targetAfter.RequestRevision, "the targeted change's saved request_revision")
 		assert.Nil(t, targetAfter.ConfirmedBy, "the targeted change records a confirmation")
 		t.Logf("targeted change %s: status %s, request_revision %s before and after", target.ChangeID, targetAfter.Status, targetAfter.RequestRevision)
+	})
+
+	t.Run("i the Live target view at a phone's width shows one kind of model field and no horizontal scroll", func(t *testing.T) {
+		live := facts.Live
+		require.True(t, live.Found, "the Live target view did not render")
+		assert.Equal(t, 375, live.ViewportWidth, "the viewport width")
+		assert.NotEqual(t, "none", live.DirectDisplay, "the provider fields of the current kind are not displayed")
+		assert.Equal(t, "none", live.GatewayDisplay, "the unused gateway fields are displayed")
+		assert.LessOrEqual(t, live.DocumentScrollWidth, live.ViewportWidth, "the Live target view widened the page")
+		t.Logf("live target view at phone width: state %s, provider fields %s, gateway fields %s, page %d in viewport %d",
+			live.LiveState, live.DirectDisplay, live.GatewayDisplay, live.DocumentScrollWidth, live.ViewportWidth)
 	})
 
 	t.Run("g a reload ends the session", func(t *testing.T) {
