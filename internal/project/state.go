@@ -101,10 +101,11 @@ func Discover(root, directory string) (*State, error) {
 // Open loads the initialized project whose private state folder dir the
 // `surla` command found with Discover and passed to the project server it
 // launched, so the server serves exactly that state and never derives a
-// folder from its own environment. dir must be absolute and private to this
-// account, hold a valid project record, and carry the name Discover derives
-// from that record's folder; otherwise Open refuses, naming dir and never a
-// credential. A folder without a record was never initialized by `surla`.
+// folder from its own environment. dir must be the absolute, physical
+// (symlink-free) path of a folder private to this account, hold a valid
+// project record, carry the name Discover derives from that record's folder,
+// and lie outside that project folder; otherwise Open refuses, naming dir and
+// never a credential. A folder without a record was never initialized by `surla`.
 func Open(dir string) (*State, error) {
 	if !filepath.IsAbs(dir) {
 		return nil, fmt.Errorf("project state folder %q is not an absolute path; start the project with surla", dir)
@@ -112,8 +113,15 @@ func Open(dir string) (*State, error) {
 	if err := privateDirectory(dir); err != nil {
 		return nil, fmt.Errorf("project state folder %s: %w", dir, err)
 	}
+	physical, err := abspath.Eval(dir)
+	if err != nil {
+		return nil, fmt.Errorf("project state folder %s: %w", dir, err)
+	}
+	if physical != dir {
+		return nil, fmt.Errorf("project state folder %s is not its physical path %s; start the project with surla", dir, physical)
+	}
 	var record Record
-	err := readJSON(filepath.Join(dir, "project.json"), &record)
+	err = readJSON(filepath.Join(dir, "project.json"), &record)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, fmt.Errorf("project state folder %s holds no project; start the project with surla", dir)
 	}
@@ -125,6 +133,13 @@ func Open(dir string) (*State, error) {
 	}
 	if projectDirectory(filepath.Dir(dir), record.Directory) != dir {
 		return nil, fmt.Errorf("project state folder %s does not belong to the project folder %s", dir, record.Directory)
+	}
+	inside, err := abspath.Within(record.Directory, dir)
+	if err != nil {
+		return nil, fmt.Errorf("project state folder %s: %w", dir, err)
+	}
+	if inside {
+		return nil, fmt.Errorf("project state folder %s must lie outside the project folder %s", dir, record.Directory)
 	}
 	return &State{Dir: dir, Record: record}, nil
 }
