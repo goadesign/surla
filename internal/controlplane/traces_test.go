@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -552,8 +553,9 @@ func TestWaitingReadBoundaryExportsWithoutRecording(t *testing.T) {
 // real HTTP handler or MCP server and compares the records the history gains.
 // A read the user's session sends with GET adds none when it succeeds,
 // including reading the history itself, or is refused (not found, forbidden),
-// an expected answer without error status. A read by the user that faults, a
-// change by the user, and a read by an agent over HTTP or MCP are recorded.
+// an expected answer without error status. A read by the user that faults or
+// panics, a change by the user, and a read by an agent over HTTP or MCP are
+// recorded.
 // The waiting read stays out even when it ends with an error. Every call
 // keeps its exported spans and their status.
 func TestHistoryLeavesOutOnlyTheUsersSuccessfulReads(t *testing.T) {
@@ -563,6 +565,8 @@ func TestHistoryLeavesOutOnlyTheUsersSuccessfulReads(t *testing.T) {
 		// generationDoer sends builder.
 		user  = "generation-token"
 		guide = "generation-token-guide"
+		// historyPanic is the value a panicking read panics with.
+		historyPanic = "history-read-panic"
 	)
 	// get returns a call sending a GET for path with token.
 	get := func(path, token string) func(*testing.T, *ControlPlane, *httptest.Server, *gensurla.ChangeCardResult) int {
@@ -572,8 +576,11 @@ func TestHistoryLeavesOutOnlyTheUsersSuccessfulReads(t *testing.T) {
 	}
 	for _, test := range []struct {
 		name string
-		// call sends the request and returns its HTTP status, or 0 when the
-		// caller gave up before an answer.
+		// panics makes the promotion target lookup every list_changes runs
+		// panic while the call is sent.
+		panics bool
+		// call sends the request and returns its HTTP status, or 0 when no
+		// answer arrived.
 		call       func(*testing.T, *ControlPlane, *httptest.Server, *gensurla.ChangeCardResult) int
 		wantStatus int
 		// saved lists the records the call adds as "name caller_kind status".
@@ -615,6 +622,13 @@ func TestHistoryLeavesOutOnlyTheUsersSuccessfulReads(t *testing.T) {
 			wantStatus: http.StatusInternalServerError,
 			saved:      []string{"surla.request.get_change user error"},
 			exported:   map[string]codes.Code{"surla.request.get_change": codes.Error},
+		},
+		{
+			// The panic reaches net/http, which drops the connection, so no
+			// answer arrives; the SDK records it as an exception event only.
+			name: "user read panics", panics: true, call: get("/changes", user), wantStatus: 0,
+			saved:    []string{"surla.controlplane.list_changes user unset", "surla.request.list_changes user unset"},
+			exported: map[string]codes.Code{"surla.request.list_changes": codes.Unset, "surla.controlplane.list_changes": codes.Unset},
 		},
 		{
 			name: "user confirms a change",
@@ -670,7 +684,17 @@ func TestHistoryLeavesOutOnlyTheUsersSuccessfulReads(t *testing.T) {
 			exporter := tracetest.NewInMemoryExporter()
 			provider := sdktrace.NewTracerProvider(sdktrace.WithSyncer(exporter))
 			t.Cleanup(func() { assert.NoError(t, provider.Shutdown(context.Background())) })
-			cp := newControlPlane(t, Options{TracerProvider: provider})
+			// Unarmed, the lookup reports no promotion target, as when none is set.
+			var panicking atomic.Bool
+			cp := newControlPlane(t, Options{
+				TracerProvider: provider,
+				ResolvePromotionTarget: func(context.Context, string) (PromotionTarget, error) {
+					if panicking.Load() {
+						panic(historyPanic)
+					}
+					return nil, nil
+				},
+			})
 			card := mustPropose(t, cp, WithPrincipal(t.Context(), Principal{ID: owner, CallerID: "guide", Kind: CallerGuide}),
 				"chg-history", "Route refunds to a manager.", refundAnalysis("Route refunds to a manager."))
 			srv := httptest.NewServer(NewHTTPHandler(cp, workflowAuthenticator(map[string]Principal{user: {ID: owner}})))
@@ -686,6 +710,7 @@ func TestHistoryLeavesOutOnlyTheUsersSuccessfulReads(t *testing.T) {
 			}
 			before := saved()
 
+			panicking.Store(test.panics)
 			assert.Equal(t, test.wantStatus, test.call(t, cp, srv, card))
 			// Close returns once every request's handler, and so every span, has ended.
 			srv.Close()
@@ -701,6 +726,11 @@ func TestHistoryLeavesOutOnlyTheUsersSuccessfulReads(t *testing.T) {
 			for _, span := range exporter.GetSpans() {
 				if _, ok := test.exported[span.Name]; ok {
 					exported[span.Name] = span.Status.Code
+					if test.panics {
+						require.NotEmpty(t, span.Events, "%s does not carry the panic", span.Name)
+						assert.Equal(t, "exception", span.Events[0].Name)
+						assert.Contains(t, span.Events[0].Attributes, attribute.String("exception.message", historyPanic))
+					}
 				}
 			}
 			assert.Equal(t, test.exported, exported)
@@ -709,7 +739,8 @@ func TestHistoryLeavesOutOnlyTheUsersSuccessfulReads(t *testing.T) {
 }
 
 // sendHistoryRequest sends one request with token to srv and returns its
-// status, or 0 when ctx ended before an answer.
+// status, or 0 when no answer arrived: ctx ended first, or the server dropped
+// the connection after a panic.
 func sendHistoryRequest(
 	t *testing.T,
 	ctx context.Context,
@@ -723,10 +754,10 @@ func sendHistoryRequest(
 	request.Header.Set("Authorization", "Bearer "+token)
 	request.Header.Set("Content-Type", "application/json")
 	response, err := srv.Client().Do(request)
-	if ctx.Err() != nil {
+	if err != nil {
+		t.Logf("%s %s got no answer: %v", method, path, err)
 		return 0
 	}
-	require.NoError(t, err)
 	assert.NoError(t, response.Body.Close())
 	return response.StatusCode
 }

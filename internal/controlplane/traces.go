@@ -37,13 +37,17 @@ type (
 		// callerID and callerKind are private attribution and never added to SDK spans.
 		callerID   string
 		callerKind string
-		// failuresOnly appends the span only when it ends with error status, an
-		// actual failure. It is set for the user's reads: the views page reads
-		// again whenever its waiting read reports a change, so saving reads that
-		// succeed or are refused (an expected answer without error status, such
-		// as a change that is gone) would fill the history with the page's
-		// observation instead of what was done.
+		// failuresOnly appends the span only when it ends with error status or
+		// a panic, an actual failure. It is set for the user's reads: the views
+		// page reads again whenever its waiting read reports a change, so saving
+		// reads that succeed or are refused (an expected answer without error
+		// status, such as a change that is gone) would fill the history with the
+		// page's observation instead of what was done.
 		failuresOnly bool
+		// panicked records that a panic was in flight when a directly deferred
+		// End ran. The SDK keeps that failure only as an exception event, not as
+		// an error status, so failuresOnly still appends the span.
+		panicked bool
 		// ended lets only the first End export and append this operation.
 		ended atomic.Bool
 	}
@@ -88,7 +92,7 @@ func (c *ControlPlane) ListTraces(
 // seeing its concrete SDK parent span. Only the separately returned local span
 // owns recording the authenticated operation when its caller ends it. Spans
 // of a GET request by the user's session are appended only when they end with
-// error status.
+// error status or a panic.
 func (t diagnosticTracer) Start(
 	ctx context.Context,
 	name string,
@@ -129,6 +133,7 @@ func (s *diagnosticSpan) End(opts ...trace.SpanEndOption) {
 	defer s.recordCompleted()
 	defer s.ReadWriteSpan.End(opts...)
 	if recovered := recover(); recovered != nil {
+		s.panicked = true
 		panic(recovered)
 	}
 }
@@ -144,11 +149,11 @@ func (c *ControlPlane) tracer(scope string) trace.Tracer {
 }
 
 // recordCompleted saves the ended SDK span even while its End resumes a panic,
-// unless it is a user's read that succeeded or was refused, so it ended
-// without error status. It holds no span history and reports only actual
-// storage failures to the host.
+// unless it is a user's read that succeeded or was refused: it ended without
+// error status and without a panic in flight. It holds no span history and
+// reports only actual storage failures to the host.
 func (s *diagnosticSpan) recordCompleted() {
-	if s.failuresOnly && s.ReadWriteSpan.Status().Code != codes.Error {
+	if s.failuresOnly && !s.panicked && s.ReadWriteSpan.Status().Code != codes.Error {
 		return
 	}
 	if err := s.store.Record(s.principal, s.callerID, s.callerKind, s.ReadWriteSpan); err != nil {
